@@ -22,7 +22,16 @@ vi.mock('@mattstack/rt-client', () => ({
 const rt = await import('@mattstack/rt-client');
 const { routes } = await import('./routes');
 
-beforeEach(() => vi.resetAllMocks());
+beforeEach(() => {
+  vi.resetAllMocks();
+  // The rooms handler now reads each DM room's newest message for the fleet
+  // tree's second line. Most tests do not care what it is, only that the call
+  // resolves like the daemon's would.
+  vi.mocked(rt.chatMessages).mockResolvedValue({
+    ok: true,
+    data: { messages: [] },
+  });
+});
 afterEach(() => {
   delete process.env.CHAT_FIXTURES;
 });
@@ -50,6 +59,81 @@ test("rooms returns the daemon's payload, DM rows included", async () => {
     kind: 'dm',
     participants: { a: 'deck-main', b: 'rt-chat-wt' },
   });
+});
+
+test('only DM rows carry lastMessage, one line, capped at 120 chars', async () => {
+  vi.mocked(rt.chatRooms).mockResolvedValueOnce({
+    ok: true,
+    data: {
+      rooms: [
+        { room: 'build', memberCount: 3, unread: 0, mentions: 0 },
+        {
+          room: 'dm-9f3a',
+          memberCount: 3,
+          unread: 1,
+          mentions: 0,
+          kind: 'dm',
+          participants: { a: 'edie', b: 'stan' },
+        },
+      ],
+    },
+  });
+  vi.mocked(rt.chatMessages).mockResolvedValue({
+    ok: true,
+    data: {
+      messages: [
+        {
+          id: 9,
+          room: 'dm-9f3a',
+          handle: 'edie',
+          body: `pack compile is green,\n\ncutting ${'x'.repeat(200)}`,
+          postedAt: 1,
+          mentions: [],
+        },
+      ],
+    },
+  });
+
+  const body = await (
+    await routes.request('/api/chat/rooms?handle=matt')
+  ).json();
+
+  expect(body.rooms[0].lastMessage).toBeUndefined();
+  expect(rt.chatMessages).toHaveBeenCalledTimes(1);
+  expect(rt.chatMessages).toHaveBeenCalledWith(
+    expect.objectContaining({ room: 'dm-9f3a', limit: 1 }),
+    expect.anything()
+  );
+  expect(body.rooms[1].lastMessage.handle).toBe('edie');
+  expect(body.rooms[1].lastMessage.body).toHaveLength(120);
+  expect(
+    body.rooms[1].lastMessage.body.startsWith(
+      'pack compile is green, cutting x'
+    )
+  ).toBe(true);
+});
+
+test('a DM whose tail cannot be read still lists, without lastMessage', async () => {
+  vi.mocked(rt.chatRooms).mockResolvedValueOnce({
+    ok: true,
+    data: {
+      rooms: [
+        {
+          room: 'dm-9f3a',
+          memberCount: 3,
+          unread: 1,
+          mentions: 0,
+          kind: 'dm',
+          participants: { a: 'edie', b: 'stan' },
+        },
+      ],
+    },
+  });
+  vi.mocked(rt.chatMessages).mockResolvedValue({ ok: false, error: 'nope' });
+
+  const res = await routes.request('/api/chat/rooms?handle=matt');
+  expect(res.status).toBe(200);
+  expect((await res.json()).rooms[0].lastMessage).toBeUndefined();
 });
 
 test('an ok:false from the daemon becomes a 502, not a crash', async () => {
@@ -167,6 +251,93 @@ test("buddies carries each buddy's rooms as tags, with DMs collapsed to `dm`", a
     branch: 'fix-auth',
     rooms: ['build', 'dm'],
   });
+});
+
+test('buddies join the live herdr pane title by sessionId', async () => {
+  vi.mocked(rt.chatBuddies).mockResolvedValueOnce({
+    ok: true,
+    data: {
+      buddies: [
+        {
+          sessionId: 's1',
+          handle: 'a',
+          baseHandle: 'a',
+          signedInAt: 1,
+          lastSeenAt: 1,
+          status: 'live',
+        },
+      ],
+    },
+  });
+  vi.mocked(rt.chatRooms).mockResolvedValueOnce({
+    ok: true,
+    data: { rooms: [] },
+  });
+  vi.mocked(rt.paneList).mockResolvedValueOnce({
+    ok: true,
+    data: {
+      panes: [
+        {
+          paneId: 'w1:p1',
+          workspace: 'x',
+          agentStatus: 'working',
+          sessionId: 's1',
+          title: 'Fix the thing',
+        },
+      ],
+    },
+  });
+  const res = await routes.request('/api/chat/buddies');
+  expect((await res.json()).buddies[0]).toMatchObject({
+    handle: 'a',
+    paneTitle: 'Fix the thing',
+  });
+});
+
+test('a failed pane:list degrades buddies to no titles, never a 502', async () => {
+  vi.mocked(rt.chatBuddies).mockResolvedValueOnce({
+    ok: true,
+    data: {
+      buddies: [
+        {
+          sessionId: 's1',
+          handle: 'a',
+          baseHandle: 'a',
+          signedInAt: 1,
+          lastSeenAt: 1,
+          status: 'live',
+        },
+      ],
+    },
+  });
+  vi.mocked(rt.chatRooms).mockResolvedValueOnce({
+    ok: true,
+    data: { rooms: [] },
+  });
+  vi.mocked(rt.paneList).mockResolvedValueOnce({
+    ok: false,
+    error: 'herdr unavailable: not running',
+  });
+  const res = await routes.request('/api/chat/buddies');
+  expect(res.status).toBe(200);
+  const body = (await res.json()) as {
+    buddies: Array<Record<string, unknown>>;
+  };
+  expect(body.buddies[0]!.handle).toBe('a');
+  expect(body.buddies[0]!.paneTitle).toBeUndefined();
+});
+
+test('fixtures mode bakes paneTitle directly, no pane:list call: jay carries a real title, max carries only its own handle', async () => {
+  process.env.CHAT_FIXTURES = '1';
+  const res = await routes.request('/api/chat/buddies');
+  const body = (await res.json()) as {
+    buddies: Array<{ handle: string; paneTitle?: string }>;
+  };
+  expect(body.buddies.find(b => b.handle === 'jay')?.paneTitle).toBe(
+    'Boxscore mattstack integration'
+  );
+  expect(body.buddies.find(b => b.handle === 'max')?.paneTitle).toBe('max');
+  expect(rt.paneList).not.toHaveBeenCalled();
 });
 
 test('a dropped write surfaces as an error, never a silent success', async () => {
@@ -829,15 +1000,15 @@ test('fixtures mode pages GET /api/chat/messages like the daemon: the newest `li
   const ids = async (query: string) =>
     (
       (await (
-        await routes.request(`/api/chat/messages/retro-0819${query}`)
+        await routes.request(`/api/chat/messages/rt${query}`)
       ).json()) as {
         messages: { id: number }[];
       }
     ).messages.map(m => m.id);
-  expect(await ids('?limit=2')).toEqual([303, 304]);
-  expect(await ids('?before=303&limit=2')).toEqual([301, 302]);
-  expect(await ids('?before=301&limit=2')).toEqual([]);
-  expect(await ids('')).toEqual([301, 302, 303, 304]);
+  expect(await ids('?limit=2')).toEqual([605, 606]);
+  expect(await ids('?before=605&limit=2')).toEqual([603, 604]);
+  expect(await ids('?before=601&limit=2')).toEqual([]);
+  expect(await ids('')).toEqual([601, 602, 603, 604, 605, 606]);
   expect(rt.chatMessages).not.toHaveBeenCalled();
 });
 
@@ -869,4 +1040,101 @@ test('fixtures mode answers POST /api/chat/invite from fixtureInvite, keyed by p
       })
     ).status
   ).toBe(400);
+});
+
+test('GET /api/chat/inbox fetches only unread rooms, capped at 50, and builds the payload as matt', async () => {
+  vi.mocked(rt.chatRooms).mockResolvedValueOnce({
+    ok: true,
+    data: {
+      rooms: [
+        { room: 'rt', memberCount: 5, unread: 200, mentions: 1 },
+        { room: 'skills', memberCount: 3, unread: 0, mentions: 0 },
+      ],
+    },
+  });
+  vi.mocked(rt.chatMessages).mockResolvedValueOnce({
+    ok: true,
+    data: {
+      messages: [
+        {
+          id: 900,
+          room: 'rt',
+          handle: 'jay',
+          body: '@matt take a look',
+          mentions: ['matt'],
+          postedAt: 1,
+        },
+      ],
+    },
+  });
+
+  const res = await routes.request('/api/chat/inbox?handle=matt');
+  expect(res.status).toBe(200);
+  expect(await res.json()).toEqual({
+    needsYou: [
+      {
+        room: 'rt',
+        kind: 'room',
+        messageId: 900,
+        handle: 'jay',
+        postedAt: 1,
+        excerpt: '@matt take a look',
+        reason: 'mention',
+      },
+    ],
+    openAsks: [],
+    // mentions is 0, not 1: the room's single mention is the needsYou card
+    // above, so it must not also be counted here.
+    elsewhere: [{ room: 'rt', kind: 'room', unread: 199, mentions: 0 }],
+  });
+  expect(rt.chatMessages).toHaveBeenCalledTimes(1);
+  expect(rt.chatMessages).toHaveBeenCalledWith(
+    { room: 'rt', limit: 50 },
+    expect.anything()
+  );
+});
+
+test('GET /api/chat/inbox 502s when the room listing itself fails', async () => {
+  vi.mocked(rt.chatRooms).mockResolvedValueOnce({
+    ok: false,
+    error: 'daemon unreachable',
+  });
+  const res = await routes.request('/api/chat/inbox?handle=matt');
+  expect(res.status).toBe(502);
+  expect(await res.json()).toEqual({ error: 'daemon unreachable' });
+});
+
+test('GET /api/chat/inbox degrades a failed per-room message fetch to elsewhere rather than 502ing', async () => {
+  vi.mocked(rt.chatRooms).mockResolvedValueOnce({
+    ok: true,
+    data: {
+      rooms: [{ room: 'rt', memberCount: 5, unread: 3, mentions: 0 }],
+    },
+  });
+  vi.mocked(rt.chatMessages).mockResolvedValueOnce({
+    ok: false,
+    error: 'boom',
+  });
+  const res = await routes.request('/api/chat/inbox?handle=matt');
+  expect(res.status).toBe(200);
+  expect(await res.json()).toEqual({
+    needsYou: [],
+    openAsks: [],
+    elsewhere: [{ room: 'rt', kind: 'room', unread: 3, mentions: 0 }],
+  });
+});
+
+test('fixtures mode answers GET /api/chat/inbox from fixtureInbox without touching the daemon', async () => {
+  process.env.CHAT_FIXTURES = '1';
+  const res = await routes.request('/api/chat/inbox?handle=matt');
+  expect(res.status).toBe(200);
+  const body = (await res.json()) as {
+    needsYou: unknown[];
+    openAsks: { room: string; reason: string }[];
+    elsewhere: { room: string }[];
+  };
+  expect(body.openAsks.every(c => c.reason === 'open-ask')).toBe(true);
+  expect(body.elsewhere.map(e => e.room)).toContain('rt');
+  expect(rt.chatRooms).not.toHaveBeenCalled();
+  expect(rt.chatMessages).not.toHaveBeenCalled();
 });

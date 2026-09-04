@@ -1,8 +1,10 @@
 import { forwardRef, useImperativeHandle, useRef, useState } from 'react';
 import type { ChangeEvent, KeyboardEvent } from 'react';
 import {
+  ActionIcon,
   Box,
   Group,
+  Paper,
   Popover,
   Stack,
   Text,
@@ -12,25 +14,18 @@ import { Icon } from '@mattstack/app-kit/icons';
 import { notifications } from '@mattstack/app-kit/notifications';
 import type { BuddyStatus } from '@mattstack/rt-client';
 
+import { doing, type DoingLine } from './doing';
 import { HUMAN_HANDLE } from './human';
 import { STATUS_WORD } from './statusDetail';
 import { useAutoGrowTextarea } from './use-auto-grow-textarea';
 
 const MUTED = 'var(--tk-muted-text)';
+const MUTED_DIM = 'var(--tk-muted)';
 const INPUT_LINE_HEIGHT = 1.4;
 const BORDER = 'var(--tk-border)';
 const BORDER_SOFT = 'var(--tk-border-soft)';
 const PURPLE = 'var(--tk-purple)';
 const ACCENT_TEXT = 'var(--mantine-color-accent-text)';
-
-/**
- * `.accent-deep` has no direct `--tk-*` token (see RoomRail's own copy of
- * this derivation): the artboard's palette only defines it as a shade one
- * step past plain accent in light, and as plain accent again in dark.
- */
-const ACCENT_DEEP =
-  'light-dark(var(--mantine-color-accent-7), var(--mantine-color-accent-text))';
-const ACCENT_ON = 'light-dark(var(--mantine-color-white), var(--tk-bg))';
 
 const STATUS_TEXT_COLOR: Record<'live' | 'idle', string> = {
   live: 'var(--mantine-color-ok-text)',
@@ -46,6 +41,10 @@ const BAD_TEXT = 'var(--mantine-color-bad-text)';
 export interface ComposerBuddy {
   handle: string;
   status: BuddyStatus;
+  branch?: string;
+  cwd?: string;
+  paneTitle?: string;
+  statusText?: string;
 }
 
 export interface ComposerProps {
@@ -56,8 +55,8 @@ export interface ComposerProps {
       channel's current membership. What separates "insert @handle" from
       "not in #room -- DM instead" in the popover. */
   roomMembers: string[];
-  /** The fleet, not the room -- same source `Roster` reads, so the popover
-      can offer a DM to a buddy who has never joined this room. */
+  /** The fleet, not the room -- same source `FleetTree` reads, so the
+      popover can offer a DM to a buddy who has never joined this room. */
   buddies: ComposerBuddy[];
   /** @default HUMAN_HANDLE (`./human`), the same single source every other
       caller of the human's own handle reads. */
@@ -74,6 +73,19 @@ export interface ComposerProps {
   /** A buddy outside the room was picked in the `@` popover: the caller
       opens the DM room and moves there; the draft stays in this instance. */
   onOpenDm?: (handle: string) => void;
+  /**
+   * Seeds the draft, and the mentions posted with it, so a reply can open
+   * with its recipient already tagged. Read ONCE, at mount: a caller that
+   * needs a different seed remounts this composer with a `key`, which is
+   * also what discards the previous draft on purpose.
+   */
+  prefill?: { body: string; mentions?: string[] };
+  /** Replaces the computed placeholder while the daemon is reachable. The
+      daemon-down copy always wins over it: it is a failure state, not a
+      caller's framing. */
+  placeholder?: string;
+  /** Called after a post has landed and the draft has cleared. */
+  onPosted?: () => void;
 }
 
 /** The imperative surface the roster and the app drive: insert a mention at
@@ -129,17 +141,21 @@ function BuddyOption({
   status,
   inRoom,
   room,
+  task,
   onSelect,
 }: {
   handle: string;
   status: 'live' | 'idle';
   inRoom: boolean;
   room: string;
+  task: DoingLine | null;
   onSelect: (handle: string, inRoom: boolean) => void;
 }) {
   const subtext = !inRoom
     ? { text: `not in #${room}, DM instead`, color: PURPLE }
-    : undefined;
+    : task
+      ? { text: task.text, color: task.kind === 'path' ? MUTED_DIM : MUTED }
+      : undefined;
 
   return (
     <UnstyledButton
@@ -249,11 +265,19 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       daemonReachable = true,
       phone = false,
       onOpenDm,
+      prefill,
+      placeholder: placeholderProp,
+      onPosted,
     },
     ref
   ) {
-    const [value, setValue] = useState('');
-    const [mentions, setMentions] = useState<string[]>([]);
+    // Lazy initialisers, never an effect keyed on `prefill`: an object
+    // literal prop changes identity every render, so syncing on it would
+    // overwrite whatever had been typed since.
+    const [value, setValue] = useState(() => prefill?.body ?? '');
+    const [mentions, setMentions] = useState<string[]>(
+      () => prefill?.mentions ?? []
+    );
     const [sending, setSending] = useState(false);
     const [token, setToken] = useState<MentionToken | null>(null);
     const [focused, setFocused] = useState(false);
@@ -349,6 +373,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         if (!res.ok) throw new Error('post failed');
         setValue('');
         setMentions([]);
+        onPosted?.();
       } catch {
         notifications.error("Couldn't send. The draft is kept.");
       } finally {
@@ -375,8 +400,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       // Phone: Enter always inserts a newline; only the button sends.
     }
 
-    /** `Roster`'s onPick, not the popover: there is no `@`-token to replace,
-      so this inserts at the caret (or the end, unfocused) instead. */
+    /** `FleetTree`'s onPick, not the popover: there is no `@`-token to
+      replace, so this inserts at the caret (or the end, unfocused) instead. */
     function insertMentionAtCaret(handle: string) {
       const el = textareaRef.current;
       const caret = el?.selectionStart ?? value.length;
@@ -408,20 +433,23 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       ? phone
         ? 'rt daemon unreachable'
         : "Can't post: rt daemon unreachable. Your draft is kept."
-      : isDm
-        ? phone
-          ? `Message ${roomMembers.join(' ↔ ')}`
-          : `Message ${roomMembers.join(' ↔ ')} (both will wake)`
-        : phone
-          ? `Message #${room}`
-          : `Message #${room} (@ to mention)`;
+      : placeholderProp
+        ? placeholderProp
+        : isDm
+          ? phone
+            ? `Message ${roomMembers.join(' ↔ ')}`
+            : `Message ${roomMembers.join(' ↔ ')} (both will wake)`
+          : phone
+            ? `Message #${room}`
+            : `Message #${room} (@ to mention)`;
 
     const inputBorderColor = !daemonReachable
       ? BORDER
       : focused
         ? ACCENT_TEXT
-        : BORDER;
+        : BORDER_SOFT;
     const inputFontSize = phone ? 16 : 'var(--mantine-font-size-md)';
+    const canSend = value.trim().length > 0 && daemonReachable && !sending;
 
     return (
       <Box
@@ -434,13 +462,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                 padding:
                   '8px var(--mantine-spacing-lg) var(--mantine-spacing-lg)',
                 background: 'var(--tk-panel)',
-                borderTop: `1px solid ${BORDER}`,
               }
             : {
                 position: 'relative',
-                paddingTop: 'var(--mantine-spacing-md)',
-                marginTop: 'var(--mantine-spacing-xs)',
-                borderTop: `1px solid ${BORDER_SOFT}`,
+                paddingTop: 'var(--mantine-spacing-sm)',
               }
         }
       >
@@ -458,96 +483,66 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
           withinPortal
         >
           <Popover.Target>
-            <Group
-              data-testid="composer-row"
-              gap="sm"
-              wrap="nowrap"
-              align="flex-end"
+            <Paper
+              data-testid="composer-input"
+              pos="relative"
+              miw={0}
+              radius="lg"
+              p="md"
+              bg={!daemonReachable ? 'var(--tk-panel)' : 'var(--tk-card)'}
+              c={!daemonReachable ? MUTED : undefined}
+              bd={`1px ${!daemonReachable ? 'dashed' : 'solid'} ${inputBorderColor}`}
             >
-              <Box
-                data-testid="composer-input"
+              <textarea
+                ref={textareaRef}
+                rows={1}
+                value={value}
+                disabled={!daemonReachable}
+                onChange={handleChange}
+                onKeyDown={handleKeyDown}
+                onFocus={() => setFocused(true)}
+                onBlur={() => setFocused(false)}
+                placeholder={placeholder}
+                aria-label="Message"
+                data-testid="composer-row"
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  flex: 1,
+                  display: 'block',
+                  width: '100%',
                   minWidth: 0,
-                  gap: 'var(--mantine-spacing-sm)',
-                  minHeight: phone ? 44 : 36,
-                  padding: '0 var(--mantine-spacing-md)',
-                  background: !daemonReachable
-                    ? 'var(--tk-panel)'
-                    : 'var(--ui-bg-1)',
-                  border: `1px solid ${inputBorderColor}`,
-                  borderStyle: !daemonReachable ? 'dashed' : 'solid',
-                  borderRadius: 'var(--mantine-radius-md)',
-                  color: !daemonReachable ? MUTED : undefined,
+                  border: 0,
+                  outline: 'none',
+                  resize: 'none',
+                  background: 'transparent',
+                  color: 'inherit',
+                  fontFamily: 'inherit',
+                  fontSize: inputFontSize,
+                  lineHeight: INPUT_LINE_HEIGHT,
+                  // Clears the floating send button; the Paper's `p` handles
+                  // the rest, so there is no reserved bottom row.
+                  paddingRight: 22,
+                  maxHeight: phone ? '25vh' : '40vh',
+                  overflowY: 'auto',
                 }}
-              >
-                <textarea
-                  ref={textareaRef}
-                  rows={1}
-                  value={value}
-                  disabled={!daemonReachable}
-                  onChange={handleChange}
-                  onKeyDown={handleKeyDown}
-                  onFocus={() => setFocused(true)}
-                  onBlur={() => setFocused(false)}
-                  placeholder={placeholder}
-                  aria-label="Message"
-                  style={{
-                    flex: 1,
-                    minWidth: 0,
-                    border: 0,
-                    outline: 'none',
-                    resize: 'none',
-                    background: 'transparent',
-                    color: 'inherit',
-                    fontFamily: 'inherit',
-                    fontSize: inputFontSize,
-                    lineHeight: INPUT_LINE_HEIGHT,
-                    padding: 'var(--mantine-spacing-sm) 0',
-                    maxHeight: phone ? '25vh' : '40vh',
-                    overflowY: 'auto',
-                  }}
-                />
-                {!phone && daemonReachable && (
-                  <Group
-                    gap="xs"
-                    wrap="nowrap"
-                    style={{
-                      flex: 'none',
-                      alignSelf: 'flex-end',
-                      fontSize: inputFontSize,
-                      height: `calc(${INPUT_LINE_HEIGHT}em + var(--mantine-spacing-sm))`,
-                      paddingBottom: 'var(--mantine-spacing-sm)',
-                    }}
-                  >
-                    <Kbd>↵ send</Kbd>
-                    <Kbd>⇧↵ newline</Kbd>
-                  </Group>
-                )}
-              </Box>
-              <UnstyledButton
+              />
+              <ActionIcon
                 aria-label="Send"
                 data-testid="composer-send"
-                disabled={!daemonReachable}
+                disabled={!canSend}
                 onClick={() => void send()}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flex: 'none',
-                  width: phone ? 44 : 34,
-                  height: phone ? 44 : 34,
-                  borderRadius: 'var(--mantine-radius-md)',
-                  background: !daemonReachable ? 'var(--ui-bg-4)' : ACCENT_DEEP,
-                  color: !daemonReachable ? MUTED : ACCENT_ON,
-                  cursor: !daemonReachable ? 'default' : 'pointer',
-                }}
+                variant="filled"
+                color="accent"
+                radius="xl"
+                size={phone ? 32 : 28}
+                pos="absolute"
+                right={phone ? 8 : 6}
+                // Offset to sit centered on a single line of text (the `md`
+                // padding plus half a line, less half the button); staying
+                // bottom-anchored holds it there as the box grows upward.
+                bottom={phone ? 7 : 9}
               >
-                <Icon name="send" size={phone ? 18 : 16} />
-              </UnstyledButton>
-            </Group>
+                <Icon name="send" size={phone ? 18 : 15} />
+              </ActionIcon>
+            </Paper>
           </Popover.Target>
           <Popover.Dropdown
             data-testid="composer-popover"
@@ -568,6 +563,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                   status={b.status as 'live' | 'idle'}
                   inRoom={roomMembers.includes(b.handle)}
                   room={room}
+                  task={doing(b)}
                   onSelect={selectBuddy}
                 />
               ))}
@@ -578,50 +574,18 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
           </Popover.Dropdown>
         </Popover>
 
-        <Group
-          gap="xs"
-          wrap="nowrap"
-          style={{ paddingTop: 'var(--mantine-spacing-xs)' }}
-        >
-          {!daemonReachable ? (
+        {!daemonReachable && (
+          <Group
+            gap="xs"
+            wrap="nowrap"
+            style={{ paddingTop: 'var(--mantine-spacing-xs)' }}
+          >
             <Text size="xs" style={{ color: BAD_TEXT }}>
               Can&apos;t post: rt daemon unreachable. Your draft is kept.
             </Text>
-          ) : (
-            <>
-              <Text size="xs" style={{ color: MUTED }}>
-                posting as
-              </Text>
-              <Text size="xs" fw={600}>
-                {humanHandle}
-              </Text>
-            </>
-          )}
-        </Group>
+          </Group>
+        )}
       </Box>
     );
   }
 );
-
-function Kbd({ children }: { children: React.ReactNode }) {
-  return (
-    <Box
-      component="span"
-      data-testid="composer-kbd"
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        height: 16,
-        padding: '0 var(--mantine-spacing-xs)',
-        border: `1px solid ${BORDER}`,
-        borderBottomWidth: 2,
-        borderRadius: 'var(--mantine-radius-sm)',
-        fontSize: 'var(--tk-fs-4xs)',
-        color: MUTED,
-        background: 'var(--ui-bg-3)',
-      }}
-    >
-      {children}
-    </Box>
-  );
-}

@@ -6,9 +6,9 @@ import type { RoomSummary } from '@mattstack/rt-client';
  * open and gone once the viewer navigates away. This is the one place the
  * client reads `archivedAt` for listing.
  */
-export function visibleRooms(
-  rooms: RoomSummary[],
+export function visibleRooms<T extends RoomSummary>(
+  rooms: T[],
   activeRoom: string | undefined
-): RoomSummary[] {
+): T[] {
   return rooms.filter(r => r.archivedAt === undefined || r.room === activeRoom);
 }

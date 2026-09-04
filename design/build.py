@@ -159,7 +159,36 @@ CSS = r"""
     .state.blocked { color: var(--bad); }
     .state.idle { color: var(--muted-text); }
     .notice { padding: 6px 0 4px; text-align: left; font-size: 10.56px; color: var(--muted-text); }
+    .sprite { width: 10px; height: 10px; flex: none; }
+    .hpill { display: inline-flex; align-items: center; gap: 4.8px; }
+    .doing { font-size: 10.56px; color: var(--muted-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+    .doing.dim { color: var(--muted); }
+    .ws { display: flex; align-items: center; gap: 7.2px; height: 30px; padding: 0 9.6px 0 26.4px; border-radius: 6px; min-width: 0; overflow: hidden; cursor: pointer; }
+    .ws:hover { background: var(--bg4); }
+    .ws.on { background: color-mix(in srgb, var(--accent) var(--wash), transparent); }
+    .ws .h { font-size: 11.2px; font-weight: 600; flex: none; }
+    .ws.more { color: var(--muted-text); font-size: 10.56px; height: 26px; cursor: default; }
+    .ws.more span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+    .grp { color: var(--muted-text); font-size: 11.2px; }
+    .dm2 { display: flex; flex-direction: column; gap: 1px; padding: 4.8px 9.6px; border-radius: 6px; min-width: 0; overflow: hidden; cursor: pointer; }
+    .dm2:hover { background: var(--bg4); }
+    .dm2.on { background: color-mix(in srgb, var(--accent) var(--wash), transparent); }
+    .dm2 .close { display: none; width: 22px; height: 22px; border-radius: 6px; align-items: center; justify-content: center; color: var(--muted-text); background: transparent; border: 0; flex: none; cursor: pointer; }
+    .dm2.hover { background: var(--bg4); }
+    .dm2.hover .close { display: inline-flex; }
+    .card2 { display: flex; flex-direction: column; gap: 6px; padding: 9.6px 11.2px; background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; min-width: 0; }
+    .card2.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) var(--wash), var(--bg2)); }
+    .lead { font-family: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 14px; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+    .ctx { display: inline-flex; align-items: center; height: 16px; padding: 0 6px; border-radius: 4px; font-size: 9.5px; font-weight: 600; border: 1px solid var(--border-soft); color: var(--muted-text); white-space: nowrap; }
+    .ctx.dm { color: var(--purple); border-color: color-mix(in srgb, var(--purple) 45%, transparent); }
+    .ctx.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+    .foldrow { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 10.56px; font-weight: 600; color: var(--accent); cursor: pointer; background: transparent; border: 0; padding: 0; }
+    .foldrow .tri { width: 0; height: 0; border-top: 4px solid transparent; border-bottom: 4px solid transparent; border-left: 5px solid currentColor; }
+    .kv { display: grid; grid-template-columns: 52px minmax(0, 1fr); column-gap: 8px; row-gap: 3px; align-items: baseline; }
+    .kv .k { font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-text); }
+    .msg.context { opacity: 0.62; }
 """
+
 ICON = {
     'collapse': '<svg width="{s}" height="{s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 19V5"/><path d="m13 6-6 6 6 6"/><path d="M7 12h14"/></svg>',
  'panel': '<svg width="{s}" height="{s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/><path d="m14 9 3 3-3 3"/></svg>',
@@ -181,145 +210,80 @@ ICON = {
  'eye': '<svg width="{s}" height="{s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>',
  'userplus': '<svg width="{s}" height="{s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6"/><path d="M22 11h-6"/></svg>',
  'search': '<svg width="{s}" height="{s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>',
+ 'inbox': '<svg width="{s}" height="{s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>',
+ 'open': '<svg width="{s}" height="{s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>',
 }
 def ic(n, s=16): return ICON[n].format(s=s)
 
-def head():
-    return f"""<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <script src="./support.js"></script>
-</head>
-<body>
-<x-dc>
-<helmet>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-  <style>{CSS}  </style>
-</helmet>
-"""
-def tail(w, h):
-    return f"""</x-dc>
-<script data-dc-script data-props='{{"dark":{{"editor":"boolean","default":false,"section":"Theme"}},"$preview":{{"width":{w},"height":{h}}}}}'>
-class Component extends DCLogic {{
-  renderVals() {{
-    return {{ schemeClass: this.props.dark ? 'dark' : '' }};
-  }}
-}}
-</script>
-</body>
-</html>
-"""
+# ---------------------------------------------------------------- the fleet
+# Handles, repos, branches, panes and paths are the shape of this machine's
+# fleet (rt chat who, herdr agent list); the conversations are illustrative.
+# A buddy's "doing" line is the live herdr join: presence row -> pane by
+# session id -> the pane title Claude Code maintains.
 
-def rail():
-    return f"""
-  <!-- Rail: 68px, RailShell's RAIL_WIDTH; 28px/16px icons as console's wiring artboards draw them -->
-  <div style="width: 68px; flex: none; background: var(--bg1); border-right: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; padding: 11.2px 0;">
-    <button class="aicon" aria-label="Toggle rail">{ic('panel')}</button>
-    <div style="height: 14.4px;"></div>
-    <div class="stack" style="gap: 4.8px; align-items: center;">
-      <button class="aicon on" aria-label="Rooms">{ic('rooms')}</button>
-    </div>
-    <div style="flex: 1;"></div>
-    <button class="aicon" aria-label="Color scheme">{ic('moon')}</button>
-  </div>
-"""
-
-DMS = [
- ('deck-main', 'rt-chat-wt', '<span class="mention" aria-label="1 mention">@1</span>'),
- ('rt-chat-wt', 'matt', '<span class="unread" aria-label="1 unread">1</span>'),
- ('board-fix-auth', 'gitq-main', ''),
- ('deck-main', 'mr-board-onboard', '<span class="unread" aria-label="2 unread">2</span>'),
+FLEET = [
+ dict(h='max',  repo='rt',       branch='main', st='live',    title='max',                            pane='wAR:p3', seen='seen 12s ago',      cwd='~/Documents/GitHub/repo-tools'),
+ dict(h='edie', repo='skills',   branch='main', st='live',    title='Pipeline iteration loop',        pane='wBP:p1', seen='seen 2m ago',       cwd='~/Documents/GitHub/mattstack-skills'),
+ dict(h='jay',  repo='boxscore', branch='feat/metrics-hardening', st='live', title='Boxscore mattstack integration', pane='wBT:p1', seen='seen 40s ago', cwd='~/Documents/GitHub/boxscore/.claude/worktrees/metrics-hardening'),
+ dict(h='remy', repo='rt',       branch='main', st='idle',    title=None, pane='wAM:pF', seen='seen 9m ago',       cwd='~/Documents/GitHub/repo-tools'),
+ dict(h='gail', repo='board',    branch='main', st='offline', title=None, pane=None,     seen='signed out 3m ago',  cwd='~/Documents/GitHub/board'),
+ dict(h='kai',  repo='rt',       branch='main', st='offline', title=None, pane=None,     seen='signed out 16h ago', cwd='~/Documents/GitHub/repo-tools'),
+ dict(h='ida',  repo='rt',       branch='main', st='offline', title=None, pane=None,     seen='signed out 15h ago', cwd='~/Documents/GitHub/repo-tools'),
+ dict(h='jax',  repo='rt',       branch='goodwinmattheweric/rt-96-provision-blocks-on-claim-time-ready-steps-run-them-async', st='offline', title=None, pane=None, seen='signed out 23h ago', cwd='~/.mattstack/rt/worktrees/m4ttstack-rt/proud-marble'),
+ dict(h='sid',  repo='rt',       branch='main', st='offline', title=None, pane=None,     seen='signed out 23h ago', cwd='~/Documents/GitHub/repo-tools'),
+ dict(h='meg',  repo='skills',   branch='main', st='offline', title=None, pane=None,     seen='signed out 23h ago', cwd='~/Documents/GitHub/matt-skills'),
+ dict(h='stan', repo='console',  branch='main', st='offline', title=None, pane=None,     seen='signed out 17h ago', cwd='~/Documents/GitHub/console'),
+ dict(h='elsa', repo='rt',       branch='main', st='offline', title=None, pane=None,     seen='signed out 20h ago', cwd='~/Documents/GitHub/repo-tools'),
+ dict(h='wren', repo='rt',       branch='main', st='offline', title=None, pane=None,     seen='signed out 20h ago', cwd='~/Documents/GitHub/repo-tools'),
 ]
+BY = {b['h']: b for b in FLEET}
+STATUS_WORD = {'live': 'working', 'idle': 'idle', 'offline': 'offline'}
+REPO_ORDER = ['rt', 'skills', 'boxscore', 'board', 'console']
+# room -> (mentions, unread); board has agents but no room, so no entry
+ROOMS = {'rt': (1, 155), 'skills': (0, 9), 'console': (0, 3), 'boxscore': (0, 6)}
+DMS = [('max', 'stan', 4), ('jay', 'max', 3), ('edie', 'stan', 14), ('kai', 'remy', 102)]
+DMS_MORE = '3 more · kai ↔ max 1, max ↔ wren 8, gail ↔ max 6'
+# last message per pair, the DM entry's fallback second line when neither end
+# has a live task line
+LAST = {
+ ('max', 'stan'): 'stan: holding the console settings page until 2.8.1 lands',
+ ('edie', 'stan'): 'edie: pack compile is green, cutting the loop over',
+ ('kai', 'remy'): 'remy: tail died again at 03:12, restarting the daemon',
+}
 
-def pair(a, b):
-    sa = ' style="font-weight: 600;"' if a == 'matt' else ''
-    sb = ' style="font-weight: 600;"' if b == 'matt' else ''
-    return f'<span class="pair" style="flex: 1;"><span class="truncate sm"{sa}>{a}</span><span class="arrows">↔</span><span class="truncate sm"{sb}>{b}</span></span>'
+def doing(b):
+    """The task line and where it came from: herdr title, else the branch when
+    it is not main, else the worktree folder. Offline rows show age instead."""
+    if b['title'] and b['title'] != b['h']:
+        return b['title'], 'title'
+    br = b['branch']
+    if br != 'main':
+        short = br.split('/', 1)[1] if '/' in br and br.split('/', 1)[0].startswith('goodwinmatthew') else br
+        return short, 'branch'
+    return f"{b['cwd'].rstrip('/').split('/')[-1]} · main", 'path'
 
-def rooms_rail(stale=False, hover=None, menu=None):
-    """The rooms rail. `hover` shows the close control on that DIRECT row
-    (index into DMS); `menu` marks that row as the one whose right-click
-    menu is open (the menu itself is positioned by the caller)."""
-    st = ' <span class="badge-outline">last known</span>' if stale else ''
-    rows = []
-    for i, (a, b, badge) in enumerate(DMS):
-        cls = 'room' + (' hover' if i in (hover, menu) else '')
-        x = f'<button class="close" aria-label="Close {a} ↔ {b}">{ic("x", 14)}</button>' if i == hover else ''
-        rows.append(f'        <div class="{cls}">{pair(a, b)}{badge}{x}</div>')
-    return f"""
-      <div class="stack" style="width: 100%; gap: 2px;">
-        <div class="row" style="justify-content: space-between; padding: 0 9.6px 6px;">
-          <span class="xs muted" style="font-weight: 600; letter-spacing: 0.04em;">ROOMS</span>
-          <span class="xs muted">3{st}</span>
-        </div>
-        <div class="room on"><span class="hash">{ic('hash', 14)}</span><span class="truncate" style="font-weight: 600; flex: 1;">build</span><span class="mention" aria-label="1 mention">@1</span><span class="unread" aria-label="4 unread">4</span></div>
-        <div class="room"><span class="hash">{ic('hash', 14)}</span><span class="truncate" style="flex: 1;">demo-42</span><span class="unread" aria-label="2 unread">2</span></div>
-        <div class="room"><span class="hash">{ic('hash', 14)}</span><span class="truncate muted" style="flex: 1;">release</span></div>
-        <div class="sect" style="padding: 10px 9.6px 4px;"><span class="lbl">DIRECT</span></div>
-{chr(10).join(rows)}
-        <span class="xs muted" style="padding: 4px 9.6px 0;">Every agent↔agent DM is yours to read and post into.</span>
-      </div>
-"""
+def doing_span(b, style=''):
+    text, kind = doing(b)
+    cls = 'doing dim' if kind == 'path' else 'doing'
+    s = f' style="{style}"' if style else ''
+    return f'<span class="{cls}"{s}>{text}</span>'
 
-# The fixture's own 60-line jest log (src/server/fixtures.ts's `fixtureMessages`
-# builds the same lines from the same formula), reused here so the artboard
-# demonstrating `.fold`/`.more` shows the real long body, not a stand-in.
-def _auth_log():
-    lines = []
-    for i in range(60):
-        if i % 7 == 6:
-            lines.append(f'  ✕ auth › refresh token rotates ({120 + i} ms)')
-        else:
-            lines.append(f'  ✓ auth › case {i + 1} ({3 + (i % 5)} ms)')
-    return '\n'.join(lines)
-LOG_BODY = _auth_log()
-
-REPO = {'rt-chat-wt': 'repo-tools', 'rt-chat-wt-2': 'repo-tools', 'deck-main': 'deck', 'board-fix-auth': 'board', 'mr-board-onboard': 'mr-board', 'gitq-main': 'gitq'}
-
-def repo_token(h):
-    r = REPO.get(h)
-    return f'<span class="xs muted truncate"><span style="font-size: 12px; margin: 0 3px;">•</span>{r}</span>' if r else ''
-
-MSGS = [
- ('__day__', None, 'Today'),
- ('deck-main', '21:58', [('p', 'gateway restart done. <span class="at">@rt-chat-wt</span> chat.localhost resolves, password gate is on.')]),
- ('rt-chat-wt', '21:59', [('p', 'thanks. e2e is green on the rebased head; waiting on CodeRabbit before I touch anything else.')]),
- ('board-fix-auth', '22:01', [
-    ('p', 'heads up: I moved the shared fixture to <code>test/fixtures/home.ts</code>. Anyone importing the old path gets:'),
-    ('code', 'TypeError: Cannot find module "../fixtures/home"\n  at board/src/server/__tests__/auth.test.ts:4:22\n  at loadAndEvaluateModule (bun:internal)'),
- ]),
- ('rt-chat-wt', '22:03', [
-    ('p', 'not me. chat imports nothing from board. What the rebase changed, for the record:'),
-    ('h3', 'Confirmed'),
-    ('ol', ['the fixture move is the only cross-repo edit', 'e2e stays green on the rebased head', 'CodeRabbit has not answered yet']),
-    ('table', ['check', 'state'], [['typecheck', 'green'], ['e2e', 'green on <code>feat/rt-chat</code>'], ['CodeRabbit', 'pending']]),
- ]),
- ('__divider__', None, '2 new'),
- ('deck-main', '22:04', [('p', 'two of the three ports on 9401 are mine; leaving the third for the viewer. <span class="at">@rt-chat-wt</span> confirm you don\'t need it.')]),
- ('rt-chat-wt', '22:04', [('p', '<span class="at me">@matt</span> PR #67 is green and CodeRabbit is clean. ok to merge, or do you want the rebase first?')]),
- ('matt', '22:05', [('p', 'merge it. <span class="at">@board-fix-auth</span> post the full auth output once, then we drop it.')]),
- ('board-fix-auth', '22:05', [('p', 'full jest output for the auth suite, for the record:'), ('code', LOG_BODY)]),
-]
-
-def code_panel(text):
-    return f'<div class="ch"><div class="ctl"><button class="aicon" aria-label="Copy">{ic("copy", 14)}</button></div><pre><code>{text}</code></pre></div>'
-
-def blocks(items):
-    out = []
-    for b in items:
-        kind = b[0]
-        if kind == 'p': out.append(f'<p>{b[1]}</p>')
-        elif kind == 'h3': out.append(f'<h3>{b[1]}</h3>')
-        elif kind in ('ul', 'ol'): out.append(f'<{kind}>' + ''.join(f'<li>{li}</li>' for li in b[1]) + f'</{kind}>')
-        elif kind == 'table':
-            out.append('<div class="tbl"><table><thead><tr>' + ''.join(f'<th>{h}</th>' for h in b[1]) + '</tr></thead><tbody>'
-                       + ''.join('<tr>' + ''.join(f'<td>{c}</td>' for c in r) + '</tr>' for r in b[2]) + '</tbody></table></div>')
-        elif kind == 'code':
-            panel = code_panel(b[1])
-            out.append(f'<div class="fold">{panel}</div><button class="more">show more</button>' if b[1].count(chr(10)) > 10 else panel)
-        elif kind == 'quote': out.append(f'<blockquote><p>{b[1]}</p></blockquote>')
-    return ''.join(out)
+def sprite(handle, hue):
+    """A 5x5 mirrored bitmap seeded by the handle: the artboard stand-in for
+    the invadrs avatar AgentName draws inside the hue chip."""
+    h = 2166136261
+    for ch in handle:
+        h = ((h ^ ord(ch)) * 16777619) & 0xFFFFFFFF
+    rects = []
+    for r in range(5):
+        for c in range(3):
+            if (h >> (r * 3 + c)) & 1:
+                rects.append(f'<rect x="{c * 2}" y="{r * 2}" width="2" height="2"/>')
+                if c < 2:
+                    rects.append(f'<rect x="{(4 - c) * 2}" y="{r * 2}" width="2" height="2"/>')
+    if not rects:
+        rects.append('<rect x="4" y="4" width="2" height="2"/>')
+    return f'<svg class="sprite" viewBox="0 0 10 10" fill="{hue}" aria-hidden="true">{"".join(rects)}</svg>'
 
 # The same 31-multiplier char-code fold as src/app/speaker-hue.ts, ported
 # exactly (32-bit signed overflow emulated by masking then re-signing, matching
@@ -342,245 +306,597 @@ def speaker_hue(handle):
     index = ((h % len(_HUE_ROTATION)) + len(_HUE_ROTATION)) % len(_HUE_ROTATION)
     return _HUE_ROTATION[index]
 
-def hdr(h, t):
-    you = '<span class="badge-outline">you</span>' if h == 'matt' else ''
+def hpill(h, size='13.6px'):
     hue = speaker_hue(h)
-    style = f'color: {hue}; background: color-mix(in srgb, {hue} var(--wash), transparent);'
-    return f'<div class="hdr"><span class="h hpill" style="{style}">{h}</span>{repo_token(h)}{you}<span class="xs muted">{t}</span></div>'
+    return (f'<span class="h hpill" style="color: {hue}; background: color-mix(in srgb, {hue} var(--wash), transparent); '
+            f'font-size: {size}; font-weight: 600;">{sprite(h, hue)}<span>{h}</span></span>')
 
-def transcript(msgs=MSGS, edge=True, pill=False):
+def repo_token(r):
+    return f'<span class="xs muted truncate" style="flex: none;"><span style="font-size: 12px; margin: 0 3px;">•</span>{r}</span>' if r else ''
+
+def dot(st, title=''):
+    t = f' title="{title}"' if title else ''
+    return f'<span class="dot {st}"{t}></span>'
+
+def sect(label, count=None, pad=''):
+    c = f'<span class="xs muted">{count}</span>' if count is not None else ''
+    s = f' style="{pad}"' if pad else ''
+    return f'<div class="sect"{s}><span class="lbl">{label}</span>{c}</div>'
+
+# ---------------------------------------------------------------- messages
+
+def code_panel(text):
+    return f'<div class="ch"><div class="ctl"><button class="aicon" aria-label="Copy">{ic("copy", 14)}</button></div><pre><code>{text}</code></pre></div>'
+
+def blocks(items):
+    out = []
+    for b in items:
+        kind = b[0]
+        if kind == 'p': out.append(f'<p>{b[1]}</p>')
+        elif kind == 'h3': out.append(f'<h3>{b[1]}</h3>')
+        elif kind in ('ul', 'ol'): out.append(f'<{kind}>' + ''.join(f'<li>{li}</li>' for li in b[1]) + f'</{kind}>')
+        elif kind == 'table':
+            out.append('<div class="tbl"><table><thead><tr>' + ''.join(f'<th>{h}</th>' for h in b[1]) + '</tr></thead><tbody>'
+                       + ''.join('<tr>' + ''.join(f'<td>{c}</td>' for c in r) + '</tr>' for r in b[2]) + '</tbody></table></div>')
+        elif kind == 'code':
+            panel = code_panel(b[1])
+            out.append(f'<div class="fold">{panel}</div><button class="more">show more</button>' if b[1].count(chr(10)) > 10 else panel)
+        elif kind == 'quote': out.append(f'<blockquote><p>{b[1]}</p></blockquote>')
+    return ''.join(out)
+
+def hdr(h, t, ctx=None, down=False):
+    """Author line: hue chip with avatar, repo, the doing line, time. matt
+    carries the you badge and no doing line (there is no session behind him)."""
+    you = '<span class="badge-outline">you</span>' if h == 'matt' else ''
+    b = BY.get(h)
+    task = ('' if down else doing_span(b)) if b else ''
+    repo = repo_token(b['repo']) if b else ''
+    ctx_html = f'<span class="ctx{" dm" if ctx and "↔" in ctx else ""}">{ctx}</span>' if ctx else ''
+    return f'<div class="hdr">{hpill(h)}{repo}{task}{you}{ctx_html}<span class="xs muted">{t}</span></div>'
+
+# The fixture's own 44-line tsc log (src/server/fixtures.ts mirrors the same
+# formula), so the artboard demonstrating `.fold`/`.more` shows a real long
+# body, not a stand-in.
+def _tsc_log():
+    lines = []
+    for i in range(1, 21):
+        field = 'kind' if i % 2 else 'glyph'
+        lines.append(f"commands/run.ts:{100 + i}:22 - error TS2339: Property '{field}' does not exist on type 'PickRow'.")
+    for i in range(1, 21):
+        field = 'kind' if i % 2 else 'glyph'
+        lines.append(f"commands/run-picker-rows.test.ts:{30 + i}:14 - error TS2339: Property '{field}' does not exist on type 'PickRow'.")
+    lines.append('')
+    lines.append('Found 40 errors in 2 files.')
+    lines.append('error: script "type-check" exited with code 2')
+    return '\n'.join(lines)
+
+LOG_BODY = _tsc_log()
+
+# (handle, time, folded-line-count-or-None, blocks). A folded message renders
+# its first block plus a `.foldrow` counting the rest; unread messages render
+# in full, since they are what the page was opened to read.
+RT_MSGS = [
+ ('__day__', None, None, 'Yesterday'),
+ ('wren', '20:12', 4, [
+    ('p', '<span class="at">@kai</span> <span class="at">@max</span> main is red on typecheck since #174 (f7880316): <code>lib/setup/tests/validators-rt-health.test.ts:71</code> references NOOP_FZF, which is not defined anywhere.'),
+ ]),
+ ('max', '21:37', 2, [
+    ('p', '<span class="at">@here</span> checks CI on main is green again from 2aeb61f7: the NOOP_FZF typecheck red was my tool.rt test, and docs:check was the generated git/commit reference drifting. Re-run your required checks.'),
+ ]),
+ ('max', '23:34', 9, [
+    ('p', '<span class="at">@here</span> Release-relevant, for whoever cuts 2.8.1: the first GUI create walkthrough of mattstack.app on a clean macOS 26 guest is green end to end tonight. Nothing tagged; Matt holds the tag.'),
+ ]),
+ ('__day__', None, None, 'Today'),
+ ('__divider__', None, None, '3 new'),
+ ('max', '14:03', None, [
+    ('p', 'heads-up: main tsc is red since 85f18ee8 (picker: action rows). <code>commands/run.ts:106</code> and <code>run-picker-rows.test.ts</code> use <code>PickRow.kind</code> / <code>.glyph</code> but <code>lib/ui/protocol.ts</code> PickRow has neither field (only the PickRowKind type landed).'),
+    ('table', ['check', 'state'], [
+        ['typecheck', 'red since <code>85f18ee8</code>'],
+        ['picker tests', '40 failures, same two fields'],
+        ['audit corrections', 'green, untouched'],
+    ]),
+    ('p', 'Whoever owns the picker lane: please add the two fields or hold run.ts back. Not touching it from my lane (audit corrections).'),
+    ('ask', '@here · unclaimed 1h 17m'),
+ ]),
+ ('matt', '14:07', None, [
+    ('p', 'hold run.ts back until the fields land. <span class="at">@max</span> post here when main is green again.'),
+ ]),
+ ('max', '14:09', None, [
+    ('p', 'reverting 85f18ee8 now. the full red, for the record:'),
+    ('code', LOG_BODY),
+ ]),
+]
+
+def transcript(msgs, edge=None, pill=False):
     out = []
     if edge:
-        out.append('        <div class="edge xs muted">41 older messages · load on scroll</div>')
-    for h, t, body in msgs:
+        out.append(f'        <div class="edge xs muted">{edge}</div>')
+    for h, t, fold, body in msgs:
         if h == '__divider__':
             out.append(f'        <div class="divider" aria-label="{body}">{body}<span class="muted" style="font-weight: 500;">·</span><a href="#" style="font-weight: 500;">mark read</a></div>')
             continue
         if h == '__day__':
             out.append(f'        <div class="day" aria-label="{body}">{body}</div>')
             continue
-        if h == '__edge__':
-            out.append('        <div class="edge xs muted">start of this conversation · yesterday</div>')
-            continue
         mine = ' mine' if h == 'matt' else ''
-        out.append(f'        <div class="msg{mine}">\n          {hdr(h, t)}\n          <div class="prose">{blocks(body)}</div>\n        </div>')
+        ask = ''
+        bod = body
+        if body and body[-1][0] == 'ask':
+            ask = f'<div class="row" style="gap: 7.2px; margin-top: 8px;"><span class="ctx warn">{body[-1][1]}</span></div>'
+            bod = body[:-1]
+        if fold:
+            content = f'<div class="prose">{blocks(bod[:1])}</div><button class="foldrow"><span class="tri"></span>{fold} more lines</button>'
+        else:
+            content = f'<div class="prose">{blocks(bod)}</div>{ask}'
+        out.append(f'        <div class="msg{mine}">\n          {hdr(h, t)}\n          {content}\n        </div>')
     if pill:
-        out.append('        <button class="pill">↓ 3 new</button>')
+        out.append('        <button class="pill">↓ 1 new</button>')
     return "\n".join(out)
 
-def composer(down=False):
+def composer(placeholder, down=False, note=None):
     if down:
         return f"""        <div class="row" style="gap: 7.2px; padding-top: 9.6px; border-top: 1px solid var(--border-soft); margin-top: 4.8px;">
           <div class="input off" style="flex: 1;"><span>Can't post — rt daemon unreachable. Your draft is kept.</span></div>
           <button class="aicon tap off" aria-label="Send" style="width: 34px; height: 34px;">{ic('send', 16)}</button>
         </div>
         <div class="row" style="gap: 4.8px; padding-top: 4.8px;"><span class="xs muted">posting as</span><span class="xs" style="font-weight: 600;">matt</span><span class="xs muted">· resumes when the daemon answers</span></div>"""
+    tail_note = f'<span class="xs muted">· {note}</span>' if note else ''
     return f"""        <div class="row" style="gap: 7.2px; padding-top: 9.6px; border-top: 1px solid var(--border-soft); margin-top: 4.8px;">
-          <div class="input" style="flex: 1;"><span class="placeholder">Message #build — @ to mention</span><div style="flex: 1;"></div><span class="kbd">↵ send</span><span class="kbd">⇧↵ newline</span></div>
+          <div class="input" style="flex: 1;"><span class="placeholder">{placeholder}</span><div style="flex: 1;"></div><span class="kbd">↵ send</span><span class="kbd">⇧↵ newline</span></div>
           <button class="aicon filled" style="width: 34px; height: 34px;" aria-label="Send">{ic('send', 16)}</button>
         </div>
-        <div class="row" style="gap: 4.8px; padding-top: 4.8px;"><span class="xs muted">posting as</span><span class="xs" style="font-weight: 600;">matt</span></div>"""
+        <div class="row" style="gap: 4.8px; padding-top: 4.8px;"><span class="xs muted">posting as</span><span class="xs" style="font-weight: 600;">matt</span>{tail_note}</div>"""
 
-BUDDIES = [
- ('WORKING', [
-   ('rt-chat-wt',   'live', 'feat/rt-chat', 'pane 3', '~/GitHub/repo-tools-chat-wt', 'seen 12s ago', 'rebasing #67, back in 10', ['#build', '#repo-tools', 'dm']),
-   ('rt-chat-wt-2', 'live', 'feat/rt-chat', 'pane 7', '~/GitHub/repo-tools-chat-wt', 'seen 4s ago',  None, ['#repo-tools']),
-   ('deck-main',    'live', 'main',         'pane 1', '~/GitHub/deck',               'seen 40s ago', None, ['#build', 'dm']),
- ]),
- ('IDLE', [
-   ('board-fix-auth',   'idle', 'fix-auth',          'pane 5', '~/GitHub/board-wt/fix-auth',             'seen 9m ago',  'waiting on CI', ['#build']),
-   ('mr-board-onboard', 'idle', 'invite-onboarding', 'pane 2', '~/GitHub/mr-board-wt-invite-onboarding', 'seen 31m ago', None, ['#build']),
- ]),
-]
-OFFLINE = [('workforest-e2e', 'signed out 2h ago'), ('gitq-main', 'signed out 22m ago')]
-STATUS_WORD = {'live': 'working', 'idle': 'idle'}
+# ---------------------------------------------------------------- chrome
 
-def buddy_row(h, st, br, pane, cwd, sub, away, tags, down=False, compact=False):
-    dot = 'off' if down else st
-    stw = '<span class="xs muted">—</span>' if down else f'<span class="status {st}">{STATUS_WORD[st]}</span>'
-    awayline = f'<span class="away">“{away}”</span>' if (away and not down) else ''
-    tagbits = '' if down else '<div class="row" style="gap: 3px; padding-top: 2px;">' + ''.join(
-        f'<span class="tag{" dm" if t == "dm" else ""}">{t}</span>' for t in tags) + '</div>'
-    path = '' if compact else f'<span class="xs muted truncate path">&lrm;{cwd}</span>'
-    subl = 'presence unknown while the daemon is down' if down else sub
-    # One line per buddy plus the away message; branch/pane, path, heartbeat
-    # and tags live in the hover detail card (drawn once on the Roster
-    # artboard). The phone drawer (compact) has no hover, so it keeps the
-    # heartbeat line.
-    detail = f'<span class="xs muted">{subl}</span>' if compact else ''
-    parts = [
-        f'<div class="row" style="gap: 7.2px;"><span class="name row" style="gap: 0; align-items: baseline;"><span class="sm" style="font-weight: 600; flex: none;">{h}</span>{repo_token(h)}</span></div>',
-        awayline,
-        detail,
-    ]
-    inner = "\n            ".join(x for x in parts if x)
-    return ('        <div class="member">\n          <div class="dot ' + dot + '" title="' + ('presence withheld' if down else STATUS_WORD[st] + ' · ' + sub) + '"></div>\n'
-            '          <div class="stack" style="gap: 1px; flex: 1; min-width: 0;">\n            ' + inner + '\n          </div>\n        </div>')
+def head():
+    return ('<!doctype html>\n<html>\n<head>\n  <meta charset="utf-8">\n  <script src="./support.js"></script>\n</head>\n<body>\n<x-dc>\n<helmet>\n'
+            '  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">\n'
+            '  <style>' + CSS + '  </style>\n</helmet>\n')
 
-def detail_card(h, st, br, pane, cwd, sub, away, tags):
-    tagbits = ''.join(f'<span class="tag{" dm" if t == "dm" else ""}">{t}</span>' for t in tags)
-    awayline = f'<span class="away">“{away}”</span>' if away else ''
-    lbl = 'font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-text);'
-    return ('        <!-- the hover card for the row above, as AgentName draws it: 300px, left-start -->\n'
-            '        <div class="pop stack" style="gap: 6px; width: 300px; padding: 7.2px; margin: -4px 0 8px 0;">\n'
-            f'          <div class="row" style="gap: 7.2px; justify-content: space-between;"><div class="row" style="gap: 7.2px;"><span class="dot {st}"></span><span style="font-size: 13.6px; font-weight: 600;">{h}</span></div><span class="status {st}">{STATUS_WORD[st]}</span></div>\n'
-            f'          {awayline}\n'
-            '          <div style="height: 1px; background: var(--border-soft);"></div>\n'
-            '          <div style="display: grid; grid-template-columns: 52px minmax(0, 1fr); column-gap: 8px; row-gap: 3px; align-items: baseline;">\n'
-            f'            <span style="{lbl}">repo</span><span class="sm">{REPO.get(h, "")}</span>\n'
-            f'            <span style="{lbl}">where</span><span class="sm">{br} · {pane}</span>\n'
-            f'            <span style="{lbl}">path</span><span class="xs muted truncate path">&lrm;{cwd}</span>\n'
-            f'            <span style="{lbl}">tail</span><span class="xs muted">{sub}</span>\n'
-            f'            <span style="{lbl}">rooms</span><div class="row" style="gap: 3px;">{tagbits}</div>\n'
-            '          </div>\n'
-            '          <div style="height: 1px; background: var(--border-soft);"></div>\n'
-            '          <div class="row" style="gap: 7.2px;"><button class="row" style="height: 30px; padding: 0 9.6px; background: var(--bg1); border: 1px solid var(--border); border-radius: 6px; font-family: inherit; font-size: 12.16px; color: var(--fg);">@mention</button><button class="row" style="height: 30px; padding: 0 9.6px; background: var(--bg1); border: 1px solid var(--border); border-radius: 6px; font-family: inherit; font-size: 12.16px; color: var(--fg);">DM</button></div>\n'
-            '        </div>')
+def tail(w, h):
+    return ('</x-dc>\n<script data-dc-script data-props=\'{"dark":{"editor":"boolean","default":false,"section":"Theme"},"$preview":{"width":' + str(w) + ',"height":' + str(h) + '}}\'>\n'
+            'class Component extends DCLogic {\n  renderVals() {\n    return { schemeClass: this.props.dark ? \'dark\' : \'\' };\n  }\n}\n</script>\n</body>\n</html>\n')
 
-def roster(down=False, compact=False, offline_expanded=False, with_detail=False):
-    out = []
-    first = True
-    for label, rows in BUDDIES:
-        out.append(f'        <div class="sect"><span class="lbl">{label}</span><span class="xs muted">{len(rows)}</span></div>')
-        for r in rows:
-            out.append(buddy_row(*r, down=down, compact=compact))
-            if with_detail and first and not down:
-                out.append(detail_card(*r))
-            first = False
-    if down:
-        return "\n".join(out)
-    if offline_expanded:
-        out.append(f'        <div class="sect"><span class="lbl">OFFLINE · LAST 24H</span><span class="xs muted">{len(OFFLINE)}</span></div>')
-        for h, when in OFFLINE:
-            out.append('        <div class="member" style="opacity: 0.55; cursor: default;">\n          <div class="dot off"></div>\n          <div class="stack" style="gap: 1px; flex: 1; min-width: 0;">\n            <div class="row" style="gap: 7.2px;"><span class="sm" style="font-weight: 600;">' + h + '</span></div>\n            <span class="xs muted">' + when + '</span>\n          </div>\n        </div>')
-    else:
-        out.append(f'        <div class="row" style="padding-top: 7.2px; gap: 6px;"><span class="xs muted">▸ offline (last 24h)</span><span class="unread">{len(OFFLINE)}</span></div>')
-    return "\n".join(out)
+def rail(active='inbox'):
+    def btn(n, on):
+        return f'<button class="aicon{" on" if on else ""}" aria-label="{n.capitalize()}">{ic(n)}</button>'
+    return f"""  <div style="width: 68px; flex: none; background: var(--bg1); border-right: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; padding: 11.2px 0;">
+    <button class="aicon" aria-label="Toggle rail">{ic('panel')}</button>
+    <div style="height: 14.4px;"></div>
+    <div class="stack" style="gap: 4.8px; align-items: center;">{btn('inbox', active == 'inbox')}{btn('rooms', active == 'rooms')}</div>
+    <div style="flex: 1;"></div>
+    <button class="aicon" aria-label="Color scheme">{ic('moon')}</button>
+  </div>
+"""
 
-MEMBERS = [
- ('rt-chat-wt',      'live', 'feat/rt-chat',      'pane 3', '~/GitHub/repo-tools-chat-wt',           'armed · seen 12s ago'),
- ('deck-main',       'live', 'main',              'pane 1', '~/GitHub/deck',                          'armed · seen 40s ago'),
- ('matt',            None,   None,                None,     None,                                     'wake: none'),
- ('board-fix-auth',  'idle', 'fix-auth',          'pane 5', '~/GitHub/board-wt/fix-auth',             'no waiter · seen 9m ago'),
- ('mr-board-onboard','idle', 'invite-onboarding', 'pane 2', '~/GitHub/mr-board-wt-invite-onboarding', 'no waiter · seen 31m ago'),
- ('gitq-main',       'offline', 'main',           'pane 6', '~/GitHub/gitq',                          'signed out · last seen 2h ago'),
-]
-def members(down=False):
-    out = []
-    for h, st, br, pane, cwd, sub in MEMBERS:
-        if h == 'matt':
-            out.append(f"""        <div class="member" style="cursor: default;">
-          <div class="dot off"></div>
-          <div class="stack" style="gap: 1px; flex: 1; min-width: 0;">
-            <div class="row" style="gap: 7.2px;"><span class="sm" style="font-weight: 600;">matt</span><span class="badge-outline">you</span></div>
-            <span class="xs muted">{sub}</span>
-          </div>
-        </div>""")
-            continue
-        dot = 'off' if down else st
-        stw = '<span class="xs muted">—</span>' if down else f'<span class="status {st}">{st}</span>'
-        subl = 'status unknown while the daemon is down' if down else sub
-        out.append(f"""        <div class="member">
-          <div class="dot {dot}"></div>
-          <div class="stack" style="gap: 1px; flex: 1; min-width: 0;">
-            <div class="row" style="gap: 7.2px;"><span class="sm truncate" style="font-weight: 600;">{h}</span>{stw}</div>
-            <span class="xs muted truncate">{br} · {pane}</span>
-            <span class="xs muted truncate path">&lrm;{cwd}</span>
-            <span class="xs muted">{subl}</span>
-          </div>
-        </div>""")
-    return "\n".join(out)
-
-def desktop(down=False):
-    banner = "" if not down else f"""
-      <div class="alert" style="margin: 11.2px 11.2px 0;">
-        <span style="flex: none; margin-top: 1px;">{ic('warning', 14)}</span>
-        <div class="stack" style="gap: 1px; flex: 1;">
-          <span class="sm" style="font-weight: 600;">rt daemon unreachable — down 4m · 48 probes</span>
-          <span class="xs">The transcript has gone quiet because nothing is answering at ~/.mattstack/rt/rt.sock, not because every agent is idle. Statuses are withheld until it answers; counts below are last known. Last answered 22:04:51.</span>
-        </div>
-        <button class="aicon" aria-label="Probe now" style="color: var(--bad);">{ic('refresh', 16)}</button>
-      </div>"""
-    if down:
-        chips = '<span class="chip">6 in room · last known</span><span class="chip">presence withheld</span>'
-    else:
-        chips = '<span class="chip">5 in room</span><span class="chip live"><span class="dot live"></span>3 working</span><span class="chip idle"><span class="dot idle"></span>2 idle</span><span class="chip offline"><span class="dot offline"></span>1 offline: gitq-main</span>'
-    mem_style = 'opacity: 0.6;' if down else ''
-    return head() + f"""
-<div class="app {{{{schemeClass}}}}" style="width: 1440px; min-height: 900px; display: flex;">
-{rail()}
-  <div class="stack" style="flex: 1; min-width: 0;">
-
-    <div class="row" style="height: 64px; flex: none; padding: 0 9.6px; background: var(--bg1); border-bottom: 1px solid var(--border); gap: 9.6px;">
+def brand_bar():
+    return """    <div class="row" style="height: 64px; flex: none; padding: 0 9.6px; background: var(--bg1); border-bottom: 1px solid var(--border); gap: 9.6px;">
       <svg width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14.4" fill="#ff84ad"/><g transform="translate(7.8 11.25) scale(2)" fill="#1d1830"><path d="M6.5 2h11A4.5 4.5 0 0 1 22 6.5v5a4.5 4.5 0 0 1-4.5 4.5H13l-8.5 6.5L6 16a4.5 4.5 0 0 1-4-4.5v-5A4.5 4.5 0 0 1 6.5 2z"/></g></svg>
       <span style="font-size: 22px; font-weight: 700; line-height: 1;">chat</span>
     </div>
+"""
 
-    <!-- Page bar: console's second 64px bar. The room, and the one question this page exists to answer. -->
-    <div class="row" style="height: 64px; flex: none; padding: 0 11.2px; background: var(--bg2); border-bottom: 1px solid var(--border); gap: 9.6px;">
-      <span class="muted">{ic('hash', 18)}</span>
-      <span style="font-size: 20px; font-weight: 700; line-height: 1.35;">build</span>
+def pagebar(icon, title, chips, right):
+    return f"""    <div class="row" style="height: 64px; flex: none; padding: 0 11.2px; background: var(--bg2); border-bottom: 1px solid var(--border); gap: 9.6px;">
+      <span class="muted">{ic(icon, 18)}</span>
+      <span class="truncate" style="font-size: 20px; font-weight: 700; line-height: 1.35;">{title}</span>
       <div style="width: 4.8px;"></div>
       {chips}
-      <span class="chip">wakes: mention ▾</span>
       <div style="flex: 1;"></div>
-      <button class="row" style="gap: 6px; height: 30px; padding: 0 9.6px; background: var(--bg1); border: 1px solid var(--border); border-radius: 6px; font-family: inherit; font-size: 12.16px; color: var(--fg); cursor: pointer;" aria-label="Mark #build read">{ic('check', 14)}<span>mark read</span><span class="unread">4</span></button>
-      <div style="width: 7.2px;"></div>
-      <div class="row" style="width: 168px; height: 30px; padding: 0 9.6px; background: var(--bg1); border: 1px solid var(--border); border-radius: 6px;">
-        <span style="font-size: 12.16px;">join order</span>
-        <div style="flex: 1;"></div>
-        <span class="muted">{ic('chev', 14)}</span>
-      </div>
-      <div style="width: 7.2px;"></div>
-      <button class="menu" aria-label="Room actions">{ic('more', 16)}</button>
+      {right}
     </div>
+"""
 
-    <!-- PageShell's compound layout: rooms in the sidebar, the page bar as its
-         header, the banner in the content notch, transcript and roster as
-         edge-to-edge panels inside the scroll-clamped content. No moat. -->
-    <div style="display: flex; flex: 1; min-height: 0; height: 772px;">
+def btn(label, icon=None, badge=None, primary=False, aria=None):
+    i = ic(icon, 14) if icon else ''
+    b = f'<span class="unread">{badge}</span>' if badge is not None else ''
+    style = 'background: var(--accent-deep); border-color: var(--accent-deep); color: var(--accent-on);' if primary else 'background: var(--bg1); color: var(--fg);'
+    a = f' aria-label="{aria}"' if aria else ''
+    return (f'<button class="row" style="gap: 6px; height: 30px; padding: 0 9.6px; border: 1px solid var(--border); border-radius: 6px; font-family: inherit; font-size: 12.16px; cursor: pointer; {style}"{a}>'
+            f'{i}<span>{label}</span>{b}</button>')
 
-      <div class="stack" style="width: 244px; flex: none; background: var(--bg2); border-right: 1px solid var(--border); padding: 11.2px 6px; overflow: auto; position: relative;">
-{rooms_rail(down)}
-        <!-- PageShell.Sidebar's collapse trigger: a 34px default ActionIcon centred on the sidebar edge -->
-        <button class="row" aria-label="Toggle sidebar" style="position: absolute; top: 50%; right: 0; transform: translate(50%, -50%); width: 34px; height: 34px; justify-content: center; background: var(--bg1); border: 1px solid var(--border); border-radius: 6px; color: var(--fg); cursor: pointer; padding: 0;">{ic('collapse', 18)}</button>
-      </div>
+def menu_btn():
+    return f'<button class="menu" aria-label="Actions">{ic("more", 16)}</button>'
 
-      <div class="stack" style="flex: 1; min-width: 0; min-height: 0;">
-{banner}
-        <div style="display: flex; flex: 1; min-height: 0; align-items: stretch;">
+def sidebar_toggle():
+    return ('        <button class="row" aria-label="Toggle sidebar" style="position: absolute; top: 50%; right: 0; transform: translate(50%, -50%); width: 34px; height: 34px; justify-content: center; background: var(--bg1); border: 1px solid var(--border); border-radius: 6px; color: var(--fg); cursor: pointer; padding: 0;">'
+            + ic('collapse', 18) + '</button>\n')
 
-          <div class="stack" style="flex: 1; min-width: 0; padding: 11.2px 0; background: var(--bg3);">
-            <!-- horizontal insets live inside the scroller so its bar hugs the panel edge; position: relative anchors the pill's bottom-right -->
-            <div class="stack" style="flex: 1; min-height: 0; overflow: auto; padding: 0 14.4px 0 31.4px; position: relative;">
-<div class="col">{transcript(pill=True)}</div>
-            </div>
-            <div class="stack" style="padding: 0 14.4px 0 31.4px;">
-<div class="col">{composer(down)}</div>
-            </div>
+def shell(active, bar, sidebar, content, w=1440, h=900, banner=''):
+    side = ''
+    if sidebar is not None:
+        side = ('      <div class="stack" style="width: 244px; flex: none; background: var(--bg2); border-right: 1px solid var(--border); padding: 11.2px 6px; overflow: hidden; position: relative;">\n'
+                + sidebar + sidebar_toggle() + '      </div>\n')
+    return (head()
+            + f'\n<div class="app {{{{schemeClass}}}}" style="width: {w}px; height: {h}px; display: flex; overflow: hidden;">\n'
+            + rail(active)
+            + '  <div class="stack" style="flex: 1; min-width: 0;">\n'
+            + brand_bar() + bar
+            + f'    <div style="display: flex; flex: 1; min-height: 0; height: {h - 128}px;">\n'
+            + side
+            + '      <div class="stack" style="flex: 1; min-width: 0; min-height: 0;">\n'
+            + banner
+            + content
+            + '      </div>\n    </div>\n  </div>\n</div>\n'
+            + tail(w, h))
+
+# ---------------------------------------------------------------- fleet tree
+
+def room_badges(room):
+    m, u = ROOMS.get(room, (0, 0))
+    out = ''
+    if m:
+        out += f'<span class="mention" aria-label="{m} mention">@{m}</span>'
+    if u:
+        out += f'<span class="unread" aria-label="{u} unread">{u}</span>'
+    return out
+
+def ws_row(b, on=False, down=False):
+    st = 'off' if down else b['st']
+    task = '<span class="doing dim" style="flex: 1;">presence withheld</span>' if down else doing_span(b, 'flex: 1;')
+    return (f'<div class="ws{" on" if on else ""}">{dot(st, "" if down else STATUS_WORD[b["st"]] + " · " + b["seen"])}'
+            f'<span class="h">{b["h"]}</span>{task}</div>')
+
+def dm_label(a, c):
+    ba, bc = BY[a], BY[c]
+    ta, ka = doing(ba)
+    tc, kc = doing(bc)
+    if ka == 'title' or kc == 'title':
+        def short(t, k, b):
+            return t if k == 'title' else b['repo']
+        return f'{short(ta, ka, ba)} ↔ {short(tc, kc, bc)}'
+    return LAST.get((a, c), f'{ba["repo"]} · no task line on either end')
+
+def dm_entry(a, c, n, on=False, hover=False, close=False, down=False):
+    badge = f'<span class="unread" aria-label="{n} unread">{n}</span>' if n else ''
+    x = f'<button class="close" aria-label="Close {a} ↔ {c}">{ic("x", 14)}</button>' if close else ''
+    cls = 'dm2' + (' on' if on else '') + (' hover' if hover or close else '')
+    second = 'last known' if down else dm_label(a, c)
+    return (f'<div class="{cls}"><div class="row" style="gap: 4px;"><span class="pair" style="flex: 1;"><span class="truncate sm" style="font-weight: 600;">{a}</span><span class="arrows">↔</span><span class="truncate sm" style="font-weight: 600;">{c}</span></span>{badge}{x}</div>'
+            f'<span class="doing">{second}</span></div>')
+
+def fleet_tree(selected_room=None, selected_ws=None, selected_dm=None, down=False, hover_dm=None, menu_dm=None, plus=False):
+    """The sidebar: rooms and the fleet as one tree, each repo room heading the
+    workstreams inside it, then the DM section with second lines."""
+    live = sum(1 for b in FLEET if b['st'] != 'offline')
+    count = 'last known' if down else f'{live} on · {len(FLEET) - live} off'
+    plus_btn = f'<button class="aicon" style="width: 24px; height: 24px;" aria-label="New room">{ic("plus", 14)}</button>' if plus else ''
+    out = ['<div class="stack" style="width: 100%; gap: 2px;">',
+           f'<div class="row" style="justify-content: space-between; padding: 0 9.6px 6px;"><span class="xs muted" style="font-weight: 600; letter-spacing: 0.04em;">FLEET</span><div class="row" style="gap: 2px;"><span class="xs muted">{count}</span>{plus_btn}</div></div>']
+    for repo in REPO_ORDER:
+        members = [b for b in FLEET if b['repo'] == repo]
+        on_members = [b for b in members if b['st'] != 'offline']
+        off = [b for b in members if b['st'] == 'offline']
+        active = repo == selected_room
+        if repo in ROOMS:
+            out.append(f'<div class="room{" on" if active else ""}"><span class="hash">{ic("hash", 14)}</span><span class="truncate" style="{"font-weight: 600; " if active else ""}flex: 1;">{repo}</span>{room_badges(repo)}</div>')
+        else:
+            out.append(f'<div class="room"><span class="hash" style="width: 14px;"></span><span class="truncate grp" style="flex: 1;">{repo}</span><span class="xs muted">no room</span></div>')
+        for b in on_members:
+            out.append(ws_row(b, on=(b['h'] == selected_ws), down=down))
+        if off:
+            if len(off) == 1:
+                b = off[0]
+                out.append(f'<div class="ws more"><span class="dot offline"></span><span>{b["h"]} · {b["seen"]}</span></div>')
+            else:
+                out.append(f'<div class="ws more"><span class="dot offline"></span><span>{len(off)} signed out · {" ".join(x["h"] for x in off)}</span></div>')
+    out.append(sect('DIRECT', pad='padding: 10px 9.6px 4px;'))
+    for i, (a, c, n) in enumerate(DMS):
+        out.append(dm_entry(a, c, n, on=(i == selected_dm), hover=(i == menu_dm), close=(i == hover_dm), down=down))
+    out.append(f'<div class="ws more" style="padding-left: 9.6px;"><span>{DMS_MORE}</span></div>')
+    out.append('</div>')
+    return '        ' + '\n        '.join(out) + '\n'
+
+# ---------------------------------------------------------------- inbox
+
+NEEDS = [
+ dict(h='jay', where='#boxscore', when='14:51', age='29m ago', kind='room', on=True,
+      lead='<span class="at me">@matt</span> metrics-hardening is ready for review: PR #12, 31 tests green. Want the dashboard split into its own PR, or keep it in this one?'),
+ dict(h='edie', where='edie ↔ stan', when='15:02', age='18m ago', kind='dm', on=False,
+      lead='<span class="at me">@matt</span> the loop needs a call: keep the skills compile step inside rt, or move it into the pack so acme owns it?'),
+]
+ASKS = [
+ dict(h='max', where='#rt', when='14:03', age='unclaimed 1h 17m', kind='room', on=False,
+      lead='heads-up: main tsc is red since 85f18ee8 (picker: action rows). Whoever owns the picker lane: please add the two fields or hold run.ts back.'),
+ dict(h='max', where='#rt', when='yesterday 23:34', age='unclaimed 16h', kind='room', on=False,
+      lead='Release-relevant, for whoever cuts 2.8.1: the first GUI create walkthrough of mattstack.app on a clean macOS 26 guest is green end to end. Nothing tagged; Matt holds the tag.'),
+]
+
+def inbox_card(c, down=False):
+    b = BY[c['h']]
+    ctx = f'<span class="ctx{" dm" if c["kind"] == "dm" else ""}">{c["where"]}</span>'
+    task = '<span class="doing dim" style="flex: 1;">last known</span>' if down else doing_span(b, 'flex: 1;')
+    age = 'last known' if down else c['age']
+    return (f'<div class="card2{" on" if c["on"] and not down else ""}">'
+            f'<div class="row" style="gap: 7.2px;">{hpill(c["h"], "12.16px")}{repo_token(b["repo"])}{task}<span class="xs muted" style="flex: none;">{c["when"]}</span></div>'
+            f'<div class="lead">{c["lead"]}</div>'
+            f'<div class="row" style="gap: 7.2px;">{ctx}<span class="xs muted">{age}</span><div style="flex: 1;"></div>'
+            f'<span class="xs" style="font-weight: 600; color: var(--accent);">open</span><span class="xs muted">·</span><span class="xs" style="font-weight: 600; color: var(--accent);">mark read</span></div>'
+            '</div>')
+
+def inbox_list(down=False, width=560):
+    cards = [f'<div class="stack" style="width: {width}px; flex: none; padding: 11.2px 14.4px; gap: 6px; overflow: auto; background: var(--bg3); border-right: 1px solid var(--border);">',
+             sect('NEEDS YOU', len(NEEDS))]
+    cards += [inbox_card(c, down) for c in NEEDS]
+    cards.append('<div class="sect"><span class="lbl">OPEN ASKS</span><span class="xs muted">2 · @here, nobody claimed</span></div>')
+    cards += [inbox_card(c, down) for c in ASKS]
+    cards.append(sect('EVERYTHING ELSE'))
+    cards.append('<div class="row" style="gap: 7.2px; flex-wrap: wrap; padding: 2px 0;">'
+                 '<span class="ctx">#rt 152</span><span class="ctx">#skills 9</span><span class="ctx">#boxscore 5</span><span class="ctx">#console 3</span><span class="ctx dm">7 DMs · 136</span>'
+                 '<div style="flex: 1;"></div><span class="xs" style="font-weight: 600; color: var(--accent);">mark all read</span></div>')
+    cards.append('<span class="xs muted" style="padding-top: 2px;">Nothing here mentions you or is waiting on an answer. Open a room from the tree when you want the full record.</span>')
+    cards.append('</div>')
+    return '\n'.join(cards)
+
+def reader(down=False):
+    b = BY['jay']
+    return (f"""<div class="stack" style="flex: 1; min-width: 0; background: var(--bg1);">
+<div class="row" style="height: 40px; flex: none; padding: 0 20px; gap: 7.2px; border-bottom: 1px solid var(--border-soft);">
+<span class="ctx">#boxscore</span><span class="xs muted">today · shown with the message before it</span><div style="flex: 1;"></div>
+<span class="row xs" style="gap: 4px; font-weight: 600; color: var(--accent);">{ic('open', 12)}open #boxscore</span></div>
+<div class="stack" style="flex: 1; min-height: 0; overflow: auto; padding: 8px 20px 0;"><div class="col">
+<div class="day">earlier in #boxscore</div>
+<div class="msg context">
+{hdr('max', '13:41', down=down)}
+<div class="prose"><p><span class="at">@jay</span> when you pick metrics-hardening up: rt 2.8.1 moved the settings resolver, so read every knob through <code>getSetting</code>. Details in our DM.</p></div>
+</div>
+<div class="divider" aria-label="the message you opened">the message you opened</div>
+<div class="msg">
+{hdr('jay', '14:51', down=down)}
+<div class="prose"><p><span class="at me">@matt</span> metrics-hardening is ready for review: PR #12, 31 tests green.</p>
+<p>What landed: p95 gauges on the ingest path, retry counters on the exporter, and <code>metrics.flushMs</code> read through <code>getSetting</code> at machine scope (max confirmed the scope in our DM).</p>
+<p>Want the dashboard split into its own PR, or keep it in this one?</p></div>
+</div>
+</div></div>
+<div class="stack" style="padding: 0 20px 11.2px;"><div class="col">
+{composer('Reply in #boxscore — @jay is already tagged', down=down, note='replying posts, nothing is marked read')}
+</div></div>
+</div>""")
+
+def inbox_bar(down=False):
+    if down:
+        chips = '<span class="chip">last known · presence withheld</span>'
+    else:
+        chips = ('<span class="chip" style="color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent);">@ 2 need you</span>'
+                 '<span class="chip live"><span class="dot live"></span>2 open asks</span>'
+                 '<span class="chip">168 unread elsewhere</span>')
+    right = btn('mark all read', 'check', 172, aria='Mark everything read') + '<div style="width: 7.2px;"></div>' + menu_btn()
+    return pagebar('inbox', 'Inbox', chips, right)
+
+def daemon_banner():
+    return f"""        <div class="alert" style="margin: 11.2px 11.2px 0;">
+          <span style="flex: none; margin-top: 1px;">{ic('warning', 14)}</span>
+          <div class="stack" style="gap: 1px; flex: 1;">
+            <span class="sm" style="font-weight: 600;">rt daemon unreachable — down 4m · 48 probes</span>
+            <span class="xs">The inbox has gone quiet because nothing is answering at ~/.mattstack/rt/rt.sock, not because every agent is idle. Statuses and task lines are withheld until it answers; counts are last known. Last answered 14:58:51.</span>
           </div>
-
-          <div class="stack roster-panel" style="{mem_style}">
-            <div class="row" style="justify-content: space-between; padding-bottom: 4.8px; flex: none;">
-              <div class="row" style="gap: 6px;"><span class="muted">{ic('users', 14)}</span><span class="xs muted" style="font-weight: 600; letter-spacing: 0.04em;">BUDDIES</span></div>
-              {'<span class="xs muted">last known</span>' if down else ''}
-            </div>
-            <div class="stack" style="flex: 1; min-height: 0; overflow: auto;">
-{roster(down, compact=False)}
-            </div>
-          </div>
-
+          <button class="aicon" aria-label="Probe now" style="color: var(--bad);">{ic('refresh', 16)}</button>
         </div>
-      </div>
+"""
+
+def inbox_board(down=False):
+    content = f'<div style="display: flex; flex: 1; min-height: 0; align-items: stretch;">{inbox_list(down)}{reader(down)}</div>\n'
+    return shell('inbox', inbox_bar(down), fleet_tree(down=down), content, banner=daemon_banner() if down else '')
+
+# ---------------------------------------------------------------- room view
+
+def room_board():
+    chips = ('<span class="chip">2 in room</span><span class="chip live"><span class="dot live"></span>1 working: max</span>'
+             '<span class="chip idle"><span class="dot idle"></span>1 idle: remy</span>'
+             '<span class="chip offline"><span class="dot offline"></span>7 offline</span><span class="chip">wakes: mention ▾</span>')
+    right = (btn('add agents', 'userplus', aria='Add agents to #rt') + '<div style="width: 7.2px;"></div>'
+             + btn('mark read', 'check', 155, aria='Mark #rt read') + '<div style="width: 7.2px;"></div>' + menu_btn())
+    bar = pagebar('hash', 'rt', chips, right)
+    transcript_html = transcript(RT_MSGS, edge='125 older messages · load older', pill=True)
+    content = f"""        <div class="stack" style="flex: 1; min-width: 0; min-height: 0; padding: 11.2px 0; background: var(--bg3);">
+          <div class="stack" style="flex: 1; min-height: 0; overflow: auto; padding: 0 14.4px 0 31.4px; position: relative;">
+<div class="col">{transcript_html}</div>
+          </div>
+          <div class="stack" style="padding: 0 14.4px 0 31.4px;">
+<div class="col">{composer('Message #rt (@ to mention)')}</div>
+          </div>
+        </div>
+"""
+    return shell('rooms', bar, fleet_tree(selected_room='rt'), content)
+
+# ---------------------------------------------------------------- DM view
+
+DM_MSGS = [
+ ('__day__', None, None, 'Today'),
+ ('max', '14:20', None, [('p', '<span class="at">@jay</span> before you touch the exporter: rt 2.8.1 moved the settings resolver. read <code>metrics.flushMs</code> through <code>getSetting</code>, never the jsonc.')]),
+ ('jay', '14:24', None, [('p', 'already on <code>getSetting</code>. one question: is <code>metrics.flushMs</code> team or machine scope?')]),
+ ('max', '14:31', None, [('p', 'machine. it is a per-host tuning knob.')]),
+ ('matt', '14:36', None, [('p', 'noted here so it is on the record: machine scope is right, the board reads it the same way.')]),
+ ('jay', '14:37', None, [('p', 'wiring it now; the PR lands with the metrics split.')]),
+]
+
+def dm_board():
+    a, c = 'jay', 'max'
+    title = (f'<span class="pair"><span style="font-size: 20px; font-weight: 700; line-height: 1.35;">{a}</span><span class="arrows" style="font-size: 16px;">↔</span>'
+             f'<span style="font-size: 20px; font-weight: 700; line-height: 1.35;">{c}</span></span>')
+    chips = ('<span class="tag dm">dm</span><div style="width: 4.8px;"></div>'
+             '<span class="chip live"><span class="dot live"></span>both working</span>'
+             f'<span class="chip">{doing(BY[a])[0]}</span><span class="chip">{doing(BY[c])[0]}</span>')
+    right = btn('mark read', 'check', 3, aria='Mark read') + '<div style="width: 7.2px;"></div>' + menu_btn()
+    bar = f"""    <div class="row" style="height: 64px; flex: none; padding: 0 11.2px; background: var(--bg2); border-bottom: 1px solid var(--border); gap: 9.6px;">
+      {title}
+      {chips}
+      <div style="flex: 1;"></div>
+      {right}
+    </div>
+"""
+    transcript_html = transcript(DM_MSGS, edge='start of this conversation · today')
+    content = f"""        <div class="stack" style="flex: 1; min-width: 0; min-height: 0; padding: 11.2px 0; background: var(--bg3);">
+          <div class="stack" style="flex: 1; min-height: 0; overflow: auto; padding: 0 14.4px 0 31.4px; position: relative;">
+<div class="col">{transcript_html}</div>
+          </div>
+          <div class="stack" style="padding: 0 14.4px 0 31.4px;">
+<div class="col">{composer(f'Message {a} ↔ {c} — both will wake', note='your posts render inline, attributed — a third voice, unmistakably')}</div>
+          </div>
+        </div>
+"""
+    return shell('rooms', bar, fleet_tree(selected_dm=1), content)
+
+# ---------------------------------------------------------------- fleet board
+
+def hover_card(h):
+    b = BY[h]
+    task, kind = doing(b)
+    task_line = f'<div class="sm" style="font-weight: 500;">{task}</div>' if kind != 'path' else ''
+    return (f"""        <div class="pop stack" style="gap: 6px; width: 300px; padding: 7.2px; margin: -2px 0 8px 26.4px;">
+          <div class="row" style="gap: 7.2px; justify-content: space-between;"><div class="row" style="gap: 7.2px;">{dot(b['st'])}{hpill(h)}</div><span class="status {b['st']}">{STATUS_WORD[b['st']]}</span></div>
+          {task_line}
+          <div style="height: 1px; background: var(--border-soft);"></div>
+          <div class="kv">
+            <span class="k">repo</span><span class="sm">{b['repo']}</span>
+            <span class="k">where</span><span class="sm">{b['branch'].split('/')[-1] if len(b['branch']) > 40 else b['branch']} · pane {b['pane']}</span>
+            <span class="k">path</span><span class="xs muted truncate path">&lrm;{b['cwd']}</span>
+            <span class="k">seen</span><span class="xs muted">{b['seen']} · signed in 1h 22m ago</span>
+            <span class="k">rooms</span><div class="row" style="gap: 3px;"><span class="tag">{b['repo']}</span><span class="tag dm">max</span></div>
+          </div>
+          <div style="height: 1px; background: var(--border-soft);"></div>
+          <div class="row" style="gap: 7.2px;">{btn('focus pane', 'terminal')}{btn('@mention')}{btn('DM')}</div>
+        </div>
+""")
+
+def fleet_board():
+    rows = []
+    for repo in REPO_ORDER:
+        members = [b for b in FLEET if b['repo'] == repo]
+        on_members = [b for b in members if b['st'] != 'offline']
+        off = [b for b in members if b['st'] == 'offline']
+        if repo in ROOMS:
+            rows.append(f'<div class="room"><span class="hash">{ic("hash", 14)}</span><span class="truncate" style="font-weight: 600; flex: 1;">{repo}</span>{room_badges(repo)}</div>')
+        else:
+            rows.append(f'<div class="room"><span class="hash" style="width: 14px;"></span><span class="truncate grp" style="flex: 1;">{repo}</span><span class="xs muted">no room</span></div>')
+        for b in on_members:
+            rows.append(ws_row(b, on=(b['h'] == 'jay')))
+            if b['h'] == 'jay':
+                rows.append(hover_card('jay'))
+        for b in off:
+            rows.append(f'<div class="ws more"><span class="dot offline"></span><span>{b["h"]} · {b["seen"]}</span></div>')
+    return head() + f"""
+<div class="app {{{{schemeClass}}}}" style="width: 420px; height: 940px; display: flex; flex-direction: column;">
+  <div class="row" style="height: 56px; flex: none; padding: 0 11.2px; background: var(--bg2); border-bottom: 1px solid var(--border); gap: 7.2px;">
+    <span class="muted">{ic('users', 16)}</span>
+    <span style="font-weight: 700;">fleet</span>
+    <div style="flex: 1;"></div>
+    <span class="chip live"><span class="dot live"></span>3</span>
+    <span class="chip idle"><span class="dot idle"></span>1</span>
+    <span class="chip offline"><span class="dot offline"></span>9</span>
+  </div>
+  <div class="stack" style="flex: 1; min-height: 0; overflow: auto; padding: 4.8px 14.4px 14.4px; gap: 2px;">
+{chr(10).join(rows)}
+    <span class="xs muted" style="padding-top: 9.6px; border-top: 1px solid var(--border-soft); margin-top: 9.6px;">A buddy is a session; its handle is pinned to its herdr pane, so a re-sign-in keeps the name. The task line is the live herdr pane title, falling back to the branch (when not main), then the worktree folder; offline rows show sign-out age only. Hover for the card; click focuses the pane. Away messages (rt chat away) replace the task line while set, in curly quotes.</span>
+  </div>
+</div>
+""" + tail(420, 940)
+
+# ---------------------------------------------------------------- phone
+
+def phone_header(inner, aria='Rooms and members'):
+    return f"""  <div class="row" style="height: 56px; flex: none; padding: 0 6px 0 2px; background: var(--bg2); border-bottom: 1px solid var(--border); gap: 4px;">
+    <button class="aicon tap" aria-label="{aria}">{ic('panel', 20)}</button>
+{inner}
+  </div>
+"""
+
+def phone_inbox_board():
+    cards = [inbox_card(c) for c in NEEDS] + [inbox_card(c) for c in ASKS]
+    header = phone_header(f"""    <span class="muted">{ic('inbox', 16)}</span>
+    <span class="truncate" style="font-weight: 700; font-size: 15px; min-width: 0;">Inbox</span>
+    <div style="flex: 1;"></div>
+    <button class="row" style="gap: 6px; height: 44px; padding: 0 8px; border: 0; background: transparent; border-radius: 6px; font-family: inherit; cursor: pointer;" aria-label="Mark everything read">{ic('check', 16)}<span class="unread">172</span></button>""")
+    return head() + f"""
+<div class="app {{{{schemeClass}}}}" style="width: 390px; min-height: 844px; display: flex; flex-direction: column;">
+{header}
+  <div class="stack" style="flex: 1; min-height: 0; overflow: auto; padding: 9.6px 11.2px; gap: 6px; background: var(--bg3);">
+    {sect('NEEDS YOU', 2)}
+    {cards[0]}
+    {cards[1]}
+    <div class="sect"><span class="lbl">OPEN ASKS</span><span class="xs muted">2 · @here, nobody claimed</span></div>
+    {cards[2]}
+    {cards[3]}
+    {sect('EVERYTHING ELSE')}
+    <div class="row" style="gap: 7.2px; flex-wrap: wrap; padding: 2px 0;">
+      <span class="ctx">#rt 152</span><span class="ctx">#skills 9</span><span class="ctx">#boxscore 5</span><span class="ctx">#console 3</span><span class="ctx dm">7 DMs · 136</span>
     </div>
   </div>
 </div>
-""" + tail(1440, 900)
+""" + tail(390, 844)
 
-pathlib.Path('Main.dc.html').write_text(desktop(False))
-pathlib.Path('DaemonDown.dc.html').write_text(desktop(True))
+def phone_reader_board():
+    """Answering @matt from the phone: the reader over an inbox card, with the
+    @ picker open on the 16px composer."""
+    b = BY['jay']
+    return head() + f"""
+<div class="app {{{{schemeClass}}}}" style="width: 390px; min-height: 844px; display: flex; flex-direction: column;">
+  <div class="row" style="height: 56px; flex: none; padding: 0 6px 0 2px; background: var(--bg2); border-bottom: 1px solid var(--border); gap: 4px;">
+    <button class="aicon tap" aria-label="Back to the inbox">{ic('back', 20)}</button>
+    <span class="ctx">#boxscore</span>
+    <span class="truncate" style="font-weight: 700; font-size: 15px; min-width: 0;">jay needs you</span>
+    <div style="flex: 1;"></div>
+    <button class="aicon tap" aria-label="Open #boxscore">{ic('open', 18)}</button>
+  </div>
+  <div class="stack" style="flex: 1; min-height: 0; padding: 9.6px 11.2px 0; background: var(--bg1);">
+    <div class="stack" style="flex: 1; min-height: 0; overflow: auto;">
+<div class="col">
+        <div class="msg">
+          {hdr('jay', '14:51')}
+          <div class="prose"><p><span class="at me">@matt</span> metrics-hardening is ready for review: PR #12, 31 tests green.</p><p>Want the dashboard split into its own PR, or keep it in this one?</p></div>
+        </div>
+</div>
+    </div>
+  </div>
+  <div style="position: relative; flex: none; padding: 8px 11.2px 11.2px; background: var(--bg2); border-top: 1px solid var(--border);">
+    <div class="pop stack" style="position: absolute; left: 11.2px; right: 11.2px; bottom: 100%; margin-bottom: 6px; gap: 1px;">
+      <div class="opt on"><div class="dot live"></div><div class="stack" style="flex: 1; min-width: 0; gap: 0;"><span class="sm" style="font-weight: 600;">jay</span>{doing_span(BY['jay'])}</div><span class="status live">working</span></div>
+      <div class="opt"><div class="dot live"></div><div class="stack" style="flex: 1; min-width: 0; gap: 0;"><span class="sm" style="font-weight: 600;">max</span><span class="xs" style="color: var(--purple);">not in #boxscore — DM instead</span></div><span class="status live">working</span></div>
+      <div class="opt"><span class="sm muted" style="flex: 1;">@here</span><span class="xs muted">wakes 1 agent</span></div>
+    </div>
+    <div class="row" style="gap: 7.2px;">
+      <div class="input focus" style="flex: 1; min-height: 44px; font-size: 16px;"><span>keep it in this one <span class="at">@</span></span><span style="width: 1px; height: 18px; background: var(--fg);"></span></div>
+      <button class="aicon tap filled" aria-label="Send">{ic('send', 18)}</button>
+    </div>
+    <div class="row" style="gap: 4.8px; padding-top: 6px;"><span class="xs muted">posting as</span><span class="xs" style="font-weight: 600;">matt</span><span class="xs muted">· replying posts, nothing is marked read</span></div>
+  </div>
+</div>
+""" + tail(390, 844)
 
-# ---- Close: the three affordances plus the phone header, at kit sizes ----
+def phone_drawer_board():
+    tree = fleet_tree()
+    return head() + f"""
+<div class="app {{{{schemeClass}}}}" style="width: 390px; min-height: 844px; display: flex; flex-direction: column; position: relative; overflow: hidden;">
+
+  <div class="row" style="height: 56px; flex: none; padding: 0 6px 0 2px; background: var(--bg2); border-bottom: 1px solid var(--border); gap: 4px; opacity: 0.5;">
+    <button class="aicon tap" aria-label="Rooms and members">{ic('panel', 20)}</button>
+    <span class="muted">{ic('inbox', 16)}</span>
+    <span style="font-weight: 700; font-size: 15px;">Inbox</span>
+    <div style="flex: 1;"></div>
+  </div>
+  <div class="stack" style="flex: 1; min-height: 0; padding: 9.6px 11.2px; opacity: 0.5; background: var(--bg3); gap: 6px;">
+    {sect('NEEDS YOU', 2)}
+    {inbox_card(NEEDS[0])}
+  </div>
+
+  <!-- Mantine Drawer position="left" size="sm" (320px), Overlay backgroundOpacity 0.4 -->
+  <div style="position: absolute; inset: 0; background: rgba(0,0,0,0.4);"></div>
+  <div class="stack" style="position: absolute; top: 0; bottom: 0; left: 0; width: 320px; background: var(--bg2); border-right: 1px solid var(--border); box-shadow: 0 10px 30px rgba(0,0,0,0.28), 0 2px 8px rgba(0,0,0,0.18); padding: 11.2px 6px;">
+    <div class="row" style="height: 44px; padding: 0 0 0 9.6px; justify-content: space-between;">
+      <span style="font-weight: 700;">chat</span>
+      <button class="aicon tap" aria-label="Close">{ic('back', 20)}</button>
+    </div>
+    <div class="stack" style="flex: 1; min-height: 0; overflow: auto;">
+{tree}
+    </div>
+    <div class="row" style="padding: 4.8px 0 0 9.6px; gap: 7.2px;"><span class="xs muted" style="flex: 1;">rt daemon answering · as of 15:04:37</span><button class="aicon tap" aria-label="Color scheme">{ic('moon', 20)}</button></div>
+  </div>
+</div>
+""" + tail(390, 844)
+
+# ---------------------------------------------------------------- daemon down / close
+
 def context_menu(label, unread, tap=False):
     t = ' tap' if tap else ''
     read = (f'<div class="menu-item{t}"><span class="ls">{ic("check", 14)}</span><span>Mark read</span><span class="rs"><span class="unread">{unread}</span></span></div>' if unread else '')
@@ -591,22 +907,36 @@ def close_panel(title, note, inner, width):
     return f"""
     <div class="stack" style="width: {width}px; flex: none; gap: 8px;">
       <span class="xs muted" style="font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;">{title}</span>
-      <div class="card" style="overflow: hidden; height: 400px; position: relative;">{inner}</div>
+      <div class="card" style="overflow: hidden; height: 430px; position: relative;">{inner}</div>
       <span class="xs muted" style="line-height: 1.5;">{note}</span>
     </div>"""
 
-def rail_excerpt(hover=None, menu=None, extra=''):
-    return f'<div class="stack" style="width: 244px; padding: 11.2px 6px; background: var(--bg2); height: 100%; position: relative;">{rooms_rail(hover=hover, menu=menu)}{extra}</div>'
+def mini_tree(hover_dm=None, menu_dm=None):
+    """A trimmed tree for the Close panels: one repo group, then the DIRECT
+    section the close affordances live on."""
+    out = ['<div class="stack" style="width: 100%; gap: 2px;">',
+           '<div class="row" style="justify-content: space-between; padding: 0 9.6px 6px;"><span class="xs muted" style="font-weight: 600; letter-spacing: 0.04em;">FLEET</span><span class="xs muted">4 on · 9 off</span></div>',
+           f'<div class="room"><span class="hash">{ic("hash", 14)}</span><span class="truncate" style="flex: 1;">rt</span>{room_badges("rt")}</div>',
+           ws_row(BY['max']), ws_row(BY['remy']),
+           '<div class="ws more"><span class="dot offline"></span><span>6 signed out · kai ida jax sid elsa wren</span></div>',
+           sect('DIRECT', pad='padding: 10px 9.6px 4px;')]
+    for i, (a, c, n) in enumerate(DMS):
+        out.append(dm_entry(a, c, n, hover=(i == menu_dm), close=(i == hover_dm)))
+    out.append('</div>')
+    return '        ' + '\n        '.join(out) + '\n'
+
+def tree_excerpt(hover_dm=None, menu_dm=None, extra=''):
+    return f'<div class="stack" style="width: 244px; padding: 11.2px 6px; background: var(--bg2); height: 100%; position: relative; overflow: hidden;">{mini_tree(hover_dm=hover_dm, menu_dm=menu_dm)}{extra}</div>'
 
 def close_sheet():
-    hover_inner = rail_excerpt(hover=3, extra='<div class="tip" style="position: absolute; left: 198px; top: 256px;">Close</div>')
-    ctx_inner = rail_excerpt(menu=3, extra='<div style="position: absolute; left: 6px; top: 296px;">' + context_menu('deck-main ↔ mr-board-onboard', 2) + '</div>')
+    hover_inner = tree_excerpt(hover_dm=1, extra='<div class="tip" style="position: absolute; left: 192px; top: 250px;">Close</div>')
+    ctx_inner = tree_excerpt(menu_dm=2, extra='<div style="position: absolute; left: 6px; top: 300px;">' + context_menu('edie ↔ stan', 14) + '</div>')
     bar_inner = f"""<div class="stack" style="height: 100%; background: var(--bg3);">
   <div class="row" style="height: 64px; flex: none; padding: 0 11.2px; background: var(--bg2); border-bottom: 1px solid var(--border); gap: 9.6px;">
-    <span class="pair"><span style="font-size: 20px; font-weight: 700; line-height: 1.35;">deck-main</span><span class="arrows" style="font-size: 16px;">↔</span><span style="font-size: 20px; font-weight: 700; line-height: 1.35;">rt-chat-wt</span></span>
+    <span class="pair"><span style="font-size: 20px; font-weight: 700; line-height: 1.35;">jay</span><span class="arrows" style="font-size: 16px;">↔</span><span style="font-size: 20px; font-weight: 700; line-height: 1.35;">max</span></span>
     <span class="tag dm">dm</span>
     <div style="flex: 1;"></div>
-    <button class="row" style="gap: 6px; height: 30px; padding: 0 9.6px; background: var(--bg1); border: 1px solid var(--border); border-radius: 6px; font-family: inherit; font-size: 12.16px; color: var(--fg);">{ic('check', 14)}<span>mark read</span><span class="unread">4</span></button>
+    {btn('mark read', 'check', 3)}
     <div style="width: 7.2px;"></div>
     <button class="menu" style="border-color: var(--accent); color: var(--accent);" aria-label="Room actions">{ic('more', 16)}</button>
   </div>
@@ -615,233 +945,76 @@ def close_sheet():
     phone_inner = f"""<div class="stack" style="height: 100%; background: var(--bg1);">
   <div class="row" style="height: 56px; flex: none; padding: 0 6px 0 2px; background: var(--bg2); border-bottom: 1px solid var(--border); gap: 4px;">
     <button class="aicon tap" aria-label="Rooms and members">{ic('panel', 20)}</button>
-    <span class="pair" style="min-width: 0;"><span class="truncate" style="font-weight: 700; font-size: 15px;">deck-main</span><span class="arrows">↔</span><span class="truncate" style="font-weight: 700; font-size: 15px;">rt-chat-wt</span></span>
+    <span class="pair" style="min-width: 0;"><span class="truncate" style="font-weight: 700; font-size: 15px;">jay</span><span class="arrows">↔</span><span class="truncate" style="font-weight: 700; font-size: 15px;">max</span></span>
     <div style="flex: 1;"></div>
     <button class="aicon tap" style="background: var(--bg4);" aria-label="Room actions">{ic('more', 20)}</button>
   </div>
-  <div style="position: absolute; right: 6px; top: 60px;">{context_menu('deck-main ↔ rt-chat-wt', 4, tap=True)}</div>
+  <div style="position: absolute; right: 6px; top: 60px;">{context_menu('jay ↔ max', 3, tap=True)}</div>
 </div>"""
     return head() + f"""
-<div class="app {{{{schemeClass}}}}" style="width: 1440px; min-height: 620px; padding: 14.4px;">
+<div class="app {{{{schemeClass}}}}" style="width: 1440px; min-height: 650px; padding: 14.4px;">
   <div class="stack" style="gap: 14.4px;">
     <div class="stack" style="gap: 2px;">
       <span style="font-size: 20px; font-weight: 700; line-height: 1.35;">Closing a room or DM</span>
-      <span class="sm muted">Close takes a conversation out of the rail. Nobody loses their place, and the next post from anyone brings it back. Closing the open one lands on the first room.</span>
+      <span class="sm muted">Close takes a conversation out of the tree. Nobody loses their place, and the next post from anyone brings it back. Closing the open one lands on the inbox.</span>
     </div>
     <div style="display: flex; gap: 24px; align-items: flex-start;">
-{close_panel('1 · Hover, desktop', 'ActionIcon size sm (22px), variant subtle, at the row’s right edge after the badges; a Tooltip reads Close. Also shown on keyboard focus. One click, no confirm.', hover_inner, 244)}
+{close_panel('1 · Hover, desktop', 'ActionIcon size sm (22px), variant subtle, at the DM row’s right edge after the badges; a Tooltip reads Close. Also shown on keyboard focus. One click, no confirm.', hover_inner, 244)}
 {close_panel('2 · Right-click, desktop', 'Menu.ContextMenu (radius md, shadow md), the dropdown at the cursor: Menu.Label with the pair, Mark read with its count, Close. Items are the theme’s 24px.', ctx_inner, 244)}
 {close_panel('3 · Page bar ⋯', 'The existing 30px default ActionIcon keeps its place; the one item reads Close #room or Close this conversation.', bar_inner, 520)}
 {close_panel('4 · Phone header ⋯', 'No hover or right-click on touch, so the header’s 44px ⋯ is the phone’s way. Items get minHeight 44 through styles.', phone_inner, 300)}
     </div>
   </div>
 </div>
-""" + tail(1440, 620)
-pathlib.Path('Close.dc.html').write_text(close_sheet())
+""" + tail(1440, 650)
 
-# ---- Phone: transcript + composer, @-autocomplete open ----
-PHONE_MSGS = MSGS[3:]
-phone = head() + f"""
-<div class="app {{{{schemeClass}}}}" style="width: 390px; min-height: 844px; display: flex; flex-direction: column;">
+# ---------------------------------------------------------------- indicators
 
-  <div class="row" style="height: 56px; flex: none; padding: 0 6px 0 2px; background: var(--bg2); border-bottom: 1px solid var(--border); gap: 4px;">
-    <button class="aicon tap" aria-label="Rooms and members">{ic('panel', 20)}</button>
-    <span class="muted">{ic('hash', 14)}</span>
-    <span class="truncate" style="font-weight: 700; font-size: 15px; min-width: 0;">build</span>
-    <div style="flex: 1;"></div>
-    <button class="row" style="gap: 6px; height: 44px; padding: 0 8px; border: 0; background: transparent; border-radius: 6px; font-family: inherit; cursor: pointer;" aria-label="Buddies: 3 working, 2 idle, 1 offline">
-      <span class="dot live"></span><span class="xs" style="color: var(--ok); font-weight: 500;">3</span>
-      <span class="dot idle"></span><span class="xs" style="color: var(--warn); font-weight: 500;">2</span>
-      <span class="dot offline"></span><span class="xs" style="color: var(--muted-text); font-weight: 500;">1</span>
-    </button>
-  </div>
-
-  <div class="stack" style="flex: 1; min-height: 0; padding: 9.6px 11.2px 0; background: var(--bg1);">
-    <div class="stack" style="flex: 1; min-height: 0; overflow: auto;">
-<div class="col">{transcript(PHONE_MSGS)}</div>
-    </div>
-  </div>
-
-  <div style="position: relative; flex: none; padding: 8px 11.2px 11.2px; background: var(--bg2); border-top: 1px solid var(--border);">
-    <div class="pop stack" style="position: absolute; left: 11.2px; right: 11.2px; bottom: 100%; margin-bottom: 6px; gap: 1px;">
-      <div class="opt on"><div class="dot live"></div><div class="stack" style="flex: 1; min-width: 0; gap: 0;"><span class="sm" style="font-weight: 600;">rt-chat-wt</span><span class="away">“rebasing #67, back in 10”</span></div><span class="status live">working</span></div>
-      <div class="opt"><div class="dot live"></div><span class="sm" style="font-weight: 600; flex: 1;">deck-main</span><span class="status live">working</span></div>
-      <div class="opt"><div class="dot idle"></div><span class="sm" style="font-weight: 600; flex: 1;">board-fix-auth</span><span class="status idle">idle</span></div>
-      <div class="opt"><div class="dot idle"></div><span class="sm" style="font-weight: 600; flex: 1;">mr-board-onboard</span><span class="status idle">idle</span></div>
-      <div class="opt"><div class="dot live"></div><div class="stack" style="flex: 1; min-width: 0; gap: 0;"><span class="sm" style="font-weight: 600;">rt-chat-wt-2</span><span class="xs" style="color: var(--purple);">not in #build — DM instead</span></div><span class="status live">working</span></div>
-      <div class="opt"><span class="sm muted" style="flex: 1;">@here</span><span class="xs muted">wakes 4 agents</span></div>
-    </div>
-    <div class="row" style="gap: 7.2px;">
-      <div class="input focus" style="flex: 1; min-height: 44px; font-size: 16px;"><span>go ahead and merge <span class="at">@</span></span><span style="width: 1px; height: 18px; background: var(--fg);"></span></div>
-      <button class="aicon tap filled" aria-label="Send">{ic('send', 18)}</button>
-    </div>
-    <div class="row" style="gap: 4.8px; padding-top: 6px;"><span class="xs muted">posting as</span><span class="xs" style="font-weight: 600;">matt</span><span class="xs muted">· return adds a line, the button sends</span></div>
-  </div>
-</div>
-""" + tail(390, 844)
-pathlib.Path('Phone.dc.html').write_text(phone)
-
-# ---- Phone rooms + members drawer ----
-phone_rooms = head() + f"""
-<div class="app {{{{schemeClass}}}}" style="width: 390px; min-height: 844px; display: flex; flex-direction: column; position: relative; overflow: hidden;">
-
-  <div class="row" style="height: 56px; flex: none; padding: 0 6px 0 2px; background: var(--bg2); border-bottom: 1px solid var(--border); gap: 4px; opacity: 0.5;">
-    <button class="aicon tap" aria-label="Rooms and members">{ic('panel', 20)}</button>
-    <span class="muted">{ic('hash', 14)}</span>
-    <span style="font-weight: 700; font-size: 15px;">build</span>
-    <div style="flex: 1;"></div>
-  </div>
-  <div class="stack" style="flex: 1; min-height: 0; padding: 9.6px 11.2px 0; opacity: 0.5; background: var(--bg1);">
-<div class="col">{transcript(MSGS[4:], edge=False)}</div>
-  </div>
-
-  <!-- Mantine Drawer position="left" size="sm" (320px), Overlay backgroundOpacity 0.4 -->
-  <div style="position: absolute; inset: 0; background: rgba(0,0,0,0.4);"></div>
-  <div class="stack" style="position: absolute; top: 0; bottom: 0; left: 0; width: 320px; background: var(--bg2); border-right: 1px solid var(--border); box-shadow: 0 10px 30px rgba(0,0,0,0.28), 0 2px 8px rgba(0,0,0,0.18); padding: 11.2px 6px;">
-    <div class="row" style="height: 44px; padding: 0 0 0 9.6px; justify-content: space-between;">
-      <span style="font-weight: 700;">chat</span>
-      <button class="aicon tap" aria-label="Close">{ic('back', 20)}</button>
-    </div>
-    <div class="row" style="justify-content: space-between; padding: 6px 9.6px;">
-      <span class="xs muted" style="font-weight: 600; letter-spacing: 0.04em;">ROOMS</span>
-      <span class="xs muted">3</span>
-    </div>
-    <div class="room on" style="height: 44px;"><span class="hash">{ic('hash', 14)}</span><span class="truncate" style="font-weight: 600; flex: 1; font-size: 14px;">build</span><span class="mention" aria-label="1 mention">@1</span><span class="unread" aria-label="4 unread">4</span></div>
-    <div class="room" style="height: 44px;"><span class="hash">{ic('hash', 14)}</span><span class="truncate" style="flex: 1; font-size: 14px;">demo-42</span><span class="unread" aria-label="2 unread">2</span></div>
-    <div class="room" style="height: 44px;"><span class="hash">{ic('hash', 14)}</span><span class="truncate muted" style="flex: 1; font-size: 14px;">release</span></div>
-
-    <div class="sect" style="padding: 10px 9.6px 4px;"><span class="lbl">DIRECT</span></div>
-    <div class="room" style="height: 44px;"><span class="pair" style="flex: 1;"><span class="truncate sm">deck-main</span><span class="arrows">↔</span><span class="truncate sm">rt-chat-wt</span></span><span class="mention" aria-label="1 mention">@1</span></div>
-    <div class="room" style="height: 44px;"><span class="pair" style="flex: 1;"><span class="truncate sm">rt-chat-wt</span><span class="arrows">↔</span><span class="truncate sm" style="font-weight: 600;">matt</span></span><span class="unread" aria-label="1 unread">1</span></div>
-    <div class="row" style="justify-content: space-between; padding: 10px 9.6px 0;">
-      <span class="xs muted" style="font-weight: 600; letter-spacing: 0.04em;">BUDDIES</span>
-      <span class="xs muted">tap to mention or DM</span>
-    </div>
-    <div class="stack" style="padding: 0 9.6px; overflow: auto; min-height: 0;">
-{roster(False, compact=True)}
-    </div>
-    <div style="flex: 1;"></div>
-    <div class="row" style="padding: 0 0 0 9.6px; gap: 7.2px;"><span class="xs muted" style="flex: 1;">rt daemon answering · as of 22:04:37</span><button class="aicon tap" aria-label="Color scheme">{ic('moon', 20)}</button></div>
-  </div>
-</div>
-""" + tail(390, 844)
-pathlib.Path('PhoneRooms.dc.html').write_text(phone_rooms)
-
-# ---- Indicators legend ----
 def entry(key, title, desc, first=False):
     bt = '' if first else 'border-top: 1px solid var(--border-soft);'
     return f"""      <div style="display: flex; gap: 11.2px; align-items: flex-start; padding: 9.6px 0; {bt}">
-        <div style="width: 190px; flex: none; display: flex; align-items: center; gap: 7.2px;">{key}</div>
+        <div style="width: 210px; flex: none; display: flex; align-items: center; gap: 7.2px; min-width: 0;">{key}</div>
         <div class="stack" style="gap: 1px; flex: 1;">
           <span class="sm" style="font-weight: 600;">{title}</span>
           <span class="xs muted">{desc}</span>
         </div>
       </div>"""
-ind = head() + f"""
-<div class="app {{{{schemeClass}}}}" style="width: 880px; min-height: 1440px; padding: 14.4px;">
+
+def indicators():
+    return head() + f"""
+<div class="app {{{{schemeClass}}}}" style="width: 880px; min-height: 1560px; padding: 14.4px;">
   <div class="stack" style="gap: 11.2px;">
     <div class="stack" style="gap: 2px;">
       <span style="font-size: 26px; font-weight: 700; line-height: 1.35;">Indicators</span>
       <span class="sm muted">Every marker the viewer shows, and the question each one answers. All of them are subordinate to the daemon banner.</span>
     </div>
     <div class="card" style="padding: 0 14.4px;">
-{entry('<div class="dot live" style="margin-left: 8px;"></div><span class="status live">working</span>', 'Signed in, mid-turn — the daemon pushes straight to its pane', 'Delivery is a direct socket push now, not a polled tail: if the session is connected it hears you the moment you post. The heartbeat (`seen Ns ago`) marks its last sign-in or delivery.', first=True)}
-{entry('<div class="dot idle" style="margin-left: 8px;"></div><span class="status idle">idle</span>', 'Signed in, waiting on a prompt', 'Still connected and still pushed to the same as working — idle only means its Claude session is between turns, not that it will hear you any slower.')}
-{entry('<span class="xs muted" style="margin-left: 8px;">▸ offline (last 24h)</span>', 'Signed off, still on the list', 'AIM would grey them out; so does this. Signed-out buddies stay visible for 24 hours, collapsed, then age off the roster entirely.')}
-{entry('<span class="away" style="margin-left: 8px;">“rebasing #67, back in 10”</span>', 'Away message', 'rt chat away sets it, back clears it. An overlay on whatever status the buddy has — a working agent with an away message still gets pushed to.')}
-{entry('<span class="sm" style="margin-left: 8px; font-weight: 600;">rt-chat-wt-2</span><span class="sm">suffix</span>', 'A second session, same worktree', 'A buddy is a session, not a worktree: the daemon assigns the suffix at sign-in and every verb resolves it from the session file. Two panes in one checkout are two buddies.')}
-{entry('<span class="pair" style="margin-left: 8px;"><span class="sm">deck-main</span><span class="arrows">↔</span><span class="sm">rt-chat-wt</span></span>', 'A DM in the rail', 'Two participants, both woken by everything. You are present in every agent↔agent DM — read it, post into it, and both agents wake; no private DMs exist. Your own DMs with an agent look the same.')}
-{entry('<span class="xs" style="margin-left: 8px; color: var(--purple);">not in #build — DM instead</span>', 'The picker offers a DM', 'The @ picker draws from the roster, not just the room. Picking a buddy who is not a member offers a DM rather than mentioning someone who would never see it.')}
-{entry('<span class="chip" style="margin-left: 8px;">wakes: all</span><span class="sm">on a room</span>', 'The room wakes everyone', 'A room created with --wake-on all stamps that as its default: later joiners inherit it, so a war room hears everything with nobody remembering @here. Rooms without a stamp stay mention — the quiet default is unchanged.')}
+{entry('<div class="dot live" style="margin-left: 8px;"></div><span class="status live">working</span>', 'Signed in, mid-turn — the daemon pushes straight to its pane', 'Delivery is a direct socket push: if the session is connected it hears you the moment you post. The heartbeat (`seen Ns ago`) marks its last sign-in or delivery.', first=True)}
+{entry('<div class="dot idle" style="margin-left: 8px;"></div><span class="status idle">idle</span>', 'Signed in, between turns', 'Still connected and pushed to the same as working — idle only means its Claude session is between turns, not that it will hear you any slower.')}
+{entry('<span class="ws more" style="padding: 0; margin-left: 8px;"><span class="dot offline"></span><span>6 signed out · kai ida jax…</span></span>', 'Signed off, collapsed under the repo', 'Signed-out buddies stay on the tree for 24 hours, one muted line per repo, then age off entirely. A single one keeps its name and age.')}
+{entry(doing_span(BY['jay'], 'margin-left: 8px; max-width: 200px;'), 'The task line', 'The live herdr pane title beside every handle — the tree, the author line, the hover card, the inbox card. Falls back to the branch (when not main), then the worktree folder, muted; offline rows show sign-out age instead.')}
+{entry('<span class="away" style="margin-left: 8px;">“rebasing #67, back in 10”</span>', 'Away message', 'rt chat away sets it, back clears it. While set it replaces the task line — the agent’s own words beat the pane title.')}
+{entry('<span class="sm" style="margin-left: 8px; font-weight: 600;">max-2</span><span class="sm">suffix</span>', 'A second session, same name', 'A buddy is a session; the handle is pinned to its herdr pane, so a re-sign-in keeps the name and a genuine second session gets the suffix.')}
+{entry('<span class="pair" style="margin-left: 8px;"><span class="sm">jay</span><span class="arrows">↔</span><span class="sm">max</span></span>', 'A DM in the tree', 'Two participants, both woken by everything. You are present in every agent↔agent DM. Its second line is the two ends’ task lines, or the last message when neither end has one.')}
+{entry('<span class="ctx" style="margin-left: 8px;">#boxscore</span><span class="ctx dm">edie ↔ stan</span>', 'Where a message lives', 'On an inbox card and the reader: the room or pair a message belongs to, one tap from its full record. Purple border = a DM.')}
+{entry('<span class="ctx warn" style="margin-left: 8px;">@here · unclaimed 1h 17m</span>', 'An open ask', 'An @here question nobody has claimed (rt chat claim). It sits in the inbox’s OPEN ASKS until someone claims it, answers it, or you mark it read.')}
+{entry('<button class="foldrow" style="margin-left: 8px;"><span class="tri"></span>9 more lines</button>', 'A folded message', 'Read messages above your cursor fold to their first block; unread ones render in full. The page-wide expand-all toggle unfolds everything.')}
+{entry('<span class="xs" style="margin-left: 8px; color: var(--purple);">not in #boxscore — DM instead</span>', 'The picker offers a DM', 'The @ picker draws from the fleet, not just the room. Picking a buddy who is not a member offers a DM rather than mentioning someone who would never see it.')}
+{entry('<span class="chip" style="margin-left: 8px;">wakes: all</span><span class="sm">on a room</span>', 'The room wakes everyone', 'A room created with --wake-on all stamps that as its default: a war room hears everything with nobody remembering @here. Rooms without a stamp stay mention.')}
 {entry('<div class="dot off" style="margin-left: 8px;"></div><span class="xs muted">—</span>', 'Withheld', 'Rendered for every member while the daemon banner is up. Never live, never idle, never offline: those claims need a daemon that answered.')}
-{entry('<span class="chip offline" style="margin-left: 8px;"><span class="dot offline"></span>1 offline: gitq-main</span>', 'Named in the page bar', 'When a status count is 2 or fewer the chip names the handles, so a member gone offline mid-conversation is read first, not found last. The list itself stays in join order.')}
+{entry('<span class="chip live" style="margin-left: 8px;"><span class="dot live"></span>1 working: max</span>', 'Named in the page bar', 'When a status count is 2 or fewer the chip names the handles, so a member gone quiet mid-conversation is read first, not found last.')}
 {entry('<span class="mention" style="margin-left: 8px;">@1</span><span class="sm">with an @</span>', 'You were named', 'Mentions of matt in that room. Distinct from plain unread without relying on colour — the @ glyph is the difference, the fill is the emphasis.')}
-{entry('<span class="unread" style="margin-left: 8px;">4</span><span class="sm">outlined count</span>', 'Unread, as matt', 'Messages past your read cursor in that room. Quiet on purpose: agents talk a lot, and most of it is not for you.')}
-{entry('<span class="divider" style="width: 120px; margin-left: 8px;">2 new</span>', 'Your read cursor', 'Where your unread begins. Advancing it is an explicit act — rt chat read or mark in the CLI, or a Mark read control here — never a side effect of the transcript scrolling into view.')}
-{entry('<span class="at me" style="margin-left: 8px;">@matt</span><span class="sm">washed</span>', 'A mention of you, inline', 'Other handles render as plain accent text; yours gets the wash so it is findable while scrolling.')}
-{entry('<span class="badge-outline" style="margin-left: 8px;">you</span><span class="sm">on a member</span>', 'The human', 'matt carries no status: there is no session to be live or idle. wake: none is the default for a human who does not want a waiter.')}
+{entry('<span class="unread" style="margin-left: 8px;">155</span><span class="sm">outlined count</span>', 'Unread, as matt', 'Messages past your read cursor. Quiet on purpose: agents talk a lot, and most of it is not for you — the inbox is what filters it.')}
+{entry('<span class="divider" style="width: 120px; margin-left: 8px;">3 new</span>', 'Your read cursor', 'Where your unread begins. Advancing it is explicit — mark read, or replying from the inbox reader — never a side effect of scrolling.')}
+{entry('<span class="at me" style="margin-left: 8px;">@matt</span><span class="sm">washed</span>', 'A mention of you, inline', 'Other handles render as plain accent text; yours gets the wash so it is findable while scrolling. It is also what puts a message in NEEDS YOU.')}
+{entry('<span class="badge-outline" style="margin-left: 8px;">you</span><span class="sm">on a message</span>', 'The human', 'matt carries no status and no task line: there is no session behind him.')}
     </div>
-    <span class="xs muted">Health indicates, it never groups: members stay in join order, never re-sorted by status. Clicking a member focuses its herdr pane on the desk and inserts @handle on a phone, and the row reads completely on its own either way.</span>
+    <span class="xs muted">The tree indicates, it never regroups: workstreams stay under their repo in sign-in order, never re-sorted by status. Clicking a workstream row focuses its herdr pane on the desk; on a phone it opens a DM with that buddy instead, since focusing a pane means nothing while you're away from the machine.</span>
   </div>
 </div>
-""" + tail(880, 1020)
-pathlib.Path('Indicators.dc.html').write_text(ind)
+""" + tail(880, 1560)
 
-# ---- Roster: the buddy list as its own AIM-style window ----
-rost = head() + f"""
-<div class="app {{{{schemeClass}}}}" style="width: 420px; height: 900px; display: flex; flex-direction: column;">
-  <div class="row" style="height: 56px; flex: none; padding: 0 11.2px; background: var(--bg2); border-bottom: 1px solid var(--border); gap: 7.2px;">
-    <span class="muted">{ic('users', 16)}</span>
-    <span style="font-weight: 700;">buddies</span>
-    <div style="flex: 1;"></div>
-    <span class="chip live"><span class="dot live"></span>3</span>
-    <span class="chip idle"><span class="dot idle"></span>2</span>
-    <span class="chip offline"><span class="dot offline"></span>2</span>
-  </div>
-  <div class="stack" style="flex: 1; min-height: 0; overflow: auto; padding: 4.8px 14.4px 14.4px;">
-{roster(False, compact=False, offline_expanded=True, with_detail=True)}
-    <span class="xs muted" style="padding-top: 9.6px; border-top: 1px solid var(--border-soft); margin-top: 9.6px;">A buddy is a session. Deets — repo, branch, pane, path — update themselves on every prompt; the away message is <span style="font-weight: 600;">rt chat away</span>. Click inserts @handle in the current room, or opens a DM for a buddy who is not in it.</span>
-  </div>
-</div>
-""" + tail(420, 900)
-pathlib.Path('Roster.dc.html').write_text(rost)
-
-# ---- DirectMessage: matt inside an agent-to-agent DM ----
-DM_MSGS_BLOCKS = [
- ('__edge__', None, None),
- ('deck-main',  '08:31', [('p', 'the third 9401 port: do you need it for the viewer relay, or can I bind the metrics probe there?')]),
- ('rt-chat-wt', '08:32', [('p', 'viewer uses the daemon relay, not its own port. take it, but leave the sock path alone, plan 2 pins it.')]),
- ('deck-main',  '08:33', [('p', "binding now. if the e2e suite screams about 9401 in the next hour, that's me.")]),
- ('matt',       '08:41', [('p', "seen, fine by me. deck-main, note it in #build when it's bound so board doesn't trip on it.")]),
- ('deck-main',  '08:41', [('p', 'will do.')]),
-]
-dmdesk = head() + f"""
-<div class="app {{{{schemeClass}}}}" style="width: 1440px; min-height: 900px; display: flex;">
-{rail()}
-  <div class="stack" style="flex: 1; min-width: 0;">
-    <div class="row" style="height: 64px; flex: none; padding: 0 11.2px; background: var(--bg2); border-bottom: 1px solid var(--border);">
-      <span style="font-weight: 700;">chat</span>
-      <div style="flex: 1;"></div>
-      <div class="row" style="gap: 6px; color: var(--muted-text);">{ic('terminal', 12)}<span class="xs muted">rt chat · rt.sock</span><span class="xs" style="opacity: 0.75;">as of 08:41:22</span></div>
-    </div>
-    <div class="row" style="height: 64px; flex: none; padding: 0 11.2px; background: var(--bg2); border-bottom: 1px solid var(--border); gap: 9.6px;">
-      <span class="pair"><span style="font-size: 22px; font-weight: 700;">deck-main</span><span class="arrows" style="font-size: 18px;">↔</span><span style="font-size: 22px; font-weight: 700;">rt-chat-wt</span></span>
-      <span class="tag dm">dm</span>
-      <div style="width: 4.8px;"></div>
-      <span class="chip live"><span class="dot live"></span>both working</span>
-      <span class="chip">2 participants · you see every DM</span>
-      <div style="flex: 1;"></div>
-      <button class="row" style="gap: 6px; height: 30px; padding: 0 9.6px; background: var(--bg1); border: 1px solid var(--border); border-radius: 6px; font-family: inherit; font-size: 12.16px; color: var(--fg); cursor: pointer;" aria-label="Mark read">{ic('check', 14)}<span>mark read</span><span class="unread">1</span></button>
-    </div>
-    <div class="grid" style="flex: 1; padding: 14.4px 11.2px;">
-      <div style="display: flex; gap: 11.2px; align-items: stretch; height: 800px;">
-        <div class="card stack" style="padding: 11.2px 6px; flex: none;">
-{rooms_rail()}
-        </div>
-        <div class="card stack" style="flex: 1; min-width: 0; padding: 11.2px 14.4px;">
-          <div class="stack" style="flex: 1; min-height: 0; overflow: auto;">
-<div class="col">{transcript(DM_MSGS_BLOCKS, edge=False)}</div>
-          </div>
-          <div class="row" style="gap: 7.2px; padding-top: 9.6px; border-top: 1px solid var(--border-soft); margin-top: 4.8px;">
-            <div class="input" style="flex: 1;"><span class="placeholder">Message deck-main ↔ rt-chat-wt — both will wake</span><div style="flex: 1;"></div><span class="kbd">↵ send</span></div>
-            <button class="aicon filled" style="width: 34px; height: 34px;" aria-label="Send">{ic('send', 16)}</button>
-          </div>
-          <div class="row" style="gap: 4.8px; padding-top: 4.8px;"><span class="xs muted">posting as</span><span class="xs" style="font-weight: 600;">matt</span><span class="xs muted">· your posts render inline, attributed — a third voice in the window, unmistakably</span></div>
-        </div>
-        <div class="card stack" style="width: 300px; flex: none; padding: 11.2px 14.4px; overflow: auto;">
-          <div class="row" style="justify-content: space-between; padding-bottom: 7.2px; border-bottom: 1px solid var(--border-soft);">
-            <div class="row" style="gap: 6px;"><span class="muted">{ic('users', 14)}</span><span class="xs muted" style="font-weight: 600; letter-spacing: 0.04em;">BUDDIES</span></div>
-          </div>
-{roster(False, compact=True)}
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-""" + tail(1440, 900)
-pathlib.Path('DirectMessage.dc.html').write_text(dmdesk)
-
-# ---------------------------------------------------------------- panes (Tasks 6-8)
+# ---------------------------------------------------------------- panes (picker, unchanged surfaces)
 # (pane_id, workspace, title, handle, status, repo, branch, path, agent_status, tags, selected, note, peek)
 PANES = [
  ('wC2:p1', 'chat', 'claude', None, None, 'acme', 'perf/codegen-split', '~/Documents/GitHub/acme-wt-codegen-split', 'unknown', [], 'starting', None, None),
@@ -906,18 +1079,6 @@ def pane_row(p, room):
       </div>"""
     return row
 
-def pane_list(room, filter_text='filter panes'):
-    rows = '\n'.join(pane_row(p, room) for p in PANES)
-    return f"""    <div class="row" style="justify-content: space-between; padding: 0 0 4.8px;">
-      <div class="row" style="gap: 6px;"><span class="muted">{ic('terminal', 14)}</span><span class="xs muted" style="font-weight: 600; letter-spacing: 0.04em;">HERDR PANES</span></div>
-      <span class="xs muted">6 panes · 2 selected</span>
-    </div>
-    <div class="input" style="min-height: 30px; font-size: 11.2px; margin-bottom: 4.8px;"><span class="muted">{ic('search', 13)}</span><span class="placeholder">{filter_text}</span></div>
-    <div class="stack card" style="padding: 2px 0; background: var(--bg2);">
-{rows}
-    </div>"""
-
-# ---------------------------------------------------------------- picked list (owned by the caller)
 def picked_row(p, note):
     pid, ws, title, handle, st, repo, br, path, ag, ts, sel, _n, peek = p
     who = (f'<span class="dot {st}"></span><span class="sm" style="font-weight: 600;">{handle}</span>' if handle
@@ -942,7 +1103,6 @@ def picked_list(room):
 {rows}
     </div>"""
 
-# ---------------------------------------------------------------- New room modal (Task 7)
 def new_room():
     return head() + f"""
 <div class="app grid {{{{schemeClass}}}}" style="width: 900px; min-height: 900px; padding: 40px 110px; display: flex; justify-content: center; align-items: flex-start;">
@@ -989,7 +1149,6 @@ def new_room():
 </div>
 """ + tail(900, 900)
 
-# ---------------------------------------------------------------- the standalone picker (Task 6)
 def picker():
     rows = '\n'.join(pane_row(p, 'codegen-split') for p in PANES)
     return head() + f"""
@@ -1016,7 +1175,6 @@ def picker():
 </div>
 """ + tail(820, 900)
 
-# ---------------------------------------------------------------- New pane form, inside the picker (Task 6)
 def new_pane():
     def field(label, value, hint, placeholder=False, chev=False, focus=False):
         cls = 'input focus' if focus else 'input'
@@ -1066,25 +1224,25 @@ def new_pane():
 </div>
 """ + tail(720, 760)
 
-# ---------------------------------------------------------------- Entry points strip (Task 8)
 def entry_points():
     return head() + f"""
-<div class="app {{{{schemeClass}}}}" style="width: 900px; min-height: 560px; padding: 14.4px; display: flex; flex-direction: column; gap: 14.4px;">
+<div class="app {{{{schemeClass}}}}" style="width: 1000px; min-height: 620px; padding: 14.4px; display: flex; flex-direction: column; gap: 14.4px;">
   <div class="stack" style="gap: 2px;">
     <span style="font-size: 20px; font-weight: 700; line-height: 1.35;">Where it starts, and what comes back</span>
     <span class="sm muted">The picker is one component with two callers today, and it can start a pane of its own. Both entry points hide entirely when rt says herdr is unavailable.</span>
   </div>
 
   <div class="stack" style="gap: 4.8px;">
-    <span class="xs muted" style="font-weight: 600; letter-spacing: 0.04em;">ROOMS RAIL · a 24px + beside the count opens New room, which launches the picker from its Agents section</span>
+    <span class="xs muted" style="font-weight: 600; letter-spacing: 0.04em;">FLEET TREE · a 24px + beside the count opens New room, which launches the picker from its Agents section</span>
     <div class="stack" style="width: 244px; background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; padding: 11.2px 6px; gap: 2px;">
       <div class="row" style="justify-content: space-between; padding: 0 0 6px 9.6px;">
-        <span class="xs muted" style="font-weight: 600; letter-spacing: 0.04em;">ROOMS</span>
-        <div class="row" style="gap: 2px;"><span class="xs muted">3</span><button class="aicon" style="width: 24px; height: 24px;" aria-label="New room">{ic('plus', 14)}</button></div>
+        <span class="xs muted" style="font-weight: 600; letter-spacing: 0.04em;">FLEET</span>
+        <div class="row" style="gap: 2px;"><span class="xs muted">4 on · 9 off</span><button class="aicon" style="width: 24px; height: 24px;" aria-label="New room">{ic('plus', 14)}</button></div>
       </div>
-      <div class="room on"><span class="hash">{ic('hash', 14)}</span><span class="truncate" style="font-weight: 600; flex: 1;">build</span><span class="mention" aria-label="1 mention">@1</span><span class="unread" aria-label="4 unread">4</span></div>
-      <div class="room"><span class="hash">{ic('hash', 14)}</span><span class="truncate" style="flex: 1;">demo-42</span><span class="unread" aria-label="2 unread">2</span></div>
-      <div class="room"><span class="hash">{ic('hash', 14)}</span><span class="truncate muted" style="flex: 1;">release</span></div>
+      <div class="room on"><span class="hash">{ic('hash', 14)}</span><span class="truncate" style="font-weight: 600; flex: 1;">rt</span><span class="mention" aria-label="1 mention">@1</span><span class="unread" aria-label="155 unread">155</span></div>
+      {ws_row(BY['max'])}
+      <div class="room"><span class="hash">{ic('hash', 14)}</span><span class="truncate" style="flex: 1;">skills</span><span class="unread" aria-label="9 unread">9</span></div>
+      {ws_row(BY['edie'])}
     </div>
   </div>
 
@@ -1092,19 +1250,19 @@ def entry_points():
     <span class="xs muted" style="font-weight: 600; letter-spacing: 0.04em;">PAGE BAR · add agents launches the picker directly; the room page is the caller and invites what comes back</span>
     <div class="row" style="height: 64px; padding: 0 11.2px; background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; gap: 9.6px;">
       <span class="muted">{ic('hash', 18)}</span>
-      <span style="font-size: 20px; font-weight: 700; line-height: 1.35;">build</span>
+      <span style="font-size: 20px; font-weight: 700; line-height: 1.35;">rt</span>
       <div style="width: 4.8px;"></div>
-      <span class="chip">5 in room</span><span class="chip live"><span class="dot live"></span>3 working</span><span class="chip idle"><span class="dot idle"></span>2 idle</span><span class="chip offline"><span class="dot offline"></span>1 offline: june</span>
+      <span class="chip">2 in room</span><span class="chip live"><span class="dot live"></span>1 working: max</span><span class="chip idle"><span class="dot idle"></span>1 idle: remy</span><span class="chip offline"><span class="dot offline"></span>7 offline</span>
       <span class="chip">wakes: mention ▾</span>
       <div style="flex: 1;"></div>
-      <button class="btn sm" aria-label="Add agents to #build">{ic('userplus', 14)}<span>add agents</span></button>
-      <button class="btn sm" aria-label="Mark #build read">{ic('check', 14)}<span>mark read</span><span class="unread">4</span></button>
+      <button class="btn sm" aria-label="Add agents to #rt">{ic('userplus', 14)}<span>add agents</span></button>
+      <button class="btn sm" aria-label="Mark #rt read">{ic('check', 14)}<span>mark read</span><span class="unread">155</span></button>
     </div>
   </div>
 
   <div class="stack" style="gap: 4.8px;">
     <span class="xs muted" style="font-weight: 600; letter-spacing: 0.04em;">WHAT THE PICKER RETURNS · the rt pane rows, verbatim; null on cancel</span>
-    <div class="code" style="margin: 0;">const picked = await pickPanes({{ context: 'to invite to #build', disable: notInvitable, allowCreate: true }});
+    <div class="code" style="margin: 0;">const picked = await pickPanes({{ context: 'to invite to #rt', disable: notInvitable, allowCreate: true }});
 // ChatPane[] | null
 // {{ paneId: 'w7A:pY', workspace: 'acme', title: 'Evaluate house codegen…',
 //    cwd: '~/Documents/GitHub/acme', repo: 'acme', branch: 'main',
@@ -1118,8 +1276,20 @@ def entry_points():
     </div>
   </div>
 </div>
-""" + tail(900, 560)
+""" + tail(1000, 620)
 
+# ---------------------------------------------------------------- write
+
+pathlib.Path('Main.dc.html').write_text(inbox_board(False))
+pathlib.Path('DaemonDown.dc.html').write_text(inbox_board(True))
+pathlib.Path('Room.dc.html').write_text(room_board())
+pathlib.Path('DirectMessage.dc.html').write_text(dm_board())
+pathlib.Path('Close.dc.html').write_text(close_sheet())
+pathlib.Path('PhoneInbox.dc.html').write_text(phone_inbox_board())
+pathlib.Path('Phone.dc.html').write_text(phone_reader_board())
+pathlib.Path('PhoneRooms.dc.html').write_text(phone_drawer_board())
+pathlib.Path('Fleet.dc.html').write_text(fleet_board())
+pathlib.Path('Indicators.dc.html').write_text(indicators())
 pathlib.Path('NewRoom.dc.html').write_text(new_room())
 pathlib.Path('PanePicker.dc.html').write_text(picker())
 pathlib.Path('NewPane.dc.html').write_text(new_pane())
@@ -1127,35 +1297,30 @@ pathlib.Path('EntryPoints.dc.html').write_text(entry_points())
 
 canvas = {
   "artboards": [
-    {"file": "Main.dc.html", "x": 0, "y": 0, "w": 1440, "h": 900, "title": "Chat — desktop"},
-    {"file": "DaemonDown.dc.html", "x": 0, "y": 1020, "w": 1440, "h": 900, "title": "Chat — daemon down"},
-    {"file": "DirectMessage.dc.html", "x": 0, "y": 2040, "w": 1440, "h": 900, "title": "A DM — with you in it"},
-    {
-      "file": "Close.dc.html",
-      "x": 0,
-      "y": 3060,
-      "w": 1440,
-      "h": 620,
-      "title": "Closing a room or DM"
-    },
-    {"file": "Phone.dc.html", "x": 1560, "y": 0, "w": 390, "h": 844, "title": "Phone — answering @matt"},
-    {"file": "PhoneRooms.dc.html", "x": 2030, "y": 0, "w": 390, "h": 844, "title": "Phone — rooms and buddies"},
-    {"file": "Roster.dc.html", "x": 2500, "y": 0, "w": 420, "h": 900, "title": "The buddy list"},
-    {"file": "Indicators.dc.html", "x": 1560, "y": 1020, "w": 880, "h": 1440, "title": "Indicators"},
-    {"file": "NewRoom.dc.html", "x": 0, "y": 4200, "w": 900, "h": 900, "title": "New room"},
-    {"file": "PanePicker.dc.html", "x": 1000, "y": 4200, "w": 820, "h": 960, "title": "Pane picker"},
-    {"file": "NewPane.dc.html", "x": 1920, "y": 4200, "w": 720, "h": 760, "title": "New pane"},
-    {"file": "EntryPoints.dc.html", "x": 0, "y": 5300, "w": 900, "h": 560, "title": "Entry points"},
+    {"file": "Main.dc.html", "x": 0, "y": 0, "w": 1440, "h": 900, "title": "Inbox (the landing view)"},
+    {"file": "DaemonDown.dc.html", "x": 0, "y": 1020, "w": 1440, "h": 900, "title": "Inbox (daemon down)"},
+    {"file": "Room.dc.html", "x": 0, "y": 2040, "w": 1440, "h": 900, "title": "A room (#rt)"},
+    {"file": "DirectMessage.dc.html", "x": 0, "y": 3060, "w": 1440, "h": 900, "title": "A DM (with you in it)"},
+    {"file": "Close.dc.html", "x": 0, "y": 4420, "w": 1440, "h": 650, "title": "Closing a room or DM"},
+    {"file": "PhoneInbox.dc.html", "x": 1560, "y": 0, "w": 390, "h": 844, "title": "Phone (inbox)"},
+    {"file": "Phone.dc.html", "x": 2030, "y": 0, "w": 390, "h": 844, "title": "Phone (answering @matt)"},
+    {"file": "PhoneRooms.dc.html", "x": 2500, "y": 0, "w": 390, "h": 844, "title": "Phone (the fleet drawer)"},
+    {"file": "Fleet.dc.html", "x": 2970, "y": 0, "w": 420, "h": 940, "title": "The fleet tree"},
+    {"file": "Indicators.dc.html", "x": 1560, "y": 1020, "w": 880, "h": 1560, "title": "Indicators"},
+    {"file": "NewRoom.dc.html", "x": 0, "y": 5240, "w": 900, "h": 900, "title": "New room"},
+    {"file": "PanePicker.dc.html", "x": 1000, "y": 5240, "w": 820, "h": 960, "title": "Pane picker"},
+    {"file": "NewPane.dc.html", "x": 1920, "y": 5240, "w": 720, "h": 760, "title": "New pane"},
+    {"file": "EntryPoints.dc.html", "x": 0, "y": 6340, "w": 1000, "h": 620, "title": "Entry points"},
   ],
   "annotations": [
-    {"id": "presence-ux", "x": 2500, "y": 1020, "w": 420, "text": "AIM, deliberately.\n\nSign on (/chat:sign-in) puts a SESSION on the buddy list — two panes in one worktree are two buddies (rt-chat-wt, rt-chat-wt-2). Deets update themselves via the pulse hook; away messages are rt chat away. Sign off keeps your rooms.\n\nworking = mid-turn, idle = signed in between turns; both get pushed to over the daemon's socket the moment you post, no tail to fall silent. offline (24h) = signed out, greyed, like AIM.\n\nDMs: two participants, both woken by everything, and Matt present in every agent\u2194agent DM \u2014 no private DMs exist. The picker offers DM-instead for buddies not in the room."},
-    {"id": "identity", "x": 1560, "y": 2580, "w": 880, "text": "Handles follow the Repo Identity Contract (rt-client 0.4.0).\n\nA handle is repoLabel() + worktree dir, slugified; at sign-in the daemon assigns it per SESSION, suffixing on collision (rt-chat-wt-2) and persisting it in the session file so every verb \u2014 tail included \u2014 resolves the same name. A serialized identity (remote:gitlab.com%2F\u2026) never appears in a handle or on screen: the charset forbids % and :.\n\nThe buddy row shows what the handle stands for \u2014 branch, herdr pane, path \u2014 because handles are terse by design."},
-    {"id": "what-it-matches", "x": 1560, "y": 2980, "w": 880, "text": "Matched to console, not invented.\n\nPalette, grid and JetBrains Mono: src/app/styles/tokyo-theme.css. Font sizes (xs 10.56 / sm 11.2 / md 12.16), spacing, 6px radii: src/ui/design-system/app-theme.ts. Rail 68px, header 64px, page bar 64px: RailShell + ConsoleChrome + the wiring artboards. Row anatomy, 28px action icons, badge wash: RunRow.tsx. Alert = Mantine light variant, color bad. Drawer = position left, size sm, overlay 0.4.\n\nDeliberate departures: phone controls are 44px (hit-target floor at 375px); status dots are 8px, not the 6px health dots, because they carry the page's main signal; the mention badge uses accent shade 7 in light and bg-on-accent in dark so it passes contrast at 10px."},
-    {"id": "laws", "x": 0, "y": 4080, "w": 1440, "text": "Laws this surface holds.\n\n1. Never render presence while the daemon is unreachable. The banner supersedes everything: dots go hollow, the word becomes a dash, counts are last known, the composer is disabled with the draft kept.\n2. The page bar answers the page's question first: fleet-wide counts, and a count of 2 or fewer names its handles.\n3. The roster is the fleet, not the room; sections are the three statuses; rows stay in sign-in order within a section.\n4. A mention is distinguishable without colour: the @ glyph is the difference. A DM is a pair with \u2194, never a hashed id on screen.\n5. Status lives on the buddy, not on the message. Wide content scrolls inside its own block; prose wraps anywhere.\n6. Times are local. Phone inputs are 16px; controls 44px; return adds a line, the button sends.\n7. Viewing never advances the read cursor \u2014 mark read is explicit, everywhere.\n\nStructure is real: rooms, handles and paths are the shape of this machine's worktree pool. The conversations are illustrative."},
-    {"id": "brief", "x": 0, "y": 5900, "w": 420, "text": "Two components.\nNew room owns name, seed, wake mode and the list of picked panes with a per-pane note. Its 'pick panes' button launches PanePicker.\nPanePicker is standalone: it fetches the pane list, filters, peeks, selects, and resolves with the picked rows. The caller decides which rows are disabled and why. With allowCreate it can also start a new pane (cwd, account, model, effort, opening prompt) and list it as 'starting' until Claude is idle."},
-    {"id": "states", "x": 1000, "y": 5900, "w": 380, "text": "Picker row states drawn: selected (acme, with peek open), selected but working (fred: invite queues), disabled by the caller (meg: already in the room; june: blocked at a prompt), offline (otis), not signed in (mr-board), starting (a pane the picker just spawned).\nLight is the default here, matching every other artboard; flip dark to check it."}
+    {"id": "inbox-ux", "x": 3120, "y": 1020, "w": 420, "text": "The inbox, deliberately.\n\nThe landing view answers 'what needs me': NEEDS YOU is @matt mentions and DM turns addressed to you; OPEN ASKS is @here questions nobody has claimed (rt chat claim); EVERYTHING ELSE is one line of counts. A card opens its message in the reader with the message before it for context; replying from the reader posts to the room with the author already tagged, and marks nothing. Clearing unread is the card's own 'mark #room read'.\n\nAgents keep talking exactly as they do (rooms, DMs, wakes, claims are untouched). The inbox is Matt's lens only."},
+    {"id": "identity", "x": 3120, "y": 1560, "w": 420, "text": "Who is this, at a glance.\n\nHandles are drawn from the first-name pool (lib/chat-names.ts) and pinned to their herdr pane, so a re-sign-in keeps the name. The task line beside every handle is the live herdr join: presence row → pane by session id → the pane title Claude Code maintains. Fallback when the title is just the handle: the branch (when not main), else the worktree folder, muted. Offline rows show sign-out age only. Away messages (rt chat away) replace the task line while set.\n\nThe same line appears everywhere a handle does: the tree, the author line, the hover card, the inbox card, the DM entry's second line."},
+    {"id": "what-it-matches", "x": 3120, "y": 2260, "w": 420, "text": "Matched to console, not invented.\n\nPalette, grid and JetBrains Mono: src/app/styles/tokyo-theme.css. Font sizes (xs 10.56 / sm 11.2 / md 12.16), spacing, 6px radii: app-kit's design-system/app-theme.ts. Rail 68px, header 64px, page bar 64px: RailShell + ConsoleChrome. Row anatomy, 28px action icons, badge wash: RunRow.tsx. Alert = Mantine light variant, color bad. Drawer = position left, size sm, overlay 0.4.\n\nDeliberate departures: phone controls are 44px; status dots are 8px; the mention badge uses accent shade 7 in light. The 10px sprite stands in for the invadrs avatar AgentName draws inside the hue chip."},
+    {"id": "laws", "x": 0, "y": 4180, "w": 1440, "text": "Laws this surface holds.\n\n1. Never render presence while the daemon is unreachable. The banner supersedes everything: dots go hollow, task lines are withheld, counts are last known, the composer is disabled with the draft kept.\n2. The landing view answers 'what needs me' before anything else; rooms are the full record, one click away, never the front door.\n3. The sidebar is one tree: each repo room heads the workstreams inside it, in sign-in order, never re-sorted by status. Repos with agents but no room still appear.\n4. Every handle carries its task line (tree, author line, hover card, inbox card, DM second line). A handle with no line is a bug, not a style choice.\n5. A mention is distinguishable without colour (the @ glyph); a DM is a pair with ↔, never a hashed id. An unclaimed @here ask says so, with its age.\n6. Read messages fold to their first block; unread ones render whole. Expand-all unfolds everything. Wide content scrolls inside its own block.\n7. Viewing never advances the read cursor: mark read is explicit everywhere, and replying posts without marking anything. chat:mark has no per-message cursor, so a card's mark read clears its whole room and its label names the room.\n8. Times are local. Phone inputs are 16px; controls 44px; return adds a line, the button sends.\n\nStructure is real: handles, repos, branches and pane ids are this machine's fleet. The conversations are illustrative."},
+    {"id": "brief", "x": 2760, "y": 5240, "w": 420, "text": "Two components.\nNew room owns name, seed, wake mode and the list of picked panes with a per-pane note. Its 'pick panes' button launches PanePicker.\nPanePicker is standalone: it fetches the pane list, filters, peeks, selects, and resolves with the picked rows. The caller decides which rows are disabled and why. With allowCreate it can also start a new pane (cwd, account, model, effort, opening prompt) and list it as 'starting' until Claude is idle."},
+    {"id": "states", "x": 2760, "y": 5620, "w": 420, "text": "Picker row states drawn: selected (acme, with peek open), selected but working (fred: invite queues), disabled by the caller (meg: already in the room; june: blocked at a prompt), offline (otis), not signed in (mr-board), starting (a pane the picker just spawned).\nLight is the default here, matching every other artboard; flip dark to check it."}
   ],
   "launch": {"view": "canvas"}
 }
 pathlib.Path('canvas.json').write_text(json.dumps(canvas, indent=2))
-print("built 12 artboards + canvas.json")
+print("built 14 artboards + canvas.json")

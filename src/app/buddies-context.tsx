@@ -1,7 +1,7 @@
 import { createContext, useContext, useMemo } from 'react';
 import type { ReactNode } from 'react';
 
-import type { RosterBuddy } from './Roster';
+import type { RosterBuddy } from './roster-types';
 
 export interface BuddyActions {
   /** Insert `@handle` into the composer (the buddy is in the open room). */

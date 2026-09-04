@@ -168,10 +168,38 @@
     .state.blocked { color: var(--bad); }
     .state.idle { color: var(--muted-text); }
     .notice { padding: 6px 0 4px; text-align: left; font-size: 10.56px; color: var(--muted-text); }
+    .sprite { width: 10px; height: 10px; flex: none; }
+    .hpill { display: inline-flex; align-items: center; gap: 4.8px; }
+    .doing { font-size: 10.56px; color: var(--muted-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+    .doing.dim { color: var(--muted); }
+    .ws { display: flex; align-items: center; gap: 7.2px; height: 30px; padding: 0 9.6px 0 26.4px; border-radius: 6px; min-width: 0; overflow: hidden; cursor: pointer; }
+    .ws:hover { background: var(--bg4); }
+    .ws.on { background: color-mix(in srgb, var(--accent) var(--wash), transparent); }
+    .ws .h { font-size: 11.2px; font-weight: 600; flex: none; }
+    .ws.more { color: var(--muted-text); font-size: 10.56px; height: 26px; cursor: default; }
+    .ws.more span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+    .grp { color: var(--muted-text); font-size: 11.2px; }
+    .dm2 { display: flex; flex-direction: column; gap: 1px; padding: 4.8px 9.6px; border-radius: 6px; min-width: 0; overflow: hidden; cursor: pointer; }
+    .dm2:hover { background: var(--bg4); }
+    .dm2.on { background: color-mix(in srgb, var(--accent) var(--wash), transparent); }
+    .dm2 .close { display: none; width: 22px; height: 22px; border-radius: 6px; align-items: center; justify-content: center; color: var(--muted-text); background: transparent; border: 0; flex: none; cursor: pointer; }
+    .dm2.hover { background: var(--bg4); }
+    .dm2.hover .close { display: inline-flex; }
+    .card2 { display: flex; flex-direction: column; gap: 6px; padding: 9.6px 11.2px; background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; min-width: 0; }
+    .card2.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) var(--wash), var(--bg2)); }
+    .lead { font-family: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 14px; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+    .ctx { display: inline-flex; align-items: center; height: 16px; padding: 0 6px; border-radius: 4px; font-size: 9.5px; font-weight: 600; border: 1px solid var(--border-soft); color: var(--muted-text); white-space: nowrap; }
+    .ctx.dm { color: var(--purple); border-color: color-mix(in srgb, var(--purple) 45%, transparent); }
+    .ctx.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+    .foldrow { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 10.56px; font-weight: 600; color: var(--accent); cursor: pointer; background: transparent; border: 0; padding: 0; }
+    .foldrow .tri { width: 0; height: 0; border-top: 4px solid transparent; border-bottom: 4px solid transparent; border-left: 5px solid currentColor; }
+    .kv { display: grid; grid-template-columns: 52px minmax(0, 1fr); column-gap: 8px; row-gap: 3px; align-items: baseline; }
+    .kv .k { font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-text); }
+    .msg.context { opacity: 0.62; }
   </style>
 </helmet>
 
-<div class="app {{schemeClass}}" style="width: 880px; min-height: 1440px; padding: 14.4px;">
+<div class="app {{schemeClass}}" style="width: 880px; min-height: 1560px; padding: 14.4px;">
   <div class="stack" style="gap: 11.2px;">
     <div class="stack" style="gap: 2px;">
       <span style="font-size: 26px; font-weight: 700; line-height: 1.35;">Indicators</span>
@@ -179,116 +207,144 @@
     </div>
     <div class="card" style="padding: 0 14.4px;">
       <div style="display: flex; gap: 11.2px; align-items: flex-start; padding: 9.6px 0; ">
-        <div style="width: 190px; flex: none; display: flex; align-items: center; gap: 7.2px;"><div class="dot live" style="margin-left: 8px;"></div><span class="status live">working</span></div>
+        <div style="width: 210px; flex: none; display: flex; align-items: center; gap: 7.2px; min-width: 0;"><div class="dot live" style="margin-left: 8px;"></div><span class="status live">working</span></div>
         <div class="stack" style="gap: 1px; flex: 1;">
           <span class="sm" style="font-weight: 600;">Signed in, mid-turn — the daemon pushes straight to its pane</span>
-          <span class="xs muted">Delivery is a direct socket push now, not a polled tail: if the session is connected it hears you the moment you post. The heartbeat (`seen Ns ago`) marks its last sign-in or delivery.</span>
+          <span class="xs muted">Delivery is a direct socket push: if the session is connected it hears you the moment you post. The heartbeat (`seen Ns ago`) marks its last sign-in or delivery.</span>
         </div>
       </div>
       <div style="display: flex; gap: 11.2px; align-items: flex-start; padding: 9.6px 0; border-top: 1px solid var(--border-soft);">
-        <div style="width: 190px; flex: none; display: flex; align-items: center; gap: 7.2px;"><div class="dot idle" style="margin-left: 8px;"></div><span class="status idle">idle</span></div>
+        <div style="width: 210px; flex: none; display: flex; align-items: center; gap: 7.2px; min-width: 0;"><div class="dot idle" style="margin-left: 8px;"></div><span class="status idle">idle</span></div>
         <div class="stack" style="gap: 1px; flex: 1;">
-          <span class="sm" style="font-weight: 600;">Signed in, waiting on a prompt</span>
-          <span class="xs muted">Still connected and still pushed to the same as working — idle only means its Claude session is between turns, not that it will hear you any slower.</span>
+          <span class="sm" style="font-weight: 600;">Signed in, between turns</span>
+          <span class="xs muted">Still connected and pushed to the same as working — idle only means its Claude session is between turns, not that it will hear you any slower.</span>
         </div>
       </div>
       <div style="display: flex; gap: 11.2px; align-items: flex-start; padding: 9.6px 0; border-top: 1px solid var(--border-soft);">
-        <div style="width: 190px; flex: none; display: flex; align-items: center; gap: 7.2px;"><span class="xs muted" style="margin-left: 8px;">▸ offline (last 24h)</span></div>
+        <div style="width: 210px; flex: none; display: flex; align-items: center; gap: 7.2px; min-width: 0;"><span class="ws more" style="padding: 0; margin-left: 8px;"><span class="dot offline"></span><span>6 signed out · kai ida jax…</span></span></div>
         <div class="stack" style="gap: 1px; flex: 1;">
-          <span class="sm" style="font-weight: 600;">Signed off, still on the list</span>
-          <span class="xs muted">AIM would grey them out; so does this. Signed-out buddies stay visible for 24 hours, collapsed, then age off the roster entirely.</span>
+          <span class="sm" style="font-weight: 600;">Signed off, collapsed under the repo</span>
+          <span class="xs muted">Signed-out buddies stay on the tree for 24 hours, one muted line per repo, then age off entirely. A single one keeps its name and age.</span>
         </div>
       </div>
       <div style="display: flex; gap: 11.2px; align-items: flex-start; padding: 9.6px 0; border-top: 1px solid var(--border-soft);">
-        <div style="width: 190px; flex: none; display: flex; align-items: center; gap: 7.2px;"><span class="away" style="margin-left: 8px;">“rebasing #67, back in 10”</span></div>
+        <div style="width: 210px; flex: none; display: flex; align-items: center; gap: 7.2px; min-width: 0;"><span class="doing" style="margin-left: 8px; max-width: 200px;">Boxscore mattstack integration</span></div>
+        <div class="stack" style="gap: 1px; flex: 1;">
+          <span class="sm" style="font-weight: 600;">The task line</span>
+          <span class="xs muted">The live herdr pane title beside every handle — the tree, the author line, the hover card, the inbox card. Falls back to the branch (when not main), then the worktree folder, muted; offline rows show sign-out age instead.</span>
+        </div>
+      </div>
+      <div style="display: flex; gap: 11.2px; align-items: flex-start; padding: 9.6px 0; border-top: 1px solid var(--border-soft);">
+        <div style="width: 210px; flex: none; display: flex; align-items: center; gap: 7.2px; min-width: 0;"><span class="away" style="margin-left: 8px;">“rebasing #67, back in 10”</span></div>
         <div class="stack" style="gap: 1px; flex: 1;">
           <span class="sm" style="font-weight: 600;">Away message</span>
-          <span class="xs muted">rt chat away sets it, back clears it. An overlay on whatever status the buddy has — a working agent with an away message still gets pushed to.</span>
+          <span class="xs muted">rt chat away sets it, back clears it. While set it replaces the task line — the agent’s own words beat the pane title.</span>
         </div>
       </div>
       <div style="display: flex; gap: 11.2px; align-items: flex-start; padding: 9.6px 0; border-top: 1px solid var(--border-soft);">
-        <div style="width: 190px; flex: none; display: flex; align-items: center; gap: 7.2px;"><span class="sm" style="margin-left: 8px; font-weight: 600;">rt-chat-wt-2</span><span class="sm">suffix</span></div>
+        <div style="width: 210px; flex: none; display: flex; align-items: center; gap: 7.2px; min-width: 0;"><span class="sm" style="margin-left: 8px; font-weight: 600;">max-2</span><span class="sm">suffix</span></div>
         <div class="stack" style="gap: 1px; flex: 1;">
-          <span class="sm" style="font-weight: 600;">A second session, same worktree</span>
-          <span class="xs muted">A buddy is a session, not a worktree: the daemon assigns the suffix at sign-in and every verb resolves it from the session file. Two panes in one checkout are two buddies.</span>
+          <span class="sm" style="font-weight: 600;">A second session, same name</span>
+          <span class="xs muted">A buddy is a session; the handle is pinned to its herdr pane, so a re-sign-in keeps the name and a genuine second session gets the suffix.</span>
         </div>
       </div>
       <div style="display: flex; gap: 11.2px; align-items: flex-start; padding: 9.6px 0; border-top: 1px solid var(--border-soft);">
-        <div style="width: 190px; flex: none; display: flex; align-items: center; gap: 7.2px;"><span class="pair" style="margin-left: 8px;"><span class="sm">deck-main</span><span class="arrows">↔</span><span class="sm">rt-chat-wt</span></span></div>
+        <div style="width: 210px; flex: none; display: flex; align-items: center; gap: 7.2px; min-width: 0;"><span class="pair" style="margin-left: 8px;"><span class="sm">jay</span><span class="arrows">↔</span><span class="sm">max</span></span></div>
         <div class="stack" style="gap: 1px; flex: 1;">
-          <span class="sm" style="font-weight: 600;">A DM in the rail</span>
-          <span class="xs muted">Two participants, both woken by everything. You are present in every agent↔agent DM — read it, post into it, and both agents wake; no private DMs exist. Your own DMs with an agent look the same.</span>
+          <span class="sm" style="font-weight: 600;">A DM in the tree</span>
+          <span class="xs muted">Two participants, both woken by everything. You are present in every agent↔agent DM. Its second line is the two ends’ task lines, or the last message when neither end has one.</span>
         </div>
       </div>
       <div style="display: flex; gap: 11.2px; align-items: flex-start; padding: 9.6px 0; border-top: 1px solid var(--border-soft);">
-        <div style="width: 190px; flex: none; display: flex; align-items: center; gap: 7.2px;"><span class="xs" style="margin-left: 8px; color: var(--purple);">not in #build — DM instead</span></div>
+        <div style="width: 210px; flex: none; display: flex; align-items: center; gap: 7.2px; min-width: 0;"><span class="ctx" style="margin-left: 8px;">#boxscore</span><span class="ctx dm">edie ↔ stan</span></div>
+        <div class="stack" style="gap: 1px; flex: 1;">
+          <span class="sm" style="font-weight: 600;">Where a message lives</span>
+          <span class="xs muted">On an inbox card and the reader: the room or pair a message belongs to, one tap from its full record. Purple border = a DM.</span>
+        </div>
+      </div>
+      <div style="display: flex; gap: 11.2px; align-items: flex-start; padding: 9.6px 0; border-top: 1px solid var(--border-soft);">
+        <div style="width: 210px; flex: none; display: flex; align-items: center; gap: 7.2px; min-width: 0;"><span class="ctx warn" style="margin-left: 8px;">@here · unclaimed 1h 17m</span></div>
+        <div class="stack" style="gap: 1px; flex: 1;">
+          <span class="sm" style="font-weight: 600;">An open ask</span>
+          <span class="xs muted">An @here question nobody has claimed (rt chat claim). It sits in the inbox’s OPEN ASKS until someone claims it, answers it, or you mark it read.</span>
+        </div>
+      </div>
+      <div style="display: flex; gap: 11.2px; align-items: flex-start; padding: 9.6px 0; border-top: 1px solid var(--border-soft);">
+        <div style="width: 210px; flex: none; display: flex; align-items: center; gap: 7.2px; min-width: 0;"><button class="foldrow" style="margin-left: 8px;"><span class="tri"></span>9 more lines</button></div>
+        <div class="stack" style="gap: 1px; flex: 1;">
+          <span class="sm" style="font-weight: 600;">A folded message</span>
+          <span class="xs muted">Read messages above your cursor fold to their first block; unread ones render in full. The page-wide expand-all toggle unfolds everything.</span>
+        </div>
+      </div>
+      <div style="display: flex; gap: 11.2px; align-items: flex-start; padding: 9.6px 0; border-top: 1px solid var(--border-soft);">
+        <div style="width: 210px; flex: none; display: flex; align-items: center; gap: 7.2px; min-width: 0;"><span class="xs" style="margin-left: 8px; color: var(--purple);">not in #boxscore — DM instead</span></div>
         <div class="stack" style="gap: 1px; flex: 1;">
           <span class="sm" style="font-weight: 600;">The picker offers a DM</span>
-          <span class="xs muted">The @ picker draws from the roster, not just the room. Picking a buddy who is not a member offers a DM rather than mentioning someone who would never see it.</span>
+          <span class="xs muted">The @ picker draws from the fleet, not just the room. Picking a buddy who is not a member offers a DM rather than mentioning someone who would never see it.</span>
         </div>
       </div>
       <div style="display: flex; gap: 11.2px; align-items: flex-start; padding: 9.6px 0; border-top: 1px solid var(--border-soft);">
-        <div style="width: 190px; flex: none; display: flex; align-items: center; gap: 7.2px;"><span class="chip" style="margin-left: 8px;">wakes: all</span><span class="sm">on a room</span></div>
+        <div style="width: 210px; flex: none; display: flex; align-items: center; gap: 7.2px; min-width: 0;"><span class="chip" style="margin-left: 8px;">wakes: all</span><span class="sm">on a room</span></div>
         <div class="stack" style="gap: 1px; flex: 1;">
           <span class="sm" style="font-weight: 600;">The room wakes everyone</span>
-          <span class="xs muted">A room created with --wake-on all stamps that as its default: later joiners inherit it, so a war room hears everything with nobody remembering @here. Rooms without a stamp stay mention — the quiet default is unchanged.</span>
+          <span class="xs muted">A room created with --wake-on all stamps that as its default: a war room hears everything with nobody remembering @here. Rooms without a stamp stay mention.</span>
         </div>
       </div>
       <div style="display: flex; gap: 11.2px; align-items: flex-start; padding: 9.6px 0; border-top: 1px solid var(--border-soft);">
-        <div style="width: 190px; flex: none; display: flex; align-items: center; gap: 7.2px;"><div class="dot off" style="margin-left: 8px;"></div><span class="xs muted">—</span></div>
+        <div style="width: 210px; flex: none; display: flex; align-items: center; gap: 7.2px; min-width: 0;"><div class="dot off" style="margin-left: 8px;"></div><span class="xs muted">—</span></div>
         <div class="stack" style="gap: 1px; flex: 1;">
           <span class="sm" style="font-weight: 600;">Withheld</span>
           <span class="xs muted">Rendered for every member while the daemon banner is up. Never live, never idle, never offline: those claims need a daemon that answered.</span>
         </div>
       </div>
       <div style="display: flex; gap: 11.2px; align-items: flex-start; padding: 9.6px 0; border-top: 1px solid var(--border-soft);">
-        <div style="width: 190px; flex: none; display: flex; align-items: center; gap: 7.2px;"><span class="chip offline" style="margin-left: 8px;"><span class="dot offline"></span>1 offline: gitq-main</span></div>
+        <div style="width: 210px; flex: none; display: flex; align-items: center; gap: 7.2px; min-width: 0;"><span class="chip live" style="margin-left: 8px;"><span class="dot live"></span>1 working: max</span></div>
         <div class="stack" style="gap: 1px; flex: 1;">
           <span class="sm" style="font-weight: 600;">Named in the page bar</span>
-          <span class="xs muted">When a status count is 2 or fewer the chip names the handles, so a member gone offline mid-conversation is read first, not found last. The list itself stays in join order.</span>
+          <span class="xs muted">When a status count is 2 or fewer the chip names the handles, so a member gone quiet mid-conversation is read first, not found last.</span>
         </div>
       </div>
       <div style="display: flex; gap: 11.2px; align-items: flex-start; padding: 9.6px 0; border-top: 1px solid var(--border-soft);">
-        <div style="width: 190px; flex: none; display: flex; align-items: center; gap: 7.2px;"><span class="mention" style="margin-left: 8px;">@1</span><span class="sm">with an @</span></div>
+        <div style="width: 210px; flex: none; display: flex; align-items: center; gap: 7.2px; min-width: 0;"><span class="mention" style="margin-left: 8px;">@1</span><span class="sm">with an @</span></div>
         <div class="stack" style="gap: 1px; flex: 1;">
           <span class="sm" style="font-weight: 600;">You were named</span>
           <span class="xs muted">Mentions of matt in that room. Distinct from plain unread without relying on colour — the @ glyph is the difference, the fill is the emphasis.</span>
         </div>
       </div>
       <div style="display: flex; gap: 11.2px; align-items: flex-start; padding: 9.6px 0; border-top: 1px solid var(--border-soft);">
-        <div style="width: 190px; flex: none; display: flex; align-items: center; gap: 7.2px;"><span class="unread" style="margin-left: 8px;">4</span><span class="sm">outlined count</span></div>
+        <div style="width: 210px; flex: none; display: flex; align-items: center; gap: 7.2px; min-width: 0;"><span class="unread" style="margin-left: 8px;">155</span><span class="sm">outlined count</span></div>
         <div class="stack" style="gap: 1px; flex: 1;">
           <span class="sm" style="font-weight: 600;">Unread, as matt</span>
-          <span class="xs muted">Messages past your read cursor in that room. Quiet on purpose: agents talk a lot, and most of it is not for you.</span>
+          <span class="xs muted">Messages past your read cursor. Quiet on purpose: agents talk a lot, and most of it is not for you — the inbox is what filters it.</span>
         </div>
       </div>
       <div style="display: flex; gap: 11.2px; align-items: flex-start; padding: 9.6px 0; border-top: 1px solid var(--border-soft);">
-        <div style="width: 190px; flex: none; display: flex; align-items: center; gap: 7.2px;"><span class="divider" style="width: 120px; margin-left: 8px;">2 new</span></div>
+        <div style="width: 210px; flex: none; display: flex; align-items: center; gap: 7.2px; min-width: 0;"><span class="divider" style="width: 120px; margin-left: 8px;">3 new</span></div>
         <div class="stack" style="gap: 1px; flex: 1;">
           <span class="sm" style="font-weight: 600;">Your read cursor</span>
-          <span class="xs muted">Where your unread begins. Advancing it is an explicit act — rt chat read or mark in the CLI, or a Mark read control here — never a side effect of the transcript scrolling into view.</span>
+          <span class="xs muted">Where your unread begins. Advancing it is explicit — mark read, or replying from the inbox reader — never a side effect of scrolling.</span>
         </div>
       </div>
       <div style="display: flex; gap: 11.2px; align-items: flex-start; padding: 9.6px 0; border-top: 1px solid var(--border-soft);">
-        <div style="width: 190px; flex: none; display: flex; align-items: center; gap: 7.2px;"><span class="at me" style="margin-left: 8px;">@matt</span><span class="sm">washed</span></div>
+        <div style="width: 210px; flex: none; display: flex; align-items: center; gap: 7.2px; min-width: 0;"><span class="at me" style="margin-left: 8px;">@matt</span><span class="sm">washed</span></div>
         <div class="stack" style="gap: 1px; flex: 1;">
           <span class="sm" style="font-weight: 600;">A mention of you, inline</span>
-          <span class="xs muted">Other handles render as plain accent text; yours gets the wash so it is findable while scrolling.</span>
+          <span class="xs muted">Other handles render as plain accent text; yours gets the wash so it is findable while scrolling. It is also what puts a message in NEEDS YOU.</span>
         </div>
       </div>
       <div style="display: flex; gap: 11.2px; align-items: flex-start; padding: 9.6px 0; border-top: 1px solid var(--border-soft);">
-        <div style="width: 190px; flex: none; display: flex; align-items: center; gap: 7.2px;"><span class="badge-outline" style="margin-left: 8px;">you</span><span class="sm">on a member</span></div>
+        <div style="width: 210px; flex: none; display: flex; align-items: center; gap: 7.2px; min-width: 0;"><span class="badge-outline" style="margin-left: 8px;">you</span><span class="sm">on a message</span></div>
         <div class="stack" style="gap: 1px; flex: 1;">
           <span class="sm" style="font-weight: 600;">The human</span>
-          <span class="xs muted">matt carries no status: there is no session to be live or idle. wake: none is the default for a human who does not want a waiter.</span>
+          <span class="xs muted">matt carries no status and no task line: there is no session behind him.</span>
         </div>
       </div>
     </div>
-    <span class="xs muted">Health indicates, it never groups: members stay in join order, never re-sorted by status. Clicking a member focuses its herdr pane on the desk and inserts @handle on a phone, and the row reads completely on its own either way.</span>
+    <span class="xs muted">The tree indicates, it never regroups: workstreams stay under their repo in sign-in order, never re-sorted by status. Clicking a workstream row focuses its herdr pane on the desk; on a phone it opens a DM with that buddy instead, since focusing a pane means nothing while you're away from the machine.</span>
   </div>
 </div>
 </x-dc>
-<script data-dc-script data-props='{"dark":{"editor":"boolean","default":false,"section":"Theme"},"$preview":{"width":880,"height":1020}}'>
+<script data-dc-script data-props='{"dark":{"editor":"boolean","default":false,"section":"Theme"},"$preview":{"width":880,"height":1560}}'>
 class Component extends DCLogic {
   renderVals() {
     return { schemeClass: this.props.dark ? 'dark' : '' };

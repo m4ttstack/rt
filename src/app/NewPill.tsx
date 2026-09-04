@@ -28,7 +28,8 @@ export function NewPill({ count, onClick }: NewPillProps) {
         gap: 'var(--mantine-spacing-xs)',
         height: 26,
         padding: '0 var(--mantine-spacing-md)',
-        borderRadius: 'var(--mantine-radius-xl)',
+        // A pill on a 26px control, which no radius token lands on.
+        borderRadius: 13,
         fontSize: 'var(--tk-fs-3xs)',
         fontWeight: 600,
         color: ACCENT_TEXT,

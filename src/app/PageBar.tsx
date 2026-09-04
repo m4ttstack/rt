@@ -1,17 +1,21 @@
+import { useState } from 'react';
 import {
   ActionIcon,
   Box,
   Button,
   Group,
   Menu,
-  Select,
+  Popover,
+  ScrollArea,
+  Stack,
   Text,
   Tooltip,
 } from '@mattstack/app-kit/core';
-import { Icon } from '@mattstack/app-kit/icons';
+import { AnimatedChevron, Icon } from '@mattstack/app-kit/icons';
 import type { BuddyStatus, RoomSummary } from '@mattstack/rt-client';
 
 import { AgentName } from './AgentName';
+import { doing, type DoingInput } from './doing';
 import { postMarkRead } from './mark-read';
 import { STATUS_WORD } from './statusDetail';
 import { useExpandAll } from './use-expand-all';
@@ -26,20 +30,6 @@ const PAGE_BAR_ROW = {
   height: '100%',
   width: '100%',
   minWidth: 0,
-} as const;
-
-const CHIP_BASE = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 'var(--mantine-spacing-xs)',
-  height: 22,
-  borderRadius: 'var(--mantine-radius-md)',
-  padding: '0 var(--mantine-spacing-sm)',
-  fontSize: 'var(--tk-fs-3xs)',
-  fontWeight: 500,
-  whiteSpace: 'nowrap',
-  border: '1px solid var(--mantine-color-default-border)',
-  color: 'var(--tk-muted-text)',
 } as const;
 
 /** The artboard's two 30px controls sit on `bg1` with the hairline border,
@@ -64,12 +54,9 @@ const UNREAD_BADGE = {
   whiteSpace: 'nowrap',
 } as const;
 
-export type RoomOrder = 'join' | 'name';
-
-export interface PageBarBuddy {
-  handle: string;
-  status: BuddyStatus;
-}
+/** Wide enough for `doing()`: a DM's bar carries each end's task line, and
+    that is resolved from the same presence row the chips count. */
+export type PageBarBuddy = DoingInput;
 
 export interface PageBarProps {
   room: RoomSummary;
@@ -84,9 +71,9 @@ export interface PageBarProps {
   /** Opens the pane picker to invite agents to this room. The button renders
       only when this is wired, and is disabled while the daemon is down. */
   onAddAgents?: () => void;
-  /** The rail's sort, the artboard's `join order` select. */
-  order?: RoomOrder;
-  onOrderChange?: (order: RoomOrder) => void;
+  /** A prop, not `Date.now()` internally, so a DM's task chips are testable
+      without fake timers. @default Date.now() */
+  now?: number;
 }
 
 function Dot({
@@ -115,29 +102,18 @@ function Dot({
   );
 }
 
-/** A chip whose count is at most two names its handles, so the stuck agent
-    is read first rather than found last; each name carries its card. */
-function NamesSuffix({ handles }: { handles: string[] }) {
-  if (handles.length === 0 || handles.length > 2) return null;
-  return (
-    <>
-      {': '}
-      {handles.map((h, i) => (
-        <span key={h}>
-          {i > 0 && ', '}
-          <AgentName handle={h} />
-        </span>
-      ))}
-    </>
-  );
-}
-
 /** The hash is an icon beside the title, as the artboard draws it, not a
     character in it; a DM is named by its pair. */
 function roomTitle(room: RoomSummary): string {
-  return room.kind === 'dm' && room.participants
-    ? `${room.participants.a} ↔ ${room.participants.b}`
-    : room.room;
+  // A DM is named by its pair, never by its hashed room id (Law 5). A DM
+  // that arrives without participants (a direct link to a malformed room)
+  // gets a neutral label rather than leaking the hash.
+  if (room.kind === 'dm') {
+    return room.participants
+      ? `${room.participants.a} ↔ ${room.participants.b}`
+      : 'Direct message';
+  }
+  return room.room;
 }
 
 function markReadLabel(room: RoomSummary): string {
@@ -168,7 +144,15 @@ export function RoomMenu({
       radius="md"
       shadow="md"
       styles={{
-        item: { minHeight: size >= 44 ? 44 : 24, color: 'var(--tk-fg)' },
+        item: {
+          minHeight: size >= 44 ? 44 : 24,
+          color: 'var(--tk-fg)',
+          // The 44px touch variant grows its type and padding to the tap
+          // scale; the desk keeps Mantine's default item size.
+          ...(size >= 44
+            ? { fontSize: 'var(--tk-fs-2xs)', padding: '3.2px 9.6px' }
+            : {}),
+        },
         dropdown: {
           display: 'flex',
           flexDirection: 'column',
@@ -201,14 +185,188 @@ export function RoomMenu({
   );
 }
 
+const MUTED = { color: 'var(--tk-muted-text)' } as const;
+
+const GROUP_LABEL = {
+  fontSize: 'var(--tk-fs-4xs)',
+  fontWeight: 700,
+  letterSpacing: '0.06em',
+  textTransform: 'uppercase',
+  color: 'var(--tk-muted-text)',
+} as const;
+
+/** One membership chip in place of the fanned-out live/idle/offline chips:
+    a status-dot summary that opens the room's full roster on click. The
+    roster groups by status so each row's status reads from its section, and
+    the wake mode moves into the popover header so the bar sheds a chip. */
+function RoomMembers({
+  room,
+  buddies,
+  reachable,
+  now,
+  wakeMode,
+}: {
+  room: RoomSummary;
+  buddies: PageBarBuddy[];
+  reachable: boolean;
+  now: number;
+  wakeMode: string;
+}) {
+  const [opened, setOpened] = useState(false);
+  const signedIn = signedInCount(buddies);
+  const live = buddies.filter(b => b.status === 'live');
+  const idle = buddies.filter(b => b.status === 'idle');
+  const offline = buddies.filter(b => b.status === 'offline');
+  const groups = [
+    { key: 'live', word: STATUS_WORD.live, members: live },
+    { key: 'idle', word: STATUS_WORD.idle, members: idle },
+    { key: 'offline', word: STATUS_WORD.offline, members: offline },
+  ].filter(g => g.members.length > 0);
+
+  const roomLabel = room.kind === 'dm' ? 'conversation' : `#${room.room}`;
+
+  return (
+    <Popover
+      opened={opened}
+      onChange={setOpened}
+      position="bottom-start"
+      withinPortal
+      shadow="md"
+      radius="md"
+      width={276}
+      trapFocus
+      styles={{ dropdown: { padding: 0, background: 'var(--tk-panel)' } }}
+    >
+      <Popover.Target>
+        <Button
+          variant="default"
+          size="xs"
+          radius="md"
+          data-testid="members-chip"
+          aria-label={`Members of ${roomLabel}`}
+          onClick={() => setOpened(o => !o)}
+          leftSection={
+            <Group gap={3} wrap="nowrap">
+              {live.length > 0 && (
+                <Dot color="var(--tk-dot-ok)" testId="members-dot-live" />
+              )}
+              {idle.length > 0 && (
+                <Dot color="var(--tk-dot-warn)" testId="members-dot-idle" />
+              )}
+              {live.length === 0 && idle.length === 0 && (
+                <Dot hollow testId="members-dot-off" />
+              )}
+            </Group>
+          }
+          rightSection={<AnimatedChevron opened={opened} size={14} />}
+          // The same default/xs control surface as the add-agents and
+          // mark-read buttons beside it, so the bar's controls all match.
+          styles={{
+            root: {
+              ...CONTROL_SURFACE,
+              fontWeight: 500,
+              ...(opened ? { background: 'var(--ui-bg-4)' } : {}),
+            },
+          }}
+        >
+          {signedIn} in {roomLabel}
+          {reachable ? '' : ' · last known'}
+        </Button>
+      </Popover.Target>
+      <Popover.Dropdown data-testid="members-dropdown">
+        <Group
+          justify="space-between"
+          wrap="nowrap"
+          gap="sm"
+          style={{
+            padding: 'var(--mantine-spacing-sm) var(--mantine-spacing-md)',
+            borderBottom: '1px solid var(--tk-border-soft)',
+          }}
+        >
+          <Text fw={700} size="sm">
+            {signedIn} in {roomLabel}
+          </Text>
+          <Text
+            component="span"
+            data-testid="members-wakes"
+            style={{ ...MUTED, fontSize: 'var(--tk-fs-3xs)' }}
+          >
+            wakes: {wakeMode}
+          </Text>
+        </Group>
+        {reachable ? (
+          <ScrollArea.Autosize
+            mah={320}
+            type="auto"
+            scrollbars="y"
+            styles={{ content: { minWidth: 0 } }}
+          >
+            <Stack
+              gap="sm"
+              style={{
+                padding: 'var(--mantine-spacing-sm) var(--mantine-spacing-xs)',
+              }}
+            >
+              {groups.map(g => (
+                <Box key={g.key}>
+                  <Group
+                    gap={6}
+                    wrap="nowrap"
+                    style={{
+                      padding: '0 var(--mantine-spacing-sm)',
+                      marginBottom: 3,
+                    }}
+                  >
+                    <Text component="span" style={GROUP_LABEL}>
+                      {g.word}
+                    </Text>
+                    <Text
+                      component="span"
+                      style={{ ...MUTED, fontSize: 'var(--tk-fs-3xs)' }}
+                    >
+                      {g.members.length}
+                    </Text>
+                  </Group>
+                  <Stack gap={1}>
+                    {g.members.map(b => (
+                      <Box
+                        key={b.handle}
+                        data-testid={`members-row-${b.handle}`}
+                        style={{ padding: '2px var(--mantine-spacing-sm)' }}
+                      >
+                        <AgentName
+                          handle={b.handle}
+                          variant="row"
+                          reachable={reachable}
+                          now={now}
+                          task={doing(b, now)}
+                        />
+                      </Box>
+                    ))}
+                  </Stack>
+                </Box>
+              ))}
+            </Stack>
+          </ScrollArea.Autosize>
+        ) : (
+          <Box style={{ padding: 'var(--mantine-spacing-md)' }}>
+            <Text style={{ ...MUTED, fontSize: 'var(--tk-fs-2xs)' }}>
+              presence withheld while the daemon is down
+            </Text>
+          </Box>
+        )}
+      </Popover.Dropdown>
+    </Popover>
+  );
+}
+
 export function PageBar({
   room,
   buddies,
   reachable = true,
   onMarkedRead,
   onAddAgents,
-  order = 'join',
-  onOrderChange,
+  now = Date.now(),
 }: PageBarProps) {
   const [expandAll, setExpandAll] = useExpandAll();
   const handleMarkRead = () => {
@@ -282,28 +440,6 @@ export function PageBar({
           mark read
         </Button>
       )}
-      {onOrderChange && (
-        <Select
-          size="xs"
-          radius="md"
-          w={168}
-          ml="sm"
-          aria-label="Room order"
-          data-testid="room-order"
-          value={order}
-          onChange={value => {
-            if (value) onOrderChange(value as RoomOrder);
-          }}
-          allowDeselect={false}
-          withCheckIcon={false}
-          data={[
-            { value: 'join', label: 'join order' },
-            { value: 'name', label: 'by name' },
-          ]}
-          rightSection={<Icon name="chevronDown" size={14} />}
-          styles={{ input: CONTROL_SURFACE }}
-        />
-      )}
       <Tooltip
         label={expandAll ? 'Clip long messages' : 'Show every message in full'}
         position="bottom"
@@ -330,40 +466,7 @@ export function PageBar({
     </>
   );
 
-  if (!reachable) {
-    return (
-      <Group
-        align="center"
-        wrap="nowrap"
-        gap="sm"
-        style={PAGE_BAR_ROW}
-        data-testid="page-bar"
-      >
-        {title}
-        <Group
-          gap="sm"
-          wrap="nowrap"
-          style={{ flex: '1 1 0%', minWidth: 0, overflowX: 'auto' }}
-        >
-          <Box component="span" style={CHIP_BASE} data-testid="chip-signed-in">
-            {signedInCount(buddies)} in room · last known
-          </Box>
-          <Box component="span" style={CHIP_BASE} data-testid="chip-withheld">
-            presence withheld
-          </Box>
-        </Group>
-        <Group gap={0} ml="auto" wrap="nowrap">
-          {controls}
-        </Group>
-      </Group>
-    );
-  }
-
   const wakeMode = room.kind === 'dm' ? 'all' : (room.defaultWake ?? 'mention');
-  const live = buddies.filter(b => b.status === 'live');
-  const idle = buddies.filter(b => b.status === 'idle');
-  const offline = buddies.filter(b => b.status === 'offline');
-  const signedInTotal = signedInCount(buddies);
 
   return (
     <Group
@@ -379,51 +482,13 @@ export function PageBar({
         wrap="nowrap"
         style={{ flex: '1 1 0%', minWidth: 0, overflowX: 'auto' }}
       >
-        <Box component="span" style={CHIP_BASE} data-testid="chip-signed-in">
-          {signedInTotal} in room
-        </Box>
-        {live.length > 0 && (
-          <Box
-            component="span"
-            style={{
-              ...CHIP_BASE,
-              borderColor:
-                'color-mix(in srgb, var(--mantine-color-ok-text) 45%, transparent)',
-              color: 'var(--mantine-color-ok-text)',
-            }}
-            data-testid="chip-live"
-          >
-            <Dot color="var(--tk-dot-ok)" testId="dot-live" />
-            {live.length} {STATUS_WORD.live}
-            <NamesSuffix handles={live.map(b => b.handle)} />
-          </Box>
-        )}
-        {idle.length > 0 && (
-          <Box
-            component="span"
-            style={{
-              ...CHIP_BASE,
-              borderColor:
-                'color-mix(in srgb, var(--mantine-color-warn-text) 45%, transparent)',
-              color: 'var(--mantine-color-warn-text)',
-            }}
-            data-testid="chip-idle"
-          >
-            <Dot color="var(--tk-dot-warn)" testId="dot-idle" />
-            {idle.length} {STATUS_WORD.idle}
-            <NamesSuffix handles={idle.map(b => b.handle)} />
-          </Box>
-        )}
-        {offline.length > 0 && (
-          <Box component="span" style={CHIP_BASE} data-testid="chip-offline">
-            <Dot hollow testId="dot-offline" />
-            {offline.length} {STATUS_WORD.offline}
-            <NamesSuffix handles={offline.map(b => b.handle)} />
-          </Box>
-        )}
-        <Box component="span" style={CHIP_BASE} data-testid="chip-wakes">
-          wakes: {wakeMode}
-        </Box>
+        <RoomMembers
+          room={room}
+          buddies={buddies}
+          reachable={reachable}
+          now={now}
+          wakeMode={wakeMode}
+        />
       </Group>
       <Group gap={0} ml="auto" wrap="nowrap">
         {controls}

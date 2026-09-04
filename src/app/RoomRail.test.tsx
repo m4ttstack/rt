@@ -5,7 +5,7 @@ import { expect, test, vi } from 'vitest';
 
 import './icons';
 
-import { RoomRail } from './RoomRail';
+import { FleetDrawer, RoomRail } from './RoomRail';
 
 test('mention badges are visually distinct from plain unread', () => {
   renderWithProviders(
@@ -39,10 +39,30 @@ test('DM rooms sit in a direct section and are named by their pair, never the ha
   // three spans so `.arrows` can carry its own colour, and getByText reads
   // only an element's DIRECT text children. Scoping to the row asserts more
   // than the plan's original line did -- that THIS row is named by its pair.
-  expect(screen.getByTestId('room-row-dm-9f3a2b1c0d4e')).toHaveTextContent(
+  expect(screen.getByTestId('dm-row-dm-9f3a2b1c0d4e')).toHaveTextContent(
     'deck-main ↔ rt-chat-wt'
   );
   expect(screen.queryByText(/dm-9f3a/)).toBeNull();
+});
+
+test('a DM room with no participants renders nowhere, hashed id included', () => {
+  renderWithProviders(
+    <RoomRail
+      rooms={[
+        { room: 'build', memberCount: 3, unread: 0, mentions: 0 },
+        {
+          room: 'dm-orphaned-hash',
+          memberCount: 0,
+          unread: 1,
+          mentions: 0,
+          kind: 'dm',
+        },
+      ]}
+    />
+  );
+  expect(screen.queryByTestId('dm-row-dm-orphaned-hash')).toBeNull();
+  expect(screen.queryByTestId('room-row-dm-orphaned-hash')).toBeNull();
+  expect(screen.queryByText(/dm-orphaned-hash/)).toBeNull();
 });
 
 test('the active room carries the accent wash, and clicking a row selects it', () => {
@@ -127,10 +147,10 @@ test('the hover × closes that row without selecting it', async () => {
       onSelectRoom={onSelectRoom}
     />
   );
-  const close = screen.getByTestId('room-close-dm-1');
+  const close = screen.getByTestId('dm-close-dm-1');
   expect(close).toHaveAttribute('aria-label', 'Close fred ↔ gitq-main');
   expect(close.style.display).toBe('none');
-  await userEvent.hover(screen.getByTestId('room-row-dm-1'));
+  await userEvent.hover(screen.getByTestId('dm-row-dm-1'));
   expect(close.style.display).toBe('');
   await userEvent.click(close);
   expect(onCloseRoom).toHaveBeenCalledWith('dm-1');
@@ -200,6 +220,43 @@ test('without onCloseRoom there is no × and right-click does nothing', () => {
   expect(screen.queryByTestId('room-context-build')).toBeNull();
 });
 
+test('the header names the fleet and counts it, and withholds the count when the daemon is down', () => {
+  const buddies = [
+    {
+      sessionId: 's-max',
+      handle: 'max',
+      baseHandle: 'max',
+      repo: 'rt',
+      signedInAt: 1,
+      lastSeenAt: 2,
+      status: 'live' as const,
+      rooms: ['rt'],
+    },
+    {
+      sessionId: 's-kai',
+      handle: 'kai',
+      baseHandle: 'kai',
+      repo: 'rt',
+      signedInAt: 2,
+      lastSeenAt: 3,
+      signedOutAt: 3,
+      status: 'offline' as const,
+      rooms: ['rt'],
+    },
+  ];
+  const rooms = [{ room: 'rt', memberCount: 2, unread: 0, mentions: 0 }];
+  const { rerender } = renderWithProviders(
+    <RoomRail rooms={rooms} buddies={buddies} />
+  );
+  expect(screen.getByRole('heading', { name: 'FLEET' })).toBeInTheDocument();
+  expect(screen.getByTestId('fleet-count')).toHaveTextContent('1 on · 1 off');
+
+  rerender(
+    <RoomRail rooms={rooms} buddies={buddies} daemonReachable={false} />
+  );
+  expect(screen.getByTestId('fleet-count')).toHaveTextContent('last known');
+});
+
 test('the + renders only with onNewRoom, disables with the daemon down, and fires', async () => {
   const onNewRoom = vi.fn();
   const rooms = [{ room: 'build', memberCount: 1, unread: 0, mentions: 0 }];
@@ -212,4 +269,111 @@ test('the + renders only with onNewRoom, disables with the daemon down, and fire
   rerender(<RoomRail rooms={rooms} onNewRoom={onNewRoom} />);
   await userEvent.click(screen.getByRole('button', { name: 'New room' }));
   expect(onNewRoom).toHaveBeenCalled();
+});
+
+test('the desktop RoomRail wires a workstream tap to onFocusPane, not onSelectBuddy', async () => {
+  const onFocusPane = vi.fn();
+  renderWithProviders(
+    <RoomRail
+      rooms={[{ room: 'build', memberCount: 1, unread: 0, mentions: 0 }]}
+      buddies={[
+        {
+          sessionId: 's-jay',
+          handle: 'jay',
+          baseHandle: 'jay',
+          repo: 'build',
+          signedInAt: 1,
+          lastSeenAt: 1,
+          status: 'live',
+          rooms: ['build'],
+          pane: 'wBT:p1',
+        },
+      ]}
+      onFocusPane={onFocusPane}
+    />
+  );
+  await userEvent.click(screen.getByTestId('ws-jay'));
+  expect(onFocusPane).toHaveBeenCalledWith('wBT:p1');
+});
+
+test('the fleet drawer carries the tree and no BUDDIES heading', () => {
+  renderWithProviders(
+    <FleetDrawer
+      opened
+      onClose={vi.fn()}
+      rooms={[{ room: 'build', memberCount: 1, unread: 0, mentions: 0 }]}
+      buddies={[]}
+      onSelectRoom={vi.fn()}
+      onOpenDm={vi.fn()}
+    />
+  );
+  expect(screen.getByRole('heading', { name: 'FLEET' })).toBeInTheDocument();
+  expect(screen.getByTestId('room-row-build')).toBeInTheDocument();
+  expect(screen.queryByText(/buddies/i)).toBeNull();
+});
+
+test('the fleet drawer selects a room and closes itself', async () => {
+  const onSelectRoom = vi.fn();
+  const onClose = vi.fn();
+  renderWithProviders(
+    <FleetDrawer
+      opened
+      onClose={onClose}
+      rooms={[{ room: 'build', memberCount: 1, unread: 0, mentions: 0 }]}
+      buddies={[]}
+      onSelectRoom={onSelectRoom}
+      onOpenDm={vi.fn()}
+    />
+  );
+  await userEvent.click(screen.getByTestId('room-row-build'));
+  expect(onSelectRoom).toHaveBeenCalledWith('build');
+  expect(onClose).toHaveBeenCalled();
+});
+
+test('tapping a workstream row in the fleet drawer opens a DM, not a focused pane', async () => {
+  const onOpenDm = vi.fn();
+  const onClose = vi.fn();
+  renderWithProviders(
+    <FleetDrawer
+      opened
+      onClose={onClose}
+      rooms={[{ room: 'build', memberCount: 1, unread: 0, mentions: 0 }]}
+      buddies={[
+        {
+          sessionId: 's-jay',
+          handle: 'jay',
+          baseHandle: 'jay',
+          repo: 'build',
+          signedInAt: 1,
+          lastSeenAt: 1,
+          status: 'live',
+          rooms: ['build'],
+          pane: 'wBT:p1',
+        },
+      ]}
+      onSelectRoom={vi.fn()}
+      onOpenDm={onOpenDm}
+    />
+  );
+  await userEvent.click(screen.getByTestId('ws-jay'));
+  expect(onOpenDm).toHaveBeenCalledWith('jay');
+  expect(onClose).toHaveBeenCalled();
+});
+
+test('the fleet drawer names the daemon health and closes on its own close control', async () => {
+  const onClose = vi.fn();
+  renderWithProviders(
+    <FleetDrawer
+      opened
+      onClose={onClose}
+      rooms={[]}
+      buddies={[]}
+      onSelectRoom={vi.fn()}
+      onOpenDm={vi.fn()}
+      daemonReachable={false}
+    />
+  );
+  expect(screen.getByText('rt daemon unreachable')).toBeInTheDocument();
+  await userEvent.click(screen.getByLabelText('Close'));
+  expect(onClose).toHaveBeenCalled();
 });

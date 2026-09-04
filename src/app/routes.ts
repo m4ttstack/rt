@@ -21,10 +21,12 @@ function decodeParam(raw: string): string | undefined {
 
 /**
  * The app's route table, as a hook: the current location in, a structured
- * route out. `/r/<room>#m-<id>` is the link rt prints after a post and on
- * a wake line, so that shape is a contract with repo-tools'
- * lib/chat-viewer-url.ts. `/demo` and the canonical PAGE_SHELL_DEMO_PATH
- * both render the PageShell showcase; any other /demo/* is not-found.
+ * route out. `home` is the Inbox, the landing view: it opens no room at all,
+ * so arriving at `/` never means facing a room's backlog. `/r/<room>#m-<id>`
+ * is the link rt prints after a post and on a wake line, so that shape is a
+ * contract with repo-tools' lib/chat-viewer-url.ts. `/demo` and the
+ * canonical PAGE_SHELL_DEMO_PATH both render the PageShell showcase; any
+ * other /demo/* is not-found.
  */
 export function useAppRoute(): AppRoute {
   const [isHome] = useRoute('/');

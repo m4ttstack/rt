@@ -10,6 +10,19 @@ export const DOT_COLOR: Record<'live' | 'idle', string> = {
   idle: 'var(--tk-dot-warn)',
 };
 
+/** `.doing` and every other extra-small meta line. */
+export const MUTED_XS = {
+  fontSize: 'var(--tk-fs-3xs)',
+  color: 'var(--tk-muted-text)',
+} as const;
+
+/** `.doing.dim`: the honest "nothing better known" state for a `kind:
+    'path'` task line -- one step dimmer than `MUTED_XS`. */
+export const MUTED_XS_DIM = {
+  fontSize: 'var(--tk-fs-3xs)',
+  color: 'var(--tk-muted)',
+} as const;
+
 export function headTruncatePath(cwd: string): string {
   const segments = cwd.split('/').filter(Boolean);
   const leaf = segments.at(-1) ?? cwd;
@@ -27,8 +40,10 @@ export function Tag({ handle, room }: { handle: string; room: string }) {
         alignItems: 'center',
         height: 14,
         padding: '0 var(--mantine-spacing-xs)',
-        borderRadius: 'var(--mantine-radius-md)',
-        fontSize: 'var(--tk-fs-4xs)',
+        // A pill on a 14px chip, and the artboards' smallest type step --
+        // neither lands on a Mantine radius or font-size token.
+        borderRadius: 7,
+        fontSize: 'var(--tk-fs-5xs)',
         fontWeight: 500,
         whiteSpace: 'nowrap',
         border: `1px solid ${

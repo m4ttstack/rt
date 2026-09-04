@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -21,12 +22,18 @@ import ScrollToBottom, {
   useScrollTo,
 } from 'react-scroll-to-bottom';
 
-import { AgentName } from './AgentName';
-import { dayKey, dayLabel } from './day-label';
+import { isOpenAsk } from '../shared/open-ask';
+import { AgentName, MESSAGE_HANDLE } from './AgentName';
+import { useBuddies } from './buddies-context';
+import { dayKey, dayLabel, localTime } from './day-label';
+import { doing } from './doing';
+import { foldPlan, readBoundary, type FoldEntry } from './folding';
+import { CtxChip } from './InboxCard';
 import { MessageMarkdown } from './MessageMarkdown';
 import { NewPill } from './NewPill';
 import { useRelayFrames, useRelayOpen } from './relay-socket';
 import { speakerHue } from './speaker-hue';
+import { formatElapsed } from './statusDetail';
 import prose from './transcript-prose.module.css';
 import scrollClasses from './transcript-scroll.module.css';
 import { useExpandAll } from './use-expand-all';
@@ -162,15 +169,21 @@ export interface TranscriptProps {
   /** When set and >0, splits a `.divider` ("N new / mark read") before the
       last N messages. Not wired to a real read cursor yet -- there is no
       `lastReadId` in this prop surface -- but gives the divider a real,
-      audit-reachable mount point. */
+      audit-reachable mount point. The same count also draws the read/unread
+      line messages fold against: everything before it renders its first
+      block, everything from it on renders whole. */
   unreadCount?: number;
   /** Element id of the message a `#m-<id>` link points at; scrolled into
       view once per room+anchor, the first time it is in the list. */
   anchor?: string;
   onMarkRead?: () => void;
-  /** Task 7's `Composer`, rendered inside this SAME card below the
-      messages -- the artboard draws one `.card` (scroll area, then the
-      composer row), never two stacked cards. */
+  /** A DM never carries an `@here` chip -- there is no room of bystanders
+      to claim it -- so the unclaimed-ask check is skipped outright rather
+      than re-deriving DM-ness from the messages themselves. @default false */
+  isDm?: boolean;
+  /** The `Composer`, rendered inside this SAME card below the messages --
+      the artboard draws one `.card` (scroll area, then the composer row),
+      never two stacked cards. */
   footer?: ReactNode;
   /** Phone.dc.html draws the transcript with NO card of its own -- flush on
       the page background, no border or radius -- since the phone shell's
@@ -182,37 +195,36 @@ export interface TranscriptProps {
   notice?: ReactNode;
 }
 
-function pad(n: number): string {
-  return String(n).padStart(2, '0');
-}
-
-/** Local time, deliberately -- never the UTC the timestamp is stored in. */
-function formatLocalTime(ts: number): string {
-  const d = new Date(ts);
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
 function MessageBody({
   message,
   humanHandle,
   startExpanded,
+  foldEntry,
 }: {
   message: ChatMessage;
   humanHandle: string | undefined;
   startExpanded: boolean;
+  /** Undefined only when the message isn't in `foldPlan`'s own list (never
+      true for a row `Transcript` actually renders); treated as unread. */
+  foldEntry: FoldEntry | undefined;
 }) {
   const bodyRef = useRef<HTMLDivElement>(null);
   const [tall, setTall] = useState(false);
   const [expanded, setExpanded] = useState(startExpanded);
-  // App-wide override: when on, nothing folds and the per-message control
-  // stays hidden, since there is nothing left to reveal.
+  // Clicking a folded row's own "N more lines" unfolds that ONE message; the
+  // same control re-folds it ("fewer lines"), so this toggles per row.
+  const [readUnfolded, setReadUnfolded] = useState(false);
+  // App-wide override: when on, nothing folds -- read-fold or the tall-body
+  // fold below -- and every per-message control stays hidden, since there
+  // is nothing left to reveal.
   const [expandAll] = useExpandAll();
 
   // A fenced code block's highlighter loads lazily and can grow the body
   // well after this mounts, so a one-shot measurement would miss it; the
   // observer re-measures whenever the unclamped content settles. The fold
   // clip lives on an ancestor Box, never on this ref's own element, so
-  // folding itself never re-triggers the observer.
+  // folding itself never re-triggers the observer. It also re-fires when
+  // read-fold swaps the first block in for the full body (or back).
   useLayoutEffect(() => {
     const el = bodyRef.current;
     if (!el) return;
@@ -224,6 +236,16 @@ function MessageBody({
   }, [message.id]);
 
   const folded = tall && !expanded && !expandAll;
+  const moreLines = foldEntry?.moreLines ?? 0;
+  // A single-block body has nothing left to reveal, so it never counts as
+  // read-folded even when `foldEntry.folded` says the message is read --
+  // rendering its one block whole is identical to rendering it "folded".
+  // A message that CAN read-fold (read, multi-block); `readFolded` is that
+  // minus the per-row unfold. The control shows in both states so the unfold
+  // is reversible.
+  const readFoldable =
+    (foldEntry?.folded ?? false) && moreLines > 0 && !expandAll;
+  const readFolded = readFoldable && !readUnfolded;
   // The wrapper shape stays IDENTICAL whether or not `tall` is true: a
   // position whose element type changes on re-render gets remounted by
   // React, which would drop the live CodeHighlight instance and reset the
@@ -239,6 +261,7 @@ function MessageBody({
             body={message.body}
             mentions={message.mentions}
             humanHandle={humanHandle}
+            firstBlockOnly={readFolded}
           />
         </div>
       </Box>
@@ -254,6 +277,23 @@ function MessageBody({
           }}
         >
           {folded ? 'show more' : 'show less'}
+        </UnstyledButton>
+      )}
+      {readFoldable && (
+        <UnstyledButton
+          data-testid="read-fold-toggle"
+          className={prose.foldrow}
+          aria-expanded={readUnfolded}
+          onClick={() => setReadUnfolded(u => !u)}
+        >
+          <Box
+            component="span"
+            className={prose.tri}
+            data-open={readUnfolded ? 'true' : undefined}
+          />
+          {readUnfolded
+            ? 'fewer lines'
+            : `${moreLines} more line${moreLines === 1 ? '' : 's'}`}
         </UnstyledButton>
       )}
     </Box>
@@ -312,16 +352,36 @@ function YouBadge() {
   );
 }
 
+/** `.ctx.warn` under an unanswered room `@here`: `@here · unclaimed <age>`. */
+function UnclaimedChip({ postedAt }: { postedAt: number }) {
+  return (
+    <Group gap="sm" wrap="nowrap" style={{ marginTop: 8 }}>
+      <CtxChip warn testId="unclaimed-chip">
+        @here · unclaimed {formatElapsed(Date.now() - postedAt)}
+      </CtxChip>
+    </Group>
+  );
+}
+
 function MessageRow({
   message,
   humanHandle,
   anchored,
+  foldEntry,
+  unclaimed,
 }: {
   message: ChatMessage;
   humanHandle: string | undefined;
   anchored: boolean;
+  foldEntry: FoldEntry | undefined;
+  unclaimed: boolean;
 }) {
   const mine = humanHandle !== undefined && message.handle === humanHandle;
+  // matt has no session behind him, so no buddy row and no task line -- the
+  // lookup below falls through to `undefined` for him on its own.
+  const ctx = useBuddies();
+  const author = ctx?.byHandle.get(message.handle);
+  const task = ctx?.reachable && author ? doing(author, ctx.now) : null;
   return (
     <div
       id={`m-${message.id}`}
@@ -334,6 +394,8 @@ function MessageRow({
           handle={message.handle}
           variant="inline"
           hue={speakerHue(message.handle, humanHandle)}
+          task={task}
+          size={MESSAGE_HANDLE}
         />
         {mine && <YouBadge />}
         <Text
@@ -341,14 +403,16 @@ function MessageRow({
           title={new Date(message.postedAt).toLocaleString()}
           style={{ color: 'var(--tk-muted-text)' }}
         >
-          {formatLocalTime(message.postedAt)}
+          {localTime(message.postedAt)}
         </Text>
       </div>
       <MessageBody
         message={message}
         humanHandle={humanHandle}
         startExpanded={anchored}
+        foldEntry={foldEntry}
       />
+      {unclaimed && <UnclaimedChip postedAt={message.postedAt} />}
     </div>
   );
 }
@@ -424,6 +488,7 @@ export function Transcript({
   footer,
   bare = false,
   notice,
+  isDm = false,
 }: TranscriptProps) {
   const [messages, setMessages] = useState(initialMessages);
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -625,12 +690,36 @@ export function Transcript({
   }
   loadOlderRef.current = () => void loadOlder();
 
-  const dividerAt =
+  // The exact index `foldPlan` folds against too -- see its own doc comment
+  // for why the fold line and this divider must read one shared number.
+  const dividerAt = readBoundary(messages.length, unreadCount);
+  // The divider itself stays hidden at both extremes: nothing to mark off
+  // when everything is read (unreadCount 0/undefined) or when the whole
+  // loaded page is unread (dividerAt would sit at index 0, above the very
+  // first row).
+  const showDivider =
     unreadCount !== undefined &&
     unreadCount > 0 &&
-    unreadCount < messages.length
-      ? messages.length - unreadCount
-      : -1;
+    unreadCount < messages.length;
+
+  const plan = useMemo(
+    () => foldPlan(messages, unreadCount, anchor),
+    [messages, unreadCount, anchor]
+  );
+
+  // An unclaimed `@here` only ever flags an UNREAD room message -- a DM has
+  // no bystanders to claim it (`isOpenAsk` itself doesn't know DM from
+  // room), and a read one already got its answer or its silence noted.
+  const unclaimedIds = useMemo(() => {
+    const ids = new Set<number>();
+    if (isDm) return ids;
+    for (let i = dividerAt; i < messages.length; i += 1) {
+      const message = messages[i]!;
+      const laterInRoom = messages.filter(m => m.id > message.id);
+      if (isOpenAsk(message, laterInRoom)) ids.add(message.id);
+    }
+    return ids;
+  }, [messages, dividerAt, isDm]);
 
   return (
     <Box
@@ -714,7 +803,7 @@ export function Transcript({
                         dayKey(message.postedAt)) && (
                       <DayDivider label={dayLabel(message.postedAt)} />
                     )}
-                    {i === dividerAt && (
+                    {showDivider && i === dividerAt && (
                       <Group
                         gap="sm"
                         wrap="nowrap"
@@ -756,6 +845,8 @@ export function Transcript({
                       message={message}
                       humanHandle={humanHandle}
                       anchored={anchor === `m-${message.id}`}
+                      foldEntry={plan.get(message.id)}
+                      unclaimed={unclaimedIds.has(message.id)}
                     />
                   </Fragment>
                 ))}

@@ -10,6 +10,7 @@ import {
   chatRooms,
   chatWho,
   getSetting,
+  paneList,
   type ChatMessage,
   type InviteResult,
   type RoomSummary,
@@ -21,12 +22,15 @@ import { validator } from 'hono/validator';
 
 import {
   fixtureBuddies,
+  fixtureInbox,
   fixtureInvite,
+  fixtureMark,
   fixtureMembers,
   fixtureMessages,
   fixtureRooms,
   fixturesEnabled,
 } from './fixtures';
+import { buildInbox } from './inbox';
 
 /**
  * Resolved at CALL time (mirrors rt-client's own `defaultSock()` convention):
@@ -56,6 +60,26 @@ function parseIntParam(raw: string | undefined): number | undefined {
 }
 
 const CHAT_NAME = /^[a-z0-9._-]+$/;
+
+/**
+ * sessionId -> the herdr pane title Claude Code maintains for that session.
+ * Degrades to an empty map on any failure, herdr being down included: the
+ * buddy roster is the important half of `/api/chat/buddies` and must never
+ * 502 because the pane list could not be read.
+ */
+async function paneTitleBySessionId(): Promise<Map<string, string>> {
+  try {
+    const res = await paneList(rtOpts());
+    if (!res?.ok || !res.data) return new Map();
+    const map = new Map<string, string>();
+    for (const pane of res.data.panes) {
+      if (pane.sessionId && pane.title) map.set(pane.sessionId, pane.title);
+    }
+    return map;
+  } catch {
+    return new Map();
+  }
+}
 
 /** The daemon's own defaults for `chat:messages`, so fixtures page the
     same way: the newest `limit` (1..500, 50 unasked), oldest first, and
@@ -162,6 +186,52 @@ async function unjoinedFleetRooms(
   });
 }
 
+interface DmLastMessage {
+  handle: string;
+  body: string;
+}
+
+/** A one-line preview, so the whole body of a long post never crosses the
+    wire for text the sidebar truncates anyway. */
+const DM_PREVIEW_CAP = 120;
+
+/**
+ * The newest message per DM room, for the fleet tree's DM second line.
+ * That line prefers what the two ends are doing; this is the fallback for a
+ * pair whose panes report no title, and only DM rooms carry it -- a channel
+ * row has badges to say what changed.
+ *
+ * One `chatMessages` per DM room, in parallel and non-fatal: a room whose
+ * tail fails to read renders the pair form instead of failing the listing.
+ */
+async function withDmLastMessage(
+  rooms: RoomSummary[]
+): Promise<(RoomSummary & { lastMessage?: DmLastMessage })[]> {
+  const dms = rooms.filter(r => r.kind === 'dm');
+  if (dms.length === 0) return rooms;
+  const tails = await Promise.all(
+    dms.map(r =>
+      chatMessages({ room: r.room, limit: 1 }, rtOpts()).catch(() => null)
+    )
+  );
+  const byRoom = new Map<string, DmLastMessage>();
+  dms.forEach((room, i) => {
+    const tail = tails[i];
+    const message = tail?.ok ? tail.data?.messages.at(-1) : undefined;
+    if (!message) return;
+    byRoom.set(room.room, {
+      handle: message.handle,
+      // Collapsed, not just cut: a body's newlines and fences would otherwise
+      // reach the client as a "one-line" preview that is nothing of the sort.
+      body: message.body.replace(/\s+/g, ' ').trim().slice(0, DM_PREVIEW_CAP),
+    });
+  });
+  return rooms.map(room => {
+    const lastMessage = byRoom.get(room.room);
+    return lastMessage ? { ...room, lastMessage } : room;
+  });
+}
+
 export const chat = new Hono()
   .get('/api/chat/rooms', async c => {
     if (fixturesEnabled()) return c.json({ rooms: fixtureRooms() }, 200);
@@ -173,7 +243,40 @@ export const chat = new Hono()
 
     const joined = res.data?.rooms ?? [];
     const extra = await unjoinedFleetRooms(joined);
-    return c.json({ rooms: [...joined, ...extra] }, 200);
+    const rooms = await withDmLastMessage([...joined, ...extra]);
+    return c.json({ rooms }, 200);
+  })
+  // `RoomSummary.unread` is a count, not a cursor id -- the daemon keeps
+  // the actual read position internally and never exposes it. The newest
+  // `min(unread, 50)` messages in a room stand in for "after the cursor",
+  // fetched with the existing paging (no `before`, so `chatMessages`
+  // returns the newest page). A room whose message fetch fails still
+  // contributes its unread/mentions counts to `elsewhere` via `buildInbox`.
+  .get('/api/chat/inbox', async c => {
+    const handle = humanHandle(c);
+    if (fixturesEnabled()) return c.json(fixtureInbox(handle), 200);
+
+    const roomsRes = await chatRooms({ handle }, rtOpts());
+    if (!roomsRes.ok || !roomsRes.data) {
+      return c.json({ error: roomsRes.error ?? 'rooms: no data' }, 502);
+    }
+    const unreadRooms = roomsRes.data.rooms.filter(r => r.unread > 0);
+
+    const pages = await Promise.all(
+      unreadRooms.map(r =>
+        chatMessages(
+          { room: r.room, limit: Math.min(r.unread, 50) },
+          rtOpts()
+        ).catch(() => null)
+      )
+    );
+    const pagesByRoom = new Map<string, ChatMessage[]>();
+    unreadRooms.forEach((r, i) => {
+      const res = pages[i];
+      if (res?.ok && res.data) pagesByRoom.set(r.room, res.data.messages);
+    });
+
+    return c.json(buildInbox(unreadRooms, pagesByRoom, handle), 200);
   })
   .get('/api/chat/who/:room', async c => {
     const room = c.req.param('room');
@@ -183,12 +286,13 @@ export const chat = new Hono()
     if (!res.ok) return c.json({ error: res.error }, 502);
     return c.json(res.data, 200);
   })
-  // Buddies composition (1 + rooms daemon calls, deliberately uncached):
+  // Buddies composition (2 + rooms daemon calls, deliberately uncached):
   // chatBuddies() gives the roster; the human's own chatRooms() gives the
   // set of rooms worth asking about; one chatWho() per room inverts
   // room -> members into handle -> rooms. Never re-derives a daemon-owned
   // status and never spawns git for `branch` -- both come straight off
-  // chatBuddies()'s PresenceRow.
+  // chatBuddies()'s PresenceRow. The pane list rides alongside the rooms
+  // wave as one more call, joined onto each buddy by sessionId.
   .get('/api/chat/buddies', async c => {
     if (fixturesEnabled()) return c.json({ buddies: fixtureBuddies() }, 200);
     const buddiesRes = await chatBuddies(rtOpts());
@@ -201,11 +305,14 @@ export const chat = new Hono()
     // human's rooms: the human is in no room he never joined, which was
     // every fleet room, so every buddy read as being nowhere. One wave of
     // calls, in buddy order, so a failure is that buddy's alone.
-    const perBuddy = await Promise.all(
-      buddiesRes.data.buddies.map(b =>
-        chatRooms({ handle: b.handle }, rtOpts()).catch(() => null)
-      )
-    );
+    const [perBuddy, paneTitles] = await Promise.all([
+      Promise.all(
+        buddiesRes.data.buddies.map(b =>
+          chatRooms({ handle: b.handle }, rtOpts()).catch(() => null)
+        )
+      ),
+      paneTitleBySessionId(),
+    ]);
     const roomsByHandle = new Map<string, string[]>();
     buddiesRes.data.buddies.forEach((b, i) => {
       const r = perBuddy[i];
@@ -218,10 +325,14 @@ export const chat = new Hono()
       roomsByHandle.set(b.handle, tags);
     });
 
-    const buddies = buddiesRes.data.buddies.map(buddy => ({
-      ...buddy,
-      rooms: roomsByHandle.get(buddy.handle) ?? [],
-    }));
+    const buddies = buddiesRes.data.buddies.map(buddy => {
+      const paneTitle = paneTitles.get(buddy.sessionId);
+      return {
+        ...buddy,
+        rooms: roomsByHandle.get(buddy.handle) ?? [],
+        ...(paneTitle !== undefined ? { paneTitle } : {}),
+      };
+    });
     return c.json({ buddies }, 200);
   })
   .get(
@@ -264,6 +375,10 @@ export const chat = new Hono()
     }),
     async c => {
       const { room } = c.req.valid('json');
+      if (fixturesEnabled()) {
+        fixtureMark(room);
+        return c.json({ ok: true }, 200);
+      }
       const res = await chatMark({ handle: humanHandle(c), room }, rtOpts());
       if (!res.ok) return c.json({ error: res.error }, 502);
       return c.json(res.data, 200);

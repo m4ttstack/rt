@@ -176,7 +176,7 @@ export function PaneRow({
               flex: 'none',
               borderRadius: '50%',
               // Hollow for both "no presence" and an offline one -- the same
-              // muted/grey treatment `Roster`'s offline dot uses.
+              // muted/grey treatment `FleetTree`'s offline dot uses.
               background:
                 pane.presence && pane.presence.status !== 'offline'
                   ? (DOT_COLOR[pane.presence.status as 'live' | 'idle'] ??
@@ -255,7 +255,7 @@ export function PaneRow({
               border: `1px solid ${BORDER}`,
               borderRadius: 'var(--mantine-radius-sm)',
               fontFamily: 'inherit',
-              fontSize: 'var(--tk-fs-2xs)',
+              fontSize: 'var(--tk-fs-small)',
               lineHeight: 1.5,
               whiteSpace: 'pre',
               overflowX: 'auto',

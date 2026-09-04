@@ -1,6 +1,19 @@
 import { useEffect, useRef } from 'react';
 
 export type RelayFrame = { topic?: unknown; payload?: unknown };
+
+/** A `chat/<room>/msg` relay topic -- the only frame the daemon still emits
+    for chat (delivery v2 dropped the separate `chat/wake/<handle>` relay).
+    Lives here rather than in a component so every subscriber filters on the
+    same string, since the topic shape is the daemon's contract. */
+export function isMsgTopic(topic: unknown): topic is string {
+  return (
+    typeof topic === 'string' &&
+    topic.startsWith('chat/') &&
+    topic.endsWith('/msg')
+  );
+}
+
 type Listener = (frame: RelayFrame) => void;
 type OpenListener = (reconnect: boolean) => void;
 

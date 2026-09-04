@@ -8,9 +8,10 @@
  * turns "screenshot the app" into a real conformance check rather than a
  * screenshot of an empty shell.
  *
- * The values are lifted from `design/build.py`'s BUDDIES, MEMBERS, MSGS and
- * OFFLINE tables, so a fixture screenshot and the artboard are showing the
- * same content. If build.py's tables change, change these with them.
+ * The buddy/room/member/message values are lifted from `design/build.py`'s
+ * FLEET, ROOMS, DMS and RT_MSGS tables (the pane fixtures below keep their
+ * own separate cast), so a fixture screenshot and the artboard are showing
+ * the same content. If build.py's tables change, change these with them.
  *
  * Dev-only, opt-in, and never on by default: `fixturesEnabled()` is the only
  * gate and it reads the env at call time so a running server can be pointed
@@ -26,7 +27,10 @@ import type {
   PaneDirectory,
   PaneFocusResult,
   PresenceRow,
+  RoomSummary,
 } from '@mattstack/rt-client';
+
+import { buildInbox, type InboxPayload } from './inbox';
 
 /** Off unless explicitly asked for. Read at call time, never cached. */
 export function fixturesEnabled(): boolean {
@@ -38,143 +42,273 @@ const S = 1000;
 const M = 60 * S;
 const H = 60 * M;
 
-type Buddy = PresenceRow & { status: BuddyStatus; rooms: string[] };
+type Buddy = PresenceRow & {
+  status: BuddyStatus;
+  rooms: string[];
+  paneTitle?: string;
+};
+
+interface FleetEntry {
+  h: string;
+  repo: string;
+  branch: string;
+  st: BuddyStatus;
+  title?: string;
+  pane?: string;
+  /** How long ago this row was last seen (live/idle) or signed out (offline). */
+  seenAgo: number;
+  cwd: string;
+}
+
+/** design/build.py's FLEET table, verbatim. */
+const FLEET: FleetEntry[] = [
+  {
+    h: 'max',
+    repo: 'rt',
+    branch: 'main',
+    st: 'live',
+    title: 'max',
+    pane: 'wAR:p3',
+    seenAgo: 12 * S,
+    cwd: '/Users/matt/Documents/GitHub/repo-tools',
+  },
+  {
+    h: 'edie',
+    repo: 'skills',
+    branch: 'main',
+    st: 'live',
+    title: 'Pipeline iteration loop',
+    pane: 'wBP:p1',
+    seenAgo: 2 * M,
+    cwd: '/Users/matt/Documents/GitHub/mattstack-skills',
+  },
+  {
+    h: 'jay',
+    repo: 'boxscore',
+    branch: 'feat/metrics-hardening',
+    st: 'live',
+    title: 'Boxscore mattstack integration',
+    pane: 'wBT:p1',
+    seenAgo: 40 * S,
+    cwd: '/Users/matt/Documents/GitHub/boxscore/.claude/worktrees/metrics-hardening',
+  },
+  {
+    h: 'remy',
+    repo: 'rt',
+    branch: 'main',
+    st: 'idle',
+    pane: 'wAM:pF',
+    seenAgo: 9 * M,
+    cwd: '/Users/matt/Documents/GitHub/repo-tools',
+  },
+  {
+    h: 'gail',
+    repo: 'board',
+    branch: 'main',
+    st: 'offline',
+    seenAgo: 3 * M,
+    cwd: '/Users/matt/Documents/GitHub/board',
+  },
+  {
+    h: 'kai',
+    repo: 'rt',
+    branch: 'main',
+    st: 'offline',
+    seenAgo: 16 * H,
+    cwd: '/Users/matt/Documents/GitHub/repo-tools',
+  },
+  {
+    h: 'ida',
+    repo: 'rt',
+    branch: 'main',
+    st: 'offline',
+    seenAgo: 15 * H,
+    cwd: '/Users/matt/Documents/GitHub/repo-tools',
+  },
+  {
+    h: 'jax',
+    repo: 'rt',
+    branch:
+      'goodwinmattheweric/rt-96-provision-blocks-on-claim-time-ready-steps-run-them-async',
+    st: 'offline',
+    seenAgo: 23 * H,
+    cwd: '/Users/matt/.mattstack/rt/worktrees/m4ttstack-rt/proud-marble',
+  },
+  {
+    h: 'sid',
+    repo: 'rt',
+    branch: 'main',
+    st: 'offline',
+    seenAgo: 23 * H,
+    cwd: '/Users/matt/Documents/GitHub/repo-tools',
+  },
+  {
+    h: 'meg',
+    repo: 'skills',
+    branch: 'main',
+    st: 'offline',
+    seenAgo: 23 * H,
+    cwd: '/Users/matt/Documents/GitHub/matt-skills',
+  },
+  {
+    h: 'stan',
+    repo: 'console',
+    branch: 'main',
+    st: 'offline',
+    seenAgo: 17 * H,
+    cwd: '/Users/matt/Documents/GitHub/console',
+  },
+  {
+    h: 'elsa',
+    repo: 'rt',
+    branch: 'main',
+    st: 'offline',
+    seenAgo: 20 * H,
+    cwd: '/Users/matt/Documents/GitHub/repo-tools',
+  },
+  {
+    h: 'wren',
+    repo: 'rt',
+    branch: 'main',
+    st: 'offline',
+    seenAgo: 20 * H,
+    cwd: '/Users/matt/Documents/GitHub/repo-tools',
+  },
+];
+
+/** design/build.py's ROOMS table: repo -> room; `board` has agents but no room. */
+const REPO_ROOMS: Record<string, string> = {
+  rt: 'rt',
+  skills: 'skills',
+  console: 'console',
+  boxscore: 'boxscore',
+};
+const ROOMS_META: Record<string, readonly [mentions: number, unread: number]> =
+  {
+    rt: [1, 155],
+    skills: [0, 9],
+    console: [0, 3],
+    boxscore: [0, 6],
+  };
+
+/** design/build.py's DMS table: (a, c, unread). */
+const DMS: ReadonlyArray<readonly [string, string, number]> = [
+  ['max', 'stan', 4],
+  ['jay', 'max', 3],
+  ['edie', 'stan', 14],
+  ['kai', 'remy', 102],
+];
+/** The DM room name is a real hashed pair-key shape, never rendered. */
+const DM_ROOM: Record<string, string> = {
+  'max|stan': 'dm-3a7f912ce0b6',
+  'jay|max': 'dm-8c1d4e6a2f90',
+  'edie|stan': 'dm-5b9e02771ac4',
+  'kai|remy': 'dm-e41f7a3c68bd',
+};
+/** design/build.py's LAST table: the newest message per pair, which the tree's
+    DM second line falls back to. `jay|max` has none on purpose -- jay's pane
+    title wins there, so the fallback never runs. */
+const DM_LAST: Record<string, { handle: string; body: string }> = {
+  'max|stan': {
+    handle: 'stan',
+    body: 'holding the console settings page until 2.8.1 lands',
+  },
+  'edie|stan': {
+    handle: 'edie',
+    body: 'pack compile is green, cutting the loop over',
+  },
+  'kai|remy': {
+    handle: 'remy',
+    body: 'tail died again at 03:12, restarting the daemon',
+  },
+};
+const dmPartners = new Set(DMS.flatMap(([a, c]) => [a, c]));
 
 export function fixtureBuddies(now = Date.now()): Buddy[] {
-  const row = (
-    handle: string,
-    status: BuddyStatus,
-    signedInAgo: number,
-    extra: Partial<Buddy>
-  ): Buddy => ({
-    sessionId: `fixture-${handle}`,
-    handle,
-    baseHandle: handle.replace(/-\d+$/, ''),
-    signedInAt: now - signedInAgo,
-    lastSeenAt: now,
-    status,
-    rooms: [],
-    ...extra,
+  return FLEET.map(f => {
+    const rooms = [
+      REPO_ROOMS[f.repo],
+      dmPartners.has(f.h) ? 'dm' : undefined,
+    ].filter((x): x is string => Boolean(x));
+    return {
+      sessionId: `fixture-${f.h}`,
+      handle: f.h,
+      baseHandle: f.h,
+      repo: f.repo,
+      branch: f.branch,
+      pane: f.pane,
+      cwd: f.cwd,
+      signedInAt: now - f.seenAgo - 4 * H,
+      lastSeenAt: now - f.seenAgo,
+      status: f.st,
+      rooms,
+      ...(f.st === 'offline' ? { signedOutAt: now - f.seenAgo } : {}),
+      ...(f.title ? { paneTitle: f.title } : {}),
+    };
   });
-
-  return [
-    row('rt-chat-wt', 'live', 3 * H, {
-      branch: 'feat/rt-chat',
-      pane: '3',
-      cwd: '/Users/matt/GitHub/repo-tools-chat-wt',
-      lastSeenAt: now - 12 * S,
-      statusText: 'rebasing #67, back in 10',
-      rooms: ['build', 'repo-tools', 'dm'],
-    }),
-    row('rt-chat-wt-2', 'live', 2 * H, {
-      branch: 'feat/rt-chat',
-      pane: '7',
-      cwd: '/Users/matt/GitHub/repo-tools-chat-wt',
-      lastSeenAt: now - 4 * S,
-      rooms: ['repo-tools'],
-    }),
-    row('deck-main', 'live', 5 * H, {
-      branch: 'main',
-      pane: '1',
-      cwd: '/Users/matt/GitHub/deck',
-      lastSeenAt: now - 40 * S,
-      rooms: ['build', 'dm'],
-    }),
-    row('board-fix-auth', 'idle', 4 * H, {
-      branch: 'fix-auth',
-      pane: '5',
-      cwd: '/Users/matt/GitHub/board-wt/fix-auth',
-      lastSeenAt: now - 9 * M,
-      statusText: 'waiting on CI',
-      rooms: ['build'],
-    }),
-    row('mr-board-onboard', 'idle', 6 * H, {
-      branch: 'invite-onboarding',
-      pane: '2',
-      cwd: '/Users/matt/GitHub/mr-board-wt-invite-onboarding',
-      lastSeenAt: now - 31 * M,
-      rooms: ['build'],
-    }),
-    row('gitq-main', 'offline', 7 * H, {
-      branch: 'main',
-      pane: '6',
-      cwd: '/Users/matt/GitHub/gitq',
-      signedOutAt: now - 22 * M,
-      rooms: ['build'],
-    }),
-    row('workforest-e2e', 'offline', 9 * H, {
-      branch: 'e2e',
-      cwd: '/Users/matt/GitHub/workforest',
-      signedOutAt: now - 2 * H,
-      rooms: [],
-    }),
-  ];
 }
 
-/** The DM room name is a real hashed pair-key shape, never rendered. */
-export const FIXTURE_DM = 'dm-9f3a2b1c0d4e';
+/** `max ↔ stan`, this cast's busiest DM. */
+export const FIXTURE_DM = DM_ROOM['max|stan']!;
 
-export function fixtureRooms(now = Date.now()) {
-  return [
-    { room: 'build', memberCount: 6, unread: 4, mentions: 1 },
-    { room: 'demo-42', memberCount: 2, unread: 2, mentions: 0 },
-    { room: 'repo-tools', memberCount: 3, unread: 0, mentions: 0 },
-    {
-      room: FIXTURE_DM,
-      memberCount: 3,
-      unread: 1,
-      mentions: 1,
-      kind: 'dm' as const,
-      participants: { a: 'deck-main', b: 'rt-chat-wt' },
-    },
-    {
-      room: 'dm-4c7e1f0a9b2d',
-      memberCount: 2,
-      unread: 1,
-      mentions: 0,
-      kind: 'dm' as const,
-      participants: { a: 'rt-chat-wt', b: 'matt' },
-    },
-    {
-      room: 'retro-0819',
-      memberCount: 3,
-      unread: 0,
-      mentions: 0,
-      archivedAt: now - 3 * 24 * H,
-    },
-    {
-      room: 'dm-7b2e9c4d1a0f',
-      memberCount: 2,
-      unread: 0,
-      mentions: 0,
-      kind: 'dm' as const,
-      participants: { a: 'board-fix-auth', b: 'matt' },
-      archivedAt: now - 5 * 24 * H,
-    },
-  ];
+/**
+ * Rooms `chat:mark` has cleared this process. Without it the mark-read
+ * controls the artboards draw on every surface do nothing here, and the
+ * read/unread states that hang off the count -- the fold, above all -- are
+ * unreachable, so a fixtures run can neither show nor audit them.
+ */
+const marked = new Set<string>();
+
+/** `POST /api/chat/mark` under fixtures. No room clears every room: that is
+    the sweep's own meaning everywhere else in this app. */
+export function fixtureMark(room?: string): void {
+  if (room) marked.add(room);
+  else {
+    for (const r of fixtureRooms()) marked.add(r.room);
+  }
 }
 
-const ARCHIVED_MEMBERS: Record<string, string[]> = {
-  'retro-0819': ['deck-main', 'gitq-main'],
-};
+export function fixtureRooms(): (RoomSummary & {
+  lastMessage?: { handle: string; body: string };
+})[] {
+  const repoRooms = (['rt', 'skills', 'boxscore', 'console'] as const).map(
+    room => {
+      const [mentions, unread] = ROOMS_META[room]!;
+      const read = marked.has(room);
+      return {
+        room,
+        memberCount: FLEET.filter(f => REPO_ROOMS[f.repo] === room).length,
+        unread: read ? 0 : unread,
+        mentions: read ? 0 : mentions,
+      };
+    }
+  );
+  const dmRooms = DMS.map(([a, c, unread]) => {
+    const lastMessage = DM_LAST[`${a}|${c}`];
+    const room = DM_ROOM[`${a}|${c}`]!;
+    return {
+      room,
+      memberCount: 3,
+      unread: marked.has(room) ? 0 : unread,
+      mentions: 0,
+      kind: 'dm' as const,
+      participants: { a, b: c },
+      ...(lastMessage ? { lastMessage } : {}),
+    };
+  });
+  return [...repoRooms, ...dmRooms];
+}
 
 export function fixtureMembers(room: string, now = Date.now()) {
   const buddies = fixtureBuddies(now);
-  const online = buddies.filter(b => b.status !== 'offline');
   // A DM's membership is its participant pair, which is not discoverable
   // from `rooms` (that carries the literal tag "dm", never the room name).
-  // Looking it up keeps the second DM from reporting an empty room.
   const dm = fixtureRooms().find(r => r.room === room && r.kind === 'dm');
-  const pair = dm?.participants;
-  const inRoom = pair
-    ? [pair.a, pair.b].filter(h => h !== 'matt')
-    : (ARCHIVED_MEMBERS[room] ??
-      online.filter(b => b.rooms.includes(room)).map(b => b.handle));
+  const inRoom = dm?.participants
+    ? [dm.participants.a, dm.participants.b].filter(h => h !== 'matt')
+    : buddies.filter(b => b.rooms.includes(room)).map(b => b.handle);
 
   return inRoom.map(handle => {
-    // The full (unfiltered) list: `ARCHIVED_MEMBERS` can name a buddy who has
-    // since gone offline, and an archived room keeping a stale member is
-    // exactly the case worth fixturing, not a lookup to fail on.
     const b = buddies.find(x => x.handle === handle)!;
     return {
       room,
@@ -189,138 +323,178 @@ export function fixtureMembers(room: string, now = Date.now()) {
 }
 
 /**
- * The Main artboard's transcript, verbatim. The long stack trace is
- * deliberate: it is the fixture that proves a code block scrolls inside its
- * own container instead of widening the page.
+ * The same 40-error tsc log formula as `design/build.py`'s `_tsc_log()`: two
+ * files of alternating `kind`/`glyph` TS2339s, so the #rt fixture below
+ * carries the same long fenced code block the artboard folds behind
+ * "show more".
+ */
+function tscLog(): string {
+  const lines: string[] = [];
+  for (let i = 1; i <= 20; i++) {
+    const field = i % 2 ? 'kind' : 'glyph';
+    lines.push(
+      `commands/run.ts:${100 + i}:22 - error TS2339: Property '${field}' does not exist on type 'PickRow'.`
+    );
+  }
+  for (let i = 1; i <= 20; i++) {
+    const field = i % 2 ? 'kind' : 'glyph';
+    lines.push(
+      `commands/run-picker-rows.test.ts:${30 + i}:14 - error TS2339: Property '${field}' does not exist on type 'PickRow'.`
+    );
+  }
+  lines.push('');
+  lines.push('Found 40 errors in 2 files.');
+  lines.push('error: script "type-check" exited with code 2');
+  return lines.join('\n');
+}
+
+/**
+ * The #rt artboard's transcript, verbatim (design/build.py's RT_MSGS): a
+ * yesterday cluster then today's tsc-red thread, ending in the full log.
+ * Any other room gets a one-line starter, since build.py only spells out
+ * #rt's conversation in full.
  */
 export function fixtureMessages(room: string, now = Date.now()): ChatMessage[] {
-  if (room === 'retro-0819') {
-    const at = (daysAgo: number, minutes: number) =>
-      now - daysAgo * 24 * H + minutes * M;
+  if (room === 'rt') {
+    const at = (minutesAgo: number) => now - minutesAgo * M;
     return [
       {
-        id: 301,
+        id: 601,
         room,
-        handle: 'deck-main',
-        body: 'retro for the 0819 incident: what went wrong, what we keep.',
-        postedAt: at(3, 0),
+        handle: 'wren',
+        body: '@kai @max main is red on typecheck since #174 (f7880316): `lib/setup/tests/validators-rt-health.test.ts:71` references NOOP_FZF, which is not defined anywhere.',
+        // >24h so it lands on a different calendar date than the closing
+        // message no matter what time of day this runs.
+        postedAt: at(1600),
+        mentions: ['kai', 'max'],
+      },
+      {
+        id: 602,
+        room,
+        handle: 'max',
+        body: '@here checks CI on main is green again from 2aeb61f7: the NOOP_FZF typecheck red was my tool.rt test, and docs:check was the generated git/commit reference drifting. Re-run your required checks.',
+        postedAt: at(1500),
         mentions: [],
       },
       {
-        id: 302,
+        id: 603,
         room,
-        handle: 'gitq-main',
-        body: 'the stack rebase raced the deploy. we keep: never restack while deck is mid-restart.',
-        postedAt: at(3, 14),
+        handle: 'max',
+        body: '@here Release-relevant, for whoever cuts 2.8.1: the first GUI create walkthrough of mattstack.app on a clean macOS 26 guest is green end to end tonight. Nothing tagged; Matt holds the tag.',
+        postedAt: at(1400),
         mentions: [],
       },
       {
-        id: 303,
+        id: 604,
         room,
-        handle: 'deck-main',
-        body: 'agreed. writing it into the deploy loop doc.',
-        postedAt: at(2, 5),
+        handle: 'max',
+        body:
+          'heads-up: main tsc is red since 85f18ee8 (picker: action rows). `commands/run.ts:106` and `run-picker-rows.test.ts` use `PickRow.kind` / `.glyph` but `lib/ui/protocol.ts` PickRow has neither field (only the PickRowKind type landed).\n\n' +
+          '| check | state |\n| --- | --- |\n| typecheck | red since `85f18ee8` |\n| picker tests | 40 failures, same two fields |\n| audit corrections | green, untouched |\n\n' +
+          'Whoever owns the picker lane: please add the two fields or hold run.ts back. Not touching it from my lane (audit corrections).',
+        postedAt: at(10),
         mentions: [],
       },
       {
-        id: 304,
+        id: 605,
         room,
-        handle: 'gitq-main',
-        body: 'done on my side too. closing this out.',
-        postedAt: at(2, 40),
-        mentions: [],
+        handle: 'matt',
+        body: 'hold run.ts back until the fields land. @max post here when main is green again.',
+        postedAt: at(6),
+        mentions: ['max'],
       },
-    ];
-  }
-  if (room !== 'build') {
-    return [
       {
-        id: 1,
+        id: 606,
         room,
-        handle: 'rt-chat-wt',
-        body: 'start of this conversation',
-        postedAt: now - 30 * M,
+        handle: 'max',
+        body:
+          'reverting 85f18ee8 now. the full red, for the record:\n```\n' +
+          tscLog() +
+          '\n```',
+        postedAt: at(4),
         mentions: [],
       },
     ];
   }
 
-  const msg = (
-    id: number,
-    handle: string,
-    minsAgo: number,
-    body: string,
-    mentions: string[] = []
-  ): ChatMessage => ({
-    id,
-    room,
-    handle,
-    body,
-    postedAt: now - minsAgo * M,
-    mentions,
-  });
+  // The Main artboard's own inbox thread: max's set-up, then jay's question
+  // for Matt. The pair is what the reader draws, context message included.
+  if (room === 'boxscore') {
+    return [
+      {
+        id: 411,
+        room,
+        handle: 'max',
+        body: '@jay when you pick metrics-hardening up: rt 2.8.1 moved the settings resolver, so read every knob through `getSetting`. Details in our DM.',
+        postedAt: now - 99 * M,
+        mentions: ['jay'],
+      },
+      {
+        id: 412,
+        room,
+        handle: 'jay',
+        body:
+          '@matt metrics-hardening is ready for review: PR #12, 31 tests green.\n\n' +
+          'What landed: p95 gauges on the ingest path, retry counters on the exporter, and `metrics.flushMs` read through `getSetting` at machine scope (max confirmed the scope in our DM).\n\n' +
+          'Want the dashboard split into its own PR, or keep it in this one?',
+        postedAt: now - 29 * M,
+        mentions: ['matt'],
+      },
+    ];
+  }
+
+  // The artboard's second NEEDS YOU card: a DM Matt is not part of, which
+  // still needs him because it names him.
+  if (room === DM_ROOM['edie|stan']) {
+    return [
+      {
+        id: 719,
+        room,
+        handle: 'stan',
+        body: 'the console settings page is holding until 2.8.1 lands.',
+        postedAt: now - 40 * M,
+        mentions: [],
+      },
+      {
+        id: 720,
+        room,
+        handle: 'edie',
+        body: '@matt the loop needs a call: keep the skills compile step inside rt, or move it into the pack so acme owns it?',
+        postedAt: now - 18 * M,
+        mentions: ['matt'],
+      },
+    ];
+  }
 
   return [
-    msg(
-      42,
-      'deck-main',
-      8,
-      'gateway restart done: @rt-chat-wt chat.mattstack resolves, password gate is on.',
-      ['rt-chat-wt']
-    ),
-    msg(
-      43,
-      'rt-chat-wt',
-      7,
-      'thanks. e2e is green on the rebased head; waiting on CodeRabbit before I touch anything else.'
-    ),
-    msg(
-      44,
-      'board-fix-auth',
-      5,
-      'heads up: I moved the shared fixture to `test/fixtures/home.ts`. Anyone importing the old path gets:\n```\nTypeError: Cannot find module "../fixtures/home"\n  at board/src/server/__tests__/auth.test.ts:4:22\n  at loadAndEvaluateModule (bun:internal)\n```'
-    ),
-    msg(45, 'rt-chat-wt', 4, 'not me: chat imports nothing from board.'),
-    msg(
-      46,
-      'deck-main',
-      2,
-      "two of the three ports on 9401 are mine; leaving the third for the viewer. @rt-chat-wt confirm you don't need it.",
-      ['rt-chat-wt']
-    ),
-    msg(
-      47,
-      'rt-chat-wt',
-      1,
-      '@matt PR #67 is green and CodeRabbit is clean: ok to merge, or do you want the rebase first?',
-      ['matt']
-    ),
-    msg(
-      1005,
-      'rt-chat-wt',
-      0.9,
-      'not me. chat imports nothing from board.\n\n# Rebase record\n\nWhat the rebase changed, for the record:\n\n## Confirmed\n\n1. the fixture move is the only cross-repo edit\n2. e2e stays green on the rebased head\n3. CodeRabbit has not answered yet\n\n### Checks\n\n| check | state |\n| --- | --- |\n| typecheck | green |\n| e2e | green on `feat/rt-chat` |\n| CodeRabbit | pending |'
-    ),
-    msg(
-      1006,
-      'matt',
-      0.7,
-      'merge it. @board-fix-auth post the full auth output once, then we drop it.',
-      ['board-fix-auth']
-    ),
-    msg(
-      48,
-      'board-fix-auth',
-      0.5,
-      'full jest output for the auth suite, for the record:\n```\n' +
-        Array.from({ length: 60 }, (_, i) =>
-          i % 7 === 6
-            ? `  ✕ auth › refresh token rotates (${120 + i} ms)`
-            : `  ✓ auth › case ${i + 1} (${3 + (i % 5)} ms)`
-        ).join('\n') +
-        '\n```'
-    ),
+    {
+      id: 1,
+      room,
+      handle: FLEET.find(f => REPO_ROOMS[f.repo] === room)?.h ?? 'max',
+      body: 'start of this conversation',
+      postedAt: now - 30 * M,
+      mentions: [],
+    },
   ];
+}
+
+/**
+ * `/api/chat/inbox` under `CHAT_FIXTURES=1`: reuses `buildInbox` over
+ * `fixtureRooms()`/`fixtureMessages()` rather than hand-authoring a payload,
+ * so a change to the fixture tables stays reflected here for free.
+ */
+export function fixtureInbox(
+  humanHandle: string,
+  now = Date.now()
+): InboxPayload {
+  const rooms = fixtureRooms();
+  const pagesByRoom = new Map<string, ChatMessage[]>();
+  for (const room of rooms) {
+    if (room.unread <= 0) continue;
+    const messages = fixtureMessages(room.room, now);
+    pagesByRoom.set(room.room, messages.slice(-Math.min(room.unread, 50)));
+  }
+  return buildInbox(rooms, pagesByRoom, humanHandle);
 }
 
 /** The picker artboard's rows: one per state it draws. Keep in step with

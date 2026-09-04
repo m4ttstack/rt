@@ -14,6 +14,16 @@ const MONTHS = [
   'Dec',
 ];
 
+function pad(n: number): string {
+  return String(n).padStart(2, '0');
+}
+
+/** Local time, deliberately -- never the UTC the timestamp is stored in. */
+export function localTime(ts: number): string {
+  const d = new Date(ts);
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 /** The local calendar day a timestamp falls on, as a comparable key. */
 export function dayKey(ts: number): string {
   const d = new Date(ts);

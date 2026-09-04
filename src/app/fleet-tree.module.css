@@ -1,0 +1,40 @@
+/* A workstream row's hover wash. It lives in CSS rather than a `useHover`
+   state because nothing about the row's BEHAVIOUR turns on hover -- unlike
+   the room and DM rows, whose × must exist in the DOM for keyboard focus
+   and for a test to reach, so those keep the JS state. */
+.wsRow:hover {
+  background: var(--ui-bg-4);
+}
+
+/* The click-to-focus hint. Absolutely placed so it costs the task line no
+   width at rest; it fades in only on row hover. The task text is
+   `overflow: hidden`, so the pill's wash (fading to the hover background)
+   simply covers the text end beneath it. `pointer-events: none` keeps the
+   click landing on the row itself. */
+.focusHint {
+  position: absolute;
+  right: var(--mantine-spacing-md);
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding-left: 16px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 100ms ease;
+  color: var(--tk-muted-text);
+  font-size: var(--tk-fs-4xs);
+  white-space: nowrap;
+  background: linear-gradient(90deg, transparent, var(--ui-bg-4) 14px);
+}
+.wsRow:hover .focusHint {
+  opacity: 1;
+}
+
+/* The `N more` DM control. `.ws.more`'s own `cursor: default` is right for
+   the inert offline roll-up and wrong here: this row is the only way to
+   reach a conversation the cap hides, so it reads and behaves as a control. */
+.moreRow:hover {
+  background: var(--ui-bg-4);
+}

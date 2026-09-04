@@ -142,15 +142,17 @@ The dot ramp and the text ramp are **different colours on purpose** — the dots
 are saturated for signal at 8px, the text is the readable ramp. Using one for
 both is the most common way this gets flattened.
 
-## Two things drawn that are deliberately not built
+## One thing drawn that is deliberately not built
 
-Do not implement them because the artboard shows them:
+Do not implement it because the artboard shows it:
 
 - the `not joined` badge on a room. The server does ship the data
   (`/api/chat/rooms` unions the fleet's rooms with `joined: false`), and an
   early build drew the badge; it was dropped in the PageShell rework because
   posting auto-joins, so "not joined" told the human nothing he could act on.
   `RailRoom.joined` is still typed and currently unread.
-- focusing a herdr pane from a roster member row. The picker now addresses a
-  pane by id (`/api/panes/:id/peek`), so that is no longer a blocker, but the
-  roster row itself still has no focus action wired.
+
+(Focusing a herdr pane from a fleet-tree row, previously on this list, is
+now drawn AND built: `POST /api/panes/:id/focus` was already wired for the
+hover card's `focus pane` button, and the 2026-09-02 round makes clicking a
+workstream row use it too.)

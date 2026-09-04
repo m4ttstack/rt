@@ -5,6 +5,7 @@ import {
   fixtureAccounts,
   fixtureBuddies,
   fixtureDirectories,
+  fixtureInbox,
   fixtureInvite,
   fixtureMembers,
   fixtureMessages,
@@ -46,33 +47,32 @@ test('the roster covers every status the design draws', () => {
     acc[b.status] = (acc[b.status] ?? 0) + 1;
     return acc;
   }, {});
-  // Matches design/build.py's BUDDIES + OFFLINE tables: 3 / 2 / 2.
-  expect(byStatus).toEqual({ live: 3, idle: 2, offline: 2 });
+  // Matches design/build.py's FLEET table: 3 live, 1 idle, 9 offline.
+  expect(byStatus).toEqual({ live: 3, idle: 1, offline: 9 });
 });
 
 test('the roster exercises the states that break layout', () => {
   const buddies = fixtureBuddies();
   const byHandle = (h: string) => buddies.find(b => b.handle === h)!;
 
-  // An away message, so the italic quote line renders somewhere.
-  expect(byHandle('board-fix-auth').statusText).toBe('waiting on CI');
-  // A buddy with no away message, so the row must collapse cleanly.
-  expect(byHandle('deck-main').statusText).toBeUndefined();
-  // A deep path, so head-truncation is visible rather than theoretical.
-  expect(byHandle('mr-board-onboard').cwd).toContain(
-    'mr-board-wt-invite-onboarding'
-  );
-  // A suffixed handle, which is what a second session on one repo looks like.
-  expect(byHandle('rt-chat-wt-2').baseHandle).toBe('rt-chat-wt');
+  // A real pane title, so the doing() title path renders somewhere.
+  expect(byHandle('edie').paneTitle).toBe('Pipeline iteration loop');
+  expect(byHandle('jay').paneTitle).toBe('Boxscore mattstack integration');
+  // max's title equals its own handle, the deliberate case that exercises
+  // doing()'s fallback past a title that merely repeats the handle.
+  expect(byHandle('max').paneTitle).toBe('max');
+  // idle with no title at all, so doing() falls through to branch/path.
+  expect(byHandle('remy').paneTitle).toBeUndefined();
+  // A ticket-slug branch on a scratch prefix, the case stripBranchPrefix()
+  // exists for.
+  expect(byHandle('jax').branch).toContain('rt-96-provision-blocks');
   // An offline buddy carries signedOutAt and nothing else worth showing.
-  expect(byHandle('workforest-e2e').signedOutAt).toBeGreaterThan(0);
+  expect(byHandle('gail').signedOutAt).toBeGreaterThan(0);
 });
 
 test('DM rooms carry participants and a hashed name that is never shown', () => {
-  const dms = fixtureRooms().filter(
-    r => r.kind === 'dm' && r.archivedAt === undefined
-  );
-  expect(dms).toHaveLength(2);
+  const dms = fixtureRooms().filter(r => r.kind === 'dm');
+  expect(dms).toHaveLength(4);
   for (const dm of dms) {
     expect(dm.room).toMatch(/^dm-[0-9a-f]{12}$/);
     expect(dm.participants?.a).toBeTruthy();
@@ -82,44 +82,44 @@ test('DM rooms carry participants and a hashed name that is never shown', () => 
 
 test('a DM room reports exactly its two agent participants', () => {
   const members = fixtureMembers(FIXTURE_DM).map(m => m.handle);
-  expect(members).toEqual(['deck-main', 'rt-chat-wt']);
+  expect(members).toEqual(['max', 'stan']);
   expect(fixtureMembers(FIXTURE_DM)[0]!.wakeOn).toBe('all');
 });
 
-test('the build transcript carries the wide code block on purpose', () => {
-  const msgs = fixtureMessages('build');
+test('the #rt transcript carries the tsc-red thread, ending in the full log', () => {
+  const msgs = fixtureMessages('rt');
   const withCode = msgs.find(m => m.body.includes('```'));
   // This fixture is the one that proves a code block scrolls inside its own
   // container rather than widening the page.
   expect(withCode).toBeDefined();
-  expect(withCode!.body).toContain('loadAndEvaluateModule');
-  // And a mention of the human, so the .at.me treatment has something to hit.
-  expect(msgs.some(m => m.mentions.includes('matt'))).toBe(true);
-  // The structured message walks the whole heading ramp (h1/h2/h3) plus a
-  // table, so the design audit has an h1, an h2 and a th to probe.
-  const structured = msgs.find(m => m.body.includes('## Confirmed'));
-  expect(structured?.body).toContain('# Rebase record');
-  expect(structured?.body).toContain('### Checks');
-  expect(structured?.body).toContain('| check | state |');
+  expect(withCode!.body).toContain('Found 40 errors in 2 files.');
+  expect(withCode!.body.split('\n').length).toBeGreaterThan(40);
+  // A mention of a real handle, so the .at treatment has something to hit.
+  expect(msgs.some(m => m.mentions.includes('max'))).toBe(true);
+  // The structured message carries the markdown table.
+  const structured = msgs.find(m => m.body.includes('| check | state |'));
+  expect(structured?.body).toContain('picker tests');
   expect(msgs.some(m => m.handle === 'matt')).toBe(true);
+  // The thread spans a day boundary: the design's "Yesterday"/"Today" split.
+  expect(new Date(msgs[0]!.postedAt).getDate()).not.toBe(
+    new Date(msgs.at(-1)!.postedAt).getDate()
+  );
 });
 
-test('fixtures carry an archived channel, an archived DM, and a long code post', () => {
-  const rooms = fixtureRooms();
-  const archived = rooms.filter(r => r.archivedAt !== undefined);
-  expect(archived.map(r => r.room)).toEqual(['retro-0819', 'dm-7b2e9c4d1a0f']);
-  expect(
-    fixtureMessages('build').at(-1)?.body.split('\n').length
-  ).toBeGreaterThan(60);
-  const retro = fixtureMessages('retro-0819');
-  expect(retro).toHaveLength(4);
-  expect(new Date(retro[0]!.postedAt).getDate()).not.toBe(
-    new Date(retro[3]!.postedAt).getDate()
-  );
-  expect(fixtureMembers('retro-0819').map(m => m.handle)).toEqual([
-    'deck-main',
-    'gitq-main',
-  ]);
+test('a room outside the scripted casts still returns a starter message', () => {
+  expect(fixtureMessages('skills')).toHaveLength(1);
+  expect(fixtureMessages('skills')[0]!.handle).toBe('edie');
+});
+
+test('the inbox fixtures carry the two cards the Main artboard draws', () => {
+  const inbox = fixtureInbox('matt');
+  expect(inbox.needsYou.map(c => c.handle)).toEqual(['edie', 'jay']);
+  expect(inbox.needsYou.map(c => c.kind)).toEqual(['dm', 'room']);
+  expect(inbox.openAsks.map(c => c.messageId)).toEqual([603, 602]);
+  // The reader's context message: jay's card has the one before it in the
+  // same room, which is what the artboard's `.msg.context` row draws.
+  const boxscore = fixtureMessages('boxscore');
+  expect(boxscore.map(m => m.handle)).toEqual(['max', 'jay']);
 });
 
 test('the pane fixtures cover every row state the picker artboard draws', () => {

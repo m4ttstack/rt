@@ -168,6 +168,34 @@
     .state.blocked { color: var(--bad); }
     .state.idle { color: var(--muted-text); }
     .notice { padding: 6px 0 4px; text-align: left; font-size: 10.56px; color: var(--muted-text); }
+    .sprite { width: 10px; height: 10px; flex: none; }
+    .hpill { display: inline-flex; align-items: center; gap: 4.8px; }
+    .doing { font-size: 10.56px; color: var(--muted-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+    .doing.dim { color: var(--muted); }
+    .ws { display: flex; align-items: center; gap: 7.2px; height: 30px; padding: 0 9.6px 0 26.4px; border-radius: 6px; min-width: 0; overflow: hidden; cursor: pointer; }
+    .ws:hover { background: var(--bg4); }
+    .ws.on { background: color-mix(in srgb, var(--accent) var(--wash), transparent); }
+    .ws .h { font-size: 11.2px; font-weight: 600; flex: none; }
+    .ws.more { color: var(--muted-text); font-size: 10.56px; height: 26px; cursor: default; }
+    .ws.more span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+    .grp { color: var(--muted-text); font-size: 11.2px; }
+    .dm2 { display: flex; flex-direction: column; gap: 1px; padding: 4.8px 9.6px; border-radius: 6px; min-width: 0; overflow: hidden; cursor: pointer; }
+    .dm2:hover { background: var(--bg4); }
+    .dm2.on { background: color-mix(in srgb, var(--accent) var(--wash), transparent); }
+    .dm2 .close { display: none; width: 22px; height: 22px; border-radius: 6px; align-items: center; justify-content: center; color: var(--muted-text); background: transparent; border: 0; flex: none; cursor: pointer; }
+    .dm2.hover { background: var(--bg4); }
+    .dm2.hover .close { display: inline-flex; }
+    .card2 { display: flex; flex-direction: column; gap: 6px; padding: 9.6px 11.2px; background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; min-width: 0; }
+    .card2.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) var(--wash), var(--bg2)); }
+    .lead { font-family: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 14px; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+    .ctx { display: inline-flex; align-items: center; height: 16px; padding: 0 6px; border-radius: 4px; font-size: 9.5px; font-weight: 600; border: 1px solid var(--border-soft); color: var(--muted-text); white-space: nowrap; }
+    .ctx.dm { color: var(--purple); border-color: color-mix(in srgb, var(--purple) 45%, transparent); }
+    .ctx.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+    .foldrow { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 10.56px; font-weight: 600; color: var(--accent); cursor: pointer; background: transparent; border: 0; padding: 0; }
+    .foldrow .tri { width: 0; height: 0; border-top: 4px solid transparent; border-bottom: 4px solid transparent; border-left: 5px solid currentColor; }
+    .kv { display: grid; grid-template-columns: 52px minmax(0, 1fr); column-gap: 8px; row-gap: 3px; align-items: baseline; }
+    .kv .k { font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-text); }
+    .msg.context { opacity: 0.62; }
   </style>
 </helmet>
 

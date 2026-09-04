@@ -36,10 +36,21 @@
 
 .hdr {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--mantine-spacing-sm);
   min-width: 0;
   margin-bottom: 8px;
+}
+
+/* The human's own messages read right-to-left: row-reverse flips the header's
+   DOM order (name, you, time) and packs it at the right, so it reads
+   time / You / Name aligned to the right edge. The speaker chip's own -6px
+   left nudge (for left alignment) is zeroed so the name sits flush right. */
+.mine .hdr {
+  flex-direction: row-reverse;
+}
+.mine .hdr :global(.mantine-Group-root[data-testid='speaker-chip']) {
+  margin-left: 0;
 }
 
 .prose {
@@ -226,4 +237,30 @@
       var(--tk-card)
     )
   );
+}
+
+.foldrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--mantine-color-accent-text);
+  font-size: var(--tk-fs-3xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tri {
+  width: 0;
+  height: 0;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-left: 5px solid currentColor;
+  transition: transform 120ms ease;
+}
+.tri[data-open='true'] {
+  transform: rotate(90deg);
 }

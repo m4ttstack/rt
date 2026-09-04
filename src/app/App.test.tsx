@@ -58,21 +58,24 @@ function renderAt(path: string) {
   return renderWithProviders(<App />);
 }
 
-test('/ renders the chat shell: wordmark, Rooms rail entry, placeholder home', () => {
+test('/ is the Inbox: the rail names both views and the landing view is the inbox', () => {
   renderAt('/');
 
   expect(screen.getByText('chat')).toBeTruthy();
 
   const rail = within(screen.getByRole('navigation', { name: 'App sections' }));
-  const rooms = rail.getByRole('link', { name: 'Rooms' });
-  expect(rooms).toBeTruthy();
-  expect(rooms.getAttribute('aria-current')).toBe('page');
+  const inbox = rail.getByRole('link', { name: 'Inbox' });
+  expect(inbox.getAttribute('aria-current')).toBe('page');
+  expect(
+    rail.getByRole('link', { name: 'Rooms' }).getAttribute('aria-current')
+  ).toBeNull();
 
   expect(
     within(screen.getByRole('banner')).getByRole('button', { name: 'Apps' })
   ).toBeTruthy();
 
-  expect(screen.getByText('No rooms')).toBeTruthy();
+  expect(screen.getByTestId('inbox-bar')).toHaveTextContent('Inbox');
+  expect(screen.getByTestId('inbox-elsewhere-note')).toBeInTheDocument();
 });
 
 test('the rail hosts the color-scheme control', () => {
@@ -110,17 +113,32 @@ test('the rail expands into labels from its trigger', () => {
   expect(roomsLabel().getAttribute('aria-hidden')).toBe('true');
 });
 
-test('on mobile the rail opens from the header toggle and navigating closes it', () => {
+test('on mobile, `/` is the phone inbox shell, not the desktop rail', async () => {
   setViewportWidth(390);
-  renderAt('/');
+  window.history.replaceState(null, '', '/');
+  renderWithProviders(
+    <App
+      initialState={{
+        daemonReachable: true,
+        rooms: [{ room: 'build', memberCount: 1, unread: 0, mentions: 0 }],
+      }}
+    />
+  );
 
-  fireEvent.click(screen.getByRole('button', { name: 'Toggle navigation' }));
-  expect(screen.getByTestId('rail-overlay')).toBeTruthy();
+  expect(screen.getByTestId('phone-inbox-shell')).toBeInTheDocument();
+  expect(screen.queryByRole('navigation', { name: 'App sections' })).toBeNull();
 
-  const rail = within(screen.getByRole('navigation', { name: 'App sections' }));
-  fireEvent.click(rail.getByRole('link', { name: 'Rooms' }));
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Rooms and members' })
+  );
+  const drawer = within(await screen.findByTestId('phone-drawer'));
+  expect(await drawer.findByTestId('room-row-build')).toBeInTheDocument();
+  expect(drawer.queryByText(/buddies/i)).toBeNull();
 
-  expect(screen.queryByTestId('rail-overlay')).toBeNull();
+  await userEvent.click(drawer.getByRole('button', { name: 'Close' }));
+  await waitFor(() =>
+    expect(screen.queryByTestId('room-row-build')).toBeNull()
+  );
 });
 
 test('the phone transcript wrapper is a flex column, so the bare transcript can size itself', () => {
@@ -130,7 +148,7 @@ test('the phone transcript wrapper is a flex column, so the bare transcript can 
   // renders empty on a phone. jsdom never computes real layout, so this pins
   // the wrapper's actual style contract instead of a faked measurement.
   setViewportWidth(390);
-  window.history.replaceState(null, '', '/');
+  window.history.replaceState(null, '', '/r/build');
   renderWithProviders(
     <App
       initialState={{
@@ -176,10 +194,10 @@ test('unknown paths render the not-found page inside the chat chrome', () => {
   fireEvent.click(screen.getByRole('link', { name: /Back home/ }));
 
   expect(window.location.pathname).toBe('/');
-  expect(screen.getByText('No rooms')).toBeTruthy();
+  expect(screen.getByTestId('inbox-bar')).toBeInTheDocument();
 });
 
-test('the roster is actually mounted, not merely written', () => {
+test('the fleet tree lists every buddy, repo or no repo', () => {
   renderWithProviders(
     <App
       initialState={{
@@ -198,16 +216,20 @@ test('the roster is actually mounted, not merely written', () => {
       }}
     />
   );
-  expect(screen.getByTestId('row-rt-chat-wt')).toBeInTheDocument();
+  // No `repo` on this presence row, so it heads its own `no repo` group
+  // rather than dropping out of the only listing the fleet has.
+  expect(screen.getByTestId('ws-rt-chat-wt')).toBeInTheDocument();
+  expect(screen.getByTestId('repo-row-no repo')).toHaveTextContent('no room');
 });
 
-test('seeded messages survive to the first room, even if the fetch rejects', async () => {
+test('seeded messages survive to the opened room, even if the fetch rejects', async () => {
   // `activeRoom` is undefined on the first render, so a seed bound to `room`
   // at mount binds to undefined and is discarded the moment a real room
   // lands. The seed then only ever worked when the fetch happened to return
   // the same thing -- which is the seam not working at all.
   installFetchMock();
   fetchMock.mockRejectedValue(new Error('network down'));
+  window.history.replaceState(null, '', '/r/build');
 
   renderWithProviders(
     <App
@@ -299,7 +321,7 @@ test('a #m-<id> anchor scrolls that message into view', () => {
   }
 });
 
-test('Back to / after picking a room shows the first room again', () => {
+test('Back to / after picking a room returns to the inbox, with no room open', () => {
   window.history.replaceState(null, '', '/');
   renderWithProviders(<App initialState={twoRooms} />);
   fireEvent.click(screen.getByText('ops'));
@@ -310,9 +332,8 @@ test('Back to / after picking a room shows the first room again', () => {
     window.history.replaceState(null, '', '/');
     window.dispatchEvent(new PopStateEvent('popstate'));
   });
-  expect(
-    within(screen.getByTestId('page-bar')).getByText('build')
-  ).toBeInTheDocument();
+  expect(screen.queryByTestId('page-bar')).toBeNull();
+  expect(screen.getByTestId('inbox-bar')).toBeInTheDocument();
 });
 
 test('a same-room hash change scrolls to the new anchor', () => {
@@ -359,7 +380,7 @@ test('a same-room hash change scrolls to the new anchor', () => {
   }
 });
 
-test('the rooms rail lives in the PageShell sidebar and the roster is the right panel', () => {
+test('the fleet tree lives in the PageShell sidebar, and no roster panel remains', () => {
   window.history.replaceState(null, '', '/r/build');
   renderWithProviders(<App initialState={twoRooms} />);
   const sidebar = document.getElementById('page-shell-sidebar');
@@ -372,16 +393,15 @@ test('the rooms rail lives in the PageShell sidebar and the roster is the right 
   expect(
     within(content as HTMLElement).getByTestId('transcript')
   ).toBeInTheDocument();
-  expect(
-    within(content as HTMLElement).getByTestId('roster')
-  ).toBeInTheDocument();
+  expect(screen.queryByTestId('roster')).toBeNull();
+  expect(screen.queryByTestId('room-order')).toBeNull();
   expect(
     within(screen.getByTestId('page-bar')).getByText('build')
   ).toBeInTheDocument();
 });
 
-test('with every room closed, the rail still mounts and the placeholder says rooms come back', () => {
-  window.history.replaceState(null, '', '/');
+test('with every room closed, a room link still mounts the rail and says rooms come back', () => {
+  window.history.replaceState(null, '', '/r/gone');
   renderWithProviders(
     <App
       initialState={{
@@ -485,7 +505,7 @@ test('DM on a sender’s card opens the pair’s room and focuses the composer t
       body: JSON.stringify({ to: 'fred' }),
     })
   );
-  await screen.findByTestId(`room-row-${dmRoom.room}`);
+  await screen.findByTestId(`dm-row-${dmRoom.room}`);
   expect(window.location.pathname).toBe(`/r/${dmRoom.room}`);
   // `focus()` defers through requestAnimationFrame.
   await waitFor(() =>
@@ -612,7 +632,7 @@ function errorResponse(status: number): Response {
   } as Response;
 }
 
-test('the home route lands on the first OPEN room, and a closed room never shows a read-only bar', () => {
+test('the rail’s Rooms entry points at the first OPEN room, and a closed room is never listed', () => {
   window.history.replaceState(null, '', '/');
   renderWithProviders(
     <App
@@ -634,12 +654,13 @@ test('the home route lands on the first OPEN room, and a closed room never shows
       }}
     />
   );
-  expect(
-    within(screen.getByTestId('page-bar')).getByText('build')
-  ).toBeInTheDocument();
+  const rail = within(screen.getByRole('navigation', { name: 'App sections' }));
+  expect(rail.getByRole('link', { name: 'Rooms' })).toHaveAttribute(
+    'href',
+    '/r/build'
+  );
   expect(screen.queryByTestId('archived-bar')).toBeNull();
   expect(screen.queryByTestId('room-row-closed-first')).toBeNull();
-  expect(screen.getByTestId('composer')).toBeInTheDocument();
 });
 
 test('a closed room reached by link opens with a live composer and is listed only while open', async () => {
@@ -674,7 +695,7 @@ test('a closed room reached by link opens with a live composer and is listed onl
   expect(screen.queryByTestId('room-row-retro')).toBeNull();
 });
 
-test('closing the open room from the rail lands on / and the first open room', async () => {
+test('closing the open room from the rail lands on the inbox', async () => {
   installFetchMock();
   const build = { room: 'build', memberCount: 1, unread: 0, mentions: 0 };
   fetchMock.mockImplementation((url: string) => {
@@ -709,11 +730,8 @@ test('closing the open room from the rail lands on / and the first open room', a
     })
   );
   await waitFor(() => expect(window.location.pathname).toBe('/'));
-  expect(
-    within(screen.getByTestId('page-bar')).getByText('build')
-  ).toBeInTheDocument();
+  expect(screen.getByTestId('inbox-bar')).toBeInTheDocument();
   expect(screen.queryByTestId('room-row-ghost')).toBeNull();
-  expect(screen.getByTestId('composer')).toBeInTheDocument();
 });
 
 test('closing another room from its rail × drops the row at once and keeps the page', async () => {
@@ -1157,4 +1175,225 @@ test('add agents invites the picked panes and shows the result line on the trans
   expect(await screen.findByTestId('transcript-notice')).toHaveTextContent(
     'invited 1 · acme pane accepted'
   );
+});
+
+const inboxPayload = {
+  needsYou: [
+    {
+      room: 'build',
+      kind: 'room' as const,
+      messageId: 412,
+      handle: 'meg',
+      postedAt: Date.now() - 60_000,
+      excerpt: '@matt is the exporter ready to ship?',
+      reason: 'mention' as const,
+    },
+  ],
+  openAsks: [],
+  elsewhere: [{ room: 'ops', kind: 'room' as const, unread: 9, mentions: 0 }],
+};
+
+const EMPTY_INBOX = { needsYou: [], openAsks: [], elsewhere: [] };
+
+/** `/api/chat/inbox` answers with `payload`; the reader's window fetch
+    answers with the opened message alone. Every other route is empty. */
+function serveInbox(payload = inboxPayload) {
+  installFetchMock();
+  fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url === '/api/chat/inbox') return jsonResponse(payload);
+    if (url.startsWith('/api/chat/messages/'))
+      return jsonResponse({
+        messages: [
+          {
+            id: 412,
+            room: 'build',
+            handle: 'meg',
+            body: '@matt is the exporter ready to ship?',
+            mentions: ['matt'],
+            postedAt: payload.needsYou[0]?.postedAt ?? 1,
+          },
+        ],
+      });
+    return jsonResponse({});
+  });
+}
+
+test('the inbox lands from /api/chat/inbox, with the first card already in the reader', async () => {
+  serveInbox();
+  window.history.replaceState(null, '', '/');
+  renderWithProviders(<App />);
+
+  expect(await screen.findByTestId('inbox-card-412')).toBeInTheDocument();
+  expect(screen.getByTestId('inbox-card-412').dataset.open).toBe('true');
+  expect(await screen.findByTestId('reader-message-412')).toHaveTextContent(
+    'is the exporter ready to ship?'
+  );
+  expect(fetchMock).toHaveBeenCalledWith(
+    '/api/chat/messages/build?before=413&limit=2'
+  );
+});
+
+test('a chat/<room>/msg frame refetches the inbox, the same rule the rail follows', async () => {
+  serveInbox();
+  window.history.replaceState(null, '', '/');
+  renderWithProviders(<App />);
+  await screen.findByTestId('inbox-card-412');
+
+  const calls = () =>
+    fetchMock.mock.calls.filter(c => String(c[0]) === '/api/chat/inbox').length;
+  const before = calls();
+  act(() => {
+    FakeWebSocket.instances.at(-1)?.onmessage?.({
+      data: JSON.stringify({ topic: 'chat/build/msg', payload: { id: 9 } }),
+    });
+  });
+  await waitFor(() => expect(calls()).toBeGreaterThan(before));
+});
+
+test('a card’s mark read posts the room-level mark and refetches the inbox', async () => {
+  serveInbox();
+  window.history.replaceState(null, '', '/');
+  renderWithProviders(<App />);
+  await screen.findByTestId('inbox-card-412');
+
+  await userEvent.click(
+    screen.getByRole('button', { name: /mark #build read/i })
+  );
+  await waitFor(() =>
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/chat/mark',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ room: 'build' }),
+      })
+    )
+  );
+});
+
+test('mark all read is the per-room mark, once per room that has unread', async () => {
+  serveInbox();
+  window.history.replaceState(null, '', '/');
+  renderWithProviders(
+    <App
+      initialState={{
+        daemonReachable: true,
+        buddies: [],
+        rooms: [
+          { room: 'build', memberCount: 1, unread: 1, mentions: 1 },
+          { room: 'ops', memberCount: 1, unread: 9, mentions: 0 },
+          { room: 'quiet', memberCount: 1, unread: 0, mentions: 0 },
+        ],
+        members: [],
+      }}
+    />
+  );
+  await screen.findByTestId('inbox-card-412');
+
+  await userEvent.click(screen.getByTestId('inbox-mark-all-read'));
+  await waitFor(() => {
+    const marked = fetchMock.mock.calls
+      .filter(c => String(c[0]) === '/api/chat/mark')
+      .map(c => (c[1] as RequestInit).body);
+    expect(marked).toEqual([
+      JSON.stringify({ room: 'build' }),
+      JSON.stringify({ room: 'ops' }),
+    ]);
+  });
+});
+
+test('open on a card leaves the inbox for the room, parked on that message', async () => {
+  serveInbox();
+  window.history.replaceState(null, '', '/');
+  renderWithProviders(<App />);
+  await screen.findByTestId('inbox-card-412');
+
+  await userEvent.click(screen.getByTestId('card-open-412'));
+  await waitFor(() => expect(window.location.pathname).toBe('/r/build'));
+  expect(window.location.hash).toBe('#m-412');
+});
+
+test('phone: tapping a card opens the reader in place, and back returns to the same list node', async () => {
+  serveInbox();
+  setViewportWidth(390);
+  window.history.replaceState(null, '', '/');
+  renderWithProviders(<App />);
+  await screen.findByTestId('inbox-card-412');
+
+  expect(screen.getByTestId('phone-inbox-list')).toHaveStyle({
+    visibility: 'visible',
+  });
+  expect(screen.queryByTestId('phone-inbox-reader')).toBeNull();
+  const list = screen.getByTestId('phone-inbox-list');
+
+  await userEvent.click(screen.getByTestId('card-lead-412'));
+  expect(await screen.findByTestId('reader-phone-header')).toHaveTextContent(
+    'meg needs you'
+  );
+  // The list stays mounted and laid out (never `display: none`) -- its
+  // scroll position survives; see the toggle's own comment for why.
+  expect(screen.getByTestId('phone-inbox-list')).toBe(list);
+  expect(screen.getByTestId('phone-inbox-list')).toHaveStyle({
+    visibility: 'hidden',
+  });
+
+  await userEvent.click(screen.getByTestId('reader-back'));
+  expect(screen.queryByTestId('phone-inbox-reader')).toBeNull();
+  expect(screen.getByTestId('phone-inbox-list')).toBe(list);
+  expect(screen.getByTestId('phone-inbox-list')).toHaveStyle({
+    visibility: 'visible',
+  });
+});
+
+test('phone: mark-all-read while the reader is open still leaves the list reachable', async () => {
+  // A stateful mock, not `serveInbox()`: the scenario needs `/api/chat/inbox`
+  // to answer full, then empty, once the reader's own mark-all sweep has
+  // run -- `serveInbox()`'s fixed payload never changes across refetches.
+  installFetchMock();
+  let inboxCalls = 0;
+  fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url === '/api/chat/inbox') {
+      inboxCalls += 1;
+      return jsonResponse(inboxCalls === 1 ? inboxPayload : EMPTY_INBOX);
+    }
+    if (url.startsWith('/api/chat/messages/'))
+      return jsonResponse({
+        messages: [
+          {
+            id: 412,
+            room: 'build',
+            handle: 'meg',
+            body: '@matt is the exporter ready to ship?',
+            mentions: ['matt'],
+            postedAt: inboxPayload.needsYou[0]?.postedAt ?? 1,
+          },
+        ],
+      });
+    return jsonResponse({});
+  });
+
+  setViewportWidth(390);
+  window.history.replaceState(null, '', '/');
+  renderWithProviders(<App />);
+  await screen.findByTestId('inbox-card-412');
+
+  await userEvent.click(screen.getByTestId('card-lead-412'));
+  await screen.findByTestId('reader-phone-header');
+  expect(screen.getByTestId('phone-inbox-list')).toHaveStyle({
+    visibility: 'hidden',
+  });
+
+  await userEvent.click(screen.getByTestId('phone-inbox-mark-all'));
+
+  // The reader's card is gone (mark-all-read emptied the inbox), so the
+  // reader itself unmounts, AND the list must not be left hidden with no
+  // way back to it.
+  await waitFor(() =>
+    expect(screen.queryByTestId('reader-phone-header')).toBeNull()
+  );
+  expect(screen.queryByTestId('phone-inbox-reader')).toBeNull();
+  expect(screen.getByTestId('phone-inbox-list')).toHaveStyle({
+    visibility: 'visible',
+  });
 });

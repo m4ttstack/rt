@@ -22,8 +22,16 @@
  *      `browser_evaluate` with a `filename` and it writes the page's computed
  *      styles for every TARGET to that file.
  *
- *   2. `node design/audit.mjs <that-file>`
+ *   2. `node design/audit.mjs <that-file> [<more-files>...]`
  *      diffs it against the spec and exits non-zero on a mismatch.
+ *
+ * No single page state holds every component at once: a menu's items exist
+ * only while it is open, the inbox and a room are different routes, and the
+ * daemon banner only exists while the daemon is down. So the probe may be run
+ * several times over one page, once per state, and step 2 takes all the
+ * captures together -- a target counts as found if any capture saw it. The
+ * captures must agree on colour scheme and on viewport, since both change what
+ * the expected values resolve to.
  *
  * Every UI task adds its components to TARGETS. A component with no entry is
  * an unaudited component: the point of this file is that "I checked it looks
@@ -76,8 +84,25 @@ const LETTER_SPACING_RESOLVES_TO_PX =
 // count of `px`-suffixed tokens once serialized, which is what actually
 // trips the generic numeric-array comparison below. Channel-by-channel
 // colour and offset/blur values verified by eye against `.pop`'s spec entry.
+// A <button> imposes its own inner display, so an authored `-webkit-box`
+// reads back as `flow-root`. The line clamp still applies through it: a
+// twelve-line excerpt in the inbox card still renders at two lines.
+const DISPLAY_BLOCKIFIES_ON_BUTTON =
+  'a <button> forces its own inner display, so an authored -webkit-box computes as flow-root; the clamp still applies, measured on an overlong excerpt';
+
+const FONT_FAMILY_QUOTING_DIFFERS =
+  'serialized with double quotes; same stack, verified by eye';
+
 const BOX_SHADOW_SERIALIZATION_DIFFERS =
   'getComputedStyle serializes colour-first with every length explicit; same shadow, verified by eye';
+
+// The app switches shells at Mantine's `sm` breakpoint (`useIsMobile`), so a
+// capture 768px wide or narrower is the phone shell and a wider one is the
+// desktop layout. Most components live in exactly one of them.
+export const PHONE_MAX_WIDTH = 768;
+const DESKTOP = 'desktop';
+const PHONE = 'phone';
+const BOTH = 'both';
 
 /**
  * Maps a spec selector to how the audit finds that component in the real app,
@@ -85,16 +110,17 @@ const BOX_SHADOW_SERIALIZATION_DIFFERS =
  *
  * `find` is a CSS selector evaluated in the page. `props` are the spec
  * declarations to compare; omit a property to exempt it, and only ever with a
- * recorded reason in `why`. `scheme` notes a check that is only meaningful in
- * one colour scheme.
+ * recorded reason in `why`. `at` is the viewport the component exists in
+ * (default `desktop`). `scheme` notes a check that is only meaningful in one
+ * colour scheme.
+ *
+ * Two entries may share a `spec` key: a capture is keyed by position in this
+ * list, not by selector, so `.chip` on the page bar and `.chip` in the inbox
+ * bar are separate assertions rather than one silently overwriting the other.
  */
 export const TARGETS = [
-  // Task 4 -- DaemonBanner (design/artboards/DaemonDown.dc.html's `.alert`).
-  // Colour props (background/color) are skipped: both resolve through
-  // `useSchemeColors`/Mantine colour tokens rather than a literal `--bad`
-  // var (this repo has no tokyo-theme.css yet -- see the task report), so
-  // the computed value is an rgb() string, not the spec's `var(...)`
-  // literal. Verified by eye instead, per CONFORMANCE's Colours section.
+  // DaemonBanner (design/artboards/DaemonDown.dc.html's `.alert`). It only
+  // exists while the daemon is unreachable, so the capture takes it last.
   {
     spec: '.alert',
     find: '[data-testid="daemon-banner"]',
@@ -104,7 +130,7 @@ export const TARGETS = [
         'shorthand not enumerated by getComputedStyle; longhands verified by eye',
     },
   },
-  // Task 4 -- the banner's "Probe now" button.
+  // The banner's "Probe now" button.
   {
     spec: '.aicon',
     find: '[data-testid="daemon-banner-probe"]',
@@ -124,73 +150,32 @@ export const TARGETS = [
       flex: "ActionIcon doesn't set flex:none itself; the artboard's parent context does",
     },
   },
-  // Task 6 -- Roster (design/artboards/Main.dc.html's BUDDIES column /
-  // Roster.dc.html). Task 4's placeholder buddy row is gone -- these specs
-  // now point at the real component's own testids. `find` targets a
-  // fixture handle (CHAT_FIXTURES=1) rather than a class, same convention
-  // RoomRail/PageBar's entries use.
-  // The roster is a PageShell panel since 2026-08-26 (no `.card` on the
-  // desktop page any more): its width, surface, hairline and padding are
-  // the container-level contract the member rows sit inside.
-  {
-    spec: '.roster-panel',
-    find: '[data-testid="roster"]',
-    props: ['width', 'background-color', 'border-left-width', 'border-left-style', 'border-left-color', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left'],
-    why: { flex: 'shorthand keyword (none), verified by eye', 'min-height': 'verified by eye: the panel scrolls its own sections' },
-  },
-  {
-    spec: '.member',
-    find: '[data-testid="row-rt-chat-wt"]',
-    props: ['display', 'align-items', 'gap'],
-    why: { padding: 'shorthand not enumerated; longhands verified by eye' },
-  },
-  {
-    spec: '.dot',
-    find: '[data-testid="dot-rt-chat-wt"]',
-    props: ['border-radius', 'height', 'width'],
-    why: {
-      flex: 'shorthand keyword (none), not reconstructed from flex-grow/shrink/basis; the dot visibly holds its size in the row, verified by eye',
-    },
-  },
-  {
-    spec: '.member .dot',
-    find: '[data-testid="dot-rt-chat-wt"]',
-    props: ['margin-top'],
-  },
-  {
-    spec: '.dot.off',
-    find: '[data-testid="dot-workforest-e2e"]',
-    props: ['background'],
-    why: {
-      border: 'full shorthand (width/style/colour combined); not separately enumerated, verified by eye',
-    },
-  },
-  // `.status*`: the status word lives in the hover card header now (the row
-  // shows the dot, with the word in its tooltip), so these match only with a
-  // card open, like `.tag*` and `.pop`.
+  // The hover card (design/artboards/Fleet.dc.html): the one place a handle
+  // still spells itself out. `find` names a fixture handle (CHAT_FIXTURES=1),
+  // the same convention the tree and page bar entries use. These match only
+  // while a card is open, like `.pop` and the menu items.
   {
     spec: '.status',
-    find: '[data-testid="status-rt-chat-wt"]',
+    find: '[data-testid="status-max"]',
+    at: DESKTOP,
     props: ['font-size', 'font-weight'],
   },
   {
     spec: '.status.live',
-    find: '[data-testid="status-rt-chat-wt"]',
+    find: '[data-testid="status-max"]',
+    at: DESKTOP,
     props: ['color'],
   },
   {
     spec: '.status.idle',
-    find: '[data-testid="status-board-fix-auth"]',
+    find: '[data-testid="status-remy"]',
+    at: DESKTOP,
     props: ['color'],
   },
   {
-    spec: '.away',
-    find: '[data-testid="away-rt-chat-wt"]',
-    props: ['color', 'font-size', 'font-style'],
-  },
-  {
     spec: '.tag',
-    find: '[data-testid="tag-rt-chat-wt-build"]',
+    find: '[data-testid="tag-max-rt"]',
+    at: DESKTOP,
     props: [
       'align-items',
       'display',
@@ -210,26 +195,132 @@ export const TARGETS = [
   },
   {
     spec: '.tag.dm',
-    find: '[data-testid="tag-rt-chat-wt-dm"]',
+    find: '[data-testid="tag-max-dm"]',
+    at: DESKTOP,
     props: ['border-color', 'color'],
   },
+  // The card's `repo / where / path / seen / rooms` grid.
   {
-    spec: '.sect',
-    find: '[data-testid="section-offline"]',
-    props: ['align-items', 'display', 'gap'],
-    why: { padding: 'shorthand not enumerated by getComputedStyle; longhands verified by eye' },
+    spec: '.kv',
+    find: '[data-testid^="detail-"] dl',
+    at: DESKTOP,
+    props: ['align-items', 'display', 'grid-template-columns', 'column-gap', 'row-gap'],
+    why: {
+      'grid-template-columns':
+        'the used value resolves the `minmax(0, 1fr)` track to the px it got; the 52px label track is the assertion, verified by eye',
+    },
   },
   {
-    spec: '.sect .lbl',
-    find: '[data-testid="section-label-offline"]',
-    props: ['color', 'font-size', 'font-weight', 'letter-spacing'],
+    spec: '.kv .k',
+    find: '[data-testid^="detail-"] dt',
+    at: DESKTOP,
+    props: ['color', 'font-size', 'font-weight', 'letter-spacing', 'text-transform'],
     why: { 'letter-spacing': LETTER_SPACING_RESOLVES_TO_PX },
   },
 
-  // Task 5 -- RoomRail (design/artboards/Main.dc.html's rooms rail).
+  // Fleet tree (design/artboards/Main.dc.html's sidebar). At 390 the same
+  // rows are what the phone drawer holds, so these are asserted in both
+  // shells and the phone capture takes them with the drawer open.
+  {
+    spec: '.dot',
+    find: '[data-testid="dot-max"]',
+    at: BOTH,
+    props: ['border-radius', 'height', 'width'],
+    why: {
+      flex: 'shorthand keyword (none), not reconstructed from flex-grow/shrink/basis; the dot visibly holds its size in the row, verified by eye',
+    },
+  },
+  {
+    spec: '.dot.off',
+    find: '[data-testid^="dot-offline-"]',
+    at: BOTH,
+    props: ['background'],
+    why: {
+      border: 'full shorthand (width/style/colour combined); not separately enumerated, verified by eye',
+    },
+  },
+  {
+    spec: '.ws',
+    find: '[data-testid^="ws-"]:not([data-testid^="ws-handle-"]):not([data-testid^="ws-doing-"])',
+    at: BOTH,
+    props: ['align-items', 'display', 'gap', 'height', 'border-radius', 'cursor', 'min-width', 'overflow'],
+    why: {
+      padding: 'shorthand not enumerated by getComputedStyle; longhands verified by eye',
+    },
+  },
+  {
+    spec: '.ws .h',
+    find: '[data-testid^="ws-handle-"]',
+    at: BOTH,
+    props: ['font-size', 'font-weight'],
+    why: { flex: 'shorthand keyword (none), not enumerated; verified by eye' },
+  },
+  // The offline roll-up. `.ws.on` has no entry on purpose: nothing in this
+  // design selects a workstream, so the rule is unreachable in the app.
+  {
+    spec: '.ws.more',
+    find: '[data-testid^="offline-"]',
+    at: BOTH,
+    props: ['color', 'cursor', 'font-size', 'height'],
+  },
+  {
+    spec: '.ws.more span',
+    find: '[data-testid^="offline-"] > span:last-child',
+    at: BOTH,
+    props: ['min-width', 'overflow', 'text-overflow', 'white-space'],
+    why: { 'white-space': WHITE_SPACE_NOT_ENUMERATED },
+  },
+  // The task line, in both tones: `edie` has a live pane title, `max`'s pane
+  // title is just its handle on a `main` branch, which falls through to the
+  // dimmer worktree-folder form.
+  {
+    spec: '.doing',
+    find: '[data-testid="ws-doing-edie"]',
+    at: BOTH,
+    props: ['color', 'font-size', 'min-width', 'overflow', 'text-overflow', 'white-space'],
+    why: { 'white-space': WHITE_SPACE_NOT_ENUMERATED },
+  },
+  {
+    spec: '.doing.dim',
+    find: '[data-testid="ws-doing-max"]',
+    at: BOTH,
+    props: ['color'],
+  },
+  // A repo with agents but no room heads its group with a plain label.
+  {
+    spec: '.grp',
+    find: '[data-testid^="repo-name-"]',
+    at: BOTH,
+    props: ['color', 'font-size'],
+  },
+  {
+    spec: '.dm2',
+    find: '[data-testid^="dm-row-"]',
+    at: BOTH,
+    props: ['display', 'flex-direction', 'gap', 'border-radius', 'cursor', 'min-width', 'overflow'],
+    why: {
+      padding: 'shorthand not enumerated by getComputedStyle; longhands verified by eye',
+    },
+  },
+  {
+    spec: '.dm2 .close',
+    find: '[data-testid^="dm-close-"]',
+    at: DESKTOP,
+    props: ['width', 'height', 'border-radius', 'align-items', 'justify-content', 'color', 'display'],
+    why: {
+      background: 'transparent until hover; verified by eye',
+      border: '0, not separately enumerated',
+      flex: 'set by the row, not the control',
+      cursor: 'verified by eye',
+    },
+  },
+
+  // The room row heading each repo group (design/artboards/Main.dc.html's
+  // sidebar), and the phone drawer's copy of the same tree.
   {
     spec: '.room',
     find: '[data-testid^="room-row-"]',
+    at: BOTH,
     props: [
       'align-items',
       'display',
@@ -256,6 +347,7 @@ export const TARGETS = [
   {
     spec: '.mention',
     find: '[data-testid="mention-badge"]',
+    at: BOTH,
     props: [
       'align-items',
       'display',
@@ -280,6 +372,7 @@ export const TARGETS = [
   {
     spec: '.unread',
     find: '[data-testid="unread-badge"]',
+    at: BOTH,
     props: [
       'align-items',
       'display',
@@ -301,7 +394,7 @@ export const TARGETS = [
     },
   },
 
-  // Task 5 -- PageBar (design/artboards/Main.dc.html's fleet chips).
+  // PageBar (design/artboards/Main.dc.html's fleet chips).
   {
     spec: '.chip',
     find: '[data-testid="chip-signed-in"]',
@@ -339,11 +432,8 @@ export const TARGETS = [
     find: '[data-testid="chip-offline"]',
     props: ['border-color', 'color'],
   },
-  // `.dot`'s own base props (border-radius/height/width) are already
-  // registered once above (Task 4's buddy-dot check) -- re-declaring the
-  // same `spec` key with a different `find` would collide in the probe's
-  // output object (keyed by `spec`), silently checking one dot's computed
-  // style against the other. Only the colour VARIANTS are new here.
+  // `.dot`'s own geometry is registered once above, on the tree's dot; only
+  // the colour VARIANTS are new here.
   {
     spec: '.dot.live',
     find: '[data-testid="dot-live"]',
@@ -384,6 +474,7 @@ export const TARGETS = [
   {
     spec: '.hpill',
     find: '[data-testid="speaker-chip"]',
+    at: BOTH,
     props: ['border-radius'],
     why: {
       padding: 'shorthand not enumerated; longhands verified by eye',
@@ -400,29 +491,6 @@ export const TARGETS = [
       'font-family': 'serialized with double quotes; same stack, verified by eye',
       'line-height': LINE_HEIGHT_RESOLVES_TO_PX,
     },
-  },
-  {
-    spec: '.prose h1',
-    find: '[data-testid="message-body"] h1',
-    props: ['font-size', 'font-weight', 'margin-top'],
-    why: { 'line-height': LINE_HEIGHT_RESOLVES_TO_PX },
-  },
-  {
-    spec: '.prose h2',
-    find: '[data-testid="message-body"] h2',
-    props: ['font-size', 'font-weight', 'margin-top'],
-    why: { 'line-height': LINE_HEIGHT_RESOLVES_TO_PX },
-  },
-  {
-    spec: '.prose h3',
-    find: '[data-testid="message-body"] h3',
-    props: ['font-size', 'font-weight', 'margin-top'],
-    why: { 'line-height': LINE_HEIGHT_RESOLVES_TO_PX },
-  },
-  {
-    spec: '.prose ul, .prose ol',
-    find: '[data-testid="message-body"] ol',
-    props: ['padding-left', 'display', 'flex-direction', 'gap'],
   },
   {
     spec: '.prose code',
@@ -452,6 +520,12 @@ export const TARGETS = [
     props: ['font-weight'],
     why: { background: 'token; color prop, verified by eye' },
   },
+  // No entry for `.prose h1`/`h2`/`h3`, `.prose ul, .prose ol` or `.divider`:
+  // no artboard draws a prose heading or a list, and no fixture room has an
+  // unread count smaller than the messages it loads (#rt draws 155 over six),
+  // which is the only shape that renders the read-cursor divider. Auditing a
+  // state neither side of the comparison can produce teaches the audit to be
+  // ignored -- the same reason `.ws.on` has no entry.
   {
     spec: '.ch',
     find: '[data-testid="code-block"]',
@@ -484,24 +558,8 @@ export const TARGETS = [
     props: ['background', 'border-radius', 'padding', 'color', 'font-weight'],
     why: { padding: 'shorthand not enumerated; longhands verified by eye' },
   },
-  {
-    spec: '.divider',
-    find: '[data-testid="transcript-divider"]',
-    props: [
-      'align-items',
-      'color',
-      'display',
-      'font-size',
-      'font-weight',
-      'gap',
-      'padding',
-    ],
-    why: {
-      padding: 'shorthand not enumerated by getComputedStyle; longhands verified by eye',
-    },
-  },
 
-  // Task 7 -- Composer (design/artboards/Main.dc.html's input row, and
+  // Composer (design/artboards/Main.dc.html's input row, and
   // Phone.dc.html's `.pop`/`.opt` popover, which only exists in the DOM
   // while `@` is active -- captured with the popover open).
   {
@@ -555,7 +613,7 @@ export const TARGETS = [
     },
   },
 
-  // QoL round 1 -- day dividers, the new pill, code copy, the fold.
+  // Day dividers, the new pill, the tall-body fold.
   {
     spec: '.day',
     find: '[data-testid="day-divider"]',
@@ -591,26 +649,15 @@ export const TARGETS = [
     },
   },
 
-  {
-    spec: '.menu',
-    find: '[data-testid="room-menu"]',
-    props: ['width', 'height', 'border-radius'],
-    why: {
-      display: 'ActionIcon authors inline-flex; blockifies as a flex item',
-      background: 'CONTROL_SURFACE token, verified by eye',
-      border: 'token',
-      color: 'token',
-      'align-items': 'verified by eye',
-      'justify-content': 'verified by eye',
-    },
-  },
-  // Close: the rail row's hover × and the menus' items. The × is `display:
-  // none` until hover, so its size and shape are read at rest; the menu
-  // items exist only while their menu is open, so capture with the page
-  // bar's ⋯ open (same convention as the composer popover).
+  // Close: the tree row's hover × and, on the phone, the header ⋯ and its
+  // menu. The × is `display: none` until hover, so its size and shape are
+  // read at rest; the menu items exist only while the menu is open, so the
+  // phone capture takes them with it open (same convention as the composer
+  // popover).
   {
     spec: '.room .close',
     find: '[data-testid^="room-close-"]',
+    at: DESKTOP,
     props: ['width', 'height', 'border-radius', 'align-items', 'justify-content', 'color'],
     why: {
       display: 'none until hover or focus; the audit reads the resting state',
@@ -621,18 +668,28 @@ export const TARGETS = [
       cursor: 'verified by eye',
     },
   },
+  // The ⋯ is 44px phone chrome, so `.aicon.tap` is its spec, not the 30px
+  // `.menu` the desktop page bar used to carry -- and its items are
+  // `.menu-item.tap`, not the 24px desktop item.
   {
-    spec: '.menu-item',
+    spec: '.aicon.tap',
+    find: '[data-testid="room-menu"]',
+    at: PHONE,
+    props: ['width', 'height'],
+  },
+  {
+    spec: '.menu-item.tap',
     find: '[data-testid="room-menu-close"]',
-    props: ['display', 'align-items', 'min-height', 'font-size', 'border-radius', 'color', 'padding'],
+    at: PHONE,
+    props: ['min-height', 'font-size'],
     why: {
       padding: 'shorthand not enumerated; longhands verified by eye',
-      'white-space': WHITE_SPACE_NOT_ENUMERATED,
     },
   },
   {
     spec: '.menu-dd',
     find: '[data-testid="room-menu-dropdown"]',
+    at: PHONE,
     props: ['display', 'flex-direction', 'background', 'border-radius', 'padding'],
     why: {
       padding: 'shorthand not enumerated; longhands verified by eye',
@@ -641,7 +698,7 @@ export const TARGETS = [
     },
   },
 
-  // Tasks 6-8 -- PanePicker (design/artboards/PanePicker.dc.html) and its
+  // PanePicker (design/artboards/PanePicker.dc.html) and its
   // NewRoomModal caller (design/artboards/NewRoom.dc.html). The `.pop` shell
   // is Mantine's own Modal.Content, not a hand-rolled popover like the
   // composer's -- `mantine-Modal-content` is the static class name
@@ -658,11 +715,54 @@ export const TARGETS = [
       'box-shadow': BOX_SHADOW_SERIALIZATION_DIFFERS,
     },
   },
-  { spec: '.pane', find: '[data-testid^="pane-row-"]', props: ['display', 'align-items', 'gap', 'border-radius', 'min-width', 'padding'], why: { padding: 'shorthand not enumerated by getComputedStyle; longhands verified by eye' } },
-  { spec: '.cb', find: '[data-testid^="pane-check-"]', props: ['width', 'height', 'border-radius', 'align-items', 'justify-content'], why: { display: 'authored inline-flex blockifies to flex as a flex item in the row; verified in source' } },
-  { spec: '.peek', find: '[data-testid^="pane-peek-"]:not([data-testid^="pane-peek-button-"])', props: ['padding', 'background', 'border-radius', 'font-size', 'line-height', 'white-space', 'overflow-x', 'color'], why: { padding: 'shorthand not enumerated by getComputedStyle; longhands verified by eye', 'white-space': WHITE_SPACE_NOT_ENUMERATED, 'line-height': LINE_HEIGHT_RESOLVES_TO_PX } },
-  { spec: '.btn.sm', find: '[data-testid="add-agents-button"]', props: ['height', 'font-size', 'font-weight', 'border-radius'] },
-  { spec: '.notice', find: '[data-testid="transcript-notice"]', props: ['padding', 'text-align', 'font-size', 'color'], why: { padding: 'shorthand not enumerated by getComputedStyle; longhands verified by eye' } },
+  { spec: '.pane', find: '[data-testid^="pane-row-"]', at: DESKTOP, props: ['display', 'align-items', 'gap', 'border-radius', 'min-width', 'padding'], why: { padding: 'shorthand not enumerated by getComputedStyle; longhands verified by eye' } },
+  { spec: '.cb', find: '[data-testid^="pane-check-"]', at: DESKTOP, props: ['width', 'height', 'border-radius', 'align-items', 'justify-content'], why: { display: 'authored inline-flex blockifies to flex as a flex item in the row; verified in source' } },
+  { spec: '.peek', find: '[data-testid^="pane-peek-"]:not([data-testid^="pane-peek-button-"])', at: DESKTOP, props: ['padding', 'background', 'border-radius', 'font-size', 'line-height', 'white-space', 'overflow-x', 'color'], why: { padding: 'shorthand not enumerated by getComputedStyle; longhands verified by eye', 'white-space': WHITE_SPACE_NOT_ENUMERATED, 'line-height': LINE_HEIGHT_RESOLVES_TO_PX } },
+  { spec: '.btn.sm', find: '[data-testid="add-agents-button"]', at: DESKTOP, props: ['height', 'font-size', 'font-weight', 'border-radius'] },
+  { spec: '.notice', find: '[data-testid="transcript-notice"]', at: DESKTOP, props: ['padding', 'text-align', 'font-size', 'color'], why: { padding: 'shorthand not enumerated by getComputedStyle; longhands verified by eye' } },
+
+  // The inbox, the landing view (design/artboards/Main.dc.html and
+  // PhoneInbox.dc.html). `find` targets the card list's own testids under
+  // CHAT_FIXTURES=1, same prefix-selector convention the pane picker's
+  // entries use. The cards are the phone landing view too.
+  { spec: '.card2', find: '[data-testid^="inbox-card-"]:not([data-open="true"])', at: BOTH, props: ['display', 'flex-direction', 'gap', 'border-radius', 'min-width', 'background', 'cursor'], why: { padding: 'shorthand not enumerated by getComputedStyle; longhands verified by eye', border: 'full shorthand (width/style/colour combined); not separately enumerated, verified by eye' } },
+  { spec: '.card2.on', find: '[data-testid^="inbox-card-"][data-open="true"]', at: DESKTOP, props: ['background', 'border-color'] },
+  { spec: '.lead', find: '[data-testid^="card-lead-"]', at: BOTH, props: ['font-size', 'overflow', 'overflow-wrap', '-webkit-line-clamp', '-webkit-box-orient'], why: { 'line-height': LINE_HEIGHT_RESOLVES_TO_PX, display: DISPLAY_BLOCKIFIES_ON_BUTTON, 'font-family': FONT_FAMILY_QUOTING_DIFFERS } },
+  // `.ctx` in all three tones: a room chip, a DM's purple, and the
+  // transcript's unclaimed-`@here` warning.
+  { spec: '.ctx', find: '[data-testid^="inbox-elsewhere-room-"]', at: BOTH, props: ['align-items', 'height', 'border-radius', 'font-size', 'font-weight', 'white-space', 'color'], why: { display: 'authored inline-flex blockifies to flex as a flex item in the meta row; verified in source', padding: 'shorthand not enumerated by getComputedStyle; longhands verified by eye', border: 'full shorthand (width/style/colour combined); not separately enumerated, verified by eye', 'white-space': WHITE_SPACE_NOT_ENUMERATED } },
+  { spec: '.ctx.dm', find: '[data-testid="inbox-elsewhere-dm"]', at: BOTH, props: ['border-color', 'color'] },
+  { spec: '.ctx.warn', find: '[data-testid="unclaimed-chip"]', at: DESKTOP, props: ['border-color', 'color'] },
+  { spec: '.sect', find: '[data-testid="inbox-section-needs-you"]', at: BOTH, props: ['align-items', 'display', 'gap'], why: { padding: 'shorthand not enumerated by getComputedStyle; longhands verified by eye' } },
+  { spec: '.sect .lbl', find: '[data-testid="inbox-section-needs-you"] > span:first-child', at: BOTH, props: ['color', 'font-size', 'font-weight', 'letter-spacing'], why: { 'letter-spacing': LETTER_SPACING_RESOLVES_TO_PX } },
+  { spec: '.chip', find: '[data-testid="inbox-chip-elsewhere"]', at: DESKTOP, props: ['align-items', 'gap', 'height', 'border-radius', 'font-size', 'font-weight', 'white-space', 'color'], why: { padding: 'shorthand not enumerated by getComputedStyle; longhands verified by eye', border: 'full shorthand (width/style/colour combined); not separately enumerated, verified by eye', 'white-space': WHITE_SPACE_NOT_ENUMERATED, display: DISPLAY_BLOCKIFIES_TO_FLEX } },
+  { spec: '.chip.live', find: '[data-testid="inbox-chip-open-asks"]', at: DESKTOP, props: ['border-color', 'color'] },
+  // The avatar inside the handle chip. The artboards draw one flat 10px
+  // sprite everywhere; the inbox card is the surface whose real invadr is
+  // that size, so this is where the number is a contract rather than a
+  // stand-in (the message header deliberately runs a 22px one).
+  { spec: '.sprite', find: '[data-testid^="inbox-card-"] [data-testid="speaker-chip"] svg', at: BOTH, props: ['height', 'width'], why: { flex: 'shorthand keyword (none), not enumerated; verified by eye' } },
+  // The reader: the message before the one you opened, dimmed.
+  { spec: '.msg.context', find: '[data-testid="reader-context-message"]', at: BOTH, props: ['opacity'] },
+
+  // Read messages fold to their first block, with the rest behind a
+  // `.foldrow`. Nothing folds while a room is all unread, so the capture
+  // takes this after a mark-read.
+  { spec: '.foldrow', find: '[data-testid="read-fold-toggle"]', at: DESKTOP, props: ['align-items', 'display', 'gap', 'margin-top', 'font-size', 'font-weight', 'color', 'cursor'], why: { background: 'UnstyledButton, verified by eye', border: 'UnstyledButton', padding: 'UnstyledButton' } },
+  // No entry for `.foldrow .tri`: the three borders that ARE the triangle are
+  // shorthands getComputedStyle never enumerates, and its authored `width: 0`
+  // / `height: 0` read back as the border box under the `border-box` sizing
+  // both sides use. Nothing on it is assertable.
+
+  // Phone chrome (Phone.dc.html / PhoneInbox.dc.html). The 56px headers are
+  // drawn with their height, padding and gap inline on the artboard, so
+  // `.row` is all spec.json owns of them: that the header is a nowrap row of
+  // centred controls, not that it is 56px. The 44px tap floor below is the
+  // number that IS in the spec.
+  { spec: '.row', find: '[data-testid="phone-inbox-header"]', at: PHONE, props: ['align-items', 'display'], why: { gap: "the artboard sets the phone header's own gap inline; `.row`'s is the generic one", 'min-width': 'Group does not set it; the header truncates on its title, verified by eye' } },
+  { spec: '.row', find: '[data-testid="reader-phone-header"]', at: PHONE, props: ['align-items', 'display'], why: { gap: "the artboard sets the phone header's own gap inline; `.row`'s is the generic one", 'min-width': 'Group does not set it; the header truncates on its title, verified by eye' } },
+  { spec: '.aicon.tap', find: '[data-testid="phone-drawer-toggle"]', at: PHONE, props: ['width', 'height'] },
+  { spec: '.aicon.tap', find: '[data-testid="reader-back"]', at: PHONE, props: ['width', 'height'] },
 ];
 
 const norm = v => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : v);
@@ -722,15 +822,28 @@ function parseColor(v) {
   return null;
 }
 
-/** `color-mix(in srgb, <colour> <pct>, transparent)` -> the same colour at that alpha. */
+/**
+ * `color-mix(in srgb, <colour> <pct>, <colour>)` -> the flat colour it makes.
+ * Over `transparent` that is the same colour at that alpha (the wash the
+ * artboards use everywhere); over an opaque second colour it is the blend,
+ * which is what an opaque wash like `.card2.on`'s resolves to.
+ */
 function resolveColorMix(v) {
-  const m = /^color-mix\(\s*in srgb\s*,\s*(\S+)\s+([\d.]+)%\s*,\s*transparent\s*\)$/.exec(
+  const m = /^color-mix\(\s*in srgb\s*,\s*(\S+)\s+([\d.]+)%\s*,\s*(\S+)\s*\)$/.exec(
     norm(v)
   );
   if (!m) return null;
   const base = parseColor(m[1]);
-  if (!base) return null;
-  return [base[0], base[1], base[2], Number(m[2]) / 100];
+  const over = parseColor(m[3]);
+  if (!base || !over) return null;
+  const p = Number(m[2]) / 100;
+  if (over[3] === 0) return [base[0], base[1], base[2], p];
+  return [
+    base[0] * p + over[0] * (1 - p),
+    base[1] * p + over[1] * (1 - p),
+    base[2] * p + over[2] * (1 - p),
+    base[3] * p + over[3] * (1 - p),
+  ];
 }
 
 /** Colours match within a rounding step per channel and 0.02 alpha. */
@@ -803,6 +916,22 @@ function equal(expected, actual, scheme = 'light') {
   return false;
 }
 
+/** Every computed property this target's assertions will read, shorthand
+    fallbacks included. Emitting only these keeps a capture small enough to
+    read by eye, and is why a TARGETS edit always needs a fresh `--probe`. */
+function neededProps(target) {
+  const want = SPEC[target.spec] ?? {};
+  const props = target.props ?? Object.keys(want);
+  const out = new Set();
+  for (const prop of props) {
+    if (target.why?.[prop]) continue;
+    out.add(prop);
+    const fallback = LONGHAND_FALLBACK[prop];
+    if (fallback) out.add(fallback);
+  }
+  return [...out];
+}
+
 /**
  * The page-side probe, emitted as source so Fast Browser can evaluate it.
  *
@@ -810,32 +939,57 @@ function equal(expected, actual, scheme = 'light') {
  * because the page has no access to this file. That makes it regenerate
  * whenever TARGETS changes -- always re-run `--probe`, never reuse a
  * captured probe from an earlier task.
+ *
+ * Results are keyed by POSITION in TARGETS, not by selector, so two entries
+ * may share a `spec` (the page bar's `.chip` and the inbox bar's) without one
+ * silently overwriting the other's reading.
  */
 function probeSource() {
-  const finds = TARGETS.map(t => ({ spec: t.spec, find: t.find }));
+  const finds = TARGETS.map(t => ({
+    spec: t.spec,
+    find: t.find,
+    read: neededProps(t),
+  }));
   return `() => {
   const targets = ${JSON.stringify(finds)};
-  const out = { __scheme__: document.documentElement.getAttribute('data-mantine-color-scheme') };
-  for (const t of targets) {
-    const el = document.querySelector(t.find);
-    // Two TARGETS can share a CSS-selector spec key (e.g. two '.chip'
-    // entries); a miss on the second must not erase the first's real hit.
-    if (!el) { if (!(t.spec in out)) out[t.spec] = null; continue; }
-    const cs = getComputedStyle(el);
-    const props = {};
-    for (const p of cs) props[p] = cs.getPropertyValue(p);
-    out[t.spec] = props;
-  }
+  const out = {
+    scheme: document.documentElement.getAttribute('data-mantine-color-scheme'),
+    width: window.innerWidth,
+    targets: targets.map(t => {
+      const el = document.querySelector(t.find);
+      if (!el) return null;
+      const cs = getComputedStyle(el);
+      // Only what the computed style ENUMERATES. Asked for by name, a
+      // shorthand like \`background\` still serializes (\`rgb(...) none repeat
+      // scroll ...\`), which no artboard value can equal; leaving it out is
+      // what lets the diff fall back to the longhand it does enumerate.
+      const enumerated = new Set();
+      for (const p of cs) enumerated.add(p);
+      const props = {};
+      for (const p of t.read) if (enumerated.has(p)) props[p] = cs.getPropertyValue(p);
+      return props;
+    }),
+  };
   return JSON.stringify(out);
 }`;
+}
+
+/** Unwraps whatever `browser_evaluate` wrote: the probe's JSON string, that
+    string wrapped in a result envelope, or the parsed object itself. */
+function parseCapture(raw) {
+  let got = JSON.parse(raw);
+  if (typeof got === 'string') got = JSON.parse(got);
+  got = got?.result ?? got;
+  if (typeof got === 'string') got = JSON.parse(got);
+  return got;
 }
 
 function main() {
   const args = process.argv.slice(2);
   // `--scheme dark` resolves every expected value against the artboards'
   // `.app.dark` palette, so ONE target list covers both schemes: capture the
-  // page in dark, pass the flag, and the same 35 targets are re-asserted
-  // against the dark palette rather than annotated one by one.
+  // page in dark, pass the flag, and the same targets are re-asserted against
+  // the dark palette rather than annotated one by one.
   const SCHEMES = ['light', 'dark'];
   const schemeIdx = args.indexOf('--scheme');
   const cliScheme = schemeIdx !== -1 ? args[schemeIdx + 1] : undefined;
@@ -849,7 +1003,6 @@ function main() {
     );
     process.exit(2);
   }
-  const arg = args[0];
 
   if (TARGETS.length === 0) {
     console.log('design audit: no TARGETS registered yet.');
@@ -857,63 +1010,93 @@ function main() {
     return;
   }
 
-  if (arg === '--probe') {
+  if (args[0] === '--probe') {
     console.log(probeSource());
     return;
   }
 
-  if (!arg) {
+  if (args.length === 0) {
     console.error('usage: node design/audit.mjs --probe');
-    console.error('       node design/audit.mjs [--scheme dark] <computed-styles.json>');
+    console.error('       node design/audit.mjs [--scheme dark] <capture.json> [<capture.json>...]');
     console.error('');
     console.error('Step 1 prints a function for Fast Browser browser_evaluate;');
     console.error('point its `filename` at a file, then pass that file to step 2.');
+    console.error('Pass one file per page state a target needs (a menu open, the');
+    console.error('inbox, a room); a target counts as found if any of them saw it.');
     process.exit(2);
   }
 
-  let got;
-  try {
-    const raw = readFileSync(arg, 'utf8');
-    // browser_evaluate may wrap the return value; accept either shape.
-    const parsed = JSON.parse(raw);
-    got =
-      typeof parsed === 'string'
-        ? JSON.parse(parsed)
-        : (parsed?.result ?? parsed);
-    if (typeof got === 'string') got = JSON.parse(got);
-  } catch (err) {
-    console.error(`could not read computed styles from ${arg}: ${err.message}`);
+  const captures = [];
+  for (const file of args) {
+    let got;
+    try {
+      got = parseCapture(readFileSync(file, 'utf8'));
+    } catch (err) {
+      console.error(`could not read computed styles from ${file}: ${err.message}`);
+      process.exit(2);
+    }
+    if (!got || typeof got !== 'object' || !Array.isArray(got.targets)) {
+      console.error(
+        `${file} did not contain a computed-styles capture. Re-run the probe ` +
+          `through browser_evaluate and point its filename at a fresh file.`
+      );
+      process.exit(2);
+    }
+    if (got.targets.length !== TARGETS.length) {
+      console.error(
+        `${file} holds ${got.targets.length} readings for ${TARGETS.length} ` +
+          `targets: it was taken with a different TARGETS list. Re-run --probe.`
+      );
+      process.exit(2);
+    }
+    captures.push({ file, ...got });
+  }
+
+  // Merging captures of different schemes or viewports would compare a dark
+  // reading against a light expectation, or a phone row against a desktop
+  // one, and report it as a component defect.
+  const disagree = (key) =>
+    captures.some(c => String(c[key]) !== String(captures[0][key]));
+  if (disagree('scheme')) {
+    console.error('the captures disagree on colour scheme; diff each scheme on its own.');
     process.exit(2);
   }
+  const phone = captures[0].width <= PHONE_MAX_WIDTH;
+  if (captures.some(c => (c.width <= PHONE_MAX_WIDTH) !== phone)) {
+    console.error(
+      `the captures straddle the ${PHONE_MAX_WIDTH}px shell switch; diff each width on its own.`
+    );
+    process.exit(2);
+  }
+  const viewport = phone ? PHONE : DESKTOP;
 
   // The capture records the scheme it was taken in, so the expected values
   // resolve against the right palette even when --scheme is omitted. An
   // explicit flag still wins, for re-checking a light capture against dark.
-  if (got === null || typeof got !== 'object' || Array.isArray(got)) {
-    console.error(
-      `${arg} did not contain a computed-styles object. Re-run the probe ` +
-        `through browser_evaluate and point its filename at a fresh file.`
-    );
-    process.exit(2);
-  }
   // A page could in principle report any string; only the two we can resolve
   // against are honoured, and anything else falls through to light.
-  const capturedScheme = SCHEMES.includes(got.__scheme__)
-    ? got.__scheme__
+  const capturedScheme = SCHEMES.includes(captures[0].scheme)
+    ? captures[0].scheme
     : undefined;
   const scheme = cliScheme ?? capturedScheme;
-  delete got.__scheme__;
 
   const failures = [];
-  for (const t of TARGETS) {
+  let checked = 0;
+  for (const [index, t] of TARGETS.entries()) {
+    const at = t.at ?? DESKTOP;
+    if (at !== BOTH && at !== viewport) continue;
+    checked += 1;
     const want = SPEC[t.spec];
     if (!want) {
       failures.push(`${t.spec}: no such selector in spec.json`);
       continue;
     }
-    const actual = got[t.spec];
+    const actual = captures.map(c => c.targets[index]).find(Boolean);
     if (!actual) {
-      failures.push(`${t.spec}: nothing matched "${t.find}" in the page`);
+      failures.push(
+        `${t.spec}: nothing matched "${t.find}" in any capture ` +
+          `(${captures.length} state${captures.length === 1 ? '' : 's'})`
+      );
       continue;
     }
     for (const prop of t.props ?? Object.keys(want)) {
@@ -940,8 +1123,8 @@ function main() {
     process.exit(1);
   }
   console.log(
-    `design audit passed: ${TARGETS.length} components match the artboards` +
-      `${scheme ? ` (${scheme} scheme)` : ''}.`
+    `design audit passed: ${checked} components match the artboards` +
+      `${scheme ? ` (${scheme} scheme` : ' ('}, ${viewport} shell).`
   );
 }
 

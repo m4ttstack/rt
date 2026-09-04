@@ -168,25 +168,54 @@
     .state.blocked { color: var(--bad); }
     .state.idle { color: var(--muted-text); }
     .notice { padding: 6px 0 4px; text-align: left; font-size: 10.56px; color: var(--muted-text); }
+    .sprite { width: 10px; height: 10px; flex: none; }
+    .hpill { display: inline-flex; align-items: center; gap: 4.8px; }
+    .doing { font-size: 10.56px; color: var(--muted-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+    .doing.dim { color: var(--muted); }
+    .ws { display: flex; align-items: center; gap: 7.2px; height: 30px; padding: 0 9.6px 0 26.4px; border-radius: 6px; min-width: 0; overflow: hidden; cursor: pointer; }
+    .ws:hover { background: var(--bg4); }
+    .ws.on { background: color-mix(in srgb, var(--accent) var(--wash), transparent); }
+    .ws .h { font-size: 11.2px; font-weight: 600; flex: none; }
+    .ws.more { color: var(--muted-text); font-size: 10.56px; height: 26px; cursor: default; }
+    .ws.more span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+    .grp { color: var(--muted-text); font-size: 11.2px; }
+    .dm2 { display: flex; flex-direction: column; gap: 1px; padding: 4.8px 9.6px; border-radius: 6px; min-width: 0; overflow: hidden; cursor: pointer; }
+    .dm2:hover { background: var(--bg4); }
+    .dm2.on { background: color-mix(in srgb, var(--accent) var(--wash), transparent); }
+    .dm2 .close { display: none; width: 22px; height: 22px; border-radius: 6px; align-items: center; justify-content: center; color: var(--muted-text); background: transparent; border: 0; flex: none; cursor: pointer; }
+    .dm2.hover { background: var(--bg4); }
+    .dm2.hover .close { display: inline-flex; }
+    .card2 { display: flex; flex-direction: column; gap: 6px; padding: 9.6px 11.2px; background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; min-width: 0; }
+    .card2.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) var(--wash), var(--bg2)); }
+    .lead { font-family: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 14px; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+    .ctx { display: inline-flex; align-items: center; height: 16px; padding: 0 6px; border-radius: 4px; font-size: 9.5px; font-weight: 600; border: 1px solid var(--border-soft); color: var(--muted-text); white-space: nowrap; }
+    .ctx.dm { color: var(--purple); border-color: color-mix(in srgb, var(--purple) 45%, transparent); }
+    .ctx.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+    .foldrow { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 10.56px; font-weight: 600; color: var(--accent); cursor: pointer; background: transparent; border: 0; padding: 0; }
+    .foldrow .tri { width: 0; height: 0; border-top: 4px solid transparent; border-bottom: 4px solid transparent; border-left: 5px solid currentColor; }
+    .kv { display: grid; grid-template-columns: 52px minmax(0, 1fr); column-gap: 8px; row-gap: 3px; align-items: baseline; }
+    .kv .k { font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-text); }
+    .msg.context { opacity: 0.62; }
   </style>
 </helmet>
 
-<div class="app {{schemeClass}}" style="width: 900px; min-height: 560px; padding: 14.4px; display: flex; flex-direction: column; gap: 14.4px;">
+<div class="app {{schemeClass}}" style="width: 1000px; min-height: 620px; padding: 14.4px; display: flex; flex-direction: column; gap: 14.4px;">
   <div class="stack" style="gap: 2px;">
     <span style="font-size: 20px; font-weight: 700; line-height: 1.35;">Where it starts, and what comes back</span>
     <span class="sm muted">The picker is one component with two callers today, and it can start a pane of its own. Both entry points hide entirely when rt says herdr is unavailable.</span>
   </div>
 
   <div class="stack" style="gap: 4.8px;">
-    <span class="xs muted" style="font-weight: 600; letter-spacing: 0.04em;">ROOMS RAIL · a 24px + beside the count opens New room, which launches the picker from its Agents section</span>
+    <span class="xs muted" style="font-weight: 600; letter-spacing: 0.04em;">FLEET TREE · a 24px + beside the count opens New room, which launches the picker from its Agents section</span>
     <div class="stack" style="width: 244px; background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; padding: 11.2px 6px; gap: 2px;">
       <div class="row" style="justify-content: space-between; padding: 0 0 6px 9.6px;">
-        <span class="xs muted" style="font-weight: 600; letter-spacing: 0.04em;">ROOMS</span>
-        <div class="row" style="gap: 2px;"><span class="xs muted">3</span><button class="aicon" style="width: 24px; height: 24px;" aria-label="New room"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button></div>
+        <span class="xs muted" style="font-weight: 600; letter-spacing: 0.04em;">FLEET</span>
+        <div class="row" style="gap: 2px;"><span class="xs muted">4 on · 9 off</span><button class="aicon" style="width: 24px; height: 24px;" aria-label="New room"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button></div>
       </div>
-      <div class="room on"><span class="hash"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h16"/><path d="M4 15h16"/><path d="M10 3 8 21"/><path d="m16 3-2 18"/></svg></span><span class="truncate" style="font-weight: 600; flex: 1;">build</span><span class="mention" aria-label="1 mention">@1</span><span class="unread" aria-label="4 unread">4</span></div>
-      <div class="room"><span class="hash"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h16"/><path d="M4 15h16"/><path d="M10 3 8 21"/><path d="m16 3-2 18"/></svg></span><span class="truncate" style="flex: 1;">demo-42</span><span class="unread" aria-label="2 unread">2</span></div>
-      <div class="room"><span class="hash"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h16"/><path d="M4 15h16"/><path d="M10 3 8 21"/><path d="m16 3-2 18"/></svg></span><span class="truncate muted" style="flex: 1;">release</span></div>
+      <div class="room on"><span class="hash"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h16"/><path d="M4 15h16"/><path d="M10 3 8 21"/><path d="m16 3-2 18"/></svg></span><span class="truncate" style="font-weight: 600; flex: 1;">rt</span><span class="mention" aria-label="1 mention">@1</span><span class="unread" aria-label="155 unread">155</span></div>
+      <div class="ws"><span class="dot live" title="working · seen 12s ago"></span><span class="h">max</span><span class="doing dim" style="flex: 1;">repo-tools · main</span></div>
+      <div class="room"><span class="hash"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h16"/><path d="M4 15h16"/><path d="M10 3 8 21"/><path d="m16 3-2 18"/></svg></span><span class="truncate" style="flex: 1;">skills</span><span class="unread" aria-label="9 unread">9</span></div>
+      <div class="ws"><span class="dot live" title="working · seen 2m ago"></span><span class="h">edie</span><span class="doing" style="flex: 1;">Pipeline iteration loop</span></div>
     </div>
   </div>
 
@@ -194,19 +223,19 @@
     <span class="xs muted" style="font-weight: 600; letter-spacing: 0.04em;">PAGE BAR · add agents launches the picker directly; the room page is the caller and invites what comes back</span>
     <div class="row" style="height: 64px; padding: 0 11.2px; background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; gap: 9.6px;">
       <span class="muted"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h16"/><path d="M4 15h16"/><path d="M10 3 8 21"/><path d="m16 3-2 18"/></svg></span>
-      <span style="font-size: 20px; font-weight: 700; line-height: 1.35;">build</span>
+      <span style="font-size: 20px; font-weight: 700; line-height: 1.35;">rt</span>
       <div style="width: 4.8px;"></div>
-      <span class="chip">5 in room</span><span class="chip live"><span class="dot live"></span>3 working</span><span class="chip idle"><span class="dot idle"></span>2 idle</span><span class="chip offline"><span class="dot offline"></span>1 offline: june</span>
+      <span class="chip">2 in room</span><span class="chip live"><span class="dot live"></span>1 working: max</span><span class="chip idle"><span class="dot idle"></span>1 idle: remy</span><span class="chip offline"><span class="dot offline"></span>7 offline</span>
       <span class="chip">wakes: mention ▾</span>
       <div style="flex: 1;"></div>
-      <button class="btn sm" aria-label="Add agents to #build"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6"/><path d="M22 11h-6"/></svg><span>add agents</span></button>
-      <button class="btn sm" aria-label="Mark #build read"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>mark read</span><span class="unread">4</span></button>
+      <button class="btn sm" aria-label="Add agents to #rt"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6"/><path d="M22 11h-6"/></svg><span>add agents</span></button>
+      <button class="btn sm" aria-label="Mark #rt read"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>mark read</span><span class="unread">155</span></button>
     </div>
   </div>
 
   <div class="stack" style="gap: 4.8px;">
     <span class="xs muted" style="font-weight: 600; letter-spacing: 0.04em;">WHAT THE PICKER RETURNS · the rt pane rows, verbatim; null on cancel</span>
-    <div class="code" style="margin: 0;">const picked = await pickPanes({ context: 'to invite to #build', disable: notInvitable, allowCreate: true });
+    <div class="code" style="margin: 0;">const picked = await pickPanes({ context: 'to invite to #rt', disable: notInvitable, allowCreate: true });
 // ChatPane[] | null
 // { paneId: 'w7A:pY', workspace: 'acme', title: 'Evaluate house codegen…',
 //    cwd: '~/Documents/GitHub/acme', repo: 'acme', branch: 'main',
@@ -221,7 +250,7 @@
   </div>
 </div>
 </x-dc>
-<script data-dc-script data-props='{"dark":{"editor":"boolean","default":false,"section":"Theme"},"$preview":{"width":900,"height":560}}'>
+<script data-dc-script data-props='{"dark":{"editor":"boolean","default":false,"section":"Theme"},"$preview":{"width":1000,"height":620}}'>
 class Component extends DCLogic {
   renderVals() {
     return { schemeClass: this.props.dark ? 'dark' : '' };

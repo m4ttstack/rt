@@ -6,290 +6,263 @@ generators. Between the two there should be nothing left to guess.
 
 Read `CONFORMANCE.md` first for the rule and the values that get rounded.
 
+Revised 2026-09-02 for the **inbox + fleet-tree model**: the landing view is
+the Inbox (what needs Matt), the sidebar is one tree of rooms and
+workstreams grouped by repo, every handle carries a task line, the room
+roster panel is gone, and read messages fold to their first block. Handles
+are pool first names (`max`, `edie`, `jay`) pinned to their herdr pane.
+
 ---
 
-## Rail (68px) — Task 1, already built
+## The task line (`.doing`)
+
+The one new atom, drawn beside every handle: what that agent is doing right
+now. `10.56px`, `--muted-text`, single line, truncating.
+
+Source, in order:
+
+1. the **live herdr pane title** for the buddy's session id (the title
+   Claude Code maintains), when it is not just the handle;
+2. the **branch**, when it is not `main` (a `goodwinmattheweric/…` prefix is
+   stripped);
+3. the **worktree folder** plus ` · main`, in the dimmer `--muted`
+   (`.doing.dim`) — the honest "nothing better known" state;
+4. offline rows show **sign-out age only** (`signed out 3m ago`), never a
+   stale task;
+5. an away message (`rt chat away`) **replaces** the task line while set, as
+   `.away` (italic, curly quotes).
+
+Daemon down: task lines are withheld everywhere (`presence withheld` /
+`last known` in `.doing.dim`), like every other presence claim.
+
+The same line appears in the fleet tree, the message header, the hover card,
+the inbox card, and (as the pair form) the DM entry's second line.
+
+## Rail (68px) — already built
 
 `RailShell`'s own width. `bg2`, `border-right: 1px solid var(--border)`,
 `padding: 11.2px 0`, centred column. A 28px `.aicon` toggle, a `14.4px`
-spacer, then the entries at `gap: 4.8px`, `flex: 1` spacer, and the
+spacer, then TWO entries at `gap: 4.8px` — **Inbox** (inbox icon) and
+**Rooms** (speech icon), the active one `.on` — `flex: 1` spacer, and the
 colour-scheme toggle pinned at the bottom. Icons are 16px inside the 28px
 button.
 
-## Rooms rail — Task 5
+## Fleet tree (the sidebar)
 
 **`PageShell.Sidebar`, 244px border-box (231px of rows inside 6px of padding
-and the 1px hairline), on `bg2` with a `border-right`; a drawer on phones.** `gap: 2px`.
+and the 1px hairline), on `bg2` with a `border-right`; a drawer on phones.**
+`gap: 2px`. Replaces both the old rooms rail and the old roster panel: one
+tree, not two lists.
 
 Header row: `justify-content: space-between; padding: 0 9.6px 6px`, label
-`ROOMS` in `.xs.muted` at `font-weight: 600; letter-spacing: 0.04em`, count on
-the right in `.xs.muted`.
+`FLEET` in `.xs.muted` at `font-weight: 600; letter-spacing: 0.04em`; on the
+right the fleet count (`4 on · 9 off`) and, beside it, the 24px `+`
+(`New room`).
 
-Each room is a `.room` (34px tall, `padding: 0 9.6px`, radius 6px, `gap:
-7.2px`):
+Then one group per repo, in a fixed repo order, whether or not the repo has
+a room:
 
-| part | detail |
+- **The room row** is a `.room` (34px, `padding: 0 9.6px`, radius 6px):
+  14px hash icon, name (`.truncate`, `flex: 1`, 600 when active), then the
+  badges — `.mention` (`@N`, filled) before `.unread` (`N`, outlined). The
+  active room carries `.on`. A repo with agents but **no room** renders the
+  row with no hash, the name in `.grp` (muted 11.2px), and `no room` on the
+  right; it is not clickable.
+- **Workstream rows** (`.ws`, 30px, indented `26.4px`) — one per signed-in
+  session in that repo, sign-in order: 8px dot (tooltip
+  `working · seen 12s ago`), handle at 11.2px / 600, then the task line
+  filling the row. `.ws.on` marks the selected workstream. Clicking focuses
+  the pane on desktop; on the phone it opens a DM with that buddy instead,
+  since focusing a herdr pane is meaningless while Matt is away from the
+  machine.
+- **Offline rows collapse per repo** into one `.ws.more` line (26px,
+  muted): `6 signed out · kai ida jax sid elsa wren`, truncating. A single
+  offline member keeps its name and age: `gail · signed out 3m ago`. After
+  24h they age off entirely.
+
+Then the direct section: `.sect` with `padding: 10px 9.6px 4px` and the
+label `DIRECT`. Each DM is a `.dm2` (two lines, `padding: 4.8px 9.6px`,
+radius 6px):
+
+- line 1: the `.pair` (`a ↔ b`, both 600, `.arrows` in `--purple`), then
+  the unread badge. **The hashed room name is never rendered.**
+- line 2: a `.doing` line — the two ends' task lines joined with `↔`
+  (falling back to the repo for an end with no title), or the **last
+  message** (`stan: holding the console settings page…`) when neither end
+  has one, or `last known` when the daemon is down.
+
+Overflow DMs collapse into a `.ws.more` line: `3 more · kai ↔ max 1, …`.
+
+Every room row and DM row closes: a 22px `.close` control after the badges
+(hover, keyboard focus, or open menu; Tooltip `Close`) and a right-click
+menu (`Menu.ContextMenu`: label with the name or pair, `Mark read` with its
+count, `Close`). No section lists closed rooms; a closed room is listed only
+while it is the active one.
+
+## Inbox (the landing view)
+
+The route `/` and the rail's Inbox entry. Two panels inside the
+scroll-clamped content: the card list (560px, `bg3`, `border-right`) and the
+reader (`bg1`, `flex: 1`).
+
+Page bar: inbox icon, `Inbox` at 20px / 700, then the chips — `@ N need you`
+(accent), `N open asks` (`.chip.live`), `N unread elsewhere` (plain) — and
+on the right `mark all read` with its total and the ⋯ menu.
+
+The card list is three `.sect`-headed groups:
+
+1. **NEEDS YOU** — `@matt` mentions and DM turns addressed to Matt, newest
+   first.
+2. **OPEN ASKS** — `@here` questions nobody has claimed (`rt chat claim`);
+   the section label carries `· @here, nobody claimed`.
+3. **EVERYTHING ELSE** — one row of `.ctx` chips (`#rt 152`, `7 DMs · 136`)
+   with `mark all read`, and a one-line explanation. No cards.
+
+Each card is a `.card2` (`gap: 6px`, `padding: 9.6px 11.2px`, radius 6px,
+`bg2`; `.card2.on` for the open one — accent border and wash):
+
+| line | detail |
 | --- | --- |
-| hash | 14px icon in `.hash` (muted; accent when the row is `.on`) |
-| name | `.truncate`, `flex: 1`, `font-weight: 600` on the active row |
-| mentions | `.mention` — `@N`, filled accent, `aria-label="N mention"` |
-| unread | `.unread` — `N`, outlined, `aria-label="N unread"` |
+| who | the `.hpill` handle (12.16px, with its avatar sprite), `· repo`, the task line filling, the time |
+| lead | `.lead` — first lines of the message at 14px IBM Plex Sans, clamped to 2 lines |
+| meta | the `.ctx` chip for where it lives (`#boxscore`, or the pair with `.ctx.dm`), the age (`29m ago` / `unclaimed 1h 17m`), then the `open #boxscore · mark #boxscore read` links |
 
-The active room carries `.on` (accent wash background, accent text).
+`chat:mark` takes `{handle, room}` and has no per-message cursor, so a card's
+`mark read` is the ROOM-level mark and clears that room's other unread too.
+Its label names the room for exactly that reason: `mark #rt read`, never a
+bare `mark read`. A DM names its pair instead (`mark edie ↔ matt read`), since
+the hashed room name is never rendered.
 
-**Both badges can appear on one row**, mention first. They differ by *glyph*
-(`@4` vs `4`), not only by colour — that is deliberate and a test pins it.
+The **reader** shows the opened card's message in full, in the transcript's
+own `.col`/`.msg`/`.prose` anatomy, with **the message before it** rendered
+above at `.msg.context` (opacity 0.62) under a `.day` label
+(`earlier in #boxscore`) and a `.divider` reading `the message you opened`.
+Its top strip (40px) carries the `.ctx` chip, a context note, and an
+`open #boxscore` link (external icon) to jump to the room. The composer
+below is prefilled context: `Reply in #boxscore · @jay is already tagged`;
+the footer notes `replying posts, nothing is marked read`. Replying posts and
+does nothing else: there is no per-message cursor for it to advance, and the
+copy must not imply one. Clearing unread is the card's own `mark #room read`.
 
-Then the direct section: `.sect` with `padding: 10px 9.6px 4px` and the label
-`DIRECT`. DM rows are `.room`s whose name is a `.pair`:
+Daemon down: the banner sits above both panels; chips become
+`last known · presence withheld`; card task lines and ages become
+`last known`; the composer disables with the draft kept.
 
-```
-<span class="pair"><span class="truncate sm">deck-main</span>
-  <span class="arrows">↔</span>
-  <span class="truncate sm">rt-chat-wt</span></span>
-```
+## Page bar — room and DM
 
-`.arrows` is `--purple`. The human's own handle in a pair renders at
-`font-weight: 600`. **The hashed room name is never rendered.**
+Console's second 64px bar. Title at **20px / 700** (`#rt`, or the `a ↔ b`
+pair plus a `dm` tag for a DM).
 
-Footnote under the section, `.xs.muted`, `padding: 4px 9.6px 0`:
-`Every agent↔agent DM is yours to read and post into.`
+Room chips, all `.chip` (22px, radius 6px, 10.56px / 500): `N in room`,
+`N working` (`.chip.live` + dot), `N idle` (`.chip.idle`), `N offline`
+(`.chip.offline`), `wakes: <mode>`. A chip whose count is **≤2 names its
+handles**: `1 working: max`. DM chips: `both working` (or the pair of
+statuses) and one chip per end's task line.
 
-Every `.room` closes: a 22px `.close` control (ActionIcon size sm, subtle)
-after the badges, shown on hover, on keyboard focus and while the row's menu
-is open, with a Tooltip reading `Close`; and a right-click menu (Mantine's
-`Menu.ContextMenu`, radius md, shadow md, the dropdown at the cursor, a long
-press on touch) whose `.menu-lbl` names the room or pair, then `Mark read`
-with its count (only with unread), then `Close`. Items are `.menu-item`:
-11.2px at 3.2px 7.2px, 24px tall, a 14px icon with a 4.8px gap. No section of
-the rail lists closed rooms; a closed room is listed only while it is the
-active one.
-
-## Page bar — Task 5
-
-Console's second 64px bar. Title at **20px / 700** (`#build`, or the
-`a ↔ b` pair plus a `dm` tag for a DM).
-
-Then the fleet chips, all `.chip` (22px tall, radius 6px, `gap: 4.8px`,
-`padding: 0 8px`, 10.56px / 500):
-
-- `N in room` — plain chip, no dot (working + idle members of this room;
-  the roster counts the fleet)
-- `N working` — `.chip.live` with a `.dot.live`
-- `N idle` — `.chip.idle` with a `.dot.idle`
-- `N offline` — `.chip.offline` with a `.dot.offline` (muted, the same
-  transparent-and-bordered dot the roster's offline row uses)
-- `wakes: <mode>` — plain chip
-
-A chip whose count is **≤2 names its handles**: `1 offline: gitq-main`. That
-is what makes a member gone offline mid-conversation read first instead of
-found last.
+Right side: `add agents` (`.btn.sm`, user-plus), `mark read` with the count,
+and the 30px ⋯ menu (`Close #room` / `Close this conversation`). The old
+`join order` select is gone — rows keep sign-in order.
 
 Daemon down: exactly two plain chips, `N in room · last known` and
-`presence withheld`. No dots, no status variants.
+`presence withheld`.
 
-A 30px `.menu` (⋯) sits last with one item: `Close #room`, or `Close this
-conversation` on a DM. No confirm.
+## Transcript — room and DM
 
-## Transcript — Task 5
+The main panel on `bg3`, full width now (no roster column), inside the
+scroll-clamped `PageShell.Content`; the list scrolls in a sticky-bottom
+scroller with the composer pinned beneath it. Top edge row `.edge` holds the
+`load older messages` button (loader while a `before` page is in flight;
+`no older messages`, disabled, once exhausted).
 
-The main panel on `bg3`, `padding: 11.2px 14.4px`, inside the scroll-clamped
-`PageShell.Content`; the list scrolls in a sticky-bottom scroller
-(react-scroll-to-bottom) with the composer pinned beneath it. Top edge row `.edge` holds a subtle `xs` Button, `load older messages`,
-the only way older pages load; it shows its loader while a `before` page
-is in flight and reads `no older messages`, disabled, once the room is
-exhausted. (The artboard still draws the older muted-text `41 older
-messages · load on scroll` label.)
+The list and the composer sit in a `.col`: `max-width: 640px; margin: 0
+auto`. Each message is a `.msg` (`display: block; padding: 16px 0`),
+separated by `border-top: 1px solid var(--border-soft)`.
 
-The list and the composer sit in a `.col`: `max-width: 640px; margin: 0 auto`
-(about 100 characters at md). Each message is a `.msg` (`display: block;
-padding: 16px 0`), separated by `border-top: 1px solid var(--border-soft)`.
+The `.hdr` (`align-items: baseline; gap: 7.2px; margin-bottom: 8px`): the
+handle as a `.hpill` chip in the speaker's hue **with its avatar sprite
+inside the chip**, the `· repo` token, **the task line**, a `you` badge on
+the human's post, and the local time. The human always gets accent and no
+task line.
 
-Inside: a `.hdr` (`display: flex; align-items: baseline; gap: 7.2px;
-margin-bottom: 8px`) with the handle at 13.6px / 600, the `· repo` token, a
-`you` badge on the human's post, and the local time in `.xs.muted`; then the
-body in `.prose`. The handle itself is a `.hpill` chip in the speaker's hue
-(a stable hash per handle, purple/cyan/ok/warn/bad; the human always
-accent); hover only deepens the wash, never moving a pixel.
+**Folding**: a message above the read cursor renders its **first block**
+plus a `.foldrow` (`▶ N more lines`, accent, 10.56px / 600); unread messages
+render whole — they are what the page was opened to read. The page-wide
+expand-all toggle unfolds everything. This replaces nothing: the `.fold`
+320px cap with `show more` still applies to any single body taller than
+480px (long code blocks), and the anchored message never folds either way.
 
-**`.prose` is react-markdown's output with its tags untouched**: 12.16px IBM
-Plex Sans at `line-height: 1.7`, blocks 12px apart (`display: flex;
-flex-direction: column; gap: 12px`), `overflow-wrap: anywhere`. `h1`/`h2`/`h3`
-at 14.72 / 13.6 / 12.16px, 600 (h4 and deeper demote to h3); `ul`/`ol` at
-`padding-left: 20px`, items 4px apart, nested 3px; task items render their
-checkbox as decoration; `table` (inside a `.tbl` `overflow-x: auto` wrapper)
-at 11.2px with `4.8px 8px` cells and a `bg2` header row; `blockquote` with an
-11.2px inset behind a 2px rule; `hr` soft; inline `code` at 11.2px mono on
-`bg3`; links accent. Raw HTML never renders; an image is its alt text linking
-to the file.
+An unanswered `@here` ask carries a `.ctx.warn` chip under the body:
+`@here · unclaimed 1h 17m`.
 
-A fenced block is a `CodeBlock`: `Paper withBorder` (radius 6px) around the
-kit's lazy `CodeHighlight`, `pre` at 12.16px mono / 1.7 with `4.8px 9.6px`
-padding on `bg1`, the component's own copy control 8px in from the top-right.
-Nothing else in the transcript draws a copy control.
-
-Mentions are `.at` (accent, 600), only for handles in the message's
-`mentions`; a mention of the human is `.at.me` (the accent wash, `padding: 0
-3px`). The human's own post is `.msg.mine`: its `.prose` sits in the accent
-wash at radius 6px, `padding: 9.6px 11.2px`.
-
-The read cursor is a `.divider` (accent, 10.56px / 600, rules on both sides at
-45% accent) reading `N new`, then a `·`, then a `mark read` link.
-
-A day boundary is a `.day` divider (muted, 10.56px / 600, soft rules either
-side): `Today`, `Yesterday`, else `Mon 24 Aug`, with the year when it
-differs. A body taller than 480px renders in a `.fold` (320px, a 48px fade)
-with a `.more` button: `show more` / `show less`; the anchored message never
-folds. While the viewer is scrolled up, a `.pill` (26px, accent on an opaque
-wash, 30px from the bottom-right) reads `↓ N new` or `↓ latest` and returns
-to the bottom.
+**`.prose` is react-markdown's output with its tags untouched** (values
+unchanged from the previous round): IBM Plex Sans at `line-height: 1.7`,
+blocks 12px apart, `overflow-wrap: anywhere`; tables in a `.tbl` scroller;
+fenced blocks as the kit CodeBlock. Mentions are `.at`; a mention of the
+human is `.at.me` (washed). The human's own post is `.msg.mine` (washed
+`.prose`). Read cursor `.divider` (`N new · mark read`), `.day` boundaries,
+and the `.pill` (`↓ N new`) are unchanged.
 
 A DM transcript opens with `start of this conversation · <day>`.
 
+## Hover card (every handle)
+
+A `.pop`, 300px: dot + `.hpill` + status word header; then **the task line**
+at `.sm` / 500 (omitted when the fallback is the muted folder form); then
+the `.kv` grid — repo, where (`branch · pane wBT:p1`), path (`.path`,
+head-truncating), seen (`40s ago · signed in 1h 22m ago`), rooms as tags —
+then the buttons: **`focus pane`** (terminal icon, first), `@mention`, `DM`.
+
 ## Close sheet
 
-`Close.dc.html` draws the four ways to close at the kit's own sizes: the rail
-row's hover × with its tooltip, the row's right-click menu, the page bar's ⋯
-with `Close this conversation`, and the phone header's 44px ⋯ with
-`.menu-item.tap` items (minHeight 44 via `styles`). Closing parks the room
-daemon-side (the `archivedAt` bit); the composer stays live and any post
-revives the room for everyone.
+`Close.dc.html` draws the four ways to close: the DM row's hover × with its
+tooltip, the row's right-click menu, the page bar's ⋯ with `Close this
+conversation`, and the phone header's 44px ⋯ with `.menu-item.tap` items.
+Closing parks the room daemon-side (the `archivedAt` bit); the composer
+stays live and any post revives the room for everyone. Closing the open
+conversation lands on the Inbox.
 
-## Roster — Task 6
+## Composer
 
-A 300px panel on `bg2` with a `border-left`, `padding: 11.2px 14.4px`,
-scrolling on its own to the right of the transcript.
+Unchanged values: `.input` (min-height 36px, radius 6px, 12.16px),
+`.input.focus` accent border; **16px font on mobile**; the box grows with
+the draft (40vh desktop / 25vh phone cap); send is `.aicon.filled`, 44px on
+the phone; disabled state is `.input.off` with the dashed border and the
+draft kept.
 
-Heading `BUDDIES` (caption `last known` only while the daemon is down).
+The `@` popover options (`.opt`, 44px) now carry the task line under the
+handle. Order: working, then idle, listed never filtered; a buddy outside
+the room reads `not in #room — DM instead`; `@here` sits last with its cost
+(`wakes N agents`). Offline buddies are left out.
 
-One online list with no heading of its own -- the dot alone says working vs
-idle, so a status flip never regroups a row under the pointer -- then an
-`offline · last 24h` `.sect` with its count. Within each, sign-in order.
+## Phone
 
-Each row is a `.member` (`align-items: flex-start`, `gap: 7.2px`, `padding:
-7.2px 0`), separated by `--border-soft`. The `.dot` gets `margin-top: 6px`,
-which is **optical, not mathematical** — do not "fix" it to centre.
+- **Inbox** (the landing): 56px header (drawer button, inbox icon, `Inbox`,
+  mark-all with count), then the same three card sections at full width on
+  `bg3`. Cards are the tap targets.
+- **Reader** (answering @matt): header is back arrow + `.ctx` chip +
+  `<handle> needs you` + an open-room icon; the message in full; the 16px
+  composer with the @ popover above it; footer `replying posts, nothing is
+  marked read`.
+- **Drawer**: Mantine Drawer left, size sm (320px), overlay 0.4 — the fleet
+  tree verbatim (44px-friendly rows), then the daemon health line and the
+  scheme toggle at the bottom.
 
-Every handle on the page is an `AgentName`: the name, then `· <repo>` in
-`.xs.muted` (the one inline token that says what a first name is doing), and
-a hover card (a `.pop`, 300px, `left-start` from the roster, `bottom-start`
-elsewhere) with the dot + handle + status header, the away message, a
-label/value grid (repo, where = `branch · pane N`, path, seen, rooms as
-tags) and `@mention` / `DM` buttons. Row contents, top to bottom (the row is
-one line plus the away message; only the phone drawer keeps item 5 on the
-row, it has no hover):
+## Pane picker
 
-1. 8px dot (its tooltip carries `STATUS_WORD[status] · <heartbeat>`) + handle
-   (`.sm`, 600) + `• repo`; the status word itself appears only in the card
-2. the away message when `statusText` is set, as `.away` (10.56px, muted,
-   *italic*, in curly quotes: `“waiting on CI”`)
-3. `branch · pane N` — either half omitted when absent
-4. the path on its own line, `.path` (`direction: rtl`) so it **head**-truncates
-   (`…/mr-board-wt-invite-onboarding`); the tail is the discriminating end
-5. the sub-line from `statusDetail`
-6. room tags at `gap: 3px; padding-top: 2px` — `.tag` each, `.tag.dm` for a DM
+Unchanged from the previous round (rows, states, peek, new-pane view); see
+the `PanePicker`, `NewPane` artboards. Handles in it are pool names.
 
-Offline rows collapse: `opacity: 0.55`, `cursor: default`, handle plus
-`signed out 2h ago` **on the row itself** (no sub-element, no detail lines).
+## New room
 
-Daemon down: `opacity: 0.6`, dot becomes `.dot.off`, status word becomes `—`
-in `.xs.muted`, away line and tags hidden, sub-line replaced with `presence
-unknown while the daemon is down`, and the offline section omitted entirely.
+Unchanged from the previous round; see `NewRoom.dc.html`.
 
-## Composer — Task 7
+## Entry points
 
-`.input` (min-height 36px, `padding: 0 9.6px`, radius 6px, 12.16px, `gap:
-7.2px`), `.input.focus` swapping the border to accent.
-
-**16px font on mobile.** Below 16px iOS zooms the viewport on focus and the
-page scrolls sideways — the exact failure the 375px rule forbids.
-
-**The box grows with the draft.** The textarea is `rows=1` and takes the
-height of its content on every change (reset to `auto`, then `scrollHeight`,
-the same mechanism as the board's launch note), capped at **40vh** on desktop
-and **25vh** on the phone, scrolling inside itself past that. The hint chips
-pin to the last line (`align-self: flex-end` inside the still-centred
-`.input`) and the send button bottom-aligns with the box. A send clears the
-draft, which drops the box back to one line. The artboards show only that
-one-line state.
-
-Send is a `.aicon.filled` (accent-deep background, `--accent-on` text). On the
-phone it and every header control are **44px** (`.aicon.tap`).
-
-Disabled (daemon down): `.input.off` — `bg2`, muted, **dashed** border. The
-send button loses its fill. Copy: `Can't post — rt daemon unreachable. Your
-draft is kept.` The draft survives.
-
-The `@` popover is a `.pop` (`bg2`, border, radius 6px, `padding: 4.8px`, and
-a real shadow: `0 10px 30px rgba(0,0,0,0.28), 0 2px 8px rgba(0,0,0,0.18)`).
-Each option is a `.opt`: **44px tall**, `gap: 7.2px`, `padding: 0 9.6px`,
-radius 4px, `.opt.on` in the accent wash.
-
-Option order: working first, then idle — **listed, never filtered**, because
-a mention still lands in an idle agent's unread; offline buddies are the one
-status left out (there is no pane left to push a mention to). A buddy
-outside the room reads `not in #room — DM instead`. `@here` sits last with
-its cost: `wakes N agents`.
-
-## Pane picker (Task 6)
-
-A `.pop` modal, 640px (a full-height drawer on phones). Header: the terminal
-icon, `Pick herdr panes` at 20px / 700, the caller's context in `.sm.muted`.
-Then the filter `.input` (30px, 11.2px, search icon), a count line in
-`.xs.muted` (`N panes running Claude`) with `N selected` and, with
-`allowCreate`, a `.btn.sm` `new pane` on the right. The list is a `.card` on
-`bg2`, `padding: 2px 0`, rows separated by `--border-soft`.
-
-Each row is a `.pane` (`gap: 9.6px`, `padding: 8.4px 9.6px`, radius 6px,
-`align-items: flex-start`); `.pane.on` carries the accent wash, `.pane.na`
-is `opacity: 0.55; cursor: default`. Two lines, not three: repo, branch and
-room tags are repeated detail, so they moved off the row into hover
-tooltips instead of sitting underneath in muted text.
-
-| part | detail |
-| --- | --- |
-| checkbox | `.cb`, 16px, radius 4px; `.cb.on` accent-deep with a 11px check; `.cb.off` on `bg4` with a muted border for a row the caller disabled |
-| dot | 8px `.dot` at `margin-top: 5px`, status colour; `.dot.off` hollow for a pane with no presence |
-| who | the handle at `.sm` / 600, or `not signed in` in `.sm.muted` |
-| where | `.xs.muted.truncate`, the workspace, plus ` · <title>` when the title is not the handle |
-| state | `.state` on the right, the word alone: `.working` (warn) `working`, `.blocked` (bad) `at a prompt`, `starting` (warn), `.idle` muted with no tooltip. A hover explains the rest: `working` -> `the invite queues until its turn ends`, `at a prompt` -> `answer its prompt first`, `starting` -> `selectable once it reaches idle`. A caller's disable reason (e.g. `in #build`) still replaces the word inline, with no tooltip |
-| eye | a 22px `.aicon`, tooltip `peek at recent output` |
-| path (line 2) | `…/leaf`, `.xs.muted`, real text (never `direction: rtl`); tooltip carries the detail the row dropped: `repo · branch`, plus ` · in #room, #room2` when the pane is already in rooms |
-| peek | `.peek` inside the row: `bg1`, hairline, radius 4px, 11.2px, `white-space: pre`, own `overflow-x`; the prompt line in `--fg` |
-
-Footer: just `Cancel` (`.btn`) and `Use N panes` (`.btn.primary`), no hint
-line.
-
-**New pane** is a second view in the same modal: back arrow + `New pane` +
-`a herdr tab running Claude`; `.field`s (`.lbl2` label, `.input`, `.hint`)
-for Directory (with a `.card` of `.opt` suggestions), a 2-column grid of
-Account / Model then Effort / Workspace, and the Opening prompt `.area`;
-footer hint with the launch command, `Back`, `Start pane`.
-
-## New room (Task 7)
-
-A `.pop` modal, 680px. Header: hash icon + `New room`. `.field`s: Room
-(`#` prefix, hint `lowercase, digits, dashes · the room exists once you
-post the seed`), Seed (`.input.area`, 96px min, hints `posted as matt · every
-invitee is told to read it first` and `markdown subset · blank line between
-points`), Wakes (a `.chip` select, hint `all = a war room, nobody has to
-@here`). The Agents section: `AGENTS · N to invite` with `pick panes`
-(`.btn.sm`, terminal icon) on the right; a `.card` of `.pane` rows without
-checkboxes, one line plus a 28px note `.input`: the workspace/title text
-itself carries the tooltip here (`repo · branch`, no room list, since the
-row has no path line to hang it on), and a remove `.aicon` sits at the end of
-the line. Footer:
-the hint (`N invites · <handle> picks it up when its turn ends`), `Create
-without inviting` (`.btn`), `Create #<room> · invite N` (`.btn.primary`).
-
-## Entry points (Task 8)
-
-The rooms rail header gains a 24px `.aicon` `+` beside the count. The page
-bar gains `add agents` (`.btn.sm`, user-plus icon) before `mark read`. After
-an invite the transcript opens with a `.notice` row (the `.edge` values, left-aligned): `invited 2 ·
-<ok>acme pane accepted</ok> · <warn>fred queued (working)</warn> ·
-members appear as they sign in`. Both entry points hide when rt reports
-herdr unavailable and disable with the daemon down.
+The fleet tree header carries the 24px `+` (New room). The room page bar
+carries `add agents` before `mark read`. After an invite the transcript
+opens with the `.notice` row (`invited 2 · acme pane accepted · fred queued
+(working) · members appear as they sign in`). Both entry points hide when rt
+reports herdr unavailable and disable with the daemon down.
 
 ## Keyboard hint
 

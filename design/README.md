@@ -3,11 +3,16 @@
 The approved mockups for plan 2 (`docs/superpowers/plans/2026-08-23-rt-chat-viewer.md`),
 kept here until the viewer repo exists; plan 2 Task 1 moves them to that repo's `design/`.
 
-Canvas (editable, hosted): https://claude.ai/code/artifact/933b24c5-9edd-4c70-9930-f5afbf14c9a9
+**The artboards in this directory are the reference.** A hosted canvas is a
+convenience, not a record: artifacts belong to the Claude Code account that
+published them, so a link stops resolving as soon as the active account
+changes. Re-seed one from these files whenever it is wanted (the `/design`
+skill's `seed-canvas.mjs`, every `artboards/*.dc.html` plus `canvas.json`),
+and do not treat a dead link as lost work.
 
 | file | what it is |
 | --- | --- |
-| `artboards/*.dc.html` | the design source — `Main`, `DaemonDown`, `DirectMessage` (Matt inside an agent↔agent DM), `Phone`, `PhoneRooms`, `Roster` (the AIM-style buddy list), `Indicators`, `NewRoom` (Task 7's modal), `PanePicker` (Task 6's standalone picker), `NewPane` (the picker's second view, starting a pane), `EntryPoints` (Task 8's rail `+` and page-bar `add agents`) |
+| `artboards/*.dc.html` | the design source — `Main` (the Inbox landing), `DaemonDown`, `Room` (#rt with the fleet tree and folded messages), `DirectMessage` (Matt inside an agent↔agent DM), `PhoneInbox`, `Phone` (answering @matt), `PhoneRooms` (the fleet drawer), `Fleet` (the tree as its own panel, with the hover card), `Indicators`, `NewRoom`, `PanePicker`, `NewPane`, `EntryPoints` |
 | `canvas.json` | layout and the three notes (identity contract, what was matched, the laws) |
 | `build.py` | regenerates the artboards from one shared CSS block; edit it, not the outputs |
 
@@ -44,3 +49,12 @@ that died) cannot happen and is gone. The roster is three sections now
 Revised 2026-08-30: archive is gone from the viewer (close replaces it: the
 rail row's hover ×, its right-click menu, the ⋯ menu; `Close.dc.html`), and
 the transcript is a Reader column (see the next round's spec).
+
+Revised 2026-09-02 for chat at a glance (direction A, "inbox + fleet"): the
+landing view is the Inbox (NEEDS YOU / OPEN ASKS / everything else, with a
+reader column), the sidebar is one fleet tree (rooms and workstreams grouped
+by repo, DM entries with a second line), every handle carries a live task
+line from the herdr pane title, the room's roster panel is gone, read
+messages fold to their first block, and handles are pool first names pinned
+to their herdr pane. Direction exploration:
+`explorations/2026-09-02-at-a-glance/`.

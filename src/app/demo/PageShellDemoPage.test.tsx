@@ -85,7 +85,7 @@ test('the mini rail expands and collapses independently of the PageShell sidebar
 
   // Slim by default: labels stay mounted but hidden (aria-hidden, no
   // data-expanded) so collapse can animate them out symmetrically.
-  expect(navbarWidth()).toContain('4.25rem'); // 68px
+  expect(navbarWidth()).toContain('3.5rem'); // 56px
   expect(
     screen.getByText('Borrow requests').hasAttribute('data-expanded')
   ).toBe(false);

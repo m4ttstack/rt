@@ -76,4 +76,4 @@ positions the dropdown at the cursor, and suppresses the native menu
 itself; the child must not call `preventDefault()` in its own
 `onContextMenu`. Keep the `Menu` uncontrolled and read its state through
 `onChange` when the UI needs to know it is open. One `Menu` per row, never
-a shared portal. `src/app/RoomRail.tsx` is the reference.
+a shared portal. `src/app/FleetTree.tsx` is the reference.
