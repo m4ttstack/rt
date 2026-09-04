@@ -40,6 +40,7 @@ const FIXTURE: RunSummary[] = [
 const runsGet = vi.fn();
 const seenGet = vi.fn();
 const enrichPost = vi.fn();
+const gatesGet = vi.fn();
 
 vi.mock('../api', () => ({
   client: {
@@ -63,6 +64,7 @@ vi.mock('../api', () => ({
         enrich: { $post: (...args: unknown[]) => enrichPost(...args) },
       },
       seen: { $get: (...args: unknown[]) => seenGet(...args) },
+      gates: { $get: (...args: unknown[]) => gatesGet(...args) },
     },
   },
 }));
@@ -76,6 +78,7 @@ beforeEach(() => {
   });
   seenGet.mockResolvedValue({ ok: true, json: async () => ({}) });
   enrichPost.mockResolvedValue({ ok: true, json: async () => ({}) });
+  gatesGet.mockResolvedValue({ ok: true, json: async () => ({ gates: [] }) });
 });
 
 afterEach(() => {

@@ -1,15 +1,16 @@
 import { notifications } from '@mattstack/app-kit/notifications';
 import { renderWithProviders } from '@mattstack/app-kit/test-utils';
-import type { BranchEnrichment } from '@mattstack/rt-client';
+import type { BranchEnrichment, GateRow } from '@mattstack/rt-client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { BoardRun } from './bands';
 
 const detailGet = vi.fn();
 const focusPost = vi.fn();
+const gatesGet = vi.fn();
 
 vi.mock('../api', () => ({
   client: {
@@ -25,6 +26,9 @@ vi.mock('../api', () => ({
         ':id': {
           focus: { $post: (...args: unknown[]) => focusPost(...args) },
         },
+      },
+      gates: {
+        $get: (...args: unknown[]) => gatesGet(...args),
       },
     },
   },
@@ -66,6 +70,32 @@ const enrichedMr: BranchEnrichment = {
   fetchedAt: 0,
 };
 
+function gateRow(overrides: Partial<GateRow> = {}): GateRow {
+  return {
+    id: 'g1',
+    subject: 'run:run-1',
+    kind: 'self-review',
+    questions: [],
+    meta: null,
+    status: 'open',
+    answer: null,
+    openedAt: 0,
+    parkedAt: null,
+    closedAt: null,
+    closedReason: null,
+    agent: null,
+    pane: null,
+    nudge: null,
+    delivery: null,
+    released: false,
+    ...overrides,
+  };
+}
+
+function gatesResponse(gates: GateRow[]) {
+  return { ok: true, status: 200, json: async () => ({ gates }) };
+}
+
 function detailResponse(fields: Array<{ key: string; value: string }>) {
   return {
     ok: true,
@@ -104,6 +134,10 @@ async function openMenu() {
 
 const originalClipboard = navigator.clipboard;
 const originalOpen = window.open;
+
+beforeEach(() => {
+  gatesGet.mockResolvedValue(gatesResponse([]));
+});
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -565,4 +599,46 @@ it('labels a finished row with total runtime, not the last-event sliver', () => 
   };
   renderRow(run);
   expect(screen.getByText(/2h/)).toBeInTheDocument();
+});
+
+describe('RunRow blocked badge', () => {
+  it('shows the blocked badge when an open gate exists for this run', async () => {
+    gatesGet.mockResolvedValue(
+      gatesResponse([gateRow({ subject: 'run:run-1', status: 'open' })])
+    );
+
+    renderRow(baseRun);
+
+    expect(await screen.findByTestId('gate-blocked-badge')).toBeInTheDocument();
+  });
+
+  it('stays quiet when the run has no gates at all', () => {
+    renderRow(baseRun);
+
+    expect(screen.queryByTestId('gate-blocked-badge')).not.toBeInTheDocument();
+  });
+
+  it('does not show the blocked badge for a parked gate', async () => {
+    gatesGet.mockResolvedValue(
+      gatesResponse([gateRow({ subject: 'run:run-1', status: 'parked' })])
+    );
+
+    renderRow(baseRun);
+
+    await screen.findByTestId('run-row-run-1');
+    expect(screen.queryByTestId('gate-blocked-badge')).not.toBeInTheDocument();
+  });
+
+  it("does not show the blocked badge for another run's open gate", async () => {
+    gatesGet.mockResolvedValue(
+      gatesResponse([
+        gateRow({ subject: 'run:some-other-run', status: 'open' }),
+      ])
+    );
+
+    renderRow(baseRun);
+
+    await screen.findByTestId('run-row-run-1');
+    expect(screen.queryByTestId('gate-blocked-badge')).not.toBeInTheDocument();
+  });
 });
