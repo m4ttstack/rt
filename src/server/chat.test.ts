@@ -203,7 +203,7 @@ test('posting into a room the human has not joined joins first, then posts', asy
   });
   vi.mocked(rt.chatPost).mockResolvedValueOnce({
     ok: true,
-    data: { id: 1, recipients: [] },
+    data: { id: 1, recipients: [], others: 1 },
   });
   const res = await routes.request('/api/chat/post', {
     method: 'POST',
@@ -237,7 +237,7 @@ test('posting into a DM never joins: the human is already its silent member and 
   });
   vi.mocked(rt.chatPost).mockResolvedValueOnce({
     ok: true,
-    data: { id: 2, recipients: ['deck-main', 'rt-chat-wt'] },
+    data: { id: 2, recipients: ['deck-main', 'rt-chat-wt'], others: 2 },
   });
   const res = await routes.request('/api/chat/post', {
     method: 'POST',
@@ -666,7 +666,7 @@ test('POST /api/chat/rooms joins as the human (creating the room), posts the see
   });
   vi.mocked(rt.chatPost).mockResolvedValueOnce({
     ok: true,
-    data: { id: 42, recipients: [] },
+    data: { id: 42, recipients: [], others: 0 },
   });
   const res = await routes.request('/api/chat/rooms', {
     method: 'POST',
