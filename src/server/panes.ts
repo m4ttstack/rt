@@ -1,5 +1,5 @@
-import { Hono } from 'hono';
 import { paneFocus } from '@mattstack/rt-client';
+import { Hono } from 'hono';
 
 export const panes = new Hono().post('/api/panes/:id/focus', async c => {
   const res = await paneFocus(

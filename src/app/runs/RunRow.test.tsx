@@ -452,9 +452,7 @@ describe('RunRow focus button', () => {
       agent: { status: 'working', pane: 'w1:p1' },
     });
 
-    await userEvent.click(
-      screen.getByRole('button', { name: 'focus pane' })
-    );
+    await userEvent.click(screen.getByRole('button', { name: 'focus pane' }));
 
     expect(focusPost).toHaveBeenCalledWith({ param: { id: 'w1:p1' } });
   });
@@ -470,9 +468,7 @@ describe('RunRow focus button', () => {
       agent: { status: 'working', pane: 'w1:p1' },
     });
 
-    await userEvent.click(
-      screen.getByRole('button', { name: 'focus pane' })
-    );
+    await userEvent.click(screen.getByRole('button', { name: 'focus pane' }));
 
     await screen.findByText("couldn't focus the pane");
   });
@@ -488,9 +484,7 @@ describe('RunRow focus button', () => {
       agent: { status: 'working', pane: 'w1:p1' },
     });
 
-    await userEvent.click(
-      screen.getByRole('button', { name: 'focus pane' })
-    );
+    await userEvent.click(screen.getByRole('button', { name: 'focus pane' }));
 
     expect(window.location.pathname).toBe('/');
   });
