@@ -20,9 +20,9 @@ first shared build. Platform consolidation gets its own brainstorm and
 spec. Per-site bespoke context recipes for engine gate sites are also out;
 adoption there is one shared-part edit, tuned later as annoyances surface.
 
-**Spec review:** fable seat 2026-09-05, report at
-`.superpowers/sdd/2026-09-05-gate-facility-w4/spec-review.md` (1 Critical,
-5 Major, 7 Minor, 8 Notes; all applied in this revision).
+**Spec review:** fable seat 2026-09-05, two rounds (reports under
+`.superpowers/sdd/2026-09-05-gate-facility-w4/`): round 1 (1C/5M/7m/8n)
+and round 2 (0C/2M/3m/6n), all findings applied.
 
 **Repos:** rt (daemon, CLI, rt-client, herdr coordination), mattstack-skills
 engine, the team pack, board, console.
@@ -111,7 +111,10 @@ wrapper already holds. No agent free-composition.
 - Labels: respond options gain thread-anchored labels
   (`{value: "fix:<threadId>", label: "fix · <file>:<line>"}`); review tier
   options carry counts (`"Major (2)"`); doctor options keep short verb
-  values with fuller labels.
+  values with fuller labels. Fills CLAMP label text to the cap when
+  composing (middle-truncate the path portion); the daemon rejection
+  remains the backstop, since deep paths can push a label past 200 bytes
+  and a routine open must not hard-fail on display text.
 - Context: review = tier counts plus finding titles from the report;
   respond = the reviewer thread quoted plus the drafted reply or fix
   summary; doctor = the situation line. Each within the 8KB cap,
@@ -121,8 +124,11 @@ wrapper already holds. No agent free-composition.
 
 This lane includes extending the board status-bin's gate verbs: `gate
 open <state>` today deliberately passes no pane and no nudge; it gains
-origin, nudge, and presentation, sourced from the state file's
-`paneId`/`tabId` and the pane's session. The board's client-facing row
+origin, nudge, and presentation. Origin comes from the state file's
+`paneId`/`tabId`; the nudge session is the pane's own
+`$CLAUDE_CODE_SESSION_ID` read at open time (the verbs run inside the
+pane, and doctor state carries no sessionId field, so a state-file read
+would be empty there). The board's client-facing row
 subset (`attachGates` and the client `GateRow` type) gains `context` and
 the origin-derived focus data.
 
@@ -146,6 +152,13 @@ engine 0.15.0):
 - Name doorbell priming explicitly: form-first makes every herdr pipeline
   pane a doorbell receiver, and an unprimed session correctly refuses the
   push as injection, so the recipe carries the priming text.
+- Nudge keying changes: the nudge follows PRESENTATION, not attendance
+  (the recipe today passes a nudge only for attended panes). Every
+  `presentation: "form"` open passes `--nudge` with the pane's own
+  session id regardless of `spawned_by`; only wait-presentation opens
+  omit it (there, the wait is the delivery). Without this flip, a
+  spawned form-first worker would block on an undismissable form with no
+  completion path at all.
 
 ## 3. Surface rendering and universal focus
 
@@ -192,8 +205,10 @@ panes: a human can focus the pane from any card and answer the form
 directly; an unattended pane blocks on its form harmlessly until some
 surface answers. The form renders each option's `label` but submits its
 `value` (strict membership validates values only); options mirror the
-gate's options exactly. A gate whose option list exceeds the form tool's
-per-question cap opens with `presentation: "wait"` instead. An in-pane
+gate's options exactly. The OPENER evaluates the option cap at open time
+(it picks `presentation`) against the native form tool's documented
+per-question option limit, currently 4; a gate with any question over
+the cap opens with `presentation: "wait"` instead. An in-pane
 form answer submits through the wrapper's normal answer verb (the board
 status-bin for board wrappers, `rt gate answer` for engine sites) and CAS
 losers proceed with the returned winner, unchanged from W1.
@@ -227,12 +242,16 @@ the interleave above recovers, (e) injection after the form is already
 gone is harmless. Output is findings plus go/no-go on the delivery
 design; any built harness is throwaway.
 
-**Fallback: idle waits where injection cannot reach.** AskUserQuestion
+**Fallback: idle waits for wait-presentation gates.** AskUserQuestion
 renders in any terminal; what a non-herdr context lacks is the Escape
-path (no herdr-owned PTY to send keys into). So: attended non-herdr
-panes keep the existing form plus queue-and-reconcile-on-touch protocol
-unchanged; UNATTENDED non-herdr waits become fire-and-end-turn. The
-wrapper launches ONE background shell loop (`run_in_background`) that
+path (no herdr-owned PTY to send keys into). Attended non-herdr panes
+therefore keep the existing form plus queue-and-reconcile-on-touch
+protocol unchanged. Every OTHER pane holding a `presentation: "wait"`
+gate takes the idle wait: unattended non-herdr panes, AND herdr panes
+whose gate exceeded the option cap (a herdr pane never runs the old
+bounded foreground loop, which would re-open the typed-input-queueing
+gap on exactly the biggest gates). The wrapper launches ONE background
+shell loop (`run_in_background`) that
 waits until the gate is answered or terminal and prints the final row as
 its last stdout, then ends the turn. The pane is idle but armed: typed
 input lands instantly, and the loop's completion re-invokes the pane
@@ -242,8 +261,9 @@ background-Bash case). The wait command is per-binary: engine sites run
 `rt gate wait <id>` (unbounded form; the CLI already loops internally
 around the daemon clamp and survives daemon restarts) or re-run
 `rt gate wait <id> --timeout <duration>` on exit 124; board wrappers
-re-run the status-bin's `gate wait <state> --max-ms <n>` on `pending`.
-The two flags belong to two different binaries and are never mixed.
+(whose over-cap gates are this path's board case) re-run the status-bin's
+`gate wait <state> --max-ms <n>` on `pending`. The two flags belong to
+two different binaries and are never mixed.
 
 **Stop-hook gate-awareness (prerequisite for the fallback, rides in the
 engine lane):** before ending its turn on a background wait, the wrapper
@@ -286,8 +306,12 @@ Form shaping only; the gate remains one atomic answer.
   with no armed run never presents a form (nobody is watching and no
   gate row reaches any surface) and instead ends that path with an error
   status the spawning surface can see. Because no run record exists in
-  this state, the launch context itself must carry the spawned marker.
-  The empty-run-id open guard (section 2) rides in the same edit.
+  this state, the spawned marker is the existing launch-instruction
+  convention: the same signal `run-start --spawned-by` is taken from
+  today (the spawning surface's prompt says so; a board wrapper
+  invocation counts as spawned per se). No new mechanism; the guard
+  reads the invocation context before any run exists. The empty-run-id
+  open guard (section 2) rides in the same edit.
 - Board doctor fix-classes wiring: the manual `/doctor` endpoint composes
   fix classes exactly as the triage auto-dispatch path does (load the
   triage config's fix classes, compose against the MR author and board
