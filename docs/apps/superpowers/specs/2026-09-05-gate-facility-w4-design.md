@@ -379,12 +379,14 @@ openers emit labeled options).
    RENDERING + re-pin first, including tolerant option rendering
    (`label ?? value`, defensive on non-strings), focus, and the collapse
    sentinel. Deploy both surfaces.
-4. Board wrapper fills + status-bin verb extension (board opener side,
-   after its surface is deployed; opener and surface live in the same
-   repo but the deploy order inside the lane still puts rendering
-   first).
-5. Engine lane: shared-part recipe edit, stop-hook fix, respond
-   collapse; engine release; team pack recompile. LAST among openers
+4. Board wrapper fills + status-bin verb extension + respond collapse
+   reshaping (the respond opener lives in the board wrapper, so the
+   collapse's open-time half rides here; surfaces carry only its
+   rendering). Board opener side deploys after its surface; opener and
+   surface live in the same repo but the deploy order inside the lane
+   still puts rendering first.
+5. Engine lane: shared-part recipe edit, stop-hook fix; engine release;
+   team pack recompile. LAST among openers
    because pipeline gates render on the console, which must already be
    deployed. RT-110's fix is merged at source (rt PR #201) and reaches
    the installed rt at its next release; the `--pack-dir` escape hatch
