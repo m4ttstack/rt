@@ -1,16 +1,32 @@
-import { readFileSync, writeFileSync, renameSync, mkdirSync, readdirSync, rmSync, existsSync } from "fs";
-import { join } from "path";
-import { APP_ROOT } from "./app-root.ts";
-import { draftBinPath } from "./herdr.ts";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'fs';
+import { join } from 'path';
+
+import { APP_ROOT } from './app-root.ts';
+import { draftBinPath } from './herdr.ts';
 
 /**
  * Doctor lifecycle for MRs with mechanical breakage (CI failing, merge
  * conflicts). The board owns "queued"; the skill emits the middle states.
  * `fixing` and `watching` loop until the branch is green + clean.
  */
-export type DoctorStatus = "queued" | "diagnosing" | "rebasing" | "fixing" | "watching" | "done" | "error";
+export type DoctorStatus =
+  | 'queued'
+  | 'diagnosing'
+  | 'rebasing'
+  | 'fixing'
+  | 'watching'
+  | 'done'
+  | 'error';
 
-export type DoctorOrigin = "auto" | "manual";
+export type DoctorOrigin = 'auto' | 'manual';
 
 export interface DoctorState {
   mrUrl: string;
@@ -50,27 +66,32 @@ export interface DoctorState {
   updatedAt: number;
 }
 
-export const DOCTOR_DIR = join(APP_ROOT, "state", "doctors");
+export const DOCTOR_DIR = join(APP_ROOT, 'state', 'doctors');
 
-
-export function doctorFilePath(mrUrl: string, dir: string = DOCTOR_DIR): string {
-  const slug = mrUrl.replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 200);
+export function doctorFilePath(
+  mrUrl: string,
+  dir: string = DOCTOR_DIR
+): string {
+  const slug = mrUrl
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 200);
   return join(dir, `${slug}.json`);
 }
 
 export function writeDoctorState(
   path: string,
   patch: Partial<DoctorState> & { status: DoctorStatus },
-  now: number = Date.now(),
+  now: number = Date.now()
 ): DoctorState {
   let prev: Partial<DoctorState> = {};
   try {
-    prev = JSON.parse(readFileSync(path, "utf8")) as DoctorState;
+    prev = JSON.parse(readFileSync(path, 'utf8')) as DoctorState;
   } catch {
     // no prior file, or unreadable -- start fresh
   }
   const next: DoctorState = {
-    mrUrl: patch.mrUrl ?? prev.mrUrl ?? "",
+    mrUrl: patch.mrUrl ?? prev.mrUrl ?? '',
     iid: patch.iid ?? prev.iid ?? 0,
     status: patch.status,
     message: patch.message ?? prev.message,
@@ -87,27 +108,29 @@ export function writeDoctorState(
     startedAt: prev.startedAt ?? now,
     updatedAt: now,
   };
-  mkdirSync(join(path, ".."), { recursive: true });
+  mkdirSync(join(path, '..'), { recursive: true });
   // Atomic write: writeFileSync opens with O_TRUNC and then writes, leaving a
   // window where the file exists but is empty. The board polls this file every
   // 4s while a doctor is running, and a mid-write read makes the badge blink
   // off for a tick. Rename over the target is atomic on POSIX same-dir, so the
   // reader always sees the old file or the fully-written new file.
-  const tmp = path + ".tmp";
-  writeFileSync(tmp, JSON.stringify(next, null, 2) + "\n");
+  const tmp = path + '.tmp';
+  writeFileSync(tmp, JSON.stringify(next, null, 2) + '\n');
   renameSync(tmp, path);
   return next;
 }
 
-export function readDoctorStates(dir: string = DOCTOR_DIR): Map<string, DoctorState> {
+export function readDoctorStates(
+  dir: string = DOCTOR_DIR
+): Map<string, DoctorState> {
   const out = new Map<string, DoctorState>();
   if (!existsSync(dir)) return out;
   for (const name of readdirSync(dir)) {
-    if (!name.endsWith(".json")) continue;
+    if (!name.endsWith('.json')) continue;
     const path = join(dir, name);
     let state: DoctorState;
     try {
-      state = JSON.parse(readFileSync(path, "utf8")) as DoctorState;
+      state = JSON.parse(readFileSync(path, 'utf8')) as DoctorState;
     } catch {
       continue;
     }
@@ -118,14 +141,17 @@ export function readDoctorStates(dir: string = DOCTOR_DIR): Map<string, DoctorSt
 
 /** Drop doctor states whose MR has left the board (kept while the MR is shown).
     See pruneReviewStates for the rationale and the healthy-snapshot gate. */
-export function pruneDoctorStates(keepUrls: ReadonlySet<string>, dir: string = DOCTOR_DIR): void {
+export function pruneDoctorStates(
+  keepUrls: ReadonlySet<string>,
+  dir: string = DOCTOR_DIR
+): void {
   if (!existsSync(dir)) return;
   for (const name of readdirSync(dir)) {
-    if (!name.endsWith(".json")) continue;
+    if (!name.endsWith('.json')) continue;
     const path = join(dir, name);
     let mrUrl: string | undefined;
     try {
-      mrUrl = (JSON.parse(readFileSync(path, "utf8")) as DoctorState).mrUrl;
+      mrUrl = (JSON.parse(readFileSync(path, 'utf8')) as DoctorState).mrUrl;
     } catch {
       continue;
     }
@@ -135,9 +161,13 @@ export function pruneDoctorStates(keepUrls: ReadonlySet<string>, dir: string = D
 
 export function attachDoctors<T extends { webUrl?: string | null }>(
   mrs: T[],
-  doctors: Map<string, DoctorState>,
+  doctors: Map<string, DoctorState>
 ): Array<T & { doctor?: DoctorState }> {
-  return mrs.map((mr) => (mr.webUrl && doctors.has(mr.webUrl) ? { ...mr, doctor: doctors.get(mr.webUrl) } : mr));
+  return mrs.map(mr =>
+    mr.webUrl && doctors.has(mr.webUrl)
+      ? { ...mr, doctor: doctors.get(mr.webUrl) }
+      : mr
+  );
 }
 
 /** The tier/fixClasses/draftBin fields a resumed doctor pane's dispatch
@@ -146,15 +176,21 @@ export function attachDoctors<T extends { webUrl?: string | null }>(
     recompute fixClasses from), while draftBin is re-derivable and folded
     in here so callers need only this one call. */
 export function doctorResumeDispatchFields(
-  state: Pick<DoctorState, "tier" | "fixClasses"> | undefined,
+  state: Pick<DoctorState, 'tier' | 'fixClasses'> | undefined
 ): { tier?: string; fixClasses?: string[]; draftBin: string } {
-  return { tier: state?.tier, fixClasses: state?.fixClasses, draftBin: draftBinPath() };
+  return {
+    tier: state?.tier,
+    fixClasses: state?.fixClasses,
+    draftBin: draftBinPath(),
+  };
 }
 
-export function parseDoctorRequestBody(body: unknown): { mrUrl: string; iid: number } | null {
-  if (!body || typeof body !== "object") return null;
+export function parseDoctorRequestBody(
+  body: unknown
+): { mrUrl: string; iid: number } | null {
+  if (!body || typeof body !== 'object') return null;
   const { mrUrl, iid } = body as { mrUrl?: unknown; iid?: unknown };
-  if (typeof mrUrl !== "string" || !mrUrl) return null;
-  if (typeof iid !== "number" || !Number.isFinite(iid)) return null;
+  if (typeof mrUrl !== 'string' || !mrUrl) return null;
+  if (typeof iid !== 'number' || !Number.isFinite(iid)) return null;
   return { mrUrl, iid };
 }

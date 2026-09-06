@@ -1,10 +1,15 @@
-import { useState } from "react";
-import type { BoardMR } from "../../data.ts";
-import { selectionHeader, MAX_HEADER_LEN, type SlackTemplates } from "../../template.ts";
-import { CopyButton } from "@mattstack/tui-kit";
-import { useAutoGrowTextarea } from "@mattstack/tui-kit/hooks";
-import { boardSummary } from "./format.ts";
-import { SLACK_ICON } from "./chips.tsx";
+import { useState } from 'react';
+
+import { CopyButton } from '@mattstack/tui-kit';
+import { useAutoGrowTextarea } from '@mattstack/tui-kit/hooks';
+import type { BoardMR } from '../../data.ts';
+import {
+  MAX_HEADER_LEN,
+  selectionHeader,
+  type SlackTemplates,
+} from '../../template.ts';
+import { SLACK_ICON } from './chips.tsx';
+import { boardSummary } from './format.ts';
 
 /** Shown only while something is selected. Carries the count, an editable
     header line, and the actions retargeted to the selection. */
@@ -50,7 +55,9 @@ function SelectionBar({
     <div className="tui-selbar">
       <div className="tui-selbar-head">
         <span className="tui-selbar-count">▣ {count} selected</span>
-        {inViewCount < count && <span className="tui-selbar-note">({inViewCount} in view)</span>}
+        {inViewCount < count && (
+          <span className="tui-selbar-note">({inViewCount} in view)</span>
+        )}
       </div>
       <textarea
         ref={taRef}
@@ -63,7 +70,7 @@ function SelectionBar({
         // Enter inserts a real break: the header is multi-line by design, and
         // sanitizeHeader carries the breaks through to the posted message. The
         // box grows to fit, so there is nothing to scroll out of view.
-        onChange={(e) => {
+        onChange={e => {
           setEdited(e.currentTarget.value);
         }}
       />
@@ -84,10 +91,16 @@ function SelectionBar({
             disabled={posting}
             title="post the selection to slack"
           >
-            {SLACK_ICON} {posting ? "posting…" : `post ${slackPost.count}`}
+            {SLACK_ICON} {posting ? 'posting…' : `post ${slackPost.count}`}
           </button>
         )}
-        <button className="tui-copy" onClick={onClear} title="clear the selection">clear</button>
+        <button
+          className="tui-copy"
+          onClick={onClear}
+          title="clear the selection"
+        >
+          clear
+        </button>
       </div>
     </div>
   );

@@ -1,4 +1,11 @@
-import { chmodSync, existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 
 /** Hand-written lines are not written the way this file writes them: `KEY = v`
     is legal and bun's own .env loader trims around the `=` and strips one pair
@@ -6,7 +13,8 @@ import { chmodSync, existsSync, readFileSync, renameSync, rmSync, writeFileSync 
     key nothing ever matches. */
 function stripQuotes(value: string): string {
   const q = value[0];
-  if ((q === '"' || q === "'") && value.length >= 2 && value.endsWith(q)) return value.slice(1, -1);
+  if ((q === '"' || q === "'") && value.length >= 2 && value.endsWith(q))
+    return value.slice(1, -1);
   return value;
 }
 
@@ -16,12 +24,14 @@ function stripQuotes(value: string): string {
 export function readEnvFile(path: string): Record<string, string> {
   if (!existsSync(path)) return {};
   const out: Record<string, string> = {};
-  for (const line of readFileSync(path, "utf8").split("\n")) {
+  for (const line of readFileSync(path, 'utf8').split('\n')) {
     const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const eq = trimmed.indexOf("=");
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eq = trimmed.indexOf('=');
     if (eq === -1) continue;
-    out[trimmed.slice(0, eq).trim()] = stripQuotes(trimmed.slice(eq + 1).trim());
+    out[trimmed.slice(0, eq).trim()] = stripQuotes(
+      trimmed.slice(eq + 1).trim()
+    );
   }
   return out;
 }
@@ -31,14 +41,17 @@ export function readEnvFile(path: string): Record<string, string> {
     old whole-file writer's `.filter(([, v]) => v)` falsy filter (this is how
     setup.ts signals "the user explicitly declined to keep this token"). Keys
     absent from `updates` are left untouched, same as any other update. */
-export function upsertEnvKeys(path: string, updates: Record<string, string>): void {
+export function upsertEnvKeys(
+  path: string,
+  updates: Record<string, string>
+): void {
   const pending = { ...updates };
   const emitted = new Set<string>();
-  const lines = existsSync(path) ? readFileSync(path, "utf8").split("\n") : [];
-  const next = lines.flatMap((line) => {
+  const lines = existsSync(path) ? readFileSync(path, 'utf8').split('\n') : [];
+  const next = lines.flatMap(line => {
     const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) return [line];
-    const eq = trimmed.indexOf("=");
+    if (!trimmed || trimmed.startsWith('#')) return [line];
+    const eq = trimmed.indexOf('=');
     if (eq === -1) return [line];
     // Trimmed to match readEnvFile: an untrimmed "KEY " matches no update, so
     // the stale line would survive and the new value land beside it.
@@ -61,13 +74,13 @@ export function upsertEnvKeys(path: string, updates: Record<string, string>): vo
       if (emitted.has(key)) return [];
       emitted.add(key);
       const value = updates[key]!;
-      return value === "" ? [] : [`${key}=${value}`];
+      return value === '' ? [] : [`${key}=${value}`];
     }
     return [line];
   });
-  while (next.length && next[next.length - 1] === "") next.pop();
+  while (next.length && next[next.length - 1] === '') next.pop();
   for (const [key, value] of Object.entries(pending)) {
-    if (value === "") continue;
+    if (value === '') continue;
     next.push(`${key}=${value}`);
   }
   // The mode option only applies to a file this call creates, so a tmp left
@@ -75,9 +88,9 @@ export function upsertEnvKeys(path: string, updates: Record<string, string>): vo
   // onto .env through the rename. chmod after the write settles it either way,
   // and a failed write takes the orphan with it rather than leaving tokens in a
   // stray file.
-  const tmp = path + ".tmp";
+  const tmp = path + '.tmp';
   try {
-    writeFileSync(tmp, next.join("\n") + "\n", { mode: 0o600 });
+    writeFileSync(tmp, next.join('\n') + '\n', { mode: 0o600 });
     chmodSync(tmp, 0o600);
     renameSync(tmp, path);
   } catch (err) {

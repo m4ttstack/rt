@@ -1,5 +1,5 @@
-import { focusTab } from "./herdr.ts";
-import { paneFocus } from "@mattstack/rt-client";
+import { paneFocus } from '@mattstack/rt-client';
+import { focusTab } from './herdr.ts';
 
 export interface FocusPaneDeps {
   paneFocus: typeof paneFocus;
@@ -12,7 +12,7 @@ export interface FocusPaneDeps {
     from a real focus. */
 export async function focusPane(
   state: { paneId?: string; tabId?: string },
-  deps: FocusPaneDeps = { paneFocus, focusTab },
+  deps: FocusPaneDeps = { paneFocus, focusTab }
 ): Promise<{ focused: boolean }> {
   if (state.paneId) {
     const res = await deps.paneFocus({ paneId: state.paneId });

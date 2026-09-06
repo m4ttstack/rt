@@ -7,42 +7,48 @@
  * comment never gets misread as a latch.
  */
 
-export const LATCH_MARKER = "<!-- mattstack:board re-review-latch v1 -->";
-export const LATCH_MARKER_SPENT = "<!-- mattstack:board re-review-latch v1 spent -->";
+export const LATCH_MARKER = '<!-- mattstack:board re-review-latch v1 -->';
+export const LATCH_MARKER_SPENT =
+  '<!-- mattstack:board re-review-latch v1 spent -->';
 
-export type LatchKind = "armed" | "spent";
+export type LatchKind = 'armed' | 'spent';
 
 /** Which latch a note body is, or null if it is not a latch this board knows.
     An unrecognized version (v2 from a newer board) is null, not armed. */
 export function latchKindOf(body: string): LatchKind | null {
   const firstLine = body.split(/\r?\n/, 1)[0];
-  if (firstLine === LATCH_MARKER_SPENT) return "spent";
-  if (firstLine === LATCH_MARKER) return "armed";
+  if (firstLine === LATCH_MARKER_SPENT) return 'spent';
+  if (firstLine === LATCH_MARKER) return 'armed';
   return null;
 }
 
 const ARMED_COPY = [
   "**Addressed everything?** Resolve this thread and I'll take another pass over the MR.",
-  "",
+  '',
   "Leave it open while there's still work in flight.",
-].join("\n");
+].join('\n');
 
 /** Why a latch was spent -- the wording differs because only one of these is
     a real reviewer verdict. "approved" is the terminal outcome; "duplicate"
     is an extra copy going defunct because another latch on the same MR
     already carries the live state, which must never read as an approval
     that did not happen. */
-export type SpentReason = "approved" | "duplicate";
+export type SpentReason = 'approved' | 'duplicate';
 
-const SPENT_COPY = "Approved, so this latch is spent. Nothing further to do here.";
-const DUPLICATE_COPY = "Superseded by a newer latch on this MR; nothing to do here.";
+const SPENT_COPY =
+  'Approved, so this latch is spent. Nothing further to do here.';
+const DUPLICATE_COPY =
+  'Superseded by a newer latch on this MR; nothing to do here.';
 
 export function armedLatchBody(imageMarkdown: string): string {
   return `${LATCH_MARKER}\n\n${imageMarkdown}\n\n${ARMED_COPY}\n`;
 }
 
-export function spentLatchBody(imageMarkdown: string, reason: SpentReason = "approved"): string {
-  const copy = reason === "duplicate" ? DUPLICATE_COPY : SPENT_COPY;
+export function spentLatchBody(
+  imageMarkdown: string,
+  reason: SpentReason = 'approved'
+): string {
+  const copy = reason === 'duplicate' ? DUPLICATE_COPY : SPENT_COPY;
   return `${LATCH_MARKER_SPENT}\n\n${imageMarkdown}\n\n${copy}\n`;
 }
 

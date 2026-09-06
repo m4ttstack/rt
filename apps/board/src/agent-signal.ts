@@ -1,11 +1,11 @@
-import type { SlackEmojiConfig } from "./config.ts";
+import type { SlackEmojiConfig } from './config.ts';
 
-export type SignalKind = "review" | "respond" | "doctor";
+export type SignalKind = 'review' | 'respond' | 'doctor';
 
-const KINDS: SignalKind[] = ["review", "respond", "doctor"];
+const KINDS: SignalKind[] = ['review', 'respond', 'doctor'];
 
 export function isSignalKind(v: unknown): v is SignalKind {
-  return typeof v === "string" && (KINDS as string[]).includes(v);
+  return typeof v === 'string' && (KINDS as string[]).includes(v);
 }
 
 /** What one agent lifecycle transition writes on the MR's slack message, or
@@ -15,12 +15,17 @@ export function isSignalKind(v: unknown): v is SignalKind {
 
     `done` with no outcome is deliberately silent -- the human never answered the
     review's posting gate, and an unanswered verdict is not an approve. */
-export function signalEmoji(kind: SignalKind, status: string, emoji: SlackEmojiConfig, outcome?: string): string | null {
-  if (kind !== "review") return null;
-  if (status === "reviewing") return emoji.looking;
-  if (status !== "done") return null;
-  if (outcome === "comment") return emoji.commented;
-  if (outcome === "approve") return emoji.approved;
+export function signalEmoji(
+  kind: SignalKind,
+  status: string,
+  emoji: SlackEmojiConfig,
+  outcome?: string
+): string | null {
+  if (kind !== 'review') return null;
+  if (status === 'reviewing') return emoji.looking;
+  if (status !== 'done') return null;
+  if (outcome === 'comment') return emoji.commented;
+  if (outcome === 'approve') return emoji.approved;
   return null;
 }
 
@@ -44,17 +49,23 @@ export interface AgentSignal {
 export function parseAgentSignal(
   body: unknown,
   pathname: string,
-  lookupIid: (mrUrl: string) => number,
+  lookupIid: (mrUrl: string) => number
 ): AgentSignal | null {
-  if (!body || typeof body !== "object") return null;
+  if (!body || typeof body !== 'object') return null;
   const { mrUrl, iid, kind, status, outcome } = body as Record<string, unknown>;
-  if (typeof mrUrl !== "string" || !mrUrl) return null;
-  if (outcome !== undefined && typeof outcome !== "string") return null;
-  if (pathname === "/review/outcome") {
-    return { mrUrl, iid: lookupIid(mrUrl), kind: "review", status: "done", outcome: outcome as string | undefined };
+  if (typeof mrUrl !== 'string' || !mrUrl) return null;
+  if (outcome !== undefined && typeof outcome !== 'string') return null;
+  if (pathname === '/review/outcome') {
+    return {
+      mrUrl,
+      iid: lookupIid(mrUrl),
+      kind: 'review',
+      status: 'done',
+      outcome: outcome as string | undefined,
+    };
   }
   if (!isSignalKind(kind)) return null;
-  if (typeof status !== "string" || !status) return null;
-  if (typeof iid !== "number" || !Number.isFinite(iid)) return null;
+  if (typeof status !== 'string' || !status) return null;
+  if (typeof iid !== 'number' || !Number.isFinite(iid)) return null;
   return { mrUrl, iid, kind, status, outcome: outcome as string | undefined };
 }

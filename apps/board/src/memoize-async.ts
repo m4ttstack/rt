@@ -12,7 +12,7 @@
 export function memoizeAsync<T>(
   load: () => Promise<T>,
   isFailure: (value: T) => boolean,
-  opts: { ttlMs?: number; now?: () => number } = {},
+  opts: { ttlMs?: number; now?: () => number } = {}
 ): () => Promise<T> {
   const ttlMs = opts.ttlMs ?? 60_000;
   const now = opts.now ?? Date.now;
@@ -29,8 +29,12 @@ export function memoizeAsync<T>(
     // of racing a second `load()`.
     expiresAt = t + ttlMs;
     pending
-      .then((value) => { expiresAt = isFailure(value) ? now() + ttlMs : Infinity; })
-      .catch(() => { expiresAt = now() + ttlMs; });
+      .then(value => {
+        expiresAt = isFailure(value) ? now() + ttlMs : Infinity;
+      })
+      .catch(() => {
+        expiresAt = now() + ttlMs;
+      });
     return pending;
   };
 }

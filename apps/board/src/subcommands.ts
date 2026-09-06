@@ -7,12 +7,12 @@
     specifiers stay literal so `bun build --compile` can see and bundle them. */
 
 const VERBS: Record<string, () => Promise<unknown>> = {
-  "review-status": () => import("../bin/review-status.ts"),
-  "respond-status": () => import("../bin/respond-status.ts"),
-  "doctor-status": () => import("../bin/doctor-status.ts"),
-  "doctor-draft": () => import("../bin/doctor-draft.ts"),
-  triage: () => import("../bin/triage.ts"),
-  gate: () => import("../bin/gate.ts"),
+  'review-status': () => import('../bin/review-status.ts'),
+  'respond-status': () => import('../bin/respond-status.ts'),
+  'doctor-status': () => import('../bin/doctor-status.ts'),
+  'doctor-draft': () => import('../bin/doctor-draft.ts'),
+  triage: () => import('../bin/triage.ts'),
+  gate: () => import('../bin/gate.ts'),
 };
 
 export const SUBCOMMANDS = Object.keys(VERBS);
@@ -23,16 +23,16 @@ export const SUBCOMMANDS = Object.keys(VERBS);
     it omits is recoverable: status writers are addressed by a state path whose
     directory names the lane, and the draft writer leads with an MR URL. */
 const LANE_DIRS: Record<string, string> = {
-  reviews: "review-status",
-  responds: "respond-status",
-  doctors: "doctor-status",
+  reviews: 'review-status',
+  responds: 'respond-status',
+  doctors: 'doctor-status',
 };
 
 function legacyVerb(argv: string[]): string | null {
   const first = argv[2];
   if (!first) return null;
-  if (/^https?:\/\//.test(first)) return "doctor-draft";
-  const lane = first.split("/").at(-2);
+  if (/^https?:\/\//.test(first)) return 'doctor-draft';
+  const lane = first.split('/').at(-2);
   return (lane && LANE_DIRS[lane]) ?? null;
 }
 

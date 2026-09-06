@@ -1,6 +1,7 @@
-import { appendFileSync, mkdirSync } from "fs";
-import { join } from "path";
-import { APP_ROOT } from "../app-root.ts";
+import { appendFileSync, mkdirSync } from 'fs';
+import { join } from 'path';
+
+import { APP_ROOT } from '../app-root.ts';
 
 /** One line per policy decision and per autonomous action. Append-only,
     survives MR pruning (doctor state files do not, by design), never pruned
@@ -18,9 +19,12 @@ export interface AuditEntry {
   outcome?: string;
 }
 
-export const AUDIT_PATH = join(APP_ROOT, "logs", "doctor-audit.jsonl");
+export const AUDIT_PATH = join(APP_ROOT, 'logs', 'doctor-audit.jsonl');
 
-export function appendAudit(entry: AuditEntry, path: string = AUDIT_PATH): void {
-  mkdirSync(join(path, ".."), { recursive: true });
-  appendFileSync(path, JSON.stringify(entry) + "\n");
+export function appendAudit(
+  entry: AuditEntry,
+  path: string = AUDIT_PATH
+): void {
+  mkdirSync(join(path, '..'), { recursive: true });
+  appendFileSync(path, JSON.stringify(entry) + '\n');
 }

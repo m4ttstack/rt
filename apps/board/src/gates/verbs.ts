@@ -1,9 +1,10 @@
-import { readFileSync } from "fs";
-import type { Commands, RtResponse } from "@mattstack/rt-client";
-import { writeReviewState, type ReviewStatus } from "../review-state.ts";
-import { writeRespondState, type RespondStatus } from "../respond-state.ts";
-import { writeDoctorState, type DoctorStatus } from "../doctor-state.ts";
-import { domainForKind } from "./sweep.ts";
+import { readFileSync } from 'fs';
+
+import type { Commands, RtResponse } from '@mattstack/rt-client';
+import { writeDoctorState, type DoctorStatus } from '../doctor-state.ts';
+import { writeRespondState, type RespondStatus } from '../respond-state.ts';
+import { writeReviewState, type ReviewStatus } from '../review-state.ts';
+import { domainForKind } from './sweep.ts';
 
 export type GateAnswers = Record<string, string | string[]>;
 
@@ -18,9 +19,15 @@ export interface GateQuestion {
     A real `io` wires the actual `gateOpen`/`gateWait`/`gateAnswer` exports;
     tests inject fakes shaped the same way. */
 export interface GateVerbIo {
-  gateOpen(payload: Commands["gate:open"]["payload"]): Promise<RtResponse<Commands["gate:open"]["data"]>>;
-  gateWait(payload: Commands["gate:wait"]["payload"]): Promise<RtResponse<Commands["gate:wait"]["data"]>>;
-  gateAnswer(payload: Commands["gate:answer"]["payload"]): Promise<RtResponse<Commands["gate:answer"]["data"]>>;
+  gateOpen(
+    payload: Commands['gate:open']['payload']
+  ): Promise<RtResponse<Commands['gate:open']['data']>>;
+  gateWait(
+    payload: Commands['gate:wait']['payload']
+  ): Promise<RtResponse<Commands['gate:wait']['data']>>;
+  gateAnswer(
+    payload: Commands['gate:answer']['payload']
+  ): Promise<RtResponse<Commands['gate:answer']['data']>>;
   now(): number;
 }
 
@@ -34,13 +41,17 @@ export const GATE_WAIT_MAX_MS = 90_000;
     number: a NaN or non-positive window would make the deadline unreachable
     and the wait loop unbounded again. */
 export function parseWaitMaxMs(argv: string[]): number | undefined {
-  const eq = argv.find((a) => a.startsWith("--max-ms="));
-  const present = eq !== undefined || argv.includes("--max-ms");
+  const eq = argv.find(a => a.startsWith('--max-ms='));
+  const present = eq !== undefined || argv.includes('--max-ms');
   if (!present) return undefined;
-  const raw = eq ? eq.slice("--max-ms=".length) : argv[argv.indexOf("--max-ms") + 1];
+  const raw = eq
+    ? eq.slice('--max-ms='.length)
+    : argv[argv.indexOf('--max-ms') + 1];
   const n = Number(raw);
-  if (raw === undefined || raw === "" || !Number.isFinite(n) || n <= 0) {
-    throw new Error("--max-ms requires a finite positive number of milliseconds");
+  if (raw === undefined || raw === '' || !Number.isFinite(n) || n <= 0) {
+    throw new Error(
+      '--max-ms requires a finite positive number of milliseconds'
+    );
   }
   return n;
 }
@@ -58,12 +69,12 @@ interface GateVerbState {
 }
 
 function readGateVerbState(statePath: string): GateVerbState {
-  return JSON.parse(readFileSync(statePath, "utf8")) as GateVerbState;
+  return JSON.parse(readFileSync(statePath, 'utf8')) as GateVerbState;
 }
 
 export const FORM_OPTION_CAP = 4;
 const CONTEXT_CAP_BYTES = 8192;
-export type GatePresentation = "form" | "wait";
+export type GatePresentation = 'form' | 'wait';
 export interface GateOpenResult {
   gateId: string;
   presentation: GatePresentation;
@@ -73,7 +84,9 @@ export interface GateOpenResult {
     question, so any question over the cap cannot render as a form and the
     gate takes the idle-wait path instead. */
 export function presentationFor(questions: GateQuestion[]): GatePresentation {
-  return questions.some((q) => q.options.length > FORM_OPTION_CAP) ? "wait" : "form";
+  return questions.some(q => q.options.length > FORM_OPTION_CAP)
+    ? 'wait'
+    : 'form';
 }
 
 /** Opens the facility gate for one wrapper round and persists the returned
@@ -92,7 +105,7 @@ export async function gateOpen(
   kind: string,
   questionsJson: string,
   io: GateVerbIo,
-  extras: { context?: string; sessionId?: string; worktree?: string } = {},
+  extras: { context?: string; sessionId?: string; worktree?: string } = {}
 ): Promise<GateOpenResult> {
   const questions = JSON.parse(questionsJson) as GateQuestion[];
   const state = readGateVerbState(statePath);
@@ -100,18 +113,25 @@ export async function gateOpen(
   if (!domain) throw new Error(`gate open: unrecognized kind "${kind}"`);
 
   let context = extras.context;
-  if (context !== undefined && Buffer.byteLength(context, "utf8") > CONTEXT_CAP_BYTES) {
-    console.error(`gate open: context exceeds ${CONTEXT_CAP_BYTES} bytes; opening without context`);
+  if (
+    context !== undefined &&
+    Buffer.byteLength(context, 'utf8') > CONTEXT_CAP_BYTES
+  ) {
+    console.error(
+      `gate open: context exceeds ${CONTEXT_CAP_BYTES} bytes; opening without context`
+    );
     context = undefined;
   }
 
   const presentation = presentationFor(questions);
-  const origin: NonNullable<Commands["gate:open"]["payload"]["origin"]> = { presentation };
+  const origin: NonNullable<Commands['gate:open']['payload']['origin']> = {
+    presentation,
+  };
   if (state.paneId) origin.paneId = state.paneId;
   if (state.tabId) origin.tabId = state.tabId;
   if (extras.worktree) origin.worktree = extras.worktree;
 
-  const payload: Commands["gate:open"]["payload"] = {
+  const payload: Commands['gate:open']['payload'] = {
     subject: `mr:${state.mrUrl}`,
     kind,
     questions,
@@ -120,25 +140,39 @@ export async function gateOpen(
   };
   if (state.paneId) payload.pane = state.paneId;
   if (context !== undefined) payload.context = context;
-  if (presentation === "form" && extras.sessionId) payload.nudge = { session: extras.sessionId };
+  if (presentation === 'form' && extras.sessionId)
+    payload.nudge = { session: extras.sessionId };
 
   const res = await io.gateOpen(payload);
-  if (!res.ok || !res.data) throw new Error(`gate:open failed: ${res.error ?? "unknown error"}`);
+  if (!res.ok || !res.data)
+    throw new Error(`gate:open failed: ${res.error ?? 'unknown error'}`);
 
-  if (domain === "review") {
-    writeReviewState(statePath, { status: state.status as ReviewStatus, gateId: res.data.id, gateKind: kind });
-  } else if (domain === "respond") {
-    writeRespondState(statePath, { status: state.status as RespondStatus, gateId: res.data.id, gateKind: kind });
+  if (domain === 'review') {
+    writeReviewState(statePath, {
+      status: state.status as ReviewStatus,
+      gateId: res.data.id,
+      gateKind: kind,
+    });
+  } else if (domain === 'respond') {
+    writeRespondState(statePath, {
+      status: state.status as RespondStatus,
+      gateId: res.data.id,
+      gateKind: kind,
+    });
   } else {
-    writeDoctorState(statePath, { status: state.status as DoctorStatus, gateId: res.data.id, gateKind: kind });
+    writeDoctorState(statePath, {
+      status: state.status as DoctorStatus,
+      gateId: res.data.id,
+      gateKind: kind,
+    });
   }
 
   return { gateId: res.data.id, presentation };
 }
 
 export type GateWaitResult =
-  | { status: "answered"; answers: GateAnswers; by: string; answeredAt: number }
-  | { status: "pending" };
+  | { status: 'answered'; answers: GateAnswers; by: string; answeredAt: number }
+  | { status: 'pending' };
 
 /** Registry-status-first: the facility's own `gate:wait` returns immediately
     on an already-answered/closed gate, so a re-entering wrapper (crash,
@@ -151,7 +185,7 @@ export type GateWaitResult =
 export async function gateWait(
   statePath: string,
   io: GateVerbIo,
-  maxMs: number = GATE_WAIT_MAX_MS,
+  maxMs: number = GATE_WAIT_MAX_MS
 ): Promise<GateWaitResult> {
   const state = readGateVerbState(statePath);
   if (!state.gateId) throw new Error(`no gate open for ${state.mrUrl}`);
@@ -162,18 +196,29 @@ export async function gateWait(
     // so a single long-poll can never overshoot the window -- the deadline
     // is enforced inside the poll, not just between polls.
     const remaining = deadline - io.now();
-    if (remaining <= 0) return { status: "pending" };
+    if (remaining <= 0) return { status: 'pending' };
     const res = await io.gateWait({ id: state.gateId, waitMs: remaining });
-    if (!res.ok || !res.data) throw new Error(`gate:wait failed: ${res.error ?? "unknown error"}`);
+    if (!res.ok || !res.data)
+      throw new Error(`gate:wait failed: ${res.error ?? 'unknown error'}`);
 
-    if (res.data.status === "timeout") continue;
-    if (res.data.status === "closed") {
-      throw new Error(`gate ${state.gateId} closed (${res.data.row.closedReason ?? "unknown reason"}) before being answered`);
+    if (res.data.status === 'timeout') continue;
+    if (res.data.status === 'closed') {
+      throw new Error(
+        `gate ${state.gateId} closed (${res.data.row.closedReason ?? 'unknown reason'}) before being answered`
+      );
     }
 
     const answer = res.data.row.answer;
-    if (!answer) throw new Error(`gate ${state.gateId} reported answered with no answer on the row`);
-    return { status: "answered", answers: answer.answers as GateAnswers, by: answer.by, answeredAt: answer.answeredAt };
+    if (!answer)
+      throw new Error(
+        `gate ${state.gateId} reported answered with no answer on the row`
+      );
+    return {
+      status: 'answered',
+      answers: answer.answers as GateAnswers,
+      by: answer.by,
+      answeredAt: answer.answeredAt,
+    };
   }
 }
 
@@ -185,18 +230,32 @@ export async function gateWait(
 export async function gateAnswer(
   statePath: string,
   answersJson: string,
-  by: "pane",
-  io: GateVerbIo,
-): Promise<{ conflict: boolean; answers: GateAnswers; by: string; answeredAt: number }> {
+  by: 'pane',
+  io: GateVerbIo
+): Promise<{
+  conflict: boolean;
+  answers: GateAnswers;
+  by: string;
+  answeredAt: number;
+}> {
   const answers = JSON.parse(answersJson) as GateAnswers;
   const state = readGateVerbState(statePath);
   if (!state.gateId) throw new Error(`no gate open for ${state.mrUrl}`);
 
   const res = await io.gateAnswer({ id: state.gateId, answers, by });
-  if (!res.ok || !res.data) throw new Error(`gate:answer failed: ${res.error ?? "unknown error"}`);
+  if (!res.ok || !res.data)
+    throw new Error(`gate:answer failed: ${res.error ?? 'unknown error'}`);
 
   const winner = res.data.row.answer;
-  if (!winner) throw new Error(`gate ${state.gateId} answer accepted but row carries no answer`);
+  if (!winner)
+    throw new Error(
+      `gate ${state.gateId} answer accepted but row carries no answer`
+    );
 
-  return { conflict: res.data.conflict === true, answers: winner.answers as GateAnswers, by: winner.by, answeredAt: winner.answeredAt };
+  return {
+    conflict: res.data.conflict === true,
+    answers: winner.answers as GateAnswers,
+    by: winner.by,
+    answeredAt: winner.answeredAt,
+  };
 }

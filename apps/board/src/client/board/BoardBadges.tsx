@@ -1,17 +1,18 @@
-import type { ReactNode } from "react";
-import type { BoardMRWithReview, RowContext } from "../types.ts";
-import { hasBoardBadges, draftKey } from "./format.ts";
+import type { ReactNode } from 'react';
+
+import type { BoardMRWithReview, RowContext } from '../types.ts';
 import {
-  ReviewBadge,
-  RespondBadge,
   DoctorBadge,
-  PeerBadge,
+  DraftBadge,
   NudgeChip,
   NudgedByMarker,
-  DraftBadge,
+  PeerBadge,
+  RespondBadge,
+  ReviewBadge,
   SlackPostedChip,
   SlackReactionChips,
-} from "./chips.tsx";
+} from './chips.tsx';
+import { draftKey, hasBoardBadges } from './format.ts';
 
 /** The badge/chip row shared by RowView and GridView — identical markup in
     both, wrapped in whichever class the caller's layout needs
@@ -32,18 +33,22 @@ export function BoardBadges({
   return (
     <div className={className}>
       <ReviewBadge review={mr.review} onOpen={() => ctx.onOpenReview(mr)} />
-      <RespondBadge respond={mr.respond} onResume={() => ctx.onResumeRespond(mr)} onOpen={() => ctx.onOpenRespond(mr)} />
+      <RespondBadge
+        respond={mr.respond}
+        onResume={() => ctx.onResumeRespond(mr)}
+        onOpen={() => ctx.onOpenRespond(mr)}
+      />
       <DoctorBadge doctor={mr.doctor} />
-      {(mr.peerReviews ?? []).map((p) => (
+      {(mr.peerReviews ?? []).map(p => (
         <PeerBadge key={p.reviewer} peer={p} />
       ))}
       <NudgeChip nudge={mr.sentNudge} />
       <NudgedByMarker nudges={mr.nudges} now={now} />
-      {(mr.drafts ?? []).map((d) => (
+      {(mr.drafts ?? []).map(d => (
         <DraftBadge
           key={d.kind}
           draft={d}
-          resolved={ctx.draftResolved.get(draftKey(mr.webUrl ?? "", d.kind))}
+          resolved={ctx.draftResolved.get(draftKey(mr.webUrl ?? '', d.kind))}
           onOpen={() => ctx.onOpenDraft(mr, d)}
         />
       ))}

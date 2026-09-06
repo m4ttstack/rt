@@ -8,8 +8,8 @@
  * resolved, not just the canonical one, because an author who resolves a
  * duplicate is still asking.
  */
-import type { MRDetail } from "@mattstack/glance";
-import { latchKindOf, type LatchKind } from "./markers.ts";
+import type { MRDetail } from '@mattstack/glance';
+import { latchKindOf, type LatchKind } from './markers.ts';
 
 export interface LatchRef {
   discussionId: string;
@@ -29,7 +29,7 @@ export function findLatches(detail: MRDetail): LatchRef[] {
   for (const d of detail.discussions) {
     const root = d.notes[0];
     if (!root) continue;
-    const kind = latchKindOf(root.body ?? "");
+    const kind = latchKindOf(root.body ?? '');
     if (!kind) continue;
     out.push({
       discussionId: d.id,
@@ -37,11 +37,13 @@ export function findLatches(detail: MRDetail): LatchRef[] {
       kind,
       resolved: !!d.resolved,
       createdAt: root.createdAt,
-      body: root.body ?? "",
+      body: root.body ?? '',
     });
   }
   return out.sort(
-    (a, b) => b.createdAt.localeCompare(a.createdAt) || b.discussionId.localeCompare(a.discussionId),
+    (a, b) =>
+      b.createdAt.localeCompare(a.createdAt) ||
+      b.discussionId.localeCompare(a.discussionId)
   );
 }
 
@@ -54,14 +56,14 @@ export function canonicalLatch(latches: LatchRef[]): LatchRef | null {
     returns the newest latch of EITHER kind, so testing against it would read
     an MR whose only latch was ever spent as still latched, forever. */
 export function hasArmedLatch(latches: LatchRef[]): boolean {
-  return latches.some((l) => l.kind === "armed");
+  return latches.some(l => l.kind === 'armed');
 }
 
 /** Every latch holding an unconsumed request. Disposing of a request must
     spend all of these, or the request bit survives in an extra and re-fires on
     every re-entry into scope. */
 export function requestCarriers(latches: LatchRef[]): LatchRef[] {
-  return latches.filter((l) => l.kind === "armed" && l.resolved);
+  return latches.filter(l => l.kind === 'armed' && l.resolved);
 }
 
 export function hasRequest(latches: LatchRef[]): boolean {

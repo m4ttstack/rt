@@ -107,7 +107,7 @@ time to rotate a token or change your default view. It prompts for:
   right-click agent actions. Leave it blank to skip.
 - **Slack** (optional), opening a browser to authorize a Slack app. Each
   teammate mints their own user token this way, so reactions and messages
-  appear as *them*. See [Slack](#slack) for the one-time app creation.
+  appear as _them_. See [Slack](#slack) for the one-time app creation.
 - **A peer-board invite** (optional). See [peer boards](#peer-boards).
 
 Setup also symlinks the wrapper skills in `skills/` into `~/.claude/skills/`,
@@ -136,15 +136,15 @@ hostname) the agent actions.
 `config.json` in the repo root is gitignored and drives everything, with the
 mattstack settings stores layered over it per key. The essentials:
 
-| field | meaning |
-|---|---|
-| `gitlabHost` | your GitLab instance, e.g. `https://gitlab.com` |
-| `projects` | project paths whose MRs are eligible |
-| `rtRepos` | maps each project path to the rt repo identity holding its MR store |
-| `members` | array of `{ "username", "name"? }`, the teammates whose authored MRs the board shows, in sidebar order |
-| `defaultMember` | member username the board opens to, or `"all"` |
-| `title` | page heading and tab title |
-| `slack` | review channel, post templates, and signal emoji |
+| field           | meaning                                                                                                |
+| --------------- | ------------------------------------------------------------------------------------------------------ |
+| `gitlabHost`    | your GitLab instance, e.g. `https://gitlab.com`                                                        |
+| `projects`      | project paths whose MRs are eligible                                                                   |
+| `rtRepos`       | maps each project path to the rt repo identity holding its MR store                                    |
+| `members`       | array of `{ "username", "name"? }`, the teammates whose authored MRs the board shows, in sidebar order |
+| `defaultMember` | member username the board opens to, or `"all"`                                                         |
+| `title`         | page heading and tab title                                                                             |
+| `slack`         | review channel, post templates, and signal emoji                                                       |
 
 The listen port is `$PORT`, default `7930`, and the server always binds
 `127.0.0.1`.

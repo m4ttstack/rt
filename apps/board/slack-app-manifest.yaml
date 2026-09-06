@@ -15,7 +15,7 @@
 display_information:
   name: mr-board
   description: MR review-thread integration — reactions and posts as each teammate.
-  background_color: "#1a1b26"
+  background_color: '#1a1b26'
 
 oauth_config:
   redirect_urls:

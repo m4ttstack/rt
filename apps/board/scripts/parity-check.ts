@@ -5,20 +5,22 @@
 // Usage: bun run scripts/parity-check.ts
 // Requires: config.json with rtRepos mapped, rt daemon running with the
 // project-mrs grant on the mapped repos, GitLab token available (legacy path).
-import { GitLabProvider, type PullRequest } from "@mattstack/glance";
-import { loadConfig, loadGitLabToken } from "../src/config.ts";
-import { buildBoard, type BoardMR } from "../src/data.ts";
-import { readProjectMRs } from "@mattstack/rt-client";
+import { GitLabProvider, type PullRequest } from '@mattstack/glance';
+import { readProjectMRs } from '@mattstack/rt-client';
+import { loadConfig, loadGitLabToken } from '../src/config.ts';
+import { buildBoard, type BoardMR } from '../src/data.ts';
 
 const config = loadConfig();
 const token = await loadGitLabToken();
 if (!token) {
-  console.error("no GitLab token available for the legacy path");
+  console.error('no GitLab token available for the legacy path');
   process.exit(2);
 }
 let legacyOps = 0;
 const provider = new GitLabProvider(config.gitlabHost, token, {
-  onRequest: () => { legacyOps++; },
+  onRequest: () => {
+    legacyOps++;
+  },
 });
 
 // Mirrors the production board's fetchTeamMRs: per-author queries in
@@ -26,13 +28,19 @@ const provider = new GitLabProvider(config.gitlabHost, token, {
 const FETCH_CONCURRENCY = 4;
 
 async function legacyFetch(): Promise<PullRequest[]> {
-  const authors = config.members.filter((m) => !m.hidden).map((m) => m.username);
+  const authors = config.members.filter(m => !m.hidden).map(m => m.username);
   const byId = new Map<string, PullRequest>();
   for (const projectPath of config.projects) {
     for (let i = 0; i < authors.length; i += FETCH_CONCURRENCY) {
       const chunk = authors.slice(i, i + FETCH_CONCURRENCY);
       const results = await Promise.all(
-        chunk.map((a) => provider.fetchPullRequests({ authorUsernames: [a], projectPath, state: "opened" })),
+        chunk.map(a =>
+          provider.fetchPullRequests({
+            authorUsernames: [a],
+            projectPath,
+            state: 'opened',
+          })
+        )
       );
       for (const pr of results.flat()) byId.set(pr.id, pr);
     }
@@ -47,7 +55,8 @@ async function rtFetch(): Promise<PullRequest[]> {
     if (!repoName) throw new Error(`no rtRepos mapping for ${projectPath}`);
     const res = await readProjectMRs(repoName);
     if (!res.ok || !res.data) throw new Error(`${projectPath}: ${res.error}`);
-    for (const e of Object.values(res.data.mrs)) if (e.pr.state === "opened") byId.set(e.pr.id, e.pr);
+    for (const e of Object.values(res.data.mrs))
+      if (e.pr.state === 'opened') byId.set(e.pr.id, e.pr);
   }
   return [...byId.values()];
 }
@@ -82,32 +91,46 @@ function normalize(m: BoardMR): Record<string, unknown> {
   delete o.updatedAt;
   delete o.fetchedAt;
   delete o.behindTarget;
-  o.pipeline = m.pipeline ? "<present>" : null;
+  o.pipeline = m.pipeline ? '<present>' : null;
   return o;
 }
 
 /** A between-snapshot pipeline transition is expected noise only when one
  *  side is literally mid-flight. */
-function isInFlightPipelineDiff(field: string, lv: string | undefined, rv: string | undefined): boolean {
-  if (field !== "pipelineState") return false;
+function isInFlightPipelineDiff(
+  field: string,
+  lv: string | undefined,
+  rv: string | undefined
+): boolean {
+  if (field !== 'pipelineState') return false;
   return lv === '"running"' || rv === '"running"';
 }
 
 const legacyPrs = await legacyFetch();
 const rtPrs = await rtFetch();
-const legacyBoard = new Map(buildBoard(legacyPrs, config).map((m) => [`${m.repositoryId}:${m.iid}`, m]));
-const rtBoard = new Map(buildBoard(rtPrs, config).map((m) => [`${m.repositoryId}:${m.iid}`, m]));
+const legacyBoard = new Map(
+  buildBoard(legacyPrs, config).map(m => [`${m.repositoryId}:${m.iid}`, m])
+);
+const rtBoard = new Map(
+  buildBoard(rtPrs, config).map(m => [`${m.repositoryId}:${m.iid}`, m])
+);
 
 let mismatches = 0;
 for (const [key, lm] of legacyBoard) {
   const rm = rtBoard.get(key);
-  if (!rm) { console.log(`MISSING in rt: ${key} (${lm.title})`); mismatches++; continue; }
+  if (!rm) {
+    console.log(`MISSING in rt: ${key} (${lm.title})`);
+    mismatches++;
+    continue;
+  }
   const [ln, rn] = [normalize(lm), normalize(rm)];
   for (const field of new Set([...Object.keys(ln), ...Object.keys(rn)])) {
     const [lv, rv] = [JSON.stringify(ln[field]), JSON.stringify(rn[field])];
     if (lv !== rv) {
       if (isInFlightPipelineDiff(field, lv, rv)) {
-        console.log(`(tolerated in-flight) ${key} .${field}: legacy=${lv} rt=${rv}`);
+        console.log(
+          `(tolerated in-flight) ${key} .${field}: legacy=${lv} rt=${rv}`
+        );
         continue;
       }
       console.log(`DIFF ${key} .${field}: legacy=${lv} rt=${rv}`);
@@ -121,6 +144,10 @@ for (const key of rtBoard.keys()) {
     console.log(`EXTRA in rt: ${key}`);
   }
 }
-console.log(`\nlegacy MRs=${legacyBoard.size} rt MRs=${rtBoard.size} field mismatches=${mismatches}`);
-console.log(`legacy ops for ONE refresh cycle=${legacyOps} (E6: multiply by cadence — 60s TTL polling = up to 15 refreshes/15min board-open; ~1/15min board-closed via slack sweep)`);
+console.log(
+  `\nlegacy MRs=${legacyBoard.size} rt MRs=${rtBoard.size} field mismatches=${mismatches}`
+);
+console.log(
+  `legacy ops for ONE refresh cycle=${legacyOps} (E6: multiply by cadence — 60s TTL polling = up to 15 refreshes/15min board-open; ~1/15min board-closed via slack sweep)`
+);
 process.exit(mismatches === 0 ? 0 : 1);

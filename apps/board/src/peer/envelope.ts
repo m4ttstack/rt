@@ -2,7 +2,7 @@
     switchboard relay. The relay never inspects payloads; every payload parser
     here is used only by the RECEIVING board when it materializes. */
 
-export type NudgeResult = "launched" | "rejected" | "expired";
+export type NudgeResult = 'launched' | 'rejected' | 'expired';
 
 /** What a sender builds. The relay stamps `from` (from the auth token) and
     `receivedAt` (its own clock -- the only clock freshness may be judged on). */
@@ -47,35 +47,53 @@ export function canonicalUsername(u: string): string {
   return u.trim().toLowerCase();
 }
 
-export function makeEnvelope(to: string, type: string, payload: unknown, now: number = Date.now()): DraftEnvelope {
-  return { id: crypto.randomUUID(), to: to === "*" ? "*" : canonicalUsername(to), type, sentAt: now, payload };
+export function makeEnvelope(
+  to: string,
+  type: string,
+  payload: unknown,
+  now: number = Date.now()
+): DraftEnvelope {
+  return {
+    id: crypto.randomUUID(),
+    to: to === '*' ? '*' : canonicalUsername(to),
+    type,
+    sentAt: now,
+    payload,
+  };
 }
 
 export function parseDraftEnvelope(body: unknown): DraftEnvelope | null {
-  if (!body || typeof body !== "object") return null;
+  if (!body || typeof body !== 'object') return null;
   const { id, to, type, sentAt, payload } = body as Record<string, unknown>;
-  if (typeof id !== "string" || !id) return null;
-  if (typeof to !== "string" || !to.trim()) return null;
-  if (typeof type !== "string" || !type) return null;
-  if (typeof sentAt !== "number" || !Number.isFinite(sentAt)) return null;
+  if (typeof id !== 'string' || !id) return null;
+  if (typeof to !== 'string' || !to.trim()) return null;
+  if (typeof type !== 'string' || !type) return null;
+  if (typeof sentAt !== 'number' || !Number.isFinite(sentAt)) return null;
   if (payload === undefined) return null;
-  return { id, to: to === "*" ? "*" : canonicalUsername(to), type, sentAt, payload };
+  return {
+    id,
+    to: to === '*' ? '*' : canonicalUsername(to),
+    type,
+    sentAt,
+    payload,
+  };
 }
 
 export function parseEnvelope(v: unknown): Envelope | null {
   const draft = parseDraftEnvelope(v);
   if (!draft) return null;
   const { from, receivedAt } = v as Record<string, unknown>;
-  if (typeof from !== "string" || !from) return null;
-  if (typeof receivedAt !== "number" || !Number.isFinite(receivedAt)) return null;
+  if (typeof from !== 'string' || !from) return null;
+  if (typeof receivedAt !== 'number' || !Number.isFinite(receivedAt))
+    return null;
   return { ...draft, from: canonicalUsername(from), receivedAt };
 }
 
 function mrBase(p: unknown): { mrUrl: string; iid: number } | null {
-  if (!p || typeof p !== "object") return null;
+  if (!p || typeof p !== 'object') return null;
   const { mrUrl, iid } = p as Record<string, unknown>;
-  if (typeof mrUrl !== "string" || !mrUrl) return null;
-  if (typeof iid !== "number" || !Number.isFinite(iid)) return null;
+  if (typeof mrUrl !== 'string' || !mrUrl) return null;
+  if (typeof iid !== 'number' || !Number.isFinite(iid)) return null;
   return { mrUrl, iid };
 }
 
@@ -83,28 +101,41 @@ export function parseReviewStatePayload(p: unknown): ReviewStatePayload | null {
   const base = mrBase(p);
   if (!base) return null;
   const { status, outcome, updatedAt } = p as Record<string, unknown>;
-  if (typeof status !== "string" || !status) return null;
-  if (outcome !== undefined && typeof outcome !== "string") return null;
-  if (typeof updatedAt !== "number" || !Number.isFinite(updatedAt)) return null;
+  if (typeof status !== 'string' || !status) return null;
+  if (outcome !== undefined && typeof outcome !== 'string') return null;
+  if (typeof updatedAt !== 'number' || !Number.isFinite(updatedAt)) return null;
   return { ...base, status, outcome: outcome as string | undefined, updatedAt };
 }
 
-export function parseReReviewRequestPayload(p: unknown): ReReviewRequestPayload | null {
+export function parseReReviewRequestPayload(
+  p: unknown
+): ReReviewRequestPayload | null {
   const base = mrBase(p);
   if (!base) return null;
   const { note } = p as Record<string, unknown>;
-  if (note !== undefined && typeof note !== "string") return null;
+  if (note !== undefined && typeof note !== 'string') return null;
   return { ...base, note: note as string | undefined };
 }
 
-const NUDGE_RESULTS: NudgeResult[] = ["launched", "rejected", "expired"];
+const NUDGE_RESULTS: NudgeResult[] = ['launched', 'rejected', 'expired'];
 
-export function parseNudgeOutcomePayload(p: unknown): NudgeOutcomePayload | null {
+export function parseNudgeOutcomePayload(
+  p: unknown
+): NudgeOutcomePayload | null {
   const base = mrBase(p);
   if (!base) return null;
   const { nudgeId, result, reason } = p as Record<string, unknown>;
-  if (typeof nudgeId !== "string" || !nudgeId) return null;
-  if (typeof result !== "string" || !(NUDGE_RESULTS as string[]).includes(result)) return null;
-  if (reason !== undefined && typeof reason !== "string") return null;
-  return { ...base, nudgeId, result: result as NudgeResult, reason: reason as string | undefined };
+  if (typeof nudgeId !== 'string' || !nudgeId) return null;
+  if (
+    typeof result !== 'string' ||
+    !(NUDGE_RESULTS as string[]).includes(result)
+  )
+    return null;
+  if (reason !== undefined && typeof reason !== 'string') return null;
+  return {
+    ...base,
+    nudgeId,
+    result: result as NudgeResult,
+    reason: reason as string | undefined,
+  };
 }

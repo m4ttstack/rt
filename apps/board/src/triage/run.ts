@@ -1,37 +1,37 @@
-import type { DoctorState, DoctorStatus } from "../doctor-state.ts";
-import type { LaunchPaneOpts } from "../herdr.ts";
-import { draftBinPath } from "../herdr.ts";
-import type { AgentLaunchResult } from "../agent-launch.ts";
-import type { FixClasses, TriageConfig } from "./config.ts";
-import { detectEdges, markHandled, observe, type OwnMrFacts } from "./edge.ts";
-import { chainOf } from "./stack.ts";
-import { decide } from "./policy.ts";
-import type { AuditEntry } from "./audit.ts";
-import type { DispatchMemory } from "./memory.ts";
+import type { AgentLaunchResult } from '../agent-launch.ts';
+import type { DoctorState, DoctorStatus } from '../doctor-state.ts';
+import type { LaunchPaneOpts } from '../herdr.ts';
+import { draftBinPath } from '../herdr.ts';
+import type { AuditEntry } from './audit.ts';
+import type { FixClasses, TriageConfig } from './config.ts';
+import { detectEdges, markHandled, observe, type OwnMrFacts } from './edge.ts';
+import type { DispatchMemory } from './memory.ts';
+import { decide } from './policy.ts';
+import { chainOf } from './stack.ts';
 
 /** Numeric tail of a glance scoped id ("gitlab:pipeline:12345" → 12345). */
 export function numericPipelineId(scoped: string): number | null {
-  const tail = scoped.split(":").pop() ?? "";
+  const tail = scoped.split(':').pop() ?? '';
   const n = Number(tail);
   return /^\d+$/.test(tail) && Number.isFinite(n) ? n : null;
 }
 
 const FIX_CLASS_FLAGS: Record<keyof FixClasses, string> = {
-  retryFlake: "retry-flake",
-  inheritedNoteDraft: "inherited-note-draft",
-  cleanApiRebase: "clean-api-rebase",
-  mechanicalLint: "mechanical-lint",
-  codeFix: "code-fix",
+  retryFlake: 'retry-flake',
+  inheritedNoteDraft: 'inherited-note-draft',
+  cleanApiRebase: 'clean-api-rebase',
+  mechanicalLint: 'mechanical-lint',
+  codeFix: 'code-fix',
 };
 
 /** The classes that write to the MR branch (commit and/or push). Only ever
     dispatched for the board identity's own MRs -- see composeFixClasses. */
-const OWN_MR_ONLY_CLASSES = ["mechanical-lint", "code-fix"];
+const OWN_MR_ONLY_CLASSES = ['mechanical-lint', 'code-fix'];
 
 export function enabledFixClassNames(fc: FixClasses): string[] {
   return (Object.keys(FIX_CLASS_FLAGS) as Array<keyof FixClasses>)
-    .filter((k) => fc[k])
-    .map((k) => FIX_CLASS_FLAGS[k]);
+    .filter(k => fc[k])
+    .map(k => FIX_CLASS_FLAGS[k]);
 }
 
 /** MAT-351: the branch-writing classes (mechanical-lint, and code-fix per
@@ -44,10 +44,14 @@ export function enabledFixClassNames(fc: FixClasses): string[] {
     username (never a hardcoded username, never config.defaultMember --
     see the 2026-08-08 ruling in .local-dev/2026-08-08-ci-triage-design.md
     §6 on why this pipeline's own-MR identity never comes from config). */
-export function composeFixClasses(fc: FixClasses, edgeAuthor: string, identity: string | null): string[] {
+export function composeFixClasses(
+  fc: FixClasses,
+  edgeAuthor: string,
+  identity: string | null
+): string[] {
   const names = enabledFixClassNames(fc);
   if (identity !== null && edgeAuthor === identity) return names;
-  return names.filter((n) => !OWN_MR_ONLY_CLASSES.includes(n));
+  return names.filter(n => !OWN_MR_ONLY_CLASSES.includes(n));
 }
 
 export const IDENTITY_TTL_MS = 24 * 60 * 60_000;
@@ -62,11 +66,12 @@ export const IDENTITY_TTL_MS = 24 * 60 * 60_000;
 export async function resolveDispatchIdentity(
   memory: DispatchMemory,
   validateToken: () => Promise<{ username: string }>,
-  now: () => number = Date.now,
+  now: () => number = Date.now
 ): Promise<string | null> {
-  const cached = memory.identity && now() - memory.identity.fetchedAt < IDENTITY_TTL_MS
-    ? memory.identity.username
-    : null;
+  const cached =
+    memory.identity && now() - memory.identity.fetchedAt < IDENTITY_TTL_MS
+      ? memory.identity.username
+      : null;
   if (cached) return cached;
   try {
     const user = await validateToken();
@@ -85,26 +90,34 @@ export async function resolveDispatchIdentity(
 export function manualDoctorFields(
   triage: TriageConfig,
   author: string,
-  identity: string | null,
+  identity: string | null
 ): { tier?: string; fixClasses: string[] } {
   return {
-    tier: triage.tier === "checkout" ? undefined : "api",
+    tier: triage.tier === 'checkout' ? undefined : 'api',
     fixClasses: composeFixClasses(triage.fixClasses, author, identity),
   };
 }
 
-const IN_FLIGHT = new Set<DoctorStatus>(["queued", "diagnosing", "rebasing", "fixing", "watching"]);
+const IN_FLIGHT = new Set<DoctorStatus>([
+  'queued',
+  'diagnosing',
+  'rebasing',
+  'fixing',
+  'watching',
+]);
 
 /** BOARD-10: the one-CI-attendant-per-MR lease (src/triage/attendant.ts).
     Injected as a port so runTriage stays fs-free in tests; absent means the
     lease system is not wired (behavior identical to pre-BOARD-10). */
 export interface AttendantsPort {
-  read(mrUrl: string, iid: number): { holder: "watch-ci" | "doctor" } | null;
+  read(mrUrl: string, iid: number): { holder: 'watch-ci' | 'doctor' } | null;
   /** BOARD-12: the fresh lease on a BRANCH, whichever MR it belongs to. The
       only way to see an attendant on a parent that sits outside the board's
       scope window; watch-ci has always written `branch`, and the doctor's own
       claim now does too. */
-  readByBranch(branch: string): { mr: string; holder: "watch-ci" | "doctor" } | null;
+  readByBranch(
+    branch: string
+  ): { mr: string; holder: 'watch-ci' | 'doctor' } | null;
   claim(mrUrl: string, iid: number, branch?: string): boolean;
   heartbeat(mrUrl: string, iid: number): void;
   release(mrUrl: string, iid: number): void;
@@ -134,7 +147,10 @@ export interface TriageRunDeps {
   fetchOwnMrs(): Promise<OwnMrFacts[]>;
   readDoctorStates(): Map<string, DoctorState>;
   launchDoctor(opts: LaunchPaneOpts): Promise<AgentLaunchResult>;
-  writeDoctorState(path: string, patch: Partial<DoctorState> & { status: DoctorStatus }): DoctorState;
+  writeDoctorState(
+    path: string,
+    patch: Partial<DoctorState> & { status: DoctorStatus }
+  ): DoctorState;
   doctorFilePath(mrUrl: string): string;
   appendAudit(entry: AuditEntry): void;
   notify(title: string, message: string): Promise<void>;
@@ -154,22 +170,28 @@ function upstreamBlocker(
   edge: { mrUrl: string },
   mrs: OwnMrFacts[],
   doctors: Map<string, DoctorState>,
-  attendants: AttendantsPort | undefined,
-): { reason: "attended-upstream" | "red-upstream"; upstreamMr: string } | null {
+  attendants: AttendantsPort | undefined
+): { reason: 'attended-upstream' | 'red-upstream'; upstreamMr: string } | null {
   const { ancestors, unresolvedParentBranch } = chainOf(mrs, edge.mrUrl);
   for (const anc of ancestors) {
     const doc = doctors.get(anc.mrUrl);
-    if (attendants?.read(anc.mrUrl, anc.iid) || (doc && IN_FLIGHT.has(doc.status))) {
-      return { reason: "attended-upstream", upstreamMr: anc.mrUrl };
+    if (
+      attendants?.read(anc.mrUrl, anc.iid) ||
+      (doc && IN_FLIGHT.has(doc.status))
+    ) {
+      return { reason: 'attended-upstream', upstreamMr: anc.mrUrl };
     }
-    if (anc.pipelineState === "failed") return { reason: "red-upstream", upstreamMr: anc.mrUrl };
+    if (anc.pipelineState === 'failed')
+      return { reason: 'red-upstream', upstreamMr: anc.mrUrl };
   }
   if (unresolvedParentBranch === null) return null;
   const held = attendants?.readByBranch(unresolvedParentBranch);
-  return held ? { reason: "attended-upstream", upstreamMr: held.mr } : null;
+  return held ? { reason: 'attended-upstream', upstreamMr: held.mr } : null;
 }
 
-export async function runTriage(deps: TriageRunDeps): Promise<{ dispatched: number; escalated: number; skipped: number }> {
+export async function runTriage(
+  deps: TriageRunDeps
+): Promise<{ dispatched: number; escalated: number; skipped: number }> {
   const result = { dispatched: 0, escalated: 0, skipped: 0 };
   if (!deps.triage.enabled) return result;
 
@@ -180,8 +202,10 @@ export async function runTriage(deps: TriageRunDeps): Promise<{ dispatched: numb
   observe(deps.memory, mrs, dayStamp);
   const edges = detectEdges(deps.memory, mrs);
   const doctors = deps.readDoctorStates();
-  const byUrl = new Map(mrs.map((m) => [m.mrUrl, m]));
-  let activeAuto = [...doctors.values()].filter((d) => d.origin === "auto" && IN_FLIGHT.has(d.status)).length;
+  const byUrl = new Map(mrs.map(m => [m.mrUrl, m]));
+  let activeAuto = [...doctors.values()].filter(
+    d => d.origin === 'auto' && IN_FLIGHT.has(d.status)
+  ).length;
 
   // Lease maintenance (BOARD-10) BEFORE edge decisions: keep in-flight
   // doctors' leases alive (the doctor pane itself never heartbeats; this
@@ -198,15 +222,31 @@ export async function runTriage(deps: TriageRunDeps): Promise<{ dispatched: numb
     const existing = doctors.get(edge.mrUrl);
     if (existing && IN_FLIGHT.has(existing.status)) {
       result.skipped++;
-      deps.appendAudit({ ts: now, mrUrl: edge.mrUrl, iid: edge.iid, event: edge.kind, decision: "skip", reason: "doctor-in-flight", pipelineId: edge.pipelineId });
+      deps.appendAudit({
+        ts: now,
+        mrUrl: edge.mrUrl,
+        iid: edge.iid,
+        event: edge.kind,
+        decision: 'skip',
+        reason: 'doctor-in-flight',
+        pipelineId: edge.pipelineId,
+      });
       continue;
     }
     // BOARD-10: someone (a watch-ci session) is already attending this MR's
     // CI. The red is theirs to handle; skip without consuming budget.
     const lease = deps.attendants?.read(edge.mrUrl, edge.iid) ?? null;
-    if (lease && lease.holder !== "doctor") {
+    if (lease && lease.holder !== 'doctor') {
       result.skipped++;
-      deps.appendAudit({ ts: now, mrUrl: edge.mrUrl, iid: edge.iid, event: edge.kind, decision: "skip", reason: "attended", pipelineId: edge.pipelineId });
+      deps.appendAudit({
+        ts: now,
+        mrUrl: edge.mrUrl,
+        iid: edge.iid,
+        event: edge.kind,
+        decision: 'skip',
+        reason: 'attended',
+        pipelineId: edge.pipelineId,
+      });
       continue;
     }
     // BOARD-12: the attendant unit is the chain. An ancestor that is attended
@@ -219,22 +259,40 @@ export async function runTriage(deps: TriageRunDeps): Promise<{ dispatched: numb
     const upstream = upstreamBlocker(edge, mrs, doctors, deps.attendants);
     if (upstream) {
       result.skipped++;
-      deps.appendAudit({ ts: now, mrUrl: edge.mrUrl, iid: edge.iid, event: edge.kind, decision: "skip", reason: upstream.reason, outcome: upstream.upstreamMr, pipelineId: edge.pipelineId });
+      deps.appendAudit({
+        ts: now,
+        mrUrl: edge.mrUrl,
+        iid: edge.iid,
+        event: edge.kind,
+        decision: 'skip',
+        reason: upstream.reason,
+        outcome: upstream.upstreamMr,
+        pipelineId: edge.pipelineId,
+      });
       continue;
     }
     const m = deps.memory.mrs[edge.mrUrl]!;
     const decision = decide(edge, m, activeAuto, deps.triage, now);
     deps.appendAudit({
-      ts: now, mrUrl: edge.mrUrl, iid: edge.iid, event: edge.kind,
-      decision: decision.action, reason: decision.reason, pipelineId: edge.pipelineId, attempt: m.attemptsToday + 1,
+      ts: now,
+      mrUrl: edge.mrUrl,
+      iid: edge.iid,
+      event: edge.kind,
+      decision: decision.action,
+      reason: decision.reason,
+      pipelineId: edge.pipelineId,
+      attempt: m.attemptsToday + 1,
     });
-    if (decision.action === "skip") {
+    if (decision.action === 'skip') {
       result.skipped++;
       continue;
     }
-    if (decision.action === "escalate") {
+    if (decision.action === 'escalate') {
       result.escalated++;
-      await deps.notify(`auto-doctor budget exhausted on !${edge.iid}`, `${edge.kind} on ${edge.mrUrl}: ${deps.triage.dailyAttemptBudget} attempts today, giving up until tomorrow or a human acts`);
+      await deps.notify(
+        `auto-doctor budget exhausted on !${edge.iid}`,
+        `${edge.kind} on ${edge.mrUrl}: ${deps.triage.dailyAttemptBudget} attempts today, giving up until tomorrow or a human acts`
+      );
       markHandled(deps.memory, edge);
       m.budgetEscalatedDay = dayStamp;
       continue;
@@ -246,9 +304,20 @@ export async function runTriage(deps: TriageRunDeps): Promise<{ dispatched: numb
     // Persisted onto the state file (not just passed to launchDoctor) so a
     // resumed pane can re-announce the same tier/fixClasses -- see
     // DoctorState.tier.
-    const tier = deps.triage.tier === "checkout" ? undefined : "api";
-    const fixClasses = composeFixClasses(deps.triage.fixClasses, edge.author, deps.identity);
-    deps.writeDoctorState(statePath, { mrUrl: edge.mrUrl, iid: edge.iid, status: "queued", origin: "auto", tier, fixClasses });
+    const tier = deps.triage.tier === 'checkout' ? undefined : 'api';
+    const fixClasses = composeFixClasses(
+      deps.triage.fixClasses,
+      edge.author,
+      deps.identity
+    );
+    deps.writeDoctorState(statePath, {
+      mrUrl: edge.mrUrl,
+      iid: edge.iid,
+      status: 'queued',
+      origin: 'auto',
+      tier,
+      fixClasses,
+    });
     try {
       const launchResult = await deps.launchDoctor({
         mrUrl: edge.mrUrl,
@@ -267,20 +336,45 @@ export async function runTriage(deps: TriageRunDeps): Promise<{ dispatched: numb
       });
       if (!launchResult.focusedExisting) {
         deps.writeDoctorState(statePath, {
-          status: "queued", tabId: launchResult.tabId, workspaceId: launchResult.workspaceId,
-          agentId: launchResult.agentId, paneId: launchResult.paneId,
+          status: 'queued',
+          tabId: launchResult.tabId,
+          workspaceId: launchResult.workspaceId,
+          agentId: launchResult.agentId,
+          paneId: launchResult.paneId,
         });
       }
-      deps.attendants?.claim(edge.mrUrl, edge.iid, byUrl.get(edge.mrUrl)?.sourceBranch);
+      deps.attendants?.claim(
+        edge.mrUrl,
+        edge.iid,
+        byUrl.get(edge.mrUrl)?.sourceBranch
+      );
       result.dispatched++;
       activeAuto++;
       markHandled(deps.memory, edge);
       m.lastDispatchAt = now;
       m.attemptsToday++;
-      deps.appendAudit({ ts: now, mrUrl: edge.mrUrl, iid: edge.iid, event: edge.kind, action: "doctor-launched", pipelineId: edge.pipelineId, attempt: m.attemptsToday });
+      deps.appendAudit({
+        ts: now,
+        mrUrl: edge.mrUrl,
+        iid: edge.iid,
+        event: edge.kind,
+        action: 'doctor-launched',
+        pipelineId: edge.pipelineId,
+        attempt: m.attemptsToday,
+      });
     } catch (err) {
-      deps.writeDoctorState(statePath, { status: "error", message: "failed to launch doctor pane" });
-      deps.appendAudit({ ts: now, mrUrl: edge.mrUrl, iid: edge.iid, event: edge.kind, action: "launch-failed", outcome: err instanceof Error ? err.message : String(err) });
+      deps.writeDoctorState(statePath, {
+        status: 'error',
+        message: 'failed to launch doctor pane',
+      });
+      deps.appendAudit({
+        ts: now,
+        mrUrl: edge.mrUrl,
+        iid: edge.iid,
+        event: edge.kind,
+        action: 'launch-failed',
+        outcome: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 

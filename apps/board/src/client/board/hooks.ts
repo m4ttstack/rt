@@ -1,10 +1,19 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { EMPTY_OPTIMISTIC, setQueued, rollback, clearServerTruth, anyActive, type Axis, type OptimisticState } from "./optimistic.ts";
-import type { BoardData, BoardMRWithReview, Toast } from "../types.ts";
-import type { BoardMR } from "../../data.ts";
-import { getData, getMember, postAction } from "../api.ts";
-import { setSlackMarks } from "./format.ts";
-import { runLaunchFlow, type LaunchFlowDeps } from "./launch-flow.ts";
+import { useCallback, useEffect, useRef, useState } from 'react';
+
+import type { BoardMR } from '../../data.ts';
+import { getData, getMember, postAction } from '../api.ts';
+import type { BoardData, BoardMRWithReview, Toast } from '../types.ts';
+import { setSlackMarks } from './format.ts';
+import { runLaunchFlow, type LaunchFlowDeps } from './launch-flow.ts';
+import {
+  anyActive,
+  clearServerTruth,
+  EMPTY_OPTIMISTIC,
+  rollback,
+  setQueued,
+  type Axis,
+  type OptimisticState,
+} from './optimistic.ts';
 
 /** Thin useState/useEffect wrapper over the pure optimistic-lifecycle
     functions: tracks the queued/error-rollback state for the review/respond/
@@ -16,15 +25,15 @@ export function useOptimisticLifecycle(data: BoardData | null) {
   // Drop optimistic entries once the server has real state for that axis.
   useEffect(() => {
     if (!data) return;
-    setState((s) => clearServerTruth(s, data.mrs));
+    setState(s => clearServerTruth(s, data.mrs));
   }, [data]);
 
   const queue = useCallback((axis: Axis, url: string) => {
-    setState((s) => setQueued(s, axis, url));
+    setState(s => setQueued(s, axis, url));
   }, []);
 
   const rollbackOne = useCallback((axis: Axis, url: string) => {
-    setState((s) => rollback(s, axis, url));
+    setState(s => rollback(s, axis, url));
   }, []);
 
   const active = anyActive(state, data?.mrs ?? []);
@@ -35,13 +44,16 @@ export function useOptimisticLifecycle(data: BoardData | null) {
 /** Transient toast queue: each addToast() call appends one with a fresh id
     and self-removes it after 3.5s. Mechanical extraction of Board's former
     toasts/toastId/addToast block. */
-export function useToasts(): { toasts: Toast[]; addToast: (text: string) => void } {
+export function useToasts(): {
+  toasts: Toast[];
+  addToast: (text: string) => void;
+} {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const toastId = useRef(0);
   const addToast = useCallback((text: string) => {
     const id = ++toastId.current;
-    setToasts((t) => [...t, { id, text }]);
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3500);
+    setToasts(t => [...t, { id, text }]);
+    setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 3500);
   }, []);
   return { toasts, addToast };
 }
@@ -79,7 +91,7 @@ export function useToasts(): { toasts: Toast[]; addToast: (text: string) => void
     and rebuilds on every render. */
 export function useBoardData(
   member: string,
-  onData?: (d: BoardData) => void,
+  onData?: (d: BoardData) => void
 ): {
   data: BoardData | null;
   loadError: boolean;
@@ -99,35 +111,35 @@ export function useBoardData(
   const load = useCallback(
     (fresh = false) =>
       getData(fresh)
-        .then((d) => {
+        .then(d => {
           if (d.slackEmoji) setSlackMarks(d.slackEmoji);
           setData(d);
           setLoadError(false);
           onData?.(d);
         })
         .catch(() => setLoadError(true)),
-    [onData],
+    [onData]
   );
 
   useEffect(() => {
     const onVisible = () => {
       if (!document.hidden) load();
     };
-    document.addEventListener("visibilitychange", onVisible);
+    document.addEventListener('visibilitychange', onVisible);
     load();
     const timer = setInterval(() => {
       if (!document.hidden) load();
     }, 60_000);
     return () => {
       clearInterval(timer);
-      document.removeEventListener("visibilitychange", onVisible);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, [load]);
 
   // Server push: rt relay events land as SSE nudges; re-pull the board.
   // Polling stays as the fallback when the stream is down.
   useEffect(() => {
-    const es = new EventSource("/events");
+    const es = new EventSource('/events');
     es.onmessage = () => {
       if (!document.hidden) load();
     };
@@ -136,25 +148,31 @@ export function useBoardData(
 
   // Merge a scoped (single-member) refresh into the current board: replace that
   // member's rows and update their roster count, leaving everyone else untouched.
-  const mergeMember = useCallback((username: string, mrs: BoardMRWithReview[], fetchedAt: number) => {
-    setData((prev) => {
-      if (!prev) return prev;
-      const others = prev.mrs.filter((m) => m.author.username !== username);
-      const members = prev.members.map((m) => (m.username === username ? { ...m, count: mrs.length } : m));
-      return { ...prev, mrs: [...others, ...mrs], members, fetchedAt };
-    });
-  }, []);
+  const mergeMember = useCallback(
+    (username: string, mrs: BoardMRWithReview[], fetchedAt: number) => {
+      setData(prev => {
+        if (!prev) return prev;
+        const others = prev.mrs.filter(m => m.author.username !== username);
+        const members = prev.members.map(m =>
+          m.username === username ? { ...m, count: mrs.length } : m
+        );
+        return { ...prev, mrs: [...others, ...mrs], members, fetchedAt };
+      });
+    },
+    []
+  );
 
   const fetchMember = useCallback(
-    (username: string) => getMember(username).then((d) => mergeMember(username, d.mrs, d.fetchedAt)),
-    [mergeMember],
+    (username: string) =>
+      getMember(username).then(d => mergeMember(username, d.mrs, d.fetchedAt)),
+    [mergeMember]
   );
 
   // When viewing one person, poll just their MRs every 15s — 1 query instead of
   // the whole team, so a reviewer's comment shows up fast and cheap. The "All"
   // view keeps the slower full poll above.
   useEffect(() => {
-    if (member === "all") return;
+    if (member === 'all') return;
     const timer = setInterval(() => {
       if (!document.hidden) fetchMember(member).catch(() => {});
     }, 15_000);
@@ -164,11 +182,19 @@ export function useBoardData(
   const [refreshing, setRefreshing] = useState(false);
   const refreshNow = useCallback(() => {
     setRefreshing(true);
-    const task = member === "all" ? load(true) : fetchMember(member);
+    const task = member === 'all' ? load(true) : fetchMember(member);
     task.catch(() => {}).finally(() => setRefreshing(false));
   }, [member, load, fetchMember]);
 
-  return { data, loadError, load, fetchMember, refreshNow, refreshing, setData };
+  return {
+    data,
+    loadError,
+    load,
+    fetchMember,
+    refreshNow,
+    refreshing,
+    setData,
+  };
 }
 
 // runLaunchFlow + LaunchFlowDeps live in ./launch-flow.ts: that module is
@@ -189,15 +215,25 @@ export function useLaunchAction(opts: {
   optimistic: ReturnType<typeof useOptimisticLifecycle>;
   addToast: (t: string) => void;
   reload: () => void;
-  failureMessage?: LaunchFlowDeps["failureMessage"];
+  failureMessage?: LaunchFlowDeps['failureMessage'];
 }): (mr: BoardMR, extra?: Record<string, unknown>, note?: string) => void {
-  const { axis, path, verbing, noun, optimistic, addToast, reload, failureMessage } = opts;
+  const {
+    axis,
+    path,
+    verbing,
+    noun,
+    optimistic,
+    addToast,
+    reload,
+    failureMessage,
+  } = opts;
   return useCallback(
     (mr: BoardMR, extra: Record<string, unknown> = {}, note?: string) => {
       const url = mr.webUrl;
       const deps: LaunchFlowDeps = {
-        post: (payload) => postAction(path, payload),
-        setQueued: axis && url ? () => optimistic.setQueued(axis, url) : () => {},
+        post: payload => postAction(path, payload),
+        setQueued:
+          axis && url ? () => optimistic.setQueued(axis, url) : () => {},
         rollback: axis && url ? () => optimistic.rollback(axis, url) : () => {},
         addToast,
         reload,
@@ -207,6 +243,6 @@ export function useLaunchAction(opts: {
       };
       void runLaunchFlow(deps, mr, { ...extra, note });
     },
-    [axis, path, verbing, noun, optimistic, addToast, reload, failureMessage],
+    [axis, path, verbing, noun, optimistic, addToast, reload, failureMessage]
   );
 }

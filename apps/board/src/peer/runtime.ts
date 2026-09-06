@@ -1,5 +1,5 @@
-import { runPeerTick, type MaterializeDeps } from "./inbox.ts";
-import type { SwitchboardClient } from "./client.ts";
+import type { SwitchboardClient } from './client.ts';
+import { runPeerTick, type MaterializeDeps } from './inbox.ts';
 
 /** Consecutive 401 inbox polls before the board calls its token dead. One 401
     can be a relay restart mid-rotation; three in a row is the token. */
@@ -7,13 +7,13 @@ const UNAUTHORIZED_AFTER = 3;
 
 export interface PeerRuntime {
   client: SwitchboardClient;
-  health(): "ok" | "unauthorized";
+  health(): 'ok' | 'unauthorized';
 }
 
 export interface PeeringHost {
   /** Injectable so tests never build a real client. */
   makeClient(url: string, token: string): SwitchboardClient;
-  deps: Omit<MaterializeDeps, "reportAuth">;
+  deps: Omit<MaterializeDeps, 'reportAuth'>;
   tickMs?: number;
   /** Outbox to drain on each tick. Defaults to the shared OUTBOX_DIR, which is
       what production wants; tests must pin a temp dir so a run never drains
@@ -32,7 +32,9 @@ export function makePeering(host: PeeringHost) {
   let strikes = 0;
   const deps: MaterializeDeps = {
     ...host.deps,
-    reportAuth: (state) => { strikes = state === "unauthorized" ? strikes + 1 : 0; },
+    reportAuth: state => {
+      strikes = state === 'unauthorized' ? strikes + 1 : 0;
+    },
   };
 
   let running: Promise<void> | null = null;
@@ -41,7 +43,9 @@ export function makePeering(host: PeeringHost) {
   function runTick(): Promise<void> {
     running = (async () => {
       if (runtime) await runPeerTick(runtime.client, deps, host.outboxDir);
-    })().finally(() => { running = null; });
+    })().finally(() => {
+      running = null;
+    });
     return running;
   }
 
@@ -56,7 +60,10 @@ export function makePeering(host: PeeringHost) {
       triggered (or joined) has finished. */
   function tickNow(): Promise<void> {
     if (!running) return runTick();
-    next ??= running.then(() => { next = null; return tickNow(); });
+    next ??= running.then(() => {
+      next = null;
+      return tickNow();
+    });
     return next;
   }
 
@@ -64,7 +71,10 @@ export function makePeering(host: PeeringHost) {
     if (timer) clearInterval(timer);
     strikes = 0;
     const client = host.makeClient(url, token);
-    runtime = { client, health: () => (strikes >= UNAUTHORIZED_AFTER ? "unauthorized" : "ok") };
+    runtime = {
+      client,
+      health: () => (strikes >= UNAUTHORIZED_AFTER ? 'unauthorized' : 'ok'),
+    };
     // Once now so a restart (or a fresh join) picks up whatever queued while
     // this board was not listening, then on a slow tick -- peer state is
     // ambient context, not a hot path.
@@ -79,6 +89,9 @@ export function makePeering(host: PeeringHost) {
     tickNow,
     /** Kills the timer, not the handle: callers holding a PeerRuntime keep a
         usable client. For tests, which must not leave an interval running. */
-    stop: () => { if (timer) clearInterval(timer); timer = null; },
+    stop: () => {
+      if (timer) clearInterval(timer);
+      timer = null;
+    },
   };
 }

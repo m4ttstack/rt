@@ -7,13 +7,13 @@
  * local-only features.
  */
 export function isLocalRequest(req: Request): boolean {
-  const host = req.headers.get("host");
+  const host = req.headers.get('host');
   if (!host) return false;
-  const hostname = host.split(":")[0]!.toLowerCase();
+  const hostname = host.split(':')[0]!.toLowerCase();
   return (
-    hostname === "localhost" ||
-    hostname === "127.0.0.1" ||
-    hostname.endsWith(".localhost") ||
-    hostname.endsWith(".mattstack")
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname.endsWith('.localhost') ||
+    hostname.endsWith('.mattstack')
   );
 }

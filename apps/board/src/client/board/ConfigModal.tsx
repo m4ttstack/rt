@@ -1,17 +1,16 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
-import { Modal } from "@mattstack/tui-kit";
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
+
 import {
   useSettingsScope,
   type SettingsScopeState,
-} from "@mattstack/settings-kit/react";
-import { postAction } from "../api.ts";
-import type { TabConfig } from "../../config.ts";
-import { sectionStatus } from "../../sections.ts";
-import { InfoTip } from "./InfoTip.tsx";
-import { Disclosure, DisclosureHead } from "./Disclosure.tsx";
+} from '@mattstack/settings-kit/react';
+import { Modal } from '@mattstack/tui-kit';
+import type { TabConfig } from '../../config.ts';
+import { sectionStatus } from '../../sections.ts';
+import { postAction } from '../api.ts';
 import {
-  COMPOSITE_SHAPES,
   addToList,
+  COMPOSITE_SHAPES,
   filterDefs,
   formatValue,
   getLeaf,
@@ -27,7 +26,9 @@ import {
   type CompositeShape,
   type ConfigDef,
   type LeafType,
-} from "./config-shapes.ts";
+} from './config-shapes.ts';
+import { Disclosure, DisclosureHead } from './Disclosure.tsx';
+import { InfoTip } from './InfoTip.tsx';
 
 const SAVED_FLASH_MS = 1400;
 
@@ -38,7 +39,7 @@ function useRowSave(store: SettingsScopeState, def: ConfigDef) {
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
 
-  const scope = def.scopes[0] ?? "user";
+  const scope = def.scopes[0] ?? 'user';
   const run = async (op: () => Promise<string | null>) => {
     setBusy(true);
     setError(null);
@@ -88,9 +89,9 @@ function TextField({
   const dirty = text !== value;
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
+    if (e.key === 'Enter') {
       e.currentTarget.blur();
-    } else if (e.key === "Escape" && dirty) {
+    } else if (e.key === 'Escape' && dirty) {
       e.stopPropagation();
       setText(value);
     }
@@ -98,13 +99,13 @@ function TextField({
 
   return (
     <input
-      className={"tui-invite-input" + (dirty ? " dirty" : "")}
+      className={'tui-invite-input' + (dirty ? ' dirty' : '')}
       value={text}
       placeholder={placeholder}
       aria-label={ariaLabel}
       disabled={disabled}
       list={list}
-      onChange={(e) => setText(e.target.value)}
+      onChange={e => setText(e.target.value)}
       onKeyDown={onKeyDown}
       onBlur={() => {
         if (dirty) onCommit(text);
@@ -122,7 +123,7 @@ function ScalarControl({
   value: unknown;
   row: ReturnType<typeof useRowSave>;
 }) {
-  if (def.type === "boolean") {
+  if (def.type === 'boolean') {
     return (
       <input
         type="checkbox"
@@ -130,18 +131,18 @@ function ScalarControl({
         checked={value === true}
         disabled={row.busy}
         aria-label={def.key}
-        onChange={(e) => void row.save(e.target.checked)}
+        onChange={e => void row.save(e.target.checked)}
       />
     );
   }
-  const type = def.type === "number" ? "number" : "string";
+  const type = def.type === 'number' ? 'number' : 'string';
   return (
     <TextField
-      value={value === undefined ? "" : String(value)}
+      value={value === undefined ? '' : String(value)}
       placeholder="unset"
       ariaLabel={def.key}
       disabled={row.busy}
-      onCommit={(text) => {
+      onCommit={text => {
         const parsed = parseScalar(type, text);
         if (parsed.ok) void row.save(parsed.value);
         else row.setError(parsed.error);
@@ -159,19 +160,19 @@ function ChipControl({
   list: string[];
   row: ReturnType<typeof useRowSave>;
 }) {
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState('');
   const add = () => {
     const next = addToList(list, draft);
-    setDraft("");
+    setDraft('');
     if (next) void row.save(next);
   };
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter" || e.key === ",") {
+    if (e.key === 'Enter' || e.key === ',') {
       e.preventDefault();
       add();
-    } else if (e.key === "Escape" && draft !== "") {
+    } else if (e.key === 'Escape' && draft !== '') {
       e.stopPropagation();
-      setDraft("");
+      setDraft('');
     }
   };
   return (
@@ -194,7 +195,7 @@ function ChipControl({
         placeholder="add…"
         aria-label={`add to ${def.key}`}
         disabled={row.busy}
-        onChange={(e) => setDraft(e.target.value)}
+        onChange={e => setDraft(e.target.value)}
         onKeyDown={onKeyDown}
         onBlur={add}
       />
@@ -224,7 +225,7 @@ function LeavesControl({
         const leaf = getLeaf(value, path);
         const label = `${def.key}.${path}`;
         let control;
-        if (type === "boolean") {
+        if (type === 'boolean') {
           control = (
             <input
               type="checkbox"
@@ -232,21 +233,21 @@ function LeavesControl({
               checked={leaf === true}
               disabled={row.busy}
               aria-label={label}
-              onChange={(e) => commit(path, e.target.checked)}
+              onChange={e => commit(path, e.target.checked)}
             />
           );
-        } else if (typeof type === "object") {
+        } else if (typeof type === 'object') {
           control = (
             <select
-              value={typeof leaf === "string" ? leaf : ""}
+              value={typeof leaf === 'string' ? leaf : ''}
               disabled={row.busy}
               aria-label={label}
-              onChange={(e) =>
-                commit(path, e.target.value === "" ? undefined : e.target.value)
+              onChange={e =>
+                commit(path, e.target.value === '' ? undefined : e.target.value)
               }
             >
               <option value="">unset</option>
-              {type.enum.map((opt) => (
+              {type.enum.map(opt => (
                 <option key={opt} value={opt}>
                   {opt}
                 </option>
@@ -256,12 +257,12 @@ function LeavesControl({
         } else {
           control = (
             <TextField
-              value={leaf === undefined ? "" : String(leaf)}
+              value={leaf === undefined ? '' : String(leaf)}
               placeholder="unset"
               ariaLabel={label}
               disabled={row.busy}
-              onCommit={(text) => {
-                if (text.trim() === "") return commit(path, undefined);
+              onCommit={text => {
+                if (text.trim() === '') return commit(path, undefined);
                 const parsed = parseScalar(type, text);
                 if (parsed.ok) commit(path, parsed.value);
                 else row.setError(`${path}: ${parsed.error}`);
@@ -293,13 +294,13 @@ function PairsControl({
 }) {
   const [a, b] = fields;
   const [draft, setDraft] = useState<{ a: string; b: string }>({
-    a: "",
-    b: "",
+    a: '',
+    b: '',
   });
   const addIfComplete = (next: { a: string; b: string }) => {
     setDraft(next);
-    if (next.a.trim() === "" || next.b.trim() === "") return;
-    setDraft({ a: "", b: "" });
+    if (next.a.trim() === '' || next.b.trim() === '') return;
+    setDraft({ a: '', b: '' });
     void row.save([...pairs, { [a]: next.a.trim(), [b]: next.b.trim() }]);
   };
   const update = (i: number, field: string, text: string) =>
@@ -310,18 +311,18 @@ function PairsControl({
       {pairs.map((p, i) => (
         <div key={i} className="tui-config-pair">
           <TextField
-            value={p[a] ?? ""}
+            value={p[a] ?? ''}
             placeholder={a}
             ariaLabel={`${def.key}[${i}].${a}`}
             disabled={row.busy}
-            onCommit={(t) => update(i, a, t)}
+            onCommit={t => update(i, a, t)}
           />
           <TextField
-            value={p[b] ?? ""}
+            value={p[b] ?? ''}
             placeholder={b}
             ariaLabel={`${def.key}[${i}].${b}`}
             disabled={row.busy}
-            onCommit={(t) => update(i, b, t)}
+            onCommit={t => update(i, b, t)}
           />
           <button
             className="tui-config-clear"
@@ -339,14 +340,14 @@ function PairsControl({
           placeholder={a}
           ariaLabel={`new ${def.key} ${a}`}
           disabled={row.busy}
-          onCommit={(t) => addIfComplete({ ...draft, a: t })}
+          onCommit={t => addIfComplete({ ...draft, a: t })}
         />
         <TextField
           value={draft.b}
           placeholder={b}
           ariaLabel={`new ${def.key} ${b}`}
           disabled={row.busy}
-          onCommit={(t) => addIfComplete({ ...draft, b: t })}
+          onCommit={t => addIfComplete({ ...draft, b: t })}
         />
         <span />
       </div>
@@ -366,7 +367,7 @@ function CompositeControl({
   row: ReturnType<typeof useRowSave>;
 }) {
   switch (shape.kind) {
-    case "stringList":
+    case 'stringList':
       return (
         <ChipControl
           def={def}
@@ -374,7 +375,7 @@ function CompositeControl({
           row={row}
         />
       );
-    case "pairList":
+    case 'pairList':
       return (
         <PairsControl
           def={def}
@@ -385,7 +386,7 @@ function CompositeControl({
           row={row}
         />
       );
-    case "leaves":
+    case 'leaves':
       return (
         <LeavesControl
           def={def}
@@ -394,7 +395,7 @@ function CompositeControl({
           row={row}
         />
       );
-    case "roster":
+    case 'roster':
       return null;
   }
 }
@@ -420,7 +421,7 @@ function RosterControl({
   onSaved: () => void;
   onOpenRoster: () => void;
 }) {
-  const [adding, setAdding] = useState("");
+  const [adding, setAdding] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Dropping arms on the first click and sends on the second, keyed by
@@ -438,24 +439,24 @@ function RosterControl({
   // itself, the same union rosterSummary counts.
   const hiddenSet = new Set([
     ...(Array.isArray(hidden)
-      ? (hidden as unknown[]).filter((u): u is string => typeof u === "string")
+      ? (hidden as unknown[]).filter((u): u is string => typeof u === 'string')
       : []),
     ...roster
-      .filter((m) => m.hidden === true && typeof m.username === "string")
-      .map((m) => m.username as string),
+      .filter(m => m.hidden === true && typeof m.username === 'string')
+      .map(m => m.username as string),
   ]);
 
-  const edit = async (action: "add" | "remove", username: string) => {
+  const edit = async (action: 'add' | 'remove', username: string) => {
     setBusy(true);
     setError(null);
-    const res = await postAction("/roster", { action, username });
+    const res = await postAction('/roster', { action, username });
     setBusy(false);
     if (!res.ok) {
       setError(res.text || `could not ${action} ${username}`);
       return;
     }
     setArmed(null);
-    if (action === "add") setAdding("");
+    if (action === 'add') setAdding('');
     // The write went through /roster (server-validated), so the kit's cached
     // defs are stale until told otherwise.
     onSaved();
@@ -473,9 +474,9 @@ function RosterControl({
       </div>
       <ul className="tui-roster-list">
         {roster.map((m, i) => {
-          const username = typeof m.username === "string" ? m.username : "";
+          const username = typeof m.username === 'string' ? m.username : '';
           if (!username) return null;
-          const name = typeof m.name === "string" ? m.name : null;
+          const name = typeof m.name === 'string' ? m.name : null;
           return (
             <li key={username || i} className="tui-roster-item">
               <span className="tui-roster-who">
@@ -493,7 +494,7 @@ function RosterControl({
                 <button
                   className="tui-modal-btn danger"
                   disabled={busy}
-                  onClick={() => void edit("remove", username)}
+                  onClick={() => void edit('remove', username)}
                 >
                   confirm drop
                 </button>
@@ -514,16 +515,16 @@ function RosterControl({
       </ul>
       <form
         className="tui-roster-add"
-        onSubmit={(e) => {
+        onSubmit={e => {
           e.preventDefault();
           const handle = adding.trim();
-          if (handle && !busy) void edit("add", handle);
+          if (handle && !busy) void edit('add', handle);
         }}
       >
         <input
           className="tui-modal-input"
           value={adding}
-          onChange={(e) => setAdding(e.target.value)}
+          onChange={e => setAdding(e.target.value)}
           placeholder="gitlab username"
           aria-label="add a teammate by gitlab username"
           disabled={busy}
@@ -541,16 +542,23 @@ function RosterControl({
   );
 }
 
-type TabSource = TabConfig["source"];
+type TabSource = TabConfig['source'];
 
 /** Under a tab's section field: the section is not a CODEOWNERS header, and
     the closest one that is. Renders nothing while rt cannot say. */
-function SectionHint({ section, known }: { section: string; known: string[] | null }) {
+function SectionHint({
+  section,
+  known,
+}: {
+  section: string;
+  known: string[] | null;
+}) {
   const status = sectionStatus(section, known);
   if (!status.unknown) return null;
   return (
     <p className="tui-modal-error">
-      not in CODEOWNERS{status.suggestion ? ` · did you mean "${status.suggestion}"?` : ""}
+      not in CODEOWNERS
+      {status.suggestion ? ` · did you mean "${status.suggestion}"?` : ''}
     </p>
   );
 }
@@ -578,45 +586,45 @@ function TabsControl({
   // Dropping a tab discards its config, so the armed row demands the tab's
   // label typed back before the drop button enables.
   const [armed, setArmed] = useState<string | null>(null);
-  const [dropText, setDropText] = useState("");
-  const [newLabel, setNewLabel] = useState("");
-  const [newKind, setNewKind] = useState<TabSource["kind"]>("codeowners");
-  const [newSection, setNewSection] = useState("");
+  const [dropText, setDropText] = useState('');
+  const [newLabel, setNewLabel] = useState('');
+  const [newKind, setNewKind] = useState<TabSource['kind']>('codeowners');
+  const [newSection, setNewSection] = useState('');
   const sectionListId = useId();
 
   const write = async (next: TabConfig[]) => {
     setBusy(true);
     setError(null);
-    const res = await postAction("/tabs", { tabs: next });
+    const res = await postAction('/tabs', { tabs: next });
     setBusy(false);
     if (!res.ok) {
-      setError(res.text || "could not save tabs");
+      setError(res.text || 'could not save tabs');
       return false;
     }
     setArmed(null);
-    setDropText("");
+    setDropText('');
     onSaved();
     return true;
   };
 
   const arm = (id: string | null) => {
     setArmed(id);
-    setDropText("");
+    setDropText('');
   };
 
   const patch = (id: string, change: (tab: TabConfig) => TabConfig) =>
-    void write(tabs.map((t) => (t.id === id ? change(t) : t)));
+    void write(tabs.map(t => (t.id === id ? change(t) : t)));
   const optional = (text: string) =>
-    text.trim() === "" ? undefined : text.trim();
+    text.trim() === '' ? undefined : text.trim();
 
   const add = async () => {
     const label = newLabel.trim();
     if (!label || busy) return;
     const source: TabSource =
-      newKind === "authors"
-        ? { kind: "authors" }
+      newKind === 'authors'
+        ? { kind: 'authors' }
         : {
-            kind: "codeowners",
+            kind: 'codeowners',
             section: newSection.trim(),
             excludeMembers: true,
           };
@@ -625,27 +633,27 @@ function TabsControl({
       {
         id: slugTabId(
           label,
-          tabs.map((t) => t.id),
+          tabs.map(t => t.id)
         ),
         label,
         source,
       },
     ]);
     if (ok) {
-      setNewLabel("");
-      setNewSection("");
+      setNewLabel('');
+      setNewSection('');
     }
   };
 
   return (
     <div className="tui-roster-edit">
       <datalist id={sectionListId}>
-        {(knownSections ?? []).map((s) => (
+        {(knownSections ?? []).map(s => (
           <option key={s} value={s} />
         ))}
       </datalist>
       <ul className="tui-roster-list tui-tabs-list">
-        {tabs.map((tab) => (
+        {tabs.map(tab => (
           <li key={tab.id} className="tui-tabs-item">
             <div className="tui-tabs-item-head">
               <TextField
@@ -653,8 +661,8 @@ function TabsControl({
                 placeholder="label"
                 ariaLabel={`label for tab ${tab.id}`}
                 disabled={busy}
-                onCommit={(text) =>
-                  patch(tab.id, (t) => ({ ...t, label: text.trim() }))
+                onCommit={text =>
+                  patch(tab.id, t => ({ ...t, label: text.trim() }))
                 }
               />
               <span className="tui-roster-handle">{tab.source.kind}</span>
@@ -688,10 +696,10 @@ function TabsControl({
             {armed === tab.id && (
               <form
                 className="tui-tabs-drop"
-                onSubmit={(e) => {
+                onSubmit={e => {
                   e.preventDefault();
                   if (dropText === tab.label && !busy)
-                    void write(tabs.filter((t) => t.id !== tab.id));
+                    void write(tabs.filter(t => t.id !== tab.id));
                 }}
               >
                 <span className="tui-modal-error">
@@ -702,7 +710,7 @@ function TabsControl({
                   className="tui-modal-input"
                   autoFocus
                   value={dropText}
-                  onChange={(e) => setDropText(e.target.value)}
+                  onChange={e => setDropText(e.target.value)}
                   placeholder={`type ${tab.label} to confirm`}
                   aria-label={`type the label of tab ${tab.id} to confirm dropping it`}
                   disabled={busy}
@@ -717,7 +725,7 @@ function TabsControl({
               </form>
             )}
             <div className="tui-tabs-fields">
-              {tab.source.kind === "codeowners" && (
+              {tab.source.kind === 'codeowners' && (
                 <>
                   <label className="tui-tabs-field">
                     <span>section</span>
@@ -727,13 +735,13 @@ function TabsControl({
                       ariaLabel={`codeowners section for tab ${tab.id}`}
                       disabled={busy}
                       list={sectionListId}
-                      onCommit={(text) =>
-                        patch(tab.id, (t) => ({
+                      onCommit={text =>
+                        patch(tab.id, t => ({
                           ...t,
                           source: {
                             ...(t.source as Extract<
                               TabSource,
-                              { kind: "codeowners" }
+                              { kind: 'codeowners' }
                             >),
                             section: text.trim(),
                           },
@@ -741,20 +749,23 @@ function TabsControl({
                       }
                     />
                   </label>
-                  <SectionHint section={tab.source.section} known={knownSections} />
+                  <SectionHint
+                    section={tab.source.section}
+                    known={knownSections}
+                  />
                   <label className="tui-tabs-field tui-tabs-check">
                     <input
                       type="checkbox"
                       className="tui-check-box"
                       checked={tab.source.excludeMembers === true}
                       disabled={busy}
-                      onChange={(e) =>
-                        patch(tab.id, (t) => ({
+                      onChange={e =>
+                        patch(tab.id, t => ({
                           ...t,
                           source: {
                             ...(t.source as Extract<
                               TabSource,
-                              { kind: "codeowners" }
+                              { kind: 'codeowners' }
                             >),
                             excludeMembers: e.target.checked,
                           },
@@ -768,16 +779,16 @@ function TabsControl({
               <label className="tui-tabs-field">
                 <span>slack channel</span>
                 <TextField
-                  value={tab.slackChannel ?? ""}
+                  value={tab.slackChannel ?? ''}
                   placeholder={
                     defaultChannel
                       ? `inherits board.slack: #${defaultChannel}`
-                      : "inherits board.slack.channel"
+                      : 'inherits board.slack.channel'
                   }
                   ariaLabel={`slack channel for tab ${tab.id}`}
                   disabled={busy}
-                  onCommit={(text) =>
-                    patch(tab.id, (t) => ({
+                  onCommit={text =>
+                    patch(tab.id, t => ({
                       ...t,
                       slackChannel: optional(text),
                     }))
@@ -787,12 +798,12 @@ function TabsControl({
               <label className="tui-tabs-field">
                 <span>review skill</span>
                 <TextField
-                  value={tab.reviewSkill ?? ""}
+                  value={tab.reviewSkill ?? ''}
                   placeholder="inherits the repo's review skill"
                   ariaLabel={`review skill for tab ${tab.id}`}
                   disabled={busy}
-                  onCommit={(text) =>
-                    patch(tab.id, (t) => ({
+                  onCommit={text =>
+                    patch(tab.id, t => ({
                       ...t,
                       reviewSkill: optional(text),
                     }))
@@ -805,7 +816,7 @@ function TabsControl({
       </ul>
       <form
         className="tui-roster-add tui-tabs-add"
-        onSubmit={(e) => {
+        onSubmit={e => {
           e.preventDefault();
           void add();
         }}
@@ -813,7 +824,7 @@ function TabsControl({
         <input
           className="tui-modal-input"
           value={newLabel}
-          onChange={(e) => setNewLabel(e.target.value)}
+          onChange={e => setNewLabel(e.target.value)}
           placeholder="new tab label"
           aria-label="new tab label"
           disabled={busy}
@@ -823,16 +834,16 @@ function TabsControl({
           value={newKind}
           aria-label="new tab source"
           disabled={busy}
-          onChange={(e) => setNewKind(e.target.value as TabSource["kind"])}
+          onChange={e => setNewKind(e.target.value as TabSource['kind'])}
         >
           <option value="codeowners">codeowners</option>
           <option value="authors">authors</option>
         </select>
-        {newKind === "codeowners" && (
+        {newKind === 'codeowners' && (
           <input
             className="tui-modal-input"
             value={newSection}
-            onChange={(e) => setNewSection(e.target.value)}
+            onChange={e => setNewSection(e.target.value)}
             placeholder="CODEOWNERS section"
             aria-label="new tab codeowners section"
             disabled={busy}
@@ -845,7 +856,7 @@ function TabsControl({
           disabled={
             busy ||
             !newLabel.trim() ||
-            (newKind === "codeowners" && !newSection.trim())
+            (newKind === 'codeowners' && !newSection.trim())
           }
         >
           add tab
@@ -859,12 +870,12 @@ function TabsControl({
 /** Control-specific caveats the registry description cannot know, shown in
     the same info tip as the description. */
 const ROW_HINTS: Record<string, string> = {
-  "board.members": "A new teammate's MRs land once rt has synced them.",
-  "board.tabs":
+  'board.members': "A new teammate's MRs land once rt has synced them.",
+  'board.tabs':
     'A new section\'s MRs land once rt has backfilled it; the tab shows "syncing" until then. A section must match a CODEOWNERS header exactly; the field suggests the headers rt has seen.',
 };
 
-const OPEN_ROWS_KEY = "board.config.openRows";
+const OPEN_ROWS_KEY = 'board.config.openRows';
 
 /** Which composite rows are expanded, remembered per browser so the modal
     reopens the way it was left. Storage is a convenience only: any failure
@@ -876,15 +887,15 @@ function useOpenRows(): [Set<string>, (key: string) => void] {
       const parsed: unknown = raw ? JSON.parse(raw) : [];
       return new Set(
         Array.isArray(parsed)
-          ? parsed.filter((k): k is string => typeof k === "string")
-          : [],
+          ? parsed.filter((k): k is string => typeof k === 'string')
+          : []
       );
     } catch {
       return new Set();
     }
   });
   const toggle = (key: string) => {
-    setOpen((prev) => {
+    setOpen(prev => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
       else next.add(key);
@@ -928,21 +939,21 @@ function SettingRow({
   const set = isSet(def);
   const malformed =
     shape !== undefined &&
-    shape.kind !== "roster" &&
+    shape.kind !== 'roster' &&
     value !== undefined &&
     !matchesShape(shape, value);
 
   let control;
-  if (kind === "tabs" && !malformed) {
+  if (kind === 'tabs' && !malformed) {
     const channel = getLeaf(
-      store.defs.find((d) => d.key === "board.slack")?.effective.value,
-      "channel",
+      store.defs.find(d => d.key === 'board.slack')?.effective.value,
+      'channel'
     );
     control = (
       <TabsControl
         tabs={tabs}
         defaultChannel={
-          typeof channel === "string" && channel !== "" ? channel : null
+          typeof channel === 'string' && channel !== '' ? channel : null
         }
         knownSections={knownSections}
         onSaved={() => {
@@ -951,19 +962,19 @@ function SettingRow({
         }}
       />
     );
-  } else if (kind === "roster") {
-    const members = store.defs.find((d) => d.key === "board.members")?.effective
+  } else if (kind === 'roster') {
+    const members = store.defs.find(d => d.key === 'board.members')?.effective
       .value;
-    const hidden = store.defs.find((d) => d.key === "board.hiddenMembers")
+    const hidden = store.defs.find(d => d.key === 'board.hiddenMembers')
       ?.effective.value;
-    const self = store.defs.find((d) => d.key === "board.defaultMember")
+    const self = store.defs.find(d => d.key === 'board.defaultMember')
       ?.effective.value;
     control =
-      def.key === "board.members" ? (
+      def.key === 'board.members' ? (
         <RosterControl
           members={members}
           hidden={hidden}
-          self={typeof self === "string" ? self : null}
+          self={typeof self === 'string' ? self : null}
           onSaved={store.refresh}
           onOpenRoster={onOpenRoster}
         />
@@ -980,13 +991,13 @@ function SettingRow({
   } else if (def.secret) {
     control = (
       <span className="tui-config-value">
-        {def.effective.scope ? "•••" : "unset"}
+        {def.effective.scope ? '•••' : 'unset'}
       </span>
     );
-  } else if (kind === "readonly" || malformed) {
+  } else if (kind === 'readonly' || malformed) {
     control = (
       <span className="tui-config-value">
-        {value === undefined ? "unset" : formatValue(value)}
+        {value === undefined ? 'unset' : formatValue(value)}
         {malformed && (
           <span className="tui-config-flag">
             unexpected shape — clear it or fix the store file
@@ -994,7 +1005,7 @@ function SettingRow({
         )}
       </span>
     );
-  } else if (kind === "scalar") {
+  } else if (kind === 'scalar') {
     control = <ScalarControl def={def} value={value} row={row} />;
   } else {
     control = (
@@ -1004,21 +1015,21 @@ function SettingRow({
 
   const help = [def.description, ROW_HINTS[def.key]]
     .filter(Boolean)
-    .join("\n\n");
+    .join('\n\n');
   // Only rows whose control is a block of fields collapse; a single input,
   // a readonly value, or the hidden-members pointer is already one line.
   const collapsible =
     shape !== undefined &&
     !malformed &&
     !def.secret &&
-    kind !== "readonly" &&
-    def.key !== "board.hiddenMembers";
+    kind !== 'readonly' &&
+    def.key !== 'board.hiddenMembers';
   const body = (
     <>
       <div className="tui-config-control">
         {control}
-        <span className={"tui-config-status" + (row.busy ? " busy" : "")}>
-          {row.busy ? "saving…" : row.saved ? "saved ✓" : ""}
+        <span className={'tui-config-status' + (row.busy ? ' busy' : '')}>
+          {row.busy ? 'saving…' : row.saved ? 'saved ✓' : ''}
         </span>
       </div>
       {row.error && <p className="tui-config-error">{row.error}</p>}
@@ -1039,15 +1050,15 @@ function SettingRow({
         <InfoTip text={help} about={def.key} />
       </span>
       <span className="tui-config-badge">
-        {def.secret ? "secret" : scopeLabel(def.scopes[0] ?? "user")}
+        {def.secret ? 'secret' : scopeLabel(def.scopes[0] ?? 'user')}
       </span>
-      {set && kind !== "roster" && kind !== "tabs" && (
+      {set && kind !== 'roster' && kind !== 'tabs' && (
         <button
           className="tui-config-clear"
           title="clear from store"
           aria-label={`clear ${def.key}`}
           disabled={row.busy}
-          onClick={(e) => {
+          onClick={e => {
             e.stopPropagation();
             void row.clear();
           }}
@@ -1062,9 +1073,9 @@ function SettingRow({
   return (
     <li
       className={
-        "tui-config-row" +
-        (set ? " set" : "") +
-        (collapsible ? " collapsible" : "")
+        'tui-config-row' +
+        (set ? ' set' : '') +
+        (collapsible ? ' collapsible' : '')
       }
       data-key={def.key}
     >
@@ -1106,8 +1117,8 @@ function ConfigModal({
   /** Reload board data so the new tab strip lands without waiting for a poll. */
   onTabsSaved: () => void;
 }) {
-  const store = useSettingsScope("board.");
-  const [query, setQuery] = useState("");
+  const store = useSettingsScope('board.');
+  const [query, setQuery] = useState('');
   const [openRows, toggleRow] = useOpenRows();
   const groups = groupByScope(filterDefs(store.defs, query));
 
@@ -1125,22 +1136,22 @@ function ConfigModal({
         value={query}
         placeholder="filter settings"
         aria-label="filter settings"
-        onChange={(e) => setQuery(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Escape" && query !== "") {
+        onChange={e => setQuery(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === 'Escape' && query !== '') {
             e.stopPropagation();
-            setQuery("");
+            setQuery('');
           }
         }}
       />
       {store.loading && <p className="tui-modal-sub">loading…</p>}
       {store.error && <p className="tui-config-error">{store.error}</p>}
       <div className="tui-config-body">
-        {groups.map((g) => (
+        {groups.map(g => (
           <section key={g.scope}>
             <h3 className="tui-config-group">{g.scope}</h3>
             <ul className="tui-config-list">
-              {g.defs.map((def) => (
+              {g.defs.map(def => (
                 <SettingRow
                   key={def.key}
                   def={def}

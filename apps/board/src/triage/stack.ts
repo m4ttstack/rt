@@ -1,4 +1,4 @@
-import type { OwnMrFacts } from "./edge.ts";
+import type { OwnMrFacts } from './edge.ts';
 
 /** BOARD-12: the attendant unit is the stack, not the MR. A child branch
     contains its parent's commits, so a red parent means the child is running
@@ -26,10 +26,10 @@ export interface StackChain {
 export function projectKeyOf(mrUrl: string): string {
   try {
     const path = new URL(mrUrl).pathname;
-    const [project] = path.split("/-/");
-    return (project ?? path).replace(/\/\d+$/, "");
+    const [project] = path.split('/-/');
+    return (project ?? path).replace(/\/\d+$/, '');
   } catch {
-    return mrUrl.replace(/\/\d+$/, "");
+    return mrUrl.replace(/\/\d+$/, '');
   }
 }
 
@@ -41,8 +41,8 @@ function branchKey(mr: OwnMrFacts, branch: string): string {
 
 /** The ancestry of one MR within the given set. Pure. */
 export function chainOf(mrs: OwnMrFacts[], mrUrl: string): StackChain {
-  const byUrl = new Map(mrs.map((m) => [m.mrUrl, m]));
-  const bySource = new Map(mrs.map((m) => [branchKey(m, m.sourceBranch), m]));
+  const byUrl = new Map(mrs.map(m => [m.mrUrl, m]));
+  const bySource = new Map(mrs.map(m => [branchKey(m, m.sourceBranch), m]));
 
   const self = byUrl.get(mrUrl);
   if (!self) return { ancestors: [], unresolvedParentBranch: null };
@@ -55,9 +55,11 @@ export function chainOf(mrs: OwnMrFacts[], mrUrl: string): StackChain {
     // branch is the root, and its targetBranch must never be looked up.
     if (!frontier.isStacked) return { ancestors, unresolvedParentBranch: null };
     const parent = bySource.get(branchKey(frontier, frontier.targetBranch));
-    if (!parent) return { ancestors, unresolvedParentBranch: frontier.targetBranch };
+    if (!parent)
+      return { ancestors, unresolvedParentBranch: frontier.targetBranch };
     // A branch cycle is malformed data, not a stack. Stop rather than hang.
-    if (seen.has(parent.mrUrl)) return { ancestors, unresolvedParentBranch: null };
+    if (seen.has(parent.mrUrl))
+      return { ancestors, unresolvedParentBranch: null };
     seen.add(parent.mrUrl);
     ancestors.push(parent);
     frontier = parent;

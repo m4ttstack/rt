@@ -1,10 +1,18 @@
-import { useEffect, useState } from "react";
-import type { BoardMR } from "../../data.ts";
-import { commentDot } from "../../view.ts";
-import type { CommentNote, CommentThread, GeneralComment } from "../types.ts";
-import { ICONS, Markdown, SideDrawer } from "@mattstack/tui-kit";
-import { ago, cleanTitle, statusPhrase, THREAD_ICON, THREAD_LABEL, commentCount } from "./format.ts";
-import { getDiscussions } from "../api.ts";
+import { useEffect, useState } from 'react';
+
+import { ICONS, Markdown, SideDrawer } from '@mattstack/tui-kit';
+import type { BoardMR } from '../../data.ts';
+import { commentDot } from '../../view.ts';
+import { getDiscussions } from '../api.ts';
+import type { CommentNote, CommentThread, GeneralComment } from '../types.ts';
+import {
+  ago,
+  cleanTitle,
+  commentCount,
+  statusPhrase,
+  THREAD_ICON,
+  THREAD_LABEL,
+} from './format.ts';
 
 /** A button that opens the comments drawer. Shared by the "N comments" status
     label and the persistent 💬 token, so both routes reach the same drawer. */
@@ -25,7 +33,7 @@ function CommentsTrigger({
       <button
         className={className}
         title={title}
-        onClick={(e) => {
+        onClick={e => {
           e.stopPropagation();
           setOpen(true);
         }}
@@ -39,15 +47,31 @@ function CommentsTrigger({
 
 /** The "N comments" / "comments resolved" status label; clicking it opens the
     drawer. A dot beside it hints whether the author has acted (see `commentDot`). */
-function CommentsButton({ mr, label, cls }: { mr: BoardMR; label: string; cls: string }) {
+function CommentsButton({
+  mr,
+  label,
+  cls,
+}: {
+  mr: BoardMR;
+  label: string;
+  cls: string;
+}) {
   const dot = commentDot(mr.threadSummary);
   return (
     <>
-      <CommentsTrigger mr={mr} className={`tui-phrase tui-comments-btn ${cls}`} title="view comment threads">
+      <CommentsTrigger
+        mr={mr}
+        className={`tui-phrase tui-comments-btn ${cls}`}
+        title="view comment threads"
+      >
         {label}
       </CommentsTrigger>
       {dot && (
-        <span className={`tui-comment-dot ${dot.cls}`} title={dot.title} aria-label={dot.title}>
+        <span
+          className={`tui-comment-dot ${dot.cls}`}
+          title={dot.title}
+          aria-label={dot.title}
+        >
           ●
         </span>
       )}
@@ -63,8 +87,14 @@ function CommentsToken({ mr }: { mr: BoardMR }) {
   const n = commentCount(mr);
   if (n === 0 || statusPhrase(mr).comments) return null;
   return (
-    <CommentsTrigger mr={mr} className="tui-comment-token" title="view comments">
-      <span className="tui-comment-token-icon" aria-hidden>💬</span>
+    <CommentsTrigger
+      mr={mr}
+      className="tui-comment-token"
+      title="view comments"
+    >
+      <span className="tui-comment-token-icon" aria-hidden>
+        💬
+      </span>
       <span>{n}</span>
     </CommentsTrigger>
   );
@@ -72,15 +102,27 @@ function CommentsToken({ mr }: { mr: BoardMR }) {
 
 /** One note in the drawer: author (highlighted when it's the MR author), a
     timestamp that deep-links to the note in GitLab, and the markdown body. */
-function CommentNoteView({ mr, note, now }: { mr: BoardMR; note: CommentNote; now: number }) {
+function CommentNoteView({
+  mr,
+  note,
+  now,
+}: {
+  mr: BoardMR;
+  note: CommentNote;
+  now: number;
+}) {
   const isAuthor = note.username === mr.author.username;
   return (
     <div className="tui-cd-note">
       <div className="tui-cd-note-head">
-        <span className={`tui-cd-note-author ${isAuthor ? "author" : "commenter"}`}>{note.name}</span>
+        <span
+          className={`tui-cd-note-author ${isAuthor ? 'author' : 'commenter'}`}
+        >
+          {note.name}
+        </span>
         <a
           className="tui-cd-note-time"
-          href={mr.webUrl ? `${mr.webUrl}#note_${note.id}` : "#"}
+          href={mr.webUrl ? `${mr.webUrl}#note_${note.id}` : '#'}
           target="_blank"
           rel="noopener noreferrer"
           title="open this comment in gitlab"
@@ -108,12 +150,15 @@ function CommentNoteView({ mr, note, now }: { mr: BoardMR; note: CommentNote; no
     notes) plus a section for general MR comments — the Overview-tab notes that
     aren't threads, so a later author comment isn't invisible. Lazily fetched. */
 function CommentsDrawer({ mr, onClose }: { mr: BoardMR; onClose: () => void }) {
-  const [data, setData] = useState<{ threads: CommentThread[]; comments: GeneralComment[] } | null>(null);
+  const [data, setData] = useState<{
+    threads: CommentThread[];
+    comments: GeneralComment[];
+  } | null>(null);
   const [failed, setFailed] = useState(false);
   const now = Date.now();
   useEffect(() => {
-    getDiscussions(mr.rtRepo ?? "", mr.iid, mr.author.username)
-      .then((d) => setData(d))
+    getDiscussions(mr.rtRepo ?? '', mr.iid, mr.author.username)
+      .then(d => setData(d))
       .catch(() => setFailed(true));
   }, [mr]);
   return (
@@ -125,7 +170,7 @@ function CommentsDrawer({ mr, onClose }: { mr: BoardMR; onClose: () => void }) {
       side="right"
       ariaLabel="comment threads"
       onClose={onClose}
-      onOverlayClick={(e) => {
+      onOverlayClick={e => {
         // The drawer renders inside the row (whose onClick opens the MR); React
         // events bubble by component tree, so stop here or clicking the overlay
         // would also open the MR.
@@ -141,7 +186,12 @@ function CommentsDrawer({ mr, onClose }: { mr: BoardMR; onClose: () => void }) {
           {ICONS.close}
         </button>
       </div>
-      <a className="tui-cd-open" href={mr.webUrl ?? "#"} target="_blank" rel="noopener noreferrer">
+      <a
+        className="tui-cd-open"
+        href={mr.webUrl ?? '#'}
+        target="_blank"
+        rel="noopener noreferrer"
+      >
         open in gitlab ↗
       </a>
       <div className="tui-cd-body">
@@ -157,7 +207,10 @@ function CommentsDrawer({ mr, onClose }: { mr: BoardMR; onClose: () => void }) {
               <section key={i} className={`tui-cd-thread ${t.status}`}>
                 <div className="tui-cd-thread-status">
                   <span>
-                    <span className="tui-comment-icon">{THREAD_ICON[t.status]}</span> {THREAD_LABEL[t.status]}
+                    <span className="tui-comment-icon">
+                      {THREAD_ICON[t.status]}
+                    </span>{' '}
+                    {THREAD_LABEL[t.status]}
                   </span>
                   {mr.webUrl && t.notes[0] && (
                     <a
@@ -170,7 +223,7 @@ function CommentsDrawer({ mr, onClose }: { mr: BoardMR; onClose: () => void }) {
                     </a>
                   )}
                 </div>
-                {t.notes.map((n) => (
+                {t.notes.map(n => (
                   <CommentNoteView key={n.id} mr={mr} note={n} now={now} />
                 ))}
               </section>
@@ -178,7 +231,7 @@ function CommentsDrawer({ mr, onClose }: { mr: BoardMR; onClose: () => void }) {
             {data.comments.length > 0 && (
               <section className="tui-cd-comments">
                 <div className="tui-cd-comments-head">MR comments</div>
-                {data.comments.map((c) => (
+                {data.comments.map(c => (
                   <CommentNoteView key={c.id} mr={mr} note={c} now={now} />
                 ))}
               </section>
@@ -190,4 +243,10 @@ function CommentsDrawer({ mr, onClose }: { mr: BoardMR; onClose: () => void }) {
   );
 }
 
-export { CommentsTrigger, CommentsButton, CommentsToken, CommentNoteView, CommentsDrawer };
+export {
+  CommentsTrigger,
+  CommentsButton,
+  CommentsToken,
+  CommentNoteView,
+  CommentsDrawer,
+};

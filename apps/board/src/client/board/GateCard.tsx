@@ -1,23 +1,29 @@
-import { useState } from "react";
-import { Chip, Markdown, RadioGroup, SelectBox } from "@mattstack/tui-kit";
-import type { GateAnswers, GateOption, GateQuestion, GateRow } from "../../gates/store.ts";
-import type { BoardMRWithReview } from "../types.ts";
+import { useState } from 'react';
+
+import { Chip, Markdown, RadioGroup, SelectBox } from '@mattstack/tui-kit';
+import type {
+  GateAnswers,
+  GateOption,
+  GateQuestion,
+  GateRow,
+} from '../../gates/store.ts';
+import type { BoardMRWithReview } from '../types.ts';
+import { Disclosure, DisclosureHead } from './Disclosure.tsx';
 import {
-  gateAnswerPayload,
-  parseConflictResponse,
-  unwrapGateAnswer,
-  optionValue,
-  optionDisplayFor,
-  displayForValue,
-  codeChangesHidden,
-  groupThreadOptions,
   CODE_CHANGES_QUESTION_ID,
   CODE_CHANGES_SENTINEL,
-  type GateSelections,
+  codeChangesHidden,
+  displayForValue,
+  gateAnswerPayload,
+  groupThreadOptions,
+  optionDisplayFor,
+  optionValue,
+  parseConflictResponse,
+  unwrapGateAnswer,
   type GateDomain,
+  type GateSelections,
   type ThreadOptionGroup,
-} from "./gate-format.ts";
-import { Disclosure, DisclosureHead } from "./Disclosure.tsx";
+} from './gate-format.ts';
 
 /** An option as it should read on screen -- a labeled option's label, a
     bare string's verb-token transform, both with the full value kept in
@@ -44,8 +50,8 @@ function ThreadGroupField({
   picked: Set<string>;
   onSelect: (groupValues: string[], next: string) => void;
 }) {
-  const values = group.entries.map((e) => e.value);
-  const current = values.find((v) => picked.has(v)) ?? "";
+  const values = group.entries.map(e => e.value);
+  const current = values.find(v => picked.has(v)) ?? '';
   return (
     <div className="tui-gate-thread-group">
       <div className="tui-gate-thread-heading" title={group.token}>
@@ -54,8 +60,11 @@ function ThreadGroupField({
       <RadioGroup
         name={`thread-${group.token}`}
         value={current}
-        onChange={(v) => onSelect(values, v)}
-        options={group.entries.map((e) => ({ value: e.value, label: <span title={e.value}>{e.verb}</span> }))}
+        onChange={v => onSelect(values, v)}
+        options={group.entries.map(e => ({
+          value: e.value,
+          label: <span title={e.value}>{e.verb}</span>,
+        }))}
       />
     </div>
   );
@@ -96,8 +105,13 @@ function GateQuestionField({
         <div className="tui-gate-question">
           <div className="tui-gate-question-label">{question.label}</div>
           <div className="tui-gate-thread-groups">
-            {groups.map((g) => (
-              <ThreadGroupField key={g.token} group={g} picked={picked} onSelect={selectGroup} />
+            {groups.map(g => (
+              <ThreadGroupField
+                key={g.token}
+                group={g}
+                picked={picked}
+                onSelect={selectGroup}
+              />
             ))}
           </div>
         </div>
@@ -107,12 +121,19 @@ function GateQuestionField({
       <div className="tui-gate-question">
         <div className="tui-gate-question-label">{question.label}</div>
         <div className="tui-gate-options">
-          {question.options.map((opt) => {
+          {question.options.map(opt => {
             const value = optionValue(opt);
             return (
               <div key={value} className="tui-gate-option">
-                <SelectBox checked={picked.has(value)} onToggle={() => toggle(value)} aria-label={value} />
-                <span className="tui-gate-option-label" onClick={() => toggle(value)}>
+                <SelectBox
+                  checked={picked.has(value)}
+                  onToggle={() => toggle(value)}
+                  aria-label={value}
+                />
+                <span
+                  className="tui-gate-option-label"
+                  onClick={() => toggle(value)}
+                >
                   <GateOptionText option={opt} />
                 </span>
               </div>
@@ -127,9 +148,12 @@ function GateQuestionField({
       <div className="tui-gate-question-label">{question.label}</div>
       <RadioGroup
         name={question.id}
-        value={typeof value === "string" ? value : ""}
-        onChange={(v) => onChange(question.id, v)}
-        options={question.options.map((opt) => ({ value: optionValue(opt), label: <GateOptionText option={opt} /> }))}
+        value={typeof value === 'string' ? value : ''}
+        onChange={v => onChange(question.id, v)}
+        options={question.options.map(opt => ({
+          value: optionValue(opt),
+          label: <GateOptionText option={opt} />,
+        }))}
       />
     </div>
   );
@@ -137,7 +161,13 @@ function GateQuestionField({
 
 /** One answered value, resolved back to its option's label (or the raw
     verb-token transform when no option matches -- see displayForValue). */
-function Answered({ value, options }: { value: string; options: GateOption[] }) {
+function Answered({
+  value,
+  options,
+}: {
+  value: string;
+  options: GateOption[];
+}) {
   const { text, title } = displayForValue(value, options);
   return <span title={title}>{text}</span>;
 }
@@ -147,24 +177,37 @@ function Answered({ value, options }: { value: string; options: GateOption[] }) 
     file) shows a placeholder rather than throwing. A value may be the bare
     option string/array or the wrapper's `{value, note}` note form -- unwrap
     before rendering, or React throws on the object child. */
-function GateAnswerSummary({ questions, answers }: { questions: GateQuestion[]; answers?: GateAnswers }) {
+function GateAnswerSummary({
+  questions,
+  answers,
+}: {
+  questions: GateQuestion[];
+  answers?: GateAnswers;
+}) {
   return (
     <dl className="tui-gate-summary">
-      {questions.map((q) => {
+      {questions.map(q => {
         const raw = answers?.[q.id];
-        const { value, note } = raw !== undefined ? unwrapGateAnswer(raw) : { value: undefined, note: undefined };
-        const text = Array.isArray(value)
-          ? value.length
-            ? value.map((v, i) => (
-                <span key={v}>
-                  {i > 0 && ", "}
-                  <Answered value={v} options={q.options} />
-                </span>
-              ))
-            : "(none)"
-          : value
-            ? <Answered value={value} options={q.options} />
-            : "(none)";
+        const { value, note } =
+          raw !== undefined
+            ? unwrapGateAnswer(raw)
+            : { value: undefined, note: undefined };
+        const text = Array.isArray(value) ? (
+          value.length ? (
+            value.map((v, i) => (
+              <span key={v}>
+                {i > 0 && ', '}
+                <Answered value={v} options={q.options} />
+              </span>
+            ))
+          ) : (
+            '(none)'
+          )
+        ) : value ? (
+          <Answered value={value} options={q.options} />
+        ) : (
+          '(none)'
+        );
         return (
           <div key={q.id} className="tui-gate-summary-row">
             <dt>{q.label}</dt>
@@ -210,38 +253,49 @@ function GateCard({
   const [selections, setSelections] = useState<GateSelections>({});
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
-  const [conflict, setConflict] = useState<{ answers: GateAnswers; by: string } | null>(null);
+  const [conflict, setConflict] = useState<{
+    answers: GateAnswers;
+    by: string;
+  } | null>(null);
   const [ctxOpen, setCtxOpen] = useState(false);
   const [focusBusy, setFocusBusy] = useState(false);
   const [focusError, setFocusError] = useState<string | null>(null);
 
   const setAnswer = (id: string, value: string | string[]) => {
-    setSelections((prev) => ({ ...prev, [id]: value }));
+    setSelections(prev => ({ ...prev, [id]: value }));
   };
 
-  const answered = gate.status === "answered";
-  const actionable = gate.status === "open" || gate.status === "parked";
-  const hidden = actionable && codeChangesHidden(gate.kind, gate.questions, selections);
-  const effective = hidden ? { ...selections, [CODE_CHANGES_QUESTION_ID]: CODE_CHANGES_SENTINEL } : selections;
+  const answered = gate.status === 'answered';
+  const actionable = gate.status === 'open' || gate.status === 'parked';
+  const hidden =
+    actionable && codeChangesHidden(gate.kind, gate.questions, selections);
+  const effective = hidden
+    ? { ...selections, [CODE_CHANGES_QUESTION_ID]: CODE_CHANGES_SENTINEL }
+    : selections;
   const payload = actionable
-    ? gateAnswerPayload({ gateId: gate.gateId, questions: gate.questions }, effective)
+    ? gateAnswerPayload(
+        { gateId: gate.gateId, questions: gate.questions },
+        effective
+      )
     : null;
   const originFocusable = Boolean(gate.origin?.paneId || gate.origin?.worktree);
   const focusGate = async () => {
     setFocusBusy(true);
     setFocusError(null);
     try {
-      const res = await fetch("/gate/focus", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
+      const res = await fetch('/gate/focus', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ gateId: gate.gateId }),
       });
       if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        const body = (await res.json().catch(() => null)) as {
+          error?: string;
+        } | null;
         setFocusError(body?.error ?? `focus failed (${res.status})`);
       }
     } catch {
-      setFocusError("focus failed");
+      setFocusError('focus failed');
     } finally {
       setFocusBusy(false);
     }
@@ -253,9 +307,9 @@ function GateCard({
     setFailed(false);
     setConflict(null);
     try {
-      const res = await fetch("/gate/answer", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
+      const res = await fetch('/gate/answer', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
         body: JSON.stringify(payload),
       });
       if (res.status === 409) {
@@ -278,10 +332,10 @@ function GateCard({
     // Clicks anywhere in here (a radio's own <label>, the checkbox text)
     // aren't inside an `a`/`button` closest() would catch, so they'd
     // otherwise bubble to the row's onRowClick and open the MR in GitLab.
-    <div className="tui-gate-card" onClick={(e) => e.stopPropagation()}>
+    <div className="tui-gate-card" onClick={e => e.stopPropagation()}>
       <div className="tui-gate-head">
         <span className="tui-gate-title">{gate.label}</span>
-        {gate.status === "parked" && (
+        {gate.status === 'parked' && (
           <Chip intent="warn" variant="outline" uppercase data-gate="parked">
             parked
           </Chip>
@@ -294,7 +348,11 @@ function GateCard({
       </div>
       {gate.context && (
         <div className="tui-gate-context">
-          <DisclosureHead open={ctxOpen} label="context" onToggle={() => setCtxOpen((o) => !o)}>
+          <DisclosureHead
+            open={ctxOpen}
+            label="context"
+            onToggle={() => setCtxOpen(o => !o)}
+          >
             context
           </DisclosureHead>
           <Disclosure open={ctxOpen}>
@@ -311,19 +369,31 @@ function GateCard({
       ) : conflict ? (
         <>
           <div className="tui-gate-error">answered elsewhere</div>
-          <GateAnswerSummary questions={gate.questions} answers={conflict.answers} />
+          <GateAnswerSummary
+            questions={gate.questions}
+            answers={conflict.answers}
+          />
         </>
       ) : (
         <>
           {gate.questions
-            .filter((q) => !(hidden && q.id === CODE_CHANGES_QUESTION_ID))
-            .map((q) => (
-              <GateQuestionField key={q.id} question={q} value={selections[q.id]} onChange={setAnswer} />
+            .filter(q => !(hidden && q.id === CODE_CHANGES_QUESTION_ID))
+            .map(q => (
+              <GateQuestionField
+                key={q.id}
+                question={q}
+                value={selections[q.id]}
+                onChange={setAnswer}
+              />
             ))}
           <div className="tui-gate-actions">
-            {failed && <span className="tui-gate-error">submit failed... nothing was sent, try again</span>}
+            {failed && (
+              <span className="tui-gate-error">
+                submit failed... nothing was sent, try again
+              </span>
+            )}
             {focusError && <span className="tui-gate-error">{focusError}</span>}
-            {gate.status === "parked" ? (
+            {gate.status === 'parked' ? (
               gate.domain && (
                 <button
                   type="button"
@@ -339,14 +409,22 @@ function GateCard({
                 type="button"
                 className="tui-gate-focus"
                 disabled={!originFocusable || focusBusy}
-                title={originFocusable ? "jump into the pane behind this gate" : "no origin on this gate"}
+                title={
+                  originFocusable
+                    ? 'jump into the pane behind this gate'
+                    : 'no origin on this gate'
+                }
                 onClick={() => void focusGate()}
               >
                 focus pane
               </button>
             )}
-            <button className="tui-gate-submit" disabled={!payload || busy} onClick={submit}>
-              {busy ? "submitting…" : "submit"}
+            <button
+              className="tui-gate-submit"
+              disabled={!payload || busy}
+              onClick={submit}
+            >
+              {busy ? 'submitting…' : 'submit'}
             </button>
           </div>
         </>

@@ -1,12 +1,12 @@
-import { homedir } from "os";
-import { join } from "path";
+import { homedir } from 'os';
+import { join } from 'path';
 
 /**
  * True when running as a bun-compiled standalone binary: import.meta.dir then
  * lives inside the embedded read-only /$bunfs filesystem, so nothing derived
  * from it is readable from disk or writable at all.
  */
-export const IS_COMPILED = import.meta.dir.includes("$bunfs");
+export const IS_COMPILED = import.meta.dir.includes('$bunfs');
 
 /**
  * Where the board's mutable companions live: config.json, .env, state/.
@@ -22,8 +22,8 @@ export const IS_COMPILED = import.meta.dir.includes("$bunfs");
 function appRoot(): string {
   const override = process.env.BOARD_APP_ROOT;
   if (override) return override;
-  if (!IS_COMPILED) return join(import.meta.dir, "..");
-  return join(process.env.HOME ?? homedir(), ".mattstack", "board");
+  if (!IS_COMPILED) return join(import.meta.dir, '..');
+  return join(process.env.HOME ?? homedir(), '.mattstack', 'board');
 }
 
 export const APP_ROOT = appRoot();

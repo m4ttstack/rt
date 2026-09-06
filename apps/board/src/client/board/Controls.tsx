@@ -1,9 +1,9 @@
-import { GROUP_KEYS, SORT_KEYS } from "../../view.ts";
-import type { ViewState } from "../../view.ts";
-import type { ThemeMode, ViewMode } from "../types.ts";
-import { CopyButton, ICONS, LabeledSeg, Segmented } from "@mattstack/tui-kit";
-import { GROUP_LABEL, SORT_LABEL } from "./format.ts";
-import { SLACK_ICON, SlackPostedMark } from "./chips.tsx";
+import { CopyButton, ICONS, LabeledSeg, Segmented } from '@mattstack/tui-kit';
+import { GROUP_KEYS, SORT_KEYS } from '../../view.ts';
+import type { ViewState } from '../../view.ts';
+import type { ThemeMode, ViewMode } from '../types.ts';
+import { SLACK_ICON, SlackPostedMark } from './chips.tsx';
+import { GROUP_LABEL, SORT_LABEL } from './format.ts';
 
 // ── controls (shared: desktop header + mobile drawer) ───────────────────────
 
@@ -41,22 +41,70 @@ function Controls({
   slackFilter?: { active: boolean; toggle: () => void } | null;
   stacked?: boolean;
 }) {
-  const group = <LabeledSeg legend="group" options={GROUP_KEYS} labels={GROUP_LABEL} value={state.group} onChange={(g) => update({ group: g })} />;
-  const sort = <LabeledSeg legend="sort" options={SORT_KEYS} labels={SORT_LABEL} value={state.sort} onChange={(s) => update({ sort: s })} />;
-  const viewSeg = <Segmented options={["rows", "grid"] as const} value={view} onChange={pickView} label="view" />;
-  const themeSeg = <Segmented options={["light", "dark", "system"] as const} value={theme} onChange={pickTheme} label="theme" />;
-  const slackFilterLabel = slackFilter?.active ? "showing only MRs posted in slack" : "only MRs posted in slack";
+  const group = (
+    <LabeledSeg
+      legend="group"
+      options={GROUP_KEYS}
+      labels={GROUP_LABEL}
+      value={state.group}
+      onChange={g => update({ group: g })}
+    />
+  );
+  const sort = (
+    <LabeledSeg
+      legend="sort"
+      options={SORT_KEYS}
+      labels={SORT_LABEL}
+      value={state.sort}
+      onChange={s => update({ sort: s })}
+    />
+  );
+  const viewSeg = (
+    <Segmented
+      options={['rows', 'grid'] as const}
+      value={view}
+      onChange={pickView}
+      label="view"
+    />
+  );
+  const themeSeg = (
+    <Segmented
+      options={['light', 'dark', 'system'] as const}
+      value={theme}
+      onChange={pickTheme}
+      label="theme"
+    />
+  );
+  const slackFilterLabel = slackFilter?.active
+    ? 'showing only MRs posted in slack'
+    : 'only MRs posted in slack';
 
   // Drawer: labeled full-width rows, so a mobile user can tell what each does.
   if (stacked) {
     return (
       <>
-        <div className="tui-ctl-row"><span className="tui-ctl-label">group</span>{group}</div>
-        <div className="tui-ctl-row"><span className="tui-ctl-label">sort</span>{sort}</div>
-        <div className="tui-ctl-row"><span className="tui-ctl-label">view</span>{viewSeg}</div>
-        <div className="tui-ctl-row"><span className="tui-ctl-label">theme</span>{themeSeg}</div>
-        <button className="tui-drawer-action" onClick={onRefresh} disabled={refreshing}>
-          {ICONS.refresh} {refreshing ? "refreshing…" : "refresh now"}
+        <div className="tui-ctl-row">
+          <span className="tui-ctl-label">group</span>
+          {group}
+        </div>
+        <div className="tui-ctl-row">
+          <span className="tui-ctl-label">sort</span>
+          {sort}
+        </div>
+        <div className="tui-ctl-row">
+          <span className="tui-ctl-label">view</span>
+          {viewSeg}
+        </div>
+        <div className="tui-ctl-row">
+          <span className="tui-ctl-label">theme</span>
+          {themeSeg}
+        </div>
+        <button
+          className="tui-drawer-action"
+          onClick={onRefresh}
+          disabled={refreshing}
+        >
+          {ICONS.refresh} {refreshing ? 'refreshing…' : 'refresh now'}
         </button>
         {slackFilter && (
           <button
@@ -65,15 +113,28 @@ function Controls({
             aria-pressed={slackFilter.active}
             onClick={slackFilter.toggle}
           >
-            <SlackPostedMark mono badge={slackFilter.active} /> {slackFilter.active ? "showing only posted in slack" : "only posted in slack"}
+            <SlackPostedMark mono badge={slackFilter.active} />{' '}
+            {slackFilter.active
+              ? 'showing only posted in slack'
+              : 'only posted in slack'}
           </button>
         )}
         {canCopy && (
-          <CopyButton text={summaryText} className="tui-drawer-action" title="copy summary for Slack" label="copy summary" />
+          <CopyButton
+            text={summaryText}
+            className="tui-drawer-action"
+            title="copy summary for Slack"
+            label="copy summary"
+          />
         )}
         {canPostSummary && onPostSummary && (
-          <button className="tui-drawer-action" onClick={onPostSummary} disabled={postingSummary} title="post this summary to slack">
-            {SLACK_ICON} {postingSummary ? "posting…" : "post summary to slack"}
+          <button
+            className="tui-drawer-action"
+            onClick={onPostSummary}
+            disabled={postingSummary}
+            title="post this summary to slack"
+          >
+            {SLACK_ICON} {postingSummary ? 'posting…' : 'post summary to slack'}
           </button>
         )}
       </>
@@ -84,7 +145,7 @@ function Controls({
   return (
     <>
       <button
-        className={`tui-copy tui-refresh${refreshing ? " spinning" : ""}`}
+        className={`tui-copy tui-refresh${refreshing ? ' spinning' : ''}`}
         onClick={onRefresh}
         disabled={refreshing}
         title="refresh now"
@@ -96,7 +157,9 @@ function Controls({
           that rule now. `.tui-copy` survives in style.css only to dress the
           board's own plain buttons (the refresh button above, the selection
           bar's post/clear), which are not CopyButton instances. */}
-      {canCopy && <CopyButton text={summaryText} title="copy summary for Slack" />}
+      {canCopy && (
+        <CopyButton text={summaryText} title="copy summary for Slack" />
+      )}
       {slackFilter && (
         <button
           className="tui-copy tui-slack-filter"

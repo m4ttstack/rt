@@ -17,11 +17,11 @@
  * only reason this preload is sufficient today -- a new test that calls one
  * of them for real must pass its own override, not rely on this file.
  */
-import { mkdtempSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
+import { mkdtempSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 
-process.env.HOME = mkdtempSync(join(tmpdir(), "mr-board-test-home-"));
+process.env.HOME = mkdtempSync(join(tmpdir(), 'mr-board-test-home-'));
 
 /**
  * Same hazard, second root: the board records its port and every state file
@@ -32,4 +32,4 @@ process.env.HOME = mkdtempSync(join(tmpdir(), "mr-board-test-home-"));
  * makes that impossible rather than merely discouraged; a test that needs the
  * repo's own state/ must now say so explicitly.
  */
-process.env.BOARD_APP_ROOT = mkdtempSync(join(tmpdir(), "mr-board-test-root-"));
+process.env.BOARD_APP_ROOT = mkdtempSync(join(tmpdir(), 'mr-board-test-root-'));

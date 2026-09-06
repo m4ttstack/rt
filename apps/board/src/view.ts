@@ -1,19 +1,24 @@
-import type { BoardMR } from "./data.ts";
-import { hasChangesRequested } from "./data.ts";
-import { projectKeyOf } from "./triage/stack.ts";
-import type { TabConfig } from "./config.ts";
+import type { TabConfig } from './config.ts';
+import type { BoardMR } from './data.ts';
+import { hasChangesRequested } from './data.ts';
+import { projectKeyOf } from './triage/stack.ts';
 
-export type GroupKey = "age" | "author" | "status" | "review";
-export type SortKey = "oldest" | "progress";
+export type GroupKey = 'age' | 'author' | 'status' | 'review';
+export type SortKey = 'oldest' | 'progress';
 
-export type SlackFilter = "all" | "posted";
+export type SlackFilter = 'all' | 'posted';
 
-export const GROUP_KEYS: readonly GroupKey[] = ["age", "author", "status", "review"];
-export const SORT_KEYS: readonly SortKey[] = ["oldest", "progress"];
-export const SLACK_FILTER_KEYS: readonly SlackFilter[] = ["all", "posted"];
+export const GROUP_KEYS: readonly GroupKey[] = [
+  'age',
+  'author',
+  'status',
+  'review',
+];
+export const SORT_KEYS: readonly SortKey[] = ['oldest', 'progress'];
+export const SLACK_FILTER_KEYS: readonly SlackFilter[] = ['all', 'posted'];
 
 /** Sentinel that sorts after any ISO date, so null timestamps land last. */
-const LATEST = "9999";
+const LATEST = '9999';
 
 /** Whether the author has acted on the row's unresolved comment threads, for the
     dot beside "N comments": amber while any thread awaits the author, green once
@@ -21,17 +26,17 @@ const LATEST = "9999";
     they never force amber. Null when there's no per-thread breakdown (fetch
     skipped/failed) or nothing unresolved to describe. */
 export function commentDot(
-  summary: BoardMR["threadSummary"],
-): { cls: "ok" | "warn"; title: string } | null {
+  summary: BoardMR['threadSummary']
+): { cls: 'ok' | 'warn'; title: string } | null {
   if (!summary) return null;
   const { awaiting, replied } = summary;
   if (awaiting + replied === 0) return null;
   if (awaiting > 0) {
     const parts = [`${awaiting} awaiting your reply`];
     if (replied > 0) parts.push(`${replied} you replied to`);
-    return { cls: "warn", title: parts.join(" · ") };
+    return { cls: 'warn', title: parts.join(' · ') };
   }
-  return { cls: "ok", title: "you've replied to every comment" };
+  return { cls: 'ok', title: "you've replied to every comment" };
 }
 
 /** True when every reviewer thread has been resolved and none awaits action — the
@@ -41,7 +46,12 @@ export function commentDot(
     and the MR falls back to "needs review". */
 export function commentsAllResolved(mr: BoardMR): boolean {
   const s = mr.threadSummary;
-  return mr.reviewerComments === 0 && !!s && s.resolved > 0 && s.awaiting + s.replied === 0;
+  return (
+    mr.reviewerComments === 0 &&
+    !!s &&
+    s.resolved > 0 &&
+    s.awaiting + s.replied === 0
+  );
 }
 
 /** Board freshness is the daemon's syncedAt, not the board's own poll loop --
@@ -49,15 +59,19 @@ export function commentsAllResolved(mr: BoardMR): boolean {
     "just fetched" and "actually fresh" are different claims. Stale past 10
     minutes; unknown (no daemon read reached this board) is treated as stale
     too, since there's nothing to vouch for it. */
-export function dataAgeLabel(dataSyncedAt: number | null, now: number): { text: string; stale: boolean } {
+export function dataAgeLabel(
+  dataSyncedAt: number | null,
+  now: number
+): { text: string; stale: boolean } {
   // <= 0 covers a cold shell record's syncedAt (no daemon read has landed
   // yet) -- epoch zero is not a real sync time, and rendering it as
   // "data as of 1:00" (local-timezone midnight) is misleading, not stale-but-honest.
-  if (dataSyncedAt === null || dataSyncedAt <= 0) return { text: "data age unknown", stale: true };
+  if (dataSyncedAt === null || dataSyncedAt <= 0)
+    return { text: 'data age unknown', stale: true };
   const stale = now - dataSyncedAt > 10 * 60_000;
   const d = new Date(dataSyncedAt);
   const hh = d.getHours();
-  const mm = String(d.getMinutes()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, '0');
   return { text: `data as of ${hh}:${mm}`, stale };
 }
 
@@ -67,20 +81,24 @@ export function dataAgeLabel(dataSyncedAt: number | null, now: number): { text: 
     which would have quietly greyed out a fourth class instead of failing.
     This module stays DOM-free and knows nothing of the kit's vocabulary — the
     translation is RowView's, the exhaustiveness is this type's. */
-export type FlagClass = "t-bad" | "t-warn" | "t-cyan";
+export type FlagClass = 't-bad' | 't-warn' | 't-cyan';
 
 /** GitLab-native facts shown as chips above the title: mechanical blockers
     (conflicts / CI), most severe first, plus the stacked marker for MRs
     targeting a parent branch instead of the default branch. */
-export function statusFlags(mr: BoardMR, opts?: { nested?: boolean }): { text: string; cls: FlagClass }[] {
+export function statusFlags(
+  mr: BoardMR,
+  opts?: { nested?: boolean }
+): { text: string; cls: FlagClass }[] {
   const b = mr.blockers;
   const flags: { text: string; cls: FlagClass }[] = [];
-  if (b?.hasConflicts) flags.push({ text: "conflicts", cls: "t-bad" });
-  if (b?.pipelineFailing) flags.push({ text: "ci failing", cls: "t-bad" });
-  if (b?.pipelineRunning) flags.push({ text: "ci running", cls: "t-warn" });
+  if (b?.hasConflicts) flags.push({ text: 'conflicts', cls: 't-bad' });
+  if (b?.pipelineFailing) flags.push({ text: 'ci failing', cls: 't-bad' });
+  if (b?.pipelineRunning) flags.push({ text: 'ci running', cls: 't-warn' });
   // A row nested under its parent already shows the relationship; the chip
   // only earns its place when the parent is not visible above the row.
-  if (mr.isStacked && !opts?.nested) flags.push({ text: `stacked → ${mr.targetBranch}`, cls: "t-cyan" });
+  if (mr.isStacked && !opts?.nested)
+    flags.push({ text: `stacked → ${mr.targetBranch}`, cls: 't-cyan' });
   return flags;
 }
 
@@ -98,7 +116,8 @@ export interface StackNode {
     the tree) and groupMRs (which pulls a child into its parent's group), so
     the two can never disagree about who is whose child. */
 function stackParents(mrs: BoardMR[]): Map<BoardMR, BoardMR> {
-  const branchKey = (mr: BoardMR, branch: string) => `${projectKeyOf(mr.webUrl ?? "")}::${branch}`;
+  const branchKey = (mr: BoardMR, branch: string) =>
+    `${projectKeyOf(mr.webUrl ?? '')}::${branch}`;
   const bySource = new Map<string, BoardMR>();
   for (const m of mrs) {
     if (m.webUrl) bySource.set(branchKey(m, m.sourceBranch), m);
@@ -136,7 +155,9 @@ function stackParents(mrs: BoardMR[]): Map<BoardMR, BoardMR> {
 export function nestStacks(mrs: BoardMR[]): StackNode[] {
   const parentOf = stackParents(mrs);
 
-  const nodes = new Map<BoardMR, StackNode>(mrs.map((m) => [m, { mr: m, children: [] }]));
+  const nodes = new Map<BoardMR, StackNode>(
+    mrs.map(m => [m, { mr: m, children: [] }])
+  );
   const roots: StackNode[] = [];
   for (const m of mrs) {
     const parent = parentOf.get(m);
@@ -154,13 +175,15 @@ function progress(mr: BoardMR): number {
 }
 
 export function filterByMember(mrs: BoardMR[], member: string): BoardMR[] {
-  return member === "all" ? mrs : mrs.filter((m) => m.author.username === member);
+  return member === 'all' ? mrs : mrs.filter(m => m.author.username === member);
 }
 
 /** Same predicate as the "posted in slack" chip, so the filtered view is
     exactly the rows carrying it. */
-export function filterBySlack<T extends { webUrl?: string | null; slack?: { posted?: boolean } | null }>(mrs: T[], filter: SlackFilter): T[] {
-  return filter === "all" ? mrs : mrs.filter((m) => !!m.slack?.posted);
+export function filterBySlack<
+  T extends { webUrl?: string | null; slack?: { posted?: boolean } | null },
+>(mrs: T[], filter: SlackFilter): T[] {
+  return filter === 'all' ? mrs : mrs.filter(m => !!m.slack?.posted);
 }
 
 /** Usernames the member filter may legitimately hold on a given tab. An
@@ -171,11 +194,13 @@ export function filterBySlack<T extends { webUrl?: string | null; slack?: { post
 export function rosterUsernamesFor(
   mrs: BoardMR[],
   tab: TabConfig | undefined,
-  configUsernames: string[],
+  configUsernames: string[]
 ): Set<string> {
-  if (!tab || tab.source.kind === "authors") return new Set(configUsernames);
+  if (!tab || tab.source.kind === 'authors') return new Set(configUsernames);
   return new Set(
-    filterByTab(mrs, tab, new Set(configUsernames)).map((mr) => mr.author.username),
+    filterByTab(mrs, tab, new Set(configUsernames)).map(
+      mr => mr.author.username
+    )
   );
 }
 
@@ -186,11 +211,18 @@ export function rosterUsernamesFor(
     authors tab too. A codeowners tab narrows to rows tagged with its section;
     excludeMembers additionally drops the roster's own authors, so the tab
     reads as the outside-the-team queue for that section. */
-export function filterByTab(mrs: BoardMR[], tab: TabConfig, members: Set<string>): BoardMR[] {
-  if (tab.source.kind === "authors") return mrs.filter((mr) => members.has(mr.author.username));
+export function filterByTab(
+  mrs: BoardMR[],
+  tab: TabConfig,
+  members: Set<string>
+): BoardMR[] {
+  if (tab.source.kind === 'authors')
+    return mrs.filter(mr => members.has(mr.author.username));
   const { section, excludeMembers } = tab.source;
   return mrs.filter(
-    (mr) => mr.codeownerSections.includes(section) && (!excludeMembers || !members.has(mr.author.username)),
+    mr =>
+      mr.codeownerSections.includes(section) &&
+      (!excludeMembers || !members.has(mr.author.username))
   );
 }
 
@@ -199,13 +231,14 @@ export function sortMRs(mrs: BoardMR[], sort: SortKey): BoardMR[] {
   // Order by last activity (updatedAt) — the same axis the row's age token and
   // the age grouping use — so "oldest" means stalest-first and the visible ages
   // read in order. (Was createdAt, which mismatched the displayed times.)
-  const byOldest = (a: BoardMR, b: BoardMR) => (a.updatedAt ?? LATEST).localeCompare(b.updatedAt ?? LATEST);
+  const byOldest = (a: BoardMR, b: BoardMR) =>
+    (a.updatedAt ?? LATEST).localeCompare(b.updatedAt ?? LATEST);
   const copy = [...mrs];
   switch (sort) {
-    case "oldest":
+    case 'oldest':
       copy.sort(byOldest);
       break;
-    case "progress":
+    case 'progress':
       copy.sort((a, b) => progress(b) - progress(a) || byOldest(a, b));
       break;
   }
@@ -220,15 +253,18 @@ export interface Group {
 /** Age band by last activity: by day for the first week, then weekly. Uses the
     same date as the row's "last updated" token and the stale gate, so a group
     label always matches the age shown on its rows. */
-function ageBucket(lastActivity: string | null, now: number): { label: string; order: number } {
-  if (!lastActivity) return { label: "Unknown", order: 1000 };
+function ageBucket(
+  lastActivity: string | null,
+  now: number
+): { label: string; order: number } {
+  if (!lastActivity) return { label: 'Unknown', order: 1000 };
   const days = Math.floor((now - Date.parse(lastActivity)) / 86_400_000);
-  if (days <= 0) return { label: "Today", order: 0 };
-  if (days === 1) return { label: "Yesterday", order: 1 };
+  if (days <= 0) return { label: 'Today', order: 0 };
+  if (days === 1) return { label: 'Yesterday', order: 1 };
   if (days <= 6) return { label: `${days} days ago`, order: days };
-  if (days <= 13) return { label: "Last week", order: 7 };
-  if (days <= 20) return { label: "2 weeks ago", order: 8 };
-  return { label: "Older", order: 9 };
+  if (days <= 13) return { label: 'Last week', order: 7 };
+  if (days <= 20) return { label: '2 weeks ago', order: 8 };
+  return { label: 'Older', order: 9 };
 }
 
 /** Coarse review-readiness bucket, most-blocking first. Mirrors the row's
@@ -238,41 +274,46 @@ function statusBucket(mr: BoardMR): { label: string; order: number } {
   // Review-state axis only. Mechanical blockers (conflicts / CI) are row flags,
   // not their own groups, so an MR with conflicts still shows under its review
   // state instead of being hidden in a "conflicts" bucket.
-  if (hasChangesRequested(mr)) return { label: "changes requested", order: 0 };
-  if (mr.reviews.isApproved) return { label: "approved", order: 4 };
-  if (mr.reviewerComments > 0) return { label: "commented", order: 1 };
+  if (hasChangesRequested(mr)) return { label: 'changes requested', order: 0 };
+  if (mr.reviews.isApproved) return { label: 'approved', order: 4 };
+  if (mr.reviewerComments > 0) return { label: 'commented', order: 1 };
   // Reviewed and all threads resolved, just not formally approved — further along
   // than an untouched MR, so it sits between "needs review" and "approved".
-  if (commentsAllResolved(mr)) return { label: "comments resolved", order: 3 };
-  return { label: "needs review", order: 2 };
+  if (commentsAllResolved(mr)) return { label: 'comments resolved', order: 3 };
+  return { label: 'needs review', order: 2 };
 }
 
 /** An MR carrying the app-initiated review status the client attaches at
     render time. Kept as a loose local shape (not imported from review-state.ts)
     so view.ts stays free of that module's `fs` deps and can bundle for the
     browser. */
-type ReviewedMR = BoardMR & { review?: { status: "queued" | "reviewing" | "done" | "error" } };
+type ReviewedMR = BoardMR & {
+  review?: { status: 'queued' | 'reviewing' | 'done' | 'error' };
+};
 
 /** Bucket by the review a member kicked off through the board, most-active
     first. MRs with no launched review fall to "not reviewed". Orthogonal to
     `statusBucket`, which reflects GitLab's own review state. */
 function reviewBucket(mr: ReviewedMR): { label: string; order: number } {
   switch (mr.review?.status) {
-    case "reviewing":
-      return { label: "reviewing", order: 0 };
-    case "queued":
-      return { label: "queued", order: 1 };
-    case "done":
-      return { label: "review ready", order: 2 };
-    case "error":
-      return { label: "review failed", order: 3 };
+    case 'reviewing':
+      return { label: 'reviewing', order: 0 };
+    case 'queued':
+      return { label: 'queued', order: 1 };
+    case 'done':
+      return { label: 'review ready', order: 2 };
+    case 'error':
+      return { label: 'review failed', order: 3 };
     default:
-      return { label: "not reviewed", order: 4 };
+      return { label: 'not reviewed', order: 4 };
   }
 }
 
 /** Group by a keyed bucket, ordering groups by the bucket's `order`. */
-function groupBy(mrs: BoardMR[], bucket: (mr: BoardMR) => { label: string; order: number }): Group[] {
+function groupBy(
+  mrs: BoardMR[],
+  bucket: (mr: BoardMR) => { label: string; order: number }
+): Group[] {
   const map = new Map<string, { order: number; mrs: BoardMR[] }>();
   for (const mr of mrs) {
     const b = bucket(mr);
@@ -297,7 +338,10 @@ function groupByAuthor(mrs: BoardMR[], memberOrder: string[]): Group[] {
   }
   return [...byUser.entries()]
     .sort((a, b) => (rank.get(a[0]) ?? 999) - (rank.get(b[0]) ?? 999))
-    .map(([username, list]) => ({ label: list[0]!.author.name || username, mrs: list }));
+    .map(([username, list]) => ({
+      label: list[0]!.author.name || username,
+      mrs: list,
+    }));
 }
 
 /** Move every stacked child into the group holding the root of its stack, so
@@ -330,7 +374,9 @@ function pullStacksIntoParentGroups(groups: Group[], mrs: BoardMR[]): Group[] {
   for (const g of groups) {
     for (const m of g.mrs) moved[rootGroupOf(m)]!.push(m);
   }
-  return groups.map((g, i) => ({ label: g.label, mrs: moved[i]! })).filter((g) => g.mrs.length > 0);
+  return groups
+    .map((g, i) => ({ label: g.label, mrs: moved[i]! }))
+    .filter(g => g.mrs.length > 0);
 }
 
 /**
@@ -338,16 +384,21 @@ function pullStacksIntoParentGroups(groups: Group[], mrs: BoardMR[]): Group[] {
  * the dimension; ordering WITHIN each group is the caller's job (apply sortMRs
  * to each group's `mrs`).
  */
-export function groupMRs(mrs: BoardMR[], group: GroupKey, memberOrder: string[], now: number): Group[] {
+export function groupMRs(
+  mrs: BoardMR[],
+  group: GroupKey,
+  memberOrder: string[],
+  now: number
+): Group[] {
   const grouped = (): Group[] => {
     switch (group) {
-      case "age":
-        return groupBy(mrs, (mr) => ageBucket(mr.updatedAt, now));
-      case "author":
+      case 'age':
+        return groupBy(mrs, mr => ageBucket(mr.updatedAt, now));
+      case 'author':
         return groupByAuthor(mrs, memberOrder);
-      case "status":
+      case 'status':
         return groupBy(mrs, statusBucket);
-      case "review":
+      case 'review':
         return groupBy(mrs as ReviewedMR[], reviewBucket);
     }
   };
@@ -362,7 +413,13 @@ export interface ViewState {
   slack: SlackFilter;
 }
 
-export const DEFAULT_VIEW: ViewState = { member: "all", group: "age", sort: "oldest", tab: "", slack: "all" };
+export const DEFAULT_VIEW: ViewState = {
+  member: 'all',
+  group: 'age',
+  sort: 'oldest',
+  tab: '',
+  slack: 'all',
+};
 
 /** URL query params win, then stored localStorage values, then defaults. Invalid
     values are dropped. `validTabs` mirrors `validMembers`: an unknown or empty
@@ -373,27 +430,34 @@ export function parseViewState(
   search: string,
   stored: Partial<ViewState> | null,
   validMembers: string[],
-  defaultMember: string = "all",
-  validTabs: string[] = [],
+  defaultMember: string = 'all',
+  validTabs: string[] = []
 ): ViewState {
   const params = new URLSearchParams(search);
-  const members = ["all", ...validMembers];
-  const memberFallback = members.includes(defaultMember) ? defaultMember : "all";
+  const members = ['all', ...validMembers];
+  const memberFallback = members.includes(defaultMember)
+    ? defaultMember
+    : 'all';
 
-  const resolve = <T extends string>(key: keyof ViewState, valid: readonly T[], fallback: T): T => {
+  const resolve = <T extends string>(
+    key: keyof ViewState,
+    valid: readonly T[],
+    fallback: T
+  ): T => {
     const fromUrl = params.get(key);
     if (fromUrl && valid.includes(fromUrl as T)) return fromUrl as T;
     const fromStore = stored?.[key];
-    if (typeof fromStore === "string" && valid.includes(fromStore as T)) return fromStore as T;
+    if (typeof fromStore === 'string' && valid.includes(fromStore as T))
+      return fromStore as T;
     return fallback;
   };
 
   return {
-    member: resolve("member", members, memberFallback),
-    group: resolve("group", GROUP_KEYS, "age"),
-    sort: resolve("sort", SORT_KEYS, "oldest"),
-    tab: resolve("tab", validTabs, validTabs[0] ?? ""),
-    slack: resolve("slack", SLACK_FILTER_KEYS, "all"),
+    member: resolve('member', members, memberFallback),
+    group: resolve('group', GROUP_KEYS, 'age'),
+    sort: resolve('sort', SORT_KEYS, 'oldest'),
+    tab: resolve('tab', validTabs, validTabs[0] ?? ''),
+    slack: resolve('slack', SLACK_FILTER_KEYS, 'all'),
   };
 }
 
@@ -401,10 +465,15 @@ export function parseViewState(
     the GET /peer/boards fetch hasn't resolved: render nothing rather than a
     wrong "invitable". Comparison is canonical (trimmed, lowercased) so a roster
     handle typed with different case never hides a board that is already peered. */
-export function memberPeerState(username: string, peered: string[] | null): "peered" | "invitable" | "unknown" {
-  if (peered === null) return "unknown";
+export function memberPeerState(
+  username: string,
+  peered: string[] | null
+): 'peered' | 'invitable' | 'unknown' {
+  if (peered === null) return 'unknown';
   const canonical = username.trim().toLowerCase();
-  return peered.some((p) => p.trim().toLowerCase() === canonical) ? "peered" : "invitable";
+  return peered.some(p => p.trim().toLowerCase() === canonical)
+    ? 'peered'
+    : 'invitable';
 }
 
 /** What the settings modal's join row should say and whether it starts folded.
@@ -413,27 +482,28 @@ export function memberPeerState(username: string, peered: string[] | null): "pee
     the open join row, which is exactly right. */
 export function joinRowState(
   switchboardConfigured: boolean,
-  peering: "ok" | "unauthorized" | null,
+  peering: 'ok' | 'unauthorized' | null
 ): { label: string; collapsed: boolean; warning?: string } {
-  if (peering === "unauthorized") {
+  if (peering === 'unauthorized') {
     return {
-      label: "re-join with a new invite",
+      label: 're-join with a new invite',
       collapsed: false,
-      warning: "peering token rejected -- re-join with a new invite",
+      warning: 'peering token rejected -- re-join with a new invite',
     };
   }
-  if (switchboardConfigured) return { label: "re-join with a new invite", collapsed: true };
-  return { label: "join peer boards", collapsed: false };
+  if (switchboardConfigured)
+    return { label: 're-join with a new invite', collapsed: true };
+  return { label: 'join peer boards', collapsed: false };
 }
 
 /** Query string (with leading "?") carrying only non-default values; "" when all default. */
 export function serializeViewState(v: ViewState): string {
   const params = new URLSearchParams();
-  if (v.member !== DEFAULT_VIEW.member) params.set("member", v.member);
-  if (v.group !== DEFAULT_VIEW.group) params.set("group", v.group);
-  if (v.sort !== DEFAULT_VIEW.sort) params.set("sort", v.sort);
-  if (v.tab !== DEFAULT_VIEW.tab) params.set("tab", v.tab);
-  if (v.slack !== DEFAULT_VIEW.slack) params.set("slack", v.slack);
+  if (v.member !== DEFAULT_VIEW.member) params.set('member', v.member);
+  if (v.group !== DEFAULT_VIEW.group) params.set('group', v.group);
+  if (v.sort !== DEFAULT_VIEW.sort) params.set('sort', v.sort);
+  if (v.tab !== DEFAULT_VIEW.tab) params.set('tab', v.tab);
+  if (v.slack !== DEFAULT_VIEW.slack) params.set('slack', v.slack);
   const s = params.toString();
-  return s ? `?${s}` : "";
+  return s ? `?${s}` : '';
 }

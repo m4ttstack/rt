@@ -1,5 +1,6 @@
-import { join } from "path";
-import { APP_ROOT } from "../app-root.ts";
+import { join } from 'path';
+
+import { APP_ROOT } from '../app-root.ts';
 
 export type GateOption = string | { value: string; label: string };
 
@@ -8,7 +9,7 @@ export interface GateOrigin {
   tabId?: string;
   runId?: string;
   worktree?: string;
-  presentation?: "form" | "wait";
+  presentation?: 'form' | 'wait';
 }
 
 export interface GateQuestion {
@@ -22,7 +23,8 @@ export interface GateQuestion {
     note}` object the wrapper's note form posts (`{"outcome": {"value":
     "comment", "note": "..."}}`) -- the daemon stores and emits both
     verbatim. See gate-format.ts's `unwrapGateAnswer` for the renderer. */
-export type GateAnswerValue = string | string[] | { value: string | string[]; note?: string };
+export type GateAnswerValue =
+  string | string[] | { value: string | string[]; note?: string };
 
 export type GateAnswers = Record<string, GateAnswerValue>;
 
@@ -36,7 +38,7 @@ export interface GateState {
   mrUrl: string;
   iid: number;
   kind: string;
-  status: "open" | "answered" | "parked";
+  status: 'open' | 'answered' | 'parked';
   openedAt: number;
   questions: GateQuestion[];
   agentId?: string;
@@ -47,7 +49,7 @@ export interface GateState {
     (see gates/sweep.ts and gates/cache.ts, the daemon-backed replacements),
     but the constant survives for server.ts's one-time boot cleanup that
     removes any leftover directory on upgraded installs. */
-export const GATE_DIR = join(APP_ROOT, "state", "gates");
+export const GATE_DIR = join(APP_ROOT, 'state', 'gates');
 
 /** The gate fields a board row carries -- a subset of `GateState`, leaving
     out the launch-plumbing fields (`agentId`, `sessionId`, `paneId`,
@@ -59,11 +61,11 @@ export interface GateRow {
   gateId: string;
   kind: string;
   label: string;
-  status: GateState["status"];
+  status: GateState['status'];
   openedAt: number;
   questions: GateQuestion[];
   answers?: GateAnswers;
   context?: string;
   origin?: GateOrigin;
-  domain?: "review" | "respond" | "doctor";
+  domain?: 'review' | 'respond' | 'doctor';
 }

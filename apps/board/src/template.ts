@@ -12,22 +12,36 @@ export interface MrFacts {
   targetBranch: string;
 }
 
-const KEYS: Array<keyof MrFacts> = ["iid", "title", "url", "ticket", "author", "sourceBranch", "targetBranch"];
+const KEYS: Array<keyof MrFacts> = [
+  'iid',
+  'title',
+  'url',
+  'ticket',
+  'author',
+  'sourceBranch',
+  'targetBranch',
+];
 
 function replace(template: string, values: Record<string, string>): string {
-  return template.replace(/\{(\w+)\}/g, (m, k) => (k in values ? values[k]! : m));
+  return template.replace(/\{(\w+)\}/g, (m, k) =>
+    k in values ? values[k]! : m
+  );
 }
 
 export function renderMr(template: string, facts: MrFacts): string {
   const values: Record<string, string> = {};
-  for (const k of KEYS) values[k] = String(facts[k] ?? "");
+  for (const k of KEYS) values[k] = String(facts[k] ?? '');
   return replace(template, values);
 }
 
-export function renderMulti(header: string, item: string, facts: MrFacts[]): string {
+export function renderMulti(
+  header: string,
+  item: string,
+  facts: MrFacts[]
+): string {
   const head = replace(header, { count: String(facts.length) });
-  const lines = facts.map((f) => renderMr(item, f));
-  return [head, ...lines].join("\n");
+  const lines = facts.map(f => renderMr(item, f));
+  return [head, ...lines].join('\n');
 }
 
 /** The three configured Slack templates, as the board and the server both see
@@ -45,9 +59,18 @@ export interface SlackTemplates {
     "post to slack" has always produced. One MR WITH a header must still go
     through renderMulti: the single template has no header line, so rendering a
     header there would silently drop the words the user typed. */
-export function renderPost(templates: SlackTemplates, facts: MrFacts[], headerOverride: string | null): string {
-  if (facts.length === 1 && headerOverride === null) return renderMr(templates.single, facts[0]!);
-  return renderMulti(headerOverride ?? templates.multiHeader, templates.multiItem, facts);
+export function renderPost(
+  templates: SlackTemplates,
+  facts: MrFacts[],
+  headerOverride: string | null
+): string {
+  if (facts.length === 1 && headerOverride === null)
+    return renderMr(templates.single, facts[0]!);
+  return renderMulti(
+    headerOverride ?? templates.multiHeader,
+    templates.multiItem,
+    facts
+  );
 }
 
 /** The selection bar's header line, in the three forms the board needs. */
@@ -86,9 +109,17 @@ export interface SelectionHeader {
     copy and post agree and both fall back to the configured template — rather
     than copy emitting an empty first line while post quietly falls back and a
     whitespace-only value 400s. */
-export function selectionHeader(configured: string, edited: string | null, selectedCount: number): SelectionHeader {
+export function selectionHeader(
+  configured: string,
+  edited: string | null,
+  selectedCount: number
+): SelectionHeader {
   if (edited === null) {
-    return { display: replace(configured, { count: String(selectedCount) }), copy: configured, post: undefined };
+    return {
+      display: replace(configured, { count: String(selectedCount) }),
+      copy: configured,
+      post: undefined,
+    };
   }
   const typed = tidyHeader(edited);
   if (!typed) return { display: edited, copy: configured, post: undefined };
@@ -125,7 +156,7 @@ export const MAX_HEADER_LEN = 600;
     Returns null when the value is unusable; the caller decides whether that's a
     400 or a fallback. */
 export function sanitizeHeader(raw: unknown): string | null {
-  if (typeof raw !== "string") return null;
+  if (typeof raw !== 'string') return null;
   const tidied = tidyHeader(raw);
   if (!tidied) return null;
   const escaped = slackEscape(tidied);
@@ -141,9 +172,9 @@ export function sanitizeHeader(raw: unknown): string | null {
     posting with one. */
 export function tidyHeader(raw: string): string {
   return raw
-    .replace(/\r\n?/g, "\n")
-    .replace(/[^\S\n]+$/gm, "")
-    .replace(/\n{3,}/g, "\n\n")
+    .replace(/\r\n?/g, '\n')
+    .replace(/[^\S\n]+$/gm, '')
+    .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
 
@@ -154,5 +185,5 @@ export function tidyHeader(raw: string): string {
     from forming a `<url|anchor>` link, an `<@user>`/`<!channel>` mention or
     broadcast -- Slack renders the entities back as literal `&`, `<`, `>`. */
 function slackEscape(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }

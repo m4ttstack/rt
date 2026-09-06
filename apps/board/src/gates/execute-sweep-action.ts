@@ -1,5 +1,5 @@
-import type { Commands, RtResponse } from "@mattstack/rt-client";
-import type { GateDomain, SweepAction } from "./sweep.ts";
+import type { Commands, RtResponse } from '@mattstack/rt-client';
+import type { GateDomain, SweepAction } from './sweep.ts';
 
 /** The narrow slice of a domain's state-file writer `executeSweepAction`
     needs: closing a missed-done tab always writes exactly `{status: "done",
@@ -9,12 +9,14 @@ import type { GateDomain, SweepAction } from "./sweep.ts";
     this by simple parameter contravariance, so server.ts can wire the real
     writers straight through with no adapter. */
 export interface DomainStateIo {
-  writeState(path: string, patch: { status: "done"; tabId: string }): void;
+  writeState(path: string, patch: { status: 'done'; tabId: string }): void;
   filePath(mrUrl: string): string;
 }
 
 export interface ExecuteSweepActionIo {
-  gatePark(payload: Commands["gate:park"]["payload"]): Promise<RtResponse<Commands["gate:park"]["data"]>>;
+  gatePark(
+    payload: Commands['gate:park']['payload']
+  ): Promise<RtResponse<Commands['gate:park']['data']>>;
   closeTab(tabId: string): Promise<void>;
   review: DomainStateIo;
   respond: DomainStateIo;
@@ -25,12 +27,17 @@ export interface ExecuteSweepActionIo {
   logError(message: string): void;
 }
 
-async function closeTabBestEffort(action: SweepAction, io: ExecuteSweepActionIo): Promise<void> {
+async function closeTabBestEffort(
+  action: SweepAction,
+  io: ExecuteSweepActionIo
+): Promise<void> {
   if (!action.tabId) return;
   try {
     await io.closeTab(action.tabId);
   } catch (err) {
-    io.logError(`gate sweep: closeTab(${action.tabId}) failed for ${action.mrUrl}: ${err instanceof Error ? err.message : err}`);
+    io.logError(
+      `gate sweep: closeTab(${action.tabId}) failed for ${action.mrUrl}: ${err instanceof Error ? err.message : err}`
+    );
   }
 }
 
@@ -51,17 +58,24 @@ function stateIo(domain: GateDomain, io: ExecuteSweepActionIo): DomainStateIo {
  * state file -- a done review's missed close never depends on, or clobbers,
  * a live respond or doctor gate on the same MR.
  */
-export async function executeSweepAction(action: SweepAction, io: ExecuteSweepActionIo): Promise<void> {
-  if (action.kind === "park") {
+export async function executeSweepAction(
+  action: SweepAction,
+  io: ExecuteSweepActionIo
+): Promise<void> {
+  if (action.kind === 'park') {
     if (!action.gateId) return;
     const result = await io.gatePark({ id: action.gateId });
     if (!result.ok) {
-      io.log(`gate sweep: gate ${action.gateId} for ${action.mrUrl} no longer open (${result.error}); skipping park`);
+      io.log(
+        `gate sweep: gate ${action.gateId} for ${action.mrUrl} no longer open (${result.error}); skipping park`
+      );
       return;
     }
 
     await closeTabBestEffort(action, io);
-    io.log(`gate sweep: parked gate ${action.gateId} for ${action.mrUrl} after ${io.graceMinutes}m with no answer`);
+    io.log(
+      `gate sweep: parked gate ${action.gateId} for ${action.mrUrl} after ${io.graceMinutes}m with no answer`
+    );
     return;
   }
 
@@ -70,6 +84,11 @@ export async function executeSweepAction(action: SweepAction, io: ExecuteSweepAc
   // "" (falsy) rather than omitting the field: writeState merges
   // patch.tabId ?? prev.tabId, so leaving tabId out of the patch would
   // keep the stale id and this action would re-fire every sweep.
-  domainIo.writeState(domainIo.filePath(action.mrUrl), { status: "done", tabId: "" });
-  io.log(`gate sweep: closed missed-done ${action.domain} tab for ${action.mrUrl}`);
+  domainIo.writeState(domainIo.filePath(action.mrUrl), {
+    status: 'done',
+    tabId: '',
+  });
+  io.log(
+    `gate sweep: closed missed-done ${action.domain} tab for ${action.mrUrl}`
+  );
 }

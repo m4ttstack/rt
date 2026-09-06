@@ -1,7 +1,7 @@
 // src/skill-path.ts
-import { existsSync, readdirSync, realpathSync } from "fs";
-import { homedir } from "os";
-import { join } from "path";
+import { existsSync, readdirSync, realpathSync } from 'fs';
+import { homedir } from 'os';
+import { join } from 'path';
 
 export interface PluginEntry {
   id: string;
@@ -13,7 +13,8 @@ export type PluginListRunner = () => Promise<PluginEntry[]>;
 
 // Absolute binary, since the server runs under a minimal launchd env (same
 // precedent as HERDR_BIN in herdr.ts -- a bare "claude" isn't on that PATH).
-const CLAUDE_BIN = process.env.CLAUDE_BIN || join(homedir(), ".local", "bin", "claude");
+const CLAUDE_BIN =
+  process.env.CLAUDE_BIN || join(homedir(), '.local', 'bin', 'claude');
 
 type PluginListResult = { ok: true; plugins: PluginEntry[] } | { ok: false };
 
@@ -21,10 +22,18 @@ type PluginListResult = { ok: true; plugins: PluginEntry[] } | { ok: false };
     failure branches (spawn error, non-zero exit, malformed/non-array JSON)
     are directly testable against a fake binary, without touching the real
     `claude` CLI or the process-lifetime cache. */
-export async function runPluginList(claudeBin: string): Promise<PluginListResult> {
+export async function runPluginList(
+  claudeBin: string
+): Promise<PluginListResult> {
   try {
-    const proc = Bun.spawn([claudeBin, "plugin", "list", "--json"], { stdout: "pipe", stderr: "pipe" });
-    const [out, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
+    const proc = Bun.spawn([claudeBin, 'plugin', 'list', '--json'], {
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    const [out, code] = await Promise.all([
+      new Response(proc.stdout).text(),
+      proc.exited,
+    ]);
     if (code !== 0) return { ok: false };
     const parsed = JSON.parse(out);
     if (!Array.isArray(parsed)) return { ok: false };
@@ -40,7 +49,9 @@ export async function runPluginList(claudeBin: string): Promise<PluginListResult
     to the slash-only fallback for the board's lifetime -- it retries next
     time instead. A successful empty list ("[]") still counts as success and
     is cached, since that's a real (if unlikely) answer from the CLI. */
-export function makeCachedPluginListRunner(run: () => Promise<PluginListResult>): PluginListRunner {
+export function makeCachedPluginListRunner(
+  run: () => Promise<PluginListResult>
+): PluginListRunner {
   let cached: PluginEntry[] | null = null;
   return async () => {
     if (cached) return cached;
@@ -52,11 +63,12 @@ export function makeCachedPluginListRunner(run: () => Promise<PluginListResult>)
 
 /** `claude plugin list --json`, memoized for the life of the process (the
     board only picks up newly (un)installed plugins on restart anyway). */
-export const defaultPluginListRunner: PluginListRunner = makeCachedPluginListRunner(() => runPluginList(CLAUDE_BIN));
+export const defaultPluginListRunner: PluginListRunner =
+  makeCachedPluginListRunner(() => runPluginList(CLAUDE_BIN));
 
 /** Find a SKILL.md directly under `dir`. */
 function skillMdIn(dir: string): string | null {
-  const path = join(dir, "SKILL.md");
+  const path = join(dir, 'SKILL.md');
   return existsSync(path) ? path : null;
 }
 
@@ -75,24 +87,26 @@ function skillMdIn(dir: string): string | null {
  */
 export async function resolveSkillPath(
   name: string,
-  listPlugins: PluginListRunner = defaultPluginListRunner,
+  listPlugins: PluginListRunner = defaultPluginListRunner
 ): Promise<string | null> {
   try {
-    const colon = name.indexOf(":");
+    const colon = name.indexOf(':');
     if (colon <= 0 || colon === name.length - 1) return null;
     const pluginPrefix = name.slice(0, colon);
     const skillName = name.slice(colon + 1);
 
     const plugins = await listPlugins();
-    const plugin = plugins.find((p) => p.enabled !== false && p.id.startsWith(`${pluginPrefix}@`));
+    const plugin = plugins.find(
+      p => p.enabled !== false && p.id.startsWith(`${pluginPrefix}@`)
+    );
     if (!plugin?.installPath) return null;
 
     const root = realpathSync(plugin.installPath);
 
-    const direct = skillMdIn(join(root, "skills", skillName));
+    const direct = skillMdIn(join(root, 'skills', skillName));
     if (direct) return realpathSync(direct);
 
-    const skillsDir = join(root, "skills");
+    const skillsDir = join(root, 'skills');
     if (existsSync(skillsDir)) {
       for (const entry of readdirSync(skillsDir, { withFileTypes: true })) {
         if (!entry.isDirectory()) continue;
@@ -101,7 +115,7 @@ export async function resolveSkillPath(
       }
     }
 
-    const attachment = skillMdIn(join(root, "attachments", skillName));
+    const attachment = skillMdIn(join(root, 'attachments', skillName));
     if (attachment) return realpathSync(attachment);
 
     return null;

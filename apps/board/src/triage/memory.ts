@@ -1,6 +1,15 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "fs";
-import { join } from "path";
-import { APP_ROOT } from "../app-root.ts";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'fs';
+import { join } from 'path';
+
+import { APP_ROOT } from '../app-root.ts';
 
 /** Per-MR dispatch bookkeeping AND red-edge memory. Plain-named file: the
     working name must not leak into state schemas (2026-08-08 amendment). */
@@ -20,7 +29,7 @@ export interface DispatchMemory {
   mrs: Record<string, MrMemory>;
 }
 
-export const MEMORY_PATH = join(APP_ROOT, "state", "auto-dispatch.json");
+export const MEMORY_PATH = join(APP_ROOT, 'state', 'auto-dispatch.json');
 
 export function emptyMrMemory(dayStamp: string): MrMemory {
   return {
@@ -40,19 +49,24 @@ export function rollDay(m: MrMemory, dayStamp: string): MrMemory {
 
 export function readMemory(path: string = MEMORY_PATH): DispatchMemory {
   try {
-    const raw = JSON.parse(readFileSync(path, "utf8")) as Partial<DispatchMemory>;
+    const raw = JSON.parse(
+      readFileSync(path, 'utf8')
+    ) as Partial<DispatchMemory>;
     return { identity: raw.identity ?? null, mrs: raw.mrs ?? {} };
   } catch {
     return { identity: null, mrs: {} };
   }
 }
 
-export function writeMemory(mem: DispatchMemory, path: string = MEMORY_PATH): void {
-  mkdirSync(join(path, ".."), { recursive: true });
+export function writeMemory(
+  mem: DispatchMemory,
+  path: string = MEMORY_PATH
+): void {
+  mkdirSync(join(path, '..'), { recursive: true });
   // Same atomic tmp+rename discipline as doctor-state.ts: the board never
   // reads this file, but a crashed half-write must not poison the next run.
-  const tmp = path + ".tmp";
-  writeFileSync(tmp, JSON.stringify(mem, null, 2) + "\n");
+  const tmp = path + '.tmp';
+  writeFileSync(tmp, JSON.stringify(mem, null, 2) + '\n');
   renameSync(tmp, path);
 }
 
@@ -71,9 +85,11 @@ const LOCK_STALE_MS = 2 * 60_000;
     SAME PROCESS apart, and a release must never delete a lock some other
     holder (including a later reclaim of what THIS caller once held) now
     owns. */
-export function tryAcquireMemoryLock(path: string = MEMORY_PATH): string | false {
-  const lock = path + ".lock";
-  mkdirSync(join(lock, ".."), { recursive: true });
+export function tryAcquireMemoryLock(
+  path: string = MEMORY_PATH
+): string | false {
+  const lock = path + '.lock';
+  mkdirSync(join(lock, '..'), { recursive: true });
   if (existsSync(lock) && Date.now() - statSync(lock).mtimeMs < LOCK_STALE_MS) {
     return false;
   }
@@ -85,10 +101,13 @@ export function tryAcquireMemoryLock(path: string = MEMORY_PATH): string | false
 /** Removes the lock file only when it still holds the SAME token this
     caller was issued -- a stale-reclaimed lock (now owned by a fresh
     acquirer) must never be deleted by the previous owner's late release. */
-export function releaseMemoryLock(token: string, path: string = MEMORY_PATH): void {
-  const lock = path + ".lock";
+export function releaseMemoryLock(
+  token: string,
+  path: string = MEMORY_PATH
+): void {
+  const lock = path + '.lock';
   try {
-    if (readFileSync(lock, "utf8") === token) rmSync(lock, { force: true });
+    if (readFileSync(lock, 'utf8') === token) rmSync(lock, { force: true });
   } catch {
     // lock file already gone: nothing to release
   }
@@ -100,7 +119,10 @@ export function releaseMemoryLock(token: string, path: string = MEMORY_PATH): vo
     (attempt budgets, lastHandledPipelineId, budgetEscalatedDay) during that
     gap, and a blind overwrite of the caller's stale snapshot would revert
     them. Caller must hold tryAcquireMemoryLock() around this call. */
-export function writeRefreshedIdentity(identity: DispatchMemory["identity"], path: string = MEMORY_PATH): void {
+export function writeRefreshedIdentity(
+  identity: DispatchMemory['identity'],
+  path: string = MEMORY_PATH
+): void {
   const fresh = readMemory(path);
   fresh.identity = identity;
   writeMemory(fresh, path);

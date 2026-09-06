@@ -1,18 +1,27 @@
+import { resumeAgentPane } from './agent-launch.ts';
 import {
-  dispatchPrompt, launchLegacyResume, launchReview, mrTabLabel, statusBinPath,
+  dispatchPrompt,
+  launchLegacyResume,
+  launchReview,
+  mrTabLabel,
+  statusBinPath,
   type SkillPathResolver,
-} from "./herdr.ts";
-import { resumeAgentPane } from "./agent-launch.ts";
-import { resolveSkillPath } from "./skill-path.ts";
-import { reviewFilePath, reviewReportPath, writeReviewState, readReviewStates } from "./review-state.ts";
+} from './herdr.ts';
+import {
+  readReviewStates,
+  reviewFilePath,
+  reviewReportPath,
+  writeReviewState,
+} from './review-state.ts';
+import { resolveSkillPath } from './skill-path.ts';
 
 /** How the re-review actually started. Callers that only want the board's
     optimistic response ignore this; triage awaits it to learn whether the pane
     came up at all. */
 export type ReReviewLaunch =
-  | { kind: "resumed" }
-  | { kind: "launched" }
-  | { kind: "error"; message: string };
+  | { kind: 'resumed' }
+  | { kind: 'launched' }
+  | { kind: 'error'; message: string };
 
 /** The launch settings a re-review needs from the board's config. */
 export interface ReReviewCtx {
@@ -79,46 +88,56 @@ export async function launchReReview(
   iid: number,
   ctx: ReReviewCtx,
   io: ReReviewIo = defaultReReviewIo,
-  resolvePath: SkillPathResolver = resolveSkillPath,
+  resolvePath: SkillPathResolver = resolveSkillPath
 ): Promise<ReReviewLaunch> {
   const existing = io.readReviewStates().get(mrUrl);
   const statePath = io.reviewFilePath(mrUrl);
-  const prompt = await dispatchPrompt("board:review", {
-    mrUrl,
-    statePath,
-    statusBin: statusBinPath(),
-    reportPath: reviewReportPath(statePath),
-    skill: ctx.skill,
-    reReview: true,
-    note: ctx.note,
-  }, resolvePath);
+  const prompt = await dispatchPrompt(
+    'board:review',
+    {
+      mrUrl,
+      statePath,
+      statusBin: statusBinPath(),
+      reportPath: reviewReportPath(statePath),
+      skill: ctx.skill,
+      reReview: true,
+      note: ctx.note,
+    },
+    resolvePath
+  );
 
   if (existing?.agentId) {
-    io.writeReviewState(statePath, { status: "reviewing" });
+    io.writeReviewState(statePath, { status: 'reviewing' });
     try {
       const result = await io.resumeAgentPane({
         agentId: existing.agentId,
         prompt,
         workspaceLabel: ctx.workspaceLabel,
-        tabLabel: mrTabLabel(iid, ctx.author, "⟲"),
+        tabLabel: mrTabLabel(iid, ctx.author, '⟲'),
       });
       if (!result.focusedExisting) {
         io.writeReviewState(statePath, {
-          status: "reviewing", tabId: result.tabId, workspaceId: result.workspaceId,
-          agentId: result.agentId, paneId: result.paneId,
+          status: 'reviewing',
+          tabId: result.tabId,
+          workspaceId: result.workspaceId,
+          agentId: result.agentId,
+          paneId: result.paneId,
         });
       }
-      return { kind: "resumed" };
+      return { kind: 'resumed' };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error(`re-review resume failed: ${message}`);
-      io.writeReviewState(statePath, { status: "error", message: "failed to launch re-review pane" });
-      return { kind: "error", message };
+      io.writeReviewState(statePath, {
+        status: 'error',
+        message: 'failed to launch re-review pane',
+      });
+      return { kind: 'error', message };
     }
   }
 
   if (existing?.sessionId) {
-    io.writeReviewState(statePath, { status: "reviewing" });
+    io.writeReviewState(statePath, { status: 'reviewing' });
     try {
       const { tabId, workspaceId } = await io.launchLegacyResume({
         mrUrl,
@@ -128,23 +147,30 @@ export async function launchReReview(
         workspaceLabel: ctx.workspaceLabel,
         statePath,
         sessionId: existing.sessionId,
-        workspaceKind: "review",
+        workspaceKind: 'review',
         prompt,
-        tabPrefix: "⟲",
+        tabPrefix: '⟲',
         author: ctx.author,
         claudeCommand: ctx.claudeCommand,
       });
-      io.writeReviewState(statePath, { status: "reviewing", tabId, workspaceId });
-      return { kind: "resumed" };
+      io.writeReviewState(statePath, {
+        status: 'reviewing',
+        tabId,
+        workspaceId,
+      });
+      return { kind: 'resumed' };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error(`re-review resume failed: ${message}`);
-      io.writeReviewState(statePath, { status: "error", message: "failed to launch re-review pane" });
-      return { kind: "error", message };
+      io.writeReviewState(statePath, {
+        status: 'error',
+        message: 'failed to launch re-review pane',
+      });
+      return { kind: 'error', message };
     }
   }
 
-  io.writeReviewState(statePath, { mrUrl, iid, status: "queued" });
+  io.writeReviewState(statePath, { mrUrl, iid, status: 'queued' });
   try {
     const result = await io.launchReview({
       mrUrl,
@@ -163,15 +189,21 @@ export async function launchReReview(
     });
     if (!result.focusedExisting) {
       io.writeReviewState(statePath, {
-        status: "queued", tabId: result.tabId, workspaceId: result.workspaceId,
-        agentId: result.agentId, paneId: result.paneId,
+        status: 'queued',
+        tabId: result.tabId,
+        workspaceId: result.workspaceId,
+        agentId: result.agentId,
+        paneId: result.paneId,
       });
     }
-    return { kind: "launched" };
+    return { kind: 'launched' };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`re-review launch failed: ${message}`);
-    io.writeReviewState(statePath, { status: "error", message: "failed to launch re-review pane" });
-    return { kind: "error", message };
+    io.writeReviewState(statePath, {
+      status: 'error',
+      message: 'failed to launch re-review pane',
+    });
+    return { kind: 'error', message };
   }
 }

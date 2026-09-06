@@ -1,18 +1,25 @@
-import type { GateRow as FacilityGateRow } from "@mattstack/rt-client";
-import type { GateEventFrame } from "./ingest.ts";
-import type { GateAnswers, GateOption, GateQuestion, GateRow } from "./store.ts";
-import type { ReviewStatus } from "../review-state.ts";
-import type { RespondStatus } from "../respond-state.ts";
-import type { DoctorStatus } from "../doctor-state.ts";
-import { domainForKind } from "./sweep.ts";
+import type { GateRow as FacilityGateRow } from '@mattstack/rt-client';
+import type { DoctorStatus } from '../doctor-state.ts';
+import type { RespondStatus } from '../respond-state.ts';
+import type { ReviewStatus } from '../review-state.ts';
+import type { GateEventFrame } from './ingest.ts';
+import type {
+  GateAnswers,
+  GateOption,
+  GateQuestion,
+  GateRow,
+} from './store.ts';
+import { domainForKind } from './sweep.ts';
 
 function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null;
+  return typeof v === 'object' && v !== null;
 }
 
 function isGateOption(v: unknown): v is GateOption {
-  if (typeof v === "string") return true;
-  return isRecord(v) && typeof v.value === "string" && typeof v.label === "string";
+  if (typeof v === 'string') return true;
+  return (
+    isRecord(v) && typeof v.value === 'string' && typeof v.label === 'string'
+  );
 }
 
 /** `opened` payloads come straight off the bus with no schema enforcement
@@ -20,19 +27,29 @@ function isGateOption(v: unknown): v is GateOption {
     GateQuestion[]` cast all the way to optionValue/rendering. Anything not
     shaped like `{id, label, options}` is dropped rather than coerced, since
     a half-built question breaks the renderer worse than a missing one. */
-function sanitizeQuestions(gateId: string, questions: unknown[]): GateQuestion[] {
+function sanitizeQuestions(
+  gateId: string,
+  questions: unknown[]
+): GateQuestion[] {
   const out: GateQuestion[] = [];
   for (const q of questions) {
     if (
       isRecord(q) &&
-      typeof q.id === "string" &&
-      typeof q.label === "string" &&
+      typeof q.id === 'string' &&
+      typeof q.label === 'string' &&
       Array.isArray(q.options) &&
       q.options.every(isGateOption)
     ) {
-      out.push({ id: q.id, label: q.label, multi: Boolean(q.multi), options: q.options as GateOption[] });
+      out.push({
+        id: q.id,
+        label: q.label,
+        multi: Boolean(q.multi),
+        options: q.options as GateOption[],
+      });
     } else {
-      console.error(`gate cache: dropping malformed question on gate ${gateId}`);
+      console.error(
+        `gate cache: dropping malformed question on gate ${gateId}`
+      );
     }
   }
   return out;
@@ -40,7 +57,8 @@ function sanitizeQuestions(gateId: string, questions: unknown[]): GateQuestion[]
 
 // The facility's own bus topics, distinct from the board's legacy
 // `board/gate/opened|answered/<id>` bridge topic (see gates/ingest.ts).
-const GATE_TOPIC_RE = /^gate\/(opened|answered|parked|closed|released)\/([^/]+)$/;
+const GATE_TOPIC_RE =
+  /^gate\/(opened|answered|parked|closed|released)\/([^/]+)$/;
 
 /** Composite key: a subject can now carry more than one live gate at once
     (review-post alongside a respond/doctor kind), so `subject` alone would
@@ -79,7 +97,7 @@ export class GateCache {
 
   /** Every kind's row for one subject, in no particular order. */
   rowsFor(subject: string): FacilityGateRow[] {
-    return this.rows().filter((row) => row.subject === subject);
+    return this.rows().filter(row => row.subject === subject);
   }
 
   rows(): FacilityGateRow[] {
@@ -96,11 +114,12 @@ export class GateCache {
   applyEvent(frame: GateEventFrame): void {
     const match = GATE_TOPIC_RE.exec(frame.topic);
     if (!match) return;
-    const kind = match[1] as "opened" | "answered" | "parked" | "closed" | "released";
+    const kind = match[1] as
+      'opened' | 'answered' | 'parked' | 'closed' | 'released';
     if (!isRecord(frame.payload)) return;
     const payload = frame.payload;
 
-    if (kind === "opened") {
+    if (kind === 'opened') {
       this.applyOpened(payload);
       return;
     }
@@ -109,17 +128,17 @@ export class GateCache {
 
   private applyOpened(payload: Record<string, unknown>): void {
     const { id, subject, questions, meta } = payload;
-    if (typeof id !== "string" || !id) return;
-    if (typeof subject !== "string" || !subject) return;
+    if (typeof id !== 'string' || !id) return;
+    if (typeof subject !== 'string' || !subject) return;
     if (!Array.isArray(questions)) return;
 
     this.applyRow({
       id,
       subject,
-      kind: typeof payload.kind === "string" ? payload.kind : "review-post",
+      kind: typeof payload.kind === 'string' ? payload.kind : 'review-post',
       questions: sanitizeQuestions(id, questions),
       meta: isRecord(meta) ? meta : null,
-      status: "open",
+      status: 'open',
       answer: null,
       // The daemon's opened event carries no openedAt (handlers/gate.ts's
       // eventPayload doesn't emit one) -- receipt time is the closest
@@ -128,13 +147,15 @@ export class GateCache {
       parkedAt: null,
       closedAt: null,
       closedReason: null,
-      agent: typeof payload.agent === "string" ? payload.agent : null,
-      pane: typeof payload.paneId === "string" ? payload.paneId : null,
+      agent: typeof payload.agent === 'string' ? payload.agent : null,
+      pane: typeof payload.paneId === 'string' ? payload.paneId : null,
       nudge: null,
       delivery: null,
       released: false,
-      context: typeof payload.context === "string" ? payload.context : null,
-      origin: isRecord(payload.origin) ? (payload.origin as FacilityGateRow["origin"]) : null,
+      context: typeof payload.context === 'string' ? payload.context : null,
+      origin: isRecord(payload.origin)
+        ? (payload.origin as FacilityGateRow['origin'])
+        : null,
     });
   }
 
@@ -148,34 +169,40 @@ export class GateCache {
     return undefined;
   }
 
-  private patchExisting(kind: "answered" | "parked" | "closed" | "released", payload: Record<string, unknown>): void {
+  private patchExisting(
+    kind: 'answered' | 'parked' | 'closed' | 'released',
+    payload: Record<string, unknown>
+  ): void {
     const { id } = payload;
-    if (typeof id !== "string" || !id) return;
+    if (typeof id !== 'string' || !id) return;
     const existing = this.findById(id);
     if (!existing) return; // unknown id: drop silently, next reconcile fills it
 
-    if (kind === "answered") {
+    if (kind === 'answered') {
       const { answers, by } = payload;
       if (!isRecord(answers)) return;
       this.applyRow({
         ...existing,
-        status: "answered",
+        status: 'answered',
         answer: {
-          answers: answers as NonNullable<FacilityGateRow["answer"]>["answers"],
-          by: typeof by === "string" ? by : "",
+          answers: answers as NonNullable<FacilityGateRow['answer']>['answers'],
+          by: typeof by === 'string' ? by : '',
           // Not on the wire event either -- see the opened-frame note above.
           answeredAt: Date.now(),
         },
-        pane: typeof payload.paneId === "string" ? payload.paneId : existing.pane,
+        pane:
+          typeof payload.paneId === 'string' ? payload.paneId : existing.pane,
       });
-    } else if (kind === "parked") {
-      this.applyRow({ ...existing, status: "parked", parkedAt: Date.now() });
-    } else if (kind === "closed") {
+    } else if (kind === 'parked') {
+      this.applyRow({ ...existing, status: 'parked', parkedAt: Date.now() });
+    } else if (kind === 'closed') {
       this.applyRow({
         ...existing,
-        status: "closed",
+        status: 'closed',
         closedAt: Date.now(),
-        closedReason: isClosedReason(payload.reason) ? payload.reason : existing.closedReason,
+        closedReason: isClosedReason(payload.reason)
+          ? payload.reason
+          : existing.closedReason,
       });
     } else {
       this.applyRow({ ...existing, released: true });
@@ -183,12 +210,12 @@ export class GateCache {
   }
 }
 
-function isClosedReason(v: unknown): v is FacilityGateRow["closedReason"] {
-  return v === "abandoned" || v === "superseded" || v === "pruned";
+function isClosedReason(v: unknown): v is FacilityGateRow['closedReason'] {
+  return v === 'abandoned' || v === 'superseded' || v === 'pruned';
 }
 
 function isTerminal(status: string | undefined): boolean {
-  return status === "done" || status === "error";
+  return status === 'done' || status === 'error';
 }
 
 type GateHost = {
@@ -202,8 +229,9 @@ type GateHost = {
     before kinds shipped, kept as a safe catch-all rather than never
     expiring. */
 function isAnsweredRowTerminal(kind: string, mr: GateHost): boolean {
-  if (kind === "respond-plan" || kind === "respond-post") return isTerminal(mr.respond?.status);
-  if (kind === "doctor-escalation") return isTerminal(mr.doctor?.status);
+  if (kind === 'respond-plan' || kind === 'respond-post')
+    return isTerminal(mr.respond?.status);
+  if (kind === 'doctor-escalation') return isTerminal(mr.doctor?.status);
   return isTerminal(mr.review?.status);
 }
 
@@ -216,15 +244,16 @@ function isAnsweredRowTerminal(kind: string, mr: GateHost): boolean {
     lifecycle already ended). */
 export function attachGates<T extends { webUrl?: string | null } & GateHost>(
   mrs: T[],
-  cache: GateCache,
+  cache: GateCache
 ): Array<T & { gates: GateRow[] }> {
-  return mrs.map((mr) => {
+  return mrs.map(mr => {
     if (!mr.webUrl) return { ...mr, gates: [] };
     const rows = cache.rowsFor(`mr:${mr.webUrl}`);
     const gates: GateRow[] = [];
     for (const row of rows) {
-      const label = typeof row.meta?.label === "string" ? row.meta.label : row.kind;
-      if (row.status === "open" || row.status === "parked") {
+      const label =
+        typeof row.meta?.label === 'string' ? row.meta.label : row.kind;
+      if (row.status === 'open' || row.status === 'parked') {
         gates.push({
           gateId: row.id,
           kind: row.kind,
@@ -236,12 +265,15 @@ export function attachGates<T extends { webUrl?: string | null } & GateHost>(
           origin: row.origin ?? undefined,
           domain: domainForKind(row.kind),
         });
-      } else if (row.status === "answered" && !isAnsweredRowTerminal(row.kind, mr)) {
+      } else if (
+        row.status === 'answered' &&
+        !isAnsweredRowTerminal(row.kind, mr)
+      ) {
         gates.push({
           gateId: row.id,
           kind: row.kind,
           label,
-          status: "answered",
+          status: 'answered',
           openedAt: row.openedAt,
           questions: row.questions as GateQuestion[],
           answers: row.answer?.answers as GateAnswers | undefined,

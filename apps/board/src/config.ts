@@ -1,20 +1,31 @@
-import { readFileSync, renameSync, writeFileSync } from "fs";
-import { join } from "path";
-import { APP_ROOT } from "./app-root.ts";
-import { shellSingleQuote } from "./shell-quote.ts";
-import { getSetting, setSetting, identityFromRemote, serializeIdentity, type RepoIdentity } from "@mattstack/rt-client";
-import { readBoardSecrets, type BoardSecretsData, type BoardSecretsDeps } from "./board-secrets.ts";
+import { readFileSync, renameSync, writeFileSync } from 'fs';
+import { join } from 'path';
+
+import {
+  getSetting,
+  identityFromRemote,
+  serializeIdentity,
+  setSetting,
+  type RepoIdentity,
+} from '@mattstack/rt-client';
+import { APP_ROOT } from './app-root.ts';
+import {
+  readBoardSecrets,
+  type BoardSecretsData,
+  type BoardSecretsDeps,
+} from './board-secrets.ts';
+import { shellSingleQuote } from './shell-quote.ts';
 
 /** A bare "host/path" config value (not a full remote URL) never matches
     identityFromRemote's URL/scp-like parsing — it has no scheme and no
     colon. Treat it as an already-normalized remote identity directly,
     lowercasing only the host segment (parity with normalizeRemote). */
 function hostPathToIdentity(value: string): RepoIdentity | null {
-  const slash = value.indexOf("/");
+  const slash = value.indexOf('/');
   if (slash <= 0 || slash === value.length - 1) return null;
   const host = value.slice(0, slash).toLowerCase();
   const path = value.slice(slash + 1);
-  return { kind: "remote", id: `${host}/${path}` };
+  return { kind: 'remote', id: `${host}/${path}` };
 }
 
 /** Encode one rtRepos value for the daemon boundary: identityFromRemote
@@ -22,7 +33,9 @@ function hostPathToIdentity(value: string): RepoIdentity | null {
     override keyed on that exact string), else the bare host/path adapter.
     Null propagates — an unmapped or malformed value must surface as a
     fetchError, never reach the identity-only daemon as a bare string. */
-export function repoIdentityField(value: string | null | undefined): string | null {
+export function repoIdentityField(
+  value: string | null | undefined
+): string | null {
   if (!value) return null;
   const identity = identityFromRemote(value) ?? hostPathToIdentity(value);
   return identity ? serializeIdentity(identity) : null;
@@ -34,15 +47,27 @@ export function repoIdentityField(value: string | null | undefined): string | nu
  * a third. A config.json entry still wins for its project: the one case
  * where the tracked remote is not the project itself (a fork, a rename).
  */
-export function deriveRtRepos(gitlabHost: string, projects: string[], overrides: Record<string, string> = {}): Record<string, string> {
-  const host = gitlabHost.replace(/^https?:\/\//, "").replace(/\/+$/, "").toLowerCase();
-  const derived = Object.fromEntries(projects.map((project) => [project, `${host}/${project}`]));
+export function deriveRtRepos(
+  gitlabHost: string,
+  projects: string[],
+  overrides: Record<string, string> = {}
+): Record<string, string> {
+  const host = gitlabHost
+    .replace(/^https?:\/\//, '')
+    .replace(/\/+$/, '')
+    .toLowerCase();
+  const derived = Object.fromEntries(
+    projects.map(project => [project, `${host}/${project}`])
+  );
   return { ...derived, ...overrides };
 }
 
 /** Same, keyed by GitLab project path through config.rtRepos — the shape
     every server.ts call site actually has in hand. */
-export function daemonRepoField(config: Pick<BoardConfig, "rtRepos">, projectPath: string): string | null {
+export function daemonRepoField(
+  config: Pick<BoardConfig, 'rtRepos'>,
+  projectPath: string
+): string | null {
   return repoIdentityField(config.rtRepos[projectPath]);
 }
 
@@ -54,17 +79,28 @@ export function daemonRepoField(config: Pick<BoardConfig, "rtRepos">, projectPat
     from gitlabHost plus the MR's own GitLab project path. Never blocks a
     launch: when both attempts fail (malformed config), logs a warning and
     returns the bare project path as a best-effort value instead of null. */
-export function resolveLaunchRepo(rtRepoOverride: string | null | undefined, gitlabHost: string, projectPath: string, mrUrl: string): string {
-  const repo = repoIdentityField(rtRepoOverride) ?? repoIdentityField(`${gitlabHost}/${projectPath}`);
+export function resolveLaunchRepo(
+  rtRepoOverride: string | null | undefined,
+  gitlabHost: string,
+  projectPath: string,
+  mrUrl: string
+): string {
+  const repo =
+    repoIdentityField(rtRepoOverride) ??
+    repoIdentityField(`${gitlabHost}/${projectPath}`);
   if (repo) return repo;
-  console.warn(`launch: could not resolve an rt repo identity for ${mrUrl} (gitlabHost=${gitlabHost}, projectPath=${projectPath || "<empty>"}); launching with the bare project path`);
+  console.warn(
+    `launch: could not resolve an rt repo identity for ${mrUrl} (gitlabHost=${gitlabHost}, projectPath=${projectPath || '<empty>'}); launching with the bare project path`
+  );
   return projectPath;
 }
 
 export interface TabConfig {
   id: string;
   label: string;
-  source: { kind: "authors" } | { kind: "codeowners"; section: string; excludeMembers?: boolean };
+  source:
+    | { kind: 'authors' }
+    | { kind: 'codeowners'; section: string; excludeMembers?: boolean };
   /** Overrides slack.channel for this tab's index, reactions, and posts. */
   slackChannel?: string;
   /** Overrides review-launch skill resolution for this tab. Empty/absent = normal resolution. */
@@ -72,7 +108,9 @@ export interface TabConfig {
 }
 
 /** No config.json/store tabs = one classic authors-roster tab, never zero tabs. */
-export const IMPLICIT_TABS: TabConfig[] = [{ id: "team", label: "Team", source: { kind: "authors" } }];
+export const IMPLICIT_TABS: TabConfig[] = [
+  { id: 'team', label: 'Team', source: { kind: 'authors' } },
+];
 
 export interface Member {
   username: string;
@@ -172,21 +210,21 @@ export interface SlackConfig {
 }
 
 export const DEFAULT_SLACK_EMOJI: SlackEmojiConfig = {
-  looking: "eyes",
-  commented: "speech_balloon",
-  approved: "white_check_mark",
+  looking: 'eyes',
+  commented: 'speech_balloon',
+  approved: 'white_check_mark',
 };
 
 const DEFAULT_SLACK: SlackConfig = {
-  channel: "code-review",
-  singleTemplate: "{title}: {url}",
+  channel: 'code-review',
+  singleTemplate: '{title}: {url}',
   multiHeader: "{count} MR's ready for review :pray:",
-  multiItem: "- {title}: {url}",
+  multiItem: '- {title}: {url}',
   autoResolveIntervalMinutes: 15,
   emoji: DEFAULT_SLACK_EMOJI,
 };
 
-export const CONFIG_PATH = join(APP_ROOT, "config.json");
+export const CONFIG_PATH = join(APP_ROOT, 'config.json');
 
 /** Parse and validate raw config JSON. Separated from file IO for testing.
     `source` names where a malformed value came from in every thrown message
@@ -195,9 +233,9 @@ export const CONFIG_PATH = join(APP_ROOT, "config.json");
     instead, so a malformed store value sends the operator to `rt settings`
     rather than blaming a file that isn't the actual problem (same contract
     as triage/config.ts's parseTriageBlock). */
-export function parseConfig(raw: string, source = "config.json"): BoardConfig {
+export function parseConfig(raw: string, source = 'config.json'): BoardConfig {
   const cfg = JSON.parse(raw) as Partial<BoardConfig>;
-  for (const key of ["gitlabHost", "projects", "members"] as const) {
+  for (const key of ['gitlabHost', 'projects', 'members'] as const) {
     const value = cfg[key];
     if (!value || (Array.isArray(value) && value.length === 0)) {
       throw new Error(`${source} is missing required field "${key}"`);
@@ -207,78 +245,121 @@ export function parseConfig(raw: string, source = "config.json"): BoardConfig {
     if (!member || !member.username) {
       throw new Error(`${source} has a member with no "username"`);
     }
-    if (member.hidden !== undefined && typeof member.hidden !== "boolean") {
-      throw new Error(`${source} member "${member.username}" has a non-boolean "hidden"`);
+    if (member.hidden !== undefined && typeof member.hidden !== 'boolean') {
+      throw new Error(
+        `${source} member "${member.username}" has a non-boolean "hidden"`
+      );
     }
   }
-  if (cfg.defaultMember && cfg.defaultMember !== "all" && !cfg.members!.some((m) => m.username === cfg.defaultMember)) {
-    throw new Error(`${source} "defaultMember" (${cfg.defaultMember}) is not "all" or a known member username`);
+  if (
+    cfg.defaultMember &&
+    cfg.defaultMember !== 'all' &&
+    !cfg.members!.some(m => m.username === cfg.defaultMember)
+  ) {
+    throw new Error(
+      `${source} "defaultMember" (${cfg.defaultMember}) is not "all" or a known member username`
+    );
   }
-  if (cfg.staleAfterDays !== undefined && (typeof cfg.staleAfterDays !== "number" || cfg.staleAfterDays <= 0)) {
+  if (
+    cfg.staleAfterDays !== undefined &&
+    (typeof cfg.staleAfterDays !== 'number' || cfg.staleAfterDays <= 0)
+  ) {
     throw new Error(`${source} "staleAfterDays" must be a positive number`);
   }
-  if (cfg.gateGraceMinutes !== undefined && (typeof cfg.gateGraceMinutes !== "number" || cfg.gateGraceMinutes <= 0)) {
+  if (
+    cfg.gateGraceMinutes !== undefined &&
+    (typeof cfg.gateGraceMinutes !== 'number' || cfg.gateGraceMinutes <= 0)
+  ) {
     throw new Error(`${source} "gateGraceMinutes" must be a positive number`);
   }
   if (cfg.ticketPrefixes !== undefined) {
-    if (!Array.isArray(cfg.ticketPrefixes) || cfg.ticketPrefixes.some((p) => typeof p !== "string" || !p.trim())) {
-      throw new Error(`${source} "ticketPrefixes" must be an array of non-empty strings`);
+    if (
+      !Array.isArray(cfg.ticketPrefixes) ||
+      cfg.ticketPrefixes.some(p => typeof p !== 'string' || !p.trim())
+    ) {
+      throw new Error(
+        `${source} "ticketPrefixes" must be an array of non-empty strings`
+      );
     }
   }
-  if (cfg.reviewCwd !== undefined && typeof cfg.reviewCwd !== "string") {
+  if (cfg.reviewCwd !== undefined && typeof cfg.reviewCwd !== 'string') {
     throw new Error(`${source} "reviewCwd" must be a string (absolute path)`);
   }
-  if (cfg.reviewsWorkspace !== undefined && typeof cfg.reviewsWorkspace !== "string") {
+  if (
+    cfg.reviewsWorkspace !== undefined &&
+    typeof cfg.reviewsWorkspace !== 'string'
+  ) {
     throw new Error(`${source} "reviewsWorkspace" must be a string`);
   }
-  if (cfg.respondCwd !== undefined && typeof cfg.respondCwd !== "string") {
+  if (cfg.respondCwd !== undefined && typeof cfg.respondCwd !== 'string') {
     throw new Error(`${source} "respondCwd" must be a string (absolute path)`);
   }
-  if (cfg.respondsWorkspace !== undefined && typeof cfg.respondsWorkspace !== "string") {
+  if (
+    cfg.respondsWorkspace !== undefined &&
+    typeof cfg.respondsWorkspace !== 'string'
+  ) {
     throw new Error(`${source} "respondsWorkspace" must be a string`);
   }
-  if (cfg.doctorCwd !== undefined && typeof cfg.doctorCwd !== "string") {
+  if (cfg.doctorCwd !== undefined && typeof cfg.doctorCwd !== 'string') {
     throw new Error(`${source} "doctorCwd" must be a string (absolute path)`);
   }
-  if (cfg.doctorsWorkspace !== undefined && typeof cfg.doctorsWorkspace !== "string") {
+  if (
+    cfg.doctorsWorkspace !== undefined &&
+    typeof cfg.doctorsWorkspace !== 'string'
+  ) {
     throw new Error(`${source} "doctorsWorkspace" must be a string`);
   }
-  if (cfg.claudeCommand !== undefined && typeof cfg.claudeCommand !== "string") {
-    throw new Error(`${source} "claudeCommand" must be a string (a shell command that starts claude)`);
+  if (
+    cfg.claudeCommand !== undefined &&
+    typeof cfg.claudeCommand !== 'string'
+  ) {
+    throw new Error(
+      `${source} "claudeCommand" must be a string (a shell command that starts claude)`
+    );
   }
-  if (cfg.doctorSkill !== undefined && typeof cfg.doctorSkill !== "string") {
+  if (cfg.doctorSkill !== undefined && typeof cfg.doctorSkill !== 'string') {
     throw new Error(`${source} "doctorSkill" must be a string (a skill name)`);
   }
   if (cfg.botUsernames !== undefined) {
-    if (!Array.isArray(cfg.botUsernames) || cfg.botUsernames.some((b) => typeof b !== "string" || !b.trim())) {
-      throw new Error(`${source} "botUsernames" must be an array of non-empty strings`);
+    if (
+      !Array.isArray(cfg.botUsernames) ||
+      cfg.botUsernames.some(b => typeof b !== 'string' || !b.trim())
+    ) {
+      throw new Error(
+        `${source} "botUsernames" must be an array of non-empty strings`
+      );
     }
   }
   const slack = parseSlack(cfg.slack, source);
   const switchboard = parseSwitchboard(cfg.switchboard, source);
   const tabs = parseTabs(cfg.tabs, source);
-  const rtRepos = (cfg.rtRepos && typeof cfg.rtRepos === "object" && !Array.isArray(cfg.rtRepos))
-    ? Object.fromEntries(Object.entries(cfg.rtRepos).filter(([, v]) => typeof v === "string"))
-    : {};
+  const rtRepos =
+    cfg.rtRepos &&
+    typeof cfg.rtRepos === 'object' &&
+    !Array.isArray(cfg.rtRepos)
+      ? Object.fromEntries(
+          Object.entries(cfg.rtRepos).filter(([, v]) => typeof v === 'string')
+        )
+      : {};
   return {
     gitlabHost: cfg.gitlabHost!,
     projects: cfg.projects!,
     members: cfg.members!,
-    defaultMember: cfg.defaultMember ?? "all",
+    defaultMember: cfg.defaultMember ?? 'all',
     staleAfterDays: cfg.staleAfterDays ?? 90,
     gateGraceMinutes: cfg.gateGraceMinutes ?? 90,
     // Normalize to uppercase so matching is case-insensitive (ticket keys are uppercased).
-    ticketPrefixes: (cfg.ticketPrefixes ?? []).map((p) => p.trim().toUpperCase()),
-    title: cfg.title ?? "MRs ready for review",
-    reviewCwd: cfg.reviewCwd ?? "",
-    reviewsWorkspace: cfg.reviewsWorkspace ?? "reviews",
-    respondCwd: cfg.respondCwd ?? "",
-    respondsWorkspace: cfg.respondsWorkspace ?? "responses",
-    doctorCwd: cfg.doctorCwd ?? "",
-    doctorsWorkspace: cfg.doctorsWorkspace ?? "doctors",
-    claudeCommand: cfg.claudeCommand ?? "",
-    doctorSkill: cfg.doctorSkill ?? "",
-    botUsernames: (cfg.botUsernames ?? []).map((b) => b.trim()),
+    ticketPrefixes: (cfg.ticketPrefixes ?? []).map(p => p.trim().toUpperCase()),
+    title: cfg.title ?? 'MRs ready for review',
+    reviewCwd: cfg.reviewCwd ?? '',
+    reviewsWorkspace: cfg.reviewsWorkspace ?? 'reviews',
+    respondCwd: cfg.respondCwd ?? '',
+    respondsWorkspace: cfg.respondsWorkspace ?? 'responses',
+    doctorCwd: cfg.doctorCwd ?? '',
+    doctorsWorkspace: cfg.doctorsWorkspace ?? 'doctors',
+    claudeCommand: cfg.claudeCommand ?? '',
+    doctorSkill: cfg.doctorSkill ?? '',
+    botUsernames: (cfg.botUsernames ?? []).map(b => b.trim()),
     rtRepos: deriveRtRepos(cfg.gitlabHost!, cfg.projects!, rtRepos),
     rtRepoOverrides: rtRepos,
     slack,
@@ -291,47 +372,69 @@ export function parseConfig(raw: string, source = "config.json"): BoardConfig {
 export function parseTabs(raw: unknown, source: string): TabConfig[] {
   if (raw === undefined) return IMPLICIT_TABS;
   if (!Array.isArray(raw)) throw new Error(`${source} "tabs" must be an array`);
-  if (raw.length === 0) throw new Error(`${source} "tabs" must not be empty (omit "tabs" for the implicit default)`);
+  if (raw.length === 0)
+    throw new Error(
+      `${source} "tabs" must not be empty (omit "tabs" for the implicit default)`
+    );
   const seenIds = new Set<string>();
   return raw.map((entry, i) => {
     const label = `tabs[${i}]`;
-    if (!entry || typeof entry !== "object") {
+    if (!entry || typeof entry !== 'object') {
       throw new Error(`${source} "${label}" must be an object`);
     }
     const t = entry as Partial<TabConfig>;
-    if (!t.id || typeof t.id !== "string") {
+    if (!t.id || typeof t.id !== 'string') {
       throw new Error(`${source} "${label}" is missing a non-empty "id"`);
     }
     if (seenIds.has(t.id)) {
       throw new Error(`${source} has a duplicate tab id "${t.id}" in ${label}`);
     }
     seenIds.add(t.id);
-    if (!t.label || typeof t.label !== "string") {
+    if (!t.label || typeof t.label !== 'string') {
       throw new Error(`${source} "${label}" is missing a non-empty "label"`);
     }
-    if (!t.source || typeof t.source !== "object") {
+    if (!t.source || typeof t.source !== 'object') {
       throw new Error(`${source} "${label}.source" must be an object`);
     }
-    const src = t.source as { kind?: string; section?: string; excludeMembers?: unknown };
-    if (src.kind !== "authors" && src.kind !== "codeowners") {
-      throw new Error(`${source} "${label}.source.kind" must be "authors" or "codeowners"`);
+    const src = t.source as {
+      kind?: string;
+      section?: string;
+      excludeMembers?: unknown;
+    };
+    if (src.kind !== 'authors' && src.kind !== 'codeowners') {
+      throw new Error(
+        `${source} "${label}.source.kind" must be "authors" or "codeowners"`
+      );
     }
-    let source_: TabConfig["source"];
-    if (src.kind === "authors") {
-      source_ = { kind: "authors" };
+    let source_: TabConfig['source'];
+    if (src.kind === 'authors') {
+      source_ = { kind: 'authors' };
     } else {
-      if (!src.section || typeof src.section !== "string") {
-        throw new Error(`${source} "${label}.source.section" is required for a codeowners tab`);
+      if (!src.section || typeof src.section !== 'string') {
+        throw new Error(
+          `${source} "${label}.source.section" is required for a codeowners tab`
+        );
       }
-      if (src.excludeMembers !== undefined && typeof src.excludeMembers !== "boolean") {
-        throw new Error(`${source} "${label}.source.excludeMembers" must be a boolean`);
+      if (
+        src.excludeMembers !== undefined &&
+        typeof src.excludeMembers !== 'boolean'
+      ) {
+        throw new Error(
+          `${source} "${label}.source.excludeMembers" must be a boolean`
+        );
       }
-      source_ = { kind: "codeowners", section: src.section, ...(src.excludeMembers !== undefined ? { excludeMembers: src.excludeMembers } : {}) };
+      source_ = {
+        kind: 'codeowners',
+        section: src.section,
+        ...(src.excludeMembers !== undefined
+          ? { excludeMembers: src.excludeMembers }
+          : {}),
+      };
     }
-    if (t.slackChannel !== undefined && typeof t.slackChannel !== "string") {
+    if (t.slackChannel !== undefined && typeof t.slackChannel !== 'string') {
       throw new Error(`${source} "${label}.slackChannel" must be a string`);
     }
-    if (t.reviewSkill !== undefined && typeof t.reviewSkill !== "string") {
+    if (t.reviewSkill !== undefined && typeof t.reviewSkill !== 'string') {
       throw new Error(`${source} "${label}.reviewSkill" must be a string`);
     }
     return {
@@ -348,44 +451,56 @@ export function parseTabs(raw: unknown, source: string): TabConfig[] {
     never lands in the store either — peer/onboard.ts builds `${url}/invites`
     verbatim, and a stored slash would double up into `//invites`. */
 function stripTrailingSlash(url: string): string {
-  return url.replace(/\/+$/, "");
+  return url.replace(/\/+$/, '');
 }
 
-function parseSwitchboard(raw: unknown, source: string): SwitchboardBoardConfig {
-  if (raw === undefined || raw === null) return { url: "" };
-  if (typeof raw !== "object" || Array.isArray(raw)) {
+function parseSwitchboard(
+  raw: unknown,
+  source: string
+): SwitchboardBoardConfig {
+  if (raw === undefined || raw === null) return { url: '' };
+  if (typeof raw !== 'object' || Array.isArray(raw)) {
     throw new Error(`${source} "switchboard" must be an object`);
   }
   const s = raw as Partial<SwitchboardBoardConfig>;
-  if (s.url !== undefined && typeof s.url !== "string") {
+  if (s.url !== undefined && typeof s.url !== 'string') {
     throw new Error(`${source} "switchboard.url" must be a string`);
   }
-  return { url: stripTrailingSlash(s.url ?? "") };
+  return { url: stripTrailingSlash(s.url ?? '') };
 }
 
 function parseSlack(raw: unknown, source: string): SlackConfig {
   if (raw === undefined || raw === null) return { ...DEFAULT_SLACK };
-  if (typeof raw !== "object" || Array.isArray(raw)) {
+  if (typeof raw !== 'object' || Array.isArray(raw)) {
     throw new Error(`${source} "slack" must be an object`);
   }
   const s = raw as Partial<SlackConfig>;
-  for (const key of ["channel", "singleTemplate", "multiHeader", "multiItem"] as const) {
-    if (s[key] !== undefined && (typeof s[key] !== "string" || !s[key])) {
+  for (const key of [
+    'channel',
+    'singleTemplate',
+    'multiHeader',
+    'multiItem',
+  ] as const) {
+    if (s[key] !== undefined && (typeof s[key] !== 'string' || !s[key])) {
       throw new Error(`${source} "slack.${key}" must be a non-empty string`);
     }
   }
   if (
     s.autoResolveIntervalMinutes !== undefined &&
-    (typeof s.autoResolveIntervalMinutes !== "number" || s.autoResolveIntervalMinutes < 0)
+    (typeof s.autoResolveIntervalMinutes !== 'number' ||
+      s.autoResolveIntervalMinutes < 0)
   ) {
-    throw new Error(`${source} "slack.autoResolveIntervalMinutes" must be a non-negative number`);
+    throw new Error(
+      `${source} "slack.autoResolveIntervalMinutes" must be a non-negative number`
+    );
   }
   return {
     channel: s.channel ?? DEFAULT_SLACK.channel,
     singleTemplate: s.singleTemplate ?? DEFAULT_SLACK.singleTemplate,
     multiHeader: s.multiHeader ?? DEFAULT_SLACK.multiHeader,
     multiItem: s.multiItem ?? DEFAULT_SLACK.multiItem,
-    autoResolveIntervalMinutes: s.autoResolveIntervalMinutes ?? DEFAULT_SLACK.autoResolveIntervalMinutes,
+    autoResolveIntervalMinutes:
+      s.autoResolveIntervalMinutes ?? DEFAULT_SLACK.autoResolveIntervalMinutes,
     emoji: parseSlackEmoji(s.emoji, source),
   };
 }
@@ -394,18 +509,23 @@ function parseSlack(raw: unknown, source: string): SlackConfig {
     Names are accepted with or without colons (`:comment:` → `comment`). */
 function parseSlackEmoji(raw: unknown, source: string): SlackEmojiConfig {
   if (raw === undefined || raw === null) return { ...DEFAULT_SLACK_EMOJI };
-  if (typeof raw !== "object" || Array.isArray(raw)) {
+  if (typeof raw !== 'object' || Array.isArray(raw)) {
     throw new Error(`${source} "slack.emoji" must be an object`);
   }
   const e = raw as Partial<SlackEmojiConfig>;
   const out = { ...DEFAULT_SLACK_EMOJI };
-  for (const role of ["looking", "commented", "approved"] as const) {
+  for (const role of ['looking', 'commented', 'approved'] as const) {
     if (e[role] === undefined) continue;
-    if (typeof e[role] !== "string") {
-      throw new Error(`${source} "slack.emoji.${role}" must be a string (a Slack emoji name)`);
+    if (typeof e[role] !== 'string') {
+      throw new Error(
+        `${source} "slack.emoji.${role}" must be a string (a Slack emoji name)`
+      );
     }
-    const name = e[role].trim().replace(/^:|:$/g, "");
-    if (!name) throw new Error(`${source} "slack.emoji.${role}" must be a non-empty emoji name`);
+    const name = e[role].trim().replace(/^:|:$/g, '');
+    if (!name)
+      throw new Error(
+        `${source} "slack.emoji.${role}" must be a non-empty emoji name`
+      );
     out[role] = name;
   }
   return out;
@@ -437,7 +557,11 @@ function storeValue<T>(key: string, resolve: GetSettingFn): T | undefined {
 }
 
 /** The three `board.agent.*` settings, as read off the store. */
-export type AgentSettings = { account?: string; model?: string; effort?: string };
+export type AgentSettings = {
+  account?: string;
+  model?: string;
+  effort?: string;
+};
 
 /** Build the pane's launch command from the agent settings.
  *
@@ -447,16 +571,22 @@ export type AgentSettings = { account?: string; model?: string; effort?: string 
  * it a resumed pane cannot find the transcript the review session wrote.
  * Every interpolated value is quoted, since all three are operator strings
  * that reach a shell. */
-export function composeAgentCommand({ account, model, effort }: AgentSettings): string {
+export function composeAgentCommand({
+  account,
+  model,
+  effort,
+}: AgentSettings): string {
   const acct = account?.trim();
   const mdl = model?.trim();
   const eff = effort?.trim();
-  if (!acct && !mdl && !eff) return "";
-  const head = acct ? `cswap run ${shellSingleQuote(acct)} --share-history --` : "claude";
+  if (!acct && !mdl && !eff) return '';
+  const head = acct
+    ? `cswap run ${shellSingleQuote(acct)} --share-history --`
+    : 'claude';
   const flags: string[] = [];
-  if (mdl) flags.push("--model", shellSingleQuote(mdl));
-  if (eff) flags.push("--effort", shellSingleQuote(eff));
-  return [head, ...flags].join(" ");
+  if (mdl) flags.push('--model', shellSingleQuote(mdl));
+  if (eff) flags.push('--effort', shellSingleQuote(eff));
+  return [head, ...flags].join(' ');
 }
 
 /** The three board.agent.* settings read directly, typed rather than composed
@@ -465,11 +595,13 @@ export function composeAgentCommand({ account, model, effort }: AgentSettings): 
     arbitrary command and so can't go through claudeCommand/composeAgentCommand
     at all. Same fail-open contract as storeValue: an unregistered key or an
     unreachable store degrades to undefined per field. */
-export function loadAgentSettings(resolve: GetSettingFn = getSetting): AgentSettings {
+export function loadAgentSettings(
+  resolve: GetSettingFn = getSetting
+): AgentSettings {
   return {
-    account: storeValue<string>("board.agent.account", resolve),
-    model: storeValue<string>("board.agent.model", resolve),
-    effort: storeValue<string>("board.agent.effort", resolve),
+    account: storeValue<string>('board.agent.account', resolve),
+    model: storeValue<string>('board.agent.model', resolve),
+    effort: storeValue<string>('board.agent.effort', resolve),
   };
 }
 
@@ -515,36 +647,59 @@ function agentCommand(resolve: GetSettingFn): string | undefined {
  * config.json most installs won't even have; the label still correctly
  * points an operator at `rt settings`, not a file that may not exist.
  */
-function withBoardStoreFallback(fileConfig: BoardConfig, resolve: GetSettingFn): BoardConfig {
-  const workspaces = storeValue<{ reviews?: string; responds?: string; doctors?: string }>("board.workspaces", resolve);
-  const cwds = storeValue<{ review?: string; respond?: string; doctor?: string }>("board.cwds", resolve);
-  const roster = storeValue<Member[]>("board.members", resolve) ?? fileConfig.members;
-  const hiddenStore = storeValue<string[]>("board.hiddenMembers", resolve);
-  const hiddenUsernames = new Set(hiddenStore ?? roster.filter((m) => m.hidden).map((m) => m.username));
-  const members = roster.map((m) => {
+function withBoardStoreFallback(
+  fileConfig: BoardConfig,
+  resolve: GetSettingFn
+): BoardConfig {
+  const workspaces = storeValue<{
+    reviews?: string;
+    responds?: string;
+    doctors?: string;
+  }>('board.workspaces', resolve);
+  const cwds = storeValue<{
+    review?: string;
+    respond?: string;
+    doctor?: string;
+  }>('board.cwds', resolve);
+  const roster =
+    storeValue<Member[]>('board.members', resolve) ?? fileConfig.members;
+  const hiddenStore = storeValue<string[]>('board.hiddenMembers', resolve);
+  const hiddenUsernames = new Set(
+    hiddenStore ?? roster.filter(m => m.hidden).map(m => m.username)
+  );
+  const members = roster.map(m => {
     const { hidden: _hidden, ...rest } = m;
     return hiddenUsernames.has(m.username) ? { ...rest, hidden: true } : rest;
   });
 
   const merged: BoardConfig = {
     ...fileConfig,
-    gitlabHost: storeValue("board.gitlabHost", resolve) ?? fileConfig.gitlabHost,
-    projects: storeValue("board.projects", resolve) ?? fileConfig.projects,
+    gitlabHost:
+      storeValue('board.gitlabHost', resolve) ?? fileConfig.gitlabHost,
+    projects: storeValue('board.projects', resolve) ?? fileConfig.projects,
     members,
-    title: storeValue("board.title", resolve) ?? fileConfig.title,
-    botUsernames: storeValue("board.botUsernames", resolve) ?? fileConfig.botUsernames,
-    ticketPrefixes: storeValue("board.ticketPrefixes", resolve) ?? fileConfig.ticketPrefixes,
-    slack: storeValue("board.slack", resolve) ?? fileConfig.slack,
-    doctorSkill: storeValue("board.doctorSkill", resolve) ?? fileConfig.doctorSkill,
-    staleAfterDays: storeValue("board.staleAfterDays", resolve) ?? fileConfig.staleAfterDays,
+    title: storeValue('board.title', resolve) ?? fileConfig.title,
+    botUsernames:
+      storeValue('board.botUsernames', resolve) ?? fileConfig.botUsernames,
+    ticketPrefixes:
+      storeValue('board.ticketPrefixes', resolve) ?? fileConfig.ticketPrefixes,
+    slack: storeValue('board.slack', resolve) ?? fileConfig.slack,
+    doctorSkill:
+      storeValue('board.doctorSkill', resolve) ?? fileConfig.doctorSkill,
+    staleAfterDays:
+      storeValue('board.staleAfterDays', resolve) ?? fileConfig.staleAfterDays,
     // The store key may be unregistered on this rt-client pin -- storeValue
     // already catches the resolver's unknown-key throw and returns
     // undefined, so this falls open to 90 rather than bricking config load.
-    gateGraceMinutes: storeValue("board.gateGraceMinutes", resolve) ?? fileConfig.gateGraceMinutes ?? 90,
+    gateGraceMinutes:
+      storeValue('board.gateGraceMinutes', resolve) ??
+      fileConfig.gateGraceMinutes ??
+      90,
     reviewsWorkspace: workspaces?.reviews ?? fileConfig.reviewsWorkspace,
     respondsWorkspace: workspaces?.responds ?? fileConfig.respondsWorkspace,
     doctorsWorkspace: workspaces?.doctors ?? fileConfig.doctorsWorkspace,
-    defaultMember: storeValue("board.defaultMember", resolve) ?? fileConfig.defaultMember,
+    defaultMember:
+      storeValue('board.defaultMember', resolve) ?? fileConfig.defaultMember,
     claudeCommand: agentCommand(resolve) ?? fileConfig.claudeCommand,
     reviewCwd: cwds?.review ?? fileConfig.reviewCwd,
     respondCwd: cwds?.respond ?? fileConfig.respondCwd,
@@ -552,11 +707,18 @@ function withBoardStoreFallback(fileConfig: BoardConfig, resolve: GetSettingFn):
     // Explicit entries only: the reparse below validates gitlabHost/projects
     // and derives the full map from them.
     rtRepos: fileConfig.rtRepoOverrides,
-    switchboard: { url: storeValue("board.switchboardUrl", resolve) ?? fileConfig.switchboard.url },
-    tabs: storeValue("board.tabs", resolve) ?? fileConfig.tabs,
+    switchboard: {
+      url:
+        storeValue('board.switchboardUrl', resolve) ??
+        fileConfig.switchboard.url,
+    },
+    tabs: storeValue('board.tabs', resolve) ?? fileConfig.tabs,
   };
 
-  return parseConfig(JSON.stringify(merged), "a board.* team settings-store value");
+  return parseConfig(
+    JSON.stringify(merged),
+    'a board.* team settings-store value'
+  );
 }
 
 /** Structurally satisfies parseConfig's required-field check without being a
@@ -566,18 +728,20 @@ function withBoardStoreFallback(fileConfig: BoardConfig, resolve: GetSettingFn):
     board boot config.json-free once cutover (plan Task 5) hands gitlabHost/
     projects/members fully to the team store. */
 const NO_FILE_PLACEHOLDER = JSON.stringify({
-  gitlabHost: "unset", projects: ["unset"], members: [{ username: "unset" }],
+  gitlabHost: 'unset',
+  projects: ['unset'],
+  members: [{ username: 'unset' }],
 });
 
 function isEnoent(err: unknown): boolean {
-  return (err as NodeJS.ErrnoException | undefined)?.code === "ENOENT";
+  return (err as NodeJS.ErrnoException | undefined)?.code === 'ENOENT';
 }
 
 function storeOwnsRequiredFields(resolve: GetSettingFn): boolean {
   return (
-    storeValue("board.gitlabHost", resolve) !== undefined &&
-    storeValue("board.projects", resolve) !== undefined &&
-    storeValue("board.members", resolve) !== undefined
+    storeValue('board.gitlabHost', resolve) !== undefined &&
+    storeValue('board.projects', resolve) !== undefined &&
+    storeValue('board.members', resolve) !== undefined
   );
 }
 
@@ -589,13 +753,18 @@ function storeOwnsRequiredFields(resolve: GetSettingFn): boolean {
     surfaces loudly, same as today. Exported (with `resolve` injectable) so
     the store-latch behavior is unit-testable without a real CONFIG_PATH or
     a real getSetting/rt-client store on disk. */
-export function loadConfigFrom(path: string, resolve: GetSettingFn = getSetting): BoardConfig {
+export function loadConfigFrom(
+  path: string,
+  resolve: GetSettingFn = getSetting
+): BoardConfig {
   let raw: string;
   try {
-    raw = readFileSync(path, "utf8");
+    raw = readFileSync(path, 'utf8');
   } catch (err) {
     if (!isEnoent(err) || !storeOwnsRequiredFields(resolve)) {
-      throw new Error(`config.json not found at ${path} — copy config.example.json and fill it in, or seed the team settings store`);
+      throw new Error(
+        `config.json not found at ${path} — copy config.example.json and fill it in, or seed the team settings store`
+      );
     }
     raw = NO_FILE_PLACEHOLDER;
   }
@@ -607,13 +776,19 @@ export function loadConfigFrom(path: string, resolve: GetSettingFn = getSetting)
  * when false, so the file stays clean. Pure (string in, string out) for testing.
  * Throws if the username isn't a configured member.
  */
-export function setHiddenInRaw(raw: string, username: string, hidden: boolean): string {
-  const obj = JSON.parse(raw) as { members?: Array<{ username: string; hidden?: boolean }> };
-  const member = obj.members?.find((m) => m.username === username);
+export function setHiddenInRaw(
+  raw: string,
+  username: string,
+  hidden: boolean
+): string {
+  const obj = JSON.parse(raw) as {
+    members?: Array<{ username: string; hidden?: boolean }>;
+  };
+  const member = obj.members?.find(m => m.username === username);
   if (!member) throw new Error(`unknown member "${username}"`);
   if (hidden) member.hidden = true;
   else delete member.hidden;
-  return JSON.stringify(obj, null, 2) + "\n";
+  return JSON.stringify(obj, null, 2) + '\n';
 }
 
 /** Store ownership is a one-way latch, decided fresh on every write — see
@@ -621,7 +796,7 @@ export function setHiddenInRaw(raw: string, username: string, hidden: boolean): 
     degrades to unowned rather than crashing the write. */
 function isHiddenMembersOwned(resolve: GetSettingFn): boolean {
   try {
-    return resolve<unknown>("board.hiddenMembers").value !== undefined;
+    return resolve<unknown>('board.hiddenMembers').value !== undefined;
   } catch {
     return false;
   }
@@ -645,7 +820,7 @@ function isHiddenMembersOwned(resolve: GetSettingFn): boolean {
     hidden overlay). Mirrors isHiddenMembersOwned: the ownership latch decides
     which file a roster edit must land in. */
 function isMembersOwned(resolve: GetSettingFn): boolean {
-  return storeValue<Member[]>("board.members", resolve) !== undefined;
+  return storeValue<Member[]>('board.members', resolve) !== undefined;
 }
 
 /**
@@ -660,28 +835,28 @@ export function saveRosterMembers(
   next: Member[],
   path: string = CONFIG_PATH,
   resolve: GetSettingFn = getSetting,
-  write: SetSettingFn = setSetting,
+  write: SetSettingFn = setSetting
 ): BoardConfig {
   if (isMembersOwned(resolve)) {
-    write("board.members", next, "team");
+    write('board.members', next, 'team');
   } else {
     let raw: string;
     try {
-      raw = readFileSync(path, "utf8");
+      raw = readFileSync(path, 'utf8');
     } catch {
       throw new Error(`config.json not found at ${path}`);
     }
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     parsed.members = next;
     const tmp = `${path}.tmp`;
-    writeFileSync(tmp, JSON.stringify(parsed, null, 2) + "\n");
+    writeFileSync(tmp, JSON.stringify(parsed, null, 2) + '\n');
     renameSync(tmp, path);
   }
   return loadConfigFrom(path, resolve);
 }
 
 function isTabsOwned(resolve: GetSettingFn): boolean {
-  return storeValue<unknown>("board.tabs", resolve) !== undefined;
+  return storeValue<unknown>('board.tabs', resolve) !== undefined;
 }
 
 /**
@@ -695,25 +870,25 @@ export function saveTabs(
   next: unknown,
   path: string = CONFIG_PATH,
   resolve: GetSettingFn = getSetting,
-  write: SetSettingFn = setSetting,
+  write: SetSettingFn = setSetting
 ): BoardConfig {
-  const tabs = parseTabs(next, "tabs");
+  const tabs = parseTabs(next, 'tabs');
   if (isTabsOwned(resolve)) {
-    write("board.tabs", tabs, "team");
+    write('board.tabs', tabs, 'team');
   } else {
     let raw: Record<string, unknown> | undefined;
     try {
-      raw = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+      raw = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
     } catch (err) {
       if (!isEnoent(err)) throw err;
     }
     if (raw === undefined) {
       loadConfigFrom(path, resolve);
-      write("board.tabs", tabs, "team");
+      write('board.tabs', tabs, 'team');
     } else {
       raw.tabs = tabs;
-      writeFileSync(path + ".tmp", JSON.stringify(raw, null, 2) + "\n");
-      renameSync(path + ".tmp", path);
+      writeFileSync(path + '.tmp', JSON.stringify(raw, null, 2) + '\n');
+      renameSync(path + '.tmp', path);
     }
   }
   return loadConfigFrom(path, resolve);
@@ -724,29 +899,31 @@ export function saveMemberHidden(
   hidden: boolean,
   path: string = CONFIG_PATH,
   resolve: GetSettingFn = getSetting,
-  write: SetSettingFn = setSetting,
+  write: SetSettingFn = setSetting
 ): BoardConfig {
   if (isHiddenMembersOwned(resolve)) {
     const current = loadConfigFrom(path, resolve);
-    if (!current.members.some((m) => m.username === username)) {
+    if (!current.members.some(m => m.username === username)) {
       throw new Error(`unknown member "${username}"`);
     }
-    const stored = resolve<string[]>("board.hiddenMembers").value ?? [];
-    const next = hidden ? [...new Set([...stored, username])] : stored.filter((u) => u !== username);
-    write("board.hiddenMembers", next, "user");
+    const stored = resolve<string[]>('board.hiddenMembers').value ?? [];
+    const next = hidden
+      ? [...new Set([...stored, username])]
+      : stored.filter(u => u !== username);
+    write('board.hiddenMembers', next, 'user');
   } else {
     let raw: string | undefined;
     try {
-      raw = readFileSync(path, "utf8");
+      raw = readFileSync(path, 'utf8');
     } catch (err) {
       if (!isEnoent(err)) throw err;
     }
     if (raw === undefined) {
       const current = loadConfigFrom(path, resolve);
-      if (!current.members.some((m) => m.username === username)) {
+      if (!current.members.some(m => m.username === username)) {
         throw new Error(`unknown member "${username}"`);
       }
-      write("board.hiddenMembers", hidden ? [username] : [], "user");
+      write('board.hiddenMembers', hidden ? [username] : [], 'user');
     } else {
       const next = setHiddenInRaw(raw, username, hidden); // throws for an unknown member
       writeFileSync(path, next);
@@ -757,7 +934,7 @@ export function saveMemberHidden(
 
 function isSwitchboardUrlOwned(resolve: GetSettingFn): boolean {
   try {
-    return resolve<unknown>("board.switchboardUrl").value !== undefined;
+    return resolve<unknown>('board.switchboardUrl').value !== undefined;
   } catch {
     return false;
   }
@@ -778,24 +955,24 @@ export function saveSwitchboardUrl(
   url: string,
   path: string = CONFIG_PATH,
   resolve: GetSettingFn = getSetting,
-  write: SetSettingFn = setSetting,
+  write: SetSettingFn = setSetting
 ): BoardConfig {
   if (isSwitchboardUrlOwned(resolve)) {
-    write("board.switchboardUrl", stripTrailingSlash(url), "machine");
+    write('board.switchboardUrl', stripTrailingSlash(url), 'machine');
   } else {
     let raw: Record<string, unknown> | undefined;
     try {
-      raw = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+      raw = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
     } catch (err) {
       if (!isEnoent(err)) throw err;
     }
     if (raw === undefined) {
-      write("board.switchboardUrl", stripTrailingSlash(url), "machine");
+      write('board.switchboardUrl', stripTrailingSlash(url), 'machine');
     } else {
       raw.switchboard = { url };
-      const text = JSON.stringify(raw, null, 2) + "\n";
-      writeFileSync(path + ".tmp", text);
-      renameSync(path + ".tmp", path);
+      const text = JSON.stringify(raw, null, 2) + '\n';
+      writeFileSync(path + '.tmp', text);
+      renameSync(path + '.tmp', path);
     }
   }
   return loadConfigFrom(path, resolve);
@@ -808,7 +985,9 @@ export function saveSwitchboardUrl(
     Any daemon-side failure (down, gate-refused, old daemon) degrades to
     `{}` after a console.warn -- these are all optional secrets, so a daemon
     problem must disable the dependent feature, never crash the board. */
-async function boardSecrets(deps?: BoardSecretsDeps): Promise<BoardSecretsData> {
+async function boardSecrets(
+  deps?: BoardSecretsDeps
+): Promise<BoardSecretsData> {
   const res = await readBoardSecrets(deps);
   if (res.ok) return res;
   console.warn(`board: secrets unavailable (${res.message})`);
@@ -817,7 +996,9 @@ async function boardSecrets(deps?: BoardSecretsDeps): Promise<BoardSecretsData> 
 
 /** Optional after the rt rewire: only the display-name lookup uses it; the
     board runs fully without one. Returns null when no token is configured. */
-export async function loadGitLabToken(deps?: BoardSecretsDeps): Promise<string | null> {
+export async function loadGitLabToken(
+  deps?: BoardSecretsDeps
+): Promise<string | null> {
   if (process.env.GITLAB_TOKEN) return process.env.GITLAB_TOKEN;
   return (await boardSecrets(deps)).gitlabToken ?? null;
 }
@@ -825,21 +1006,28 @@ export async function loadGitLabToken(deps?: BoardSecretsDeps): Promise<string |
 /** Slack user token (xoxp) for the review-thread integration. Optional: the
     board runs fine without it; the Slack menu actions just stay disabled.
     Returns null when no token is configured. */
-export async function loadSlackToken(deps?: BoardSecretsDeps): Promise<string | null> {
+export async function loadSlackToken(
+  deps?: BoardSecretsDeps
+): Promise<string | null> {
   if (process.env.SLACK_TOKEN) return process.env.SLACK_TOKEN;
   return (await boardSecrets(deps)).slackToken ?? null;
 }
 
 /** Switchboard board token. Optional: without it (or without switchboard.url)
     the board runs exactly as before, with all peer features disabled. */
-export async function loadSwitchboardToken(deps?: BoardSecretsDeps): Promise<string | null> {
+export async function loadSwitchboardToken(
+  deps?: BoardSecretsDeps
+): Promise<string | null> {
   if (process.env.SWITCHBOARD_TOKEN) return process.env.SWITCHBOARD_TOKEN;
   return (await boardSecrets(deps)).switchboardToken ?? null;
 }
 
 /** Switchboard ADMIN token (operator only). Presence of this secret is what
     turns on the board's invite affordances; absence changes nothing. */
-export async function loadSwitchboardAdminToken(deps?: BoardSecretsDeps): Promise<string | null> {
-  if (process.env.SWITCHBOARD_ADMIN_TOKEN) return process.env.SWITCHBOARD_ADMIN_TOKEN;
+export async function loadSwitchboardAdminToken(
+  deps?: BoardSecretsDeps
+): Promise<string | null> {
+  if (process.env.SWITCHBOARD_ADMIN_TOKEN)
+    return process.env.SWITCHBOARD_ADMIN_TOKEN;
   return (await boardSecrets(deps)).switchboardAdminToken ?? null;
 }

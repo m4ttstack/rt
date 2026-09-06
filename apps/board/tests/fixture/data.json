@@ -816,9 +816,7 @@
       "slack": {
         "status": "found",
         "permalink": "https://example.slack.com/archives/C0100000000/p1700000000000002",
-        "reactions": [
-          "eyes"
-        ],
+        "reactions": ["eyes"],
         "posted": true
       },
       "gates": []
@@ -1495,10 +1493,7 @@
       "slack": {
         "status": "found",
         "permalink": "https://example.slack.com/archives/C0100000000/p1700000000000004",
-        "reactions": [
-          "eyes",
-          "comment"
-        ],
+        "reactions": ["eyes", "comment"],
         "posted": true
       },
       "drafts": [
@@ -1933,8 +1928,5 @@
     }
   ],
   "scopeUncoveredSections": [],
-  "scopeKnownSections": [
-    "Acme - #pod-acme",
-    "Docs"
-  ]
+  "scopeKnownSections": ["Acme - #pod-acme", "Docs"]
 }

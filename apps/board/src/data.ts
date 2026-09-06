@@ -1,9 +1,15 @@
-import { getMRDashboardProps, getReviewDisplayState, stripDraftPrefix as glanceStripDraftPrefix, type MRDashboardProps, type PullRequest } from "@mattstack/glance";
-import type { BoardConfig, Member } from "./config.ts";
-import type { DemandDecl, ProjectMRsScope } from "@mattstack/rt-client";
-import { extractTicketId } from "./ticket.ts";
+import {
+  getMRDashboardProps,
+  getReviewDisplayState,
+  stripDraftPrefix as glanceStripDraftPrefix,
+  type MRDashboardProps,
+  type PullRequest,
+} from '@mattstack/glance';
+import type { DemandDecl, ProjectMRsScope } from '@mattstack/rt-client';
+import type { BoardConfig, Member } from './config.ts';
+import { extractTicketId } from './ticket.ts';
 
-export type PipelineState = "passed" | "running" | "failed" | "none";
+export type PipelineState = 'passed' | 'running' | 'failed' | 'none';
 
 /** Dashboard props plus the raw fields the board renders that props omit. */
 export type BoardMR = MRDashboardProps & {
@@ -64,19 +70,22 @@ export interface Snapshot {
 }
 
 /** Parse "group/project" out of a GitLab MR web URL. */
-export function projectPathFromWebUrl(webUrl: string, gitlabHost: string): string | null {
+export function projectPathFromWebUrl(
+  webUrl: string,
+  gitlabHost: string
+): string | null {
   if (!webUrl.startsWith(gitlabHost)) return null;
-  const rest = webUrl.slice(gitlabHost.length).replace(/^\//, "");
-  const idx = rest.indexOf("/-/");
+  const rest = webUrl.slice(gitlabHost.length).replace(/^\//, '');
+  const idx = rest.indexOf('/-/');
   return idx === -1 ? null : rest.slice(0, idx);
 }
 
 /** Collapse the SDK's pipeline signals into one grouping/sorting key. */
 function derivePipelineState(props: MRDashboardProps): PipelineState {
-  if (!props.pipeline) return "none";
-  if (props.blockers.pipelineFailing) return "failed";
-  if (props.blockers.pipelineRunning) return "running";
-  return "passed";
+  if (!props.pipeline) return 'none';
+  if (props.blockers.pipelineFailing) return 'failed';
+  if (props.blockers.pipelineRunning) return 'running';
+  return 'passed';
 }
 
 /** BOARD-17: upstream avatar URLs can embed a GitLab `private_token` query
@@ -89,9 +98,9 @@ function scrubAvatarUrls(value: unknown): void {
     for (const v of value) scrubAvatarUrls(v);
     return;
   }
-  if (value && typeof value === "object") {
+  if (value && typeof value === 'object') {
     const rec = value as Record<string, unknown>;
-    if ("avatarUrl" in rec) rec.avatarUrl = null;
+    if ('avatarUrl' in rec) rec.avatarUrl = null;
     for (const key of Object.keys(rec)) scrubAvatarUrls(rec[key]);
   }
 }
@@ -110,21 +119,25 @@ export function buildBoard(
   prs: PullRequest[],
   config: BoardConfig,
   now: number = Date.now(),
-  tags?: Map<string, string[]>,
+  tags?: Map<string, string[]>
 ): BoardMR[] {
-  const members = new Set(config.members.map((m) => m.username));
+  const members = new Set(config.members.map(m => m.username));
   const projects = new Set(config.projects);
   const staleCutoff = now - config.staleAfterDays * 86_400_000;
   const prefixes = new Set(config.ticketPrefixes);
-  const tabSections = new Set(config.tabs.flatMap((t) => (t.source.kind === "codeowners" ? [t.source.section] : [])));
+  const tabSections = new Set(
+    config.tabs.flatMap(t =>
+      t.source.kind === 'codeowners' ? [t.source.section] : []
+    )
+  );
   const out: BoardMR[] = [];
   for (const pr of prs) {
-    if (pr.state !== "opened") continue;
+    if (pr.state !== 'opened') continue;
     if (!pr.author) continue;
     const isMember = members.has(pr.author.username);
     // Only tags matching a currently-configured tab count -- a tab removed
     // from config must not keep stale-tagged rows on the board.
-    const tagged = (tags?.get(pr.id) ?? []).filter((s) => tabSections.has(s));
+    const tagged = (tags?.get(pr.id) ?? []).filter(s => tabSections.has(s));
     // A tagged row is on the board regardless of author; per-tab display
     // filtering by section is Task 11's job, not buildBoard's.
     if (!isMember && tagged.length === 0) continue;
@@ -140,10 +153,12 @@ export function buildBoard(
     // codeowner tag rides the board regardless of whose ticket it carries.
     if (prefixes.size > 0 && tagged.length === 0) {
       const ticket = extractTicketId(pr.sourceBranch, pr.title);
-      const prefix = ticket ? ticket.slice(0, ticket.indexOf("-")) : null;
+      const prefix = ticket ? ticket.slice(0, ticket.indexOf('-')) : null;
       if (!prefix || !prefixes.has(prefix)) continue;
     }
-    const path = pr.webUrl ? projectPathFromWebUrl(pr.webUrl, config.gitlabHost) : null;
+    const path = pr.webUrl
+      ? projectPathFromWebUrl(pr.webUrl, config.gitlabHost)
+      : null;
     if (!path || !projects.has(path)) continue;
     const props = getMRDashboardProps(pr);
     // Mutates the freshly-parsed daemon read, never a cached board: each fetch
@@ -179,7 +194,7 @@ const LEGACY_WIP_PREFIX = /^\s*(?:\[wip\]|\(wip\)|wip:)\s*/i;
     is glance's job (GitLabProvider.updatePullRequest), which also verifies the
     flag landed -- do not reimplement that here. */
 export function stripDraftPrefix(title: string): string {
-  return glanceStripDraftPrefix(title).replace(LEGACY_WIP_PREFIX, "");
+  return glanceStripDraftPrefix(title).replace(LEGACY_WIP_PREFIX, '');
 }
 
 /**
@@ -194,10 +209,16 @@ export function stripDraftPrefix(title: string): string {
 // (the actual listen port is env/default-derived, not config), so callers
 // pass the resolved port explicitly.
 export function boardDemand(config: BoardConfig, port: number): DemandDecl {
-  const sections = [...new Set(config.tabs.flatMap((t) => (t.source.kind === "codeowners" ? [t.source.section] : [])))];
+  const sections = [
+    ...new Set(
+      config.tabs.flatMap(t =>
+        t.source.kind === 'codeowners' ? [t.source.section] : []
+      )
+    ),
+  ];
   return {
     client: `board:${port}`,
-    authors: config.members.map((m) => m.username),
+    authors: config.members.map(m => m.username),
     ...(sections.length > 0 ? { codeownerSections: sections } : {}),
     declaredAt: Date.now(),
   };
@@ -207,11 +228,18 @@ export function boardDemand(config: BoardConfig, port: number): DemandDecl {
     board channel; a tag-only row uses its codeowners tab's channel (first
     match in tab order), falling back to the board channel when none of its
     tags carry a slackChannel. */
-export function channelForMR(config: BoardConfig, mr: Pick<BoardMR, "author" | "codeownerSections">): string {
-  const isMember = config.members.some((m) => m.username === mr.author.username);
+export function channelForMR(
+  config: BoardConfig,
+  mr: Pick<BoardMR, 'author' | 'codeownerSections'>
+): string {
+  const isMember = config.members.some(m => m.username === mr.author.username);
   if (!isMember) {
     for (const tab of config.tabs) {
-      if (tab.source.kind === "codeowners" && tab.slackChannel && mr.codeownerSections.includes(tab.source.section)) {
+      if (
+        tab.source.kind === 'codeowners' &&
+        tab.slackChannel &&
+        mr.codeownerSections.includes(tab.source.section)
+      ) {
         return tab.slackChannel;
       }
     }
@@ -222,7 +250,9 @@ export function channelForMR(config: BoardConfig, mr: Pick<BoardMR, "author" | "
 /** Every Slack channel this board's config can route a review-request to:
     the default channel plus every tab-level override, deduped. Used to
     validate a client-supplied channel override. */
-export function configuredSlackChannels(config: Pick<BoardConfig, "slack" | "tabs">): string[] {
+export function configuredSlackChannels(
+  config: Pick<BoardConfig, 'slack' | 'tabs'>
+): string[] {
   const channels = new Set<string>([config.slack.channel]);
   for (const tab of config.tabs) {
     if (tab.slackChannel) channels.add(tab.slackChannel);
@@ -247,20 +277,31 @@ export interface SyncScopeRead {
  * them. A project that errored before yielding a read is simply absent from
  * `reads`.
  */
-export function aggregateSyncScope(
-  reads: SyncScopeRead[],
-): { dataSyncedAt: number | null; scopeUncovered: string[]; scopeWindowDays: number | null; scopeUncoveredSections: string[]; scopeKnownSections: string[] | null } {
+export function aggregateSyncScope(reads: SyncScopeRead[]): {
+  dataSyncedAt: number | null;
+  scopeUncovered: string[];
+  scopeWindowDays: number | null;
+  scopeUncoveredSections: string[];
+  scopeKnownSections: string[] | null;
+} {
   let dataSyncedAt: number | null = null;
   let scopeWindowDays: number | null = null;
   const uncovered = new Set<string>();
   const uncoveredSections = new Set<string>();
   let known: Set<string> | null = null;
   for (const read of reads) {
-    dataSyncedAt = dataSyncedAt === null ? read.syncedAt : Math.min(dataSyncedAt, read.syncedAt);
+    dataSyncedAt =
+      dataSyncedAt === null
+        ? read.syncedAt
+        : Math.min(dataSyncedAt, read.syncedAt);
     if (read.scope) {
-      scopeWindowDays = scopeWindowDays === null ? read.scope.windowDays : Math.min(scopeWindowDays, read.scope.windowDays);
+      scopeWindowDays =
+        scopeWindowDays === null
+          ? read.scope.windowDays
+          : Math.min(scopeWindowDays, read.scope.windowDays);
       for (const author of read.scope.uncovered) uncovered.add(author);
-      for (const section of read.scope.uncoveredSections ?? []) uncoveredSections.add(section);
+      for (const section of read.scope.uncoveredSections ?? [])
+        uncoveredSections.add(section);
       if (read.scope.knownSections) {
         known ??= new Set<string>();
         for (const section of read.scope.knownSections) known.add(section);
@@ -282,7 +323,11 @@ export function aggregateSyncScope(
  * comments. Comes from `reviews.reviewers[].reviewState`.
  */
 export function hasChangesRequested(mr: BoardMR): boolean {
-  return mr.reviews.reviewers?.some((r) => getReviewDisplayState(r.reviewState ?? null) === "changes_requested") ?? false;
+  return (
+    mr.reviews.reviewers?.some(
+      r => getReviewDisplayState(r.reviewState ?? null) === 'changes_requested'
+    ) ?? false
+  );
 }
 
 /** Which snapshot MRs the served board keeps: a visible (non-hidden) roster
@@ -290,9 +335,15 @@ export function hasChangesRequested(mr: BoardMR): boolean {
     what lets a codeowner-tagged stranger -- never a roster member -- reach a
     codeowners tab; without it every tagged row from outside the roster would
     be dropped here before a tab ever saw it. */
-export function visibleMrsFor(mrs: BoardMR[], visibleMembers: Member[]): BoardMR[] {
-  const visibleNames = new Set(visibleMembers.map((m) => m.username));
-  return mrs.filter((mr) => visibleNames.has(mr.author.username) || mr.codeownerSections.length > 0);
+export function visibleMrsFor(
+  mrs: BoardMR[],
+  visibleMembers: Member[]
+): BoardMR[] {
+  const visibleNames = new Set(visibleMembers.map(m => m.username));
+  return mrs.filter(
+    mr =>
+      visibleNames.has(mr.author.username) || mr.codeownerSections.length > 0
+  );
 }
 
 export interface RosterMember {
@@ -302,11 +353,15 @@ export interface RosterMember {
 }
 
 /** Members in config order, each with a resolved name and open-MR count. */
-export function buildRoster(members: Member[], mrs: BoardMR[], names: Map<string, string | null>): RosterMember[] {
-  return members.map((member) => ({
+export function buildRoster(
+  members: Member[],
+  mrs: BoardMR[],
+  names: Map<string, string | null>
+): RosterMember[] {
+  return members.map(member => ({
     username: member.username,
     name: names.get(member.username) ?? member.name ?? null,
-    count: mrs.filter((mr) => mr.author.username === member.username).length,
+    count: mrs.filter(mr => mr.author.username === member.username).length,
   }));
 }
 
@@ -325,7 +380,7 @@ export function inferRoster(mrs: BoardMR[]): RosterMember[] {
     else byUsername.set(username, { username, name: name ?? null, count: 1 });
   }
   return [...byUsername.values()].sort(
-    (a, b) => b.count - a.count || a.username.localeCompare(b.username),
+    (a, b) => b.count - a.count || a.username.localeCompare(b.username)
   );
 }
 
@@ -333,12 +388,12 @@ export function reviewSkillForTab(
   config: BoardConfig,
   tabId: string | undefined,
   mrUrl: string,
-  fallback: (kind: "review", mrUrl: string) => string,
+  fallback: (kind: 'review', mrUrl: string) => string
 ): string {
-  const tab = tabId ? config.tabs.find((t) => t.id === tabId) : undefined;
+  const tab = tabId ? config.tabs.find(t => t.id === tabId) : undefined;
   if (tab?.reviewSkill) {
     console.log(`review skill: ${tab.reviewSkill} (tab ${tab.id})`);
     return tab.reviewSkill;
   }
-  return fallback("review", mrUrl);
+  return fallback('review', mrUrl);
 }

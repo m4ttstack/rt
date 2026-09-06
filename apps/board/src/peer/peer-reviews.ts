@@ -1,5 +1,13 @@
-import { readFileSync, writeFileSync, renameSync, mkdirSync, readdirSync, rmSync, existsSync } from "fs";
-import { join } from "path";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'fs';
+import { join } from 'path';
 
 /** A peer's review status for one MR, as materialized from an inbound
     review-state envelope. Multiple reviewers can each have their own state
@@ -14,12 +22,25 @@ export interface PeerReviewState {
 }
 
 /** Per-(mrUrl, reviewer) JSON files live here. */
-export const PEER_REVIEW_DIR = join(import.meta.dir, "..", "..", "state", "peer-reviews");
+export const PEER_REVIEW_DIR = join(
+  import.meta.dir,
+  '..',
+  '..',
+  'state',
+  'peer-reviews'
+);
 
 /** Deterministic file path for an mrUrl + reviewer pair, so a repeat delivery
     resolves the same file. */
-export function peerReviewFilePath(mrUrl: string, reviewer: string, dir: string = PEER_REVIEW_DIR): string {
-  const slug = `${mrUrl}-${reviewer}`.replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 200);
+export function peerReviewFilePath(
+  mrUrl: string,
+  reviewer: string,
+  dir: string = PEER_REVIEW_DIR
+): string {
+  const slug = `${mrUrl}-${reviewer}`
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 200);
   return join(dir, `${slug}.json`);
 }
 
@@ -27,31 +48,38 @@ export function peerReviewFilePath(mrUrl: string, reviewer: string, dir: string 
     prior state untouched) when a newer state is already on disk.
     At-least-once delivery + outbox retries can deliver an older state after
     a newer one; last-write-wins on the payload clock, not arrival order. */
-export function writePeerReview(s: PeerReviewState, dir: string = PEER_REVIEW_DIR): boolean {
+export function writePeerReview(
+  s: PeerReviewState,
+  dir: string = PEER_REVIEW_DIR
+): boolean {
   const path = peerReviewFilePath(s.mrUrl, s.reviewer, dir);
   try {
-    const prev = JSON.parse(readFileSync(path, "utf8")) as PeerReviewState;
+    const prev = JSON.parse(readFileSync(path, 'utf8')) as PeerReviewState;
     if (prev.updatedAt >= s.updatedAt) return false;
   } catch {
     // no prior state -- first write
   }
   mkdirSync(dir, { recursive: true });
-  const tmp = path + ".tmp";
-  writeFileSync(tmp, JSON.stringify(s, null, 2) + "\n");
+  const tmp = path + '.tmp';
+  writeFileSync(tmp, JSON.stringify(s, null, 2) + '\n');
   renameSync(tmp, path);
   return true;
 }
 
 /** Read all peer review states, grouped by mrUrl -- a single MR can have one
     entry per reviewer who's shared their status. */
-export function readPeerReviews(dir: string = PEER_REVIEW_DIR): Map<string, PeerReviewState[]> {
+export function readPeerReviews(
+  dir: string = PEER_REVIEW_DIR
+): Map<string, PeerReviewState[]> {
   const out = new Map<string, PeerReviewState[]>();
   if (!existsSync(dir)) return out;
   for (const name of readdirSync(dir)) {
-    if (!name.endsWith(".json")) continue;
+    if (!name.endsWith('.json')) continue;
     let state: PeerReviewState;
     try {
-      state = JSON.parse(readFileSync(join(dir, name), "utf8")) as PeerReviewState;
+      state = JSON.parse(
+        readFileSync(join(dir, name), 'utf8')
+      ) as PeerReviewState;
     } catch {
       continue;
     }
@@ -66,14 +94,17 @@ export function readPeerReviews(dir: string = PEER_REVIEW_DIR): Map<string, Peer
 /** Delete peer review states whose MR is no longer on the board. `keepUrls`
     is the current board MR set; callers gate this on a healthy snapshot so a
     failed fetch can't wipe live state. */
-export function prunePeerReviews(keepUrls: ReadonlySet<string>, dir: string = PEER_REVIEW_DIR): void {
+export function prunePeerReviews(
+  keepUrls: ReadonlySet<string>,
+  dir: string = PEER_REVIEW_DIR
+): void {
   if (!existsSync(dir)) return;
   for (const name of readdirSync(dir)) {
-    if (!name.endsWith(".json")) continue;
+    if (!name.endsWith('.json')) continue;
     const path = join(dir, name);
     let mrUrl: string | undefined;
     try {
-      mrUrl = (JSON.parse(readFileSync(path, "utf8")) as PeerReviewState).mrUrl;
+      mrUrl = (JSON.parse(readFileSync(path, 'utf8')) as PeerReviewState).mrUrl;
     } catch {
       continue;
     }
@@ -87,9 +118,11 @@ export function prunePeerReviews(keepUrls: ReadonlySet<string>, dir: string = PE
     `peerReviews` field. Non-mutating. */
 export function attachPeerReviews<T extends { webUrl?: string | null }>(
   mrs: T[],
-  peerReviews: Map<string, PeerReviewState[]>,
+  peerReviews: Map<string, PeerReviewState[]>
 ): Array<T & { peerReviews?: PeerReviewState[] }> {
-  return mrs.map((mr) =>
-    mr.webUrl && peerReviews.has(mr.webUrl) ? { ...mr, peerReviews: peerReviews.get(mr.webUrl) } : mr,
+  return mrs.map(mr =>
+    mr.webUrl && peerReviews.has(mr.webUrl)
+      ? { ...mr, peerReviews: peerReviews.get(mr.webUrl) }
+      : mr
   );
 }

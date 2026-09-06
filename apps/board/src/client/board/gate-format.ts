@@ -1,4 +1,9 @@
-import type { GateAnswers, GateAnswerValue, GateOption, GateQuestion } from "../../gates/store.ts";
+import type {
+  GateAnswers,
+  GateAnswerValue,
+  GateOption,
+  GateQuestion,
+} from '../../gates/store.ts';
 
 /** Which board lifecycle a gate kind belongs to. Deliberately re-declared
     rather than imported from gates/sweep.ts's own domainForKind: that
@@ -8,7 +13,7 @@ import type { GateAnswers, GateAnswerValue, GateOption, GateQuestion } from "../
     has no business in it) and fail typecheck (the client tsconfig carries
     no Bun globals). Kept in sync with GATE_KINDS/domainForKind by the
     gate-format test suite exercising the same kind strings. */
-export type GateDomain = "review" | "respond" | "doctor";
+export type GateDomain = 'review' | 'respond' | 'doctor';
 
 /** UI-collected picks, keyed by question id: an array for a `multi`
     question's checked options, a bare string for a single-select's radio. */
@@ -38,7 +43,10 @@ export interface GateAnswerPayload {
  * excluded from the required set entirely -- otherwise a clean review's
  * gate would have no possible answer and could never be closed.
  */
-export function gateAnswerPayload(gate: GateForAnswer, selections: GateSelections): GateAnswerPayload | null {
+export function gateAnswerPayload(
+  gate: GateForAnswer,
+  selections: GateSelections
+): GateAnswerPayload | null {
   const answers: GateSelections = {};
   for (const q of gate.questions) {
     if (q.options.length === 0) continue;
@@ -47,7 +55,7 @@ export function gateAnswerPayload(gate: GateForAnswer, selections: GateSelection
       if (!Array.isArray(value) || value.length === 0) return null;
       answers[q.id] = value;
     } else {
-      if (typeof value !== "string" || value.length === 0) return null;
+      if (typeof value !== 'string' || value.length === 0) return null;
       answers[q.id] = value;
     }
   }
@@ -68,7 +76,12 @@ export interface UnwrappedGateAnswer {
  * free text) renders instead of crashing React on an object child.
  */
 export function unwrapGateAnswer(raw: GateAnswerValue): UnwrappedGateAnswer {
-  if (raw !== null && typeof raw === "object" && !Array.isArray(raw) && "value" in raw) {
+  if (
+    raw !== null &&
+    typeof raw === 'object' &&
+    !Array.isArray(raw) &&
+    'value' in raw
+  ) {
     return { value: raw.value, note: raw.note };
   }
   return { value: raw };
@@ -87,8 +100,10 @@ export interface GateAnswerConflict {
  * real even if the body somehow lost its answer, so this never throws.
  */
 export function parseConflictResponse(body: unknown): GateAnswerConflict {
-  const row = (body as { row?: { answer?: { answers?: GateAnswers; by?: string } } } | null)?.row;
-  return { answers: row?.answer?.answers ?? {}, by: row?.answer?.by ?? "" };
+  const row = (
+    body as { row?: { answer?: { answers?: GateAnswers; by?: string } } } | null
+  )?.row;
+  return { answers: row?.answer?.answers ?? {}, by: row?.answer?.by ?? '' };
 }
 
 export interface GateOptionDisplay {
@@ -126,29 +141,34 @@ export function formatGateOption(option: string): GateOptionDisplay {
 }
 
 export function optionValue(o: GateOption): string {
-  return typeof o === "string" ? o : o.value;
+  return typeof o === 'string' ? o : o.value;
 }
 
 /** Labeled options render their label with the raw value as the hover
     title; bare strings keep the verb-token transform unchanged. */
 export function optionDisplayFor(o: GateOption): GateOptionDisplay {
-  if (typeof o !== "string") {
+  if (typeof o !== 'string') {
     const text = o.label || o.value;
     return text === o.value ? { text } : { text, title: o.value };
   }
   return formatGateOption(o);
 }
 
-export function displayForValue(value: string, options: GateOption[]): GateOptionDisplay {
-  const match = options.find((o) => optionValue(o) === value);
-  return match !== undefined ? optionDisplayFor(match) : formatGateOption(value);
+export function displayForValue(
+  value: string,
+  options: GateOption[]
+): GateOptionDisplay {
+  const match = options.find(o => optionValue(o) === value);
+  return match !== undefined
+    ? optionDisplayFor(match)
+    : formatGateOption(value);
 }
 
 /** The three verbs a respond-plan thread question ever offers. Grouping
     (see `groupThreadOptions`) only fires when every option is one of these
     verbs paired with a thread token -- any other verb leaves the question
     flat, since there'd be no fixed radio row to render. */
-const THREAD_VERBS = ["reply", "fix", "skip"] as const;
+const THREAD_VERBS = ['reply', 'fix', 'skip'] as const;
 type ThreadVerb = (typeof THREAD_VERBS)[number];
 const THREAD_OPTION = /^(reply|fix|skip):(.+)$/;
 
@@ -175,9 +195,10 @@ export interface ThreadOptionGroup {
     to the token's short form when no option in the group carries a label. */
 function threadHeading(token: string, entries: ThreadOptionEntry[]): string {
   for (const { verb, option } of entries) {
-    if (typeof option === "string") continue;
+    if (typeof option === 'string') continue;
     const prefix = `${verb} · `;
-    if (option.label.startsWith(prefix)) return option.label.slice(prefix.length);
+    if (option.label.startsWith(prefix))
+      return option.label.slice(prefix.length);
   }
   return token.slice(0, 8);
 }
@@ -194,7 +215,9 @@ function threadHeading(token: string, entries: ThreadOptionEntry[]): string {
  * options are grouped for display, never which values a token's entries
  * carry.
  */
-export function groupThreadOptions(options: GateOption[]): ThreadOptionGroup[] | null {
+export function groupThreadOptions(
+  options: GateOption[]
+): ThreadOptionGroup[] | null {
   const byToken = new Map<string, ThreadOptionEntry[]>();
   for (const opt of options) {
     const value = optionValue(opt);
@@ -212,18 +235,20 @@ export function groupThreadOptions(options: GateOption[]): ThreadOptionGroup[] |
   // back to the flat rendering rather than grouping a partial/malformed set.
   for (const entries of byToken.values()) {
     if (entries.length !== THREAD_VERBS.length) return null;
-    const verbs = new Set(entries.map((e) => e.verb));
+    const verbs = new Set(entries.map(e => e.verb));
     if (verbs.size !== THREAD_VERBS.length) return null;
   }
   return [...byToken.entries()].map(([token, entries]) => {
-    const ordered = [...entries].sort((a, b) => THREAD_VERBS.indexOf(a.verb) - THREAD_VERBS.indexOf(b.verb));
+    const ordered = [...entries].sort(
+      (a, b) => THREAD_VERBS.indexOf(a.verb) - THREAD_VERBS.indexOf(b.verb)
+    );
     return { token, heading: threadHeading(token, ordered), entries: ordered };
   });
 }
 
-export const RESPOND_PLAN_KIND = "respond-plan";
-export const CODE_CHANGES_QUESTION_ID = "code-changes";
-export const CODE_CHANGES_SENTINEL = "skip";
+export const RESPOND_PLAN_KIND = 'respond-plan';
+export const CODE_CHANGES_QUESTION_ID = 'code-changes';
+export const CODE_CHANGES_SENTINEL = 'skip';
 
 /** The respond collapse keys off the gate's own option set: only a
     respond-plan gate whose code-changes question carries the sentinel
@@ -231,15 +256,17 @@ export const CODE_CHANGES_SENTINEL = "skip";
 export function codeChangesHidden(
   kind: string,
   questions: GateQuestion[],
-  selections: GateSelections,
+  selections: GateSelections
 ): boolean {
   if (kind !== RESPOND_PLAN_KIND) return false;
-  const q = questions.find((x) => x.id === CODE_CHANGES_QUESTION_ID);
-  if (!q || !q.options.some((o) => optionValue(o) === CODE_CHANGES_SENTINEL)) return false;
+  const q = questions.find(x => x.id === CODE_CHANGES_QUESTION_ID);
+  if (!q || !q.options.some(o => optionValue(o) === CODE_CHANGES_SENTINEL))
+    return false;
   for (const [qid, sel] of Object.entries(selections)) {
     if (qid === CODE_CHANGES_QUESTION_ID) continue;
     const values = Array.isArray(sel) ? sel : [sel];
-    if (values.some((v) => typeof v === "string" && v.startsWith("fix:"))) return false;
+    if (values.some(v => typeof v === 'string' && v.startsWith('fix:')))
+      return false;
   }
   return true;
 }

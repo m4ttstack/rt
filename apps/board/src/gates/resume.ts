@@ -1,10 +1,10 @@
-import type { GateRow as FacilityGateRow } from "@mattstack/rt-client";
-import type { GateQuestion, GateState } from "./store.ts";
-import { mrTabLabel, type SkillPathResolver } from "../herdr.ts";
-import { resolveSkillPath } from "../skill-path.ts";
-import type { AgentLaunchResult } from "../agent-launch.ts";
-import { GATE_LIST_PAGE_LIMIT, type GateEventFrame } from "./ingest.ts";
-import { domainForKind, GATE_KINDS, type GateDomain } from "./sweep.ts";
+import type { GateRow as FacilityGateRow } from '@mattstack/rt-client';
+import type { AgentLaunchResult } from '../agent-launch.ts';
+import { mrTabLabel, type SkillPathResolver } from '../herdr.ts';
+import { resolveSkillPath } from '../skill-path.ts';
+import { GATE_LIST_PAGE_LIMIT, type GateEventFrame } from './ingest.ts';
+import type { GateQuestion, GateState } from './store.ts';
+import { domainForKind, GATE_KINDS, type GateDomain } from './sweep.ts';
 
 /** The fields any domain's lifecycle state carries in common -- the subset
     a resume needs, regardless of which wrapper (review/respond/doctor)
@@ -31,7 +31,10 @@ export interface ResumableState {
     (see `ResumeParkedGateIo.resumers`). */
 export interface KindResumeIo {
   readState(mrUrl: string): ResumableState | undefined;
-  writeState(path: string, patch: Partial<ResumableState> & { status: string }): void;
+  writeState(
+    path: string,
+    patch: Partial<ResumableState> & { status: string }
+  ): void;
   filePath(mrUrl: string): string;
   /** Resolve the domain skill the resumed wrapper should delegate to --
       review honors a tab's `reviewSkill` override via `tabId`; respond/doctor
@@ -41,7 +44,13 @@ export interface KindResumeIo {
       each domain's own `dispatchPrompt("board:<domain>", {...}, resolvePath)`
       call, since the SkillPromptOpts fields a domain needs (e.g. review's
       `reportPath`) differ. */
-  prompt(mrUrl: string, statePath: string, skill: string, resumedGate: string, resolvePath: SkillPathResolver): Promise<string>;
+  prompt(
+    mrUrl: string,
+    statePath: string,
+    skill: string,
+    resumedGate: string,
+    resolvePath: SkillPathResolver
+  ): Promise<string>;
   /** The status this kind's state settles into once its pane resumes.
       Review has exactly one in-flight status ("reviewing"), reproduced
       verbatim; respond/doctor each have a richer lifecycle and pick their
@@ -55,7 +64,12 @@ export interface KindResumeIo {
     and the courtesy notify when a resume can't proceed. */
 export interface ResumeParkedGateIo {
   resumers: Partial<Record<string, KindResumeIo>>;
-  resumeAgentPane(opts: { agentId: string; prompt: string; workspaceLabel: string; tabLabel: string }): Promise<AgentLaunchResult>;
+  resumeAgentPane(opts: {
+    agentId: string;
+    prompt: string;
+    workspaceLabel: string;
+    tabLabel: string;
+  }): Promise<AgentLaunchResult>;
   notify(message: string): void;
 }
 
@@ -66,7 +80,9 @@ export interface ResumeParkedGateIo {
     a literal, which is what lets the wiring test in
     gates-resume.test.ts catch a dropped kind instead of the whole suite
     passing silently. */
-export function buildResumers(byDomain: Record<GateDomain, KindResumeIo>): Partial<Record<string, KindResumeIo>> {
+export function buildResumers(
+  byDomain: Record<GateDomain, KindResumeIo>
+): Partial<Record<string, KindResumeIo>> {
   const resumers: Partial<Record<string, KindResumeIo>> = {};
   for (const kind of GATE_KINDS) {
     const domain = domainForKind(kind);
@@ -98,23 +114,36 @@ export function buildResumers(byDomain: Record<GateDomain, KindResumeIo>): Parti
 export async function resumeParkedGate(
   gate: GateState,
   io: ResumeParkedGateIo,
-  resolvePath: SkillPathResolver = resolveSkillPath,
+  resolvePath: SkillPathResolver = resolveSkillPath
 ): Promise<boolean> {
   if (!gate.agentId) {
-    io.notify("parked gate answered but no agent on file; relaunch from the board");
+    io.notify(
+      'parked gate answered but no agent on file; relaunch from the board'
+    );
     return false;
   }
 
-  const kindIo = Object.hasOwn(io.resumers, gate.kind) ? io.resumers[gate.kind] : undefined;
+  const kindIo = Object.hasOwn(io.resumers, gate.kind)
+    ? io.resumers[gate.kind]
+    : undefined;
   if (!kindIo) {
-    if ((GATE_KINDS as readonly string[]).includes(gate.kind)) throw new Error(`${gate.kind} resume not wired`);
-    console.error(`gate resume: unknown gate kind "${gate.kind}" on ${gate.mrUrl}; skipping`);
+    if ((GATE_KINDS as readonly string[]).includes(gate.kind))
+      throw new Error(`${gate.kind} resume not wired`);
+    console.error(
+      `gate resume: unknown gate kind "${gate.kind}" on ${gate.mrUrl}; skipping`
+    );
     return false;
   }
 
   const statePath = kindIo.filePath(gate.mrUrl);
   const skill = kindIo.resolveSkill(gate.mrUrl, gate.tabId);
-  const prompt = await kindIo.prompt(gate.mrUrl, statePath, skill, gate.gateId, resolvePath);
+  const prompt = await kindIo.prompt(
+    gate.mrUrl,
+    statePath,
+    skill,
+    gate.gateId,
+    resolvePath
+  );
 
   let result;
   try {
@@ -122,10 +151,12 @@ export async function resumeParkedGate(
       agentId: gate.agentId,
       prompt,
       workspaceLabel: kindIo.workspaceLabel,
-      tabLabel: mrTabLabel(gate.iid, undefined, "↺"),
+      tabLabel: mrTabLabel(gate.iid, undefined, '↺'),
     });
   } catch (err) {
-    console.error(`parked gate resume failed: ${err instanceof Error ? err.message : err}`);
+    console.error(
+      `parked gate resume failed: ${err instanceof Error ? err.message : err}`
+    );
     return false;
   }
   if (result.focusedExisting) return true;
@@ -138,15 +169,25 @@ export async function resumeParkedGate(
       workspaceId: result.workspaceId,
     });
   } catch (err) {
-    console.error(`parked gate resume: pane ids not persisted: ${err instanceof Error ? err.message : err}`);
+    console.error(
+      `parked gate resume: pane ids not persisted: ${err instanceof Error ? err.message : err}`
+    );
   }
   return true;
 }
 
 // ── Event-driven trigger: any surface's answer resumes the parked gate ────
 
-type GateListPayload = { subjectPrefix: string; cursor?: number; limit?: number };
-type GateListResult = { ok: boolean; data?: { gates: FacilityGateRow[]; cursor: number }; error?: string };
+type GateListPayload = {
+  subjectPrefix: string;
+  cursor?: number;
+  limit?: number;
+};
+type GateListResult = {
+  ok: boolean;
+  data?: { gates: FacilityGateRow[]; cursor: number };
+  error?: string;
+};
 
 /** Seams `handleAnsweredEvent`/`bootResumePass` need beyond `resumeParkedGate`'s
     own io: reading the (already cache-updated) facility rows and paging the
@@ -165,7 +206,7 @@ export interface GateResumeEventIo extends ResumeParkedGateIo {
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null;
+  return typeof v === 'object' && v !== null;
 }
 
 /**
@@ -181,15 +222,24 @@ function isRecord(v: unknown): v is Record<string, unknown> {
  * place. Re-reads state after the resume attempt so that write can't
  * clobber whatever status `resumeParkedGate` itself just settled on.
  */
-async function resumeIfMissed(row: FacilityGateRow, io: GateResumeEventIo, resolvePath: SkillPathResolver): Promise<void> {
-  if (row.status !== "answered" || row.parkedAt === null) return;
-  if (!row.subject.startsWith("mr:")) return;
-  const mrUrl = row.subject.slice("mr:".length);
+async function resumeIfMissed(
+  row: FacilityGateRow,
+  io: GateResumeEventIo,
+  resolvePath: SkillPathResolver
+): Promise<void> {
+  if (row.status !== 'answered' || row.parkedAt === null) return;
+  if (!row.subject.startsWith('mr:')) return;
+  const mrUrl = row.subject.slice('mr:'.length);
 
-  const kindIo = Object.hasOwn(io.resumers, row.kind) ? io.resumers[row.kind] : undefined;
+  const kindIo = Object.hasOwn(io.resumers, row.kind)
+    ? io.resumers[row.kind]
+    : undefined;
   if (!kindIo) {
-    if ((GATE_KINDS as readonly string[]).includes(row.kind)) throw new Error(`${row.kind} resume not wired`);
-    console.error(`gate resume: unknown gate kind "${row.kind}" on ${row.subject}; skipping`);
+    if ((GATE_KINDS as readonly string[]).includes(row.kind))
+      throw new Error(`${row.kind} resume not wired`);
+    console.error(
+      `gate resume: unknown gate kind "${row.kind}" on ${row.subject}; skipping`
+    );
     return;
   }
 
@@ -205,7 +255,7 @@ async function resumeIfMissed(row: FacilityGateRow, io: GateResumeEventIo, resol
     mrUrl,
     iid: state.iid,
     kind: row.kind,
-    status: "answered",
+    status: 'answered',
     openedAt: row.openedAt,
     questions: row.questions as GateQuestion[],
     agentId: state.agentId,
@@ -215,21 +265,36 @@ async function resumeIfMissed(row: FacilityGateRow, io: GateResumeEventIo, resol
   if (!resumed) return;
 
   const fresh = kindIo.readState(mrUrl) ?? state;
-  kindIo.writeState(kindIo.filePath(mrUrl), { status: fresh.status, resumedGateId: row.id });
+  kindIo.writeState(kindIo.filePath(mrUrl), {
+    status: fresh.status,
+    resumedGateId: row.id,
+  });
 }
 
 /** Pages `gateList({subjectPrefix})` to exhaustion looking for one gate id --
     the cache-miss fallback for `handleAnsweredEvent` and the shared paging
     shape `bootResumePass` also uses. `subjectPrefix` is a full `mr:<url>`
     subject here, not just `mr:`, so this only ever reads one MR's rows. */
-async function fetchGateRowById(io: GateResumeEventIo, subjectPrefix: string, id: string): Promise<FacilityGateRow | undefined> {
+async function fetchGateRowById(
+  io: GateResumeEventIo,
+  subjectPrefix: string,
+  id: string
+): Promise<FacilityGateRow | undefined> {
   let cursor: number | undefined;
   for (;;) {
-    const res = await io.gateList({ subjectPrefix, cursor, limit: GATE_LIST_PAGE_LIMIT });
+    const res = await io.gateList({
+      subjectPrefix,
+      cursor,
+      limit: GATE_LIST_PAGE_LIMIT,
+    });
     if (!res.ok || !res.data) return undefined;
-    const match = res.data.gates.find((row) => row.id === id);
+    const match = res.data.gates.find(row => row.id === id);
     if (match) return match;
-    if (res.data.gates.length < GATE_LIST_PAGE_LIMIT || res.data.cursor === cursor) return undefined;
+    if (
+      res.data.gates.length < GATE_LIST_PAGE_LIMIT ||
+      res.data.cursor === cursor
+    )
+      return undefined;
     cursor = res.data.cursor;
   }
 }
@@ -243,15 +308,15 @@ async function fetchGateRowById(io: GateResumeEventIo, subjectPrefix: string, id
 export async function handleAnsweredEvent(
   frame: GateEventFrame,
   io: GateResumeEventIo,
-  resolvePath: SkillPathResolver = resolveSkillPath,
+  resolvePath: SkillPathResolver = resolveSkillPath
 ): Promise<void> {
-  if (!frame.topic.startsWith("gate/answered/")) return;
+  if (!frame.topic.startsWith('gate/answered/')) return;
   if (!isRecord(frame.payload)) return;
   const { id, subject } = frame.payload;
-  if (typeof id !== "string" || !id) return;
-  if (typeof subject !== "string" || !subject.startsWith("mr:")) return;
+  if (typeof id !== 'string' || !id) return;
+  if (typeof subject !== 'string' || !subject.startsWith('mr:')) return;
 
-  let row = io.rowsForSubject(subject).find((r) => r.id === id);
+  let row = io.rowsForSubject(subject).find(r => r.id === id);
   if (!row) {
     // The cache doesn't have this gate (opened before the board last
     // started) or none of the subject's cached kinds match this id (stale)
@@ -273,13 +338,19 @@ export async function handleAnsweredEvent(
  */
 export async function bootResumePass(
   io: GateResumeEventIo,
-  resolvePath: SkillPathResolver = resolveSkillPath,
+  resolvePath: SkillPathResolver = resolveSkillPath
 ): Promise<void> {
   let cursor: number | undefined;
   for (;;) {
-    const res = await io.gateList({ subjectPrefix: "mr:", cursor, limit: GATE_LIST_PAGE_LIMIT });
+    const res = await io.gateList({
+      subjectPrefix: 'mr:',
+      cursor,
+      limit: GATE_LIST_PAGE_LIMIT,
+    });
     if (!res.ok || !res.data) {
-      console.error(`gate boot resume pass: gate:list failed: ${res.error ?? "unknown error"}`);
+      console.error(
+        `gate boot resume pass: gate:list failed: ${res.error ?? 'unknown error'}`
+      );
       break;
     }
     for (const row of res.data.gates) {
@@ -288,10 +359,16 @@ export async function bootResumePass(
       try {
         await resumeIfMissed(row, io, resolvePath);
       } catch (err) {
-        console.error(`gate boot resume pass: resumeIfMissed(${row.id}) failed: ${err instanceof Error ? err.message : err}`);
+        console.error(
+          `gate boot resume pass: resumeIfMissed(${row.id}) failed: ${err instanceof Error ? err.message : err}`
+        );
       }
     }
-    if (res.data.gates.length < GATE_LIST_PAGE_LIMIT || res.data.cursor === cursor) break;
+    if (
+      res.data.gates.length < GATE_LIST_PAGE_LIMIT ||
+      res.data.cursor === cursor
+    )
+      break;
     cursor = res.data.cursor;
   }
 }

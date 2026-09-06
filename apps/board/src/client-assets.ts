@@ -1,4 +1,4 @@
-import { buildClientBundle, type ClientBundle } from "./client-bundle.ts";
+import { buildClientBundle, type ClientBundle } from './client-bundle.ts';
 
 let injected: ClientBundle | null = null;
 
@@ -10,7 +10,10 @@ let injected: ClientBundle | null = null;
  * bundled, so it throws instead of lying.
  */
 export function injectClientAssets(assets: ClientBundle): void {
-  if (resolved) throw new Error("injectClientAssets called after the server already loaded its client bundle");
+  if (resolved)
+    throw new Error(
+      'injectClientAssets called after the server already loaded its client bundle'
+    );
   injected = assets;
 }
 

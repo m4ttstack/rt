@@ -23,12 +23,17 @@ export function migrateLegacySessions<S extends LegacySessionState>(
   domain: string,
   states: Map<string, S>,
   filePath: (mrUrl: string) => string,
-  writeState: (path: string, patch: { status: S["status"]; sessionId: string }) => void,
-  log: (message: string) => void,
+  writeState: (
+    path: string,
+    patch: { status: S['status']; sessionId: string }
+  ) => void,
+  log: (message: string) => void
 ): void {
   for (const state of states.values()) {
     if (!state.sessionId || state.agentId) continue;
-    writeState(filePath(state.mrUrl), { status: state.status, sessionId: "" });
-    log(`legacy session migration: cleared stale sessionId for ${domain} ${state.mrUrl}`);
+    writeState(filePath(state.mrUrl), { status: state.status, sessionId: '' });
+    log(
+      `legacy session migration: cleared stale sessionId for ${domain} ${state.mrUrl}`
+    );
   }
 }

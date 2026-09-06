@@ -1,5 +1,5 @@
-import type { BoardMR } from "../../data.ts";
-import type { ActionResult } from "../api.ts";
+import type { BoardMR } from '../../data.ts';
+import type { ActionResult } from '../api.ts';
 
 /** Deps a launch flow needs from its caller: how to POST, how to reflect the
     optimistic queued/rollback state (no-ops for non-optimistic actions like
@@ -29,7 +29,11 @@ export interface LaunchFlowDeps {
     DOM-free by design (no react, no browser globals) so it stays importable
     from a plain root-tsconfig test without pulling DOM types into that
     program -- see hooks.ts, which imports this for useLaunchAction. */
-export async function runLaunchFlow(deps: LaunchFlowDeps, mr: BoardMR, extra: Record<string, unknown>): Promise<void> {
+export async function runLaunchFlow(
+  deps: LaunchFlowDeps,
+  mr: BoardMR,
+  extra: Record<string, unknown>
+): Promise<void> {
   if (!mr.webUrl) return;
   deps.setQueued();
   deps.addToast(`${deps.verbing} for !${mr.iid}…`);
@@ -37,7 +41,9 @@ export async function runLaunchFlow(deps: LaunchFlowDeps, mr: BoardMR, extra: Re
   if (!result.ok) {
     deps.rollback();
     deps.addToast(
-      deps.failureMessage ? deps.failureMessage(result, mr) : `couldn't launch ${deps.noun} for !${mr.iid} (${result.status})`,
+      deps.failureMessage
+        ? deps.failureMessage(result, mr)
+        : `couldn't launch ${deps.noun} for !${mr.iid} (${result.status})`
     );
     return;
   }
@@ -45,6 +51,9 @@ export async function runLaunchFlow(deps: LaunchFlowDeps, mr: BoardMR, extra: Re
   // failureMessage above), but the server never sets `focused` on a resume
   // response today -- this branch is inert for resume until/unless that
   // changes, at which point resume would start showing this toast too.
-  if (result.body?.focused) deps.addToast(`${deps.noun} already running for !${mr.iid} — focused its tab`);
+  if (result.body?.focused)
+    deps.addToast(
+      `${deps.noun} already running for !${mr.iid} — focused its tab`
+    );
   deps.reload();
 }

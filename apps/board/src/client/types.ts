@@ -1,10 +1,11 @@
-import type { MouseEvent } from "react";
-import type { BoardMR } from "../data.ts";
-import type { SlackTemplates } from "../template.ts";
-import type { RespondStatus } from "../respond-outcome.ts";
-import type { TabConfig } from "../config.ts";
-import type { GateRow } from "../gates/store.ts";
-import type { GateDomain } from "./board/gate-format.ts";
+import type { MouseEvent } from 'react';
+
+import type { TabConfig } from '../config.ts';
+import type { BoardMR } from '../data.ts';
+import type { GateRow } from '../gates/store.ts';
+import type { RespondStatus } from '../respond-outcome.ts';
+import type { SlackTemplates } from '../template.ts';
+import type { GateDomain } from './board/gate-format.ts';
 
 export interface RosterMember {
   username: string;
@@ -21,22 +22,77 @@ export interface ConfigMember {
   count: number | null;
 }
 
-export type ReviewStatus = "queued" | "reviewing" | "done" | "error";
-export interface ReviewInfo { status: ReviewStatus; message?: string; reportReady?: boolean; sessionId?: string; tabId?: string }
-export interface RespondInfo { status: RespondStatus; message?: string; reportReady?: boolean; sessionId?: string; posted?: number; threads?: number; tabId?: string }
-export type DoctorStatus = "queued" | "diagnosing" | "rebasing" | "fixing" | "watching" | "done" | "error";
-export interface DoctorInfo { status: DoctorStatus; message?: string; origin?: "auto" | "manual"; tabId?: string }
-export interface DraftInfo { kind: string; body: string; createdAt: number }
-export interface SlackInfo { status: "found" | "notfound"; permalink?: string; reactions: string[]; posted: boolean }
+export type ReviewStatus = 'queued' | 'reviewing' | 'done' | 'error';
+export interface ReviewInfo {
+  status: ReviewStatus;
+  message?: string;
+  reportReady?: boolean;
+  sessionId?: string;
+  tabId?: string;
+}
+export interface RespondInfo {
+  status: RespondStatus;
+  message?: string;
+  reportReady?: boolean;
+  sessionId?: string;
+  posted?: number;
+  threads?: number;
+  tabId?: string;
+}
+export type DoctorStatus =
+  | 'queued'
+  | 'diagnosing'
+  | 'rebasing'
+  | 'fixing'
+  | 'watching'
+  | 'done'
+  | 'error';
+export interface DoctorInfo {
+  status: DoctorStatus;
+  message?: string;
+  origin?: 'auto' | 'manual';
+  tabId?: string;
+}
+export interface DraftInfo {
+  kind: string;
+  body: string;
+  createdAt: number;
+}
+export interface SlackInfo {
+  status: 'found' | 'notfound';
+  permalink?: string;
+  reactions: string[];
+  posted: boolean;
+}
 /** How a peer's board says their review of one of our MRs is going. `status`
     and `outcome` stay loose strings: they're another board's lifecycle words,
     relayed verbatim, and a peer may run a version whose vocabulary we don't know. */
-export interface PeerReviewInfo { mrUrl: string; iid: number; reviewer: string; status: string; outcome?: string; updatedAt: number }
+export interface PeerReviewInfo {
+  mrUrl: string;
+  iid: number;
+  reviewer: string;
+  status: string;
+  outcome?: string;
+  updatedAt: number;
+}
 /** The re-review this board asked a peer for, and where that ask now stands.
     `reason` only comes with a rejection (the peer's own words for the refusal). */
-export interface SentNudgeInfo { display: "requested" | "confirmed" | "launched" | "rejected" | "expired" | "no-response"; reviewer: string; reason?: string }
+export interface SentNudgeInfo {
+  display:
+    | 'requested'
+    | 'confirmed'
+    | 'launched'
+    | 'rejected'
+    | 'expired'
+    | 'no-response';
+  reviewer: string;
+  reason?: string;
+}
 /** A peer waiting on us: an inbound re-review request we haven't handled yet. */
-export interface InboundNudgeInfo { from: string; receivedAt: number }
+export interface InboundNudgeInfo {
+  from: string;
+  receivedAt: number;
+}
 export type BoardMRWithReview = BoardMR & {
   review?: ReviewInfo;
   respond?: RespondInfo;
@@ -85,14 +141,14 @@ export interface BoardData {
   canInvite: boolean;
   /** Peering health: "ok" when the switchboard accepts us, "unauthorized" when
       it rejects us, null when this board isn't peering at all. */
-  peering: "ok" | "unauthorized" | null;
+  peering: 'ok' | 'unauthorized' | null;
   /** Board tabs, in display order. Always non-empty (config.tabs falls back to
       IMPLICIT_TABS server-side). */
   tabs: TabConfig[];
 }
 
-export type ThemeMode = "light" | "dark" | "system";
-export type ViewMode = "rows" | "grid";
+export type ThemeMode = 'light' | 'dark' | 'system';
+export type ViewMode = 'rows' | 'grid';
 
 export interface Toast {
   id: number;
@@ -117,7 +173,7 @@ export interface RowContext {
   onOpenReview: (mr: BoardMRWithReview) => void;
   onOpenRespond: (mr: BoardMRWithReview) => void;
   onOpenDraft: (mr: BoardMRWithReview, draft: DraftInfo) => void;
-  draftResolved: ReadonlyMap<string, "posted" | "dismissed">;
+  draftResolved: ReadonlyMap<string, 'posted' | 'dismissed'>;
   onResumeRespond: (mr: BoardMR, note?: string) => void;
   /** Jumps into the pane behind a gate's own domain (review/respond/doctor) --
       the same dedup-and-focus path launching that domain again already takes
@@ -127,7 +183,13 @@ export interface RowContext {
   onToggleSelect: (webUrl: string) => void;
 }
 
-export type ThreadStatus = "resolved" | "replied" | "awaiting";
-export type CommentNote = { id: number; name: string; username: string | null; at: string; body: string };
+export type ThreadStatus = 'resolved' | 'replied' | 'awaiting';
+export type CommentNote = {
+  id: number;
+  name: string;
+  username: string | null;
+  at: string;
+  body: string;
+};
 export type CommentThread = { status: ThreadStatus; notes: CommentNote[] };
 export type GeneralComment = CommentNote;

@@ -1,5 +1,12 @@
-import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import {
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { join } from 'node:path';
 
 /** BOARD-10: the one-CI-attendant-per-MR lease. A plain per-MR JSON file so
     every actor -- this board, the acme:watch-ci skill's shell helper, a
@@ -7,7 +14,7 @@ import { join } from "node:path";
     (acme skills must stay free of rt/daemon dependencies). Freshness is
     heartbeat + TTL; a crashed holder costs nothing and needs no cleanup. */
 
-export type AttendantHolder = "watch-ci" | "doctor";
+export type AttendantHolder = 'watch-ci' | 'doctor';
 
 export interface AttendantLease {
   mr: string;
@@ -23,7 +30,7 @@ export interface AttendantLease {
 export const DEFAULT_ATTENDANT_TTL_SECONDS = 600;
 
 export function defaultAttendantsDir(): string {
-  return join(process.env.HOME ?? "~", ".mattstack", "ci-attendants");
+  return join(process.env.HOME ?? '~', '.mattstack', 'ci-attendants');
 }
 
 /** Project path + iid, slugged for the filesystem: two projects with the same
@@ -32,11 +39,14 @@ export function leaseFileName(mrUrl: string, iid: number): string {
   let project: string;
   try {
     const u = new URL(mrUrl);
-    project = u.pathname.split("/-/")[0] ?? u.pathname;
+    project = u.pathname.split('/-/')[0] ?? u.pathname;
   } catch {
     project = mrUrl;
   }
-  const slug = project.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  const slug = project
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
   return `${slug}-${iid}.json`;
 }
 
@@ -50,16 +60,26 @@ function isFresh(lease: AttendantLease, now: number): boolean {
 
 /** The fresh lease for this MR, or null (missing, malformed, or stale --
     callers never see a stale lease). */
-export function readLease(dir: string, mrUrl: string, iid: number, now: number): AttendantLease | null {
+export function readLease(
+  dir: string,
+  mrUrl: string,
+  iid: number,
+  now: number
+): AttendantLease | null {
   let raw: string;
   try {
-    raw = readFileSync(leasePath(dir, mrUrl, iid), "utf8");
+    raw = readFileSync(leasePath(dir, mrUrl, iid), 'utf8');
   } catch {
     return null;
   }
   try {
     const lease = JSON.parse(raw) as AttendantLease;
-    if (typeof lease.heartbeatAt !== "number" || typeof lease.ttlSeconds !== "number" || !lease.holder) return null;
+    if (
+      typeof lease.heartbeatAt !== 'number' ||
+      typeof lease.ttlSeconds !== 'number' ||
+      !lease.holder
+    )
+      return null;
     return isFresh(lease, now) ? lease : null;
   } catch {
     return null;
@@ -70,7 +90,11 @@ export function readLease(dir: string, mrUrl: string, iid: number, now: number):
     uses this to see an attendant on a parent MR that sits outside the board's
     scope window -- there is no lease file to name, only a branch. A directory
     scan is fine: this dir holds one file per actively attended MR. */
-export function readLeaseByBranch(dir: string, branch: string, now: number): AttendantLease | null {
+export function readLeaseByBranch(
+  dir: string,
+  branch: string,
+  now: number
+): AttendantLease | null {
   if (!branch) return null;
   let names: string[];
   try {
@@ -79,11 +103,18 @@ export function readLeaseByBranch(dir: string, branch: string, now: number): Att
     return null;
   }
   for (const name of names) {
-    if (!name.endsWith(".json")) continue;
+    if (!name.endsWith('.json')) continue;
     try {
-      const lease = JSON.parse(readFileSync(join(dir, name), "utf8")) as AttendantLease;
+      const lease = JSON.parse(
+        readFileSync(join(dir, name), 'utf8')
+      ) as AttendantLease;
       if (lease.branch !== branch) continue;
-      if (typeof lease.heartbeatAt !== "number" || typeof lease.ttlSeconds !== "number" || !lease.holder) continue;
+      if (
+        typeof lease.heartbeatAt !== 'number' ||
+        typeof lease.ttlSeconds !== 'number' ||
+        !lease.holder
+      )
+        continue;
       if (isFresh(lease, now)) return lease;
     } catch {
       continue;
@@ -97,17 +128,18 @@ export function readLeaseByBranch(dir: string, branch: string, now: number): Att
 export function claimLease(
   dir: string,
   record: AttendantLease,
-  now: number,
+  now: number
 ): { ok: true } | { ok: false; holder: AttendantLease } {
   mkdirSync(dir, { recursive: true });
   const path = leasePath(dir, record.mr, iidOf(record));
   const body = JSON.stringify(record, null, 2);
   try {
-    writeFileSync(path, body, { flag: "wx" });
+    writeFileSync(path, body, { flag: 'wx' });
     return { ok: true };
   } catch {
     const existing = readLease(dir, record.mr, iidOf(record), now);
-    if (existing && existing.holder !== record.holder) return { ok: false, holder: existing };
+    if (existing && existing.holder !== record.holder)
+      return { ok: false, holder: existing };
     // Stale, malformed, or our own holder re-claiming: replace atomically.
     const tmp = `${path}.${process.pid}.tmp`;
     writeFileSync(tmp, body);
@@ -117,11 +149,17 @@ export function claimLease(
 }
 
 /** Refresh heartbeatAt -- only when the named holder actually holds it. */
-export function heartbeatLease(dir: string, mrUrl: string, iid: number, holder: AttendantHolder, now: number): void {
+export function heartbeatLease(
+  dir: string,
+  mrUrl: string,
+  iid: number,
+  holder: AttendantHolder,
+  now: number
+): void {
   const path = leasePath(dir, mrUrl, iid);
   let lease: AttendantLease;
   try {
-    lease = JSON.parse(readFileSync(path, "utf8")) as AttendantLease;
+    lease = JSON.parse(readFileSync(path, 'utf8')) as AttendantLease;
   } catch {
     return;
   }
@@ -133,11 +171,16 @@ export function heartbeatLease(dir: string, mrUrl: string, iid: number, holder: 
 }
 
 /** Delete the lease -- only when the named holder holds it (any freshness). */
-export function releaseLease(dir: string, mrUrl: string, iid: number, holder: AttendantHolder): void {
+export function releaseLease(
+  dir: string,
+  mrUrl: string,
+  iid: number,
+  holder: AttendantHolder
+): void {
   const path = leasePath(dir, mrUrl, iid);
   let lease: AttendantLease;
   try {
-    lease = JSON.parse(readFileSync(path, "utf8")) as AttendantLease;
+    lease = JSON.parse(readFileSync(path, 'utf8')) as AttendantLease;
   } catch {
     return;
   }
@@ -148,7 +191,7 @@ export function releaseLease(dir: string, mrUrl: string, iid: number, holder: At
 /** The lease records the MR url; the iid rides in the filename. Claims carry
     both, so recover the iid from the url's trailing segment. */
 function iidOf(record: AttendantLease): number {
-  const tail = record.mr.split("/").pop() ?? "";
+  const tail = record.mr.split('/').pop() ?? '';
   const n = Number(tail);
   return Number.isFinite(n) && /^\d+$/.test(tail) ? n : 0;
 }

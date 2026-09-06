@@ -6,10 +6,11 @@
  * pick like ocean's #1d3557 would be invisible on the near-black band; the
  * per-MR character comes from the creature's shape, and pink holds 6.84:1.
  */
-import { readFileSync } from "fs";
-import { PNG } from "pngjs";
-import { resolveSpawn } from "invadrs";
-import bandAsset from "../../assets/latch-band.png" with { type: "file" };
+import { readFileSync } from 'fs';
+import { resolveSpawn } from 'invadrs';
+import { PNG } from 'pngjs';
+
+import bandAsset from '../../assets/latch-band.png' with { type: 'file' };
 
 export const BAND_W = 1200;
 export const BAND_H = 208;
@@ -28,7 +29,10 @@ const SPRITE_SIDE = 120;
 // temp path at runtime, so readFileSync works unchanged either way.
 const DEFAULT_BAND = bandAsset;
 
-export function latchBannerPng(mrUrl: string, bandPath: string = DEFAULT_BAND): Buffer {
+export function latchBannerPng(
+  mrUrl: string,
+  bandPath: string = DEFAULT_BAND
+): Buffer {
   const band = PNG.sync.read(readFileSync(bandPath));
   const { grid, padding } = resolveSpawn(mrUrl);
 

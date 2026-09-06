@@ -1,8 +1,6 @@
 {
   "gitlabHost": "https://gitlab.com",
-  "projects": [
-    "myteam/myproject"
-  ],
+  "projects": ["myteam/myproject"],
   "members": [
     {
       "username": "ada",
@@ -38,8 +36,15 @@
   "switchboard": { "url": "" },
   "tabs": [
     { "id": "team", "label": "Team", "source": { "kind": "authors" } },
-    { "id": "codeowner-queue", "label": "Codeowner Queue",
-      "source": { "kind": "codeowners", "section": "Acme", "excludeMembers": true },
-      "slackChannel": "team-codeowners" }
+    {
+      "id": "codeowner-queue",
+      "label": "Codeowner Queue",
+      "source": {
+        "kind": "codeowners",
+        "section": "Acme",
+        "excludeMembers": true
+      },
+      "slackChannel": "team-codeowners"
+    }
   ]
 }

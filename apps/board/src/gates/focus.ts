@@ -1,9 +1,9 @@
-import { realpathSync } from "node:fs";
-import type { GateOrigin } from "./store.ts";
+import { realpathSync } from 'node:fs';
+
+import type { GateOrigin } from './store.ts';
 
 export type FocusResolution =
-  | { ok: true; paneId: string; tabId?: string }
-  | { ok: false; reason: string };
+  { ok: true; paneId: string; tabId?: string } | { ok: false; reason: string };
 
 /** Normalizes a path before comparing an origin's worktree against a live
     pane's cwd: a trailing slash, or any symlink either side reports in a
@@ -17,12 +17,14 @@ export type FocusResolution =
     would have on macOS -- the ONLY platform where `/tmp` is itself a
     symlink, so the rewrite must not apply elsewhere. */
 export function normalizeWorktreePath(path: string): string {
-  const trimmed = path.replace(/\/+$/, "");
+  const trimmed = path.replace(/\/+$/, '');
   try {
     return realpathSync(trimmed);
   } catch {
-    const isTmp = trimmed === "/tmp" || trimmed.startsWith("/tmp/");
-    return process.platform === "darwin" && isTmp ? `/private${trimmed}` : trimmed;
+    const isTmp = trimmed === '/tmp' || trimmed.startsWith('/tmp/');
+    return process.platform === 'darwin' && isTmp
+      ? `/private${trimmed}`
+      : trimmed;
   }
 }
 
@@ -30,7 +32,7 @@ export function normalizeWorktreePath(path: string): string {
     live pane cwds, else a human-readable reason for a disabled affordance. */
 export function resolveOriginFocus(
   origin: GateOrigin | undefined,
-  panes: Array<{ paneId: string; cwd?: string }>,
+  panes: Array<{ paneId: string; cwd?: string }>
 ): FocusResolution {
   if (origin?.paneId) {
     return origin.tabId !== undefined
@@ -39,12 +41,14 @@ export function resolveOriginFocus(
   }
   if (origin?.worktree) {
     const target = normalizeWorktreePath(origin.worktree);
-    const match = panes.find((p) => p.cwd !== undefined && normalizeWorktreePath(p.cwd) === target);
+    const match = panes.find(
+      p => p.cwd !== undefined && normalizeWorktreePath(p.cwd) === target
+    );
     return match
       ? { ok: true, paneId: match.paneId }
-      : { ok: false, reason: "no live pane matches the origin worktree" };
+      : { ok: false, reason: 'no live pane matches the origin worktree' };
   }
-  return { ok: false, reason: "no origin on this gate" };
+  return { ok: false, reason: 'no origin on this gate' };
 }
 
 export interface PanesForOriginResult {
@@ -63,12 +67,18 @@ export interface PanesForOriginResult {
     what's live. */
 export async function panesForOrigin(
   origin: GateOrigin | undefined,
-  listPanes: () => Promise<{ ok: boolean; data?: { panes: Array<{ paneId: string; cwd?: string }> } | null }>,
+  listPanes: () => Promise<{
+    ok: boolean;
+    data?: { panes: Array<{ paneId: string; cwd?: string }> } | null;
+  }>
 ): Promise<PanesForOriginResult> {
-  if (origin?.paneId || !origin?.worktree) return { panes: [], fetchFailed: false };
+  if (origin?.paneId || !origin?.worktree)
+    return { panes: [], fetchFailed: false };
   try {
     const res = await listPanes();
-    return res.ok && res.data ? { panes: res.data.panes, fetchFailed: false } : { panes: [], fetchFailed: true };
+    return res.ok && res.data
+      ? { panes: res.data.panes, fetchFailed: false }
+      : { panes: [], fetchFailed: true };
   } catch {
     return { panes: [], fetchFailed: true };
   }

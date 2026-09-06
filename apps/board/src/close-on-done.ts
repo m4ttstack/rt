@@ -1,4 +1,4 @@
-import type { AgentSignal } from "./agent-signal.ts";
+import type { AgentSignal } from './agent-signal.ts';
 
 /** Resolves the tabId a launched pane is running in for one signal, or
     undefined when no state (or no tabId) is on file for it. */
@@ -19,13 +19,15 @@ export function closeOnDone(
   signal: AgentSignal,
   resolveTabId: TabIdResolver,
   close: (tabId: string) => Promise<void>,
-  clearTabId: TabIdClearer,
+  clearTabId: TabIdClearer
 ): void {
-  if (signal.status !== "done") return;
+  if (signal.status !== 'done') return;
   const tabId = resolveTabId(signal);
   if (!tabId) return;
   clearTabId(signal);
-  void close(tabId).catch((err) => {
-    console.error(`tab close failed for ${signal.mrUrl}: ${err instanceof Error ? err.message : err}`);
+  void close(tabId).catch(err => {
+    console.error(
+      `tab close failed for ${signal.mrUrl}: ${err instanceof Error ? err.message : err}`
+    );
   });
 }

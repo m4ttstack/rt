@@ -1,5 +1,5 @@
-import type { Commands, GateRow, RtResponse } from "@mattstack/rt-client";
-import type { GateAnswers } from "./store.ts";
+import type { Commands, GateRow, RtResponse } from '@mattstack/rt-client';
+import type { GateAnswers } from './store.ts';
 
 /** Board-UI answer path: proxies the facility's `gate:answer` (the single
     CAS arbiter) rather than owning any state itself, so the HTTP handler in
@@ -12,15 +12,17 @@ export interface AnswerGateIo {
       row can be one of several live on the same MR), so this is a guard
       against a stale id, not a lookup. */
   isAnswerable(gateId: string): boolean;
-  gateAnswer(payload: Commands["gate:answer"]["payload"]): Promise<RtResponse<Commands["gate:answer"]["data"]>>;
+  gateAnswer(
+    payload: Commands['gate:answer']['payload']
+  ): Promise<RtResponse<Commands['gate:answer']['data']>>;
 }
 
 export type AnswerGateResult =
-  | { kind: "ok" }
-  | { kind: "conflict"; row: GateRow }
-  | { kind: "not-found" }
-  | { kind: "invalid"; reason: string }
-  | { kind: "unreachable"; reason: string };
+  | { kind: 'ok' }
+  | { kind: 'conflict'; row: GateRow }
+  | { kind: 'not-found' }
+  | { kind: 'invalid'; reason: string }
+  | { kind: 'unreachable'; reason: string };
 
 /** Distinguishes the daemon's "nothing there to answer" rejections from
     validation/strict-membership ones -- the former maps to 404, the latter
@@ -29,13 +31,13 @@ export type AnswerGateResult =
     an option value like "closed" (e.g. an invalid answer naming a "closed"
     option), which a substring match would misroute to 404. */
 function isMissingGateError(message: string): boolean {
-  return message === "not-found" || message === "closed";
+  return message === 'not-found' || message === 'closed';
 }
 
 /** The rt-client transport's own error-shape prefix (see rtCommand's catch)
     for a failed socket connection -- distinct from a daemon-issued
     validation rejection, which never carries this text. */
-const UNREACHABLE_PREFIX = "rt daemon unreachable";
+const UNREACHABLE_PREFIX = 'rt daemon unreachable';
 
 function isUnreachableError(message: string): boolean {
   return message.startsWith(UNREACHABLE_PREFIX);
@@ -54,21 +56,31 @@ function isUnreachableError(message: string): boolean {
  * guards the contract anyway -- an unexpected throw is a transport failure
  * exactly like the unreachable `ok:false` shape, not a validation error.
  */
-export async function answerGate(gateId: string, answers: GateAnswers, io: AnswerGateIo): Promise<AnswerGateResult> {
-  if (!io.isAnswerable(gateId)) return { kind: "not-found" };
+export async function answerGate(
+  gateId: string,
+  answers: GateAnswers,
+  io: AnswerGateIo
+): Promise<AnswerGateResult> {
+  if (!io.isAnswerable(gateId)) return { kind: 'not-found' };
 
-  let res: Awaited<ReturnType<AnswerGateIo["gateAnswer"]>>;
+  let res: Awaited<ReturnType<AnswerGateIo['gateAnswer']>>;
   try {
-    res = await io.gateAnswer({ id: gateId, answers, by: "board" });
+    res = await io.gateAnswer({ id: gateId, answers, by: 'board' });
   } catch (err) {
-    return { kind: "unreachable", reason: err instanceof Error ? err.message : String(err) };
+    return {
+      kind: 'unreachable',
+      reason: err instanceof Error ? err.message : String(err),
+    };
   }
   if (!res.ok || !res.data) {
-    const message = res.error ?? "gate:answer failed with no error detail";
-    if (isMissingGateError(message)) return { kind: "not-found" };
-    if (isUnreachableError(message)) return { kind: "unreachable", reason: message };
-    return { kind: "invalid", reason: message };
+    const message = res.error ?? 'gate:answer failed with no error detail';
+    if (isMissingGateError(message)) return { kind: 'not-found' };
+    if (isUnreachableError(message))
+      return { kind: 'unreachable', reason: message };
+    return { kind: 'invalid', reason: message };
   }
 
-  return res.data.conflict ? { kind: "conflict", row: res.data.row } : { kind: "ok" };
+  return res.data.conflict
+    ? { kind: 'conflict', row: res.data.row }
+    : { kind: 'ok' };
 }

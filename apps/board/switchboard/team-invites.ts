@@ -10,18 +10,20 @@
 
     Named `team_invites` rather than the spec's `invites`: `store.ts` already
     owns an `invites` table for peer-board handles in the same sqlite file. */
-import type { Database } from "bun:sqlite";
-import { timingSafeEqual } from "node:crypto";
+import { timingSafeEqual } from 'node:crypto';
+import type { Database } from 'bun:sqlite';
 
 export const INVITE_ID_RE = /^[0-9a-f]{32}$/;
 export const MAX_BLOB_BYTES = 64 * 1024;
 
 function hashSecret(secret: string): string {
-  return new Bun.CryptoHasher("sha256").update(secret).digest("hex");
+  return new Bun.CryptoHasher('sha256').update(secret).digest('hex');
 }
 
 function mintSecret(): string {
-  return Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64url");
+  return Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString(
+    'base64url'
+  );
 }
 
 function secretMatches(secret: string, expectedHash: string): boolean {
@@ -51,95 +53,129 @@ export class TeamInviteStore {
       reply_blob TEXT,
       reply_at INTEGER
     )`);
-    db.run(`CREATE INDEX IF NOT EXISTS team_invites_expires_at ON team_invites (expires_at)`);
+    db.run(
+      `CREATE INDEX IF NOT EXISTS team_invites_expires_at ON team_invites (expires_at)`
+    );
   }
 
   private row(id: string): Row | null {
-    return this.db
-      .query<Row, [string]>(
-        `SELECT id, ciphertext, creator_secret_hash, expires_at, redeemed_at, reply_blob
-         FROM team_invites WHERE id = ?`,
-      )
-      .get(id) ?? null;
+    return (
+      this.db
+        .query<Row, [string]>(
+          `SELECT id, ciphertext, creator_secret_hash, expires_at, redeemed_at, reply_blob
+         FROM team_invites WHERE id = ?`
+        )
+        .get(id) ?? null
+    );
   }
 
   /** Never overwrites: the id is the sealed blob's AAD, so a collision means the
       caller must mint a fresh id rather than retry. */
-  create(id: string, ciphertext: string, expiresAt: number, now: number): { ok: true; creatorSecret: string } | { ok: false; error: "conflict" } {
+  create(
+    id: string,
+    ciphertext: string,
+    expiresAt: number,
+    now: number
+  ): { ok: true; creatorSecret: string } | { ok: false; error: 'conflict' } {
     const secret = mintSecret();
     const changes = this.db.run(
       `INSERT INTO team_invites (id, ciphertext, creator_secret_hash, expires_at, created_at)
        VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING`,
-      [id, ciphertext, hashSecret(secret), expiresAt, now],
+      [id, ciphertext, hashSecret(secret), expiresAt, now]
     ).changes;
-    if (changes === 0) return { ok: false, error: "conflict" };
+    if (changes === 0) return { ok: false, error: 'conflict' };
     return { ok: true, creatorSecret: secret };
   }
 
   /** Returns the ciphertext and nothing else: an unauthenticated GET must not
       confirm *why* an id is gone, only that it is. */
-  fetch(id: string, now: number): { ok: true; ciphertext: string } | { ok: false; error: "unknown" | "gone" } {
+  fetch(
+    id: string,
+    now: number
+  ):
+    | { ok: true; ciphertext: string }
+    | { ok: false; error: 'unknown' | 'gone' } {
     const row = this.row(id);
-    if (!row) return { ok: false, error: "unknown" };
-    if (row.expires_at <= now || row.redeemed_at !== null) return { ok: false, error: "gone" };
+    if (!row) return { ok: false, error: 'unknown' };
+    if (row.expires_at <= now || row.redeemed_at !== null)
+      return { ok: false, error: 'gone' };
     return { ok: true, ciphertext: row.ciphertext };
   }
 
   /** One statement decides the winner. A read-then-write here is a race two
       simultaneous redeemers can both win, handing one invite to two machines;
       the follow-up read only labels a loss that already happened. */
-  redeem(id: string, now: number): { ok: true } | { ok: false; error: "unknown" | "gone" | "redeemed" } {
+  redeem(
+    id: string,
+    now: number
+  ): { ok: true } | { ok: false; error: 'unknown' | 'gone' | 'redeemed' } {
     const won = this.db.run(
       `UPDATE team_invites SET redeemed_at = ? WHERE id = ? AND redeemed_at IS NULL AND expires_at > ?`,
-      [now, id, now],
+      [now, id, now]
     ).changes;
     if (won === 1) return { ok: true };
     const row = this.row(id);
-    if (!row) return { ok: false, error: "unknown" };
-    if (row.expires_at <= now) return { ok: false, error: "gone" };
-    return { ok: false, error: "redeemed" };
+    if (!row) return { ok: false, error: 'unknown' };
+    if (row.expires_at <= now) return { ok: false, error: 'gone' };
+    return { ok: false, error: 'redeemed' };
   }
 
   /** Write-once, by the same CAS reasoning as redeem: the joiner is
       unauthenticated here, so first-write-wins is what stops anyone who learns
       the id from overwriting the real joiner's key. */
-  putReply(id: string, blob: string, now: number): { ok: true } | { ok: false; error: "unknown" | "gone" | "exists" } {
+  putReply(
+    id: string,
+    blob: string,
+    now: number
+  ): { ok: true } | { ok: false; error: 'unknown' | 'gone' | 'exists' } {
     const stored = this.db.run(
       `UPDATE team_invites SET reply_blob = ?, reply_at = ?
        WHERE id = ? AND reply_blob IS NULL AND expires_at > ?`,
-      [blob, now, id, now],
+      [blob, now, id, now]
     ).changes;
     if (stored === 1) return { ok: true };
     const row = this.row(id);
-    if (!row) return { ok: false, error: "unknown" };
-    if (row.expires_at <= now) return { ok: false, error: "gone" };
-    return { ok: false, error: "exists" };
+    if (!row) return { ok: false, error: 'unknown' };
+    if (row.expires_at <= now) return { ok: false, error: 'gone' };
+    return { ok: false, error: 'exists' };
   }
 
   /** Revoking expires the row rather than deleting it, so the reaper is still
       the only thing that removes rows and a revoked id reads as 410 rather than
       404. Adding a `revoked_at` column would widen the schema the security
       argument rests on. */
-  revoke(id: string, secret: string, now: number): { ok: true } | { ok: false; error: "unknown" | "unauthorized" | "gone" } {
+  revoke(
+    id: string,
+    secret: string,
+    now: number
+  ): { ok: true } | { ok: false; error: 'unknown' | 'unauthorized' | 'gone' } {
     const row = this.row(id);
-    if (!row) return { ok: false, error: "unknown" };
-    if (!secretMatches(secret, row.creator_secret_hash)) return { ok: false, error: "unauthorized" };
-    if (row.expires_at <= now) return { ok: false, error: "gone" };
+    if (!row) return { ok: false, error: 'unknown' };
+    if (!secretMatches(secret, row.creator_secret_hash))
+      return { ok: false, error: 'unauthorized' };
+    if (row.expires_at <= now) return { ok: false, error: 'gone' };
     this.db.run(`UPDATE team_invites SET expires_at = 0 WHERE id = ?`, [id]);
     return { ok: true };
   }
 
-  hasReply(id: string, secret: string): { ok: true; blob: string | null } | { ok: false; error: "unauthorized" | "unknown" } {
+  hasReply(
+    id: string,
+    secret: string
+  ):
+    | { ok: true; blob: string | null }
+    | { ok: false; error: 'unauthorized' | 'unknown' } {
     const row = this.row(id);
-    if (!row) return { ok: false, error: "unknown" };
-    if (!secretMatches(secret, row.creator_secret_hash)) return { ok: false, error: "unauthorized" };
+    if (!row) return { ok: false, error: 'unknown' };
+    if (!secretMatches(secret, row.creator_secret_hash))
+      return { ok: false, error: 'unauthorized' };
     return { ok: true, blob: row.reply_blob };
   }
 
   /** Redeemed and revoked invites go out on this same pass rather than
       immediately, which is what keeps 410 distinguishable from 404 for a while. */
   prune(now: number): number {
-    return this.db.run(`DELETE FROM team_invites WHERE expires_at < ?`, [now]).changes;
+    return this.db.run(`DELETE FROM team_invites WHERE expires_at < ?`, [now])
+      .changes;
   }
 }
 
@@ -148,7 +184,11 @@ export class TeamInviteStore {
     growing with every address that ever touched the relay. */
 class RateLimiter {
   private hits = new Map<string, { window: number; count: number }>();
-  constructor(private limit: number, private windowMs: number = 60_000, private maxKeys: number = 10_000) {}
+  constructor(
+    private limit: number,
+    private windowMs: number = 60_000,
+    private maxKeys: number = 10_000
+  ) {}
 
   /** Counts this attempt and reports whether the key is now over its limit. */
   exceeded(key: string, now: number): boolean {
@@ -159,7 +199,8 @@ class RateLimiter {
       return seen.count > this.limit;
     }
     if (this.hits.size >= this.maxKeys) {
-      for (const [k, v] of this.hits) if (v.window !== window) this.hits.delete(k);
+      for (const [k, v] of this.hits)
+        if (v.window !== window) this.hits.delete(k);
     }
     this.hits.set(key, { window, count: 1 });
     return false;
@@ -169,8 +210,8 @@ class RateLimiter {
 /** Railway terminates TLS in front of the service, so the client address only
     exists in this header; it is an abuse signal, never an authorization one. */
 function sourceIp(req: Request): string {
-  const forwarded = req.headers.get("x-forwarded-for") ?? "";
-  return forwarded.split(",")[0]?.trim() || "unknown";
+  const forwarded = req.headers.get('x-forwarded-for') ?? '';
+  return forwarded.split(',')[0]?.trim() || 'unknown';
 }
 
 function text(status: number, body: string): Response {
@@ -178,7 +219,10 @@ function text(status: number, body: string): Response {
 }
 
 function json(status: number, body: unknown): Response {
-  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
 }
 
 export const MINTS_PER_MINUTE = 10;
@@ -186,10 +230,14 @@ export const AUTH_FAILURES_PER_MINUTE = 10;
 
 /** The returned handler answers null for a path this surface does not own, so
     the caller falls through to the peer-boards routes. */
-export function makeTeamInviteHandler(store: TeamInviteStore, now: () => number) {
+export function makeTeamInviteHandler(
+  store: TeamInviteStore,
+  now: () => number
+) {
   const mints = new RateLimiter(MINTS_PER_MINUTE);
   const authFailures = new RateLimiter(AUTH_FAILURES_PER_MINUTE);
-  return (req: Request, pathname: string) => handleTeamInvites(req, pathname, store, now, mints, authFailures);
+  return (req: Request, pathname: string) =>
+    handleTeamInvites(req, pathname, store, now, mints, authFailures);
 }
 
 async function handleTeamInvites(
@@ -198,104 +246,132 @@ async function handleTeamInvites(
   store: TeamInviteStore,
   now: () => number,
   mints: RateLimiter,
-  authFailures: RateLimiter,
+  authFailures: RateLimiter
 ): Promise<Response | null> {
-  if (pathname !== "/v1/invites" && !pathname.startsWith("/v1/invites/")) return null;
-  const rest = pathname === "/v1/invites" ? "" : pathname.slice("/v1/invites/".length);
+  if (pathname !== '/v1/invites' && !pathname.startsWith('/v1/invites/'))
+    return null;
+  const rest =
+    pathname === '/v1/invites' ? '' : pathname.slice('/v1/invites/'.length);
 
-  if (rest === "") {
-    if (req.method !== "POST") return text(405, "method not allowed");
-    if (mints.exceeded(sourceIp(req), now())) return text(429, "too many invites; try again in a minute");
+  if (rest === '') {
+    if (req.method !== 'POST') return text(405, 'method not allowed');
+    if (mints.exceeded(sourceIp(req), now()))
+      return text(429, 'too many invites; try again in a minute');
     const oversize = tooLarge(req);
     if (oversize) return oversize;
     let body: unknown;
-    try { body = await req.json(); } catch { return text(400, "invalid json"); }
-    const { id, ciphertext, expiresAt } = (body ?? {}) as { id?: unknown; ciphertext?: unknown; expiresAt?: unknown };
-    if (typeof id !== "string" || !INVITE_ID_RE.test(id)) return text(400, "id must be 32 lowercase hex characters");
-    if (typeof ciphertext !== "string" || !ciphertext) return text(400, "expected { ciphertext }");
-    if (Buffer.byteLength(ciphertext) > MAX_BLOB_BYTES) return text(413, "ciphertext too large");
-    if (typeof expiresAt !== "string") return text(400, "expected { expiresAt } as an ISO-8601 string");
+    try {
+      body = await req.json();
+    } catch {
+      return text(400, 'invalid json');
+    }
+    const { id, ciphertext, expiresAt } = (body ?? {}) as {
+      id?: unknown;
+      ciphertext?: unknown;
+      expiresAt?: unknown;
+    };
+    if (typeof id !== 'string' || !INVITE_ID_RE.test(id))
+      return text(400, 'id must be 32 lowercase hex characters');
+    if (typeof ciphertext !== 'string' || !ciphertext)
+      return text(400, 'expected { ciphertext }');
+    if (Buffer.byteLength(ciphertext) > MAX_BLOB_BYTES)
+      return text(413, 'ciphertext too large');
+    if (typeof expiresAt !== 'string')
+      return text(400, 'expected { expiresAt } as an ISO-8601 string');
     const expiry = Date.parse(expiresAt);
-    if (Number.isNaN(expiry) || expiry <= now()) return text(400, "expiresAt must be a future ISO-8601 timestamp");
+    if (Number.isNaN(expiry) || expiry <= now())
+      return text(400, 'expiresAt must be a future ISO-8601 timestamp');
     const created = store.create(id, ciphertext, expiry, now());
-    if (!created.ok) return text(409, "that invite id is already taken; mint a fresh one");
+    if (!created.ok)
+      return text(409, 'that invite id is already taken; mint a fresh one');
     return json(201, { id, creatorSecret: created.creatorSecret });
   }
 
-  const [id, tail, ...extra] = rest.split("/");
-  if (!id || extra.length) return text(404, "not found");
-  if (!INVITE_ID_RE.test(id)) return text(400, "id must be 32 lowercase hex characters");
+  const [id, tail, ...extra] = rest.split('/');
+  if (!id || extra.length) return text(404, 'not found');
+  if (!INVITE_ID_RE.test(id))
+    return text(400, 'id must be 32 lowercase hex characters');
 
   if (!tail) {
-    if (req.method === "GET") {
+    if (req.method === 'GET') {
       const got = store.fetch(id, now());
       if (got.ok) return json(200, { ciphertext: got.ciphertext });
-      return text(got.error === "unknown" ? 404 : 410, "gone");
+      return text(got.error === 'unknown' ? 404 : 410, 'gone');
     }
-    if (req.method === "DELETE") {
+    if (req.method === 'DELETE') {
       const secret = bearer(req);
-      if (!secret) return text(401, "unauthorized");
+      if (!secret) return text(401, 'unauthorized');
       const r = store.revoke(id, secret, now());
       if (r.ok) return new Response(null, { status: 204 });
-      if (r.error === "unauthorized") return refuse(id, authFailures, now());
-      return text(404, "gone");
+      if (r.error === 'unauthorized') return refuse(id, authFailures, now());
+      return text(404, 'gone');
     }
-    return text(405, "method not allowed");
+    return text(405, 'method not allowed');
   }
 
-  if (tail === "redeem") {
-    if (req.method !== "POST") return text(405, "method not allowed");
+  if (tail === 'redeem') {
+    if (req.method !== 'POST') return text(405, 'method not allowed');
     const r = store.redeem(id, now());
     if (r.ok) return json(200, { ok: true });
-    if (r.error === "unknown") return text(404, "gone");
-    if (r.error === "gone") return text(410, "gone");
-    return text(409, "that invite has already been redeemed");
+    if (r.error === 'unknown') return text(404, 'gone');
+    if (r.error === 'gone') return text(410, 'gone');
+    return text(409, 'that invite has already been redeemed');
   }
 
-  if (tail === "reply") {
-    if (req.method === "POST") {
+  if (tail === 'reply') {
+    if (req.method === 'POST') {
       const oversize = tooLarge(req);
       if (oversize) return oversize;
       let body: unknown;
-      try { body = await req.json(); } catch { return text(400, "invalid json"); }
+      try {
+        body = await req.json();
+      } catch {
+        return text(400, 'invalid json');
+      }
       const blob = (body as { blob?: unknown })?.blob;
-      if (typeof blob !== "string" || !blob) return text(400, "expected { blob }");
-      if (Buffer.byteLength(blob) > MAX_BLOB_BYTES) return text(413, "blob too large");
+      if (typeof blob !== 'string' || !blob)
+        return text(400, 'expected { blob }');
+      if (Buffer.byteLength(blob) > MAX_BLOB_BYTES)
+        return text(413, 'blob too large');
       const r = store.putReply(id, blob, now());
       if (r.ok) return json(200, { ok: true });
-      if (r.error === "unknown") return text(404, "gone");
-      if (r.error === "gone") return text(410, "gone");
-      return text(409, "a reply is already recorded for that invite");
+      if (r.error === 'unknown') return text(404, 'gone');
+      if (r.error === 'gone') return text(410, 'gone');
+      return text(409, 'a reply is already recorded for that invite');
     }
-    if (req.method === "GET") {
+    if (req.method === 'GET') {
       const secret = bearer(req);
-      if (!secret) return text(401, "unauthorized");
+      if (!secret) return text(401, 'unauthorized');
       const r = store.hasReply(id, secret);
-      if (!r.ok) return r.error === "unknown" ? text(404, "gone") : refuse(id, authFailures, now());
-      if (r.blob === null) return text(404, "no reply yet");
+      if (!r.ok)
+        return r.error === 'unknown'
+          ? text(404, 'gone')
+          : refuse(id, authFailures, now());
+      if (r.blob === null) return text(404, 'no reply yet');
       return json(200, { blob: r.blob });
     }
-    return text(405, "method not allowed");
+    return text(405, 'method not allowed');
   }
 
-  return text(404, "not found");
+  return text(404, 'not found');
 }
 
 /** Counted only on a wrong secret, and only after the real one has had its
     chance, so brute force is pointless without stalling the legitimate poller. */
 function refuse(id: string, authFailures: RateLimiter, now: number): Response {
   return authFailures.exceeded(id, now)
-    ? text(429, "too many failed attempts for that invite")
-    : text(401, "unauthorized");
+    ? text(429, 'too many failed attempts for that invite')
+    : text(401, 'unauthorized');
 }
 
 function tooLarge(req: Request): Response | null {
-  const declared = Number(req.headers.get("content-length"));
-  if (Number.isFinite(declared) && declared > MAX_BLOB_BYTES + 4096) return text(413, "body too large");
+  const declared = Number(req.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > MAX_BLOB_BYTES + 4096)
+    return text(413, 'body too large');
   return null;
 }
 
 function bearer(req: Request): string | null {
-  const h = req.headers.get("authorization") ?? "";
-  return h.startsWith("Bearer ") ? h.slice(7) : null;
+  const h = req.headers.get('authorization') ?? '';
+  return h.startsWith('Bearer ') ? h.slice(7) : null;
 }

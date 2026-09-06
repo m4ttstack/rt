@@ -1,8 +1,6 @@
 {
   "gitlabHost": "https://gitlab.com",
-  "projects": [
-    "group/project"
-  ],
+  "projects": ["group/project"],
   "rtRepos": {
     "your-group/your-project": "your-rt-repo-name"
   },
@@ -18,9 +16,7 @@
   "defaultMember": "your-gitlab-username",
   "staleAfterDays": 30,
   "title": "MR Board",
-  "botUsernames": [
-    "some-integration-bot"
-  ],
+  "botUsernames": ["some-integration-bot"],
   "reviewsWorkspace": "reviews",
   "respondsWorkspace": "responses",
   "doctorsWorkspace": "doctors",
@@ -55,7 +51,5 @@
   "switchboard": {
     "url": ""
   },
-  "tabs": [
-    { "id": "team", "label": "Team", "source": { "kind": "authors" } }
-  ]
+  "tabs": [{ "id": "team", "label": "Team", "source": { "kind": "authors" } }]
 }

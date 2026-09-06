@@ -1,7 +1,7 @@
-import type { MRDetail } from "@mattstack/glance";
-import { latchKindOf } from "./latch/markers.ts";
+import type { MRDetail } from '@mattstack/glance';
+import { latchKindOf } from './latch/markers.ts';
 
-export type ThreadStatus = "resolved" | "replied" | "awaiting";
+export type ThreadStatus = 'resolved' | 'replied' | 'awaiting';
 
 export interface CommentNote {
   id: number;
@@ -47,21 +47,24 @@ export function isBotUsername(username: string | null | undefined): boolean {
     escape hatch for named integration bots), or the username-heuristic flags it. */
 function isBotAuthor(
   author: { username?: string | null; name?: string | null } | null | undefined,
-  configBots: Set<string>,
+  configBots: Set<string>
 ): boolean {
   if (!author) return false;
-  if (author.username && configBots.has(author.username.toLowerCase())) return true;
+  if (author.username && configBots.has(author.username.toLowerCase()))
+    return true;
   if (author.name && configBots.has(author.name.toLowerCase())) return true;
   return isBotUsername(author.username);
 }
 
-function toNote(n: MRDetail["discussions"][number]["notes"][number]): CommentNote {
+function toNote(
+  n: MRDetail['discussions'][number]['notes'][number]
+): CommentNote {
   return {
     id: n.id,
-    name: n.author?.name ?? n.author?.username ?? "?",
+    name: n.author?.name ?? n.author?.username ?? '?',
     username: n.author?.username ?? null,
     at: n.createdAt,
-    body: n.body ?? "",
+    body: n.body ?? '',
   };
 }
 
@@ -81,49 +84,52 @@ function toNote(n: MRDetail["discussions"][number]["notes"][number]): CommentNot
 export function summarizeDiscussions(
   detail: MRDetail,
   author: string | null,
-  botUsernames: string[] = [],
+  botUsernames: string[] = []
 ): { threads: CommentThread[]; comments: GeneralComment[] } {
-  const configBots = new Set(botUsernames.map((b) => b.toLowerCase()));
+  const configBots = new Set(botUsernames.map(b => b.toLowerCase()));
   const threads: CommentThread[] = [];
   const comments: GeneralComment[] = [];
   for (const d of detail.discussions) {
-    const notes = d.notes.filter((n) => !n.system);
+    const notes = d.notes.filter(n => !n.system);
     if (!notes.length) continue;
     // The board's own latch thread is machinery, not feedback. Counting it
     // would inflate "N comments", and a spent latch is a resolved thread, so
     // it would also feed threadSummary.resolved and make an MR with no real
     // feedback read as all-resolved.
-    if (latchKindOf(notes[0]!.body ?? "")) continue;
-    const resolvable = notes.filter((n) => n.resolvable);
+    if (latchKindOf(notes[0]!.body ?? '')) continue;
+    const resolvable = notes.filter(n => n.resolvable);
     if (!resolvable.length) {
       // No resolvable note ⇒ a general MR comment, not a review thread. Skip
       // automated linkbacks and bot-authored notes (not real comments).
       for (const n of notes) {
-        if (isAutomatedNote(n.body ?? "") || isBotAuthor(n.author, configBots)) continue;
+        if (isAutomatedNote(n.body ?? '') || isBotAuthor(n.author, configBots))
+          continue;
         comments.push(toNote(n));
       }
       continue;
     }
     // Author-only thread (the author commenting on their own MR) — not feedback.
-    if (!notes.some((n) => n.author?.username && n.author.username !== author)) continue;
-    const resolved = resolvable.every((n) => n.resolved === true);
+    if (!notes.some(n => n.author?.username && n.author.username !== author))
+      continue;
+    const resolved = resolvable.every(n => n.resolved === true);
     const last = notes[notes.length - 1]!;
     const status: ThreadStatus = resolved
-      ? "resolved"
+      ? 'resolved'
       : author && last.author?.username === author
-        ? "replied"
-        : "awaiting";
+        ? 'replied'
+        : 'awaiting';
     threads.push({ status, notes: notes.map(toNote) });
   }
   // "Author replied elsewhere": the latest general comment the author left. Any
   // awaiting thread whose last note predates it counts as replied.
   const authorLastCommentAt = comments
-    .filter((c) => author && c.username === author)
-    .reduce((max, c) => (c.at > max ? c.at : max), "");
+    .filter(c => author && c.username === author)
+    .reduce((max, c) => (c.at > max ? c.at : max), '');
   if (authorLastCommentAt) {
     for (const t of threads) {
-      const lastAt = t.notes[t.notes.length - 1]?.at ?? "";
-      if (t.status === "awaiting" && lastAt && lastAt < authorLastCommentAt) t.status = "replied";
+      const lastAt = t.notes[t.notes.length - 1]?.at ?? '';
+      if (t.status === 'awaiting' && lastAt && lastAt < authorLastCommentAt)
+        t.status = 'replied';
     }
   }
   comments.sort((a, b) => a.at.localeCompare(b.at));
@@ -133,13 +139,16 @@ export function summarizeDiscussions(
 }
 
 /** Just the resolvable reviewer threads (back-compat; see summarizeDiscussions). */
-export function summarizeThreads(detail: MRDetail, author: string | null): CommentThread[] {
+export function summarizeThreads(
+  detail: MRDetail,
+  author: string | null
+): CommentThread[] {
   return summarizeDiscussions(detail, author).threads;
 }
 
 /** Count of reviewer threads still needing attention (not yet resolved). */
 export function unresolvedReviewerCount(threads: CommentThread[]): number {
-  return threads.filter((t) => t.status !== "resolved").length;
+  return threads.filter(t => t.status !== 'resolved').length;
 }
 
 /** Per-status thread counts, for the row's comment-action dot. */

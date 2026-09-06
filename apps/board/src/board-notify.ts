@@ -1,7 +1,8 @@
-import { readFileSync } from "fs";
-import { join } from "path";
-import { APP_ROOT } from "./app-root.ts";
-import type { AgentSignal } from "./agent-signal.ts";
+import { readFileSync } from 'fs';
+import { join } from 'path';
+
+import type { AgentSignal } from './agent-signal.ts';
+import { APP_ROOT } from './app-root.ts';
 
 const DEFAULT_PORT = 7930;
 
@@ -18,13 +19,13 @@ function validPort(value: unknown): number | undefined {
     migration (env PORT is now the sole override), so there is no longer a
     config.json tier here. */
 export function readBoardPort(
-  portFilePath: string = join(APP_ROOT, "state", "board-port"),
+  portFilePath: string = join(APP_ROOT, 'state', 'board-port')
 ): number {
   const fromEnv = validPort(process.env.MR_BOARD_PORT);
   if (fromEnv !== undefined) return fromEnv;
 
   try {
-    const fromFile = validPort(readFileSync(portFilePath, "utf8").trim());
+    const fromFile = validPort(readFileSync(portFilePath, 'utf8').trim());
     if (fromFile !== undefined) return fromFile;
   } catch {
     // no runtime port file yet -- fall through to the default
@@ -37,19 +38,26 @@ export function readBoardPort(
     whatever slack reaction that status means (see signalEmoji). Best-effort by
     design: the state file the CLI already wrote is the source of truth, so a
     board that is down or restarting must never fail the agent's status write. */
-export async function notifyBoard(signal: AgentSignal, port: number = readBoardPort()): Promise<void> {
+export async function notifyBoard(
+  signal: AgentSignal,
+  port: number = readBoardPort()
+): Promise<void> {
   if (!signal.mrUrl) return;
   const url = `http://localhost:${port}/agent/status`;
   try {
     const res = await fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify(signal),
     });
     if (!res.ok) {
-      console.error(`board /agent/status returned ${res.status}: ${await res.text().catch(() => "")}`);
+      console.error(
+        `board /agent/status returned ${res.status}: ${await res.text().catch(() => '')}`
+      );
     }
   } catch (err) {
-    console.error(`board /agent/status unreachable: ${err instanceof Error ? err.message : err}`);
+    console.error(
+      `board /agent/status unreachable: ${err instanceof Error ? err.message : err}`
+    );
   }
 }

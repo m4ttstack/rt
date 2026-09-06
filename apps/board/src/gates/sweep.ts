@@ -1,13 +1,13 @@
-import type { GateRow } from "@mattstack/rt-client";
-import type { ReviewState } from "../review-state.ts";
-import type { RespondState } from "../respond-state.ts";
-import type { DoctorState } from "../doctor-state.ts";
+import type { GateRow } from '@mattstack/rt-client';
+import type { DoctorState } from '../doctor-state.ts';
+import type { RespondState } from '../respond-state.ts';
+import type { ReviewState } from '../review-state.ts';
 
 /** Which board lifecycle a gate kind's answered-state and tab belong to. */
-export type GateDomain = "review" | "respond" | "doctor";
+export type GateDomain = 'review' | 'respond' | 'doctor';
 
 export interface SweepAction {
-  kind: "park" | "close-missed-done";
+  kind: 'park' | 'close-missed-done';
   domain: GateDomain;
   mrUrl: string;
   tabId?: string;
@@ -22,13 +22,18 @@ export interface GateSweepStates {
   doctors: Map<string, DoctorState>;
 }
 
-const MR_SUBJECT_PREFIX = "mr:";
+const MR_SUBJECT_PREFIX = 'mr:';
 
 /** Every gate kind the board knows, kept beside domainForKind so the two
     can never drift apart -- resume.ts's buildResumers walks this list to
     build the resumers map, so a kind added here with no matching resumer
     fails that wiring test instead of silently resuming as unwired. */
-export const GATE_KINDS = ["review-post", "respond-plan", "respond-post", "doctor-escalation"] as const;
+export const GATE_KINDS = [
+  'review-post',
+  'respond-plan',
+  'respond-post',
+  'doctor-escalation',
+] as const;
 
 /** A kind outside this map (present or future) is skipped by the sweep
     entirely -- silently, since an unrecognized kind has no lifecycle map to
@@ -37,15 +42,19 @@ export const GATE_KINDS = ["review-post", "respond-plan", "respond-post", "docto
     label prefix and a state writer for `gate open`, so the two never drift
     against each other. */
 export function domainForKind(kind: string): GateDomain | undefined {
-  if (kind === "review-post") return "review";
-  if (kind === "respond-plan" || kind === "respond-post") return "respond";
-  if (kind === "doctor-escalation") return "doctor";
+  if (kind === 'review-post') return 'review';
+  if (kind === 'respond-plan' || kind === 'respond-post') return 'respond';
+  if (kind === 'doctor-escalation') return 'doctor';
   return undefined;
 }
 
-function tabIdFor(domain: GateDomain, mrUrl: string, states: GateSweepStates): string | undefined {
-  if (domain === "review") return states.reviews.get(mrUrl)?.tabId;
-  if (domain === "respond") return states.responds.get(mrUrl)?.tabId;
+function tabIdFor(
+  domain: GateDomain,
+  mrUrl: string,
+  states: GateSweepStates
+): string | undefined {
+  if (domain === 'review') return states.reviews.get(mrUrl)?.tabId;
+  if (domain === 'respond') return states.responds.get(mrUrl)?.tabId;
   return states.doctors.get(mrUrl)?.tabId;
 }
 
@@ -77,7 +86,7 @@ export function planSweep(
   now: number,
   graceMs: number,
   onUnknownKind?: (row: GateRow) => void,
-  warnedUnknownGateIds: Set<string> = new Set(),
+  warnedUnknownGateIds: Set<string> = new Set()
 ): SweepAction[] {
   const actions: SweepAction[] = [];
   const openByDomain: Record<GateDomain, Set<string>> = {
@@ -95,41 +104,68 @@ export function planSweep(
       // caller passes a seen-set that survives across sweep passes (the
       // server's setInterval loop) so a foreign kind logs once per gate id,
       // not once per minute for as long as the row is retained.
-      if ((row.status === "open" || row.status === "parked") && !warnedUnknownGateIds.has(row.id)) {
+      if (
+        (row.status === 'open' || row.status === 'parked') &&
+        !warnedUnknownGateIds.has(row.id)
+      ) {
         warnedUnknownGateIds.add(row.id);
         onUnknownKind?.(row);
       }
       continue;
     }
     const mrUrl = row.subject.slice(MR_SUBJECT_PREFIX.length);
-    if (row.status !== "open") continue;
+    if (row.status !== 'open') continue;
     openByDomain[domain].add(mrUrl);
     if (now - row.openedAt >= graceMs) {
-      actions.push({ kind: "park", domain, mrUrl, tabId: tabIdFor(domain, mrUrl, states), gateId: row.id });
+      actions.push({
+        kind: 'park',
+        domain,
+        mrUrl,
+        tabId: tabIdFor(domain, mrUrl, states),
+        gateId: row.id,
+      });
     }
   }
 
   for (const [mrUrl, review] of states.reviews) {
-    if (review.status !== "done" || !review.tabId) continue;
+    if (review.status !== 'done' || !review.tabId) continue;
     if (openByDomain.review.has(mrUrl)) continue;
-    actions.push({ kind: "close-missed-done", domain: "review", mrUrl, tabId: review.tabId });
+    actions.push({
+      kind: 'close-missed-done',
+      domain: 'review',
+      mrUrl,
+      tabId: review.tabId,
+    });
   }
   for (const [mrUrl, respond] of states.responds) {
-    if (respond.status !== "done" || !respond.tabId) continue;
+    if (respond.status !== 'done' || !respond.tabId) continue;
     if (openByDomain.respond.has(mrUrl)) continue;
-    actions.push({ kind: "close-missed-done", domain: "respond", mrUrl, tabId: respond.tabId });
+    actions.push({
+      kind: 'close-missed-done',
+      domain: 'respond',
+      mrUrl,
+      tabId: respond.tabId,
+    });
   }
   for (const [mrUrl, doctor] of states.doctors) {
-    if (doctor.status !== "done" || !doctor.tabId) continue;
+    if (doctor.status !== 'done' || !doctor.tabId) continue;
     if (openByDomain.doctor.has(mrUrl)) continue;
-    actions.push({ kind: "close-missed-done", domain: "doctor", mrUrl, tabId: doctor.tabId });
+    actions.push({
+      kind: 'close-missed-done',
+      domain: 'doctor',
+      mrUrl,
+      tabId: doctor.tabId,
+    });
   }
 
   return actions;
 }
 
 export interface PruneOffBoardGatesIo {
-  gateClose(payload: { id: string; reason: "abandoned" | "superseded" | "pruned" }): Promise<unknown>;
+  gateClose(payload: {
+    id: string;
+    reason: 'abandoned' | 'superseded' | 'pruned';
+  }): Promise<unknown>;
   logError(message: string): void;
 }
 
@@ -143,17 +179,19 @@ export interface PruneOffBoardGatesIo {
 export async function pruneOffBoardGates(
   rows: GateRow[],
   onBoard: Set<string>,
-  io: PruneOffBoardGatesIo,
+  io: PruneOffBoardGatesIo
 ): Promise<void> {
   for (const row of rows) {
     if (!row.subject.startsWith(MR_SUBJECT_PREFIX)) continue;
-    if (row.status !== "open" && row.status !== "parked") continue;
+    if (row.status !== 'open' && row.status !== 'parked') continue;
     const mrUrl = row.subject.slice(MR_SUBJECT_PREFIX.length);
     if (onBoard.has(mrUrl)) continue;
     try {
-      await io.gateClose({ id: row.id, reason: "pruned" });
+      await io.gateClose({ id: row.id, reason: 'pruned' });
     } catch (err) {
-      io.logError(`gate prune: gateClose(${row.id}) failed for ${mrUrl}: ${err instanceof Error ? err.message : err}`);
+      io.logError(
+        `gate prune: gateClose(${row.id}) failed for ${mrUrl}: ${err instanceof Error ? err.message : err}`
+      );
     }
   }
 }

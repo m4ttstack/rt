@@ -1,6 +1,6 @@
-import { emptyMrMemory, rollDay, type DispatchMemory } from "./memory.ts";
+import { emptyMrMemory, rollDay, type DispatchMemory } from './memory.ts';
 
-export type PipelineState = "passed" | "running" | "failed" | "none";
+export type PipelineState = 'passed' | 'running' | 'failed' | 'none';
 
 export interface OwnMrFacts {
   mrUrl: string;
@@ -23,7 +23,7 @@ export interface OwnMrFacts {
   isStacked: boolean;
 }
 
-export type EdgeKind = "pipeline-red" | "needs-rebase";
+export type EdgeKind = 'pipeline-red' | 'needs-rebase';
 
 export interface Edge {
   mrUrl: string;
@@ -37,9 +37,16 @@ export interface Edge {
     day, and RE-ARM the needs-rebase latch when the MR is observed clean.
     Handled-marking is deliberately NOT here -- a cooldown-skipped edge must
     re-fire on the next run (spec §6), so only dispatch/escalate marks. */
-export function observe(mem: DispatchMemory, mrs: OwnMrFacts[], dayStamp: string): void {
+export function observe(
+  mem: DispatchMemory,
+  mrs: OwnMrFacts[],
+  dayStamp: string
+): void {
   for (const facts of mrs) {
-    const m = rollDay(mem.mrs[facts.mrUrl] ?? emptyMrMemory(dayStamp), dayStamp);
+    const m = rollDay(
+      mem.mrs[facts.mrUrl] ?? emptyMrMemory(dayStamp),
+      dayStamp
+    );
     if (!facts.needsRebase) m.lastNeedsRebase = false;
     mem.mrs[facts.mrUrl] = m;
   }
@@ -51,11 +58,27 @@ export function detectEdges(mem: DispatchMemory, mrs: OwnMrFacts[]): Edge[] {
   for (const facts of mrs) {
     const m = mem.mrs[facts.mrUrl];
     if (!m) continue;
-    if (facts.pipelineState === "failed" && facts.pipelineId !== null && facts.pipelineId !== m.lastHandledPipelineId) {
-      edges.push({ mrUrl: facts.mrUrl, iid: facts.iid, kind: "pipeline-red", pipelineId: facts.pipelineId, author: facts.author });
+    if (
+      facts.pipelineState === 'failed' &&
+      facts.pipelineId !== null &&
+      facts.pipelineId !== m.lastHandledPipelineId
+    ) {
+      edges.push({
+        mrUrl: facts.mrUrl,
+        iid: facts.iid,
+        kind: 'pipeline-red',
+        pipelineId: facts.pipelineId,
+        author: facts.author,
+      });
     }
     if (facts.needsRebase && !m.lastNeedsRebase) {
-      edges.push({ mrUrl: facts.mrUrl, iid: facts.iid, kind: "needs-rebase", pipelineId: facts.pipelineId, author: facts.author });
+      edges.push({
+        mrUrl: facts.mrUrl,
+        iid: facts.iid,
+        kind: 'needs-rebase',
+        pipelineId: facts.pipelineId,
+        author: facts.author,
+      });
     }
   }
   return edges;
@@ -65,6 +88,6 @@ export function detectEdges(mem: DispatchMemory, mrs: OwnMrFacts[]): Edge[] {
 export function markHandled(mem: DispatchMemory, edge: Edge): void {
   const m = mem.mrs[edge.mrUrl];
   if (!m) return;
-  if (edge.kind === "pipeline-red") m.lastHandledPipelineId = edge.pipelineId;
-  if (edge.kind === "needs-rebase") m.lastNeedsRebase = true;
+  if (edge.kind === 'pipeline-red') m.lastHandledPipelineId = edge.pipelineId;
+  if (edge.kind === 'needs-rebase') m.lastNeedsRebase = true;
 }

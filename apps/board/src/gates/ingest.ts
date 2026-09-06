@@ -1,4 +1,4 @@
-import type { GateRow as FacilityGateRow } from "@mattstack/rt-client";
+import type { GateRow as FacilityGateRow } from '@mattstack/rt-client';
 
 /** Shape shared by a relay `("event", frame)` push and an `events:list` row --
     both carry a bus topic and its payload, which is all the cache feed and
@@ -23,7 +23,7 @@ export interface GateReconcileTarget {
 const GATE_BUS_TOPIC_RE = /^gate\/[^/]+\/[^/]+$/;
 
 function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null;
+  return typeof v === 'object' && v !== null;
 }
 
 /** True for a `gate/**` bus frame whose payload names an MR-scoped subject
@@ -33,7 +33,7 @@ function isBoardGateFrame(frame: GateEventFrame): boolean {
   if (!GATE_BUS_TOPIC_RE.test(frame.topic)) return false;
   if (!isRecord(frame.payload)) return false;
   const subject = frame.payload.subject;
-  return typeof subject === "string" && subject.startsWith("mr:");
+  return typeof subject === 'string' && subject.startsWith('mr:');
 }
 
 /**
@@ -41,14 +41,26 @@ function isBoardGateFrame(frame: GateEventFrame): boolean {
  * updates the cache and runs `notify` (the board's SSE nudge) so open tabs
  * refresh; anything else is dropped silently.
  */
-export function ingestRelayFrame(cache: GateCacheTarget, frame: GateEventFrame, notify: () => void): void {
+export function ingestRelayFrame(
+  cache: GateCacheTarget,
+  frame: GateEventFrame,
+  notify: () => void
+): void {
   if (!isBoardGateFrame(frame)) return;
   cache.applyEvent(frame);
   notify();
 }
 
-type GateListPayload = { subjectPrefix: string; cursor?: number; limit?: number };
-type GateListResult = { ok: boolean; data?: { gates: FacilityGateRow[]; cursor: number }; error?: string };
+type GateListPayload = {
+  subjectPrefix: string;
+  cursor?: number;
+  limit?: number;
+};
+type GateListResult = {
+  ok: boolean;
+  data?: { gates: FacilityGateRow[]; cursor: number };
+  error?: string;
+};
 
 /** Page size for every `gate:list` paging loop in this module. The daemon's
     `cursor` is a resume position, not a done-signal -- it is non-zero on
@@ -63,19 +75,32 @@ export const GATE_LIST_PAGE_LIMIT = 200;
  * was down still opens with current gates rather than an empty cache
  * waiting on the next bus event.
  */
-export async function reconcileGatesOnBoot(list: (payload: GateListPayload) => Promise<GateListResult>, cache: GateReconcileTarget): Promise<void> {
+export async function reconcileGatesOnBoot(
+  list: (payload: GateListPayload) => Promise<GateListResult>,
+  cache: GateReconcileTarget
+): Promise<void> {
   const rows: FacilityGateRow[] = [];
   let cursor: number | undefined;
   for (;;) {
-    const res = await list({ subjectPrefix: "mr:", cursor, limit: GATE_LIST_PAGE_LIMIT });
+    const res = await list({
+      subjectPrefix: 'mr:',
+      cursor,
+      limit: GATE_LIST_PAGE_LIMIT,
+    });
     if (!res.ok || !res.data) {
-      console.error(`gate boot reconcile: gate:list failed: ${res.error ?? "unknown error"}`);
+      console.error(
+        `gate boot reconcile: gate:list failed: ${res.error ?? 'unknown error'}`
+      );
       break;
     }
     rows.push(...res.data.gates);
     // A partial page ends the pass; the repeated-cursor check is a safety
     // net against a daemon that returns a full page with no forward progress.
-    if (res.data.gates.length < GATE_LIST_PAGE_LIMIT || res.data.cursor === cursor) break;
+    if (
+      res.data.gates.length < GATE_LIST_PAGE_LIMIT ||
+      res.data.cursor === cursor
+    )
+      break;
     cursor = res.data.cursor;
   }
   cache.reconcile(rows);
@@ -92,7 +117,7 @@ export interface EventBridgeRule {
 
 /** The board's pre-facility bridge pattern, kept only so `ensureBridgeRule`
     can replace a rule a prior board version left behind. */
-const LEGACY_GATE_OPENED_PATTERN = "board/gate/opened/*";
+const LEGACY_GATE_OPENED_PATTERN = 'board/gate/opened/*';
 
 /** The rule this board contributes so opening a gate raises a desktop
     notification. `{label}` and `{subject}` interpolate straight from the
@@ -102,10 +127,10 @@ const LEGACY_GATE_OPENED_PATTERN = "board/gate/opened/*";
     payload-driven on the daemon side (a payload `paneId` matching the
     focused pane drops the notification): no field on the rule itself. */
 export const GATE_OPENED_BRIDGE_RULE: EventBridgeRule = {
-  pattern: "gate/opened/*",
-  category: "gate",
-  title: "{label}",
-  message: "{subject}",
+  pattern: 'gate/opened/*',
+  category: 'gate',
+  title: '{label}',
+  message: '{subject}',
 };
 
 /**
@@ -116,9 +141,14 @@ export const GATE_OPENED_BRIDGE_RULE: EventBridgeRule = {
  * duplicate alongside the new one. Every other entry -- other apps' rules,
  * hand edits -- rides along untouched.
  */
-export function ensureBridgeRule(read: () => EventBridgeRule[], write: (next: EventBridgeRule[]) => void): void {
+export function ensureBridgeRule(
+  read: () => EventBridgeRule[],
+  write: (next: EventBridgeRule[]) => void
+): void {
   const current = read();
-  if (current.some((r) => r.pattern === GATE_OPENED_BRIDGE_RULE.pattern)) return;
-  const withoutLegacy = current.filter((r) => r.pattern !== LEGACY_GATE_OPENED_PATTERN);
+  if (current.some(r => r.pattern === GATE_OPENED_BRIDGE_RULE.pattern)) return;
+  const withoutLegacy = current.filter(
+    r => r.pattern !== LEGACY_GATE_OPENED_PATTERN
+  );
   write([...withoutLegacy, GATE_OPENED_BRIDGE_RULE]);
 }

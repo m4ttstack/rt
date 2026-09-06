@@ -1,5 +1,5 @@
-import { join } from "path";
-import type { BunPlugin } from "bun";
+import { join } from 'path';
+import type { BunPlugin } from 'bun';
 
 // ONE React in the bundle, pinned by resolved path.
 //
@@ -32,9 +32,9 @@ import type { BunPlugin } from "bun";
 // given ours and break at render, not at resolve -- so this plugin, not the
 // lockfile, is where that investigation starts.
 const reactSingleton: BunPlugin = {
-  name: "react-singleton",
+  name: 'react-singleton',
   setup(builder) {
-    builder.onResolve({ filter: /^react(-dom)?(\/.*)?$/ }, (args) => ({
+    builder.onResolve({ filter: /^react(-dom)?(\/.*)?$/ }, args => ({
       path: Bun.resolveSync(args.path, import.meta.dir),
     }));
   },
@@ -53,14 +53,14 @@ export interface ClientBundle {
  */
 export async function buildClientBundle(): Promise<ClientBundle> {
   const build = await Bun.build({
-    entrypoints: [join(import.meta.dir, "client", "main.tsx")],
-    target: "browser",
+    entrypoints: [join(import.meta.dir, 'client', 'main.tsx')],
+    target: 'browser',
     minify: true,
     plugins: [reactSingleton],
   });
   if (!build.success) {
-    console.error(build.logs.join("\n"));
-    throw new Error("client bundle failed");
+    console.error(build.logs.join('\n'));
+    throw new Error('client bundle failed');
   }
   // The client entry imports the kit's theme.css + canvas.css, so the bundle is
   // now a JS chunk *and* a CSS chunk. Discriminate on `kind`, not on the file
@@ -74,9 +74,20 @@ export async function buildClientBundle(): Promise<ClientBundle> {
   // imports silently vanished, which would boot the board with no token block at
   // all (every var(--*) computing to `initial` -- black text on a transparent
   // ground). Better a boot failure than a black board.
-  const jsOutputs = build.outputs.filter((o) => o.kind === "entry-point");
-  const cssOutputs = build.outputs.filter((o) => o.kind === "asset" && o.path.endsWith(".css"));
-  if (jsOutputs.length !== 1) throw new Error(`expected 1 JS entry-point output, got ${jsOutputs.length}`);
-  if (cssOutputs.length !== 1) throw new Error(`expected 1 CSS asset output (tui-kit theme + canvas), got ${cssOutputs.length}`);
-  return { appJs: await jsOutputs[0]!.text(), appCss: await cssOutputs[0]!.text() };
+  const jsOutputs = build.outputs.filter(o => o.kind === 'entry-point');
+  const cssOutputs = build.outputs.filter(
+    o => o.kind === 'asset' && o.path.endsWith('.css')
+  );
+  if (jsOutputs.length !== 1)
+    throw new Error(
+      `expected 1 JS entry-point output, got ${jsOutputs.length}`
+    );
+  if (cssOutputs.length !== 1)
+    throw new Error(
+      `expected 1 CSS asset output (tui-kit theme + canvas), got ${cssOutputs.length}`
+    );
+  return {
+    appJs: await jsOutputs[0]!.text(),
+    appCss: await cssOutputs[0]!.text(),
+  };
 }

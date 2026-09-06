@@ -1,28 +1,31 @@
 // Headless policy engine, second entry point of this repo (working name).
 // rt cron is the intended caller (spec §5); a human running it by hand gets
 // the same one idempotent evaluation pass. The board server NEVER runs this.
-import { GitLabProvider, parseRepoId, type MRDetail } from "@mattstack/glance";
-import { readDiscussions, readProjectMRs } from "@mattstack/rt-client";
-import { loadConfig, loadGitLabToken, loadSwitchboardToken, repoIdentityField, resolveLaunchRepo, loadAgentSettings } from "../src/config.ts";
-import { buildBoard, projectPathFromWebUrl } from "../src/data.ts";
-import { doctorFilePath, readDoctorStates, writeDoctorState } from "../src/doctor-state.ts";
-import { launchDoctor } from "../src/herdr.ts";
-import { latchGateway } from "../src/latch/gateway.ts";
-import { resolveLaunchSkill } from "../src/manifest-bindings.ts";
-import { makeEnvelope } from "../src/peer/envelope.ts";
-import { makeSwitchboardClient } from "../src/peer/client.ts";
-import { markNudgeHandled, readNudges } from "../src/peer/nudges.ts";
-import { drainOutbox, enqueueOutbox } from "../src/peer/outbox.ts";
-import { launchReReview } from "../src/review-launch.ts";
-import { readReviewStates } from "../src/review-state.ts";
-import { appendAudit } from "../src/triage/audit.ts";
-import { loadReReviewConfig, loadTriageConfig } from "../src/triage/config.ts";
-import { runLatchPass, type LatchMrFacts } from "../src/triage/latch.ts";
-import { readMemory, releaseMemoryLock, tryAcquireMemoryLock, writeMemory } from "../src/triage/memory.ts";
-import { runNudgePass } from "../src/triage/nudge.ts";
-import { notifyEscalation } from "../src/triage/notify.ts";
-import { collectProjectPRs } from "../src/triage/projects.ts";
-import { numericPipelineId, resolveDispatchIdentity, runTriage } from "../src/triage/run.ts";
+import { GitLabProvider, parseRepoId, type MRDetail } from '@mattstack/glance';
+import { readDiscussions, readProjectMRs } from '@mattstack/rt-client';
+import {
+  loadAgentSettings,
+  loadConfig,
+  loadGitLabToken,
+  loadSwitchboardToken,
+  repoIdentityField,
+  resolveLaunchRepo,
+} from '../src/config.ts';
+import { buildBoard, projectPathFromWebUrl } from '../src/data.ts';
+import {
+  doctorFilePath,
+  readDoctorStates,
+  writeDoctorState,
+} from '../src/doctor-state.ts';
+import { launchDoctor } from '../src/herdr.ts';
+import { latchGateway } from '../src/latch/gateway.ts';
+import { resolveLaunchSkill } from '../src/manifest-bindings.ts';
+import { makeSwitchboardClient } from '../src/peer/client.ts';
+import { makeEnvelope } from '../src/peer/envelope.ts';
+import { markNudgeHandled, readNudges } from '../src/peer/nudges.ts';
+import { drainOutbox, enqueueOutbox } from '../src/peer/outbox.ts';
+import { launchReReview } from '../src/review-launch.ts';
+import { readReviewStates } from '../src/review-state.ts';
 import {
   claimLease,
   DEFAULT_ATTENDANT_TTL_SECONDS,
@@ -31,8 +34,25 @@ import {
   readLease,
   readLeaseByBranch,
   releaseLease,
-} from "../src/triage/attendant.ts";
-import type { OwnMrFacts } from "../src/triage/edge.ts";
+} from '../src/triage/attendant.ts';
+import { appendAudit } from '../src/triage/audit.ts';
+import { loadReReviewConfig, loadTriageConfig } from '../src/triage/config.ts';
+import type { OwnMrFacts } from '../src/triage/edge.ts';
+import { runLatchPass, type LatchMrFacts } from '../src/triage/latch.ts';
+import {
+  readMemory,
+  releaseMemoryLock,
+  tryAcquireMemoryLock,
+  writeMemory,
+} from '../src/triage/memory.ts';
+import { notifyEscalation } from '../src/triage/notify.ts';
+import { runNudgePass } from '../src/triage/nudge.ts';
+import { collectProjectPRs } from '../src/triage/projects.ts';
+import {
+  numericPipelineId,
+  resolveDispatchIdentity,
+  runTriage,
+} from '../src/triage/run.ts';
 
 // Fully disabled is the common cron-invoked case: decide it BEFORE taking the
 // lock, because process.exit() skips finally blocks and would strand the lock
@@ -58,8 +78,14 @@ try {
   // path), since this pipeline works from mrUrl alone and never builds a
   // BoardMR of its own.
   const repoForMrUrl = (mrUrl: string): string => {
-    const projectPath = projectPathFromWebUrl(mrUrl, boardConfig.gitlabHost) ?? "";
-    return resolveLaunchRepo(boardConfig.rtRepos[projectPath] ?? null, boardConfig.gitlabHost, projectPath, mrUrl);
+    const projectPath =
+      projectPathFromWebUrl(mrUrl, boardConfig.gitlabHost) ?? '';
+    return resolveLaunchRepo(
+      boardConfig.rtRepos[projectPath] ?? null,
+      boardConfig.gitlabHost,
+      projectPath,
+      mrUrl
+    );
   };
 
   // Own-MR identity from the GitLab token (ruling: never defaultMember),
@@ -69,10 +95,12 @@ try {
   // reclaims it.
   const username = await resolveDispatchIdentity(memory, async () => {
     const token = await loadGitLabToken();
-    if (!token) throw new Error("triage: no gitlab token available for identity");
+    if (!token)
+      throw new Error('triage: no gitlab token available for identity');
     return new GitLabProvider(boardConfig.gitlabHost, token).validateToken();
   });
-  if (!username) throw new Error("triage: no gitlab token available for identity");
+  if (!username)
+    throw new Error('triage: no gitlab token available for identity');
 
   // SCOPE (review fix 1): triage's MR scope is deliberately the BOARD's
   // visibility scope -- buildBoard applies the member, own-draft, stale-window,
@@ -87,8 +115,8 @@ try {
   const fetchOwnMrs = async (): Promise<OwnMrFacts[]> => {
     const { prs, tags } = await collectProjectPRs(boardConfig, readProjectMRs);
     return buildBoard(prs, boardConfig, undefined, tags)
-      .filter((m) => m.author.username === username && m.webUrl)
-      .map((m) => ({
+      .filter(m => m.author.username === username && m.webUrl)
+      .map(m => ({
         mrUrl: m.webUrl!,
         iid: m.iid,
         pipelineId: m.pipeline ? numericPipelineId(m.pipeline.id) : null,
@@ -110,15 +138,16 @@ try {
     const states = readReviewStates();
     const { prs, tags } = await collectProjectPRs(boardConfig, readProjectMRs);
     return buildBoard(prs, boardConfig, undefined, tags)
-      .filter((m) => m.webUrl && states.get(m.webUrl)?.status === "done")
-      .map((m) => ({
+      .filter(m => m.webUrl && states.get(m.webUrl)?.status === 'done')
+      .map(m => ({
         mrUrl: m.webUrl!,
         iid: m.iid,
         projectId: parseRepoId(m.repositoryId),
-        projectPath: projectPathFromWebUrl(m.webUrl!, boardConfig.gitlabHost) ?? "",
+        projectPath:
+          projectPathFromWebUrl(m.webUrl!, boardConfig.gitlabHost) ?? '',
         // Encoded, not the bare rtRepos value: readDetail below passes this
         // straight to readDiscussions, which is daemon-identity-keyed.
-        rtRepo: repoIdentityField(m.rtRepo) ?? "",
+        rtRepo: repoIdentityField(m.rtRepo) ?? '',
         isApproved: !!m.reviews.isApproved,
       }));
   };
@@ -135,7 +164,7 @@ try {
     readDoctorStates,
     launchDoctor,
     writeDoctorState,
-    doctorFilePath: (mrUrl) => doctorFilePath(mrUrl),
+    doctorFilePath: mrUrl => doctorFilePath(mrUrl),
     appendAudit,
     notify: (title, message) => notifyEscalation(title, message, triage.notify),
     memory,
@@ -143,10 +172,12 @@ try {
     now: () => Date.now(),
     // BOARD-10: one CI attendant per MR (plain files under ~/.mattstack/ci-attendants).
     attendants: {
-      read: (mrUrl, iid) => readLease(defaultAttendantsDir(), mrUrl, iid, Date.now()),
+      read: (mrUrl, iid) =>
+        readLease(defaultAttendantsDir(), mrUrl, iid, Date.now()),
       // BOARD-12: lets the stack preflight see an attendant on a parent MR
       // that falls outside the board's scope window.
-      readByBranch: (branch) => readLeaseByBranch(defaultAttendantsDir(), branch, Date.now()),
+      readByBranch: branch =>
+        readLeaseByBranch(defaultAttendantsDir(), branch, Date.now()),
       claim: (mrUrl, _iid, branch) =>
         claimLease(
           defaultAttendantsDir(),
@@ -155,24 +186,37 @@ try {
             // BOARD-12: watch-ci has always recorded its branch; the doctor
             // now does too, so readByBranch sees both holders.
             branch,
-            holder: "doctor",
-            sessionLabel: "mr-board-triage",
+            holder: 'doctor',
+            sessionLabel: 'mr-board-triage',
             pid: process.pid,
             startedAt: Date.now(),
             heartbeatAt: Date.now(),
             ttlSeconds: DEFAULT_ATTENDANT_TTL_SECONDS,
           },
-          Date.now(),
+          Date.now()
         ).ok,
-      heartbeat: (mrUrl, iid) => heartbeatLease(defaultAttendantsDir(), mrUrl, iid, "doctor", Date.now()),
-      release: (mrUrl, iid) => releaseLease(defaultAttendantsDir(), mrUrl, iid, "doctor"),
+      heartbeat: (mrUrl, iid) =>
+        heartbeatLease(
+          defaultAttendantsDir(),
+          mrUrl,
+          iid,
+          'doctor',
+          Date.now()
+        ),
+      release: (mrUrl, iid) =>
+        releaseLease(defaultAttendantsDir(), mrUrl, iid, 'doctor'),
     },
   });
-  console.log(`triage: dispatched ${result.dispatched}, escalated ${result.escalated}, skipped ${result.skipped}`);
+  console.log(
+    `triage: dispatched ${result.dispatched}, escalated ${result.escalated}, skipped ${result.skipped}`
+  );
 
   const switchboardToken = await loadSwitchboardToken();
   if (boardConfig.switchboard.url && switchboardToken) {
-    const client = makeSwitchboardClient(boardConfig.switchboard.url, switchboardToken);
+    const client = makeSwitchboardClient(
+      boardConfig.switchboard.url,
+      switchboardToken
+    );
     const nudgeResult = await runNudgePass({
       readNudges,
       markNudgeHandled: (id, r, reason) => markNudgeHandled(id, r, reason),
@@ -184,19 +228,23 @@ try {
           workspaceLabel: boardConfig.reviewsWorkspace,
           // BOARD-14: manifest binding when present, else "" (the generic wrapper) --
           // same resolution the board's own HTTP re-review launches use.
-          skill: resolveLaunchSkill("review", mrUrl, boardConfig),
+          skill: resolveLaunchSkill('review', mrUrl, boardConfig),
           ...loadAgentSettings(),
           claudeCommand: boardConfig.claudeCommand,
         }),
-      publishOutcome: (to, payload) => enqueueOutbox(makeEnvelope(to, "nudge-outcome", payload)),
+      publishOutcome: (to, payload) =>
+        enqueueOutbox(makeEnvelope(to, 'nudge-outcome', payload)),
       memory,
       cfg: triage,
       appendAudit,
-      notify: (title, message) => notifyEscalation(title, message, triage.notify),
+      notify: (title, message) =>
+        notifyEscalation(title, message, triage.notify),
       now: () => Date.now(),
     });
-    await drainOutbox((d) => client.publish(d));
-    console.log(`nudges: dispatched ${nudgeResult.dispatched}, rejected ${nudgeResult.rejected}, expired ${nudgeResult.expired}, skipped ${nudgeResult.skipped}`);
+    await drainOutbox(d => client.publish(d));
+    console.log(
+      `nudges: dispatched ${nudgeResult.dispatched}, rejected ${nudgeResult.rejected}, expired ${nudgeResult.expired}, skipped ${nudgeResult.skipped}`
+    );
   }
 
   // The latch pass writes to GitLab, so without a token there is nothing it
@@ -209,7 +257,7 @@ try {
       const latchResult = await runLatchPass({
         readReviewStates,
         fetchLatchMrs,
-        readDetail: async (mr) => {
+        readDetail: async mr => {
           const res = await readDiscussions(mr.rtRepo, mr.iid);
           if (!res.ok || !res.data) return null;
           return { discussions: res.data.discussions } as MRDetail;
@@ -220,7 +268,7 @@ try {
             cwd: boardConfig.reviewCwd,
             repo: repoForMrUrl(mrUrl),
             workspaceLabel: boardConfig.reviewsWorkspace,
-            skill: resolveLaunchSkill("review", mrUrl, boardConfig),
+            skill: resolveLaunchSkill('review', mrUrl, boardConfig),
             ...loadAgentSettings(),
             claudeCommand: boardConfig.claudeCommand,
           }),
@@ -228,7 +276,8 @@ try {
         cfg: triage,
         reReview,
         appendAudit,
-        notify: (title, message) => notifyEscalation(title, message, triage.notify),
+        notify: (title, message) =>
+          notifyEscalation(title, message, triage.notify),
         now: () => Date.now(),
       });
       console.log(`latch pass: ${JSON.stringify(latchResult)}`);

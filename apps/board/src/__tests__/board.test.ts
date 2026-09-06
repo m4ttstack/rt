@@ -1,82 +1,93 @@
-import { describe, expect, test } from "bun:test";
-import type { PullRequest } from "@mattstack/glance";
+import { describe, expect, test } from 'bun:test';
+
+import type { PullRequest } from '@mattstack/glance';
+import { SnapshotCache, type FetchResult } from '../cache.ts';
+import {
+  DEFAULT_SLACK_EMOJI,
+  IMPLICIT_TABS,
+  type BoardConfig,
+  type TabConfig,
+} from '../config.ts';
 import {
   aggregateSyncScope,
   boardDemand,
   buildBoard,
   buildRoster,
-  inferRoster,
   channelForMR,
   configuredSlackChannels,
+  inferRoster,
   projectPathFromWebUrl,
   reviewSkillForTab,
   stripDraftPrefix,
   visibleMrsFor,
   type BoardMR,
-} from "../data.ts";
-import { SnapshotCache, type FetchResult } from "../cache.ts";
-import { DEFAULT_SLACK_EMOJI, IMPLICIT_TABS, type BoardConfig, type TabConfig } from "../config.ts";
-import { extractTicketId } from "../ticket.ts";
+} from '../data.ts';
+import { extractTicketId } from '../ticket.ts';
 
 const config: BoardConfig = {
-  gitlabHost: "https://gitlab.com",
-  projects: ["org/repo-a", "org/repo-b"],
-  members: [{ username: "alice" }, { username: "bob" }],
-  defaultMember: "all",
+  gitlabHost: 'https://gitlab.com',
+  projects: ['org/repo-a', 'org/repo-b'],
+  members: [{ username: 'alice' }, { username: 'bob' }],
+  defaultMember: 'all',
   staleAfterDays: 90,
   gateGraceMinutes: 90,
   ticketPrefixes: [],
-  title: "Test board",
-  reviewCwd: "",
-  reviewsWorkspace: "reviews",
-  respondCwd: "",
-  respondsWorkspace: "responds",
-  doctorCwd: "",
-  doctorsWorkspace: "doctors",
-  claudeCommand: "",
-  doctorSkill: "",
+  title: 'Test board',
+  reviewCwd: '',
+  reviewsWorkspace: 'reviews',
+  respondCwd: '',
+  respondsWorkspace: 'responds',
+  doctorCwd: '',
+  doctorsWorkspace: 'doctors',
+  claudeCommand: '',
+  doctorSkill: '',
   botUsernames: [],
   rtRepos: {},
   rtRepoOverrides: {},
   slack: {
-    channel: "code-review",
-    singleTemplate: "{title}: {url}",
+    channel: 'code-review',
+    singleTemplate: '{title}: {url}',
     multiHeader: "{count} MR's ready for review",
-    multiItem: "- {title}: {url}",
+    multiItem: '- {title}: {url}',
     autoResolveIntervalMinutes: 0,
     emoji: DEFAULT_SLACK_EMOJI,
   },
-  switchboard: { url: "" },
+  switchboard: { url: '' },
   tabs: IMPLICIT_TABS,
 };
 
 /** A team tab plus one codeowners tab watching "Acme" -- used by the
     boardDemand and tagged-row buildBoard tests below. */
 const tabsWithCodeowners: TabConfig[] = [
-  { id: "t", label: "T", source: { kind: "authors" } },
-  { id: "q", label: "Q", source: { kind: "codeowners", section: "Acme" } },
+  { id: 't', label: 'T', source: { kind: 'authors' } },
+  { id: 'q', label: 'Q', source: { kind: 'codeowners', section: 'Acme' } },
 ];
 
 function pr(overrides: Partial<PullRequest>): PullRequest {
   return {
-    id: "gitlab:1",
+    id: 'gitlab:1',
     iid: 1,
-    repositoryId: "gitlab:42",
-    title: "An MR",
+    repositoryId: 'gitlab:42',
+    title: 'An MR',
     description: null,
-    state: "opened",
+    state: 'opened',
     draft: false,
     conflicts: false,
-    webUrl: "https://gitlab.com/org/repo-a/-/merge_requests/1",
-    sourceBranch: "feat/x",
-    targetBranch: "main",
-    createdAt: "2026-07-09T12:00:00Z",
-    updatedAt: "2026-07-10T12:00:00Z",
+    webUrl: 'https://gitlab.com/org/repo-a/-/merge_requests/1',
+    sourceBranch: 'feat/x',
+    targetBranch: 'main',
+    createdAt: '2026-07-09T12:00:00Z',
+    updatedAt: '2026-07-10T12:00:00Z',
     sha: null,
-    author: { id: "gitlab:7", username: "alice", name: "Alice", avatarUrl: null },
+    author: {
+      id: 'gitlab:7',
+      username: 'alice',
+      name: 'Alice',
+      avatarUrl: null,
+    },
     assignees: [],
     reviewers: [],
-    roles: ["author"],
+    roles: ['author'],
     pipeline: null,
     unresolvedThreadCount: 0,
     approvalsLeft: 1,
@@ -104,413 +115,658 @@ function pr(overrides: Partial<PullRequest>): PullRequest {
   } as PullRequest;
 }
 
-describe("buildBoard avatar scrub (BOARD-17)", () => {
-  test("nulls every avatarUrl anywhere in the built MR — they can carry a private_token", () => {
-    const leaky = "https://gitlab.com/uploads/avatar.png?private_token=glpat-SECRET";
+describe('buildBoard avatar scrub (BOARD-17)', () => {
+  test('nulls every avatarUrl anywhere in the built MR — they can carry a private_token', () => {
+    const leaky =
+      'https://gitlab.com/uploads/avatar.png?private_token=glpat-SECRET';
     const [mr] = buildBoard(
       [
         pr({
-          author: { id: "gitlab:7", username: "alice", name: "Alice", avatarUrl: leaky },
+          author: {
+            id: 'gitlab:7',
+            username: 'alice',
+            name: 'Alice',
+            avatarUrl: leaky,
+          },
           reviewers: [
-            { id: "gitlab:8", username: "bob", name: "Bob", avatarUrl: leaky, reviewState: "REVIEWED" },
-          ] as unknown as PullRequest["reviewers"],
-          approvedBy: [{ id: "gitlab:9", username: "carol", name: "Carol", avatarUrl: leaky }] as unknown as PullRequest["approvedBy"],
-          mergeUser: { id: "gitlab:9", username: "carol", name: "Carol", avatarUrl: leaky } as unknown as PullRequest["mergeUser"],
+            {
+              id: 'gitlab:8',
+              username: 'bob',
+              name: 'Bob',
+              avatarUrl: leaky,
+              reviewState: 'REVIEWED',
+            },
+          ] as unknown as PullRequest['reviewers'],
+          approvedBy: [
+            {
+              id: 'gitlab:9',
+              username: 'carol',
+              name: 'Carol',
+              avatarUrl: leaky,
+            },
+          ] as unknown as PullRequest['approvedBy'],
+          mergeUser: {
+            id: 'gitlab:9',
+            username: 'carol',
+            name: 'Carol',
+            avatarUrl: leaky,
+          } as unknown as PullRequest['mergeUser'],
         }),
       ],
       config,
-      Date.parse("2026-07-11T00:00:00Z"),
+      Date.parse('2026-07-11T00:00:00Z')
     );
     expect(mr).toBeDefined();
     // No avatarUrl anywhere in the payload may survive with a value: the
     // client never renders them, and upstream URLs embed credentials.
     const leaks: string[] = [];
     const walk = (v: unknown, path: string): void => {
-      if (Array.isArray(v)) return v.forEach((x, i) => walk(x, `${path}[${i}]`));
-      if (v && typeof v === "object") {
+      if (Array.isArray(v))
+        return v.forEach((x, i) => walk(x, `${path}[${i}]`));
+      if (v && typeof v === 'object') {
         for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
-          if (k === "avatarUrl" && val !== null) leaks.push(`${path}.${k}=${String(val)}`);
+          if (k === 'avatarUrl' && val !== null)
+            leaks.push(`${path}.${k}=${String(val)}`);
           walk(val, `${path}.${k}`);
         }
       }
     };
-    walk(mr, "mr");
+    walk(mr, 'mr');
     expect(leaks).toEqual([]);
-    expect(JSON.stringify(mr)).not.toContain("private_token");
+    expect(JSON.stringify(mr)).not.toContain('private_token');
   });
 });
 
-describe("extractTicketId", () => {
-  test("exact branch segment", () => {
-    expect(extractTicketId("feature/acme-1287", "whatever")).toBe("ACME-1287");
+describe('extractTicketId', () => {
+  test('exact branch segment', () => {
+    expect(extractTicketId('feature/acme-1287', 'whatever')).toBe('ACME-1287');
   });
-  test("prefixed branch segment", () => {
-    expect(extractTicketId("feature/acme-1287-add-photos", "whatever")).toBe("ACME-1287");
-  });
-  test("falls back to title prefix", () => {
-    expect(extractTicketId("some-branch", "ACME-2388: simplify things")).toBe("ACME-2388");
-  });
-  test("null when nothing matches", () => {
-    expect(extractTicketId("main", "fix stuff")).toBeNull();
-  });
-});
-
-describe("projectPathFromWebUrl", () => {
-  test("extracts group/project", () => {
-    expect(projectPathFromWebUrl("https://gitlab.com/org/sub/repo/-/merge_requests/7", "https://gitlab.com")).toBe(
-      "org/sub/repo",
+  test('prefixed branch segment', () => {
+    expect(extractTicketId('feature/acme-1287-add-photos', 'whatever')).toBe(
+      'ACME-1287'
     );
   });
-  test("null for foreign host", () => {
-    expect(projectPathFromWebUrl("https://other.com/org/repo/-/merge_requests/7", "https://gitlab.com")).toBeNull();
+  test('falls back to title prefix', () => {
+    expect(extractTicketId('some-branch', 'ACME-2388: simplify things')).toBe(
+      'ACME-2388'
+    );
+  });
+  test('null when nothing matches', () => {
+    expect(extractTicketId('main', 'fix stuff')).toBeNull();
   });
 });
 
-describe("stripDraftPrefix", () => {
-  test("clears every marker gitlab recognises, in any case", () => {
-    expect(stripDraftPrefix("Draft: fix the thing")).toBe("fix the thing");
-    expect(stripDraftPrefix("draft: fix the thing")).toBe("fix the thing");
-    expect(stripDraftPrefix("DRAFT: fix the thing")).toBe("fix the thing");
-    expect(stripDraftPrefix("[Draft] fix the thing")).toBe("fix the thing");
-    expect(stripDraftPrefix("(Draft) fix the thing")).toBe("fix the thing");
-    expect(stripDraftPrefix("WIP: fix the thing")).toBe("fix the thing");
-    expect(stripDraftPrefix("[WIP] fix the thing")).toBe("fix the thing");
+describe('projectPathFromWebUrl', () => {
+  test('extracts group/project', () => {
+    expect(
+      projectPathFromWebUrl(
+        'https://gitlab.com/org/sub/repo/-/merge_requests/7',
+        'https://gitlab.com'
+      )
+    ).toBe('org/sub/repo');
+  });
+  test('null for foreign host', () => {
+    expect(
+      projectPathFromWebUrl(
+        'https://other.com/org/repo/-/merge_requests/7',
+        'https://gitlab.com'
+      )
+    ).toBeNull();
+  });
+});
+
+describe('stripDraftPrefix', () => {
+  test('clears every marker gitlab recognises, in any case', () => {
+    expect(stripDraftPrefix('Draft: fix the thing')).toBe('fix the thing');
+    expect(stripDraftPrefix('draft: fix the thing')).toBe('fix the thing');
+    expect(stripDraftPrefix('DRAFT: fix the thing')).toBe('fix the thing');
+    expect(stripDraftPrefix('[Draft] fix the thing')).toBe('fix the thing');
+    expect(stripDraftPrefix('(Draft) fix the thing')).toBe('fix the thing');
+    expect(stripDraftPrefix('WIP: fix the thing')).toBe('fix the thing');
+    expect(stripDraftPrefix('[WIP] fix the thing')).toBe('fix the thing');
   });
 
-  test("keeps the ticket id that follows the marker", () => {
-    expect(stripDraftPrefix("Draft: ACME-2382: fix the thing")).toBe("ACME-2382: fix the thing");
+  test('keeps the ticket id that follows the marker', () => {
+    expect(stripDraftPrefix('Draft: ACME-2382: fix the thing')).toBe(
+      'ACME-2382: fix the thing'
+    );
   });
 
-  test("returns the title untouched when there is no marker, so callers can refuse to guess", () => {
-    expect(stripDraftPrefix("fix the thing")).toBe("fix the thing");
+  test('returns the title untouched when there is no marker, so callers can refuse to guess', () => {
+    expect(stripDraftPrefix('fix the thing')).toBe('fix the thing');
     // Only a leading marker counts -- "draft" as a real word must survive.
-    expect(stripDraftPrefix("rewrite the draft: attempt two")).toBe("rewrite the draft: attempt two");
-    expect(stripDraftPrefix("add draft support")).toBe("add draft support");
+    expect(stripDraftPrefix('rewrite the draft: attempt two')).toBe(
+      'rewrite the draft: attempt two'
+    );
+    expect(stripDraftPrefix('add draft support')).toBe('add draft support');
   });
 });
 
-describe("buildBoard", () => {
-  test("keeps only member-authored, open, non-draft MRs in configured projects", () => {
+describe('buildBoard', () => {
+  test('keeps only member-authored, open, non-draft MRs in configured projects', () => {
     const mrs = buildBoard(
       [
-        pr({ iid: 1, author: { id: "a", username: "alice", name: "Alice", avatarUrl: null } }),
-        pr({ iid: 2, author: { id: "b", username: "bob", name: "Bob", avatarUrl: null } }),
-        pr({ iid: 3, author: { id: "c", username: "carol", name: "Carol", avatarUrl: null } }), // not a member
+        pr({
+          iid: 1,
+          author: {
+            id: 'a',
+            username: 'alice',
+            name: 'Alice',
+            avatarUrl: null,
+          },
+        }),
+        pr({
+          iid: 2,
+          author: { id: 'b', username: 'bob', name: 'Bob', avatarUrl: null },
+        }),
+        pr({
+          iid: 3,
+          author: {
+            id: 'c',
+            username: 'carol',
+            name: 'Carol',
+            avatarUrl: null,
+          },
+        }), // not a member
         pr({ iid: 4, draft: true }),
-        pr({ iid: 5, state: "merged" }),
-        pr({ iid: 6, webUrl: "https://gitlab.com/other/repo/-/merge_requests/6" }), // wrong project
+        pr({ iid: 5, state: 'merged' }),
+        pr({
+          iid: 6,
+          webUrl: 'https://gitlab.com/other/repo/-/merge_requests/6',
+        }), // wrong project
       ],
-      config,
+      config
     );
-    expect(mrs.map((m) => m.iid).sort()).toEqual([1, 2]);
+    expect(mrs.map(m => m.iid).sort()).toEqual([1, 2]);
   });
 
   test("keeps your own drafts and flags them, but not anyone else's", () => {
-    const mine: BoardConfig = { ...config, defaultMember: "alice" };
+    const mine: BoardConfig = { ...config, defaultMember: 'alice' };
     const mrs = buildBoard(
       [
-        pr({ iid: 1, draft: true, author: { id: "a", username: "alice", name: "Alice", avatarUrl: null } }),
-        pr({ iid: 2, draft: true, author: { id: "b", username: "bob", name: "Bob", avatarUrl: null } }),
-        pr({ iid: 3, author: { id: "a", username: "alice", name: "Alice", avatarUrl: null } }),
+        pr({
+          iid: 1,
+          draft: true,
+          author: {
+            id: 'a',
+            username: 'alice',
+            name: 'Alice',
+            avatarUrl: null,
+          },
+        }),
+        pr({
+          iid: 2,
+          draft: true,
+          author: { id: 'b', username: 'bob', name: 'Bob', avatarUrl: null },
+        }),
+        pr({
+          iid: 3,
+          author: {
+            id: 'a',
+            username: 'alice',
+            name: 'Alice',
+            avatarUrl: null,
+          },
+        }),
       ],
-      mine,
+      mine
     );
-    expect(mrs.map((m) => m.iid).sort()).toEqual([1, 3]);
-    expect(mrs.find((m) => m.iid === 1)?.isDraft).toBe(true);
-    expect(mrs.find((m) => m.iid === 3)?.isDraft).toBe(false);
+    expect(mrs.map(m => m.iid).sort()).toEqual([1, 3]);
+    expect(mrs.find(m => m.iid === 1)?.isDraft).toBe(true);
+    expect(mrs.find(m => m.iid === 3)?.isDraft).toBe(false);
   });
 
-  test("hides every draft when there is no single you to own them", () => {
+  test('hides every draft when there is no single you to own them', () => {
     // defaultMember "all" means the board is showing the whole team, so there is
     // nobody whose drafts are "mine" to act on.
-    const mrs = buildBoard([pr({ iid: 1, draft: true }), pr({ iid: 2 })], config);
-    expect(mrs.map((m) => m.iid)).toEqual([2]);
+    const mrs = buildBoard(
+      [pr({ iid: 1, draft: true }), pr({ iid: 2 })],
+      config
+    );
+    expect(mrs.map(m => m.iid)).toEqual([2]);
   });
 
-  test("drops MRs with no activity within the stale window, keeps recently-updated ones", () => {
-    const now = Date.parse("2026-07-13T00:00:00Z");
+  test('drops MRs with no activity within the stale window, keeps recently-updated ones', () => {
+    const now = Date.parse('2026-07-13T00:00:00Z');
     const mrs = buildBoard(
       [
-        pr({ iid: 1, updatedAt: "2026-07-10T00:00:00Z" }), // 3 days ago — fresh
-        pr({ iid: 2, updatedAt: "2026-01-01T00:00:00Z" }), // ~193 days ago — stale
+        pr({ iid: 1, updatedAt: '2026-07-10T00:00:00Z' }), // 3 days ago — fresh
+        pr({ iid: 2, updatedAt: '2026-01-01T00:00:00Z' }), // ~193 days ago — stale
       ],
       config, // staleAfterDays: 90
-      now,
+      now
     );
-    expect(mrs.map((m) => m.iid)).toEqual([1]);
+    expect(mrs.map(m => m.iid)).toEqual([1]);
   });
 
-  test("ticketPrefixes filter: keeps only matching prefixes, drops other teams and untagged", () => {
-    const withPrefix = { ...config, ticketPrefixes: ["ACME"] };
+  test('ticketPrefixes filter: keeps only matching prefixes, drops other teams and untagged', () => {
+    const withPrefix = { ...config, ticketPrefixes: ['ACME'] };
     const mrs = buildBoard(
       [
-        pr({ iid: 1, sourceBranch: "feature/acme-2369-thing" }), // ACME, keep
-        pr({ iid: 2, sourceBranch: "ing-595-transition", title: "ING work" }), // ING, drop
-        pr({ iid: 3, sourceBranch: "hotfix", title: "NO-TICKET quick fix" }), // untagged, drop
-        pr({ iid: 4, sourceBranch: "x", title: "ACME-2400: titled" }), // ACME via title, keep
+        pr({ iid: 1, sourceBranch: 'feature/acme-2369-thing' }), // ACME, keep
+        pr({ iid: 2, sourceBranch: 'ing-595-transition', title: 'ING work' }), // ING, drop
+        pr({ iid: 3, sourceBranch: 'hotfix', title: 'NO-TICKET quick fix' }), // untagged, drop
+        pr({ iid: 4, sourceBranch: 'x', title: 'ACME-2400: titled' }), // ACME via title, keep
       ],
-      withPrefix,
+      withPrefix
     );
-    expect(mrs.map((m) => m.iid).sort()).toEqual([1, 4]);
+    expect(mrs.map(m => m.iid).sort()).toEqual([1, 4]);
   });
 
-  test("empty ticketPrefixes keeps everything regardless of ticket", () => {
+  test('empty ticketPrefixes keeps everything regardless of ticket', () => {
     const mrs = buildBoard(
-      [pr({ iid: 1, sourceBranch: "ing-1-x", title: "ING" }), pr({ iid: 2, sourceBranch: "no-ticket" })],
-      config, // ticketPrefixes: []
+      [
+        pr({ iid: 1, sourceBranch: 'ing-1-x', title: 'ING' }),
+        pr({ iid: 2, sourceBranch: 'no-ticket' }),
+      ],
+      config // ticketPrefixes: []
     );
-    expect(mrs.map((m) => m.iid).sort()).toEqual([1, 2]);
+    expect(mrs.map(m => m.iid).sort()).toEqual([1, 2]);
   });
 
-  test("tags each MR with author, createdAt, and derived pipelineState", () => {
-    const [mr] = buildBoard([pr({ createdAt: "2026-07-01T00:00:00Z" })], config);
-    expect(mr!.author.username).toBe("alice");
-    expect(mr!.createdAt).toBe("2026-07-01T00:00:00Z");
-    expect(mr!.pipelineState).toBe("none"); // pipeline: null
+  test('tags each MR with author, createdAt, and derived pipelineState', () => {
+    const [mr] = buildBoard(
+      [pr({ createdAt: '2026-07-01T00:00:00Z' })],
+      config
+    );
+    expect(mr!.author.username).toBe('alice');
+    expect(mr!.createdAt).toBe('2026-07-01T00:00:00Z');
+    expect(mr!.pipelineState).toBe('none'); // pipeline: null
   });
 
-  test("buildBoard maps rtRepo from config.rtRepos by project path, null when unmapped", () => {
-    const testConfig = { ...config, projects: ["g/a", "g/b"], rtRepos: { "g/a": "repo-a" } };
+  test('buildBoard maps rtRepo from config.rtRepos by project path, null when unmapped', () => {
+    const testConfig = {
+      ...config,
+      projects: ['g/a', 'g/b'],
+      rtRepos: { 'g/a': 'repo-a' },
+    };
     const prs = [
-      pr({ webUrl: "https://gitlab.com/g/a/-/merge_requests/1" }),
-      pr({ iid: 2, webUrl: "https://gitlab.com/g/b/-/merge_requests/2" }),
+      pr({ webUrl: 'https://gitlab.com/g/a/-/merge_requests/1' }),
+      pr({ iid: 2, webUrl: 'https://gitlab.com/g/b/-/merge_requests/2' }),
     ];
     const board = buildBoard(prs, testConfig);
-    expect(board.find((m) => m.webUrl!.includes("/g/a/"))!.rtRepo).toBe("repo-a");
-    expect(board.find((m) => m.webUrl!.includes("/g/b/"))!.rtRepo).toBeNull();
+    expect(board.find(m => m.webUrl!.includes('/g/a/'))!.rtRepo).toBe('repo-a');
+    expect(board.find(m => m.webUrl!.includes('/g/b/'))!.rtRepo).toBeNull();
   });
 });
 
-describe("buildBoard tagged rows (codeowner tabs)", () => {
+describe('buildBoard tagged rows (codeowner tabs)', () => {
   const withTabs: BoardConfig = { ...config, tabs: tabsWithCodeowners };
-  const now = Date.parse("2026-07-11T00:00:00Z");
+  const now = Date.parse('2026-07-11T00:00:00Z');
 
-  test("keeps a tagged stranger and stamps codeownerSections", () => {
-    const stranger = pr({ id: "gitlab:900", iid: 9, author: { id: "gitlab:99", username: "outsider", name: "Outsider", avatarUrl: null } });
-    const tags = new Map([[stranger.id, ["Acme"]]]);
+  test('keeps a tagged stranger and stamps codeownerSections', () => {
+    const stranger = pr({
+      id: 'gitlab:900',
+      iid: 9,
+      author: {
+        id: 'gitlab:99',
+        username: 'outsider',
+        name: 'Outsider',
+        avatarUrl: null,
+      },
+    });
+    const tags = new Map([[stranger.id, ['Acme']]]);
     const out = buildBoard([stranger], withTabs, now, tags);
     expect(out).toHaveLength(1);
-    expect(out[0]!.codeownerSections).toEqual(["Acme"]);
+    expect(out[0]!.codeownerSections).toEqual(['Acme']);
   });
 
   test("stamps codeownerSections on a roster member's own tagged MR too", () => {
     // Mirrors fetchMemberMRs' scoped refresh: the row is kept on isMember
     // alone, but a tags map must still be passed for codeownerSections to
     // land -- an omitted map (server.ts's prior bug) silently zeroes it.
-    const memberMr = pr({ id: "gitlab:904", iid: 13 }); // default author: alice, a roster member
-    const tags = new Map([[memberMr.id, ["Acme"]]]);
+    const memberMr = pr({ id: 'gitlab:904', iid: 13 }); // default author: alice, a roster member
+    const tags = new Map([[memberMr.id, ['Acme']]]);
     const out = buildBoard([memberMr], withTabs, now, tags);
     expect(out).toHaveLength(1);
-    expect(out[0]!.codeownerSections).toEqual(["Acme"]);
+    expect(out[0]!.codeownerSections).toEqual(['Acme']);
   });
 
-  test("still drops an untagged stranger, and tag-kept rows skip the prefix filter", () => {
-    const withPrefixes: BoardConfig = { ...withTabs, ticketPrefixes: ["CV"] };
+  test('still drops an untagged stranger, and tag-kept rows skip the prefix filter', () => {
+    const withPrefixes: BoardConfig = { ...withTabs, ticketPrefixes: ['CV'] };
     // untagged stranger -> dropped
-    const untaggedStranger = pr({ id: "gitlab:901", iid: 10, author: { id: "gitlab:100", username: "ghost", name: "Ghost", avatarUrl: null } });
+    const untaggedStranger = pr({
+      id: 'gitlab:901',
+      iid: 10,
+      author: {
+        id: 'gitlab:100',
+        username: 'ghost',
+        name: 'Ghost',
+        avatarUrl: null,
+      },
+    });
     // tagged stranger with no ticket prefix while ticketPrefixes=["CV"] -> kept
     const taggedNoPrefix = pr({
-      id: "gitlab:902",
+      id: 'gitlab:902',
       iid: 11,
-      author: { id: "gitlab:101", username: "outsider", name: "Outsider", avatarUrl: null },
-      sourceBranch: "no-ticket",
-      title: "no ticket here",
+      author: {
+        id: 'gitlab:101',
+        username: 'outsider',
+        name: 'Outsider',
+        avatarUrl: null,
+      },
+      sourceBranch: 'no-ticket',
+      title: 'no ticket here',
     });
     // tagged MR from a section no tab declares -> dropped
     const taggedWrongSection = pr({
-      id: "gitlab:903",
+      id: 'gitlab:903',
       iid: 12,
-      author: { id: "gitlab:102", username: "outsider2", name: "Outsider2", avatarUrl: null },
-      sourceBranch: "no-ticket",
-      title: "no ticket either",
+      author: {
+        id: 'gitlab:102',
+        username: 'outsider2',
+        name: 'Outsider2',
+        avatarUrl: null,
+      },
+      sourceBranch: 'no-ticket',
+      title: 'no ticket either',
     });
     const tags = new Map([
-      [taggedNoPrefix.id, ["Acme"]],
-      [taggedWrongSection.id, ["OtherSection"]],
+      [taggedNoPrefix.id, ['Acme']],
+      [taggedWrongSection.id, ['OtherSection']],
     ]);
-    const out = buildBoard([untaggedStranger, taggedNoPrefix, taggedWrongSection], withPrefixes, now, tags);
-    expect(out.map((m) => m.iid)).toEqual([11]);
+    const out = buildBoard(
+      [untaggedStranger, taggedNoPrefix, taggedWrongSection],
+      withPrefixes,
+      now,
+      tags
+    );
+    expect(out.map(m => m.iid)).toEqual([11]);
   });
 });
 
-describe("visibleMrsFor (the /data.json payload gate)", () => {
+describe('visibleMrsFor (the /data.json payload gate)', () => {
   test("keeps a tagged stranger's MR, drops a hidden member's own MR", () => {
     const withHiddenAndTabs: BoardConfig = {
       ...config,
-      members: [{ username: "alice" }, { username: "carol", hidden: true }],
+      members: [{ username: 'alice' }, { username: 'carol', hidden: true }],
       tabs: tabsWithCodeowners,
     };
-    const now = Date.parse("2026-07-11T00:00:00Z");
+    const now = Date.parse('2026-07-11T00:00:00Z');
     const hiddenMemberMr = pr({
-      id: "gitlab:910",
+      id: 'gitlab:910',
       iid: 20,
-      author: { id: "gitlab:110", username: "carol", name: "Carol", avatarUrl: null },
+      author: {
+        id: 'gitlab:110',
+        username: 'carol',
+        name: 'Carol',
+        avatarUrl: null,
+      },
     });
     const taggedStranger = pr({
-      id: "gitlab:911",
+      id: 'gitlab:911',
       iid: 21,
-      author: { id: "gitlab:111", username: "outsider", name: "Outsider", avatarUrl: null },
+      author: {
+        id: 'gitlab:111',
+        username: 'outsider',
+        name: 'Outsider',
+        avatarUrl: null,
+      },
     });
-    const tags = new Map([[taggedStranger.id, ["Acme"]]]);
-    const snapshotMrs = buildBoard([hiddenMemberMr, taggedStranger], withHiddenAndTabs, now, tags);
+    const tags = new Map([[taggedStranger.id, ['Acme']]]);
+    const snapshotMrs = buildBoard(
+      [hiddenMemberMr, taggedStranger],
+      withHiddenAndTabs,
+      now,
+      tags
+    );
     // Both reach the snapshot -- buildBoard doesn't know about "hidden"; only
     // visibleMrsFor (the /data.json gate) does.
-    expect(snapshotMrs.map((m) => m.iid)).toEqual([20, 21]);
+    expect(snapshotMrs.map(m => m.iid)).toEqual([20, 21]);
 
-    const visibleMembers = withHiddenAndTabs.members.filter((m) => !m.hidden);
+    const visibleMembers = withHiddenAndTabs.members.filter(m => !m.hidden);
     const served = visibleMrsFor(snapshotMrs, visibleMembers);
-    expect(served.map((m) => m.iid)).toEqual([21]);
+    expect(served.map(m => m.iid)).toEqual([21]);
   });
 });
 
-describe("inferRoster", () => {
+describe('inferRoster', () => {
   function authored(username: string, name: string | null = null): BoardMR {
-    return { author: { id: username, username, name, avatarUrl: null } } as unknown as BoardMR;
+    return {
+      author: { id: username, username, name, avatarUrl: null },
+    } as unknown as BoardMR;
   }
 
-  test("derives one entry per distinct author, busiest first", () => {
-    const roster = inferRoster([authored("zoe"), authored("adam"), authored("zoe"), authored("adam"), authored("zoe")]);
+  test('derives one entry per distinct author, busiest first', () => {
+    const roster = inferRoster([
+      authored('zoe'),
+      authored('adam'),
+      authored('zoe'),
+      authored('adam'),
+      authored('zoe'),
+    ]);
     expect(roster).toEqual([
-      { username: "zoe", name: null, count: 3 },
-      { username: "adam", name: null, count: 2 },
+      { username: 'zoe', name: null, count: 3 },
+      { username: 'adam', name: null, count: 2 },
     ]);
   });
 
-  test("ties break alphabetically so the order is stable across polls", () => {
-    const roster = inferRoster([authored("zoe"), authored("adam"), authored("mira")]);
-    expect(roster.map((r) => r.username)).toEqual(["adam", "mira", "zoe"]);
+  test('ties break alphabetically so the order is stable across polls', () => {
+    const roster = inferRoster([
+      authored('zoe'),
+      authored('adam'),
+      authored('mira'),
+    ]);
+    expect(roster.map(r => r.username)).toEqual(['adam', 'mira', 'zoe']);
   });
 
   test("keeps the author's display name and tolerates a missing one", () => {
-    const roster = inferRoster([authored("adam", "Adam Stranger"), authored("mira")]);
-    expect(roster.find((r) => r.username === "adam")?.name).toBe("Adam Stranger");
-    expect(roster.find((r) => r.username === "mira")?.name).toBeNull();
+    const roster = inferRoster([
+      authored('adam', 'Adam Stranger'),
+      authored('mira'),
+    ]);
+    expect(roster.find(r => r.username === 'adam')?.name).toBe('Adam Stranger');
+    expect(roster.find(r => r.username === 'mira')?.name).toBeNull();
   });
 
-  test("no MRs means no roster", () => {
+  test('no MRs means no roster', () => {
     expect(inferRoster([])).toEqual([]);
   });
 });
 
-describe("buildRoster", () => {
-  const members = [{ username: "alice" }, { username: "bob", name: "Bobby" }, { username: "carol" }];
+describe('buildRoster', () => {
+  const members = [
+    { username: 'alice' },
+    { username: 'bob', name: 'Bobby' },
+    { username: 'carol' },
+  ];
 
   function boardMr(username: string): BoardMR {
-    return { author: { id: username, username, name: username, avatarUrl: null } } as unknown as BoardMR;
+    return {
+      author: { id: username, username, name: username, avatarUrl: null },
+    } as unknown as BoardMR;
   }
 
-  test("returns members in config order with resolved names and per-member counts", () => {
-    const mrs = [boardMr("alice"), boardMr("bob"), boardMr("alice")];
-    const names = new Map<string, string | null>([["alice", "Alice Resolved"]]);
+  test('returns members in config order with resolved names and per-member counts', () => {
+    const mrs = [boardMr('alice'), boardMr('bob'), boardMr('alice')];
+    const names = new Map<string, string | null>([['alice', 'Alice Resolved']]);
     const roster = buildRoster(members, mrs, names);
-    expect(roster.map((r) => r.username)).toEqual(["alice", "bob", "carol"]);
-    expect(roster[0]).toEqual({ username: "alice", name: "Alice Resolved", count: 2 });
+    expect(roster.map(r => r.username)).toEqual(['alice', 'bob', 'carol']);
+    expect(roster[0]).toEqual({
+      username: 'alice',
+      name: 'Alice Resolved',
+      count: 2,
+    });
   });
 
-  test("member with zero MRs still appears with count 0", () => {
-    const roster = buildRoster(members, [boardMr("alice")], new Map());
-    expect(roster.find((r) => r.username === "carol")).toEqual({ username: "carol", name: null, count: 0 });
+  test('member with zero MRs still appears with count 0', () => {
+    const roster = buildRoster(members, [boardMr('alice')], new Map());
+    expect(roster.find(r => r.username === 'carol')).toEqual({
+      username: 'carol',
+      name: null,
+      count: 0,
+    });
   });
 
-  test("name falls back from names map to member.name to null", () => {
-    const roster = buildRoster(members, [], new Map([["alice", "Alice Resolved"]]));
-    expect(roster.find((r) => r.username === "alice")?.name).toBe("Alice Resolved"); // from names map
-    expect(roster.find((r) => r.username === "bob")?.name).toBe("Bobby"); // falls back to member.name
-    expect(roster.find((r) => r.username === "carol")?.name).toBeNull(); // falls back to null
+  test('name falls back from names map to member.name to null', () => {
+    const roster = buildRoster(
+      members,
+      [],
+      new Map([['alice', 'Alice Resolved']])
+    );
+    expect(roster.find(r => r.username === 'alice')?.name).toBe(
+      'Alice Resolved'
+    ); // from names map
+    expect(roster.find(r => r.username === 'bob')?.name).toBe('Bobby'); // falls back to member.name
+    expect(roster.find(r => r.username === 'carol')?.name).toBeNull(); // falls back to null
   });
 });
 
-describe("boardDemand", () => {
-  test("stable client id from the passed-in port, full roster including hidden, fresh stamp", () => {
-    const d = boardDemand({ ...config, members: [{ username: "a" }, { username: "b", hidden: true }] }, 5980);
-    expect(d.client).toBe("board:5980");
-    expect(d.authors).toEqual(["a", "b"]);          // hidden is a display state, not a demand state
+describe('boardDemand', () => {
+  test('stable client id from the passed-in port, full roster including hidden, fresh stamp', () => {
+    const d = boardDemand(
+      {
+        ...config,
+        members: [{ username: 'a' }, { username: 'b', hidden: true }],
+      },
+      5980
+    );
+    expect(d.client).toBe('board:5980');
+    expect(d.authors).toEqual(['a', 'b']); // hidden is a display state, not a demand state
     expect(d.declaredAt).toBeGreaterThan(0);
   });
 
-  test("declares the union of tab sections, and omits the field when no tab is codeowners", () => {
+  test('declares the union of tab sections, and omits the field when no tab is codeowners', () => {
     const withTabs: BoardConfig = { ...config, tabs: tabsWithCodeowners };
-    expect(boardDemand(withTabs, 1).codeownerSections).toEqual(["Acme"]);
+    expect(boardDemand(withTabs, 1).codeownerSections).toEqual(['Acme']);
     expect(boardDemand(config, 1).codeownerSections).toBeUndefined();
   });
 });
 
-describe("channelForMR", () => {
+describe('channelForMR', () => {
   const tabsWithSlackChannel: TabConfig[] = [
-    { id: "t", label: "T", source: { kind: "authors" } },
-    { id: "q", label: "Q", source: { kind: "codeowners", section: "Acme", excludeMembers: true }, slackChannel: "team-codeowners" },
+    { id: 't', label: 'T', source: { kind: 'authors' } },
+    {
+      id: 'q',
+      label: 'Q',
+      source: { kind: 'codeowners', section: 'Acme', excludeMembers: true },
+      slackChannel: 'team-codeowners',
+    },
   ];
   const withSlackTab: BoardConfig = { ...config, tabs: tabsWithSlackChannel };
 
-  test("routes a roster MR to the default channel", () => {
+  test('routes a roster MR to the default channel', () => {
     expect(
-      channelForMR(withSlackTab, { author: { id: "gitlab:1", username: "alice", name: "Alice", avatarUrl: null }, codeownerSections: [] }),
-    ).toBe("code-review");
+      channelForMR(withSlackTab, {
+        author: {
+          id: 'gitlab:1',
+          username: 'alice',
+          name: 'Alice',
+          avatarUrl: null,
+        },
+        codeownerSections: [],
+      })
+    ).toBe('code-review');
   });
 
   test("routes a tagged stranger to their codeowners tab's channel", () => {
     expect(
       channelForMR(withSlackTab, {
-        author: { id: "gitlab:2", username: "outsider", name: "Outsider", avatarUrl: null },
-        codeownerSections: ["Acme"],
-      }),
-    ).toBe("team-codeowners");
+        author: {
+          id: 'gitlab:2',
+          username: 'outsider',
+          name: 'Outsider',
+          avatarUrl: null,
+        },
+        codeownerSections: ['Acme'],
+      })
+    ).toBe('team-codeowners');
   });
 
   test("falls back to the default channel when a stranger's tags match no tab's slackChannel", () => {
     expect(
       channelForMR(withSlackTab, {
-        author: { id: "gitlab:3", username: "outsider", name: "Outsider", avatarUrl: null },
-        codeownerSections: ["SomeOtherSection"],
-      }),
-    ).toBe("code-review");
+        author: {
+          id: 'gitlab:3',
+          username: 'outsider',
+          name: 'Outsider',
+          avatarUrl: null,
+        },
+        codeownerSections: ['SomeOtherSection'],
+      })
+    ).toBe('code-review');
   });
 
-  test("a stranger with no tags falls back to the default channel", () => {
+  test('a stranger with no tags falls back to the default channel', () => {
     expect(
-      channelForMR(withSlackTab, { author: { id: "gitlab:4", username: "outsider", name: "Outsider", avatarUrl: null }, codeownerSections: [] }),
-    ).toBe("code-review");
+      channelForMR(withSlackTab, {
+        author: {
+          id: 'gitlab:4',
+          username: 'outsider',
+          name: 'Outsider',
+          avatarUrl: null,
+        },
+        codeownerSections: [],
+      })
+    ).toBe('code-review');
   });
 });
 
-describe("configuredSlackChannels", () => {
-  test("is the default channel plus every distinct tab slackChannel", () => {
+describe('configuredSlackChannels', () => {
+  test('is the default channel plus every distinct tab slackChannel', () => {
     const withTabs: BoardConfig = {
       ...config,
       tabs: [
-        { id: "t", label: "T", source: { kind: "authors" } },
-        { id: "q", label: "Q", source: { kind: "codeowners", section: "Acme" }, slackChannel: "team-codeowners" },
-        { id: "r", label: "R", source: { kind: "codeowners", section: "Billing" }, slackChannel: "team-codeowners" },
+        { id: 't', label: 'T', source: { kind: 'authors' } },
+        {
+          id: 'q',
+          label: 'Q',
+          source: { kind: 'codeowners', section: 'Acme' },
+          slackChannel: 'team-codeowners',
+        },
+        {
+          id: 'r',
+          label: 'R',
+          source: { kind: 'codeowners', section: 'Billing' },
+          slackChannel: 'team-codeowners',
+        },
       ],
     };
-    expect(configuredSlackChannels(withTabs).sort()).toEqual(["code-review", "team-codeowners"]);
+    expect(configuredSlackChannels(withTabs).sort()).toEqual([
+      'code-review',
+      'team-codeowners',
+    ]);
   });
 
-  test("is just the default channel when no tab overrides it", () => {
-    expect(configuredSlackChannels(config)).toEqual(["code-review"]);
+  test('is just the default channel when no tab overrides it', () => {
+    expect(configuredSlackChannels(config)).toEqual(['code-review']);
   });
 });
 
-describe("reviewSkillForTab", () => {
+describe('reviewSkillForTab', () => {
   test("prefers the tab's reviewSkill and falls back to normal resolution", () => {
-    const cfg = { ...config, tabs: [
-      { id: "t", label: "T", source: { kind: "authors" as const } },
-      { id: "q", label: "Q", source: { kind: "codeowners" as const, section: "Acme" }, reviewSkill: "external:review" },
-    ] };
-    const fallback = () => "acme:review";
-    expect(reviewSkillForTab(cfg, "q", "u", fallback)).toBe("external:review");
-    expect(reviewSkillForTab(cfg, "t", "u", fallback)).toBe("acme:review");
-    expect(reviewSkillForTab(cfg, undefined, "u", fallback)).toBe("acme:review");
+    const cfg = {
+      ...config,
+      tabs: [
+        { id: 't', label: 'T', source: { kind: 'authors' as const } },
+        {
+          id: 'q',
+          label: 'Q',
+          source: { kind: 'codeowners' as const, section: 'Acme' },
+          reviewSkill: 'external:review',
+        },
+      ],
+    };
+    const fallback = () => 'acme:review';
+    expect(reviewSkillForTab(cfg, 'q', 'u', fallback)).toBe('external:review');
+    expect(reviewSkillForTab(cfg, 't', 'u', fallback)).toBe('acme:review');
+    expect(reviewSkillForTab(cfg, undefined, 'u', fallback)).toBe(
+      'acme:review'
+    );
   });
 });
 
-describe("aggregateSyncScope", () => {
-  test("dataSyncedAt is the min syncedAt across reads", () => {
-    const agg = aggregateSyncScope([{ syncedAt: 300 }, { syncedAt: 100 }, { syncedAt: 200 }]);
+describe('aggregateSyncScope', () => {
+  test('dataSyncedAt is the min syncedAt across reads', () => {
+    const agg = aggregateSyncScope([
+      { syncedAt: 300 },
+      { syncedAt: 100 },
+      { syncedAt: 200 },
+    ]);
     expect(agg.dataSyncedAt).toBe(100);
   });
 
-  test("no reads yields null syncedAt/windowDays and an empty uncovered list", () => {
+  test('no reads yields null syncedAt/windowDays and an empty uncovered list', () => {
     expect(aggregateSyncScope([])).toEqual({
       dataSyncedAt: null,
       scopeUncovered: [],
@@ -520,41 +776,86 @@ describe("aggregateSyncScope", () => {
     });
   });
 
-  test("unions scope.uncovered across reads and takes the min windowDays", () => {
+  test('unions scope.uncovered across reads and takes the min windowDays', () => {
     const agg = aggregateSyncScope([
-      { syncedAt: 100, scope: { authors: ["a"], windowDays: 30, uncovered: ["a"] } },
-      { syncedAt: 200, scope: { authors: ["b"], windowDays: 14, uncovered: ["b", "a"] } },
+      {
+        syncedAt: 100,
+        scope: { authors: ['a'], windowDays: 30, uncovered: ['a'] },
+      },
+      {
+        syncedAt: 200,
+        scope: { authors: ['b'], windowDays: 14, uncovered: ['b', 'a'] },
+      },
     ]);
-    expect(agg.scopeUncovered.sort()).toEqual(["a", "b"]);
+    expect(agg.scopeUncovered.sort()).toEqual(['a', 'b']);
     expect(agg.scopeWindowDays).toBe(14);
   });
 
-  test("scopeWindowDays and scopeUncovered stay empty when no read carries a scope", () => {
+  test('scopeWindowDays and scopeUncovered stay empty when no read carries a scope', () => {
     const agg = aggregateSyncScope([{ syncedAt: 100 }, { syncedAt: 200 }]);
     expect(agg.scopeWindowDays).toBeNull();
     expect(agg.scopeUncovered).toEqual([]);
   });
 
-  test("unions uncoveredSections", () => {
+  test('unions uncoveredSections', () => {
     const agg = aggregateSyncScope([
-      { syncedAt: 1, scope: { authors: [], windowDays: 30, uncovered: [], sections: [], uncoveredSections: ["Acme"] } },
+      {
+        syncedAt: 1,
+        scope: {
+          authors: [],
+          windowDays: 30,
+          uncovered: [],
+          sections: [],
+          uncoveredSections: ['Acme'],
+        },
+      },
       { syncedAt: 2 },
     ]);
-    expect(agg.scopeUncoveredSections).toEqual(["Acme"]);
+    expect(agg.scopeUncoveredSections).toEqual(['Acme']);
   });
 
-  test("scopeKnownSections is null until a read carries the field, then the sorted union", () => {
-    expect(aggregateSyncScope([{ syncedAt: 1, scope: { authors: [], windowDays: 30, uncovered: [] } }]).scopeKnownSections).toBeNull();
+  test('scopeKnownSections is null until a read carries the field, then the sorted union', () => {
+    expect(
+      aggregateSyncScope([
+        { syncedAt: 1, scope: { authors: [], windowDays: 30, uncovered: [] } },
+      ]).scopeKnownSections
+    ).toBeNull();
     const agg = aggregateSyncScope([
-      { syncedAt: 1, scope: { authors: [], windowDays: 30, uncovered: [], knownSections: ["Zeta", "Acme"] } },
-      { syncedAt: 2, scope: { authors: [], windowDays: 30, uncovered: [], knownSections: ["Acme"] } },
+      {
+        syncedAt: 1,
+        scope: {
+          authors: [],
+          windowDays: 30,
+          uncovered: [],
+          knownSections: ['Zeta', 'Acme'],
+        },
+      },
+      {
+        syncedAt: 2,
+        scope: {
+          authors: [],
+          windowDays: 30,
+          uncovered: [],
+          knownSections: ['Acme'],
+        },
+      },
       { syncedAt: 3 },
     ]);
-    expect(agg.scopeKnownSections).toEqual(["Acme", "Zeta"]);
+    expect(agg.scopeKnownSections).toEqual(['Acme', 'Zeta']);
   });
 
-  test("an empty knownSections list is an answer, not null", () => {
-    const agg = aggregateSyncScope([{ syncedAt: 1, scope: { authors: [], windowDays: 30, uncovered: [], knownSections: [] } }]);
+  test('an empty knownSections list is an answer, not null', () => {
+    const agg = aggregateSyncScope([
+      {
+        syncedAt: 1,
+        scope: {
+          authors: [],
+          windowDays: 30,
+          uncovered: [],
+          knownSections: [],
+        },
+      },
+    ]);
     expect(agg.scopeKnownSections).toEqual([]);
   });
 });
@@ -562,20 +863,29 @@ describe("aggregateSyncScope", () => {
 /** Wrap a bare mrs array as the FetchResult shape SnapshotCache now expects,
     for tests that only care about the mrs field. */
 function fetchResult(mrs: unknown[]): FetchResult {
-  return { mrs: mrs as BoardMR[], dataSyncedAt: null, scopeUncovered: [], scopeWindowDays: null, scopeUncoveredSections: [], scopeKnownSections: null };
+  return {
+    mrs: mrs as BoardMR[],
+    dataSyncedAt: null,
+    scopeUncovered: [],
+    scopeWindowDays: null,
+    scopeUncoveredSections: [],
+    scopeKnownSections: null,
+  };
 }
 
-describe("SnapshotCache", () => {
-  test("caches within TTL and revalidates after", async () => {
+describe('SnapshotCache', () => {
+  test('caches within TTL and revalidates after', async () => {
     let calls = 0;
     let clock = 1_000;
     const cache = new SnapshotCache(
       async () => {
         calls++;
-        return fetchResult([pr({ iid: calls })].map(() => ({ iid: calls } as any)));
+        return fetchResult(
+          [pr({ iid: calls })].map(() => ({ iid: calls }) as any)
+        );
       },
       () => clock,
-      60_000,
+      60_000
     );
     const first = await cache.get();
     expect(first.mrs).toHaveLength(1);
@@ -584,25 +894,25 @@ describe("SnapshotCache", () => {
     expect(calls).toBe(1); // within TTL
     clock += 61_000;
     await cache.get(); // serves stale, kicks background refresh
-    await new Promise((r) => setTimeout(r, 0));
+    await new Promise(r => setTimeout(r, 0));
     expect(calls).toBe(2);
   });
 
   // A config change makes the snapshot outdated but not useless. Readers must
   // keep getting the old data while the refetch (tens of seconds against
   // GitLab) runs, rather than blocking on it.
-  test("markStale() serves the current snapshot while revalidating", async () => {
+  test('markStale() serves the current snapshot while revalidating', async () => {
     let calls = 0;
     let release!: () => void;
     const cache = new SnapshotCache(
       async () => {
         calls++;
         const n = calls;
-        if (n === 2) await new Promise<void>((r) => (release = r)); // hold the refetch open
+        if (n === 2) await new Promise<void>(r => (release = r)); // hold the refetch open
         return fetchResult([{ iid: n } as any]);
       },
       () => 1_000, // frozen clock: markStale is the only thing forcing a refetch
-      60_000,
+      60_000
     );
     expect((await cache.get()).mrs).toEqual([{ iid: 1 } as any]);
 
@@ -612,12 +922,12 @@ describe("SnapshotCache", () => {
     expect(calls).toBe(2); // ...and a refresh was kicked
 
     release();
-    await new Promise((r) => setTimeout(r, 0));
+    await new Promise(r => setTimeout(r, 0));
     expect((await cache.get()).mrs).toEqual([{ iid: 2 } as any]);
   });
 
   // The manual refresh button means "I'll wait for genuinely fresh data".
-  test("invalidate() still blocks until fresh data arrives", async () => {
+  test('invalidate() still blocks until fresh data arrives', async () => {
     let calls = 0;
     const cache = new SnapshotCache(
       async () => {
@@ -625,7 +935,7 @@ describe("SnapshotCache", () => {
         return fetchResult([{ iid: calls } as any]);
       },
       () => 1_000,
-      60_000,
+      60_000
     );
     await cache.get();
     cache.invalidate();
@@ -635,18 +945,18 @@ describe("SnapshotCache", () => {
 
   // Toggling two members in a row: the second change lands while the first
   // one's refetch is still running, so that refetch used the old config.
-  test("a change landing mid-refetch forces another refetch", async () => {
+  test('a change landing mid-refetch forces another refetch', async () => {
     let calls = 0;
     const gate: Array<() => void> = [];
     const cache = new SnapshotCache(
       async () => {
         calls++;
         const n = calls;
-        await new Promise<void>((r) => gate.push(r));
+        await new Promise<void>(r => gate.push(r));
         return fetchResult([{ iid: n } as any]);
       },
       () => 1_000,
-      60_000,
+      60_000
     );
     const first = cache.get();
     gate[0]!();
@@ -659,26 +969,43 @@ describe("SnapshotCache", () => {
 
     cache.markStale(); // config changes again *while* #2 is in flight
     gate[1]!(); // #2 lands, but its data predates that second change
-    await new Promise((r) => setTimeout(r, 0));
+    await new Promise(r => setTimeout(r, 0));
 
     await cache.get(); // so #2 can't be trusted as current — refetch again
     expect(calls).toBe(3);
   });
 
-  test("refreshNow revalidates immediately and resolves with fresh data", async () => {
+  test('refreshNow revalidates immediately and resolves with fresh data', async () => {
     let calls = 0;
-    const cache = new SnapshotCache(async () => { calls++; return fetchResult([]); }, () => 1000, 60_000);
-    await cache.get();               // warm: 1 fetch
+    const cache = new SnapshotCache(
+      async () => {
+        calls++;
+        return fetchResult([]);
+      },
+      () => 1000,
+      60_000
+    );
+    await cache.get(); // warm: 1 fetch
     const snap = await cache.refreshNow(); // within TTL, but must fetch again
     expect(calls).toBe(2);
     expect(snap.fetchError).toBeNull();
   });
 
-  test("refreshNow during an in-flight fetch shares it and stays stale for the next get", async () => {
+  test('refreshNow during an in-flight fetch shares it and stays stale for the next get', async () => {
     let calls = 0;
     let release!: () => void;
-    const gate = new Promise<void>((r) => { release = r; });
-    const cache = new SnapshotCache(async () => { calls++; await gate; return fetchResult([]); }, () => 1000, 60_000);
+    const gate = new Promise<void>(r => {
+      release = r;
+    });
+    const cache = new SnapshotCache(
+      async () => {
+        calls++;
+        await gate;
+        return fetchResult([]);
+      },
+      () => 1000,
+      60_000
+    );
     const first = cache.get();
     const second = cache.refreshNow(); // shares the in-flight fetch
     release();
@@ -689,9 +1016,16 @@ describe("SnapshotCache", () => {
     expect(calls).toBe(2);
   });
 
-  test("forceRefresh with nothing in flight fetches once and returns fresh data", async () => {
+  test('forceRefresh with nothing in flight fetches once and returns fresh data', async () => {
     let calls = 0;
-    const cache = new SnapshotCache(async () => { calls++; return fetchResult([]); }, () => 1000, 60_000);
+    const cache = new SnapshotCache(
+      async () => {
+        calls++;
+        return fetchResult([]);
+      },
+      () => 1000,
+      60_000
+    );
     await cache.get(); // warm: 1 fetch
     const snap = await cache.forceRefresh();
     expect(calls).toBe(2);
@@ -700,10 +1034,12 @@ describe("SnapshotCache", () => {
 
   // The forced path must never share a fetch that started before the user's
   // click — that fetch's data (and any force-flag consumption) predates it.
-  test("forceRefresh during an in-flight fetch waits it out and fetches again", async () => {
+  test('forceRefresh during an in-flight fetch waits it out and fetches again', async () => {
     let calls = 0;
     let release!: () => void;
-    const gate = new Promise<void>((r) => { release = r; });
+    const gate = new Promise<void>(r => {
+      release = r;
+    });
     const cache = new SnapshotCache(
       async () => {
         calls++;
@@ -712,7 +1048,7 @@ describe("SnapshotCache", () => {
         return fetchResult([{ iid: n } as any]);
       },
       () => 1000,
-      60_000,
+      60_000
     );
     const first = cache.get(); // gated fetch #1, in flight
     const forced = cache.forceRefresh(); // must not share #1 — waits it out

@@ -1,18 +1,19 @@
-import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { parseConfig } from "../config.ts";
-import { resolveBoardSkill, resolveLaunchSkill } from "../manifest-bindings.ts";
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { describe, expect, test } from 'bun:test';
+
+import { parseConfig } from '../config.ts';
+import { resolveBoardSkill, resolveLaunchSkill } from '../manifest-bindings.ts';
 
 const base = {
-  gitlabHost: "https://gitlab.com",
-  projects: ["org/repo"],
-  members: [{ username: "alice" }],
+  gitlabHost: 'https://gitlab.com',
+  projects: ['org/repo'],
+  members: [{ username: 'alice' }],
   // reviewSkill/respondSkill retired (dead -- always shadowed by the
   // manifest); their config fallback is unconditionally "". Only doctorSkill
   // still has a real config fallback.
-  doctorSkill: "config:doctor",
+  doctorSkill: 'config:doctor',
 };
 
 const cfg = parseConfig(JSON.stringify(base));
@@ -20,129 +21,168 @@ const cfg = parseConfig(JSON.stringify(base));
 /** A fresh mkdtemp mattstackHome with `repos/<slug>/skills.jsonc` written
     from `contents`, or no `repos` dir at all when `contents` is omitted. */
 function makeHome(slug: string | null, contents?: string): string {
-  const home = mkdtempSync(join(tmpdir(), "manifest-bindings-home-"));
+  const home = mkdtempSync(join(tmpdir(), 'manifest-bindings-home-'));
   if (slug !== null) {
-    const repoDir = join(home, "repos", slug);
+    const repoDir = join(home, 'repos', slug);
     mkdirSync(repoDir, { recursive: true });
-    writeFileSync(join(repoDir, "skills.jsonc"), contents ?? "");
+    writeFileSync(join(repoDir, 'skills.jsonc'), contents ?? '');
   }
   return home;
 }
 
-describe("resolveBoardSkill", () => {
-  test("manifest binding present -> manifest value + source manifest", () => {
+describe('resolveBoardSkill', () => {
+  test('manifest binding present -> manifest value + source manifest', () => {
     const home = makeHome(
-      "gitlab.com-org-repo",
-      JSON.stringify({ bindings: { "board:review": { review: "myteam:review" } } }),
+      'gitlab.com-org-repo',
+      JSON.stringify({
+        bindings: { 'board:review': { review: 'myteam:review' } },
+      })
     );
-    const result = resolveBoardSkill("review", "org/repo", cfg, home);
-    expect(result).toEqual({ skill: "myteam:review", source: "manifest" });
+    const result = resolveBoardSkill('review', 'org/repo', cfg, home);
+    expect(result).toEqual({ skill: 'myteam:review', source: 'manifest' });
   });
 
-  test("no repos dir -> config fallback (\"\" for review -- reviewSkill retired)", () => {
+  test('no repos dir -> config fallback ("" for review -- reviewSkill retired)', () => {
     const home = makeHome(null);
-    const result = resolveBoardSkill("review", "org/repo", cfg, home);
-    expect(result).toEqual({ skill: "", source: "config" });
+    const result = resolveBoardSkill('review', 'org/repo', cfg, home);
+    expect(result).toEqual({ skill: '', source: 'config' });
   });
 
-  test("manifest without board keys -> config fallback (\"\" for respond -- respondSkill retired)", () => {
+  test('manifest without board keys -> config fallback ("" for respond -- respondSkill retired)', () => {
     const home = makeHome(
-      "gitlab.com-org-repo",
-      JSON.stringify({ bindings: { "mattstack:work": { tiering: "mattstack:model-tiering" } } }),
+      'gitlab.com-org-repo',
+      JSON.stringify({
+        bindings: { 'mattstack:work': { tiering: 'mattstack:model-tiering' } },
+      })
     );
-    const result = resolveBoardSkill("respond", "org/repo", cfg, home);
-    expect(result).toEqual({ skill: "", source: "config" });
+    const result = resolveBoardSkill('respond', 'org/repo', cfg, home);
+    expect(result).toEqual({ skill: '', source: 'config' });
   });
 
-  test("malformed manifest -> config fallback (no throw)", () => {
-    const home = makeHome("gitlab.com-org-repo", "{ not valid json");
-    expect(() => resolveBoardSkill("doctor", "org/repo", cfg, home)).not.toThrow();
-    const result = resolveBoardSkill("doctor", "org/repo", cfg, home);
-    expect(result).toEqual({ skill: "config:doctor", source: "config" });
+  test('malformed manifest -> config fallback (no throw)', () => {
+    const home = makeHome('gitlab.com-org-repo', '{ not valid json');
+    expect(() =>
+      resolveBoardSkill('doctor', 'org/repo', cfg, home)
+    ).not.toThrow();
+    const result = resolveBoardSkill('doctor', 'org/repo', cfg, home);
+    expect(result).toEqual({ skill: 'config:doctor', source: 'config' });
   });
 
-  test("slug derivation: gitlabHost + project path locate repos/<host>-<project>/skills.jsonc", () => {
+  test('slug derivation: gitlabHost + project path locate repos/<host>-<project>/skills.jsonc', () => {
     const home = makeHome(
-      "gitlab.example.com-acme-widgets",
-      JSON.stringify({ bindings: { "board:review": { review: "acme:review" } } }),
+      'gitlab.example.com-acme-widgets',
+      JSON.stringify({
+        bindings: { 'board:review': { review: 'acme:review' } },
+      })
     );
-    const exampleCfg = parseConfig(JSON.stringify({ ...base, gitlabHost: "https://gitlab.example.com" }));
-    const result = resolveBoardSkill("review", "acme/widgets", exampleCfg, home);
-    expect(result).toEqual({ skill: "acme:review", source: "manifest" });
+    const exampleCfg = parseConfig(
+      JSON.stringify({ ...base, gitlabHost: 'https://gitlab.example.com' })
+    );
+    const result = resolveBoardSkill(
+      'review',
+      'acme/widgets',
+      exampleCfg,
+      home
+    );
+    expect(result).toEqual({ skill: 'acme:review', source: 'manifest' });
   });
 
-  test("comment-bearing manifest parses", () => {
+  test('comment-bearing manifest parses', () => {
     const home = makeHome(
-      "gitlab.com-org-repo",
+      'gitlab.com-org-repo',
       [
-        "// GENERATED by merge-manifests.sh -- do not hand-edit",
-        "{",
+        '// GENERATED by merge-manifests.sh -- do not hand-edit',
+        '{',
         '  "bindings": {',
         '    "board:doctor": { "doctor": "myteam:doctor" }',
-        "  }",
-        "}",
-        "",
-      ].join("\n"),
+        '  }',
+        '}',
+        '',
+      ].join('\n')
     );
-    const result = resolveBoardSkill("doctor", "org/repo", cfg, home);
-    expect(result).toEqual({ skill: "myteam:doctor", source: "manifest" });
+    const result = resolveBoardSkill('doctor', 'org/repo', cfg, home);
+    expect(result).toEqual({ skill: 'myteam:doctor', source: 'manifest' });
   });
 
-  test("absent key in an otherwise valid manifest -> config fallback", () => {
+  test('absent key in an otherwise valid manifest -> config fallback', () => {
     const home = makeHome(
-      "gitlab.com-org-repo",
-      JSON.stringify({ bindings: { "board:review": { review: "myteam:review" } } }),
+      'gitlab.com-org-repo',
+      JSON.stringify({
+        bindings: { 'board:review': { review: 'myteam:review' } },
+      })
     );
-    const result = resolveBoardSkill("doctor", "org/repo", cfg, home);
-    expect(result).toEqual({ skill: "config:doctor", source: "config" });
+    const result = resolveBoardSkill('doctor', 'org/repo', cfg, home);
+    expect(result).toEqual({ skill: 'config:doctor', source: 'config' });
   });
 
-  test("empty skill string in binding -> config fallback", () => {
+  test('empty skill string in binding -> config fallback', () => {
     const home = makeHome(
-      "gitlab.com-org-repo",
-      JSON.stringify({ bindings: { "board:review": { review: "" } } }),
+      'gitlab.com-org-repo',
+      JSON.stringify({ bindings: { 'board:review': { review: '' } } })
     );
-    const result = resolveBoardSkill("review", "org/repo", cfg, home);
-    expect(result).toEqual({ skill: "", source: "config" });
+    const result = resolveBoardSkill('review', 'org/repo', cfg, home);
+    expect(result).toEqual({ skill: '', source: 'config' });
   });
 
-  test("trailing-slash host resolves the same manifest as the plain host", () => {
+  test('trailing-slash host resolves the same manifest as the plain host', () => {
     const home = makeHome(
-      "gitlab.com-org-repo",
-      JSON.stringify({ bindings: { "board:review": { review: "myteam:review" } } }),
+      'gitlab.com-org-repo',
+      JSON.stringify({
+        bindings: { 'board:review': { review: 'myteam:review' } },
+      })
     );
-    const trailingSlashCfg = parseConfig(JSON.stringify({ ...base, gitlabHost: "https://gitlab.com/" }));
-    const result = resolveBoardSkill("review", "org/repo", trailingSlashCfg, home);
-    expect(result).toEqual({ skill: "myteam:review", source: "manifest" });
+    const trailingSlashCfg = parseConfig(
+      JSON.stringify({ ...base, gitlabHost: 'https://gitlab.com/' })
+    );
+    const result = resolveBoardSkill(
+      'review',
+      'org/repo',
+      trailingSlashCfg,
+      home
+    );
+    expect(result).toEqual({ skill: 'myteam:review', source: 'manifest' });
   });
 
-  test("credentialed host resolves the same manifest as the plain host", () => {
+  test('credentialed host resolves the same manifest as the plain host', () => {
     const home = makeHome(
-      "gitlab.com-org-repo",
-      JSON.stringify({ bindings: { "board:review": { review: "myteam:review" } } }),
+      'gitlab.com-org-repo',
+      JSON.stringify({
+        bindings: { 'board:review': { review: 'myteam:review' } },
+      })
     );
-    const credentialedCfg = parseConfig(JSON.stringify({ ...base, gitlabHost: "https://user:pass@gitlab.com" }));
-    const result = resolveBoardSkill("review", "org/repo", credentialedCfg, home);
-    expect(result).toEqual({ skill: "myteam:review", source: "manifest" });
+    const credentialedCfg = parseConfig(
+      JSON.stringify({ ...base, gitlabHost: 'https://user:pass@gitlab.com' })
+    );
+    const result = resolveBoardSkill(
+      'review',
+      'org/repo',
+      credentialedCfg,
+      home
+    );
+    expect(result).toEqual({ skill: 'myteam:review', source: 'manifest' });
   });
 });
 
-describe("resolveLaunchSkill", () => {
+describe('resolveLaunchSkill', () => {
   // BOARD-14: nudge-driven re-review launches (bin/triage.ts) derive the
   // project from the MR's webUrl and resolve through the same manifest
   // binding as the board's own HTTP launch sites (server.ts).
-  const mrUrl = "https://gitlab.com/org/repo/-/merge_requests/7";
+  const mrUrl = 'https://gitlab.com/org/repo/-/merge_requests/7';
 
   test("manifest binding present -> resolves via manifest from the MR's webUrl", () => {
     const home = makeHome(
-      "gitlab.com-org-repo",
-      JSON.stringify({ bindings: { "board:review": { review: "myteam:review" } } }),
+      'gitlab.com-org-repo',
+      JSON.stringify({
+        bindings: { 'board:review': { review: 'myteam:review' } },
+      })
     );
-    expect(resolveLaunchSkill("review", mrUrl, cfg, home)).toBe("myteam:review");
+    expect(resolveLaunchSkill('review', mrUrl, cfg, home)).toBe(
+      'myteam:review'
+    );
   });
 
-  test("no manifest -> config fallback (\"\" -- reviewSkill retired)", () => {
+  test('no manifest -> config fallback ("" -- reviewSkill retired)', () => {
     const home = makeHome(null);
-    expect(resolveLaunchSkill("review", mrUrl, cfg, home)).toBe("");
+    expect(resolveLaunchSkill('review', mrUrl, cfg, home)).toBe('');
   });
 });

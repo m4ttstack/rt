@@ -2,30 +2,48 @@
  * The latch's GitLab writes, behind one injected gateway so the pass and the
  * server share them and tests need no network.
  */
-import { latchBannerPng } from "./banner.ts";
-import { armedLatchBody, imageMarkdownOf, spentLatchBody, type SpentReason } from "./markers.ts";
-import type { LatchRef } from "./discussions.ts";
+import { latchBannerPng } from './banner.ts';
+import type { LatchRef } from './discussions.ts';
+import {
+  armedLatchBody,
+  imageMarkdownOf,
+  spentLatchBody,
+  type SpentReason,
+} from './markers.ts';
 
 export interface LatchGateway {
   uploadFile(
     projectId: number,
     filename: string,
     bytes: Uint8Array,
-    contentType?: string,
+    contentType?: string
   ): Promise<{ markdown: string; url: string; alt: string; full_path: string }>;
   createDiscussion(
     projectId: number,
     mrIid: number,
-    body: string,
+    body: string
   ): Promise<{ id: string; notes: { id: number }[] }>;
-  updateNote(projectId: number, mrIid: number, noteId: number, body: string): Promise<void>;
-  resolveDiscussion(projectPath: string, mrIid: number, discussionId: string): Promise<void>;
-  unresolveDiscussion(projectPath: string, mrIid: number, discussionId: string): Promise<void>;
+  updateNote(
+    projectId: number,
+    mrIid: number,
+    noteId: number,
+    body: string
+  ): Promise<void>;
+  resolveDiscussion(
+    projectPath: string,
+    mrIid: number,
+    discussionId: string
+  ): Promise<void>;
+  unresolveDiscussion(
+    projectPath: string,
+    mrIid: number,
+    discussionId: string
+  ): Promise<void>;
   createNote(
     projectId: number,
     mrIid: number,
     body: string,
-    discussionId?: string,
+    discussionId?: string
   ): Promise<{ id: number }>;
 }
 
@@ -35,10 +53,15 @@ export async function postLatch(
   projectId: number,
   _projectPath: string,
   mrUrl: string,
-  iid: number,
+  iid: number
 ): Promise<void> {
   const png = latchBannerPng(mrUrl);
-  const up = await gw.uploadFile(projectId, `latch-${iid}.png`, png, "image/png");
+  const up = await gw.uploadFile(
+    projectId,
+    `latch-${iid}.png`,
+    png,
+    'image/png'
+  );
   await gw.createDiscussion(projectId, iid, armedLatchBody(up.markdown));
 }
 
@@ -56,16 +79,17 @@ export async function spendLatch(
   projectPath: string,
   iid: number,
   latch: LatchRef,
-  reason: SpentReason = "approved",
+  reason: SpentReason = 'approved'
 ): Promise<void> {
-  if (latch.kind === "spent") {
+  if (latch.kind === 'spent') {
     // Idempotent: an already-spent latch is left alone, except for the crash
     // residue where the body was written but the resolve never landed.
-    if (!latch.resolved) await gw.resolveDiscussion(projectPath, iid, latch.discussionId);
+    if (!latch.resolved)
+      await gw.resolveDiscussion(projectPath, iid, latch.discussionId);
     return;
   }
   const img = imageMarkdownOf(latch.body);
-  const body = spentLatchBody(img ?? "", reason);
+  const body = spentLatchBody(img ?? '', reason);
   await gw.updateNote(projectId, iid, latch.rootNoteId, body);
   await gw.resolveDiscussion(projectPath, iid, latch.discussionId);
 }
@@ -80,7 +104,7 @@ export async function spendAllLatches(
   projectPath: string,
   iid: number,
   latches: LatchRef[],
-  reason: SpentReason = "approved",
+  reason: SpentReason = 'approved'
 ): Promise<void> {
   const seen = new Set<string>();
   for (const latch of latches) {

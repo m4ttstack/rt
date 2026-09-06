@@ -1,10 +1,11 @@
-import { existsSync, readFileSync } from "fs";
-import { homedir } from "os";
-import { join } from "path";
-import type { BoardConfig } from "./config.ts";
-import { projectPathFromWebUrl } from "./data.ts";
+import { existsSync, readFileSync } from 'fs';
+import { homedir } from 'os';
+import { join } from 'path';
 
-export type BoardSkillKind = "review" | "respond" | "doctor";
+import type { BoardConfig } from './config.ts';
+import { projectPathFromWebUrl } from './data.ts';
+
+export type BoardSkillKind = 'review' | 'respond' | 'doctor';
 
 /** Strip full-line `//` comments from JSONC text. Only lines whose trimmed
     content starts with `//` are removed -- a `//` inside a string value (e.g.
@@ -13,14 +14,14 @@ export type BoardSkillKind = "review" | "respond" | "doctor";
     comment line this needs to survive stripping past. */
 export function stripJsonc(raw: string): string {
   return raw
-    .split("\n")
-    .filter((line) => !line.trim().startsWith("//"))
-    .join("\n");
+    .split('\n')
+    .filter(line => !line.trim().startsWith('//'))
+    .join('\n');
 }
 
 export interface ResolvedBoardSkill {
   skill: string;
-  source: "manifest" | "config";
+  source: 'manifest' | 'config';
 }
 
 /** review/respond had a config fallback once (reviewSkill/respondSkill); both
@@ -29,7 +30,7 @@ export interface ResolvedBoardSkill {
     generic wrapper). doctor's config fallback (doctorSkill) is real and
     manifest-overridable per BOARD-14. */
 function configSkillFor(kind: BoardSkillKind, cfg: BoardConfig): string {
-  return kind === "doctor" ? cfg.doctorSkill : "";
+  return kind === 'doctor' ? cfg.doctorSkill : '';
 }
 
 /** Slug a GitLab host + project path into the `~/.mattstack/repos/<slug>` dir
@@ -42,11 +43,11 @@ function configSkillFor(kind: BoardSkillKind, cfg: BoardConfig): string {
     credentials on `gitlabHost` still resolve the same manifest. */
 export function boardRepoSlug(gitlabHost: string, project: string): string {
   const host = gitlabHost
-    .replace(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//, "")
-    .replace(/^[^@/]*@/, "")
-    .split("/")[0]!
+    .replace(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//, '')
+    .replace(/^[^@/]*@/, '')
+    .split('/')[0]!
     .toLowerCase();
-  return `${host}-${project.replace(/\//g, "-")}`;
+  return `${host}-${project.replace(/\//g, '-')}`;
 }
 
 /**
@@ -67,18 +68,21 @@ export function resolveBoardSkill(
   kind: BoardSkillKind,
   project: string,
   cfg: BoardConfig,
-  mattstackHome?: string,
+  mattstackHome?: string
 ): ResolvedBoardSkill {
-  const fallback: ResolvedBoardSkill = { skill: configSkillFor(kind, cfg), source: "config" };
+  const fallback: ResolvedBoardSkill = {
+    skill: configSkillFor(kind, cfg),
+    source: 'config',
+  };
 
-  const home = mattstackHome ?? join(homedir(), ".mattstack");
+  const home = mattstackHome ?? join(homedir(), '.mattstack');
   const slug = boardRepoSlug(cfg.gitlabHost, project);
-  const manifestPath = join(home, "repos", slug, "skills.jsonc");
+  const manifestPath = join(home, 'repos', slug, 'skills.jsonc');
   if (!existsSync(manifestPath)) return fallback;
 
   let raw: string;
   try {
-    raw = readFileSync(manifestPath, "utf8");
+    raw = readFileSync(manifestPath, 'utf8');
   } catch {
     return fallback;
   }
@@ -89,18 +93,21 @@ export function resolveBoardSkill(
   } catch {
     return fallback;
   }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return fallback;
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+    return fallback;
 
   const bindings = (parsed as Record<string, unknown>).bindings;
-  if (!bindings || typeof bindings !== "object" || Array.isArray(bindings)) return fallback;
+  if (!bindings || typeof bindings !== 'object' || Array.isArray(bindings))
+    return fallback;
 
   const binding = (bindings as Record<string, unknown>)[`board:${kind}`];
-  if (!binding || typeof binding !== "object" || Array.isArray(binding)) return fallback;
+  if (!binding || typeof binding !== 'object' || Array.isArray(binding))
+    return fallback;
 
   const skill = (binding as Record<string, unknown>)[kind];
-  if (typeof skill !== "string" || skill === "") return fallback;
+  if (typeof skill !== 'string' || skill === '') return fallback;
 
-  return { skill, source: "manifest" };
+  return { skill, source: 'manifest' };
 }
 
 /** Resolve + log which skill a launch (review/respond/doctor) should use for
@@ -110,11 +117,16 @@ export function resolveBoardSkill(
     HTTP launches (server.ts) and triage's nudge-driven re-review launches
     (bin/triage.ts) -- so the "<kind> skill: <skill> (<source>)" log line has
     one place. */
-export function resolveLaunchSkill(kind: BoardSkillKind, mrUrl: string, cfg: BoardConfig, mattstackHome?: string): string {
+export function resolveLaunchSkill(
+  kind: BoardSkillKind,
+  mrUrl: string,
+  cfg: BoardConfig,
+  mattstackHome?: string
+): string {
   const project = projectPathFromWebUrl(mrUrl, cfg.gitlabHost);
   const resolved = project
     ? resolveBoardSkill(kind, project, cfg, mattstackHome)
-    : { skill: configSkillFor(kind, cfg), source: "config" as const };
+    : { skill: configSkillFor(kind, cfg), source: 'config' as const };
   console.log(`${kind} skill: ${resolved.skill} (${resolved.source})`);
   return resolved.skill;
 }

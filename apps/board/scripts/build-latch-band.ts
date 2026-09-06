@@ -6,9 +6,9 @@
  *
  *   bun run scripts/build-latch-band.ts
  */
-import { chromium } from "playwright";
-import { mkdirSync } from "fs";
-import { join } from "path";
+import { mkdirSync } from 'fs';
+import { join } from 'path';
+import { chromium } from 'playwright';
 
 const W = 1200;
 const H = 208;
@@ -45,11 +45,18 @@ const html = `<!doctype html><meta charset="utf-8">
 
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: W, height: H } });
-await page.setContent(html, { waitUntil: "networkidle" });
-await page.evaluate(() => (globalThis as unknown as { document: { fonts: { ready: Promise<unknown> } } }).document.fonts.ready);
-mkdirSync(join(import.meta.dir, "..", "assets"), { recursive: true });
-await page.locator(".band").screenshot({
-  path: join(import.meta.dir, "..", "assets", "latch-band.png"),
+await page.setContent(html, { waitUntil: 'networkidle' });
+await page.evaluate(
+  () =>
+    (
+      globalThis as unknown as {
+        document: { fonts: { ready: Promise<unknown> } };
+      }
+    ).document.fonts.ready
+);
+mkdirSync(join(import.meta.dir, '..', 'assets'), { recursive: true });
+await page.locator('.band').screenshot({
+  path: join(import.meta.dir, '..', 'assets', 'latch-band.png'),
 });
 await browser.close();
 console.log(`wrote assets/latch-band.png (${W}x${H})`);

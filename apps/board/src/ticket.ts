@@ -7,8 +7,11 @@ const TITLE_RE = /^([A-Za-z]+-\d+)\b/;
  * prefix — mirrors rt's extractLinearId), falling back to an "ACME-1234: ..."
  * title prefix.
  */
-export function extractTicketId(sourceBranch: string, title: string): string | null {
-  const segments = sourceBranch.split("/");
+export function extractTicketId(
+  sourceBranch: string,
+  title: string
+): string | null {
+  const segments = sourceBranch.split('/');
   for (let i = segments.length - 1; i >= 0; i--) {
     if (EXACT_RE.test(segments[i]!)) return segments[i]!.toUpperCase();
   }
