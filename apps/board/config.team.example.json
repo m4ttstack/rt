@@ -1,0 +1,50 @@
+{
+  "gitlabHost": "https://gitlab.com",
+  "projects": ["myteam/myproject"],
+  "members": [
+    {
+      "username": "ada",
+      "name": "Ada Lovelace"
+    },
+    {
+      "username": "grace",
+      "name": "Grace Hopper"
+    },
+    {
+      "username": "linus",
+      "name": "Linus Torvalds"
+    }
+  ],
+  "defaultMember": "all",
+  "staleAfterDays": 30,
+  "ticketPrefixes": [],
+  "title": "MR Board",
+  "doctorSkill": "myteam:doctor",
+  "claudeCommand": "",
+  "slack": {
+    "channel": "code-review",
+    "singleTemplate": "{title}: {url}",
+    "multiHeader": "{count} MR's ready for review :pray:",
+    "multiItem": "- {title}: {url}",
+    "autoResolveIntervalMinutes": 15,
+    "emoji": {
+      "looking": "eyes",
+      "commented": "speech_balloon",
+      "approved": "white_check_mark"
+    }
+  },
+  "switchboard": { "url": "" },
+  "tabs": [
+    { "id": "team", "label": "Team", "source": { "kind": "authors" } },
+    {
+      "id": "codeowner-queue",
+      "label": "Codeowner Queue",
+      "source": {
+        "kind": "codeowners",
+        "section": "Acme",
+        "excludeMembers": true
+      },
+      "slackChannel": "team-codeowners"
+    }
+  ]
+}

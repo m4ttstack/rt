@@ -1,0 +1,17 @@
+{
+  "name": "board",
+  "displayName": "Board",
+  "description": "Your team's open GitLab MRs that are ready for review, on one shareable page.",
+  "icon": "./src/favicon.svg",
+  "port": 11006,
+  "includeInBundle": true,
+  "dev": {
+    "start": "caffeinate -s bun src/server.ts",
+    "build": "bun run build",
+    "deploy": "bun run build && deck restart board"
+  },
+  "bundle": {
+    "build": "bun install --frozen-lockfile && bun run build",
+    "artifact": "dist/board"
+  }
+}

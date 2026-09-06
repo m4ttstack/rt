@@ -1,0 +1,23 @@
+node_modules/
+.DS_Store
+
+# local config + secrets (never commit)
+.env
+config.json
+config.team.json
+# ...except the committed capture-harness fixture (tests/fixture/README.md)
+!tests/fixture/config.json
+
+# runtime state + logs
+state/
+logs/
+switchboard/*.sqlite*
+
+# local planning docs
+.local-dev/
+
+# screenshot-capture scratch output (tests/baselines/ is the committed baseline)
+tests/.captures/
+
+# compiled binary + build-time client bundle (bun run build)
+dist/

@@ -8,3 +8,7 @@ packages/tui-kit
 # Design canvases are regenerated from a shared CSS block per app
 # (see each app's design/README.md provenance table); never reformatted.
 apps/*/design
+# board's mr-board wrapper skills: src/__tests__/skills-resolve.test.ts
+# byte-compares their YAML frontmatter (double-quoted `slots:`); prettier's
+# singleQuote rewrite breaks that assertion.
+apps/board/skills/*/SKILL.md
