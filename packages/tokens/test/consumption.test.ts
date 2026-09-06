@@ -9,6 +9,14 @@ import { describe, expect, it } from 'vitest';
  * Deletion is Phase 2 material.
  */
 const WAIVED_TUI: Record<string, string> = {
+  '--color-gray-muted':
+    "raw muted token for non-text intents (StatusDot's/Badge's 'muted' variant and wash mixes reach it via intent-resolver.ts's FAMILY['muted'] === 'gray' branch, var(--color-gray-muted)), outside this test's CSS-module scope; --text-muted now reads --color-gray-mutedText instead, so this raw value has no remaining CSS-file reference.",
+  '--muted-text':
+    "new text-role alias mirroring tokyo's --tk-muted-text naming; existing recipes still read --muted (unaffected, same value) -- Phase 3 apps are the intended consumer of the explicit name.",
+  '--accent-text':
+    "new text-role alias mirroring tokyo's --tk-accent-text naming; no recipe paints link/accent text through it yet -- Phase 3 apps are the intended consumer.",
+  '--red-text':
+    "new text-role alias mirroring tokyo's --tk-red-text naming; no recipe paints error/bad text through it yet -- Phase 3 apps are the intended consumer.",
   '--chrome':
     "public alias contract (soribashi.config.ts's cssVariablesResolver + docs/css-contract.md); guaranteed for consumer apps regardless of this repo's own recipe usage.",
   '--dot-ok':
@@ -94,6 +102,8 @@ const WAIVED_TUI: Record<string, string> = {
 };
 
 const WAIVED_TOKYO: Record<string, string> = {
+  '--tk-red-text':
+    "AA-compliant red TEXT role (>=4.5:1), mirrors --tk-muted-text/--tk-accent-text; packages/ui's --mantine-color-error still reads the raw --tk-red for the error surface, and no component paints red as inline text yet -- Phase 3 material.",
   '--tk-green':
     "declared for full parity with tui-kit's hue palette (tokyo-theme.css header: 'every hex below is tui-kit's exact string ... parity with tui-kit is by construction'); no packages/ui component wires this hue yet.",
   '--tk-amber':

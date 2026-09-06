@@ -211,9 +211,15 @@ export const tuiTheme = createTheme({
     },
     // Plain string refs only: `text` and `border` are typed
     // Record<string, SemanticReference>; only `surface` accepts the object form.
+    // `muted` reads the AA-compliant mutedText leaf, not the raw gray.muted
+    // hex -- that raw value stays available on `colors.gray.muted` for
+    // dots/washes/borders, which are graded against WCAG non-text floors, not
+    // the 4.5:1 text floor this slot is picked to clear.
     text: {
       primary: "colors.gray.fg",
-      muted: "colors.gray.muted",
+      muted: "colors.gray.mutedText",
+      accentText: "colors.gray.accentText",
+      badText: "colors.gray.redText",
     },
     border: {
       default: "colors.line.border",

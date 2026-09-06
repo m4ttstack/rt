@@ -12,6 +12,7 @@ export interface ColorScheme {
     muted: string;
     mutedText: string;
     accentText: string;
+    redText: string;
   };
   surface: {
     chrome: string;
@@ -55,11 +56,12 @@ export const TOKENS: Tokens = {
     },
     text: {
       // Canonical 6-digit spelling; CSS_TEXT below overrides the shipped
-      // spelling back to today's 3-digit `#111`.
-      fg: '#111111',
+      // spelling back to the 3-digit `#222`.
+      fg: '#222222',
       muted: '#8990b3',
       mutedText: '#565d80',
       accentText: '#1c5fbf',
+      redText: '#c8214f',
     },
     surface: {
       chrome: '#f3f4f7',
@@ -93,6 +95,7 @@ export const TOKENS: Tokens = {
       muted: '#7e86ad',
       mutedText: '#969ec2',
       accentText: '#7aa2f7',
+      redText: '#f7768e',
     },
     surface: {
       chrome: '#232a47',
@@ -126,5 +129,5 @@ export const TOKENS: Tokens = {
 // spelling while every consumer of TOKENS itself does color math in six-digit
 // hex.
 export const CSS_TEXT: Record<string, string> = {
-  'light.text.fg': '#111',
+  'light.text.fg': '#222',
 };

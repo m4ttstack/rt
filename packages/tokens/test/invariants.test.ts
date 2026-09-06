@@ -17,10 +17,15 @@ describe('surface ladder', () => {
 describe('AA floors for text-role tokens', () => {
   const surfaces = ['chrome', 'bg', 'panel', 'card'] as const;
   it.each(SCHEMES)(
-    '%s: fg, mutedText, accentText clear 4.5:1 on every surface',
+    '%s: fg, mutedText, accentText, redText clear 4.5:1 on every surface',
     scheme => {
       const t = TOKENS[scheme];
-      for (const roleName of ['fg', 'mutedText', 'accentText'] as const) {
+      for (const roleName of [
+        'fg',
+        'mutedText',
+        'accentText',
+        'redText',
+      ] as const) {
         for (const surface of surfaces) {
           const ratio = contrastRatio(t.text[roleName], t.surface[surface]);
           expect(

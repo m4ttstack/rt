@@ -55,7 +55,7 @@
   --tk-card: #ffffff;
   --tk-border: #c8cad6;
   --tk-border-soft: #d5d7e2;
-  --tk-fg: #111;
+  --tk-fg: #222;
   --tk-muted: #8990b3;
   /* AA-compliant muted for TEXT (>=4.5:1 on bg 1-3). The raw muted token above
      stays tui-kit's exact hex for dots/borders; only the muted TEXT roles read
@@ -66,6 +66,8 @@
      token above stays tui-kit's exact hex for fills and badges; only anchor
      text reads the darker value below. Same split as the muted pair. */
   --tk-accent-text: #1c5fbf;
+  /* AA-compliant red for TEXT (>=4.5:1 on bg 1-3); the raw red token above stays tui-kit's exact hex for fills and error surfaces. Same split as the muted/accent pair. */
+  --tk-red-text: #c8214f;
   --tk-green: #587539;
   --tk-red: #f52a65;
   --tk-amber: #8c6c3e;
@@ -98,6 +100,8 @@
   /* Accent for link text in dark (>=4.5:1 on bg 1-3); the accent already
      clears AA there, so this equals it. */
   --tk-accent-text: #7aa2f7;
+  /* Red text for the dark scheme; the raw red already clears AA there, so this equals it. */
+  --tk-red-text: #f7768e;
   --tk-green: #9ece6a;
   --tk-red: #f7768e;
   --tk-amber: #e0af68;

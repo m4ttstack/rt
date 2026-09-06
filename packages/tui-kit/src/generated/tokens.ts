@@ -20,8 +20,11 @@ export const GENERATED_LIGHT_COLORS = {
     "500": "#007197"
   },
   "gray": {
-    "fg": "#111",
-    "muted": "#8990b3"
+    "fg": "#222",
+    "muted": "#8990b3",
+    "mutedText": "#565d80",
+    "accentText": "#1c5fbf",
+    "redText": "#c8214f"
   },
   "surface": {
     "bg": "#f7f8fa",
@@ -62,7 +65,10 @@ export const GENERATED_DARK_COLORS = {
   },
   "gray": {
     "fg": "#e3e7f6",
-    "muted": "#7e86ad"
+    "muted": "#7e86ad",
+    "mutedText": "#969ec2",
+    "accentText": "#7aa2f7",
+    "redText": "#f7768e"
   },
   "surface": {
     "bg": "#16161e",

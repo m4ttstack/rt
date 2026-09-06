@@ -47,6 +47,13 @@ const aliases: CssVariablesResolver = () => ({
     "--chrome": "var(--surface-chrome)",
     "--fg": "var(--text-primary)",
     "--muted": "var(--text-muted)",
+    // emitSemanticLines always prefixes a semanticTokens.text key with
+    // `--text-`, so these three (mirroring tokyo's --tk-muted-text /
+    // --tk-accent-text / --tk-red-text) cannot be produced as semantic vars
+    // and are aliased here instead, the same way --chrome is.
+    "--muted-text": "var(--text-muted)",
+    "--accent-text": "var(--text-accentText)",
+    "--red-text": "var(--text-badText)",
     "--border": "var(--border-default)",
     "--accent": "var(--color-blue-500)",
     "--green": "var(--color-green-500)",

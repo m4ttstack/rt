@@ -11,8 +11,11 @@
     --color-dot-bad: light-dark(#e5153f, #ff5c72);
     --color-dot-ok: light-dark(#1f9d3a, #4ade5b);
     --color-dot-warn: light-dark(#e08a00, #ffbb3d);
-    --color-gray-fg: light-dark(#111, #e3e7f6);
+    --color-gray-accentText: light-dark(#1c5fbf, #7aa2f7);
+    --color-gray-fg: light-dark(#222, #e3e7f6);
     --color-gray-muted: light-dark(#8990b3, #7e86ad);
+    --color-gray-mutedText: light-dark(#565d80, #969ec2);
+    --color-gray-redText: light-dark(#c8214f, #f7768e);
     --color-green-500: light-dark(#587539, #9ece6a);
     --color-line-border: light-dark(#c8cad6, #3b4261);
     --color-line-grid: light-dark(rgba(52, 59, 88, 0.05), rgba(122, 162, 247, 0.06));
@@ -105,7 +108,9 @@
     --breakpoint-sm: 40rem;
     --breakpoint-xl: 80rem;
     --breakpoint-xs: 24rem;
-    --text-muted: var(--color-gray-muted);
+    --text-accentText: var(--color-gray-accentText);
+    --text-badText: var(--color-gray-redText);
+    --text-muted: var(--color-gray-mutedText);
     --text-primary: var(--color-gray-fg);
     --surface-canvas: var(--color-surface-bg);
     --surface-card: var(--color-surface-card);
@@ -135,6 +140,9 @@
     --chrome: var(--surface-chrome);
     --fg: var(--text-primary);
     --muted: var(--text-muted);
+    --muted-text: var(--text-muted);
+    --accent-text: var(--text-accentText);
+    --red-text: var(--text-badText);
     --border: var(--border-default);
     --accent: var(--color-blue-500);
     --green: var(--color-green-500);
