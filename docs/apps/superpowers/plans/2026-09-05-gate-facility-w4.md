@@ -100,7 +100,7 @@ Note the returned id as GATE. Tell the pane `GO. The gate id is <GATE>.` and con
 ### Task 2: rt registry schema: labeled options, context, origin, event payload [rt lane]
 
 **Files:**
-- Modify: `packages/rt-client/src/commands.ts:95-109` (types), `:577` (gate:open payload)
+- Modify: `packages/rt-client/src/commands.ts:95-110` (types), `:577` (gate:open payload)
 - Modify: `packages/rt-client/src/client.ts:449-456` (gateOpen whitelist)
 - Modify: `packages/rt-client/src/index.ts` (export the two option helpers)
 - Modify: `lib/daemon/gates-store.ts` (columns, migration, row mapping, open input)
@@ -113,7 +113,7 @@ Note the returned id as GATE. Tell the pane `GO. The gate id is <GATE>.` and con
   - `type GateOption = string | { value: string; label: string }` (commands.ts)
   - `interface GateOrigin { paneId?: string; tabId?: string; runId?: string; worktree?: string; presentation?: "form" | "wait" }` (commands.ts)
   - `GateQuestion.options: GateOption[]`
-  - `GateRow.context: string | null` and `GateRow.origin: GateOrigin | null`
+  - `GateRow.context?: string | null` and `GateRow.origin?: GateOrigin | null` (OPTIONAL on the wire type, see Step 4)
   - `Commands["gate:open"]["payload"]` gains `context?: string; origin?: GateOrigin`
   - `gateOptionValue(o: GateOption): string` and `gateOptionLabel(o: GateOption): string`, exported from `@mattstack/rt-client`
   - `gate/opened` event payload gains `context` and `origin`
@@ -245,12 +245,14 @@ export function gateOptionLabel(o: GateOption): string {
 }
 ```
 
-In `GateRow` (line 100-109) add, after the `meta` field:
+In `GateRow` (line 100-110) add, after the `meta` field:
 
 ```ts
-  context: string | null;
-  origin: GateOrigin | null;
+  context?: string | null;
+  origin?: GateOrigin | null;
 ```
+
+The fields are OPTIONAL on the wire type deliberately: every full `GateRow` fixture literal across rt, board, and console stays type-valid with zero churn, while `rowToGate` (Step 5) still always sets both, so runtime consumers can rely on their presence on daemon-served rows.
 
 In `Commands["gate:open"]` (line 577) extend the payload type with `context?: string; origin?: GateOrigin;`. In `packages/rt-client/src/client.ts:454`, extend the whitelist loop to `["meta", "agent", "pane", "nudge", "context", "origin"] as const`. In `packages/rt-client/src/index.ts`, add `gateOptionValue` and `gateOptionLabel` to the exports from `./commands.ts` (types like `GateOption`/`GateOrigin` flow through the existing type re-export the same way `GateRow` does).
 
@@ -286,7 +288,7 @@ In `Commands["gate:open"]` (line 577) extend the payload type with `context?: st
   - `open()` (line 353-373): pass `context: input.context ?? null, origin: input.origin ? JSON.stringify(input.origin) : null` into `openTxn`.
 
 - [ ] **Step 6: Handler validation + event payload.** In `lib/daemon/handlers/gate.ts`:
-  - Import `gateOptionValue` and the `GateOrigin` type from `../../../packages/rt-client/src/commands.ts` (extend the existing import).
+  - The existing rt-client import (line 8) is `import type` and the repo compiles under `verbatimModuleSyntax`, so the VALUE import gets its own statement: add `import { gateOptionValue } from "../../../packages/rt-client/src/commands.ts";` and extend the existing `import type` line with `GateOrigin`.
   - Add near the existing validators (below `isPlainObject`, line 51):
 
 ```ts
@@ -358,8 +360,8 @@ function isValidOrigin(v: unknown): v is GateOrigin {
 
 - [ ] **Step 7: Run green.**
 
-Run: `bun test lib/daemon/__tests__/ commands/__tests__/gate.test.ts packages/rt-client`
-Expected: PASS (the pre-existing suites must stay green; string options are unchanged behavior).
+Run: `bun test lib/daemon/__tests__/ commands/__tests__/gate.test.ts packages/rt-client && bunx tsc --noEmit`
+Expected: PASS on both (the pre-existing suites must stay green; string options are unchanged behavior; `bun test` alone does not typecheck, and rt CI runs `bunx tsc --noEmit`, so the lane gates it here).
 
 - [ ] **Step 8: Commit.**
 
@@ -496,7 +498,7 @@ export function createEscapeInjector(herdr: typeof herdrRequest = herdrRequest):
 
 - [ ] **Step 4: Sequence it in gate-push.** In `lib/daemon/gate-push.ts`:
   - Import: `import { GATE_BY_PANE } from "./gates-store.ts";` and `import type { EscapeInjector } from "./gate-escape.ts";`
-  - `createGatePush` opts gain `injectEscape?: EscapeInjector;`; destructure it with the others.
+  - `createGatePush` opts gain `injectEscape?: EscapeInjector;`; the implementation reads `opts.injectEscape` directly (no destructuring), as the replacement code below does.
   - Replace `pushToPane` (line 74-85) with:
 
 ```ts
@@ -528,8 +530,8 @@ export function createEscapeInjector(herdr: typeof herdrRequest = herdrRequest):
 
 - [ ] **Step 6: Run green.**
 
-Run: `bun test lib/daemon/__tests__/gate-push.test.ts lib/daemon/__tests__/gates-e2e.test.ts`
-Expected: PASS (existing doorbell tests unchanged; new suite green).
+Run: `bun test lib/daemon/__tests__/gate-push.test.ts lib/daemon/__tests__/gates-e2e.test.ts && bunx tsc --noEmit`
+Expected: PASS on both (existing doorbell tests unchanged; new suite green).
 
 - [ ] **Step 7: Commit.**
 
@@ -638,8 +640,8 @@ Expected: PASS.
 
 - [ ] **Step 5: Full rt suite.**
 
-Run: `bun test lib commands packages`
-Expected: PASS.
+Run: `bun test lib commands packages && bunx tsc --noEmit`
+Expected: PASS on both.
 
 - [ ] **Step 6: Commit.**
 
@@ -674,7 +676,7 @@ git commit -m "gate open --context/--origin flags; notify bridge rules gain subj
 **Files:**
 - Modify: `package.json` (re-pin `@mattstack/rt-client` to Task 5's version)
 - Modify: `src/gates/store.ts:4-9,48-56`
-- Modify: `src/gates/cache.ts:83-110` (applyOpened), `:186-219` (attachGates)
+- Modify: `src/gates/cache.ts:81-108` (applyOpened), `:186-219` (attachGates)
 - Modify: `src/client/board/gate-format.ts:101-133`
 - Modify: `src/client/board/GateCard.tsx`
 - Modify: `src/style.css` (one rule)
@@ -687,7 +689,7 @@ git commit -m "gate open --context/--origin flags; notify bridge rules gain subj
   - `src/client/board/gate-format.ts`: `optionValue(o: GateOption): string`, `optionDisplayFor(o: GateOption): GateOptionDisplay`, `displayForValue(value: string, options: GateOption[]): GateOptionDisplay`.
   - `attachGates` rows carry `context`, `origin`, `domain` (domain via the server-side `domainForKind`).
 
-- [ ] **Step 1: Re-pin.** `bun add @mattstack/rt-client@<the version Task 5 recorded>` then `bun test` to see what breaks (expected: type errors where `options` is consumed as `string[]`). Do not fix yet.
+- [ ] **Step 1: Re-pin.** `bun add @mattstack/rt-client@<the version Task 5 recorded>` then `bun run typecheck` as the breakage probe (`bun test` does not typecheck; Bun strips types). Expected: CLEAN. The new wire fields are optional by design (Task 2), so existing full-`GateRow` fixtures stay valid, and the `options` widening to `GateOption[]` only loosens assignability.
 
 - [ ] **Step 2: Write the failing format tests.** Append to `src/__tests__/gate-format.test.ts`:
 
@@ -810,7 +812,7 @@ export function displayForValue(value: string, options: GateOption[]): GateOptio
 In `gateAnswerPayload` nothing changes (`q.options.length` still gates requiredness; selections already carry values).
 
 - [ ] **Step 6: Map the fields through the server.** In `src/gates/cache.ts`:
-  - `applyOpened` (line 83-110): after the `nudge: null,` line add
+  - `applyOpened` (line 81-108): after the `nudge: null,` line add
 
 ```ts
       context: typeof payload.context === "string" ? payload.context : null,
@@ -848,8 +850,8 @@ In `gateAnswerPayload` nothing changes (`q.options.length` still gates requiredn
 
 - [ ] **Step 8: Run green.**
 
-Run: `bun test`
-Expected: PASS (whole board suite; the re-pin type fallout from Step 1 is resolved by the store type change).
+Run: `bun test && bun run typecheck`
+Expected: PASS on both (whole board suite plus the three-tsconfig typecheck; board PR CI runs only the purity gate, so the lane gates types here).
 
 - [ ] **Step 9: Commit.**
 
@@ -873,7 +875,7 @@ git commit -m "gates: labeled options, context section, and origin on the board 
 - Consumes: Task 6's `GateRow.origin/domain`; `focusPane` (`src/focus-pane.ts:10`); `paneList` from `@mattstack/rt-client` (no payload; returns `{ panes: Array<{ paneId: string; cwd?: string; ... }> }`).
 - Produces:
   - `resolveOriginFocus(origin: GateOrigin | undefined, panes: Array<{ paneId: string; cwd?: string }>): { ok: true; paneId: string; tabId?: string } | { ok: false; reason: string }` in `src/gates/focus.ts`
-  - Board route `POST /gate/focus` body `{ gateId: string }`; 200 `{ok:true}`, 400 `{ok:false,error:<reason>}`, 404 unknown gate, 502 focus failure
+  - Board route `POST /gate/focus` body `{ gateId: string }`; 200 `{ok:true}`, 400 `{ok:false,error:<reason>}`, 404 unknown gate, 502 only when the focus call throws (`focusPane` swallows a failed `paneFocus` into its tab fallback, so most focus failures resolve 200)
   - Client: open gates focus via the route; parked gates keep the resume flow via `onFocusPane(mr, gate.domain)`; `gateFocusDomain` no longer exists.
 
 - [ ] **Step 1: Write the failing resolution tests.** Create `src/__tests__/gates-focus.test.ts`:
@@ -976,24 +978,33 @@ export function resolveOriginFocus(
 ```
 
 - [ ] **Step 5: Rewire the client button and retire the duplicate.** In `src/client/board/gate-format.ts`: delete `domainForKind` (line 13-18), `DomainPaneRef` (line 138-140), and `gateFocusDomain` (line 150-157); keep `export type GateDomain`. In `src/client/board/GateCard.tsx`:
-  - Drop the `gateFocusDomain` import; add `useState` for `focusBusy`.
-  - Replace the `focusDomain` computation (line 151) and the focus button block (line 212-221) with:
+  - Drop the `gateFocusDomain` import; add `useState` for `focusBusy` and `focusError`.
+  - Replace the `focusDomain` computation (line 151) and the focus button block (line 212-221) with (a non-2xx response surfaces its reason in the card's existing error styling, per the spec's never-a-dead-button rule):
 
 ```tsx
   const originFocusable = Boolean(gate.origin?.paneId || gate.origin?.worktree);
   const focusGate = async () => {
     setFocusBusy(true);
+    setFocusError(null);
     try {
-      await fetch("/gate/focus", {
+      const res = await fetch("/gate/focus", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ gateId: gate.gateId }),
       });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        setFocusError(body?.error ?? `focus failed (${res.status})`);
+      }
+    } catch {
+      setFocusError("focus failed");
     } finally {
       setFocusBusy(false);
     }
   };
 ```
+
+  with the state declared beside the others: `const [focusError, setFocusError] = useState<string | null>(null);` and rendered in the actions row: `{focusError && <span className="tui-gate-error">{focusError}</span>}`.
 
   and in the actions row:
 
@@ -1028,8 +1039,8 @@ export function resolveOriginFocus(
 
 - [ ] **Step 7: Run green.**
 
-Run: `bun test`
-Expected: PASS.
+Run: `bun test && bun run typecheck`
+Expected: PASS on both.
 
 - [ ] **Step 8: Commit.**
 
@@ -1138,8 +1149,8 @@ and filter the question render:
 
 - [ ] **Step 5: Run green.**
 
-Run: `bun test`
-Expected: PASS.
+Run: `bun test && bun run typecheck`
+Expected: PASS on both.
 
 - [ ] **Step 6: Commit.**
 
@@ -1159,7 +1170,7 @@ git commit -m "gates: respond-plan collapse hides code-changes until a fix and s
 - Test: `src/__tests__/gates-sweep.test.ts`, create `src/__tests__/triage-manual-doctor.test.ts`
 
 **Interfaces:**
-- Consumes: `domainForKind`/`GATE_KINDS` (`src/gates/sweep.ts:31-44`), `composeFixClasses` (`src/triage/run.ts:47`), `loadTriageConfig` (`src/triage/config.ts:154`), `readMemory`/`writeMemory` (`src/triage/memory.ts:41,50`), `getGitLabProvider` (server-local, `src/server.ts:108-113`), `launchDoctor` (`src/herdr.ts`, already accepts `tier`/`fixClasses`).
+- Consumes: `domainForKind`/`GATE_KINDS` (`src/gates/sweep.ts:31-44`), `composeFixClasses` (`src/triage/run.ts:47`), `loadTriageConfig` (`src/triage/config.ts:154`), `readMemory`/`writeMemory` (`src/triage/memory.ts:41,50`), the server-local ASYNC `gitlab(): Promise<GitLabProvider>` helper (`src/server.ts:107-113`; `validateToken()` resolves the token user), `launchDoctor` (`src/herdr.ts`, already accepts `tier`/`fixClasses`).
 - Produces:
   - `planSweep(rows, states, now, graceMs, onUnknownKind?: (row: GateRow) => void)`
   - resume walk: an unknown kind logs `gate resume: unknown gate kind "<kind>" on <subject>; skipping` instead of throwing; a KNOWN kind with missing wiring still throws
@@ -1170,14 +1181,15 @@ git commit -m "gates: respond-plan collapse hides code-changes until a fix and s
 
 ```ts
 test("planSweep reports an unknown kind through the callback instead of pure silence", () => {
-  const rows = [row({ kind: "mystery-kind", status: "open", openedAt: 0 })];
+  const rows = [baseRow({ kind: "mystery-kind", status: "open", openedAt: 0 })];
+  const states = { reviews: new Map(), responds: new Map(), doctors: new Map() };
   const unknown: string[] = [];
-  planSweep(rows, emptyStates(), 10_000_000, 1, (r) => unknown.push(r.kind));
+  planSweep(rows, states, 10_000_000, 1, (r) => unknown.push(r.kind));
   expect(unknown).toEqual(["mystery-kind"]);
 });
 ```
 
-(If the file's fixture helpers are named differently, use its existing row-building helper; the assertion is the callback capture.) Create `src/__tests__/triage-manual-doctor.test.ts`:
+(`baseRow` is the file's existing fixture helper at `src/__tests__/gates-sweep.test.ts:13`; states are built inline per test in that file, so no shared helper exists or is needed.) Create `src/__tests__/triage-manual-doctor.test.ts`:
 
 ```ts
 import { describe, expect, test } from "bun:test";
@@ -1288,17 +1300,17 @@ export function manualDoctorFields(
 ```ts
         const triage = loadTriageConfig();
         const memory = readMemory();
-        const identity = await resolveDispatchIdentity(memory, () => getGitLabProvider().validateToken());
+        const identity = await resolveDispatchIdentity(memory, async () => (await gitlab()).validateToken());
         writeMemory(memory);
-        const { tier, fixClasses } = manualDoctorFields(triage, author, identity);
+        const { tier, fixClasses } = manualDoctorFields(triage, mr.author.username, identity);
 ```
 
-  then extend the state write to `{ mrUrl: parsed.mrUrl, iid: parsed.iid, status: "queued", origin: "manual", tier, fixClasses }` and the `launchDoctor({ ... })` call with `tier, fixClasses,`.
+  then extend the state write to `{ mrUrl: parsed.mrUrl, iid: parsed.iid, status: "queued", origin: "manual", tier, fixClasses }` and the `launchDoctor({ ... })` call with `tier, fixClasses,`. The composer takes `mr.author.username` and NEVER the endpoint's `author` variable: that variable is `mrAuthorLabel(mr)`, the display name, and `composeFixClasses` licenses the branch-writing classes only on an exact USERNAME match against the token identity, so feeding the label silently disables `mechanical-lint`/`code-fix` on the operator's own MRs. Keep `author` only for the launch's tab-label opt.
 
 - [ ] **Step 4: Run green.**
 
-Run: `bun test`
-Expected: PASS.
+Run: `bun test && bun run typecheck`
+Expected: PASS on both.
 
 - [ ] **Step 5: Commit.**
 
@@ -1377,11 +1389,9 @@ describe('W4 rendering', () => {
 Run: `bunx vitest run src/app/runs/GateCard.test.tsx`
 Expected: FAIL (labels render as objects or not at all; no context toggle; code-changes always shown).
 
-- [ ] **Step 4: Implement the format helpers.** In `src/app/runs/gate-format.ts` add (import `GateOption` type and `gateOptionValue` from `@mattstack/rt-client`):
+- [ ] **Step 4: Implement the format helpers.** In `src/app/runs/gate-format.ts`: the file already imports `GateQuestion` (type) from `@mattstack/rt-client` on line 1; MERGE into that existing import rather than adding a second one (a duplicate `GateQuestion` identifier is a compile error), so it reads `import { gateOptionValue, type GateOption, type GateQuestion } from '@mattstack/rt-client';`. Then add:
 
 ```ts
-import { gateOptionValue, type GateOption, type GateQuestion } from '@mattstack/rt-client';
-
 export const optionValue = gateOptionValue;
 
 export function optionLabel(o: GateOption): string {
@@ -1531,7 +1541,7 @@ describe('POST /api/gates/:id/focus', () => {
 });
 ```
 
-(`row()` in this file needs `context: null, origin: null` added to its base object after the re-pin; do that while here.)
+(The base `row()` fixture needs no changes: the wire fields are optional by design, Task 2.)
 
 - [ ] **Step 2: Write the failing button test.** Append to `src/app/runs/GateCard.test.tsx`:
 
@@ -1557,7 +1567,7 @@ describe('focus button', () => {
 });
 ```
 
-(`gateRow` needs `context: null, origin: null` added to its base object; do that while here.)
+(The base `gateRow` fixture needs no changes: the wire fields are optional by design, Task 2.)
 
 - [ ] **Step 3: Run to verify failure.**
 
@@ -1607,7 +1617,7 @@ and chain onto the `gates` Hono app:
   });
 ```
 
-- [ ] **Step 5: Implement the button.** In `src/app/runs/GateCard.tsx`, add `const [focusBusy, setFocusBusy] = useState(false);` and:
+- [ ] **Step 5: Implement the button.** In `src/app/runs/GateCard.tsx`, add `const [focusBusy, setFocusBusy] = useState(false);` and `const [focusError, setFocusError] = useState<string | null>(null);` and (a non-2xx response surfaces its reason in the card's existing error styling, per the spec's never-a-dead-button rule; the dead-worktree 400 is the case that matters):
 
 ```tsx
   const focusReason =
@@ -1619,12 +1629,29 @@ and chain onto the `gates` Hono app:
 
   const focusPaneAction = async () => {
     setFocusBusy(true);
+    setFocusError(null);
     try {
-      await client.api.gates[':id'].focus.$post({ param: { id: gate.id } });
+      const res = await client.api.gates[':id'].focus.$post({ param: { id: gate.id } });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        setFocusError(body?.error ?? `focus failed (${res.status})`);
+      }
+    } catch {
+      setFocusError('focus failed');
     } finally {
       setFocusBusy(false);
     }
   };
+```
+
+Render the error beside the button in the actions `Group`:
+
+```tsx
+              {focusError && (
+                <Text c="bad" fz={12} data-testid="gate-focus-error">
+                  {focusError}
+                </Text>
+              )}
 ```
 
 Render it in the actions `Group` next to submit (and in the answered/conflict branches leave the card as is; the button lives only on the actionable branch):
@@ -1679,7 +1706,7 @@ git commit -m "gates ui: origin-resolved focus endpoint and button"
 - Produces (Task 14's wrapper prose depends on these):
   - `FORM_OPTION_CAP = 4` and `presentationFor(questions): "form" | "wait"` (any question with more than 4 options forces wait)
   - `gateOpen(statePath, kind, questionsJson, io, extras?: { context?: string; sessionId?: string; worktree?: string })` returns `{ gateId: string; presentation: "form" | "wait" }`
-  - `bin/gate.ts open` accepts `--context <text>`, sources `sessionId` from `process.env.CLAUDE_CODE_SESSION_ID` and `worktree` from `process.cwd()`, and prints ONE JSON line `{"gateId":"...","presentation":"form"|"wait"}`
+  - `bin/gate.ts open` accepts `--context <text>`, sources `sessionId` from `process.env.CLAUDE_CODE_SESSION_ID` and `worktree` from `process.cwd()`, and prints ONE JSON line `{"gateId":"...","presentation":"form"|"wait"}`. This deliberately breaks `gate open`'s stdout contract (a bare id becomes a JSON line): its only consumers are the wrapper skills rewritten in Task 14 within this same lane, and the parked-resume path reads `gate wait <state>`, never open output.
   - Open payload rules: origin always stamped (`paneId`/`tabId` from state when present, `worktree`, `presentation`); `pane` set from state `paneId`; nudge `{session}` ONLY when presentation is form and a session id exists; oversize context (over 8192 UTF-8 bytes) is dropped with a stderr note, never truncated.
 
 - [ ] **Step 1: Write the failing tests.** In `src/__tests__/gates-verbs.test.ts`, the existing `gateOpen` tests destructure a string return; update them to `(await gateOpen(...)).gateId` where they assert the id. Then append:
@@ -1840,8 +1867,8 @@ export async function gateOpen(
 
 - [ ] **Step 4: Run green.**
 
-Run: `bun test`
-Expected: PASS (including the updated pre-existing gateOpen tests).
+Run: `bun test && bun run typecheck`
+Expected: PASS on both (including the updated pre-existing gateOpen tests).
 
 - [ ] **Step 5: Commit.**
 
@@ -1937,6 +1964,16 @@ code-changes question to a single-thread gate.
 ```
 
   - Context rule: `--context` is the reviewer thread quoted verbatim plus the drafted reply or fix summary for each thread, within the 8KB cap.
+  - Append to the pasted form branch IN THIS FILE (the pane is the third implementation of the collapse, alongside the board and console cards):
+
+```markdown
+On a respond-plan gate, hide the code-changes question until a `fix:`
+value is chosen and submit `skip` for it while hidden, exactly as the
+board and console cards do (ask the thread questions first, then either
+ask code-changes or fill `skip`, still ONE gate answer at the end).
+```
+
+  Note for the implementer: this branch is structurally unreachable today (a multi-thread gate's threads question exceeds the option cap and opens as wait; a single-thread gate carries no code-changes question), but the rule is pinned so a future shape change cannot silently diverge the pane form from the cards.
 
 - [ ] **Step 5: Doctor fill rules.** In `skills/doctor/SKILL.md`, where the escalation gate's options are built, add: options keep their short verb values and gain fuller labels (`{"value": "retry", "label": "retry the failed job"}` shape, each site's own wording); `--context` is the situation line the escalation already composes.
 
@@ -2012,10 +2049,15 @@ named by `origin.paneId`.
    site's option values are not already human-readable; labels cap at 200
    UTF-8 bytes -- middle-truncate a long path, never alter the value.
 
+   The open runs ONLY inside the non-empty branch; the empty branch stops
+   this recipe and takes step 6's fallback.
+
    ```bash
    rt runs field set gate <scope> --stage <stage>
-   [ -n "$RUN_ID" ] || { echo "gate site: no run id; not opening a run: gate" >&2; }  # then step 6
-   ORIGIN=$(python3 - "$RUN_ID" <<'EOF'
+   if [ -z "$RUN_ID" ]; then
+     echo "gate site: no run id; not opening a run: gate. STOP: take step 6's fallback." >&2
+   else
+     ORIGIN=$(python3 - "$RUN_ID" <<'EOF'
    import json, os, sys
    o = {"runId": sys.argv[1], "worktree": os.getcwd(),
         "presentation": os.environ.get("GATE_PRESENTATION", "wait")}
@@ -2025,14 +2067,17 @@ named by `origin.paneId`.
    print(json.dumps(o))
    EOF
    )
-   # form presentation (set GATE_PRESENTATION=form above): nudge this session
-   GATE=$(rt gate open --subject "run:$RUN_ID" --kind <scope> --questions '<questions json>' \
-     --context "$CONTEXT" --origin "$ORIGIN" \
-     --nudge "{\"session\":\"$CLAUDE_CODE_SESSION_ID\"}")
-   # wait presentation: same command WITHOUT --nudge
-   GATE_ID=$(printf '%s' "$GATE" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+     # form presentation (set GATE_PRESENTATION=form above): nudge this session
+     GATE=$(rt gate open --subject "run:$RUN_ID" --kind <scope> --questions '<questions json>' \
+       --context "$CONTEXT" --origin "$ORIGIN" \
+       --nudge "{\"session\":\"$CLAUDE_CODE_SESSION_ID\"}")
+     # wait presentation: same command WITHOUT --nudge
+     GATE_ID=$(printf '%s' "$GATE" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+   fi
    ```
 ```
+
+Formatting constraint for the SKILL edit: write the heredoc body and its `EOF` terminator at LINE START in the file (do not carry the list's three-space indent into them); a heredoc terminator with leading spaces never matches and the recipe would hang any shell that runs it verbatim.
 
 - [ ] **Step 4: Replace step 4 (the bounded wait) with the idle wait.**
 
@@ -2199,7 +2244,7 @@ This edits skill files: **load `superpowers:writing-skills` before editing.**
 
 - [ ] **Step 1: Load writing-skills and read both files whole.**
 
-- [ ] **Step 2: Replace every occurrence** of the sentence `With no run, present the same form in-pane only.` (one in checkout, two in rebase-worktree) with:
+- [ ] **Step 2: Replace every occurrence** of the sentence `With no run, present the same form in-pane only.` (one in checkout, two in rebase-worktree). The sentence is LINE-WRAPPED in all three occurrences, so an exact one-line string replace will not match: `attachments/forge/checkout/SKILL.md:40-41` wraps as `...in-pane` / `only.` and is followed by `Never a guess.`, which STAYS; `attachments/forge/rebase-worktree/SKILL.md:95-96` and `:118-119` wrap similarly. Replace with:
 
 ```markdown
 With no run: a human invocation presents the same form in-pane only. A
@@ -2230,7 +2275,7 @@ git commit -m "forge parts: spawned no-run contexts error out instead of present
 **MATT GATE: do not proceed without explicit approval at EACH step below.** Engine goes LAST among openers: pipeline gates render on the console, which Task 12 already deployed.
 
 - [ ] **Step 1:** engine repo: run the full check battery (`bun test`, `bash tests/repo-purity.sh`, `bash tests/certify.sh` on each edited part, `sh tests/test-gate-stop-hook.sh`). All green.
-- [ ] **Step 2:** Version bump per the same-commit convention: `plugin.json` 0.16.0 (or the next minor from whatever main holds), commit message suffix `; bump to <version>`.
+- [ ] **Step 2:** Version bump per the same-commit convention: `.claude-plugin/plugin.json` (currently `"version": "0.15.0"` at line 3) to 0.16.0 (or the next minor from whatever main holds), commit message suffix `; bump to <version>`.
 - [ ] **Step 3: MATT GATE.** Present the engine branch. Only after explicit approval: push/merge to engine main.
 - [ ] **Step 4: MATT GATE.** Team pack recompile: in the team pack's repo, recompile against the new engine (`rt skills compile`; if the installed rt predates the RT-110 release, use the documented `--pack-dir` escape hatch). Then the plugin update for every consuming surface. Each push/update individually approved.
 - [ ] **Step 5:** Sanity: start a scratch pipeline run to a `clarify` gate in a herdr pane; `rt gate list --subject-prefix run: --open` must show the gate carrying `origin` (with `runId`, `worktree`, `paneId`, `presentation`) and, for a labeled site, `{value,label}` options; the console must render it with labels and context.
