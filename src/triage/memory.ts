@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "fs";
 import { join } from "path";
 import { APP_ROOT } from "../app-root.ts";
 
@@ -54,4 +54,28 @@ export function writeMemory(mem: DispatchMemory, path: string = MEMORY_PATH): vo
   const tmp = path + ".tmp";
   writeFileSync(tmp, JSON.stringify(mem, null, 2) + "\n");
   renameSync(tmp, path);
+}
+
+const LOCK_STALE_MS = 2 * 60_000;
+
+/** Every read-modify-write of this file (the auto triage pass, and the
+    manual /doctor launch's identity refresh) must serialize behind this
+    lock: a slow pass and a fresh trigger interleaving can clobber attempt
+    budgets, `lastHandledPipelineId`, or `budgetEscalatedDay` in either
+    direction. Non-blocking: false means another live pass holds it, and
+    the caller should skip its write rather than wait. A lock older than
+    the stale window is reclaimed rather than honored, so a crashed holder
+    (which skips its `finally` via `process.exit`) can never strand it. */
+export function tryAcquireMemoryLock(path: string = MEMORY_PATH): boolean {
+  const lock = path + ".lock";
+  mkdirSync(join(lock, ".."), { recursive: true });
+  if (existsSync(lock) && Date.now() - statSync(lock).mtimeMs < LOCK_STALE_MS) {
+    return false;
+  }
+  writeFileSync(lock, String(process.pid));
+  return true;
+}
+
+export function releaseMemoryLock(path: string = MEMORY_PATH): void {
+  rmSync(path + ".lock", { force: true });
 }

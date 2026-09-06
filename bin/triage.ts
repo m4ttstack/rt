@@ -1,8 +1,6 @@
 // Headless policy engine, second entry point of this repo (working name).
 // rt cron is the intended caller (spec §5); a human running it by hand gets
 // the same one idempotent evaluation pass. The board server NEVER runs this.
-import { existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "fs";
-import { join } from "path";
 import { GitLabProvider, parseRepoId, type MRDetail } from "@mattstack/glance";
 import { readDiscussions, readProjectMRs } from "@mattstack/rt-client";
 import { loadConfig, loadGitLabToken, loadSwitchboardToken, repoIdentityField, resolveLaunchRepo, loadAgentSettings } from "../src/config.ts";
@@ -20,7 +18,7 @@ import { readReviewStates } from "../src/review-state.ts";
 import { appendAudit } from "../src/triage/audit.ts";
 import { loadReReviewConfig, loadTriageConfig } from "../src/triage/config.ts";
 import { runLatchPass, type LatchMrFacts } from "../src/triage/latch.ts";
-import { MEMORY_PATH, readMemory, writeMemory } from "../src/triage/memory.ts";
+import { readMemory, releaseMemoryLock, tryAcquireMemoryLock, writeMemory } from "../src/triage/memory.ts";
 import { runNudgePass } from "../src/triage/nudge.ts";
 import { notifyEscalation } from "../src/triage/notify.ts";
 import { collectProjectPRs } from "../src/triage/projects.ts";
@@ -36,9 +34,6 @@ import {
 } from "../src/triage/attendant.ts";
 import type { OwnMrFacts } from "../src/triage/edge.ts";
 
-const LOCK_PATH = MEMORY_PATH + ".lock";
-const LOCK_STALE_MS = 2 * 60_000;
-
 // Fully disabled is the common cron-invoked case: decide it BEFORE taking the
 // lock, because process.exit() skips finally blocks and would strand the lock
 // file. Two switches: board.triage gates the doctor/nudge sweeps, board.reReview
@@ -49,13 +44,9 @@ if (!triage.enabled && !reReview.enabled) process.exit(0);
 
 // One run at a time: cron debounces, but a slow run + a fresh trigger must
 // not interleave dispatches. A stale lock (crashed run) is reclaimed.
-// mkdir first: on a fresh install state/ does not exist yet and the lock
-// write would crash before the first run ever created it via writeMemory.
-mkdirSync(join(LOCK_PATH, ".."), { recursive: true });
-if (existsSync(LOCK_PATH) && Date.now() - statSync(LOCK_PATH).mtimeMs < LOCK_STALE_MS) {
+if (!tryAcquireMemoryLock()) {
   process.exit(0);
 }
-writeFileSync(LOCK_PATH, String(process.pid));
 
 try {
   const boardConfig = loadConfig();
@@ -249,5 +240,5 @@ try {
   }
   writeMemory(memory);
 } finally {
-  rmSync(LOCK_PATH, { force: true });
+  releaseMemoryLock();
 }

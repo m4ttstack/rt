@@ -41,7 +41,7 @@ import { findLatches, hasArmedLatch } from "./latch/discussions.ts";
 import { latchGateway } from "./latch/gateway.ts";
 import { postLatch, spendAllLatches } from "./latch/post.ts";
 import { loadReReviewConfig, loadTriageConfig } from "./triage/config.ts";
-import { readMemory, writeMemory } from "./triage/memory.ts";
+import { readMemory, releaseMemoryLock, tryAcquireMemoryLock, writeMemory } from "./triage/memory.ts";
 import { manualDoctorFields, resolveDispatchIdentity } from "./triage/run.ts";
 import { makeSwitchboardClient, type SwitchboardClient } from "./peer/client.ts";
 import { type MaterializeDeps } from "./peer/inbox.ts";
@@ -1024,8 +1024,24 @@ const httpServer = Bun.serve({
         }
         const triage = loadTriageConfig();
         const memory = readMemory();
+        const identityBefore = memory.identity;
         const identity = await resolveDispatchIdentity(memory, async () => (await gitlab()).validateToken());
-        writeMemory(memory);
+        // Only touch state/auto-dispatch.json when the identity actually
+        // refreshed (a cache hit leaves memory.identity's reference
+        // unchanged), and take the auto triage pass's own lock around that
+        // write -- bin/triage.ts serializes every access to this file so a
+        // slow pass and this manual launch never clobber the SAME attempt
+        // budgets / lastHandledPipelineId / budgetEscalatedDay in either
+        // direction. A pass already holding the lock just means this
+        // request's own identity refresh is not persisted; it still applies
+        // to fixClasses below, and the next request re-resolves it.
+        if (memory.identity !== identityBefore && tryAcquireMemoryLock()) {
+          try {
+            writeMemory(memory);
+          } finally {
+            releaseMemoryLock();
+          }
+        }
         const { tier, fixClasses } = manualDoctorFields(triage, mr.author.username, identity);
         const statePath = doctorFilePath(parsed.mrUrl);
         writeDoctorState(statePath, { mrUrl: parsed.mrUrl, iid: parsed.iid, status: "queued", origin: "manual", tier, fixClasses });
