@@ -7,6 +7,7 @@ import {
   optionValue,
   optionDisplayFor,
   displayForValue,
+  codeChangesHidden,
 } from "../client/board/gate-format.ts";
 import type { GateQuestion } from "../gates/store.ts";
 
@@ -140,5 +141,32 @@ describe("labeled options (W4)", () => {
     const options = [{ value: "Major", label: "Major (2)" }, "approve"];
     expect(displayForValue("Major", options)).toEqual({ text: "Major (2)", title: "Major" });
     expect(displayForValue("gone", options)).toEqual({ text: "gone" });
+  });
+});
+
+describe("respond collapse (W4)", () => {
+  const questions = [
+    { id: "threads-1", label: "Threads", multi: true, options: ["reply:t1", "fix:t1", "skip:t1"] },
+    { id: "code-changes", label: "Approve the proposed code changes?", multi: false, options: ["approve", "revise", "skip"] },
+  ];
+
+  test("hidden until a fix: value is selected", () => {
+    expect(codeChangesHidden("respond-plan", questions, {})).toBe(true);
+    expect(codeChangesHidden("respond-plan", questions, { "threads-1": ["reply:t1"] })).toBe(true);
+    expect(codeChangesHidden("respond-plan", questions, { "threads-1": ["fix:t1"] })).toBe(false);
+  });
+
+  test("never hidden off respond-plan, without the question, or without the sentinel option", () => {
+    expect(codeChangesHidden("review-post", questions, {})).toBe(false);
+    expect(codeChangesHidden("respond-plan", [questions[0]!], {})).toBe(false);
+    const noSentinel = [questions[0]!, { ...questions[1]!, options: ["approve", "revise"] }];
+    expect(codeChangesHidden("respond-plan", noSentinel, {})).toBe(false);
+  });
+
+  test("a hidden question submits the sentinel through gateAnswerPayload", () => {
+    const selections = { "threads-1": ["reply:t1"] };
+    const effective = { ...selections, "code-changes": "skip" };
+    const payload = gateAnswerPayload({ gateId: "g1", questions }, effective);
+    expect(payload).toEqual({ gateId: "g1", answers: { "threads-1": ["reply:t1"], "code-changes": "skip" } });
   });
 });

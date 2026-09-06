@@ -9,6 +9,9 @@ import {
   optionValue,
   optionDisplayFor,
   displayForValue,
+  codeChangesHidden,
+  CODE_CHANGES_QUESTION_ID,
+  CODE_CHANGES_SENTINEL,
   type GateSelections,
   type GateDomain,
 } from "./gate-format.ts";
@@ -162,7 +165,11 @@ function GateCard({
 
   const answered = gate.status === "answered";
   const actionable = gate.status === "open" || gate.status === "parked";
-  const payload = actionable ? gateAnswerPayload({ gateId: gate.gateId, questions: gate.questions }, selections) : null;
+  const hidden = actionable && codeChangesHidden(gate.kind, gate.questions, selections);
+  const effective = hidden ? { ...selections, [CODE_CHANGES_QUESTION_ID]: CODE_CHANGES_SENTINEL } : selections;
+  const payload = actionable
+    ? gateAnswerPayload({ gateId: gate.gateId, questions: gate.questions }, effective)
+    : null;
   const originFocusable = Boolean(gate.origin?.paneId || gate.origin?.worktree);
   const focusGate = async () => {
     setFocusBusy(true);
@@ -248,9 +255,11 @@ function GateCard({
         </>
       ) : (
         <>
-          {gate.questions.map((q) => (
-            <GateQuestionField key={q.id} question={q} value={selections[q.id]} onChange={setAnswer} />
-          ))}
+          {gate.questions
+            .filter((q) => !(hidden && q.id === CODE_CHANGES_QUESTION_ID))
+            .map((q) => (
+              <GateQuestionField key={q.id} question={q} value={selections[q.id]} onChange={setAnswer} />
+            ))}
           <div className="tui-gate-actions">
             {failed && <span className="tui-gate-error">submit failed... nothing was sent, try again</span>}
             {focusError && <span className="tui-gate-error">{focusError}</span>}

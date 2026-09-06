@@ -143,3 +143,26 @@ export function displayForValue(value: string, options: GateOption[]): GateOptio
   const match = options.find((o) => optionValue(o) === value);
   return match !== undefined ? optionDisplayFor(match) : formatGateOption(value);
 }
+
+export const RESPOND_PLAN_KIND = "respond-plan";
+export const CODE_CHANGES_QUESTION_ID = "code-changes";
+export const CODE_CHANGES_SENTINEL = "skip";
+
+/** The respond collapse keys off the gate's own option set: only a
+    respond-plan gate whose code-changes question carries the sentinel
+    participates, so old gates render exactly as before. */
+export function codeChangesHidden(
+  kind: string,
+  questions: GateQuestion[],
+  selections: GateSelections,
+): boolean {
+  if (kind !== RESPOND_PLAN_KIND) return false;
+  const q = questions.find((x) => x.id === CODE_CHANGES_QUESTION_ID);
+  if (!q || !q.options.some((o) => optionValue(o) === CODE_CHANGES_SENTINEL)) return false;
+  for (const [qid, sel] of Object.entries(selections)) {
+    if (qid === CODE_CHANGES_QUESTION_ID) continue;
+    const values = Array.isArray(sel) ? sel : [sel];
+    if (values.some((v) => typeof v === "string" && v.startsWith("fix:"))) return false;
+  }
+  return true;
+}
