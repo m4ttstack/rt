@@ -118,6 +118,24 @@ jobs:
       - run: bun run board:test
       - name: board has no employer or domain references in its tracked tree
         run: apps/board/scripts/repo-purity.sh
+      # deck:test runs in the deck-macos job below: deck supervises launchd
+      # and shells to plutil, both macOS-only, so its suite cannot run here.
+
+  deck-macos:
+    runs-on: macos-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      # Same bun pin as the checks job above (generated-artifact byte-compare
+      # gates), kept in sync with it.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.13'
+      - run: bun install --frozen-lockfile
+      - run: bun run tui-kit:build
       - run: bun run deck:test
       # deck:test-dom is not run here: 11 of its 83 tests pre-exist as
       # failures in the standalone repo at the imported SHA (unrelated
