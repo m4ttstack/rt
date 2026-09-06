@@ -1,0 +1,77 @@
+/*
+ * Modal — mr-board's `.tui-modal*` centred dialog FRAME.
+ *
+ * Board-specific modal CONTENT rules (`.tui-modal-sub`, `-list`, `-row`, …) and
+ * the per-modal overrides (`.tui-review-modal`, `.tui-draft-modal`) stay
+ * app-side and keep winning without `!important`: mr-board's stylesheet is
+ * unlayered, and everything here sits inside `@layer soribashi.recipes`.
+ *
+ * `.close:focus-visible` is one selector's share of mr-board's shared
+ * fourteen-selector focus ring — a SPLIT of that rule, not a move; the board
+ * keeps the other thirteen. See docs/decisions.md for the adoption rules.
+ */
+@layer soribashi.recipes {
+  .overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: var(--sb-modal-overlay-pad-y) var(--spacing-rem100);
+    background: var(--surface-wash-bg-55);
+    backdrop-filter: blur(2px);
+  }
+
+  /* `box-sizing` is an ADDITION, not a lift — mr-board gets it from a global
+     reset, the kit's copy of which (src/canvas.css) is optional. Without it a
+     consumer who skips the canvas gets a "420px" frame measuring ~455px. See
+     docs/decisions.md for what it does and does not guarantee. */
+  .root {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: var(--sb-modal-max-w);
+    max-height: var(--sb-modal-max-h);
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    background: var(--panel);
+    padding: var(--spacing-rem100) var(--spacing-xxl) var(--spacing-rem120);
+    box-shadow: var(--shadow-modal);
+  }
+
+  .head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .title {
+    font-weight: 700;
+    letter-spacing: var(--sb-modal-title-tracking);
+    color: var(--accent);
+  }
+
+  /* No `font: inherit` here, deliberately: `.tui-modal-x` never set one, so the
+     close button has always rendered in the browser's default button font, and
+     adding it would visibly change SettingsModal's literal "✕". */
+  .close {
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: var(--font-size-rem90);
+    padding: var(--spacing-rem20) var(--spacing-rem40);
+    border-radius: var(--radius-px5);
+  }
+
+  .close:hover {
+    color: var(--fg);
+    background: var(--card);
+  }
+
+  .close:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}

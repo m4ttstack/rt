@@ -1,0 +1,44 @@
+/* SelectBox — mr-board's row/card selection checkbox (`.tui-selectbox`). */
+@layer soribashi.recipes {
+  .root {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: var(--sb-selectbox-size);
+    height: var(--sb-selectbox-size);
+    padding: 0;
+    /* UA reset, longhand: the `font` shorthand would also reset font-size,
+       which the board's own override on the next line owns. */
+    font-family: inherit;
+    font-weight: inherit;
+    font-size: var(--font-size-rem105);
+    line-height: 1;
+    cursor: pointer;
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-px5);
+    color: var(--muted);
+    opacity: 0.5;
+    transition:
+      opacity 0.12s,
+      color 0.12s,
+      background 0.12s;
+  }
+
+  .root:hover {
+    opacity: 1;
+    color: var(--fg);
+    background: var(--surface-wash-accent-14);
+  }
+
+  .root[data-checked] {
+    opacity: 1;
+    color: var(--accent);
+  }
+
+  .root:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}

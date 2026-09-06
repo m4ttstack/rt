@@ -1,0 +1,54 @@
+/*
+ * StatusDot — mr-board's `.tui-dot`/`.tui-dot-wrap` status glyph + hover card.
+ *
+ * `--sd-color` is the recipe's own per-instance scalar, mapped straight from
+ * `intent` and never through autoVars — see docs/decisions.md. The card is
+ * portaled (../Tooltip/TooltipCard.tsx), the same shared implementation
+ * Tooltip's own card uses; `.card` here is that card's visual skin, kept
+ * byte-identical to Tooltip's own so the two stay indistinguishable at rest.
+ */
+@layer soribashi.recipes {
+  .root {
+    flex-shrink: 0;
+    align-self: center;
+  }
+
+  .dot {
+    font-size: var(--font-size-rem100);
+    line-height: 1;
+    display: inline-block;
+    vertical-align: middle;
+    position: relative;
+    /* Optical nudge, verbatim: the ● glyph renders low in its line box, so
+       this lifts it to visual centre. Not a value to re-derive or round. */
+    top: -2px;
+    color: var(--sd-color);
+  }
+
+  /* `box-sizing` is an ADDITION, not a lift — without it a consumer who skips
+     the optional canvas reset gets a "320px" tooltip measuring ~342px. See
+     docs/decisions.md. */
+  .card {
+    box-sizing: border-box;
+    position: fixed;
+    /* Highest z-index in the kit (ContextMenu 200, ToastHost 210) — a hover
+       card must stay above every other overlay layer, including toasts. */
+    z-index: 300;
+    white-space: pre-line;
+    width: max-content;
+    max-width: 320px;
+    /* See Tooltip.module.css's identical note: a portaled card can't rely on
+       inheriting a font from wherever its trigger happens to sit. */
+    font-family: var(--font-sans);
+    font-size: var(--font-size-rem74);
+    line-height: 1.5;
+    text-align: left;
+    font-weight: 400;
+    background: var(--panel);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-sm) var(--spacing-lg);
+    pointer-events: none;
+  }
+}

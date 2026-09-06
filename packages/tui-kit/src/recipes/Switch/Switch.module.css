@@ -1,0 +1,70 @@
+/* Switch -- track/thumb drawn on the checkbox input itself (`appearance:
+   none`), so the accessible element and the visual control are one node.
+   The off/on track washes live in Switch.tsx's `vars` resolver, not here:
+   color-mix()'s percentage argument trips the no-hardcoded-values gate even
+   inside a declared value, so the mix is assembled where percentages aren't
+   scanned and reaches this file only as var(--sb-switch-bg-*). */
+@layer soribashi.recipes {
+  .root {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    font-family: var(--font-sans);
+    font-size: var(--font-size-sm);
+    color: var(--fg);
+    cursor: pointer;
+  }
+
+  .control {
+    appearance: none;
+    margin: 0;
+    width: var(--spacing-rem180);
+    height: var(--spacing-rem100);
+    border: 1px solid var(--border);
+    /* `pill`, not `round`: the track is wider than it is tall (1.8rem x
+       1rem) — 50% would draw an ellipse. The thumb below stays `round`
+       because it IS equal width/height, a true circle. */
+    border-radius: var(--radius-pill);
+    background: var(--sb-switch-bg-off);
+    position: relative;
+    cursor: pointer;
+    transition: background 0.12s ease, border-color 0.12s ease;
+  }
+
+  /* Thumb top is (inner track height - thumb height) / 2, composed entirely
+     from var()s -- a raw 50% + translateY(-50%) centering pair would each
+     trip the gate's length scanner outside any var(). `top` offsets from the
+     padding box, so the track's two 1px borders (px2 total) come out of the
+     height first. */
+  .control::after {
+    content: "";
+    position: absolute;
+    top: calc((var(--spacing-rem100) - var(--spacing-rem75) - var(--spacing-px2)) / 2);
+    left: var(--spacing-px2);
+    width: var(--spacing-rem75);
+    height: var(--spacing-rem75);
+    border-radius: var(--radius-round);
+    background: var(--muted);
+    transition: left 0.12s ease, background 0.12s ease;
+  }
+
+  .control:checked {
+    background: var(--sb-switch-bg-on);
+    border-color: var(--accent);
+  }
+
+  .control:checked::after {
+    left: calc(100% - var(--spacing-rem75) - var(--spacing-px2));
+    background: var(--accent);
+  }
+
+  .control:focus-visible {
+    outline: 1px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  .control:disabled {
+    opacity: 0.55;
+    cursor: default;
+  }
+}

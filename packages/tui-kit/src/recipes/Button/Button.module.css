@@ -1,0 +1,84 @@
+/* Button — the kit's workhorse control, four canonical variants (default,
+   light, outline, subtle). Every variant's colour comes from the SAME
+   `--button-bg`/`--button-color`/`--button-border`/`--button-hover` quartet,
+   which autoVars derives from the theme's intent resolver
+   (tuiIntentResolver -> singleShadeVariantColors) per (intent, variant) —
+   nothing in this stylesheet names a variant to pick a colour any more.
+   HOVER changes background ONLY, never border or text colour. */
+@layer soribashi.recipes {
+  .root {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-xs);
+    font-family: var(--font-sans);
+    font-size: var(--font-size-sm);
+    line-height: var(--line-height-base);
+    /* Uniform box model across variants: border-WIDTH always reserved, so
+       switching variant (or hovering) never shifts layout — border-COLOR is
+       the only part that changes, and it's `transparent` for some variants
+       via `--button-border` itself, not via a separate declaration here. */
+    border: 1px solid var(--button-border);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-xs) var(--spacing-md);
+    cursor: pointer;
+    transition: border-color 0.12s ease, background 0.12s ease, color 0.12s ease,
+      transform 0.08s ease;
+
+    background: var(--button-bg);
+    color: var(--button-color);
+  }
+
+  .root:hover:not(:disabled) {
+    background: var(--button-hover);
+  }
+
+  .root:focus-visible {
+    outline: 1px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  .root:disabled {
+    opacity: 0.55;
+    cursor: default;
+  }
+
+  .root:active:not(:disabled) {
+    transform: translateY(1px);
+  }
+
+  .root[data-size="sm"] {
+    font-size: var(--font-size-xs);
+    padding: var(--spacing-xxs) var(--spacing-sm);
+  }
+
+  /* `--spacing-xxs` read as too tight around a 14px Icon glyph — bumped to
+     `--spacing-xs`, with a min-width/min-height floor so a `sm` iconOnly
+     button still comes out an even ~28px square rather than shrinking to
+     fit the glyph (the old Oat board pinned this same floor for the same
+     reason). */
+  .root[data-icon-only] {
+    padding: var(--spacing-xs);
+    aspect-ratio: 1;
+    min-width: var(--spacing-rem175);
+    min-height: var(--spacing-rem175);
+  }
+
+  /* PARITY ANCHOR (Button.parity.test.tsx): the resolver's `default` variant
+     is deliberately intent-agnostic — one neutral panel for every intent, by
+     design (see default-intent-resolver.ts). `bad` on `default` is the one
+     cell that predates the resolver and has no field in its result to carry
+     this: red text AND red border, at rest, is a Button-specific departure
+     from that neutral rule, so it stays here as a narrow override rather
+     than becoming a resolver patch that would leak into every other variant.
+     `color` is darkened toward `--fg` (same formula as intent-resolver.ts) —
+     raw `--red` on `--surface-panel` reads below WCAG AA; `border-color` stays
+     the raw tone since border isn't the failing axis. The mix itself lives in
+     Button.tsx's `vars` as `--sb-button-bad-color`: a literal color-mix()
+     percentage here would trip the no-hardcoded-values gate even inside
+     var()'s expression tree. */
+  .root[data-variant="default"][data-intent="bad"] {
+    color: var(--sb-button-bad-color);
+    border-color: var(--red);
+  }
+}

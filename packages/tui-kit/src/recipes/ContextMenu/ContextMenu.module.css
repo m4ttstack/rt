@@ -1,0 +1,78 @@
+/*
+ * ContextMenu — mr-board's `.tui-menu*` cursor-anchored row action menu.
+ *
+ * Note mode (`.tui-menu-noting`, `.tui-menu-note*`) and the trailing board
+ * chrome (`.tui-menu-check`, `.tui-menu-spin`) are NOT absorbed here and must
+ * stay in mr-board's stylesheet — see docs/decisions.md for the ancestor-scoped
+ * rule that needs rewriting at adoption.
+ */
+@layer soribashi.recipes {
+  /* `box-sizing` is an ADDITION, not a lift — mr-board gets it from a global
+     reset, the kit's copy of which (src/canvas.css) is optional. See
+     docs/decisions.md for what it does and does not guarantee. */
+  .root {
+    box-sizing: border-box;
+    position: fixed;
+    z-index: 200;
+    min-width: var(--sb-contextmenu-min-w);
+    padding: var(--spacing-px4);
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-menu);
+    font-size: var(--font-size-px13);
+  }
+
+  .label {
+    padding: var(--spacing-px5) var(--spacing-px8) var(--spacing-px6);
+    font-family: var(--font-sans);
+    font-size: var(--font-size-px11);
+    color: var(--muted);
+    border-bottom: 1px solid var(--border-soft);
+    margin-bottom: var(--spacing-px4);
+  }
+
+  /* `box-sizing` for the same reason as `.root`, and it bites harder here:
+     `width: 100%` plus 8px of horizontal padding would otherwise make every
+     item 16px wider than the box it sits in. */
+  .item {
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-px12);
+    width: 100%;
+    padding: var(--spacing-px7) var(--spacing-px8);
+    background: none;
+    border: none;
+    border-radius: var(--radius-px5);
+    color: var(--fg);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .item:hover:not(:disabled),
+  .item:focus-visible {
+    background: var(--surface-wash-accent-16);
+    outline: none;
+  }
+
+  .item:disabled {
+    color: var(--muted);
+    opacity: 0.45;
+    cursor: default;
+  }
+
+  .hint {
+    font-family: var(--font-sans);
+    font-size: var(--font-size-px10);
+    color: var(--muted);
+  }
+
+  .separator {
+    height: 1px;
+    background: var(--border-soft);
+    margin: var(--spacing-px4) var(--spacing-px2);
+  }
+}

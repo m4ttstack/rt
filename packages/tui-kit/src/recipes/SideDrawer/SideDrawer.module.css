@@ -1,0 +1,65 @@
+/*
+ * SideDrawer — mr-board's TWO drawer families (`.tui-cd*` right,
+ * `.tui-drawer*` left) merged into one side-driven recipe. Shared declarations
+ * sit on `.overlay`/`.root`; everything that differs is written under
+ * `[data-side]`.
+ *
+ * The left overlay's `justify-content` is deliberately left UNSET rather than
+ * written as `flex-start`: the board never declares it, so today's computed
+ * value is the initial `normal`, and the parity constraint is computed styles,
+ * not just pixels.
+ *
+ * The left overlay's `display: none` + its 720px unhide are a BOARD LAYOUT
+ * decision, not a property of "a left drawer", and stay in mr-board's
+ * stylesheet. Every drawer internal likewise stays app-side. See
+ * docs/decisions.md for those adoption rules.
+ */
+@layer soribashi.recipes {
+  .overlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    background: var(--surface-wash-bg-55);
+    backdrop-filter: blur(2px);
+  }
+
+  .overlay[data-side="right"] {
+    z-index: 100;
+    justify-content: flex-end;
+    /* Both resets exist because this drawer renders inside a clickable, nowrap
+       board row and has to undo what it inherits. Scoped to the right side
+       rather than generalised: generalising would change the LEFT overlay's
+       computed `cursor` from `auto` to `default`, which parity forbids. */
+    cursor: default;
+    white-space: normal;
+  }
+
+  .overlay[data-side="left"] {
+    z-index: 90;
+  }
+
+  /* `box-sizing` is an ADDITION, not a lift — without it a consumer who skips
+     the optional canvas reset renders a "320px" left drawer 349px wide. See
+     docs/decisions.md. */
+  .root {
+    box-sizing: border-box;
+    width: var(--sb-sidedrawer-w);
+    height: 100%;
+    overflow-y: auto;
+    background: var(--panel);
+    display: flex;
+    flex-direction: column;
+  }
+
+  .root[data-side="right"] {
+    border-left: 1px solid var(--border);
+    box-shadow: var(--shadow-drawer);
+  }
+
+  .root[data-side="left"] {
+    border-right: 1px solid var(--border);
+    padding: var(--spacing-px14);
+    gap: var(--spacing-px14);
+    box-shadow: var(--shadow-drawer-left);
+  }
+}

@@ -1,0 +1,56 @@
+/*
+ * Segmented (+ LabeledSeg) — mr-board's icon/text segmented control family.
+ *
+ * The solid fill lives on the root and shows through the transparent buttons,
+ * so the control reads as one opaque box rather than letting the page's grid
+ * bleed through. The active option's accent then paints over it. Both halves
+ * are the current board rule, verbatim.
+ *
+ * `.option` deliberately carries no `font` reset — see docs/decisions.md.
+ */
+@layer soribashi.recipes {
+  .root {
+    display: inline-flex;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    background: var(--panel);
+  }
+
+  .option {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--spacing-xs) var(--spacing-sm);
+    cursor: pointer;
+    background: transparent;
+    border: none;
+    color: var(--muted);
+  }
+
+  .option + .option {
+    border-left: 1px solid var(--border);
+  }
+
+  .option[data-active] {
+    background: var(--accent);
+    color: var(--bg);
+    font-weight: 700;
+  }
+
+  .option:not([data-active]):hover {
+    color: var(--fg);
+  }
+
+  .option:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  /* LabeledSeg's roomier text padding. Segmented never stamps `data-text`, so
+     this never matches an icon-mode control. */
+  .root[data-text] .option {
+    padding: var(--spacing-xs) var(--spacing-rem55);
+    font-size: var(--sb-segmented-text-size);
+  }
+}
