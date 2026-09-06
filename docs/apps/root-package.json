@@ -69,7 +69,7 @@
     "wouter": "^3.10.0",
     "zod": "^4.4.3",
     "hono": "^4.13.5",
-    "@mattstack/rt-client": "^0.14.0",
+    "@mattstack/rt-client": "^0.16.0",
     "@mattstack/glance": "^0.24.0"
   }
 }
