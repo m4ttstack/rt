@@ -51,6 +51,12 @@ export const COMPOSITE_SHAPES: Record<string, CompositeShape> = {
       "fixClasses.codeFix": "boolean",
     },
   },
+  "board.reReview": {
+    kind: "leaves",
+    fields: {
+      enabled: "boolean",
+    },
+  },
   "board.tabs": { kind: "tabs" },
   "board.members": { kind: "roster" },
   "board.hiddenMembers": { kind: "roster" },
