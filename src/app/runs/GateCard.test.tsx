@@ -6,6 +6,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const answerPost = vi.fn();
+const focusPost = vi.fn();
 
 vi.mock('../api', () => ({
   client: {
@@ -13,6 +14,7 @@ vi.mock('../api', () => ({
       gates: {
         ':id': {
           answer: { $post: (...args: unknown[]) => answerPost(...args) },
+          focus: { $post: (...args: unknown[]) => focusPost(...args) },
         },
       },
     },
@@ -282,5 +284,111 @@ describe('GateCard: answered', () => {
 
     const summary = screen.getByTestId('gate-answer-summary');
     expect(within(summary).getByText('(none)')).toBeInTheDocument();
+  });
+});
+
+describe('W4 rendering', () => {
+  it('renders option labels but submits values', async () => {
+    const user = userEvent.setup();
+    renderCard(
+      gateRow({
+        questions: [
+          {
+            id: 'outcome',
+            label: 'What happened?',
+            multi: false,
+            options: [{ value: 'pass', label: 'Pass (all green)' }, 'fail'],
+          },
+        ],
+      })
+    );
+    await user.click(screen.getByLabelText('Pass (all green)'));
+    await user.click(screen.getByRole('button', { name: 'submit' }));
+    await waitFor(() => expect(answerPost).toHaveBeenCalled());
+    expect(answerPost.mock.calls[0]![0]).toMatchObject({
+      json: { answers: { outcome: 'pass' } },
+    });
+  });
+
+  it('shows a context toggle and reveals the context text', async () => {
+    const user = userEvent.setup();
+    renderCard(gateRow({ context: 'the failing check output' }));
+    expect(screen.queryByTestId('gate-context-body')).not.toBeInTheDocument();
+    await user.click(screen.getByTestId('gate-context-toggle'));
+    expect(screen.getByTestId('gate-context-body')).toHaveTextContent(
+      'the failing check output'
+    );
+  });
+
+  it('hides code-changes until a fix is picked and submits the sentinel while hidden', async () => {
+    const user = userEvent.setup();
+    // A prior test's answerPost.mockResolvedValue (409 conflict) otherwise
+    // survives vi.clearAllMocks() -- it clears calls, not the resolved
+    // implementation -- and would flip this card to the read-only conflict
+    // view after the first submit below, before the second interaction.
+    answerPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ row: gateRow({ status: 'open' }) }),
+    });
+    renderCard(
+      gateRow({
+        kind: 'respond-plan',
+        questions: [
+          {
+            id: 'threads-1',
+            label: 'Threads',
+            multi: true,
+            options: ['reply:t1', 'fix:t1', 'skip:t1'],
+          },
+          {
+            id: 'code-changes',
+            label: 'Approve the proposed code changes?',
+            multi: false,
+            options: ['approve', 'revise', 'skip'],
+          },
+        ],
+      })
+    );
+    expect(
+      screen.queryByText('Approve the proposed code changes?')
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByLabelText('reply:t1'));
+    await user.click(screen.getByRole('button', { name: 'submit' }));
+    await waitFor(() => expect(answerPost).toHaveBeenCalled());
+    expect(answerPost.mock.calls[0]![0]).toMatchObject({
+      json: { answers: { 'threads-1': ['reply:t1'], 'code-changes': 'skip' } },
+    });
+    answerPost.mockClear();
+    await user.click(screen.getByLabelText('fix:t1'));
+    expect(
+      screen.getByText('Approve the proposed code changes?')
+    ).toBeInTheDocument();
+  });
+});
+
+describe('focus button', () => {
+  it('is enabled when the origin can resolve and disabled with a reason otherwise', () => {
+    renderCard(gateRow({ origin: { paneId: 'p1', presentation: 'form' } }));
+    expect(screen.getByTestId('gate-focus')).toBeEnabled();
+  });
+
+  it('is disabled with reasons for origin-less and parked gates', () => {
+    renderCard(gateRow({}));
+    expect(screen.getByTestId('gate-focus')).toBeDisabled();
+    expect(screen.getByTestId('gate-focus')).toHaveAttribute(
+      'title',
+      'no origin on this gate'
+    );
+  });
+
+  it('parked gates disable focus but keep the submit path', () => {
+    renderCard(gateRow({ status: 'parked', origin: { paneId: 'p1' } }));
+    expect(screen.getByTestId('gate-focus')).toBeDisabled();
+    expect(screen.getByTestId('gate-focus')).toHaveAttribute(
+      'title',
+      'parked; resume is board-owned'
+    );
+    expect(screen.getByRole('button', { name: 'submit' })).toBeInTheDocument();
   });
 });

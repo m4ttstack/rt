@@ -5,6 +5,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('@mattstack/rt-client', () => ({
   gateList: vi.fn(),
   gateAnswer: vi.fn(),
+  paneList: vi.fn(),
+  paneFocus: vi.fn(),
 }));
 
 const { gates } = await import('./gates');
@@ -243,5 +245,80 @@ describe('POST /api/gates/:id/answer', () => {
 
     expect(res.status).toBe(400);
     expect(rt.gateAnswer).not.toHaveBeenCalled();
+  });
+});
+
+function focus(id: string) {
+  return gates.fetch(
+    new Request(`http://localhost/api/gates/${id}/focus`, { method: 'POST' })
+  );
+}
+
+describe('POST /api/gates/:id/focus', () => {
+  it('focuses directly by origin.paneId', async () => {
+    vi.mocked(rt.gateList).mockResolvedValueOnce({
+      ok: true,
+      data: {
+        gates: [row({ origin: { paneId: 'p1', presentation: 'form' } })],
+        cursor: 1,
+      },
+    });
+    vi.mocked(rt.paneFocus).mockResolvedValueOnce({
+      ok: true,
+      data: { paneId: 'p1', focused: true },
+    });
+    const res = await focus('g1');
+    expect(res.status).toBe(200);
+    expect(rt.paneFocus).toHaveBeenCalledWith(
+      { paneId: 'p1' },
+      expect.anything()
+    );
+    expect(rt.paneList).not.toHaveBeenCalled();
+  });
+
+  it('falls back to a worktree match against live pane cwds', async () => {
+    vi.mocked(rt.gateList).mockResolvedValueOnce({
+      ok: true,
+      data: { gates: [row({ origin: { worktree: '/w' } })], cursor: 1 },
+    });
+    vi.mocked(rt.paneList).mockResolvedValueOnce({
+      ok: true,
+      data: {
+        panes: [
+          { paneId: 'a', cwd: '/other' },
+          { paneId: 'b', cwd: '/w' },
+        ],
+      },
+    } as never);
+    vi.mocked(rt.paneFocus).mockResolvedValueOnce({
+      ok: true,
+      data: { paneId: 'b', focused: true },
+    });
+    const res = await focus('g1');
+    expect(res.status).toBe(200);
+    expect(rt.paneFocus).toHaveBeenCalledWith(
+      { paneId: 'b' },
+      expect.anything()
+    );
+  });
+
+  it('an unresolvable origin is a 400 with the reason, never a dead focus', async () => {
+    vi.mocked(rt.gateList).mockResolvedValueOnce({
+      ok: true,
+      data: { gates: [row({})], cursor: 1 },
+    });
+    const res = await focus('g1');
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'no origin on this gate' });
+    expect(rt.paneFocus).not.toHaveBeenCalled();
+  });
+
+  it('unknown gate is 404', async () => {
+    vi.mocked(rt.gateList).mockResolvedValueOnce({
+      ok: true,
+      data: { gates: [], cursor: 0 },
+    });
+    const res = await focus('missing');
+    expect(res.status).toBe(404);
   });
 });

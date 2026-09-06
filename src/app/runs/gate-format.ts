@@ -1,4 +1,8 @@
-import type { GateAnswer, GateQuestion } from '@mattstack/rt-client';
+import type {
+  GateAnswer,
+  GateOption,
+  GateQuestion,
+} from '@mattstack/rt-client';
 
 /** UI-collected picks, keyed by question id: an array for a `multi`
     question's checked options, a bare string for a single-select's radio. */
@@ -83,4 +87,48 @@ export function parseConflictResponse(body: unknown): GateAnswerConflict {
     body as { row?: { answer?: { answers?: GateAnswers; by?: string } } } | null
   )?.row;
   return { answers: row?.answer?.answers ?? {}, by: row?.answer?.by ?? '' };
+}
+
+export function optionValue(o: GateOption): string {
+  return typeof o === 'string' ? o : o.value;
+}
+
+export function optionLabel(o: GateOption): string {
+  return typeof o === 'string' ? o : o.label || o.value;
+}
+
+export function displayValueLabel(
+  value: string,
+  options: GateOption[]
+): string {
+  const match = options.find(o => optionValue(o) === value);
+  return match !== undefined ? optionLabel(match) : value;
+}
+
+export const RESPOND_PLAN_KIND = 'respond-plan';
+export const CODE_CHANGES_QUESTION_ID = 'code-changes';
+export const CODE_CHANGES_SENTINEL = 'skip';
+
+/**
+ * A respond-plan gate's code-changes question is skippable by design once no
+ * other question's answer contains a `fix:`-prefixed selection -- the
+ * gate's own submit sentinel stands in for it while hidden, so this both
+ * decides visibility and tells the caller what to substitute.
+ */
+export function codeChangesHidden(
+  kind: string,
+  questions: GateQuestion[],
+  selections: GateSelections
+): boolean {
+  if (kind !== RESPOND_PLAN_KIND) return false;
+  const q = questions.find(x => x.id === CODE_CHANGES_QUESTION_ID);
+  if (!q || !q.options.some(o => optionValue(o) === CODE_CHANGES_SENTINEL))
+    return false;
+  for (const [qid, sel] of Object.entries(selections)) {
+    if (qid === CODE_CHANGES_QUESTION_ID) continue;
+    const values = Array.isArray(sel) ? sel : [sel];
+    if (values.some(v => typeof v === 'string' && v.startsWith('fix:')))
+      return false;
+  }
+  return true;
 }

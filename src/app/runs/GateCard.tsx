@@ -15,7 +15,13 @@ import { useQueryClient } from '@tanstack/react-query';
 
 import { client } from '../api';
 import {
+  CODE_CHANGES_QUESTION_ID,
+  CODE_CHANGES_SENTINEL,
+  codeChangesHidden,
+  displayValueLabel,
   gateAnswerPayload,
+  optionLabel,
+  optionValue,
   parseConflictResponse,
   unwrapGateAnswer,
   type GateAnswerConflict,
@@ -50,10 +56,10 @@ function GateQuestionField({
         <Stack gap={6}>
           {question.options.map(opt => (
             <Checkbox
-              key={opt}
-              label={opt}
-              checked={picked.has(opt)}
-              onChange={() => toggle(opt)}
+              key={optionValue(opt)}
+              label={optionLabel(opt)}
+              checked={picked.has(optionValue(opt))}
+              onChange={() => toggle(optionValue(opt))}
             />
           ))}
         </Stack>
@@ -68,7 +74,11 @@ function GateQuestionField({
     >
       <Stack gap={6} mt={6}>
         {question.options.map(opt => (
-          <Radio key={opt} value={opt} label={opt} />
+          <Radio
+            key={optionValue(opt)}
+            value={optionValue(opt)}
+            label={optionLabel(opt)}
+          />
         ))}
       </Stack>
     </Radio.Group>
@@ -97,9 +107,11 @@ function GateAnswerSummary({
             : { value: undefined, note: undefined };
         const text = Array.isArray(value)
           ? value.length
-            ? value.join(', ')
+            ? value.map(v => displayValueLabel(v, q.options)).join(', ')
             : '(none)'
-          : value || '(none)';
+          : value
+            ? displayValueLabel(value, q.options)
+            : '(none)';
         return (
           <Group key={q.id} gap={8} wrap="nowrap" align="flex-start">
             <Text fz={12} c="dimmed" style={{ minWidth: 140, flexShrink: 0 }}>
@@ -151,6 +163,9 @@ export function GateCard({ gate }: { gate: GateRow }) {
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
   const [conflict, setConflict] = useState<GateAnswerConflict | null>(null);
+  const [contextOpen, setContextOpen] = useState(false);
+  const [focusBusy, setFocusBusy] = useState(false);
+  const [focusError, setFocusError] = useState<string | null>(null);
 
   const setAnswer = (id: string, value: string | string[]) => {
     setSelections(prev => ({ ...prev, [id]: value }));
@@ -158,9 +173,41 @@ export function GateCard({ gate }: { gate: GateRow }) {
 
   const answered = gate.status === 'answered';
   const actionable = gate.status === 'open' || gate.status === 'parked';
+  const hidden =
+    actionable && codeChangesHidden(gate.kind, gate.questions, selections);
+  const effective = hidden
+    ? { ...selections, [CODE_CHANGES_QUESTION_ID]: CODE_CHANGES_SENTINEL }
+    : selections;
   const payload = actionable
-    ? gateAnswerPayload(gate.questions, selections)
+    ? gateAnswerPayload(gate.questions, effective)
     : null;
+
+  const focusReason =
+    gate.status === 'parked'
+      ? 'parked; resume is board-owned'
+      : gate.origin?.paneId || gate.origin?.worktree
+        ? null
+        : 'no origin on this gate';
+
+  const focusPaneAction = async () => {
+    setFocusBusy(true);
+    setFocusError(null);
+    try {
+      const res = await client.api.gates[':id'].focus.$post({
+        param: { id: gate.id },
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        setFocusError(body?.error ?? `focus failed (${res.status})`);
+      }
+    } catch {
+      setFocusError('focus failed');
+    } finally {
+      setFocusBusy(false);
+    }
+  };
 
   const submit = async () => {
     if (!payload) return;
@@ -249,6 +296,28 @@ export function GateCard({ gate }: { gate: GateRow }) {
             )}
           </Group>
         </Group>
+        {typeof gate.context === 'string' && gate.context.length > 0 && (
+          <Stack gap={4}>
+            <Button
+              size="compact-xs"
+              variant="subtle"
+              onClick={() => setContextOpen(o => !o)}
+              data-testid="gate-context-toggle"
+              style={{ alignSelf: 'flex-start' }}
+            >
+              {contextOpen ? 'hide context' : 'show context'}
+            </Button>
+            {contextOpen && (
+              <Text
+                fz={12}
+                style={{ whiteSpace: 'pre-wrap' }}
+                data-testid="gate-context-body"
+              >
+                {gate.context}
+              </Text>
+            )}
+          </Stack>
+        )}
         {answered ? (
           <GateAnswerSummary
             questions={gate.questions}
@@ -266,28 +335,46 @@ export function GateCard({ gate }: { gate: GateRow }) {
           </>
         ) : (
           <>
-            {gate.questions.map(q => (
-              <GateQuestionField
-                key={q.id}
-                question={q}
-                value={selections[q.id]}
-                onChange={setAnswer}
-              />
-            ))}
+            {gate.questions
+              .filter(q => !(hidden && q.id === CODE_CHANGES_QUESTION_ID))
+              .map(q => (
+                <GateQuestionField
+                  key={q.id}
+                  question={q}
+                  value={selections[q.id]}
+                  onChange={setAnswer}
+                />
+              ))}
             <Group justify="space-between" align="center">
               {failed && (
                 <Text c="bad" fz={12}>
                   submit failed... nothing was sent, try again
                 </Text>
               )}
-              <Button
-                size="xs"
-                disabled={!payload || busy}
-                onClick={() => void submit()}
-                ml="auto"
-              >
-                {busy ? 'submitting…' : 'submit'}
-              </Button>
+              {focusError && (
+                <Text c="bad" fz={12} data-testid="gate-focus-error">
+                  {focusError}
+                </Text>
+              )}
+              <Group gap="xs" ml="auto">
+                <Button
+                  size="xs"
+                  variant="default"
+                  data-testid="gate-focus"
+                  disabled={focusReason !== null || focusBusy}
+                  title={focusReason ?? 'jump into the pane behind this gate'}
+                  onClick={() => void focusPaneAction()}
+                >
+                  focus pane
+                </Button>
+                <Button
+                  size="xs"
+                  disabled={!payload || busy}
+                  onClick={() => void submit()}
+                >
+                  {busy ? 'submitting…' : 'submit'}
+                </Button>
+              </Group>
             </Group>
           </>
         )}
