@@ -1327,6 +1327,10 @@ const httpServer = Bun.serve({
       case "/gate/focus": {
         if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
         if (!isLocalRequest(req)) return new Response("forbidden", { status: 403 });
+        // Same content-type gate as /peer/invite and /peer/join: isLocalRequest
+        // reads the Host header, which a cross-origin form can forge.
+        const ct = req.headers.get("content-type") ?? "";
+        if (!ct.toLowerCase().includes("application/json")) return new Response("expected application/json", { status: 415 });
         let body: unknown;
         try {
           body = await req.json();
@@ -1345,7 +1349,12 @@ const httpServer = Bun.serve({
           });
         }
         try {
-          await focusPane({ paneId: resolved.paneId, tabId: resolved.tabId });
+          const { focused } = await focusPane({ paneId: resolved.paneId, tabId: resolved.tabId });
+          if (!focused) {
+            return new Response(JSON.stringify({ ok: false, error: "focus failed" }), {
+              status: 502, headers: { "content-type": "application/json" },
+            });
+          }
         } catch (err) {
           return new Response(JSON.stringify({ ok: false, error: err instanceof Error ? err.message : String(err) }), {
             status: 502, headers: { "content-type": "application/json" },

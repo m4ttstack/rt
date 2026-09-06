@@ -6,15 +6,22 @@ export interface FocusPaneDeps {
   focusTab: typeof focusTab;
 }
 
-/** Tray-raised focus when a paneId is on file; herdr-internal tab focus otherwise. */
+/** Tray-raised focus when a paneId is on file; herdr-internal tab focus
+    otherwise. Returns whether anything was actually focused, so a caller
+    with no tabId fallback (e.g. /gate/focus) can tell a silent no-op apart
+    from a real focus. */
 export async function focusPane(
   state: { paneId?: string; tabId?: string },
   deps: FocusPaneDeps = { paneFocus, focusTab },
-): Promise<void> {
+): Promise<{ focused: boolean }> {
   if (state.paneId) {
     const res = await deps.paneFocus({ paneId: state.paneId });
-    if (res.ok) return;
+    if (res.ok) return { focused: true };
     console.error(`pane focus failed, falling back to tab focus: ${res.error}`);
   }
-  if (state.tabId) await deps.focusTab(state.tabId);
+  if (state.tabId) {
+    await deps.focusTab(state.tabId);
+    return { focused: true };
+  }
+  return { focused: false };
 }

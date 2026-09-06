@@ -8,6 +8,8 @@ import {
   optionDisplayFor,
   displayForValue,
   codeChangesHidden,
+  CODE_CHANGES_QUESTION_ID,
+  CODE_CHANGES_SENTINEL,
 } from "../client/board/gate-format.ts";
 import type { GateQuestion } from "../gates/store.ts";
 
@@ -165,8 +167,12 @@ describe("respond collapse (W4)", () => {
 
   test("a hidden question submits the sentinel through gateAnswerPayload", () => {
     const selections = { "threads-1": ["reply:t1"] };
-    const effective = { ...selections, "code-changes": "skip" };
+    // Same derivation GateCard uses: only merge the sentinel once
+    // codeChangesHidden says the question is actually hidden.
+    const hidden = codeChangesHidden("respond-plan", questions, selections);
+    const effective = hidden ? { ...selections, [CODE_CHANGES_QUESTION_ID]: CODE_CHANGES_SENTINEL } : selections;
     const payload = gateAnswerPayload({ gateId: "g1", questions }, effective);
-    expect(payload).toEqual({ gateId: "g1", answers: { "threads-1": ["reply:t1"], "code-changes": "skip" } });
+    expect(hidden).toBe(true);
+    expect(payload).toEqual({ gateId: "g1", answers: { "threads-1": ["reply:t1"], "code-changes": CODE_CHANGES_SENTINEL } });
   });
 });

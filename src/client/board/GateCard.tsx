@@ -239,7 +239,7 @@ function GateCard({
       {gate.context && (
         <div className="tui-gate-context">
           <DisclosureHead open={ctxOpen} label="context" onToggle={() => setCtxOpen((o) => !o)}>
-            <></>
+            context
           </DisclosureHead>
           <Disclosure open={ctxOpen}>
             <pre className="tui-gate-context-body">{gate.context}</pre>

@@ -105,7 +105,7 @@ export async function resumeParkedGate(
     return false;
   }
 
-  const kindIo = io.resumers[gate.kind];
+  const kindIo = Object.hasOwn(io.resumers, gate.kind) ? io.resumers[gate.kind] : undefined;
   if (!kindIo) {
     if ((GATE_KINDS as readonly string[]).includes(gate.kind)) throw new Error(`${gate.kind} resume not wired`);
     console.error(`gate resume: unknown gate kind "${gate.kind}" on ${gate.mrUrl}; skipping`);
@@ -186,7 +186,7 @@ async function resumeIfMissed(row: FacilityGateRow, io: GateResumeEventIo, resol
   if (!row.subject.startsWith("mr:")) return;
   const mrUrl = row.subject.slice("mr:".length);
 
-  const kindIo = io.resumers[row.kind];
+  const kindIo = Object.hasOwn(io.resumers, row.kind) ? io.resumers[row.kind] : undefined;
   if (!kindIo) {
     if ((GATE_KINDS as readonly string[]).includes(row.kind)) throw new Error(`${row.kind} resume not wired`);
     console.error(`gate resume: unknown gate kind "${row.kind}" on ${row.subject}; skipping`);

@@ -97,6 +97,40 @@ describe("GateCache.applyEvent", () => {
     expect(cached?.questions).toEqual([{ id: "q1", label: "Ship it?", multi: false, options: ["yes", "no"] }]);
   });
 
+  test("opened frame drops malformed questions rather than blindly casting them", () => {
+    const cache = new GateCache();
+    const errors: unknown[] = [];
+    const origError = console.error;
+    console.error = (...args: unknown[]) => errors.push(args);
+    try {
+      cache.applyEvent({
+        topic: "gate/opened/gate-9",
+        payload: {
+          id: "gate-9",
+          subject: SUBJECT_A,
+          kind: "review-post",
+          questions: [
+            { id: "q1", label: "Ship it?", multi: false, options: ["yes", "no"] },
+            { id: "q2", label: "Labeled", multi: false, options: [{ value: "v", label: "V" }] },
+            "not an object",
+            { id: "q3", label: "Missing options" },
+            { id: 4, label: "Bad id type", options: ["yes"] },
+            { id: "q4", label: "Bad option shape", options: [{ value: "v" }] },
+          ],
+          meta: null,
+        },
+      });
+    } finally {
+      console.error = origError;
+    }
+    const cached = cache.get(SUBJECT_A, "review-post");
+    expect(cached?.questions).toEqual([
+      { id: "q1", label: "Ship it?", multi: false, options: ["yes", "no"] },
+      { id: "q2", label: "Labeled", multi: false, options: [{ value: "v", label: "V" }] },
+    ]);
+    expect(errors.length).toBe(4);
+  });
+
   test("opened frame for an already-cached subject+kind replaces it wholesale (re-review)", () => {
     const cache = new GateCache();
     cache.applyRow(row({ status: "answered", answer: { answers: { q1: "yes" }, by: "board-ui", answeredAt: 2000 } }));
