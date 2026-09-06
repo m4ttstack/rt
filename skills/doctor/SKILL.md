@@ -384,8 +384,9 @@ A short list of concrete, executable choices exists — open the gate with
 that list as `options`, e.g.:
 
 - `"rebase conflict in app/routes/foo.ts: both sides modified handleSubmit"`
-  with options `["keep the MR branch's handleSubmit", "keep main's
-  handleSubmit", "leave it to me in the pane"]`
+  with options `[{"value": "keep-mr", "label": "keep the MR branch's
+  handleSubmit"}, {"value": "keep-main", "label": "keep main's handleSubmit"},
+  "leave it to me in the pane"]`
 - `"CI red after 3 cycles: 2 tests still failing (snapshot + business logic
-  in Bar)"` with options `["extend budget by 3 more cycles", "leave it to me
-  in the pane"]`
+  in Bar)"` with options `[{"value": "extend-budget", "label": "extend budget
+  by 3 more cycles"}, "leave it to me in the pane"]`
