@@ -1,9 +1,4 @@
-import {
-  gateOptionValue,
-  type GateAnswer,
-  type GateOption,
-  type GateQuestion,
-} from '@mattstack/rt-client';
+import type { GateAnswer, GateOption, GateQuestion } from '@mattstack/rt-client';
 
 /** UI-collected picks, keyed by question id: an array for a `multi`
     question's checked options, a bare string for a single-select's radio. */
@@ -90,7 +85,9 @@ export function parseConflictResponse(body: unknown): GateAnswerConflict {
   return { answers: row?.answer?.answers ?? {}, by: row?.answer?.by ?? '' };
 }
 
-export const optionValue = gateOptionValue;
+export function optionValue(o: GateOption): string {
+  return typeof o === 'string' ? o : o.value;
+}
 
 export function optionLabel(o: GateOption): string {
   return typeof o === 'string' ? o : o.label || o.value;
