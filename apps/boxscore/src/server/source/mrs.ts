@@ -1,8 +1,14 @@
-import type { MergeRequestIndexRow, MergeRequestMetrics } from "@mattstack/glance";
-import type { IndexRow, MrState, StoredMetrics } from "../store/index.js";
-import type { SourceIO, SourceProvider } from "./provider.js";
+import type {
+  MergeRequestIndexRow,
+  MergeRequestMetrics,
+} from '@mattstack/glance';
+import type { IndexRow, MrState, StoredMetrics } from '../store/index.js';
+import type { SourceIO, SourceProvider } from './provider.js';
 
-export function toIndexRow(row: MergeRequestIndexRow, scannedAt: string): IndexRow {
+export function toIndexRow(
+  row: MergeRequestIndexRow,
+  scannedAt: string
+): IndexRow {
   return {
     projectPath: row.projectPath,
     iid: row.iid,
@@ -22,7 +28,7 @@ export async function scanProject(
   provider: SourceProvider,
   projectPath: string,
   updatedAfter: string,
-  io: SourceIO = {},
+  io: SourceIO = {}
 ): Promise<IndexRow[]> {
   const rows = await provider.fetchMergeRequestIndex({
     projectPaths: [projectPath],
@@ -30,7 +36,7 @@ export async function scanProject(
     signal: io.signal,
   });
   const scannedAt = new Date().toISOString();
-  return rows.map((row) => toIndexRow(row, scannedAt));
+  return rows.map(row => toIndexRow(row, scannedAt));
 }
 
 export function toStoredMetrics(metrics: MergeRequestMetrics): StoredMetrics {
@@ -45,10 +51,14 @@ export function toStoredMetrics(metrics: MergeRequestMetrics): StoredMetrics {
           filesChanged: metrics.diffStats.filesChanged,
         }
       : null,
-    fileStats: metrics.fileStats.map((f) => ({ path: f.path, additions: f.additions, deletions: f.deletions })),
+    fileStats: metrics.fileStats.map(f => ({
+      path: f.path,
+      additions: f.additions,
+      deletions: f.deletions,
+    })),
     labels: metrics.labels,
     approvedByUsernames: metrics.approvedByUsernames,
-    notes: metrics.notes.map((n) => ({
+    notes: metrics.notes.map(n => ({
       authorUsername: n.authorUsername,
       createdAt: n.createdAt,
       system: n.system,
@@ -61,8 +71,10 @@ export async function fetchMetrics(
   provider: SourceProvider,
   projectPath: string,
   iid: number,
-  io: SourceIO = {},
+  io: SourceIO = {}
 ): Promise<StoredMetrics | null> {
-  const metrics = await provider.fetchMergeRequestMetrics(projectPath, iid, { signal: io.signal });
+  const metrics = await provider.fetchMergeRequestMetrics(projectPath, iid, {
+    signal: io.signal,
+  });
   return metrics ? toStoredMetrics(metrics) : null;
 }

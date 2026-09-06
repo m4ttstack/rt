@@ -1,5 +1,5 @@
-import { METRICS, metricValue, setMetricRank } from "../../shared/metrics.js";
-import type { MetricKey, UserRow } from "../../shared/types.js";
+import { METRICS, metricValue, setMetricRank } from '../../shared/metrics.js';
+import type { MetricKey, UserRow } from '../../shared/types.js';
 
 export type Leaders = Partial<Record<MetricKey, string | null>>;
 
@@ -16,9 +16,11 @@ export function applyRankings(users: UserRow[]): Leaders {
 
   for (const d of METRICS) {
     const ranked = users
-      .filter((u) => u.resolved && metricValue(u.metrics, d) !== null)
-      .map((u) => ({ user: u, value: metricValue(u.metrics, d)! }))
-      .sort((a, b) => (d.better === "asc" ? a.value - b.value : b.value - a.value));
+      .filter(u => u.resolved && metricValue(u.metrics, d) !== null)
+      .map(u => ({ user: u, value: metricValue(u.metrics, d)! }))
+      .sort((a, b) =>
+        d.better === 'asc' ? a.value - b.value : b.value - a.value
+      );
 
     let lastValue: number | null = null;
     let lastRank = 0;

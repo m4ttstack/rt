@@ -1,15 +1,15 @@
-import type { RangeKey, RangePreset, TimeWindow } from "../../shared/types.js";
+import type { RangeKey, RangePreset, TimeWindow } from '../../shared/types.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 const PRESET_DAYS: Record<RangePreset, number> = {
-  "7d": 7,
-  "30d": 30,
-  "90d": 90,
+  '7d': 7,
+  '30d': 30,
+  '90d': 90,
 };
 
 export function isPreset(value: string): value is RangePreset {
-  return value === "7d" || value === "30d" || value === "90d";
+  return value === '7d' || value === '30d' || value === '90d';
 }
 
 /** Resolve a preset (relative to `now`) into a concrete window. */
@@ -33,7 +33,9 @@ export function baseWindow(trend: boolean, now: Date): TimeWindow {
   // fetched `since` must equal the day-granular start, else a custom range
   // starting at that day's midnight is judged "covered" while rows fetched
   // between midnight and the un-floored write-time clock are silently missing.
-  const start = new Date(Date.UTC(s.getUTCFullYear(), s.getUTCMonth(), s.getUTCDate()));
+  const start = new Date(
+    Date.UTC(s.getUTCFullYear(), s.getUTCMonth(), s.getUTCDate())
+  );
   return {
     start: start.toISOString(),
     end: now.toISOString(),
@@ -44,12 +46,14 @@ export function baseWindow(trend: boolean, now: Date): TimeWindow {
 /** True when `inner`'s day-range lies within `outer`'s (day-granular, matching the cache key). */
 export function covers(outer: TimeWindow, inner: TimeWindow): boolean {
   const day = (iso: string) => Date.parse(iso.slice(0, 10));
-  return day(inner.start) >= day(outer.start) && day(inner.end) <= day(outer.end);
+  return (
+    day(inner.start) >= day(outer.start) && day(inner.end) <= day(outer.end)
+  );
 }
 
 /** Build a custom window from explicit ISO bounds. */
 export function customWindow(startIso: string, endIso: string): TimeWindow {
-  return { start: startIso, end: endIso, key: "custom" };
+  return { start: startIso, end: endIso, key: 'custom' };
 }
 
 /** The equal-length window immediately preceding `window`, for trend deltas. */
@@ -96,15 +100,20 @@ export function resolveWindowArgs(
   range: string | undefined,
   start: string | undefined,
   end: string | undefined,
-  defaultRange: RangePreset,
+  defaultRange: RangePreset
 ): TimeWindow {
-  if (range === "custom" || (start && end)) {
-    if (!start || !end) throw new Error("custom range requires both start and end (ISO dates)");
+  if (range === 'custom' || (start && end)) {
+    if (!start || !end)
+      throw new Error('custom range requires both start and end (ISO dates)');
     if (Number.isNaN(Date.parse(start)) || Number.isNaN(Date.parse(end))) {
-      throw new Error("start and end must be valid ISO dates");
+      throw new Error('start and end must be valid ISO dates');
     }
-    if (Date.parse(start) >= Date.parse(end)) throw new Error("start must be before end");
-    return customWindow(new Date(start).toISOString(), new Date(end).toISOString());
+    if (Date.parse(start) >= Date.parse(end))
+      throw new Error('start must be before end');
+    return customWindow(
+      new Date(start).toISOString(),
+      new Date(end).toISOString()
+    );
   }
   const preset: RangePreset = range && isPreset(range) ? range : defaultRange;
   return resolvePreset(preset, new Date());

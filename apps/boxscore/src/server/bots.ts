@@ -1,8 +1,8 @@
-import { readSettings } from "./config/index.js";
-import { compileBotPatterns } from "./metrics/stats.js";
-import { getStore, mrKey } from "./store/index.js";
-import { BUILTIN_BOT_PATTERNS } from "../shared/bots.js";
-import type { SuspectedBot } from "../shared/types.js";
+import { BUILTIN_BOT_PATTERNS } from '../shared/bots.js';
+import type { SuspectedBot } from '../shared/types.js';
+import { readSettings } from './config/index.js';
+import { compileBotPatterns } from './metrics/stats.js';
+import { getStore, mrKey } from './store/index.js';
 
 export type { SuspectedBot };
 
@@ -12,26 +12,26 @@ export type { SuspectedBot };
  * members (visible or hidden).
  */
 export async function scanSuspectedBots(
-  extraPatterns: string[],
+  extraPatterns: string[]
 ): Promise<SuspectedBot[]> {
   const allPatterns = [
-    ...BUILTIN_BOT_PATTERNS.map((p) => new RegExp(p.source, "i")),
+    ...BUILTIN_BOT_PATTERNS.map(p => new RegExp(p.source, 'i')),
     ...compileBotPatterns(extraPatterns),
   ];
 
   const store = getStore();
   const indexRows = store.allIndexRows();
-  const keys = indexRows.map((r) => mrKey(r.projectPath, r.iid));
+  const keys = indexRows.map(r => mrKey(r.projectPath, r.iid));
   const metricsRows = store.metricsByKeys(keys);
 
-  const knownUsers = new Set(readSettings().roster.map((r) => r.username));
+  const knownUsers = new Set(readSettings().roster.map(r => r.username));
   const seen = new Set<string>();
   const matches: SuspectedBot[] = [];
 
   const check = (u: string | null) => {
     if (!u || seen.has(u) || knownUsers.has(u)) return;
     seen.add(u);
-    const pat = allPatterns.find((p) => p.test(u));
+    const pat = allPatterns.find(p => p.test(u));
     if (pat) matches.push({ username: u, matchedPattern: String(pat) });
   };
 

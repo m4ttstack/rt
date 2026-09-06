@@ -1,5 +1,5 @@
-import type { StoredIdentity } from "../store/index.js";
-import type { SourceIO, SourceProvider } from "./provider.js";
+import type { StoredIdentity } from '../store/index.js';
+import type { SourceIO, SourceProvider } from './provider.js';
 
 interface RestUser {
   id: number;
@@ -16,23 +16,29 @@ interface RestUser {
 export async function resolveIdentity(
   provider: SourceProvider,
   username: string,
-  io: SourceIO = {},
+  io: SourceIO = {}
 ): Promise<StoredIdentity> {
   const fetchedAt = new Date().toISOString();
   const res = await provider.restRequest(
-    "GET",
+    'GET',
     `/users?username=${encodeURIComponent(username)}`,
     undefined,
-    "resolveIdentity",
-    { signal: io.signal, retry: true },
+    'resolveIdentity',
+    { signal: io.signal, retry: true }
   );
   if (!res.ok) {
     return { username, name: null, resolved: false, userId: null, fetchedAt };
   }
   const matches = (await res.json()) as RestUser[];
-  const exact = matches.find((m) => m.username === username) ?? matches[0];
+  const exact = matches.find(m => m.username === username) ?? matches[0];
   if (!exact) {
     return { username, name: null, resolved: false, userId: null, fetchedAt };
   }
-  return { username, name: exact.name, resolved: true, userId: exact.id, fetchedAt };
+  return {
+    username,
+    name: exact.name,
+    resolved: true,
+    userId: exact.id,
+    fetchedAt,
+  };
 }

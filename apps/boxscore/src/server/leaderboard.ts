@@ -1,15 +1,3 @@
-import { ConfigError, readSettings, type Env } from "./config/index.js";
-import { readSecrets } from "./config/secrets.js";
-import { getCurrentUser } from "./config/current-user.js";
-import { buildUserEvidence } from "./metrics/evidence.js";
-import { computeSnapshot, type Snapshot } from "./metrics/snapshot.js";
-import { buildResponse, type BuildContext } from "./metrics/trend.js";
-import { runRefresh } from "./refresh/index.js";
-import { makeProvider } from "./source/index.js";
-import { getStore } from "./store/index.js";
-import { buildFetchResult, hasDataFor, storedIdentities } from "./store/query.js";
-import { baseWindow, covers, priorWindow } from "./util/window.js";
-import type { FetchResult } from "./store/model.js";
 import type {
   LeaderboardResponse,
   LeaderboardWarning,
@@ -17,11 +5,27 @@ import type {
   Scope,
   TimeWindow,
   UserDetailResponse,
-} from "../shared/types.js";
+} from '../shared/types.js';
+import { getCurrentUser } from './config/current-user.js';
+import { ConfigError, readSettings, type Env } from './config/index.js';
+import { readSecrets } from './config/secrets.js';
+import { buildUserEvidence } from './metrics/evidence.js';
+import { computeSnapshot, type Snapshot } from './metrics/snapshot.js';
+import { buildResponse, type BuildContext } from './metrics/trend.js';
+import { runRefresh } from './refresh/index.js';
+import { makeProvider } from './source/index.js';
+import { getStore } from './store/index.js';
+import type { FetchResult } from './store/model.js';
+import {
+  buildFetchResult,
+  hasDataFor,
+  storedIdentities,
+} from './store/query.js';
+import { baseWindow, covers, priorWindow } from './util/window.js';
 
 /** Thrown by getLeaderboard when cacheOnly is set and the store has never been populated. */
 export class ColdCacheError extends Error {
-  override readonly name = "ColdCacheError";
+  override readonly name = 'ColdCacheError';
 }
 
 export interface LeaderboardOptions {
@@ -37,11 +41,11 @@ export interface LeaderboardOptions {
 
 /** Wrap a window-agnostic reporter to stamp the window. Exported for testing. */
 export function withWindow(
-  window: "current" | "prior",
-  onProgress?: (p: RefreshProgress) => void,
-): ((p: Omit<RefreshProgress, "window">) => void) | undefined {
+  window: 'current' | 'prior',
+  onProgress?: (p: RefreshProgress) => void
+): ((p: Omit<RefreshProgress, 'window'>) => void) | undefined {
   if (!onProgress) return undefined;
-  return (p) => onProgress({ ...p, window });
+  return p => onProgress({ ...p, window });
 }
 
 export interface DetailOptions extends LeaderboardOptions {
@@ -50,7 +54,7 @@ export interface DetailOptions extends LeaderboardOptions {
 }
 
 export class UnknownUserError extends Error {
-  override readonly name = "UnknownUserError";
+  override readonly name = 'UnknownUserError';
 }
 
 /** Assembles the fetchers' connection envelope from settings + daemon secrets (spec 5.4). */
@@ -58,26 +62,32 @@ async function resolveEnv(): Promise<Env> {
   const s = readSettings();
   if (!s.baseUrl) {
     throw new ConfigError(
-      "GitLab is not configured: set the forge host in mattstack.integrations (rt settings).",
+      'GitLab is not configured: set the forge host in mattstack.integrations (rt settings).'
     );
   }
   const secrets = await readSecrets();
   if (secrets.warning) console.warn(`[config] ${secrets.warning}`);
   if (!secrets.gitlabToken) {
     throw new ConfigError(
-      "GitLab token is not configured: set gitlabToken in the rt secrets store (or GITLAB_TOKEN).",
+      'GitLab token is not configured: set gitlabToken in the rt secrets store (or GITLAB_TOKEN).'
     );
   }
-  return { baseUrl: s.baseUrl, token: secrets.gitlabToken, linearApiKey: secrets.linearApiKey };
+  return {
+    baseUrl: s.baseUrl,
+    token: secrets.gitlabToken,
+    linearApiKey: secrets.linearApiKey,
+  };
 }
 
 /** Settings-driven, projects-only (spec 5.4; groupPath scoping was retired with config.ts). */
 function resolveScope(): Scope {
   const projects = readSettings().projects;
   if (projects.length === 0) {
-    throw new ConfigError("boxscore.projects is empty: add at least one \"group/project\" (rt settings).");
+    throw new ConfigError(
+      'boxscore.projects is empty: add at least one "group/project" (rt settings).'
+    );
   }
-  return { type: "projects", projectPaths: projects };
+  return { type: 'projects', projectPaths: projects };
 }
 
 /** The settings-derived options shared by snapshot and evidence computation. */
@@ -103,7 +113,7 @@ const snapshotFor = (result: FetchResult, window: TimeWindow): Snapshot =>
  * detail endpoint can build evidence from the same data without a second store read.
  */
 async function buildLeaderboard(
-  opts: LeaderboardOptions,
+  opts: LeaderboardOptions
 ): Promise<{ response: LeaderboardResponse; current: FetchResult; env: Env }> {
   const env = await resolveEnv();
   const settings = readSettings();
@@ -127,26 +137,41 @@ async function buildLeaderboard(
       env,
       window: covers(base, read) ? base : read,
       signal: opts.signal,
-      onProgress: withWindow("current", opts.onProgress),
+      onProgress: withWindow('current', opts.onProgress),
     });
     warnings.push(...refreshed);
   }
 
-  if (opts.cacheOnly && !opts.refresh && !hasDataFor(store, settings.projects, read)) {
-    throw new ColdCacheError(`no data back to ${read.start} for ${settings.projects.join(", ")}`);
+  if (
+    opts.cacheOnly &&
+    !opts.refresh &&
+    !hasDataFor(store, settings.projects, read)
+  ) {
+    throw new ColdCacheError(
+      `no data back to ${read.start} for ${settings.projects.join(', ')}`
+    );
   }
 
-  const rosterUsernames = settings.roster.map((r) => r.username);
+  const rosterUsernames = settings.roster.map(r => r.username);
   const current = buildFetchResult(store, opts.window, rosterUsernames);
   const priorSnapshot: Snapshot | null = opts.trend
     ? snapshotFor(buildFetchResult(store, pw, rosterUsernames), pw)
     : null;
 
-  opts.onProgress?.({ phase: "compute", label: "Computing metrics", done: 0, total: 0, window: "current" });
+  opts.onProgress?.({
+    phase: 'compute',
+    label: 'Computing metrics',
+    done: 0,
+    total: 0,
+    window: 'current',
+  });
 
   const who = await getCurrentUser(env.baseUrl, env.token);
   if (!who) {
-    warnings.push({ code: "user_lookup_failed", message: "GitLab /user lookup failed; no row is highlighted as you" });
+    warnings.push({
+      code: 'user_lookup_failed',
+      message: 'GitLab /user lookup failed; no row is highlighted as you',
+    });
   }
 
   const ctx: BuildContext = {
@@ -154,7 +179,7 @@ async function buildLeaderboard(
     window: opts.window,
     priorWindow: priorSnapshot ? pw : null,
     baseUrl: env.baseUrl,
-    currentUser: who?.username ?? "",
+    currentUser: who?.username ?? '',
     generatedAt: new Date().toISOString(),
     // No refresh ran on this request: everything served came from data already in the store.
     fromCache: !opts.refresh,
@@ -163,14 +188,20 @@ async function buildLeaderboard(
   };
 
   return {
-    response: buildResponse(snapshotFor(current, opts.window), priorSnapshot, ctx),
+    response: buildResponse(
+      snapshotFor(current, opts.window),
+      priorSnapshot,
+      ctx
+    ),
     current,
     env,
   };
 }
 
 /** Orchestrator: refresh (when asked) -> read current + prior from the store -> build response with trend. */
-export async function getLeaderboard(opts: LeaderboardOptions): Promise<LeaderboardResponse> {
+export async function getLeaderboard(
+  opts: LeaderboardOptions
+): Promise<LeaderboardResponse> {
   return (await buildLeaderboard(opts)).response;
 }
 
@@ -178,11 +209,15 @@ export async function getLeaderboard(opts: LeaderboardOptions): Promise<Leaderbo
  * Per-person drill-down: the same ranked row the leaderboard shows (value + rank + delta for
  * the rail) plus per-metric evidence built from the same store data.
  */
-export async function getUserDetail(opts: DetailOptions): Promise<UserDetailResponse> {
+export async function getUserDetail(
+  opts: DetailOptions
+): Promise<UserDetailResponse> {
   const { response, current, env } = await buildLeaderboard(opts);
-  const userRow = response.users.find((u) => u.username === opts.user);
+  const userRow = response.users.find(u => u.username === opts.user);
   if (!userRow) {
-    throw new UnknownUserError(`Unknown user "${opts.user}" (not in the configured set).`);
+    throw new UnknownUserError(
+      `Unknown user "${opts.user}" (not in the configured set).`
+    );
   }
 
   // Strips `users` (the full roster) before spreading into CohortOptions, which has no such

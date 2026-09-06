@@ -4,16 +4,16 @@
  * carries a `rank`), so the UI never computes "who's #1" itself.
  */
 import {
-  METRICS,
   deltaIsGood,
   formatNumber,
   formatValue,
   metricDelta,
   metricRank,
+  METRICS,
   metricValue,
   type MetricDescriptor,
   type MetricGroup,
-} from "../shared/metrics";
+} from '../shared/metrics';
 
 export type Column = MetricDescriptor;
 
@@ -25,11 +25,14 @@ export const rankValue = metricRank;
 export { deltaIsGood, formatNumber, formatValue };
 
 /** Display order + presentation metadata per metric group, shared by table/cards/detail. */
-export const GROUP_ORDER: MetricGroup[] = ["delivery", "volume", "quality"];
+export const GROUP_ORDER: MetricGroup[] = ['delivery', 'volume', 'quality'];
 
 /** `accent` is a Mantine color name, the one source every view reads for a group's tint. */
-export const GROUP_META: Record<MetricGroup, { label: string; hint?: string; accent: string }> = {
-  delivery: { label: "Delivery", hint: "Linear", accent: "green" },
-  volume: { label: "Volume", hint: "gameable", accent: "dimmed" },
-  quality: { label: "Quality & consistency", accent: "accent" },
+export const GROUP_META: Record<
+  MetricGroup,
+  { label: string; hint?: string; accent: string }
+> = {
+  delivery: { label: 'Delivery', hint: 'Linear', accent: 'green' },
+  volume: { label: 'Volume', hint: 'gameable', accent: 'dimmed' },
+  quality: { label: 'Quality & consistency', accent: 'accent' },
 };

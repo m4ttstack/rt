@@ -1,22 +1,22 @@
-import { useEffect, useMemo, useState } from "react";
-import { MattstackShell, NotFoundPage } from "@mattstack/app-kit/app";
-import { Alert, PageShell, Stack, Text } from "@mattstack/app-kit/core";
-import { Icon } from "@mattstack/app-kit/icons";
-import { RailLink } from "@mattstack/app-kit/router";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-import type { LeaderboardResponse } from "../shared/types";
-import { isColdCache, type RangeSelection } from "./api";
-import { useLeaderboard } from "./hooks/useLeaderboard";
-import { useRefreshJob } from "./hooks/useRefreshJob";
-import { useAppRoute } from "./routes";
-import { Controls, ControlsMeta, type ViewMode } from "./components/Controls";
-import { DetailPage } from "./components/DetailPage";
-import { LeaderboardTable } from "./components/LeaderboardTable";
-import { MetricCards } from "./components/MetricCards";
-import { RefreshProgress as RefreshProgressBar } from "./components/RefreshProgress";
-import { usePersistentState } from "./hooks/usePersistentState";
-import { SettingsPage } from "./settings/SettingsPage";
+import { MattstackShell, NotFoundPage } from '@mattstack/app-kit/app';
+import { Alert, PageShell, Stack, Text } from '@mattstack/app-kit/core';
+import { Icon } from '@mattstack/app-kit/icons';
+import { RailLink } from '@mattstack/app-kit/router';
+import type { LeaderboardResponse } from '../shared/types';
+import { isColdCache, type RangeSelection } from './api';
+import { Controls, ControlsMeta, type ViewMode } from './components/Controls';
+import { DetailPage } from './components/DetailPage';
+import { LeaderboardTable } from './components/LeaderboardTable';
+import { MetricCards } from './components/MetricCards';
+import { RefreshProgress as RefreshProgressBar } from './components/RefreshProgress';
+import { useLeaderboard } from './hooks/useLeaderboard';
+import { usePersistentState } from './hooks/usePersistentState';
+import { useRefreshJob } from './hooks/useRefreshJob';
+import { useAppRoute } from './routes';
+import { SettingsPage } from './settings/SettingsPage';
 
 interface RangeState {
   range: string;
@@ -45,11 +45,11 @@ function AppShell() {
   const [awaitingRefresh, setAwaitingRefresh] = useState(false);
   // Persisted across reloads so the last-selected window/toggles stick.
   const [rangeState, setRangeState] = usePersistentState<RangeState>(
-    "forge-range",
-    { range: "30d" },
+    'forge-range',
+    { range: '30d' }
   );
-  const [trend, setTrend] = usePersistentState<boolean>("forge-trend", false);
-  const [view, setView] = usePersistentState<ViewMode>("forge-view", "table");
+  const [trend, setTrend] = usePersistentState<boolean>('forge-trend', false);
+  const [view, setView] = usePersistentState<ViewMode>('forge-view', 'table');
   const route = useAppRoute();
 
   const selection = useMemo<RangeSelection>(
@@ -59,7 +59,7 @@ function AppShell() {
       end: rangeState.end,
       trend,
     }),
-    [rangeState.range, rangeState.start, rangeState.end, trend],
+    [rangeState.range, rangeState.start, rangeState.end, trend]
   );
 
   const refreshJob = useRefreshJob({
@@ -72,7 +72,7 @@ function AppShell() {
       if (matches) setData(result);
       setAwaitingRefresh(false);
     },
-    onError: (message) => {
+    onError: message => {
       setJobError(message);
       setAwaitingRefresh(false);
     },
@@ -126,7 +126,7 @@ function AppShell() {
           alt=""
           width={30}
           height={30}
-          style={{ display: "block", flex: "none" }}
+          style={{ display: 'block', flex: 'none' }}
         />
       }
     >
@@ -135,24 +135,24 @@ function AppShell() {
         <RailLink icon="settings" label="Settings" href="/settings" />
       </MattstackShell.Rail>
 
-      {route.name === "settings" && <SettingsPage />}
+      {route.name === 'settings' && <SettingsPage />}
 
-      {(route.name === "user" || route.name === "stat") && (
+      {(route.name === 'user' || route.name === 'stat') && (
         <DetailPage
           username={route.username}
-          initialStat={route.name === "stat" ? route.stat : null}
+          initialStat={route.name === 'stat' ? route.stat : null}
           range={rangeState}
           trend={trend}
         />
       )}
 
-      {route.name === "not-found" && (
+      {route.name === 'not-found' && (
         <PageShell>
           <NotFoundPage />
         </PageShell>
       )}
 
-      {route.name === "leaderboard" && (
+      {route.name === 'leaderboard' && (
         <PageShell>
           <PageShell.Main>
             <PageShell.Header
@@ -222,7 +222,7 @@ function AppShell() {
                       </Alert>
                     )}
 
-                    {view === "table" ? (
+                    {view === 'table' ? (
                       <LeaderboardTable data={data} trend={trend} />
                     ) : (
                       <MetricCards data={data} trend={trend} />
@@ -234,7 +234,7 @@ function AppShell() {
                           <Text key={k} size="xs" c="dimmed">
                             <Text component="span" fw={500} c="dimmed">
                               {k}:
-                            </Text>{" "}
+                            </Text>{' '}
                             {v}
                           </Text>
                         ))}

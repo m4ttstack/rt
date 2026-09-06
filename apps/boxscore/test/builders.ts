@@ -4,10 +4,15 @@ import type {
   MetricValue,
   UserMetrics,
   UserRow,
-} from "../src/shared/types.js";
+} from '../src/shared/types.js';
 
 const mv = (value: number): MetricValue => ({ value, delta: null, rank: null });
-const dv = (p50: number | null): DistributionValue => ({ p50, p90: p50, deltaP50: null, rank: null });
+const dv = (p50: number | null): DistributionValue => ({
+  p50,
+  p90: p50,
+  deltaP50: null,
+  rank: null,
+});
 
 export interface MetricInput {
   additions?: number;
@@ -53,7 +58,7 @@ export function makeMetrics(o: MetricInput = {}): UserMetrics {
 export function makeUser(
   username: string,
   metrics: UserMetrics,
-  opts: { resolved?: boolean; isCurrentUser?: boolean; name?: string } = {},
+  opts: { resolved?: boolean; isCurrentUser?: boolean; name?: string } = {}
 ): UserRow {
   return {
     username,
@@ -66,17 +71,28 @@ export function makeUser(
 
 export function makeResponse(
   users: UserRow[],
-  opts: { currentUser?: string; hasTrend?: boolean; leaders?: LeaderboardResponse["leaders"] } = {},
+  opts: {
+    currentUser?: string;
+    hasTrend?: boolean;
+    leaders?: LeaderboardResponse['leaders'];
+  } = {}
 ): LeaderboardResponse {
   return {
-    scope: { type: "projects", projectPaths: ["org/app"] },
-    window: { start: "2026-05-01T00:00:00.000Z", end: "2026-05-31T00:00:00.000Z", key: "30d" },
+    scope: { type: 'projects', projectPaths: ['org/app'] },
+    window: {
+      start: '2026-05-01T00:00:00.000Z',
+      end: '2026-05-31T00:00:00.000Z',
+      key: '30d',
+    },
     priorWindow: null,
     hasTrend: opts.hasTrend ?? false,
-    baseUrl: "https://gitlab.com",
+    baseUrl: 'https://gitlab.com',
     currentUser:
-      opts.currentUser ?? users.find((u) => u.isCurrentUser)?.username ?? users[0]?.username ?? "",
-    generatedAt: "2026-05-31T00:00:00.000Z",
+      opts.currentUser ??
+      users.find(u => u.isCurrentUser)?.username ??
+      users[0]?.username ??
+      '',
+    generatedAt: '2026-05-31T00:00:00.000Z',
     fromCache: false,
     metricNotes: {},
     leaders: opts.leaders ?? {},

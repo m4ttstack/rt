@@ -16,15 +16,20 @@ export function __resetCurrentUser(): void {
 export async function getCurrentUser(
   baseUrl: string,
   token: string,
-  fetchImpl?: typeof fetch,
+  fetchImpl?: typeof fetch
 ): Promise<CurrentUser | null> {
   if (cached) return cached;
   if (!fetchImpl && process.env.VITEST) return null;
   const f = fetchImpl ?? fetch;
   try {
-    const res = await f(`${baseUrl}/api/v4/user`, { headers: { "PRIVATE-TOKEN": token } });
+    const res = await f(`${baseUrl}/api/v4/user`, {
+      headers: { 'PRIVATE-TOKEN': token },
+    });
     if (!res.ok) return null;
-    const body = (await res.json()) as { username: string; name: string | null };
+    const body = (await res.json()) as {
+      username: string;
+      name: string | null;
+    };
     cached = { username: body.username, name: body.name ?? null };
     return cached;
   } catch {

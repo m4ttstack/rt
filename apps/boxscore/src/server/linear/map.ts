@@ -1,5 +1,5 @@
-import type { NormLinearIssue } from "../store/model.js";
-import type { RawIssue } from "./raw-types.js";
+import type { NormLinearIssue } from '../store/model.js';
+import type { RawIssue } from './raw-types.js';
 
 /**
  * Map a raw Linear issue (looked up by identifier) into the normalized model,
@@ -8,7 +8,7 @@ import type { RawIssue } from "./raw-types.js";
 export function mapIssue(
   raw: RawIssue,
   assignedUser: string | null,
-  linkedMrs: { iid: number; projectPath: string }[],
+  linkedMrs: { iid: number; projectPath: string }[]
 ): NormLinearIssue {
   return {
     id: raw.id,

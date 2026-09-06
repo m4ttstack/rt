@@ -1,10 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from 'react';
 
-import { Button, Paper, Text } from "@mattstack/app-kit/core";
-
-import type { RefreshProgress as Progress } from "../../shared/types";
-import { progressKey, stallNotice } from "../lib/progress";
-import styles from "./RefreshProgress.module.css";
+import { Button, Paper, Text } from '@mattstack/app-kit/core';
+import type { RefreshProgress as Progress } from '../../shared/types';
+import { progressKey, stallNotice } from '../lib/progress';
+import styles from './RefreshProgress.module.css';
 
 interface Props {
   progress: Progress | null;
@@ -13,9 +12,11 @@ interface Props {
 
 export function RefreshProgress({ progress, onCancel }: Props) {
   // The server sends a human label with every progress event; phase is the raw fallback.
-  const label = progress ? progress.label || progress.phase : "Starting…";
+  const label = progress ? progress.label || progress.phase : 'Starting…';
   const determinate = !!progress && progress.total > 0;
-  const pct = determinate ? Math.round((progress.done / progress.total) * 100) : null;
+  const pct = determinate
+    ? Math.round((progress.done / progress.total) * 100)
+    : null;
 
   // A single stalled request holds the count still. Without this the bar looks healthy the
   // whole time and there's no way to tell "working" from "wedged".
@@ -29,21 +30,23 @@ export function RefreshProgress({ progress, onCancel }: Props) {
       py="xs"
       mt="md"
       data-testid="refresh-progress"
-      data-state={determinate ? "determinate" : "indeterminate"}
+      data-state={determinate ? 'determinate' : 'indeterminate'}
       style={{
-        display: "flex",
-        alignItems: "center",
+        display: 'flex',
+        alignItems: 'center',
         gap: 12,
-        borderColor: stalled ? "var(--mantine-color-warn-6)" : undefined,
-        backgroundColor: stalled ? "var(--mantine-color-warn-light)" : undefined,
+        borderColor: stalled ? 'var(--mantine-color-warn-6)' : undefined,
+        backgroundColor: stalled
+          ? 'var(--mantine-color-warn-light)'
+          : undefined,
       }}
     >
-      <Text size="sm" fw={600} style={{ whiteSpace: "nowrap" }}>
+      <Text size="sm" fw={600} style={{ whiteSpace: 'nowrap' }}>
         Refreshing · {label}
       </Text>
 
       {stalled && (
-        <Text size="xs" c="warn" style={{ whiteSpace: "nowrap" }}>
+        <Text size="xs" c="warn" style={{ whiteSpace: 'nowrap' }}>
           {stalled}
         </Text>
       )}
@@ -51,7 +54,11 @@ export function RefreshProgress({ progress, onCancel }: Props) {
       <div className={styles.track} data-testid="refresh-progress-track">
         {determinate ? (
           <div
-            className={stalled ? `${styles.determinate} ${styles.determinateStalled}` : styles.determinate}
+            className={
+              stalled
+                ? `${styles.determinate} ${styles.determinateStalled}`
+                : styles.determinate
+            }
             style={{ width: `${pct}%` }}
           />
         ) : (
@@ -60,7 +67,11 @@ export function RefreshProgress({ progress, onCancel }: Props) {
       </div>
 
       {determinate && (
-        <Text size="xs" c="dimmed" style={{ whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
+        <Text
+          size="xs"
+          c="dimmed"
+          style={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}
+        >
           {progress.done}/{progress.total}
         </Text>
       )}
@@ -83,7 +94,10 @@ function useIdleMs(key: string): number {
   }, [key]);
 
   useEffect(() => {
-    const timer = setInterval(() => setIdleMs(Date.now() - changedAt.current), 1_000);
+    const timer = setInterval(
+      () => setIdleMs(Date.now() - changedAt.current),
+      1_000
+    );
     return () => clearInterval(timer);
   }, []);
 

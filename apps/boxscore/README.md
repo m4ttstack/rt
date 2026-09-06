@@ -99,19 +99,19 @@ built app straight out of `dist/`).
 
 ## How the metrics work (and how they're gamed)
 
-| Metric | Source | Gaming vector |
-|---|---|---|
-| Code added/deleted, Net | GraphQL `diffStatsSummary` on merged MRs | verbose code; resisting deletion |
-| MRs merged | authored + `state: merged` in window | artificial micro-PRs |
-| MRs reviewed | non-authored MRs with your in-window note or approval | rubber-stamping |
-| Pipelines | REST `?username=` per project | trivial re-runs |
-| **Review depth** | mean inline (DiffNote) comments per reviewed MR | nitpick-spam (a per-MR mean, never a total; a median collapses to 0 for most reviewers) |
-| **Review latency** | first non-author note minus MR open (p50/p90) | a hollow "looking 👀" note ... pair with depth |
-| **Revert rate** | merged MRs later reverted (`Revert "…"` / label) | fix-forward evades detection (labeled "detected only") |
-| **MR size health** | % of merged MRs in the reviewable band | two-sided band resists both mega- and micro-PRs |
-| **Coding-day streak** | distinct push-active days (events API) | a daily trivial push ... which is most of the habit anyway |
-| **Reciprocity** | reviews given / reviews received | spray-reviewing (gate the given side on depth) |
-| **Trend** | this window minus the prior equal window | almost nothing ... you only beat your past self |
+| Metric                  | Source                                                | Gaming vector                                                                           |
+| ----------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Code added/deleted, Net | GraphQL `diffStatsSummary` on merged MRs              | verbose code; resisting deletion                                                        |
+| MRs merged              | authored + `state: merged` in window                  | artificial micro-PRs                                                                    |
+| MRs reviewed            | non-authored MRs with your in-window note or approval | rubber-stamping                                                                         |
+| Pipelines               | REST `?username=` per project                         | trivial re-runs                                                                         |
+| **Review depth**        | mean inline (DiffNote) comments per reviewed MR       | nitpick-spam (a per-MR mean, never a total; a median collapses to 0 for most reviewers) |
+| **Review latency**      | first non-author note minus MR open (p50/p90)         | a hollow "looking 👀" note ... pair with depth                                          |
+| **Revert rate**         | merged MRs later reverted (`Revert "…"` / label)      | fix-forward evades detection (labeled "detected only")                                  |
+| **MR size health**      | % of merged MRs in the reviewable band                | two-sided band resists both mega- and micro-PRs                                         |
+| **Coding-day streak**   | distinct push-active days (events API)                | a daily trivial push ... which is most of the habit anyway                              |
+| **Reciprocity**         | reviews given / reviews received                      | spray-reviewing (gate the given side on depth)                                          |
+| **Trend**               | this window minus the prior equal window              | almost nothing ... you only beat your past self                                         |
 
 See `gitlab-leaderboard-spec.md` for the exact definitions.
 
@@ -140,17 +140,17 @@ See `gitlab-leaderboard-spec.md` for the exact definitions.
 
 ## Development
 
-| Script               | What it does                                                              |
-| -------------------- | -------------------------------------------------------------------------- |
-| `bun run dev`        | Start the Vite dev server (`src/app`).                                     |
-| `bun run dev:server` | Start the Bun/Hono API server (`src/server`) with hot reload.              |
-| `bun run build`      | Typecheck then production build (`vite build`) into `dist/`.               |
-| `bun run serve`      | Run the production server against the built `dist/`.                      |
-| `bun run report`     | Ranked standings table from the terminal (see below).                     |
-| `bun run validate`   | Run the evaluator; exits non-zero on any ranking-integrity error.          |
-| `bun run test`       | Vitest: server tests (`test/`) plus component tests (`src/app/**`).       |
-| `bun run typecheck`  | `tsc --noEmit` over the whole tree (server, app, shared).                 |
-| `bun run lint`       | ESLint over `src`.                                                        |
+| Script               | What it does                                                        |
+| -------------------- | ------------------------------------------------------------------- |
+| `bun run dev`        | Start the Vite dev server (`src/app`).                              |
+| `bun run dev:server` | Start the Bun/Hono API server (`src/server`) with hot reload.       |
+| `bun run build`      | Typecheck then production build (`vite build`) into `dist/`.        |
+| `bun run serve`      | Run the production server against the built `dist/`.                |
+| `bun run report`     | Ranked standings table from the terminal (see below).               |
+| `bun run validate`   | Run the evaluator; exits non-zero on any ranking-integrity error.   |
+| `bun run test`       | Vitest: server tests (`test/`) plus component tests (`src/app/**`). |
+| `bun run typecheck`  | `tsc --noEmit` over the whole tree (server, app, shared).           |
+| `bun run lint`       | ESLint over `src`.                                                  |
 
 The metric layer (`src/server/metrics/`) is pure functions over a normalized model
 (`src/server/store/model.ts`), so all the math is tested offline without a live GitLab.

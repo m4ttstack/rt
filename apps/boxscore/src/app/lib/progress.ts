@@ -1,11 +1,11 @@
-import type { RefreshProgress } from "../../shared/types";
+import type { RefreshProgress } from '../../shared/types';
 
 /**
  * Identity of one progress reading. Two equal keys mean the refresh has not moved, which is
  * the only stall signal the client gets: the server reports counts, not liveness.
  */
 export function progressKey(p: RefreshProgress | null): string {
-  return p ? `${p.window}|${p.phase}|${p.done}/${p.total}|${p.label}` : "";
+  return p ? `${p.window}|${p.phase}|${p.done}/${p.total}|${p.label}` : '';
 }
 
 /** How long a refresh may sit on one reading before the bar stops looking healthy. */
@@ -21,5 +21,7 @@ export const REQUEST_DEADLINE_MS = 30_000;
 export function stallNotice(idleMs: number): string | null {
   if (idleMs < STALL_AFTER_MS) return null;
   const seconds = Math.floor(idleMs / 1000);
-  return idleMs >= REQUEST_DEADLINE_MS ? `stalled ${seconds}s · retrying` : `stalled ${seconds}s`;
+  return idleMs >= REQUEST_DEADLINE_MS
+    ? `stalled ${seconds}s · retrying`
+    : `stalled ${seconds}s`;
 }

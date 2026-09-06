@@ -1,8 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useMutation, useQuery } from '@tanstack/react-query';
 
-import { client, readOrThrow, selectionQuery, type RangeSelection, type RefreshResult } from "../api";
-import type { LeaderboardResponse } from "../../shared/types";
+import type { LeaderboardResponse } from '../../shared/types';
+import {
+  client,
+  readOrThrow,
+  selectionQuery,
+  type RangeSelection,
+  type RefreshResult,
+} from '../api';
 
 const POLL_MS = 750;
 
@@ -36,21 +42,27 @@ export function useRefreshJob(handlers: RefreshJobHandlers) {
 
   const startMutation = useMutation({
     mutationFn: async (selection: RangeSelection) => {
-      const res = await client.api.refresh.$post({ query: selectionQuery(selection) });
-      return readOrThrow<RefreshResult>(res, "start refresh");
+      const res = await client.api.refresh.$post({
+        query: selectionQuery(selection),
+      });
+      return readOrThrow<RefreshResult>(res, 'start refresh');
     },
   });
 
   const pollQuery = useQuery({
-    queryKey: ["refresh", jobId],
+    queryKey: ['refresh', jobId],
     queryFn: async () => {
-      const res = await client.api.refresh[":id"].$get({ param: { id: jobId as string } });
-      return readOrThrow<RefreshResult>(res, "poll refresh");
+      const res = await client.api.refresh[':id'].$get({
+        param: { id: jobId as string },
+      });
+      return readOrThrow<RefreshResult>(res, 'poll refresh');
     },
     enabled: jobId !== null,
-    initialData: () => (jobId !== null ? (startResultRef.current ?? undefined) : undefined),
+    initialData: () =>
+      jobId !== null ? (startResultRef.current ?? undefined) : undefined,
     staleTime: POLL_MS,
-    refetchInterval: (query) => (query.state.data?.status === "running" ? POLL_MS : false),
+    refetchInterval: query =>
+      query.state.data?.status === 'running' ? POLL_MS : false,
     refetchIntervalInBackground: true,
     // One attempt per tick, like the old setTimeout(tick, POLL_MS) loop: a failed poll ends the
     // job immediately (below) rather than react-query silently retrying it a few times first.
@@ -69,12 +81,12 @@ export function useRefreshJob(handlers: RefreshJobHandlers) {
       return;
     }
     const status = pollQuery.data;
-    if (!status || status.status === "running") return;
+    if (!status || status.status === 'running') return;
     const startedFor = startedForRef.current;
-    if (status.status === "done" && status.result && startedFor) {
+    if (status.status === 'done' && status.result && startedFor) {
       handlersRef.current.onDone(status.result, startedFor);
-    } else if (status.status === "error") {
-      handlersRef.current.onError(status.error ?? "Refresh failed");
+    } else if (status.status === 'error') {
+      handlersRef.current.onError(status.error ?? 'Refresh failed');
     }
     startedForRef.current = null;
     setJobId(null);
@@ -95,15 +107,17 @@ export function useRefreshJob(handlers: RefreshJobHandlers) {
         startInFlightRef.current = false;
       }
     },
-    [jobId, startMutation],
+    [jobId, startMutation]
   );
 
   const cancel = useCallback(() => {
     if (!jobId) return;
     // Best-effort: a failed cancel shouldn't surface to the user or float an unhandled rejection.
-    void client.api.refresh[":id"].cancel.$post({ param: { id: jobId } }).catch((e) => {
-      console.warn("cancelRefresh failed", e);
-    });
+    void client.api.refresh[':id'].cancel
+      .$post({ param: { id: jobId } })
+      .catch(e => {
+        console.warn('cancelRefresh failed', e);
+      });
     startedForRef.current = null;
     startResultRef.current = null;
     // Clear local state immediately so the bar disappears without waiting for the next poll;

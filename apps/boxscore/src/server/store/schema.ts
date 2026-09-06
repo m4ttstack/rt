@@ -2,14 +2,14 @@
 export const SCHEMA_VERSION = 2;
 
 export const TABLES = [
-  "mr_index",
-  "scan_meta",
-  "mr_metrics",
-  "pipelines",
-  "push_events",
-  "linear_issues",
-  "linear_ids",
-  "identities",
+  'mr_index',
+  'scan_meta',
+  'mr_metrics',
+  'pipelines',
+  'push_events',
+  'linear_issues',
+  'linear_ids',
+  'identities',
 ] as const;
 
 export const DDL = `

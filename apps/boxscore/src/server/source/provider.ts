@@ -1,4 +1,4 @@
-import { GitLabProvider } from "@mattstack/glance";
+import { GitLabProvider } from '@mattstack/glance';
 import type {
   FetchMergeRequestIndexOptions,
   FetchMergeRequestMetricsOptions,
@@ -11,8 +11,8 @@ import type {
   PipelineSummary,
   ProjectRef,
   UserEvent,
-} from "@mattstack/glance";
-import type { Env } from "../config/index.js";
+} from '@mattstack/glance';
+import type { Env } from '../config/index.js';
 
 export type { GitProvider };
 
@@ -32,16 +32,33 @@ export interface RequestIO {
  * implement this, not GitProvider's full mutation surface.
  */
 export interface SourceProvider {
-  fetchMergeRequestIndex(options: FetchMergeRequestIndexOptions): Promise<MergeRequestIndexRow[]>;
+  fetchMergeRequestIndex(
+    options: FetchMergeRequestIndexOptions
+  ): Promise<MergeRequestIndexRow[]>;
   fetchMergeRequestMetrics(
     projectPath: string,
     mrIid: number,
-    options?: FetchMergeRequestMetricsOptions,
+    options?: FetchMergeRequestMetricsOptions
   ): Promise<MergeRequestMetrics | null>;
-  fetchProject(projectPath: string, options?: FetchProjectOptions): Promise<ProjectRef | null>;
-  fetchProjectPipelines(projectPath: string, options: FetchProjectPipelinesOptions): Promise<PipelineSummary[]>;
-  fetchUserEvents(userId: string, options: FetchUserEventsOptions): Promise<UserEvent[]>;
-  restRequest(method: string, path: string, body?: unknown, op?: string, io?: RequestIO): Promise<Response>;
+  fetchProject(
+    projectPath: string,
+    options?: FetchProjectOptions
+  ): Promise<ProjectRef | null>;
+  fetchProjectPipelines(
+    projectPath: string,
+    options: FetchProjectPipelinesOptions
+  ): Promise<PipelineSummary[]>;
+  fetchUserEvents(
+    userId: string,
+    options: FetchUserEventsOptions
+  ): Promise<UserEvent[]>;
+  restRequest(
+    method: string,
+    path: string,
+    body?: unknown,
+    op?: string,
+    io?: RequestIO
+  ): Promise<Response>;
 }
 
 type ProviderFactory = (env: Env) => GitProvider;
@@ -55,6 +72,9 @@ export function __setProviderFactory(f: ProviderFactory | null): void {
 
 export function makeProvider(env: Env): GitProvider {
   if (factory) return factory(env);
-  if (process.env.VITEST) throw new Error("tests must inject a provider factory (__setProviderFactory)");
+  if (process.env.VITEST)
+    throw new Error(
+      'tests must inject a provider factory (__setProviderFactory)'
+    );
   return new GitLabProvider(env.baseUrl, env.token);
 }

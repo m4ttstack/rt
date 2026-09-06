@@ -1,40 +1,39 @@
-import { useMemo, useState, type CSSProperties } from "react";
-import { useLocation } from "wouter";
+import { useMemo, useState, type CSSProperties } from 'react';
+import { useLocation } from 'wouter';
 
-import { Badge, Paper, Table, Text } from "@mattstack/app-kit/core";
-import { useSchemeColors } from "@mattstack/app-kit/hooks";
-import { Icon } from "@mattstack/app-kit/icons";
-
-import type { LeaderboardResponse, UserRow } from "../../shared/types";
+import { Badge, Paper, Table, Text } from '@mattstack/app-kit/core';
+import { useSchemeColors } from '@mattstack/app-kit/hooks';
+import { Icon } from '@mattstack/app-kit/icons';
+import type { LeaderboardResponse, UserRow } from '../../shared/types';
 import {
   COLUMNS,
-  type Column,
-  GROUP_META,
-  GROUP_ORDER,
   deltaValue,
   formatValue,
+  GROUP_META,
+  GROUP_ORDER,
   rankValue,
   sortValue,
-} from "../columns";
-import { DeltaBadge } from "./DeltaBadge";
-import styles from "./leaderboard.module.css";
-import { MetricTip } from "./MetricTip";
-import { Tooltip } from "./Tooltip";
+  type Column,
+} from '../columns';
+import { DeltaBadge } from './DeltaBadge';
+import styles from './leaderboard.module.css';
+import { MetricTip } from './MetricTip';
+import { Tooltip } from './Tooltip';
 
 interface Props {
   data: LeaderboardResponse;
   trend: boolean;
 }
 
-const BORDER = "1px solid var(--mantine-color-default-border)";
-const STICKY_LEFT: CSSProperties = { position: "sticky", left: 0, zIndex: 1 };
+const BORDER = '1px solid var(--mantine-color-default-border)';
+const STICKY_LEFT: CSSProperties = { position: 'sticky', left: 0, zIndex: 1 };
 
 export function LeaderboardTable({ data, trend }: Props) {
-  const [sortKey, setSortKey] = useState<string>("mrsMerged");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [sortKey, setSortKey] = useState<string>('mrsMerged');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const { bg } = useSchemeColors();
 
-  const sortCol = COLUMNS.find((c) => c.key === sortKey) ?? COLUMNS[0]!;
+  const sortCol = COLUMNS.find(c => c.key === sortKey) ?? COLUMNS[0]!;
 
   const rows = useMemo(() => {
     const copy = [...data.users];
@@ -44,17 +43,17 @@ export function LeaderboardTable({ data, trend }: Props) {
       if (va === null && vb === null) return 0;
       if (va === null) return 1;
       if (vb === null) return -1;
-      return sortDir === "desc" ? vb - va : va - vb;
+      return sortDir === 'desc' ? vb - va : va - vb;
     });
     return copy;
   }, [data.users, sortCol, sortDir]);
 
   const onSort = (col: Column) => {
     if (col.key === sortKey) {
-      setSortDir((d) => (d === "desc" ? "asc" : "desc"));
+      setSortDir(d => (d === 'desc' ? 'asc' : 'desc'));
     } else {
       setSortKey(col.key);
-      setSortDir(col.better === "asc" ? "asc" : "desc");
+      setSortDir(col.better === 'asc' ? 'asc' : 'desc');
     }
   };
 
@@ -62,7 +61,7 @@ export function LeaderboardTable({ data, trend }: Props) {
     <Paper
       withBorder
       radius="md"
-      style={{ backgroundColor: bg.monochrome, overflow: "hidden" }}
+      style={{ backgroundColor: bg.monochrome, overflow: 'hidden' }}
     >
       <Table.ScrollContainer minWidth={1200}>
         <Table headerAccent={false} highlightOnHover>
@@ -74,8 +73,8 @@ export function LeaderboardTable({ data, trend }: Props) {
               >
                 Person
               </Table.Th>
-              {GROUP_ORDER.map((g) => {
-                const cols = COLUMNS.filter((c) => c.group === g);
+              {GROUP_ORDER.map(g => {
+                const cols = COLUMNS.filter(c => c.group === g);
                 if (cols.length === 0) return null;
                 const meta = GROUP_META[g];
                 return (
@@ -96,7 +95,7 @@ export function LeaderboardTable({ data, trend }: Props) {
                     </Text>
                     {meta.hint && (
                       <Text component="span" size="xs" c="dimmed">
-                        {" "}
+                        {' '}
                         ({meta.hint})
                       </Text>
                     )}
@@ -116,29 +115,29 @@ export function LeaderboardTable({ data, trend }: Props) {
                   key={col.key}
                   ta="right"
                   style={{
-                    whiteSpace: "nowrap",
+                    whiteSpace: 'nowrap',
                     borderLeft:
                       i > 0 && COLUMNS[i - 1]!.group !== col.group
                         ? BORDER
                         : undefined,
                     color:
                       col.key === sortKey
-                        ? "var(--mantine-color-text)"
+                        ? 'var(--mantine-color-text)'
                         : undefined,
                   }}
                 >
                   <Tooltip content={<MetricTip col={col} />}>
                     <span
                       data-testid={`sort-${col.key}`}
-                      style={{ cursor: "pointer" }}
+                      style={{ cursor: 'pointer' }}
                       onClick={() => onSort(col)}
                     >
                       {col.label}
                       {col.key === sortKey && (
                         <Icon
-                          name={sortDir === "desc" ? "arrowDown" : "arrowUp"}
+                          name={sortDir === 'desc' ? 'arrowDown' : 'arrowUp'}
                           size={11}
-                          style={{ marginLeft: 3, verticalAlign: "middle" }}
+                          style={{ marginLeft: 3, verticalAlign: 'middle' }}
                         />
                       )}
                     </span>
@@ -148,7 +147,7 @@ export function LeaderboardTable({ data, trend }: Props) {
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
-            {rows.map((row) => (
+            {rows.map(row => (
               <Row
                 key={row.username}
                 row={row}
@@ -188,15 +187,15 @@ function Row({
   const { bg } = useSchemeColors();
   const goToStat = (stat: string) =>
     setLocation(
-      `/user/${encodeURIComponent(row.username)}/${encodeURIComponent(stat)}`,
+      `/user/${encodeURIComponent(row.username)}/${encodeURIComponent(stat)}`
     );
 
-  const rowBg = row.isCurrentUser ? bg.lightened("accent") : undefined;
+  const rowBg = row.isCurrentUser ? bg.lightened('accent') : undefined;
 
   return (
     <Table.Tr
       data-testid={`row-${row.username}`}
-      data-current-user={row.isCurrentUser ? "true" : undefined}
+      data-current-user={row.isCurrentUser ? 'true' : undefined}
       style={{ backgroundColor: rowBg, opacity: row.resolved ? 1 : 0.5 }}
     >
       <Table.Td
@@ -210,7 +209,7 @@ function Row({
           <Text
             component="span"
             fw={row.isCurrentUser ? 600 : 400}
-            c={row.isCurrentUser ? "accent" : undefined}
+            c={row.isCurrentUser ? 'accent' : undefined}
           >
             {row.name ?? row.username}
           </Text>
@@ -232,10 +231,10 @@ function Row({
             onClick={() => goToStat(col.key)}
             ta="right"
             style={{
-              cursor: "pointer",
-              whiteSpace: "nowrap",
-              fontFamily: "var(--mantine-font-family-monospace)",
-              fontVariantNumeric: "tabular-nums",
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              fontFamily: 'var(--mantine-font-family-monospace)',
+              fontVariantNumeric: 'tabular-nums',
               borderLeft: borderL ? BORDER : undefined,
             }}
             title={`${row.name ?? row.username} · ${col.label} details`}
@@ -269,7 +268,7 @@ function Cell({
     if (d === null || d === 0) {
       return (
         <Text component="span" c="dimmed">
-          {d === 0 ? "→ 0" : "—"}
+          {d === 0 ? '→ 0' : '—'}
         </Text>
       );
     }
@@ -278,7 +277,7 @@ function Cell({
 
   const v = sortValue(row.metrics, col);
   const cell = row.metrics[col.key];
-  const p90 = col.kind === "dist" ? (cell as { p90: number | null }).p90 : null;
+  const p90 = col.kind === 'dist' ? (cell as { p90: number | null }).p90 : null;
   return (
     <span title={p90 !== null ? `p90: ${p90}h` : undefined}>
       {formatValue(v, col)}

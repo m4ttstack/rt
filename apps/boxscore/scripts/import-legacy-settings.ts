@@ -4,12 +4,18 @@
 //
 // Do NOT run this from an automated context: it writes real user/team
 // stores and prints a git-commit reminder aimed at a human.
-import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
-import { getSetting, rtCommand, setSetting, type SettingScope } from "@mattstack/rt-client";
-import type { RangePreset } from "../src/shared/types.js";
-import type { RosterEntry } from "../src/server/config/index.js";
+import { existsSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+
+import {
+  getSetting,
+  rtCommand,
+  setSetting,
+  type SettingScope,
+} from '@mattstack/rt-client';
+import type { RosterEntry } from '../src/server/config/index.js';
+import type { RangePreset } from '../src/shared/types.js';
 
 export type Integrations = Record<string, unknown> & {
   forge?: { host?: string };
@@ -38,11 +44,21 @@ interface PlannedWrite {
   scope: SettingScope;
 }
 
-const LEGACY_FILES = ["config.ts", "settings.json", ".env", ".env.example", "server/settings.ts", "server/env.ts"];
+const LEGACY_FILES = [
+  'config.ts',
+  'settings.json',
+  '.env',
+  '.env.example',
+  'server/settings.ts',
+  'server/env.ts',
+];
 
 /** Board entries win on name; legacy usernames missing from the board are appended, nameless. */
-export function mergeRoster(board: RosterEntry[], legacyUsernames: string[]): RosterEntry[] {
-  const seen = new Set(board.map((m) => m.username));
+export function mergeRoster(
+  board: RosterEntry[],
+  legacyUsernames: string[]
+): RosterEntry[] {
+  const seen = new Set(board.map(m => m.username));
   const merged = [...board];
   for (const username of legacyUsernames) {
     if (seen.has(username)) continue;
@@ -55,7 +71,7 @@ export function mergeRoster(board: RosterEntry[], legacyUsernames: string[]): Ro
 /** Fills only the fields `current` is missing; never overwrites an already-present forge.host / linear.teamKey. */
 export function mergeIntegrations(
   current: Integrations,
-  incoming: { host?: string; teamKey?: string },
+  incoming: { host?: string; teamKey?: string }
 ): { merged: Integrations; changed: boolean } {
   const merged: Integrations = { ...current };
   let changed = false;
@@ -78,48 +94,52 @@ function fatal(message: string): never {
 }
 
 function apiTokenPath(): string {
-  return join(process.env.HOME ?? homedir(), ".mattstack", "rt", "api-token");
+  return join(process.env.HOME ?? homedir(), '.mattstack', 'rt', 'api-token');
 }
 
 async function loadLegacyConfig(): Promise<LegacyConfig> {
-  const specifier = join(process.cwd(), "config.ts");
-  if (!existsSync(specifier)) fatal(`config.ts not found in ${process.cwd()} ... already imported?`);
+  const specifier = join(process.cwd(), 'config.ts');
+  if (!existsSync(specifier))
+    fatal(`config.ts not found in ${process.cwd()} ... already imported?`);
   const mod = (await import(specifier)) as { config: LegacyConfig };
   return mod.config;
 }
 
 function loadLegacySettings(): LegacySettings {
-  const path = join(process.cwd(), "settings.json");
-  if (!existsSync(path)) fatal(`settings.json not found in ${process.cwd()} ... already imported?`);
-  return JSON.parse(readFileSync(path, "utf8")) as LegacySettings;
+  const path = join(process.cwd(), 'settings.json');
+  if (!existsSync(path))
+    fatal(`settings.json not found in ${process.cwd()} ... already imported?`);
+  return JSON.parse(readFileSync(path, 'utf8')) as LegacySettings;
 }
 
 async function checkSecretsPresent(): Promise<void> {
   let token: string;
   try {
-    token = readFileSync(apiTokenPath(), "utf8").trim();
+    token = readFileSync(apiTokenPath(), 'utf8').trim();
   } catch (err) {
-    fatal(`cannot read the rt api token at ${apiTokenPath()}: ${err instanceof Error ? err.message : String(err)}`);
+    fatal(
+      `cannot read the rt api token at ${apiTokenPath()}: ${err instanceof Error ? err.message : String(err)}`
+    );
   }
   const res = await rtCommand<{ gitlabToken?: string; linearApiKey?: string }>(
-    "secrets:read",
-    { token, scope: "extension" },
-    { timeoutMs: 15_000 },
+    'secrets:read',
+    { token, scope: 'extension' },
+    { timeoutMs: 15_000 }
   );
-  if (!res.ok) fatal(`secrets:read failed: ${res.error ?? "unknown"}`);
+  if (!res.ok) fatal(`secrets:read failed: ${res.error ?? 'unknown'}`);
   const missing: string[] = [];
-  if (!("gitlabToken" in (res.data ?? {}))) missing.push("gitlabToken");
-  if (!("linearApiKey" in (res.data ?? {}))) missing.push("linearApiKey");
+  if (!('gitlabToken' in (res.data ?? {}))) missing.push('gitlabToken');
+  if (!('linearApiKey' in (res.data ?? {}))) missing.push('linearApiKey');
   if (missing.length > 0) {
     fatal(
-      `missing key(s) in the extension secrets store: ${missing.join(", ")}. ` +
-        "Add them to the sops-encrypted secrets store before re-running this import.",
+      `missing key(s) in the extension secrets store: ${missing.join(', ')}. ` +
+        'Add them to the sops-encrypted secrets store before re-running this import.'
     );
   }
 }
 
 async function main(): Promise<void> {
-  const dryRun = process.argv.includes("--dry-run");
+  const dryRun = process.argv.includes('--dry-run');
 
   const legacy = await loadLegacyConfig();
   const settingsJson = loadLegacySettings();
@@ -127,31 +147,63 @@ async function main(): Promise<void> {
 
   await checkSecretsPresent();
 
-  const board = getSetting<RosterEntry[] | undefined>("board.members").value ?? [];
+  const board =
+    getSetting<RosterEntry[] | undefined>('board.members').value ?? [];
 
   const writes: PlannedWrite[] = [
-    { key: "mattstack.roster", value: mergeRoster(board, settingsJson.users), scope: "team" },
-    { key: "boxscore.projects", value: legacy.projectPaths ?? [], scope: "team" },
-    { key: "boxscore.linearDoneStates", value: settingsJson.doneStates, scope: "team" },
-    { key: "boxscore.sizeBand", value: settingsJson.sizeBand, scope: "team" },
-    { key: "boxscore.excludeFilePatterns", value: settingsJson.excludeFilePatterns, scope: "team" },
-    { key: "boxscore.ignoredMrs", value: settingsJson.ignoredMrs, scope: "team" },
-    { key: "boxscore.botPatterns", value: settingsJson.bots.extraPatterns, scope: "team" },
-    { key: "boxscore.defaultRange", value: legacy.defaultRange, scope: "user" },
+    {
+      key: 'mattstack.roster',
+      value: mergeRoster(board, settingsJson.users),
+      scope: 'team',
+    },
+    {
+      key: 'boxscore.projects',
+      value: legacy.projectPaths ?? [],
+      scope: 'team',
+    },
+    {
+      key: 'boxscore.linearDoneStates',
+      value: settingsJson.doneStates,
+      scope: 'team',
+    },
+    { key: 'boxscore.sizeBand', value: settingsJson.sizeBand, scope: 'team' },
+    {
+      key: 'boxscore.excludeFilePatterns',
+      value: settingsJson.excludeFilePatterns,
+      scope: 'team',
+    },
+    {
+      key: 'boxscore.ignoredMrs',
+      value: settingsJson.ignoredMrs,
+      scope: 'team',
+    },
+    {
+      key: 'boxscore.botPatterns',
+      value: settingsJson.bots.extraPatterns,
+      scope: 'team',
+    },
+    { key: 'boxscore.defaultRange', value: legacy.defaultRange, scope: 'user' },
   ];
 
-  const currentIntegrations = getSetting<Integrations | undefined>("mattstack.integrations").value ?? {};
-  const { merged: mergedIntegrations, changed: integrationsChanged } = mergeIntegrations(currentIntegrations, {
-    host: gitlabBaseUrl,
-    teamKey: settingsJson.linearTeam,
-  });
+  const currentIntegrations =
+    getSetting<Integrations | undefined>('mattstack.integrations').value ?? {};
+  const { merged: mergedIntegrations, changed: integrationsChanged } =
+    mergeIntegrations(currentIntegrations, {
+      host: gitlabBaseUrl,
+      teamKey: settingsJson.linearTeam,
+    });
   if (integrationsChanged) {
-    writes.push({ key: "mattstack.integrations", value: mergedIntegrations, scope: "team" });
+    writes.push({
+      key: 'mattstack.integrations',
+      value: mergedIntegrations,
+      scope: 'team',
+    });
   }
 
   if (dryRun) {
-    console.log("[import-legacy-settings] --dry-run: planned writes");
-    for (const w of writes) console.log(`  ${w.scope} ${w.key} = ${JSON.stringify(w.value)}`);
+    console.log('[import-legacy-settings] --dry-run: planned writes');
+    for (const w of writes)
+      console.log(`  ${w.scope} ${w.key} = ${JSON.stringify(w.value)}`);
     return;
   }
 
@@ -160,20 +212,24 @@ async function main(): Promise<void> {
   for (const w of writes) {
     const readBack = getSetting(w.key).value;
     if (JSON.stringify(readBack) !== JSON.stringify(w.value)) {
-      fatal(`verification failed for ${w.key}: wrote ${JSON.stringify(w.value)}, read back ${JSON.stringify(readBack)}`);
+      fatal(
+        `verification failed for ${w.key}: wrote ${JSON.stringify(w.value)}, read back ${JSON.stringify(readBack)}`
+      );
     }
   }
 
   console.log(
-    "[import-legacy-settings] team-scope writes landed in the local acme-web team repo working copy. " +
-      "Commit and push there for the rest of the team to pick them up.",
+    '[import-legacy-settings] team-scope writes landed in the local acme-web team repo working copy. ' +
+      'Commit and push there for the rest of the team to pick them up.'
   );
-  console.log("[import-legacy-settings] the settings-fold branch removes these legacy files:");
+  console.log(
+    '[import-legacy-settings] the settings-fold branch removes these legacy files:'
+  );
   for (const f of LEGACY_FILES) console.log(`  ${f}`);
 }
 
 if (import.meta.main) {
-  main().catch((err) => {
+  main().catch(err => {
     fatal(err instanceof Error ? err.message : String(err));
   });
 }

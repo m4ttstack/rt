@@ -1,8 +1,21 @@
-import { inWindow } from "../util/window.js";
-import { buildIgnoredMrSet, buildMetricFilters, isDoneState, matchesTeam, type MetricFilters } from "./filters.js";
-import { buildRevertedTitleSet, isReverted } from "./reverts.js";
-import type { FetchResult, NormLinearIssue, NormMr, NormNote, NormPipeline, NormPushEvent } from "../store/model.js";
-import type { TimeWindow } from "../../shared/types.js";
+import type { TimeWindow } from '../../shared/types.js';
+import type {
+  FetchResult,
+  NormLinearIssue,
+  NormMr,
+  NormNote,
+  NormPipeline,
+  NormPushEvent,
+} from '../store/model.js';
+import { inWindow } from '../util/window.js';
+import {
+  buildIgnoredMrSet,
+  buildMetricFilters,
+  isDoneState,
+  matchesTeam,
+  type MetricFilters,
+} from './filters.js';
+import { buildRevertedTitleSet, isReverted } from './reverts.js';
 
 export interface CohortOptions {
   window: TimeWindow;
@@ -36,7 +49,7 @@ export interface Corpus {
 
 export function buildCorpus(fetched: FetchResult, opts: CohortOptions): Corpus {
   const isIgnored = buildIgnoredMrSet(opts.ignoredMrs);
-  const mrs = fetched.mrs.filter((m) => !isIgnored(m));
+  const mrs = fetched.mrs.filter(m => !isIgnored(m));
   return {
     mrs,
     pipelines: fetched.pipelines,
@@ -95,14 +108,23 @@ export interface UserCohorts {
 
 const HOUR_MS = 60 * 60 * 1000;
 
-const hoursFrom = (clockStartIso: string, toMs: number): number => (toMs - Date.parse(clockStartIso)) / HOUR_MS;
+const hoursFrom = (clockStartIso: string, toMs: number): number =>
+  (toMs - Date.parse(clockStartIso)) / HOUR_MS;
 
-export function buildUserCohorts(corpus: Corpus, u: string, opts: CohortOptions): UserCohorts {
+export function buildUserCohorts(
+  corpus: Corpus,
+  u: string,
+  opts: CohortOptions
+): UserCohorts {
   const { window, sizeBand } = opts;
   const { mrs, filters: f } = corpus;
 
   const authoredMerged = mrs.filter(
-    (m) => m.authorUsername === u && m.state === "merged" && f.hasTeamTicket(m) && inWindow(m.mergedAt, window),
+    m =>
+      m.authorUsername === u &&
+      m.state === 'merged' &&
+      f.hasTeamTicket(m) &&
+      inWindow(m.mergedAt, window)
   );
 
   const inBand = (m: NormMr): boolean => {
@@ -111,31 +133,44 @@ export function buildUserCohorts(corpus: Corpus, u: string, opts: CohortOptions)
     return changed >= sizeBand.tooSmall && changed <= sizeBand.tooLarge;
   };
 
-  const reverted = authoredMerged.filter((m) => isReverted(m, corpus.revertedTitles));
+  const reverted = authoredMerged.filter(m =>
+    isReverted(m, corpus.revertedTitles)
+  );
 
   const reviewed: ReviewedMr[] = [];
   for (const m of mrs) {
     if (m.authorUsername === u) continue;
-    const notes = m.notes.filter((n) => n.authorUsername === u && !n.system && inWindow(n.createdAt, window));
+    const notes = m.notes.filter(
+      n => n.authorUsername === u && !n.system && inWindow(n.createdAt, window)
+    );
     const approvedInScope =
-      corpus.approvalsAvailable && m.approvedByUsernames.includes(u) && inWindow(m.mergedAt, window);
+      corpus.approvalsAvailable &&
+      m.approvedByUsernames.includes(u) &&
+      inWindow(m.mergedAt, window);
     if (notes.length === 0 && !approvedInScope) continue;
 
     let responseHours: number | null = null;
     if (notes.length > 0) {
-      const earliest = Math.min(...notes.map((n) => Date.parse(n.createdAt)));
+      const earliest = Math.min(...notes.map(n => Date.parse(n.createdAt)));
       const hours = hoursFrom(m.preparedAt ?? m.createdAt, earliest);
       if (hours >= 0) responseHours = hours;
     }
-    reviewed.push({ mr: m, notes, inlineCount: notes.filter((n) => n.inline).length, responseHours });
+    reviewed.push({
+      mr: m,
+      notes,
+      inlineCount: notes.filter(n => n.inline).length,
+      responseHours,
+    });
   }
 
   const waited: WaitedMr[] = [];
   for (const m of mrs) {
     if (m.authorUsername !== u || !inWindow(m.createdAt, window)) continue;
     const firstTouch = m.notes
-      .filter((n) => !n.system && n.authorUsername !== u && !f.isBot(n.authorUsername))
-      .map((n) => Date.parse(n.createdAt))
+      .filter(
+        n => !n.system && n.authorUsername !== u && !f.isBot(n.authorUsername)
+      )
+      .map(n => Date.parse(n.createdAt))
       .sort((a, b) => a - b)[0];
     if (firstTouch === undefined) continue;
     const hours = hoursFrom(m.preparedAt ?? m.createdAt, firstTouch);
@@ -146,29 +181,61 @@ export function buildUserCohorts(corpus: Corpus, u: string, opts: CohortOptions)
   for (const m of authoredMerged) {
     const seen = new Set<string>();
     for (const n of m.notes) {
-      if (!n.system && n.authorUsername && n.authorUsername !== u && !f.isBot(n.authorUsername)) {
+      if (
+        !n.system &&
+        n.authorUsername &&
+        n.authorUsername !== u &&
+        !f.isBot(n.authorUsername)
+      ) {
         seen.add(n.authorUsername);
       }
     }
     if (corpus.approvalsAvailable) {
-      for (const a of m.approvedByUsernames) if (a !== u && !f.isBot(a)) seen.add(a);
+      for (const a of m.approvedByUsernames)
+        if (a !== u && !f.isBot(a)) seen.add(a);
     }
-    for (const r of seen) reviewersOfMine.set(r, (reviewersOfMine.get(r) ?? 0) + 1);
+    for (const r of seen)
+      reviewersOfMine.set(r, (reviewersOfMine.get(r) ?? 0) + 1);
   }
 
-  const pipelines = corpus.pipelines.filter((p) => p.username === u && inWindow(p.createdAt, window));
+  const pipelines = corpus.pipelines.filter(
+    p => p.username === u && inWindow(p.createdAt, window)
+  );
   const pushTimestamps = corpus.pushEvents
-    .filter((e) => e.username === u && inWindow(e.createdAt, window))
-    .map((e) => e.createdAt);
-  const mergeTimestamps = authoredMerged.map((m) => m.mergedAt ?? "").filter(Boolean);
+    .filter(e => e.username === u && inWindow(e.createdAt, window))
+    .map(e => e.createdAt);
+  const mergeTimestamps = authoredMerged
+    .map(m => m.mergedAt ?? '')
+    .filter(Boolean);
 
-  const issues: IssueCohort = { counted: [], teamExcluded: 0, stateExcluded: 0 };
+  const issues: IssueCohort = {
+    counted: [],
+    teamExcluded: 0,
+    stateExcluded: 0,
+  };
   for (const i of corpus.linearIssues) {
     if (i.assignedUser !== u) continue;
-    if (!matchesTeam(i.identifier, opts.linearTeam)) { issues.teamExcluded++; continue; }
-    if (!isDoneState(i.stateType, i.stateName, opts.doneStates)) { issues.stateExcluded++; continue; }
+    if (!matchesTeam(i.identifier, opts.linearTeam)) {
+      issues.teamExcluded++;
+      continue;
+    }
+    if (!isDoneState(i.stateType, i.stateName, opts.doneStates)) {
+      issues.stateExcluded++;
+      continue;
+    }
     issues.counted.push(i);
   }
 
-  return { authoredMerged, inBand, reverted, reviewed, waited, reviewersOfMine, pipelines, pushTimestamps, mergeTimestamps, issues };
+  return {
+    authoredMerged,
+    inBand,
+    reverted,
+    reviewed,
+    waited,
+    reviewersOfMine,
+    pipelines,
+    pushTimestamps,
+    mergeTimestamps,
+    issues,
+  };
 }

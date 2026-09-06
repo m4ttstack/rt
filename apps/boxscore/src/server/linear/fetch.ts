@@ -1,11 +1,14 @@
-import { linearRequest } from "./client.js";
-import { mapIssue } from "./map.js";
-import { mrTicketHaystack } from "./ticket.js";
-import { mapLimit } from "../util/concurrency.js";
-import { getStore } from "../store/index.js";
-import type { RawIssue } from "./raw-types.js";
-import type { MrState, NormMr, NormLinearIssue } from "../store/model.js";
-import type { LeaderboardWarning, RefreshProgress } from "../../shared/types.js";
+import type {
+  LeaderboardWarning,
+  RefreshProgress,
+} from '../../shared/types.js';
+import { getStore } from '../store/index.js';
+import type { MrState, NormLinearIssue, NormMr } from '../store/model.js';
+import { mapLimit } from '../util/concurrency.js';
+import { linearRequest } from './client.js';
+import { mapIssue } from './map.js';
+import type { RawIssue } from './raw-types.js';
+import { mrTicketHaystack } from './ticket.js';
 
 /** Extract Linear identifiers from a string, e.g. "ACME-123", "ENG-456", "HUB:299". */
 const LINEAR_ID_RE = /\b([A-Z]+[-:]\d+)\b/gi;
@@ -27,10 +30,10 @@ const VALID_LINEAR_ID_RE = /^[A-Z]{2,}-\d+$/;
  * Each alias is `_N` so we can match results back to identifiers.
  */
 function buildVerifyQuery(identifiers: readonly string[]): string {
-  const fields = "id identifier title url state { type name }";
+  const fields = 'id identifier title url state { type name }';
   const aliases = identifiers
     .map((id, i) => `_${i}: issue(id: ${JSON.stringify(id)}) { ${fields} }`)
-    .join("\n");
+    .join('\n');
   return `query VerifyIssues {\n${aliases}\n}`;
 }
 
@@ -62,12 +65,13 @@ interface TicketMr {
  */
 function earliestMr<T extends { projectPath: string; iid: number }>(
   mrs: readonly T[],
-  timeOf: (m: T) => string,
+  timeOf: (m: T) => string
 ): T {
   return mrs.reduce((best, m) => {
     const delta = Date.parse(timeOf(m)) - Date.parse(timeOf(best));
     if (delta !== 0) return delta < 0 ? m : best;
-    if (m.projectPath !== best.projectPath) return m.projectPath < best.projectPath ? m : best;
+    if (m.projectPath !== best.projectPath)
+      return m.projectPath < best.projectPath ? m : best;
     return m.iid < best.iid ? m : best;
   });
 }
@@ -80,16 +84,19 @@ function earliestMr<T extends { projectPath: string; iid: number }>(
  * nothing merged yet, only an uncontested single author is safe to credit -- several
  * candidates with nothing shipped is a guess, not an attribution.
  */
-function creditedAuthor(mrs: readonly TicketMr[], roster: ReadonlySet<string>): string | null {
-  const merged = mrs.filter((m) => m.state === "merged" && m.mergedAt);
+function creditedAuthor(
+  mrs: readonly TicketMr[],
+  roster: ReadonlySet<string>
+): string | null {
+  const merged = mrs.filter(m => m.state === 'merged' && m.mergedAt);
   if (merged.length > 0) {
-    const rosterMerged = merged.filter((m) => roster.has(m.authorUsername));
+    const rosterMerged = merged.filter(m => roster.has(m.authorUsername));
     const pool = rosterMerged.length > 0 ? rosterMerged : merged;
-    return earliestMr(pool, (m) => m.mergedAt!).authorUsername;
+    return earliestMr(pool, m => m.mergedAt!).authorUsername;
   }
-  const authors = new Set(mrs.map((m) => m.authorUsername));
+  const authors = new Set(mrs.map(m => m.authorUsername));
   if (authors.size !== 1) return null;
-  return earliestMr(mrs, (m) => m.createdAt).authorUsername;
+  return earliestMr(mrs, m => m.createdAt).authorUsername;
 }
 
 /**
@@ -100,13 +107,16 @@ function creditedAuthor(mrs: readonly TicketMr[], roster: ReadonlySet<string>): 
 async function verifyChunk(
   apiKey: string,
   chunk: readonly string[],
-  signal?: AbortSignal,
+  signal?: AbortSignal
 ): Promise<VerifyOutcome> {
   const query = buildVerifyQuery(chunk);
   try {
-    return { result: await linearRequest<VerifyResult>(apiKey, query, {}, signal), failed: [] };
+    return {
+      result: await linearRequest<VerifyResult>(apiKey, query, {}, signal),
+      failed: [],
+    };
   } catch (err) {
-    if ((err as Error).name === "AbortError") throw err;
+    if ((err as Error).name === 'AbortError') throw err;
     return verifyIndividually(apiKey, chunk, signal);
   }
 }
@@ -119,29 +129,25 @@ async function verifyChunk(
 async function verifyIndividually(
   apiKey: string,
   ids: readonly string[],
-  signal?: AbortSignal,
+  signal?: AbortSignal
 ): Promise<VerifyOutcome> {
   const result: VerifyResult = {};
   const failed: string[] = [];
-  await mapLimit(
-    [...ids.entries()],
-    LINEAR_CONCURRENCY,
-    async ([i, id]) => {
-      signal?.throwIfAborted();
-      const query = buildVerifyQuery([id]);
-      try {
-        const data = await linearRequest<VerifyResult>(apiKey, query, {}, signal);
-        const raw = data["_0"];
-        if (raw) result[`_${i}`] = raw;
-      } catch (err) {
-        if ((err as Error).name === "AbortError") throw err;
-        // "Entity not found" IS a definitive answer (Linear errors on nonexistent ids
-        // rather than returning null): leave the alias unset so it's cached as invalid.
-        // Anything else (rate limit, transport) says nothing about validity.
-        if (!/entity not found/i.test((err as Error).message)) failed.push(id);
-      }
-    },
-  );
+  await mapLimit([...ids.entries()], LINEAR_CONCURRENCY, async ([i, id]) => {
+    signal?.throwIfAborted();
+    const query = buildVerifyQuery([id]);
+    try {
+      const data = await linearRequest<VerifyResult>(apiKey, query, {}, signal);
+      const raw = data['_0'];
+      if (raw) result[`_${i}`] = raw;
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') throw err;
+      // "Entity not found" IS a definitive answer (Linear errors on nonexistent ids
+      // rather than returning null): leave the alias unset so it's cached as invalid.
+      // Anything else (rate limit, transport) says nothing about validity.
+      if (!/entity not found/i.test((err as Error).message)) failed.push(id);
+    }
+  });
   return { result, failed };
 }
 
@@ -153,7 +159,7 @@ async function verifyIndividually(
  * count them.
  */
 export function eligibleForLinearDiscovery(m: NormMr): boolean {
-  return m.state !== "closed";
+  return m.state !== 'closed';
 }
 
 /**
@@ -169,7 +175,7 @@ export async function resolveLinearTickets(
   warnings: LeaderboardWarning[],
   roster: readonly string[] | ReadonlySet<string>,
   signal?: AbortSignal,
-  onProgress?: (p: Omit<RefreshProgress, "window">) => void,
+  onProgress?: (p: Omit<RefreshProgress, 'window'>) => void
 ): Promise<NormLinearIssue[]> {
   if (!apiKey || sourceMrs.length === 0) return [];
 
@@ -182,10 +188,12 @@ export async function resolveLinearTickets(
   for (const mr of sourceMrs) {
     const ids = extractLinearIds(mrTicketHaystack(mr));
     for (const id of ids) {
-      const normalized = id.toUpperCase().replace(":", "-");
+      const normalized = id.toUpperCase().replace(':', '-');
       if (!mr.authorUsername) continue;
       const ref = ticketMap.get(normalized) ?? { mrs: [] };
-      if (!ref.mrs.some((m) => m.iid === mr.iid && m.projectPath === mr.projectPath)) {
+      if (
+        !ref.mrs.some(m => m.iid === mr.iid && m.projectPath === mr.projectPath)
+      ) {
         ref.mrs.push({
           iid: mr.iid,
           projectPath: mr.projectPath,
@@ -201,7 +209,9 @@ export async function resolveLinearTickets(
 
   if (ticketMap.size === 0) return [];
 
-  const candidates = [...ticketMap.keys()].filter((id) => VALID_LINEAR_ID_RE.test(id));
+  const candidates = [...ticketMap.keys()].filter(id =>
+    VALID_LINEAR_ID_RE.test(id)
+  );
   if (candidates.length === 0) return [];
 
   // Partition by cached validity: known-valid go straight to batch query,
@@ -226,7 +236,10 @@ export async function resolveLinearTickets(
       if (!identifier) continue;
       const ref = ticketMap.get(identifier);
       const author = ref ? creditedAuthor(ref.mrs, rosterSet) : null;
-      const linkedMrs = (ref?.mrs ?? []).map(({ iid, projectPath }) => ({ iid, projectPath }));
+      const linkedMrs = (ref?.mrs ?? []).map(({ iid, projectPath }) => ({
+        iid,
+        projectPath,
+      }));
       issues.push(mapIssue(raw, author, linkedMrs));
     }
   };
@@ -240,7 +253,12 @@ export async function resolveLinearTickets(
   for (let ci = 0; ci < validChunks; ci++) {
     signal?.throwIfAborted();
     const chunk = knownValid.slice(ci * CHUNK_SIZE, (ci + 1) * CHUNK_SIZE);
-    onProgress?.({ phase: "linear", label: `Fetching ${knownValid.length} cached tickets`, done: ci, total: validChunks });
+    onProgress?.({
+      phase: 'linear',
+      label: `Fetching ${knownValid.length} cached tickets`,
+      done: ci,
+      total: validChunks,
+    });
     const { result, failed } = await verifyChunk(apiKey, chunk, signal);
     collectResults(result, chunk);
     allFailed.push(...failed);
@@ -252,7 +270,12 @@ export async function resolveLinearTickets(
     for (let ci = 0; ci < unknownChunks; ci++) {
       signal?.throwIfAborted();
       const chunk = unknown.slice(ci * CHUNK_SIZE, (ci + 1) * CHUNK_SIZE);
-      onProgress?.({ phase: "linear", label: `Verifying ${unknown.length} new identifiers (${ci + 1}/${unknownChunks})`, done: ci, total: unknownChunks });
+      onProgress?.({
+        phase: 'linear',
+        label: `Verifying ${unknown.length} new identifiers (${ci + 1}/${unknownChunks})`,
+        done: ci,
+        total: unknownChunks,
+      });
       const { result, failed } = await verifyChunk(apiKey, chunk, signal);
       collectResults(result, chunk);
       allFailed.push(...failed);
@@ -261,20 +284,25 @@ export async function resolveLinearTickets(
       // says nothing; caching valid:false for it would permanently hide a real ticket.
       const failedSet = new Set(failed);
       const entries = chunk
-        .filter((id) => !failedSet.has(id))
-        .map((id) => ({ id, valid: !!result[`_${chunk.indexOf(id)}`] }));
+        .filter(id => !failedSet.has(id))
+        .map(id => ({ id, valid: !!result[`_${chunk.indexOf(id)}`] }));
       store.putLinearIds(entries);
     }
   }
 
   if (allFailed.length > 0) {
     warnings.push({
-      code: "linear_partial",
+      code: 'linear_partial',
       message: `Linear lookup failed for ${allFailed.length} tickets (e.g. ${allFailed[0]}); they are missing from this refresh.`,
     });
   }
 
-  onProgress?.({ phase: "linear", label: "Verifying Linear tickets", done: 1, total: 1 });
+  onProgress?.({
+    phase: 'linear',
+    label: 'Verifying Linear tickets',
+    done: 1,
+    total: 1,
+  });
   return issues;
 }
 

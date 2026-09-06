@@ -1,5 +1,5 @@
-import { fileURLToPath } from "node:url";
-import { defineConfig } from "vitest/config";
+import { fileURLToPath } from 'node:url';
+import { defineConfig } from 'vitest/config';
 
 // Separate from vite.config.ts (which serves the client app) so tests resolve from repo root.
 //
@@ -10,27 +10,27 @@ import { defineConfig } from "vitest/config";
 // whole suite to jsdom.
 export default defineConfig({
   resolve: {
-    alias: { "@": fileURLToPath(new URL("./src/app", import.meta.url)) },
+    alias: { '@': fileURLToPath(new URL('./src/app', import.meta.url)) },
   },
   test: {
     projects: [
       {
         extends: true,
         test: {
-          name: "server",
-          include: ["test/**/*.test.ts"],
-          environment: "node",
+          name: 'server',
+          include: ['test/**/*.test.ts'],
+          environment: 'node',
           // Points the store at a test-only file so a run never touches the developer's real one.
-          env: { BOXSCORE_DB: ".cache-test/test.sqlite" },
+          env: { BOXSCORE_DB: '.cache-test/test.sqlite' },
         },
       },
       {
         extends: true,
         test: {
-          name: "component",
-          include: ["src/app/**/*.test.{ts,tsx}"],
-          environment: "jsdom",
-          setupFiles: ["./src/app/test-setup.ts"],
+          name: 'component',
+          include: ['src/app/**/*.test.{ts,tsx}'],
+          environment: 'jsdom',
+          setupFiles: ['./src/app/test-setup.ts'],
         },
       },
     ],

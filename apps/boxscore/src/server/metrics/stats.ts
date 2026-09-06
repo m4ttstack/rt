@@ -1,9 +1,12 @@
 /** Pure statistical helpers used across the metric layer. */
 
-import { BUILTIN_BOT_PATTERNS } from "../../shared/bots.js";
+import { BUILTIN_BOT_PATTERNS } from '../../shared/bots.js';
 
 /** Linear-interpolated percentile of an unsorted sample. p in [0,1]. null if empty. */
-export function percentile(values: readonly number[], p: number): number | null {
+export function percentile(
+  values: readonly number[],
+  p: number
+): number | null {
   if (values.length === 0) return null;
   const sorted = [...values].sort((a, b) => a - b);
   if (sorted.length === 1) return sorted[0]!;
@@ -29,12 +32,19 @@ export function mean(values: readonly number[]): number {
  * group/project bots, CI bots). They post non-system notes seconds after MR creation,
  * which would otherwise dominate "first review" timing and reviewer counts.
  */
-const BUILTIN_BOT_RES = BUILTIN_BOT_PATTERNS.map((p) => new RegExp(p.source, "i"));
+const BUILTIN_BOT_RES = BUILTIN_BOT_PATTERNS.map(
+  p => new RegExp(p.source, 'i')
+);
 
-export function isBotUsername(username: string | null, extraPatterns?: readonly RegExp[]): boolean {
+export function isBotUsername(
+  username: string | null,
+  extraPatterns?: readonly RegExp[]
+): boolean {
   if (!username) return false;
-  if (BUILTIN_BOT_RES.some((re) => re.test(username))) return true;
-  return extraPatterns !== undefined && extraPatterns.some((re) => re.test(username));
+  if (BUILTIN_BOT_RES.some(re => re.test(username))) return true;
+  return (
+    extraPatterns !== undefined && extraPatterns.some(re => re.test(username))
+  );
 }
 
 /** Compile user-supplied bot patterns, skipping any bad regex from settings. */
@@ -42,7 +52,7 @@ export function compileBotPatterns(patterns?: readonly string[]): RegExp[] {
   const compiled: RegExp[] = [];
   for (const p of patterns ?? []) {
     try {
-      compiled.push(new RegExp(p, "i"));
+      compiled.push(new RegExp(p, 'i'));
     } catch {
       // Bad regex from user settings ... skip it.
     }
@@ -71,7 +81,9 @@ export function streaks(timestamps: readonly string[]): StreakResult {
   const keys = [...new Set(timestamps.map(dayKey))].sort();
   if (keys.length === 0) return { distinct: 0, current: 0, longest: 0 };
 
-  const dayNums = keys.map((k) => Math.round(Date.parse(`${k}T00:00:00Z`) / DAY_MS));
+  const dayNums = keys.map(k =>
+    Math.round(Date.parse(`${k}T00:00:00Z`) / DAY_MS)
+  );
 
   let longest = 1;
   let run = 1;

@@ -1,10 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState } from 'react';
 
 /**
  * useState whose value is mirrored to localStorage, so a selection survives a page reload.
  * Falls back to `initial` when nothing is stored or storage/JSON is unavailable.
  */
-export function usePersistentState<T>(key: string, initial: T): [T, (value: T) => void] {
+export function usePersistentState<T>(
+  key: string,
+  initial: T
+): [T, (value: T) => void] {
   const [value, setValue] = useState<T>(() => {
     try {
       const raw = localStorage.getItem(key);

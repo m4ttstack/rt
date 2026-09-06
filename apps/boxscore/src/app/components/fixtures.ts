@@ -3,7 +3,13 @@
  * `test/builders.ts` (server tests): that helper has no `delta` knob, which the trend/delta
  * badge tests here need.
  */
-import type { DistributionValue, LeaderboardResponse, MetricValue, UserMetrics, UserRow } from "../../shared/types";
+import type {
+  DistributionValue,
+  LeaderboardResponse,
+  MetricValue,
+  UserMetrics,
+  UserRow,
+} from '../../shared/types';
 
 interface ScalarOverride {
   value?: number;
@@ -20,7 +26,12 @@ function mv(o: ScalarOverride = {}): MetricValue {
 }
 
 function dv(o: DistOverride = {}): DistributionValue {
-  return { p50: o.p50 ?? null, p90: null, deltaP50: o.deltaP50 ?? null, rank: null };
+  return {
+    p50: o.p50 ?? null,
+    p90: null,
+    deltaP50: o.deltaP50 ?? null,
+    rank: null,
+  };
 }
 
 export interface FixtureMetrics {
@@ -67,7 +78,7 @@ export function buildMetrics(o: FixtureMetrics = {}): UserMetrics {
 export function buildUser(
   username: string,
   metrics: UserMetrics,
-  opts: { resolved?: boolean; isCurrentUser?: boolean; name?: string } = {},
+  opts: { resolved?: boolean; isCurrentUser?: boolean; name?: string } = {}
 ): UserRow {
   return {
     username,
@@ -78,17 +89,29 @@ export function buildUser(
   };
 }
 
-export function buildResponse(users: UserRow[], opts: { hasTrend?: boolean } = {}): LeaderboardResponse {
+export function buildResponse(
+  users: UserRow[],
+  opts: { hasTrend?: boolean } = {}
+): LeaderboardResponse {
   return {
-    scope: { type: "group", groupPath: "acme/eng" },
-    window: { start: "2026-08-01T00:00:00.000Z", end: "2026-08-31T00:00:00.000Z", key: "30d" },
+    scope: { type: 'group', groupPath: 'acme/eng' },
+    window: {
+      start: '2026-08-01T00:00:00.000Z',
+      end: '2026-08-31T00:00:00.000Z',
+      key: '30d',
+    },
     priorWindow: opts.hasTrend
-      ? { start: "2026-07-01T00:00:00.000Z", end: "2026-07-31T00:00:00.000Z", key: "30d" }
+      ? {
+          start: '2026-07-01T00:00:00.000Z',
+          end: '2026-07-31T00:00:00.000Z',
+          key: '30d',
+        }
       : null,
     hasTrend: opts.hasTrend ?? false,
-    baseUrl: "https://gitlab.example.com",
-    currentUser: users.find((u) => u.isCurrentUser)?.username ?? (users[0]?.username ?? ""),
-    generatedAt: "2026-08-31T12:00:00.000Z",
+    baseUrl: 'https://gitlab.example.com',
+    currentUser:
+      users.find(u => u.isCurrentUser)?.username ?? users[0]?.username ?? '',
+    generatedAt: '2026-08-31T12:00:00.000Z',
     fromCache: true,
     metricNotes: {},
     leaders: {},

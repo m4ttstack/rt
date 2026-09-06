@@ -1,5 +1,5 @@
-import type { NormMr } from "../store/model.js";
-import { REVERT_TITLE_RE } from "../../shared/reverts.js";
+import { REVERT_TITLE_RE } from '../../shared/reverts.js';
+import type { NormMr } from '../store/model.js';
 
 /**
  * Revert detection (spec 4.7) ... heuristic, free-tier only.
@@ -19,7 +19,7 @@ export function revertTarget(mr: NormMr): string | null {
   const m = mr.title.match(REVERT_TITLE_RE);
   if (m) return normalizeTitle(m[1]!);
   // Fallback: a `revert` label + quoted original anywhere in the title.
-  if (mr.labels.some((l) => l.toLowerCase() === "revert")) {
+  if (mr.labels.some(l => l.toLowerCase() === 'revert')) {
     const q = mr.title.match(/"(.+)"/);
     if (q) return normalizeTitle(q[1]!);
   }

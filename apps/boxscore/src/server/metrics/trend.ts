@@ -1,6 +1,3 @@
-import { applyRankings } from "./ranking.js";
-import { round } from "./stats.js";
-import type { RawDist, RawUserMetrics, Snapshot } from "./snapshot.js";
 import type {
   DistributionValue,
   LeaderboardResponse,
@@ -10,8 +7,11 @@ import type {
   TimeWindow,
   UserMetrics,
   UserRow,
-} from "../../shared/types.js";
-import type { UserIdentity } from "../store/model.js";
+} from '../../shared/types.js';
+import type { UserIdentity } from '../store/model.js';
+import { applyRankings } from './ranking.js';
+import type { RawDist, RawUserMetrics, Snapshot } from './snapshot.js';
+import { round } from './stats.js';
 
 export interface BuildContext {
   scope: Scope;
@@ -32,14 +32,18 @@ export interface BuildContext {
 export function buildResponse(
   current: Snapshot,
   prior: Snapshot | null,
-  ctx: BuildContext,
+  ctx: BuildContext
 ): LeaderboardResponse {
   const hasTrend = prior !== null;
 
-  const users: UserRow[] = Object.keys(current.byUser).map((username) => {
+  const users: UserRow[] = Object.keys(current.byUser).map(username => {
     const cur = current.byUser[username]!;
     const prev = prior?.byUser[username] ?? null;
-    const identity = ctx.identities[username] ?? { username, name: null, resolved: false };
+    const identity = ctx.identities[username] ?? {
+      username,
+      name: null,
+      resolved: false,
+    };
     return {
       username,
       name: identity.name,
@@ -52,13 +56,15 @@ export function buildResponse(
   // Classification lives here in the data layer: assign per-metric ranks + leaders.
   const leaders = applyRankings(users);
 
-  const metricNotes: LeaderboardResponse["metricNotes"] = {};
+  const metricNotes: LeaderboardResponse['metricNotes'] = {};
   if (!current.approvalsAvailable) {
     metricNotes.mrsReviewed =
-      "Approvals not accessible on this tier; reviewed = note authors only.";
-    metricNotes.reciprocity = "Received side counts note authors only (approvals unavailable).";
+      'Approvals not accessible on this tier; reviewed = note authors only.';
+    metricNotes.reciprocity =
+      'Received side counts note authors only (approvals unavailable).';
   }
-  metricNotes.revertRate = "Detected reverts only (undercounts fix-forward fixes).";
+  metricNotes.revertRate =
+    'Detected reverts only (undercounts fix-forward fixes).';
 
   return {
     scope: ctx.scope,
@@ -76,7 +82,10 @@ export function buildResponse(
   };
 }
 
-function combine(cur: RawUserMetrics, prev: RawUserMetrics | null): UserMetrics {
+function combine(
+  cur: RawUserMetrics,
+  prev: RawUserMetrics | null
+): UserMetrics {
   const mv = (c: number, p: number | undefined): MetricValue => ({
     value: c,
     delta: p === undefined ? null : round(c - p, 3),
@@ -99,7 +108,10 @@ function combine(cur: RawUserMetrics, prev: RawUserMetrics | null): UserMetrics 
     pipelineStatus: cur.pipelineStatus,
     reviewDepth: mv(cur.reviewDepth, prev?.reviewDepth),
     reviewLatencyHours: dv(cur.reviewLatencyHours, prev?.reviewLatencyHours),
-    responseLatencyHours: dv(cur.responseLatencyHours, prev?.responseLatencyHours),
+    responseLatencyHours: dv(
+      cur.responseLatencyHours,
+      prev?.responseLatencyHours
+    ),
     revertRate: mv(cur.revertRate, prev?.revertRate),
     revertedCount: mv(cur.revertedCount, prev?.revertedCount),
     sizeHealthPct: mv(cur.sizeHealthPct, prev?.sizeHealthPct),

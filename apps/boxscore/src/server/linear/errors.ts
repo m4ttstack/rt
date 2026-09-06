@@ -1,8 +1,8 @@
 export class LinearApiError extends Error {
-  override readonly name = "LinearApiError";
+  override readonly name = 'LinearApiError';
   constructor(
     message: string,
-    readonly status?: number,
+    readonly status?: number
   ) {
     super(message);
   }

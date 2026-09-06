@@ -1,12 +1,13 @@
-import { randomUUID } from "node:crypto";
-import { getLeaderboard } from "../leaderboard.js";
+import { randomUUID } from 'node:crypto';
+
 import type {
   LeaderboardResponse,
   RefreshJobStatus,
   RefreshProgress,
   RefreshStatusResponse,
   TimeWindow,
-} from "../../shared/types.js";
+} from '../../shared/types.js';
+import { getLeaderboard } from '../leaderboard.js';
 
 /** What the client asked to refresh, echoed back so it can match results to its current view. */
 export interface RefreshSelection {
@@ -47,14 +48,17 @@ const JOB_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 // Single-operator app: at most one job exists at a time.
 let currentJob: RefreshJob | null = null;
 
-export function startRefresh(req: RefreshRequest, run: Runner = getLeaderboard): RefreshJob {
-  if (currentJob && currentJob.status === "running") return currentJob;
+export function startRefresh(
+  req: RefreshRequest,
+  run: Runner = getLeaderboard
+): RefreshJob {
+  if (currentJob && currentJob.status === 'running') return currentJob;
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), JOB_TIMEOUT_MS);
   const job: RefreshJob = {
     id: randomUUID().slice(0, 8),
-    status: "running",
+    status: 'running',
     progress: null,
     startedAt: new Date().toISOString(),
     selection: req.selection,
@@ -67,19 +71,26 @@ export function startRefresh(req: RefreshRequest, run: Runner = getLeaderboard):
     refresh: true,
     trend: req.trend,
     signal: controller.signal,
-    onProgress: (p) => { job.progress = p; },
-  }).then(
-    (result) => { job.status = "done"; job.result = result; },
-    (err) => {
-      if ((err as Error).name === "AbortError") {
-        job.status = job.status === "cancelled" ? "cancelled" : "error";
-        if (job.status === "error") job.error = "Refresh timed out";
-      } else {
-        job.status = "error";
-        job.error = (err as Error).message;
-      }
+    onProgress: p => {
+      job.progress = p;
     },
-  ).finally(() => clearTimeout(timeout));
+  })
+    .then(
+      result => {
+        job.status = 'done';
+        job.result = result;
+      },
+      err => {
+        if ((err as Error).name === 'AbortError') {
+          job.status = job.status === 'cancelled' ? 'cancelled' : 'error';
+          if (job.status === 'error') job.error = 'Refresh timed out';
+        } else {
+          job.status = 'error';
+          job.error = (err as Error).message;
+        }
+      }
+    )
+    .finally(() => clearTimeout(timeout));
 
   return job;
 }
@@ -90,13 +101,13 @@ export function getRefresh(id: string): RefreshJob | null {
 
 export function cancelRefresh(id: string): RefreshJob | null {
   const job = getRefresh(id);
-  if (job && job.status === "running") {
+  if (job && job.status === 'running') {
     job.controller.abort();
     // Flip to a terminal state synchronously. The run's rejection handler also sets
     // "cancelled" once the AbortError unwinds, but doing it here closes the race where a
     // re-click between abort() and that rejection would see status "running" and re-attach
     // the aborting job; it also makes the cancel response report "cancelled" immediately.
-    job.status = "cancelled";
+    job.status = 'cancelled';
   }
   return job;
 }
@@ -108,7 +119,9 @@ export function toStatusResponse(job: RefreshJob): RefreshStatusResponse {
     status: job.status,
     progress: job.progress,
     ...(job.error ? { error: job.error } : {}),
-    ...(job.status === "done" && job.result !== undefined ? { result: job.result } : {}),
+    ...(job.status === 'done' && job.result !== undefined
+      ? { result: job.result }
+      : {}),
   };
 }
 

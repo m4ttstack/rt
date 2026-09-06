@@ -1,7 +1,7 @@
-import { getDb, resetDb } from "./db.js";
-import { TABLES } from "./schema.js";
+import { getDb, resetDb } from './db.js';
+import { TABLES } from './schema.js';
 
-export type MrState = "merged" | "opened" | "closed" | "locked";
+export type MrState = 'merged' | 'opened' | 'closed' | 'locked';
 
 export interface IndexRow {
   projectPath: string;
@@ -29,7 +29,11 @@ export interface StoredMetrics {
   projectPath: string;
   iid: number;
   description: string | null;
-  diffStats: { additions: number; deletions: number; filesChanged: number } | null;
+  diffStats: {
+    additions: number;
+    deletions: number;
+    filesChanged: number;
+  } | null;
   fileStats: { path: string; additions: number; deletions: number }[];
   labels: string[];
   approvedByUsernames: string[];
@@ -81,11 +85,11 @@ function pipelineKey(projectPath: string, id: string): string {
 }
 
 function pushEventKey(row: StoredPushEvent): string {
-  return `${row.username}:${row.createdAt}:${row.repositoryId ?? ""}`;
+  return `${row.username}:${row.createdAt}:${row.repositoryId ?? ''}`;
 }
 
 function placeholders(n: number): string {
-  return `(${Array(n).fill("?").join(",")})`;
+  return `(${Array(n).fill('?').join(',')})`;
 }
 
 interface IndexRowRecord {
@@ -124,58 +128,74 @@ function buildStore() {
   const stmtUpsertIndex = db.query(
     `INSERT OR REPLACE INTO mr_index
       (key, project_path, iid, title, state, created_at, updated_at, merged_at, author_username, source_branch, labels, scanned_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   // UPDATED_DESC, then key, is the order the GraphQL pagination produced before the store
   // existed. Linear attribution no longer depends on it (creditedAuthor picks explicitly),
   // but a stable order keeps every consumer reproducible run to run.
   const stmtIndexUpdatedWithin = db.query(
-    "SELECT * FROM mr_index WHERE updated_at >= ? AND updated_at <= ? ORDER BY updated_at DESC, key",
+    'SELECT * FROM mr_index WHERE updated_at >= ? AND updated_at <= ? ORDER BY updated_at DESC, key'
   );
-  const stmtAllIndexRows = db.query("SELECT * FROM mr_index ORDER BY updated_at DESC, key");
-  const stmtLastScan = db.query("SELECT last_scan FROM scan_meta WHERE project_path = ?");
-  const stmtScanFloor = db.query("SELECT first_scan FROM scan_meta WHERE project_path = ?");
+  const stmtAllIndexRows = db.query(
+    'SELECT * FROM mr_index ORDER BY updated_at DESC, key'
+  );
+  const stmtLastScan = db.query(
+    'SELECT last_scan FROM scan_meta WHERE project_path = ?'
+  );
+  const stmtScanFloor = db.query(
+    'SELECT first_scan FROM scan_meta WHERE project_path = ?'
+  );
   const stmtRecordScan = db.query(
     `INSERT INTO scan_meta (project_path, last_scan, first_scan) VALUES (?, ?, ?)
      ON CONFLICT (project_path) DO UPDATE SET
        last_scan = excluded.last_scan,
-       first_scan = MIN(first_scan, excluded.first_scan)`,
+       first_scan = MIN(first_scan, excluded.first_scan)`
   );
 
   const stmtUpsertMetrics = db.query(
-    "INSERT OR REPLACE INTO mr_metrics (key, project_path, iid, data) VALUES (?, ?, ?, ?)",
+    'INSERT OR REPLACE INTO mr_metrics (key, project_path, iid, data) VALUES (?, ?, ?, ?)'
   );
 
   const stmtUpsertPipeline = db.query(
-    "INSERT OR REPLACE INTO pipelines (key, project_path, username, status, created_at) VALUES (?, ?, ?, ?, ?)",
+    'INSERT OR REPLACE INTO pipelines (key, project_path, username, status, created_at) VALUES (?, ?, ?, ?, ?)'
   );
   const stmtPipelinesBetween = db.query(
-    "SELECT key, project_path, username, status, created_at FROM pipelines WHERE created_at >= ? AND created_at <= ?",
+    'SELECT key, project_path, username, status, created_at FROM pipelines WHERE created_at >= ? AND created_at <= ?'
   );
 
   const stmtUpsertPushEvent = db.query(
-    "INSERT OR REPLACE INTO push_events (key, username, created_at, repository_id) VALUES (?, ?, ?, ?)",
+    'INSERT OR REPLACE INTO push_events (key, username, created_at, repository_id) VALUES (?, ?, ?, ?)'
   );
   const stmtPushEventsBetween = db.query(
-    "SELECT username, created_at, repository_id FROM push_events WHERE created_at >= ? AND created_at <= ?",
+    'SELECT username, created_at, repository_id FROM push_events WHERE created_at >= ? AND created_at <= ?'
   );
 
-  const stmtUpsertLinearIssue = db.query("INSERT OR REPLACE INTO linear_issues (identifier, data) VALUES (?, ?)");
-  const stmtAllLinearIssues = db.query("SELECT data FROM linear_issues");
+  const stmtUpsertLinearIssue = db.query(
+    'INSERT OR REPLACE INTO linear_issues (identifier, data) VALUES (?, ?)'
+  );
+  const stmtAllLinearIssues = db.query('SELECT data FROM linear_issues');
 
-  const stmtIsValidLinearId = db.query("SELECT valid FROM linear_ids WHERE id = ?");
-  const stmtPutLinearId = db.query("INSERT OR REPLACE INTO linear_ids (id, valid) VALUES (?, ?)");
-  const stmtLinearIdStats = db.query("SELECT valid, COUNT(*) as c FROM linear_ids GROUP BY valid");
+  const stmtIsValidLinearId = db.query(
+    'SELECT valid FROM linear_ids WHERE id = ?'
+  );
+  const stmtPutLinearId = db.query(
+    'INSERT OR REPLACE INTO linear_ids (id, valid) VALUES (?, ?)'
+  );
+  const stmtLinearIdStats = db.query(
+    'SELECT valid, COUNT(*) as c FROM linear_ids GROUP BY valid'
+  );
 
   const stmtUpsertIdentity = db.query(
-    "INSERT OR REPLACE INTO identities (username, name, resolved, user_id, fetched_at) VALUES (?, ?, ?, ?, ?)",
+    'INSERT OR REPLACE INTO identities (username, name, resolved, user_id, fetched_at) VALUES (?, ?, ?, ?, ?)'
   );
 
-  const stmtCountMrIndex = db.query("SELECT COUNT(*) as c FROM mr_index");
-  const stmtCountMrMetrics = db.query("SELECT COUNT(*) as c FROM mr_metrics");
-  const stmtCountPipelines = db.query("SELECT COUNT(*) as c FROM pipelines");
-  const stmtCountPushEvents = db.query("SELECT COUNT(*) as c FROM push_events");
-  const stmtCountLinearIssues = db.query("SELECT COUNT(*) as c FROM linear_issues");
+  const stmtCountMrIndex = db.query('SELECT COUNT(*) as c FROM mr_index');
+  const stmtCountMrMetrics = db.query('SELECT COUNT(*) as c FROM mr_metrics');
+  const stmtCountPipelines = db.query('SELECT COUNT(*) as c FROM pipelines');
+  const stmtCountPushEvents = db.query('SELECT COUNT(*) as c FROM push_events');
+  const stmtCountLinearIssues = db.query(
+    'SELECT COUNT(*) as c FROM linear_issues'
+  );
 
   return {
     upsertIndexRows(rows: readonly IndexRow[]): void {
@@ -193,7 +213,7 @@ function buildStore() {
             r.authorUsername,
             r.sourceBranch,
             JSON.stringify(r.labels),
-            r.scannedAt,
+            r.scannedAt
           );
         }
       });
@@ -201,7 +221,9 @@ function buildStore() {
     },
 
     indexRowsUpdatedWithin(startIso: string, endIso: string): IndexRow[] {
-      return (stmtIndexUpdatedWithin.all(startIso, endIso) as IndexRowRecord[]).map(toIndexRow);
+      return (
+        stmtIndexUpdatedWithin.all(startIso, endIso) as IndexRowRecord[]
+      ).map(toIndexRow);
     },
 
     allIndexRows(): IndexRow[] {
@@ -211,7 +233,9 @@ function buildStore() {
     indexRowsByKeys(keys: readonly string[]): IndexRow[] {
       if (keys.length === 0) return [];
       const rows = db
-        .query(`SELECT * FROM mr_index WHERE key IN ${placeholders(keys.length)}`)
+        .query(
+          `SELECT * FROM mr_index WHERE key IN ${placeholders(keys.length)}`
+        )
         .all(...keys) as IndexRowRecord[];
       return rows.map(toIndexRow);
     },
@@ -223,7 +247,9 @@ function buildStore() {
     },
     /** The scan floor: the earliest `updatedAfter` any successful scan of the project has covered. */
     scanFloor(projectPath: string): string | null {
-      const row = stmtScanFloor.get(projectPath) as { first_scan: string } | null;
+      const row = stmtScanFloor.get(projectPath) as {
+        first_scan: string;
+      } | null;
       return row?.first_scan ?? null;
     },
     /** Advance the watermark to `at` and lower the floor to `from` when it reaches further back. */
@@ -235,7 +261,12 @@ function buildStore() {
       const tx = db.transaction((batch: readonly StoredMetrics[]) => {
         for (const r of batch) {
           const { projectPath, iid, ...rest } = r;
-          stmtUpsertMetrics.run(mrKey(projectPath, iid), projectPath, iid, JSON.stringify(rest));
+          stmtUpsertMetrics.run(
+            mrKey(projectPath, iid),
+            projectPath,
+            iid,
+            JSON.stringify(rest)
+          );
         }
       });
       tx(rows);
@@ -247,28 +278,36 @@ function buildStore() {
         .query(
           `SELECT mi.key as key FROM mr_index mi
            JOIN mr_metrics mm ON mm.key = mi.key
-           WHERE mi.key IN ${placeholders(keys.length)} AND mi.state = 'merged'`,
+           WHERE mi.key IN ${placeholders(keys.length)} AND mi.state = 'merged'`
         )
         .all(...keys) as { key: string }[];
-      return new Set(rows.map((r) => r.key));
+      return new Set(rows.map(r => r.key));
     },
 
     metricsByKeys(keys: readonly string[]): StoredMetrics[] {
       if (keys.length === 0) return [];
       const rows = db
-        .query(`SELECT project_path, iid, data FROM mr_metrics WHERE key IN ${placeholders(keys.length)}`)
+        .query(
+          `SELECT project_path, iid, data FROM mr_metrics WHERE key IN ${placeholders(keys.length)}`
+        )
         .all(...keys) as { project_path: string; iid: number; data: string }[];
-      return rows.map((r) => ({
+      return rows.map(r => ({
         projectPath: r.project_path,
         iid: r.iid,
-        ...(JSON.parse(r.data) as Omit<StoredMetrics, "projectPath" | "iid">),
+        ...(JSON.parse(r.data) as Omit<StoredMetrics, 'projectPath' | 'iid'>),
       }));
     },
 
     upsertPipelines(rows: readonly StoredPipeline[]): void {
       const tx = db.transaction((batch: readonly StoredPipeline[]) => {
         for (const r of batch) {
-          stmtUpsertPipeline.run(pipelineKey(r.projectPath, r.id), r.projectPath, r.username, r.status, r.createdAt);
+          stmtUpsertPipeline.run(
+            pipelineKey(r.projectPath, r.id),
+            r.projectPath,
+            r.username,
+            r.status,
+            r.createdAt
+          );
         }
       });
       tx(rows);
@@ -283,7 +322,7 @@ function buildStore() {
       }[];
       // pipelines has no scalar id column (schema.ts DDL); the id is everything in
       // `key` after the "<project_path>:" prefix, which pipelineKey() always writes.
-      return rows.map((r) => ({
+      return rows.map(r => ({
         id: r.key.slice(r.project_path.length + 1),
         projectPath: r.project_path,
         username: r.username,
@@ -295,7 +334,12 @@ function buildStore() {
     upsertPushEvents(rows: readonly StoredPushEvent[]): void {
       const tx = db.transaction((batch: readonly StoredPushEvent[]) => {
         for (const r of batch) {
-          stmtUpsertPushEvent.run(pushEventKey(r), r.username, r.createdAt, r.repositoryId);
+          stmtUpsertPushEvent.run(
+            pushEventKey(r),
+            r.username,
+            r.createdAt,
+            r.repositoryId
+          );
         }
       });
       tx(rows);
@@ -306,21 +350,26 @@ function buildStore() {
         created_at: string;
         repository_id: string | null;
       }[];
-      return rows.map((r) => ({ username: r.username, createdAt: r.created_at, repositoryId: r.repository_id }));
+      return rows.map(r => ({
+        username: r.username,
+        createdAt: r.created_at,
+        repositoryId: r.repository_id,
+      }));
     },
 
     upsertLinearIssues(rows: readonly StoredLinearIssue[]): void {
       const tx = db.transaction((batch: readonly StoredLinearIssue[]) => {
-        for (const r of batch) stmtUpsertLinearIssue.run(r.identifier, JSON.stringify(r));
+        for (const r of batch)
+          stmtUpsertLinearIssue.run(r.identifier, JSON.stringify(r));
       });
       tx(rows);
     },
     linearIssuesForMrKeys(keys: readonly string[]): StoredLinearIssue[] {
       const keySet = new Set(keys);
       const rows = stmtAllLinearIssues.all() as { data: string }[];
-      const issues = rows.map((r) => JSON.parse(r.data) as StoredLinearIssue);
-      return issues.filter((issue) =>
-        issue.linkedMrs.some((lm) => keySet.has(mrKey(lm.projectPath, lm.iid))),
+      const issues = rows.map(r => JSON.parse(r.data) as StoredLinearIssue);
+      return issues.filter(issue =>
+        issue.linkedMrs.some(lm => keySet.has(mrKey(lm.projectPath, lm.iid)))
       );
     },
 
@@ -329,9 +378,11 @@ function buildStore() {
       return row === null ? null : row.valid === 1;
     },
     putLinearIds(entries: readonly { id: string; valid: boolean }[]): void {
-      const tx = db.transaction((batch: readonly { id: string; valid: boolean }[]) => {
-        for (const e of batch) stmtPutLinearId.run(e.id, e.valid ? 1 : 0);
-      });
+      const tx = db.transaction(
+        (batch: readonly { id: string; valid: boolean }[]) => {
+          for (const e of batch) stmtPutLinearId.run(e.id, e.valid ? 1 : 0);
+        }
+      );
       tx(entries);
     },
     linearIdStats(): { valid: number; invalid: number } {
@@ -348,7 +399,13 @@ function buildStore() {
     upsertIdentities(rows: readonly StoredIdentity[]): void {
       const tx = db.transaction((batch: readonly StoredIdentity[]) => {
         for (const r of batch) {
-          stmtUpsertIdentity.run(r.username, r.name, r.resolved ? 1 : 0, r.userId, r.fetchedAt);
+          stmtUpsertIdentity.run(
+            r.username,
+            r.name,
+            r.resolved ? 1 : 0,
+            r.userId,
+            r.fetchedAt
+          );
         }
       });
       tx(rows);
@@ -356,7 +413,9 @@ function buildStore() {
     identities(usernames: readonly string[]): StoredIdentity[] {
       if (usernames.length === 0) return [];
       const rows = db
-        .query(`SELECT * FROM identities WHERE username IN ${placeholders(usernames.length)}`)
+        .query(
+          `SELECT * FROM identities WHERE username IN ${placeholders(usernames.length)}`
+        )
         .all(...usernames) as {
         username: string;
         name: string | null;
@@ -364,7 +423,7 @@ function buildStore() {
         user_id: number | null;
         fetched_at: string;
       }[];
-      return rows.map((r) => ({
+      return rows.map(r => ({
         username: r.username,
         name: r.name,
         resolved: r.resolved === 1,
@@ -373,7 +432,13 @@ function buildStore() {
       }));
     },
 
-    counts(): { mrIndex: number; mrMetrics: number; pipelines: number; pushEvents: number; linearIssues: number } {
+    counts(): {
+      mrIndex: number;
+      mrMetrics: number;
+      pipelines: number;
+      pushEvents: number;
+      linearIssues: number;
+    } {
       return {
         mrIndex: (stmtCountMrIndex.get() as { c: number }).c,
         mrMetrics: (stmtCountMrMetrics.get() as { c: number }).c,

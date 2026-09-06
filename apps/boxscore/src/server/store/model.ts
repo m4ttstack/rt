@@ -4,7 +4,7 @@
  * so the pure metric functions never touch GitLab-specific field names.
  */
 
-export type MrState = "merged" | "opened" | "closed" | "locked";
+export type MrState = 'merged' | 'opened' | 'closed' | 'locked';
 
 export interface NormNote {
   /** null when the note author can't be resolved (deleted user, etc.). */

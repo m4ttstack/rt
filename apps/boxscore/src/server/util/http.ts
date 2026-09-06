@@ -10,11 +10,11 @@
 
 /** Wraps an error worth another attempt. Anything else thrown by a runner is final. */
 export class RetryableError extends Error {
-  override readonly name = "RetryableError";
+  override readonly name = 'RetryableError';
   constructor(
     readonly reason: Error,
     /** Server-requested wait, when it sent a usable Retry-After. */
-    readonly retryAfterMs?: number,
+    readonly retryAfterMs?: number
   ) {
     super(reason.message);
   }
@@ -43,7 +43,7 @@ export function isTransientStatus(status: number): boolean {
 
 /** `Retry-After` as ms, or undefined when absent/unparseable. Accepts seconds or an HTTP date. */
 export function retryAfterMs(res: Response): number | undefined {
-  const raw = res.headers.get("retry-after");
+  const raw = res.headers.get('retry-after');
   if (!raw) return undefined;
   const seconds = Number(raw);
   if (Number.isFinite(seconds)) return clampWait(seconds * 1000);
@@ -58,7 +58,7 @@ export function retryAfterMs(res: Response): number | undefined {
  */
 export function asRetryable(err: unknown, callerSignal?: AbortSignal): Error {
   const e = err as Error;
-  if (e?.name === "AbortError" || callerSignal?.aborted) return e;
+  if (e?.name === 'AbortError' || callerSignal?.aborted) return e;
   return new RetryableError(e);
 }
 
@@ -70,9 +70,13 @@ export function asRetryable(err: unknown, callerSignal?: AbortSignal): Error {
  */
 export async function withRetry<T>(
   run: (signal: AbortSignal) => Promise<T>,
-  opts: RetryOptions = {},
+  opts: RetryOptions = {}
 ): Promise<T> {
-  const { signal, timeoutMs = DEFAULT_TIMEOUT_MS, attempts = DEFAULT_ATTEMPTS } = opts;
+  const {
+    signal,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+    attempts = DEFAULT_ATTEMPTS,
+  } = opts;
 
   for (let attempt = 1; ; attempt++) {
     signal?.throwIfAborted();
@@ -87,11 +91,15 @@ export async function withRetry<T>(
   }
 }
 
-const clampWait = (ms: number): number => Math.min(MAX_RETRY_AFTER_MS, Math.max(0, ms));
+const clampWait = (ms: number): number =>
+  Math.min(MAX_RETRY_AFTER_MS, Math.max(0, ms));
 
 /** Exponential, half-jittered so a fanned-out burst doesn't resynchronize on the retry. */
 function backoffMs(attempt: number): number {
-  const ceiling = Math.min(MAX_BACKOFF_MS, BASE_BACKOFF_MS * 2 ** (attempt - 1));
+  const ceiling = Math.min(
+    MAX_BACKOFF_MS,
+    BASE_BACKOFF_MS * 2 ** (attempt - 1)
+  );
   return ceiling / 2 + Math.random() * (ceiling / 2);
 }
 
@@ -107,9 +115,9 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
       reject(signal?.reason);
     };
     const timer = setTimeout(() => {
-      signal?.removeEventListener("abort", onAbort);
+      signal?.removeEventListener('abort', onAbort);
       resolve();
     }, ms);
-    signal?.addEventListener("abort", onAbort, { once: true });
+    signal?.addEventListener('abort', onAbort, { once: true });
   });
 }

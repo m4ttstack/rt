@@ -3,8 +3,8 @@
  * No `any` anywhere here (spec section 10): both sides import these types.
  */
 
-export type RangePreset = "7d" | "30d" | "90d";
-export type RangeKey = RangePreset | "custom" | "base90" | "base180";
+export type RangePreset = '7d' | '30d' | '90d';
+export type RangeKey = RangePreset | 'custom' | 'base90' | 'base180';
 
 export interface TimeWindow {
   /** Inclusive start, ISO 8601. */
@@ -79,7 +79,9 @@ export type ScalarMetricKey = {
 
 /** Keys of the distribution (latency) metrics. */
 export type DistributionMetricKey = {
-  [K in keyof UserMetrics]: UserMetrics[K] extends DistributionValue ? K : never;
+  [K in keyof UserMetrics]: UserMetrics[K] extends DistributionValue
+    ? K
+    : never;
 }[keyof UserMetrics];
 
 /** Every rankable metric key (scalar or distribution). */
@@ -95,23 +97,23 @@ export interface UserRow {
 }
 
 export interface Scope {
-  type: "group" | "projects";
+  type: 'group' | 'projects';
   groupPath?: string;
   projectPaths?: string[];
 }
 
 /** Every warning the pipeline can attach to a response. Adding a site means adding a code here. */
 export type WarningCode =
-  | "user_unresolved"
-  | "user_lookup_failed"
-  | "mr_fetch_failed"
-  | "mr_detail_partial"
-  | "projects_fetch_failed"
-  | "project_id_failed"
-  | "pipeline_fetch_failed"
-  | "events_fetch_failed"
-  | "linear_partial"
-  | "trend_unavailable";
+  | 'user_unresolved'
+  | 'user_lookup_failed'
+  | 'mr_fetch_failed'
+  | 'mr_detail_partial'
+  | 'projects_fetch_failed'
+  | 'project_id_failed'
+  | 'pipeline_fetch_failed'
+  | 'events_fetch_failed'
+  | 'linear_partial'
+  | 'trend_unavailable';
 
 export interface LeaderboardWarning {
   code: WarningCode;
@@ -171,15 +173,22 @@ export interface LeaderboardResponse {
 
 /** Live progress for a background refresh run. `total: 0` => indeterminate phase. */
 export interface RefreshProgress {
-  phase: "users" | "mrs-list" | "mrs-detail" | "pipelines" | "pushes" | "linear" | "compute";
+  phase:
+    | 'users'
+    | 'mrs-list'
+    | 'mrs-detail'
+    | 'pipelines'
+    | 'pushes'
+    | 'linear'
+    | 'compute';
   label: string;
   done: number;
   total: number;
   /** Trend runs the whole pipeline twice; which window this progress belongs to. */
-  window: "current" | "prior";
+  window: 'current' | 'prior';
 }
 
-export type RefreshJobStatus = "running" | "done" | "error" | "cancelled";
+export type RefreshJobStatus = 'running' | 'done' | 'error' | 'cancelled';
 
 /** Response of GET /api/cache/stats. */
 export interface CacheStatsResponse {
@@ -204,5 +213,3 @@ export interface RefreshStatusResponse {
   /** Present only when status === "done". */
   result?: LeaderboardResponse;
 }
-
-

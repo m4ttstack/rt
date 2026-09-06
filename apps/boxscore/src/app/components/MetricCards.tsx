@@ -1,21 +1,20 @@
-import { useLocation } from "wouter";
+import { useLocation } from 'wouter';
 
-import { Card, Group, SimpleGrid, Stack, Text } from "@mattstack/app-kit/core";
-
-import type { LeaderboardResponse, UserRow } from "../../shared/types";
+import { Card, Group, SimpleGrid, Stack, Text } from '@mattstack/app-kit/core';
+import type { LeaderboardResponse, UserRow } from '../../shared/types';
 import {
   COLUMNS,
-  type Column,
-  GROUP_META,
   deltaValue,
   formatValue,
+  GROUP_META,
   rankValue,
   sortValue,
-} from "../columns";
-import { DeltaBadge } from "./DeltaBadge";
-import styles from "./leaderboard.module.css";
-import { MetricTip } from "./MetricTip";
-import { Tooltip } from "./Tooltip";
+  type Column,
+} from '../columns';
+import { DeltaBadge } from './DeltaBadge';
+import styles from './leaderboard.module.css';
+import { MetricTip } from './MetricTip';
+import { Tooltip } from './Tooltip';
 
 interface Props {
   data: LeaderboardResponse;
@@ -25,7 +24,7 @@ interface Props {
 export function MetricCards({ data, trend }: Props) {
   return (
     <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
-      {COLUMNS.map((col) => (
+      {COLUMNS.map(col => (
         <Card
           key={col.key}
           withBorder
@@ -41,7 +40,7 @@ export function MetricCards({ data, trend }: Props) {
               size="10px"
               tt="uppercase"
               c={GROUP_META[col.group].accent}
-              style={{ letterSpacing: "0.06em" }}
+              style={{ letterSpacing: '0.06em' }}
             >
               {col.group}
             </Text>
@@ -66,10 +65,10 @@ function Ranking({
   // Order and position come from the server-computed rank (ties share a rank),
   // so the cards never disagree with the table or the detail rail.
   const ranked = [...users]
-    .filter((u) => u.resolved && sortValue(u.metrics, col) !== null)
+    .filter(u => u.resolved && sortValue(u.metrics, col) !== null)
     .sort(
       (a, b) =>
-        (rankValue(a.metrics, col) ?? 99) - (rankValue(b.metrics, col) ?? 99),
+        (rankValue(a.metrics, col) ?? 99) - (rankValue(b.metrics, col) ?? 99)
     );
 
   if (ranked.length === 0) {
@@ -82,7 +81,7 @@ function Ranking({
 
   return (
     <Stack gap={1}>
-      {ranked.map((u) => {
+      {ranked.map(u => {
         const d = trend ? deltaValue(u.metrics, col) : null;
         return (
           <button
@@ -90,7 +89,7 @@ function Ranking({
             className={styles.cardRow}
             onClick={() =>
               setLocation(
-                `/user/${encodeURIComponent(u.username)}/${encodeURIComponent(col.key)}`,
+                `/user/${encodeURIComponent(u.username)}/${encodeURIComponent(col.key)}`
               )
             }
             title={`${u.name ?? u.username} · ${col.label} details`}
@@ -99,14 +98,14 @@ function Ranking({
               <Text
                 size="xs"
                 c="dimmed"
-                style={{ width: 16, textAlign: "right" }}
+                style={{ width: 16, textAlign: 'right' }}
               >
-                {rankValue(u.metrics, col) ?? "—"}
+                {rankValue(u.metrics, col) ?? '—'}
               </Text>
               <Text
                 size="sm"
                 fw={u.isCurrentUser ? 600 : 400}
-                c={u.isCurrentUser ? "accent" : undefined}
+                c={u.isCurrentUser ? 'accent' : undefined}
               >
                 {u.name ?? u.username}
               </Text>
@@ -114,12 +113,12 @@ function Ranking({
             <Group
               gap={8}
               wrap="nowrap"
-              style={{ fontFamily: "var(--mantine-font-family-monospace)" }}
+              style={{ fontFamily: 'var(--mantine-font-family-monospace)' }}
             >
               <Text
                 component="span"
                 size="sm"
-                style={{ fontVariantNumeric: "tabular-nums" }}
+                style={{ fontVariantNumeric: 'tabular-nums' }}
               >
                 {formatValue(sortValue(u.metrics, col), col)}
               </Text>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState } from 'react';
 
 import {
   ActionIcon,
@@ -12,21 +12,20 @@ import {
   Paper,
   Select,
   Stack,
-  Text,
   TagsInput,
+  Text,
   TextInput,
-} from "@mattstack/app-kit/core";
-import { Icon } from "@mattstack/app-kit/icons";
+} from '@mattstack/app-kit/core';
+import { Icon } from '@mattstack/app-kit/icons';
 import {
   useSettingKey,
   useSettingsScope,
   type SettingKeyState,
   type SettingsScopeState,
-} from "@mattstack/settings-kit/react";
-
+} from '@mattstack/settings-kit/react';
 import {
-  COMPOSITE_SHAPES,
   asRosterEntries,
+  COMPOSITE_SHAPES,
   formatValue,
   getLeaf,
   isSet,
@@ -36,32 +35,32 @@ import {
   setLeaf,
   type ConfigDef,
   type RosterEntry,
-} from "./shapes";
+} from './shapes';
 
 const KEY_LABELS: Record<string, string> = {
-  "mattstack.roster": "Roster",
-  "boxscore.projects": "Projects",
-  "boxscore.linearDoneStates": "Linear done states",
-  "boxscore.sizeBand": "Size band",
-  "boxscore.excludeFilePatterns": "File exclusions",
-  "boxscore.ignoredMrs": "Ignored MRs",
-  "boxscore.botPatterns": "Bot patterns",
-  "boxscore.hiddenMembers": "Hidden members",
-  "boxscore.defaultRange": "Default range",
+  'mattstack.roster': 'Roster',
+  'boxscore.projects': 'Projects',
+  'boxscore.linearDoneStates': 'Linear done states',
+  'boxscore.sizeBand': 'Size band',
+  'boxscore.excludeFilePatterns': 'File exclusions',
+  'boxscore.ignoredMrs': 'Ignored MRs',
+  'boxscore.botPatterns': 'Bot patterns',
+  'boxscore.hiddenMembers': 'Hidden members',
+  'boxscore.defaultRange': 'Default range',
 };
 
 function keyLabel(key: string): string {
   return KEY_LABELS[key] ?? key;
 }
 
-const ROW_BORDER = "1px solid var(--mantine-color-default-border)";
+const ROW_BORDER = '1px solid var(--mantine-color-default-border)';
 
 function scopeBadge(scope: string) {
   return (
     <Badge
       size="xs"
       variant="light"
-      color={scope === "team" ? "purple" : "cyan"}
+      color={scope === 'team' ? 'purple' : 'cyan'}
     >
       {scope} store
     </Badge>
@@ -73,7 +72,7 @@ function scopeBadge(scope: string) {
 function useRowSave(store: SettingsScopeState, def: ConfigDef) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const scope = def.scopes[0] ?? "team";
+  const scope = def.scopes[0] ?? 'team';
   const save = async (value: unknown) => {
     setBusy(true);
     setError(null);
@@ -98,7 +97,7 @@ function StringListControl({
   return (
     <TagsInput
       value={list}
-      onChange={(next) => void row.save(next)}
+      onChange={next => void row.save(next)}
       disabled={row.busy}
       placeholder="add…"
       aria-label={def.key}
@@ -115,7 +114,7 @@ function LeavesControl({
 }: {
   def: ConfigDef;
   value: unknown;
-  fields: Record<string, "string" | "number">;
+  fields: Record<string, 'string' | 'number'>;
   row: ReturnType<typeof useRowSave>;
 }) {
   return (
@@ -130,16 +129,16 @@ function LeavesControl({
             size="xs"
             w={110}
             value={
-              type === "number"
-                ? typeof leaf === "number"
+              type === 'number'
+                ? typeof leaf === 'number'
                   ? leaf
-                  : ""
-                : String(leaf ?? "")
+                  : ''
+                : String(leaf ?? '')
             }
             disabled={row.busy}
             aria-label={label}
-            onChange={(v) =>
-              void row.save(setLeaf(value, path, v === "" ? undefined : v))
+            onChange={v =>
+              void row.save(setLeaf(value, path, v === '' ? undefined : v))
             }
           />
         );
@@ -160,12 +159,12 @@ function SelectControl({
   return (
     <Select
       data={[...selectOptions(def)]}
-      value={typeof value === "string" ? value : null}
+      value={typeof value === 'string' ? value : null}
       disabled={row.busy}
       aria-label={def.key}
       size="xs"
       w={120}
-      onChange={(v) => {
+      onChange={v => {
         if (v) void row.save(v);
       }}
     />
@@ -181,8 +180,8 @@ function ScalarControl({
   value: unknown;
   row: ReturnType<typeof useRowSave>;
 }) {
-  const [text, setText] = useState(value === undefined ? "" : String(value));
-  useEffect(() => setText(value === undefined ? "" : String(value)), [value]);
+  const [text, setText] = useState(value === undefined ? '' : String(value));
+  useEffect(() => setText(value === undefined ? '' : String(value)), [value]);
   return (
     <TextInput
       value={text}
@@ -191,7 +190,7 @@ function ScalarControl({
       aria-label={def.key}
       onTextChange={setText}
       onBlur={() => {
-        if (text !== (value === undefined ? "" : String(value)))
+        if (text !== (value === undefined ? '' : String(value)))
           void row.save(text);
       }}
     />
@@ -213,20 +212,20 @@ function SettingRow({
     shape !== undefined && value !== undefined && !matchesShape(shape, value);
 
   let control;
-  if (def.secret || kind === "readonly" || malformed) {
+  if (def.secret || kind === 'readonly' || malformed) {
     control = (
       <Text size="xs" c="dimmed">
-        {value === undefined ? "unset" : formatValue(value)}
-        {malformed && " (unexpected shape, edit the store file)"}
+        {value === undefined ? 'unset' : formatValue(value)}
+        {malformed && ' (unexpected shape, edit the store file)'}
       </Text>
     );
-  } else if (kind === "stringList") {
+  } else if (kind === 'stringList') {
     control = <StringListControl def={def} value={value} row={row} />;
-  } else if (kind === "leaves" && shape?.kind === "leaves") {
+  } else if (kind === 'leaves' && shape?.kind === 'leaves') {
     control = (
       <LeavesControl def={def} value={value} fields={shape.fields} row={row} />
     );
-  } else if (kind === "select") {
+  } else if (kind === 'select') {
     control = <SelectControl def={def} value={value} row={row} />;
   } else {
     control = <ScalarControl def={def} value={value} row={row} />;
@@ -241,7 +240,7 @@ function SettingRow({
       data-key={def.key}
       style={{ borderTop: ROW_BORDER }}
     >
-      <Stack gap={2} style={{ minWidth: 220, flex: "none" }}>
+      <Stack gap={2} style={{ minWidth: 220, flex: 'none' }}>
         <Text size="sm" fw={600}>
           {keyLabel(def.key)}
         </Text>
@@ -263,8 +262,8 @@ function SettingRow({
         )}
         {row.busy && <Loader size={12} />}
       </Stack>
-      <Group gap={6} wrap="nowrap" align="flex-start" style={{ flex: "none" }}>
-        {scopeBadge(def.scopes[0] ?? "user")}
+      <Group gap={6} wrap="nowrap" align="flex-start" style={{ flex: 'none' }}>
+        {scopeBadge(def.scopes[0] ?? 'user')}
         {!isSet(def) && (
           <Text size="xs" c="dimmed">
             unset
@@ -282,12 +281,12 @@ function SettingRow({
     each edit immediately instead of waiting on the hook's `def` to refetch. */
 function RosterRow({ keyState }: { keyState: SettingKeyState }) {
   const def = keyState.def;
-  const scope = def?.scopes[0] ?? "team";
+  const scope = def?.scopes[0] ?? 'team';
   const [optimistic, setOptimistic] = useState<RosterEntry[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [draftUsername, setDraftUsername] = useState("");
-  const [draftName, setDraftName] = useState("");
+  const [draftUsername, setDraftUsername] = useState('');
+  const [draftName, setDraftName] = useState('');
 
   // A freshly loaded def (mount, or an explicit refresh) is the new source
   // of truth; a def reference changes only then, never on our own applies.
@@ -296,10 +295,10 @@ function RosterRow({ keyState }: { keyState: SettingKeyState }) {
   useEffect(() => {
     if (!keyState.staged) return;
     let alive = true;
-    void keyState.apply().then((ok) => {
+    void keyState.apply().then(ok => {
       if (!alive) return;
       setBusy(false);
-      if (!ok) setError(keyState.applyError ?? "could not save roster");
+      if (!ok) setError(keyState.applyError ?? 'could not save roster');
     });
     return () => {
       alive = false;
@@ -323,13 +322,13 @@ function RosterRow({ keyState }: { keyState: SettingKeyState }) {
     if (!username) return;
     const name = draftName.trim();
     commit([...roster, name ? { username, name } : { username }]);
-    setDraftUsername("");
-    setDraftName("");
+    setDraftUsername('');
+    setDraftName('');
   };
 
   return (
     <Group align="flex-start" wrap="nowrap" gap="md" p="sm" data-key={def.key}>
-      <Stack gap={2} style={{ minWidth: 220, flex: "none" }}>
+      <Stack gap={2} style={{ minWidth: 220, flex: 'none' }}>
         <Text size="sm" fw={600}>
           Roster
         </Text>
@@ -407,7 +406,7 @@ function RosterRow({ keyState }: { keyState: SettingKeyState }) {
           </Paper>
         ) : (
           <Text size="xs" c="dimmed">
-            {roster.length} member{roster.length === 1 ? "" : "s"}
+            {roster.length} member{roster.length === 1 ? '' : 's'}
           </Text>
         )}
         {error && (
@@ -417,7 +416,7 @@ function RosterRow({ keyState }: { keyState: SettingKeyState }) {
         )}
         {busy && <Loader size={12} />}
       </Stack>
-      <Group gap={6} wrap="nowrap" align="flex-start" style={{ flex: "none" }}>
+      <Group gap={6} wrap="nowrap" align="flex-start" style={{ flex: 'none' }}>
         {scopeBadge(scope)}
       </Group>
     </Group>
@@ -451,11 +450,11 @@ function Section({
 }
 
 export function SettingsPage() {
-  const store = useSettingsScope("boxscore.");
-  const roster = useSettingKey("mattstack.roster");
+  const store = useSettingsScope('boxscore.');
+  const roster = useSettingKey('mattstack.roster');
 
-  const teamDefs = store.defs.filter((d) => d.scopes[0] === "team");
-  const userDefs = store.defs.filter((d) => d.scopes[0] === "user");
+  const teamDefs = store.defs.filter(d => d.scopes[0] === 'team');
+  const userDefs = store.defs.filter(d => d.scopes[0] === 'user');
 
   return (
     <PageShell>
@@ -489,7 +488,7 @@ export function SettingsPage() {
               {!roster.loading && !roster.error && (
                 <RosterRow keyState={roster} />
               )}
-              {teamDefs.map((def) => (
+              {teamDefs.map(def => (
                 <SettingRow key={def.key} def={def} store={store} />
               ))}
             </Section>
@@ -498,7 +497,7 @@ export function SettingsPage() {
               title="You"
               subtitle="user store · follows you to every machine"
             >
-              {userDefs.map((def) => (
+              {userDefs.map(def => (
                 <SettingRow key={def.key} def={def} store={store} />
               ))}
               {userDefs.length === 0 && (

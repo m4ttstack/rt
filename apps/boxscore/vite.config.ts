@@ -1,5 +1,6 @@
-import { defineConfig } from "vite";
-import { mattstackVite } from "@mattstack/app-kit/vite";
+import { defineConfig } from 'vite';
+
+import { mattstackVite } from '@mattstack/app-kit/vite';
 
 const base = mattstackVite({ apiPort: 11005 });
 
@@ -19,7 +20,7 @@ export default defineConfig({
       // their own app source happens to import this same subpath
       // directly (for wouter's navigate()), incidentally pre-bundling
       // it; boxscore has no such direct import, so it needs listing here.
-      "wouter/use-browser-location",
+      'wouter/use-browser-location',
     ],
   },
 });
