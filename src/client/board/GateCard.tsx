@@ -9,7 +9,6 @@ import {
   optionValue,
   optionDisplayFor,
   displayForValue,
-  gateFocusDomain,
   type GateSelections,
   type GateDomain,
 } from "./gate-format.ts";
@@ -135,12 +134,11 @@ function GateAnswerSummary({ questions, answers }: { questions: GateQuestion[]; 
     immediately from local state -- it's not a guess, the daemon's CAS
     already recorded someone else's answer and handed back the real winner.
 
-    `onFocusPane` is the escape hatch for a wait with no form left to answer:
-    the pane behind this gate is parked on a facility `gate wait`, and
-    jumping into it lets a human answer conversationally instead (the
-    wrapper's `--by pane` path, arbitrated by the daemon's CAS same as a
-    submit here). `mr` supplies the domain's own tabId so the button only
-    ever shows while a pane is actually still around to jump into. */
+    The focus button takes two paths: a `parked` gate keeps resuming its
+    domain's whole flow in a fresh pane via `onFocusPane`/`gate.domain` (the
+    facility has already released this gate's original pane); an `open` gate
+    jumps straight into its own still-live origin pane via `/gate/focus`,
+    disabled with a reason when no origin resolves to a live pane. */
 function GateCard({
   gate,
   mr,
@@ -155,6 +153,8 @@ function GateCard({
   const [failed, setFailed] = useState(false);
   const [conflict, setConflict] = useState<{ answers: GateAnswers; by: string } | null>(null);
   const [ctxOpen, setCtxOpen] = useState(false);
+  const [focusBusy, setFocusBusy] = useState(false);
+  const [focusError, setFocusError] = useState<string | null>(null);
 
   const setAnswer = (id: string, value: string | string[]) => {
     setSelections((prev) => ({ ...prev, [id]: value }));
@@ -163,7 +163,26 @@ function GateCard({
   const answered = gate.status === "answered";
   const actionable = gate.status === "open" || gate.status === "parked";
   const payload = actionable ? gateAnswerPayload({ gateId: gate.gateId, questions: gate.questions }, selections) : null;
-  const focusDomain = actionable ? gateFocusDomain(gate.kind, mr) : null;
+  const originFocusable = Boolean(gate.origin?.paneId || gate.origin?.worktree);
+  const focusGate = async () => {
+    setFocusBusy(true);
+    setFocusError(null);
+    try {
+      const res = await fetch("/gate/focus", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ gateId: gate.gateId }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        setFocusError(body?.error ?? `focus failed (${res.status})`);
+      }
+    } catch {
+      setFocusError("focus failed");
+    } finally {
+      setFocusBusy(false);
+    }
+  };
 
   const submit = async () => {
     if (!payload) return;
@@ -234,12 +253,25 @@ function GateCard({
           ))}
           <div className="tui-gate-actions">
             {failed && <span className="tui-gate-error">submit failed... nothing was sent, try again</span>}
-            {focusDomain && (
+            {focusError && <span className="tui-gate-error">{focusError}</span>}
+            {gate.status === "parked" ? (
+              gate.domain && (
+                <button
+                  type="button"
+                  className="tui-gate-focus"
+                  title="resume this gate's flow in a fresh pane"
+                  onClick={() => onFocusPane(mr, gate.domain!)}
+                >
+                  focus pane
+                </button>
+              )
+            ) : (
               <button
                 type="button"
                 className="tui-gate-focus"
-                title="jump into the pane -- it's waiting at this gate and can take a conversational answer instead"
-                onClick={() => onFocusPane(mr, focusDomain)}
+                disabled={!originFocusable || focusBusy}
+                title={originFocusable ? "jump into the pane behind this gate" : "no origin on this gate"}
+                onClick={() => void focusGate()}
               >
                 focus pane
               </button>

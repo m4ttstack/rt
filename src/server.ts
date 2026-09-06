@@ -13,7 +13,7 @@ import { upsertEnvKeys } from "./env-file.ts";
 import { aggregateSyncScope, boardDemand, buildBoard, buildRoster, channelForMR, configuredSlackChannels, projectPathFromWebUrl, reviewSkillForTab, visibleMrsFor, type BoardMR, type SyncScopeRead } from "./data.ts";
 import { GitLabProvider, ReadBackFailedError, NoteMutator, parseRepoId } from "@mattstack/glance";
 import { summarizeDiscussions, threadStatusCounts, unresolvedReviewerCount } from "./discussions.ts";
-import { readProjectMRs, readDiscussions, subscribe, gateList, gatePark, gateClose, gateAnswer as gateAnswerFacility, getSetting, setSetting } from "@mattstack/rt-client";
+import { readProjectMRs, readDiscussions, subscribe, gateList, gatePark, gateClose, gateAnswer as gateAnswerFacility, getSetting, setSetting, paneList } from "@mattstack/rt-client";
 import { SnapshotCache } from "./cache.ts";
 import { isLocalRequest } from "./local.ts";
 import { settingsHandler } from "@mattstack/settings-kit/server";
@@ -24,6 +24,7 @@ import { GATE_DIR, type GateAnswers } from "./gates/store.ts";
 import { ingestRelayFrame, reconcileGatesOnBoot, ensureBridgeRule, type EventBridgeRule, type GateEventFrame } from "./gates/ingest.ts";
 import { GateCache, attachGates } from "./gates/cache.ts";
 import { answerGate } from "./gates/answer.ts";
+import { resolveOriginFocus } from "./gates/focus.ts";
 import { handleAnsweredEvent, bootResumePass, buildResumers, type GateResumeEventIo, type KindResumeIo } from "./gates/resume.ts";
 import { planSweep, pruneOffBoardGates } from "./gates/sweep.ts";
 import { executeSweepAction, type ExecuteSweepActionIo } from "./gates/execute-sweep-action.ts";
@@ -1322,6 +1323,36 @@ const httpServer = Bun.serve({
             console.error(`gate answer: daemon unreachable: ${result.reason}`);
             return new Response("rt daemon unreachable, try again", { status: 502 });
         }
+      }
+      case "/gate/focus": {
+        if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
+        if (!isLocalRequest(req)) return new Response("forbidden", { status: 403 });
+        let body: unknown;
+        try {
+          body = await req.json();
+        } catch {
+          return new Response("invalid json", { status: 400 });
+        }
+        const gateId = (body as { gateId?: unknown })?.gateId;
+        if (typeof gateId !== "string" || !gateId) return new Response("expected { gateId: string }", { status: 400 });
+        const row = gateCache.rows().find((r) => r.id === gateId);
+        if (!row) return new Response(`unknown gate "${gateId}"`, { status: 404 });
+        const panesRes = await paneList();
+        const panes = panesRes.ok && panesRes.data ? panesRes.data.panes : [];
+        const resolved = resolveOriginFocus(row.origin ?? undefined, panes);
+        if (!resolved.ok) {
+          return new Response(JSON.stringify({ ok: false, error: resolved.reason }), {
+            status: 400, headers: { "content-type": "application/json" },
+          });
+        }
+        try {
+          await focusPane({ paneId: resolved.paneId, tabId: resolved.tabId });
+        } catch (err) {
+          return new Response(JSON.stringify({ ok: false, error: err instanceof Error ? err.message : String(err) }), {
+            status: 502, headers: { "content-type": "application/json" },
+          });
+        }
+        return new Response(JSON.stringify({ ok: true }), { headers: { "content-type": "application/json" } });
       }
       case "/nudge": {
         // Ask a peer's agent for a re-review of YOUR OWN MR. The board only

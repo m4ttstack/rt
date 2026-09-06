@@ -4,7 +4,6 @@ import {
   parseConflictResponse,
   unwrapGateAnswer,
   formatGateOption,
-  gateFocusDomain,
   optionValue,
   optionDisplayFor,
   displayForValue,
@@ -118,27 +117,6 @@ describe("formatGateOption", () => {
     const questions: GateQuestion[] = [{ id: "threads-1", label: "t", multi: true, options: ["fix:7080da2fcf93c1a2"] }];
     const payload = gateAnswerPayload({ gateId: GATE_ID, questions }, { "threads-1": ["fix:7080da2fcf93c1a2"] });
     expect(payload).toEqual({ gateId: GATE_ID, answers: { "threads-1": ["fix:7080da2fcf93c1a2"] } });
-  });
-});
-
-describe("gateFocusDomain", () => {
-  test("resolves the gate kind's domain when that domain's own state carries a tabId", () => {
-    expect(gateFocusDomain("respond-plan", { respond: { tabId: "w1:t2" } })).toBe("respond");
-    expect(gateFocusDomain("review-post", { review: { tabId: "w1:t1" } })).toBe("review");
-    expect(gateFocusDomain("doctor-escalation", { doctor: { tabId: "w1:t3" } })).toBe("doctor");
-  });
-
-  test("returns null when the domain's own state has no tabId", () => {
-    expect(gateFocusDomain("respond-plan", { respond: {} })).toBeNull();
-    expect(gateFocusDomain("respond-plan", {})).toBeNull();
-  });
-
-  test("never offers a different domain's live tabId", () => {
-    expect(gateFocusDomain("respond-plan", { review: { tabId: "w1:t1" } })).toBeNull();
-  });
-
-  test("returns null for an unrecognized kind", () => {
-    expect(gateFocusDomain("mystery-kind", { review: { tabId: "w1:t1" } })).toBeNull();
   });
 });
 
