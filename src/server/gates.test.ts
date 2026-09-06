@@ -1,4 +1,7 @@
 // @vitest-environment node
+import { mkdtempSync, rmSync, symlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { GateRow } from '@mattstack/rt-client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -9,7 +12,7 @@ vi.mock('@mattstack/rt-client', () => ({
   paneFocus: vi.fn(),
 }));
 
-const { gates } = await import('./gates');
+const { gates, resolveOriginFocus } = await import('./gates');
 const rt = await import('@mattstack/rt-client');
 
 beforeEach(() => {
@@ -75,16 +78,22 @@ describe('GET /api/gates', () => {
         expect.objectContaining({ id: 'g200' }),
       ]),
     });
-    expect(rt.gateList).toHaveBeenCalledWith({
-      subjectPrefix: 'run:',
-      limit: 200,
-      cursor: undefined,
-    });
-    expect(rt.gateList).toHaveBeenCalledWith({
-      subjectPrefix: 'run:',
-      limit: 200,
-      cursor: 200,
-    });
+    expect(rt.gateList).toHaveBeenCalledWith(
+      {
+        subjectPrefix: 'run:',
+        limit: 200,
+        cursor: undefined,
+      },
+      expect.anything()
+    );
+    expect(rt.gateList).toHaveBeenCalledWith(
+      {
+        subjectPrefix: 'run:',
+        limit: 200,
+        cursor: 200,
+      },
+      expect.anything()
+    );
   });
 
   it('terminates on a short page even though the cursor keeps advancing', async () => {
@@ -153,11 +162,14 @@ describe('POST /api/gates/:id/answer', () => {
     const res = await answer('g1', { answers: { q1: 'yes' } });
 
     expect(res.status).toBe(200);
-    expect(rt.gateAnswer).toHaveBeenCalledWith({
-      id: 'g1',
-      answers: { q1: 'yes' },
-      by: 'console',
-    });
+    expect(rt.gateAnswer).toHaveBeenCalledWith(
+      {
+        id: 'g1',
+        answers: { q1: 'yes' },
+        by: 'console',
+      },
+      expect.anything()
+    );
     await expect(res.json()).resolves.toEqual({ row: answered });
   });
 
@@ -320,5 +332,71 @@ describe('POST /api/gates/:id/focus', () => {
     });
     const res = await focus('missing');
     expect(res.status).toBe(404);
+  });
+
+  it('degrades to a 400 naming the pane-list failure, distinct from a plain no-match', async () => {
+    vi.mocked(rt.gateList).mockResolvedValueOnce({
+      ok: true,
+      data: { gates: [row({ origin: { worktree: '/w' } })], cursor: 1 },
+    });
+    vi.mocked(rt.paneList).mockResolvedValueOnce({
+      ok: false,
+      error: 'rt daemon unreachable at /tmp/rt.sock: ECONNREFUSED',
+    });
+    const res = await focus('g1');
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toEqual({
+      error: 'could not list live panes',
+    });
+    expect(rt.paneFocus).not.toHaveBeenCalled();
+  });
+});
+
+describe('resolveOriginFocus: worktree normalization', () => {
+  it('matches a worktree with a trailing slash against a pane cwd without one', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'gates-wt-'));
+    try {
+      const resolved = resolveOriginFocus({ worktree: `${dir}/` }, [
+        { paneId: 'p1', cwd: dir },
+      ]);
+      expect(resolved).toEqual({ ok: true, paneId: 'p1' });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('resolves a symlinked worktree path to the same target as the pane cwd (macOS /tmp-class divergence)', () => {
+    const real = mkdtempSync(join(tmpdir(), 'gates-real-'));
+    const link = join(tmpdir(), `gates-link-${Date.now()}`);
+    symlinkSync(real, link);
+    try {
+      const resolved = resolveOriginFocus({ worktree: link }, [
+        { paneId: 'p1', cwd: real },
+      ]);
+      expect(resolved).toEqual({ ok: true, paneId: 'p1' });
+    } finally {
+      rmSync(link, { force: true });
+      rmSync(real, { recursive: true, force: true });
+    }
+  });
+
+  it('a pane-list fetch failure names its own reason, never a bare no-match', () => {
+    const resolved = resolveOriginFocus({ worktree: '/w' }, [], {
+      panesUnavailable: true,
+    });
+    expect(resolved).toEqual({
+      ok: false,
+      reason: 'could not list live panes',
+    });
+  });
+
+  it('a genuinely absent match still reports the no-match reason', () => {
+    const resolved = resolveOriginFocus({ worktree: '/gone' }, [
+      { paneId: 'a', cwd: '/other' },
+    ]);
+    expect(resolved).toEqual({
+      ok: false,
+      reason: 'no live pane matches the origin worktree',
+    });
   });
 });
