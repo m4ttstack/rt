@@ -278,24 +278,38 @@ function chipOf(container: HTMLElement): HTMLElement {
 }
 
 /**
- * Renders `ui` next to probe spans painted with `var(<alias>)` and with the
- * SAME `color-mix` formula `retunedTextColor` would apply to that alias for
- * `variant`/`intent`, so a colour assertion compares two REAL computed
- * values rather than an expected string. The wrapper's own colour is
- * deliberately `--fg`, which no census row uses: a chip whose `--chip-color`
- * failed to resolve would fall back to inherit and read as `--fg`, which is
- * what `notToBe(fgColor)` catches.
+ * `intent-resolver.ts`'s FAMILY['muted'] === 'gray' branch paints from the
+ * raw `--color-gray-muted` token, not tui-kit's own `--muted` alias -- that
+ * alias now resolves to the AA text-role slot (theme.ts semanticTokens.text
+ * .muted, since SORI-36), a different value. Every other census alias below
+ * (--accent, --green, --red, ...) still is a direct 1:1 of its intent's raw
+ * `--color-<family>-500`, so only `--muted` needs the redirect.
+ */
+const PROBE_VAR: Record<string, string> = {
+  "--muted": "--color-gray-muted",
+};
+
+/**
+ * Renders `ui` next to probe spans painted with `var(<alias>)` (redirected
+ * through PROBE_VAR where the theme alias and the intent resolver's actual
+ * tone have diverged) and with the SAME `color-mix` formula
+ * `retunedTextColor` would apply to that tone for `variant`/`intent`, so a
+ * colour assertion compares two REAL computed values rather than an expected
+ * string. The wrapper's own colour is deliberately `--fg`, which no census
+ * row uses: a chip whose `--chip-color` failed to resolve would fall back to
+ * inherit and read as `--fg`, which is what `notToBe(fgColor)` catches.
  *
  * `expectedColor` and `aliasColor` diverge exactly for the intents the
  * contrast retune darkened (intent-resolver.ts) — `border`, unaffected by
  * that retune, still equals the raw `aliasColor`.
  */
 async function renderWithProbe(ui: React.ReactNode, alias: string, variant: string, intent: string) {
-  const expectedColorExpr = retunedTextColor(`var(${alias})`, variant, intent);
+  const probeVar = PROBE_VAR[alias] ?? alias;
+  const expectedColorExpr = retunedTextColor(`var(${probeVar})`, variant, intent);
   const screen = await renderWithTheme(
     <div style={{ color: "var(--fg)" }}>
       {ui}
-      <span data-testid="probe" style={{ color: `var(${alias})` }} />
+      <span data-testid="probe" style={{ color: `var(${probeVar})` }} />
       <span data-testid="expected-probe" style={{ color: expectedColorExpr }} />
       <span data-testid="fg-probe" style={{ color: "var(--fg)" }} />
       <span data-testid="border-probe" style={{ color: "var(--border)" }} />

@@ -1,6 +1,6 @@
 {
   "name": "@mattstack/app-kit",
-  "version": "0.2.0",
+  "version": "0.4.0",
   "description": "mantine-kit plus the mattstack layer: Tokyo theme, app shell, boot, router helpers, config presets.",
   "type": "module",
   "license": "MIT",
@@ -56,7 +56,7 @@
     "@mantine/modals": "^9.5.2",
     "@mantine/notifications": "^9.5.2",
     "@mantine/spotlight": "^9.5.2",
-    "@mattstack/mantine-tokyo": "^0.3.0",
+    "@mattstack/mantine-tokyo": "^0.4.0",
     "@testing-library/react": "^16.3.2",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",

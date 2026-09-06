@@ -1,6 +1,11 @@
 import { copyFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import {
+  FONT_SMOOTHING_BEGIN_MARKER,
+  FONT_SMOOTHING_END_MARKER,
+  renderFontSmoothing,
+} from '../src/fragments.ts';
 import { CSS_TEXT, TOKENS, type ColorScheme } from '../src/values.ts';
 
 const PACKAGES_ROOT = join(import.meta.dirname, '..', '..');
@@ -34,9 +39,9 @@ function pick(path: string, value: string): string {
 /**
  * Maps a TOKENS color scheme onto tui-kit's `tuiTheme.tokens.colors` /
  * `TUI_DARK_COLORS` shape. tui-kit has one canonical shade per hue (`"500"`)
- * where TOKENS has a bare hex, and collapses `text` to the two leaves
- * (`fg`, `muted`) it consumes -- `mutedText`/`accentText`/`wash` are not part
- * of this phase's consumption scope.
+ * where TOKENS has a bare hex, and collapses `text` to the five leaves
+ * (`fg`, `muted`, `mutedText`, `accentText`, `redText`) it consumes --
+ * `wash` is a percentage, not a color, and stays out of this map.
  */
 function buildTuiKitColors(scheme: 'light' | 'dark') {
   const t: ColorScheme = TOKENS[scheme];
@@ -51,6 +56,9 @@ function buildTuiKitColors(scheme: 'light' | 'dark') {
     gray: {
       fg: at('text.fg', t.text.fg),
       muted: at('text.muted', t.text.muted),
+      mutedText: at('text.mutedText', t.text.mutedText),
+      accentText: at('text.accentText', t.text.accentText),
+      redText: at('text.redText', t.text.redText),
     },
     surface: {
       bg: at('surface.bg', t.surface.bg),
@@ -121,12 +129,16 @@ const TOKYO_LIGHT_MUTED_TEXT_COMMENT = `  /* AA-compliant muted for TEXT (>=4.5:
 const TOKYO_LIGHT_ACCENT_TEXT_COMMENT = `  /* AA-compliant accent for LINK TEXT (>=4.5:1 on bg 1-3). The raw accent
      token above stays tui-kit's exact hex for fills and badges; only anchor
      text reads the darker value below. Same split as the muted pair. */`;
+const TOKYO_LIGHT_RED_TEXT_COMMENT =
+  "  /* AA-compliant red for TEXT (>=4.5:1 on bg 1-3); the raw red token above stays tui-kit's exact hex for fills and error surfaces. Same split as the muted/accent pair. */";
 const TOKYO_DARK_TOP_COMMENT = `  /* Dark never inverted (bg < panel < card already), so --tk-chrome equals the
      panel rung: the rail/nav frame reads as a step up from the near-black page. */`;
 const TOKYO_DARK_MUTED_TEXT_COMMENT =
   '  /* AA-compliant muted text for the dark scheme (>=4.5:1 on bg 1-3). */';
 const TOKYO_DARK_ACCENT_TEXT_COMMENT = `  /* Accent for link text in dark (>=4.5:1 on bg 1-3); the accent already
      clears AA there, so this equals it. */`;
+const TOKYO_DARK_RED_TEXT_COMMENT =
+  '  /* Red text for the dark scheme; the raw red already clears AA there, so this equals it. */';
 
 function buildTokyoDeclarations(scheme: 'light' | 'dark') {
   const t: ColorScheme = TOKENS[scheme];
@@ -145,6 +157,7 @@ function buildTokyoDeclarations(scheme: 'light' | 'dark') {
     accentText: at('text.accentText', t.text.accentText),
     green: at('hue.ok', t.hue.ok),
     red: at('hue.bad', t.hue.bad),
+    redText: at('text.redText', t.text.redText),
     amber: at('hue.warn', t.hue.warn),
     purple: at('hue.purple', t.hue.purple),
     cyan: at('hue.cyan', t.hue.cyan),
@@ -168,6 +181,10 @@ function renderTokyoSchemeBlock(scheme: 'light' | 'dark'): string {
     scheme === 'light'
       ? TOKYO_LIGHT_ACCENT_TEXT_COMMENT
       : TOKYO_DARK_ACCENT_TEXT_COMMENT;
+  const redTextComment =
+    scheme === 'light'
+      ? TOKYO_LIGHT_RED_TEXT_COMMENT
+      : TOKYO_DARK_RED_TEXT_COMMENT;
   return [
     topComment,
     `  --tk-chrome: ${d.chrome};`,
@@ -183,6 +200,8 @@ function renderTokyoSchemeBlock(scheme: 'light' | 'dark'): string {
     `  --tk-accent: ${d.accent};`,
     accentTextComment,
     `  --tk-accent-text: ${d.accentText};`,
+    redTextComment,
+    `  --tk-red-text: ${d.redText};`,
     `  --tk-green: ${d.green};`,
     `  --tk-red: ${d.red};`,
     `  --tk-amber: ${d.amber};`,
@@ -238,6 +257,48 @@ export function spliceGenerated(
   return css.slice(0, afterBegin) + '\n' + body + '\n  ' + css.slice(endIdx);
 }
 
+const BODY_RULE_PATTERN = /\nbody \{[^}]*\}\n\n/;
+
+/**
+ * Unlike tui-kit's theme.css (fully overwritten by `soribashi build` on
+ * every run, so a plain append is idempotent by construction),
+ * tokyo-theme.css persists across runs: `generateTokyoThemeCss` re-reads
+ * whatever is already on disk. A blind append would duplicate the fragment
+ * on the second run, so this replaces it in place once the markers exist
+ * and only falls back to the body-rule anchor -- the kit's own `body` rule
+ * keeps background/type, this fragment carries only smoothing -- on the
+ * first run.
+ */
+function upsertFontSmoothingFragment(css: string): string {
+  const beginIdx = css.indexOf(FONT_SMOOTHING_BEGIN_MARKER);
+  if (beginIdx !== -1) {
+    const endIdx = css.indexOf(FONT_SMOOTHING_END_MARKER, beginIdx);
+    if (endIdx === -1) {
+      throw new Error(
+        `tokyo-theme.css: found ${FONT_SMOOTHING_BEGIN_MARKER} without matching ${FONT_SMOOTHING_END_MARKER}`
+      );
+    }
+    return (
+      css.slice(0, beginIdx) +
+      renderFontSmoothing() +
+      css.slice(endIdx + FONT_SMOOTHING_END_MARKER.length)
+    );
+  }
+  const match = BODY_RULE_PATTERN.exec(css);
+  if (match === null) {
+    throw new Error(
+      'tokyo-theme.css: no body rule found to anchor the font-smoothing fragment after'
+    );
+  }
+  const insertAt = match.index + match[0].length;
+  return (
+    css.slice(0, insertAt) +
+    renderFontSmoothing() +
+    '\n\n' +
+    css.slice(insertAt)
+  );
+}
+
 function generateTokyoThemeCss(): string {
   let css = readFileSync(TOKYO_THEME_CSS, 'utf8');
   css = spliceGenerated(
@@ -250,6 +311,7 @@ function generateTokyoThemeCss(): string {
     '/* BEGIN GENERATED: tokyo tokens dark */',
     renderTokyoSchemeBlock('dark')
   );
+  css = upsertFontSmoothingFragment(css);
   return css;
 }
 

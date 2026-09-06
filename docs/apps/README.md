@@ -15,11 +15,20 @@ and console.
 
 ## What's inside
 
-| Package           | Name                       | What it is                                                                                                                                       |
-| ----------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `packages/ui`     | `@mattstack/app-kit`       | The Mantine-based component kit plus the mattstack layer: app shell, boot, router helpers, icon registry, config presets. Tokyo theme pre-wired. |
-| `packages/server` | `@mattstack/app-server`    | The Hono/Bun server frame: health route, JSON error floors, static/embedded asset serving, the rt-client relay, `Bun.serve`.                     |
-| `packages/tokyo`  | `@mattstack/mantine-tokyo` | The Tokyo Day/Night brand tokens (colour ramps, theme values, colour names, CSS, font) `@mattstack/app-kit` themes itself with.                  |
+| Package            | Name                       | What it is                                                                                                                                       |
+| ------------------ | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `packages/ui`      | `@mattstack/app-kit`       | The Mantine-based component kit plus the mattstack layer: app shell, boot, router helpers, icon registry, config presets. Tokyo theme pre-wired. |
+| `packages/server`  | `@mattstack/app-server`    | The Hono/Bun server frame: health route, JSON error floors, static/embedded asset serving, the rt-client relay, `Bun.serve`.                     |
+| `packages/tokyo`   | `@mattstack/mantine-tokyo` | The Tokyo Day/Night brand tokens (colour ramps, theme values, colour names, CSS, font) `@mattstack/app-kit` themes itself with.                  |
+| `packages/tui-kit` | `@mattstack/tui-kit`       | The terminal-UI kit for herdr-style panes: components, hooks, and theme, built rather than source-shipped like the other three.                  |
+
+`packages/tui-kit` lives in this repo alongside the Mantine-based packages
+so all four publish and version in lockstep; it does not depend on
+`packages/ui` or `packages/server`, or vice versa. `packages/tokens` is
+also part of this workspace but is private and unpublished: it generates
+the canonical colour and font values both `mantine-tokyo` and `tui-kit`
+ship, and exists to keep those two themes in sync, not to be consumed
+directly.
 
 `@mattstack/app-kit` has nineteen subpath exports: the Mantine-based
 components and shadows (`./core`), hooks, forms, modals, notifications, the
@@ -43,11 +52,31 @@ See `AGENTS.md` for the contract anyone editing `packages/ui/src` or
 
 ## Installation
 
-app-kit's packages aren't on npm yet, so a consumer depends on a packed
-tarball rather than a bare `file:` directory. Bun 1.3 installs a bare
-`file:../packages/ui` dependency as a symlink into the source tree, which
-resolves peers like `react` twice and breaks typecheck and tests in the
-consumer. Pack each package instead:
+All four packages are on npm. Install with a normal version range, the
+same as any other npm dependency:
+
+```json
+{
+  "dependencies": {
+    "@mattstack/app-kit": "^0.4.0",
+    "@mattstack/app-server": "^0.4.0",
+    "@mattstack/mantine-tokyo": "^0.4.0",
+    "@mattstack/tui-kit": "^0.4.0"
+  }
+}
+```
+
+The four published packages release together as one platform version (see
+`CLAUDE.md`'s "Publishing" section); publishing itself is still done by
+hand, with no automated release step in this repo.
+
+### Consuming unreleased workspace changes
+
+To pick up a change in this workspace before it's published, depend on a
+packed tarball rather than a bare `file:` directory: Bun 1.3 installs a
+bare `file:../packages/ui` dependency as a symlink into the source tree,
+which resolves peers like `react` twice and breaks typecheck and tests in
+the consumer. Pack each package instead:
 
 ```bash
 cd packages/tokyo && bun pm pack --destination ../../my-app/vendor --quiet
@@ -60,9 +89,9 @@ Then depend on the tarballs:
 ```json
 {
   "dependencies": {
-    "@mattstack/app-kit": "file:./vendor/mattstack-app-kit-0.1.9.tgz",
-    "@mattstack/app-server": "file:./vendor/mattstack-app-server-0.1.2.tgz",
-    "@mattstack/mantine-tokyo": "file:./vendor/mattstack-mantine-tokyo-0.2.0.tgz"
+    "@mattstack/app-kit": "file:./vendor/mattstack-app-kit-0.4.0.tgz",
+    "@mattstack/app-server": "file:./vendor/mattstack-app-server-0.4.0.tgz",
+    "@mattstack/mantine-tokyo": "file:./vendor/mattstack-mantine-tokyo-0.4.0.tgz"
   }
 }
 ```
@@ -73,20 +102,6 @@ the pattern end to end. See `AGENTS.md`'s "Consumer requirements" section
 for the other real failure modes a migrating app hits (icon augmentation
 file naming, the Mantine colour augmentation, the vite preset's plain-JS
 shape).
-
-Once the packages are published, a consumer switches to a normal version
-range, the same as any other npm dependency:
-
-```json
-{
-  "dependencies": {
-    "@mattstack/app-kit": "^0.1.9"
-  }
-}
-```
-
-Each package is versioned and published independently, by hand, with no
-automated release step in this repo.
 
 ## Quickstart
 

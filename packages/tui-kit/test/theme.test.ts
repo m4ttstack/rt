@@ -191,9 +191,19 @@ test("the census tables are the shape this suite expects", () => {
 // sweep below still holds these three to census parity. See the "surface
 // ramp" block further down for their own coverage.
 const SURFACE_RAMP_RULING = new Set(["--bg", "--panel", "--card"]);
+// `--fg`/`--muted` are excluded from BOTH sweeps: the value-conformance
+// ruling (SORI-36) retunes `fg` to #222 in light and repoints the
+// `muted` TEXT role onto the AA-compliant mutedText value, so neither still
+// carries its census literal through `resolve()`. See the "text conformance"
+// block further down for their own coverage.
+const TEXT_CONFORMANCE_RULING = new Set(["--fg", "--muted"]);
 const LIGHT_COLORS = [...LIGHT].filter(
-  ([name]) => SLOT[name]!.kind === "color" && !SURFACE_RAMP_RULING.has(name),
+  ([name]) =>
+    SLOT[name]!.kind === "color" &&
+    !SURFACE_RAMP_RULING.has(name) &&
+    !TEXT_CONFORMANCE_RULING.has(name),
 );
+const DARK_COLORS = [...DARK].filter(([name]) => !TEXT_CONFORMANCE_RULING.has(name));
 
 test.each(LIGHT_COLORS)(
   "light %s carries the census value verbatim, in the theme and through the generated CSS",
@@ -207,7 +217,7 @@ test.each(LIGHT_COLORS)(
   },
 );
 
-test.each([...DARK])(
+test.each(DARK_COLORS)(
   "dark %s carries the census value verbatim, in the theme and through the generated CSS",
   (name: string, value: string) => {
     const slot = SLOT[name]!;
@@ -277,6 +287,44 @@ test("chrome carries the ruling's value in both schemes", () => {
   expect(resolve("--chrome", "dark")).toBe("#232a47");
 });
 
+// ── text conformance ─────────────────────────────────────────────────────
+// A departure from census parity (see the TEXT_CONFORMANCE_RULING filter
+// above): SORI-36 retunes `fg` to #222 in light and adds `mutedText` as the
+// AA-compliant TEXT role. The fill/text-split ruling keeps the public
+// `--muted` alias on the raw census hex (fills, dots, washes, the Switch
+// thumb, Badge's muted wash/border); only the explicit `--muted-text` alias
+// carries the AA-compliant value, for text-role `color:` declarations.
+
+test("fg carries the value-conformance ruling's #222 in light, unchanged in dark", () => {
+  expect(tuiTheme.tokens.colors.gray!.fg).toBe("#222");
+  expect(tuiTheme.dark!.colors!.gray!.fg).toBe("#e3e7f6");
+  expect(resolve("--fg", "light")).toBe("#222");
+  expect(resolve("--fg", "dark")).toBe("#e3e7f6");
+});
+
+test("muted FILL (--muted) stays the raw census hex; muted TEXT (--muted-text) reads the AA-compliant mutedText value", () => {
+  expect(tuiTheme.tokens.colors.gray!.mutedText).toBe("#565d80");
+  expect(tuiTheme.dark!.colors!.gray!.mutedText).toBe("#969ec2");
+  expect(resolve("--muted-text", "light")).toBe("#565d80");
+  expect(resolve("--muted-text", "dark")).toBe("#969ec2");
+  expect(tuiTheme.tokens.colors.gray!.muted).toBe("#8990b3");
+  expect(tuiTheme.dark!.colors!.gray!.muted).toBe("#7e86ad");
+  expect(resolve("--muted", "light")).toBe("#8990b3");
+  expect(resolve("--muted", "dark")).toBe("#7e86ad");
+});
+
+test("accentText and badText resolve to their AA-compliant literals in both schemes", () => {
+  expect(tuiTheme.tokens.colors.gray!.accentText).toBe("#1c5fbf");
+  expect(tuiTheme.dark!.colors!.gray!.accentText).toBe("#7aa2f7");
+  expect(resolve("--accent-text", "light")).toBe("#1c5fbf");
+  expect(resolve("--accent-text", "dark")).toBe("#7aa2f7");
+
+  expect(tuiTheme.tokens.colors.gray!.redText).toBe("#c8214f");
+  expect(tuiTheme.dark!.colors!.gray!.redText).toBe("#f7768e");
+  expect(resolve("--red-text", "light")).toBe("#c8214f");
+  expect(resolve("--red-text", "dark")).toBe("#f7768e");
+});
+
 // Bun's CSS bundler inlines a `url()`-referenced asset under this file's
 // bundled CSS as a base64 data URI (verified empirically: the observed cutoff
 // sits between 120KB and 150KB); past it, the asset is copied out to a
@@ -295,7 +343,7 @@ test("the vendored woff2 stays under Bun's CSS asset-inlining threshold", () => 
 });
 
 test("generated css exposes the alias contract with verbatim values reachable", () => {
-  for (const alias of ["--bg:", "--panel:", "--card:", "--chrome:", "--fg:", "--muted:", "--border:", "--border-soft:", "--accent:", "--green:", "--red:", "--amber:", "--purple:", "--cyan:", "--grid-line:", "--dot-ok:", "--dot-warn:", "--dot-bad:", "--font-mono:", "--font-sans:", "--font-numeric:"]) {
+  for (const alias of ["--bg:", "--panel:", "--card:", "--chrome:", "--fg:", "--muted:", "--muted-text:", "--accent-text:", "--red-text:", "--border:", "--border-soft:", "--accent:", "--green:", "--red:", "--amber:", "--purple:", "--cyan:", "--grid-line:", "--dot-ok:", "--dot-warn:", "--dot-bad:", "--font-mono:", "--font-sans:", "--font-numeric:"]) {
     expect(css).toContain(alias);
   }
   expect(css).toContain("#2e7de9"); // light accent, verbatim

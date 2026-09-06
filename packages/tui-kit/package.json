@@ -1,6 +1,6 @@
 {
   "name": "@mattstack/tui-kit",
-  "version": "0.2.0",
+  "version": "0.4.0",
   "license": "MIT",
   "type": "module",
   "main": "./dist/src/index.js",
@@ -41,7 +41,7 @@
   "scripts": {
     "setup": "bun install",
     "census": "bun run scripts/census.ts",
-    "codegen": "soribashi build && bun run scripts/append-font-faces.ts",
+    "codegen": "soribashi build && bun run scripts/append-font-faces.ts && bun run ../tokens/scripts/append-fragments.ts",
     "build": "rm -rf dist && tsc -p tsconfig.build.json && bun scripts/copy-recipe-css.ts && bun scripts/fix-dts-extensions.ts dist",
     "prepack": "bun run build",
     "typecheck": "tsc --noEmit",
