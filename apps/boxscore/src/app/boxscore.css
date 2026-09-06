@@ -1,0 +1,22 @@
+/* System sans blooms under macOS subpixel antialiasing (worst on white bold
+   text knocked out of the accent SegmentedControl); greyscale smoothing fixes
+   it. Local until mantine-tokyo ships it in its own body rule (kit follow-up). */
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Bump the Mantine size scale ~10% for the content only. Tokyo's ladder is
+   deliberately compact (md 0.76rem ~12px), which reads small in a data view;
+   these are custom props, so redefining them on the scroll frame cascades to
+   the cards/table while the rail/header chrome outside keep the base scale.
+
+   (The ramp, dimmed-text fix, and launcher sizing that used to live here now
+   ship in @mattstack/mantine-tokyo 0.3.0 + @mattstack/app-kit 0.2.0.) */
+#page-shell-content {
+  --mantine-font-size-xs: 0.72rem;
+  --mantine-font-size-sm: 0.78rem;
+  --mantine-font-size-md: 0.84rem;
+  --mantine-font-size-lg: 0.93rem;
+  --mantine-font-size-xl: 1rem;
+}

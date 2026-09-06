@@ -1,0 +1,52 @@
+{
+  "name": "boxscore",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "bun": ">=1.1"
+  },
+  "scripts": {
+    "dev": "vite",
+    "dev:server": "bun --watch src/server/index.ts",
+    "build": "bun run typecheck && vite build",
+    "serve": "bun src/server/index.ts",
+    "report": "bun src/server/cli.ts",
+    "validate": "bun src/server/cli.ts --format validate",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "eslint --no-error-on-unmatched-pattern src",
+    "test": "bun --bun vitest run"
+  },
+  "dependencies": {
+    "@mattstack/app-kit": "^0.2.0",
+    "@mattstack/app-server": "^0.1.2",
+    "@mattstack/glance": "^0.24.0",
+    "@mattstack/mantine-tokyo": "^0.3.0",
+    "@mattstack/rt-client": "^0.14.0",
+    "@mattstack/settings-kit": "^0.1.3",
+    "@tanstack/react-query": "^5.102.8",
+    "hono": "^4.6.14",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "wouter": "^3.10.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
+    "@types/bun": "^1.3.14",
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "eslint": "^10.7.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "jsdom": "^30.0.1",
+    "typescript": "~6",
+    "typescript-eslint": "^8.64.0",
+    "vite": "^8.1.1",
+    "vitest": "^4.1.10"
+  }
+}

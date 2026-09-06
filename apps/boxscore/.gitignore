@@ -1,0 +1,18 @@
+node_modules/
+dist/
+.cache/
+.cache-test/
+.env
+.env.local
+*.log
+.DS_Store
+
+# Local-only process scratch (superpowers specs/plans, SDD ledger). Never committed.
+.local-dev/
+.superpowers/
+
+# Per-user settings (overrides config.ts). Never committed.
+settings.json
+
+# Session worktrees (EnterWorktree). Never committed.
+.claude/worktrees/

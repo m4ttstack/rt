@@ -1,0 +1,11 @@
+{
+  "extends": "@mattstack/app-kit/tsconfig.base.json",
+  "compilerOptions": {
+    "paths": {
+      "@/*": ["./src/app/*"]
+    },
+    // src/server's parameter properties need emission; this task cannot rewrite server logic to drop them.
+    "erasableSyntaxOnly": false
+  },
+  "include": ["src", "test", "vite.config.ts", "vitest.config.ts"]
+}
