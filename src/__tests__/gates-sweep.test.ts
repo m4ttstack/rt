@@ -228,6 +228,14 @@ describe("planSweep", () => {
     const actions = planSweep([], s, NOW, GRACE_MS);
     expect(actions).toEqual([{ kind: "close-missed-done", domain: "doctor", mrUrl: MR_URL, tabId: "doctor-tab" }]);
   });
+
+  test("planSweep reports an unknown kind through the callback instead of pure silence", () => {
+    const rows = [baseRow({ kind: "mystery-kind", status: "open", openedAt: 0 })];
+    const s = { reviews: new Map(), responds: new Map(), doctors: new Map() };
+    const unknown: string[] = [];
+    planSweep(rows, s, 10_000_000, 1, (r) => unknown.push(r.kind));
+    expect(unknown).toEqual(["mystery-kind"]);
+  });
 });
 
 describe("pruneOffBoardGates", () => {

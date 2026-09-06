@@ -24,7 +24,7 @@ import { MEMORY_PATH, readMemory, writeMemory } from "../src/triage/memory.ts";
 import { runNudgePass } from "../src/triage/nudge.ts";
 import { notifyEscalation } from "../src/triage/notify.ts";
 import { collectProjectPRs } from "../src/triage/projects.ts";
-import { numericPipelineId, runTriage } from "../src/triage/run.ts";
+import { numericPipelineId, resolveDispatchIdentity, runTriage } from "../src/triage/run.ts";
 import {
   claimLease,
   DEFAULT_ATTENDANT_TTL_SECONDS,
@@ -38,7 +38,6 @@ import type { OwnMrFacts } from "../src/triage/edge.ts";
 
 const LOCK_PATH = MEMORY_PATH + ".lock";
 const LOCK_STALE_MS = 2 * 60_000;
-const IDENTITY_TTL_MS = 24 * 60 * 60_000;
 
 // Fully disabled is the common cron-invoked case: decide it BEFORE taking the
 // lock, because process.exit() skips finally blocks and would strand the lock
@@ -73,16 +72,15 @@ try {
 
   // Own-MR identity from the GitLab token (ruling: never defaultMember),
   // cached so steady-state runs are pure socket reads.
-  let username = memory.identity && Date.now() - memory.identity.fetchedAt < IDENTITY_TTL_MS ? memory.identity.username : null;
-  if (!username) {
+  // Throw rather than process.exit(1) on a resolution failure: an exit here
+  // would skip the finally block and strand the lock until the stale window
+  // reclaims it.
+  const username = await resolveDispatchIdentity(memory, async () => {
     const token = await loadGitLabToken();
-    // Throw rather than process.exit(1): an exit here would skip the finally
-    // block and strand the lock until the stale window reclaims it.
     if (!token) throw new Error("triage: no gitlab token available for identity");
-    const user = await new GitLabProvider(boardConfig.gitlabHost, token).validateToken();
-    username = user.username;
-    memory.identity = { username, fetchedAt: Date.now() };
-  }
+    return new GitLabProvider(boardConfig.gitlabHost, token).validateToken();
+  });
+  if (!username) throw new Error("triage: no gitlab token available for identity");
 
   // SCOPE (review fix 1): triage's MR scope is deliberately the BOARD's
   // visibility scope -- buildBoard applies the member, own-draft, stale-window,

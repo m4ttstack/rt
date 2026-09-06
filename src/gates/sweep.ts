@@ -76,6 +76,7 @@ export function planSweep(
   states: GateSweepStates,
   now: number,
   graceMs: number,
+  onUnknownKind?: (row: GateRow) => void,
 ): SweepAction[] {
   const actions: SweepAction[] = [];
   const openByDomain: Record<GateDomain, Set<string>> = {
@@ -87,7 +88,7 @@ export function planSweep(
   for (const row of rows) {
     if (!row.subject.startsWith(MR_SUBJECT_PREFIX)) continue;
     const domain = domainForKind(row.kind);
-    if (!domain) continue;
+    if (!domain) { onUnknownKind?.(row); continue; }
     const mrUrl = row.subject.slice(MR_SUBJECT_PREFIX.length);
     if (row.status !== "open") continue;
     openByDomain[domain].add(mrUrl);

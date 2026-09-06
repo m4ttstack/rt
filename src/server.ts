@@ -39,7 +39,9 @@ import { signalEmoji, parseAgentSignal } from "./agent-signal.ts";
 import { findLatches, hasArmedLatch } from "./latch/discussions.ts";
 import { latchGateway } from "./latch/gateway.ts";
 import { postLatch, spendAllLatches } from "./latch/post.ts";
-import { loadReReviewConfig } from "./triage/config.ts";
+import { loadReReviewConfig, loadTriageConfig } from "./triage/config.ts";
+import { readMemory, writeMemory } from "./triage/memory.ts";
+import { manualDoctorFields, resolveDispatchIdentity } from "./triage/run.ts";
 import { makeSwitchboardClient, type SwitchboardClient } from "./peer/client.ts";
 import { type MaterializeDeps } from "./peer/inbox.ts";
 import { makePeering } from "./peer/runtime.ts";
@@ -1019,8 +1021,13 @@ const httpServer = Bun.serve({
             // tab is gone -- fall through and start a fresh doctor session
           }
         }
+        const triage = loadTriageConfig();
+        const memory = readMemory();
+        const identity = await resolveDispatchIdentity(memory, async () => (await gitlab()).validateToken());
+        writeMemory(memory);
+        const { tier, fixClasses } = manualDoctorFields(triage, mr.author.username, identity);
         const statePath = doctorFilePath(parsed.mrUrl);
-        writeDoctorState(statePath, { mrUrl: parsed.mrUrl, iid: parsed.iid, status: "queued", origin: "manual" });
+        writeDoctorState(statePath, { mrUrl: parsed.mrUrl, iid: parsed.iid, status: "queued", origin: "manual", tier, fixClasses });
         void launchDoctor({
           mrUrl: parsed.mrUrl,
           iid: parsed.iid,
@@ -1032,6 +1039,8 @@ const httpServer = Bun.serve({
           author,
           ...loadAgentSettings(),
           note,
+          tier,
+          fixClasses,
         })
           .then((result) => {
             if (result.focusedExisting) return;
@@ -1875,7 +1884,7 @@ function gateResumeIo(): GateResumeEventIo {
 
 async function runGateSweep(): Promise<void> {
   const states = { reviews: readReviewStates(), responds: readRespondStates(), doctors: readDoctorStates() };
-  const actions = planSweep(gateCache.rows(), states, Date.now(), config.gateGraceMinutes * 60_000);
+  const actions = planSweep(gateCache.rows(), states, Date.now(), config.gateGraceMinutes * 60_000, (row) => console.error(`gate sweep: unknown gate kind "${row.kind}" on ${row.subject}; skipping`));
   const io = sweepActionIo();
   for (const action of actions) {
     await executeSweepAction(action, io);

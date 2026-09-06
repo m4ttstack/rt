@@ -223,11 +223,19 @@ describe("resumeParkedGate", () => {
     expect(resumeCalls.notify).toEqual(["parked gate answered but no agent on file; relaunch from the board"]);
   });
 
-  test("a kind with no resumers entry throws rather than silently no-oping", async () => {
-    const gate = baseGate({ agentId: "agent-1", kind: "mystery-kind" });
+  test("a KNOWN kind with no resumers entry throws rather than silently no-oping", async () => {
+    const gate = baseGate({ agentId: "agent-1", kind: "doctor-escalation" });
     const { io: resumeIo } = fakeResumeIo({});
 
-    await expect(resumeParkedGate(gate, resumeIo, async () => null)).rejects.toThrow("mystery-kind resume not wired");
+    await expect(resumeParkedGate(gate, resumeIo, async () => null)).rejects.toThrow("doctor-escalation resume not wired");
+  });
+
+  test("an UNKNOWN kind (outside GATE_KINDS) logs and skips rather than throwing", async () => {
+    const gate = baseGate({ agentId: "agent-1", kind: "mystery-kind" });
+    const { io: resumeIo, calls: resumeCalls } = fakeResumeIo({});
+
+    await expect(resumeParkedGate(gate, resumeIo, async () => null)).resolves.toBe(false);
+    expect(resumeCalls.resumeAgentPane.length).toBe(0);
   });
 });
 
@@ -438,12 +446,12 @@ describe("handleAnsweredEvent", () => {
     expect(review.get(MR_URL)?.resumedGateId).toBe(GATE_ID);
   });
 
-  test("an unwired kind throws rather than silently mishandling it", async () => {
+  test("an unknown kind (outside GATE_KINDS) logs and skips rather than throwing", async () => {
     const row = facilityRow({ kind: "mystery-kind" });
     const { io, calls } = fakeEventIo({ rows: [row] });
     const frame: GateEventFrame = { topic: `gate/answered/${GATE_ID}`, payload: { id: GATE_ID, subject: SUBJECT } };
 
-    await expect(handleAnsweredEvent(frame, io, noSkillLookup)).rejects.toThrow("mystery-kind resume not wired");
+    await expect(handleAnsweredEvent(frame, io, noSkillLookup)).resolves.toBeUndefined();
     expect(calls.resumeAgentPane.length).toBe(0);
   });
 

@@ -89,11 +89,11 @@ export function buildResumers(byDomain: Record<GateDomain, KindResumeIo>): Parti
  * itself already succeeded and must not be undone by a resume failure.
  *
  * Returns whether a pane actually resumed (`resumeAgentPane` returned) --
- * false on the missing-agentId notify branch AND on a failed dispatch, so
- * neither writes the exactly-once marker and both stay retryable (the next
- * answered event or boot pass tries again). A failure AFTER the dispatch
- * (persisting the fresh pane ids) still returns true: the pane exists, and
- * a retry would launch a duplicate.
+ * false on the missing-agentId notify branch, the unknown-kind skip, AND on
+ * a failed dispatch, so none of those write the exactly-once marker and all
+ * stay retryable (the next answered event or boot pass tries again). A
+ * failure AFTER the dispatch (persisting the fresh pane ids) still returns
+ * true: the pane exists, and a retry would launch a duplicate.
  */
 export async function resumeParkedGate(
   gate: GateState,
@@ -106,7 +106,11 @@ export async function resumeParkedGate(
   }
 
   const kindIo = io.resumers[gate.kind];
-  if (!kindIo) throw new Error(`${gate.kind} resume not wired`);
+  if (!kindIo) {
+    if ((GATE_KINDS as readonly string[]).includes(gate.kind)) throw new Error(`${gate.kind} resume not wired`);
+    console.error(`gate resume: unknown gate kind "${gate.kind}" on ${gate.mrUrl}; skipping`);
+    return false;
+  }
 
   const statePath = kindIo.filePath(gate.mrUrl);
   const skill = kindIo.resolveSkill(gate.mrUrl, gate.tabId);
@@ -170,11 +174,12 @@ function isRecord(v: unknown): v is Record<string, unknown> {
  * `open` gate answered directly never sets `parkedAt`, and it survives the
  * `answered` patch -- see GateCache.applyEvent) or one already resumed
  * (the `resumedGateId` dedup marker, tracked on that kind's own state file).
- * A kind with no `resumers` entry (present or future) throws rather than
- * being silently skipped -- a resume this board can't perform must never
- * look like one that didn't need to happen. Re-reads state after the resume
- * attempt so that write can't clobber whatever status `resumeParkedGate`
- * itself just settled on.
+ * A KNOWN kind (in `GATE_KINDS`) with no `resumers` entry throws -- a resume
+ * this board can't perform must never look like one that didn't need to
+ * happen. An unknown kind (outside `GATE_KINDS` entirely) logs and skips
+ * instead, since it was never this board's row to resume in the first
+ * place. Re-reads state after the resume attempt so that write can't
+ * clobber whatever status `resumeParkedGate` itself just settled on.
  */
 async function resumeIfMissed(row: FacilityGateRow, io: GateResumeEventIo, resolvePath: SkillPathResolver): Promise<void> {
   if (row.status !== "answered" || row.parkedAt === null) return;
@@ -182,7 +187,11 @@ async function resumeIfMissed(row: FacilityGateRow, io: GateResumeEventIo, resol
   const mrUrl = row.subject.slice("mr:".length);
 
   const kindIo = io.resumers[row.kind];
-  if (!kindIo) throw new Error(`${row.kind} resume not wired`);
+  if (!kindIo) {
+    if ((GATE_KINDS as readonly string[]).includes(row.kind)) throw new Error(`${row.kind} resume not wired`);
+    console.error(`gate resume: unknown gate kind "${row.kind}" on ${row.subject}; skipping`);
+    return;
+  }
 
   const state = kindIo.readState(mrUrl);
   if (!state || state.resumedGateId === row.id) return;
