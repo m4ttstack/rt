@@ -386,6 +386,7 @@ git add -A && git commit -m "tokens: fg #222 estate-wide, red text token, tui-ki
 - Produces: `bun scripts/set-platform-version.ts 0.3.0` sets `version` in packages/{ui,server,tokyo,tui-kit}/package.json and rewrites `@mattstack/mantine-tokyo` peer in packages/ui to `^0.3.0`.
 
 - [ ] **Step 1: Write the script** (read each package.json, set version, rewrite the internal peer, print a summary table). Run it with `0.3.0`.
+- [ ] **Step 1b: Peer floor hygiene**: in `packages/server/package.json`, widen the `@mattstack/rt-client` peer from `^0.14.0` to `>=0.14.0` (rt-client is on 0.16.0 and consumers pin it exactly; the caret guarantees mismatch warnings every minor). Bump the root devDep to `^0.16.0` while there.
 - [ ] **Step 2: Docs pass** (README paragraph, CLAUDE.md staleness fixes).
 - [ ] **Step 3: Full root suite green, commit**
 
@@ -399,7 +400,7 @@ git add -A && git commit -m "release: platform 0.3.0 lockstep versions and docs"
 
 ## Phase 3: consumer cleanup (each task in its own repo worktree, gated on the Phase 2 publish)
 
-Each task: bump the `@mattstack/*` deps to the platform version, delete the local copy the kit now ships, verify with that repo's own suite, commit. Exact locations verified 2026-09-05 (re-grep before editing; files move).
+Each task: bump the `@mattstack/*` KIT deps to the platform version, delete the local copy the kit now ships, verify with that repo's own suite, commit. Never touch `@mattstack/rt-client` (board and console pin it exactly, `"0.16.0"` as of 2026-09-06, on purpose), `@mattstack/glance`, or `@mattstack/settings-kit`. Exact locations verified 2026-09-06 (re-grep before editing; files move; board's style.css gained a gate-card block around lines 690-760 with additional `var(--accent)`/`var(--muted)` text sites for Task 9's swap).
 
 ### Task 9: board
 
