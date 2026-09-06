@@ -44,7 +44,8 @@ if (!triage.enabled && !reReview.enabled) process.exit(0);
 
 // One run at a time: cron debounces, but a slow run + a fresh trigger must
 // not interleave dispatches. A stale lock (crashed run) is reclaimed.
-if (!tryAcquireMemoryLock()) {
+const lockToken = tryAcquireMemoryLock();
+if (lockToken === false) {
   process.exit(0);
 }
 
@@ -240,5 +241,5 @@ try {
   }
   writeMemory(memory);
 } finally {
-  releaseMemoryLock();
+  releaseMemoryLock(lockToken);
 }

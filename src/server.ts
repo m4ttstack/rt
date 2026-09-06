@@ -41,7 +41,7 @@ import { findLatches, hasArmedLatch } from "./latch/discussions.ts";
 import { latchGateway } from "./latch/gateway.ts";
 import { postLatch, spendAllLatches } from "./latch/post.ts";
 import { loadReReviewConfig, loadTriageConfig } from "./triage/config.ts";
-import { readMemory, releaseMemoryLock, tryAcquireMemoryLock, writeMemory } from "./triage/memory.ts";
+import { readMemory, releaseMemoryLock, tryAcquireMemoryLock, writeRefreshedIdentity } from "./triage/memory.ts";
 import { manualDoctorFields, resolveDispatchIdentity } from "./triage/run.ts";
 import { makeSwitchboardClient, type SwitchboardClient } from "./peer/client.ts";
 import { type MaterializeDeps } from "./peer/inbox.ts";
@@ -1023,23 +1023,31 @@ const httpServer = Bun.serve({
           }
         }
         const triage = loadTriageConfig();
-        const memory = readMemory();
-        const identityBefore = memory.identity;
-        const identity = await resolveDispatchIdentity(memory, async () => (await gitlab()).validateToken());
+        // Token validation happens here, OUTSIDE the lock, since it's a
+        // network round-trip and the lock must never sit open for that long.
+        const identityRead = readMemory();
+        const identityBefore = identityRead.identity;
+        const identity = await resolveDispatchIdentity(identityRead, async () => (await gitlab()).validateToken());
         // Only touch state/auto-dispatch.json when the identity actually
-        // refreshed (a cache hit leaves memory.identity's reference
-        // unchanged), and take the auto triage pass's own lock around that
-        // write -- bin/triage.ts serializes every access to this file so a
-        // slow pass and this manual launch never clobber the SAME attempt
-        // budgets / lastHandledPipelineId / budgetEscalatedDay in either
-        // direction. A pass already holding the lock just means this
-        // request's own identity refresh is not persisted; it still applies
-        // to fixClasses below, and the next request re-resolves it.
-        if (memory.identity !== identityBefore && tryAcquireMemoryLock()) {
-          try {
-            writeMemory(memory);
-          } finally {
-            releaseMemoryLock();
+        // refreshed (a cache hit leaves identityRead.identity's reference
+        // unchanged). bin/triage.ts serializes every access to this file
+        // behind the same lock, so a slow pass and this manual launch never
+        // clobber the SAME attempt budgets / lastHandledPipelineId /
+        // budgetEscalatedDay in either direction; writeRefreshedIdentity
+        // re-reads the CURRENT file under the lock rather than writing back
+        // this stale pre-network-call snapshot, so a pass that wrote OTHER
+        // fields during the round-trip is never reverted. A pass already
+        // holding the lock just means this request's own identity refresh is
+        // not persisted; it still applies to fixClasses below, and the next
+        // request re-resolves it.
+        if (identityRead.identity !== identityBefore) {
+          const lockToken = tryAcquireMemoryLock();
+          if (lockToken !== false) {
+            try {
+              writeRefreshedIdentity(identityRead.identity);
+            } finally {
+              releaseMemoryLock(lockToken);
+            }
           }
         }
         const { tier, fixClasses } = manualDoctorFields(triage, mr.author.username, identity);
