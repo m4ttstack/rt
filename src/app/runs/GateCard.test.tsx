@@ -391,4 +391,42 @@ describe('focus button', () => {
     );
     expect(screen.getByRole('button', { name: 'submit' })).toBeInTheDocument();
   });
+
+  it('posts to the focus endpoint keyed to the gate id when the enabled button is clicked', async () => {
+    focusPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ focused: true }),
+    });
+    renderCard(gateRow({ id: 'g7', origin: { paneId: 'p1' } }));
+
+    await userEvent.click(screen.getByTestId('gate-focus'));
+
+    await waitFor(() =>
+      expect(focusPost).toHaveBeenCalledWith({ param: { id: 'g7' } })
+    );
+    expect(screen.queryByTestId('gate-focus-error')).not.toBeInTheDocument();
+  });
+
+  it('renders the daemon-reported reason on a non-2xx focus response', async () => {
+    focusPost.mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({ error: 'no live pane matches the origin worktree' }),
+    });
+    renderCard(gateRow({ origin: { worktree: '/w' } }));
+
+    await userEvent.click(screen.getByTestId('gate-focus'));
+
+    await screen.findByText('no live pane matches the origin worktree');
+  });
+
+  it('renders a generic error when the focus request rejects outright', async () => {
+    focusPost.mockRejectedValue(new Error('network down'));
+    renderCard(gateRow({ origin: { paneId: 'p1' } }));
+
+    await userEvent.click(screen.getByTestId('gate-focus'));
+
+    await screen.findByText('focus failed');
+  });
 });
