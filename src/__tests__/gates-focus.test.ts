@@ -114,4 +114,12 @@ describe("panesForOrigin", () => {
     const result = await panesForOrigin({ worktree: "/w" }, listPanes);
     expect(result).toEqual({ panes: [], fetchFailed: true });
   });
+
+  test("a rejecting fetch also resolves to an empty pane list flagged as failed, rather than throwing", async () => {
+    const listPanes = async (): Promise<{ ok: boolean; data?: { panes: Array<{ paneId: string; cwd?: string }> } | null }> => {
+      throw new Error("daemon unreachable");
+    };
+    const result = await panesForOrigin({ worktree: "/w" }, listPanes);
+    expect(result).toEqual({ panes: [], fetchFailed: true });
+  });
 });

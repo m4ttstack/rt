@@ -64,6 +64,10 @@ export async function panesForOrigin(
   listPanes: () => Promise<{ ok: boolean; data?: { panes: Array<{ paneId: string; cwd?: string }> } | null }>,
 ): Promise<PanesForOriginResult> {
   if (origin?.paneId || !origin?.worktree) return { panes: [], fetchFailed: false };
-  const res = await listPanes();
-  return res.ok && res.data ? { panes: res.data.panes, fetchFailed: false } : { panes: [], fetchFailed: true };
+  try {
+    const res = await listPanes();
+    return res.ok && res.data ? { panes: res.data.panes, fetchFailed: false } : { panes: [], fetchFailed: true };
+  } catch {
+    return { panes: [], fetchFailed: true };
+  }
 }
