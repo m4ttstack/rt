@@ -1,0 +1,322 @@
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Tomorrow:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap');
+  .ph { font-family: "Tomorrow", "Noto Sans JP", monospace; font-size:12px; color:#4c505e; background:#ececf0; border:1px solid #c8cad1; border-radius:10px; width:264px; overflow:hidden; flex-shrink:0; position:relative; }
+  .ph .nav { display:flex; align-items:center; justify-content:space-between; padding:11px 12px 9px; background:#f3f4f7; border-bottom:1px solid #dcdee5; }
+  .ph .nav .back { color:#2e7de9; white-space:nowrap; }
+  .ph .nav .ttl { font-weight:700; color:#343b58; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .ph .nav .x { color:#9aa0b0; }
+  .ph .nav .navact { color:#2e7de9; font-weight:600; }
+  .ph .inner { padding:12px 10px 16px; }
+  .grp { background:#fff; border:1px solid #dcdee5; border-radius:9px; overflow:hidden; margin-bottom:6px; }
+  .grp .r { display:flex; align-items:center; gap:8px; padding:8px 11px; border-bottom:1px solid #ecedf1; min-height:18px; }
+  .grp .r:last-child { border-bottom:none; }
+  .grp .r .l { color:#343b58; flex:1; white-space:nowrap; }
+  .grp .r .v { color:#9aa0b0; text-align:right; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:130px; }
+  .grp .r .ch { color:#c0c3cc; }
+  .grp .r.act .l { color:#2e7de9; flex:none; }
+  .grp .r.act { justify-content:flex-start; }
+  .grp .r.danger { justify-content:center; }
+  .grp .r.danger .l { color:#c64343; flex:none; }
+  .grp .r.sel .l::before { content:"✓ "; color:#2e7de9; }
+  .grp .r.unsel .l { padding-left:17px; color:#4c505e; }
+  .foot { color:#8990a3; font-size:10px; line-height:1.5; padding:0 11px; margin:-2px 0 12px; }
+  .sw { display:inline-block; width:28px; height:16px; border-radius:999px; background:#2e7de9; position:relative; flex-shrink:0; }
+  .sw::after { content:""; position:absolute; right:2px; top:2px; width:12px; height:12px; border-radius:50%; background:#fff; }
+  .sw.off { background:#c4c7d0; } .sw.off::after { right:auto; left:2px; }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; }
+  .dot.g { background:#587539; } .dot.r { background:#c64343; } .dot.y { background:#b8863b; }
+  .stat { padding:2px 12px 11px; background:#f3f4f7; border-bottom:1px solid #dcdee5; color:#7a7f8d; margin-top:-1px; font-size:11px; }
+  .stat .lnk { color:#2e7de9; }
+  .logbox { background:#2a2e3f; border-radius:8px; padding:9px 11px; color:#9aa5ce; font-size:10px; line-height:1.6; }
+  .cap { font-size:11px; color:#667; margin-top:7px; font-family:"Tomorrow","Noto Sans JP",monospace; text-align:center; max-width:264px; }
+  .inp { border:1px solid #9ab6e8; background:#fff; border-radius:6px; padding:4px 8px; color:#343b58; flex:1; }
+  .inp .cursor { border-left:1.5px solid #2e7de9; margin-left:1px; animation:none; }
+  .inp .plc { color:#b8bcc7; }
+  .errbar { background:#f6cdd4; color:#c64343; font-size:10.5px; padding:6px 12px; border-bottom:1px solid #eab6bf; }
+  .sheetdim { position:absolute; inset:0; background:rgba(52,59,88,.28); border-radius:10px; display:flex; align-items:flex-end; }
+  .sheet { background:#f3f4f7; border-radius:12px 12px 10px 10px; margin:8px; width:calc(100% - 16px); padding:12px 10px 10px; }
+  .sheet .msg { color:#7a7f8d; font-size:10.5px; text-align:center; padding:0 8px 10px; line-height:1.5; }
+  .spin { display:inline-block; width:11px; height:11px; border:2px solid #c4c7d0; border-top-color:#2e7de9; border-radius:50%; margin-right:6px; vertical-align:-2px; }
+  .flow { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-start; margin-bottom:8px; }
+  h3.fl { margin-top:28px; }
+</style>
+
+<h2>Drawer state atlas — every screen, every state</h2>
+<p class="subtitle">The complete surface inventory for the iOS-style drawer, using the real deck data model (password + Google sign-in with domains/people mode; edit = name, base port, command, workdir). Faithful states, not idealized ones.</p>
+
+<h3 class="fl">1 · Roots — one per row kind</h3>
+<div class="flow">
+  <div><div class="ph">
+    <div class="nav"><span class="back" style="visibility:hidden;">‹</span><span class="ttl">orbit</span><span class="x">✕</span></div>
+    <div class="stat"><span class="dot g"></span>200 in 18ms · running pid 5311 · <span class="lnk">open ↗</span></div>
+    <div class="inner">
+      <div class="grp"><div class="r"><span class="l">public</span><span class="sw"></span></div></div>
+      <div class="foot">orbit.mattstack is reachable through the tunnel</div>
+      <div class="grp">
+        <div class="r"><span class="l">dev port</span><span class="v">3007 · override</span><span class="ch">›</span></div>
+        <div class="r"><span class="l">access</span><span class="v">password · sign-in</span><span class="ch">›</span></div>
+        <div class="r"><span class="l">logs</span><span class="v">2 lines</span><span class="ch">›</span></div>
+      </div>
+      <div class="grp">
+        <div class="r act"><span class="l">↻ restart service</span></div>
+        <div class="r"><span class="l" style="color:#2e7de9;">✎ edit app</span><span class="ch">›</span></div>
+      </div>
+      <div class="grp" style="margin-top:12px;"><div class="r danger"><span class="l">remove app…</span></div></div>
+    </div>
+  </div><div class="cap">healthy managed app, everything configured</div></div>
+
+  <div><div class="ph">
+    <div class="nav"><span class="back" style="visibility:hidden;">‹</span><span class="ttl">atlas</span><span class="x">✕</span></div>
+    <div class="stat"><span class="dot g"></span>200 in 34ms · running pid 5123 · <span class="lnk">open ↗</span></div>
+    <div class="inner">
+      <div class="grp"><div class="r"><span class="l">public</span><span class="sw"></span></div></div>
+      <div class="foot">atlas.mattstack is reachable through the tunnel</div>
+      <div class="grp">
+        <div class="r"><span class="l">dev port</span><span class="v">11001</span><span class="ch">›</span></div>
+        <div class="r"><span class="l">access</span><span class="v">open</span><span class="ch">›</span></div>
+        <div class="r"><span class="l">logs</span><span class="v">none</span><span class="ch">›</span></div>
+      </div>
+      <div class="grp">
+        <div class="r act"><span class="l">↻ restart service</span></div>
+        <div class="r"><span class="l" style="color:#2e7de9;">✎ edit app</span><span class="ch">›</span></div>
+      </div>
+      <div class="grp" style="margin-top:12px;"><div class="r danger"><span class="l">remove app…</span></div></div>
+    </div>
+  </div><div class="cap">plain app — same skeleton, quiet values</div></div>
+
+  <div><div class="ph">
+    <div class="nav"><span class="back" style="visibility:hidden;">‹</span><span class="ttl">ledger</span><span class="x">✕</span></div>
+    <div class="stat"><span class="dot r"></span><span style="color:#c64343;">unreachable</span> · exit 1</div>
+    <div class="errbar">▲ cloudflare sync failed · 502 from Cloudflare API</div>
+    <div class="inner">
+      <div class="grp"><div class="r"><span class="l">public</span><span class="sw off"></span></div></div>
+      <div class="foot">not public — visitors get the tunnel's 404 page</div>
+      <div class="grp">
+        <div class="r"><span class="l">dev port</span><span class="v">11005</span><span class="ch">›</span></div>
+        <div class="r"><span class="l">access</span><span class="v">open</span><span class="ch">›</span></div>
+        <div class="r"><span class="l">logs</span><span class="v" style="color:#c64343;">14 lines</span><span class="ch">›</span></div>
+      </div>
+      <div class="grp">
+        <div class="r act"><span class="l">↻ restart service</span></div>
+        <div class="r"><span class="l" style="color:#2e7de9;">✎ edit app</span><span class="ch">›</span></div>
+      </div>
+      <div class="grp" style="margin-top:12px;"><div class="r danger"><span class="l">remove app…</span></div></div>
+    </div>
+  </div><div class="cap">broken app — error banner under status, logs hint turns red</div></div>
+
+  <div><div class="ph">
+    <div class="nav"><span class="back" style="visibility:hidden;">‹</span><span class="ttl">stray-agent</span><span class="x">✕</span></div>
+    <div class="stat"><span class="dot r"></span>stopped · exit 1 · no route</div>
+    <div class="inner">
+      <div class="grp">
+        <div class="r"><span class="l">logs</span><span class="v">6 lines</span><span class="ch">›</span></div>
+      </div>
+      <div class="grp">
+        <div class="r act"><span class="l">↻ restart service</span></div>
+        <div class="r act"><span class="l">+ give it a route…</span></div>
+      </div>
+    </div>
+  </div><div class="cap">service without route — reduced root, no public/access/port</div></div>
+
+  <div><div class="ph">
+    <div class="nav"><span class="back" style="visibility:hidden;">‹</span><span class="ttl">cloudflared</span><span class="x">✕</span></div>
+    <div class="stat"><span class="dot g"></span>up · running pid 4200</div>
+    <div class="inner">
+      <div class="grp">
+        <div class="r"><span class="l">carries</span><span class="v">*.mattstack</span></div>
+        <div class="r"><span class="l">logs</span><span class="v">none</span><span class="ch">›</span></div>
+      </div>
+      <div class="grp"><div class="r act"><span class="l">↻ restart tunnel</span></div></div>
+    </div>
+  </div><div class="cap">tunnel — facts + restart, nothing else</div></div>
+
+  <div><div class="ph">
+    <div class="nav"><span class="back" style="visibility:hidden;">‹</span><span class="ttl">orbit</span><span class="x">✕</span></div>
+    <div class="stat"><span class="dot y"></span>restarting…</div>
+    <div class="inner">
+      <div class="grp"><div class="r"><span class="l">public</span><span class="sw"></span></div></div>
+      <div class="foot">orbit.mattstack is reachable through the tunnel</div>
+      <div class="grp">
+        <div class="r"><span class="l">dev port</span><span class="v">3007 · override</span><span class="ch">›</span></div>
+        <div class="r"><span class="l">access</span><span class="v">password · sign-in</span><span class="ch">›</span></div>
+        <div class="r"><span class="l">logs</span><span class="v">2 lines</span><span class="ch">›</span></div>
+      </div>
+      <div class="grp">
+        <div class="r"><span class="spin"></span><span class="l" style="color:#9aa0b0;">restarting…</span></div>
+        <div class="r"><span class="l" style="color:#2e7de9;">✎ edit app</span><span class="ch">›</span></div>
+      </div>
+    </div>
+  </div><div class="cap">transient — restart row busy, status dot amber</div></div>
+</div>
+
+<h3 class="fl">2 · Dev port</h3>
+<div class="flow">
+  <div><div class="ph">
+    <div class="nav"><span class="back">‹ orbit</span><span class="ttl">dev port</span><span class="x">✕</span></div>
+    <div class="inner" style="padding-top:14px;">
+      <div class="grp">
+        <div class="r"><span class="l">assigned port</span><span class="v">11007</span></div>
+        <div class="r"><span class="l">override</span><span class="v" style="color:#343b58;">3007</span></div>
+      </div>
+      <div class="foot">the proxy routes orbit.mattstack to 3007 while the override is set</div>
+      <div class="grp"><div class="r"><span class="l">public follows dev</span><span class="sw off"></span></div></div>
+      <div class="foot">off: visitors keep getting 11007 while you develop on 3007</div>
+      <div class="grp"><div class="r act"><span class="l">revert to 11007</span></div></div>
+    </div>
+  </div><div class="cap">override active</div></div>
+
+  <div><div class="ph">
+    <div class="nav"><span class="back">‹ atlas</span><span class="ttl">dev port</span><span class="x">✕</span></div>
+    <div class="inner" style="padding-top:14px;">
+      <div class="grp"><div class="r"><span class="l">assigned port</span><span class="v">11001</span></div></div>
+      <div class="foot">atlas serves on its assigned port — no override</div>
+      <div class="grp"><div class="r act"><span class="l">set override…</span></div></div>
+    </div>
+  </div><div class="cap">no override</div></div>
+
+  <div><div class="ph">
+    <div class="nav"><span class="back">‹ atlas</span><span class="ttl">dev port</span><span class="navact">save</span></div>
+    <div class="inner" style="padding-top:14px;">
+      <div class="grp"><div class="r"><span class="l">assigned port</span><span class="v">11001</span></div></div>
+      <div class="grp"><div class="r"><span class="l">override</span><span class="inp">5173<span class="cursor">&nbsp;</span></span></div></div>
+      <div class="foot">the port your dev server is listening on right now</div>
+      <div class="grp"><div class="r act"><span class="l" style="color:#9aa0b0;">cancel</span></div></div>
+    </div>
+  </div><div class="cap">setting an override — save in the nav bar</div></div>
+</div>
+
+<h3 class="fl">3 · Access</h3>
+<div class="flow">
+  <div><div class="ph">
+    <div class="nav"><span class="back">‹ orbit</span><span class="ttl">access</span><span class="x">✕</span></div>
+    <div class="inner" style="padding-top:14px;">
+      <div class="grp">
+        <div class="r"><span class="l">password</span><span class="v">set</span><span class="ch">›</span></div>
+      </div>
+      <div class="foot">visitors enter this password before the proxy lets them through</div>
+      <div class="grp">
+        <div class="r"><span class="l">google sign-in</span><span class="sw"></span></div>
+        <div class="r"><span class="l">who</span><span class="v">2 people</span><span class="ch">›</span></div>
+      </div>
+      <div class="foot">sign-in happens at cloudflare's edge, before traffic reaches the app</div>
+    </div>
+  </div><div class="cap">access root — both gates on</div></div>
+
+  <div><div class="ph">
+    <div class="nav"><span class="back">‹ atlas</span><span class="ttl">access</span><span class="x">✕</span></div>
+    <div class="inner" style="padding-top:14px;">
+      <div class="grp">
+        <div class="r"><span class="l">password</span><span class="v">not set</span><span class="ch">›</span></div>
+      </div>
+      <div class="grp">
+        <div class="r"><span class="l">google sign-in</span><span class="sw off"></span></div>
+      </div>
+      <div class="foot">atlas is open — anyone who can reach the tunnel gets in</div>
+    </div>
+  </div><div class="cap">access root — everything off ("who" row hidden until sign-in is on)</div></div>
+
+  <div><div class="ph">
+    <div class="nav"><span class="back">‹ access</span><span class="ttl">password</span><span class="navact">save</span></div>
+    <div class="inner" style="padding-top:14px;">
+      <div class="grp"><div class="r"><span class="inp"><span class="plc">new password</span></span></div></div>
+      <div class="foot">replaces the current password immediately for new visitors</div>
+      <div class="grp"><div class="r danger"><span class="l">remove password</span></div></div>
+    </div>
+  </div><div class="cap">password screen — set/change + remove in one place</div></div>
+
+  <div><div class="ph">
+    <div class="nav"><span class="back">‹ access</span><span class="ttl">who</span><span class="x">✕</span></div>
+    <div class="inner" style="padding-top:14px;">
+      <div class="grp">
+        <div class="r unsel"><span class="l">anyone at these domains</span></div>
+        <div class="r sel"><span class="l" style="color:#343b58;">these people</span></div>
+      </div>
+      <div class="grp">
+        <div class="r"><span class="l">matt@bouncer.mx</span><span class="ch" style="color:#c64343;">✕</span></div>
+        <div class="r"><span class="l">bee@bouncer.mx</span><span class="ch" style="color:#c64343;">✕</span></div>
+        <div class="r act"><span class="l">+ add email…</span></div>
+      </div>
+      <div class="foot">changes apply at cloudflare when you leave this screen</div>
+    </div>
+  </div><div class="cap">who — mode picker + allowlist as rows</div></div>
+
+  <div><div class="ph">
+    <div class="nav"><span class="back">‹ access</span><span class="ttl">who</span><span class="navact">save</span></div>
+    <div class="inner" style="padding-top:14px;">
+      <div class="grp">
+        <div class="r sel"><span class="l" style="color:#343b58;">anyone at these domains</span></div>
+        <div class="r unsel"><span class="l">these people</span></div>
+      </div>
+      <div class="grp">
+        <div class="r"><span class="l">bouncer.mx</span><span class="ch" style="color:#c64343;">✕</span></div>
+        <div class="r"><span class="inp">corp.co<span class="cursor">&nbsp;</span></span></div>
+      </div>
+    </div>
+  </div><div class="cap">who — domains mode, adding an entry inline</div></div>
+</div>
+
+<h3 class="fl">4 · Logs, edit, remove</h3>
+<div class="flow">
+  <div><div class="ph">
+    <div class="nav"><span class="back">‹ ledger</span><span class="ttl">logs</span><span class="x">✕</span></div>
+    <div class="inner" style="padding-top:14px;">
+      <div class="logbox" style="min-height:150px;">bun: error: connect ECONNREFUSED<br>&nbsp;&nbsp;at tcpConnect (node:net)<br>exited with code 1<br>launchd: respawning in 10s<br>bun: error: connect ECONNREFUSED<br>exited with code 1</div>
+      <div class="grp" style="margin-top:8px;">
+        <div class="r act"><span class="l">copy all</span></div>
+      </div>
+      <div class="foot">last 200 lines of stderr, newest at the bottom · live</div>
+    </div>
+  </div><div class="cap">logs — full tail, the stderr modal dies</div></div>
+
+  <div><div class="ph">
+    <div class="nav"><span class="back">‹ orbit</span><span class="ttl">edit app</span><span class="navact">save</span></div>
+    <div class="inner" style="padding-top:14px;">
+      <div class="grp">
+        <div class="r"><span class="l">name</span><span class="inp" style="max-width:120px;">orbit</span></div>
+        <div class="r"><span class="l">base port</span><span class="inp" style="max-width:120px;">11007</span></div>
+      </div>
+      <div class="grp">
+        <div class="r"><span class="l">command</span><span class="inp" style="max-width:130px; font-size:10.5px;">bun src/server.ts</span></div>
+        <div class="r"><span class="l">directory</span><span class="inp" style="max-width:130px; font-size:10.5px;">~/code/orbit</span></div>
+      </div>
+      <div class="foot">command + directory only exist for managed apps — external apps show name and port only</div>
+    </div>
+  </div><div class="cap">edit — fields as grouped rows, save in nav</div></div>
+
+  <div><div class="ph">
+    <div class="nav"><span class="back" style="visibility:hidden;">‹</span><span class="ttl">orbit</span><span class="x">✕</span></div>
+    <div class="stat"><span class="dot g"></span>200 in 18ms · running pid 5311</div>
+    <div class="inner" style="filter:blur(.4px); opacity:.7;">
+      <div class="grp"><div class="r"><span class="l">public</span><span class="sw"></span></div></div>
+      <div class="grp">
+        <div class="r"><span class="l">dev port</span><span class="v">3007 · override</span><span class="ch">›</span></div>
+        <div class="r"><span class="l">access</span><span class="v">password · sign-in</span><span class="ch">›</span></div>
+      </div>
+    </div>
+    <div class="sheetdim"><div class="sheet">
+      <div class="msg">remove orbit? its route, launchd service, and access config are deleted. the code stays.</div>
+      <div class="grp"><div class="r danger"><span class="l">remove app</span></div></div>
+      <div class="grp"><div class="r" style="justify-content:center;"><span class="l" style="flex:none; color:#2e7de9;">cancel</span></div></div>
+    </div></div>
+  </div><div class="cap">remove — action sheet over the root, states the blast radius</div></div>
+</div>
+
+<h3 class="fl">Rules the atlas encodes</h3>
+<ul style="font-size:14px; line-height:1.8; margin-left:18px;">
+  <li><strong>Same skeleton per row kind</strong> — apps always show public / nav / actions / danger; services and the tunnel show reduced roots. No layout shift between apps.</li>
+  <li><strong>Editing always gets its own screen</strong> with <code>save</code> in the nav bar and inputs in grouped rows — never inline editing on a reading screen.</li>
+  <li><strong>Destructive = red row, then action sheet</strong> stating the blast radius (remove app); remove password is a red row inside the password screen, no sheet (recoverable).</li>
+  <li><strong>Errors ride the surface they belong to</strong>: sync failure is a banner on the root; crash output turns the logs hint red.</li>
+  <li><strong>Transient states replace their trigger</strong> — restart row becomes a spinner row; nothing else moves.</li>
+</ul>
+
+<div class="options" style="margin-top:18px;">
+  <div class="option" data-choice="atlas-approved" onclick="toggleSelect(this)">
+    <div class="letter">✓</div>
+    <div class="content"><h3>Atlas approved — lock the drawer design</h3><p>Next: the full-board composite (table + this drawer), then write the spec.</p></div>
+  </div>
+  <div class="option" data-choice="atlas-iterate" onclick="toggleSelect(this)">
+    <div class="letter">↻</div>
+    <div class="content"><h3>Iterate specific screens</h3><p>Name the screens that are off.</p></div>
+  </div>
+</div>

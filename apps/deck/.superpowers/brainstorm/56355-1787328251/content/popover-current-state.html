@@ -1,0 +1,59 @@
+<h2>Devport popover — where it stands right now</h2>
+<p class="subtitle">This is the uncommitted branch build, captured fresh (fixture data, orbit row). Old hover-pill shown for reference. Below: what I see wrong, click everything you want us to tackle.</p>
+
+<div class="section">
+  <div class="label">Zoomed: popover open on orbit's DEV chip (2×)</div>
+  <div style="border:1px solid #ccc; border-radius:8px; overflow:hidden; width:640px; max-width:100%; height:260px; position:relative; background:#e2e2e6;">
+    <img src="/files/popover-capture.png" style="position:absolute; width:2560px; max-width:none; left:-740px; top:-630px;">
+  </div>
+</div>
+
+<div class="section">
+  <div class="label">Full board with popover open</div>
+  <div class="mockup">
+    <div class="mockup-body" style="padding:0;">
+      <img src="/files/popover-capture.png" style="max-width:100%; display:block;">
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="label">Previous version (hover pill — what's live today)</div>
+  <div style="border:1px solid #ccc; border-radius:8px; overflow:hidden; width:640px; max-width:100%; height:200px; position:relative; background:#e2e2e6;">
+    <img src="/files/pill-previous.png" style="position:absolute; width:2560px; max-width:none; left:-740px; top:-600px;">
+  </div>
+</div>
+
+<h3>What I see wrong in the new popover</h3>
+<div class="options" data-multiselect>
+  <div class="option" data-choice="focus-tooltip" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Stray "revert to 11007" tooltip on open</h3>
+      <p>The popover moves focus to the revert button, and kit tooltips show on focus — so a tooltip hangs below the popover the moment it opens. Worst artifact in the shot.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="clipped-sliver" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Clipped fragment at the popover's top-right</h3>
+      <p>A sliver of something (looks like the DEV chip's own tooltip, clipped by the table's overflow container) pokes out beside the health badge.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="visual-design" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>The popover itself is plain / cramped</h3>
+      <p>Grey box, "normally 11007" label, revert + switch jammed on one row. Functional, but not obviously better-looking than what it replaced. Worth a design pass on its content.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="placement" onclick="toggleSelect(this)">
+    <div class="letter">D</div>
+    <div class="content">
+      <h3>Placement / anchoring</h3>
+      <p>It opens below-left of the chip and floats over the section heading. Possibly fine (popovers overlay), but check it feels anchored to the chip.</p>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle">Tests are all green (304 unit, 43 DOM, 14/14 pixel) — this is purely a design question now. Select what bothers you, and tell me in the terminal anything on the board beyond the popover that's on your "mess" list.</p>

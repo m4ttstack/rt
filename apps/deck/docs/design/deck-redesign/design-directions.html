@@ -1,0 +1,125 @@
+<style>
+  .tk { font-family: ui-monospace, "SF Mono", Menlo, monospace; background:#e1e2e7; color:#4c505e; border:1px solid #c8cad1; border-radius:8px; padding:14px; font-size:12px; line-height:1.5; }
+  .tk .hd { display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; }
+  .tk .ttl { font-size:18px; font-weight:700; color:#343b58; }
+  .tk .btn { border:1px solid #c8cad1; background:#eaebef; border-radius:5px; padding:2px 8px; font-size:11px; color:#343b58; display:inline-block; }
+  .tk .btn.acc { color:#2e7de9; border-color:#2e7de9; }
+  .tk .stats { color:#7a7f8d; margin:6px 0 10px; }
+  .tk table { width:100%; border-collapse:collapse; }
+  .tk th { text-align:left; font-size:10px; letter-spacing:.08em; color:#8990a3; border-bottom:1px solid #c8cad1; padding:4px 8px; }
+  .tk td { padding:6px 8px; border-bottom:1px solid #d4d6dd; vertical-align:middle; }
+  .tk .site { color:#343b58; font-weight:700; }
+  .tk .dim { color:#9aa0b0; }
+  .tk .b { display:inline-block; border-radius:999px; padding:1px 8px; font-size:10px; }
+  .tk .b.ok { background:#d5e0c8; color:#587539; }
+  .tk .b.bad { background:#f6cdd4; color:#c64343; }
+  .tk .b.warn { background:#f2dcc0; color:#8c6c3e; }
+  .tk .b.info { background:#ccd7f0; color:#2e7de9; }
+  .tk .sw { display:inline-block; width:26px; height:14px; border-radius:999px; background:#2e7de9; position:relative; vertical-align:middle; }
+  .tk .sw::after { content:""; position:absolute; right:2px; top:2px; width:10px; height:10px; border-radius:50%; background:#fff; }
+  .tk .sw.off { background:#b8bcc7; } .tk .sw.off::after { right:auto; left:2px; }
+  .tk .dot { display:inline-block; width:8px; height:8px; border-radius:50%; vertical-align:middle; margin-right:6px; }
+  .tk .dot.g { background:#587539; } .tk .dot.r { background:#c64343; } .tk .dot.y { background:#b8863b; }
+  .tk .chev { color:#9aa0b0; float:right; }
+  .drawer { background:#f3f4f7; border:1px solid #c8cad1; border-radius:8px; padding:12px; font-size:12px; }
+  .drawer h5 { font-size:10px; letter-spacing:.08em; color:#8990a3; text-transform:uppercase; margin:12px 0 4px; border-bottom:1px solid #dcdee5; padding-bottom:2px; }
+  .drawer h5:first-child { margin-top:0; }
+  .drawer .row { display:flex; justify-content:space-between; align-items:center; padding:3px 0; }
+  .appcard { background:#eaebef; border:1px solid #c8cad1; border-radius:8px; padding:10px 12px; }
+</style>
+
+<h2>Deck redesign — three directions from first principles</h2>
+<p class="subtitle">The jobs deck serves, in order of frequency: ① "is my fleet healthy?" (glance) · ② "flip this public/private" (one click) · ③ "why is X broken?" (drill in) · ④ port wrangling & wiring new apps (rare). My diagnosis of the current mess: <strong>every rare job's controls are crammed inline into the status table</strong> — hover reveals, chip popovers, glyph mysteries, tooltip clipping all descend from that one decision. All three directions keep the Tokyo look; they differ in where job ③/④ controls live.</p>
+
+<div class="cards" style="display:block;">
+
+<div class="card" data-choice="drawer" onclick="toggleSelect(this)" style="margin-bottom:24px;">
+  <div class="card-body">
+    <h3>A — Status table + detail drawer &nbsp;<span style="color:#2e7de9;">(my recommendation)</span></h3>
+    <p>The table becomes pure status plus the single high-frequency action (public switch). Clicking a row slides a drawer out on the right that owns <em>everything else</em> for that app: dev port, access, logs, restart/edit/remove — labeled sections with room to breathe, no popovers, no hover reveals, no icon guessing, nothing clipped by table overflow. The devport popover we just built dissolves into a proper "dev port" section.</p>
+  </div>
+  <div class="card-image" style="padding:12px; background:#fff;">
+    <div style="display:flex; gap:12px; align-items:flex-start;">
+      <div class="tk" style="flex:1.4;">
+        <div class="hd"><span class="ttl">Deck</span><span><span class="btn">reload proxy</span> <span class="btn acc">+ add app</span></span></div>
+        <div class="stats">3/4 healthy · 3 public · 1 protected · next 11012</div>
+        <table>
+          <tr><th>site</th><th>port</th><th>health</th><th>public</th><th></th></tr>
+          <tr><td class="site"><span class="dot g"></span>atlas</td><td>11001</td><td><span class="b ok">200 34ms</span></td><td><span class="sw"></span></td><td class="dim">›</td></tr>
+          <tr><td class="site"><span class="dot r"></span>ledger <span class="b bad">sync failed</span></td><td>11005</td><td><span class="b bad">unreachable</span></td><td><span class="sw off"></span></td><td class="dim">›</td></tr>
+          <tr style="background:#d8dcf0;"><td class="site"><span class="dot g"></span>orbit</td><td>3007 <span class="b info">dev</span></td><td><span class="b ok">200 18ms</span></td><td><span class="sw"></span></td><td class="dim">›</td></tr>
+        </table>
+      </div>
+      <div class="drawer" style="flex:1; font-family:ui-monospace,Menlo,monospace;">
+        <div class="row"><strong style="color:#343b58;">orbit.mattstack ↗</strong><span style="color:#9aa0b0;">✕</span></div>
+        <div class="row dim" style="color:#7a7f8d;">running pid 5311 · 200 in 18ms</div>
+        <h5>dev port</h5>
+        <div class="row"><span>override <strong>3007</strong> · normally 11007</span><span class="btn">revert</span></div>
+        <div class="row"><span>public follows dev port</span><span class="sw off"></span></div>
+        <h5>access</h5>
+        <div class="row"><span>password set · 2 emails allowed</span><span class="btn">manage</span></div>
+        <h5>logs</h5>
+        <div style="background:#e1e2e7; border-radius:5px; padding:6px; color:#7a7f8d; font-size:10px;">[hmr] connect failed ×3<br>listening on :3007</div>
+        <h5>service</h5>
+        <div class="row"><span class="btn">restart</span><span class="btn">edit</span><span class="btn" style="color:#c64343;">remove</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="pros-cons">
+      <div class="pros"><h4>Pros</h4><ul><li>Structurally eliminates every jank class we've been whack-a-moling</li><li>Room for richer detail later (health history, log tail) without touching rows</li><li>Table gets dramatically calmer — job ① improves too</li></ul></div>
+      <div class="cons"><h4>Cons</h4><ul><li>Biggest build: new Drawer recipe in tui-kit + board restructure</li><li>Job ④ becomes two clicks (row, then section) instead of one hover</li></ul></div>
+    </div>
+  </div>
+</div>
+
+<div class="card" data-choice="cards" onclick="toggleSelect(this)" style="margin-bottom:24px;">
+  <div class="card-body">
+    <h3>B — Fleet cards</h3>
+    <p>Drop the table. Each app is a card in a responsive grid: big health state, name, public toggle, and a compact detail area per card. Scales visually like a status wall / ops dashboard.</p>
+  </div>
+  <div class="card-image" style="padding:12px; background:#fff;">
+    <div class="tk">
+      <div class="hd"><span class="ttl">Deck</span><span><span class="btn">reload proxy</span> <span class="btn acc">+ add app</span></span></div>
+      <div class="stats">3/4 healthy · 3 public · 1 protected</div>
+      <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px;">
+        <div class="appcard"><div><span class="dot g"></span><strong style="color:#343b58;">atlas</strong> <span class="sw" style="float:right;"></span></div><div class="dim" style="margin-top:6px;">11001 · 200 34ms<br>running pid 5123</div></div>
+        <div class="appcard" style="border-color:#c64343;"><div><span class="dot r"></span><strong style="color:#343b58;">ledger</strong> <span class="sw off" style="float:right;"></span></div><div class="dim" style="margin-top:6px;">11005 · <span style="color:#c64343;">unreachable</span><br><span style="color:#c64343;">cloudflare sync failed</span></div></div>
+        <div class="appcard"><div><span class="dot g"></span><strong style="color:#343b58;">orbit</strong> <span class="sw" style="float:right;"></span></div><div class="dim" style="margin-top:6px;">3007 <span class="b info">dev</span> · 200 18ms<br>running pid 5311</div></div>
+      </div>
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="pros-cons">
+      <div class="pros"><h4>Pros</h4><ul><li>Best glanceability of all three — broken apps visually shout</li><li>Natural home for per-app controls (card flip/expand)</li></ul></div>
+      <div class="cons"><h4>Cons</h4><ul><li>Loses column scanning (compare ports/pids across apps)</li><li>Density drops hard past ~8 apps; your fleet will grow</li><li>Furthest from the current mental model</li></ul></div>
+    </div>
+  </div>
+</div>
+
+<div class="card" data-choice="inline" onclick="toggleSelect(this)">
+  <div class="card-body">
+    <h3>C — Refined inline table</h3>
+    <p>Keep everything inline but systematize it: actions always visible in a fixed rail (no hover reveal), port override as an expanding sub-row (no popover), labeled access text instead of glyph pairs. Smallest change from today.</p>
+  </div>
+  <div class="card-image" style="padding:12px; background:#fff;">
+    <div class="tk">
+      <table>
+        <tr><th>site</th><th>port</th><th>health</th><th>launchd</th><th>public</th><th>access</th><th>actions</th></tr>
+        <tr><td class="site">atlas</td><td>11001</td><td><span class="b ok">200 34ms</span></td><td class="dim">running 5123</td><td><span class="sw"></span></td><td class="dim">open</td><td><span class="btn">↻</span> <span class="btn">✎</span> <span class="btn">🗑</span></td></tr>
+        <tr><td class="site">orbit</td><td>3007 <span class="b info">dev ▾</span></td><td><span class="b ok">200 18ms</span></td><td class="dim">running 5311</td><td><span class="sw"></span></td><td class="dim">password</td><td><span class="btn">↻</span> <span class="btn">✎</span> <span class="btn">🗑</span></td></tr>
+        <tr><td colspan="7" style="background:#eaebef; color:#7a7f8d;">&nbsp;&nbsp;└ dev override 3007 · normally 11007 · <span class="btn">revert</span> · public follows dev <span class="sw off"></span></td></tr>
+      </table>
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="pros-cons">
+      <div class="pros"><h4>Pros</h4><ul><li>Cheapest; ships this week</li><li>One-click access to everything stays</li></ul></div>
+      <div class="cons"><h4>Cons</h4><ul><li>Doesn't fix the root conflation — rows stay busy, seven columns of mixed status+controls</li><li>Tooltip/overflow clipping hazards remain in play</li><li>We keep polishing individual cells forever</li></ul></div>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<p class="subtitle" style="margin-top:16px;">Click a direction (or tell me a hybrid). Assumptions I'm carrying unless you object: Tokyo aesthetic stays; gateway pages (just rebuilt, zero-JS) are out of scope; "services without routes" and "cloudflare tunnel" sections ride along with whichever direction wins.</p>

@@ -1,0 +1,135 @@
+<style>
+  .tk { font-family: ui-monospace, "SF Mono", Menlo, monospace; background:#e1e2e7; color:#4c505e; border:1px solid #c8cad1; border-radius:8px; padding:16px; font-size:12px; line-height:1.55; }
+  .tk .hd { display:flex; justify-content:space-between; align-items:baseline; }
+  .tk .ttl { font-size:20px; font-weight:700; color:#343b58; }
+  .tk .btn { border:1px solid #c8cad1; background:#eaebef; border-radius:5px; padding:2px 9px; font-size:11px; color:#343b58; display:inline-block; }
+  .tk .btn.acc { color:#2e7de9; border-color:#9ab6e8; }
+  .tk .btn.danger { color:#c64343; }
+  .tk .btn.quiet { border-color:transparent; background:transparent; color:#8990a3; }
+  .tk .stats { color:#7a7f8d; margin:8px 0 14px; }
+  .tk .stats b { color:#587539; font-weight:600; }
+  .tk table { width:100%; border-collapse:collapse; }
+  .tk th { text-align:left; font-size:10px; letter-spacing:.08em; color:#8990a3; border-bottom:1px solid #c8cad1; padding:4px 8px; font-weight:600; }
+  .tk td { padding:7px 8px; border-bottom:1px solid #d4d6dd; vertical-align:middle; }
+  .tk .site { color:#343b58; font-weight:700; }
+  .tk .site .ext { color:#9aa0b0; font-weight:400; }
+  .tk .dim { color:#9aa0b0; }
+  .tk .b { display:inline-block; border-radius:999px; padding:1px 8px; font-size:10px; white-space:nowrap; }
+  .tk .b.ok { background:#d5e0c8; color:#587539; }
+  .tk .b.bad { background:#f6cdd4; color:#c64343; }
+  .tk .b.info { background:#ccd7f0; color:#2e7de9; }
+  .tk .b.tag { background:#dcdee5; color:#7a7f8d; letter-spacing:.05em; font-size:9px; }
+  .tk .sw { display:inline-block; width:26px; height:14px; border-radius:999px; background:#2e7de9; position:relative; vertical-align:middle; }
+  .tk .sw::after { content:""; position:absolute; right:2px; top:2px; width:10px; height:10px; border-radius:50%; background:#fff; }
+  .tk .sw.off { background:#b8bcc7; } .tk .sw.off::after { right:auto; left:2px; }
+  .tk .dot { display:inline-block; width:8px; height:8px; border-radius:50%; vertical-align:middle; margin-right:7px; }
+  .tk .dot.g { background:#587539; } .tk .dot.r { background:#c64343; } .tk .dot.y { background:#b8863b; }
+  .tk .err { color:#c64343; font-size:11px; padding-left:15px; }
+  .tk .sec { font-size:15px; font-weight:700; color:#343b58; margin:18px 0 6px; }
+  .tk .rail { white-space:nowrap; opacity:.55; }
+  .tk tr:hover .rail { opacity:1; }
+  .drawer { background:#f3f4f7; border:1px solid #c8cad1; border-left:3px solid #2e7de9; border-radius:8px; padding:14px; font-size:12px; font-family:ui-monospace,Menlo,monospace; color:#4c505e; }
+  .drawer h5 { font-size:10px; letter-spacing:.08em; color:#8990a3; text-transform:uppercase; margin:14px 0 6px; border-bottom:1px solid #dcdee5; padding-bottom:3px; }
+  .drawer h5:first-of-type { margin-top:10px; }
+  .drawer .row { display:flex; justify-content:space-between; align-items:center; padding:3px 0; gap:8px; }
+  .drawer .input { border:1px solid #c8cad1; background:#fff; border-radius:5px; padding:2px 8px; color:#9aa0b0; flex:1; }
+  .subrow { background:#eaebef; }
+</style>
+
+<h2>Round 2 — the fork is smaller than it looked</h2>
+<p class="subtitle">Refining A and C revealed they share the same table: status-first columns, leading health dot, calm right side. What actually differs is <strong>where per-app controls live</strong> — a drawer, or in-place expansion. Both full boards below, then the choice.</p>
+
+<div class="section">
+  <div class="label">Shared table refinements (both directions get these)</div>
+  <ul style="font-size:14px; line-height:1.7; margin:6px 0 0 18px;">
+    <li><strong>Leading health dot</strong> on the site name — job ① reads down the left edge, no mid-row badge hunting</li>
+    <li><strong>Columns regrouped:</strong> identity (site) · facts (port, health, service) · controls (public + …) — status left, action right, one divider of whitespace</li>
+    <li><strong>Access glyph pair → text state</strong>: "open" (dim) / "password" / "2 emails" — reads without hovering</li>
+    <li><strong>Error text stays inline</strong> under the site name (it's status, not control) but in one consistent slot</li>
+    <li>Stat strip keeps its one-line text form, healthy count bolded green when all-green, red fraction otherwise</li>
+  </ul>
+</div>
+
+<div class="cards" style="display:block; margin-top:20px;">
+
+<div class="card" data-choice="drawer-refined" onclick="toggleSelect(this)" style="margin-bottom:26px;">
+  <div class="card-body">
+    <h3>A′ — Drawer, refined</h3>
+    <p>Row = status + public switch + restart (kept inline — it's your #3 most-used action and one click matters when something's down). Everything else in the drawer: click row or press <code>enter</code>. Access management moves <em>into</em> the drawer (password + email list inline), retiring the AccessModal. Stderr tail lives there too, with "open full" for the modal. Esc or ✕ closes; the open row stays highlighted.</p>
+  </div>
+  <div class="card-image" style="padding:12px; background:#fff;">
+    <div style="display:flex; gap:12px; align-items:flex-start;">
+      <div class="tk" style="flex:1.5;">
+        <div class="hd"><span class="ttl">Deck</span><span><span class="btn">reload proxy</span> <span class="btn acc">+ add app</span></span></div>
+        <div class="stats"><span style="color:#c64343;">3/4 healthy</span> · 3 public · 1 protected · next 11012</div>
+        <table>
+          <tr><th>site</th><th>port</th><th>health</th><th>service</th><th style="border-left:12px solid transparent;">public</th><th></th><th></th></tr>
+          <tr><td class="site"><span class="dot g"></span>atlas<span class="ext">.mattstack ↗</span> <span class="b tag">MANAGED</span></td><td>11001</td><td><span class="b ok">200 34ms</span></td><td class="dim">pid 5123</td><td style="border-left:12px solid transparent;"><span class="sw"></span></td><td><span class="btn quiet">↻</span></td><td class="dim">›</td></tr>
+          <tr><td class="site"><span class="dot g"></span>forecast<span class="ext">.mattstack ↗</span> <span class="b tag">THIS BOARD</span></td><td>11003</td><td><span class="b ok">200 51ms</span></td><td class="dim">pid 5140</td><td style="border-left:12px solid transparent;"><span class="sw"></span></td><td><span class="btn quiet">↻</span></td><td class="dim">›</td></tr>
+          <tr><td class="site"><span class="dot r"></span>ledger<span class="ext">.mattstack</span><br><span class="err">▲ cloudflare sync failed · 502</span></td><td>11005</td><td><span class="b bad">unreachable</span></td><td class="dim" style="color:#c64343;">exit 1</td><td style="border-left:12px solid transparent;"><span class="sw off"></span></td><td><span class="btn quiet">↻</span></td><td class="dim">›</td></tr>
+          <tr style="background:#d8dcf0;"><td class="site"><span class="dot g"></span>orbit<span class="ext">.mattstack ↗</span></td><td>3007 <span class="b info">dev</span></td><td><span class="b ok">200 18ms</span></td><td class="dim">pid 5311</td><td style="border-left:12px solid transparent;"><span class="sw"></span></td><td><span class="btn quiet">↻</span></td><td class="dim">›</td></tr>
+        </table>
+        <div class="sec">services without routes</div>
+        <table><tr><td class="site"><span class="dot r"></span>stray-agent</td><td class="dim">no route</td><td><span class="b bad">stopped</span></td><td class="dim">exit 1</td><td></td><td><span class="btn quiet">↻</span></td><td class="dim">›</td></tr></table>
+        <div class="sec">cloudflare tunnel</div>
+        <table><tr><td class="site"><span class="dot g"></span>cloudflared</td><td class="dim">*.mattstack</td><td><span class="b ok">up</span></td><td class="dim">pid 4200</td><td></td><td><span class="btn quiet">↻</span></td><td class="dim">›</td></tr></table>
+      </div>
+      <div class="drawer" style="flex:1;">
+        <div class="row"><strong style="color:#343b58; font-size:14px;">orbit<span style="color:#9aa0b0; font-weight:400;">.mattstack ↗</span></strong><span style="color:#9aa0b0;">esc ✕</span></div>
+        <div class="row" style="color:#7a7f8d;"><span><span class="dot g" style="width:7px;height:7px;"></span>200 in 18ms · running pid 5311</span><span class="btn">↻ restart</span></div>
+        <h5>dev port</h5>
+        <div class="row"><span>override <strong style="color:#343b58;">3007</strong> · normally 11007</span><span class="btn">revert</span></div>
+        <div class="row"><span class="dim">public follows dev port</span><span class="sw off"></span></div>
+        <h5>access</h5>
+        <div class="row"><span>password</span><span>set · <span class="btn quiet" style="color:#2e7de9;">change</span> <span class="btn quiet" style="color:#c64343;">clear</span></span></div>
+        <div class="row"><span>emails</span><span class="dim">matt@… +1 · <span style="color:#2e7de9;">edit</span></span></div>
+        <h5>stderr <span style="float:right; color:#2e7de9; text-transform:none;">open full</span></h5>
+        <div style="background:#e1e2e7; border-radius:5px; padding:7px; color:#7a7f8d; font-size:10px; line-height:1.5;">[vite] hmr connect failed ×3<br>listening on :3007</div>
+        <h5>app</h5>
+        <div class="row"><span><span class="btn">✎ edit</span></span><span class="btn danger">🗑 remove</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card" data-choice="inline-refined" onclick="toggleSelect(this)" style="margin-bottom:8px;">
+  <div class="card-body">
+    <h3>C′ — Inline table, refined</h3>
+    <p>Same table, plus an access column and an always-visible action rail — quiet at 55% opacity, full strength on row hover (affordance without shout, nothing hidden). The dev chip's <code>▾</code> expands a sub-row with the override controls in place; access text opens the existing modal. No drawer, no popover.</p>
+  </div>
+  <div class="card-image" style="padding:12px; background:#fff;">
+    <div class="tk">
+      <div class="hd"><span class="ttl">Deck</span><span><span class="btn">reload proxy</span> <span class="btn acc">+ add app</span></span></div>
+      <div class="stats"><span style="color:#c64343;">3/4 healthy</span> · 3 public · 1 protected · next 11012</div>
+      <table>
+        <tr><th>site</th><th>port</th><th>health</th><th>service</th><th style="border-left:12px solid transparent;">public</th><th>access</th><th>actions</th></tr>
+        <tr><td class="site"><span class="dot g"></span>atlas<span class="ext">.mattstack ↗</span> <span class="b tag">MANAGED</span></td><td>11001</td><td><span class="b ok">200 34ms</span></td><td class="dim">pid 5123</td><td style="border-left:12px solid transparent;"><span class="sw"></span></td><td class="dim">password</td><td class="rail"><span class="btn quiet">↻</span><span class="btn quiet">✎</span><span class="btn quiet">🗑</span></td></tr>
+        <tr><td class="site"><span class="dot r"></span>ledger<span class="ext">.mattstack</span><br><span class="err">▲ cloudflare sync failed · 502</span></td><td>11005</td><td><span class="b bad">unreachable</span></td><td class="dim" style="color:#c64343;">exit 1</td><td style="border-left:12px solid transparent;"><span class="sw off"></span></td><td class="dim">open</td><td class="rail"><span class="btn quiet">↻</span><span class="btn quiet">✎</span><span class="btn quiet">🗑</span></td></tr>
+        <tr><td class="site"><span class="dot g"></span>orbit<span class="ext">.mattstack ↗</span></td><td>3007 <span class="b info">dev ▾</span></td><td><span class="b ok">200 18ms</span></td><td class="dim">pid 5311</td><td style="border-left:12px solid transparent;"><span class="sw"></span></td><td class="dim">2 emails</td><td class="rail"><span class="btn quiet">↻</span><span class="btn quiet">✎</span><span class="btn quiet">🗑</span></td></tr>
+        <tr class="subrow"><td colspan="7" style="color:#7a7f8d; padding-left:24px;">dev override <strong style="color:#343b58;">3007</strong> · normally 11007 &nbsp; <span class="btn">revert</span> &nbsp;·&nbsp; public follows dev <span class="sw off"></span></td></tr>
+      </table>
+      <div class="sec">services without routes</div>
+      <table><tr><td class="site"><span class="dot r"></span>stray-agent</td><td class="dim">no route</td><td><span class="b bad">stopped</span></td><td class="dim">exit 1</td><td></td><td></td><td class="rail"><span class="btn quiet">↻</span></td></tr></table>
+      <div class="sec">cloudflare tunnel</div>
+      <table><tr><td class="site"><span class="dot g"></span>cloudflared</td><td class="dim">*.mattstack</td><td><span class="b ok">up</span></td><td class="dim">pid 4200</td><td></td><td></td><td class="rail"><span class="btn quiet">↻</span></td></tr></table>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<h3 style="margin-top:22px;">The choice</h3>
+<div class="options">
+  <div class="option" data-choice="pick-drawer" onclick="toggleSelect(this)">
+    <div class="letter">A′</div>
+    <div class="content"><h3>Drawer</h3><p>Calmest rows, one home for all per-app depth, retires AccessModal + popover + stderr-from-row. My pick: it's the only one that gets better as apps grow richer.</p></div>
+  </div>
+  <div class="option" data-choice="pick-inline" onclick="toggleSelect(this)">
+    <div class="letter">C′</div>
+    <div class="content"><h3>Inline</h3><p>Everything one click from the surface, no new kit recipe. Right if you value the flat all-visible cockpit over calm.</p></div>
+  </div>
+  <div class="option" data-choice="iterate" onclick="toggleSelect(this)">
+    <div class="letter">↻</div>
+    <div class="content"><h3>Neither yet — iterate again</h3><p>Tell me what feels off in either and I'll do another round.</p></div>
+  </div>
+</div>

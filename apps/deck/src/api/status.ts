@@ -1,0 +1,280 @@
+import {
+  checkHealth,
+  joinApps,
+  listenerFor,
+  orphanServices,
+  publicDomainFor,
+  readRoutes,
+  readServices,
+  tailFile,
+  servicePrefixes,
+  shortLabel,
+  type Health,
+  type LaunchdService,
+  MATTSTACK_TLD,
+} from "../../core/discover.ts";
+import { getAppSettings, type PortOverride } from "../../core/settings.ts";
+import { listRecords, type SyncIssue, type RemoteState } from "../registry/records.ts";
+import { commandKeysFor, readLinkedManifest } from "../registry/serve-shape.ts";
+import { allocatePort } from "../registry/allocate.ts";
+import { getOAuth, type OAuth } from "../edge/oauth.ts";
+import { getPlatformSettings } from "./platform-settings.ts";
+import { isPlatformManagedBy } from "../services/manager.ts";
+import { TUNNEL_LABEL } from "../edge/domain.ts";
+import { tunnelRowHealth } from "../edge/edge-health.ts";
+import { edgeDrift } from "../edge/edge-reconcile.ts";
+
+export interface BuildStatusOpts {
+  requestHost?: string;
+  port: number;
+  canaryPort: number;
+  proxyFreshness: "fresh" | "stale" | "unknown";
+  autoHeal: { at: number; ok: boolean | null } | null;
+  /** Gates `StatusRow.commands`/`devLink` for managed apps; user apps are never gated. */
+  devMode?: boolean;
+  /** Fake `/ready` fetch for tests; production reads the connector's local metrics endpoint. */
+  readyFetch?: typeof fetch;
+  /** Drift flags from the edge reconcile loop; tests inject, production reads edgeDrift(). */
+  edgeDrift?: () => { tunnelGone: boolean };
+}
+
+export interface StatusService {
+  label: string;
+  short: string;
+  pid: number | null;
+  lastExitStatus: number | null;
+  unmanaged: { pid: number; command: string } | null;
+  /** Tail of recent stderr, populated only when the service looks unhealthy. */
+  stderr: string[];
+}
+
+export interface StatusRow {
+  name: string;
+  /** TLD the row's identity renders under (ownership-driven locally, the
+      tunnel domain when served publicly); null for rows with no hostname
+      identity (orphan services, tunnels). */
+  displayTld: string | null;
+  port: number | null;
+  url: string | null;
+  publicUrl: string | null;
+  health: Health | null;
+  service: StatusService | null;
+  published: boolean;
+  hasPassword: boolean;
+  /** A cloudflared tunnel service (infra), rendered in its own section. */
+  isTunnel: boolean;
+  override: PortOverride | null;
+  /** Whether public traffic follows this app's override instead of its base port. */
+  publicFollowsOverride: boolean;
+  /**
+   * The board's own row: never port-editable. True for the board's PORT, for
+   * CANARY_PORT (its route points at the canary listener mid-freshness-check),
+   * and for the port on the platform's own registry record, which after
+   * self-hosting bootstrap may be neither of those.
+   */
+  self: boolean;
+  /** Registry owner, or null for a route/service the registry has no record for (pre-migrate legacy). */
+  managedBy: string | null;
+  /**
+   * URL of the app's icon (the mattstack mark) for the board to render, or null.
+   * The platform's own row resolves to the bundled deck mark at /favicon.svg;
+   * other managed products resolve to their ingested icon; user apps get null.
+   */
+  icon: string | null;
+  issues: SyncIssue[];
+  /**
+   * The registry record's structural shape, for the board's edit dialog to
+   * pre-fill. Null when there is no record (pre-migrate legacy row). This is
+   * distinct from the top-level `record: SafeRecord` GET /api/v1/apps/:name
+   * already returns -- that one is unchanged.
+   *
+   * command/workingDirectory are local-only: they are null whenever the request
+   * arrived through a public host, whatever the record actually holds. The edit
+   * dialog that consumes them only renders under canManage (local), so it never
+   * misses them, while a public GET -- always allowed through, the 403 gate only
+   * covers mutations -- cannot carry them out. `kind` is not sensitive.
+   */
+  record: { kind: "service" | "external"; command: string[] | null; workingDirectory: string | null } | null;
+  oauth: OAuth;
+  /** Action-command names surfaced to the board: user apps always; managed apps per the dev gate. */
+  commands?: string[];
+  /** Managed rows in dev mode only: drives the board's Link source / fix link affordances. */
+  devLink?: "unlinked" | "linked" | "broken";
+  /** The linked source checkout, local-only (null through a public host), managed rows only. */
+  devDir?: string | null;
+  publicOrigin: "tunnel" | "railway";
+  remote: { status: RemoteState["status"]; url: string | null } | null;
+}
+
+export interface Status {
+  suffix: string;
+  canRestart: boolean;
+  canManage: boolean;
+  up: number;
+  total: number;
+  apps: StatusRow[];
+  orphans: StatusRow[];
+  nextPort: number | null;
+  /** True when the proxy is serving stale routes (its watcher has died). */
+  proxyStale: boolean;
+  /** The most recent automatic proxy restart; ok is null while it is running. */
+  autoHeal: { at: number; ok: boolean | null } | null;
+}
+
+export function serviceJson(
+  s: LaunchdService,
+  health: Health | null,
+  unmanaged: { pid: number; command: string } | null,
+): StatusService {
+  // Show logs when the row is in a bad state: an app that failed its health
+  // probe, or an unrouted service that isn't running.
+  const bad = health ? !health.ok : s.pid === null;
+  return {
+    label: s.label,
+    short: shortLabel(s.label, servicePrefixes(getPlatformSettings().legacyPrefixes)),
+    pid: s.pid,
+    lastExitStatus: s.lastExitStatus,
+    unmanaged,
+    stderr: bad ? tailFile(s.stderrPath, 12) : [],
+  };
+}
+
+export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
+  const [routes, services] = [readRoutes(), await readServices()];
+  const apps = joinApps(routes, services, opts.requestHost);
+  const publicDomain = publicDomainFor(opts.requestHost);
+  const orphans = orphanServices(apps, services);
+  const healths = await Promise.all(apps.map((a) => checkHealth(a.port)));
+
+  // One read of the registry, reused for the per-row join, the self lookup and
+  // the nextPort hint below.
+  const records = listRecords();
+  const recordsByName = new Map(records.map((r) => [r.name, r]));
+  // The platform's own registry record (once migrated) may sit at any port, so
+  // its row is "self" by matching that port rather than by name lookup.
+  const platformRecord = records.find((r) => isPlatformManagedBy(r.managedBy));
+
+  const appRows: StatusRow[] = await Promise.all(
+    apps.map(async (a, i) => {
+      const health = healths[i]!;
+      // A healthy route whose managed service is stopped means something else
+      // holds the port — name that unmanaged process instead of crying wolf.
+      const unmanaged =
+        health.ok && a.service && a.service.pid === null ? await listenerFor(a.port) : null;
+      const settings = getAppSettings(a.name);
+      const follows = settings.publicFollowsOverride ?? false;
+      const record = recordsByName.get(a.name);
+      // Ownership decides the displayed TLD: a managed record (managedBy set
+      // to anything but "user") is a mattstack product and surfaces as
+      // name.mattstack; user-added apps surface as name.localhost. Through a
+      // public tunnel the tunnel's domain is everyone's identity.
+      const owned = record?.managedBy != null && record.managedBy !== "user";
+      const displayTld = publicDomain ?? (owned ? MATTSTACK_TLD : "localhost");
+      return {
+        name: a.name,
+        displayTld,
+        port: a.port,
+        // The href must match the rendered identity: an owned app joins on
+        // whichever of its routes sorts first (often name.localhost), so the
+        // joined route's url would contradict the .mattstack the row displays.
+        url: `https://${a.name}.${displayTld}`,
+        publicUrl: a.publicUrl,
+        health,
+        service: a.service ? serviceJson(a.service, health, unmanaged) : null,
+        published: settings.published,
+        hasPassword: !!settings.passwordHash,
+        isTunnel: false,
+        override: settings.override ?? null,
+        publicFollowsOverride: follows,
+        // Also matches CANARY_PORT: during a freshness check the board's route
+        // points at its canary listener, and it is still the board's own row.
+        self:
+          a.port === opts.port ||
+          a.port === opts.canaryPort ||
+          (platformRecord !== undefined && a.port === platformRecord.port),
+        managedBy: record?.managedBy ?? null,
+        icon: record
+          ? isPlatformManagedBy(record.managedBy)
+            ? "/favicon.svg"
+            : record.icon
+              ? `/api/apps/${a.name}/icon`
+              : null
+          : null,
+        issues: record?.issues ?? [],
+        record: record
+          ? {
+              kind: record.kind,
+              command: publicDomain === null ? record.command ?? null : null,
+              workingDirectory: publicDomain === null ? record.workingDirectory ?? null : null,
+            }
+          : null,
+        oauth: getOAuth(a.name),
+        commands: record ? commandKeysFor(record, !!opts.devMode) : undefined,
+        devLink:
+          record && record.managedBy !== "user" && opts.devMode
+            ? readLinkedManifest(record).state
+            : undefined,
+        devDir:
+          record && record.managedBy !== "user"
+            ? (publicDomain === null ? record.dev?.workingDirectory ?? null : null)
+            : undefined,
+        publicOrigin: record?.remote?.status === "live" ? "railway" as const : "tunnel" as const,
+        remote: record?.remote ? { status: record.remote.status, url: record.remote.url ?? null } : null,
+      };
+    }),
+  );
+
+  const platform = getPlatformSettings();
+  const edgeService = orphans.find((s) => s.label === TUNNEL_LABEL);
+  const edgeHealth = edgeService && platform.tunnel
+    ? await tunnelRowHealth({
+        running: edgeService.pid !== null,
+        tunnelGone: (opts.edgeDrift ?? edgeDrift)().tunnelGone,
+        domain: platform.publicDomain,
+        fetchImpl: opts.readyFetch,
+      })
+    : null;
+
+  const orphanRows: StatusRow[] = orphans.map((s) => ({
+    name: shortLabel(s.label, servicePrefixes(getPlatformSettings().legacyPrefixes)),
+    displayTld: null,
+    port: null,
+    url: null,
+    publicUrl: null,
+    health: s.label === TUNNEL_LABEL ? edgeHealth : null,
+    // The tunnel's own health (may be pid!=null but disconnected) decides its stderr tail;
+    // every other orphan service still falls back to the pid-null check inside serviceJson.
+    service: serviceJson(s, s.label === TUNNEL_LABEL ? edgeHealth : null, null),
+    published: true,
+    hasPassword: false,
+    // cloudflared tunnels are infrastructure, not stray app services.
+    isTunnel: s.program.some((p) => p.includes("cloudflared")),
+    override: null,
+    publicFollowsOverride: false,
+    self: false,
+    managedBy: null,
+    icon: null,
+    issues: [],
+    record: null,
+    oauth: { mode: "off" },
+    publicOrigin: "tunnel" as const,
+    remote: null,
+  }));
+
+  return {
+    suffix: publicDomain ?? "localhost",
+    // Restart is a local-only control: never expose it through a public tunnel.
+    canRestart: publicDomain === null,
+    canManage: publicDomain === null,
+    up: healths.filter((h) => h.ok).length,
+    total: apps.length,
+    apps: appRows,
+    orphans: orphanRows,
+    // Advisory only, but it must not lie: use the SAME authority the actual
+    // registration path uses, so a record holding a port whose alias hasn't
+    // landed yet (or failed, leaving a SyncIssue) isn't advertised as free.
+    nextPort: allocatePort(records, routes, services),
+    proxyStale: opts.proxyFreshness === "stale",
+    autoHeal: opts.autoHeal,
+  };
+}

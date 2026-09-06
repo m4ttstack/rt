@@ -1,0 +1,135 @@
+import { dirname, join } from "path";
+import { mkdirSync } from "fs";
+import { readRoutes, readServices } from "../../core/discover.ts";
+import {
+  PLATFORM_LABEL, PLATFORM_NAME, LEGACY_PLATFORM_LABEL, LEGACY_PLATFORM_NAME,
+} from "../services/manager.ts";
+import { allocatePort } from "./allocate.ts";
+import { listRecords, getRecord, deleteRecord, putRecord } from "./records.ts";
+import { registerApp, reinstallSupervised, type Drivers } from "../api/register.ts";
+import { stateDir, logsDir } from "../api/state.ts";
+import { composeServicePath } from "../services/exec-env.ts";
+import { readDeckManifest } from "./deck-manifest.ts";
+
+export interface BootstrapResult {
+  port: number;
+  label: string;
+  aliases: string[];
+}
+
+/**
+ * Deck eats its own contract (ruled). This is the ONE legitimate self-write:
+ * the agent and route go in before the registry exists, then the record catches
+ * up immediately via the ordinary register flow in adopt mode. Everything after
+ * this moment goes through the API like any other app. Self-heal is launchd's
+ * KeepAlive; Deck cannot heal itself from inside.
+ */
+export async function bootstrapSelf(
+  drivers: Drivers,
+  opts: { execPath: string; entry: string | null; tlds: string[] },
+): Promise<BootstrapResult> {
+  // Local -> Deck rename (ruled): an upgrading machine's self-row may still
+  // be on disk under the pre-rename identity (name/managedBy "local"). Look
+  // for it under the new name first, then fall back to the old one, so its
+  // port is reused rather than re-allocated.
+  const existing = getRecord(PLATFORM_NAME) ?? getRecord(LEGACY_PLATFORM_NAME);
+  const port =
+    existing?.port ??
+    allocatePort(listRecords(), readRoutes(), await readServices());
+  if (port === null) throw new Error("port range exhausted");
+
+  // Migration requirement: boot the pre-rename platform label out before
+  // installing the new one, so an upgrading machine never ends up running
+  // both platform agents at once. uninstall() is idempotent teardown
+  // (services/launchd.ts): a no-op when that label was never installed, so
+  // this is safe to call unconditionally on every boot, not just upgrades.
+  //
+  // This is the OPPOSITE order from convert.ts's per-app conversion
+  // (install new, then boot the old one out), and deliberately so: an
+  // ordinary app converting keeps the same port either way, so briefly
+  // running under both labels is a tolerable transient. The platform's own
+  // two labels would both try to bind the SAME port AND both run the full
+  // API server against the SAME state dir -- two live writers on one
+  // registry.json is a substantially worse hazard than the platform being
+  // briefly down, which is what boot-out-first risks instead (a crash
+  // between this line and install() below). That trade is accepted because
+  // `deck setup` is an attended, one-shot, idempotent command: a re-run
+  // redoes this uninstall (already a no-op) and install cleanly.
+  await drivers.manager.uninstall(LEGACY_PLATFORM_LABEL);
+
+  mkdirSync(logsDir(), { recursive: true });
+  const programArguments = opts.entry
+    ? [opts.execPath, opts.entry, "serve"] // checkout mode: bun + src/main.ts
+    : [opts.execPath, "serve"]; // compiled binary
+  await drivers.manager.install({
+    label: PLATFORM_LABEL,
+    programArguments,
+    workingDirectory: stateDir(),
+    // launchd starts agents with its own minimal PATH ($PATH pared down to
+    // the OS defaults), so the platform needs one that can find what it
+    // shells out to (portless, in particular; this broke live). Composed,
+    // not captured: `deck setup` runs from a shell whose PATH may hold
+    // per-shell version-manager directories, and those are dead long before
+    // the plist that recorded them is next read. This PATH is also what
+    // every app plist the running platform renders inherits by default, so
+    // a bad capture here would propagate to every app registered after it.
+    environment: { PORT: String(port), PATH: composeServicePath() },
+    stdoutPath: join(logsDir(), "deck.out.log"),
+    stderrPath: join(logsDir(), "deck.err.log"),
+  });
+
+  const aliases = [PLATFORM_NAME];
+  if (!opts.tlds.includes("mattstack")) aliases.push(`${PLATFORM_NAME}.mattstack`);
+  for (const alias of aliases) await drivers.edge.alias(alias, port);
+
+  // Record catch-up, fresh bootstrap only: adopt mode writes the row without
+  // re-running the drivers. Adopt skips the route-conflict check (the alias we
+  // JUST wrote above is the route it would otherwise collide with), but the
+  // status still gets checked: a silent failure here would leave Deck serving
+  // with no record of itself. On a re-run (reinstall/upgrade/retry) the record
+  // already exists, and registering it again would 409 against itself, so the
+  // field patch below is the whole catch-up that is still owed.
+  if (!existing) {
+    const result = await registerApp(
+      { name: PLATFORM_NAME, managedBy: PLATFORM_NAME, staticPort: port, adopt: true },
+      drivers,
+    );
+    if (result.status !== 201) {
+      throw new Error(`self record catch-up failed (${result.status}): ${JSON.stringify(result.body)}`);
+    }
+  } else if (existing.name !== PLATFORM_NAME) {
+    // Migrate the pre-rename self-row's KEY too, not just its fields below:
+    // putRecord() writes under record.name, so leaving this as "local" would
+    // create a second row instead of relabeling this one in place.
+    deleteRecord(existing.name);
+    putRecord({ ...existing, name: PLATFORM_NAME });
+  }
+  // The adopt path wrote kind external; the self record is a supervised
+  // service. One write path for both a fresh bootstrap and a re-run, so a
+  // re-run also re-asserts these fields if something drifted them (the
+  // managedBy id, in particular, for a record migrated from "local" above).
+  const rec = getRecord(PLATFORM_NAME)!;
+  rec.kind = "service";
+  rec.label = PLATFORM_LABEL;
+  rec.managedBy = PLATFORM_NAME;
+  rec.command = programArguments;
+  rec.workingDirectory = stateDir();
+  rec.dev = undefined;
+  if (opts.entry) {
+    // entry is <checkout>/src/main.ts; the manifest name check validates the derivation.
+    const repoRoot = dirname(dirname(opts.entry));
+    const parsed = readDeckManifest(repoRoot);
+    if (parsed?.ok && parsed.manifest.name === PLATFORM_NAME) {
+      rec.dev = { workingDirectory: repoRoot };
+    }
+  }
+  putRecord(rec);
+
+  // Re-render the apps' plists too. Their programs are resolved at render
+  // time, so a setup run after a toolchain change is what repairs an app
+  // whose interpreter moved — without this, `deck setup` fixes the platform
+  // and leaves every app it supervises pointing at the old one.
+  await reinstallSupervised(drivers);
+
+  return { port, label: PLATFORM_LABEL, aliases };
+}
