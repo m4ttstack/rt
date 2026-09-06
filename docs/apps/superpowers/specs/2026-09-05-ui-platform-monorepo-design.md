@@ -44,9 +44,9 @@ One dependency-free workspace package:
   never one token darkened for both jobs. tui-kit's raw light text
   tokens conform to these on the first generated release; board's
   :root overrides then delete rather than upstream (MANKIT-2). `--fg`
-  stays #111 estate-wide (SORI-36 leaves it untouched); board's #333
-  softening, which its own comment calls a preference, reverts with the
-  override deletion.
+  becomes #222 estate-wide (Matt's call, splitting tokyo's #111 and
+  board's #333 preference), defined exactly once in the tokens data so
+  changing it later is a one-line edit; board's override deletes.
 - `src/fragments/`: base-rule CSS rendered from the values, each block
   wrapped in `BEGIN`/`END` markers: body ground (background from the
   semantic bg token, font stack from font tokens, the two smoothing
