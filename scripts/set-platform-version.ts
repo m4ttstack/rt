@@ -16,10 +16,33 @@ function writePkg(path: string, pkg: Record<string, unknown>): void {
   writeFileSync(path, JSON.stringify(pkg, null, 2) + '\n');
 }
 
+// A published package can never move backward: npm has no unpublish-and-
+// retry story once a version is out. -1 means `to` is older than `from`.
+function compareVersions(a: string, b: string): number {
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    if (pa[i] !== pb[i]) return (pa[i] as number) - (pb[i] as number);
+  }
+  return 0;
+}
+
 const version = process.argv[2];
 if (!version || !/^\d+\.\d+\.\d+$/.test(version)) {
   console.error('Usage: bun scripts/set-platform-version.ts <version>');
   process.exit(1);
+}
+
+const paths = PACKAGE_DIRS.map(dir => `packages/${dir}/package.json`);
+const currentVersions = paths.map(path => String(readPkg(path).version));
+for (let i = 0; i < paths.length; i++) {
+  if (compareVersions(version, currentVersions[i] as string) < 0) {
+    console.error(
+      `${version} is older than ${currentVersions[i]} already set in ${paths[i]}. ` +
+        'A platform version must never decrease a published package.'
+    );
+    process.exit(1);
+  }
 }
 
 const rows: { name: string; path: string; from: string; to: string }[] = [];
