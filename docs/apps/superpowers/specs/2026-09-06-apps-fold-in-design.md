@@ -2,7 +2,8 @@
 
 Date: 2026-09-06. Status: approved direction, spec under review.
 Builds on `2026-09-05-ui-platform-monorepo-design.md` (its Migration
-steps shipped as PRs #11/#13) and SUPERSEDES Phase 3 of
+steps 1-3 shipped as PRs #11/#13; steps 4-5, the npm release and
+consumer bumps, are cancelled by this spec) and SUPERSEDES Phase 3 of
 `docs/superpowers/plans/2026-09-05-ui-platform-monorepo.md` (the
 consumer-bump cleanups), which now happen inside each app's fold-in.
 
@@ -105,8 +106,8 @@ For each app, in order chat, console, boxscore, board, deck:
    `core/generated/board.css` twin via `build:board`.
 4. The app's imported `.github/workflows/` is dispositioned
    deliberately in the same PR: chat's served-client/api-404 gate and
-   the purity gates (chat/console/board) port into the monorepo CI as
-   per-app steps; board's and deck's tag-triggered release.yml are
+   the purity gates (console and board; chat has none) port into the
+   monorepo CI as per-app steps; board's and deck's tag-triggered release.yml are
    deleted (subsumed by bundle-apps); nothing stays inert under
    `apps/<name>/.github/`.
 5. Deck service registration repoints to the monorepo path; the old
