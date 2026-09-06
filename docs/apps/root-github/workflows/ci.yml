@@ -107,3 +107,7 @@ jobs:
       - run: bun run boxscore:typecheck
       - run: bun run boxscore:lint
       - run: bun run boxscore:test
+      - run: bun run board:typecheck
+      - run: bun run board:test
+      - name: board has no employer or domain references in its tracked tree
+        run: apps/board/scripts/repo-purity.sh
