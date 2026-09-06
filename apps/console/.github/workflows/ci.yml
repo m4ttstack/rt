@@ -1,0 +1,64 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: console
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: console
+      - uses: oven-sh/setup-bun@v2
+      - name: Authenticate npm for private @mattstack packages
+        env:
+          NPM_READ_TOKEN: ${{ secrets.NPM_READ_TOKEN }}
+        run: printf '//registry.npmjs.org/:_authToken=%s\n' "$NPM_READ_TOKEN" >> "$HOME/.npmrc"
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - run: bun run typecheck
+      - run: bun run lint
+      - run: bun run format:check
+      - run: bun run test -- --run
+      - run: bun run build
+      - run: bun run build:binary
+      # The binary embeds its own assets, so the only honest test is to run it
+      # where `dist/` is not: a binary built without the codegen step falls back
+      # to disk mode and 404s every page, which passes silently anywhere the
+      # source tree happens to be sitting next to it.
+      - name: the binary serves its own assets with no source tree
+        run: |
+          set -euo pipefail
+          cp dist-bin/console "$RUNNER_TEMP/console"
+          mv dist dist-hidden
+          cd "$RUNNER_TEMP"
+          PORT=11099 ./console &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true' EXIT
+          for _ in $(seq 1 30); do
+            curl -fsS -m 1 localhost:11099/api/health >/dev/null 2>&1 && break
+            sleep 1
+          done
+          curl -fsS -m 5 localhost:11099/api/health >/dev/null
+          test "$(curl -s -o /dev/null -w '%{http_code}' localhost:11099/)" = 200
+          test "$(curl -s -o /dev/null -w '%{http_code}' localhost:11099/search)" = 200
+          asset=$(curl -s localhost:11099/ | grep -oE '/assets/[^"]+\.js' | head -1)
+          test -n "$asset"
+          test "$(curl -s -o /dev/null -w '%{http_code}' "localhost:11099$asset")" = 200
+          # The font ships inside @mattstack/mantine-tokyo, so Vite emits it as a
+          # content-hashed /assets/ URL rather than the literal /fonts/ path it
+          # had while it lived in public/. Discover it from the stylesheet that
+          # actually references it, the same way the js asset above is found.
+          #
+          # Assert the CONTENT TYPE, not just the status. The previous version of
+          # this check curled a hardcoded /fonts/ path and tested only for 200 --
+          # which the SPA catch-all satisfies by serving index.html as text/html.
+          # It passed whether or not the font existed, and would have kept passing
+          # through this extraction. A status-only assertion on a path a catch-all
+          # can answer proves nothing.
+          css=$(curl -s localhost:11099/ | grep -oE '/assets/[^"]+\.css' | head -1)
+          test -n "$css"
+          font=$(curl -s "localhost:11099$css" | grep -oE '/assets/[^)"]+\.woff2' | head -1)
+          test -n "$font"
+          test "$(curl -s -o /dev/null -w '%{http_code}' "localhost:11099$font")" = 200
+          test "$(curl -s -o /dev/null -w '%{content_type}' "localhost:11099$font")" = "font/woff2"

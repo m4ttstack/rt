@@ -1,0 +1,156 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap">
+  <style>
+    :root{
+      --tk-bg:#e1e2e7; --tk-panel:#eff0f5; --tk-card:#f6f6fa; --tk-l4:#e6e6ec;
+      --tk-border:#c8cad6; --tk-border-soft:#d5d7e2;
+      --tk-fg:#111; --tk-muted:#8990b3; --tk-muted-strong:#6a7099;
+      --tk-accent:#2e7de9; --tk-green:#587539; --tk-red:#f52a65; --tk-amber:#8c6c3e;
+      --tk-purple:#7847bd; --tk-cyan:#007197; --tk-grid:rgba(52,59,88,0.05);
+      --tk-dot-ok:#1f9d3a; --tk-dot-warn:#e08a00; --tk-dot-bad:#e5153f;
+    }
+    *{ box-sizing:border-box; }
+    body{ margin:0; font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; color:var(--tk-fg); }
+    a{ color:var(--tk-accent); text-decoration:none; } a:hover{ text-decoration:underline; }
+    .grid-bg{ background-color:var(--tk-bg); background-image:linear-gradient(var(--tk-grid) 1px, transparent 1px),linear-gradient(90deg, var(--tk-grid) 1px, transparent 1px); background-size:28px 28px; }
+    .title{ font-size:20px; font-weight:700; }
+
+    .tabbar{ display:flex; align-items:flex-end; gap:2px; border-bottom:1px solid var(--tk-border); }
+    .tab{ display:inline-flex; align-items:center; gap:7px; padding:9px 14px 10px; font-size:13px; color:var(--tk-muted-strong); cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-1px; }
+    .tab.active{ color:var(--tk-fg); font-weight:600; border-bottom-color:var(--tk-accent); }
+    .tab .cnt{ font-size:10.5px; font-weight:700; padding:1px 6px; border-radius:999px; background:var(--tk-l4); color:var(--tk-muted-strong); }
+    .tab.active .cnt.warn{ background:rgba(224,138,0,0.16); color:var(--tk-amber); }
+
+    /* stat cards */
+    .stats{ display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:14px; }
+    .stat{ background:var(--tk-panel); border:1px solid var(--tk-border); border-radius:10px; padding:15px 16px; }
+    .stat .n{ font-size:26px; font-weight:700; line-height:1; }
+    .stat .l{ font-size:11px; color:var(--tk-muted-strong); margin-top:8px; display:flex; align-items:center; gap:7px; }
+    .dot{ width:8px; height:8px; border-radius:999px; display:inline-block; }
+
+    .card{ background:var(--tk-panel); border:1px solid var(--tk-border); border-radius:10px; overflow:hidden; }
+    .grouphead{ display:flex; align-items:center; gap:9px; padding:13px 16px; border-bottom:1px solid var(--tk-border-soft); background:var(--tk-card); }
+    .gtitle{ font-size:12.5px; font-weight:700; }
+    .gcount{ font-size:10.5px; font-weight:700; padding:1px 7px; border-radius:999px; }
+
+    .hrow{ display:flex; align-items:center; gap:11px; padding:11px 16px; border-bottom:1px solid var(--tk-border-soft); cursor:pointer; }
+    .hrow:last-child{ border-bottom:0; }
+    .hrow:hover{ background:var(--tk-card); }
+    .hname{ font-size:13px; font-weight:700; }
+    .href{ font-size:11px; color:var(--tk-muted); }
+    .hwhy{ font-size:11px; color:var(--tk-muted-strong); }
+    .chev{ color:var(--tk-muted); display:flex; }
+    .act{ display:inline-flex; align-items:center; gap:6px; height:26px; padding:0 10px; border:1px solid var(--tk-border); border-radius:7px; background:var(--tk-card); font-size:11px; color:var(--tk-fg); cursor:pointer; }
+    .act svg{ color:var(--tk-muted-strong); }
+  </style>
+</helmet>
+
+<div class="grid-bg" style="width:1180px; min-height:900px; padding:26px 30px 40px;">
+
+  <div style="font-size:11.5px; color:var(--tk-muted-strong);">console</div>
+  <div style="display:flex; align-items:center; justify-content:space-between; margin-top:10px;">
+    <div class="title">Wiring</div>
+    <div style="font-size:11px; color:var(--tk-muted);">rt skills check · acme · 11:30 PM</div>
+  </div>
+
+  <div class="tabbar" style="margin-top:16px;">
+    <div class="tab">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg>Pipeline
+    </div>
+    <div class="tab">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l9 5-9 5-9-5 9-5z"/><path d="M3 12l9 5 9-5"/><path d="M3 17l9 5 9-5"/></svg>Surface
+    </div>
+    <div class="tab active">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>Health <span class="cnt warn">3</span>
+    </div>
+  </div>
+
+  <!-- stat cards -->
+  <div class="stats" style="margin-top:18px;">
+    <div class="stat"><div class="n" style="color:var(--tk-green);">28</div><div class="l"><span class="dot" style="background:var(--tk-dot-ok);"></span>In sync</div></div>
+    <div class="stat"><div class="n" style="color:var(--tk-amber);">2</div><div class="l"><span class="dot" style="background:var(--tk-dot-warn);"></span>Source newer</div></div>
+    <div class="stat"><div class="n" style="color:var(--tk-red);">1</div><div class="l"><span class="dot" style="background:var(--tk-dot-bad);"></span>Never compiled</div></div>
+    <div class="stat"><div class="n" style="color:var(--tk-muted-strong);">5</div><div class="l"><span class="dot" style="background:var(--tk-muted);"></span>Unwired</div></div>
+  </div>
+
+  <!-- Recompile needed -->
+  <div class="card" style="margin-top:18px;">
+    <div class="grouphead">
+      <span class="dot" style="background:var(--tk-dot-warn);"></span>
+      <span class="gtitle">Recompile needed</span>
+      <span class="gcount" style="background:rgba(224,138,0,0.16); color:var(--tk-amber);">2</span>
+      <span style="flex:1;"></span>
+      <span style="font-size:11px; color:var(--tk-muted);">source edited since the artifact was last built</span>
+    </div>
+
+    <div class="hrow">
+      <span class="hname">review-criteria</span>
+      <span class="href">acme:review-criteria</span>
+      <span style="flex:1;"></span>
+      <span class="hwhy">source 2h newer than artifact</span>
+      <span class="act"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg>Preview compile</span>
+      <span class="chev"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></span>
+    </div>
+
+    <div class="hrow">
+      <span class="hname">ship-domain</span>
+      <span class="href">acme:ship-domain</span>
+      <span style="flex:1;"></span>
+      <span class="hwhy">source 40m newer than artifact</span>
+      <span class="act"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg>Preview compile</span>
+      <span class="chev"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></span>
+    </div>
+  </div>
+
+  <!-- Never compiled -->
+  <div class="card" style="margin-top:14px;">
+    <div class="grouphead">
+      <span class="dot" style="background:var(--tk-dot-bad);"></span>
+      <span class="gtitle">Never compiled</span>
+      <span class="gcount" style="background:rgba(245,42,101,0.14); color:var(--tk-red);">1</span>
+      <span style="flex:1;"></span>
+      <span style="font-size:11px; color:var(--tk-muted);">wired into a verb but has no built artifact yet</span>
+    </div>
+    <div class="hrow">
+      <span class="hname">reply-rules</span>
+      <span class="href">acme:reply-rules</span>
+      <span style="flex:1;"></span>
+      <span class="hwhy">bound by receive-review · no artifact</span>
+      <span class="act"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg>Preview compile</span>
+      <span class="chev"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></span>
+    </div>
+  </div>
+
+  <!-- Unwired (informational) -->
+  <div class="card" style="margin-top:14px;">
+    <div class="grouphead">
+      <span class="dot" style="background:var(--tk-muted);"></span>
+      <span class="gtitle">Unwired</span>
+      <span class="gcount" style="background:var(--tk-l4); color:var(--tk-muted-strong);">5</span>
+      <span style="flex:1;"></span>
+      <span style="font-size:11px; color:var(--tk-muted);">internal skills nothing in the roster binds — safe to keep or prune</span>
+    </div>
+    <div class="hrow"><span class="hname">checkout</span><span class="href">mattstack:checkout</span><span style="flex:1;"></span><span class="hwhy">no slots · nothing binds it</span><span class="chev"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></span></div>
+    <div class="hrow"><span class="hname">checkout-and-open</span><span class="href">mattstack:checkout-and-open</span><span style="flex:1;"></span><span class="hwhy">no slots · nothing binds it</span><span class="chev"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></span></div>
+    <div class="hrow"><span class="hname">map-open-mrs</span><span class="href">mattstack:map-open-mrs</span><span style="flex:1;"></span><span class="hwhy">no slots · nothing binds it</span><span class="chev"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></span></div>
+    <div class="hrow"><span class="hname">rebase-worktree</span><span class="href">mattstack:rebase-worktree</span><span style="flex:1;"></span><span class="hwhy">no slots · nothing binds it</span><span class="chev"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></span></div>
+    <div class="hrow"><span class="hname">sync-open-mrs</span><span class="href">mattstack:sync-open-mrs</span><span style="flex:1;"></span><span class="hwhy">no slots · nothing binds it</span><span class="chev"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></span></div>
+  </div>
+
+</div>
+</x-dc>
+<script data-dc-script data-props='{"$preview":{"width":1180,"height":900}}'>
+class Component extends DCLogic {}
+</script>
+</body>
+</html>

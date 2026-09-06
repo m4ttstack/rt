@@ -1,0 +1,94 @@
+{
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 1660,
+      "title": "Wiring \u2014 the feature pipeline"
+    },
+    {
+      "file": "Indicators.dc.html",
+      "x": 1560,
+      "y": 0,
+      "w": 880,
+      "h": 900,
+      "title": "Indicators"
+    },
+    {
+      "file": "CompileDrawer.dc.html",
+      "x": 1560,
+      "y": 1020,
+      "w": 720,
+      "h": 900,
+      "title": "Compile preview drawer"
+    },
+    {
+      "file": "InverseIndex.dc.html",
+      "x": 2400,
+      "y": 1020,
+      "w": 720,
+      "h": 900,
+      "title": "Inverse index drawer"
+    },
+    {
+      "file": "History.dc.html",
+      "x": 0,
+      "y": 2260,
+      "w": 720,
+      "h": 900,
+      "title": "History drawer"
+    },
+    {
+      "file": "SeamCompare.dc.html",
+      "x": 840,
+      "y": 2260,
+      "w": 720,
+      "h": 900,
+      "title": "Seam-aware compare"
+    },
+    {
+      "file": "SurfaceRoster.dc.html",
+      "x": 0,
+      "y": 3260,
+      "w": 720,
+      "h": 900,
+      "title": "Surface roster"
+    },
+    {
+      "file": "Rebind.dc.html",
+      "x": 840,
+      "y": 3260,
+      "w": 720,
+      "h": 900,
+      "title": "Staged rebinding"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "the-spine",
+      "x": 1560,
+      "y": 980,
+      "w": 880,
+      "text": "One spine, no groups.\n\nThe order is the pipeline's own execution order, read from the manifest's pipelines.feature \u2014 provision, plan, gates, evidence, implement, self-review, ship, watch-ci. It is not sorted by health and never reorders under you.\n\nwork leads because it is the orchestrator that reads this pipeline and runs each stage.\n\nEvery skill shows its slots wired open \u2014 slot, the contract it demands, and the fill bound to it. That relationship is the wiring, so it is never behind a chevron.\n\nHealth is an indicator ON the row, never an axis that moves rows around. The bullet carries it; the badge names it; the sub-line says what it costs you.\n\nThe last stop is Outside the pipeline \u2014 the same terminal item RunDetail's Timeline already uses \u2014 holding the wired skills that have no run order."
+    },
+    {
+      "id": "real-data",
+      "x": 0,
+      "y": 1740,
+      "w": 1440,
+      "text": "Structure is real, read from ~/.mattstack/repos/gitlab.com-acme-acme-dev/skills.jsonc: the eight-stage feature pipeline, all eighteen binding keys, the four mr-board binders, and stage-implement genuinely having no slots. Health states are illustrative \u2014 check was not run for this draft \u2014 and skill descriptions were rewritten neutral, since this canvas is hosted."
+    },
+    {
+      "id": "two-truths",
+      "x": 1680,
+      "y": 2260,
+      "w": 640,
+      "text": "Two kinds of truth, never one list.\n\nRight now is momentary and true only of this machine: working tree, installed version, whether the compiled output still matches. It sits above, on its own surface.\n\nHistory is ordered, immutable and attributable. A commit row and a 'working tree is dirty' row look alike and mean nothing alike, so they never share a surface.\n\nThe boundary is stated where it is read: this repo holds the fills and the compiled output, but the step's own source lives in the mattstack plugin. Its changes cannot appear here, and the drawer says so rather than implying full coverage.\n\nCompare attributes each hunk to the seam whose span CONTAINS it. A span is measured in its own source file, not in the compiled output, so every hunk header names the file its line numbers belong to. A hunk no seam contains renders as itself -- unattributed beats misattributed."
+    }
+  ],
+  "launch": {
+    "view": "canvas"
+  }
+}

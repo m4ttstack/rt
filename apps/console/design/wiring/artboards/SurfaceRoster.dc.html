@@ -1,0 +1,193 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .app {
+      --bg1: #e1e2e7; --bg2: #eff0f5; --bg3: #f6f6fa; --bg4: #e4e4e7;
+      --border: #c8cad6; --border-soft: #d5d7e2;
+      --fg: #111; --muted: #8990b3;
+      --accent: #2e7de9; --ok: #587539; --warn: #8c6c3e; --bad: #f52a65;
+      --purple: #7847bd; --cyan: #007197; --wash: 10%;
+    }
+    .app.dark {
+      --bg1: #16161e; --bg2: #232a47; --bg3: #2c3352; --bg4: #3b4160;
+      --border: #3b4261; --border-soft: #313853;
+      --fg: #e3e7f6; --muted: #7e86ad;
+      --accent: #7aa2f7; --ok: #9ece6a; --warn: #e0af68; --bad: #f7768e;
+      --purple: #bb9af7; --cyan: #7dcfff; --wash: 15%;
+    }
+    .app { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13.5px; line-height: 1.55; color: var(--fg); }
+    .row { display: flex; align-items: center; gap: 4.8px; min-width: 0; }
+    .stack { display: flex; flex-direction: column; }
+    .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .xs { font-size: 10.56px; }
+    .sm { font-size: 11.2px; }
+    .muted { color: var(--muted); }
+    .aicon { width: 28px; height: 28px; border-radius: 6px; flex: none; display: inline-flex; align-items: center; justify-content: center; color: var(--muted); background: transparent; border: 0; cursor: pointer; }
+    .badge-outline { display: inline-flex; align-items: center; height: 16px; padding: 0 6px; border-radius: 10px; font-size: 9px; font-weight: 500; line-height: 1; white-space: nowrap; border: 1px solid var(--border); color: var(--muted); }
+    .well { background: var(--bg3); border: 1px solid var(--border-soft); border-radius: 4px; }
+    .code { font-size: 11.2px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+    .btn { height: 28px; padding: 0 11.2px; border-radius: 6px; border: 0; font-family: inherit; font-size: 11.2px; font-weight: 500; cursor: pointer; background: var(--accent); color: #fff; }
+    .btn[disabled] { background: var(--bg4); color: var(--muted); cursor: default; }
+    .btn-quiet { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+
+    /* The switch is the only control on a row, so it carries the state; the
+       row never restates it as a word. */
+    .sw { width: 30px; height: 17px; border-radius: 9px; flex: none; background: var(--bg4); border: 1px solid var(--border); position: relative; cursor: pointer; padding: 0; }
+    .sw i { position: absolute; top: 2px; left: 2px; width: 11px; height: 11px; border-radius: 50%; background: var(--muted); display: block; }
+    .sw.on { background: var(--accent); border-color: var(--accent); }
+    .sw.on i { left: 15px; background: #fff; }
+
+    .srow { display: flex; align-items: center; gap: 9.6px; padding: 6px 9.6px; min-width: 0; }
+    .srow + .srow { border-top: 1px solid var(--border-soft); }
+    /* Staged rows are tinted, never moved: the roster stays in one name order
+       so a row does not jump out from under the pointer that just toggled it. */
+    .srow.staged { background: color-mix(in srgb, var(--accent) var(--wash), transparent); }
+    .arrow { display: inline-flex; align-items: center; gap: 4px; flex: none; }
+  </style>
+</helmet>
+
+<div class="app {{schemeClass}}" style="width: 720px; height: 900px; background: var(--bg2); border-left: 1px solid var(--border); box-shadow: -6px 0 32px rgba(0, 0, 0, 0.3); display: flex; flex-direction: column;">
+
+  <div class="row" style="flex: none; padding: 11.2px; gap: 7.2px; border-bottom: 1px solid var(--border);">
+    <div class="stack" style="gap: 2px; flex: 1; min-width: 0;">
+      <div class="row" style="gap: 4.8px;">
+        <span style="font-size: 14.72px; font-weight: 700;">Surface</span>
+        <span class="sm muted truncate">demo</span>
+      </div>
+      <div class="row" style="gap: 6px; color: var(--muted);">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/></svg>
+        <span class="xs muted truncate">pack/surface.jsonc</span>
+        <span class="xs" style="opacity: 0.75; flex: none;">as of 11:02:18 AM</span>
+      </div>
+    </div>
+    <button class="aicon" aria-label="Close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+  </div>
+
+  <div class="stack" style="flex: 1; min-height: 0; padding: 11.2px; gap: 9.6px;">
+
+    <span class="xs muted">Public skills can be invoked by name. Internal ones exist only to compile into a verb.</span>
+
+    <div class="well" style="flex: 1; min-height: 0; overflow: auto;">
+
+      <div class="srow">
+        <button class="sw on" role="switch" aria-checked="true" aria-label="review"><i></i></button>
+        <span class="badge-outline" style="width: 66px; justify-content: center;">compiled</span>
+        <span class="sm truncate" style="flex: 1;">review</span>
+      </div>
+
+      <!-- Staged, and compiled: apply does not MOVE this one. Its directory is
+           dropped and simply not regenerated, so the row says that instead of
+           borrowing the hand-authored wording one row down. -->
+      <div class="srow staged">
+        <button class="sw" role="switch" aria-checked="false" aria-label="ship"><i></i></button>
+        <span class="badge-outline" style="width: 66px; justify-content: center;">compiled</span>
+        <div class="stack" style="gap: 0; flex: 1; min-width: 0;">
+          <span class="sm truncate">ship</span>
+          <span class="xs muted truncate">skills/ship/ stops being compiled and is removed</span>
+        </div>
+        <span class="arrow xs muted"><span>public</span>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+          <span style="color: var(--fg); font-weight: 600;">internal</span></span>
+      </div>
+
+      <div class="srow">
+        <button class="sw on" role="switch" aria-checked="true" aria-label="shepherdr"><i></i></button>
+        <span class="badge-outline" style="width: 66px; justify-content: center;">compiled</span>
+        <span class="sm truncate" style="flex: 1;">shepherdr</span>
+      </div>
+
+      <div class="srow">
+        <button class="sw on" role="switch" aria-checked="true" aria-label="watch-ci"><i></i></button>
+        <span class="badge-outline" style="width: 66px; justify-content: center;">compiled</span>
+        <span class="sm truncate" style="flex: 1;">watch-ci</span>
+      </div>
+
+      <div class="srow">
+        <button class="sw on" role="switch" aria-checked="true" aria-label="work"><i></i></button>
+        <span class="badge-outline" style="width: 66px; justify-content: center;">compiled</span>
+        <span class="sm truncate" style="flex: 1;">work</span>
+      </div>
+
+      <!-- Staged, hand-authored: this one really is a git mv. -->
+      <div class="srow staged">
+        <button class="sw on" role="switch" aria-checked="true" aria-label="ci-forge-gitlab"><i></i></button>
+        <span class="badge-outline" style="width: 66px; justify-content: center;">fill</span>
+        <div class="stack" style="gap: 0; flex: 1; min-width: 0;">
+          <span class="sm truncate">ci-forge-gitlab</span>
+          <span class="xs muted truncate">attachments/ci-forge-gitlab/ → skills/ci-forge-gitlab/</span>
+        </div>
+        <span class="arrow xs muted"><span>internal</span>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+          <span style="color: var(--fg); font-weight: 600;">public</span></span>
+      </div>
+
+      <div class="srow">
+        <button class="sw" role="switch" aria-checked="false" aria-label="model-tiering"><i></i></button>
+        <span class="badge-outline" style="width: 66px; justify-content: center;">fill</span>
+        <span class="sm truncate" style="flex: 1;">model-tiering</span>
+      </div>
+
+      <div class="srow">
+        <button class="sw" role="switch" aria-checked="false" aria-label="watch-ci-domain"><i></i></button>
+        <span class="badge-outline" style="width: 66px; justify-content: center;">fill</span>
+        <span class="sm truncate" style="flex: 1;">watch-ci-domain</span>
+      </div>
+
+      <div class="srow">
+        <button class="sw" role="switch" aria-checked="false" aria-label="ci-forge-github"><i></i></button>
+        <span class="badge-outline" style="width: 66px; justify-content: center;">fill</span>
+        <span class="sm truncate" style="flex: 1;">ci-forge-github</span>
+      </div>
+
+      <div class="srow">
+        <button class="sw" role="switch" aria-checked="false" aria-label="run-db"><i></i></button>
+        <span class="badge-outline" style="width: 66px; justify-content: center;">fill</span>
+        <span class="sm truncate" style="flex: 1;">run-db</span>
+      </div>
+
+    </div>
+
+    <!-- Nothing above this line has written anything. The panel is the whole
+         safety story, so it states the command it will run rather than
+         describing it. -->
+    <div class="stack" style="flex: none; gap: 6px; border-top: 1px solid var(--border); padding-top: 9.6px;">
+      <div class="row" style="justify-content: space-between;">
+        <span class="xs muted">2 staged — nothing is written until you apply</span>
+        <div class="row" style="gap: 6px;">
+          <button class="btn btn-quiet">Discard</button>
+          <button class="btn">Apply</button>
+        </div>
+      </div>
+
+      <div class="well" style="padding: 7.2px 9.6px;"><div class="code">rt skills surface set ci-forge-gitlab --public
+rt skills surface set ship --internal</div></div>
+
+      <div class="row" style="gap: 6px; align-items: flex-start;">
+        <svg class="muted" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="margin-top: 2px; flex: none;"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+        <span class="xs muted">Each command rewrites surface.jsonc once and then recompiles the pack. A change in both directions is two commands, run in order — if the second fails the first has already landed, and this panel re-reads from disk to show what did.</span>
+      </div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"dark":{"editor":"boolean","default":false,"section":"Theme"},"$preview":{"width":720,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { schemeClass: this.props.dark ? 'dark' : '' };
+  }
+}
+</script>
+</body>
+</html>
