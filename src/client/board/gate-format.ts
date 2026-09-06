@@ -1,4 +1,4 @@
-import type { GateAnswers, GateAnswerValue, GateQuestion } from "../../gates/store.ts";
+import type { GateAnswers, GateAnswerValue, GateOption, GateQuestion } from "../../gates/store.ts";
 
 /** Which board lifecycle a gate kind belongs to. Deliberately re-declared
     rather than imported from gates/sweep.ts's own domainForKind: that
@@ -9,13 +9,6 @@ import type { GateAnswers, GateAnswerValue, GateQuestion } from "../../gates/sto
     no Bun globals). Kept in sync with GATE_KINDS/domainForKind by the
     gate-format test suite exercising the same kind strings. */
 export type GateDomain = "review" | "respond" | "doctor";
-
-function domainForKind(kind: string): GateDomain | undefined {
-  if (kind === "review-post") return "review";
-  if (kind === "respond-plan" || kind === "respond-post") return "respond";
-  if (kind === "doctor-escalation") return "doctor";
-  return undefined;
-}
 
 /** UI-collected picks, keyed by question id: an array for a `multi`
     question's checked options, a bare string for a single-select's radio. */
@@ -132,26 +125,44 @@ export function formatGateOption(option: string): GateOptionDisplay {
   return { text: `${verb} · ${token!.slice(0, 8)}`, title: option };
 }
 
-/** A domain's own pane reference, as attached to a board MR (`mr.review` /
-    `mr.respond` / `mr.doctor`) -- the one field GateCard's focus button
-    needs to know a pane is still around to jump into. */
-export interface DomainPaneRef {
-  tabId?: string;
+export function optionValue(o: GateOption): string {
+  return typeof o === "string" ? o : o.value;
 }
 
-/**
- * Which domain (if any) a gate card's "focus pane" button should jump into.
- * A gate kind always maps to exactly one domain (domainForKind); the button
- * only renders when THAT domain's own state still carries a tabId -- a
- * park/open gate's pane is still around, a closed or never-launched one is
- * not, and a live tabId in a DIFFERENT domain must never be offered (a
- * respond gate never jumps into a review pane).
- */
-export function gateFocusDomain(
+/** Labeled options render their label with the raw value as the hover
+    title; bare strings keep the verb-token transform unchanged. */
+export function optionDisplayFor(o: GateOption): GateOptionDisplay {
+  if (typeof o !== "string") {
+    const text = o.label || o.value;
+    return text === o.value ? { text } : { text, title: o.value };
+  }
+  return formatGateOption(o);
+}
+
+export function displayForValue(value: string, options: GateOption[]): GateOptionDisplay {
+  const match = options.find((o) => optionValue(o) === value);
+  return match !== undefined ? optionDisplayFor(match) : formatGateOption(value);
+}
+
+export const RESPOND_PLAN_KIND = "respond-plan";
+export const CODE_CHANGES_QUESTION_ID = "code-changes";
+export const CODE_CHANGES_SENTINEL = "skip";
+
+/** The respond collapse keys off the gate's own option set: only a
+    respond-plan gate whose code-changes question carries the sentinel
+    participates, so old gates render exactly as before. */
+export function codeChangesHidden(
   kind: string,
-  panes: { review?: DomainPaneRef; respond?: DomainPaneRef; doctor?: DomainPaneRef },
-): GateDomain | null {
-  const domain = domainForKind(kind);
-  if (!domain) return null;
-  return panes[domain]?.tabId ? domain : null;
+  questions: GateQuestion[],
+  selections: GateSelections,
+): boolean {
+  if (kind !== RESPOND_PLAN_KIND) return false;
+  const q = questions.find((x) => x.id === CODE_CHANGES_QUESTION_ID);
+  if (!q || !q.options.some((o) => optionValue(o) === CODE_CHANGES_SENTINEL)) return false;
+  for (const [qid, sel] of Object.entries(selections)) {
+    if (qid === CODE_CHANGES_QUESTION_ID) continue;
+    const values = Array.isArray(sel) ? sel : [sel];
+    if (values.some((v) => typeof v === "string" && v.startsWith("fix:"))) return false;
+  }
+  return true;
 }

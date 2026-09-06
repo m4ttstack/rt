@@ -97,6 +97,40 @@ describe("GateCache.applyEvent", () => {
     expect(cached?.questions).toEqual([{ id: "q1", label: "Ship it?", multi: false, options: ["yes", "no"] }]);
   });
 
+  test("opened frame drops malformed questions rather than blindly casting them", () => {
+    const cache = new GateCache();
+    const errors: unknown[] = [];
+    const origError = console.error;
+    console.error = (...args: unknown[]) => errors.push(args);
+    try {
+      cache.applyEvent({
+        topic: "gate/opened/gate-9",
+        payload: {
+          id: "gate-9",
+          subject: SUBJECT_A,
+          kind: "review-post",
+          questions: [
+            { id: "q1", label: "Ship it?", multi: false, options: ["yes", "no"] },
+            { id: "q2", label: "Labeled", multi: false, options: [{ value: "v", label: "V" }] },
+            "not an object",
+            { id: "q3", label: "Missing options" },
+            { id: 4, label: "Bad id type", options: ["yes"] },
+            { id: "q4", label: "Bad option shape", options: [{ value: "v" }] },
+          ],
+          meta: null,
+        },
+      });
+    } finally {
+      console.error = origError;
+    }
+    const cached = cache.get(SUBJECT_A, "review-post");
+    expect(cached?.questions).toEqual([
+      { id: "q1", label: "Ship it?", multi: false, options: ["yes", "no"] },
+      { id: "q2", label: "Labeled", multi: false, options: [{ value: "v", label: "V" }] },
+    ]);
+    expect(errors.length).toBe(4);
+  });
+
   test("opened frame for an already-cached subject+kind replaces it wholesale (re-review)", () => {
     const cache = new GateCache();
     cache.applyRow(row({ status: "answered", answer: { answers: { q1: "yes" }, by: "board-ui", answeredAt: 2000 } }));
@@ -209,6 +243,21 @@ describe("GateCache.applyEvent", () => {
     expect(() => cache.applyEvent({ topic: "gate/opened/gate-1", payload: null })).not.toThrow();
     expect(cache.rows()).toEqual([]);
   });
+
+  test("applyEvent(opened) carries context and origin onto the cached row", () => {
+    const cache = new GateCache();
+    cache.applyEvent({
+      topic: "gate/opened/g9",
+      payload: {
+        id: "g9", subject: "mr:https://gitlab.example.com/x/9", kind: "review-post",
+        questions: [], meta: null,
+        context: "finding titles", origin: { paneId: "p9", presentation: "form" },
+      },
+    });
+    const row = cache.rowsFor("mr:https://gitlab.example.com/x/9")[0]!;
+    expect(row.context).toBe("finding titles");
+    expect(row.origin).toEqual({ paneId: "p9", presentation: "form" });
+  });
 });
 
 describe("attachGates", () => {
@@ -225,6 +274,9 @@ describe("attachGates", () => {
         openedAt: 1000,
         questions: [{ id: "q1", label: "Ship it?", multi: false, options: ["yes", "no"] }],
         answers: undefined,
+        context: undefined,
+        origin: undefined,
+        domain: "review",
       },
     ]);
   });
@@ -374,5 +426,20 @@ describe("attachGates", () => {
       const [errored] = attachGates([{ webUrl: WEB_URL, doctor: { status: "error" as const } }], cache);
       expect(errored!.gates).toEqual([]);
     });
+  });
+
+  test("attachGates carries context, origin, and the kind's domain onto the board row", () => {
+    const cache = new GateCache();
+    cache.applyRow({
+      id: "g1", subject: "mr:https://gitlab.example.com/x/1", kind: "review-post",
+      questions: [], meta: null, status: "open", answer: null, openedAt: 1,
+      parkedAt: null, closedAt: null, closedReason: null, agent: null, pane: null,
+      nudge: null, delivery: null, released: false,
+      context: "ctx", origin: { worktree: "/tmp/wt" },
+    });
+    const [mr] = attachGates([{ webUrl: "https://gitlab.example.com/x/1" }], cache);
+    expect(mr!.gates[0]!.context).toBe("ctx");
+    expect(mr!.gates[0]!.origin).toEqual({ worktree: "/tmp/wt" });
+    expect(mr!.gates[0]!.domain).toBe("review");
   });
 });

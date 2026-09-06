@@ -50,6 +50,49 @@ export function composeFixClasses(fc: FixClasses, edgeAuthor: string, identity: 
   return names.filter((n) => !OWN_MR_ONLY_CLASSES.includes(n));
 }
 
+export const IDENTITY_TTL_MS = 24 * 60 * 60_000;
+
+/** Shared cache-then-validate identity resolution for both the auto pass
+    (bin/triage.ts) and the manual /doctor launch (server.ts) -- a stale or
+    absent cache entry re-validates the token and writes the fresh result
+    back onto `memory.identity` for the caller to persist. A validation
+    failure resolves null rather than throwing so the manual launch path can
+    still dispatch with the branch-writing classes gated off (composeFixClasses'
+    identity !== null check), matching the auto path's failure mode. */
+export async function resolveDispatchIdentity(
+  memory: DispatchMemory,
+  validateToken: () => Promise<{ username: string }>,
+  now: () => number = Date.now,
+): Promise<string | null> {
+  const cached = memory.identity && now() - memory.identity.fetchedAt < IDENTITY_TTL_MS
+    ? memory.identity.username
+    : null;
+  if (cached) return cached;
+  try {
+    const user = await validateToken();
+    memory.identity = { username: user.username, fetchedAt: now() };
+    return user.username;
+  } catch {
+    return null;
+  }
+}
+
+/** The manual /doctor launch's tier/fixClasses, composed the same way
+    runTriage's own dispatch does below -- `author` MUST be the GitLab
+    username (mr.author.username), never a display-name label, since
+    composeFixClasses licenses the branch-writing classes on an exact
+    username match against `identity`. */
+export function manualDoctorFields(
+  triage: TriageConfig,
+  author: string,
+  identity: string | null,
+): { tier?: string; fixClasses: string[] } {
+  return {
+    tier: triage.tier === "checkout" ? undefined : "api",
+    fixClasses: composeFixClasses(triage.fixClasses, author, identity),
+  };
+}
+
 const IN_FLIGHT = new Set<DoctorStatus>(["queued", "diagnosing", "rebasing", "fixing", "watching"]);
 
 /** BOARD-10: the one-CI-attendant-per-MR lease (src/triage/attendant.ts).

@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "@mattstack/glance": "^0.24.0",
-    "@mattstack/rt-client": "^0.15.0",
+    "@mattstack/rt-client": "0.16.0",
     "@mattstack/settings-kit": "^0.1.3",
     "@mattstack/tui-kit": "^0.2.0",
     "invadrs": "^0.2.0",

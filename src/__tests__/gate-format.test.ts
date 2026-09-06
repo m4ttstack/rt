@@ -1,5 +1,16 @@
 import { describe, test, expect } from "bun:test";
-import { gateAnswerPayload, parseConflictResponse, unwrapGateAnswer, formatGateOption, gateFocusDomain } from "../client/board/gate-format.ts";
+import {
+  gateAnswerPayload,
+  parseConflictResponse,
+  unwrapGateAnswer,
+  formatGateOption,
+  optionValue,
+  optionDisplayFor,
+  displayForValue,
+  codeChangesHidden,
+  CODE_CHANGES_QUESTION_ID,
+  CODE_CHANGES_SENTINEL,
+} from "../client/board/gate-format.ts";
 import type { GateQuestion } from "../gates/store.ts";
 
 const GATE_ID = "gate-1";
@@ -112,23 +123,56 @@ describe("formatGateOption", () => {
   });
 });
 
-describe("gateFocusDomain", () => {
-  test("resolves the gate kind's domain when that domain's own state carries a tabId", () => {
-    expect(gateFocusDomain("respond-plan", { respond: { tabId: "w1:t2" } })).toBe("respond");
-    expect(gateFocusDomain("review-post", { review: { tabId: "w1:t1" } })).toBe("review");
-    expect(gateFocusDomain("doctor-escalation", { doctor: { tabId: "w1:t3" } })).toBe("doctor");
+describe("labeled options (W4)", () => {
+  test("optionValue returns the string or the object's value", () => {
+    expect(optionValue("approve")).toBe("approve");
+    expect(optionValue({ value: "Major", label: "Major (2)" })).toBe("Major");
   });
 
-  test("returns null when the domain's own state has no tabId", () => {
-    expect(gateFocusDomain("respond-plan", { respond: {} })).toBeNull();
-    expect(gateFocusDomain("respond-plan", {})).toBeNull();
+  test("optionDisplayFor renders label with the value as hover title", () => {
+    expect(optionDisplayFor({ value: "fix:7080da2fcf93c1a2", label: "fix · api.ts:42" }))
+      .toEqual({ text: "fix · api.ts:42", title: "fix:7080da2fcf93c1a2" });
   });
 
-  test("never offers a different domain's live tabId", () => {
-    expect(gateFocusDomain("respond-plan", { review: { tabId: "w1:t1" } })).toBeNull();
+  test("optionDisplayFor keeps the verb-token transform for bare strings", () => {
+    expect(optionDisplayFor("fix:7080da2fcf93c1a2")).toEqual({ text: "fix · 7080da2f", title: "fix:7080da2fcf93c1a2" });
+    expect(optionDisplayFor("approve")).toEqual({ text: "approve" });
   });
 
-  test("returns null for an unrecognized kind", () => {
-    expect(gateFocusDomain("mystery-kind", { review: { tabId: "w1:t1" } })).toBeNull();
+  test("displayForValue maps an answered value back to its option's label", () => {
+    const options = [{ value: "Major", label: "Major (2)" }, "approve"];
+    expect(displayForValue("Major", options)).toEqual({ text: "Major (2)", title: "Major" });
+    expect(displayForValue("gone", options)).toEqual({ text: "gone" });
+  });
+});
+
+describe("respond collapse (W4)", () => {
+  const questions = [
+    { id: "threads-1", label: "Threads", multi: true, options: ["reply:t1", "fix:t1", "skip:t1"] },
+    { id: "code-changes", label: "Approve the proposed code changes?", multi: false, options: ["approve", "revise", "skip"] },
+  ];
+
+  test("hidden until a fix: value is selected", () => {
+    expect(codeChangesHidden("respond-plan", questions, {})).toBe(true);
+    expect(codeChangesHidden("respond-plan", questions, { "threads-1": ["reply:t1"] })).toBe(true);
+    expect(codeChangesHidden("respond-plan", questions, { "threads-1": ["fix:t1"] })).toBe(false);
+  });
+
+  test("never hidden off respond-plan, without the question, or without the sentinel option", () => {
+    expect(codeChangesHidden("review-post", questions, {})).toBe(false);
+    expect(codeChangesHidden("respond-plan", [questions[0]!], {})).toBe(false);
+    const noSentinel = [questions[0]!, { ...questions[1]!, options: ["approve", "revise"] }];
+    expect(codeChangesHidden("respond-plan", noSentinel, {})).toBe(false);
+  });
+
+  test("a hidden question submits the sentinel through gateAnswerPayload", () => {
+    const selections = { "threads-1": ["reply:t1"] };
+    // Same derivation GateCard uses: only merge the sentinel once
+    // codeChangesHidden says the question is actually hidden.
+    const hidden = codeChangesHidden("respond-plan", questions, selections);
+    const effective = hidden ? { ...selections, [CODE_CHANGES_QUESTION_ID]: CODE_CHANGES_SENTINEL } : selections;
+    const payload = gateAnswerPayload({ gateId: "g1", questions }, effective);
+    expect(hidden).toBe(true);
+    expect(payload).toEqual({ gateId: "g1", answers: { "threads-1": ["reply:t1"], "code-changes": CODE_CHANGES_SENTINEL } });
   });
 });

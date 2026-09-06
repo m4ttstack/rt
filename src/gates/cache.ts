@@ -1,12 +1,41 @@
 import type { GateRow as FacilityGateRow } from "@mattstack/rt-client";
 import type { GateEventFrame } from "./ingest.ts";
-import type { GateAnswers, GateQuestion, GateRow } from "./store.ts";
+import type { GateAnswers, GateOption, GateQuestion, GateRow } from "./store.ts";
 import type { ReviewStatus } from "../review-state.ts";
 import type { RespondStatus } from "../respond-state.ts";
 import type { DoctorStatus } from "../doctor-state.ts";
+import { domainForKind } from "./sweep.ts";
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null;
+}
+
+function isGateOption(v: unknown): v is GateOption {
+  if (typeof v === "string") return true;
+  return isRecord(v) && typeof v.value === "string" && typeof v.label === "string";
+}
+
+/** `opened` payloads come straight off the bus with no schema enforcement
+    upstream -- a malformed question would otherwise ride an `as
+    GateQuestion[]` cast all the way to optionValue/rendering. Anything not
+    shaped like `{id, label, options}` is dropped rather than coerced, since
+    a half-built question breaks the renderer worse than a missing one. */
+function sanitizeQuestions(gateId: string, questions: unknown[]): GateQuestion[] {
+  const out: GateQuestion[] = [];
+  for (const q of questions) {
+    if (
+      isRecord(q) &&
+      typeof q.id === "string" &&
+      typeof q.label === "string" &&
+      Array.isArray(q.options) &&
+      q.options.every(isGateOption)
+    ) {
+      out.push({ id: q.id, label: q.label, multi: Boolean(q.multi), options: q.options as GateOption[] });
+    } else {
+      console.error(`gate cache: dropping malformed question on gate ${gateId}`);
+    }
+  }
+  return out;
 }
 
 // The facility's own bus topics, distinct from the board's legacy
@@ -88,7 +117,7 @@ export class GateCache {
       id,
       subject,
       kind: typeof payload.kind === "string" ? payload.kind : "review-post",
-      questions: questions as GateQuestion[],
+      questions: sanitizeQuestions(id, questions),
       meta: isRecord(meta) ? meta : null,
       status: "open",
       answer: null,
@@ -104,6 +133,8 @@ export class GateCache {
       nudge: null,
       delivery: null,
       released: false,
+      context: typeof payload.context === "string" ? payload.context : null,
+      origin: isRecord(payload.origin) ? (payload.origin as FacilityGateRow["origin"]) : null,
     });
   }
 
@@ -201,6 +232,9 @@ export function attachGates<T extends { webUrl?: string | null } & GateHost>(
           status: row.status,
           openedAt: row.openedAt,
           questions: row.questions as GateQuestion[],
+          context: row.context ?? undefined,
+          origin: row.origin ?? undefined,
+          domain: domainForKind(row.kind),
         });
       } else if (row.status === "answered" && !isAnsweredRowTerminal(row.kind, mr)) {
         gates.push({
@@ -211,6 +245,9 @@ export function attachGates<T extends { webUrl?: string | null } & GateHost>(
           openedAt: row.openedAt,
           questions: row.questions as GateQuestion[],
           answers: row.answer?.answers as GateAnswers | undefined,
+          context: row.context ?? undefined,
+          origin: row.origin ?? undefined,
+          domain: domainForKind(row.kind),
         });
       }
     }
