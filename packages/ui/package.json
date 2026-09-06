@@ -57,7 +57,7 @@
     "@mantine/notifications": "catalog:",
     "@mantine/spotlight": "catalog:",
     "@mattstack/mantine-tokyo": "^0.4.0",
-    "@testing-library/react": "^16.3.2",
+    "@testing-library/react": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:",
     "vitest": "catalog:",

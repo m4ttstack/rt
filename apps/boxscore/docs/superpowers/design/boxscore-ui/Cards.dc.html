@@ -1,0 +1,482 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+    body { margin: 0; }
+    a { color: var(--tk-accent-text); text-decoration: none; }
+    a:hover { color: var(--tk-accent-text); text-decoration: underline; }
+    .frame { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13.5px; line-height: 1.55; color: var(--tk-fg); background: var(--tk-bg); }
+    .content { background-color: var(--tk-bg); background-image: linear-gradient(var(--tk-grid) 1px, transparent 1px), linear-gradient(90deg, var(--tk-grid) 1px, transparent 1px); background-size: 28px 28px; }
+    .num { font-variant-numeric: tabular-nums; }
+    .th { font-size: 11.2px; font-weight: 600; color: var(--tk-muted-text); text-align: right; padding: 4.8px 7.2px; white-space: normal; line-height: 1.2; vertical-align: bottom; border-bottom: 1px solid var(--tk-border-soft); }
+    .td { font-size: 12.16px; text-align: right; padding: 4.8px 7.2px; white-space: nowrap; border-bottom: 1px solid var(--tk-border-soft); }
+    .tr-you .td { background: color-mix(in srgb, var(--tk-accent) var(--tk-wash), transparent); }
+    .group-l { border-left: 1px solid var(--tk-border); }
+    .rail-entry { width: 34px; height: 34px; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: var(--tk-fg); }
+    .rail-entry-active { background: var(--tk-accent); color: var(--tk-on-accent); }
+    .badge { display: inline-flex; align-items: center; height: 16px; padding: 0 6px; border-radius: 10px; font-size: 10.56px; font-weight: 600; letter-spacing: 0.02em; }
+    .badge-accent { background: color-mix(in srgb, var(--tk-accent) 15%, transparent); color: var(--tk-accent-text); }
+    .badge-muted { background: color-mix(in srgb, var(--tk-fg) 8%, var(--tk-card)); color: var(--tk-muted-text); }
+    .btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 14px; border-radius: 6px; font-size: 11.2px; font-weight: 600; border: 1px solid var(--tk-border); background: var(--tk-panel); color: var(--tk-fg); white-space: nowrap; }
+    .btn-filled { background: var(--tk-accent); border-color: var(--tk-accent); color: var(--tk-on-accent); }
+    .btn-subtle { border-color: transparent; background: transparent; color: var(--tk-muted-text); }
+    .seg { display: inline-flex; padding: 2px; border-radius: 6px; background: var(--tk-panel); border: 1px solid var(--tk-border-soft); height: 28px; box-sizing: border-box; }
+    .seg-item { display: inline-flex; align-items: center; padding: 0 10px; border-radius: 4px; font-size: 11.2px; font-weight: 500; color: var(--tk-muted-text); }
+    .seg-on { background: var(--tk-card); color: var(--tk-fg); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12); }
+    .paper { background: var(--tk-card); border: 1px solid var(--tk-border); border-radius: 6px; }
+    .alert-warn { display: flex; gap: 9.6px; align-items: flex-start; padding: 9.6px; border-radius: 6px; background: color-mix(in srgb, var(--tk-amber) 14%, transparent); color: var(--tk-fg); font-size: 11.2px; }
+    .kbd { font-size: 10.56px; color: var(--tk-muted-text); }
+    .stat-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 5px 9.6px; font-size: 12.16px; border-bottom: 1px solid var(--tk-border-soft); }
+    .stat-on { background: color-mix(in srgb, var(--tk-accent) var(--tk-wash), transparent); color: var(--tk-accent-text); }
+    .ev-th { font-size: 10.56px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--tk-muted-text); text-align: left; padding: 6px 9.6px; border-bottom: 1px solid var(--tk-border-soft); white-space: nowrap; }
+    .ev-td { font-size: 12.16px; padding: 5px 9.6px; border-bottom: 1px solid var(--tk-border-soft); vertical-align: top; color: var(--tk-muted-text); }
+    .ev-td-key { color: var(--tk-fg); white-space: nowrap; }
+    .ev-td-num { text-align: right; white-space: nowrap; }
+    .setting-row { display: grid; grid-template-columns: 260px minmax(0, 1fr) 150px 34px; gap: 12px; align-items: start; padding: 9.6px 12px; border-bottom: 1px solid var(--tk-border-soft); }
+    .scope { display: inline-flex; align-items: center; gap: 5px; font-size: 10.56px; color: var(--tk-muted-text); white-space: nowrap; }
+    .dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+    .switch { width: 32px; height: 20px; border-radius: 10px; position: relative; display: inline-block; box-sizing: border-box; }
+    .switch-off { background: var(--tk-panel); border: 1px solid var(--tk-border); }
+    .switch-on { background: var(--tk-accent); }
+    .thumb { width: 14px; height: 14px; border-radius: 50%; background: #ffffff; position: absolute; top: 2px; }
+</style>
+</helmet>
+<div class="frame" style="--tk-bg: {{c.bg}}; --tk-panel: {{c.panel}}; --tk-card: {{c.card}}; --tk-border: {{c.border}}; --tk-border-soft: {{c.borderSoft}}; --tk-fg: {{c.fg}}; --tk-muted: {{c.muted}}; --tk-muted-text: {{c.mutedText}}; --tk-accent: {{c.accent}}; --tk-accent-text: {{c.accentText}}; --tk-green: {{c.green}}; --tk-red: {{c.red}}; --tk-amber: {{c.amber}}; --tk-purple: {{c.purple}}; --tk-cyan: {{c.cyan}}; --tk-grid: {{c.grid}}; --tk-dot-ok: {{c.dotOk}}; --tk-dot-warn: {{c.dotWarn}}; --tk-dot-bad: {{c.dotBad}}; --tk-wash: {{c.wash}}; --tk-on-accent: {{c.onAccent}}; width: 1440px; height: 1180px; display: flex; flex-direction: column; overflow: hidden; box-sizing: border-box">
+  <div style="height: 48px; flex: none; display: flex; align-items: center; justify-content: space-between; padding: 0 9.6px; border-bottom: 1px solid var(--tk-border); background: var(--tk-bg); box-sizing: border-box">
+    <div style="display: flex; align-items: center; gap: 7.2px">
+      <svg width="30" height="30" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" style="display: block; flex: none"><rect width="32" height="32" rx="7.2" fill="#ff84ad"></rect><g fill="#1d1830"><rect x="9.4" y="16" width="3.6" height="7" rx="1"></rect><rect x="14.2" y="12" width="3.6" height="11" rx="1"></rect><rect x="19" y="9" width="3.6" height="14" rx="1"></rect></g></svg>
+      <div style="font-weight: 700; font-size: 22px; line-height: 1; white-space: nowrap">boxscore</div>
+    </div>
+    <div style="width: 44px; height: 44px; border-radius: 6px; display: flex; align-items: center; justify-content: center" title="Apps"><svg width="34" height="34" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" style="display: block; flex: none"><rect width="64" height="64" rx="14.4" fill="#161224"></rect><text x="13" y="40.5" font-family="'JetBrains Mono', ui-monospace, Menlo, monospace" font-size="25.6" font-weight="500" fill="#FF6B9D">m</text><g transform="translate(31.6 22.4) scale(0.8)" fill="none" stroke="#FF6B9D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.5 L21.8 7 L12 11.5 L2.2 7 Z"></path><path d="M2.2 12.3 L12 16.8 L21.8 12.3"></path><path d="M2.2 17.3 L12 21.8 L21.8 17.3"></path></g></svg></div>
+  </div>
+  <div style="flex: 1; display: flex; min-height: 0">
+    <div style="width: 68px; flex: none; border-right: 1px solid var(--tk-border); background: var(--tk-bg); display: flex; flex-direction: column; gap: 4.8px; padding: 9.6px 8px; box-sizing: border-box">
+      <div class="rail-entry" style="margin-left: 9px; color: var(--tk-muted-text)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: block; flex: none"><rect width="18" height="18" x="3" y="3" rx="2"></rect><path d="M9 3v18"></path><path d="m14 9 3 3-3 3"></path></svg></div>
+      <div class="rail-entry rail-entry-active" title="Leaderboard" style="margin-left: 9px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: block; flex: none"><path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2V9M9 21H5a2 2 0 0 1-2-2V9m0 0h18"></path></svg></div>
+      <div class="rail-entry" title="Settings" style="margin-left: 9px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: block; flex: none"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg></div>
+      <div style="flex: 1"></div>
+      <div class="rail-entry" style="margin-left: 9px; color: var(--tk-fg)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: block; flex: none"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path></svg></div>
+    </div>
+    <div style="flex: 1; display: flex; flex-direction: column; min-width: 0">
+      <div style="height: 40px; flex: none; display: flex; align-items: center; justify-content: space-between; padding: 0 18px; background: var(--tk-panel); border-bottom: 1px solid var(--tk-border); box-sizing: border-box">
+        <div style="font-size: 13.6px; font-weight: 600">Leaderboard</div>
+  <div style="font-size: 10.56px; color: var(--tk-muted-text)">Volume metrics are gameable; weigh them against the quality columns.</div>
+      </div>
+      <div class="content" style="flex: 1; overflow: hidden; padding: 18px; box-sizing: border-box; display: flex; flex-direction: column; gap: 14.4px; min-height: 0">
+        <div style="display: flex; align-items: center; gap: 14.4px; flex-wrap: nowrap">
+    <div class="seg"><div class="seg-item">7d</div><div class="seg-item seg-on">30d</div><div class="seg-item">90d</div><div class="seg-item">Custom</div></div>
+    <div style="display: flex; align-items: center; gap: 7.2px">
+      <div class="switch switch-on"><div class="thumb" style="right: 2px"></div></div>
+      <div style="font-size: 11.2px; color: var(--tk-muted-text)">Trend vs prior</div>
+    </div>
+    <div class="seg"><div class="seg-item">Table</div><div class="seg-item seg-on">Cards</div></div>
+    <div style="flex: 1"></div>
+    <div class="btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: block; flex: none"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path><path d="M21 3v5h-5"></path><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path><path d="M8 16H3v5"></path></svg>Refresh</div>
+  </div>
+  <div style="display: flex; gap: 14.4px; font-size: 10.56px; color: var(--tk-muted-text); margin-top: -7.2px">
+    <div>Scope: <span style="color: var(--tk-fg)">acme/acme-web</span></div>
+    <div>Window: <span style="color: var(--tk-fg)">2026-08-03 → 2026-09-02</span></div>
+    <div>cached 14 min ago</div>
+    <div style="color: var(--tk-accent-text)">trend vs 2026-07-04+</div>
+  </div><div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14.4px"><div class="paper" style="padding: 12px 12px 9.6px">
+      <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 7.2px">
+        <div style="font-size: 12.16px; font-weight: 600">Issues done</div>
+        <div style="font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--tk-green)">delivery</div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 1px"><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px; color: var(--tk-accent-text); font-weight: 600">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">1</span><span>Matthew Goodwin</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="color: var(--tk-accent-text)">9</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>2</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">2</span><span>Owen Marsh</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">8</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>3</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">3</span><span>Nadia Fenwick</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">7</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>1</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">4</span><span>Sam Kestrel</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">6</span><span style="font-size: 10.56px"><span style="color: var(--tk-muted-text)">→ 0</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">5</span><span>Marco Villanueva</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">5</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>1</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">6</span><span>Reggie Voss</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">4</span><span style="font-size: 10.56px"><span style="color: var(--tk-red)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 7 1 1h6Z" fill="var(--tk-red)"></path></svg>1</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">7</span><span>Miles Chandler</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">3</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>1</span></span></div>
+      </div></div>
+    </div><div class="paper" style="padding: 12px 12px 9.6px">
+      <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 7.2px">
+        <div style="font-size: 12.16px; font-weight: 600">Added</div>
+        <div style="font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--tk-muted-text)">volume</div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 1px"><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">1</span><span>Owen Marsh</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">6,105</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>1,930</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px; color: var(--tk-accent-text); font-weight: 600">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">2</span><span>Matthew Goodwin</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="color: var(--tk-accent-text)">4,812</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>640</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">3</span><span>Nadia Fenwick</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">3,340</span><span style="font-size: 10.56px"><span style="color: var(--tk-red)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 7 1 1h6Z" fill="var(--tk-red)"></path></svg>410</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">4</span><span>Sam Kestrel</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">2,918</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>120</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">5</span><span>Reggie Voss</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">2,230</span><span style="font-size: 10.56px"><span style="color: var(--tk-red)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 7 1 1h6Z" fill="var(--tk-red)"></path></svg>880</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">6</span><span>Marco Villanueva</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">1,764</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>300</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">7</span><span>Miles Chandler</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">1,102</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>410</span></span></div>
+      </div></div>
+    </div><div class="paper" style="padding: 12px 12px 9.6px">
+      <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 7.2px">
+        <div style="font-size: 12.16px; font-weight: 600">Deleted</div>
+        <div style="font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--tk-muted-text)">volume</div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 1px"><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">1</span><span>Owen Marsh</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">3,988</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>1,204</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px; color: var(--tk-accent-text); font-weight: 600">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">2</span><span>Matthew Goodwin</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="color: var(--tk-accent-text)">2,106</span><span style="font-size: 10.56px"><span style="color: var(--tk-red)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 7 1 1h6Z" fill="var(--tk-red)"></path></svg>212</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">3</span><span>Nadia Fenwick</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">1,522</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>88</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">4</span><span>Reggie Voss</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">1,110</span><span style="font-size: 10.56px"><span style="color: var(--tk-red)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 7 1 1h6Z" fill="var(--tk-red)"></path></svg>402</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">5</span><span>Sam Kestrel</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">905</span><span style="font-size: 10.56px"><span style="color: var(--tk-red)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 7 1 1h6Z" fill="var(--tk-red)"></path></svg>60</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">6</span><span>Marco Villanueva</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">640</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>95</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">7</span><span>Miles Chandler</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">388</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>120</span></span></div>
+      </div></div>
+    </div><div class="paper" style="padding: 12px 12px 9.6px">
+      <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 7.2px">
+        <div style="font-size: 12.16px; font-weight: 600">MRs merged</div>
+        <div style="font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--tk-muted-text)">volume</div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 1px"><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px; color: var(--tk-accent-text); font-weight: 600">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">1</span><span>Matthew Goodwin</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="color: var(--tk-accent-text)">14</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>3</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">2</span><span>Owen Marsh</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">12</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>4</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">3</span><span>Nadia Fenwick</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">11</span><span style="font-size: 10.56px"><span style="color: var(--tk-red)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 7 1 1h6Z" fill="var(--tk-red)"></path></svg>1</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">4</span><span>Sam Kestrel</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">9</span><span style="font-size: 10.56px"><span style="color: var(--tk-muted-text)">→ 0</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">5</span><span>Marco Villanueva</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">7</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>1</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">6</span><span>Reggie Voss</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">6</span><span style="font-size: 10.56px"><span style="color: var(--tk-red)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 7 1 1h6Z" fill="var(--tk-red)"></path></svg>2</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">7</span><span>Miles Chandler</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">5</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>2</span></span></div>
+      </div></div>
+    </div><div class="paper" style="padding: 12px 12px 9.6px">
+      <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 7.2px">
+        <div style="font-size: 12.16px; font-weight: 600">MRs reviewed</div>
+        <div style="font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--tk-muted-text)">volume</div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 1px"><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">1</span><span>Nadia Fenwick</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">16</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>4</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px; color: var(--tk-accent-text); font-weight: 600">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">2</span><span>Matthew Goodwin</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="color: var(--tk-accent-text)">11</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>1</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">3</span><span>Marco Villanueva</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">9</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>2</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">4</span><span>Sam Kestrel</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">8</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>1</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">5</span><span>Owen Marsh</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">6</span><span style="font-size: 10.56px"><span style="color: var(--tk-red)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 7 1 1h6Z" fill="var(--tk-red)"></path></svg>2</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">6</span><span>Reggie Voss</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">5</span><span style="font-size: 10.56px"><span style="color: var(--tk-red)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 7 1 1h6Z" fill="var(--tk-red)"></path></svg>1</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">7</span><span>Miles Chandler</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">4</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>1</span></span></div>
+      </div></div>
+    </div><div class="paper" style="padding: 12px 12px 9.6px">
+      <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 7.2px">
+        <div style="font-size: 12.16px; font-weight: 600">Pipelines</div>
+        <div style="font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--tk-muted-text)">volume</div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 1px"><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">1</span><span>Owen Marsh</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">97</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>21</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px; color: var(--tk-accent-text); font-weight: 600">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">2</span><span>Matthew Goodwin</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="color: var(--tk-accent-text)">88</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>9</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">3</span><span>Nadia Fenwick</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">74</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>2</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">4</span><span>Sam Kestrel</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">61</span><span style="font-size: 10.56px"><span style="color: var(--tk-red)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 7 1 1h6Z" fill="var(--tk-red)"></path></svg>4</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">5</span><span>Marco Villanueva</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">52</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>6</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">6</span><span>Reggie Voss</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">40</span><span style="font-size: 10.56px"><span style="color: var(--tk-red)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 7 1 1h6Z" fill="var(--tk-red)"></path></svg>12</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">7</span><span>Miles Chandler</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">33</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>8</span></span></div>
+      </div></div>
+    </div><div class="paper" style="padding: 12px 12px 9.6px">
+      <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 7.2px">
+        <div style="font-size: 12.16px; font-weight: 600">Review depth</div>
+        <div style="font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--tk-accent-text)">quality</div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 1px"><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">1</span><span>Nadia Fenwick</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">3.1/MR</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>0.6</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px; color: var(--tk-accent-text); font-weight: 600">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">2</span><span>Matthew Goodwin</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="color: var(--tk-accent-text)">2.4/MR</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>0.3</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">3</span><span>Marco Villanueva</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">2.0/MR</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>0.4</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">4</span><span>Sam Kestrel</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">1.7/MR</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>0.1</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">5</span><span>Reggie Voss</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">1.4/MR</span><span style="font-size: 10.56px"><span style="color: var(--tk-red)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 7 1 1h6Z" fill="var(--tk-red)"></path></svg>0.5</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">6</span><span>Owen Marsh</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">1.1/MR</span><span style="font-size: 10.56px"><span style="color: var(--tk-red)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 7 1 1h6Z" fill="var(--tk-red)"></path></svg>0.2</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">7</span><span>Miles Chandler</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">0.9/MR</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>0.2</span></span></div>
+      </div></div>
+    </div><div class="paper" style="padding: 12px 12px 9.6px">
+      <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 7.2px">
+        <div style="font-size: 12.16px; font-weight: 600">Wait for review</div>
+        <div style="font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--tk-accent-text)">quality</div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 1px"><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">1</span><span>Owen Marsh</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">2.7h</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 7 1 1h6Z" fill="var(--tk-green)"></path></svg>0.6</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px; color: var(--tk-accent-text); font-weight: 600">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">2</span><span>Matthew Goodwin</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="color: var(--tk-accent-text)">3.1h</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 7 1 1h6Z" fill="var(--tk-green)"></path></svg>1.4</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">3</span><span>Nadia Fenwick</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">5.8h</span><span style="font-size: 10.56px"><span style="color: var(--tk-red)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-red)"></path></svg>0.9</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">4</span><span>Sam Kestrel</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">6.4h</span><span style="font-size: 10.56px"><span style="color: var(--tk-red)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-red)"></path></svg>1.1</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">5</span><span>Marco Villanueva</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">8.9h</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 7 1 1h6Z" fill="var(--tk-green)"></path></svg>2.0</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">6</span><span>Miles Chandler</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">10.5h</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 7 1 1h6Z" fill="var(--tk-green)"></path></svg>1.1</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">7</span><span>Reggie Voss</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">12.2h</span><span style="font-size: 10.56px"><span style="color: var(--tk-red)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-red)"></path></svg>3.4</span></span></div>
+      </div></div>
+    </div><div class="paper" style="padding: 12px 12px 9.6px">
+      <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 7.2px">
+        <div style="font-size: 12.16px; font-weight: 600">Response time</div>
+        <div style="font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--tk-accent-text)">quality</div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 1px"><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">1</span><span>Nadia Fenwick</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">1.2h</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 7 1 1h6Z" fill="var(--tk-green)"></path></svg>0.4</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px; color: var(--tk-accent-text); font-weight: 600">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">2</span><span>Matthew Goodwin</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="color: var(--tk-accent-text)">1.9h</span><span style="font-size: 10.56px"><span style="color: var(--tk-red)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-red)"></path></svg>0.2</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">3</span><span>Marco Villanueva</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">2.6h</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 7 1 1h6Z" fill="var(--tk-green)"></path></svg>0.5</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">4</span><span>Sam Kestrel</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">4.3h</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 7 1 1h6Z" fill="var(--tk-green)"></path></svg>0.8</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">5</span><span>Reggie Voss</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">5.1h</span><span style="font-size: 10.56px"><span style="color: var(--tk-red)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-red)"></path></svg>1.2</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">6</span><span>Owen Marsh</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">6.8h</span><span style="font-size: 10.56px"><span style="color: var(--tk-red)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-red)"></path></svg>2.1</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">7</span><span>Miles Chandler</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">7.4h</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 7 1 1h6Z" fill="var(--tk-green)"></path></svg>0.9</span></span></div>
+      </div></div>
+    </div><div class="paper" style="padding: 12px 12px 9.6px">
+      <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 7.2px">
+        <div style="font-size: 12.16px; font-weight: 600">Revert rate</div>
+        <div style="font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--tk-accent-text)">quality</div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 1px"><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px; color: var(--tk-accent-text); font-weight: 600">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">1</span><span>Matthew Goodwin</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="color: var(--tk-accent-text)">0%</span><span style="font-size: 10.56px"><span style="color: var(--tk-muted-text)">→ 0</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">2</span><span>Sam Kestrel</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">0%</span><span style="font-size: 10.56px"><span style="color: var(--tk-muted-text)">→ 0</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">3</span><span>Marco Villanueva</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">0%</span><span style="font-size: 10.56px"><span style="color: var(--tk-muted-text)">→ 0</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">4</span><span>Miles Chandler</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">0%</span><span style="font-size: 10.56px"><span style="color: var(--tk-muted-text)">→ 0</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">5</span><span>Owen Marsh</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">8%</span><span style="font-size: 10.56px"><span style="color: var(--tk-red)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-red)"></path></svg>8</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">6</span><span>Nadia Fenwick</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">9%</span><span style="font-size: 10.56px"><span style="color: var(--tk-red)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-red)"></path></svg>9</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">7</span><span>Reggie Voss</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">17%</span><span style="font-size: 10.56px"><span style="color: var(--tk-red)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-red)"></path></svg>17</span></span></div>
+      </div></div>
+    </div><div class="paper" style="padding: 12px 12px 9.6px">
+      <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 7.2px">
+        <div style="font-size: 12.16px; font-weight: 600">Size health</div>
+        <div style="font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--tk-accent-text)">quality</div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 1px"><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">1</span><span>Marco Villanueva</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">86%</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>4</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">2</span><span>Miles Chandler</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">80%</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>5</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">3</span><span>Sam Kestrel</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">78%</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>3</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px; color: var(--tk-accent-text); font-weight: 600">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">4</span><span>Matthew Goodwin</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="color: var(--tk-accent-text)">71%</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>6</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">5</span><span>Reggie Voss</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">67%</span><span style="font-size: 10.56px"><span style="color: var(--tk-red)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 7 1 1h6Z" fill="var(--tk-red)"></path></svg>8</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">6</span><span>Nadia Fenwick</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">64%</span><span style="font-size: 10.56px"><span style="color: var(--tk-red)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 7 1 1h6Z" fill="var(--tk-red)"></path></svg>5</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">7</span><span>Owen Marsh</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">50%</span><span style="font-size: 10.56px"><span style="color: var(--tk-red)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 7 1 1h6Z" fill="var(--tk-red)"></path></svg>11</span></span></div>
+      </div></div>
+    </div><div class="paper" style="padding: 12px 12px 9.6px">
+      <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 7.2px">
+        <div style="font-size: 12.16px; font-weight: 600">Coding days</div>
+        <div style="font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--tk-accent-text)">quality</div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 1px"><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px; color: var(--tk-accent-text); font-weight: 600">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">1</span><span>Matthew Goodwin</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="color: var(--tk-accent-text)">19</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>2</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">2</span><span>Owen Marsh</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">18</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>1</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">3</span><span>Nadia Fenwick</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">17</span><span style="font-size: 10.56px"><span style="color: var(--tk-muted-text)">→ 0</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">4</span><span>Sam Kestrel</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">15</span><span style="font-size: 10.56px"><span style="color: var(--tk-red)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 7 1 1h6Z" fill="var(--tk-red)"></path></svg>1</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">5</span><span>Marco Villanueva</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">14</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>1</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">6</span><span>Reggie Voss</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">12</span><span style="font-size: 10.56px"><span style="color: var(--tk-red)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 7 1 1h6Z" fill="var(--tk-red)"></path></svg>3</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">7</span><span>Miles Chandler</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">11</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>2</span></span></div>
+      </div></div>
+    </div><div class="paper" style="padding: 12px 12px 9.6px">
+      <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 7.2px">
+        <div style="font-size: 12.16px; font-weight: 600">Merge streak</div>
+        <div style="font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--tk-accent-text)">quality</div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 1px"><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">1</span><span>Owen Marsh</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">5</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>2</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px; color: var(--tk-accent-text); font-weight: 600">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">2</span><span>Matthew Goodwin</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="color: var(--tk-accent-text)">4</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>1</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">3</span><span>Nadia Fenwick</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">3</span><span style="font-size: 10.56px"><span style="color: var(--tk-muted-text)">→ 0</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">4</span><span>Sam Kestrel</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">3</span><span style="font-size: 10.56px"><span style="color: var(--tk-muted-text)">→ 0</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">5</span><span>Marco Villanueva</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">2</span><span style="font-size: 10.56px"><span style="color: var(--tk-muted-text)">→ 0</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">6</span><span>Reggie Voss</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">2</span><span style="font-size: 10.56px"><span style="color: var(--tk-red)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 7 1 1h6Z" fill="var(--tk-red)"></path></svg>1</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">7</span><span>Miles Chandler</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">2</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>1</span></span></div>
+      </div></div>
+    </div><div class="paper" style="padding: 12px 12px 9.6px">
+      <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 7.2px">
+        <div style="font-size: 12.16px; font-weight: 600">Reciprocity</div>
+        <div style="font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--tk-accent-text)">quality</div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 1px"><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">1</span><span>Nadia Fenwick</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">1.6</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>0.3</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">2</span><span>Marco Villanueva</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">1.3</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>0.2</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px; color: var(--tk-accent-text); font-weight: 600">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">3</span><span>Matthew Goodwin</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="color: var(--tk-accent-text)">1.2</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>0.1</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">4</span><span>Miles Chandler</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">1.0</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>0.2</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">5</span><span>Sam Kestrel</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">0.9</span><span style="font-size: 10.56px"><span style="color: var(--tk-green)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 1 7 7H1Z" fill="var(--tk-green)"></path></svg>0.1</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">6</span><span>Reggie Voss</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">0.8</span><span style="font-size: 10.56px"><span style="color: var(--tk-red)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 7 1 1h6Z" fill="var(--tk-red)"></path></svg>0.3</span></span></div>
+      </div><div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px">
+        <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">7</span><span>Owen Marsh</span></div>
+        <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="">0.6</span><span style="font-size: 10.56px"><span style="color: var(--tk-red)"><svg width="8" height="8" viewBox="0 0 8 8" style="display: inline-block; vertical-align: middle; margin-right: 3px"><path d="M4 7 1 1h6Z" fill="var(--tk-red)"></path></svg>0.2</span></span></div>
+      </div></div>
+    </div></div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"dark":{"editor":"boolean","default":true,"section":"Scheme"},"$preview":{"width":1440,"height":1180}}'>
+const DAY = {"bg":"#e1e2e7","panel":"#eff0f5","card":"#f6f6fa","border":"#c8cad6","borderSoft":"#d5d7e2","fg":"#111111","muted":"#8990b3","mutedText":"#565d80","accent":"#2e7de9","accentText":"#1c5fbf","green":"#587539","red":"#f52a65","amber":"#8c6c3e","purple":"#7847bd","cyan":"#007197","grid":"rgba(52, 59, 88, 0.05)","dotOk":"#1f9d3a","dotWarn":"#e08a00","dotBad":"#e5153f","wash":"10%","onAccent":"#ffffff"};
+const NIGHT = {"bg":"#16161e","panel":"#232a47","card":"#2c3352","border":"#3b4261","borderSoft":"#313853","fg":"#e3e7f6","muted":"#7e86ad","mutedText":"#969ec2","accent":"#7aa2f7","accentText":"#7aa2f7","green":"#9ece6a","red":"#f7768e","amber":"#e0af68","purple":"#bb9af7","cyan":"#7dcfff","grid":"rgba(122, 162, 247, 0.06)","dotOk":"#4ade5b","dotWarn":"#ffbb3d","dotBad":"#ff5c72","wash":"15%","onAccent":"#16161e"};
+class Component extends DCLogic {
+  renderVals() {
+    return { c: this.props.dark ?? true ? NIGHT : DAY };
+  }
+}
+</script>
+</body>
+</html>

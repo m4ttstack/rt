@@ -1,0 +1,5 @@
+{
+  "displayName": "boxscore",
+  "description": "Ranks a hand-picked set of GitLab users on a live leaderboard.",
+  "icon": "./public/favicon.svg"
+}

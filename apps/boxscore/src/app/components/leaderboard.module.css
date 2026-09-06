@@ -1,0 +1,36 @@
+/* Clickable names in the table and cards had hover affordances on the original
+   site that the migration dropped: the table name underlines, the card row
+   highlights. Restored here (inline styles can't express :hover). */
+
+.nameButton {
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+}
+
+.nameButton:hover {
+  text-decoration: underline;
+}
+
+.cardRow {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+}
+
+.cardRow:hover {
+  background-color: var(--mantine-color-default-hover);
+}
