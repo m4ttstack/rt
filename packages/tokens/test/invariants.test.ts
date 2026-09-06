@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { contrastRatio, srgbLuminance } from '../src/color-math.ts';
-import { TOKENS } from '../src/values.ts';
+import { CSS_TEXT, TOKENS } from '../src/values.ts';
 
 const SCHEMES = ['light', 'dark'] as const;
 
@@ -31,4 +31,21 @@ describe('AA floors for text-role tokens', () => {
       }
     }
   );
+});
+
+describe('CSS_TEXT overrides', () => {
+  it('every key resolves to an existing TOKENS path with the same color', () => {
+    for (const [path, cssText] of Object.entries(CSS_TEXT)) {
+      const resolved: unknown = path
+        .split('.')
+        .reduce<unknown>(
+          (node, key) => (node as Record<string, unknown>)[key],
+          TOKENS
+        );
+      expect(typeof resolved, `${path} resolves to a TOKENS string`).toBe(
+        'string'
+      );
+      expect(srgbLuminance(cssText)).toBe(srgbLuminance(resolved as string));
+    }
+  });
 });

@@ -1,9 +1,3 @@
-// Reserved for later emitters (Task 4's tokyo generator): a token's shipped
-// CSS text can diverge from its canonical value (e.g. today's `#111` vs the
-// canonical `#111111`). TOKENS itself stays all plain strings so color-math
-// and sibling-package consumers never have to unwrap a token.
-export type TokenValue = string | { value: string; cssText?: string };
-
 export interface ColorScheme {
   hue: {
     accent: string;
@@ -60,9 +54,8 @@ export const TOKENS: Tokens = {
       cyan: '#007197',
     },
     text: {
-      // Canonical 6-digit spelling; today's tokyo-theme.css prints the
-      // 3-digit `#111`. Task 4's emitter restores that exact spelling via a
-      // { value: '#111111', cssText: '#111' } override keyed off this value.
+      // Canonical 6-digit spelling; CSS_TEXT below overrides the shipped
+      // spelling back to today's 3-digit `#111`.
       fg: '#111111',
       muted: '#8990b3',
       mutedText: '#565d80',
@@ -125,4 +118,13 @@ export const TOKENS: Tokens = {
     baseSize: '13.5px',
     lineHeight: '1.55',
   },
+};
+
+// Dot-path (e.g. 'light.text.fg') into TOKENS, keyed to the exact CSS text an
+// emitter must print in place of the six-digit canonical value at that path.
+// Emitters print CSS_TEXT[path] ?? value, so shipped CSS keeps its historical
+// spelling while every consumer of TOKENS itself does color math in six-digit
+// hex.
+export const CSS_TEXT: Record<string, string> = {
+  'light.text.fg': '#111',
 };
