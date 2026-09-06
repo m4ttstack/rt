@@ -4,8 +4,8 @@ app-kit ships three source-shipped packages that let a mattstack web app be
 only its product code: a Mantine-based UI kit, a Hono/Bun server frame, and
 the shared brand tokens they both theme from. No `dist`, no build step:
 `exports` in each package.json point straight at `src/*.ts(x)` and `.css`,
-so a consumer gets the same files whether it installs a packed tarball or,
-later, an npm release.
+so a workspace consumer gets the same files a build step would produce,
+without running one.
 
 app-kit is part of the mattstack estate, the same toolkit behind
 [rt](https://github.com/m4ttstack/rt), [deck](https://github.com/m4ttstack/deck),
@@ -23,7 +23,7 @@ and console.
 | `packages/tui-kit` | `@mattstack/tui-kit`       | The terminal-UI kit for herdr-style panes: components, hooks, and theme, built rather than source-shipped like the other three.                  |
 
 `packages/tui-kit` lives in this repo alongside the Mantine-based packages
-so all four publish and version in lockstep; it does not depend on
+so all four version in lockstep; it does not depend on
 `packages/ui` or `packages/server`, or vice versa. `packages/tokens` is
 also part of this workspace but is private and unpublished: it generates
 the canonical colour and font values both `mantine-tokyo` and `tui-kit`
@@ -52,56 +52,27 @@ See `AGENTS.md` for the contract anyone editing `packages/ui/src` or
 
 ## Installation
 
-All four packages are on npm. Install with a normal version range, the
-same as any other npm dependency:
+None of the four packages publish to npm. The apps that use them are
+folding into this repo as workspace members (see
+`docs/superpowers/specs/2026-09-06-apps-fold-in-design.md`); once an app
+lands under `apps/<name>`, it depends on `packages/ui`, `packages/server`,
+`packages/tokyo`, and `packages/tui-kit` with `workspace:*`. `packages/ui`,
+`packages/server`, and `packages/tokyo` are consumed straight from source,
+no install step required; `@mattstack/tui-kit` builds to `dist/`, so
+workspace consumers run `bun run tui-kit:build` before any board or deck
+work. General consumption of these packages from outside this workspace
+is unsupported, except for the packed-tarball path below, which is the
+sanctioned bundle-transition mechanism for apps that have not folded in
+yet.
 
-```json
-{
-  "dependencies": {
-    "@mattstack/app-kit": "^0.4.0",
-    "@mattstack/app-server": "^0.4.0",
-    "@mattstack/mantine-tokyo": "^0.4.0",
-    "@mattstack/tui-kit": "^0.4.0"
-  }
-}
-```
+### Bundle-transition tarballs
 
-The four published packages release together as one platform version (see
-`CLAUDE.md`'s "Publishing" section); publishing itself is still done by
-hand, with no automated release step in this repo.
-
-### Consuming unreleased workspace changes
-
-To pick up a change in this workspace before it's published, depend on a
-packed tarball rather than a bare `file:` directory: Bun 1.3 installs a
-bare `file:../packages/ui` dependency as a symlink into the source tree,
-which resolves peers like `react` twice and breaks typecheck and tests in
-the consumer. Pack each package instead:
-
-```bash
-cd packages/tokyo && bun pm pack --destination ../../my-app/vendor --quiet
-cd ../ui && bun pm pack --destination ../../my-app/vendor --quiet
-cd ../server && bun pm pack --destination ../../my-app/vendor --quiet
-```
-
-Then depend on the tarballs:
-
-```json
-{
-  "dependencies": {
-    "@mattstack/app-kit": "file:./vendor/mattstack-app-kit-0.4.0.tgz",
-    "@mattstack/app-server": "file:./vendor/mattstack-app-server-0.4.0.tgz",
-    "@mattstack/mantine-tokyo": "file:./vendor/mattstack-mantine-tokyo-0.4.0.tgz"
-  }
-}
-```
-
-`probe/` in this repo is the reference implementation of exactly that
-flow; its `package.json` and the root `probe:install` script (below) show
-the pattern end to end. See `AGENTS.md`'s "Consumer requirements" section
-for the other real failure modes a migrating app hits (icon augmentation
-file naming, the Mantine colour augmentation, the vite preset's plain-JS
-shape).
+Until an app has folded in, it can pick up a workspace change by
+depending on a packed tarball rather than a bare `file:` directory (Bun
+1.3 resolves a bare `file:../packages/ui` dependency as a symlink into
+the source tree, which resolves peers like `react` twice and breaks
+typecheck and tests in the consumer); see the fold-in spec for how each
+app's transition uses this mechanism.
 
 ## Quickstart
 
