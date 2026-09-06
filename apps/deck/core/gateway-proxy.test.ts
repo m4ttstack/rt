@@ -96,6 +96,14 @@ beforeAll(async () => {
   const settings = await import('./settings.ts');
   reloadSettings = settings.reloadSettings;
   reloadSettings();
+  // platform-settings.ts caches its parsed file at module-first-import, which
+  // can happen from an earlier test file's own static import chain (e.g.
+  // routes-writer.ts -> discover.ts) before this file's env vars exist.
+  // Reload explicitly, same as domain.test.ts / server.test.ts, so publicDomain
+  // reflects PLATFORM_SETTINGS regardless of which test file loads it first.
+  const { reloadPlatformSettings } =
+    await import('../src/api/platform-settings.ts');
+  reloadPlatformSettings();
   const { startGateway } = await import('./gateway.ts');
   gateway = startGateway(0);
   origin = `http://127.0.0.1:${gateway.port}`;
