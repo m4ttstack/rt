@@ -334,6 +334,39 @@ describe('POST /api/gates/:id/focus', () => {
     expect(res.status).toBe(404);
   });
 
+  it('502s when the gate-list lookup fails', async () => {
+    vi.mocked(rt.gateList).mockResolvedValueOnce({
+      ok: false,
+      error: 'rt daemon unreachable at /tmp/rt.sock: ECONNREFUSED',
+    });
+    const res = await focus('g1');
+    expect(res.status).toBe(502);
+    await expect(res.json()).resolves.toEqual({
+      error: 'rt daemon unreachable at /tmp/rt.sock: ECONNREFUSED',
+    });
+    expect(rt.paneList).not.toHaveBeenCalled();
+    expect(rt.paneFocus).not.toHaveBeenCalled();
+  });
+
+  it('502s when paneFocus itself fails after a resolved origin', async () => {
+    vi.mocked(rt.gateList).mockResolvedValueOnce({
+      ok: true,
+      data: {
+        gates: [row({ origin: { paneId: 'p1', presentation: 'form' } })],
+        cursor: 1,
+      },
+    });
+    vi.mocked(rt.paneFocus).mockResolvedValueOnce({
+      ok: false,
+      error: 'pane:focus failed: no such pane',
+    });
+    const res = await focus('g1');
+    expect(res.status).toBe(502);
+    await expect(res.json()).resolves.toEqual({
+      error: 'pane:focus failed: no such pane',
+    });
+  });
+
   it('degrades to a 400 naming the pane-list failure, distinct from a plain no-match', async () => {
     vi.mocked(rt.gateList).mockResolvedValueOnce({
       ok: true,
