@@ -138,8 +138,9 @@ remembered in the conversation.
      ]
      ```
 
-     `<levels present>` is a placeholder — substitute the actual level
-     strings, e.g. `["critical","important","nit"]`. Don't copy it verbatim.
+     `<levels present>` is a placeholder: substitute the actual tier
+     objects, e.g. `[{"value":"critical","label":"critical (1)"},
+     {"value":"nit","label":"nit (2)"}]`. Don't copy it verbatim.
 
      When no levels are present (a clean review with no findings), omit the
      `tiers` question entirely and open the gate with `outcome` alone, so a
@@ -149,25 +150,40 @@ remembered in the conversation.
      [{"id": "outcome", "label": "Verdict", "multi": false, "options": ["comment", "approve"]}]
      ```
 
+     Options carry display labels: the `tiers` question's options are
+     `{"value": "<Tier>", "label": "<Tier> (<count>)"}` objects, the count being
+     that tier's finding count from the report (e.g. value `Major`, label
+     `Major (2)`); the `outcome` options stay bare strings. The `--context`
+     text is the tier counts line followed by one line per finding title from
+     the report, verbatim from the report file, never re-summarized.
+
    - **Open the gate:**
-     `<status-bin> gate open <state> --kind review-post --questions <json>`
-   - **Wait for the answer:**
-     `<status-bin> gate wait <state>`
-     Each invocation waits for a bounded window and always exits on its own,
-     printing exactly one line:
-     - `{"status": "pending"}` — the window elapsed with no answer yet. Run
-       the same command again, and keep re-running it until one of the other
-       results arrives. This loop IS the wait; every re-run resumes exactly
-       where the last left off, because the gate and any answer are
-       persisted daemon state.
-     - `{"answers": {"tiers": [...], "outcome": "..."}, "by": "...", "answeredAt": ...}` when
-       the gate carried both questions, or `{"answers": {"outcome": "..."}, "by": "...", "answeredAt": ...}`
-       when it carried `outcome` alone. Read `answers.outcome`, and `answers.tiers` when the gate
-       carried it.
-     A nonzero exit with any error other than the closed message or the
-     terminal errors below is a transient failure (a daemon restart, say) —
-     re-run it like a pending. Re-entering the wait can never lose an answer
-     already recorded.
+     `<status-bin> gate open <state> --kind review-post --questions <json> --context <context text>`
+     The output is one JSON line: `{"gateId": "...", "presentation": "form"}` or `"wait"`.
+     The context text is assembled from strings you already hold (see the fill
+     rules above); if it would exceed 8192 UTF-8 bytes, omit `--context`
+     entirely rather than trimming it.
+   - **presentation "form":** present the SAME questions as the native
+     structured-question form. Render each option's `label` when it has one
+     and submit the chosen option's `value` verbatim; never an index, never a
+     paraphrase. Submit exactly one
+     `<status-bin> gate answer <state> --answers <json> --by pane` after the
+     form. A printed conflict answer means another surface won: say so in one
+     line and proceed on the printed winning answer. If the form is dismissed
+     under you and a message arrives saying the gate was answered elsewhere,
+     that message is a verify-only signal and never carries the answer: run
+     `<status-bin> gate wait <state> --max-ms 1000`, read the recorded
+     answer, and proceed on it.
+   - **presentation "wait":** do NOT present a form. Launch ONE background
+     shell command (the shell tool's run-in-background mode) that loops
+     `<status-bin> gate wait <state> --max-ms 90000`, re-running while it
+     prints `{"status":"pending"}`, and exits printing the answered JSON as
+     its last stdout. Then END YOUR TURN in one line: `holding at gate
+     <gateId>`. The pane is idle but armed: typed input lands instantly, and
+     the loop's completion re-invokes this pane with the answer as the tool
+     result. On re-invoke, proceed on the answer exactly as the form branch
+     does. A wait that fails with a closed or not-found message is terminal:
+     follow this wrapper's existing closed-gate rules.
    - **Closed or missing gate.** If `gate wait` fails with `gate <id> closed (<reason>)`, the
      decision site itself was abandoned — superseded by a re-review, abandoned, or pruned when
      the MR left the board. A `not-found` error or `no gate open for <url>` mean the same thing
@@ -198,7 +214,7 @@ remembered in the conversation.
      same questions the gate would have — both `tiers` and `outcome` when
      levels are present, `outcome` alone when they aren't — never the old
      two-gate pair, and proceed on its answers. A failing `gate wait` is not
-     itself degradation — per "Wait for the answer" above, re-run it; only
+     itself degradation — per the presentation branches above, re-run it; only
      if it keeps failing, and never with the closed message or the terminal
      errors above (those end cleanly per "Closed or missing gate" instead),
      fall back to the same combined `AskUserQuestion`, and tell the human why.

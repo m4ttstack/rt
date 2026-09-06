@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
-import { gateOpen, gateWait, gateAnswer, parseWaitMaxMs, type GateVerbIo } from "../gates/verbs.ts";
+import { gateOpen, gateWait, gateAnswer, parseWaitMaxMs, presentationFor, type GateVerbIo } from "../gates/verbs.ts";
 import { statusBinPath } from "../herdr.ts";
 import type { ReviewState } from "../review-state.ts";
 import type { RespondState } from "../respond-state.ts";
@@ -117,7 +117,7 @@ describe("gateOpen", () => {
   test("calls the facility with subject mr:<url>, kind review-post, no nudge, and an !<iid> label", async () => {
     const { io, calls } = fakeIo();
 
-    const gateId = await gateOpen(statePath, "review-post", JSON.stringify(QUESTIONS), io);
+    const gateId = (await gateOpen(statePath, "review-post", JSON.stringify(QUESTIONS), io)).gateId;
 
     expect(gateId).toBe("gate-1");
     expect(calls.gateOpen.length).toBe(1);
@@ -128,7 +128,9 @@ describe("gateOpen", () => {
     expect(payload.meta).toEqual({ label: `review gate !${IID}` });
     expect(payload.nudge).toBeUndefined();
     expect(payload.agent).toBeUndefined();
-    expect(payload.pane).toBeUndefined();
+    // No extras passed: no sessionId means no nudge even though the fixture's
+    // paneId still stamps origin/pane (pane is keyed off state, not extras).
+    expect(payload.pane).toBe("pane-1");
   });
 
   test("persists the returned gateId and gateKind onto review state, leaving other fields untouched", async () => {
@@ -204,7 +206,7 @@ describe("gateOpen: label and writer by kind's domain", () => {
     );
     const { io, calls } = fakeIo({ openResult: { ok: true, data: { id: "gate-respond", supersededId: null } } });
 
-    const gateId = await gateOpen(respondPath, "respond-plan", JSON.stringify(QUESTIONS), io);
+    const gateId = (await gateOpen(respondPath, "respond-plan", JSON.stringify(QUESTIONS), io)).gateId;
 
     expect(gateId).toBe("gate-respond");
     expect(calls.gateOpen[0]!.meta).toEqual({ label: `respond gate !${IID}` });
@@ -226,7 +228,7 @@ describe("gateOpen: label and writer by kind's domain", () => {
     );
     const { io, calls } = fakeIo({ openResult: { ok: true, data: { id: "gate-doctor", supersededId: null } } });
 
-    const gateId = await gateOpen(doctorPath, "doctor-escalation", JSON.stringify(QUESTIONS), io);
+    const gateId = (await gateOpen(doctorPath, "doctor-escalation", JSON.stringify(QUESTIONS), io)).gateId;
 
     expect(gateId).toBe("gate-doctor");
     expect(calls.gateOpen[0]!.meta).toEqual({ label: `doctor gate !${IID}` });
@@ -403,6 +405,65 @@ describe("gateAnswer", () => {
     const { io } = fakeIo();
 
     await expect(gateAnswer(statePath, JSON.stringify({}), "pane", io)).rejects.toThrow(/no gate open/);
+  });
+});
+
+describe("gateOpen W4 (origin, nudge, presentation, context)", () => {
+  const FORM_QUESTIONS = JSON.stringify([
+    { id: "outcome", label: "Outcome?", multi: false, options: ["comment", "approve"] },
+  ]);
+  const OVER_CAP_QUESTIONS = JSON.stringify([
+    { id: "threads-1", label: "Threads", multi: true, options: ["a", "b", "c", "d", "e"] },
+  ]);
+
+  function stateWithPane(dir: string): string {
+    const statePath = join(dir, "state.json");
+    writeFileSync(statePath, JSON.stringify({
+      mrUrl: MR_URL, iid: IID, status: "reviewing", paneId: "pane-3", tabId: "tab-3",
+    }));
+    return statePath;
+  }
+
+  test("form presentation: origin stamped, pane set, nudge carries the session id", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "gate-verbs-w4-"));
+    const { io, calls } = fakeIo({ openResult: { ok: true, data: { id: "g1", supersededId: null } } });
+    const result = await gateOpen(stateWithPane(dir), "review-post", FORM_QUESTIONS, io, {
+      sessionId: "sess-9", worktree: "/tmp/wt", context: "tier counts",
+    });
+    expect(result).toEqual({ gateId: "g1", presentation: "form" });
+    const payload = calls.gateOpen[0]!;
+    expect(payload.origin).toEqual({ presentation: "form", paneId: "pane-3", tabId: "tab-3", worktree: "/tmp/wt" });
+    expect(payload.pane).toBe("pane-3");
+    expect(payload.nudge).toEqual({ session: "sess-9" });
+    expect(payload.context).toBe("tier counts");
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("over the option cap: presentation wait and NO nudge", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "gate-verbs-w4-"));
+    const { io, calls } = fakeIo({ openResult: { ok: true, data: { id: "g2", supersededId: null } } });
+    const result = await gateOpen(stateWithPane(dir), "respond-plan", OVER_CAP_QUESTIONS, io, {
+      sessionId: "sess-9", worktree: "/tmp/wt",
+    });
+    expect(result.presentation).toBe("wait");
+    expect(calls.gateOpen[0]!.nudge).toBeUndefined();
+    expect(calls.gateOpen[0]!.origin!.presentation).toBe("wait");
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("oversize context is dropped, not truncated, and the open still succeeds", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "gate-verbs-w4-"));
+    const { io, calls } = fakeIo({ openResult: { ok: true, data: { id: "g3", supersededId: null } } });
+    await gateOpen(stateWithPane(dir), "review-post", FORM_QUESTIONS, io, { context: "x".repeat(8193) });
+    expect(calls.gateOpen[0]!.context).toBeUndefined();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("presentationFor: 4 options is a form, 5 is a wait", () => {
+    const q4 = [{ id: "q", label: "q", multi: false, options: ["a", "b", "c", "d"] }];
+    const q5 = [{ id: "q", label: "q", multi: false, options: ["a", "b", "c", "d", "e"] }];
+    expect(presentationFor(q4)).toBe("form");
+    expect(presentationFor(q5)).toBe("wait");
   });
 });
 

@@ -11,7 +11,7 @@ export interface GateQuestion {
   id: string;
   label: string;
   multi: boolean;
-  options: string[];
+  options: Array<string | { value: string; label: string }>;
 }
 
 /** Thin seam over the three rt-client gate facility wrappers this CLI drives.
@@ -53,33 +53,76 @@ interface GateVerbState {
   iid: number;
   status: string;
   gateId?: string;
+  paneId?: string;
+  tabId?: string;
 }
 
 function readGateVerbState(statePath: string): GateVerbState {
   return JSON.parse(readFileSync(statePath, "utf8")) as GateVerbState;
 }
 
+export const FORM_OPTION_CAP = 4;
+const CONTEXT_CAP_BYTES = 8192;
+export type GatePresentation = "form" | "wait";
+export interface GateOpenResult {
+  gateId: string;
+  presentation: GatePresentation;
+}
+
+/** The opener picks presentation: the native form tool caps options per
+    question, so any question over the cap cannot render as a form and the
+    gate takes the idle-wait path instead. */
+export function presentationFor(questions: GateQuestion[]): GatePresentation {
+  return questions.some((q) => q.options.length > FORM_OPTION_CAP) ? "wait" : "form";
+}
+
 /** Opens the facility gate for one wrapper round and persists the returned
     id (and the kind it was opened with) onto that wrapper's own state file --
     `gateWait`/`gateAnswer` take only the state path, never the id, so the
     wrapper CLI contract stays unchanged and re-entry after a crash just
-    re-reads the file. Board panes are unattended, so no nudge is passed.
-    `kind` picks both the `meta.label` prefix and which domain's typed
-    writer merges the patch back in, via the same kind→domain map sweep.ts
-    uses -- an unrecognized kind fails loudly rather than guessing a writer
-    that would silently drop that domain's own fields on merge. */
-export async function gateOpen(statePath: string, kind: string, questionsJson: string, io: GateVerbIo): Promise<string> {
+    re-reads the file. `kind` picks both the `meta.label` prefix and which
+    domain's typed writer merges the patch back in, via the same kind→domain
+    map sweep.ts uses -- an unrecognized kind fails loudly rather than
+    guessing a writer that would silently drop that domain's own fields on
+    merge. The nudge only fires for a form presentation with a session id:
+    a wait-presented gate has no attended pane to ping, and an unattended
+    pane (no session id) has nowhere for the nudge to land. */
+export async function gateOpen(
+  statePath: string,
+  kind: string,
+  questionsJson: string,
+  io: GateVerbIo,
+  extras: { context?: string; sessionId?: string; worktree?: string } = {},
+): Promise<GateOpenResult> {
   const questions = JSON.parse(questionsJson) as GateQuestion[];
   const state = readGateVerbState(statePath);
   const domain = domainForKind(kind);
   if (!domain) throw new Error(`gate open: unrecognized kind "${kind}"`);
 
-  const res = await io.gateOpen({
+  let context = extras.context;
+  if (context !== undefined && Buffer.byteLength(context, "utf8") > CONTEXT_CAP_BYTES) {
+    console.error(`gate open: context exceeds ${CONTEXT_CAP_BYTES} bytes; opening without context`);
+    context = undefined;
+  }
+
+  const presentation = presentationFor(questions);
+  const origin: NonNullable<Commands["gate:open"]["payload"]["origin"]> = { presentation };
+  if (state.paneId) origin.paneId = state.paneId;
+  if (state.tabId) origin.tabId = state.tabId;
+  if (extras.worktree) origin.worktree = extras.worktree;
+
+  const payload: Commands["gate:open"]["payload"] = {
     subject: `mr:${state.mrUrl}`,
     kind,
     questions,
     meta: { label: `${domain} gate !${state.iid}` },
-  });
+    origin,
+  };
+  if (state.paneId) payload.pane = state.paneId;
+  if (context !== undefined) payload.context = context;
+  if (presentation === "form" && extras.sessionId) payload.nudge = { session: extras.sessionId };
+
+  const res = await io.gateOpen(payload);
   if (!res.ok || !res.data) throw new Error(`gate:open failed: ${res.error ?? "unknown error"}`);
 
   if (domain === "review") {
@@ -90,7 +133,7 @@ export async function gateOpen(statePath: string, kind: string, questionsJson: s
     writeDoctorState(statePath, { status: state.status as DoctorStatus, gateId: res.data.id, gateKind: kind });
   }
 
-  return res.data.id;
+  return { gateId: res.data.id, presentation };
 }
 
 export type GateWaitResult =
