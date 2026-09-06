@@ -61,7 +61,10 @@
     "console:build": "cd apps/console && bun run build",
     "boxscore:typecheck": "cd apps/boxscore && bun run typecheck",
     "boxscore:lint": "cd apps/boxscore && bun run lint",
-    "boxscore:test": "cd apps/boxscore && bun run test"
+    "boxscore:test": "cd apps/boxscore && bun run test",
+    "board:typecheck": "cd apps/board && bun run typecheck",
+    "board:test": "cd apps/board && bun run test",
+    "board:build": "cd apps/board && bun run build"
   },
   "devDependencies": {
     "@mattstack/app-kit": "workspace:*",
