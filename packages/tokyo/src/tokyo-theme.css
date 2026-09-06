@@ -246,6 +246,13 @@ body {
   background-color: var(--tk-bg);
 }
 
+/* BEGIN GENERATED: base rules (font smoothing) */
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+/* END GENERATED: base rules (font smoothing) */
+
 /*
  * The graph-paper grid. NOT painted on `body`: PageShell's root and
  * RailShell's `AppShell.Main` both sit between body and every route, and

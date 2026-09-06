@@ -1,6 +1,11 @@
 import { copyFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import {
+  FONT_SMOOTHING_BEGIN_MARKER,
+  FONT_SMOOTHING_END_MARKER,
+  renderFontSmoothing,
+} from '../src/fragments.ts';
 import { CSS_TEXT, TOKENS, type ColorScheme } from '../src/values.ts';
 
 const PACKAGES_ROOT = join(import.meta.dirname, '..', '..');
@@ -238,6 +243,48 @@ export function spliceGenerated(
   return css.slice(0, afterBegin) + '\n' + body + '\n  ' + css.slice(endIdx);
 }
 
+const BODY_RULE_PATTERN = /\nbody \{[^}]*\}\n\n/;
+
+/**
+ * Unlike tui-kit's theme.css (fully overwritten by `soribashi build` on
+ * every run, so a plain append is idempotent by construction),
+ * tokyo-theme.css persists across runs: `generateTokyoThemeCss` re-reads
+ * whatever is already on disk. A blind append would duplicate the fragment
+ * on the second run, so this replaces it in place once the markers exist
+ * and only falls back to the body-rule anchor -- the kit's own `body` rule
+ * keeps background/type, this fragment carries only smoothing -- on the
+ * first run.
+ */
+function upsertFontSmoothingFragment(css: string): string {
+  const beginIdx = css.indexOf(FONT_SMOOTHING_BEGIN_MARKER);
+  if (beginIdx !== -1) {
+    const endIdx = css.indexOf(FONT_SMOOTHING_END_MARKER, beginIdx);
+    if (endIdx === -1) {
+      throw new Error(
+        `tokyo-theme.css: found ${FONT_SMOOTHING_BEGIN_MARKER} without matching ${FONT_SMOOTHING_END_MARKER}`
+      );
+    }
+    return (
+      css.slice(0, beginIdx) +
+      renderFontSmoothing() +
+      css.slice(endIdx + FONT_SMOOTHING_END_MARKER.length)
+    );
+  }
+  const match = BODY_RULE_PATTERN.exec(css);
+  if (match === null) {
+    throw new Error(
+      'tokyo-theme.css: no body rule found to anchor the font-smoothing fragment after'
+    );
+  }
+  const insertAt = match.index + match[0].length;
+  return (
+    css.slice(0, insertAt) +
+    renderFontSmoothing() +
+    '\n\n' +
+    css.slice(insertAt)
+  );
+}
+
 function generateTokyoThemeCss(): string {
   let css = readFileSync(TOKYO_THEME_CSS, 'utf8');
   css = spliceGenerated(
@@ -250,6 +297,7 @@ function generateTokyoThemeCss(): string {
     '/* BEGIN GENERATED: tokyo tokens dark */',
     renderTokyoSchemeBlock('dark')
   );
+  css = upsertFontSmoothingFragment(css);
   return css;
 }
 

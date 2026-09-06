@@ -502,3 +502,10 @@
   font-display: swap;
   src: url("../../assets/fonts/jetbrains-mono.woff2") format("woff2");
 }
+
+/* BEGIN GENERATED: base rules (font smoothing) */
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+/* END GENERATED: base rules (font smoothing) */
