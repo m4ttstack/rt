@@ -194,8 +194,15 @@ function renderTokyoSchemeBlock(scheme: 'light' | 'dark'): string {
  * Splices `body` between one BEGIN/END marker pair, replacing whatever
  * currently sits there. The markers themselves are left untouched --
  * everything else in tokyo-theme.css is hand-authored and never moves.
+ *
+ * `endMarker` text is shared by every scheme block, so a lone `indexOf`
+ * for it would happily match a later block's END if this block's own END
+ * were missing -- that read would splice `body` across the boundary into
+ * the next block instead of failing. The next-BEGIN check below closes
+ * that: any BEGIN marker between this one and the matched END means the
+ * END wasn't this block's, so it throws instead of splicing silently.
  */
-function spliceGenerated(
+export function spliceGenerated(
   css: string,
   beginMarker: string,
   body: string
@@ -205,10 +212,21 @@ function spliceGenerated(
   if (beginIdx === -1) {
     throw new Error(`tokyo-theme.css: marker not found: ${beginMarker}`);
   }
+  if (css.indexOf(beginMarker, beginIdx + 1) !== -1) {
+    throw new Error(`tokyo-theme.css: duplicate marker: ${beginMarker}`);
+  }
   const afterBegin = beginIdx + beginMarker.length;
   const endIdx = css.indexOf(endMarker, afterBegin);
   if (endIdx === -1) {
     throw new Error(`tokyo-theme.css: no END GENERATED after ${beginMarker}`);
+  }
+  const nextBeginPattern = /\/\* BEGIN GENERATED:.*?\*\//g;
+  nextBeginPattern.lastIndex = afterBegin;
+  const nextBegin = nextBeginPattern.exec(css);
+  if (nextBegin !== null && nextBegin.index < endIdx) {
+    throw new Error(
+      `tokyo-theme.css: no END GENERATED before the next BEGIN marker after ${beginMarker}`
+    );
   }
   return css.slice(0, afterBegin) + '\n' + body + '\n  ' + css.slice(endIdx);
 }
@@ -233,4 +251,8 @@ function main() {
   writeFileSync(TOKYO_THEME_CSS, generateTokyoThemeCss());
 }
 
-main();
+// Guarded so the test suite can import spliceGenerated without triggering a
+// write-to-disk as a side effect of the import.
+if (import.meta.main) {
+  main();
+}
