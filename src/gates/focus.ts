@@ -1,3 +1,4 @@
+import { realpathSync } from "node:fs";
 import type { GateOrigin } from "./store.ts";
 
 export type FocusResolution =
@@ -5,12 +6,22 @@ export type FocusResolution =
   | { ok: false; reason: string };
 
 /** Normalizes a path before comparing an origin's worktree against a live
-    pane's cwd: a trailing slash, or macOS resolving `/tmp` to its real
-    `/private/tmp` target (one side of a comparison may report either form),
-    would otherwise fail an exact-string match on the SAME directory. */
+    pane's cwd: a trailing slash, or any symlink either side reports in a
+    different form (origin.worktree comes from a kernel-resolved
+    process.cwd(); a pane cwd sourced from herdr can still carry the
+    symlinked form, e.g. macOS's `/tmp` vs. its real `/private/tmp`), would
+    otherwise fail an exact-string match on the SAME directory. realpath
+    needs the path to exist; a torn-down worktree or a stale pane cwd must
+    still normalize deterministically rather than throw, so a missing path
+    falls back to the trimmed string with the one rewrite realpath itself
+    would have made for the common macOS case. */
 export function normalizeWorktreePath(path: string): string {
   const trimmed = path.replace(/\/+$/, "");
-  return trimmed === "/tmp" || trimmed.startsWith("/tmp/") ? `/private${trimmed}` : trimmed;
+  try {
+    return realpathSync(trimmed);
+  } catch {
+    return trimmed === "/tmp" || trimmed.startsWith("/tmp/") ? `/private${trimmed}` : trimmed;
+  }
 }
 
 /** Shared focus rule: direct by origin.paneId, else worktree match against

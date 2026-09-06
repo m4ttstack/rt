@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, realpathSync, symlinkSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import { normalizeWorktreePath, panesForOrigin, resolveOriginFocus } from "../gates/focus.ts";
 
 describe("resolveOriginFocus", () => {
@@ -48,9 +51,20 @@ describe("normalizeWorktreePath", () => {
     expect(normalizeWorktreePath("/a/b///")).toBe("/a/b");
   });
 
-  test("rewrites the macOS /tmp symlink to its real /private/tmp target", () => {
-    expect(normalizeWorktreePath("/tmp")).toBe("/private/tmp");
-    expect(normalizeWorktreePath("/tmp/wt-1/board")).toBe("/private/tmp/wt-1/board");
+  test("resolves a real symlink to its actual target directory", () => {
+    const base = mkdtempSync(join(tmpdir(), "focus-normalize-"));
+    const real = join(base, "real");
+    mkdirSync(real);
+    const link = join(base, "link");
+    symlinkSync(real, link);
+    expect(normalizeWorktreePath(`${link}/`)).toBe(realpathSync(real));
+  });
+
+  test("a path that no longer exists falls back deterministically instead of throwing", () => {
+    const missing = join(tmpdir(), "focus-normalize-does-not-exist-xyz");
+    expect(() => normalizeWorktreePath(missing)).not.toThrow();
+    expect(normalizeWorktreePath("/tmp/gate-w4-missing-xyz/")).toBe("/private/tmp/gate-w4-missing-xyz");
+    expect(normalizeWorktreePath("/Users/nobody/definitely-missing-xyz")).toBe("/Users/nobody/definitely-missing-xyz");
   });
 
   test("leaves an already-resolved or unrelated path alone", () => {
