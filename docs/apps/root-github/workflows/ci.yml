@@ -61,3 +61,46 @@ jobs:
           test "$(curl -s -o /dev/null -w '%{http_code}' "localhost:11123$asset")" = 200
           test "$(curl -s -o /dev/null -w '%{http_code}' localhost:11123/api/does-not-exist)" = 404
           test "$(curl -s -o /dev/null -w '%{content_type}' localhost:11123/api/does-not-exist)" = "application/json"
+      - run: bun run console:typecheck
+      - run: bun run console:lint
+      - run: bun run console:test
+      - run: bun run console:build
+      - run: cd apps/console && bun run build:binary
+      # console ships a self-contained binary; the only honest test is to run
+      # it where dist/ is not: a binary built without the codegen step falls
+      # back to disk mode and 404s every page, which passes silently anywhere
+      # the source tree happens to be sitting next to it.
+      - name: console's binary serves its own assets with no source tree
+        run: |
+          set -euo pipefail
+          cp apps/console/dist-bin/console "$RUNNER_TEMP/console"
+          mv apps/console/dist apps/console/dist-hidden
+          cd "$RUNNER_TEMP"
+          PORT=11099 ./console &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true' EXIT
+          for _ in $(seq 1 30); do
+            curl -fsS -m 1 localhost:11099/api/health >/dev/null 2>&1 && break
+            sleep 1
+          done
+          curl -fsS -m 5 localhost:11099/api/health >/dev/null
+          test "$(curl -s -o /dev/null -w '%{http_code}' localhost:11099/)" = 200
+          test "$(curl -s -o /dev/null -w '%{http_code}' localhost:11099/search)" = 200
+          asset=$(curl -s localhost:11099/ | grep -oE '/assets/[^"]+\.js' | head -1)
+          test -n "$asset"
+          test "$(curl -s -o /dev/null -w '%{http_code}' "localhost:11099$asset")" = 200
+          # The font ships inside @mattstack/mantine-tokyo, so Vite emits it as a
+          # content-hashed /assets/ URL rather than the literal /fonts/ path it
+          # had while it lived in public/. Discover it from the stylesheet that
+          # actually references it, the same way the js asset above is found.
+          #
+          # Assert the CONTENT TYPE, not just the status. A status-only
+          # assertion on a path a catch-all can answer proves nothing.
+          css=$(curl -s localhost:11099/ | grep -oE '/assets/[^"]+\.css' | head -1)
+          test -n "$css"
+          font=$(curl -s "localhost:11099$css" | grep -oE '/assets/[^)"]+\.woff2' | head -1)
+          test -n "$font"
+          test "$(curl -s -o /dev/null -w '%{http_code}' "localhost:11099$font")" = 200
+          test "$(curl -s -o /dev/null -w '%{content_type}' "localhost:11099$font")" = "font/woff2"
+      - name: console has no employer or domain references in its tracked tree
+        run: apps/console/scripts/repo-purity.sh
