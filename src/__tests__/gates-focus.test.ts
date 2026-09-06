@@ -32,7 +32,7 @@ describe("resolveOriginFocus", () => {
       .toEqual({ ok: true, paneId: "a" });
   });
 
-  test("the macOS /tmp vs /private/tmp symlink still matches on either side", () => {
+  test.skipIf(process.platform !== "darwin")("the macOS /tmp vs /private/tmp symlink still matches on either side", () => {
     expect(resolveOriginFocus({ worktree: "/tmp/wt-1" }, [{ paneId: "a", cwd: "/private/tmp/wt-1" }]))
       .toEqual({ ok: true, paneId: "a" });
     expect(resolveOriginFocus({ worktree: "/private/tmp/wt-1" }, [{ paneId: "a", cwd: "/tmp/wt-1" }]))
@@ -63,7 +63,16 @@ describe("normalizeWorktreePath", () => {
   test("a path that no longer exists falls back deterministically instead of throwing", () => {
     const missing = join(tmpdir(), "focus-normalize-does-not-exist-xyz");
     expect(() => normalizeWorktreePath(missing)).not.toThrow();
-    expect(normalizeWorktreePath("/tmp/gate-w4-missing-xyz/")).toBe("/private/tmp/gate-w4-missing-xyz");
+
+    // A real base under /tmp (guaranteed to exist and resolve) with a child
+    // that was never created (guaranteed absent), so realpathSync throws for
+    // the same reason on every platform; only the fallback's OWN rewrite is
+    // platform-specific.
+    const base = mkdtempSync("/tmp/focus-normalize-missing-");
+    const missingChild = join(base, "definitely-not-here");
+    const expected = process.platform === "darwin" ? `/private${missingChild}` : missingChild;
+    expect(normalizeWorktreePath(missingChild)).toBe(expected);
+
     expect(normalizeWorktreePath("/Users/nobody/definitely-missing-xyz")).toBe("/Users/nobody/definitely-missing-xyz");
   });
 

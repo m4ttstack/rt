@@ -13,14 +13,16 @@ export type FocusResolution =
     otherwise fail an exact-string match on the SAME directory. realpath
     needs the path to exist; a torn-down worktree or a stale pane cwd must
     still normalize deterministically rather than throw, so a missing path
-    falls back to the trimmed string with the one rewrite realpath itself
-    would have made for the common macOS case. */
+    falls back to the trimmed string, rewritten the way realpath itself
+    would have on macOS -- the ONLY platform where `/tmp` is itself a
+    symlink, so the rewrite must not apply elsewhere. */
 export function normalizeWorktreePath(path: string): string {
   const trimmed = path.replace(/\/+$/, "");
   try {
     return realpathSync(trimmed);
   } catch {
-    return trimmed === "/tmp" || trimmed.startsWith("/tmp/") ? `/private${trimmed}` : trimmed;
+    const isTmp = trimmed === "/tmp" || trimmed.startsWith("/tmp/");
+    return process.platform === "darwin" && isTmp ? `/private${trimmed}` : trimmed;
   }
 }
 
