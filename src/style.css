@@ -689,6 +689,7 @@ body {
 .tui-gate-summary-row { display: flex; gap: 0.5rem; font-size: 0.85rem; }
 .tui-gate-summary-row dt { color: var(--muted); }
 .tui-gate-summary-row dd { margin: 0; color: var(--fg); }
+.tui-gate-context-body { white-space: pre-wrap; margin: 0; font: inherit; }
 /* slack review-signal reactions rendered next to the review badge */
 .tui-slack-reactions { display: inline-flex; gap: 4px; align-items: center; font-size: 13px; line-height: 1; }
 .tui-slack-reaction { user-select: none; }

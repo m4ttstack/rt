@@ -1,11 +1,21 @@
 import { join } from "path";
 import { APP_ROOT } from "../app-root.ts";
 
+export type GateOption = string | { value: string; label: string };
+
+export interface GateOrigin {
+  paneId?: string;
+  tabId?: string;
+  runId?: string;
+  worktree?: string;
+  presentation?: "form" | "wait";
+}
+
 export interface GateQuestion {
   id: string;
   label: string;
   multi: boolean;
-  options: string[];
+  options: GateOption[];
 }
 
 /** One answer's wire value: a bare option string/array, or the `{value,
@@ -53,4 +63,7 @@ export interface GateRow {
   openedAt: number;
   questions: GateQuestion[];
   answers?: GateAnswers;
+  context?: string;
+  origin?: GateOrigin;
+  domain?: "review" | "respond" | "doctor";
 }

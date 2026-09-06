@@ -4,6 +4,7 @@ import type { GateAnswers, GateQuestion, GateRow } from "./store.ts";
 import type { ReviewStatus } from "../review-state.ts";
 import type { RespondStatus } from "../respond-state.ts";
 import type { DoctorStatus } from "../doctor-state.ts";
+import { domainForKind } from "./sweep.ts";
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null;
@@ -104,6 +105,8 @@ export class GateCache {
       nudge: null,
       delivery: null,
       released: false,
+      context: typeof payload.context === "string" ? payload.context : null,
+      origin: isRecord(payload.origin) ? (payload.origin as FacilityGateRow["origin"]) : null,
     });
   }
 
@@ -201,6 +204,9 @@ export function attachGates<T extends { webUrl?: string | null } & GateHost>(
           status: row.status,
           openedAt: row.openedAt,
           questions: row.questions as GateQuestion[],
+          context: row.context ?? undefined,
+          origin: row.origin ?? undefined,
+          domain: domainForKind(row.kind),
         });
       } else if (row.status === "answered" && !isAnsweredRowTerminal(row.kind, mr)) {
         gates.push({
@@ -211,6 +217,9 @@ export function attachGates<T extends { webUrl?: string | null } & GateHost>(
           openedAt: row.openedAt,
           questions: row.questions as GateQuestion[],
           answers: row.answer?.answers as GateAnswers | undefined,
+          context: row.context ?? undefined,
+          origin: row.origin ?? undefined,
+          domain: domainForKind(row.kind),
         });
       }
     }

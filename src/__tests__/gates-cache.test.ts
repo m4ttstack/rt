@@ -209,6 +209,21 @@ describe("GateCache.applyEvent", () => {
     expect(() => cache.applyEvent({ topic: "gate/opened/gate-1", payload: null })).not.toThrow();
     expect(cache.rows()).toEqual([]);
   });
+
+  test("applyEvent(opened) carries context and origin onto the cached row", () => {
+    const cache = new GateCache();
+    cache.applyEvent({
+      topic: "gate/opened/g9",
+      payload: {
+        id: "g9", subject: "mr:https://gitlab.example.com/x/9", kind: "review-post",
+        questions: [], meta: null,
+        context: "finding titles", origin: { paneId: "p9", presentation: "form" },
+      },
+    });
+    const row = cache.rowsFor("mr:https://gitlab.example.com/x/9")[0]!;
+    expect(row.context).toBe("finding titles");
+    expect(row.origin).toEqual({ paneId: "p9", presentation: "form" });
+  });
 });
 
 describe("attachGates", () => {
@@ -225,6 +240,9 @@ describe("attachGates", () => {
         openedAt: 1000,
         questions: [{ id: "q1", label: "Ship it?", multi: false, options: ["yes", "no"] }],
         answers: undefined,
+        context: undefined,
+        origin: undefined,
+        domain: "review",
       },
     ]);
   });
@@ -374,5 +392,20 @@ describe("attachGates", () => {
       const [errored] = attachGates([{ webUrl: WEB_URL, doctor: { status: "error" as const } }], cache);
       expect(errored!.gates).toEqual([]);
     });
+  });
+
+  test("attachGates carries context, origin, and the kind's domain onto the board row", () => {
+    const cache = new GateCache();
+    cache.applyRow({
+      id: "g1", subject: "mr:https://gitlab.example.com/x/1", kind: "review-post",
+      questions: [], meta: null, status: "open", answer: null, openedAt: 1,
+      parkedAt: null, closedAt: null, closedReason: null, agent: null, pane: null,
+      nudge: null, delivery: null, released: false,
+      context: "ctx", origin: { worktree: "/tmp/wt" },
+    });
+    const [mr] = attachGates([{ webUrl: "https://gitlab.example.com/x/1" }], cache);
+    expect(mr!.gates[0]!.context).toBe("ctx");
+    expect(mr!.gates[0]!.origin).toEqual({ worktree: "/tmp/wt" });
+    expect(mr!.gates[0]!.domain).toBe("review");
   });
 });

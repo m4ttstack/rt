@@ -1,4 +1,4 @@
-import type { GateAnswers, GateAnswerValue, GateQuestion } from "../../gates/store.ts";
+import type { GateAnswers, GateAnswerValue, GateOption, GateQuestion } from "../../gates/store.ts";
 
 /** Which board lifecycle a gate kind belongs to. Deliberately re-declared
     rather than imported from gates/sweep.ts's own domainForKind: that
@@ -130,6 +130,25 @@ export function formatGateOption(option: string): GateOptionDisplay {
   if (!m) return { text: option };
   const [, verb, token] = m;
   return { text: `${verb} · ${token!.slice(0, 8)}`, title: option };
+}
+
+export function optionValue(o: GateOption): string {
+  return typeof o === "string" ? o : o.value;
+}
+
+/** Labeled options render their label with the raw value as the hover
+    title; bare strings keep the verb-token transform unchanged. */
+export function optionDisplayFor(o: GateOption): GateOptionDisplay {
+  if (typeof o !== "string") {
+    const text = o.label || o.value;
+    return text === o.value ? { text } : { text, title: o.value };
+  }
+  return formatGateOption(o);
+}
+
+export function displayForValue(value: string, options: GateOption[]): GateOptionDisplay {
+  const match = options.find((o) => optionValue(o) === value);
+  return match !== undefined ? optionDisplayFor(match) : formatGateOption(value);
 }
 
 /** A domain's own pane reference, as attached to a board MR (`mr.review` /

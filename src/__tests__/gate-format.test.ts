@@ -1,5 +1,14 @@
 import { describe, test, expect } from "bun:test";
-import { gateAnswerPayload, parseConflictResponse, unwrapGateAnswer, formatGateOption, gateFocusDomain } from "../client/board/gate-format.ts";
+import {
+  gateAnswerPayload,
+  parseConflictResponse,
+  unwrapGateAnswer,
+  formatGateOption,
+  gateFocusDomain,
+  optionValue,
+  optionDisplayFor,
+  displayForValue,
+} from "../client/board/gate-format.ts";
 import type { GateQuestion } from "../gates/store.ts";
 
 const GATE_ID = "gate-1";
@@ -130,5 +139,28 @@ describe("gateFocusDomain", () => {
 
   test("returns null for an unrecognized kind", () => {
     expect(gateFocusDomain("mystery-kind", { review: { tabId: "w1:t1" } })).toBeNull();
+  });
+});
+
+describe("labeled options (W4)", () => {
+  test("optionValue returns the string or the object's value", () => {
+    expect(optionValue("approve")).toBe("approve");
+    expect(optionValue({ value: "Major", label: "Major (2)" })).toBe("Major");
+  });
+
+  test("optionDisplayFor renders label with the value as hover title", () => {
+    expect(optionDisplayFor({ value: "fix:7080da2fcf93c1a2", label: "fix · api.ts:42" }))
+      .toEqual({ text: "fix · api.ts:42", title: "fix:7080da2fcf93c1a2" });
+  });
+
+  test("optionDisplayFor keeps the verb-token transform for bare strings", () => {
+    expect(optionDisplayFor("fix:7080da2fcf93c1a2")).toEqual({ text: "fix · 7080da2f", title: "fix:7080da2fcf93c1a2" });
+    expect(optionDisplayFor("approve")).toEqual({ text: "approve" });
+  });
+
+  test("displayForValue maps an answered value back to its option's label", () => {
+    const options = [{ value: "Major", label: "Major (2)" }, "approve"];
+    expect(displayForValue("Major", options)).toEqual({ text: "Major (2)", title: "Major" });
+    expect(displayForValue("gone", options)).toEqual({ text: "gone" });
   });
 });

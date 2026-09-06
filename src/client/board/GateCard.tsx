@@ -1,23 +1,27 @@
 import { useState } from "react";
 import { Chip, RadioGroup, SelectBox } from "@mattstack/tui-kit";
-import type { GateAnswers, GateQuestion, GateRow } from "../../gates/store.ts";
+import type { GateAnswers, GateOption, GateQuestion, GateRow } from "../../gates/store.ts";
 import type { BoardMRWithReview } from "../types.ts";
 import {
   gateAnswerPayload,
   parseConflictResponse,
   unwrapGateAnswer,
-  formatGateOption,
+  optionValue,
+  optionDisplayFor,
+  displayForValue,
   gateFocusDomain,
   type GateSelections,
   type GateDomain,
 } from "./gate-format.ts";
+import { Disclosure, DisclosureHead } from "./Disclosure.tsx";
 
-/** An option string as it should read on screen -- the verb prominent, a
-    long id token truncated, the full string kept in `title` for anyone who
-    hovers. Shared by the question inputs and the answered summary so the
-    same option always reads the same way in both places. */
-function GateOptionText({ option }: { option: string }) {
-  const { text, title } = formatGateOption(option);
+/** An option as it should read on screen -- a labeled option's label, a
+    bare string's verb-token transform, both with the full value kept in
+    `title` for anyone who hovers. Shared by the question inputs and the
+    answered summary so the same option always reads the same way in both
+    places. */
+function GateOptionText({ option }: { option: GateOption }) {
+  const { text, title } = optionDisplayFor(option);
   return <span title={title}>{text}</span>;
 }
 
@@ -35,24 +39,27 @@ function GateQuestionField({
 }) {
   if (question.multi) {
     const picked = new Set(Array.isArray(value) ? value : []);
-    const toggle = (opt: string) => {
+    const toggle = (val: string) => {
       const next = new Set(picked);
-      if (next.has(opt)) next.delete(opt);
-      else next.add(opt);
+      if (next.has(val)) next.delete(val);
+      else next.add(val);
       onChange(question.id, [...next]);
     };
     return (
       <div className="tui-gate-question">
         <div className="tui-gate-question-label">{question.label}</div>
         <div className="tui-gate-options">
-          {question.options.map((opt) => (
-            <div key={opt} className="tui-gate-option">
-              <SelectBox checked={picked.has(opt)} onToggle={() => toggle(opt)} aria-label={opt} />
-              <span className="tui-gate-option-label" onClick={() => toggle(opt)}>
-                <GateOptionText option={opt} />
-              </span>
-            </div>
-          ))}
+          {question.options.map((opt) => {
+            const value = optionValue(opt);
+            return (
+              <div key={value} className="tui-gate-option">
+                <SelectBox checked={picked.has(value)} onToggle={() => toggle(value)} aria-label={value} />
+                <span className="tui-gate-option-label" onClick={() => toggle(value)}>
+                  <GateOptionText option={opt} />
+                </span>
+              </div>
+            );
+          })}
         </div>
       </div>
     );
@@ -64,10 +71,17 @@ function GateQuestionField({
         name={question.id}
         value={typeof value === "string" ? value : ""}
         onChange={(v) => onChange(question.id, v)}
-        options={question.options.map((opt) => ({ value: opt, label: <GateOptionText option={opt} /> }))}
+        options={question.options.map((opt) => ({ value: optionValue(opt), label: <GateOptionText option={opt} /> }))}
       />
     </div>
   );
+}
+
+/** One answered value, resolved back to its option's label (or the raw
+    verb-token transform when no option matches -- see displayForValue). */
+function Answered({ value, options }: { value: string; options: GateOption[] }) {
+  const { text, title } = displayForValue(value, options);
+  return <span title={title}>{text}</span>;
 }
 
 /** The answered branch: what got chosen, read-only -- no inputs, nothing to
@@ -86,12 +100,12 @@ function GateAnswerSummary({ questions, answers }: { questions: GateQuestion[]; 
             ? value.map((v, i) => (
                 <span key={v}>
                   {i > 0 && ", "}
-                  <GateOptionText option={v} />
+                  <Answered value={v} options={q.options} />
                 </span>
               ))
             : "(none)"
           : value
-            ? <GateOptionText option={value} />
+            ? <Answered value={value} options={q.options} />
             : "(none)";
         return (
           <div key={q.id} className="tui-gate-summary-row">
@@ -140,6 +154,7 @@ function GateCard({
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
   const [conflict, setConflict] = useState<{ answers: GateAnswers; by: string } | null>(null);
+  const [ctxOpen, setCtxOpen] = useState(false);
 
   const setAnswer = (id: string, value: string | string[]) => {
     setSelections((prev) => ({ ...prev, [id]: value }));
@@ -195,6 +210,16 @@ function GateCard({
           </Chip>
         )}
       </div>
+      {gate.context && (
+        <div className="tui-gate-context">
+          <DisclosureHead open={ctxOpen} label="context" onToggle={() => setCtxOpen((o) => !o)}>
+            <></>
+          </DisclosureHead>
+          <Disclosure open={ctxOpen}>
+            <pre className="tui-gate-context-body">{gate.context}</pre>
+          </Disclosure>
+        </div>
+      )}
       {answered ? (
         <GateAnswerSummary questions={gate.questions} answers={gate.answers} />
       ) : conflict ? (
