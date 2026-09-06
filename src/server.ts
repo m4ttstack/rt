@@ -1937,9 +1937,21 @@ function gateResumeIo(): GateResumeEventIo {
   };
 }
 
+// Reported once per gate id, not once per sweep pass -- an unrecognized kind
+// stays retained (answered/closed included) until restart, and the sweep
+// re-runs every GATE_SWEEP_MS forever.
+const warnedUnknownGateIds = new Set<string>();
+
 async function runGateSweep(): Promise<void> {
   const states = { reviews: readReviewStates(), responds: readRespondStates(), doctors: readDoctorStates() };
-  const actions = planSweep(gateCache.rows(), states, Date.now(), config.gateGraceMinutes * 60_000, (row) => console.error(`gate sweep: unknown gate kind "${row.kind}" on ${row.subject}; skipping`));
+  const actions = planSweep(
+    gateCache.rows(),
+    states,
+    Date.now(),
+    config.gateGraceMinutes * 60_000,
+    (row) => console.error(`gate sweep: unknown gate kind "${row.kind}" on ${row.subject}; skipping`),
+    warnedUnknownGateIds,
+  );
   const io = sweepActionIo();
   for (const action of actions) {
     await executeSweepAction(action, io);
