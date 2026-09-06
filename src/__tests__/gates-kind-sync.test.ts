@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync, readdirSync } from "fs";
+import { existsSync, readFileSync, readdirSync } from "fs";
 import { join } from "path";
 import { GATE_KINDS } from "../gates/sweep.ts";
 
@@ -14,12 +14,9 @@ const SKILLS_DIR = join(import.meta.dir, "..", "..", "skills");
 function declaredKinds(): Set<string> {
   const kinds = new Set<string>();
   for (const entry of readdirSync(SKILLS_DIR)) {
-    let text: string;
-    try {
-      text = readFileSync(join(SKILLS_DIR, entry, "SKILL.md"), "utf8");
-    } catch {
-      continue;
-    }
+    const skillPath = join(SKILLS_DIR, entry, "SKILL.md");
+    if (!existsSync(skillPath)) continue;
+    const text = readFileSync(skillPath, "utf8");
     for (const m of text.matchAll(/--kind\s+([a-z][a-z-]*)/g)) {
       kinds.add(m[1]!);
     }
