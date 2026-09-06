@@ -41,7 +41,7 @@ import { findLatches, hasArmedLatch } from "./latch/discussions.ts";
 import { latchGateway } from "./latch/gateway.ts";
 import { postLatch, spendAllLatches } from "./latch/post.ts";
 import { loadReReviewConfig, loadTriageConfig } from "./triage/config.ts";
-import { readMemory, writeMemory } from "./triage/memory.ts";
+import { readMemory, releaseMemoryLock, tryAcquireMemoryLock, writeRefreshedIdentity } from "./triage/memory.ts";
 import { manualDoctorFields, resolveDispatchIdentity } from "./triage/run.ts";
 import { makeSwitchboardClient, type SwitchboardClient } from "./peer/client.ts";
 import { type MaterializeDeps } from "./peer/inbox.ts";
@@ -1023,9 +1023,33 @@ const httpServer = Bun.serve({
           }
         }
         const triage = loadTriageConfig();
-        const memory = readMemory();
-        const identity = await resolveDispatchIdentity(memory, async () => (await gitlab()).validateToken());
-        writeMemory(memory);
+        // Token validation happens here, OUTSIDE the lock, since it's a
+        // network round-trip and the lock must never sit open for that long.
+        const identityRead = readMemory();
+        const identityBefore = identityRead.identity;
+        const identity = await resolveDispatchIdentity(identityRead, async () => (await gitlab()).validateToken());
+        // Only touch state/auto-dispatch.json when the identity actually
+        // refreshed (a cache hit leaves identityRead.identity's reference
+        // unchanged). bin/triage.ts serializes every access to this file
+        // behind the same lock, so a slow pass and this manual launch never
+        // clobber the SAME attempt budgets / lastHandledPipelineId /
+        // budgetEscalatedDay in either direction; writeRefreshedIdentity
+        // re-reads the CURRENT file under the lock rather than writing back
+        // this stale pre-network-call snapshot, so a pass that wrote OTHER
+        // fields during the round-trip is never reverted. A pass already
+        // holding the lock just means this request's own identity refresh is
+        // not persisted; it still applies to fixClasses below, and the next
+        // request re-resolves it.
+        if (identityRead.identity !== identityBefore) {
+          const lockToken = tryAcquireMemoryLock();
+          if (lockToken !== false) {
+            try {
+              writeRefreshedIdentity(identityRead.identity);
+            } finally {
+              releaseMemoryLock(lockToken);
+            }
+          }
+        }
         const { tier, fixClasses } = manualDoctorFields(triage, mr.author.username, identity);
         const statePath = doctorFilePath(parsed.mrUrl);
         writeDoctorState(statePath, { mrUrl: parsed.mrUrl, iid: parsed.iid, status: "queued", origin: "manual", tier, fixClasses });
@@ -1341,10 +1365,13 @@ const httpServer = Bun.serve({
         if (typeof gateId !== "string" || !gateId) return new Response("expected { gateId: string }", { status: 400 });
         const row = gateCache.rows().find((r) => r.id === gateId);
         if (!row) return new Response(`unknown gate "${gateId}"`, { status: 404 });
-        const panes = await panesForOrigin(row.origin ?? undefined, paneList);
+        const { panes, fetchFailed } = await panesForOrigin(row.origin ?? undefined, paneList);
         const resolved = resolveOriginFocus(row.origin ?? undefined, panes);
         if (!resolved.ok) {
-          return new Response(JSON.stringify({ ok: false, error: resolved.reason }), {
+          // The pane-list fetch itself failing is a different fact than the
+          // fetch succeeding with no matching pane; say which one happened.
+          const reason = fetchFailed ? "could not list panes to match the origin worktree" : resolved.reason;
+          return new Response(JSON.stringify({ ok: false, error: reason }), {
             status: 400, headers: { "content-type": "application/json" },
           });
         }
@@ -1921,9 +1948,21 @@ function gateResumeIo(): GateResumeEventIo {
   };
 }
 
+// Reported once per gate id, not once per sweep pass -- an unrecognized kind
+// stays retained (answered/closed included) until restart, and the sweep
+// re-runs every GATE_SWEEP_MS forever.
+const warnedUnknownGateIds = new Set<string>();
+
 async function runGateSweep(): Promise<void> {
   const states = { reviews: readReviewStates(), responds: readRespondStates(), doctors: readDoctorStates() };
-  const actions = planSweep(gateCache.rows(), states, Date.now(), config.gateGraceMinutes * 60_000, (row) => console.error(`gate sweep: unknown gate kind "${row.kind}" on ${row.subject}; skipping`));
+  const actions = planSweep(
+    gateCache.rows(),
+    states,
+    Date.now(),
+    config.gateGraceMinutes * 60_000,
+    (row) => console.error(`gate sweep: unknown gate kind "${row.kind}" on ${row.subject}; skipping`),
+    warnedUnknownGateIds,
+  );
   const io = sweepActionIo();
   for (const action of actions) {
     await executeSweepAction(action, io);

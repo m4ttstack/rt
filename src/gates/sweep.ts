@@ -77,6 +77,7 @@ export function planSweep(
   now: number,
   graceMs: number,
   onUnknownKind?: (row: GateRow) => void,
+  warnedUnknownGateIds: Set<string> = new Set(),
 ): SweepAction[] {
   const actions: SweepAction[] = [];
   const openByDomain: Record<GateDomain, Set<string>> = {
@@ -88,7 +89,18 @@ export function planSweep(
   for (const row of rows) {
     if (!row.subject.startsWith(MR_SUBJECT_PREFIX)) continue;
     const domain = domainForKind(row.kind);
-    if (!domain) { onUnknownKind?.(row); continue; }
+    if (!domain) {
+      // Answered/closed rows need no attention, and this cache retains them
+      // until restart, so reporting those forever would be pure noise. The
+      // caller passes a seen-set that survives across sweep passes (the
+      // server's setInterval loop) so a foreign kind logs once per gate id,
+      // not once per minute for as long as the row is retained.
+      if ((row.status === "open" || row.status === "parked") && !warnedUnknownGateIds.has(row.id)) {
+        warnedUnknownGateIds.add(row.id);
+        onUnknownKind?.(row);
+      }
+      continue;
+    }
     const mrUrl = row.subject.slice(MR_SUBJECT_PREFIX.length);
     if (row.status !== "open") continue;
     openByDomain[domain].add(mrUrl);

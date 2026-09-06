@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { panesForOrigin, resolveOriginFocus } from "../gates/focus.ts";
+import { mkdirSync, mkdtempSync, realpathSync, symlinkSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
+import { normalizeWorktreePath, panesForOrigin, resolveOriginFocus } from "../gates/focus.ts";
 
 describe("resolveOriginFocus", () => {
   test("paneId wins directly and carries tabId for the fallback", () => {
@@ -21,6 +24,63 @@ describe("resolveOriginFocus", () => {
     expect(resolveOriginFocus(undefined, [])).toEqual({ ok: false, reason: "no origin on this gate" });
     expect(resolveOriginFocus({}, [])).toEqual({ ok: false, reason: "no origin on this gate" });
   });
+
+  test("a trailing slash on either side of the comparison still matches", () => {
+    expect(resolveOriginFocus({ worktree: "/w/" }, [{ paneId: "a", cwd: "/w" }]))
+      .toEqual({ ok: true, paneId: "a" });
+    expect(resolveOriginFocus({ worktree: "/w" }, [{ paneId: "a", cwd: "/w/" }]))
+      .toEqual({ ok: true, paneId: "a" });
+  });
+
+  test.skipIf(process.platform !== "darwin")("the macOS /tmp vs /private/tmp symlink still matches on either side", () => {
+    expect(resolveOriginFocus({ worktree: "/tmp/wt-1" }, [{ paneId: "a", cwd: "/private/tmp/wt-1" }]))
+      .toEqual({ ok: true, paneId: "a" });
+    expect(resolveOriginFocus({ worktree: "/private/tmp/wt-1" }, [{ paneId: "a", cwd: "/tmp/wt-1" }]))
+      .toEqual({ ok: true, paneId: "a" });
+  });
+
+  test("a pane with no cwd never matches a worktree origin", () => {
+    expect(resolveOriginFocus({ worktree: "/w" }, [{ paneId: "a" }]))
+      .toEqual({ ok: false, reason: "no live pane matches the origin worktree" });
+  });
+});
+
+describe("normalizeWorktreePath", () => {
+  test("strips trailing slashes", () => {
+    expect(normalizeWorktreePath("/a/b/")).toBe("/a/b");
+    expect(normalizeWorktreePath("/a/b///")).toBe("/a/b");
+  });
+
+  test("resolves a real symlink to its actual target directory", () => {
+    const base = mkdtempSync(join(tmpdir(), "focus-normalize-"));
+    const real = join(base, "real");
+    mkdirSync(real);
+    const link = join(base, "link");
+    symlinkSync(real, link);
+    expect(normalizeWorktreePath(`${link}/`)).toBe(realpathSync(real));
+  });
+
+  test("a path that no longer exists falls back deterministically instead of throwing", () => {
+    const missing = join(tmpdir(), "focus-normalize-does-not-exist-xyz");
+    expect(() => normalizeWorktreePath(missing)).not.toThrow();
+
+    // A real base under /tmp (guaranteed to exist and resolve) with a child
+    // that was never created (guaranteed absent), so realpathSync throws for
+    // the same reason on every platform; only the fallback's OWN rewrite is
+    // platform-specific.
+    const base = mkdtempSync("/tmp/focus-normalize-missing-");
+    const missingChild = join(base, "definitely-not-here");
+    const expected = process.platform === "darwin" ? `/private${missingChild}` : missingChild;
+    expect(normalizeWorktreePath(missingChild)).toBe(expected);
+
+    expect(normalizeWorktreePath("/Users/nobody/definitely-missing-xyz")).toBe("/Users/nobody/definitely-missing-xyz");
+  });
+
+  test("leaves an already-resolved or unrelated path alone", () => {
+    expect(normalizeWorktreePath("/private/tmp/wt-1")).toBe("/private/tmp/wt-1");
+    expect(normalizeWorktreePath("/Users/matt/repo")).toBe("/Users/matt/repo");
+    expect(normalizeWorktreePath("/tmpfoo")).toBe("/tmpfoo");
+  });
 });
 
 describe("panesForOrigin", () => {
@@ -30,8 +90,8 @@ describe("panesForOrigin", () => {
       calls++;
       return { ok: true, data: { panes: [] } };
     };
-    const panes = await panesForOrigin({ paneId: "p1" }, listPanes);
-    expect(panes).toEqual([]);
+    const result = await panesForOrigin({ paneId: "p1" }, listPanes);
+    expect(result).toEqual({ panes: [], fetchFailed: false });
     expect(calls).toBe(0);
   });
 
@@ -55,12 +115,20 @@ describe("panesForOrigin", () => {
     };
     const result = await panesForOrigin({ worktree: "/w" }, listPanes);
     expect(calls).toBe(1);
-    expect(result).toEqual(panes);
+    expect(result).toEqual({ panes, fetchFailed: false });
   });
 
-  test("a failed fetch resolves to an empty pane list rather than throwing", async () => {
+  test("a failed fetch resolves to an empty pane list flagged as failed, rather than throwing", async () => {
     const listPanes = async () => ({ ok: false, data: null });
     const result = await panesForOrigin({ worktree: "/w" }, listPanes);
-    expect(result).toEqual([]);
+    expect(result).toEqual({ panes: [], fetchFailed: true });
+  });
+
+  test("a rejecting fetch also resolves to an empty pane list flagged as failed, rather than throwing", async () => {
+    const listPanes = async (): Promise<{ ok: boolean; data?: { panes: Array<{ paneId: string; cwd?: string }> } | null }> => {
+      throw new Error("daemon unreachable");
+    };
+    const result = await panesForOrigin({ worktree: "/w" }, listPanes);
+    expect(result).toEqual({ panes: [], fetchFailed: true });
   });
 });

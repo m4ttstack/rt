@@ -236,6 +236,47 @@ describe("planSweep", () => {
     planSweep(rows, s, 10_000_000, 1, (r) => unknown.push(r.kind));
     expect(unknown).toEqual(["mystery-kind"]);
   });
+
+  test("planSweep never reports an unknown kind that is already answered or closed", () => {
+    const rows = [
+      baseRow({ id: "gate-answered", kind: "mystery-kind", status: "answered" }),
+      baseRow({ id: "gate-closed", kind: "mystery-kind", status: "closed" }),
+    ];
+    const s = { reviews: new Map(), responds: new Map(), doctors: new Map() };
+    const unknown: string[] = [];
+    planSweep(rows, s, 10_000_000, 1, (r) => unknown.push(r.id));
+    expect(unknown).toEqual([]);
+  });
+
+  test("planSweep reports a parked unknown kind, not just open", () => {
+    const rows = [baseRow({ id: "gate-parked", kind: "mystery-kind", status: "parked" })];
+    const s = { reviews: new Map(), responds: new Map(), doctors: new Map() };
+    const unknown: string[] = [];
+    planSweep(rows, s, 10_000_000, 1, (r) => unknown.push(r.id));
+    expect(unknown).toEqual(["gate-parked"]);
+  });
+
+  test("planSweep dedups an unknown kind across repeated passes sharing the same seen-set", () => {
+    const rows = [baseRow({ id: "gate-mystery", kind: "mystery-kind", status: "open" })];
+    const s = { reviews: new Map(), responds: new Map(), doctors: new Map() };
+    const seen = new Set<string>();
+    const unknown: string[] = [];
+    const report = (r: { id: string }) => unknown.push(r.id);
+    planSweep(rows, s, 10_000_000, 1, report, seen);
+    planSweep(rows, s, 10_000_000, 1, report, seen);
+    planSweep(rows, s, 10_000_000, 1, report, seen);
+    expect(unknown).toEqual(["gate-mystery"]);
+  });
+
+  test("planSweep re-reports the same unknown gate id when given a fresh seen-set", () => {
+    const rows = [baseRow({ id: "gate-mystery", kind: "mystery-kind", status: "open" })];
+    const s = { reviews: new Map(), responds: new Map(), doctors: new Map() };
+    const unknown: string[] = [];
+    const report = (r: { id: string }) => unknown.push(r.id);
+    planSweep(rows, s, 10_000_000, 1, report, new Set());
+    planSweep(rows, s, 10_000_000, 1, report, new Set());
+    expect(unknown).toEqual(["gate-mystery", "gate-mystery"]);
+  });
 });
 
 describe("pruneOffBoardGates", () => {

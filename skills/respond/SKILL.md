@@ -218,20 +218,32 @@ conversation.
      does. A wait that fails with a closed or not-found message is terminal:
      follow this wrapper's existing closed-gate rules.
 5. **Act on the plan.** Hand `{plan: <answers>, by: <by>}` to the domain
-   skill (or act on it yourself on the generic no-domain-skill path) —
-   `by` is the wait's own decider field, so the domain skill's decision
-   record names who actually decided instead of guessing. If `code-changes`
-   came back `approve`, emit `implementing`
-   (`<status-bin> respond-status <state> implementing`) before touching code,
-   implement the decided fixes one at a time, verified, then update
-   `--report <path>` with the finalized replies (each fixed thread's reply
-   text now reads e.g. `"Fixed: file:line"`) and emit `drafting` again —
-   before Gate 2 opens, the report must hold what will actually be posted,
-   not the earlier draft. If `code-changes` came back `revise`, there is
-   nothing to implement this round — let the domain skill revise the
-   proposal; if it reports a fresh adjudication table, treat that as a new
-   round of step 3-4 (a new `respond-plan` gate, same shape, and the report
-   update from step 3 applies again).
+   skill (or act on it yourself on the generic no-domain-skill path); `by`
+   is the wait's own decider field, so the domain skill's decision record
+   names who actually decided instead of guessing. Three shapes the answer
+   can take decide whether anything gets implemented this round:
+
+   - **`code-changes: approve`** (the multi-thread gate): emit `implementing`
+     (`<status-bin> respond-status <state> implementing`) before touching
+     code, implement the decided fixes one at a time, verified, then update
+     `--report <path>` with the finalized replies (each fixed thread's reply
+     text now reads e.g. `"Fixed: file:line"`) and emit `drafting` again;
+     before Gate 2 opens, the report must hold what will actually be
+     posted, not the earlier draft.
+   - **`code-changes: skip`** (the no-code-changes sentinel every surface
+     submits while the question is hidden) **or `code-changes: revise`**:
+     nothing gets implemented this round. On `revise`, let the domain skill
+     revise the proposal; if it reports a fresh adjudication table, treat
+     that as a new round of step 3-4 (a new `respond-plan` gate, same
+     shape, and the report update from step 3 applies again). On `skip`,
+     go straight to Gate 2: reply and skip threads still get their drafted
+     replies posted, there is just nothing to implement first.
+   - **No `code-changes` key at all** (the single-thread merged gate from
+     step 4): the one thread's own verb answer implies the disposition. A
+     `fix:<id>` answer implies the implementing path exactly like
+     `code-changes: approve` above. A `reply:<id>` or `skip:<id>` answer
+     implies no implementation this round, exactly like `code-changes: skip`
+     above.
 6. **Gate 2 — post.** Build the post questions from the finalized replies:
 
    ```json
