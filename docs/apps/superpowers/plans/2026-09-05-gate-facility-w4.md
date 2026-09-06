@@ -958,8 +958,11 @@ export function resolveOriginFocus(
         if (typeof gateId !== "string" || !gateId) return new Response("expected { gateId: string }", { status: 400 });
         const row = gateCache.rows().find((r) => r.id === gateId);
         if (!row) return new Response(`unknown gate "${gateId}"`, { status: 404 });
-        const panesRes = await paneList();
-        const panes = panesRes.ok && panesRes.data ? panesRes.data.panes : [];
+        let panes: Array<{ paneId: string; cwd?: string }> = [];
+        if (!row.origin?.paneId && row.origin?.worktree) {
+          const panesRes = await paneList();
+          panes = panesRes.ok && panesRes.data ? panesRes.data.panes : [];
+        }
         const resolved = resolveOriginFocus(row.origin ?? undefined, panes);
         if (!resolved.ok) {
           return new Response(JSON.stringify({ ok: false, error: resolved.reason }), {
