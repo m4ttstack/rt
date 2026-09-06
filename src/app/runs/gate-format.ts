@@ -1,4 +1,8 @@
-import type { GateAnswer, GateOption, GateQuestion } from '@mattstack/rt-client';
+import type {
+  GateAnswer,
+  GateOption,
+  GateQuestion,
+} from '@mattstack/rt-client';
 
 /** UI-collected picks, keyed by question id: an array for a `multi`
     question's checked options, a bare string for a single-select's radio. */
@@ -93,7 +97,10 @@ export function optionLabel(o: GateOption): string {
   return typeof o === 'string' ? o : o.label || o.value;
 }
 
-export function displayValueLabel(value: string, options: GateOption[]): string {
+export function displayValueLabel(
+  value: string,
+  options: GateOption[]
+): string {
   const match = options.find(o => optionValue(o) === value);
   return match !== undefined ? optionLabel(match) : value;
 }
@@ -115,11 +122,13 @@ export function codeChangesHidden(
 ): boolean {
   if (kind !== RESPOND_PLAN_KIND) return false;
   const q = questions.find(x => x.id === CODE_CHANGES_QUESTION_ID);
-  if (!q || !q.options.some(o => optionValue(o) === CODE_CHANGES_SENTINEL)) return false;
+  if (!q || !q.options.some(o => optionValue(o) === CODE_CHANGES_SENTINEL))
+    return false;
   for (const [qid, sel] of Object.entries(selections)) {
     if (qid === CODE_CHANGES_QUESTION_ID) continue;
     const values = Array.isArray(sel) ? sel : [sel];
-    if (values.some(v => typeof v === 'string' && v.startsWith('fix:'))) return false;
+    if (values.some(v => typeof v === 'string' && v.startsWith('fix:')))
+      return false;
   }
   return true;
 }

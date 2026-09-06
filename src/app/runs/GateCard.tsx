@@ -74,7 +74,11 @@ function GateQuestionField({
     >
       <Stack gap={6} mt={6}>
         {question.options.map(opt => (
-          <Radio key={optionValue(opt)} value={optionValue(opt)} label={optionLabel(opt)} />
+          <Radio
+            key={optionValue(opt)}
+            value={optionValue(opt)}
+            label={optionLabel(opt)}
+          />
         ))}
       </Stack>
     </Radio.Group>
@@ -169,11 +173,14 @@ export function GateCard({ gate }: { gate: GateRow }) {
 
   const answered = gate.status === 'answered';
   const actionable = gate.status === 'open' || gate.status === 'parked';
-  const hidden = actionable && codeChangesHidden(gate.kind, gate.questions, selections);
+  const hidden =
+    actionable && codeChangesHidden(gate.kind, gate.questions, selections);
   const effective = hidden
     ? { ...selections, [CODE_CHANGES_QUESTION_ID]: CODE_CHANGES_SENTINEL }
     : selections;
-  const payload = actionable ? gateAnswerPayload(gate.questions, effective) : null;
+  const payload = actionable
+    ? gateAnswerPayload(gate.questions, effective)
+    : null;
 
   const focusReason =
     gate.status === 'parked'
@@ -301,7 +308,11 @@ export function GateCard({ gate }: { gate: GateRow }) {
               {contextOpen ? 'hide context' : 'show context'}
             </Button>
             {contextOpen && (
-              <Text fz={12} style={{ whiteSpace: 'pre-wrap' }} data-testid="gate-context-body">
+              <Text
+                fz={12}
+                style={{ whiteSpace: 'pre-wrap' }}
+                data-testid="gate-context-body"
+              >
                 {gate.context}
               </Text>
             )}
