@@ -35,8 +35,13 @@ shared home, so every consumer hand-copied them.
 
 One dependency-free workspace package:
 
-- `src/values.ts`: primitives (ramps, type scale, spacing, radii, fonts)
-  and the semantic layer, as literal data with day/night per token.
+- `src/values.ts`: the drift-prone shared truth as literal data with
+  day/night per token: canonical hue values, the semantic surface/text/
+  border/dot layer, and the font stacks plus base type. Kit-local scales
+  that have never drifted (tui-kit's census-derived spacing/radius/
+  fontSize ladders, tokyo's generator-derived ten-step ramps) stay in
+  their kits, pinned to tokens by anchor tests (a ramp's primary shade
+  must equal the tokens canonical hue) rather than moved.
   Seeded from mantine-tokyo's shipped values, which already carry the AA
   repair as a fill/text split (`--tk-muted-text`, `--tk-accent-text`);
   the one addition is a red text token (#c8214f, SORI-36). The semantic
