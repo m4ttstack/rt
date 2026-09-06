@@ -23,3 +23,17 @@ export function resolveOriginFocus(
   }
   return { ok: false, reason: "no origin on this gate" };
 }
+
+/** Fetches live panes only when the resolution actually needs them: a direct
+    `origin.paneId` never touches the pane list, so a fetch that would only
+    be discarded (or a call the daemon has to serve for nothing) never
+    happens; the worktree-fallback path is the only one that needs to know
+    what's live. */
+export async function panesForOrigin(
+  origin: GateOrigin | undefined,
+  listPanes: () => Promise<{ ok: boolean; data?: { panes: Array<{ paneId: string; cwd?: string }> } | null }>,
+): Promise<Array<{ paneId: string; cwd?: string }>> {
+  if (origin?.paneId || !origin?.worktree) return [];
+  const res = await listPanes();
+  return res.ok && res.data ? res.data.panes : [];
+}

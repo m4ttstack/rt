@@ -24,7 +24,7 @@ import { GATE_DIR, type GateAnswers } from "./gates/store.ts";
 import { ingestRelayFrame, reconcileGatesOnBoot, ensureBridgeRule, type EventBridgeRule, type GateEventFrame } from "./gates/ingest.ts";
 import { GateCache, attachGates } from "./gates/cache.ts";
 import { answerGate } from "./gates/answer.ts";
-import { resolveOriginFocus } from "./gates/focus.ts";
+import { resolveOriginFocus, panesForOrigin } from "./gates/focus.ts";
 import { handleAnsweredEvent, bootResumePass, buildResumers, type GateResumeEventIo, type KindResumeIo } from "./gates/resume.ts";
 import { planSweep, pruneOffBoardGates } from "./gates/sweep.ts";
 import { executeSweepAction, type ExecuteSweepActionIo } from "./gates/execute-sweep-action.ts";
@@ -1337,8 +1337,7 @@ const httpServer = Bun.serve({
         if (typeof gateId !== "string" || !gateId) return new Response("expected { gateId: string }", { status: 400 });
         const row = gateCache.rows().find((r) => r.id === gateId);
         if (!row) return new Response(`unknown gate "${gateId}"`, { status: 404 });
-        const panesRes = await paneList();
-        const panes = panesRes.ok && panesRes.data ? panesRes.data.panes : [];
+        const panes = await panesForOrigin(row.origin ?? undefined, paneList);
         const resolved = resolveOriginFocus(row.origin ?? undefined, panes);
         if (!resolved.ok) {
           return new Response(JSON.stringify({ ok: false, error: resolved.reason }), {
