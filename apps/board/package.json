@@ -32,7 +32,7 @@
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "@types/node": "^26.2.0",
+    "@types/node": "catalog:",
     "@types/pixelmatch": "^5.2.6",
     "@types/pngjs": "^6.0.5",
     "@types/react": "catalog:",

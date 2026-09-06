@@ -314,6 +314,7 @@
   position: absolute;
   left: 0.45rem;
   top: 0.5rem;
+  /* Decorative ::before glyph, not read text: stays paired with the row's own accent wash above, not the -text ramp. */
   color: var(--accent);
 }
 .tui-row-1 {
@@ -505,6 +506,7 @@
   color: var(--dot-ok);
 }
 .tui-cd-thread.replied .tui-comment-icon {
+  /* Status-dot family, not text: siblings use --dot-ok/--dot-warn; this state has no dedicated dot token yet. */
   color: var(--accent);
 }
 .tui-cd-thread.awaiting .tui-comment-icon {
