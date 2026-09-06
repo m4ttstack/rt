@@ -8,10 +8,11 @@ import {
   optionDisplayFor,
   displayForValue,
   codeChangesHidden,
+  groupThreadOptions,
   CODE_CHANGES_QUESTION_ID,
   CODE_CHANGES_SENTINEL,
 } from "../client/board/gate-format.ts";
-import type { GateQuestion } from "../gates/store.ts";
+import type { GateOption, GateQuestion } from "../gates/store.ts";
 
 const GATE_ID = "gate-1";
 
@@ -174,5 +175,72 @@ describe("respond collapse (W4)", () => {
     const payload = gateAnswerPayload({ gateId: "g1", questions }, effective);
     expect(hidden).toBe(true);
     expect(payload).toEqual({ gateId: "g1", answers: { "threads-1": ["reply:t1"], "code-changes": CODE_CHANGES_SENTINEL } });
+  });
+});
+
+describe("groupThreadOptions (per-thread grouping)", () => {
+  test("groups bare reply/fix/skip options by token, ordering verbs reply/fix/skip regardless of input order", () => {
+    const options: GateOption[] = ["skip:t1", "fix:t1", "reply:t1", "fix:t2", "skip:t2", "reply:t2"];
+    const groups = groupThreadOptions(options);
+    expect(groups).toEqual([
+      {
+        token: "t1",
+        heading: "t1",
+        entries: [
+          { verb: "reply", value: "reply:t1", option: "reply:t1" },
+          { verb: "fix", value: "fix:t1", option: "fix:t1" },
+          { verb: "skip", value: "skip:t1", option: "skip:t1" },
+        ],
+      },
+      {
+        token: "t2",
+        heading: "t2",
+        entries: [
+          { verb: "reply", value: "reply:t2", option: "reply:t2" },
+          { verb: "fix", value: "fix:t2", option: "fix:t2" },
+          { verb: "skip", value: "skip:t2", option: "skip:t2" },
+        ],
+      },
+    ]);
+  });
+
+  test("derives the heading from a labeled option's 'verb · <thread text>' suffix", () => {
+    const options: GateOption[] = [
+      { value: "reply:7080da2fcf93c1a2", label: "reply · api.ts:42" },
+      { value: "fix:7080da2fcf93c1a2", label: "fix · api.ts:42" },
+      { value: "skip:7080da2fcf93c1a2", label: "skip · api.ts:42" },
+      { value: "reply:a1b2c3d4e5f60718", label: "reply · README.md:3" },
+      { value: "fix:a1b2c3d4e5f60718", label: "fix · README.md:3" },
+      { value: "skip:a1b2c3d4e5f60718", label: "skip · README.md:3" },
+    ];
+    const groups = groupThreadOptions(options);
+    expect(groups?.map((g) => g.heading)).toEqual(["api.ts:42", "README.md:3"]);
+  });
+
+  test("returns null for a single thread -- 2+ distinct tokens are required", () => {
+    expect(groupThreadOptions(["reply:t1", "fix:t1", "skip:t1"])).toBeNull();
+  });
+
+  test("returns null when any option doesn't parse as reply/fix/skip:<token>", () => {
+    const options: GateOption[] = ["reply:t1", "fix:t1", "approve"];
+    expect(groupThreadOptions(options)).toBeNull();
+  });
+
+  test("returns null when tokens don't share the same verb set", () => {
+    const options: GateOption[] = ["reply:t1", "fix:t1", "skip:t1", "reply:t2", "fix:t2"];
+    expect(groupThreadOptions(options)).toBeNull();
+  });
+
+  test("returns null for an unrelated verb, like a tiers or outcome question", () => {
+    expect(groupThreadOptions(["nit", "must-fix"])).toBeNull();
+    expect(groupThreadOptions(["comment", "approve"])).toBeNull();
+  });
+
+  test("round-trips: submitted values are still the exact option strings, one per thread", () => {
+    const questions: GateQuestion[] = [
+      { id: "threads-1", label: "Threads", multi: true, options: ["reply:t1", "fix:t1", "skip:t1", "reply:t2", "fix:t2", "skip:t2"] },
+    ];
+    const payload = gateAnswerPayload({ gateId: GATE_ID, questions }, { "threads-1": ["fix:t1", "skip:t2"] });
+    expect(payload).toEqual({ gateId: GATE_ID, answers: { "threads-1": ["fix:t1", "skip:t2"] } });
   });
 });

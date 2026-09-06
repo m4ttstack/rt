@@ -720,6 +720,15 @@ body {
 .tui-gate-context-body table { border-collapse: collapse; margin: 0 0 0.4rem; font-size: 0.95em; }
 .tui-gate-context-body th, .tui-gate-context-body td { border: 1px solid var(--border-soft); padding: 0.15rem 0.35rem; }
 .tui-gate-context-body img { max-width: 100%; }
+/* Per-thread grouping for a respond-plan threads question: one heading plus
+   a compact reply/fix/skip radio row per thread, instead of N*3 flat
+   checkboxes each repeating the thread text. */
+.tui-gate-thread-groups { display: flex; flex-direction: column; gap: 0.4rem; }
+.tui-gate-thread-group {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+  padding: 0.3rem 0.5rem; background: color-mix(in srgb, var(--fg) 4%, transparent); border-radius: 6px;
+}
+.tui-gate-thread-heading { font-size: 0.8rem; color: var(--fg); margin-right: auto; overflow-wrap: anywhere; }
 /* slack review-signal reactions rendered next to the review badge */
 .tui-slack-reactions { display: inline-flex; gap: 4px; align-items: center; font-size: 13px; line-height: 1; }
 .tui-slack-reaction { user-select: none; }
