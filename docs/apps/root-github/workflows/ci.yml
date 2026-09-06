@@ -20,6 +20,7 @@ jobs:
       - run: bun run lint
       - run: bun run format:check
       - run: bun run test -- --run
+      - run: bun run tokens:test
       - run: bun run build-storybook
       - run: bun run treeshake
       - run: bun run probe:test
