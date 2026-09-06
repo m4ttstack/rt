@@ -206,10 +206,15 @@ export function groupThreadOptions(options: GateOption[]): ThreadOptionGroup[] |
     byToken.set(token, list);
   }
   if (byToken.size < 2) return null;
-  const verbSetKey = (entries: ThreadOptionEntry[]) =>
-    [...entries.map((e) => e.verb)].sort().join(",");
-  const keys = [...byToken.values()].map(verbSetKey);
-  if (new Set(keys).size > 1) return null;
+  // Each thread must offer exactly one reply, one fix and one skip -- a
+  // missing verb leaves no control for that action, a duplicated verb makes
+  // the radio row's "at most one" selection ambiguous. Either shape falls
+  // back to the flat rendering rather than grouping a partial/malformed set.
+  for (const entries of byToken.values()) {
+    if (entries.length !== THREAD_VERBS.length) return null;
+    const verbs = new Set(entries.map((e) => e.verb));
+    if (verbs.size !== THREAD_VERBS.length) return null;
+  }
   return [...byToken.entries()].map(([token, entries]) => {
     const ordered = [...entries].sort((a, b) => THREAD_VERBS.indexOf(a.verb) - THREAD_VERBS.indexOf(b.verb));
     return { token, heading: threadHeading(token, ordered), entries: ordered };

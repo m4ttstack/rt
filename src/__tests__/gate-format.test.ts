@@ -226,8 +226,16 @@ describe("groupThreadOptions (per-thread grouping)", () => {
     expect(groupThreadOptions(options)).toBeNull();
   });
 
-  test("returns null when tokens don't share the same verb set", () => {
-    const options: GateOption[] = ["reply:t1", "fix:t1", "skip:t1", "reply:t2", "fix:t2"];
+  test("returns null when one token is missing a verb, even if every token is missing the same one", () => {
+    // t1 has all three; t2 is missing skip -- a partial group must not render.
+    expect(groupThreadOptions(["reply:t1", "fix:t1", "skip:t1", "reply:t2", "fix:t2"])).toBeNull();
+    // Both tokens consistently missing skip is still incomplete, not a smaller valid set.
+    expect(groupThreadOptions(["reply:t1", "fix:t1", "reply:t2", "fix:t2"])).toBeNull();
+  });
+
+  test("returns null when a token has a duplicated verb instead of the missing one", () => {
+    // t1: reply, fix, fix -- three options, but only two distinct verbs (skip missing, fix doubled).
+    const options: GateOption[] = ["reply:t1", "fix:t1", "fix:t1", "reply:t2", "fix:t2", "skip:t2"];
     expect(groupThreadOptions(options)).toBeNull();
   });
 
