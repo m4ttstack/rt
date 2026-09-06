@@ -297,8 +297,11 @@ closed-gate/escape-hatch/degraded-mode mechanics, self-contained here since
 each gate follows it independently. (The open/presentation/wait mechanics are
 inline at each gate above, since the questions and context differ per gate.)
 `gate wait`'s answered form is `{"answers": {...}, "by": "...", "answeredAt": ...}`,
-keyed by that gate's own question ids (`threads-1`/`code-changes` for Gate 1,
-`replies`/`disposition` for Gate 2). Read the relevant `answers.<id>`.
+keyed by that gate's own question ids: `replies`/`disposition` for Gate 2; for
+Gate 1 in the multi-thread case, one `threads-<n>` id per chunk of up to 8
+threads by starting index (`threads-1`, `threads-9`, ...) plus `code-changes`;
+for Gate 1 in the single-thread case, `threads-1` alone (the merged question,
+no `code-changes` key). Read the relevant `answers.<id>`.
 
 - **Closed or missing gate.** If `gate wait` fails with `gate <id> closed (<reason>)`,
   the decision site itself was abandoned — superseded, abandoned, or pruned
