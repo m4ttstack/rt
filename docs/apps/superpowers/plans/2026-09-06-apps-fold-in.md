@@ -48,7 +48,7 @@
 **Interfaces:**
 - Produces: the `apps/*` workspace pattern, root script conventions `chat:typecheck`, `chat:test`, `chat:lint`, `chat:build` (`cd apps/chat && bun run <script>`), and the per-app CI step shape every later task copies.
 
-- [ ] **Step 1**: `git fetch` the chat repo, then `git subtree add --prefix apps/chat ~/Documents/GitHub/chat main`.
+- [ ] **Step 1**: `git -C ~/Documents/GitHub/chat fetch origin`, then `git subtree add --prefix apps/chat ~/Documents/GitHub/chat $(git -C ~/Documents/GitHub/chat rev-parse origin/main)` (`origin/main` is not a fetchable ref name in `git subtree add`'s repository+ref form; the resolved commit is).
 - [ ] **Step 2**: Root `package.json`: workspaces becomes the OBJECT form with the catalog:
 
 ```json
@@ -92,7 +92,7 @@ Convert the ROOT devDependencies and each workspace package's occurrences of the
 
 Same shape as Task 2 (no probe step). Specifics that differ:
 
-- [ ] Subtree from `~/Documents/GitHub/console` into `apps/console`.
+- [ ] Subtree from `~/Documents/GitHub/console`'s `origin/main` into `apps/console`: `git -C ~/Documents/GitHub/console fetch origin`, then `git subtree add --prefix apps/console ~/Documents/GitHub/console $(git -C ~/Documents/GitHub/console rev-parse origin/main)`.
 - [ ] Deps: three kit packages -> `workspace:*`; rt-client already `0.16.0` exact, keep; react `^19.2.7` stays.
 - [ ] Fragment cleanup: remove ONLY the two smoothing declarations inside index.html's inline style block; the loading-bar rules stay (anchor ed4b81c); console's `loading-bar-sync.test.ts` still green.
 - [ ] Workflow disposition: port console's ci.yml steps and its purity gate (`purity.yml` + `scripts/repo-purity.sh`) as `console:*` steps; delete `apps/console/.github`.
@@ -102,7 +102,7 @@ Same shape as Task 2 (no probe step). Specifics that differ:
 
 Same shape. Specifics:
 
-- [ ] Subtree from `~/Documents/GitHub/boxscore` into `apps/boxscore`.
+- [ ] Subtree from `~/Documents/GitHub/boxscore`'s `origin/main` into `apps/boxscore`: `git -C ~/Documents/GitHub/boxscore fetch origin`, then `git subtree add --prefix apps/boxscore ~/Documents/GitHub/boxscore $(git -C ~/Documents/GitHub/boxscore rev-parse origin/main)`.
 - [ ] Deps: kit packages -> `workspace:*`; `@mattstack/settings-kit` stays pinned as-is; rt-client -> `0.16.0`.
 - [ ] No fragment cleanup (boxscore has no local copies).
 - [ ] Workflow disposition per its repo's actual workflows (inventory at import; port test/typecheck steps, delete the rest deliberately).
@@ -113,8 +113,8 @@ Same shape. Specifics:
 
 **The deepest one.** Same shape plus:
 
-- [ ] Subtree from `~/Documents/GitHub/board` into `apps/board`.
-- [ ] Deps: `@mattstack/tui-kit` -> `workspace:*`; rt-client `0.16.0` exact stays; glance/settings-kit/invadrs pins stay; react exact `19.2.7` -> `^19.2.7` (workspace alignment); verify single React especially here (board's `//soribashi` note documents the two-copy failure).
+- [ ] Subtree from `~/Documents/GitHub/board`'s `origin/main` into `apps/board`: `git -C ~/Documents/GitHub/board fetch origin`, then `git subtree add --prefix apps/board ~/Documents/GitHub/board $(git -C ~/Documents/GitHub/board rev-parse origin/main)`.
+- [ ] Deps: `@mattstack/tui-kit` -> `workspace:*`; rt-client `0.16.0` exact stays; glance -> `catalog:` (every app already pins `^0.24.0`, so the catalog value changes nothing); settings-kit/invadrs pins stay; react exact `19.2.7` -> `^19.2.7` (workspace alignment); verify single React especially here (board's `//soribashi` note documents the two-copy failure).
 - [ ] Build ordering: add `tui-kit:build` before every `board:*` step in root scripts and CI.
 - [ ] Fragment cleanup per spec step 3 (anchor 273fcaf): the one body smoothing block AND the `:root` override block in `src/style.css`, plus the text-role swap (text `color:` declarations to the `-text` vars; fills and dots keep `var(--muted)`). Board's capture baselines will move: re-baseline (`capture:baseline`) deliberately and eyeball before committing baselines.
 - [ ] Workflow disposition: port board's purity gate; delete its release.yml (subsumed by bundle-apps).
@@ -125,8 +125,8 @@ Same shape. Specifics:
 
 Same shape plus:
 
-- [ ] Subtree from `~/Documents/GitHub/deck` into `apps/deck`.
-- [ ] Deps: `@mattstack/tui-kit` -> `workspace:*`; react exact `19.2.8` -> `^19.2.7`-aligned single resolution; rt-client -> `0.16.0`; glance stays.
+- [ ] Subtree from `~/Documents/GitHub/deck`'s `origin/main` into `apps/deck`: `git -C ~/Documents/GitHub/deck fetch origin`, then `git subtree add --prefix apps/deck ~/Documents/GitHub/deck $(git -C ~/Documents/GitHub/deck rev-parse origin/main)`.
+- [ ] Deps: `@mattstack/tui-kit` -> `workspace:*`; react exact `19.2.8` -> `^19.2.7`-aligned single resolution; rt-client -> `0.16.0`; glance -> `catalog:` (every app already pins `^0.24.0`, so the catalog value changes nothing).
 - [ ] Build ordering: `tui-kit:build` before `deck:*` steps.
 - [ ] Fragment cleanup (anchor e18a4b7): smoothing declarations inside `core/board/board.css`'s body rule; regenerate `core/generated/board.css` via `build:board`.
 - [ ] Workflow disposition: delete deck's release.yml (subsumed); port its test steps as `deck:*`.

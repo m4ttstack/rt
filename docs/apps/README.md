@@ -56,9 +56,14 @@ None of the four packages publish to npm. The apps that use them are
 folding into this repo as workspace members (see
 `docs/superpowers/specs/2026-09-06-apps-fold-in-design.md`); once an app
 lands under `apps/<name>`, it depends on `packages/ui`, `packages/server`,
-`packages/tokyo`, and `packages/tui-kit` with `workspace:*` and consumes
-them straight from source, no install step required. There is no
-supported way to consume these packages from outside this workspace.
+`packages/tokyo`, and `packages/tui-kit` with `workspace:*`. `packages/ui`,
+`packages/server`, and `packages/tokyo` are consumed straight from source,
+no install step required; `@mattstack/tui-kit` builds to `dist/`, so
+workspace consumers run `bun run tui-kit:build` before any board or deck
+work. General consumption of these packages from outside this workspace
+is unsupported, except for the packed-tarball path below, which is the
+sanctioned bundle-transition mechanism for apps that have not folded in
+yet.
 
 ### Bundle-transition tarballs
 
