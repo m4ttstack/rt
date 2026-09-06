@@ -41,9 +41,7 @@ function def(over: Partial<ConfigDef> & { key: string }): ConfigDef {
 // board.gitlabHost (config.ts deriveRtRepos). The registry row goes with the
 // next @mattstack/rt-client publish; until board picks that up, the key is
 // still registered and must not be offered for editing.
-// board.reReview ({enabled}, rt-client 0.16.0) has no editor shape yet --
-// pending its own task, not a coverage gap.
-const DELIBERATELY_READONLY_COMPOSITES: string[] = ["board.rtRepos", "board.reReview"];
+const DELIBERATELY_READONLY_COMPOSITES: string[] = ["board.rtRepos"];
 
 describe("COMPOSITE_SHAPES", () => {
   test("covers every composite board.* key in the registry except the deliberately-readonly ones", () => {
