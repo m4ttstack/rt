@@ -55,22 +55,22 @@
     "remark-gfm": "^4.0.1"
   },
   "peerDependencies": {
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react": "catalog:",
+    "react-dom": "catalog:"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
     "@types/react-test-renderer": "^19.1.0",
-    "@vitejs/plugin-react": "^6",
+    "@vitejs/plugin-react": "catalog:",
     "@vitest/browser-playwright": "^4.1.10",
     "playwright": "^1.59.1",
-    "react": "^19.2",
-    "react-dom": "^19.2",
+    "react": "catalog:",
+    "react-dom": "catalog:",
     "react-test-renderer": "^19.2.8",
     "typescript": "^7",
-    "vitest": "^4",
+    "vitest": "catalog:",
     "vitest-browser-react": "^2"
   }
 }

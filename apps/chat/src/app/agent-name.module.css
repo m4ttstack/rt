@@ -1,0 +1,63 @@
+/* A hoverable name says so: on hover the whole unit (handle, bullet, repo)
+   takes the mention accent and its wash, the same treatment a mention of
+   you gets in a message body, so "this opens something" reads without a
+   cursor change. */
+.target {
+  border-radius: 3px;
+  cursor: default;
+}
+
+.target .name {
+  border-radius: 4px;
+  padding: 2px 5px;
+  margin: -2px -5px;
+  transition:
+    color 120ms ease,
+    background-color 120ms ease;
+}
+
+.target:hover .name * {
+  color: var(--mantine-color-accent-text);
+}
+
+.target:hover .name {
+  color: var(--mantine-color-accent-text);
+  background-color: color-mix(
+    in srgb,
+    var(--mantine-color-accent-text) var(--tk-wash),
+    transparent
+  );
+}
+
+/* The speaker chip owns its own box: `--speaker-hue` is set inline per
+   render, so geometry lives here once and never changes between rest and
+   hover -- only the wash strength does. A hover-time padding/margin swap
+   here would shear every row's content to its right, so it never touches
+   these declarations again below. */
+.hueChip {
+  border-radius: 4px;
+  padding: 0 6px;
+  margin-left: -6px;
+  color: var(--speaker-hue);
+  background-color: color-mix(
+    in srgb,
+    var(--speaker-hue) var(--tk-wash),
+    transparent
+  );
+  transition: background-color 120ms ease;
+}
+
+.target:hover .hueChip {
+  background-color: color-mix(
+    in srgb,
+    var(--speaker-hue) calc(var(--tk-wash) * 2),
+    transparent
+  );
+}
+
+/* Inline SVG defaults to an inline box with a few px of descender gap below
+   it; block removes that so it doesn't nudge its flex siblings out of line. */
+.avatar {
+  flex: none;
+  display: block;
+}

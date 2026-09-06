@@ -4,7 +4,7 @@ storybook-static
 docs
 bun.lock
 packages/ui/scripts/treeshake-probe/dist
-probe/src/server/embedded
-probe/bun.lock
-probe/vendor
 packages/tui-kit
+# Design canvases are regenerated from a shared CSS block per app
+# (see each app's design/README.md provenance table); never reformatted.
+apps/*/design

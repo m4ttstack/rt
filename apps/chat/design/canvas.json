@@ -1,0 +1,163 @@
+{
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "Inbox (the landing view)"
+    },
+    {
+      "file": "DaemonDown.dc.html",
+      "x": 0,
+      "y": 1020,
+      "w": 1440,
+      "h": 900,
+      "title": "Inbox (daemon down)"
+    },
+    {
+      "file": "Room.dc.html",
+      "x": 0,
+      "y": 2040,
+      "w": 1440,
+      "h": 900,
+      "title": "A room (#rt)"
+    },
+    {
+      "file": "DirectMessage.dc.html",
+      "x": 0,
+      "y": 3060,
+      "w": 1440,
+      "h": 900,
+      "title": "A DM (with you in it)"
+    },
+    {
+      "file": "Close.dc.html",
+      "x": 0,
+      "y": 4420,
+      "w": 1440,
+      "h": 650,
+      "title": "Closing a room or DM"
+    },
+    {
+      "file": "PhoneInbox.dc.html",
+      "x": 1560,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "Phone (inbox)"
+    },
+    {
+      "file": "Phone.dc.html",
+      "x": 2030,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "Phone (answering @matt)"
+    },
+    {
+      "file": "PhoneRooms.dc.html",
+      "x": 2500,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "Phone (the fleet drawer)"
+    },
+    {
+      "file": "Fleet.dc.html",
+      "x": 2970,
+      "y": 0,
+      "w": 420,
+      "h": 940,
+      "title": "The fleet tree"
+    },
+    {
+      "file": "Indicators.dc.html",
+      "x": 1560,
+      "y": 1020,
+      "w": 880,
+      "h": 1560,
+      "title": "Indicators"
+    },
+    {
+      "file": "NewRoom.dc.html",
+      "x": 0,
+      "y": 5240,
+      "w": 900,
+      "h": 900,
+      "title": "New room"
+    },
+    {
+      "file": "PanePicker.dc.html",
+      "x": 1000,
+      "y": 5240,
+      "w": 820,
+      "h": 960,
+      "title": "Pane picker"
+    },
+    {
+      "file": "NewPane.dc.html",
+      "x": 1920,
+      "y": 5240,
+      "w": 720,
+      "h": 760,
+      "title": "New pane"
+    },
+    {
+      "file": "EntryPoints.dc.html",
+      "x": 0,
+      "y": 6340,
+      "w": 1000,
+      "h": 620,
+      "title": "Entry points"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "inbox-ux",
+      "x": 3120,
+      "y": 1020,
+      "w": 420,
+      "text": "The inbox, deliberately.\n\nThe landing view answers 'what needs me': NEEDS YOU is @matt mentions and DM turns addressed to you; OPEN ASKS is @here questions nobody has claimed (rt chat claim); EVERYTHING ELSE is one line of counts. A card opens its message in the reader with the message before it for context; replying from the reader posts to the room with the author already tagged, and marks nothing. Clearing unread is the card's own 'mark #room read'.\n\nAgents keep talking exactly as they do (rooms, DMs, wakes, claims are untouched). The inbox is Matt's lens only."
+    },
+    {
+      "id": "identity",
+      "x": 3120,
+      "y": 1560,
+      "w": 420,
+      "text": "Who is this, at a glance.\n\nHandles are drawn from the first-name pool (lib/chat-names.ts) and pinned to their herdr pane, so a re-sign-in keeps the name. The task line beside every handle is the live herdr join: presence row \u2192 pane by session id \u2192 the pane title Claude Code maintains. Fallback when the title is just the handle: the branch (when not main), else the worktree folder, muted. Offline rows show sign-out age only. Away messages (rt chat away) replace the task line while set.\n\nThe same line appears everywhere a handle does: the tree, the author line, the hover card, the inbox card, the DM entry's second line."
+    },
+    {
+      "id": "what-it-matches",
+      "x": 3120,
+      "y": 2260,
+      "w": 420,
+      "text": "Matched to console, not invented.\n\nPalette, grid and JetBrains Mono: src/app/styles/tokyo-theme.css. Font sizes (xs 10.56 / sm 11.2 / md 12.16), spacing, 6px radii: app-kit's design-system/app-theme.ts. Rail 68px, header 64px, page bar 64px: RailShell + ConsoleChrome. Row anatomy, 28px action icons, badge wash: RunRow.tsx. Alert = Mantine light variant, color bad. Drawer = position left, size sm, overlay 0.4.\n\nDeliberate departures: phone controls are 44px; status dots are 8px; the mention badge uses accent shade 7 in light. The 10px sprite stands in for the invadrs avatar AgentName draws inside the hue chip."
+    },
+    {
+      "id": "laws",
+      "x": 0,
+      "y": 4180,
+      "w": 1440,
+      "text": "Laws this surface holds.\n\n1. Never render presence while the daemon is unreachable. The banner supersedes everything: dots go hollow, task lines are withheld, counts are last known, the composer is disabled with the draft kept.\n2. The landing view answers 'what needs me' before anything else; rooms are the full record, one click away, never the front door.\n3. The sidebar is one tree: each repo room heads the workstreams inside it, in sign-in order, never re-sorted by status. Repos with agents but no room still appear.\n4. Every handle carries its task line (tree, author line, hover card, inbox card, DM second line). A handle with no line is a bug, not a style choice.\n5. A mention is distinguishable without colour (the @ glyph); a DM is a pair with \u2194, never a hashed id. An unclaimed @here ask says so, with its age.\n6. Read messages fold to their first block; unread ones render whole. Expand-all unfolds everything. Wide content scrolls inside its own block.\n7. Viewing never advances the read cursor: mark read is explicit everywhere, and replying posts without marking anything. chat:mark has no per-message cursor, so a card's mark read clears its whole room and its label names the room.\n8. Times are local. Phone inputs are 16px; controls 44px; return adds a line, the button sends.\n\nStructure is real: handles, repos, branches and pane ids are this machine's fleet. The conversations are illustrative."
+    },
+    {
+      "id": "brief",
+      "x": 2760,
+      "y": 5240,
+      "w": 420,
+      "text": "Two components.\nNew room owns name, seed, wake mode and the list of picked panes with a per-pane note. Its 'pick panes' button launches PanePicker.\nPanePicker is standalone: it fetches the pane list, filters, peeks, selects, and resolves with the picked rows. The caller decides which rows are disabled and why. With allowCreate it can also start a new pane (cwd, account, model, effort, opening prompt) and list it as 'starting' until Claude is idle."
+    },
+    {
+      "id": "states",
+      "x": 2760,
+      "y": 5620,
+      "w": 420,
+      "text": "Picker row states drawn: selected (acme, with peek open), selected but working (fred: invite queues), disabled by the caller (meg: already in the room; june: blocked at a prompt), offline (otis), not signed in (mr-board), starting (a pane the picker just spawned).\nLight is the default here, matching every other artboard; flip dark to check it."
+    }
+  ],
+  "launch": {
+    "view": "canvas"
+  }
+}

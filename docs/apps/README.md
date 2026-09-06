@@ -42,10 +42,11 @@ everything except the top-level `.` export is vitest-safe (never loads
 `hono/bun`); the top-level export (`serveMattstackApp`) is the one that
 does. The full table lives in `packages/server/README.md`.
 
-`probe/` is an internal, unpublished consumer app in this repo that
-installs the three packages the way an external app will, so CI proves
-the packages actually work outside their own workspace before a real app
-depends on them.
+`apps/chat` is the first app folded into this repo as a workspace
+consumer (`docs/superpowers/specs/2026-09-06-apps-fold-in-design.md`);
+its own typecheck/lint/test/build suite is the in-repo proof that the
+packages work for a real consumer, replacing the old standalone `probe/`
+app.
 
 See `AGENTS.md` for the contract anyone editing `packages/ui/src` or
 `packages/server/src`, or consuming either package, needs.
@@ -124,17 +125,17 @@ snippets, including the vite and eslint presets.
 ```bash
 $ git clone https://github.com/m4ttstack/app-kit.git
 $ cd app-kit
-$ bun install                 # workspace install: packages/ui, packages/server, packages/tokyo
+$ bun install                 # workspace install: packages/*, apps/*
 $ bun run test                # vitest across packages/ui + packages/server
 $ bun run storybook           # dev server at :6006 (packages/ui's stories)
-$ bun run probe:install       # packs the three packages as tarballs, installs the probe app against them
-$ bun run probe:build         # typechecks and builds the probe app against the packed packages
+$ bun run chat:typecheck      # typechecks apps/chat against the workspace packages
+$ bun run chat:build          # builds apps/chat against the workspace packages
 ```
 
 `bun run typecheck`, `bun run lint`, `bun run format:check`,
 `bun run build-storybook`, and `bun run treeshake` are the other gates CI
-runs; `bun run probe:test` and `bun run probe:serve-check` exercise the
-probe's own tests and its running server.
+runs; `bun run chat:lint` and `bun run chat:test` exercise chat's own
+suite.
 
 ## Contributing
 
@@ -144,7 +145,8 @@ probe's own tests and its running server.
   hits.
 - `bun run typecheck`, `bun run lint`, `bun run format:check`,
   `bun run test -- --run`, `bun run build-storybook`, `bun run treeshake`,
-  `bun run probe:test`, and `bun run probe:build` are exactly what CI runs
+  `bun run chat:typecheck`, `bun run chat:lint`, `bun run chat:test`, and
+  `bun run chat:build` are exactly what CI runs
   (`.github/workflows/ci.yml`); run them locally before opening a pull
   request.
 - `bun run format` (prettier --write) fixes most lint and format failures

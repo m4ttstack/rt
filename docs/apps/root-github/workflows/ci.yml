@@ -15,11 +15,6 @@ jobs:
       # here means the emitter drifted, a generated file was hand-edited, or
       # the committed font copy diverged from the canonical source.
       - run: bun run tokens:codegen && git diff --exit-code packages/tui-kit/src/generated packages/tui-kit/assets packages/tokyo/src
-      # probe:install packs the three packages and installs the probe (which
-      # is outside the workspace). It must precede typecheck/lint, because the
-      # root typecheck and lint scripts chain probe:typecheck / probe:lint,
-      # which need the probe's node_modules present.
-      - run: bun run probe:install
       - run: bun run typecheck
       - run: bun run lint
       - run: bun run format:check
@@ -27,9 +22,6 @@ jobs:
       - run: bun run tokens:test
       - run: bun run build-storybook
       - run: bun run treeshake
-      - run: bun run probe:test
-      - run: bun run probe:build
-      - run: bun run probe:serve-check
       - run: bun run tui-kit:build
       - run: bun run tui-kit:gates
       # `tui-kit:test` (all projects) stays the local/full command; CI splits
@@ -41,3 +33,31 @@ jobs:
       - run: cd packages/tui-kit && bunx vitest run --project node
       - run: cd packages/tui-kit && bunx playwright install chromium
       - run: cd packages/tui-kit && bunx vitest run --project browser --exclude '**/*.visual.test.tsx' --exclude '**/*.parity.test.tsx'
+      - run: bun run chat:typecheck
+      - run: bun run chat:lint
+      - run: bun run chat:test
+      - run: bun run chat:build
+      # chat ships no binary (deck supervises the process); this is its
+      # equivalent to console's served-binary gate: the built client is
+      # served and /api is not swallowed by the SPA fallback, because an
+      # unmatched /api route must stay a JSON 404 (an RPC client checks
+      # res.ok and would otherwise throw parsing HTML).
+      - name: chat serves the built client, and /api is not the SPA
+        run: |
+          set -euo pipefail
+          cd apps/chat
+          PORT=11123 bun src/server/index.ts &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true' EXIT
+          for _ in $(seq 1 30); do
+            curl -fsS -m 1 localhost:11123/api/health >/dev/null 2>&1 && break
+            sleep 1
+          done
+          curl -fsS -m 5 localhost:11123/api/health >/dev/null
+          test "$(curl -s -o /dev/null -w '%{http_code}' localhost:11123/)" = 200
+          test "$(curl -s -o /dev/null -w '%{content_type}' localhost:11123/)" = "text/html; charset=utf-8"
+          asset=$(curl -s localhost:11123/ | grep -oE '/assets/[^"]+\.js' | head -1)
+          test -n "$asset"
+          test "$(curl -s -o /dev/null -w '%{http_code}' "localhost:11123$asset")" = 200
+          test "$(curl -s -o /dev/null -w '%{http_code}' localhost:11123/api/does-not-exist)" = 404
+          test "$(curl -s -o /dev/null -w '%{content_type}' localhost:11123/api/does-not-exist)" = "application/json"

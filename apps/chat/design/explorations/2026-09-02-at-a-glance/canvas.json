@@ -1,0 +1,84 @@
+{
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "A · Inbox + fleet"
+    },
+    {
+      "file": "Workstreams.dc.html",
+      "x": 1560,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "B · Workstream first"
+    },
+    {
+      "file": "Repaired.dc.html",
+      "x": 3120,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "C · Classic chat, repaired"
+    },
+    {
+      "file": "InboxOnly.dc.html",
+      "x": 0,
+      "y": 1300,
+      "w": 1440,
+      "h": 900,
+      "title": "D · Inbox only"
+    },
+    {
+      "file": "Identity.dc.html",
+      "x": 1560,
+      "y": 1300,
+      "w": 960,
+      "h": 1000,
+      "title": "Shared · who is this"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "a-inbox",
+      "x": 0,
+      "y": 960,
+      "w": 700,
+      "text": "A · Inbox + fleet.\n\nOpens on what needs you: @matt mentions and DM turns to you, then @here asks nobody claimed, then one line for everything else. Click a card, read it in the right column, reply from there. The sidebar is one tree: each repo room heads the workstreams inside it, DMs get a second line.\n\nFor: you stop reading 155 messages to find the two that matter.\nAgainst: 'unanswered' is inferred from claims and replies, so a question answered in a room post can linger until you mark it read."
+    },
+    {
+      "id": "b-work",
+      "x": 1560,
+      "y": 960,
+      "w": 700,
+      "text": "B · Workstream first.\n\nThe unit is the pane, not the name. Pick jay in the tree and the page is jay's feed: everything jay said and was asked, across #boxscore and its DM, with the room or pair tagged on each message. The right column says what jay is, where, since when, and who jay talks to.\n\nFor: 'who is this' is answered by the page title, and a DM is just two workstreams' feeds overlapping.\nAgainst: the landing view is still a transcript, and a room debate between four agents is split across four feeds (the room stays one click up)."
+    },
+    {
+      "id": "c-repair",
+      "x": 3120,
+      "y": 960,
+      "w": 700,
+      "text": "C · Classic chat, repaired.\n\nSame rooms, DMs, transcript and roster. Four repairs: the task line on every author, roster row and DM entry; long messages fold to their first paragraph with 'N more lines'; @here asks carry an unclaimed chip; offline rows show their repo.\n\nFor: smallest change, nothing moves.\nAgainst: #rt is still a wall of 155, and the roster still leads with status, so eight rt sessions still sit in one pile."
+    },
+    {
+      "id": "d-only",
+      "x": 0,
+      "y": 2260,
+      "w": 700,
+      "text": "D · Inbox only.\n\nA without the sidebar. The fleet is a strip under the page bar (repo, then its live handles, then how many are off); rooms are reachable only from the 'everything else' chips. Everything else is A.\n\nFor: the least to maintain, and the page can only ever show you what matters.\nAgainst: no standing view of a room; the record is one hop away every time, and the strip has no room for task lines (they move to the hover)."
+    },
+    {
+      "id": "decisions",
+      "x": 1560,
+      "y": 2360,
+      "w": 900,
+      "text": "Settled before drawing (2026-09-02).\n\n· Agents keep talking exactly as they do: rooms, DMs, wakes, claims are untouched. Every direction here is Matt's lens only.\n· The task line is a live join in the viewer: presence row → herdr pane by session id → the pane title Claude Code sets. No rt change. Fallback when the title is the handle or the pane is gone: branch (when not main), else the worktree folder; offline rows show sign-out age only.\n· rt pins a handle to its herdr pane, so a re-sign-in keeps the name (the one rt change).\n\nMatched to the app, not invented: the shared CSS block is design/build.py's (JetBrains Mono 13.5, IBM Plex Sans 16 prose, 6px radii, 68/64/64 chrome, 244 sidebar, 300 roster). New pieces: the sprite stands in for the invadrs avatar the app draws inside the hue chip; cards and the fleet strip reuse chip, badge and member rules.\n\nThe fleet, rooms, branches and pane ids are today's real ones; the messages are illustrative."
+    }
+  ],
+  "launch": {
+    "view": "canvas"
+  }
+}
