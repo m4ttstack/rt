@@ -48,21 +48,21 @@
     "test": "vitest"
   },
   "peerDependencies": {
-    "@mantine/code-highlight": "^9.5.2",
-    "@mantine/core": "^9.5.2",
-    "@mantine/dates": "^9.5.2",
-    "@mantine/form": "^9.5.2",
-    "@mantine/hooks": "^9.5.2",
-    "@mantine/modals": "^9.5.2",
-    "@mantine/notifications": "^9.5.2",
-    "@mantine/spotlight": "^9.5.2",
+    "@mantine/code-highlight": "catalog:",
+    "@mantine/core": "catalog:",
+    "@mantine/dates": "catalog:",
+    "@mantine/form": "catalog:",
+    "@mantine/hooks": "catalog:",
+    "@mantine/modals": "catalog:",
+    "@mantine/notifications": "catalog:",
+    "@mantine/spotlight": "catalog:",
     "@mattstack/mantine-tokyo": "^0.4.0",
     "@testing-library/react": "^16.3.2",
-    "react": "^19.2.7",
-    "react-dom": "^19.2.7",
-    "vitest": "^4.1.10",
-    "wouter": "^3.10.0",
-    "zod": "^4.4.3"
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "vitest": "catalog:",
+    "wouter": "catalog:",
+    "zod": "catalog:"
   },
   "peerDependenciesMeta": {
     "@testing-library/react": {
