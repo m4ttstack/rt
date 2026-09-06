@@ -1,0 +1,43 @@
+/* The inbox's CSS-only pieces: hover states and the lead's own family.
+   Everything a style prop can express stays a style prop, as elsewhere in
+   this app. */
+
+/* `.card2` is the whole tap target, so its hover has to read as one surface
+   rather than a per-child highlight -- which is why it lives here and not
+   on a `useHover` state: nothing about the card's BEHAVIOUR turns on hover. */
+.card:hover {
+  border-color: color-mix(
+    in srgb,
+    var(--mantine-color-accent-text) 45%,
+    var(--tk-border)
+  );
+}
+
+.link:hover {
+  text-decoration: underline;
+}
+
+/*
+ * `.lead`: the first lines of a message, in the prose face rather than the
+ * chrome's mono, so a card reads as a message and not as a log row. The
+ * `@font-face` rules for this family live in `transcript-prose.module.css`;
+ * `Reader.tsx` imports that module at module scope, so the faces load with
+ * the inbox page whether or not a reader is mounted.
+ */
+.lead {
+  font-family:
+    'IBM Plex Sans',
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
+  font-size: var(--tk-fs-lead);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+/* The message above the one you opened: present, readable, and visibly not
+   the thing you came for. */
+.context {
+  opacity: 0.62;
+}

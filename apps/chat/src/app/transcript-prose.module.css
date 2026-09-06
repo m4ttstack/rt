@@ -1,0 +1,266 @@
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/ibm-plex-sans-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/ibm-plex-sans-500.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/ibm-plex-sans-600.woff2') format('woff2');
+}
+
+/* About 100 characters at md; the column, not the type, is what keeps a
+   long post readable on a wide screen. */
+.col {
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.msg {
+  display: block;
+  padding: 16px 0;
+  min-width: 0;
+}
+
+.hdr {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-sm);
+  min-width: 0;
+  margin-bottom: 8px;
+}
+
+/* The human's own messages read right-to-left: row-reverse flips the header's
+   DOM order (name, you, time) and packs it at the right, so it reads
+   time / You / Name aligned to the right edge. The speaker chip's own -6px
+   left nudge (for left alignment) is zeroed so the name sits flush right. */
+.mine .hdr {
+  flex-direction: row-reverse;
+}
+.mine .hdr :global(.mantine-Group-root[data-testid='speaker-chip']) {
+  margin-left: 0;
+}
+
+.prose {
+  font-family:
+    'IBM Plex Sans',
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
+  font-size: var(--mantine-font-size-md);
+  line-height: 1.7;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.prose > * {
+  margin: 0;
+}
+
+.prose h1 {
+  font-size: var(--mantine-font-size-xl);
+  font-weight: 600;
+  line-height: 1.35;
+  margin-top: 4px;
+}
+
+.prose h2 {
+  font-size: var(--mantine-font-size-lg);
+  font-weight: 600;
+  line-height: 1.35;
+  margin-top: 4px;
+}
+
+.prose h3 {
+  font-size: var(--mantine-font-size-md);
+  font-weight: 600;
+  line-height: 1.4;
+  margin-top: 2px;
+}
+
+.prose ul,
+.prose ol {
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.prose li > ul,
+.prose li > ol {
+  margin-top: 3px;
+  gap: 3px;
+}
+
+/* remark-gfm task items: the box is decoration, never a control. */
+.prose li:has(> input[type='checkbox']) {
+  list-style: none;
+  margin-left: -20px;
+}
+
+.prose li > input[type='checkbox'] {
+  width: 14px;
+  height: 14px;
+  margin: 0 7.2px 0 0;
+  vertical-align: -2px;
+  pointer-events: none;
+}
+
+/* CodeHighlight (inside a fence's `pre`) renders its own `pre > code`; the
+   inline-code treatment must not leak into it. */
+.prose :not(pre) > code {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: var(--mantine-font-size-sm);
+  padding: 0 4px;
+  background: var(--ui-bg-3);
+  border: 1px solid var(--tk-border-soft);
+  border-radius: 3px;
+}
+
+.prose strong {
+  font-weight: 600;
+}
+
+.prose del {
+  color: var(--tk-muted-text);
+}
+
+.tbl {
+  overflow-x: auto;
+}
+
+.prose table {
+  border-collapse: collapse;
+  font-size: var(--mantine-font-size-sm);
+  line-height: 1.45;
+}
+
+.prose th,
+.prose td {
+  border: 1px solid var(--tk-border-soft);
+  padding: 4.8px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.prose th {
+  background: var(--tk-panel);
+  font-weight: 600;
+}
+
+.prose blockquote {
+  padding-left: var(--mantine-spacing-lg);
+  border-left: 2px solid var(--tk-border);
+  color: var(--tk-muted-text);
+}
+
+.prose hr {
+  border: 0;
+  border-top: 1px solid var(--tk-border-soft);
+}
+
+.prose a {
+  color: var(--mantine-color-accent-text);
+}
+
+.prose a:hover {
+  text-decoration: underline;
+}
+
+.at {
+  color: var(--mantine-color-accent-text);
+  font-weight: 600;
+}
+
+.atMe {
+  background: color-mix(
+    in srgb,
+    var(--mantine-color-accent-text) var(--tk-wash),
+    transparent
+  );
+  border-radius: 3px;
+  padding: 0 3px;
+}
+
+.mine .prose {
+  background: color-mix(
+    in srgb,
+    var(--mantine-color-accent-text) var(--tk-wash),
+    transparent
+  );
+  border-radius: var(--mantine-radius-md);
+  padding: var(--mantine-spacing-md) var(--mantine-spacing-lg);
+}
+
+.fold {
+  position: relative;
+  max-height: 320px;
+  overflow: hidden;
+}
+
+.fold::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 48px;
+  background: linear-gradient(to bottom, transparent, var(--tk-card));
+  pointer-events: none;
+}
+
+/* An own post's `.prose` sits on the accent wash, not the bare card: the
+   fade must land on that composite or its bottom edge shows a visible seam. */
+.mine .fold::after {
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    color-mix(
+      in srgb,
+      var(--mantine-color-accent-text) var(--tk-wash),
+      var(--tk-card)
+    )
+  );
+}
+
+.foldrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--mantine-color-accent-text);
+  font-size: var(--tk-fs-3xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tri {
+  width: 0;
+  height: 0;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-left: 5px solid currentColor;
+  transition: transform 120ms ease;
+}
+.tri[data-open='true'] {
+  transform: rotate(90deg);
+}
