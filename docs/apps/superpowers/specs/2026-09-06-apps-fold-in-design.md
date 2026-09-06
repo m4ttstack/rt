@@ -1,8 +1,10 @@
 # apps fold-in: one repo for the estate, npm retired
 
 Date: 2026-09-06. Status: approved direction, spec under review.
-Builds on `2026-09-05-ui-platform-monorepo-design.md` (phases 1-2 shipped,
-merged as PRs #11/#13) and SUPERSEDES that plan's Phase 3.
+Builds on `2026-09-05-ui-platform-monorepo-design.md` (its Migration
+steps shipped as PRs #11/#13) and SUPERSEDES Phase 3 of
+`docs/superpowers/plans/2026-09-05-ui-platform-monorepo.md` (the
+consumer-bump cleanups), which now happen inside each app's fold-in.
 
 ## Problem
 
@@ -21,7 +23,7 @@ consumers.
 | Repo name | The repo renames to `m4ttstack/apps` (GitHub redirects cover old URLs). |
 | Deck's public repo | Deck goes private inside the wall. Accepted consequence: its public links and the MAT-249 open-sourcing ambition for deck invert; public-facing links (mattstack.dev, READMEs) need repointing. |
 | npm | Platform publishing ENDS. 0.4.0 is versioned in-tree but never publishes; no package of this repo ships to the registry again. `packages/tokens` stays private as before. |
-| What stays npm | `@mattstack/rt-client`, `@mattstack/glance`, `@mattstack/settings-kit`, `invadrs`: external packages with their own homes and trains, consumed by the apps exactly as today (exact pins preserved). |
+| What stays npm | `@mattstack/rt-client`, `@mattstack/glance`, `@mattstack/settings-kit`, `invadrs`: external packages with their own homes and trains, consumed by the apps as today. Pins survive EXCEPT where one hoisted workspace makes skew dangerous: react/react-dom align workspace-wide at fold-in (board pins 19.2.7 exact, deck 19.2.8 exact, everything else ^19.2.7; one nested copy plus workspace-linked tui-kit peering the hoisted copy is the two-React trap board's own package.json note documents). Each app's fold-in PR verifies single-React resolution. rt-client skew (^0.14.0 vs exact 0.16.0) aligns to the exact pin the daemon owners chose. |
 | Ex-Phase 3 | Each app's smoothing-copy deletion, board's override deletion and text-role swaps happen inside that app's fold-in migration, not as separate bump PRs. |
 | probe/ | Retires. Five real in-repo apps prove the packages; probe and its CI legs are deleted. |
 | Gate-kit (future) | With board and console as siblings, the headless gate kit becomes an internal workspace package (thora's brief factors this in). Minimum published surface is standing policy. |
@@ -51,12 +53,17 @@ clone of ONE repo at main, on a GitHub macos runner, with no sibling
 checkouts. Folding therefore requires, in the rt repo (max's scope, a
 separate brief):
 
-1. Per-app recipe keying: one `recipe.json` per app (at
-   `apps/<name>/recipe.json`) or a keyed root recipe; `plan-matrix.ts`
-   and `bundle-apps.yml` updated accordingly.
+1. Per-app recipe keying: the recipe file is `mattstack.deck.json`, and
+   every app repo (boxscore included) already carries one at its root;
+   it rides in with the subtree to `apps/<name>/mattstack.deck.json`.
+   Nothing new is authored; `plan-matrix.ts` and `bundle-apps.yml`
+   change to read it from the per-app path.
 2. Version read from `apps/<name>/package.json`, not the repo root.
 3. App-prefixed tags (`chat-v0.1.1`) with the tag guard and release
-   step updated; releases land on `m4ttstack/apps`.
+   step updated; releases land on `m4ttstack/apps`. The prefix is
+   essential, not cosmetic: chat and console both sit at 0.1.0 today,
+   so unprefixed `v0.1.0` tags collide on the shared repo's first
+   release.
 4. deps.lock `repo` fields repoint to the `apps` slug.
 5. The old app repos stay UNARCHIVED until a shipped mattstack.app
    release carries a deps.lock pointing at `apps` release tarballs;
@@ -73,24 +80,46 @@ Boxscore does not ship in the bundle; its fold-in has no pipeline leg.
 
 For each app, in order chat, console, boxscore, board, deck:
 
-1. `git subtree add --prefix apps/<name>` from the app repo's main.
-2. Workspace wiring: platform deps become `workspace:*`; external npm
-   deps keep their exact pins; the app's vite/tsc/bun build runs from
-   `apps/<name>` unchanged; root scripts and CI gain bounded per-app
-   steps (the app's own typecheck/test/lint, not a root sweep).
-3. Ex-Phase 3 cleanup in the same PR: delete the app's local smoothing
-   copy (console index.html inline block, chat type-scale.css, board
-   style.css, deck board.css); board additionally deletes its :root
-   override block and swaps text-role `color:` declarations to
-   `var(--muted-text)` / `var(--accent-text)` / `var(--red-text)`
-   (fills and dots keep `var(--muted)`, which is the raw value).
-4. `recipe.json` added for bundled apps (chat, console, board, deck).
+1. `git subtree add --prefix apps/<name>` from the app repo's
+   origin/main. Fold-in PRs merge with MERGE COMMITS, never squash: a
+   squash flattens the imported history the subtree exists to preserve.
+2. Workspace wiring: platform deps become `workspace:*` (aligning
+   react/react-dom per the decision table); root scripts and CI gain
+   bounded per-app steps (the app's own typecheck/test/lint, not a root
+   sweep). Build-ordering constraint for board and deck: tui-kit
+   exports `./dist/*`, which a bare `bun install` does not build, so
+   the root scripts and CI must run `tui-kit:build` before any board or
+   deck typecheck/test/build step. The Mantine apps need no ordering
+   (ui/server/tokyo export TS source).
+3. Ex-Phase 3 cleanup in the same PR, fragments only, never whole
+   files: console deletes the two smoothing declarations inside its
+   index.html inline style block (the loading-bar rules in that block
+   stay; commit anchor ed4b81c); chat deletes the trailing smoothing
+   section of `src/app/styles/type-scale.css` (the `--tk-fs-*` tokens
+   stay; 7c531fa); board deletes its one `body` smoothing block and its
+   `:root` override block in `src/style.css` (273fcaf) and swaps
+   text-role `color:` declarations to `var(--muted-text)` /
+   `var(--accent-text)` / `var(--red-text)` while fills and dots keep
+   `var(--muted)`; deck deletes the smoothing declarations inside
+   `core/board/board.css`'s body rule (e18a4b7) and regenerates its
+   `core/generated/board.css` twin via `build:board`.
+4. The app's imported `.github/workflows/` is dispositioned
+   deliberately in the same PR: chat's served-client/api-404 gate and
+   the purity gates (chat/console/board) port into the monorepo CI as
+   per-app steps; board's and deck's tag-triggered release.yml are
+   deleted (subsumed by bundle-apps); nothing stays inert under
+   `apps/<name>/.github/`.
 5. Deck service registration repoints to the monorepo path; the old
    repo is left untouched (unarchived, per the pipeline rule) and gains
    a README pointer to `apps`.
 6. rt identity: the session/worktree/chat keying for the app moves to
    the `apps` repo; board's skills and automation update their repo
    references.
+7. Drift window: until the bundle cutover, bundle builds still clone
+   the OLD repo's main, so any interim hotfix lands there first and the
+   monorepo copy re-syncs via `git subtree pull` before cutover. The
+   old repo stays the hotfix source of truth for its app until its
+   deps.lock row repoints.
 
 ## Rename and privatization sequencing
 
@@ -99,8 +128,9 @@ For each app, in order chat, console, boxscore, board, deck:
    (redirects preserve clones and PR links); update rt identity, the
    chat room derivation, deps.lock slugs (with max), and public links.
 3. Deck's old repo goes private only after the deps.lock repoint ships
-   in a mattstack.app release; the other four old repos likewise stay
-   until then, then archive.
+   in a mattstack.app release; chat, console, and board likewise stay
+   until then, then archive. Boxscore has no deps.lock row and may
+   archive as soon as its fold-in merges.
 
 ## Docs and truth repairs (first commit of the fold-in)
 
@@ -111,8 +141,9 @@ For each app, in order chat, console, boxscore, board, deck:
 - CLAUDE.md: publishing section inverts (nothing publishes; the four
   0.4.0 versions are tree-internal identities); consumer-repos section
   describes `apps/` instead.
-- Storybook's story glob is broken (`No story files found`); repair it
-  in passing, it is the kit's eyeball surface.
+- Storybook stays the kit's eyeball surface; `build-storybook` is green
+  on main and must stay green through every fold-in PR (an earlier
+  broken-glob observation did not reproduce and is withdrawn).
 
 ## Risks
 
