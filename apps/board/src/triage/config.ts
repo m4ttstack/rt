@@ -1,0 +1,211 @@
+import { readFileSync } from "fs";
+import { getSetting } from "@mattstack/rt-client";
+import { CONFIG_PATH } from "../config.ts";
+
+export interface FixClasses {
+  retryFlake: boolean;
+  inheritedNoteDraft: boolean;
+  cleanApiRebase: boolean;
+  /** Behavior-neutral mechanical code fixes (append required lint-disable
+      reasons, formatting-only changes, import ordering) committed and pushed
+      to the MR branch. MAT-351: dispatch only ever includes this class for
+      edges whose author is the board's own identity -- see composeFixClasses
+      in run.ts, the actual gate. DEFAULT OFF, same conservative posture as
+      cleanApiRebase, since it's the other branch-writing class here. */
+  mechanicalLint: boolean;
+  /** Full repair authority for the board identity's OWN MRs (Matt's
+      2026-08-10 widening of MAT-351). Same author gate as mechanicalLint in
+      composeFixClasses; DEFAULT OFF. */
+  codeFix: boolean;
+}
+
+export interface TriageConfig {
+  enabled: boolean;
+  cooldownMinutes: number;
+  maxConcurrent: number;
+  dailyAttemptBudget: number;
+  fixClasses: FixClasses;
+  /** Domain skill the auto-dispatched wrapper delegates to. Deliberate:
+      triage-level config override, not manifest-resolved (BOARD-14 ruling --
+      auto-dispatch has no per-MR nudge/click origin to hang a manifest
+      lookup off, so it stays a plain config field). */
+  doctorSkill: string;
+  /** Repair tier for auto dispatches: "api" = no-checkout held-drafts doctor;
+      "checkout" = the full fix-and-push doctor (token identity's own MRs
+      only, which fetchOwnMrs already guarantees). */
+  tier: "api" | "checkout";
+  notify: "rt" | "badge-only";
+}
+
+const DEFAULT_FIX_CLASSES: FixClasses = {
+  retryFlake: true,
+  inheritedNoteDraft: true,
+  // API-only but branch-rewriting; ships DEFAULT OFF per the 2026-08-08 ruling.
+  cleanApiRebase: false,
+  // Commits + pushes to the MR branch; ships DEFAULT OFF per the 2026-08-10
+  // MAT-351 ruling. Gated to the board's own identity at dispatch regardless
+  // of this toggle -- see composeFixClasses in run.ts.
+  mechanicalLint: false,
+  // Full fix-and-push on the board identity's own MRs; same gate, same
+  // conservative shipped default.
+  codeFix: false,
+};
+
+const DEFAULTS: TriageConfig = {
+  enabled: false,
+  cooldownMinutes: 30,
+  maxConcurrent: 2,
+  dailyAttemptBudget: 3,
+  fixClasses: DEFAULT_FIX_CLASSES,
+  doctorSkill: "",
+  tier: "api",
+  notify: "rt",
+};
+
+function positiveNumber(value: unknown, key: string, fallback: number, source: string): number {
+  if (value === undefined) return fallback;
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    throw new Error(`${source} "triage.${key}" must be a positive number`);
+  }
+  return value;
+}
+
+/** `source` names where a malformed value came from in every thrown message
+    (default "config.json", the file path's own vocabulary) — the store call
+    site in loadTriageConfig passes `settings key "board.triage"` instead, so
+    a malformed store value sends the operator to `rt settings` rather than
+    telling them to go fix a file that isn't the actual problem. */
+export function parseTriageBlock(raw: unknown, source = "config.json"): TriageConfig {
+  if (raw === undefined || raw === null) return structuredClone(DEFAULTS);
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error(`${source} "triage" must be an object`);
+  }
+  const t = raw as Record<string, unknown>;
+  if (t.enabled !== undefined && typeof t.enabled !== "boolean") {
+    throw new Error(`${source} "triage.enabled" must be a boolean`);
+  }
+  if (t.doctorSkill !== undefined && typeof t.doctorSkill !== "string") {
+    throw new Error(`${source} "triage.doctorSkill" must be a string (a skill name)`);
+  }
+  if (t.notify !== undefined && t.notify !== "rt" && t.notify !== "badge-only") {
+    throw new Error(`${source} "triage.notify" must be "rt" or "badge-only"`);
+  }
+  if (t.tier !== undefined && t.tier !== "api" && t.tier !== "checkout") {
+    throw new Error(`${source} "triage.tier" must be "api" or "checkout"`);
+  }
+  const fixClasses = { ...DEFAULT_FIX_CLASSES };
+  if (t.fixClasses !== undefined) {
+    if (typeof t.fixClasses !== "object" || t.fixClasses === null || Array.isArray(t.fixClasses)) {
+      throw new Error(`${source} "triage.fixClasses" must be an object`);
+    }
+    for (const key of ["retryFlake", "inheritedNoteDraft", "cleanApiRebase", "mechanicalLint", "codeFix"] as const) {
+      const v = (t.fixClasses as Record<string, unknown>)[key];
+      if (v === undefined) continue;
+      if (typeof v !== "boolean") throw new Error(`${source} "triage.fixClasses.${key}" must be a boolean`);
+      fixClasses[key] = v;
+    }
+  }
+  return {
+    enabled: (t.enabled as boolean | undefined) ?? DEFAULTS.enabled,
+    cooldownMinutes: positiveNumber(t.cooldownMinutes, "cooldownMinutes", DEFAULTS.cooldownMinutes, source),
+    maxConcurrent: positiveNumber(t.maxConcurrent, "maxConcurrent", DEFAULTS.maxConcurrent, source),
+    dailyAttemptBudget: positiveNumber(t.dailyAttemptBudget, "dailyAttemptBudget", DEFAULTS.dailyAttemptBudget, source),
+    fixClasses,
+    doctorSkill: (t.doctorSkill as string | undefined) ?? DEFAULTS.doctorSkill,
+    tier: (t.tier as "api" | "checkout" | undefined) ?? DEFAULTS.tier,
+    notify: (t.notify as "rt" | "badge-only" | undefined) ?? DEFAULTS.notify,
+  };
+}
+
+type GetSettingFn = typeof getSetting;
+
+/** Read one board.triage* key, degrading to "not owned" on a resolver throw
+    (an unregistered key, or an unreadable/malformed store file -- getSetting
+    never touches the daemon) rather than letting that brick triage config
+    load (same fail-open contract as config.ts's storeValue). Warns once per
+    call. */
+function storeValue<T>(key: string, resolve: GetSettingFn, fallback = "falling back to config.json"): T | undefined {
+  try {
+    return resolve<T>(key).value;
+  } catch (err) {
+    console.warn(`board: ${key} unavailable, ${fallback}`, err);
+    return undefined;
+  }
+}
+
+function isEnoent(err: unknown): boolean {
+  return (err as NodeJS.ErrnoException | undefined)?.code === "ENOENT";
+}
+
+/** The block lives in the board's config.json, but parsing stays here so the
+    board server never needs to know the block exists (hard boundary).
+    BOARD-14 split across three independently latched store keys once
+    migrated: `board.triage` (user) carries every field here except
+    doctorSkill/maxConcurrent — those two are sibling flat keys
+    (`board.triage.doctorSkill` team, never manifest-resolved;
+    `board.triageMaxConcurrent` machine), not nested inside `board.triage`,
+    so each is layered back on individually after the block wins or falls
+    back to config.json's triage block as a whole. A missing config.json (RULING:
+    file-authority is meaningless with no file) degrades to an absent triage
+    block rather than throwing, mirroring config.ts's loadConfigFrom store-boot
+    mode -- board.triage/board.triage.doctorSkill/board.triageMaxConcurrent can
+    carry the whole config on their own once the store owns them. Any other
+    read failure (a genuinely malformed config.json) still surfaces loudly. */
+export function loadTriageConfig(
+  configPath: string = CONFIG_PATH,
+  resolve: GetSettingFn = getSetting,
+): TriageConfig {
+  let triageRaw: unknown;
+  try {
+    triageRaw = (JSON.parse(readFileSync(configPath, "utf8")) as { triage?: unknown }).triage;
+  } catch (err) {
+    if (!isEnoent(err)) throw err;
+    triageRaw = undefined;
+  }
+  const fileConfig = parseTriageBlock(triageRaw);
+
+  const storeRaw = storeValue<unknown>("board.triage", resolve);
+  const merged = storeRaw !== undefined
+    ? {
+        // No `...fileConfig` here: parseTriageBlock always returns every
+        // TriageConfig field (defaulted, never partial), so spreading it
+        // first would only be immediately overwritten below -- doctorSkill/
+        // maxConcurrent are re-pinned to the file's values on the next two
+        // lines regardless, since those two never live inside board.triage.
+        ...parseTriageBlock(storeRaw, `settings key "board.triage"`),
+        doctorSkill: fileConfig.doctorSkill,
+        maxConcurrent: fileConfig.maxConcurrent,
+      }
+    : fileConfig;
+
+  const doctorSkill = storeValue<string>("board.triage.doctorSkill", resolve);
+  const maxConcurrent = storeValue<number>("board.triageMaxConcurrent", resolve);
+  merged.doctorSkill = typeof doctorSkill === "string" ? doctorSkill : merged.doctorSkill;
+  merged.maxConcurrent = typeof maxConcurrent === "number" && maxConcurrent > 0 ? maxConcurrent : merged.maxConcurrent;
+
+  return merged;
+}
+
+export interface ReReviewConfig {
+  enabled: boolean;
+}
+
+const RE_REVIEW_DEFAULTS: ReReviewConfig = { enabled: true };
+
+/** `board.reReview` is store-only (no config.json block) and ships enabled:
+    the re-review latch is basic board behavior, not a per-developer sweep
+    like board.triage, so a fresh teammate gets it without opting in. A
+    resolver throw (the key not yet registered in this rt-client, or an
+    unreadable store) degrades to that same default rather than silently
+    turning the latch off. */
+export function loadReReviewConfig(resolve: GetSettingFn = getSetting): ReReviewConfig {
+  const raw = storeValue<unknown>("board.reReview", resolve, "defaulting to enabled");
+  if (raw === undefined || raw === null) return { ...RE_REVIEW_DEFAULTS };
+  const source = `settings key "board.reReview"`;
+  if (typeof raw !== "object" || Array.isArray(raw)) throw new Error(`${source} must be an object`);
+  const { enabled } = raw as Record<string, unknown>;
+  if (enabled !== undefined && typeof enabled !== "boolean") {
+    throw new Error(`${source} "enabled" must be a boolean`);
+  }
+  return { enabled: (enabled as boolean | undefined) ?? RE_REVIEW_DEFAULTS.enabled };
+}

@@ -1,0 +1,36 @@
+# Slack app manifest for the mr-board review-thread integration.
+#
+# Create the app from this file: https://api.slack.com/apps → "Create New App"
+# → "From an app manifest" → pick your workspace → paste this YAML. Then grab
+# the Client ID and Client Secret from Basic Information and feed them to
+# `bun run setup` (or put SLACK_CLIENT_ID / SLACK_CLIENT_SECRET in .env).
+#
+# Each teammate mints their own user token (xoxp) through the OAuth flow in
+# `bun run setup`, so reactions and messages appear as them. While the app is
+# unlisted, add each teammate as a Collaborator (Settings → Collaborators) so
+# they can complete the flow.
+#
+# The redirect URL matches SLACK_REDIRECT_PORT in scripts/setup.ts.
+
+display_information:
+  name: mr-board
+  description: MR review-thread integration — reactions and posts as each teammate.
+  background_color: "#1a1b26"
+
+oauth_config:
+  redirect_urls:
+    - http://localhost:53782/slack/callback
+  scopes:
+    user:
+      - channels:history
+      - channels:read
+      - chat:write
+      - groups:history
+      - groups:read
+      - reactions:read
+      - reactions:write
+
+settings:
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false

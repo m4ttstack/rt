@@ -1,0 +1,108 @@
+{
+  "threads": [
+    {
+      "status": "replied",
+      "notes": [
+        {
+          "id": 1001,
+          "name": "Pia Quist",
+          "username": "pquist",
+          "at": "2025-08-18T20:22:04.846Z",
+          "body": "[BLOCKING] This `in` guard is a stale-codegen workaround that should come out before merge, and while it does not change behavior today, it disables the check that would catch it if the wiring ever broke.\n\n`temperatureFactors` is now selected in `HighlightPanelFields`, which is spread into `PanelFields` then `ReportPanelFields`, and `AnnotatedPanel` is derived from `PanelFieldsFragment`. So after `bun run codegen` (which CI runs on every pipeline, since `generated/graphql.ts` is not committed) `AnnotatedPanel` really does carry `temperatureFactors`, and the comment's premise no longer holds.\n\nThe reason to fix it rather than leave it: `'temperatureFactors' in panel` turns a *compile-time* guarantee into a *runtime* one. Today the type system fails the build if that field is dropped from the fragment; with the `in` check in place the same regression compiles clean and silently returns `[]`, so half of this highlight just stops rendering, with no test failure (the unit fixtures hand-build the leaves) and no type error.\n\nDropping just the guard:\n\n```ts\nfunction panelTemperatureFactors(panel: AnnotatedPanel): TemperatureLeaves {\n  const factors = primaryReporter(panel)?.temperatureFactors;\n  return Array.isArray(factors) ? factors : [];\n}\n```\n\nIf that does not type-check locally, it means codegen has not been re-run since `highlights.graphql` changed. Running it is the fix, not the guard.\n\n_(Edited: my first version also called the `Array.isArray` normalization redundant because `filterByValue` re-checks. Withdrawing that: `temperatureFactors` really is a bare leaf rather than an array when the panel has no factors, so normalizing here is a contract this helper is entitled to offer.)_"
+        },
+        {
+          "id": 1002,
+          "name": "Joel Vasquez",
+          "username": "jvasquez",
+          "at": "2025-08-19T09:00:00.000Z",
+          "body": "Removed the guard and took your version. After codegen the field resolves without\nthe `in` check, so the compile-time guarantee is back. Kept the Array.isArray\nnormalization."
+        }
+      ]
+    },
+    {
+      "status": "replied",
+      "notes": [
+        {
+          "id": 1003,
+          "name": "Pia Quist",
+          "username": "pquist",
+          "at": "2025-08-18T20:24:48.213Z",
+          "body": "@bfinch, a QA heads-up on how to reach these cards, since the gating is narrower than it looks and \"no card appeared\" is not by itself a bug report.\n\nThe panel only renders when **all three** hold:\n\n1. the record has at least one reporter with a `temperatureFactors` leaf,\n2. the workspace flag `highlights.temperature` is on for the tenant, and\n3. the summary job has run at least once since the record was last edited.\n\nCondition 3 is the one that trips people up: on a freshly seeded record the job is queued but has not landed, so the panel is legitimately empty for a minute or two. Re-open the record rather than filing on the first empty render.\n\nSeed script for a record that satisfies all three:\n\n```sh\nbun run scripts/seed.ts --preset temperature-highlights --tenant demo\n```\n\nIf it is still empty after the job lands, that is worth a ticket, and the job log is the first thing to attach."
+        },
+        {
+          "id": 1004,
+          "name": "Joel Vasquez",
+          "username": "jvasquez",
+          "at": "2025-08-19T09:04:00.000Z",
+          "body": "Added the seed preset to the MR description so it does not get lost in the thread.\nAlso filed a follow-up to surface \"summary pending\" in the empty state instead of\nrendering nothing, which is the actual paper cut here."
+        }
+      ]
+    },
+    {
+      "status": "replied",
+      "notes": [
+        {
+          "id": 1005,
+          "name": "Pia Quist",
+          "username": "pquist",
+          "at": "2025-08-18T20:31:12.104Z",
+          "body": "Naming nit that is worth doing now rather than later: `factor` is used for two different things in this file. In `buildFactorRow` it means one row of the panel, and in `temperatureFactor` it means the scalar the row is computed from. Two readers already asked me which one `factors.length` counts.\n\nSuggest `rows` for the first and `factors` for the second, which also makes the guard read the way it behaves:\n\n```ts\nconst rows = panelTemperatureFactors(panel).map(buildFactorRow);\nif (rows.length === 0) return null;\n```\n\nNot blocking, but it is a two-minute rename while the file is already open."
+        },
+        {
+          "id": 1006,
+          "name": "Joel Vasquez",
+          "username": "jvasquez",
+          "at": "2025-08-19T09:06:00.000Z",
+          "body": "Renamed. `rows` for the rendered rows, `factors` for the scalars, and the empty\ncheck now reads off `rows`."
+        }
+      ]
+    },
+    {
+      "status": "replied",
+      "notes": [
+        {
+          "id": 1007,
+          "name": "Pia Quist",
+          "username": "pquist",
+          "at": "2025-08-18T20:38:57.900Z",
+          "body": "The new test covers the happy path and the empty path, but not the one that actually regressed last quarter: a panel whose factors arrive **out of order**. The renderer sorts by `recordedAt`, and the fixture here is already sorted, so the sort could be deleted and this suite would stay green.\n\nA third case with two factors in reverse order, asserting the rendered order, would pin it:\n\n```ts\ntest(\"renders factors oldest first regardless of payload order\", () => {\n  const panel = panelWith([factor(\"2025-02-01\"), factor(\"2025-01-01\")]);\n  expect(renderedDates(panel)).toEqual([\"2025-01-01\", \"2025-02-01\"]);\n});\n```\n\nThat is the only thing I would want before this lands."
+        },
+        {
+          "id": 1008,
+          "name": "Joel Vasquez",
+          "username": "jvasquez",
+          "at": "2025-08-19T09:09:00.000Z",
+          "body": "Good catch, the sort really was unpinned. Added the reverse-order case and it fails\nwithout the sort, which is what I wanted to see."
+        }
+      ]
+    },
+    {
+      "status": "replied",
+      "notes": [
+        {
+          "id": 1009,
+          "name": "Pia Quist",
+          "username": "pquist",
+          "at": "2025-08-18T20:44:19.552Z",
+          "body": "Last one, and it is only a question: the panel fetches its own copy of the record through `usePanelRecord` even though the parent already has it in context. On a page with six panels that is six identical requests, deduped by the cache today but only because the cache key happens to match.\n\nIs there a reason not to read it from context here? If the panel is meant to be usable standalone, say so in a comment and I will drop it."
+        },
+        {
+          "id": 1010,
+          "name": "Joel Vasquez",
+          "username": "jvasquez",
+          "at": "2025-08-19T09:12:00.000Z",
+          "body": "Standalone use is real (the harness renders this panel with no parent), so I kept the\nhook and added a comment saying why. The cache key is asserted in the hook's own\ntest now, so the dedupe is not accidental any more."
+        }
+      ]
+    }
+  ],
+  "comments": [
+    {
+      "id": 2001,
+      "name": "Preview Deploys",
+      "username": "preview-deploys",
+      "at": "2025-08-18T17:49:31.938Z",
+      "body": "Preview environments for this merge request are ready.\n\n| Service | Deployment | Preview | Updated (UTC) |\n| :--- | :--- | :--- | :--- |\n| web | Ready | [preview](https://preview.example.com/acme-1235-web) | Aug 18, 2025 5:48pm |\n| api | Ready | [preview](https://preview.example.com/acme-1235-api) | Aug 18, 2025 5:47pm |\n| worker | Skipped | n/a | Aug 18, 2025 5:47pm |\n\nRebuilds on every push to the source branch. Environments are torn down when the merge request is merged or closed."
+    }
+  ]
+}
