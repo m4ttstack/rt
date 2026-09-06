@@ -76,3 +76,19 @@ The hand-sync watch items above; the board's client-local type
 re-declarations; the console's local helper duplication under the lint
 wall; and the class of cross-surface divergence the W4 final reviews had
 to catch by hand. The gate triage modal then builds once on the kit.
+
+## Direction update (2026-09-06 afternoon): fold-in supersedes the home lean
+
+Matt's direction via the ui-platform thread: ALL FIVE apps (chat, console,
+boxscore, board, deck) fold into the app-kit monorepo, renamed
+m4ttstack/apps; platform npm publishing ends. That flips this brief's home
+conclusion: with board and console as workspace siblings, gate-kit's
+natural home is an INTERNAL workspace package in m4ttstack/apps
+(unpublished, like tokens), per the minimum-published-surface principle.
+
+The daemon-versioned core in the coupling table is unchanged as a fact; it
+now argues only for the kit's DEPENDENCY shape, not its address: the kit
+consumes wire types from @mattstack/rt-client and moves in lockstep with
+the workspace's single rt-client pin. Everything else in this brief
+(inventory, constraints, headless boundary, per-surface variance) stands.
+Formal placement remains Matt's call at the platform phase-end check-in.
