@@ -163,15 +163,60 @@ conversation.
    ```json
    [
      {"id": "threads-1", "label": "Threads 1-8: reply, fix, or skip each", "multi": true,
-      "options": ["reply:<threadId>", "fix:<threadId>", "skip:<threadId>", "... one triple per thread in the group, ids verbatim"]},
+      "options": [{"value": "reply:<threadId>", "label": "reply · <file>:<line>"}, {"value": "fix:<threadId>", "label": "fix · <file>:<line>"}, {"value": "skip:<threadId>", "label": "skip · <file>:<line>"}, "... one triple per thread in the group, ids verbatim"]},
      {"id": "code-changes", "label": "Approve the proposed code changes?", "multi": false,
-      "options": ["approve", "revise"]}
+      "options": ["approve", "revise", "skip"]}
    ]
    ```
 
+   Labels are display text with a 200 UTF-8 byte cap. Compose them from the
+   thread's file and line; when a path would push a label past the cap,
+   middle-truncate the path portion (keep the filename and line). Never let
+   a label's length fail the open; the value string is never altered.
+
+   `skip` is the no-code-changes sentinel: surfaces hide the code-changes
+   question until a `fix:` option is selected and submit `skip` for it while
+   hidden, so it must always be present in the options.
+
+   When exactly ONE unresolved thread exists, build ONE merged single-select
+   question instead of the group-plus-code-changes pair: id `threads-1`,
+   options the thread's `reply:<id>`/`fix:<id>`/`skip:<id>` triple (labeled
+   as above). The verb choice implies the disposition; do not add a
+   code-changes question to a single-thread gate.
+
    - **Open the gate:**
-     `<status-bin> gate open <state> --kind respond-plan --questions <json>`
-   - **Wait for the answer:** run the wait/gate-protocol below.
+     `<status-bin> gate open <state> --kind respond-plan --questions <json> --context <context text>`
+     The output is one JSON line: `{"gateId": "...", "presentation": "form"}` or `"wait"`.
+     The context text is the reviewer thread quoted verbatim plus the drafted
+     reply or fix summary for each thread, within the 8192 UTF-8 byte cap; if
+     it would exceed the cap, omit `--context` entirely rather than trimming
+     it.
+   - **presentation "form":** present the SAME questions as the native
+     structured-question form. Render each option's `label` when it has one
+     and submit the chosen option's `value` verbatim; never an index, never a
+     paraphrase. Submit exactly one
+     `<status-bin> gate answer <state> --answers <json> --by pane` after the
+     form. A printed conflict answer means another surface won: say so in one
+     line and proceed on the printed winning answer. If the form is dismissed
+     under you and a message arrives saying the gate was answered elsewhere,
+     that message is a verify-only signal and never carries the answer: run
+     `<status-bin> gate wait <state> --max-ms 1000`, read the recorded
+     answer, and proceed on it.
+
+     On a respond-plan gate, hide the code-changes question until a `fix:`
+     value is chosen and submit `skip` for it while hidden, exactly as the
+     board and console cards do (ask the thread questions first, then either
+     ask code-changes or fill `skip`, still ONE gate answer at the end).
+   - **presentation "wait":** do NOT present a form. Launch ONE background
+     shell command (the shell tool's run-in-background mode) that loops
+     `<status-bin> gate wait <state> --max-ms 90000`, re-running while it
+     prints `{"status":"pending"}`, and exits printing the answered JSON as
+     its last stdout. Then END YOUR TURN in one line: `holding at gate
+     <gateId>`. The pane is idle but armed: typed input lands instantly, and
+     the loop's completion re-invokes this pane with the answer as the tool
+     result. On re-invoke, proceed on the answer exactly as the form branch
+     does. A wait that fails with a closed or not-found message is terminal:
+     follow this wrapper's existing closed-gate rules.
 5. **Act on the plan.** Hand `{plan: <answers>, by: <by>}` to the domain
    skill (or act on it yourself on the generic no-domain-skill path) —
    `by` is the wait's own decider field, so the domain skill's decision
@@ -197,8 +242,33 @@ conversation.
    ```
 
    - **Open the gate:**
-     `<status-bin> gate open <state> --kind respond-post --questions <json>`
-   - **Wait for the answer:** run the wait/gate-protocol below.
+     `<status-bin> gate open <state> --kind respond-post --questions <json> --context <context text>`
+     The output is one JSON line: `{"gateId": "...", "presentation": "form"}` or `"wait"`.
+     The context text is the reviewer thread quoted verbatim plus the drafted
+     reply or fix summary for each thread, within the 8192 UTF-8 byte cap; if
+     it would exceed the cap, omit `--context` entirely rather than trimming
+     it.
+   - **presentation "form":** present the SAME questions as the native
+     structured-question form. Render each option's `label` when it has one
+     and submit the chosen option's `value` verbatim; never an index, never a
+     paraphrase. Submit exactly one
+     `<status-bin> gate answer <state> --answers <json> --by pane` after the
+     form. A printed conflict answer means another surface won: say so in one
+     line and proceed on the printed winning answer. If the form is dismissed
+     under you and a message arrives saying the gate was answered elsewhere,
+     that message is a verify-only signal and never carries the answer: run
+     `<status-bin> gate wait <state> --max-ms 1000`, read the recorded
+     answer, and proceed on it.
+   - **presentation "wait":** do NOT present a form. Launch ONE background
+     shell command (the shell tool's run-in-background mode) that loops
+     `<status-bin> gate wait <state> --max-ms 90000`, re-running while it
+     prints `{"status":"pending"}`, and exits printing the answered JSON as
+     its last stdout. Then END YOUR TURN in one line: `holding at gate
+     <gateId>`. The pane is idle but armed: typed input lands instantly, and
+     the loop's completion re-invokes this pane with the answer as the tool
+     result. On re-invoke, proceed on the answer exactly as the form branch
+     does. A wait that fails with a closed or not-found message is terminal:
+     follow this wrapper's existing closed-gate rules.
    - **Act on the answer.** Hand `{post: <answers>, by: <by>}` to the domain
      skill so it can execute the posting, or post the selected replies
      yourself on the generic no-domain-skill path — `by` is the wait's own
@@ -223,25 +293,13 @@ conversation.
 ## Gate protocol (both gates)
 
 Both Gate 1 (`respond-plan`) and Gate 2 (`respond-post`) share the same
-wait/escape-hatch/degraded-mode mechanics — self-contained here since each
-gate follows it independently:
+closed-gate/escape-hatch/degraded-mode mechanics, self-contained here since
+each gate follows it independently. (The open/presentation/wait mechanics are
+inline at each gate above, since the questions and context differ per gate.)
+`gate wait`'s answered form is `{"answers": {...}, "by": "...", "answeredAt": ...}`,
+keyed by that gate's own question ids (`threads-1`/`code-changes` for Gate 1,
+`replies`/`disposition` for Gate 2). Read the relevant `answers.<id>`.
 
-- **Wait for the answer:**
-  `<status-bin> gate wait <state>`
-  Each invocation waits for a bounded window and always exits on its own,
-  printing exactly one line:
-  - `{"status": "pending"}` — the window elapsed with no answer yet. Run the
-    same command again, and keep re-running it until one of the other
-    results arrives. This loop IS the wait; every re-run resumes exactly
-    where the last left off, because the gate and any answer are persisted
-    daemon state.
-  - `{"answers": {...}, "by": "...", "answeredAt": ...}` — keyed by that
-    gate's own question ids (`threads-1`/`code-changes` for Gate 1,
-    `replies`/`disposition` for Gate 2). Read the relevant `answers.<id>`.
-  A nonzero exit with any error other than the closed message or the
-  terminal errors below is a transient failure (a daemon restart, say) —
-  re-run it like a pending. Re-entering the wait can never lose an answer
-  already recorded.
 - **Closed or missing gate.** If `gate wait` fails with `gate <id> closed (<reason>)`,
   the decision site itself was abandoned — superseded, abandoned, or pruned
   when the MR left the board. A `not-found` error or `no gate open for <url>`
@@ -272,7 +330,7 @@ gate follows it independently:
 - **Degraded mode.** If `gate open` exits nonzero (the daemon was down at
   open time), fall back to ONE `AskUserQuestion` carrying that gate's own
   questions and proceed on its answers. A failing `gate wait` is not itself
-  degradation — per "Wait for the answer" above, re-run it; only if it keeps
+  degradation — per the presentation branches above, re-run it; only if it keeps
   failing, and never with the closed message or the terminal errors above
   (those end cleanly per "Closed or missing gate" instead), fall back to the
   same `AskUserQuestion`, and tell the human why.

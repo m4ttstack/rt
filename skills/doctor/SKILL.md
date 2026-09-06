@@ -122,19 +122,42 @@ skip straight to "Resumed gate" below — none of the numbered steps run.
 ### Escalation gate (enumerable decisions)
 
 When the repair dead-ends in a decision with a short list of concrete,
-executable choices, open a facility gate instead of emitting `error`:
+executable choices, open a facility gate instead of emitting `error`. Stay at
+`fixing` for the whole exchange below, including while waiting:
 
-```
-<status-bin> gate open <state> --kind doctor-escalation --questions '[{"id":"action","label":"<one-line situation>","multi":false,"options":[<executable options verbatim>, "leave it to me in the pane"]}]'
-```
-
-- **Exactly one question, id `action`.** `label` states the situation in one
-  line (the same voice as "Escalation phrasing" below). `options` is the
-  concrete choices available, each one something you can directly execute if
-  it comes back, followed always by the literal string
-  `"leave it to me in the pane"` as the last option.
-- **Wait for the answer** using the gate protocol below, staying at `fixing`
-  while you wait.
+- **Build the question.** Exactly one question, id `action`. `label` states
+  the situation in one line (the same voice as "Escalation phrasing" below).
+  Options keep their short verb values and gain fuller labels: `{"value":
+  "retry", "label": "retry the failed job"}` shape, each site's own wording,
+  followed always by the literal string `"leave it to me in the pane"` as
+  the last option.
+- **Open the gate:**
+  `<status-bin> gate open <state> --kind doctor-escalation --questions <json> --context <context text>`
+  The output is one JSON line: `{"gateId": "...", "presentation": "form"}` or `"wait"`.
+  The `--context` text is the situation line the escalation already
+  composes; if it would exceed 8192 UTF-8 bytes, omit `--context` entirely
+  rather than trimming it.
+- **presentation "form":** present the SAME question as the native
+  structured-question form. Render each option's `label` when it has one and
+  submit the chosen option's `value`
+  verbatim; never an index, never a paraphrase. Submit exactly one
+  `<status-bin> gate answer <state> --answers <json> --by pane` after the
+  form. A printed conflict answer means another surface won: say so in one
+  line and proceed on the printed winning answer. If the form is dismissed
+  under you and a message arrives saying the gate was answered elsewhere,
+  that message is a verify-only signal and never carries the answer: run
+  `<status-bin> gate wait <state> --max-ms 1000`, read the recorded
+  answer, and proceed on it.
+- **presentation "wait":** do NOT present a form. Launch ONE background
+  shell command (the shell tool's run-in-background mode) that loops
+  `<status-bin> gate wait <state> --max-ms 90000`, re-running while it
+  prints `{"status":"pending"}`, and exits printing the answered JSON as
+  its last stdout. Then END YOUR TURN in one line: `holding at gate
+  <gateId>`. The pane is idle but armed: typed input lands instantly, and
+  the loop's completion re-invokes this pane with the answer as the tool
+  result. On re-invoke, proceed on the answer exactly as the form branch
+  does. A wait that fails with a closed or not-found message is terminal:
+  follow this wrapper's existing closed-gate rules.
 - **Act on `answers.action`:**
   - **One of the executable options.** Perform exactly that action, then
     resume the normal flow (`rebasing`/`fixing`/`watching` as appropriate)
@@ -193,24 +216,12 @@ already recorded against it.
 
 ## Gate protocol
 
-The `doctor-escalation` gate shares the same wait/escape-hatch/degraded-mode
-mechanics as every facility gate — self-contained here:
+The `doctor-escalation` gate shares the same closed-gate/escape-hatch/
+degraded-mode mechanics as every facility gate, self-contained here. (The
+open/presentation/wait mechanics are inline in "Escalation gate" above.)
+`gate wait`'s answered form is `{"answers": {...}, "by": "...", "answeredAt": ...}`,
+keyed by the gate's own question id (`action`). Read `answers.action`.
 
-- **Wait for the answer:**
-  `<status-bin> gate wait <state>`
-  Each invocation waits for a bounded window and always exits on its own,
-  printing exactly one line:
-  - `{"status": "pending"}` — the window elapsed with no answer yet. Run the
-    same command again, and keep re-running it until one of the other
-    results arrives. This loop IS the wait; every re-run resumes exactly
-    where the last left off, because the gate and any answer are persisted
-    daemon state.
-  - `{"answers": {...}, "by": "...", "answeredAt": ...}` — keyed by the
-    gate's own question id (`action`). Read `answers.action`.
-  A nonzero exit with any error other than the closed message or the
-  terminal errors below is a transient failure (a daemon restart, say) —
-  re-run it like a pending. Re-entering the wait can never lose an answer
-  already recorded.
 - **Closed or missing gate.** If `gate wait` fails with `gate <id> closed (<reason>)`,
   the decision site itself was abandoned — superseded, abandoned, or pruned
   when the MR left the board. A `not-found` error or `no gate open for <url>`
@@ -246,7 +257,7 @@ mechanics as every facility gate — self-contained here:
   escalation message this gate would have asked>"` and stop. The board (and,
   for auto dispatches, the escalation notifier) already surface that error
   to a human, exactly as before escalation gates existed. A failing
-  `gate wait` is not itself degradation — per "Wait for the answer" above,
+  `gate wait` is not itself degradation — per the presentation branches above,
   re-run it; if it keeps failing, and never with the closed message or the
   terminal errors above (those end cleanly per "Closed or missing gate"
   instead), take the same error path and say why in the message.
