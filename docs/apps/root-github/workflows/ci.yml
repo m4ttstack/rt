@@ -104,3 +104,6 @@ jobs:
           test "$(curl -s -o /dev/null -w '%{content_type}' "localhost:11099$font")" = "font/woff2"
       - name: console has no employer or domain references in its tracked tree
         run: apps/console/scripts/repo-purity.sh
+      - run: bun run boxscore:typecheck
+      - run: bun run boxscore:lint
+      - run: bun run boxscore:test
