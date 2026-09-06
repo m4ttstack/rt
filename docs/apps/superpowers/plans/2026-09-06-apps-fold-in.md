@@ -14,7 +14,7 @@
 
 - Fold-in PRs merge with MERGE COMMITS, never squash (history preservation).
 - Subtree imports come from each app repo's `origin/main` only; anything unmerged in an app repo lands there first or waits.
-- Platform deps become `workspace:*`; external npm deps keep their pins except: react/react-dom align workspace-wide on `^19.2.7`-compatible single resolution (board's `19.2.7` and deck's `19.2.8` exact pins change to the aligned range), and rt-client aligns to the exact `0.16.0` pin in every app that uses it. Every app task verifies single-React resolution (`bun pm ls react` shows one copy reachable from the app, or the app's own duplicate-react guard passes).
+- Platform deps become `workspace:*`. Shared external deps align via a root workspace CATALOG (Bun: `workspaces.catalog` in the root package.json; members reference `"catalog:"`; `bun pm pack` resolves refs to concrete versions at pack time, so transition tarballs stay valid). Task 2 introduces the catalog with at least: react `^19.2.7`, react-dom `^19.2.7`, the nine `@mantine/*` at `^9.5.2`, wouter, zod, hono, `@mattstack/rt-client` `0.16.0`, `@mattstack/glance`, typescript, vite, vitest, `@vitejs/plugin-react`, `@types/react`, `@types/react-dom`, `@tanstack/react-query`. Each fold-in converts that app's occurrences of catalogued deps to `catalog:` (board's `19.2.7` and deck's `19.2.8` exact react pins die here); deps not in the catalog keep their pins. Every app task still verifies single-React resolution (`bun pm ls react` reachable once, or the app's duplicate-react guard passes).
 - tui-kit exports `./dist/*`: root scripts and CI run `tui-kit:build` before ANY board or deck typecheck/test/build step. Mantine apps are exempt.
 - Ex-Phase 3 cleanups are fragments only, per the spec's step 3 (survive-lists and commit anchors ed4b81c, 7c531fa, 273fcaf, e18a4b7); board's text-role swap: text `color:` declarations move to `var(--muted-text)` / `var(--accent-text)` / `var(--red-text)`, fills and dots keep `var(--muted)`.
 - No imported `.github/workflows` stays inert: port (console/board purity gates, chat's served-client/api-404 gate) or delete (board/deck release.yml) in the same PR.
@@ -49,7 +49,39 @@
 - Produces: the `apps/*` workspace pattern, root script conventions `chat:typecheck`, `chat:test`, `chat:lint`, `chat:build` (`cd apps/chat && bun run <script>`), and the per-app CI step shape every later task copies.
 
 - [ ] **Step 1**: `git fetch` the chat repo, then `git subtree add --prefix apps/chat ~/Documents/GitHub/chat main`.
-- [ ] **Step 2**: Root `package.json`: `"workspaces": ["packages/*", "packages/tui-kit/workshop", "apps/*"]`. `apps/chat/package.json`: `@mattstack/app-kit`, `@mattstack/app-server`, `@mattstack/mantine-tokyo` -> `"workspace:*"`; rt-client -> `"0.16.0"`; react/react-dom stay `^19.2.7`. `bun install`; verify single React (`bun pm ls react`).
+- [ ] **Step 2**: Root `package.json`: workspaces becomes the OBJECT form with the catalog:
+
+```json
+"workspaces": {
+  "packages": ["packages/*", "packages/tui-kit/workshop", "apps/*"],
+  "catalog": {
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "@mantine/code-highlight": "^9.5.2",
+    "@mantine/core": "^9.5.2",
+    "@mantine/dates": "^9.5.2",
+    "@mantine/form": "^9.5.2",
+    "@mantine/hooks": "^9.5.2",
+    "@mantine/modals": "^9.5.2",
+    "@mantine/notifications": "^9.5.2",
+    "@mantine/spotlight": "^9.5.2",
+    "@mattstack/glance": "^0.24.0",
+    "@mattstack/rt-client": "0.16.0",
+    "@tanstack/react-query": "^5.102.0",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "hono": "^4.13.3",
+    "typescript": "~6",
+    "vite": "^8.1.1",
+    "vitest": "^4.1.10",
+    "wouter": "^3.10.0",
+    "zod": "^4.4.3"
+  }
+}
+```
+
+Convert the ROOT devDependencies and each workspace package's occurrences of these deps (packages/ui peers included; catalog refs work in peerDependencies) to `"catalog:"` in this same step, so the catalog is the single home from its first commit. Then `apps/chat/package.json`: `@mattstack/app-kit`, `@mattstack/app-server`, `@mattstack/mantine-tokyo` -> `"workspace:*"`; every catalogued dep -> `"catalog:"`. `bun install`; verify single React (`bun pm ls react`); `bun run tui-kit:gates` and the full root suite prove the catalog conversion changed no resolution the gates can see.
 - [ ] **Step 3**: Ex-Phase 3 fragment cleanup per the spec (type-scale.css trailing smoothing section only; anchor 7c531fa). Chat's `loading-bar-sync.test.ts` must still pass (the index.html block it byte-compares is untouched).
 - [ ] **Step 4**: Workflow disposition: port chat's served-client/api-404 gate from `apps/chat/.github/workflows/ci.yml` into root ci.yml as chat steps (`chat:typecheck`, `chat:lint`, `chat:test`, `chat:build`, plus the served-client check command verbatim); `git rm -r apps/chat/.github`.
 - [ ] **Step 5**: Probe retirement: `git rm -r probe`, remove `probe:*` root scripts and their ci.yml steps and the `sync-probe-refs` script; chat's suite is the in-repo consumer proof now.
