@@ -6,6 +6,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const answerPost = vi.fn();
+const focusPost = vi.fn();
 
 vi.mock('../api', () => ({
   client: {
@@ -13,6 +14,7 @@ vi.mock('../api', () => ({
       gates: {
         ':id': {
           answer: { $post: (...args: unknown[]) => answerPost(...args) },
+          focus: { $post: (...args: unknown[]) => focusPost(...args) },
         },
       },
     },
@@ -333,5 +335,31 @@ describe('W4 rendering', () => {
     answerPost.mockClear();
     await user.click(screen.getByLabelText('fix:t1'));
     expect(screen.getByText('Approve the proposed code changes?')).toBeInTheDocument();
+  });
+});
+
+describe('focus button', () => {
+  it('is enabled when the origin can resolve and disabled with a reason otherwise', () => {
+    renderCard(gateRow({ origin: { paneId: 'p1', presentation: 'form' } }));
+    expect(screen.getByTestId('gate-focus')).toBeEnabled();
+  });
+
+  it('is disabled with reasons for origin-less and parked gates', () => {
+    renderCard(gateRow({}));
+    expect(screen.getByTestId('gate-focus')).toBeDisabled();
+    expect(screen.getByTestId('gate-focus')).toHaveAttribute(
+      'title',
+      'no origin on this gate'
+    );
+  });
+
+  it('parked gates disable focus but keep the submit path', () => {
+    renderCard(gateRow({ status: 'parked', origin: { paneId: 'p1' } }));
+    expect(screen.getByTestId('gate-focus')).toBeDisabled();
+    expect(screen.getByTestId('gate-focus')).toHaveAttribute(
+      'title',
+      'parked; resume is board-owned'
+    );
+    expect(screen.getByRole('button', { name: 'submit' })).toBeInTheDocument();
   });
 });

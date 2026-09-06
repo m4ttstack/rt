@@ -1,6 +1,8 @@
 import {
   gateAnswer,
   gateList,
+  paneFocus,
+  paneList,
   type GateAnswer,
   type GateRow,
 } from '@mattstack/rt-client';
@@ -58,6 +60,23 @@ function isUnreachableError(message: string): boolean {
   return message.startsWith(UNREACHABLE_PREFIX);
 }
 
+/** Same resolution rule as the board's origin-focus resolver: a direct
+    paneId wins outright (no pane list round trip needed), a worktree falls
+    back to matching a live pane's cwd, and anything else is unresolvable. */
+export function resolveOriginFocus(
+  origin: GateRow['origin'] | undefined,
+  panes: Array<{ paneId: string; cwd?: string }>
+): { ok: true; paneId: string } | { ok: false; reason: string } {
+  if (origin?.paneId) return { ok: true, paneId: origin.paneId };
+  if (origin?.worktree) {
+    const match = panes.find(p => p.cwd === origin.worktree);
+    return match
+      ? { ok: true, paneId: match.paneId }
+      : { ok: false, reason: 'no live pane matches the origin worktree' };
+  }
+  return { ok: false, reason: 'no origin on this gate' };
+}
+
 export const gates = new Hono()
   .get('/api/gates', async c => {
     const res = await listAllRunGates();
@@ -101,4 +120,24 @@ export const gates = new Hono()
       if (res.data.conflict) return c.json({ row: res.data.row }, 409);
       return c.json({ row: res.data.row }, 200);
     }
-  );
+  )
+  .post('/api/gates/:id/focus', async c => {
+    const { id } = c.req.param();
+    const all = await listAllRunGates();
+    if (!all.ok) return c.json({ error: all.error }, 502);
+    const row = all.gates.find(g => g.id === id);
+    if (!row) return c.json({ error: 'not-found' }, 404);
+    let panes: Array<{ paneId: string; cwd?: string }> = [];
+    if (!row.origin?.paneId && row.origin?.worktree) {
+      const panesRes = await paneList({ sockPath: process.env.RT_SOCK_PATH });
+      panes = panesRes.ok && panesRes.data ? panesRes.data.panes : [];
+    }
+    const resolved = resolveOriginFocus(row.origin ?? undefined, panes);
+    if (!resolved.ok) return c.json({ error: resolved.reason }, 400);
+    const focusRes = await paneFocus(
+      { paneId: resolved.paneId },
+      { sockPath: process.env.RT_SOCK_PATH }
+    );
+    if (!focusRes.ok) return c.json({ error: focusRes.error }, 502);
+    return c.json({ focused: true }, 200);
+  });

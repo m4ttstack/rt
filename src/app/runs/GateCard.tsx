@@ -160,6 +160,8 @@ export function GateCard({ gate }: { gate: GateRow }) {
   const [failed, setFailed] = useState(false);
   const [conflict, setConflict] = useState<GateAnswerConflict | null>(null);
   const [contextOpen, setContextOpen] = useState(false);
+  const [focusBusy, setFocusBusy] = useState(false);
+  const [focusError, setFocusError] = useState<string | null>(null);
 
   const setAnswer = (id: string, value: string | string[]) => {
     setSelections(prev => ({ ...prev, [id]: value }));
@@ -172,6 +174,33 @@ export function GateCard({ gate }: { gate: GateRow }) {
     ? { ...selections, [CODE_CHANGES_QUESTION_ID]: CODE_CHANGES_SENTINEL }
     : selections;
   const payload = actionable ? gateAnswerPayload(gate.questions, effective) : null;
+
+  const focusReason =
+    gate.status === 'parked'
+      ? 'parked; resume is board-owned'
+      : gate.origin?.paneId || gate.origin?.worktree
+        ? null
+        : 'no origin on this gate';
+
+  const focusPaneAction = async () => {
+    setFocusBusy(true);
+    setFocusError(null);
+    try {
+      const res = await client.api.gates[':id'].focus.$post({
+        param: { id: gate.id },
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        setFocusError(body?.error ?? `focus failed (${res.status})`);
+      }
+    } catch {
+      setFocusError('focus failed');
+    } finally {
+      setFocusBusy(false);
+    }
+  };
 
   const submit = async () => {
     if (!payload) return;
@@ -311,14 +340,30 @@ export function GateCard({ gate }: { gate: GateRow }) {
                   submit failed... nothing was sent, try again
                 </Text>
               )}
-              <Button
-                size="xs"
-                disabled={!payload || busy}
-                onClick={() => void submit()}
-                ml="auto"
-              >
-                {busy ? 'submitting…' : 'submit'}
-              </Button>
+              {focusError && (
+                <Text c="bad" fz={12} data-testid="gate-focus-error">
+                  {focusError}
+                </Text>
+              )}
+              <Group gap="xs" ml="auto">
+                <Button
+                  size="xs"
+                  variant="default"
+                  data-testid="gate-focus"
+                  disabled={focusReason !== null || focusBusy}
+                  title={focusReason ?? 'jump into the pane behind this gate'}
+                  onClick={() => void focusPaneAction()}
+                >
+                  focus pane
+                </Button>
+                <Button
+                  size="xs"
+                  disabled={!payload || busy}
+                  onClick={() => void submit()}
+                >
+                  {busy ? 'submitting…' : 'submit'}
+                </Button>
+              </Group>
             </Group>
           </>
         )}
