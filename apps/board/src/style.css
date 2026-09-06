@@ -17,45 +17,6 @@
    rules on any conflict -- nothing here needs `!important` to win.
    ─────────────────────────────────────────────────────────────────── */
 
-/* ── contrast overrides: TEMPORARY, upstream to tui-kit ───────────────
-   The kit's light text colours fail WCAG AA against the near-white ramp.
-   Measured against --chrome #f3f4f7, the surface most board text sits on:
-
-     --muted  #8990b3  2.85:1   fails AA and even the 3:1 large-text bar,
-                                on 11-13px text. Board's most-used token.
-     --accent #2e7de9  3.65:1   fails AA for normal text
-     --red    #f52a65  3.53:1   fails AA for normal text
-
-   The values below clear 4.5:1 with margin (5.01 / 5.08 / 5.04) and keep the
-   hue, darkening only. Dark-mode values are carried through untouched, since
-   dark was never the failing scheme.
-
-   The fourth is a preference, not a failure: --fg softened from the kit's
-   #111 to #333. Both clear AAA by a distance (17.17 and 11.49 on --chrome),
-   and #333 keeps 4.25x the luminance separation from --muted, so the title
-   still sits clearly above its metadata.
-
-   This is a deliberate one-file deviation from the kit's palette, not a fork
-   to keep: deck, console and gitq inherit the same failing values, so it
-   belongs in tui-kit. Delete this block when the kit ships it. */
-:root {
-  --color-gray-fg: light-dark(#333333, #e3e7f6);
-  --color-gray-muted: light-dark(#626880, #7e86ad);
-  --color-blue-500: light-dark(#2166c4, #7aa2f7);
-  --color-red-500: light-dark(#c8214f, #f7768e);
-}
-
-/* The page is a system sans now, and macOS renders that with subpixel
-   antialiasing by default. Light text knocked out of a saturated fill then
-   optically gains weight and blooms -- worst on the segmented control's active
-   option, which is bold at 12px on --accent. Greyscale antialiasing thins the
-   strokes back to the weight they were drawn at. Board never needed this while
-   everything was JetBrains Mono. */
-body {
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
 /* ── header ───────────────────────────────────────────────────────── */
 /* The header is a zone, not a card, so it takes --chrome and the soft border
    rather than a card's fill. Flat, not a mix: --chrome sits BELOW --bg on the
@@ -87,9 +48,9 @@ body {
   display: flex; align-items: center; gap: 0.35rem;
   font-size: 1.15rem; font-weight: 700; letter-spacing: 0.02em; margin: 0;
 }
-.tui-prompt { color: var(--accent); }
+.tui-prompt { color: var(--accent-text); }
 .tui-sub { margin: 0.15rem 0 0; }
-.tui-comment { color: var(--muted); font-size: 0.78rem; opacity: 0.9; }
+.tui-comment { color: var(--muted-text); font-size: 0.78rem; opacity: 0.9; }
 .tui-controls { display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center; }
 /* Push the header toolbar to the right edge, even when it wraps below the title. */
 .tui-controls-header { margin-left: auto; justify-content: flex-end; }
@@ -107,10 +68,10 @@ body {
 .tui-copy {
   display: inline-flex; align-items: center; justify-content: center;
   padding: 0.3rem 0.45rem; cursor: pointer; border-radius: 6px;
-  background: var(--panel); border: 1px solid var(--border); color: var(--muted);
+  background: var(--panel); border: 1px solid var(--border); color: var(--muted-text);
 }
 .tui-copy:hover { color: var(--fg); border-color: var(--accent); }
-.tui-refresh:disabled { cursor: default; color: var(--accent); border-color: var(--accent); }
+.tui-refresh:disabled { cursor: default; color: var(--accent-text); border-color: var(--accent); }
 /* Posted-to-slack filter: off is a muted mono glyph like its neighbours; on
    is the segmented control's active state (accent fill, glyph in page
    colour, the chip's ✓ badge kept). The hover rule below outranks
@@ -124,7 +85,7 @@ body {
 .tui-copy-inline {
   display: inline-flex; align-items: center; justify-content: center;
   padding: 0 0.2rem; cursor: pointer; flex-shrink: 0; align-self: center;
-  background: transparent; border: none; color: var(--muted); opacity: 0;
+  background: transparent; border: none; color: var(--muted-text); opacity: 0;
   transition: opacity 0.1s ease;
 }
 .tui-row:hover .tui-copy-inline, .tui-card:hover .tui-copy-inline { opacity: 0.9; }
@@ -146,8 +107,8 @@ body {
   backdrop-filter: blur(6px);
 }
 .tui-selbar-head { display: flex; align-items: baseline; gap: 0.4rem; }
-.tui-selbar-count { color: var(--accent); font-weight: 700; white-space: nowrap; }
-.tui-selbar-note { color: var(--muted); font-size: 0.78rem; }
+.tui-selbar-count { color: var(--accent-text); font-weight: 700; white-space: nowrap; }
+.tui-selbar-note { color: var(--muted-text); font-size: 0.78rem; }
 /* A textarea, not an input: the header is multi-line, and it wraps into view
    instead of scrolling out of it. Height is driven from JS off scrollHeight;
    resize is off because the box sizes itself. max-height caps the growth so a
@@ -205,15 +166,15 @@ body {
    light; a system sans at 200 renders spindly, so the title was reading
    thinner than the metadata line beneath it. */
 .tui-title { font-weight: 500; font-size: 0.75rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tui-row-2 { display: flex; align-items: center; gap: 0.55rem; color: var(--muted); font-size: 0.6rem; margin-top: 0.15rem; }
+.tui-row-2 { display: flex; align-items: center; gap: 0.55rem; color: var(--muted-text); font-size: 0.6rem; margin-top: 0.15rem; }
 .tui-branch { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tui-arrow { color: var(--muted); opacity: 0.7; }
-.tui-mr-iid { color: var(--muted); }
+.tui-arrow { color: var(--muted-text); opacity: 0.7; }
+.tui-mr-iid { color: var(--muted-text); }
 /* Draft marker on a row: now Chip's small-caps register (`uppercase` -- the
    transform, the 0.06em tracking, the 0.55rem/700 type) inside the neutral
    `subtle` frame, muted. Only the tighter pill is left here; see the chip
    outliers block below. */
-.tui-row-sep { color: var(--muted); opacity: 0.5; }
+.tui-row-sep { color: var(--muted-text); opacity: 0.5; }
 /* Author identity in a row (All view, non-author grouping). */
 .tui-author-tag {
   display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
@@ -233,8 +194,8 @@ body {
 /* ── tokens ───────────────────────────────────────────────────────── */
 .tui-phrase { font-size: 0.7rem; flex-shrink: 0; white-space: nowrap; }
 .tui-meta { display: inline-flex; align-items: center; gap: 0.8rem; font-size: 0.76rem; flex-shrink: 0; white-space: nowrap; }
-.t-ok { color: var(--green); } .t-bad { color: var(--red); } .t-warn { color: var(--amber); }
-.t-cyan { color: var(--cyan); } .t-muted { color: var(--muted); } .t-accent { color: var(--accent); }
+.t-ok { color: var(--green); } .t-bad { color: var(--red-text); } .t-warn { color: var(--amber); }
+.t-cyan { color: var(--cyan); } .t-muted { color: var(--muted-text); } .t-accent { color: var(--accent-text); }
 .t-dim .t-ok, .t-dim .t-bad { opacity: 0.75; }
 
 /* ── comments drawer ──────────────────────────────────────────────── */
@@ -258,14 +219,14 @@ body {
 .tui-comment-token {
   display: inline-flex; align-items: center; gap: 0.15rem;
   background: none; border: none; padding: 0; cursor: pointer; line-height: 1;
-  font-family: inherit; font-size: inherit; color: var(--muted);
+  font-family: inherit; font-size: inherit; color: var(--muted-text);
   white-space: nowrap; flex-shrink: 0;
 }
 .tui-comment-token:hover { color: var(--fg); }
 
 /* General MR-comments section in the drawer (notes that aren't resolvable threads). */
 .tui-cd-comments-head {
-  font-size: 0.72rem; color: var(--muted); text-transform: uppercase;
+  font-size: 0.72rem; color: var(--muted-text); text-transform: uppercase;
   letter-spacing: 0.04em; margin: 0.7rem 0 0.4rem;
   border-top: 1px solid var(--border); padding-top: 0.7rem;
 }
@@ -275,7 +236,7 @@ body {
   margin-top: 0.7rem;
 }
 .tui-cd-comments .tui-cd-note + .tui-cd-note { border-top-color: var(--border); }
-.tui-comments-empty { color: var(--muted); }
+.tui-comments-empty { color: var(--muted-text); }
 .tui-comment-icon { flex-shrink: 0; }
 .tui-cd-thread.resolved .tui-comment-icon { color: var(--dot-ok); }
 .tui-cd-thread.replied .tui-comment-icon { color: var(--accent); }
@@ -286,9 +247,9 @@ body {
   padding: 0.9rem 1rem 0.5rem; position: sticky; top: 0; background: var(--panel); z-index: 1;
 }
 .tui-cd-title { font-weight: 600; font-size: 0.92rem; line-height: 1.4; min-width: 0; }
-.tui-cd-iid { color: var(--muted); font-family: var(--font-sans); font-weight: 400; }
+.tui-cd-iid { color: var(--muted-text); font-family: var(--font-sans); font-weight: 400; }
 .tui-cd-open {
-  color: var(--accent); font-size: 0.76rem; text-decoration: none;
+  color: var(--accent-text); font-size: 0.76rem; text-decoration: none;
   padding: 0 1rem 0.7rem; border-bottom: 1px solid var(--border-soft);
 }
 .tui-cd-open:hover { text-decoration: underline; }
@@ -309,17 +270,17 @@ body {
   padding: 0.4rem 0.7rem; background: color-mix(in srgb, var(--fg) 5%, transparent);
   border-bottom: 1px solid var(--border-soft);
 }
-.tui-cd-thread-open { color: var(--accent); font-weight: 400; font-size: 0.68rem; text-decoration: none; flex-shrink: 0; }
+.tui-cd-thread-open { color: var(--accent-text); font-weight: 400; font-size: 0.68rem; text-decoration: none; flex-shrink: 0; }
 .tui-cd-thread-open:hover { text-decoration: underline; }
 .tui-cd-note { padding: 0.55rem 0.7rem; }
 .tui-cd-note + .tui-cd-note { border-top: 1px solid var(--border-soft); }
 .tui-cd-note-head { display: flex; justify-content: space-between; align-items: baseline; gap: 0.6rem; margin-bottom: 0.25rem; }
 .tui-cd-note-author { font-weight: 600; font-size: 0.72rem; }
 /* MR author (responding to feedback) vs reviewers/commenters (giving it). */
-.tui-cd-note-author.author { color: var(--accent); }
+.tui-cd-note-author.author { color: var(--accent-text); }
 .tui-cd-note-author.commenter { color: var(--purple); }
-.tui-cd-note-time { color: var(--muted); font-size: 0.66rem; flex-shrink: 0; text-decoration: none; }
-.tui-cd-note-time:hover { color: var(--accent); }
+.tui-cd-note-time { color: var(--muted-text); font-size: 0.66rem; flex-shrink: 0; text-decoration: none; }
+.tui-cd-note-time:hover { color: var(--accent-text); }
 .tui-cd-note-body {
   font: 400 0.74rem/1.5 var(--font-sans); color: var(--fg);
   overflow-wrap: anywhere;
@@ -335,7 +296,7 @@ body {
 .tui-cd-note-body [data-part="markdown"] > :first-child { margin-top: 0; }
 .tui-cd-note-body [data-part="markdown"] > :last-child { margin-bottom: 0; }
 .tui-cd-note-body p { margin: 0 0 0.5rem; }
-.tui-cd-note-body a { color: var(--accent); }
+.tui-cd-note-body a { color: var(--accent-text); }
 .tui-cd-note-body code {
   font-family: var(--font-mono); font-size: 0.86em;
   background: color-mix(in srgb, var(--fg) 8%, transparent); border-radius: 3px; padding: 0.05em 0.3em;
@@ -349,7 +310,7 @@ body {
 .tui-cd-note-body li { margin: 0.1rem 0; }
 .tui-cd-note-body blockquote {
   margin: 0 0 0.5rem; padding-left: 0.6rem; border-left: 2px solid var(--border);
-  color: var(--muted);
+  color: var(--muted-text);
 }
 .tui-cd-note-body h1, .tui-cd-note-body h2, .tui-cd-note-body h3,
 .tui-cd-note-body h4, .tui-cd-note-body h5, .tui-cd-note-body h6 {
@@ -377,11 +338,11 @@ body {
 .tui-card-label {
   position: absolute; top: -0.72em; left: 0.7rem;
   background: var(--card); padding: 0 0.45rem;
-  font-size: 0.74rem; color: var(--muted);
+  font-size: 0.74rem; color: var(--muted-text);
   display: inline-flex; gap: 0.4rem; align-items: baseline;
 }
 .tui-card-title { font-weight: 600; font-size: 0.85rem; line-height: 1.4; margin-bottom: 0.2rem; }
-.tui-card-branch { color: var(--muted); font-size: 0.76rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tui-card-branch { color: var(--muted-text); font-size: 0.76rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tui-card-tokens { margin-top: 0.4rem; margin-bottom: 0.5rem; }
 .tui-blockers { list-style: none; margin: auto 0 0; padding: 0.45rem 0.6rem; border-left: 2px solid var(--amber); background: color-mix(in srgb, var(--amber) 7%, transparent); font-size: 0.75rem; color: var(--fg); }
 .tui-blockers li { opacity: 0.85; }
@@ -393,7 +354,7 @@ body {
   background: color-mix(in srgb, var(--amber) 7%, transparent);
 }
 .tui-banner[data-intent="bad"] {
-  color: var(--red); border-color: color-mix(in srgb, var(--red) 45%, transparent);
+  color: var(--red-text); border-color: color-mix(in srgb, var(--red) 45%, transparent);
   background: color-mix(in srgb, var(--red) 7%, transparent);
 }
 .tui-banner-btn {
@@ -401,9 +362,9 @@ body {
   border: 1px solid currentColor; border-radius: 4px; padding: 0.1rem 0.5rem; cursor: pointer;
 }
 .tui-banner-btn:hover { background: color-mix(in srgb, currentColor 12%, transparent); }
-.tui-empty { color: var(--muted); font: 500 0.9rem/1.5 var(--font-sans); text-align: center; margin-top: 3.5rem; }
-.tui-loading { color: var(--muted); text-align: center; margin-top: 4rem; }
-.tui-footer { color: var(--muted); font: 500 0.76rem/1.5 var(--font-sans); text-align: center; margin-top: 2.2rem; opacity: 0.8; }
+.tui-empty { color: var(--muted-text); font: 500 0.9rem/1.5 var(--font-sans); text-align: center; margin-top: 3.5rem; }
+.tui-loading { color: var(--muted-text); text-align: center; margin-top: 4rem; }
+.tui-footer { color: var(--muted-text); font: 500 0.76rem/1.5 var(--font-sans); text-align: center; margin-top: 2.2rem; opacity: 0.8; }
 /* Daemon data older than 10 minutes (or unknown) -- same amber the fetchError
    banner uses, so "trust this less" reads the same way everywhere. */
 .tui-footer-stale { color: var(--amber); opacity: 1; }
@@ -422,7 +383,7 @@ body {
    inferred from the MRs in view). */
 .tui-side-note {
   margin: 0 0 4px; padding: 0 4px;
-  color: var(--muted); font-size: 11px; font-family: var(--font-sans);
+  color: var(--muted-text); font-size: 11px; font-family: var(--font-sans);
 }
 .tui-main { min-width: 0; }
 /* The roster gets the same framed-panel backdrop as the MR groups -- bare
@@ -439,7 +400,7 @@ body {
 .tui-side-gear {
   flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
   padding: 0 9px; border: 1px solid transparent; border-radius: 6px;
-  background: none; color: var(--muted); cursor: pointer;
+  background: none; color: var(--muted-text); cursor: pointer;
 }
 .tui-side-gear:hover { background: var(--card); color: var(--fg); border-color: var(--border); }
 .tui-side-item {
@@ -454,7 +415,7 @@ body {
    keeps its two-item space-between layout instead of the flag floating
    mid-row on its own. */
 .tui-side-right { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
-.tui-side-count { color: var(--muted); font-family: var(--font-sans); font-size: 0.85em; }
+.tui-side-count { color: var(--muted-text); font-family: var(--font-sans); font-size: 0.85em; }
 .tui-side-empty { opacity: 0.45; }
 
 /* ── mobile: burger + drawer ──────────────────────────────────────── */
@@ -483,7 +444,7 @@ body {
 }
 /* Labeled, full-width control rows in the drawer. */
 .tui-ctl-row { display: flex; align-items: center; gap: 10px; }
-.tui-ctl-label { flex-shrink: 0; width: 48px; color: var(--muted); font-size: 0.78rem; }
+.tui-ctl-label { flex-shrink: 0; width: 48px; color: var(--muted-text); font-size: 0.78rem; }
 .tui-drawer-controls [data-part="segmented"] { flex: 1; }
 .tui-drawer-controls [data-part="segmented-option"] { flex: 1; }
 .tui-drawer-action {
@@ -509,13 +470,13 @@ body {
    two are NOT dead with it: Board.tsx's mobile drawer head and CommentsDrawer's
    head each render their own .tui-modal-title / .tui-modal-x inside a
    SideDrawer's children, where no Modal slot reaches. */
-.tui-modal-title { font-weight: 700; letter-spacing: 0.02em; color: var(--accent); }
+.tui-modal-title { font-weight: 700; letter-spacing: 0.02em; color: var(--accent-text); }
 .tui-modal-x {
-  background: none; border: none; color: var(--muted); cursor: pointer;
+  background: none; border: none; color: var(--muted-text); cursor: pointer;
   font-size: 0.9rem; padding: 0.2rem 0.4rem; border-radius: 5px;
 }
 .tui-modal-x:hover { color: var(--fg); background: var(--card); }
-.tui-modal-sub { color: var(--muted); font-size: 0.76rem; margin: 0.2rem 0 0.9rem; }
+.tui-modal-sub { color: var(--muted-text); font-size: 0.76rem; margin: 0.2rem 0 0.9rem; }
 .tui-modal-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .tui-modal-row {
   display: flex; justify-content: space-between; align-items: center; gap: 10px;
@@ -532,14 +493,14 @@ body {
   accent-color: var(--dot-ok); margin: 0;
 }
 .tui-check-box:disabled { cursor: default; }
-.tui-modal-count { flex-shrink: 0; color: var(--muted); font-family: var(--font-sans); font-size: 0.85em; }
+.tui-modal-count { flex-shrink: 0; color: var(--muted-text); font-family: var(--font-sans); font-size: 0.85em; }
 /* right side of a roster row: the peering affordance, then the MR count */
 .tui-modal-right { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
 
 /* ── peering: invite / re-invite / join ───────────────────────────────── */
 /* "already has a board" marker, in the quiet small-caps register of .tui-modal-count */
 .tui-peered {
-  flex-shrink: 0; color: var(--muted); font-size: 0.7rem;
+  flex-shrink: 0; color: var(--muted-text); font-size: 0.7rem;
   text-transform: uppercase; letter-spacing: 0.06em;
 }
 /* small action button, in the .tui-draft-act family but sized for a list row */
@@ -564,7 +525,7 @@ body {
   flex: 1; min-width: 0; padding: 3px 8px; font: inherit; font-size: 0.8rem;
   background: var(--card); border: 1px solid var(--border); border-radius: 6px; color: var(--fg);
 }
-.tui-invite-input::placeholder { color: var(--muted); }
+.tui-invite-input::placeholder { color: var(--muted-text); }
 /* the issued invite: the string itself, its copy button, and what it's good for */
 .tui-invite-row {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
@@ -575,17 +536,17 @@ body {
   flex: 1; min-width: 0; font-family: var(--font-mono); font-size: 0.78rem;
   color: var(--fg); overflow-wrap: anywhere;
 }
-.tui-invite-note { flex-basis: 100%; color: var(--muted); font-size: 0.72rem; }
+.tui-invite-note { flex-basis: 100%; color: var(--muted-text); font-size: 0.72rem; }
 .tui-invite-error { color: var(--dot-bad); margin: 0.6rem 0 0; }
 /* join / re-join sits below the roster, separated the way the modal separates
    its own sections: a hairline rule, not a heading. */
 .tui-join-row { margin-top: 0.9rem; padding-top: 0.8rem; border-top: 1px solid var(--border); }
-.tui-join-label { color: var(--muted); font-size: 0.76rem; }
+.tui-join-label { color: var(--muted-text); font-size: 0.76rem; }
 .tui-join-warning { color: var(--dot-bad); margin: 0 0 0.5rem; }
 /* collapsed affordance: a text button, so a healthy board isn't nagged by a form */
 .tui-join-toggle {
   padding: 0; font: inherit; font-size: 0.76rem; cursor: pointer;
-  background: none; border: none; color: var(--muted); text-decoration: underline;
+  background: none; border: none; color: var(--muted-text); text-decoration: underline;
 }
 .tui-join-toggle:hover { color: var(--fg); }
 
@@ -666,7 +627,7 @@ body {
   display: flex; flex-direction: column; gap: 0.6rem;
 }
 .tui-gate-head { display: flex; align-items: center; gap: 8px; }
-.tui-gate-title { font: 600 0.78rem/1.4 var(--font-sans); color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+.tui-gate-title { font: 600 0.78rem/1.4 var(--font-sans); color: var(--muted-text); text-transform: uppercase; letter-spacing: 0.03em; }
 .tui-gate-question { display: flex; flex-direction: column; gap: 0.3rem; }
 .tui-gate-question-label { font-size: 0.85rem; color: var(--fg); }
 .tui-gate-options { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
@@ -682,12 +643,12 @@ body {
 .tui-gate-submit:disabled { opacity: 0.5; cursor: default; }
 .tui-gate-focus {
   padding: 4px 12px; font: inherit; font-size: 0.85rem; cursor: pointer;
-  background: transparent; border: 1px solid var(--border); border-radius: 6px; color: var(--muted);
+  background: transparent; border: 1px solid var(--border); border-radius: 6px; color: var(--muted-text);
 }
 .tui-gate-focus:hover { border-color: var(--muted); color: var(--fg); }
 .tui-gate-summary { margin: 0; display: flex; flex-direction: column; gap: 0.3rem; }
 .tui-gate-summary-row { display: flex; gap: 0.5rem; font-size: 0.85rem; }
-.tui-gate-summary-row dt { color: var(--muted); }
+.tui-gate-summary-row dt { color: var(--muted-text); }
 .tui-gate-summary-row dd { margin: 0; color: var(--fg); }
 /* Gate context, rendered as markdown -- same prose recipe as .tui-cd-note-body
    (see its own comment for why the first/last-child margin collapse has to
@@ -697,7 +658,7 @@ body {
 .tui-gate-context-body [data-part="markdown"] > :first-child { margin-top: 0; }
 .tui-gate-context-body [data-part="markdown"] > :last-child { margin-bottom: 0; }
 .tui-gate-context-body p { margin: 0 0 0.4rem; }
-.tui-gate-context-body a { color: var(--accent); }
+.tui-gate-context-body a { color: var(--accent-text); }
 .tui-gate-context-body code {
   font-family: var(--font-mono); font-size: 0.9em;
   background: color-mix(in srgb, var(--fg) 8%, transparent); border-radius: 3px; padding: 0.05em 0.3em;
@@ -711,7 +672,7 @@ body {
 .tui-gate-context-body li { margin: 0.1rem 0; }
 .tui-gate-context-body blockquote {
   margin: 0 0 0.4rem; padding-left: 0.6rem; border-left: 2px solid var(--border);
-  color: var(--muted);
+  color: var(--muted-text);
 }
 .tui-gate-context-body h1, .tui-gate-context-body h2, .tui-gate-context-body h3,
 .tui-gate-context-body h4, .tui-gate-context-body h5, .tui-gate-context-body h6 {
@@ -820,7 +781,7 @@ body {
   display: flex; justify-content: flex-end; align-items: center; gap: 8px;
   margin-top: 0.9rem;
 }
-.tui-draft-note { margin-right: auto; color: var(--muted); font-size: 0.76rem; }
+.tui-draft-note { margin-right: auto; color: var(--muted-text); font-size: 0.76rem; }
 .tui-draft-error { margin-right: auto; color: var(--dot-bad); font-size: 0.76rem; }
 .tui-draft-act {
   padding: 4px 12px; font: inherit; font-size: 0.85rem; cursor: pointer;
@@ -888,8 +849,8 @@ body {
   resize: none; overflow-y: auto; max-height: 40vh;
 }
 .tui-menu-note:focus { outline: none; border-color: var(--accent); }
-.tui-menu-note::placeholder { color: var(--muted); opacity: 0.8; }
-.tui-menu-note-hint { font-family: var(--font-sans); font-size: 10px; color: var(--muted); padding: 6px 3px 2px; }
+.tui-menu-note::placeholder { color: var(--muted-text); opacity: 0.8; }
+.tui-menu-note-hint { font-family: var(--font-sans); font-size: 10px; color: var(--muted-text); padding: 6px 3px 2px; }
 /* Trailing nodes a slack-mark item hands the shell: the set mark, and the
    in-flight spinner that replaces it while the reaction is being written. */
 .tui-menu-check { color: var(--dot-ok); font-size: 12px; }
@@ -908,7 +869,7 @@ body {
 .tui-config-body { flex: 1; min-height: 0; overflow-y: auto; padding-right: 0.4rem; margin-right: -0.4rem; }
 .tui-config-filter { width: 100%; margin: 0.6rem 0 0.5rem; }
 .tui-config-group {
-  margin: 0.9rem 0 0.25rem; color: var(--muted); font-size: 0.68rem; font-weight: 600;
+  margin: 0.9rem 0 0.25rem; color: var(--muted-text); font-size: 0.68rem; font-weight: 600;
   text-transform: uppercase; letter-spacing: 0.07em;
 }
 .tui-config-list { list-style: none; margin: 0; padding: 0; }
@@ -925,7 +886,7 @@ body {
 .tui-disclosure-head:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
 .tui-disclosure-head:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
 .tui-disclosure-chevron {
-  flex: 0 0 auto; display: inline-block; width: 12px; color: var(--muted); font-size: 0.8rem; line-height: 1;
+  flex: 0 0 auto; display: inline-block; width: 12px; color: var(--muted-text); font-size: 0.8rem; line-height: 1;
   transition: transform 180ms ease, color 120ms ease;
 }
 .tui-disclosure-head.open .tui-disclosure-chevron { transform: rotate(90deg); }
@@ -940,16 +901,16 @@ body {
 }
 .tui-config-keyname { font-weight: 600; font-family: var(--font-sans); font-size: 0.84rem; }
 .tui-config-badge {
-  margin-left: auto; color: var(--muted); font-size: 0.66rem; white-space: nowrap;
+  margin-left: auto; color: var(--muted-text); font-size: 0.66rem; white-space: nowrap;
   text-transform: uppercase; letter-spacing: 0.05em;
 }
-.tui-config-clear { background: none; border: none; color: var(--muted); cursor: pointer; padding: 0 4px; font: inherit; line-height: 1; }
+.tui-config-clear { background: none; border: none; color: var(--muted-text); cursor: pointer; padding: 0 4px; font: inherit; line-height: 1; }
 .tui-config-clear:hover:not(:disabled) { color: var(--fg); }
 .tui-config-clear:disabled { opacity: 0.5; cursor: default; }
 .tui-info {
   display: inline-flex; align-items: center; justify-content: center;
   width: 15px; height: 15px; padding: 0; border-radius: 50%;
-  border: 1px solid var(--muted); background: none; color: var(--muted);
+  border: 1px solid var(--muted); background: none; color: var(--muted-text);
   font: 600 10px/1 var(--font-sans); cursor: help;
 }
 .tui-info:hover, .tui-info:focus-visible { color: var(--fg); border-color: var(--fg); }
@@ -966,22 +927,22 @@ body {
   background: var(--card); border: 1px solid var(--border); border-radius: 6px;
 }
 .tui-config-status { min-width: 4.5em; color: var(--dot-ok); font-size: 0.72rem; white-space: nowrap; }
-.tui-config-status.busy { color: var(--muted); }
-.tui-config-error { margin: 4px 0 0; color: var(--red, #d66); font-size: 0.78rem; }
-.tui-config-value { font-family: var(--font-sans); font-size: 0.78rem; color: var(--muted); word-break: break-all; }
+.tui-config-status.busy { color: var(--muted-text); }
+.tui-config-error { margin: 4px 0 0; color: var(--red-text, #d66); font-size: 0.78rem; }
+.tui-config-value { font-family: var(--font-sans); font-size: 0.78rem; color: var(--muted-text); word-break: break-all; }
 .tui-config-flag { margin-left: 6px; color: var(--amber); font-family: var(--font-sans); font-size: 0.72rem; }
-.tui-config-link { background: none; border: none; padding: 0; color: var(--accent); cursor: pointer; font: inherit; font-size: 0.78rem; }
+.tui-config-link { background: none; border: none; padding: 0; color: var(--accent-text); cursor: pointer; font: inherit; font-size: 0.78rem; }
 .tui-config-leaves { display: grid; grid-template-columns: max-content 1fr; gap: 4px 10px; align-items: center; flex: 1; }
 .tui-config-leaf { display: contents; }
-.tui-config-leaf-label { font-family: var(--font-sans); font-size: 0.76rem; color: var(--muted); }
+.tui-config-leaf-label { font-family: var(--font-sans); font-size: 0.76rem; color: var(--muted-text); }
 .tui-config-chips { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; flex: 1; }
 .tui-config-chip {
   display: inline-flex; align-items: center; gap: 5px; padding: 1px 7px;
   font-family: var(--font-sans); font-size: 0.76rem;
   background: var(--card); border: 1px solid var(--border); border-radius: 999px;
 }
-.tui-config-chip button { background: none; border: none; padding: 0; color: var(--muted); cursor: pointer; font: inherit; line-height: 1; }
-.tui-config-chip button:hover:not(:disabled) { color: var(--red); }
+.tui-config-chip button { background: none; border: none; padding: 0; color: var(--muted-text); cursor: pointer; font: inherit; line-height: 1; }
+.tui-config-chip button:hover:not(:disabled) { color: var(--red-text); }
 .tui-config-chips .tui-invite-input { flex: 0 1 150px; min-width: 90px; }
 .tui-config-pairs { display: flex; flex-direction: column; gap: 4px; flex: 1; }
 .tui-config-pair { display: grid; grid-template-columns: 1fr 1fr 1.4em; gap: 8px; align-items: center; }
@@ -1000,7 +961,7 @@ body {
   padding: 7px 14px; border: 0; border-bottom: 2px solid transparent;
   margin-bottom: -1px; border-radius: 6px 6px 0 0;
   background: var(--chrome);
-  color: var(--muted); font: inherit; font-size: 13px; cursor: pointer;
+  color: var(--muted-text); font: inherit; font-size: 13px; cursor: pointer;
   transition: color 150ms ease, border-color 150ms ease, background 150ms ease;
 }
 /* Resting, hover and active all share the strip's --chrome. The active tab is
@@ -1024,8 +985,8 @@ body {
 }
 .tui-roster-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 4px; }
 .tui-roster-who { display: inline-flex; align-items: baseline; gap: 6px; min-width: 0; font-size: 13px; }
-.tui-roster-handle { color: var(--muted); font-family: var(--font-sans); font-size: 11px; }
-.tui-roster-out { color: var(--muted); font-size: 11px; }
+.tui-roster-handle { color: var(--muted-text); font-family: var(--font-sans); font-size: 11px; }
+.tui-roster-out { color: var(--muted-text); font-size: 11px; }
 .tui-roster-add { display: flex; gap: 6px; }
 .tui-roster-add .tui-modal-input { flex: 1; min-width: 0; }
 .tui-modal-input {
@@ -1034,13 +995,13 @@ body {
 }
 .tui-modal-btn {
   padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px;
-  background: var(--card); color: var(--muted); font: inherit; font-size: 12px; cursor: pointer;
+  background: var(--card); color: var(--muted-text); font: inherit; font-size: 12px; cursor: pointer;
   transition: color 150ms ease, border-color 150ms ease;
 }
 .tui-modal-btn:hover:not(:disabled) { color: var(--fg); }
 .tui-modal-btn:disabled { opacity: 0.5; cursor: default; }
-.tui-modal-btn.danger { color: var(--red); border-color: currentcolor; }
-.tui-modal-error { margin: 4px 0 0; color: var(--red); font-size: 12px; }
+.tui-modal-btn.danger { color: var(--red-text); border-color: currentcolor; }
+.tui-modal-error { margin: 4px 0 0; color: var(--red-text); font-size: 12px; }
 @media (prefers-reduced-motion: reduce) { .tui-modal-btn { transition: none; } }
 .tui-tabs-list { gap: 12px; padding: 10px; max-height: 60vh; }
 .tui-tabs-item { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); }
@@ -1048,7 +1009,7 @@ body {
 .tui-tabs-item-head .tui-invite-input { flex: 1; min-width: 0; font-size: 14px; }
 .tui-tabs-fields { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 14px; align-items: center; }
 .tui-tabs-field { display: contents; }
-.tui-tabs-field > span { color: var(--muted); font-family: var(--font-sans); font-size: 11px; white-space: nowrap; }
+.tui-tabs-field > span { color: var(--muted-text); font-family: var(--font-sans); font-size: 11px; white-space: nowrap; }
 .tui-tabs-field .tui-invite-input { width: 100%; max-width: 420px; min-width: 0; }
 .tui-tabs-check { display: flex; grid-column: 2; align-items: center; gap: 8px; }
 .tui-tabs-fields > .tui-modal-error { grid-column: 2; margin: -4px 0 0; }
