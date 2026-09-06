@@ -9,14 +9,14 @@
     "@types/bun": "latest",
     "@types/pixelmatch": "^5.2.6",
     "@types/pngjs": "^6.0.5",
-    "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.4",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
     "pixelmatch": "^7.2.0",
     "playwright": "^1.62.1",
     "pngjs": "^7.0.0"
   },
   "peerDependencies": {
-    "typescript": "^5"
+    "typescript": "catalog:"
   },
   "scripts": {
     "build:board": "bun run scripts/build-board.ts && bun run scripts/build-gateway-css.ts",
@@ -31,10 +31,10 @@
     "deploy": "bun run scripts/deploy.ts"
   },
   "dependencies": {
-    "@mattstack/glance": "^0.24.0",
-    "@mattstack/rt-client": "^0.14.0",
-    "@mattstack/tui-kit": "^0.2.0",
-    "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "@mattstack/glance": "catalog:",
+    "@mattstack/rt-client": "catalog:",
+    "@mattstack/tui-kit": "workspace:*",
+    "react": "catalog:",
+    "react-dom": "catalog:"
   }
 }
