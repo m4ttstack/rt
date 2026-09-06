@@ -111,3 +111,7 @@ jobs:
       - run: bun run board:test
       - name: board has no employer or domain references in its tracked tree
         run: apps/board/scripts/repo-purity.sh
+      - run: bun run deck:test
+      # deck:test-dom is not run here: 11 of its 83 tests pre-exist as
+      # failures in the standalone repo at the imported SHA (unrelated
+      # Playwright/DOM assertions), so it is not a clean CI gate yet.
