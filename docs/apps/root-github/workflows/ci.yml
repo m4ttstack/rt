@@ -32,8 +32,12 @@ jobs:
       - run: bun run probe:serve-check
       - run: bun run tui-kit:build
       - run: bun run tui-kit:gates
-      # Scoped to the node project only: tui-kit's browser project carries
-      # visual-regression baselines never generated in CI, so running it here
-      # would be permanently red on environment drift. `tui-kit:test` (all
-      # projects, including browser) stays the local/full command.
+      # `tui-kit:test` (all projects) stays the local/full command; CI splits
+      # the browser project in two runs below because it mixes plain behavior
+      # tests with two recorded-oracle suites (`*.visual.test.tsx` screenshot
+      # baselines, `*.parity.test.tsx` computed-style oracles) captured
+      # against one local Chrome. Oracle-recorded suites stay local until
+      # CI-recorded baselines exist; everything else in the project runs here.
       - run: cd packages/tui-kit && bunx vitest run --project node
+      - run: cd packages/tui-kit && bunx playwright install chromium
+      - run: cd packages/tui-kit && bunx vitest run --project browser --exclude '**/*.visual.test.tsx' --exclude '**/*.parity.test.tsx'
