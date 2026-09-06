@@ -14,5 +14,5 @@
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true
   },
-  "include": ["src", "test"]
+  "include": ["src", "test", "scripts"]
 }

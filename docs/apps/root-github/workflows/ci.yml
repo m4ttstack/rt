@@ -11,6 +11,10 @@ jobs:
           persist-credentials: false
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
+      # Regenerating must reproduce what's checked in byte-for-byte: a diff
+      # here means the emitter drifted from the generated files, not that the
+      # generated files are wrong.
+      - run: bun run tokens:codegen && git diff --exit-code packages/tui-kit/src/generated packages/tokyo/src
       # probe:install packs the three packages and installs the probe (which
       # is outside the workspace). It must precede typecheck/lint, because the
       # root typecheck and lint scripts chain probe:typecheck / probe:lint,
