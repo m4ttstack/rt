@@ -25,3 +25,7 @@ jobs:
       - run: bun run probe:test
       - run: bun run probe:build
       - run: bun run probe:serve-check
+      - run: bun run tui-kit:build
+      - run: bun run tui-kit:gates
+      - run: cd packages/tui-kit && bunx playwright install --with-deps chromium
+      - run: bun run tui-kit:test

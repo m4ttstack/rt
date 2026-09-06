@@ -6,6 +6,8 @@ import { mattstackEslint } from './packages/ui/presets/eslint.js';
 export default tseslint.config(
   // The treeshake gate's build output; a compiled bundle, not source.
   { ignores: ['packages/ui/scripts/treeshake-probe/dist/**'] },
+  // tui-kit is absorbed as-is with its own lint conventions.
+  { ignores: ['packages/tui-kit/**'] },
   ...mattstackEslint({ app: ['probe/src/**/*.{ts,tsx}'] }),
   {
     // Config presets ship as plain JS (see packages/ui/presets/vite.js) and
