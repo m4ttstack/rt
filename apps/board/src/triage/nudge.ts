@@ -109,9 +109,7 @@ export interface NudgePassDeps {
   now(): number;
 }
 
-export async function runNudgePass(
-  deps: NudgePassDeps
-): Promise<{
+export async function runNudgePass(deps: NudgePassDeps): Promise<{
   dispatched: number;
   rejected: number;
   expired: number;

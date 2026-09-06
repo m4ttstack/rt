@@ -12,9 +12,7 @@ import {
   type TriageRunDeps,
 } from '../triage/run.ts';
 
-function deps(
-  over: Partial<TriageRunDeps> = {}
-): TriageRunDeps & {
+function deps(over: Partial<TriageRunDeps> = {}): TriageRunDeps & {
   audit: AuditEntry[];
   launches: any[];
   notifies: string[];
