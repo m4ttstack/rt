@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Chip, RadioGroup, SelectBox } from "@mattstack/tui-kit";
+import { Chip, Markdown, RadioGroup, SelectBox } from "@mattstack/tui-kit";
 import type { GateAnswers, GateOption, GateQuestion, GateRow } from "../../gates/store.ts";
 import type { BoardMRWithReview } from "../types.ts";
 import {
@@ -10,10 +10,12 @@ import {
   optionDisplayFor,
   displayForValue,
   codeChangesHidden,
+  groupThreadOptions,
   CODE_CHANGES_QUESTION_ID,
   CODE_CHANGES_SENTINEL,
   type GateSelections,
   type GateDomain,
+  type ThreadOptionGroup,
 } from "./gate-format.ts";
 import { Disclosure, DisclosureHead } from "./Disclosure.tsx";
 
@@ -27,9 +29,44 @@ function GateOptionText({ option }: { option: GateOption }) {
   return <span title={title}>{text}</span>;
 }
 
+/** One thread's radio row within a grouped threads question -- the group's
+    heading once, then a compact reply/fix/skip radio (at most one verb per
+    thread, matching the ungrouped checkboxes' at-most-one-per-token use).
+    `onSelect` replaces whichever of this thread's values was previously in
+    the question's selection set with the newly chosen one (or clears it),
+    leaving every other thread's selection untouched. */
+function ThreadGroupField({
+  group,
+  picked,
+  onSelect,
+}: {
+  group: ThreadOptionGroup;
+  picked: Set<string>;
+  onSelect: (groupValues: string[], next: string) => void;
+}) {
+  const values = group.entries.map((e) => e.value);
+  const current = values.find((v) => picked.has(v)) ?? "";
+  return (
+    <div className="tui-gate-thread-group">
+      <div className="tui-gate-thread-heading" title={group.token}>
+        {group.heading}
+      </div>
+      <RadioGroup
+        name={`thread-${group.token}`}
+        value={current}
+        onChange={(v) => onSelect(values, v)}
+        options={group.entries.map((e) => ({ value: e.value, label: <span title={e.value}>{e.verb}</span> }))}
+      />
+    </div>
+  );
+}
+
 /** One question's input: a SelectBox per option for a `multi` question (a
     checkbox group -- the same toggle recipe the row's own select-box uses),
-    a RadioGroup for a single-select. */
+    a RadioGroup for a single-select. A `multi` question whose options are all
+    reply/fix/skip verb-token pairs across 2+ threads renders as one radio row
+    per thread instead (see `groupThreadOptions`) -- same submitted values,
+    just grouped by thread rather than listed flat. */
 function GateQuestionField({
   question,
   value,
@@ -47,6 +84,25 @@ function GateQuestionField({
       else next.add(val);
       onChange(question.id, [...next]);
     };
+    const groups = groupThreadOptions(question.options);
+    if (groups) {
+      const selectGroup = (groupValues: string[], next: string) => {
+        const nextSet = new Set(picked);
+        for (const v of groupValues) nextSet.delete(v);
+        if (next) nextSet.add(next);
+        onChange(question.id, [...nextSet]);
+      };
+      return (
+        <div className="tui-gate-question">
+          <div className="tui-gate-question-label">{question.label}</div>
+          <div className="tui-gate-thread-groups">
+            {groups.map((g) => (
+              <ThreadGroupField key={g.token} group={g} picked={picked} onSelect={selectGroup} />
+            ))}
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="tui-gate-question">
         <div className="tui-gate-question-label">{question.label}</div>
@@ -242,7 +298,11 @@ function GateCard({
             context
           </DisclosureHead>
           <Disclosure open={ctxOpen}>
-            <pre className="tui-gate-context-body">{gate.context}</pre>
+            <div className="tui-gate-context-body">
+              <Markdown unstyled linkTargetBlank>
+                {gate.context}
+              </Markdown>
+            </div>
           </Disclosure>
         </div>
       )}
