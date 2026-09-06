@@ -1,0 +1,10 @@
+node_modules/
+logs/
+.local-dev/
+.worktrees/
+dist/
+test/.captures/
+data/settings.json
+.superpowers/brainstorm/.last-token
+.env
+.env.*

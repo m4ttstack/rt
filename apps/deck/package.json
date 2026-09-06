@@ -1,0 +1,40 @@
+{
+  "name": "deck",
+  "version": "1.0.1",
+  "module": "src/main.ts",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/pixelmatch": "^5.2.6",
+    "@types/pngjs": "^6.0.5",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "pixelmatch": "^7.2.0",
+    "playwright": "^1.62.1",
+    "pngjs": "^7.0.0"
+  },
+  "peerDependencies": {
+    "typescript": "catalog:"
+  },
+  "scripts": {
+    "build:board": "bun run scripts/build-board.ts && bun run scripts/build-gateway-css.ts",
+    "build": "bun build --compile src/main.ts --outfile dist/deck",
+    "serve": "bun run src/main.ts serve",
+    "test": "bun test core src",
+    "test:dom": "bun test test/dom/",
+    "test:e2e": "LOCAL_E2E=1 bun test test/e2e.smoke.test.ts",
+    "capture": "bun test/capture.ts --out test/.captures",
+    "capture:baseline": "bun test/capture.ts --out test/baselines",
+    "capture:compare": "bun test/compare.ts",
+    "deploy": "bun run scripts/deploy.ts"
+  },
+  "dependencies": {
+    "@mattstack/glance": "catalog:",
+    "@mattstack/rt-client": "catalog:",
+    "@mattstack/tui-kit": "workspace:*",
+    "react": "catalog:",
+    "react-dom": "catalog:"
+  }
+}

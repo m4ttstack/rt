@@ -1,0 +1,115 @@
+// src/registry/records.test.ts
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
+import { afterAll, beforeEach, expect, test } from 'bun:test';
+
+const dir = mkdtempSync(join(tmpdir(), 'local-registry-'));
+process.env.LOCAL_REGISTRY_PATH = join(dir, 'registry.json');
+
+const {
+  listRecords,
+  getRecord,
+  putRecord,
+  deleteRecord,
+  reloadRegistry,
+  addIssue,
+  clearIssues,
+} = await import('./records.ts');
+
+afterAll(() => rmSync(dir, { recursive: true, force: true }));
+beforeEach(() => {
+  rmSync(process.env.LOCAL_REGISTRY_PATH!, { force: true });
+  reloadRegistry();
+});
+
+const rec = (name: string, managedBy = 'user') => ({
+  name,
+  managedBy,
+  port: 11000,
+  kind: 'service' as const,
+  command: ['bun', 'server.ts'],
+  workingDirectory: '/tmp/x',
+  label: `com.mattstack.deck.${name}`,
+  createdAt: '2026-08-10T00:00:00Z',
+});
+
+test('empty registry lists nothing and survives a missing file', () => {
+  expect(listRecords()).toEqual([]);
+});
+
+test('put/get/delete round-trips and persists to disk', () => {
+  putRecord(rec('gitq', 'rt'));
+  expect(getRecord('gitq')!.managedBy).toBe('rt');
+  reloadRegistry(); // force a re-read from disk
+  expect(getRecord('gitq')!.port).toBe(11000);
+  expect(deleteRecord('gitq')).toBe(true);
+  expect(getRecord('gitq')).toBeUndefined();
+  expect(deleteRecord('gitq')).toBe(false);
+});
+
+test('writes are atomic: a .tmp file never survives', () => {
+  putRecord(rec('a'));
+  expect(existsSync(process.env.LOCAL_REGISTRY_PATH! + '.tmp')).toBe(false);
+  expect(
+    JSON.parse(readFileSync(process.env.LOCAL_REGISTRY_PATH!, 'utf8')).version
+  ).toBe(1);
+});
+
+test('issues accumulate per source and clear per source', () => {
+  putRecord(rec('a'));
+  addIssue('a', {
+    source: 'portless',
+    message: 'alias failed',
+    at: '2026-08-10T00:00:00Z',
+  });
+  addIssue('a', {
+    source: 'launchd',
+    message: 'load failed',
+    at: '2026-08-10T00:00:00Z',
+  });
+  expect(getRecord('a')!.issues).toHaveLength(2);
+  clearIssues('a', 'portless');
+  expect(getRecord('a')!.issues).toHaveLength(1);
+  expect(getRecord('a')!.issues![0]!.source).toBe('launchd');
+});
+
+test('putRecord round-trips manifest command fields', () => {
+  putRecord({
+    name: 'chat',
+    managedBy: 'user',
+    port: 11002,
+    kind: 'service' as const,
+    createdAt: 'x',
+    commands: { build: 'bun run build', deploy: 'bun run deploy' },
+    altConfigs: { dev: { port: 5173, start: 'bun run dev' } },
+    activeAlt: 'dev',
+  });
+  const r = getRecord('chat')!;
+  expect(r.commands).toEqual({
+    build: 'bun run build',
+    deploy: 'bun run deploy',
+  });
+  expect(r.altConfigs).toEqual({ dev: { port: 5173, start: 'bun run dev' } });
+  expect(r.activeAlt).toBe('dev');
+});
+
+test('dev.workingDirectory round-trips and dev-link issues clear by source', () => {
+  putRecord({
+    name: 'chat',
+    managedBy: 'rt',
+    port: 11002,
+    kind: 'service',
+    dev: { workingDirectory: '/tmp/chat-checkout' },
+    createdAt: new Date().toISOString(),
+  });
+  expect(getRecord('chat')?.dev?.workingDirectory).toBe('/tmp/chat-checkout');
+  addIssue('chat', {
+    source: 'dev-link',
+    message: 'broken',
+    at: new Date().toISOString(),
+  });
+  expect(getRecord('chat')?.issues?.[0]?.source).toBe('dev-link');
+  clearIssues('chat', 'dev-link');
+  expect(getRecord('chat')?.issues).toBeUndefined();
+});
