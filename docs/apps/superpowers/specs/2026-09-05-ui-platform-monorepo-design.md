@@ -43,7 +43,10 @@ One dependency-free workspace package:
   layer keeps that split: a fill token and a text token per intent,
   never one token darkened for both jobs. tui-kit's raw light text
   tokens conform to these on the first generated release; board's
-  :root overrides then delete rather than upstream (MANKIT-2).
+  :root overrides then delete rather than upstream (MANKIT-2). `--fg`
+  stays #111 estate-wide (SORI-36 leaves it untouched); board's #333
+  softening, which its own comment calls a preference, reverts with the
+  override deletion.
 - `src/fragments/`: base-rule CSS rendered from the values, each block
   wrapped in `BEGIN`/`END` markers: body ground (background from the
   semantic bg token, font stack from font tokens, the two smoothing
@@ -146,7 +149,7 @@ All run in the one CI, which is what the monorepo buys:
 | Risk | Handling |
 |---|---|
 | tui-kit's build (tsc + soribashi codegen + workshop workspace) misbehaves inside the workspace | Step 1 lands alone and CI must be green before anything depends on the move. |
-| Generated tokyo-theme.css diverges from today's shipped values | Generation is introduced value-identical first (a test asserts the generated file matches the current file), then board's corrections land as an explicit value change. |
+| Generated tokyo-theme.css diverges from today's shipped values | Generation is introduced value-identical first (a test asserts the generated file matches the current file), then the tokens conformance (tui-kit's text darkening, tokyo's one new red text token) lands as an explicit value change. |
 | Lockstep bumps consumers did not ask for | Harmless version churn on unchanged packages (`packages/server` in particular will ride releases carrying only token changes); consumers bump one aligned set instead of four numbers. |
 | Capture suites cannot verify the smoothing fragment | Headless Chromium already renders greyscale, so board's pixel baselines reported the 09-03 smoothing change as a no-op (MANKIT-2). The fragment's presence is gated byte-for-byte; its visual effect is checked by eye in a real browser once per release. |
 | Fragment append breaks a consumer that styled around the old gap | The fragments are exactly the rules every consumer already carries locally; cleanup deletes copies rather than changing behavior. |
