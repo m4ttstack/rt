@@ -46,7 +46,10 @@ const aliases: CssVariablesResolver = () => ({
     "--card": "var(--surface-card)",
     "--chrome": "var(--surface-chrome)",
     "--fg": "var(--text-primary)",
-    "--muted": "var(--text-muted)",
+    // `--muted` is the FILL half of tokyo's fill/text split: raw
+    // `--color-gray-muted`, not the AA-darkened text chain. Washes, dots and
+    // the Switch thumb read this one; text roles read `--muted-text` below.
+    "--muted": "var(--color-gray-muted)",
     // emitSemanticLines always prefixes a semanticTokens.text key with
     // `--text-`, so these three (mirroring tokyo's --tk-muted-text /
     // --tk-accent-text / --tk-red-text) cannot be produced as semantic vars

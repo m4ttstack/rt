@@ -9,8 +9,6 @@ import { describe, expect, it } from 'vitest';
  * Deletion is Phase 2 material.
  */
 const WAIVED_TUI: Record<string, string> = {
-  '--color-gray-muted':
-    "raw muted token for non-text intents (StatusDot's/Badge's 'muted' variant and wash mixes reach it via intent-resolver.ts's FAMILY['muted'] === 'gray' branch, var(--color-gray-muted)), outside this test's CSS-module scope; --text-muted now reads --color-gray-mutedText instead, so this raw value has no remaining CSS-file reference.",
   '--muted-text':
     "new text-role alias mirroring tokyo's --tk-muted-text naming; existing recipes still read --muted (unaffected, same value) -- Phase 3 apps are the intended consumer of the explicit name.",
   '--accent-text':

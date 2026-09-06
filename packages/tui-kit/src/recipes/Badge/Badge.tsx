@@ -43,10 +43,16 @@ export const Badge = defineComponent<
   // aren't scanned. Same escape hatch Button's --surface-wash-fg-5 uses,
   // done inline because no existing wash token carries a per-intent tone.
   vars: (_theme, props) => {
-    const tone = BADGE_TONES[(props as BadgeOwnProps).intent ?? "muted"];
+    const intent = (props as BadgeOwnProps).intent ?? "muted";
+    const tone = BADGE_TONES[intent];
+    // Fill/text split (fills raw, text darkened): muted's wash and border
+    // stay on the raw --muted fill tone, but its text reads --text-muted so
+    // the label itself clears AA. The other three intents have no such
+    // split -- their fill tone already carries their text.
+    const textTone = intent === "muted" ? "var(--text-muted)" : tone;
     return {
       root: {
-        "--sb-badge-color": tone,
+        "--sb-badge-color": textTone,
         "--sb-badge-bg": `color-mix(in srgb, ${tone} 12%, transparent)`,
         "--sb-badge-border": `color-mix(in srgb, ${tone} 40%, transparent)`,
       },

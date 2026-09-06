@@ -192,7 +192,7 @@ test("the census tables are the shape this suite expects", () => {
 // ramp" block further down for their own coverage.
 const SURFACE_RAMP_RULING = new Set(["--bg", "--panel", "--card"]);
 // `--fg`/`--muted` are excluded from BOTH sweeps: the value-conformance
-// ruling (SORI-36) retunes `fg` to #222 in every scheme and repoints the
+// ruling (SORI-36) retunes `fg` to #222 in light and repoints the
 // `muted` TEXT role onto the AA-compliant mutedText value, so neither still
 // carries its census literal through `resolve()`. See the "text conformance"
 // block further down for their own coverage.
@@ -289,10 +289,11 @@ test("chrome carries the ruling's value in both schemes", () => {
 
 // ── text conformance ─────────────────────────────────────────────────────
 // A departure from census parity (see the TEXT_CONFORMANCE_RULING filter
-// above): SORI-36 retunes `fg` to #222 estate-wide and repoints the `muted`
-// TEXT role onto the AA-compliant mutedText value, keeping the raw census
-// muted hex on `colors.gray.muted` for non-text consumers (StatusDot/Badge's
-// muted intent via intent-resolver.ts, washes).
+// above): SORI-36 retunes `fg` to #222 in light and adds `mutedText` as the
+// AA-compliant TEXT role. The fill/text-split ruling keeps the public
+// `--muted` alias on the raw census hex (fills, dots, washes, the Switch
+// thumb, Badge's muted wash/border); only the explicit `--muted-text` alias
+// carries the AA-compliant value, for text-role `color:` declarations.
 
 test("fg carries the value-conformance ruling's #222 in light, unchanged in dark", () => {
   expect(tuiTheme.tokens.colors.gray!.fg).toBe("#222");
@@ -301,13 +302,15 @@ test("fg carries the value-conformance ruling's #222 in light, unchanged in dark
   expect(resolve("--fg", "dark")).toBe("#e3e7f6");
 });
 
-test("muted TEXT reads the AA-compliant mutedText value; the raw census muted hex survives on colors.gray.muted", () => {
+test("muted FILL (--muted) stays the raw census hex; muted TEXT (--muted-text) reads the AA-compliant mutedText value", () => {
   expect(tuiTheme.tokens.colors.gray!.mutedText).toBe("#565d80");
   expect(tuiTheme.dark!.colors!.gray!.mutedText).toBe("#969ec2");
-  expect(resolve("--muted", "light")).toBe("#565d80");
-  expect(resolve("--muted", "dark")).toBe("#969ec2");
+  expect(resolve("--muted-text", "light")).toBe("#565d80");
+  expect(resolve("--muted-text", "dark")).toBe("#969ec2");
   expect(tuiTheme.tokens.colors.gray!.muted).toBe("#8990b3");
   expect(tuiTheme.dark!.colors!.gray!.muted).toBe("#7e86ad");
+  expect(resolve("--muted", "light")).toBe("#8990b3");
+  expect(resolve("--muted", "dark")).toBe("#7e86ad");
 });
 
 test("accentText and badText resolve to their AA-compliant literals in both schemes", () => {

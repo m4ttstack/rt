@@ -139,7 +139,7 @@
     --card: var(--surface-card);
     --chrome: var(--surface-chrome);
     --fg: var(--text-primary);
-    --muted: var(--text-muted);
+    --muted: var(--color-gray-muted);
     --muted-text: var(--text-muted);
     --accent-text: var(--text-accentText);
     --red-text: var(--text-badText);

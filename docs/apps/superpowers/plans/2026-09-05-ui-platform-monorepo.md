@@ -408,7 +408,7 @@ Each task: bump the `@mattstack/*` KIT deps to the platform version, delete the 
 
 - [ ] Bump `@mattstack/tui-kit` to the platform version; `bun install`.
 - [ ] Delete the `:root` override block (`src/style.css` ~41-46: `--color-gray-fg`, `--color-gray-muted`, `--color-blue-500`, `--color-red-500` and its comment) and the local smoothing rule (~52-57).
-- [ ] Text-role swap: for every declaration in `src/style.css` where `var(--muted)`, `var(--accent)`, or `var(--red)` is the value of a `color:` property on TEXT (not a background, border, fill, or dot), switch to `var(--muted-text)` / `var(--accent-text)` / `var(--red-text)`. Fill and dot usages keep the raw tokens. This is judgment work per declaration; the SORI-36 measurements (4.5:1 on chrome/bg/panel/card) are the acceptance bar, checked with the contrast math from tokens or a browser audit.
+- [ ] Text-role swap: for every declaration in `src/style.css` where `var(--muted)`, `var(--accent)`, or `var(--red)` is the value of a `color:` property on TEXT (not a background, border, fill, or dot), switch to `var(--muted-text)` / `var(--accent-text)` / `var(--red-text)`. Fill and dot usages keep `var(--muted)`, `var(--accent)`, `var(--red)` as is (raw again by the fill/text-split ruling; only text-role `color:` declarations swap). This is judgment work per declaration; the SORI-36 measurements (4.5:1 on chrome/bg/panel/card) are the acceptance bar, checked with the contrast math from tokens or a browser audit.
 - [ ] `bun run typecheck && bun test && bun run capture:compare` (captures will move where text darkened; re-baseline deliberately with `capture:baseline` after eyeballing).
 - [ ] Commit: `conform to platform 0.3.0: kit-shipped smoothing and text tokens; overrides deleted`.
 
