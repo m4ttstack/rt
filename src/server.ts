@@ -1357,10 +1357,13 @@ const httpServer = Bun.serve({
         if (typeof gateId !== "string" || !gateId) return new Response("expected { gateId: string }", { status: 400 });
         const row = gateCache.rows().find((r) => r.id === gateId);
         if (!row) return new Response(`unknown gate "${gateId}"`, { status: 404 });
-        const panes = await panesForOrigin(row.origin ?? undefined, paneList);
+        const { panes, fetchFailed } = await panesForOrigin(row.origin ?? undefined, paneList);
         const resolved = resolveOriginFocus(row.origin ?? undefined, panes);
         if (!resolved.ok) {
-          return new Response(JSON.stringify({ ok: false, error: resolved.reason }), {
+          // The pane-list fetch itself failing is a different fact than the
+          // fetch succeeding with no matching pane; say which one happened.
+          const reason = fetchFailed ? "could not list panes to match the origin worktree" : resolved.reason;
+          return new Response(JSON.stringify({ ok: false, error: reason }), {
             status: 400, headers: { "content-type": "application/json" },
           });
         }

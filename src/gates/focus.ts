@@ -4,6 +4,15 @@ export type FocusResolution =
   | { ok: true; paneId: string; tabId?: string }
   | { ok: false; reason: string };
 
+/** Normalizes a path before comparing an origin's worktree against a live
+    pane's cwd: a trailing slash, or macOS resolving `/tmp` to its real
+    `/private/tmp` target (one side of a comparison may report either form),
+    would otherwise fail an exact-string match on the SAME directory. */
+export function normalizeWorktreePath(path: string): string {
+  const trimmed = path.replace(/\/+$/, "");
+  return trimmed === "/tmp" || trimmed.startsWith("/tmp/") ? `/private${trimmed}` : trimmed;
+}
+
 /** Shared focus rule: direct by origin.paneId, else worktree match against
     live pane cwds, else a human-readable reason for a disabled affordance. */
 export function resolveOriginFocus(
@@ -16,12 +25,22 @@ export function resolveOriginFocus(
       : { ok: true, paneId: origin.paneId };
   }
   if (origin?.worktree) {
-    const match = panes.find((p) => p.cwd === origin.worktree);
+    const target = normalizeWorktreePath(origin.worktree);
+    const match = panes.find((p) => p.cwd !== undefined && normalizeWorktreePath(p.cwd) === target);
     return match
       ? { ok: true, paneId: match.paneId }
       : { ok: false, reason: "no live pane matches the origin worktree" };
   }
   return { ok: false, reason: "no origin on this gate" };
+}
+
+export interface PanesForOriginResult {
+  panes: Array<{ paneId: string; cwd?: string }>;
+  /** True when a worktree-fallback fetch was attempted and the daemon call
+      itself failed, as opposed to succeeding with no matching pane. The
+      caller needs this to word a "could not list panes" reason correctly
+      instead of the misleading "no live pane matches". */
+  fetchFailed: boolean;
 }
 
 /** Fetches live panes only when the resolution actually needs them: a direct
@@ -32,8 +51,8 @@ export function resolveOriginFocus(
 export async function panesForOrigin(
   origin: GateOrigin | undefined,
   listPanes: () => Promise<{ ok: boolean; data?: { panes: Array<{ paneId: string; cwd?: string }> } | null }>,
-): Promise<Array<{ paneId: string; cwd?: string }>> {
-  if (origin?.paneId || !origin?.worktree) return [];
+): Promise<PanesForOriginResult> {
+  if (origin?.paneId || !origin?.worktree) return { panes: [], fetchFailed: false };
   const res = await listPanes();
-  return res.ok && res.data ? res.data.panes : [];
+  return res.ok && res.data ? { panes: res.data.panes, fetchFailed: false } : { panes: [], fetchFailed: true };
 }
