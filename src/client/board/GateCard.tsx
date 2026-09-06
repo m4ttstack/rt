@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Chip, RadioGroup, SelectBox } from "@mattstack/tui-kit";
+import { Chip, Markdown, RadioGroup, SelectBox } from "@mattstack/tui-kit";
 import type { GateAnswers, GateOption, GateQuestion, GateRow } from "../../gates/store.ts";
 import type { BoardMRWithReview } from "../types.ts";
 import {
@@ -242,7 +242,11 @@ function GateCard({
             context
           </DisclosureHead>
           <Disclosure open={ctxOpen}>
-            <pre className="tui-gate-context-body">{gate.context}</pre>
+            <div className="tui-gate-context-body">
+              <Markdown unstyled linkTargetBlank>
+                {gate.context}
+              </Markdown>
+            </div>
           </Disclosure>
         </div>
       )}
