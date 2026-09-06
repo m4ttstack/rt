@@ -1,0 +1,84 @@
+/*
+ * Panel — mr-board's `.tui-panel*` collapsible section container.
+ *
+ * The `.body` slot deliberately declares nothing: mr-board's content wrapper
+ * carries no rule at all, and adding layout would be an addition, not a lift.
+ */
+@layer soribashi.recipes {
+  .root {
+    position: relative;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--surface-wash-panel-88);
+    padding: var(--spacing-xxl) 0 var(--spacing-xs);
+    margin: var(--spacing-rem150) 0 var(--spacing-rem180);
+  }
+
+  .title {
+    position: absolute;
+    top: var(--panel-title-offset);
+    left: var(--spacing-xl);
+    background: var(--bg);
+    padding: 0 var(--spacing-rem50);
+    font-size: var(--font-size-rem74);
+    font-weight: 700;
+    letter-spacing: var(--panel-title-tracking);
+    color: var(--accent);
+    border: 0;
+    font-family: inherit;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--panel-title-gap);
+  }
+
+  .title:hover {
+    color: var(--surface-wash-accent-fg-70);
+  }
+
+  .title:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: var(--radius-px2);
+  }
+
+  .caret {
+    font-size: var(--font-size-rem65);
+    opacity: 0.7;
+    transition: transform 120ms ease;
+  }
+
+  .count {
+    color: var(--muted);
+    font-weight: 400;
+  }
+
+  /* Collapsed: drop the outer frame and reflow the title into a full-width
+     bar. The "label on the border" look only makes sense when there's a body
+     to label -- with none, the empty frame reads as a broken container. */
+  .root[data-collapsed] {
+    border: 0;
+    background: transparent;
+    padding: 0;
+    margin: var(--spacing-rem75) 0;
+  }
+
+  /* `box-sizing` is an ADDITION, not a lift — without it a consumer who skips
+     the optional canvas reset gets a 100%-wide bar plus ~19px of padding and
+     border overflowing the panel. See docs/decisions.md. */
+  .root[data-collapsed] .title {
+    box-sizing: border-box;
+    position: static;
+    display: flex;
+    width: 100%;
+    text-align: left;
+    padding: var(--spacing-rem40) var(--spacing-xl);
+    background: var(--surface-wash-panel-70);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+  }
+
+  .root[data-collapsed] .title:hover {
+    background: var(--surface-wash-panel-100);
+  }
+}

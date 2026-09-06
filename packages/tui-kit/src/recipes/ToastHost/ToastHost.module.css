@@ -1,0 +1,35 @@
+/*
+ * ToastHost — mr-board's `.tui-toasts`/`.tui-toast` transient stack.
+ *
+ * The toast's `padding` and `font-size` both read `--font-size-px13`: it is the
+ * same literal, and no spacing rung carries it. Cross-family token reuse is
+ * deliberate here, not a slip.
+ */
+@layer soribashi.recipes {
+  .root {
+    position: fixed;
+    right: var(--sb-toasthost-offset);
+    bottom: var(--sb-toasthost-offset);
+    z-index: 210;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-px8);
+    pointer-events: none;
+  }
+
+  /* `box-sizing` is an ADDITION, not a lift — without it a consumer who skips
+     the optional canvas reset gets a "320px" toast a few px wider. See
+     docs/decisions.md. */
+  .toast {
+    box-sizing: border-box;
+    padding: var(--spacing-px9) var(--font-size-px13);
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-left: var(--spacing-px3) solid var(--accent);
+    border-radius: var(--radius-px7);
+    box-shadow: var(--shadow-toast);
+    color: var(--fg);
+    font-size: var(--font-size-px13);
+    max-width: 320px;
+  }
+}

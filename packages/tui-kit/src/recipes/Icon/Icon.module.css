@@ -1,0 +1,11 @@
+/*
+ * Icon's stylesheet is one declaration long by design: almost everything that
+ * shapes an mr-board glyph is an SVG presentation attribute on the element
+ * (see Icon.tsx), and moving those into CSS would change their cascade
+ * position — attributes lose to any author rule, declarations here would not.
+ */
+@layer soribashi.recipes {
+  .root {
+    flex-shrink: 0;
+  }
+}

@@ -1,0 +1,76 @@
+{
+  "name": "@mattstack/tui-kit",
+  "version": "0.2.0",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    },
+    "./hooks": {
+      "types": "./dist/src/hooks/index.d.ts",
+      "default": "./dist/src/hooks/index.js"
+    },
+    "./theme": {
+      "types": "./dist/src/theme.d.ts",
+      "default": "./dist/src/theme.js"
+    },
+    "./provider": {
+      "types": "./dist/src/provider.d.ts",
+      "default": "./dist/src/provider.js"
+    },
+    "./theme.css": "./src/generated/theme.css",
+    "./canvas.css": "./src/canvas.css",
+    "./types/css-modules.d.ts": "./types/css-modules.d.ts",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "src/generated/theme.css",
+    "src/canvas.css",
+    "assets",
+    "types",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "restricted"
+  },
+  "scripts": {
+    "setup": "bun install",
+    "census": "bun run scripts/census.ts",
+    "codegen": "soribashi build && bun run scripts/append-font-faces.ts",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && bun scripts/copy-recipe-css.ts && bun scripts/fix-dts-extensions.ts dist",
+    "prepack": "bun run build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "gates": "vitest run --project node test/no-hardcoded-values.test.ts test/token-existence.test.ts test/no-node-builtins.test.ts test/copy-recipe-css.test.ts test/bun-build-keyframes.test.ts test/fix-dts-extensions.test.ts && bun run codegen && git diff --exit-code src/generated/theme.css",
+    "dev:workshop": "cd workshop && bunx vite"
+  },
+  "dependencies": {
+    "@soribashi/core": "^0.4.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@types/react-test-renderer": "^19.1.0",
+    "@vitejs/plugin-react": "^6",
+    "@vitest/browser-playwright": "^4.1.10",
+    "playwright": "^1.59.1",
+    "react": "^19.2",
+    "react-dom": "^19.2",
+    "react-test-renderer": "^19.2.8",
+    "typescript": "^7",
+    "vitest": "^4",
+    "vitest-browser-react": "^2"
+  }
+}

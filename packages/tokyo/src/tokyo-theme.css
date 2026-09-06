@@ -39,6 +39,7 @@
    The declarations live in the per-scheme blocks below, one each, which
    tokyo-theme.test.ts checks by name -- so this note sits outside them. */
 :root[data-mantine-color-scheme='light'] {
+  /* BEGIN GENERATED: tokyo tokens light */
   /* Light surface ramp, Supabase model: a near-white canvas, a subtle grey chrome
      frame, and true-white content. Contrast rides text and element borders on the
      light ground, not surface-to-surface fill. --tk-chrome is the frame grey (app
@@ -76,9 +77,11 @@
   --tk-dot-bad: #e5153f;
 
   --tk-wash: 10%;
+  /* END GENERATED */
 }
 
 :root[data-mantine-color-scheme='dark'] {
+  /* BEGIN GENERATED: tokyo tokens dark */
   /* Dark never inverted (bg < panel < card already), so --tk-chrome equals the
      panel rung: the rail/nav frame reads as a step up from the near-black page. */
   --tk-chrome: #232a47;
@@ -106,6 +109,7 @@
   --tk-dot-bad: #ff5c72;
 
   --tk-wash: 15%;
+  /* END GENERATED */
 }
 
 /*

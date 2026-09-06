@@ -5,7 +5,8 @@
   "type": "module",
   "license": "MIT",
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "packages/tui-kit/workshop"
   ],
   "scripts": {
     "typecheck": "bun run --filter '@mattstack/*' typecheck && bun run probe:typecheck",
@@ -16,6 +17,11 @@
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
     "treeshake": "packages/ui/scripts/treeshake-check.sh",
+    "tui-kit:build": "cd packages/tui-kit && bun run build",
+    "tui-kit:test": "cd packages/tui-kit && bun run test",
+    "tui-kit:gates": "cd packages/tui-kit && bun run gates",
+    "tokens:test": "cd packages/tokens && bun run test",
+    "tokens:codegen": "bun run packages/tokens/scripts/generate.ts",
     "probe:install": "rm -rf probe/node_modules/@mattstack probe/node_modules/.bun probe/vendor probe/bun.lock && mkdir -p probe/vendor && (cd packages/tokyo && bun pm pack --destination ../../probe/vendor --quiet) && (cd packages/ui && bun pm pack --destination ../../probe/vendor --quiet) && (cd packages/server && bun pm pack --destination ../../probe/vendor --quiet) && bun scripts/sync-probe-refs.ts && cd probe && bun install",
     "probe:typecheck": "cd probe && bun run typecheck",
     "probe:lint": "if [ -d probe ]; then cd probe && bun run lint; fi",

@@ -1,0 +1,22 @@
+/* Badge — filled status pill, the loud sibling of Chip. Tint and border ride
+   the TSX-side --sb-badge-bg/--sb-badge-border mixes (Badge.tsx's vars
+   resolver), so the four intents share one rule here. */
+@layer soribashi.recipes {
+  .root {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-xxs);
+    font-family: var(--font-sans);
+    font-size: var(--font-size-xs);
+    line-height: var(--line-height-base);
+    font-variant-numeric: var(--font-numeric);
+    color: var(--sb-badge-color);
+    background: var(--sb-badge-bg);
+    border: 1px solid var(--sb-badge-border);
+    /* `pill`, not `round` (50%): this box is wider than it is tall, and 50%
+       on an unequal box draws an ellipse, not a stadium. */
+    border-radius: var(--radius-pill);
+    padding: 0 var(--spacing-sm);
+    white-space: nowrap;
+  }
+}

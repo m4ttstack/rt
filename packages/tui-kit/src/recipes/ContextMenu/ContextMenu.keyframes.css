@@ -1,0 +1,22 @@
+/* The entry animation and its keyframes live here, outside
+   ContextMenu.module.css, keyed on the public `data-part`: see
+   docs/decisions.md, "Keyframes live outside the CSS module".
+   `contextmenu-in`, not mr-board's `tui-menu-in`: this ident is global, so
+   the NAME is what keeps it from colliding with the board's own copy while
+   both stylesheets are loaded. */
+@layer soribashi.recipes {
+  [data-part="contextmenu"] {
+    animation: contextmenu-in 90ms ease-out;
+  }
+
+  @keyframes contextmenu-in {
+    from {
+      opacity: 0;
+      transform: scale(0.97) translateY(-2px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+}

@@ -11,6 +11,10 @@ jobs:
           persist-credentials: false
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
+      # Regenerating must reproduce what's checked in byte-for-byte: a diff
+      # here means the emitter drifted, a generated file was hand-edited, or
+      # the committed font copy diverged from the canonical source.
+      - run: bun run tokens:codegen && git diff --exit-code packages/tui-kit/src/generated packages/tui-kit/assets packages/tokyo/src
       # probe:install packs the three packages and installs the probe (which
       # is outside the workspace). It must precede typecheck/lint, because the
       # root typecheck and lint scripts chain probe:typecheck / probe:lint,
@@ -20,8 +24,20 @@ jobs:
       - run: bun run lint
       - run: bun run format:check
       - run: bun run test -- --run
+      - run: bun run tokens:test
       - run: bun run build-storybook
       - run: bun run treeshake
       - run: bun run probe:test
       - run: bun run probe:build
       - run: bun run probe:serve-check
+      - run: bun run tui-kit:build
+      - run: bun run tui-kit:gates
+      # `tui-kit:test` (all projects) stays the local/full command; CI splits
+      # the browser project in two runs below because it mixes plain behavior
+      # tests with two recorded-oracle suites (`*.visual.test.tsx` screenshot
+      # baselines, `*.parity.test.tsx` computed-style oracles) captured
+      # against one local Chrome. Oracle-recorded suites stay local until
+      # CI-recorded baselines exist; everything else in the project runs here.
+      - run: cd packages/tui-kit && bunx vitest run --project node
+      - run: cd packages/tui-kit && bunx playwright install chromium
+      - run: cd packages/tui-kit && bunx vitest run --project browser --exclude '**/*.visual.test.tsx' --exclude '**/*.parity.test.tsx'

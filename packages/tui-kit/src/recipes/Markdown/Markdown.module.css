@@ -1,0 +1,123 @@
+/*
+ * Markdown — mr-board's `.tui-md` prose typography, lifted onto one slot.
+ *
+ * The element selectors below are plain (non-localized) descendants of `.root`
+ * because ReactMarkdown decides what DOM they are, not this recipe — there is
+ * no slot to give any of them.
+ *
+ * `.tui-review-body .tui-md`'s 820px reading-measure cap is ancestor-scoped and
+ * is NOT part of this recipe; it must survive adoption, rewritten onto
+ * `[data-part="markdown"]`. See docs/decisions.md.
+ */
+@layer soribashi.recipes {
+  .root {
+    font-family: var(--font-sans);
+    font-size: var(--font-size-rem95);
+    line-height: 1.6;
+    color: var(--fg);
+    overflow-wrap: anywhere;
+  }
+
+  .root h1,
+  .root h2,
+  .root h3,
+  .root h4 {
+    font-weight: 600;
+    line-height: 1.25;
+    margin: var(--sb-markdown-heading-margin-top) 0 var(--sb-markdown-heading-margin-bottom);
+  }
+
+  .root h1 {
+    font-size: var(--sb-markdown-h1-size);
+    padding-bottom: var(--sb-markdown-heading-underline-pad);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .root h2 {
+    font-size: var(--sb-markdown-h2-size);
+    padding-bottom: var(--sb-markdown-heading-underline-pad);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .root h3 {
+    font-size: var(--sb-markdown-h3-size);
+  }
+
+  .root h4 {
+    font-size: var(--sb-markdown-h4-size);
+  }
+
+  .root h1:first-child,
+  .root h2:first-child,
+  .root h3:first-child {
+    margin-top: 0;
+  }
+
+  .root p,
+  .root ul,
+  .root ol {
+    margin: var(--sb-markdown-block-margin) 0;
+  }
+
+  .root ul,
+  .root ol {
+    padding-left: var(--sb-markdown-list-indent);
+  }
+
+  .root li {
+    margin: var(--sb-markdown-list-item-margin) 0;
+  }
+
+  .root a {
+    color: var(--accent);
+  }
+
+  .root code {
+    font-family: var(--font-mono);
+    font-size: var(--sb-markdown-code-size);
+    background: var(--card);
+    padding: var(--sb-markdown-code-pad-block) var(--sb-markdown-code-pad-inline);
+    border-radius: var(--radius-sm);
+  }
+
+  .root pre {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: var(--spacing-lg) var(--spacing-xl);
+    overflow-x: auto;
+    margin: var(--sb-markdown-pre-margin) 0;
+  }
+
+  .root pre code {
+    background: none;
+    padding: 0;
+  }
+
+  .root blockquote {
+    margin: var(--sb-markdown-blockquote-margin) 0;
+    padding: var(--sb-markdown-blockquote-pad-block) var(--sb-markdown-blockquote-pad-inline);
+    color: var(--muted);
+    border-left: var(--sb-markdown-blockquote-border-w) solid var(--border);
+  }
+
+  .root table {
+    border-collapse: collapse;
+    margin: var(--sb-markdown-table-margin) 0;
+    display: block;
+    overflow-x: auto;
+  }
+
+  .root th,
+  .root td {
+    border: 1px solid var(--border);
+    padding: var(--sb-markdown-cell-pad-block) var(--sb-markdown-cell-pad-inline);
+    text-align: left;
+  }
+
+  .root hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: var(--sb-markdown-hr-margin) 0;
+  }
+}

@@ -1,0 +1,27 @@
+/* The pulse's longhands, its reduced-motion override and its keyframes live
+   here, outside Chip.module.css, keyed on the public `data-part`: see
+   docs/decisions.md, "Keyframes live outside the CSS module". */
+@layer soribashi.recipes {
+  [data-part="chip"][data-pulse] {
+    animation-name: chip-pulse;
+    animation-duration: var(--sb-chip-pulse-period);
+    animation-timing-function: ease-in-out;
+    animation-iteration-count: infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    [data-part="chip"][data-pulse] {
+      animation-name: none;
+    }
+  }
+
+  @keyframes chip-pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+  }
+}

@@ -7,3 +7,4 @@ packages/ui/scripts/treeshake-probe/dist
 probe/src/server/embedded
 probe/bun.lock
 probe/vendor
+packages/tui-kit

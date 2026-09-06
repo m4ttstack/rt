@@ -1,0 +1,82 @@
+/*
+ * Chip — mr-board's badge/flag family (`.tui-review` + `.tui-flag`, unified).
+ * Colour comes entirely from `--chip-*`, which the builder derives via
+ * autoVars -> tuiIntentResolver; nothing here references a hue token directly.
+ * See docs/decisions.md for the unification and the deliberate departures.
+ */
+@layer soribashi.recipes {
+  .root {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-px4);
+    padding: 1px var(--spacing-px6);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-px11);
+    white-space: nowrap;
+    flex-shrink: 0;
+
+    /* `--chip-bg` is transparent for every intent in this theme, but referenced
+       rather than hardcoded so a re-skin that DOES paint chips can. */
+    background: var(--chip-bg, transparent);
+    color: var(--chip-color, inherit);
+
+    /* UA resets for the `as="button"` / `as="a"` forms; each is a no-op on the
+       default span. Longhand deliberately: the `font` shorthand would also
+       reset font-size, which the declaration above owns. */
+    margin: 0;
+    font-family: inherit;
+    font-weight: inherit;
+    line-height: inherit;
+    text-align: inherit;
+    text-decoration: none;
+  }
+
+  .root[data-variant="outline"] {
+    border-color: var(--chip-border, currentColor);
+  }
+
+  /* Overriding this from an app is route-sensitive, and getting it wrong is
+     silent: `Chip.extend({ vars })` or a per-instance `vars` prop works (both
+     land in the element's inline style); an app rule setting
+     `--sb-chip-dimmed-opacity` does NOT (inline beats any stylesheet rule); an
+     app rule setting `opacity` directly works at any specificity, because an
+     unlayered author rule beats everything in `@layer soribashi.recipes`. */
+  .root[data-dimmed] {
+    opacity: var(--sb-chip-dimmed-opacity);
+  }
+
+  /* `700` stays a bare number: the theme declares no fontWeight scale. */
+  .root[data-uppercase] {
+    text-transform: uppercase;
+    letter-spacing: var(--sb-chip-uppercase-tracking);
+    font-size: var(--font-size-xxs);
+    font-weight: 700;
+  }
+
+  /* Keyed on the ELEMENT, not a modifier prop: in mr-board every chip carrying
+     `.tui-review-open` is exactly the one rendered as a button, so the element
+     already is the signal and a `clickable` prop could disagree with it. */
+  .root:is(button, a) {
+    cursor: pointer;
+  }
+
+  .root:is(button, a):hover {
+    background: var(--chip-hover, var(--card));
+  }
+
+  .root:is(button, a):focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  /* `.tui-badge-emoji`: keeps a glyph's line box from shoving the label's
+     baseline. No font-size — it inherits the chip's, so restating it would
+     freeze the icon out of a theme that retunes the chip. */
+  .icon {
+    display: inline-flex;
+    align-items: center;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+}
