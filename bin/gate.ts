@@ -26,9 +26,13 @@ try {
   if (verb === "open") {
     const kind = flag(rest, "--kind");
     const questions = flag(rest, "--questions");
-    if (!statePath || !kind || !questions) throw new Error("usage: gate open <state> --kind <k> --questions <json>");
-    const gateId = await gateOpen(statePath, kind, questions, io);
-    console.log(gateId);
+    if (!statePath || !kind || !questions) throw new Error("usage: gate open <state> --kind <k> --questions <json> [--context <text>]");
+    const result = await gateOpen(statePath, kind, questions, io, {
+      context: flag(rest, "--context"),
+      sessionId: process.env.CLAUDE_CODE_SESSION_ID,
+      worktree: process.cwd(),
+    });
+    console.log(JSON.stringify(result));
   } else if (verb === "wait") {
     if (!statePath) throw new Error("usage: gate wait <state> [--max-ms <n>]");
     const result = await gateWait(statePath, io, parseWaitMaxMs(rest));
