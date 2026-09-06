@@ -32,15 +32,3 @@
      agent's hover card, and nothing else. */
   --tk-fs-5xs: 0.53rem; /* 8.5px */
 }
-
-/*
- * Greyscale font smoothing for the system sans. Without it macOS renders
- * subpixel antialiasing, which blooms bold light text on saturated fills
- * (worst on the composer's filled send button). Belongs in the kit's body
- * rule; carried here so chat's shipped UI is crisp now. Delete once
- * mantine-tokyo ships it -- tracked in MANKIT-2.
- */
-body {
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
