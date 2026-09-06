@@ -15,11 +15,6 @@ jobs:
       # here means the emitter drifted, a generated file was hand-edited, or
       # the committed font copy diverged from the canonical source.
       - run: bun run tokens:codegen && git diff --exit-code packages/tui-kit/src/generated packages/tui-kit/assets packages/tokyo/src
-      # probe:install packs the three packages and installs the probe (which
-      # is outside the workspace). It must precede typecheck/lint, because the
-      # root typecheck and lint scripts chain probe:typecheck / probe:lint,
-      # which need the probe's node_modules present.
-      - run: bun run probe:install
       - run: bun run typecheck
       - run: bun run lint
       - run: bun run format:check
@@ -27,9 +22,6 @@ jobs:
       - run: bun run tokens:test
       - run: bun run build-storybook
       - run: bun run treeshake
-      - run: bun run probe:test
-      - run: bun run probe:build
-      - run: bun run probe:serve-check
       - run: bun run tui-kit:build
       - run: bun run tui-kit:gates
       # `tui-kit:test` (all projects) stays the local/full command; CI splits

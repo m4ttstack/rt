@@ -36,8 +36,8 @@
     }
   },
   "scripts": {
-    "typecheck": "bun run --filter '@mattstack/*' typecheck && bun run probe:typecheck",
-    "lint": "eslint --no-error-on-unmatched-pattern packages .storybook && bun run probe:lint",
+    "typecheck": "bun run --filter '@mattstack/*' typecheck",
+    "lint": "eslint --no-error-on-unmatched-pattern packages .storybook",
     "test": "vitest",
     "format": "prettier --write . --cache",
     "format:check": "prettier --check . --cache",
@@ -52,13 +52,7 @@
     "chat:typecheck": "cd apps/chat && bun run typecheck",
     "chat:lint": "cd apps/chat && bun run lint",
     "chat:test": "cd apps/chat && bun run test -- --run",
-    "chat:build": "cd apps/chat && bun run build",
-    "probe:install": "rm -rf probe/node_modules/@mattstack probe/node_modules/.bun probe/vendor probe/bun.lock && mkdir -p probe/vendor && (cd packages/tokyo && bun pm pack --destination ../../probe/vendor --quiet) && (cd packages/ui && bun pm pack --destination ../../probe/vendor --quiet) && (cd packages/server && bun pm pack --destination ../../probe/vendor --quiet) && bun scripts/sync-probe-refs.ts && cd probe && bun install",
-    "probe:typecheck": "cd probe && bun run typecheck",
-    "probe:lint": "if [ -d probe ]; then cd probe && bun run lint; fi",
-    "probe:test": "cd probe && bun run test -- --run",
-    "probe:build": "cd probe && bun run build",
-    "probe:serve-check": "probe/scripts/serve-check.sh"
+    "chat:build": "cd apps/chat && bun run build"
   },
   "devDependencies": {
     "@mattstack/app-kit": "workspace:*",

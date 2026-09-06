@@ -8,7 +8,7 @@ export default tseslint.config(
   { ignores: ['packages/ui/scripts/treeshake-probe/dist/**'] },
   // tui-kit is absorbed as-is with its own lint conventions.
   { ignores: ['packages/tui-kit/**'] },
-  ...mattstackEslint({ app: ['probe/src/**/*.{ts,tsx}'] }),
+  ...mattstackEslint(),
   {
     // Config presets ship as plain JS (see packages/ui/presets/vite.js) and
     // run in Node, unlike the .tsx source that typescript-eslint's ts-file
