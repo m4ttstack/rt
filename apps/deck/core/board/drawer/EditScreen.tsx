@@ -3,18 +3,23 @@
 // resolver owns their shape). Command + directory exist only for supervised
 // services; external apps show name and base port, same split the add-app
 // modal makes on entry.
-import { ListGroup } from "@mattstack/tui-kit";
-import type { EditModalState } from "../useBoardState.ts";
-import type { ScreenBuilder } from "./RootScreen.tsx";
+import { ListGroup } from '@mattstack/tui-kit';
+import type { EditModalState } from '../useBoardState.ts';
+import type { ScreenBuilder } from './RootScreen.tsx';
 
 const NAME_PATTERN = /^[a-z0-9][a-z0-9.-]*$/;
 
-const FIELD_FOOTER = "command and directory only exist for supervised services — external apps show name and port only";
+const FIELD_FOOTER =
+  'command and directory only exist for supervised services — external apps show name and port only';
 
 function isSaveable(m: EditModalState): boolean {
   if (!NAME_PATTERN.test(m.name.trim())) return false;
-  if (m.port.trim() === "") return false;
-  if (m.kind === "service" && (m.command.trim() === "" || m.workingDirectory.trim() === "")) return false;
+  if (m.port.trim() === '') return false;
+  if (
+    m.kind === 'service' &&
+    (m.command.trim() === '' || m.workingDirectory.trim() === '')
+  )
+    return false;
   return true;
 }
 
@@ -24,10 +29,10 @@ export const buildEditScreen: ScreenBuilder = (row, nav, board) => {
   // Transient: submitEdit() clears editModal on success and this screen's
   // own onLeave hasn't popped the frame yet for that same render.
   if (!m) {
-    return { id: `edit:${row.name}`, title: "edit app", content: null };
+    return { id: `edit:${row.name}`, title: 'edit app', content: null };
   }
 
-  const managed = m.kind === "service";
+  const managed = m.kind === 'service';
   const saveable = isSaveable(m);
   const save = async () => {
     if (await board.submitEdit()) nav.pop();
@@ -35,8 +40,8 @@ export const buildEditScreen: ScreenBuilder = (row, nav, board) => {
 
   return {
     id: `edit:${row.name}`,
-    title: "edit app",
-    navAction: { label: "save", onAction: save, disabled: !saveable },
+    title: 'edit app',
+    navAction: { label: 'save', onAction: save, disabled: !saveable },
     content: (
       <div className="drawer-groups">
         <ListGroup footer={managed ? undefined : FIELD_FOOTER}>
@@ -46,22 +51,22 @@ export const buildEditScreen: ScreenBuilder = (row, nav, board) => {
           <ListGroup.Input
             label="name"
             value={m.name}
-            onChange={(ev) => board.updateEditModal({ name: ev.target.value })}
+            onChange={ev => board.updateEditModal({ name: ev.target.value })}
             error={m.error}
             pattern="[a-z0-9][a-z0-9.-]*"
             required
-            onKeyDown={(ev) => {
-              if (ev.key === "Enter" && saveable) save();
+            onKeyDown={ev => {
+              if (ev.key === 'Enter' && saveable) save();
             }}
           />
           <ListGroup.Input
             label="base port"
             value={m.port}
-            onChange={(ev) => board.updateEditModal({ port: ev.target.value })}
+            onChange={ev => board.updateEditModal({ port: ev.target.value })}
             inputMode="numeric"
             required
-            onKeyDown={(ev) => {
-              if (ev.key === "Enter" && saveable) save();
+            onKeyDown={ev => {
+              if (ev.key === 'Enter' && saveable) save();
             }}
           />
         </ListGroup>
@@ -70,19 +75,23 @@ export const buildEditScreen: ScreenBuilder = (row, nav, board) => {
             <ListGroup.Input
               label="command"
               value={m.command}
-              onChange={(ev) => board.updateEditModal({ command: ev.target.value })}
+              onChange={ev =>
+                board.updateEditModal({ command: ev.target.value })
+              }
               required
-              onKeyDown={(ev) => {
-                if (ev.key === "Enter" && saveable) save();
+              onKeyDown={ev => {
+                if (ev.key === 'Enter' && saveable) save();
               }}
             />
             <ListGroup.Input
               label="directory"
               value={m.workingDirectory}
-              onChange={(ev) => board.updateEditModal({ workingDirectory: ev.target.value })}
+              onChange={ev =>
+                board.updateEditModal({ workingDirectory: ev.target.value })
+              }
               required
-              onKeyDown={(ev) => {
-                if (ev.key === "Enter" && saveable) save();
+              onKeyDown={ev => {
+                if (ev.key === 'Enter' && saveable) save();
               }}
             />
           </ListGroup>

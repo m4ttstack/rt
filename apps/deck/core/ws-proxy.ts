@@ -1,4 +1,4 @@
-import type { ServerWebSocket } from "bun";
+import type { ServerWebSocket } from 'bun';
 
 /**
  * Websocket proxying for the gateway.
@@ -21,15 +21,21 @@ export interface WsProxyData {
 export function isWebSocketUpgrade(req: Request): boolean {
   // Both headers are case-insensitive per RFC 6455, and Connection is a list
   // ("keep-alive, Upgrade") in practice, so match a token rather than equality.
-  const upgrade = req.headers.get("upgrade")?.toLowerCase();
-  const connection = req.headers.get("connection")?.toLowerCase() ?? "";
-  return upgrade === "websocket" && connection.split(",").some((t) => t.trim() === "upgrade");
+  const upgrade = req.headers.get('upgrade')?.toLowerCase();
+  const connection = req.headers.get('connection')?.toLowerCase() ?? '';
+  return (
+    upgrade === 'websocket' &&
+    connection.split(',').some(t => t.trim() === 'upgrade')
+  );
 }
 
 /** Parse Sec-WebSocket-Protocol, which is a comma-separated preference list. */
 export function requestedProtocols(header: string | null): string[] {
   if (!header) return [];
-  return header.split(",").map((p) => p.trim()).filter(Boolean);
+  return header
+    .split(',')
+    .map(p => p.trim())
+    .filter(Boolean);
 }
 
 /**
@@ -42,11 +48,18 @@ export function requestedProtocols(header: string | null): string[] {
 export function safeCloseCode(code: number | undefined): number {
   if (code === undefined) return 1000;
   if (code === 1005 || code === 1006) return 1000;
-  const allowed = (code >= 1000 && code <= 1003) || (code >= 1007 && code <= 1014) || (code >= 3000 && code <= 4999);
+  const allowed =
+    (code >= 1000 && code <= 1003) ||
+    (code >= 1007 && code <= 1014) ||
+    (code >= 3000 && code <= 4999);
   return allowed ? code : 1000;
 }
 
-export function upstreamUrl(port: number, pathname: string, search: string): string {
+export function upstreamUrl(
+  port: number,
+  pathname: string,
+  search: string
+): string {
   return `ws://127.0.0.1:${port}${pathname}${search}`;
 }
 
@@ -61,17 +74,19 @@ export function upstreamUrl(port: number, pathname: string, search: string): str
 export function connectUpstream(
   url: string,
   protocols: string[],
-  timeoutMs = 5000,
+  timeoutMs = 5000
 ): Promise<{ upstream: WebSocket; data: WsProxyData }> {
   return new Promise((resolve, reject) => {
     let upstream: WebSocket;
     try {
-      upstream = protocols.length ? new WebSocket(url, protocols) : new WebSocket(url);
+      upstream = protocols.length
+        ? new WebSocket(url, protocols)
+        : new WebSocket(url);
     } catch (err) {
       reject(err);
       return;
     }
-    upstream.binaryType = "arraybuffer";
+    upstream.binaryType = 'arraybuffer';
 
     const data: WsProxyData = { upstream, pending: [], client: null };
     let settled = false;
@@ -79,7 +94,9 @@ export function connectUpstream(
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
-      try { upstream.close(); } catch {}
+      try {
+        upstream.close();
+      } catch {}
       reject(new Error(`upstream websocket timed out after ${timeoutMs}ms`));
     }, timeoutMs);
 
@@ -94,10 +111,10 @@ export function connectUpstream(
       if (!settled) {
         settled = true;
         clearTimeout(timer);
-        reject(new Error("upstream websocket failed to connect"));
+        reject(new Error('upstream websocket failed to connect'));
         return;
       }
-      data.client?.close(1011, "upstream error");
+      data.client?.close(1011, 'upstream error');
     };
 
     upstream.onmessage = (event: MessageEvent) => {
@@ -112,7 +129,7 @@ export function connectUpstream(
       if (!settled) {
         settled = true;
         clearTimeout(timer);
-        reject(new Error("upstream websocket closed during handshake"));
+        reject(new Error('upstream websocket closed during handshake'));
         return;
       }
       data.client?.close(safeCloseCode(event.code), event.reason || undefined);
@@ -133,8 +150,13 @@ export const wsHandler = {
   },
   close(ws: ServerWebSocket<WsProxyData>, code: number, reason: string) {
     const { upstream } = ws.data;
-    if (upstream.readyState === WebSocket.OPEN || upstream.readyState === WebSocket.CONNECTING) {
-      try { upstream.close(safeCloseCode(code), reason || undefined); } catch {}
+    if (
+      upstream.readyState === WebSocket.OPEN ||
+      upstream.readyState === WebSocket.CONNECTING
+    ) {
+      try {
+        upstream.close(safeCloseCode(code), reason || undefined);
+      } catch {}
     }
   },
 };

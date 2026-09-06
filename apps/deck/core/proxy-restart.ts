@@ -13,16 +13,23 @@
  */
 
 /** The launchd label of the portless proxy daemon (/Library/LaunchDaemons). */
-export const PROXY_LABEL = "system/sh.portless.proxy";
+export const PROXY_LABEL = 'system/sh.portless.proxy';
 
-export const SUDOERS_PATH = "/etc/sudoers.d/local-apps-proxy-restart";
+export const SUDOERS_PATH = '/etc/sudoers.d/local-apps-proxy-restart';
 
 /**
  * The exact argv the board runs. Fixed at module scope: callers cannot pass a
  * label, a flag, or anything else into it.
  */
 export function proxyRestartArgv(): string[] {
-  return ["/usr/bin/sudo", "-n", "/bin/launchctl", "kickstart", "-k", PROXY_LABEL];
+  return [
+    '/usr/bin/sudo',
+    '-n',
+    '/bin/launchctl',
+    'kickstart',
+    '-k',
+    PROXY_LABEL,
+  ];
 }
 
 /** The single sudoers rule that authorizes the command above, for `user`. */
@@ -56,13 +63,24 @@ export function sudoersInstallCommand(user: string): string {
  * so a request that waits for it is killed in flight and surfaces as a 502.
  */
 export function preflightArgv(): string[] {
-  return ["/usr/bin/sudo", "-n", "-l", "/bin/launchctl", "kickstart", "-k", PROXY_LABEL];
+  return [
+    '/usr/bin/sudo',
+    '-n',
+    '-l',
+    '/bin/launchctl',
+    'kickstart',
+    '-k',
+    PROXY_LABEL,
+  ];
 }
 
 /** Whether the scoped sudoers rule is installed. Never throws. */
 export async function isAuthorized(): Promise<boolean> {
   try {
-    const proc = Bun.spawn(preflightArgv(), { stderr: "ignore", stdout: "ignore" });
+    const proc = Bun.spawn(preflightArgv(), {
+      stderr: 'ignore',
+      stdout: 'ignore',
+    });
     return (await proc.exited) === 0;
   } catch {
     return false;
@@ -74,13 +92,16 @@ export async function isAuthorized(): Promise<boolean> {
  * request; the client watches for the proxy coming back on its own.
  */
 export function startRestartDetached(): void {
-  const proc = Bun.spawn(proxyRestartArgv(), { stderr: "ignore", stdout: "ignore" });
+  const proc = Bun.spawn(proxyRestartArgv(), {
+    stderr: 'ignore',
+    stdout: 'ignore',
+  });
   proc.unref();
 }
 
 export type ProxyRestartResult =
   | { ok: true }
-  | { ok: false; reason: "not-authorized" | "failed"; detail: string };
+  | { ok: false; reason: 'not-authorized' | 'failed'; detail: string };
 
 /**
  * True when sudo refused for lack of authorization rather than the command
@@ -89,30 +110,38 @@ export type ProxyRestartResult =
 export function isNotAuthorized(stderr: string): boolean {
   const s = stderr.toLowerCase();
   return (
-    s.includes("password is required") ||
-    s.includes("a password is required") ||
-    s.includes("terminal is required") ||
-    s.includes("askpass") ||
-    s.includes("not allowed to execute") ||
-    s.includes("may not run") ||
-    s.includes("is not in the sudoers file")
+    s.includes('password is required') ||
+    s.includes('a password is required') ||
+    s.includes('terminal is required') ||
+    s.includes('askpass') ||
+    s.includes('not allowed to execute') ||
+    s.includes('may not run') ||
+    s.includes('is not in the sudoers file')
   );
 }
 
 /** Run the restart. Never throws: failures come back as a typed result. */
 export async function restartProxy(): Promise<ProxyRestartResult> {
   try {
-    const proc = Bun.spawn(proxyRestartArgv(), { stderr: "pipe", stdout: "pipe" });
+    const proc = Bun.spawn(proxyRestartArgv(), {
+      stderr: 'pipe',
+      stdout: 'pipe',
+    });
     const stderr = await new Response(proc.stderr).text();
     const code = await proc.exited;
     if (code === 0) return { ok: true };
-    const detail = stderr.trim().split("\n").slice(0, 3).join(" ").slice(0, 300);
+    const detail = stderr
+      .trim()
+      .split('\n')
+      .slice(0, 3)
+      .join(' ')
+      .slice(0, 300);
     return {
       ok: false,
-      reason: isNotAuthorized(stderr) ? "not-authorized" : "failed",
+      reason: isNotAuthorized(stderr) ? 'not-authorized' : 'failed',
       detail: detail || `exit ${code}`,
     };
   } catch (err) {
-    return { ok: false, reason: "failed", detail: String(err).slice(0, 300) };
+    return { ok: false, reason: 'failed', detail: String(err).slice(0, 300) };
   }
 }

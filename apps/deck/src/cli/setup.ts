@@ -1,24 +1,31 @@
 // src/cli/setup.ts
-import { readFileSync, rmSync } from "fs";
-import { basename, join } from "path";
-import { bootstrapSelf } from "../registry/bootstrap.ts";
-import { readProxyTlds } from "../edge/portless.ts";
-import { unbindDomain } from "../edge/domain.ts";
-import type { Drivers } from "../api/register.ts";
-import { listRecords, getRecord, deleteRecord } from "../registry/records.ts";
-import { stateDir, logsDir } from "../api/state.ts";
-import { updatePlatformSettings } from "../api/platform-settings.ts";
-import { PLATFORM_NAME, LEGACY_PLATFORM_NAME, isPlatformManagedBy } from "../services/manager.ts";
+import { readFileSync, rmSync } from 'fs';
+import { basename, join } from 'path';
+
+import { updatePlatformSettings } from '../api/platform-settings.ts';
+import type { Drivers } from '../api/register.ts';
+import { logsDir, stateDir } from '../api/state.ts';
+import { unbindDomain } from '../edge/domain.ts';
+import { readProxyTlds } from '../edge/portless.ts';
+import { bootstrapSelf } from '../registry/bootstrap.ts';
+import { deleteRecord, getRecord, listRecords } from '../registry/records.ts';
+import {
+  isPlatformManagedBy,
+  LEGACY_PLATFORM_NAME,
+  PLATFORM_NAME,
+} from '../services/manager.ts';
 
 export interface Io {
   out(s: string): void;
   err(s: string): void;
 }
 
-export type CheckExec = (argv: string[]) => Promise<{ code: number; stdout: string }>;
+export type CheckExec = (
+  argv: string[]
+) => Promise<{ code: number; stdout: string }>;
 
-const realCheckExec: CheckExec = async (argv) => {
-  const proc = Bun.spawn(argv, { stdout: "pipe", stderr: "ignore" });
+const realCheckExec: CheckExec = async argv => {
+  const proc = Bun.spawn(argv, { stdout: 'pipe', stderr: 'ignore' });
   const code = await proc.exited;
   const stdout = await new Response(proc.stdout).text();
   return { code, stdout };
@@ -31,13 +38,23 @@ const NODE_MAJOR_FLOOR = 24;
 const PORTLESS_VERSION_FLOOR = [0, 15, 5] as const;
 
 function parseVersion(raw: string): [number, number, number] | null {
-  const m = raw.trim().replace(/^v/, "").match(/^(\d+)\.(\d+)\.(\d+)/);
+  const m = raw
+    .trim()
+    .replace(/^v/, '')
+    .match(/^(\d+)\.(\d+)\.(\d+)/);
   if (!m) return null;
   return [Number(m[1]), Number(m[2]), Number(m[3])];
 }
 
-function belowFloor(v: [number, number, number], floor: readonly [number, number, number]): boolean {
-  const parts: Array<[number, number]> = [[v[0], floor[0]], [v[1], floor[1]], [v[2], floor[2]]];
+function belowFloor(
+  v: [number, number, number],
+  floor: readonly [number, number, number]
+): boolean {
+  const parts: Array<[number, number]> = [
+    [v[0], floor[0]],
+    [v[1], floor[1]],
+    [v[2], floor[2]],
+  ];
   for (const [have, want] of parts) {
     if (have < want) return true;
     if (have > want) return false;
@@ -50,27 +67,29 @@ function belowFloor(v: [number, number, number], floor: readonly [number, number
  * system keychain and can hang on a stuck security daemon, so it is never
  * shelled out to here — only `--version` reads.
  */
-export async function checkPrereqs(exec: CheckExec): Promise<{ ok: boolean; problems: string[] }> {
+export async function checkPrereqs(
+  exec: CheckExec
+): Promise<{ ok: boolean; problems: string[] }> {
   const problems: string[] = [];
 
-  const node = await exec(["node", "--version"]);
+  const node = await exec(['node', '--version']);
   const nodeVersion = node.code === 0 ? parseVersion(node.stdout) : null;
   if (!nodeVersion || nodeVersion[0] < NODE_MAJOR_FLOOR) {
     problems.push(
-      `node ${NODE_MAJOR_FLOOR}+ is required (portless's own prerequisite) — found ${node.stdout.trim() || "none"}; install from https://nodejs.org`,
+      `node ${NODE_MAJOR_FLOOR}+ is required (portless's own prerequisite) — found ${node.stdout.trim() || 'none'}; install from https://nodejs.org`
     );
   }
 
-  const portless = await exec(["portless", "--version"]);
+  const portless = await exec(['portless', '--version']);
   if (portless.code !== 0) {
     problems.push(
-      "portless is not installed — `npm install -g portless`, then `portless trust` and `portless service install`",
+      'portless is not installed — `npm install -g portless`, then `portless trust` and `portless service install`'
     );
   } else {
     const version = parseVersion(portless.stdout);
     if (!version || belowFloor(version, PORTLESS_VERSION_FLOOR)) {
       problems.push(
-        `portless must be >= ${PORTLESS_VERSION_FLOOR.join(".")} (found ${portless.stdout.trim() || "unknown"}) — \`npm install -g portless\``,
+        `portless must be >= ${PORTLESS_VERSION_FLOOR.join('.')} (found ${portless.stdout.trim() || 'unknown'}) — \`npm install -g portless\``
       );
     }
   }
@@ -85,7 +104,7 @@ export async function checkPrereqs(exec: CheckExec): Promise<{ ok: boolean; prob
  */
 export function detectExecTarget(): { execPath: string; entry: string | null } {
   const execPath = process.execPath;
-  const isCompiled = !basename(execPath).startsWith("bun");
+  const isCompiled = !basename(execPath).startsWith('bun');
   return isCompiled ? { execPath, entry: null } : { execPath, entry: Bun.main };
 }
 
@@ -107,19 +126,23 @@ async function waitForHealth(port: number): Promise<boolean> {
       // not up yet
     }
     if (Date.now() >= deadline) return false;
-    await new Promise((r) => setTimeout(r, interval));
+    await new Promise(r => setTimeout(r, interval));
   }
 }
 
 function tailLog(path: string, lines = 20): string {
   try {
-    return readFileSync(path, "utf8").split("\n").slice(-lines).join("\n");
+    return readFileSync(path, 'utf8').split('\n').slice(-lines).join('\n');
   } catch {
-    return "(no log yet)";
+    return '(no log yet)';
   }
 }
 
-export async function setup(drivers: Drivers, io: Io, checkExec: CheckExec = realCheckExec): Promise<number> {
+export async function setup(
+  drivers: Drivers,
+  io: Io,
+  checkExec: CheckExec = realCheckExec
+): Promise<number> {
   const check = await checkPrereqs(checkExec);
   if (!check.ok) {
     for (const problem of check.problems) io.err(problem);
@@ -134,8 +157,10 @@ export async function setup(drivers: Drivers, io: Io, checkExec: CheckExec = rea
 
   const healthy = await waitForHealth(result.port);
   if (!healthy) {
-    io.err(`Deck didn't come up on port ${result.port} within the health-check budget`);
-    io.err(tailLog(join(logsDir(), "deck.err.log")));
+    io.err(
+      `Deck didn't come up on port ${result.port} within the health-check budget`
+    );
+    io.err(tailLog(join(logsDir(), 'deck.err.log')));
     return 1;
   }
 
@@ -145,12 +170,16 @@ export async function setup(drivers: Drivers, io: Io, checkExec: CheckExec = rea
   return 0;
 }
 
-export async function uninstall(drivers: Drivers, io: Io, opts: { force: boolean }): Promise<number> {
-  const others = listRecords().filter((r) => !isPlatformManagedBy(r.managedBy));
+export async function uninstall(
+  drivers: Drivers,
+  io: Io,
+  opts: { force: boolean }
+): Promise<number> {
+  const others = listRecords().filter(r => !isPlatformManagedBy(r.managedBy));
   if (others.length > 0 && !opts.force) {
-    io.err("Other apps are still registered with Deck:");
+    io.err('Other apps are still registered with Deck:');
     for (const r of others) io.err(`  ${r.name} (${r.managedBy})`);
-    io.err("Remove them first, or re-run `deck uninstall --force`.");
+    io.err('Remove them first, or re-run `deck uninstall --force`.');
     return 1;
   }
 
@@ -169,7 +198,12 @@ export async function uninstall(drivers: Drivers, io: Io, opts: { force: boolean
     // pre-rename aliases alongside (or instead of) the current ones.
     // removeAlias() is idempotent teardown (edge/portless.ts), so attempting
     // one that was never written is a safe no-op.
-    for (const alias of [PLATFORM_NAME, `${PLATFORM_NAME}.mattstack`, LEGACY_PLATFORM_NAME, `${LEGACY_PLATFORM_NAME}.mattstack`]) {
+    for (const alias of [
+      PLATFORM_NAME,
+      `${PLATFORM_NAME}.mattstack`,
+      LEGACY_PLATFORM_NAME,
+      `${LEGACY_PLATFORM_NAME}.mattstack`,
+    ]) {
       try {
         await drivers.edge.removeAlias(alias);
       } catch {
@@ -181,26 +215,43 @@ export async function uninstall(drivers: Drivers, io: Io, opts: { force: boolean
 
   if (drivers.tunnel) {
     try {
-      const r = await unbindDomain({ tunnel: drivers.tunnel, manager: drivers.manager, dns: drivers.dns ?? null }, { force: true });
-      if (r.status === 200 && !(r.body as { alreadyUnbound?: boolean }).alreadyUnbound) io.out("edge unbound: tunnel, DNS record and launchd service removed");
+      const r = await unbindDomain(
+        {
+          tunnel: drivers.tunnel,
+          manager: drivers.manager,
+          dns: drivers.dns ?? null,
+        },
+        { force: true }
+      );
+      if (
+        r.status === 200 &&
+        !(r.body as { alreadyUnbound?: boolean }).alreadyUnbound
+      )
+        io.out('edge unbound: tunnel, DNS record and launchd service removed');
     } catch {
       // best-effort teardown; uninstall must not get stuck on a driver failure
     }
   }
 
   try {
-    rmSync(join(stateDir(), "api.json"), { force: true });
+    rmSync(join(stateDir(), 'api.json'), { force: true });
   } catch {
     // nothing to remove
   }
 
-  io.out("Deck uninstalled: its launchd agent, route aliases, and api.json are gone.");
-  io.out("Left in place: portless itself, and any per-app launchd plists it still supervises.");
+  io.out(
+    'Deck uninstalled: its launchd agent, route aliases, and api.json are gone.'
+  );
+  io.out(
+    'Left in place: portless itself, and any per-app launchd plists it still supervises.'
+  );
 
   // Remote apps outlive deck and the tunnel by design: never torn down here,
   // only reported. Read-only over listRecords -- no Railway driver involved.
-  for (const r of listRecords().filter((r) => r.remote)) {
-    io.out(`kept remote service ${r.name} (${r.remote!.url}) (running on Railway)`);
+  for (const r of listRecords().filter(r => r.remote)) {
+    io.out(
+      `kept remote service ${r.name} (${r.remote!.url}) (running on Railway)`
+    );
   }
 
   return 0;

@@ -9,15 +9,18 @@
 // than pushing a third stack frame: the atlas's own nav-bar back label reads
 // the row name ("‹ atlas") from both the view and the setting screen, which
 // only holds if setting sits directly on root, not on top of the view.
-import { ListGroup } from "@mattstack/tui-kit";
-import { OptimisticToggleRow } from "../optimistic.tsx";
-import type { Row, StatusData } from "../logic.ts";
-import type { ScreenBuilder } from "./RootScreen.tsx";
+import { ListGroup } from '@mattstack/tui-kit';
+import type { Row, StatusData } from '../logic.ts';
+import { OptimisticToggleRow } from '../optimistic.tsx';
+import type { ScreenBuilder } from './RootScreen.tsx';
 
 /** The board's own row can never carry a real override (see useBoardState's
     startEdit/applyOverride guards) -- mirrors devPortValue's root hint so the
     pushed screen never disagrees with what the row just showed. */
-function effectiveOverride(row: Row, data: StatusData): { devPort: number; basePort: number } | null {
+function effectiveOverride(
+  row: Row,
+  data: StatusData
+): { devPort: number; basePort: number } | null {
   return row.override && data.canManage && !row.self ? row.override : null;
 }
 
@@ -25,7 +28,11 @@ function overrideFooter(row: Row, data: StatusData, devPort: number): string {
   return `the proxy routes ${row.name}.${row.displayTld ?? data.suffix} to ${devPort} while the override is set`;
 }
 
-function publicFollowsFooter(follows: boolean, basePort: number, devPort: number): string {
+function publicFollowsFooter(
+  follows: boolean,
+  basePort: number,
+  devPort: number
+): string {
   return follows
     ? `on: visitors also get ${devPort} while you develop on it`
     : `off: visitors keep getting ${basePort} while you develop on ${devPort}`;
@@ -42,7 +49,8 @@ function noOverrideFooter(row: Row): string {
 }
 
 export const buildDevPortSetting: ScreenBuilder = (row, nav, board) => {
-  const value = board.editing && board.editing.app === row.name ? board.editing.value : "";
+  const value =
+    board.editing && board.editing.app === row.name ? board.editing.value : '';
   const back = () => {
     nav.pop();
     nav.push(buildDevPortScreen);
@@ -57,24 +65,24 @@ export const buildDevPortSetting: ScreenBuilder = (row, nav, board) => {
   };
   return {
     id: `devport-set:${row.name}`,
-    title: "dev port",
-    navAction: { label: "save", onAction: save, disabled: value.trim() === "" },
+    title: 'dev port',
+    navAction: { label: 'save', onAction: save, disabled: value.trim() === '' },
     content: (
       <div className="drawer-groups">
         <ListGroup>
-          <ListGroup.Fact label="assigned port" value={row.port ?? ""} />
+          <ListGroup.Fact label="assigned port" value={row.port ?? ''} />
         </ListGroup>
         <ListGroup footer="the port your dev server is listening on right now">
           <ListGroup.Input
             value={value}
-            onChange={(ev) => board.setEditValue(ev.target.value)}
-            inputRef={(el) => el?.focus()}
+            onChange={ev => board.setEditValue(ev.target.value)}
+            inputRef={el => el?.focus()}
             inputMode="numeric"
             placeholder="dev port"
             aria-label="dev port override"
-            onKeyDown={(ev) => {
-              if (ev.key === "Enter" && value.trim() !== "") save();
-              else if (ev.key === "Escape") cancel();
+            onKeyDown={ev => {
+              if (ev.key === 'Enter' && value.trim() !== '') save();
+              else if (ev.key === 'Escape') cancel();
             }}
           />
         </ListGroup>
@@ -92,14 +100,20 @@ export const buildDevPortScreen: ScreenBuilder = (row, nav, board, data) => {
   if (override) {
     return {
       id: `devport:${row.name}`,
-      title: "dev port",
+      title: 'dev port',
       content: (
         <div className="drawer-groups">
           <ListGroup footer={overrideFooter(row, data, override.devPort)}>
             <ListGroup.Fact label="assigned port" value={override.basePort} />
             <ListGroup.Fact label="override" value={override.devPort} />
           </ListGroup>
-          <ListGroup footer={publicFollowsFooter(row.publicFollowsOverride, override.basePort, override.devPort)}>
+          <ListGroup
+            footer={publicFollowsFooter(
+              row.publicFollowsOverride,
+              override.basePort,
+              override.devPort
+            )}
+          >
             <OptimisticToggleRow
               label="public follows dev"
               checked={row.publicFollowsOverride}
@@ -112,7 +126,10 @@ export const buildDevPortScreen: ScreenBuilder = (row, nav, board, data) => {
             />
           </ListGroup>
           <ListGroup>
-            <ListGroup.Action label={`revert to ${override.basePort}`} onClick={() => board.clearPort(row)} />
+            <ListGroup.Action
+              label={`revert to ${override.basePort}`}
+              onClick={() => board.clearPort(row)}
+            />
           </ListGroup>
         </div>
       ),
@@ -121,11 +138,11 @@ export const buildDevPortScreen: ScreenBuilder = (row, nav, board, data) => {
 
   return {
     id: `devport:${row.name}`,
-    title: "dev port",
+    title: 'dev port',
     content: (
       <div className="drawer-groups">
         <ListGroup footer={noOverrideFooter(row)}>
-          <ListGroup.Fact label="assigned port" value={row.port ?? ""} />
+          <ListGroup.Fact label="assigned port" value={row.port ?? ''} />
         </ListGroup>
         {/* Self's `startEdit` no-ops (useBoardState guards the board's own
             row from ever overriding itself), so this row is never offered

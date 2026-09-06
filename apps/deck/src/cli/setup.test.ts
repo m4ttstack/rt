@@ -1,38 +1,39 @@
-import { test, expect, beforeEach } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "fs";
-import { join } from "path";
-import { tmpdir } from "os";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
+import { beforeEach, expect, test } from 'bun:test';
 
-const dir = mkdtempSync(join(tmpdir(), "local-setup-"));
+const dir = mkdtempSync(join(tmpdir(), 'local-setup-'));
 process.env.LOCAL_STATE_DIR = dir;
-process.env.LOCAL_REGISTRY_PATH = join(dir, "registry.json");
-process.env.LOCAL_APPS_ROUTES_PATH = join(dir, "routes.json");
-process.env.LOCAL_APPS_SETTINGS_PATH = join(dir, "settings.json");
-process.env.LOCAL_PLATFORM_SETTINGS_PATH = join(dir, "platform.json");
+process.env.LOCAL_REGISTRY_PATH = join(dir, 'registry.json');
+process.env.LOCAL_APPS_ROUTES_PATH = join(dir, 'routes.json');
+process.env.LOCAL_APPS_SETTINGS_PATH = join(dir, 'settings.json');
+process.env.LOCAL_PLATFORM_SETTINGS_PATH = join(dir, 'platform.json');
 // Nonexistent on purpose: readProxyTlds() falls back to ["localhost"] deterministically.
-process.env.LOCAL_PORTLESS_TLDS_PATH = join(dir, "proxy.tlds");
-process.env.LOCAL_AGENTS_DIR = join(dir, "agents"); // isolate from this machine's real LaunchAgents
+process.env.LOCAL_PORTLESS_TLDS_PATH = join(dir, 'proxy.tlds');
+process.env.LOCAL_AGENTS_DIR = join(dir, 'agents'); // isolate from this machine's real LaunchAgents
 // deck.platform reads through rt-client, which resolves HOME at call time (not overridable
 // via a LOCAL_*_PATH var) -- must be faked here too, or the import below touches the real
 // ~/.mattstack; beforeEach repoints it to a fresh dir per test below.
 process.env.HOME = dir;
-writeFileSync(process.env.LOCAL_APPS_ROUTES_PATH, "[]");
+writeFileSync(process.env.LOCAL_APPS_ROUTES_PATH, '[]');
 
-const { checkPrereqs, setup, uninstall } = await import("./setup.ts");
-const { bootstrapSelf } = await import("../registry/bootstrap.ts");
-const { registerApp } = await import("../api/register.ts");
-const { FakeServiceManager } = await import("../services/fake.ts");
-const { FakeEdgeProxy } = await import("../edge/portless.ts");
-const { getRecord, putRecord, reloadRegistry } = await import("../registry/records.ts");
-const { getPlatformSettings } = await import("../api/platform-settings.ts");
-const { logsDir } = await import("../api/state.ts");
-const { PLATFORM_LABEL } = await import("../services/manager.ts");
+const { checkPrereqs, setup, uninstall } = await import('./setup.ts');
+const { bootstrapSelf } = await import('../registry/bootstrap.ts');
+const { registerApp } = await import('../api/register.ts');
+const { FakeServiceManager } = await import('../services/fake.ts');
+const { FakeEdgeProxy } = await import('../edge/portless.ts');
+const { getRecord, putRecord, reloadRegistry } =
+  await import('../registry/records.ts');
+const { getPlatformSettings } = await import('../api/platform-settings.ts');
+const { logsDir } = await import('../api/state.ts');
+const { PLATFORM_LABEL } = await import('../services/manager.ts');
 
 beforeEach(() => {
   rmSync(process.env.LOCAL_REGISTRY_PATH!, { force: true });
   // A fresh HOME per test keeps this file's own store writes (via setup())
   // from leaking test-to-test, same as server.test.ts.
-  process.env.HOME = mkdtempSync(join(tmpdir(), "local-setup-home-"));
+  process.env.HOME = mkdtempSync(join(tmpdir(), 'local-setup-home-'));
   reloadRegistry();
   delete process.env.LOCAL_SETUP_HEALTH_BUDGET_MS;
   delete process.env.LOCAL_SETUP_HEALTH_INTERVAL_MS;
@@ -40,48 +41,64 @@ beforeEach(() => {
 
 function io() {
   const lines: string[] = [];
-  return { out: (s: string) => lines.push(s), err: (s: string) => lines.push(s), lines };
+  return {
+    out: (s: string) => lines.push(s),
+    err: (s: string) => lines.push(s),
+    lines,
+  };
 }
 
-test("checkPrereqs names the missing pieces with their install commands", async () => {
-  const r = await checkPrereqs(async (argv) => ({ code: 127, stdout: "" }));
+test('checkPrereqs names the missing pieces with their install commands', async () => {
+  const r = await checkPrereqs(async argv => ({ code: 127, stdout: '' }));
   expect(r.ok).toBe(false);
-  expect(r.problems.join(" ")).toContain("npm install -g portless");
+  expect(r.problems.join(' ')).toContain('npm install -g portless');
 });
 
-test("checkPrereqs enforces the 0.15.5 floor", async () => {
-  const r = await checkPrereqs(async (argv) =>
-    argv[0] === "portless" ? { code: 0, stdout: "0.14.0" } : { code: 0, stdout: "v24.1.0" });
+test('checkPrereqs enforces the 0.15.5 floor', async () => {
+  const r = await checkPrereqs(async argv =>
+    argv[0] === 'portless'
+      ? { code: 0, stdout: '0.14.0' }
+      : { code: 0, stdout: 'v24.1.0' }
+  );
   expect(r.ok).toBe(false);
-  expect(r.problems.join(" ")).toContain("0.15.5");
+  expect(r.problems.join(' ')).toContain('0.15.5');
 });
 
-test("checkPrereqs passes when node 24+ and portless 0.15.5+ are both present", async () => {
-  const r = await checkPrereqs(async (argv) =>
-    argv[0] === "portless" ? { code: 0, stdout: "0.15.5" } : { code: 0, stdout: "v24.1.0" });
+test('checkPrereqs passes when node 24+ and portless 0.15.5+ are both present', async () => {
+  const r = await checkPrereqs(async argv =>
+    argv[0] === 'portless'
+      ? { code: 0, stdout: '0.15.5' }
+      : { code: 0, stdout: 'v24.1.0' }
+  );
   expect(r.ok).toBe(true);
   expect(r.problems).toEqual([]);
 });
 
-test("uninstall refuses while other records exist, force overrides", async () => {
+test('uninstall refuses while other records exist, force overrides', async () => {
   const manager = new FakeServiceManager();
   const edge = new FakeEdgeProxy();
-  await registerApp({ name: "keeper", staticPort: 4000 }, { manager, edge });
+  await registerApp({ name: 'keeper', staticPort: 4000 }, { manager, edge });
   const o = io();
   expect(await uninstall({ manager, edge }, o, { force: false })).toBe(1);
-  expect(o.lines.join("\n")).toContain("keeper");
+  expect(o.lines.join('\n')).toContain('keeper');
   expect(await uninstall({ manager, edge }, io(), { force: true })).toBe(0);
 });
 
-test("uninstall --force spares remote services: prints name + url, never touches Railway", async () => {
+test('uninstall --force spares remote services: prints name + url, never touches Railway', async () => {
   const manager = new FakeServiceManager();
   const edge = new FakeEdgeProxy();
   putRecord({
-    name: "storefront", managedBy: "user", port: 4001, kind: "service",
+    name: 'storefront',
+    managedBy: 'user',
+    port: 4001,
+    kind: 'service',
     createdAt: new Date().toISOString(),
     remote: {
-      target: "railway", serviceId: "svc_123", customDomain: "storefront.example.com",
-      status: "live", url: "https://storefront.example.com",
+      target: 'railway',
+      serviceId: 'svc_123',
+      customDomain: 'storefront.example.com',
+      status: 'live',
+      url: 'https://storefront.example.com',
     },
   });
 
@@ -89,69 +106,82 @@ test("uninstall --force spares remote services: prints name + url, never touches
   // No `railway` driver in `drivers` -- if uninstall ever touched drivers.railway
   // this would throw on undefined, so a clean pass proves the path is read-only.
   expect(await uninstall({ manager, edge }, o, { force: true })).toBe(0);
-  const out = o.lines.join("\n");
-  expect(out).toContain("storefront");
-  expect(out).toContain("https://storefront.example.com");
+  const out = o.lines.join('\n');
+  expect(out).toContain('storefront');
+  expect(out).toContain('https://storefront.example.com');
   // Remote apps outlive deck: uninstall must never delete their record.
-  expect(getRecord("storefront")).toBeDefined();
+  expect(getRecord('storefront')).toBeDefined();
 });
 
 test("uninstall removes Deck's own agent + aliases when no other apps are registered", async () => {
   const manager = new FakeServiceManager();
   const edge = new FakeEdgeProxy();
-  await bootstrapSelf({ manager, edge }, {
-    execPath: "/usr/local/bin/deck", entry: null, tlds: ["localhost"],
-  });
+  await bootstrapSelf(
+    { manager, edge },
+    {
+      execPath: '/usr/local/bin/deck',
+      entry: null,
+      tlds: ['localhost'],
+    }
+  );
   expect(manager.installed.has(PLATFORM_LABEL)).toBe(true);
-  expect(edge.aliases.has("deck")).toBe(true);
+  expect(edge.aliases.has('deck')).toBe(true);
 
   const o = io();
   expect(await uninstall({ manager, edge }, o, { force: false })).toBe(0);
   expect(manager.installed.has(PLATFORM_LABEL)).toBe(false);
-  expect(edge.aliases.has("deck")).toBe(false);
-  expect(getRecord("deck")).toBeUndefined();
+  expect(edge.aliases.has('deck')).toBe(false);
+  expect(getRecord('deck')).toBeUndefined();
 });
 
 const passExec = async (argv: string[]) =>
-  argv[0] === "portless" ? { code: 0, stdout: "0.15.5" } : { code: 0, stdout: "v24.0.0" };
+  argv[0] === 'portless'
+    ? { code: 0, stdout: '0.15.5' }
+    : { code: 0, stdout: 'v24.0.0' };
 
-test("setup: prereqs pass, bootstraps, writes tlds into platform settings, prints URLs", async () => {
+test('setup: prereqs pass, bootstraps, writes tlds into platform settings, prints URLs', async () => {
   const manager = new FakeServiceManager();
   const edge = new FakeEdgeProxy();
-  const server = Bun.serve({ port: 0, fetch: () => new Response("ok") });
+  const server = Bun.serve({ port: 0, fetch: () => new Response('ok') });
   // Pre-seed the self record at the listening server's port, so bootstrapSelf's
   // `existing?.port` reuses it instead of allocating a port nothing is on.
   putRecord({
-    name: "deck", managedBy: "deck", port: server.port!, kind: "service",
+    name: 'deck',
+    managedBy: 'deck',
+    port: server.port!,
+    kind: 'service',
     createdAt: new Date().toISOString(),
   });
-  process.env.LOCAL_SETUP_HEALTH_BUDGET_MS = "2000";
-  process.env.LOCAL_SETUP_HEALTH_INTERVAL_MS = "50";
+  process.env.LOCAL_SETUP_HEALTH_BUDGET_MS = '2000';
+  process.env.LOCAL_SETUP_HEALTH_INTERVAL_MS = '50';
 
   const o = io();
   const code = await setup({ manager, edge }, o, passExec);
   server.stop(true);
 
   expect(code).toBe(0);
-  expect(o.lines.some((l) => l.includes("https://deck."))).toBe(true);
-  expect(getPlatformSettings().tlds).toEqual(["localhost"]);
+  expect(o.lines.some(l => l.includes('https://deck.'))).toBe(true);
+  expect(getPlatformSettings().tlds).toEqual(['localhost']);
 });
 
-test("setup: healthz timeout exits 1 and shows a tail of the error log", async () => {
+test('setup: healthz timeout exits 1 and shows a tail of the error log', async () => {
   const manager = new FakeServiceManager();
   const edge = new FakeEdgeProxy();
   putRecord({
-    name: "deck", managedBy: "deck", port: 39997, kind: "service",
+    name: 'deck',
+    managedBy: 'deck',
+    port: 39997,
+    kind: 'service',
     createdAt: new Date().toISOString(),
   });
   mkdirSync(logsDir(), { recursive: true });
-  writeFileSync(join(logsDir(), "deck.err.log"), "boom: something broke\n");
-  process.env.LOCAL_SETUP_HEALTH_BUDGET_MS = "200";
-  process.env.LOCAL_SETUP_HEALTH_INTERVAL_MS = "50";
+  writeFileSync(join(logsDir(), 'deck.err.log'), 'boom: something broke\n');
+  process.env.LOCAL_SETUP_HEALTH_BUDGET_MS = '200';
+  process.env.LOCAL_SETUP_HEALTH_INTERVAL_MS = '50';
 
   const o = io();
   const code = await setup({ manager, edge }, o, passExec);
 
   expect(code).toBe(1);
-  expect(o.lines.join("\n")).toContain("boom: something broke");
+  expect(o.lines.join('\n')).toContain('boom: something broke');
 });

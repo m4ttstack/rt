@@ -3,13 +3,25 @@
 // the kit's own job (SideDrawer wires escape internally); this module adds
 // row retargeting (↑/↓), the row-vanished guard, and focus restore to the
 // currently-open row rather than whichever row was clicked to open it.
-import { useEffect, useRef, useState, type RefObject } from "react";
-import { Drawer, type DrawerScreen } from "@mattstack/tui-kit";
-import type { Row, StatusData } from "../logic.ts";
-import type { BoardState } from "../useBoardState.ts";
-import { buildAppRoot, buildServiceRoot, buildTunnelRoot, type Nav, type ScreenBuilder } from "./RootScreen.tsx";
+import { useEffect, useRef, useState, type RefObject } from 'react';
 
-function rootScreenFor(row: Row, nav: Nav, board: BoardState, data: StatusData): DrawerScreen {
+import { Drawer, type DrawerScreen } from '@mattstack/tui-kit';
+import type { Row, StatusData } from '../logic.ts';
+import type { BoardState } from '../useBoardState.ts';
+import {
+  buildAppRoot,
+  buildServiceRoot,
+  buildTunnelRoot,
+  type Nav,
+  type ScreenBuilder,
+} from './RootScreen.tsx';
+
+function rootScreenFor(
+  row: Row,
+  nav: Nav,
+  board: BoardState,
+  data: StatusData
+): DrawerScreen {
   const restarting = board.isRestarting(row);
   if (row.isTunnel) return buildTunnelRoot(row, nav, board, data, restarting);
   if (row.port == null) return buildServiceRoot(row, nav, board, restarting);
@@ -46,7 +58,9 @@ export function AppDrawer({
   // same screen instead of staying frozen at whatever it looked like when
   // it was pushed. `onLeave` is optional per-frame cleanup, run once when
   // the frame is removed (see the `Nav` doc comment).
-  const [pushed, setPushed] = useState<Array<{ build: ScreenBuilder; onLeave?: () => void }>>([]);
+  const [pushed, setPushed] = useState<
+    Array<{ build: ScreenBuilder; onLeave?: () => void }>
+  >([]);
   const returnFocusRef = useRef<HTMLElement | null>(null);
 
   // onLeave callbacks a row switch discarded, drained by the effect below.
@@ -60,7 +74,7 @@ export function AppDrawer({
     if (pendingLeaveRef.current.length === 0) return;
     const fns = pendingLeaveRef.current;
     pendingLeaveRef.current = [];
-    fns.forEach((fn) => fn());
+    fns.forEach(fn => fn());
   });
 
   // A row switch (arrow keys, or clicking a different row while one is
@@ -80,7 +94,10 @@ export function AppDrawer({
     setPushed([]);
   }
 
-  const row = openRowName != null ? (rows.find((r) => r.name === openRowName) ?? null) : null;
+  const row =
+    openRowName != null
+      ? (rows.find(r => r.name === openRowName) ?? null)
+      : null;
 
   // Belt-and-braces, not the primary guard: the dev-port setting frame's own
   // onLeave already calls cancelEdit() on every exit path (pop, close, row
@@ -99,9 +116,9 @@ export function AppDrawer({
   }, [openRowName, board.closeAccess]);
 
   const nav: Nav = {
-    push: (build, onLeave) => setPushed((prev) => [...prev, { build, onLeave }]),
+    push: (build, onLeave) => setPushed(prev => [...prev, { build, onLeave }]),
     pop: () =>
-      setPushed((prev) => {
+      setPushed(prev => {
         if (prev.length === 0) return prev;
         prev[prev.length - 1]!.onLeave?.();
         return prev.slice(0, -1);
@@ -112,7 +129,7 @@ export function AppDrawer({
     // would find these same frames still in `pushed` and queue their
     // onLeave a second time.
     close: () => {
-      pushed.forEach((frame) => frame.onLeave?.());
+      pushed.forEach(frame => frame.onLeave?.());
       setPushed([]);
       onOpenRowNameChange(null);
     },
@@ -122,7 +139,8 @@ export function AppDrawer({
   // render registers its chevron via ref callback during commit, so the map
   // is only complete once this effect runs.
   useEffect(() => {
-    returnFocusRef.current = openRowName != null ? (chevronRefs.get(openRowName) ?? null) : null;
+    returnFocusRef.current =
+      openRowName != null ? (chevronRefs.get(openRowName) ?? null) : null;
   }, [openRowName, chevronRefs]);
 
   // The vanished-row guard: a poll can drop the open row (removed app,
@@ -131,7 +149,7 @@ export function AppDrawer({
   // explicitly and moves focus itself rather than trusting that cleanup.
   useEffect(() => {
     if (openRowName == null) return;
-    if (rows.some((r) => r.name === openRowName)) return;
+    if (rows.some(r => r.name === openRowName)) return;
     onOpenRowNameChange(null);
     // Deferred a frame so it runs after Drawer's own close-cleanup attempt
     // (which touches a stale ref and does nothing) rather than racing it.
@@ -141,26 +159,36 @@ export function AppDrawer({
   useEffect(() => {
     if (row == null) return;
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
       const target = e.target as HTMLElement | null;
       if (target && /^(input|textarea)$/i.test(target.tagName)) return;
       // A confirm dialog or the add-app modal can sit open above the drawer;
       // retargeting the row underneath it would swap the drawer's contents
       // while the dialog still reads as pointing at the old row.
       if (board.pendingRemove != null || board.addModal != null) return;
-      const idx = rows.findIndex((r) => r.name === openRowName);
+      const idx = rows.findIndex(r => r.name === openRowName);
       if (idx === -1) return;
-      const nextIdx = e.key === "ArrowDown" ? idx + 1 : idx - 1;
+      const nextIdx = e.key === 'ArrowDown' ? idx + 1 : idx - 1;
       if (nextIdx < 0 || nextIdx >= rows.length) return;
       e.preventDefault();
       onOpenRowNameChange(rows[nextIdx]!.name);
     }
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [row, rows, openRowName, onOpenRowNameChange, board.pendingRemove, board.addModal]);
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [
+    row,
+    rows,
+    openRowName,
+    onOpenRowNameChange,
+    board.pendingRemove,
+    board.addModal,
+  ]);
 
   const stack: DrawerScreen[] = row
-    ? [rootScreenFor(row, nav, board, data), ...pushed.map((frame) => frame.build(row, nav, board, data))]
+    ? [
+        rootScreenFor(row, nav, board, data),
+        ...pushed.map(frame => frame.build(row, nav, board, data)),
+      ]
     : [];
 
   return (
@@ -169,7 +197,7 @@ export function AppDrawer({
       stack={stack}
       onBack={nav.pop}
       onClose={nav.close}
-      ariaLabel={row ? `${row.name} details` : "row details"}
+      ariaLabel={row ? `${row.name} details` : 'row details'}
       returnFocusRef={returnFocusRef}
     />
   );

@@ -18,14 +18,15 @@
  * rather than trusting what an earlier render stored.
  */
 
-import { homedir } from "os";
-import { join } from "path";
-import { existsSync, statSync, accessSync, constants } from "fs";
-import { bundleHelpersDir } from "./bundle-layout.ts";
+import { accessSync, constants, existsSync, statSync } from 'fs';
+import { homedir } from 'os';
+import { join } from 'path';
+
+import { bundleHelpersDir } from './bundle-layout.ts';
 
 export type Exists = (path: string) => boolean;
 
-const defaultExists: Exists = (p) => existsSync(p);
+const defaultExists: Exists = p => existsSync(p);
 
 /**
  * Directories a supervised service may rely on, in precedence order.
@@ -39,21 +40,24 @@ const defaultExists: Exists = (p) => existsSync(p);
  * stable it looks — deck must not encode which manager a machine happens to
  * run. Those belong in `extraDirs`, set deliberately per machine.
  */
-export function stablePathDirs(home: string = homedir(), bundleHelpers: string | null = bundleHelpersDir()): string[] {
+export function stablePathDirs(
+  home: string = homedir(),
+  bundleHelpers: string | null = bundleHelpersDir()
+): string[] {
   return [
     ...(bundleHelpers ? [bundleHelpers] : []),
-    join(home, ".mattstack", "deck", "bin"),
-    join(home, ".local", "bin"),
-    join(home, ".bun", "bin"),
-    join(home, ".cargo", "bin"),
-    "/opt/homebrew/bin",
-    "/opt/homebrew/sbin",
-    "/usr/local/bin",
-    "/usr/local/sbin",
-    "/usr/bin",
-    "/bin",
-    "/usr/sbin",
-    "/sbin",
+    join(home, '.mattstack', 'deck', 'bin'),
+    join(home, '.local', 'bin'),
+    join(home, '.bun', 'bin'),
+    join(home, '.cargo', 'bin'),
+    '/opt/homebrew/bin',
+    '/opt/homebrew/sbin',
+    '/usr/local/bin',
+    '/usr/local/sbin',
+    '/usr/bin',
+    '/bin',
+    '/usr/sbin',
+    '/sbin',
   ];
 }
 
@@ -77,14 +81,14 @@ export function composeServicePath(opts: ComposePathOpts = {}): string {
   const out: string[] = [];
   const stable = stablePathDirs(
     opts.home ?? homedir(),
-    opts.bundleHelpers !== undefined ? opts.bundleHelpers : bundleHelpersDir(),
+    opts.bundleHelpers !== undefined ? opts.bundleHelpers : bundleHelpersDir()
   );
   for (const dir of [...(opts.extraDirs ?? []), ...stable]) {
     if (!dir || seen.has(dir) || !exists(dir)) continue;
     seen.add(dir);
     out.push(dir);
   }
-  return out.join(":");
+  return out.join(':');
 }
 
 function isExecutableFile(path: string): boolean {
@@ -112,10 +116,10 @@ function isExecutableFile(path: string): boolean {
 export function resolveProgram(
   argv0: string,
   path: string,
-  isExecutable: (p: string) => boolean = isExecutableFile,
+  isExecutable: (p: string) => boolean = isExecutableFile
 ): string | null {
-  if (argv0.includes("/")) return argv0;
-  for (const dir of path.split(":")) {
+  if (argv0.includes('/')) return argv0;
+  for (const dir of path.split(':')) {
     if (!dir) continue;
     const candidate = join(dir, argv0);
     if (isExecutable(candidate)) return candidate;

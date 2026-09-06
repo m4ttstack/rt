@@ -5,22 +5,31 @@
 // checkbox (see onPasswordSwitch/onOauthSwitch there) is unnecessary here:
 // leaving `checked`-backing state untouched on a failed request already
 // re-renders the control back to the server's last-known truth.
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useToasts } from "@mattstack/tui-kit";
-import { apiDelete, apiPatch, apiPost, apiPut, getStatus, pushRemote as postPushRemote, setRemote as postSetRemote } from "./api.ts";
+import { useCallback, useEffect, useRef, useState } from 'react';
+
+import { useToasts } from '@mattstack/tui-kit';
 import {
+  apiDelete,
+  apiPatch,
+  apiPost,
+  apiPut,
+  getStatus,
+  pushRemote as postPushRemote,
+  setRemote as postSetRemote,
+} from './api.ts';
+import {
+  addPayload,
+  autoBanner,
   BOARD_WAIT_MS,
   COMMAND_POLL_MS,
   COMMAND_TIMEOUT_MS,
-  PROXY_WAIT_MS,
-  REFRESH_MS,
-  addPayload,
-  autoBanner,
   commandKey,
   commandStuckToast,
   commandToast,
   editPatch,
+  PROXY_WAIT_MS,
   reconcileRestarting,
+  REFRESH_MS,
   sections as sectionsOf,
   subline as sublineOf,
   tunnels as tunnelsOf,
@@ -30,7 +39,7 @@ import {
   type RestartingMap,
   type Row,
   type StatusData,
-} from "./logic.ts";
+} from './logic.ts';
 
 export interface EditingState {
   app: string;
@@ -62,7 +71,7 @@ export interface AccessModalState {
   pwError: string | null;
   pwBusy: boolean;
   oauthOn: boolean;
-  mode: "emails" | "domains";
+  mode: 'emails' | 'domains';
   entries: string[];
   entryDraft: string;
   oauthError: string | null;
@@ -76,9 +85,9 @@ async function waitForProxy(timeoutMs: number): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   let sawDrop = false;
   while (Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, 1000));
+    await new Promise(r => setTimeout(r, 1000));
     try {
-      const res = await fetch("/healthz", { cache: "no-store" });
+      const res = await fetch('/healthz', { cache: 'no-store' });
       if (res.ok && sawDrop) return true;
       if (!res.ok) sawDrop = true;
     } catch {
@@ -89,7 +98,7 @@ async function waitForProxy(timeoutMs: number): Promise<boolean> {
   return false;
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 /** Poll until the board's API answers again, for the case where a command
     restarted the board itself. Unlike waitForProxy this needs no drop to have
@@ -99,7 +108,7 @@ async function waitForBoard(timeoutMs: number): Promise<boolean> {
   while (Date.now() < deadline) {
     await sleep(1000);
     try {
-      if ((await fetch("/healthz", { cache: "no-store" })).ok) return true;
+      if ((await fetch('/healthz', { cache: 'no-store' })).ok) return true;
     } catch {
       /* still down */
     }
@@ -107,7 +116,7 @@ async function waitForBoard(timeoutMs: number): Promise<boolean> {
   return false;
 }
 
-type RunOutcome = { exitCode: number } | "restarted" | "timeout";
+type RunOutcome = { exitCode: number } | 'restarted' | 'timeout';
 
 /** Follow one command run to its end. `onDrop` fires once, the first time the
     API stops answering, so the button can say so while the poll continues. */
@@ -115,7 +124,7 @@ async function pollCommandRun(
   app: string,
   cmd: string,
   runId: string,
-  onDrop: () => void,
+  onDrop: () => void
 ): Promise<RunOutcome> {
   const deadline = Date.now() + COMMAND_TIMEOUT_MS;
   let dropped = false;
@@ -123,7 +132,9 @@ async function pollCommandRun(
     await sleep(COMMAND_POLL_MS);
     let res: Response;
     try {
-      res = await fetch(`/api/v1/apps/${app}/commands/${cmd}/${runId}`, { cache: "no-store" });
+      res = await fetch(`/api/v1/apps/${app}/commands/${cmd}/${runId}`, {
+        cache: 'no-store',
+      });
     } catch {
       if (!dropped) {
         dropped = true;
@@ -133,11 +144,14 @@ async function pollCommandRun(
     }
     // Runs live in the server's memory, so a runId it just handed out can only
     // go unknown by the process having restarted under us.
-    if (res.status === 404) return "restarted";
-    const st = (await res.json().catch(() => ({}))) as { status?: string; exitCode?: number };
-    if (st.status === "exited") return { exitCode: st.exitCode ?? 0 };
+    if (res.status === 404) return 'restarted';
+    const st = (await res.json().catch(() => ({}))) as {
+      status?: string;
+      exitCode?: number;
+    };
+    if (st.status === 'exited') return { exitCode: st.exitCode ?? 0 };
   }
-  return "timeout";
+  return 'timeout';
 }
 
 export function useBoardState() {
@@ -167,16 +181,19 @@ export function useBoardState() {
   // until this deadline. Not exposed: only refresh()'s autoBanner check reads it.
   const proxyHoldUntil = useRef(0);
 
-  const notice = useCallback((kind: Notice["kind"], message: string, holdMs = 0, command?: string) => {
-    setProxyNotice({ kind, message, command });
-    if (holdMs) proxyHoldUntil.current = Date.now() + holdMs;
-  }, []);
+  const notice = useCallback(
+    (kind: Notice['kind'], message: string, holdMs = 0, command?: string) => {
+      setProxyNotice({ kind, message, command });
+      if (holdMs) proxyHoldUntil.current = Date.now() + holdMs;
+    },
+    []
+  );
 
   const refresh = useCallback(async () => {
     if (editingRef.current) return; // don't fight an in-flight port edit
     try {
       const next = await getStatus();
-      setRestarting((prev) => reconcileRestarting(prev, next, Date.now()));
+      setRestarting(prev => reconcileRestarting(prev, next, Date.now()));
       setData(next);
       // A stale proxy serves old ports on .localhost while every health probe
       // (which hits ports directly) still reads green, so say so loudly.
@@ -196,7 +213,7 @@ export function useBoardState() {
 
   const isRestarting = useCallback(
     (row: Row) => !!(row.service && restarting[row.service.label]),
-    [restarting],
+    [restarting]
   );
 
   // Restarting the board's own service kills this API mid-response: the fetch
@@ -206,33 +223,43 @@ export function useBoardState() {
     if (!row.service) return;
     const label = row.service.label;
     const pid = row.service.pid;
-    setRestarting((prev) => ({ ...prev, [label]: { pid, at: Date.now() } }));
+    setRestarting(prev => ({ ...prev, [label]: { pid, at: Date.now() } }));
     apiPost(`/api/v1/apps/${row.name}/restart`).catch(() => {});
   }, []);
 
   // The ref is authoritative and the state mirrors it for rendering: the
   // async run loop below has to test and set the in-flight guard across
   // awaits, where a captured state value is already stale.
-  const setCommandPhase = useCallback((key: string, phase: CommandPhase | null) => {
-    const next = { ...commandRunsRef.current };
-    if (phase === null) delete next[key];
-    else next[key] = phase;
-    commandRunsRef.current = next;
-    setCommandRuns(next);
-  }, []);
+  const setCommandPhase = useCallback(
+    (key: string, phase: CommandPhase | null) => {
+      const next = { ...commandRunsRef.current };
+      if (phase === null) delete next[key];
+      else next[key] = phase;
+      commandRunsRef.current = next;
+      setCommandRuns(next);
+    },
+    []
+  );
 
   const onRunCommand = useCallback(
     async (row: Row, cmd: string) => {
       const key = commandKey(row.name, cmd);
       if (commandRunsRef.current[key]) return;
-      setCommandPhase(key, "running");
+      setCommandPhase(key, 'running');
 
       let runId: string | null = null;
       try {
         const res = await apiPost(`/api/v1/apps/${row.name}/commands/${cmd}`);
-        const body = (await res.json().catch(() => ({}))) as { runId?: string; error?: string };
+        const body = (await res.json().catch(() => ({}))) as {
+          runId?: string;
+          error?: string;
+        };
         if (!res.ok) {
-          addToast(body.error === "busy" ? `${cmd} is already running.` : `${cmd} could not start (${res.status}).`);
+          addToast(
+            body.error === 'busy'
+              ? `${cmd} is already running.`
+              : `${cmd} could not start (${res.status}).`
+          );
           setCommandPhase(key, null);
           return;
         }
@@ -242,11 +269,13 @@ export function useBoardState() {
       }
 
       const outcome = runId
-        ? await pollCommandRun(row.name, cmd, runId, () => setCommandPhase(key, "restarting"))
-        : "restarted";
+        ? await pollCommandRun(row.name, cmd, runId, () =>
+            setCommandPhase(key, 'restarting')
+          )
+        : 'restarted';
 
-      if (outcome === "restarted") {
-        setCommandPhase(key, "restarting");
+      if (outcome === 'restarted') {
+        setCommandPhase(key, 'restarting');
         // Everything on screen came from the binary that just went away, the
         // board bundle included, so refreshing state would leave the old page
         // running against the new server.
@@ -260,10 +289,14 @@ export function useBoardState() {
       }
 
       setCommandPhase(key, null);
-      addToast(outcome === "timeout" ? commandStuckToast(row.name, cmd) : commandToast(row.name, cmd, outcome.exitCode));
+      addToast(
+        outcome === 'timeout'
+          ? commandStuckToast(row.name, cmd)
+          : commandToast(row.name, cmd, outcome.exitCode)
+      );
       await refresh();
     },
-    [addToast, refresh, setCommandPhase],
+    [addToast, refresh, setCommandPhase]
   );
 
   // ---- dev-mode source linking ----
@@ -275,18 +308,28 @@ export function useBoardState() {
     async (row: Row, workingDirectory: string): Promise<string | null> => {
       let res: Response | null = null;
       try {
-        res = await apiPatch(`/api/v1/apps/${row.name}`, { dev: { workingDirectory } });
+        res = await apiPatch(`/api/v1/apps/${row.name}`, {
+          dev: { workingDirectory },
+        });
       } catch {
         res = null;
       }
       if (!res || !res.ok) {
-        const body = res ? await res.json().catch(() => ({}) as { message?: string; error?: string }) : {};
-        return (body as { message?: string }).message || (body as { error?: string }).error || "linking failed, the board did not answer.";
+        const body = res
+          ? await res
+              .json()
+              .catch(() => ({}) as { message?: string; error?: string })
+          : {};
+        return (
+          (body as { message?: string }).message ||
+          (body as { error?: string }).error ||
+          'linking failed, the board did not answer.'
+        );
       }
       await refresh();
       return null;
     },
-    [refresh],
+    [refresh]
   );
 
   const unlinkSource = useCallback(
@@ -298,29 +341,31 @@ export function useBoardState() {
       }
       await refresh();
     },
-    [refresh],
+    [refresh]
   );
 
   const onPublish = useCallback(
     async (row: Row) => {
       try {
-        await apiPut(`/api/v1/apps/${row.name}/publish`, { published: !row.published });
+        await apiPut(`/api/v1/apps/${row.name}/publish`, {
+          published: !row.published,
+        });
       } catch {
         /* transient -- the next refresh shows the true state */
       }
       await refresh();
     },
-    [refresh],
+    [refresh]
   );
 
   const postPort = useCallback(
     (app: string, port: string) => {
-      const devPort = port === "" ? null : Number(port); // null clears the override
+      const devPort = port === '' ? null : Number(port); // null clears the override
       apiPut(`/api/v1/apps/${app}/override`, { devPort })
         .catch(() => {})
         .then(() => refresh());
     },
-    [refresh],
+    [refresh]
   );
 
   // The board's own row is never port-editable: overriding it would repoint
@@ -328,36 +373,42 @@ export function useBoardState() {
   const startEdit = useCallback(
     (row: Row) => {
       if (!data || !data.canManage || row.self || row.port == null) return;
-      setEditing({ app: row.name, value: "" });
+      setEditing({ app: row.name, value: '' });
     },
-    [data],
+    [data]
   );
 
   const setEditValue = useCallback((v: string) => {
-    setEditing((prev) => (prev ? { ...prev, value: v } : prev));
+    setEditing(prev => (prev ? { ...prev, value: v } : prev));
   }, []);
 
   const submitPort = useCallback(() => {
-    setEditing((prev) => {
+    setEditing(prev => {
       if (!prev) return prev;
       const v = prev.value.trim();
-      if (v !== "") postPort(prev.app, v); // enter on empty input = cancel
+      if (v !== '') postPort(prev.app, v); // enter on empty input = cancel
       return null;
     });
   }, [postPort]);
 
   const cancelEdit = useCallback(() => setEditing(null), []);
 
-  const clearPort = useCallback((row: Row) => postPort(row.name, ""), [postPort]);
+  const clearPort = useCallback(
+    (row: Row) => postPort(row.name, ''),
+    [postPort]
+  );
 
   const onPublicFollows = useCallback(
     async (row: Row) => {
       const follows = !row.publicFollowsOverride;
       try {
-        const res = await apiPut(`/api/v1/apps/${row.name}/public-follows-override`, { follows });
+        const res = await apiPut(
+          `/api/v1/apps/${row.name}/public-follows-override`,
+          { follows }
+        );
         if (!res.ok) {
           const body = await res.json().catch(() => ({}) as { error?: string });
-          notice("bad", body.error || "the board rejected that change.", 10000);
+          notice('bad', body.error || 'the board rejected that change.', 10000);
         }
       } catch {
         /* transient -- the next refresh shows the true state */
@@ -366,7 +417,7 @@ export function useBoardState() {
       // on is what triggers the probe that reports whether it actually works.
       await refresh();
     },
-    [refresh, notice],
+    [refresh, notice]
   );
 
   // ---- remote (Railway push) ----
@@ -375,15 +426,21 @@ export function useBoardState() {
       try {
         const res = await postSetRemote(row.name, enabled);
         if (!res.ok) {
-          const body = await res.json().catch(() => ({}) as { error?: string; message?: string });
-          notice("bad", body.message || body.error || "the board rejected that change.", 10000);
+          const body = await res
+            .json()
+            .catch(() => ({}) as { error?: string; message?: string });
+          notice(
+            'bad',
+            body.message || body.error || 'the board rejected that change.',
+            10000
+          );
         }
       } catch {
         /* transient -- the next refresh shows the true state */
       }
       await refresh();
     },
-    [refresh, notice],
+    [refresh, notice]
   );
 
   // Fire-and-forget, same as onRunCommand: the deploy that follows can
@@ -395,20 +452,31 @@ export function useBoardState() {
 
   // ---- add ----
   const openAdd = useCallback(() => {
-    setAddModal({ name: "", external: false, command: "", workingDirectory: "", staticPort: "", error: null });
+    setAddModal({
+      name: '',
+      external: false,
+      command: '',
+      workingDirectory: '',
+      staticPort: '',
+      error: null,
+    });
   }, []);
   const closeAdd = useCallback(() => setAddModal(null), []);
   const updateAddModal = useCallback((patch: Partial<AddModalState>) => {
-    setAddModal((prev) => (prev ? { ...prev, ...patch } : prev));
+    setAddModal(prev => (prev ? { ...prev, ...patch } : prev));
   }, []);
   const submitAdd = useCallback(async () => {
     if (!addModal) return;
     const payload = addPayload(addModal);
     try {
-      const res = await apiPost("/api/v1/apps", payload);
-      const body = await res.json().catch(() => ({}) as { message?: string; error?: string });
+      const res = await apiPost('/api/v1/apps', payload);
+      const body = await res
+        .json()
+        .catch(() => ({}) as { message?: string; error?: string });
       if (!res.ok) {
-        updateAddModal({ error: body.message || body.error || `failed (${res.status})` });
+        updateAddModal({
+          error: body.message || body.error || `failed (${res.status})`,
+        });
         return;
       }
       setAddModal(null);
@@ -428,16 +496,19 @@ export function useBoardState() {
     setEditModal({
       original: row.name,
       name: row.name,
-      port: row.override ? String(row.override.basePort) : String(row.port ?? ""),
-      kind: row.record ? row.record.kind : "external",
-      command: row.record && row.record.command ? row.record.command.join(" ") : "",
-      workingDirectory: row.record ? row.record.workingDirectory || "" : "",
+      port: row.override
+        ? String(row.override.basePort)
+        : String(row.port ?? ''),
+      kind: row.record ? row.record.kind : 'external',
+      command:
+        row.record && row.record.command ? row.record.command.join(' ') : '',
+      workingDirectory: row.record ? row.record.workingDirectory || '' : '',
       error: null,
     });
   }, []);
   const closeEdit = useCallback(() => setEditModal(null), []);
   const updateEditModal = useCallback((patch: Partial<EditModalState>) => {
-    setEditModal((prev) => (prev ? { ...prev, ...patch } : prev));
+    setEditModal(prev => (prev ? { ...prev, ...patch } : prev));
   }, []);
   const submitEdit = useCallback(async () => {
     if (!editModal) return false;
@@ -448,9 +519,18 @@ export function useBoardState() {
     } catch {
       res = null;
     }
-    const body = res ? await res.json().catch(() => ({}) as { message?: string; error?: string }) : {};
+    const body = res
+      ? await res
+          .json()
+          .catch(() => ({}) as { message?: string; error?: string })
+      : {};
     if (!res || !res.ok) {
-      updateEditModal({ error: (body as { message?: string; error?: string }).message || (body as { error?: string }).error || "edit failed" });
+      updateEditModal({
+        error:
+          (body as { message?: string; error?: string }).message ||
+          (body as { error?: string }).error ||
+          'edit failed',
+      });
       return false;
     }
     setEditModal(null);
@@ -480,45 +560,57 @@ export function useBoardState() {
       res = null;
     }
     if (res && !res.ok) {
-      const body = await res.json().catch(() => ({}) as { message?: string; error?: string });
+      const body = await res
+        .json()
+        .catch(() => ({}) as { message?: string; error?: string });
       // Surface the API's message VERBATIM - for managed rows it carries the
       // escape hatch ("Managed by mattstack - `rt uninstall <app>`").
-      notice("bad", body.message || body.error || `remove failed (${res.status})`, 15000);
+      notice(
+        'bad',
+        body.message || body.error || `remove failed (${res.status})`,
+        15000
+      );
     }
     await refresh();
   }, [pendingRemove, refresh, notice]);
 
   // ---- access ----
   const openAccess = useCallback((row: Row) => {
-    const o = row.oauth || { mode: "off" as const };
+    const o = row.oauth || { mode: 'off' as const };
     setAccessModal({
       app: row.name,
-      password: "",
+      password: '',
       pwError: null,
       pwBusy: false,
-      oauthOn: o.mode !== "off",
-      mode: o.mode === "domains" ? "domains" : "emails",
-      entries: o.mode === "emails" ? o.emails : o.mode === "domains" ? o.domains : [],
-      entryDraft: "",
+      oauthOn: o.mode !== 'off',
+      mode: o.mode === 'domains' ? 'domains' : 'emails',
+      entries:
+        o.mode === 'emails' ? o.emails : o.mode === 'domains' ? o.domains : [],
+      entryDraft: '',
       oauthError: null,
       oauthBusy: false,
     });
   }, []);
   const closeAccess = useCallback(() => setAccessModal(null), []);
   const updateAccessModal = useCallback((patch: Partial<AccessModalState>) => {
-    setAccessModal((prev) => (prev ? { ...prev, ...patch } : prev));
+    setAccessModal(prev => (prev ? { ...prev, ...patch } : prev));
   }, []);
 
   const addAccessEntry = useCallback((value: string) => {
-    setAccessModal((prev) => {
+    setAccessModal(prev => {
       if (!prev) return prev;
       const trimmed = value.trim();
-      if (!trimmed || prev.entries.includes(trimmed)) return { ...prev, entryDraft: "" };
-      return { ...prev, entries: [...prev.entries, trimmed], entryDraft: "" };
+      if (!trimmed || prev.entries.includes(trimmed))
+        return { ...prev, entryDraft: '' };
+      return { ...prev, entries: [...prev.entries, trimmed], entryDraft: '' };
     });
   }, []);
   const removeAccessEntry = useCallback((index: number) => {
-    setAccessModal((prev) => (prev ? { ...prev, entries: prev.entries.filter((_, i) => i !== index) } : prev));
+    setAccessModal(prev =>
+      prev
+        ? { ...prev, entries: prev.entries.filter((_, i) => i !== index) }
+        : prev
+    );
   }, []);
 
   // No confirm: unlike removing the app itself, a removed password is
@@ -528,15 +620,20 @@ export function useBoardState() {
     updateAccessModal({ pwBusy: true, pwError: null });
     let res: Response | null = null;
     try {
-      res = await apiPut(`/api/v1/apps/${accessModal.app}/password`, { password: null });
+      res = await apiPut(`/api/v1/apps/${accessModal.app}/password`, {
+        password: null,
+      });
     } catch {
       res = null;
     }
     if (!res || !res.ok) {
-      updateAccessModal({ pwBusy: false, pwError: "removing the password failed." });
+      updateAccessModal({
+        pwBusy: false,
+        pwError: 'removing the password failed.',
+      });
       return false;
     }
-    updateAccessModal({ pwBusy: false, password: "" });
+    updateAccessModal({ pwBusy: false, password: '' });
     await refresh();
     return true;
   }, [accessModal, refresh, updateAccessModal]);
@@ -546,15 +643,20 @@ export function useBoardState() {
     updateAccessModal({ pwBusy: true, pwError: null });
     let res: Response | null = null;
     try {
-      res = await apiPut(`/api/v1/apps/${accessModal.app}/password`, { password: accessModal.password });
+      res = await apiPut(`/api/v1/apps/${accessModal.app}/password`, {
+        password: accessModal.password,
+      });
     } catch {
       res = null;
     }
     if (!res || !res.ok) {
-      updateAccessModal({ pwBusy: false, pwError: "saving the password failed, the board did not answer." });
+      updateAccessModal({
+        pwBusy: false,
+        pwError: 'saving the password failed, the board did not answer.',
+      });
       return false;
     }
-    updateAccessModal({ pwBusy: false, password: "" });
+    updateAccessModal({ pwBusy: false, password: '' });
     await refresh();
     return true;
   }, [accessModal, refresh, updateAccessModal]);
@@ -568,15 +670,27 @@ export function useBoardState() {
     updateAccessModal({ oauthBusy: true, oauthError: null });
     let res: Response | null = null;
     try {
-      res = await apiPut(`/api/v1/apps/${accessModal.app}/access`, { mode: "off" });
+      res = await apiPut(`/api/v1/apps/${accessModal.app}/access`, {
+        mode: 'off',
+      });
     } catch {
       res = null;
     }
-    const b = res ? await res.json().catch(() => ({}) as { message?: string; error?: string; cfSynced?: boolean }) : {};
+    const b = res
+      ? await res
+          .json()
+          .catch(
+            () =>
+              ({}) as { message?: string; error?: string; cfSynced?: boolean }
+          )
+      : {};
     if (!res || !res.ok) {
       updateAccessModal({
         oauthBusy: false,
-        oauthError: (b as { message?: string }).message || (b as { error?: string }).error || "turning sign-in off failed.",
+        oauthError:
+          (b as { message?: string }).message ||
+          (b as { error?: string }).error ||
+          'turning sign-in off failed.',
       });
       return;
     }
@@ -590,7 +704,7 @@ export function useBoardState() {
       entries: [],
       oauthError:
         (b as { cfSynced?: boolean }).cfSynced === false
-          ? "sign-in is off here, but Cloudflare was not updated, so visitors may still be asked to sign in."
+          ? 'sign-in is off here, but Cloudflare was not updated, so visitors may still be asked to sign in.'
           : null,
     });
     await refresh();
@@ -600,7 +714,7 @@ export function useBoardState() {
   // other mode are never valid for the new one: clear them rather than leave
   // "a@x.dev" sitting under "anyone at these domains" with save live.
   const onOauthMode = useCallback(() => {
-    updateAccessModal({ entries: [], entryDraft: "", oauthError: null });
+    updateAccessModal({ entries: [], entryDraft: '', oauthError: null });
   }, [updateAccessModal]);
 
   const applyOauth = useCallback(async () => {
@@ -608,7 +722,9 @@ export function useBoardState() {
     const items = accessModal.entries;
     if (!items.length) return false;
     const payload =
-      accessModal.mode === "emails" ? { mode: "emails", emails: items } : { mode: "domains", domains: items };
+      accessModal.mode === 'emails'
+        ? { mode: 'emails', emails: items }
+        : { mode: 'domains', domains: items };
     updateAccessModal({ oauthBusy: true, oauthError: null });
     let res: Response | null = null;
     try {
@@ -617,10 +733,17 @@ export function useBoardState() {
       res = null;
     }
     if (!res || !res.ok) {
-      const b = res ? await res.json().catch(() => ({}) as { message?: string; error?: string }) : {};
+      const b = res
+        ? await res
+            .json()
+            .catch(() => ({}) as { message?: string; error?: string })
+        : {};
       updateAccessModal({
         oauthBusy: false,
-        oauthError: (b as { message?: string }).message || (b as { error?: string }).error || "Cloudflare sync failed.",
+        oauthError:
+          (b as { message?: string }).message ||
+          (b as { error?: string }).error ||
+          'Cloudflare sync failed.',
       });
       return false;
     }
@@ -634,32 +757,40 @@ export function useBoardState() {
     setReloadingProxy(true);
     setProxyNotice(null);
     try {
-      const res = await apiPost("/api/v1/proxy/restart");
-      const body = await res.json().catch(() => ({}) as { ok?: boolean; error?: string; installCommand?: string; detail?: string });
+      const res = await apiPost('/api/v1/proxy/restart');
+      const body = await res.json().catch(
+        () =>
+          ({}) as {
+            ok?: boolean;
+            error?: string;
+            installCommand?: string;
+            detail?: string;
+          }
+      );
       if (body.ok) {
         // The proxy is going down and, if this page is served through it, so
         // is our connection. Wait for it to answer again rather than assume.
         const back = await waitForProxy(PROXY_WAIT_MS);
         notice(
-          back ? "ok" : "bad",
+          back ? 'ok' : 'bad',
           back
-            ? "portless proxy restarted — .localhost now serves the current routes."
-            : "the proxy did not come back within 45s. Check: launchctl print system/sh.portless.proxy",
-          30000,
+            ? 'portless proxy restarted — .localhost now serves the current routes.'
+            : 'the proxy did not come back within 45s. Check: launchctl print system/sh.portless.proxy',
+          30000
         );
-      } else if (body.error === "not-authorized") {
+      } else if (body.error === 'not-authorized') {
         notice(
-          "bad",
+          'bad',
           "One-time setup: the board isn't allowed to restart the proxy yet. " +
-            "Run this in a terminal (it validates the rule before activating it), then try again:",
+            'Run this in a terminal (it validates the rule before activating it), then try again:',
           60000,
-          body.installCommand || "",
+          body.installCommand || ''
         );
       } else {
-        notice("bad", `restart failed: ${body.detail || res.status}`, 30000);
+        notice('bad', `restart failed: ${body.detail || res.status}`, 30000);
       }
     } catch (err) {
-      notice("bad", `restart failed: ${String(err)}`);
+      notice('bad', `restart failed: ${String(err)}`);
     }
     setReloadingProxy(false);
     await refresh();

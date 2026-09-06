@@ -2,16 +2,30 @@
 // Roots". Every nav row now pushes a real screen: dev port
 // (DevPortScreen.tsx), access (AccessScreens.tsx), logs (LogsScreen.tsx),
 // and edit (EditScreen.tsx).
-import { Alert, ICONS, ListGroup, StatusDot, type DrawerScreen } from "@mattstack/tui-kit";
-import { OptimisticGatedToggleRow, OptimisticToggleRow } from "../optimistic.tsx";
-import { servicePid } from "../AppsTable.tsx";
-import { isMattstack, type Row, type StatusData, tunnelDomain } from "../logic.ts";
-import type { BoardState } from "../useBoardState.ts";
-import { buildAccessRoot } from "./AccessScreens.tsx";
-import { buildDevPortScreen } from "./DevPortScreen.tsx";
-import { buildEditScreen } from "./EditScreen.tsx";
-import { buildLogsScreen } from "./LogsScreen.tsx";
-import { buildSourceScreen, sourceValue } from "./SourceScreen.tsx";
+import {
+  Alert,
+  ICONS,
+  ListGroup,
+  StatusDot,
+  type DrawerScreen,
+} from '@mattstack/tui-kit';
+import { servicePid } from '../AppsTable.tsx';
+import {
+  isMattstack,
+  tunnelDomain,
+  type Row,
+  type StatusData,
+} from '../logic.ts';
+import {
+  OptimisticGatedToggleRow,
+  OptimisticToggleRow,
+} from '../optimistic.tsx';
+import type { BoardState } from '../useBoardState.ts';
+import { buildAccessRoot } from './AccessScreens.tsx';
+import { buildDevPortScreen } from './DevPortScreen.tsx';
+import { buildEditScreen } from './EditScreen.tsx';
+import { buildLogsScreen } from './LogsScreen.tsx';
+import { buildSourceScreen, sourceValue } from './SourceScreen.tsx';
 
 /** What a root/pushed screen's row builders push onto and pop off of. Drawer
     itself owns no mutation surface -- AppDrawer is the only implementation.
@@ -30,12 +44,17 @@ export interface Nav {
     the whole pushed stack every render, so a mutation a pushed screen
     triggers is visible on its own screen the same render it reaches the
     root's nav-row hint. */
-export type ScreenBuilder = (row: Row, nav: Nav, board: BoardState, data: StatusData) => DrawerScreen;
+export type ScreenBuilder = (
+  row: Row,
+  nav: Nav,
+  board: BoardState,
+  data: StatusData
+) => DrawerScreen;
 
 function logsValueHint(row: Row): { text: string; bad: boolean } {
   const n = row.service ? row.service.stderr.length : 0;
   const bad = n > 0 && (row.health ? !row.health.ok : false);
-  return { text: n === 0 ? "none" : `${n} line${n === 1 ? "" : "s"}`, bad };
+  return { text: n === 0 ? 'none' : `${n} line${n === 1 ? '' : 's'}`, bad };
 }
 
 function logsValue(row: Row) {
@@ -46,7 +65,13 @@ function logsValue(row: Row) {
 /** health dot + latency/service-state text + `open ↗`, matching the site
     cell's own leading-dot logic (see AppsTable's healthTone/healthTip) but
     spelled out in full since the drawer has room the table row doesn't. */
-function RootStatusStrip({ row, restarting }: { row: Row; restarting: boolean }) {
+function RootStatusStrip({
+  row,
+  restarting,
+}: {
+  row: Row;
+  restarting: boolean;
+}) {
   if (restarting) {
     return (
       <p className="drawer-status">
@@ -56,28 +81,45 @@ function RootStatusStrip({ row, restarting }: { row: Row; restarting: boolean })
     );
   }
   const pid = row.service ? servicePid(row.service) : null;
-  const tone: "ok" | "bad" = row.health ? (row.health.ok ? "ok" : "bad") : pid !== null ? "ok" : "bad";
+  const tone: 'ok' | 'bad' = row.health
+    ? row.health.ok
+      ? 'ok'
+      : 'bad'
+    : pid !== null
+      ? 'ok'
+      : 'bad';
   const parts: string[] = [];
   if (row.health) {
-    parts.push(row.health.status !== null ? `${row.health.status} in ${row.health.ms}ms` : "unreachable");
+    parts.push(
+      row.health.status !== null
+        ? `${row.health.status} in ${row.health.ms}ms`
+        : 'unreachable'
+    );
   } else if (row.service) {
-    parts.push(pid !== null ? "running" : "stopped");
+    parts.push(pid !== null ? 'running' : 'stopped');
   }
   if (row.service) {
-    if (pid !== null) parts.push(row.health ? `running pid ${pid}` : `pid ${pid}`);
-    else if (row.service.lastExitStatus != null) parts.push(`exit ${row.service.lastExitStatus}`);
+    if (pid !== null)
+      parts.push(row.health ? `running pid ${pid}` : `pid ${pid}`);
+    else if (row.service.lastExitStatus != null)
+      parts.push(`exit ${row.service.lastExitStatus}`);
   }
   // Keyed off port alone, not `row.health`: a routeless row (stray-agent)
   // has no health probe to gate on, and would otherwise silently drop this
   // suffix -- port is the one field every unrouted row shares.
-  if (row.port == null) parts.push("no route");
+  if (row.port == null) parts.push('no route');
   const openLink = row.health?.ok && row.url;
   return (
     <p className="drawer-status">
-      <StatusDot intent={tone} tip={parts.join(" · ")} />
-      {parts.join(" · ")}
+      <StatusDot intent={tone} tip={parts.join(' · ')} />
+      {parts.join(' · ')}
       {openLink && (
-        <a className="drawer-status-link" href={row.url!} target="_blank" rel="noopener">
+        <a
+          className="drawer-status-link"
+          href={row.url!}
+          target="_blank"
+          rel="noopener"
+        >
           open ↗
         </a>
       )}
@@ -85,7 +127,13 @@ function RootStatusStrip({ row, restarting }: { row: Row; restarting: boolean })
   );
 }
 
-function TunnelStatusStrip({ row, restarting }: { row: Row; restarting: boolean }) {
+function TunnelStatusStrip({
+  row,
+  restarting,
+}: {
+  row: Row;
+  restarting: boolean;
+}) {
   if (restarting) {
     return (
       <p className="drawer-status">
@@ -97,15 +145,16 @@ function TunnelStatusStrip({ row, restarting }: { row: Row; restarting: boolean 
   const pid = row.service ? servicePid(row.service) : null;
   const up = pid !== null;
   const health = row.health;
-  const intent = health?.tone ?? (up ? "ok" : "bad");
-  const parts = [health?.detail ?? (up ? "up" : "down")];
+  const intent = health?.tone ?? (up ? 'ok' : 'bad');
+  const parts = [health?.detail ?? (up ? 'up' : 'down')];
   if (row.service && pid !== null) parts.push(`running pid ${pid}`);
-  else if (row.service?.lastExitStatus != null) parts.push(`exit ${row.service.lastExitStatus}`);
+  else if (row.service?.lastExitStatus != null)
+    parts.push(`exit ${row.service.lastExitStatus}`);
   if (health?.hint) parts.push(health.hint);
   return (
     <p className="drawer-status">
-      <StatusDot intent={intent} tip={parts.join(" · ")} />
-      {parts.join(" · ")}
+      <StatusDot intent={intent} tip={parts.join(' · ')} />
+      {parts.join(' · ')}
     </p>
   );
 }
@@ -118,7 +167,7 @@ function publicFooter(row: Row, data: StatusData): string {
 
 function devPortValue(row: Row, data: StatusData): string {
   const overriding = row.override && data.canManage && !row.self;
-  return overriding ? `${row.port} · override` : String(row.port ?? "");
+  return overriding ? `${row.port} · override` : String(row.port ?? '');
 }
 
 // One word per gate, condensed to a value-hint width -- "open" reads as
@@ -126,22 +175,24 @@ function devPortValue(row: Row, data: StatusData): string {
 // row's value occupies.
 function accessValue(row: Row): string {
   const parts: string[] = [];
-  if (row.hasPassword) parts.push("password");
-  if (row.oauth && row.oauth.mode !== "off") parts.push("sign-in");
-  return parts.length ? parts.join(" · ") : "open";
+  if (row.hasPassword) parts.push('password');
+  if (row.oauth && row.oauth.mode !== 'off') parts.push('sign-in');
+  return parts.length ? parts.join(' · ') : 'open';
 }
 
-function remoteStatusText(status: NonNullable<Row["remote"]>["status"]): string {
-  if (status === "deploying") return "deploying...";
-  if (status === "verifying") return "verifying...";
-  if (status === "live") return "live";
-  return "error";
+function remoteStatusText(
+  status: NonNullable<Row['remote']>['status']
+): string {
+  if (status === 'deploying') return 'deploying...';
+  if (status === 'verifying') return 'verifying...';
+  if (status === 'live') return 'live';
+  return 'error';
 }
 
 function remoteFooter(row: Row): string {
   return row.remote
     ? `serving public traffic from Railway (${remoteStatusText(row.remote.status)})`
-    : "off, this app is only reachable through the local tunnel";
+    : 'off, this app is only reachable through the local tunnel';
 }
 
 // Only enabling remote requires a sign-in gate (the server's own refuse
@@ -149,8 +200,8 @@ function remoteFooter(row: Row): string {
 // already remote must stay reachable even if oauth was since turned off, or
 // there would be no way back out of that state from the board.
 function remoteToggleTip(row: Row): string | undefined {
-  if (row.remote == null && row.hasPassword && row.oauth.mode === "off") {
-    return "add sign-in access before pushing this app to Railway (a password alone does not gate the public origin)";
+  if (row.remote == null && row.hasPassword && row.oauth.mode === 'off') {
+    return 'add sign-in access before pushing this app to Railway (a password alone does not gate the public origin)';
   }
   return undefined;
 }
@@ -160,7 +211,7 @@ export function buildAppRoot(
   nav: Nav,
   board: BoardState,
   data: StatusData,
-  restarting: boolean,
+  restarting: boolean
 ): DrawerScreen {
   return {
     id: `root:${row.name}`,
@@ -168,7 +219,7 @@ export function buildAppRoot(
     header: (
       <>
         <RootStatusStrip row={row} restarting={restarting} />
-        {(row.issues || []).map((issue) => (
+        {(row.issues || []).map(issue => (
           <Alert key={issue.source} intent="bad">
             {issue.source} sync failed · {issue.message}
           </Alert>
@@ -186,7 +237,11 @@ export function buildAppRoot(
               label="public"
               checked={row.published}
               mutate={() => board.onPublish(row)}
-              aria-label={row.published ? `make ${row.name} private` : `publish ${row.name}`}
+              aria-label={
+                row.published
+                  ? `make ${row.name} private`
+                  : `publish ${row.name}`
+              }
             />
           </ListGroup>
         )}
@@ -202,9 +257,18 @@ export function buildAppRoot(
               mutate={() => board.onSetRemote(row, row.remote == null)}
               disabled={remoteToggleTip(row) != null}
               disabledTip={remoteToggleTip(row)}
-              aria-label={row.remote != null ? `turn off remote for ${row.name}` : `push ${row.name} to Railway`}
+              aria-label={
+                row.remote != null
+                  ? `turn off remote for ${row.name}`
+                  : `push ${row.name} to Railway`
+              }
             />
-            {row.remote && <ListGroup.Fact label="status" value={remoteStatusText(row.remote.status)} />}
+            {row.remote && (
+              <ListGroup.Fact
+                label="status"
+                value={remoteStatusText(row.remote.status)}
+              />
+            )}
           </ListGroup>
         )}
         {data.canManage && row.remote && (
@@ -212,7 +276,10 @@ export function buildAppRoot(
             <ListGroup.Action
               label="Push to Railway"
               onClick={() => board.onPushRemote(row)}
-              disabled={row.remote.status === "deploying" || row.remote.status === "verifying"}
+              disabled={
+                row.remote.status === 'deploying' ||
+                row.remote.status === 'verifying'
+              }
             />
           </ListGroup>
         )}
@@ -232,14 +299,22 @@ export function buildAppRoot(
               }}
             />
           )}
-          <ListGroup.Nav label="logs" value={logsValue(row)} onClick={() => nav.push(buildLogsScreen)} />
+          <ListGroup.Nav
+            label="logs"
+            value={logsValue(row)}
+            onClick={() => nav.push(buildLogsScreen)}
+          />
           {/* The dev link, tucked here rather than the table: read-only facts
               plus relink/Unlink. Managed rows only; devLink is dev-mode gated. */}
           {isMattstack(row) && !row.self && row.devLink !== undefined && (
             <ListGroup.Nav
               label="source"
               value={
-                sourceValue(row).bad ? <span className="t-bad">{sourceValue(row).text}</span> : sourceValue(row).text
+                sourceValue(row).bad ? (
+                  <span className="t-bad">{sourceValue(row).text}</span>
+                ) : (
+                  sourceValue(row).text
+                )
               }
               onClick={() => nav.push(buildSourceScreen)}
             />
@@ -248,7 +323,13 @@ export function buildAppRoot(
         {data.canManage && (
           <ListGroup>
             <ListGroup.Action
-              label={restarting ? "restarting…" : <>{ICONS["refresh-cw"]} restart service</>}
+              label={
+                restarting ? (
+                  'restarting…'
+                ) : (
+                  <>{ICONS['refresh-cw']} restart service</>
+                )
+              }
               busy={restarting}
               disabled={!row.service}
               onClick={() => board.onRestart(row)}
@@ -282,7 +363,10 @@ export function buildAppRoot(
         {data.canManage && (
           <div className="drawer-danger-group">
             <ListGroup>
-              <ListGroup.Danger label="remove app…" onClick={() => board.onRemove(row)} />
+              <ListGroup.Danger
+                label="remove app…"
+                onClick={() => board.onRemove(row)}
+              />
             </ListGroup>
           </div>
         )}
@@ -291,7 +375,12 @@ export function buildAppRoot(
   };
 }
 
-export function buildServiceRoot(row: Row, nav: Nav, board: BoardState, restarting: boolean): DrawerScreen {
+export function buildServiceRoot(
+  row: Row,
+  nav: Nav,
+  board: BoardState,
+  restarting: boolean
+): DrawerScreen {
   return {
     id: `root:${row.name}`,
     title: row.name,
@@ -299,11 +388,21 @@ export function buildServiceRoot(row: Row, nav: Nav, board: BoardState, restarti
     content: (
       <div className="drawer-groups">
         <ListGroup>
-          <ListGroup.Nav label="logs" value={logsValue(row)} onClick={() => nav.push(buildLogsScreen)} />
+          <ListGroup.Nav
+            label="logs"
+            value={logsValue(row)}
+            onClick={() => nav.push(buildLogsScreen)}
+          />
         </ListGroup>
         <ListGroup>
           <ListGroup.Action
-            label={restarting ? "restarting…" : <>{ICONS["refresh-cw"]} restart service</>}
+            label={
+              restarting ? (
+                'restarting…'
+              ) : (
+                <>{ICONS['refresh-cw']} restart service</>
+              )
+            }
             busy={restarting}
             disabled={!row.service}
             onClick={() => board.onRestart(row)}
@@ -321,7 +420,13 @@ export function buildServiceRoot(row: Row, nav: Nav, board: BoardState, restarti
   };
 }
 
-export function buildTunnelRoot(row: Row, nav: Nav, board: BoardState, data: StatusData, restarting: boolean): DrawerScreen {
+export function buildTunnelRoot(
+  row: Row,
+  nav: Nav,
+  board: BoardState,
+  data: StatusData,
+  restarting: boolean
+): DrawerScreen {
   const domain = tunnelDomain(data);
   return {
     id: `root:${row.name}`,
@@ -331,11 +436,21 @@ export function buildTunnelRoot(row: Row, nav: Nav, board: BoardState, data: Sta
       <div className="drawer-groups">
         <ListGroup>
           {domain && <ListGroup.Fact label="carries" value={`*.${domain}`} />}
-          <ListGroup.Nav label="logs" value={logsValue(row)} onClick={() => nav.push(buildLogsScreen)} />
+          <ListGroup.Nav
+            label="logs"
+            value={logsValue(row)}
+            onClick={() => nav.push(buildLogsScreen)}
+          />
         </ListGroup>
         <ListGroup>
           <ListGroup.Action
-            label={restarting ? "restarting…" : <>{ICONS["refresh-cw"]} restart tunnel</>}
+            label={
+              restarting ? (
+                'restarting…'
+              ) : (
+                <>{ICONS['refresh-cw']} restart tunnel</>
+              )
+            }
             busy={restarting}
             disabled={!row.service}
             onClick={() => board.onRestart(row)}

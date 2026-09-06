@@ -2,8 +2,8 @@ import {
   nextFreePort,
   type LaunchdService,
   type PortlessRoute,
-} from "../../core/discover.ts";
-import type { AppRecord } from "./records.ts";
+} from '../../core/discover.ts';
+import type { AppRecord } from './records.ts';
 
 /**
  * The registry is the allocator of record, but ports can also be held by routes
@@ -13,9 +13,9 @@ import type { AppRecord } from "./records.ts";
 export function allocatePort(
   records: AppRecord[],
   routes: PortlessRoute[],
-  services: LaunchdService[],
+  services: LaunchdService[]
 ): number | null {
-  const synthetic: PortlessRoute[] = records.map((r) => ({
+  const synthetic: PortlessRoute[] = records.map(r => ({
     hostname: `${r.name}.localhost`,
     port: r.port,
   }));

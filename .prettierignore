@@ -12,3 +12,7 @@ apps/*/design
 # byte-compares their YAML frontmatter (double-quoted `slots:`); prettier's
 # singleQuote rewrite breaks that assertion.
 apps/board/skills/*/SKILL.md
+# deck's core/generated-fresh.test.ts byte-compares these against
+# buildBoardArtifacts()/buildGatewayCss() output; prettier reformatting
+# would desync the committed twin from what `bun run build:board` emits.
+apps/deck/core/generated

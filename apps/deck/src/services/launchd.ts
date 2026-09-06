@@ -1,18 +1,21 @@
-import { writeFileSync, rmSync, existsSync, mkdirSync, readFileSync } from "fs";
-import { join } from "path";
-import { homedir } from "os";
-import type { ServiceManager, ServiceSpec } from "./manager.ts";
-import { renderPlist } from "./plist.ts";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { homedir } from 'os';
+import { join } from 'path';
+
+import type { ServiceManager, ServiceSpec } from './manager.ts';
+import { renderPlist } from './plist.ts';
 
 export type Exec = (argv: string[]) => Promise<number>;
 
-const realExec: Exec = async (argv) => {
-  const proc = Bun.spawn(argv, { stderr: "ignore", stdout: "ignore" });
+const realExec: Exec = async argv => {
+  const proc = Bun.spawn(argv, { stderr: 'ignore', stdout: 'ignore' });
   return await proc.exited;
 };
 
 export function agentsDir(): string {
-  return process.env.LOCAL_AGENTS_DIR ?? join(homedir(), "Library", "LaunchAgents");
+  return (
+    process.env.LOCAL_AGENTS_DIR ?? join(homedir(), 'Library', 'LaunchAgents')
+  );
 }
 
 /** ProgramArguments read back from an installed plist deck itself rendered
@@ -21,17 +24,22 @@ export function agentsDir(): string {
 export function readInstalledProgramArguments(label: string): string[] | null {
   let xml: string;
   try {
-    xml = readFileSync(join(agentsDir(), `${label}.plist`), "utf8");
+    xml = readFileSync(join(agentsDir(), `${label}.plist`), 'utf8');
   } catch {
     return null;
   }
-  const array = xml.match(/<key>ProgramArguments<\/key>\s*<array>([\s\S]*?)<\/array>/);
+  const array = xml.match(
+    /<key>ProgramArguments<\/key>\s*<array>([\s\S]*?)<\/array>/
+  );
   if (!array) return null;
   // Unescape in reverse order of esc(): &lt; to <, &gt; to >, &amp; to & last.
   // Reversing the order is critical: if &amp; was unescaped first, then & in
   // &lt; would be replaced again, corrupting the result.
-  return [...array[1]!.matchAll(/<string>([\s\S]*?)<\/string>/g)].map((m) =>
-    m[1]!.replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&"),
+  return [...array[1]!.matchAll(/<string>([\s\S]*?)<\/string>/g)].map(m =>
+    m[1]!
+      .replaceAll('&lt;', '<')
+      .replaceAll('&gt;', '>')
+      .replaceAll('&amp;', '&')
   );
 }
 
@@ -40,14 +48,19 @@ export function readInstalledProgramArguments(label: string): string[] | null {
 export function readInstalledWorkingDirectory(label: string): string | null {
   let xml: string;
   try {
-    xml = readFileSync(join(agentsDir(), `${label}.plist`), "utf8");
+    xml = readFileSync(join(agentsDir(), `${label}.plist`), 'utf8');
   } catch {
     return null;
   }
-  const match = xml.match(/<key>WorkingDirectory<\/key>\s*<string>([\s\S]*?)<\/string>/);
+  const match = xml.match(
+    /<key>WorkingDirectory<\/key>\s*<string>([\s\S]*?)<\/string>/
+  );
   if (!match) return null;
   // Same reverse-of-esc() ordering as readInstalledProgramArguments: &amp; last.
-  return match[1]!.replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&");
+  return match[1]!
+    .replaceAll('&lt;', '<')
+    .replaceAll('&gt;', '>')
+    .replaceAll('&amp;', '&');
 }
 
 export class LaunchdManager implements ServiceManager {
@@ -61,8 +74,9 @@ export class LaunchdManager implements ServiceManager {
     mkdirSync(agentsDir(), { recursive: true });
     const path = this.plistPath(spec.label);
     writeFileSync(path, renderPlist(spec));
-    const code = await this.exec(["launchctl", "load", path]);
-    if (code !== 0) throw new Error(`launchctl load failed for ${spec.label} (exit ${code})`);
+    const code = await this.exec(['launchctl', 'load', path]);
+    if (code !== 0)
+      throw new Error(`launchctl load failed for ${spec.label} (exit ${code})`);
   }
 
   async uninstall(label: string): Promise<void> {
@@ -79,13 +93,20 @@ export class LaunchdManager implements ServiceManager {
     // distinguish "already not loaded" from other benign states. A genuine
     // failure still surfaces below, via rmSync actually failing to remove
     // the file (e.g. permission denied), which force:true does not swallow.
-    await this.exec(["launchctl", "unload", path]);
+    await this.exec(['launchctl', 'unload', path]);
     rmSync(path, { force: true });
   }
 
   async kickstart(label: string): Promise<boolean> {
     const uid = process.getuid?.() ?? 0;
-    return (await this.exec(["launchctl", "kickstart", "-k", `gui/${uid}/${label}`])) === 0;
+    return (
+      (await this.exec([
+        'launchctl',
+        'kickstart',
+        '-k',
+        `gui/${uid}/${label}`,
+      ])) === 0
+    );
   }
 
   async isInstalled(label: string): Promise<boolean> {

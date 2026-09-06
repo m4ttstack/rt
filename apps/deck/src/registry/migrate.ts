@@ -1,14 +1,23 @@
-import { readRoutes, readServices, servicePrefixes, bareName, dedupeRoutes } from "../../core/discover.ts";
-import { getPlatformSettings, updatePlatformSettings } from "../api/platform-settings.ts";
-import { getRecord, putRecord, listRecords } from "./records.ts";
-import { PLATFORM_LABEL } from "../services/manager.ts";
+import {
+  bareName,
+  dedupeRoutes,
+  readRoutes,
+  readServices,
+  servicePrefixes,
+} from '../../core/discover.ts';
+import {
+  getPlatformSettings,
+  updatePlatformSettings,
+} from '../api/platform-settings.ts';
+import { PLATFORM_LABEL } from '../services/manager.ts';
+import { getRecord, listRecords, putRecord } from './records.ts';
 
 /**
  * The one sanctioned legacy-prefix literal (ruled): every other module that
  * needs it, including convert.ts, imports it from here rather than
  * re-declaring the string — certify.sh's purity grep only excludes this file.
  */
-export const DEFAULT_LEGACY_PREFIX = "com.matthewgoodwin.";
+export const DEFAULT_LEGACY_PREFIX = 'com.matthewgoodwin.';
 
 /**
  * Adoption, not conversion (ruled): records point at the EXISTING label, plist,
@@ -16,11 +25,15 @@ export const DEFAULT_LEGACY_PREFIX = "com.matthewgoodwin.";
  * The old plists keep running under launchd exactly as before; they are simply
  * operable from the board now.
  */
-export async function migrate(opts: { legacyPrefix?: string }): Promise<{ adopted: string[]; skipped: string[] }> {
+export async function migrate(opts: {
+  legacyPrefix?: string;
+}): Promise<{ adopted: string[]; skipped: string[] }> {
   const legacyPrefix = opts.legacyPrefix ?? DEFAULT_LEGACY_PREFIX;
   const settings = getPlatformSettings();
   if (!settings.legacyPrefixes.includes(legacyPrefix)) {
-    updatePlatformSettings({ legacyPrefixes: [...settings.legacyPrefixes, legacyPrefix] });
+    updatePlatformSettings({
+      legacyPrefixes: [...settings.legacyPrefixes, legacyPrefix],
+    });
   }
 
   const adopted: string[] = [];
@@ -28,22 +41,28 @@ export async function migrate(opts: { legacyPrefix?: string }): Promise<{ adopte
   const tlds = getPlatformSettings().tlds;
   const services = await readServices(servicePrefixes([legacyPrefix]));
   const routes = dedupeRoutes(readRoutes(), tlds);
-  const claimedPorts = new Set(listRecords().map((r) => r.port));
+  const claimedPorts = new Set(listRecords().map(r => r.port));
 
   for (const route of routes) {
     const name = bareName(route.hostname, tlds);
-    if (getRecord(name) || claimedPorts.has(route.port)) { skipped.push(name); continue; }
-    const svc = services.find((s) => s.port === route.port);
+    if (getRecord(name) || claimedPorts.has(route.port)) {
+      skipped.push(name);
+      continue;
+    }
+    const svc = services.find(s => s.port === route.port);
     // Defense-in-depth for a hypothetical ordering where migrate() runs before
     // Deck's own bootstrap record exists yet (so claimedPorts wouldn't catch
     // it): never adopt a record carrying Deck's own platform launchd label
     // under any other name - that record is Deck itself, not a new app.
-    if (svc?.label === PLATFORM_LABEL) { skipped.push(name); continue; }
+    if (svc?.label === PLATFORM_LABEL) {
+      skipped.push(name);
+      continue;
+    }
     putRecord({
       name,
-      managedBy: "user",
+      managedBy: 'user',
       port: route.port,
-      kind: svc ? "service" : "external",
+      kind: svc ? 'service' : 'external',
       ...(svc && {
         label: svc.label,
         command: svc.program,

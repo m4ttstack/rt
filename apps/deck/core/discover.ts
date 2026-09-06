@@ -1,29 +1,36 @@
-import { readFileSync, readdirSync, existsSync } from "fs";
-import { join } from "path";
-import { homedir } from "os";
-import { getPlatformSettings } from "../src/api/platform-settings.ts";
+import { existsSync, readdirSync, readFileSync } from 'fs';
+import { homedir } from 'os';
+import { join } from 'path';
+
+import { getPlatformSettings } from '../src/api/platform-settings.ts';
 
 // Computed fresh on every call (not frozen at import time) so callers that set
 // LOCAL_APPS_ROUTES_PATH after this module first loads (tests, in particular)
 // still get the override, regardless of module load order.
 export function routesPath(): string {
-  return process.env.LOCAL_APPS_ROUTES_PATH ?? join(homedir(), ".portless", "routes.json");
+  return (
+    process.env.LOCAL_APPS_ROUTES_PATH ??
+    join(homedir(), '.portless', 'routes.json')
+  );
 }
 // Same lazy-override pattern as routesPath() above, and as agentsDir() in
 // src/services/launchd.ts (kept in sync so both readers agree in tests).
 export function agentsDir(): string {
-  return process.env.LOCAL_AGENTS_DIR ?? join(homedir(), "Library", "LaunchAgents");
+  return (
+    process.env.LOCAL_AGENTS_DIR ?? join(homedir(), 'Library', 'LaunchAgents')
+  );
 }
 
-export const PRODUCT_PREFIX = "com.mattstack.deck.";
+export const PRODUCT_PREFIX = 'com.mattstack.deck.';
 
 export function servicePrefixes(legacy: string[]): string[] {
   return [PRODUCT_PREFIX, ...legacy];
 }
 
 export function shortLabel(label: string, prefixes: string[]): string {
-  if (label + "." === PRODUCT_PREFIX) return "deck"; // the platform's own bare label
-  for (const p of prefixes) if (label.startsWith(p)) return label.slice(p.length);
+  if (label + '.' === PRODUCT_PREFIX) return 'deck'; // the platform's own bare label
+  for (const p of prefixes)
+    if (label.startsWith(p)) return label.slice(p.length);
   return label;
 }
 
@@ -53,13 +60,13 @@ export const PORT_RANGE = { start: 11000, end: 11999 } as const;
 /** The stack's own TLD: mattstack-owned (managed) apps surface as
     name.mattstack; user-added apps stay on .localhost. Product identity,
     not configuration. */
-export const MATTSTACK_TLD = "mattstack";
+export const MATTSTACK_TLD = 'mattstack';
 
 // Lowest port in PORT_RANGE not claimed by any route or any launchd service PORT.
 // Returns null only if the whole range is taken (not expected in practice).
 export function nextFreePort(
   routes: PortlessRoute[],
-  services: LaunchdService[],
+  services: LaunchdService[]
 ): number | null {
   const used = new Set<number>();
   for (const r of routes) used.add(r.port);
@@ -88,7 +95,7 @@ let lastGoodRoutes: PortlessRoute[] = [];
 
 export function readRoutes(): PortlessRoute[] {
   try {
-    const parsed = JSON.parse(readFileSync(routesPath(), "utf8"));
+    const parsed = JSON.parse(readFileSync(routesPath(), 'utf8'));
     if (Array.isArray(parsed)) {
       lastGoodRoutes = parsed;
       return parsed;
@@ -99,8 +106,12 @@ export function readRoutes(): PortlessRoute[] {
   return lastGoodRoutes;
 }
 
-async function plistToJson(path: string): Promise<Record<string, unknown> | null> {
-  const proc = Bun.spawn(["plutil", "-convert", "json", "-o", "-", path], { stderr: "ignore" });
+async function plistToJson(
+  path: string
+): Promise<Record<string, unknown> | null> {
+  const proc = Bun.spawn(['plutil', '-convert', 'json', '-o', '-', path], {
+    stderr: 'ignore',
+  });
   const out = await new Response(proc.stdout).text();
   if ((await proc.exited) !== 0) return null;
   try {
@@ -117,38 +128,56 @@ async function plistToJson(path: string): Promise<Record<string, unknown> | null
  * and the suite passes or fails on whether the developer happens to be serving.
  * Unset reads launchctl. "" is nothing running; entries are `label=pid`.
  */
-function seamedPids(): Map<string, { pid: number | null; status: number }> | null {
+function seamedPids(): Map<
+  string,
+  { pid: number | null; status: number }
+> | null {
   const raw = process.env.LOCAL_LAUNCHCTL_PIDS;
   if (raw === undefined) return null;
   const map = new Map<string, { pid: number | null; status: number }>();
-  for (const entry of raw.split(",").map((s) => s.trim()).filter(Boolean)) {
-    const [label, pid] = entry.split("=");
+  for (const entry of raw
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean)) {
+    const [label, pid] = entry.split('=');
     if (!label) continue;
-    map.set(label, { pid: pid === undefined || pid === "-" ? null : Number(pid), status: 0 });
+    map.set(label, {
+      pid: pid === undefined || pid === '-' ? null : Number(pid),
+      status: 0,
+    });
   }
   return map;
 }
 
-async function launchctlPids(): Promise<Map<string, { pid: number | null; status: number }>> {
+async function launchctlPids(): Promise<
+  Map<string, { pid: number | null; status: number }>
+> {
   const seamed = seamedPids();
   if (seamed) return seamed;
-  const proc = Bun.spawn(["launchctl", "list"], { stderr: "ignore" });
+  const proc = Bun.spawn(['launchctl', 'list'], { stderr: 'ignore' });
   const out = await new Response(proc.stdout).text();
   await proc.exited;
   const map = new Map<string, { pid: number | null; status: number }>();
-  for (const line of out.split("\n").slice(1)) {
+  for (const line of out.split('\n').slice(1)) {
     const [pid, status, label] = line.trim().split(/\t+/);
     if (!label) continue;
-    map.set(label, { pid: pid === "-" ? null : Number(pid), status: Number(status) });
+    map.set(label, {
+      pid: pid === '-' ? null : Number(pid),
+      status: Number(status),
+    });
   }
   return map;
 }
 
-export async function readServices(prefixes: string[] = servicePrefixes(getPlatformSettings().legacyPrefixes)): Promise<LaunchdService[]> {
+export async function readServices(
+  prefixes: string[] = servicePrefixes(getPlatformSettings().legacyPrefixes)
+): Promise<LaunchdService[]> {
   const dir = agentsDir();
   if (!existsSync(dir)) return [];
   const files = readdirSync(dir).filter(
-    (f) => f.endsWith(".plist") && (prefixes.some((p) => f.startsWith(p)) || f === "com.mattstack.deck.plist"),
+    f =>
+      f.endsWith('.plist') &&
+      (prefixes.some(p => f.startsWith(p)) || f === 'com.mattstack.deck.plist')
   );
   const running = await launchctlPids();
   const services: LaunchdService[] = [];
@@ -156,15 +185,18 @@ export async function readServices(prefixes: string[] = servicePrefixes(getPlatf
     const path = join(dir, file);
     const plist = await plistToJson(path);
     if (!plist) continue;
-    const label = (plist["Label"] as string) ?? file.replace(".plist", "");
+    const label = (plist['Label'] as string) ?? file.replace('.plist', '');
     const state = running.get(label);
     services.push({
       label,
       plistPath: path,
-      program: (plist["ProgramArguments"] as string[]) ?? [],
-      workingDirectory: (plist["WorkingDirectory"] as string) ?? null,
-      stderrPath: (plist["StandardErrorPath"] as string) ?? null,
-      port: Number((plist["EnvironmentVariables"] as Record<string, string>)?.["PORT"]) || null,
+      program: (plist['ProgramArguments'] as string[]) ?? [],
+      workingDirectory: (plist['WorkingDirectory'] as string) ?? null,
+      stderrPath: (plist['StandardErrorPath'] as string) ?? null,
+      port:
+        Number(
+          (plist['EnvironmentVariables'] as Record<string, string>)?.['PORT']
+        ) || null,
       pid: state?.pid ?? null,
       lastExitStatus: state && state.pid === null ? state.status : null,
     });
@@ -180,18 +212,19 @@ export async function readServices(prefixes: string[] = servicePrefixes(getPlatf
  */
 export function publicDomainFor(requestHost?: string): string | null {
   if (!requestHost) return null;
-  const host = requestHost.replace(/:\d+$/, "");
-  if (host === "localhost" || host.endsWith(".localhost")) return null;
+  const host = requestHost.replace(/:\d+$/, '');
+  if (host === 'localhost' || host.endsWith('.localhost')) return null;
   if (/^[\d.]+$/.test(host)) return null; // bare IP address, not a domain
-  const parent = host.replace(/^[^.]+\./, "");
-  return parent.includes(".") ? parent : null; // require a real multi-label domain
+  const parent = host.replace(/^[^.]+\./, '');
+  return parent.includes('.') ? parent : null; // require a real multi-label domain
 }
 
 /** Strip trailing labels that are configured TLDs: board.mattstack.localhost -> board. */
 export function bareName(hostname: string, tlds: string[]): string {
-  const labels = hostname.split(".");
-  while (labels.length > 1 && tlds.includes(labels[labels.length - 1]!)) labels.pop();
-  return labels.join(".");
+  const labels = hostname.split('.');
+  while (labels.length > 1 && tlds.includes(labels[labels.length - 1]!))
+    labels.pop();
+  return labels.join('.');
 }
 
 /**
@@ -202,8 +235,9 @@ export function bareName(hostname: string, tlds: string[]): string {
  * is earliest in `tlds` (the caller's own preference order).
  */
 function tldRank(hostname: string, tlds: string[]): number {
-  if (hostname.endsWith(".localhost")) return -1;
-  for (let i = 0; i < tlds.length; i++) if (hostname.endsWith(`.${tlds[i]}`)) return i;
+  if (hostname.endsWith('.localhost')) return -1;
+  for (let i = 0; i < tlds.length; i++)
+    if (hostname.endsWith(`.${tlds[i]}`)) return i;
   return tlds.length;
 }
 
@@ -213,44 +247,59 @@ function tldRank(hostname: string, tlds: string[]): number {
  * whichever variant happens to appear first in routes.json - that on-disk
  * order is portless's, not Deck's, to control.
  */
-export function dedupeRoutes(routes: PortlessRoute[], tlds: string[]): PortlessRoute[] {
+export function dedupeRoutes(
+  routes: PortlessRoute[],
+  tlds: string[]
+): PortlessRoute[] {
   const byName = new Map<string, PortlessRoute>();
   for (const r of routes) {
     const name = bareName(r.hostname, tlds);
     const existing = byName.get(name);
-    if (!existing || tldRank(r.hostname, tlds) < tldRank(existing.hostname, tlds)) {
+    if (
+      !existing ||
+      tldRank(r.hostname, tlds) < tldRank(existing.hostname, tlds)
+    ) {
       byName.set(name, r);
     }
   }
-  return routes.filter((r) => byName.get(bareName(r.hostname, tlds)) === r);
+  return routes.filter(r => byName.get(bareName(r.hostname, tlds)) === r);
 }
 
 /**
  * Join routes to services: exact match on the plist's PORT env var first,
  * name overlap as a fallback. Unmatched routes render without service info.
  */
-export function joinApps(routes: PortlessRoute[], services: LaunchdService[], requestHost?: string): App[] {
+export function joinApps(
+  routes: PortlessRoute[],
+  services: LaunchdService[],
+  requestHost?: string
+): App[] {
   const domain = publicDomainFor(requestHost);
   const { publicDomain, tlds } = getPlatformSettings();
-  return dedupeRoutes(routes, tlds).map((route) => {
+  return dedupeRoutes(routes, tlds).map(route => {
     const name = bareName(route.hostname, tlds);
     const service =
-      services.find((s) => s.port === route.port) ??
-      services.find((s) => {
-        const dir = s.workingDirectory?.split("/").pop() ?? "";
+      services.find(s => s.port === route.port) ??
+      services.find(s => {
+        const dir = s.workingDirectory?.split('/').pop() ?? '';
         return s.label.includes(name) || dir.includes(name);
       }) ??
       null;
-    const url = domain ? `https://${name}.${domain}` : `https://${route.hostname}`;
+    const url = domain
+      ? `https://${name}.${domain}`
+      : `https://${route.hostname}`;
     const publicUrl = publicDomain ? `https://${name}.${publicDomain}` : null;
     return { name, url, publicUrl, port: route.port, service };
   });
 }
 
 /** Services that have no portless route (e.g. the mr-board tunnel). */
-export function orphanServices(apps: App[], services: LaunchdService[]): LaunchdService[] {
-  const claimed = new Set(apps.map((a) => a.service?.label).filter(Boolean));
-  return services.filter((s) => !claimed.has(s.label));
+export function orphanServices(
+  apps: App[],
+  services: LaunchdService[]
+): LaunchdService[] {
+  const claimed = new Set(apps.map(a => a.service?.label).filter(Boolean));
+  return services.filter(s => !claimed.has(s.label));
 }
 
 export interface Health {
@@ -258,7 +307,7 @@ export interface Health {
   status: number | null;
   ms: number | null;
   /** Edge rows only: a badge tone plus human text. App rows never set these. */
-  tone?: "ok" | "warn" | "bad";
+  tone?: 'ok' | 'warn' | 'bad';
   detail?: string;
   hint?: string;
 }
@@ -267,13 +316,17 @@ export interface Health {
 export async function checkHealth(port: number): Promise<Health> {
   const started = Date.now();
   let last: Health = { ok: false, status: null, ms: null };
-  for (const path of ["/healthz", "/"]) {
+  for (const path of ['/healthz', '/']) {
     try {
       const res = await fetch(`http://localhost:${port}${path}`, {
         signal: AbortSignal.timeout(3000),
-        redirect: "manual",
+        redirect: 'manual',
       });
-      last = { ok: res.status < 500, status: res.status, ms: Date.now() - started };
+      last = {
+        ok: res.status < 500,
+        status: res.status,
+        ms: Date.now() - started,
+      };
       // 404 on /healthz just means the app has no health endpoint — judge by "/".
       if (res.status !== 404) return last;
     } catch {
@@ -284,15 +337,20 @@ export async function checkHealth(port: number): Promise<Health> {
 }
 
 /** The process actually listening on a port, per lsof. Null when nothing listens. */
-export async function listenerFor(port: number): Promise<{ pid: number; command: string } | null> {
-  const proc = Bun.spawn(["lsof", "-nP", `-iTCP:${port}`, "-sTCP:LISTEN", "-Fpc"], {
-    stderr: "ignore",
-  });
+export async function listenerFor(
+  port: number
+): Promise<{ pid: number; command: string } | null> {
+  const proc = Bun.spawn(
+    ['lsof', '-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-Fpc'],
+    {
+      stderr: 'ignore',
+    }
+  );
   const out = await new Response(proc.stdout).text();
   await proc.exited;
   const pid = /^p(\d+)$/m.exec(out)?.[1];
   const command = /^c(.+)$/m.exec(out)?.[1];
-  return pid ? { pid: Number(pid), command: command ?? "?" } : null;
+  return pid ? { pid: Number(pid), command: command ?? '?' } : null;
 }
 
 /**
@@ -303,17 +361,20 @@ export async function listenerFor(port: number): Promise<{ pid: number; command:
  */
 export async function restartService(label: string): Promise<boolean> {
   const uid = process.getuid?.() ?? 0;
-  const proc = Bun.spawn(["launchctl", "kickstart", "-k", `gui/${uid}/${label}`], {
-    stderr: "ignore",
-  });
+  const proc = Bun.spawn(
+    ['launchctl', 'kickstart', '-k', `gui/${uid}/${label}`],
+    {
+      stderr: 'ignore',
+    }
+  );
   return (await proc.exited) === 0;
 }
 
 export function tailFile(path: string | null, lines: number): string[] {
   if (!path || !existsSync(path)) return [];
   try {
-    const content = readFileSync(path, "utf8");
-    return content.split("\n").filter(Boolean).slice(-lines);
+    const content = readFileSync(path, 'utf8');
+    return content.split('\n').filter(Boolean).slice(-lines);
   } catch {
     return [];
   }

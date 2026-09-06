@@ -1,18 +1,19 @@
-import { readFileSync, writeFileSync, renameSync, mkdirSync } from "fs";
-import { dirname, join } from "path";
-import { stateDir } from "../api/state.ts";
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs';
+import { dirname, join } from 'path';
+
+import { stateDir } from '../api/state.ts';
 
 export interface RemoteState {
-  target: "railway";
+  target: 'railway';
   serviceId: string;
   customDomain: string;
   /** Railway-assigned CNAME target (<id>.up.railway.app), from ensureCustomDomain; set at the verifying stage so reconcileRemote can write the CNAME. */
   cnameTarget?: string;
   /** Railway-returned TXT record name, stored so disableRemote deletes the exact record enableRemote created. */
   txtName?: string;
-  status: "deploying" | "verifying" | "live" | "error";
+  status: 'deploying' | 'verifying' | 'live' | 'error';
   /** Which cutover path a real run took; set when the CNAME is written. */
-  cutover?: "verified-first" | "cname-first";
+  cutover?: 'verified-first' | 'cname-first';
   url?: string;
   lastPush?: { sha: string; dirty: boolean; at: string };
   /** Backoff gate for reconcileRemote: ISO time before which not to re-poll. */
@@ -20,7 +21,7 @@ export interface RemoteState {
 }
 
 export interface SyncIssue {
-  source: "portless" | "launchd" | "cloudflare" | "railway" | "dev-link";
+  source: 'portless' | 'launchd' | 'cloudflare' | 'railway' | 'dev-link';
   message: string;
   at: string;
 }
@@ -31,7 +32,7 @@ export interface AppRecord {
   managedBy: string;
   port: number;
   /** service = Deck supervises it via launchd; external = a static port Deck only routes to. */
-  kind: "service" | "external";
+  kind: 'service' | 'external';
   command?: string[];
   workingDirectory?: string;
   env?: Record<string, string>;
@@ -42,7 +43,7 @@ export interface AppRecord {
   displayName?: string;
   description?: string;
   /** Present once an icon has been ingested to the deck icon store. */
-  icon?: { ext: "svg" };
+  icon?: { ext: 'svg' };
   /** Action commands from mattstack.deck.json (shell strings), excluding `start`. Dev-mode-gated at the API for managed apps; never gated for user apps. */
   commands?: Record<string, string>;
   /** Declared serve-shape overlays; each may carry only `port` and/or `start`. */
@@ -74,14 +75,16 @@ interface RegistryFile {
 // start, never following a later HOME fake) independently of state.ts's own
 // copy; importing it keeps the two from diverging again.
 export function registryPath(): string {
-  return process.env.LOCAL_REGISTRY_PATH ?? join(stateDir(), "registry.json");
+  return process.env.LOCAL_REGISTRY_PATH ?? join(stateDir(), 'registry.json');
 }
 
 let cache: RegistryFile = load();
 
 function load(): RegistryFile {
   try {
-    const parsed = JSON.parse(readFileSync(registryPath(), "utf8")) as RegistryFile;
+    const parsed = JSON.parse(
+      readFileSync(registryPath(), 'utf8')
+    ) as RegistryFile;
     if (!parsed.apps) parsed.apps = {};
     return parsed;
   } catch {
@@ -99,7 +102,7 @@ function save(): void {
   mkdirSync(dirname(path), { recursive: true });
   // Atomic temp+rename is CORRECT here (unlike routes.json): nothing fs.watches
   // this file, and a torn registry would be far worse than a torn route table.
-  const tmp = path + ".tmp";
+  const tmp = path + '.tmp';
   writeFileSync(tmp, JSON.stringify(cache, null, 2));
   renameSync(tmp, path);
 }
@@ -136,15 +139,18 @@ export function addIssue(name: string, issue: SyncIssue): void {
   cache = load();
   const r = cache.apps[name];
   if (!r) return;
-  r.issues = [...(r.issues ?? []).filter((i) => i.source !== issue.source), issue];
+  r.issues = [
+    ...(r.issues ?? []).filter(i => i.source !== issue.source),
+    issue,
+  ];
   save();
 }
 
-export function clearIssues(name: string, source: SyncIssue["source"]): void {
+export function clearIssues(name: string, source: SyncIssue['source']): void {
   cache = load();
   const r = cache.apps[name];
   if (!r?.issues) return;
-  r.issues = r.issues.filter((i) => i.source !== source);
+  r.issues = r.issues.filter(i => i.source !== source);
   if (r.issues.length === 0) delete r.issues;
   save();
 }

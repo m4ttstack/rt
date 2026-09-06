@@ -1,5 +1,5 @@
-import { readFileSync } from "fs";
-import { join } from "path";
+import { readFileSync } from 'fs';
+import { join } from 'path';
 
 export interface DeckManifest {
   name: string;
@@ -20,9 +20,7 @@ export interface DeckManifest {
 }
 
 export type ParseResult =
-  | { ok: true; manifest: DeckManifest }
-  | { ok: false; error: string }
-  | null;
+  { ok: true; manifest: DeckManifest } | { ok: false; error: string } | null;
 
 const NAME_RE = /^[a-z0-9][a-z0-9.-]*$/;
 const COMMAND_KEY_RE = /^[a-z0-9-]+$/;
@@ -34,7 +32,7 @@ function err(error: string): ParseResult {
 export function readDeckManifest(dir: string): ParseResult {
   let raw: string;
   try {
-    raw = readFileSync(join(dir, "mattstack.deck.json"), "utf8");
+    raw = readFileSync(join(dir, 'mattstack.deck.json'), 'utf8');
   } catch {
     return null; // absent is not an error: callers fall back to mattstack.json for identity
   }
@@ -42,90 +40,125 @@ export function readDeckManifest(dir: string): ParseResult {
   try {
     parsed = JSON.parse(raw);
   } catch {
-    return err("mattstack.deck.json is not valid JSON");
+    return err('mattstack.deck.json is not valid JSON');
   }
-  if (typeof parsed !== "object" || parsed === null) return err("mattstack.deck.json must be an object");
+  if (typeof parsed !== 'object' || parsed === null)
+    return err('mattstack.deck.json must be an object');
   const m = parsed as Record<string, unknown>;
 
-  if (typeof m.name !== "string" || !NAME_RE.test(m.name)) {
+  if (typeof m.name !== 'string' || !NAME_RE.test(m.name)) {
     return err(`name must match ${NAME_RE}`);
   }
 
   const commands: Record<string, string> = {};
   if (m.commands !== undefined) {
-    if (typeof m.commands !== "object" || m.commands === null) return err("commands must be an object");
-    for (const [key, val] of Object.entries(m.commands as Record<string, unknown>)) {
+    if (typeof m.commands !== 'object' || m.commands === null)
+      return err('commands must be an object');
+    for (const [key, val] of Object.entries(
+      m.commands as Record<string, unknown>
+    )) {
       // Every non-start key becomes a board button routed at /commands/:key; the route
       // regex only accepts [a-z0-9-], so anything else is a silent 404, not a dead click.
-      if (!COMMAND_KEY_RE.test(key)) return err(`command key ${key} must match ${COMMAND_KEY_RE}`);
-      if (typeof val !== "string" || val.length === 0) return err(`command ${key} must be a non-empty string`);
+      if (!COMMAND_KEY_RE.test(key))
+        return err(`command key ${key} must match ${COMMAND_KEY_RE}`);
+      if (typeof val !== 'string' || val.length === 0)
+        return err(`command ${key} must be a non-empty string`);
       commands[key] = val;
     }
   }
 
   const out: DeckManifest = { name: m.name, commands };
-  if (typeof m.displayName === "string") out.displayName = m.displayName;
-  if (typeof m.description === "string") out.description = m.description;
-  if (typeof m.icon === "string") out.icon = m.icon;
+  if (typeof m.displayName === 'string') out.displayName = m.displayName;
+  if (typeof m.description === 'string') out.description = m.description;
+  if (typeof m.icon === 'string') out.icon = m.icon;
   if (m.port !== undefined) {
-    if (!Number.isInteger(m.port) || (m.port as number) < 1 || (m.port as number) > 65535) return err("port must be 1-65535");
+    if (
+      !Number.isInteger(m.port) ||
+      (m.port as number) < 1 ||
+      (m.port as number) > 65535
+    )
+      return err('port must be 1-65535');
     out.port = m.port as number;
   }
 
   if (m.includeInBundle !== undefined) {
-    if (typeof m.includeInBundle !== "boolean") return err("includeInBundle must be a boolean");
+    if (typeof m.includeInBundle !== 'boolean')
+      return err('includeInBundle must be a boolean');
     out.includeInBundle = m.includeInBundle;
   }
 
   if (m.dev !== undefined) {
-    if (typeof m.dev !== "object" || m.dev === null || Array.isArray(m.dev)) return err("dev must be an object");
+    if (typeof m.dev !== 'object' || m.dev === null || Array.isArray(m.dev))
+      return err('dev must be an object');
     const dev: Record<string, string> = {};
     for (const [key, val] of Object.entries(m.dev as Record<string, unknown>)) {
-      if (!COMMAND_KEY_RE.test(key)) return err(`dev command key ${key} must match ${COMMAND_KEY_RE}`);
-      if (typeof val !== "string" || val.length === 0) return err(`dev command ${key} must be a non-empty string`);
+      if (!COMMAND_KEY_RE.test(key))
+        return err(`dev command key ${key} must match ${COMMAND_KEY_RE}`);
+      if (typeof val !== 'string' || val.length === 0)
+        return err(`dev command ${key} must be a non-empty string`);
       dev[key] = val;
     }
     out.dev = dev;
   }
 
   if (m.env !== undefined) {
-    if (typeof m.env !== "object" || m.env === null || Array.isArray(m.env)) return err("env must be an object");
+    if (typeof m.env !== 'object' || m.env === null || Array.isArray(m.env))
+      return err('env must be an object');
     const env: Record<string, string> = {};
     for (const [key, val] of Object.entries(m.env as Record<string, unknown>)) {
-      if (key.length === 0) return err("env keys must be non-empty");
-      if (typeof val !== "string") return err(`env ${key} must be a string`);
+      if (key.length === 0) return err('env keys must be non-empty');
+      if (typeof val !== 'string') return err(`env ${key} must be a string`);
       env[key] = val;
     }
     out.env = env;
   }
 
   if (m.altConfigs !== undefined) {
-    if (typeof m.altConfigs !== "object" || m.altConfigs === null) return err("altConfigs must be an object");
+    if (typeof m.altConfigs !== 'object' || m.altConfigs === null)
+      return err('altConfigs must be an object');
     const alts: Record<string, { port?: number; start?: string }> = {};
-    for (const [altName, rawOverlay] of Object.entries(m.altConfigs as Record<string, unknown>)) {
-      if (typeof rawOverlay !== "object" || rawOverlay === null) return err(`overlay ${altName} must be an object`);
+    for (const [altName, rawOverlay] of Object.entries(
+      m.altConfigs as Record<string, unknown>
+    )) {
+      if (typeof rawOverlay !== 'object' || rawOverlay === null)
+        return err(`overlay ${altName} must be an object`);
       const overlay = rawOverlay as Record<string, unknown>;
       const entry: { port?: number; start?: string } = {};
       for (const key of Object.keys(overlay)) {
         // The loud rejection the spec requires: an overlay is the serve shape only.
-        if (key !== "port" && key !== "commands") {
-          return err(`overlay ${altName} may only override port and commands.start (saw ${key})`);
+        if (key !== 'port' && key !== 'commands') {
+          return err(
+            `overlay ${altName} may only override port and commands.start (saw ${key})`
+          );
         }
       }
       if (overlay.port !== undefined) {
-        if (!Number.isInteger(overlay.port) || (overlay.port as number) < 1 || (overlay.port as number) > 65535) {
+        if (
+          !Number.isInteger(overlay.port) ||
+          (overlay.port as number) < 1 ||
+          (overlay.port as number) > 65535
+        ) {
           return err(`overlay ${altName} port must be 1-65535`);
         }
         entry.port = overlay.port as number;
       }
       if (overlay.commands !== undefined) {
-        if (typeof overlay.commands !== "object" || overlay.commands === null) return err(`overlay ${altName} commands must be an object`);
-        for (const key of Object.keys(overlay.commands as Record<string, unknown>)) {
-          if (key !== "start") return err(`overlay ${altName} may only override commands.start (saw commands.${key})`);
+        if (typeof overlay.commands !== 'object' || overlay.commands === null)
+          return err(`overlay ${altName} commands must be an object`);
+        for (const key of Object.keys(
+          overlay.commands as Record<string, unknown>
+        )) {
+          if (key !== 'start')
+            return err(
+              `overlay ${altName} may only override commands.start (saw commands.${key})`
+            );
         }
         const start = (overlay.commands as Record<string, unknown>).start;
         if (start !== undefined) {
-          if (typeof start !== "string" || start.length === 0) return err(`overlay ${altName} commands.start must be a non-empty string`);
+          if (typeof start !== 'string' || start.length === 0)
+            return err(
+              `overlay ${altName} commands.start must be a non-empty string`
+            );
           entry.start = start;
         }
       }
@@ -145,19 +178,20 @@ const SHELL_SYNTAX = /[|&;<>()$`\\"'*?\[\]{}~\n]|(^|\s)\w+=/;
 
 export function startArgv(start: string): string[] {
   const s = start.trim();
-  if (SHELL_SYNTAX.test(s)) return ["sh", "-c", start];
+  if (SHELL_SYNTAX.test(s)) return ['sh', '-c', start];
   return s.split(/\s+/);
 }
 
 export function resolveServeShape(
   manifest: DeckManifest,
-  altName?: string,
+  altName?: string
 ): { port?: number; command?: string[] } {
   // Object.prototype.hasOwnProperty, not `in` or a bare index: altConfigs is a
   // plain object, so an inherited name (toString, constructor, ...) would
   // otherwise resolve to a real member and silently fall through as "known".
-  const hasOverlay = altName !== undefined
-    && Object.prototype.hasOwnProperty.call(manifest.altConfigs ?? {}, altName);
+  const hasOverlay =
+    altName !== undefined &&
+    Object.prototype.hasOwnProperty.call(manifest.altConfigs ?? {}, altName);
   if (altName !== undefined && !hasOverlay) {
     throw new Error(`unknown alt config: ${altName}`);
   }

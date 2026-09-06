@@ -1,8 +1,9 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from "fs";
-import { join, resolve } from "path";
-import { stateDir } from "../api/state.ts";
-import { getRecord, putRecord } from "./records.ts";
-import { readDeckManifest } from "./deck-manifest.ts";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { join, resolve } from 'path';
+
+import { stateDir } from '../api/state.ts';
+import { readDeckManifest } from './deck-manifest.ts';
+import { getRecord, putRecord } from './records.ts';
 
 export interface Manifest {
   displayName: string;
@@ -19,7 +20,7 @@ export interface Manifest {
 export function readManifest(dir: string): Manifest | null {
   let raw: string;
   try {
-    raw = readFileSync(join(dir, "mattstack.json"), "utf8");
+    raw = readFileSync(join(dir, 'mattstack.json'), 'utf8');
   } catch {
     return null;
   }
@@ -29,12 +30,13 @@ export function readManifest(dir: string): Manifest | null {
   } catch {
     return null;
   }
-  if (typeof parsed !== "object" || parsed === null) return null;
+  if (typeof parsed !== 'object' || parsed === null) return null;
   const m = parsed as Record<string, unknown>;
-  if (typeof m.displayName !== "string" || m.displayName.length === 0) return null;
-  if (typeof m.icon !== "string" || m.icon.length === 0) return null;
+  if (typeof m.displayName !== 'string' || m.displayName.length === 0)
+    return null;
+  if (typeof m.icon !== 'string' || m.icon.length === 0) return null;
   const out: Manifest = { displayName: m.displayName, icon: m.icon };
-  if (typeof m.description === "string") out.description = m.description;
+  if (typeof m.description === 'string') out.description = m.description;
   return out;
 }
 
@@ -43,14 +45,15 @@ const MAX_ICON_BYTES = 64 * 1024;
 // Accepts a valid SVG whose root is <svg>, allowing a leading XML prolog,
 // comments, or DOCTYPE that standard exporters (Illustrator, Inkscape) emit
 // before the root element.
-const SVG_ROOT = /^\s*(?:<\?xml\b[^>]*\?>\s*|<!--[\s\S]*?-->\s*|<!DOCTYPE\b[^>]*>\s*)*<svg[\s>]/i;
+const SVG_ROOT =
+  /^\s*(?:<\?xml\b[^>]*\?>\s*|<!--[\s\S]*?-->\s*|<!DOCTYPE\b[^>]*>\s*)*<svg[\s>]/i;
 
 function looksLikeSvg(content: string): boolean {
   return SVG_ROOT.test(content);
 }
 
 export function iconsDir(): string {
-  return join(stateDir(), "icons");
+  return join(stateDir(), 'icons');
 }
 
 export function iconPathFor(name: string): string {
@@ -77,15 +80,28 @@ export function ingestManifest(name: string): void {
   const deck = readDeckManifest(record.workingDirectory);
   const manifest =
     deck && deck.ok && deck.manifest.displayName && deck.manifest.icon
-      ? { displayName: deck.manifest.displayName, description: deck.manifest.description, icon: deck.manifest.icon }
+      ? {
+          displayName: deck.manifest.displayName,
+          description: deck.manifest.description,
+          icon: deck.manifest.icon,
+        }
       : readManifest(record.workingDirectory); // deprecated mattstack.json fallback (identity only)
   if (!manifest) {
     // The manifest is the source of truth for identity: if neither deck.json
     // nor mattstack.json supplies one anymore, a previously-ingested
     // displayName/description/icon must not linger as stale leftovers.
-    if (record.displayName !== undefined || record.description !== undefined || record.icon !== undefined) {
+    if (
+      record.displayName !== undefined ||
+      record.description !== undefined ||
+      record.icon !== undefined
+    ) {
       removeIcon(name);
-      const { displayName: _displayName, description: _description, icon: _icon, ...rest } = record;
+      const {
+        displayName: _displayName,
+        description: _description,
+        icon: _icon,
+        ...rest
+      } = record;
       putRecord(rest);
     }
     return;
@@ -95,7 +111,7 @@ export function ingestManifest(name: string): void {
     const iconPath = resolve(record.workingDirectory, manifest.icon);
     const bytes = readFileSync(iconPath);
     if (bytes.byteLength > MAX_ICON_BYTES) return;
-    svg = bytes.toString("utf8");
+    svg = bytes.toString('utf8');
   } catch {
     return;
   }
@@ -107,7 +123,7 @@ export function ingestManifest(name: string): void {
       ...record,
       displayName: manifest.displayName,
       description: manifest.description,
-      icon: { ext: "svg" },
+      icon: { ext: 'svg' },
     });
   } catch {
     return;

@@ -1,15 +1,20 @@
-import type { AppRecord } from "./records.ts";
-import { isPlatformManagedBy } from "../services/manager.ts";
+import { isPlatformManagedBy } from '../services/manager.ts';
+import type { AppRecord } from './records.ts';
 
 /** Manager ids are generic; display names make the 409 read like the product. */
-export const MANAGER_DISPLAY: Record<string, string> = { rt: "mattstack" };
+export const MANAGER_DISPLAY: Record<string, string> = { rt: 'mattstack' };
 
 export type StructuralVerdict =
   | { ok: true }
   | {
       ok: false;
       status: 409;
-      body: { error: "managed"; managedBy: string; message: string; escapeHatch: string };
+      body: {
+        error: 'managed';
+        managedBy: string;
+        message: string;
+        escapeHatch: string;
+      };
     };
 
 /**
@@ -18,20 +23,24 @@ export type StructuralVerdict =
  * the documented escape hatch the 409 body advertises.
  */
 export function authorizeStructural(
-  record: Pick<AppRecord, "name" | "managedBy">,
+  record: Pick<AppRecord, 'name' | 'managedBy'>,
   caller: string,
-  force: boolean,
+  force: boolean
 ): StructuralVerdict {
   if (force || record.managedBy === caller) return { ok: true };
-  const message =
-    isPlatformManagedBy(record.managedBy)
-      ? "This is Deck itself: `deck uninstall`"
-      : record.managedBy === "user"
-        ? `Managed by user: remove it from the board or \`deck remove ${record.name}\``
-        : `Managed by ${MANAGER_DISPLAY[record.managedBy] ?? record.managedBy} — \`${record.managedBy} uninstall ${record.name}\``;
+  const message = isPlatformManagedBy(record.managedBy)
+    ? 'This is Deck itself: `deck uninstall`'
+    : record.managedBy === 'user'
+      ? `Managed by user: remove it from the board or \`deck remove ${record.name}\``
+      : `Managed by ${MANAGER_DISPLAY[record.managedBy] ?? record.managedBy} — \`${record.managedBy} uninstall ${record.name}\``;
   return {
     ok: false,
     status: 409,
-    body: { error: "managed", managedBy: record.managedBy, message, escapeHatch: "?force=true" },
+    body: {
+      error: 'managed',
+      managedBy: record.managedBy,
+      message,
+      escapeHatch: '?force=true',
+    },
   };
 }

@@ -1,5 +1,6 @@
-import { ListGroup, Switch, Tooltip } from "@mattstack/tui-kit";
-import { useOptimistic, useTransition } from "react";
+import { useOptimistic, useTransition } from 'react';
+
+import { ListGroup, Switch, Tooltip } from '@mattstack/tui-kit';
 
 /** Optimistic boolean for a Switch backed by a server mutation: the shown
     value flips the moment the user clicks, and the canonical value takes
@@ -7,7 +8,10 @@ import { useOptimistic, useTransition } from "react";
     state (every useBoardState mutation does), so the canonical value is
     already correct at settle time and the hand-off is invisible; a failed
     mutation leaves canonical state unchanged and the switch snaps back. */
-export function useOptimisticToggle(actual: boolean, mutate: () => Promise<void>): [boolean, () => void] {
+export function useOptimisticToggle(
+  actual: boolean,
+  mutate: () => Promise<void>
+): [boolean, () => void] {
   const [shown, setShown] = useOptimistic(actual);
   const [, startTransition] = useTransition();
   const toggle = () =>
@@ -25,11 +29,11 @@ export function useOptimisticToggle(actual: boolean, mutate: () => Promise<void>
 export function OptimisticSwitch({
   checked,
   mutate,
-  "aria-label": ariaLabel,
+  'aria-label': ariaLabel,
 }: {
   checked: boolean;
   mutate: () => Promise<void>;
-  "aria-label": string;
+  'aria-label': string;
 }) {
   const [shown, toggle] = useOptimisticToggle(checked, mutate);
   return <Switch checked={shown} onChange={toggle} aria-label={ariaLabel} />;
@@ -39,15 +43,22 @@ export function OptimisticToggleRow({
   label,
   checked,
   mutate,
-  "aria-label": ariaLabel,
+  'aria-label': ariaLabel,
 }: {
   label: string;
   checked: boolean;
   mutate: () => Promise<void>;
-  "aria-label": string;
+  'aria-label': string;
 }) {
   const [shown, toggle] = useOptimisticToggle(checked, mutate);
-  return <ListGroup.Toggle label={label} checked={shown} onChange={toggle} aria-label={ariaLabel} />;
+  return (
+    <ListGroup.Toggle
+      label={label}
+      checked={shown}
+      onChange={toggle}
+      aria-label={ariaLabel}
+    />
+  );
 }
 
 /** Same shell as ListGroup.Toggle (label span + Switch, same `data-part`s so
@@ -63,25 +74,34 @@ export function OptimisticGatedToggleRow({
   mutate,
   disabled,
   disabledTip,
-  "aria-label": ariaLabel,
+  'aria-label': ariaLabel,
 }: {
   label: string;
   checked: boolean;
   mutate: () => Promise<void>;
   disabled?: boolean;
   disabledTip?: string;
-  "aria-label": string;
+  'aria-label': string;
 }) {
   const [shown, toggle] = useOptimisticToggle(checked, mutate);
   const control = (
-    <Switch checked={shown} onChange={disabled ? () => {} : toggle} disabled={disabled} aria-label={ariaLabel} />
+    <Switch
+      checked={shown}
+      onChange={disabled ? () => {} : toggle}
+      disabled={disabled}
+      aria-label={ariaLabel}
+    />
   );
   return (
     <li className="drawer-toggle-row" data-part="listgroup-toggle">
       <span className="drawer-toggle-label" data-part="listgroup-label">
         {label}
       </span>
-      {disabled && disabledTip ? <Tooltip tip={disabledTip}>{control}</Tooltip> : control}
+      {disabled && disabledTip ? (
+        <Tooltip tip={disabledTip}>{control}</Tooltip>
+      ) : (
+        control
+      )}
     </li>
   );
 }

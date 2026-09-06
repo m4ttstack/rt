@@ -1,6 +1,12 @@
-import { mkdirSync, readFileSync, writeFileSync, existsSync, renameSync } from "fs";
-import { join } from "path";
-import { homedir } from "os";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from 'fs';
+import { homedir } from 'os';
+import { join } from 'path';
 
 // `homedir()` alone is frozen to whatever HOME was at process start -- Bun
 // does not track later mutations of process.env.HOME through it, so a
@@ -8,12 +14,18 @@ import { homedir } from "os";
 // ?? homedir()` reads the live env var first, per rt-client's paths.ts
 // convention, falling back to `homedir()` only when HOME is unset entirely.
 export function stateDir(): string {
-  return process.env.LOCAL_STATE_DIR ?? join(process.env.HOME ?? homedir(), ".mattstack", "deck");
+  return (
+    process.env.LOCAL_STATE_DIR ??
+    join(process.env.HOME ?? homedir(), '.mattstack', 'deck')
+  );
 }
 
 /** Where state lived before the Local -> Deck rename. Adoption source only. */
 export function legacyStateDir(): string {
-  return process.env.LOCAL_LEGACY_STATE_DIR ?? join(process.env.HOME ?? homedir(), ".mattstack", "local");
+  return (
+    process.env.LOCAL_LEGACY_STATE_DIR ??
+    join(process.env.HOME ?? homedir(), '.mattstack', 'local')
+  );
 }
 
 /**
@@ -39,18 +51,23 @@ export function adoptLegacyStateDir(): void {
 }
 
 export function logsDir(): string {
-  return join(stateDir(), "logs");
+  return join(stateDir(), 'logs');
 }
 
 /** Where the CLI finds a running platform. Written at serve boot. */
 export function writeApiInfo(port: number): void {
   mkdirSync(stateDir(), { recursive: true });
-  writeFileSync(join(stateDir(), "api.json"), JSON.stringify({ port, pid: process.pid }));
+  writeFileSync(
+    join(stateDir(), 'api.json'),
+    JSON.stringify({ port, pid: process.pid })
+  );
 }
 
 export function readApiInfo(): { port: number } | null {
   try {
-    const parsed = JSON.parse(readFileSync(join(stateDir(), "api.json"), "utf8"));
+    const parsed = JSON.parse(
+      readFileSync(join(stateDir(), 'api.json'), 'utf8')
+    );
     return Number.isInteger(parsed.port) ? { port: parsed.port } : null;
   } catch {
     return null;

@@ -1,4 +1,4 @@
-import type { ServiceManager, ServiceSpec } from "./manager.ts";
+import type { ServiceManager, ServiceSpec } from './manager.ts';
 
 /** Deterministic in-memory manager for API tests. */
 export class FakeServiceManager implements ServiceManager {
@@ -15,11 +15,11 @@ export class FakeServiceManager implements ServiceManager {
   }
 
   async install(spec: ServiceSpec): Promise<void> {
-    this.maybeFail(spec.label, "install");
+    this.maybeFail(spec.label, 'install');
     this.installed.set(spec.label, spec);
   }
   async uninstall(label: string): Promise<void> {
-    this.maybeFail(label, "uninstall");
+    this.maybeFail(label, 'uninstall');
     this.installed.delete(label);
   }
   async kickstart(label: string): Promise<boolean> {

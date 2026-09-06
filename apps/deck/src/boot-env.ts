@@ -8,8 +8,9 @@
 // import graph before executing the importer's own statements. Putting the
 // guard in its own module and importing it FIRST is what actually orders it
 // before every transitive import that reads this env var.
-import { join } from "path";
-import { stateDir, adoptLegacyStateDir } from "./api/state.ts";
+import { join } from 'path';
+
+import { adoptLegacyStateDir, stateDir } from './api/state.ts';
 
 // Local -> Deck rename (ruled): adopt a pre-rename ~/.mattstack/local into
 // ~/.mattstack/deck before anything (records.ts's eager cache load, in
@@ -33,5 +34,5 @@ adoptLegacyStateDir();
 // first run; those are the rotation set (compromised, being retired), not a
 // seed worth carrying forward.
 if (!process.env.LOCAL_APPS_SETTINGS_PATH) {
-  process.env.LOCAL_APPS_SETTINGS_PATH = join(stateDir(), "settings.json");
+  process.env.LOCAL_APPS_SETTINGS_PATH = join(stateDir(), 'settings.json');
 }

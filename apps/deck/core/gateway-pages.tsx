@@ -1,9 +1,10 @@
-import type { ReactNode } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
+import type { ReactNode } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+
 // readFileSync(import.meta.dir…) dies under --compile; a static import embeds
 // the tokens in the binary and behaves identically under plain `bun run`.
 // @ts-expect-error — tsc has no ambient module declaration for a .css text import (with {type:"text"}); runtime is correct, see core/generated-fresh.test.ts
-import GATEWAY_CSS from "./generated/gateway.css" with { type: "text" };
+import GATEWAY_CSS from './generated/gateway.css' with { type: 'text' };
 
 // Static layout only: colours are the generated token vars above, so this
 // block never redeclares one and needs no dark-mode branch of its own.
@@ -46,7 +47,13 @@ button.primary:focus-visible { outline: none;
 function LockBadge() {
   return (
     <div className="badge">
-      <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true">
+      <svg
+        viewBox="0 0 24 24"
+        width="22"
+        height="22"
+        fill="currentColor"
+        aria-hidden="true"
+      >
         <path d="M12 1a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2h-1V6a5 5 0 0 0-5-5zm3 8H9V6a3 3 0 0 1 6 0z" />
       </svg>
     </div>
@@ -70,7 +77,7 @@ function Card({ title, children }: { title: string; children: ReactNode }) {
 }
 
 function shell(node: ReactNode): string {
-  return "<!doctype html>" + renderToStaticMarkup(node);
+  return '<!doctype html>' + renderToStaticMarkup(node);
 }
 
 export function pageNothingHere(): string {
@@ -78,7 +85,7 @@ export function pageNothingHere(): string {
     <Card title="Nothing here">
       <h1>Nothing here</h1>
       <p>There is no app at this address.</p>
-    </Card>,
+    </Card>
   );
 }
 
@@ -87,7 +94,7 @@ export function pageOffline(app: string): string {
     <Card title="App is offline">
       <h1>{app} is offline</h1>
       <p>This app is not responding right now. Try again shortly.</p>
-    </Card>,
+    </Card>
   );
 }
 
@@ -96,11 +103,14 @@ export function pageRateLimited(): string {
     <Card title="Too many attempts">
       <h1>Too many attempts</h1>
       <p>Please wait a minute and try again.</p>
-    </Card>,
+    </Card>
   );
 }
 
-export function pageLogin(app: string, opts: { error?: boolean; next?: string } = {}): string {
+export function pageLogin(
+  app: string,
+  opts: { error?: boolean; next?: string } = {}
+): string {
   return shell(
     <Card title={app}>
       <LockBadge />
@@ -118,9 +128,11 @@ export function pageLogin(app: string, opts: { error?: boolean; next?: string } 
           autoFocus
           required
         />
-        <input type="hidden" name="next" defaultValue={opts.next ?? "/"} />
-        <button className="primary" type="submit">Unlock</button>
+        <input type="hidden" name="next" defaultValue={opts.next ?? '/'} />
+        <button className="primary" type="submit">
+          Unlock
+        </button>
       </form>
-    </Card>,
+    </Card>
   );
 }

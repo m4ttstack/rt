@@ -37,19 +37,12 @@
       "issues": [],
       "record": {
         "kind": "service",
-        "command": [
-          "bun",
-          "run",
-          "server.ts"
-        ],
+        "command": ["bun", "run", "server.ts"],
         "workingDirectory": "/Users/matt/Documents/GitHub/atlas"
       },
       "oauth": {
         "mode": "emails",
-        "emails": [
-          "matt@example.com",
-          "guest@example.com"
-        ]
+        "emails": ["matt@example.com", "guest@example.com"]
       },
       "publicOrigin": "tunnel",
       "remote": null
@@ -83,18 +76,12 @@
       "issues": [],
       "record": {
         "kind": "service",
-        "command": [
-          "bun",
-          "run",
-          "server.ts"
-        ],
+        "command": ["bun", "run", "server.ts"],
         "workingDirectory": "/Users/matt/Documents/GitHub/railwayapp"
       },
       "oauth": {
         "mode": "emails",
-        "emails": [
-          "matt@example.com"
-        ]
+        "emails": ["matt@example.com"]
       },
       "publicOrigin": "railway",
       "remote": {
@@ -131,11 +118,7 @@
       "issues": [],
       "record": {
         "kind": "service",
-        "command": [
-          "bun",
-          "run",
-          "server.ts"
-        ],
+        "command": ["bun", "run", "server.ts"],
         "workingDirectory": "/Users/matt/Documents/GitHub/gatedapp"
       },
       "oauth": {
@@ -173,11 +156,7 @@
       "issues": [],
       "record": {
         "kind": "service",
-        "command": [
-          "bun",
-          "run",
-          "server.ts"
-        ],
+        "command": ["bun", "run", "server.ts"],
         "workingDirectory": "/Users/matt/Documents/GitHub/lockedout"
       },
       "oauth": {

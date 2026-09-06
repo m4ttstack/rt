@@ -157,7 +157,7 @@ usage:
 - **Casual, zero setup**: `portless --funnel` gives the app a public URL
   with no auth. Treat it accordingly.
 - **Password gate**: set a password on the app, from the board or `deck
-  password <name>`. It's served by Deck's own gateway; no accounts
+password <name>`. It's served by Deck's own gateway; no accounts
   needed.
 - **Your own domain**: `deck domain yourdomain.dev` creates and owns a
   wildcard Cloudflare tunnel (`*.yourdomain.dev` to your local gateway),

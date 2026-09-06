@@ -1,14 +1,19 @@
-import { listRecords, putRecord, type AppRecord } from "./records.ts";
-import { readDeckManifest } from "./deck-manifest.ts";
-import { isPlatformManagedBy } from "../services/manager.ts";
-import { sourceShape, bundleShape } from "./serve-shape.ts";
+import { isPlatformManagedBy } from '../services/manager.ts';
+import { readDeckManifest } from './deck-manifest.ts';
+import { listRecords, putRecord, type AppRecord } from './records.ts';
+import { bundleShape, sourceShape } from './serve-shape.ts';
 
 /** Uptime guard: a slim row must carry its dev
     link in the same write that clears its legacy source command, or the app
     would be left with neither a bundle nor a source to fall back to. */
-export function assertSlimRowKeepsAFallback(name: string, next: AppRecord): void {
+export function assertSlimRowKeepsAFallback(
+  name: string,
+  next: AppRecord
+): void {
   if (!next.dev?.workingDirectory) {
-    throw new Error(`migration guard: refusing to slim ${name} without dev.workingDirectory`);
+    throw new Error(
+      `migration guard: refusing to slim ${name} without dev.workingDirectory`
+    );
   }
 }
 
@@ -18,14 +23,22 @@ function writeSlimRow(next: AppRecord): void {
   putRecord(next);
 }
 
-export function migrateManagedDevShape(): { slimmed: string[]; skipped: string[] } {
+export function migrateManagedDevShape(): {
+  slimmed: string[];
+  skipped: string[];
+} {
   const slimmed: string[] = [];
   const skipped: string[] = [];
   for (const record of listRecords()) {
-    if (record.managedBy === "user") continue;
+    if (record.managedBy === 'user') continue;
     if (isPlatformManagedBy(record.managedBy)) {
       if (record.sourceDirectory && !record.dev) {
-        putRecord({ ...record, dev: { workingDirectory: record.sourceDirectory }, sourceDirectory: undefined, commands: undefined });
+        putRecord({
+          ...record,
+          dev: { workingDirectory: record.sourceDirectory },
+          sourceDirectory: undefined,
+          commands: undefined,
+        });
         slimmed.push(record.name);
       }
       continue;
@@ -33,7 +46,11 @@ export function migrateManagedDevShape(): { slimmed: string[]; skipped: string[]
     if (record.dev?.workingDirectory) continue;
     const dir = record.workingDirectory;
     const parsed = dir ? readDeckManifest(dir) : null;
-    if (!parsed?.ok || parsed.manifest.name !== record.name || parsed.manifest.includeInBundle !== true) {
+    if (
+      !parsed?.ok ||
+      parsed.manifest.name !== record.name ||
+      parsed.manifest.includeInBundle !== true
+    ) {
       skipped.push(record.name);
       continue;
     }

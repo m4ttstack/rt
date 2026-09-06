@@ -1,15 +1,23 @@
-import { dirname, join } from "path";
-import { mkdirSync } from "fs";
-import { readRoutes, readServices } from "../../core/discover.ts";
+import { mkdirSync } from 'fs';
+import { dirname, join } from 'path';
+
+import { readRoutes, readServices } from '../../core/discover.ts';
 import {
-  PLATFORM_LABEL, PLATFORM_NAME, LEGACY_PLATFORM_LABEL, LEGACY_PLATFORM_NAME,
-} from "../services/manager.ts";
-import { allocatePort } from "./allocate.ts";
-import { listRecords, getRecord, deleteRecord, putRecord } from "./records.ts";
-import { registerApp, reinstallSupervised, type Drivers } from "../api/register.ts";
-import { stateDir, logsDir } from "../api/state.ts";
-import { composeServicePath } from "../services/exec-env.ts";
-import { readDeckManifest } from "./deck-manifest.ts";
+  registerApp,
+  reinstallSupervised,
+  type Drivers,
+} from '../api/register.ts';
+import { logsDir, stateDir } from '../api/state.ts';
+import { composeServicePath } from '../services/exec-env.ts';
+import {
+  LEGACY_PLATFORM_LABEL,
+  LEGACY_PLATFORM_NAME,
+  PLATFORM_LABEL,
+  PLATFORM_NAME,
+} from '../services/manager.ts';
+import { allocatePort } from './allocate.ts';
+import { readDeckManifest } from './deck-manifest.ts';
+import { deleteRecord, getRecord, listRecords, putRecord } from './records.ts';
 
 export interface BootstrapResult {
   port: number;
@@ -26,7 +34,7 @@ export interface BootstrapResult {
  */
 export async function bootstrapSelf(
   drivers: Drivers,
-  opts: { execPath: string; entry: string | null; tlds: string[] },
+  opts: { execPath: string; entry: string | null; tlds: string[] }
 ): Promise<BootstrapResult> {
   // Local -> Deck rename (ruled): an upgrading machine's self-row may still
   // be on disk under the pre-rename identity (name/managedBy "local"). Look
@@ -36,7 +44,7 @@ export async function bootstrapSelf(
   const port =
     existing?.port ??
     allocatePort(listRecords(), readRoutes(), await readServices());
-  if (port === null) throw new Error("port range exhausted");
+  if (port === null) throw new Error('port range exhausted');
 
   // Migration requirement: boot the pre-rename platform label out before
   // installing the new one, so an upgrading machine never ends up running
@@ -59,8 +67,8 @@ export async function bootstrapSelf(
 
   mkdirSync(logsDir(), { recursive: true });
   const programArguments = opts.entry
-    ? [opts.execPath, opts.entry, "serve"] // checkout mode: bun + src/main.ts
-    : [opts.execPath, "serve"]; // compiled binary
+    ? [opts.execPath, opts.entry, 'serve'] // checkout mode: bun + src/main.ts
+    : [opts.execPath, 'serve']; // compiled binary
   await drivers.manager.install({
     label: PLATFORM_LABEL,
     programArguments,
@@ -74,12 +82,13 @@ export async function bootstrapSelf(
     // every app plist the running platform renders inherits by default, so
     // a bad capture here would propagate to every app registered after it.
     environment: { PORT: String(port), PATH: composeServicePath() },
-    stdoutPath: join(logsDir(), "deck.out.log"),
-    stderrPath: join(logsDir(), "deck.err.log"),
+    stdoutPath: join(logsDir(), 'deck.out.log'),
+    stderrPath: join(logsDir(), 'deck.err.log'),
   });
 
   const aliases = [PLATFORM_NAME];
-  if (!opts.tlds.includes("mattstack")) aliases.push(`${PLATFORM_NAME}.mattstack`);
+  if (!opts.tlds.includes('mattstack'))
+    aliases.push(`${PLATFORM_NAME}.mattstack`);
   for (const alias of aliases) await drivers.edge.alias(alias, port);
 
   // Record catch-up, fresh bootstrap only: adopt mode writes the row without
@@ -91,11 +100,18 @@ export async function bootstrapSelf(
   // field patch below is the whole catch-up that is still owed.
   if (!existing) {
     const result = await registerApp(
-      { name: PLATFORM_NAME, managedBy: PLATFORM_NAME, staticPort: port, adopt: true },
-      drivers,
+      {
+        name: PLATFORM_NAME,
+        managedBy: PLATFORM_NAME,
+        staticPort: port,
+        adopt: true,
+      },
+      drivers
     );
     if (result.status !== 201) {
-      throw new Error(`self record catch-up failed (${result.status}): ${JSON.stringify(result.body)}`);
+      throw new Error(
+        `self record catch-up failed (${result.status}): ${JSON.stringify(result.body)}`
+      );
     }
   } else if (existing.name !== PLATFORM_NAME) {
     // Migrate the pre-rename self-row's KEY too, not just its fields below:
@@ -109,7 +125,7 @@ export async function bootstrapSelf(
   // re-run also re-asserts these fields if something drifted them (the
   // managedBy id, in particular, for a record migrated from "local" above).
   const rec = getRecord(PLATFORM_NAME)!;
-  rec.kind = "service";
+  rec.kind = 'service';
   rec.label = PLATFORM_LABEL;
   rec.managedBy = PLATFORM_NAME;
   rec.command = programArguments;

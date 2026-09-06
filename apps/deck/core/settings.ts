@@ -1,8 +1,15 @@
-import { readFileSync, writeFileSync, renameSync, mkdirSync, chmodSync } from "fs";
-import { dirname, join } from "path";
-import { randomBytes } from "crypto";
-import { getSetting, setSetting } from "@mattstack/rt-client";
-import { stateDir } from "../src/api/state.ts";
+import { randomBytes } from 'crypto';
+import {
+  chmodSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from 'fs';
+import { dirname, join } from 'path';
+
+import { getSetting, setSetting } from '@mattstack/rt-client';
+import { stateDir } from '../src/api/state.ts';
 
 export interface PortOverride {
   devPort: number;
@@ -48,10 +55,12 @@ export interface SettingsFile {
 // the repo's own data/ directory, which is untracked scratch, not a config
 // source.
 export function settingsPath(): string {
-  return process.env.LOCAL_APPS_SETTINGS_PATH ?? join(stateDir(), "settings.json");
+  return (
+    process.env.LOCAL_APPS_SETTINGS_PATH ?? join(stateDir(), 'settings.json')
+  );
 }
 
-const STORE_KEY = "deck.apps";
+const STORE_KEY = 'deck.apps';
 type MigratedAppFields = { published: boolean; publicFollowsOverride: boolean };
 type GetSettingFn = typeof getSetting;
 
@@ -67,16 +76,17 @@ type GetSettingFn = typeof getSetting;
  */
 function withAppsStoreFallback(
   fileApps: Record<string, AppEntry>,
-  resolve: GetSettingFn,
+  resolve: GetSettingFn
 ): Record<string, AppEntry> {
   let store: Record<string, Partial<MigratedAppFields>>;
   try {
-    store = (resolve<Record<string, Partial<MigratedAppFields>>>(STORE_KEY).value ?? {}) as Record<
-      string,
-      Partial<MigratedAppFields>
-    >;
+    store = (resolve<Record<string, Partial<MigratedAppFields>>>(STORE_KEY)
+      .value ?? {}) as Record<string, Partial<MigratedAppFields>>;
   } catch (err) {
-    console.warn(`deck: ${STORE_KEY} unavailable, falling back to settings.json`, err);
+    console.warn(
+      `deck: ${STORE_KEY} unavailable, falling back to settings.json`,
+      err
+    );
     return fileApps;
   }
   const merged: Record<string, AppEntry> = { ...fileApps };
@@ -84,9 +94,12 @@ function withAppsStoreFallback(
     const fileEntry = fileApps[app] ?? {};
     merged[app] = {
       ...fileEntry,
-      published: fields.published !== undefined ? fields.published : fileEntry.published,
+      published:
+        fields.published !== undefined ? fields.published : fileEntry.published,
       publicFollowsOverride:
-        fields.publicFollowsOverride !== undefined ? fields.publicFollowsOverride : fileEntry.publicFollowsOverride,
+        fields.publicFollowsOverride !== undefined
+          ? fields.publicFollowsOverride
+          : fileEntry.publicFollowsOverride,
     };
   }
   return merged;
@@ -98,13 +111,18 @@ mintSecretIfMissing();
 function load(resolve: GetSettingFn): SettingsFile {
   let fileValues: SettingsFile;
   try {
-    const parsed = JSON.parse(readFileSync(settingsPath(), "utf8")) as SettingsFile;
+    const parsed = JSON.parse(
+      readFileSync(settingsPath(), 'utf8')
+    ) as SettingsFile;
     if (!parsed.apps) parsed.apps = {};
     fileValues = parsed;
   } catch {
     fileValues = { version: 1, apps: {} };
   }
-  return { ...fileValues, apps: withAppsStoreFallback(fileValues.apps, resolve) };
+  return {
+    ...fileValues,
+    apps: withAppsStoreFallback(fileValues.apps, resolve),
+  };
 }
 
 export function reloadSettings(resolve: GetSettingFn = getSetting): void {
@@ -122,12 +140,14 @@ export function reloadSettings(resolve: GetSettingFn = getSetting): void {
 function mintSecretIfMissing(): void {
   if (cache.secret) return;
   const previous = structuredClone(cache);
-  cache.secret = randomBytes(32).toString("hex");
+  cache.secret = randomBytes(32).toString('hex');
   save(previous);
 }
 
 /** The store's view of every app currently in cache, defaults applied so both fields are always determinate. */
-function buildAppsStoreDict(state: SettingsFile): Record<string, MigratedAppFields> {
+function buildAppsStoreDict(
+  state: SettingsFile
+): Record<string, MigratedAppFields> {
   const out: Record<string, MigratedAppFields> = {};
   for (const [app, entry] of Object.entries(state.apps)) {
     out[app] = {
@@ -145,7 +165,11 @@ function buildAppsStoreDict(state: SettingsFile): Record<string, MigratedAppFiel
 function stripMigratedFields(state: SettingsFile): SettingsFile {
   const apps: Record<string, AppEntry> = {};
   for (const [app, entry] of Object.entries(state.apps)) {
-    const { published: _published, publicFollowsOverride: _publicFollowsOverride, ...rest } = entry;
+    const {
+      published: _published,
+      publicFollowsOverride: _publicFollowsOverride,
+      ...rest
+    } = entry;
     if (Object.keys(rest).length > 0) apps[app] = rest;
   }
   return { ...state, apps };
@@ -168,10 +192,8 @@ function isAppsStoreOwned(): boolean {
 }
 
 function currentRawAppsStore(): Record<string, Partial<MigratedAppFields>> {
-  return (getSetting<Record<string, Partial<MigratedAppFields>>>(STORE_KEY).value ?? {}) as Record<
-    string,
-    Partial<MigratedAppFields>
-  >;
+  return (getSetting<Record<string, Partial<MigratedAppFields>>>(STORE_KEY)
+    .value ?? {}) as Record<string, Partial<MigratedAppFields>>;
 }
 
 /**
@@ -183,8 +205,13 @@ function currentRawAppsStore(): Record<string, Partial<MigratedAppFields>> {
  * should actually disappear from the store, so those are deleted from the
  * result.
  */
-function nextAppsStoreDict(previous: SettingsFile): Record<string, Partial<MigratedAppFields>> {
-  const next: Record<string, Partial<MigratedAppFields>> = { ...currentRawAppsStore(), ...buildAppsStoreDict(cache) };
+function nextAppsStoreDict(
+  previous: SettingsFile
+): Record<string, Partial<MigratedAppFields>> {
+  const next: Record<string, Partial<MigratedAppFields>> = {
+    ...currentRawAppsStore(),
+    ...buildAppsStoreDict(cache),
+  };
   for (const app of Object.keys(previous.apps)) {
     if (!(app in cache.apps)) delete next[app];
   }
@@ -199,7 +226,9 @@ function nextAppsStoreDict(previous: SettingsFile): Record<string, Partial<Migra
  * rename's new name, just added by the forward write this call is undoing --
  * are the one case an app should disappear from the store on revert.
  */
-function revertedAppsStoreDict(previous: SettingsFile): Record<string, Partial<MigratedAppFields>> {
+function revertedAppsStoreDict(
+  previous: SettingsFile
+): Record<string, Partial<MigratedAppFields>> {
   const reverted: Record<string, Partial<MigratedAppFields>> = {
     ...currentRawAppsStore(),
     ...buildAppsStoreDict(previous),
@@ -229,7 +258,7 @@ function save(previous: SettingsFile): void {
 
   if (owned) {
     try {
-      setSetting(STORE_KEY, nextAppsStoreDict(previous), "user");
+      setSetting(STORE_KEY, nextAppsStoreDict(previous), 'user');
     } catch (err) {
       cache = previous;
       throw err;
@@ -238,7 +267,7 @@ function save(previous: SettingsFile): void {
 
   const path = settingsPath();
   mkdirSync(dirname(path), { recursive: true });
-  const tmp = path + ".tmp";
+  const tmp = path + '.tmp';
   const fileBody = owned ? stripMigratedFields(cache) : cache;
   try {
     writeFileSync(tmp, JSON.stringify(fileBody, null, 2), { mode: 0o600 });
@@ -247,13 +276,16 @@ function save(previous: SettingsFile): void {
   } catch (err) {
     if (owned) {
       try {
-        setSetting(STORE_KEY, revertedAppsStoreDict(previous), "user");
+        setSetting(STORE_KEY, revertedAppsStoreDict(previous), 'user');
       } catch (revertErr) {
-        console.error("settings save: failed to revert deck.apps after a file-write failure", revertErr);
+        console.error(
+          'settings save: failed to revert deck.apps after a file-write failure',
+          revertErr
+        );
       }
     }
     cache = previous;
-    console.error("settings save failed:", err);
+    console.error('settings save failed:', err);
     throw err;
   }
 }
@@ -270,7 +302,8 @@ export function getAppSettings(app: string): AppSettings {
 }
 
 function ensure(app: string): AppEntry {
-  if (!cache.apps[app]) cache.apps[app] = { published: true, passwordVersion: 0 };
+  if (!cache.apps[app])
+    cache.apps[app] = { published: true, passwordVersion: 0 };
   return cache.apps[app] as AppEntry;
 }
 
@@ -278,13 +311,19 @@ export function getSecret(): string {
   return cache.secret as string;
 }
 
-export async function setPublished(app: string, published: boolean): Promise<void> {
+export async function setPublished(
+  app: string,
+  published: boolean
+): Promise<void> {
   const previous = structuredClone(cache);
   ensure(app).published = published;
   save(previous);
 }
 
-export async function setPassword(app: string, password: string): Promise<void> {
+export async function setPassword(
+  app: string,
+  password: string
+): Promise<void> {
   const previous = structuredClone(cache);
   const entry = ensure(app);
   entry.passwordHash = await Bun.password.hash(password);

@@ -1,6 +1,6 @@
-import { readFileSync } from "fs";
-import { join } from "path";
-import { homedir } from "os";
+import { readFileSync } from 'fs';
+import { homedir } from 'os';
+import { join } from 'path';
 
 export interface EdgeProxy {
   alias(name: string, port: number): Promise<void>;
@@ -16,8 +16,8 @@ export interface ExecResult {
 }
 export type Exec = (argv: string[]) => Promise<ExecResult>;
 
-const realExec: Exec = async (argv) => {
-  const proc = Bun.spawn(argv, { stderr: "pipe", stdout: "pipe" });
+const realExec: Exec = async argv => {
+  const proc = Bun.spawn(argv, { stderr: 'pipe', stdout: 'pipe' });
   const [code, stdout, stderr] = await Promise.all([
     proc.exited,
     new Response(proc.stdout).text(),
@@ -45,17 +45,19 @@ export class PortlessCli implements EdgeProxy {
     // it explicitly is what actually picks up PATH as it stands right now
     // (the installing shell's captured PATH, once the platform's own plist
     // carries one; see registry/bootstrap.ts).
-    this.portlessBin = Bun.which("portless", { PATH: process.env.PATH ?? "" }) ?? "portless";
+    this.portlessBin =
+      Bun.which('portless', { PATH: process.env.PATH ?? '' }) ?? 'portless';
   }
 
   async alias(name: string, port: number): Promise<void> {
-    const argv = [this.portlessBin, "alias", name, String(port)];
+    const argv = [this.portlessBin, 'alias', name, String(port)];
     const { code } = await this.exec(argv);
-    if (code !== 0) throw new Error(`\`portless alias ${name} ${port}\` failed`);
+    if (code !== 0)
+      throw new Error(`\`portless alias ${name} ${port}\` failed`);
   }
 
   async removeAlias(name: string): Promise<void> {
-    const argv = [this.portlessBin, "alias", "--remove", name];
+    const argv = [this.portlessBin, 'alias', '--remove', name];
     const { code, output } = await this.exec(argv);
     if (code === 0) return;
     // Teardown must be idempotent: an alias that is already gone (removed
@@ -76,14 +78,18 @@ export class PortlessCli implements EdgeProxy {
  */
 export function readProxyTlds(): string[] {
   const path =
-    process.env.LOCAL_PORTLESS_TLDS_PATH ?? join(homedir(), ".portless", "proxy.tlds");
+    process.env.LOCAL_PORTLESS_TLDS_PATH ??
+    join(homedir(), '.portless', 'proxy.tlds');
   try {
-    const tlds = readFileSync(path, "utf8").split("\n").map((s) => s.trim()).filter(Boolean);
+    const tlds = readFileSync(path, 'utf8')
+      .split('\n')
+      .map(s => s.trim())
+      .filter(Boolean);
     if (tlds.length) return tlds;
   } catch {
     // fall through
   }
-  return ["localhost"];
+  return ['localhost'];
 }
 
 export class FakeEdgeProxy implements EdgeProxy {

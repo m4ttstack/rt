@@ -22,9 +22,9 @@
  * touches ~/.mattstack/deck even through that gap. A test file that sets its
  * own LOCAL_STATE_DIR still overrides this.
  */
-import { mkdtempSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
+import { mkdtempSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 
-process.env.HOME = mkdtempSync(join(tmpdir(), "local-test-home-"));
-process.env.LOCAL_STATE_DIR = mkdtempSync(join(tmpdir(), "local-test-state-"));
+process.env.HOME = mkdtempSync(join(tmpdir(), 'local-test-home-'));
+process.env.LOCAL_STATE_DIR = mkdtempSync(join(tmpdir(), 'local-test-state-'));

@@ -13,13 +13,13 @@
 
 /** Everything the tunnel can reach is HTTPS on 443, so HMR must be told so. */
 export const REQUIRED_HMR_PORT = 443;
-export const REQUIRED_HMR_PROTOCOL = "wss";
+export const REQUIRED_HMR_PROTOCOL = 'wss';
 
 export type IssueCode =
-  | "dev-server-down"
-  | "host-blocked"
-  | "hmr-not-tunnel-ready"
-  | "unknown-dev-server";
+  | 'dev-server-down'
+  | 'host-blocked'
+  | 'hmr-not-tunnel-ready'
+  | 'unknown-dev-server';
 
 export interface Issue {
   code: IssueCode;
@@ -54,13 +54,13 @@ export interface ProbeContext {
  */
 export function parseHmrPort(clientJs: string): number | null {
   const m = clientJs.match(/const hmrPort = (\d+|null)/);
-  if (!m || m[1] === "null") return null;
+  if (!m || m[1] === 'null') return null;
   return Number(m[1]);
 }
 
 export function parseHmrProtocol(clientJs: string): string | null {
   const m = clientJs.match(/const socketProtocol = (null|"[^"]*")/);
-  if (!m || m[1] === "null") return null;
+  if (!m || m[1] === 'null') return null;
   return m[1]!.slice(1, -1);
 }
 
@@ -71,30 +71,34 @@ export function isHostBlocked(status: number, body: string): boolean {
 
 export function interpretProbe(probe: Probe, ctx: ProbeContext): Issue[] {
   if (!probe.reachable) {
-    return [{
-      code: "dev-server-down",
-      message: `Nothing is listening on port ${ctx.devPort}.`,
-      fix: `Start the dev server for ${ctx.app}, or clear the port override.`,
-    }];
+    return [
+      {
+        code: 'dev-server-down',
+        message: `Nothing is listening on port ${ctx.devPort}.`,
+        fix: `Start the dev server for ${ctx.app}, or clear the port override.`,
+      },
+    ];
   }
 
   const issues: Issue[] = [];
 
   if (probe.host && isHostBlocked(probe.host.status, probe.host.body)) {
     issues.push({
-      code: "host-blocked",
+      code: 'host-blocked',
       message: `The dev server refuses requests for ${ctx.publicHost}.`,
       fix: `Add server.allowedHosts: ['${ctx.publicHost}'] to the dev server config.`,
     });
   }
 
-  const isVite = probe.viteClient !== undefined && probe.viteClient.status === 200;
+  const isVite =
+    probe.viteClient !== undefined && probe.viteClient.status === 200;
   if (!isVite) {
     // Not Vite: the HMR literals do not exist, so checking them would invent a
     // failure. The host check above still applies to any dev server.
     issues.push({
-      code: "unknown-dev-server",
-      message: "Not a Vite dev server, so hot-reload config could not be checked.",
+      code: 'unknown-dev-server',
+      message:
+        'Not a Vite dev server, so hot-reload config could not be checked.',
     });
     return issues;
   }
@@ -103,7 +107,7 @@ export function interpretProbe(probe: Probe, ctx: ProbeContext): Issue[] {
   const protocol = parseHmrProtocol(probe.viteClient!.body);
   if (port !== REQUIRED_HMR_PORT || protocol !== REQUIRED_HMR_PROTOCOL) {
     issues.push({
-      code: "hmr-not-tunnel-ready",
+      code: 'hmr-not-tunnel-ready',
       message: hmrMessage(port, protocol, ctx.devPort),
       fix:
         `Add server.hmr: { clientPort: ${REQUIRED_HMR_PORT}, ` +
@@ -115,31 +119,45 @@ export function interpretProbe(probe: Probe, ctx: ProbeContext): Issue[] {
 }
 
 /** Name whichever half is wrong, since the port is the usual culprit. */
-function hmrMessage(port: number | null, protocol: string | null, devPort: number): string {
+function hmrMessage(
+  port: number | null,
+  protocol: string | null,
+  devPort: number
+): string {
   if (port !== REQUIRED_HMR_PORT) {
     return `Hot reload dials port ${port ?? devPort}, which the tunnel does not expose.`;
   }
-  return `Hot reload uses ${protocol ?? "ws"}, but traffic through the tunnel is ${REQUIRED_HMR_PROTOCOL}.`;
+  return `Hot reload uses ${protocol ?? 'ws'}, but traffic through the tunnel is ${REQUIRED_HMR_PROTOCOL}.`;
 }
 
 async function get(
   url: string,
   headers: Record<string, string>,
-  timeoutMs: number,
+  timeoutMs: number
 ): Promise<{ status: number; body: string } | null> {
   try {
-    const res = await fetch(url, { headers, signal: AbortSignal.timeout(timeoutMs) });
+    const res = await fetch(url, {
+      headers,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
     return { status: res.status, body: await res.text() };
   } catch {
     return null;
   }
 }
 
-export async function probeDevServer(ctx: ProbeContext, timeoutMs = 2000): Promise<Probe> {
+export async function probeDevServer(
+  ctx: ProbeContext,
+  timeoutMs = 2000
+): Promise<Probe> {
   const base = `http://127.0.0.1:${ctx.devPort}`;
   const [host, viteClient] = await Promise.all([
     get(`${base}/`, { host: ctx.publicHost }, timeoutMs),
-    get(`${base}/@vite/client`, { host: `localhost:${ctx.devPort}` }, timeoutMs),
+    get(
+      `${base}/@vite/client`,
+      { host: `localhost:${ctx.devPort}` },
+      timeoutMs
+    ),
   ]);
   // Either probe answering proves something is listening; the /@vite/client one
   // uses a local Host so a blocked hostname cannot masquerade as an unreachable

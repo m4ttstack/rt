@@ -1,11 +1,23 @@
-import { join } from "path";
-import { checkHealth, type Health } from "../../core/discover.ts";
+import { join } from 'path';
+
+import { checkHealth, type Health } from '../../core/discover.ts';
+import { logsDir } from '../api/state.ts';
 import {
-  PLATFORM_LABEL, LABEL_PREFIX, LEGACY_PLATFORM_LABEL_PREFIX, type ServiceManager, type ServiceSpec,
-} from "../services/manager.ts";
-import { putRecord, getRecord, listRecords, addIssue, reloadRegistry, type AppRecord } from "./records.ts";
-import { DEFAULT_LEGACY_PREFIX } from "./migrate.ts";
-import { logsDir } from "../api/state.ts";
+  LABEL_PREFIX,
+  LEGACY_PLATFORM_LABEL_PREFIX,
+  PLATFORM_LABEL,
+  type ServiceManager,
+  type ServiceSpec,
+} from '../services/manager.ts';
+import { DEFAULT_LEGACY_PREFIX } from './migrate.ts';
+import {
+  addIssue,
+  getRecord,
+  listRecords,
+  putRecord,
+  reloadRegistry,
+  type AppRecord,
+} from './records.ts';
 
 export interface ConvertResult {
   converted: string[];
@@ -30,14 +42,14 @@ export interface ConvertOpts {
   intervalMs?: number;
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 /** Poll healthCheck until it reports ok or the deadline passes. Always tries at least once. */
 async function waitForHealthy(
   port: number,
   healthCheck: (port: number) => Promise<Health>,
   waitMs: number,
-  intervalMs: number,
+  intervalMs: number
 ): Promise<boolean> {
   const deadline = Date.now() + waitMs;
   while (true) {
@@ -51,7 +63,7 @@ function specFor(record: AppRecord, label: string): ServiceSpec {
   return {
     label,
     programArguments: record.command ?? [],
-    workingDirectory: record.workingDirectory ?? "",
+    workingDirectory: record.workingDirectory ?? '',
     environment: { ...(record.env ?? {}), PORT: String(record.port) },
     stdoutPath: join(logsDir(), `${record.name}.out.log`),
     stderrPath: join(logsDir(), `${record.name}.err.log`),
@@ -68,7 +80,10 @@ function specFor(record: AppRecord, label: string): ServiceSpec {
  * never aborts the rest of the batch.
  */
 export async function convert(opts: ConvertOpts): Promise<ConvertResult> {
-  const legacyPrefixes = opts.legacyPrefixes ?? [DEFAULT_LEGACY_PREFIX, LEGACY_PLATFORM_LABEL_PREFIX];
+  const legacyPrefixes = opts.legacyPrefixes ?? [
+    DEFAULT_LEGACY_PREFIX,
+    LEGACY_PLATFORM_LABEL_PREFIX,
+  ];
   const healthCheck = opts.healthCheck ?? checkHealth;
   const waitMs = opts.waitMs ?? 10_000;
   const intervalMs = opts.intervalMs ?? 500;
@@ -82,19 +97,28 @@ export async function convert(opts: ConvertOpts): Promise<ConvertResult> {
     // Deck's own platform record is excluded, exactly as migrate.ts's
     // defense-in-depth check for its bootstrap alias: never touch it under
     // any code path, checked ahead of (and independent of) the prefix test.
-    if (record.label === PLATFORM_LABEL) { skipped.push(record.name); continue; }
+    if (record.label === PLATFORM_LABEL) {
+      skipped.push(record.name);
+      continue;
+    }
     // Not a launchd-supervised app (external/route-only, or no label yet)...
     // nothing to convert.
-    if (record.kind !== "service" || !record.label) { skipped.push(record.name); continue; }
+    if (record.kind !== 'service' || !record.label) {
+      skipped.push(record.name);
+      continue;
+    }
     // Already on the new convention (a fresh app, or a previous convert run):
     // this is the idempotency path... a second run is a no-op per app.
-    if (!legacyPrefixes.some((p) => record.label!.startsWith(p))) { skipped.push(record.name); continue; }
+    if (!legacyPrefixes.some(p => record.label!.startsWith(p))) {
+      skipped.push(record.name);
+      continue;
+    }
 
     const oldLabel = record.label;
     const newLabel = `${LABEL_PREFIX}${record.name}`;
 
     let healthy = false;
-    let failureReason = "";
+    let failureReason = '';
     try {
       // 1. Render + write the new plist (same program/args/workingDir/PORT).
       await manager.install(specFor(record, newLabel));
@@ -102,8 +126,14 @@ export async function convert(opts: ConvertOpts): Promise<ConvertResult> {
       await manager.uninstall(oldLabel);
       // 3. Load the new label, then health-check the app (bounded wait).
       await manager.kickstart(newLabel);
-      healthy = await waitForHealthy(record.port, healthCheck, waitMs, intervalMs);
-      if (!healthy) failureReason = `health-check failed for ${newLabel} on port ${record.port} after conversion`;
+      healthy = await waitForHealthy(
+        record.port,
+        healthCheck,
+        waitMs,
+        intervalMs
+      );
+      if (!healthy)
+        failureReason = `health-check failed for ${newLabel} on port ${record.port} after conversion`;
     } catch (err) {
       failureReason = String((err as Error).message ?? err);
     }
@@ -120,7 +150,11 @@ export async function convert(opts: ConvertOpts): Promise<ConvertResult> {
       if (!getRecord(record.name)) {
         // Torn down for real, not left running orphaned under a label no
         // record points at.
-        try { await manager.uninstall(newLabel); } catch { /* best effort */ }
+        try {
+          await manager.uninstall(newLabel);
+        } catch {
+          /* best effort */
+        }
         skipped.push(record.name);
         continue;
       }
@@ -151,10 +185,18 @@ export async function convert(opts: ConvertOpts): Promise<ConvertResult> {
     // checked), which would leave the app down under both labels with no
     // restore attempted. Never let a rollback-step failure itself abort the
     // batch: this is already the failure path.
-    try { await manager.uninstall(newLabel); } catch { /* best effort */ }
-    try { await manager.install(specFor(record, oldLabel)); } catch { /* best effort */ }
+    try {
+      await manager.uninstall(newLabel);
+    } catch {
+      /* best effort */
+    }
+    try {
+      await manager.install(specFor(record, oldLabel));
+    } catch {
+      /* best effort */
+    }
     addIssue(record.name, {
-      source: "launchd",
+      source: 'launchd',
       message: failureReason.slice(0, 300),
       at: new Date().toISOString(),
     });

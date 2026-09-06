@@ -39,6 +39,7 @@ travels with the app in git, and is what puts action buttons on the board.
   (11000-11999) and injects it as `$PORT` into the service. Set `port` only for
   a self-run app deck should merely route to (one with no `commands.start`).
 - `env` is the service environment; deck layers `PORT` on top of it.
+
 3. From the app directory, `deck register` creates/syncs the app (or
    `deck register --dir <path>` from anywhere).
 

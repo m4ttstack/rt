@@ -2,33 +2,37 @@ import {
   checkHealth,
   joinApps,
   listenerFor,
+  MATTSTACK_TLD,
   orphanServices,
   publicDomainFor,
   readRoutes,
   readServices,
-  tailFile,
   servicePrefixes,
   shortLabel,
+  tailFile,
   type Health,
   type LaunchdService,
-  MATTSTACK_TLD,
-} from "../../core/discover.ts";
-import { getAppSettings, type PortOverride } from "../../core/settings.ts";
-import { listRecords, type SyncIssue, type RemoteState } from "../registry/records.ts";
-import { commandKeysFor, readLinkedManifest } from "../registry/serve-shape.ts";
-import { allocatePort } from "../registry/allocate.ts";
-import { getOAuth, type OAuth } from "../edge/oauth.ts";
-import { getPlatformSettings } from "./platform-settings.ts";
-import { isPlatformManagedBy } from "../services/manager.ts";
-import { TUNNEL_LABEL } from "../edge/domain.ts";
-import { tunnelRowHealth } from "../edge/edge-health.ts";
-import { edgeDrift } from "../edge/edge-reconcile.ts";
+} from '../../core/discover.ts';
+import { getAppSettings, type PortOverride } from '../../core/settings.ts';
+import { TUNNEL_LABEL } from '../edge/domain.ts';
+import { tunnelRowHealth } from '../edge/edge-health.ts';
+import { edgeDrift } from '../edge/edge-reconcile.ts';
+import { getOAuth, type OAuth } from '../edge/oauth.ts';
+import { allocatePort } from '../registry/allocate.ts';
+import {
+  listRecords,
+  type RemoteState,
+  type SyncIssue,
+} from '../registry/records.ts';
+import { commandKeysFor, readLinkedManifest } from '../registry/serve-shape.ts';
+import { isPlatformManagedBy } from '../services/manager.ts';
+import { getPlatformSettings } from './platform-settings.ts';
 
 export interface BuildStatusOpts {
   requestHost?: string;
   port: number;
   canaryPort: number;
-  proxyFreshness: "fresh" | "stale" | "unknown";
+  proxyFreshness: 'fresh' | 'stale' | 'unknown';
   autoHeal: { at: number; ok: boolean | null } | null;
   /** Gates `StatusRow.commands`/`devLink` for managed apps; user apps are never gated. */
   devMode?: boolean;
@@ -94,16 +98,20 @@ export interface StatusRow {
    * misses them, while a public GET -- always allowed through, the 403 gate only
    * covers mutations -- cannot carry them out. `kind` is not sensitive.
    */
-  record: { kind: "service" | "external"; command: string[] | null; workingDirectory: string | null } | null;
+  record: {
+    kind: 'service' | 'external';
+    command: string[] | null;
+    workingDirectory: string | null;
+  } | null;
   oauth: OAuth;
   /** Action-command names surfaced to the board: user apps always; managed apps per the dev gate. */
   commands?: string[];
   /** Managed rows in dev mode only: drives the board's Link source / fix link affordances. */
-  devLink?: "unlinked" | "linked" | "broken";
+  devLink?: 'unlinked' | 'linked' | 'broken';
   /** The linked source checkout, local-only (null through a public host), managed rows only. */
   devDir?: string | null;
-  publicOrigin: "tunnel" | "railway";
-  remote: { status: RemoteState["status"]; url: string | null } | null;
+  publicOrigin: 'tunnel' | 'railway';
+  remote: { status: RemoteState['status']; url: string | null } | null;
 }
 
 export interface Status {
@@ -124,14 +132,17 @@ export interface Status {
 export function serviceJson(
   s: LaunchdService,
   health: Health | null,
-  unmanaged: { pid: number; command: string } | null,
+  unmanaged: { pid: number; command: string } | null
 ): StatusService {
   // Show logs when the row is in a bad state: an app that failed its health
   // probe, or an unrouted service that isn't running.
   const bad = health ? !health.ok : s.pid === null;
   return {
     label: s.label,
-    short: shortLabel(s.label, servicePrefixes(getPlatformSettings().legacyPrefixes)),
+    short: shortLabel(
+      s.label,
+      servicePrefixes(getPlatformSettings().legacyPrefixes)
+    ),
     pid: s.pid,
     lastExitStatus: s.lastExitStatus,
     unmanaged,
@@ -144,15 +155,15 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
   const apps = joinApps(routes, services, opts.requestHost);
   const publicDomain = publicDomainFor(opts.requestHost);
   const orphans = orphanServices(apps, services);
-  const healths = await Promise.all(apps.map((a) => checkHealth(a.port)));
+  const healths = await Promise.all(apps.map(a => checkHealth(a.port)));
 
   // One read of the registry, reused for the per-row join, the self lookup and
   // the nextPort hint below.
   const records = listRecords();
-  const recordsByName = new Map(records.map((r) => [r.name, r]));
+  const recordsByName = new Map(records.map(r => [r.name, r]));
   // The platform's own registry record (once migrated) may sit at any port, so
   // its row is "self" by matching that port rather than by name lookup.
-  const platformRecord = records.find((r) => isPlatformManagedBy(r.managedBy));
+  const platformRecord = records.find(r => isPlatformManagedBy(r.managedBy));
 
   const appRows: StatusRow[] = await Promise.all(
     apps.map(async (a, i) => {
@@ -160,7 +171,9 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
       // A healthy route whose managed service is stopped means something else
       // holds the port — name that unmanaged process instead of crying wolf.
       const unmanaged =
-        health.ok && a.service && a.service.pid === null ? await listenerFor(a.port) : null;
+        health.ok && a.service && a.service.pid === null
+          ? await listenerFor(a.port)
+          : null;
       const settings = getAppSettings(a.name);
       const follows = settings.publicFollowsOverride ?? false;
       const record = recordsByName.get(a.name);
@@ -168,8 +181,8 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
       // to anything but "user") is a mattstack product and surfaces as
       // name.mattstack; user-added apps surface as name.localhost. Through a
       // public tunnel the tunnel's domain is everyone's identity.
-      const owned = record?.managedBy != null && record.managedBy !== "user";
-      const displayTld = publicDomain ?? (owned ? MATTSTACK_TLD : "localhost");
+      const owned = record?.managedBy != null && record.managedBy !== 'user';
+      const displayTld = publicDomain ?? (owned ? MATTSTACK_TLD : 'localhost');
       return {
         name: a.name,
         displayTld,
@@ -195,7 +208,7 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
         managedBy: record?.managedBy ?? null,
         icon: record
           ? isPlatformManagedBy(record.managedBy)
-            ? "/favicon.svg"
+            ? '/favicon.svg'
             : record.icon
               ? `/api/apps/${a.name}/icon`
               : null
@@ -204,39 +217,53 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
         record: record
           ? {
               kind: record.kind,
-              command: publicDomain === null ? record.command ?? null : null,
-              workingDirectory: publicDomain === null ? record.workingDirectory ?? null : null,
+              command: publicDomain === null ? (record.command ?? null) : null,
+              workingDirectory:
+                publicDomain === null
+                  ? (record.workingDirectory ?? null)
+                  : null,
             }
           : null,
         oauth: getOAuth(a.name),
         commands: record ? commandKeysFor(record, !!opts.devMode) : undefined,
         devLink:
-          record && record.managedBy !== "user" && opts.devMode
+          record && record.managedBy !== 'user' && opts.devMode
             ? readLinkedManifest(record).state
             : undefined,
         devDir:
-          record && record.managedBy !== "user"
-            ? (publicDomain === null ? record.dev?.workingDirectory ?? null : null)
+          record && record.managedBy !== 'user'
+            ? publicDomain === null
+              ? (record.dev?.workingDirectory ?? null)
+              : null
             : undefined,
-        publicOrigin: record?.remote?.status === "live" ? "railway" as const : "tunnel" as const,
-        remote: record?.remote ? { status: record.remote.status, url: record.remote.url ?? null } : null,
+        publicOrigin:
+          record?.remote?.status === 'live'
+            ? ('railway' as const)
+            : ('tunnel' as const),
+        remote: record?.remote
+          ? { status: record.remote.status, url: record.remote.url ?? null }
+          : null,
       };
-    }),
+    })
   );
 
   const platform = getPlatformSettings();
-  const edgeService = orphans.find((s) => s.label === TUNNEL_LABEL);
-  const edgeHealth = edgeService && platform.tunnel
-    ? await tunnelRowHealth({
-        running: edgeService.pid !== null,
-        tunnelGone: (opts.edgeDrift ?? edgeDrift)().tunnelGone,
-        domain: platform.publicDomain,
-        fetchImpl: opts.readyFetch,
-      })
-    : null;
+  const edgeService = orphans.find(s => s.label === TUNNEL_LABEL);
+  const edgeHealth =
+    edgeService && platform.tunnel
+      ? await tunnelRowHealth({
+          running: edgeService.pid !== null,
+          tunnelGone: (opts.edgeDrift ?? edgeDrift)().tunnelGone,
+          domain: platform.publicDomain,
+          fetchImpl: opts.readyFetch,
+        })
+      : null;
 
-  const orphanRows: StatusRow[] = orphans.map((s) => ({
-    name: shortLabel(s.label, servicePrefixes(getPlatformSettings().legacyPrefixes)),
+  const orphanRows: StatusRow[] = orphans.map(s => ({
+    name: shortLabel(
+      s.label,
+      servicePrefixes(getPlatformSettings().legacyPrefixes)
+    ),
     displayTld: null,
     port: null,
     url: null,
@@ -248,7 +275,7 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
     published: true,
     hasPassword: false,
     // cloudflared tunnels are infrastructure, not stray app services.
-    isTunnel: s.program.some((p) => p.includes("cloudflared")),
+    isTunnel: s.program.some(p => p.includes('cloudflared')),
     override: null,
     publicFollowsOverride: false,
     self: false,
@@ -256,17 +283,17 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
     icon: null,
     issues: [],
     record: null,
-    oauth: { mode: "off" },
-    publicOrigin: "tunnel" as const,
+    oauth: { mode: 'off' },
+    publicOrigin: 'tunnel' as const,
     remote: null,
   }));
 
   return {
-    suffix: publicDomain ?? "localhost",
+    suffix: publicDomain ?? 'localhost',
     // Restart is a local-only control: never expose it through a public tunnel.
     canRestart: publicDomain === null,
     canManage: publicDomain === null,
-    up: healths.filter((h) => h.ok).length,
+    up: healths.filter(h => h.ok).length,
     total: apps.length,
     apps: appRows,
     orphans: orphanRows,
@@ -274,7 +301,7 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
     // registration path uses, so a record holding a port whose alias hasn't
     // landed yet (or failed, leaving a SyncIssue) isn't advertised as free.
     nextPort: allocatePort(records, routes, services),
-    proxyStale: opts.proxyFreshness === "stale",
+    proxyStale: opts.proxyFreshness === 'stale',
     autoHeal: opts.autoHeal,
   };
 }

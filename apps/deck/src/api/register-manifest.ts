@@ -1,10 +1,22 @@
-import { readDeckManifest, resolveServeShape } from "../registry/deck-manifest.ts";
-import { getRecord, putRecord } from "../registry/records.ts";
-import { registerApp, editApp, type Drivers, type FlowResult } from "./register.ts";
-import { ingestManifest } from "../registry/manifest.ts";
-import { isPlatformManagedBy, PLATFORM_NAME, LEGACY_PLATFORM_NAME } from "../services/manager.ts";
-import type { DeckManifest } from "../registry/deck-manifest.ts";
-import type { AppRecord } from "../registry/records.ts";
+import {
+  readDeckManifest,
+  resolveServeShape,
+} from '../registry/deck-manifest.ts';
+import type { DeckManifest } from '../registry/deck-manifest.ts';
+import { ingestManifest } from '../registry/manifest.ts';
+import { getRecord, putRecord } from '../registry/records.ts';
+import type { AppRecord } from '../registry/records.ts';
+import {
+  isPlatformManagedBy,
+  LEGACY_PLATFORM_NAME,
+  PLATFORM_NAME,
+} from '../services/manager.ts';
+import {
+  editApp,
+  registerApp,
+  type Drivers,
+  type FlowResult,
+} from './register.ts';
 
 /**
  * The platform's own record: bootstrapSelf owns its serve shape (the installed
@@ -17,10 +29,10 @@ function attachSource(
   existing: AppRecord,
   manifest: DeckManifest,
   dir: string,
-  activeAlt: string | undefined,
+  activeAlt: string | undefined
 ): FlowResult {
   if (activeAlt !== undefined) {
-    return { status: 400, body: { error: "the platform has no alt configs" } };
+    return { status: 400, body: { error: 'the platform has no alt configs' } };
   }
   const declaresServeShape =
     manifest.commands.start !== undefined ||
@@ -31,10 +43,18 @@ function attachSource(
   if (declaresServeShape) {
     return {
       status: 400,
-      body: { error: "deck manages its own service; the platform manifest may only link a source checkout" },
+      body: {
+        error:
+          'deck manages its own service; the platform manifest may only link a source checkout',
+      },
     };
   }
-  putRecord({ ...existing, dev: { workingDirectory: dir }, sourceDirectory: undefined, commands: undefined });
+  putRecord({
+    ...existing,
+    dev: { workingDirectory: dir },
+    sourceDirectory: undefined,
+    commands: undefined,
+  });
   return { status: 200, body: { record: getRecord(existing.name) } };
 }
 
@@ -48,10 +68,11 @@ function attachSource(
 export async function applyManifest(
   dir: string,
   activeAlt: string | undefined,
-  drivers: Drivers,
+  drivers: Drivers
 ): Promise<FlowResult> {
   const parsed = readDeckManifest(dir);
-  if (parsed === null) return { status: 400, body: { error: "no mattstack.deck.json in " + dir } };
+  if (parsed === null)
+    return { status: 400, body: { error: 'no mattstack.deck.json in ' + dir } };
   if (!parsed.ok) return { status: 400, body: { error: parsed.error } };
   const manifest = parsed.manifest;
 
@@ -67,10 +88,16 @@ export async function applyManifest(
 
   // The create path below would register a user app named deck running from a
   // checkout; the platform registers itself in `deck setup`.
-  if (!existing && (manifest.name === PLATFORM_NAME || manifest.name === LEGACY_PLATFORM_NAME)) {
-    return { status: 400, body: { error: "run deck setup first; the platform registers itself" } };
+  if (
+    !existing &&
+    (manifest.name === PLATFORM_NAME || manifest.name === LEGACY_PLATFORM_NAME)
+  ) {
+    return {
+      status: 400,
+      body: { error: 'run deck setup first; the platform registers itself' },
+    };
   }
-  if (existing && existing.managedBy !== "user") {
+  if (existing && existing.managedBy !== 'user') {
     if (isPlatformManagedBy(existing.managedBy)) {
       return attachSource(existing, manifest, dir, activeAlt);
     }
@@ -78,16 +105,30 @@ export async function applyManifest(
     // wherever the resolver decides (bundle vs. linked source), never from
     // whichever manifest last called register.
     if (activeAlt !== undefined) {
-      return { status: 400, body: { error: "alt configs do not apply to a linked managed app" } };
+      return {
+        status: 400,
+        body: { error: 'alt configs do not apply to a linked managed app' },
+      };
     }
-    const linked = await editApp(manifest.name, { dev: { workingDirectory: dir } }, existing.managedBy, true, drivers);
+    const linked = await editApp(
+      manifest.name,
+      { dev: { workingDirectory: dir } },
+      existing.managedBy,
+      true,
+      drivers
+    );
     if (linked.status !== 200) return linked;
     // The resolver is the only serve truth for a managed row; stored
     // command/commands/workingDirectory are pre-manifest residue that the
     // resolver would otherwise flag as legacy drift forever.
     const current = getRecord(manifest.name)!;
     if (current.command || current.commands || current.workingDirectory) {
-      putRecord({ ...current, command: undefined, commands: undefined, workingDirectory: undefined });
+      putRecord({
+        ...current,
+        command: undefined,
+        commands: undefined,
+        workingDirectory: undefined,
+      });
     }
     return { status: 200, body: { record: getRecord(manifest.name) } };
   }
@@ -95,13 +136,22 @@ export async function applyManifest(
   if (!existing) {
     // A manifest with neither a start command nor a port declares nothing to stand up.
     if (!shape.command && shape.port === undefined) {
-      return { status: 400, body: { error: "manifest must declare commands.start or a port" } };
+      return {
+        status: 400,
+        body: { error: 'manifest must declare commands.start or a port' },
+      };
     }
     const created = await registerApp(
       shape.command
-        ? { name: manifest.name, command: shape.command, workingDirectory: dir, port: shape.port, env: manifest.env }
+        ? {
+            name: manifest.name,
+            command: shape.command,
+            workingDirectory: dir,
+            port: shape.port,
+            env: manifest.env,
+          }
         : { name: manifest.name, staticPort: shape.port! },
-      drivers,
+      drivers
     );
     if (created.status !== 201) return created;
   } else if (shape.command) {
@@ -111,13 +161,15 @@ export async function applyManifest(
     // CLI, so the caller is the app's own manager with force=true to clear
     // authorizeStructural (mirrors adoptApp's force-bless). Safe because the
     // whole mutation plane is 127.0.0.1-local and public mutations are already 403'd.
-    if (existing.kind !== "service") {
+    if (existing.kind !== 'service') {
       // external -> service: editApp keeps a record's kind, so it would set the
       // command but never install launchd, leaving a route-only app with a
       // command and no running service. Refuse loudly instead of half-applying.
       return {
         status: 400,
-        body: { error: `cannot add commands.start to route-only app ${manifest.name} via register; run \`deck remove ${manifest.name}\` then re-register` },
+        body: {
+          error: `cannot add commands.start to route-only app ${manifest.name} via register; run \`deck remove ${manifest.name}\` then re-register`,
+        },
       };
     }
     const edited = await editApp(
@@ -125,27 +177,40 @@ export async function applyManifest(
       // env: `?? {}` rather than undefined, because editApp keeps the record's old
       // env on undefined and the manifest is the source of truth: dropping env
       // from the manifest must clear it on the service, not silently retain it.
-      { command: shape.command, workingDirectory: dir, env: manifest.env ?? {}, ...(shape.port !== undefined && { port: shape.port }) },
+      {
+        command: shape.command,
+        workingDirectory: dir,
+        env: manifest.env ?? {},
+        ...(shape.port !== undefined && { port: shape.port }),
+      },
       existing.managedBy,
       true,
-      drivers,
+      drivers
     );
     if (edited.status !== 200) return edited;
-  } else if (existing.kind === "service") {
+  } else if (existing.kind === 'service') {
     // service -> route-only: the manifest dropped commands.start on a supervised
     // app. Tearing a live service down to route-only is a structural change
     // editApp does not perform; silently keeping the old service is worse than
     // refusing. `deck remove` + re-register is the explicit path.
     return {
       status: 400,
-      body: { error: `cannot drop commands.start on supervised app ${manifest.name} via register; run \`deck remove ${manifest.name}\` then re-register as route-only` },
+      body: {
+        error: `cannot drop commands.start on supervised app ${manifest.name} via register; run \`deck remove ${manifest.name}\` then re-register as route-only`,
+      },
     };
   } else if (shape.port !== undefined && shape.port !== existing.port) {
     // Port-only (external) app whose declared or overlay port changed: propagate
     // the new port and route alias. editApp's external path updates the alias
     // without touching launchd, so `deck alt` actually re-routes a port-only app
     // instead of returning success while the route stays on the old port.
-    const edited = await editApp(manifest.name, { port: shape.port }, existing.managedBy, true, drivers);
+    const edited = await editApp(
+      manifest.name,
+      { port: shape.port },
+      existing.managedBy,
+      true,
+      drivers
+    );
     if (edited.status !== 200) return edited;
   }
 

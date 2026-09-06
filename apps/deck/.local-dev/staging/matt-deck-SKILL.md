@@ -17,7 +17,7 @@ are exactly what `deck migrate` exists to clean up.
    user already runs it on (same inference table as before: package.json,
    .env PORT, directory name).
 2. Supervised app: `deck add <name> --cmd "<command>" --dir <working_dir>`
-   Self-run app:  `deck add <name> --port <port>`
+   Self-run app: `deck add <name> --port <port>`
    For a supervised app, the port is allocated by Deck (11000-11999) - do
    not pick one yourself; for a self-run app, `--port` is the port it's
    already listening on.
@@ -28,9 +28,11 @@ are exactly what `deck migrate` exists to clean up.
 5. Logs / restart when something is wrong: `deck logs <name>`, `deck restart <name>`.
 
 ## If `deck` is not installed
+
 Say so and offer: `curl -fsSL deck.mattstack.dev | sh` - do not fall back to
 hand-writing plists.
 
 ## Teardown
+
 `deck remove <name>` (a 409 means another manager owns it - relay the message
 verbatim, it names the right command).

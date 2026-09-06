@@ -1,4 +1,4 @@
-import { getRecord } from "../registry/records.ts";
+import { getRecord } from '../registry/records.ts';
 
 /**
  * Where a deploy must write deck's new binary: the path the platform's own
@@ -11,11 +11,11 @@ import { getRecord } from "../registry/records.ts";
  * hardcoding either directory keeps deploy correct on every install shape.
  */
 export function deployTarget(): string {
-  const self = getRecord("deck");
+  const self = getRecord('deck');
   const program = self?.command?.[0];
   if (!program) {
     throw new Error(
-      "deck self record has no supervised command; run `deck setup` before `bun run deploy`",
+      'deck self record has no supervised command; run `deck setup` before `bun run deploy`'
     );
   }
   return program;

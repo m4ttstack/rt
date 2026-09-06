@@ -2,21 +2,29 @@
 // nothing else. Publication and the password gate live in core/settings.ts and
 // are enforced independently: core/gateway.ts reads passwordHash and never
 // reads this file.
-import { readFileSync, writeFileSync, renameSync, mkdirSync, chmodSync } from "fs";
-import { dirname, join } from "path";
-import { getSetting, setSetting } from "@mattstack/rt-client";
-import { stateDir } from "../api/state.ts";
+import {
+  chmodSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from 'fs';
+import { dirname, join } from 'path';
+
+import { getSetting, setSetting } from '@mattstack/rt-client';
+import { stateDir } from '../api/state.ts';
 
 export type OAuth =
-  | { mode: "off" }
-  | { mode: "emails"; emails: string[] }
-  | { mode: "domains"; domains: string[] };
+  | { mode: 'off' }
+  | { mode: 'emails'; emails: string[] }
+  | { mode: 'domains'; domains: string[] };
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const DOMAIN_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i;
+const DOMAIN_RE =
+  /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i;
 
 export function accessPath(): string {
-  return process.env.LOCAL_ACCESS_PATH ?? join(stateDir(), "access.json");
+  return process.env.LOCAL_ACCESS_PATH ?? join(stateDir(), 'access.json');
 }
 
 interface AccessFile {
@@ -24,21 +32,27 @@ interface AccessFile {
 }
 
 function isOAuth(value: unknown): value is OAuth {
-  if (typeof value !== "object" || value === null) return false;
+  if (typeof value !== 'object' || value === null) return false;
   const r = value as Record<string, unknown>;
-  if (r.mode === "off") return true;
-  if (r.mode === "emails") {
-    return Array.isArray(r.emails) && r.emails.length > 0
-      && r.emails.every((e) => typeof e === "string" && EMAIL_RE.test(e));
+  if (r.mode === 'off') return true;
+  if (r.mode === 'emails') {
+    return (
+      Array.isArray(r.emails) &&
+      r.emails.length > 0 &&
+      r.emails.every(e => typeof e === 'string' && EMAIL_RE.test(e))
+    );
   }
-  if (r.mode === "domains") {
-    return Array.isArray(r.domains) && r.domains.length > 0
-      && r.domains.every((d) => typeof d === "string" && DOMAIN_RE.test(d));
+  if (r.mode === 'domains') {
+    return (
+      Array.isArray(r.domains) &&
+      r.domains.length > 0 &&
+      r.domains.every(d => typeof d === 'string' && DOMAIN_RE.test(d))
+    );
   }
   return false;
 }
 
-const STORE_KEY = "deck.access";
+const STORE_KEY = 'deck.access';
 type GetSettingFn = typeof getSetting;
 
 /**
@@ -51,12 +65,21 @@ type GetSettingFn = typeof getSetting;
  * this NEVER rewrites the store: an invalid store entry is skipped, not
  * corrected -- the store is authoritative as-written.
  */
-function withAccessStoreFallback(fileApps: Record<string, OAuth>, resolve: GetSettingFn): Record<string, OAuth> {
+function withAccessStoreFallback(
+  fileApps: Record<string, OAuth>,
+  resolve: GetSettingFn
+): Record<string, OAuth> {
   let store: Record<string, unknown>;
   try {
-    store = (resolve<Record<string, unknown>>(STORE_KEY).value ?? {}) as Record<string, unknown>;
+    store = (resolve<Record<string, unknown>>(STORE_KEY).value ?? {}) as Record<
+      string,
+      unknown
+    >;
   } catch (err) {
-    console.warn(`deck: ${STORE_KEY} unavailable, falling back to access.json`, err);
+    console.warn(
+      `deck: ${STORE_KEY} unavailable, falling back to access.json`,
+      err
+    );
     return fileApps;
   }
   const merged: Record<string, OAuth> = { ...fileApps };
@@ -79,12 +102,12 @@ let cache: AccessFile = load(getSetting);
 function loadFileKept(): Record<string, OAuth> {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(readFileSync(accessPath(), "utf8"));
+    parsed = JSON.parse(readFileSync(accessPath(), 'utf8'));
   } catch {
     return {};
   }
   const apps = (parsed as AccessFile | null)?.apps;
-  if (typeof apps !== "object" || apps === null) return {};
+  if (typeof apps !== 'object' || apps === null) return {};
 
   const kept: Record<string, OAuth> = {};
   let dropped = false;
@@ -107,14 +130,14 @@ export function reloadOAuth(resolve: GetSettingFn = getSetting): void {
 function saveFile(file: AccessFile): void {
   const path = accessPath();
   mkdirSync(dirname(path), { recursive: true });
-  const tmp = path + ".tmp";
+  const tmp = path + '.tmp';
   writeFileSync(tmp, JSON.stringify(file, null, 2), { mode: 0o600 });
   renameSync(tmp, path);
   chmodSync(path, 0o600);
 }
 
 export function getOAuth(app: string): OAuth {
-  return cache.apps[app] ?? { mode: "off" };
+  return cache.apps[app] ?? { mode: 'off' };
 }
 
 /**
@@ -134,7 +157,10 @@ function isAccessStoreOwned(): boolean {
 }
 
 function currentRawAccessStore(): Record<string, unknown> {
-  return (getSetting<Record<string, unknown>>(STORE_KEY).value ?? {}) as Record<string, unknown>;
+  return (getSetting<Record<string, unknown>>(STORE_KEY).value ?? {}) as Record<
+    string,
+    unknown
+  >;
 }
 
 /**
@@ -158,7 +184,11 @@ export function setOAuth(app: string, rule: OAuth): void {
   const owned = isAccessStoreOwned();
   if (owned) {
     try {
-      setSetting(STORE_KEY, { ...currentRawAccessStore(), [app]: rule }, "user");
+      setSetting(
+        STORE_KEY,
+        { ...currentRawAccessStore(), [app]: rule },
+        'user'
+      );
     } catch (err) {
       cache = previous;
       throw err;
@@ -171,7 +201,10 @@ export function setOAuth(app: string, rule: OAuth): void {
     try {
       saveFile({ apps: {} });
     } catch (err) {
-      console.warn("deck.access: collapsing access.json after a store write failed; the store is authoritative", err);
+      console.warn(
+        'deck.access: collapsing access.json after a store write failed; the store is authoritative',
+        err
+      );
     }
   } else {
     try {
@@ -207,7 +240,7 @@ export function renameOAuth(oldName: string, newName: string): void {
     const next = { ...currentRawAccessStore(), [newName]: rule };
     delete next[oldName];
     try {
-      setSetting(STORE_KEY, next, "user");
+      setSetting(STORE_KEY, next, 'user');
     } catch (err) {
       cache = previous;
       throw err;
@@ -215,7 +248,10 @@ export function renameOAuth(oldName: string, newName: string): void {
     try {
       saveFile({ apps: {} });
     } catch (err) {
-      console.warn("deck.access: collapsing access.json after a store write failed; the store is authoritative", err);
+      console.warn(
+        'deck.access: collapsing access.json after a store write failed; the store is authoritative',
+        err
+      );
     }
   } else {
     try {
@@ -228,28 +264,35 @@ export function renameOAuth(oldName: string, newName: string): void {
 }
 
 export function oauthRequiresCf(rule: OAuth): boolean {
-  return rule.mode !== "off";
+  return rule.mode !== 'off';
 }
 
 export function parseOAuth(body: unknown): OAuth | { error: string } {
-  if (typeof body !== "object" || body === null) return { error: "invalid body" };
+  if (typeof body !== 'object' || body === null)
+    return { error: 'invalid body' };
   const b = body as Record<string, unknown>;
-  if (b.mode === "off") return { mode: "off" };
-  if (b.mode === "emails") {
+  if (b.mode === 'off') return { mode: 'off' };
+  if (b.mode === 'emails') {
     const emails = b.emails;
-    if (!Array.isArray(emails) || emails.length === 0
-      || !emails.every((e) => typeof e === "string" && EMAIL_RE.test(e))) {
-      return { error: "emails must be a non-empty list of valid addresses" };
+    if (
+      !Array.isArray(emails) ||
+      emails.length === 0 ||
+      !emails.every(e => typeof e === 'string' && EMAIL_RE.test(e))
+    ) {
+      return { error: 'emails must be a non-empty list of valid addresses' };
     }
-    return { mode: "emails", emails: emails as string[] };
+    return { mode: 'emails', emails: emails as string[] };
   }
-  if (b.mode === "domains") {
+  if (b.mode === 'domains') {
     const domains = b.domains;
-    if (!Array.isArray(domains) || domains.length === 0
-      || !domains.every((d) => typeof d === "string" && DOMAIN_RE.test(d))) {
-      return { error: "domains must be a non-empty list of valid domains" };
+    if (
+      !Array.isArray(domains) ||
+      domains.length === 0 ||
+      !domains.every(d => typeof d === 'string' && DOMAIN_RE.test(d))
+    ) {
+      return { error: 'domains must be a non-empty list of valid domains' };
     }
-    return { mode: "domains", domains: domains as string[] };
+    return { mode: 'domains', domains: domains as string[] };
   }
-  return { error: "unknown mode" };
+  return { error: 'unknown mode' };
 }

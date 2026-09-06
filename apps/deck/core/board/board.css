@@ -12,18 +12,43 @@ body {
   margin: 0;
   background: var(--card);
 }
-.board-header { display: flex; justify-content: space-between; align-items: center; }
+.board-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
 /* Title lockup: the deck mark at full size beside the wordmark. */
-.board-title { display: flex; align-items: center; gap: var(--spacing-md); }
-.board-logo { width: 32px; height: 32px; display: block; flex: none; }
+.board-title {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+.board-logo {
+  width: 32px;
+  height: 32px;
+  display: block;
+  flex: none;
+}
 
 /* Subline reads as one quiet caption: the health count carries its tone, the
    supporting counts trail dimmed with a gap rather than another dotted run. */
-.board-subline { color: var(--muted); margin: var(--spacing-lg) 0 var(--spacing-rem150); }
-.subline-rest { margin-left: var(--spacing-xl); opacity: 0.72; }
+.board-subline {
+  color: var(--muted);
+  margin: var(--spacing-lg) 0 var(--spacing-rem150);
+}
+.subline-rest {
+  margin-left: var(--spacing-xl);
+  opacity: 0.72;
+}
 
-.header-actions { display: flex; align-items: center; gap: var(--spacing-xs); }
-.mt-6 { margin-top: 1.5rem; }
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+.mt-6 {
+  margin-top: 1.5rem;
+}
 
 /* The app icon (mattstack mark) leads a managed row's identity, ahead of the
    health dot; unmanaged rows carry none and start at the dot. */
@@ -50,17 +75,35 @@ body {
   color: var(--muted);
   cursor: pointer;
 }
-.tunnel-label { font-size: var(--font-size-sm); }
-.tunnel-badge:hover .tunnel-label { color: var(--fg); }
+.tunnel-label {
+  font-size: var(--font-size-sm);
+}
+.tunnel-badge:hover .tunnel-label {
+  color: var(--fg);
+}
 
-.unstyled { color: inherit; text-decoration: none; }
-.muted { color: var(--muted); text-decoration: none; }
-.muted-more { color: var(--muted); opacity: 0.6; text-decoration: none; }
+.unstyled {
+  color: inherit;
+  text-decoration: none;
+}
+.muted {
+  color: var(--muted);
+  text-decoration: none;
+}
+.muted-more {
+  color: var(--muted);
+  opacity: 0.6;
+  text-decoration: none;
+}
 /* Bad-tone plain text -- for a value that reads as dim by default (the
    service cell's exit status) and only needs the bad hue, not a pill:
    Badge is reserved for the health column. */
-.t-bad { color: var(--red); }
-.t-ok { color: var(--green); }
+.t-bad {
+  color: var(--red);
+}
+.t-ok {
+  color: var(--green);
+}
 
 /* hstack is a block-level flex container, so a chip after the name would be
    pushed onto its own line and stand the row up taller. */
@@ -105,7 +148,9 @@ body {
   border-radius: var(--radius-sm);
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
-  transition: color 0.12s ease, background 0.12s ease;
+  transition:
+    color 0.12s ease,
+    background 0.12s ease;
 }
 .public-link:hover,
 .public-link:focus-visible {
@@ -137,11 +182,11 @@ body {
   gap: var(--spacing-xs);
   width: 100%;
 }
-.dev-link-input [data-part="field"] {
+.dev-link-input [data-part='field'] {
   flex: 1;
   min-width: 0;
 }
-.dev-link-input [data-part="field-input"] {
+.dev-link-input [data-part='field-input'] {
   width: 100%;
 }
 
@@ -160,13 +205,13 @@ body {
 /* The switch (16px, inline-flex) is shorter than the tooltip wrapper's
    line box, so baseline alignment (the default) leaves it off-center by
    the asymmetric leading above/below the baseline. Table cells only. */
-[data-part="table-cell"] [data-part="switch"] {
+[data-part='table-cell'] [data-part='switch'] {
   vertical-align: middle;
 }
 
 /* Gap between the dot and the name it precedes -- StatusDot itself ships
    unmargined so a consumer can also use it flush against other glyphs. */
-[data-part="statusdot"] {
+[data-part='statusdot'] {
   margin-right: var(--spacing-sm);
 }
 
@@ -201,7 +246,7 @@ body {
    layout plus the identical colgroup each AppsTable renders pins one shared
    column grid, so columns line up down the whole page instead of each table
    sizing to its own content. */
-.apps-grid [data-part="table"] {
+.apps-grid [data-part='table'] {
   table-layout: fixed;
 }
 
@@ -233,7 +278,7 @@ body {
    fully claims attention) with the lightest wash token available and no
    blur -- unlayered, so it wins over the kit's `@layer soribashi.recipes`
    rule regardless of selector specificity. */
-[data-part="sidedrawer-overlay"] {
+[data-part='sidedrawer-overlay'] {
   background: var(--surface-wash-fg-5);
   backdrop-filter: none;
 }

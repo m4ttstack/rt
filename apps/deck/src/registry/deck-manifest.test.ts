@@ -1,194 +1,301 @@
-import { test, expect } from "bun:test";
-import { mkdtempSync, mkdirSync, writeFileSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
-import { readDeckManifest, resolveServeShape } from "./deck-manifest.ts";
+import { mkdirSync, mkdtempSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
+import { expect, test } from 'bun:test';
+
+import {
+  readDeckManifest,
+  resolveServeShape,
+  startArgv,
+} from './deck-manifest.ts';
 
 function repo(files: Record<string, string>): string {
-  const dir = mkdtempSync(join(tmpdir(), "deckman-"));
+  const dir = mkdtempSync(join(tmpdir(), 'deckman-'));
   for (const [name, content] of Object.entries(files)) {
     const p = join(dir, name);
-    mkdirSync(join(p, ".."), { recursive: true });
+    mkdirSync(join(p, '..'), { recursive: true });
     writeFileSync(p, content);
   }
   return dir;
 }
 
-test("absent manifest is null (not an error)", () => {
+test('absent manifest is null (not an error)', () => {
   expect(readDeckManifest(repo({}))).toBeNull();
 });
 
-test("reads name, port, start and action commands", () => {
+test('reads name, port, start and action commands', () => {
   const dir = repo({
-    "mattstack.deck.json": JSON.stringify({
-      name: "chat", displayName: "Chat", description: "rt chat viewer", icon: "public/icon.svg",
-      port: 11002, commands: { start: "bun run serve", build: "bun run build", deploy: "bun run deploy" },
+    'mattstack.deck.json': JSON.stringify({
+      name: 'chat',
+      displayName: 'Chat',
+      description: 'rt chat viewer',
+      icon: 'public/icon.svg',
+      port: 11002,
+      commands: {
+        start: 'bun run serve',
+        build: 'bun run build',
+        deploy: 'bun run deploy',
+      },
     }),
   });
   const r = readDeckManifest(dir);
   expect(r?.ok).toBe(true);
-  if (!r || !r.ok) throw new Error("unreachable");
-  expect(r.manifest.name).toBe("chat");
+  if (!r || !r.ok) throw new Error('unreachable');
+  expect(r.manifest.name).toBe('chat');
   expect(r.manifest.port).toBe(11002);
-  expect(r.manifest.commands).toEqual({ start: "bun run serve", build: "bun run build", deploy: "bun run deploy" });
-  expect(r.manifest.displayName).toBe("Chat");
+  expect(r.manifest.commands).toEqual({
+    start: 'bun run serve',
+    build: 'bun run build',
+    deploy: 'bun run deploy',
+  });
+  expect(r.manifest.displayName).toBe('Chat');
 });
 
-test("reads and normalizes altConfigs (commands.start -> start)", () => {
+test('reads and normalizes altConfigs (commands.start -> start)', () => {
   const dir = repo({
-    "mattstack.deck.json": JSON.stringify({
-      name: "chat", commands: { start: "bun run serve" },
-      altConfigs: { dev: { port: 5173, commands: { start: "bun run dev" } } },
+    'mattstack.deck.json': JSON.stringify({
+      name: 'chat',
+      commands: { start: 'bun run serve' },
+      altConfigs: { dev: { port: 5173, commands: { start: 'bun run dev' } } },
     }),
   });
   const r = readDeckManifest(dir);
-  if (!r || !r.ok) throw new Error("expected ok");
-  expect(r.manifest.altConfigs).toEqual({ dev: { port: 5173, start: "bun run dev" } });
+  if (!r || !r.ok) throw new Error('expected ok');
+  expect(r.manifest.altConfigs).toEqual({
+    dev: { port: 5173, start: 'bun run dev' },
+  });
 });
 
-test("rejects an overlay that overrides anything but port/commands.start", () => {
+test('rejects an overlay that overrides anything but port/commands.start', () => {
   const dir = repo({
-    "mattstack.deck.json": JSON.stringify({
-      name: "chat", commands: { start: "s" },
-      altConfigs: { dev: { commands: { deploy: "nope" } } },
+    'mattstack.deck.json': JSON.stringify({
+      name: 'chat',
+      commands: { start: 's' },
+      altConfigs: { dev: { commands: { deploy: 'nope' } } },
     }),
   });
   const r = readDeckManifest(dir);
   expect(r?.ok).toBe(false);
-  if (!r || r.ok) throw new Error("expected error");
-  expect(r.error).toContain("dev");
+  if (!r || r.ok) throw new Error('expected error');
+  expect(r.error).toContain('dev');
 });
 
-test("rejects a non-string command value", () => {
-  const dir = repo({ "mattstack.deck.json": JSON.stringify({ name: "chat", commands: { start: 5 } }) });
-  const r = readDeckManifest(dir);
-  expect(r?.ok).toBe(false);
-});
-
-test("rejects a command key that would 404 the board route", () => {
-  const dir = repo({ "mattstack.deck.json": JSON.stringify({ name: "chat", commands: { start: "s", "db:migrate": "x" } }) });
-  const r = readDeckManifest(dir);
-  expect(r?.ok).toBe(false);
-});
-
-test("accepts start/build/deploy command keys", () => {
+test('rejects a non-string command value', () => {
   const dir = repo({
-    "mattstack.deck.json": JSON.stringify({
-      name: "chat", commands: { start: "bun run serve", build: "bun run build", deploy: "bun run deploy" },
+    'mattstack.deck.json': JSON.stringify({
+      name: 'chat',
+      commands: { start: 5 },
+    }),
+  });
+  const r = readDeckManifest(dir);
+  expect(r?.ok).toBe(false);
+});
+
+test('rejects a command key that would 404 the board route', () => {
+  const dir = repo({
+    'mattstack.deck.json': JSON.stringify({
+      name: 'chat',
+      commands: { start: 's', 'db:migrate': 'x' },
+    }),
+  });
+  const r = readDeckManifest(dir);
+  expect(r?.ok).toBe(false);
+});
+
+test('accepts start/build/deploy command keys', () => {
+  const dir = repo({
+    'mattstack.deck.json': JSON.stringify({
+      name: 'chat',
+      commands: {
+        start: 'bun run serve',
+        build: 'bun run build',
+        deploy: 'bun run deploy',
+      },
     }),
   });
   const r = readDeckManifest(dir);
   expect(r?.ok).toBe(true);
 });
 
-test("rejects a bad name", () => {
-  const dir = repo({ "mattstack.deck.json": JSON.stringify({ name: "Bad Name", commands: {} }) });
+test('rejects a bad name', () => {
+  const dir = repo({
+    'mattstack.deck.json': JSON.stringify({ name: 'Bad Name', commands: {} }),
+  });
   const r = readDeckManifest(dir);
   expect(r?.ok).toBe(false);
 });
 
-test("unparseable JSON is a loud error, not null", () => {
-  const dir = repo({ "mattstack.deck.json": "{ not json" });
+test('unparseable JSON is a loud error, not null', () => {
+  const dir = repo({ 'mattstack.deck.json': '{ not json' });
   const r = readDeckManifest(dir);
   expect(r?.ok).toBe(false);
 });
 
-test("base serve shape wraps start in sh -c", () => {
-  const shape = resolveServeShape({ name: "chat", port: 11002, commands: { start: "bun run serve" } });
-  expect(shape).toEqual({ port: 11002, command: ["bun", "run", "serve"] });
+test('base serve shape wraps start in sh -c', () => {
+  const shape = resolveServeShape({
+    name: 'chat',
+    port: 11002,
+    commands: { start: 'bun run serve' },
+  });
+  expect(shape).toEqual({ port: 11002, command: ['bun', 'run', 'serve'] });
 });
 
-test("overlay overrides port and start", () => {
+test('overlay overrides port and start', () => {
   const shape = resolveServeShape(
-    { name: "chat", port: 11002, commands: { start: "bun run serve" }, altConfigs: { dev: { port: 5173, start: "bun run dev" } } },
-    "dev",
+    {
+      name: 'chat',
+      port: 11002,
+      commands: { start: 'bun run serve' },
+      altConfigs: { dev: { port: 5173, start: 'bun run dev' } },
+    },
+    'dev'
   );
-  expect(shape).toEqual({ port: 5173, command: ["bun", "run", "dev"] });
+  expect(shape).toEqual({ port: 5173, command: ['bun', 'run', 'dev'] });
 });
 
-test("overlay that omits a field inherits the base for it", () => {
+test('overlay that omits a field inherits the base for it', () => {
   const shape = resolveServeShape(
-    { name: "chat", port: 11002, commands: { start: "bun run serve" }, altConfigs: { hmr: { port: 5173 } } },
-    "hmr",
+    {
+      name: 'chat',
+      port: 11002,
+      commands: { start: 'bun run serve' },
+      altConfigs: { hmr: { port: 5173 } },
+    },
+    'hmr'
   );
-  expect(shape).toEqual({ port: 5173, command: ["bun", "run", "serve"] });
+  expect(shape).toEqual({ port: 5173, command: ['bun', 'run', 'serve'] });
 });
 
-test("unknown alt throws", () => {
-  expect(() => resolveServeShape({ name: "c", commands: { start: "s" } }, "nope")).toThrow();
+test('unknown alt throws', () => {
+  expect(() =>
+    resolveServeShape({ name: 'c', commands: { start: 's' } }, 'nope')
+  ).toThrow();
 });
 
-test("an inherited Object.prototype name is not a known alt", () => {
-  const manifest = { name: "c", commands: { start: "s" } };
-  expect(() => resolveServeShape(manifest, "toString")).toThrow();
-  expect(() => resolveServeShape(manifest, "constructor")).toThrow();
+test('an inherited Object.prototype name is not a known alt', () => {
+  const manifest = { name: 'c', commands: { start: 's' } };
+  expect(() => resolveServeShape(manifest, 'toString')).toThrow();
+  expect(() => resolveServeShape(manifest, 'constructor')).toThrow();
 });
 
-test("no start command yields no argv (port-only app)", () => {
-  expect(resolveServeShape({ name: "c", port: 4200, commands: {} })).toEqual({ port: 4200, command: undefined });
+test('no start command yields no argv (port-only app)', () => {
+  expect(resolveServeShape({ name: 'c', port: 4200, commands: {} })).toEqual({
+    port: 4200,
+    command: undefined,
+  });
 });
 
 test("deck's own repo manifest parses", () => {
-  const r = readDeckManifest(join(import.meta.dir, "..", ".."));
+  const r = readDeckManifest(join(import.meta.dir, '..', '..'));
   expect(r?.ok).toBe(true);
-  if (!r || !r.ok) throw new Error("unreachable");
-  expect(r.manifest.name).toBe("deck");
+  if (!r || !r.ok) throw new Error('unreachable');
+  expect(r.manifest.name).toBe('deck');
   expect(r.manifest.dev?.deploy).toBeDefined();
   expect(r.manifest.dev?.start).toBeUndefined();
 });
 
-test("reads a top-level env for the supervised service", () => {
+test('reads a top-level env for the supervised service', () => {
   const dir = repo({
-    "mattstack.deck.json": JSON.stringify({
-      name: "api", port: 11010, commands: { start: "bun server/index.ts" },
-      env: { API_PORT: "11010", SERVE_STATIC: "1" },
+    'mattstack.deck.json': JSON.stringify({
+      name: 'api',
+      port: 11010,
+      commands: { start: 'bun server/index.ts' },
+      env: { API_PORT: '11010', SERVE_STATIC: '1' },
     }),
   });
   const r = readDeckManifest(dir);
-  if (!r || !r.ok) throw new Error("expected ok");
-  expect(r.manifest.env).toEqual({ API_PORT: "11010", SERVE_STATIC: "1" });
+  if (!r || !r.ok) throw new Error('expected ok');
+  expect(r.manifest.env).toEqual({ API_PORT: '11010', SERVE_STATIC: '1' });
 });
 
-test("rejects a non-string env value", () => {
-  const dir = repo({ "mattstack.deck.json": JSON.stringify({ name: "api", commands: { start: "s" }, env: { PORT: 11010 } }) });
-  expect(readDeckManifest(dir)?.ok).toBe(false);
-});
-
-test("an overlay may not override env", () => {
+test('rejects a non-string env value', () => {
   const dir = repo({
-    "mattstack.deck.json": JSON.stringify({ name: "api", commands: { start: "s" }, altConfigs: { dev: { env: { X: "1" } } } }),
+    'mattstack.deck.json': JSON.stringify({
+      name: 'api',
+      commands: { start: 's' },
+      env: { PORT: 11010 },
+    }),
   });
   expect(readDeckManifest(dir)?.ok).toBe(false);
 });
 
-import { startArgv } from "./deck-manifest.ts";
-
-test("a plain start runs directly, not under sh", () => {
-  expect(startArgv("bun src/server.ts")).toEqual(["bun", "src/server.ts"]);
-  expect(startArgv("caffeinate -s bun src/server.ts")).toEqual(["caffeinate", "-s", "bun", "src/server.ts"]);
-  expect(startArgv("bun x vite preview --port 11003 --strictPort --host 127.0.0.1"))
-    .toEqual(["bun", "x", "vite", "preview", "--port", "11003", "--strictPort", "--host", "127.0.0.1"]);
-});
-
-test("a --flag=value word is not mistaken for an env assignment", () => {
-  expect(startArgv("bun serve --port=11003")).toEqual(["bun", "serve", "--port=11003"]);
-});
-
-test("shell syntax keeps the sh -c wrapper", () => {
-  expect(startArgv("bun run build && deck restart chat")).toEqual(["sh", "-c", "bun run build && deck restart chat"]);
-  expect(startArgv("NODE_ENV=production bun server/index.ts")).toEqual(["sh", "-c", "NODE_ENV=production bun server/index.ts"]);
-  expect(startArgv('bun run "my script"')).toEqual(["sh", "-c", 'bun run "my script"']);
-  expect(startArgv("bun s.ts > out.log")).toEqual(["sh", "-c", "bun s.ts > out.log"]);
-  expect(startArgv("echo $HOME")).toEqual(["sh", "-c", "echo $HOME"]);
-});
-
-test("parses dev node and includeInBundle", () => {
+test('an overlay may not override env', () => {
   const dir = repo({
-    "mattstack.deck.json": JSON.stringify({
-      name: "chat",
+    'mattstack.deck.json': JSON.stringify({
+      name: 'api',
+      commands: { start: 's' },
+      altConfigs: { dev: { env: { X: '1' } } },
+    }),
+  });
+  expect(readDeckManifest(dir)?.ok).toBe(false);
+});
+
+test('a plain start runs directly, not under sh', () => {
+  expect(startArgv('bun src/server.ts')).toEqual(['bun', 'src/server.ts']);
+  expect(startArgv('caffeinate -s bun src/server.ts')).toEqual([
+    'caffeinate',
+    '-s',
+    'bun',
+    'src/server.ts',
+  ]);
+  expect(
+    startArgv('bun x vite preview --port 11003 --strictPort --host 127.0.0.1')
+  ).toEqual([
+    'bun',
+    'x',
+    'vite',
+    'preview',
+    '--port',
+    '11003',
+    '--strictPort',
+    '--host',
+    '127.0.0.1',
+  ]);
+});
+
+test('a --flag=value word is not mistaken for an env assignment', () => {
+  expect(startArgv('bun serve --port=11003')).toEqual([
+    'bun',
+    'serve',
+    '--port=11003',
+  ]);
+});
+
+test('shell syntax keeps the sh -c wrapper', () => {
+  expect(startArgv('bun run build && deck restart chat')).toEqual([
+    'sh',
+    '-c',
+    'bun run build && deck restart chat',
+  ]);
+  expect(startArgv('NODE_ENV=production bun server/index.ts')).toEqual([
+    'sh',
+    '-c',
+    'NODE_ENV=production bun server/index.ts',
+  ]);
+  expect(startArgv('bun run "my script"')).toEqual([
+    'sh',
+    '-c',
+    'bun run "my script"',
+  ]);
+  expect(startArgv('bun s.ts > out.log')).toEqual([
+    'sh',
+    '-c',
+    'bun s.ts > out.log',
+  ]);
+  expect(startArgv('echo $HOME')).toEqual(['sh', '-c', 'echo $HOME']);
+});
+
+test('parses dev node and includeInBundle', () => {
+  const dir = repo({
+    'mattstack.deck.json': JSON.stringify({
+      name: 'chat',
       port: 11002,
       includeInBundle: true,
-      dev: { start: "bun src/server/index.ts", build: "bun run build", deploy: "bun run deploy" },
+      dev: {
+        start: 'bun src/server/index.ts',
+        build: 'bun run build',
+        deploy: 'bun run deploy',
+      },
     }),
   });
   const parsed = readDeckManifest(dir);
@@ -196,28 +303,37 @@ test("parses dev node and includeInBundle", () => {
   if (parsed?.ok) {
     expect(parsed.manifest.includeInBundle).toBe(true);
     expect(parsed.manifest.dev).toEqual({
-      start: "bun src/server/index.ts",
-      build: "bun run build",
-      deploy: "bun run deploy",
+      start: 'bun src/server/index.ts',
+      build: 'bun run build',
+      deploy: 'bun run deploy',
     });
   }
 });
 
-test("rejects a non-boolean includeInBundle", () => {
-  const dir = repo({ "mattstack.deck.json": JSON.stringify({ name: "chat", includeInBundle: "yes" }) });
+test('rejects a non-boolean includeInBundle', () => {
+  const dir = repo({
+    'mattstack.deck.json': JSON.stringify({
+      name: 'chat',
+      includeInBundle: 'yes',
+    }),
+  });
   const parsed = readDeckManifest(dir);
   expect(parsed?.ok).toBe(false);
 });
 
-test("rejects bad dev nodes", () => {
-  for (const dev of [["a"], { "BAD KEY": "x" }, { build: "" }, { build: 3 }]) {
-    const dir = repo({ "mattstack.deck.json": JSON.stringify({ name: "chat", dev }) });
+test('rejects bad dev nodes', () => {
+  for (const dev of [['a'], { 'BAD KEY': 'x' }, { build: '' }, { build: 3 }]) {
+    const dir = repo({
+      'mattstack.deck.json': JSON.stringify({ name: 'chat', dev }),
+    });
     expect(readDeckManifest(dir)?.ok).toBe(false);
   }
 });
 
-test("dev node absent stays undefined", () => {
-  const dir = repo({ "mattstack.deck.json": JSON.stringify({ name: "chat", port: 11002 }) });
+test('dev node absent stays undefined', () => {
+  const dir = repo({
+    'mattstack.deck.json': JSON.stringify({ name: 'chat', port: 11002 }),
+  });
   const parsed = readDeckManifest(dir);
   expect(parsed?.ok).toBe(true);
   if (parsed?.ok) {

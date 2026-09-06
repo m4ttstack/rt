@@ -1,7 +1,14 @@
-import { readFileSync, writeFileSync, renameSync, mkdirSync, chmodSync } from "fs";
-import { dirname, join } from "path";
-import { stateDir } from "./state.ts";
-import { getSetting, setSetting } from "@mattstack/rt-client";
+import {
+  chmodSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from 'fs';
+import { dirname, join } from 'path';
+
+import { getSetting, setSetting } from '@mattstack/rt-client';
+import { stateDir } from './state.ts';
 
 export interface TunnelIdentity {
   name: string;
@@ -18,14 +25,25 @@ export interface PlatformSettings {
 }
 
 const DEFAULTS: PlatformSettings = {
-  publicDomain: null, tlds: ["localhost"], legacyPrefixes: [], secrets: {}, railway: null, tunnel: null,
+  publicDomain: null,
+  tlds: ['localhost'],
+  legacyPrefixes: [],
+  secrets: {},
+  railway: null,
+  tunnel: null,
 };
 
-const STORE_KEY = "deck.platform";
-type MigratedFields = Pick<PlatformSettings, "publicDomain" | "legacyPrefixes" | "railway" | "tunnel">;
+const STORE_KEY = 'deck.platform';
+type MigratedFields = Pick<
+  PlatformSettings,
+  'publicDomain' | 'legacyPrefixes' | 'railway' | 'tunnel'
+>;
 
 export function platformSettingsPath(): string {
-  return process.env.LOCAL_PLATFORM_SETTINGS_PATH ?? join(stateDir(), "platform.json");
+  return (
+    process.env.LOCAL_PLATFORM_SETTINGS_PATH ??
+    join(stateDir(), 'platform.json')
+  );
 }
 
 type GetSettingFn = typeof getSetting;
@@ -39,17 +57,30 @@ type GetSettingFn = typeof getSetting;
  * real state. Delete this function whole at cutover, once the file no
  * longer carries these fields.
  */
-function withPlatformStoreFallback(fileValues: MigratedFields, resolve: GetSettingFn): MigratedFields {
+function withPlatformStoreFallback(
+  fileValues: MigratedFields,
+  resolve: GetSettingFn
+): MigratedFields {
   let store: Partial<MigratedFields>;
   try {
-    store = (resolve<Partial<MigratedFields>>(STORE_KEY).value ?? {}) as Partial<MigratedFields>;
+    store = (resolve<Partial<MigratedFields>>(STORE_KEY).value ??
+      {}) as Partial<MigratedFields>;
   } catch (err) {
-    console.warn(`deck: ${STORE_KEY} unavailable, falling back to platform.json`, err);
+    console.warn(
+      `deck: ${STORE_KEY} unavailable, falling back to platform.json`,
+      err
+    );
     return fileValues;
   }
   return {
-    publicDomain: store.publicDomain !== undefined ? store.publicDomain : fileValues.publicDomain,
-    legacyPrefixes: store.legacyPrefixes !== undefined ? store.legacyPrefixes : fileValues.legacyPrefixes,
+    publicDomain:
+      store.publicDomain !== undefined
+        ? store.publicDomain
+        : fileValues.publicDomain,
+    legacyPrefixes:
+      store.legacyPrefixes !== undefined
+        ? store.legacyPrefixes
+        : fileValues.legacyPrefixes,
     railway: store.railway !== undefined ? store.railway : fileValues.railway,
     tunnel: store.tunnel !== undefined ? store.tunnel : fileValues.tunnel,
   };
@@ -60,15 +91,24 @@ let cache: PlatformSettings = load(getSetting);
 function load(resolve: GetSettingFn): PlatformSettings {
   let fileValues: PlatformSettings;
   try {
-    fileValues = { ...DEFAULTS, ...JSON.parse(readFileSync(platformSettingsPath(), "utf8")) };
+    fileValues = {
+      ...DEFAULTS,
+      ...JSON.parse(readFileSync(platformSettingsPath(), 'utf8')),
+    };
   } catch {
     fileValues = structuredClone(DEFAULTS);
   }
   return { ...fileValues, ...withPlatformStoreFallback(fileValues, resolve) };
 }
 
-export function reloadPlatformSettings(resolve: GetSettingFn = getSetting): void { cache = load(resolve); }
-export function getPlatformSettings(): PlatformSettings { return cache; }
+export function reloadPlatformSettings(
+  resolve: GetSettingFn = getSetting
+): void {
+  cache = load(resolve);
+}
+export function getPlatformSettings(): PlatformSettings {
+  return cache;
+}
 
 /**
  * Store ownership is a one-way latch, decided fresh on every write: rt-client's
@@ -89,9 +129,16 @@ function isPlatformStoreOwned(resolve: GetSettingFn): boolean {
   }
 }
 
-export function updatePlatformSettings(patch: Partial<PlatformSettings>, resolve: GetSettingFn = getSetting): void {
+export function updatePlatformSettings(
+  patch: Partial<PlatformSettings>,
+  resolve: GetSettingFn = getSetting
+): void {
   const previous = cache;
-  cache = { ...cache, ...patch, secrets: { ...cache.secrets, ...(patch.secrets ?? {}) } };
+  cache = {
+    ...cache,
+    ...patch,
+    secrets: { ...cache.secrets, ...(patch.secrets ?? {}) },
+  };
 
   const owned = isPlatformStoreOwned(resolve);
   if (owned) {
@@ -105,7 +152,16 @@ export function updatePlatformSettings(patch: Partial<PlatformSettings>, resolve
       // a field another process wrote to the store after this process
       // booted is clobbered here, same as any other boot-read config in
       // deck (a restart is what picks up an external edit).
-      setSetting(STORE_KEY, { publicDomain: cache.publicDomain, legacyPrefixes: cache.legacyPrefixes, railway: cache.railway, tunnel: cache.tunnel }, "machine");
+      setSetting(
+        STORE_KEY,
+        {
+          publicDomain: cache.publicDomain,
+          legacyPrefixes: cache.legacyPrefixes,
+          railway: cache.railway,
+          tunnel: cache.tunnel,
+        },
+        'machine'
+      );
     } catch (err) {
       cache = previous; // never claim a value neither the store nor the file actually holds
       throw err;
@@ -114,14 +170,20 @@ export function updatePlatformSettings(patch: Partial<PlatformSettings>, resolve
 
   const fileBody: Record<string, unknown> = owned
     ? (() => {
-        const { publicDomain: _publicDomain, legacyPrefixes: _legacyPrefixes, railway: _railway, tunnel: _tunnel, ...rest } = cache;
+        const {
+          publicDomain: _publicDomain,
+          legacyPrefixes: _legacyPrefixes,
+          railway: _railway,
+          tunnel: _tunnel,
+          ...rest
+        } = cache;
         return rest;
       })()
     : cache; // unowned: the file is the only place holding these fields, so it keeps them
 
   const path = platformSettingsPath();
   mkdirSync(dirname(path), { recursive: true });
-  const tmp = path + ".tmp";
+  const tmp = path + '.tmp';
   try {
     writeFileSync(tmp, JSON.stringify(fileBody, null, 2), { mode: 0o600 });
     renameSync(tmp, path);
@@ -129,9 +191,21 @@ export function updatePlatformSettings(patch: Partial<PlatformSettings>, resolve
   } catch (err) {
     if (owned) {
       try {
-        setSetting(STORE_KEY, { publicDomain: previous.publicDomain, legacyPrefixes: previous.legacyPrefixes, railway: previous.railway, tunnel: previous.tunnel }, "machine");
+        setSetting(
+          STORE_KEY,
+          {
+            publicDomain: previous.publicDomain,
+            legacyPrefixes: previous.legacyPrefixes,
+            railway: previous.railway,
+            tunnel: previous.tunnel,
+          },
+          'machine'
+        );
       } catch (revertErr) {
-        console.error("platform settings save: failed to revert deck.platform after a file-write failure", revertErr);
+        console.error(
+          'platform settings save: failed to revert deck.platform after a file-write failure',
+          revertErr
+        );
       }
     }
     cache = previous;

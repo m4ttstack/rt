@@ -1,10 +1,18 @@
-import { useMemo, useRef, useState } from "react";
-import { Alert, Badge, Button, ICONS, ToastHost, Tooltip } from "@mattstack/tui-kit";
-import { AppsTable } from "./AppsTable.tsx";
-import { AppDrawer } from "./drawer/AppDrawer.tsx";
-import { AddAppModal, RemoveConfirm, UnlinkConfirm } from "./modals.tsx";
-import { sublineHealthy, type Row } from "./logic.ts";
-import { useBoardState } from "./useBoardState.ts";
+import { useMemo, useRef, useState } from 'react';
+
+import {
+  Alert,
+  Badge,
+  Button,
+  ICONS,
+  ToastHost,
+  Tooltip,
+} from '@mattstack/tui-kit';
+import { AppsTable } from './AppsTable.tsx';
+import { AppDrawer } from './drawer/AppDrawer.tsx';
+import { sublineHealthy, type Row } from './logic.ts';
+import { AddAppModal, RemoveConfirm, UnlinkConfirm } from './modals.tsx';
+import { useBoardState } from './useBoardState.ts';
 
 /** Aggregate cloudflare-tunnel health, collapsed to a single header badge that
     opens the tunnel's drawer on click (the tunnel no longer gets its own row). */
@@ -20,10 +28,14 @@ function TunnelBadge({
   if (!tunnels.length) return null;
   const restarting = tunnels.some(isRestarting);
   const health = tunnels[0]?.health ?? null;
-  const up = tunnels.every((t) => t.service && t.service.pid !== null);
-  const intent = restarting ? "warn" : health?.tone ?? (up ? "ok" : "bad");
-  const label = restarting ? "restarting…" : health?.detail ?? (up ? "up" : "down");
-  const tip = health?.hint ? `${tunnels.map((t) => t.name).join(", ")} · ${health.hint}` : tunnels.map((t) => t.name).join(", ");
+  const up = tunnels.every(t => t.service && t.service.pid !== null);
+  const intent = restarting ? 'warn' : (health?.tone ?? (up ? 'ok' : 'bad'));
+  const label = restarting
+    ? 'restarting…'
+    : (health?.detail ?? (up ? 'up' : 'down'));
+  const tip = health?.hint
+    ? `${tunnels.map(t => t.name).join(', ')} · ${health.hint}`
+    : tunnels.map(t => t.name).join(', ');
   return (
     <Tooltip tip={tip}>
       <button
@@ -74,8 +86,8 @@ export function Board() {
   const [openRowName, setOpenRowName] = useState<string | null>(null);
   // Table display order: apps, then strays, then tunnels -- what ↑/↓ walks.
   const allRows = useMemo(
-    () => [...sections.flatMap((s) => s.rows), ...tunnels],
-    [sections, tunnels],
+    () => [...sections.flatMap(s => s.rows), ...tunnels],
+    [sections, tunnels]
   );
   const healthy = data ? sublineHealthy(data) : null;
 
@@ -84,7 +96,7 @@ export function Board() {
       className="board"
       ref={mainRef}
       tabIndex={-1}
-      data-board-ready={data != null ? "" : undefined}
+      data-board-ready={data != null ? '' : undefined}
     >
       <header className="board-header">
         <div className="board-title">
@@ -105,7 +117,7 @@ export function Board() {
           {data && data.canManage && (
             <>
               <Button size="sm" busy={reloadingProxy} onClick={onProxyReload}>
-                {reloadingProxy ? "restarting…" : "reload proxy"}
+                {reloadingProxy ? 'restarting…' : 'reload proxy'}
               </Button>
               <Button size="sm" onClick={openAdd}>
                 {ICONS.plus} add app
@@ -117,12 +129,12 @@ export function Board() {
       <p className="board-subline">
         {healthy ? (
           <>
-            <span className={healthy.ok ? "t-ok" : "t-bad"}>
+            <span className={healthy.ok ? 't-ok' : 't-bad'}>
               {healthy.text}
             </span>
             {subline.length > healthy.text.length && (
               <span className="subline-rest">
-                {subline.slice(healthy.text.length).replace(/^\s*·\s*/, "")}
+                {subline.slice(healthy.text.length).replace(/^\s*·\s*/, '')}
               </span>
             )}
           </>
@@ -139,7 +151,7 @@ export function Board() {
       {data != null && (
         <>
           {sections.map((section, i) => (
-            <section key={section.key} className={i === 0 ? undefined : "mt-6"}>
+            <section key={section.key} className={i === 0 ? undefined : 'mt-6'}>
               {section.title && <h2>{section.title}</h2>}
               <AppsTable
                 section={section}
