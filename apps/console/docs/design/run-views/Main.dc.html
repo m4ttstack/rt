@@ -1,0 +1,156 @@
+<script src="./support.js"></script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap">
+<style>
+  .rb-root * { box-sizing: border-box; margin: 0; }
+  .rb-root { font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .rb-chip { display:inline-flex; align-items:center; gap:6px; border-radius:999px; padding:2px 10px; font-size:11px; font-weight:600; }
+</style>
+<div class="rb-root" style="width:1440px;height:900px;background:#f1f3f5;color:#212529;overflow:hidden;">
+  <!-- top bar -->
+  <div style="background:#f8f9fa;border-bottom:1px solid #dee2e6;padding:10px 28px;font-size:12px;color:#495057;">console</div>
+
+  <div style="padding:26px 40px 0 40px;">
+    <div style="display:flex;align-items:baseline;justify-content:space-between;">
+      <div style="font-size:30px;font-weight:700;">Runs</div>
+      <div style="font-size:11px;color:#868e96;">&gt;_ rt runs · live · updated 2s ago</div>
+    </div>
+
+    <!-- Needs attention -->
+    <div style="margin-top:26px;display:flex;justify-content:space-between;align-items:center;">
+      <div style="font-size:13px;font-weight:700;">Needs attention</div>
+      <div style="font-size:12px;color:#868e96;">1</div>
+    </div>
+    <div style="margin-top:10px;background:#fff;border:1px solid #ffb3c1;border-radius:8px;padding:14px 18px;display:flex;align-items:center;gap:18px;">
+      <div style="flex:1;min-width:0;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span style="font-weight:700;font-size:14px;color:#2e7de9;">DEMO-1287</span>
+          <span style="font-size:13px;color:#212529;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Fix flaky retry in payment webhooks</span>
+        </div>
+        <div style="margin-top:5px;font-size:11px;color:#868e96;">acme/payments · demo-1287-fix-retry · MR !4310</div>
+      </div>
+      <div style="flex:none;width:300px;">
+        <div style="display:flex;align-items:baseline;gap:8px;">
+          <span style="font-size:14px;font-weight:700;">self-review</span>
+          <span style="font-size:11px;color:#868e96;">2h 27m in stage</span>
+        </div>
+        <div style="margin-top:6px;display:flex;gap:4px;align-items:center;">
+          <span style="width:26px;height:4px;border-radius:2px;background:#587539;"></span>
+          <span style="width:26px;height:4px;border-radius:2px;background:#587539;"></span>
+          <span style="width:26px;height:4px;border-radius:2px;background:#587539;"></span>
+          <span style="width:26px;height:4px;border-radius:2px;background:#587539;"></span>
+          <span style="width:26px;height:4px;border-radius:2px;background:#587539;"></span>
+          <span style="width:26px;height:4px;border-radius:2px;background:#2e7de9;"></span>
+          <span style="width:26px;height:4px;border-radius:2px;background:#dee2e6;"></span>
+          <span style="width:26px;height:4px;border-radius:2px;background:#dee2e6;"></span>
+          <span style="font-size:10px;color:#868e96;margin-left:6px;">6/8</span>
+        </div>
+      </div>
+      <div style="flex:none;display:flex;align-items:center;gap:12px;">
+        <span class="rb-chip" style="background:#ffe8f2;color:#ac0033;">stale · no event in 41m</span>
+        <span style="width:28px;height:28px;border:1px solid #dee2e6;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;color:#495057;">⋯</span>
+      </div>
+    </div>
+
+    <!-- Running -->
+    <div style="margin-top:26px;display:flex;justify-content:space-between;align-items:center;">
+      <div style="font-size:13px;font-weight:700;">Running</div>
+      <div style="font-size:12px;color:#868e96;">2</div>
+    </div>
+    <div style="margin-top:10px;background:#fff;border:1px solid #dee2e6;border-radius:8px;padding:14px 18px;display:flex;align-items:center;gap:18px;">
+      <div style="flex:1;min-width:0;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span style="font-weight:700;font-size:14px;color:#2e7de9;">DEMO-1265</span>
+          <span style="font-size:13px;">Add shield toggle to side-rail dropdown</span>
+        </div>
+        <div style="margin-top:5px;font-size:11px;color:#868e96;">acme/payments · demo-1265-add-shield-toggle</div>
+      </div>
+      <div style="flex:none;width:300px;">
+        <div style="display:flex;align-items:baseline;gap:8px;">
+          <span style="font-size:14px;font-weight:700;">implement</span>
+          <span style="font-size:11px;color:#868e96;">1h 23m in stage</span>
+        </div>
+        <div style="margin-top:6px;display:flex;gap:4px;align-items:center;">
+          <span style="width:26px;height:4px;border-radius:2px;background:#587539;"></span>
+          <span style="width:26px;height:4px;border-radius:2px;background:#587539;"></span>
+          <span style="width:26px;height:4px;border-radius:2px;background:#587539;"></span>
+          <span style="width:26px;height:4px;border-radius:2px;background:#587539;"></span>
+          <span style="width:26px;height:4px;border-radius:2px;background:#2e7de9;"></span>
+          <span style="width:26px;height:4px;border-radius:2px;background:#dee2e6;"></span>
+          <span style="width:26px;height:4px;border-radius:2px;background:#dee2e6;"></span>
+          <span style="width:26px;height:4px;border-radius:2px;background:#dee2e6;"></span>
+          <span style="font-size:10px;color:#868e96;margin-left:6px;">5/8</span>
+        </div>
+      </div>
+      <div style="flex:none;display:flex;align-items:center;gap:12px;">
+        <span class="rb-chip" style="background:#f5f8f1;color:#587539;">● driven · agent working</span>
+        <span style="width:28px;height:28px;border:1px solid #dee2e6;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;color:#495057;">⋯</span>
+      </div>
+    </div>
+    <div style="margin-top:8px;background:#fff;border:1px solid #dee2e6;border-radius:8px;padding:14px 18px;display:flex;align-items:center;gap:18px;">
+      <div style="flex:1;min-width:0;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span style="font-weight:700;font-size:14px;color:#2e7de9;">DEMO-1301</span>
+          <span style="font-size:13px;">Rate-limit export endpoint per org</span>
+        </div>
+        <div style="margin-top:5px;font-size:11px;color:#868e96;">acme/gateway · demo-1301-rate-limit-export</div>
+      </div>
+      <div style="flex:none;width:300px;">
+        <div style="display:flex;align-items:baseline;gap:8px;">
+          <span style="font-size:14px;font-weight:700;">plan</span>
+          <span style="font-size:11px;color:#868e96;">12m in stage</span>
+        </div>
+        <div style="margin-top:6px;display:flex;gap:4px;align-items:center;">
+          <span style="width:26px;height:4px;border-radius:2px;background:#587539;"></span>
+          <span style="width:26px;height:4px;border-radius:2px;background:#2e7de9;"></span>
+          <span style="width:26px;height:4px;border-radius:2px;background:#dee2e6;"></span>
+          <span style="width:26px;height:4px;border-radius:2px;background:#dee2e6;"></span>
+          <span style="width:26px;height:4px;border-radius:2px;background:#dee2e6;"></span>
+          <span style="width:26px;height:4px;border-radius:2px;background:#dee2e6;"></span>
+          <span style="width:26px;height:4px;border-radius:2px;background:#dee2e6;"></span>
+          <span style="width:26px;height:4px;border-radius:2px;background:#dee2e6;"></span>
+          <span style="font-size:10px;color:#868e96;margin-left:6px;">2/8</span>
+        </div>
+      </div>
+      <div style="flex:none;display:flex;align-items:center;gap:12px;">
+        <span class="rb-chip" style="background:#f5f8f1;color:#587539;">● driven · agent working</span>
+        <span style="width:28px;height:28px;border:1px solid #dee2e6;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;color:#495057;">⋯</span>
+      </div>
+    </div>
+
+    <!-- Recently finished -->
+    <div style="margin-top:26px;display:flex;justify-content:space-between;align-items:center;">
+      <div style="font-size:13px;font-weight:700;">Recently finished</div>
+      <div style="font-size:12px;color:#868e96;">1</div>
+    </div>
+    <div style="margin-top:10px;background:#fff;border:1px solid #dee2e6;border-radius:8px;padding:14px 18px;display:flex;align-items:center;gap:18px;opacity:.82;">
+      <div style="flex:1;min-width:0;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span style="font-weight:700;font-size:14px;color:#2e7de9;">DEMO-1253</span>
+          <span style="font-size:13px;">Annotate coverage badge on repo cards</span>
+        </div>
+        <div style="margin-top:5px;font-size:11px;color:#868e96;">acme/payments · demo-1253-coverage-badge · MR !4288 merged</div>
+      </div>
+      <div style="flex:none;width:300px;">
+        <div style="display:flex;align-items:baseline;gap:8px;">
+          <span style="font-size:14px;font-weight:700;color:#587539;">done</span>
+          <span style="font-size:11px;color:#868e96;">2h 48m total</span>
+        </div>
+        <div style="margin-top:6px;display:flex;gap:4px;align-items:center;">
+          <span style="width:26px;height:4px;border-radius:2px;background:#587539;"></span>
+          <span style="width:26px;height:4px;border-radius:2px;background:#587539;"></span>
+          <span style="width:26px;height:4px;border-radius:2px;background:#587539;"></span>
+          <span style="width:26px;height:4px;border-radius:2px;background:#587539;"></span>
+          <span style="width:26px;height:4px;border-radius:2px;background:#587539;"></span>
+          <span style="width:26px;height:4px;border-radius:2px;background:#587539;"></span>
+          <span style="width:26px;height:4px;border-radius:2px;background:#587539;"></span>
+          <span style="width:26px;height:4px;border-radius:2px;background:#587539;"></span>
+          <span style="font-size:10px;color:#868e96;margin-left:6px;">8/8</span>
+        </div>
+      </div>
+      <div style="flex:none;display:flex;align-items:center;gap:12px;">
+        <span class="rb-chip" style="background:#f5f8f1;color:#587539;">done</span>
+        <span style="width:28px;height:28px;border:1px solid #dee2e6;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;color:#495057;">⋯</span>
+      </div>
+    </div>
+  </div>
+</div>

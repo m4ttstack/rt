@@ -52,7 +52,11 @@
     "chat:typecheck": "cd apps/chat && bun run typecheck",
     "chat:lint": "cd apps/chat && bun run lint",
     "chat:test": "cd apps/chat && bun run test -- --run",
-    "chat:build": "cd apps/chat && bun run build"
+    "chat:build": "cd apps/chat && bun run build",
+    "console:typecheck": "cd apps/console && bun run typecheck",
+    "console:lint": "cd apps/console && bun run lint",
+    "console:test": "cd apps/console && bun run test -- --run",
+    "console:build": "cd apps/console && bun run build"
   },
   "devDependencies": {
     "@mattstack/app-kit": "workspace:*",

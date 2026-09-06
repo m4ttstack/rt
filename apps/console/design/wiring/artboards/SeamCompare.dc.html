@@ -1,0 +1,133 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .app {
+      --bg1: #e1e2e7; --bg2: #eff0f5; --bg3: #f6f6fa; --bg4: #e4e4e7;
+      --border: #c8cad6; --border-soft: #d5d7e2;
+      --fg: #111; --muted: #8990b3;
+      --accent: #2e7de9; --ok: #587539; --warn: #8c6c3e; --bad: #f52a65;
+      --purple: #7847bd; --cyan: #007197; --wash: 10%;
+    }
+    .app.dark {
+      --bg1: #16161e; --bg2: #232a47; --bg3: #2c3352; --bg4: #3b4160;
+      --border: #3b4261; --border-soft: #313853;
+      --fg: #e3e7f6; --muted: #7e86ad;
+      --accent: #7aa2f7; --ok: #9ece6a; --warn: #e0af68; --bad: #f7768e;
+      --purple: #bb9af7; --cyan: #7dcfff; --wash: 15%;
+    }
+    .app { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13.5px; line-height: 1.55; color: var(--fg); }
+    .row { display: flex; align-items: center; gap: 4.8px; min-width: 0; }
+    .stack { display: flex; flex-direction: column; }
+    .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .xs { font-size: 10.56px; }
+    .sm { font-size: 11.2px; }
+    .muted { color: var(--muted); }
+    .aicon { width: 28px; height: 28px; border-radius: 6px; flex: none; display: inline-flex; align-items: center; justify-content: center; color: var(--muted); background: transparent; border: 0; cursor: pointer; }
+    .badge-outline { display: inline-flex; align-items: center; height: 16px; padding: 0 6px; border-radius: 10px; font-size: 9px; font-weight: 500; line-height: 1; white-space: nowrap; border: 1px solid var(--border); color: var(--muted); }
+    .well { background: var(--bg3); border: 1px solid var(--border-soft); border-radius: 4px; }
+    .code { font-size: 11.2px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+    .add { background: color-mix(in srgb, var(--ok) var(--wash), transparent); color: var(--ok); display: block; }
+    .del { background: color-mix(in srgb, var(--bad) var(--wash), transparent); color: var(--bad); display: block; }
+  </style>
+</helmet>
+
+<div class="app {{schemeClass}}" style="width: 720px; height: 900px; background: var(--bg2); border-left: 1px solid var(--border); box-shadow: -6px 0 32px rgba(0, 0, 0, 0.3); display: flex; flex-direction: column;">
+
+  <div class="row" style="flex: none; padding: 11.2px; gap: 7.2px; border-bottom: 1px solid var(--border);">
+    <div class="stack" style="gap: 2px; flex: 1; min-width: 0;">
+      <div class="row" style="gap: 4.8px;">
+        <span style="font-size: 14.72px; font-weight: 700;">watch-ci</span>
+        <span class="sm muted" style="flex: none;">17f8273</span>
+        <svg class="muted" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="flex: none;"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+        <span class="sm muted" style="flex: none;">ed24bc4</span>
+      </div>
+      <div class="row" style="gap: 6px; color: var(--muted);">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></svg>
+        <span class="xs muted">git diff 17f8273..ed24bc4 -- .</span>
+        <span class="xs" style="opacity: 0.75;">as of 10:14:31 AM</span>
+      </div>
+    </div>
+    <button class="aicon" aria-label="Back to history"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg></button>
+  </div>
+
+  <div class="stack" style="flex: 1; min-height: 0; padding: 11.2px; gap: 11.2px; overflow: auto;">
+
+    <!-- How much the attribution had to work with, so a structurally broken
+         run cannot pass for an honest one that simply matched nothing. -->
+    <span class="xs muted">1 of 3 hunks matched a seam · 1 of 3 seams name a file in this repo</span>
+
+    <!-- Attribution is against SOURCE coordinates, so the header says which
+         file's line numbers the span belongs to rather than implying the
+         compiled body's. Only a fill of THIS pack can appear here: the step
+         and the forge slot are bound out of the mattstack plugin, whose
+         sources this repo does not hold. -->
+    <div class="stack" style="gap: 4.8px;">
+      <div class="row" style="gap: 4.8px;">
+        <span class="xs muted" style="flex: none;">slot domain</span>
+        <span class="sm" style="font-weight: 600; flex: none;">demo:watch-ci-domain</span>
+        <span class="badge-outline">0.4.11</span>
+        <span class="xs truncate" style="flex: 1; color: var(--muted); opacity: 0.75;">attachments/watch-ci-domain/SKILL.md:13-161</span>
+      </div>
+      <div class="well" style="padding: 9.6px;"><div class="code"> The QA suite is the gate; the smoke job is advisory.
+<span class="del">-A red smoke job holds the ship.</span><span class="add">+A red smoke job with a green QA suite is a ship, not a hold.</span></div></div>
+    </div>
+
+    <!-- A hunk no seam contains. Unattributed beats misattributed, and saying
+         so is the point: the reader can still see the change. -->
+    <div class="stack" style="gap: 4.8px;">
+      <div class="row" style="gap: 4.8px;">
+        <span class="xs muted" style="flex: none;">no seam contains this</span>
+        <span class="sm muted truncate" style="flex: 1;">skills/watch-ci/SKILL.md:1-9</span>
+      </div>
+      <div class="well" style="padding: 9.6px;"><div class="code"> ---
+ name: "watch-ci"
+<span class="del">-  compiled: "mattstack@0.7.4 + demo:watch-ci-domain@0.4.10"</span><span class="add">+  compiled: "mattstack@0.8.0 + demo:watch-ci-domain@0.4.11"</span>
+ ---</div></div>
+      <span class="xs muted" style="padding-left: 2px;">No part's body span contains these lines — they belong to the compile itself, or to a file no seam of this verb names.</span>
+    </div>
+
+    <!-- The diff is over the whole pack, so this verb's own hunks lead and
+         the rest is counted rather than mixed through them. Grouping by
+         provenance, not by health. -->
+    <span class="xs muted">1 more hunk elsewhere in this pack — this diff covers the pack, not just watch-ci.</span>
+
+    <div class="stack" style="gap: 4.8px;">
+      <div class="row" style="gap: 4.8px;">
+        <span class="xs muted" style="flex: none;">no seam contains this</span>
+        <span class="sm muted truncate" style="flex: 1;">skills/review/SKILL.md:1-9</span>
+      </div>
+      <div class="well" style="padding: 9.6px;"><div class="code"> ---
+ name: "review"
+<span class="del">-  compiled: "mattstack@0.7.4 + demo:review-criteria@0.4.10"</span><span class="add">+  compiled: "mattstack@0.8.0 + demo:review-criteria@0.4.11"</span>
+ ---</div></div>
+      <span class="xs muted" style="padding-left: 2px;">No part's body span contains these lines — they belong to the compile itself, or to a file no seam of this verb names.</span>
+    </div>
+
+    <div class="row" style="gap: 6px; align-items: flex-start; padding-top: 4.8px; border-top: 1px solid var(--border-soft);">
+      <svg class="muted" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="margin-top: 2px; flex: none;"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+      <span class="xs muted">A seam's line span is measured in its own source file, not in the compiled output — so each hunk above is placed against the file its header names, and the spans come from a fresh compile of today's sources. The step's source is in another repo and no hunk here can attribute to it.</span>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"dark":{"editor":"boolean","default":false,"section":"Theme"},"$preview":{"width":720,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { schemeClass: this.props.dark ? 'dark' : '' };
+  }
+}
+</script>
+</body>
+</html>
