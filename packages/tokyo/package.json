@@ -18,7 +18,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/m4ttstack/app-kit.git",
+    "url": "git+https://github.com/m4ttstack/apps.git",
     "directory": "packages/tokyo"
   },
   "scripts": {
