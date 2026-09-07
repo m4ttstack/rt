@@ -31,7 +31,7 @@ The token stays **server-side only** ... the browser never sees it.
   client's typed RPC) served through `serveMattstackApp` from `src/server/index.ts`. The
   metric math, GitLab fetch/store layer, and CLI live under it (`metrics/`, `store/`,
   `refresh/`, `linear/`, `cli.ts`); see "Notes & limitations" below for how that part works.
-- **`src/app`** is a [`@mattstack/app-kit`](https://github.com/m4ttstack/app-kit) app:
+- **`src/app`** is a [`@mattstack/app-kit`](https://github.com/m4ttstack/apps) app:
   `MattstackShell` for the frame/rail, [wouter](https://github.com/molefrog/wouter) for
   routing (`src/app/routes.ts` maps four routes ... `/`, `/user/:name`,
   `/user/:name/:stat`, `/settings` ... to a small `AppRoute` union), and

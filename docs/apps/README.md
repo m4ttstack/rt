@@ -123,8 +123,8 @@ snippets, including the vite and eslint presets.
 ## Development
 
 ```bash
-$ git clone https://github.com/m4ttstack/app-kit.git
-$ cd app-kit
+$ git clone https://github.com/m4ttstack/apps.git
+$ cd apps
 $ bun install                 # workspace install: packages/*, apps/*
 $ bun run test                # vitest across packages/ui + packages/server
 $ bun run storybook           # dev server at :6006 (packages/ui's stories)
