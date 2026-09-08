@@ -625,14 +625,21 @@ export function Board() {
   useEffect(() => {
     if (gateDeepLinkIid === null) return;
     const row = document.querySelector(`[data-mr-iid="${gateDeepLinkIid}"]`);
-    let t: ReturnType<typeof setTimeout> | undefined;
-    if (row) {
-      row.scrollIntoView({ block: 'center' });
-      row.classList.add('tui-row-flash');
-      t = setTimeout(() => row.classList.remove('tui-row-flash'), 2000);
-    }
     history.replaceState(null, '', stripGateParam(location.search));
-    setGateDeepLinkIid(null);
+    if (!row) {
+      setGateDeepLinkIid(null);
+      return;
+    }
+    row.scrollIntoView({ block: 'center' });
+    row.classList.add('tui-row-flash');
+    // Resetting gateDeepLinkIid changes this effect's own dependency, which
+    // re-runs its cleanup -- doing that synchronously here would clearTimeout
+    // the flash removal before it ever fires. Reset it from inside the
+    // timeout instead, once the flash has actually been removed.
+    const t = setTimeout(() => {
+      row.classList.remove('tui-row-flash');
+      setGateDeepLinkIid(null);
+    }, 2000);
     return () => clearTimeout(t);
   }, [gateDeepLinkIid]);
 
