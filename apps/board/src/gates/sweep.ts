@@ -1,10 +1,15 @@
+import {
+  domainForKind,
+  GATE_KINDS,
+  type GateDomain,
+} from '@mattstack/gate-kit';
 import type { GateRow } from '@mattstack/rt-client';
 import type { DoctorState } from '../doctor-state.ts';
 import type { RespondState } from '../respond-state.ts';
 import type { ReviewState } from '../review-state.ts';
 
-/** Which board lifecycle a gate kind's answered-state and tab belong to. */
-export type GateDomain = 'review' | 'respond' | 'doctor';
+export { domainForKind, GATE_KINDS };
+export type { GateDomain };
 
 export interface SweepAction {
   kind: 'park' | 'close-missed-done';
@@ -23,30 +28,6 @@ export interface GateSweepStates {
 }
 
 const MR_SUBJECT_PREFIX = 'mr:';
-
-/** Every gate kind the board knows, kept beside domainForKind so the two
-    can never drift apart -- resume.ts's buildResumers walks this list to
-    build the resumers map, so a kind added here with no matching resumer
-    fails that wiring test instead of silently resuming as unwired. */
-export const GATE_KINDS = [
-  'review-post',
-  'respond-plan',
-  'respond-post',
-  'doctor-escalation',
-] as const;
-
-/** A kind outside this map (present or future) is skipped by the sweep
-    entirely -- silently, since an unrecognized kind has no lifecycle map to
-    join against and must never crash the sweep for every other row.
-    Exported: verbs.ts reuses this same kind→domain mapping to pick a
-    label prefix and a state writer for `gate open`, so the two never drift
-    against each other. */
-export function domainForKind(kind: string): GateDomain | undefined {
-  if (kind === 'review-post') return 'review';
-  if (kind === 'respond-plan' || kind === 'respond-post') return 'respond';
-  if (kind === 'doctor-escalation') return 'doctor';
-  return undefined;
-}
 
 function tabIdFor(
   domain: GateDomain,

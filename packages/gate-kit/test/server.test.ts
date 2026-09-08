@@ -1,19 +1,30 @@
-import { mkdirSync, mkdtempSync, realpathSync, symlinkSync } from 'fs';
-import { tmpdir } from 'os';
-import { join } from 'path';
-import { describe, expect, test } from 'bun:test';
+import { mkdirSync, mkdtempSync, realpathSync, symlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { describe, expect, test } from 'vitest';
 
 import {
   normalizeWorktreePath,
   panesForOrigin,
   resolveOriginFocus,
-} from '../gates/focus.ts';
+} from '@mattstack/gate-kit/server';
 
 describe('resolveOriginFocus', () => {
-  test('paneId wins directly and carries tabId for the fallback', () => {
+  test('paneId wins directly; tabId is dropped unless carryTabId asks for it', () => {
     expect(
       resolveOriginFocus({ paneId: 'p1', tabId: 't1', worktree: '/w' }, [])
+    ).toEqual({ ok: true, paneId: 'p1' });
+  });
+
+  test('carryTabId threads tabId through for the board tab fallback', () => {
+    expect(
+      resolveOriginFocus({ paneId: 'p1', tabId: 't1', worktree: '/w' }, [], {
+        carryTabId: true,
+      })
     ).toEqual({ ok: true, paneId: 'p1', tabId: 't1' });
+    expect(
+      resolveOriginFocus({ paneId: 'p1' }, [], { carryTabId: true })
+    ).toEqual({ ok: true, paneId: 'p1' });
   });
 
   test("worktree matches a live pane's cwd when no paneId is on the origin", () => {
@@ -79,6 +90,18 @@ describe('resolveOriginFocus', () => {
       ok: false,
       reason: 'no live pane matches the origin worktree',
     });
+  });
+
+  test('a pane-list fetch failure names its own reason, never a bare no-match', () => {
+    expect(
+      resolveOriginFocus({ worktree: '/w' }, [], { panesUnavailable: true })
+    ).toEqual({ ok: false, reason: 'could not list live panes' });
+  });
+
+  test('panesUnavailable is irrelevant when a direct paneId resolves', () => {
+    expect(
+      resolveOriginFocus({ paneId: 'p1' }, [], { panesUnavailable: true })
+    ).toEqual({ ok: true, paneId: 'p1' });
   });
 });
 

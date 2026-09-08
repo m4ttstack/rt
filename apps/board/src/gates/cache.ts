@@ -256,6 +256,7 @@ export function attachGates<T extends { webUrl?: string | null } & GateHost>(
       if (row.status === 'open' || row.status === 'parked') {
         gates.push({
           gateId: row.id,
+          subject: row.subject,
           kind: row.kind,
           label,
           status: row.status,
@@ -271,12 +272,15 @@ export function attachGates<T extends { webUrl?: string | null } & GateHost>(
       ) {
         gates.push({
           gateId: row.id,
+          subject: row.subject,
           kind: row.kind,
           label,
           status: 'answered',
           openedAt: row.openedAt,
           questions: row.questions as GateQuestion[],
           answers: row.answer?.answers as GateAnswers | undefined,
+          answeredBy: row.answer?.by,
+          answeredAt: row.answer?.answeredAt,
           context: row.context ?? undefined,
           origin: row.origin ?? undefined,
           domain: domainForKind(row.kind),

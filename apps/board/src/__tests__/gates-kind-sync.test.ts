@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { describe, expect, test } from 'bun:test';
 
-import { GATE_KINDS } from '../gates/sweep.ts';
+import { GATE_KINDS } from '@mattstack/gate-kit';
 
 /** The wrapper skills declare gate kinds in prose (`--kind <k>` in their
     status-bin invocations) while the sweep/resume lifecycle maps key off

@@ -1,32 +1,20 @@
 import { join } from 'path';
 
+import type {
+  GateAnswers,
+  GateDomain,
+  GateOrigin,
+  GateQuestion,
+} from '@mattstack/gate-kit';
 import { APP_ROOT } from '../app-root.ts';
 
-export type GateOption = string | { value: string; label: string };
-
-export interface GateOrigin {
-  paneId?: string;
-  tabId?: string;
-  runId?: string;
-  worktree?: string;
-  presentation?: 'form' | 'wait';
-}
-
-export interface GateQuestion {
-  id: string;
-  label: string;
-  multi: boolean;
-  options: GateOption[];
-}
-
-/** One answer's wire value: a bare option string/array, or the `{value,
-    note}` object the wrapper's note form posts (`{"outcome": {"value":
-    "comment", "note": "..."}}`) -- the daemon stores and emits both
-    verbatim. See gate-format.ts's `unwrapGateAnswer` for the renderer. */
-export type GateAnswerValue =
-  string | string[] | { value: string | string[]; note?: string };
-
-export type GateAnswers = Record<string, GateAnswerValue>;
+export type {
+  GateAnswers,
+  GateAnswerValue,
+  GateOption,
+  GateOrigin,
+  GateQuestion,
+} from '@mattstack/gate-kit';
 
 /** The fields `resume.ts` actually threads through a resume: the gate's own
     identity/questions plus the launch plumbing (`agentId`, `tabId`) needed
@@ -59,13 +47,18 @@ export const GATE_DIR = join(APP_ROOT, 'state', 'gates');
     row's `meta.label` when set, else `kind` itself. */
 export interface GateRow {
   gateId: string;
+  /** The facility row's own subject (`mr:<url>`): what the answered-gate
+      chip derives its `!iid` ref from. */
+  subject: string;
   kind: string;
   label: string;
   status: GateState['status'];
   openedAt: number;
   questions: GateQuestion[];
   answers?: GateAnswers;
+  answeredBy?: string;
+  answeredAt?: number;
   context?: string;
   origin?: GateOrigin;
-  domain?: 'review' | 'respond' | 'doctor';
+  domain?: GateDomain;
 }

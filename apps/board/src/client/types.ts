@@ -1,11 +1,11 @@
 import type { MouseEvent } from 'react';
 
+import type { GateDomain } from '@mattstack/gate-kit';
 import type { TabConfig } from '../config.ts';
 import type { BoardMR } from '../data.ts';
 import type { GateRow } from '../gates/store.ts';
 import type { RespondStatus } from '../respond-outcome.ts';
 import type { SlackTemplates } from '../template.ts';
-import type { GateDomain } from './board/gate-format.ts';
 
 export interface RosterMember {
   username: string;

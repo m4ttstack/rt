@@ -29,6 +29,7 @@
     "@mantine/spotlight": "catalog:",
     "@mattstack/app-kit": "workspace:*",
     "@mattstack/app-server": "workspace:*",
+    "@mattstack/gate-kit": "workspace:*",
     "@mattstack/glance": "catalog:",
     "@mattstack/mantine-tokyo": "workspace:*",
     "@mattstack/rt-client": "catalog:",
