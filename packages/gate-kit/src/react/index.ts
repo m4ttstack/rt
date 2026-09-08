@@ -8,10 +8,16 @@ import {
 } from '../collapse';
 import { groupThreadOptions, type ThreadOptionGroup } from '../grouping';
 import { optionDisplayFor, optionValue } from '../options';
-import { gateAnswerPayload, type GateSelections } from '../payload';
+import {
+  gateAnswerPayload,
+  type GateAnswers,
+  type GateSelections,
+} from '../payload';
 
 export { Questionnaire } from '@shadcn/react/questionnaire';
 export type { QuestionnaireItemDefinition } from '@shadcn/react/questionnaire';
+export { gateDraftKey, useGateDraft } from './draft';
+export type { GateDraft } from './draft';
 
 /** The slice of a gate the adapter needs; both apps' row shapes satisfy it
     structurally. */
@@ -95,17 +101,25 @@ export function gateItems(
   };
 }
 
+/** The form field a question's optional note travels in; the cards name
+    their note inputs with it and `answersFromForm` reads it back. */
+export function noteFieldName(questionId: string): string {
+  return `${questionId}:note`;
+}
+
 /**
- * The native form back to one atomic answer: `get` for a single-select,
+ * The native form back to one atomic wire answer: `get` for a single-select,
  * `getAll` for a multi, then through effectiveSelections (the structurally
  * excluded code-changes item submits the sentinel) into gateAnswerPayload.
  * Null while any required question lacks an answer, so a caller can refuse
- * the submit on that alone.
+ * the submit on that alone. A question whose note field is non-empty after
+ * trimming submits `{ value, note }`; every other question submits the bare
+ * selection, and the injected sentinel never carries a note.
  */
 export function answersFromForm(
   gate: GateForItems,
   formData: FormData
-): { answers: GateSelections } | null {
+): { answers: GateAnswers } | null {
   const selections: GateSelections = {};
   for (const q of gate.questions) {
     if (q.multi) {
@@ -119,8 +133,16 @@ export function answersFromForm(
         selections[q.id] = value;
     }
   }
-  return gateAnswerPayload(
+  const payload = gateAnswerPayload(
     gate.questions,
     effectiveSelections(gate.kind, gate.questions, selections)
   );
+  if (!payload) return null;
+  const answers: GateAnswers = {};
+  for (const [id, value] of Object.entries(payload.answers)) {
+    const raw = id in selections ? formData.get(noteFieldName(id)) : null;
+    const note = typeof raw === 'string' ? raw.trim() : '';
+    answers[id] = note.length > 0 ? { value, note } : value;
+  }
+  return { answers };
 }

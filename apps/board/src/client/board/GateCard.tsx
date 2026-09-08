@@ -2,6 +2,7 @@ import { useState } from 'react';
 
 import type {
   AnswerOutcome,
+  GateAnswers,
   GateDomain,
   GateSelections,
   GateSummaryDetailRow,
@@ -236,7 +237,7 @@ function GateCard({
     }
   };
 
-  const submit = async (payload: { answers: GateSelections } | null) => {
+  const submit = async (payload: { answers: GateAnswers } | null) => {
     if (!payload || busy) return;
     setBusy(true);
     setFailed(false);

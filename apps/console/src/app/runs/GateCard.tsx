@@ -14,6 +14,7 @@ import {
   gateAnswerPayload,
   resolveAnswerOutcome,
   type AnswerOutcome,
+  type GateAnswers,
   type GateSelections,
   type GateSummaryDetailRow,
   type GateSummaryInput,
@@ -151,7 +152,7 @@ export function GateCard({ gate }: { gate: GateRow }) {
     }
   };
 
-  const submit = async (payload: { answers: GateSelections } | null) => {
+  const submit = async (payload: { answers: GateAnswers } | null) => {
     if (!payload || busy) return;
     setBusy(true);
     setFailed(false);

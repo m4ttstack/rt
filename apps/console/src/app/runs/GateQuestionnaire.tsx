@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Badge, Group, Stack } from '@mattstack/app-kit/core';
-import type { GateSelections } from '@mattstack/gate-kit';
+import type { GateAnswers, GateSelections } from '@mattstack/gate-kit';
 import {
   answersFromForm,
   gateItems,
@@ -27,7 +27,7 @@ export function GateQuestionnaire({
   gate: GateForItems;
   selections: GateSelections;
   onSelectionsChange: (next: GateSelections) => void;
-  onSubmitAnswers: (payload: { answers: GateSelections } | null) => void;
+  onSubmitAnswers: (payload: { answers: GateAnswers } | null) => void;
   footer: ReactNode;
 }) {
   const { items, display } = gateItems(gate, selections);
