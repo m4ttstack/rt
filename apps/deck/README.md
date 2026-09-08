@@ -320,7 +320,7 @@ you run. The rest of the estate:
   settings and secrets run through.
 - [gitq](https://github.com/m4ttstack/gitq): a deterministic stacked-branch
   engine for git.
-- [board](https://github.com/m4ttstack/board): a team's open GitLab MRs,
+- [board](../board) (in this same repo): a team's open GitLab MRs,
   ready to review, on one page.
 - [glance](https://github.com/m4ttstack/glance): one client for GitHub and
   GitLab, one set of types.

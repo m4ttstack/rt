@@ -14,21 +14,22 @@ are new to this repo.
 
 Two separate walls, at two separate scopes.
 
-**A consuming app's own code** (chat, console, `probe/`) is not allowed to
-import Mantine packages directly. Every Mantine import goes through
-`@mattstack/app-kit/*` subpath barrels instead, so the kit's fixed
-defaults and overrides (a shadowed `Table`, a themed `Modal`, a typed
-`notifications.show`, ...) are the only way anything Mantine-shaped enters
-the app. This wall ships AS the `mattstackEslint()` preset
-(`packages/ui/presets/eslint.js`, exported as `@mattstack/app-kit/eslint`)
--- a consumer spreads it into its own `eslint.config.js` and passes an
-`app` glob matching its own source. `probe/eslint.config.js` does exactly
-that, spreading `mattstackEslint()` with its default `src/**/*.{ts,tsx}`
-glob; it is the reference wiring a migrating app copies. (The root
-`eslint.config.js` also carries an `app: ['probe/src/**/*.{ts,tsx}']`
-entry, but the root `lint` script only points `eslint` at `packages
-.storybook` and then shells out to `bun run probe:lint`, so probe is
-actually linted through its own config, not the root one.)
+**A consuming app's own code** (`apps/chat`, `apps/console`,
+`apps/boxscore` -- the three Mantine-based apps; `apps/board` and
+`apps/deck` consume `@mattstack/tui-kit` instead and are not subject to
+this wall) is not allowed to import Mantine packages directly. Every
+Mantine import goes through `@mattstack/app-kit/*` subpath barrels
+instead, so the kit's fixed defaults and overrides (a shadowed `Table`, a
+themed `Modal`, a typed `notifications.show`, ...) are the only way
+anything Mantine-shaped enters the app. This wall ships AS the
+`mattstackEslint()` preset (`packages/ui/presets/eslint.js`, exported as
+`@mattstack/app-kit/eslint`) -- a consumer spreads it into its own
+`eslint.config.js`, taking the default `src/**/*.{ts,tsx}` app glob.
+`apps/chat/eslint.config.js` does exactly that; it is the reference
+wiring a new app copies. The root `eslint.config.js` carries no app-level
+glob and does not lint app code at all: each app is linted through its
+own config via its own `<app>:lint` root script, not the root `lint`
+script (which only points `eslint` at `packages .storybook`).
 
 ```js
 const wall = (pkg, subpath) => ({
@@ -63,9 +64,9 @@ specifier to the matching `@mattstack/app-kit/*` barrel. Never disable the
 rule at the call site in app code -- the whole point is that app code
 never needs to. The one sanctioned exception is an app's own
 icon-registration file (e.g. `src/app/icons.ts`): it may
-`eslint-disable-line no-restricted-imports` to import `lucide-react`
+`eslint-disable-next-line no-restricted-imports` to import `lucide-react`
 directly for the `registerIcons` call -- see §8's `AppIcons` augmentation
-contract and `probe/src/app/icons.ts:1` for the reference wiring.
+contract and `apps/chat/src/app/icons.ts` for the reference wiring.
 
 **Inside `packages/ui/src/**` itself**, a second, stricter rule applies --
 this one is NOT shipped in the `@mattstack/app-kit/eslint` preset (a
@@ -533,7 +534,7 @@ The two-file sync contract has a clear owner on each side: the package
 owns the stylesheet, and the app owns `index.html` plus a one-line
 `loading-bar-sync.test.ts` calling
 `expectLoadingBarInSync(readFileSync('index.html', 'utf-8'))` (see
-`probe/src/loading-bar-sync.test.ts`). `expectLoadingBarInSync`
+`apps/chat/src/loading-bar-sync.test.ts`). `expectLoadingBarInSync`
 (`@mattstack/app-kit/test-utils`) reads both files off disk at test time
 and extracts the block between the markers from the package's OWN
 stylesheet -- no string constant to drift -- so the check runs in every
@@ -599,8 +600,8 @@ registration. `Icon` reads a module-level registry; registration before
 first render is the contract, and registering a key the kit already has
 throws. The registration file is the one sanctioned place outside the
 kit's own `Icons.ts` where an app may
-`eslint-disable-line no-restricted-imports` to import `lucide-react`
-directly, e.g. `probe/src/app/icons.ts:1`. See "Consumer requirements"
+`eslint-disable-next-line no-restricted-imports` to import `lucide-react`
+directly, e.g. `apps/chat/src/app/icons.ts:4`. See "Consumer requirements"
 below for the one real trap in writing that `.d.ts` file.
 
 **Theme extension**: `mountMattstackApp(node, { theme })` merges on top of
@@ -638,9 +639,10 @@ the app, so an RPC client's typing is untouched by the frame.
 
 ## 10. Consumer requirements
 
-Real findings from building `probe/` -- a consumer that misses any of
-these breaks in a way that does not announce itself as "the kit is
-wrong":
+Real findings from building `apps/chat`, `apps/console`, and
+`apps/boxscore`, the three Mantine-based apps that consume
+`@mattstack/app-kit` -- a consumer that misses any of these breaks in a
+way that does not announce itself as "the kit is wrong":
 
 1. **The Mantine colour-name augmentation needs no `/// <reference>`
    line.** It lives in `packages/ui/src/design-system/colors.ts` (a
@@ -653,8 +655,8 @@ wrong":
 2. **Name an app-icon augmentation file so it does not share a basename
    with a sibling `.ts` file.** TypeScript drops a `foo.d.ts` when `foo.ts`
    exists next to it in the same directory, so the augmentation silently
-   never loads and `IconName` never widens. `probe/src/app/icons.ts`
-   (the registration call) and `probe/src/app/app-icons.d.ts` (the
+   never loads and `IconName` never widens. `apps/chat/src/app/icons.ts`
+   (the registration call) and `apps/chat/src/app/app-icons.d.ts` (the
    `declare module '@mattstack/app-kit/icons' { interface AppIcons {...}
 }` block) are named to avoid exactly this collision -- do not name the
    augmentation file `icons.d.ts` next to an `icons.ts`.
@@ -667,20 +669,19 @@ wrong":
    avoids that entirely. A consumer whose `vite.config.ts` imports
    `@mattstack/app-kit/vite` needs no special config-loading flag on any
    Vite invocation (`vite`, `vite build`, `vitest`; see
-   `probe/package.json`'s `dev`/`build`/`test` scripts).
+   `apps/chat/package.json`'s `dev`/`build`/`test` scripts).
 
-4. **Depend on packed tarballs, not bare `file:` directories, until these
-   packages are published.** Bun 1.3 installs a bare `file:../packages/ui`
-   dependency as a SYMLINK into the source tree (contents symlink into the
-   source, not copied), which makes peers (`react`, `vite`, `wouter`)
-   resolve twice -- once through the symlinked package's own
-   `node_modules` resolution, once through the consumer's -- and that
-   breaks the consumer's typecheck and tests in ways that look unrelated
-   to the dependency. A packed tarball (`bun pm pack`) extracts as a real
-   copy, the same shape a registry install gives, so peers resolve once.
-   `probe/package.json` depends on `file:./vendor/mattstack-app-kit-0.1.0.tgz`
-   etc, and the root `probe:install` script is the reference
-   implementation: it packs all three packages fresh with `bun pm pack`
-   into `probe/vendor/`, then installs. Chat's migration must do the same
-   -- a bare `file:../app-kit/packages/ui` dependency is not equivalent to
-   what this repo's own CI proves works.
+4. **Depend on `workspace:*`, not a packed tarball or a bare `file:` path,
+   now that an app lives in this repo.** Every app under `apps/` declares
+   `"@mattstack/app-kit": "workspace:*"` (and the same for `app-server`,
+   `mantine-tokyo`) in its own `package.json`. `workspace:*` resolves
+   through this repo's single `bun install`, so peers (`react`, `vite`,
+   `wouter`) resolve once, the same as a registry install would. The
+   packed-tarball mechanism (`bun pm pack`, README.md's "Bundle-transition
+   tarballs" section) is for a consumer OUTSIDE this workspace only -- an
+   app that has not folded in yet. A bare `file:../packages/ui` dependency
+   from outside the workspace still hits Bun 1.3's symlink-into-source
+   behavior (contents symlink rather than copy, so peers resolve twice:
+   once through the symlinked package's own `node_modules`, once through
+   the consumer's), which is exactly the failure mode `workspace:*` and
+   the tarball path both avoid, each in their own scope.

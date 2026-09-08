@@ -10,7 +10,8 @@ component-authoring framework that gives every component a themeable recipe, a
 Styles API, and generated CSS custom properties.
 
 tui-kit is part of the mattstack estate and is the shared look for its web
-surfaces, starting with [board](https://github.com/m4ttstack/board).
+surfaces, starting with [board](../../apps/board). It is developed in this
+monorepo, alongside the apps that consume it.
 
 ## Features
 
@@ -40,13 +41,9 @@ surfaces, starting with [board](https://github.com/m4ttstack/board).
 
 ## Installation
 
-```sh
-npm install @mattstack/tui-kit
-```
-
-Or `bun add @mattstack/tui-kit`, or your package manager's equivalent. React 19
-is a peer dependency. The package is published under a restricted npm scope, so
-installing it requires access to the `@mattstack` scope.
+`@mattstack/tui-kit` is unpublished; it lives in this monorepo and every
+consumer depends on it with `"@mattstack/tui-kit": "workspace:*"`. React 19
+is a peer dependency.
 
 ## Quickstart
 
@@ -121,9 +118,10 @@ matters: [docs/consuming.md](docs/consuming.md).
 From a clean checkout:
 
 ```console
-$ git clone https://github.com/m4ttstack/tui-kit
-$ cd tui-kit
-$ bun install
+$ git clone https://github.com/m4ttstack/apps.git
+$ cd apps
+$ bun install                 # workspace install, from the repo root
+$ cd packages/tui-kit
 $ bun run dev:workshop
 ```
 

@@ -80,9 +80,10 @@ see the layout yourself without wiring up a real GitLab project, copy
 ## Installation
 
 ```sh
-git clone https://github.com/m4ttstack/board.git
-cd board
-bun install
+git clone https://github.com/m4ttstack/apps.git
+cd apps                       # the workspace root, not this app's own dir
+bun install                   # workspace install: packages/*, apps/*
+cd apps/board
 ```
 
 ## Quickstart
@@ -236,7 +237,7 @@ bun run build      # standalone binary at dist/board
 board is one app in [mattstack](https://github.com/m4ttstack), a personal
 developer estate: [rt](https://github.com/m4ttstack/rt) is the CLI and daemon
 this board reads its MR data from,
-[deck](https://github.com/m4ttstack/deck) serves it locally at
+[deck](../deck) (in this same repo) serves it locally at
 `board.mattstack`, [gitq](https://github.com/m4ttstack/gitq) manages stacked
 branches, [glance](https://github.com/m4ttstack/glance) models the forge data,
 and [skills](https://github.com/m4ttstack/skills) plus the

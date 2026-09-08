@@ -50,9 +50,10 @@ the pieces above wire together.
 Requires [Bun](https://bun.sh).
 
 ```bash
-git clone https://github.com/m4ttstack/chat.git
-cd chat
-bun install
+git clone https://github.com/m4ttstack/apps.git
+cd apps                       # the workspace root, not this app's own dir
+bun install                   # workspace install: packages/*, apps/*
+cd apps/chat
 ```
 
 `chat` is a client for the `rt` daemon: the real app needs `rt` installed
@@ -143,7 +144,7 @@ the shared UI kit, and the deploy loop.
 ## Contributing
 
 This repository isn't accepting outside contributions yet. Bug reports and
-suggestions are welcome via [issues](https://github.com/m4ttstack/chat/issues).
+suggestions are welcome via [issues](https://github.com/m4ttstack/apps/issues).
 Anyone opening a PR should read `AGENTS.md` and `ARCHITECTURE.md` first;
 they carry the conventions this codebase expects (import walls, the
 design-conformance contract, how server routes compose).

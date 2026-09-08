@@ -29,7 +29,7 @@ Host header reach those actions too. Use the tunnel for any off-machine access.
 
 ## Deck
 
-`mattstack.deck.json` registers the board with [deck](https://github.com/m4ttstack/deck),
+`mattstack.deck.json` registers the board with [deck](../../deck) (in this same repo),
 which serves it at `board.mattstack` on a local port. That hostname counts as
 local for the gating above, so agent actions work through deck the same way
 they do on `localhost`.
