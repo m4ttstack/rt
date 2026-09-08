@@ -29,7 +29,6 @@ import type {
   RowContext,
   RowMenuState,
   ThemeMode,
-  ViewMode,
 } from '../types.ts';
 import { AppLauncher } from './AppLauncher.tsx';
 import { AppMark } from './AppMark.tsx';
@@ -38,7 +37,6 @@ import { Controls } from './Controls.tsx';
 import { DraftModal } from './DraftModal.tsx';
 import { boardSummary, draftKey, getSlackMarks, mrLine } from './format.ts';
 import type { GateDomain } from './gate-format.ts';
-import { GridView } from './GridView.tsx';
 import {
   useBoardData,
   useLaunchAction,
@@ -63,15 +61,11 @@ declare global {
 // ── toggles ────────────────────────────────────────────────────────────────
 
 const THEME_KEY = 'mrs-theme';
-const VIEW_KEY = 'mrs-view';
 const STATE_KEY = 'mrs-view-state';
 
 // ── board ──────────────────────────────────────────────────────────────────
 
 export function Board() {
-  const [view, setView] = useState<ViewMode>(
-    () => (localStorage.getItem(VIEW_KEY) as ViewMode) ?? 'rows'
-  );
   const [theme, setTheme] = useState<ThemeMode>(
     () => (localStorage.getItem(THEME_KEY) as ThemeMode) ?? 'system'
   );
@@ -88,10 +82,6 @@ export function Board() {
   });
   const validatedOnce = useRef(false);
 
-  const pickView = (v: ViewMode) => {
-    localStorage.setItem(VIEW_KEY, v);
-    setView(v);
-  };
   const pickTheme = (m: ThemeMode) => {
     localStorage.setItem(THEME_KEY, m);
     window.__applyTheme();
@@ -687,7 +677,7 @@ export function Board() {
   const summaryText = boardSummary(flatMrs, data.slackTemplates);
   const postableMrs = postableOf(flatMrs as BoardMRWithReview[]);
   const postableSelected = postableOf(selectedMrs as BoardMRWithReview[]);
-  // One context object threaded through RowView, GridView, and RowMenu — the
+  // One context object threaded through RowView and RowMenu — the
   // board-owned bits every row/menu needs that aren't specific to one MR.
   const rowCtx: RowContext = {
     local: data.local,
@@ -729,8 +719,6 @@ export function Board() {
   const controlProps = {
     state,
     update,
-    view,
-    pickView,
     theme,
     pickTheme,
     // The bar owns copy while a selection is live -- its header input has to
@@ -748,7 +736,7 @@ export function Board() {
   };
 
   return (
-    <div className={`tui tui-app${view === 'grid' ? ' tui-wide' : ''}`}>
+    <div className="tui tui-app">
       {/* Desktop roster (hidden on mobile, where it moves into the drawer).
           Also hidden on a codeowners tab: it isn't filtered by member, so the
           roster has nothing to drive. */}
@@ -874,21 +862,12 @@ export function Board() {
               // user has already folded up.
               storageKey="mrs-panel-collapsed"
             >
-              {view === 'rows' ? (
-                <RowView
-                  mrs={g.mrs}
-                  now={now}
-                  showAuthor={showAuthorIn(g)}
-                  ctx={rowCtx}
-                />
-              ) : (
-                <GridView
-                  mrs={g.mrs}
-                  now={now}
-                  showAuthor={showAuthorIn(g)}
-                  ctx={rowCtx}
-                />
-              )}
+              <RowView
+                mrs={g.mrs}
+                now={now}
+                showAuthor={showAuthorIn(g)}
+                ctx={rowCtx}
+              />
             </Panel>
           ))
         )}
