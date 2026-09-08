@@ -104,4 +104,14 @@ describe("herd-store", () => {
     s.setJobStatus(h.id, "acme-1", "done", { lastReport: 42 });
     expect(s.getJob(h.id, "acme-1")).toMatchObject({ status: "done", lastReport: 42, lastGate: "gt-1" });
   });
+
+  test("upsertJob clears nullable fields on explicit null", () => {
+    const s = store();
+    const h = herd(s);
+    s.upsertJob({ herd: h.id, name: "acme-1", worktree: "/w/acme-1", handle: "acme-1", status: "active", pane: "w1:p1", agentSession: "s" });
+    s.upsertJob({ herd: h.id, name: "acme-1", worktree: "/w/acme-1", handle: "acme-1", status: "active", pane: null });
+    const j = s.getJob(h.id, "acme-1")!;
+    expect(j.pane).toBeNull();
+    expect(j.agentSession).toBe("s");
+  });
 });
