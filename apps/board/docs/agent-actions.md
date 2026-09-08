@@ -7,11 +7,11 @@ locally-viewed board can hand the MR to a Claude Code agent running in a
 
 Three launches share one shape:
 
-| action | what it does | herdr workspace |
-|---|---|---|
-| **launch review** (and **re-review**) | reviews someone else's MR | `reviewsWorkspace` |
-| **respond to review** | processes review feedback on your own MR | `respondsWorkspace` |
-| **call the doctor** | repairs mechanical breakage: merge conflicts, red CI | `doctorsWorkspace` |
+| action                                | what it does                                         | herdr workspace     |
+| ------------------------------------- | ---------------------------------------------------- | ------------------- |
+| **launch review** (and **re-review**) | reviews someone else's MR                            | `reviewsWorkspace`  |
+| **respond to review**                 | processes review feedback on your own MR             | `respondsWorkspace` |
+| **call the doctor**                   | repairs mechanical breakage: merge conflicts, red CI | `doctorsWorkspace`  |
 
 Each spawns a fresh herdr tab labelled `!<iid>`, starts `claude` in the
 matching cwd (`reviewCwd`, `respondCwd`, `doctorCwd`, each falling back to
@@ -26,7 +26,15 @@ the wrapper skill itself carries no repo- or team-specific knowledge.
 
 The wrapper emits `reviewing` / `done` / `error` to a state file the board
 reads, so the row shows a live badge, with an instant optimistic badge and
-toast the moment you launch. The board owns every Slack reaction (👀 on
+toast the moment you launch. Each write also publishes the same transition on
+the rt daemon's event bus, topic `board/agent-status/<kind>`, stamped with the
+emitting board's root so two boards on one machine never act on each other's
+panes. The board consumes that topic from the bus journal by cursor
+(`state/agent-status-cursor`): a live push wakes it within a second, the
+60-second sweep tick covers a push it missed, and a boot replays everything
+emitted while it was down, within the journal's retention (7 days or 50,000
+events). Past that, the triage latch pass and the gate sweep still reconcile
+from the state files. The board owns every Slack reaction (👀 on
 `reviewing`, 💬 or ✅ on `done`), so the agent never touches Slack. Launching
 again while a session is live re-focuses its tab instead of spawning another.
 
@@ -91,12 +99,12 @@ Resolution order in each wrapper:
 
 Slots and contracts:
 
-| wrapper | slot | contract |
-|---|---|---|
-| `board:review` | `review` | `mr-review@2` |
-| `board:respond` | `respond` | `mr-respond@2` |
-| `board:doctor` | `doctor` | `mr-doctor@2` (the checkout tier) |
-| `board:doctor` | `doctor-api` | `mr-doctor-api@2` (the `--tier api` no-checkout tier) |
+| wrapper         | slot         | contract                                              |
+| --------------- | ------------ | ----------------------------------------------------- |
+| `board:review`  | `review`     | `mr-review@2`                                         |
+| `board:respond` | `respond`    | `mr-respond@2`                                        |
+| `board:doctor`  | `doctor`     | `mr-doctor@2` (the checkout tier)                     |
+| `board:doctor`  | `doctor-api` | `mr-doctor-api@2` (the `--tier api` no-checkout tier) |
 
 A bound skill must declare the matching contract in its `metadata.provides`.
 
@@ -105,13 +113,13 @@ A bound skill must declare the matching contract in its `metadata.provides`.
 {
   "version": 1,
   "bindings": {
-    "board:review":  { "review": "acme:mr-board-review" },
+    "board:review": { "review": "acme:mr-board-review" },
     "board:respond": { "respond": "acme:mr-board-respond" },
     "board:doctor": {
       "doctor": "acme:mr-board-doctor",
-      "doctor-api": "acme:mr-board-doctor-api"
-    }
-  }
+      "doctor-api": "acme:mr-board-doctor-api",
+    },
+  },
 }
 ```
 
@@ -126,13 +134,13 @@ latch job is on unless the `board.reReview` setting turns it off.
 MRs and dispatches a doctor pane at the configured `tier`. Which repairs it is
 allowed to attempt is a per-class opt-in:
 
-| fix class | default | what it does |
-|---|---|---|
-| `retryFlake` | on | retries a pipeline that looks flaky |
-| `inheritedNoteDraft` | on | drafts an inherited-note reply, held for approval |
-| `cleanApiRebase` | off | server-side rebase, no checkout |
-| `mechanicalLint` | off | behavior-neutral mechanical fixes committed and pushed |
-| `codeFix` | off | full repair authority |
+| fix class            | default | what it does                                           |
+| -------------------- | ------- | ------------------------------------------------------ |
+| `retryFlake`         | on      | retries a pipeline that looks flaky                    |
+| `inheritedNoteDraft` | on      | drafts an inherited-note reply, held for approval      |
+| `cleanApiRebase`     | off     | server-side rebase, no checkout                        |
+| `mechanicalLint`     | off     | behavior-neutral mechanical fixes committed and pushed |
+| `codeFix`            | off     | full repair authority                                  |
 
 The two branch-writing classes (`mechanicalLint`, `codeFix`) are additionally
 gated to the board identity's own MRs at dispatch time, whatever their toggles

@@ -3060,7 +3060,8 @@ if (!FIXTURE_DIR) {
       `gate boot resume pass failed: ${err instanceof Error ? err.message : err}`
     )
   );
-  // Replays every transition emitted while the board was down.
+  // Replays every transition emitted while the board was down. A board with
+  // no cursor yet starts at the journal head instead and replays nothing.
   wakeAgentStatusFeed();
 }
 
