@@ -1399,6 +1399,7 @@
   flex-direction: column;
   gap: 0.6rem;
   min-width: 0;
+  max-width: 36rem;
 }
 .tui-gate-progress {
   font: 500 0.7rem/1.4 var(--font-mono);
