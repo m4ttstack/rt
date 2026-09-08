@@ -394,6 +394,7 @@ describe('attachGates', () => {
     expect(mr!.gates).toEqual([
       {
         gateId: 'gate-1',
+        subject: 'mr:https://gitlab.com/acme/webapp/-/merge_requests/4821',
         kind: 'review-post',
         label: 'review gate !4821',
         status: 'open',
@@ -448,6 +449,11 @@ describe('attachGates', () => {
     );
     expect(mr!.gates[0]?.status).toBe('answered');
     expect(mr!.gates[0]?.answers).toEqual({ q1: 'yes' });
+    expect(mr!.gates[0]?.subject).toBe(
+      'mr:https://gitlab.com/acme/webapp/-/merge_requests/4821'
+    );
+    expect(mr!.gates[0]?.answeredBy).toBe('board-ui');
+    expect(mr!.gates[0]?.answeredAt).toBe(2000);
   });
 
   test('an answered review-post row does NOT render once review state is done (never keyed on released)', () => {

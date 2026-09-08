@@ -1,11 +1,11 @@
 import type { MouseEvent } from 'react';
 
+import type { GateDomain } from '@mattstack/gate-kit';
 import type { TabConfig } from '../config.ts';
 import type { BoardMR } from '../data.ts';
 import type { GateRow } from '../gates/store.ts';
 import type { RespondStatus } from '../respond-outcome.ts';
 import type { SlackTemplates } from '../template.ts';
-import type { GateDomain } from './board/gate-format.ts';
 
 export interface RosterMember {
   username: string;
@@ -148,7 +148,6 @@ export interface BoardData {
 }
 
 export type ThemeMode = 'light' | 'dark' | 'system';
-export type ViewMode = 'rows' | 'grid';
 
 export interface Toast {
   id: number;
@@ -161,7 +160,7 @@ export interface RowMenuState {
   mr: BoardMR;
 }
 
-/** Shared per-render context threaded through RowView, GridView, and RowMenu —
+/** Shared per-render context threaded through RowView and RowMenu —
     the board-owned bits every row/menu needs that aren't specific to one MR.
     Built once in Board.tsx per render, not memoized: recreating it is no more
     work than the individual props it replaces. */

@@ -196,6 +196,7 @@ const enrichedBranch: BranchEnrichment = {
 afterEach(() => {
   vi.clearAllMocks();
   window.history.pushState(null, '', '/');
+  localStorage.clear();
 });
 
 beforeEach(() => {
@@ -1089,8 +1090,8 @@ describe('RunDetail: gate card', () => {
     expect(
       await screen.findByTestId('gate-answered-badge')
     ).toBeInTheDocument();
-    expect(await screen.findByTestId('gate-answer-summary')).toHaveTextContent(
-      'pass'
+    expect(await screen.findByTestId('gate-chip')).toHaveTextContent(
+      'self-review run run-1 · pass · by someone'
     );
     // Answered isn't actionable -- no Answer affordance for it.
     expect(
@@ -1184,7 +1185,7 @@ describe('RunDetail: gate card', () => {
 
     renderDetail();
 
-    await userEvent.click(await screen.findByLabelText('pass'));
+    await userEvent.click(await screen.findByRole('radio', { name: 'pass' }));
     await userEvent.click(screen.getByRole('button', { name: 'submit' }));
 
     await waitFor(() =>

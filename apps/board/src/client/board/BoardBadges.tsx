@@ -14,10 +14,9 @@ import {
 } from './chips.tsx';
 import { draftKey, hasBoardBadges } from './format.ts';
 
-/** The badge/chip row shared by RowView and GridView — identical markup in
-    both, wrapped in whichever class the caller's layout needs
-    ("tui-row-board" for rows, "tui-card-board" for cards). Internalizes the
-    hasBoardBadges guard: callers drop their own and just render this. */
+/** The badge/chip row under each MR row, wrapped in the caller's layout class
+    ("tui-row-board"). Internalizes the hasBoardBadges guard: callers drop
+    their own and just render this. */
 export function BoardBadges({
   mr,
   now,

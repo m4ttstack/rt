@@ -3,7 +3,12 @@ import { Invadr } from 'invadrs/react';
 import { Chip, CopyButton, SelectBox } from '@mattstack/tui-kit';
 import type { BoardMR } from '../../data.ts';
 import { extractTicketId, ticketUrl } from '../../ticket.ts';
-import { nestStacks, statusFlags, type FlagClass } from '../../view.ts';
+import {
+  behindToken,
+  nestStacks,
+  statusFlags,
+  type FlagClass,
+} from '../../view.ts';
 import type { BoardMRWithReview, RowContext } from '../types.ts';
 import { BoardBadges } from './BoardBadges.tsx';
 import { CommentsButton, CommentsToken } from './CommentsDrawer.tsx';
@@ -33,7 +38,8 @@ function onRowClick(e: React.MouseEvent, mr: BoardMR) {
     class now fails to compile here instead of silently rendering grey.
     `data-flag` is the hook style.css scopes the flag's standing 0.9 dim and
     its own zero-padding box to. */
-const FLAG_INTENT: Record<FlagClass, 'bad' | 'warn' | 'cyan'> = {
+const FLAG_INTENT: Record<FlagClass, 'ok' | 'bad' | 'warn' | 'cyan'> = {
+  't-ok': 'ok',
   't-bad': 'bad',
   't-warn': 'warn',
   't-cyan': 'cyan',
@@ -64,12 +70,18 @@ function StatusPhrase({ mr }: { mr: BoardMR }) {
 }
 
 function MetaTokens({ mr, now }: { mr: BoardMR; now: number }) {
+  const behind = behindToken(mr);
   return (
     <span className="tui-meta">
       {mr.diff && (
         <span className="t-dim" title={`${mr.diff.filesChanged} files changed`}>
           <span className="t-ok">+{mr.diff.additions}</span>{' '}
           <span className="t-bad">−{mr.diff.deletions}</span>
+        </span>
+      )}
+      {behind && (
+        <span className="t-warn" title={behind.title}>
+          {behind.text}
         </span>
       )}
       <CommentsToken mr={mr} />

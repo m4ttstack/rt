@@ -1,6 +1,6 @@
 import { realpathSync } from 'node:fs';
 
-import type { GateOrigin } from './store.ts';
+import type { GateOrigin } from '@mattstack/rt-client';
 
 export type FocusResolution =
   { ok: true; paneId: string; tabId?: string } | { ok: false; reason: string };
@@ -28,18 +28,33 @@ export function normalizeWorktreePath(path: string): string {
   }
 }
 
+export interface ResolveOriginFocusOpts {
+  /** Thread origin.tabId into a paneId resolution -- the board's tab
+      fallback wants it; console's pane:focus call has no use for it. */
+  carryTabId?: boolean;
+  /** The caller tried to list live panes and the call itself failed -- a
+      different fact than an empty or non-matching list, so it gets its own
+      reason instead of the misleading no-match one. */
+  panesUnavailable?: boolean;
+}
+
 /** Shared focus rule: direct by origin.paneId, else worktree match against
-    live pane cwds, else a human-readable reason for a disabled affordance. */
+    live pane cwds, else a human-readable reason for a disabled affordance
+    or a 400 body. */
 export function resolveOriginFocus(
   origin: GateOrigin | undefined,
-  panes: Array<{ paneId: string; cwd?: string }>
+  panes: Array<{ paneId: string; cwd?: string }>,
+  opts: ResolveOriginFocusOpts = {}
 ): FocusResolution {
   if (origin?.paneId) {
-    return origin.tabId !== undefined
+    return opts.carryTabId && origin.tabId !== undefined
       ? { ok: true, paneId: origin.paneId, tabId: origin.tabId }
       : { ok: true, paneId: origin.paneId };
   }
   if (origin?.worktree) {
+    if (opts.panesUnavailable) {
+      return { ok: false, reason: 'could not list live panes' };
+    }
     const target = normalizeWorktreePath(origin.worktree);
     const match = panes.find(
       p => p.cwd !== undefined && normalizeWorktreePath(p.cwd) === target

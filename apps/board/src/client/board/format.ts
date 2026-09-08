@@ -500,6 +500,42 @@ function doctorItemLabel(status?: DoctorStatus): string {
   return 'focus doctor tab';
 }
 
+/** The GitLab-side actions the row menu offers for this MR, driven by the
+    view-model button state glance already computed. The rebase item also
+    raises on plain behind-ness: glance keeps rebaseButton mirroring GitLab's
+    own button (MAT-164), and the "freshen a merely-behind branch" affordance
+    is exactly what the board wants beyond that. */
+function gitlabMenuItems(mr: BoardMR): {
+  kind: 'merge' | 'rebase' | 'setAutoMerge' | 'cancelAutoMerge';
+  label: string;
+  disabled: boolean;
+}[] {
+  const items: ReturnType<typeof gitlabMenuItems> = [];
+  if (mr.mergeButton.visible)
+    items.push({
+      kind: 'merge',
+      label: 'merge',
+      disabled: mr.mergeButton.disabled || mr.mergeButton.loading,
+    });
+  if (mr.rebaseButton.visible || (mr.behindTarget ?? 0) > 0)
+    items.push({
+      kind: 'rebase',
+      label: 'rebase on target',
+      disabled: mr.rebaseButton.loading,
+    });
+  if (mr.autoMergeButton.visible)
+    items.push(
+      mr.autoMergeButton.isActive
+        ? {
+            kind: 'cancelAutoMerge',
+            label: 'cancel auto-merge',
+            disabled: false,
+          }
+        : { kind: 'setAutoMerge', label: 'set auto-merge', disabled: false }
+    );
+  return items;
+}
+
 export {
   GROUP_LABEL,
   SORT_LABEL,
@@ -516,6 +552,7 @@ export {
   peerState,
   CHIP_CELL_WORDS,
   NUDGE_RETRYABLE,
+  gitlabMenuItems,
   nudgeChipText,
   nudgeTargets,
   draftKey,

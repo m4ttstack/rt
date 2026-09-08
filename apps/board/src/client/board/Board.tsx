@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import type { GateDomain } from '@mattstack/gate-kit';
 import { ICONS, Panel, SideDrawer, ToastHost } from '@mattstack/tui-kit';
 import type { BoardMR } from '../../data.ts';
 import { inferRoster } from '../../data.ts';
+import type { MrAction } from '../../mr-action.ts';
 import { sectionStatus } from '../../sections.ts';
 import {
   postableOf,
@@ -29,7 +31,6 @@ import type {
   RowContext,
   RowMenuState,
   ThemeMode,
-  ViewMode,
 } from '../types.ts';
 import { AppLauncher } from './AppLauncher.tsx';
 import { AppMark } from './AppMark.tsx';
@@ -43,8 +44,6 @@ import {
 } from './deep-link.ts';
 import { DraftModal } from './DraftModal.tsx';
 import { boardSummary, draftKey, getSlackMarks, mrLine } from './format.ts';
-import type { GateDomain } from './gate-format.ts';
-import { GridView } from './GridView.tsx';
 import {
   useBoardData,
   useLaunchAction,
@@ -69,15 +68,11 @@ declare global {
 // ── toggles ────────────────────────────────────────────────────────────────
 
 const THEME_KEY = 'mrs-theme';
-const VIEW_KEY = 'mrs-view';
 const STATE_KEY = 'mrs-view-state';
 
 // ── board ──────────────────────────────────────────────────────────────────
 
 export function Board() {
-  const [view, setView] = useState<ViewMode>(
-    () => (localStorage.getItem(VIEW_KEY) as ViewMode) ?? 'rows'
-  );
   const [theme, setTheme] = useState<ThemeMode>(
     () => (localStorage.getItem(THEME_KEY) as ThemeMode) ?? 'system'
   );
@@ -97,10 +92,6 @@ export function Board() {
   // the scroll/flash/strip effect below once that row has actually rendered.
   const [gateDeepLinkIid, setGateDeepLinkIid] = useState<number | null>(null);
 
-  const pickView = (v: ViewMode) => {
-    localStorage.setItem(VIEW_KEY, v);
-    setView(v);
-  };
   const pickTheme = (m: ThemeMode) => {
     localStorage.setItem(THEME_KEY, m);
     window.__applyTheme();
@@ -379,6 +370,12 @@ export function Board() {
     (mr: BoardMR, note?: string) => doctorAction(mr, {}, note),
     [doctorAction]
   );
+  // The doctor chassis scoped to a checkout rebase — the fallback when the
+  // GitLab-side rebase can't (conflicts) or didn't work.
+  const handleRebaseLocal = useCallback(
+    (mr: BoardMR, note?: string) => doctorAction(mr, { mode: 'rebase' }, note),
+    [doctorAction]
+  );
 
   // GateCard's "focus pane" escape hatch: jump into whichever domain's pane
   // opened the gate, via the exact same launch endpoint a fresh launch from
@@ -489,6 +486,33 @@ export function Board() {
           void load(true);
         }
       );
+    },
+    [addToast, load]
+  );
+
+  const handleMrAction = useCallback(
+    (mr: BoardMR, action: MrAction) => {
+      if (!mr.webUrl) return;
+      const wording: Record<MrAction, [pending: string, done: string]> = {
+        merge: ['merging', 'merge accepted'],
+        rebase: ['rebasing', 'rebase started'],
+        setAutoMerge: ['arming auto-merge on', 'auto-merge armed for'],
+        cancelAutoMerge: ['canceling auto-merge on', 'auto-merge canceled for'],
+      };
+      const [pending, done] = wording[action];
+      addToast(`${pending} !${mr.iid}…`);
+      postAction('/mr/action', {
+        mrUrl: mr.webUrl,
+        iid: mr.iid,
+        action,
+      }).then(result => {
+        if (!result.ok) {
+          addToast(`couldn't ${action} !${mr.iid} (${result.status})`);
+          return;
+        }
+        addToast(`${done} !${mr.iid}`);
+        void load(true);
+      });
     },
     [addToast, load]
   );
@@ -743,7 +767,7 @@ export function Board() {
   const summaryText = boardSummary(flatMrs, data.slackTemplates);
   const postableMrs = postableOf(flatMrs as BoardMRWithReview[]);
   const postableSelected = postableOf(selectedMrs as BoardMRWithReview[]);
-  // One context object threaded through RowView, GridView, and RowMenu — the
+  // One context object threaded through RowView and RowMenu — the
   // board-owned bits every row/menu needs that aren't specific to one MR.
   const rowCtx: RowContext = {
     local: data.local,
@@ -785,8 +809,6 @@ export function Board() {
   const controlProps = {
     state,
     update,
-    view,
-    pickView,
     theme,
     pickTheme,
     // The bar owns copy while a selection is live -- its header input has to
@@ -804,7 +826,7 @@ export function Board() {
   };
 
   return (
-    <div className={`tui tui-app${view === 'grid' ? ' tui-wide' : ''}`}>
+    <div className="tui tui-app">
       {/* Desktop roster (hidden on mobile, where it moves into the drawer).
           Also hidden on a codeowners tab: it isn't filtered by member, so the
           roster has nothing to drive. */}
@@ -930,21 +952,12 @@ export function Board() {
               // user has already folded up.
               storageKey="mrs-panel-collapsed"
             >
-              {view === 'rows' ? (
-                <RowView
-                  mrs={g.mrs}
-                  now={now}
-                  showAuthor={showAuthorIn(g)}
-                  ctx={rowCtx}
-                />
-              ) : (
-                <GridView
-                  mrs={g.mrs}
-                  now={now}
-                  showAuthor={showAuthorIn(g)}
-                  ctx={rowCtx}
-                />
-              )}
+              <RowView
+                mrs={g.mrs}
+                now={now}
+                showAuthor={showAuthorIn(g)}
+                ctx={rowCtx}
+              />
             </Panel>
           ))
         )}
@@ -1053,6 +1066,8 @@ export function Board() {
           // people's drafts, but their ready MRs are on the board, so this gate
           // is what keeps "mark as draft" off them.
           canDraftState={rowMenu.mr.author.username === data.defaultMember}
+          onMrAction={handleMrAction}
+          onRebaseLocal={handleRebaseLocal}
           onNudge={handleNudge}
           // Your own MRs only: a nudge asks a peer to re-review YOUR work, and
           // the server enforces the same gate (403 "not your MR").

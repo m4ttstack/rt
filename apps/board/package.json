@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@mattstack/app-server": "workspace:*",
+    "@mattstack/gate-kit": "workspace:*",
     "@mattstack/glance": "catalog:",
     "@mattstack/rt-client": "catalog:",
     "@mattstack/settings-kit": "^0.1.3",

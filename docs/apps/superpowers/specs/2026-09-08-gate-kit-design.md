@@ -166,3 +166,97 @@ resume flow unchanged.
 
 Single repo, so no cross-repo deploy ordering: per-app deploys happen
 after the wave merges.
+
+## Amendment (2026-09-08, live review): card interaction model
+
+Ratified by Matt on the preview of the migrated cards. Supersedes the
+"flat card" rendering described under the React adapter for gates with
+more than one question, and adds four capabilities of the questionnaire
+primitive that the first cut left unwired.
+
+### Layout
+
+- **One question:** flat. Title, options (each with its shortcut hint),
+  error line, note field, Submit. The single item is the primitive's
+  active item, so no `hidden`/`inert` override is needed.
+- **Two or more questions:** the primitive's step mode. A progress line
+  built from `Questionnaire.Progress` render state ("2 of 3") above the
+  active question's title, that question's options, error line, note
+  field, then the actions row: Previous, Next, Submit (Submit only on the
+  last item). Non-active items keep the primitive's `hidden` + `inert`.
+  The `hidden={false} inert={false}` override is removed from both cards;
+  the adapter's pin test retargets to the step contract (only the active
+  item visible, the single-item case visible).
+- The respond-plan collapse is unchanged and stays value-keyed: the
+  code-changes item joins the sequence only once a `fix:` value is
+  selected; while absent it submits the sentinel through
+  `effectiveSelections` as today. In step mode this means the last step
+  appears when a fix is picked, and Submit moves to it.
+- Chip, recommended badge, context disclosure, focus button, conflict
+  path: unchanged. Board keeps its tui chrome, console its Mantine chrome.
+
+### Shortcuts
+
+`Questionnaire.Root shortcuts="numbers"`. Each option renders
+`Questionnaire.ChoiceShortcut` as a small key hint (board: a mono chip,
+console: `Kbd`). The primitive resolves keys against the active item,
+which is the visible one in both layouts.
+
+### Errors and navigation state
+
+Each item renders `Questionnaire.Error`; the primitive's required
+validation supplies the message when Next or Submit is pressed with no
+answer. Next and Submit render disabled until the active item's status is
+answered (`Questionnaire.Next`/`Submit` render state), so the enabled
+button always does something.
+
+### Freeform note
+
+Every question carries an optional note input: a plain text input inside
+the item's fieldset (not `Questionnaire.Input`, which names itself after
+the item and marks it answered), accessible name "Note for <question
+label>", placeholder "Add a note". The adapter names the field
+`<question id>:note`. `answersFromForm`
+returns wire answers (`{ answers: GateAnswers }`): a question whose note
+is non-empty after trimming submits `{ value, note }` where `value` is
+the selection (string, or string[] for multi); an empty note submits the
+bare selection exactly as today. The daemon already stores and emits both
+shapes; the answered chip and detail already render the note via
+`unwrapGateAnswer`.
+
+### Resume
+
+The adapter exports `useGateDraft(gateId, enabled)` (browser-only, in
+`./react`): a draft `{ selections, notes, item }` per gate id in
+`localStorage` under `gate-kit:draft:<gateId>`, saved on every change
+while the gate is open, restored on mount, and cleared on a successful
+submit, on a conflict loss, or when the gate is no longer open. A Reset
+action (rendered beside Previous, step mode only -- two or more
+questions) clears the draft and the form. Storage access is wrapped so
+an unavailable `localStorage` degrades to no draft.
+
+### Deferred
+
+Explicit skip (optional questions) waits on rt: `optional?: true` on the
+wire question, daemon validation accepting omission for optional
+questions, and the gate-protocol prose. Dialog hosting is the triage
+modal, the next build on this kit. Animated item transitions: not now.
+
+### Testing (amendment)
+
+- Adapter: step contract pin (active item visible, others hidden and
+  inert; single item visible); shortcut selects in the active item;
+  note round-trip (`{ value, note }` for single and multi, bare value on
+  empty note); `useGateDraft` save, restore, clear, and storage-unavailable
+  path.
+- Console (DOM): progress text advances on Next; Submit disabled until
+  answered; error text on a form submit with nothing answered
+  (Cmd+Enter); note reaches the POST body.
+- Board: typecheck + `build:client`; behavior covered by the adapter
+  suite and the preview.
+
+### Sequencing (amendment)
+
+5. Card interaction model (adapter first, then board, then console),
+   previewed from the worktree on the live deck rows before the PR
+   merges.

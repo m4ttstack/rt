@@ -72,6 +72,9 @@ function renderCard(gate: GateRow) {
 
 afterEach(() => {
   vi.clearAllMocks();
+  // The card writes a draft to localStorage on every pick; every test here
+  // uses gate id g1, so a leftover draft would pre-check a later test.
+  localStorage.clear();
 });
 
 describe('GateCard: open/actionable', () => {
@@ -84,27 +87,41 @@ describe('GateCard: open/actionable', () => {
     );
   });
 
-  it('renders a single-select question as radios and a multi question as checkboxes', () => {
+  it('renders the first question as radios and steps to the multi question as checkboxes', async () => {
     renderCard(gateRow());
 
     expect(screen.getByText('What happened?')).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: 'pass' })).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: 'fail' })).toBeInTheDocument();
-    expect(screen.getByText('Any flags?')).toBeInTheDocument();
+    // The second question is the primitive's hidden, inert step.
+    expect(
+      screen.queryByRole('checkbox', { name: 'lint' })
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId('gate-progress')).toHaveTextContent('1 of 2');
+
+    await userEvent.click(screen.getByRole('radio', { name: 'pass' }));
+    await userEvent.click(screen.getByTestId('gate-next'));
+    expect(screen.getByText('Any flags?')).toBeVisible();
     expect(screen.getByRole('checkbox', { name: 'lint' })).toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: 'types' })).toBeInTheDocument();
+    expect(screen.getByTestId('gate-progress')).toHaveTextContent('2 of 2');
   });
 
-  it('disables submit until every question has an answer', async () => {
+  it('disables Next until the active question is answered, then Submit until the last one is', async () => {
     renderCard(gateRow());
+
+    expect(
+      screen.queryByRole('button', { name: 'submit' })
+    ).not.toBeInTheDocument();
+    const next = screen.getByTestId('gate-next');
+    expect(next).toBeDisabled();
+
+    await userEvent.click(screen.getByRole('radio', { name: 'pass' }));
+    expect(next).toBeEnabled();
+    await userEvent.click(next);
 
     const submit = screen.getByRole('button', { name: 'submit' });
     expect(submit).toBeDisabled();
-
-    await userEvent.click(screen.getByRole('radio', { name: 'pass' }));
-    // The multi question is still unanswered.
-    expect(submit).toBeDisabled();
-
     await userEvent.click(screen.getByRole('checkbox', { name: 'lint' }));
     expect(submit).toBeEnabled();
   });
@@ -118,6 +135,7 @@ describe('GateCard: open/actionable', () => {
     renderCard(gateRow({ id: 'g42' }));
 
     await userEvent.click(screen.getByRole('radio', { name: 'pass' }));
+    await userEvent.click(screen.getByTestId('gate-next'));
     await userEvent.click(screen.getByRole('checkbox', { name: 'lint' }));
     await userEvent.click(screen.getByRole('button', { name: 'submit' }));
 
@@ -134,10 +152,13 @@ describe('GateCard: open/actionable', () => {
     renderCard(gateRow());
 
     await userEvent.click(screen.getByRole('radio', { name: 'pass' }));
+    await userEvent.click(screen.getByTestId('gate-next'));
     await userEvent.click(screen.getByRole('checkbox', { name: 'lint' }));
     await userEvent.click(screen.getByRole('button', { name: 'submit' }));
 
     await screen.findByText(/submit failed/);
+    expect(screen.getByRole('checkbox', { name: 'lint' })).toBeChecked();
+    await userEvent.click(screen.getByTestId('gate-previous'));
     expect(screen.getByRole('radio', { name: 'pass' })).toBeChecked();
   });
 
@@ -157,6 +178,7 @@ describe('GateCard: open/actionable', () => {
     renderCard(gateRow());
 
     await userEvent.click(screen.getByRole('radio', { name: 'pass' }));
+    await userEvent.click(screen.getByTestId('gate-next'));
     await userEvent.click(screen.getByRole('checkbox', { name: 'lint' }));
     await userEvent.click(screen.getByRole('button', { name: 'submit' }));
 
@@ -186,6 +208,7 @@ describe('GateCard: open/actionable', () => {
     queryClient.setQueryData(['gates'], { gates: [] });
 
     await userEvent.click(screen.getByRole('radio', { name: 'pass' }));
+    await userEvent.click(screen.getByTestId('gate-next'));
     await userEvent.click(screen.getByRole('checkbox', { name: 'lint' }));
     await userEvent.click(screen.getByRole('button', { name: 'submit' }));
 
@@ -251,39 +274,52 @@ describe('GateCard: parked', () => {
     renderCard(gateRow({ status: 'parked' }));
 
     expect(screen.getByTestId('gate-parked-badge')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'submit' })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'pass' })).toBeInTheDocument();
+    expect(screen.getByTestId('gate-next')).toBeInTheDocument();
+  });
+});
+
+describe('GateCard: closed', () => {
+  it('renders the summary chip, never the questionnaire form', () => {
+    renderCard(gateRow({ status: 'closed', closedReason: 'superseded' }));
+
+    expect(screen.getByTestId('gate-chip')).toHaveTextContent('superseded');
+    expect(screen.queryByRole('radio')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'submit' })
+    ).not.toBeInTheDocument();
   });
 });
 
 describe('GateCard: answered', () => {
-  it('renders a read-only summary, unwrapping the {value, note} form', () => {
+  it('renders a chip for an answered gate and expands to the unwrapped detail', async () => {
     renderCard(
       gateRow({
         status: 'answered',
         answer: {
           answers: {
-            outcome: { value: 'pass', note: 'flaky retry, ok on rerun' },
+            outcome: { value: 'pass', note: 'clean run' },
             flags: ['lint'],
           },
-          by: 'reviewer-pane',
-          answeredAt: 100,
+          by: 'pane',
+          answeredAt: 1,
         },
       })
     );
 
-    expect(screen.getByTestId('gate-answered-badge')).toBeInTheDocument();
+    expect(screen.getByTestId('gate-chip')).toHaveTextContent(
+      'self-review run run-1 · pass, lint'
+    );
+    expect(screen.queryByTestId('gate-answer-summary')).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByTestId('gate-detail-toggle'));
     const summary = screen.getByTestId('gate-answer-summary');
     expect(within(summary).getByText('pass')).toBeInTheDocument();
-    expect(
-      within(summary).getByText('flaky retry, ok on rerun')
-    ).toBeInTheDocument();
+    expect(within(summary).getByText('clean run')).toBeInTheDocument();
     expect(within(summary).getByText('lint')).toBeInTheDocument();
-    expect(
-      screen.queryByRole('button', { name: 'submit' })
-    ).not.toBeInTheDocument();
   });
 
-  it('shows a placeholder for a question missing from the answers', () => {
+  it('shows a placeholder for a question missing from the answers', async () => {
     renderCard(
       gateRow({
         status: 'answered',
@@ -291,6 +327,7 @@ describe('GateCard: answered', () => {
       })
     );
 
+    await userEvent.click(screen.getByTestId('gate-detail-toggle'));
     const summary = screen.getByTestId('gate-answer-summary');
     expect(within(summary).getByText('(none)')).toBeInTheDocument();
   });
@@ -311,7 +348,7 @@ describe('W4 rendering', () => {
         ],
       })
     );
-    await user.click(screen.getByLabelText('Pass (all green)'));
+    await user.click(screen.getByRole('radio', { name: 'Pass (all green)' }));
     await user.click(screen.getByRole('button', { name: 'submit' }));
     await waitFor(() => expect(answerPost).toHaveBeenCalled());
     expect(answerPost.mock.calls[0]![0]).toMatchObject({
@@ -362,17 +399,54 @@ describe('W4 rendering', () => {
     expect(
       screen.queryByText('Approve the proposed code changes?')
     ).not.toBeInTheDocument();
-    await user.click(screen.getByLabelText('reply:t1'));
+    await user.click(screen.getByRole('checkbox', { name: 'reply:t1' }));
     await user.click(screen.getByRole('button', { name: 'submit' }));
     await waitFor(() => expect(answerPost).toHaveBeenCalled());
     expect(answerPost.mock.calls[0]![0]).toMatchObject({
       json: { answers: { 'threads-1': ['reply:t1'], 'code-changes': 'skip' } },
     });
     answerPost.mockClear();
-    await user.click(screen.getByLabelText('fix:t1'));
+    await user.click(screen.getByRole('checkbox', { name: 'fix:t1' }));
+    // The code-changes item joins as a new LAST step: Submit moves to it.
     expect(
-      screen.getByText('Approve the proposed code changes?')
+      screen.queryByRole('button', { name: 'submit' })
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId('gate-progress')).toHaveTextContent('1 of 2');
+    expect(
+      screen.queryByRole('radio', { name: 'approve' })
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByTestId('gate-next'));
+    expect(screen.getByRole('radio', { name: 'approve' })).toBeVisible();
+    expect(screen.getByRole('radio', { name: 'approve' })).toBeEnabled();
+    expect(screen.getByTestId('gate-progress')).toHaveTextContent('2 of 2');
+    expect(screen.getByRole('button', { name: 'submit' })).toBeInTheDocument();
+  });
+
+  it('renders a recommended badge on the marked option only', () => {
+    renderCard(
+      gateRow({
+        questions: [
+          {
+            id: 'outcome',
+            label: 'What happened?',
+            multi: false,
+            options: [
+              { value: 'approve', label: 'Approve (recommended)' },
+              { value: 'comment', label: 'Comment' },
+            ],
+          },
+        ],
+      })
+    );
+    const approveChoice = screen.getByText('Approve').closest('label')!;
+    expect(
+      within(approveChoice).getByTestId('gate-recommended')
     ).toBeInTheDocument();
+
+    const commentChoice = screen.getByText('Comment').closest('label')!;
+    expect(
+      within(commentChoice).queryByTestId('gate-recommended')
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -391,14 +465,14 @@ describe('focus button', () => {
     );
   });
 
-  it('parked gates disable focus but keep the submit path', () => {
+  it('parked gates disable focus but keep the answer path', () => {
     renderCard(gateRow({ status: 'parked', origin: { paneId: 'p1' } }));
     expect(screen.getByTestId('gate-focus')).toBeDisabled();
     expect(screen.getByTestId('gate-focus')).toHaveAttribute(
       'title',
       'parked; resume is board-owned'
     );
-    expect(screen.getByRole('button', { name: 'submit' })).toBeInTheDocument();
+    expect(screen.getByTestId('gate-next')).toBeInTheDocument();
   });
 
   it('posts to the focus endpoint keyed to the gate id when the enabled button is clicked', async () => {
@@ -437,5 +511,150 @@ describe('focus button', () => {
     await userEvent.click(screen.getByTestId('gate-focus'));
 
     await screen.findByText('focus failed');
+  });
+});
+
+describe('GateCard: step mode', () => {
+  it('shows a progress line that advances on Next and returns on Previous', async () => {
+    renderCard(gateRow());
+    expect(screen.getByTestId('gate-progress')).toHaveTextContent('1 of 2');
+
+    await userEvent.click(screen.getByRole('radio', { name: 'pass' }));
+    await userEvent.click(screen.getByTestId('gate-next'));
+    expect(screen.getByTestId('gate-progress')).toHaveTextContent('2 of 2');
+
+    await userEvent.click(screen.getByTestId('gate-previous'));
+    expect(screen.getByTestId('gate-progress')).toHaveTextContent('1 of 2');
+  });
+
+  it('renders a single-question gate flat: no progress, no Previous, Next, or Reset, and Submit disabled until answered', async () => {
+    renderCard(gateRow({ questions: [gateRow().questions[0]!] }));
+    expect(screen.queryByTestId('gate-progress')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('gate-next')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('gate-previous')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('gate-reset')).not.toBeInTheDocument();
+
+    const submit = screen.getByRole('button', { name: 'submit' });
+    expect(submit).toBeDisabled();
+    await userEvent.click(screen.getByRole('radio', { name: 'pass' }));
+    expect(submit).toBeEnabled();
+  });
+
+  it('shows the required message on an empty Next: Cmd+Enter is the keyboard path past the disabled button', async () => {
+    renderCard(gateRow());
+    expect(screen.queryByTestId('gate-error')).not.toBeInTheDocument();
+
+    screen.getByRole('radio', { name: 'pass' }).focus();
+    await userEvent.keyboard('{Meta>}{Enter}{/Meta}');
+
+    expect(screen.getByTestId('gate-error')).toHaveTextContent(
+      'Choose an answer to continue.'
+    );
+    expect(screen.getByRole('alert')).toBe(screen.getByTestId('gate-error'));
+    expect(screen.getByTestId('gate-progress')).toHaveTextContent('1 of 2');
+  });
+
+  it('renders a key hint per option and picks with the number key inside the active question', async () => {
+    renderCard(gateRow());
+    const fail = screen.getByRole('radio', { name: 'fail' });
+    expect(fail.closest('label')).toHaveTextContent('2');
+
+    screen.getByRole('radio', { name: 'pass' }).focus();
+    await userEvent.keyboard('2');
+    expect(fail).toBeChecked();
+  });
+
+  it('sends a non-empty note as { value, note } and leaves untouched questions bare', async () => {
+    answerPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ row: gateRow({ status: 'answered' }) }),
+    });
+    renderCard(gateRow({ id: 'g9' }));
+
+    await userEvent.click(screen.getByRole('radio', { name: 'pass' }));
+    await userEvent.type(
+      screen.getByLabelText('Note for What happened?'),
+      '  clean run  '
+    );
+    await userEvent.click(screen.getByTestId('gate-next'));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'lint' }));
+    await userEvent.click(screen.getByRole('button', { name: 'submit' }));
+
+    await waitFor(() =>
+      expect(answerPost).toHaveBeenCalledWith({
+        param: { id: 'g9' },
+        json: {
+          answers: {
+            outcome: { value: 'pass', note: 'clean run' },
+            flags: ['lint'],
+          },
+        },
+      })
+    );
+  });
+
+  it('restores a saved draft on mount, including the step, and clears it on a successful submit', async () => {
+    localStorage.setItem(
+      'gate-kit:draft:g1',
+      JSON.stringify({
+        selections: { outcome: 'fail' },
+        notes: { outcome: 'from the draft' },
+        item: 'flags',
+      })
+    );
+    answerPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ row: gateRow({ status: 'answered' }) }),
+    });
+    renderCard(gateRow());
+
+    expect(screen.getByTestId('gate-progress')).toHaveTextContent('2 of 2');
+    await userEvent.click(screen.getByTestId('gate-previous'));
+    expect(screen.getByRole('radio', { name: 'fail' })).toBeChecked();
+    expect(screen.getByLabelText('Note for What happened?')).toHaveValue(
+      'from the draft'
+    );
+
+    await userEvent.click(screen.getByTestId('gate-next'));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'types' }));
+    expect(localStorage.getItem('gate-kit:draft:g1')).not.toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'submit' }));
+
+    await waitFor(() => expect(answerPost).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(localStorage.getItem('gate-kit:draft:g1')).toBeNull()
+    );
+  });
+
+  it('reset clears the picks, the note, and the draft, and returns to the first question', async () => {
+    renderCard(gateRow());
+    await userEvent.click(screen.getByRole('radio', { name: 'pass' }));
+    await userEvent.type(screen.getByLabelText('Note for What happened?'), 'x');
+    await userEvent.click(screen.getByTestId('gate-next'));
+    expect(localStorage.getItem('gate-kit:draft:g1')).not.toBeNull();
+
+    await userEvent.click(screen.getByTestId('gate-reset'));
+
+    expect(screen.getByTestId('gate-progress')).toHaveTextContent('1 of 2');
+    expect(screen.getByRole('radio', { name: 'pass' })).not.toBeChecked();
+    expect(screen.getByLabelText('Note for What happened?')).toHaveValue('');
+    expect(screen.getByTestId('gate-next')).toBeDisabled();
+    expect(localStorage.getItem('gate-kit:draft:g1')).toBeNull();
+  });
+
+  it('drops a stored draft for a gate that is no longer open', () => {
+    localStorage.setItem(
+      'gate-kit:draft:g1',
+      JSON.stringify({ selections: { outcome: 'fail' }, notes: {}, item: null })
+    );
+    renderCard(
+      gateRow({
+        status: 'answered',
+        answer: { answers: { outcome: 'pass' }, by: 'p', answeredAt: 1 },
+      })
+    );
+    expect(localStorage.getItem('gate-kit:draft:g1')).toBeNull();
   });
 });

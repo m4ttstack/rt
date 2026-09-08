@@ -51,6 +51,7 @@
     "tui-kit:gates": "cd packages/tui-kit && bun run gates",
     "tokens:test": "cd packages/tokens && bun run test",
     "tokens:codegen": "bun run packages/tokens/scripts/generate.ts",
+    "gate-kit:test": "cd packages/gate-kit && bun run test",
     "chat:typecheck": "cd apps/chat && bun run typecheck",
     "chat:lint": "cd apps/chat && bun run lint",
     "chat:test": "cd apps/chat && bun run test -- --run",
