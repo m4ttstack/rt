@@ -1369,35 +1369,161 @@
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
+/* The questionnaire Item renders as a <fieldset>, so the UA groove border,
+   padding and inline margin have to be cleared here; min-inline-size resets
+   the fieldset's min-content default, which otherwise refuses to shrink.
+   The primitive hides every non-active item with the `hidden` attribute,
+   and an author `display` rule beats the UA [hidden] rule, hence the
+   explicit override. */
 .tui-gate-question {
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
+  gap: 0.5rem;
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-inline-size: 0;
+}
+.tui-gate-question[hidden] {
+  display: none;
 }
 .tui-gate-question-label {
   font-size: 0.85rem;
+  font-weight: 600;
+  line-height: 1.35;
   color: var(--fg);
+  margin-bottom: 0.35rem;
 }
-.tui-gate-options {
+.tui-gate-form {
   display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: center;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-width: 0;
 }
-.tui-gate-option {
-  display: inline-flex;
+.tui-gate-progress {
+  font: 500 0.7rem/1.4 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-text);
+  min-height: 1lh;
+}
+.tui-gate-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.tui-gate-choice {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  font-size: 0.82rem;
+  color: var(--fg);
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background-color 120ms,
+    border-color 120ms;
+}
+.tui-gate-choice:hover {
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+}
+.tui-gate-choice[data-checked] {
+  border-color: color-mix(in srgb, var(--amber) 60%, var(--border));
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+}
+.tui-gate-choice[data-invalid] {
+  border-color: var(--dot-bad);
+}
+.tui-gate-choice:has(> input:focus-visible) {
+  outline: 2px solid var(--amber);
+  outline-offset: 1px;
+}
+.tui-gate-choice-input {
+  margin: 2px 0 0;
+  flex-shrink: 0;
+  accent-color: var(--amber);
+}
+.tui-gate-choice-label {
+  display: flex;
+  flex: 1;
+  min-width: 0;
   align-items: center;
   gap: 6px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
-.tui-gate-option-label {
-  font-size: 0.82rem;
-  cursor: pointer;
+/* No `display` here on purpose: the primitive hides the hint with the
+   `hidden` attribute when an option has no key. */
+.tui-gate-key {
+  margin-left: auto;
+  flex-shrink: 0;
+  font: 500 0.62rem/1 var(--font-mono);
+  padding: 3px 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--muted-text);
+  background: var(--bg);
+  pointer-events: none;
+}
+.tui-gate-invalid {
+  margin: 0;
+  font-size: 0.76rem;
+  color: var(--dot-bad);
+}
+.tui-gate-note {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 30px;
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 0.8rem;
+  color: var(--fg);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.tui-gate-note::placeholder {
+  color: var(--muted-text);
+}
+.tui-gate-note:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 1px;
 }
 .tui-gate-actions {
   display: flex;
-  justify-content: flex-end;
   align-items: center;
   gap: 8px;
+  min-height: 28px;
+}
+.tui-gate-actions-end {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tui-gate-nav {
+  padding: 4px 12px;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted-text);
+}
+.tui-gate-nav:hover:not(:disabled) {
+  border-color: var(--muted);
+  color: var(--fg);
+}
+.tui-gate-nav:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 .tui-gate-error {
   margin-right: auto;
@@ -1453,6 +1579,37 @@
 .tui-gate-summary-row dd {
   margin: 0;
   color: var(--fg);
+}
+.tui-gate-chip {
+  font-size: 12px;
+  color: var(--tui-text, inherit);
+}
+.tui-gate-thread-verbs {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.tui-gate-thread-verb {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.tui-gate-thread-verb[data-checked] {
+  color: var(--amber);
+  background: color-mix(in srgb, var(--amber) 12%, transparent);
+}
+.tui-gate-thread-verb .tui-gate-key {
+  margin-left: 2px;
+}
+.tui-gate-summary-note {
+  font-size: 11px;
+  opacity: 0.7;
+}
+.tui-gate-question legend.tui-gate-question-label {
+  padding: 0;
 }
 /* Gate context, rendered as markdown -- same prose recipe as .tui-cd-note-body
    (see its own comment for why the first/last-child margin collapse has to

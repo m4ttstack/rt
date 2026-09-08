@@ -16,3 +16,6 @@ apps/board/skills/*/SKILL.md
 # buildBoardArtifacts()/buildGatewayCss() output; prettier reformatting
 # would desync the committed twin from what `bun run build:board` emits.
 apps/deck/core/generated
+# Runtime state dirs (gitignored as directories; a symlinked state/ is not matched by that pattern)
+apps/*/state
+apps/*/state.*

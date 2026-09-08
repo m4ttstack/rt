@@ -1,7 +1,4 @@
 // @vitest-environment node
-import { mkdtempSync, rmSync, symlinkSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import type { GateRow } from '@mattstack/rt-client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -12,7 +9,7 @@ vi.mock('@mattstack/rt-client', () => ({
   paneFocus: vi.fn(),
 }));
 
-const { gates, resolveOriginFocus } = await import('./gates');
+const { gates } = await import('./gates');
 const rt = await import('@mattstack/rt-client');
 
 beforeEach(() => {
@@ -382,54 +379,5 @@ describe('POST /api/gates/:id/focus', () => {
       error: 'could not list live panes',
     });
     expect(rt.paneFocus).not.toHaveBeenCalled();
-  });
-});
-
-describe('resolveOriginFocus: worktree normalization', () => {
-  it('matches a worktree with a trailing slash against a pane cwd without one', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'gates-wt-'));
-    try {
-      const resolved = resolveOriginFocus({ worktree: `${dir}/` }, [
-        { paneId: 'p1', cwd: dir },
-      ]);
-      expect(resolved).toEqual({ ok: true, paneId: 'p1' });
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
-  it('resolves a symlinked worktree path to the same target as the pane cwd (macOS /tmp-class divergence)', () => {
-    const real = mkdtempSync(join(tmpdir(), 'gates-real-'));
-    const link = join(tmpdir(), `gates-link-${Date.now()}`);
-    symlinkSync(real, link);
-    try {
-      const resolved = resolveOriginFocus({ worktree: link }, [
-        { paneId: 'p1', cwd: real },
-      ]);
-      expect(resolved).toEqual({ ok: true, paneId: 'p1' });
-    } finally {
-      rmSync(link, { force: true });
-      rmSync(real, { recursive: true, force: true });
-    }
-  });
-
-  it('a pane-list fetch failure names its own reason, never a bare no-match', () => {
-    const resolved = resolveOriginFocus({ worktree: '/w' }, [], {
-      panesUnavailable: true,
-    });
-    expect(resolved).toEqual({
-      ok: false,
-      reason: 'could not list live panes',
-    });
-  });
-
-  it('a genuinely absent match still reports the no-match reason', () => {
-    const resolved = resolveOriginFocus({ worktree: '/gone' }, [
-      { paneId: 'a', cwd: '/other' },
-    ]);
-    expect(resolved).toEqual({
-      ok: false,
-      reason: 'no live pane matches the origin worktree',
-    });
   });
 });

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import type { GateDomain } from '@mattstack/gate-kit';
 import { ICONS, Panel, SideDrawer, ToastHost } from '@mattstack/tui-kit';
 import type { BoardMR } from '../../data.ts';
 import { inferRoster } from '../../data.ts';
@@ -37,7 +38,6 @@ import { ConfigModal } from './ConfigModal.tsx';
 import { Controls } from './Controls.tsx';
 import { DraftModal } from './DraftModal.tsx';
 import { boardSummary, draftKey, getSlackMarks, mrLine } from './format.ts';
-import type { GateDomain } from './gate-format.ts';
 import {
   useBoardData,
   useLaunchAction,

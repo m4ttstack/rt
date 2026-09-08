@@ -19,6 +19,7 @@
     "build": "bun run build:client && bun build --compile src/compiled.ts --outfile dist/board"
   },
   "dependencies": {
+    "@mattstack/gate-kit": "workspace:*",
     "@mattstack/glance": "catalog:",
     "@mattstack/rt-client": "catalog:",
     "@mattstack/settings-kit": "^0.1.3",
