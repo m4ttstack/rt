@@ -1524,6 +1524,28 @@
   margin: 0;
   color: var(--fg);
 }
+.tui-gate-chip {
+  font-size: 12px;
+  color: var(--tui-text, inherit);
+}
+.tui-gate-thread-verbs {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.tui-gate-thread-verb {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  cursor: pointer;
+}
+.tui-gate-summary-note {
+  font-size: 11px;
+  opacity: 0.7;
+}
+.tui-gate-question legend.tui-gate-question-label {
+  padding: 0;
+}
 /* Gate context, rendered as markdown -- same prose recipe as .tui-cd-note-body
    (see its own comment for why the first/last-child margin collapse has to
    key on [data-part="markdown"] rather than a bare `>` selector), sized down

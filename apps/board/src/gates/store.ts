@@ -1,7 +1,10 @@
 import { join } from 'path';
 
-import type { GateAnswers, GateOrigin, GateQuestion } from '@mattstack/gate-kit';
-
+import type {
+  GateAnswers,
+  GateOrigin,
+  GateQuestion,
+} from '@mattstack/gate-kit';
 import { APP_ROOT } from '../app-root.ts';
 
 export type {
