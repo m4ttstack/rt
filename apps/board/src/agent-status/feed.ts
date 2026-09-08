@@ -1,0 +1,163 @@
+import { mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { dirname } from 'path';
+
+import {
+  AGENT_STATUS_TOPIC_PREFIX,
+  parseAgentStatusPayload,
+  type AgentSignal,
+} from '../agent-signal.ts';
+
+export const AGENT_STATUS_PATTERN = 'board/agent-status/*';
+export const PAGE_LIMIT = 500;
+
+export function isAgentStatusTopic(topic: unknown): topic is string {
+  return (
+    typeof topic === 'string' && topic.startsWith(AGENT_STATUS_TOPIC_PREFIX)
+  );
+}
+
+export interface JournalEvent {
+  id: number;
+  topic: string;
+  payload: unknown;
+}
+
+export interface AgentStatusFeedIo {
+  eventsHead(): Promise<{
+    ok: boolean;
+    data?: { cursor: number };
+    error?: string;
+  }>;
+  eventsList(
+    after: number,
+    limit: number
+  ): Promise<{
+    ok: boolean;
+    data?: { events: JournalEvent[] };
+    error?: string;
+  }>;
+  readCursor(): number | null;
+  writeCursor(cursor: number): void;
+  handle(signal: AgentSignal): Promise<void>;
+  appRoot: string;
+  log(line: string): void;
+}
+
+/**
+ * The only path by which a status signal reaches the board. Every trigger
+ * (boot, a relay push, the sweep tick) reads the journal past the cursor
+ * rather than trusting what it was handed, so live delivery and replay
+ * share one ordering and a push that arrives mid-reconnect costs nothing.
+ *
+ * The cursor advances after every event, handled or skipped, so a poison
+ * event can never wedge the feed: the sweeps remain the backstop for the
+ * one MR whose handler threw.
+ */
+export class AgentStatusFeed {
+  private cursor: number | null = null;
+  private running: Promise<void> | null = null;
+  private rerun = false;
+
+  constructor(private readonly io: AgentStatusFeedIo) {}
+
+  /** Concurrent calls coalesce: one pass runs and at most one more is
+      queued behind it, so a burst of wake-ups costs two reads, not N. */
+  catchUp(): Promise<void> {
+    if (this.running) {
+      this.rerun = true;
+      return this.running;
+    }
+    this.running = this.drain().finally(() => {
+      this.running = null;
+    });
+    return this.running;
+  }
+
+  private async drain(): Promise<void> {
+    do {
+      this.rerun = false;
+      await this.pass();
+    } while (this.rerun);
+  }
+
+  private async pass(): Promise<void> {
+    let after = await this.resolveCursor();
+    if (after === null) return;
+    for (;;) {
+      const res = await this.io.eventsList(after, PAGE_LIMIT);
+      if (!res.ok || !res.data) {
+        this.io.log(
+          `agent-status feed: journal read failed: ${res.error ?? 'unknown error'}`
+        );
+        return;
+      }
+      for (const ev of res.data.events) {
+        await this.handleOne(ev);
+        this.advance(ev.id);
+        after = ev.id;
+      }
+      if (res.data.events.length < PAGE_LIMIT) return;
+    }
+  }
+
+  /** A board that has never run the feed starts at the journal head:
+      nothing emitted before it existed is a transition it owes a reaction. */
+  private async resolveCursor(): Promise<number | null> {
+    if (this.cursor !== null) return this.cursor;
+    const stored = this.io.readCursor();
+    if (stored !== null) {
+      this.cursor = stored;
+      return stored;
+    }
+    const head = await this.io.eventsHead();
+    if (!head.ok || !head.data) {
+      this.io.log(
+        `agent-status feed: cursor seed failed: ${head.error ?? 'unknown error'}`
+      );
+      return null;
+    }
+    this.advance(head.data.cursor);
+    return head.data.cursor;
+  }
+
+  private advance(id: number): void {
+    this.cursor = id;
+    this.io.writeCursor(id);
+  }
+
+  private async handleOne(ev: JournalEvent): Promise<void> {
+    if (!isAgentStatusTopic(ev.topic)) return;
+    const payload = parseAgentStatusPayload(ev.payload);
+    if (!payload) {
+      this.io.log(
+        `agent-status feed: dropped malformed event #${ev.id} on ${ev.topic}`
+      );
+      return;
+    }
+    if (payload.appRoot !== this.io.appRoot) return;
+    const { appRoot: _appRoot, ...signal } = payload;
+    try {
+      await this.io.handle(signal);
+    } catch (err) {
+      this.io.log(
+        `agent-status feed: handler failed on #${ev.id} (${signal.mrUrl}): ${err instanceof Error ? err.message : err}`
+      );
+    }
+  }
+}
+
+export function readCursorFile(path: string): number | null {
+  try {
+    const raw = readFileSync(path, 'utf8').trim();
+    if (!raw) return null;
+    const n = Number(raw);
+    return Number.isInteger(n) && n >= 0 ? n : null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeCursorFile(path: string, cursor: number): void {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, String(cursor));
+}
