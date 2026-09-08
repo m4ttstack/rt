@@ -1,6 +1,11 @@
 import { readFileSync, rmSync, watch } from 'fs';
 import { basename, dirname, join } from 'path';
 
+import {
+  deckAppUrl,
+  ensureEventBridgeRule,
+  type EventBridgeRule,
+} from '@mattstack/app-server/event-bridge';
 import type { MRDetail, PullRequest } from '@mattstack/glance';
 import {
   GitLabProvider,
@@ -106,10 +111,9 @@ import {
 } from './gates/execute-sweep-action.ts';
 import { panesForOrigin, resolveOriginFocus } from './gates/focus.ts';
 import {
-  ensureBridgeRule,
+  boardBridgeRule,
   ingestRelayFrame,
   reconcileGatesOnBoot,
-  type EventBridgeRule,
   type GateEventFrame,
 } from './gates/ingest.ts';
 import { migrateLegacySessions } from './gates/legacy-session-migration.ts';
@@ -3100,12 +3104,12 @@ if (!FIXTURE_DIR) {
 }
 
 // Bridge-rule registration: upsert this board's gate-opened rule into
-// `rt.notify.eventBridges` (merge-not-clobber -- see ensureBridgeRule), so a
-// gate/opened/* event raises a desktop notification once the rt daemon side
-// has registered that key. Local file reads, not a daemon round trip, so
-// this runs synchronously and cheaply; caught so a stale rt-client copy
-// without the key yet (or any other read/write failure) never blocks boot --
-// just skip and log once.
+// `rt.notify.eventBridges` (merge-not-clobber -- see ensureEventBridgeRule),
+// so a gate/opened/* event raises a desktop notification, with a click-through
+// url, once the rt daemon side has registered that key. `deckAppUrl` awaits a
+// local `/api/status` round trip, so the whole reconcile runs async and is
+// caught so a stale rt-client copy without the key yet (or any other
+// read/write/lookup failure) never blocks boot -- just skip and log once.
 function readEventBridges(): EventBridgeRule[] {
   return getSetting<EventBridgeRule[]>('rt.notify.eventBridges').value ?? [];
 }
@@ -3113,13 +3117,21 @@ function writeEventBridges(next: EventBridgeRule[]): void {
   setSetting('rt.notify.eventBridges', next, 'user');
 }
 if (!FIXTURE_DIR) {
-  try {
-    ensureBridgeRule(readEventBridges, writeEventBridges);
-  } catch (err) {
-    console.error(
-      `gate bridge-rule reconcile skipped: ${err instanceof Error ? err.message : err}`
-    );
-  }
+  void (async () => {
+    try {
+      const boardUrl = await deckAppUrl('board', `http://localhost:${port}`);
+      ensureEventBridgeRule(
+        readEventBridges,
+        writeEventBridges,
+        boardBridgeRule(boardUrl),
+        { replacePatterns: ['board/gate/opened/*'] }
+      );
+    } catch (err) {
+      console.error(
+        `gate bridge-rule reconcile skipped: ${err instanceof Error ? err.message : err}`
+      );
+    }
+  })();
 }
 
 // Hot-reload config.json so adding/removing members (or any setting) takes

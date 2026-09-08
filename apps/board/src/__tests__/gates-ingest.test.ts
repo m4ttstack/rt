@@ -1,13 +1,15 @@
 import { describe, expect, test } from 'bun:test';
 
+import {
+  ensureEventBridgeRule,
+  type EventBridgeRule,
+} from '@mattstack/app-server/event-bridge';
 import type { GateRow as FacilityGateRow } from '@mattstack/rt-client';
 import {
-  ensureBridgeRule,
+  boardBridgeRule,
   GATE_LIST_PAGE_LIMIT,
-  GATE_OPENED_BRIDGE_RULE,
   ingestRelayFrame,
   reconcileGatesOnBoot,
-  type EventBridgeRule,
   type GateCacheTarget,
   type GateReconcileTarget,
 } from '../gates/ingest.ts';
@@ -225,7 +227,10 @@ describe('reconcileGatesOnBoot', () => {
   });
 });
 
-describe('ensureBridgeRule', () => {
+describe('boardBridgeRule', () => {
+  const BOARD_URL = 'https://board.mattstack';
+  const rule = boardBridgeRule(BOARD_URL);
+
   function fakeIo(initial: EventBridgeRule[]): {
     read: () => EventBridgeRule[];
     write: (next: EventBridgeRule[]) => void;
@@ -243,33 +248,45 @@ describe('ensureBridgeRule', () => {
     };
   }
 
-  test('rule pattern is gate/opened/*, template renders label, no per-rule suppression field', () => {
-    expect(GATE_OPENED_BRIDGE_RULE.pattern).toBe('gate/opened/*');
-    expect(GATE_OPENED_BRIDGE_RULE.title).toContain('{label}');
-    // Suppression is payload-driven (a bridge event's own `paneId`), not a
-    // property of the rule -- the rule carries only pattern/category/title/message.
-    expect(Object.keys(GATE_OPENED_BRIDGE_RULE).sort()).toEqual([
-      'category',
-      'message',
-      'pattern',
-      'title',
-    ]);
+  test('rule matches the board contract: pattern, subjectPrefix, templates, and click-through url', () => {
+    expect(rule).toEqual({
+      pattern: 'gate/opened/*',
+      subjectPrefix: 'mr:',
+      category: 'gate',
+      title: '{label}',
+      message: '{question}',
+      url: `${BOARD_URL}/?gate={id}`,
+    });
   });
 
   test('neither rule present: the gate-opened rule is added', () => {
     const io = fakeIo([]);
-    ensureBridgeRule(io.read, io.write);
+    ensureEventBridgeRule(io.read, io.write, rule);
     expect(io.writes).toHaveLength(1);
-    expect(io.writes[0]).toEqual([GATE_OPENED_BRIDGE_RULE]);
+    expect(io.writes[0]).toEqual([rule]);
   });
 
-  test('new-pattern rule already present: unchanged, no duplicate written', () => {
-    const io = fakeIo([GATE_OPENED_BRIDGE_RULE]);
-    ensureBridgeRule(io.read, io.write);
+  test('identical rule already present: unchanged, no duplicate written', () => {
+    const io = fakeIo([rule]);
+    ensureEventBridgeRule(io.read, io.write, rule);
     expect(io.writes).toHaveLength(0);
   });
 
-  test('old board/gate/opened/* rule present: replaced with the new-pattern rule, not duplicated', () => {
+  test('stale same-identity rule (old {subject} body, no url) is replaced in place', () => {
+    const stale: EventBridgeRule = {
+      pattern: 'gate/opened/*',
+      subjectPrefix: 'mr:',
+      category: 'gate',
+      title: '{label}',
+      message: '{subject}',
+    };
+    const io = fakeIo([stale]);
+    ensureEventBridgeRule(io.read, io.write, rule);
+    expect(io.writes).toHaveLength(1);
+    expect(io.writes[0]).toEqual([rule]);
+  });
+
+  test('old board/gate/opened/* legacy rule is removed when installing', () => {
     const legacy: EventBridgeRule = {
       pattern: 'board/gate/opened/*',
       category: 'gate',
@@ -277,9 +294,11 @@ describe('ensureBridgeRule', () => {
       message: '{mrUrl}',
     };
     const io = fakeIo([legacy]);
-    ensureBridgeRule(io.read, io.write);
+    ensureEventBridgeRule(io.read, io.write, rule, {
+      replacePatterns: ['board/gate/opened/*'],
+    });
     expect(io.writes).toHaveLength(1);
-    expect(io.writes[0]).toEqual([GATE_OPENED_BRIDGE_RULE]);
+    expect(io.writes[0]).toEqual([rule]);
   });
 
   test('unrelated entries are preserved alongside the appended rule', () => {
@@ -290,8 +309,8 @@ describe('ensureBridgeRule', () => {
       message: '{body}',
     };
     const io = fakeIo([other]);
-    ensureBridgeRule(io.read, io.write);
+    ensureEventBridgeRule(io.read, io.write, rule);
     expect(io.writes).toHaveLength(1);
-    expect(io.writes[0]).toEqual([other, GATE_OPENED_BRIDGE_RULE]);
+    expect(io.writes[0]).toEqual([other, rule]);
   });
 });
