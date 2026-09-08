@@ -38,10 +38,21 @@ All 2026-09-08, during design:
 | Suite scope | Board only; other apps' compliance is not this effort and gets no tickets now | Matt |
 | Distribution | Fits the bundle story; settings stay behind the rt-client resolver; IF NOT EXISTS migrations only; ship as board's own release tag after apps PR 24; installed machines need a first-run JSON import | max (bundle pipeline owner) |
 
+## The state root
+
+One function, `boardStateRoot()`, anchors everything that moves:
+`dirname(BOARD_STATE_DB)` when the env is set, else `~/.mattstack/board`.
+HOME resolved at call time. The db lives at `<root>/state.db`, claim-ticket
+handles under `<root>/state/<lane>/`, and the audit log moves to
+`<root>/logs/doctor-audit.jsonl` (still append-only JSONL). APP_ROOT keeps
+only `config.json` and `.env`. This anchoring is forced by the claim
+ticket: the CLI derives the db from the handle path, so handles must be
+minted under the db's own root, or a checkout server would hand paths
+pointing at a different db than it opened. Panes never need the env.
+
 ## The database
 
-- Path: `BOARD_STATE_DB` when set, else `~/.mattstack/board/state.db`. HOME
-  resolved at call time. Panes never need the env; see the claim ticket.
+- Path: `<boardStateRoot()>/state.db`.
 - `bun:sqlite`, copying rt's `lib/state/db.ts` pattern: lazy singleton
   `getStateDb()`, `openStateDb(path)` seam for tests, `closeStateDb()`.
   Pragmas on every open, in order: `busy_timeout` first, then
@@ -62,19 +73,32 @@ All 2026-09-08, during design:
 
 ## Schema v1
 
-Three lifecycle tables mirroring today's per-lane state shapes:
+One lifecycle table for all three lanes. Every reader consumes these
+states whole (`readReviewStates()` and friends return full objects) and
+nothing queries by inner field, so the state itself is one JSON column,
+rt's `project_mrs.pr` idiom, with extracted columns only for what is
+actually keyed or filtered:
 
-- `reviews`, `responds`, `doctors`: identity (`mr_url` primary key within
-  the table, `iid`), lifecycle (`status`, `message`, `outcome` where the
-  lane has one), session plumbing (`session_id`, `agent_id`, `pane_id`,
-  `tab_id`, `workspace_id`, gate fields where the lane has them),
-  `started_at`, `updated_at`, plus `handle TEXT UNIQUE` (the claim ticket)
-  and `report TEXT` (nullable; replaces the sibling `.md` file as the
-  record).
+```sql
+CREATE TABLE IF NOT EXISTS agent_states (
+  lane       TEXT NOT NULL,   -- review | respond | doctor
+  mr_url     TEXT NOT NULL,
+  state      TEXT NOT NULL,   -- JSON (ReviewState | RespondState | DoctorState)
+  handle     TEXT NOT NULL,   -- claim ticket path
+  report     TEXT,            -- ingested markdown, replaces the sibling .md
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (lane, mr_url)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_states_handle
+  ON agent_states(handle);
+```
 
-Supporting tables mirroring their modules: `gates`, `drafts`, `nudges`,
-`nudges_sent`, `outbox` (FIFO, bounded-retry writes like rt's
-`notify_queue`), and `slack_messages` (today's per-MR `state/slack/` files).
+Supporting tables mirroring their modules: `drafts` (keyed mr_url + kind),
+`nudges` (keyed id), `nudges_sent` (keyed mr_url), `outbox` (FIFO,
+bounded-retry writes like rt's `notify_queue`), and `slack_refs` (today's
+per-MR `state/slack/` files, keyed mr_url). No `gates` table: per-gate
+files were already retired for the daemon-backed gate cache; only the
+boot cleanup of the leftover directory remains.
 
 A namespaced `kv (ns, k, v JSON, updated_at)` for the blobs: the two slack
 index caches, the agent-status cursor, and triage memory
@@ -132,7 +156,8 @@ The v1 migration ends with a one-shot import, guarded by a kv marker:
 - Settings (`board.*` keys, `config.json`, `.env`): stay behind the
   rt-client settings resolver and APP_ROOT config files. Settings are
   RT-47's domain, not state.
-- `logs/doctor-audit.jsonl`: logs stay append-only files, matching rt.
+- The audit log stays an append-only JSONL file, matching rt, though its
+  path moves under the state root (see above).
 - `~/.mattstack/ci-attendants/`: shared surface; the watch-ci skill's shell
   scripts write these lease files directly, and they are already
   home-anchored.
