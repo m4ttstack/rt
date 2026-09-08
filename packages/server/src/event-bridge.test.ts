@@ -18,17 +18,38 @@ const BOARD_RULE: EventBridgeRule = {
   url: 'https://board.localhost/?gate={id}',
 };
 
+/** A read/write pair backed by one mutable slot, the way the real settings
+    store behaves (a write is visible to the next read) -- ensureEventBridgeRule's
+    verify-after-write pass depends on that, so a mock that ignores writes
+    would misreport every call as a lost race. */
+function fakeStore(initial: EventBridgeRule[]): {
+  read: () => EventBridgeRule[];
+  write: (next: EventBridgeRule[]) => void;
+  writes: EventBridgeRule[][];
+} {
+  let current = initial;
+  const writes: EventBridgeRule[][] = [];
+  return {
+    read: () => current,
+    write: next => {
+      writes.push(next);
+      current = next;
+    },
+    writes,
+  };
+}
+
 test('ensureEventBridgeRule appends when the rule identity is absent', () => {
-  const write = vi.fn();
-  ensureEventBridgeRule(() => [], write, BOARD_RULE);
-  expect(write).toHaveBeenCalledTimes(1);
-  expect(write).toHaveBeenCalledWith([BOARD_RULE]);
+  const store = fakeStore([]);
+  ensureEventBridgeRule(store.read, store.write, BOARD_RULE);
+  expect(store.writes).toHaveLength(1);
+  expect(store.writes[0]).toEqual([BOARD_RULE]);
 });
 
 test('ensureEventBridgeRule is a no-op when an identical rule already exists', () => {
-  const write = vi.fn();
-  ensureEventBridgeRule(() => [{ ...BOARD_RULE }], write, BOARD_RULE);
-  expect(write).not.toHaveBeenCalled();
+  const store = fakeStore([{ ...BOARD_RULE }]);
+  ensureEventBridgeRule(store.read, store.write, BOARD_RULE);
+  expect(store.writes).toHaveLength(0);
 });
 
 test('ensureEventBridgeRule replaces in place when the identity matches but the body differs', () => {
@@ -40,10 +61,10 @@ test('ensureEventBridgeRule replaces in place when the identity matches but the 
     title: 'x',
     message: 'y',
   };
-  const write = vi.fn();
-  ensureEventBridgeRule(() => [other, stale], write, BOARD_RULE);
-  expect(write).toHaveBeenCalledTimes(1);
-  expect(write).toHaveBeenCalledWith([other, BOARD_RULE]);
+  const store = fakeStore([other, stale]);
+  ensureEventBridgeRule(store.read, store.write, BOARD_RULE);
+  expect(store.writes).toHaveLength(1);
+  expect(store.writes[0]).toEqual([other, BOARD_RULE]);
 });
 
 test('ensureEventBridgeRule leaves a same-pattern different-subjectPrefix rule alone and appends', () => {
@@ -52,10 +73,10 @@ test('ensureEventBridgeRule leaves a same-pattern different-subjectPrefix rule a
     subjectPrefix: 'run:',
     url: 'https://console.localhost/gates/{id}',
   };
-  const write = vi.fn();
-  ensureEventBridgeRule(() => [consoleRule], write, BOARD_RULE);
-  expect(write).toHaveBeenCalledTimes(1);
-  expect(write).toHaveBeenCalledWith([consoleRule, BOARD_RULE]);
+  const store = fakeStore([consoleRule]);
+  ensureEventBridgeRule(store.read, store.write, BOARD_RULE);
+  expect(store.writes).toHaveLength(1);
+  expect(store.writes[0]).toEqual([consoleRule, BOARD_RULE]);
 });
 
 test('ensureEventBridgeRule drops replacePatterns entries when installing', () => {
@@ -65,12 +86,60 @@ test('ensureEventBridgeRule drops replacePatterns entries when installing', () =
     title: '{label}',
     message: '{subject}',
   };
-  const write = vi.fn();
-  ensureEventBridgeRule(() => [legacy], write, BOARD_RULE, {
+  const store = fakeStore([legacy]);
+  ensureEventBridgeRule(store.read, store.write, BOARD_RULE, {
     replacePatterns: ['board/gate/opened/*'],
   });
-  expect(write).toHaveBeenCalledTimes(1);
-  expect(write).toHaveBeenCalledWith([BOARD_RULE]);
+  expect(store.writes).toHaveLength(1);
+  expect(store.writes[0]).toEqual([BOARD_RULE]);
+});
+
+test('ensureEventBridgeRule drops a same-pattern legacy rule with no subjectPrefix when the incoming rule carries one', () => {
+  // The exact body the released board wrote before subjectPrefix existed --
+  // an absent prefix matches every subject in rt, so it double-notifies
+  // alongside a newly installed scoped rule unless it is absorbed.
+  const legacyCatchAll: EventBridgeRule = {
+    pattern: 'gate/opened/*',
+    category: 'gate',
+    title: '{label}',
+    message: '{subject}',
+  };
+  const store = fakeStore([legacyCatchAll]);
+  ensureEventBridgeRule(store.read, store.write, BOARD_RULE);
+  expect(store.writes).toHaveLength(1);
+  expect(store.writes[0]).toEqual([BOARD_RULE]);
+});
+
+test('ensureEventBridgeRule retries once when a stale read after write shows the rule missing', () => {
+  const writes: EventBridgeRule[][] = [];
+  const write = (next: EventBridgeRule[]) => writes.push(next);
+  let readCalls = 0;
+  // First read (before the write): empty. Second read (the verify pass,
+  // simulating a concurrent writer's stale snapshot): still empty, as if
+  // the just-completed write never landed.
+  const read = () => {
+    readCalls++;
+    return [] as EventBridgeRule[];
+  };
+  ensureEventBridgeRule(read, write, BOARD_RULE);
+  expect(readCalls).toBe(2);
+  expect(writes).toHaveLength(2);
+  expect(writes[0]).toEqual([BOARD_RULE]);
+  expect(writes[1]).toEqual([BOARD_RULE]);
+});
+
+test('ensureEventBridgeRule does not retry when the verify read shows the rule present', () => {
+  const writes: EventBridgeRule[][] = [];
+  const write = (next: EventBridgeRule[]) => writes.push(next);
+  let readCalls = 0;
+  const read = () => {
+    readCalls++;
+    // Second call (the verify pass) sees the write that just landed.
+    return readCalls === 1 ? [] : [BOARD_RULE];
+  };
+  ensureEventBridgeRule(read, write, BOARD_RULE);
+  expect(readCalls).toBe(2);
+  expect(writes).toHaveLength(1);
 });
 
 function tempStateDir(): string {
@@ -104,7 +173,10 @@ test('deckAppUrl returns the matching row url on the happy path', async () => {
     });
     expect(url).toBe('https://board.mattstack');
     expect(fetchImpl).toHaveBeenCalledTimes(1);
-    expect(fetchImpl).toHaveBeenCalledWith('http://127.0.0.1:4123/api/status');
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'http://127.0.0.1:4123/api/v1/status',
+      { signal: expect.any(AbortSignal) }
+    );
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

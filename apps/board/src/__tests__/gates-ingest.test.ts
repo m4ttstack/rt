@@ -272,15 +272,18 @@ describe('boardBridgeRule', () => {
     expect(io.writes).toHaveLength(0);
   });
 
-  test('stale same-identity rule (old {subject} body, no url) is replaced in place', () => {
-    const stale: EventBridgeRule = {
+  test('the real released rule (no subjectPrefix, message {subject}, no url) is replaced with nothing left behind', () => {
+    // The exact body the first shipped board wrote, before subjectPrefix
+    // existed on this rule at all -- an absent prefix matches every subject
+    // in rt, so it must be gone once the scoped rule lands, not merely
+    // updated in place alongside it.
+    const released: EventBridgeRule = {
       pattern: 'gate/opened/*',
-      subjectPrefix: 'mr:',
       category: 'gate',
       title: '{label}',
       message: '{subject}',
     };
-    const io = fakeIo([stale]);
+    const io = fakeIo([released]);
     ensureEventBridgeRule(io.read, io.write, rule);
     expect(io.writes).toHaveLength(1);
     expect(io.writes[0]).toEqual([rule]);

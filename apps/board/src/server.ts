@@ -3107,7 +3107,7 @@ if (!FIXTURE_DIR) {
 // `rt.notify.eventBridges` (merge-not-clobber -- see ensureEventBridgeRule),
 // so a gate/opened/* event raises a desktop notification, with a click-through
 // url, once the rt daemon side has registered that key. `deckAppUrl` awaits a
-// local `/api/status` round trip, so the whole reconcile runs async and is
+// local `/api/v1/status` round trip, so the whole reconcile runs async and is
 // caught so a stale rt-client copy without the key yet (or any other
 // read/write/lookup failure) never blocks boot -- just skip and log once.
 function readEventBridges(): EventBridgeRule[] {

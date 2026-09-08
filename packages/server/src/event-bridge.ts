@@ -25,6 +25,32 @@ export interface EventBridgeRule {
  * field). `write` runs only when the resulting list actually differs from
  * what `read()` returned.
  */
+function mergeRule(
+  current: EventBridgeRule[],
+  rule: EventBridgeRule,
+  legacy: Set<string>
+): EventBridgeRule[] {
+  // A stored entry with the same pattern and no subjectPrefix is the shape
+  // the first released version of this rule wrote (before subjectPrefix
+  // existed) -- an absent prefix matches every subject in rt, so it keeps
+  // double-notifying alongside a newly scoped rule unless it goes too.
+  const withoutStale = current.filter(
+    r =>
+      !legacy.has(r.pattern) &&
+      !(
+        rule.subjectPrefix !== undefined &&
+        r.pattern === rule.pattern &&
+        r.subjectPrefix === undefined
+      )
+  );
+  const idx = withoutStale.findIndex(
+    r => r.pattern === rule.pattern && r.subjectPrefix === rule.subjectPrefix
+  );
+  return idx === -1
+    ? [...withoutStale, rule]
+    : withoutStale.map((r, i) => (i === idx ? rule : r));
+}
+
 export function ensureEventBridgeRule(
   read: () => EventBridgeRule[],
   write: (next: EventBridgeRule[]) => void,
@@ -33,15 +59,18 @@ export function ensureEventBridgeRule(
 ): void {
   const legacy = new Set(opts?.replacePatterns ?? []);
   const current = read();
-  const withoutLegacy = current.filter(r => !legacy.has(r.pattern));
-  const idx = withoutLegacy.findIndex(
+  const next = mergeRule(current, rule, legacy);
+  if (JSON.stringify(current) === JSON.stringify(next)) return;
+  write(next);
+
+  // Board and console both read-modify-write this same setting at boot with
+  // no lock, so a stale read here can silently drop a write the other app
+  // made in between. One verify-and-retry catches that race without looping.
+  const after = read();
+  const stillMissing = !after.some(
     r => r.pattern === rule.pattern && r.subjectPrefix === rule.subjectPrefix
   );
-  const next =
-    idx === -1
-      ? [...withoutLegacy, rule]
-      : withoutLegacy.map((r, i) => (i === idx ? rule : r));
-  if (JSON.stringify(current) !== JSON.stringify(next)) write(next);
+  if (stillMissing) write(mergeRule(after, rule, legacy));
 }
 
 /** Where deck's serve boot writes `api.json` (`apps/deck/src/api/state.ts`
@@ -60,13 +89,14 @@ interface DeckStatusRow {
 }
 
 /**
- * Looks up an app's local url through deck's `/api/status`, the way the
- * board itself renders app links. Uses `url` (deck's local
- * `https://<name>.<tld>` form), never `publicUrl` (the tunnel address,
- * meaningless for a notification click handled on this machine). Any
- * failure -- deck not running, no `api.json`, a bad port, a non-200
- * response, or a missing/null row -- returns `fallback` rather than
- * throwing, since this only ever runs at app boot.
+ * Looks up an app's local url through deck's `GET /api/v1/status` (the
+ * canonical route; `/api/status` is a deprecated GET alias kept for one
+ * release), the way the board itself renders app links. Uses `url` (deck's
+ * local `https://<name>.<tld>` form), never `publicUrl` (the tunnel
+ * address, meaningless for a notification click handled on this machine).
+ * Any failure -- deck not running, no `api.json`, a bad port, a non-200 or
+ * timed-out response, or a missing/null row -- returns `fallback` rather
+ * than throwing, since this only ever runs at app boot.
  */
 export async function deckAppUrl(
   name: string,
@@ -81,7 +111,13 @@ export async function deckAppUrl(
     );
     const info = JSON.parse(raw) as { port?: unknown };
     if (!Number.isInteger(info.port)) return fallback;
-    const res = await fetchImpl(`http://127.0.0.1:${info.port}/api/status`);
+    const res = await fetchImpl(
+      `http://127.0.0.1:${info.port}/api/v1/status`,
+      // A hung deck must not leave this promise pending forever -- an abort
+      // falls into the catch below and returns `fallback`, same as any
+      // other failure.
+      { signal: AbortSignal.timeout(2000) }
+    );
     if (!res.ok) return fallback;
     const body = (await res.json()) as { apps?: DeckStatusRow[] };
     const row = (body.apps ?? []).find(a => a.name === name);

@@ -26,7 +26,7 @@ support, tray button) is a separate plan in repo-tools; it ships first.
   installed (today's behavior).
 - `<boardUrl>` / `<consoleUrl>` come from deck: read `api.json` under
   deck's state dir (`apps/deck/src/api/state.ts` `stateDir()`, the
-  `~/.mattstack/deck` tree), `GET http://127.0.0.1:<port>/api/status`,
+  `~/.mattstack/deck` tree), `GET http://127.0.0.1:<port>/api/v1/status`,
   find the row whose `name` is the app's deck name (`board` / `console`),
   take its `url` (the local `https://<name>.<tld>` form, NOT `publicUrl`,
   which is the tunnel address). Fall back to `http://localhost:<own port>`
