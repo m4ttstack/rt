@@ -3,10 +3,12 @@ import { useEffect, useState } from 'react';
 import { ContextMenu } from '@mattstack/tui-kit';
 import { useAutoGrowTextarea } from '@mattstack/tui-kit/hooks';
 import type { BoardMR } from '../../data.ts';
+import type { MrAction } from '../../mr-action.ts';
 import type { BoardMRWithReview, RowContext, RowMenuState } from '../types.ts';
 import {
   doctorItemLabel,
   getSlackMarks,
+  gitlabMenuItems,
   nudgeTargets,
   respondItemLabel,
   reviewMenuItems,
@@ -33,6 +35,8 @@ function RowMenu({
   canDoctor,
   onDraftState,
   canDraftState,
+  onMrAction,
+  onRebaseLocal,
   onNudge,
   canNudge,
   onResumeReview,
@@ -56,6 +60,8 @@ function RowMenu({
   canDoctor: boolean;
   onDraftState: (mr: BoardMR, draft: boolean) => void;
   canDraftState: boolean;
+  onMrAction: (mr: BoardMR, action: MrAction) => void;
+  onRebaseLocal: (mr: BoardMR, note?: string) => void;
   onNudge: (mr: BoardMR, reviewer: string) => void;
   canNudge: boolean;
   onResumeReview: (mr: BoardMR, note?: string) => void;
@@ -65,6 +71,9 @@ function RowMenu({
   const [reactions, setReactions] = useState<string[]>(
     (menu.mr as BoardMRWithReview).slack?.reactions ?? []
   );
+  // Merge is the one irreversible item: the first click flips its label to a
+  // confirm, the second fires. Any other click closes the menu, which resets.
+  const [confirmMerge, setConfirmMerge] = useState(false);
   const [pending, setPending] = useState<string[]>([]);
   // Alt-held flips pane-launching items into "+ note" mode; alt-clicking one
   // swaps the menu for a note box whose Enter fires the captured action.
@@ -94,6 +103,11 @@ function RowMenu({
   const found = slack?.status === 'found';
   const showSlack = ctx.local && ctx.slackEnabled;
   const peers = ctx.local && canNudge ? nudgeTargets(mrx) : [];
+  const gitlabItems = gitlabMenuItems(mr);
+  const canRebaseLocal =
+    mr.blockers?.hasConflicts ||
+    mr.rebaseButton.visible ||
+    (mr.behindTarget ?? 0) > 0;
   const run = (fn: () => void) => () => {
     fn();
     onClose();
@@ -196,6 +210,7 @@ function RowMenu({
     >
       <ContextMenu.Label>!{mr.iid}</ContextMenu.Label>
 
+      {ctx.local && <ContextMenu.Label>panes</ContextMenu.Label>}
       {ctx.local &&
         reviewMenuItems(mrx.review?.status).map(item => (
           <ContextMenu.Item
@@ -263,12 +278,56 @@ function RowMenu({
           }
         />
       )}
+      {/* The doctor chassis scoped to a checkout rebase — offered whenever a
+          rebase is plausibly wanted (conflicts, GitLab's own rebase button
+          raised, or merely behind target), since it's the fallback for the
+          gitlab-section rebase failing. A doctor already in flight re-focuses
+          via the endpoint's dedup rather than spawning a second pane. */}
+      {ctx.local && canRebaseLocal && (
+        <ContextMenu.Item
+          label="rebase locally"
+          hint={paneHint}
+          onClick={paneClick('rebase locally', note => onRebaseLocal(mr, note))}
+        />
+      )}
+      {ctx.local && (gitlabItems.length > 0 || canDraftState) && (
+        <>
+          <ContextMenu.Separator />
+          <ContextMenu.Label>gitlab</ContextMenu.Label>
+        </>
+      )}
+      {ctx.local &&
+        gitlabItems.map(item => (
+          <ContextMenu.Item
+            key={item.kind}
+            label={
+              item.kind === 'merge' && confirmMerge
+                ? 'really merge?'
+                : item.label
+            }
+            hint="gitlab"
+            disabled={item.disabled}
+            onClick={
+              item.kind === 'merge' && !confirmMerge
+                ? () => setConfirmMerge(true)
+                : run(() => onMrAction(mr, item.kind))
+            }
+          />
+        ))}
       {ctx.local && canDraftState && (
         <ContextMenu.Item
           label={mr.isDraft ? 'mark ready' : 'mark as draft'}
           hint="gitlab"
           onClick={run(() => onDraftState(mr, !mr.isDraft))}
         />
+      )}
+      {/* On a remote board no pane/gitlab section renders above, so the misc
+          items sit right under the title and need no divider of their own. */}
+      {ctx.local && (
+        <>
+          <ContextMenu.Separator />
+          <ContextMenu.Label>misc</ContextMenu.Label>
+        </>
       )}
       {/* Ask a peer whose review left comments to look again. Only ever offered
           for your own MR, and only while no ask of yours is still outstanding. */}

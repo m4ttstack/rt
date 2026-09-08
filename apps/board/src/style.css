@@ -165,8 +165,7 @@
   opacity: 0;
   transition: opacity 0.1s ease;
 }
-.tui-row:hover .tui-copy-inline,
-.tui-card:hover .tui-copy-inline {
+.tui-row:hover .tui-copy-inline {
   opacity: 0.9;
 }
 .tui-copy-inline:hover {
@@ -725,68 +724,6 @@
   color: var(--amber);
   font: 500 0.78rem/1.5 var(--font-sans);
   margin-top: 0.2rem;
-}
-
-/* ── grid / cards ─────────────────────────────────────────────────── */
-.tui-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
-  gap: 1.1rem;
-  padding: 0.5rem 1rem 0.8rem;
-}
-.tui-card {
-  position: relative;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--card);
-  padding: 1rem 0.9rem 0.7rem;
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-}
-.tui-card:hover {
-  border-color: var(--accent);
-}
-.tui-card-label {
-  position: absolute;
-  top: -0.72em;
-  left: 0.7rem;
-  background: var(--card);
-  padding: 0 0.45rem;
-  font-size: 0.74rem;
-  color: var(--muted-text);
-  display: inline-flex;
-  gap: 0.4rem;
-  align-items: baseline;
-}
-.tui-card-title {
-  font-weight: 600;
-  font-size: 0.85rem;
-  line-height: 1.4;
-  margin-bottom: 0.2rem;
-}
-.tui-card-branch {
-  color: var(--muted-text);
-  font-size: 0.76rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.tui-card-tokens {
-  margin-top: 0.4rem;
-  margin-bottom: 0.5rem;
-}
-.tui-blockers {
-  list-style: none;
-  margin: auto 0 0;
-  padding: 0.45rem 0.6rem;
-  border-left: 2px solid var(--amber);
-  background: color-mix(in srgb, var(--amber) 7%, transparent);
-  font-size: 0.75rem;
-  color: var(--fg);
-}
-.tui-blockers li {
-  opacity: 0.85;
 }
 
 /* ── chrome ───────────────────────────────────────────────────────── */
@@ -1402,13 +1339,6 @@
    row below the branch, so they don't compete with GitLab-native flags. */
 .tui-row-board {
   margin-top: 5px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-.tui-card-board {
-  margin-top: 6px;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -2075,8 +2005,7 @@
 }
 
 /* rows are clickable (open MR); local rows also right-click for actions */
-.tui-row[data-local='1'],
-.tui-card[data-local='1'] {
+.tui-row[data-local='1'] {
   cursor: context-menu;
 }
 

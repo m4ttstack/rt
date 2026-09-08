@@ -141,6 +141,11 @@ import { isLocalRequest } from './local.ts';
 import { resolveBoardSkill, type BoardSkillKind } from './manifest-bindings.ts';
 import { memoizeAsync } from './memoize-async.ts';
 import {
+  isJsonMediaType,
+  parseMrActionBody,
+  runMrAction,
+} from './mr-action.ts';
+import {
   makeSwitchboardClient,
   type SwitchboardClient,
 } from './peer/client.ts';
@@ -1631,11 +1636,22 @@ const httpServer = Bun.serve({
             }
           }
         }
-        const { tier, fixClasses } = manualDoctorFields(
-          triage,
-          mr.author.username,
-          identity
-        );
+        // mode "rebase" is a scoped doctor: checkout tier (whose base
+        // playbook is exactly worktree + rebase) with an EMPTY fix-class
+        // allowlist, so CI triage and code fixes stay out of scope, plus a
+        // note pinning the job to the rebase alone.
+        const manual = manualDoctorFields(triage, mr.author.username, identity);
+        const tier = parsed.mode === 'rebase' ? undefined : manual.tier;
+        const fixClasses = parsed.mode === 'rebase' ? [] : manual.fixClasses;
+        const launchNote =
+          parsed.mode === 'rebase'
+            ? [
+                'rebase-only: rebase the source branch onto its target, resolve conflicts, and push; skip CI triage and any other fixes',
+                note,
+              ]
+                .filter(Boolean)
+                .join('. ')
+            : note;
         const statePath = doctorFilePath(parsed.mrUrl);
         writeDoctorState(statePath, {
           mrUrl: parsed.mrUrl,
@@ -1655,7 +1671,7 @@ const httpServer = Bun.serve({
           skill: resolveLaunchSkill('doctor', parsed.mrUrl),
           author,
           ...loadAgentSettings(),
-          note,
+          note: launchNote,
           tier,
           fixClasses,
         })
@@ -1857,6 +1873,61 @@ const httpServer = Bun.serve({
             );
           }
           return new Response(`gitlab update failed: ${message}`, {
+            status: 502,
+          });
+        }
+      }
+      case '/mr/action': {
+        // Fire one GitLab-side MR action (merge / rebase / auto-merge arm or
+        // cancel) from the row menu. Visibility is the client's job (the
+        // view-model's button state); GitLab itself is the permission check.
+        if (req.method !== 'POST')
+          return new Response('method not allowed', { status: 405 });
+        if (!isLocalRequest(req))
+          return new Response('forbidden', { status: 403 });
+        // CSRF gate: see isJsonMediaType for why this is an exact media-type
+        // match, not the includes() form the older endpoints use.
+        if (!isJsonMediaType(req.headers.get('content-type')))
+          return new Response('expected application/json', { status: 415 });
+        if (!gitlabToken)
+          return new Response('gitlab token not configured', { status: 400 });
+        let body: unknown;
+        try {
+          body = await req.json();
+        } catch {
+          return new Response('invalid json', { status: 400 });
+        }
+        const parsed = parseMrActionBody(body);
+        if (!parsed) {
+          return new Response(
+            'expected { mrUrl: string, iid: number, action: merge|rebase|setAutoMerge|cancelAutoMerge }',
+            { status: 400 }
+          );
+        }
+        const snapshot = await cache.get();
+        const mr = snapshot.mrs.find(m => m.webUrl === parsed.mrUrl);
+        if (!mr)
+          return new Response(`unknown MR "${parsed.mrUrl}"`, { status: 400 });
+        const path = projectPathFromWebUrl(parsed.mrUrl, config.gitlabHost);
+        if (!path)
+          return new Response(
+            `could not derive a project path from "${parsed.mrUrl}"`,
+            { status: 400 }
+          );
+        try {
+          await runMrAction(await gitlab(), path, parsed.iid, parsed.action);
+          // The cached snapshot predates the action; drop it so the next
+          // /data.json reflects it instead of waiting out the cache TTL.
+          cache.invalidate();
+          return new Response(JSON.stringify({ ok: true }), {
+            headers: { 'content-type': 'application/json' },
+          });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          console.error(
+            `mr action ${parsed.action} failed for !${parsed.iid}: ${message}`
+          );
+          return new Response(`gitlab ${parsed.action} failed: ${message}`, {
             status: 502,
           });
         }

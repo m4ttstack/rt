@@ -148,7 +148,6 @@ export interface BoardData {
 }
 
 export type ThemeMode = 'light' | 'dark' | 'system';
-export type ViewMode = 'rows' | 'grid';
 
 export interface Toast {
   id: number;
@@ -161,7 +160,7 @@ export interface RowMenuState {
   mr: BoardMR;
 }
 
-/** Shared per-render context threaded through RowView, GridView, and RowMenu —
+/** Shared per-render context threaded through RowView and RowMenu —
     the board-owned bits every row/menu needs that aren't specific to one MR.
     Built once in Board.tsx per render, not memoized: recreating it is no more
     work than the individual props it replaces. */

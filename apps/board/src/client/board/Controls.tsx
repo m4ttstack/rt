@@ -1,7 +1,7 @@
 import { CopyButton, ICONS, LabeledSeg, Segmented } from '@mattstack/tui-kit';
 import { GROUP_KEYS, SORT_KEYS } from '../../view.ts';
 import type { ViewState } from '../../view.ts';
-import type { ThemeMode, ViewMode } from '../types.ts';
+import type { ThemeMode } from '../types.ts';
 import { SLACK_ICON, SlackPostedMark } from './chips.tsx';
 import { GROUP_LABEL, SORT_LABEL } from './format.ts';
 
@@ -10,8 +10,6 @@ import { GROUP_LABEL, SORT_LABEL } from './format.ts';
 function Controls({
   state,
   update,
-  view,
-  pickView,
   theme,
   pickTheme,
   canCopy,
@@ -26,8 +24,6 @@ function Controls({
 }: {
   state: ViewState;
   update: (patch: Partial<ViewState>) => void;
-  view: ViewMode;
-  pickView: (v: ViewMode) => void;
   theme: ThemeMode;
   pickTheme: (m: ThemeMode) => void;
   canCopy: boolean;
@@ -59,14 +55,6 @@ function Controls({
       onChange={s => update({ sort: s })}
     />
   );
-  const viewSeg = (
-    <Segmented
-      options={['rows', 'grid'] as const}
-      value={view}
-      onChange={pickView}
-      label="view"
-    />
-  );
   const themeSeg = (
     <Segmented
       options={['light', 'dark', 'system'] as const}
@@ -90,10 +78,6 @@ function Controls({
         <div className="tui-ctl-row">
           <span className="tui-ctl-label">sort</span>
           {sort}
-        </div>
-        <div className="tui-ctl-row">
-          <span className="tui-ctl-label">view</span>
-          {viewSeg}
         </div>
         <div className="tui-ctl-row">
           <span className="tui-ctl-label">theme</span>
@@ -174,7 +158,6 @@ function Controls({
       )}
       {group}
       {sort}
-      {viewSeg}
       {themeSeg}
     </>
   );

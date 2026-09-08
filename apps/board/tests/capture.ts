@@ -86,7 +86,7 @@ async function newPage(width: number, theme: 'light' | 'dark'): Promise<Page> {
         }
       ).document.fonts.ready
   );
-  await page.waitForSelector('.tui-row, .tui-card, .tui-empty');
+  await page.waitForSelector('.tui-row, .tui-empty');
   return page;
 }
 
@@ -158,23 +158,11 @@ for (const theme of ['light', 'dark'] as const) {
   await page.waitForSelector('.tui-banner[data-intent="bad"]');
   await shoot(page, `badsection-${theme}`);
   await page.click('[role="tab"]:has-text("Team")');
-  await page.waitForSelector('.tui-row, .tui-card');
+  await page.waitForSelector('.tui-row');
   // selection bar
   await page.locator('[data-part="selectbox"]').first().click();
   await page.waitForSelector('.tui-selbar');
   await shoot(page, `selection-${theme}`);
-  await page.close();
-
-  // grid view
-  page = await newPage(1280, theme);
-  await page.evaluate(() => localStorage.setItem('mrs-view', 'grid'));
-  await page.reload();
-  await page.addStyleTag({
-    content:
-      '*,*::before,*::after{animation:none!important;transition:none!important}',
-  });
-  await page.waitForSelector('.tui-grid');
-  await shoot(page, `grid-${theme}`);
   await page.close();
 
   // mobile drawer (below the 720px breakpoint)
