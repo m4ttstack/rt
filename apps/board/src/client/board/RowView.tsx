@@ -151,6 +151,7 @@ function RowView({
       <div
         key={mr.iid}
         className={nested ? 'tui-row tui-row-nested' : 'tui-row'}
+        data-mr-iid={mr.iid}
         data-local={ctx.local ? '1' : undefined}
         title={ctx.local ? 'right-click for actions' : undefined}
         onClick={e => onRowClick(e, mr)}

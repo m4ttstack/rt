@@ -35,6 +35,7 @@ import { AppLauncher } from './AppLauncher.tsx';
 import { AppMark } from './AppMark.tsx';
 import { ConfigModal } from './ConfigModal.tsx';
 import { Controls } from './Controls.tsx';
+import { gateParam, mrForGate, stripGateParam } from './deep-link.ts';
 import { DraftModal } from './DraftModal.tsx';
 import { boardSummary, draftKey, getSlackMarks, mrLine } from './format.ts';
 import type { GateDomain } from './gate-format.ts';
@@ -87,6 +88,9 @@ export function Board() {
     return parseViewState(location.search, stored, []);
   });
   const validatedOnce = useRef(false);
+  // The iid a `?gate=<id>` deep link resolved to on first load, consumed by
+  // the scroll/flash/strip effect below once that row has actually rendered.
+  const [gateDeepLinkIid, setGateDeepLinkIid] = useState<number | null>(null);
 
   const pickView = (v: ViewMode) => {
     localStorage.setItem(VIEW_KEY, v);
@@ -158,6 +162,9 @@ export function Board() {
           tabIds
         )
       );
+      const gateId = gateParam(location.search);
+      const linkedIid = gateId ? mrForGate(d.mrs, gateId) : null;
+      if (linkedIid !== null) setGateDeepLinkIid(linkedIid);
     } else {
       // Validated against the ACTIVE TAB's roster: a codeowners tab's is
       // inferred from the rows in view, so checking the config roster alone
@@ -594,6 +601,22 @@ export function Board() {
     }, 4000);
     return () => clearInterval(t);
   }, [optimisticLifecycle.active, load]);
+
+  // `?gate=<id>` deep link: by the time this runs, the linked row has already
+  // rendered (gateDeepLinkIid is set in the same batch as the data that
+  // produced it). history.replaceState strips the param so a refresh doesn't
+  // re-scroll.
+  useEffect(() => {
+    if (gateDeepLinkIid === null) return;
+    const row = document.querySelector(`[data-mr-iid="${gateDeepLinkIid}"]`);
+    if (row) {
+      row.scrollIntoView({ block: 'center' });
+      row.classList.add('tui-row-flash');
+      setTimeout(() => row.classList.remove('tui-row-flash'), 2000);
+    }
+    history.replaceState(null, '', stripGateParam(location.search));
+    setGateDeepLinkIid(null);
+  }, [gateDeepLinkIid]);
 
   if (!data) {
     return (
