@@ -1451,20 +1451,25 @@
   padding: 0;
   min-inline-size: 0;
 }
+.tui-gate-question + .tui-gate-question {
+  margin-top: 0.9rem;
+}
 .tui-gate-question-label {
   font-size: 0.85rem;
+  font-weight: 600;
   color: var(--fg);
+  margin-bottom: 0.15rem;
 }
 .tui-gate-options {
   display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: center;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding-left: 0.25rem;
 }
 .tui-gate-option {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 .tui-gate-option-label {
   font-size: 0.82rem;
