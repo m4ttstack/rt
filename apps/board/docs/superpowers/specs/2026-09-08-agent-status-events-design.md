@@ -86,7 +86,9 @@ code path and one ordering.
 - **Deadline.** Each handler call is raced against `HANDLE_DEADLINE_MS`
   (30s). On expiry the feed logs, advances, and moves on; the running call
   is not cancelled. One stalled GitLab or Slack call therefore costs one
-  MR's signal 30s, never every MR's.
+  MR's signal 30s, never every MR's. Order is preserved per MR: a later
+  event for the same MR waits behind a timed-out handler inside its own
+  deadline, while other MRs proceed.
 - **Triggers.** Three things call `catchUp()`: boot, every relay `event`
   frame whose topic starts with `board/agent-status/`, and the existing
   gate-sweep tick (`GATE_SWEEP_MS`, 60s). The relay push is a wake-up, not

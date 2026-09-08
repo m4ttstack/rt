@@ -63,12 +63,18 @@ export interface AgentStatusFeedIo {
  * The cursor advances after every event, handled or skipped, so a poison
  * event can never wedge the feed: the sweeps remain the backstop for the
  * one MR whose handler threw or ran past its deadline.
+ *
+ * Per-MR order survives a timeout. A handler past its deadline is left
+ * running and the next event for that MR waits behind it, inside its own
+ * deadline, so a delayed effect can never land after a later transition's;
+ * every other MR proceeds while that one waits.
  */
 export class AgentStatusFeed {
   private cursor: number | null = null;
   private running: Promise<void> | null = null;
   private rerun = false;
   private readonly reportedForeignRoots = new Set<string>();
+  private readonly inFlight = new Map<string, Promise<void>>();
 
   constructor(private readonly io: AgentStatusFeedIo) {}
 
@@ -160,10 +166,24 @@ export class AgentStatusFeed {
     }
     const { appRoot: _appRoot, ...signal } = payload;
     const deadlineMs = this.io.handleDeadlineMs ?? HANDLE_DEADLINE_MS;
+    const mrUrl = signal.mrUrl;
+    // The chain is what orders this MR's effects; the throw is caught inside
+    // it so the next event for the MR queues behind a failure too.
+    const run = (this.inFlight.get(mrUrl) ?? Promise.resolve()).then(() =>
+      this.io.handle(signal, ev.emittedAt).catch((err: unknown) => {
+        this.io.log(
+          `agent-status feed: handler failed on #${ev.id} (${mrUrl}): ${err instanceof Error ? err.message : err}`
+        );
+      })
+    );
+    this.inFlight.set(mrUrl, run);
+    void run.then(() => {
+      if (this.inFlight.get(mrUrl) === run) this.inFlight.delete(mrUrl);
+    });
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const timedOut = await Promise.race([
-        this.io.handle(signal, ev.emittedAt).then(() => false),
+        run.then(() => false),
         new Promise<boolean>(resolve => {
           timer = setTimeout(() => resolve(true), deadlineMs);
         }),
@@ -172,13 +192,9 @@ export class AgentStatusFeed {
       // that MR's reconciliation, the same policy a throwing handler gets.
       if (timedOut) {
         this.io.log(
-          `agent-status feed: handler timed out on #${ev.id} (${signal.mrUrl}) after ${deadlineMs}ms`
+          `agent-status feed: handler timed out on #${ev.id} (${mrUrl}) after ${deadlineMs}ms`
         );
       }
-    } catch (err) {
-      this.io.log(
-        `agent-status feed: handler failed on #${ev.id} (${signal.mrUrl}): ${err instanceof Error ? err.message : err}`
-      );
     } finally {
       // A live timer would hold the process open past the last event.
       clearTimeout(timer);

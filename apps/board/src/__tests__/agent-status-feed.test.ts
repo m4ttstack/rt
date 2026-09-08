@@ -16,6 +16,7 @@ import {
 
 const ROOT = '/Users/dev/board';
 const MR = 'https://gitlab.com/acme/webapp/-/merge_requests/4821';
+const MR2 = 'https://gitlab.com/acme/webapp/-/merge_requests/4822';
 const EMITTED_BASE = 1_700_000_000_000;
 
 function event(
@@ -40,6 +41,21 @@ function event(
     emittedAt: EMITTED_BASE + id,
     ...overrides,
   };
+}
+
+/** Same shape as `event`, on a second MR: the feed serializes per mrUrl, so
+    the two are the only way to tell blocking from ordering. */
+function otherMrEvent(id: number): JournalEvent {
+  return event(id, {
+    payload: {
+      mrUrl: MR2,
+      iid: 4822,
+      kind: 'review',
+      status: 'done',
+      outcome: 'comment',
+      appRoot: ROOT,
+    },
+  });
 }
 
 interface Harness {
@@ -220,7 +236,7 @@ describe('AgentStatusFeed.catchUp', () => {
     const slow = new Promise<void>(resolve => setTimeout(resolve, 50));
     const h = harness({
       stored: 10,
-      pages: [[event(11), event(12)]],
+      pages: [[event(11), otherMrEvent(12)]],
       handleDeadlineMs: 10,
       handle: async signal => {
         const first = h.handled.length === 0;
@@ -235,6 +251,81 @@ describe('AgentStatusFeed.catchUp', () => {
     ]);
     expect(h.handled.length).toBe(2);
     await slow;
+  });
+
+  test('a later event for the same MR waits for a timed-out handler', async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>(r => {
+      release = r;
+    });
+    let secondDone: () => void = () => {};
+    const second = new Promise<void>(r => {
+      secondDone = r;
+    });
+    const trace: string[] = [];
+    let calls = 0;
+    const h = harness({
+      stored: 10,
+      pages: [[event(11), event(12)]],
+      handleDeadlineMs: 10,
+      handle: async () => {
+        const nth = ++calls;
+        trace.push(`start ${nth}`);
+        if (nth === 1) {
+          await gate;
+          trace.push('end 1');
+          return;
+        }
+        trace.push('end 2');
+        secondDone();
+      },
+    });
+    await h.feed.catchUp();
+    expect(h.cursors).toEqual([11, 12]);
+    expect(trace).toEqual(['start 1']);
+    expect(h.lines).toEqual([
+      `agent-status feed: handler timed out on #11 (${MR}) after 10ms`,
+      `agent-status feed: handler timed out on #12 (${MR}) after 10ms`,
+    ]);
+    release();
+    await second;
+    expect(trace).toEqual(['start 1', 'end 1', 'start 2', 'end 2']);
+  });
+
+  test('a different MR is not blocked by a timed-out handler', async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>(r => {
+      release = r;
+    });
+    let firstDone: () => void = () => {};
+    const first = new Promise<void>(r => {
+      firstDone = r;
+    });
+    const trace: string[] = [];
+    let calls = 0;
+    const h = harness({
+      stored: 10,
+      pages: [[event(11), otherMrEvent(12)]],
+      handleDeadlineMs: 10,
+      handle: async () => {
+        const nth = ++calls;
+        trace.push(`start ${nth}`);
+        if (nth === 1) {
+          await gate;
+          trace.push('end 1');
+          firstDone();
+          return;
+        }
+        trace.push('end 2');
+      },
+    });
+    await h.feed.catchUp();
+    expect(trace).toEqual(['start 1', 'start 2', 'end 2']);
+    expect(h.lines).toEqual([
+      `agent-status feed: handler timed out on #11 (${MR}) after 10ms`,
+    ]);
+    release();
+    await first;
   });
 
   test('pages through a full page and stops on a short one', async () => {
