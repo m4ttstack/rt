@@ -74,12 +74,18 @@ code path and one ordering.
   handled in `state/agent-status-cursor`. On boot with no cursor file it
   reads `eventsHead()` and starts from there: nothing before the feature
   shipped is replayed.
-- **Catch-up.** `catchUp()` reads `eventsList({pattern: "board/agent-status/*",
-after: cursor})`, handles each event in id order, and advances the cursor
-  after each one. Frames whose `appRoot` is not this board's are skipped
-  and still advance the cursor. A handler throw is logged, the cursor still
-  advances, and the sweeps remain the backstop for that MR; a poison event
-  must never wedge the feed.
+- **Catch-up.** `catchUp()` reads
+  `eventsList({pattern: "board/agent-status/*", after: cursor})`, handles
+  each event in id order, and advances the cursor after each one. Frames
+  whose `appRoot` is not this board's are skipped and still advance the
+  cursor; the first frame from each foreign root is logged once so a
+  misconfigured `BOARD_APP_ROOT` is visible rather than silent. A handler
+  throw is logged, the cursor still advances, and the sweeps remain the
+  backstop for that MR; a poison event must never wedge the feed.
+- **Deadline.** Each handler call is raced against `HANDLE_DEADLINE_MS`
+  (30s). On expiry the feed logs, advances, and moves on; the running call
+  is not cancelled. One stalled GitLab or Slack call therefore costs one
+  MR's signal 30s, never every MR's.
 - **Triggers.** Three things call `catchUp()`: boot, every relay `event`
   frame whose topic starts with `board/agent-status/`, and the existing
   gate-sweep tick (`GATE_SWEEP_MS`, 60s). The relay push is a wake-up, not
@@ -91,19 +97,26 @@ after: cursor})`, handles each event in id order, and advances the cursor
   one more pass after it. Events for one MR therefore never interleave.
 
 The feed takes its I/O as an injected interface (`eventsHead`,
-`eventsList`, read and write cursor, `handle`, `appRoot`, `log`) so it is
-unit-tested with fakes and no daemon.
+`eventsList`, read and write cursor, `handle(signal, emittedAt)`,
+`appRoot`, `log`, and an optional `handleDeadlineMs`) so it is unit-tested
+with fakes and no daemon.
 
 ### Server side: the handler
 
 The body of the `/agent/status` case in `src/server.ts` becomes
-`async function handleAgentSignal(signal: AgentSignal): Promise<void>` in
-the same file. It keeps its four side effects in their current order and
+`async function handleAgentSignal(signal: AgentSignal, emittedAt: number):
+Promise<void>` in the same file, where `emittedAt` is the journal's stamp
+for the event. It keeps its four side effects in their current order and
 semantics: peer review-state relay, latch arm or spend, `closeOnDone`,
-Slack reaction. The Slack branch keeps its current error handling but
-logs instead of returning an HTTP status; `reactToMR` already treats
-`already_reacted` as success, which is what makes a replayed `done`
-harmless. The feed's `handle` is this function.
+Slack reaction. Two of them read `emittedAt`, because on a replay the
+handling time is boot time, not transition time: the peer envelope carries
+`updatedAt: emittedAt`, and `closeOnDone` is skipped when that kind's state
+file already has an `updatedAt` newer than `emittedAt`, since a later
+transition or launch owns that tab. The CLI writes the state file before
+it emits, so a live signal always closes. Latch and Slack replay
+unguarded: a latch is posted only when none is armed, and `reactToMR`
+already treats `already_reacted` as success. The Slack branch logs instead
+of returning an HTTP status. The feed's `handle` is this function.
 
 ### Retired
 
