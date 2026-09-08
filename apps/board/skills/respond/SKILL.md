@@ -256,7 +256,9 @@ conversation.
      that as a new round of step 3-4 (a new `respond-plan` gate, same
      shape, and the report update from step 3 applies again). On `skip`,
      go straight to Gate 2: reply and skip threads still get their drafted
-     replies posted, there is just nothing to implement first.
+     replies posted, there is just nothing to implement first. A thread
+     answered `fix:` under `skip` stays unimplemented and has no finalized
+     reply, so it is held out of Gate 2 rather than posted as a draft.
 6. **Gate 2 — post.** Build the post questions from the finalized replies:
 
    ```json
