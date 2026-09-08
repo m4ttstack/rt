@@ -136,6 +136,20 @@ describe('recommended marker', () => {
     });
   });
 
+  test('formatGateOption lifts the flag off a bare verb-token string too', () => {
+    const original =
+      'fix:8709b19264237de0fb023ce216d174d282ab6840 (recommended)';
+    expect(formatGateOption(original)).toEqual({
+      text: 'fix · 8709b192',
+      title: original,
+      recommended: true,
+    });
+    expect(formatGateOption('fix:8709b19264237de0fb023ce216d174d282ab6840')).toEqual({
+      text: 'fix · 8709b192',
+      title: 'fix:8709b19264237de0fb023ce216d174d282ab6840',
+    });
+  });
+
   test('displayForValue carries the flag through', () => {
     const options = [
       { value: 'approve', label: 'Approve (recommended)' },

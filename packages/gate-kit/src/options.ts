@@ -52,13 +52,17 @@ export function optionLabel(o: GateOption): string {
  * human word rather than an id -- renders unchanged.
  */
 export function formatGateOption(option: string): GateOptionDisplay {
-  const m = VERB_TOKEN_OPTION.exec(option);
+  const s = stripRecommended(option);
+  const m = VERB_TOKEN_OPTION.exec(s.text);
   if (!m) {
-    const s = stripRecommended(option);
     return s.recommended ? { ...s, title: option } : { text: option };
   }
   const [, verb, token] = m;
-  return { text: `${verb} · ${token!.slice(0, 8)}`, title: option };
+  const display: GateOptionDisplay = {
+    text: `${verb} · ${token!.slice(0, 8)}`,
+    title: option,
+  };
+  return s.recommended ? { ...display, recommended: true } : display;
 }
 
 /** Labeled options render their label with the raw value as the hover
