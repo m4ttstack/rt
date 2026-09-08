@@ -52,8 +52,7 @@ test('SIGTERM exits promptly with code 0, not leaked past the grace period', asy
     env: {
       ...process.env,
       HOME: fakeHome,
-      // Without this the booted server writes state/board-port into the repo,
-      // pointing a developer's live board's status writers at a test port.
+      // Keeps the booted server's state writes out of the repo.
       BOARD_APP_ROOT: fakeHome,
       PORT: String(port),
       GITLAB_TOKEN: '',

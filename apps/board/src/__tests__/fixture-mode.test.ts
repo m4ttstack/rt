@@ -64,8 +64,7 @@ const PORT = 47942; // test's own port, not even the fixture default (7942 colli
 const proc = Bun.spawn(
   ['bun', 'run', join(import.meta.dir, '..', 'server.ts')],
   {
-    // BOARD_APP_ROOT keeps the booted server from writing state/board-port into
-    // the repo, which would point a live board's status writers at a test port.
+    // BOARD_APP_ROOT keeps the booted server's state writes out of the repo.
     env: {
       ...process.env,
       BOARD_FIXTURE: dir,

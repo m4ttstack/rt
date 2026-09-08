@@ -12,8 +12,8 @@ export type TabIdClearer = (signal: AgentSignal) => void;
 /** Close the herdr tab a launched pane reports done from. `error` never
     closes -- a failing pane is kept open for forensics. The tabId is cleared
     FIRST and the close itself is detached (fired, never awaited): the caller
-    is the /agent/status handler, and a hung herdr close must not stall that
-    request; a close that then fails just leaves a tab for the human, while
+    is handleAgentSignal, and a hung herdr close must not stall the feed's
+    journal pass; a close that then fails just leaves a tab for the human, while
     the cleared tabId already guarantees no sweep re-fires on it. */
 export function closeOnDone(
   signal: AgentSignal,
