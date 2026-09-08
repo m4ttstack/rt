@@ -32,11 +32,12 @@ emitting board's root so two boards on one machine never act on each other's
 panes. The board consumes that topic from the bus journal by cursor
 (`state/agent-status-cursor`): a live push wakes it within a second, the
 60-second sweep tick covers a push it missed, and a boot replays everything
-emitted while it was down, within the journal's retention (7 days or 50,000
-events). Past that, the triage latch pass and the gate sweep still reconcile
-from the state files. The board owns every Slack reaction (👀 on
-`reviewing`, 💬 or ✅ on `done`), so the agent never touches Slack. Launching
-again while a session is live re-focuses its tab instead of spawning another.
+emitted while it was down, within the journal's retention (at least 7 days and
+at least the newest 50,000 events). Past that, the triage latch pass and the
+gate sweep still reconcile from the state files. The board owns every Slack
+reaction (👀 on `reviewing`, 💬 or ✅ on `done`), so the agent never touches
+Slack. Launching again while a session is live re-focuses its tab instead of
+spawning another.
 
 State files live in the gitignored `state/` directory (`state/reviews/`,
 `state/responds/`, `state/doctors/`, `state/drafts/`). They are pruned when

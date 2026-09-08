@@ -75,7 +75,7 @@ code path and one ordering.
   reads `eventsHead()` and starts from there: nothing before the feature
   shipped is replayed.
 - **Catch-up.** `catchUp()` reads `eventsList({pattern: "board/agent-status/*",
-  after: cursor})`, handles each event in id order, and advances the cursor
+after: cursor})`, handles each event in id order, and advances the cursor
   after each one. Frames whose `appRoot` is not this board's are skipped
   and still advance the cursor. A handler throw is logged, the cursor still
   advances, and the sweeps remain the backstop for that MR; a poison event
@@ -109,22 +109,22 @@ harmless. The feed's `handle` is this function.
 
 - `state/board-port`: the write at server boot and `readBoardPort`.
 - `src/board-notify.ts` and its test, replaced by `src/agent-status/emit.ts`.
-- The `/agent/status` and `/review/outcome` routes. `parseAgentSignal`
-  survives with its `pathname` parameter dropped; it now validates a bus
-  payload and gains the `appRoot` check.
+- The `/agent/status` and `/review/outcome` routes.
+- `parseAgentSignal` and its tests, replaced by `parseAgentStatusPayload`,
+  which validates the bus payload including `appRoot`.
 - The `BOARD_APP_ROOT` comments in the server-booting tests that explain
   the port-file write; the env var itself stays, since those tests still
   isolate state.
 
 ### Guarantees
 
-| Board state at emit time | Delivery |
-|---|---|
-| Up and connected | Relay push wakes `catchUp()`; handled within a second |
-| Up, relay reconnecting or backpressured | Next sweep tick, at most 60s |
-| Down | Boot catch-up replays everything after the cursor |
-| Down past journal retention (7 days or 50,000 events) | The triage latch pass and gate sweep, unchanged |
-| Daemon down at emit | Lost, as today; state file plus sweeps |
+| Board state at emit time                                                             | Delivery                                              |
+| ------------------------------------------------------------------------------------ | ----------------------------------------------------- |
+| Up and connected                                                                     | Relay push wakes `catchUp()`; handled within a second |
+| Up, relay reconnecting or backpressured                                              | Next sweep tick, at most 60s                          |
+| Down                                                                                 | Boot catch-up replays everything after the cursor     |
+| Down past journal retention (older than 7 days and outside the newest 50,000 events) | The triage latch pass and gate sweep, unchanged       |
+| Daemon down at emit                                                                  | Lost, as today; state file plus sweeps                |
 
 The sweeps are not touched by this change and remain the durable path.
 
