@@ -194,6 +194,7 @@ const enrichedBranch: BranchEnrichment = {
 
 afterEach(() => {
   vi.clearAllMocks();
+  localStorage.clear();
 });
 
 beforeEach(() => {
@@ -1182,7 +1183,7 @@ describe('RunDetail: gate card', () => {
 
     renderDetail();
 
-    await userEvent.click(await screen.findByLabelText('pass'));
+    await userEvent.click(await screen.findByRole('radio', { name: 'pass' }));
     await userEvent.click(screen.getByRole('button', { name: 'submit' }));
 
     await waitFor(() =>

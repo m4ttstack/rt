@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Badge,
   Button,
@@ -10,8 +10,6 @@ import {
 import { useSchemeColors } from '@mattstack/app-kit/hooks';
 import {
   answeredGateSummary,
-  effectiveSelections,
-  gateAnswerPayload,
   resolveAnswerOutcome,
   type AnswerOutcome,
   type GateAnswers,
@@ -19,6 +17,7 @@ import {
   type GateSummaryDetailRow,
   type GateSummaryInput,
 } from '@mattstack/gate-kit';
+import { useGateDraft } from '@mattstack/gate-kit/react';
 import type { GateRow } from '@mattstack/rt-client';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -100,6 +99,11 @@ function gateTitle(gate: GateRow): string {
     wears a badge since a pane is no longer waiting on it. `answered` swaps
     to the summary chip.
 
+    The picks, per-question notes, and the active step live here and are
+    mirrored to a localStorage draft while the gate is open (restored on
+    mount; cleared on a successful submit, a conflict loss, a Reset, or once
+    the gate is no longer open).
+
     No optimistic local state on a successful submit: the request either
     fails (shown inline, recover by retry) or succeeds and the invalidate
     refetches. A CAS loss is the one response rendered immediately from
@@ -108,7 +112,20 @@ function gateTitle(gate: GateRow): string {
 export function GateCard({ gate }: { gate: GateRow }) {
   const { bg, border } = useSchemeColors();
   const queryClient = useQueryClient();
-  const [selections, setSelections] = useState<GateSelections>({});
+  const answered = gate.status === 'answered';
+  const actionable = gate.status === 'open' || gate.status === 'parked';
+  const {
+    initial: draft,
+    save: saveDraft,
+    clear: clearDraft,
+  } = useGateDraft(gate.id, actionable);
+  const [selections, setSelections] = useState<GateSelections>(
+    () => draft?.selections ?? {}
+  );
+  const [notes, setNotes] = useState<Record<string, string>>(
+    () => draft?.notes ?? {}
+  );
+  const [step, setStep] = useState<string | null>(() => draft?.item ?? null);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
   const [lost, setLost] = useState<AnswerOutcome | null>(null);
@@ -116,14 +133,9 @@ export function GateCard({ gate }: { gate: GateRow }) {
   const [focusBusy, setFocusBusy] = useState(false);
   const [focusError, setFocusError] = useState<string | null>(null);
 
-  const answered = gate.status === 'answered';
-  const actionable = gate.status === 'open' || gate.status === 'parked';
-  const submittable =
-    actionable &&
-    gateAnswerPayload(
-      gate.questions,
-      effectiveSelections(gate.kind, gate.questions, selections)
-    ) !== null;
+  useEffect(() => {
+    saveDraft({ selections, notes, item: step });
+  }, [saveDraft, selections, notes, step]);
 
   const focusReason =
     gate.status === 'parked'
@@ -174,6 +186,7 @@ export function GateCard({ gate }: { gate: GateRow }) {
         // this body is itself proof the row changed.
         setBusy(false);
         setLost(outcome);
+        clearDraft();
         void queryClient.invalidateQueries({ queryKey: ['gates'] });
         return;
       }
@@ -184,11 +197,19 @@ export function GateCard({ gate }: { gate: GateRow }) {
       return;
     }
     setBusy(false);
+    clearDraft();
     void queryClient.invalidateQueries({ queryKey: ['gates'] });
   };
 
-  const footer = (
-    <Group justify="space-between" align="center">
+  const resetAll = () => {
+    setSelections({});
+    setNotes({});
+    setStep(null);
+    clearDraft();
+  };
+
+  const status = (
+    <>
       {failed && (
         <Text c="bad" fz={12}>
           submit failed... nothing was sent, try again
@@ -199,22 +220,20 @@ export function GateCard({ gate }: { gate: GateRow }) {
           {focusError}
         </Text>
       )}
-      <Group gap="xs" ml="auto">
-        <Button
-          size="xs"
-          variant="default"
-          data-testid="gate-focus"
-          disabled={focusReason !== null || focusBusy}
-          title={focusReason ?? 'jump into the pane behind this gate'}
-          onClick={() => void focusPaneAction()}
-        >
-          focus pane
-        </Button>
-        <Button size="xs" type="submit" disabled={!submittable || busy}>
-          {busy ? 'submitting…' : 'submit'}
-        </Button>
-      </Group>
-    </Group>
+    </>
+  );
+
+  const focus = (
+    <Button
+      size="xs"
+      variant="default"
+      data-testid="gate-focus"
+      disabled={focusReason !== null || focusBusy}
+      title={focusReason ?? 'jump into the pane behind this gate'}
+      onClick={() => void focusPaneAction()}
+    >
+      focus pane
+    </Button>
   );
 
   return (
@@ -307,8 +326,17 @@ export function GateCard({ gate }: { gate: GateRow }) {
             gate={{ kind: gate.kind, questions: gate.questions }}
             selections={selections}
             onSelectionsChange={setSelections}
+            notes={notes}
+            onNoteChange={(name, value) =>
+              setNotes(prev => ({ ...prev, [name]: value }))
+            }
+            step={step}
+            onStepChange={setStep}
+            onReset={resetAll}
+            busy={busy}
             onSubmitAnswers={payload => void submit(payload)}
-            footer={footer}
+            status={status}
+            focus={focus}
           />
         )}
       </Stack>

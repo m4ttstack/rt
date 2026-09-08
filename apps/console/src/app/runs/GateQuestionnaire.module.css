@@ -1,0 +1,111 @@
+/*
+ * The gate questionnaire's step layout on the shadcn base-nova demo's
+ * rhythm: bordered choice rows that lift on hover and wear the accent
+ * border once picked, a mono progress line, and one flat Item at a time.
+ * :hover, [data-checked], and [hidden] cannot be inline styles, so this is
+ * a CSS module per the kit's styling discipline; every value is a token.
+ */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mantine-spacing-md);
+  min-width: 0;
+}
+
+.progress {
+  font-variant-numeric: tabular-nums;
+  min-height: 1lh;
+}
+
+/* The Item is a <fieldset>. The primitive hides every non-active item with
+   the `hidden` attribute, which an author `display` rule would beat. */
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mantine-spacing-sm);
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-inline-size: 0;
+}
+
+.item[hidden] {
+  display: none;
+}
+
+.title {
+  font-size: var(--mantine-font-size-sm);
+  font-weight: 600;
+  line-height: 1.35;
+  padding: 0;
+  margin-bottom: var(--mantine-spacing-xs);
+}
+
+.choices {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.choice {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--mantine-spacing-sm);
+  min-height: 36px;
+  padding: 6px var(--mantine-spacing-sm);
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-md);
+  background: transparent;
+  font-size: var(--mantine-font-size-sm);
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+.choice:hover {
+  background-color: var(--ui-bg-3);
+}
+
+.choice[data-checked] {
+  border-color: var(--mantine-color-accent-filled);
+  background-color: var(--ui-bg-3);
+}
+
+.choice[data-invalid] {
+  border-color: var(--mantine-color-bad-filled);
+}
+
+.choice:has(> input:focus-visible) {
+  outline: 2px solid var(--mantine-color-accent-filled);
+  outline-offset: 1px;
+}
+
+.choiceInput {
+  margin: 2px 0 0;
+  flex-shrink: 0;
+  accent-color: var(--mantine-color-accent-filled);
+}
+
+.choiceLabel {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.key {
+  margin-left: auto;
+  flex-shrink: 0;
+  pointer-events: none;
+}
+
+.actions {
+  min-height: 28px;
+}

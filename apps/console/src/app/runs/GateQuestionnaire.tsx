@@ -1,36 +1,68 @@
-import type { ReactNode } from 'react';
-import { Badge, Group, Stack } from '@mattstack/app-kit/core';
+import { useMemo, type ReactNode } from 'react';
+import {
+  Badge,
+  Button,
+  Group,
+  Kbd,
+  Text,
+  TextInput,
+} from '@mattstack/app-kit/core';
 import type { GateAnswers, GateSelections } from '@mattstack/gate-kit';
 import {
   answersFromForm,
   gateItems,
+  noteFieldName,
   Questionnaire,
   type GateForItems,
 } from '@mattstack/gate-kit/react';
 
-/** Mantine-styled layer over the kit's questionnaire adapter. Every visible
-    question renders at once (parity with the flat card, not the future
-    multi-step triage modal): the primitive is step-shaped and renders every
-    non-active Item hidden and inert, so the explicit hidden/inert overrides
-    on each Item are what make the flat card possible. The native form is the
-    one door to submission: FormData, not component state, builds the answer.
-    Every choice is controlled from `selections` so a question that unmounts
-    and comes back (the respond collapse) remounts wearing its answer, and
-    the FormData the submit reads still mirrors that state exactly. */
+import classes from './GateQuestionnaire.module.css';
+
+/** Mantine-styled layer over the kit's questionnaire adapter, in the
+    primitive's own step mode: one active Item at a time (the others render
+    hidden and inert), a progress line and Previous / Reset only when there
+    is more than one item, Submit only on the last. The native form is the
+    one door to submission: FormData, not component state, builds the
+    answer. Every choice is controlled from `selections` so a question that
+    unmounts and comes back (the respond collapse) remounts wearing its
+    answer, and the FormData the submit reads still mirrors that state.
+    Next and Submit disable until the active item is answered, so the
+    enabled button always does something; Cmd/Ctrl+Enter stays the
+    primitive's validate-and-advance path and surfaces the error line. */
 export function GateQuestionnaire({
   gate,
   selections,
   onSelectionsChange,
+  notes,
+  onNoteChange,
+  step,
+  onStepChange,
+  onReset,
+  busy,
   onSubmitAnswers,
-  footer,
+  status,
+  focus,
 }: {
   gate: GateForItems;
   selections: GateSelections;
   onSelectionsChange: (next: GateSelections) => void;
+  notes: Record<string, string>;
+  onNoteChange: (name: string, value: string) => void;
+  step: string | null;
+  onStepChange: (name: string) => void;
+  onReset: () => void;
+  busy: boolean;
   onSubmitAnswers: (payload: { answers: GateAnswers } | null) => void;
-  footer: ReactNode;
+  status: ReactNode;
+  focus: ReactNode;
 }) {
-  const { items, display } = gateItems(gate, selections);
+  const { items, display } = useMemo(
+    () => gateItems(gate, selections),
+    [gate, selections]
+  );
+  const stepped = display.length > 1;
+  const activeStep = step ?? display[0]?.name;
+
   const toggle = (
     name: string,
     multiple: boolean,
@@ -47,9 +79,14 @@ export function GateQuestionnaire({
     else next.delete(value);
     onSelectionsChange({ ...selections, [name]: [...next] });
   };
+
   return (
     <Questionnaire.Root
+      className={classes.form}
       items={items}
+      shortcuts="numbers"
+      item={activeStep}
+      onItemChange={onStepChange}
       onSubmit={event => {
         event.preventDefault();
         onSubmitAnswers(
@@ -57,74 +94,174 @@ export function GateQuestionnaire({
         );
       }}
     >
-      <Stack gap="md">
-        {display.map(item => {
-          const current = selections[item.name];
-          const picked = new Set(Array.isArray(current) ? current : []);
-          return (
-            <Questionnaire.Item
-              key={item.name}
-              name={item.name}
-              required={item.required}
-              multiple={item.multiple}
-              hidden={false}
-              inert={false}
-              style={{ border: 0, margin: 0, padding: 0 }}
+      {stepped && (
+        <Questionnaire.Progress
+          render={(props, state) => (
+            <Text
+              {...props}
+              component="span"
+              fz={11}
+              fw={500}
+              c="dimmed"
+              ff="monospace"
+              className={classes.progress}
+              data-testid="gate-progress"
             >
-              <Questionnaire.Title
-                style={{ fontWeight: 600, fontSize: 13, padding: 0 }}
-              >
-                {item.prompt}
-              </Questionnaire.Title>
-              <Questionnaire.Choices>
-                <Stack gap={6} mt={6}>
-                  {item.choices.map(choice => (
-                    <Questionnaire.Choice
-                      key={choice.value}
-                      value={choice.value}
-                      checked={
-                        item.multiple
-                          ? picked.has(choice.value)
-                          : current === choice.value
-                      }
-                      onChange={event =>
-                        toggle(
-                          item.name,
-                          item.multiple,
-                          choice.value,
-                          event.currentTarget.checked
-                        )
-                      }
-                      style={{ display: 'flex', gap: 8, alignItems: 'center' }}
-                    >
-                      <Questionnaire.ChoiceInput />
-                      <Questionnaire.ChoiceLabel
-                        title={choice.description}
-                        style={{ fontSize: 13 }}
+              {state.current} of {state.total}
+            </Text>
+          )}
+        />
+      )}
+      {display.map(item => {
+        const current = selections[item.name];
+        const picked = new Set(Array.isArray(current) ? current : []);
+        return (
+          <Questionnaire.Item
+            key={item.name}
+            name={item.name}
+            required={item.required}
+            multiple={item.multiple}
+            className={classes.item}
+            data-testid={`gate-item-${item.name}`}
+          >
+            <Questionnaire.Title className={classes.title}>
+              {item.prompt}
+            </Questionnaire.Title>
+            <Questionnaire.Choices className={classes.choices}>
+              {item.choices.map(choice => (
+                <Questionnaire.Choice
+                  key={choice.value}
+                  value={choice.value}
+                  checked={
+                    item.multiple
+                      ? picked.has(choice.value)
+                      : current === choice.value
+                  }
+                  onChange={event =>
+                    toggle(
+                      item.name,
+                      item.multiple,
+                      choice.value,
+                      event.currentTarget.checked
+                    )
+                  }
+                  className={classes.choice}
+                >
+                  <Questionnaire.ChoiceInput className={classes.choiceInput} />
+                  <Questionnaire.ChoiceLabel
+                    title={choice.description}
+                    className={classes.choiceLabel}
+                  >
+                    <span>{choice.label}</span>
+                    {choice.recommended && (
+                      <Badge
+                        size="xs"
+                        variant="light"
+                        color="teal"
+                        data-testid="gate-recommended"
                       >
-                        <Group gap={6} wrap="nowrap" component="span">
-                          <span>{choice.label}</span>
-                          {choice.recommended && (
-                            <Badge
-                              size="xs"
-                              variant="light"
-                              color="teal"
-                              data-testid="gate-recommended"
-                            >
-                              recommended
-                            </Badge>
-                          )}
-                        </Group>
-                      </Questionnaire.ChoiceLabel>
-                    </Questionnaire.Choice>
-                  ))}
-                </Stack>
-              </Questionnaire.Choices>
-            </Questionnaire.Item>
-          );
-        })}
-        {footer}
-      </Stack>
+                        recommended
+                      </Badge>
+                    )}
+                  </Questionnaire.ChoiceLabel>
+                  <Questionnaire.ChoiceShortcut
+                    render={(props, state) =>
+                      state.shortcut === null ? null : (
+                        <Kbd {...props} size="xs" className={classes.key} />
+                      )
+                    }
+                  />
+                </Questionnaire.Choice>
+              ))}
+            </Questionnaire.Choices>
+            <Questionnaire.Error
+              render={(props, state) =>
+                state.invalid ? (
+                  <Text {...props} c="bad" fz={12} data-testid="gate-error" />
+                ) : null
+              }
+            />
+            <TextInput
+              size="xs"
+              name={noteFieldName(item.name)}
+              aria-label={`Note for ${item.prompt}`}
+              placeholder="Add a note"
+              value={notes[item.name] ?? ''}
+              onChange={event =>
+                onNoteChange(item.name, event.currentTarget.value)
+              }
+              onKeyDown={event => {
+                // Plain Enter in a text input is implicit form submission;
+                // Cmd/Ctrl+Enter stays the primitive's validate-and-advance.
+                if (event.key === 'Enter' && !event.metaKey && !event.ctrlKey)
+                  event.preventDefault();
+              }}
+              data-testid={`gate-note-${item.name}`}
+            />
+          </Questionnaire.Item>
+        );
+      })}
+      <Group className={classes.actions} gap="xs" align="center" wrap="wrap">
+        <Questionnaire.Previous
+          render={(props, state) =>
+            state.visible ? (
+              <Button
+                {...props}
+                size="xs"
+                variant="default"
+                disabled={busy}
+                data-testid="gate-previous"
+              />
+            ) : null
+          }
+        >
+          previous
+        </Questionnaire.Previous>
+        {stepped && (
+          <Button
+            size="xs"
+            variant="subtle"
+            type="reset"
+            disabled={busy}
+            onClick={onReset}
+            data-testid="gate-reset"
+          >
+            reset
+          </Button>
+        )}
+        <Group gap="xs" ml="auto" align="center">
+          {status}
+          {focus}
+          <Questionnaire.Next
+            render={(props, state) =>
+              state.visible ? (
+                <Button
+                  {...props}
+                  size="xs"
+                  disabled={busy || state.status !== 'answered'}
+                  data-testid="gate-next"
+                />
+              ) : null
+            }
+          >
+            next
+          </Questionnaire.Next>
+          <Questionnaire.Submit
+            render={(props, state) =>
+              state.visible ? (
+                <Button
+                  {...props}
+                  size="xs"
+                  disabled={busy || state.status !== 'answered'}
+                  data-testid="gate-submit"
+                />
+              ) : null
+            }
+          >
+            {busy ? 'submitting…' : 'submit'}
+          </Questionnaire.Submit>
+        </Group>
+      </Group>
     </Questionnaire.Root>
   );
 }
