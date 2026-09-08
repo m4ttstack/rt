@@ -20,3 +20,16 @@ export type {
   GateSelections,
   UnwrappedGateAnswer,
 } from './payload';
+export {
+  CODE_CHANGES_QUESTION_ID,
+  CODE_CHANGES_SENTINEL,
+  codeChangesHidden,
+  effectiveSelections,
+  RESPOND_PLAN_KIND,
+} from './collapse';
+export { groupThreadOptions } from './grouping';
+export type {
+  ThreadOptionEntry,
+  ThreadOptionGroup,
+  ThreadVerb,
+} from './grouping';
