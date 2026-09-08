@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Stack } from '@mattstack/app-kit/core';
+import { Badge, Group, Stack } from '@mattstack/app-kit/core';
 import type { GateSelections } from '@mattstack/gate-kit';
 import {
   answersFromForm,
@@ -102,7 +102,19 @@ export function GateQuestionnaire({
                         title={choice.description}
                         style={{ fontSize: 13 }}
                       >
-                        {choice.label}
+                        <Group gap={6} wrap="nowrap" component="span">
+                          <span>{choice.label}</span>
+                          {choice.recommended && (
+                            <Badge
+                              size="xs"
+                              variant="light"
+                              color="teal"
+                              data-testid="gate-recommended"
+                            >
+                              recommended
+                            </Badge>
+                          )}
+                        </Group>
                       </Questionnaire.ChoiceLabel>
                     </Questionnaire.Choice>
                   ))}

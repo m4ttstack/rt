@@ -365,6 +365,33 @@ describe('W4 rendering', () => {
     expect(screen.getByRole('radio', { name: 'approve' })).toBeVisible();
     expect(screen.getByRole('radio', { name: 'approve' })).toBeEnabled();
   });
+
+  it('renders a recommended badge on the marked option only', () => {
+    renderCard(
+      gateRow({
+        questions: [
+          {
+            id: 'outcome',
+            label: 'What happened?',
+            multi: false,
+            options: [
+              { value: 'approve', label: 'Approve (recommended)' },
+              { value: 'comment', label: 'Comment' },
+            ],
+          },
+        ],
+      })
+    );
+    const approveChoice = screen.getByText('Approve').closest('label')!;
+    expect(
+      within(approveChoice).getByTestId('gate-recommended')
+    ).toBeInTheDocument();
+
+    const commentChoice = screen.getByText('Comment').closest('label')!;
+    expect(
+      within(commentChoice).queryByTestId('gate-recommended')
+    ).not.toBeInTheDocument();
+  });
 });
 
 describe('focus button', () => {
