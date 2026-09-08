@@ -144,7 +144,9 @@ describe('recommended marker', () => {
       title: original,
       recommended: true,
     });
-    expect(formatGateOption('fix:8709b19264237de0fb023ce216d174d282ab6840')).toEqual({
+    expect(
+      formatGateOption('fix:8709b19264237de0fb023ce216d174d282ab6840')
+    ).toEqual({
       text: 'fix · 8709b192',
       title: 'fix:8709b19264237de0fb023ce216d174d282ab6840',
     });

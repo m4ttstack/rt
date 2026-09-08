@@ -78,10 +78,7 @@ describe('respond collapse (W4)', () => {
   });
 
   test('a multi code-changes question gets an array sentinel, and gateAnswerPayload accepts it', () => {
-    const multiQuestions = [
-      questions[0]!,
-      { ...questions[1]!, multi: true },
-    ];
+    const multiQuestions = [questions[0]!, { ...questions[1]!, multi: true }];
     const selections = { 'threads-1': ['reply:t1'] };
     expect(
       effectiveSelections('respond-plan', multiQuestions, selections)

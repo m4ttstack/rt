@@ -43,8 +43,6 @@ export function effectiveSelections(
 ): GateSelections {
   if (!codeChangesHidden(kind, questions, selections)) return selections;
   const q = questions.find(x => x.id === CODE_CHANGES_QUESTION_ID);
-  const sentinel = q?.multi
-    ? [CODE_CHANGES_SENTINEL]
-    : CODE_CHANGES_SENTINEL;
+  const sentinel = q?.multi ? [CODE_CHANGES_SENTINEL] : CODE_CHANGES_SENTINEL;
   return { ...selections, [CODE_CHANGES_QUESTION_ID]: sentinel };
 }
