@@ -107,7 +107,11 @@ old one. Instead:
   no other way to recover once the pane that produced them is gone. Never
   re-adjudicate and never re-implement from scratch:
   - `respond-plan` → implement from the report's decided plan: the wait's
-    `{plan: <answers>, by: <by>}` select among the report's threads. Hand the report
+    `{plan: <answers>, by: <by>}` select among the report's threads. Join
+    each answer to its report row by the thread id inside the option VALUE
+    (every `answers` key other than `code-changes` holds one
+    `<verb>:<threadId>`; split at the first `:`), never by the `thread-<n>`
+    question id, which is only a container. Hand the report
     and those answers to the domain skill exactly as step 5 would have. When
     it's back to finalized replies, update the report with them, emit
     `drafting`, then run Gate 2 **fresh** (open it, wait, hand `{post: ...}`
@@ -133,9 +137,8 @@ conversation.
      MR/ticket, fetching unresolved human threads, adjudicating each one, and
      drafting replies and proposed fixes — then reports back to you the
      adjudication: a
-     verdict table (one row per thread, with its recommended reply/fix/skip
-     and grouped in batches of at most 8) plus whether it is proposing code
-     changes. It never presents a gate or decides what gets implemented or
+     verdict table (one row per thread, with its recommended reply/fix/skip)
+     plus whether it is proposing code changes. It never presents a gate or decides what gets implemented or
      posted; this wrapper owns both facility gates (steps 4 and 6) and hands
      the domain skill `{plan: ...}` and later `{post: ...}` to act on once a
      human has answered.
@@ -154,35 +157,46 @@ conversation.
    pane can mechanically join the wait's answers back to the report's rows. (Whoever produces the adjudication — the domain
    skill or you — is responsible for this file existing before Gate 1
    opens.) Then: `<status-bin> respond-status <state> drafting`
-4. **Gate 1 — plan.** Build one multi-select question per group of up to 8
-   threads, plus one `code-changes` question, per the shape below (the group
-   labels/ids are `threads-1`, `threads-9`, ... by starting index; substitute
-   the real thread ids and one `reply:<id>`/`fix:<id>`/`skip:<id>` triple per
-   thread — the ids shown are a placeholder, don't copy them verbatim):
+4. **Gate 1 — plan.** Build ONE single-select question per unresolved
+   thread, in verdict-table order, plus one `code-changes` question, per
+   the shape below. A thread question's id is `thread-<n>` by 1-based
+   position, its label is that thread's `<file>:<line>`, and its three
+   options carry the verb plus the thread id VERBATIM in the value and the
+   bare verb in the label (the ids shown are placeholders; substitute the
+   real ones):
 
    ```json
    [
-     {"id": "threads-1", "label": "Threads 1-8: reply, fix, or skip each", "multi": true,
-      "options": [{"value": "reply:<threadId>", "label": "reply · <file>:<line>"}, {"value": "fix:<threadId>", "label": "fix · <file>:<line>"}, {"value": "skip:<threadId>", "label": "skip · <file>:<line>"}, "... one triple per thread in the group, ids verbatim"]},
+     {"id": "thread-1", "label": "<file>:<line>", "multi": false,
+      "options": [{"value": "reply:<threadId>", "label": "reply"}, {"value": "fix:<threadId>", "label": "fix"}, {"value": "skip:<threadId>", "label": "skip"}]},
+     {"id": "thread-2", "label": "<file>:<line>", "multi": false,
+      "options": ["... the next thread's reply/fix/skip triple, its own id verbatim; one such question per thread"]},
      {"id": "code-changes", "label": "Approve the proposed code changes?", "multi": false,
       "options": ["approve", "revise", "skip"]}
    ]
    ```
 
-   Labels are display text with a 200 UTF-8 byte cap. Compose them from the
-   thread's file and line; when a path would push a label past the cap,
-   middle-truncate the path portion (keep the filename and line). Never let
-   a label's length fail the open; the value string is never altered.
+   One question per thread keeps every question at three options, under
+   the native form's per-question cap, so `gate open` stamps `form` for
+   any thread count; never fold several threads into one multi-select. It
+   also makes reply/fix/skip mutually exclusive per thread by
+   construction, so no contradictory selection can arrive.
+
+   The thread id lives in the option VALUE, never in the question id:
+   every consumer of the answer (step 5 here, a `--resumed-gate` pane, the
+   board card, the console card) reads every `answers` key other than
+   `code-changes`, splits the value at its first `:`, and joins the thread
+   id to the report row. The `thread-<n>` id is a container; nothing keys
+   on it.
+
+   Option labels cap at 200 UTF-8 bytes (the bare verbs sit far under it).
+   Keep a question label to the thread's path and line; when a path is
+   long, middle-truncate the path portion (keep the filename and line).
+   Never alter a value string.
 
    `skip` is the no-code-changes sentinel: surfaces hide the code-changes
-   question until a `fix:` option is selected and submit `skip` for it while
+   question until a `fix:` value is selected and submit `skip` for it while
    hidden, so it must always be present in the options.
-
-   When exactly ONE unresolved thread exists, build ONE merged single-select
-   question instead of the group-plus-code-changes pair: id `threads-1`,
-   options the thread's `reply:<id>`/`fix:<id>`/`skip:<id>` triple (labeled
-   as above). The verb choice implies the disposition; do not add a
-   code-changes question to a single-thread gate.
 
    - **Open the gate:**
      `<status-bin> gate open <state> --kind respond-plan --questions <json> --context <context text>`
@@ -192,21 +206,23 @@ conversation.
      it would exceed the cap, omit `--context` entirely rather than trimming
      it.
    - **presentation "form":** present the SAME questions as the native
-     structured-question form. Render each option's `label` when it has one
-     and submit the chosen option's `value` verbatim; never an index, never a
-     paraphrase. Submit exactly one
-     `<status-bin> gate answer <state> --answers <json> --by pane` after the
-     form. A printed conflict answer means another surface won: say so in one
-     line and proceed on the printed winning answer. If the form is dismissed
+     structured-question form. The form tool takes at most four questions
+     per call, so chunk: the thread questions in order, up to four per
+     call, until every thread is asked; then, if any thread's answer is a
+     `fix:` value, ask `code-changes` in one more call, otherwise fill
+     `code-changes: "skip"` without asking (the same hide rule the board
+     and console cards apply). Render each option's `label` and submit the
+     chosen option's `value` verbatim; never an index, never a paraphrase.
+     Submit exactly one
+     `<status-bin> gate answer <state> --answers <json> --by pane` after
+     the LAST call, carrying every thread question's answer plus
+     `code-changes`; never one per chunk. A printed conflict answer means
+     another surface won: say so in one line and proceed on the printed
+     winning answer. If the form is dismissed
      under you and a message arrives saying the gate was answered elsewhere,
      that message is a verify-only signal and never carries the answer: run
      `<status-bin> gate wait <state> --max-ms 1000`, read the recorded
      answer, and proceed on it.
-
-     On a respond-plan gate, hide the code-changes question until a `fix:`
-     value is chosen and submit `skip` for it while hidden, exactly as the
-     board and console cards do (ask the thread questions first, then either
-     ask code-changes or fill `skip`, still ONE gate answer at the end).
    - **presentation "wait":** do NOT present a form. Launch ONE background
      shell command (the shell tool's run-in-background mode) that loops
      `<status-bin> gate wait <state> --max-ms 90000`, re-running while it
@@ -220,12 +236,15 @@ conversation.
 5. **Act on the plan.** Hand `{plan: <answers>, by: <by>}` to the domain
    skill (or act on it yourself on the generic no-domain-skill path); `by`
    is the wait's own decider field, so the domain skill's decision record
-   names who actually decided instead of guessing. Three shapes the answer
-   can take decide whether anything gets implemented this round:
+   names who actually decided instead of guessing. Each thread's
+   disposition is the verb in its answer value (`reply:<id>`, `fix:<id>`,
+   or `skip:<id>`, read off every key other than `code-changes`), and the
+   `code-changes` answer decides whether anything gets implemented this
+   round:
 
-   - **`code-changes: approve`** (the multi-thread gate): emit `implementing`
+   - **`code-changes: approve`**: emit `implementing`
      (`<status-bin> respond-status <state> implementing`) before touching
-     code, implement the decided fixes one at a time, verified, then update
+     code, implement the `fix:` threads one at a time, verified, then update
      `--report <path>` with the finalized replies (each fixed thread's reply
      text now reads e.g. `"Fixed: file:line"`) and emit `drafting` again;
      before Gate 2 opens, the report must hold what will actually be
@@ -238,12 +257,6 @@ conversation.
      shape, and the report update from step 3 applies again). On `skip`,
      go straight to Gate 2: reply and skip threads still get their drafted
      replies posted, there is just nothing to implement first.
-   - **No `code-changes` key at all** (the single-thread merged gate from
-     step 4): the one thread's own verb answer implies the disposition. A
-     `fix:<id>` answer implies the implementing path exactly like
-     `code-changes: approve` above. A `reply:<id>` or `skip:<id>` answer
-     implies no implementation this round, exactly like `code-changes: skip`
-     above.
 6. **Gate 2 — post.** Build the post questions from the finalized replies:
 
    ```json
@@ -309,11 +322,12 @@ closed-gate/escape-hatch/degraded-mode mechanics, self-contained here since
 each gate follows it independently. (The open/presentation/wait mechanics are
 inline at each gate above, since the questions and context differ per gate.)
 `gate wait`'s answered form is `{"answers": {...}, "by": "...", "answeredAt": ...}`,
-keyed by that gate's own question ids: `replies`/`disposition` for Gate 2; for
-Gate 1 in the multi-thread case, one `threads-<n>` id per chunk of up to 8
-threads by starting index (`threads-1`, `threads-9`, ...) plus `code-changes`;
-for Gate 1 in the single-thread case, `threads-1` alone (the merged question,
-no `code-changes` key). Read the relevant `answers.<id>`.
+keyed by that gate's own question ids: `replies`/`disposition` for Gate 2,
+read as `answers.<id>`; for Gate 1, one `thread-<n>` id per unresolved
+thread plus `code-changes`. Read Gate 1's thread answers by iterating every
+key other than `code-changes` and splitting each value at its first `:`
+into the verb and the thread id: the thread id is in the value, and the
+`thread-<n>` key is never a join key.
 
 - **Closed or missing gate.** If `gate wait` fails with `gate <id> closed (<reason>)`,
   the decision site itself was abandoned — superseded, abandoned, or pruned
@@ -331,7 +345,7 @@ no `code-changes` key). Read the relevant `answers.<id>`.
   `<status-bin> gate answer <state> --answers <json> --by pane`.
   - **Strict membership.** Each recorded answer value must be one of that
     question's option strings, verbatim (e.g. `"approve"`,
-    `["reply:t1","fix:t2"]`) — the daemon rejects anything else. Carry the
+    `"fix:t1"`) — the daemon rejects anything else. Carry the
     human's phrasing, hedges, or nuance in the note form instead:
     `{"code-changes": {"value": "approve", "note": "approve but hold off on thread 3"}}`.
   - **CAS loss.** `gate answer` prints nothing and exits 0 when the pane's
