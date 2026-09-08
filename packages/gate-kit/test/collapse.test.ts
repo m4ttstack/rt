@@ -76,4 +76,34 @@ describe('respond collapse (W4)', () => {
       selections
     );
   });
+
+  test('a multi code-changes question gets an array sentinel, and gateAnswerPayload accepts it', () => {
+    const multiQuestions = [
+      questions[0]!,
+      { ...questions[1]!, multi: true },
+    ];
+    const selections = { 'threads-1': ['reply:t1'] };
+    expect(
+      effectiveSelections('respond-plan', multiQuestions, selections)
+    ).toEqual({
+      'threads-1': ['reply:t1'],
+      'code-changes': [CODE_CHANGES_SENTINEL],
+    });
+    const payload = gateAnswerPayload(
+      multiQuestions,
+      effectiveSelections('respond-plan', multiQuestions, selections)
+    );
+    expect(payload).toEqual({
+      answers: {
+        'threads-1': ['reply:t1'],
+        'code-changes': [CODE_CHANGES_SENTINEL],
+      },
+    });
+  });
+
+  test('the single-select case still yields the bare string sentinel', () => {
+    expect(effectiveSelections('respond-plan', questions, {})).toEqual({
+      [CODE_CHANGES_QUESTION_ID]: CODE_CHANGES_SENTINEL,
+    });
+  });
 });
