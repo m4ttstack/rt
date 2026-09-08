@@ -134,29 +134,37 @@ function AnswerGateAction() {
 }
 
 /** `/gates/:id` (`GateRedirect`) hands off here with `?gate=<id>` still on
-    the URL. Scrolls to the linked `GateCard` once the gates query has
-    actually resolved (so the card exists to find), then strips the param.
-    `consumedRef` is the "once" guard: stripping the param flips `gateId` to
-    null on the next render, which is what stops a later gates refetch
-    (the websocket in `useRunEvents` invalidates `['gates']` on every
-    pipeline event) from re-triggering this -- the ref additionally covers
-    a refetch landing before that URL update commits. */
-function useGateDeepLinkScroll(gatesResolved: boolean) {
+    the URL, and it usually gets here before this run's gates query has
+    caught up (the notification fires the instant the daemon opens the
+    gate; the console's own `['gates']` fetch is a round trip behind). So
+    the param is consumed only on a successful scroll, never merely because
+    the query resolved: on every change of `gates`, if the target isn't
+    rendered yet, do nothing and wait for the next gates update (a refetch
+    via the websocket in `useRunEvents`, which invalidates `['gates']` on
+    every pipeline event) to try again. A gate that never shows up leaves
+    the param in place -- acceptable, and distinguishable from "already
+    consumed" for anyone debugging the URL. `consumedRef` is the "once"
+    guard once the scroll DOES fire: stripping the param flips `gateId` to
+    null on the next render, and the ref additionally covers a refetch
+    landing before that URL update commits. */
+function useGateDeepLinkScroll(gates: GateRow[] | undefined) {
   const search = useSearch();
   const consumedRef = useRef<string | null>(null);
 
   useEffect(() => {
     const gateId = new URLSearchParams(search).get('gate');
-    if (!gateId || !gatesResolved || consumedRef.current === gateId) return;
+    if (!gateId || gates === undefined || consumedRef.current === gateId) {
+      return;
+    }
+    const el = document.querySelector(`[data-gate-id="${gateId}"]`);
+    if (!el) return;
     consumedRef.current = gateId;
-    document
-      .querySelector(`[data-gate-id="${gateId}"]`)
-      ?.scrollIntoView?.({ block: 'center' });
+    el.scrollIntoView({ block: 'center' });
     const params = new URLSearchParams(search);
     params.delete('gate');
     const qs = params.toString();
     history.replaceState(null, '', location.pathname + (qs ? `?${qs}` : ''));
-  }, [search, gatesResolved]);
+  }, [search, gates]);
 }
 
 function AbandonAction({ repo, runId }: { repo: string; runId: string }) {
@@ -500,7 +508,7 @@ function RunDetailContent({ repo, runId }: { repo: string; runId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runId]);
 
-  useGateDeepLinkScroll(gatesQuery.data !== undefined);
+  useGateDeepLinkScroll(gatesQuery.data?.gates);
 
   return (
     <Stack gap="lg" data-testid="run-detail">

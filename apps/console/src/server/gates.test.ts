@@ -429,6 +429,10 @@ describe('GET /api/gates/:id/locate', () => {
       repo: 'repo-tools',
       runId: 'r1',
     });
+    // The shared RT_SOCK_PATH seam (rtClientOptions()) every other rt-client
+    // call in this file threads -- listRuns must carry it too, not just
+    // gateList/paneList/paneFocus/gateAnswer.
+    expect(rt.listRuns).toHaveBeenCalledWith(undefined, expect.anything());
   });
 
   it('404s when the gate itself does not exist', async () => {

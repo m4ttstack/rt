@@ -203,7 +203,7 @@ export const gates = new Hono()
 
     // No repo in hand yet -- the gate names only the run id, so every repo's
     // runs must be searched, same as GET /api/runs does with no `repo` query.
-    const runsRes = await listRuns();
+    const runsRes = await listRuns(undefined, rtClientOptions());
     if (!runsRes.ok) return c.json({ error: runsRes.error }, 502);
     const run = runsRes.data?.runs.find(r => r.id === runId);
     if (!run) return c.json({ error: 'run not found' }, 404);
