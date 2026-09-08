@@ -44,9 +44,10 @@ or `doctor`. Payload is the existing `AgentSignal` plus one scoping field:
 }
 ```
 
-`appRoot` is the emitting CLI's `APP_ROOT`. The status-bin a pane runs is
-the launching board's own (`statusBinPath()`), so this is the launching
-board's root by construction, in the checkout form and the compiled form.
+`appRoot` is derived from the state path the board handed the pane
+(`<APP_ROOT>/state/<lane>/<slug>.json`, third ancestor), so it is the
+launching board's root even when `BOARD_APP_ROOT` is set only where the
+server runs; panes get no environment from `rt agent start`.
 The bus is machine-wide and every board on the machine hears every frame;
 a board handles only frames whose `appRoot` equals its own and drops the
 rest silently. Without this, a dev board and the deck board watching the

@@ -1,4 +1,7 @@
-import { emitAgentStatus } from '../src/agent-status/emit.ts';
+import {
+  boardRootFromStatePath,
+  emitAgentStatus,
+} from '../src/agent-status/emit.ts';
 import {
   writeReviewState,
   type ReviewOutcome,
@@ -71,10 +74,13 @@ const state = writeReviewState(parsed.path, {
   ...(sessionId ? { sessionId } : {}),
 });
 
-await emitAgentStatus({
-  mrUrl: state.mrUrl,
-  iid: state.iid,
-  kind: 'review',
-  status,
-  outcome,
-});
+await emitAgentStatus(
+  {
+    mrUrl: state.mrUrl,
+    iid: state.iid,
+    kind: 'review',
+    status,
+    outcome,
+  },
+  boardRootFromStatePath(parsed.path)
+);

@@ -1,4 +1,7 @@
-import { emitAgentStatus } from '../src/agent-status/emit.ts';
+import {
+  boardRootFromStatePath,
+  emitAgentStatus,
+} from '../src/agent-status/emit.ts';
 import { respondOutcome } from '../src/respond-outcome.ts';
 import { writeRespondState, type RespondStatus } from '../src/respond-state.ts';
 
@@ -90,10 +93,13 @@ const state = writeRespondState(parsed.path, {
   ...(sessionId ? { sessionId } : {}),
 });
 
-await emitAgentStatus({
-  mrUrl: state.mrUrl,
-  iid: state.iid,
-  kind: 'respond',
-  status: parsed.status,
-  outcome: respondOutcome(state.posted, state.threads),
-});
+await emitAgentStatus(
+  {
+    mrUrl: state.mrUrl,
+    iid: state.iid,
+    kind: 'respond',
+    status: parsed.status,
+    outcome: respondOutcome(state.posted, state.threads),
+  },
+  boardRootFromStatePath(parsed.path)
+);

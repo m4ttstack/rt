@@ -1,6 +1,11 @@
+import { resolve } from 'path';
 import { describe, expect, test } from 'bun:test';
 
-import { emitAgentStatus, type EmitIo } from '../agent-status/emit.ts';
+import {
+  boardRootFromStatePath,
+  emitAgentStatus,
+  type EmitIo,
+} from '../agent-status/emit.ts';
 
 const SIGNAL = {
   mrUrl: 'https://gitlab.com/acme/webapp/-/merge_requests/4821',
@@ -9,6 +14,8 @@ const SIGNAL = {
   status: 'done',
   outcome: 'comment',
 };
+
+const ROOT = '/Users/dev/board';
 
 function fakeIo(
   emit: EmitIo['emit']
@@ -20,7 +27,6 @@ function fakeIo(
       calls.push({ topic, payload });
       return emit(topic, payload);
     },
-    appRoot: '/Users/dev/board',
     log: line => lines.push(line),
     lines,
     calls,
@@ -29,14 +35,28 @@ function fakeIo(
 
 const accepted = async () => ({ ok: true });
 
+describe('boardRootFromStatePath', () => {
+  test('every lane resolves to the board root above state/', () => {
+    expect(boardRootFromStatePath(`${ROOT}/state/reviews/x.json`)).toBe(ROOT);
+    expect(boardRootFromStatePath(`${ROOT}/state/responds/x.json`)).toBe(ROOT);
+    expect(boardRootFromStatePath(`${ROOT}/state/doctors/x.json`)).toBe(ROOT);
+  });
+
+  test('a relative path resolves against the cwd', () => {
+    expect(boardRootFromStatePath('state/reviews/x.json')).toBe(
+      resolve(process.cwd())
+    );
+  });
+});
+
 describe('emitAgentStatus', () => {
-  test('emits on the kind topic with the signal plus this board root', async () => {
+  test('emits on the kind topic with the signal plus the given board root', async () => {
     const io = fakeIo(accepted);
-    await emitAgentStatus(SIGNAL, io);
+    await emitAgentStatus(SIGNAL, ROOT, io);
     expect(io.calls).toEqual([
       {
         topic: 'board/agent-status/review',
-        payload: { ...SIGNAL, appRoot: '/Users/dev/board' },
+        payload: { ...SIGNAL, appRoot: ROOT },
       },
     ]);
     expect(io.lines).toEqual([]);
@@ -44,9 +64,10 @@ describe('emitAgentStatus', () => {
 
   test('respond and doctor land on their own topics', async () => {
     const io = fakeIo(accepted);
-    await emitAgentStatus({ ...SIGNAL, kind: 'respond' }, io);
+    await emitAgentStatus({ ...SIGNAL, kind: 'respond' }, ROOT, io);
     await emitAgentStatus(
       { ...SIGNAL, kind: 'doctor', outcome: undefined },
+      ROOT,
       io
     );
     expect(io.calls.map(c => c.topic)).toEqual([
@@ -57,13 +78,13 @@ describe('emitAgentStatus', () => {
 
   test('skips the emit entirely when there is no mrUrl to act on', async () => {
     const io = fakeIo(accepted);
-    await emitAgentStatus({ ...SIGNAL, mrUrl: '' }, io);
+    await emitAgentStatus({ ...SIGNAL, mrUrl: '' }, ROOT, io);
     expect(io.calls).toEqual([]);
   });
 
   test('a refused emit resolves and logs one line', async () => {
     const io = fakeIo(async () => ({ ok: false, error: 'daemon unreachable' }));
-    await expect(emitAgentStatus(SIGNAL, io)).resolves.toBeUndefined();
+    await expect(emitAgentStatus(SIGNAL, ROOT, io)).resolves.toBeUndefined();
     expect(io.lines).toEqual(['agent-status emit refused: daemon unreachable']);
   });
 
@@ -71,7 +92,7 @@ describe('emitAgentStatus', () => {
     const io = fakeIo(async () => {
       throw new Error('ECONNREFUSED');
     });
-    await expect(emitAgentStatus(SIGNAL, io)).resolves.toBeUndefined();
+    await expect(emitAgentStatus(SIGNAL, ROOT, io)).resolves.toBeUndefined();
     expect(io.lines).toEqual(['agent-status emit failed: ECONNREFUSED']);
   });
 });

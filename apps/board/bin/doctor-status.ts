@@ -1,4 +1,7 @@
-import { emitAgentStatus } from '../src/agent-status/emit.ts';
+import {
+  boardRootFromStatePath,
+  emitAgentStatus,
+} from '../src/agent-status/emit.ts';
 import { writeDoctorState, type DoctorStatus } from '../src/doctor-state.ts';
 
 const VALID: DoctorStatus[] = [
@@ -26,12 +29,15 @@ const state = writeDoctorState(path, {
   ...(message ? { message } : {}),
 });
 
-await emitAgentStatus({
-  mrUrl: state.mrUrl,
-  iid: state.iid,
-  kind: 'doctor',
-  status,
-});
+await emitAgentStatus(
+  {
+    mrUrl: state.mrUrl,
+    iid: state.iid,
+    kind: 'doctor',
+    status,
+  },
+  boardRootFromStatePath(path)
+);
 
 // AUTO doctors leave a full audit trail (spec §6: one line per autonomous
 // action). The pane reports each action as a status write whose message names
