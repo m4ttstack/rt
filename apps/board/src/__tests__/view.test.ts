@@ -17,6 +17,7 @@ import {
   rosterUsernamesFor,
   serializeViewState,
   sortMRs,
+  behindToken,
   statusFlags,
 } from '../view.ts';
 
@@ -267,6 +268,49 @@ describe('statusFlags', () => {
     );
     expect(flags.some(f => f.text.startsWith('stacked'))).toBe(false);
     expect(flags[0]).toEqual({ text: 'conflicts', cls: 't-bad' });
+  });
+
+  test('armed auto-merge shows an ok flag, before the stacked chip', () => {
+    const flags = statusFlags(
+      mr({
+        isStacked: true,
+        targetBranch: 'parent-branch',
+        autoMergeButton: { isActive: true },
+      } as any)
+    );
+    expect(flags[0]).toEqual({ text: 'auto-merge', cls: 't-ok' });
+    expect(flags.at(-1)?.text).toBe('stacked → parent-branch');
+  });
+
+  test('no auto-merge flag when it is not armed', () => {
+    const flags = statusFlags(
+      mr({ autoMergeButton: { isActive: false } } as any)
+    );
+    expect(flags.some(f => f.text === 'auto-merge')).toBe(false);
+  });
+});
+
+describe('behindToken', () => {
+  test('behind by N renders ↓N with a plural title', () => {
+    expect(behindToken(mr({ behindTarget: 3 } as any))).toEqual({
+      text: '↓3',
+      title: '3 commits behind target',
+    });
+  });
+
+  test('behind by one keeps the title singular', () => {
+    expect(behindToken(mr({ behindTarget: 1 } as any))).toEqual({
+      text: '↓1',
+      title: '1 commit behind target',
+    });
+  });
+
+  test('zero behind renders nothing', () => {
+    expect(behindToken(mr({ behindTarget: 0 } as any))).toBeNull();
+  });
+
+  test('null is unknown, not zero — renders nothing', () => {
+    expect(behindToken(mr({ behindTarget: null } as any))).toBeNull();
   });
 });
 
