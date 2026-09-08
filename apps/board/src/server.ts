@@ -530,6 +530,16 @@ const resolveSignalTabId: TabIdResolver = signal => {
   return readDoctorStates().get(signal.mrUrl)?.tabId;
 };
 
+/** When that same state store was last written, from the same three maps
+    resolveSignalTabId reads. */
+const resolveSignalUpdatedAt = (signal: AgentSignal): number | undefined => {
+  if (signal.kind === 'review')
+    return readReviewStates().get(signal.mrUrl)?.updatedAt;
+  if (signal.kind === 'respond')
+    return readRespondStates().get(signal.mrUrl)?.updatedAt;
+  return readDoctorStates().get(signal.mrUrl)?.updatedAt;
+};
+
 // "" (falsy), not omitted -- writeReviewState/writeRespondState/writeDoctorState
 // all merge patch.tabId ?? prev.tabId, so leaving it out of the patch would
 // keep the stale id and the next sweep would re-fire this same close.
@@ -2765,8 +2775,12 @@ function gateResumeIo(): GateResumeEventIo {
 /** What one lifecycle transition means to this board. Fed only by the
     agent-status feed, in journal order; a replayed `done` is safe because
     every step here is idempotent (a latch is posted only when none is armed,
-    a repeated Slack reaction is a no-op, a cleared tabId is cleared). */
-async function handleAgentSignal(signal: AgentSignal): Promise<void> {
+    a repeated Slack reaction is a no-op) and the one step that is not, the
+    tab close, is guarded on `emittedAt`. */
+async function handleAgentSignal(
+  signal: AgentSignal,
+  emittedAt: number
+): Promise<void> {
   // Off the memoized getters, as the request handler resolves them: nothing
   // here rides a request, so neither token is already in scope.
   const [gitlabToken, slackToken] = await Promise.all([
@@ -2800,7 +2814,7 @@ async function handleAgentSignal(signal: AgentSignal): Promise<void> {
           iid: signal.iid,
           status: signal.status,
           outcome: signal.outcome,
-          updatedAt: Date.now(),
+          updatedAt: emittedAt,
         } satisfies ReviewStatePayload)
       );
       kickOutbox(pc);
@@ -2856,12 +2870,19 @@ async function handleAgentSignal(signal: AgentSignal): Promise<void> {
   // never closes, so a failing pane stays open for forensics. Must run
   // above the emoji early-return below: most `done` signals have no
   // emoji and would never reach a close placed after it.
-  closeOnDone(
-    signal,
-    resolveSignalTabId,
-    tabId => closeTab(tabId),
-    clearSignalTabId
-  );
+  // The status CLI writes the state file before it emits, so a live signal
+  // always has updatedAt <= emittedAt. A newer write means a later transition
+  // or launch superseded this event: the tab on file is not this event's to
+  // close, nor its status this event's to overwrite with `done`.
+  const stateUpdatedAt = resolveSignalUpdatedAt(signal);
+  if (!(stateUpdatedAt !== undefined && stateUpdatedAt > emittedAt)) {
+    closeOnDone(
+      signal,
+      resolveSignalTabId,
+      tabId => closeTab(tabId),
+      clearSignalTabId
+    );
+  }
   const emoji = signalEmoji(
     signal.kind,
     signal.status,
@@ -2968,6 +2989,19 @@ if (!FIXTURE_DIR) {
   } catch (err) {
     console.error(
       `gate file-store cleanup skipped: ${err instanceof Error ? err.message : err}`
+    );
+  }
+}
+
+// One-time migration: state/board-port retired with the HTTP notify path, and
+// a stale copy misleads anyone reading the state dir into thinking the board
+// still answers on that port.
+if (!FIXTURE_DIR) {
+  try {
+    rmSync(join(APP_ROOT, 'state', 'board-port'), { force: true });
+  } catch (err) {
+    console.error(
+      `board-port cleanup skipped: ${err instanceof Error ? err.message : err}`
     );
   }
 }

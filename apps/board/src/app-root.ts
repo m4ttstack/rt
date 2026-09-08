@@ -16,7 +16,9 @@ export const IS_COMPILED = import.meta.dir.includes('$bunfs');
  * launcher that forgets to set a working directory would otherwise point the
  * board at "/" and every state write would fail. From a checkout it stays the
  * repo root, so a dev checkout keeps its existing config.json and state/ in
- * place. BOARD_APP_ROOT overrides both (the bundle can pin an explicit home).
+ * place. BOARD_APP_ROOT overrides both (the bundle can pin an explicit home),
+ * and it must reach the panes the board launches too: a status CLI stamps its
+ * own root onto every frame it emits, and the server ignores every other.
  * HOME is read at call time — Bun freezes os.homedir() at process start.
  */
 function appRoot(): string {

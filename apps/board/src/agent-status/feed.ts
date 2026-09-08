@@ -10,6 +10,12 @@ import {
 export const AGENT_STATUS_PATTERN = 'board/agent-status/*';
 export const PAGE_LIMIT = 500;
 
+/** How long one handler may hold the serialized pass. The handler reaches
+    GitLab and Slack with no abort signal of its own, so without a bound one
+    stalled MR delays every other MR's signal and the 60s tick coalesces
+    onto the stuck pass. */
+export const HANDLE_DEADLINE_MS = 30_000;
+
 export function isAgentStatusTopic(topic: unknown): topic is string {
   return (
     typeof topic === 'string' && topic.startsWith(AGENT_STATUS_TOPIC_PREFIX)
@@ -20,6 +26,10 @@ export interface JournalEvent {
   id: number;
   topic: string;
   payload: unknown;
+  /** Epoch ms the daemon stamped at emit. On a replay this is the transition
+      time, which is what any time-sensitive side effect must key off rather
+      than the moment the board got round to the event. */
+  emittedAt: number;
 }
 
 export interface AgentStatusFeedIo {
@@ -38,9 +48,10 @@ export interface AgentStatusFeedIo {
   }>;
   readCursor(): number | null;
   writeCursor(cursor: number): void;
-  handle(signal: AgentSignal): Promise<void>;
+  handle(signal: AgentSignal, emittedAt: number): Promise<void>;
   appRoot: string;
   log(line: string): void;
+  handleDeadlineMs?: number;
 }
 
 /**
@@ -51,12 +62,13 @@ export interface AgentStatusFeedIo {
  *
  * The cursor advances after every event, handled or skipped, so a poison
  * event can never wedge the feed: the sweeps remain the backstop for the
- * one MR whose handler threw.
+ * one MR whose handler threw or ran past its deadline.
  */
 export class AgentStatusFeed {
   private cursor: number | null = null;
   private running: Promise<void> | null = null;
   private rerun = false;
+  private readonly reportedForeignRoots = new Set<string>();
 
   constructor(private readonly io: AgentStatusFeedIo) {}
 
@@ -134,14 +146,42 @@ export class AgentStatusFeed {
       );
       return;
     }
-    if (payload.appRoot !== this.io.appRoot) return;
+    if (payload.appRoot !== this.io.appRoot) {
+      // Once per foreign root, not once per frame: two boards on one machine
+      // talk past each other forever, and the line is only there to name a
+      // BOARD_APP_ROOT that never reached the panes this board launches.
+      if (!this.reportedForeignRoots.has(payload.appRoot)) {
+        this.reportedForeignRoots.add(payload.appRoot);
+        this.io.log(
+          `agent-status feed: ignoring frames stamped ${payload.appRoot}; this board is ${this.io.appRoot}`
+        );
+      }
+      return;
+    }
     const { appRoot: _appRoot, ...signal } = payload;
+    const deadlineMs = this.io.handleDeadlineMs ?? HANDLE_DEADLINE_MS;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      await this.io.handle(signal);
+      const timedOut = await Promise.race([
+        this.io.handle(signal, ev.emittedAt).then(() => false),
+        new Promise<boolean>(resolve => {
+          timer = setTimeout(() => resolve(true), deadlineMs);
+        }),
+      ]);
+      // The handler is left running rather than cancelled: the sweeps own
+      // that MR's reconciliation, the same policy a throwing handler gets.
+      if (timedOut) {
+        this.io.log(
+          `agent-status feed: handler timed out on #${ev.id} (${signal.mrUrl}) after ${deadlineMs}ms`
+        );
+      }
     } catch (err) {
       this.io.log(
         `agent-status feed: handler failed on #${ev.id} (${signal.mrUrl}): ${err instanceof Error ? err.message : err}`
       );
+    } finally {
+      // A live timer would hold the process open past the last event.
+      clearTimeout(timer);
     }
   }
 }

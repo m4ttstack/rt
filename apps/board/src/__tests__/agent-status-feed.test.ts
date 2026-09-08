@@ -16,10 +16,15 @@ import {
 
 const ROOT = '/Users/dev/board';
 const MR = 'https://gitlab.com/acme/webapp/-/merge_requests/4821';
+const EMITTED_BASE = 1_700_000_000_000;
 
 function event(
   id: number,
-  overrides: Partial<{ topic: string; payload: unknown }> = {}
+  overrides: Partial<{
+    topic: string;
+    payload: unknown;
+    emittedAt: number;
+  }> = {}
 ): JournalEvent {
   return {
     id,
@@ -32,6 +37,7 @@ function event(
       outcome: 'comment',
       appRoot: ROOT,
     },
+    emittedAt: EMITTED_BASE + id,
     ...overrides,
   };
 }
@@ -40,6 +46,7 @@ interface Harness {
   io: AgentStatusFeedIo;
   feed: AgentStatusFeed;
   handled: AgentSignal[];
+  handledAt: number[];
   cursors: number[];
   lists: { after: number; limit: number }[];
   headCalls: number;
@@ -52,11 +59,13 @@ function harness(opts: {
   pages?: JournalEvent[][];
   headOk?: boolean;
   listOk?: boolean;
-  handle?: (signal: AgentSignal) => Promise<void>;
+  handle?: (signal: AgentSignal, emittedAt: number) => Promise<void>;
+  handleDeadlineMs?: number;
 }): Harness {
   const pages = [...(opts.pages ?? [[]])];
   const h: Harness = {
     handled: [],
+    handledAt: [],
     cursors: [],
     lists: [],
     headCalls: 0,
@@ -78,11 +87,13 @@ function harness(opts: {
     writeCursor: c => h.cursors.push(c),
     handle:
       opts.handle ??
-      (async signal => {
+      (async (signal, emittedAt) => {
         h.handled.push(signal);
+        h.handledAt.push(emittedAt);
       }),
     appRoot: ROOT,
     log: line => h.lines.push(line),
+    handleDeadlineMs: opts.handleDeadlineMs,
   };
   h.feed = new AgentStatusFeed(h.io);
   return h;
@@ -136,6 +147,12 @@ describe('AgentStatusFeed.catchUp', () => {
     });
   });
 
+  test('the handler receives the event emittedAt', async () => {
+    const h = harness({ stored: 10, pages: [[event(11)]] });
+    await h.feed.catchUp();
+    expect(h.handledAt).toEqual([EMITTED_BASE + 11]);
+  });
+
   test('another board root is skipped and still advances the cursor', async () => {
     const other = event(11);
     (other.payload as { appRoot: string }).appRoot = '/Users/dev/other';
@@ -143,6 +160,29 @@ describe('AgentStatusFeed.catchUp', () => {
     await h.feed.catchUp();
     expect(h.handled.length).toBe(1);
     expect(h.cursors).toEqual([11, 12]);
+  });
+
+  test('a foreign root is reported once per root', async () => {
+    const stamp = (ev: JournalEvent, root: string): JournalEvent => {
+      (ev.payload as { appRoot: string }).appRoot = root;
+      return ev;
+    };
+    const h = harness({
+      stored: 10,
+      pages: [
+        [
+          stamp(event(11), '/Users/dev/other'),
+          stamp(event(12), '/Users/dev/other'),
+          stamp(event(13), '/Users/dev/third'),
+        ],
+      ],
+    });
+    await h.feed.catchUp();
+    expect(h.handled).toEqual([]);
+    expect(h.lines).toEqual([
+      `agent-status feed: ignoring frames stamped /Users/dev/other; this board is ${ROOT}`,
+      `agent-status feed: ignoring frames stamped /Users/dev/third; this board is ${ROOT}`,
+    ]);
   });
 
   test('a malformed payload is dropped with one line and still advances', async () => {
@@ -174,6 +214,27 @@ describe('AgentStatusFeed.catchUp', () => {
     expect(h.lines).toEqual([
       `agent-status feed: handler failed on #11 (${MR}): slack exploded`,
     ]);
+  });
+
+  test('a handler past the deadline is logged and the cursor advances', async () => {
+    const slow = new Promise<void>(resolve => setTimeout(resolve, 50));
+    const h = harness({
+      stored: 10,
+      pages: [[event(11), event(12)]],
+      handleDeadlineMs: 10,
+      handle: async signal => {
+        const first = h.handled.length === 0;
+        h.handled.push(signal);
+        if (first) await slow;
+      },
+    });
+    await h.feed.catchUp();
+    expect(h.cursors).toEqual([11, 12]);
+    expect(h.lines).toEqual([
+      `agent-status feed: handler timed out on #11 (${MR}) after 10ms`,
+    ]);
+    expect(h.handled.length).toBe(2);
+    await slow;
   });
 
   test('pages through a full page and stops on a short one', async () => {
