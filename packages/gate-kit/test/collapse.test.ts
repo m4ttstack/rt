@@ -65,7 +65,9 @@ describe('respond collapse (W4)', () => {
       [CODE_CHANGES_QUESTION_ID]: CODE_CHANGES_SENTINEL,
     });
     const withFix = { 'threads-1': ['fix:t1'] };
-    expect(effectiveSelections('respond-plan', questions, withFix)).toBe(withFix);
+    expect(effectiveSelections('respond-plan', questions, withFix)).toBe(
+      withFix
+    );
   });
 
   test('effectiveSelections passes non-respond kinds through untouched', () => {

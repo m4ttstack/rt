@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
-import type { GateQuestion } from '@mattstack/rt-client';
 import { gateAnswerPayload, unwrapGateAnswer } from '@mattstack/gate-kit';
+import type { GateQuestion } from '@mattstack/rt-client';
 
 const QUESTIONS: GateQuestion[] = [
   {

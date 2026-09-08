@@ -1,5 +1,4 @@
 import type { GateQuestion } from '@mattstack/rt-client';
-
 import { domainForKind } from './kinds';
 import { displayForValue, type GateOptionDisplay } from './options';
 import { unwrapGateAnswer, type GateAnswers } from './payload';

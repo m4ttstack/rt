@@ -1,9 +1,10 @@
 import { describe, expect, test } from 'vitest';
 
-import type { GateQuestion } from '@mattstack/rt-client';
 import { answeredGateSummary } from '@mattstack/gate-kit';
+import type { GateQuestion } from '@mattstack/rt-client';
 
-const MR_SUBJECT = 'mr:https://gitlab.example.invalid/group/proj/-/merge_requests/44058';
+const MR_SUBJECT =
+  'mr:https://gitlab.example.invalid/group/proj/-/merge_requests/44058';
 
 const REVIEW_QUESTIONS: GateQuestion[] = [
   { id: 'tiers', label: 'Post which findings?', multi: true, options: [] },
@@ -132,7 +133,11 @@ describe('answeredGateSummary chip', () => {
           options: ['lint', 'types'],
         },
       ],
-      answer: { answers: { flags: ['lint', 'types'] }, by: 'pane', answeredAt: 1 },
+      answer: {
+        answers: { flags: ['lint', 'types'] },
+        by: 'pane',
+        answeredAt: 1,
+      },
     });
     expect(chip).toBe('self-review run r1 · lint, types');
   });
@@ -196,8 +201,18 @@ describe('answeredGateSummary detail', () => {
       answer: null,
     });
     expect(detail).toEqual([
-      { question: 'Post which findings?', answers: [{ text: '(none)' }], decidedBy: null, at: null },
-      { question: 'Verdict', answers: [{ text: '(none)' }], decidedBy: null, at: null },
+      {
+        question: 'Post which findings?',
+        answers: [{ text: '(none)' }],
+        decidedBy: null,
+        at: null,
+      },
+      {
+        question: 'Verdict',
+        answers: [{ text: '(none)' }],
+        decidedBy: null,
+        at: null,
+      },
     ]);
   });
 });

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
-import type { GateOption, GateQuestion } from '@mattstack/rt-client';
 import { gateAnswerPayload, groupThreadOptions } from '@mattstack/gate-kit';
+import type { GateOption, GateQuestion } from '@mattstack/rt-client';
 
 describe('groupThreadOptions (per-thread grouping)', () => {
   test('groups bare reply/fix/skip options by token, ordering verbs reply/fix/skip regardless of input order', () => {

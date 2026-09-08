@@ -1,5 +1,4 @@
 import type { GateQuestion } from '@mattstack/rt-client';
-
 import { optionValue } from './options';
 import type { GateSelections } from './payload';
 

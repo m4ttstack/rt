@@ -3,8 +3,7 @@ import { realpathSync } from 'node:fs';
 import type { GateOrigin } from '@mattstack/rt-client';
 
 export type FocusResolution =
-  | { ok: true; paneId: string; tabId?: string }
-  | { ok: false; reason: string };
+  { ok: true; paneId: string; tabId?: string } | { ok: false; reason: string };
 
 /** Normalizes a path before comparing an origin's worktree against a live
     pane's cwd: a trailing slash, or any symlink either side reports in a

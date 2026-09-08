@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'vitest';
 
-import type { GateQuestion } from '@mattstack/rt-client';
 import {
   displayForValue,
   formatGateOption,
@@ -9,6 +8,7 @@ import {
   optionLabel,
   optionValue,
 } from '@mattstack/gate-kit';
+import type { GateQuestion } from '@mattstack/rt-client';
 
 describe('formatGateOption', () => {
   test('compacts a verb:longtoken option, carrying the full string as title', () => {

@@ -1,5 +1,4 @@
 import type { GateOption } from '@mattstack/rt-client';
-
 import { optionValue } from './options';
 
 /** The three verbs a respond-plan thread question ever offers. Grouping
