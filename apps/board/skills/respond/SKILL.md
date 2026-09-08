@@ -110,7 +110,8 @@ old one. Instead:
     `{plan: <answers>, by: <by>}` select among the report's threads. Join
     each answer to its report row by the thread id inside the option VALUE
     (every `answers` key other than `code-changes` holds one
-    `<verb>:<threadId>`; split at the first `:`), never by the `thread-<n>`
+    `<verb>:<threadId>`, or a `{value, note}` object around it: unwrap
+    `value` first, then split at the first `:`), never by the `thread-<n>`
     question id, which is only a container. Hand the report
     and those answers to the domain skill exactly as step 5 would have. When
     it's back to finalized replies, update the report with them, emit
@@ -185,8 +186,8 @@ conversation.
    The thread id lives in the option VALUE, never in the question id:
    every consumer of the answer (step 5 here, a `--resumed-gate` pane, the
    board card, the console card) reads every `answers` key other than
-   `code-changes`, splits the value at its first `:`, and joins the thread
-   id to the report row. The `thread-<n>` id is a container; nothing keys
+   `code-changes`, unwraps a `{value, note}` object to its `value`, splits
+   at the first `:`, and joins the thread id to the report row. The `thread-<n>` id is a container; nothing keys
    on it.
 
    Option labels cap at 200 UTF-8 bytes (the bare verbs sit far under it).
@@ -238,7 +239,8 @@ conversation.
    is the wait's own decider field, so the domain skill's decision record
    names who actually decided instead of guessing. Each thread's
    disposition is the verb in its answer value (`reply:<id>`, `fix:<id>`,
-   or `skip:<id>`, read off every key other than `code-changes`), and the
+   or `skip:<id>`, read off every key other than `code-changes`, taking
+   `value` first when the answer is a `{value, note}` object), and the
    `code-changes` answer decides whether anything gets implemented this
    round:
 
@@ -327,9 +329,9 @@ inline at each gate above, since the questions and context differ per gate.)
 keyed by that gate's own question ids: `replies`/`disposition` for Gate 2,
 read as `answers.<id>`; for Gate 1, one `thread-<n>` id per unresolved
 thread plus `code-changes`. Read Gate 1's thread answers by iterating every
-key other than `code-changes` and splitting each value at its first `:`
-into the verb and the thread id: the thread id is in the value, and the
-`thread-<n>` key is never a join key.
+key other than `code-changes`, unwrapping a `{value, note}` object to its
+`value`, and splitting at the first `:` into the verb and the thread id:
+the thread id is in the value, and the `thread-<n>` key is never a join key.
 
 - **Closed or missing gate.** If `gate wait` fails with `gate <id> closed (<reason>)`,
   the decision site itself was abandoned — superseded, abandoned, or pruned
@@ -359,8 +361,10 @@ into the verb and the thread id: the thread id is in the value, and the
     question's answer may be the bare option string/array or the
     `{value, note}` object — read `value` in the object case.
 - **Degraded mode.** If `gate open` exits nonzero (the daemon was down at
-  open time), fall back to ONE `AskUserQuestion` carrying that gate's own
-  questions and proceed on its answers. A failing `gate wait` is not itself
+  open time), fall back to the native form alone, chunked exactly as that
+  gate's form branch describes (Gate 1: thread questions four per call,
+  then `code-changes` only after a fix; Gate 2: its two questions in one
+  call), and proceed on the combined answers. A failing `gate wait` is not itself
   degradation — per the presentation branches above, re-run it; only if it keeps
   failing, and never with the closed message or the terminal errors above
   (those end cleanly per "Closed or missing gate" instead), fall back to the
