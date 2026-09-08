@@ -621,9 +621,10 @@ function agentCommand(resolve: GetSettingFn): string | undefined {
  * store-wins is per SUB-field there so setting one doesn't blank the other
  * two back to their zero value. `rtRepos` is derived from `board.gitlabHost`
  * and `board.projects` (see deriveRtRepos), with config.json's entries as
- * per-project overrides; there is no store key for it. The members roster overlays `board.hiddenMembers` (user-scope
- * usernames) onto the roster's `hidden` flags by username, replacing
- * whatever `hidden` flags the roster source (store or file) carried inline —
+ * per-project overrides; there is no store key for it. The roster comes from
+ * the first owning key in ROSTER_KEYS, and overlays `board.hiddenMembers`
+ * (user-scope usernames) onto that roster's `hidden` flags by username,
+ * replacing whatever `hidden` flags the roster source carried inline:
  * post-migration, hidden state lives only in the user key, never on the
  * team-owned member entries. Delete this function whole at cutover, once
  * config.json carries none of these fields.
@@ -647,6 +648,28 @@ function agentCommand(resolve: GetSettingFn): string | undefined {
  * config.json most installs won't even have; the label still correctly
  * points an operator at `rt settings`, not a file that may not exist.
  */
+/** Roster store keys, strongest first. `mattstack.roster` is the suite-wide
+    roster every mattstack app reads; `board.members` is the board's own
+    pre-migration list, kept for installs whose team store still carries it.
+    An unregistered key on a stale rt-client copy resolves undefined through
+    storeValue's catch, so an old copy simply keeps using board.members. */
+const ROSTER_KEYS = ['mattstack.roster', 'board.members'] as const;
+
+type RosterStoreKey = (typeof ROSTER_KEYS)[number];
+
+/** The owning roster key and its value, or null when the store owns neither.
+    One helper for both sides of the latch: the reader and the writer must
+    never disagree about which key holds the roster. */
+function rosterFromStore(
+  resolve: GetSettingFn
+): { key: RosterStoreKey; members: Member[] } | null {
+  for (const key of ROSTER_KEYS) {
+    const members = storeValue<Member[]>(key, resolve);
+    if (members !== undefined) return { key, members };
+  }
+  return null;
+}
+
 function withBoardStoreFallback(
   fileConfig: BoardConfig,
   resolve: GetSettingFn
@@ -661,8 +684,7 @@ function withBoardStoreFallback(
     respond?: string;
     doctor?: string;
   }>('board.cwds', resolve);
-  const roster =
-    storeValue<Member[]>('board.members', resolve) ?? fileConfig.members;
+  const roster = rosterFromStore(resolve)?.members ?? fileConfig.members;
   const hiddenStore = storeValue<string[]>('board.hiddenMembers', resolve);
   const hiddenUsernames = new Set(
     hiddenStore ?? roster.filter(m => m.hidden).map(m => m.username)
@@ -741,7 +763,7 @@ function storeOwnsRequiredFields(resolve: GetSettingFn): boolean {
   return (
     storeValue('board.gitlabHost', resolve) !== undefined &&
     storeValue('board.projects', resolve) !== undefined &&
-    storeValue('board.members', resolve) !== undefined
+    rosterFromStore(resolve) !== null
   );
 }
 

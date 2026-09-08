@@ -187,6 +187,57 @@ describe('loadConfigFrom: per-key store-wins fallback', () => {
     );
     expect(cfg.gateGraceMinutes).toBe(120);
   });
+
+  test('mattstack.roster wins over board.members', () => {
+    const p = tmpConfig();
+    const cfg = loadConfigFrom(
+      p,
+      fakeResolve({
+        'mattstack.roster': [{ username: 'suite', name: 'Suite Wide' }],
+        'board.members': [{ username: 'legacy' }],
+      })
+    );
+    expect(cfg.members).toEqual([{ username: 'suite', name: 'Suite Wide' }]);
+  });
+
+  test('board.members still wins over config.json when mattstack.roster is unset', () => {
+    const p = tmpConfig();
+    const cfg = loadConfigFrom(
+      p,
+      fakeResolve({ 'board.members': [{ username: 'legacy' }] })
+    );
+    expect(cfg.members).toEqual([{ username: 'legacy' }]);
+  });
+
+  test('an empty mattstack.roster is still ownership, not absence', () => {
+    // [] is a value: it must not fall through to board.members. parseConfig
+    // refuses an empty roster, so this proves ownership by the throw.
+    const p = tmpConfig();
+    expect(() =>
+      loadConfigFrom(
+        p,
+        fakeResolve({
+          'mattstack.roster': [],
+          'board.members': [{ username: 'legacy' }],
+        })
+      )
+    ).toThrow();
+  });
+
+  test('board.hiddenMembers overlays a mattstack.roster roster the same way', () => {
+    const p = tmpConfig();
+    const cfg = loadConfigFrom(
+      p,
+      fakeResolve({
+        'mattstack.roster': [{ username: 'ann' }, { username: 'bo' }],
+        'board.hiddenMembers': ['bo'],
+      })
+    );
+    expect(cfg.members).toEqual([
+      { username: 'ann' },
+      { username: 'bo', hidden: true },
+    ]);
+  });
 });
 
 describe('loadConfigFrom: store values get the same normalization/validation the file path gets', () => {
@@ -776,5 +827,34 @@ describe('saveTabs: latch-gated writer', () => {
       'slackChannel' in
         saveTabs([team], p, fakeResolve({}), fakeWrite([])).tabs[0]!
     ).toBe(false);
+  });
+});
+
+describe('storeOwnsRequiredFields: config.json-free boot', () => {
+  test('mattstack.roster satisfies the roster requirement with no config.json', () => {
+    const missing = join(mkdtempSync(join(tmpdir(), 'board-noconfig-')), 'config.json');
+    const cfg = loadConfigFrom(
+      missing,
+      fakeResolve({
+        'board.gitlabHost': 'https://gitlab.example.com',
+        'board.projects': ['g/p'],
+        'mattstack.roster': [{ username: 'ann' }],
+      })
+    );
+    expect(cfg.members).toEqual([{ username: 'ann' }]);
+    expect(cfg.gitlabHost).toBe('https://gitlab.example.com');
+  });
+
+  test('no roster key at all with no config.json still throws the seed message', () => {
+    const missing = join(mkdtempSync(join(tmpdir(), 'board-noconfig-')), 'config.json');
+    expect(() =>
+      loadConfigFrom(
+        missing,
+        fakeResolve({
+          'board.gitlabHost': 'https://gitlab.example.com',
+          'board.projects': ['g/p'],
+        })
+      )
+    ).toThrow(/config.json not found/);
   });
 });
