@@ -14,8 +14,9 @@ import {
     non-active Item hidden and inert, so the explicit hidden/inert overrides
     on each Item are what make the flat card possible. The native form is the
     one door to submission: FormData, not component state, builds the answer.
-    The `selections` mirror exists only to drive the structural collapse and
-    the submit-disabled derivation in GateCard. */
+    Every choice is controlled from `selections` so a question that unmounts
+    and comes back (the respond collapse) remounts wearing its answer, and
+    the FormData the submit reads still mirrors that state exactly. */
 export function GateQuestionnaire({
   gate,
   selections,
@@ -57,50 +58,59 @@ export function GateQuestionnaire({
       }}
     >
       <Stack gap="md">
-        {display.map(item => (
-          <Questionnaire.Item
-            key={item.name}
-            name={item.name}
-            required={item.required}
-            multiple={item.multiple}
-            hidden={false}
-            inert={false}
-            style={{ border: 0, margin: 0, padding: 0 }}
-          >
-            <Questionnaire.Title
-              style={{ fontWeight: 600, fontSize: 13, padding: 0 }}
+        {display.map(item => {
+          const current = selections[item.name];
+          const picked = new Set(Array.isArray(current) ? current : []);
+          return (
+            <Questionnaire.Item
+              key={item.name}
+              name={item.name}
+              required={item.required}
+              multiple={item.multiple}
+              hidden={false}
+              inert={false}
+              style={{ border: 0, margin: 0, padding: 0 }}
             >
-              {item.prompt}
-            </Questionnaire.Title>
-            <Questionnaire.Choices>
-              <Stack gap={6} mt={6}>
-                {item.choices.map(choice => (
-                  <Questionnaire.Choice
-                    key={choice.value}
-                    value={choice.value}
-                    onChange={event =>
-                      toggle(
-                        item.name,
-                        item.multiple,
-                        choice.value,
-                        event.currentTarget.checked
-                      )
-                    }
-                    style={{ display: 'flex', gap: 8, alignItems: 'center' }}
-                  >
-                    <Questionnaire.ChoiceInput />
-                    <Questionnaire.ChoiceLabel
-                      title={choice.description}
-                      style={{ fontSize: 13 }}
+              <Questionnaire.Title
+                style={{ fontWeight: 600, fontSize: 13, padding: 0 }}
+              >
+                {item.prompt}
+              </Questionnaire.Title>
+              <Questionnaire.Choices>
+                <Stack gap={6} mt={6}>
+                  {item.choices.map(choice => (
+                    <Questionnaire.Choice
+                      key={choice.value}
+                      value={choice.value}
+                      checked={
+                        item.multiple
+                          ? picked.has(choice.value)
+                          : current === choice.value
+                      }
+                      onChange={event =>
+                        toggle(
+                          item.name,
+                          item.multiple,
+                          choice.value,
+                          event.currentTarget.checked
+                        )
+                      }
+                      style={{ display: 'flex', gap: 8, alignItems: 'center' }}
                     >
-                      {choice.label}
-                    </Questionnaire.ChoiceLabel>
-                  </Questionnaire.Choice>
-                ))}
-              </Stack>
-            </Questionnaire.Choices>
-          </Questionnaire.Item>
-        ))}
+                      <Questionnaire.ChoiceInput />
+                      <Questionnaire.ChoiceLabel
+                        title={choice.description}
+                        style={{ fontSize: 13 }}
+                      >
+                        {choice.label}
+                      </Questionnaire.ChoiceLabel>
+                    </Questionnaire.Choice>
+                  ))}
+                </Stack>
+              </Questionnaire.Choices>
+            </Questionnaire.Item>
+          );
+        })}
         {footer}
       </Stack>
     </Questionnaire.Root>

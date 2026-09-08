@@ -365,6 +365,11 @@ function GateCard({
                         <Questionnaire.Choice
                           key={choice.value}
                           value={choice.value}
+                          checked={
+                            item.multiple
+                              ? picked.has(choice.value)
+                              : current === choice.value
+                          }
                           onChange={event =>
                             item.multiple
                               ? toggleMulti(
