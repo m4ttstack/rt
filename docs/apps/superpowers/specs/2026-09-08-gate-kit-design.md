@@ -212,9 +212,11 @@ button always does something.
 
 ### Freeform note
 
-Every question carries an optional note input (`Questionnaire.Input`,
-accessible name "Note for <question label>", placeholder "Add a note").
-The adapter names the field `<question id>:note`. `answersFromForm`
+Every question carries an optional note input: a plain text input inside
+the item's fieldset (not `Questionnaire.Input`, which names itself after
+the item and marks it answered), accessible name "Note for <question
+label>", placeholder "Add a note". The adapter names the field
+`<question id>:note`. `answersFromForm`
 returns wire answers (`{ answers: GateAnswers }`): a question whose note
 is non-empty after trimming submits `{ value, note }` where `value` is
 the selection (string, or string[] for multi); an empty note submits the
