@@ -41,13 +41,9 @@ monorepo, alongside the apps that consume it.
 
 ## Installation
 
-```sh
-npm install @mattstack/tui-kit
-```
-
-Or `bun add @mattstack/tui-kit`, or your package manager's equivalent. React 19
-is a peer dependency. The package is published under a restricted npm scope, so
-installing it requires access to the `@mattstack` scope.
+`@mattstack/tui-kit` is unpublished; it lives in this monorepo and every
+consumer depends on it with `"@mattstack/tui-kit": "workspace:*"`. React 19
+is a peer dependency.
 
 ## Quickstart
 
