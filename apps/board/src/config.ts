@@ -611,6 +611,28 @@ function agentCommand(resolve: GetSettingFn): string | undefined {
   return composeAgentCommand(loadAgentSettings(resolve)) || undefined;
 }
 
+/** Roster store keys, strongest first. `mattstack.roster` is the suite-wide
+    roster every mattstack app reads; `board.members` is the board's own
+    pre-migration list, kept for installs whose team store still carries it.
+    An unregistered key on a stale rt-client copy resolves undefined through
+    storeValue's catch, so an old copy simply keeps using board.members. */
+const ROSTER_KEYS = ['mattstack.roster', 'board.members'] as const;
+
+type RosterStoreKey = (typeof ROSTER_KEYS)[number];
+
+/** The owning roster key and its value, or null when the store owns neither.
+    One helper for both sides of the latch: the reader and the writer must
+    never disagree about which key holds the roster. */
+function rosterFromStore(
+  resolve: GetSettingFn
+): { key: RosterStoreKey; members: Member[] } | null {
+  for (const key of ROSTER_KEYS) {
+    const members = storeValue<Member[]>(key, resolve);
+    if (members !== undefined) return { key, members };
+  }
+  return null;
+}
+
 /**
  * Transition fallback (board settings migration): layers every board.* store
  * key over `fileConfig`, per key. A key the store doesn't yet own falls back
@@ -648,28 +670,6 @@ function agentCommand(resolve: GetSettingFn): string | undefined {
  * config.json most installs won't even have; the label still correctly
  * points an operator at `rt settings`, not a file that may not exist.
  */
-/** Roster store keys, strongest first. `mattstack.roster` is the suite-wide
-    roster every mattstack app reads; `board.members` is the board's own
-    pre-migration list, kept for installs whose team store still carries it.
-    An unregistered key on a stale rt-client copy resolves undefined through
-    storeValue's catch, so an old copy simply keeps using board.members. */
-const ROSTER_KEYS = ['mattstack.roster', 'board.members'] as const;
-
-type RosterStoreKey = (typeof ROSTER_KEYS)[number];
-
-/** The owning roster key and its value, or null when the store owns neither.
-    One helper for both sides of the latch: the reader and the writer must
-    never disagree about which key holds the roster. */
-function rosterFromStore(
-  resolve: GetSettingFn
-): { key: RosterStoreKey; members: Member[] } | null {
-  for (const key of ROSTER_KEYS) {
-    const members = storeValue<Member[]>(key, resolve);
-    if (members !== undefined) return { key, members };
-  }
-  return null;
-}
-
 function withBoardStoreFallback(
   fileConfig: BoardConfig,
   resolve: GetSettingFn
