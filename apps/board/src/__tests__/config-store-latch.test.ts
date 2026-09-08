@@ -473,6 +473,52 @@ describe('saveRosterMembers: latch-gated writer', () => {
     );
     expect(calls[0]!.value).toEqual([{ username: 'alice' }]);
   });
+
+  test('owned by mattstack.roster: writes that key, not board.members', () => {
+    const p = tmpConfig({ ...base, members: [{ username: 'alice' }] });
+    const calls: Array<{ key: string; value: unknown; scope: string }> = [];
+    const next = [{ username: 'alice' }, { username: 'bob', name: 'Bob Ng' }];
+    saveRosterMembers(
+      next,
+      p,
+      fakeResolve({
+        'mattstack.roster': [{ username: 'alice' }],
+        'board.members': [{ username: 'legacy' }],
+      }),
+      fakeWrite(calls)
+    );
+    expect(calls).toEqual([
+      { key: 'mattstack.roster', value: next, scope: 'team' },
+    ]);
+  });
+
+  test('a write to mattstack.roster strips hidden: that key has no such field', () => {
+    const p = tmpConfig({ ...base, members: [{ username: 'alice' }] });
+    const calls: Array<{ key: string; value: unknown; scope: string }> = [];
+    saveRosterMembers(
+      [{ username: 'alice' }, { username: 'bob', hidden: true, name: 'Bob' }],
+      p,
+      fakeResolve({ 'mattstack.roster': [{ username: 'alice' }] }),
+      fakeWrite(calls)
+    );
+    expect(calls[0]!.value).toEqual([
+      { username: 'alice' },
+      { username: 'bob', name: 'Bob' },
+    ]);
+  });
+
+  test('a write to board.members keeps hidden: that key still carries it', () => {
+    const p = tmpConfig({ ...base, members: [{ username: 'alice' }] });
+    const calls: Array<{ key: string; value: unknown; scope: string }> = [];
+    const next = [{ username: 'alice' }, { username: 'bob', hidden: true }];
+    saveRosterMembers(
+      next,
+      p,
+      fakeResolve({ 'board.members': [{ username: 'alice' }] }),
+      fakeWrite(calls)
+    );
+    expect(calls[0]!.value).toEqual(next);
+  });
 });
 
 describe('saveMemberHidden: latch-gated writer', () => {

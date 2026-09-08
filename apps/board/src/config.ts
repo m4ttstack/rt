@@ -825,33 +825,13 @@ function isHiddenMembersOwned(resolve: GetSettingFn): boolean {
 }
 
 /**
- * Persist `username`'s hidden flag and return the reload. Unowned: config.json's
- * inline `members[].hidden` stays the single writer (today's behavior) —
- * UNLESS config.json doesn't exist at all (RULING: file-authority is
- * meaningless with no file), in which case this establishes store ownership
- * outright rather than raw-ENOENT-ing (mirrors loadConfigFrom's store-boot
- * mode; only reachable when the store already owns the required team fields,
- * since that's what a config.json-free `current` needs to resolve at all).
- * Owned: `board.hiddenMembers` (the user store) is the single writer instead
- * and config.json is never touched for this — every branch is exactly one
- * write, so a `write` throw simply propagates; nothing was persisted for it
- * to revert. A non-ENOENT file-read failure (a genuinely malformed
- * config.json) still surfaces loudly, same as today.
- */
-/** Whether the settings store owns the roster itself (as opposed to the
-    hidden overlay). Mirrors isHiddenMembersOwned: the ownership latch decides
-    which file a roster edit must land in. */
-function isMembersOwned(resolve: GetSettingFn): boolean {
-  return storeValue<Member[]>('board.members', resolve) !== undefined;
-}
-
-/**
- * Replace the roster wholesale, honoring the ownership latch: a store-owned
- * roster is written to the team store, otherwise to config.json. Callers own
+ * Replace the roster wholesale: a store-owned roster is written back to the
+ * key that owns it (see ROSTER_KEYS), otherwise to config.json. Callers own
  * validation (duplicate, unknown) and pass the full next list; this only
  * persists it and hands back the reloaded config so the server can swap its
- * in-memory copy. Hidden flags ride along on the entries, matching how the
- * roster is stored today.
+ * in-memory copy. Hidden flags ride along only on `board.members`;
+ * `mattstack.roster` is shared with every suite app and carries no hidden
+ * field.
  */
 export function saveRosterMembers(
   next: Member[],
@@ -859,8 +839,13 @@ export function saveRosterMembers(
   resolve: GetSettingFn = getSetting,
   write: SetSettingFn = setSetting
 ): BoardConfig {
-  if (isMembersOwned(resolve)) {
-    write('board.members', next, 'team');
+  const owner = rosterFromStore(resolve);
+  if (owner) {
+    const value =
+      owner.key === 'mattstack.roster'
+        ? next.map(({ hidden: _hidden, ...rest }) => rest)
+        : next;
+    write(owner.key, value, 'team');
   } else {
     let raw: string;
     try {
@@ -916,6 +901,20 @@ export function saveTabs(
   return loadConfigFrom(path, resolve);
 }
 
+/**
+ * Persist `username`'s hidden flag and return the reload. Unowned: config.json's
+ * inline `members[].hidden` stays the single writer (today's behavior)...
+ * UNLESS config.json doesn't exist at all (RULING: file-authority is
+ * meaningless with no file), in which case this establishes store ownership
+ * outright rather than raw-ENOENT-ing (mirrors loadConfigFrom's store-boot
+ * mode; only reachable when the store already owns the required team fields,
+ * since that's what a config.json-free `current` needs to resolve at all).
+ * Owned: `board.hiddenMembers` (the user store) is the single writer instead
+ * and config.json is never touched for this... every branch is exactly one
+ * write, so a `write` throw simply propagates; nothing was persisted for it
+ * to revert. A non-ENOENT file-read failure (a genuinely malformed
+ * config.json) still surfaces loudly, same as today.
+ */
 export function saveMemberHidden(
   username: string,
   hidden: boolean,
