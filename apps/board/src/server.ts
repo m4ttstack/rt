@@ -140,7 +140,11 @@ import { postLatch, spendAllLatches } from './latch/post.ts';
 import { isLocalRequest } from './local.ts';
 import { resolveBoardSkill, type BoardSkillKind } from './manifest-bindings.ts';
 import { memoizeAsync } from './memoize-async.ts';
-import { parseMrActionBody, runMrAction } from './mr-action.ts';
+import {
+  isJsonMediaType,
+  parseMrActionBody,
+  runMrAction,
+} from './mr-action.ts';
 import {
   makeSwitchboardClient,
   type SwitchboardClient,
@@ -1881,6 +1885,10 @@ const httpServer = Bun.serve({
           return new Response('method not allowed', { status: 405 });
         if (!isLocalRequest(req))
           return new Response('forbidden', { status: 403 });
+        // CSRF gate: see isJsonMediaType for why this is an exact media-type
+        // match, not the includes() form the older endpoints use.
+        if (!isJsonMediaType(req.headers.get('content-type')))
+          return new Response('expected application/json', { status: 415 });
         if (!gitlabToken)
           return new Response('gitlab token not configured', { status: 400 });
         let body: unknown;
