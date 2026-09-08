@@ -247,34 +247,34 @@ describe('GateCard: parked', () => {
 });
 
 describe('GateCard: answered', () => {
-  it('renders a read-only summary, unwrapping the {value, note} form', () => {
+  it('renders a chip for an answered gate and expands to the unwrapped detail', async () => {
     renderCard(
       gateRow({
         status: 'answered',
         answer: {
           answers: {
-            outcome: { value: 'pass', note: 'flaky retry, ok on rerun' },
+            outcome: { value: 'pass', note: 'clean run' },
             flags: ['lint'],
           },
-          by: 'reviewer-pane',
-          answeredAt: 100,
+          by: 'pane',
+          answeredAt: 1,
         },
       })
     );
 
-    expect(screen.getByTestId('gate-answered-badge')).toBeInTheDocument();
+    expect(screen.getByTestId('gate-chip')).toHaveTextContent(
+      'self-review run run-1 · pass, lint'
+    );
+    expect(screen.queryByTestId('gate-answer-summary')).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByTestId('gate-detail-toggle'));
     const summary = screen.getByTestId('gate-answer-summary');
     expect(within(summary).getByText('pass')).toBeInTheDocument();
-    expect(
-      within(summary).getByText('flaky retry, ok on rerun')
-    ).toBeInTheDocument();
+    expect(within(summary).getByText('clean run')).toBeInTheDocument();
     expect(within(summary).getByText('lint')).toBeInTheDocument();
-    expect(
-      screen.queryByRole('button', { name: 'submit' })
-    ).not.toBeInTheDocument();
   });
 
-  it('shows a placeholder for a question missing from the answers', () => {
+  it('shows a placeholder for a question missing from the answers', async () => {
     renderCard(
       gateRow({
         status: 'answered',
@@ -282,6 +282,7 @@ describe('GateCard: answered', () => {
       })
     );
 
+    await userEvent.click(screen.getByTestId('gate-detail-toggle'));
     const summary = screen.getByTestId('gate-answer-summary');
     expect(within(summary).getByText('(none)')).toBeInTheDocument();
   });
@@ -361,9 +362,8 @@ describe('W4 rendering', () => {
     });
     answerPost.mockClear();
     await user.click(screen.getByLabelText('fix:t1'));
-    expect(
-      screen.getByText('Approve the proposed code changes?')
-    ).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'approve' })).toBeVisible();
+    expect(screen.getByRole('radio', { name: 'approve' })).toBeEnabled();
   });
 });
 

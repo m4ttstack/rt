@@ -1087,8 +1087,8 @@ describe('RunDetail: gate card', () => {
     expect(
       await screen.findByTestId('gate-answered-badge')
     ).toBeInTheDocument();
-    expect(await screen.findByTestId('gate-answer-summary')).toHaveTextContent(
-      'pass'
+    expect(await screen.findByTestId('gate-chip')).toHaveTextContent(
+      'self-review run run-1 · pass · by someone'
     );
     // Answered isn't actionable -- no Answer affordance for it.
     expect(

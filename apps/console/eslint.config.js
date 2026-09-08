@@ -26,6 +26,13 @@ export default tseslint.config(
                 'scope and crashes the browser bundle. Value imports in app code come from ' +
                 "'@mattstack/rt-client/identity'; everything else is `import type` only.",
             },
+            {
+              regex: '^@mattstack/gate-kit/server$',
+              importNamePattern: '.*',
+              allowTypeImports: true,
+              message:
+                "The gate-kit server entry touches node:fs and must never reach the browser bundle. App code imports '@mattstack/gate-kit' or '@mattstack/gate-kit/react'; only src/server may import the server entry.",
+            },
           ],
         },
       ],
