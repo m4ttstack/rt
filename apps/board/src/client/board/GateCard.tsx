@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import type {
   AnswerOutcome,
@@ -8,16 +8,13 @@ import type {
   GateSummaryDetailRow,
   GateSummaryInput,
 } from '@mattstack/gate-kit';
-import {
-  answeredGateSummary,
-  effectiveSelections,
-  gateAnswerPayload,
-  resolveAnswerOutcome,
-} from '@mattstack/gate-kit';
+import { answeredGateSummary, resolveAnswerOutcome } from '@mattstack/gate-kit';
 import {
   answersFromForm,
   gateItems,
+  noteFieldName,
   Questionnaire,
+  useGateDraft,
   type GateItemDisplay,
 } from '@mattstack/gate-kit/react';
 import { Chip, Markdown } from '@mattstack/tui-kit';
@@ -67,7 +64,7 @@ function ThreadGroupChoices({
                   }
                   className="tui-gate-thread-verb"
                 >
-                  <Questionnaire.ChoiceInput />
+                  <Questionnaire.ChoiceInput className="tui-gate-choice-input" />
                   <Questionnaire.ChoiceLabel>
                     <span title={entry.value}>{entry.verb}</span>
                     {entry.recommended && (
@@ -82,6 +79,7 @@ function ThreadGroupChoices({
                       </Chip>
                     )}
                   </Questionnaire.ChoiceLabel>
+                  <Questionnaire.ChoiceShortcut className="tui-gate-key" />
                 </Questionnaire.Choice>
               ))}
             </div>
@@ -148,6 +146,12 @@ function AnsweredChip({
     either, `parked` additionally wears a badge since a pane is no longer
     waiting on it. `answered` swaps to the summary chip.
 
+    One question renders flat; two or more step through the primitive's own
+    step mode (one active item, Previous / Next, Submit on the last). The
+    code-changes item of a respond-plan gate joins the sequence only once a
+    `fix:` value is picked, which in step mode means a new last step appears
+    and Submit moves to it.
+
     No optimistic local state on a successful submit: the request either
     fails (shown inline) or succeeds and the board's SSE-driven poll flips
     this gate's status on its own next refresh. A CAS loss is the one
@@ -168,7 +172,20 @@ function GateCard({
   mr: BoardMRWithReview;
   onFocusPane: (mr: BoardMRWithReview, domain: GateDomain) => void;
 }) {
-  const [selections, setSelections] = useState<GateSelections>({});
+  const answered = gate.status === 'answered';
+  const actionable = gate.status === 'open' || gate.status === 'parked';
+  const {
+    initial: draft,
+    save: saveDraft,
+    clear: clearDraft,
+  } = useGateDraft(gate.gateId, actionable);
+  const [selections, setSelections] = useState<GateSelections>(
+    () => draft?.selections ?? {}
+  );
+  const [notes, setNotes] = useState<Record<string, string>>(
+    () => draft?.notes ?? {}
+  );
+  const [step, setStep] = useState<string | null>(() => draft?.item ?? null);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
   const [lost, setLost] = useState<AnswerOutcome | null>(null);
@@ -176,20 +193,18 @@ function GateCard({
   const [focusBusy, setFocusBusy] = useState(false);
   const [focusError, setFocusError] = useState<string | null>(null);
 
-  const answered = gate.status === 'answered';
-  const actionable = gate.status === 'open' || gate.status === 'parked';
-  const submittable =
-    actionable &&
-    gateAnswerPayload(
-      gate.questions,
-      effectiveSelections(gate.kind, gate.questions, selections)
-    ) !== null;
   const originFocusable = Boolean(gate.origin?.paneId || gate.origin?.worktree);
 
-  const { items, display } = gateItems(
-    { kind: gate.kind, questions: gate.questions },
-    selections
+  const { items, display } = useMemo(
+    () => gateItems({ kind: gate.kind, questions: gate.questions }, selections),
+    [gate.kind, gate.questions, selections]
   );
+  const stepped = display.length > 1;
+  const activeStep = step ?? display[0]?.name;
+
+  useEffect(() => {
+    saveDraft({ selections, notes, item: step });
+  }, [saveDraft, selections, notes, step]);
 
   const setSingle = (name: string, value: string) =>
     setSelections(prev => ({ ...prev, [name]: value }));
@@ -214,6 +229,14 @@ function GateCard({
       if (checked) set.add(next);
       return { ...prev, [name]: [...set] };
     });
+  const setNote = (name: string, value: string) =>
+    setNotes(prev => ({ ...prev, [name]: value }));
+  const resetAll = () => {
+    setSelections({});
+    setNotes({});
+    setStep(null);
+    clearDraft();
+  };
 
   const focusGate = async () => {
     setFocusBusy(true);
@@ -257,6 +280,7 @@ function GateCard({
         // winning row, not a validation failure to retry.
         setBusy(false);
         setLost(outcome);
+        clearDraft();
         return;
       }
       if (!res.ok) throw new Error(String(res.status));
@@ -266,6 +290,7 @@ function GateCard({
       return;
     }
     setBusy(false);
+    clearDraft();
   };
 
   return (
@@ -336,7 +361,11 @@ function GateCard({
         </>
       ) : (
         <Questionnaire.Root
+          className="tui-gate-form"
           items={items}
+          shortcuts="numbers"
+          item={activeStep}
+          onItemChange={setStep}
           onSubmit={event => {
             event.preventDefault();
             void submit(
@@ -347,121 +376,175 @@ function GateCard({
             );
           }}
         >
-          {display.map(item => {
-            const current = selections[item.name];
+          {stepped && (
+            <Questionnaire.Progress
+              className="tui-gate-progress"
+              render={(props, state) => (
+                <span {...props}>
+                  {state.current} of {state.total}
+                </span>
+              )}
+            />
+          )}
+          {display.map(q => {
+            const current = selections[q.name];
             const picked = new Set(Array.isArray(current) ? current : []);
             return (
-              // The primitive is step-shaped (non-active Items render hidden
-              // and inert); the two overrides are what make the flat card
-              // possible.
               <Questionnaire.Item
-                key={item.name}
-                name={item.name}
-                required={item.required}
-                multiple={item.multiple}
-                hidden={false}
-                inert={false}
+                key={q.name}
+                name={q.name}
+                required={q.required}
+                multiple={q.multiple}
                 className="tui-gate-question"
               >
                 <Questionnaire.Title className="tui-gate-question-label">
-                  {item.prompt}
+                  {q.prompt}
                 </Questionnaire.Title>
-                <Questionnaire.Choices>
-                  {item.groups ? (
+                <Questionnaire.Choices className="tui-gate-choices">
+                  {q.groups ? (
                     <ThreadGroupChoices
-                      item={item}
+                      item={q}
                       picked={picked}
                       onGroupSelect={(values, next, checked) =>
-                        selectGroup(item.name, values, next, checked)
+                        selectGroup(q.name, values, next, checked)
                       }
                     />
                   ) : (
-                    <div className="tui-gate-options">
-                      {item.choices.map(choice => (
-                        <Questionnaire.Choice
-                          key={choice.value}
-                          value={choice.value}
-                          checked={
-                            item.multiple
-                              ? picked.has(choice.value)
-                              : current === choice.value
-                          }
-                          onChange={event =>
-                            item.multiple
-                              ? toggleMulti(
-                                  item.name,
-                                  choice.value,
-                                  event.currentTarget.checked
-                                )
-                              : setSingle(item.name, choice.value)
-                          }
-                          className="tui-gate-option"
-                        >
-                          <Questionnaire.ChoiceInput />
-                          <Questionnaire.ChoiceLabel className="tui-gate-option-label">
-                            <span title={choice.description}>
-                              {choice.label}
-                            </span>
-                            {choice.recommended && (
-                              <Chip
-                                intent="ok"
-                                variant="outline"
-                                uppercase
-                                data-gate="recommended"
-                                className="tui-gate-recommended"
-                              >
-                                recommended
-                              </Chip>
-                            )}
-                          </Questionnaire.ChoiceLabel>
-                        </Questionnaire.Choice>
-                      ))}
-                    </div>
+                    q.choices.map(choice => (
+                      <Questionnaire.Choice
+                        key={choice.value}
+                        value={choice.value}
+                        checked={
+                          q.multiple
+                            ? picked.has(choice.value)
+                            : current === choice.value
+                        }
+                        onChange={event =>
+                          q.multiple
+                            ? toggleMulti(
+                                q.name,
+                                choice.value,
+                                event.currentTarget.checked
+                              )
+                            : setSingle(q.name, choice.value)
+                        }
+                        className="tui-gate-choice"
+                      >
+                        <Questionnaire.ChoiceInput className="tui-gate-choice-input" />
+                        <Questionnaire.ChoiceLabel className="tui-gate-choice-label">
+                          <span title={choice.description}>{choice.label}</span>
+                          {choice.recommended && (
+                            <Chip
+                              intent="ok"
+                              variant="outline"
+                              uppercase
+                              data-gate="recommended"
+                              className="tui-gate-recommended"
+                            >
+                              recommended
+                            </Chip>
+                          )}
+                        </Questionnaire.ChoiceLabel>
+                        <Questionnaire.ChoiceShortcut className="tui-gate-key" />
+                      </Questionnaire.Choice>
+                    ))
                   )}
                 </Questionnaire.Choices>
+                <Questionnaire.Error className="tui-gate-invalid" />
+                <input
+                  type="text"
+                  className="tui-gate-note"
+                  name={noteFieldName(q.name)}
+                  aria-label={`Note for ${q.prompt}`}
+                  placeholder="Add a note"
+                  value={notes[q.name] ?? ''}
+                  onChange={event => setNote(q.name, event.currentTarget.value)}
+                  onKeyDown={event => {
+                    // Plain Enter in a text input is implicit form submission;
+                    // Cmd/Ctrl+Enter stays the primitive's validate-and-advance.
+                    if (
+                      event.key === 'Enter' &&
+                      !event.metaKey &&
+                      !event.ctrlKey
+                    )
+                      event.preventDefault();
+                  }}
+                />
               </Questionnaire.Item>
             );
           })}
           <div className="tui-gate-actions">
-            {failed && (
-              <span className="tui-gate-error">
-                submit failed... nothing was sent, try again
-              </span>
+            <Questionnaire.Previous className="tui-gate-nav" disabled={busy}>
+              previous
+            </Questionnaire.Previous>
+            {stepped && (
+              <button
+                type="reset"
+                className="tui-gate-nav"
+                disabled={busy}
+                onClick={resetAll}
+              >
+                reset
+              </button>
             )}
-            {focusError && <span className="tui-gate-error">{focusError}</span>}
-            {gate.status === 'parked' ? (
-              gate.domain && (
+            <div className="tui-gate-actions-end">
+              {failed && (
+                <span className="tui-gate-error">
+                  submit failed... nothing was sent, try again
+                </span>
+              )}
+              {focusError && (
+                <span className="tui-gate-error">{focusError}</span>
+              )}
+              {gate.status === 'parked' ? (
+                gate.domain && (
+                  <button
+                    type="button"
+                    className="tui-gate-focus"
+                    title="resume this gate's flow in a fresh pane"
+                    onClick={() => onFocusPane(mr, gate.domain!)}
+                  >
+                    focus pane
+                  </button>
+                )
+              ) : (
                 <button
                   type="button"
                   className="tui-gate-focus"
-                  title="resume this gate's flow in a fresh pane"
-                  onClick={() => onFocusPane(mr, gate.domain!)}
+                  disabled={!originFocusable || focusBusy}
+                  title={
+                    originFocusable
+                      ? 'jump into the pane behind this gate'
+                      : 'no origin on this gate'
+                  }
+                  onClick={() => void focusGate()}
                 >
                   focus pane
                 </button>
-              )
-            ) : (
-              <button
-                type="button"
-                className="tui-gate-focus"
-                disabled={!originFocusable || focusBusy}
-                title={
-                  originFocusable
-                    ? 'jump into the pane behind this gate'
-                    : 'no origin on this gate'
-                }
-                onClick={() => void focusGate()}
+              )}
+              <Questionnaire.Next
+                className="tui-gate-submit"
+                render={(props, state) => (
+                  <button
+                    {...props}
+                    disabled={busy || state.status !== 'answered'}
+                  />
+                )}
               >
-                focus pane
-              </button>
-            )}
-            <button
-              type="submit"
-              className="tui-gate-submit"
-              disabled={!submittable || busy}
-            >
-              {busy ? 'submitting…' : 'submit'}
-            </button>
+                next
+              </Questionnaire.Next>
+              <Questionnaire.Submit
+                className="tui-gate-submit"
+                render={(props, state) => (
+                  <button
+                    {...props}
+                    disabled={busy || state.status !== 'answered'}
+                  />
+                )}
+              >
+                {busy ? 'submitting…' : 'submit'}
+              </Questionnaire.Submit>
+            </div>
           </div>
         </Questionnaire.Root>
       )}
