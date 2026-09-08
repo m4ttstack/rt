@@ -36,6 +36,7 @@ function GridView({
         key={mr.iid}
         className="tui-card"
         style={depth > 0 ? { marginLeft: '0.7rem' } : undefined}
+        data-mr-iid={mr.iid}
         data-local={ctx.local ? '1' : undefined}
         title={ctx.local ? 'right-click for actions' : undefined}
         onClick={e => onRowClick(e, mr)}
