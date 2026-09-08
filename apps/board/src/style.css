@@ -1550,6 +1550,12 @@
   font-size: 11px;
   opacity: 0.7;
 }
+.tui-gate-option-label,
+.tui-gate-thread-verb .tui-gate-recommended {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
 .tui-gate-question legend.tui-gate-question-label {
   padding: 0;
 }

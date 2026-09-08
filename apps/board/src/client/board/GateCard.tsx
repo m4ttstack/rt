@@ -69,6 +69,17 @@ function ThreadGroupChoices({
                   <Questionnaire.ChoiceInput />
                   <Questionnaire.ChoiceLabel>
                     <span title={entry.value}>{entry.verb}</span>
+                    {entry.recommended && (
+                      <Chip
+                        intent="ok"
+                        variant="outline"
+                        uppercase
+                        data-gate="recommended"
+                        className="tui-gate-recommended"
+                      >
+                        recommended
+                      </Chip>
+                    )}
                   </Questionnaire.ChoiceLabel>
                 </Questionnaire.Choice>
               ))}
@@ -390,6 +401,17 @@ function GateCard({
                             <span title={choice.description}>
                               {choice.label}
                             </span>
+                            {choice.recommended && (
+                              <Chip
+                                intent="ok"
+                                variant="outline"
+                                uppercase
+                                data-gate="recommended"
+                                className="tui-gate-recommended"
+                              >
+                                recommended
+                              </Chip>
+                            )}
                           </Questionnaire.ChoiceLabel>
                         </Questionnaire.Choice>
                       ))}
