@@ -17,8 +17,8 @@ environment.
 On 2026-09-06 a stray boot left a dead port in that file. Every `done`
 signal after that was posted to nothing and swallowed as best-effort, so no
 latch was armed, no Slack reaction landed, and no pane tab auto-closed
-until the sweeps caught up. The latch on !44121 arrived from the triage
-pass five minutes late; the rest never arrived.
+until the sweeps caught up. The latch on the MR that surfaced this arrived
+from the triage pass five minutes late; the rest never arrived.
 
 ## Solution
 
@@ -35,12 +35,12 @@ or `doctor`. Payload is the existing `AgentSignal` plus one scoping field:
 
 ```json
 {
-  "mrUrl": "https://gitlab.com/acme/acme-web/-/merge_requests/44121",
-  "iid": 44121,
+  "mrUrl": "https://gitlab.example.com/acme/webapp/-/merge_requests/4821",
+  "iid": 4821,
   "kind": "review",
   "status": "done",
   "outcome": "comment",
-  "appRoot": "/Users/matt/Documents/GitHub/mattstack-apps/apps/board"
+  "appRoot": "/Users/dev/apps/board"
 }
 ```
 
