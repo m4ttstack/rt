@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ICONS, Panel, SideDrawer, ToastHost } from '@mattstack/tui-kit';
 import type { BoardMR } from '../../data.ts';
 import { inferRoster } from '../../data.ts';
+import type { MrAction } from '../../mr-action.ts';
 import { sectionStatus } from '../../sections.ts';
 import {
   postableOf,
@@ -456,6 +457,36 @@ export function Board() {
           void load(true);
         }
       );
+    },
+    [addToast, load]
+  );
+
+  const handleMrAction = useCallback(
+    (mr: BoardMR, action: MrAction) => {
+      if (!mr.webUrl) return;
+      const wording: Record<MrAction, [pending: string, done: string]> = {
+        merge: ['merging', 'merge accepted'],
+        rebase: ['rebasing', 'rebase started'],
+        setAutoMerge: ['arming auto-merge on', 'auto-merge armed for'],
+        cancelAutoMerge: [
+          'canceling auto-merge on',
+          'auto-merge canceled for',
+        ],
+      };
+      const [pending, done] = wording[action];
+      addToast(`${pending} !${mr.iid}…`);
+      postAction('/mr/action', {
+        mrUrl: mr.webUrl,
+        iid: mr.iid,
+        action,
+      }).then(result => {
+        if (!result.ok) {
+          addToast(`couldn't ${action} !${mr.iid} (${result.status})`);
+          return;
+        }
+        addToast(`${done} !${mr.iid}`);
+        void load(true);
+      });
     },
     [addToast, load]
   );
@@ -976,6 +1007,7 @@ export function Board() {
           // people's drafts, but their ready MRs are on the board, so this gate
           // is what keeps "mark as draft" off them.
           canDraftState={rowMenu.mr.author.username === data.defaultMember}
+          onMrAction={handleMrAction}
           onNudge={handleNudge}
           // Your own MRs only: a nudge asks a peer to re-review YOUR work, and
           // the server enforces the same gate (403 "not your MR").
