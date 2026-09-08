@@ -35,7 +35,12 @@ import { AppLauncher } from './AppLauncher.tsx';
 import { AppMark } from './AppMark.tsx';
 import { ConfigModal } from './ConfigModal.tsx';
 import { Controls } from './Controls.tsx';
-import { gateParam, mrForGate, stripGateParam } from './deep-link.ts';
+import {
+  gateParam,
+  mrForGate,
+  stripGateParam,
+  viewStateForGate,
+} from './deep-link.ts';
 import { DraftModal } from './DraftModal.tsx';
 import { boardSummary, draftKey, getSlackMarks, mrLine } from './format.ts';
 import type { GateDomain } from './gate-format.ts';
@@ -153,18 +158,29 @@ export function Board() {
       );
       const tab = d.tabs.find(t => t.id === firstPass.tab) ?? d.tabs[0];
       const validMembers = [...rosterUsernamesFor(d.mrs, tab, usernames)];
-      setState(
-        parseViewState(
-          location.search,
-          stored,
-          validMembers,
-          d.defaultMember,
-          tabIds
-        )
+      let resolved = parseViewState(
+        location.search,
+        stored,
+        validMembers,
+        d.defaultMember,
+        tabIds
       );
       const gateId = gateParam(location.search);
       const linkedIid = gateId ? mrForGate(d.mrs, gateId) : null;
-      if (linkedIid !== null) setGateDeepLinkIid(linkedIid);
+      if (linkedIid !== null) {
+        // The stored/URL filters resolved above may hide the linked MR (wrong
+        // tab, a member pick, "posted only") -- a deep link has to land, so
+        // widen whatever would otherwise keep the row off-screen.
+        resolved = viewStateForGate(
+          resolved,
+          d.mrs,
+          d.tabs,
+          new Set(usernames),
+          linkedIid
+        );
+        setGateDeepLinkIid(linkedIid);
+      }
+      setState(resolved);
     } else {
       // Validated against the ACTIVE TAB's roster: a codeowners tab's is
       // inferred from the rows in view, so checking the config roster alone
@@ -609,13 +625,15 @@ export function Board() {
   useEffect(() => {
     if (gateDeepLinkIid === null) return;
     const row = document.querySelector(`[data-mr-iid="${gateDeepLinkIid}"]`);
+    let t: ReturnType<typeof setTimeout> | undefined;
     if (row) {
       row.scrollIntoView({ block: 'center' });
       row.classList.add('tui-row-flash');
-      setTimeout(() => row.classList.remove('tui-row-flash'), 2000);
+      t = setTimeout(() => row.classList.remove('tui-row-flash'), 2000);
     }
     history.replaceState(null, '', stripGateParam(location.search));
     setGateDeepLinkIid(null);
+    return () => clearTimeout(t);
   }, [gateDeepLinkIid]);
 
   if (!data) {

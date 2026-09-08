@@ -1,10 +1,26 @@
 import { describe, expect, test } from 'bun:test';
 
+import type { TabConfig } from '../config.ts';
+import type { BoardMR } from '../data.ts';
+import { DEFAULT_VIEW } from '../view.ts';
 import {
   gateParam,
   mrForGate,
   stripGateParam,
+  viewStateForGate,
 } from '../client/board/deep-link.ts';
+
+type GateLinkMR = BoardMR & { slack?: { posted?: boolean } | null };
+
+function mr(overrides: Partial<GateLinkMR>): GateLinkMR {
+  return {
+    iid: 1,
+    title: 'MR',
+    author: { id: 'x', username: 'bob', name: 'Bob', avatarUrl: null },
+    codeownerSections: [],
+    ...overrides,
+  } as unknown as GateLinkMR;
+}
 
 describe('gateParam', () => {
   test('reads gate from a query string', () => {
@@ -49,6 +65,95 @@ describe('mrForGate', () => {
 
   test('returns null when a row has no gates array at all', () => {
     expect(mrForGate(mrs, 'g4')).toBeNull();
+  });
+});
+
+describe('viewStateForGate', () => {
+  const teamTab: TabConfig = {
+    id: 'team',
+    label: 'Team',
+    source: { kind: 'authors' },
+  };
+  const designTab: TabConfig = {
+    id: 'design',
+    label: 'Design',
+    source: { kind: 'codeowners', section: 'design' },
+  };
+
+  test('widens member to all when the current pick hides the row', () => {
+    const mrs = [
+      mr({ iid: 1, author: { id: 'a', username: 'alice', name: 'Alice', avatarUrl: null } }),
+      mr({ iid: 2, author: { id: 'b', username: 'bob', name: 'Bob', avatarUrl: null } }),
+    ];
+    const state = { ...DEFAULT_VIEW, tab: 'team', member: 'alice' };
+    const result = viewStateForGate(
+      state,
+      mrs,
+      [teamTab],
+      new Set(['alice', 'bob']),
+      2
+    );
+    expect(result.member).toBe('all');
+    expect(result.tab).toBe('team');
+  });
+
+  test('switches to the first tab whose filter carries the linked row', () => {
+    const mrs = [
+      mr({
+        iid: 3,
+        author: { id: 'c', username: 'carol', name: 'Carol', avatarUrl: null },
+        codeownerSections: ['design'],
+      }),
+    ];
+    // carol isn't on the roster, so the authors tab hides her row entirely.
+    const state = { ...DEFAULT_VIEW, tab: 'team' };
+    const result = viewStateForGate(
+      state,
+      mrs,
+      [teamTab, designTab],
+      new Set(['alice', 'bob']),
+      3
+    );
+    expect(result.tab).toBe('design');
+  });
+
+  test('leaves the tab alone when the current one already shows the row', () => {
+    const mrs = [mr({ iid: 4, author: { id: 'b', username: 'bob', name: 'Bob', avatarUrl: null } })];
+    const state = { ...DEFAULT_VIEW, tab: 'team' };
+    const result = viewStateForGate(
+      state,
+      mrs,
+      [teamTab, designTab],
+      new Set(['bob']),
+      4
+    );
+    expect(result.tab).toBe('team');
+  });
+
+  test('clears a posted-only slack filter that would hide the row', () => {
+    const mrs = [mr({ iid: 5, slack: { posted: false } })];
+    const state = { ...DEFAULT_VIEW, tab: 'team', slack: 'posted' as const };
+    const result = viewStateForGate(
+      state,
+      mrs,
+      [teamTab],
+      new Set(['bob']),
+      5
+    );
+    expect(result.slack).toBe('all');
+  });
+
+  test('returns state unchanged when no row carries the iid', () => {
+    const mrs = [mr({ iid: 6 })];
+    const state = { ...DEFAULT_VIEW, tab: 'team', member: 'bob' };
+    const result = viewStateForGate(
+      state,
+      mrs,
+      [teamTab],
+      new Set(['bob']),
+      999
+    );
+    expect(result).toEqual(state);
   });
 });
 
