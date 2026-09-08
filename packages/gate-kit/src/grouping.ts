@@ -44,9 +44,9 @@ function threadHeading(token: string, entries: ThreadOptionEntry[]): string {
  * Detects the shape a respond-plan threads question renders as N*3 flat
  * checkboxes: every option a `(reply|fix|skip):<token>` pair, spanning 2+
  * distinct tokens, each token offering the identical verb set. When it
- * matches, returns one group per token (for GateQuestionField to render as a
- * heading plus a compact verb radio row); returns null for any other shape
- * so the caller renders the flat checkbox list unchanged.
+ * matches, returns one group per token (for the adapter's display rows to
+ * render as a heading plus a compact verb radio row); returns null for any
+ * other shape so the caller renders the flat checkbox list unchanged.
  *
  * Selection semantics are unaffected either way -- this only decides how the
  * options are grouped for display, never which values a token's entries
