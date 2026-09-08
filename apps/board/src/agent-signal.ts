@@ -8,6 +8,14 @@ export function isSignalKind(v: unknown): v is SignalKind {
   return typeof v === 'string' && (KINDS as string[]).includes(v);
 }
 
+export const AGENT_STATUS_TOPIC_PREFIX = 'board/agent-status/';
+
+/** One topic segment per launch kind, so a consumer matches all three with
+    the single-segment glob `board/agent-status/*`. */
+export function agentStatusTopic(kind: SignalKind): string {
+  return `${AGENT_STATUS_TOPIC_PREFIX}${kind}`;
+}
+
 /** What one agent lifecycle transition writes on the MR's slack message, or
     null for the transitions that say nothing. This is the whole policy: the
     launched agent never touches slack, it only reports status, and the board
@@ -35,6 +43,40 @@ export interface AgentSignal {
   kind: SignalKind;
   status: string;
   outcome?: string;
+}
+
+/** `AgentSignal` as it rides the bus. The bus is machine-wide, so a board
+    handles only payloads its own status-bin emitted: `appRoot` is the
+    emitting CLI's APP_ROOT, which is the launching board's by construction. */
+export interface AgentStatusPayload extends AgentSignal {
+  appRoot: string;
+}
+
+/** The bus contract every CLI in bin/ emits and the feed consumes. A payload
+    with no `appRoot` is not a bus payload and is refused rather than guessed
+    at, because handling it on the wrong board posts a latch twice. */
+export function parseAgentStatusPayload(
+  body: unknown
+): AgentStatusPayload | null {
+  if (!body || typeof body !== 'object') return null;
+  const { mrUrl, iid, kind, status, outcome, appRoot } = body as Record<
+    string,
+    unknown
+  >;
+  if (typeof mrUrl !== 'string' || !mrUrl) return null;
+  if (typeof appRoot !== 'string' || !appRoot) return null;
+  if (!isSignalKind(kind)) return null;
+  if (typeof status !== 'string' || !status) return null;
+  if (typeof iid !== 'number' || !Number.isFinite(iid)) return null;
+  if (outcome !== undefined && typeof outcome !== 'string') return null;
+  return {
+    mrUrl,
+    iid,
+    kind,
+    status,
+    outcome: outcome as string | undefined,
+    appRoot,
+  };
 }
 
 /** Parse an /agent/status body -- the wire contract every CLI in bin/ posts and
