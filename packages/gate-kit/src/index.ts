@@ -33,3 +33,7 @@ export type {
   ThreadOptionGroup,
   ThreadVerb,
 } from './grouping';
+export { resolveAnswerOutcome } from './conflict';
+export type { AnswerOutcome } from './conflict';
+export { domainForKind, GATE_KINDS } from './kinds';
+export type { GateDomain } from './kinds';
