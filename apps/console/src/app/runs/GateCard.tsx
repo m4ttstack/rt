@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Badge,
   Button,
@@ -132,6 +132,10 @@ export function GateCard({ gate }: { gate: GateRow }) {
   const [contextOpen, setContextOpen] = useState(false);
   const [focusBusy, setFocusBusy] = useState(false);
   const [focusError, setFocusError] = useState<string | null>(null);
+  const questionnaireGate = useMemo(
+    () => ({ kind: gate.kind, questions: gate.questions }),
+    [gate.kind, gate.questions]
+  );
 
   useEffect(() => {
     saveDraft({ selections, notes, item: step });
@@ -323,7 +327,7 @@ export function GateCard({ gate }: { gate: GateRow }) {
           </>
         ) : (
           <GateQuestionnaire
-            gate={{ kind: gate.kind, questions: gate.questions }}
+            gate={questionnaireGate}
             selections={selections}
             onSelectionsChange={setSelections}
             notes={notes}
