@@ -180,8 +180,8 @@ primitive that the first cut left unwired.
   error line, note field, Submit. The single item is the primitive's
   active item, so no `hidden`/`inert` override is needed.
 - **Two or more questions:** the primitive's step mode. A progress line
-  built from `Questionnaire.Progress` render state ("2 of 3" beside the
-  active question's title), one question's options, error line, note
+  built from `Questionnaire.Progress` render state ("2 of 3") above the
+  active question's title, that question's options, error line, note
   field, then the actions row: Previous, Next, Submit (Submit only on the
   last item). Non-active items keep the primitive's `hidden` + `inert`.
   The `hidden={false} inert={false}` override is removed from both cards;
@@ -231,8 +231,9 @@ The adapter exports `useGateDraft(gateId, enabled)` (browser-only, in
 `localStorage` under `gate-kit:draft:<gateId>`, saved on every change
 while the gate is open, restored on mount, and cleared on a successful
 submit, on a conflict loss, or when the gate is no longer open. A Reset
-action (rendered beside Previous) clears the draft and the form. Storage
-access is wrapped so an unavailable `localStorage` degrades to no draft.
+action (rendered beside Previous, step mode only -- two or more
+questions) clears the draft and the form. Storage access is wrapped so
+an unavailable `localStorage` degrades to no draft.
 
 ### Deferred
 
@@ -249,7 +250,8 @@ modal, the next build on this kit. Animated item transitions: not now.
   empty note); `useGateDraft` save, restore, clear, and storage-unavailable
   path.
 - Console (DOM): progress text advances on Next; Submit disabled until
-  answered; error text on an empty Next; note reaches the POST body.
+  answered; error text on a form submit with nothing answered
+  (Cmd+Enter); note reaches the POST body.
 - Board: typecheck + `build:client`; behavior covered by the adapter
   suite and the preview.
 
