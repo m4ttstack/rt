@@ -75,6 +75,15 @@ afterEach(() => {
 });
 
 describe('GateCard: open/actionable', () => {
+  it('carries the gate id as a data attribute for the `/gates/:id` deep-link scroll target', () => {
+    renderCard(gateRow({ id: 'g-42' }));
+
+    expect(screen.getByTestId('gate-card')).toHaveAttribute(
+      'data-gate-id',
+      'g-42'
+    );
+  });
+
   it('renders a single-select question as radios and a multi question as checkboxes', () => {
     renderCard(gateRow());
 

@@ -261,6 +261,10 @@ export function GateCard({ gate }: { gate: GateRow }) {
       // `activeGatesForRun` sorts by `openedAt` alone, so a newer answered
       // gate can sort ahead of an older still-open one.
       data-actionable={actionable}
+      // The `/gates/:id` deep-link scroll target (RunDetail's gate-param
+      // effect); distinct from `data-testid` so it stays a stable selector
+      // even if the testid ever changes.
+      data-gate-id={gate.id}
       onClick={e => e.stopPropagation()}
       style={{ border: `1px solid ${border.default}` }}
     >

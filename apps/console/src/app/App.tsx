@@ -7,6 +7,7 @@ import { useLocation } from 'wouter';
 
 import { SHELL_HEADER_HEIGHT } from './chrome';
 import { ExplainKeyPage } from './config/ExplainKeyPage';
+import { GateRedirect } from './gates/GateRedirect';
 import { NotFoundPage } from './NotFoundPage';
 import { ConsolePalette } from './palette/ConsolePalette';
 import { useAppRoute, type AppRoute } from './routes';
@@ -63,6 +64,8 @@ function RouteContent({ route }: { route: AppRoute }) {
       return <RunBoard />;
     case 'run':
       return <RunDetail repo={route.repo} runId={route.runId} />;
+    case 'gate':
+      return <GateRedirect id={route.id} />;
     case 'search':
       return <RunSearch />;
     case 'wiring':

@@ -1,4 +1,4 @@
-import { Component, useEffect } from 'react';
+import { Component, useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
 import {
   Anchor,
@@ -24,6 +24,7 @@ import { modals } from '@mattstack/app-kit/modals';
 import { notifications } from '@mattstack/app-kit/notifications';
 import type { GateRow, RunFieldRow, RunSummary } from '@mattstack/rt-client';
 import { useQueryClient } from '@tanstack/react-query';
+import { useSearch } from 'wouter';
 
 import { client } from '../api';
 import { PAGE_ROW_HEIGHT } from '../chrome';
@@ -130,6 +131,32 @@ function AnswerGateAction() {
       Answer
     </Button>
   );
+}
+
+/** `/gates/:id` (`GateRedirect`) hands off here with `?gate=<id>` still on
+    the URL. Scrolls to the linked `GateCard` once the gates query has
+    actually resolved (so the card exists to find), then strips the param.
+    `consumedRef` is the "once" guard: stripping the param flips `gateId` to
+    null on the next render, which is what stops a later gates refetch
+    (the websocket in `useRunEvents` invalidates `['gates']` on every
+    pipeline event) from re-triggering this -- the ref additionally covers
+    a refetch landing before that URL update commits. */
+function useGateDeepLinkScroll(gatesResolved: boolean) {
+  const search = useSearch();
+  const consumedRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const gateId = new URLSearchParams(search).get('gate');
+    if (!gateId || !gatesResolved || consumedRef.current === gateId) return;
+    consumedRef.current = gateId;
+    document
+      .querySelector(`[data-gate-id="${gateId}"]`)
+      ?.scrollIntoView?.({ block: 'center' });
+    const params = new URLSearchParams(search);
+    params.delete('gate');
+    const qs = params.toString();
+    history.replaceState(null, '', location.pathname + (qs ? `?${qs}` : ''));
+  }, [search, gatesResolved]);
 }
 
 function AbandonAction({ repo, runId }: { repo: string; runId: string }) {
@@ -472,6 +499,8 @@ function RunDetailContent({ repo, runId }: { repo: string; runId: string }) {
     // because useMutation returns a new object each render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runId]);
+
+  useGateDeepLinkScroll(gatesQuery.data !== undefined);
 
   return (
     <Stack gap="lg" data-testid="run-detail">
