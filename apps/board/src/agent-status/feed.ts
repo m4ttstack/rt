@@ -154,8 +154,8 @@ export class AgentStatusFeed {
     }
     if (payload.appRoot !== this.io.appRoot) {
       // Once per foreign root, not once per frame: two boards on one machine
-      // talk past each other forever, and the line is only there to name a
-      // BOARD_APP_ROOT that never reached the panes this board launches.
+      // talk past each other forever, and the line is only there to name the
+      // other board once rather than to report a fault.
       if (!this.reportedForeignRoots.has(payload.appRoot)) {
         this.reportedForeignRoots.add(payload.appRoot);
         this.io.log(
