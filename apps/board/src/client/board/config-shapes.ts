@@ -238,12 +238,18 @@ export function groupByScope(
 export function rosterSummary(members: unknown, hidden: unknown): string {
   const roster = Array.isArray(members) ? members.filter(isRecord) : [];
   if (roster.length === 0) return 'no members';
+  // board.hiddenMembers replaces the roster's inline `hidden` flags rather
+  // than adding to them (withBoardStoreFallback), so a present overlay --
+  // even an empty one -- is the whole answer, not a union with inline flags.
+  const overlay = Array.isArray(hidden)
+    ? hidden.filter((h): h is string => typeof h === 'string')
+    : null;
   const hiddenNames = new Set<string>(
-    Array.isArray(hidden) ? hidden.filter(h => typeof h === 'string') : []
+    overlay ??
+      roster
+        .filter(m => m.hidden === true && typeof m.username === 'string')
+        .map(m => m.username as string)
   );
-  for (const m of roster)
-    if (m.hidden === true && typeof m.username === 'string')
-      hiddenNames.add(m.username);
   const head = `${roster.length} member${roster.length === 1 ? '' : 's'}`;
   return hiddenNames.size > 0 ? `${head}, ${hiddenNames.size} hidden` : head;
 }
