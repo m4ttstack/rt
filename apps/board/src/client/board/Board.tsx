@@ -347,6 +347,12 @@ export function Board() {
     (mr: BoardMR, note?: string) => doctorAction(mr, {}, note),
     [doctorAction]
   );
+  // The doctor chassis scoped to a checkout rebase — the fallback when the
+  // GitLab-side rebase can't (conflicts) or didn't work.
+  const handleRebaseLocal = useCallback(
+    (mr: BoardMR, note?: string) => doctorAction(mr, { mode: 'rebase' }, note),
+    [doctorAction]
+  );
 
   // GateCard's "focus pane" escape hatch: jump into whichever domain's pane
   // opened the gate, via the exact same launch endpoint a fresh launch from
@@ -1008,6 +1014,7 @@ export function Board() {
           // is what keeps "mark as draft" off them.
           canDraftState={rowMenu.mr.author.username === data.defaultMember}
           onMrAction={handleMrAction}
+          onRebaseLocal={handleRebaseLocal}
           onNudge={handleNudge}
           // Your own MRs only: a nudge asks a peer to re-review YOUR work, and
           // the server enforces the same gate (403 "not your MR").

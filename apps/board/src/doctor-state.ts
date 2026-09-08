@@ -187,10 +187,15 @@ export function doctorResumeDispatchFields(
 
 export function parseDoctorRequestBody(
   body: unknown
-): { mrUrl: string; iid: number } | null {
+): { mrUrl: string; iid: number; mode?: 'rebase' } | null {
   if (!body || typeof body !== 'object') return null;
-  const { mrUrl, iid } = body as { mrUrl?: unknown; iid?: unknown };
+  const { mrUrl, iid, mode } = body as {
+    mrUrl?: unknown;
+    iid?: unknown;
+    mode?: unknown;
+  };
   if (typeof mrUrl !== 'string' || !mrUrl) return null;
   if (typeof iid !== 'number' || !Number.isFinite(iid)) return null;
-  return { mrUrl, iid };
+  if (mode !== undefined && mode !== 'rebase') return null;
+  return { mrUrl, iid, mode };
 }

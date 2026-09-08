@@ -5,6 +5,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   doctorResumeDispatchFields,
+  parseDoctorRequestBody,
   writeDoctorState,
 } from '../doctor-state.ts';
 import { dispatchPrompt } from '../herdr.ts';
@@ -101,5 +102,24 @@ describe('resumed doctor dispatch carries its original tier/fixClasses', () => {
     expect(prompt).not.toContain('--tier');
     expect(prompt).not.toContain('--fix-classes');
     expect(prompt).toContain('--draft-bin');
+  });
+});
+
+describe('parseDoctorRequestBody', () => {
+  const base = { mrUrl: 'https://gitlab.com/o/r/-/merge_requests/3', iid: 3 };
+
+  test('plain launch body parses without a mode', () => {
+    expect(parseDoctorRequestBody(base)).toEqual({ ...base, mode: undefined });
+  });
+
+  test('mode rebase is carried through', () => {
+    expect(parseDoctorRequestBody({ ...base, mode: 'rebase' })).toEqual({
+      ...base,
+      mode: 'rebase',
+    });
+  });
+
+  test('an unknown mode is rejected', () => {
+    expect(parseDoctorRequestBody({ ...base, mode: 'fix-all' })).toBeNull();
   });
 });

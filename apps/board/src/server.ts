@@ -1632,11 +1632,23 @@ const httpServer = Bun.serve({
             }
           }
         }
-        const { tier, fixClasses } = manualDoctorFields(
-          triage,
-          mr.author.username,
-          identity
-        );
+        // mode "rebase" is a scoped doctor: checkout tier (whose base
+        // playbook is exactly worktree + rebase) with an EMPTY fix-class
+        // allowlist, so CI triage and code fixes stay out of scope, plus a
+        // note pinning the job to the rebase alone.
+        const manual = manualDoctorFields(triage, mr.author.username, identity);
+        const tier = parsed.mode === 'rebase' ? undefined : manual.tier;
+        const fixClasses =
+          parsed.mode === 'rebase' ? [] : manual.fixClasses;
+        const launchNote =
+          parsed.mode === 'rebase'
+            ? [
+                'rebase-only: rebase the source branch onto its target, resolve conflicts, and push; skip CI triage and any other fixes',
+                note,
+              ]
+                .filter(Boolean)
+                .join('. ')
+            : note;
         const statePath = doctorFilePath(parsed.mrUrl);
         writeDoctorState(statePath, {
           mrUrl: parsed.mrUrl,
@@ -1656,7 +1668,7 @@ const httpServer = Bun.serve({
           skill: resolveLaunchSkill('doctor', parsed.mrUrl),
           author,
           ...loadAgentSettings(),
-          note,
+          note: launchNote,
           tier,
           fixClasses,
         })

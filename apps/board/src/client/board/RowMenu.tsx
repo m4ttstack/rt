@@ -36,6 +36,7 @@ function RowMenu({
   onDraftState,
   canDraftState,
   onMrAction,
+  onRebaseLocal,
   onNudge,
   canNudge,
   onResumeReview,
@@ -60,6 +61,7 @@ function RowMenu({
   onDraftState: (mr: BoardMR, draft: boolean) => void;
   canDraftState: boolean;
   onMrAction: (mr: BoardMR, action: MrAction) => void;
+  onRebaseLocal: (mr: BoardMR, note?: string) => void;
   onNudge: (mr: BoardMR, reviewer: string) => void;
   canNudge: boolean;
   onResumeReview: (mr: BoardMR, note?: string) => void;
@@ -102,6 +104,10 @@ function RowMenu({
   const showSlack = ctx.local && ctx.slackEnabled;
   const peers = ctx.local && canNudge ? nudgeTargets(mrx) : [];
   const gitlabItems = gitlabMenuItems(mr);
+  const canRebaseLocal =
+    mr.blockers?.hasConflicts ||
+    mr.rebaseButton.visible ||
+    (mr.behindTarget ?? 0) > 0;
   const run = (fn: () => void) => () => {
     fn();
     onClose();
@@ -270,6 +276,18 @@ function RowMenu({
                   onDoctor(mr, note)
                 )
           }
+        />
+      )}
+      {/* The doctor chassis scoped to a checkout rebase — offered whenever a
+          rebase is plausibly wanted (conflicts, GitLab's own rebase button
+          raised, or merely behind target), since it's the fallback for the
+          gitlab-section rebase failing. A doctor already in flight re-focuses
+          via the endpoint's dedup rather than spawning a second pane. */}
+      {ctx.local && canRebaseLocal && (
+        <ContextMenu.Item
+          label="rebase locally"
+          hint={paneHint}
+          onClick={paneClick('rebase locally', note => onRebaseLocal(mr, note))}
         />
       )}
       {ctx.local && (gitlabItems.length > 0 || canDraftState) && (
