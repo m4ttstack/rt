@@ -248,11 +248,15 @@ const VERB_OPTION = /^(reply|fix|skip):(.+)$/;
 function Harness({
   gate,
   onAnswers,
+  initialSelections,
 }: {
   gate: GateForItems;
   onAnswers: (payload: { answers: GateAnswers } | null) => void;
+  initialSelections?: GateSelections;
 }) {
-  const [selections, setSelections] = useState<GateSelections>({});
+  const [selections, setSelections] = useState<GateSelections>(
+    initialSelections ?? {}
+  );
   const { items, display } = gateItems(gate, selections);
 
   const toggle = (
@@ -391,6 +395,18 @@ describe('step contract', () => {
     await userEvent.click(screen.getByRole('button', { name: 'previous' }));
     expect(screen.getByRole('radio', { name: 'passed' })).toBeChecked();
     expect(screen.getByRole('progressbar')).toHaveTextContent('1 of 2');
+  });
+
+  test('a choice mounted checked marks its item answered with no interaction: Next is enabled on first render', () => {
+    render(
+      <Harness
+        gate={PLAIN_GATE}
+        onAnswers={() => {}}
+        initialSelections={{ outcome: 'fail' }}
+      />
+    );
+    expect(screen.getByRole('radio', { name: 'fail' })).toBeChecked();
+    expect(screen.getByRole('button', { name: 'next' })).toBeEnabled();
   });
 
   test('Next with nothing picked stays put and shows the required message', async () => {
