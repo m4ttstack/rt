@@ -35,7 +35,7 @@ const proc = Bun.spawn(
     env: {
       ...process.env,
       HOME: fakeHome,
-      // Keeps the booted server from writing state/board-port into the repo.
+      // Keeps the booted server's state writes out of the repo.
       BOARD_APP_ROOT: fakeHome,
       PORT: String(PORT),
       GITLAB_TOKEN: '',

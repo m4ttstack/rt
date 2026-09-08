@@ -42,8 +42,7 @@ const proc = Bun.spawn(
     env: {
       ...process.env,
       HOME: fakeHome,
-      // Keeps the booted server from writing state/board-port into the repo,
-      // which would point a live board's status writers at a test port.
+      // Keeps the booted server's state writes out of the repo.
       BOARD_APP_ROOT: fakeHome,
       PORT: String(PORT),
       // Force every token through the (wedged) daemon path -- a token

@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, rmSync, watch, writeFileSync } from 'fs';
+import { readFileSync, rmSync, watch } from 'fs';
 import { basename, dirname, join } from 'path';
 
 import type { MRDetail, PullRequest } from '@mattstack/glance';
@@ -9,6 +9,8 @@ import {
   ReadBackFailedError,
 } from '@mattstack/glance';
 import {
+  eventsHead,
+  eventsList,
   gateAnswer as gateAnswerFacility,
   gateClose,
   gateList,
@@ -23,7 +25,14 @@ import {
 import { settingsHandler } from '@mattstack/settings-kit/server';
 import pkg from '../package.json';
 import { resumeAgentPane } from './agent-launch.ts';
-import { parseAgentSignal, signalEmoji } from './agent-signal.ts';
+import { signalEmoji, type AgentSignal } from './agent-signal.ts';
+import {
+  AGENT_STATUS_PATTERN,
+  AgentStatusFeed,
+  isAgentStatusTopic,
+  readCursorFile,
+  writeCursorFile,
+} from './agent-status/feed.ts';
 import { APP_ROOT, IS_COMPILED } from './app-root.ts';
 import { SnapshotCache } from './cache.ts';
 import { getClientAssets } from './client-assets.ts';
@@ -519,6 +528,16 @@ const resolveSignalTabId: TabIdResolver = signal => {
   if (signal.kind === 'respond')
     return readRespondStates().get(signal.mrUrl)?.tabId;
   return readDoctorStates().get(signal.mrUrl)?.tabId;
+};
+
+/** When that same state store was last written, from the same three maps
+    resolveSignalTabId reads. */
+const resolveSignalUpdatedAt = (signal: AgentSignal): number | undefined => {
+  if (signal.kind === 'review')
+    return readReviewStates().get(signal.mrUrl)?.updatedAt;
+  if (signal.kind === 'respond')
+    return readRespondStates().get(signal.mrUrl)?.updatedAt;
+  return readDoctorStates().get(signal.mrUrl)?.updatedAt;
 };
 
 // "" (falsy), not omitted -- writeReviewState/writeRespondState/writeDoctorState
@@ -1729,193 +1748,6 @@ const httpServer = Bun.serve({
           );
         }
       }
-      case '/agent/status':
-      // Retained as harmless belt-and-braces, not because any caller can still
-      // reach it: panes invoke the CLI as `bun run <path>/bin/review-status.ts`,
-      // which bun re-reads from disk on every invocation, so even a pane
-      // launched before this change runs the current CLI (posting to
-      // /agent/status) the moment it next fires.
-      case '/review/outcome': {
-        // The launched agent's only channel back to the board. It reports the
-        // lifecycle status it just wrote, and the board -- which already has the
-        // channel indexed -- decides which slack reaction that means. Keeps the
-        // agent out of slack entirely.
-        if (req.method !== 'POST')
-          return new Response('method not allowed', { status: 405 });
-        if (!isLocalRequest(req))
-          return new Response('forbidden', { status: 403 });
-        let body: unknown;
-        try {
-          body = await req.json();
-        } catch {
-          return new Response('invalid json', { status: 400 });
-        }
-        const signal = parseAgentSignal(
-          body,
-          pathname,
-          u => readReviewStates().get(u)?.iid ?? 0
-        );
-        if (!signal) {
-          return new Response(
-            'expected { mrUrl: string, iid: number, kind: review|respond|doctor, status: string, outcome?: string }',
-            { status: 400 }
-          );
-        }
-        // Peer sync: tell the MR author's board where this review stands. Runs
-        // before the emoji early-return below, so transitions that map to no
-        // emoji still sync. Own policy (slack reactions) continues after; this
-        // is pure relay traffic.
-        // `defaultMember: "all"` is a view setting, not an identity, so there is
-        // no way to tell this board's own MRs from a peer's. Without that, the
-        // own-MR guard below can never match and the board would relay a
-        // review-state for every MR on it, including publishing to itself.
-        const pc = peering.current()?.client;
-        if (pc && signal.kind === 'review' && config.defaultMember !== 'all') {
-          const snapshotForPeer = await cache.get();
-          const authorUsername = snapshotForPeer.mrs.find(
-            m => m.webUrl === signal.mrUrl
-          )?.author.username;
-          // Never relay a review of this board's own MR: the author is right
-          // here, and the peer state files are for other people's boards.
-          if (
-            authorUsername &&
-            canonicalUsername(authorUsername) !==
-              canonicalUsername(config.defaultMember)
-          ) {
-            enqueueOutbox(
-              makeEnvelope(authorUsername, 'review-state', {
-                mrUrl: signal.mrUrl,
-                iid: signal.iid,
-                status: signal.status,
-                outcome: signal.outcome,
-                updatedAt: Date.now(),
-              } satisfies ReviewStatePayload)
-            );
-            kickOutbox(pc);
-          }
-        }
-        // Arm a latch when a review lands with a comment outcome, spend it when
-        // one lands approved. Best-effort, like every other side effect here:
-        // the triage latch pass reconciles anything a down or throwing board
-        // misses, so a failure must never fail the agent's status write.
-        if (
-          signal.kind === 'review' &&
-          signal.status === 'done' &&
-          gitlabToken
-        ) {
-          try {
-            const snapshot = await cache.get();
-            const mr = snapshot.mrs.find(m => m.webUrl === signal.mrUrl);
-            if (mr) {
-              const projectId = parseRepoId(mr.repositoryId);
-              const projectPath =
-                projectPathFromWebUrl(signal.mrUrl, config.gitlabHost) ?? '';
-              const gw = latchGateway(config.gitlabHost, gitlabToken);
-              // Arming honours board.reReview; spending never does, since a
-              // latch left armed on a team that switched re-review off is a
-              // promise nothing keeps.
-              if (
-                signal.outcome === 'comment' &&
-                loadReReviewConfig().enabled
-              ) {
-                const detail = await readLatchDetail(mr);
-                // A live latch (armed, either resolved or not) already exists
-                // for this MR -- a spent one must never suppress a fresh post,
-                // or the feature disables itself forever the first time a
-                // latch is ever spent.
-                if (detail && !hasArmedLatch(findLatches(detail))) {
-                  await postLatch(
-                    gw,
-                    projectId,
-                    projectPath,
-                    signal.mrUrl,
-                    mr.iid
-                  );
-                }
-              } else if (signal.outcome === 'approve') {
-                const detail = await readLatchDetail(mr);
-                // Every latch found, not just the canonical one: an armed
-                // duplicate left behind here is unreachable to the triage
-                // pass's repair step once the canon it stops at is spent.
-                if (detail)
-                  await spendAllLatches(
-                    gw,
-                    projectId,
-                    projectPath,
-                    mr.iid,
-                    findLatches(detail)
-                  );
-              }
-            }
-          } catch (err) {
-            console.error(
-              `latch step failed for ${signal.mrUrl}: ${err instanceof Error ? err.message : err}`
-            );
-          }
-        }
-        // Close the launched pane's tab once its agent reports done -- error
-        // never closes, so a failing pane stays open for forensics. Must run
-        // above the emoji early-return below: most `done` signals have no
-        // emoji and would never reach a close placed after it.
-        closeOnDone(
-          signal,
-          resolveSignalTabId,
-          tabId => closeTab(tabId),
-          clearSignalTabId
-        );
-        const emoji = signalEmoji(
-          signal.kind,
-          signal.status,
-          config.slack.emoji,
-          signal.outcome
-        );
-        if (!emoji) {
-          return new Response(JSON.stringify({ ok: true, reacted: false }), {
-            headers: { 'content-type': 'application/json' },
-          });
-        }
-        // Only a wanted reaction needs slack configured -- most transitions map
-        // to no emoji at all (see signalEmoji) and must not 400 on a Slack-less
-        // install.
-        if (!slackToken)
-          return new Response('slack not configured', { status: 400 });
-        // The sweeper usually resolves the ref first, but a review launched and
-        // finished inside one sweep interval can beat it here.
-        try {
-          const signalSnapshot = await cache.get();
-          const signalMr = signalSnapshot.mrs.find(
-            m => m.webUrl === signal.mrUrl
-          );
-          const signalChannel = signalMr
-            ? channelForMR(config, signalMr)
-            : config.slack.channel;
-          const existing = readSlackRefs().get(signal.mrUrl);
-          if (existing?.status !== 'found' || !existing.messageTs) {
-            await resolveSlackRef(
-              slackToken,
-              signalChannel,
-              signal.mrUrl,
-              signal.iid
-            );
-          }
-          const ref = await reactToMR(slackToken, signal.mrUrl, emoji);
-          return new Response(
-            JSON.stringify({
-              ok: true,
-              reacted: true,
-              reactions: ref.reactions ?? [],
-            }),
-            {
-              headers: { 'content-type': 'application/json' },
-            }
-          );
-        } catch (err) {
-          return new Response(
-            `slack react failed: ${err instanceof Error ? err.message : err}`,
-            { status: 502 }
-          );
-        }
-      }
       case '/draft': {
         // Flip one of your own MRs between draft and ready. GitLab has no draft
         // flag: the draft state IS the title prefix, so rewriting the title is
@@ -2698,21 +2530,6 @@ const httpServer = Bun.serve({
   },
 });
 
-// The board's real port can differ from config.json when $PORT is set (see
-// above); the status CLIs run in a separate process that never sees that env,
-// so leave the resolved port where they can find it on disk instead.
-// A stale or missing port file only costs the agents their Slack reactions,
-// which is not worth refusing to serve over.
-try {
-  const boardPortDir = join(APP_ROOT, 'state');
-  mkdirSync(boardPortDir, { recursive: true });
-  writeFileSync(join(boardPortDir, 'board-port'), String(port));
-} catch (err) {
-  console.error(
-    `could not record the board port in state/board-port: ${err instanceof Error ? err.message : err} -- agent-driven Slack reactions may not reach this board`
-  );
-}
-
 console.log(`the board serving on http://localhost:${port}`);
 
 // Warm the cache at startup so the first visitor after a (re)start gets a
@@ -2955,6 +2772,174 @@ function gateResumeIo(): GateResumeEventIo {
   };
 }
 
+/** What one lifecycle transition means to this board. Fed only by the
+    agent-status feed, in journal order; a replayed `done` is safe because
+    every step here is idempotent (a latch is posted only when none is armed,
+    a repeated Slack reaction is a no-op) and the one step that is not, the
+    tab close, is guarded on `emittedAt`. */
+async function handleAgentSignal(
+  signal: AgentSignal,
+  emittedAt: number
+): Promise<void> {
+  // Off the memoized getters, as the request handler resolves them: nothing
+  // here rides a request, so neither token is already in scope.
+  const [gitlabToken, slackToken] = await Promise.all([
+    getGitlabToken(),
+    getSlackToken(),
+  ]);
+  // Peer sync: tell the MR author's board where this review stands. Runs
+  // before the emoji early-return below, so transitions that map to no
+  // emoji still sync. Own policy (slack reactions) continues after; this
+  // is pure relay traffic.
+  // `defaultMember: "all"` is a view setting, not an identity, so there is
+  // no way to tell this board's own MRs from a peer's. Without that, the
+  // own-MR guard below can never match and the board would relay a
+  // review-state for every MR on it, including publishing to itself.
+  const pc = peering.current()?.client;
+  if (pc && signal.kind === 'review' && config.defaultMember !== 'all') {
+    const snapshotForPeer = await cache.get();
+    const authorUsername = snapshotForPeer.mrs.find(
+      m => m.webUrl === signal.mrUrl
+    )?.author.username;
+    // Never relay a review of this board's own MR: the author is right
+    // here, and the peer state files are for other people's boards.
+    if (
+      authorUsername &&
+      canonicalUsername(authorUsername) !==
+        canonicalUsername(config.defaultMember)
+    ) {
+      enqueueOutbox(
+        makeEnvelope(authorUsername, 'review-state', {
+          mrUrl: signal.mrUrl,
+          iid: signal.iid,
+          status: signal.status,
+          outcome: signal.outcome,
+          updatedAt: emittedAt,
+        } satisfies ReviewStatePayload)
+      );
+      kickOutbox(pc);
+    }
+  }
+  // Arm a latch when a review lands with a comment outcome, spend it when
+  // one lands approved. Best-effort, like every other side effect here:
+  // the triage latch pass reconciles anything a down or throwing board
+  // misses, so a failure must never fail the agent's status write.
+  if (signal.kind === 'review' && signal.status === 'done' && gitlabToken) {
+    try {
+      const snapshot = await cache.get();
+      const mr = snapshot.mrs.find(m => m.webUrl === signal.mrUrl);
+      if (mr) {
+        const projectId = parseRepoId(mr.repositoryId);
+        const projectPath =
+          projectPathFromWebUrl(signal.mrUrl, config.gitlabHost) ?? '';
+        const gw = latchGateway(config.gitlabHost, gitlabToken);
+        // Arming honours board.reReview; spending never does, since a
+        // latch left armed on a team that switched re-review off is a
+        // promise nothing keeps.
+        if (signal.outcome === 'comment' && loadReReviewConfig().enabled) {
+          const detail = await readLatchDetail(mr);
+          // A live latch (armed, either resolved or not) already exists
+          // for this MR -- a spent one must never suppress a fresh post,
+          // or the feature disables itself forever the first time a
+          // latch is ever spent.
+          if (detail && !hasArmedLatch(findLatches(detail))) {
+            await postLatch(gw, projectId, projectPath, signal.mrUrl, mr.iid);
+          }
+        } else if (signal.outcome === 'approve') {
+          const detail = await readLatchDetail(mr);
+          // Every latch found, not just the canonical one: an armed
+          // duplicate left behind here is unreachable to the triage
+          // pass's repair step once the canon it stops at is spent.
+          if (detail)
+            await spendAllLatches(
+              gw,
+              projectId,
+              projectPath,
+              mr.iid,
+              findLatches(detail)
+            );
+        }
+      }
+    } catch (err) {
+      console.error(
+        `latch step failed for ${signal.mrUrl}: ${err instanceof Error ? err.message : err}`
+      );
+    }
+  }
+  // Close the launched pane's tab once its agent reports done -- error
+  // never closes, so a failing pane stays open for forensics. Must run
+  // above the emoji early-return below: most `done` signals have no
+  // emoji and would never reach a close placed after it.
+  // The status CLI writes the state file before it emits, so a live signal
+  // always has updatedAt <= emittedAt. A newer write means a later transition
+  // or launch superseded this event: the tab on file is not this event's to
+  // close, nor its status this event's to overwrite with `done`.
+  const stateUpdatedAt = resolveSignalUpdatedAt(signal);
+  if (!(stateUpdatedAt !== undefined && stateUpdatedAt > emittedAt)) {
+    closeOnDone(
+      signal,
+      resolveSignalTabId,
+      tabId => closeTab(tabId),
+      clearSignalTabId
+    );
+  }
+  const emoji = signalEmoji(
+    signal.kind,
+    signal.status,
+    config.slack.emoji,
+    signal.outcome
+  );
+  // Most transitions map to no emoji at all (see signalEmoji), and a
+  // Slack-less install has nothing to react with.
+  if (!emoji || !slackToken) return;
+  // The sweeper usually resolves the ref first, but a review launched and
+  // finished inside one sweep interval can beat it here.
+  try {
+    const signalSnapshot = await cache.get();
+    const signalMr = signalSnapshot.mrs.find(m => m.webUrl === signal.mrUrl);
+    const signalChannel = signalMr
+      ? channelForMR(config, signalMr)
+      : config.slack.channel;
+    const existing = readSlackRefs().get(signal.mrUrl);
+    if (existing?.status !== 'found' || !existing.messageTs) {
+      await resolveSlackRef(
+        slackToken,
+        signalChannel,
+        signal.mrUrl,
+        signal.iid
+      );
+    }
+    await reactToMR(slackToken, signal.mrUrl, emoji);
+  } catch (err) {
+    console.error(
+      `slack react failed for ${signal.mrUrl}: ${err instanceof Error ? err.message : err}`
+    );
+  }
+}
+
+const AGENT_STATUS_CURSOR_PATH = join(APP_ROOT, 'state', 'agent-status-cursor');
+
+const agentStatusFeed = new AgentStatusFeed({
+  eventsHead: () => eventsHead(),
+  eventsList: (after, limit) =>
+    eventsList({ pattern: AGENT_STATUS_PATTERN, after, limit }),
+  readCursor: () => readCursorFile(AGENT_STATUS_CURSOR_PATH),
+  writeCursor: cursor => writeCursorFile(AGENT_STATUS_CURSOR_PATH, cursor),
+  handle: handleAgentSignal,
+  appRoot: APP_ROOT,
+  log: line => console.error(line),
+});
+
+function wakeAgentStatusFeed(): void {
+  void agentStatusFeed
+    .catchUp()
+    .catch(err =>
+      console.error(
+        `agent-status feed failed: ${err instanceof Error ? err.message : err}`
+      )
+    );
+}
+
 // Reported once per gate id, not once per sweep pass -- an unrecognized kind
 // stays retained (answered/closed included) until restart, and the sweep
 // re-runs every GATE_SWEEP_MS forever.
@@ -2990,6 +2975,7 @@ if (!FIXTURE_DIR) {
         `gate sweep failed: ${err instanceof Error ? err.message : err}`
       )
     );
+    wakeAgentStatusFeed();
   }, GATE_SWEEP_MS);
 }
 
@@ -3003,6 +2989,19 @@ if (!FIXTURE_DIR) {
   } catch (err) {
     console.error(
       `gate file-store cleanup skipped: ${err instanceof Error ? err.message : err}`
+    );
+  }
+}
+
+// One-time migration: state/board-port retired with the HTTP notify path, and
+// a stale copy misleads anyone reading the state dir into thinking the board
+// still answers on that port.
+if (!FIXTURE_DIR) {
+  try {
+    rmSync(join(APP_ROOT, 'state', 'board-port'), { force: true });
+  } catch (err) {
+    console.error(
+      `board-port cleanup skipped: ${err instanceof Error ? err.message : err}`
     );
   }
 }
@@ -3056,6 +3055,9 @@ const stopRelay = FIXTURE_DIR
               )
             );
           }
+          // The push is a wake-up, never the delivery: the journal is read
+          // from the cursor so a frame that raced a reconnect is not lost.
+          if (isAgentStatusTopic(frame.topic)) wakeAgentStatusFeed();
         }
       }
       if (!RELAY_TYPES.has(type)) return;
@@ -3092,6 +3094,9 @@ if (!FIXTURE_DIR) {
       `gate boot resume pass failed: ${err instanceof Error ? err.message : err}`
     )
   );
+  // Replays every transition emitted while the board was down. A board with
+  // no cursor yet starts at the journal head instead and replays nothing.
+  wakeAgentStatusFeed();
 }
 
 // Bridge-rule registration: upsert this board's gate-opened rule into

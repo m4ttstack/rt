@@ -181,8 +181,11 @@ agent in a fresh [herdr](https://herdr.dev) pane:
 
 The board injects the domain skill and a status-writer path as flags, so the
 wrapper skills carry no repo- or team-specific knowledge. The wrapper reports
-lifecycle status back, the row shows a live badge, and the board owns every
-Slack reaction, so the agent never touches Slack.
+lifecycle status back through a state file and a matching event on the rt
+daemon's bus; the board reads that bus from a cursor it keeps, so a
+transition that lands while the board is down is replayed at its next boot.
+The row shows a live badge, and the board owns every Slack reaction, so the
+agent never touches Slack.
 
 The gate is enforced on both sides: the client hides the menu items and the
 server returns `403`, so these never fire through a public tunnel.

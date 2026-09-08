@@ -74,7 +74,7 @@ describe('closeOnDone', () => {
       },
       s => cleared.push(s)
     );
-    // Synchronous return: the caller (the /agent/status handler) is never
+    // Synchronous return: the caller (handleAgentSignal) is never
     // blocked on the close, and the tabId is already cleared.
     expect(cleared).toHaveLength(1);
     expect(closeStarted).toBe(true);
