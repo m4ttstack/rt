@@ -8,10 +8,11 @@ so a workspace consumer gets the same files a build step would produce,
 without running one.
 
 app-kit is part of the mattstack estate, the same toolkit behind
-[rt](https://github.com/m4ttstack/rt), [deck](https://github.com/m4ttstack/deck),
+[rt](https://github.com/m4ttstack/rt), [glance](https://github.com/m4ttstack/glance),
 and [herdr-chat](https://github.com/m4ttstack/herdr-chat). Internally, it's
-the shared UI and server layer mattstack's own apps build on, including chat
-and console.
+the shared UI and server layer mattstack's own apps build on, including
+chat, console, and boxscore, the three Mantine-based apps that live in this
+repo under `apps/`.
 
 ## What's inside
 
@@ -50,6 +51,22 @@ app.
 
 See `AGENTS.md` for the contract anyone editing `packages/ui/src` or
 `packages/server/src`, or consuming either package, needs.
+
+## Repository layout
+
+- `packages/` -- the four platform packages (`ui`, `server`, `tokyo`,
+  `tui-kit`) described above, plus `packages/tokens`, the private
+  generator that keeps `tokyo` and `tui-kit`'s colour/font values in sync.
+- `apps/` -- the five mattstack apps that consume these packages as
+  workspace members: `chat`, `console`, `boxscore` (Mantine-based, on
+  `@mattstack/app-kit`), and `board`, `deck` (terminal-flavoured, on
+  `@mattstack/tui-kit`). Each has its own root scripts
+  (`bun run <app>:typecheck`, `:test`, `:lint`, `:build`, where each
+  applies) and CI gates.
+- `archive/<app>/*` -- the full branch history each app's old standalone
+  GitHub repo carried before it folded in here (those repos are deleted).
+  Pre-fold-in releases were re-tagged byte-identical under app-prefixed
+  tags (`chat-v0.1.0` style), so old release links keep resolving.
 
 ## Installation
 

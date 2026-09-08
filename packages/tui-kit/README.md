@@ -10,7 +10,8 @@ component-authoring framework that gives every component a themeable recipe, a
 Styles API, and generated CSS custom properties.
 
 tui-kit is part of the mattstack estate and is the shared look for its web
-surfaces, starting with [board](https://github.com/m4ttstack/board).
+surfaces, starting with [board](../../apps/board). It is developed in this
+monorepo, alongside the apps that consume it.
 
 ## Features
 
@@ -121,9 +122,10 @@ matters: [docs/consuming.md](docs/consuming.md).
 From a clean checkout:
 
 ```console
-$ git clone https://github.com/m4ttstack/tui-kit
-$ cd tui-kit
-$ bun install
+$ git clone https://github.com/m4ttstack/apps.git
+$ cd apps
+$ bun install                 # workspace install, from the repo root
+$ cd packages/tui-kit
 $ bun run dev:workshop
 ```
 
