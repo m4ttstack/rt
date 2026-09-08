@@ -45,12 +45,12 @@ describe("readServedPacks", () => {
     const p = fakeProbes({
       home,
       files: {
-        [marketplacePath]: JSON.stringify({ name: "acme0", plugins: [{ name: "acme1", source: "./packs/acme1" }] }),
-        [join(clone, "packs", "acme1", ".claude-plugin", "plugin.json")]: JSON.stringify({ version: "0.5.28" }),
+        [marketplacePath]: JSON.stringify({ name: "acme-market", plugins: [{ name: "acme-skills", source: "./packs/acme-skills" }] }),
+        [join(clone, "packs", "acme-skills", ".claude-plugin", "plugin.json")]: JSON.stringify({ version: "0.5.28" }),
       },
     });
     expect(readServedPacks(p, "acme")).toEqual({
-      packs: [{ id: "acme1@acme0", name: "acme1", servedVersion: "0.5.28" }],
+      packs: [{ id: "acme-skills@acme-market", name: "acme-skills", servedVersion: "0.5.28" }],
       error: null,
     });
   });
@@ -58,10 +58,10 @@ describe("readServedPacks", () => {
   test("an object-form source is listed with a null served version", () => {
     const p = fakeProbes({
       home,
-      files: { [marketplacePath]: JSON.stringify({ name: "acme0", plugins: [{ name: "remote", source: { source: "github", repo: "o/r" } }] }) },
+      files: { [marketplacePath]: JSON.stringify({ name: "acme-market", plugins: [{ name: "remote", source: { source: "github", repo: "o/r" } }] }) },
     });
     expect(readServedPacks(p, "acme")).toEqual({
-      packs: [{ id: "remote@acme0", name: "remote", servedVersion: null }],
+      packs: [{ id: "remote@acme-market", name: "remote", servedVersion: null }],
       error: null,
     });
   });
@@ -69,9 +69,9 @@ describe("readServedPacks", () => {
   test("a missing or unparsable plugin.json yields a null served version, not a dropped pack", () => {
     const p = fakeProbes({
       home,
-      files: { [marketplacePath]: JSON.stringify({ name: "acme0", plugins: [{ name: "acme1", source: "./packs/acme1" }] }) },
+      files: { [marketplacePath]: JSON.stringify({ name: "acme-market", plugins: [{ name: "acme-skills", source: "./packs/acme-skills" }] }) },
     });
-    expect(readServedPacks(p, "acme").packs).toEqual([{ id: "acme1@acme0", name: "acme1", servedVersion: null }]);
+    expect(readServedPacks(p, "acme").packs).toEqual([{ id: "acme-skills@acme-market", name: "acme-skills", servedVersion: null }]);
   });
 
   test("the marketplace name falls back to the slug when the file omits it", () => {
