@@ -59,8 +59,9 @@ verbs, same arguments, same state-file writes.
 ### CLI side
 
 `bin/review-status.ts`, `bin/respond-status.ts` and `bin/doctor-status.ts`
-replace their `notifyBoard(signal)` call with `emitAgentStatus(signal)`
-from a new `src/agent-status/emit.ts`, which calls rt-client's
+replace their `notifyBoard(signal)` call with
+`emitAgentStatus(signal, boardRootFromStatePath(statePath))` from a new
+`src/agent-status/emit.ts`, which calls rt-client's
 `eventsEmit(topic, payload)`. Best-effort, exactly as today: a daemon that
 is down logs one line to stderr and the CLI still exits zero, because the
 state file it already wrote is the source of truth.
@@ -79,8 +80,8 @@ code path and one ordering.
   `eventsList({pattern: "board/agent-status/*", after: cursor})`, handles
   each event in id order, and advances the cursor after each one. Frames
   whose `appRoot` is not this board's are skipped and still advance the
-  cursor; the first frame from each foreign root is logged once so a
-  misconfigured `BOARD_APP_ROOT` is visible rather than silent. A handler
+  cursor; the first frame from each foreign root is logged once so another
+  board's traffic on this machine is visible rather than silent. A handler
   throw is logged, the cursor still advances, and the sweeps remain the
   backstop for that MR; a poison event must never wedge the feed.
 - **Deadline.** Each handler call is raced against `HANDLE_DEADLINE_MS`
