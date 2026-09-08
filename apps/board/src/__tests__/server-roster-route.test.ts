@@ -91,11 +91,17 @@ test('add with a name writes mattstack.roster', async () => {
   const res = await roster({ action: 'add', username: 'cy', name: 'Cy Park' });
   expect(res.status).toBe(200);
   expect(stored()).toContainEqual({ username: 'cy', name: 'Cy Park' });
-  expect(JSON.parse(readFileSync(storePath, 'utf8'))['board.members']).toBeUndefined();
+  expect(
+    JSON.parse(readFileSync(storePath, 'utf8'))['board.members']
+  ).toBeUndefined();
 });
 
 test('rename sets a name on an existing member', async () => {
-  const res = await roster({ action: 'rename', username: 'bo', name: 'Bo Chen' });
+  const res = await roster({
+    action: 'rename',
+    username: 'bo',
+    name: 'Bo Chen',
+  });
   expect(res.status).toBe(200);
   expect(stored()).toContainEqual({ username: 'bo', name: 'Bo Chen' });
 });

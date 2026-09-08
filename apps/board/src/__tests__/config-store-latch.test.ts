@@ -880,7 +880,10 @@ describe('saveTabs: latch-gated writer', () => {
 
 describe('storeOwnsRequiredFields: config.json-free boot', () => {
   test('mattstack.roster satisfies the roster requirement with no config.json', () => {
-    const missing = join(mkdtempSync(join(tmpdir(), 'board-noconfig-')), 'config.json');
+    const missing = join(
+      mkdtempSync(join(tmpdir(), 'board-noconfig-')),
+      'config.json'
+    );
     const cfg = loadConfigFrom(
       missing,
       fakeResolve({
@@ -894,7 +897,10 @@ describe('storeOwnsRequiredFields: config.json-free boot', () => {
   });
 
   test('no roster key at all with no config.json still throws the seed message', () => {
-    const missing = join(mkdtempSync(join(tmpdir(), 'board-noconfig-')), 'config.json');
+    const missing = join(
+      mkdtempSync(join(tmpdir(), 'board-noconfig-')),
+      'config.json'
+    );
     expect(() =>
       loadConfigFrom(
         missing,
@@ -974,7 +980,11 @@ describe('applyRosterEdit: pure roster mutation', () => {
   });
 
   test('remove drops the entry', () => {
-    const r = applyRosterEdit(roster, { action: 'remove', username: 'bo' }, 'ann');
+    const r = applyRosterEdit(
+      roster,
+      { action: 'remove', username: 'bo' },
+      'ann'
+    );
     expect(r.ok && r.members.map(m => m.username)).toEqual(['ann', 'cy']);
   });
 
@@ -986,7 +996,11 @@ describe('applyRosterEdit: pure roster mutation', () => {
 
   test('remove refuses to empty the roster', () => {
     expect(
-      applyRosterEdit([{ username: 'ann' }], { action: 'remove', username: 'ann' }, null)
+      applyRosterEdit(
+        [{ username: 'ann' }],
+        { action: 'remove', username: 'ann' },
+        null
+      )
     ).toEqual({ ok: false, error: 'the roster cannot be emptied' });
   });
 
@@ -1048,13 +1062,21 @@ describe('applyRosterEdit: pure roster mutation', () => {
 
   test('rename rejects an unknown username', () => {
     expect(
-      applyRosterEdit(roster, { action: 'rename', username: 'zed', name: 'Z' }, 'ann')
+      applyRosterEdit(
+        roster,
+        { action: 'rename', username: 'zed', name: 'Z' },
+        'ann'
+      )
     ).toEqual({ ok: false, error: 'unknown member "zed"' });
   });
 
   test('the input roster is never mutated', () => {
     const snapshot = JSON.parse(JSON.stringify(roster));
-    applyRosterEdit(roster, { action: 'rename', username: 'bo', name: 'Bo' }, 'ann');
+    applyRosterEdit(
+      roster,
+      { action: 'rename', username: 'bo', name: 'Bo' },
+      'ann'
+    );
     applyRosterEdit(roster, { action: 'remove', username: 'bo' }, 'ann');
     expect(roster).toEqual(snapshot);
   });

@@ -519,7 +519,9 @@ function RosterControl({
                   >
                     {name ?? username}
                   </button>
-                  {name && <span className="tui-roster-handle">@{username}</span>}
+                  {name && (
+                    <span className="tui-roster-handle">@{username}</span>
+                  )}
                   {hiddenSet.has(username) && (
                     <span className="tui-roster-out">checked out</span>
                   )}

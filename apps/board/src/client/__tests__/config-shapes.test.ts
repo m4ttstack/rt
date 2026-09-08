@@ -279,7 +279,10 @@ describe('rosterSummary', () => {
 
   test('falls back to inline flags with no overlay', () => {
     expect(
-      rosterSummary([{ username: 'a', hidden: true }, { username: 'b' }], undefined)
+      rosterSummary(
+        [{ username: 'a', hidden: true }, { username: 'b' }],
+        undefined
+      )
     ).toBe('2 members, 1 hidden');
   });
 
@@ -289,11 +292,15 @@ describe('rosterSummary', () => {
   });
 
   test('an overlay name that is not on the roster is not counted', () => {
-    expect(rosterSummary([{ username: 'a' }, { username: 'b' }], ['c'])).toBe('2 members');
+    expect(rosterSummary([{ username: 'a' }, { username: 'b' }], ['c'])).toBe(
+      '2 members'
+    );
   });
 
   test('an empty overlay means nobody is hidden, not "fall back to inline flags"', () => {
-    expect(rosterSummary([{ username: 'a', hidden: true }], [])).toBe('1 member');
+    expect(rosterSummary([{ username: 'a', hidden: true }], [])).toBe(
+      '1 member'
+    );
   });
 });
 

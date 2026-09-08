@@ -242,7 +242,9 @@ export function rosterSummary(members: unknown, hidden: unknown): string {
   // than adding to them (withBoardStoreFallback), and it may name people who
   // are not on this roster at all: it is boxscore's overlay too.
   const onRoster = new Set(
-    roster.map(m => m.username).filter((u): u is string => typeof u === 'string')
+    roster
+      .map(m => m.username)
+      .filter((u): u is string => typeof u === 'string')
   );
   const overlay = Array.isArray(hidden)
     ? hidden.filter((h): h is string => typeof h === 'string')

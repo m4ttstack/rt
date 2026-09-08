@@ -843,8 +843,7 @@ export type RosterEdit = {
 };
 
 export type RosterEditResult =
-  | { ok: true; members: Member[] }
-  | { ok: false; error: string };
+  { ok: true; members: Member[] } | { ok: false; error: string };
 
 /** Apply one roster edit, returning the next list or the message to hand the
     caller. Pure (list in, list out) so every rule below is testable without a
