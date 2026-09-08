@@ -2,6 +2,7 @@ import { realpathSync } from 'node:fs';
 import {
   gateAnswer,
   gateList,
+  listRuns,
   paneFocus,
   paneList,
   type GateAnswer,
@@ -188,4 +189,23 @@ export const gates = new Hono()
     );
     if (!focusRes.ok) return c.json({ error: focusRes.error }, 502);
     return c.json({ focused: true }, 200);
+  })
+  .get('/api/gates/:id/locate', async c => {
+    const { id } = c.req.param();
+    const all = await listAllRunGates();
+    if (!all.ok) return c.json({ error: all.error }, 502);
+    const row = all.gates.find(g => g.id === id);
+    if (!row) return c.json({ error: 'not-found' }, 404);
+    if (!row.subject.startsWith('run:')) {
+      return c.json({ error: 'gate is not a run gate' }, 404);
+    }
+    const runId = row.subject.slice('run:'.length);
+
+    // No repo in hand yet -- the gate names only the run id, so every repo's
+    // runs must be searched, same as GET /api/runs does with no `repo` query.
+    const runsRes = await listRuns();
+    if (!runsRes.ok) return c.json({ error: runsRes.error }, 502);
+    const run = runsRes.data?.runs.find(r => r.id === runId);
+    if (!run) return c.json({ error: 'run not found' }, 404);
+    return c.json({ repo: run.repo, runId: run.id }, 200);
   });
