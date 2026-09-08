@@ -1,4 +1,4 @@
-import { notifyBoard } from '../src/board-notify.ts';
+import { emitAgentStatus } from '../src/agent-status/emit.ts';
 import {
   writeReviewState,
   type ReviewOutcome,
@@ -71,7 +71,7 @@ const state = writeReviewState(parsed.path, {
   ...(sessionId ? { sessionId } : {}),
 });
 
-await notifyBoard({
+await emitAgentStatus({
   mrUrl: state.mrUrl,
   iid: state.iid,
   kind: 'review',

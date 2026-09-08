@@ -1,4 +1,4 @@
-import { notifyBoard } from '../src/board-notify.ts';
+import { emitAgentStatus } from '../src/agent-status/emit.ts';
 import { respondOutcome } from '../src/respond-outcome.ts';
 import { writeRespondState, type RespondStatus } from '../src/respond-state.ts';
 
@@ -90,7 +90,7 @@ const state = writeRespondState(parsed.path, {
   ...(sessionId ? { sessionId } : {}),
 });
 
-await notifyBoard({
+await emitAgentStatus({
   mrUrl: state.mrUrl,
   iid: state.iid,
   kind: 'respond',
