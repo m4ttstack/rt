@@ -1,13 +1,16 @@
 import { serveMattstackApp } from '@mattstack/app-server';
 
 import pkg from '../../package.json' with { type: 'json' };
+import { installConsoleBridgeRule } from './event-bridge';
 import { routes } from './routes';
+
+const PORT = 11011;
 
 await serveMattstackApp({
   name: 'console',
   version: pkg.version,
   routes,
-  port: 11011,
+  port: PORT,
   relay: [
     { match: t => t === 'run-updated', topic: 'runs' },
     { match: t => t.startsWith('gate/'), topic: 'gates' },
@@ -16,3 +19,12 @@ await serveMattstackApp({
   // manifest; `bun build --compile` still sees the literal and embeds it.
   embedded: () => import('./embedded/manifest' as string),
 });
+
+// Fire-and-forget: awaits a deck round trip, so this must not block boot.
+// Any failure (deck down, a stale rt-client without the setting key yet,
+// or a settings read/write refusal) is logged once and otherwise ignored.
+void installConsoleBridgeRule({ port: PORT }).catch(err =>
+  console.error(
+    `gate bridge-rule reconcile skipped: ${err instanceof Error ? err.message : err}`
+  )
+);
