@@ -333,7 +333,7 @@ function GateCard({
           </Disclosure>
         </div>
       )}
-      {answered ? (
+      {answered || !actionable ? (
         <AnsweredChip
           row={{
             subject: gate.subject,
