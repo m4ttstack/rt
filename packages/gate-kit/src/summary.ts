@@ -1,4 +1,4 @@
-import type { GateQuestion, GATE_BY_PANE } from '@mattstack/rt-client';
+import type { GATE_BY_PANE, GateQuestion } from '@mattstack/rt-client';
 import { domainForKind } from './kinds';
 import { displayForValue, type GateOptionDisplay } from './options';
 import { unwrapGateAnswer, type GateAnswers } from './payload';
