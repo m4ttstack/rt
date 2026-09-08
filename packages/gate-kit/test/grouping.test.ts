@@ -93,6 +93,33 @@ describe('groupThreadOptions (per-thread grouping)', () => {
     expect(groupThreadOptions(['comment', 'approve'])).toBeNull();
   });
 
+  test('strips a "(recommended)" suffix from the heading and flags that entry', () => {
+    const options: GateOption[] = [
+      {
+        value: 'reply:7080da2fcf93c1a2',
+        label: 'reply · api.ts:42 (recommended)',
+      },
+      { value: 'fix:7080da2fcf93c1a2', label: 'fix · api.ts:42' },
+      { value: 'skip:7080da2fcf93c1a2', label: 'skip · api.ts:42' },
+      { value: 'reply:a1b2c3d4e5f60718', label: 'reply · README.md:3' },
+      { value: 'fix:a1b2c3d4e5f60718', label: 'fix · README.md:3' },
+      { value: 'skip:a1b2c3d4e5f60718', label: 'skip · README.md:3' },
+    ];
+    const groups = groupThreadOptions(options);
+    expect(groups?.map(g => g.heading)).toEqual(['api.ts:42', 'README.md:3']);
+    const [g1, g2] = groups!;
+    expect(g1!.entries.map(e => e.recommended)).toEqual([
+      true,
+      undefined,
+      undefined,
+    ]);
+    expect(g2!.entries.map(e => e.recommended)).toEqual([
+      undefined,
+      undefined,
+      undefined,
+    ]);
+  });
+
   test('round-trips: submitted values are still the exact option strings, one per thread', () => {
     const questions: GateQuestion[] = [
       {

@@ -219,4 +219,29 @@ describe('answeredGateSummary detail', () => {
       },
     ]);
   });
+
+  test('a recommended label strips the suffix from both the chip and the detail text', () => {
+    const { chip, detail } = answeredGateSummary({
+      subject: 'run:r1',
+      kind: 'self-review',
+      status: 'answered',
+      questions: [
+        {
+          id: 'outcome',
+          label: 'What happened?',
+          multi: false,
+          options: [
+            { value: 'approve', label: 'Approve (recommended)' },
+            { value: 'comment', label: 'Comment' },
+          ],
+        },
+      ],
+      answer: { answers: { outcome: 'approve' }, by: 'pane', answeredAt: 1 },
+    });
+    expect(chip).toBe('self-review run r1 · Approve');
+    expect(chip).not.toContain('recommended');
+    expect(detail[0]!.answers).toEqual([
+      { text: 'Approve', title: 'approve', recommended: true },
+    ]);
+  });
 });

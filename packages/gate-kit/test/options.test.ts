@@ -7,6 +7,7 @@ import {
   optionDisplayFor,
   optionLabel,
   optionValue,
+  stripRecommended,
 } from '@mattstack/gate-kit';
 import type { GateQuestion } from '@mattstack/rt-client';
 
@@ -89,4 +90,65 @@ test('optionLabel returns the label, falling back to the value', () => {
   expect(optionLabel('approve')).toBe('approve');
   expect(optionLabel({ value: 'Major', label: 'Major (2)' })).toBe('Major (2)');
   expect(optionLabel({ value: 'Major', label: '' })).toBe('Major');
+});
+
+describe('recommended marker', () => {
+  test('stripRecommended lifts a trailing "(recommended)" off the text', () => {
+    expect(stripRecommended('Approve (recommended)')).toEqual({
+      text: 'Approve',
+      recommended: true,
+    });
+    expect(stripRecommended('Approve (Recommended)')).toEqual({
+      text: 'Approve',
+      recommended: true,
+    });
+    expect(stripRecommended('Approve  ( RECOMMENDED ) ')).toEqual({
+      text: 'Approve',
+      recommended: true,
+    });
+  });
+
+  test('stripRecommended leaves other text alone', () => {
+    expect(stripRecommended('Approve')).toEqual({ text: 'Approve' });
+    expect(stripRecommended('(recommended) approve')).toEqual({
+      text: '(recommended) approve',
+    });
+    expect(stripRecommended('recommended')).toEqual({ text: 'recommended' });
+  });
+
+  test('a labeled option renders the stripped label and keeps its value as title', () => {
+    const d = optionDisplayFor({
+      value: 'fix:8709b19264237de0fb023ce216d174d282ab6840',
+      label: 'fix: add characterization test (recommended)',
+    });
+    expect(d).toEqual({
+      text: 'fix: add characterization test',
+      title: 'fix:8709b19264237de0fb023ce216d174d282ab6840',
+      recommended: true,
+    });
+  });
+
+  test('a bare option string with the suffix strips for display only', () => {
+    expect(formatGateOption('approve (recommended)')).toEqual({
+      text: 'approve',
+      title: 'approve (recommended)',
+      recommended: true,
+    });
+  });
+
+  test('displayForValue carries the flag through', () => {
+    const options = [
+      { value: 'approve', label: 'Approve (recommended)' },
+      { value: 'comment', label: 'Comment' },
+    ];
+    expect(displayForValue('approve', options)).toEqual({
+      text: 'Approve',
+      title: 'approve',
+      recommended: true,
+    });
+    expect(displayForValue('comment', options)).toEqual({
+      text: 'Comment',
+      title: 'comment',
+    });
+  });
 });

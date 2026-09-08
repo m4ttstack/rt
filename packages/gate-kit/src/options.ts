@@ -6,12 +6,29 @@ export interface GateOptionDisplay {
   /** The full option string, when it differs from `text` -- callers put this
       in a `title` attr so the truncated form stays inspectable. */
   title?: string;
+  /** The agent marked this option as its recommendation; the marker text is
+      already stripped from `text`. Surfaces render it as their own badge. */
+  recommended?: true;
 }
 
 /** A `<verb>:<token>` option whose token is long enough to be a real id
     (thread hash, gate id, ...) rather than a short human word like
     "addressed". Only these get compacted -- see formatGateOption. */
 const VERB_TOKEN_OPTION = /^([a-z][a-z-]*):(.{12,})$/;
+
+const RECOMMENDED_SUFFIX = /\s*\(\s*recommended\s*\)\s*$/i;
+
+/** Agents mark their pick by ending a label with "(recommended)" (the same
+    convention the native form uses). Lifted off the display text so a
+    surface can render it as a badge instead of trailing prose. */
+export function stripRecommended(text: string): {
+  text: string;
+  recommended?: true;
+} {
+  const stripped = text.replace(RECOMMENDED_SUFFIX, '');
+  if (stripped === text || stripped.length === 0) return { text };
+  return { text: stripped.trimEnd(), recommended: true };
+}
 
 export function optionValue(o: GateOption): string {
   return typeof o === 'string' ? o : o.value;
@@ -36,7 +53,10 @@ export function optionLabel(o: GateOption): string {
  */
 export function formatGateOption(option: string): GateOptionDisplay {
   const m = VERB_TOKEN_OPTION.exec(option);
-  if (!m) return { text: option };
+  if (!m) {
+    const s = stripRecommended(option);
+    return s.recommended ? { ...s, title: option } : { text: option };
+  }
   const [, verb, token] = m;
   return { text: `${verb} · ${token!.slice(0, 8)}`, title: option };
 }
@@ -45,8 +65,10 @@ export function formatGateOption(option: string): GateOptionDisplay {
     title; bare strings keep the verb-token transform unchanged. */
 export function optionDisplayFor(o: GateOption): GateOptionDisplay {
   if (typeof o !== 'string') {
-    const text = o.label || o.value;
-    return text === o.value ? { text } : { text, title: o.value };
+    const s = stripRecommended(o.label || o.value);
+    const display: GateOptionDisplay =
+      s.text === o.value ? { text: s.text } : { text: s.text, title: o.value };
+    return s.recommended ? { ...display, recommended: true } : display;
   }
   return formatGateOption(o);
 }

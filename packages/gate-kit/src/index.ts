@@ -11,6 +11,7 @@ export {
   optionDisplayFor,
   optionLabel,
   optionValue,
+  stripRecommended,
 } from './options';
 export type { GateOptionDisplay } from './options';
 export { gateAnswerPayload, unwrapGateAnswer } from './payload';

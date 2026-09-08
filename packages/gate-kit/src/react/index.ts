@@ -28,6 +28,8 @@ export interface GateItemChoice {
   /** The full raw value when it differs from `label` -- title/tooltip
       material, mirroring GateOptionDisplay.title. */
   description?: string;
+  /** The agent's pick; render a badge. */
+  recommended?: boolean;
 }
 
 export interface GateItemDisplay {
@@ -78,6 +80,7 @@ export function gateItems(
         value: optionValue(opt),
         label: d.text,
         ...(d.title !== undefined ? { description: d.title } : {}),
+        ...(d.recommended ? { recommended: true } : {}),
       };
     }),
     groups: q.multi ? groupThreadOptions(q.options) : null,

@@ -1,5 +1,5 @@
 import type { GateOption } from '@mattstack/rt-client';
-import { optionValue } from './options';
+import { optionLabel, optionValue, stripRecommended } from './options';
 
 /** The three verbs a respond-plan thread question ever offers. Grouping
     (see `groupThreadOptions`) only fires when every option is one of these
@@ -13,6 +13,8 @@ export interface ThreadOptionEntry {
   verb: ThreadVerb;
   value: string;
   option: GateOption;
+  /** The agent marked this thread's verb as its recommendation. */
+  recommended?: true;
 }
 
 export interface ThreadOptionGroup {
@@ -34,8 +36,8 @@ function threadHeading(token: string, entries: ThreadOptionEntry[]): string {
   for (const { verb, option } of entries) {
     if (typeof option === 'string') continue;
     const prefix = `${verb} · `;
-    if (option.label.startsWith(prefix))
-      return option.label.slice(prefix.length);
+    const { text } = stripRecommended(option.label);
+    if (text.startsWith(prefix)) return text.slice(prefix.length);
   }
   return token.slice(0, 8);
 }
@@ -61,8 +63,14 @@ export function groupThreadOptions(
     const m = THREAD_OPTION.exec(value);
     if (!m) return null;
     const [, verb, token] = m as unknown as [string, ThreadVerb, string];
+    const { recommended } = stripRecommended(optionLabel(opt));
     const list = byToken.get(token) ?? [];
-    list.push({ verb, value, option: opt });
+    list.push({
+      verb,
+      value,
+      option: opt,
+      ...(recommended ? { recommended: true } : {}),
+    });
     byToken.set(token, list);
   }
   if (byToken.size < 2) return null;

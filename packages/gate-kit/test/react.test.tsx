@@ -132,6 +132,31 @@ describe('gateItems', () => {
     const { display } = gateItems(gate, {});
     expect(display[0]!.groups?.map(g => g.token)).toEqual(['t1', 't2']);
   });
+
+  test('a labeled option carries the recommended flag through to its display choice', () => {
+    const gate: GateForItems = {
+      kind: 'self-review',
+      questions: [
+        {
+          id: 'outcome',
+          label: 'What happened?',
+          multi: false,
+          options: [
+            { value: 'approve', label: 'Approve (recommended)' },
+            { value: 'comment', label: 'Comment' },
+          ],
+        },
+      ],
+    };
+    const { display } = gateItems(gate, {});
+    expect(display[0]!.choices[0]).toEqual({
+      value: 'approve',
+      label: 'Approve',
+      description: 'approve',
+      recommended: true,
+    });
+    expect(display[0]!.choices[1]).not.toHaveProperty('recommended');
+  });
 });
 
 describe('answersFromForm', () => {
