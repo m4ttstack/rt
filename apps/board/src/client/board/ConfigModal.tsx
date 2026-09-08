@@ -994,6 +994,7 @@ function SettingRow({
     !matchesShape(shape, value);
 
   let control;
+  let keyname: string = def.key;
   if (kind === 'tabs' && !malformed) {
     const channel = getLeaf(
       store.defs.find(d => d.key === 'board.slack')?.effective.value,
@@ -1021,6 +1022,9 @@ function SettingRow({
     const members = Array.isArray(mattstackRoster)
       ? mattstackRoster
       : boardMembers;
+    if (Array.isArray(mattstackRoster)) {
+      keyname = 'mattstack.roster';
+    }
     const hidden = store.defs.find(d => d.key === 'board.hiddenMembers')
       ?.effective.value;
     const self = store.defs.find(d => d.key === 'board.defaultMember')
@@ -1104,7 +1108,7 @@ function SettingRow({
   const stop = (e: { stopPropagation: () => void }) => e.stopPropagation();
   const head = (
     <>
-      <span className="tui-config-keyname">{def.key}</span>
+      <span className="tui-config-keyname">{keyname}</span>
       <span onClick={stop} onKeyDown={stop} className="tui-config-tip">
         <InfoTip text={help} about={def.key} />
       </span>
