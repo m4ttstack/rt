@@ -1,5 +1,5 @@
 import { homedir } from 'os';
-import { join } from 'path';
+import { join, resolve } from 'path';
 
 /**
  * True when running as a bun-compiled standalone binary: import.meta.dir then
@@ -19,11 +19,13 @@ export const IS_COMPILED = import.meta.dir.includes('$bunfs');
  * place. BOARD_APP_ROOT overrides both (the bundle can pin an explicit home)
  * and only has to be set where the server runs: a launched pane derives the
  * board's root from the state path it is handed, not from its own environment.
+ * The override is normalized because that derivation is, and the two are
+ * compared by string equality; a trailing slash must not split them.
  * HOME is read at call time — Bun freezes os.homedir() at process start.
  */
 function appRoot(): string {
   const override = process.env.BOARD_APP_ROOT;
-  if (override) return override;
+  if (override) return resolve(override);
   if (!IS_COMPILED) return join(import.meta.dir, '..');
   return join(process.env.HOME ?? homedir(), '.mattstack', 'board');
 }

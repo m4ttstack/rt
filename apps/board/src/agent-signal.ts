@@ -47,7 +47,8 @@ export interface AgentSignal {
 
 /** `AgentSignal` as it rides the bus. The bus is machine-wide, so a board
     handles only payloads its own status-bin emitted: `appRoot` is the
-    emitting CLI's APP_ROOT, which is the launching board's by construction. */
+    launching board's root, which the CLI derives from the state path that
+    board handed it rather than from its own environment. */
 export interface AgentStatusPayload extends AgentSignal {
   appRoot: string;
 }

@@ -167,14 +167,19 @@ export class AgentStatusFeed {
     const { appRoot: _appRoot, ...signal } = payload;
     const deadlineMs = this.io.handleDeadlineMs ?? HANDLE_DEADLINE_MS;
     const mrUrl = signal.mrUrl;
-    // The chain is what orders this MR's effects; the throw is caught inside
-    // it so the next event for the MR queues behind a failure too.
-    const run = (this.inFlight.get(mrUrl) ?? Promise.resolve()).then(() =>
-      this.io.handle(signal, ev.emittedAt).catch((err: unknown) => {
-        this.io.log(
-          `agent-status feed: handler failed on #${ev.id} (${mrUrl}): ${err instanceof Error ? err.message : err}`
-        );
-      })
+    // The chain is what orders this MR's effects; a throw, synchronous or
+    // not, is caught inside it so the chain always settles and the next
+    // event for the MR queues behind a failure too.
+    const run = (this.inFlight.get(mrUrl) ?? Promise.resolve()).then(
+      async () => {
+        try {
+          await this.io.handle(signal, ev.emittedAt);
+        } catch (err) {
+          this.io.log(
+            `agent-status feed: handler failed on #${ev.id} (${mrUrl}): ${err instanceof Error ? err.message : err}`
+          );
+        }
+      }
     );
     this.inFlight.set(mrUrl, run);
     void run.then(() => {

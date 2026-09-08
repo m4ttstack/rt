@@ -232,6 +232,25 @@ describe('AgentStatusFeed.catchUp', () => {
     ]);
   });
 
+  test('a handler that throws synchronously is logged and the next event is still handled', async () => {
+    let calls = 0;
+    const h = harness({
+      stored: 10,
+      pages: [[event(11), event(12)]],
+      handle: (): Promise<void> => {
+        calls++;
+        if (calls === 1) throw new Error('sync boom');
+        return Promise.resolve();
+      },
+    });
+    await h.feed.catchUp();
+    expect(calls).toBe(2);
+    expect(h.cursors).toEqual([11, 12]);
+    expect(h.lines).toEqual([
+      `agent-status feed: handler failed on #11 (${MR}): sync boom`,
+    ]);
+  });
+
   test('a handler past the deadline is logged and the cursor advances', async () => {
     const slow = new Promise<void>(resolve => setTimeout(resolve, 50));
     const h = harness({
