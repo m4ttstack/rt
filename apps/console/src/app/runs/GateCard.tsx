@@ -28,7 +28,7 @@ function GateSummaryDetail({ detail }: { detail: GateSummaryDetailRow[] }) {
   return (
     <Stack gap={6} data-testid="gate-answer-summary">
       {detail.map(row => (
-        <Group key={row.question} gap={8} wrap="nowrap" align="flex-start">
+        <Group key={row.id} gap={8} wrap="nowrap" align="flex-start">
           <Text fz={12} c="dimmed" style={{ minWidth: 140, flexShrink: 0 }}>
             {row.question}
           </Text>

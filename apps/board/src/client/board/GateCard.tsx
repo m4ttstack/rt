@@ -84,7 +84,7 @@ function SummaryDetail({ detail }: { detail: GateSummaryDetailRow[] }) {
   return (
     <dl className="tui-gate-summary">
       {detail.map(row => (
-        <div key={row.question} className="tui-gate-summary-row">
+        <div key={row.id} className="tui-gate-summary-row">
           <dt>{row.question}</dt>
           <dd>
             {row.answers.map((a, i) => (

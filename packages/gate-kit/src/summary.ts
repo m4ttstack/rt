@@ -16,6 +16,7 @@ export interface GateSummaryInput {
 }
 
 export interface GateSummaryDetailRow {
+  id: string;
   question: string;
   answers: GateOptionDisplay[];
   note?: string;
@@ -98,6 +99,7 @@ export function answeredGateSummary(row: GateSummaryInput): GateSummary {
           ? unwrapped.value
           : [unwrapped.value];
     return {
+      id: q.id,
       question: q.label,
       answers:
         values.length > 0

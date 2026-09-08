@@ -177,6 +177,7 @@ describe('answeredGateSummary detail', () => {
     });
     expect(detail).toEqual([
       {
+        id: 'threads-1',
         question: 'Threads',
         answers: [{ text: 'fix · t1aaaaaa', title: 'fix:t1aaaaaaaaaaaaaa' }],
         note: 'CI first',
@@ -184,6 +185,7 @@ describe('answeredGateSummary detail', () => {
         at: 99,
       },
       {
+        id: 'code-changes',
         question: 'Approve the proposed code changes?',
         answers: [{ text: 'approved', title: 'approve' }],
         decidedBy: 'board',
@@ -202,12 +204,14 @@ describe('answeredGateSummary detail', () => {
     });
     expect(detail).toEqual([
       {
+        id: 'tiers',
         question: 'Post which findings?',
         answers: [{ text: '(none)' }],
         decidedBy: null,
         at: null,
       },
       {
+        id: 'outcome',
         question: 'Verdict',
         answers: [{ text: '(none)' }],
         decidedBy: null,
