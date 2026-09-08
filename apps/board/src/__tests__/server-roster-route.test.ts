@@ -6,7 +6,8 @@ import { afterAll, expect, test } from 'bun:test';
 // Boots the real server against a fake $HOME whose team store owns
 // mattstack.roster, then drives POST /roster. Proves the route's three
 // actions land in the suite key (not board.members) and that a rename
-// survives the write, without touching the real ~/.mattstack.
+// survives the write, without touching the real ~/.mattstack or the real
+// apps/board checkout's config.json.
 //
 // board.defaultMember is a "user"-scoped key (registry-defs.ts), so it is
 // seeded into the fake HOME's user store, not the team store -- a team-store
@@ -41,7 +42,12 @@ const PORT = 47951;
 const proc = Bun.spawn(
   ['bun', 'run', join(import.meta.dir, '..', 'server.ts')],
   {
-    env: { ...process.env, HOME: fakeHome, PORT: String(PORT) },
+    env: {
+      ...process.env,
+      HOME: fakeHome,
+      BOARD_APP_ROOT: fakeHome,
+      PORT: String(PORT),
+    },
     stdout: 'pipe',
     stderr: 'pipe',
   }
