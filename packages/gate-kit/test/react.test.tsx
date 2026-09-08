@@ -222,6 +222,161 @@ function Harness({
   );
 }
 
+const VERB_GATE: GateForItems = {
+  kind: 'respond-plan',
+  questions: [
+    {
+      id: 'threads-1',
+      label: 'Threads',
+      multi: true,
+      options: ['reply:t1', 'fix:t1', 'skip:t1'],
+    },
+  ],
+};
+
+const VERB_OPTION = /^(reply|fix|skip):(.+)$/;
+
+/** Both apps' real cards: every choice is controlled from `selections`
+    rather than left to the input's own DOM state, so a question that
+    unmounts and remounts (the respond collapse) comes back wearing its
+    answer. `toggle` also carries the board's sibling-uncheck rule -- picking
+    one verb for a thread token clears any other verb already picked for
+    that same token. */
+function ControlledHarness({
+  gate,
+  onAnswers,
+}: {
+  gate: GateForItems;
+  onAnswers: (payload: { answers: GateSelections } | null) => void;
+}) {
+  const [selections, setSelections] = useState<GateSelections>({});
+  const { items, display } = gateItems(gate, selections);
+
+  const toggle = (
+    name: string,
+    multiple: boolean,
+    value: string,
+    checked: boolean
+  ) => {
+    setSelections(prev => {
+      if (!multiple) return { ...prev, [name]: value };
+      const current = prev[name];
+      const set = new Set(Array.isArray(current) ? current : []);
+      const token = VERB_OPTION.exec(value)?.[2];
+      if (token !== undefined) {
+        for (const v of set)
+          if (VERB_OPTION.exec(v)?.[2] === token) set.delete(v);
+      }
+      if (checked) set.add(value);
+      return { ...prev, [name]: [...set] };
+    });
+  };
+
+  return (
+    <Questionnaire.Root
+      items={items}
+      onSubmit={event => {
+        event.preventDefault();
+        onAnswers(answersFromForm(gate, new FormData(event.currentTarget)));
+      }}
+    >
+      {display.map(item => {
+        const current = selections[item.name];
+        const picked = new Set(Array.isArray(current) ? current : []);
+        return (
+          <Questionnaire.Item
+            key={item.name}
+            name={item.name}
+            required={item.required}
+            multiple={item.multiple}
+            hidden={false}
+            inert={false}
+          >
+            <Questionnaire.Title>{item.prompt}</Questionnaire.Title>
+            <Questionnaire.Choices>
+              {item.choices.map(choice => (
+                <Questionnaire.Choice
+                  key={choice.value}
+                  value={choice.value}
+                  checked={
+                    item.multiple
+                      ? picked.has(choice.value)
+                      : current === choice.value
+                  }
+                  onChange={event =>
+                    toggle(
+                      item.name,
+                      item.multiple,
+                      choice.value,
+                      event.currentTarget.checked
+                    )
+                  }
+                >
+                  <Questionnaire.ChoiceInput />
+                  <Questionnaire.ChoiceLabel>
+                    {choice.label}
+                  </Questionnaire.ChoiceLabel>
+                </Questionnaire.Choice>
+              ))}
+            </Questionnaire.Choices>
+          </Questionnaire.Item>
+        );
+      })}
+      <button type="submit">submit</button>
+    </Questionnaire.Root>
+  );
+}
+
+describe('controlled choices', () => {
+  test('a controlled checkbox forces its sibling to uncheck: the primitive is not left to native checkbox semantics', async () => {
+    const onAnswers = vi.fn();
+    render(<ControlledHarness gate={VERB_GATE} onAnswers={onAnswers} />);
+
+    await userEvent.click(screen.getByRole('checkbox', { name: 'reply:t1' }));
+    expect(screen.getByRole('checkbox', { name: 'reply:t1' })).toBeChecked();
+
+    await userEvent.click(screen.getByRole('checkbox', { name: 'fix:t1' }));
+    // Two independent <input type="checkbox"> elements never uncheck each
+    // other natively; this only holds if the primitive re-applies `checked`
+    // from the next render's props rather than trusting the DOM's own state.
+    expect(
+      screen.getByRole('checkbox', { name: 'reply:t1' })
+    ).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'fix:t1' })).toBeChecked();
+
+    await userEvent.click(screen.getByRole('button', { name: 'submit' }));
+    expect(onAnswers).toHaveBeenCalledWith({
+      answers: { 'threads-1': ['fix:t1'] },
+    });
+  });
+
+  test('a controlled radio remounted with its answer still set reads back through FormData without re-selecting', async () => {
+    const onAnswers = vi.fn();
+    render(<ControlledHarness gate={RESPOND_GATE} onAnswers={onAnswers} />);
+
+    await userEvent.click(screen.getByRole('checkbox', { name: 'fix:t1' }));
+    await userEvent.click(screen.getByRole('radio', { name: 'approve' }));
+    expect(screen.getByRole('radio', { name: 'approve' })).toBeChecked();
+
+    // Unmount code-changes (untick the only fix:), then bring it back. The
+    // `selections` mirror never cleared 'code-changes', so a controlled
+    // radio must remount pre-checked -- this is the F2 scenario.
+    await userEvent.click(screen.getByRole('checkbox', { name: 'fix:t1' }));
+    expect(
+      screen.queryByRole('radio', { name: 'approve' })
+    ).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('checkbox', { name: 'fix:t1' }));
+
+    const approveRadio = screen.getByRole('radio', { name: 'approve' });
+    expect(approveRadio).toBeChecked();
+
+    await userEvent.click(screen.getByRole('button', { name: 'submit' }));
+    expect(onAnswers).toHaveBeenCalledWith({
+      answers: { 'threads-1': ['fix:t1'], 'code-changes': 'approve' },
+    });
+  });
+});
+
 describe('questionnaire round trip', () => {
   test('every item is visible and usable at once: the flat card overrides the step machinery', () => {
     render(<Harness gate={PLAIN_GATE} onAnswers={() => {}} />);
