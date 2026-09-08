@@ -1,7 +1,9 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 
 import {
+  useSettingKey,
   useSettingsScope,
+  type SettingKeyState,
   type SettingsScopeState,
 } from '@mattstack/settings-kit/react';
 import { Modal } from '@mattstack/tui-kit';
@@ -960,6 +962,7 @@ function useOpenRows(): [Set<string>, (key: string) => void] {
 function SettingRow({
   def,
   store,
+  rosterKey,
   tabs,
   knownSections,
   open,
@@ -969,6 +972,8 @@ function SettingRow({
 }: {
   def: ConfigDef;
   store: SettingsScopeState;
+  /** mattstack.roster, fetched separately since it isn't board.-prefixed. */
+  rosterKey: SettingKeyState;
   tabs: TabConfig[];
   knownSections: string[] | null;
   /** Expanded, for a collapsible row; ignored otherwise. */
@@ -1008,8 +1013,14 @@ function SettingRow({
       />
     );
   } else if (kind === 'roster') {
-    const members = store.defs.find(d => d.key === 'board.members')?.effective
-      .value;
+    const boardMembers = store.defs.find(d => d.key === 'board.members')
+      ?.effective.value;
+    // Must follow the server's own key precedence (config.ts ROSTER_KEYS)
+    // or the editor shows a list POST /roster is not actually writing to.
+    const mattstackRoster = rosterKey.def?.effective.value;
+    const members = Array.isArray(mattstackRoster)
+      ? mattstackRoster
+      : boardMembers;
     const hidden = store.defs.find(d => d.key === 'board.hiddenMembers')
       ?.effective.value;
     const self = store.defs.find(d => d.key === 'board.defaultMember')
@@ -1020,7 +1031,10 @@ function SettingRow({
           members={members}
           hidden={hidden}
           self={typeof self === 'string' ? self : null}
-          onSaved={store.refresh}
+          onSaved={() => {
+            store.refresh();
+            rosterKey.refresh();
+          }}
           onOpenRoster={onOpenRoster}
         />
       ) : (
@@ -1163,6 +1177,7 @@ function ConfigModal({
   onTabsSaved: () => void;
 }) {
   const store = useSettingsScope('board.');
+  const rosterKey = useSettingKey('mattstack.roster');
   const [query, setQuery] = useState('');
   const [openRows, toggleRow] = useOpenRows();
   const groups = groupByScope(filterDefs(store.defs, query));
@@ -1201,6 +1216,7 @@ function ConfigModal({
                   key={def.key}
                   def={def}
                   store={store}
+                  rosterKey={rosterKey}
                   tabs={tabs}
                   knownSections={knownSections}
                   open={openRows.has(def.key)}
