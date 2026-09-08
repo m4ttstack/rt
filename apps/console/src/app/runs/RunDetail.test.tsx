@@ -1395,7 +1395,11 @@ describe('RunDetail: gate deep link', () => {
       status: 200,
       json: async () => ({ lines: [], truncated: false }),
     });
-    seenPost.mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
+    seenPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
     gatesGet.mockResolvedValue(
       gatesResponse([gateRow({ id: 'g-open', status: 'open' })])
     );
@@ -1428,7 +1432,11 @@ describe('RunDetail: gate deep link', () => {
       status: 200,
       json: async () => ({ lines: [], truncated: false }),
     });
-    seenPost.mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
+    seenPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
     gatesGet.mockResolvedValue(
       gatesResponse([gateRow({ id: 'g-open', status: 'open' })])
     );
@@ -1462,7 +1470,11 @@ describe('RunDetail: gate deep link', () => {
       status: 200,
       json: async () => ({ lines: [], truncated: false }),
     });
-    seenPost.mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
+    seenPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
     // The notification usually beats the console's own gates fetch: the
     // first response has no matching gate at all.
     gatesGet
@@ -1505,7 +1517,11 @@ describe('RunDetail: gate deep link', () => {
       status: 200,
       json: async () => ({ lines: [], truncated: false }),
     });
-    seenPost.mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
+    seenPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
     gatesGet.mockResolvedValue(
       gatesResponse([gateRow({ id: 'g-open', status: 'open' })])
     );

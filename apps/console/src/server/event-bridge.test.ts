@@ -7,9 +7,8 @@ vi.mock('@mattstack/rt-client', () => ({
   setSetting: vi.fn(),
 }));
 
-const { consoleBridgeRule, installConsoleBridgeRule } = await import(
-  './event-bridge'
-);
+const { consoleBridgeRule, installConsoleBridgeRule } =
+  await import('./event-bridge');
 const rt = await import('@mattstack/rt-client');
 
 beforeEach(() => {

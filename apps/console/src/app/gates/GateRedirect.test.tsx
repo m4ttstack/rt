@@ -34,9 +34,7 @@ afterEach(() => {
 describe('GateRedirect', () => {
   it('replaces the URL with the located run and carries the gate id along', async () => {
     window.history.pushState(null, '', '/gates/g1');
-    locateGet.mockResolvedValue(
-      ok({ repo: 'repo-tools', runId: 'run-1' })
-    );
+    locateGet.mockResolvedValue(ok({ repo: 'repo-tools', runId: 'run-1' }));
 
     renderWithProviders(<GateRedirect id="g1" />);
 

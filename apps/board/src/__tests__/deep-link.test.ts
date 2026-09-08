@@ -1,14 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { TabConfig } from '../config.ts';
-import type { BoardMR } from '../data.ts';
-import { DEFAULT_VIEW } from '../view.ts';
 import {
   gateParam,
   mrForGate,
   stripGateParam,
   viewStateForGate,
 } from '../client/board/deep-link.ts';
+import type { TabConfig } from '../config.ts';
+import type { BoardMR } from '../data.ts';
+import { DEFAULT_VIEW } from '../view.ts';
 
 type GateLinkMR = BoardMR & { slack?: { posted?: boolean } | null };
 
@@ -82,8 +82,14 @@ describe('viewStateForGate', () => {
 
   test('widens member to all when the current pick hides the row', () => {
     const mrs = [
-      mr({ iid: 1, author: { id: 'a', username: 'alice', name: 'Alice', avatarUrl: null } }),
-      mr({ iid: 2, author: { id: 'b', username: 'bob', name: 'Bob', avatarUrl: null } }),
+      mr({
+        iid: 1,
+        author: { id: 'a', username: 'alice', name: 'Alice', avatarUrl: null },
+      }),
+      mr({
+        iid: 2,
+        author: { id: 'b', username: 'bob', name: 'Bob', avatarUrl: null },
+      }),
     ];
     const state = { ...DEFAULT_VIEW, tab: 'team', member: 'alice' };
     const result = viewStateForGate(
@@ -118,7 +124,12 @@ describe('viewStateForGate', () => {
   });
 
   test('leaves the tab alone when the current one already shows the row', () => {
-    const mrs = [mr({ iid: 4, author: { id: 'b', username: 'bob', name: 'Bob', avatarUrl: null } })];
+    const mrs = [
+      mr({
+        iid: 4,
+        author: { id: 'b', username: 'bob', name: 'Bob', avatarUrl: null },
+      }),
+    ];
     const state = { ...DEFAULT_VIEW, tab: 'team' };
     const result = viewStateForGate(
       state,
@@ -133,13 +144,7 @@ describe('viewStateForGate', () => {
   test('clears a posted-only slack filter that would hide the row', () => {
     const mrs = [mr({ iid: 5, slack: { posted: false } })];
     const state = { ...DEFAULT_VIEW, tab: 'team', slack: 'posted' as const };
-    const result = viewStateForGate(
-      state,
-      mrs,
-      [teamTab],
-      new Set(['bob']),
-      5
-    );
+    const result = viewStateForGate(state, mrs, [teamTab], new Set(['bob']), 5);
     expect(result.slack).toBe('all');
   });
 

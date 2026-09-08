@@ -156,9 +156,7 @@ function useGateDeepLinkScroll(gates: GateRow[] | undefined) {
     if (!gateId || gates === undefined || consumedRef.current === gateId) {
       return;
     }
-    const el = document.querySelector(
-      `[data-gate-id="${CSS.escape(gateId)}"]`
-    );
+    const el = document.querySelector(`[data-gate-id="${CSS.escape(gateId)}"]`);
     if (!el) return;
     consumedRef.current = gateId;
     el.scrollIntoView({ block: 'center' });

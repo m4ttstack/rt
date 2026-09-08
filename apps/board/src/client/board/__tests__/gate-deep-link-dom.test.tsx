@@ -4,9 +4,8 @@
     leaving `location.search` untouched) only reproduces against a real
     History API, not a hand-rolled stub. */
 
-import { afterAll, beforeAll, expect, test } from 'bun:test';
-
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
+import { afterAll, beforeAll, expect, test } from 'bun:test';
 
 GlobalRegistrator.register({ url: 'http://localhost/?gate=g1' });
 
@@ -18,8 +17,9 @@ class FakeEventSource {
 }
 (globalThis as unknown as { EventSource: unknown }).EventSource =
   FakeEventSource;
-(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
+(
+  globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 const BOARD_DATA = {
   title: 'MRs ready for review',
