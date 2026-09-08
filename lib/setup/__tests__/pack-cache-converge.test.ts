@@ -84,6 +84,22 @@ describe("convergePackCache", () => {
     expect(verbs).toEqual(["list", "update", "install", "disable"]);
   });
 
+  test("a claude that phrases update's absence as 'is not installed' still settles the pack", async () => {
+    const { p, execs } = probesWith(
+      { ...served([{ name: "acme1", source: "./packs/acme1" }]), ...pluginJson("acme1", "0.5.28") },
+      (argv) => {
+        if (argv.includes("list")) return listing([]);
+        if (argv.includes("update")) return { code: 1, stdout: "", stderr: 'Plugin "acme1" is not installed' };
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    );
+    const result = await convergePackCache(p, "acme", quietLog);
+    expect(result.installed).toEqual(["acme1@acme0"]);
+    expect(result.failed).toEqual([]);
+    const verbs = execs.filter((a) => a[1] === "plugin").map((a) => a[2]);
+    expect(verbs).toEqual(["list", "update", "install", "disable"]);
+  });
+
   test("a null served version is skipped whether or not it is listed", async () => {
     for (const entries of [[], [{ id: "remote@acme0", version: "1.0.0", enabled: false }]]) {
       const { p, execs } = probesWith(served([{ name: "remote", source: { source: "github", repo: "o/r" } }]), () => listing(entries));
