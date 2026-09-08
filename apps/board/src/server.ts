@@ -1,6 +1,7 @@
 import { readFileSync, rmSync, watch } from 'fs';
 import { basename, dirname, join } from 'path';
 
+import { panesForOrigin, resolveOriginFocus } from '@mattstack/gate-kit/server';
 import type { MRDetail, PullRequest } from '@mattstack/glance';
 import {
   GitLabProvider,
@@ -104,7 +105,6 @@ import {
   executeSweepAction,
   type ExecuteSweepActionIo,
 } from './gates/execute-sweep-action.ts';
-import { panesForOrigin, resolveOriginFocus } from './gates/focus.ts';
 import {
   ensureBridgeRule,
   ingestRelayFrame,
@@ -1950,7 +1950,9 @@ const httpServer = Bun.serve({
           row.origin ?? undefined,
           paneList
         );
-        const resolved = resolveOriginFocus(row.origin ?? undefined, panes);
+        const resolved = resolveOriginFocus(row.origin ?? undefined, panes, {
+          carryTabId: true,
+        });
         if (!resolved.ok) {
           // The pane-list fetch itself failing is a different fact than the
           // fetch succeeding with no matching pane; say which one happened.
