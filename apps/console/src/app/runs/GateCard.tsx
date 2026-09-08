@@ -250,6 +250,7 @@ export function GateCard({ gate }: { gate: GateRow }) {
       radius="xl"
       data-testid="gate-card"
       data-actionable={actionable}
+      data-gate-id={gate.id}
       onClick={e => e.stopPropagation()}
       style={{ border: `1px solid ${border.default}` }}
     >

@@ -297,7 +297,11 @@ function GateCard({
     // Clicks anywhere in here (a choice's own <label>, the checkbox text)
     // aren't inside an `a`/`button` closest() would catch, so they'd
     // otherwise bubble to the row's onRowClick and open the MR in GitLab.
-    <div className="tui-gate-card" onClick={e => e.stopPropagation()}>
+    <div
+      className="tui-gate-card"
+      data-gate-id={gate.gateId}
+      onClick={e => e.stopPropagation()}
+    >
       <div className="tui-gate-head">
         <span className="tui-gate-title">{gate.label}</span>
         {gate.status === 'parked' && (
