@@ -223,7 +223,7 @@ describe('loadConfigFrom: per-key store-wins fallback', () => {
           'board.members': [{ username: 'legacy' }],
         })
       )
-    ).toThrow();
+    ).toThrow(/missing required field "members"/);
   });
 
   test('board.hiddenMembers overlays a mattstack.roster roster the same way', () => {

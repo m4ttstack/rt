@@ -47,6 +47,12 @@ const proc = Bun.spawn(
       HOME: fakeHome,
       BOARD_APP_ROOT: fakeHome,
       PORT: String(PORT),
+      // A token inherited from the developer's shell would make the
+      // post-edit void refreshMemberNames() reach real gitlab.example.com.
+      GITLAB_TOKEN: '',
+      SLACK_TOKEN: '',
+      SWITCHBOARD_TOKEN: '',
+      SWITCHBOARD_ADMIN_TOKEN: '',
     },
     stdout: 'pipe',
     stderr: 'pipe',
