@@ -1439,10 +1439,17 @@
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
+/* The questionnaire Item renders as a <fieldset>, so the UA groove border,
+   padding and inline margin have to be cleared here; min-inline-size resets
+   the fieldset's min-content default, which otherwise refuses to shrink. */
 .tui-gate-question {
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-inline-size: 0;
 }
 .tui-gate-question-label {
   font-size: 0.85rem;
