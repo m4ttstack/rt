@@ -2,6 +2,7 @@ import { join } from 'path';
 
 import type {
   GateAnswers,
+  GateDomain,
   GateOrigin,
   GateQuestion,
 } from '@mattstack/gate-kit';
@@ -59,5 +60,5 @@ export interface GateRow {
   answeredAt?: number;
   context?: string;
   origin?: GateOrigin;
-  domain?: 'review' | 'respond' | 'doctor';
+  domain?: GateDomain;
 }
