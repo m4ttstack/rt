@@ -6,6 +6,7 @@ import { describe, expect, test } from 'bun:test';
 import type { getSetting, setSetting } from '@mattstack/rt-client';
 import {
   DEFAULT_SLACK_EMOJI,
+  displayName,
   loadConfigFrom,
   saveMemberHidden,
   saveRosterMembers,
@@ -902,5 +903,28 @@ describe('storeOwnsRequiredFields: config.json-free boot', () => {
         })
       )
     ).toThrow(/config.json not found/);
+  });
+});
+
+describe('displayName: stored name beats the GitLab profile', () => {
+  test('a stored name wins over the GitLab profile name', () => {
+    expect(
+      displayName({ username: 'wescalloway', name: 'Wes Calloway' }, 'D. Faint')
+    ).toBe('Wes Calloway');
+  });
+
+  test('the GitLab profile fills in when there is no stored name', () => {
+    expect(displayName({ username: 'samkestrel' }, 'Sam Kestrel')).toBe('Sam Kestrel');
+  });
+
+  test('null when neither side has one', () => {
+    expect(displayName({ username: 'priyamalhotra' }, null)).toBeNull();
+    expect(displayName({ username: 'priyamalhotra' }, undefined)).toBeNull();
+  });
+
+  test('a blank stored name does not shadow the profile', () => {
+    expect(displayName({ username: 'x', name: '   ' }, 'Real Name')).toBe(
+      'Real Name'
+    );
   });
 });

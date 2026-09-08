@@ -114,10 +114,20 @@ export const IMPLICIT_TABS: TabConfig[] = [
 
 export interface Member {
   username: string;
-  /** Optional display name; falls back to the GitLab profile lookup, then username. */
+  /** Optional display name; overrides the GitLab profile lookup when set, else falls back to it, then username. */
   name?: string;
   /** Checked out: kept in config but hidden from the sidebar, the "All" view, and its counts. */
   hidden?: boolean;
+}
+
+/** A member's display name. The stored name is an override, not a fallback:
+    it is the only way to name an account GitLab cannot resolve, and a name
+    typed into the roster editor must survive the hourly profile refresh. */
+export function displayName(
+  member: Member,
+  profileName: string | null | undefined
+): string | null {
+  return member.name?.trim() || profileName?.trim() || null;
 }
 
 export interface BoardConfig {

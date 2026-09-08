@@ -45,6 +45,7 @@ import {
 import {
   CONFIG_PATH,
   daemonRepoField,
+  displayName,
   loadAgentSettings,
   loadConfig,
   loadGitLabToken,
@@ -640,16 +641,16 @@ async function refreshMemberNames(): Promise<void> {
     config.members.map(async member => {
       try {
         if (!token) {
-          memberNames.set(member.username, member.name ?? null);
+          memberNames.set(member.username, displayName(member, null));
           return;
         }
         const user = await (await gitlab()).fetchUser(member.username);
-        memberNames.set(member.username, user?.name ?? member.name ?? null);
+        memberNames.set(member.username, displayName(member, user?.name));
       } catch (err) {
         console.error(
           `name lookup failed for ${member.username}: ${err instanceof Error ? err.message : err}`
         );
-        memberNames.set(member.username, member.name ?? null);
+        memberNames.set(member.username, displayName(member, null));
       }
     })
   );
