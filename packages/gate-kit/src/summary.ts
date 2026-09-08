@@ -1,4 +1,4 @@
-import type { GateQuestion } from '@mattstack/rt-client';
+import type { GateQuestion, GATE_BY_PANE } from '@mattstack/rt-client';
 import { domainForKind } from './kinds';
 import { displayForValue, type GateOptionDisplay } from './options';
 import { unwrapGateAnswer, type GateAnswers } from './payload';
@@ -28,11 +28,12 @@ export interface GateSummary {
   detail: GateSummaryDetailRow[];
 }
 
-/** The `by` value a pane stamps when it answers its own gate (rt-client's
-    GATE_BY_PANE) -- the unmarked case, so only other deciders get called
-    out on the chip. String literal rather than an rt-client value import:
-    the core entry must stay runtime-free of rt-client. */
-const BY_PANE = 'pane';
+/** The `by` value a pane stamps when it answers its own gate -- the unmarked
+    case, so only other deciders get called out on the chip. Typed against
+    rt-client's own GATE_BY_PANE via a type-only import so a value change
+    there is a compile error here, while the core entry stays runtime-free
+    of rt-client. */
+const BY_PANE: typeof GATE_BY_PANE = 'pane';
 
 const VERB_VALUE = /^([a-z][a-z-]*):(.+)$/;
 
