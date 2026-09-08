@@ -325,7 +325,7 @@ export function GateCard({ gate }: { gate: GateRow }) {
               }}
             />
           </>
-        ) : (
+        ) : actionable ? (
           <GateQuestionnaire
             gate={questionnaireGate}
             selections={selections}
@@ -342,6 +342,8 @@ export function GateCard({ gate }: { gate: GateRow }) {
             status={status}
             focus={focus}
           />
+        ) : (
+          <AnsweredSummary row={gate} />
         )}
       </Stack>
     </Paper>

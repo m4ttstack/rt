@@ -270,6 +270,18 @@ describe('GateCard: parked', () => {
   });
 });
 
+describe('GateCard: closed', () => {
+  it('renders the summary chip, never the questionnaire form', () => {
+    renderCard(gateRow({ status: 'closed', closedReason: 'superseded' }));
+
+    expect(screen.getByTestId('gate-chip')).toHaveTextContent('superseded');
+    expect(screen.queryByRole('radio')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'submit' })
+    ).not.toBeInTheDocument();
+  });
+});
+
 describe('GateCard: answered', () => {
   it('renders a chip for an answered gate and expands to the unwrapped detail', async () => {
     renderCard(
