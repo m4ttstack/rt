@@ -5,6 +5,7 @@ import { describe, expect, test } from 'bun:test';
 
 import type { getSetting, setSetting } from '@mattstack/rt-client';
 import {
+  applyRosterEdit,
   DEFAULT_SLACK_EMOJI,
   displayName,
   loadConfigFrom,
@@ -926,5 +927,135 @@ describe('displayName: stored name beats the GitLab profile', () => {
     expect(displayName({ username: 'x', name: '   ' }, 'Real Name')).toBe(
       'Real Name'
     );
+  });
+});
+
+describe('applyRosterEdit: pure roster mutation', () => {
+  const roster = [
+    { username: 'ann', name: 'Ann Lee' },
+    { username: 'bo' },
+    { username: 'cy', hidden: true },
+  ];
+
+  test('add appends with a name', () => {
+    const r = applyRosterEdit(
+      roster,
+      { action: 'add', username: 'dee', name: 'Dee Fox' },
+      'ann'
+    );
+    expect(r).toEqual({
+      ok: true,
+      members: [...roster, { username: 'dee', name: 'Dee Fox' }],
+    });
+  });
+
+  test('add without a name omits the field rather than storing empty', () => {
+    const r = applyRosterEdit(
+      roster,
+      { action: 'add', username: 'dee', name: '  ' },
+      'ann'
+    );
+    expect(r.ok && r.members.at(-1)).toEqual({ username: 'dee' });
+  });
+
+  test('add trims the username', () => {
+    const r = applyRosterEdit(
+      roster,
+      { action: 'add', username: '  dee  ' },
+      'ann'
+    );
+    expect(r.ok && r.members.at(-1)).toEqual({ username: 'dee' });
+  });
+
+  test('add rejects a duplicate', () => {
+    expect(
+      applyRosterEdit(roster, { action: 'add', username: 'bo' }, 'ann')
+    ).toEqual({ ok: false, error: '"bo" is already on the roster' });
+  });
+
+  test('remove drops the entry', () => {
+    const r = applyRosterEdit(roster, { action: 'remove', username: 'bo' }, 'ann');
+    expect(r.ok && r.members.map(m => m.username)).toEqual(['ann', 'cy']);
+  });
+
+  test('remove rejects an unknown username', () => {
+    expect(
+      applyRosterEdit(roster, { action: 'remove', username: 'zed' }, 'ann')
+    ).toEqual({ ok: false, error: 'unknown member "zed"' });
+  });
+
+  test('remove refuses to empty the roster', () => {
+    expect(
+      applyRosterEdit([{ username: 'ann' }], { action: 'remove', username: 'ann' }, null)
+    ).toEqual({ ok: false, error: 'the roster cannot be emptied' });
+  });
+
+  test('remove refuses to drop the board owner', () => {
+    expect(
+      applyRosterEdit(roster, { action: 'remove', username: 'ann' }, 'ann')
+    ).toEqual({
+      ok: false,
+      error: 'you cannot drop yourself: this board runs as you',
+    });
+  });
+
+  test('rename sets a name on an existing member, in place', () => {
+    const r = applyRosterEdit(
+      roster,
+      { action: 'rename', username: 'bo', name: 'Bo Chen' },
+      'ann'
+    );
+    expect(r.ok && r.members).toEqual([
+      { username: 'ann', name: 'Ann Lee' },
+      { username: 'bo', name: 'Bo Chen' },
+      { username: 'cy', hidden: true },
+    ]);
+  });
+
+  test('rename replaces an existing name', () => {
+    const r = applyRosterEdit(
+      roster,
+      { action: 'rename', username: 'ann', name: 'Ann Marie Lee' },
+      'ann'
+    );
+    expect(r.ok && r.members[0]).toEqual({
+      username: 'ann',
+      name: 'Ann Marie Lee',
+    });
+  });
+
+  test('rename to blank clears the name so the gitlab profile takes over', () => {
+    const r = applyRosterEdit(
+      roster,
+      { action: 'rename', username: 'ann', name: '   ' },
+      'ann'
+    );
+    expect(r.ok && r.members[0]).toEqual({ username: 'ann' });
+  });
+
+  test('rename preserves a hidden flag', () => {
+    const r = applyRosterEdit(
+      roster,
+      { action: 'rename', username: 'cy', name: 'Cy Park' },
+      'ann'
+    );
+    expect(r.ok && r.members[2]).toEqual({
+      username: 'cy',
+      name: 'Cy Park',
+      hidden: true,
+    });
+  });
+
+  test('rename rejects an unknown username', () => {
+    expect(
+      applyRosterEdit(roster, { action: 'rename', username: 'zed', name: 'Z' }, 'ann')
+    ).toEqual({ ok: false, error: 'unknown member "zed"' });
+  });
+
+  test('the input roster is never mutated', () => {
+    const snapshot = JSON.parse(JSON.stringify(roster));
+    applyRosterEdit(roster, { action: 'rename', username: 'bo', name: 'Bo' }, 'ann');
+    applyRosterEdit(roster, { action: 'remove', username: 'bo' }, 'ann');
+    expect(roster).toEqual(snapshot);
   });
 });

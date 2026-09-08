@@ -834,6 +834,68 @@ function isHiddenMembersOwned(resolve: GetSettingFn): boolean {
   }
 }
 
+export type RosterAction = 'add' | 'remove' | 'rename';
+
+export type RosterEdit = {
+  action: RosterAction;
+  username: string;
+  name?: string;
+};
+
+export type RosterEditResult =
+  | { ok: true; members: Member[] }
+  | { ok: false; error: string };
+
+/** Apply one roster edit, returning the next list or the message to hand the
+    caller. Pure (list in, list out) so every rule below is testable without a
+    server, same as setHiddenInRaw. `self` is the board's defaultMember: the
+    board runs as them, so dropping them would strand every affordance keyed
+    on that identity, and an empty roster is one parseConfig refuses to load
+    on the next boot. A blank name clears the field rather than storing an
+    empty string, which is what lets a rename hand a member back to the
+    GitLab profile lookup. */
+export function applyRosterEdit(
+  members: Member[],
+  edit: RosterEdit,
+  self: string | null
+): RosterEditResult {
+  const username = edit.username.trim();
+  if (!username) return { ok: false, error: 'username is required' };
+  const name = edit.name?.trim() ?? '';
+  const present = members.some(m => m.username === username);
+
+  if (edit.action === 'add') {
+    if (present)
+      return { ok: false, error: `"${username}" is already on the roster` };
+    return {
+      ok: true,
+      members: [...members, name ? { username, name } : { username }],
+    };
+  }
+
+  if (!present) return { ok: false, error: `unknown member "${username}"` };
+
+  if (edit.action === 'rename') {
+    return {
+      ok: true,
+      members: members.map(m => {
+        if (m.username !== username) return m;
+        const { name: _name, ...rest } = m;
+        return name ? { ...rest, name } : rest;
+      }),
+    };
+  }
+
+  if (members.length === 1)
+    return { ok: false, error: 'the roster cannot be emptied' };
+  if (username === self)
+    return {
+      ok: false,
+      error: 'you cannot drop yourself: this board runs as you',
+    };
+  return { ok: true, members: members.filter(m => m.username !== username) };
+}
+
 /**
  * Replace the roster wholesale: a store-owned roster is written back to the
  * key that owns it (see ROSTER_KEYS), otherwise to config.json. Callers own

@@ -43,6 +43,7 @@ import {
   type TabIdResolver,
 } from './close-on-done.ts';
 import {
+  applyRosterEdit,
   CONFIG_PATH,
   daemonRepoField,
   displayName,
@@ -1037,9 +1038,11 @@ const httpServer = Bun.serve({
         });
       }
       case '/roster': {
-        // Add or drop a teammate. Sibling of /settings (which only flips the
-        // hidden overlay): both are single-writer config mutations that swap
-        // the in-memory roster so this and every later /data.json agree.
+        // Add, drop, or rename a teammate. Sibling of /settings (which only
+        // flips the hidden overlay): both are single-writer config mutations
+        // that swap the in-memory roster so this and every later /data.json
+        // agree. Every rule lives in applyRosterEdit; this only shapes the
+        // request and persists the result.
         if (req.method !== 'POST')
           return new Response('method not allowed', { status: 405 });
         if (!isLocalRequest(req))
@@ -1056,51 +1059,26 @@ const httpServer = Bun.serve({
           name?: unknown;
         };
         if (
-          (action !== 'add' && action !== 'remove') ||
+          (action !== 'add' && action !== 'remove' && action !== 'rename') ||
           typeof username !== 'string' ||
           !username.trim()
         ) {
           return new Response(
-            'expected { action: "add" | "remove", username: string, name?: string }',
+            'expected { action: "add" | "remove" | "rename", username: string, name?: string }',
             { status: 400 }
           );
         }
         if (name !== undefined && typeof name !== 'string') {
           return new Response('name must be a string', { status: 400 });
         }
-        const handle = username.trim();
-        const present = config.members.some(m => m.username === handle);
-        if (action === 'add' && present)
-          return new Response(`"${handle}" is already on the roster`, {
-            status: 400,
-          });
-        if (action === 'remove' && !present)
-          return new Response(`unknown member "${handle}"`, { status: 400 });
-        // The board needs someone to be: dropping the last member would leave
-        // a roster parseConfig refuses to load on the next boot, and dropping
-        // yourself strands every affordance keyed on defaultMember (drafts,
-        // respond, "yours" in general).
-        if (action === 'remove' && config.members.length === 1) {
-          return new Response('the roster cannot be emptied', { status: 400 });
-        }
-        if (action === 'remove' && handle === config.defaultMember) {
-          return new Response(
-            'you cannot drop yourself: this board runs as you',
-            { status: 400 }
-          );
-        }
-        const trimmedName = typeof name === 'string' ? name.trim() : '';
-        const next =
-          action === 'add'
-            ? [
-                ...config.members,
-                trimmedName
-                  ? { username: handle, name: trimmedName }
-                  : { username: handle },
-              ]
-            : config.members.filter(m => m.username !== handle);
+        const edit = applyRosterEdit(
+          config.members,
+          { action, username, name },
+          config.defaultMember === 'all' ? null : config.defaultMember
+        );
+        if (!edit.ok) return new Response(edit.error, { status: 400 });
         try {
-          config.members = saveRosterMembers(next).members;
+          config.members = saveRosterMembers(edit.members).members;
         } catch (err) {
           return new Response(
             `roster write failed: ${err instanceof Error ? err.message : err}`,
@@ -1109,7 +1087,11 @@ const httpServer = Bun.serve({
         }
         // A new member's MRs are not in the snapshot yet, and a dropped one's
         // must leave it: the next full fetch declares the new demand to rt.
+        // A rename changes no demand, but the display name is cached for an
+        // hour, so the lookup has to be re-armed either way.
         cache.invalidate();
+        namesFetchedAt = 0;
+        void refreshMemberNames();
         return new Response(JSON.stringify({ ok: true }), {
           headers: { 'content-type': 'application/json' },
         });
