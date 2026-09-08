@@ -182,6 +182,14 @@ describe("herd:resume / status / close", () => {
     expect(store.getJob(herd, "acme-1")!.status).toBe("closed");
   });
 
+  test("close marks the job closed even when the herdr runner throws", async () => {
+    const { h, store, herd } = await started({ herdrRunnerFor: () => async () => { throw new Error("herdr not found"); } });
+    store.upsertJob({ herd, name: "acme-1", worktree: "/w/acme-1", handle: "acme-1", status: "active", pane: "w9:p1" });
+    const res = await h["herd:close"]({ herd, job: "acme-1" });
+    expect(res.ok).toBe(true);
+    expect(store.getJob(herd, "acme-1")!.status).toBe("closed");
+  });
+
   test("close on a job with no pane still marks it closed", async () => {
     const { h, store, herd, herdrCalls } = await started();
     store.upsertJob({ herd, name: "acme-1", worktree: "/w/acme-1", handle: "acme-1", status: "crashed" });
