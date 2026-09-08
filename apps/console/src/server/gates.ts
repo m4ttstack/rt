@@ -196,6 +196,8 @@ export const gates = new Hono()
     if (!all.ok) return c.json({ error: all.error }, 502);
     const row = all.gates.find(g => g.id === id);
     if (!row) return c.json({ error: 'not-found' }, 404);
+    // listAllRunGates already scoped the list to subjectPrefix: 'run:' -- this
+    // re-check guards the daemon contract rather than filtering anything here.
     if (!row.subject.startsWith('run:')) {
       return c.json({ error: 'gate is not a run gate' }, 404);
     }
