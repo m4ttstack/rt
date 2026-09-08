@@ -624,8 +624,16 @@ export function Board() {
   // re-scroll.
   useEffect(() => {
     if (gateDeepLinkIid === null) return;
-    const row = document.querySelector(`[data-mr-iid="${gateDeepLinkIid}"]`);
-    history.replaceState(null, '', stripGateParam(location.search));
+    const row = document.querySelector(
+      `[data-mr-iid="${CSS.escape(String(gateDeepLinkIid))}"]`
+    );
+    // An empty relative url is a no-op for replaceState (it keeps the
+    // current query) -- fall back to the bare pathname, same as update().
+    history.replaceState(
+      null,
+      '',
+      stripGateParam(location.search) || location.pathname
+    );
     if (!row) {
       setGateDeepLinkIid(null);
       return;

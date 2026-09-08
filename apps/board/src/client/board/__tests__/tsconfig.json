@@ -1,0 +1,13 @@
+{
+  // A fourth program, for this directory's DOM-rendering tests only -- same
+  // reason as `src/client/__tests__/tsconfig.json` (bun:test needs
+  // `types: ["bun"]`, which the client program deliberately withholds): DOM
+  // lib plus bun types, so `bun:test` and `document`/`Element` both resolve.
+  "extends": "../../../../tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "types": ["bun"]
+  },
+  "include": ["./**/*"],
+  "exclude": []
+}
