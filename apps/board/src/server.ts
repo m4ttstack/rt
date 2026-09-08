@@ -113,7 +113,6 @@ import {
   type GateEventFrame,
 } from './gates/ingest.ts';
 import { migrateLegacySessions } from './gates/legacy-session-migration.ts';
-import { parseMrActionBody, runMrAction } from './mr-action.ts';
 import {
   bootResumePass,
   buildResumers,
@@ -141,6 +140,7 @@ import { postLatch, spendAllLatches } from './latch/post.ts';
 import { isLocalRequest } from './local.ts';
 import { resolveBoardSkill, type BoardSkillKind } from './manifest-bindings.ts';
 import { memoizeAsync } from './memoize-async.ts';
+import { parseMrActionBody, runMrAction } from './mr-action.ts';
 import {
   makeSwitchboardClient,
   type SwitchboardClient,
@@ -1638,8 +1638,7 @@ const httpServer = Bun.serve({
         // note pinning the job to the rebase alone.
         const manual = manualDoctorFields(triage, mr.author.username, identity);
         const tier = parsed.mode === 'rebase' ? undefined : manual.tier;
-        const fixClasses =
-          parsed.mode === 'rebase' ? [] : manual.fixClasses;
+        const fixClasses = parsed.mode === 'rebase' ? [] : manual.fixClasses;
         const launchNote =
           parsed.mode === 'rebase'
             ? [

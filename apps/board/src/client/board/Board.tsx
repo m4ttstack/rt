@@ -474,10 +474,7 @@ export function Board() {
         merge: ['merging', 'merge accepted'],
         rebase: ['rebasing', 'rebase started'],
         setAutoMerge: ['arming auto-merge on', 'auto-merge armed for'],
-        cancelAutoMerge: [
-          'canceling auto-merge on',
-          'auto-merge canceled for',
-        ],
+        cancelAutoMerge: ['canceling auto-merge on', 'auto-merge canceled for'],
       };
       const [pending, done] = wording[action];
       addToast(`${pending} !${mr.iid}…`);

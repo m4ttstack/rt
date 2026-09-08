@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import type { TabConfig } from '../config.ts';
 import type { BoardMR } from '../data.ts';
 import {
+  behindToken,
   commentDot,
   dataAgeLabel,
   DEFAULT_VIEW,
@@ -17,7 +18,6 @@ import {
   rosterUsernamesFor,
   serializeViewState,
   sortMRs,
-  behindToken,
   statusFlags,
 } from '../view.ts';
 

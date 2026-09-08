@@ -7,7 +7,10 @@ import {
 } from '../mr-action.ts';
 
 describe('parseMrActionBody', () => {
-  const base = { mrUrl: 'https://gitlab.com/org/repo/-/merge_requests/7', iid: 7 };
+  const base = {
+    mrUrl: 'https://gitlab.com/org/repo/-/merge_requests/7',
+    iid: 7,
+  };
 
   test.each(['merge', 'rebase', 'setAutoMerge', 'cancelAutoMerge'] as const)(
     'accepts action %s',
@@ -25,7 +28,9 @@ describe('parseMrActionBody', () => {
 
   test('rejects a missing mrUrl or iid', () => {
     expect(parseMrActionBody({ iid: 7, action: 'merge' })).toBeNull();
-    expect(parseMrActionBody({ mrUrl: base.mrUrl, action: 'merge' })).toBeNull();
+    expect(
+      parseMrActionBody({ mrUrl: base.mrUrl, action: 'merge' })
+    ).toBeNull();
   });
 
   test('rejects a non-object body', () => {
@@ -58,11 +63,14 @@ describe('runMrAction', () => {
     ['rebase', 'rebase org/repo !7'],
     ['setAutoMerge', 'setAutoMerge org/repo !7'],
     ['cancelAutoMerge', 'cancelAutoMerge org/repo !7'],
-  ] as const)('%s dispatches to the matching provider call', async (action, expected) => {
-    const calls: string[] = [];
-    await runMrAction(fakeProvider(calls), 'org/repo', 7, action);
-    expect(calls).toEqual([expected]);
-  });
+  ] as const)(
+    '%s dispatches to the matching provider call',
+    async (action, expected) => {
+      const calls: string[] = [];
+      await runMrAction(fakeProvider(calls), 'org/repo', 7, action);
+      expect(calls).toEqual([expected]);
+    }
+  );
 
   test('a provider failure propagates to the caller', async () => {
     const provider = fakeProvider([]);

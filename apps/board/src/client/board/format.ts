@@ -526,7 +526,11 @@ function gitlabMenuItems(mr: BoardMR): {
   if (mr.autoMergeButton.visible)
     items.push(
       mr.autoMergeButton.isActive
-        ? { kind: 'cancelAutoMerge', label: 'cancel auto-merge', disabled: false }
+        ? {
+            kind: 'cancelAutoMerge',
+            label: 'cancel auto-merge',
+            disabled: false,
+          }
         : { kind: 'setAutoMerge', label: 'set auto-merge', disabled: false }
     );
   return items;
