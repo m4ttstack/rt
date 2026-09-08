@@ -161,14 +161,18 @@ export function GateCard({ gate }: { gate: GateRow }) {
         param: { id: gate.id },
         json: payload,
       });
-      if (res.status === 409) {
+      const outcome = resolveAnswerOutcome(
+        res.status,
+        await res.json().catch(() => null)
+      );
+      if (outcome.kind === 'lost') {
         // An answer WAS recorded, just not this one -- the body carries the
         // winning row, not a validation failure to retry. Invalidate here
         // too (not just the success path below): every other consumer of
         // ['gates'] still thinks this gate is open until it refetches, and
-        // this 409 body is itself proof the row changed.
+        // this body is itself proof the row changed.
         setBusy(false);
-        setLost(resolveAnswerOutcome(409, await res.json().catch(() => null)));
+        setLost(outcome);
         void queryClient.invalidateQueries({ queryKey: ['gates'] });
         return;
       }

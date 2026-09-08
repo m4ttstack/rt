@@ -236,11 +236,15 @@ function GateCard({
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ gateId: gate.gateId, answers: payload.answers }),
       });
-      if (res.status === 409) {
+      const outcome = resolveAnswerOutcome(
+        res.status,
+        await res.json().catch(() => null)
+      );
+      if (outcome.kind === 'lost') {
         // An answer WAS recorded, just not this one -- the body carries the
         // winning row, not a validation failure to retry.
         setBusy(false);
-        setLost(resolveAnswerOutcome(409, await res.json().catch(() => null)));
+        setLost(outcome);
         return;
       }
       if (!res.ok) throw new Error(String(res.status));
