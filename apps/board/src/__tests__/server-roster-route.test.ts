@@ -144,9 +144,7 @@ async function settings(body: unknown): Promise<Response> {
 }
 
 function storedUser(): Record<string, unknown> {
-  return JSON.parse(
-    readFileSync(join(userDir, 'settings.user.jsonc'), 'utf8')
-  );
+  return JSON.parse(readFileSync(join(userDir, 'settings.user.jsonc'), 'utf8'));
 }
 
 test('hiding a roster member writes board.hiddenMembers to the user store', async () => {
