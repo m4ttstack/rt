@@ -1,6 +1,7 @@
 import type { GateDomain } from '@mattstack/gate-kit';
 import { Chip, Markdown, Modal } from '@mattstack/tui-kit';
 import type { GateRow } from '../../gates/store.ts';
+import { extractTicketId } from '../../ticket.ts';
 import type { BoardMRWithReview } from '../types.ts';
 import { AnsweredChip, GateForm, useGateForm } from './GateCard.tsx';
 
@@ -69,7 +70,9 @@ function GateTriageModal({
             parked
           </Chip>
         )}
-        <span className="tui-triage-subject">{mr.title}</span>
+        <span className="tui-triage-subject">
+          <span className="tui-triage-mr-ref">!{mr.iid}</span> {mr.title}
+        </span>
         {gate.status === 'parked' ? (
           gate.domain && (
             <button
@@ -158,12 +161,38 @@ function GateTriageModal({
               </div>
             ) : (
               <div className="tui-triage-context tui-triage-meta">
-                <div className="tui-triage-context-label">gate</div>
+                <div className="tui-triage-context-label">
+                  what you're triaging
+                </div>
                 <dl className="tui-triage-meta-rows">
                   <div className="tui-triage-meta-row">
-                    <dt>subject</dt>
-                    <dd className="tui-triage-meta-mono">{gate.subject}</dd>
+                    <dt>mr</dt>
+                    <dd>
+                      <span className="tui-triage-mr-ref">!{mr.iid}</span>{' '}
+                      {mr.title}
+                    </dd>
                   </div>
+                  {mr.author && (
+                    <div className="tui-triage-meta-row">
+                      <dt>author</dt>
+                      <dd>{mr.author.name || mr.author.username}</dd>
+                    </div>
+                  )}
+                  {mr.sourceBranch && (
+                    <div className="tui-triage-meta-row">
+                      <dt>branch</dt>
+                      <dd className="tui-triage-meta-mono">
+                        {mr.sourceBranch}
+                      </dd>
+                    </div>
+                  )}
+                  {mr.sourceBranch &&
+                    extractTicketId(mr.sourceBranch, mr.title) && (
+                      <div className="tui-triage-meta-row">
+                        <dt>ticket</dt>
+                        <dd>{extractTicketId(mr.sourceBranch, mr.title)}</dd>
+                      </div>
+                    )}
                   <div className="tui-triage-meta-row">
                     <dt>opened</dt>
                     <dd>{new Date(gate.openedAt).toLocaleString()}</dd>
@@ -176,12 +205,6 @@ function GateTriageModal({
                           .filter(Boolean)
                           .join(' · ')}
                       </dd>
-                    </div>
-                  )}
-                  {gate.domain && (
-                    <div className="tui-triage-meta-row">
-                      <dt>domain</dt>
-                      <dd>{gate.domain}</dd>
                     </div>
                   )}
                 </dl>

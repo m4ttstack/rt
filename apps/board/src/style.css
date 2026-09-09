@@ -1771,6 +1771,11 @@
   overflow-wrap: anywhere;
   color: var(--fg);
 }
+.tui-triage-mr-ref {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--accent-text);
+}
 .tui-triage-meta-mono {
   font-family: var(--font-mono);
   font-size: 0.72rem;

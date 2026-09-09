@@ -78,6 +78,8 @@ function question(
 const boardMr = {
   iid: 31,
   title: 'themed gate controls',
+  author: { id: 'gitlab:7', username: 'paul', name: 'Paul', avatarUrl: null },
+  sourceBranch: 'board-28-themed-gate-controls',
 } as unknown as BoardMRWithReview;
 
 function seedDraft(
