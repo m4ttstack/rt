@@ -980,13 +980,16 @@ export function saveTabs(
  * inline flags alone, so config.json's `members[].hidden` is never read back
  * even when the file exists -- writing there would be a dead write and
  * validating `username` against the file's own members would reject a
- * member the file never listed. In that case (and whenever config.json
- * doesn't exist at all -- RULING: file-authority is meaningless with no
- * file) this establishes `board.hiddenMembers` ownership instead, seeded
- * from the currently resolved hidden set so establishing ownership never
- * drops another member's hidden state. Only when the roster itself is
- * file-authoritative and config.json exists does the file's inline
- * `members[].hidden` stay the writer. Owned: `board.hiddenMembers` (the user
+ * member the file never listed. In that case this establishes
+ * `board.hiddenMembers` ownership instead (RULING: file-authority is
+ * meaningless once the roster itself isn't file-authoritative), seeded from
+ * the currently resolved hidden set so establishing ownership never drops
+ * another member's hidden state. Only when the roster is NOT store-owned and
+ * config.json exists does the file's inline `members[].hidden` stay the
+ * writer; when the roster isn't store-owned and config.json is missing
+ * entirely, that combination can never resolve (storeOwnsRequiredFields
+ * needs a store-owned roster too), so loadConfigFrom's own "config.json not
+ * found" throw is what surfaces. Owned: `board.hiddenMembers` (the user
  * store) is the single writer instead and config.json is never touched for
  * this... every branch is exactly one write, so a `write` throw simply
  * propagates; nothing was persisted for it to revert. A non-ENOENT file-read
@@ -1020,7 +1023,11 @@ export function saveMemberHidden(
       if (!isEnoent(err)) throw err;
     }
     if (raw === undefined) {
-      seedAndWriteHiddenOverlay(username, hidden, path, resolve, write);
+      // rosterFromStore(resolve) is already null here (the branch above
+      // only matches non-null), so storeOwnsRequiredFields can never hold
+      // and this always throws loadConfigFrom's "config.json not found"
+      // error -- there is no seed to establish ownership from.
+      loadConfigFrom(path, resolve);
     } else {
       const next = setHiddenInRaw(raw, username, hidden); // throws for an unknown member
       writeFileSync(path, next);

@@ -776,6 +776,46 @@ describe('saveMemberHidden: a store-owned roster decides the writer, not config.
     ]);
   });
 
+  test('un-hiding the only currently-hidden member writes an empty array, which still latches ownership', () => {
+    const p = tmpConfig({ ...base, members: [{ username: 'alice' }] });
+    const calls: Array<{ key: string; value: unknown; scope: string }> = [];
+    saveMemberHidden(
+      'carol',
+      false,
+      p,
+      fakeResolve({
+        'mattstack.roster': [
+          { username: 'alice' },
+          { username: 'carol', hidden: true },
+        ],
+      }),
+      fakeWrite(calls)
+    );
+    expect(calls).toEqual([
+      { key: 'board.hiddenMembers', value: [], scope: 'user' },
+    ]);
+  });
+
+  test('un-hiding a member who was never hidden writes the seed unchanged', () => {
+    const p = tmpConfig({ ...base, members: [{ username: 'alice' }] });
+    const calls: Array<{ key: string; value: unknown; scope: string }> = [];
+    saveMemberHidden(
+      'carol',
+      false,
+      p,
+      fakeResolve({
+        'mattstack.roster': [
+          { username: 'alice', hidden: true },
+          { username: 'carol' },
+        ],
+      }),
+      fakeWrite(calls)
+    );
+    expect(calls).toEqual([
+      { key: 'board.hiddenMembers', value: ['alice'], scope: 'user' },
+    ]);
+  });
+
   test('an unknown username throws before any write', () => {
     const p = tmpConfig({ ...base, members: [{ username: 'alice' }] });
     const calls: Array<{ key: string; value: unknown; scope: string }> = [];
