@@ -1663,7 +1663,7 @@
   background: none;
   border: 1px solid transparent;
   border-radius: var(--gate-radius-btn);
-  color: var(--gate-muted);
+  color: var(--fg);
 }
 .tui-gate-focus:hover:not(:disabled),
 .tui-gate-ghost:hover:not(:disabled) {
