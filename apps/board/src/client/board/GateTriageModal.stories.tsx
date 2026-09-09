@@ -121,7 +121,7 @@ const firstGate: GateRow = {
   kind: 'respond-plan',
   label: 'respond-plan',
   status: 'open',
-  openedAt: 1757426100000,
+  openedAt: 1788962100000,
   questions: respondPlanQuestions,
   origin: { paneId: 'pane-1', worktree: 'widgets' },
 };
@@ -178,7 +178,7 @@ const lastGate: GateRow = {
   kind: 'self-review',
   label: 'self-review',
   status: 'open',
-  openedAt: 1757428320000,
+  openedAt: 1788964320000,
   questions: [
     question('verdict', 'Ready to merge?', false, [
       { value: 'approve', label: 'Approve (recommended)' },

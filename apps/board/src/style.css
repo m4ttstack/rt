@@ -1678,7 +1678,7 @@
 /* The frame is the kit Modal recipe; this class both widens it (app CSS
    outranks the recipe's @layer rule) and scopes the gate contrast vars. */
 .tui-triage-modal {
-  max-width: 940px;
+  max-width: 760px;
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
@@ -1707,18 +1707,19 @@
   padding: 2px 8px;
 }
 .tui-triage-pos {
-  margin-left: 8px;
+  margin-left: 2px;
   font: 500 0.7rem/1 var(--font-mono);
   font-variant-numeric: tabular-nums;
   letter-spacing: normal;
   color: var(--gate-muted);
+  align-self: center;
 }
 .tui-triage-pips {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  margin-left: 10px;
-  vertical-align: 1px;
+  margin-left: 2px;
+  align-self: center;
 }
 .tui-triage-pip {
   width: 6px;
@@ -1783,11 +1784,13 @@
 .tui-triage-strip {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 4px 4px 6px 8px;
+  padding: 7px 10px 8px;
   border: 1px solid var(--border-soft);
   border-radius: 6px;
   background: var(--chrome);
+}
+.tui-triage-strip .tui-row-2 {
+  align-items: baseline;
 }
 /* The strip is the MR row users already scan, verbatim classes
    (.tui-title/.tui-row-2/...), minus main-view status chips and badges. */
@@ -1799,10 +1802,11 @@
 }
 .tui-triage-kind {
   flex-shrink: 0;
-  font: 600 0.66rem/1.4 var(--font-sans);
+  font: 600 0.66rem/1 var(--font-sans);
   text-transform: uppercase;
   letter-spacing: 0.03em;
   color: var(--gate-muted);
+  align-self: center;
 }
 .tui-triage-peek {
   display: flex;
