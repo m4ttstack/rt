@@ -142,13 +142,17 @@ function importLane(db: Database, roots: string[], lane: Lane, t: Tally): void {
   }
   for (const w of winners.values()) {
     const handle = resolveHandle(db, lane, w.mrUrl, w.root, w.filePath);
+    // insertAgentState normalizes {mrUrl, iid} into the stored blob (agent
+    // states.ts); a legacy row without a numeric iid must land the same way,
+    // so downstream readers (status CLIs, emitAgentStatus) always find one.
+    const state = { ...w.raw, mrUrl: w.mrUrl, iid: w.iid };
     db.query(
       `INSERT INTO agent_states (lane, mr_url, state, handle, report, updated_at)
        VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT(lane, mr_url) DO UPDATE SET
          state = excluded.state, handle = excluded.handle, report = excluded.report, updated_at = excluded.updated_at
        WHERE excluded.updated_at > agent_states.updated_at`
-    ).run(lane, w.mrUrl, JSON.stringify(w.raw), handle, w.report, w.updatedAt);
+    ).run(lane, w.mrUrl, JSON.stringify(state), handle, w.report, w.updatedAt);
   }
 }
 

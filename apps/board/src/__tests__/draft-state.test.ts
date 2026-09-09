@@ -123,4 +123,61 @@ describe('draft state', () => {
     expect(rows[0]!.drafts).toHaveLength(1);
     expect(rows[1]!.drafts).toBeUndefined();
   });
+
+  test('a writer that commits between the read and the upsert is not clobbered', () => {
+    const mrUrl = 'https://x/mr/5';
+    writeDraft(
+      mrUrl,
+      'k',
+      { mrUrl, iid: 5, kind: 'k', body: 'first', status: 'held' },
+      100,
+      db
+    );
+
+    // A second connection to the same file stands in for another process.
+    // It commits a fresh row for this same (mrUrl, kind) right before this
+    // writeDraft's own upsert statement runs. If the read and the upsert
+    // were not one transaction, that commit would be invisible to the
+    // in-flight write and get silently overwritten by it.
+    const other = openStateDb(join(dir, 'state.db'));
+    const originalQuery = db.query.bind(db);
+    let injected = false;
+    (db as unknown as { query: typeof db.query }).query = ((sql: string) => {
+      if (!injected && sql.includes('INSERT INTO drafts')) {
+        injected = true;
+        other
+          .query(
+            `INSERT INTO drafts (mr_url, kind, draft, updated_at) VALUES (?, ?, ?, ?)
+             ON CONFLICT(mr_url, kind) DO UPDATE SET draft = excluded.draft, updated_at = excluded.updated_at`
+          )
+          .run(
+            mrUrl,
+            'k',
+            JSON.stringify({
+              mrUrl,
+              iid: 5,
+              kind: 'k',
+              body: 'concurrent',
+              status: 'held',
+              createdAt: 100,
+              updatedAt: 150,
+            }),
+            150
+          );
+      }
+      return originalQuery(sql);
+    }) as typeof db.query;
+
+    let result: ReturnType<typeof writeDraft>;
+    try {
+      result = writeDraft(mrUrl, 'k', { status: 'posted' }, 200, db);
+    } finally {
+      (db as unknown as { query: typeof db.query }).query = originalQuery;
+      other.close();
+    }
+
+    expect(injected).toBe(true);
+    expect(result.status).toBe('posted');
+    expect(result.body).toBe('concurrent');
+  });
 });

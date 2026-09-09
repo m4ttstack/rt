@@ -16,6 +16,7 @@ import {
   slackSweepTargets,
   sweepSlackRefs,
   writeIndex,
+  writeSlackRef,
   type SlackIndex,
   type SlackMessage,
   type SlackRef,
@@ -136,6 +137,39 @@ describe('readIndex / writeIndex per-channel', () => {
     writeIndex('team-codeowners', idx, db);
     expect(readIndex('team-codeowners', db)).toEqual(idx);
     expect(readIndex('code-review', db)).toBeNull();
+  });
+});
+
+describe('writeSlackRef critical flag', () => {
+  test('a busy write is swallowed by default, but retried-then-thrown when critical', () => {
+    const ref: SlackRef = {
+      mrUrl: URL_A,
+      iid: 1,
+      status: 'found',
+      checkedAt: 1,
+    };
+    const originalQuery = db.query.bind(db);
+    (db as unknown as { query: typeof db.query }).query = ((sql: string) => {
+      if (sql.includes('INSERT INTO slack_refs')) {
+        throw Object.assign(new Error('database is locked'), {
+          code: 'SQLITE_BUSY',
+        });
+      }
+      return originalQuery(sql);
+    }) as typeof db.query;
+
+    try {
+      // reactToMR has already posted a Slack reply by the time it calls
+      // writeSlackRef(..., true); a swallowed write there means the next
+      // call posts a duplicate. Every other caller only caches a lookup, so
+      // the default (uncritical) path may silently skip a busy write.
+      expect(() => writeSlackRef(ref, db, false)).not.toThrow();
+      expect(readSlackRefs(db).size).toBe(0);
+
+      expect(() => writeSlackRef(ref, db, true)).toThrow();
+    } finally {
+      (db as unknown as { query: typeof db.query }).query = originalQuery;
+    }
   });
 });
 

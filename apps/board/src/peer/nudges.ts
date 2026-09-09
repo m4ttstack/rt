@@ -162,14 +162,17 @@ export function resolveSentNudge(
   resolution: NonNullable<SentNudge['resolution']>,
   db: Database = getStateDb()
 ): void {
-  const prev = readSentNudgeRow(mrUrl, db);
-  if (!prev) return;
-  if (prev.resolution && prev.resolution.result !== 'confirmed') return;
-  const next: SentNudge = { ...prev, resolution };
   runCriticalWrite('sent nudge resolve', () => {
-    db.query(
-      'UPDATE nudges_sent SET nudge = ?, updated_at = ? WHERE mr_url = ?'
-    ).run(JSON.stringify(next), Date.now(), mrUrl);
+    const tx = db.transaction(() => {
+      const prev = readSentNudgeRow(mrUrl, db);
+      if (!prev) return;
+      if (prev.resolution && prev.resolution.result !== 'confirmed') return;
+      const next: SentNudge = { ...prev, resolution };
+      db.query(
+        'UPDATE nudges_sent SET nudge = ?, updated_at = ? WHERE mr_url = ?'
+      ).run(JSON.stringify(next), Date.now(), mrUrl);
+    });
+    tx();
   });
 }
 
@@ -184,11 +187,14 @@ export function retireSentNudge(
   ifSentBefore: number,
   db: Database = getStateDb()
 ): void {
-  const prev = readSentNudgeRow(mrUrl, db);
-  if (!prev) return;
-  if (prev.sentAt >= ifSentBefore) return;
   persistOrWarn('sent nudge retire', () => {
-    db.query('DELETE FROM nudges_sent WHERE mr_url = ?').run(mrUrl);
+    const tx = db.transaction(() => {
+      const prev = readSentNudgeRow(mrUrl, db);
+      if (!prev) return;
+      if (prev.sentAt >= ifSentBefore) return;
+      db.query('DELETE FROM nudges_sent WHERE mr_url = ?').run(mrUrl);
+    });
+    tx();
   });
 }
 

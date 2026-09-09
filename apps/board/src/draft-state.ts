@@ -44,22 +44,26 @@ export function writeDraft(
   now: number = Date.now(),
   db: Database = getStateDb()
 ): DraftState {
-  const prev: Partial<DraftState> = readDraftRow(mrUrl, kind, db) ?? {};
-  const next: DraftState = {
-    mrUrl: patch.mrUrl ?? prev.mrUrl ?? mrUrl,
-    iid: patch.iid ?? prev.iid ?? 0,
-    kind: patch.kind ?? prev.kind ?? kind,
-    body: patch.body ?? prev.body ?? '',
-    status: patch.status,
-    createdAt: prev.createdAt ?? now,
-    updatedAt: now,
-    postedNoteId: patch.postedNoteId ?? prev.postedNoteId,
-  };
+  let next!: DraftState;
   runCriticalWrite('draft write', () => {
-    db.query(
-      `INSERT INTO drafts (mr_url, kind, draft, updated_at) VALUES (?, ?, ?, ?)
-       ON CONFLICT(mr_url, kind) DO UPDATE SET draft = excluded.draft, updated_at = excluded.updated_at`
-    ).run(mrUrl, kind, JSON.stringify(next), now);
+    const tx = db.transaction(() => {
+      const prev: Partial<DraftState> = readDraftRow(mrUrl, kind, db) ?? {};
+      next = {
+        mrUrl: patch.mrUrl ?? prev.mrUrl ?? mrUrl,
+        iid: patch.iid ?? prev.iid ?? 0,
+        kind: patch.kind ?? prev.kind ?? kind,
+        body: patch.body ?? prev.body ?? '',
+        status: patch.status,
+        createdAt: prev.createdAt ?? now,
+        updatedAt: now,
+        postedNoteId: patch.postedNoteId ?? prev.postedNoteId,
+      };
+      db.query(
+        `INSERT INTO drafts (mr_url, kind, draft, updated_at) VALUES (?, ?, ?, ?)
+         ON CONFLICT(mr_url, kind) DO UPDATE SET draft = excluded.draft, updated_at = excluded.updated_at`
+      ).run(mrUrl, kind, JSON.stringify(next), now);
+    });
+    tx();
   });
   return next;
 }

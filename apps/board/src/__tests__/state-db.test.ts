@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
 
 import {
@@ -9,6 +10,7 @@ import {
   getStateDb,
   openStateDb,
   SCHEMA_VERSION,
+  SchemaTooNewError,
   stateDbPath,
 } from '../state/db.ts';
 import { getKvValue, setKvValue } from '../state/kv-blob.ts';
@@ -60,6 +62,26 @@ describe('state db', () => {
       (db.query('PRAGMA user_version').get() as { user_version: number })
         .user_version
     ).toBe(SCHEMA_VERSION);
+  });
+
+  test('a future schema version is rejected, not quarantined', () => {
+    const path = tempDbPath();
+    const db = openStateDb(path);
+    db.exec(`PRAGMA user_version = ${SCHEMA_VERSION + 1}`);
+    db.close();
+
+    expect(() => openStateDb(path)).toThrow(SchemaTooNewError);
+    // A future-schema db is not corrupt: it must still be the same file,
+    // never renamed aside and replaced the way a genuinely unopenable db is.
+    // Inspect the raw file directly (not via openStateDb, which would just
+    // throw again) to confirm nothing quarantined or recreated it.
+    expect(existsSync(path)).toBe(true);
+    const raw = new Database(path);
+    expect(
+      (raw.query('PRAGMA user_version').get() as { user_version: number })
+        .user_version
+    ).toBe(SCHEMA_VERSION + 1);
+    raw.close();
   });
 
   test('kv round-trips and falls back', () => {

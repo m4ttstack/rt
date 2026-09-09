@@ -222,13 +222,21 @@ export function pruneStates(
   keepUrls: ReadonlySet<string>,
   db: Database = getStateDb()
 ): void {
-  const rows = db
-    .query('SELECT mr_url, handle FROM agent_states WHERE lane = ?')
-    .all(lane) as { mr_url: string; handle: string }[];
-  const stale = rows.filter(row => !keepUrls.has(row.mr_url));
-  if (stale.length === 0) return;
+  // The SELECT and the DELETEs share one transaction snapshot: a row a
+  // concurrent insertAgentState changes between them invalidates that
+  // snapshot, so the DELETE raises a busy error instead of silently removing
+  // a row the caller can no longer prove is stale. `committed` gates the
+  // unlink loop on the transaction actually finishing -- a busy-aborted
+  // prune must not unlink a handle's report file for a delete that never
+  // happened (the handle path is reused by the next cycle's relaunch).
+  let stale: { mr_url: string; handle: string }[] = [];
+  let committed = false;
   persistOrWarn('agent-state prune', () => {
     const tx = db.transaction(() => {
+      const rows = db
+        .query('SELECT mr_url, handle FROM agent_states WHERE lane = ?')
+        .all(lane) as { mr_url: string; handle: string }[];
+      stale = rows.filter(row => !keepUrls.has(row.mr_url));
       for (const row of stale) {
         db.query('DELETE FROM agent_states WHERE lane = ? AND mr_url = ?').run(
           lane,
@@ -237,7 +245,9 @@ export function pruneStates(
       }
     });
     tx();
+    committed = true;
   });
+  if (!committed) return;
   for (const row of stale) {
     try {
       unlinkSync(reportPathForHandle(row.handle));

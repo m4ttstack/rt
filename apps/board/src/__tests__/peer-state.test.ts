@@ -285,6 +285,56 @@ describe('resolveSentNudge', () => {
       at: 20,
     });
   });
+
+  test('a re-sent nudge that lands between the read and the mutation is not overwritten with stale identity', () => {
+    writeSentNudge(
+      { nudgeId: 'n1', mrUrl: URL_A, iid: 4821, reviewer: 'grace', sentAt: 1 },
+      db
+    );
+
+    // A second connection stands in for a writeSentNudge that replaces this
+    // row with a brand new ask right before resolveSentNudge's own UPDATE
+    // runs. The guard (`prev.resolution` undefined/confirmed) and the
+    // mutation must see the same snapshot, or this resolves a nudge that
+    // was already superseded.
+    const other = openStateDb(db.filename);
+    const originalQuery = db.query.bind(db);
+    let injected = false;
+    (db as unknown as { query: typeof db.query }).query = ((sql: string) => {
+      if (!injected && sql.includes('UPDATE nudges_sent')) {
+        injected = true;
+        other
+          .query(
+            `INSERT INTO nudges_sent (mr_url, nudge, updated_at) VALUES (?, ?, ?)
+             ON CONFLICT(mr_url) DO UPDATE SET nudge = excluded.nudge, updated_at = excluded.updated_at`
+          )
+          .run(
+            URL_A,
+            JSON.stringify({
+              nudgeId: 'n2',
+              mrUrl: URL_A,
+              iid: 4821,
+              reviewer: 'grace',
+              sentAt: 50,
+            }),
+            50
+          );
+      }
+      return originalQuery(sql);
+    }) as typeof db.query;
+
+    try {
+      resolveSentNudge(URL_A, { result: 'launched', at: 10 }, db);
+    } finally {
+      (db as unknown as { query: typeof db.query }).query = originalQuery;
+      other.close();
+    }
+
+    expect(injected).toBe(true);
+    const row = readSentNudges(db).get(URL_A);
+    expect(row?.nudgeId).toBe('n2');
+    expect(row?.resolution).toEqual({ result: 'launched', at: 10 });
+  });
 });
 
 describe('retireSentNudge', () => {
@@ -327,6 +377,52 @@ describe('retireSentNudge', () => {
     const map = readSentNudges(db);
     expect(map.has(URL_A)).toBe(false);
     expect(map.has(URL_B)).toBe(true);
+  });
+
+  test('a fresh ask that lands between the read and the delete is not retired', () => {
+    writeSentNudge(
+      { nudgeId: 'n1', mrUrl: URL_A, iid: 4821, reviewer: 'grace', sentAt: 1 },
+      db
+    );
+
+    // A second connection stands in for the fresh writeSentNudge that lands
+    // right before retireSentNudge's own DELETE runs -- the exact case the
+    // ifSentBefore guard exists for.
+    const other = openStateDb(db.filename);
+    const originalQuery = db.query.bind(db);
+    let injected = false;
+    (db as unknown as { query: typeof db.query }).query = ((sql: string) => {
+      if (!injected && sql.includes('DELETE FROM nudges_sent')) {
+        injected = true;
+        other
+          .query(
+            `INSERT INTO nudges_sent (mr_url, nudge, updated_at) VALUES (?, ?, ?)
+             ON CONFLICT(mr_url) DO UPDATE SET nudge = excluded.nudge, updated_at = excluded.updated_at`
+          )
+          .run(
+            URL_A,
+            JSON.stringify({
+              nudgeId: 'n2',
+              mrUrl: URL_A,
+              iid: 4821,
+              reviewer: 'grace',
+              sentAt: 50,
+            }),
+            50
+          );
+      }
+      return originalQuery(sql);
+    }) as typeof db.query;
+
+    try {
+      retireSentNudge(URL_A, 10, db);
+    } finally {
+      (db as unknown as { query: typeof db.query }).query = originalQuery;
+      other.close();
+    }
+
+    expect(injected).toBe(true);
+    expect(readSentNudges(db).get(URL_A)?.nudgeId).toBe('n2');
   });
 });
 

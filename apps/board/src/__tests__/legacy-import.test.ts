@@ -271,6 +271,29 @@ describe('importLegacyState', () => {
     expect(rows.length).toBe(0);
   });
 
+  test('the imported state blob always carries the normalized identity, even without a legacy iid', () => {
+    const root = tempRoot();
+    const db = openStateDb(join(root, 'state.db'));
+
+    // No `iid` field at all on the legacy record.
+    writeLegacyJson(root, 'reviews/mr-1.json', {
+      mrUrl: URL_A,
+      status: 'done',
+      startedAt: 1,
+      updatedAt: 1,
+    });
+
+    importLegacyState(db, [root]);
+
+    const row = db
+      .query('SELECT state FROM agent_states WHERE lane = ? AND mr_url = ?')
+      .get('review', URL_A) as { state: string };
+    const state = JSON.parse(row.state);
+    expect(state.mrUrl).toBe(URL_A);
+    expect(state.iid).toBe(0);
+    expect(typeof state.iid).toBe('number');
+  });
+
   test('handle rule: legacy path kept when the row came from the db being imported into', () => {
     const root = tempRoot();
     const dbPath = dbPathForRoot(root);
@@ -405,52 +428,58 @@ describe('importLegacyState', () => {
     expect(JSON.parse(row.state).status).toBe('done');
   });
 
-  test('getStateDb rolls the singleton back on an import throw, and retries cleanly', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'board-legacy-retry-'));
-    const reviewsDir = join(dir, 'state', 'reviews');
-    mkdirSync(reviewsDir, { recursive: true });
-    writeFileSync(
-      join(reviewsDir, 'mr-1.json'),
-      JSON.stringify({
-        mrUrl: URL_A,
-        iid: 1,
-        status: 'done',
-        startedAt: 1,
-        updatedAt: 1,
-      })
-    );
-    // Make the legacy reviews dir unreadable so importLane's readdirSync
-    // throws uncaught, forcing a genuine importLegacyState failure.
-    chmodSync(reviewsDir, 0o000);
+  // chmod 000 does not block root from reading a directory, so the throw
+  // this test depends on never happens under root.
+  const isRoot = typeof process.getuid === 'function' && process.getuid() === 0;
+  test.skipIf(isRoot)(
+    'getStateDb rolls the singleton back on an import throw, and retries cleanly',
+    () => {
+      const dir = mkdtempSync(join(tmpdir(), 'board-legacy-retry-'));
+      const reviewsDir = join(dir, 'state', 'reviews');
+      mkdirSync(reviewsDir, { recursive: true });
+      writeFileSync(
+        join(reviewsDir, 'mr-1.json'),
+        JSON.stringify({
+          mrUrl: URL_A,
+          iid: 1,
+          status: 'done',
+          startedAt: 1,
+          updatedAt: 1,
+        })
+      );
+      // Make the legacy reviews dir unreadable so importLane's readdirSync
+      // throws uncaught, forcing a genuine importLegacyState failure.
+      chmodSync(reviewsDir, 0o000);
 
-    const prevStateDb = process.env.BOARD_STATE_DB;
-    process.env.BOARD_STATE_DB = join(dir, 'state.db');
-    closeStateDb();
-    try {
-      expect(() => getStateDb()).toThrow();
-
-      // Fix the fault and retry: the failed call must not have poisoned the
-      // singleton, so this call reopens and completes the import.
-      chmodSync(reviewsDir, 0o755);
-      const db = getStateDb();
-      const row = db
-        .query('SELECT state FROM agent_states WHERE lane = ? AND mr_url = ?')
-        .get('review', URL_A) as { state: string } | null;
-      expect(row).not.toBeNull();
-      expect(getKvValue('meta', 'legacy-import-done', false, db)).toBe(true);
-    } finally {
-      // A successful retry already renamed the legacy dir away; only
-      // restore permissions if the chmod-000 directory is still there.
-      try {
-        chmodSync(reviewsDir, 0o755);
-      } catch {
-        // already renamed away by a successful import
-      }
+      const prevStateDb = process.env.BOARD_STATE_DB;
+      process.env.BOARD_STATE_DB = join(dir, 'state.db');
       closeStateDb();
-      if (prevStateDb === undefined) delete process.env.BOARD_STATE_DB;
-      else process.env.BOARD_STATE_DB = prevStateDb;
+      try {
+        expect(() => getStateDb()).toThrow();
+
+        // Fix the fault and retry: the failed call must not have poisoned the
+        // singleton, so this call reopens and completes the import.
+        chmodSync(reviewsDir, 0o755);
+        const db = getStateDb();
+        const row = db
+          .query('SELECT state FROM agent_states WHERE lane = ? AND mr_url = ?')
+          .get('review', URL_A) as { state: string } | null;
+        expect(row).not.toBeNull();
+        expect(getKvValue('meta', 'legacy-import-done', false, db)).toBe(true);
+      } finally {
+        // A successful retry already renamed the legacy dir away; only
+        // restore permissions if the chmod-000 directory is still there.
+        try {
+          chmodSync(reviewsDir, 0o755);
+        } catch {
+          // already renamed away by a successful import
+        }
+        closeStateDb();
+        if (prevStateDb === undefined) delete process.env.BOARD_STATE_DB;
+        else process.env.BOARD_STATE_DB = prevStateDb;
+      }
     }
-  });
+  );
 
   test('a renameSync failure is non-fatal: data still lands and the marker still gets set', () => {
     const root = tempRoot();

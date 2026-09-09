@@ -103,6 +103,23 @@ CREATE TABLE IF NOT EXISTS kv (
 type Migration = (db: Database) => void;
 const MIGRATIONS: Migration[] = [db => db.exec(V1_SCHEMA)];
 
+// SCHEMA_VERSION is the public constant other modules reason about;
+// MIGRATIONS.length is what runMigrations actually applies. They must never
+// drift apart, or a caller could believe a schema is current when the
+// migration list hasn't caught up (or vice versa).
+if (SCHEMA_VERSION !== MIGRATIONS.length) {
+  throw new Error(
+    `SCHEMA_VERSION (${SCHEMA_VERSION}) must equal MIGRATIONS.length (${MIGRATIONS.length})`
+  );
+}
+
+/** A db's user_version is newer than this build's MIGRATIONS list knows how
+    to run. Deliberately not an error shape openStateDb's quarantine regex
+    matches (SQLITE_CORRUPT / SQLITE_NOTADB / "file is not a database"): a
+    newer-schema db is not corrupt, and must never be renamed away and
+    silently recreated by an older binary. */
+export class SchemaTooNewError extends Error {}
+
 function runMigrations(db: Database): void {
   // busy_timeout is already set by the caller (openAt) before this runs.
   db.exec('BEGIN IMMEDIATE');
@@ -110,8 +127,13 @@ function runMigrations(db: Database): void {
     const v = (
       db.query('PRAGMA user_version').get() as { user_version: number }
     ).user_version;
+    if (v > MIGRATIONS.length) {
+      throw new SchemaTooNewError(
+        `state.db schema v${v} is newer than this board understands (v${MIGRATIONS.length}); upgrade the board`
+      );
+    }
     for (let i = v; i < MIGRATIONS.length; i++) MIGRATIONS[i]!(db);
-    db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+    db.exec(`PRAGMA user_version = ${MIGRATIONS.length}`);
     db.exec('COMMIT');
   } catch (err) {
     db.exec('ROLLBACK');

@@ -4,6 +4,7 @@ import {
   getKvValue,
   getStateDb,
   persistOrWarn,
+  runCriticalWrite,
   setKvValue,
 } from './state/index.ts';
 
@@ -394,16 +395,24 @@ export async function postToSlack(
 
 // ── per-MR ref state ─────────────────────────────────────────────────────────
 
+/** `critical` selects the retry-then-throw write path: a caller that has
+    already posted a Slack reply (reactToMR) must not swallow a busy-database
+    write, since losing this ref means the next reaction posts a duplicate
+    reply. Every other caller only caches a lookup, so a swallowed busy write
+    just re-resolves on the next read. */
 export function writeSlackRef(
   ref: SlackRef,
-  db: Database = getStateDb()
+  db: Database = getStateDb(),
+  critical = false
 ): void {
-  persistOrWarn('slack ref write', () => {
+  const write = () => {
     db.query(
       `INSERT INTO slack_refs (mr_url, ref, updated_at) VALUES (?, ?, ?)
        ON CONFLICT(mr_url) DO UPDATE SET ref = excluded.ref, updated_at = excluded.updated_at`
     ).run(ref.mrUrl, JSON.stringify(ref), Date.now());
-  });
+  };
+  if (critical) runCriticalWrite('slack ref write', write);
+  else persistOrWarn('slack ref write', write);
 }
 
 function readSlackRef(mrUrl: string, db: Database): SlackRef | null {
@@ -651,7 +660,7 @@ export async function reactToMR(
   await addReaction(token, ref.channelId, next.messageTs, emoji);
   next.reactions = await messageReactions(token, ref.channelId, next.messageTs);
   next.checkedAt = now;
-  writeSlackRef(next, db);
+  writeSlackRef(next, db, true);
   return next;
 }
 
