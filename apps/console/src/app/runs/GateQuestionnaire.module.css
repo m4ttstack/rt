@@ -80,7 +80,7 @@
   border-color: var(--mantine-color-bad-filled);
 }
 
-.choice:has(> input:focus-visible) {
+.choice:has(input:focus-visible) {
   outline: 2px solid var(--mantine-color-accent-filled);
   outline-offset: 1px;
 }
