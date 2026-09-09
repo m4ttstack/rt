@@ -268,16 +268,6 @@ export function GateForm({
         );
       }}
     >
-      {stepped && (
-        <Questionnaire.Progress
-          className="tui-gate-progress"
-          render={(props, state) => (
-            <span {...props}>
-              {state.current} of {state.total}
-            </span>
-          )}
-        />
-      )}
       {display.map(q => {
         const current = selections[q.name];
         const picked = new Set(Array.isArray(current) ? current : []);
@@ -289,9 +279,21 @@ export function GateForm({
             multiple={q.multiple}
             className="tui-gate-question"
           >
-            <Questionnaire.Title className="tui-gate-question-label">
-              {q.prompt}
-            </Questionnaire.Title>
+            <div className="tui-gate-question-head">
+              <Questionnaire.Title className="tui-gate-question-label">
+                {q.prompt}
+              </Questionnaire.Title>
+              {stepped && (
+                <Questionnaire.Progress
+                  className="tui-gate-progress"
+                  render={(props, state) => (
+                    <span {...props}>
+                      Question {state.current} of {state.total}
+                    </span>
+                  )}
+                />
+              )}
+            </div>
             <Questionnaire.Choices className="tui-gate-choices">
               {q.choices.map(choice => (
                 <Questionnaire.Choice
