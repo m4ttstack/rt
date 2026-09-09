@@ -9,7 +9,7 @@ import type { Commands } from "../../../packages/rt-client/src/commands.ts";
 import { gateOptionValue } from "../../../packages/rt-client/src/commands.ts";
 import type { CommandResult } from "./types.ts";
 import type { EventsBus } from "../events-bus.ts";
-import type { GatesStore, GateQuestion, GateAnswer, GateRow } from "../gates-store.ts";
+import type { GatesStore, GateQuestion, GateAnswer, GateRow, GateOrigin } from "../gates-store.ts";
 import type { GatePush } from "../gate-push.ts";
 
 /** Callers that omit `push` (e.g. handler-only tests) get a no-op: gate:*
@@ -163,11 +163,26 @@ function validateAnswers(questions: GateQuestion[], answers: Record<string, unkn
   return null;
 }
 
+/** Herd-spawned runs own their gates; everything else (no origin, no runId,
+    an unknown run, or a legacy spawner like "shepherdr") falls back to the
+    human owner -- the only two owner shapes RT-117 defines. */
+export function deriveOwner(
+  origin: GateOrigin | undefined,
+  runSpawnedBy?: (runId: string) => string | null,
+): string {
+  const runId = origin?.runId;
+  if (runId && runSpawnedBy) {
+    const spawner = runSpawnedBy(runId);
+    if (spawner && spawner.startsWith("herd:")) return spawner;
+  }
+  return "human";
+}
+
 export function createGateHandlers(
   store: GatesStore,
   bus: EventsBus,
   broadcast: (type: string, data: any) => void,
-  deps: { push?: GatePush; log?: Logger } = {},
+  deps: { push?: GatePush; log?: Logger; runSpawnedBy?: (runId: string) => string | null } = {},
 ): { "gate:open": (payload: unknown) => Promise<CommandResult<"gate:open">> }
   & { "gate:answer": (payload: unknown) => Promise<CommandResult<"gate:answer">> }
   & { "gate:wait": (payload: unknown, signal?: AbortSignal) => Promise<CommandResult<"gate:wait">> }
@@ -179,6 +194,7 @@ export function createGateHandlers(
   & { "gate:subscriptions": (payload: unknown) => Promise<CommandResult<"gate:subscriptions">> } {
   const push = deps.push ?? noopPush;
   const log = deps.log;
+  const runSpawnedBy = deps.runSpawnedBy;
   // Fire-and-forget: a push/fan-out failure must never fail the verb that
   // triggered it. The promise itself is not expected to reject (gate-push
   // catches and records delivery outcomes internally), but a logged catch
@@ -252,10 +268,11 @@ export function createGateHandlers(
         }
       }
 
+      const owner = deriveOwner(payload?.origin, runSpawnedBy);
       const { row, supersededId } = store.open({
         subject, kind, questions,
         meta: payload?.meta, agent: payload?.agent, pane: payload?.pane, nudge: payload?.nudge,
-        context: payload?.context, origin: payload?.origin,
+        context: payload?.context, origin: payload?.origin, owner,
       });
 
       // One timestamp for both the journal row and the broadcast frame (events:emit idiom).
@@ -264,7 +281,7 @@ export function createGateHandlers(
       const eventPayload = {
         id: row.id, subject: row.subject, kind: row.kind, questions: row.questions,
         meta: row.meta, agent: row.agent, paneId: row.pane, label,
-        context: row.context, origin: row.origin,
+        context: row.context, origin: row.origin, owner: row.owner,
       };
       emitGateEvent(`gate/opened/${row.id}`, eventPayload, emittedAt);
 

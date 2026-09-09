@@ -124,7 +124,11 @@ export function buildRoutedHandlers(opts: {
     bg: opts.bgService, bgClaims: opts.bgClaims, lifecycle: opts.herdLifecycle,
   });
   const worktreeHandlers = createWorktreeHandlers({ repoIndex: ctx.repoIndex, cache: ctx.cache, log: ctx.log }, opts.worktree);
-  const gateHandlers = createGateHandlers(opts.gatesStore, opts.eventsBus, broadcast, { push: opts.gatePush, log: ctx.log });
+  const gateHandlers = createGateHandlers(opts.gatesStore, opts.eventsBus, broadcast, {
+    push: opts.gatePush,
+    log: ctx.log,
+    runSpawnedBy: (runId) => findRun(runId)?.run.spawned_by ?? null,
+  });
   const herdHandlers = createHerdHandlers({
     store: opts.herdStore,
     gateStore: opts.gatesStore,
