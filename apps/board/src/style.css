@@ -1785,7 +1785,7 @@
 }
 .tui-triage-context-label {
   font: 600 0.9rem/1.4 var(--font-sans);
-  color: var(--fg);
+  color: var(--accent-text);
   margin-bottom: 0.55rem;
 }
 .tui-triage-form-col {
