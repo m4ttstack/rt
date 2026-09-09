@@ -1,0 +1,186 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap">
+  <style>
+    body { margin: 0; }
+    .stage {
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      width: 720px; height: 640px; position: relative; overflow: hidden;
+      font-family: var(--font-sans); font-size: 13.5px; line-height: 1.55;
+      background: var(--bg);
+      background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+      background-size: 22px 22px;
+    }
+    .stage.dark {
+      --bg: #16161e; --panel: #232a47; --card: #2c3352; --chrome: #232a47;
+      --fg: #e3e7f6; --muted: #7e86ad; --muted-text: #969ec2;
+      --border: #3b4261; --border-soft: #313853;
+      --accent: #7aa2f7; --accent-text: #7aa2f7; --amber: #e0af68;
+      --dot-ok: #4ade5b; --dot-bad: #ff5c72; --grid: rgba(122, 162, 247, 0.06);
+    }
+    .stage.light {
+      --bg: #f7f8fa; --panel: #fbfbfc; --card: #ffffff; --chrome: #f3f4f7;
+      --fg: #222; --muted: #8990b3; --muted-text: #565d80;
+      --border: #c8cad6; --border-soft: #d5d7e2;
+      --accent: #2e7de9; --accent-text: #1c5fbf; --amber: #8c6c3e;
+      --dot-ok: #1f9d3a; --dot-bad: #e5153f; --grid: rgba(52, 59, 88, 0.05);
+    }
+    .board-ghost { position: absolute; inset: 0; padding: 18px 24px; display: flex; flex-direction: column; gap: 10px; }
+    .ghost-header { height: 52px; border: 1px solid var(--border-soft); border-radius: 8px; background: var(--chrome); }
+    .ghost-panel { border: 1px solid var(--border-soft); border-radius: 8px; background: var(--chrome); padding: 10px 14px; display: flex; flex-direction: column; gap: 8px; }
+    .ghost-row { height: 30px; border-radius: 6px; background: var(--card); }
+    .overlay {
+      position: absolute; inset: 0; z-index: 10;
+      display: flex; align-items: flex-start; justify-content: center;
+      padding: 48px 16px 16px;
+      background: color-mix(in srgb, var(--bg) 55%, transparent);
+      backdrop-filter: blur(2px);
+    }
+    .modal {
+      box-sizing: border-box; width: 100%; max-width: 560px;
+      border: 1px solid var(--border); border-radius: 10px;
+      background: var(--panel);
+      padding: 1rem 1.1rem 1.2rem;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+      display: flex; flex-direction: column; gap: 0.6rem;
+      color: var(--fg);
+    }
+    .modal-head { display: flex; justify-content: space-between; align-items: center; }
+    .modal-title { font-weight: 700; letter-spacing: 0.02em; color: var(--accent); }
+    .modal-x { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 0.9rem; padding: 0.2rem 0.4rem; border-radius: 5px; font-family: var(--font-sans); }
+    .modal-sub { color: var(--muted-text); font-size: 0.76rem; margin: -0.35rem 0 0; }
+    .ctx-row { display: flex; align-items: center; gap: 6px; font-size: 0.72rem; color: var(--muted-text); cursor: pointer; }
+    .ctx-chevron { font-size: 0.6rem; }
+    .progress-row { display: flex; align-items: center; gap: 10px; min-height: 1lh; }
+    .dots { display: flex; align-items: center; gap: 6px; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; }
+    .dot.done { background: var(--muted-text); }
+    .dot.active { background: var(--amber); outline: 2px solid color-mix(in srgb, var(--amber) 35%, transparent); outline-offset: 1px; }
+    .dot.todo { background: transparent; border: 1px solid var(--border); box-sizing: border-box; }
+    .progress-count { font-family: var(--font-mono); font-weight: 500; font-size: 0.7rem; font-variant-numeric: tabular-nums; color: var(--muted-text); }
+    .question { display: flex; flex-direction: column; gap: 0.5rem; }
+    .q-label { font-size: 0.78rem; font-weight: 600; line-height: 1.35; color: var(--fg); margin-bottom: 0.25rem; }
+    .choices { display: flex; flex-direction: column; gap: 6px; }
+    .choice {
+      position: relative; display: flex; align-items: center; gap: 8px;
+      min-height: 28px; padding: 4px 8px;
+      border: 1px solid var(--border); border-radius: 6px;
+      background: transparent; font-size: 0.75rem; color: var(--fg); cursor: pointer;
+    }
+    .choice.checked {
+      border-color: color-mix(in srgb, var(--amber) 60%, var(--border));
+      background: color-mix(in srgb, var(--fg) 7%, transparent);
+    }
+    .radio { flex-shrink: 0; width: 12px; height: 12px; border: 1px solid var(--border); border-radius: 50%; background: transparent; box-sizing: border-box; }
+    .radio.checked { border-color: var(--amber); background: var(--amber); }
+    .choice-label { display: flex; flex: 1; min-width: 0; align-items: center; gap: 6px; line-height: 1.35; }
+    .rec-chip {
+      display: inline-flex; align-items: center; padding: 1px 6px;
+      border: 1px solid currentColor; border-radius: 4px;
+      font-size: 0.55rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+      color: var(--dot-ok); background: transparent; white-space: nowrap;
+    }
+    .key {
+      margin-left: auto; flex-shrink: 0;
+      font-family: var(--font-mono); font-weight: 500; font-size: 0.62rem; line-height: 1;
+      padding: 3px 5px; border: 1px solid var(--border); border-radius: 4px;
+      color: var(--muted-text); background: var(--bg);
+    }
+    .note {
+      width: 100%; box-sizing: border-box; min-height: 26px; padding: 3px 8px;
+      font-family: var(--font-sans); font-size: 0.75rem; color: var(--muted-text);
+      background: transparent; border: 1px solid var(--border); border-radius: 8px;
+      display: flex; align-items: center;
+    }
+    .actions { display: flex; align-items: center; gap: 8px; min-height: 28px; }
+    .actions-end { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+    .nav {
+      padding: 4px 12px; font-family: var(--font-sans); font-size: 0.85rem; cursor: pointer;
+      background: transparent; border: 1px solid var(--border); border-radius: 6px; color: var(--muted-text);
+    }
+    .submit {
+      padding: 4px 12px; font-family: var(--font-sans); font-size: 0.85rem; cursor: pointer;
+      background: transparent; border: 1px solid var(--amber); border-radius: 6px; color: var(--amber);
+    }
+    a { color: #7aa2f7; } a:hover { color: #9db8f9; }
+  </style>
+</helmet>
+<div class="stage {{scheme}}">
+  <div class="board-ghost">
+    <div class="ghost-header"></div>
+    <div class="ghost-panel">
+      <div class="ghost-row"></div>
+      <div class="ghost-row" style="opacity: 0.75"></div>
+      <div class="ghost-row" style="opacity: 0.55"></div>
+    </div>
+    <div class="ghost-panel">
+      <div class="ghost-row" style="opacity: 0.45"></div>
+      <div class="ghost-row" style="opacity: 0.35"></div>
+    </div>
+  </div>
+  <div class="overlay">
+    <div class="modal">
+      <div class="modal-head">
+        <span class="modal-title">respond-plan</span>
+        <button class="modal-x">✕</button>
+      </div>
+      <p class="modal-sub">apps#31 · themed gate controls</p>
+      <div class="ctx-row"><span class="ctx-chevron">▸</span><span>context</span></div>
+      <div class="progress-row">
+        <div class="dots">
+          <div class="dot done"></div>
+          <div class="dot active"></div>
+          <div class="dot todo"></div>
+        </div>
+        <span class="progress-count">2 of 3</span>
+      </div>
+      <div class="question">
+        <div class="q-label">Thread 2: test coverage</div>
+        <div class="choices">
+          <div class="choice">
+            <div class="radio"></div>
+            <div class="choice-label"><span>reply</span></div>
+            <span class="key">1</span>
+          </div>
+          <div class="choice checked">
+            <div class="radio checked"></div>
+            <div class="choice-label"><span>fix</span><span class="rec-chip">recommended</span></div>
+            <span class="key">2</span>
+          </div>
+          <div class="choice">
+            <div class="radio"></div>
+            <div class="choice-label"><span>skip</span></div>
+            <span class="key">3</span>
+          </div>
+        </div>
+        <div class="note">Add a note</div>
+      </div>
+      <div class="actions">
+        <button class="nav">previous</button>
+        <button class="nav">reset</button>
+        <div class="actions-end">
+          <button class="nav">focus pane</button>
+          <button class="submit">next</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"scheme":{"editor":"enum","default":"dark","options":["dark","light"]}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { scheme: this.props.scheme ?? 'dark' };
+  }
+}
+</script>
+</body>
+</html>
