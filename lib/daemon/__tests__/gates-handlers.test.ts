@@ -27,7 +27,7 @@ function twoQuestions(): GateQuestion[] {
 
 /** Real store on a fresh tmp db, a fake bus capturing every emitAt call, and
     a fake broadcast capturing every frame -- mirrors events-handlers.test.ts. */
-function harness(opts: { push?: GatePush } = {}) {
+function harness(opts: { push?: GatePush; runSpawnedBy?: (runId: string) => string | null } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "rt-gates-handlers-"));
   dirs.push(dir);
   const store: GatesStore = createGatesStore({ dbPath: join(dir, "gates.db"), log });
@@ -40,8 +40,15 @@ function harness(opts: { push?: GatePush } = {}) {
     },
   } as unknown as EventsBus;
   const broadcasts: Array<{ type: string; data: any }> = [];
-  const handlers = createGateHandlers(store, bus, (type, data) => broadcasts.push({ type, data }), { push: opts.push });
+  const handlers = createGateHandlers(store, bus, (type, data) => broadcasts.push({ type, data }), {
+    push: opts.push,
+    runSpawnedBy: opts.runSpawnedBy,
+  });
   return { handlers, store, emitted, broadcasts };
+}
+
+function openPayload() {
+  return { subject: "run:r1", kind: "clarify", questions: qs() };
 }
 
 /** Records every gateId passed to GatePush.onClosed; onAnswered/onOpened are
@@ -591,6 +598,28 @@ describe("gate:open W4 fields", () => {
     const row = store.get((r as { data: { id: string } }).data.id)!;
     expect(row.context).toBeNull();
     expect(row.origin).toBeNull();
+  });
+});
+
+describe("gate:open owner derivation (RT-117)", () => {
+  test("gate:open derives herd owner from the run's spawner", async () => {
+    const { handlers, store } = harness({ runSpawnedBy: () => "herd:h-9" });
+    const res = await handlers["gate:open"]({ ...openPayload(), origin: { runId: "r-1", presentation: "wait" } });
+    expect(res.ok).toBe(true);
+    expect(store.get((res as any).data.id)?.owner).toBe("herd:h-9");
+  });
+
+  test("gate:open derives human for legacy spawners and missing runs", async () => {
+    const { handlers, store } = harness({ runSpawnedBy: () => "shepherdr" });
+    const res = await handlers["gate:open"]({ ...openPayload(), origin: { runId: "r-2", presentation: "wait" } });
+    expect(res.ok).toBe(true);
+    expect(store.get((res as any).data.id)?.owner).toBe("human");
+  });
+
+  test("gate:open without origin derives human and the opened event carries owner", async () => {
+    const { handlers, emitted } = harness();
+    await handlers["gate:open"](openPayload());
+    expect((emitted[0]!.payload as any).owner).toBe("human");
   });
 });
 
