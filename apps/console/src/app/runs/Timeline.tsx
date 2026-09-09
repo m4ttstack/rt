@@ -408,7 +408,7 @@ export function Timeline({
                   <Box
                     data-testid="timeline-current-stage"
                     bg={bg.lightened('accent')}
-                    p="xs"
+                    p={14}
                     mt={4}
                     style={{
                       border: border.style('accent'),
