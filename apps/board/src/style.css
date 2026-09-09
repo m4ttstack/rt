@@ -96,6 +96,23 @@
 .tui-controls-header [data-part='segmented-option'] {
   height: 100%;
 }
+/* The --gate-* tokens are scoped to the gate surfaces (Modal, chips), hence
+   the fallback -- this button sits in the plain header toolbar. */
+.tui-dq-open {
+  padding: var(--gate-btn-pad, 5px 12px);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--accent-text);
+  white-space: nowrap;
+}
+.tui-dq-open:hover {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
 .tui-author {
   color: var(--purple);
   white-space: nowrap;

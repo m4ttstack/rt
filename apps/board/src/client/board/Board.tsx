@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { GateDomain } from '@mattstack/gate-kit';
 import { ICONS, Panel, SideDrawer, ToastHost } from '@mattstack/tui-kit';
@@ -17,12 +17,13 @@ import {
   filterBySlack,
   filterByTab,
   groupMRs,
+  nestStacks,
   parseViewState,
   rosterUsernamesFor,
   serializeViewState,
   sortMRs,
 } from '../../view.ts';
-import type { ViewState } from '../../view.ts';
+import type { StackNode, ViewState } from '../../view.ts';
 import { postAction } from '../api.ts';
 import type {
   BoardData,
@@ -36,6 +37,12 @@ import { AppLauncher } from './AppLauncher.tsx';
 import { AppMark } from './AppMark.tsx';
 import { ConfigModal } from './ConfigModal.tsx';
 import { Controls } from './Controls.tsx';
+import type { QueueEntry } from './decision-queue.ts';
+import { useDecisionQueue } from './decision-queue.ts';
+import {
+  DecisionQueueComplete,
+  DecisionQueueModal,
+} from './DecisionQueueModal.tsx';
 import {
   gateParam,
   mrForGate,
@@ -69,11 +76,6 @@ declare global {
 
 const THEME_KEY = 'mrs-theme';
 const STATE_KEY = 'mrs-view-state';
-
-/** Placeholder RowContext.onOpenGate: the queue wiring that opens the modal
-    on a chip click lands separately, and RowContext must satisfy its type
-    until then. */
-const openGateNoop = () => {};
 
 // ── board ──────────────────────────────────────────────────────────────────
 
@@ -680,6 +682,27 @@ export function Board() {
     return () => clearTimeout(t);
   }, [gateDeepLinkIid]);
 
+  // Board-wide, not scoped to the active tab/member filter -- a decision
+  // inbox that emptied out on a tab switch would hide gates rather than
+  // resolve them. Derived from the raw stack trees (not the later `groups`,
+  // which only exist once `data` has cleared the loading check below) so
+  // this and useDecisionQueue can sit above that check, unconditionally, as
+  // every hook in this component must.
+  const queueEntries = useMemo(() => {
+    if (!data) return [];
+    const out: QueueEntry[] = [];
+    const collect = (node: StackNode) => {
+      const mr = node.mr as BoardMRWithReview;
+      for (const gate of mr.gates ?? [])
+        if (gate.status === 'open' || gate.status === 'parked')
+          out.push({ gate, mr });
+      node.children.forEach(collect);
+    };
+    nestStacks(data.mrs).forEach(collect);
+    return out;
+  }, [data]);
+  const queue = useDecisionQueue(queueEntries);
+
   if (!data) {
     return (
       <p className="tui-loading">
@@ -785,7 +808,7 @@ export function Board() {
     draftResolved,
     onResumeRespond: handleResumeRespond,
     onFocusPane: handleFocusPane,
-    onOpenGate: openGateNoop,
+    onOpenGate: queue.openAt,
     selected,
     onToggleSelect: toggleSelect,
   };
@@ -875,6 +898,15 @@ export function Board() {
             </p>
           </div>
           <div className="tui-controls tui-controls-header">
+            {queueEntries.length > 0 && (
+              <button
+                type="button"
+                className="tui-dq-open"
+                onClick={queue.openAtStart}
+              >
+                decision queue · {queueEntries.length}
+              </button>
+            )}
             <Controls {...controlProps} />
           </div>
           <div className="tui-app-launcher">
@@ -1087,6 +1119,28 @@ export function Board() {
       )}
       {respondModal && (
         <RespondModal mr={respondModal} onClose={() => setRespondModal(null)} />
+      )}
+
+      {queue.open && queue.active && (
+        <DecisionQueueModal
+          gate={queue.active.gate}
+          mr={queue.active.mr}
+          position={queue.position}
+          states={queue.states}
+          nextPeek={queue.nextPeek}
+          onClose={queue.close}
+          onSkip={queue.skip}
+          onFocusPane={handleFocusPane}
+          onAnswered={() => queue.noteAnswered(queue.active!.gate.gateId)}
+          onContinue={() => queue.noteAnswered(queue.active!.gate.gateId)}
+        />
+      )}
+      {queue.open && queue.complete && (
+        <DecisionQueueComplete
+          answered={queue.answeredCount}
+          skipped={queue.skippedCount}
+          onClose={queue.close}
+        />
       )}
 
       {draftModal && (
