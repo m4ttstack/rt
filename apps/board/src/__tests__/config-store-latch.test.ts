@@ -5,7 +5,9 @@ import { describe, expect, test } from 'bun:test';
 
 import type { getSetting, setSetting } from '@mattstack/rt-client';
 import {
+  applyRosterEdit,
   DEFAULT_SLACK_EMOJI,
+  displayName,
   loadConfigFrom,
   saveMemberHidden,
   saveRosterMembers,
@@ -186,6 +188,57 @@ describe('loadConfigFrom: per-key store-wins fallback', () => {
       fakeResolve({ 'board.gateGraceMinutes': 120 })
     );
     expect(cfg.gateGraceMinutes).toBe(120);
+  });
+
+  test('mattstack.roster wins over board.members', () => {
+    const p = tmpConfig();
+    const cfg = loadConfigFrom(
+      p,
+      fakeResolve({
+        'mattstack.roster': [{ username: 'suite', name: 'Suite Wide' }],
+        'board.members': [{ username: 'legacy' }],
+      })
+    );
+    expect(cfg.members).toEqual([{ username: 'suite', name: 'Suite Wide' }]);
+  });
+
+  test('board.members still wins over config.json when mattstack.roster is unset', () => {
+    const p = tmpConfig();
+    const cfg = loadConfigFrom(
+      p,
+      fakeResolve({ 'board.members': [{ username: 'legacy' }] })
+    );
+    expect(cfg.members).toEqual([{ username: 'legacy' }]);
+  });
+
+  test('an empty mattstack.roster is still ownership, not absence', () => {
+    // [] is a value: it must not fall through to board.members. parseConfig
+    // refuses an empty roster, so this proves ownership by the throw.
+    const p = tmpConfig();
+    expect(() =>
+      loadConfigFrom(
+        p,
+        fakeResolve({
+          'mattstack.roster': [],
+          'board.members': [{ username: 'legacy' }],
+        })
+      )
+    ).toThrow(/missing required field "members"/);
+  });
+
+  test('board.hiddenMembers overlays a mattstack.roster roster the same way', () => {
+    const p = tmpConfig();
+    const cfg = loadConfigFrom(
+      p,
+      fakeResolve({
+        'mattstack.roster': [{ username: 'ann' }, { username: 'bo' }],
+        'board.hiddenMembers': ['bo'],
+      })
+    );
+    expect(cfg.members).toEqual([
+      { username: 'ann' },
+      { username: 'bo', hidden: true },
+    ]);
   });
 });
 
@@ -421,6 +474,52 @@ describe('saveRosterMembers: latch-gated writer', () => {
       fakeWrite(calls)
     );
     expect(calls[0]!.value).toEqual([{ username: 'alice' }]);
+  });
+
+  test('owned by mattstack.roster: writes that key, not board.members', () => {
+    const p = tmpConfig({ ...base, members: [{ username: 'alice' }] });
+    const calls: Array<{ key: string; value: unknown; scope: string }> = [];
+    const next = [{ username: 'alice' }, { username: 'bob', name: 'Bob Ng' }];
+    saveRosterMembers(
+      next,
+      p,
+      fakeResolve({
+        'mattstack.roster': [{ username: 'alice' }],
+        'board.members': [{ username: 'legacy' }],
+      }),
+      fakeWrite(calls)
+    );
+    expect(calls).toEqual([
+      { key: 'mattstack.roster', value: next, scope: 'team' },
+    ]);
+  });
+
+  test('a write to mattstack.roster strips hidden: that key has no such field', () => {
+    const p = tmpConfig({ ...base, members: [{ username: 'alice' }] });
+    const calls: Array<{ key: string; value: unknown; scope: string }> = [];
+    saveRosterMembers(
+      [{ username: 'alice' }, { username: 'bob', hidden: true, name: 'Bob' }],
+      p,
+      fakeResolve({ 'mattstack.roster': [{ username: 'alice' }] }),
+      fakeWrite(calls)
+    );
+    expect(calls[0]!.value).toEqual([
+      { username: 'alice' },
+      { username: 'bob', name: 'Bob' },
+    ]);
+  });
+
+  test('a write to board.members keeps hidden: that key still carries it', () => {
+    const p = tmpConfig({ ...base, members: [{ username: 'alice' }] });
+    const calls: Array<{ key: string; value: unknown; scope: string }> = [];
+    const next = [{ username: 'alice' }, { username: 'bob', hidden: true }];
+    saveRosterMembers(
+      next,
+      p,
+      fakeResolve({ 'board.members': [{ username: 'alice' }] }),
+      fakeWrite(calls)
+    );
+    expect(calls[0]!.value).toEqual(next);
   });
 });
 
@@ -776,5 +875,209 @@ describe('saveTabs: latch-gated writer', () => {
       'slackChannel' in
         saveTabs([team], p, fakeResolve({}), fakeWrite([])).tabs[0]!
     ).toBe(false);
+  });
+});
+
+describe('storeOwnsRequiredFields: config.json-free boot', () => {
+  test('mattstack.roster satisfies the roster requirement with no config.json', () => {
+    const missing = join(
+      mkdtempSync(join(tmpdir(), 'board-noconfig-')),
+      'config.json'
+    );
+    const cfg = loadConfigFrom(
+      missing,
+      fakeResolve({
+        'board.gitlabHost': 'https://gitlab.example.com',
+        'board.projects': ['g/p'],
+        'mattstack.roster': [{ username: 'ann' }],
+      })
+    );
+    expect(cfg.members).toEqual([{ username: 'ann' }]);
+    expect(cfg.gitlabHost).toBe('https://gitlab.example.com');
+  });
+
+  test('no roster key at all with no config.json still throws the seed message', () => {
+    const missing = join(
+      mkdtempSync(join(tmpdir(), 'board-noconfig-')),
+      'config.json'
+    );
+    expect(() =>
+      loadConfigFrom(
+        missing,
+        fakeResolve({
+          'board.gitlabHost': 'https://gitlab.example.com',
+          'board.projects': ['g/p'],
+        })
+      )
+    ).toThrow(/config.json not found/);
+  });
+});
+
+describe('displayName: stored name beats the GitLab profile', () => {
+  test('a stored name wins over the GitLab profile name', () => {
+    expect(displayName({ username: 'dee', name: 'Dee Fox' }, 'D. Fox')).toBe(
+      'Dee Fox'
+    );
+  });
+
+  test('the GitLab profile fills in when there is no stored name', () => {
+    expect(displayName({ username: 'bo' }, 'Bo Chen')).toBe('Bo Chen');
+  });
+
+  test('null when neither side has one', () => {
+    expect(displayName({ username: 'cy' }, null)).toBeNull();
+    expect(displayName({ username: 'cy' }, undefined)).toBeNull();
+  });
+
+  test('a blank stored name does not shadow the profile', () => {
+    expect(displayName({ username: 'x', name: '   ' }, 'Real Name')).toBe(
+      'Real Name'
+    );
+  });
+});
+
+describe('applyRosterEdit: pure roster mutation', () => {
+  const roster = [
+    { username: 'ann', name: 'Ann Lee' },
+    { username: 'bo' },
+    { username: 'cy', hidden: true },
+  ];
+
+  test('add appends with a name', () => {
+    const r = applyRosterEdit(
+      roster,
+      { action: 'add', username: 'dee', name: 'Dee Fox' },
+      'ann'
+    );
+    expect(r).toEqual({
+      ok: true,
+      members: [...roster, { username: 'dee', name: 'Dee Fox' }],
+    });
+  });
+
+  test('add without a name omits the field rather than storing empty', () => {
+    const r = applyRosterEdit(
+      roster,
+      { action: 'add', username: 'dee', name: '  ' },
+      'ann'
+    );
+    expect(r.ok && r.members.at(-1)).toEqual({ username: 'dee' });
+  });
+
+  test('add trims the username', () => {
+    const r = applyRosterEdit(
+      roster,
+      { action: 'add', username: '  dee  ' },
+      'ann'
+    );
+    expect(r.ok && r.members.at(-1)).toEqual({ username: 'dee' });
+  });
+
+  test('add rejects a duplicate', () => {
+    expect(
+      applyRosterEdit(roster, { action: 'add', username: 'bo' }, 'ann')
+    ).toEqual({ ok: false, error: '"bo" is already on the roster' });
+  });
+
+  test('remove drops the entry', () => {
+    const r = applyRosterEdit(
+      roster,
+      { action: 'remove', username: 'bo' },
+      'ann'
+    );
+    expect(r.ok && r.members.map(m => m.username)).toEqual(['ann', 'cy']);
+  });
+
+  test('remove rejects an unknown username', () => {
+    expect(
+      applyRosterEdit(roster, { action: 'remove', username: 'zed' }, 'ann')
+    ).toEqual({ ok: false, error: 'unknown member "zed"' });
+  });
+
+  test('remove refuses to empty the roster', () => {
+    expect(
+      applyRosterEdit(
+        [{ username: 'ann' }],
+        { action: 'remove', username: 'ann' },
+        null
+      )
+    ).toEqual({ ok: false, error: 'the roster cannot be emptied' });
+  });
+
+  test('remove refuses to drop the board owner', () => {
+    expect(
+      applyRosterEdit(roster, { action: 'remove', username: 'ann' }, 'ann')
+    ).toEqual({
+      ok: false,
+      error: 'you cannot drop yourself: this board runs as you',
+    });
+  });
+
+  test('rename sets a name on an existing member, in place', () => {
+    const r = applyRosterEdit(
+      roster,
+      { action: 'rename', username: 'bo', name: 'Bo Chen' },
+      'ann'
+    );
+    expect(r.ok && r.members).toEqual([
+      { username: 'ann', name: 'Ann Lee' },
+      { username: 'bo', name: 'Bo Chen' },
+      { username: 'cy', hidden: true },
+    ]);
+  });
+
+  test('rename replaces an existing name', () => {
+    const r = applyRosterEdit(
+      roster,
+      { action: 'rename', username: 'ann', name: 'Ann Marie Lee' },
+      'ann'
+    );
+    expect(r.ok && r.members[0]).toEqual({
+      username: 'ann',
+      name: 'Ann Marie Lee',
+    });
+  });
+
+  test('rename to blank clears the name so the gitlab profile takes over', () => {
+    const r = applyRosterEdit(
+      roster,
+      { action: 'rename', username: 'ann', name: '   ' },
+      'ann'
+    );
+    expect(r.ok && r.members[0]).toEqual({ username: 'ann' });
+  });
+
+  test('rename preserves a hidden flag', () => {
+    const r = applyRosterEdit(
+      roster,
+      { action: 'rename', username: 'cy', name: 'Cy Park' },
+      'ann'
+    );
+    expect(r.ok && r.members[2]).toEqual({
+      username: 'cy',
+      name: 'Cy Park',
+      hidden: true,
+    });
+  });
+
+  test('rename rejects an unknown username', () => {
+    expect(
+      applyRosterEdit(
+        roster,
+        { action: 'rename', username: 'zed', name: 'Z' },
+        'ann'
+      )
+    ).toEqual({ ok: false, error: 'unknown member "zed"' });
+  });
+
+  test('the input roster is never mutated', () => {
+    const snapshot = JSON.parse(JSON.stringify(roster));
+    applyRosterEdit(
+      roster,
+      { action: 'rename', username: 'bo', name: 'Bo' },
+      'ann'
+    );
+    applyRosterEdit(roster, { action: 'remove', username: 'bo' }, 'ann');
+    expect(roster).toEqual(snapshot);
   });
 });

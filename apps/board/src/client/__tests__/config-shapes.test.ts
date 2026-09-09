@@ -268,12 +268,39 @@ describe('groupByScope', () => {
 });
 
 describe('rosterSummary', () => {
-  test('counts members and hidden entries, tolerating unset values', () => {
+  test('counts hidden from the overlay alone once the store owns it', () => {
+    // board.hiddenMembers replaces the roster's inline flags in
+    // withBoardStoreFallback, so counting the union would double-report a
+    // member the overlay already checked back in.
     expect(
-      rosterSummary([{ username: 'a' }, { username: 'b', hidden: true }], ['c'])
-    ).toBe('2 members, 2 hidden');
+      rosterSummary([{ username: 'a', hidden: true }, { username: 'b' }], ['b'])
+    ).toBe('2 members, 1 hidden');
+  });
+
+  test('falls back to inline flags with no overlay', () => {
+    expect(
+      rosterSummary(
+        [{ username: 'a', hidden: true }, { username: 'b' }],
+        undefined
+      )
+    ).toBe('2 members, 1 hidden');
+  });
+
+  test('tolerates unset values', () => {
     expect(rosterSummary(undefined, undefined)).toBe('no members');
     expect(rosterSummary([{ username: 'a' }], undefined)).toBe('1 member');
+  });
+
+  test('an overlay name that is not on the roster is not counted', () => {
+    expect(rosterSummary([{ username: 'a' }, { username: 'b' }], ['c'])).toBe(
+      '2 members'
+    );
+  });
+
+  test('an empty overlay means nobody is hidden, not "fall back to inline flags"', () => {
+    expect(rosterSummary([{ username: 'a', hidden: true }], [])).toBe(
+      '1 member'
+    );
   });
 });
 

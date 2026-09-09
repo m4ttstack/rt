@@ -238,12 +238,23 @@ export function groupByScope(
 export function rosterSummary(members: unknown, hidden: unknown): string {
   const roster = Array.isArray(members) ? members.filter(isRecord) : [];
   if (roster.length === 0) return 'no members';
-  const hiddenNames = new Set<string>(
-    Array.isArray(hidden) ? hidden.filter(h => typeof h === 'string') : []
+  // board.hiddenMembers replaces the roster's inline `hidden` flags rather
+  // than adding to them (withBoardStoreFallback), and it may name people who
+  // are not on this roster at all: it is boxscore's overlay too.
+  const onRoster = new Set(
+    roster
+      .map(m => m.username)
+      .filter((u): u is string => typeof u === 'string')
   );
-  for (const m of roster)
-    if (m.hidden === true && typeof m.username === 'string')
-      hiddenNames.add(m.username);
+  const overlay = Array.isArray(hidden)
+    ? hidden.filter((h): h is string => typeof h === 'string')
+    : null;
+  const inline = roster
+    .filter(m => m.hidden === true && typeof m.username === 'string')
+    .map(m => m.username as string);
+  const hiddenNames = new Set<string>(
+    (overlay ?? inline).filter(u => onRoster.has(u))
+  );
   const head = `${roster.length} member${roster.length === 1 ? '' : 's'}`;
   return hiddenNames.size > 0 ? `${head}, ${hiddenNames.size} hidden` : head;
 }

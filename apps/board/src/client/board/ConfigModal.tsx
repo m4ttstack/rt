@@ -1,7 +1,9 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 
 import {
+  useSettingKey,
   useSettingsScope,
+  type SettingKeyState,
   type SettingsScopeState,
 } from '@mattstack/settings-kit/react';
 import { Modal } from '@mattstack/tui-kit';
@@ -422,11 +424,14 @@ function RosterControl({
   onOpenRoster: () => void;
 }) {
   const [adding, setAdding] = useState('');
+  const [addingName, setAddingName] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Dropping arms on the first click and sends on the second, keyed by
   // username since every row carries the button.
   const [armed, setArmed] = useState<string | null>(null);
+  // The username whose display name is being edited inline, if any.
+  const [renaming, setRenaming] = useState<string | null>(null);
 
   const roster = Array.isArray(members)
     ? (members as Array<{
@@ -435,28 +440,37 @@ function RosterControl({
         hidden?: unknown;
       }>)
     : [];
-  // Checked out is either the user overlay or a hidden flag on the entry
-  // itself, the same union rosterSummary counts.
-  const hiddenSet = new Set([
-    ...(Array.isArray(hidden)
-      ? (hidden as unknown[]).filter((u): u is string => typeof u === 'string')
-      : []),
-    ...roster
-      .filter(m => m.hidden === true && typeof m.username === 'string')
-      .map(m => m.username as string),
-  ]);
+  // Same rule as rosterSummary and withBoardStoreFallback: the user overlay
+  // replaces the roster's inline hidden flags rather than adding to them.
+  const overlay = Array.isArray(hidden)
+    ? (hidden as unknown[]).filter((u): u is string => typeof u === 'string')
+    : null;
+  const hiddenSet = new Set<string>(
+    overlay ??
+      roster
+        .filter(m => m.hidden === true && typeof m.username === 'string')
+        .map(m => m.username as string)
+  );
 
-  const edit = async (action: 'add' | 'remove', username: string) => {
+  const edit = async (
+    action: 'add' | 'remove' | 'rename',
+    username: string,
+    name?: string
+  ) => {
     setBusy(true);
     setError(null);
-    const res = await postAction('/roster', { action, username });
+    const res = await postAction('/roster', { action, username, name });
     setBusy(false);
     if (!res.ok) {
       setError(res.text || `could not ${action} ${username}`);
       return;
     }
     setArmed(null);
-    if (action === 'add') setAdding('');
+    if (action === 'add') {
+      setAdding('');
+      setAddingName('');
+    }
+    setRenaming(null);
     // The write went through /roster (server-validated), so the kit's cached
     // defs are stale until told otherwise.
     onSaved();
@@ -479,13 +493,40 @@ function RosterControl({
           const name = typeof m.name === 'string' ? m.name : null;
           return (
             <li key={username || i} className="tui-roster-item">
-              <span className="tui-roster-who">
-                {name ?? username}
-                {name && <span className="tui-roster-handle">@{username}</span>}
-                {hiddenSet.has(username) && (
-                  <span className="tui-roster-out">checked out</span>
-                )}
-              </span>
+              {renaming === username ? (
+                // Clears `renaming` on blur even when TextField's own commit
+                // does not fire (blurring with no edit made never calls
+                // onCommit), so the row cannot get stuck in edit mode.
+                <span
+                  className="tui-roster-who"
+                  onBlur={() => setRenaming(null)}
+                >
+                  <TextField
+                    value={name ?? ''}
+                    placeholder="display name"
+                    ariaLabel={`display name for ${username}`}
+                    disabled={busy}
+                    onCommit={next => void edit('rename', username, next)}
+                  />
+                </span>
+              ) : (
+                <span className="tui-roster-who">
+                  <button
+                    className="tui-config-link"
+                    onClick={() => setRenaming(username)}
+                    title="set a display name"
+                    aria-label={`rename ${username}`}
+                  >
+                    {name ?? username}
+                  </button>
+                  {name && (
+                    <span className="tui-roster-handle">@{username}</span>
+                  )}
+                  {hiddenSet.has(username) && (
+                    <span className="tui-roster-out">checked out</span>
+                  )}
+                </span>
+              )}
               {username === self ? (
                 <span className="tui-roster-out" title="this board runs as you">
                   you
@@ -518,7 +559,7 @@ function RosterControl({
         onSubmit={e => {
           e.preventDefault();
           const handle = adding.trim();
-          if (handle && !busy) void edit('add', handle);
+          if (handle && !busy) void edit('add', handle, addingName.trim());
         }}
       >
         <input
@@ -527,6 +568,14 @@ function RosterControl({
           onChange={e => setAdding(e.target.value)}
           placeholder="gitlab username"
           aria-label="add a teammate by gitlab username"
+          disabled={busy}
+        />
+        <input
+          className="tui-modal-input"
+          value={addingName}
+          onChange={e => setAddingName(e.target.value)}
+          placeholder="display name (optional)"
+          aria-label="display name for the teammate being added"
           disabled={busy}
         />
         <button
@@ -915,6 +964,7 @@ function useOpenRows(): [Set<string>, (key: string) => void] {
 function SettingRow({
   def,
   store,
+  rosterKey,
   tabs,
   knownSections,
   open,
@@ -924,6 +974,8 @@ function SettingRow({
 }: {
   def: ConfigDef;
   store: SettingsScopeState;
+  /** mattstack.roster, fetched separately since it isn't board.-prefixed. */
+  rosterKey: SettingKeyState;
   tabs: TabConfig[];
   knownSections: string[] | null;
   /** Expanded, for a collapsible row; ignored otherwise. */
@@ -944,6 +996,7 @@ function SettingRow({
     !matchesShape(shape, value);
 
   let control;
+  let keyname: string = def.key;
   if (kind === 'tabs' && !malformed) {
     const channel = getLeaf(
       store.defs.find(d => d.key === 'board.slack')?.effective.value,
@@ -963,8 +1016,17 @@ function SettingRow({
       />
     );
   } else if (kind === 'roster') {
-    const members = store.defs.find(d => d.key === 'board.members')?.effective
-      .value;
+    const boardMembers = store.defs.find(d => d.key === 'board.members')
+      ?.effective.value;
+    // Must follow the server's own key precedence (config.ts ROSTER_KEYS)
+    // or the editor shows a list POST /roster is not actually writing to.
+    const mattstackRoster = rosterKey.def?.effective.value;
+    const members = Array.isArray(mattstackRoster)
+      ? mattstackRoster
+      : boardMembers;
+    if (Array.isArray(mattstackRoster)) {
+      keyname = 'mattstack.roster';
+    }
     const hidden = store.defs.find(d => d.key === 'board.hiddenMembers')
       ?.effective.value;
     const self = store.defs.find(d => d.key === 'board.defaultMember')
@@ -975,7 +1037,10 @@ function SettingRow({
           members={members}
           hidden={hidden}
           self={typeof self === 'string' ? self : null}
-          onSaved={store.refresh}
+          onSaved={() => {
+            store.refresh();
+            rosterKey.refresh();
+          }}
           onOpenRoster={onOpenRoster}
         />
       ) : (
@@ -1045,7 +1110,7 @@ function SettingRow({
   const stop = (e: { stopPropagation: () => void }) => e.stopPropagation();
   const head = (
     <>
-      <span className="tui-config-keyname">{def.key}</span>
+      <span className="tui-config-keyname">{keyname}</span>
       <span onClick={stop} onKeyDown={stop} className="tui-config-tip">
         <InfoTip text={help} about={def.key} />
       </span>
@@ -1118,6 +1183,7 @@ function ConfigModal({
   onTabsSaved: () => void;
 }) {
   const store = useSettingsScope('board.');
+  const rosterKey = useSettingKey('mattstack.roster');
   const [query, setQuery] = useState('');
   const [openRows, toggleRow] = useOpenRows();
   const groups = groupByScope(filterDefs(store.defs, query));
@@ -1156,6 +1222,7 @@ function ConfigModal({
                   key={def.key}
                   def={def}
                   store={store}
+                  rosterKey={rosterKey}
                   tabs={tabs}
                   knownSections={knownSections}
                   open={openRows.has(def.key)}

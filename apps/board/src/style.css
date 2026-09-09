@@ -2413,8 +2413,13 @@
   display: inline-flex;
   align-items: baseline;
   gap: 6px;
+  flex: 1;
   min-width: 0;
   font-size: 13px;
+}
+.tui-roster-who .tui-invite-input {
+  flex: 1;
+  min-width: 0;
 }
 .tui-roster-handle {
   color: var(--muted-text);

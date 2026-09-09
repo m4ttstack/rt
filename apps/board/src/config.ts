@@ -114,10 +114,20 @@ export const IMPLICIT_TABS: TabConfig[] = [
 
 export interface Member {
   username: string;
-  /** Optional display name; falls back to the GitLab profile lookup, then username. */
+  /** Optional display name; overrides the GitLab profile lookup when set, else falls back to it, then username. */
   name?: string;
   /** Checked out: kept in config but hidden from the sidebar, the "All" view, and its counts. */
   hidden?: boolean;
+}
+
+/** A member's display name. The stored name is an override, not a fallback:
+    it is the only way to name an account GitLab cannot resolve, and a name
+    typed into the roster editor must survive the hourly profile refresh. */
+export function displayName(
+  member: Member,
+  profileName: string | null | undefined
+): string | null {
+  return member.name?.trim() || profileName?.trim() || null;
 }
 
 export interface BoardConfig {
@@ -611,6 +621,28 @@ function agentCommand(resolve: GetSettingFn): string | undefined {
   return composeAgentCommand(loadAgentSettings(resolve)) || undefined;
 }
 
+/** Roster store keys, strongest first. `mattstack.roster` is the suite-wide
+    roster every mattstack app reads; `board.members` is the board's own
+    pre-migration list, kept for installs whose team store still carries it.
+    An unregistered key on a stale rt-client copy resolves undefined through
+    storeValue's catch, so an old copy simply keeps using board.members. */
+const ROSTER_KEYS = ['mattstack.roster', 'board.members'] as const;
+
+type RosterStoreKey = (typeof ROSTER_KEYS)[number];
+
+/** The owning roster key and its value, or null when the store owns neither.
+    One helper for both sides of the latch: the reader and the writer must
+    never disagree about which key holds the roster. */
+function rosterFromStore(
+  resolve: GetSettingFn
+): { key: RosterStoreKey; members: Member[] } | null {
+  for (const key of ROSTER_KEYS) {
+    const members = storeValue<Member[]>(key, resolve);
+    if (members !== undefined) return { key, members };
+  }
+  return null;
+}
+
 /**
  * Transition fallback (board settings migration): layers every board.* store
  * key over `fileConfig`, per key. A key the store doesn't yet own falls back
@@ -621,9 +653,10 @@ function agentCommand(resolve: GetSettingFn): string | undefined {
  * store-wins is per SUB-field there so setting one doesn't blank the other
  * two back to their zero value. `rtRepos` is derived from `board.gitlabHost`
  * and `board.projects` (see deriveRtRepos), with config.json's entries as
- * per-project overrides; there is no store key for it. The members roster overlays `board.hiddenMembers` (user-scope
- * usernames) onto the roster's `hidden` flags by username, replacing
- * whatever `hidden` flags the roster source (store or file) carried inline —
+ * per-project overrides; there is no store key for it. The roster comes from
+ * the first owning key in ROSTER_KEYS, and overlays `board.hiddenMembers`
+ * (user-scope usernames) onto that roster's `hidden` flags by username,
+ * replacing whatever `hidden` flags the roster source carried inline:
  * post-migration, hidden state lives only in the user key, never on the
  * team-owned member entries. Delete this function whole at cutover, once
  * config.json carries none of these fields.
@@ -661,8 +694,7 @@ function withBoardStoreFallback(
     respond?: string;
     doctor?: string;
   }>('board.cwds', resolve);
-  const roster =
-    storeValue<Member[]>('board.members', resolve) ?? fileConfig.members;
+  const roster = rosterFromStore(resolve)?.members ?? fileConfig.members;
   const hiddenStore = storeValue<string[]>('board.hiddenMembers', resolve);
   const hiddenUsernames = new Set(
     hiddenStore ?? roster.filter(m => m.hidden).map(m => m.username)
@@ -741,7 +773,7 @@ function storeOwnsRequiredFields(resolve: GetSettingFn): boolean {
   return (
     storeValue('board.gitlabHost', resolve) !== undefined &&
     storeValue('board.projects', resolve) !== undefined &&
-    storeValue('board.members', resolve) !== undefined
+    rosterFromStore(resolve) !== null
   );
 }
 
@@ -802,34 +834,75 @@ function isHiddenMembersOwned(resolve: GetSettingFn): boolean {
   }
 }
 
-/**
- * Persist `username`'s hidden flag and return the reload. Unowned: config.json's
- * inline `members[].hidden` stays the single writer (today's behavior) —
- * UNLESS config.json doesn't exist at all (RULING: file-authority is
- * meaningless with no file), in which case this establishes store ownership
- * outright rather than raw-ENOENT-ing (mirrors loadConfigFrom's store-boot
- * mode; only reachable when the store already owns the required team fields,
- * since that's what a config.json-free `current` needs to resolve at all).
- * Owned: `board.hiddenMembers` (the user store) is the single writer instead
- * and config.json is never touched for this — every branch is exactly one
- * write, so a `write` throw simply propagates; nothing was persisted for it
- * to revert. A non-ENOENT file-read failure (a genuinely malformed
- * config.json) still surfaces loudly, same as today.
- */
-/** Whether the settings store owns the roster itself (as opposed to the
-    hidden overlay). Mirrors isHiddenMembersOwned: the ownership latch decides
-    which file a roster edit must land in. */
-function isMembersOwned(resolve: GetSettingFn): boolean {
-  return storeValue<Member[]>('board.members', resolve) !== undefined;
+export type RosterAction = 'add' | 'remove' | 'rename';
+
+export type RosterEdit = {
+  action: RosterAction;
+  username: string;
+  name?: string;
+};
+
+export type RosterEditResult =
+  { ok: true; members: Member[] } | { ok: false; error: string };
+
+/** Apply one roster edit, returning the next list or the message to hand the
+    caller. Pure (list in, list out) so every rule below is testable without a
+    server, same as setHiddenInRaw. `self` is the board's defaultMember: the
+    board runs as them, so dropping them would strand every affordance keyed
+    on that identity, and an empty roster is one parseConfig refuses to load
+    on the next boot. A blank name clears the field rather than storing an
+    empty string, which is what lets a rename hand a member back to the
+    GitLab profile lookup. */
+export function applyRosterEdit(
+  members: Member[],
+  edit: RosterEdit,
+  self: string | null
+): RosterEditResult {
+  const username = edit.username.trim();
+  if (!username) return { ok: false, error: 'username is required' };
+  const name = edit.name?.trim() ?? '';
+  const present = members.some(m => m.username === username);
+
+  if (edit.action === 'add') {
+    if (present)
+      return { ok: false, error: `"${username}" is already on the roster` };
+    return {
+      ok: true,
+      members: [...members, name ? { username, name } : { username }],
+    };
+  }
+
+  if (!present) return { ok: false, error: `unknown member "${username}"` };
+
+  if (edit.action === 'rename') {
+    return {
+      ok: true,
+      members: members.map(m => {
+        if (m.username !== username) return m;
+        const { name: _name, ...rest } = m;
+        return name ? { ...rest, name } : rest;
+      }),
+    };
+  }
+
+  if (members.length === 1)
+    return { ok: false, error: 'the roster cannot be emptied' };
+  if (username === self)
+    return {
+      ok: false,
+      error: 'you cannot drop yourself: this board runs as you',
+    };
+  return { ok: true, members: members.filter(m => m.username !== username) };
 }
 
 /**
- * Replace the roster wholesale, honoring the ownership latch: a store-owned
- * roster is written to the team store, otherwise to config.json. Callers own
+ * Replace the roster wholesale: a store-owned roster is written back to the
+ * key that owns it (see ROSTER_KEYS), otherwise to config.json. Callers own
  * validation (duplicate, unknown) and pass the full next list; this only
  * persists it and hands back the reloaded config so the server can swap its
- * in-memory copy. Hidden flags ride along on the entries, matching how the
- * roster is stored today.
+ * in-memory copy. Hidden flags ride along only on `board.members`;
+ * `mattstack.roster` is shared with every suite app and carries no hidden
+ * field.
  */
 export function saveRosterMembers(
   next: Member[],
@@ -837,8 +910,13 @@ export function saveRosterMembers(
   resolve: GetSettingFn = getSetting,
   write: SetSettingFn = setSetting
 ): BoardConfig {
-  if (isMembersOwned(resolve)) {
-    write('board.members', next, 'team');
+  const owner = rosterFromStore(resolve);
+  if (owner) {
+    const value =
+      owner.key === 'mattstack.roster'
+        ? next.map(({ hidden: _hidden, ...rest }) => rest)
+        : next;
+    write(owner.key, value, 'team');
   } else {
     let raw: string;
     try {
@@ -894,6 +972,20 @@ export function saveTabs(
   return loadConfigFrom(path, resolve);
 }
 
+/**
+ * Persist `username`'s hidden flag and return the reload. Unowned: config.json's
+ * inline `members[].hidden` stays the single writer (today's behavior)...
+ * UNLESS config.json doesn't exist at all (RULING: file-authority is
+ * meaningless with no file), in which case this establishes store ownership
+ * outright rather than raw-ENOENT-ing (mirrors loadConfigFrom's store-boot
+ * mode; only reachable when the store already owns the required team fields,
+ * since that's what a config.json-free `current` needs to resolve at all).
+ * Owned: `board.hiddenMembers` (the user store) is the single writer instead
+ * and config.json is never touched for this... every branch is exactly one
+ * write, so a `write` throw simply propagates; nothing was persisted for it
+ * to revert. A non-ENOENT file-read failure (a genuinely malformed
+ * config.json) still surfaces loudly, same as today.
+ */
 export function saveMemberHidden(
   username: string,
   hidden: boolean,
