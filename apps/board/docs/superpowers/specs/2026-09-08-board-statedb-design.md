@@ -14,7 +14,7 @@ one week (2026-09-08 investigation):
 
 - The Sep 6 fold-in moved the board between repos and orphaned every prior
   review state, which silently disabled the re-review latch on
-  acme-web !43889 and !43878.
+  two live MRs.
 - A deck worktree preview (DECK-62: the manifest env never reached the
   process) booted with the worktree as APP_ROOT and forked live state.
 - `bin/review-status.ts` writes landing with no prior file produced
