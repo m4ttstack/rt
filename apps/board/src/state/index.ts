@@ -24,5 +24,6 @@ export {
   readStates,
   readReport,
   setReportByHandle,
+  ingestReport,
   pruneStates,
 } from './agent-states.ts';

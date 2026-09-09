@@ -1,3 +1,4 @@
+import { existsSync } from 'fs';
 import type { Database } from 'bun:sqlite';
 
 import type { Commands, RtResponse } from '@mattstack/rt-client';
@@ -5,7 +6,12 @@ import { boardRootFromStatePath } from '../agent-status/emit.ts';
 import { writeDoctorState, type DoctorStatus } from '../doctor-state.ts';
 import { writeRespondState, type RespondStatus } from '../respond-state.ts';
 import { writeReviewState, type ReviewStatus } from '../review-state.ts';
-import { dbPathForRoot, openStateDb, readByHandle } from '../state/index.ts';
+import {
+  dbPathForRoot,
+  ingestReport,
+  openStateDb,
+  readByHandle,
+} from '../state/index.ts';
 import { domainForKind } from './sweep.ts';
 
 export type GateAnswers = Record<string, string | string[]>;
@@ -75,7 +81,11 @@ interface GateVerbState {
     root it was launched under -- there is no ambient default to fall back
     on. */
 function openDbForHandle(statePath: string): Database {
-  return openStateDb(dbPathForRoot(boardRootFromStatePath(statePath)), 'cli');
+  const dbPath = dbPathForRoot(boardRootFromStatePath(statePath));
+  if (!existsSync(dbPath)) {
+    throw new Error(`no board db at ${dbPath}; stale pre-upgrade handle?`);
+  }
+  return openStateDb(dbPath, 'cli');
 }
 
 function readGateVerbState(statePath: string, db: Database): GateVerbState {
@@ -126,6 +136,10 @@ export async function gateOpen(
   const questions = JSON.parse(questionsJson) as GateQuestion[];
   const db = openDbForHandle(statePath);
   const state = readGateVerbState(statePath, db);
+  // The skill writes its report just before parking at a gate, so the board
+  // must be able to serve it for the whole time the pane sits here -- this
+  // is the moment that write is most likely to have just landed.
+  ingestReport(statePath, db);
   const domain = domainForKind(kind);
   if (!domain) throw new Error(`gate open: unrecognized kind "${kind}"`);
 

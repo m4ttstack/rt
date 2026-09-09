@@ -10,6 +10,8 @@ config.team.json
 
 # runtime state + logs
 /state/
+/state.db*
+/state.imported-*
 /logs/
 switchboard/*.sqlite*
 

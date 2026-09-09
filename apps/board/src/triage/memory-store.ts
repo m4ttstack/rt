@@ -15,12 +15,17 @@ import type { DispatchMemory } from './memory.ts';
     mutate the returned memory's fields in place, so a shared singleton here
     would leak state across unrelated calls. */
 export function readMemory(db: Database = getStateDb()): DispatchMemory {
-  return getKvValue<DispatchMemory>(
+  const raw = getKvValue<Partial<DispatchMemory>>(
     'triage',
     'memory',
     { identity: null, mrs: {} },
     db
   );
+  // Per-field, not whole-object: a legacy-imported auto-dispatch.json can be
+  // a partial blob (missing a field the old file predates), and the fallback
+  // above only ever applies on a total miss -- without this, `memory.mrs[...]`
+  // throws on a row that exists but never had an `mrs` key.
+  return { identity: raw.identity ?? null, mrs: raw.mrs ?? {} };
 }
 
 export function writeMemory(

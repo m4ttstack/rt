@@ -19,11 +19,18 @@ export interface AuditEntry {
   outcome?: string;
 }
 
-export const AUDIT_PATH = join(boardStateRoot(), 'logs', 'doctor-audit.jsonl');
+export function auditPathForRoot(root: string): string {
+  return join(root, 'logs', 'doctor-audit.jsonl');
+}
 
+/** `path` defaults from boardStateRoot() at CALL time, not module load: the
+    ambient default is only correct for the auto-triage pass, which runs
+    under the same root as getStateDb()'s default. A caller resolving a
+    handle-derived root (doctor-status.ts, an overridden board) must pass
+    that root's own path explicitly via auditPathForRoot. */
 export function appendAudit(
   entry: AuditEntry,
-  path: string = AUDIT_PATH
+  path: string = auditPathForRoot(boardStateRoot())
 ): void {
   mkdirSync(join(path, '..'), { recursive: true });
   appendFileSync(path, JSON.stringify(entry) + '\n');

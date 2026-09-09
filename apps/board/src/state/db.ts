@@ -1,7 +1,7 @@
 import { Database } from 'bun:sqlite';
 import { mkdirSync, renameSync } from 'fs';
 import { homedir } from 'os';
-import { dirname, join, resolve } from 'path';
+import { basename, dirname, join, resolve } from 'path';
 
 import { APP_ROOT } from '../app-root.ts';
 import { getKvValue } from './kv-blob.ts';
@@ -13,14 +13,33 @@ export const SCHEMA_VERSION = 1;
 const BUSY_TIMEOUT_MS: Record<DbFlavor, number> = { server: 250, cli: 5000 };
 const MIGRATION_BUSY_TIMEOUT_MS = 5000;
 
-export function boardStateRoot(): string {
+/** A status CLI derives its db by walking up from a claim-ticket handle to
+    `<root>/state.db` (dbPathForRoot), never from BOARD_STATE_DB itself. A
+    pinned override whose basename isn't `state.db` would resolve to a
+    different file than that derivation, silently splitting the server's
+    writes from every launched pane's -- so a mismatched basename fails here,
+    at the point the override is read, rather than as two files quietly
+    drifting apart. */
+function validatedOverride(): string | undefined {
   const override = process.env.BOARD_STATE_DB;
-  if (override) return dirname(resolve(override));
+  if (!override) return undefined;
+  const resolved = resolve(override);
+  if (basename(resolved) !== 'state.db') {
+    throw new Error(
+      `BOARD_STATE_DB must name a file called state.db (got ${resolved}); pin its directory, not an arbitrary filename`
+    );
+  }
+  return resolved;
+}
+
+export function boardStateRoot(): string {
+  const override = validatedOverride();
+  if (override) return dirname(override);
   return join(process.env.HOME ?? homedir(), '.mattstack', 'board');
 }
 export function stateDbPath(): string {
-  const override = process.env.BOARD_STATE_DB;
-  if (override) return resolve(override);
+  const override = validatedOverride();
+  if (override) return override;
   return join(boardStateRoot(), 'state.db');
 }
 export function dbPathForRoot(root: string): string {
@@ -85,7 +104,7 @@ type Migration = (db: Database) => void;
 const MIGRATIONS: Migration[] = [db => db.exec(V1_SCHEMA)];
 
 function runMigrations(db: Database): void {
-  db.exec(`PRAGMA busy_timeout = ${MIGRATION_BUSY_TIMEOUT_MS}`);
+  // busy_timeout is already set by the caller (openAt) before this runs.
   db.exec('BEGIN IMMEDIATE');
   try {
     const v = (db.query('PRAGMA user_version').get() as { user_version: number }).user_version;
@@ -109,6 +128,8 @@ function openAt(path: string, flavor: DbFlavor): Database {
   return db;
 }
 
+// Never runs the legacy import itself -- tests rely on that invariant to open
+// a plain, empty-of-import db. Only getStateDb (below) triggers importLegacyState.
 export function openStateDb(path: string, flavor: DbFlavor = 'cli'): Database {
   try {
     return openAt(path, flavor);
@@ -130,13 +151,32 @@ export function getStateDb(flavor: DbFlavor = 'cli'): Database {
     // legacy directory) must leave `singleton` untouched, so the NEXT call
     // reopens and retries the import instead of forever short-circuiting on
     // a handle whose import never finished.
-    try {
-      if (!getKvValue('meta', 'legacy-import-done', false, opened)) {
-        importLegacyState(opened, [...new Set([APP_ROOT, boardStateRoot()])]);
+    //
+    // A fixture boot (BOARD_FIXTURE) skips this entirely: BOARD_STATE_DB
+    // contains the db file to the fixture dir, but not the import's own
+    // source scan (APP_ROOT / boardStateRoot()), which could otherwise reach
+    // a real checkout's legacy state/ tree and rename it away.
+    if (!process.env.BOARD_FIXTURE) {
+      try {
+        if (!getKvValue('meta', 'legacy-import-done', false, opened)) {
+          // The import runs against contended freshly-opened dbs (two
+          // processes racing their first-ever open), so it borrows the
+          // migration timeout/immediate-transaction discipline rather than
+          // the flavor's own (server's 250ms is tuned for steady-state
+          // request handling, not a one-shot bulk import), then restores it.
+          opened.exec(`PRAGMA busy_timeout = ${MIGRATION_BUSY_TIMEOUT_MS}`);
+          const result = importLegacyState(opened, [
+            ...new Set([APP_ROOT, boardStateRoot()]),
+          ]);
+          opened.exec(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS[flavor]}`);
+          console.error(
+            `legacy import: imported=${result.imported} skipped=${result.skipped} renamed=[${result.renamed.join(', ')}]`
+          );
+        }
+      } catch (err) {
+        opened.close();
+        throw err;
       }
-    } catch (err) {
-      opened.close();
-      throw err;
     }
     singleton = opened;
   }

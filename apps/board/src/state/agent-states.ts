@@ -1,4 +1,4 @@
-import { unlinkSync } from 'fs';
+import { readFileSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import { Database } from 'bun:sqlite';
 
@@ -55,6 +55,9 @@ export function insertAgentState(
   const full = { mrUrl, iid, ...state };
   runCriticalWrite('agent-state insert', () => {
     db.query(
+      // The ON CONFLICT branch resets report to NULL, so this must only ever
+      // run for a genuine new cycle: relaunching over an imported row hits
+      // this branch too and would drop an already-ingested report.
       `INSERT INTO agent_states (lane, mr_url, state, handle, report, updated_at)
        VALUES (?, ?, ?, ?, NULL, ?)
        ON CONFLICT(lane, mr_url) DO UPDATE SET
@@ -186,6 +189,26 @@ export function setReportByHandle(
     tx();
   });
   return ok;
+}
+
+/** Ingests the handle's sibling .md report into its row, if the file exists
+    yet. Called on every review/respond status write and at gate open, not
+    gated on `done`: the skill writes the report BEFORE parking at a gate, so
+    the board must be able to serve it while the pane still holds there (a
+    `done` write is just the final catch-up, for a report written only at the
+    very end). Only the file read is caught here -- a db error out of
+    setReportByHandle propagates, it is never swallowed alongside a routine
+    "no report yet" ENOENT. */
+export function ingestReport(handle: string, db: Database = getStateDb()): void {
+  let text: string;
+  try {
+    text = readFileSync(reportPathForHandle(handle), 'utf8');
+  } catch {
+    return;
+  }
+  if (!setReportByHandle(handle, text, db)) {
+    console.error(`report ingestion: no state row for handle ${handle}`);
+  }
 }
 
 /** Drop rows whose MR has left the board (kept while the MR is shown), and

@@ -1,3 +1,5 @@
+import { existsSync } from 'fs';
+
 import {
   boardRootFromStatePath,
   emitAgentStatus,
@@ -9,8 +11,8 @@ import type {
 } from '../src/review-state.ts';
 import {
   dbPathForRoot,
+  ingestReport,
   openStateDb,
-  setReportByHandle,
   updateByHandle,
 } from '../src/state/index.ts';
 
@@ -74,10 +76,12 @@ const outcome = parsed.outcome as ReviewOutcome | undefined;
 const sessionId =
   parsed.session ?? process.env.CLAUDE_CODE_SESSION_ID ?? undefined;
 
-const db = openStateDb(
-  dbPathForRoot(boardRootFromStatePath(parsed.path)),
-  'cli'
-);
+const dbPath = dbPathForRoot(boardRootFromStatePath(parsed.path));
+if (!existsSync(dbPath)) {
+  console.error(`no board db at ${dbPath}; stale pre-upgrade handle?`);
+  process.exit(1);
+}
+const db = openStateDb(dbPath, 'cli');
 const merged = updateByHandle(
   parsed.path,
   {
@@ -96,14 +100,7 @@ if (!merged) {
   process.exit(1);
 }
 
-if (status === 'done') {
-  const reportPath = parsed.path.replace(/\.json$/, '') + '.md';
-  try {
-    setReportByHandle(parsed.path, await Bun.file(reportPath).text(), db);
-  } catch {
-    // No sibling report to ingest -- a done write with nothing written yet.
-  }
-}
+ingestReport(parsed.path, db);
 
 await emitAgentStatus(
   {

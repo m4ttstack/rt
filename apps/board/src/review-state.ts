@@ -113,7 +113,7 @@ export function writeReviewState(
 }
 
 /** Read all review states, keyed by mrUrl. Pruning is by board membership (see
-    pruneReviewStates), not age — a review persists as long as its MR is shown. */
+    pruneReviewStates), not age... a review persists as long as its MR is shown. */
 export function readReviewStates(
   db: Database = getStateDb()
 ): Map<string, ReviewState> {
@@ -121,7 +121,7 @@ export function readReviewStates(
 }
 
 /** Delete review states (and their sibling `.md` reports) whose MR is no longer
-    on the board — so a review is kept exactly as long as its MR is shown, then
+    on the board... so a review is kept exactly as long as its MR is shown, then
     dropped once the MR merges/closes/goes stale. `keepUrls` is the current board
     MR set; callers gate this on a healthy snapshot so a failed fetch can't wipe
     live state. */

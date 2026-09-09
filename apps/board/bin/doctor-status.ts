@@ -1,3 +1,5 @@
+import { existsSync } from 'fs';
+
 import {
   boardRootFromStatePath,
   emitAgentStatus,
@@ -29,7 +31,12 @@ if (!path || !status || !VALID.includes(status as DoctorStatus)) {
   process.exit(1);
 }
 
-const db = openStateDb(dbPathForRoot(boardRootFromStatePath(path)), 'cli');
+const dbPath = dbPathForRoot(boardRootFromStatePath(path));
+if (!existsSync(dbPath)) {
+  console.error(`no board db at ${dbPath}; stale pre-upgrade handle?`);
+  process.exit(1);
+}
+const db = openStateDb(dbPath, 'cli');
 const merged = updateByHandle(
   path,
   {
@@ -62,15 +69,20 @@ await emitAgentStatus(
 // origin-auto doctor into the JSONL covers actions and outcomes alike.
 if (merged.origin === 'auto') {
   try {
-    const { appendAudit } = await import('../src/triage/audit.ts');
-    appendAudit({
-      ts: Date.now(),
-      mrUrl: merged.mrUrl,
-      iid: merged.iid,
-      event: 'doctor-status',
-      action: status,
-      outcome: merged.message,
-    });
+    const { appendAudit, auditPathForRoot } = await import(
+      '../src/triage/audit.ts'
+    );
+    appendAudit(
+      {
+        ts: Date.now(),
+        mrUrl: merged.mrUrl,
+        iid: merged.iid,
+        event: 'doctor-status',
+        action: status,
+        outcome: merged.message,
+      },
+      auditPathForRoot(boardRootFromStatePath(path))
+    );
   } catch (err) {
     console.error(
       `audit append failed: ${err instanceof Error ? err.message : err}`

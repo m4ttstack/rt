@@ -15,6 +15,8 @@ import { getKvValue, setKvValue } from './kv-blob.ts';
 export interface LegacyImportResult {
   imported: number;
   skipped: number;
+  /** Legacy roots whose `state/` dir was successfully renamed aside this run. */
+  renamed: string[];
 }
 
 const LANE_DIR: Record<Lane, string> = {
@@ -476,7 +478,7 @@ export function importLegacyState(
   roots: string[]
 ): LegacyImportResult {
   if (getKvValue('meta', 'legacy-import-done', false, db)) {
-    return { imported: 0, skipped: 0 };
+    return { imported: 0, skipped: 0, renamed: [] };
   }
 
   const legacyRoots = legacyRootsOf(roots);
@@ -495,7 +497,11 @@ export function importLegacyState(
     importAgentStatusCursor(db, roots, tally);
     importSlackIndexes(db, roots, tally);
   });
-  tx();
+  // Immediate, not deferred: this can race another process's first-ever open
+  // of the same fresh db (see getStateDb's raised busy_timeout around this
+  // call), and a deferred transaction only takes its write lock on the first
+  // write inside it, well after the race could already have been lost.
+  tx.immediate();
 
   // Best-effort quarantine: the transaction above already committed the
   // imported data durably, so a rename failure (e.g. a file busy on the
@@ -503,11 +509,13 @@ export function importLegacyState(
   // the old directory sticks around for next time, harmlessly re-scanned
   // and re-superseded by the guarded upserts above.
   const dateStamp = new Date().toISOString().slice(0, 10);
+  const renamed: string[] = [];
   for (const root of legacyRoots) {
     const legacyDir = join(root, 'state');
     if (!existsSync(legacyDir)) continue;
     try {
       renameSync(legacyDir, join(root, `state.imported-${dateStamp}`));
+      renamed.push(root);
     } catch (err) {
       console.error(
         `legacy import: could not rename ${legacyDir}: ${err instanceof Error ? err.message : err}`
@@ -516,5 +524,5 @@ export function importLegacyState(
   }
 
   setKvValue('meta', 'legacy-import-done', true, db);
-  return tally;
+  return { ...tally, renamed };
 }
