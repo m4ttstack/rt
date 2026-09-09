@@ -1,3 +1,5 @@
+import { useEffect } from 'react';
+
 import type { GateDomain } from '@mattstack/gate-kit';
 import { Chip, Markdown, Modal } from '@mattstack/tui-kit';
 import type { GateRow } from '../../gates/store.ts';
@@ -30,6 +32,7 @@ function DecisionQueueModal({
   onFocusPane,
   onAnswered,
   onContinue,
+  onLostChange,
 }: {
   gate: GateRow;
   mr: BoardMRWithReview;
@@ -44,10 +47,17 @@ function DecisionQueueModal({
   onFocusPane: (mr: BoardMRWithReview, domain: GateDomain) => void;
   onAnswered: () => void;
   onContinue: () => void;
+  /** Fires when the CAS-loss face flips on or off, so the host can hold the
+      queue on this gate while it's showing. */
+  onLostChange?: (lost: boolean) => void;
 }) {
   const form = useGateForm(gate, onAnswered);
   const answered = gate.status === 'answered';
   const actionable = gate.status === 'open' || gate.status === 'parked';
+
+  useEffect(() => {
+    onLostChange?.(form.lost !== null);
+  }, [form.lost, onLostChange]);
 
   return (
     <Modal

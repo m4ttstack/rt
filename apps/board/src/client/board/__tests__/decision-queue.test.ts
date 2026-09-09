@@ -4,6 +4,7 @@ import type { GateRow } from '../../../gates/store.ts';
 import type { BoardMRWithReview } from '../../types.ts';
 import {
   advance,
+  advanceOrWrap,
   queueView,
   reconcile,
   type QueueEntry,
@@ -58,4 +59,27 @@ test('complete when nothing is left', () => {
     entries
   );
   expect(v.complete).toBe(true);
+});
+
+test('reconcile with a held vanished active keeps it active', () => {
+  const next = reconcile(session(), [entry('g2', 2), entry('g3', 3)], 'g1');
+  expect(next.activeId).toBe('g1');
+  expect(next.answered).not.toContain('g1');
+});
+
+test('hold cleared then reconcile retires the vanished active gate', () => {
+  const next = reconcile(session(), [entry('g2', 2), entry('g3', 3)], null);
+  expect(next.answered).toContain('g1');
+  expect(next.activeId).toBe('g2');
+});
+
+test('advanceOrWrap wraps to the first remaining gate rather than completing', () => {
+  // openAt a middle gate, then answer/skip forward off the end of order.
+  const s = session({ answered: ['g2', 'g3'], activeId: 'g3' });
+  expect(advanceOrWrap(s, entries, 'g3')).toBe('g1');
+});
+
+test('advanceOrWrap completes only once every gate is retired', () => {
+  const s = session({ answered: ['g1', 'g2', 'g3'], activeId: 'g3' });
+  expect(advanceOrWrap(s, entries, 'g3')).toBeNull();
 });

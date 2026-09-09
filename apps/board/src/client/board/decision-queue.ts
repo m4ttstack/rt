@@ -27,6 +27,7 @@ export interface DecisionQueue extends QueueView {
   close: () => void;
   skip: () => void;
   noteAnswered: (gateId: string) => void;
+  hold: (gateId: string | null) => void;
 }
 
 /** The queue's own state: `order` is append-only for the life of a session
@@ -104,12 +105,27 @@ export function advance(
   return null;
 }
 
+/** `advance` only ever walks forward from `from`, so a gate retired mid-order
+    (entered via a row chip, or the sole vanished active gate) would otherwise
+    hit `complete` while earlier gates are still todo. Falling back to a
+    from-null walk wraps to the first remaining gate instead. */
+export function advanceOrWrap(
+  session: QueueSession,
+  entries: QueueEntry[],
+  from: string
+): string | null {
+  return advance(session, entries, from) ?? advance(session, entries, null);
+}
+
 /** Appends unseen actionable gates to `order` without touching existing
     positions, then auto-answers an activeId that has vanished from entries
-    (the gate was resolved elsewhere) and advances past it. */
+    (the gate was resolved elsewhere) and advances past it -- unless `heldId`
+    names that same gate, in which case it stays active so its lost-answer
+    face can keep showing through the refresh that dropped it. */
 export function reconcile(
   session: QueueSession,
-  entries: QueueEntry[]
+  entries: QueueEntry[],
+  heldId: string | null = null
 ): QueueSession {
   const seen = new Set(session.order);
   const appended = entries.map(e => e.gate.gateId).filter(id => !seen.has(id));
@@ -118,11 +134,17 @@ export function reconcile(
     : session.order;
 
   if (session.activeId !== null && !entryFor(entries, session.activeId)) {
+    if (heldId !== null && heldId === session.activeId) {
+      return order === session.order ? session : { ...session, order };
+    }
     const answered = session.answered.includes(session.activeId)
       ? session.answered
       : [...session.answered, session.activeId];
     const next = { ...session, order, answered };
-    return { ...next, activeId: advance(next, entries, session.activeId) };
+    return {
+      ...next,
+      activeId: advanceOrWrap(next, entries, session.activeId),
+    };
   }
 
   return order === session.order ? session : { ...session, order };
@@ -131,11 +153,12 @@ export function reconcile(
 export function useDecisionQueue(entries: QueueEntry[]): DecisionQueue {
   const [open, setOpen] = useState(false);
   const [session, setSession] = useState<QueueSession>(CLOSED_SESSION);
+  const [heldId, setHeldId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
-    setSession(s => reconcile(s, entries));
-  }, [open, entries]);
+    setSession(s => reconcile(s, entries, heldId));
+  }, [open, entries, heldId]);
 
   const openAtStart = useCallback(() => {
     const order = entries.map(e => e.gate.gateId);
@@ -164,6 +187,7 @@ export function useDecisionQueue(entries: QueueEntry[]): DecisionQueue {
   const close = useCallback(() => {
     setOpen(false);
     setSession(CLOSED_SESSION);
+    setHeldId(null);
   }, []);
 
   const skip = useCallback(() => {
@@ -171,22 +195,27 @@ export function useDecisionQueue(entries: QueueEntry[]): DecisionQueue {
       if (s.activeId === null) return s;
       const skipped = [...s.skipped, s.activeId];
       const next = { ...s, skipped };
-      return { ...next, activeId: advance(next, entries, s.activeId) };
+      return { ...next, activeId: advanceOrWrap(next, entries, s.activeId) };
     });
   }, [entries]);
 
   const noteAnswered = useCallback(
     (gateId: string) => {
+      setHeldId(h => (h === gateId ? null : h));
       setSession(s => {
         const answered = s.answered.includes(gateId)
           ? s.answered
           : [...s.answered, gateId];
         const next = { ...s, answered };
-        return { ...next, activeId: advance(next, entries, gateId) };
+        return { ...next, activeId: advanceOrWrap(next, entries, gateId) };
       });
     },
     [entries]
   );
+
+  const hold = useCallback((gateId: string | null) => {
+    setHeldId(gateId);
+  }, []);
 
   const view = queueView(session, entries);
 
@@ -198,5 +227,6 @@ export function useDecisionQueue(entries: QueueEntry[]): DecisionQueue {
     close,
     skip,
     noteAnswered,
+    hold,
   };
 }
