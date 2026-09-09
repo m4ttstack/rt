@@ -15,84 +15,11 @@ import {
   noteFieldName,
   Questionnaire,
   useGateDraft,
-  type GateItemDisplay,
 } from '@mattstack/gate-kit/react';
 import { Chip, Markdown } from '@mattstack/tui-kit';
 import type { GateRow } from '../../gates/store.ts';
 import type { BoardMRWithReview } from '../types.ts';
 import { Disclosure, DisclosureHead } from './Disclosure.tsx';
-
-/** One thread's verb row within a grouped threads question: the group's
-    heading once, then reply/fix/skip as controlled questionnaire choices
-    styled as a compact row. At most one verb per thread -- checking one
-    entry unchecks its siblings, leaving every other thread's selection
-    untouched -- which is board policy, so it lives here, not in the kit. */
-function ThreadGroupChoices({
-  item,
-  picked,
-  onGroupSelect,
-}: {
-  item: GateItemDisplay;
-  picked: Set<string>;
-  onGroupSelect: (
-    groupValues: string[],
-    next: string,
-    checked: boolean
-  ) => void;
-}) {
-  return (
-    <div className="tui-gate-thread-groups">
-      {item.groups!.map(group => {
-        const values = group.entries.map(e => e.value);
-        return (
-          <div key={group.token} className="tui-gate-thread-group">
-            <div className="tui-gate-thread-heading" title={group.token}>
-              {group.heading}
-            </div>
-            <div className="tui-gate-thread-verbs">
-              {group.entries.map(entry => (
-                <Questionnaire.Choice
-                  key={entry.value}
-                  value={entry.value}
-                  checked={picked.has(entry.value)}
-                  onChange={event =>
-                    onGroupSelect(
-                      values,
-                      entry.value,
-                      event.currentTarget.checked
-                    )
-                  }
-                  className="tui-gate-thread-verb"
-                >
-                  <Questionnaire.ChoiceInput
-                    render={props => (
-                      <input {...props} className="tui-gate-choice-input" />
-                    )}
-                  />
-                  <Questionnaire.ChoiceLabel>
-                    <span title={entry.value}>{entry.verb}</span>
-                    {entry.recommended && (
-                      <Chip
-                        intent="ok"
-                        variant="outline"
-                        uppercase
-                        data-gate="recommended"
-                        className="tui-gate-recommended"
-                      >
-                        recommended
-                      </Chip>
-                    )}
-                  </Questionnaire.ChoiceLabel>
-                  <Questionnaire.ChoiceShortcut className="tui-gate-key" />
-                </Questionnaire.Choice>
-              ))}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
 
 function SummaryDetail({ detail }: { detail: GateSummaryDetailRow[] }) {
   return (
@@ -219,19 +146,6 @@ function GateCard({
       if (checked) next.add(value);
       else next.delete(value);
       return { ...prev, [name]: [...next] };
-    });
-  const selectGroup = (
-    name: string,
-    groupValues: string[],
-    next: string,
-    checked: boolean
-  ) =>
-    setSelections(prev => {
-      const current = prev[name];
-      const set = new Set(Array.isArray(current) ? current : []);
-      for (const v of groupValues) set.delete(v);
-      if (checked) set.add(next);
-      return { ...prev, [name]: [...set] };
     });
   const setNote = (name: string, value: string) =>
     setNotes(prev => ({ ...prev, [name]: value }));
@@ -409,61 +323,48 @@ function GateCard({
                   {q.prompt}
                 </Questionnaire.Title>
                 <Questionnaire.Choices className="tui-gate-choices">
-                  {q.groups ? (
-                    <ThreadGroupChoices
-                      item={q}
-                      picked={picked}
-                      onGroupSelect={(values, next, checked) =>
-                        selectGroup(q.name, values, next, checked)
+                  {q.choices.map(choice => (
+                    <Questionnaire.Choice
+                      key={choice.value}
+                      value={choice.value}
+                      checked={
+                        q.multiple
+                          ? picked.has(choice.value)
+                          : current === choice.value
                       }
-                    />
-                  ) : (
-                    q.choices.map(choice => (
-                      <Questionnaire.Choice
-                        key={choice.value}
-                        value={choice.value}
-                        checked={
-                          q.multiple
-                            ? picked.has(choice.value)
-                            : current === choice.value
-                        }
-                        onChange={event =>
-                          q.multiple
-                            ? toggleMulti(
-                                q.name,
-                                choice.value,
-                                event.currentTarget.checked
-                              )
-                            : setSingle(q.name, choice.value)
-                        }
-                        className="tui-gate-choice"
-                      >
-                        <Questionnaire.ChoiceInput
-                          render={props => (
-                            <input
-                              {...props}
-                              className="tui-gate-choice-input"
-                            />
-                          )}
-                        />
-                        <Questionnaire.ChoiceLabel className="tui-gate-choice-label">
-                          <span title={choice.description}>{choice.label}</span>
-                          {choice.recommended && (
-                            <Chip
-                              intent="ok"
-                              variant="outline"
-                              uppercase
-                              data-gate="recommended"
-                              className="tui-gate-recommended"
-                            >
-                              recommended
-                            </Chip>
-                          )}
-                        </Questionnaire.ChoiceLabel>
-                        <Questionnaire.ChoiceShortcut className="tui-gate-key" />
-                      </Questionnaire.Choice>
-                    ))
-                  )}
+                      onChange={event =>
+                        q.multiple
+                          ? toggleMulti(
+                              q.name,
+                              choice.value,
+                              event.currentTarget.checked
+                            )
+                          : setSingle(q.name, choice.value)
+                      }
+                      className="tui-gate-choice"
+                    >
+                      <Questionnaire.ChoiceInput
+                        render={props => (
+                          <input {...props} className="tui-gate-choice-input" />
+                        )}
+                      />
+                      <Questionnaire.ChoiceLabel className="tui-gate-choice-label">
+                        <span title={choice.description}>{choice.label}</span>
+                        {choice.recommended && (
+                          <Chip
+                            intent="ok"
+                            variant="outline"
+                            uppercase
+                            data-gate="recommended"
+                            className="tui-gate-recommended"
+                          >
+                            recommended
+                          </Chip>
+                        )}
+                      </Questionnaire.ChoiceLabel>
+                      <Questionnaire.ChoiceShortcut className="tui-gate-key" />
+                    </Questionnaire.Choice>
+                  ))}
                 </Questionnaire.Choices>
                 <Questionnaire.Error className="tui-gate-invalid" />
                 <input

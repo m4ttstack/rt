@@ -1616,26 +1616,6 @@
   font-size: 12px;
   color: var(--tui-text, inherit);
 }
-.tui-gate-thread-verbs {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-}
-.tui-gate-thread-verb {
-  display: inline-flex;
-  gap: 4px;
-  align-items: center;
-  padding: 2px 6px;
-  border-radius: 6px;
-  cursor: pointer;
-}
-.tui-gate-thread-verb[data-checked] {
-  color: var(--amber);
-  background: color-mix(in srgb, var(--amber) 12%, transparent);
-}
-.tui-gate-thread-verb .tui-gate-key {
-  margin-left: 2px;
-}
 .tui-gate-summary-note {
   font-size: 11px;
   opacity: 0.7;
@@ -1719,29 +1699,6 @@
 }
 .tui-gate-context-body img {
   max-width: 100%;
-}
-/* Per-thread grouping for a respond-plan threads question: one heading plus
-   a compact reply/fix/skip radio row per thread, instead of N*3 flat
-   checkboxes each repeating the thread text. */
-.tui-gate-thread-groups {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-}
-.tui-gate-thread-group {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 0.3rem 0.5rem;
-  background: color-mix(in srgb, var(--fg) 4%, transparent);
-  border-radius: 6px;
-}
-.tui-gate-thread-heading {
-  font-size: 0.8rem;
-  color: var(--fg);
-  margin-right: auto;
-  overflow-wrap: anywhere;
 }
 /* slack review-signal reactions rendered next to the review badge */
 .tui-slack-reactions {
