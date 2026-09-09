@@ -1681,7 +1681,7 @@
   max-width: 760px;
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
+  gap: 0.95rem;
 }
 /* The head is the recipe's accent title span, stretched so the gate cluster
    (kind + actions) can ride its right edge; everything inside resets the
@@ -1770,7 +1770,7 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 0.8rem;
+  gap: 1rem;
   min-height: 0;
 }
 .tui-triage-context {
@@ -1795,7 +1795,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.6rem;
+  gap: 0.8rem;
 }
 .tui-triage-form-col .tui-gate-form {
   width: 100%;
