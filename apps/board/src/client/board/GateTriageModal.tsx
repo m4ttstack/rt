@@ -147,7 +147,7 @@ function GateTriageModal({
         // advances across gates with and without context.
         return (
           <div className="tui-triage-body">
-            {gate.context && (
+            {gate.context ? (
               <div className="tui-triage-context">
                 <div className="tui-triage-context-label">context</div>
                 <div className="tui-gate-context-body">
@@ -155,6 +155,36 @@ function GateTriageModal({
                     {gate.context}
                   </Markdown>
                 </div>
+              </div>
+            ) : (
+              <div className="tui-triage-context tui-triage-meta">
+                <div className="tui-triage-context-label">gate</div>
+                <dl className="tui-triage-meta-rows">
+                  <div className="tui-triage-meta-row">
+                    <dt>subject</dt>
+                    <dd className="tui-triage-meta-mono">{gate.subject}</dd>
+                  </div>
+                  <div className="tui-triage-meta-row">
+                    <dt>opened</dt>
+                    <dd>{new Date(gate.openedAt).toLocaleString()}</dd>
+                  </div>
+                  {gate.origin && (
+                    <div className="tui-triage-meta-row">
+                      <dt>origin</dt>
+                      <dd className="tui-triage-meta-mono">
+                        {[gate.origin.worktree, gate.origin.paneId]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </dd>
+                    </div>
+                  )}
+                  {gate.domain && (
+                    <div className="tui-triage-meta-row">
+                      <dt>domain</dt>
+                      <dd>{gate.domain}</dd>
+                    </div>
+                  )}
+                </dl>
               </div>
             )}
             <div className="tui-triage-form-col">{face}</div>
