@@ -1354,7 +1354,8 @@
 /* review gate card: the questions a review pane opened on this row, answered
    inline. Its own bordered block below the badge row so a row carrying a
    gate visibly grows rather than crowding the badges. */
-.tui-gate-card {
+.tui-gate-card,
+.tui-triage-modal {
   /* Gate-scoped contrast lift: the kit's --border and --muted-text sit too
      close to --card in dark, so the gate chrome takes its own edge/text
      values. The light halves match the kit tokens byte for byte. */
@@ -1632,6 +1633,104 @@
 .tui-gate-summary-note {
   font-size: 11px;
   opacity: 0.7;
+}
+/* ── gate triage modal ────────────────────────────────────────────── */
+/* The frame is the kit Modal recipe; this class both widens it (app CSS
+   outranks the recipe's @layer rule) and scopes the gate contrast vars. */
+.tui-triage-modal {
+  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+/* The head is the recipe's accent title span; these two ride inside it, so
+   they reset its weight/tracking for their own quieter voice. */
+.tui-triage-pos {
+  margin-left: 8px;
+  font: 500 0.7rem/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: normal;
+  color: var(--gate-muted);
+}
+.tui-triage-pips {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 10px;
+  vertical-align: 1px;
+}
+.tui-triage-pip {
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+}
+.tui-triage-pip[data-state='done'] {
+  background: var(--dot-ok);
+}
+.tui-triage-pip[data-state='active'] {
+  background: var(--amber);
+}
+.tui-triage-pip[data-state='todo'] {
+  background: transparent;
+  border: 1px solid var(--gate-edge);
+  box-sizing: border-box;
+}
+.tui-triage-pip[data-state='skipped'] {
+  background: var(--dot-warn);
+  opacity: 0.55;
+}
+.tui-triage-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 4px 4px 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  background: var(--chrome);
+}
+.tui-triage-subject {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.75rem;
+  color: var(--fg);
+}
+.tui-triage-strip .tui-gate-ghost {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  padding: 2px 8px;
+}
+.tui-triage-peek {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.7rem;
+  color: var(--gate-muted);
+  border-top: 1px solid var(--border-soft);
+  padding-top: 0.55rem;
+}
+.tui-triage-peek-k {
+  font: 500 0.7rem/1 var(--font-mono);
+}
+.tui-triage-done {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1.6rem 0 0.8rem;
+}
+.tui-triage-done-line {
+  font-size: 0.85rem;
+  color: var(--fg);
+}
+.tui-triage-done-counts {
+  font: 500 0.7rem/1.4 var(--font-mono);
+  color: var(--gate-muted);
+}
+.tui-triage-done .tui-gate-submit {
+  margin-top: 0.5rem;
 }
 .tui-gate-question legend.tui-gate-question-label {
   padding: 0;
