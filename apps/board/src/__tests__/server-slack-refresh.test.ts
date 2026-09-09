@@ -3,7 +3,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { afterAll, expect, test } from 'bun:test';
 
-import { slackRefPath } from '../slack.ts';
+import { dbPathForRoot, openStateDb } from '../state/index.ts';
 
 // Proves POST /slack/refresh runs a FORCED sweep: a `notfound` ref checked a
 // moment ago (which the periodic sweep would leave alone until its retry
@@ -83,12 +83,25 @@ const pr = {
 };
 
 // A fresh notfound ref: the periodic sweep's retry window has not elapsed.
-const refDir = join(fakeHome, 'state', 'slack');
-mkdirSync(refDir, { recursive: true });
-writeFileSync(
-  slackRefPath(mrUrl, refDir),
-  JSON.stringify({ mrUrl, iid: 601, status: 'notfound', checkedAt: Date.now() })
+// Seeded directly into the same state.db the spawned server will open (same
+// HOME, no BOARD_STATE_DB override -- boardStateRoot() resolves identically
+// in both processes).
+const seedDb = openStateDb(
+  dbPathForRoot(join(fakeHome, '.mattstack', 'board'))
 );
+seedDb
+  .query('INSERT INTO slack_refs (mr_url, ref, updated_at) VALUES (?, ?, ?)')
+  .run(
+    mrUrl,
+    JSON.stringify({
+      mrUrl,
+      iid: 601,
+      status: 'notfound',
+      checkedAt: Date.now(),
+    }),
+    Date.now()
+  );
+seedDb.close();
 
 const rtDir = join(fakeHome, '.mattstack', 'rt');
 mkdirSync(rtDir, { recursive: true });

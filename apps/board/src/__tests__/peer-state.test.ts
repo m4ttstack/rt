@@ -1,6 +1,7 @@
 import { existsSync, mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import type { Database } from 'bun:sqlite';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
 import {
@@ -26,10 +27,13 @@ import {
   writePeerReview,
   type PeerReviewState,
 } from '../peer/peer-reviews.ts';
+import { openStateDb } from '../state/db.ts';
 
 let dir: string;
+let db: Database;
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'ps-'));
+  db = openStateDb(join(dir, 'state.db'));
 });
 afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
@@ -183,15 +187,15 @@ describe('writeNudge / readNudges', () => {
   });
 
   test('dedupes by id -- second write with same id is a no-op', () => {
-    writeNudge(n({ note: 'first' }), dir);
-    writeNudge(n({ note: 'second' }), dir);
-    const all = readNudges(dir);
+    writeNudge(n({ note: 'first' }), db);
+    writeNudge(n({ note: 'second' }), db);
+    const all = readNudges(db);
     expect(all.length).toBe(1);
     expect(all[0]!.note).toBe('first');
   });
 
-  test('readNudges returns empty array when dir is missing', () => {
-    expect(readNudges(join(dir, 'nope'))).toEqual([]);
+  test('readNudges returns empty array with no rows', () => {
+    expect(readNudges(db)).toEqual([]);
   });
 });
 
@@ -199,10 +203,10 @@ describe('markNudgeHandled', () => {
   test('round-trips the handled result and reason', () => {
     writeNudge(
       { id: 'n1', mrUrl: URL_A, iid: 4821, from: 'ada', receivedAt: 1 },
-      dir
+      db
     );
-    markNudgeHandled('n1', 'launched', 'checked out and ran it', dir, 5000);
-    const handled = readNudges(dir).find(x => x.id === 'n1');
+    markNudgeHandled('n1', 'launched', 'checked out and ran it', db, 5000);
+    const handled = readNudges(db).find(x => x.id === 'n1');
     expect(handled?.handled).toEqual({
       at: 5000,
       result: 'launched',
@@ -215,42 +219,42 @@ describe('pruneNudges', () => {
   test('keeps nudges whose MR is kept, deletes the rest', () => {
     writeNudge(
       { id: 'n1', mrUrl: URL_A, iid: 4821, from: 'ada', receivedAt: 1 },
-      dir
+      db
     );
     writeNudge(
       { id: 'n2', mrUrl: URL_B, iid: 1, from: 'ada', receivedAt: 1 },
-      dir
+      db
     );
-    pruneNudges(new Set([URL_A]), dir);
-    const ids = readNudges(dir).map(x => x.id);
+    pruneNudges(new Set([URL_A]), db);
+    const ids = readNudges(db).map(x => x.id);
     expect(ids).toEqual(['n1']);
   });
 });
 
 describe('writeSentNudge / readSentNudges', () => {
-  test('one file per MR, keyed by mrUrl on read', () => {
+  test('one row per MR, keyed by mrUrl on read', () => {
     writeSentNudge(
       { nudgeId: 'n1', mrUrl: URL_A, iid: 4821, reviewer: 'grace', sentAt: 1 },
-      dir
+      db
     );
-    const map = readSentNudges(dir);
+    const map = readSentNudges(db);
     expect(map.get(URL_A)?.nudgeId).toBe('n1');
   });
 });
 
 describe('resolveSentNudge', () => {
-  test('is a no-op when no file exists for the MR', () => {
-    resolveSentNudge(URL_A, { result: 'launched', at: 10 }, dir);
-    expect(readSentNudges(dir).size).toBe(0);
+  test('is a no-op when no row exists for the MR', () => {
+    resolveSentNudge(URL_A, { result: 'launched', at: 10 }, db);
+    expect(readSentNudges(db).size).toBe(0);
   });
 
-  test('merges the resolution into the existing sent-nudge file', () => {
+  test('merges the resolution into the existing sent-nudge row', () => {
     writeSentNudge(
       { nudgeId: 'n1', mrUrl: URL_A, iid: 4821, reviewer: 'grace', sentAt: 1 },
-      dir
+      db
     );
-    resolveSentNudge(URL_A, { result: 'launched', at: 10 }, dir);
-    expect(readSentNudges(dir).get(URL_A)?.resolution).toEqual({
+    resolveSentNudge(URL_A, { result: 'launched', at: 10 }, db);
+    expect(readSentNudges(db).get(URL_A)?.resolution).toEqual({
       result: 'launched',
       at: 10,
     });
@@ -259,11 +263,11 @@ describe('resolveSentNudge', () => {
   test('does not overwrite an existing terminal resolution', () => {
     writeSentNudge(
       { nudgeId: 'n1', mrUrl: URL_A, iid: 4821, reviewer: 'grace', sentAt: 1 },
-      dir
+      db
     );
-    resolveSentNudge(URL_A, { result: 'launched', at: 10 }, dir);
-    resolveSentNudge(URL_A, { result: 'rejected', at: 20 }, dir);
-    expect(readSentNudges(dir).get(URL_A)?.resolution).toEqual({
+    resolveSentNudge(URL_A, { result: 'launched', at: 10 }, db);
+    resolveSentNudge(URL_A, { result: 'rejected', at: 20 }, db);
+    expect(readSentNudges(db).get(URL_A)?.resolution).toEqual({
       result: 'launched',
       at: 10,
     });
@@ -272,57 +276,153 @@ describe('resolveSentNudge', () => {
   test("a 'confirmed' resolution may still be replaced by a later terminal result", () => {
     writeSentNudge(
       { nudgeId: 'n1', mrUrl: URL_A, iid: 4821, reviewer: 'grace', sentAt: 1 },
-      dir
+      db
     );
-    resolveSentNudge(URL_A, { result: 'confirmed', at: 10 }, dir);
-    resolveSentNudge(URL_A, { result: 'launched', at: 20 }, dir);
-    expect(readSentNudges(dir).get(URL_A)?.resolution).toEqual({
+    resolveSentNudge(URL_A, { result: 'confirmed', at: 10 }, db);
+    resolveSentNudge(URL_A, { result: 'launched', at: 20 }, db);
+    expect(readSentNudges(db).get(URL_A)?.resolution).toEqual({
       result: 'launched',
       at: 20,
     });
   });
+
+  test('a re-sent nudge that lands between the read and the mutation is not overwritten with stale identity', () => {
+    writeSentNudge(
+      { nudgeId: 'n1', mrUrl: URL_A, iid: 4821, reviewer: 'grace', sentAt: 1 },
+      db
+    );
+
+    // A second connection stands in for a writeSentNudge that replaces this
+    // row with a brand new ask right before resolveSentNudge's own UPDATE
+    // runs. The guard (`prev.resolution` undefined/confirmed) and the
+    // mutation must see the same snapshot, or this resolves a nudge that
+    // was already superseded.
+    const other = openStateDb(db.filename);
+    const originalQuery = db.query.bind(db);
+    let injected = false;
+    (db as unknown as { query: typeof db.query }).query = ((sql: string) => {
+      if (!injected && sql.includes('UPDATE nudges_sent')) {
+        injected = true;
+        other
+          .query(
+            `INSERT INTO nudges_sent (mr_url, nudge, updated_at) VALUES (?, ?, ?)
+             ON CONFLICT(mr_url) DO UPDATE SET nudge = excluded.nudge, updated_at = excluded.updated_at`
+          )
+          .run(
+            URL_A,
+            JSON.stringify({
+              nudgeId: 'n2',
+              mrUrl: URL_A,
+              iid: 4821,
+              reviewer: 'grace',
+              sentAt: 50,
+            }),
+            50
+          );
+      }
+      return originalQuery(sql);
+    }) as typeof db.query;
+
+    try {
+      resolveSentNudge(URL_A, { result: 'launched', at: 10 }, db);
+    } finally {
+      (db as unknown as { query: typeof db.query }).query = originalQuery;
+      other.close();
+    }
+
+    expect(injected).toBe(true);
+    const row = readSentNudges(db).get(URL_A);
+    expect(row?.nudgeId).toBe('n2');
+    expect(row?.resolution).toEqual({ result: 'launched', at: 10 });
+  });
 });
 
 describe('retireSentNudge', () => {
-  test('is a no-op when no file exists for the MR', () => {
-    retireSentNudge(URL_A, 10, dir);
-    expect(readSentNudges(dir).size).toBe(0);
+  test('is a no-op when no row exists for the MR', () => {
+    retireSentNudge(URL_A, 10, db);
+    expect(readSentNudges(db).size).toBe(0);
   });
 
   test('deletes the sent nudge when it was sent before the cutoff', () => {
     writeSentNudge(
       { nudgeId: 'n1', mrUrl: URL_A, iid: 4821, reviewer: 'grace', sentAt: 1 },
-      dir
+      db
     );
-    resolveSentNudge(URL_A, { result: 'launched', at: 5 }, dir);
-    retireSentNudge(URL_A, 10, dir);
-    expect(readSentNudges(dir).has(URL_A)).toBe(false);
+    resolveSentNudge(URL_A, { result: 'launched', at: 5 }, db);
+    retireSentNudge(URL_A, 10, db);
+    expect(readSentNudges(db).has(URL_A)).toBe(false);
   });
 
   test("keeps a nudge sent at or after the cutoff, so a redelivered old 'done' cannot clear a fresh ask", () => {
     writeSentNudge(
       { nudgeId: 'n1', mrUrl: URL_A, iid: 4821, reviewer: 'grace', sentAt: 20 },
-      dir
+      db
     );
-    retireSentNudge(URL_A, 10, dir);
-    expect(readSentNudges(dir).has(URL_A)).toBe(true);
-    retireSentNudge(URL_A, 20, dir);
-    expect(readSentNudges(dir).has(URL_A)).toBe(true);
+    retireSentNudge(URL_A, 10, db);
+    expect(readSentNudges(db).has(URL_A)).toBe(true);
+    retireSentNudge(URL_A, 20, db);
+    expect(readSentNudges(db).has(URL_A)).toBe(true);
   });
 
   test('only retires the named MR', () => {
     writeSentNudge(
       { nudgeId: 'n1', mrUrl: URL_A, iid: 4821, reviewer: 'grace', sentAt: 1 },
-      dir
+      db
     );
     writeSentNudge(
       { nudgeId: 'n2', mrUrl: URL_B, iid: 1, reviewer: 'grace', sentAt: 1 },
-      dir
+      db
     );
-    retireSentNudge(URL_A, 10, dir);
-    const map = readSentNudges(dir);
+    retireSentNudge(URL_A, 10, db);
+    const map = readSentNudges(db);
     expect(map.has(URL_A)).toBe(false);
     expect(map.has(URL_B)).toBe(true);
+  });
+
+  test('a fresh ask that lands between the read and the delete is not retired', () => {
+    writeSentNudge(
+      { nudgeId: 'n1', mrUrl: URL_A, iid: 4821, reviewer: 'grace', sentAt: 1 },
+      db
+    );
+
+    // A second connection stands in for the fresh writeSentNudge that lands
+    // right before retireSentNudge's own DELETE runs -- the exact case the
+    // ifSentBefore guard exists for.
+    const other = openStateDb(db.filename);
+    const originalQuery = db.query.bind(db);
+    let injected = false;
+    (db as unknown as { query: typeof db.query }).query = ((sql: string) => {
+      if (!injected && sql.includes('DELETE FROM nudges_sent')) {
+        injected = true;
+        other
+          .query(
+            `INSERT INTO nudges_sent (mr_url, nudge, updated_at) VALUES (?, ?, ?)
+             ON CONFLICT(mr_url) DO UPDATE SET nudge = excluded.nudge, updated_at = excluded.updated_at`
+          )
+          .run(
+            URL_A,
+            JSON.stringify({
+              nudgeId: 'n2',
+              mrUrl: URL_A,
+              iid: 4821,
+              reviewer: 'grace',
+              sentAt: 50,
+            }),
+            50
+          );
+      }
+      return originalQuery(sql);
+    }) as typeof db.query;
+
+    try {
+      retireSentNudge(URL_A, 10, db);
+    } finally {
+      (db as unknown as { query: typeof db.query }).query = originalQuery;
+      other.close();
+    }
+
+    expect(injected).toBe(true);
+    expect(readSentNudges(db).get(URL_A)?.nudgeId).toBe('n2');
   });
 });
 
@@ -330,14 +430,14 @@ describe('pruneSentNudges', () => {
   test('keeps sent nudges whose MR is kept, deletes the rest', () => {
     writeSentNudge(
       { nudgeId: 'n1', mrUrl: URL_A, iid: 4821, reviewer: 'grace', sentAt: 1 },
-      dir
+      db
     );
     writeSentNudge(
       { nudgeId: 'n2', mrUrl: URL_B, iid: 1, reviewer: 'grace', sentAt: 1 },
-      dir
+      db
     );
-    pruneSentNudges(new Set([URL_A]), dir);
-    const map = readSentNudges(dir);
+    pruneSentNudges(new Set([URL_A]), db);
+    const map = readSentNudges(db);
     expect(map.has(URL_A)).toBe(true);
     expect(map.has(URL_B)).toBe(false);
   });

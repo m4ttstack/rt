@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import type { Database } from 'bun:sqlite';
 import { afterEach, describe, expect, test } from 'bun:test';
 
 import type { SwitchboardClient } from '../peer/client.ts';
@@ -9,13 +10,14 @@ import { runPeerTick, type MaterializeDeps } from '../peer/inbox.ts';
 import type { NudgeState } from '../peer/nudges.ts';
 import { enqueueOutbox, readOutbox } from '../peer/outbox.ts';
 import type { PeerReviewState } from '../peer/peer-reviews.ts';
+import { openStateDb } from '../state/db.ts';
 
 const URL_A = 'https://gitlab.com/acme/webapp/-/merge_requests/4821';
 
 let dir: string | undefined;
-function freshDir(): string {
+function freshDb(): Database {
   dir = mkdtempSync(join(tmpdir(), 'peer-tick-'));
-  return dir;
+  return openStateDb(join(dir, 'state.db'));
 }
 afterEach(() => {
   if (dir) rmSync(dir, { recursive: true, force: true });
@@ -119,7 +121,7 @@ function fakeDeps(): MaterializeDeps & {
 
 describe('runPeerTick', () => {
   test('drains the outbox before pulling the inbox', async () => {
-    const outbox = freshDir();
+    const outbox = freshDb();
     enqueueOutbox(draft('e1'), outbox, 1);
     const client = fakeClient([]);
     await runPeerTick(client, fakeDeps(), outbox);
@@ -128,7 +130,7 @@ describe('runPeerTick', () => {
   });
 
   test('materializes every fetched envelope and acks all of their ids', async () => {
-    const outbox = freshDir();
+    const outbox = freshDb();
     const client = fakeClient([
       envelope({ id: 'a' }),
       envelope({
@@ -145,7 +147,7 @@ describe('runPeerTick', () => {
   });
 
   test("acks malformed and unknown envelopes too, so a bad message can't wedge the inbox", async () => {
-    const outbox = freshDir();
+    const outbox = freshDb();
     const client = fakeClient([
       envelope({ id: 'bad', payload: { mrUrl: URL_A } }),
       envelope({ id: 'alien', type: 'smoke-signal', payload: {} }),
@@ -158,7 +160,7 @@ describe('runPeerTick', () => {
   });
 
   test("a throwing materialize doesn't stop the batch or skip the ack", async () => {
-    const outbox = freshDir();
+    const outbox = freshDb();
     const client = fakeClient([
       envelope({ id: 'boom' }),
       envelope({ id: 'fine', from: 'linus' }),
@@ -182,7 +184,7 @@ describe('runPeerTick', () => {
   });
 
   test('acks nothing when the inbox call fails', async () => {
-    const outbox = freshDir();
+    const outbox = freshDb();
     const client = fakeClient(null);
     await runPeerTick(client, fakeDeps(), outbox);
     expect(client.calls).toEqual(['inbox']);
@@ -190,7 +192,7 @@ describe('runPeerTick', () => {
   });
 
   test('never rejects when the relay client throws -- the interval callback must survive', async () => {
-    const outbox = freshDir();
+    const outbox = freshDb();
     const client = fakeClient([], {
       async inbox() {
         throw new Error('relay exploded');
@@ -203,7 +205,7 @@ describe('runPeerTick', () => {
   });
 
   test('unauthorized inbox reports auth and skips materialize/ack', async () => {
-    const outbox = freshDir();
+    const outbox = freshDb();
     const events: string[] = [];
     const client = {
       publish: async () => 201,
@@ -219,7 +221,7 @@ describe('runPeerTick', () => {
   });
 
   test('successful inbox reports ok', async () => {
-    const outbox = freshDir();
+    const outbox = freshDb();
     const events: string[] = [];
     const client = {
       publish: async () => 201,

@@ -1,16 +1,14 @@
-import {
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from 'fs';
-import { join } from 'path';
+import { Database } from 'bun:sqlite';
 
-import { APP_ROOT } from './app-root.ts';
 import { draftBinPath } from './herdr.ts';
+import {
+  getStateDb,
+  insertAgentState,
+  mintHandle,
+  pruneStates,
+  readStates,
+  updateByHandle,
+} from './state/index.ts';
 
 /**
  * Doctor lifecycle for MRs with mechanical breakage (CI failing, merge
@@ -66,97 +64,58 @@ export interface DoctorState {
   updatedAt: number;
 }
 
-export const DOCTOR_DIR = join(APP_ROOT, 'state', 'doctors');
-
-export function doctorFilePath(
-  mrUrl: string,
-  dir: string = DOCTOR_DIR
-): string {
-  const slug = mrUrl
-    .replace(/[^a-zA-Z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 200);
-  return join(dir, `${slug}.json`);
+export function doctorFilePath(mrUrl: string): string {
+  return mintHandle('doctor', mrUrl);
 }
 
 export function writeDoctorState(
-  path: string,
+  handle: string,
   patch: Partial<DoctorState> & { status: DoctorStatus },
-  now: number = Date.now()
+  now: number = Date.now(),
+  db: Database = getStateDb()
 ): DoctorState {
-  let prev: Partial<DoctorState> = {};
-  try {
-    prev = JSON.parse(readFileSync(path, 'utf8')) as DoctorState;
-  } catch {
-    // no prior file, or unreadable -- start fresh
+  const updated = updateByHandle(handle, patch, now, db);
+  if (updated) return updated as DoctorState;
+  if (patch.mrUrl === undefined || patch.iid === undefined) {
+    throw new Error(
+      `doctor state write with no prior row and no identity: ${handle}`
+    );
   }
   const next: DoctorState = {
-    mrUrl: patch.mrUrl ?? prev.mrUrl ?? '',
-    iid: patch.iid ?? prev.iid ?? 0,
+    mrUrl: patch.mrUrl,
+    iid: patch.iid,
     status: patch.status,
-    message: patch.message ?? prev.message,
-    tabId: patch.tabId ?? prev.tabId,
-    workspaceId: patch.workspaceId ?? prev.workspaceId,
-    origin: patch.origin ?? prev.origin,
-    agentId: patch.agentId ?? prev.agentId,
-    paneId: patch.paneId ?? prev.paneId,
-    tier: patch.tier ?? prev.tier,
-    fixClasses: patch.fixClasses ?? prev.fixClasses,
-    gateId: patch.gateId ?? prev.gateId,
-    gateKind: patch.gateKind ?? prev.gateKind,
-    resumedGateId: patch.resumedGateId ?? prev.resumedGateId,
-    startedAt: prev.startedAt ?? now,
+    message: patch.message,
+    tabId: patch.tabId,
+    workspaceId: patch.workspaceId,
+    origin: patch.origin,
+    agentId: patch.agentId,
+    paneId: patch.paneId,
+    tier: patch.tier,
+    fixClasses: patch.fixClasses,
+    gateId: patch.gateId,
+    gateKind: patch.gateKind,
+    resumedGateId: patch.resumedGateId,
+    startedAt: now,
     updatedAt: now,
   };
-  mkdirSync(join(path, '..'), { recursive: true });
-  // Atomic write: writeFileSync opens with O_TRUNC and then writes, leaving a
-  // window where the file exists but is empty. The board polls this file every
-  // 4s while a doctor is running, and a mid-write read makes the badge blink
-  // off for a tick. Rename over the target is atomic on POSIX same-dir, so the
-  // reader always sees the old file or the fully-written new file.
-  const tmp = path + '.tmp';
-  writeFileSync(tmp, JSON.stringify(next, null, 2) + '\n');
-  renameSync(tmp, path);
+  insertAgentState('doctor', patch.mrUrl, patch.iid, next, handle, db);
   return next;
 }
 
 export function readDoctorStates(
-  dir: string = DOCTOR_DIR
+  db: Database = getStateDb()
 ): Map<string, DoctorState> {
-  const out = new Map<string, DoctorState>();
-  if (!existsSync(dir)) return out;
-  for (const name of readdirSync(dir)) {
-    if (!name.endsWith('.json')) continue;
-    const path = join(dir, name);
-    let state: DoctorState;
-    try {
-      state = JSON.parse(readFileSync(path, 'utf8')) as DoctorState;
-    } catch {
-      continue;
-    }
-    if (state.mrUrl) out.set(state.mrUrl, state);
-  }
-  return out;
+  return readStates('doctor', db) as Map<string, DoctorState>;
 }
 
 /** Drop doctor states whose MR has left the board (kept while the MR is shown).
     See pruneReviewStates for the rationale and the healthy-snapshot gate. */
 export function pruneDoctorStates(
   keepUrls: ReadonlySet<string>,
-  dir: string = DOCTOR_DIR
+  db: Database = getStateDb()
 ): void {
-  if (!existsSync(dir)) return;
-  for (const name of readdirSync(dir)) {
-    if (!name.endsWith('.json')) continue;
-    const path = join(dir, name);
-    let mrUrl: string | undefined;
-    try {
-      mrUrl = (JSON.parse(readFileSync(path, 'utf8')) as DoctorState).mrUrl;
-    } catch {
-      continue;
-    }
-    if (mrUrl && !keepUrls.has(mrUrl)) rmSync(path, { force: true });
-  }
+  pruneStates('doctor', keepUrls, db);
 }
 
 export function attachDoctors<T extends { webUrl?: string | null }>(

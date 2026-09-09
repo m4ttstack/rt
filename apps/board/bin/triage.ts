@@ -41,10 +41,10 @@ import type { OwnMrFacts } from '../src/triage/edge.ts';
 import { runLatchPass, type LatchMrFacts } from '../src/triage/latch.ts';
 import {
   readMemory,
-  releaseMemoryLock,
-  tryAcquireMemoryLock,
+  releaseCron,
+  tryClaimCron,
   writeMemory,
-} from '../src/triage/memory.ts';
+} from '../src/triage/memory-store.ts';
 import { notifyEscalation } from '../src/triage/notify.ts';
 import { runNudgePass } from '../src/triage/nudge.ts';
 import { collectProjectPRs } from '../src/triage/projects.ts';
@@ -63,8 +63,8 @@ const reReview = loadReReviewConfig();
 if (!triage.enabled && !reReview.enabled) process.exit(0);
 
 // One run at a time: cron debounces, but a slow run + a fresh trigger must
-// not interleave dispatches. A stale lock (crashed run) is reclaimed.
-const lockToken = tryAcquireMemoryLock();
+// not interleave dispatches. A stale claim (crashed run) is reclaimed.
+const lockToken = tryClaimCron(Date.now());
 if (lockToken === false) {
   process.exit(0);
 }
@@ -290,5 +290,5 @@ try {
   }
   writeMemory(memory);
 } finally {
-  releaseMemoryLock(lockToken);
+  releaseCron(lockToken);
 }

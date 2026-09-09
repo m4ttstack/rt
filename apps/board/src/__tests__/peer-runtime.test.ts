@@ -1,19 +1,21 @@
 import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import type { Database } from 'bun:sqlite';
 import { afterEach, describe, expect, test } from 'bun:test';
 
 import type { SwitchboardClient } from '../peer/client.ts';
 import { makePeering } from '../peer/runtime.ts';
+import { openStateDb } from '../state/db.ts';
 
-/** Every peering built here pins its own outbox. Without this the runtime
-    falls back to the shared OUTBOX_DIR and a test run would publish and delete
+/** Every peering built here pins its own outbox db. Without this the runtime
+    falls back to the shared state db and a test run would publish and delete
     whatever a real board had queued -- including from start()'s unawaited boot
     tick, which can land after the test that spawned it has finished. */
 let dir: string | undefined;
-function freshDir(): string {
+function freshDb(): Database {
   dir = mkdtempSync(join(tmpdir(), 'peer-runtime-'));
-  return dir;
+  return openStateDb(join(dir, 'state.db'));
 }
 afterEach(() => {
   if (dir) rmSync(dir, { recursive: true, force: true });
@@ -44,7 +46,7 @@ describe('makePeering', () => {
       makeClient: () => (made++, fakeClient(() => [])),
       deps: noDeps,
       tickMs: 999_999,
-      outboxDir: freshDir(),
+      outboxDb: freshDb(),
     });
     peering.start('https://sb', 'tok1');
     peering.start('https://sb', 'tok2');
@@ -73,7 +75,7 @@ describe('makePeering', () => {
       makeClient: () => client,
       deps: noDeps,
       tickMs: 999_999,
-      outboxDir: freshDir(),
+      outboxDb: freshDb(),
     });
     peering.start('https://sb', 'tok'); // start's own boot tick blocks in inbox
     await Promise.resolve();
@@ -101,7 +103,7 @@ describe('makePeering', () => {
       makeClient: () => fakeClient(() => result),
       deps: noDeps,
       tickMs: 999_999,
-      outboxDir: freshDir(),
+      outboxDb: freshDb(),
     });
     const rt = peering.start('https://sb', 'tok');
     // Drive ticks manually via the exported tick hook rather than timers:

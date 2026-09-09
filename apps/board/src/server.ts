@@ -1,4 +1,4 @@
-import { readFileSync, rmSync, watch } from 'fs';
+import { readFileSync, watch } from 'fs';
 import { basename, dirname, join } from 'path';
 
 import {
@@ -36,8 +36,6 @@ import {
   AGENT_STATUS_PATTERN,
   AgentStatusFeed,
   isAgentStatusTopic,
-  readCursorFile,
-  writeCursorFile,
 } from './agent-status/feed.ts';
 import { APP_ROOT, IS_COMPILED } from './app-root.ts';
 import { SnapshotCache } from './cache.ts';
@@ -97,7 +95,6 @@ import {
 } from './doctor-state.ts';
 import {
   attachDrafts,
-  draftFilePath,
   heldDraftsByMr,
   pruneDrafts,
   readDrafts,
@@ -126,7 +123,7 @@ import {
   type GateResumeEventIo,
   type KindResumeIo,
 } from './gates/resume.ts';
-import { GATE_DIR, type GateAnswers } from './gates/store.ts';
+import { type GateAnswers } from './gates/store.ts';
 import { planSweep, pruneOffBoardGates } from './gates/sweep.ts';
 import {
   closeTab,
@@ -219,6 +216,13 @@ import {
   sweepSlackRefs,
   unreactFromMR,
 } from './slack.ts';
+import {
+  boardStateRoot,
+  getKvValue,
+  getStateDb,
+  persistOrWarn,
+  setKvValue,
+} from './state/index.ts';
 import styleCss from './style.css' with { type: 'text' };
 import {
   MAX_HEADER_LEN,
@@ -229,10 +233,10 @@ import {
 import { loadReReviewConfig, loadTriageConfig } from './triage/config.ts';
 import {
   readMemory,
-  releaseMemoryLock,
-  tryAcquireMemoryLock,
+  releaseCron,
+  tryClaimCron,
   writeRefreshedIdentity,
-} from './triage/memory.ts';
+} from './triage/memory-store.ts';
 import { manualDoctorFields, resolveDispatchIdentity } from './triage/run.ts';
 
 /** Capture-harness mode: boot from a committed fixture dir instead of live
@@ -240,6 +244,17 @@ import { manualDoctorFields, resolveDispatchIdentity } from './triage/run.ts';
     The seed of the permanent screenshot harness (see tests/capture.ts). */
 const FIXTURE_DIR = process.env.BOARD_FIXTURE || null;
 const fixtureFile = (name: string) => join(FIXTURE_DIR!, name);
+
+// Containment must be structural, not route-enumeration-dependent: pin
+// state.db inside the fixture dir (alongside BOARD_APP_ROOT below) before
+// ANY code path -- including a store's lazy getStateDb() default param --
+// can open one. Without this a fixture boot that reaches an unswitched
+// db-touching route would lazily open the real ~/.mattstack/board/state.db.
+// Only when the caller hasn't already pinned one: an explicit
+// BOARD_STATE_DB (e.g. a test asserting against a specific path) wins.
+if (FIXTURE_DIR && !process.env.BOARD_STATE_DB) {
+  process.env.BOARD_STATE_DB = join(FIXTURE_DIR, 'state.db');
+}
 
 // Bare semver, nothing else: the mattstack bundle gate compares this output
 // against the rt-tray deps.lock row verbatim. Before config load, so a clean
@@ -256,6 +271,14 @@ const cssPath = join(import.meta.dir, 'style.css');
 const favicon = faviconSvg;
 /** The board's own .env, written when /peer/join redeems an invite. */
 const ENV_PATH = join(APP_ROOT, '.env');
+
+// First open of state.db in this process: the 'server' flavor's short busy
+// timeout (state/db.ts) matches a long-lived process that would rather fail
+// fast than block a request on a writer, unlike the 'cli' default every
+// store's getStateDb() falls back to. Safe to call unconditionally in
+// fixture mode too now that BOARD_STATE_DB above has already contained it
+// to the fixture dir.
+getStateDb('server');
 
 // `let`: /peer/join reassigns the whole config after persisting switchboard.url.
 let config = FIXTURE_DIR
@@ -1634,12 +1657,12 @@ const httpServer = Bun.serve({
         // not persisted; it still applies to fixClasses below, and the next
         // request re-resolves it.
         if (identityRead.identity !== identityBefore) {
-          const lockToken = tryAcquireMemoryLock();
+          const lockToken = tryClaimCron(Date.now());
           if (lockToken !== false) {
             try {
               writeRefreshedIdentity(identityRead.identity);
             } finally {
-              releaseMemoryLock(lockToken);
+              releaseCron(lockToken);
             }
           }
         }
@@ -1745,9 +1768,8 @@ const httpServer = Bun.serve({
           return new Response('no held draft for that MR/kind', {
             status: 404,
           });
-        const path = draftFilePath(mrUrl, kind);
         if (action === 'dismiss') {
-          writeDraft(path, { status: 'dismissed' });
+          writeDraft(mrUrl, kind, { status: 'dismissed' });
           return new Response(JSON.stringify({ ok: true, dismissed: true }), {
             headers: { 'content-type': 'application/json' },
           });
@@ -1761,7 +1783,10 @@ const httpServer = Bun.serve({
           const projectId = parseRepoId(mr.repositoryId);
           const mutator = new NoteMutator(config.gitlabHost, gitlabToken);
           const note = await mutator.createNote(projectId, mr.iid, draft.body);
-          writeDraft(path, { status: 'posted', postedNoteId: note.id });
+          writeDraft(mrUrl, kind, {
+            status: 'posted',
+            postedNoteId: note.id,
+          });
           return new Response(
             JSON.stringify({ ok: true, posted: true, noteId: note.id }),
             {
@@ -3026,16 +3051,17 @@ async function handleAgentSignal(
   }
 }
 
-const AGENT_STATUS_CURSOR_PATH = join(APP_ROOT, 'state', 'agent-status-cursor');
-
 const agentStatusFeed = new AgentStatusFeed({
   eventsHead: () => eventsHead(),
   eventsList: (after, limit) =>
     eventsList({ pattern: AGENT_STATUS_PATTERN, after, limit }),
-  readCursor: () => readCursorFile(AGENT_STATUS_CURSOR_PATH),
-  writeCursor: cursor => writeCursorFile(AGENT_STATUS_CURSOR_PATH, cursor),
+  readCursor: () => getKvValue<number | null>('agent-status', 'cursor', null),
+  writeCursor: cursor =>
+    persistOrWarn('agent-status cursor write', () =>
+      setKvValue('agent-status', 'cursor', cursor)
+    ),
   handle: handleAgentSignal,
-  appRoot: APP_ROOT,
+  appRoot: boardStateRoot(),
   log: line => console.error(line),
 });
 
@@ -3086,33 +3112,6 @@ if (!FIXTURE_DIR) {
     );
     wakeAgentStatusFeed();
   }, GATE_SWEEP_MS);
-}
-
-// One-time migration: the board's own per-MR gate files (state/gates/) are
-// retired now that the board-row read is fully daemon-backed (GateCache).
-// Best-effort and silent on an already-clean install -- force skips the
-// not-found case rather than checking existence first.
-if (!FIXTURE_DIR) {
-  try {
-    rmSync(GATE_DIR, { recursive: true, force: true });
-  } catch (err) {
-    console.error(
-      `gate file-store cleanup skipped: ${err instanceof Error ? err.message : err}`
-    );
-  }
-}
-
-// One-time migration: state/board-port retired with the HTTP notify path, and
-// a stale copy misleads anyone reading the state dir into thinking the board
-// still answers on that port.
-if (!FIXTURE_DIR) {
-  try {
-    rmSync(join(APP_ROOT, 'state', 'board-port'), { force: true });
-  } catch (err) {
-    console.error(
-      `board-port cleanup skipped: ${err instanceof Error ? err.message : err}`
-    );
-  }
 }
 
 // One-shot migration: review/respond states that predate rt agent adoption

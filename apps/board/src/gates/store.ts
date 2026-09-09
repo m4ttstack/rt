@@ -1,12 +1,9 @@
-import { join } from 'path';
-
 import type {
   GateAnswers,
   GateDomain,
   GateOrigin,
   GateQuestion,
 } from '@mattstack/gate-kit';
-import { APP_ROOT } from '../app-root.ts';
 
 export type {
   GateAnswers,
@@ -32,12 +29,6 @@ export interface GateState {
   agentId?: string;
   tabId?: string;
 }
-
-/** Per-gate JSON files used to live here; one live gate per MR. Retired
-    (see gates/sweep.ts and gates/cache.ts, the daemon-backed replacements),
-    but the constant survives for server.ts's one-time boot cleanup that
-    removes any leftover directory on upgraded installs. */
-export const GATE_DIR = join(APP_ROOT, 'state', 'gates');
 
 /** The gate fields a board row carries -- a subset of `GateState`, leaving
     out the launch-plumbing fields (`agentId`, `sessionId`, `paneId`,

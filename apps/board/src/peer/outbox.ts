@@ -1,22 +1,7 @@
-import {
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from 'fs';
-import { join } from 'path';
+import { Database } from 'bun:sqlite';
 
-import { APP_ROOT } from '../app-root.ts';
+import { getStateDb, runCriticalWrite } from '../state/index.ts';
 import type { DraftEnvelope } from './envelope.ts';
-
-/** One file per envelope id. Both the board's 60s tick and a triage run may
-    drain concurrently; per-file enqueue/rm makes every operation atomic with
-    no shared read-modify-write, so the worst race is a double send -- which
-    the relay's (id, recipient) primary key makes idempotent. */
-export const OUTBOX_DIR = join(APP_ROOT, 'state', 'outbox');
 
 export interface OutboxEntry {
   envelope: DraftEnvelope;
@@ -24,42 +9,40 @@ export interface OutboxEntry {
   attempts: number;
 }
 
-function entryPath(dir: string, id: string): string {
-  return join(dir, `${id.replace(/[^a-zA-Z0-9-]+/g, '-')}.json`);
-}
-
-function writeEntry(dir: string, entry: OutboxEntry): void {
-  mkdirSync(dir, { recursive: true });
-  const path = entryPath(dir, entry.envelope.id);
-  const tmp = path + '.tmp';
-  writeFileSync(tmp, JSON.stringify(entry, null, 2) + '\n');
-  renameSync(tmp, path);
-}
-
+/** Enqueue an outbound envelope. INSERT OR IGNORE: the UNIQUE envelope_id
+    index makes a repeat enqueue for the same id a no-op, so the board's 60s
+    tick and a triage run can both attempt the same send without duplicating
+    the queue entry. */
 export function enqueueOutbox(
   draft: DraftEnvelope,
-  dir: string = OUTBOX_DIR,
+  db: Database = getStateDb(),
   now: number = Date.now()
 ): void {
-  if (existsSync(entryPath(dir, draft.id))) return;
-  writeEntry(dir, { envelope: draft, queuedAt: now, attempts: 0 });
+  runCriticalWrite('outbox enqueue', () => {
+    db.query(
+      'INSERT OR IGNORE INTO outbox (envelope_id, entry) VALUES (?, ?)'
+    ).run(
+      draft.id,
+      JSON.stringify({ envelope: draft, queuedAt: now, attempts: 0 })
+    );
+  });
 }
 
-export function readOutbox(dir: string = OUTBOX_DIR): OutboxEntry[] {
-  if (!existsSync(dir)) return [];
+/** Every queued entry, in `id` order (insertion order). */
+export function readOutbox(db: Database = getStateDb()): OutboxEntry[] {
+  const rows = db.query('SELECT entry FROM outbox ORDER BY id ASC').all() as {
+    entry: string;
+  }[];
   const out: OutboxEntry[] = [];
-  for (const name of readdirSync(dir)) {
-    if (!name.endsWith('.json')) continue;
+  for (const row of rows) {
     try {
-      const e = JSON.parse(
-        readFileSync(join(dir, name), 'utf8')
-      ) as OutboxEntry;
+      const e = JSON.parse(row.entry) as OutboxEntry;
       if (e.envelope?.id) out.push(e);
     } catch {
       continue;
     }
   }
-  return out.sort((a, b) => a.queuedAt - b.queuedAt);
+  return out;
 }
 
 /** 2xx delivered. 401/403 is the board's credential, not the envelope: the
@@ -80,24 +63,32 @@ export function classifySend(
 
 export async function drainOutbox(
   send: (d: DraftEnvelope) => Promise<number | 'network'>,
-  dir: string = OUTBOX_DIR
+  db: Database = getStateDb()
 ): Promise<{ sent: number; dropped: number; kept: number }> {
   const result = { sent: 0, dropped: 0, kept: 0 };
-  for (const entry of readOutbox(dir)) {
+  for (const entry of readOutbox(db)) {
     const status = await send(entry.envelope);
     const cls = classifySend(status);
-    if (cls === 'sent') {
-      result.sent++;
-      rmSync(entryPath(dir, entry.envelope.id), { force: true });
-    } else if (cls === 'drop') {
-      result.dropped++;
-      console.error(
-        `outbox: dropping ${entry.envelope.type} ${entry.envelope.id} to ${entry.envelope.to} (${status})`
-      );
-      rmSync(entryPath(dir, entry.envelope.id), { force: true });
+    if (cls === 'sent' || cls === 'drop') {
+      if (cls === 'drop') {
+        console.error(
+          `outbox: dropping ${entry.envelope.type} ${entry.envelope.id} to ${entry.envelope.to} (${status})`
+        );
+      }
+      runCriticalWrite('outbox dequeue', () => {
+        db.query('DELETE FROM outbox WHERE envelope_id = ?').run(
+          entry.envelope.id
+        );
+      });
+      result[cls === 'sent' ? 'sent' : 'dropped']++;
     } else {
       result.kept++;
-      writeEntry(dir, { ...entry, attempts: entry.attempts + 1 });
+      runCriticalWrite('outbox retry bump', () => {
+        db.query('UPDATE outbox SET entry = ? WHERE envelope_id = ?').run(
+          JSON.stringify({ ...entry, attempts: entry.attempts + 1 }),
+          entry.envelope.id
+        );
+      });
     }
   }
   return result;

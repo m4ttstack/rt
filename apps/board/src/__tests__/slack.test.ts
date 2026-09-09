@@ -1,30 +1,40 @@
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import type { Database } from 'bun:sqlite';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
 import {
-  adoptLegacyIndex,
   attachSlack,
   buildPermalink,
   buildThreadPermalink,
   extractMrUrls,
-  legacyIndexPath,
   matchReviewMessage,
   readIndex,
   readSlackRefs,
   slackIndexPath,
-  slackRefPath,
   slackSweepTargets,
   sweepSlackRefs,
   writeIndex,
+  writeSlackRef,
   type SlackIndex,
   type SlackMessage,
   type SlackRef,
 } from '../slack.ts';
+import { openStateDb } from '../state/db.ts';
 
 const URL_A = 'https://gitlab.com/acme/webapp/-/merge_requests/4821';
 const URL_B = 'https://gitlab.com/acme/webapp/-/merge_requests/4822';
+
+let dir: string;
+let db: Database;
+beforeEach(() => {
+  dir = mkdtempSync(join(tmpdir(), 'slack-'));
+  db = openStateDb(join(dir, 'state.db'));
+});
+afterEach(() => {
+  rmSync(dir, { recursive: true, force: true });
+});
 
 function msg(ts: string, text: string, user = 'U1'): SlackMessage {
   return { ts, user, text };
@@ -98,15 +108,6 @@ describe('extractMrUrls', () => {
   });
 });
 
-describe('slackRefPath', () => {
-  test('is deterministic and slugs the url', () => {
-    expect(slackRefPath(URL_A, '/s')).toBe(slackRefPath(URL_A, '/s'));
-    expect(slackRefPath(URL_A, '/s').startsWith('/s/')).toBe(true);
-    expect(slackRefPath(URL_A, '/s').endsWith('.json')).toBe(true);
-    expect(slackRefPath(URL_A, '/s')).not.toBe(slackRefPath(URL_B, '/s'));
-  });
-});
-
 describe('slackIndexPath', () => {
   test('is stable per channel and distinct across channels', () => {
     expect(slackIndexPath('code-review')).not.toBe(
@@ -115,110 +116,60 @@ describe('slackIndexPath', () => {
     expect(slackIndexPath('code-review')).toBe(slackIndexPath('code-review'));
   });
 
-  test('slugs unsafe characters and lives under the given dir', () => {
-    expect(slackIndexPath('pod/weird name!', '/s')).toBe(
-      '/s/slack-index-pod-weird-name-.json'
-    );
+  test('slugs unsafe characters', () => {
+    expect(slackIndexPath('pod/weird name!')).toBe('pod-weird-name-');
   });
 });
 
 describe('readIndex / writeIndex per-channel', () => {
-  let dir: string;
-  beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'slack-idx-'));
-  });
-  afterEach(() => {
-    rmSync(dir, { recursive: true, force: true });
+  test('with nothing written yet, a fresh install starts with null per channel', () => {
+    expect(readIndex('code-review', db)).toBeNull();
+    expect(readIndex('team-codeowners', db)).toBeNull();
   });
 
-  test('readIndex never touches the legacy file -- adoption is a separate, id-verified step', () => {
-    const legacy: SlackIndex = {
-      channelId: 'C1',
-      teamDomain: 'acme.slack.com',
-      lastTs: '100.0',
-      messages: [],
-    };
-    writeFileSync(legacyIndexPath(dir), JSON.stringify(legacy));
-    expect(readIndex('code-review', dir)).toBeNull();
-    expect(existsSync(legacyIndexPath(dir))).toBe(true); // untouched
-  });
-
-  test('with no legacy file, a fresh install just starts with null per channel', () => {
-    expect(readIndex('code-review', dir)).toBeNull();
-    expect(readIndex('team-codeowners', dir)).toBeNull();
-  });
-
-  test('writeIndex writes to the channel-specific path, independent of other channels', () => {
+  test('writeIndex writes under the channel-specific key, independent of other channels', () => {
     const idx: SlackIndex = {
       channelId: 'C2',
       teamDomain: 'acme.slack.com',
       lastTs: '200.0',
       messages: [],
     };
-    writeIndex('team-codeowners', idx, dir);
-    expect(readIndex('team-codeowners', dir)).toEqual(idx);
-    expect(readIndex('code-review', dir)).toBeNull();
+    writeIndex('team-codeowners', idx, db);
+    expect(readIndex('team-codeowners', db)).toEqual(idx);
+    expect(readIndex('code-review', db)).toBeNull();
   });
 });
 
-describe('adoptLegacyIndex', () => {
-  let dir: string;
-  beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'slack-idx-'));
-  });
-  afterEach(() => {
-    rmSync(dir, { recursive: true, force: true });
-  });
-
-  // The legacy index's channelId is the real Slack id of whichever channel a
-  // pre-tabs install was actually using -- here, "code-review"'s.
-  const legacy: SlackIndex = {
-    channelId: 'C1',
-    teamDomain: 'acme.slack.com',
-    lastTs: '100.0',
-    messages: [],
-  };
-
-  test('adopts when the resolved channel id matches (the default channel winning the race)', () => {
-    writeFileSync(legacyIndexPath(dir), JSON.stringify(legacy));
-    const adopted = adoptLegacyIndex('code-review', 'C1', dir);
-    expect(adopted).toEqual(legacy);
-    expect(existsSync(legacyIndexPath(dir))).toBe(false); // consumed
-    expect(readIndex('code-review', dir)).toEqual(legacy);
-  });
-
-  test('refuses when the resolved channel id does not match (a codeowners tab winning the race), leaving the legacy file for its real owner', () => {
-    writeFileSync(legacyIndexPath(dir), JSON.stringify(legacy));
-    // team-codeowners's own resolved id ("C2") is not code-review's ("C1").
-    const adopted = adoptLegacyIndex('team-codeowners', 'C2', dir);
-    expect(adopted).toBeNull();
-    expect(readIndex('team-codeowners', dir)).toBeNull(); // no fresh file written by adoptLegacyIndex itself
-    expect(existsSync(legacyIndexPath(dir))).toBe(true); // legacy file untouched, still there for code-review
-    expect(readIndex('code-review', dir)).toBeNull(); // not adopted for code-review either -- still pending
-
-    // The default channel can still adopt it afterward.
-    const laterAdopted = adoptLegacyIndex('code-review', 'C1', dir);
-    expect(laterAdopted).toEqual(legacy);
-    expect(existsSync(legacyIndexPath(dir))).toBe(false);
-    expect(readIndex('code-review', dir)).toEqual(legacy);
-  });
-
-  test('returns null with no legacy file to adopt', () => {
-    expect(adoptLegacyIndex('code-review', 'C1', dir)).toBeNull();
-  });
-
-  test('returns null (does not overwrite) when the channel already has its own index', () => {
-    const own: SlackIndex = {
-      channelId: 'C1',
-      teamDomain: 'acme.slack.com',
-      lastTs: '50.0',
-      messages: [],
+describe('writeSlackRef critical flag', () => {
+  test('a busy write is swallowed by default, but retried-then-thrown when critical', () => {
+    const ref: SlackRef = {
+      mrUrl: URL_A,
+      iid: 1,
+      status: 'found',
+      checkedAt: 1,
     };
-    writeIndex('code-review', own, dir);
-    writeFileSync(legacyIndexPath(dir), JSON.stringify(legacy));
-    expect(adoptLegacyIndex('code-review', 'C1', dir)).toBeNull();
-    expect(readIndex('code-review', dir)).toEqual(own); // untouched
-    expect(existsSync(legacyIndexPath(dir))).toBe(true); // legacy left alone too
+    const originalQuery = db.query.bind(db);
+    (db as unknown as { query: typeof db.query }).query = ((sql: string) => {
+      if (sql.includes('INSERT INTO slack_refs')) {
+        throw Object.assign(new Error('database is locked'), {
+          code: 'SQLITE_BUSY',
+        });
+      }
+      return originalQuery(sql);
+    }) as typeof db.query;
+
+    try {
+      // reactToMR has already posted a Slack reply by the time it calls
+      // writeSlackRef(..., true); a swallowed write there means the next
+      // call posts a duplicate. Every other caller only caches a lookup, so
+      // the default (uncritical) path may silently skip a busy write.
+      expect(() => writeSlackRef(ref, db, false)).not.toThrow();
+      expect(readSlackRefs(db).size).toBe(0);
+
+      expect(() => writeSlackRef(ref, db, true)).toThrow();
+    } finally {
+      (db as unknown as { query: typeof db.query }).query = originalQuery;
+    }
   });
 });
 
@@ -375,14 +326,6 @@ describe('slackSweepTargets', () => {
 
 describe('sweepSlackRefs', () => {
   let api: ReturnType<typeof mockSlackApi>;
-  // Indexes only ever grow and refs persist, so each sweep starts from an
-  // empty state root or an earlier test's channel history leaks in.
-  beforeEach(() =>
-    rmSync(join(process.env.BOARD_APP_ROOT!, 'state'), {
-      recursive: true,
-      force: true,
-    })
-  );
   afterEach(() => api.restore());
 
   test('syncs each channel once, then resolves every target against that index', async () => {
@@ -398,11 +341,11 @@ describe('sweepSlackRefs', () => {
         channel: 'code-review',
       },
     ];
-    await sweepSlackRefs('tok', targets, { gapMs: 0 });
+    await sweepSlackRefs('tok', targets, { gapMs: 0, db });
     expect(api.calls.filter(c => c === 'conversations.history')).toHaveLength(
       1
     );
-    const refs = readSlackRefs();
+    const refs = readSlackRefs(db);
     expect(refs.get(URL_A)?.status).toBe('found');
     expect(refs.get(URL_B)?.status).toBe('notfound');
     expect(refs.get(targets[2]!.mrUrl)?.status).toBe('notfound');
@@ -422,11 +365,11 @@ describe('sweepSlackRefs', () => {
         channel: 'acme-channel',
       },
     ];
-    await sweepSlackRefs('tok', targets, { gapMs: 0 });
+    await sweepSlackRefs('tok', targets, { gapMs: 0, db });
     expect(api.calls.filter(c => c === 'conversations.history')).toHaveLength(
       2
     );
-    expect(readSlackRefs().get(URL_B)?.status).toBe('found');
+    expect(readSlackRefs(db).get(URL_B)?.status).toBe('found');
   });
 
   test('a failing channel sync is reported and does not stop the other channel', async () => {
@@ -435,8 +378,8 @@ describe('sweepSlackRefs', () => {
       { mrUrl: URL_A, iid: 1, channel: 'no-such-channel' },
       { mrUrl: URL_B, iid: 2, channel: 'acme-channel' },
     ];
-    const result = await sweepSlackRefs('tok', targets, { gapMs: 0 });
+    const result = await sweepSlackRefs('tok', targets, { gapMs: 0, db });
     expect(result.failed).toBe(1);
-    expect(readSlackRefs().get(URL_B)?.status).toBe('notfound');
+    expect(readSlackRefs(db).get(URL_B)?.status).toBe('notfound');
   });
 });
