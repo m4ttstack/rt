@@ -1809,14 +1809,21 @@
   background: var(--card);
   font-size: var(--gate-font-meta);
 }
+/* The pinned header wears its own band: bleeds through the pane padding to
+   the frame, a shade under the card ground, sealed with a soft rule. */
 .tui-triage-context-label {
   font-family: var(--font-sans);
   font-size: var(--gate-font-title);
   font-weight: 600;
   line-height: 1.4;
   color: var(--accent-text);
-  margin-bottom: 0.55rem;
   flex-shrink: 0;
+  margin: -1rem -1.1rem 0.55rem;
+  padding: 0.6rem 1.1rem;
+  background: color-mix(in srgb, var(--fg) 4%, var(--card));
+  border-bottom: 1px solid var(--border-soft);
+  border-radius: calc(var(--gate-radius-card) - 1px)
+    calc(var(--gate-radius-card) - 1px) 0 0;
 }
 /* The scroll edge is the pane border, not the inner padding: the body bleeds
    through the right padding and restores it inside, so the thin bar hugs the
