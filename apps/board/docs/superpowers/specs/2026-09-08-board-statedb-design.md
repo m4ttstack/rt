@@ -57,10 +57,10 @@ pointing at a different db than it opened. Panes never need the env.
   `getStateDb()`, `openStateDb(path)` seam for tests, `closeStateDb()`.
   Pragmas on every open, in order: `busy_timeout` first, then
   `journal_mode = WAL`, then `synchronous = NORMAL`.
-- Busy policy per writer flavor, rt's split: the long-running server defers
-  cache-class writes on SQLITE_BUSY (warn and retry next sweep) but retries
-  lifecycle and queue writes with short bounded backoff; CLIs wait
-  (5000ms busy_timeout).
+- Busy policy per writer flavor, rt's split, implemented as a small
+  `busy.ts` (bounded-retry `runCriticalWrite` for lifecycle rows and the
+  outbox; catch-warn-continue `persistOrWarn` for cache-class writes);
+  CLIs wait (5000ms busy_timeout), the server runs at 250ms.
 - `PRAGMA user_version` migrations, ordered in-code list, `BEGIN IMMEDIATE`
   with a re-read inside the transaction. All DDL `IF NOT EXISTS` (max: the
   runner replays V1..Vn on every bump, and SCHEMA_VERSION is claimed across
@@ -97,8 +97,9 @@ Supporting tables mirroring their modules: `drafts` (keyed mr_url + kind),
 `nudges` (keyed id), `nudges_sent` (keyed mr_url), `outbox` (FIFO,
 bounded-retry writes like rt's `notify_queue`), and `slack_refs` (today's
 per-MR `state/slack/` files, keyed mr_url). No `gates` table: per-gate
-files were already retired for the daemon-backed gate cache; only the
-boot cleanup of the leftover directory remains.
+files were already retired for the daemon-backed gate cache, and the
+legacy-dir rename at import time subsumes the old boot cleanup, which is
+deleted.
 
 A namespaced `kv (ns, k, v JSON, updated_at)` for the blobs: the two slack
 index caches, the agent-status cursor, and triage memory
@@ -147,7 +148,10 @@ The v1 migration ends with a one-shot import, guarded by a kv marker:
   moves. Newest `updatedAt` wins per key. Sibling `.md` reports import into
   `report`.
 - After a successful import the legacy dir is renamed
-  `state.imported-<date>`; nothing deletes it.
+  `state.imported-<date>`; nothing deletes it. The pre-tabs single
+  `slack-index.json` cache is deliberately not imported (a channel resync
+  rebuilds it), and pruned lifecycle rows also drop their handle-sibling
+  `.md` scratch files.
 - Installed machines hold JSON state today (max), so the import ships in the
   same release as the cutover.
 

@@ -29,6 +29,8 @@
 **Files:**
 - Create: `apps/board/src/state/db.ts`
 - Create: `apps/board/src/state/kv-blob.ts`
+- Create: `apps/board/src/state/busy.ts`
+- Create: `apps/board/src/state/index.ts` (the barrel; every consumer outside `src/state/` imports through it)
 - Test: `apps/board/src/__tests__/state-db.test.ts`
 
 **Interfaces:**
@@ -41,6 +43,8 @@
   - `getStateDb(flavor?: DbFlavor): Database` lazy singleton; `openStateDb(path: string, flavor?: DbFlavor): Database` explicit seam; `closeStateDb(): void`
   - `SCHEMA_VERSION = 1`
   - `getKvValue<T>(ns: string, key: string, fallback: T, db?: Database): T`, `setKvValue(ns: string, key: string, value: unknown, db?: Database): void`, `deleteKvValue(ns: string, key: string, db?: Database): void`
+  - `busy.ts`: `runCriticalWrite(label: string, fn: () => void): void` (bounded retry, 3 attempts with 50ms backoff, rethrow after; for lifecycle rows and outbox, where a dropped write loses state) and `persistOrWarn(label: string, fn: () => void): void` (catch SQLITE_BUSY, console.error, move on; for cache-class writes: slack refs, indexes, kv cursor). Copy the split from rt's `lib/state/busy.ts`.
+  - `openStateDb` NEVER runs the legacy import; only the real-path `getStateDb()` singleton does (Task 6). Tests opening temp dbs must never touch live JSON trees.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -48,7 +52,7 @@
 // apps/board/src/__tests__/state-db.test.ts
 import { describe, expect, test } from 'bun:test';
 import { Database } from 'bun:sqlite';
-import { mkdtempSync } from 'fs';
+import { mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { openStateDb, SCHEMA_VERSION } from '../state/db.ts';
@@ -78,7 +82,7 @@ describe('state db', () => {
 
   test('unopenable db is quarantined and recreated', () => {
     const path = tempDbPath();
-    Bun.write(path, 'this is not a sqlite database, definitely');
+    writeFileSync(path, 'this is not a sqlite database, definitely');
     const db = openStateDb(path);
     expect((db.query('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(SCHEMA_VERSION);
   });
@@ -164,7 +168,7 @@ CREATE TABLE IF NOT EXISTS outbox (
   envelope_id TEXT NOT NULL,
   entry      TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_outbox_envelope_id ON outbox(envelope_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_outbox_envelope_id ON outbox(envelope_id);
 
 CREATE TABLE IF NOT EXISTS slack_refs (
   mr_url     TEXT PRIMARY KEY,
@@ -283,7 +287,7 @@ git commit -m "board: state.db core, v1 schema, kv blob accessors"
 - Modify: `apps/board/src/respond-state.ts` (same)
 - Modify: `apps/board/src/doctor-state.ts` (same)
 - Test: `apps/board/src/__tests__/agent-states.test.ts`
-- Modify: `apps/board/src/__tests__/review-state.test.ts` (retarget to a temp db via `openStateDb`)
+- Modify: `apps/board/src/__tests__/review-state.test.ts`, `respond-state.test.ts`, `doctor-state.test.ts`, `review-status.test.ts`, `respond-status.test.ts` (all exercise the same file IO; retarget each to a temp db via `openStateDb`)
 
 **Interfaces:**
 - Consumes: Task 1's `getStateDb`, `openStateDb`, `boardStateRoot`.
@@ -296,7 +300,7 @@ git commit -m "board: state.db core, v1 schema, kv blob accessors"
   - `readStates(lane: Lane, db?): Map<string, object>` (keyed mrUrl; each state gets `reportReady: report IS NOT NULL` stamped at read)
   - `readReport(lane: Lane, mrUrl: string, db?): string | null`
   - `setReportByHandle(handle: string, text: string, db?): boolean`
-  - `pruneStates(lane: Lane, keepUrls: ReadonlySet<string>, db?): void`
+  - `pruneStates(lane: Lane, keepUrls: ReadonlySet<string>, db?): void` (also best-effort unlinks each removed row's handle-sibling `.md` scratch file, so pane report handoffs never accumulate)
 - The lane adapters keep their existing exported names as thin wrappers, e.g. `readReviewStates()` returns `readStates('review')` cast to `Map<string, ReviewState>`; `writeReviewState(handle, patch, now?)` first tries `updateByHandle`, and when no row exists it requires `patch.mrUrl` and `patch.iid` to insert, else throws `Error('review state write with no prior row and no identity: <handle>')`. `reviewFilePath(mrUrl)` returns `mintHandle('review', mrUrl)`. `reviewReportPath(handle)` keeps returning the sibling `.md` path (still the scratch handoff a pane writes). `readReviewReport(mrUrl)` reads the db. Prune functions delegate to `pruneStates`.
 - `respond-state.ts` and `doctor-state.ts` mirror this exactly for their own state types and helper exports (`attachResponds`, `attachDoctors`, `respondOutcome` and friends are pure and unchanged).
 
@@ -442,9 +446,11 @@ git commit -m "board: agent_states store; review/respond/doctor state moves to d
 - Modify: `apps/board/bin/review-status.ts`
 - Modify: `apps/board/bin/respond-status.ts`
 - Modify: `apps/board/bin/doctor-status.ts`
-- Modify: `apps/board/bin/gate.ts` (reads gateId/gateKind through the adapter by handle)
+- Modify: `apps/board/src/gates/verbs.ts` (the gate CLI's actual state IO: `readGateVerbState`'s `readFileSync` becomes `readByHandle`; its gate-id writes already flow through `writeReviewState`/`writeRespondState`/`writeDoctorState`, which Task 2 rewired)
+- Modify: `apps/board/bin/gate.ts` (only argv plumbing; the IO lives in verbs.ts)
 - Modify: `apps/board/src/agent-status/emit.ts` (no behavior change; confirm `boardRootFromStatePath` still feeds `appRoot`)
-- Test: `apps/board/src/__tests__/status-bin.test.ts` (extend)
+- Modify: `apps/board/src/server.ts:3002` (the feed's `appRoot: APP_ROOT` becomes `appRoot: boardStateRoot()`; post-cutover panes emit `boardStateRoot()`-derived roots, and a checkout server comparing against APP_ROOT would silently drop every one of its own panes' events)
+- Test: `apps/board/src/__tests__/status-bin.test.ts` (extend), `apps/board/src/__tests__/gates-verbs.test.ts` (retarget from state files to db rows)
 
 **Interfaces:**
 - Consumes: Task 2's `updateByHandle`, `setReportByHandle`, Task 1's `dbPathForRoot`, `openStateDb`; existing `boardRootFromStatePath`.
@@ -455,7 +461,7 @@ git commit -m "board: agent_states store; review/respond/doctor state moves to d
 
 - [ ] **Step 1: Extend the failing test**
 
-Add to `status-bin.test.ts` (which already shells the CLIs; follow its existing harness conventions for invoking `bin/review-status.ts` with a scratch root):
+Add to `status-bin.test.ts`. Its existing cases hand the CLI a shallow `<tmp>/review.json` path; after the rewire the root derivation lands two levels up and no row exists, so rearrange them onto `<root>/state/reviews/<slug>.json` depth with rows inserted first. Then add:
 
 ```ts
 test('review-status writes the db row by handle and ingests the report on done', async () => {
@@ -575,9 +581,9 @@ git commit -m "board: launchers insert claim-ticket rows before pane start"
 - Produces:
   - Each module keeps its exported names; the `dir`/`path` defaulted parameters become optional `db: Database = getStateDb()` parameters (tests pass temp dbs).
   - Rows store the whole object as JSON in the table's blob column (`draft`, `nudge`, `entry`, `ref`), exactly the object the module's interface already defines; keys per the schema in Task 1.
-  - `outbox`: `enqueueOutbox` INSERTs; `drainOutbox`'s reader consumes in `id` order and DELETEs on success; INSERT/DELETE retry with a short bounded backoff (3 attempts) since a dropped queue write loses a peer message.
+  - `outbox`: `enqueueOutbox` INSERTs with `INSERT OR IGNORE` (the UNIQUE envelope_id index preserves today's dedupe-by-id); `drainOutbox`'s reader consumes in `id` order and DELETEs on success; INSERT/DELETE go through `runCriticalWrite` since a dropped queue write loses a peer message. Lifecycle inserts/updates in Tasks 2-4 use `runCriticalWrite` too; slack refs, indexes, and the cursor use `persistOrWarn`.
   - `triage/memory.ts`: `readMemory`/`writeMemory` become kv blob reads/writes (ns `triage`, key `memory`); `writeRefreshedIdentity` becomes a transaction (fresh read + field write). `tryAcquireMemoryLock`/`releaseMemoryLock` are replaced by `tryClaimCron(now, db?): string | false` and `releaseCron(token, db?)` over kv ns `triage`, key `cron-claim` storing `{ token, at }`: a claim younger than 2 minutes refuses, an older one is reclaimed; release deletes only its own token. `bin/triage.ts` swaps to these names.
-  - `slack.ts`: `writeSlackRef`/`readSlackRefs` use `slack_refs`; `readIndex`/`writeIndex` use kv ns `slack-index`, key = the channel id (today's per-channel index file name suffix); `adoptLegacyIndex` is deleted (the Task 6 import owns legacy data).
+  - `slack.ts`: `writeSlackRef`/`readSlackRefs` use `slack_refs`; `readIndex(channelName)`/`writeIndex(channelName, ...)` use kv ns `slack-index`, key = the channel NAME slug exactly as `slackIndexPath` slugs it today (the files are `state/slack-index-<name-slug>.json`; nothing is keyed by channel id); `adoptLegacyIndex` is deleted, and the pre-tabs single `state/slack-index.json` cache is deliberately dropped rather than imported (it is a cache; one channel resync rebuilds it).
 
 - [ ] **Step 1: Retarget each module's tests, add the cron-claim cases**
 
@@ -624,7 +630,7 @@ git commit -m "board: drafts, nudges, outbox, slack, triage memory and cursor mo
 
 **Interfaces:**
 - Consumes: every Task 1/2/5 store writer; `boardStateRoot()`.
-- Produces: `importLegacyState(db: Database, roots: string[]): { imported: number, skipped: number }`, invoked from `openStateDb` after `runMigrations` when `getKvValue('meta', 'legacy-import-done', false, db)` is false; `roots` defaults to the dedup of `[APP_ROOT, boardStateRoot()]`.
+- Produces: `importLegacyState(db: Database, roots: string[]): { imported: number, skipped: number }`, invoked ONLY from `getStateDb()` (the real-path singleton) after `runMigrations`, when `getKvValue('meta', 'legacy-import-done', false, db)` is false, with roots = dedup of `[APP_ROOT, boardStateRoot()]`. `openStateDb` never imports: tests hand `importLegacyState` their own fixture roots explicitly, and temp dbs never touch live trees.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -642,7 +648,7 @@ Build a fixture legacy tree in a temp dir:
 <root>/state/slack/<slug>.json
 <root>/state/auto-dispatch.json
 <root>/state/agent-status-cursor    (raw string)
-<root>/slack-index-<channel>.json
+<root>/state/slack-index-<channel-name-slug>.json
 ```
 
 Cases:
@@ -679,7 +685,7 @@ git commit -m "board: one-shot legacy JSON import into state.db"
 ### Task 7: sweep the stragglers and gate the pattern
 
 **Files:**
-- Modify: `apps/board/src/server.ts` (db flavor `server` at boot; prune sweeps already store-backed; boot cleanup keeps removing `GATE_DIR` leftovers and now also tolerates an absent legacy `state/`)
+- Modify: `apps/board/src/server.ts` (db flavor `server` at boot; prune sweeps already store-backed; the `GATE_DIR` boot cleanup is DELETED along with the `GATE_DIR` constant in `src/gates/store.ts`, since Task 6's rename of the whole legacy `state/` dir subsumes it and the purity guard forbids the pattern)
 - Modify: `apps/board/src/app-root.ts` (doc comment: APP_ROOT owns config.json and .env only)
 - Modify: `apps/board/AGENTS.md` or `apps/board/README.md` state sections to describe `~/.mattstack/board/state.db`, `BOARD_STATE_DB`, and the claim ticket
 - Test: `apps/board/src/__tests__/state-purity.test.ts` (new)
