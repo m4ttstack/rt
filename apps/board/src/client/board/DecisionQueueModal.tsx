@@ -53,14 +53,6 @@ function DecisionQueueModal({
       closeGlyph="✕"
     >
       <div className="tui-triage-queue-row">
-        <span className="tui-triage-pos">
-          gate {position} of {states.length}
-        </span>
-        <span className="tui-triage-pips">
-          {states.map((state, i) => (
-            <i key={i} className="tui-triage-pip" data-state={state} />
-          ))}
-        </span>
         <span className="tui-triage-head-actions">
           {gate.status === 'parked' ? (
             gate.domain && (
@@ -201,12 +193,24 @@ function DecisionQueueModal({
           </div>
         );
       })()}
-      {nextPeek && (
+      <div className="tui-triage-footer">
         <div className="tui-triage-peek">
-          <span className="tui-triage-peek-k">next:</span>
-          <span>{nextPeek}</span>
+          {nextPeek && (
+            <>
+              <span className="tui-triage-peek-k">next:</span>
+              <span>{nextPeek}</span>
+            </>
+          )}
         </div>
-      )}
+        <span className="tui-triage-pips">
+          {states.map((state, i) => (
+            <i key={i} className="tui-triage-pip" data-state={state} />
+          ))}
+        </span>
+        <span className="tui-triage-pos">
+          gate {position} of {states.length}
+        </span>
+      </div>
     </Modal>
   );
 }
