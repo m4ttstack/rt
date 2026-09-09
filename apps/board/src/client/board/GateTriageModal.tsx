@@ -1,7 +1,7 @@
 import type { GateDomain } from '@mattstack/gate-kit';
 import { Chip, Markdown, Modal } from '@mattstack/tui-kit';
 import type { GateRow } from '../../gates/store.ts';
-import { extractTicketId } from '../../ticket.ts';
+import { extractTicketId, ticketUrl } from '../../ticket.ts';
 import type { BoardMRWithReview } from '../types.ts';
 import { ago, cleanTitle } from './format.ts';
 import { AnsweredChip, GateForm, useGateForm } from './GateCard.tsx';
@@ -105,9 +105,15 @@ function GateTriageModal({
         <div className="tui-triage-row-1">
           <span className="tui-title">{cleanTitle(mr.title)}</span>
           {mr.sourceBranch && extractTicketId(mr.sourceBranch, mr.title) && (
-            <span className="tui-ticket">
+            <a
+              className="tui-ticket"
+              href={ticketUrl(extractTicketId(mr.sourceBranch, mr.title)!)}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={`open ${extractTicketId(mr.sourceBranch, mr.title)} in Linear`}
+            >
               {extractTicketId(mr.sourceBranch, mr.title)}
-            </span>
+            </a>
           )}
         </div>
         <div className="tui-row-2">
