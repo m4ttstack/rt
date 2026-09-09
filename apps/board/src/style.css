@@ -1686,21 +1686,23 @@
 .tui-triage-modal[data-context] {
   max-width: 940px;
 }
+/* Context sits ABOVE the form, the way a real pane reads: transcript on
+   top, prompt below. The pane scrolls on its own past its cap. */
 .tui-triage-body {
   display: flex;
-  align-items: flex-start;
-  gap: 1.1rem;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.8rem;
   min-height: 0;
 }
 .tui-triage-context {
-  flex: 1 1 auto;
   min-width: 0;
-  max-height: 56vh;
+  max-height: 46vh;
   overflow-y: auto;
   padding: 0.6rem 0.8rem;
   border: 1px solid var(--border-soft);
   border-radius: 6px;
-  background: var(--chrome);
+  background: var(--card);
   font-size: 0.78rem;
 }
 .tui-triage-context-label {
@@ -1711,23 +1713,10 @@
   margin-bottom: 0.4rem;
 }
 .tui-triage-form-col {
-  flex: 0 0 400px;
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
-}
-@media (max-width: 900px) {
-  .tui-triage-body {
-    flex-direction: column;
-  }
-  .tui-triage-form-col {
-    flex: 1 1 auto;
-    width: 100%;
-  }
-  .tui-triage-context {
-    max-height: 32vh;
-  }
 }
 .tui-triage-strip {
   display: flex;
