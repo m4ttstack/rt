@@ -1,10 +1,9 @@
 import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { Database } from 'bun:sqlite';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
-import { openStateDb } from '../state/db.ts';
 import {
   launchReReview,
   type ReReviewCtx,
@@ -15,6 +14,7 @@ import {
   reviewFilePath,
   writeReviewState,
 } from '../review-state.ts';
+import { openStateDb } from '../state/db.ts';
 
 const URL_A = 'https://gitlab.com/acme/webapp/-/merge_requests/4821';
 const IID = 4821;
@@ -69,7 +69,8 @@ function makeIo(over: Partial<ReReviewIo> = {}): ReReviewIo {
       };
     },
     reviewFilePath: mrUrl => reviewFilePath(mrUrl),
-    writeReviewState: (path, patch, now) => writeReviewState(path, patch, now, db),
+    writeReviewState: (path, patch, now) =>
+      writeReviewState(path, patch, now, db),
     readReviewStates: () => readReviewStates(db),
     ...over,
   };
@@ -88,13 +89,18 @@ afterEach(() => {
 
 describe('launchReReview: agentId on file (arm i -- resumeAgentPane)', () => {
   beforeEach(() => {
-    writeReviewState(reviewFilePath(URL_A), {
-      mrUrl: URL_A,
-      iid: IID,
-      status: 'done',
-      sessionId: 'sess-old',
-      agentId: 'agent-old',
-    }, Date.now(), db);
+    writeReviewState(
+      reviewFilePath(URL_A),
+      {
+        mrUrl: URL_A,
+        iid: IID,
+        status: 'done',
+        sessionId: 'sess-old',
+        agentId: 'agent-old',
+      },
+      Date.now(),
+      db
+    );
   });
 
   test('resumes through resumeAgentPane, never launchLegacyResume, with the dispatchPrompt re-review prompt', async () => {
@@ -184,12 +190,17 @@ describe('launchReReview: agentId on file (arm i -- resumeAgentPane)', () => {
 
 describe('launchReReview: sessionId only on file, no agentId (arm ii -- launchLegacyResume)', () => {
   beforeEach(() => {
-    writeReviewState(reviewFilePath(URL_A), {
-      mrUrl: URL_A,
-      iid: IID,
-      status: 'done',
-      sessionId: 'sess-abc',
-    }, Date.now(), db);
+    writeReviewState(
+      reviewFilePath(URL_A),
+      {
+        mrUrl: URL_A,
+        iid: IID,
+        status: 'done',
+        sessionId: 'sess-abc',
+      },
+      Date.now(),
+      db
+    );
   });
 
   test('resumes through launchLegacyResume, never resumeAgentPane, with the SAME dispatchPrompt re-review prompt', async () => {
@@ -346,11 +357,16 @@ describe('launchReReview: nothing on file (arm iii -- fresh launchReview)', () =
   });
 
   test('a state file without a sessionId or agentId still takes the fresh path', async () => {
-    writeReviewState(reviewFilePath(URL_A), {
-      mrUrl: URL_A,
-      iid: IID,
-      status: 'done',
-    }, Date.now(), db);
+    writeReviewState(
+      reviewFilePath(URL_A),
+      {
+        mrUrl: URL_A,
+        iid: IID,
+        status: 'done',
+      },
+      Date.now(),
+      db
+    );
 
     const res = await launchReReview(URL_A, IID, CTX, makeIo(), noSkillPath);
 

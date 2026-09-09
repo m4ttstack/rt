@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite';
 
+import { draftBinPath } from './herdr.ts';
 import {
   getStateDb,
   insertAgentState,
@@ -8,7 +9,6 @@ import {
   readStates,
   updateByHandle,
 } from './state/index.ts';
-import { draftBinPath } from './herdr.ts';
 
 /**
  * Doctor lifecycle for MRs with mechanical breakage (CI failing, merge

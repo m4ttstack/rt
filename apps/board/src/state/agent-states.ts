@@ -199,7 +199,10 @@ export function setReportByHandle(
     very end). Only the file read is caught here -- a db error out of
     setReportByHandle propagates, it is never swallowed alongside a routine
     "no report yet" ENOENT. */
-export function ingestReport(handle: string, db: Database = getStateDb()): void {
+export function ingestReport(
+  handle: string,
+  db: Database = getStateDb()
+): void {
   let text: string;
   try {
     text = readFileSync(reportPathForHandle(handle), 'utf8');

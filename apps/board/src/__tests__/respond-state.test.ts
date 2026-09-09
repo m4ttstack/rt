@@ -1,11 +1,9 @@
 import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { Database } from 'bun:sqlite';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
-import { setReportByHandle } from '../state/agent-states.ts';
-import { openStateDb } from '../state/db.ts';
 import {
   pruneRespondStates,
   readRespondReport,
@@ -14,6 +12,8 @@ import {
   respondReportPath,
   writeRespondState,
 } from '../respond-state.ts';
+import { setReportByHandle } from '../state/agent-states.ts';
+import { openStateDb } from '../state/db.ts';
 
 let dir: string;
 let db: Database;
@@ -93,7 +93,12 @@ describe('writeRespondState counts', () => {
 describe('writeRespondState identity', () => {
   test('a write with no prior row and no identity throws loudly', () => {
     expect(() =>
-      writeRespondState(respondFilePath(URL_A), { status: 'drafting' }, 1000, db)
+      writeRespondState(
+        respondFilePath(URL_A),
+        { status: 'drafting' },
+        1000,
+        db
+      )
     ).toThrow(/no prior row and no identity/);
   });
 });
@@ -154,7 +159,12 @@ describe('respond report', () => {
   test('readRespondReport returns the saved markdown, or null when absent', () => {
     expect(readRespondReport(URL_A, db)).toBeNull();
     const p = respondFilePath(URL_A);
-    writeRespondState(p, { mrUrl: URL_A, iid: 4821, status: 'drafting' }, 1000, db);
+    writeRespondState(
+      p,
+      { mrUrl: URL_A, iid: 4821, status: 'drafting' },
+      1000,
+      db
+    );
     setReportByHandle(p, '# adjudication\n\nlooks good', db);
     expect(readRespondReport(URL_A, db)).toBe('# adjudication\n\nlooks good');
   });
@@ -177,10 +187,20 @@ describe('pruneRespondStates', () => {
   const OTHER = 'https://gitlab.com/acme/webapp/-/merge_requests/1';
   test("deletes an off-board state's sibling report with it", () => {
     const pathA = respondFilePath(URL_A);
-    writeRespondState(pathA, { mrUrl: URL_A, iid: 4821, status: 'done' }, 1000, db);
+    writeRespondState(
+      pathA,
+      { mrUrl: URL_A, iid: 4821, status: 'done' },
+      1000,
+      db
+    );
     setReportByHandle(pathA, '# adjudication A', db);
     const pathOther = respondFilePath(OTHER);
-    writeRespondState(pathOther, { mrUrl: OTHER, iid: 1, status: 'done' }, 1000, db);
+    writeRespondState(
+      pathOther,
+      { mrUrl: OTHER, iid: 1, status: 'done' },
+      1000,
+      db
+    );
     setReportByHandle(pathOther, '# adjudication OTHER', db);
 
     pruneRespondStates(new Set([URL_A]), db);

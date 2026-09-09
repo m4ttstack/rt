@@ -1,7 +1,7 @@
-import { Database } from 'bun:sqlite';
 import { mkdirSync, renameSync } from 'fs';
 import { homedir } from 'os';
 import { basename, dirname, join, resolve } from 'path';
+import { Database } from 'bun:sqlite';
 
 import { APP_ROOT } from '../app-root.ts';
 import { getKvValue } from './kv-blob.ts';
@@ -107,7 +107,9 @@ function runMigrations(db: Database): void {
   // busy_timeout is already set by the caller (openAt) before this runs.
   db.exec('BEGIN IMMEDIATE');
   try {
-    const v = (db.query('PRAGMA user_version').get() as { user_version: number }).user_version;
+    const v = (
+      db.query('PRAGMA user_version').get() as { user_version: number }
+    ).user_version;
     for (let i = v; i < MIGRATIONS.length; i++) MIGRATIONS[i]!(db);
     db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
     db.exec('COMMIT');
@@ -135,7 +137,8 @@ export function openStateDb(path: string, flavor: DbFlavor = 'cli'): Database {
     return openAt(path, flavor);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    if (!/SQLITE_CORRUPT|SQLITE_NOTADB|file is not a database/i.test(msg)) throw err;
+    if (!/SQLITE_CORRUPT|SQLITE_NOTADB|file is not a database/i.test(msg))
+      throw err;
     const quarantine = `${path}.corrupt-${new Date().toISOString().slice(0, 10)}`;
     renameSync(path, quarantine);
     console.error(`state.db unopenable, quarantined to ${quarantine}: ${msg}`);

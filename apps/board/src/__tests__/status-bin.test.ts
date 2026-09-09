@@ -220,7 +220,9 @@ describe('the status writer the board hands out', () => {
 
   test('doctor-draft with --state derives its db from the handle, not the ambient default', async () => {
     const root = mkdtempSync(join(tmpdir(), 'board-statusbin-draft-'));
-    const otherHome = mkdtempSync(join(tmpdir(), 'board-statusbin-draft-home-'));
+    const otherHome = mkdtempSync(
+      join(tmpdir(), 'board-statusbin-draft-home-')
+    );
     const handle = mintHandle('doctor', 'https://x/mr/11', root);
 
     const proc = Bun.spawn(
@@ -248,9 +250,9 @@ describe('the status writer the board hands out', () => {
     }[];
     expect(rows.length).toBe(1);
     expect(rows[0]!.draft).toContain('job fails on main');
-    expect(
-      existsSync(join(otherHome, '.mattstack', 'board', 'state.db'))
-    ).toBe(false);
+    expect(existsSync(join(otherHome, '.mattstack', 'board', 'state.db'))).toBe(
+      false
+    );
   });
 
   test('rejects an unknown subcommand rather than silently doing nothing', async () => {

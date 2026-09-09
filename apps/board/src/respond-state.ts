@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite';
 
+import type { RespondStatus } from './respond-outcome.ts';
 import {
   getStateDb,
   insertAgentState,
@@ -10,7 +11,6 @@ import {
   reportPathForHandle,
   updateByHandle,
 } from './state/index.ts';
-import type { RespondStatus } from './respond-outcome.ts';
 
 /**
  * Response-to-review lifecycle. The board owns "queued" (from POST /respond);

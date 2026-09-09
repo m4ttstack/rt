@@ -1,12 +1,12 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { Database } from 'bun:sqlite';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
+import { readReviewReport, readReviewStates } from '../review-state.ts';
 import { insertAgentState, mintHandle } from '../state/agent-states.ts';
 import { openStateDb } from '../state/db.ts';
-import { readReviewReport, readReviewStates } from '../review-state.ts';
 
 let dir: string;
 let dbPath: string;
@@ -75,7 +75,16 @@ describe('review-status CLI', () => {
     const handle = mintHandle('review', URL_A, dir);
     seed(handle, 4821);
     const proc = Bun.spawn(
-      ['bun', 'run', CLI, handle, 'done', 'looks solid', '--outcome', 'approve'],
+      [
+        'bun',
+        'run',
+        CLI,
+        handle,
+        'done',
+        'looks solid',
+        '--outcome',
+        'approve',
+      ],
       { stderr: 'pipe', env: env() }
     );
     const code = await proc.exited;

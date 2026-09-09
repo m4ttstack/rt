@@ -69,9 +69,8 @@ await emitAgentStatus(
 // origin-auto doctor into the JSONL covers actions and outcomes alike.
 if (merged.origin === 'auto') {
   try {
-    const { appendAudit, auditPathForRoot } = await import(
-      '../src/triage/audit.ts'
-    );
+    const { appendAudit, auditPathForRoot } =
+      await import('../src/triage/audit.ts');
     appendAudit(
       {
         ts: Date.now(),

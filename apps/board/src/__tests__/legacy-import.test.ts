@@ -1,4 +1,3 @@
-import { describe, expect, test } from 'bun:test';
 import {
   chmodSync,
   mkdirSync,
@@ -8,9 +7,15 @@ import {
 } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { describe, expect, test } from 'bun:test';
 
-import { closeStateDb, getStateDb, openStateDb, dbPathForRoot } from '../state/db.ts';
 import { readByHandle } from '../state/agent-states.ts';
+import {
+  closeStateDb,
+  dbPathForRoot,
+  getStateDb,
+  openStateDb,
+} from '../state/db.ts';
 import { getKvValue, setKvValue } from '../state/kv-blob.ts';
 import { importLegacyState } from '../state/legacy-import.ts';
 
@@ -90,7 +95,13 @@ describe('importLegacyState', () => {
     });
 
     writeLegacyJson(root, 'outbox/env-1.json', {
-      envelope: { id: 'env-1', to: 'bob', type: 'review-state', sentAt: 5, payload: {} },
+      envelope: {
+        id: 'env-1',
+        to: 'bob',
+        type: 'review-state',
+        sentAt: 5,
+        payload: {},
+      },
       queuedAt: 5,
       attempts: 0,
     });
@@ -125,8 +136,14 @@ describe('importLegacyState', () => {
     expect(result.renamed).toEqual([root]);
 
     const reviewRow = db
-      .query('SELECT state, report, handle FROM agent_states WHERE lane = ? AND mr_url = ?')
-      .get('review', URL_A) as { state: string; report: string | null; handle: string };
+      .query(
+        'SELECT state, report, handle FROM agent_states WHERE lane = ? AND mr_url = ?'
+      )
+      .get('review', URL_A) as {
+      state: string;
+      report: string | null;
+      handle: string;
+    };
     expect(JSON.parse(reviewRow.state).status).toBe('done');
     expect(reviewRow.report).toBe('# report');
 
@@ -145,7 +162,9 @@ describe('importLegacyState', () => {
       .get(URL_A, 'inherited-note') as { draft: string };
     expect(JSON.parse(draftRow.draft).body).toBe('hello');
 
-    const nudgeRow = db.query('SELECT nudge FROM nudges WHERE id = ?').get('nudge-1') as {
+    const nudgeRow = db
+      .query('SELECT nudge FROM nudges WHERE id = ?')
+      .get('nudge-1') as {
       nudge: string;
     };
     expect(JSON.parse(nudgeRow.nudge).from).toBe('alice');
@@ -173,7 +192,12 @@ describe('importLegacyState', () => {
     );
     expect(memory.identity?.username).toBe('alice');
 
-    const cursor = getKvValue<number | null>('agent-status', 'cursor', null, db);
+    const cursor = getKvValue<number | null>(
+      'agent-status',
+      'cursor',
+      null,
+      db
+    );
     expect(cursor).toBe(42);
 
     const index = getKvValue<{ channelId: string } | null>(
@@ -185,9 +209,9 @@ describe('importLegacyState', () => {
     expect(index?.channelId).toBe('C1');
 
     // legacy dir renamed, marker set
-    expect(readdirSync(root).some(n => /^state\.imported-\d{4}-\d{2}-\d{2}$/.test(n))).toBe(
-      true
-    );
+    expect(
+      readdirSync(root).some(n => /^state\.imported-\d{4}-\d{2}-\d{2}$/.test(n))
+    ).toBe(true);
     expect(readdirSync(root)).not.toContain('state');
     expect(getKvValue('meta', 'legacy-import-done', false, db)).toBe(true);
   });
@@ -218,7 +242,9 @@ describe('importLegacyState', () => {
     expect(result.renamed.sort()).toEqual([rootNew, rootOld].sort());
 
     const row = db
-      .query('SELECT state, updated_at FROM agent_states WHERE lane = ? AND mr_url = ?')
+      .query(
+        'SELECT state, updated_at FROM agent_states WHERE lane = ? AND mr_url = ?'
+      )
       .get('review', URL_A) as { state: string; updated_at: number };
     expect(JSON.parse(row.state).status).toBe('done');
     expect(row.updated_at).toBe(200);
@@ -286,7 +312,12 @@ describe('importLegacyState', () => {
     const row = db
       .query('SELECT handle FROM agent_states WHERE lane = ? AND mr_url = ?')
       .get('review', URL_A) as { handle: string };
-    const otherRootLegacyPath = join(otherRoot, 'state', 'reviews', 'mr-1.json');
+    const otherRootLegacyPath = join(
+      otherRoot,
+      'state',
+      'reviews',
+      'mr-1.json'
+    );
     expect(row.handle).not.toBe(otherRootLegacyPath);
     expect(readByHandle(row.handle, db)).not.toBeNull();
   });
@@ -366,7 +397,9 @@ describe('importLegacyState', () => {
     importLegacyState(db, [rootA, rootB]);
 
     const row = db
-      .query('SELECT state, updated_at FROM agent_states WHERE lane = ? AND mr_url = ?')
+      .query(
+        'SELECT state, updated_at FROM agent_states WHERE lane = ? AND mr_url = ?'
+      )
       .get('review', URL_A) as { state: string; updated_at: number };
     expect(row.updated_at).toBe(200);
     expect(JSON.parse(row.state).status).toBe('done');

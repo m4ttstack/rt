@@ -1,10 +1,9 @@
 import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { Database } from 'bun:sqlite';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
-import { openStateDb } from '../state/db.ts';
 import {
   doctorFilePath,
   doctorResumeDispatchFields,
@@ -12,6 +11,7 @@ import {
   writeDoctorState,
 } from '../doctor-state.ts';
 import { dispatchPrompt } from '../herdr.ts';
+import { openStateDb } from '../state/db.ts';
 
 let dir: string;
 let db: Database;

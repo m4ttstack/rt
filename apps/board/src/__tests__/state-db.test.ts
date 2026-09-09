@@ -1,8 +1,8 @@
-import { describe, expect, test } from 'bun:test';
-import { Database } from 'bun:sqlite';
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { describe, expect, test } from 'bun:test';
+
 import {
   boardStateRoot,
   closeStateDb,
@@ -20,10 +20,24 @@ function tempDbPath(): string {
 describe('state db', () => {
   test('open migrates to SCHEMA_VERSION with all v1 tables', () => {
     const db = openStateDb(tempDbPath());
-    const version = (db.query('PRAGMA user_version').get() as { user_version: number }).user_version;
+    const version = (
+      db.query('PRAGMA user_version').get() as { user_version: number }
+    ).user_version;
     expect(version).toBe(SCHEMA_VERSION);
-    const tables = (db.query("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[]).map(r => r.name);
-    for (const t of ['agent_states', 'drafts', 'nudges', 'nudges_sent', 'outbox', 'slack_refs', 'kv']) {
+    const tables = (
+      db.query("SELECT name FROM sqlite_master WHERE type='table'").all() as {
+        name: string;
+      }[]
+    ).map(r => r.name);
+    for (const t of [
+      'agent_states',
+      'drafts',
+      'nudges',
+      'nudges_sent',
+      'outbox',
+      'slack_refs',
+      'kv',
+    ]) {
       expect(tables).toContain(t);
     }
   });
@@ -32,21 +46,29 @@ describe('state db', () => {
     const path = tempDbPath();
     openStateDb(path).close();
     const db = openStateDb(path);
-    expect((db.query('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(SCHEMA_VERSION);
+    expect(
+      (db.query('PRAGMA user_version').get() as { user_version: number })
+        .user_version
+    ).toBe(SCHEMA_VERSION);
   });
 
   test('unopenable db is quarantined and recreated', () => {
     const path = tempDbPath();
     writeFileSync(path, 'this is not a sqlite database, definitely');
     const db = openStateDb(path);
-    expect((db.query('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(SCHEMA_VERSION);
+    expect(
+      (db.query('PRAGMA user_version').get() as { user_version: number })
+        .user_version
+    ).toBe(SCHEMA_VERSION);
   });
 
   test('kv round-trips and falls back', () => {
     const db = openStateDb(tempDbPath());
     expect(getKvValue('t', 'missing', 'fallback', db)).toBe('fallback');
     setKvValue('t', 'k', { a: 1 }, db);
-    expect(getKvValue<{ a: number } | null>('t', 'k', null, db)).toEqual({ a: 1 });
+    expect(getKvValue<{ a: number } | null>('t', 'k', null, db)).toEqual({
+      a: 1,
+    });
   });
 });
 
@@ -91,9 +113,9 @@ describe('BOARD_FIXTURE skips the legacy import', () => {
     try {
       const db = getStateDb();
       expect(db.query('SELECT * FROM agent_states').all().length).toBe(0);
-      expect(
-        existsSync(join(root, 'state', 'reviews', 'mr-1.json'))
-      ).toBe(true);
+      expect(existsSync(join(root, 'state', 'reviews', 'mr-1.json'))).toBe(
+        true
+      );
       expect(getKvValue('meta', 'legacy-import-done', false, db)).toBe(false);
     } finally {
       closeStateDb();

@@ -1,11 +1,9 @@
 import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { Database } from 'bun:sqlite';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
-import { setReportByHandle } from '../state/agent-states.ts';
-import { openStateDb } from '../state/db.ts';
 import {
   attachReviews,
   parseReviewRequestBody,
@@ -16,6 +14,8 @@ import {
   reviewReportPath,
   writeReviewState,
 } from '../review-state.ts';
+import { setReportByHandle } from '../state/agent-states.ts';
+import { openStateDb } from '../state/db.ts';
 
 let dir: string;
 let db: Database;
@@ -159,7 +159,12 @@ describe('review report', () => {
 
   test('readReviewStates flags reportReady when a report is on file', () => {
     const p = reviewFilePath(URL_A);
-    writeReviewState(p, { mrUrl: URL_A, iid: 4821, status: 'done' }, 10_000, db);
+    writeReviewState(
+      p,
+      { mrUrl: URL_A, iid: 4821, status: 'done' },
+      10_000,
+      db
+    );
     expect(readReviewStates(db).get(URL_A)?.reportReady).toBe(false);
     setReportByHandle(p, '# Review', db);
     expect(readReviewStates(db).get(URL_A)?.reportReady).toBe(true);

@@ -1,12 +1,12 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { Database } from 'bun:sqlite';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
+import { readRespondReport, readRespondStates } from '../respond-state.ts';
 import { insertAgentState, mintHandle } from '../state/agent-states.ts';
 import { openStateDb } from '../state/db.ts';
-import { readRespondReport, readRespondStates } from '../respond-state.ts';
 
 let dir: string;
 let dbPath: string;
@@ -108,7 +108,14 @@ describe('respond-status CLI', () => {
 
   test('rejects counts that are not non-negative integers', async () => {
     expect(
-      await run(seedHandle(nextUrl()), 'done', '--posted', '-1', '--threads', '3')
+      await run(
+        seedHandle(nextUrl()),
+        'done',
+        '--posted',
+        '-1',
+        '--threads',
+        '3'
+      )
     ).toBe(1);
     expect(
       await run(
@@ -121,7 +128,14 @@ describe('respond-status CLI', () => {
       )
     ).toBe(1);
     expect(
-      await run(seedHandle(nextUrl()), 'done', '--posted', 'two', '--threads', '3')
+      await run(
+        seedHandle(nextUrl()),
+        'done',
+        '--posted',
+        'two',
+        '--threads',
+        '3'
+      )
     ).toBe(1);
     expect(await run(seedHandle(nextUrl()), 'done', '--threads', '-3')).toBe(1);
   });

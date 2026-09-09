@@ -3,7 +3,11 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { afterAll, expect, test } from 'bun:test';
 
-import { insertAgentState, mintHandle, setReportByHandle } from '../state/agent-states.ts';
+import {
+  insertAgentState,
+  mintHandle,
+  setReportByHandle,
+} from '../state/agent-states.ts';
 import { openStateDb } from '../state/db.ts';
 
 // Proves the real (non-fixture) /respond/report route -- readRespondReport's

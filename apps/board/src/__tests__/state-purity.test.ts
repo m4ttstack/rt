@@ -1,6 +1,6 @@
-import { describe, expect, test } from 'bun:test';
 import { readdirSync, readFileSync, statSync } from 'fs';
 import { join } from 'path';
+import { describe, expect, test } from 'bun:test';
 
 // apps/board root, regardless of where bun invokes this file from.
 const BOARD_ROOT = join(import.meta.dir, '..', '..');

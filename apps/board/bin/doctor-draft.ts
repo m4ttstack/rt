@@ -37,5 +37,11 @@ const db = state
   ? openStateDb(dbPathForRoot(boardRootFromStatePath(state)), 'cli')
   : getStateDb();
 
-writeDraft(mrUrl, kind, { mrUrl, iid, kind, body, status: 'held' }, Date.now(), db);
+writeDraft(
+  mrUrl,
+  kind,
+  { mrUrl, iid, kind, body, status: 'held' },
+  Date.now(),
+  db
+);
 console.log(`${mrUrl} ${kind}`);

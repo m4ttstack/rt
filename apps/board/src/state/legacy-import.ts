@@ -1,12 +1,12 @@
-import { Database } from 'bun:sqlite';
 import {
   existsSync,
-  readFileSync,
   readdirSync,
+  readFileSync,
   renameSync,
   statSync,
 } from 'fs';
 import { join, resolve } from 'path';
+import { Database } from 'bun:sqlite';
 
 import { mintHandle, type Lane } from './agent-states.ts';
 import { dbPathForRoot } from './db.ts';
@@ -128,7 +128,15 @@ function importLane(db: Database, roots: string[], lane: Lane, t: Tally): void {
       }
       const existing = winners.get(mrUrl);
       if (!existing || updatedAt > existing.updatedAt) {
-        winners.set(mrUrl, { mrUrl, iid, raw, updatedAt, root, filePath, report });
+        winners.set(mrUrl, {
+          mrUrl,
+          iid,
+          raw,
+          updatedAt,
+          root,
+          filePath,
+          report,
+        });
       }
     }
   }
@@ -213,7 +221,8 @@ function importNudges(db: Database, roots: string[], t: Tally): void {
         continue;
       }
       t.imported++;
-      const receivedAt = typeof raw.receivedAt === 'number' ? raw.receivedAt : 0;
+      const receivedAt =
+        typeof raw.receivedAt === 'number' ? raw.receivedAt : 0;
       const existing = winners.get(id);
       if (!existing || receivedAt > existing.receivedAt) {
         winners.set(id, { id, raw, receivedAt });
@@ -400,7 +409,11 @@ function importAutoDispatch(db: Database, roots: string[], t: Tally): void {
   }
 }
 
-function importAgentStatusCursor(db: Database, roots: string[], t: Tally): void {
+function importAgentStatusCursor(
+  db: Database,
+  roots: string[],
+  t: Tally
+): void {
   let winner: { cursor: number; mtime: number } | undefined;
   for (const root of roots) {
     const path = join(root, 'state', 'agent-status-cursor');
@@ -449,7 +462,8 @@ function importSlackIndexes(db: Database, roots: string[], t: Tally): void {
       t.imported++;
       const mtime = mtimeOf(path);
       const existing = winners.get(slug);
-      if (!existing || mtime > existing.mtime) winners.set(slug, { raw: parsed, mtime });
+      if (!existing || mtime > existing.mtime)
+        winners.set(slug, { raw: parsed, mtime });
     }
   }
   for (const [slug, w] of winners) {
