@@ -129,3 +129,34 @@ test('dropping yourself is refused', async () => {
   expect(res.status).toBe(400);
   expect(await res.text()).toContain('this board runs as you');
 });
+
+// The team store owns mattstack.roster here and config.json is never
+// written into fakeHome, so /settings exercises the same store-owned-roster
+// path the config.ts unit tests cover: an unknown username must surface as
+// a 400 (BOARD-26's regression, previously an uncaught throw and a 500),
+// and a known one must persist to the user store rather than a dead file.
+async function settings(body: unknown): Promise<Response> {
+  return fetch(`http://127.0.0.1:${PORT}/settings`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+function storedUser(): Record<string, unknown> {
+  return JSON.parse(
+    readFileSync(join(userDir, 'settings.user.jsonc'), 'utf8')
+  );
+}
+
+test('hiding a roster member writes board.hiddenMembers to the user store', async () => {
+  const res = await settings({ username: 'cy', hidden: true });
+  expect(res.status).toBe(200);
+  expect(storedUser()['board.hiddenMembers']).toContain('cy');
+});
+
+test('hiding an unknown username is a 400, not a 500', async () => {
+  const res = await settings({ username: 'zed', hidden: true });
+  expect(res.status).toBe(400);
+  expect(await res.text()).toBe('unknown member "zed"');
+});
