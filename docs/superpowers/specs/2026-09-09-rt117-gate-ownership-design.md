@@ -67,7 +67,7 @@ The notify seam consults ownership before surfacing a gate to the human:
 
 - Gate owner resolves to a live shepherd session: no human notification at open. The shepherd's push IS the delivery.
 - Gate owner is `human` (includes every `rt herd ask` / `milestone`): notify exactly as today.
-- Escalation: a daemon sweep (piggybacking the existing gate retry cadence) fires ONE human notification for a shepherd-owned gate that is (a) still open past the TTL, or (b) whose owner's push channel is marked dead. The notification names the gate, the herd, and why it escalated. TTL is a registered settings key (`gates.escalationTtlMinutes`, default 10) following the settings-registry checklist.
+- Escalation: a daemon sweep (piggybacking the existing gate retry cadence) fires ONE human notification for a shepherd-owned gate that is (a) still open past the TTL, or (b) whose owner's push channel is marked dead. The notification names the gate, the herd, and why it escalated. TTL is a registered settings key (`rt.gates.escalationTtlMinutes`, default 10) following the settings-registry checklist and the registry's `rt.*` naming convention.
 
 ## 5. Wait-mode discriminator
 
