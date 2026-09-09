@@ -210,7 +210,7 @@ function RowMenu({
     >
       <ContextMenu.Label>!{mr.iid}</ContextMenu.Label>
 
-      {ctx.local && <ContextMenu.Label>panes</ContextMenu.Label>}
+      {ctx.local && <ContextMenu.Label>agent actions</ContextMenu.Label>}
       {ctx.local &&
         reviewMenuItems(mrx.review?.status).map(item => (
           <ContextMenu.Item
