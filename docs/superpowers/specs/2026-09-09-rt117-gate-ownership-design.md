@@ -92,7 +92,7 @@ The notify seam consults ownership before surfacing a gate to the human:
 
 ## Schema
 
-One `SCHEMA_VERSION` bump covering both additive columns (`gates.owner`, `gate_subscriptions.scope`). Repo rules apply: `IF NOT EXISTS` table creation carries the columns, existing-table adds are guarded by `PRAGMA table_info`, and the version number is claimed in #rt before merge (renumber if second).
+`gates.db` is its own sqlite store with an established idempotent migration pattern: the `CREATE TABLE IF NOT EXISTS` blocks carry the new columns (`gates.owner`, `gate_subscriptions.scope`), and existing-table adds ride the store's `PRAGMA table_info` + `ALTER TABLE ADD COLUMN` loop (the same one that added `context`/`origin`). No `state.db` involvement, no `SCHEMA_VERSION` claim needed.
 
 ## Companion work (mattstack-skills, same plan)
 
@@ -104,6 +104,7 @@ The claimview pack's herd-init migrates to `rt herd start` so every shepherded r
 - Redelivery/retry changes for form-blocked panes (disproven as the mechanism; the form is the blocker).
 - `rt bg status/release` stale-claim CLI (flagged on RT-113).
 - Any fs-watcher or wait heartbeat.
+- Process reaping on pane close. A closed pane can orphan SIGTERM-immune dev servers reparented to init (RT-117 item 2 addendum); endpoint claims are not a liveness signal and the agent's own teardown report cannot be trusted, so reaping belongs to the pane-closing layer (herdr). Follow-up outside rt's side of this ticket.
 
 ## Testing
 
