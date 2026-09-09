@@ -376,17 +376,17 @@ Add a new `describe` block at the end of `apps/board/src/__tests__/config-store-
 describe('displayName: stored name beats the GitLab profile', () => {
   test('a stored name wins over the GitLab profile name', () => {
     expect(
-      displayName({ username: 'wescalloway', name: 'Wes Calloway' }, 'D. Faint')
-    ).toBe('Wes Calloway');
+      displayName({ username: 'dee', name: 'Dee Fox' }, 'D. Fox')
+    ).toBe('Dee Fox');
   });
 
   test('the GitLab profile fills in when there is no stored name', () => {
-    expect(displayName({ username: 'samkestrel' }, 'Sam Kestrel')).toBe('Sam Kestrel');
+    expect(displayName({ username: 'bo' }, 'Bo Chen')).toBe('Bo Chen');
   });
 
   test('null when neither side has one', () => {
-    expect(displayName({ username: 'priyamalhotra' }, null)).toBeNull();
-    expect(displayName({ username: 'priyamalhotra' }, undefined)).toBeNull();
+    expect(displayName({ username: 'cy' }, null)).toBeNull();
+    expect(displayName({ username: 'cy' }, undefined)).toBeNull();
   });
 
   test('a blank stored name does not shadow the profile', () => {
@@ -1124,7 +1124,7 @@ git commit -m "board: name field on roster add, inline rename, overlay replaces 
 
 ### Task 6: Migrate the team store and verify in the running board
 
-The code now reads `mattstack.roster` first. This task moves the data so it actually has something to read, and adds the two names.
+The code now reads `mattstack.roster` first. This task moved the data so it actually had something to read, and added display names for two of the entries. The migration has already been performed, so this section is now a historical record of the procedure, not a script to re-run: the roster below is a placeholder shape, not this team's real membership.
 
 **Files:** none. This task writes the team settings store through `rt settings set` and verifies the result.
 
@@ -1134,7 +1134,7 @@ The code now reads `mattstack.roster` first. This task moves the data so it actu
 
 - [ ] **Step 1: Flag the consequence and get a go-ahead**
 
-Tell Matt, in one line, that this write drops `nadia1` (Nadia Fenwick), `nightowl2`, and `MilesChandler-Acme` from `mattstack.roster`, which is the roster boxscore's leaderboard reads, and that `nadia1` and `nightowl2` are already in his `board.hiddenMembers` overlay. Wait for confirmation before Step 3. Do not skip this step: it is a shared team-store write that changes another app's behavior.
+Tell Matt, in one line, that this write drops a handful of usernames (shape only: `gil` (Gil Ortiz), `hana`, and `quinn-at-acme`, the last with an employer name baked into the handle itself, matching the reason this repo has a purity gate) from `mattstack.roster`, which is the roster boxscore's leaderboard reads, and that some of the dropped usernames are already in his `board.hiddenMembers` overlay. Wait for confirmation before Step 3. Do not skip this step: it is a shared team-store write that changes another app's behavior.
 
 - [ ] **Step 2: Capture the current values so the write is reversible**
 
@@ -1143,22 +1143,24 @@ rt settings explain mattstack.roster
 rt settings explain board.members
 ```
 
-Paste both team-scope values into the task report. The team store is git-backed, so `git -C ~/.mattstack/teams/acme-web log -1` also gives a restore point; record that SHA.
+Paste both team-scope values into the task report. The team store is git-backed, so `git -C ~/.mattstack/teams/testteam log -1` also gives a restore point; record that SHA.
 
 - [ ] **Step 3: Write the merged roster**
 
-`board.members` is authoritative. Its six entries, plus the two names Matt supplied, minus the inline `hidden` flag (which `board.hiddenMembers` owns and `mattstack.roster` does not carry):
+`board.members` is authoritative. Its entries, plus the display names supplied for two of them, minus the inline `hidden` flag (which `board.hiddenMembers` owns and `mattstack.roster` does not carry). The shape is `{username, name?}` per entry; the command below shows that shape with placeholder people, not the real roster:
 
 ```bash
 rt settings set mattstack.roster --scope team '[
-  {"username":"m4ttheweric","name":"Matthew Goodwin"},
-  {"username":"samkestrel","name":"Sam Kestrel"},
-  {"username":"owen-at-acme","name":"Owen Marsh"},
-  {"username":"marcovillanueva","name":"Marco Villanueva"},
-  {"username":"priyamalhotra","name":"Priya Malhotra"},
-  {"username":"wescalloway","name":"Wes Calloway"}
+  {"username":"ann","name":"Ann Lee"},
+  {"username":"bo","name":"Bo Chen"},
+  {"username":"cy","name":"Cy Park"},
+  {"username":"dee","name":"Dee Fox"},
+  {"username":"alice","name":"Alice Shaw"},
+  {"username":"bob","name":"Bob Ng"}
 ]'
 ```
+
+Pull the operator's actual usernames and names from that install's own `rt settings explain board.members` output at the time of the write; do not carry values out of this document into a real `rt settings set` call.
 
 - [ ] **Step 4: Verify resolution**
 
@@ -1166,7 +1168,7 @@ rt settings set mattstack.roster --scope team '[
 rt settings explain mattstack.roster
 ```
 
-Expected: the team row shows all six with names. `board.members` is left in place untouched: it is now dead weight behind the fallback, and leaving it is the cheap rollback (unset `mattstack.roster` and the board is exactly where it started).
+Expected: the team row shows every entry with a name. `board.members` is left in place untouched: it is now dead weight behind the fallback, and leaving it is the cheap rollback (unset `mattstack.roster` and the board is exactly where it started).
 
 - [ ] **Step 5: Rebuild and restart the board, then check the roster panel**
 
@@ -1176,11 +1178,11 @@ Per CLAUDE.md's deck serving note, deck's health check only proves `/api` is up 
 cd /Users/matt/.mattstack/rt/worktrees/gh-m4ttstack-app-kit/proud-jungle && bun run board:build
 ```
 
-Then ask Matt to confirm in the running board that `priyamalhotra` reads "Priya Malhotra" and `wescalloway` reads "Wes Calloway", that the settings modal and the roster panel now agree on who is checked out, and that adding someone with a name and renaming someone both stick. Ask before driving a browser yourself: per the ask-before-browser-verification rule, Matt likely has the board open already.
+Then ask Matt to confirm in the running board that a member with a stored name shows it instead of a raw username, that the settings modal and the roster panel now agree on who is checked out, and that adding someone with a name and renaming someone both stick. Ask before driving a browser yourself: per the ask-before-browser-verification rule, Matt likely has the board open already.
 
 - [ ] **Step 6: Note the team-store push**
 
-`setSetting` prints the reminder itself: a team write stays local until committed and pushed from `~/.mattstack/teams/acme-web`. Surface that to Matt rather than pushing on his behalf.
+`setSetting` prints the reminder itself: a team write stays local until committed and pushed from `~/.mattstack/teams/testteam`. Surface that to Matt rather than pushing on his behalf.
 
 - [ ] **Step 7: Commit the plan doc and open the PR**
 
@@ -1201,7 +1203,7 @@ Then open the PR against `main` in `m4ttstack/apps`. Per Matt's CLAUDE.md, wait 
 
 **Two things the plan adds beyond the four decisions, both deliberate:**
 1. Stripping `hidden` on a `mattstack.roster` write (Task 2). Not requested, but writing `hidden` into a key whose declared shape is `[{username, name?}]` would put board-only state into boxscore's roster. This is a correctness requirement of decision 1, not scope creep.
-2. The `rosterSummary` / `hiddenSet` replace-not-union fix (Task 5 Steps 3-4). This is the bug behind `priyamalhotra` reading "checked out" in the settings modal while checked-in in the roster panel. It is one line in each of two places and sits in exactly the code Task 5 already rewrites. If a reviewer wants it split out, it is cleanly separable.
+2. The `rosterSummary` / `hiddenSet` replace-not-union fix (Task 5 Steps 3-4). This is the bug behind a member reading "checked out" in the settings modal while checked-in in the roster panel. It is one line in each of two places and sits in exactly the code Task 5 already rewrites. If a reviewer wants it split out, it is cleanly separable.
 
 **Known gap.** Board has no React component test harness, so the ConfigModal changes in Task 5 have no automated test. Task 4's route tests cover the server contract those controls call, and Task 6 Step 5 covers the UI by hand. Building a component harness for this change would be larger than the change.
 
