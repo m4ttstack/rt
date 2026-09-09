@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { GateDomain } from '@mattstack/gate-kit';
 import { ICONS, Panel, SideDrawer, ToastHost } from '@mattstack/tui-kit';
@@ -17,12 +17,13 @@ import {
   filterBySlack,
   filterByTab,
   groupMRs,
+  nestStacks,
   parseViewState,
   rosterUsernamesFor,
   serializeViewState,
   sortMRs,
 } from '../../view.ts';
-import type { ViewState } from '../../view.ts';
+import type { StackNode, ViewState } from '../../view.ts';
 import { postAction } from '../api.ts';
 import type {
   BoardData,
@@ -36,6 +37,12 @@ import { AppLauncher } from './AppLauncher.tsx';
 import { AppMark } from './AppMark.tsx';
 import { ConfigModal } from './ConfigModal.tsx';
 import { Controls } from './Controls.tsx';
+import type { QueueEntry } from './decision-queue.ts';
+import { useDecisionQueue } from './decision-queue.ts';
+import {
+  DecisionQueueComplete,
+  DecisionQueueModal,
+} from './DecisionQueueModal.tsx';
 import {
   gateParam,
   mrForGate,
@@ -377,7 +384,7 @@ export function Board() {
     [doctorAction]
   );
 
-  // GateCard's "focus pane" escape hatch: jump into whichever domain's pane
+  // GateForm's "focus pane" escape hatch: jump into whichever domain's pane
   // opened the gate, via the exact same launch endpoint a fresh launch from
   // the row would use -- the server-side dedup (existing tabId + in-flight
   // status) re-focuses that pane instead of spawning another, so this never
@@ -675,6 +682,88 @@ export function Board() {
     return () => clearTimeout(t);
   }, [gateDeepLinkIid]);
 
+  // The pure filter/group/sort pipeline (overlay -> tabFiltered ->
+  // filterBySlack(filterByMember(...)) -> groupMRs(...).map(sortMRs...)),
+  // hoisted above the loading guard below and memoized so it has exactly one
+  // source of truth: the render body reads its fields instead of
+  // recomputing them, and the decision queue below reads the same `groups`
+  // the rows actually render -- header count and queue order can never drift
+  // from what's on screen. Sitting above the guard (rather than after it,
+  // where `groups` used to live) is what lets this and useDecisionQueue be
+  // called unconditionally, as every hook in this component must be: a
+  // render where `data` is still null must call exactly the hooks it always
+  // calls, never fewer.
+  const boardView = useMemo(() => {
+    if (!data) return null;
+    const total = data.members.reduce((n, m) => n + m.count, 0);
+    // data.tabs is always non-empty (server falls back to IMPLICIT_TABS);
+    // state.tab itself may briefly lag on the very first render before
+    // onData's validation pass lands, so fall back to the first tab rather
+    // than trust it blindly.
+    const activeTab = data.tabs.find(t => t.id === state.tab) ?? data.tabs[0]!;
+    const isCodeownersTab = activeTab.source.kind === 'codeowners';
+    // A codeowners tab's "who counts as roster" set for excludeMembers.
+    const rosterUsernames = new Set(data.members.map(m => m.username));
+    // Server state wins; otherwise show an optimistic "queued" badge if pending.
+    const mrs = overlay(data.mrs, optimisticLifecycle.state);
+    const tabFiltered = filterByTab(mrs, activeTab, rosterUsernames);
+    // Codeowners tabs bypass member filtering entirely (and the sidebar that
+    // drives it) -- the queue is scoped by section, not by roster author.
+    // A codeowners tab lists other teams' MRs, so the configured roster has
+    // nothing to drive there. Inferring one from the rows in view keeps the
+    // author filter (and the settings gears that live in this panel) available.
+    const roster = isCodeownersTab ? inferRoster(tabFiltered) : data.members;
+    const rosterTotal = isCodeownersTab ? tabFiltered.length : total;
+    // A stored "posted" pick with slack unconfigured would hide every row
+    // behind a control that isn't rendered, so the filter only bites when
+    // there are refs to filter on.
+    const slackFilter = data.slackEnabled ? state.slack : 'all';
+    const filtered = filterBySlack(
+      filterByMember(tabFiltered, state.member),
+      slackFilter
+    );
+    const groups = groupMRs(
+      filtered,
+      state.group,
+      data.members.map(m => m.username),
+      Date.now()
+    ).map(g => ({
+      label: g.label,
+      mrs: sortMRs(g.mrs, state.sort),
+    }));
+    return {
+      activeTab,
+      isCodeownersTab,
+      rosterUsernames,
+      mrs,
+      tabFiltered,
+      roster,
+      rosterTotal,
+      slackFilter,
+      filtered,
+      groups,
+    };
+  }, [data, optimisticLifecycle.state, state]);
+
+  // Actionable gates on VISIBLE rows only, in board order: group order, then
+  // the group's own sort, then stack nesting -- exactly the order and scope
+  // `boardView.groups` renders, since it's the same array.
+  const queueEntries = useMemo(() => {
+    if (!boardView) return [];
+    const out: QueueEntry[] = [];
+    const collect = (node: StackNode) => {
+      const mr = node.mr as BoardMRWithReview;
+      for (const gate of mr.gates ?? [])
+        if (gate.status === 'open' || gate.status === 'parked')
+          out.push({ gate, mr });
+      node.children.forEach(collect);
+    };
+    for (const g of boardView.groups) nestStacks(g.mrs).forEach(collect);
+    return out;
+  }, [boardView]);
+  const queue = useDecisionQueue(queueEntries);
+  const activeGateId = queue.active?.gate.gateId ?? null;
+
   if (!data) {
     return (
       <p className="tui-loading">
@@ -683,7 +772,19 @@ export function Board() {
     );
   }
 
-  const total = data.members.reduce((n, m) => n + m.count, 0);
+  const {
+    activeTab,
+    isCodeownersTab,
+    rosterUsernames,
+    mrs,
+    tabFiltered,
+    roster,
+    rosterTotal,
+    slackFilter,
+    filtered,
+    groups,
+  } = boardView!;
+
   const staleMins = Math.round((Date.now() - data.fetchedAt) / 60_000);
   const now = Date.now();
   const dataAge = dataAgeLabel(data.dataSyncedAt, now);
@@ -694,13 +795,6 @@ export function Board() {
       ? `board shows ${data.staleAfterDays} days but rt syncs ${data.scopeWindowDays} days... align configs`
       : null;
 
-  // data.tabs is always non-empty (server falls back to IMPLICIT_TABS); state.tab
-  // itself may briefly lag on the very first render before onData's validation
-  // pass lands, so fall back to the first tab rather than trust it blindly.
-  const activeTab = data.tabs.find(t => t.id === state.tab) ?? data.tabs[0]!;
-  const isCodeownersTab = activeTab.source.kind === 'codeowners';
-  // A codeowners tab's "who counts as roster" set for excludeMembers.
-  const rosterUsernames = new Set(data.members.map(m => m.username));
   const activeSection =
     activeTab.source.kind === 'codeowners'
       ? sectionStatus(activeTab.source.section, data.scopeKnownSections)
@@ -716,34 +810,6 @@ export function Board() {
     activeTab.source.kind === 'codeowners' &&
     !activeSection?.unknown &&
     data.scopeUncoveredSections.includes(activeTab.source.section);
-
-  // Server state wins; otherwise show an optimistic "queued" badge if pending.
-  const mrs = overlay(data.mrs, optimisticLifecycle.state);
-  const tabFiltered = filterByTab(mrs, activeTab, rosterUsernames);
-  // Codeowners tabs bypass member filtering entirely (and the sidebar that
-  // drives it) -- the queue is scoped by section, not by roster author.
-  // A codeowners tab lists other teams' MRs, so the configured roster has
-  // nothing to drive there. Inferring one from the rows in view keeps the
-  // author filter (and the settings gears that live in this panel) available.
-  const roster = isCodeownersTab ? inferRoster(tabFiltered) : data.members;
-  const rosterTotal = isCodeownersTab ? tabFiltered.length : total;
-  // A stored "posted" pick with slack unconfigured would hide every row
-  // behind a control that isn't rendered, so the filter only bites when
-  // there are refs to filter on.
-  const slackFilter = data.slackEnabled ? state.slack : 'all';
-  const filtered = filterBySlack(
-    filterByMember(tabFiltered, state.member),
-    slackFilter
-  );
-  const groups = groupMRs(
-    filtered,
-    state.group,
-    data.members.map(m => m.username),
-    now
-  ).map(g => ({
-    label: g.label,
-    mrs: sortMRs(g.mrs, state.sort),
-  }));
   const activeMember =
     state.member !== 'all'
       ? (roster.find(m => m.username === state.member) ?? null)
@@ -780,6 +846,7 @@ export function Board() {
     draftResolved,
     onResumeRespond: handleResumeRespond,
     onFocusPane: handleFocusPane,
+    onOpenGate: queue.openAt,
     selected,
     onToggleSelect: toggleSelect,
   };
@@ -869,6 +936,15 @@ export function Board() {
             </p>
           </div>
           <div className="tui-controls tui-controls-header">
+            {queueEntries.length > 0 && (
+              <button
+                type="button"
+                className="tui-dq-open"
+                onClick={queue.openAtStart}
+              >
+                decision queue · {queueEntries.length}
+              </button>
+            )}
             <Controls {...controlProps} />
           </div>
           <div className="tui-app-launcher">
@@ -1081,6 +1157,30 @@ export function Board() {
       )}
       {respondModal && (
         <RespondModal mr={respondModal} onClose={() => setRespondModal(null)} />
+      )}
+
+      {queue.open && queue.active && activeGateId && (
+        <DecisionQueueModal
+          key={activeGateId}
+          gate={queue.active.gate}
+          mr={queue.active.mr}
+          position={queue.position}
+          states={queue.states}
+          nextPeek={queue.nextPeek}
+          onClose={queue.close}
+          onSkip={queue.skip}
+          onFocusPane={handleFocusPane}
+          onAnswered={() => queue.noteAnswered(activeGateId)}
+          onContinue={() => queue.noteAnswered(activeGateId)}
+          onLostChange={lost => queue.hold(lost ? activeGateId : null)}
+        />
+      )}
+      {queue.open && queue.complete && (
+        <DecisionQueueComplete
+          answered={queue.answeredCount}
+          skipped={queue.skippedCount}
+          onClose={queue.close}
+        />
       )}
 
       {draftModal && (

@@ -1,0 +1,165 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap">
+  <style>
+    body { margin: 0; }
+    .stage {
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      width: 760px; height: 620px; box-sizing: border-box; padding: 20px 24px;
+      font-family: var(--font-sans); font-size: 13.5px; line-height: 1.55;
+      background: #16161e;
+      background-image: linear-gradient(rgba(122, 162, 247, 0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(122, 162, 247, 0.06) 1px, transparent 1px);
+      background-size: 22px 22px;
+      display: flex; gap: 24px;
+    }
+    .col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+    .col-title { font-family: var(--font-mono); font-weight: 700; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    .col.current { --card-bg: #2c3352; --edge: #3b4261; --mut: #969ec2; --amber: #e0af68; --fgc: #e3e7f6; --keybg: #16161e; --radio-edge: #3b4261; --checked-edge: #9e8965; --checked-fill: rgba(227, 231, 246, 0.07); }
+    .col.tuned { --card-bg: #2c3352; --edge: #505879; --mut: #aab3d8; --amber: #e0af68; --fgc: #eef1fb; --keybg: #1c2136; --radio-edge: #6b7499; --checked-edge: #e0af68; --checked-fill: rgba(224, 175, 104, 0.10); }
+    .col.current .col-title { color: #969ec2; }
+    .col.tuned .col-title { color: #e0af68; }
+    .panel-ground { background: #232a47; border: 1px solid #313853; border-radius: 8px; padding: 12px 14px; }
+    .card {
+      margin-top: 0; padding: 0.7rem 0.9rem;
+      background: var(--card-bg); border: 1px solid var(--edge); border-radius: 8px;
+      display: flex; flex-direction: column; gap: 0.6rem; color: var(--fgc);
+    }
+    .card-title { font-weight: 600; font-size: 0.72rem; line-height: 1.4; color: var(--mut); text-transform: uppercase; letter-spacing: 0.03em; }
+    .progress { font-family: var(--font-mono); font-weight: 500; font-size: 0.7rem; font-variant-numeric: tabular-nums; color: var(--mut); }
+    .q-label { font-size: 0.78rem; font-weight: 600; line-height: 1.35; color: var(--fgc); margin-bottom: 0.25rem; }
+    .choices { display: flex; flex-direction: column; gap: 6px; }
+    .choice {
+      display: flex; align-items: center; gap: 8px; min-height: 28px; padding: 4px 8px;
+      border: 1px solid var(--edge); border-radius: 6px; background: transparent;
+      font-size: 0.75rem; color: var(--fgc); cursor: pointer;
+    }
+    .choice.checked { border-color: var(--checked-edge); background: var(--checked-fill); }
+    .radio { flex-shrink: 0; width: 12px; height: 12px; border: 1px solid var(--radio-edge); border-radius: 50%; box-sizing: border-box; }
+    .radio.checked { border-color: var(--amber); background: var(--amber); }
+    .choice-label { display: flex; flex: 1; min-width: 0; align-items: center; gap: 6px; line-height: 1.35; }
+    .rec-chip {
+      display: inline-flex; align-items: center; padding: 1px 6px;
+      border: 1px solid currentColor; border-radius: 4px;
+      font-size: 0.55rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+      color: #4ade5b; white-space: nowrap;
+    }
+    .key {
+      margin-left: auto; flex-shrink: 0;
+      font-family: var(--font-mono); font-weight: 500; font-size: 0.62rem; line-height: 1;
+      padding: 3px 5px; border: 1px solid var(--edge); border-radius: 4px;
+      color: var(--mut); background: var(--keybg);
+    }
+    .note {
+      box-sizing: border-box; min-height: 26px; padding: 3px 8px;
+      font-size: 0.75rem; color: var(--mut);
+      border: 1px solid var(--edge); border-radius: 8px;
+      display: flex; align-items: center;
+    }
+    .actions { display: flex; align-items: center; gap: 8px; min-height: 28px; }
+    .nav { padding: 4px 12px; font-family: var(--font-sans); font-size: 0.85rem; background: transparent; border: 1px solid var(--edge); border-radius: 6px; color: var(--mut); }
+    .submit { margin-left: auto; padding: 4px 12px; font-family: var(--font-sans); font-size: 0.85rem; background: transparent; border: 1px solid var(--amber); border-radius: 6px; color: var(--amber); }
+    .col.tuned .nav { background: rgba(227, 231, 246, 0.08); border-color: transparent; color: #aab3d8; }
+    .col.tuned .submit { background: #e0af68; border-color: transparent; color: #16161e; font-weight: 600; }
+    .legend { display: flex; flex-direction: column; gap: 3px; font-family: var(--font-mono); font-size: 0.62rem; line-height: 1.5; color: #969ec2; }
+    .legend .chg { color: #e0af68; }
+    a { color: #7aa2f7; } a:hover { color: #9db8f9; }
+  </style>
+</helmet>
+<div class="stage">
+  <div class="col current">
+    <div class="col-title">current dark</div>
+    <div class="panel-ground">
+      <div class="card">
+        <div class="card-title">respond-plan</div>
+        <div class="progress">2 of 3</div>
+        <div>
+          <div class="q-label">Thread 2: test coverage</div>
+          <div class="choices">
+            <div class="choice">
+              <div class="radio"></div>
+              <div class="choice-label"><span>reply</span></div>
+              <span class="key">1</span>
+            </div>
+            <div class="choice checked">
+              <div class="radio checked"></div>
+              <div class="choice-label"><span>fix</span><span class="rec-chip">recommended</span></div>
+              <span class="key">2</span>
+            </div>
+            <div class="choice">
+              <div class="radio"></div>
+              <div class="choice-label"><span>skip</span></div>
+              <span class="key">3</span>
+            </div>
+          </div>
+        </div>
+        <div class="note">Add a note</div>
+        <div class="actions">
+          <button class="nav">previous</button>
+          <button class="submit">next</button>
+        </div>
+      </div>
+    </div>
+    <div class="legend">
+      <span>row + control edges  #3b4261</span>
+      <span>muted text          #969ec2</span>
+      <span>key chip ground     #16161e</span>
+      <span>checked row         fg 7% wash, amber-60 edge</span>
+    </div>
+  </div>
+  <div class="col tuned">
+    <div class="col-title">tuned dark</div>
+    <div class="panel-ground">
+      <div class="card">
+        <div class="card-title">respond-plan</div>
+        <div class="progress">2 of 3</div>
+        <div>
+          <div class="q-label">Thread 2: test coverage</div>
+          <div class="choices">
+            <div class="choice">
+              <div class="radio"></div>
+              <div class="choice-label"><span>reply</span></div>
+              <span class="key">1</span>
+            </div>
+            <div class="choice checked">
+              <div class="radio checked"></div>
+              <div class="choice-label"><span>fix</span><span class="rec-chip">recommended</span></div>
+              <span class="key">2</span>
+            </div>
+            <div class="choice">
+              <div class="radio"></div>
+              <div class="choice-label"><span>skip</span></div>
+              <span class="key">3</span>
+            </div>
+          </div>
+        </div>
+        <div class="note">Add a note</div>
+        <div class="actions">
+          <button class="nav">previous</button>
+          <button class="submit">next</button>
+        </div>
+      </div>
+    </div>
+    <div class="legend">
+      <span class="chg">row + control edges  #505879  (fg 20% into card)</span>
+      <span class="chg">muted text          #aab3d8</span>
+      <span class="chg">key chip ground     #1c2136</span>
+      <span class="chg">checked row         amber 10% wash, full amber edge</span>
+      <span class="chg">radio edge          #6b7499 (unchecked)</span>
+      <span class="chg">buttons, three tiers:</span>
+      <span class="chg">  primary (next/submit)  solid amber, dark text</span>
+      <span class="chg">  middle (previous)      light: fg 8% alpha fill, no edge</span>
+      <span class="chg">  quiet (reset, strip)   ghost: text only</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

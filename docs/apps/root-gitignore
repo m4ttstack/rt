@@ -40,3 +40,4 @@ probe/dist-bin
 # package source edit, so CI repacks rather than reading committed copies.
 probe/vendor
 probe/bun.lock
+docs/design/gate-triage-modal/gate-triage-modal.html

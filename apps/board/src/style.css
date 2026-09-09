@@ -96,6 +96,23 @@
 .tui-controls-header [data-part='segmented-option'] {
   height: 100%;
 }
+/* The --gate-* tokens are scoped to the gate surfaces (Modal, chips), hence
+   the fallback -- this button sits in the plain header toolbar. */
+.tui-dq-open {
+  padding: var(--gate-btn-pad, 5px 12px);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--accent-text);
+  white-space: nowrap;
+}
+.tui-dq-open:hover {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
 .tui-author {
   color: var(--purple);
   white-space: nowrap;
@@ -396,9 +413,17 @@
 
 /* ── tokens ───────────────────────────────────────────────────────── */
 .tui-phrase {
-  font-size: 0.7rem;
   flex-shrink: 0;
   white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 .tui-meta {
   display: inline-flex;
@@ -438,12 +463,12 @@
   padding: 0;
   cursor: pointer;
   /* font-family only — NOT `font: inherit`, which would reset the size to the
-     row's 13.5px instead of the .tui-phrase 0.7rem the other labels use. Leave
+     row's 13.5px instead of the .tui-phrase 0.62rem the other labels use. Leave
      color to the t-warn class so the label stays amber. */
   font-family: inherit;
-  text-decoration: underline;
-  text-decoration-style: dotted;
-  text-underline-offset: 2px;
+}
+.tui-comments-btn:hover {
+  background: color-mix(in srgb, currentColor 10%, transparent);
 }
 /* Hint beside "N comments": has the author acted on the threads yet. */
 .tui-comment-dot {
@@ -1354,7 +1379,33 @@
 /* review gate card: the questions a review pane opened on this row, answered
    inline. Its own bordered block below the badge row so a row carrying a
    gate visibly grows rather than crowding the badges. */
-.tui-gate-card {
+.tui-gate-card,
+.tui-triage-modal {
+  /* Gate-scoped contrast lift: the kit's --border and --muted-text sit too
+     close to --card in dark, so the gate chrome takes its own edge/text
+     values. The light halves match the kit tokens byte for byte. */
+  --gate-edge: light-dark(#c8cad6, #505879);
+  --gate-control-edge: light-dark(#c8cad6, #6b7499);
+  --gate-muted: light-dark(#565d80, #aab3d8);
+  --gate-key-bg: light-dark(#f7f8fa, #1c2136);
+  /* One scale for the whole surface: four text sizes, three rhythm steps,
+     one button geometry. Every rule below consumes these. */
+  --gate-font-display: 1rem;
+  --gate-font-title: 0.9rem;
+  --gate-font-body: 0.85rem;
+  --gate-font-meta: 0.78rem;
+  --gate-font-small: 0.7rem;
+  --gate-font-micro: 0.62rem;
+  --gate-gap: 0.95rem;
+  --gate-gap-inner: 0.8rem;
+  --gate-gap-row: 10px;
+  --gate-pad-card: 1rem 1.1rem 1.1rem;
+  --gate-pad-chrome: 8px 10px;
+  --gate-btn-font: 0.8rem;
+  --gate-btn-pad: 5px 12px;
+  --gate-radius-card: 10px;
+  --gate-radius-control: 8px;
+  --gate-radius-btn: 6px;
   margin-top: 8px;
   padding: 0.7rem 0.9rem;
   background: var(--card);
@@ -1364,6 +1415,15 @@
   flex-direction: column;
   gap: 0.6rem;
 }
+/* Rows carry no form controls: a gate is a chip that opens the decision
+   queue, or the answered summary. */
+.tui-gate-row-face {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
 .tui-gate-head {
   display: flex;
   align-items: center;
@@ -1371,7 +1431,7 @@
 }
 .tui-gate-title {
   font: 600 0.72rem/1.4 var(--font-sans);
-  color: var(--muted-text);
+  color: var(--gate-muted);
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
@@ -1384,52 +1444,93 @@
 .tui-gate-question {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  border: 0;
+  gap: var(--gate-gap-inner);
+  border: 1px solid var(--gate-edge);
+  border-radius: var(--gate-radius-card);
+  background: var(--card);
   margin: 0;
-  padding: 0;
+  padding: var(--gate-pad-card);
   min-inline-size: 0;
 }
 .tui-gate-question[hidden] {
   display: none;
 }
+/* Same band as the context header: bleeds through the card padding, a
+   shade under the ground, sealed with a soft rule. */
+.tui-gate-question-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin: -1rem -1.1rem 0;
+  padding: 0.6rem 1.1rem;
+  background: color-mix(in srgb, var(--fg) 4%, var(--card));
+  border-bottom: 1px solid var(--border-soft);
+  border-radius: calc(var(--gate-radius-card) - 1px)
+    calc(var(--gate-radius-card) - 1px) 0 0;
+}
 .tui-gate-question-label {
-  font-size: 0.78rem;
+  font-size: var(--gate-font-title);
   font-weight: 600;
   line-height: 1.35;
   color: var(--fg);
-  margin-bottom: 0.25rem;
 }
 .tui-gate-form {
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
+  gap: var(--gate-gap-inner);
   min-width: 0;
   max-width: 36rem;
 }
 .tui-gate-progress {
-  font: 500 0.7rem/1.4 var(--font-mono);
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font: 500 var(--gate-font-meta) / 1.4 var(--font-sans);
   font-variant-numeric: tabular-nums;
-  color: var(--muted-text);
-  min-height: 1lh;
+  color: var(--gate-muted);
+}
+.tui-gate-qdots {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.tui-gate-qdot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+.tui-gate-qdot[data-state='done'] {
+  background: color-mix(in srgb, var(--fg) 55%, transparent);
+}
+.tui-gate-qdot[data-state='active'] {
+  background: var(--accent);
+  outline: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  outline-offset: 1px;
+}
+.tui-gate-qdot[data-state='todo'] {
+  background: transparent;
+  border: 1px solid var(--gate-edge);
 }
 .tui-gate-choices {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--gate-gap-row);
   min-width: 0;
 }
 .tui-gate-choice {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-height: 28px;
-  padding: 4px 8px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  gap: var(--gate-gap-row);
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 1px solid var(--gate-edge);
+  border-radius: var(--gate-radius-control);
   background: transparent;
-  font-size: 0.75rem;
+  font-size: var(--gate-font-body);
   color: var(--fg);
   cursor: pointer;
   user-select: none;
@@ -1441,8 +1542,8 @@
   background: color-mix(in srgb, var(--fg) 4%, transparent);
 }
 .tui-gate-choice[data-checked] {
-  border-color: color-mix(in srgb, var(--amber) 60%, var(--border));
-  background: color-mix(in srgb, var(--fg) 7%, transparent);
+  border-color: var(--amber);
+  background: color-mix(in srgb, var(--amber) 10%, transparent);
 }
 .tui-gate-choice:has(> input:focus-visible) {
   outline: 2px solid var(--amber);
@@ -1460,9 +1561,9 @@
   appearance: none;
   margin: 0;
   flex-shrink: 0;
-  width: 12px;
-  height: 12px;
-  border: 1px solid var(--border);
+  width: 15px;
+  height: 15px;
+  border: 1px solid var(--gate-control-edge);
   border-radius: 50%;
   background: transparent;
   cursor: pointer;
@@ -1495,33 +1596,39 @@
 .tui-gate-key {
   margin-left: auto;
   flex-shrink: 0;
-  font: 500 0.62rem/1 var(--font-mono);
-  padding: 3px 5px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--muted-text);
-  background: var(--bg);
+  font: 500 var(--gate-font-micro) / 1 var(--font-mono);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  box-sizing: border-box;
+  padding: 0 5px;
+  border: 1px solid var(--gate-edge);
+  border-radius: 999px;
+  color: var(--gate-muted);
+  background: var(--gate-key-bg);
   pointer-events: none;
 }
 .tui-gate-invalid {
   margin: 0;
-  font-size: 0.76rem;
+  font-size: var(--gate-font-meta);
   color: var(--dot-bad);
 }
 .tui-gate-note {
   width: 100%;
   box-sizing: border-box;
-  min-height: 26px;
-  padding: 3px 8px;
+  min-height: 34px;
+  padding: 6px 12px;
   font: inherit;
-  font-size: 0.75rem;
+  font-size: var(--gate-font-body);
   color: var(--fg);
   background: transparent;
-  border: 1px solid var(--border);
+  border: 1px solid var(--gate-edge);
   border-radius: 8px;
 }
 .tui-gate-note::placeholder {
-  color: var(--muted-text);
+  color: var(--gate-muted);
 }
 .tui-gate-note:focus-visible {
   outline: 2px solid var(--amber);
@@ -1531,7 +1638,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 28px;
+  min-height: 34px;
+  padding: 0 0.2rem;
 }
 .tui-gate-actions-end {
   margin-left: auto;
@@ -1540,17 +1648,17 @@
   gap: 8px;
 }
 .tui-gate-nav {
-  padding: 4px 12px;
+  padding: var(--gate-btn-pad);
   font: inherit;
-  font-size: 0.85rem;
+  font-size: var(--gate-btn-font);
   cursor: pointer;
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--muted-text);
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  border: 1px solid transparent;
+  border-radius: var(--gate-radius-btn);
+  color: var(--gate-muted);
 }
 .tui-gate-nav:hover:not(:disabled) {
-  border-color: var(--muted);
+  background: color-mix(in srgb, var(--fg) 13%, transparent);
   color: var(--fg);
 }
 .tui-gate-nav:disabled {
@@ -1560,39 +1668,45 @@
 .tui-gate-error {
   margin-right: auto;
   color: var(--dot-bad);
-  font-size: 0.76rem;
+  font-size: var(--gate-font-meta);
 }
 .tui-gate-submit {
-  padding: 4px 12px;
+  padding: var(--gate-btn-pad);
   font: inherit;
-  font-size: 0.85rem;
+  font-size: var(--gate-btn-font);
+  font-weight: 600;
   cursor: pointer;
-  background: transparent;
-  border: 1px solid var(--amber);
-  border-radius: 6px;
-  color: var(--amber);
+  background: var(--amber);
+  border: 1px solid transparent;
+  border-radius: var(--gate-radius-btn);
+  color: var(--bg);
 }
 .tui-gate-submit:hover:not(:disabled) {
-  background: var(--amber);
-  color: var(--bg);
+  background: color-mix(in srgb, var(--amber) 88%, var(--fg));
 }
 .tui-gate-submit:disabled {
   opacity: 0.5;
   cursor: default;
 }
-.tui-gate-focus {
-  padding: 4px 12px;
+.tui-gate-focus,
+.tui-gate-ghost {
+  padding: var(--gate-btn-pad);
   font: inherit;
-  font-size: 0.85rem;
+  font-size: var(--gate-btn-font);
   cursor: pointer;
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--muted-text);
-}
-.tui-gate-focus:hover {
-  border-color: var(--muted);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--gate-radius-btn);
   color: var(--fg);
+}
+.tui-gate-focus:hover:not(:disabled),
+.tui-gate-ghost:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+  color: var(--fg);
+}
+.tui-gate-ghost:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 .tui-gate-summary {
   margin: 0;
@@ -1603,7 +1717,7 @@
 .tui-gate-summary-row {
   display: flex;
   gap: 0.5rem;
-  font-size: 0.85rem;
+  font-size: var(--gate-font-body);
 }
 .tui-gate-summary-row dt {
   color: var(--muted-text);
@@ -1619,6 +1733,249 @@
 .tui-gate-summary-note {
   font-size: 11px;
   opacity: 0.7;
+}
+/* ── gate triage modal ────────────────────────────────────────────── */
+/* The frame is the kit Modal recipe; this class both widens it (app CSS
+   outranks the recipe's @layer rule) and scopes the gate contrast vars. */
+.tui-triage-modal {
+  max-width: 760px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gate-gap);
+}
+/* The head is the recipe's accent title span, stretched so the gate cluster
+   (kind + actions) can ride its right edge; everything inside resets the
+   title's weight/tracking for its own voice. */
+.tui-triage-modal [data-part='modal-title'] {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--gate-font-display);
+  line-height: 1.4;
+}
+.tui-triage-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+/* Gate actions read as buttons at rest: the light tier, not ghost text. */
+.tui-triage-head-actions .tui-gate-ghost {
+  font-size: var(--gate-btn-font);
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
+  padding: var(--gate-btn-pad);
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  color: var(--fg);
+}
+.tui-triage-head-actions .tui-gate-ghost:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--fg) 13%, transparent);
+}
+.tui-triage-head-actions .tui-triage-act-focus {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent-text);
+}
+.tui-triage-head-actions .tui-triage-act-focus:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+/* The queue line sits under the head: count, pips and the gate kind get
+   their own row so the head keeps only the title, actions and close. */
+.tui-triage-modal [data-part='modal-head'] {
+  margin-bottom: 0.45rem;
+}
+.tui-triage-queue-row {
+  display: flex;
+  align-items: center;
+  gap: var(--gate-gap-row);
+}
+.tui-triage-pos {
+  font-family: var(--font-sans);
+  font-size: var(--gate-font-body);
+  font-weight: 500;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: normal;
+  color: var(--fg);
+  align-self: center;
+}
+.tui-triage-pips {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: center;
+}
+.tui-triage-pip {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+}
+.tui-triage-pip[data-state='done'] {
+  background: color-mix(in srgb, var(--fg) 55%, transparent);
+}
+.tui-triage-pip[data-state='active'] {
+  background: var(--accent);
+}
+.tui-triage-pip[data-state='todo'] {
+  background: transparent;
+  border: 1px solid var(--gate-edge);
+  box-sizing: border-box;
+}
+.tui-triage-pip[data-state='skipped'] {
+  background: var(--dot-warn);
+  opacity: 0.55;
+}
+/* One frame size for every gate: the pane is the point of hosting gates in
+   a modal at all, so the frame is sized for it whether or not this gate's
+   asker supplied context, and never resizes as the queue advances. */
+/* Context sits ABOVE the form, the way a real pane reads: transcript on
+   top, prompt below. The pane scrolls on its own past its cap. */
+.tui-triage-body {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--gate-gap);
+  min-height: 0;
+}
+.tui-triage-context {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  max-height: 46vh;
+  min-height: 0;
+  overflow: hidden;
+  padding: var(--gate-pad-card);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--gate-radius-card);
+  background: var(--card);
+  font-size: var(--gate-font-meta);
+}
+/* The pinned header wears its own band: bleeds through the pane padding to
+   the frame, a shade under the card ground, sealed with a soft rule. */
+.tui-triage-context-label {
+  font-family: var(--font-sans);
+  font-size: var(--gate-font-title);
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--accent-text);
+  flex-shrink: 0;
+  margin: -1rem -1.1rem 0.55rem;
+  padding: 0.6rem 1.1rem;
+  background: color-mix(in srgb, var(--fg) 4%, var(--card));
+  border-bottom: 1px solid var(--border-soft);
+  border-radius: calc(var(--gate-radius-card) - 1px)
+    calc(var(--gate-radius-card) - 1px) 0 0;
+}
+/* The scroll edge is the pane border, not the inner padding: the body bleeds
+   through the right padding and restores it inside, so the thin bar hugs the
+   frame with no visible gutter. */
+.tui-triage-context .tui-gate-context-body {
+  min-height: 0;
+  overflow-y: auto;
+  margin-right: -1.1rem;
+  padding-right: 1.1rem;
+  scrollbar-width: thin;
+  scrollbar-color: var(--gate-edge) transparent;
+}
+.tui-triage-form-col {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--gate-gap-inner);
+}
+.tui-triage-form-col .tui-gate-form {
+  width: 100%;
+  max-width: 30rem;
+}
+.tui-triage-strip {
+  display: flex;
+  flex-direction: column;
+  padding: var(--gate-pad-chrome);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--gate-radius-btn);
+  background: var(--chrome);
+}
+/* Tuned from the row's 0.6rem: one size for the whole line, and the branch
+   gives up the row's flex stretch so age and origin stay clustered left
+   instead of stranding at the far edge of a 760px strip. */
+.tui-triage-strip .tui-row-2 {
+  align-items: baseline;
+  font-size: var(--gate-font-meta);
+}
+.tui-triage-strip .tui-row-2 .tui-author-tag {
+  font-size: var(--gate-font-meta);
+}
+.tui-triage-strip .tui-row-2 .tui-branch {
+  flex: 0 0 auto;
+}
+/* The strip is the MR row users already scan, verbatim classes
+   (.tui-title/.tui-row-2/...), minus main-view status chips and badges. */
+.tui-triage-row-1 {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+}
+.tui-triage-row-1 .tui-title {
+  font-size: var(--gate-font-body);
+}
+.tui-triage-row-1 .tui-ticket {
+  font-size: var(--gate-font-meta);
+}
+.tui-triage-kind {
+  flex-shrink: 0;
+  font: 600 var(--gate-font-small) / 1 var(--font-sans);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--gate-muted);
+  align-self: center;
+}
+/* Footer: next-gate peek left, pips centered on the modal, count right. */
+.tui-triage-footer {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 10px;
+  border-top: 1px solid var(--border-soft);
+  padding: 0.85rem 0 0.35rem;
+}
+.tui-triage-footer .tui-triage-pos {
+  justify-self: end;
+}
+.tui-triage-peek {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--gate-font-meta);
+  color: var(--gate-muted);
+  min-height: 1lh;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tui-triage-peek-k {
+  font-weight: 500;
+}
+.tui-triage-done {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1.6rem 0 0.8rem;
+}
+.tui-triage-done-line {
+  font-size: 0.85rem;
+  color: var(--fg);
+}
+.tui-triage-done-counts {
+  font: 500 0.7rem/1.4 var(--font-mono);
+  color: var(--gate-muted);
+}
+.tui-triage-done .tui-gate-submit {
+  margin-top: 0.5rem;
 }
 .tui-gate-question legend.tui-gate-question-label {
   padding: 0;
