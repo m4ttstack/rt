@@ -1,12 +1,12 @@
-import { mkdtempSync, rmSync } from 'fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { dirname, join } from 'path';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { Database } from 'bun:sqlite';
 
 import { insertAgentState, mintHandle } from '../state/agent-states.ts';
 import { openStateDb } from '../state/db.ts';
-import { readRespondStates } from '../respond-state.ts';
+import { readRespondReport, readRespondStates } from '../respond-state.ts';
 
 let dir: string;
 let dbPath: string;
@@ -139,5 +139,32 @@ describe('respond-status CLI', () => {
     const state = readRespondStates(db).get(url);
     expect(state?.threads).toBe(3);
     expect(state?.posted).toBeUndefined();
+  });
+
+  test('a non-done status write still ingests a sibling report, so a mid-gate hold can serve it', async () => {
+    const url = nextUrl();
+    const handle = seedHandle(url);
+    const reportPath = handle.replace(/\.json$/, '') + '.md';
+    mkdirSync(dirname(reportPath), { recursive: true });
+    writeFileSync(reportPath, '# adjudication\n\nposting 2 of 3');
+    expect(await run(handle, 'drafting', 'awaiting the posting gate')).toBe(0);
+    const state = readRespondStates(db).get(url);
+    expect(state?.status).toBe('drafting');
+    expect(state?.reportReady).toBe(true);
+    expect(readRespondReport(url, db)).toContain('posting 2 of 3');
+  });
+
+  test('a stale pre-upgrade handle (no db at the derived root) fails loudly instead of creating one', async () => {
+    const staleRoot = mkdtempSync(join(tmpdir(), 'rps-stale-'));
+    const handle = mintHandle('respond', nextUrl(), staleRoot);
+    const proc = Bun.spawn(['bun', 'run', CLI, handle, 'drafting'], {
+      stderr: 'pipe',
+      env: { ...process.env, MR_BOARD_PORT: '1' },
+    });
+    const code = await proc.exited;
+    expect(code).toBe(1);
+    const stderr = await new Response(proc.stderr).text();
+    expect(stderr).toContain('stale pre-upgrade handle?');
+    rmSync(staleRoot, { recursive: true, force: true });
   });
 });

@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, statSync } from 'fs';
+import { existsSync, mkdirSync, mkdtempSync, statSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { describe, expect, test } from 'bun:test';
@@ -132,8 +132,9 @@ describe('the status writer the board hands out', () => {
     expect(written.reportReady).toBe(true);
   });
 
-  test('review-status exits 1 loudly on an unknown handle', async () => {
+  test('review-status exits 1 loudly on an unknown handle in an existing db', async () => {
     const root = mkdtempSync(join(tmpdir(), 'board-statusbin-'));
+    openStateDb(dbPathForRoot(root), 'cli'); // db exists; no row for this handle
     const handle = mintHandle('review', 'https://x/mr/71', root);
 
     const proc = Bun.spawn(
@@ -143,6 +144,20 @@ describe('the status writer the board hands out', () => {
     expect(await proc.exited).toBe(1);
     expect(await new Response(proc.stderr).text()).toContain(
       'no state row for'
+    );
+  });
+
+  test('review-status exits 1 loudly on a handle whose root has no db at all', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'board-statusbin-nodb-'));
+    const handle = mintHandle('review', 'https://x/mr/72', root);
+
+    const proc = Bun.spawn(
+      [statusBinPath(), 'review-status', handle, 'reviewing'],
+      { stdout: 'pipe', stderr: 'pipe', env: NO_LIVE_BOARD }
+    );
+    expect(await proc.exited).toBe(1);
+    expect(await new Response(proc.stderr).text()).toContain(
+      'stale pre-upgrade handle?'
     );
   });
 
@@ -201,6 +216,41 @@ describe('the status writer the board hands out', () => {
       expect(rows.length).toBe(1);
       expect(rows[0]!.draft).toContain('job x fails on main');
     });
+  });
+
+  test('doctor-draft with --state derives its db from the handle, not the ambient default', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'board-statusbin-draft-'));
+    const otherHome = mkdtempSync(join(tmpdir(), 'board-statusbin-draft-home-'));
+    const handle = mintHandle('doctor', 'https://x/mr/11', root);
+
+    const proc = Bun.spawn(
+      [
+        statusBinPath(),
+        'doctor-draft',
+        'https://x/mr/11',
+        '11',
+        'inherited-note',
+        'job fails on main',
+        '--state',
+        handle,
+      ],
+      {
+        stdout: 'pipe',
+        stderr: 'pipe',
+        env: { ...NO_LIVE_BOARD, HOME: otherHome },
+      }
+    );
+    expect(await proc.exited).toBe(0);
+
+    const db = openStateDb(dbPathForRoot(root), 'cli');
+    const rows = db.query('SELECT draft FROM drafts').all() as {
+      draft: string;
+    }[];
+    expect(rows.length).toBe(1);
+    expect(rows[0]!.draft).toContain('job fails on main');
+    expect(
+      existsSync(join(otherHome, '.mattstack', 'board', 'state.db'))
+    ).toBe(false);
   });
 
   test('rejects an unknown subcommand rather than silently doing nothing', async () => {

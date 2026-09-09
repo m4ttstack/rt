@@ -122,6 +122,7 @@ describe('importLegacyState', () => {
 
     expect(result.imported).toBe(11);
     expect(result.skipped).toBe(0);
+    expect(result.renamed).toEqual([root]);
 
     const reviewRow = db
       .query('SELECT state, report, handle FROM agent_states WHERE lane = ? AND mr_url = ?')
@@ -214,6 +215,7 @@ describe('importLegacyState', () => {
     const result = importLegacyState(db, [rootOld, rootNew]);
     expect(result.imported).toBe(2);
     expect(result.skipped).toBe(0);
+    expect(result.renamed.sort()).toEqual([rootNew, rootOld].sort());
 
     const row = db
       .query('SELECT state, updated_at FROM agent_states WHERE lane = ? AND mr_url = ?')
@@ -305,7 +307,7 @@ describe('importLegacyState', () => {
     expect(first.imported).toBe(1);
 
     const second = importLegacyState(db, [root]);
-    expect(second).toEqual({ imported: 0, skipped: 0 });
+    expect(second).toEqual({ imported: 0, skipped: 0, renamed: [] });
 
     const rows = db.query('SELECT * FROM agent_states').all();
     expect(rows.length).toBe(1);
@@ -436,6 +438,7 @@ describe('importLegacyState', () => {
 
     const result = importLegacyState(db, [root]);
     expect(result.imported).toBe(1);
+    expect(result.renamed).toEqual([]);
 
     const row = db
       .query('SELECT state FROM agent_states WHERE lane = ? AND mr_url = ?')

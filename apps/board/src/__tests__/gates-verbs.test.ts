@@ -1,6 +1,6 @@
-import { mkdtempSync, rmSync } from 'fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { dirname, join } from 'path';
 import type { Database } from 'bun:sqlite';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
@@ -23,6 +23,7 @@ import {
   mintHandle,
   openStateDb,
   readByHandle,
+  reportPathForHandle,
 } from '../state/index.ts';
 
 const MR_URL = 'https://gitlab.com/acme/webapp/-/merge_requests/4821';
@@ -280,6 +281,40 @@ describe('gateOpen', () => {
       by: 'board-ui',
       answeredAt: 9000,
     });
+  });
+
+  test('ingests a sibling report on open, so a mid-gate hold can already serve it', async () => {
+    const reportPath = reportPathForHandle(statePath);
+    mkdirSync(dirname(reportPath), { recursive: true });
+    writeFileSync(reportPath, '# review\n\nlgtm');
+    const { io } = fakeIo();
+
+    await gateOpen(statePath, 'review-post', JSON.stringify(QUESTIONS), io);
+
+    const row = readByHandle(statePath, db) as ReviewState;
+    expect(row.reportReady).toBe(true);
+    const { readReviewReport } = await import('../review-state.ts');
+    expect(readReviewReport(MR_URL, db)).toContain('lgtm');
+  });
+});
+
+describe('gate verbs: stale pre-upgrade handle', () => {
+  test('open/wait/answer fail loudly instead of creating a stray db at a foreign root', async () => {
+    const staleRoot = mkdtempSync(join(tmpdir(), 'gv-stale-'));
+    const staleHandle = mintHandle('review', MR_URL, staleRoot);
+    const { io } = fakeIo();
+
+    await expect(
+      gateOpen(staleHandle, 'review-post', JSON.stringify(QUESTIONS), io)
+    ).rejects.toThrow(/stale pre-upgrade handle\?/);
+    await expect(gateWait(staleHandle, io)).rejects.toThrow(
+      /stale pre-upgrade handle\?/
+    );
+    await expect(
+      gateAnswer(staleHandle, JSON.stringify({}), 'pane', io)
+    ).rejects.toThrow(/stale pre-upgrade handle\?/);
+
+    rmSync(staleRoot, { recursive: true, force: true });
   });
 });
 

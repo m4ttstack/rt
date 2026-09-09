@@ -1,12 +1,12 @@
-import { mkdtempSync, rmSync } from 'fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { dirname, join } from 'path';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { Database } from 'bun:sqlite';
 
 import { insertAgentState, mintHandle } from '../state/agent-states.ts';
 import { openStateDb } from '../state/db.ts';
-import { readReviewStates } from '../review-state.ts';
+import { readReviewReport, readReviewStates } from '../review-state.ts';
 
 let dir: string;
 let dbPath: string;
@@ -83,5 +83,37 @@ describe('review-status CLI', () => {
     const state = readReviewStates(db).get(URL_A);
     expect(state?.status).toBe('done');
     expect(state?.outcome).toBe('approve');
+  });
+
+  test('a non-done status write still ingests a sibling report, so a mid-gate hold can serve it', async () => {
+    const handle = mintHandle('review', URL_A, dir);
+    seed(handle, 4821);
+    const reportPath = handle.replace(/\.json$/, '') + '.md';
+    mkdirSync(dirname(reportPath), { recursive: true });
+    writeFileSync(reportPath, '# full review\n\nlgtm');
+    const proc = Bun.spawn(
+      ['bun', 'run', CLI, handle, 'reviewing', 'awaiting the outcome gate'],
+      { stderr: 'pipe', env: env() }
+    );
+    const code = await proc.exited;
+    expect(code).toBe(0);
+    const state = readReviewStates(db).get(URL_A);
+    expect(state?.status).toBe('reviewing');
+    expect(state?.reportReady).toBe(true);
+    expect(readReviewReport(URL_A, db)).toContain('lgtm');
+  });
+
+  test('a stale pre-upgrade handle (no db at the derived root) fails loudly instead of creating one', async () => {
+    const staleRoot = mkdtempSync(join(tmpdir(), 'rc-stale-'));
+    const handle = mintHandle('review', URL_A, staleRoot);
+    const proc = Bun.spawn(['bun', 'run', CLI, handle, 'reviewing'], {
+      stderr: 'pipe',
+      env: { ...process.env, MR_BOARD_PORT: '1' },
+    });
+    const code = await proc.exited;
+    expect(code).toBe(1);
+    const stderr = await new Response(proc.stderr).text();
+    expect(stderr).toContain('stale pre-upgrade handle?');
+    rmSync(staleRoot, { recursive: true, force: true });
   });
 });

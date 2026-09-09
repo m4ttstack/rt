@@ -5,6 +5,7 @@ import type { Database } from 'bun:sqlite';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
 import { openStateDb } from '../state/db.ts';
+import { setKvValue } from '../state/kv-blob.ts';
 import {
   readMemory,
   releaseCron,
@@ -44,6 +45,30 @@ describe('dispatch memory', () => {
     const first = readMemory(db);
     first.identity = { username: 'leaked', fetchedAt: 1 };
     expect(readMemory(db)).toEqual({ identity: null, mrs: {} });
+  });
+
+  test('a legacy-imported blob missing identity normalizes to null rather than undefined', () => {
+    setKvValue(
+      'triage',
+      'memory',
+      { mrs: { 'https://x/mr/1': emptyMrMemory('2026-08-08') } },
+      db
+    );
+    const mem = readMemory(db);
+    expect(mem.identity).toBeNull();
+    expect(mem.mrs['https://x/mr/1']).toBeDefined();
+  });
+
+  test('a legacy-imported blob missing mrs normalizes to {} instead of throwing on lookup', () => {
+    setKvValue(
+      'triage',
+      'memory',
+      { identity: { username: 'alice', fetchedAt: 1 } },
+      db
+    );
+    const mem = readMemory(db);
+    expect(mem.mrs).toEqual({});
+    expect(() => mem.mrs['https://x/mr/1']).not.toThrow();
   });
 });
 
