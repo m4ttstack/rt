@@ -1355,6 +1355,13 @@
    inline. Its own bordered block below the badge row so a row carrying a
    gate visibly grows rather than crowding the badges. */
 .tui-gate-card {
+  /* Gate-scoped contrast lift: the kit's --border and --muted-text sit too
+     close to --card in dark, so the gate chrome takes its own edge/text
+     values. The light halves match the kit tokens byte for byte. */
+  --gate-edge: light-dark(#c8cad6, #505879);
+  --gate-control-edge: light-dark(#c8cad6, #6b7499);
+  --gate-muted: light-dark(#565d80, #aab3d8);
+  --gate-key-bg: light-dark(#f7f8fa, #1c2136);
   margin-top: 8px;
   padding: 0.7rem 0.9rem;
   background: var(--card);
@@ -1371,7 +1378,7 @@
 }
 .tui-gate-title {
   font: 600 0.72rem/1.4 var(--font-sans);
-  color: var(--muted-text);
+  color: var(--gate-muted);
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
@@ -1410,7 +1417,7 @@
 .tui-gate-progress {
   font: 500 0.7rem/1.4 var(--font-mono);
   font-variant-numeric: tabular-nums;
-  color: var(--muted-text);
+  color: var(--gate-muted);
   min-height: 1lh;
 }
 .tui-gate-choices {
@@ -1426,7 +1433,7 @@
   gap: 8px;
   min-height: 28px;
   padding: 4px 8px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--gate-edge);
   border-radius: 6px;
   background: transparent;
   font-size: 0.75rem;
@@ -1441,8 +1448,8 @@
   background: color-mix(in srgb, var(--fg) 4%, transparent);
 }
 .tui-gate-choice[data-checked] {
-  border-color: color-mix(in srgb, var(--amber) 60%, var(--border));
-  background: color-mix(in srgb, var(--fg) 7%, transparent);
+  border-color: var(--amber);
+  background: color-mix(in srgb, var(--amber) 10%, transparent);
 }
 .tui-gate-choice:has(> input:focus-visible) {
   outline: 2px solid var(--amber);
@@ -1462,7 +1469,7 @@
   flex-shrink: 0;
   width: 12px;
   height: 12px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--gate-control-edge);
   border-radius: 50%;
   background: transparent;
   cursor: pointer;
@@ -1497,10 +1504,10 @@
   flex-shrink: 0;
   font: 500 0.62rem/1 var(--font-mono);
   padding: 3px 5px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--gate-edge);
   border-radius: 4px;
-  color: var(--muted-text);
-  background: var(--bg);
+  color: var(--gate-muted);
+  background: var(--gate-key-bg);
   pointer-events: none;
 }
 .tui-gate-invalid {
@@ -1517,11 +1524,11 @@
   font-size: 0.75rem;
   color: var(--fg);
   background: transparent;
-  border: 1px solid var(--border);
+  border: 1px solid var(--gate-edge);
   border-radius: 8px;
 }
 .tui-gate-note::placeholder {
-  color: var(--muted-text);
+  color: var(--gate-muted);
 }
 .tui-gate-note:focus-visible {
   outline: 2px solid var(--amber);
@@ -1544,13 +1551,13 @@
   font: inherit;
   font-size: 0.85rem;
   cursor: pointer;
-  background: transparent;
-  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  border: 1px solid transparent;
   border-radius: 6px;
-  color: var(--muted-text);
+  color: var(--gate-muted);
 }
 .tui-gate-nav:hover:not(:disabled) {
-  border-color: var(--muted);
+  background: color-mix(in srgb, var(--fg) 13%, transparent);
   color: var(--fg);
 }
 .tui-gate-nav:disabled {
@@ -1566,33 +1573,39 @@
   padding: 4px 12px;
   font: inherit;
   font-size: 0.85rem;
+  font-weight: 600;
   cursor: pointer;
-  background: transparent;
-  border: 1px solid var(--amber);
+  background: var(--amber);
+  border: 1px solid transparent;
   border-radius: 6px;
-  color: var(--amber);
+  color: var(--bg);
 }
 .tui-gate-submit:hover:not(:disabled) {
-  background: var(--amber);
-  color: var(--bg);
+  background: color-mix(in srgb, var(--amber) 88%, var(--fg));
 }
 .tui-gate-submit:disabled {
   opacity: 0.5;
   cursor: default;
 }
-.tui-gate-focus {
-  padding: 4px 12px;
+.tui-gate-focus,
+.tui-gate-ghost {
+  padding: 4px 10px;
   font: inherit;
   font-size: 0.85rem;
   cursor: pointer;
-  background: transparent;
-  border: 1px solid var(--border);
+  background: none;
+  border: 1px solid transparent;
   border-radius: 6px;
-  color: var(--muted-text);
+  color: var(--gate-muted);
 }
-.tui-gate-focus:hover {
-  border-color: var(--muted);
+.tui-gate-focus:hover:not(:disabled),
+.tui-gate-ghost:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
   color: var(--fg);
+}
+.tui-gate-ghost:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 .tui-gate-summary {
   margin: 0;

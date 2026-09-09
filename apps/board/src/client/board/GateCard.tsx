@@ -398,7 +398,7 @@ function GateCard({
             {stepped && (
               <button
                 type="reset"
-                className="tui-gate-nav"
+                className="tui-gate-ghost"
                 disabled={busy}
                 onClick={resetAll}
               >
