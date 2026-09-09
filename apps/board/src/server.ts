@@ -36,8 +36,6 @@ import {
   AGENT_STATUS_PATTERN,
   AgentStatusFeed,
   isAgentStatusTopic,
-  readCursorFile,
-  writeCursorFile,
 } from './agent-status/feed.ts';
 import { APP_ROOT, IS_COMPILED } from './app-root.ts';
 import { SnapshotCache } from './cache.ts';
@@ -97,7 +95,6 @@ import {
 } from './doctor-state.ts';
 import {
   attachDrafts,
-  draftFilePath,
   heldDraftsByMr,
   pruneDrafts,
   readDrafts,
@@ -219,7 +216,12 @@ import {
   sweepSlackRefs,
   unreactFromMR,
 } from './slack.ts';
-import { boardStateRoot } from './state/index.ts';
+import {
+  boardStateRoot,
+  getKvValue,
+  persistOrWarn,
+  setKvValue,
+} from './state/index.ts';
 import styleCss from './style.css' with { type: 'text' };
 import {
   MAX_HEADER_LEN,
@@ -230,10 +232,10 @@ import {
 import { loadReReviewConfig, loadTriageConfig } from './triage/config.ts';
 import {
   readMemory,
-  releaseMemoryLock,
-  tryAcquireMemoryLock,
+  releaseCron,
+  tryClaimCron,
   writeRefreshedIdentity,
-} from './triage/memory.ts';
+} from './triage/memory-store.ts';
 import { manualDoctorFields, resolveDispatchIdentity } from './triage/run.ts';
 
 /** Capture-harness mode: boot from a committed fixture dir instead of live
@@ -1635,12 +1637,12 @@ const httpServer = Bun.serve({
         // not persisted; it still applies to fixClasses below, and the next
         // request re-resolves it.
         if (identityRead.identity !== identityBefore) {
-          const lockToken = tryAcquireMemoryLock();
+          const lockToken = tryClaimCron(Date.now());
           if (lockToken !== false) {
             try {
               writeRefreshedIdentity(identityRead.identity);
             } finally {
-              releaseMemoryLock(lockToken);
+              releaseCron(lockToken);
             }
           }
         }
@@ -1746,9 +1748,8 @@ const httpServer = Bun.serve({
           return new Response('no held draft for that MR/kind', {
             status: 404,
           });
-        const path = draftFilePath(mrUrl, kind);
         if (action === 'dismiss') {
-          writeDraft(path, { status: 'dismissed' });
+          writeDraft(mrUrl, kind, { status: 'dismissed' });
           return new Response(JSON.stringify({ ok: true, dismissed: true }), {
             headers: { 'content-type': 'application/json' },
           });
@@ -1762,7 +1763,10 @@ const httpServer = Bun.serve({
           const projectId = parseRepoId(mr.repositoryId);
           const mutator = new NoteMutator(config.gitlabHost, gitlabToken);
           const note = await mutator.createNote(projectId, mr.iid, draft.body);
-          writeDraft(path, { status: 'posted', postedNoteId: note.id });
+          writeDraft(mrUrl, kind, {
+            status: 'posted',
+            postedNoteId: note.id,
+          });
           return new Response(
             JSON.stringify({ ok: true, posted: true, noteId: note.id }),
             {
@@ -3027,14 +3031,15 @@ async function handleAgentSignal(
   }
 }
 
-const AGENT_STATUS_CURSOR_PATH = join(APP_ROOT, 'state', 'agent-status-cursor');
-
 const agentStatusFeed = new AgentStatusFeed({
   eventsHead: () => eventsHead(),
   eventsList: (after, limit) =>
     eventsList({ pattern: AGENT_STATUS_PATTERN, after, limit }),
-  readCursor: () => readCursorFile(AGENT_STATUS_CURSOR_PATH),
-  writeCursor: cursor => writeCursorFile(AGENT_STATUS_CURSOR_PATH, cursor),
+  readCursor: () => getKvValue<number | null>('agent-status', 'cursor', null),
+  writeCursor: cursor =>
+    persistOrWarn('agent-status cursor write', () =>
+      setKvValue('agent-status', 'cursor', cursor)
+    ),
   handle: handleAgentSignal,
   appRoot: boardStateRoot(),
   log: line => console.error(line),

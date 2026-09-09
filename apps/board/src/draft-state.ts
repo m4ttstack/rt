@@ -1,15 +1,6 @@
-import {
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from 'fs';
-import { join } from 'path';
+import { Database } from 'bun:sqlite';
 
-import { APP_ROOT } from './app-root.ts';
+import { getStateDb, persistOrWarn, runCriticalWrite } from './state/index.ts';
 
 /** An outbound MR note the doctor DRAFTED but may never post. Held drafts are
     the only path to GitLab notes, and only the board's approval click walks
@@ -29,55 +20,58 @@ export interface DraftState {
   postedNoteId?: number;
 }
 
-export const DRAFT_DIR = join(APP_ROOT, 'state', 'drafts');
-
-export function draftFilePath(
+function readDraftRow(
   mrUrl: string,
   kind: string,
-  dir: string = DRAFT_DIR
-): string {
-  const slug = `${mrUrl}-${kind}`
-    .replace(/[^a-zA-Z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 200);
-  return join(dir, `${slug}.json`);
+  db: Database
+): DraftState | null {
+  const row = db
+    .query('SELECT draft FROM drafts WHERE mr_url = ? AND kind = ?')
+    .get(mrUrl, kind) as { draft: string } | null;
+  if (!row) return null;
+  try {
+    return JSON.parse(row.draft) as DraftState;
+  } catch {
+    return null;
+  }
 }
 
+/** Read-merge-write a draft row, keyed by (mrUrl, kind). */
 export function writeDraft(
-  path: string,
+  mrUrl: string,
+  kind: string,
   patch: Partial<DraftState> & { status: DraftStatus },
-  now: number = Date.now()
+  now: number = Date.now(),
+  db: Database = getStateDb()
 ): DraftState {
-  let prev: Partial<DraftState> = {};
-  try {
-    prev = JSON.parse(readFileSync(path, 'utf8')) as DraftState;
-  } catch {
-    // no prior draft -- start fresh
-  }
+  const prev: Partial<DraftState> = readDraftRow(mrUrl, kind, db) ?? {};
   const next: DraftState = {
-    mrUrl: patch.mrUrl ?? prev.mrUrl ?? '',
+    mrUrl: patch.mrUrl ?? prev.mrUrl ?? mrUrl,
     iid: patch.iid ?? prev.iid ?? 0,
-    kind: patch.kind ?? prev.kind ?? '',
+    kind: patch.kind ?? prev.kind ?? kind,
     body: patch.body ?? prev.body ?? '',
     status: patch.status,
     createdAt: prev.createdAt ?? now,
     updatedAt: now,
     postedNoteId: patch.postedNoteId ?? prev.postedNoteId,
   };
-  mkdirSync(join(path, '..'), { recursive: true });
-  const tmp = path + '.tmp';
-  writeFileSync(tmp, JSON.stringify(next, null, 2) + '\n');
-  renameSync(tmp, path);
+  runCriticalWrite('draft write', () => {
+    db.query(
+      `INSERT INTO drafts (mr_url, kind, draft, updated_at) VALUES (?, ?, ?, ?)
+       ON CONFLICT(mr_url, kind) DO UPDATE SET draft = excluded.draft, updated_at = excluded.updated_at`
+    ).run(mrUrl, kind, JSON.stringify(next), now);
+  });
   return next;
 }
 
-export function readDrafts(dir: string = DRAFT_DIR): DraftState[] {
+export function readDrafts(db: Database = getStateDb()): DraftState[] {
+  const rows = db.query('SELECT draft FROM drafts').all() as {
+    draft: string;
+  }[];
   const out: DraftState[] = [];
-  if (!existsSync(dir)) return out;
-  for (const name of readdirSync(dir)) {
-    if (!name.endsWith('.json')) continue;
+  for (const row of rows) {
     try {
-      const d = JSON.parse(readFileSync(join(dir, name), 'utf8')) as DraftState;
+      const d = JSON.parse(row.draft) as DraftState;
       if (d.mrUrl && d.kind) out.push(d);
     } catch {
       continue;
@@ -104,20 +98,25 @@ export function heldDraftsByMr(
     the record of what was drafted. */
 export function pruneDrafts(
   keepUrls: ReadonlySet<string>,
-  dir: string = DRAFT_DIR
+  db: Database = getStateDb()
 ): void {
-  if (!existsSync(dir)) return;
-  for (const name of readdirSync(dir)) {
-    if (!name.endsWith('.json')) continue;
-    const path = join(dir, name);
-    let mrUrl: string | undefined;
-    try {
-      mrUrl = (JSON.parse(readFileSync(path, 'utf8')) as DraftState).mrUrl;
-    } catch {
-      continue;
-    }
-    if (mrUrl && !keepUrls.has(mrUrl)) rmSync(path, { force: true });
-  }
+  const rows = db.query('SELECT mr_url, kind FROM drafts').all() as {
+    mr_url: string;
+    kind: string;
+  }[];
+  const stale = rows.filter(row => !keepUrls.has(row.mr_url));
+  if (stale.length === 0) return;
+  persistOrWarn('draft prune', () => {
+    const tx = db.transaction(() => {
+      for (const row of stale) {
+        db.query('DELETE FROM drafts WHERE mr_url = ? AND kind = ?').run(
+          row.mr_url,
+          row.kind
+        );
+      }
+    });
+    tx();
+  });
 }
 
 export function attachDrafts<T extends { webUrl?: string | null }>(

@@ -1,10 +1,4 @@
-import {
-  mkdirSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  statSync,
-} from 'fs';
+import { mkdirSync, mkdtempSync, statSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { describe, expect, test } from 'bun:test';
@@ -192,15 +186,20 @@ describe('the status writer the board hands out', () => {
         {
           stdout: 'pipe',
           stderr: 'pipe',
-          env: { ...NO_LIVE_BOARD, BOARD_APP_ROOT: root },
+          env: {
+            ...NO_LIVE_BOARD,
+            BOARD_APP_ROOT: root,
+            BOARD_STATE_DB: dbPathForRoot(root),
+          },
         }
       );
       expect(await proc.exited).toBe(0);
-      const drafts = readdirSync(join(root, 'state', 'drafts'));
-      expect(drafts.length).toBe(1);
-      expect(
-        readFileSync(join(root, 'state', 'drafts', drafts[0]!), 'utf8')
-      ).toContain('job x fails on main');
+      const db = openStateDb(dbPathForRoot(root), 'cli');
+      const rows = db.query('SELECT draft FROM drafts').all() as {
+        draft: string;
+      }[];
+      expect(rows.length).toBe(1);
+      expect(rows[0]!.draft).toContain('job x fails on main');
     });
   });
 

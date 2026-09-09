@@ -1,3 +1,5 @@
+import type { Database } from 'bun:sqlite';
+
 import type { SwitchboardClient } from './client.ts';
 import { runPeerTick, type MaterializeDeps } from './inbox.ts';
 
@@ -15,10 +17,10 @@ export interface PeeringHost {
   makeClient(url: string, token: string): SwitchboardClient;
   deps: Omit<MaterializeDeps, 'reportAuth'>;
   tickMs?: number;
-  /** Outbox to drain on each tick. Defaults to the shared OUTBOX_DIR, which is
-      what production wants; tests must pin a temp dir so a run never drains
-      the real queue. */
-  outboxDir?: string;
+  /** Outbox db to drain on each tick. Defaults to the shared state db, which
+      is what production wants; tests must pin a temp db so a run never
+      drains the real queue. */
+  outboxDb?: Database;
 }
 
 /** The board's peering runtime: hot-startable from /peer/join as well as boot
@@ -42,7 +44,7 @@ export function makePeering(host: PeeringHost) {
 
   function runTick(): Promise<void> {
     running = (async () => {
-      if (runtime) await runPeerTick(runtime.client, deps, host.outboxDir);
+      if (runtime) await runPeerTick(runtime.client, deps, host.outboxDb);
     })().finally(() => {
       running = null;
     });

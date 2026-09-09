@@ -1,19 +1,11 @@
+import { Database } from 'bun:sqlite';
+
 import {
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  renameSync,
-  writeFileSync,
-} from 'fs';
-import { join } from 'path';
-
-import { APP_ROOT } from './app-root.ts';
-
-const STATE_ROOT = join(APP_ROOT, 'state');
-export const SLACK_REF_DIR = join(STATE_ROOT, 'slack');
-/** Pre-tabs installs had exactly one channel and one index at this path. */
-const LEGACY_INDEX_NAME = 'slack-index.json';
+  getKvValue,
+  getStateDb,
+  persistOrWarn,
+  setKvValue,
+} from './state/index.ts';
 
 /** How far back the first index build reaches. Review requests older than the
     board's stale window are irrelevant, so we never page the whole channel. */
@@ -99,18 +91,6 @@ export function matchReviewMessage(
   return hits.reduce((a, b) => (parseFloat(a.ts) <= parseFloat(b.ts) ? a : b));
 }
 
-/** Deterministic per-MR ref filename (mirrors review-state's slug scheme). */
-export function slackRefPath(
-  mrUrl: string,
-  dir: string = SLACK_REF_DIR
-): string {
-  const slug = mrUrl
-    .replace(/[^a-zA-Z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 200);
-  return join(dir, `${slug}.json`);
-}
-
 // ── Slack Web API ────────────────────────────────────────────────────────────
 
 async function call(
@@ -173,82 +153,33 @@ async function resolveChannelId(
   );
 }
 
-/** Per-channel index path; the pre-tabs single-channel index migrates lazily
-    (see readIndex). `dir` defaults to the real state root and is only
-    overridden by tests. */
-export function slackIndexPath(
-  channelName: string,
-  dir: string = STATE_ROOT
-): string {
-  const slug = channelName.replace(/[^a-zA-Z0-9_-]+/g, '-');
-  return join(dir, `slack-index-${slug}.json`);
+/** The kv key a channel's index lives under -- a channel NAME slug, never the
+    channel id. Exported so tests and callers can predict/inspect the key. */
+export function slackIndexPath(channelName: string): string {
+  return channelName.replace(/[^a-zA-Z0-9_-]+/g, '-');
 }
 
-/** Where the pre-tabs single-channel index lives, if this install predates tabs. */
-export function legacyIndexPath(dir: string = STATE_ROOT): string {
-  return join(dir, LEGACY_INDEX_NAME);
-}
-
-/** Read a channel's own index. No legacy fallback here -- adoption needs a
-    resolved channel id to verify against (see adoptLegacyIndex), which this
-    plain fs read has no way to obtain. */
+/** Read a channel's own index. */
 export function readIndex(
   channelName: string,
-  dir: string = STATE_ROOT
+  db: Database = getStateDb()
 ): SlackIndex | null {
-  try {
-    return JSON.parse(
-      readFileSync(slackIndexPath(channelName, dir), 'utf8')
-    ) as SlackIndex;
-  } catch {
-    return null;
-  }
+  return getKvValue<SlackIndex | null>(
+    'slack-index',
+    slackIndexPath(channelName),
+    null,
+    db
+  );
 }
 
 export function writeIndex(
   channelName: string,
   index: SlackIndex,
-  dir: string = STATE_ROOT
+  db: Database = getStateDb()
 ): void {
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(
-    slackIndexPath(channelName, dir),
-    JSON.stringify(index, null, 2) + '\n'
+  persistOrWarn('slack index write', () =>
+    setKvValue('slack-index', slackIndexPath(channelName), index, db)
   );
-}
-
-/**
- * Adopt the legacy single-channel index for `channelName`, but only when its
- * cached channelId actually matches `resolvedChannelId` -- the id the caller
- * just resolved by name from Slack. The legacy file predates tabs and stores
- * no channel name, only a channelId, so an unverified adoption would let
- * whichever channel asks first inherit a DIFFERENT channel's id and silently
- * operate against the wrong Slack channel from then on. A mismatch leaves
- * the legacy file untouched so the channel it actually belongs to can still
- * adopt it later; the caller starts fresh with `resolvedChannelId` instead.
- */
-export function adoptLegacyIndex(
-  channelName: string,
-  resolvedChannelId: string,
-  dir: string = STATE_ROOT
-): SlackIndex | null {
-  const path = slackIndexPath(channelName, dir);
-  const legacyPath = legacyIndexPath(dir);
-  if (existsSync(path) || !existsSync(legacyPath)) return null;
-  let legacy: SlackIndex;
-  try {
-    legacy = JSON.parse(readFileSync(legacyPath, 'utf8')) as SlackIndex;
-  } catch {
-    return null;
-  }
-  if (legacy.channelId !== resolvedChannelId) return null;
-  try {
-    renameSync(legacyPath, path);
-  } catch {
-    // Lost a rename race with another process's adoption; the file now at
-    // `path` (written by whoever won) is still correct for this channel.
-  }
-  return legacy;
 }
 
 /**
@@ -259,14 +190,12 @@ export function adoptLegacyIndex(
 export async function syncIndex(
   token: string,
   channelName: string,
-  now: number = Date.now()
+  now: number = Date.now(),
+  db: Database = getStateDb()
 ): Promise<SlackIndex> {
-  let existing = readIndex(channelName);
+  const existing = readIndex(channelName, db);
   const channelId =
     existing?.channelId ?? (await resolveChannelId(token, channelName));
-  // No per-channel index yet: the resolved id above lets us verify (not just
-  // assume) whether the legacy single-channel index actually belongs here.
-  if (!existing) existing = adoptLegacyIndex(channelName, channelId);
   const domain = existing?.teamDomain ?? (await teamDomain(token));
   const oldest =
     existing?.lastTs && existing.lastTs !== '0'
@@ -306,7 +235,7 @@ export async function syncIndex(
     lastTs,
     messages: merged,
   };
-  writeIndex(channelName, index);
+  writeIndex(channelName, index, db);
   return index;
 }
 
@@ -424,13 +353,13 @@ export async function postToSlack(
   channelName: string,
   text: string,
   mrs: Array<{ webUrl: string; iid: number }>,
-  now: number = Date.now()
+  now: number = Date.now(),
+  db: Database = getStateDb()
 ): Promise<SlackRef[]> {
   if (!mrs.length) throw new Error('nothing to post');
-  let existing = readIndex(channelName);
+  const existing = readIndex(channelName, db);
   const channelId =
     existing?.channelId ?? (await resolveChannelId(token, channelName));
-  if (!existing) existing = adoptLegacyIndex(channelName, channelId);
   const domain = existing?.teamDomain ?? (await teamDomain(token));
   const ts = await postMessage(token, channelId, text);
   const multi = mrs.length > 1;
@@ -459,28 +388,48 @@ export async function postToSlack(
       reactions: [],
     };
   });
-  for (const ref of refs) writeSlackRef(ref);
+  for (const ref of refs) writeSlackRef(ref, db);
   return refs;
 }
 
 // ── per-MR ref state ─────────────────────────────────────────────────────────
 
-export function writeSlackRef(ref: SlackRef): void {
-  mkdirSync(SLACK_REF_DIR, { recursive: true });
-  writeFileSync(slackRefPath(ref.mrUrl), JSON.stringify(ref, null, 2) + '\n');
+export function writeSlackRef(
+  ref: SlackRef,
+  db: Database = getStateDb()
+): void {
+  persistOrWarn('slack ref write', () => {
+    db.query(
+      `INSERT INTO slack_refs (mr_url, ref, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT(mr_url) DO UPDATE SET ref = excluded.ref, updated_at = excluded.updated_at`
+    ).run(ref.mrUrl, JSON.stringify(ref), Date.now());
+  });
+}
+
+function readSlackRef(mrUrl: string, db: Database): SlackRef | null {
+  const row = db
+    .query('SELECT ref FROM slack_refs WHERE mr_url = ?')
+    .get(mrUrl) as { ref: string } | null;
+  if (!row) return null;
+  try {
+    return JSON.parse(row.ref) as SlackRef;
+  } catch {
+    return null;
+  }
 }
 
 /** All resolved Slack refs, keyed by mrUrl, for merging into /data.json. */
 export function readSlackRefs(
-  dir: string = SLACK_REF_DIR
+  db: Database = getStateDb()
 ): Map<string, SlackRef> {
   const out = new Map<string, SlackRef>();
-  if (!existsSync(dir)) return out;
-  for (const name of readdirSync(dir)) {
-    if (!name.endsWith('.json')) continue;
+  const rows = db.query('SELECT mr_url, ref FROM slack_refs').all() as {
+    mr_url: string;
+    ref: string;
+  }[];
+  for (const row of rows) {
     try {
-      const ref = JSON.parse(readFileSync(join(dir, name), 'utf8')) as SlackRef;
-      if (ref.mrUrl) out.set(ref.mrUrl, ref);
+      out.set(row.mr_url, JSON.parse(row.ref) as SlackRef);
     } catch {
       // skip unreadable ref
     }
@@ -528,13 +477,14 @@ export async function resolveSlackRef(
   mrUrl: string,
   iid: number,
   now: number = Date.now(),
-  presynced?: SlackIndex
+  presynced?: SlackIndex,
+  db: Database = getStateDb()
 ): Promise<SlackRef> {
-  const index = presynced ?? (await syncIndex(token, channelName, now));
+  const index = presynced ?? (await syncIndex(token, channelName, now, db));
   const msg = matchReviewMessage(index.messages, mrUrl);
   if (!msg) {
     const ref: SlackRef = { mrUrl, iid, status: 'notfound', checkedAt: now };
-    writeSlackRef(ref);
+    writeSlackRef(ref, db);
     return ref;
   }
   const base = {
@@ -554,7 +504,7 @@ export async function resolveSlackRef(
       permalink: buildPermalink(index.teamDomain, index.channelId, msg.ts),
       reactions: await messageReactions(token, index.channelId, msg.ts),
     };
-    writeSlackRef(ref);
+    writeSlackRef(ref, db);
     return ref;
   }
 
@@ -582,7 +532,7 @@ export async function resolveSlackRef(
       ? await messageReactions(token, index.channelId, reply.ts)
       : [],
   };
-  writeSlackRef(ref);
+  writeSlackRef(ref, db);
   return ref;
 }
 
@@ -624,15 +574,16 @@ export function slackSweepTargets<T extends { webUrl?: string | null }>(
 export async function sweepSlackRefs(
   token: string,
   targets: SweepTarget[],
-  opts: { gapMs?: number; now?: number } = {}
+  opts: { gapMs?: number; now?: number; db?: Database } = {}
 ): Promise<{ resolved: number; failed: number; errors: string[] }> {
   const gapMs = opts.gapMs ?? 250;
   const now = opts.now ?? Date.now();
+  const db = opts.db ?? getStateDb();
   const indexes = new Map<string, Promise<SlackIndex>>();
   const indexFor = (channel: string): Promise<SlackIndex> => {
     let pending = indexes.get(channel);
     if (!pending) {
-      pending = syncIndex(token, channel, now);
+      pending = syncIndex(token, channel, now, db);
       indexes.set(channel, pending);
     }
     return pending;
@@ -647,7 +598,8 @@ export async function sweepSlackRefs(
         t.mrUrl,
         t.iid,
         now,
-        await indexFor(t.channel)
+        await indexFor(t.channel),
+        db
       );
       resolved++;
       if (ref.status === 'found' && gapMs > 0)
@@ -670,13 +622,14 @@ export async function reactToMR(
   token: string,
   mrUrl: string,
   emoji: string,
-  now: number = Date.now()
+  now: number = Date.now(),
+  db: Database = getStateDb()
 ): Promise<SlackRef> {
-  const ref = JSON.parse(readFileSync(slackRefPath(mrUrl), 'utf8')) as SlackRef;
-  if (ref.status !== 'found' || !ref.channelId) {
+  const ref = readSlackRef(mrUrl, db);
+  if (!ref || ref.status !== 'found' || !ref.channelId) {
     throw new Error('no resolved slack message for this MR');
   }
-  let next = { ...ref };
+  const next = { ...ref };
   if (ref.multi && !ref.messageTs) {
     if (!ref.parentTs || !ref.teamDomain)
       throw new Error('multi-MR ref missing thread parent');
@@ -698,7 +651,7 @@ export async function reactToMR(
   await addReaction(token, ref.channelId, next.messageTs, emoji);
   next.reactions = await messageReactions(token, ref.channelId, next.messageTs);
   next.checkedAt = now;
-  writeSlackRef(next);
+  writeSlackRef(next, db);
   return next;
 }
 
@@ -710,10 +663,11 @@ export async function unreactFromMR(
   token: string,
   mrUrl: string,
   emoji: string,
-  now: number = Date.now()
+  now: number = Date.now(),
+  db: Database = getStateDb()
 ): Promise<SlackRef> {
-  const ref = JSON.parse(readFileSync(slackRefPath(mrUrl), 'utf8')) as SlackRef;
-  if (ref.status !== 'found' || !ref.channelId || !ref.messageTs) {
+  const ref = readSlackRef(mrUrl, db);
+  if (!ref || ref.status !== 'found' || !ref.channelId || !ref.messageTs) {
     throw new Error('no resolved slack message for this MR');
   }
   await removeReaction(token, ref.channelId, ref.messageTs, emoji);
@@ -722,6 +676,6 @@ export async function unreactFromMR(
     reactions: await messageReactions(token, ref.channelId, ref.messageTs),
     checkedAt: now,
   };
-  writeSlackRef(next);
+  writeSlackRef(next, db);
   return next;
 }

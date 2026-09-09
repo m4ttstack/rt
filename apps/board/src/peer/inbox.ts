@@ -1,3 +1,5 @@
+import type { Database } from 'bun:sqlite';
+
 import type { SwitchboardClient } from './client.ts';
 import {
   parseNudgeOutcomePayload,
@@ -97,10 +99,10 @@ export function materializeEnvelope(
 export async function runPeerTick(
   client: SwitchboardClient,
   deps: MaterializeDeps,
-  outboxDir?: string
+  outboxDb?: Database
 ): Promise<void> {
   try {
-    await drainOutbox(d => client.publish(d), outboxDir);
+    await drainOutbox(d => client.publish(d), outboxDb);
     const envelopes = await client.inbox();
     // A 401 is a token problem, not a transient one: report it and stop, so
     // nothing is materialized or acked against a rejected token.

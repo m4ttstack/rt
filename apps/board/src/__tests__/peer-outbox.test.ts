@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import type { Database } from 'bun:sqlite';
 import { afterEach, describe, expect, test } from 'bun:test';
 
 import { makeSwitchboardClient } from '../peer/client.ts';
@@ -11,13 +12,14 @@ import {
   enqueueOutbox,
   readOutbox,
 } from '../peer/outbox.ts';
+import { openStateDb } from '../state/db.ts';
 
 let dir: string | undefined;
-function freshDir(): string {
+function freshDb(): Database {
   dir = mkdtempSync(join(tmpdir(), 'outbox-'));
-  return dir;
+  return openStateDb(join(dir, 'state.db'));
 }
-// Only classifySend's tests skip freshDir(), so guard against the unset case
+// Only classifySend's tests skip freshDb(), so guard against the unset case
 // rather than calling rmSync on an undefined path.
 afterEach(() => {
   if (dir) rmSync(dir, { recursive: true, force: true });
@@ -47,39 +49,39 @@ describe('classifySend', () => {
 
 describe('outbox', () => {
   test('enqueue then read round-trips; enqueue is idempotent per id', () => {
-    const dir = freshDir();
-    enqueueOutbox(d('e1'), dir, 5);
-    enqueueOutbox(d('e1'), dir, 9);
-    const entries = readOutbox(dir);
+    const db = freshDb();
+    enqueueOutbox(d('e1'), db, 5);
+    enqueueOutbox(d('e1'), db, 9);
+    const entries = readOutbox(db);
     expect(entries.length).toBe(1);
     expect(entries[0]!.queuedAt).toBe(5);
   });
   test('drain sends, drops 4xx, keeps retryables with attempts bumped', async () => {
-    const dir = freshDir();
-    enqueueOutbox(d('ok'), dir, 1);
-    enqueueOutbox(d('gone'), dir, 1);
-    enqueueOutbox(d('later'), dir, 1);
+    const db = freshDb();
+    enqueueOutbox(d('ok'), db, 1);
+    enqueueOutbox(d('gone'), db, 1);
+    enqueueOutbox(d('later'), db, 1);
     const statuses: Record<string, number | 'network'> = {
       ok: 201,
       gone: 422,
       later: 'network',
     };
-    const result = await drainOutbox(async env => statuses[env.id]!, dir);
+    const result = await drainOutbox(async env => statuses[env.id]!, db);
     expect(result).toEqual({ sent: 1, dropped: 1, kept: 1 });
-    const remaining = readOutbox(dir);
+    const remaining = readOutbox(db);
     expect(remaining.map(e => e.envelope.id)).toEqual(['later']);
     expect(remaining[0]!.attempts).toBe(1);
   });
   test("drain keeps a 401'd envelope queued so it survives a token rotation", async () => {
-    const dir = freshDir();
-    enqueueOutbox(d('stale-token'), dir, 1);
-    const denied = await drainOutbox(async () => 401, dir);
+    const db = freshDb();
+    enqueueOutbox(d('stale-token'), db, 1);
+    const denied = await drainOutbox(async () => 401, db);
     expect(denied).toEqual({ sent: 0, dropped: 0, kept: 1 });
-    expect(readOutbox(dir).map(e => e.envelope.id)).toEqual(['stale-token']);
+    expect(readOutbox(db).map(e => e.envelope.id)).toEqual(['stale-token']);
     // and it goes out once the board has re-joined with a fresh token
-    const after = await drainOutbox(async () => 201, dir);
+    const after = await drainOutbox(async () => 201, db);
     expect(after).toEqual({ sent: 1, dropped: 0, kept: 0 });
-    expect(readOutbox(dir)).toEqual([]);
+    expect(readOutbox(db)).toEqual([]);
   });
 });
 
