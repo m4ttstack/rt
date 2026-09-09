@@ -1724,28 +1724,26 @@
 .tui-triage-queue-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   margin-top: -0.2rem;
 }
 .tui-triage-pos {
-  margin-left: 2px;
-  font: 500 0.7rem/1 var(--font-mono);
+  font: 500 0.85rem/1 var(--font-mono);
   font-variant-numeric: tabular-nums;
   letter-spacing: normal;
-  color: var(--gate-muted);
+  color: var(--fg);
   align-self: center;
 }
 .tui-triage-pips {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  margin-left: 2px;
+  gap: 6px;
   align-self: center;
 }
 .tui-triage-pip {
-  width: 6px;
-  height: 6px;
-  border-radius: 2px;
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
 }
 .tui-triage-pip[data-state='done'] {
   background: var(--dot-ok);
@@ -1839,7 +1837,7 @@
 }
 .tui-triage-kind {
   flex-shrink: 0;
-  font: 600 0.66rem/1 var(--font-sans);
+  font: 600 0.74rem/1 var(--font-sans);
   text-transform: uppercase;
   letter-spacing: 0.03em;
   color: var(--gate-muted);
