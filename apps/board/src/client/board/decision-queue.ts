@@ -71,9 +71,13 @@ export function queueView(
   const position = session.activeId
     ? session.order.indexOf(session.activeId) + 1
     : 0;
-  const nextId = session.activeId
-    ? advance(session, entries, session.activeId)
+  // The peek mirrors where skip/answer actually lands (wraparound included);
+  // when the wrap would land back on the active gate itself, there is no
+  // "next" to glance at.
+  const wrapped = session.activeId
+    ? advanceOrWrap(session, entries, session.activeId)
     : null;
+  const nextId = wrapped === session.activeId ? null : wrapped;
   const nextEntry = entryFor(entries, nextId);
   return {
     open: false,

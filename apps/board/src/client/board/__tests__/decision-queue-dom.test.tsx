@@ -131,6 +131,11 @@ let React: typeof import('react');
 let createRoot: typeof import('react-dom/client').createRoot;
 let Board: typeof import('../Board.tsx').Board;
 
+// bun test shares one global realm across files: unregister() only restores
+// what registration recorded, so the fetch stub and the EventSource property
+// added afterwards must be rolled back by hand.
+const realFetch = globalThis.fetch;
+
 beforeAll(async () => {
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = typeof input === 'string' ? input : input.toString();
@@ -148,6 +153,8 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  globalThis.fetch = realFetch;
+  delete (globalThis as unknown as { EventSource?: unknown }).EventSource;
   await GlobalRegistrator.unregister();
 });
 

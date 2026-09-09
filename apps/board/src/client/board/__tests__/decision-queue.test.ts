@@ -83,3 +83,10 @@ test('advanceOrWrap completes only once every gate is retired', () => {
   const s = session({ answered: ['g1', 'g2', 'g3'], activeId: 'g3' });
   expect(advanceOrWrap(s, entries, 'g3')).toBeNull();
 });
+
+test('nextPeek wraps with navigation, and never peeks the active gate itself', () => {
+  const wrapping = session({ answered: ['g2'], activeId: 'g3' });
+  expect(queueView(wrapping, entries).nextPeek).toBe('!1 · fix the thing');
+  const lastRemaining = session({ answered: ['g1', 'g2'], activeId: 'g3' });
+  expect(queueView(lastRemaining, entries).nextPeek).toBeUndefined();
+});
