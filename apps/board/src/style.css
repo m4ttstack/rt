@@ -1749,7 +1749,10 @@
   gap: var(--gate-gap-row);
 }
 .tui-triage-pos {
-  font: 500 var(--gate-font-body) / 1 var(--font-mono);
+  font-family: var(--font-sans);
+  font-size: var(--gate-font-body);
+  font-weight: 500;
+  line-height: 1;
   font-variant-numeric: tabular-nums;
   letter-spacing: normal;
   color: var(--fg);
@@ -1890,7 +1893,7 @@
   white-space: nowrap;
 }
 .tui-triage-peek-k {
-  font: 500 var(--gate-font-meta) / 1 var(--font-mono);
+  font-weight: 500;
 }
 .tui-triage-done {
   display: flex;
