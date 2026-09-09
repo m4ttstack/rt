@@ -682,14 +682,74 @@ export function Board() {
     return () => clearTimeout(t);
   }, [gateDeepLinkIid]);
 
-  // Board-wide, not scoped to the active tab/member filter -- a decision
-  // inbox that emptied out on a tab switch would hide gates rather than
-  // resolve them. Derived from the raw stack trees (not the later `groups`,
-  // which only exist once `data` has cleared the loading check below) so
-  // this and useDecisionQueue can sit above that check, unconditionally, as
-  // every hook in this component must.
+  // The pure filter/group/sort pipeline (overlay -> tabFiltered ->
+  // filterBySlack(filterByMember(...)) -> groupMRs(...).map(sortMRs...)),
+  // hoisted above the loading guard below and memoized so it has exactly one
+  // source of truth: the render body reads its fields instead of
+  // recomputing them, and the decision queue below reads the same `groups`
+  // the rows actually render -- header count and queue order can never drift
+  // from what's on screen. Sitting above the guard (rather than after it,
+  // where `groups` used to live) is what lets this and useDecisionQueue be
+  // called unconditionally, as every hook in this component must be: a
+  // render where `data` is still null must call exactly the hooks it always
+  // calls, never fewer.
+  const boardView = useMemo(() => {
+    if (!data) return null;
+    const total = data.members.reduce((n, m) => n + m.count, 0);
+    // data.tabs is always non-empty (server falls back to IMPLICIT_TABS);
+    // state.tab itself may briefly lag on the very first render before
+    // onData's validation pass lands, so fall back to the first tab rather
+    // than trust it blindly.
+    const activeTab = data.tabs.find(t => t.id === state.tab) ?? data.tabs[0]!;
+    const isCodeownersTab = activeTab.source.kind === 'codeowners';
+    // A codeowners tab's "who counts as roster" set for excludeMembers.
+    const rosterUsernames = new Set(data.members.map(m => m.username));
+    // Server state wins; otherwise show an optimistic "queued" badge if pending.
+    const mrs = overlay(data.mrs, optimisticLifecycle.state);
+    const tabFiltered = filterByTab(mrs, activeTab, rosterUsernames);
+    // Codeowners tabs bypass member filtering entirely (and the sidebar that
+    // drives it) -- the queue is scoped by section, not by roster author.
+    // A codeowners tab lists other teams' MRs, so the configured roster has
+    // nothing to drive there. Inferring one from the rows in view keeps the
+    // author filter (and the settings gears that live in this panel) available.
+    const roster = isCodeownersTab ? inferRoster(tabFiltered) : data.members;
+    const rosterTotal = isCodeownersTab ? tabFiltered.length : total;
+    // A stored "posted" pick with slack unconfigured would hide every row
+    // behind a control that isn't rendered, so the filter only bites when
+    // there are refs to filter on.
+    const slackFilter = data.slackEnabled ? state.slack : 'all';
+    const filtered = filterBySlack(
+      filterByMember(tabFiltered, state.member),
+      slackFilter
+    );
+    const groups = groupMRs(
+      filtered,
+      state.group,
+      data.members.map(m => m.username),
+      Date.now()
+    ).map(g => ({
+      label: g.label,
+      mrs: sortMRs(g.mrs, state.sort),
+    }));
+    return {
+      activeTab,
+      isCodeownersTab,
+      rosterUsernames,
+      mrs,
+      tabFiltered,
+      roster,
+      rosterTotal,
+      slackFilter,
+      filtered,
+      groups,
+    };
+  }, [data, optimisticLifecycle.state, state]);
+
+  // Actionable gates on VISIBLE rows only, in board order: group order, then
+  // the group's own sort, then stack nesting -- exactly the order and scope
+  // `boardView.groups` renders, since it's the same array.
   const queueEntries = useMemo(() => {
-    if (!data) return [];
+    if (!boardView) return [];
     const out: QueueEntry[] = [];
     const collect = (node: StackNode) => {
       const mr = node.mr as BoardMRWithReview;
@@ -698,9 +758,9 @@ export function Board() {
           out.push({ gate, mr });
       node.children.forEach(collect);
     };
-    nestStacks(data.mrs).forEach(collect);
+    for (const g of boardView.groups) nestStacks(g.mrs).forEach(collect);
     return out;
-  }, [data]);
+  }, [boardView]);
   const queue = useDecisionQueue(queueEntries);
 
   if (!data) {
@@ -711,7 +771,19 @@ export function Board() {
     );
   }
 
-  const total = data.members.reduce((n, m) => n + m.count, 0);
+  const {
+    activeTab,
+    isCodeownersTab,
+    rosterUsernames,
+    mrs,
+    tabFiltered,
+    roster,
+    rosterTotal,
+    slackFilter,
+    filtered,
+    groups,
+  } = boardView!;
+
   const staleMins = Math.round((Date.now() - data.fetchedAt) / 60_000);
   const now = Date.now();
   const dataAge = dataAgeLabel(data.dataSyncedAt, now);
@@ -722,13 +794,6 @@ export function Board() {
       ? `board shows ${data.staleAfterDays} days but rt syncs ${data.scopeWindowDays} days... align configs`
       : null;
 
-  // data.tabs is always non-empty (server falls back to IMPLICIT_TABS); state.tab
-  // itself may briefly lag on the very first render before onData's validation
-  // pass lands, so fall back to the first tab rather than trust it blindly.
-  const activeTab = data.tabs.find(t => t.id === state.tab) ?? data.tabs[0]!;
-  const isCodeownersTab = activeTab.source.kind === 'codeowners';
-  // A codeowners tab's "who counts as roster" set for excludeMembers.
-  const rosterUsernames = new Set(data.members.map(m => m.username));
   const activeSection =
     activeTab.source.kind === 'codeowners'
       ? sectionStatus(activeTab.source.section, data.scopeKnownSections)
@@ -744,34 +809,6 @@ export function Board() {
     activeTab.source.kind === 'codeowners' &&
     !activeSection?.unknown &&
     data.scopeUncoveredSections.includes(activeTab.source.section);
-
-  // Server state wins; otherwise show an optimistic "queued" badge if pending.
-  const mrs = overlay(data.mrs, optimisticLifecycle.state);
-  const tabFiltered = filterByTab(mrs, activeTab, rosterUsernames);
-  // Codeowners tabs bypass member filtering entirely (and the sidebar that
-  // drives it) -- the queue is scoped by section, not by roster author.
-  // A codeowners tab lists other teams' MRs, so the configured roster has
-  // nothing to drive there. Inferring one from the rows in view keeps the
-  // author filter (and the settings gears that live in this panel) available.
-  const roster = isCodeownersTab ? inferRoster(tabFiltered) : data.members;
-  const rosterTotal = isCodeownersTab ? tabFiltered.length : total;
-  // A stored "posted" pick with slack unconfigured would hide every row
-  // behind a control that isn't rendered, so the filter only bites when
-  // there are refs to filter on.
-  const slackFilter = data.slackEnabled ? state.slack : 'all';
-  const filtered = filterBySlack(
-    filterByMember(tabFiltered, state.member),
-    slackFilter
-  );
-  const groups = groupMRs(
-    filtered,
-    state.group,
-    data.members.map(m => m.username),
-    now
-  ).map(g => ({
-    label: g.label,
-    mrs: sortMRs(g.mrs, state.sort),
-  }));
   const activeMember =
     state.member !== 'all'
       ? (roster.find(m => m.username === state.member) ?? null)
