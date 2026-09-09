@@ -1778,7 +1778,7 @@
   border-radius: 3px;
 }
 .tui-triage-pip[data-state='done'] {
-  background: var(--dot-ok);
+  background: var(--gate-muted);
 }
 .tui-triage-pip[data-state='active'] {
   background: var(--accent);
