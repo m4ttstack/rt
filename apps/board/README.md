@@ -163,9 +163,14 @@ agent-status cursor) lives in one SQLite file, `state.db`, opened lazily on
 first use and shared by the server and every CLI it launches. Its location
 is independent of `config.json`'s: `BOARD_STATE_DB` pins an exact file path
 when set, otherwise it defaults to `~/.mattstack/board/state.db` regardless
-of which checkout or `BOARD_APP_ROOT` is running the server. A first run
-against an existing install one-shot imports any legacy per-lane JSON state
-files it finds and renames the old `state/` directory aside.
+of which checkout or `BOARD_APP_ROOT` is running the server. That path must
+still be named `state.db` (a launched pane's status CLI always derives
+`<root>/state.db` from its claim ticket, never from `BOARD_STATE_DB`
+itself, so any other basename would silently split the server's db from
+every pane's); a mismatched basename fails fast rather than quietly forking
+state. A first run against an existing install one-shot
+imports any legacy per-lane JSON state files it finds and renames the old
+`state/` directory aside.
 
 A launched pane (review, respond, doctor) never sees `BOARD_STATE_DB`
 itself. Instead the server hands it a **claim ticket**: a `--state <path>`

@@ -125,9 +125,13 @@ Launch order changes from "write initial state file, then launch" to
 3. The CLI resolves the row by handle and UPDATEs it. No matching row is a
    loud error, never a fresh identity-less record. This structurally closes
    BOARD-24.
-4. On a `done` write, the CLI reads the `--report` sibling file if present
-   and stores its text into `report`; the file is scratch from then on.
-   `reportReady` becomes `report IS NOT NULL`.
+4. On every status write, and at gate open, the CLI reads the report's
+   sibling file if present and stores its text into `report`; the file is
+   scratch from then on. This is not gated on `done`: the skill writes the
+   report before parking at a gate, so the board must be able to serve it
+   for the whole time the pane holds there. `done` is just the final
+   catch-up, for a report only finished at the very end. `reportReady`
+   becomes `report IS NOT NULL`.
 
 The agent-status event's `appRoot` scoping field carries the handle-derived
 root as today, which post-cutover is `boardStateRoot()`; the server's own
@@ -192,7 +196,9 @@ migrations, guarded by a kv marker; explicit-path opens never import:
   carries the root derivation panes need, and dropping it later is cheap if
   the wrapper contract is ever re-cut.
 - In-flight panes at cutover hold handles to files the import has already
-  consumed. The import maps their paths to rows (the handle is the same
-  string), so their next status write lands in the db; their state files are
-  gone with the renamed dir, which only matters to a pane that crashed
-  mid-write during the upgrade window.
+  consumed. A same-root handle maps straight to its row (the handle is the
+  same string), so its next status write lands in the db with no pane action
+  needed. A foreign-root handle -- a pane launched by a pre-upgrade checkout
+  whose root the import never touched -- fails loudly instead (no board db
+  at that path) rather than silently creating a stray db; that pane needs a
+  relaunch. Drain in-flight panes before upgrading to avoid the relaunch.
