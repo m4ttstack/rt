@@ -158,6 +158,22 @@ describe("gate-push", () => {
     expect(delivered.map((d) => d.sessionId)).toEqual(["shep"]);
   });
 
+  test("fanOut delivers once per session even when both its prefix and owner rows match (RT-117 dedupe)", async () => {
+    const { push, store, delivered } = harness();
+    store.subscribe({ subjectPrefix: "herd:h-1/", session: "shep" });
+    store.subscribe({ subjectPrefix: "", session: "shep", scope: "owner", ownerRef: "herd:h-1" });
+    const row = store.open({ subject: "herd:h-1/job-a", kind: "question", questions: qs(), owner: "herd:h-1" }).row;
+    await push.onOpened(row);
+    expect(delivered.filter((d) => d.sessionId === "shep").length).toBe(1);
+    // Only the row that matched first (the prefix row, subscribed first)
+    // records a delivery outcome -- the skipped owner row is left untouched.
+    const subs = store.subscriptions();
+    const prefixSub = subs.find((s) => s.scope === "prefix")!;
+    const ownerSub = subs.find((s) => s.scope === "owner")!;
+    expect(prefixSub.lastDelivery?.outcome).toBe("delivered");
+    expect(ownerSub.lastDelivery).toBeNull();
+  });
+
   test("fan-out resolves the subscriber registry ONCE per event when resolveAll is wired (F8)", async () => {
     const store = freshStore();
     const delivered: Array<{ sessionId: string; body: string }> = [];

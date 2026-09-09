@@ -228,16 +228,28 @@ describe("herd:resume / status / close", () => {
     expect(res.data.status.jobs[0]).toMatchObject({ name: "job-a", openGate: res.data.gates[0]!.id, paneStatus: "working" });
   });
 
-  test("resume drops the prior session's subscriptions for this herd before re-subscribing", async () => {
+  test("resume drops only the prior shepherd's subscriptions for this herd; an unrelated session's herd-prefix subscription survives", async () => {
     const { h, gateStore, herd } = await started();
     const before = gateStore.subscriptions({ live: true });
     expect(before).toHaveLength(2);
+    // A co-observer on this herd's prefix (e.g. a manual `rt gate subscribe`
+    // or a board relay) must not be caught by the resume re-point.
+    const observer = gateStore.subscribe({ subjectPrefix: `herd:${herd}/`, session: "observer" });
     const res = await h["herd:resume"]({ herd, session: "sess-shep-2" });
     if (!res.ok) throw new Error(res.error);
     const after = gateStore.subscriptions({ live: true });
-    expect(after).toHaveLength(2);
-    expect(after.every((s) => s.session === "sess-shep-2")).toBe(true);
+    const shepSubs = after.filter((s) => s.session === "sess-shep-2");
+    expect(shepSubs).toHaveLength(2);
     for (const b of before) expect(after.some((a) => a.id === b.id)).toBe(false);
+    expect(after.some((a) => a.id === observer.id)).toBe(true);
+  });
+
+  test("start never drops another session's subscription (no prior shepherd to re-point from)", async () => {
+    const { h, gateStore } = harness();
+    const observer = gateStore.subscribe({ subjectPrefix: "herd:demo-", session: "observer" });
+    const res = await h["herd:start"](START);
+    if (!res.ok) throw new Error(res.error);
+    expect(gateStore.subscriptions({ live: true }).some((s) => s.id === observer.id)).toBe(true);
   });
 
   test("resume on an unknown herd fails", async () => {

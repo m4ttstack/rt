@@ -83,18 +83,23 @@ export function createHerdHandlers(deps: HerdDeps) {
 
   /** Registers both the prefix row (herd:<id>/*, for the shepherd's own job
       gates) and the owner row (routes any gate whose `owner` is this herd,
-      regardless of subject -- e.g. a run gate spawned by a job). A resume
-      under a new session first drops any live row a PRIOR session held for
-      this same herd, so a crashed/relaunched shepherd re-points fan-out
-      instead of leaving a stale session subscribed alongside the new one. */
-  async function subscribeShepherd(herdId: string, session: string): Promise<CommandResult<"gate:subscribe">> {
+      regardless of subject -- e.g. a run gate spawned by a job). `priorSession`
+      -- the herd's shepherdSession before this call, passed by the resume
+      caller only -- has its matching rows dropped first, so a relaunched
+      shepherd re-points fan-out onto its new session. Scoped to that ONE
+      session deliberately: any OTHER session's herd-prefix or owner
+      subscription (a manual `rt gate subscribe`, a board relay) is a
+      legitimate co-observer and must survive a resume it had no part in. */
+  async function subscribeShepherd(herdId: string, session: string, priorSession?: string | null): Promise<CommandResult<"gate:subscribe">> {
     const ownerRef = herdOwner(herdId);
     const prefix = herdPrefix(herdId);
-    const live = await deps.gate["gate:subscriptions"]({ live: true });
-    if (live.ok) {
-      for (const sub of live.data.subscriptions) {
-        const sameHerd = sub.scope === "owner" ? sub.ownerRef === ownerRef : sub.subjectPrefix === prefix;
-        if (sameHerd && sub.session !== session) await deps.gate["gate:unsubscribe"]({ id: sub.id });
+    if (priorSession && priorSession !== session) {
+      const prior = await deps.gate["gate:subscriptions"]({ live: true, session: priorSession });
+      if (prior.ok) {
+        for (const sub of prior.data.subscriptions) {
+          const sameHerd = sub.scope === "owner" ? sub.ownerRef === ownerRef : sub.subjectPrefix === prefix;
+          if (sameHerd) await deps.gate["gate:unsubscribe"]({ id: sub.id });
+        }
       }
     }
     const prefixSub = await deps.gate["gate:subscribe"]({ subjectPrefix: prefix, session });
@@ -269,7 +274,7 @@ export function createHerdHandlers(deps: HerdDeps) {
       if (!herdId || !session) return { ok: false, error: "herd and session are required" };
       const herd = store.get(herdId);
       if (!herd) return { ok: false, error: `unknown herd "${herdId}"` };
-      const sub = await subscribeShepherd(herdId, session);
+      const sub = await subscribeShepherd(herdId, session, herd.shepherdSession);
       if (!sub.ok) return sub;
       // Presence binds a handle to a session: without a row for the relaunched
       // session, worker reports and lifecycle posts wake nobody.

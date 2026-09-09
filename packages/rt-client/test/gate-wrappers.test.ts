@@ -125,6 +125,17 @@ describe("gateSubscribe", () => {
     expect(res.data).toEqual({ id: "sub-1" });
     expect(seen).toEqual([{ cmd: "gate:subscribe", payload }]);
   });
+
+  test("forwards scope and ownerRef when present (RT-117)", async () => {
+    const { sock, seen, stop } = fakeDaemon({
+      "gate:subscribe": { ok: true, data: { id: "sub-1" } },
+    });
+    stops.push(stop);
+    const payload = { subjectPrefix: "", session: "sess-1", scope: "owner" as const, ownerRef: "herd:h-1" };
+    const res = await gateSubscribe(payload, { sockPath: sock });
+    expect(res.ok).toBe(true);
+    expect(seen).toEqual([{ cmd: "gate:subscribe", payload }]);
+  });
 });
 
 describe("gateUnsubscribe", () => {
