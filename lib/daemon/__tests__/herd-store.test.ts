@@ -33,7 +33,7 @@ describe("herd-store", () => {
   });
 
   test("herdSubject composes herd:<id>/<job>", () => {
-    expect(herdSubject("demo-1", "acme-1")).toBe("herd:demo-1/acme-1");
+    expect(herdSubject("demo-1", "job-a")).toBe("herd:demo-1/job-a");
   });
 
   test("create then get round-trips, status active, wrappedAt null", () => {
@@ -68,9 +68,9 @@ describe("herd-store", () => {
   test("upsertJob inserts then updates the same (herd, name) row", () => {
     const s = store();
     const h = herd(s);
-    const j = s.upsertJob({ herd: h.id, name: "acme-1", worktree: "/w/acme-1", tree: "slot-a", handle: "acme-1", status: "spawning" });
-    expect(j).toMatchObject({ herd: h.id, name: "acme-1", status: "spawning", pane: null, tree: "slot-a", disposable: false });
-    const j2 = s.upsertJob({ herd: h.id, name: "acme-1", worktree: "/w/acme-1", handle: "acme-1", status: "spawning", pane: "w1:p1", agentSession: "sess-w", disposable: true });
+    const j = s.upsertJob({ herd: h.id, name: "job-a", worktree: "/w/job-a", tree: "slot-a", handle: "job-a", status: "spawning" });
+    expect(j).toMatchObject({ herd: h.id, name: "job-a", status: "spawning", pane: null, tree: "slot-a", disposable: false });
+    const j2 = s.upsertJob({ herd: h.id, name: "job-a", worktree: "/w/job-a", handle: "job-a", status: "spawning", pane: "w1:p1", agentSession: "sess-w", disposable: true });
     expect(j2).toMatchObject({ pane: "w1:p1", tree: "slot-a", disposable: true });
     expect(s.jobs(h.id)).toHaveLength(1);
   });
@@ -84,33 +84,33 @@ describe("herd-store", () => {
   test("jobsByPane and jobBySubject resolve rows", () => {
     const s = store();
     const h = herd(s);
-    s.upsertJob({ herd: h.id, name: "acme-1", worktree: "/w/acme-1", handle: "acme-1", status: "active", pane: "w1:p1" });
-    expect(s.jobsByPane("w1:p1").map((j) => j.name)).toEqual(["acme-1"]);
-    expect(s.jobBySubject(herdSubject(h.id, "acme-1"))!.name).toBe("acme-1");
+    s.upsertJob({ herd: h.id, name: "job-a", worktree: "/w/job-a", handle: "job-a", status: "active", pane: "w1:p1" });
+    expect(s.jobsByPane("w1:p1").map((j) => j.name)).toEqual(["job-a"]);
+    expect(s.jobBySubject(herdSubject(h.id, "job-a"))!.name).toBe("job-a");
     expect(s.jobBySubject("run:abc")).toBeNull();
-    expect(s.jobBySubject("herd:nope/acme-1")).toBeNull();
+    expect(s.jobBySubject("herd:nope/job-a")).toBeNull();
   });
 
   test("setJobStatus updates status, lastGate, lastReport, updatedAt", () => {
     const s = store();
     const h = herd(s);
-    s.upsertJob({ herd: h.id, name: "acme-1", worktree: "/w", handle: "acme-1", status: "active" });
-    const before = s.getJob(h.id, "acme-1")!.updatedAt;
-    s.setJobStatus(h.id, "acme-1", "at-gate", { lastGate: "gt-1" });
-    const j = s.getJob(h.id, "acme-1")!;
+    s.upsertJob({ herd: h.id, name: "job-a", worktree: "/w", handle: "job-a", status: "active" });
+    const before = s.getJob(h.id, "job-a")!.updatedAt;
+    s.setJobStatus(h.id, "job-a", "at-gate", { lastGate: "gt-1" });
+    const j = s.getJob(h.id, "job-a")!;
     expect(j.status).toBe("at-gate");
     expect(j.lastGate).toBe("gt-1");
     expect(j.updatedAt).toBeGreaterThanOrEqual(before);
-    s.setJobStatus(h.id, "acme-1", "done", { lastReport: 42 });
-    expect(s.getJob(h.id, "acme-1")).toMatchObject({ status: "done", lastReport: 42, lastGate: "gt-1" });
+    s.setJobStatus(h.id, "job-a", "done", { lastReport: 42 });
+    expect(s.getJob(h.id, "job-a")).toMatchObject({ status: "done", lastReport: 42, lastGate: "gt-1" });
   });
 
   test("upsertJob clears nullable fields on explicit null", () => {
     const s = store();
     const h = herd(s);
-    s.upsertJob({ herd: h.id, name: "acme-1", worktree: "/w/acme-1", handle: "acme-1", status: "active", pane: "w1:p1", agentSession: "s" });
-    s.upsertJob({ herd: h.id, name: "acme-1", worktree: "/w/acme-1", handle: "acme-1", status: "active", pane: null });
-    const j = s.getJob(h.id, "acme-1")!;
+    s.upsertJob({ herd: h.id, name: "job-a", worktree: "/w/job-a", handle: "job-a", status: "active", pane: "w1:p1", agentSession: "s" });
+    s.upsertJob({ herd: h.id, name: "job-a", worktree: "/w/job-a", handle: "job-a", status: "active", pane: null });
+    const j = s.getJob(h.id, "job-a")!;
     expect(j.pane).toBeNull();
     expect(j.agentSession).toBe("s");
   });
