@@ -58,10 +58,16 @@ PATTERN="$A1|$A2|$A3|$A4|$A5|$A6|$A7|$A8|$A9|$A10B"
 # patterns, and nothing is authored in them either. grep -I skips other
 # binaries, which is what keeps things like tests/baselines/*.png (had they
 # not already been PNG-excluded) from reporting a match on a coincidental
-# byte run.
+# byte run. The exclusions are git pathspecs rather than a grep stage: the
+# trailing `|| true` swallows every pipeline failure (grep exits 1 on the
+# no-hits success path, so it cannot be dropped), which means any stage that
+# failed for another reason would make the gate print ok without having
+# scanned -- the fewer stages inside the pipeline, the less can fail open.
 HITS=$(cd "$ROOT" \
   && git ls-files -z \
-  | grep -zvE '(bun\.lock|package-lock\.json|\.png)$' \
+    -- ':(exclude)*bun.lock' \
+       ':(exclude)*package-lock.json' \
+       ':(exclude)*.png' \
   | xargs -0 grep -IniE "$PATTERN" 2>/dev/null \
   | grep -v '^scripts/repo-purity.sh:' || true)
 if [ -n "$HITS" ]; then
