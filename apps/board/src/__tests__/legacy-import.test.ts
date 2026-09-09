@@ -1,18 +1,17 @@
 import { describe, expect, test } from 'bun:test';
-import type { Database } from 'bun:sqlite';
 import {
+  chmodSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
-  statSync,
   writeFileSync,
 } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
-import { openStateDb, dbPathForRoot } from '../state/db.ts';
+import { closeStateDb, getStateDb, openStateDb, dbPathForRoot } from '../state/db.ts';
 import { readByHandle } from '../state/agent-states.ts';
-import { getKvValue } from '../state/kv-blob.ts';
+import { getKvValue, setKvValue } from '../state/kv-blob.ts';
 import { importLegacyState } from '../state/legacy-import.ts';
 
 function tempRoot(): string {
@@ -327,5 +326,121 @@ describe('importLegacyState', () => {
     expect(result.imported).toBe(0);
     expect(result.skipped).toBe(0);
     expect(getKvValue('slack-index', 'legacy', null, db)).toBeNull();
+  });
+
+  test('a crash-before-marker re-run never downgrades an already-committed newer row', () => {
+    const rootA = tempRoot();
+    const rootB = tempRoot();
+    const dbPath = join(rootA, 'state.db');
+    const db = openStateDb(dbPath);
+
+    writeLegacyJson(rootA, 'reviews/mr-1.json', {
+      mrUrl: URL_A,
+      iid: 1,
+      status: 'done',
+      startedAt: 1,
+      updatedAt: 200,
+    });
+
+    const first = importLegacyState(db, [rootA]);
+    expect(first.imported).toBe(1);
+    // rootA's legacy dir is already renamed away by the completed run above.
+    expect(readdirSync(rootA)).not.toContain('state');
+
+    // Simulate a crash between the import transaction committing and the
+    // marker write landing: clear the marker directly, as a crash would
+    // leave it, without redoing the (already-renamed) rootA directory.
+    setKvValue('meta', 'legacy-import-done', false, db);
+
+    // A second, unrelated root shows up with an OLDER copy of the same row.
+    writeLegacyJson(rootB, 'reviews/mr-1.json', {
+      mrUrl: URL_A,
+      iid: 1,
+      status: 'reviewing',
+      startedAt: 1,
+      updatedAt: 100,
+    });
+
+    importLegacyState(db, [rootA, rootB]);
+
+    const row = db
+      .query('SELECT state, updated_at FROM agent_states WHERE lane = ? AND mr_url = ?')
+      .get('review', URL_A) as { state: string; updated_at: number };
+    expect(row.updated_at).toBe(200);
+    expect(JSON.parse(row.state).status).toBe('done');
+  });
+
+  test('getStateDb rolls the singleton back on an import throw, and retries cleanly', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'board-legacy-retry-'));
+    const reviewsDir = join(dir, 'state', 'reviews');
+    mkdirSync(reviewsDir, { recursive: true });
+    writeFileSync(
+      join(reviewsDir, 'mr-1.json'),
+      JSON.stringify({
+        mrUrl: URL_A,
+        iid: 1,
+        status: 'done',
+        startedAt: 1,
+        updatedAt: 1,
+      })
+    );
+    // Make the legacy reviews dir unreadable so importLane's readdirSync
+    // throws uncaught, forcing a genuine importLegacyState failure.
+    chmodSync(reviewsDir, 0o000);
+
+    const prevStateDb = process.env.BOARD_STATE_DB;
+    process.env.BOARD_STATE_DB = join(dir, 'state.db');
+    closeStateDb();
+    try {
+      expect(() => getStateDb()).toThrow();
+
+      // Fix the fault and retry: the failed call must not have poisoned the
+      // singleton, so this call reopens and completes the import.
+      chmodSync(reviewsDir, 0o755);
+      const db = getStateDb();
+      const row = db
+        .query('SELECT state FROM agent_states WHERE lane = ? AND mr_url = ?')
+        .get('review', URL_A) as { state: string } | null;
+      expect(row).not.toBeNull();
+      expect(getKvValue('meta', 'legacy-import-done', false, db)).toBe(true);
+    } finally {
+      // A successful retry already renamed the legacy dir away; only
+      // restore permissions if the chmod-000 directory is still there.
+      try {
+        chmodSync(reviewsDir, 0o755);
+      } catch {
+        // already renamed away by a successful import
+      }
+      closeStateDb();
+      if (prevStateDb === undefined) delete process.env.BOARD_STATE_DB;
+      else process.env.BOARD_STATE_DB = prevStateDb;
+    }
+  });
+
+  test('a renameSync failure is non-fatal: data still lands and the marker still gets set', () => {
+    const root = tempRoot();
+    const db = openStateDb(join(root, 'state.db'));
+
+    writeLegacyJson(root, 'reviews/mr-1.json', {
+      mrUrl: URL_A,
+      iid: 1,
+      status: 'done',
+      startedAt: 1,
+      updatedAt: 1,
+    });
+
+    // Block the post-commit rename by pre-creating its target as a plain
+    // file: renaming a directory onto an existing non-directory throws.
+    const dateStamp = new Date().toISOString().slice(0, 10);
+    writeFileSync(join(root, `state.imported-${dateStamp}`), 'blocked');
+
+    const result = importLegacyState(db, [root]);
+    expect(result.imported).toBe(1);
+
+    const row = db
+      .query('SELECT state FROM agent_states WHERE lane = ? AND mr_url = ?')
+      .get('review', URL_A) as { state: string } | null;
+    expect(row).not.toBeNull();
+    expect(getKvValue('meta', 'legacy-import-done', false, db)).toBe(true);
   });
 });

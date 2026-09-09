@@ -125,10 +125,20 @@ export function openStateDb(path: string, flavor: DbFlavor = 'cli'): Database {
 let singleton: Database | null = null;
 export function getStateDb(flavor: DbFlavor = 'cli'): Database {
   if (!singleton) {
-    singleton = openStateDb(stateDbPath(), flavor);
-    if (!getKvValue('meta', 'legacy-import-done', false, singleton)) {
-      importLegacyState(singleton, [...new Set([APP_ROOT, boardStateRoot()])]);
+    const opened = openStateDb(stateDbPath(), flavor);
+    // Assign only after a clean import: a throw here (e.g. an unreadable
+    // legacy directory) must leave `singleton` untouched, so the NEXT call
+    // reopens and retries the import instead of forever short-circuiting on
+    // a handle whose import never finished.
+    try {
+      if (!getKvValue('meta', 'legacy-import-done', false, opened)) {
+        importLegacyState(opened, [...new Set([APP_ROOT, boardStateRoot()])]);
+      }
+    } catch (err) {
+      opened.close();
+      throw err;
     }
+    singleton = opened;
   }
   return singleton;
 }
