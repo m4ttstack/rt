@@ -1694,7 +1694,6 @@
   gap: 8px;
 }
 .tui-triage-head-actions {
-  margin-left: auto;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -1859,12 +1858,16 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 0.7rem;
+  font-size: 0.78rem;
   color: var(--gate-muted);
   min-height: 1lh;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .tui-triage-peek-k {
-  font: 500 0.7rem/1 var(--font-mono);
+  font: 500 0.78rem/1 var(--font-mono);
 }
 .tui-triage-done {
   display: flex;

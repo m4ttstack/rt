@@ -34,7 +34,7 @@ function DecisionQueueModal({
   position: number;
   /** One entry per queued gate, in queue order. */
   states: TriageGateState[];
-  /** "kind · subject" line for the gate after this one; omit on the last. */
+  /** "!ref · title" glance at the gate after this one; omit on the last. */
   nextPeek?: string;
   onClose: () => void;
   onSkip: () => void;
