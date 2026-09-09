@@ -1472,8 +1472,8 @@
   background: var(--gate-muted);
 }
 .tui-gate-qdot[data-state='active'] {
-  background: var(--amber);
-  outline: 2px solid color-mix(in srgb, var(--amber) 35%, transparent);
+  background: var(--accent);
+  outline: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
   outline-offset: 1px;
 }
 .tui-gate-qdot[data-state='todo'] {
@@ -1781,7 +1781,7 @@
   background: var(--dot-ok);
 }
 .tui-triage-pip[data-state='active'] {
-  background: var(--amber);
+  background: var(--accent);
 }
 .tui-triage-pip[data-state='todo'] {
   background: transparent;
