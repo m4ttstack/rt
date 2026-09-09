@@ -2,8 +2,10 @@ import { useMemo, type ReactNode } from 'react';
 import {
   Badge,
   Button,
+  Checkbox,
   Group,
   Kbd,
+  Radio,
   Text,
   TextInput,
 } from '@mattstack/app-kit/core';
@@ -147,7 +149,25 @@ export function GateQuestionnaire({
                   }
                   className={classes.choice}
                 >
-                  <Questionnaire.ChoiceInput className={classes.choiceInput} />
+                  <Questionnaire.ChoiceInput
+                    render={props =>
+                      item.multiple ? (
+                        <Checkbox
+                          {...props}
+                          color="accent"
+                          size="sm"
+                          className={classes.choiceInput}
+                        />
+                      ) : (
+                        <Radio
+                          {...props}
+                          color="accent"
+                          size="sm"
+                          className={classes.choiceInput}
+                        />
+                      )
+                    }
+                  />
                   <Questionnaire.ChoiceLabel
                     title={choice.description}
                     className={classes.choiceLabel}
