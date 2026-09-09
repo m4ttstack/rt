@@ -3,6 +3,7 @@ import { Chip, Markdown, Modal } from '@mattstack/tui-kit';
 import type { GateRow } from '../../gates/store.ts';
 import { extractTicketId } from '../../ticket.ts';
 import type { BoardMRWithReview } from '../types.ts';
+import { ago, cleanTitle } from './format.ts';
 import { AnsweredChip, GateForm, useGateForm } from './GateCard.tsx';
 
 /** One pip per queued gate. `skipped` gates come from the queue's local
@@ -57,6 +58,43 @@ function GateTriageModal({
               <i key={i} className="tui-triage-pip" data-state={state} />
             ))}
           </span>
+          <span className="tui-triage-kind">{gate.label}</span>
+          {gate.status === 'parked' && (
+            <Chip intent="warn" variant="outline" uppercase data-gate="parked">
+              parked
+            </Chip>
+          )}
+          <span className="tui-triage-head-actions">
+            {gate.status === 'parked' ? (
+              gate.domain && (
+                <button
+                  type="button"
+                  className="tui-gate-ghost"
+                  title="resume this gate's flow in a fresh pane"
+                  onClick={() => onFocusPane(mr, gate.domain!)}
+                >
+                  focus pane
+                </button>
+              )
+            ) : (
+              <button
+                type="button"
+                className="tui-gate-ghost"
+                disabled={!form.originFocusable || form.focusBusy}
+                title={
+                  form.originFocusable
+                    ? 'jump into the pane behind this gate'
+                    : 'no origin on this gate'
+                }
+                onClick={() => void form.focusGate()}
+              >
+                focus pane
+              </button>
+            )}
+            <button type="button" className="tui-gate-ghost" onClick={onSkip}>
+              skip gate
+            </button>
+          </span>
         </>
       }
       ariaLabel="gate triage"
@@ -64,59 +102,28 @@ function GateTriageModal({
       closeGlyph="✕"
     >
       <div className="tui-triage-strip">
-        <div className="tui-triage-strip-main">
-          <span className="tui-triage-title">{mr.title}</span>
+        <div className="tui-triage-row-1">
+          <span className="tui-title">{cleanTitle(mr.title)}</span>
           {mr.sourceBranch && extractTicketId(mr.sourceBranch, mr.title) && (
-            <span className="tui-triage-ticket">
+            <span className="tui-ticket">
               {extractTicketId(mr.sourceBranch, mr.title)}
             </span>
           )}
-          <span className="tui-triage-kind">{gate.label}</span>
-          {gate.status === 'parked' && (
-            <Chip intent="warn" variant="outline" uppercase data-gate="parked">
-              parked
-            </Chip>
-          )}
-          {gate.status === 'parked' ? (
-            gate.domain && (
-              <button
-                type="button"
-                className="tui-gate-ghost"
-                title="resume this gate's flow in a fresh pane"
-                onClick={() => onFocusPane(mr, gate.domain!)}
-              >
-                focus pane
-              </button>
-            )
-          ) : (
-            <button
-              type="button"
-              className="tui-gate-ghost"
-              disabled={!form.originFocusable || form.focusBusy}
-              title={
-                form.originFocusable
-                  ? 'jump into the pane behind this gate'
-                  : 'no origin on this gate'
-              }
-              onClick={() => void form.focusGate()}
-            >
-              focus pane
-            </button>
-          )}
-          <button type="button" className="tui-gate-ghost" onClick={onSkip}>
-            skip gate
-          </button>
         </div>
-        <div className="tui-triage-strip-facts">
-          {mr.author && <span>{mr.author.name || mr.author.username}</span>}
-          <span className="tui-triage-meta-mono">!{mr.iid}</span>
-          <span className="tui-triage-strip-sep">|</span>
-          {mr.sourceBranch && (
-            <span className="tui-triage-meta-mono">{mr.sourceBranch}</span>
+        <div className="tui-row-2">
+          {mr.author && (
+            <span className="tui-author-tag">
+              {mr.author.name || mr.author.username}
+            </span>
           )}
-          <span>opened {new Date(gate.openedAt).toLocaleString()}</span>
+          <span className="tui-mr-iid">!{mr.iid}</span>
+          <span className="tui-row-sep">|</span>
+          {mr.sourceBranch && (
+            <span className="tui-branch">{mr.sourceBranch}</span>
+          )}
+          <span>{ago(new Date(gate.openedAt).toISOString(), Date.now())}</span>
           {gate.origin && (
-            <span className="tui-triage-meta-mono">
+            <span>
               {[gate.origin.worktree, gate.origin.paneId]
                 .filter(Boolean)
                 .join(' · ')}

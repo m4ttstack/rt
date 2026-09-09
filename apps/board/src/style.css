@@ -1683,8 +1683,29 @@
   flex-direction: column;
   gap: 0.6rem;
 }
-/* The head is the recipe's accent title span; these two ride inside it, so
-   they reset its weight/tracking for their own quieter voice. */
+/* The head is the recipe's accent title span, stretched so the gate cluster
+   (kind + actions) can ride its right edge; everything inside resets the
+   title's weight/tracking for its own voice. */
+.tui-triage-modal [data-part='modal-title'] {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tui-triage-head-actions {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.tui-triage-head-actions .tui-gate-ghost {
+  font-size: 0.7rem;
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+  padding: 2px 8px;
+}
 .tui-triage-pos {
   margin-left: 8px;
   font: 500 0.7rem/1 var(--font-mono);
@@ -1748,15 +1769,6 @@
   color: var(--gate-muted);
   margin-bottom: 0.4rem;
 }
-.tui-triage-mr-ref {
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  color: var(--accent-text);
-}
-.tui-triage-meta-mono {
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-}
 .tui-triage-form-col {
   min-width: 0;
   display: flex;
@@ -1777,39 +1789,13 @@
   border-radius: 6px;
   background: var(--chrome);
 }
-.tui-triage-strip-main {
+/* The strip is the MR row users already scan, verbatim classes
+   (.tui-title/.tui-row-2/...), minus main-view status chips and badges. */
+.tui-triage-row-1 {
   display: flex;
   align-items: center;
-  gap: 8px;
-}
-/* The facts line mirrors the MR row's second line (.tui-row-2): author,
-   !iid, a pipe, the branch, then time and origin, all in the muted voice. */
-.tui-triage-strip-facts {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  column-gap: 0.55rem;
-  row-gap: 2px;
-  font-size: 0.7rem;
-  color: var(--gate-muted);
-}
-.tui-triage-strip-sep {
-  opacity: 0.5;
-}
-.tui-triage-title {
-  flex: 1;
+  gap: 0.55rem;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 500;
-  font-size: 0.8rem;
-  color: var(--fg);
-}
-.tui-triage-ticket {
-  flex-shrink: 0;
-  font-size: 0.72rem;
-  color: var(--accent-text);
 }
 .tui-triage-kind {
   flex-shrink: 0;
@@ -1817,20 +1803,6 @@
   text-transform: uppercase;
   letter-spacing: 0.03em;
   color: var(--gate-muted);
-}
-.tui-triage-subject {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.75rem;
-  color: var(--fg);
-}
-.tui-triage-strip .tui-gate-ghost {
-  flex-shrink: 0;
-  font-size: 0.7rem;
-  padding: 2px 8px;
 }
 .tui-triage-peek {
   display: flex;
