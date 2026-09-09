@@ -13,7 +13,10 @@ import '../../style.css';
 
 import type { GateQuestion, GateRow } from '../../gates/store.ts';
 import type { BoardMRWithReview } from '../types.ts';
-import { GateTriageComplete, GateTriageModal } from './GateTriageModal.tsx';
+import {
+  DecisionQueueComplete,
+  DecisionQueueModal,
+} from './DecisionQueueModal.tsx';
 
 /**
  * Sign-off catalog for the triage-queue modal (the gate-kit design pass's
@@ -55,7 +58,7 @@ const boardStage = (
 );
 
 const meta = {
-  title: 'Gates/Board/GateTriageModal',
+  title: 'Gates/Board/DecisionQueueModal',
   decorators: [boardStage],
   parameters: { layout: 'fullscreen' },
 } satisfies Meta;
@@ -128,7 +131,7 @@ const firstGate: GateRow = {
 
 export const FirstGateIdle: Story = {
   render: () => (
-    <GateTriageModal
+    <DecisionQueueModal
       gate={firstGate}
       mr={boardMr}
       position={1}
@@ -156,7 +159,7 @@ export const MidGateSelected: Story = {
       item: 'thread-2',
     });
     return (
-      <GateTriageModal
+      <DecisionQueueModal
         gate={midGate}
         mr={boardMr}
         position={2}
@@ -197,7 +200,7 @@ export const LastGateSubmit: Story = {
       item: null,
     });
     return (
-      <GateTriageModal
+      <DecisionQueueModal
         gate={lastGate}
         mr={boardMr}
         position={5}
@@ -219,7 +222,7 @@ const errorGate: GateRow = { ...lastGate, gateId: 'triage-error' };
 
 export const ErrorState: Story = {
   render: () => (
-    <GateTriageModal
+    <DecisionQueueModal
       gate={errorGate}
       mr={boardMr}
       position={3}
@@ -250,7 +253,7 @@ const parkedGate: GateRow = {
 
 export const ParkedGate: Story = {
   render: () => (
-    <GateTriageModal
+    <DecisionQueueModal
       gate={parkedGate}
       mr={boardMr}
       position={4}
@@ -301,7 +304,7 @@ export const WithContext: Story = {
       item: 'thread-2',
     });
     return (
-      <GateTriageModal
+      <DecisionQueueModal
         gate={contextGate}
         mr={boardMr}
         position={2}
@@ -337,7 +340,7 @@ const longContextGate: GateRow = {
 
 export const LongContextScroll: Story = {
   render: () => (
-    <GateTriageModal
+    <DecisionQueueModal
       gate={longContextGate}
       mr={boardMr}
       position={2}
@@ -379,7 +382,7 @@ export const WriteInAnswer: Story = {
       item: null,
     });
     return (
-      <GateTriageModal
+      <DecisionQueueModal
         gate={writeInGate}
         mr={boardMr}
         position={3}
@@ -396,5 +399,7 @@ export const WriteInAnswer: Story = {
 // --- QueueComplete ----------------------------------------------------------
 
 export const QueueComplete: Story = {
-  render: () => <GateTriageComplete answered={4} skipped={1} onClose={noop} />,
+  render: () => (
+    <DecisionQueueComplete answered={4} skipped={1} onClose={noop} />
+  ),
 };

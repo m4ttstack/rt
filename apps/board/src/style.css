@@ -1695,7 +1695,6 @@
 }
 .tui-triage-head-actions {
   margin-left: auto;
-  margin-right: 12px;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -1719,6 +1718,14 @@
 }
 .tui-triage-head-actions .tui-triage-act-focus:hover:not(:disabled) {
   background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+/* The queue line sits under the head: count, pips and the gate kind get
+   their own row so the head keeps only the title, actions and close. */
+.tui-triage-queue-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: -0.2rem;
 }
 .tui-triage-pos {
   margin-left: 2px;

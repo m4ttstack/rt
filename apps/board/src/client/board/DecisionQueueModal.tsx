@@ -18,7 +18,7 @@ export type TriageGateState = 'done' | 'active' | 'todo' | 'skipped';
     footer never mixes the two. The host owns the queue itself (which gates
     join, the order, advancing on answer or skip); this component renders
     exactly one active gate of it. */
-function GateTriageModal({
+function DecisionQueueModal({
   gate,
   mr,
   position,
@@ -47,64 +47,62 @@ function GateTriageModal({
   return (
     <Modal
       className="tui-triage-modal"
-      title={
-        <>
-          triage
-          <span className="tui-triage-pos">
-            gate {position} of {states.length}
-          </span>
-          <span className="tui-triage-pips">
-            {states.map((state, i) => (
-              <i key={i} className="tui-triage-pip" data-state={state} />
-            ))}
-          </span>
-          <span className="tui-triage-kind">{gate.label}</span>
-          {gate.status === 'parked' && (
-            <Chip intent="warn" variant="outline" uppercase data-gate="parked">
-              parked
-            </Chip>
-          )}
-          <span className="tui-triage-head-actions">
-            {gate.status === 'parked' ? (
-              gate.domain && (
-                <button
-                  type="button"
-                  className="tui-gate-ghost tui-triage-act-focus"
-                  title="resume this gate's flow in a fresh pane"
-                  onClick={() => onFocusPane(mr, gate.domain!)}
-                >
-                  focus pane
-                </button>
-              )
-            ) : (
-              <button
-                type="button"
-                className="tui-gate-ghost tui-triage-act-focus"
-                disabled={!form.originFocusable || form.focusBusy}
-                title={
-                  form.originFocusable
-                    ? 'jump into the pane behind this gate'
-                    : 'no origin on this gate'
-                }
-                onClick={() => void form.focusGate()}
-              >
-                focus pane
-              </button>
-            )}
-            <button
-              type="button"
-              className="tui-gate-ghost tui-triage-act-skip"
-              onClick={onSkip}
-            >
-              skip gate
-            </button>
-          </span>
-        </>
-      }
-      ariaLabel="gate triage"
+      title={<>decision queue</>}
+      ariaLabel="decision queue"
       onClose={onClose}
       closeGlyph="✕"
     >
+      <div className="tui-triage-queue-row">
+        <span className="tui-triage-pos">
+          gate {position} of {states.length}
+        </span>
+        <span className="tui-triage-pips">
+          {states.map((state, i) => (
+            <i key={i} className="tui-triage-pip" data-state={state} />
+          ))}
+        </span>
+        <span className="tui-triage-kind">{gate.label}</span>
+        {gate.status === 'parked' && (
+          <Chip intent="warn" variant="outline" uppercase data-gate="parked">
+            parked
+          </Chip>
+        )}
+        <span className="tui-triage-head-actions">
+          {gate.status === 'parked' ? (
+            gate.domain && (
+              <button
+                type="button"
+                className="tui-gate-ghost tui-triage-act-focus"
+                title="resume this gate's flow in a fresh pane"
+                onClick={() => onFocusPane(mr, gate.domain!)}
+              >
+                focus pane
+              </button>
+            )
+          ) : (
+            <button
+              type="button"
+              className="tui-gate-ghost tui-triage-act-focus"
+              disabled={!form.originFocusable || form.focusBusy}
+              title={
+                form.originFocusable
+                  ? 'jump into the pane behind this gate'
+                  : 'no origin on this gate'
+              }
+              onClick={() => void form.focusGate()}
+            >
+              focus pane
+            </button>
+          )}
+          <button
+            type="button"
+            className="tui-gate-ghost tui-triage-act-skip"
+            onClick={onSkip}
+          >
+            skip gate
+          </button>
+        </span>
+      </div>
       <div className="tui-triage-strip">
         <div className="tui-triage-row-1">
           <span className="tui-title">{cleanTitle(mr.title)}</span>
@@ -214,7 +212,7 @@ function GateTriageModal({
 }
 
 /** The queue's terminal face, shown once no gate is left active. */
-function GateTriageComplete({
+function DecisionQueueComplete({
   answered,
   skipped,
   onClose,
@@ -226,8 +224,8 @@ function GateTriageComplete({
   return (
     <Modal
       className="tui-triage-modal"
-      title="triage"
-      ariaLabel="gate triage complete"
+      title="decision queue"
+      ariaLabel="decision queue complete"
       onClose={onClose}
       closeGlyph="✕"
     >
@@ -244,4 +242,4 @@ function GateTriageComplete({
   );
 }
 
-export { GateTriageComplete, GateTriageModal };
+export { DecisionQueueComplete, DecisionQueueModal };
