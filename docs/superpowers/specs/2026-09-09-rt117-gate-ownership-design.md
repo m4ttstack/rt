@@ -45,7 +45,7 @@ Ownership is derived once and stored; a re-pointed shepherd (`rt herd resume`) d
 - Owner `human`: any caller may answer (today's behavior).
 - Owner `herd:<id>`: the caller must present the owning session (`--session`, defaulted from the caller's session file the way other verbs do it). Mismatch returns a structured refusal naming the owner: `{ ok: false, error: "owned-by", owner, hint }`. Exit code and `--json` shape follow the existing rejected-verb convention.
 - `--override` bypasses the guard, is intended for the human recovering a dead herd, and is recorded on the answer row (`overridden: true`) so the audit trail survives.
-- `by === GATE_BY_PANE` (the pane answering its own form) stays exempt; that path is how a form's own submission lands.
+- `by === GATE_BY_PANE` (the pane answering its own form) stays exempt; that path is how a form's own submission lands. `by` is caller-supplied and unauthenticated, so a caller that deliberately passes `--by pane` skips the guard: the enforcement targets ACCIDENTAL cross-herd answering by convention-following agents, not a hostile local caller. Authenticating `by` is out of scope.
 
 Two adjacent repairs on the same handler path:
 
