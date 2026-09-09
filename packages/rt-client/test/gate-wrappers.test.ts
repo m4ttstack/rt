@@ -15,6 +15,7 @@ const row: GateRow = {
   meta: null, status: "open", answer: null,
   openedAt: 1, parkedAt: null, closedAt: null, closedReason: null,
   agent: null, pane: null, nudge: null, delivery: null, released: false,
+  owner: null, escalatedAt: null,
 };
 
 describe("gateOpen", () => {
@@ -145,6 +146,7 @@ describe("gateSubscriptions", () => {
     const sub: GateSubscription = {
       id: "sub-1", subjectPrefix: "run:", session: "sess-1",
       createdAt: 1, lastDelivery: null, dead: false,
+      scope: "prefix", ownerRef: null,
     };
     const { sock, seen, stop } = fakeDaemon({
       "gate:subscriptions": { ok: true, data: { subscriptions: [sub] } },
