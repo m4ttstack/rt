@@ -1469,11 +1469,11 @@
   box-sizing: border-box;
 }
 .tui-gate-qdot[data-state='done'] {
-  background: var(--gate-muted);
+  background: color-mix(in srgb, var(--fg) 30%, transparent);
 }
 .tui-gate-qdot[data-state='active'] {
-  background: var(--purple);
-  outline: 2px solid color-mix(in srgb, var(--purple) 35%, transparent);
+  background: var(--accent);
+  outline: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
   outline-offset: 1px;
 }
 .tui-gate-qdot[data-state='todo'] {
@@ -1778,10 +1778,10 @@
   border-radius: 3px;
 }
 .tui-triage-pip[data-state='done'] {
-  background: var(--gate-muted);
+  background: color-mix(in srgb, var(--fg) 30%, transparent);
 }
 .tui-triage-pip[data-state='active'] {
-  background: var(--purple);
+  background: var(--accent);
 }
 .tui-triage-pip[data-state='todo'] {
   background: transparent;
