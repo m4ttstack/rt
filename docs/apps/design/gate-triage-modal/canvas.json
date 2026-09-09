@@ -1,0 +1,17 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "title": "Gate dialog (leading)", "x": 0, "y": 0, "w": 720, "h": 640 },
+    { "file": "TriageQueue.dc.html", "title": "Triage queue", "x": 820, "y": 0, "w": 720, "h": 640 },
+    { "file": "DrawerHost.dc.html", "title": "Drawer host", "x": 1640, "y": 0, "w": 720, "h": 640 },
+    { "file": "DarkContrast.dc.html", "title": "Dark contrast: current vs tuned", "x": 0, "y": 820, "w": 760, "h": 620 }
+  ],
+  "annotations": [
+    { "id": "brief", "x": 0, "y": -180, "w": 480, "text": "Design pass: gate triage modal (board).\nThree hosting directions, all reusing the shipped card vocabulary (same tokens, same choice rows, key hints, note field). Each artboard has a dark/light tweak chip; dark is the default since that is where the contrast complaint lives.\nPick a direction; it then gets specced as Storybook stories for sign-off before implementation.\nBaseline PNGs of all 22 catalog stories: docs/design/gate-cards/baseline/." },
+    { "id": "note-dialog", "x": 0, "y": 680, "w": 340, "text": "Gate dialog (leading). The spec's shape: one gate per modal, questions as steps, dot-row progress. Opens from the gate chip on a row.\nTradeoff: one gate at a time, no cross-gate flow. Width 560px vs the Modal recipe's 420 default." },
+    { "id": "note-queue", "x": 820, "y": 680, "w": 340, "text": "Triage queue. One session walks every pending gate on the board; pips track gates, dots track questions inside the active gate, footer peeks the next gate.\nTradeoff: more chrome, and skip-gate semantics need defining (rt has no skip today, so skip = just close and move on)." },
+    { "id": "note-drawer", "x": 1640, "y": 680, "w": 340, "text": "Drawer host. Comments-drawer chrome instead of a centered dialog; the board stays visible and scannable while answering.\nTradeoff: 380px is tight for long option labels, and there is no dimmed focus on the gate." },
+    { "id": "note-contrast", "x": 820, "y": 820, "w": 360, "text": "Pass input 2: dark contrast on the cards. Left column is today's exact values; right lifts row and control edges, brightens muted text, and gives the checked row an amber wash with a full amber edge. Exact values in the legends. After sign-off these land as board CSS (or kit token) tweaks and apply to cards and modal alike." },
+    { "id": "note-console", "x": 1220, "y": 820, "w": 300, "text": "Console: follows once the board direction is picked. The same kit adapter renders inside a Mantine Modal with the console's existing questionnaire styling." }
+  ],
+  "launch": { "view": "canvas" }
+}
