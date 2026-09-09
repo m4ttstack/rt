@@ -1801,6 +1801,8 @@
   display: flex;
   flex-direction: column;
   max-height: 46vh;
+  min-height: 0;
+  overflow: hidden;
   padding: var(--gate-pad-card);
   border: 1px solid var(--border-soft);
   border-radius: var(--gate-radius-card);
