@@ -1,13 +1,106 @@
 {
   "artboards": [
-    { "file": "Main.dc.html", "title": "Triage queue", "x": 0, "y": 0, "w": 720, "h": 640 },
-    { "file": "DarkContrast.dc.html", "title": "Dark contrast: current vs tuned", "x": 820, "y": 0, "w": 760, "h": 620 }
+    {
+      "file": "Main.dc.html",
+      "title": "Triage queue",
+      "x": 0,
+      "y": 0,
+      "w": 720,
+      "h": 640
+    },
+    {
+      "file": "DarkContrast.dc.html",
+      "title": "Dark contrast: current vs tuned",
+      "x": 820,
+      "y": 0,
+      "w": 760,
+      "h": 620
+    },
+    {
+      "file": "StripRowInline.dc.html",
+      "title": "Row + gate cluster inline",
+      "x": 0,
+      "y": 0,
+      "w": 720,
+      "h": 340,
+      "page": "page-2"
+    },
+    {
+      "file": "StripRowPure.dc.html",
+      "title": "Pure row; gate in the head",
+      "x": 820,
+      "y": 0,
+      "w": 720,
+      "h": 340,
+      "page": "page-2"
+    }
   ],
   "annotations": [
-    { "id": "brief", "x": 0, "y": -170, "w": 480, "text": "Design pass: gate triage modal (board).\nDirection ratified 2026-09-09: TRIAGE QUEUE. One modal session walks every pending gate on the board; pips track gates, dots track questions inside the active gate, footer peeks the next gate. Buttons take the mantine-style light variant (color at low alpha, no edge).\nNext: spec every state as Storybook stories for sign-off, then implement.\nBaseline PNGs of all 22 catalog stories: docs/design/gate-cards/baseline/." },
-    { "id": "note-queue", "x": 0, "y": 680, "w": 360, "text": "Actions live at their own level now: gate-level (focus pane, skip gate) as ghost buttons on the gate strip; step-level (previous, solid next) in the footer; reset as ghost text. Queue pips moved to the header beside the count.\nQueue semantics ratified 2026-09-09:\n1. Entry: both a header triage button (starts at gate 1) and a row's gate chip (enters positioned at that gate).\n2. Skip gate: advance only; the skipped gate and its draft stay untouched.\n3. Scope: all actionable gates on visible rows (respects filters), board order." },
-    { "id": "note-contrast", "x": 820, "y": 680, "w": 360, "text": "Pass input 2: dark contrast on the cards. Left column is today's exact values; right lifts row and control edges, brightens muted text, amber wash on the checked row, light-variant buttons. Exact values in the legends. After sign-off these land as board CSS (or kit token) tweaks and apply to cards and modal alike." },
-    { "id": "note-console", "x": 1220, "y": 680, "w": 300, "text": "Console: the same kit adapter renders the queue inside a Mantine Modal with the console's existing questionnaire styling. Specced after the board stories." }
+    {
+      "id": "brief",
+      "x": 0,
+      "y": -170,
+      "w": 480,
+      "text": "Design pass: gate triage modal (board).\nDirection ratified 2026-09-09: TRIAGE QUEUE. One modal session walks every pending gate on the board; pips track gates, dots track questions inside the active gate, footer peeks the next gate. Buttons take the mantine-style light variant (color at low alpha, no edge).\nNext: spec every state as Storybook stories for sign-off, then implement.\nBaseline PNGs of all 22 catalog stories: docs/design/gate-cards/baseline/."
+    },
+    {
+      "id": "note-queue",
+      "x": 0,
+      "y": 680,
+      "w": 360,
+      "text": "Actions live at their own level now: gate-level (focus pane, skip gate) as ghost buttons on the gate strip; step-level (previous, solid next) in the footer; reset as ghost text. Queue pips moved to the header beside the count.\nQueue semantics ratified 2026-09-09:\n1. Entry: both a header triage button (starts at gate 1) and a row's gate chip (enters positioned at that gate).\n2. Skip gate: advance only; the skipped gate and its draft stay untouched.\n3. Scope: all actionable gates on visible rows (respects filters), board order."
+    },
+    {
+      "id": "note-contrast",
+      "x": 820,
+      "y": 680,
+      "w": 360,
+      "text": "Pass input 2: dark contrast on the cards. Left column is today's exact values; right lifts row and control edges, brightens muted text, amber wash on the checked row, light-variant buttons. Exact values in the legends. After sign-off these land as board CSS (or kit token) tweaks and apply to cards and modal alike."
+    },
+    {
+      "id": "note-console",
+      "x": 1220,
+      "y": 680,
+      "w": 300,
+      "text": "Console: the same kit adapter renders the queue inside a Mantine Modal with the console's existing questionnaire styling. Specced after the board stories."
+    },
+    {
+      "id": "strip-brief",
+      "x": 0,
+      "y": -150,
+      "w": 460,
+      "page": "page-2",
+      "text": "Mini-pass on the orientation strip. Ruling: it should BE the MR row users already scan (title line + the row-2 meta line, byte-identical values) so nobody learns a second surface. Status chips, pipeline state and the badge row stay on the main view only; the row here carries identity facts, not live status.\nOpen question: where the gate-only bits live (kind, focus pane, skip gate). Pips and count stay in the modal head either way."
+    },
+    {
+      "id": "strip-a-note",
+      "x": 0,
+      "y": 380,
+      "w": 340,
+      "page": "page-2",
+      "text": "Row + gate cluster inline: the kind and the two ghost actions ride the title line's right edge, like badges do on a real row.\nTradeoff: a long title competes with the cluster for line-1 width."
+    },
+    {
+      "id": "strip-b-note",
+      "x": 820,
+      "y": 380,
+      "w": 340,
+      "page": "page-2",
+      "text": "Pure row; gate in the head: the strip is only the MR row; kind joins the head after the pips, actions sit left of the close button.\nTradeoff: gate identity is farther from the row it gates; head gets busier."
+    }
   ],
-  "launch": { "view": "canvas" }
+  "launch": {
+    "view": "canvas",
+    "page": "page-2"
+  },
+  "pages": [
+    {
+      "id": "page-1",
+      "name": "Modal"
+    },
+    {
+      "id": "page-2",
+      "name": "Strip"
+    }
+  ]
 }
