@@ -110,6 +110,27 @@ describe('agent states', () => {
     expect(readStates('review', d).size).toBe(0);
   });
 
+  test('prune unlinks the removed row report scratch file', () => {
+    const d = db();
+    const handleRoot = mkdtempSync(join(tmpdir(), 'board-as-unlink-'));
+    const h = mintHandle('review', URL, handleRoot);
+    insertAgentState(
+      'review',
+      URL,
+      7,
+      { mrUrl: URL, iid: 7, status: 'done', startedAt: 1, updatedAt: 1 },
+      h,
+      d
+    );
+    mkdirSync(join(handleRoot, 'state', 'reviews'), { recursive: true });
+    writeFileSync(reportPathForHandle(h), '# scratch report');
+
+    pruneStates('review', new Set<string>(), d);
+
+    expect(readStates('review', d).size).toBe(0);
+    expect(existsSync(reportPathForHandle(h))).toBe(false);
+  });
+
   test('a relaunch that lands between the read and the delete survives the prune', () => {
     const d = db();
     const handleRoot = mkdtempSync(join(tmpdir(), 'board-as-handle-'));

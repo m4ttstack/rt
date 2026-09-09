@@ -1,4 +1,10 @@
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { Database } from 'bun:sqlite';
@@ -54,20 +60,34 @@ describe('state db', () => {
     ).toBe(SCHEMA_VERSION);
   });
 
-  test('unopenable db is quarantined and recreated', () => {
+  test('unopenable db is quarantined and recreated; stale sidecar bytes never survive under the live name', () => {
     const path = tempDbPath();
     writeFileSync(path, 'this is not a sqlite database, definitely');
+    writeFileSync(path + '-wal', 'stale wal pages');
+    writeFileSync(path + '-shm', 'stale shm');
     const db = openStateDb(path);
     expect(
       (db.query('PRAGMA user_version').get() as { user_version: number })
         .user_version
     ).toBe(SCHEMA_VERSION);
+    const quarantine = `${path}.corrupt-${new Date().toISOString().slice(0, 10)}`;
+    expect(existsSync(quarantine)).toBe(true);
+    // Closing the failed handle may itself delete the stale sidecars before
+    // the rename runs (sqlite build dependent: Linux does, macOS keeps them),
+    // so their quarantined copies are best-effort. The invariant that holds
+    // everywhere: the recreated db's live sidecars carry none of the stale
+    // bytes.
+    for (const suffix of ['-wal', '-shm']) {
+      if (existsSync(path + suffix)) {
+        expect(readFileSync(path + suffix, 'latin1')).not.toContain('stale');
+      }
+    }
   });
 
   test('a future schema version is rejected, not quarantined', () => {
     const path = tempDbPath();
     const db = openStateDb(path);
-    db.exec(`PRAGMA user_version = ${SCHEMA_VERSION + 1}`);
+    db.run(`PRAGMA user_version = ${SCHEMA_VERSION + 1}`);
     db.close();
 
     expect(() => openStateDb(path)).toThrow(SchemaTooNewError);
