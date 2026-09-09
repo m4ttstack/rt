@@ -973,18 +973,28 @@ export function saveTabs(
 }
 
 /**
- * Persist `username`'s hidden flag and return the reload. Unowned: config.json's
- * inline `members[].hidden` stays the single writer (today's behavior)...
- * UNLESS config.json doesn't exist at all (RULING: file-authority is
- * meaningless with no file), in which case this establishes store ownership
- * outright rather than raw-ENOENT-ing (mirrors loadConfigFrom's store-boot
- * mode; only reachable when the store already owns the required team fields,
- * since that's what a config.json-free `current` needs to resolve at all).
- * Owned: `board.hiddenMembers` (the user store) is the single writer instead
- * and config.json is never touched for this... every branch is exactly one
- * write, so a `write` throw simply propagates; nothing was persisted for it
- * to revert. A non-ENOENT file-read failure (a genuinely malformed
- * config.json) still surfaces loudly, same as today.
+ * Persist `username`'s hidden flag and return the reload. Unowned overlay:
+ * the roster's own ownership decides the writer, not config.json's mere
+ * existence. A store-owned roster (`mattstack.roster` or `board.members`)
+ * means withBoardStoreFallback derives hidden state from that roster's
+ * inline flags alone, so config.json's `members[].hidden` is never read back
+ * even when the file exists -- writing there would be a dead write and
+ * validating `username` against the file's own members would reject a
+ * member the file never listed. In that case this establishes
+ * `board.hiddenMembers` ownership instead (RULING: file-authority is
+ * meaningless once the roster itself isn't file-authoritative), seeded from
+ * the currently resolved hidden set so establishing ownership never drops
+ * another member's hidden state. Only when the roster is NOT store-owned and
+ * config.json exists does the file's inline `members[].hidden` stay the
+ * writer; when the roster isn't store-owned and config.json is missing
+ * entirely, that combination can never resolve (storeOwnsRequiredFields
+ * needs a store-owned roster too), so loadConfigFrom's own "config.json not
+ * found" throw is what surfaces. Owned: `board.hiddenMembers` (the user
+ * store) is the single writer instead and config.json is never touched for
+ * this... every branch is exactly one write, so a `write` throw simply
+ * propagates; nothing was persisted for it to revert. A non-ENOENT file-read
+ * failure (a genuinely malformed config.json) still surfaces loudly, same as
+ * today.
  */
 export function saveMemberHidden(
   username: string,
@@ -1003,6 +1013,8 @@ export function saveMemberHidden(
       ? [...new Set([...stored, username])]
       : stored.filter(u => u !== username);
     write('board.hiddenMembers', next, 'user');
+  } else if (rosterFromStore(resolve)) {
+    seedAndWriteHiddenOverlay(username, hidden, path, resolve, write);
   } else {
     let raw: string | undefined;
     try {
@@ -1011,17 +1023,39 @@ export function saveMemberHidden(
       if (!isEnoent(err)) throw err;
     }
     if (raw === undefined) {
-      const current = loadConfigFrom(path, resolve);
-      if (!current.members.some(m => m.username === username)) {
-        throw new Error(`unknown member "${username}"`);
-      }
-      write('board.hiddenMembers', hidden ? [username] : [], 'user');
+      // rosterFromStore(resolve) is already null here (the branch above
+      // only matches non-null), so storeOwnsRequiredFields can never hold
+      // and this always throws loadConfigFrom's "config.json not found"
+      // error -- there is no seed to establish ownership from.
+      loadConfigFrom(path, resolve);
     } else {
       const next = setHiddenInRaw(raw, username, hidden); // throws for an unknown member
       writeFileSync(path, next);
     }
   }
   return loadConfigFrom(path, resolve);
+}
+
+/** Establishes `board.hiddenMembers` ownership seeded from the currently
+    resolved hidden set (not just `[username]`), so the transition never
+    drops another member's hidden state that today derives from the roster's
+    inline flag. */
+function seedAndWriteHiddenOverlay(
+  username: string,
+  hidden: boolean,
+  path: string,
+  resolve: GetSettingFn,
+  write: SetSettingFn
+): void {
+  const current = loadConfigFrom(path, resolve);
+  if (!current.members.some(m => m.username === username)) {
+    throw new Error(`unknown member "${username}"`);
+  }
+  const seeded = current.members.filter(m => m.hidden).map(m => m.username);
+  const next = hidden
+    ? [...new Set([...seeded, username])]
+    : seeded.filter(u => u !== username);
+  write('board.hiddenMembers', next, 'user');
 }
 
 function isSwitchboardUrlOwned(resolve: GetSettingFn): boolean {

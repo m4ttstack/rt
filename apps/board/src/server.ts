@@ -1057,9 +1057,18 @@ const httpServer = Bun.serve({
         if (!config.members.some(m => m.username === username)) {
           return new Response(`unknown member "${username}"`, { status: 400 });
         }
-        // Single writer: persist to config.json, then swap the in-memory members
-        // so this and every subsequent /data.json reflect the new state.
-        config.members = saveMemberHidden(username, hidden).members;
+        // Single writer: persist to the latch-decided target, then swap the
+        // in-memory members so this and every subsequent /data.json reflect
+        // the new state. A fresh unknown-member throw here (the cached
+        // `config` above raced a roster change) is still a 400, not a 500.
+        try {
+          config.members = saveMemberHidden(username, hidden).members;
+        } catch (err) {
+          if (err instanceof Error && /^unknown member /.test(err.message)) {
+            return new Response(err.message, { status: 400 });
+          }
+          throw err;
+        }
         return new Response(JSON.stringify({ ok: true }), {
           headers: { 'content-type': 'application/json' },
         });
