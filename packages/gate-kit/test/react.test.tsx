@@ -85,7 +85,6 @@ describe('gateItems', () => {
         { value: 'pass', label: 'passed', description: 'pass' },
         { value: 'fail', label: 'fail' },
       ],
-      groups: null,
     });
     expect(display[1]!.multiple).toBe(true);
   });
@@ -121,29 +120,6 @@ describe('gateItems', () => {
         i => i.name
       )
     ).toEqual(['threads-1', 'code-changes']);
-  });
-
-  test('grouped-rendering data rides along for multi questions that group', () => {
-    const gate: GateForItems = {
-      kind: 'respond-plan',
-      questions: [
-        {
-          id: 'threads-1',
-          label: 'Threads',
-          multi: true,
-          options: [
-            'reply:t1',
-            'fix:t1',
-            'skip:t1',
-            'reply:t2',
-            'fix:t2',
-            'skip:t2',
-          ],
-        },
-      ],
-    };
-    const { display } = gateItems(gate, {});
-    expect(display[0]!.groups?.map(g => g.token)).toEqual(['t1', 't2']);
   });
 
   test('a labeled option carries the recommended flag through to its display choice', () => {

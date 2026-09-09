@@ -6,7 +6,6 @@ import {
   codeChangesHidden,
   effectiveSelections,
 } from '../collapse';
-import { groupThreadOptions, type ThreadOptionGroup } from '../grouping';
 import { optionDisplayFor, optionValue } from '../options';
 import {
   gateAnswerPayload,
@@ -44,9 +43,6 @@ export interface GateItemDisplay {
   multiple: boolean;
   required: boolean;
   choices: GateItemChoice[];
-  /** Per-thread grouping for a multi question whose options form a complete
-      reply/fix/skip set per token; null means render the flat choice list. */
-  groups: ThreadOptionGroup[] | null;
 }
 
 export interface GateItems {
@@ -89,7 +85,6 @@ export function gateItems(
         ...(d.recommended ? { recommended: true } : {}),
       };
     }),
-    groups: q.multi ? groupThreadOptions(q.options) : null,
   }));
   return {
     items: display.map(d => ({

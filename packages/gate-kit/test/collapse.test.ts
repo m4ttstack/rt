@@ -104,3 +104,79 @@ describe('respond collapse (W4)', () => {
     });
   });
 });
+
+/**
+ * Pins the shipped BOARD-23 shape: one single-select question per thread
+ * (`thread-<n>`, positional, never a join key) offering `reply:<threadId>` /
+ * `fix:<threadId>` / `skip:<threadId>`, plus the single-select code-changes
+ * question. The collapse must key off VALUES (a `fix:` prefix anywhere in
+ * the selections) and never off question ids -- the rename case below is
+ * the test that would catch a regression to id-keying.
+ */
+describe('respond collapse over per-thread single-select questions (BOARD-23)', () => {
+  const perThreadQuestions = [
+    {
+      id: 'thread-1',
+      label: 'reply · api.ts:42',
+      multi: false,
+      options: ['reply:t1', 'fix:t1', 'skip:t1'],
+    },
+    {
+      id: 'thread-2',
+      label: 'reply · README.md:3',
+      multi: false,
+      options: ['reply:t2', 'fix:t2', 'skip:t2'],
+    },
+    {
+      id: 'code-changes',
+      label: 'Approve the proposed code changes?',
+      multi: false,
+      options: ['approve', 'revise', 'skip'],
+    },
+  ];
+
+  test('a fix: on any thread question shows code-changes', () => {
+    expect(
+      codeChangesHidden('respond-plan', perThreadQuestions, {
+        'thread-1': 'reply:t1',
+        'thread-2': 'fix:t2',
+      })
+    ).toBe(false);
+  });
+
+  test('all reply, or all skip, hides code-changes -- and effectiveSelections injects the sentinel', () => {
+    const allReply = { 'thread-1': 'reply:t1', 'thread-2': 'reply:t2' };
+    expect(
+      codeChangesHidden('respond-plan', perThreadQuestions, allReply)
+    ).toBe(true);
+    expect(
+      effectiveSelections('respond-plan', perThreadQuestions, allReply)
+    ).toEqual({ ...allReply, 'code-changes': CODE_CHANGES_SENTINEL });
+
+    const allSkip = { 'thread-1': 'skip:t1', 'thread-2': 'skip:t2' };
+    expect(codeChangesHidden('respond-plan', perThreadQuestions, allSkip)).toBe(
+      true
+    );
+    expect(
+      effectiveSelections('respond-plan', perThreadQuestions, allSkip)
+    ).toEqual({ ...allSkip, 'code-changes': CODE_CHANGES_SENTINEL });
+  });
+
+  test('renaming the thread question ids changes nothing -- the collapse is value-keyed, never id-keyed', () => {
+    const renamed = [
+      { ...perThreadQuestions[0]!, id: 'threadA' },
+      { ...perThreadQuestions[1]!, id: 'threadB' },
+      perThreadQuestions[2]!,
+    ];
+
+    const allReplyRenamed = { threadA: 'reply:t1', threadB: 'reply:t2' };
+    expect(codeChangesHidden('respond-plan', renamed, allReplyRenamed)).toBe(
+      true
+    );
+
+    const oneFixRenamed = { threadA: 'reply:t1', threadB: 'fix:t2' };
+    expect(codeChangesHidden('respond-plan', renamed, oneFixRenamed)).toBe(
+      false
+    );
+  });
+});
