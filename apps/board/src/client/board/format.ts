@@ -437,7 +437,7 @@ function statusPhrase(mr: BoardMR): {
       text: `${mr.reviews.given}/${mr.reviews.required} approved`,
       cls: 't-warn',
     };
-  return { text: 'needs review', cls: 't-muted' };
+  return { text: 'needs review', cls: 't-warn' };
 }
 
 /** Depth-first flattening of one stack tree, for views that render a chain as

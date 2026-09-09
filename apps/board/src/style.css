@@ -413,9 +413,17 @@
 
 /* ── tokens ───────────────────────────────────────────────────────── */
 .tui-phrase {
-  font-size: 0.7rem;
   flex-shrink: 0;
   white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 .tui-meta {
   display: inline-flex;
@@ -458,9 +466,9 @@
      row's 13.5px instead of the .tui-phrase 0.7rem the other labels use. Leave
      color to the t-warn class so the label stays amber. */
   font-family: inherit;
-  text-decoration: underline;
-  text-decoration-style: dotted;
-  text-underline-offset: 2px;
+}
+.tui-comments-btn:hover {
+  background: color-mix(in srgb, currentColor 10%, transparent);
 }
 /* Hint beside "N comments": has the author acted on the threads yet. */
 .tui-comment-dot {
