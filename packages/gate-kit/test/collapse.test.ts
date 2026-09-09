@@ -146,9 +146,9 @@ describe('respond collapse over per-thread single-select questions (BOARD-23)', 
 
   test('all reply, or all skip, hides code-changes -- and effectiveSelections injects the sentinel', () => {
     const allReply = { 'thread-1': 'reply:t1', 'thread-2': 'reply:t2' };
-    expect(codeChangesHidden('respond-plan', perThreadQuestions, allReply)).toBe(
-      true
-    );
+    expect(
+      codeChangesHidden('respond-plan', perThreadQuestions, allReply)
+    ).toBe(true);
     expect(
       effectiveSelections('respond-plan', perThreadQuestions, allReply)
     ).toEqual({ ...allReply, 'code-changes': CODE_CHANGES_SENTINEL });
