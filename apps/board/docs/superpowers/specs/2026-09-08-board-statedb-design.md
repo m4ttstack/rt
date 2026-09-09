@@ -129,8 +129,10 @@ Launch order changes from "write initial state file, then launch" to
    and stores its text into `report`; the file is scratch from then on.
    `reportReady` becomes `report IS NOT NULL`.
 
-The agent-status event's `appRoot` scoping field carries the same derived
-root it does today, so multi-board frame scoping on the bus is unchanged.
+The agent-status event's `appRoot` scoping field carries the handle-derived
+root as today, which post-cutover is `boardStateRoot()`; the server's own
+side of the comparison re-anchors from APP_ROOT to `boardStateRoot()` so a
+checkout server still recognizes its own panes' frames.
 
 ## Readers and prune
 
@@ -141,7 +143,8 @@ on a healthy, non-empty board snapshot, keyed on the full board.
 
 ## Import
 
-The v1 migration ends with a one-shot import, guarded by a kv marker:
+The first real-path open (`getStateDb()`) runs a one-shot import after
+migrations, guarded by a kv marker; explicit-path opens never import:
 
 - Source: the invoking process's legacy `<APP_ROOT>/state/` tree (this
   covers the compiled home and a checkout equally), every surface that

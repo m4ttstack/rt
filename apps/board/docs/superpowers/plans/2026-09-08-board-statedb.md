@@ -273,7 +273,7 @@ Expected: PASS (4 tests).
 - [ ] **Step 5: Commit**
 
 ```bash
-git add apps/board/src/state/db.ts apps/board/src/state/kv-blob.ts apps/board/src/__tests__/state-db.test.ts
+git add apps/board/src/state/db.ts apps/board/src/state/kv-blob.ts apps/board/src/state/busy.ts apps/board/src/state/index.ts apps/board/src/__tests__/state-db.test.ts
 git commit -m "board: state.db core, v1 schema, kv blob accessors"
 ```
 
@@ -488,8 +488,7 @@ In `review-status.ts`, replace the `writeReviewState` call with:
 
 ```ts
 import { boardRootFromStatePath } from '../src/agent-status/emit.ts';
-import { dbPathForRoot, openStateDb } from '../src/state/db.ts';
-import { setReportByHandle, updateByHandle } from '../src/state/agent-states.ts';
+import { dbPathForRoot, openStateDb, setReportByHandle, updateByHandle } from '../src/state/index.ts';
 
 const db = openStateDb(dbPathForRoot(boardRootFromStatePath(parsed.path)), 'cli');
 const merged = updateByHandle(
@@ -582,7 +581,7 @@ git commit -m "board: launchers insert claim-ticket rows before pane start"
   - Each module keeps its exported names; the `dir`/`path` defaulted parameters become optional `db: Database = getStateDb()` parameters (tests pass temp dbs).
   - Rows store the whole object as JSON in the table's blob column (`draft`, `nudge`, `entry`, `ref`), exactly the object the module's interface already defines; keys per the schema in Task 1.
   - `outbox`: `enqueueOutbox` INSERTs with `INSERT OR IGNORE` (the UNIQUE envelope_id index preserves today's dedupe-by-id); `drainOutbox`'s reader consumes in `id` order and DELETEs on success; INSERT/DELETE go through `runCriticalWrite` since a dropped queue write loses a peer message. Lifecycle inserts/updates in Tasks 2-4 use `runCriticalWrite` too; slack refs, indexes, and the cursor use `persistOrWarn`.
-  - `triage/memory.ts`: `readMemory`/`writeMemory` become kv blob reads/writes (ns `triage`, key `memory`); `writeRefreshedIdentity` becomes a transaction (fresh read + field write). `tryAcquireMemoryLock`/`releaseMemoryLock` are replaced by `tryClaimCron(now, db?): string | false` and `releaseCron(token, db?)` over kv ns `triage`, key `cron-claim` storing `{ token, at }`: a claim younger than 2 minutes refuses, an older one is reclaimed; release deletes only its own token. `bin/triage.ts` swaps to these names.
+  - `triage/memory.ts`: `readMemory`/`writeMemory` become kv blob reads/writes (ns `triage`, key `memory`); `writeRefreshedIdentity` becomes a transaction (fresh read + field write). `tryAcquireMemoryLock`/`releaseMemoryLock` are replaced by `tryClaimCron(now, db?): string | false` and `releaseCron(token, db?)` over kv ns `triage`, key `cron-claim` storing `{ token, at }`: the staleness check and the claim write happen inside one `db.transaction()` (BEGIN IMMEDIATE semantics) so two processes cannot both pass the check; a claim younger than 2 minutes refuses, an older one is reclaimed; release deletes only its own token. `bin/triage.ts` swaps to these names.
   - `slack.ts`: `writeSlackRef`/`readSlackRefs` use `slack_refs`; `readIndex(channelName)`/`writeIndex(channelName, ...)` use kv ns `slack-index`, key = the channel NAME slug exactly as `slackIndexPath` slugs it today (the files are `state/slack-index-<name-slug>.json`; nothing is keyed by channel id); `adoptLegacyIndex` is deleted, and the pre-tabs single `state/slack-index.json` cache is deliberately dropped rather than imported (it is a cache; one channel resync rebuilds it).
 
 - [ ] **Step 1: Retarget each module's tests, add the cron-claim cases**
@@ -655,7 +654,7 @@ Cases:
 - every surface lands in its table/kv slot; the review's `.md` lands in `report`; handles follow the in-flight rule below
 - two roots offering the same key: newest `updatedAt` wins
 - identity-less legacy files (`mrUrl: ""`) are skipped, counted in `skipped`
-- after import the legacy `state/` dir is renamed `state.imported-<YYYY-MM-DD>` and the kv marker is set; a second `openStateDb` run imports nothing
+- after import the legacy `state/` dir is renamed `state.imported-<YYYY-MM-DD>` and the kv marker is set; a second `importLegacyState` call against the same db imports nothing (the marker check is the thing under test)
 
 In-flight panes hold legacy `--state` paths, and the spec promises their next write lands in the db. The handle rule that delivers it: an imported lifecycle row keeps the LEGACY path as its handle when the row came from a root whose `dbPathForRoot(root)` equals the db being imported into (the pane's derivation then finds this db and this row), and gets a freshly minted handle otherwise. Test both branches, and drop the re-minted claim in the first bullet above in favor of this rule.
 
