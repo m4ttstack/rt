@@ -461,7 +461,9 @@ export function gateAnswer(
   a: Commands["gate:answer"]["payload"],
   o: RtClientOptions = {},
 ): Promise<RtResponse<Commands["gate:answer"]["data"]>> {
-  return rtCommand<Commands["gate:answer"]["data"]>("gate:answer", { id: a.id, answers: a.answers, by: a.by }, { sockPath: o.sockPath, timeoutMs: o.timeoutMs ?? 10_000 });
+  const payload: Record<string, unknown> = { id: a.id, answers: a.answers, by: a.by };
+  for (const k of ["session", "override"] as const) if (a[k] !== undefined) payload[k] = a[k];
+  return rtCommand<Commands["gate:answer"]["data"]>("gate:answer", payload, { sockPath: o.sockPath, timeoutMs: o.timeoutMs ?? 10_000 });
 }
 
 /** Daemon clamps its own wait to 240s (gates-store.ts); the client abort

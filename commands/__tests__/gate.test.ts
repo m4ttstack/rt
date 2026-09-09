@@ -60,12 +60,30 @@ describe("buildOpenPayload", () => {
 
 describe("buildAnswerPayload", () => {
   test("id is positional, answers/by are flags", () => {
-    const payload = buildAnswerPayload(["gt-1a2b3c4d", "--answers", '{"q1":"yes"}', "--by", "human"]);
+    const payload = buildAnswerPayload(["gt-1a2b3c4d", "--answers", '{"q1":"yes"}', "--by", "human"], {});
     expect(payload).toEqual({ id: "gt-1a2b3c4d", answers: { q1: "yes" }, by: "human" });
   });
 
   test("positional works regardless of flag order", () => {
-    const payload = buildAnswerPayload(["--by", "human", "--answers", '{"q1":"yes"}', "gt-1a2b3c4d"]);
+    const payload = buildAnswerPayload(["--by", "human", "--answers", '{"q1":"yes"}', "gt-1a2b3c4d"], {});
+    expect(payload).toEqual({ id: "gt-1a2b3c4d", answers: { q1: "yes" }, by: "human" });
+  });
+
+  test("--session overrides CLAUDE_CODE_SESSION_ID; --override sets a boolean flag (RT-117)", () => {
+    const payload = buildAnswerPayload(
+      ["gt-1a2b3c4d", "--answers", '{"q1":"yes"}', "--by", "human", "--session", "explicit-session", "--override"],
+      { CLAUDE_CODE_SESSION_ID: "ambient-session" },
+    );
+    expect(payload).toEqual({ id: "gt-1a2b3c4d", answers: { q1: "yes" }, by: "human", session: "explicit-session", override: true });
+  });
+
+  test("--session defaults to CLAUDE_CODE_SESSION_ID when omitted (RT-117)", () => {
+    const payload = buildAnswerPayload(["gt-1a2b3c4d", "--answers", '{"q1":"yes"}', "--by", "human"], { CLAUDE_CODE_SESSION_ID: "ambient-session" });
+    expect(payload).toEqual({ id: "gt-1a2b3c4d", answers: { q1: "yes" }, by: "human", session: "ambient-session" });
+  });
+
+  test("no --session and no CLAUDE_CODE_SESSION_ID leaves session unset (RT-117)", () => {
+    const payload = buildAnswerPayload(["gt-1a2b3c4d", "--answers", '{"q1":"yes"}', "--by", "human"], {});
     expect(payload).toEqual({ id: "gt-1a2b3c4d", answers: { q1: "yes" }, by: "human" });
   });
 });
@@ -126,7 +144,7 @@ function fakeRow(overrides: Partial<GateRow> = {}): GateRow {
     id: "gt-1a2b3c4d", subject: "run:abc123", kind: "approval",
     questions: [], meta: null,
     status: "answered", answer: null,
-    openedAt: 0, parkedAt: null, closedAt: null, closedReason: null,
+    openedAt: 0, parkedAt: null, closedAt: null, closedReason: null, supersededBy: null,
     agent: null, pane: null, nudge: null, delivery: null, released: false,
     owner: null, escalatedAt: null,
     ...overrides,

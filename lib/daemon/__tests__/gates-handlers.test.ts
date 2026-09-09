@@ -27,7 +27,11 @@ function twoQuestions(): GateQuestion[] {
 
 /** Real store on a fresh tmp db, a fake bus capturing every emitAt call, and
     a fake broadcast capturing every frame -- mirrors events-handlers.test.ts. */
-function harness(opts: { push?: GatePush; runSpawnedBy?: (runId: string) => string | null } = {}) {
+function harness(opts: {
+  push?: GatePush;
+  runSpawnedBy?: (runId: string) => string | null;
+  herdShepherd?: (herdId: string) => string | null;
+} = {}) {
   const dir = mkdtempSync(join(tmpdir(), "rt-gates-handlers-"));
   dirs.push(dir);
   const store: GatesStore = createGatesStore({ dbPath: join(dir, "gates.db"), log });
@@ -43,12 +47,22 @@ function harness(opts: { push?: GatePush; runSpawnedBy?: (runId: string) => stri
   const handlers = createGateHandlers(store, bus, (type, data) => broadcasts.push({ type, data }), {
     push: opts.push,
     runSpawnedBy: opts.runSpawnedBy,
+    herdShepherd: opts.herdShepherd,
   });
   return { handlers, store, emitted, broadcasts };
 }
 
-function openPayload() {
-  return { subject: "run:r1", kind: "clarify", questions: qs() };
+/** Alias read at the RT-117 owner-enforcement call sites below: same harness,
+    named for what those tests are building (a handler map to answer against). */
+const makeHandlers = harness;
+
+function openPayload(overrides: Partial<{ subject: string; kind: string; questions: GateQuestion[] }> = {}) {
+  return { subject: "run:r1", kind: "clarify", questions: qs(), ...overrides };
+}
+
+/** A valid answer for qs()'s single question ("q", member "a"). */
+function validAnswers() {
+  return { q: "a" };
 }
 
 /** Records every gateId passed to GatePush.onClosed; onAnswered/onOpened are
@@ -620,6 +634,41 @@ describe("gate:open owner derivation (RT-117)", () => {
     const { handlers, emitted } = harness();
     await handlers["gate:open"](openPayload());
     expect((emitted[0]!.payload as any).owner).toBe("human");
+  });
+});
+
+describe("gate:answer owner enforcement (RT-117)", () => {
+  test("gate:answer refuses a non-owner session", async () => {
+    const { handlers } = makeHandlers({ runSpawnedBy: () => "herd:h-1", herdShepherd: () => "shep-session" });
+    const open = await handlers["gate:open"]({ ...openPayload(), origin: { runId: "r", presentation: "wait" } });
+    const res = await handlers["gate:answer"]({ id: (open as any).data.id, by: "intruder", session: "other-session", answers: validAnswers() });
+    expect(res).toEqual({ ok: false, error: "owned-by", owner: "herd:h-1" });
+  });
+
+  test("gate:answer allows the owning shepherd, the pane, and override", async () => {
+    const { handlers } = makeHandlers({ runSpawnedBy: () => "herd:h-1", herdShepherd: () => "shep-session" });
+    const a = await handlers["gate:open"]({ ...openPayload(), origin: { runId: "r", presentation: "wait" } });
+    const ok1 = await handlers["gate:answer"]({ id: (a as any).data.id, by: "shep", session: "shep-session", answers: validAnswers() });
+    expect(ok1.ok).toBe(true);
+
+    const b = await handlers["gate:open"]({ ...openPayload({ kind: "k2" }), origin: { runId: "r", presentation: "wait" } });
+    const ok2 = await handlers["gate:answer"]({ id: (b as any).data.id, by: "matt", override: true, answers: validAnswers() });
+    expect(ok2.ok).toBe(true);
+    expect((ok2 as any).data.row.answer.overridden).toBe(true);
+
+    // GATE_BY_PANE stays exempt: a pane reconciling its own gate never carries
+    // the owning session, so the guard must not block it.
+    const c = await handlers["gate:open"]({ ...openPayload({ kind: "k3" }), origin: { runId: "r", presentation: "wait" } });
+    const ok3 = await handlers["gate:answer"]({ id: (c as any).data.id, by: "pane", answers: validAnswers() });
+    expect(ok3.ok).toBe(true);
+  });
+
+  test("gate:answer on a superseded gate returns a structured rejection", async () => {
+    const { handlers } = makeHandlers({});
+    const first = await handlers["gate:open"](openPayload());
+    const second = await handlers["gate:open"](openPayload()); // same subject+kind supersedes
+    const res = await handlers["gate:answer"]({ id: (first as any).data.id, by: "anyone", answers: validAnswers() });
+    expect(res).toEqual({ ok: false, error: "gate-closed", reason: "superseded", supersededBy: (second as any).data.id });
   });
 });
 
