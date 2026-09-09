@@ -1699,12 +1699,18 @@
   align-items: center;
   gap: 4px;
 }
+/* Gate actions read as buttons at rest: the light tier, not ghost text. */
 .tui-triage-head-actions .tui-gate-ghost {
   font-size: 0.7rem;
-  font-weight: 400;
+  font-weight: 500;
   letter-spacing: normal;
   text-transform: none;
-  padding: 2px 8px;
+  padding: 3px 10px;
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  color: var(--fg);
+}
+.tui-triage-head-actions .tui-gate-ghost:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--fg) 13%, transparent);
 }
 .tui-triage-pos {
   margin-left: 2px;
