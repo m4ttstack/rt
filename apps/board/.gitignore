@@ -9,8 +9,8 @@ config.team.json
 !tests/fixture/config.json
 
 # runtime state + logs
-state/
-logs/
+/state/
+/logs/
 switchboard/*.sqlite*
 
 # local planning docs
