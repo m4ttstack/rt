@@ -65,3 +65,13 @@ describe('useAppRoute: /runs/:repo/:runId', () => {
     expect(routeAt('/runs/%E0%A4%A/run-1')).toEqual({ name: 'not-found' });
   });
 });
+
+describe('useAppRoute: /gates/:id', () => {
+  it('matches a gate id route', () => {
+    expect(routeAt('/gates/g1')).toEqual({ name: 'gate', id: 'g1' });
+  });
+
+  it('falls through to not-found with no id segment', () => {
+    expect(routeAt('/gates/')).toEqual({ name: 'not-found' });
+  });
+});

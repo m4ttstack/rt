@@ -1,3 +1,4 @@
+import type { EventBridgeRule } from '@mattstack/app-server/event-bridge';
 import type { GateRow as FacilityGateRow } from '@mattstack/rt-client';
 
 /** Shape shared by a relay `("event", frame)` push and an `events:list` row --
@@ -108,47 +109,23 @@ export async function reconcileGatesOnBoot(
 
 // ── Bridge rule: the board's own entry in rt.notify.eventBridges ──────────
 
-export interface EventBridgeRule {
-  pattern: string;
-  category: string;
-  title: string;
-  message: string;
-}
-
-/** The board's pre-facility bridge pattern, kept only so `ensureBridgeRule`
-    can replace a rule a prior board version left behind. */
-const LEGACY_GATE_OPENED_PATTERN = 'board/gate/opened/*';
-
 /** The rule this board contributes so opening a gate raises a desktop
-    notification. `{label}` and `{subject}` interpolate straight from the
-    `gate/opened/*` payload -- `label` is the `meta.label` the wrapper sets
-    at open time (e.g. "review gate !4821"), already formatted for display,
-    so the template needs no `iid`/`kind` lookup of its own. Suppression is
-    payload-driven on the daemon side (a payload `paneId` matching the
-    focused pane drops the notification): no field on the rule itself. */
-export const GATE_OPENED_BRIDGE_RULE: EventBridgeRule = {
-  pattern: 'gate/opened/*',
-  category: 'gate',
-  title: '{label}',
-  message: '{subject}',
-};
-
-/**
- * Merge-not-clobber upsert: appends the board's gate-opened bridge rule to
- * whatever `read()` returns. A rule already at the current pattern is a
- * no-op; a rule still at the legacy `board/gate/opened/*` pattern (a prior
- * board version's entry) is replaced in place rather than left as a dead
- * duplicate alongside the new one. Every other entry -- other apps' rules,
- * hand edits -- rides along untouched.
- */
-export function ensureBridgeRule(
-  read: () => EventBridgeRule[],
-  write: (next: EventBridgeRule[]) => void
-): void {
-  const current = read();
-  if (current.some(r => r.pattern === GATE_OPENED_BRIDGE_RULE.pattern)) return;
-  const withoutLegacy = current.filter(
-    r => r.pattern !== LEGACY_GATE_OPENED_PATTERN
-  );
-  write([...withoutLegacy, GATE_OPENED_BRIDGE_RULE]);
+    notification that opens the gate in the board on click. `{label}` and
+    `{question}` interpolate from the `gate/opened/*` payload -- `label` is
+    the `meta.label` the wrapper sets at open time (e.g. "review gate
+    !4821"), already formatted for display, so the template needs no
+    `iid`/`kind` lookup of its own. `subjectPrefix: 'mr:'` is the rule's
+    identity half that keeps it from colliding with console's `run:` rule
+    on the same `gate/opened/*` pattern. Suppression is payload-driven on
+    the daemon side (a payload `paneId` matching the focused pane drops the
+    notification): no field on the rule itself. */
+export function boardBridgeRule(boardUrl: string): EventBridgeRule {
+  return {
+    pattern: 'gate/opened/*',
+    subjectPrefix: 'mr:',
+    category: 'gate',
+    title: '{label}',
+    message: '{question}',
+    url: `${boardUrl}/?gate={id}`,
+  };
 }

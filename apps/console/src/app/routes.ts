@@ -4,6 +4,7 @@ import { useRoute } from 'wouter';
 export type AppRoute =
   | { name: 'board' }
   | { name: 'run'; repo: string; runId: string }
+  | { name: 'gate'; id: string }
   | { name: 'search' }
   | { name: 'wiring' }
   | { name: 'config'; key: string }
@@ -39,12 +40,15 @@ function canonicalRepo(raw: string): string | undefined {
  * The app's route table, as a hook: the current location in, a structured
  * route out. `/runs/<repo>/<runId>` carries a serialized repo identity in the
  * repo segment, so that route re-canonicalizes it (see `canonicalRepo`).
+ * `/gates/<id>` has no content of its own -- it's the redirect stub a
+ * notification links to (see `GateRedirect`).
  */
 export function useAppRoute(): AppRoute {
   const [isBoard] = useRoute('/');
   const [isSearch] = useRoute('/search');
   const [isWiring] = useRoute('/wiring');
   const [isRun, runParams] = useRoute('/runs/:repo/:runId');
+  const [isGate, gateParams] = useRoute('/gates/:id');
   const [isConfig, configParams] = useRoute('/config/:key');
 
   if (isBoard) return { name: 'board' };
@@ -56,6 +60,10 @@ export function useAppRoute(): AppRoute {
     return repo !== undefined && runId !== undefined
       ? { name: 'run', repo, runId }
       : { name: 'not-found' };
+  }
+  if (isGate) {
+    const id = decodeParam(gateParams.id ?? '');
+    return id !== undefined ? { name: 'gate', id } : { name: 'not-found' };
   }
   if (isConfig) {
     const key = decodeParam(configParams.key ?? '');

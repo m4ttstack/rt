@@ -11,7 +11,7 @@
     "switchboard": "bun run switchboard/server.ts",
     "sync-resolvers": "sh scripts/sync-resolvers.sh",
     "test": "bun test",
-    "typecheck": "tsc --noEmit -p . && tsc --noEmit -p src/client && tsc --noEmit -p src/client/__tests__",
+    "typecheck": "tsc --noEmit -p . && tsc --noEmit -p src/client && tsc --noEmit -p src/client/__tests__ && tsc --noEmit -p src/client/board/__tests__",
     "capture": "bun tests/capture.ts --out tests/.captures",
     "capture:baseline": "bun tests/capture.ts --out tests/baselines",
     "capture:compare": "bun tests/compare.ts",
@@ -19,6 +19,7 @@
     "build": "bun run build:client && bun build --compile src/compiled.ts --outfile dist/board"
   },
   "dependencies": {
+    "@mattstack/app-server": "workspace:*",
     "@mattstack/gate-kit": "workspace:*",
     "@mattstack/glance": "catalog:",
     "@mattstack/rt-client": "catalog:",
@@ -32,6 +33,7 @@
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
+    "@happy-dom/global-registrator": "^20.14.0",
     "@types/bun": "latest",
     "@types/node": "catalog:",
     "@types/pixelmatch": "^5.2.6",

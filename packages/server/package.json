@@ -21,7 +21,8 @@
     ".": "./src/serve.ts",
     "./app": "./src/app.ts",
     "./relays": "./src/relays.ts",
-    "./static": "./src/static.ts"
+    "./static": "./src/static.ts",
+    "./event-bridge": "./src/event-bridge.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

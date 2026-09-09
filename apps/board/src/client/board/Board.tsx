@@ -36,6 +36,12 @@ import { AppLauncher } from './AppLauncher.tsx';
 import { AppMark } from './AppMark.tsx';
 import { ConfigModal } from './ConfigModal.tsx';
 import { Controls } from './Controls.tsx';
+import {
+  gateParam,
+  mrForGate,
+  stripGateParam,
+  viewStateForGate,
+} from './deep-link.ts';
 import { DraftModal } from './DraftModal.tsx';
 import { boardSummary, draftKey, getSlackMarks, mrLine } from './format.ts';
 import {
@@ -82,6 +88,9 @@ export function Board() {
     return parseViewState(location.search, stored, []);
   });
   const validatedOnce = useRef(false);
+  // The iid a `?gate=<id>` deep link resolved to on first load, consumed by
+  // the scroll/flash/strip effect below once that row has actually rendered.
+  const [gateDeepLinkIid, setGateDeepLinkIid] = useState<number | null>(null);
 
   const pickTheme = (m: ThemeMode) => {
     localStorage.setItem(THEME_KEY, m);
@@ -140,15 +149,29 @@ export function Board() {
       );
       const tab = d.tabs.find(t => t.id === firstPass.tab) ?? d.tabs[0];
       const validMembers = [...rosterUsernamesFor(d.mrs, tab, usernames)];
-      setState(
-        parseViewState(
-          location.search,
-          stored,
-          validMembers,
-          d.defaultMember,
-          tabIds
-        )
+      let resolved = parseViewState(
+        location.search,
+        stored,
+        validMembers,
+        d.defaultMember,
+        tabIds
       );
+      const gateId = gateParam(location.search);
+      const linkedIid = gateId ? mrForGate(d.mrs, gateId) : null;
+      if (linkedIid !== null) {
+        // The stored/URL filters resolved above may hide the linked MR (wrong
+        // tab, a member pick, "posted only") -- a deep link has to land, so
+        // widen whatever would otherwise keep the row off-screen.
+        resolved = viewStateForGate(
+          resolved,
+          d.mrs,
+          d.tabs,
+          new Set(usernames),
+          linkedIid
+        );
+        setGateDeepLinkIid(linkedIid);
+      }
+      setState(resolved);
     } else {
       // Validated against the ACTIVE TAB's roster: a codeowners tab's is
       // inferred from the rows in view, so checking the config roster alone
@@ -618,6 +641,39 @@ export function Board() {
     }, 4000);
     return () => clearInterval(t);
   }, [optimisticLifecycle.active, load]);
+
+  // `?gate=<id>` deep link: by the time this runs, the linked row has already
+  // rendered (gateDeepLinkIid is set in the same batch as the data that
+  // produced it). history.replaceState strips the param so a refresh doesn't
+  // re-scroll.
+  useEffect(() => {
+    if (gateDeepLinkIid === null) return;
+    const row = document.querySelector(
+      `[data-mr-iid="${CSS.escape(String(gateDeepLinkIid))}"]`
+    );
+    // An empty relative url is a no-op for replaceState (it keeps the
+    // current query) -- fall back to the bare pathname, same as update().
+    history.replaceState(
+      null,
+      '',
+      stripGateParam(location.search) || location.pathname
+    );
+    if (!row) {
+      setGateDeepLinkIid(null);
+      return;
+    }
+    row.scrollIntoView({ block: 'center' });
+    row.classList.add('tui-row-flash');
+    // Resetting gateDeepLinkIid changes this effect's own dependency, which
+    // re-runs its cleanup -- doing that synchronously here would clearTimeout
+    // the flash removal before it ever fires. Reset it from inside the
+    // timeout instead, once the flash has actually been removed.
+    const t = setTimeout(() => {
+      row.classList.remove('tui-row-flash');
+      setGateDeepLinkIid(null);
+    }, 2000);
+    return () => clearTimeout(t);
+  }, [gateDeepLinkIid]);
 
   if (!data) {
     return (

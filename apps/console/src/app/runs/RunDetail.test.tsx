@@ -137,11 +137,12 @@ function renderDetail() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  return renderWithProviders(
+  const result = renderWithProviders(
     <QueryClientProvider client={queryClient}>
       <RunDetail repo="repo-tools" runId="run-1" />
     </QueryClientProvider>
   );
+  return { ...result, queryClient };
 }
 
 function gateRow(overrides: Partial<GateRow> = {}): GateRow {
@@ -194,6 +195,7 @@ const enrichedBranch: BranchEnrichment = {
 
 afterEach(() => {
   vi.clearAllMocks();
+  window.history.pushState(null, '', '/');
   localStorage.clear();
 });
 
@@ -1380,6 +1382,161 @@ describe('RunDetail: gate card', () => {
 
       expect(scrollSpy).toHaveBeenCalledTimes(1);
       expect(scrollSpy.mock.instances[0]).toBe(cards[1]);
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+});
+
+describe('RunDetail: gate deep link', () => {
+  it('scrolls to the linked gate card once the gates query resolves, then strips the `gate` param', async () => {
+    detailGet.mockResolvedValue(detailResponse(FIXTURE));
+    artifactGet.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ lines: [], truncated: false }),
+    });
+    seenPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
+    gatesGet.mockResolvedValue(
+      gatesResponse([gateRow({ id: 'g-open', status: 'open' })])
+    );
+
+    window.history.pushState(null, '', '/runs/repo-tools/run-1?gate=g-open');
+
+    const scrollSpy = vi.fn();
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scrollSpy;
+
+    try {
+      renderDetail();
+
+      const card = await screen.findByTestId('gate-card');
+      expect(card).toHaveAttribute('data-gate-id', 'g-open');
+
+      await waitFor(() => expect(scrollSpy).toHaveBeenCalledTimes(1));
+      expect(scrollSpy.mock.instances[0]).toBe(card);
+      await waitFor(() => expect(window.location.search).toBe(''));
+      expect(window.location.pathname).toBe('/runs/repo-tools/run-1');
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
+  it('does not scroll again when the gates query refetches after the param is stripped', async () => {
+    detailGet.mockResolvedValue(detailResponse(FIXTURE));
+    artifactGet.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ lines: [], truncated: false }),
+    });
+    seenPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
+    gatesGet.mockResolvedValue(
+      gatesResponse([gateRow({ id: 'g-open', status: 'open' })])
+    );
+
+    window.history.pushState(null, '', '/runs/repo-tools/run-1?gate=g-open');
+
+    const scrollSpy = vi.fn();
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scrollSpy;
+
+    try {
+      const { queryClient } = renderDetail();
+
+      await screen.findByTestId('gate-card');
+      await waitFor(() => expect(scrollSpy).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(window.location.search).toBe(''));
+
+      await queryClient.invalidateQueries({ queryKey: ['gates'] });
+      await waitFor(() => expect(gatesGet).toHaveBeenCalledTimes(2));
+
+      expect(scrollSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
+  it('waits for the target gate to actually appear before scrolling and stripping the param', async () => {
+    detailGet.mockResolvedValue(detailResponse(FIXTURE));
+    artifactGet.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ lines: [], truncated: false }),
+    });
+    seenPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
+    // The notification usually beats the console's own gates fetch: the
+    // first response has no matching gate at all.
+    gatesGet
+      .mockResolvedValueOnce(gatesResponse([]))
+      .mockResolvedValueOnce(
+        gatesResponse([gateRow({ id: 'g-open', status: 'open' })])
+      );
+
+    window.history.pushState(null, '', '/runs/repo-tools/run-1?gate=g-open');
+
+    const scrollSpy = vi.fn();
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scrollSpy;
+
+    try {
+      const { queryClient } = renderDetail();
+
+      await screen.findByTestId('summary-card');
+      await waitFor(() =>
+        expect(screen.queryByTestId('gate-card')).not.toBeInTheDocument()
+      );
+      expect(scrollSpy).not.toHaveBeenCalled();
+      expect(window.location.search).toBe('?gate=g-open');
+
+      await queryClient.invalidateQueries({ queryKey: ['gates'] });
+      const card = await screen.findByTestId('gate-card');
+
+      await waitFor(() => expect(scrollSpy).toHaveBeenCalledTimes(1));
+      expect(scrollSpy.mock.instances[0]).toBe(card);
+      await waitFor(() => expect(window.location.search).toBe(''));
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
+  it('does not scroll when there is no `gate` param', async () => {
+    detailGet.mockResolvedValue(detailResponse(FIXTURE));
+    artifactGet.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ lines: [], truncated: false }),
+    });
+    seenPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
+    gatesGet.mockResolvedValue(
+      gatesResponse([gateRow({ id: 'g-open', status: 'open' })])
+    );
+
+    window.history.pushState(null, '', '/runs/repo-tools/run-1');
+
+    const scrollSpy = vi.fn();
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scrollSpy;
+
+    try {
+      renderDetail();
+      await screen.findByTestId('gate-card');
+      expect(scrollSpy).not.toHaveBeenCalled();
     } finally {
       Element.prototype.scrollIntoView = original;
     }

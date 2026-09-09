@@ -1,4 +1,4 @@
-import { Component, useEffect } from 'react';
+import { Component, useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
 import {
   Anchor,
@@ -24,6 +24,7 @@ import { modals } from '@mattstack/app-kit/modals';
 import { notifications } from '@mattstack/app-kit/notifications';
 import type { GateRow, RunFieldRow, RunSummary } from '@mattstack/rt-client';
 import { useQueryClient } from '@tanstack/react-query';
+import { useSearch } from 'wouter';
 
 import { client } from '../api';
 import { PAGE_ROW_HEIGHT } from '../chrome';
@@ -130,6 +131,40 @@ function AnswerGateAction() {
       Answer
     </Button>
   );
+}
+
+/** `/gates/:id` (`GateRedirect`) hands off here with `?gate=<id>` still on
+    the URL, and it usually gets here before this run's gates query has
+    caught up (the notification fires the instant the daemon opens the
+    gate; the console's own `['gates']` fetch is a round trip behind). So
+    the param is consumed only on a successful scroll, never merely because
+    the query resolved: on every change of `gates`, if the target isn't
+    rendered yet, do nothing and wait for the next gates update (a refetch
+    via the websocket in `useRunEvents`, which invalidates `['gates']` on
+    every pipeline event) to try again. A gate that never shows up leaves
+    the param in place -- acceptable, and distinguishable from "already
+    consumed" for anyone debugging the URL. `consumedRef` is the "once"
+    guard once the scroll DOES fire: stripping the param flips `gateId` to
+    null on the next render, and the ref additionally covers a refetch
+    landing before that URL update commits. */
+function useGateDeepLinkScroll(gates: GateRow[] | undefined) {
+  const search = useSearch();
+  const consumedRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const gateId = new URLSearchParams(search).get('gate');
+    if (!gateId || gates === undefined || consumedRef.current === gateId) {
+      return;
+    }
+    const el = document.querySelector(`[data-gate-id="${CSS.escape(gateId)}"]`);
+    if (!el) return;
+    consumedRef.current = gateId;
+    el.scrollIntoView({ block: 'center' });
+    const params = new URLSearchParams(search);
+    params.delete('gate');
+    const qs = params.toString();
+    history.replaceState(null, '', location.pathname + (qs ? `?${qs}` : ''));
+  }, [search, gates]);
 }
 
 function AbandonAction({ repo, runId }: { repo: string; runId: string }) {
@@ -472,6 +507,8 @@ function RunDetailContent({ repo, runId }: { repo: string; runId: string }) {
     // because useMutation returns a new object each render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runId]);
+
+  useGateDeepLinkScroll(gatesQuery.data?.gates);
 
   return (
     <Stack gap="lg" data-testid="run-detail">

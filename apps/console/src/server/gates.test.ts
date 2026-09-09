@@ -1,5 +1,5 @@
 // @vitest-environment node
-import type { GateRow } from '@mattstack/rt-client';
+import type { GateRow, RunSummary } from '@mattstack/rt-client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@mattstack/rt-client', () => ({
@@ -7,6 +7,7 @@ vi.mock('@mattstack/rt-client', () => ({
   gateAnswer: vi.fn(),
   paneList: vi.fn(),
   paneFocus: vi.fn(),
+  listRuns: vi.fn(),
 }));
 
 const { gates } = await import('./gates');
@@ -38,8 +39,33 @@ function row(overrides: Partial<GateRow> = {}): GateRow {
   };
 }
 
+function runSummary(overrides: Partial<RunSummary> = {}): RunSummary {
+  return {
+    id: 'r1',
+    repo: 'repo-tools',
+    work_type: 'feature',
+    pipeline: 'implement',
+    status: 'running',
+    current_stage: 'implement',
+    spawned_by: null,
+    started_at: 0,
+    ended_at: null,
+    pack_commits: null,
+    pack_dirty: 0,
+    attention: { needs: false, reason: null, evidence: '' },
+    last_event_at: 0,
+    ticket: null,
+    branch: null,
+    ...overrides,
+  };
+}
+
 function get() {
   return gates.fetch(new Request('http://localhost/api/gates'));
+}
+
+function locate(id: string) {
+  return gates.fetch(new Request(`http://localhost/api/gates/${id}/locate`));
 }
 
 function answer(id: string, body: unknown) {
@@ -379,5 +405,95 @@ describe('POST /api/gates/:id/focus', () => {
       error: 'could not list live panes',
     });
     expect(rt.paneFocus).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET /api/gates/:id/locate', () => {
+  it('resolves the run gate to its run and repo', async () => {
+    vi.mocked(rt.gateList).mockResolvedValueOnce({
+      ok: true,
+      data: { gates: [row({ subject: 'run:r1' })], cursor: 1 },
+    });
+    vi.mocked(rt.listRuns).mockResolvedValueOnce({
+      ok: true,
+      data: { runs: [runSummary({ id: 'r1', repo: 'repo-tools' })] },
+    });
+
+    const res = await locate('g1');
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({
+      repo: 'repo-tools',
+      runId: 'r1',
+    });
+    // The shared RT_SOCK_PATH seam (rtClientOptions()) every other rt-client
+    // call in this file threads -- listRuns must carry it too, not just
+    // gateList/paneList/paneFocus/gateAnswer.
+    expect(rt.listRuns).toHaveBeenCalledWith(undefined, expect.anything());
+  });
+
+  it('404s when the gate itself does not exist', async () => {
+    vi.mocked(rt.gateList).mockResolvedValueOnce({
+      ok: true,
+      data: { gates: [], cursor: 0 },
+    });
+
+    const res = await locate('missing');
+
+    expect(res.status).toBe(404);
+    expect(rt.listRuns).not.toHaveBeenCalled();
+  });
+
+  it('404s a gate whose subject is not a run', async () => {
+    vi.mocked(rt.gateList).mockResolvedValueOnce({
+      ok: true,
+      data: { gates: [row({ id: 'g1', subject: 'pr:123' })], cursor: 1 },
+    });
+
+    const res = await locate('g1');
+
+    expect(res.status).toBe(404);
+    expect(rt.listRuns).not.toHaveBeenCalled();
+  });
+
+  it('404s when the run is not found in any repo', async () => {
+    vi.mocked(rt.gateList).mockResolvedValueOnce({
+      ok: true,
+      data: { gates: [row({ subject: 'run:r1' })], cursor: 1 },
+    });
+    vi.mocked(rt.listRuns).mockResolvedValueOnce({
+      ok: true,
+      data: { runs: [runSummary({ id: 'other-run' })] },
+    });
+
+    const res = await locate('g1');
+
+    expect(res.status).toBe(404);
+  });
+
+  it('502s when the gate lookup fails', async () => {
+    vi.mocked(rt.gateList).mockResolvedValueOnce({
+      ok: false,
+      error: 'rt daemon unreachable at /tmp/rt.sock: ECONNREFUSED',
+    });
+
+    const res = await locate('g1');
+
+    expect(res.status).toBe(502);
+  });
+
+  it('502s when listRuns fails', async () => {
+    vi.mocked(rt.gateList).mockResolvedValueOnce({
+      ok: true,
+      data: { gates: [row({ subject: 'run:r1' })], cursor: 1 },
+    });
+    vi.mocked(rt.listRuns).mockResolvedValueOnce({
+      ok: false,
+      error: 'rt daemon unreachable at /tmp/rt.sock: ECONNREFUSED',
+    });
+
+    const res = await locate('g1');
+
+    expect(res.status).toBe(502);
   });
 });

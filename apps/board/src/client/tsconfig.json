@@ -8,7 +8,8 @@
     "./**/*",
     "../../node_modules/@mattstack/tui-kit/types/css-modules.d.ts"
   ],
-  // __tests__ is its own program: it needs `types: ["bun"]` for `bun:test`,
-  // which this one cannot have (see src/client/__tests__/tsconfig.json).
-  "exclude": ["__tests__"]
+  // Both __tests__ dirs are their own programs: they need `types: ["bun"]`
+  // for `bun:test`, which this one cannot have (see
+  // src/client/__tests__/tsconfig.json and src/client/board/__tests__/tsconfig.json).
+  "exclude": ["__tests__", "board/__tests__"]
 }
