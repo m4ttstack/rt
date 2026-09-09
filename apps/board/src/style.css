@@ -1798,8 +1798,9 @@
 }
 .tui-triage-context {
   min-width: 0;
+  display: flex;
+  flex-direction: column;
   max-height: 46vh;
-  overflow-y: auto;
   padding: var(--gate-pad-card);
   border: 1px solid var(--border-soft);
   border-radius: var(--gate-radius-card);
@@ -1813,6 +1814,11 @@
   line-height: 1.4;
   color: var(--accent-text);
   margin-bottom: 0.55rem;
+  flex-shrink: 0;
+}
+.tui-triage-context .tui-gate-context-body {
+  min-height: 0;
+  overflow-y: auto;
 }
 .tui-triage-form-col {
   min-width: 0;
