@@ -1,4 +1,4 @@
-import { mkdirSync, renameSync } from 'fs';
+import { existsSync, mkdirSync, renameSync } from 'fs';
 import { homedir } from 'os';
 import { basename, dirname, join, resolve } from 'path';
 import { Database } from 'bun:sqlite';
@@ -101,7 +101,7 @@ CREATE TABLE IF NOT EXISTS kv (
 `;
 
 type Migration = (db: Database) => void;
-const MIGRATIONS: Migration[] = [db => db.exec(V1_SCHEMA)];
+const MIGRATIONS: Migration[] = [db => db.run(V1_SCHEMA)];
 
 // SCHEMA_VERSION is the public constant other modules reason about;
 // MIGRATIONS.length is what runMigrations actually applies. They must never
@@ -122,7 +122,7 @@ export class SchemaTooNewError extends Error {}
 
 function runMigrations(db: Database): void {
   // busy_timeout is already set by the caller (openAt) before this runs.
-  db.exec('BEGIN IMMEDIATE');
+  db.run('BEGIN IMMEDIATE');
   try {
     const v = (
       db.query('PRAGMA user_version').get() as { user_version: number }
@@ -133,10 +133,10 @@ function runMigrations(db: Database): void {
       );
     }
     for (let i = v; i < MIGRATIONS.length; i++) MIGRATIONS[i]!(db);
-    db.exec(`PRAGMA user_version = ${MIGRATIONS.length}`);
-    db.exec('COMMIT');
+    db.run(`PRAGMA user_version = ${MIGRATIONS.length}`);
+    db.run('COMMIT');
   } catch (err) {
-    db.exec('ROLLBACK');
+    db.run('ROLLBACK');
     throw err;
   }
 }
@@ -144,11 +144,19 @@ function runMigrations(db: Database): void {
 function openAt(path: string, flavor: DbFlavor): Database {
   mkdirSync(dirname(path), { recursive: true });
   const db = new Database(path, { create: true });
-  db.exec(`PRAGMA busy_timeout = ${MIGRATION_BUSY_TIMEOUT_MS}`);
-  db.exec('PRAGMA journal_mode = WAL');
-  db.exec('PRAGMA synchronous = NORMAL');
-  runMigrations(db);
-  db.exec(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS[flavor]}`);
+  // Close on any failure past the constructor: quarantine renames this very
+  // file next, and an open handle would keep writing WAL pages under the
+  // live name after the rename.
+  try {
+    db.run(`PRAGMA busy_timeout = ${MIGRATION_BUSY_TIMEOUT_MS}`);
+    db.run('PRAGMA journal_mode = WAL');
+    db.run('PRAGMA synchronous = NORMAL');
+    runMigrations(db);
+    db.run(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS[flavor]}`);
+  } catch (err) {
+    db.close();
+    throw err;
+  }
   return db;
 }
 
@@ -163,6 +171,12 @@ export function openStateDb(path: string, flavor: DbFlavor = 'cli'): Database {
       throw err;
     const quarantine = `${path}.corrupt-${new Date().toISOString().slice(0, 10)}`;
     renameSync(path, quarantine);
+    // Sidecars go with the main file: left behind, their pages would poison
+    // (or at least confuse forensics on) the recreated db under the live name.
+    for (const suffix of ['-wal', '-shm']) {
+      if (existsSync(path + suffix))
+        renameSync(path + suffix, quarantine + suffix);
+    }
     console.error(`state.db unopenable, quarantined to ${quarantine}: ${msg}`);
     return openAt(path, flavor);
   }
@@ -189,11 +203,11 @@ export function getStateDb(flavor: DbFlavor = 'cli'): Database {
           // migration timeout/immediate-transaction discipline rather than
           // the flavor's own (server's 250ms is tuned for steady-state
           // request handling, not a one-shot bulk import), then restores it.
-          opened.exec(`PRAGMA busy_timeout = ${MIGRATION_BUSY_TIMEOUT_MS}`);
+          opened.run(`PRAGMA busy_timeout = ${MIGRATION_BUSY_TIMEOUT_MS}`);
           const result = importLegacyState(opened, [
             ...new Set([APP_ROOT, boardStateRoot()]),
           ]);
-          opened.exec(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS[flavor]}`);
+          opened.run(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS[flavor]}`);
           console.error(
             `legacy import: imported=${result.imported} skipped=${result.skipped} renamed=[${result.renamed.join(', ')}]`
           );

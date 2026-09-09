@@ -27,7 +27,10 @@ describe('state purity', () => {
         const rel = file.slice(BOARD_ROOT.length + 1);
         if (ALLOWED.has(rel) || rel.includes('__tests__')) continue;
         const src = readFileSync(file, 'utf8');
-        if (/join\(APP_ROOT,\s*'state'/.test(src)) offenders.push(rel);
+        if (
+          /join\(\s*APP_ROOT\s*,\s*['"`]state|\$\{APP_ROOT\}\/state/.test(src)
+        )
+          offenders.push(rel);
       }
     }
     expect(offenders).toEqual([]);

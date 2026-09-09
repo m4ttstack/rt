@@ -1,3 +1,5 @@
+import { existsSync } from 'fs';
+
 import { boardRootFromStatePath } from '../src/agent-status/emit.ts';
 import { writeDraft } from '../src/draft-state.ts';
 import { dbPathForRoot, getStateDb, openStateDb } from '../src/state/index.ts';
@@ -33,9 +35,17 @@ if (!mrUrl || !Number.isFinite(iid) || !kind || !body) {
 // cache) and falls back to the ambient default db, same as before this fix --
 // a caller that has it (the current doctor SKILL.md template) stays inside
 // whichever board root launched the pane, matching the status CLIs.
-const db = state
-  ? openStateDb(dbPathForRoot(boardRootFromStatePath(state)), 'cli')
-  : getStateDb();
+let db;
+if (state) {
+  const dbPath = dbPathForRoot(boardRootFromStatePath(state));
+  if (!existsSync(dbPath)) {
+    console.error(`no board db at ${dbPath}; stale pre-upgrade handle?`);
+    process.exit(1);
+  }
+  db = openStateDb(dbPath, 'cli');
+} else {
+  db = getStateDb();
+}
 
 writeDraft(
   mrUrl,

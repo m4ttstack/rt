@@ -224,6 +224,9 @@ describe('the status writer the board hands out', () => {
       join(tmpdir(), 'board-statusbin-draft-home-')
     );
     const handle = mintHandle('doctor', 'https://x/mr/11', root);
+    // The launcher creates the db before any pane runs; the CLI's stale-handle
+    // guard refuses a root with no db rather than creating a stray one.
+    openStateDb(dbPathForRoot(root), 'cli').close();
 
     const proc = Bun.spawn(
       [
@@ -253,6 +256,29 @@ describe('the status writer the board hands out', () => {
     expect(existsSync(join(otherHome, '.mattstack', 'board', 'state.db'))).toBe(
       false
     );
+  });
+
+  test('doctor-draft with a stale pre-upgrade handle exits 1 and creates no stray db', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'board-statusbin-stale-'));
+    const handle = mintHandle('doctor', 'https://x/mr/12', root);
+
+    const proc = Bun.spawn(
+      [
+        statusBinPath(),
+        'doctor-draft',
+        'https://x/mr/12',
+        '12',
+        'inherited-note',
+        'job fails on main',
+        '--state',
+        handle,
+      ],
+      { stdout: 'pipe', stderr: 'pipe', env: NO_LIVE_BOARD }
+    );
+    expect(await proc.exited).toBe(1);
+    const stderr = await new Response(proc.stderr).text();
+    expect(stderr).toContain('stale pre-upgrade handle');
+    expect(existsSync(dbPathForRoot(root))).toBe(false);
   });
 
   test('rejects an unknown subcommand rather than silently doing nothing', async () => {
