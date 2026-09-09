@@ -1782,17 +1782,40 @@
   align-items: center;
   gap: 8px;
 }
+/* The facts line mirrors the MR row's second line (.tui-row-2): author,
+   !iid, a pipe, the branch, then time and origin, all in the muted voice. */
 .tui-triage-strip-facts {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  column-gap: 6px;
+  column-gap: 0.55rem;
   row-gap: 2px;
   font-size: 0.7rem;
   color: var(--gate-muted);
 }
-.tui-triage-strip-facts > span + span::before {
-  content: '· ';
+.tui-triage-strip-sep {
+  opacity: 0.5;
+}
+.tui-triage-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  font-size: 0.8rem;
+  color: var(--fg);
+}
+.tui-triage-ticket {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  color: var(--accent-text);
+}
+.tui-triage-kind {
+  flex-shrink: 0;
+  font: 600 0.66rem/1.4 var(--font-sans);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
   color: var(--gate-muted);
 }
 .tui-triage-subject {

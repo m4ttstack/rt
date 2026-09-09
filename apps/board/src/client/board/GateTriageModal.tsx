@@ -65,15 +65,18 @@ function GateTriageModal({
     >
       <div className="tui-triage-strip">
         <div className="tui-triage-strip-main">
-          <span className="tui-gate-title">{gate.label}</span>
+          <span className="tui-triage-title">{mr.title}</span>
+          {mr.sourceBranch && extractTicketId(mr.sourceBranch, mr.title) && (
+            <span className="tui-triage-ticket">
+              {extractTicketId(mr.sourceBranch, mr.title)}
+            </span>
+          )}
+          <span className="tui-triage-kind">{gate.label}</span>
           {gate.status === 'parked' && (
             <Chip intent="warn" variant="outline" uppercase data-gate="parked">
               parked
             </Chip>
           )}
-          <span className="tui-triage-subject">
-            <span className="tui-triage-mr-ref">!{mr.iid}</span> {mr.title}
-          </span>
           {gate.status === 'parked' ? (
             gate.domain && (
               <button
@@ -105,10 +108,9 @@ function GateTriageModal({
           </button>
         </div>
         <div className="tui-triage-strip-facts">
-          {mr.author && <span>by {mr.author.name || mr.author.username}</span>}
-          {mr.sourceBranch && extractTicketId(mr.sourceBranch, mr.title) && (
-            <span>{extractTicketId(mr.sourceBranch, mr.title)}</span>
-          )}
+          {mr.author && <span>{mr.author.name || mr.author.username}</span>}
+          <span className="tui-triage-meta-mono">!{mr.iid}</span>
+          <span className="tui-triage-strip-sep">|</span>
           {mr.sourceBranch && (
             <span className="tui-triage-meta-mono">{mr.sourceBranch}</span>
           )}
