@@ -51,6 +51,7 @@ export interface GatesStore {
     nudge?: { session: string };
     context?: string;
     origin?: GateOrigin;
+    owner?: string;
   }): OpenResult;
   get(id: string): GateRow | null;
   list(filter: { open?: boolean; subjectPrefix?: string; kind?: string; limit?: number; cursor?: number }): { gates: GateRow[]; cursor: number };
@@ -59,17 +60,22 @@ export interface GatesStore {
   close(id: string, reason: "abandoned" | "superseded" | "pruned"): { ok: true } | { ok: false; reason: "not-found" | "already-answered" | "already-closed" };
   markDelivery(id: string, outcome: "delivered" | "dead-pane"): void;
   wait(id: string, opts: { waitMs?: number; signal?: AbortSignal }): Promise<WaitResult>;
-  /** Idempotent on (subjectPrefix, session): a live match returns the
-      existing row rather than minting a duplicate. */
-  subscribe(input: { subjectPrefix: string; session: string }): GateSubscription;
+  /** Idempotent on (scope, subjectPrefix, ownerRef, session): a live match
+      returns the existing row rather than minting a duplicate. */
+  subscribe(input: { subjectPrefix: string; session: string; scope?: "prefix" | "owner"; ownerRef?: string }): GateSubscription;
   unsubscribe(id: string): boolean;
   subscriptions(filter?: { live?: boolean; session?: string }): GateSubscription[];
   markSubscriptionDelivery(id: string, outcome: "delivered" | "failed"): void;
   markSubscriptionDead(id: string): void;
+  /** Stamps escalatedAt once (CAS on IS NULL); a second call on an already-escalated row is a no-op. */
+  markEscalated(id: string): void;
   deadPanePushes(): GateRow[];
   /** Deletes closed/answered rows past the retention window, floor respected.
       Returns the number of rows removed. */
   sweep(): number;
+  /** Deletes dead subscription rows whose last delivery attempt (or creation,
+      if never delivered) is older than `olderThanMs`. Returns rows removed. */
+  pruneDeadSubscriptions(olderThanMs: number, now?: number): number;
   close_(): void;
   /** Test-only debug accessor for the underlying handle (e.g. pragma checks). Not for feature code. */
   __db?: Database;
@@ -94,6 +100,8 @@ interface GateColumns {
   released: number;
   context: string | null;
   origin: string | null;
+  owner: string | null;
+  escalatedAt: number | null;
 }
 
 interface SubscriptionColumns {
@@ -103,6 +111,8 @@ interface SubscriptionColumns {
   createdAt: number;
   lastDelivery: string | null;
   dead: number;
+  scope: "prefix" | "owner";
+  ownerRef: string | null;
 }
 
 function rowToSubscription(row: SubscriptionColumns): GateSubscription {
@@ -113,6 +123,8 @@ function rowToSubscription(row: SubscriptionColumns): GateSubscription {
     createdAt: row.createdAt,
     lastDelivery: row.lastDelivery == null ? null : JSON.parse(row.lastDelivery),
     dead: row.dead === 1,
+    scope: row.scope,
+    ownerRef: row.ownerRef,
   };
 }
 
@@ -136,6 +148,8 @@ function rowToGate(row: GateColumns): GateRow {
     released: row.released === 1,
     context: row.context ?? null,
     origin: row.origin == null ? null : JSON.parse(row.origin),
+    owner: row.owner ?? null,
+    escalatedAt: row.escalatedAt ?? null,
   };
 }
 
@@ -216,7 +230,9 @@ export function createGatesStore(opts: {
       delivery      TEXT,
       released      INTEGER NOT NULL DEFAULT 0,
       context       TEXT,
-      origin        TEXT
+      origin        TEXT,
+      owner         TEXT,
+      escalatedAt   INTEGER
     );
     CREATE INDEX IF NOT EXISTS idx_gates_subject_kind_status ON gates(subject, kind, status);
 
@@ -226,26 +242,38 @@ export function createGatesStore(opts: {
       session       TEXT NOT NULL,
       createdAt     INTEGER NOT NULL,
       lastDelivery  TEXT,
-      dead          INTEGER NOT NULL DEFAULT 0
+      dead          INTEGER NOT NULL DEFAULT 0,
+      scope         TEXT NOT NULL DEFAULT 'prefix',
+      ownerRef      TEXT
     );
   `);
 
-  // Idempotent migration for a gates.db predating the W4 columns: CREATE
-  // TABLE IF NOT EXISTS above never adds columns to an existing table.
+  // Idempotent migration for a gates.db predating the W4/RT-117 columns:
+  // CREATE TABLE IF NOT EXISTS above never adds columns to an existing table.
   const gateCols = new Set(
     (db.query("PRAGMA table_info(gates)").all() as Array<{ name: string }>).map((c) => c.name),
   );
-  for (const col of ["context", "origin"]) {
+  for (const col of ["context", "origin", "owner"]) {
     if (!gateCols.has(col)) db.exec(`ALTER TABLE gates ADD COLUMN ${col} TEXT;`);
   }
+  if (!gateCols.has("escalatedAt")) db.exec("ALTER TABLE gates ADD COLUMN escalatedAt INTEGER;");
+
+  const subCols = new Set(
+    (db.query("PRAGMA table_info(gate_subscriptions)").all() as Array<{ name: string }>).map((c) => c.name),
+  );
+  if (!subCols.has("scope")) {
+    db.exec("ALTER TABLE gate_subscriptions ADD COLUMN scope TEXT;");
+    db.exec("UPDATE gate_subscriptions SET scope = 'prefix' WHERE scope IS NULL;");
+  }
+  if (!subCols.has("ownerRef")) db.exec("ALTER TABLE gate_subscriptions ADD COLUMN ownerRef TEXT;");
 
   const getStmt = db.prepare("SELECT * FROM gates WHERE id = ?");
   const insertStmt = db.prepare(`
     INSERT INTO gates (
       id, subject, kind, questions, meta, status, answer,
       openedAt, parkedAt, closedAt, closedReason, agent, pane, nudge, delivery, released,
-      context, origin
-    ) VALUES (?, ?, ?, ?, ?, 'open', NULL, ?, NULL, NULL, NULL, ?, ?, ?, NULL, 0, ?, ?)
+      context, origin, owner, escalatedAt
+    ) VALUES (?, ?, ?, ?, ?, 'open', NULL, ?, NULL, NULL, NULL, ?, ?, ?, NULL, 0, ?, ?, ?, NULL)
   `);
   const supersedeStmt = db.prepare(
     "UPDATE gates SET status = 'closed', closedReason = 'superseded', closedAt = ? WHERE subject = ? AND kind = ? AND status = 'open'",
@@ -266,6 +294,7 @@ export function createGatesStore(opts: {
   );
   const releaseStmt = db.prepare("UPDATE gates SET released = 1 WHERE id = ?");
   const markDeliveryStmt = db.prepare("UPDATE gates SET delivery = ? WHERE id = ?");
+  const markEscalatedStmt = db.prepare("UPDATE gates SET escalatedAt = ? WHERE id = ? AND escalatedAt IS NULL");
   const maxRowidStmt = db.prepare("SELECT COALESCE(MAX(rowid), 0) AS maxId FROM gates");
   // Row floor scoped to terminal rows only: open/parked rows are never swept
   // regardless, so they shouldn't consume floor headroom meant for terminal ones.
@@ -282,15 +311,21 @@ export function createGatesStore(opts: {
   `);
 
   const getSubStmt = db.prepare("SELECT * FROM gate_subscriptions WHERE id = ?");
+  // ownerRef = ? never matches a NULL-bound column in SQLite, which would
+  // break idempotence for prefix rows (ownerRef always NULL there): IS binds
+  // NULL-safely for both the prefix and owner scopes.
   const findLiveSubStmt = db.prepare(
-    "SELECT * FROM gate_subscriptions WHERE subjectPrefix = ? AND session = ? AND dead = 0 LIMIT 1",
+    "SELECT * FROM gate_subscriptions WHERE scope = ? AND subjectPrefix = ? AND ownerRef IS ? AND session = ? AND dead = 0 LIMIT 1",
   );
   const insertSubStmt = db.prepare(
-    "INSERT INTO gate_subscriptions (id, subjectPrefix, session, createdAt, lastDelivery, dead) VALUES (?, ?, ?, ?, NULL, 0)",
+    "INSERT INTO gate_subscriptions (id, subjectPrefix, session, createdAt, lastDelivery, dead, scope, ownerRef) VALUES (?, ?, ?, ?, NULL, 0, ?, ?)",
   );
   const deleteSubStmt = db.prepare("DELETE FROM gate_subscriptions WHERE id = ?");
   const subDeliveryStmt = db.prepare("UPDATE gate_subscriptions SET lastDelivery = ? WHERE id = ?");
   const subDeadStmt = db.prepare("UPDATE gate_subscriptions SET dead = 1 WHERE id = ?");
+  const pruneDeadSubStmt = db.prepare(
+    "DELETE FROM gate_subscriptions WHERE dead = 1 AND (lastDelivery IS NULL OR json_extract(lastDelivery, '$.at') <= ?)",
+  );
   const deadPaneStmt = db.prepare(
     "SELECT * FROM gates WHERE nudge IS NOT NULL AND released = 0 AND status = 'answered' AND delivery IS NOT NULL ORDER BY openedAt",
   );
@@ -312,6 +347,7 @@ export function createGatesStore(opts: {
     nudge: string | null;
     context: string | null;
     origin: string | null;
+    owner: string | null;
   }): string | null => {
     const existing = findOpenSameKindStmt.get(input.subject, input.kind) as { id: string } | undefined;
     if (existing) supersedeStmt.run(input.openedAt, input.subject, input.kind);
@@ -327,6 +363,7 @@ export function createGatesStore(opts: {
       input.nudge,
       input.context,
       input.origin,
+      input.owner,
     );
     return existing?.id ?? null;
   });
@@ -395,6 +432,7 @@ export function createGatesStore(opts: {
         nudge: input.nudge ? JSON.stringify(input.nudge) : null,
         context: input.context ?? null,
         origin: input.origin ? JSON.stringify(input.origin) : null,
+        owner: input.owner ?? null,
       });
       log.debug({ id, subject: input.subject, kind: input.kind, supersededId }, "gate opened");
       // The supersede path must not bypass wake-up: a waiter on the
@@ -500,14 +538,18 @@ export function createGatesStore(opts: {
     },
 
     subscribe(input) {
-      // Idempotent on (subjectPrefix, session): a blind re-subscribe (e.g. a
-      // shepherd re-arming after a crash) must never double the fan-out. A
-      // DEAD row does not block a fresh one -- only a live match short-circuits.
-      const existing = findLiveSubStmt.get(input.subjectPrefix, input.session) as SubscriptionColumns | null;
+      // Idempotent on (scope, subjectPrefix, ownerRef, session): a blind
+      // re-subscribe (e.g. a shepherd re-arming after a crash) must never
+      // double the fan-out. A DEAD row does not block a fresh one -- only a
+      // live match short-circuits. One shepherd session running two herds
+      // subscribes with two distinct ownerRef values, so each holds its own row.
+      const scope = input.scope ?? "prefix";
+      const ownerRef = input.ownerRef ?? null;
+      const existing = findLiveSubStmt.get(scope, input.subjectPrefix, ownerRef, input.session) as SubscriptionColumns | null;
       if (existing) return rowToSubscription(existing);
       const id = crypto.randomUUID();
       const createdAt = Date.now();
-      insertSubStmt.run(id, input.subjectPrefix, input.session, createdAt);
+      insertSubStmt.run(id, input.subjectPrefix, input.session, createdAt, scope, ownerRef);
       return rowToSubscription(getSubStmt.get(id) as SubscriptionColumns);
     },
 
@@ -531,6 +573,15 @@ export function createGatesStore(opts: {
 
     markSubscriptionDead(id) {
       subDeadStmt.run(id);
+    },
+
+    markEscalated(id) {
+      markEscalatedStmt.run(Date.now(), id);
+    },
+
+    pruneDeadSubscriptions(olderThanMs, now = Date.now()) {
+      const { changes } = pruneDeadSubStmt.run(now - olderThanMs);
+      return changes;
     },
 
     deadPanePushes() {

@@ -123,6 +123,8 @@ export interface GateRow {
   nudge: { session: string } | null;
   delivery: { outcome: "delivered" | "dead-pane"; at: number } | null;
   released: boolean;
+  owner: string | null;
+  escalatedAt: number | null;
 }
 
 export interface GateSubscription {
@@ -132,6 +134,8 @@ export interface GateSubscription {
   createdAt: number;
   lastDelivery: { outcome: "delivered" | "failed"; at: number } | null;
   dead: boolean;
+  scope: "prefix" | "owner";
+  ownerRef: string | null;
 }
 
 export interface HerdInfo { id: string; repo: string; room: string; workspace: string; shepherdSession: string; shepherdHandle: string; herdrSocket: string | null; hidden: boolean; status: "active" | "wrapped"; createdAt: number; wrappedAt: number | null }

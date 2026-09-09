@@ -316,6 +316,36 @@ test("an existing gates.db without the W4 columns gains them on open (ALTER migr
   store.close_();
 });
 
+describe("gates store (ownership)", () => {
+  test("open stores owner and get returns it", () => {
+    const s = store();
+    const { row } = s.open({ subject: "herd:h/j1", kind: "question", questions: qs(), owner: "herd:h-1" });
+    expect(s.get(row.id)?.owner).toBe("herd:h-1");
+  });
+
+  test("owner defaults to null and markEscalated stamps escalatedAt once", () => {
+    const s = store();
+    const { row } = s.open({ subject: "run:r1", kind: "clarify", questions: qs() });
+    expect(row.owner).toBeNull();
+    expect(row.escalatedAt).toBeNull();
+    s.markEscalated(row.id);
+    const stamped = s.get(row.id)!.escalatedAt;
+    expect(typeof stamped).toBe("number");
+  });
+
+  test("subscriptions carry scope and ownerRef; prune removes stale dead rows", () => {
+    const s = store();
+    s.subscribe({ subjectPrefix: "", session: "s1", scope: "owner", ownerRef: "herd:h-1" });
+    const sub = s.subscriptions({ live: true })[0]!;
+    expect(sub.scope).toBe("owner");
+    expect(sub.ownerRef).toBe("herd:h-1");
+    s.markSubscriptionDelivery(sub.id, "failed");
+    s.markSubscriptionDead(sub.id);
+    expect(s.pruneDeadSubscriptions(0)).toBe(1);
+    expect(s.subscriptions({}).length).toBe(0);
+  });
+});
+
 test("deadPanePushes lists answered nudged rows whose last push was dead-pane and are unreleased; never closed ones", () => {
   const s = store();
   const a = s.open({ subject: "herd:h/j1", kind: "question", questions: qs(), nudge: { session: "w1" } }).row.id;
