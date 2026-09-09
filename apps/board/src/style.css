@@ -1363,6 +1363,23 @@
   --gate-control-edge: light-dark(#c8cad6, #6b7499);
   --gate-muted: light-dark(#565d80, #aab3d8);
   --gate-key-bg: light-dark(#f7f8fa, #1c2136);
+  /* One scale for the whole surface: four text sizes, three rhythm steps,
+     one button geometry. Every rule below consumes these. */
+  --gate-font-title: 0.95rem;
+  --gate-font-body: 0.85rem;
+  --gate-font-meta: 0.78rem;
+  --gate-font-small: 0.7rem;
+  --gate-font-micro: 0.62rem;
+  --gate-gap: 0.95rem;
+  --gate-gap-inner: 0.8rem;
+  --gate-gap-row: 10px;
+  --gate-pad-card: 1rem 1.1rem 1.1rem;
+  --gate-pad-chrome: 8px 10px;
+  --gate-btn-font: 0.8rem;
+  --gate-btn-pad: 5px 12px;
+  --gate-radius-card: 10px;
+  --gate-radius-control: 8px;
+  --gate-radius-btn: 6px;
   margin-top: 8px;
   padding: 0.7rem 0.9rem;
   background: var(--card);
@@ -1392,12 +1409,12 @@
 .tui-gate-question {
   display: flex;
   flex-direction: column;
-  gap: 0.7rem;
+  gap: var(--gate-gap-inner);
   border: 1px solid var(--gate-edge);
-  border-radius: 10px;
+  border-radius: var(--gate-radius-card);
   background: var(--card);
   margin: 0;
-  padding: 1rem 1.1rem 1.1rem;
+  padding: var(--gate-pad-card);
   min-inline-size: 0;
 }
 .tui-gate-question[hidden] {
@@ -1410,7 +1427,7 @@
   gap: 10px;
 }
 .tui-gate-question-label {
-  font-size: 0.95rem;
+  font-size: var(--gate-font-title);
   font-weight: 600;
   line-height: 1.35;
   color: var(--fg);
@@ -1418,7 +1435,7 @@
 .tui-gate-form {
   display: flex;
   flex-direction: column;
-  gap: 0.8rem;
+  gap: var(--gate-gap-inner);
   min-width: 0;
   max-width: 36rem;
 }
@@ -1427,7 +1444,7 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font: 500 0.72rem/1.4 var(--font-sans);
+  font: 500 var(--gate-font-meta) / 1.4 var(--font-sans);
   font-variant-numeric: tabular-nums;
   color: var(--gate-muted);
 }
@@ -1457,20 +1474,20 @@
 .tui-gate-choices {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--gate-gap-row);
   min-width: 0;
 }
 .tui-gate-choice {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--gate-gap-row);
   min-height: 44px;
   padding: 10px 14px;
   border: 1px solid var(--gate-edge);
-  border-radius: 8px;
+  border-radius: var(--gate-radius-control);
   background: transparent;
-  font-size: 0.8rem;
+  font-size: var(--gate-font-body);
   color: var(--fg);
   cursor: pointer;
   user-select: none;
@@ -1536,7 +1553,7 @@
 .tui-gate-key {
   margin-left: auto;
   flex-shrink: 0;
-  font: 500 0.62rem/1 var(--font-mono);
+  font: 500 var(--gate-font-micro) / 1 var(--font-mono);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1552,7 +1569,7 @@
 }
 .tui-gate-invalid {
   margin: 0;
-  font-size: 0.76rem;
+  font-size: var(--gate-font-meta);
   color: var(--dot-bad);
 }
 .tui-gate-note {
@@ -1561,7 +1578,7 @@
   min-height: 34px;
   padding: 6px 12px;
   font: inherit;
-  font-size: 0.8rem;
+  font-size: var(--gate-font-body);
   color: var(--fg);
   background: transparent;
   border: 1px solid var(--gate-edge);
@@ -1588,13 +1605,13 @@
   gap: 8px;
 }
 .tui-gate-nav {
-  padding: 6px 14px;
+  padding: var(--gate-btn-pad);
   font: inherit;
-  font-size: 0.85rem;
+  font-size: var(--gate-btn-font);
   cursor: pointer;
   background: color-mix(in srgb, var(--fg) 8%, transparent);
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--gate-radius-btn);
   color: var(--gate-muted);
 }
 .tui-gate-nav:hover:not(:disabled) {
@@ -1608,17 +1625,17 @@
 .tui-gate-error {
   margin-right: auto;
   color: var(--dot-bad);
-  font-size: 0.76rem;
+  font-size: var(--gate-font-meta);
 }
 .tui-gate-submit {
-  padding: 7px 18px;
+  padding: var(--gate-btn-pad);
   font: inherit;
-  font-size: 0.85rem;
+  font-size: var(--gate-btn-font);
   font-weight: 600;
   cursor: pointer;
   background: var(--amber);
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--gate-radius-btn);
   color: var(--bg);
 }
 .tui-gate-submit:hover:not(:disabled) {
@@ -1630,13 +1647,13 @@
 }
 .tui-gate-focus,
 .tui-gate-ghost {
-  padding: 4px 10px;
+  padding: var(--gate-btn-pad);
   font: inherit;
-  font-size: 0.85rem;
+  font-size: var(--gate-btn-font);
   cursor: pointer;
   background: none;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--gate-radius-btn);
   color: var(--gate-muted);
 }
 .tui-gate-focus:hover:not(:disabled),
@@ -1657,7 +1674,7 @@
 .tui-gate-summary-row {
   display: flex;
   gap: 0.5rem;
-  font-size: 0.85rem;
+  font-size: var(--gate-font-body);
 }
 .tui-gate-summary-row dt {
   color: var(--muted-text);
@@ -1681,7 +1698,7 @@
   max-width: 760px;
   display: flex;
   flex-direction: column;
-  gap: 0.95rem;
+  gap: var(--gate-gap);
 }
 /* The head is the recipe's accent title span, stretched so the gate cluster
    (kind + actions) can ride its right edge; everything inside resets the
@@ -1700,11 +1717,11 @@
 }
 /* Gate actions read as buttons at rest: the light tier, not ghost text. */
 .tui-triage-head-actions .tui-gate-ghost {
-  font-size: 0.7rem;
+  font-size: var(--gate-btn-font);
   font-weight: 500;
   letter-spacing: normal;
   text-transform: none;
-  padding: 3px 10px;
+  padding: var(--gate-btn-pad);
   background: color-mix(in srgb, var(--fg) 8%, transparent);
   color: var(--fg);
 }
@@ -1726,10 +1743,10 @@
 .tui-triage-queue-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--gate-gap-row);
 }
 .tui-triage-pos {
-  font: 500 0.85rem/1 var(--font-mono);
+  font: 500 var(--gate-font-body) / 1 var(--font-mono);
   font-variant-numeric: tabular-nums;
   letter-spacing: normal;
   color: var(--fg);
@@ -1770,21 +1787,21 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 1rem;
+  gap: var(--gate-gap);
   min-height: 0;
 }
 .tui-triage-context {
   min-width: 0;
   max-height: 46vh;
   overflow-y: auto;
-  padding: 0.6rem 0.8rem;
+  padding: var(--gate-pad-card);
   border: 1px solid var(--border-soft);
-  border-radius: 6px;
+  border-radius: var(--gate-radius-card);
   background: var(--card);
-  font-size: 0.78rem;
+  font-size: var(--gate-font-meta);
 }
 .tui-triage-context-label {
-  font: 600 0.9rem/1.4 var(--font-sans);
+  font: 600 var(--gate-font-title) / 1.4 var(--font-sans);
   color: var(--accent-text);
   margin-bottom: 0.55rem;
 }
@@ -1793,7 +1810,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.8rem;
+  gap: var(--gate-gap-inner);
 }
 .tui-triage-form-col .tui-gate-form {
   width: 100%;
@@ -1802,9 +1819,9 @@
 .tui-triage-strip {
   display: flex;
   flex-direction: column;
-  padding: 7px 10px 8px;
+  padding: var(--gate-pad-chrome);
   border: 1px solid var(--border-soft);
-  border-radius: 6px;
+  border-radius: var(--gate-radius-btn);
   background: var(--chrome);
 }
 /* Tuned from the row's 0.6rem: one size for the whole line, and the branch
@@ -1812,10 +1829,10 @@
    instead of stranding at the far edge of a 760px strip. */
 .tui-triage-strip .tui-row-2 {
   align-items: baseline;
-  font-size: 0.75rem;
+  font-size: var(--gate-font-meta);
 }
 .tui-triage-strip .tui-row-2 .tui-author-tag {
-  font-size: 0.75rem;
+  font-size: var(--gate-font-meta);
 }
 .tui-triage-strip .tui-row-2 .tui-branch {
   flex: 0 0 auto;
@@ -1829,14 +1846,14 @@
   min-width: 0;
 }
 .tui-triage-row-1 .tui-title {
-  font-size: 0.85rem;
+  font-size: var(--gate-font-body);
 }
 .tui-triage-row-1 .tui-ticket {
-  font-size: 0.78rem;
+  font-size: var(--gate-font-meta);
 }
 .tui-triage-kind {
   flex-shrink: 0;
-  font: 600 0.74rem/1 var(--font-sans);
+  font: 600 var(--gate-font-small) / 1 var(--font-sans);
   text-transform: uppercase;
   letter-spacing: 0.03em;
   color: var(--gate-muted);
@@ -1858,7 +1875,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 0.78rem;
+  font-size: var(--gate-font-meta);
   color: var(--gate-muted);
   min-height: 1lh;
   min-width: 0;
@@ -1867,7 +1884,7 @@
   white-space: nowrap;
 }
 .tui-triage-peek-k {
-  font: 500 0.78rem/1 var(--font-mono);
+  font: 500 var(--gate-font-meta) / 1 var(--font-mono);
 }
 .tui-triage-done {
   display: flex;
