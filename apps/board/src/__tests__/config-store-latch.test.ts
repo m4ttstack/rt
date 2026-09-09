@@ -636,11 +636,14 @@ describe('saveMemberHidden / saveSwitchboardUrl: config.json-free still succeeds
   const teamOwned = {
     'board.gitlabHost': 'https://gitlab.example.com',
     'board.projects': ['team/repo'],
-    'board.members': [{ username: 'carol' }, { username: 'dave' }],
+    'board.members': [
+      { username: 'carol', hidden: true },
+      { username: 'dave' },
+    ],
     // board.hiddenMembers/board.switchboardUrl deliberately absent -- unowned going in
   };
 
-  test('saveMemberHidden with owned team keys and no config.json establishes board.hiddenMembers ownership', () => {
+  test('saveMemberHidden with owned team keys and no config.json establishes board.hiddenMembers ownership, seeded from the resolved hidden set', () => {
     const missing = join(
       mkdtempSync(join(tmpdir(), 'board-latch-nofile-')),
       'config.json'
@@ -654,9 +657,12 @@ describe('saveMemberHidden / saveSwitchboardUrl: config.json-free still succeeds
       fakeWrite(calls)
     );
     expect(calls).toEqual([
-      { key: 'board.hiddenMembers', value: ['dave'], scope: 'user' },
+      { key: 'board.hiddenMembers', value: ['carol', 'dave'], scope: 'user' },
     ]);
-    expect(cfg.members).toEqual([{ username: 'carol' }, { username: 'dave' }]); // fakeResolve is static; the write landed, the reload just doesn't see it back
+    expect(cfg.members).toEqual([
+      { username: 'carol', hidden: true },
+      { username: 'dave' },
+    ]); // fakeResolve is static; the write landed, the reload just doesn't see it back
   });
 
   test('saveMemberHidden with owned team keys, no config.json, and an unknown member throws before any write', () => {
@@ -707,6 +713,84 @@ describe('saveMemberHidden / saveSwitchboardUrl: config.json-free still succeeds
       },
     ]); // slash-free, per the switchboardUrl round-trip fix
     expect(cfg.gitlabHost).toBe('https://gitlab.example.com'); // the reload succeeded off the store alone
+  });
+});
+
+describe('saveMemberHidden: a store-owned roster decides the writer, not config.json existing', () => {
+  test('hiding a member the store roster has but config.json lacks writes board.hiddenMembers, config.json untouched', () => {
+    const p = tmpConfig({ ...base, members: [{ username: 'alice' }] });
+    const before = readFileSync(p, 'utf8');
+    const calls: Array<{ key: string; value: unknown; scope: string }> = [];
+    saveMemberHidden(
+      'carol',
+      true,
+      p,
+      fakeResolve({
+        'mattstack.roster': [{ username: 'alice' }, { username: 'carol' }],
+      }),
+      fakeWrite(calls)
+    );
+    expect(calls).toEqual([
+      { key: 'board.hiddenMembers', value: ['carol'], scope: 'user' },
+    ]);
+    expect(readFileSync(p, 'utf8')).toBe(before);
+  });
+
+  test('the overlay write seeds from a member already hidden via an inline store-roster flag', () => {
+    const p = tmpConfig({ ...base, members: [{ username: 'alice' }] });
+    const calls: Array<{ key: string; value: unknown; scope: string }> = [];
+    saveMemberHidden(
+      'carol',
+      true,
+      p,
+      fakeResolve({
+        'mattstack.roster': [
+          { username: 'alice', hidden: true },
+          { username: 'carol' },
+        ],
+      }),
+      fakeWrite(calls)
+    );
+    expect(calls).toEqual([
+      { key: 'board.hiddenMembers', value: ['alice', 'carol'], scope: 'user' },
+    ]);
+  });
+
+  test('un-hiding omits the username but keeps another seeded one', () => {
+    const p = tmpConfig({ ...base, members: [{ username: 'alice' }] });
+    const calls: Array<{ key: string; value: unknown; scope: string }> = [];
+    saveMemberHidden(
+      'carol',
+      false,
+      p,
+      fakeResolve({
+        'mattstack.roster': [
+          { username: 'alice', hidden: true },
+          { username: 'carol', hidden: true },
+        ],
+      }),
+      fakeWrite(calls)
+    );
+    expect(calls).toEqual([
+      { key: 'board.hiddenMembers', value: ['alice'], scope: 'user' },
+    ]);
+  });
+
+  test('an unknown username throws before any write', () => {
+    const p = tmpConfig({ ...base, members: [{ username: 'alice' }] });
+    const calls: Array<{ key: string; value: unknown; scope: string }> = [];
+    expect(() =>
+      saveMemberHidden(
+        'ghost',
+        true,
+        p,
+        fakeResolve({
+          'mattstack.roster': [{ username: 'alice' }, { username: 'carol' }],
+        }),
+        fakeWrite(calls)
+      )
+    ).toThrow(/unknown member "ghost"/);
+    expect(calls).toEqual([]);
   });
 });
 
