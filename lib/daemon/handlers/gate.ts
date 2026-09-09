@@ -450,9 +450,21 @@ export function createGateHandlers(
       const payload = rawPayload as Commands["gate:subscribe"]["payload"] | undefined;
       const subjectPrefix = typeof payload?.subjectPrefix === "string" ? payload.subjectPrefix.trim() : "";
       const session = typeof payload?.session === "string" ? payload.session.trim() : "";
-      if (!subjectPrefix) return { ok: false as const, error: "missing subjectPrefix" };
+      const isOwnerScope = payload?.scope === "owner";
+      const ownerRef = typeof payload?.ownerRef === "string" ? payload.ownerRef.trim() : "";
       if (!session) return { ok: false as const, error: "missing session" };
-      const sub = store.subscribe({ subjectPrefix, session });
+      // Owner rows carry an empty subjectPrefix by design (they route on
+      // row.owner, not on subject), so the prefix-required check below is
+      // only for prefix-scoped rows.
+      if (isOwnerScope) {
+        if (!ownerRef.startsWith("herd:")) return { ok: false as const, error: 'scope "owner" requires ownerRef starting "herd:"' };
+      } else if (!subjectPrefix) {
+        return { ok: false as const, error: "missing subjectPrefix" };
+      }
+      const sub = store.subscribe({
+        subjectPrefix, session,
+        ...(isOwnerScope && { scope: "owner" as const, ownerRef }),
+      });
       return { ok: true as const, data: { id: sub.id } };
     },
 

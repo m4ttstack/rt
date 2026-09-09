@@ -148,6 +148,16 @@ describe("gate-push", () => {
     expect(delivered[0]!.body).toContain(row.status);
   });
 
+  test("fanOut pushes owner-scoped subscriptions for owned gates only (RT-117)", async () => {
+    const { push, store, delivered } = harness();
+    store.subscribe({ subjectPrefix: "", session: "shep", scope: "owner", ownerRef: "herd:h-1" });
+    const owned = store.open({ subject: "run:r-1", kind: "clarify", questions: qs(), owner: "herd:h-1" }).row;
+    const foreign = store.open({ subject: "run:r-2", kind: "k2", questions: qs(), owner: "herd:h-2" }).row;
+    await push.onOpened(owned);
+    await push.onOpened(foreign);
+    expect(delivered.map((d) => d.sessionId)).toEqual(["shep"]);
+  });
+
   test("fan-out resolves the subscriber registry ONCE per event when resolveAll is wired (F8)", async () => {
     const store = freshStore();
     const delivered: Array<{ sessionId: string; body: string }> = [];

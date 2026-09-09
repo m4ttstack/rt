@@ -639,7 +639,7 @@ export interface Commands {
   "gate:list": { payload: { open?: boolean; subjectPrefix?: string; kind?: string; limit?: number; cursor?: number }; data: { gates: GateRow[]; cursor: number } };
   "gate:park": { payload: { id: string }; data: { ok: true } };
   "gate:close": { payload: { id: string; reason: "abandoned" | "superseded" | "pruned" }; data: { ok: true } };
-  "gate:subscribe": { payload: { subjectPrefix: string; session: string }; data: { id: string } };
+  "gate:subscribe": { payload: { subjectPrefix: string; session: string; scope?: "owner"; ownerRef?: string }; data: { id: string } };
   "gate:unsubscribe": { payload: { id: string }; data: { removed: boolean } };
   /** The shepherd's gap-recovery liveness check and the observability window
    *  onto delivery outcomes (dead marks included). */
