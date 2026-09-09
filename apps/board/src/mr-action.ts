@@ -21,19 +21,6 @@ export interface MrActionProvider {
   cancelAutoMerge(projectPath: string, mrIid: number): Promise<void>;
 }
 
-/** Exact json media-type check for the CSRF gate: isLocalRequest reads the
-    Host header, which a cross-origin form can forge, so state-changing
-    endpoints require a content type only a preflighted request can carry. An
-    `includes('application/json')` check is NOT equivalent — a simple request
-    may smuggle the string in a parameter (`text/plain;foo=application/json`)
-    without ever tripping a preflight, so only the media type itself counts. */
-export function isJsonMediaType(contentType: string | null): boolean {
-  if (!contentType) return false;
-  return (
-    contentType.split(';', 1)[0]!.trim().toLowerCase() === 'application/json'
-  );
-}
-
 export function parseMrActionBody(
   body: unknown
 ): { mrUrl: string; iid: number; action: MrAction } | null {
