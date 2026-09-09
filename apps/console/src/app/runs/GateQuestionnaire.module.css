@@ -80,15 +80,16 @@
   border-color: var(--mantine-color-bad-filled);
 }
 
-.choice:has(> input:focus-visible) {
+.choice:has(input:focus-visible) {
   outline: 2px solid var(--mantine-color-accent-filled);
   outline-offset: 1px;
 }
 
+/* Mantine's own Radio/Checkbox draw the control (icon, fill, border) from
+   the `color="accent"` prop passed at the call site; this class only has to
+   keep it from shrinking in the flex row. */
 .choiceInput {
-  margin: 2px 0 0;
   flex-shrink: 0;
-  accent-color: var(--mantine-color-accent-filled);
 }
 
 .choiceLabel {

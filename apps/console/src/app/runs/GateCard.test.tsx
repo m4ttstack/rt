@@ -147,6 +147,35 @@ describe('GateCard: open/actionable', () => {
     );
   });
 
+  it('renders Mantine Radio/Checkbox for the choice inputs, and a click through them still reaches FormData', async () => {
+    answerPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ row: gateRow({ status: 'answered' }) }),
+    });
+    renderCard(gateRow({ id: 'g-mantine' }));
+
+    const passRadio = screen.getByRole('radio', { name: 'pass' });
+    // Proves the render prop swapped in Mantine's own control, not a bare
+    // native input styled by class name alone -- Mantine stamps this static
+    // class on the actual <input> it renders regardless of theming.
+    expect(passRadio).toHaveClass('mantine-Radio-radio');
+    await userEvent.click(passRadio);
+    await userEvent.click(screen.getByTestId('gate-next'));
+
+    const lintCheckbox = screen.getByRole('checkbox', { name: 'lint' });
+    expect(lintCheckbox).toHaveClass('mantine-Checkbox-input');
+    await userEvent.click(lintCheckbox);
+    await userEvent.click(screen.getByRole('button', { name: 'submit' }));
+
+    await waitFor(() =>
+      expect(answerPost).toHaveBeenCalledWith({
+        param: { id: 'g-mantine' },
+        json: { answers: { outcome: 'pass', flags: ['lint'] } },
+      })
+    );
+  });
+
   it('shows a retry-shaped error and keeps the answer selected when the request rejects outright', async () => {
     answerPost.mockRejectedValue(new Error('network down'));
     renderCard(gateRow());
