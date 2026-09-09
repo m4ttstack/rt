@@ -762,6 +762,7 @@ export function Board() {
     return out;
   }, [boardView]);
   const queue = useDecisionQueue(queueEntries);
+  const activeGateId = queue.active?.gate.gateId ?? null;
 
   if (!data) {
     return (
@@ -1158,8 +1159,9 @@ export function Board() {
         <RespondModal mr={respondModal} onClose={() => setRespondModal(null)} />
       )}
 
-      {queue.open && queue.active && (
+      {queue.open && queue.active && activeGateId && (
         <DecisionQueueModal
+          key={activeGateId}
           gate={queue.active.gate}
           mr={queue.active.mr}
           position={queue.position}
@@ -1168,8 +1170,9 @@ export function Board() {
           onClose={queue.close}
           onSkip={queue.skip}
           onFocusPane={handleFocusPane}
-          onAnswered={() => queue.noteAnswered(queue.active!.gate.gateId)}
-          onContinue={() => queue.noteAnswered(queue.active!.gate.gateId)}
+          onAnswered={() => queue.noteAnswered(activeGateId)}
+          onContinue={() => queue.noteAnswered(activeGateId)}
+          onLostChange={lost => queue.hold(lost ? activeGateId : null)}
         />
       )}
       {queue.open && queue.complete && (

@@ -22,6 +22,20 @@ class FakeEventSource {
   globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
+// Same question id on both gates so a leaked selection from gate 1's form
+// would land in a real field on gate 2's, not merely an absent one.
+const VERDICT_QUESTIONS = [
+  {
+    id: 'verdict',
+    label: 'Ready to merge?',
+    multi: false,
+    options: [
+      { value: 'approve', label: 'Approve' },
+      { value: 'changes', label: 'Request changes' },
+    ],
+  },
+];
+
 const BOARD_DATA = {
   title: 'MRs ready for review',
   defaultMember: 'all',
@@ -56,7 +70,7 @@ const BOARD_DATA = {
           label: 'review',
           status: 'open',
           openedAt: 1,
-          questions: [],
+          questions: VERDICT_QUESTIONS,
           origin: { paneId: 'pane-1', worktree: 'widgets' },
         },
       ],
@@ -87,7 +101,7 @@ const BOARD_DATA = {
           label: 'self-review',
           status: 'open',
           openedAt: 2,
-          questions: [],
+          questions: VERDICT_QUESTIONS,
           origin: { paneId: 'pane-2', worktree: 'widgets' },
         },
       ],
@@ -194,6 +208,56 @@ test('decision queue: header entry opens, skip advances, close dismisses', async
       '[role="dialog"][aria-label="decision queue"]'
     );
     expect(dialog).toBeNull();
+  } finally {
+    await React.act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  }
+});
+
+test('decision queue: skipping a gate does not bleed its selection into the next', async () => {
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+
+  const root = createRoot(container);
+  try {
+    await React.act(async () => {
+      root.render(React.createElement(Board));
+    });
+    await React.act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 0));
+    });
+
+    const openButton = container.querySelector('.tui-dq-open');
+    await React.act(async () => {
+      (openButton as HTMLElement).click();
+    });
+
+    let dialog = container.querySelector(
+      '[role="dialog"][aria-label="decision queue"]'
+    );
+    expect(dialog?.textContent).toContain('first mr title');
+
+    const firstChoice = dialog!.querySelector(
+      '.tui-gate-choice-input'
+    ) as HTMLInputElement;
+    expect(firstChoice).not.toBeNull();
+    await React.act(async () => {
+      firstChoice.click();
+    });
+    expect(firstChoice.checked).toBe(true);
+
+    const skipButton = findByText(dialog!, 'button', 'skip gate');
+    await React.act(async () => {
+      (skipButton as HTMLElement).click();
+    });
+
+    dialog = container.querySelector(
+      '[role="dialog"][aria-label="decision queue"]'
+    );
+    expect(dialog?.textContent).toContain('second mr title');
+    expect(dialog!.querySelector('.tui-gate-choice-input:checked')).toBeNull();
   } finally {
     await React.act(async () => {
       root.unmount();
