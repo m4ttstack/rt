@@ -61,12 +61,6 @@ function DecisionQueueModal({
             <i key={i} className="tui-triage-pip" data-state={state} />
           ))}
         </span>
-        <span className="tui-triage-kind">{gate.label}</span>
-        {gate.status === 'parked' && (
-          <Chip intent="warn" variant="outline" uppercase data-gate="parked">
-            parked
-          </Chip>
-        )}
         <span className="tui-triage-head-actions">
           {gate.status === 'parked' ? (
             gate.domain && (
@@ -116,6 +110,12 @@ function DecisionQueueModal({
             >
               {extractTicketId(mr.sourceBranch, mr.title)}
             </a>
+          )}
+          <span className="tui-triage-kind">{gate.label}</span>
+          {gate.status === 'parked' && (
+            <Chip intent="warn" variant="outline" uppercase data-gate="parked">
+              parked
+            </Chip>
           )}
         </div>
         <div className="tui-row-2">
