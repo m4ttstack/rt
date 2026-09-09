@@ -157,9 +157,21 @@ export function createGatePush(opts: {
     // fan-out that doesn't match it, so a chronically-failing subscriber on
     // an untouched prefix could never reach deadAfterFailures.
     const allLive = store.subscriptions({ live: true });
-    const subs = allLive.filter((sub) =>
+    const matched = allLive.filter((sub) =>
       sub.scope === "owner" ? row.owner !== null && row.owner === sub.ownerRef : row.subject.startsWith(sub.subjectPrefix),
     );
+    // One session can hold both a prefix row and an owner row that both
+    // match the same gate (e.g. a herd shepherd's own job gate, which is
+    // both under its herd: prefix and owned by it) -- dedupe to one push per
+    // session, first match wins, so the other row's delivery outcome is left
+    // untouched rather than double-recorded.
+    const seenSessions = new Set<string>();
+    const subs: GateSubscription[] = [];
+    for (const sub of matched) {
+      if (seenSessions.has(sub.session)) continue;
+      seenSessions.add(sub.session);
+      subs.push(sub);
+    }
     // Batch registry resolution: one scan for the whole fan-out (resolveAll,
     // when wired) rather than resolveSession re-scanning per subscriber.
     const registry = resolveAll ? resolveAll() : null;

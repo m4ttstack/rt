@@ -505,7 +505,9 @@ export function gateSubscribe(
   a: Commands["gate:subscribe"]["payload"],
   o: RtClientOptions = {},
 ): Promise<RtResponse<Commands["gate:subscribe"]["data"]>> {
-  return rtCommand<Commands["gate:subscribe"]["data"]>("gate:subscribe", { subjectPrefix: a.subjectPrefix, session: a.session }, { sockPath: o.sockPath, timeoutMs: o.timeoutMs ?? 10_000 });
+  const payload: Record<string, unknown> = { subjectPrefix: a.subjectPrefix, session: a.session };
+  for (const k of ["scope", "ownerRef"] as const) if (a[k] !== undefined) payload[k] = a[k];
+  return rtCommand<Commands["gate:subscribe"]["data"]>("gate:subscribe", payload, { sockPath: o.sockPath, timeoutMs: o.timeoutMs ?? 10_000 });
 }
 
 export function gateUnsubscribe(
