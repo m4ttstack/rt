@@ -1784,11 +1784,9 @@
   font-size: 0.78rem;
 }
 .tui-triage-context-label {
-  font: 600 0.66rem/1.4 var(--font-sans);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  color: var(--gate-muted);
-  margin-bottom: 0.4rem;
+  font: 600 0.9rem/1.4 var(--font-sans);
+  color: var(--fg);
+  margin-bottom: 0.55rem;
 }
 .tui-triage-form-col {
   min-width: 0;
