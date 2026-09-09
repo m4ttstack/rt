@@ -169,7 +169,7 @@ files it finds and renames the old `state/` directory aside.
 
 A launched pane (review, respond, doctor) never sees `BOARD_STATE_DB`
 itself. Instead the server hands it a **claim ticket**: a `--state <path>`
-argv value that is really an opaque handle, `<root>/state/<lane>/<slug>`,
+argv value that is really an opaque handle, `<root>/state/<lane>s/<slug>.json`,
 from which the status CLI (`bin/review-status.ts`, `bin/respond-status.ts`,
 `bin/doctor-status.ts`, `bin/gate.ts`) derives the same `state.db` by
 walking up from the handle to its root. The CLI resolves its row by handle

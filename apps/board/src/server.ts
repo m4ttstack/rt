@@ -245,6 +245,17 @@ import { manualDoctorFields, resolveDispatchIdentity } from './triage/run.ts';
 const FIXTURE_DIR = process.env.BOARD_FIXTURE || null;
 const fixtureFile = (name: string) => join(FIXTURE_DIR!, name);
 
+// Containment must be structural, not route-enumeration-dependent: pin
+// state.db inside the fixture dir (alongside BOARD_APP_ROOT below) before
+// ANY code path -- including a store's lazy getStateDb() default param --
+// can open one. Without this a fixture boot that reaches an unswitched
+// db-touching route would lazily open the real ~/.mattstack/board/state.db.
+// Only when the caller hasn't already pinned one: an explicit
+// BOARD_STATE_DB (e.g. a test asserting against a specific path) wins.
+if (FIXTURE_DIR && !process.env.BOARD_STATE_DB) {
+  process.env.BOARD_STATE_DB = join(FIXTURE_DIR, 'state.db');
+}
+
 // Bare semver, nothing else: the mattstack bundle gate compares this output
 // against the rt-tray deps.lock row verbatim. Before config load, so a clean
 // machine with no config can still ask. src/compiled.ts answers it even
@@ -264,9 +275,10 @@ const ENV_PATH = join(APP_ROOT, '.env');
 // First open of state.db in this process: the 'server' flavor's short busy
 // timeout (state/db.ts) matches a long-lived process that would rather fail
 // fast than block a request on a writer, unlike the 'cli' default every
-// store's getStateDb() falls back to. Skipped in fixture mode, which never
-// touches state.db and must not create one under the real HOME.
-if (!FIXTURE_DIR) getStateDb('server');
+// store's getStateDb() falls back to. Safe to call unconditionally in
+// fixture mode too now that BOARD_STATE_DB above has already contained it
+// to the fixture dir.
+getStateDb('server');
 
 // `let`: /peer/join reassigns the whole config after persisting switchboard.url.
 let config = FIXTURE_DIR

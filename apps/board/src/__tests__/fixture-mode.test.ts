@@ -1,4 +1,4 @@
-import { cpSync, mkdtempSync, writeFileSync } from 'fs';
+import { cpSync, existsSync, mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { afterAll, expect, test } from 'bun:test';
@@ -60,6 +60,12 @@ writeFileSync(
 writeFileSync(join(dir, 'review-report.md'), '# canned review\n');
 writeFileSync(join(dir, 'respond-report.md'), '# canned respond report\n');
 
+// A sandboxed HOME: proves containment lands state.db in the fixture dir
+// even though real-HOME resolution (boardStateRoot()'s default) is what
+// every store's getStateDb() would fall back to without the BOARD_STATE_DB
+// override server.ts sets for fixture mode.
+const fakeHome = mkdtempSync(join(tmpdir(), 'board-fixture-home-'));
+
 const PORT = 47942; // test's own port, not even the fixture default (7942 collides with an unrelated local service on this machine)
 const proc = Bun.spawn(
   ['bun', 'run', join(import.meta.dir, '..', 'server.ts')],
@@ -67,6 +73,7 @@ const proc = Bun.spawn(
     // BOARD_APP_ROOT keeps the booted server's state writes out of the repo.
     env: {
       ...process.env,
+      HOME: fakeHome,
       BOARD_FIXTURE: dir,
       BOARD_APP_ROOT: dir,
       PORT: String(PORT),
@@ -116,3 +123,16 @@ test('fixture mode serves canned endpoints and refuses POSTs', async () => {
   const shell = await (await fetch(`http://127.0.0.1:${PORT}/`)).text();
   expect(shell).toContain('<div id="root">');
 }, 30_000);
+
+test('fixture mode never opens state.db under HOME', async () => {
+  await ready();
+  // The boot-time getStateDb('server') call (server.ts) runs unconditionally
+  // and is the very first thing that could open a db in this process, so its
+  // location alone proves containment holds regardless of which route (if
+  // any) later touches state -- not just the routes the fixture switch
+  // happens to shadow today.
+  expect(existsSync(join(dir, 'state.db'))).toBe(true);
+  expect(existsSync(join(fakeHome, '.mattstack', 'board', 'state.db'))).toBe(
+    false
+  );
+});
