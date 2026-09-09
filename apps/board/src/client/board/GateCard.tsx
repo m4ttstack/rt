@@ -288,6 +288,21 @@ export function GateForm({
                   className="tui-gate-progress"
                   render={(props, state) => (
                     <span {...props}>
+                      <span className="tui-gate-qdots">
+                        {Array.from({ length: state.total }, (_, i) => (
+                          <i
+                            key={i}
+                            className="tui-gate-qdot"
+                            data-state={
+                              i + 1 < state.current
+                                ? 'done'
+                                : i + 1 === state.current
+                                  ? 'active'
+                                  : 'todo'
+                            }
+                          />
+                        ))}
+                      </span>
                       Question {state.current} of {state.total}
                     </span>
                   )}

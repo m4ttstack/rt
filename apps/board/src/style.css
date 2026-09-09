@@ -1424,9 +1424,35 @@
 }
 .tui-gate-progress {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font: 500 0.72rem/1.4 var(--font-sans);
   font-variant-numeric: tabular-nums;
   color: var(--gate-muted);
+}
+.tui-gate-qdots {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.tui-gate-qdot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+.tui-gate-qdot[data-state='done'] {
+  background: var(--gate-muted);
+}
+.tui-gate-qdot[data-state='active'] {
+  background: var(--amber);
+  outline: 2px solid color-mix(in srgb, var(--amber) 35%, transparent);
+  outline-offset: 1px;
+}
+.tui-gate-qdot[data-state='todo'] {
+  background: transparent;
+  border: 1px solid var(--gate-edge);
 }
 .tui-gate-choices {
   display: flex;
