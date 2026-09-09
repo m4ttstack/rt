@@ -1390,6 +1390,15 @@
   flex-direction: column;
   gap: 0.6rem;
 }
+/* Rows carry no form controls: a gate is a chip that opens the decision
+   queue, or the answered summary. */
+.tui-gate-row-face {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
 .tui-gate-head {
   display: flex;
   align-items: center;

@@ -20,7 +20,7 @@ import {
   mrLine,
   statusPhrase,
 } from './format.ts';
-import { GateCard } from './GateCard.tsx';
+import { GateRowChips } from './GateRowChips.tsx';
 import { StatusDot } from './StatusDot.tsx';
 
 /** Plain click opens the MR in GitLab; right-click opens the row action menu
@@ -225,19 +225,12 @@ function RowView({
             className="tui-row-board"
           />
           <Watching mr={mr} />
-          {/* Keyed by gateId: each card's selections/conflict state belongs
-                to ONE gate, and a re-review mints a new id for the same MR
-                row -- remounting is what clears the stale state. Multiple
-                cards can render at once (e.g. a live respond gate alongside
-                a still-open review gate). */}
-          {((mr as BoardMRWithReview).gates ?? []).map(gate => (
-            <GateCard
-              key={gate.gateId}
-              gate={gate}
-              mr={mr as BoardMRWithReview}
-              onFocusPane={ctx.onFocusPane}
-            />
-          ))}
+          {/* A row carries no form controls: each gate is a chip that opens
+                the decision queue, or the answered summary. */}
+          <GateRowChips
+            gates={(mr as BoardMRWithReview).gates ?? []}
+            onOpenGate={ctx.onOpenGate}
+          />
         </div>
       </div>
     );

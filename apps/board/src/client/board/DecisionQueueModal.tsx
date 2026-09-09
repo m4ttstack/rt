@@ -4,20 +4,21 @@ import type { GateRow } from '../../gates/store.ts';
 import { extractTicketId, ticketUrl } from '../../ticket.ts';
 import type { BoardMRWithReview } from '../types.ts';
 import { ago, cleanTitle } from './format.ts';
-import { AnsweredChip, GateForm, useGateForm } from './GateCard.tsx';
+import { AnsweredChip, GateForm, useGateForm } from './GateForm.tsx';
 
 /** One pip per queued gate. `skipped` gates come from the queue's local
     skip action, which advances without answering and leaves the gate (and
     its draft) untouched. */
 export type TriageGateState = 'done' | 'active' | 'todo' | 'skipped';
 
-/** The queue-hosted face of one gate: the same `GateForm` the row card
-    renders, inside the kit Modal, with queue chrome around it. Actions keep
-    their level: gate-level (focus pane, skip gate) sit on the gate strip,
-    step-level (previous / next / submit) stay in the form's footer, so the
-    footer never mixes the two. The host owns the queue itself (which gates
-    join, the order, advancing on answer or skip); this component renders
-    exactly one active gate of it. */
+/** The queue-hosted face of one gate: `GateForm` inside the kit Modal, with
+    queue chrome around it -- the only place a gate's form actually mounts,
+    since a row now shows a chip that opens this modal rather than the form
+    itself. Actions keep their level: gate-level (focus pane, skip gate) sit
+    on the gate strip, step-level (previous / next / submit) stay in the
+    form's footer, so the footer never mixes the two. The host owns the
+    queue itself (which gates join, the order, advancing on answer or skip);
+    this component renders exactly one active gate of it. */
 function DecisionQueueModal({
   gate,
   mr,

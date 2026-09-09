@@ -16,7 +16,7 @@ import {
   Questionnaire,
   useGateDraft,
 } from '@mattstack/gate-kit/react';
-import { Chip, Markdown } from '@mattstack/tui-kit';
+import { Chip } from '@mattstack/tui-kit';
 import type { GateRow } from '../../gates/store.ts';
 import type { BoardMRWithReview } from '../types.ts';
 import { Disclosure, DisclosureHead } from './Disclosure.tsx';
@@ -46,10 +46,9 @@ function SummaryDetail({ detail }: { detail: GateSummaryDetailRow[] }) {
 
 /** The compact answered face: one chip line, detail on demand. The conflict
     path passes startOpen -- the winning answer someone else recorded is the
-    whole message there. Exported for its own Storybook coverage: GateCard's
-    conflict face only exists inside its own post-submit state, so a story
-    reproduces that composition directly against this piece. */
-export function AnsweredChip({
+    whole message there. Exported for its own Storybook coverage and for
+    GateRowChips, which renders it directly for any non-actionable gate. */
+function AnsweredChip({
   row,
   startOpen = false,
 }: {
@@ -76,10 +75,10 @@ export function AnsweredChip({
 
 /** All answer-form state for one actionable gate: selections/notes/step
     seeded from the localStorage draft, the submit + CAS-loss flow, and the
-    origin-focus call. Shared by the row card and the triage modal so both
-    hosts drive the identical form; the host that calls it also reads `lost`
-    for its own chrome (the card's answered chip). */
-export function useGateForm(gate: GateRow, onAnswered?: () => void) {
+    origin-focus call. The triage modal is the only host that mounts a live
+    form (a row's chip only opens the modal), and it also reads `lost` for
+    its own chrome (the answered chip on a CAS loss). */
+function useGateForm(gate: GateRow, onAnswered?: () => void) {
   const actionable = gate.status === 'open' || gate.status === 'parked';
   const {
     initial: draft,
@@ -212,14 +211,14 @@ export function useGateForm(gate: GateRow, onAnswered?: () => void) {
 
 export type GateFormState = ReturnType<typeof useGateForm>;
 
-/** The questionnaire form both gate hosts render. One question renders flat;
-    two or more step through the primitive's own step mode (one active item,
-    Previous / Next, Submit on the last). The code-changes item of a
+/** The questionnaire form the triage modal renders. One question renders
+    flat; two or more step through the primitive's own step mode (one active
+    item, Previous / Next, Submit on the last). The code-changes item of a
     respond-plan gate joins the sequence only once a `fix:` value is picked,
     which in step mode means a new last step appears and Submit moves to it.
     `showFocusAction` keeps the footer's focus-pane button out of hosts that
     surface it elsewhere (the triage modal's gate strip). */
-export function GateForm({
+function GateForm({
   gate,
   mr,
   form,
@@ -449,111 +448,4 @@ export function GateForm({
   );
 }
 
-/** Renders one gate a review/respond/doctor pane opened on this MR's row.
-    `open` and `parked` are both actionable -- the questionnaire renders for
-    either, `parked` additionally wears a badge since a pane is no longer
-    waiting on it. `answered` swaps to the summary chip.
-
-    No optimistic local state on a successful submit: the request either
-    fails (shown inline) or succeeds and the board's SSE-driven poll flips
-    this gate's status on its own next refresh. A CAS loss is the one
-    response rendered immediately from local state -- the daemon already
-    recorded someone else's answer and handed back the real winner.
-
-    The focus button takes two paths: a `parked` gate resumes its domain's
-    whole flow in a fresh pane via `onFocusPane`/`gate.domain` (the facility
-    has already released this gate's original pane); an `open` gate jumps
-    straight into its own still-live origin pane via `/gate/focus`, disabled
-    with a reason when no origin resolves. */
-function GateCard({
-  gate,
-  mr,
-  onFocusPane,
-}: {
-  gate: GateRow;
-  mr: BoardMRWithReview;
-  onFocusPane: (mr: BoardMRWithReview, domain: GateDomain) => void;
-}) {
-  const answered = gate.status === 'answered';
-  const actionable = gate.status === 'open' || gate.status === 'parked';
-  const [ctxOpen, setCtxOpen] = useState(false);
-  const form = useGateForm(gate);
-
-  return (
-    // Clicks anywhere in here (a choice's own <label>, the checkbox text)
-    // aren't inside an `a`/`button` closest() would catch, so they'd
-    // otherwise bubble to the row's onRowClick and open the MR in GitLab.
-    <div
-      className="tui-gate-card"
-      data-gate-id={gate.gateId}
-      onClick={e => e.stopPropagation()}
-    >
-      <div className="tui-gate-head">
-        <span className="tui-gate-title">{gate.label}</span>
-        {gate.status === 'parked' && (
-          <Chip intent="warn" variant="outline" uppercase data-gate="parked">
-            parked
-          </Chip>
-        )}
-        {(answered || form.lost) && (
-          <Chip intent="ok" variant="outline" uppercase data-gate="answered">
-            answered
-          </Chip>
-        )}
-      </div>
-      {gate.context && (
-        <div className="tui-gate-context">
-          <DisclosureHead
-            open={ctxOpen}
-            label="context"
-            onToggle={() => setCtxOpen(o => !o)}
-          >
-            context
-          </DisclosureHead>
-          <Disclosure open={ctxOpen}>
-            <div className="tui-gate-context-body">
-              <Markdown unstyled linkTargetBlank>
-                {gate.context}
-              </Markdown>
-            </div>
-          </Disclosure>
-        </div>
-      )}
-      {answered || !actionable ? (
-        <AnsweredChip
-          row={{
-            subject: gate.subject,
-            kind: gate.kind,
-            status: gate.status,
-            questions: gate.questions,
-            answer: gate.answers
-              ? {
-                  answers: gate.answers,
-                  by: gate.answeredBy,
-                  answeredAt: gate.answeredAt,
-                }
-              : null,
-          }}
-        />
-      ) : form.lost ? (
-        <>
-          <div className="tui-gate-error">answered elsewhere</div>
-          <AnsweredChip
-            startOpen
-            row={{
-              subject: gate.subject,
-              kind: gate.kind,
-              status: 'answered',
-              questions: gate.questions,
-              answer: { answers: form.lost.answers, by: form.lost.by },
-            }}
-          />
-        </>
-      ) : (
-        <GateForm gate={gate} mr={mr} form={form} onFocusPane={onFocusPane} />
-      )}
-    </div>
-  );
-}
-
-export { GateCard };
+export { AnsweredChip, GateForm, useGateForm };

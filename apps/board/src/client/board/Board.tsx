@@ -70,6 +70,11 @@ declare global {
 const THEME_KEY = 'mrs-theme';
 const STATE_KEY = 'mrs-view-state';
 
+/** Placeholder RowContext.onOpenGate: the queue wiring that opens the modal
+    on a chip click lands separately, and RowContext must satisfy its type
+    until then. */
+const openGateNoop = () => {};
+
 // ── board ──────────────────────────────────────────────────────────────────
 
 export function Board() {
@@ -377,7 +382,7 @@ export function Board() {
     [doctorAction]
   );
 
-  // GateCard's "focus pane" escape hatch: jump into whichever domain's pane
+  // GateForm's "focus pane" escape hatch: jump into whichever domain's pane
   // opened the gate, via the exact same launch endpoint a fresh launch from
   // the row would use -- the server-side dedup (existing tabId + in-flight
   // status) re-focuses that pane instead of spawning another, so this never
@@ -780,6 +785,7 @@ export function Board() {
     draftResolved,
     onResumeRespond: handleResumeRespond,
     onFocusPane: handleFocusPane,
+    onOpenGate: openGateNoop,
     selected,
     onToggleSelect: toggleSelect,
   };

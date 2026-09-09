@@ -176,8 +176,11 @@ export interface RowContext {
   onResumeRespond: (mr: BoardMR, note?: string) => void;
   /** Jumps into the pane behind a gate's own domain (review/respond/doctor) --
       the same dedup-and-focus path launching that domain again already takes
-      (see GateCard's "focus pane" button), not a distinct endpoint. */
+      (see GateForm's "focus pane" button), not a distinct endpoint. */
   onFocusPane: (mr: BoardMRWithReview, domain: GateDomain) => void;
+  /** Opens the decision queue modal to the given gate -- a row's chip face
+      never mounts a form itself. */
+  onOpenGate: (gateId: string) => void;
   selected: ReadonlySet<string>;
   onToggleSelect: (webUrl: string) => void;
 }

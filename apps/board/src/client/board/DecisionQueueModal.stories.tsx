@@ -20,11 +20,11 @@ import {
 
 /**
  * Sign-off catalog for the triage-queue modal (the gate-kit design pass's
- * ratified direction): the kit Modal hosting the same GateForm the row card
- * renders, with queue chrome around it -- pips in the head, gate-level
- * actions on the gate strip, next-gate peek in the footer. The Modal recipe
- * is fixed-position, so each story renders inside a tall stage that the
- * overlay covers; drafts seed exactly as in Gates/Board/GateCard.
+ * ratified direction): the kit Modal hosting GateForm, with queue chrome
+ * around it -- pips in the head, gate-level actions on the gate strip,
+ * next-gate peek in the footer. The Modal recipe is fixed-position, so each
+ * story renders inside a tall stage that the overlay covers; drafts seed via
+ * the same `gateDraftKey()` localStorage write `useGateDraft` reads.
  */
 function BoardStage({
   scheme,
@@ -221,9 +221,8 @@ export const LastGateSubmit: Story = {
 
 // --- ErrorState -------------------------------------------------------------
 
-/** Same technique as Gates/Board/GateCard's ErrorState: Cmd/Ctrl+Enter on
-    the unanswered required item calls the primitive's real `validate()`
-    without submitting, flipping its computed `invalid` state. */
+/** Cmd/Ctrl+Enter on the unanswered required item calls the primitive's real
+    `validate()` without submitting, flipping its computed `invalid` state. */
 const errorGate: GateRow = { ...lastGate, gateId: 'triage-error' };
 
 export const ErrorState: Story = {
