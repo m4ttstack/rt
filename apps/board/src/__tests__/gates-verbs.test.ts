@@ -1,6 +1,7 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import type { Database } from 'bun:sqlite';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
 import type { Commands, GateRow, RtResponse } from '@mattstack/rt-client';
@@ -16,6 +17,13 @@ import {
 import { statusBinPath } from '../herdr.ts';
 import type { RespondState } from '../respond-state.ts';
 import type { ReviewState } from '../review-state.ts';
+import {
+  dbPathForRoot,
+  insertAgentState,
+  mintHandle,
+  openStateDb,
+  readByHandle,
+} from '../state/index.ts';
 
 const MR_URL = 'https://gitlab.com/acme/webapp/-/merge_requests/4821';
 const IID = 4821;
@@ -109,12 +117,19 @@ function fakeIo(
 }
 
 let dir: string;
+let db: Database;
 let statePath: string;
 
+/** Seeds (or fully replaces) the review row the module-level `statePath`
+    handle addresses -- gateOpen/gateWait/gateAnswer resolve their own db
+    from the handle, so the row has to live in the same file this test's
+    `db` points at (see mintHandle's root-derived depth). */
 function writeState(patch: Partial<ReviewState> = {}): void {
-  writeFileSync(
-    statePath,
-    JSON.stringify({
+  insertAgentState(
+    'review',
+    MR_URL,
+    IID,
+    {
       mrUrl: MR_URL,
       iid: IID,
       status: 'reviewing',
@@ -125,17 +140,20 @@ function writeState(patch: Partial<ReviewState> = {}): void {
       startedAt: 1,
       updatedAt: 1,
       ...patch,
-    })
+    },
+    statePath,
+    db
   );
 }
 
 function readState(): ReviewState {
-  return JSON.parse(readFileSync(statePath, 'utf8')) as ReviewState;
+  return readByHandle(statePath, db) as ReviewState;
 }
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'gv-'));
-  statePath = join(dir, 'review.json');
+  db = openStateDb(dbPathForRoot(dir), 'cli');
+  statePath = mintHandle('review', MR_URL, dir);
   writeState();
 });
 
@@ -226,7 +244,12 @@ describe('gateOpen', () => {
     // An unrelated status write (e.g. a resume) that doesn't mention gateId
     // must not clobber it -- gateId has to be on writeReviewState's explicit
     // merge-field list, not just settable by the one call that minted it.
-    writeReviewState(statePath, { status: 'reviewing', paneId: 'pane-2' });
+    writeReviewState(
+      statePath,
+      { status: 'reviewing', paneId: 'pane-2' },
+      Date.now(),
+      db
+    );
     expect(readState().gateId).toBe('gate-survives');
 
     const { io: waitIo, calls: waitCalls } = fakeIo({
@@ -262,17 +285,21 @@ describe('gateOpen', () => {
 
 describe("gateOpen: label and writer by kind's domain", () => {
   test("a respond-plan open labels 'respond gate !<iid>' and persists gateId/gateKind onto respond state", async () => {
-    const respondPath = join(dir, 'respond.json');
-    writeFileSync(
-      respondPath,
-      JSON.stringify({
+    const respondPath = mintHandle('respond', MR_URL, dir);
+    insertAgentState(
+      'respond',
+      MR_URL,
+      IID,
+      {
         mrUrl: MR_URL,
         iid: IID,
         status: 'implementing',
         agentId: 'agent-1',
         startedAt: 1,
         updatedAt: 1,
-      })
+      },
+      respondPath,
+      db
     );
     const { io, calls } = fakeIo({
       openResult: {
@@ -287,30 +314,32 @@ describe("gateOpen: label and writer by kind's domain", () => {
 
     expect(gateId).toBe('gate-respond');
     expect(calls.gateOpen[0]!.meta).toEqual({ label: `respond gate !${IID}` });
-    const respondState = JSON.parse(
-      readFileSync(respondPath, 'utf8')
-    ) as RespondState;
+    const respondState = readByHandle(respondPath, db) as RespondState;
     expect(respondState.gateId).toBe('gate-respond');
     expect(respondState.gateKind).toBe('respond-plan');
     expect(respondState.status).toBe('implementing');
-    // The respond-only fields on the file before this open must survive the
+    // The respond-only fields on the row before this open must survive the
     // write untouched -- proof gateOpen went through writeRespondState's own
     // merge list, not a review-shaped one that would silently drop them.
     expect(respondState.agentId).toBe('agent-1');
   });
 
   test("a doctor-escalation open labels 'doctor gate !<iid>' and persists gateId/gateKind onto doctor state", async () => {
-    const doctorPath = join(dir, 'doctor.json');
-    writeFileSync(
-      doctorPath,
-      JSON.stringify({
+    const doctorPath = mintHandle('doctor', MR_URL, dir);
+    insertAgentState(
+      'doctor',
+      MR_URL,
+      IID,
+      {
         mrUrl: MR_URL,
         iid: IID,
         status: 'fixing',
         origin: 'manual',
         startedAt: 1,
         updatedAt: 1,
-      })
+      },
+      doctorPath,
+      db
     );
     const { io, calls } = fakeIo({
       openResult: { ok: true, data: { id: 'gate-doctor', supersededId: null } },
@@ -327,9 +356,7 @@ describe("gateOpen: label and writer by kind's domain", () => {
 
     expect(gateId).toBe('gate-doctor');
     expect(calls.gateOpen[0]!.meta).toEqual({ label: `doctor gate !${IID}` });
-    const doctorState = JSON.parse(
-      readFileSync(doctorPath, 'utf8')
-    ) as DoctorState;
+    const doctorState = readByHandle(doctorPath, db) as DoctorState;
     expect(doctorState.gateId).toBe('gate-doctor');
     expect(doctorState.gateKind).toBe('doctor-escalation');
     expect(doctorState.status).toBe('fixing');
@@ -628,28 +655,35 @@ describe('gateOpen W4 (origin, nudge, presentation, context)', () => {
     },
   ]);
 
-  function stateWithPane(dir: string): string {
-    const statePath = join(dir, 'state.json');
-    writeFileSync(
-      statePath,
-      JSON.stringify({
+  function stateWithPane(dir: string, db: Database): string {
+    const statePath = mintHandle('review', MR_URL, dir);
+    insertAgentState(
+      'review',
+      MR_URL,
+      IID,
+      {
         mrUrl: MR_URL,
         iid: IID,
         status: 'reviewing',
         paneId: 'pane-3',
         tabId: 'tab-3',
-      })
+        startedAt: 1,
+        updatedAt: 1,
+      },
+      statePath,
+      db
     );
     return statePath;
   }
 
   test('form presentation: origin stamped, pane set, nudge carries the session id', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'gate-verbs-w4-'));
+    const db = openStateDb(dbPathForRoot(dir), 'cli');
     const { io, calls } = fakeIo({
       openResult: { ok: true, data: { id: 'g1', supersededId: null } },
     });
     const result = await gateOpen(
-      stateWithPane(dir),
+      stateWithPane(dir, db),
       'review-post',
       FORM_QUESTIONS,
       io,
@@ -675,11 +709,12 @@ describe('gateOpen W4 (origin, nudge, presentation, context)', () => {
 
   test('over the option cap: presentation wait and NO nudge', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'gate-verbs-w4-'));
+    const db = openStateDb(dbPathForRoot(dir), 'cli');
     const { io, calls } = fakeIo({
       openResult: { ok: true, data: { id: 'g2', supersededId: null } },
     });
     const result = await gateOpen(
-      stateWithPane(dir),
+      stateWithPane(dir, db),
       'respond-plan',
       OVER_CAP_QUESTIONS,
       io,
@@ -696,10 +731,11 @@ describe('gateOpen W4 (origin, nudge, presentation, context)', () => {
 
   test('oversize context is dropped, not truncated, and the open still succeeds', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'gate-verbs-w4-'));
+    const db = openStateDb(dbPathForRoot(dir), 'cli');
     const { io, calls } = fakeIo({
       openResult: { ok: true, data: { id: 'g3', supersededId: null } },
     });
-    await gateOpen(stateWithPane(dir), 'review-post', FORM_QUESTIONS, io, {
+    await gateOpen(stateWithPane(dir, db), 'review-post', FORM_QUESTIONS, io, {
       context: 'x'.repeat(8193),
     });
     expect(calls.gateOpen[0]!.context).toBeUndefined();

@@ -2,11 +2,17 @@ import {
   boardRootFromStatePath,
   emitAgentStatus,
 } from '../src/agent-status/emit.ts';
-import {
-  writeReviewState,
-  type ReviewOutcome,
-  type ReviewStatus,
+import type {
+  ReviewOutcome,
+  ReviewState,
+  ReviewStatus,
 } from '../src/review-state.ts';
+import {
+  dbPathForRoot,
+  openStateDb,
+  setReportByHandle,
+  updateByHandle,
+} from '../src/state/index.ts';
 
 const VALID_STATUS: ReviewStatus[] = ['queued', 'reviewing', 'done', 'error'];
 const VALID_OUTCOME: ReviewOutcome[] = ['comment', 'approve'];
@@ -67,17 +73,42 @@ const outcome = parsed.outcome as ReviewOutcome | undefined;
 // it on every write so a resume from the board finds the latest known id.
 const sessionId =
   parsed.session ?? process.env.CLAUDE_CODE_SESSION_ID ?? undefined;
-const state = writeReviewState(parsed.path, {
-  status,
-  ...(parsed.message ? { message: parsed.message } : {}),
-  ...(outcome ? { outcome } : {}),
-  ...(sessionId ? { sessionId } : {}),
-});
+
+const db = openStateDb(
+  dbPathForRoot(boardRootFromStatePath(parsed.path)),
+  'cli'
+);
+const merged = updateByHandle(
+  parsed.path,
+  {
+    status,
+    ...(parsed.message ? { message: parsed.message } : {}),
+    ...(outcome ? { outcome } : {}),
+    ...(sessionId ? { sessionId } : {}),
+  },
+  Date.now(),
+  db
+) as (ReviewState & { mrUrl: string; iid: number }) | null;
+if (!merged) {
+  console.error(
+    `no state row for ${parsed.path}; was this pane launched by a board on this machine?`
+  );
+  process.exit(1);
+}
+
+if (status === 'done') {
+  const reportPath = parsed.path.replace(/\.json$/, '') + '.md';
+  try {
+    setReportByHandle(parsed.path, await Bun.file(reportPath).text(), db);
+  } catch {
+    // No sibling report to ingest -- a done write with nothing written yet.
+  }
+}
 
 await emitAgentStatus(
   {
-    mrUrl: state.mrUrl,
-    iid: state.iid,
+    mrUrl: merged.mrUrl,
+    iid: merged.iid,
     kind: 'review',
     status,
     outcome,

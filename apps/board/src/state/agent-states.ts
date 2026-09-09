@@ -1,6 +1,6 @@
-import { Database } from 'bun:sqlite';
 import { unlinkSync } from 'fs';
 import { join } from 'path';
+import { Database } from 'bun:sqlite';
 
 import { persistOrWarn, runCriticalWrite } from './busy.ts';
 import { boardStateRoot, getStateDb } from './db.ts';
@@ -90,6 +90,21 @@ export function updateByHandle(
     tx();
   });
   return result;
+}
+
+/** One row's state by handle, `reportReady` merged in the same shape
+    `readStates` returns. Null when no row matches -- callers that need a
+    row to exist (the status CLIs, the gate verbs) turn that into a loud
+    failure themselves rather than this function guessing at one. */
+export function readByHandle(
+  handle: string,
+  db: Database = getStateDb()
+): object | null {
+  const row = db
+    .query('SELECT state, report FROM agent_states WHERE handle = ?')
+    .get(handle) as { state: string; report: string | null } | null;
+  if (!row) return null;
+  return { ...JSON.parse(row.state), reportReady: row.report !== null };
 }
 
 export function updateByMr(

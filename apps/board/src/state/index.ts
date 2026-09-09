@@ -9,22 +9,16 @@ export {
   closeStateDb,
 } from './db.ts';
 
-export {
-  getKvValue,
-  setKvValue,
-  deleteKvValue,
-} from './kv-blob.ts';
+export { getKvValue, setKvValue, deleteKvValue } from './kv-blob.ts';
 
-export {
-  persistOrWarn,
-  runCriticalWrite,
-} from './busy.ts';
+export { persistOrWarn, runCriticalWrite } from './busy.ts';
 
 export {
   type Lane,
   mintHandle,
   reportPathForHandle,
   insertAgentState,
+  readByHandle,
   updateByHandle,
   updateByMr,
   readStates,

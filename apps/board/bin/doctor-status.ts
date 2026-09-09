@@ -2,7 +2,12 @@ import {
   boardRootFromStatePath,
   emitAgentStatus,
 } from '../src/agent-status/emit.ts';
-import { writeDoctorState, type DoctorStatus } from '../src/doctor-state.ts';
+import type { DoctorState, DoctorStatus } from '../src/doctor-state.ts';
+import {
+  dbPathForRoot,
+  openStateDb,
+  updateByHandle,
+} from '../src/state/index.ts';
 
 const VALID: DoctorStatus[] = [
   'queued',
@@ -24,15 +29,27 @@ if (!path || !status || !VALID.includes(status as DoctorStatus)) {
   process.exit(1);
 }
 
-const state = writeDoctorState(path, {
-  status: status as DoctorStatus,
-  ...(message ? { message } : {}),
-});
+const db = openStateDb(dbPathForRoot(boardRootFromStatePath(path)), 'cli');
+const merged = updateByHandle(
+  path,
+  {
+    status: status as DoctorStatus,
+    ...(message ? { message } : {}),
+  },
+  Date.now(),
+  db
+) as (DoctorState & { mrUrl: string; iid: number }) | null;
+if (!merged) {
+  console.error(
+    `no state row for ${path}; was this pane launched by a board on this machine?`
+  );
+  process.exit(1);
+}
 
 await emitAgentStatus(
   {
-    mrUrl: state.mrUrl,
-    iid: state.iid,
+    mrUrl: merged.mrUrl,
+    iid: merged.iid,
     kind: 'doctor',
     status,
   },
@@ -43,16 +60,16 @@ await emitAgentStatus(
 // action). The pane reports each action as a status write whose message names
 // it (see the wrapper contract), so mirroring every transition of an
 // origin-auto doctor into the JSONL covers actions and outcomes alike.
-if (state.origin === 'auto') {
+if (merged.origin === 'auto') {
   try {
     const { appendAudit } = await import('../src/triage/audit.ts');
     appendAudit({
       ts: Date.now(),
-      mrUrl: state.mrUrl,
-      iid: state.iid,
+      mrUrl: merged.mrUrl,
+      iid: merged.iid,
       event: 'doctor-status',
       action: status,
-      outcome: state.message,
+      outcome: merged.message,
     });
   } catch (err) {
     console.error(
@@ -63,16 +80,16 @@ if (state.origin === 'auto') {
 
 // Escalation is the one loud moment (spec §3): an AUTO doctor hitting `error`
 // pushes a one-line summary of the diagnosis to the tray (the full text stays
-// in the state file and audit log). Manual doctors stay quiet -- the human
+// in the state row and audit log). Manual doctors stay quiet -- the human
 // launched that pane and is watching its badge.
-if (status === 'error' && state.origin === 'auto') {
+if (status === 'error' && merged.origin === 'auto') {
   try {
     const { loadTriageConfig } = await import('../src/triage/config.ts');
     const { escalationBody, notifyEscalation } =
       await import('../src/triage/notify.ts');
     await notifyEscalation(
-      `doctor stuck on !${state.iid}`,
-      escalationBody(state.message ?? 'escalated without a message'),
+      `doctor stuck on !${merged.iid}`,
+      escalationBody(merged.message ?? 'escalated without a message'),
       loadTriageConfig().notify
     );
   } catch (err) {

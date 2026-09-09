@@ -1,9 +1,11 @@
-import { readFileSync } from 'fs';
+import type { Database } from 'bun:sqlite';
 
 import type { Commands, RtResponse } from '@mattstack/rt-client';
+import { boardRootFromStatePath } from '../agent-status/emit.ts';
 import { writeDoctorState, type DoctorStatus } from '../doctor-state.ts';
 import { writeRespondState, type RespondStatus } from '../respond-state.ts';
 import { writeReviewState, type ReviewStatus } from '../review-state.ts';
+import { dbPathForRoot, openStateDb, readByHandle } from '../state/index.ts';
 import { domainForKind } from './sweep.ts';
 
 export type GateAnswers = Record<string, string | string[]>;
@@ -68,8 +70,22 @@ interface GateVerbState {
   tabId?: string;
 }
 
-function readGateVerbState(statePath: string): GateVerbState {
-  return JSON.parse(readFileSync(statePath, 'utf8')) as GateVerbState;
+/** Every gate verb resolves its db the same way the status CLIs do: from the
+    handle itself, so a gate CLI invocation works no matter which board's
+    root it was launched under -- there is no ambient default to fall back
+    on. */
+function openDbForHandle(statePath: string): Database {
+  return openStateDb(dbPathForRoot(boardRootFromStatePath(statePath)), 'cli');
+}
+
+function readGateVerbState(statePath: string, db: Database): GateVerbState {
+  const row = readByHandle(statePath, db) as GateVerbState | null;
+  if (!row) {
+    throw new Error(
+      `no state row for ${statePath}; was this pane launched by a board on this machine?`
+    );
+  }
+  return row;
 }
 
 export const FORM_OPTION_CAP = 4;
@@ -108,7 +124,8 @@ export async function gateOpen(
   extras: { context?: string; sessionId?: string; worktree?: string } = {}
 ): Promise<GateOpenResult> {
   const questions = JSON.parse(questionsJson) as GateQuestion[];
-  const state = readGateVerbState(statePath);
+  const db = openDbForHandle(statePath);
+  const state = readGateVerbState(statePath, db);
   const domain = domainForKind(kind);
   if (!domain) throw new Error(`gate open: unrecognized kind "${kind}"`);
 
@@ -148,23 +165,38 @@ export async function gateOpen(
     throw new Error(`gate:open failed: ${res.error ?? 'unknown error'}`);
 
   if (domain === 'review') {
-    writeReviewState(statePath, {
-      status: state.status as ReviewStatus,
-      gateId: res.data.id,
-      gateKind: kind,
-    });
+    writeReviewState(
+      statePath,
+      {
+        status: state.status as ReviewStatus,
+        gateId: res.data.id,
+        gateKind: kind,
+      },
+      Date.now(),
+      db
+    );
   } else if (domain === 'respond') {
-    writeRespondState(statePath, {
-      status: state.status as RespondStatus,
-      gateId: res.data.id,
-      gateKind: kind,
-    });
+    writeRespondState(
+      statePath,
+      {
+        status: state.status as RespondStatus,
+        gateId: res.data.id,
+        gateKind: kind,
+      },
+      Date.now(),
+      db
+    );
   } else {
-    writeDoctorState(statePath, {
-      status: state.status as DoctorStatus,
-      gateId: res.data.id,
-      gateKind: kind,
-    });
+    writeDoctorState(
+      statePath,
+      {
+        status: state.status as DoctorStatus,
+        gateId: res.data.id,
+        gateKind: kind,
+      },
+      Date.now(),
+      db
+    );
   }
 
   return { gateId: res.data.id, presentation };
@@ -187,7 +219,7 @@ export async function gateWait(
   io: GateVerbIo,
   maxMs: number = GATE_WAIT_MAX_MS
 ): Promise<GateWaitResult> {
-  const state = readGateVerbState(statePath);
+  const state = readGateVerbState(statePath, openDbForHandle(statePath));
   if (!state.gateId) throw new Error(`no gate open for ${state.mrUrl}`);
   const deadline = io.now() + maxMs;
 
@@ -239,7 +271,7 @@ export async function gateAnswer(
   answeredAt: number;
 }> {
   const answers = JSON.parse(answersJson) as GateAnswers;
-  const state = readGateVerbState(statePath);
+  const state = readGateVerbState(statePath, openDbForHandle(statePath));
   if (!state.gateId) throw new Error(`no gate open for ${state.mrUrl}`);
 
   const res = await io.gateAnswer({ id: state.gateId, answers, by });

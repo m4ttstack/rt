@@ -3,7 +3,13 @@ import {
   emitAgentStatus,
 } from '../src/agent-status/emit.ts';
 import { respondOutcome } from '../src/respond-outcome.ts';
-import { writeRespondState, type RespondStatus } from '../src/respond-state.ts';
+import type { RespondState, RespondStatus } from '../src/respond-state.ts';
+import {
+  dbPathForRoot,
+  openStateDb,
+  setReportByHandle,
+  updateByHandle,
+} from '../src/state/index.ts';
 
 const VALID: RespondStatus[] = [
   'queued',
@@ -85,21 +91,46 @@ if (posted !== undefined && threads === undefined) {
 
 const sessionId =
   parsed.session ?? process.env.CLAUDE_CODE_SESSION_ID ?? undefined;
-const state = writeRespondState(parsed.path, {
-  status: parsed.status as RespondStatus,
-  ...(parsed.message ? { message: parsed.message } : {}),
-  ...(posted !== undefined ? { posted } : {}),
-  ...(threads !== undefined ? { threads } : {}),
-  ...(sessionId ? { sessionId } : {}),
-});
+
+const db = openStateDb(
+  dbPathForRoot(boardRootFromStatePath(parsed.path)),
+  'cli'
+);
+const merged = updateByHandle(
+  parsed.path,
+  {
+    status: parsed.status as RespondStatus,
+    ...(parsed.message ? { message: parsed.message } : {}),
+    ...(posted !== undefined ? { posted } : {}),
+    ...(threads !== undefined ? { threads } : {}),
+    ...(sessionId ? { sessionId } : {}),
+  },
+  Date.now(),
+  db
+) as (RespondState & { mrUrl: string; iid: number }) | null;
+if (!merged) {
+  console.error(
+    `no state row for ${parsed.path}; was this pane launched by a board on this machine?`
+  );
+  process.exit(1);
+}
+
+if (parsed.status === 'done') {
+  const reportPath = parsed.path.replace(/\.json$/, '') + '.md';
+  try {
+    setReportByHandle(parsed.path, await Bun.file(reportPath).text(), db);
+  } catch {
+    // No sibling report to ingest -- a done write with nothing written yet.
+  }
+}
 
 await emitAgentStatus(
   {
-    mrUrl: state.mrUrl,
-    iid: state.iid,
+    mrUrl: merged.mrUrl,
+    iid: merged.iid,
     kind: 'respond',
     status: parsed.status,
-    outcome: respondOutcome(state.posted, state.threads),
+    outcome: respondOutcome(merged.posted, merged.threads),
   },
   boardRootFromStatePath(parsed.path)
 );

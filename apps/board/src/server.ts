@@ -219,6 +219,7 @@ import {
   sweepSlackRefs,
   unreactFromMR,
 } from './slack.ts';
+import { boardStateRoot } from './state/index.ts';
 import styleCss from './style.css' with { type: 'text' };
 import {
   MAX_HEADER_LEN,
@@ -3035,7 +3036,7 @@ const agentStatusFeed = new AgentStatusFeed({
   readCursor: () => readCursorFile(AGENT_STATUS_CURSOR_PATH),
   writeCursor: cursor => writeCursorFile(AGENT_STATUS_CURSOR_PATH, cursor),
   handle: handleAgentSignal,
-  appRoot: APP_ROOT,
+  appRoot: boardStateRoot(),
   log: line => console.error(line),
 });
 
