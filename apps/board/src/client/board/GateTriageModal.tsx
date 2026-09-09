@@ -64,44 +64,63 @@ function GateTriageModal({
       closeGlyph="✕"
     >
       <div className="tui-triage-strip">
-        <span className="tui-gate-title">{gate.label}</span>
-        {gate.status === 'parked' && (
-          <Chip intent="warn" variant="outline" uppercase data-gate="parked">
-            parked
-          </Chip>
-        )}
-        <span className="tui-triage-subject">
-          <span className="tui-triage-mr-ref">!{mr.iid}</span> {mr.title}
-        </span>
-        {gate.status === 'parked' ? (
-          gate.domain && (
+        <div className="tui-triage-strip-main">
+          <span className="tui-gate-title">{gate.label}</span>
+          {gate.status === 'parked' && (
+            <Chip intent="warn" variant="outline" uppercase data-gate="parked">
+              parked
+            </Chip>
+          )}
+          <span className="tui-triage-subject">
+            <span className="tui-triage-mr-ref">!{mr.iid}</span> {mr.title}
+          </span>
+          {gate.status === 'parked' ? (
+            gate.domain && (
+              <button
+                type="button"
+                className="tui-gate-ghost"
+                title="resume this gate's flow in a fresh pane"
+                onClick={() => onFocusPane(mr, gate.domain!)}
+              >
+                focus pane
+              </button>
+            )
+          ) : (
             <button
               type="button"
               className="tui-gate-ghost"
-              title="resume this gate's flow in a fresh pane"
-              onClick={() => onFocusPane(mr, gate.domain!)}
+              disabled={!form.originFocusable || form.focusBusy}
+              title={
+                form.originFocusable
+                  ? 'jump into the pane behind this gate'
+                  : 'no origin on this gate'
+              }
+              onClick={() => void form.focusGate()}
             >
               focus pane
             </button>
-          )
-        ) : (
-          <button
-            type="button"
-            className="tui-gate-ghost"
-            disabled={!form.originFocusable || form.focusBusy}
-            title={
-              form.originFocusable
-                ? 'jump into the pane behind this gate'
-                : 'no origin on this gate'
-            }
-            onClick={() => void form.focusGate()}
-          >
-            focus pane
+          )}
+          <button type="button" className="tui-gate-ghost" onClick={onSkip}>
+            skip gate
           </button>
-        )}
-        <button type="button" className="tui-gate-ghost" onClick={onSkip}>
-          skip gate
-        </button>
+        </div>
+        <div className="tui-triage-strip-facts">
+          {mr.author && <span>by {mr.author.name || mr.author.username}</span>}
+          {mr.sourceBranch && extractTicketId(mr.sourceBranch, mr.title) && (
+            <span>{extractTicketId(mr.sourceBranch, mr.title)}</span>
+          )}
+          {mr.sourceBranch && (
+            <span className="tui-triage-meta-mono">{mr.sourceBranch}</span>
+          )}
+          <span>opened {new Date(gate.openedAt).toLocaleString()}</span>
+          {gate.origin && (
+            <span className="tui-triage-meta-mono">
+              {[gate.origin.worktree, gate.origin.paneId]
+                .filter(Boolean)
+                .join(' · ')}
+            </span>
+          )}
+        </div>
       </div>
       {(() => {
         const face =
@@ -150,53 +169,6 @@ function GateTriageModal({
         // advances across gates with and without context.
         return (
           <div className="tui-triage-body">
-            <div className="tui-triage-context tui-triage-meta">
-              <div className="tui-triage-context-label">
-                what you're triaging
-              </div>
-              <dl className="tui-triage-meta-rows">
-                <div className="tui-triage-meta-row">
-                  <dt>mr</dt>
-                  <dd>
-                    <span className="tui-triage-mr-ref">!{mr.iid}</span>{' '}
-                    {mr.title}
-                  </dd>
-                </div>
-                {mr.author && (
-                  <div className="tui-triage-meta-row">
-                    <dt>author</dt>
-                    <dd>{mr.author.name || mr.author.username}</dd>
-                  </div>
-                )}
-                {mr.sourceBranch && (
-                  <div className="tui-triage-meta-row">
-                    <dt>branch</dt>
-                    <dd className="tui-triage-meta-mono">{mr.sourceBranch}</dd>
-                  </div>
-                )}
-                {mr.sourceBranch &&
-                  extractTicketId(mr.sourceBranch, mr.title) && (
-                    <div className="tui-triage-meta-row">
-                      <dt>ticket</dt>
-                      <dd>{extractTicketId(mr.sourceBranch, mr.title)}</dd>
-                    </div>
-                  )}
-                <div className="tui-triage-meta-row">
-                  <dt>opened</dt>
-                  <dd>{new Date(gate.openedAt).toLocaleString()}</dd>
-                </div>
-                {gate.origin && (
-                  <div className="tui-triage-meta-row">
-                    <dt>origin</dt>
-                    <dd className="tui-triage-meta-mono">
-                      {[gate.origin.worktree, gate.origin.paneId]
-                        .filter(Boolean)
-                        .join(' · ')}
-                    </dd>
-                  </div>
-                )}
-              </dl>
-            </div>
             {gate.context && (
               <div className="tui-triage-context">
                 <div className="tui-triage-context-label">context</div>

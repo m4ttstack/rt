@@ -1748,29 +1748,6 @@
   color: var(--gate-muted);
   margin-bottom: 0.4rem;
 }
-/* The contextless fallback: the pane slot holds the gate's own provenance
-   instead of sitting empty, so the frame stays constant across the queue. */
-.tui-triage-meta-rows {
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-.tui-triage-meta-row {
-  display: flex;
-  gap: 0.6rem;
-  font-size: 0.75rem;
-}
-.tui-triage-meta-row dt {
-  flex: 0 0 4.5rem;
-  color: var(--gate-muted);
-}
-.tui-triage-meta-row dd {
-  margin: 0;
-  min-width: 0;
-  overflow-wrap: anywhere;
-  color: var(--fg);
-}
 .tui-triage-mr-ref {
   font-family: var(--font-mono);
   font-size: 0.72rem;
@@ -1793,12 +1770,30 @@
 }
 .tui-triage-strip {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 4px 4px 8px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 4px 6px 8px;
   border: 1px solid var(--border-soft);
   border-radius: 6px;
   background: var(--chrome);
+}
+.tui-triage-strip-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tui-triage-strip-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 6px;
+  row-gap: 2px;
+  font-size: 0.7rem;
+  color: var(--gate-muted);
+}
+.tui-triage-strip-facts > span + span::before {
+  content: '· ';
+  color: var(--gate-muted);
 }
 .tui-triage-subject {
   flex: 1;
