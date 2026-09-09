@@ -141,14 +141,10 @@ import {
 import { findLatches, hasArmedLatch } from './latch/discussions.ts';
 import { latchGateway } from './latch/gateway.ts';
 import { postLatch, spendAllLatches } from './latch/post.ts';
-import { isLocalRequest } from './local.ts';
+import { isLocalRequest, requireJsonBody } from './local.ts';
 import { resolveBoardSkill, type BoardSkillKind } from './manifest-bindings.ts';
 import { memoizeAsync } from './memoize-async.ts';
-import {
-  isJsonMediaType,
-  parseMrActionBody,
-  runMrAction,
-} from './mr-action.ts';
+import { parseMrActionBody, runMrAction } from './mr-action.ts';
 import {
   makeSwitchboardClient,
   type SwitchboardClient,
@@ -1013,6 +1009,10 @@ const httpServer = Bun.serve({
       case '/settings': {
         if (req.method !== 'POST')
           return new Response('method not allowed', { status: 405 });
+        {
+          const notJson = requireJsonBody(req);
+          if (notJson) return notJson;
+        }
         let body: unknown;
         try {
           body = await req.json();
@@ -1047,6 +1047,10 @@ const httpServer = Bun.serve({
           return new Response('method not allowed', { status: 405 });
         if (!isLocalRequest(req))
           return new Response('forbidden', { status: 403 });
+        {
+          const notJson = requireJsonBody(req);
+          if (notJson) return notJson;
+        }
         let body: unknown;
         try {
           body = await req.json();
@@ -1125,6 +1129,10 @@ const httpServer = Bun.serve({
           return new Response('method not allowed', { status: 405 });
         if (!isLocalRequest(req))
           return new Response('forbidden', { status: 403 });
+        {
+          const notJson = requireJsonBody(req);
+          if (notJson) return notJson;
+        }
         let body: unknown;
         try {
           body = await req.json();
@@ -1188,6 +1196,10 @@ const httpServer = Bun.serve({
           return new Response('method not allowed', { status: 405 });
         if (!isLocalRequest(req))
           return new Response('forbidden', { status: 403 });
+        {
+          const notJson = requireJsonBody(req);
+          if (notJson) return notJson;
+        }
         if (!config.reviewCwd)
           return new Response('reviewCwd not configured', { status: 400 });
         let body: unknown;
@@ -1397,6 +1409,10 @@ const httpServer = Bun.serve({
           return new Response('method not allowed', { status: 405 });
         if (!isLocalRequest(req))
           return new Response('forbidden', { status: 403 });
+        {
+          const notJson = requireJsonBody(req);
+          if (notJson) return notJson;
+        }
         const cwd = config.respondCwd || config.reviewCwd;
         if (!cwd)
           return new Response('respondCwd (or reviewCwd) not configured', {
@@ -1560,6 +1576,10 @@ const httpServer = Bun.serve({
           return new Response('method not allowed', { status: 405 });
         if (!isLocalRequest(req))
           return new Response('forbidden', { status: 403 });
+        {
+          const notJson = requireJsonBody(req);
+          if (notJson) return notJson;
+        }
         const cwd = config.doctorCwd || config.reviewCwd;
         if (!cwd)
           return new Response('doctorCwd (or reviewCwd) not configured', {
@@ -1710,6 +1730,10 @@ const httpServer = Bun.serve({
           return new Response('method not allowed', { status: 405 });
         if (!isLocalRequest(req))
           return new Response('forbidden', { status: 403 });
+        {
+          const notJson = requireJsonBody(req);
+          if (notJson) return notJson;
+        }
         let body: unknown;
         try {
           body = await req.json();
@@ -1777,6 +1801,10 @@ const httpServer = Bun.serve({
           return new Response('method not allowed', { status: 405 });
         if (!isLocalRequest(req))
           return new Response('forbidden', { status: 403 });
+        {
+          const notJson = requireJsonBody(req);
+          if (notJson) return notJson;
+        }
         if (!gitlabToken)
           return new Response('gitlab token not configured', { status: 400 });
         let body: unknown;
@@ -1889,10 +1917,10 @@ const httpServer = Bun.serve({
           return new Response('method not allowed', { status: 405 });
         if (!isLocalRequest(req))
           return new Response('forbidden', { status: 403 });
-        // CSRF gate: see isJsonMediaType for why this is an exact media-type
-        // match, not the includes() form the older endpoints use.
-        if (!isJsonMediaType(req.headers.get('content-type')))
-          return new Response('expected application/json', { status: 415 });
+        {
+          const notJson = requireJsonBody(req);
+          if (notJson) return notJson;
+        }
         if (!gitlabToken)
           return new Response('gitlab token not configured', { status: 400 });
         let body: unknown;
@@ -1949,6 +1977,10 @@ const httpServer = Bun.serve({
           return new Response('method not allowed', { status: 405 });
         if (!isLocalRequest(req))
           return new Response('forbidden', { status: 403 });
+        {
+          const notJson = requireJsonBody(req);
+          if (notJson) return notJson;
+        }
         let body: unknown;
         try {
           body = await req.json();
@@ -2004,11 +2036,10 @@ const httpServer = Bun.serve({
           return new Response('method not allowed', { status: 405 });
         if (!isLocalRequest(req))
           return new Response('forbidden', { status: 403 });
-        // Same content-type gate as /peer/invite and /peer/join: isLocalRequest
-        // reads the Host header, which a cross-origin form can forge.
-        const ct = req.headers.get('content-type') ?? '';
-        if (!ct.toLowerCase().includes('application/json'))
-          return new Response('expected application/json', { status: 415 });
+        {
+          const notJson = requireJsonBody(req);
+          if (notJson) return notJson;
+        }
         let body: unknown;
         try {
           body = await req.json();
@@ -2076,6 +2107,10 @@ const httpServer = Bun.serve({
           return new Response('method not allowed', { status: 405 });
         if (!isLocalRequest(req))
           return new Response('forbidden', { status: 403 });
+        {
+          const notJson = requireJsonBody(req);
+          if (notJson) return notJson;
+        }
         const pc = peering.current()?.client;
         if (!pc)
           return new Response('switchboard not configured', { status: 400 });
@@ -2152,9 +2187,10 @@ const httpServer = Bun.serve({
         // carry the text/plain-class types, and anything else trips a CORS
         // preflight the board never answers. The board's own client always
         // sends application/json.
-        const ct = req.headers.get('content-type') ?? '';
-        if (!ct.toLowerCase().includes('application/json'))
-          return new Response('expected application/json', { status: 415 });
+        {
+          const notJson = requireJsonBody(req);
+          if (notJson) return notJson;
+        }
         if (!switchboardAdminToken || !config.switchboard.url)
           return new Response('inviting is not set up on this board', {
             status: 400,
@@ -2211,9 +2247,10 @@ const httpServer = Bun.serve({
         // Same content-type gate as /peer/invite above: a forged Host header on
         // a cross-origin form must not be enough to re-point this board's
         // switchboard config.
-        const ct = req.headers.get('content-type') ?? '';
-        if (!ct.toLowerCase().includes('application/json'))
-          return new Response('expected application/json', { status: 415 });
+        {
+          const notJson = requireJsonBody(req);
+          if (notJson) return notJson;
+        }
         let body: unknown;
         try {
           body = await req.json();
@@ -2301,6 +2338,10 @@ const httpServer = Bun.serve({
           return new Response('method not allowed', { status: 405 });
         if (!isLocalRequest(req))
           return new Response('forbidden', { status: 403 });
+        {
+          const notJson = requireJsonBody(req);
+          if (notJson) return notJson;
+        }
         if (!slackToken)
           return new Response('slack not configured', { status: 400 });
         let body: unknown;
@@ -2390,6 +2431,10 @@ const httpServer = Bun.serve({
           return new Response('method not allowed', { status: 405 });
         if (!isLocalRequest(req))
           return new Response('forbidden', { status: 403 });
+        {
+          const notJson = requireJsonBody(req);
+          if (notJson) return notJson;
+        }
         if (!slackToken)
           return new Response('slack not configured', { status: 400 });
         let body: unknown;
@@ -2559,6 +2604,10 @@ const httpServer = Bun.serve({
           return new Response('method not allowed', { status: 405 });
         if (!isLocalRequest(req))
           return new Response('forbidden', { status: 403 });
+        {
+          const notJson = requireJsonBody(req);
+          if (notJson) return notJson;
+        }
         if (!slackToken)
           return new Response('slack not configured', { status: 400 });
         let body: unknown;
