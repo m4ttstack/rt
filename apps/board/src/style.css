@@ -1444,9 +1444,6 @@
   border-color: color-mix(in srgb, var(--amber) 60%, var(--border));
   background: color-mix(in srgb, var(--fg) 7%, transparent);
 }
-.tui-gate-choice[data-invalid] {
-  border-color: var(--dot-bad);
-}
 .tui-gate-choice:has(> input:focus-visible) {
   outline: 2px solid var(--amber);
   outline-offset: 1px;
