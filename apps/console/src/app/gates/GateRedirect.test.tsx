@@ -46,6 +46,21 @@ describe('GateRedirect', () => {
     expect(locateGet).toHaveBeenCalledWith({ param: { id: 'g1' } });
   });
 
+  it('encodes runId and id but leaves the already-encoded repo alone', async () => {
+    window.history.pushState(null, '', '/gates/g%2F1');
+    locateGet.mockResolvedValue(
+      ok({ repo: 'group%2Fproject', runId: 'run/1' })
+    );
+
+    renderWithProviders(<GateRedirect id="g/1" />);
+
+    await vi.waitFor(() =>
+      expect(window.location.pathname + window.location.search).toBe(
+        '/runs/group%2Fproject/run%2F1?gate=g%2F1'
+      )
+    );
+  });
+
   it('renders a one-line error when locate 404s, without navigating', async () => {
     window.history.pushState(null, '', '/gates/missing');
     locateGet.mockResolvedValue(notFound('not-found'));

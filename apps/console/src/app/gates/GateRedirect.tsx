@@ -25,11 +25,18 @@ export function GateRedirect({ id }: { id: string }) {
           const body = (await res.json().catch(() => null)) as {
             error?: string;
           } | null;
+          if (cancelled) return;
           setError(body?.error ?? `locate failed (${res.status})`);
           return;
         }
         const { repo, runId } = await res.json();
-        navigate(`/runs/${repo}/${runId}?gate=${id}`, { replace: true });
+        if (cancelled) return;
+        // `repo` comes back from the locate endpoint already serialized/
+        // percent-encoded; re-encoding it here would double-encode its `%2F`.
+        navigate(
+          `/runs/${repo}/${encodeURIComponent(runId)}?gate=${encodeURIComponent(id)}`,
+          { replace: true }
+        );
       } catch {
         if (!cancelled) setError('locate failed');
       }
