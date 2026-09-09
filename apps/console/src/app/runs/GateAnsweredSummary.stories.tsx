@@ -1,3 +1,4 @@
+import type React from 'react';
 import { Text } from '@mattstack/app-kit/core';
 import type { GateQuestion, GateSummaryInput } from '@mattstack/gate-kit';
 import type { Meta, StoryObj } from '@storybook/react-vite';
@@ -14,8 +15,15 @@ import { AnsweredSummary } from './GateCard';
  * declaring `component` makes `StoryObj` require an `args` object matching
  * AnsweredSummary's props even when render never reads it.
  */
+const consoleStage = (Story: () => React.ReactNode) => (
+  <div style={{ background: 'var(--mantine-color-body)', padding: '1.5rem' }}>
+    <Story />
+  </div>
+);
+
 const meta = {
   title: 'Gates/Console/AnsweredSummary',
+  decorators: [consoleStage],
   parameters: { layout: 'padded' },
 } satisfies Meta;
 

@@ -30,8 +30,35 @@ import { AnsweredChip, GateCard } from './GateCard.tsx';
  * synchronously before the component's own first render, using a distinct
  * `gateId` per story so drafts never leak between them.
  */
+function BoardStage({
+  scheme,
+  children,
+}: {
+  scheme: 'light' | 'dark';
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className={scheme === 'dark' ? 'dark' : undefined}
+      style={{ background: 'var(--bg)', color: 'var(--fg)', padding: '1.5rem' }}
+    >
+      <SoribashiProvider theme={tuiTheme}>{children}</SoribashiProvider>
+    </div>
+  );
+}
+
+const boardStage = (
+  Story: () => ReactNode,
+  context: { globals: { scheme?: string } }
+) => (
+  <BoardStage scheme={context.globals.scheme === 'dark' ? 'dark' : 'light'}>
+    <Story />
+  </BoardStage>
+);
+
 const meta = {
   title: 'Gates/Board/GateCard',
+  decorators: [boardStage],
   parameters: { layout: 'padded' },
 } satisfies Meta;
 
@@ -64,16 +91,6 @@ const boardMr = {
     element's color-scheme it's consumed under, not where it's declared --
     the same mechanism tui-kit's own Chip visual harness relies on to mount
     dark without touching <html>. */
-function DarkStage({ children }: { children: ReactNode }) {
-  return (
-    <div
-      className="dark"
-      style={{ background: 'var(--bg)', color: 'var(--fg)', padding: '1.5rem' }}
-    >
-      <SoribashiProvider theme={tuiTheme}>{children}</SoribashiProvider>
-    </div>
-  );
-}
 
 /** Seeds the exact draft `useGateDraft` reads on GateCard's first render --
     a plain localStorage write under the module's own key convention, done
@@ -98,11 +115,7 @@ function BoardGateCardHarness({
   gate: GateRow;
   onFocusPane?: (mr: BoardMRWithReview, domain: GateDomain) => void;
 }) {
-  return (
-    <DarkStage>
-      <GateCard gate={gate} mr={boardMr} onFocusPane={onFocusPane} />
-    </DarkStage>
-  );
+  return <GateCard gate={gate} mr={boardMr} onFocusPane={onFocusPane} />;
 }
 
 // --- FlatSingleQuestion -----------------------------------------------------
@@ -323,24 +336,22 @@ const conflictGate: GateRow = { ...answeredGate, gateId: 'story-conflict' };
 
 export const ConflictAnsweredElsewhere: Story = {
   render: () => (
-    <DarkStage>
-      <div className="tui-gate-card">
-        <div className="tui-gate-head">
-          <span className="tui-gate-title">{conflictGate.label}</span>
-        </div>
-        <div className="tui-gate-error">answered elsewhere</div>
-        <AnsweredChip
-          startOpen
-          row={{
-            subject: conflictGate.subject,
-            kind: conflictGate.kind,
-            status: 'answered',
-            questions: conflictGate.questions,
-            answer: { answers: { verdict: 'changes' }, by: 'someone-else' },
-          }}
-        />
+    <div className="tui-gate-card">
+      <div className="tui-gate-head">
+        <span className="tui-gate-title">{conflictGate.label}</span>
       </div>
-    </DarkStage>
+      <div className="tui-gate-error">answered elsewhere</div>
+      <AnsweredChip
+        startOpen
+        row={{
+          subject: conflictGate.subject,
+          kind: conflictGate.kind,
+          status: 'answered',
+          questions: conflictGate.questions,
+          answer: { answers: { verdict: 'changes' }, by: 'someone-else' },
+        }}
+      />
+    </div>
   ),
 };
 

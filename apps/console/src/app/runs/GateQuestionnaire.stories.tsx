@@ -1,3 +1,4 @@
+import type React from 'react';
 import { useState } from 'react';
 import type { GateQuestion, GateSelections } from '@mattstack/gate-kit';
 import type { GateForItems } from '@mattstack/gate-kit/react';
@@ -17,8 +18,15 @@ import { GateQuestionnaire } from './GateQuestionnaire';
  * declaring `component` here makes Storybook's `StoryObj` require an `args`
  * object matching GateQuestionnaire's props even when render never reads it.
  */
+const consoleStage = (Story: () => React.ReactNode) => (
+  <div style={{ background: 'var(--mantine-color-body)', padding: '1.5rem' }}>
+    <Story />
+  </div>
+);
+
 const meta = {
   title: 'Gates/Console/GateQuestionnaire',
+  decorators: [consoleStage],
   parameters: { layout: 'padded' },
 } satisfies Meta;
 
