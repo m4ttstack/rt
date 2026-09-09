@@ -64,7 +64,11 @@ function ThreadGroupChoices({
                   }
                   className="tui-gate-thread-verb"
                 >
-                  <Questionnaire.ChoiceInput className="tui-gate-choice-input" />
+                  <Questionnaire.ChoiceInput
+                    render={props => (
+                      <input {...props} className="tui-gate-choice-input" />
+                    )}
+                  />
                   <Questionnaire.ChoiceLabel>
                     <span title={entry.value}>{entry.verb}</span>
                     {entry.recommended && (
@@ -434,7 +438,14 @@ function GateCard({
                         }
                         className="tui-gate-choice"
                       >
-                        <Questionnaire.ChoiceInput className="tui-gate-choice-input" />
+                        <Questionnaire.ChoiceInput
+                          render={props => (
+                            <input
+                              {...props}
+                              className="tui-gate-choice-input"
+                            />
+                          )}
+                        />
                         <Questionnaire.ChoiceLabel className="tui-gate-choice-label">
                           <span title={choice.description}>{choice.label}</span>
                           {choice.recommended && (

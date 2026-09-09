@@ -1445,10 +1445,38 @@
   outline: 2px solid var(--amber);
   outline-offset: 1px;
 }
+/* tui-kit's own RadioGroup recipe (packages/tui-kit/src/recipes/Field/Field.tsx)
+   draws no themed control at all -- its per-option `<input>` is bare native
+   with zero rules on the input itself (Field.module.css only lays out the
+   option row), so there is no existing look to reuse here. This draws the
+   control by hand instead: appearance:none plus a checked fill from the
+   tokens already used across this block. The primitive sets data-type to
+   "radio" or "checkbox" on every choice input on its own, so one class
+   covers both shapes. */
 .tui-gate-choice-input {
+  appearance: none;
   margin: 2px 0 0;
   flex-shrink: 0;
-  accent-color: var(--amber);
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  transition:
+    background-color 120ms,
+    border-color 120ms;
+}
+.tui-gate-choice-input[data-type='checkbox'] {
+  border-radius: 3px;
+}
+.tui-gate-choice-input[data-checked] {
+  border-color: var(--amber);
+  background: var(--amber);
+}
+.tui-gate-choice-input:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
 }
 .tui-gate-choice-label {
   display: flex;
