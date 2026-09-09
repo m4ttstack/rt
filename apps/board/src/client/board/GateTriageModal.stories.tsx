@@ -376,6 +376,49 @@ export const LongContextScroll: Story = {
   ),
 };
 
+// --- WriteInAnswer ----------------------------------------------------------
+
+/** Visual spec for RT-116's `allowOther`: an "Other (write in)" choice whose
+    written answer travels in the text field below it ({value: 'other',
+    note}). Until rt ships the schema field and the kit appends the choice
+    itself, this fixture carries the option explicitly; the rendering is
+    already exactly the ratified UX. */
+const writeInGate: GateRow = {
+  ...lastGate,
+  gateId: 'triage-write-in',
+  questions: [
+    question('verdict', 'Ready to merge?', false, [
+      { value: 'approve', label: 'Approve (recommended)' },
+      { value: 'changes', label: 'Request changes' },
+      { value: 'other', label: 'Other (write in)' },
+    ]),
+  ],
+};
+
+export const WriteInAnswer: Story = {
+  render: () => {
+    seedDraft(writeInGate.gateId, {
+      selections: { verdict: 'other' },
+      notes: {
+        verdict: 'Merge after the deploy freeze lifts on Thursday.',
+      },
+      item: null,
+    });
+    return (
+      <GateTriageModal
+        gate={writeInGate}
+        mr={boardMr}
+        position={3}
+        states={['done', 'done', 'active', 'todo', 'todo']}
+        nextPeek="respond-plan · widgets!44 · retry loop"
+        onClose={noop}
+        onSkip={noop}
+        onFocusPane={noop}
+      />
+    );
+  },
+};
+
 // --- QueueComplete ----------------------------------------------------------
 
 export const QueueComplete: Story = {
