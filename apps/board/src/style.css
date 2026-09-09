@@ -1695,9 +1695,10 @@
 }
 .tui-triage-head-actions {
   margin-left: auto;
+  margin-right: 12px;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
 }
 /* Gate actions read as buttons at rest: the light tier, not ghost text. */
 .tui-triage-head-actions .tui-gate-ghost {
@@ -1711,6 +1712,13 @@
 }
 .tui-triage-head-actions .tui-gate-ghost:hover:not(:disabled) {
   background: color-mix(in srgb, var(--fg) 13%, transparent);
+}
+.tui-triage-head-actions .tui-triage-act-focus {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent-text);
+}
+.tui-triage-head-actions .tui-triage-act-focus:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 .tui-triage-pos {
   margin-left: 2px;

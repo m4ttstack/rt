@@ -69,7 +69,7 @@ function GateTriageModal({
               gate.domain && (
                 <button
                   type="button"
-                  className="tui-gate-ghost"
+                  className="tui-gate-ghost tui-triage-act-focus"
                   title="resume this gate's flow in a fresh pane"
                   onClick={() => onFocusPane(mr, gate.domain!)}
                 >
@@ -79,7 +79,7 @@ function GateTriageModal({
             ) : (
               <button
                 type="button"
-                className="tui-gate-ghost"
+                className="tui-gate-ghost tui-triage-act-focus"
                 disabled={!form.originFocusable || form.focusBusy}
                 title={
                   form.originFocusable
@@ -91,7 +91,11 @@ function GateTriageModal({
                 focus pane
               </button>
             )}
-            <button type="button" className="tui-gate-ghost" onClick={onSkip}>
+            <button
+              type="button"
+              className="tui-gate-ghost tui-triage-act-skip"
+              onClick={onSkip}
+            >
               skip gate
             </button>
           </span>
