@@ -1421,11 +1421,19 @@
 .tui-gate-question[hidden] {
   display: none;
 }
+/* Same band as the context header: bleeds through the card padding, a
+   shade under the ground, sealed with a soft rule. */
 .tui-gate-question-head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 10px;
+  margin: -1rem -1.1rem 0;
+  padding: 0.6rem 1.1rem;
+  background: color-mix(in srgb, var(--fg) 4%, var(--card));
+  border-bottom: 1px solid var(--border-soft);
+  border-radius: calc(var(--gate-radius-card) - 1px)
+    calc(var(--gate-radius-card) - 1px) 0 0;
 }
 .tui-gate-question-label {
   font-size: var(--gate-font-title);
