@@ -1816,9 +1816,16 @@
   margin-bottom: 0.55rem;
   flex-shrink: 0;
 }
+/* The scroll edge is the pane border, not the inner padding: the body bleeds
+   through the right padding and restores it inside, so the thin bar hugs the
+   frame with no visible gutter. */
 .tui-triage-context .tui-gate-context-body {
   min-height: 0;
   overflow-y: auto;
+  margin-right: -1.1rem;
+  padding-right: 1.1rem;
+  scrollbar-width: thin;
+  scrollbar-color: var(--gate-edge) transparent;
 }
 .tui-triage-form-col {
   min-width: 0;
