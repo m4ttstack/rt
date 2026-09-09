@@ -167,14 +167,15 @@ const selectedNoteGate: GateRow = {
   ...clarifyGate,
   gateId: 'story-selected-note',
 };
-seedDraft(selectedNoteGate.gateId, {
-  selections: { scope: 'yes' },
-  notes: { scope: 'Confirmed with the reporter.' },
-  item: 'scope',
-});
-
 export const StepOneSelectedWithNote: Story = {
-  render: () => <BoardGateCardHarness gate={selectedNoteGate} />,
+  render: () => {
+    seedDraft(selectedNoteGate.gateId, {
+      selections: { scope: 'yes' },
+      notes: { scope: 'Confirmed with the reporter.' },
+      item: 'scope',
+    });
+    return <BoardGateCardHarness gate={selectedNoteGate} />;
+  },
 };
 
 // --- StepTwoMulti --------------------------------------------------------------
@@ -192,14 +193,15 @@ const severityGate: GateRow = {
   ],
   origin: { paneId: 'pane-1', worktree: 'widgets' },
 };
-seedDraft(severityGate.gateId, {
-  selections: { severity: 'minor', areas: ['ui', 'docs'] },
-  notes: {},
-  item: 'areas',
-});
-
 export const StepTwoMulti: Story = {
-  render: () => <BoardGateCardHarness gate={severityGate} />,
+  render: () => {
+    seedDraft(severityGate.gateId, {
+      selections: { severity: 'minor', areas: ['ui', 'docs'] },
+      notes: {},
+      item: 'areas',
+    });
+    return <BoardGateCardHarness gate={severityGate} />;
+  },
 };
 
 // --- ErrorState: the primitive's own validation, driven for real -----------
@@ -249,14 +251,15 @@ const respondPlanGate: GateRow = {
   ],
   origin: { paneId: 'pane-1', worktree: 'widgets' },
 };
-seedDraft(respondPlanGate.gateId, {
-  selections: { 'thread-1': 'fix:bbbbbbbbbbbb' },
-  notes: {},
-  item: 'thread-1',
-});
-
 export const RespondPlanCollapse: Story = {
-  render: () => <BoardGateCardHarness gate={respondPlanGate} />,
+  render: () => {
+    seedDraft(respondPlanGate.gateId, {
+      selections: { 'thread-1': 'fix:bbbbbbbbbbbb' },
+      notes: {},
+      item: 'thread-1',
+    });
+    return <BoardGateCardHarness gate={respondPlanGate} />;
+  },
 };
 
 // --- AnsweredChipCollapsed / AnsweredChipExpanded --------------------------
