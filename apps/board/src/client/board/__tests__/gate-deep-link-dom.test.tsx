@@ -107,10 +107,10 @@ test('a ?gate=<id> deep link scrolls to, flashes, and strips the matching row', 
   const container = document.createElement('div');
   document.body.appendChild(container);
 
-  let scrolledEl: Element | null = null;
+  const scrolled: Element[] = [];
   const original = Element.prototype.scrollIntoView;
   Element.prototype.scrollIntoView = function (this: Element) {
-    scrolledEl = this;
+    scrolled.push(this);
   };
 
   const root = createRoot(container);
@@ -125,7 +125,7 @@ test('a ?gate=<id> deep link scrolls to, flashes, and strips the matching row', 
 
     const row = container.querySelector('[data-mr-iid="1"]');
     expect(row).not.toBeNull();
-    expect(scrolledEl === row).toBe(true);
+    expect(scrolled[0] === row).toBe(true);
     expect(row?.classList.contains('tui-row-flash')).toBe(true);
     expect(window.location.search).toBe('');
   } finally {
