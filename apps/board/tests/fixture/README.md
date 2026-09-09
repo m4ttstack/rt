@@ -11,8 +11,8 @@ no rt relay. Port 7941 (never the live board's 7930).
 Every name, username, avatar seed, project path, branch, ticket id, URL and
 comment body here is invented. Nothing in this directory is a snapshot of a
 real board, and nothing may be pasted in from one: the tracked tree is swept
-by `scripts/repo-purity.sh`, and the 22 PNGs in `tests/baselines/` render
-whatever these files say.
+by the repo root's `scripts/repo-purity.sh`, and the 22 PNGs in
+`tests/baselines/` render whatever these files say.
 
 Timestamps are pinned and every capture run freezes the browser clock to
 `meta.json`'s `now`, so the rendered "3 days ago" style labels stay fixed.

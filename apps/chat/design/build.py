@@ -1201,7 +1201,7 @@ def new_pane():
     </div>
 
     <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9.6px;">
-{field('Account', 'acme · Fable 35% used', 'from cswap list · headroom beside each', chev=True)}
+{field('Account', 'Acme · Fable 35% used', 'from cswap list · headroom beside each', chev=True)}
 {field('Model', 'claude-fable-5', 'defaults to the newest', chev=True)}
     </div>
 
@@ -1216,7 +1216,7 @@ def new_pane():
     </div>
 
     <div class="row" style="gap: 7.2px; justify-content: flex-end; padding-top: 4.8px; border-top: 1px solid var(--border-soft);">
-      <span class="hint" style="flex: 1;">runs <code style="font-family: inherit; font-size: 10.56px; background: var(--bg3); border: 1px solid var(--border-soft); border-radius: 3px; padding: 0 3px;">cswap run acme --share-history -- claude --model claude-fable-5 --effort high</code> in a new tab · about 20s to idle</span>
+      <span class="hint" style="flex: 1;">runs <code style="font-family: inherit; font-size: 10.56px; background: var(--bg3); border: 1px solid var(--border-soft); border-radius: 3px; padding: 0 3px;">cswap run Acme --share-history -- claude --model claude-fable-5 --effort high</code> in a new tab · about 20s to idle</span>
       <button class="btn">Back</button>
       <button class="btn primary">{ic('plus', 14)}Start pane</button>
     </div>
