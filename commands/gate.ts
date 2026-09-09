@@ -4,7 +4,7 @@
  * commands/events.ts's arg parsing / --json payload / exit code idiom.
  *
  *   rt gate open --subject <s> --kind <k> --questions <json> [--meta <json>] [--agent <id>] [--pane <id>] [--nudge <json>]
- *   rt gate answer <id> --answers <json> --by <surface>
+ *   rt gate answer <id> --answers <json> --by <surface> [--session <id>] [--override]
  *   rt gate wait <id> [--timeout <duration>]     # default: wait forever
  *   rt gate list [--open] [--subject-prefix <p>] [--kind <k>] [--limit <n>] [--cursor <n>]
  *   rt gate park <id>
@@ -114,25 +114,48 @@ export async function gateOpen(args: string[]): Promise<void> {
 
 // ─── answer ──────────────────────────────────────────────────────────────────
 
-const ANSWER_USAGE = "usage: rt gate answer <id> --answers <json> --by <surface>";
+const ANSWER_USAGE = "usage: rt gate answer <id> --answers <json> --by <surface> [--session <id>] [--override]";
 
-export function buildAnswerPayload(args: string[]): Commands["gate:answer"]["payload"] {
+// `env` is a required, explicit parameter (not a `process.env` default) so a
+// test's payload is never at the mercy of the real CLAUDE_CODE_SESSION_ID a
+// dev shell happens to be running under -- same idiom as herd.ts's buildAskPayload.
+export function buildAnswerPayload(args: string[], env: NodeJS.ProcessEnv): Commands["gate:answer"]["payload"] {
   const id = positional(args);
   const answers = parseJsonFlag(args, "--answers");
   const by = flagValue(args, "--by");
   if (!id) fail(ANSWER_USAGE);
   if (answers === undefined) fail(ANSWER_USAGE);
   if (!by) fail(ANSWER_USAGE);
-  return { id, answers: answers as Commands["gate:answer"]["payload"]["answers"], by };
+  const payload: Commands["gate:answer"]["payload"] = { id, answers: answers as Commands["gate:answer"]["payload"]["answers"], by };
+  const session = flagValue(args, "--session") ?? env.CLAUDE_CODE_SESSION_ID;
+  if (session !== undefined) payload.session = session;
+  if (args.includes("--override")) payload.override = true;
+  return payload;
+}
+
+/** Turns gate:answer's two structured rejections (RT-117) into the operator-facing
+    sentences; every other error keeps falling through to its bare `error` string. */
+function answerRejectionMessage(res: RtResponse<Commands["gate:answer"]["data"]>, id: string): string {
+  if (res.error === "owned-by") {
+    const owner = (res as { owner?: string }).owner ?? "unknown";
+    return `gate ${id} is owned by ${owner}; pass --override to answer anyway`;
+  }
+  if (res.error === "gate-closed") {
+    const reason = (res as { reason?: string }).reason ?? "closed";
+    const supersededBy = (res as { supersededBy?: string }).supersededBy;
+    return `gate ${id} is closed (${reason})${supersededBy ? `; superseded by ${supersededBy}` : ""}`;
+  }
+  return res.error ?? "answer failed";
 }
 
 export async function gateAnswer(args: string[]): Promise<void> {
-  const payload = buildAnswerPayload(args);
+  const payload = buildAnswerPayload(args, process.env);
   const res = await clientAnswer(payload);
-  const data = unwrap(res, "answer");
+  if (!res.ok || res.data === undefined) fail(answerRejectionMessage(res, payload.id));
+  const data = res.data;
   // A CAS loss is a defined outcome (ok:true, conflict:true) carrying the
   // winning row, not an error — see packages/rt-client/src/commands.ts.
-  if (data.conflict) console.error(`rt gate: answer lost — ${payload.id} was already answered; showing the winning row`);
+  if (data.conflict) console.error(`rt gate: answer lost: ${payload.id} was already answered; showing the winning row`);
   console.log(JSON.stringify({ ok: true, row: data.row, conflict: data.conflict ?? false }));
 }
 

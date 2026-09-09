@@ -13,7 +13,7 @@ const row: GateRow = {
   id: "gt-1", subject: "run:1", kind: "approve",
   questions: [{ id: "q1", label: "ok?", multi: false, options: ["yes", "no"] }],
   meta: null, status: "open", answer: null,
-  openedAt: 1, parkedAt: null, closedAt: null, closedReason: null,
+  openedAt: 1, parkedAt: null, closedAt: null, closedReason: null, supersededBy: null,
   agent: null, pane: null, nudge: null, delivery: null, released: false,
   owner: null, escalatedAt: null,
 };

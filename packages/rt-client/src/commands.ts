@@ -110,7 +110,7 @@ export function gateOptionValue(o: GateOption): string {
 export function gateOptionLabel(o: GateOption): string {
   return typeof o === "string" ? o : (o.label || o.value);
 }
-export interface GateAnswer { answers: Record<string, string | string[] | { value: string | string[]; note?: string }>; by: string; answeredAt: number }
+export interface GateAnswer { answers: Record<string, string | string[] | { value: string | string[]; note?: string }>; by: string; answeredAt: number; overridden?: boolean }
 export interface GateRow {
   id: string; subject: string; kind: string;
   questions: GateQuestion[]; meta: Record<string, unknown> | null;
@@ -119,6 +119,8 @@ export interface GateRow {
   status: GateStatus; answer: GateAnswer | null;
   openedAt: number; parkedAt: number | null; closedAt: number | null;
   closedReason: "abandoned" | "superseded" | "pruned" | null;
+  /** Set only when `closedReason` is "superseded": the id of the gate that superseded this one. */
+  supersededBy: string | null;
   agent: string | null; pane: string | null;
   nudge: { session: string } | null;
   delivery: { outcome: "delivered" | "dead-pane"; at: number } | null;
@@ -620,8 +622,15 @@ export interface Commands {
    * `conflict:true` and the WINNING row, so every consumer gets the winner
    * typed with no envelope hacks. `ok:false` is reserved for
    * not-found/closed/validation failures.
+   *
+   * RT-117 owner enforcement adds two structured rejections beyond the plain
+   * `{ok:false, error:string}` shape (see `GateAnswerResult` in
+   * `lib/daemon/handlers/gate.ts`): a herd-owned gate answered by anyone but
+   * the owning shepherd's session, the answering pane, or an explicit human
+   * `override` returns `{ok:false, error:"owned-by", owner}`; a closed gate
+   * returns `{ok:false, error:"gate-closed", reason, supersededBy?}`.
    */
-  "gate:answer": { payload: { id: string; answers: GateAnswer["answers"]; by: string }; data: { row: GateRow; conflict?: true } };
+  "gate:answer": { payload: { id: string; answers: GateAnswer["answers"]; by: string; session?: string; override?: boolean }; data: { row: GateRow; conflict?: true } };
   /** `ok:false "not-found"` on an unknown id is terminal; the CLI loop must not re-enter on it.
    *  `timeout` carries no row (nothing settled); `answered`/`closed` always carry the settled row. */
   "gate:wait": { payload: { id: string; waitMs?: number }; data: { status: "timeout" } | { status: "answered" | "closed"; row: GateRow } };

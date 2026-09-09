@@ -79,6 +79,8 @@ const gateSubcommands: Record<string, CommandNode> = {
       { name: "Id", type: "text", placeholder: "gt-1a2b3c4d", hint: "Gate id" },
       { name: "Answers", flag: "--answers", type: "text", placeholder: "{\"q1\":\"yes\"}", hint: "JSON answers keyed by question id" },
       { name: "By", flag: "--by", type: "text", placeholder: "human", hint: "Answering surface" },
+      { name: "Session", flag: "--session", type: "text", placeholder: "abc123", hint: "Session id claiming the owning shepherd (default: CLAUDE_CODE_SESSION_ID)" },
+      { name: "Override", flag: "--override", type: "boolean", default: false, hint: "Answer a herd-owned gate anyway (human escalation)" },
     ],
   },
   wait: {

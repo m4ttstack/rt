@@ -6,11 +6,22 @@
 
 import type { Logger } from "pino";
 import type { Commands } from "../../../packages/rt-client/src/commands.ts";
-import { gateOptionValue } from "../../../packages/rt-client/src/commands.ts";
+import { gateOptionValue, GATE_BY_PANE } from "../../../packages/rt-client/src/commands.ts";
 import type { CommandResult } from "./types.ts";
 import type { EventsBus } from "../events-bus.ts";
 import type { GatesStore, GateQuestion, GateAnswer, GateRow, GateOrigin } from "../gates-store.ts";
 import type { GatePush } from "../gate-push.ts";
+
+/**
+ * gate:answer's two structured rejections (RT-117): a non-owner's answer and
+ * a closed gate both need fields beyond the generic `{ok:false, error}`
+ * shape, so this widens just this one verb's result rather than every
+ * command in the catalog.
+ */
+export type GateAnswerResult =
+  | CommandResult<"gate:answer">
+  | { ok: false; error: "owned-by"; owner: string }
+  | { ok: false; error: "gate-closed"; reason: GateRow["closedReason"]; supersededBy?: string };
 
 /** Callers that omit `push` (e.g. handler-only tests) get a no-op: gate:*
     must work identically with or without the delivery layer wired in. */
@@ -182,9 +193,14 @@ export function createGateHandlers(
   store: GatesStore,
   bus: EventsBus,
   broadcast: (type: string, data: any) => void,
-  deps: { push?: GatePush; log?: Logger; runSpawnedBy?: (runId: string) => string | null } = {},
+  deps: {
+    push?: GatePush; log?: Logger;
+    runSpawnedBy?: (runId: string) => string | null;
+    /** Resolves a herd id to its shepherd's live session, for the owner guard below. */
+    herdShepherd?: (herdId: string) => string | null;
+  } = {},
 ): { "gate:open": (payload: unknown) => Promise<CommandResult<"gate:open">> }
-  & { "gate:answer": (payload: unknown) => Promise<CommandResult<"gate:answer">> }
+  & { "gate:answer": (payload: unknown) => Promise<GateAnswerResult> }
   & { "gate:wait": (payload: unknown, signal?: AbortSignal) => Promise<CommandResult<"gate:wait">> }
   & { "gate:list": (payload: unknown) => Promise<CommandResult<"gate:list">> }
   & { "gate:park": (payload: unknown) => Promise<CommandResult<"gate:park">> }
@@ -195,6 +211,7 @@ export function createGateHandlers(
   const push = deps.push ?? noopPush;
   const log = deps.log;
   const runSpawnedBy = deps.runSpawnedBy;
+  const herdShepherd = deps.herdShepherd;
   // Fire-and-forget: a push/fan-out failure must never fail the verb that
   // triggered it. The promise itself is not expected to reject (gate-push
   // catches and records delivery outcomes internally), but a logged catch
@@ -321,10 +338,31 @@ export function createGateHandlers(
 
       const gate = store.get(id);
       if (!gate) return { ok: false as const, error: "not-found" };
+
+      // A closed gate is a terminal rejection, checked before ownership or
+      // shape: a caller answering a superseded gate needs to know what
+      // replaced it, not that it lacks permission to answer a dead row.
+      if (gate.status === "closed") {
+        return {
+          ok: false as const, error: "gate-closed", reason: gate.closedReason,
+          ...(gate.supersededBy ? { supersededBy: gate.supersededBy } : {}),
+        };
+      }
+
+      // Herd-owned gates require the owning shepherd's own session (or the
+      // answering pane itself, or an explicit human --override); a null/
+      // "human" owner (including pre-RT-117 rows) is open to any caller.
+      const owner = gate.owner;
+      if (owner?.startsWith("herd:") && payload?.override !== true && by !== GATE_BY_PANE) {
+        const shepherd = herdShepherd?.(owner.slice("herd:".length)) ?? null;
+        const session = typeof payload?.session === "string" ? payload.session : "";
+        if (!shepherd || session !== shepherd) return { ok: false as const, error: "owned-by", owner };
+      }
+
       const validationError = validateAnswers(gate.questions, answers as Record<string, unknown>);
       if (validationError) return { ok: false as const, error: validationError };
 
-      const result = store.answer(id, answers as GateAnswer["answers"], by);
+      const result = store.answer(id, answers as GateAnswer["answers"], by, { overridden: payload?.override === true });
       const emittedAt = Date.now();
 
       if (result.ok) {

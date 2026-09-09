@@ -128,6 +128,7 @@ export function buildRoutedHandlers(opts: {
     push: opts.gatePush,
     log: ctx.log,
     runSpawnedBy: (runId) => findRun(runId)?.run.spawned_by ?? null,
+    herdShepherd: (herdId) => opts.herdStore.get(herdId)?.shepherdSession ?? null,
   });
   const herdHandlers = createHerdHandlers({
     store: opts.herdStore,

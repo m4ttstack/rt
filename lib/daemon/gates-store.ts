@@ -55,7 +55,7 @@ export interface GatesStore {
   }): OpenResult;
   get(id: string): GateRow | null;
   list(filter: { open?: boolean; subjectPrefix?: string; kind?: string; limit?: number; cursor?: number }): { gates: GateRow[]; cursor: number };
-  answer(id: string, answers: GateAnswer["answers"], by: string): AnswerResult;
+  answer(id: string, answers: GateAnswer["answers"], by: string, opts?: { overridden?: boolean }): AnswerResult;
   park(id: string): { ok: true } | { ok: false; reason: "not-found" | "not-open"; row: GateRow | null };
   close(id: string, reason: "abandoned" | "superseded" | "pruned"): { ok: true } | { ok: false; reason: "not-found" | "already-answered" | "already-closed" };
   markDelivery(id: string, outcome: "delivered" | "dead-pane"): void;
@@ -93,6 +93,7 @@ interface GateColumns {
   parkedAt: number | null;
   closedAt: number | null;
   closedReason: "abandoned" | "superseded" | "pruned" | null;
+  supersededBy: string | null;
   agent: string | null;
   pane: string | null;
   nudge: string | null;
@@ -141,6 +142,7 @@ function rowToGate(row: GateColumns): GateRow {
     parkedAt: row.parkedAt,
     closedAt: row.closedAt,
     closedReason: row.closedReason,
+    supersededBy: row.supersededBy ?? null,
     agent: row.agent,
     pane: row.pane,
     nudge: row.nudge == null ? null : JSON.parse(row.nudge),
@@ -224,6 +226,7 @@ export function createGatesStore(opts: {
       parkedAt      INTEGER,
       closedAt      INTEGER,
       closedReason  TEXT,
+      supersededBy  TEXT,
       agent         TEXT,
       pane          TEXT,
       nudge         TEXT,
@@ -253,7 +256,7 @@ export function createGatesStore(opts: {
   const gateCols = new Set(
     (db.query("PRAGMA table_info(gates)").all() as Array<{ name: string }>).map((c) => c.name),
   );
-  for (const col of ["context", "origin", "owner"]) {
+  for (const col of ["context", "origin", "owner", "supersededBy"]) {
     if (!gateCols.has(col)) db.exec(`ALTER TABLE gates ADD COLUMN ${col} TEXT;`);
   }
   if (!gateCols.has("escalatedAt")) db.exec("ALTER TABLE gates ADD COLUMN escalatedAt INTEGER;");
@@ -275,8 +278,11 @@ export function createGatesStore(opts: {
       context, origin, owner, escalatedAt
     ) VALUES (?, ?, ?, ?, ?, 'open', NULL, ?, NULL, NULL, NULL, ?, ?, ?, NULL, 0, ?, ?, ?, NULL)
   `);
+  // supersededBy is the new gate's own id, already minted before this runs
+  // (open() generates it up front) -- no follow-up query needed to answer
+  // "closed by what" for the rejection gate:answer returns on this row.
   const supersedeStmt = db.prepare(
-    "UPDATE gates SET status = 'closed', closedReason = 'superseded', closedAt = ? WHERE subject = ? AND kind = ? AND status = 'open'",
+    "UPDATE gates SET status = 'closed', closedReason = 'superseded', closedAt = ?, supersededBy = ? WHERE subject = ? AND kind = ? AND status = 'open'",
   );
   const findOpenSameKindStmt = db.prepare(
     "SELECT id FROM gates WHERE subject = ? AND kind = ? AND status = 'open'",
@@ -350,7 +356,7 @@ export function createGatesStore(opts: {
     owner: string | null;
   }): string | null => {
     const existing = findOpenSameKindStmt.get(input.subject, input.kind) as { id: string } | undefined;
-    if (existing) supersedeStmt.run(input.openedAt, input.subject, input.kind);
+    if (existing) supersedeStmt.run(input.openedAt, input.id, input.subject, input.kind);
     insertStmt.run(
       input.id,
       input.subject,
@@ -468,8 +474,11 @@ export function createGatesStore(opts: {
       return { gates, cursor };
     },
 
-    answer(id, answers, by) {
-      const answer: GateAnswer = { answers, by, answeredAt: Date.now() };
+    answer(id, answers, by, opts) {
+      const answer: GateAnswer = {
+        answers, by, answeredAt: Date.now(),
+        ...(opts?.overridden ? { overridden: true } : {}),
+      };
       // Winner: a pane that decided has provably reconciled (release commits with the answer).
       const { changed, released: winReleased } = answerWinTxn(JSON.stringify(answer), id, by);
       if (changed) { wake(id, "answered"); return { ok: true, row: get(id)!, released: winReleased }; }
