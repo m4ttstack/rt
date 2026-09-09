@@ -463,7 +463,7 @@
   padding: 0;
   cursor: pointer;
   /* font-family only — NOT `font: inherit`, which would reset the size to the
-     row's 13.5px instead of the .tui-phrase 0.7rem the other labels use. Leave
+     row's 13.5px instead of the .tui-phrase 0.62rem the other labels use. Leave
      color to the t-warn class so the label stays amber. */
   font-family: inherit;
 }
