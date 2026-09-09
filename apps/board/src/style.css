@@ -1794,10 +1794,10 @@
    instead of stranding at the far edge of a 760px strip. */
 .tui-triage-strip .tui-row-2 {
   align-items: baseline;
-  font-size: 0.68rem;
+  font-size: 0.75rem;
 }
 .tui-triage-strip .tui-row-2 .tui-author-tag {
-  font-size: 0.68rem;
+  font-size: 0.75rem;
 }
 .tui-triage-strip .tui-row-2 .tui-branch {
   flex: 0 0 auto;
@@ -1809,6 +1809,12 @@
   align-items: center;
   gap: 0.55rem;
   min-width: 0;
+}
+.tui-triage-row-1 .tui-title {
+  font-size: 0.85rem;
+}
+.tui-triage-row-1 .tui-ticket {
+  font-size: 0.78rem;
 }
 .tui-triage-kind {
   flex-shrink: 0;
