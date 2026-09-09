@@ -3,6 +3,10 @@ import { mkdirSync, renameSync } from 'fs';
 import { homedir } from 'os';
 import { dirname, join, resolve } from 'path';
 
+import { APP_ROOT } from '../app-root.ts';
+import { getKvValue } from './kv-blob.ts';
+import { importLegacyState } from './legacy-import.ts';
+
 export type DbFlavor = 'server' | 'cli';
 export const SCHEMA_VERSION = 1;
 
@@ -120,7 +124,12 @@ export function openStateDb(path: string, flavor: DbFlavor = 'cli'): Database {
 
 let singleton: Database | null = null;
 export function getStateDb(flavor: DbFlavor = 'cli'): Database {
-  if (!singleton) singleton = openStateDb(stateDbPath(), flavor);
+  if (!singleton) {
+    singleton = openStateDb(stateDbPath(), flavor);
+    if (!getKvValue('meta', 'legacy-import-done', false, singleton)) {
+      importLegacyState(singleton, [...new Set([APP_ROOT, boardStateRoot()])]);
+    }
+  }
   return singleton;
 }
 export function closeStateDb(): void {
