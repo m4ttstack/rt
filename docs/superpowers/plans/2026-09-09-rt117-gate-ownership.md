@@ -26,12 +26,12 @@
 ### Task 1: gates-store owner, escalatedAt, and subscription scope columns
 
 **Files:**
-- Modify: `lib/daemon/gates-store.ts`
+- Modify: `lib/daemon/gates-store.ts`, `packages/rt-client/src/commands.ts` (`GateRow` at :119 and `GateSubscription` at :128 are DEFINED there; gates-store only re-exports them)
 - Test: `lib/daemon/__tests__/gates-store.test.ts` (existing file, add cases)
 
 **Interfaces:**
-- Consumes: existing `createGatesStore`, `GateRow`, `GateSubscription`.
-- Produces: `GateRow.owner: string | null` (`"human" | "herd:<id>"`), `GateRow.escalatedAt: number | null`, `GatesStore.markEscalated(id: string): void`, `OpenGateInput.owner?: string`, `GateSubscription.scope: "prefix" | "owner"`, `GateSubscription.ownerRef: string | null`, `AddSubscriptionInput` gains `{ scope?: "prefix" | "owner"; ownerRef?: string }`, `GatesStore.pruneDeadSubscriptions(olderThanMs: number, now?: number): number`.
+- Consumes: existing `createGatesStore`, `GateRow`, `GateSubscription`, and the store's existing `subscribe(input: { subjectPrefix: string; session: string })` method (`gates-store.ts:502`). `subscribe` is EXTENDED, never renamed: the `gate:subscribe` handler and its idempotence contract keep working unchanged for prefix rows.
+- Produces: `GateRow.owner: string | null` (`"human" | "herd:<id>"`), `GateRow.escalatedAt: number | null`, `GatesStore.markEscalated(id: string): void`, `OpenGateInput.owner?: string`, `GateSubscription.scope: "prefix" | "owner"`, `GateSubscription.ownerRef: string | null`, `subscribe` input gains `{ scope?: "prefix" | "owner"; ownerRef?: string }`, `GatesStore.pruneDeadSubscriptions(olderThanMs: number, now?: number): number`. The live-dedupe check (`findLiveSubStmt`, `gates-store.ts:285`, today keyed on `(subjectPrefix, session)`) becomes scope-aware: keyed on `(scope, subjectPrefix, ownerRef, session)`, so one shepherd session running two herds holds two distinct owner rows instead of the second silently deduping into the first.
 
 - [ ] **Step 1: Write the failing tests** (append to `gates-store.test.ts`)
 
@@ -54,7 +54,7 @@ test("owner defaults to null and markEscalated stamps escalatedAt once", () => {
 
 test("subscriptions carry scope and ownerRef; prune removes stale dead rows", () => {
   const { store } = makeStore();
-  store.addSubscription({ subjectPrefix: "", session: "s1", scope: "owner", ownerRef: "herd:h-1" });
+  store.subscribe({ subjectPrefix: "", session: "s1", scope: "owner", ownerRef: "herd:h-1" });
   const sub = store.subscriptions({ live: true })[0]!;
   expect(sub.scope).toBe("owner");
   expect(sub.ownerRef).toBe("herd:h-1");
@@ -79,18 +79,20 @@ In `gates-store.ts`:
 - Extend the existing column-add loop: `for (const col of ["context", "origin", "owner", "escalatedAt"])` (all TEXT is fine for owner; use a second small loop or a typed map so `escalatedAt` is added as INTEGER). Add a matching `PRAGMA table_info(gate_subscriptions)` loop for `scope` (TEXT, backfill `'prefix'` via `UPDATE gate_subscriptions SET scope='prefix' WHERE scope IS NULL`) and `ownerRef` (TEXT).
 - Thread `owner` through `open()` input, the INSERT statement, and `rowToGate` (null when absent). Same for `escalatedAt` in `rowToGate`.
 - `markEscalated`: `UPDATE gates SET escalatedAt = ? WHERE id = ? AND escalatedAt IS NULL`.
-- `addSubscription` stores scope/ownerRef; `rowToSubscription` returns them.
+- `subscribe` accepts and stores scope/ownerRef (defaulting scope to "prefix"); `rowToSubscription` returns them; the live-dedupe statement is re-keyed on (scope, subjectPrefix, ownerRef, session) per the Interfaces block.
 - `pruneDeadSubscriptions(olderThanMs, now = Date.now())`: `DELETE FROM gate_subscriptions WHERE dead = 1 AND (lastDelivery IS NULL OR json_extract(lastDelivery, '$.at') <= ?)` with `now - olderThanMs`; return `changes`.
+
+In `packages/rt-client/src/commands.ts`: add `owner: string | null` and `escalatedAt: number | null` to `GateRow` (:119), `scope: "prefix" | "owner"` and `ownerRef: string | null` to `GateSubscription` (:128). Then `cd packages/rt-client && bun run build` (dist freshness; consumers copy dist verbatim).
 
 - [ ] **Step 4: Run to verify pass**
 
-Run: `bun test lib/daemon/__tests__/gates-store.test.ts`
-Expected: PASS, including all pre-existing cases.
+Run: `bun test lib/daemon/__tests__/gates-store.test.ts packages/rt-client`
+Expected: PASS, including all pre-existing cases and dist-freshness.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add lib/daemon/gates-store.ts lib/daemon/__tests__/gates-store.test.ts
+git add lib/daemon/gates-store.ts lib/daemon/__tests__/gates-store.test.ts packages/rt-client
 git commit -m "gates-store: owner, escalatedAt, subscription scope columns" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ```
 
@@ -140,7 +142,7 @@ Expected: FAIL (`owner` null / event payload missing owner).
 - [ ] **Step 3: Implement**
 
 - `handlers/gate.ts`: export `deriveOwner(origin: GateOrigin | undefined, runSpawnedBy?: (runId: string) => string | null): string { const runId = origin?.runId; if (runId && runSpawnedBy) { const s = runSpawnedBy(runId); if (s && s.startsWith("herd:")) return s; } return "human"; }`. Call it in `gate:open` and pass `owner` into `store.open`. Add `owner: row.owner` to the opened `eventPayload`.
-- `command-router.ts`: next to the existing `runWorktree` wiring (`:135`), add `runSpawnedBy: (runId) => findRun(runId)?.fields.find((f) => f.key === "spawned_by")?.value ?? null,` and pass it into `createGateHandlers`'s deps.
+- `command-router.ts`: next to the existing `runWorktree` wiring (`:135`), add `runSpawnedBy: (runId) => findRun(runId)?.run.spawned_by ?? null,` and pass it into `createGateHandlers`'s deps. NOTE: `spawned_by` is a COLUMN on the runs table surfaced as `RunDetail.run.spawned_by` (`lib/runs/write.ts:21`, `lib/runs/store.ts:55,160`), NOT a fields row like `worktree`; copying the `runWorktree` fields-lookup pattern here returns null forever and silently no-ops the whole ownership feature.
 
 - [ ] **Step 4: Run to verify pass**
 
@@ -264,7 +266,7 @@ git commit -m "gate answer: owner guard with override; clean closed-gate rejecti
 
 ```ts
 test("fanOut pushes owner-scoped subscriptions for owned gates only", async () => {
-  const sub = store.addSubscription({ subjectPrefix: "", session: "shep", scope: "owner", ownerRef: "herd:h-1" });
+  const sub = store.subscribe({ subjectPrefix: "", session: "shep", scope: "owner", ownerRef: "herd:h-1" });
   const owned = store.open({ ...baseOpen({ subject: "run:r-1" }), owner: "herd:h-1" }).row;
   const foreign = store.open({ ...baseOpen({ subject: "run:r-2", kind: "k2" }), owner: "herd:h-2" }).row;
   await push.onOpened(owned);
@@ -284,9 +286,9 @@ test("herd start subscribes the shepherd to its own gates by owner", async () =>
 - [ ] **Step 3: Implement**
 
 - `gate-push.ts` `fanOut`: `const subs = allLive.filter((sub) => sub.scope === "owner" ? (row.owner !== null && row.owner === sub.ownerRef) : row.subject.startsWith(sub.subjectPrefix));`
-- `handlers/gate.ts` `gate:subscribe`: accept and validate the two new fields; reject `scope:"owner"` without a `herd:`-prefixed `ownerRef`; pass through to `addSubscription`.
-- `handlers/herd.ts` `subscribeShepherd`: after the prefix subscribe, call `deps.gate["gate:subscribe"]({ scope: "owner", ownerRef: "herd:" + herdId, subjectPrefix: "", session })`; before both, drop any live subscription rows for the same herd held by a DIFFERENT session (re-point on resume), using `gate:subscriptions` + `gate:unsubscribe`.
-- `packages/rt-client/src/commands.ts`: payload type update; rebuild rt-client (`bun run build` in the package).
+- `handlers/gate.ts` `gate:subscribe`: accept and validate the two new fields; reject `scope:"owner"` without a `herd:`-prefixed `ownerRef`; pass through to the store's `subscribe`. The handler's existing empty-`subjectPrefix` rejection (`handlers/gate.ts:385`) must be RELAXED for `scope:"owner"` rows (empty prefix is their normal shape); it stays for prefix rows.
+- `handlers/herd.ts` `subscribeShepherd`: after the prefix subscribe, call `deps.gate["gate:subscribe"]({ scope: "owner", ownerRef: "herd:" + herdId, subjectPrefix: "", session })`; before both, drop any live subscription rows for the same herd held by a DIFFERENT session (re-point on resume), using `gate:subscriptions` + `gate:unsubscribe`. `HerdDeps.gate` is a `Pick` that today EXCLUDES `gate:unsubscribe` (`handlers/herd.ts:31`); widen the Pick and wire the verb through in `command-router.ts`. Cross-herd dedupe is already correct after Task 1's scope-aware dedupe key; do not add a second dedupe here.
+- `packages/rt-client/src/commands.ts`: `gate:subscribe` payload type update (row types were already extended in Task 1); rebuild rt-client (`bun run build` in the package).
 
 - [ ] **Step 4: Run to verify pass** ... same test command, plus `bun test packages/rt-client`.
 
@@ -325,7 +327,7 @@ test("sweep escalates an owned gate past the TTL exactly once", () => {
 });
 
 test("sweep escalates immediately when the owner's subscription is dead", () => {
-  store.addSubscription({ subjectPrefix: "", session: "shep", scope: "owner", ownerRef: "herd:h-1" });
+  store.subscribe({ subjectPrefix: "", session: "shep", scope: "owner", ownerRef: "herd:h-1" });
   const sub = store.subscriptions({})[0]!;
   store.markSubscriptionDead(sub.id);
   store.open({ ...baseOpen(), owner: "herd:h-1" });
@@ -459,7 +461,7 @@ test("subscription phrase names presentation and owner", () => {
 - `gate:open`: after validation, `const origin = payload?.origin ? { presentation: "wait" as const, ...payload.origin } : undefined;` and store that (spread order makes an explicit presentation win).
 - `GATE_SUBSCRIPTION_PHRASE`: widen its parameter to include `origin`/`owner` and render the parenthetical; update `fanOut`'s caller (it already has the full row).
 - `commands/gate.ts` list: append presentation and owner to each rendered row where present (follow the file's existing column style; `--json` output is the raw rows and needs no change).
-- The existing gate-push/e2e assertions on the OLD phrase will fail: update them to the new exact string in the same commit (this is the deliberate verbatim change, pinned in e2e).
+- Existing assertions survive this change as-is: the gate-push unit test recomputes its expectation via `GATE_SUBSCRIPTION_PHRASE(row)` itself (`gate-push.test.ts:145`), and the herd e2e matches the substring `"re-read the gate registry"` (`herd.test.ts:302`), which the new phrase keeps. What this task ADDS is the new exact-string pin: the unit assertion in Step 1 plus an e2e assertion of the full new phrase.
 
 - [ ] **Step 4: Run to verify pass** ... `bun test lib/daemon lib/__tests__` then `bun run test:e2e`
 
@@ -479,7 +481,7 @@ git commit -m "gates: pane origins require presentation; phrase and list surface
 - Test: the herd handlers suite
 
 **Interfaces:**
-- Consumes: `resolveSession`-style inbox resolution already available to the daemon (`resolveInbox` in `lib/daemon.ts`; thread it into herd handler deps as `probeInbox: (session: string) => Promise<"reachable" | "unreachable">`).
+- Consumes: `resolveSession`-style inbox resolution already available to the daemon (`resolveInbox`, defined in `lib/claude-registry.ts` and imported by `lib/daemon.ts`; thread it into herd handler deps as `probeInbox: (session: string) => Promise<"reachable" | "unreachable">`).
 - Produces: `herd:status` data gains `push: { state: "reachable" | "unreachable"; lastDelivery: <existing subscription lastDelivery or null> }`. `herd:resume`'s `gates` uses the same job-worktree matching as `herd:gates` (extract that filter into a shared `listHerdRunGates(herdId)` inside the handler module and call it from both, adding the herd-prefix gates to resume's count).
 
 - [ ] **Step 1: Write the failing tests**
