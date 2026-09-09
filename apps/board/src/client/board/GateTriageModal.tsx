@@ -121,6 +121,7 @@ function GateTriageModal({
           {mr.sourceBranch && (
             <span className="tui-branch">{mr.sourceBranch}</span>
           )}
+          <span className="tui-row-sep">·</span>
           <span>{ago(new Date(gate.openedAt).toISOString(), Date.now())}</span>
           {gate.origin && (
             <span>

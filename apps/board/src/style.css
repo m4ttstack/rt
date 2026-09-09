@@ -1789,8 +1789,18 @@
   border-radius: 6px;
   background: var(--chrome);
 }
+/* Tuned from the row's 0.6rem: one size for the whole line, and the branch
+   gives up the row's flex stretch so age and origin stay clustered left
+   instead of stranding at the far edge of a 760px strip. */
 .tui-triage-strip .tui-row-2 {
   align-items: baseline;
+  font-size: 0.68rem;
+}
+.tui-triage-strip .tui-row-2 .tui-author-tag {
+  font-size: 0.68rem;
+}
+.tui-triage-strip .tui-row-2 .tui-branch {
+  flex: 0 0 auto;
 }
 /* The strip is the MR row users already scan, verbatim classes
    (.tui-title/.tui-row-2/...), minus main-view status chips and badges. */
