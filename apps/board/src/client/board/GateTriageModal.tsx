@@ -45,7 +45,6 @@ function GateTriageModal({
   return (
     <Modal
       className="tui-triage-modal"
-      data-context={gate.context ? '' : undefined}
       title={
         <>
           triage
@@ -143,21 +142,23 @@ function GateTriageModal({
             />
           );
         // The modal exists to give context room: unlike the row card's
-        // collapsed disclosure, context here is open, beside the form.
-        return gate.context ? (
+        // collapsed disclosure, context renders open, above the form. One
+        // frame size regardless, so the modal never resizes as the queue
+        // advances across gates with and without context.
+        return (
           <div className="tui-triage-body">
-            <div className="tui-triage-context">
-              <div className="tui-triage-context-label">context</div>
-              <div className="tui-gate-context-body">
-                <Markdown unstyled linkTargetBlank>
-                  {gate.context}
-                </Markdown>
+            {gate.context && (
+              <div className="tui-triage-context">
+                <div className="tui-triage-context-label">context</div>
+                <div className="tui-gate-context-body">
+                  <Markdown unstyled linkTargetBlank>
+                    {gate.context}
+                  </Markdown>
+                </div>
               </div>
-            </div>
+            )}
             <div className="tui-triage-form-col">{face}</div>
           </div>
-        ) : (
-          face
         );
       })()}
       {nextPeek && (

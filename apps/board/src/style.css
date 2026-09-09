@@ -1678,7 +1678,7 @@
 /* The frame is the kit Modal recipe; this class both widens it (app CSS
    outranks the recipe's @layer rule) and scopes the gate contrast vars. */
 .tui-triage-modal {
-  max-width: 560px;
+  max-width: 940px;
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
@@ -1719,13 +1719,9 @@
   background: var(--dot-warn);
   opacity: 0.55;
 }
-/* A gate carrying context gets the wide frame; the pane is the point of
-   hosting gates in a modal at all, so it renders open (the row card's
-   collapsed disclosure stays the compact face). Contextless gates keep the
-   narrow frame instead of centering a 36rem form in an empty 940px shell. */
-.tui-triage-modal[data-context] {
-  max-width: 940px;
-}
+/* One frame size for every gate: the pane is the point of hosting gates in
+   a modal at all, so the frame is sized for it whether or not this gate's
+   asker supplied context, and never resizes as the queue advances. */
 /* Context sits ABOVE the form, the way a real pane reads: transcript on
    top, prompt below. The pane scrolls on its own past its cap. */
 .tui-triage-body {
