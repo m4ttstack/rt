@@ -101,9 +101,12 @@ export async function applyManifest(
     if (isPlatformManagedBy(existing.managedBy)) {
       return attachSource(existing, manifest, dir, activeAlt);
     }
-    // Linking, not reconciling: a managed app's serve shape comes from
-    // wherever the resolver decides (bundle vs. linked source), never from
-    // whichever manifest last called register.
+    // Linking, not reconciling: a managed app's serve shape (command/port)
+    // comes from wherever the resolver decides (bundle vs. linked source),
+    // never from whichever manifest last called register. env is not part of
+    // that resolver decision, though, so it still syncs here: `?? {}` (not
+    // undefined) because the manifest is the source of truth for it -- dropping
+    // env from the manifest must clear it on the service, not silently retain it.
     if (activeAlt !== undefined) {
       return {
         status: 400,
@@ -112,7 +115,7 @@ export async function applyManifest(
     }
     const linked = await editApp(
       manifest.name,
-      { dev: { workingDirectory: dir } },
+      { dev: { workingDirectory: dir }, env: manifest.env ?? {} },
       existing.managedBy,
       true,
       drivers

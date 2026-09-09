@@ -115,6 +115,17 @@ test('register: allocates from 11000, installs the service, registers the alias,
   expect(drivers.edge.aliases.get('myapp')).toBe(11000);
 });
 
+test('register: manifest env reaches the service, but never overrides PORT', async () => {
+  const res = await registerApp(
+    { ...input, name: 'envd', env: { FOO: 'bar', PORT: '1' } },
+    drivers
+  );
+  expect(res.status).toBe(201);
+  const spec = drivers.manager.installed.get('com.mattstack.deck.envd')!;
+  expect(spec.environment.FOO).toBe('bar');
+  expect(spec.environment.PORT).toBe(String(getRecord('envd')!.port));
+});
+
 test('register with staticPort creates an external record and no service', async () => {
   const res = await registerApp({ name: 'ext', staticPort: 4200 }, drivers);
   expect(res.status).toBe(201);
