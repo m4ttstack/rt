@@ -150,7 +150,54 @@ function GateTriageModal({
         // advances across gates with and without context.
         return (
           <div className="tui-triage-body">
-            {gate.context ? (
+            <div className="tui-triage-context tui-triage-meta">
+              <div className="tui-triage-context-label">
+                what you're triaging
+              </div>
+              <dl className="tui-triage-meta-rows">
+                <div className="tui-triage-meta-row">
+                  <dt>mr</dt>
+                  <dd>
+                    <span className="tui-triage-mr-ref">!{mr.iid}</span>{' '}
+                    {mr.title}
+                  </dd>
+                </div>
+                {mr.author && (
+                  <div className="tui-triage-meta-row">
+                    <dt>author</dt>
+                    <dd>{mr.author.name || mr.author.username}</dd>
+                  </div>
+                )}
+                {mr.sourceBranch && (
+                  <div className="tui-triage-meta-row">
+                    <dt>branch</dt>
+                    <dd className="tui-triage-meta-mono">{mr.sourceBranch}</dd>
+                  </div>
+                )}
+                {mr.sourceBranch &&
+                  extractTicketId(mr.sourceBranch, mr.title) && (
+                    <div className="tui-triage-meta-row">
+                      <dt>ticket</dt>
+                      <dd>{extractTicketId(mr.sourceBranch, mr.title)}</dd>
+                    </div>
+                  )}
+                <div className="tui-triage-meta-row">
+                  <dt>opened</dt>
+                  <dd>{new Date(gate.openedAt).toLocaleString()}</dd>
+                </div>
+                {gate.origin && (
+                  <div className="tui-triage-meta-row">
+                    <dt>origin</dt>
+                    <dd className="tui-triage-meta-mono">
+                      {[gate.origin.worktree, gate.origin.paneId]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </dd>
+                  </div>
+                )}
+              </dl>
+            </div>
+            {gate.context && (
               <div className="tui-triage-context">
                 <div className="tui-triage-context-label">context</div>
                 <div className="tui-gate-context-body">
@@ -158,56 +205,6 @@ function GateTriageModal({
                     {gate.context}
                   </Markdown>
                 </div>
-              </div>
-            ) : (
-              <div className="tui-triage-context tui-triage-meta">
-                <div className="tui-triage-context-label">
-                  what you're triaging
-                </div>
-                <dl className="tui-triage-meta-rows">
-                  <div className="tui-triage-meta-row">
-                    <dt>mr</dt>
-                    <dd>
-                      <span className="tui-triage-mr-ref">!{mr.iid}</span>{' '}
-                      {mr.title}
-                    </dd>
-                  </div>
-                  {mr.author && (
-                    <div className="tui-triage-meta-row">
-                      <dt>author</dt>
-                      <dd>{mr.author.name || mr.author.username}</dd>
-                    </div>
-                  )}
-                  {mr.sourceBranch && (
-                    <div className="tui-triage-meta-row">
-                      <dt>branch</dt>
-                      <dd className="tui-triage-meta-mono">
-                        {mr.sourceBranch}
-                      </dd>
-                    </div>
-                  )}
-                  {mr.sourceBranch &&
-                    extractTicketId(mr.sourceBranch, mr.title) && (
-                      <div className="tui-triage-meta-row">
-                        <dt>ticket</dt>
-                        <dd>{extractTicketId(mr.sourceBranch, mr.title)}</dd>
-                      </div>
-                    )}
-                  <div className="tui-triage-meta-row">
-                    <dt>opened</dt>
-                    <dd>{new Date(gate.openedAt).toLocaleString()}</dd>
-                  </div>
-                  {gate.origin && (
-                    <div className="tui-triage-meta-row">
-                      <dt>origin</dt>
-                      <dd className="tui-triage-meta-mono">
-                        {[gate.origin.worktree, gate.origin.paneId]
-                          .filter(Boolean)
-                          .join(' · ')}
-                      </dd>
-                    </div>
-                  )}
-                </dl>
               </div>
             )}
             <div className="tui-triage-form-col">{face}</div>
