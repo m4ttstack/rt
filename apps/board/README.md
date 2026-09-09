@@ -17,6 +17,7 @@ username, so there is no image hosting anywhere in the stack.
 - [Quickstart](#quickstart)
 - [Usage](#usage)
 - [Configuration](#configuration)
+- [State](#state)
 - [Slack](#slack)
 - [Agent actions](#agent-actions)
 - [Peer boards](#peer-boards)
@@ -154,6 +155,27 @@ The listen port is `$PORT`, default `7930`, and the server always binds
 tabs, the settings-store ownership latch and its reload rules, and all the
 tokens and secrets.
 
+## State
+
+Everything the board writes at runtime (review/respond/doctor lifecycle
+rows, drafts, nudges, the outbox, Slack refs, triage memory, the
+agent-status cursor) lives in one SQLite file, `state.db`, opened lazily on
+first use and shared by the server and every CLI it launches. Its location
+is independent of `config.json`'s: `BOARD_STATE_DB` pins an exact file path
+when set, otherwise it defaults to `~/.mattstack/board/state.db` regardless
+of which checkout or `BOARD_APP_ROOT` is running the server. A first run
+against an existing install one-shot imports any legacy per-lane JSON state
+files it finds and renames the old `state/` directory aside.
+
+A launched pane (review, respond, doctor) never sees `BOARD_STATE_DB`
+itself. Instead the server hands it a **claim ticket**: a `--state <path>`
+argv value that is really an opaque handle, `<root>/state/<lane>/<slug>`,
+from which the status CLI (`bin/review-status.ts`, `bin/respond-status.ts`,
+`bin/doctor-status.ts`, `bin/gate.ts`) derives the same `state.db` by
+walking up from the handle to its root. The CLI resolves its row by handle
+and updates it; an unrecognized handle is a loud error rather than a
+silently created record.
+
 ## Slack
 
 The board plugs into a channel convention rather than inventing its own
@@ -254,8 +276,10 @@ Issues and pull requests are welcome. Before opening one:
 - Run `bun test` and `bun run typecheck`.
 - Keep the TypeScript strict, and keep new configuration in
   [`docs/configuration.md`](docs/configuration.md) rather than only in code.
-- Never commit `config.json`, `.env`, or anything under `state/`. They are
-  gitignored for a reason: they carry real names, tokens, and MR URLs.
+- Never commit `config.json` or `.env`. They are gitignored for a reason:
+  they carry real names, tokens, and MR URLs. `state.db` lives outside the
+  repo entirely (`~/.mattstack/board/state.db` by default), so it never
+  shows up here to begin with.
 
 ## License
 

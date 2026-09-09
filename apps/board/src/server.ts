@@ -1,4 +1,4 @@
-import { readFileSync, rmSync, watch } from 'fs';
+import { readFileSync, watch } from 'fs';
 import { basename, dirname, join } from 'path';
 
 import {
@@ -123,7 +123,7 @@ import {
   type GateResumeEventIo,
   type KindResumeIo,
 } from './gates/resume.ts';
-import { GATE_DIR, type GateAnswers } from './gates/store.ts';
+import { type GateAnswers } from './gates/store.ts';
 import { planSweep, pruneOffBoardGates } from './gates/sweep.ts';
 import {
   closeTab,
@@ -219,6 +219,7 @@ import {
 import {
   boardStateRoot,
   getKvValue,
+  getStateDb,
   persistOrWarn,
   setKvValue,
 } from './state/index.ts';
@@ -259,6 +260,13 @@ const cssPath = join(import.meta.dir, 'style.css');
 const favicon = faviconSvg;
 /** The board's own .env, written when /peer/join redeems an invite. */
 const ENV_PATH = join(APP_ROOT, '.env');
+
+// First open of state.db in this process: the 'server' flavor's short busy
+// timeout (state/db.ts) matches a long-lived process that would rather fail
+// fast than block a request on a writer, unlike the 'cli' default every
+// store's getStateDb() falls back to. Skipped in fixture mode, which never
+// touches state.db and must not create one under the real HOME.
+if (!FIXTURE_DIR) getStateDb('server');
 
 // `let`: /peer/join reassigns the whole config after persisting switchboard.url.
 let config = FIXTURE_DIR
@@ -3092,33 +3100,6 @@ if (!FIXTURE_DIR) {
     );
     wakeAgentStatusFeed();
   }, GATE_SWEEP_MS);
-}
-
-// One-time migration: the board's own per-MR gate files (state/gates/) are
-// retired now that the board-row read is fully daemon-backed (GateCache).
-// Best-effort and silent on an already-clean install -- force skips the
-// not-found case rather than checking existence first.
-if (!FIXTURE_DIR) {
-  try {
-    rmSync(GATE_DIR, { recursive: true, force: true });
-  } catch (err) {
-    console.error(
-      `gate file-store cleanup skipped: ${err instanceof Error ? err.message : err}`
-    );
-  }
-}
-
-// One-time migration: state/board-port retired with the HTTP notify path, and
-// a stale copy misleads anyone reading the state dir into thinking the board
-// still answers on that port.
-if (!FIXTURE_DIR) {
-  try {
-    rmSync(join(APP_ROOT, 'state', 'board-port'), { force: true });
-  } catch (err) {
-    console.error(
-      `board-port cleanup skipped: ${err instanceof Error ? err.message : err}`
-    );
-  }
 }
 
 // One-shot migration: review/respond states that predate rt agent adoption
