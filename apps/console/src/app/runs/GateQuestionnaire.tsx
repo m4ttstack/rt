@@ -155,14 +155,14 @@ export function GateQuestionnaire({
                         <Checkbox
                           {...props}
                           color="accent"
-                          size="sm"
+                          size="xs"
                           className={classes.choiceInput}
                         />
                       ) : (
                         <Radio
                           {...props}
                           color="accent"
-                          size="sm"
+                          size="xs"
                           className={classes.choiceInput}
                         />
                       )
