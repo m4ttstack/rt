@@ -8,6 +8,18 @@ import type { Preview } from '@storybook/react-vite';
 import { theme } from '@mattstack/app-kit/design-system';
 
 const preview: Preview = {
+  globalTypes: {
+    scheme: {
+      description: 'Color scheme',
+      toolbar: {
+        title: 'Scheme',
+        icon: 'mirror',
+        items: ['light', 'dark'],
+        dynamicTitle: true,
+      },
+    },
+  },
+  initialGlobals: { scheme: 'light' },
   parameters: {
     controls: {
       matchers: {
@@ -25,8 +37,11 @@ const preview: Preview = {
   },
 
   decorators: [
-    Story => (
-      <MantineProvider theme={theme} defaultColorScheme="auto">
+    (Story, context) => (
+      <MantineProvider
+        theme={theme}
+        forceColorScheme={context.globals.scheme === 'dark' ? 'dark' : 'light'}
+      >
         <ModalsProvider>
           <Story />
           <Notifications />

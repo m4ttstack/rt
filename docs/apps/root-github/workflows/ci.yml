@@ -28,9 +28,9 @@ jobs:
       - run: bun run test -- --run
       - run: bun run tokens:test
       - run: bun run gate-kit:test
+      - run: bun run tui-kit:build
       - run: bun run build-storybook
       - run: bun run treeshake
-      - run: bun run tui-kit:build
       - run: bun run tui-kit:gates
       # `tui-kit:test` (all projects) stays the local/full command; CI splits
       # the browser project in two runs below because it mixes plain behavior

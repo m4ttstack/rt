@@ -46,8 +46,10 @@ function SummaryDetail({ detail }: { detail: GateSummaryDetailRow[] }) {
 
 /** The compact answered face: one chip line, detail on demand. The conflict
     path passes startOpen -- the winning answer someone else recorded is the
-    whole message there. */
-function AnsweredChip({
+    whole message there. Exported for its own Storybook coverage: GateCard's
+    conflict face only exists inside its own post-submit state, so a story
+    reproduces that composition directly against this piece. */
+export function AnsweredChip({
   row,
   startOpen = false,
 }: {
