@@ -548,3 +548,37 @@ test('register on a managed app links the checkout instead of rewriting its serv
   const altResult = await applyManifest(dir, 'dev', drivers);
   expect(altResult.status).toBe(400);
 });
+
+test('register on a managed app still syncs manifest env onto the supervised service', async () => {
+  scratch();
+  const { FakeServiceManager } = await import('../services/fake.ts');
+  const { FakeEdgeProxy } = await import('../edge/portless.ts');
+  const { reloadRegistry, getRecord, putRecord } =
+    await import('../registry/records.ts');
+  const { applyManifest } = await import('./register-manifest.ts');
+  reloadRegistry();
+  const drivers = {
+    manager: new FakeServiceManager(),
+    edge: new FakeEdgeProxy(),
+  };
+  const bundleDir = mkdtempSync(join(tmpdir(), 'chat-bundle-'));
+  const commandPath = join(bundleDir, 'chat');
+  writeFileSync(commandPath, '');
+  putRecord(managedRecord(commandPath));
+  const dir = appRepo({
+    name: 'chat',
+    port: 5173,
+    dev: { start: 'bun run serve' },
+    env: { FOO: 'bar' },
+  });
+
+  const r = await applyManifest(dir, undefined, drivers);
+  expect(r.status).toBe(200);
+  expect(getRecord('chat')!.env).toEqual({ FOO: 'bar' });
+  const spec = drivers.manager.installed.get('com.mattstack.deck.chat')!;
+  expect(spec.environment.FOO).toBe('bar');
+  // The manifest's port is ignored for a linked managed app (the resolver, not
+  // the manifest, owns port); PORT on the service must still match the record's
+  // actual (untouched) port, not the manifest's.
+  expect(spec.environment.PORT).toBe(String(getRecord('chat')!.port));
+});
