@@ -1720,11 +1720,13 @@
 }
 /* The queue line sits under the head: count, pips and the gate kind get
    their own row so the head keeps only the title, actions and close. */
+.tui-triage-modal [data-part='modal-head'] {
+  margin-bottom: 0.45rem;
+}
 .tui-triage-queue-row {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-top: -0.2rem;
 }
 .tui-triage-pos {
   font: 500 0.85rem/1 var(--font-mono);
