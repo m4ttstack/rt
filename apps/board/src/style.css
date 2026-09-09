@@ -1469,7 +1469,7 @@
   box-sizing: border-box;
 }
 .tui-gate-qdot[data-state='done'] {
-  background: color-mix(in srgb, var(--fg) 50%, transparent);
+  background: color-mix(in srgb, var(--fg) 60%, transparent);
 }
 .tui-gate-qdot[data-state='active'] {
   background: var(--accent);
@@ -1778,7 +1778,7 @@
   border-radius: 3px;
 }
 .tui-triage-pip[data-state='done'] {
-  background: color-mix(in srgb, var(--fg) 50%, transparent);
+  background: color-mix(in srgb, var(--fg) 60%, transparent);
 }
 .tui-triage-pip[data-state='active'] {
   background: var(--accent);
