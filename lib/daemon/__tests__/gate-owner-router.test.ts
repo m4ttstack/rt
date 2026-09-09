@@ -36,7 +36,10 @@ const stubCtx = {
   refreshStatusRef: { lastRefreshAt: 0 },
 } as unknown as HandlerContext;
 
-function buildHandlers() {
+// `herdStore` is injectable so owner-enforcement tests can seed a real herd
+// row (create/setShepherd) and have command-router.ts's actual
+// `herdShepherd` wiring resolve against it, not a throwaway empty store.
+function buildHandlers(herdStore: ReturnType<typeof createHerdStore> = createHerdStore({ dbPath: ":memory:", log: pino({ level: "silent" }) })) {
   const gatesStore = createGatesStore({ dbPath: ":memory:", log: pino({ level: "silent" }) });
   const handlers = buildRoutedHandlers({
     ctx: stubCtx,
@@ -51,7 +54,7 @@ function buildHandlers() {
     eventsBus: createEventsBus({ dbPath: ":memory:", log: pino({ level: "silent" }) }),
     gatesStore,
     gatePush: { onAnswered: async () => {}, onOpened: async () => {}, onClosed: async () => {}, retryDeadPanes: async () => ({ retried: 0, delivered: 0, gaveUp: 0 }) } satisfies GatePush,
-    herdStore: createHerdStore({ dbPath: ":memory:", log: pino({ level: "silent" }) }),
+    herdStore,
     herdLifecycle: { connected: () => false, watch: () => {}, sweepClaims: async () => {} },
     herdJobsRoot: "/tmp/rt-herd-router-jobs",
     bgService: {
@@ -68,7 +71,7 @@ function buildHandlers() {
     repos: { withReconcilerHeld: async (fn) => fn(), refreshWatchedRepos: () => {} },
     stateDb: openStateDb(":memory:"),
   });
-  return { handlers, gatesStore };
+  return { handlers, gatesStore, herdStore };
 }
 
 let runsRoot: string | null = null;
@@ -116,5 +119,70 @@ describe("gate:open owner derivation through the real command-router wiring (RT-
     expect((res as any).ok).toBe(true);
     const row = gatesStore.get((res as any).data.id);
     expect(row?.owner).toBe("human");
+  });
+});
+
+describe("gate:answer owner enforcement through the real command-router + herd store wiring (RT-117)", () => {
+  test("the owning shepherd's live session answers a herd-owned gate through the real herd store, no override needed", async () => {
+    runsRoot = mkdtempSync(join(tmpdir(), "rt-gate-owner-router-"));
+    process.env.RT_RUNS_ROOT = runsRoot;
+    const herdStore = createHerdStore({ dbPath: ":memory:", log: pino({ level: "silent" }) });
+    herdStore.create({
+      id: "hd-match", repo: "widget-forge", room: "room-match", workspace: "ws-match",
+      shepherdSession: "shep-session-match", shepherdHandle: "shep-match", herdrSocket: null, hidden: false,
+    });
+    const started = runStart(runsRoot, {
+      repo: "widget-forge", workType: "feature", pipeline: "default",
+      spawnedBy: "herd:hd-match", env: {},
+    });
+    if (!started.ok) throw new Error(started.error);
+
+    const { handlers } = buildHandlers(herdStore);
+    const opened = await handlers["gate:open"]!({
+      subject: "run:r-match", kind: "clarify",
+      questions: [{ id: "q", label: "Pick", multi: false, options: ["a", "b"] }],
+      origin: { runId: started.runId, presentation: "wait" },
+    });
+    if (!(opened as any).ok) throw new Error("open failed");
+    const gateId = (opened as any).data.id;
+
+    const res = await handlers["gate:answer"]!({ id: gateId, by: "shep", session: "shep-session-match", answers: { q: "a" } });
+    expect((res as any).ok).toBe(true);
+    expect((res as any).data.row.answer.overridden).toBeUndefined();
+  });
+
+  test("a herd's shepherd flip is resolved at answer time: the new session may answer, the old one is refused", async () => {
+    runsRoot = mkdtempSync(join(tmpdir(), "rt-gate-owner-router-"));
+    process.env.RT_RUNS_ROOT = runsRoot;
+    const herdStore = createHerdStore({ dbPath: ":memory:", log: pino({ level: "silent" }) });
+    herdStore.create({
+      id: "hd-flip", repo: "widget-forge", room: "room-flip", workspace: "ws-flip",
+      shepherdSession: "shep-session-old", shepherdHandle: "shep-old", herdrSocket: null, hidden: false,
+    });
+    const started = runStart(runsRoot, {
+      repo: "widget-forge", workType: "feature", pipeline: "default",
+      spawnedBy: "herd:hd-flip", env: {},
+    });
+    if (!started.ok) throw new Error(started.error);
+
+    const { handlers } = buildHandlers(herdStore);
+    const opened = await handlers["gate:open"]!({
+      subject: "run:r-flip", kind: "clarify",
+      questions: [{ id: "q", label: "Pick", multi: false, options: ["a", "b"] }],
+      origin: { runId: started.runId, presentation: "wait" },
+    });
+    if (!(opened as any).ok) throw new Error("open failed");
+    const gateId = (opened as any).data.id;
+
+    // The shepherd handed off mid-run: the owner guard reads the herd store
+    // fresh on every answer, not a session captured at gate-open time.
+    herdStore.setShepherd("hd-flip", { session: "shep-session-new", handle: "shep-new" });
+
+    const refusedOld = await handlers["gate:answer"]!({ id: gateId, by: "shep", session: "shep-session-old", answers: { q: "a" } });
+    expect(refusedOld).toEqual({ ok: false, error: "owned-by", owner: "herd:hd-flip" });
+
+    const okNew = await handlers["gate:answer"]!({ id: gateId, by: "shep", session: "shep-session-new", answers: { q: "a" } });
+    expect((okNew as any).ok).toBe(true);
+    expect((okNew as any).data.row.answer.overridden).toBeUndefined();
   });
 });
