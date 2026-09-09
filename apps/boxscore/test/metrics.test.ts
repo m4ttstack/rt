@@ -45,7 +45,7 @@ describe('stats', () => {
     expect(isBotUsername('project_123_bot_abc')).toBe(true);
     expect(isBotUsername('some_ci_bot')).toBe(true);
     expect(isBotUsername('ghost')).toBe(true);
-    expect(isBotUsername('m4ttheweric')).toBe(false);
+    expect(isBotUsername('alexrivera')).toBe(false);
     expect(isBotUsername('abbott')).toBe(false); // not a bot despite containing "bot"
     expect(isBotUsername(null)).toBe(false);
   });

@@ -6,7 +6,7 @@
  *   bun server/cli.ts --range 7d --trend          # include trend deltas
  *   bun server/cli.ts --range 30d --format json   # raw response JSON
  *   bun server/cli.ts --range 30d --format validate --refresh   # run the evaluator (exit 1 on error)
- *   bun server/cli.ts --detail owen-at-acme --range 30d       # per-stat evidence for one person
+ *   bun server/cli.ts --detail owen-at-acme --range 30d          # per-stat evidence for one person
  *   bun server/cli.ts --format bots                              # scan the whole store for suspected bots
  */
 import {

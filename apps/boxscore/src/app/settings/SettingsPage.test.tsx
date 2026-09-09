@@ -76,7 +76,7 @@ const ROSTER_DEF = def({
   description: 'The suite-wide team roster.',
   effective: {
     scope: 'team',
-    value: [{ username: 'm4ttheweric', name: 'Matthew Goodwin' }],
+    value: [{ username: 'alexrivera', name: 'Alex Rivera' }],
     file: 'team.jsonc',
   },
 });
@@ -174,7 +174,7 @@ describe('SettingsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add' }));
 
     expect(stage).toHaveBeenCalledWith('team', [
-      { username: 'm4ttheweric', name: 'Matthew Goodwin' },
+      { username: 'alexrivera', name: 'Alex Rivera' },
       { username: 'newperson' },
     ]);
   });

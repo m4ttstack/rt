@@ -34,7 +34,7 @@ const flush = () => new Promise(r => setTimeout(r, 0));
 const PROJECTS = ['acme/acme-web'];
 const SETTINGS: Record<string, unknown> = {
   'boxscore.projects': PROJECTS,
-  'mattstack.roster': [{ username: 'm4ttheweric', name: 'Matthew Goodwin' }],
+  'mattstack.roster': [{ username: 'alexrivera', name: 'Alex Rivera' }],
   'mattstack.integrations': { forge: { host: 'gl.example' } },
 };
 

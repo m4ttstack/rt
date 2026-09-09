@@ -650,7 +650,7 @@ import { __setSettingReader } from "../server/config/index.js";
 
 const SETTINGS: Record<string, unknown> = {
   "boxscore.projects": ["acme/acme-web"],
-  "mattstack.roster": [{ username: "m4ttheweric", name: "Matthew Goodwin" }],
+  "mattstack.roster": [{ username: "alexrivera", name: "Alex Rivera" }],
   "mattstack.integrations": { forge: { host: "gl.example" } },
 };
 beforeAll(() => __setSettingReader(<T,>(k: string) => SETTINGS[k] as T | undefined));
