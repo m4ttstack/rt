@@ -27,6 +27,8 @@ function DecisionQueueModal({
   onClose,
   onSkip,
   onFocusPane,
+  onAnswered,
+  onContinue,
 }: {
   gate: GateRow;
   mr: BoardMRWithReview;
@@ -39,8 +41,10 @@ function DecisionQueueModal({
   onClose: () => void;
   onSkip: () => void;
   onFocusPane: (mr: BoardMRWithReview, domain: GateDomain) => void;
+  onAnswered: () => void;
+  onContinue: () => void;
 }) {
-  const form = useGateForm(gate);
+  const form = useGateForm(gate, onAnswered);
   const answered = gate.status === 'answered';
   const actionable = gate.status === 'open' || gate.status === 'parked';
 
@@ -163,6 +167,13 @@ function DecisionQueueModal({
                   answer: { answers: form.lost.answers, by: form.lost.by },
                 }}
               />
+              <button
+                type="button"
+                className="tui-gate-submit"
+                onClick={onContinue}
+              >
+                continue
+              </button>
             </>
           ) : (
             <GateForm

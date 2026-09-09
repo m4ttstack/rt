@@ -79,7 +79,7 @@ export function AnsweredChip({
     origin-focus call. Shared by the row card and the triage modal so both
     hosts drive the identical form; the host that calls it also reads `lost`
     for its own chrome (the card's answered chip). */
-export function useGateForm(gate: GateRow) {
+export function useGateForm(gate: GateRow, onAnswered?: () => void) {
   const actionable = gate.status === 'open' || gate.status === 'parked';
   const {
     initial: draft,
@@ -184,6 +184,7 @@ export function useGateForm(gate: GateRow) {
     }
     setBusy(false);
     clearDraft();
+    onAnswered?.();
   };
 
   return {

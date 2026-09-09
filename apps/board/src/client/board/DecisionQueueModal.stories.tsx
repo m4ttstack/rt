@@ -140,6 +140,8 @@ export const FirstGateIdle: Story = {
       onClose={noop}
       onSkip={noop}
       onFocusPane={noop}
+      onAnswered={noop}
+      onContinue={noop}
     />
   ),
 };
@@ -168,6 +170,8 @@ export const MidGateSelected: Story = {
         onClose={noop}
         onSkip={noop}
         onFocusPane={noop}
+        onAnswered={noop}
+        onContinue={noop}
       />
     );
   },
@@ -208,6 +212,8 @@ export const LastGateSubmit: Story = {
         onClose={noop}
         onSkip={noop}
         onFocusPane={noop}
+        onAnswered={noop}
+        onContinue={noop}
       />
     );
   },
@@ -231,6 +237,8 @@ export const ErrorState: Story = {
       onClose={noop}
       onSkip={noop}
       onFocusPane={noop}
+      onAnswered={noop}
+      onContinue={noop}
     />
   ),
   play: async ({ canvasElement }) => {
@@ -262,6 +270,8 @@ export const ParkedGate: Story = {
       onClose={noop}
       onSkip={noop}
       onFocusPane={noop}
+      onAnswered={noop}
+      onContinue={noop}
     />
   ),
 };
@@ -313,6 +323,8 @@ export const WithContext: Story = {
         onClose={noop}
         onSkip={noop}
         onFocusPane={noop}
+        onAnswered={noop}
+        onContinue={noop}
       />
     );
   },
@@ -349,6 +361,8 @@ export const LongContextScroll: Story = {
       onClose={noop}
       onSkip={noop}
       onFocusPane={noop}
+      onAnswered={noop}
+      onContinue={noop}
     />
   ),
 };
@@ -391,6 +405,8 @@ export const WriteInAnswer: Story = {
         onClose={noop}
         onSkip={noop}
         onFocusPane={noop}
+        onAnswered={noop}
+        onContinue={noop}
       />
     );
   },
