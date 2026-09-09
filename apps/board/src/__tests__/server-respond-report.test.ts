@@ -3,6 +3,9 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { afterAll, expect, test } from 'bun:test';
 
+import { insertAgentState, mintHandle, setReportByHandle } from '../state/agent-states.ts';
+import { openStateDb } from '../state/db.ts';
+
 // Proves the real (non-fixture) /respond/report route -- readRespondReport's
 // wiring into server.ts -- answers 404 before a fill has saved anything and
 // 200 with the markdown once it has. Same minimal boot as
@@ -56,16 +59,10 @@ async function ready(): Promise<void> {
 
 const MR_URL = 'https://gitlab.example.com/g/p/-/merge_requests/1';
 
-// Mirrors respondFilePath's own slugging (src/respond-state.ts) rather than
-// importing it -- that module reads APP_ROOT from this test process's own
-// env at import time, which would resolve against the wrong $HOME.
-function respondReportFile(mrUrl: string): string {
-  const slug = mrUrl
-    .replace(/[^a-zA-Z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 200);
-  return join(fakeHome, 'state', 'responds', `${slug}.md`);
-}
+// The server process resolves its db via boardStateRoot(), which (absent
+// BOARD_STATE_DB) is $HOME/.mattstack/board/state.db -- HOME is set to
+// fakeHome above, so this is the same file the running server reads.
+const stateDbPath = join(fakeHome, '.mattstack', 'board', 'state.db');
 
 test('/respond/report 404s before a fill has saved anything, then serves the saved markdown', async () => {
   await ready();
@@ -74,9 +71,17 @@ test('/respond/report 404s before a fill has saved anything, then serves the sav
   );
   expect(before.status).toBe(404);
 
-  const reportPath = respondReportFile(MR_URL);
-  mkdirSync(join(reportPath, '..'), { recursive: true });
-  writeFileSync(reportPath, '# adjudication\n\nreply to thread 7080da2f');
+  const db = openStateDb(stateDbPath);
+  const handle = mintHandle('respond', MR_URL, fakeHome);
+  insertAgentState(
+    'respond',
+    MR_URL,
+    1,
+    { mrUrl: MR_URL, iid: 1, status: 'done', startedAt: 0, updatedAt: 0 },
+    handle,
+    db
+  );
+  setReportByHandle(handle, '# adjudication\n\nreply to thread 7080da2f', db);
 
   const after = await fetch(
     `http://127.0.0.1:${PORT}/respond/report?mr=${encodeURIComponent(MR_URL)}`

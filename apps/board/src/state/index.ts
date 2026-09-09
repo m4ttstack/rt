@@ -19,3 +19,16 @@ export {
   persistOrWarn,
   runCriticalWrite,
 } from './busy.ts';
+
+export {
+  type Lane,
+  mintHandle,
+  reportPathForHandle,
+  insertAgentState,
+  updateByHandle,
+  updateByMr,
+  readStates,
+  readReport,
+  setReportByHandle,
+  pruneStates,
+} from './agent-states.ts';

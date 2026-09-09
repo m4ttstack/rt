@@ -1,15 +1,15 @@
-import {
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from 'fs';
-import { join } from 'path';
+import { Database } from 'bun:sqlite';
 
-import { APP_ROOT } from './app-root.ts';
+import {
+  getStateDb,
+  insertAgentState,
+  mintHandle,
+  pruneStates,
+  readReport,
+  readStates,
+  reportPathForHandle,
+  updateByHandle,
+} from './state/index.ts';
 
 export type ReviewStatus = 'queued' | 'reviewing' | 'done' | 'error';
 export type ReviewOutcome = 'comment' | 'approve';
@@ -49,102 +49,75 @@ export interface ReviewState {
   startedAt: number;
   updatedAt: number;
   /** Whether the agent has written its full review markdown yet. Computed at
-      read time from the sibling report file; never persisted to the state JSON. */
+      read time from the db report column; never persisted to the state JSON. */
   reportReady?: boolean;
 }
 
-/** Per-review JSON files live here; the server owns naming, the agent just writes. */
-export const REVIEW_DIR = join(APP_ROOT, 'state', 'reviews');
-
-/** Deterministic file path for an MR url, so a repeat launch resolves the same file. */
-export function reviewFilePath(
-  mrUrl: string,
-  dir: string = REVIEW_DIR
-): string {
-  const slug = mrUrl
-    .replace(/[^a-zA-Z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 200);
-  return join(dir, `${slug}.json`);
+/** Deterministic handle for an MR's review row, so a repeat launch resolves
+    the same row. */
+export function reviewFilePath(mrUrl: string): string {
+  return mintHandle('review', mrUrl);
 }
 
-/** Sibling markdown file holding the agent's full written review, derived from
-    the state file path so the server and the review agent resolve the same
-    location without passing it around. */
-export function reviewReportPath(statePath: string): string {
-  return statePath.replace(/\.json$/, '') + '.md';
+/** Sibling markdown file holding the agent's full written review, derived
+    from the handle so the server and the review agent resolve the same
+    location without passing it around. Still the pane's scratch handoff. */
+export function reviewReportPath(handle: string): string {
+  return reportPathForHandle(handle);
 }
 
 /** The written review markdown for an MR, or null if the agent hasn't saved one. */
 export function readReviewReport(
   mrUrl: string,
-  dir: string = REVIEW_DIR
+  db: Database = getStateDb()
 ): string | null {
-  try {
-    return readFileSync(reviewReportPath(reviewFilePath(mrUrl, dir)), 'utf8');
-  } catch {
-    return null;
-  }
+  return readReport('review', mrUrl, db);
 }
 
-/** Read-merge-write a review state file. First write stamps startedAt; every write stamps updatedAt. */
+/** Read-merge-write a review row. First write stamps startedAt; every write
+    stamps updatedAt. Tries updateByHandle first; when no row exists it
+    requires `patch.mrUrl` and `patch.iid` to insert a fresh row, else there
+    is no identity to key the row by and the caller is doing something wrong. */
 export function writeReviewState(
-  path: string,
+  handle: string,
   patch: Partial<ReviewState> & { status: ReviewStatus },
-  now: number = Date.now()
+  now: number = Date.now(),
+  db: Database = getStateDb()
 ): ReviewState {
-  let prev: Partial<ReviewState> = {};
-  try {
-    prev = JSON.parse(readFileSync(path, 'utf8')) as ReviewState;
-  } catch {
-    // no prior file, or unreadable -- start fresh
+  const updated = updateByHandle(handle, patch, now, db);
+  if (updated) return updated as ReviewState;
+  if (patch.mrUrl === undefined || patch.iid === undefined) {
+    throw new Error(
+      `review state write with no prior row and no identity: ${handle}`
+    );
   }
   const next: ReviewState = {
-    mrUrl: patch.mrUrl ?? prev.mrUrl ?? '',
-    iid: patch.iid ?? prev.iid ?? 0,
+    mrUrl: patch.mrUrl,
+    iid: patch.iid,
     status: patch.status,
-    message: patch.message ?? prev.message,
-    tabId: patch.tabId ?? prev.tabId,
-    workspaceId: patch.workspaceId ?? prev.workspaceId,
-    outcome: patch.outcome ?? prev.outcome,
-    sessionId: patch.sessionId ?? prev.sessionId,
-    agentId: patch.agentId ?? prev.agentId,
-    paneId: patch.paneId ?? prev.paneId,
-    gateId: patch.gateId ?? prev.gateId,
-    gateKind: patch.gateKind ?? prev.gateKind,
-    resumedGateId: patch.resumedGateId ?? prev.resumedGateId,
-    startedAt: prev.startedAt ?? now,
+    message: patch.message,
+    tabId: patch.tabId,
+    workspaceId: patch.workspaceId,
+    outcome: patch.outcome,
+    sessionId: patch.sessionId,
+    agentId: patch.agentId,
+    paneId: patch.paneId,
+    gateId: patch.gateId,
+    gateKind: patch.gateKind,
+    resumedGateId: patch.resumedGateId,
+    startedAt: now,
     updatedAt: now,
   };
-  mkdirSync(join(path, '..'), { recursive: true });
-  const tmp = path + '.tmp';
-  writeFileSync(tmp, JSON.stringify(next, null, 2) + '\n');
-  renameSync(tmp, path);
+  insertAgentState('review', patch.mrUrl, patch.iid, next, handle, db);
   return next;
 }
 
 /** Read all review states, keyed by mrUrl. Pruning is by board membership (see
     pruneReviewStates), not age — a review persists as long as its MR is shown. */
 export function readReviewStates(
-  dir: string = REVIEW_DIR
+  db: Database = getStateDb()
 ): Map<string, ReviewState> {
-  const out = new Map<string, ReviewState>();
-  if (!existsSync(dir)) return out;
-  for (const name of readdirSync(dir)) {
-    if (!name.endsWith('.json')) continue;
-    const path = join(dir, name);
-    let state: ReviewState;
-    try {
-      state = JSON.parse(readFileSync(path, 'utf8')) as ReviewState;
-    } catch {
-      continue;
-    }
-    if (state.mrUrl) {
-      state.reportReady = existsSync(reviewReportPath(path));
-      out.set(state.mrUrl, state);
-    }
-  }
-  return out;
+  return readStates('review', db) as Map<string, ReviewState>;
 }
 
 /** Delete review states (and their sibling `.md` reports) whose MR is no longer
@@ -154,23 +127,9 @@ export function readReviewStates(
     live state. */
 export function pruneReviewStates(
   keepUrls: ReadonlySet<string>,
-  dir: string = REVIEW_DIR
+  db: Database = getStateDb()
 ): void {
-  if (!existsSync(dir)) return;
-  for (const name of readdirSync(dir)) {
-    if (!name.endsWith('.json')) continue;
-    const path = join(dir, name);
-    let mrUrl: string | undefined;
-    try {
-      mrUrl = (JSON.parse(readFileSync(path, 'utf8')) as ReviewState).mrUrl;
-    } catch {
-      continue;
-    }
-    if (mrUrl && !keepUrls.has(mrUrl)) {
-      rmSync(path, { force: true });
-      rmSync(reviewReportPath(path), { force: true });
-    }
-  }
+  pruneStates('review', keepUrls, db);
 }
 
 /** Attach each MR's review state (matched by webUrl) as a `review` field. Non-mutating. */

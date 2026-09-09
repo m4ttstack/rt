@@ -2,7 +2,9 @@ import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import type { Database } from 'bun:sqlite';
 
+import { openStateDb } from '../state/db.ts';
 import {
   launchReReview,
   type ReReviewCtx,
@@ -31,6 +33,7 @@ const CTX: ReReviewCtx = {
 const noSkillPath = async () => null;
 
 let dir: string;
+let db: Database;
 let resumeCalls: Array<Record<string, unknown>>;
 let legacyResumeCalls: Array<Record<string, unknown>>;
 let reviewCalls: Array<Record<string, unknown>>;
@@ -65,15 +68,16 @@ function makeIo(over: Partial<ReReviewIo> = {}): ReReviewIo {
         focusedExisting: false,
       };
     },
-    reviewFilePath: mrUrl => reviewFilePath(mrUrl, dir),
-    writeReviewState: (path, patch, now) => writeReviewState(path, patch, now),
-    readReviewStates: () => readReviewStates(dir),
+    reviewFilePath: mrUrl => reviewFilePath(mrUrl),
+    writeReviewState: (path, patch, now) => writeReviewState(path, patch, now, db),
+    readReviewStates: () => readReviewStates(db),
     ...over,
   };
 }
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'rl-'));
+  db = openStateDb(join(dir, 'state.db'));
   resumeCalls = [];
   legacyResumeCalls = [];
   reviewCalls = [];
@@ -84,13 +88,13 @@ afterEach(() => {
 
 describe('launchReReview: agentId on file (arm i -- resumeAgentPane)', () => {
   beforeEach(() => {
-    writeReviewState(reviewFilePath(URL_A, dir), {
+    writeReviewState(reviewFilePath(URL_A), {
       mrUrl: URL_A,
       iid: IID,
       status: 'done',
       sessionId: 'sess-old',
       agentId: 'agent-old',
-    });
+    }, Date.now(), db);
   });
 
   test('resumes through resumeAgentPane, never launchLegacyResume, with the dispatchPrompt re-review prompt', async () => {
@@ -116,7 +120,7 @@ describe('launchReReview: agentId on file (arm i -- resumeAgentPane)', () => {
   test('writes reviewing state, then stamps the tab/agent it landed in', async () => {
     await launchReReview(URL_A, IID, CTX, makeIo(), noSkillPath);
 
-    const state = readReviewStates(dir).get(URL_A);
+    const state = readReviewStates(db).get(URL_A);
     expect(state?.status).toBe('reviewing');
     expect(state?.tabId).toBe('w1:t7');
     expect(state?.workspaceId).toBe('w1');
@@ -155,7 +159,7 @@ describe('launchReReview: agentId on file (arm i -- resumeAgentPane)', () => {
     const res = await launchReReview(URL_A, IID, CTX, io, noSkillPath);
 
     expect(res).toEqual({ kind: 'resumed' });
-    const state = readReviewStates(dir).get(URL_A);
+    const state = readReviewStates(db).get(URL_A);
     // Still the pre-existing tab/agent identity, not blanked by empty ids.
     expect(state?.agentId).toBe('agent-old');
     expect(state?.status).toBe('reviewing');
@@ -172,7 +176,7 @@ describe('launchReReview: agentId on file (arm i -- resumeAgentPane)', () => {
 
     expect(res.kind).toBe('error');
     expect(res).toMatchObject({ message: 'rt agent: unreachable' });
-    const state = readReviewStates(dir).get(URL_A);
+    const state = readReviewStates(db).get(URL_A);
     expect(state?.status).toBe('error');
     expect(state?.message).toBe('failed to launch re-review pane');
   });
@@ -180,12 +184,12 @@ describe('launchReReview: agentId on file (arm i -- resumeAgentPane)', () => {
 
 describe('launchReReview: sessionId only on file, no agentId (arm ii -- launchLegacyResume)', () => {
   beforeEach(() => {
-    writeReviewState(reviewFilePath(URL_A, dir), {
+    writeReviewState(reviewFilePath(URL_A), {
       mrUrl: URL_A,
       iid: IID,
       status: 'done',
       sessionId: 'sess-abc',
-    });
+    }, Date.now(), db);
   });
 
   test('resumes through launchLegacyResume, never resumeAgentPane, with the SAME dispatchPrompt re-review prompt', async () => {
@@ -201,7 +205,7 @@ describe('launchReReview: sessionId only on file, no agentId (arm ii -- launchLe
       cwd: CTX.cwd,
       repo: CTX.repo,
       workspaceLabel: CTX.workspaceLabel,
-      statePath: reviewFilePath(URL_A, dir),
+      statePath: reviewFilePath(URL_A),
       sessionId: 'sess-abc',
       workspaceKind: 'review',
       tabPrefix: '⟲',
@@ -218,7 +222,7 @@ describe('launchReReview: sessionId only on file, no agentId (arm ii -- launchLe
   test('writes reviewing state, then stamps the tab it landed in', async () => {
     await launchReReview(URL_A, IID, CTX, makeIo(), noSkillPath);
 
-    const state = readReviewStates(dir).get(URL_A);
+    const state = readReviewStates(db).get(URL_A);
     expect(state?.status).toBe('reviewing');
     expect(state?.tabId).toBe('w1:t7');
     expect(state?.workspaceId).toBe('w1');
@@ -275,7 +279,7 @@ describe('launchReReview: sessionId only on file, no agentId (arm ii -- launchLe
 
     expect(res.kind).toBe('error');
     expect(res).toMatchObject({ message: 'herdr: no workspace' });
-    const state = readReviewStates(dir).get(URL_A);
+    const state = readReviewStates(db).get(URL_A);
     expect(state?.status).toBe('error');
     expect(state?.message).toBe('failed to launch re-review pane');
   });
@@ -295,7 +299,7 @@ describe('launchReReview: nothing on file (arm iii -- fresh launchReview)', () =
       cwd: CTX.cwd,
       repo: CTX.repo,
       workspaceLabel: CTX.workspaceLabel,
-      statePath: reviewFilePath(URL_A, dir),
+      statePath: reviewFilePath(URL_A),
       skill: CTX.skill,
       reReview: true,
       author: CTX.author,
@@ -331,7 +335,7 @@ describe('launchReReview: nothing on file (arm iii -- fresh launchReview)', () =
   test('writes a queued state carrying the MR identity, then stamps the tab and agent', async () => {
     await launchReReview(URL_A, IID, CTX, makeIo(), noSkillPath);
 
-    const state = readReviewStates(dir).get(URL_A);
+    const state = readReviewStates(db).get(URL_A);
     expect(state?.status).toBe('queued');
     expect(state?.mrUrl).toBe(URL_A);
     expect(state?.iid).toBe(IID);
@@ -342,11 +346,11 @@ describe('launchReReview: nothing on file (arm iii -- fresh launchReview)', () =
   });
 
   test('a state file without a sessionId or agentId still takes the fresh path', async () => {
-    writeReviewState(reviewFilePath(URL_A, dir), {
+    writeReviewState(reviewFilePath(URL_A), {
       mrUrl: URL_A,
       iid: IID,
       status: 'done',
-    });
+    }, Date.now(), db);
 
     const res = await launchReReview(URL_A, IID, CTX, makeIo(), noSkillPath);
 
@@ -371,7 +375,7 @@ describe('launchReReview: nothing on file (arm iii -- fresh launchReview)', () =
     const res = await launchReReview(URL_A, IID, CTX, io, noSkillPath);
 
     expect(res).toEqual({ kind: 'launched' });
-    const state = readReviewStates(dir).get(URL_A);
+    const state = readReviewStates(db).get(URL_A);
     expect(state?.status).toBe('queued');
     expect(state?.tabId).toBeUndefined();
   });
@@ -389,7 +393,7 @@ describe('launchReReview: nothing on file (arm iii -- fresh launchReview)', () =
       kind: 'error',
       message: 'herdr: could not create review tab',
     });
-    const state = readReviewStates(dir).get(URL_A);
+    const state = readReviewStates(db).get(URL_A);
     expect(state?.status).toBe('error');
     expect(state?.message).toBe('failed to launch re-review pane');
   });

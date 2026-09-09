@@ -1,15 +1,15 @@
-import {
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from 'fs';
-import { join } from 'path';
+import { Database } from 'bun:sqlite';
 
-import { APP_ROOT } from './app-root.ts';
+import {
+  getStateDb,
+  insertAgentState,
+  mintHandle,
+  pruneStates,
+  readReport,
+  readStates,
+  reportPathForHandle,
+  updateByHandle,
+} from './state/index.ts';
 import type { RespondStatus } from './respond-outcome.ts';
 
 /**
@@ -52,126 +52,81 @@ export interface RespondState {
   startedAt: number;
   updatedAt: number;
   /** Whether the fill has written its adjudication (verdict table + drafted
-      replies) yet. Computed at read time from the sibling report file; never
+      replies) yet. Computed at read time from the db report column; never
       persisted to the state JSON. See ReviewState's own reportReady, which
       this mirrors byte-for-byte. */
   reportReady?: boolean;
 }
 
-export const RESPOND_DIR = join(APP_ROOT, 'state', 'responds');
-
-export function respondFilePath(
-  mrUrl: string,
-  dir: string = RESPOND_DIR
-): string {
-  const slug = mrUrl
-    .replace(/[^a-zA-Z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 200);
-  return join(dir, `${slug}.json`);
+export function respondFilePath(mrUrl: string): string {
+  return mintHandle('respond', mrUrl);
 }
 
 /** The written adjudication markdown for an MR, or null if the fill hasn't
     saved one yet. See readReviewReport, which this mirrors byte-for-byte. */
 export function readRespondReport(
   mrUrl: string,
-  dir: string = RESPOND_DIR
+  db: Database = getStateDb()
 ): string | null {
-  try {
-    return readFileSync(respondReportPath(respondFilePath(mrUrl, dir)), 'utf8');
-  } catch {
-    return null;
-  }
+  return readReport('respond', mrUrl, db);
 }
 
 /** Sibling markdown file holding the fill's adjudication table and
-    drafted/finalized replies, derived from the state file path so the
-    server and the respond wrapper resolve the same location without
-    passing it around. See reviewReportPath (review-state.ts), which this
-    mirrors byte-for-byte. */
-export function respondReportPath(statePath: string): string {
-  return statePath.replace(/\.json$/, '') + '.md';
+    drafted/finalized replies, derived from the handle so the server and the
+    respond wrapper resolve the same location without passing it around.
+    See reviewReportPath (review-state.ts), which this mirrors byte-for-byte. */
+export function respondReportPath(handle: string): string {
+  return reportPathForHandle(handle);
 }
 
 export function writeRespondState(
-  path: string,
+  handle: string,
   patch: Partial<RespondState> & { status: RespondStatus },
-  now: number = Date.now()
+  now: number = Date.now(),
+  db: Database = getStateDb()
 ): RespondState {
-  let prev: Partial<RespondState> = {};
-  try {
-    prev = JSON.parse(readFileSync(path, 'utf8')) as RespondState;
-  } catch {
-    // no prior file, or unreadable -- start fresh
+  const updated = updateByHandle(handle, patch, now, db);
+  if (updated) return updated as RespondState;
+  if (patch.mrUrl === undefined || patch.iid === undefined) {
+    throw new Error(
+      `respond state write with no prior row and no identity: ${handle}`
+    );
   }
   const next: RespondState = {
-    mrUrl: patch.mrUrl ?? prev.mrUrl ?? '',
-    iid: patch.iid ?? prev.iid ?? 0,
+    mrUrl: patch.mrUrl,
+    iid: patch.iid,
     status: patch.status,
-    message: patch.message ?? prev.message,
-    posted: patch.posted ?? prev.posted,
-    threads: patch.threads ?? prev.threads,
-    tabId: patch.tabId ?? prev.tabId,
-    workspaceId: patch.workspaceId ?? prev.workspaceId,
-    sessionId: patch.sessionId ?? prev.sessionId,
-    agentId: patch.agentId ?? prev.agentId,
-    paneId: patch.paneId ?? prev.paneId,
-    gateId: patch.gateId ?? prev.gateId,
-    gateKind: patch.gateKind ?? prev.gateKind,
-    resumedGateId: patch.resumedGateId ?? prev.resumedGateId,
-    startedAt: prev.startedAt ?? now,
+    message: patch.message,
+    posted: patch.posted,
+    threads: patch.threads,
+    tabId: patch.tabId,
+    workspaceId: patch.workspaceId,
+    sessionId: patch.sessionId,
+    agentId: patch.agentId,
+    paneId: patch.paneId,
+    gateId: patch.gateId,
+    gateKind: patch.gateKind,
+    resumedGateId: patch.resumedGateId,
+    startedAt: now,
     updatedAt: now,
   };
-  mkdirSync(join(path, '..'), { recursive: true });
-  const tmp = path + '.tmp';
-  writeFileSync(tmp, JSON.stringify(next, null, 2) + '\n');
-  renameSync(tmp, path);
+  insertAgentState('respond', patch.mrUrl, patch.iid, next, handle, db);
   return next;
 }
 
 export function readRespondStates(
-  dir: string = RESPOND_DIR
+  db: Database = getStateDb()
 ): Map<string, RespondState> {
-  const out = new Map<string, RespondState>();
-  if (!existsSync(dir)) return out;
-  for (const name of readdirSync(dir)) {
-    if (!name.endsWith('.json')) continue;
-    const path = join(dir, name);
-    let state: RespondState;
-    try {
-      state = JSON.parse(readFileSync(path, 'utf8')) as RespondState;
-    } catch {
-      continue;
-    }
-    if (state.mrUrl) {
-      state.reportReady = existsSync(respondReportPath(path));
-      out.set(state.mrUrl, state);
-    }
-  }
-  return out;
+  return readStates('respond', db) as Map<string, RespondState>;
 }
 
 /** Drop respond states whose MR has left the board (kept while the MR is shown).
     See pruneReviewStates for the rationale and the healthy-snapshot gate. */
 export function pruneRespondStates(
   keepUrls: ReadonlySet<string>,
-  dir: string = RESPOND_DIR
+  db: Database = getStateDb()
 ): void {
-  if (!existsSync(dir)) return;
-  for (const name of readdirSync(dir)) {
-    if (!name.endsWith('.json')) continue;
-    const path = join(dir, name);
-    let mrUrl: string | undefined;
-    try {
-      mrUrl = (JSON.parse(readFileSync(path, 'utf8')) as RespondState).mrUrl;
-    } catch {
-      continue;
-    }
-    if (mrUrl && !keepUrls.has(mrUrl)) {
-      rmSync(path, { force: true });
-      rmSync(respondReportPath(path), { force: true });
-    }
-  }
+  pruneStates('respond', keepUrls, db);
 }
 
 /** Attach each MR's respond state (matched by webUrl) as a `respond` field. */
