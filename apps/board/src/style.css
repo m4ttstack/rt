@@ -1716,7 +1716,12 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 0.6rem;
+}
+.tui-triage-form-col .tui-gate-form {
+  width: 100%;
+  max-width: 30rem;
 }
 .tui-triage-strip {
   display: flex;
