@@ -55,8 +55,11 @@ function GateSummaryDetail({ detail }: { detail: GateSummaryDetailRow[] }) {
 
 /** The compact answered face: one chip line, detail on demand. `startOpen`
     is the conflict path -- the winning answer someone else recorded is the
-    whole message there, so it must not hide behind a toggle. */
-function AnsweredSummary({
+    whole message there, so it must not hide behind a toggle. Exported for
+    its own Storybook coverage: GateCard's own stories would need a
+    QueryClientProvider and a stubbed daemon client for no visual benefit,
+    since this face never touches either. */
+export function AnsweredSummary({
   row,
   startOpen = false,
 }: {
