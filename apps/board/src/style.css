@@ -1365,7 +1365,8 @@
   --gate-key-bg: light-dark(#f7f8fa, #1c2136);
   /* One scale for the whole surface: four text sizes, three rhythm steps,
      one button geometry. Every rule below consumes these. */
-  --gate-font-title: 0.95rem;
+  --gate-font-display: 1rem;
+  --gate-font-title: 0.9rem;
   --gate-font-body: 0.85rem;
   --gate-font-meta: 0.78rem;
   --gate-font-small: 0.7rem;
@@ -1709,6 +1710,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  font-size: var(--gate-font-display);
+  line-height: 1.4;
 }
 .tui-triage-head-actions {
   display: inline-flex;
@@ -1801,7 +1804,10 @@
   font-size: var(--gate-font-meta);
 }
 .tui-triage-context-label {
-  font: 600 var(--gate-font-title) / 1.4 var(--font-sans);
+  font-family: var(--font-sans);
+  font-size: var(--gate-font-title);
+  font-weight: 600;
+  line-height: 1.4;
   color: var(--accent-text);
   margin-bottom: 0.55rem;
 }
