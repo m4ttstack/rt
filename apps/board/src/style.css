@@ -1421,11 +1421,6 @@
   gap: 0.8rem;
   min-width: 0;
   max-width: 36rem;
-  padding: 0.9rem;
-  background: color-mix(in srgb, var(--bg) 35%, var(--panel));
-  border: 1px solid var(--border-soft);
-  border-radius: 12px;
-  box-sizing: border-box;
 }
 .tui-gate-progress {
   flex-shrink: 0;
