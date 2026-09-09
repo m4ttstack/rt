@@ -181,7 +181,7 @@ function DecisionQueueModal({
           <div className="tui-triage-body">
             {gate.context && (
               <div className="tui-triage-context">
-                <div className="tui-triage-context-label">Context</div>
+                <div className="tui-triage-context-label">Decision context</div>
                 <div className="tui-gate-context-body">
                   <Markdown unstyled linkTargetBlank>
                     {gate.context}
