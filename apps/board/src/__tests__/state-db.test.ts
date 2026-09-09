@@ -54,20 +54,26 @@ describe('state db', () => {
     ).toBe(SCHEMA_VERSION);
   });
 
-  test('unopenable db is quarantined and recreated', () => {
+  test('unopenable db is quarantined and recreated, sidecars renamed alongside', () => {
     const path = tempDbPath();
     writeFileSync(path, 'this is not a sqlite database, definitely');
+    writeFileSync(path + '-wal', 'stale wal pages');
+    writeFileSync(path + '-shm', 'stale shm');
     const db = openStateDb(path);
     expect(
       (db.query('PRAGMA user_version').get() as { user_version: number })
         .user_version
     ).toBe(SCHEMA_VERSION);
+    const quarantine = `${path}.corrupt-${new Date().toISOString().slice(0, 10)}`;
+    expect(existsSync(quarantine)).toBe(true);
+    expect(existsSync(quarantine + '-wal')).toBe(true);
+    expect(existsSync(quarantine + '-shm')).toBe(true);
   });
 
   test('a future schema version is rejected, not quarantined', () => {
     const path = tempDbPath();
     const db = openStateDb(path);
-    db.exec(`PRAGMA user_version = ${SCHEMA_VERSION + 1}`);
+    db.run(`PRAGMA user_version = ${SCHEMA_VERSION + 1}`);
     db.close();
 
     expect(() => openStateDb(path)).toThrow(SchemaTooNewError);
