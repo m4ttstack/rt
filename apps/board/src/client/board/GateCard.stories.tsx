@@ -287,6 +287,31 @@ export const AnsweredChipExpanded: Story = {
   },
 };
 
+/** The expanded detail renders a note when the wire answer carries one
+    ({value, note}); expanded via the same click the reviewer would make. */
+export const AnsweredChipWithNote: Story = {
+  render: () => (
+    <BoardGateCardHarness
+      gate={{
+        ...answeredGate,
+        gateId: 'story-answered-note',
+        answers: {
+          verdict: {
+            value: 'changes',
+            note: 'Needs another pass on the auth flow before merge.',
+          },
+        },
+      }}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await fireEvent.click(
+      canvas.getByRole('button', { name: /answered gate summary/i })
+    );
+  },
+};
+
 // --- ConflictAnsweredElsewhere ----------------------------------------------
 
 /** GateCard's `lost` branch only exists inside its own post-submit state
