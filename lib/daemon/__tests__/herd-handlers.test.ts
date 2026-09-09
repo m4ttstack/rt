@@ -132,9 +132,20 @@ describe("herd:start", () => {
     expect(chatCalls[0]!.payload).toMatchObject({ sessionId: "sess-shep", baseHandle: "shepherd", noRoom: true });
     expect(chatCalls[1]!.payload).toMatchObject({ room: res.data.room, handle: "shepherd" });
     const subs = gateStore.subscriptions({ live: true });
-    expect(subs).toHaveLength(1);
-    expect(subs[0]).toMatchObject({ subjectPrefix: `herd:${res.data.herd}/`, session: "sess-shep" });
-    expect(res.data.subscription).toBe(subs[0]!.id);
+    expect(subs).toHaveLength(2);
+    const prefixSub = subs.find((s) => s.scope === "prefix")!;
+    const ownerSub = subs.find((s) => s.scope === "owner")!;
+    expect(prefixSub).toMatchObject({ subjectPrefix: `herd:${res.data.herd}/`, session: "sess-shep" });
+    expect(ownerSub).toMatchObject({ subjectPrefix: "", ownerRef: `herd:${res.data.herd}`, session: "sess-shep" });
+    expect(res.data.subscription).toBe(prefixSub.id);
+  });
+
+  test("herd start subscribes the shepherd to its own gates by owner", async () => {
+    const { h, gateStore } = harness();
+    const res = await h["herd:start"](START);
+    if (!res.ok) throw new Error(res.error);
+    const subs = gateStore.subscriptions({ live: true });
+    expect(subs.some((s) => s.scope === "owner" && s.ownerRef?.startsWith("herd:"))).toBe(true);
   });
 
   test("rejects an invalid name and a missing session", async () => {
@@ -209,10 +220,24 @@ describe("herd:resume / status / close", () => {
     const res = await h["herd:resume"]({ herd, session: "sess-shep-2" });
     if (!res.ok) throw new Error(res.error);
     expect(store.get(herd)!.shepherdSession).toBe("sess-shep-2");
-    expect(gateStore.subscriptions({ live: true, session: "sess-shep-2" })).toHaveLength(1);
+    const subs = gateStore.subscriptions({ live: true, session: "sess-shep-2" });
+    expect(subs).toHaveLength(2);
+    expect(subs.map((s) => s.scope).sort()).toEqual(["owner", "prefix"]);
     expect(res.data.gates).toHaveLength(1);
     expect(res.data.unread).toBe(3);
     expect(res.data.status.jobs[0]).toMatchObject({ name: "job-a", openGate: res.data.gates[0]!.id, paneStatus: "working" });
+  });
+
+  test("resume drops the prior session's subscriptions for this herd before re-subscribing", async () => {
+    const { h, gateStore, herd } = await started();
+    const before = gateStore.subscriptions({ live: true });
+    expect(before).toHaveLength(2);
+    const res = await h["herd:resume"]({ herd, session: "sess-shep-2" });
+    if (!res.ok) throw new Error(res.error);
+    const after = gateStore.subscriptions({ live: true });
+    expect(after).toHaveLength(2);
+    expect(after.every((s) => s.session === "sess-shep-2")).toBe(true);
+    for (const b of before) expect(after.some((a) => a.id === b.id)).toBe(false);
   });
 
   test("resume on an unknown herd fails", async () => {

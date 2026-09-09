@@ -28,7 +28,7 @@ const herdOwner = (herdId: string): string => `herd:${herdId}`;
 export interface HerdDeps {
   store: HerdStore;
   gateStore: Pick<GatesStore, "get">;
-  gate: Pick<ReturnType<typeof createGateHandlers>, "gate:open" | "gate:list" | "gate:close" | "gate:subscribe" | "gate:subscriptions">;
+  gate: Pick<ReturnType<typeof createGateHandlers>, "gate:open" | "gate:list" | "gate:close" | "gate:subscribe" | "gate:subscriptions" | "gate:unsubscribe">;
   chat: Pick<ReturnType<typeof createChatHandlers>, "chat:sign-in" | "chat:join" | "chat:post" | "chat:archive" | "chat:rooms">;
   agent: Pick<ReturnType<typeof createAgentHandlers>, "agent:start">;
   worktree: { "worktree:provision": (payload: any) => Promise<any>; "worktree:dispose": (payload: any) => Promise<any> };
@@ -81,8 +81,27 @@ export function jobDir(jobsRoot: string, herdId: string, job: string): string { 
 export function createHerdHandlers(deps: HerdDeps) {
   const { store, log } = deps;
 
+  /** Registers both the prefix row (herd:<id>/*, for the shepherd's own job
+      gates) and the owner row (routes any gate whose `owner` is this herd,
+      regardless of subject -- e.g. a run gate spawned by a job). A resume
+      under a new session first drops any live row a PRIOR session held for
+      this same herd, so a crashed/relaunched shepherd re-points fan-out
+      instead of leaving a stale session subscribed alongside the new one. */
   async function subscribeShepherd(herdId: string, session: string): Promise<CommandResult<"gate:subscribe">> {
-    return deps.gate["gate:subscribe"]({ subjectPrefix: herdPrefix(herdId), session });
+    const ownerRef = herdOwner(herdId);
+    const prefix = herdPrefix(herdId);
+    const live = await deps.gate["gate:subscriptions"]({ live: true });
+    if (live.ok) {
+      for (const sub of live.data.subscriptions) {
+        const sameHerd = sub.scope === "owner" ? sub.ownerRef === ownerRef : sub.subjectPrefix === prefix;
+        if (sameHerd && sub.session !== session) await deps.gate["gate:unsubscribe"]({ id: sub.id });
+      }
+    }
+    const prefixSub = await deps.gate["gate:subscribe"]({ subjectPrefix: prefix, session });
+    if (!prefixSub.ok) return prefixSub;
+    const ownerSub = await deps.gate["gate:subscribe"]({ scope: "owner", ownerRef, subjectPrefix: "", session });
+    if (!ownerSub.ok) return ownerSub;
+    return prefixSub;
   }
 
   async function paneStatuses(socket: string | null): Promise<Map<string, string>> {

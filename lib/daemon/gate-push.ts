@@ -157,7 +157,9 @@ export function createGatePush(opts: {
     // fan-out that doesn't match it, so a chronically-failing subscriber on
     // an untouched prefix could never reach deadAfterFailures.
     const allLive = store.subscriptions({ live: true });
-    const subs = allLive.filter((sub) => row.subject.startsWith(sub.subjectPrefix));
+    const subs = allLive.filter((sub) =>
+      sub.scope === "owner" ? row.owner !== null && row.owner === sub.ownerRef : row.subject.startsWith(sub.subjectPrefix),
+    );
     // Batch registry resolution: one scan for the whole fan-out (resolveAll,
     // when wired) rather than resolveSession re-scanning per subscriber.
     const registry = resolveAll ? resolveAll() : null;
