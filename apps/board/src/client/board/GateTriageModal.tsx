@@ -1,5 +1,5 @@
 import type { GateDomain } from '@mattstack/gate-kit';
-import { Chip, Modal } from '@mattstack/tui-kit';
+import { Chip, Markdown, Modal } from '@mattstack/tui-kit';
 import type { GateRow } from '../../gates/store.ts';
 import type { BoardMRWithReview } from '../types.ts';
 import { AnsweredChip, GateForm, useGateForm } from './GateCard.tsx';
@@ -45,6 +45,7 @@ function GateTriageModal({
   return (
     <Modal
       className="tui-triage-modal"
+      data-context={gate.context ? '' : undefined}
       title={
         <>
           triage
@@ -100,45 +101,65 @@ function GateTriageModal({
           skip gate
         </button>
       </div>
-      {answered || !actionable ? (
-        <AnsweredChip
-          row={{
-            subject: gate.subject,
-            kind: gate.kind,
-            status: gate.status,
-            questions: gate.questions,
-            answer: gate.answers
-              ? {
-                  answers: gate.answers,
-                  by: gate.answeredBy,
-                  answeredAt: gate.answeredAt,
-                }
-              : null,
-          }}
-        />
-      ) : form.lost ? (
-        <>
-          <div className="tui-gate-error">answered elsewhere</div>
-          <AnsweredChip
-            startOpen
-            row={{
-              subject: gate.subject,
-              kind: gate.kind,
-              status: 'answered',
-              questions: gate.questions,
-              answer: { answers: form.lost.answers, by: form.lost.by },
-            }}
-          />
-        </>
-      ) : (
-        <GateForm
-          gate={gate}
-          mr={mr}
-          form={form}
-          onFocusPane={onFocusPane}
-          showFocusAction={false}
-        />
-      )}
+      {(() => {
+        const face =
+          answered || !actionable ? (
+            <AnsweredChip
+              row={{
+                subject: gate.subject,
+                kind: gate.kind,
+                status: gate.status,
+                questions: gate.questions,
+                answer: gate.answers
+                  ? {
+                      answers: gate.answers,
+                      by: gate.answeredBy,
+                      answeredAt: gate.answeredAt,
+                    }
+                  : null,
+              }}
+            />
+          ) : form.lost ? (
+            <>
+              <div className="tui-gate-error">answered elsewhere</div>
+              <AnsweredChip
+                startOpen
+                row={{
+                  subject: gate.subject,
+                  kind: gate.kind,
+                  status: 'answered',
+                  questions: gate.questions,
+                  answer: { answers: form.lost.answers, by: form.lost.by },
+                }}
+              />
+            </>
+          ) : (
+            <GateForm
+              gate={gate}
+              mr={mr}
+              form={form}
+              onFocusPane={onFocusPane}
+              showFocusAction={false}
+            />
+          );
+        // The modal exists to give context room: unlike the row card's
+        // collapsed disclosure, context here is open, beside the form.
+        return gate.context ? (
+          <div className="tui-triage-body">
+            <div className="tui-triage-context">
+              <div className="tui-triage-context-label">context</div>
+              <div className="tui-gate-context-body">
+                <Markdown unstyled linkTargetBlank>
+                  {gate.context}
+                </Markdown>
+              </div>
+            </div>
+            <div className="tui-triage-form-col">{face}</div>
+          </div>
+        ) : (
+          face
+        );
+      })()}
       {nextPeek && (
         <div className="tui-triage-peek">
           <span className="tui-triage-peek-k">next:</span>

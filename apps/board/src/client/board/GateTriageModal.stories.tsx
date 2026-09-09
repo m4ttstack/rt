@@ -289,6 +289,93 @@ export const AnsweredGate: Story = {
   ),
 };
 
+// --- WithContext ------------------------------------------------------------
+
+/** The modal's reason to exist over the row card: the gate's context renders
+    OPEN in its own pane beside the form (the card only offers a collapsed
+    disclosure). A context gate takes the wide frame. */
+const contextBody = `The reviewer left two threads on this MR.
+
+**Thread 1 · \`lib/retry.ts:41\` · naming**
+
+> \`withBackoff\` reads like it adds backoff to an existing retry, but it IS
+> the retry loop. Suggest \`retryWithBackoff\` so call sites read correctly.
+
+**Thread 2 · \`lib/retry.ts:58\` · test coverage**
+
+> The abort path has no test. If the signal fires between attempts, the loop
+> should stop without scheduling another timer:
+
+\`\`\`ts
+if (signal?.aborted) return { ok: false, reason: 'aborted' };
+await delay(backoff(attempt), { signal });
+\`\`\`
+
+Recommended plan: fix both in this MR as a separate commit.`;
+
+const contextGate: GateRow = {
+  ...firstGate,
+  gateId: 'triage-context',
+  context: contextBody,
+};
+
+export const WithContext: Story = {
+  render: () => {
+    seedDraft(contextGate.gateId, {
+      selections: { 'thread-1': 'fix:bbbbbbbbbbbb' },
+      notes: {},
+      item: 'thread-2',
+    });
+    return (
+      <GateTriageModal
+        gate={contextGate}
+        mr={boardMr}
+        position={2}
+        states={['done', 'active', 'todo', 'todo', 'todo']}
+        nextPeek="clarify · rt#218 · picker follow-ups"
+        onClose={noop}
+        onSkip={noop}
+        onFocusPane={noop}
+      />
+    );
+  },
+};
+
+// --- LongContextScroll ------------------------------------------------------
+
+/** Context taller than the pane's 56vh cap: the pane scrolls on its own
+    while the form column stays put. */
+const longContextGate: GateRow = {
+  ...firstGate,
+  gateId: 'triage-context-long',
+  context: [
+    contextBody,
+    ...Array.from(
+      { length: 6 },
+      (_, i) => `**Follow-up note ${i + 1}**
+
+> Additional reviewer discussion quoted here so the pane overflows: the
+> retry loop's jitter window, the timer cleanup on unmount, and how the
+> abort reason propagates to the caller were each debated at length.`
+    ),
+  ].join('\n\n'),
+};
+
+export const LongContextScroll: Story = {
+  render: () => (
+    <GateTriageModal
+      gate={longContextGate}
+      mr={boardMr}
+      position={2}
+      states={['done', 'active', 'todo', 'todo', 'todo']}
+      nextPeek="clarify · rt#218 · picker follow-ups"
+      onClose={noop}
+      onSkip={noop}
+      onFocusPane={noop}
+    />
+  ),
+};
+
 // --- QueueComplete ----------------------------------------------------------
 
 export const QueueComplete: Story = {

@@ -1679,6 +1679,56 @@
   background: var(--dot-warn);
   opacity: 0.55;
 }
+/* A gate carrying context gets the wide frame; the pane is the point of
+   hosting gates in a modal at all, so it renders open (the row card's
+   collapsed disclosure stays the compact face). Contextless gates keep the
+   narrow frame instead of centering a 36rem form in an empty 940px shell. */
+.tui-triage-modal[data-context] {
+  max-width: 940px;
+}
+.tui-triage-body {
+  display: flex;
+  align-items: flex-start;
+  gap: 1.1rem;
+  min-height: 0;
+}
+.tui-triage-context {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-height: 56vh;
+  overflow-y: auto;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  background: var(--chrome);
+  font-size: 0.78rem;
+}
+.tui-triage-context-label {
+  font: 600 0.66rem/1.4 var(--font-sans);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--gate-muted);
+  margin-bottom: 0.4rem;
+}
+.tui-triage-form-col {
+  flex: 0 0 400px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+@media (max-width: 900px) {
+  .tui-triage-body {
+    flex-direction: column;
+  }
+  .tui-triage-form-col {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+  .tui-triage-context {
+    max-height: 32vh;
+  }
+}
 .tui-triage-strip {
   display: flex;
   align-items: center;
