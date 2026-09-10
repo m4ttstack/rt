@@ -52,8 +52,8 @@ function cheapWorktreeRow(wt: { path: string; branch: string }, currentPath: str
 }
 
 function enrichedWorktreeRow(eb: EnrichedBranch, currentPath: string): PickRow {
-  const { left, right } = formatBranchSegments(eb);
-  return { value: eb.path, left, right: annotateCurrent(right, eb.path === currentPath) };
+  const { left, right, match } = formatBranchSegments(eb);
+  return { value: eb.path, left, right: annotateCurrent(right, eb.path === currentPath), match };
 }
 
 function repoOptionsFromList(repos: KnownRepo[]) {
