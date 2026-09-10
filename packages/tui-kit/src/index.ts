@@ -106,6 +106,16 @@ export { Panel, PANEL_PARTS, panelTheme } from "./recipes/Panel/Panel.tsx";
 export type { PanelOwnProps, PanelProps } from "./recipes/Panel/Panel.tsx";
 
 export {
+  ScrollPane,
+  SCROLLPANE_PARTS,
+  scrollPaneTheme,
+} from "./recipes/ScrollPane/ScrollPane.tsx";
+export type {
+  ScrollPaneOwnProps,
+  ScrollPaneProps,
+} from "./recipes/ScrollPane/ScrollPane.tsx";
+
+export {
   LabeledSeg,
   labeledSegTheme,
   SEGMENTED_PARTS,

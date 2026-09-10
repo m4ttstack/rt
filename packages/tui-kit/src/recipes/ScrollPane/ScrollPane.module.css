@@ -1,0 +1,49 @@
+/* ScrollPane: bounded scroll pane with a pinned header band, lifted from
+   mr-board's decision-queue context pane. */
+@layer soribashi.recipes {
+  .root {
+    display: flex;
+    flex-direction: column;
+    /* A bare max-height loses to the flex automatic minimum size when the
+       pane sits in a flex column; min-height: 0 plus overflow: hidden make
+       the cap real and push the scrolling into .body. */
+    max-height: var(--sb-scrollpane-max);
+    min-height: 0;
+    overflow: hidden;
+    box-sizing: border-box;
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-xl);
+    background: var(--card);
+    padding: var(--spacing-rem100) var(--spacing-xxl) var(--spacing-xxl);
+    font-family: var(--font-sans);
+  }
+
+  .head {
+    flex-shrink: 0;
+    /* The band bleeds through the root padding to the frame, then restores
+       it inside; a shade under the card ground, sealed with a soft rule. */
+    margin: calc(-1 * var(--spacing-rem100)) calc(-1 * var(--spacing-xxl))
+      var(--spacing-rem55);
+    padding: var(--spacing-md) var(--spacing-xxl);
+    font-size: var(--type-title);
+    font-weight: 600;
+    line-height: var(--line-height-snug);
+    color: var(--accent-text);
+    background: var(--surface-wash-fg-4-card);
+    border-bottom: 1px solid var(--border-soft);
+    border-radius: calc(var(--radius-xl) - 1px) calc(var(--radius-xl) - 1px)
+      0 0;
+  }
+
+  .body {
+    min-height: 0;
+    overflow-y: auto;
+    /* The scroll edge is the pane border, not the inner padding: bleed
+       through the right padding and restore it inside so the thin bar hugs
+       the frame with no visible gutter. */
+    margin-right: calc(-1 * var(--spacing-xxl));
+    padding-right: var(--spacing-xxl);
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-on-card) transparent;
+  }
+}

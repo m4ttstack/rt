@@ -58,6 +58,9 @@ export const MATRIX_CLASSIFICATION: Record<string, MatrixClassification> = {
   RadioGroup: {
     exempt: "shares Field.module.css structural chrome (fixed --fg/--muted/--red pairs), no intent axis",
   },
+  ScrollPane: {
+    exempt: "structural: fixed --card/--border-soft/--accent-text pairs, no intent axis",
+  },
   Segmented: {
     exempt:
       "structural chrome: fixed --panel/--muted/--accent/--bg/--fg pairs (the accent segment is the SELECTED state, not an intent), no intent axis",
