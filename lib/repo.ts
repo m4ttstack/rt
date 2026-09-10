@@ -355,8 +355,8 @@ export async function pickWorktreeFromRepo(
 
   const options = enriched.map(eb => ({ value: eb.path, label: eb.branch || eb.dirName, hint: "" }));
   const rows: PickRow[] = enriched.map(eb => {
-    const { left, right } = formatBranchSegments(eb);
-    return { value: eb.path, left, right };
+    const { left, right, match } = formatBranchSegments(eb);
+    return { value: eb.path, left, right, match };
   });
 
   return filterableSelect({
@@ -412,8 +412,8 @@ export async function pickRepoInteractive(): Promise<RepoIdentity> {
     options.push({ value: "__all_repos__", label: "Pick from all repos", hint: `${repos.length} repos available` });
 
     const rows: PickRow[] = enriched.map((eb) => {
-      const { left, right } = formatBranchSegments(eb);
-      return { value: eb.path, left, right };
+      const { left, right, match } = formatBranchSegments(eb);
+      return { value: eb.path, left, right, match };
     });
     rows.push({
       value: "__all_repos__",
