@@ -31,6 +31,7 @@ import { branchOf } from "../../state/branch-cache.ts";
 import { classifyDirtyAsync, disposeTree } from "../../worktree/dispose.ts";
 import { loadWorktreeAppConfig, type WorktreeAppConfig } from "../../worktree/config.ts";
 import { killWorktreeProcesses } from "../worktree-process-kill.ts";
+import type { RunningRunScan } from "../../runs/store.ts";
 
 /**
  * The reactor's own memory, at `~/.mattstack/rt/worktree-reactor-state.json`.
@@ -102,7 +103,7 @@ export interface ReactorDeps {
   emit: (type: string, data: unknown) => void;
   log: Logger;
   /** Threaded straight into disposeTree's DisposeDeps; wired from `findRunningRunByWorktree` in lib/runs/store.ts. */
-  findRunningRun: (worktree: string) => { id: string; currentStage: string } | null;
+  findRunningRun: (worktree: string) => RunningRunScan;
 }
 
 /**

@@ -149,7 +149,7 @@ describe("provision claim: a dropped write is refused, not silently accepted", (
         kick: () => {},
         creationInFlight: () => null,
         withReconcilerHeld: async (fn) => fn(),
-        findRunningRunByWorktree: () => null,
+        findRunningRunByWorktree: () => ({ kind: "none" }),
       },
     );
 

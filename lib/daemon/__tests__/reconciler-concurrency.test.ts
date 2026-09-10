@@ -129,7 +129,7 @@ describe("reconciler per-repo concurrency (S094)", () => {
         if (type === "worktree:created") created.push((data as { repo: string }).repo);
       },
       log: fakeLog(),
-      findRunningRunByWorktree: () => null,
+      findRunningRunByWorktree: () => ({ kind: "none" }),
     });
 
     reconciler.kick();
@@ -158,7 +158,7 @@ describe("reconciler per-repo concurrency (S094)", () => {
         if (type === "worktree:created") order.push("created");
       },
       log: fakeLog(),
-      findRunningRunByWorktree: () => null,
+      findRunningRunByWorktree: () => ({ kind: "none" }),
     });
 
     reconciler.kick();

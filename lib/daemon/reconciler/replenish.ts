@@ -17,6 +17,7 @@ import { createTree } from "../../worktree/create.ts";
 import { disposeTree } from "../../worktree/dispose.ts";
 import { loadWorktreeRepoConfig, type WorktreeAppConfig } from "../../worktree/config.ts";
 import { backoffDelayMs, type FreshenDeps } from "./freshen.ts";
+import type { RunningRunScan } from "../../runs/store.ts";
 
 // Machine-side clamp (S077): no team declaration builds more than this on one laptop.
 export const WORKTREE_ONDECK_CEILING = 5;
@@ -130,7 +131,7 @@ export async function replenishAndShrink(
   deps: FreshenDeps & {
     backoff?: CreateBackoffMap;
     /** Threaded into the shrink path's disposeTree call; wired from `findRunningRunByWorktree` in lib/runs/store.ts. */
-    findRunningRun: (worktree: string) => { id: string; currentStage: string } | null;
+    findRunningRun: (worktree: string) => RunningRunScan;
   },
   creationPromises: Map<string, Promise<void>>,
   appConfig: WorktreeAppConfig,

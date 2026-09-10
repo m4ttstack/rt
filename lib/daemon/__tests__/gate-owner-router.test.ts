@@ -50,7 +50,7 @@ function buildHandlers(herdStore: ReturnType<typeof createHerdStore> = createHer
       kick: () => {},
       creationInFlight: () => null,
       withReconcilerHeld: async (fn) => fn(),
-      findRunningRunByWorktree: () => null,
+      findRunningRunByWorktree: () => ({ kind: "none" }),
     },
     eventsBus: createEventsBus({ dbPath: ":memory:", log: pino({ level: "silent" }) }),
     gatesStore,

@@ -12,6 +12,7 @@ import type { CommandResult } from "./types.ts";
 import type { HerdStore, HerdJobRow } from "../herd-store.ts";
 import { herdPrefix, herdSubject, isValidJobName, mintHerdId } from "../herd-store.ts";
 import type { GatesStore } from "../gates-store.ts";
+import type { RunningRunScan } from "../../runs/store.ts";
 import type { createGateHandlers } from "./gate.ts";
 import type { createChatHandlers } from "./chat.ts";
 import type { createAgentHandlers } from "./agent.ts";
@@ -34,7 +35,7 @@ export interface HerdDeps {
   worktree: { "worktree:provision": (payload: any) => Promise<any>; "worktree:dispose": (payload: any) => Promise<any> };
   runWorktree: (runId: string) => string | null;
   /** Live-run lookup by worktree path, for herd:close's advisory warning; wired from `findRunningRunByWorktree` in lib/runs/store.ts. */
-  findRunningRunByWorktree: (worktree: string) => { id: string; currentStage: string } | null;
+  findRunningRunByWorktree: (worktree: string) => RunningRunScan;
   /** The chat handle a session already holds, or null; wired from `presenceForSession` in lib/state/presence-store.ts. */
   presenceHandleForSession: (session: string) => string | null;
   /** Whether the shepherd session's own inbox socket is currently accepting connections; wired from `probeInboxReachability` in lib/daemon/inbox.ts over `resolveInbox`'s binding. */
@@ -93,16 +94,31 @@ export function createHerdHandlers(deps: HerdDeps) {
 
   /** Registers both the prefix row (herd:<id>/*, for the shepherd's own job
       gates) and the owner row (routes any gate whose `owner` is this herd,
-      regardless of subject -- e.g. a run gate spawned by a job). `priorSession`
-      -- the herd's shepherdSession before this call, passed by the resume
-      caller only -- has its matching rows dropped first, so a relaunched
-      shepherd re-points fan-out onto its new session. Scoped to that ONE
+      regardless of subject -- e.g. a run gate spawned by a job) BEFORE
+      dropping `priorSession`'s matching rows -- the herd's shepherdSession
+      before this call, passed by the resume caller only. Create-before-delete
+      is safe here (never a spurious no-op re-subscribe) because the store's
+      dedupe key is (scope, subjectPrefix, ownerRef, session) and `session`
+      always differs from `priorSession` when there is one to replace.
+      Ordering this way means a failed replacement leaves the prior
+      subscription intact instead of a session with no fan-out at all: if the
+      owner row fails, the just-created prefix row is rolled back and the
+      prior rows are never touched. Prior-row removal is scoped to that ONE
       session deliberately: any OTHER session's herd-prefix or owner
       subscription (a manual `rt gate subscribe`, a board relay) is a
       legitimate co-observer and must survive a resume it had no part in. */
   async function subscribeShepherd(herdId: string, session: string, priorSession?: string | null): Promise<CommandResult<"gate:subscribe">> {
     const ownerRef = herdOwner(herdId);
     const prefix = herdPrefix(herdId);
+
+    const prefixSub = await deps.gate["gate:subscribe"]({ subjectPrefix: prefix, session });
+    if (!prefixSub.ok) return prefixSub;
+    const ownerSub = await deps.gate["gate:subscribe"]({ scope: "owner", ownerRef, subjectPrefix: "", session });
+    if (!ownerSub.ok) {
+      await deps.gate["gate:unsubscribe"]({ id: prefixSub.data.id });
+      return ownerSub;
+    }
+
     if (priorSession && priorSession !== session) {
       const prior = await deps.gate["gate:subscriptions"]({ live: true, session: priorSession });
       if (prior.ok) {
@@ -112,10 +128,6 @@ export function createHerdHandlers(deps: HerdDeps) {
         }
       }
     }
-    const prefixSub = await deps.gate["gate:subscribe"]({ subjectPrefix: prefix, session });
-    if (!prefixSub.ok) return prefixSub;
-    const ownerSub = await deps.gate["gate:subscribe"]({ scope: "owner", ownerRef, subjectPrefix: "", session });
-    if (!ownerSub.ok) return ownerSub;
     return prefixSub;
   }
 
@@ -350,10 +362,15 @@ export function createHerdHandlers(deps: HerdDeps) {
       store.setJobStatus(herdId, name, "closed");
       // Advisory, not a refusal: an abandoned run is resumable, so a running
       // pipeline in the job's worktree is worth flagging but never blocks close.
-      const running = deps.findRunningRunByWorktree(job.worktree);
-      const warning = running
-        ? `job worktree has running run ${running.id} at ${running.currentStage}; finish it or run: rt runs abandon ${running.id}`
-        : undefined;
+      // A scan that could not finish gets the same advisory treatment: warn
+      // rather than silently reading it as "nothing running".
+      const scan = deps.findRunningRunByWorktree(job.worktree);
+      const warning =
+        scan.kind === "match"
+          ? `job worktree has running run ${scan.run.id} at ${scan.run.currentStage}; finish it or run: rt runs abandon ${scan.run.id}`
+          : scan.kind === "incomplete"
+            ? "could not verify runs; check manually"
+            : undefined;
       return { ok: true, data: { job: name, status: "closed", ...(warning && { warning }) } };
     },
 

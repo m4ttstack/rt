@@ -9,6 +9,7 @@ import { closeStateDb } from "../../../state/index.ts";
 import { rtDir } from "../../../rt-paths.ts";
 import { loadRegistry, saveRegistry, type TreeRecord } from "../../../worktree/registry.ts";
 import { detectTransitions, __test__ } from "../reactor.ts";
+import type { RunningRunScan } from "../../../runs/store.ts";
 
 const GIT_ID = "-c user.email=t@t -c user.name=t";
 
@@ -70,7 +71,7 @@ describe("R049: fired-ledger GC", () => {
     writeJson(join(rtDir(), "worktrees.json"), { enabled: true, killProcesses: false });
   });
 
-  function detect(entries: Record<string, unknown>, findRunningRun: (worktree: string) => { id: string; currentStage: string } | null = () => null): Promise<void> {
+  function detect(entries: Record<string, unknown>, findRunningRun: (worktree: string) => RunningRunScan = () => ({ kind: "none" })): Promise<void> {
     return detectTransitions({
       repoName,
       repoPath: repo,
@@ -151,7 +152,7 @@ describe("auto-dispose refuses a tree with a live pipeline run", () => {
       cacheEntries: { "feat-hotel": { repoName, mr: { iid: 55, state: "opened" } } } as any,
       emit: () => {},
       log: fakeLog(),
-      findRunningRun: () => null,
+      findRunningRun: () => ({ kind: "none" }),
     });
     await detectTransitions({
       repoName,
@@ -159,7 +160,8 @@ describe("auto-dispose refuses a tree with a live pipeline run", () => {
       cacheEntries: { "feat-hotel": { repoName, mr: { iid: 55, state: "merged" } } } as any,
       emit: () => {},
       log: fakeLog(),
-      findRunningRun: (worktree) => (worktree === rec.path ? { id: "run-1", currentStage: "implement" } : null),
+      findRunningRun: (worktree) =>
+        worktree === rec.path ? { kind: "match", run: { id: "run-1", currentStage: "implement" } } : { kind: "none" },
     });
 
     const after = loadRegistry(repoName).find((t) => t.path === rec.path);
