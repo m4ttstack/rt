@@ -13,10 +13,25 @@
 
 import { homedir } from "os";
 import { join } from "path";
-import { discoverPacks } from "../lib/skills/packs.ts";
+import { discoverPacks, type PackInfo } from "../lib/skills/packs.ts";
 import { resolveClaudeBin } from "../lib/claude-bin.ts";
 import { syncPack, type SyncDeps, type SyncReport, type SyncStep } from "../lib/skills/sync.ts";
 import { checkPack, compilePackAll } from "./skills.ts";
+
+/**
+ * The mattstack pack is the only valid sync engine: falling back to the pack
+ * itself when no mattstack pack is discovered would silently point
+ * update-engine's version compare and loadStepSource's lookups at the wrong
+ * plugin, so an absent engine refuses instead of guessing.
+ */
+export function deriveEngine(packs: PackInfo[], pack: PackInfo): { engine: PackInfo } | { error: string } {
+  const mattstack = packs.find((p) => p.name === "mattstack");
+  if (mattstack) return { engine: mattstack };
+  if (pack.name === "mattstack") return { engine: pack };
+  return {
+    error: `no "mattstack" engine pack discovered alongside "${pack.name}" (looked for a plugin named "mattstack" registered via extraKnownMarketplaces in Claude's settings.json); register the mattstack marketplace and re-run`,
+  };
+}
 
 function flagValue(args: string[], flag: string): string | undefined {
   const i = args.indexOf(flag);
@@ -73,7 +88,9 @@ export async function skillsSync(args: string[]): Promise<void> {
         : `which pack? pass --pack <name> (discovered: ${packs.map((p) => p.name).join(", ")})`,
     );
   }
-  const engine = packs.find((p) => p.name === "mattstack") ?? pack!;
+  const engineResult = deriveEngine(packs, pack!);
+  if ("error" in engineResult) fail(engineResult.error);
+  const engine = engineResult.engine;
 
   const configDir = process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude");
   const deps: SyncDeps = {
