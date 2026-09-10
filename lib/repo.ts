@@ -404,7 +404,7 @@ export async function pickRepoInteractive(): Promise<RepoIdentity> {
     } catch { /* no remote */ }
 
     const enriched = await enrichBranches(
-      currentRepo.worktrees.map((wt) => ({ path: wt.path, branch: wt.branch })),
+      pickerWorktrees(currentRepo).map((wt) => ({ path: wt.path, branch: wt.branch })),
       remoteUrl,
     );
 

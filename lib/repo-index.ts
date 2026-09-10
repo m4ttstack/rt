@@ -1430,7 +1430,13 @@ export function repoFromOptionValue(repos: KnownRepo[], value: string): KnownRep
     general picker shares. A copy: `repo.worktrees` keeps git's own order for
     everything agent-facing (`rt worktree list --json`). */
 export function pickerWorktrees(repo: Pick<KnownRepo, "worktrees">): KnownRepo["worktrees"] {
-  const [main, ...rest] = repo.worktrees.filter((wt) => !isTrashPath(wt.path));
+  // on-deck/* trees are unclaimed pool plumbing: entering one bypasses claim
+  // tracking and the freshen/shrink cycle can dispose it underfoot, so no
+  // picker offers them. Explicit --worktree branch resolution bypasses this
+  // seam deliberately.
+  const [main, ...rest] = repo.worktrees.filter(
+    (wt) => !isTrashPath(wt.path) && !wt.branch.startsWith("on-deck/"),
+  );
   if (!main) return [];
   const label = (wt: KnownRepo["worktrees"][number]) => wt.branch || basename(wt.path);
   return [main, ...rest.sort((a, b) => label(a).localeCompare(label(b), undefined, { sensitivity: "base" }))];

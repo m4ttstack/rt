@@ -19,7 +19,7 @@ import { join, relative, basename } from "path";
 
 const SHELL = process.env.SHELL ?? "bash";
 import type { CommandContext } from "../lib/command-tree.ts";
-import { getKnownRepos } from "../lib/repo-index.ts";
+import { getKnownRepos, pickerWorktrees } from "../lib/repo-index.ts";
 import { rtDir } from "../lib/rt-paths.ts";
 import { ensureHistoryHook } from "../lib/shell-integration.ts";
 import { getWorkspacePackages, type KnownRepo } from "../lib/repo.ts";
@@ -967,7 +967,7 @@ export async function resolveRun(
           selectedRepo = repoFromOptionValue(knownRepos, repoResult.value!)!;
         }
 
-        const worktrees = selectedRepo.worktrees.filter((wt) =>
+        const worktrees = pickerWorktrees(selectedRepo).filter((wt) =>
           existsSync(wt.path),
         );
         if (worktrees.length === 0) {
