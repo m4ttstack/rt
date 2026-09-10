@@ -251,8 +251,11 @@ const MR_STATE_GLYPHS: Record<string, { glyph: string; tone: string }> = {
 const MAX_TICKET_TITLE = 64;
 
 function clipTitle(title: string): string {
-  if (title.length <= MAX_TICKET_TITLE) return title;
-  return title.slice(0, MAX_TICKET_TITLE - 1).trimEnd() + "…";
+  // Code points, not UTF-16 units: a unit-indexed slice can cut a surrogate
+  // pair in half and hand the picker an unpaired surrogate.
+  const codePoints = Array.from(title);
+  if (codePoints.length <= MAX_TICKET_TITLE) return title;
+  return codePoints.slice(0, MAX_TICKET_TITLE - 1).join("").trimEnd() + "…";
 }
 
 /**

@@ -223,6 +223,14 @@ describe("formatBranchSegments", () => {
     expect(left[2]!.text).toBe(title);
   });
 
+  test("clipping never splits a surrogate pair at the boundary", () => {
+    const title = "x".repeat(62) + "🚀" + "y".repeat(10);
+    const eb = mkBranch({ linearId: "ACME-1", ticket: mkTicket({ title }) });
+    const { left } = formatBranchSegments(eb);
+    expect(left[2]!.text.isWellFormed()).toBe(true);
+    expect(left[2]!.text.endsWith("🚀…")).toBe(true);
+  });
+
   test("ticket-row match text carries branch, full title, and linearId for filtering", () => {
     const longTitle = "a".repeat(80);
     const eb = mkBranch({
