@@ -411,10 +411,15 @@ body {
    The `.tui-dot` glyph (including its -2px optical nudge), the three
    `--dot-*` colour rules, `.tui-dot-wrap` and its `attr(data-tip)` tooltip
    are the recipe's two slots, `[data-part="statusdot"]` /
-   `[data-part="statusdot-dot"]`. Nothing here selects into them: the board
-   keeps only the DERIVATION (blockers -> intent, statusReasons -> tip) in
+   `[data-part="statusdot-dot"]`. The board keeps the DERIVATION
+   (blockers -> intent, statusReasons -> tip) in
    src/client/board/StatusDot.tsx. `.tui-comment-dot` below is a SEPARATE
    family that happens to reuse two of the same colours -- left alone. */
+/* The recipe's 1rem glyph reads oversized beside the row title at the
+   app's scaled root; row dots take the meta size. */
+.tui-row [data-part='statusdot-dot'] {
+  font-size: var(--type-meta);
+}
 
 /* ── tokens ───────────────────────────────────────────────────────── */
 .tui-phrase {
