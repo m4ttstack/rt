@@ -897,19 +897,29 @@ describe("rt chat CLI — buddies, away, back, dm", () => {
     expect(peekNotifications()).toHaveLength(1);
   });
 
-  test("dm prints nothing on success (plain), and --json reports the room/recipients", async () => {
+  test("dm prints `dm → <handle> #<id>` plus the default viewer link on success (plain), and --json reports the room/recipients", async () => {
     await signInInProcess({ as: "a", session: "s1", noRoom: true });
     await signInInProcess({ as: "b", session: "s2", noRoom: true });
 
-    expect(await runChat(["dm", "b", "hi", "--session", "s1"])).toBe("");
+    const plain = await runChat(["dm", "b", "hi", "--session", "s1"]);
+    const plainRooms = JSON.parse(await runChat(["rooms", "--json", "--session", "s1"]));
+    const dmRoomName = plainRooms.rooms.find((r: { kind?: string }) => r.kind === "dm").room;
+    expect(plain).toBe(`dm → b #1\nposted → https://chat.mattstack/r/${dmRoomName}#m-1`);
 
     const out = await runChat(["dm", "b", "again", "--json", "--session", "s1"]);
     const parsed = JSON.parse(out);
-    expect(parsed).toMatchObject({ ok: true, recipients: ["b"] });
+    expect(parsed).toMatchObject({ ok: true, room: dmRoomName, recipients: ["b"] });
+  });
 
+  test("dm's viewer link follows chat.viewerUrl, same as post", async () => {
+    setSetting("chat.viewerUrl", "https://chat.example/", "user");
+    await signInInProcess({ as: "a", session: "s1", noRoom: true });
+    await signInInProcess({ as: "b", session: "s2", noRoom: true });
+
+    const out = await runChat(["dm", "b", "hi", "--session", "s1"]);
     const rooms = JSON.parse(await runChat(["rooms", "--json", "--session", "s1"]));
-    const dmRoom = rooms.rooms.find((r: { room: string }) => r.room === parsed.room);
-    expect(dmRoom).toMatchObject({ kind: "dm" });
+    const dmRoomName = rooms.rooms.find((r: { kind?: string }) => r.kind === "dm").room;
+    expect(out).toBe(`dm → b #1\nposted → https://chat.example/r/${dmRoomName}#m-1`);
   });
 
   test("rooms lists a DM room in a direct section after channels, headed a ↔ b, never the hashed room id", async () => {

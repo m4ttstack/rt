@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import type { Logger } from "pino";
-import { openStateDb, presenceForSession, type RegistryDeps } from "../../state/index.ts";
+import { openStateDb, presenceForHandle, presenceForSession, type RegistryDeps } from "../../state/index.ts";
 import type { InboxBinding } from "../../claude-registry.ts";
 import { createChatDeliverySweep, createChatHandlers, pendingIncludesRecipient, planSweepTargets, type InboxDeps } from "../handlers/chat.ts";
 import { drainNotifications, peekNotifications } from "../../notifier.ts";
@@ -161,6 +161,78 @@ test("a successful welcome delivery also refreshes last_seen_at", async () => {
 
   expect(calls).toHaveLength(1); // the welcome frame landed
   expect(presenceForSession("sess-c", h.db)!.lastSeenAt).toBeGreaterThan(SENTINEL);
+});
+
+test("posting refreshes the AUTHOR's own last_seen_at, not just the recipient's", async () => {
+  const calls: Array<[string, string]> = [];
+  const sock = fakeSocketPath();
+  const inboxDeps: InboxDeps = {
+    resolve: (sessionId) => (sessionId === "sess-b" ? { pid: process.pid, socketPath: sock, status: "idle" } : null),
+    deliver: async (socketPath, content) => { calls.push([socketPath, content]); return { ok: true }; },
+  };
+  const h = freshHandlers(inboxDeps);
+  await h["chat:sign-in"]({ sessionId: "sess-a", baseHandle: "a" });
+  await h["chat:sign-in"]({ sessionId: "sess-b", baseHandle: "b" });
+  await settleWelcome(calls);
+  await h["chat:join"]({ room: "general", handle: "a" });
+  await h["chat:join"]({ room: "general", handle: "b" });
+  const before = presenceForHandle("a", h.db)!.lastSeenAt;
+  await Bun.sleep(2);
+  const posted = await h["chat:post"]({ room: "general", handle: "a", body: "hi" });
+  if (!posted.ok) throw new Error("unreachable");
+  expect(presenceForHandle("a", h.db)!.lastSeenAt).toBeGreaterThan(before);
+});
+
+test("a quiet post still refreshes the author's last_seen_at even though it wakes nobody", async () => {
+  const h = freshHandlers();
+  await h["chat:sign-in"]({ sessionId: "sess-a", baseHandle: "a" });
+  await h["chat:join"]({ room: "general", handle: "a" });
+  const before = presenceForHandle("a", h.db)!.lastSeenAt;
+  await Bun.sleep(2);
+  const posted = await h["chat:post"]({ room: "general", handle: "a", body: "for the record", quiet: true });
+  if (!posted.ok) throw new Error("unreachable");
+  expect(presenceForHandle("a", h.db)!.lastSeenAt).toBeGreaterThan(before);
+});
+
+test("a DM refreshes the sender's own last_seen_at", async () => {
+  const h = freshHandlers();
+  await h["chat:sign-in"]({ sessionId: "sess-a", baseHandle: "a" });
+  await h["chat:sign-in"]({ sessionId: "sess-b", baseHandle: "b" });
+  const before = presenceForHandle("a", h.db)!.lastSeenAt;
+  await Bun.sleep(2);
+  const sent = await h["chat:dm"]({ from: "a", to: "b", body: "hi" });
+  if (!sent.ok) throw new Error("unreachable");
+  expect(presenceForHandle("a", h.db)!.lastSeenAt).toBeGreaterThan(before);
+});
+
+test("acking refreshes the ACKER's own last_seen_at, not just the author's", async () => {
+  const h = freshHandlers();
+  await h["chat:sign-in"]({ sessionId: "sess-a", baseHandle: "a" });
+  await h["chat:sign-in"]({ sessionId: "sess-b", baseHandle: "b" });
+  await h["chat:join"]({ room: "general", handle: "a" });
+  await h["chat:join"]({ room: "general", handle: "b" });
+  const posted = await h["chat:post"]({ room: "general", handle: "a", body: "hi" });
+  if (!posted.ok) throw new Error("unreachable");
+  const before = presenceForHandle("b", h.db)!.lastSeenAt;
+  await Bun.sleep(2);
+  const acked = await h["chat:ack"]({ id: posted.data.id, handle: "b" });
+  expect(acked.ok).toBe(true);
+  expect(presenceForHandle("b", h.db)!.lastSeenAt).toBeGreaterThan(before);
+});
+
+test("reading refreshes the READER's own last_seen_at", async () => {
+  const h = freshHandlers();
+  await h["chat:sign-in"]({ sessionId: "sess-a", baseHandle: "a" });
+  await h["chat:sign-in"]({ sessionId: "sess-b", baseHandle: "b" });
+  await h["chat:join"]({ room: "general", handle: "a" });
+  await h["chat:join"]({ room: "general", handle: "b" });
+  const posted = await h["chat:post"]({ room: "general", handle: "a", body: "hi" });
+  if (!posted.ok) throw new Error("unreachable");
+  const before = presenceForHandle("b", h.db)!.lastSeenAt;
+  await Bun.sleep(2);
+  const unread = await h["chat:read"]({ handle: "b" });
+  expect(unread.ok).toBe(true);
+  expect(presenceForHandle("b", h.db)!.lastSeenAt).toBeGreaterThan(before);
 });
 
 test("a recipient whose resolver misses gets no deliver call and keeps unread", async () => {
