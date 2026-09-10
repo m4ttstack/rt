@@ -82,11 +82,16 @@ semantic names.
 excludes it today). Final set:
 `["default", "filled", "light", "outline", "subtle"]`.
 
-### Resolver pins (`intent-resolver.ts`)
+### Pinned cells
 
-`tuiIntentResolver` keeps `singleShadeVariantColors` as the base and layers
-a pinned-values table for the cells the board ratified. Pinned outputs
-(exact strings):
+The `filled` patch (all intents: `var(--bg)` text, tone-88%-toward-fg
+hover) lives in `tuiIntentResolver`: the variant is new, so no shipped
+surface can regress. The three PRE-EXISTING cells below are pinned in
+Button itself (`Button.tsx` `vars`, the `--sb-button-bad-color` escape
+hatch pattern), NOT in the resolver: the shared resolver feeds `autoVars`
+for a dozen recipes (Chip included), and a resolver-level pin would
+restyle shipped non-Button surfaces, which "Accepted visible deltas" being
+a closed list forbids. Pinned outputs (exact strings):
 
 | Cell | background | color | hover |
 |---|---|---|---|
