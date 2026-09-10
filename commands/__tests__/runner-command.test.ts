@@ -118,6 +118,29 @@ test("buildTmuxRunnerDeps carries the seed through", () => {
   expect(deps.seed).toEqual(seed);
 });
 
+// Both builders serve a LIVE board's add flow: their resolve closure must
+// tell resolveRun it is resolving for a board, or a preset pick nests a
+// second board on the tmux default (abandoning a --herdr board's bg server).
+test("both deps builders resolve with the board option set", async () => {
+  const realRun = { ...(await import("../run.ts")) };
+  const seen: unknown[] = [];
+  const { mock } = await import("bun:test");
+  mock.module("../run.ts", () => ({
+    ...realRun,
+    resolveRun: async (_args: string[], _ctx: unknown, opts?: unknown) => {
+      seen.push(opts);
+      return { kind: "cancelled", code: 1 };
+    },
+  }));
+  try {
+    await buildRunnerDeps([], {} as never, "/tmp/sock").resolve();
+    await buildTmuxRunnerDeps([], {} as never).resolve();
+  } finally {
+    mock.module("../run.ts", () => realRun);
+  }
+  expect(seen).toEqual([{ board: true }, { board: true }]);
+});
+
 test("acquireBgSocket passes the claim to bgEnsure and returns its socket", async () => {
   const ensureCalls: unknown[] = [];
   const fakeDeps: Parameters<typeof acquireBgSocket>[1] = {

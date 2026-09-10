@@ -209,6 +209,16 @@ export class Runner {
       await this.openBoard();
       return;
     }
+    if (res.kind === "seed") {
+      // A preset picked from THIS board: its rows land here, on this
+      // board's own engine -- never on a nested seeded board, whose
+      // hard-wired tmux default would abandon a --herdr board's bg server.
+      const entries = res.entries.map((s) => this.pushEntry(s));
+      await this.openBoard();
+      for (const entry of entries) await this.launch(entry);
+      this.push();
+      return;
+    }
     if (res.kind !== "resolved") {
       await this.openBoard();
       return;

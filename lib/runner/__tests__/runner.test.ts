@@ -156,6 +156,27 @@ test("add: closes the session, resolves in-process, reopens with an optimistic s
   expect(pushedModel.entries[0]!.startedAt).not.toBeNull();
 });
 
+test("add: a seed resolution lands every entry on the current board's engine", async () => {
+  const first = new FakeSession([{ t: "intent", name: "add" }]);
+  const second = new FakeSession([{ t: "intent", name: "quit" }]);
+  const d = deps({
+    sessions: [first, second],
+    resolve: async () => ({ kind: "seed", entries: [
+      { name: "dev", command: "bun run dev", cwd: "/repo/web", pkg: "web", repo: "acme" },
+      { name: "api", command: "bun run api", cwd: "/repo/api", pkg: "backend", repo: "acme" },
+    ] }) as RunResolution,
+  });
+  const r = new Runner(d);
+  await r.run();
+  expect(r.entries.map((e) => e.name)).toEqual(["dev", "api"]);
+  expect(d.engine.calls.some((c) => c.startsWith("run:") && c.includes("/repo/web") && c.includes("bun run dev"))).toBe(true);
+  expect(d.engine.calls.some((c) => c.startsWith("run:") && c.includes("/repo/api") && c.includes("bun run api"))).toBe(true);
+  // The reopened session's initial payload carries both rows, already starting.
+  const pushedModel = second.pushed[0] as { entries: { name: string; state: string }[] };
+  expect(pushedModel.entries).toHaveLength(2);
+  expect(pushedModel.entries.every((e) => e.state === "starting")).toBe(true);
+});
+
 test("a cancelled picker reopens the board unchanged", async () => {
   const first = new FakeSession([{ t: "intent", name: "add" }]);
   const second = new FakeSession([{ t: "intent", name: "quit" }]);
