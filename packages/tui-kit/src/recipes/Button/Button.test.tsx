@@ -398,10 +398,10 @@ describe("Button (browser)", () => {
 
   it("rejects an out-of-vocabulary variant at the type level", async () => {
     await renderWithTheme(
-      // @ts-expect-error -- "filled" is not in the kit's variant vocabulary
-      // (BUTTON_VARIANTS is default/light/outline/subtle; theme.ts's variant
-      // vocabulary omits soribashi's canonical "filled").
-      <Button variant="filled">go</Button>,
+      // @ts-expect-error -- "link" is not in the kit's variant vocabulary
+      // (theme.ts's variant vocabulary omits soribashi's canonical
+      // "transparent"/"link").
+      <Button variant="link">go</Button>,
     );
   });
 });
