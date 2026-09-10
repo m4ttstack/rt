@@ -46,6 +46,11 @@ Nothing is assumed; every name comes from the surfaces rt already reads:
   extended to read the version per `<plugin>@<marketplace>` id. The cache directory is
   never globbed for versions: it can hold several.
 
+The registration key is written from the marketplace manifest's `name` at registration
+time, so the two coincide by construction; the key is the operative name for
+`claude plugin update`, and if they ever diverge the update step fails loudly rather
+than silently updating nothing.
+
 A missing derivation (pack not listed in any local marketplace, no installed record) is
 a refusal naming what was looked for and where, never a guess.
 
@@ -57,8 +62,12 @@ any failure is "fix the named problem, run sync again."
 
 1. **Guards (refusals, nothing mutated yet):**
    - engine checkout dirty or not on `main` → refuse
-   - pack checkout dirty → refuse (compile auto-commits; it must only ever pick up
-     sync's own version bump)
+   - pack checkout dirty → refuse (sync's own commit step stages the pack directory;
+     a dirty tree would fold foreign changes into sync's commit)
+   - pack checkout carries a `.worktrees/` or `.claude/worktrees/` directory → refuse,
+     naming the prune: a directory-marketplace plugin update copies the pack's whole
+     working tree into the installed cache, gitignored junk included, and the porcelain
+     guard cannot see ignored content
 2. **Freshen sources:** `git pull --ff-only` in the engine checkout and the pack
    checkout; a pull that cannot fast-forward (diverged, no remote) is a refusal. Sync
    never bumps the engine version; it only consumes what `main` says.
@@ -113,7 +122,7 @@ stale cache masked.
 ## `rt skills check` grows the installed dimension
 
 Check gains a third comparison per pack: installed plugin version
-(`installed_plugins.json`) vs source manifest version, reported in the JSON payload as
+(via the `claude plugin list --json` seam) vs source manifest version, reported in the JSON payload as
 `installed: { version, sourceVersion, status: "current" | "lagging" | "missing" }` and
 as a human summary line naming both versions and the fix (`rt skills sync`).
 
@@ -148,6 +157,10 @@ In the console's skills server module, which already spawns rt for check/compile
 - A mid-chain step failure stops the chain, reports the step and its captured
   stderr verbatim, and exits 1. No rollback machinery: every step is idempotent and the
   chain re-runs from the top, skipping what is already satisfied.
+- An exception thrown by an in-process step (the check or compile facilities can throw
+  usage errors, e.g. when manifest discovery finds nothing) is caught and recorded as
+  that step's failure; under `--json` the CLI always prints a parseable payload, never
+  a bare stack.
 - Sync never stashes, never force-pushes, never mutates a dirty tree, and never touches
   a non-canonical cswap cache.
 
@@ -157,7 +170,8 @@ In the console's skills server module, which already spawns rt for check/compile
   ordering, every guard's refusal message, skip logic per starting state (no-op, lag
   only, drift, drift-survives-compile), the mattstack degenerate case, derivation
   failures, and the cswap sweep against fixture symlinks. Fixture
-  `known_marketplaces.json`/`installed_plugins.json` under the test-isolated HOME.
+  plugin-list entries and `settings.json` `extraKnownMarketplaces` under the
+  test-isolated HOME.
 - Check's installed dimension: fixtures for current/lagging/missing, and the exit-code
   rule (drift → 1, lag-only → 0).
 - One e2e file pinning the `--json` envelope and usage string (CI runs e2e;

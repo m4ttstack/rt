@@ -48,6 +48,7 @@
 - Modify: `lib/skills/packs.ts`
 - Modify: `lib/skills/sources.ts`
 - Modify: `commands/skills.ts` (only the `resolvePluginRootsFromDir` return shape and the two `PluginRoots` literals in `resolve()`)
+- Modify: the two existing typed test literals that annotate `: PluginRoots` — `lib/skills/__tests__/sources.test.ts:96` and `commands/__tests__/skills.test.ts:216` (`computeGolden`) — each gains `list: []` (the root tsconfig type-checks test files, so `bunx tsc --noEmit` fails without this)
 - Test: `lib/skills/__tests__/packs.test.ts`, `lib/skills/__tests__/sources.test.ts`
 
 **Interfaces:**
@@ -232,9 +233,9 @@ And a handler-behavior test in the existing `skillsCheck` describe block (fixtur
 test("check --json reports installed: null under --mattstack-dir and drift alone drives the exit code", async () => {
   const mattstackDir = makeMattstackDir();
   const packDir = makePackDir();
-  const manifest = makeManifest(packDir);
+  const manifest = makeManifest("t");
   await skillsCompile(["--pack", "t", "--mattstack-dir", mattstackDir, "--manifest", manifest]);
-  resetLogs();
+  logs.length = 0;
   await skillsCheck(["--pack", "t", "--mattstack-dir", mattstackDir, "--manifest", manifest, "--json"]);
   const payload = JSON.parse(logs.at(-1)!);
   expect(payload.installed).toBeNull();
@@ -299,7 +300,7 @@ export async function checkPack(opts: { pack?: string; packDir?: string; manifes
 }
 ```
 
-`installed` inside `computeCheck`: `installedInfoFor(resolved, discoverPacks())`.
+`installed` inside `computeCheck`: `resolved.pluginRoots.list.length === 0 ? null : installedInfoFor(resolved, discoverPacks())` (skips the settings/marketplace walk in fixture mode, where the list is always empty).
 
 The `skillsCheck` handler then prints from the payload, byte-identical human lines to today for the verb rows and chainErrors (same order: chainErrors first, then per-verb lines), plus one new line when `installed` is lagging or missing:
 
@@ -342,7 +343,7 @@ Append to the `skillsCompile` describe block (same fixtures as the golden-compil
 test("compilePackAll writes the pack and reports ok", async () => {
   const mattstackDir = makeMattstackDir();
   const packDir = makePackDir();
-  const manifest = makeManifest(packDir);
+  const manifest = makeManifest("t");
   const result = await compilePackAll({ pack: "t", mattstackDir, manifest });
   expect(result).toEqual({ ok: true, errors: [] });
   expect(existsSync(join(packDir, "skills", "watch-ci", "SKILL.md"))).toBe(true);
@@ -456,20 +457,20 @@ export async function syncPack(pack: PackInfo, engine: PackInfo, deps: SyncDeps)
 
 | step name | action | skipped when | refused when |
 | --- | --- | --- | --- |
-| `guards` | `git status --porcelain` in engine + pack checkouts; `git branch --show-current` in engine | never | either dirty; engine not on `main`; `pack.marketplace` or `engine.marketplace` null; `deps.claudeBin` null |
+| `guards` | `git status --porcelain` in engine + pack checkouts; `git branch --show-current` in engine; existence probe for `<pack.dir>/.worktrees` and `<pack.dir>/.claude/worktrees` | never | either dirty; engine not on `main`; a worktrees directory exists in the pack dir (a directory-marketplace plugin update copies the whole working tree, gitignored junk included; refusal names the prune); `pack.marketplace` or `engine.marketplace` null; `deps.claudeBin` null |
 | `pull-engine` | `git pull --ff-only` in `engine.dir` | engine dir === pack dir (the mattstack pack case, pulled once as `pull-pack`) | non-zero exit |
 | `pull-pack` | `git pull --ff-only` in `pack.dir` | never | non-zero exit |
 | `update-engine` | `claude plugin update <engine.name>@<engine.marketplace>` | installed engine version === engine checkout manifest version; or engine dir === pack dir | non-zero exit → `failed` |
-| `check` | `deps.checkPack(pack.name)` | never | never (drives the branch) |
+| `check` | `deps.checkPack(pack.name)` | never | never (drives the branch); a throw → `failed` |
 | `bump` | `bumpPatchVersion(pack.dir)` | no drift | never |
-| `compile` | `deps.compilePack(pack.name)` | no drift | `ok: false` → refused, detail = errors joined |
-| `recheck` | `deps.checkPack(pack.name)` | no drift | still drifting → refused: "content drift survives recompile; take the agent path (mattstack:editing-skills)" |
+| `compile` | `deps.compilePack(pack.name)` | no drift | `ok: false` → refused, detail = errors joined; a throw → `failed` |
+| `recheck` | `deps.checkPack(pack.name)` | no drift | still drifting → refused: "content drift survives recompile; take the agent path (mattstack:editing-skills)"; a throw → `failed` |
 | `commit-push` | `git add -A .` + `git commit -m "skills sync: <pack> v<after>"` + `git push`, cwd `pack.dir` | no drift | non-zero exit → `failed` |
 | `update-pack` | `claude plugin update <pack.name>@<pack.marketplace>` | check said installed current AND no drift (the no-op case ends the chain before this) | non-zero exit → `failed` |
 | `verify-installed` | re-run `claude plugin list --json`, `installedVersionFor` must equal the pack source version | chain no-opped | mismatch → `failed` |
 | `cswap-sweep` | readlink every entry of `cswapSessionsDir/*/plugins`; each that is not a symlink resolving to `join(configDir, "plugins")` appends a warning | sessions dir absent | never (warnings only) |
 
-Version bookkeeping: installed versions before/after come from `deps.run(claudeBin, ["plugin", "list", "--json"])` parsed as `PluginListEntry[]` and fed to `installedVersionFor`; the source versions from each checkout's `.claude-plugin/plugin.json`. A refused or failed step stops the chain, sets `ok: false`, and every later step is omitted from `steps`. `restartNeeded` is true iff `update-engine` or `update-pack` ran. The whole-chain no-op (no drift, installed current) ends after `check` with `ok: true, restartNeeded: false`.
+Version bookkeeping: installed versions before/after come from `deps.run(claudeBin, ["plugin", "list", "--json"])` parsed as `PluginListEntry[]` and fed to `installedVersionFor`; the source versions from each checkout's `.claude-plugin/plugin.json`. A refused or failed step stops the chain, sets `ok: false`, and every later step is omitted from `steps`. `syncPack` wraps every injected-dep and subprocess call in try/catch: a throw (the check/compile facilities raise usage errors, e.g. when manifest discovery finds nothing) becomes that step's `failed` status with the message as detail, never an escaped exception. `restartNeeded` is true iff `update-engine` or `update-pack` ran. The whole-chain no-op (no drift, installed current) ends after `check` with `ok: true, restartNeeded: false`.
 
 `resolveClaudeBin`: `Bun.which("claude")`, then the first existing of `~/.claude/local/claude`, `/opt/homebrew/bin/claude`, `/usr/local/bin/claude`; else null.
 
@@ -528,6 +529,8 @@ Cases (one `test` each; assert on `report.steps` names/statuses, `report.ok`, `r
 11. **cswap sweep:** a sessions dir with one `plugins` symlink to `join(configDir, "plugins")` and one real directory → exactly one warning naming the divergent session dir.
 12. **failed update:** `claude plugin update` exits 2 → step `failed`, `ok: false`, stderr in detail.
 13. **bumpPatchVersion:** `0.5.9` → `0.5.10`; file rewritten with 2-space indent and trailing newline.
+14. **checkPack throws:** `checkPack` rejects with an Error → step `check` is `failed` with the message as detail, `ok: false`, no later calls, nothing thrown out of `syncPack`.
+15. **worktrees junk:** a `.worktrees/` directory inside the pack dir → `guards` refused, detail names the directory and says to prune it, zero further calls.
 
 - [ ] **Step 2: Run to verify failure**
 
@@ -603,7 +606,7 @@ test("skills sync appears in skills help", async () => {
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `bun run test:e2e -- e2e/tests/skills-sync.test.ts` (or the repo's per-file e2e invocation)
+Run: `bun test --preload ./e2e/setup.ts --timeout 60000 e2e/tests/skills-sync.test.ts`
 Expected: FAIL (unknown subcommand).
 
 - [ ] **Step 3: Implement**
@@ -651,7 +654,13 @@ export async function skillsSync(args: string[]): Promise<void> {
     cswapSessionsDir: join(homedir(), ".claude-swap-backup", "sessions"),
   };
 
-  const report = await syncPack(pack!, engine, deps);
+  let report: SyncReport;
+  try {
+    report = await syncPack(pack!, engine, deps);
+  } catch (err) {
+    fail(err instanceof Error ? err.message : String(err));
+    return;
+  }
   if (json) console.log(JSON.stringify(report));
   else renderHuman(report);
   if (!report.ok) process.exitCode = 1;
@@ -686,7 +695,7 @@ sync: {
 
 - [ ] **Step 4: Verify**
 
-Run: `bun run picker:check && bun test lib commands && bun run test:e2e -- e2e/tests/skills-sync.test.ts && bunx tsc --noEmit`
+Run: `bun run picker:check && bun test lib commands && bun test --preload ./e2e/setup.ts --timeout 60000 e2e/tests/skills-sync.test.ts && bunx tsc --noEmit`
 Expected: all PASS. Then `bun run docs:gen` and inspect the diff (discard nothing by hand; commit what it writes, except any RELEASE_NOTES.md clobber, which gets checked out).
 
 - [ ] **Step 5: Commit**
