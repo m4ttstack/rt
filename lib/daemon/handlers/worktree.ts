@@ -97,7 +97,7 @@ export interface WorktreeHandlerOpts {
   /** Excludes reconciler passes -- not other registry writers -- for the duration of `fn`. */
   withReconcilerHeld: <T>(fn: () => Promise<T>) => Promise<T>;
   /** Live-run lookup by worktree path, threaded into disposeTree's running-run guard; wired from `findRunningRunByWorktree` in lib/runs/store.ts. */
-  findRunningRunByWorktree?: (worktree: string) => { id: string; currentStage: string } | null;
+  findRunningRunByWorktree: (worktree: string) => { id: string; currentStage: string } | null;
 }
 
 // ─── Small shared helpers ────────────────────────────────────────────────────
@@ -601,7 +601,7 @@ export function createWorktreeHandlers(
       if (!owner && targets.length > 1) return { ok: false, error: "tree-ambiguous" };
 
       const disposed: string[] = [];
-      const refused: Array<{ tree: string; reason: string }> = [];
+      const refused: Array<{ tree: string; reason: string; detail?: string }> = [];
       const recoverable: Array<{ tree: string; path: string; until: string }> = [];
 
       for (const { repoName, repoPath, rec } of targets) {
@@ -615,7 +615,7 @@ export function createWorktreeHandlers(
           if (outcome.trash) {
             recoverable.push({ tree: rec.name, path: outcome.trash.path, until: outcome.trash.keptUntil });
           }
-        } else refused.push({ tree: rec.name, reason: outcome.refusal });
+        } else refused.push({ tree: rec.name, reason: outcome.refusal, ...(outcome.detail && { detail: outcome.detail }) });
       }
 
       if (targets.length === 0 && treeName) refused.push({ tree: treeName, reason: "unknown" });
@@ -793,7 +793,7 @@ export function createWorktreeHandlers(
         const claimed: string[] = [];
         const unmanaged: string[] = [];
         const disposed: string[] = [];
-        const refused: Array<{ tree: string; reason: string }> = [];
+        const refused: Array<{ tree: string; reason: string; detail?: string }> = [];
 
         for (const rec of trees) {
           if (rec.kind === "main" || canon(rec.path) === canon(repoPath)) {
@@ -826,7 +826,7 @@ export function createWorktreeHandlers(
             );
             if (outcome === "busy") refused.push({ tree: rec.name, reason: "busy" });
             else if (outcome.disposed) disposed.push(rec.name);
-            else refused.push({ tree: rec.name, reason: outcome.refusal });
+            else refused.push({ tree: rec.name, reason: outcome.refusal, ...(outcome.detail && { detail: outcome.detail }) });
             continue;
           }
 

@@ -277,6 +277,7 @@ describe("disposeTree", () => {
       emit: (type, data) => events.push({ type, data }),
       log: { info: () => {}, warn: () => {} },
       killProcesses: false,
+      findRunningRun: () => null,
       ...overrides,
     };
   }
@@ -519,7 +520,11 @@ describe("disposeTree", () => {
 
     const deps = makeDeps({ findRunningRun: (worktree) => (worktree === path ? { id: "run-1", currentStage: "implement" } : null) });
     const result = await disposeTree(deps, rec, {});
-    expect(result).toEqual({ disposed: false, refusal: "running-run" });
+    expect(result).toEqual({
+      disposed: false,
+      refusal: "running-run",
+      detail: "running run run-1 at implement; rt runs abandon run-1",
+    });
     expect(existsSync(path)).toBe(true);
 
     const forced = await disposeTree(deps, rec, { force: true });
@@ -550,10 +555,10 @@ describe("disposeTree", () => {
       findRunningRun: () => ({ id: "run-1", currentStage: "implement" }),
     });
     const result = await disposeTree(deps, rec, {});
-    expect(result).toEqual({ disposed: false, refusal: "running-run" });
+    expect(result).toMatchObject({ disposed: false, refusal: "running-run" });
   });
 
-  test("no findRunningRun dep means no running-run guard runs at all", async () => {
+  test("findRunningRun reporting no match lets disposal proceed normally", async () => {
     const path = addTree(repo, "tree-a", "feature-a");
     commitIn(path, "new.txt", "pushed\n");
     execSync(`git -C ${path} push origin feature-a && git -C ${repo} fetch origin`, {
@@ -866,6 +871,7 @@ describe("disposeTree against the real branch_cache store (identity-keyed)", () 
       emit: (type, data) => events.push({ type, data }),
       log: { info: () => {}, warn: () => {} },
       killProcesses: false,
+      findRunningRun: () => null,
     };
 
     const result = await disposeTree(deps, rec, { auto: true });
@@ -900,6 +906,7 @@ describe("disposeTree against the real branch_cache store (identity-keyed)", () 
       emit: (type, data) => events.push({ type, data }),
       log: { info: () => {}, warn: () => {} },
       killProcesses: false,
+      findRunningRun: () => null,
     };
 
     // No MR joins (repoName mismatch), so the guard falls back to the

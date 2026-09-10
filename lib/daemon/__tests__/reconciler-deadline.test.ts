@@ -60,6 +60,7 @@ describe("reconciler pass deadline", () => {
       repoIndex: () => ({ [repoName]: repoPath }),
       emit: () => {},
       log: silent(),
+      findRunningRunByWorktree: () => null,
       passDeadlineMs: 50,
     });
 
@@ -82,6 +83,7 @@ describe("reconciler pass deadline", () => {
       repoIndex: () => ({ [repoName]: repoPath }),
       emit: () => {},
       log: silent(warns),
+      findRunningRunByWorktree: () => null,
       passDeadlineMs: 30,
     });
 

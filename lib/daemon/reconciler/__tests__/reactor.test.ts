@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach } from "bun:test";
 import { execSync } from "child_process";
-import { mkdtempSync, realpathSync, writeFileSync } from "fs";
+import { existsSync, mkdtempSync, realpathSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import type { Logger } from "pino";
@@ -70,13 +70,14 @@ describe("R049: fired-ledger GC", () => {
     writeJson(join(rtDir(), "worktrees.json"), { enabled: true, killProcesses: false });
   });
 
-  function detect(entries: Record<string, unknown>): Promise<void> {
+  function detect(entries: Record<string, unknown>, findRunningRun: (worktree: string) => { id: string; currentStage: string } | null = () => null): Promise<void> {
     return detectTransitions({
       repoName,
       repoPath: repo,
       cacheEntries: entries as any,
       emit: () => {},
       log: fakeLog(),
+      findRunningRun,
     });
   }
 
@@ -126,5 +127,45 @@ describe("R049: fired-ledger GC", () => {
     await detect({});
 
     expect(__test__.loadReactorState().fired).toContain("disposed:otherrepo:9:merged");
+  });
+});
+
+describe("auto-dispose refuses a tree with a live pipeline run", () => {
+  const repoName = "acme";
+  let repo: string;
+
+  beforeEach(() => {
+    process.env.HOME = realpathSync(mkdtempSync(join(tmpdir(), "rtreactorgc-home-")));
+    closeStateDb();
+    repo = makeRepo();
+    addBareOrigin(repo);
+    writeJson(join(rtDir(), "worktrees.json"), { enabled: true, killProcesses: false });
+  });
+
+  test("a merged branch whose worktree has a running run is marked disposable, not deleted", async () => {
+    const rec = ephemeralTree(repo, repoName, "hotel", "feat-hotel");
+
+    await detectTransitions({
+      repoName,
+      repoPath: repo,
+      cacheEntries: { "feat-hotel": { repoName, mr: { iid: 55, state: "opened" } } } as any,
+      emit: () => {},
+      log: fakeLog(),
+      findRunningRun: () => null,
+    });
+    await detectTransitions({
+      repoName,
+      repoPath: repo,
+      cacheEntries: { "feat-hotel": { repoName, mr: { iid: 55, state: "merged" } } } as any,
+      emit: () => {},
+      log: fakeLog(),
+      findRunningRun: (worktree) => (worktree === rec.path ? { id: "run-1", currentStage: "implement" } : null),
+    });
+
+    const after = loadRegistry(repoName).find((t) => t.path === rec.path);
+    expect(after).toBeDefined();
+    expect(after!.state).toBe("disposable");
+    expect(after!.disposableReason).toBe("running-run");
+    expect(existsSync(rec.path)).toBe(true);
   });
 });

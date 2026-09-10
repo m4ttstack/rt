@@ -31,6 +31,7 @@ function harness(order: string[]) {
     },
     emit: () => {},
     log: silentLog,
+    findRunningRunByWorktree: () => null,
   });
 }
 
@@ -211,6 +212,7 @@ describe("worktree:adopt and worktree:freshen under the reconciler hold", () => 
         kick: reconciler.kick,
         creationInFlight: () => null,
         withReconcilerHeld: reconciler.withReconcilerHeld,
+        findRunningRunByWorktree: () => null,
       },
     );
 
@@ -251,6 +253,7 @@ describe("worktree:adopt and worktree:freshen under the reconciler hold", () => 
         kick: reconciler.kick,
         creationInFlight: () => null,
         withReconcilerHeld: reconciler.withReconcilerHeld,
+        findRunningRunByWorktree: () => null,
       },
     );
 

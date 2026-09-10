@@ -131,6 +131,7 @@ async function reconcilerHarnessWithLegacyRegistry(
     repoIndex: () => ({ [identity]: repoPath }),
     emit: () => {},
     log: fakeLog(),
+    findRunningRunByWorktree: () => null,
   });
   return { runOnce: reconciler.runOnce };
 }
@@ -449,6 +450,7 @@ describe("createWorktreeReconciler", () => {
       repoIndex: () => ({ [repoName]: repo, untouched: untouchedRepo }),
       emit: () => {},
       log: fakeLog(),
+      findRunningRunByWorktree: () => null,
     });
 
     await reconciler.runOnce();
@@ -481,6 +483,7 @@ describe("createWorktreeReconciler", () => {
       repoIndex: () => ({ [repoName]: repo }),
       emit: () => {},
       log: fakeLog(),
+      findRunningRunByWorktree: () => null,
     });
 
     await reconciler.runOnce();
@@ -496,6 +499,7 @@ describe("createWorktreeReconciler", () => {
       repoIndex: () => ({ [repoName]: repo }),
       emit: () => {},
       log: fakeLog(),
+      findRunningRunByWorktree: () => null,
     });
 
     reconciler.kick();
@@ -532,6 +536,7 @@ describe("createWorktreeReconciler", () => {
       repoIndex: () => ({ [repoName]: repo }),
       emit: () => {},
       log: fakeLog(),
+      findRunningRunByWorktree: () => null,
     });
 
     await reconciler.runOnce();
@@ -573,6 +578,7 @@ describe("createWorktreeReconciler", () => {
       repoIndex: () => ({ [disabledRepoName]: repo }),
       emit: (type: string, data: unknown) => events.push({ type, data }),
       log: fakeLog(),
+      findRunningRunByWorktree: () => null,
     });
 
     await reconciler.runOnce();
@@ -609,6 +615,7 @@ describe("createWorktreeReconciler", () => {
       repoIndex: () => ({ [dormantRepoName]: dormantRepo }),
       emit: () => {},
       log: fakeLog(),
+      findRunningRunByWorktree: () => null,
     });
 
     await reconciler.runOnce();
@@ -634,6 +641,7 @@ describe("createWorktreeReconciler", () => {
       repoIndex: () => ({ [legacyRepoName]: legacyRepo }),
       emit: () => {},
       log: fakeLog(),
+      findRunningRunByWorktree: () => null,
     });
 
     await reconciler.runOnce();
@@ -730,6 +738,7 @@ describe("merge reactor (detectTransitions)", () => {
       cacheEntries: entries as any,
       emit: (type: string, data: unknown) => events.push({ type, data }),
       log,
+      findRunningRun: () => null,
     });
   }
 
@@ -979,6 +988,7 @@ describe("merge reactor (detectTransitions)", () => {
         cacheEntries: { "feat-odd": { repoName, mr: { iid: 42, state } } } as any,
         emit: (type: string, data: unknown) => events.push({ type, data }),
         log,
+        findRunningRun: () => null,
       });
 
     await pass("opened", fakeLog());
@@ -1079,6 +1089,7 @@ describe("merge reactor (detectTransitions)", () => {
       repoIndex: () => ({ [repoName]: repo }),
       emit: (type: string, data: unknown) => events.push({ type, data }),
       log: fakeLog(),
+      findRunningRunByWorktree: () => null,
     });
 
     await reconciler.runOnce();
@@ -1519,7 +1530,7 @@ describe("replenish / shrink", () => {
     });
 
     await __test__.replenishAndShrink(
-      { repoName, repoPath: repo, emit: () => {}, log: fakeLog() },
+      { repoName, repoPath: repo, emit: () => {}, log: fakeLog(), findRunningRun: () => null },
       new Map(),
       fakeAppConfig(),
     );
@@ -1550,7 +1561,7 @@ describe("replenish / shrink", () => {
 
     try {
       await __test__.replenishAndShrink(
-        { repoName, repoPath: repo, emit: () => {}, log },
+        { repoName, repoPath: repo, emit: () => {}, log, findRunningRun: () => null },
         new Map(),
         fakeAppConfig(),
       );
@@ -1569,7 +1580,7 @@ describe("replenish / shrink", () => {
     await declareWorktrees(repo, repoName, { onDeck: 2, root: join(repo, ".worktrees") });
 
     await __test__.replenishAndShrink(
-      { repoName, repoPath: repo, emit: () => {}, log: fakeLog() },
+      { repoName, repoPath: repo, emit: () => {}, log: fakeLog(), findRunningRun: () => null },
       new Map(),
       fakeAppConfig(),
     );
@@ -1591,7 +1602,7 @@ describe("replenish / shrink", () => {
     } as unknown as Logger;
 
     await __test__.replenishAndShrink(
-      { repoName, repoPath: repo, emit: () => {}, log },
+      { repoName, repoPath: repo, emit: () => {}, log, findRunningRun: () => null },
       new Map(),
       fakeAppConfig(),
     );
@@ -1614,7 +1625,7 @@ describe("replenish / shrink", () => {
       debug: () => {},
       warn: (_fields: unknown, msg?: string) => warns.push(msg ?? ""),
     } as unknown as Logger;
-    const deps = { repoName, repoPath: repo, emit: () => {}, log };
+    const deps = { repoName, repoPath: repo, emit: () => {}, log, findRunningRun: () => null };
 
     await __test__.replenishAndShrink(deps, new Map(), fakeAppConfig());
     expect(warns.filter((w) => w.includes("replenish create failed")).length).toBe(1);
@@ -1639,7 +1650,7 @@ describe("replenish / shrink", () => {
     });
 
     await __test__.replenishAndShrink(
-      { repoName, repoPath: repo, emit: () => {}, log: fakeLog() },
+      { repoName, repoPath: repo, emit: () => {}, log: fakeLog(), findRunningRun: () => null },
       new Map(),
       fakeAppConfig(),
     );
@@ -1660,7 +1671,7 @@ describe("replenish / shrink", () => {
     await declareWorktrees(repo, repoName, { onDeck: 2, root: join(repo, ".worktrees") });
 
     await __test__.replenishAndShrink(
-      { repoName, repoPath: repo, emit: () => {}, log: fakeLog() },
+      { repoName, repoPath: repo, emit: () => {}, log: fakeLog(), findRunningRun: () => null },
       new Map(),
       fakeAppConfig(),
     );
@@ -1682,7 +1693,7 @@ describe("replenish / shrink", () => {
 
     await declareWorktrees(repo, repoName, { onDeck: 1, root: join(repo, ".worktrees") });
     await __test__.replenishAndShrink(
-      { repoName, repoPath: repo, emit: () => {}, log: fakeLog() },
+      { repoName, repoPath: repo, emit: () => {}, log: fakeLog(), findRunningRun: () => null },
       new Map(),
       fakeAppConfig(),
     );
@@ -1727,6 +1738,7 @@ describe("detached trigger / latency", () => {
       repoIndex: () => ({ [repoName]: repo }),
       emit: (type: string, data: unknown) => events.push({ type, data }),
       log: fakeLog(),
+      findRunningRunByWorktree: () => null,
     });
 
     const t0 = Date.now();
@@ -1768,6 +1780,7 @@ describe("detached trigger / latency", () => {
       repoIndex: () => { repoIndexCalls++; return { [repoName]: repo }; },
       emit: () => {},
       log: fakeLog(),
+      findRunningRunByWorktree: () => null,
     });
 
     reconciler.kick();

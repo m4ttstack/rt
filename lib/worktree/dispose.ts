@@ -127,14 +127,18 @@ export interface DisposeDeps {
   /** The calling CLI process (and its descendants) to spare from the kill. */
   callerPids?: number[];
   /** Live-run lookup by worktree path, guard 4: wired from `findRunningRunByWorktree`
-      in lib/runs/store.ts. Optional so a caller that never touches herd worktrees
-      can omit it; omitting it skips the guard rather than failing closed. */
-  findRunningRun?: (worktree: string) => { id: string; currentStage: string } | null;
+      in lib/runs/store.ts. Required (not optional) so a new construction site
+      can't forget it and silently fail open on a running-run tree. */
+  findRunningRun: (worktree: string) => { id: string; currentStage: string } | null;
 }
 
 export type DisposeOutcome =
   | { disposed: true; trash?: { path: string; keptUntil: string } }
-  | { disposed: false; refusal: string };
+  /** `detail` is set only where the bare `refusal` code can't name what a
+      human needs to act on it (the run id and stage for `running-run`); every
+      caller that surfaces `refusal` to a person should print `detail` too
+      when present. */
+  | { disposed: false; refusal: string; detail?: string };
 
 /** The MR joined to this tree, if the branch cache knows one for this repo. */
 function joinedMr(
@@ -192,13 +196,13 @@ export async function disposeTree(
   const force = opts.force === true;
   const auto = opts.auto === true;
 
-  const refuse = (refusal: string, extra: Record<string, unknown> = {}): DisposeOutcome => {
-    const fields = { repo: repoName, tree: rec.name, refusal, ...extra };
+  const refuse = (refusal: string, detail?: string): DisposeOutcome => {
+    const fields = { repo: repoName, tree: rec.name, refusal, ...(detail ? { detail } : {}) };
     // Auto refusals repeat every reactor pass for as long as the tree sits
     // disposable, so they belong at debug; a human-driven refusal is a one-off.
     if (auto && log.debug) log.debug(fields, "worktree dispose refused");
     else log.info(fields, "worktree dispose refused");
-    return { disposed: false, refusal };
+    return { disposed: false, refusal, ...(detail ? { detail } : {}) };
   };
 
   // All three callers hold the tree lock, but their record was collected
@@ -245,12 +249,9 @@ export async function disposeTree(
 
     // 4. No pipeline run is still live in this worktree: a running run can go
     //    on writing to the filesystem disposal is about to remove.
-    const running = deps.findRunningRun?.(rec.path);
+    const running = deps.findRunningRun(rec.path);
     if (running) {
-      return refuse("running-run", {
-        runId: running.id, currentStage: running.currentStage,
-        hint: `finish it or run: rt runs abandon ${running.id}`,
-      });
+      return refuse("running-run", `running run ${running.id} at ${running.currentStage}; rt runs abandon ${running.id}`);
     }
 
     // 5. Nobody is attending the MR right now.

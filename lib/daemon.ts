@@ -778,6 +778,7 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
           repoIndex: loadRepoIndex,
           emit,
           log,
+          findRunningRunByWorktree,
         });
 
         refreshCache = createCacheRefresher({
