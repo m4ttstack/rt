@@ -1,6 +1,7 @@
 import type { ComponentProps, HTMLAttributes, ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { defineComponent } from "../../builders.ts";
+import { ICONS } from "../Icon/Icon.tsx";
 import classes from "./Panel.module.css";
 
 /** Authoring category (1 = pure styled primitive, with internal lifecycle).
@@ -137,7 +138,7 @@ export const Panel = defineComponent<PanelProps_, typeof PANEL_SELECTORS, readon
           onClick={toggle}
         >
           <span {...getStyles("caret")} data-part={PANEL_PARTS.caret} aria-hidden>
-            {collapsed ? "▸" : "▾"}
+            {ICONS["chevron-right"]}
           </span>
           {title} <span {...getStyles("count")} data-part={PANEL_PARTS.count}>{count}</span>
         </button>

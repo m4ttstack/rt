@@ -42,10 +42,23 @@
     border-radius: var(--radius-px2);
   }
 
+  /* The chevron points right when collapsed and rotates down when open;
+     fixtures and first paints apply the transform at mount, so the 120ms
+     transition only ever animates a user toggle. */
   .caret {
-    font-size: var(--font-size-rem65);
+    display: inline-flex;
+    align-items: center;
     opacity: 0.7;
     transition: transform 120ms ease;
+  }
+
+  .caret svg {
+    width: var(--spacing-px12);
+    height: var(--spacing-px12);
+  }
+
+  .root:not([data-collapsed]) .caret {
+    transform: rotate(90deg);
   }
 
   .count {
