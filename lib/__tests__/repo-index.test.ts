@@ -890,4 +890,17 @@ describe("pickerWorktrees", () => {
     };
     expect(pickerWorktrees(repo).map((w) => w.path)).toEqual(["/pool/x/main", "/pool/x/charlie"]);
   });
+
+  test("excludes on-deck pool trees (unclaimed plumbing, not for direct entry)", () => {
+    const repo = {
+      repoName: "x", dataDir: "/d",
+      worktrees: [
+        wt("/pool/x/main", "master"),
+        wt("/pool/x/bellatrix", "on-deck/bellatrix"),
+        wt("/pool/x/charlie", "rt-3-live"),
+        wt("/pool/x/luna", "on-deck/luna"),
+      ],
+    };
+    expect(pickerWorktrees(repo).map((w) => w.path)).toEqual(["/pool/x/main", "/pool/x/charlie"]);
+  });
 });
