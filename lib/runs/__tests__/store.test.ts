@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
-import { findRun, findRunsBySession, listRuns, readRun } from "../store.ts";
+import { findRun, findRunningRunByWorktree, findRunsBySession, listRuns, readRun } from "../store.ts";
 import { root, seedRun } from "./fixtures.ts";
 
 afterEach(() => { delete process.env.RT_RUNS_ROOT; });
@@ -171,5 +171,34 @@ describe("findRunsBySession", () => {
     setSessionField(dir, "alpha", "20260821-010101-aaaa", "sess-1");
 
     expect(findRunsBySession("sess-1").map((m) => m.summary.id)).toEqual(["20260821-010101-aaaa"]);
+  });
+});
+
+function setWorktreeField(dir: string, repo: string, id: string, worktree: string, at = 0): void {
+  const db = new Database(join(dir, repo, id, "state.db"));
+  db.exec(`INSERT INTO fields VALUES ('${id}', 'worktree', '${worktree}', 'plan', ${at});`);
+  db.close();
+}
+
+describe("findRunningRunByWorktree", () => {
+  test("matches a running run whose worktree field equals the given path", () => {
+    const dir = root();
+    seedRun(dir, "alpha", "20260821-010101-aaaa", 1000);
+    setWorktreeField(dir, "alpha", "20260821-010101-aaaa", "/w/job-a");
+    expect(findRunningRunByWorktree("/w/job-a")).toEqual({ id: "20260821-010101-aaaa", currentStage: "plan" });
+  });
+
+  test("a done run's worktree does not match", () => {
+    const dir = root();
+    seedRun(dir, "alpha", "20260821-020202-bbbb", 1000, 1, { status: "done" });
+    setWorktreeField(dir, "alpha", "20260821-020202-bbbb", "/w/job-b");
+    expect(findRunningRunByWorktree("/w/job-b")).toBeNull();
+  });
+
+  test("no run's worktree matches the given path", () => {
+    const dir = root();
+    seedRun(dir, "alpha", "20260821-030303-cccc", 1000);
+    setWorktreeField(dir, "alpha", "20260821-030303-cccc", "/w/other");
+    expect(findRunningRunByWorktree("/w/nope")).toBeNull();
   });
 });

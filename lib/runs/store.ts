@@ -199,6 +199,30 @@ export function findRun(runId: string, liveness?: RunLiveness): RunDetail | null
 // contained.
 export type RunSessionMatch = { summary: RunSummary; runDb: string };
 
+/** Scans every run DB for a live run anchored at `worktree`, guarding herd
+    close/dispose against a filesystem a running pipeline still owns. */
+export function findRunningRunByWorktree(worktree: string): { id: string; currentStage: string } | null {
+  for (const repo of dirs(runsRoot())) {
+    for (const id of dirs(join(runsRoot(), repo))) {
+      const opened = openRun(repo, id);
+      if (!opened) continue;
+      try {
+        const run = opened.db.query("SELECT status, current_stage FROM runs LIMIT 1").get() as
+          { status: string; current_stage: string | null } | undefined;
+        if (!run || run.status !== "running") continue;
+        const field = opened.db.query("SELECT value FROM fields WHERE key = 'worktree'").get() as
+          { value: string } | undefined;
+        if (field?.value === worktree) return { id, currentStage: run.current_stage ?? "" };
+      } catch {
+        continue;
+      } finally {
+        opened.db.close();
+      }
+    }
+  }
+  return null;
+}
+
 export function findRunsBySession(sessionId: string): RunSessionMatch[] {
   const out: RunSessionMatch[] = [];
   for (const repo of dirs(runsRoot())) {
