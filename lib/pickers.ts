@@ -7,7 +7,7 @@
 
 import { execSync } from "child_process";
 import { join } from "path";
-import { getRepoIdentity, pickWorktreeFromRepo, getWorkspacePackages, repoOptions, repoFromOptionValue, missingRepoRefusal, pickerWorktrees, type KnownRepo } from "./repo.ts";
+import { pickWorktreeFromRepo, getWorkspacePackages, repoOptions, repoFromOptionValue, missingRepoRefusal, pickerWorktrees, type KnownRepo } from "./repo.ts";
 import { enrichBranches, formatBranchSegments, isDefaultBranch, type EnrichedBranch } from "./enrich.ts";
 import { repoLabel } from "./repo-label.ts";
 import type { PickHandle } from "./ui/pick.ts";
