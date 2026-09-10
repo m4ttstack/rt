@@ -722,6 +722,64 @@ func TestHighlightAppliesCyanWhenPositionsIndexTheVisibleLeftText(t *testing.T) 
 	}
 }
 
+// TestHighlightAppliesCyanToVisibleRightText mirrors the left-side
+// contract for right-pinned segments: a query that matched the row via its
+// Match field and is visible in the right text (the cd picker's ticket id)
+// highlights those runes; left text that lacks the query stays plain, so
+// any cyan in the line is the right side's.
+func TestHighlightAppliesCyanToVisibleRightText(t *testing.T) {
+	req := protocol.PickRequest{
+		T:            "pick",
+		Protocol:     protocol.Version,
+		InitialQuery: "1841",
+		Rows: []protocol.PickRow{
+			{
+				Value: "/repo/fleur",
+				Left:  []protocol.PickSegment{{Text: "fleur", Tone: "text"}},
+				Right: []protocol.PickSegment{{Text: "ACME-1841", Tone: "dimmer"}},
+				Match: "fleur ACME-1841",
+			},
+		},
+	}
+	m := New(req)
+	m.width = 40
+
+	if len(m.matches) != 1 {
+		t.Fatalf("the row should match via its Match field, got %d", len(m.matches))
+	}
+	if !strings.Contains(rowLine(m, 0), cyanSGR) {
+		t.Fatalf("matched runes of the visible right text should carry the cyan highlight: %q", rowLine(m, 0))
+	}
+}
+
+// TestHighlightSkipsRightTextWithoutTheQuery is the right side's
+// alias-only counterpart: a row matched via Match whose visible text (left
+// and right) lacks the query paints no highlight at all.
+func TestHighlightSkipsRightTextWithoutTheQuery(t *testing.T) {
+	req := protocol.PickRequest{
+		T:            "pick",
+		Protocol:     protocol.Version,
+		InitialQuery: "sidebar",
+		Rows: []protocol.PickRow{
+			{
+				Value: "/repo/fleur",
+				Left:  []protocol.PickSegment{{Text: "fleur", Tone: "text"}},
+				Right: []protocol.PickSegment{{Text: "ACME-1841", Tone: "dimmer"}},
+				Match: "fleur Claim chat sidebar ACME-1841",
+			},
+		},
+	}
+	m := New(req)
+	m.width = 40
+
+	if len(m.matches) != 1 {
+		t.Fatalf("the row should match via its Match field, got %d", len(m.matches))
+	}
+	if strings.Contains(rowLine(m, 0), cyanSGR) {
+		t.Fatalf("the query isn't in any visible text, so nothing may highlight: %q", rowLine(m, 0))
+	}
+}
+
 // TestHighlightMatchesVisibleTextEvenWhenMatchFieldDiverges replaces the
 // old "diverges => always suppress" contract: reusing the filter's own
 // match.Positions (which index matchText -- row.Match when the caller set
