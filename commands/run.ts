@@ -996,8 +996,8 @@ export async function resolveRun(
             );
             const wtResult = await runSegmentPicker({
               rows: enriched.map((eb) => {
-                const { left, right } = formatBranchSegments(eb);
-                return { value: eb.path, left, right };
+                const { left, right, match } = formatBranchSegments(eb);
+                return { value: eb.path, left, right, match };
               }),
               message: `${repoLabel(selectedRepo.repoName)} worktrees`,
               headerParts: [

@@ -171,4 +171,87 @@ describe("formatBranchSegments", () => {
       { text: "ACME-1234", tone: "dimmer" },
     ]);
   });
+
+  test("ticket branch appends its linearId after the icons, dimmer", () => {
+    const eb = mkBranch({
+      dirName: "fleur",
+      linearId: "ACME-1841",
+      ticket: mkTicket({ stateName: "Code Review" }),
+      mr: mkMr({ state: "opened", pipeline: { status: "success" } as any }),
+    });
+    const { right } = formatBranchSegments(eb);
+    expect(right).toEqual([
+      { text: "✓", tone: "mint" },
+      { text: " " },
+      { text: "◉", tone: "mint" },
+      { text: " " },
+      { text: "ACME-1841", tone: "dimmer" },
+    ]);
+  });
+
+  test("ticket branch with no MR still shows its linearId, dimmer", () => {
+    const eb = mkBranch({
+      dirName: "seamus",
+      linearId: "ACME-1710",
+      ticket: mkTicket({ stateName: "In Progress" }),
+    });
+    const { right } = formatBranchSegments(eb);
+    expect(right).toEqual([{ text: "ACME-1710", tone: "dimmer" }]);
+  });
+
+  test("a long ticket title is clipped to 64 chars with an ellipsis; the state tag survives", () => {
+    const longTitle =
+      "`selectedMeshType` acts as a permanent cache and never re-syncs when vehicle classification changes";
+    const eb = mkBranch({
+      dirName: "fleur",
+      linearId: "ACME-1841",
+      ticket: mkTicket({ title: longTitle, stateName: "Code Review" }),
+    });
+    const { left } = formatBranchSegments(eb);
+
+    const titleSeg = left[2]!;
+    expect(titleSeg.text.length).toBe(64);
+    expect(titleSeg.text.endsWith("…")).toBe(true);
+    expect(titleSeg.text.startsWith("`selectedMeshType` acts as a permanent cache")).toBe(true);
+    expect(left.at(-1)).toEqual({ text: " [Code Review]", tone: "dim" });
+  });
+
+  test("a 64-char ticket title is not clipped", () => {
+    const title = "x".repeat(64);
+    const eb = mkBranch({ linearId: "ACME-1", ticket: mkTicket({ title }) });
+    const { left } = formatBranchSegments(eb);
+    expect(left[2]!.text).toBe(title);
+  });
+
+  test("clipping never splits a surrogate pair at the boundary", () => {
+    const title = "x".repeat(62) + "🚀" + "y".repeat(10);
+    const eb = mkBranch({ linearId: "ACME-1", ticket: mkTicket({ title }) });
+    const { left } = formatBranchSegments(eb);
+    expect(left[2]!.text.isWellFormed()).toBe(true);
+    expect(left[2]!.text.endsWith("🚀…")).toBe(true);
+  });
+
+  test("ticket-row match text carries branch, full title, and linearId for filtering", () => {
+    const longTitle = "a".repeat(80);
+    const eb = mkBranch({
+      dirName: "fleur",
+      branch: "acme-1841-selected-mesh-type",
+      linearId: "ACME-1841",
+      ticket: mkTicket({ title: longTitle, stateName: "Code Review" }),
+    });
+    const { match } = formatBranchSegments(eb);
+    expect(match).toContain("fleur");
+    expect(match).toContain("acme-1841-selected-mesh-type");
+    expect(match).toContain(longTitle);
+    expect(match).toContain("ACME-1841");
+    expect(match).toContain("[Code Review]");
+  });
+
+  test("non-ticket-row match text carries dirName, branch, and linearId", () => {
+    const eb = mkBranch({ dirName: "hedwig", branch: "acme-token-pipeline", linearId: "ACME-1234" });
+    const { match } = formatBranchSegments(eb);
+    expect(match).toContain("hedwig");
+    expect(match).toContain("acme-token-pipeline");
+    expect(match).toContain("ACME-1234");
+  });
 });
