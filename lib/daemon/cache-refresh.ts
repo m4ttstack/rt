@@ -61,6 +61,15 @@ export const COLD_RECHECK_MS = 60 * 60 * 1000;
  */
 export const COLD_PER_CYCLE = 25;
 
+/**
+ * Names that can never carry an MR of their own and so never earn a GitLab
+ * or Linear round trip: on-deck/* (pool plumbing), rt-backup/* (rt's own
+ * rebase backups), backup/* (the human convention for parked copies).
+ */
+export function isEnrichableBranchName(branch: string): boolean {
+  return !branch.startsWith("on-deck/") && !branch.startsWith("rt-backup/") && !branch.startsWith("backup/");
+}
+
 export interface EnrichmentCandidate {
   path: string;
   branch: string;
@@ -261,10 +270,8 @@ export function createCacheRefresher(deps: CacheRefresherDeps): () => Promise<vo
 
         try {
           // 1. Discover worktree branches (detached worktrees have no branch).
-          // on-deck/* branches are pool plumbing, not feature work — never
-          // worth MR/Linear enrichment.
           const candidates: EnrichmentCandidate[] = ((await listWorktreesAsync(repoPath, signal)) ?? [])
-            .filter((w): w is WorktreeEntry & { branch: string } => !!w.branch && !w.branch.startsWith("on-deck/"))
+            .filter((w): w is WorktreeEntry & { branch: string } => !!w.branch && isEnrichableBranchName(w.branch))
             .map((w) => ({ path: w.path, branch: w.branch, worktree: true }));
 
           // 2. Discover local branches (not just worktrees)
@@ -273,7 +280,7 @@ export function createCacheRefresher(deps: CacheRefresherDeps): () => Promise<vo
           if (localBranches.exitCode === 0) {
             for (const name of localBranches.stdout.split("\n")) {
               const trimmed = name.trim();
-              if (!trimmed || worktreeBranchSet.has(trimmed) || trimmed.startsWith("on-deck/")) continue;
+              if (!trimmed || worktreeBranchSet.has(trimmed) || !isEnrichableBranchName(trimmed)) continue;
               if (extractLinearId(trimmed)) {
                 candidates.push({ path: repoPath, branch: trimmed, worktree: false });
               }
