@@ -156,7 +156,12 @@ Bun.listen({
         id = req.id;
         logMethod(req.method);
         if (req.method === "session.snapshot") {
-          reply = JSON.stringify({ id, result: { snapshot: { workspaces: [], panes: [] } } });
+          // The spawned pane must be listed: the daemon's claim sweep treats
+          // a bg pane missing from the snapshot as stale and releases its
+          // claim, so an empty snapshot makes the claim-gated stop race the
+          // watch-connect sweep (fail/pass by timing). A real server lists
+          // the pane it just spawned.
+          reply = JSON.stringify({ id, result: { snapshot: { workspaces: [], panes: [{ pane_id: "w1:p1" }] } } });
         } else if (req.method === "events.subscribe") {
           reply = JSON.stringify({ id, result: { type: "subscribed" } });
         } else if (req.method === "agent.get" || req.method === "agent.wait") {

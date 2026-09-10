@@ -58,8 +58,12 @@ export function harness(over: Partial<HerdDeps> = {}) {
     },
   } as unknown as HerdDeps["chat"];
   const agentCalls: any[] = [];
+  // Contract parity with the real agent:start (handlers/agent.ts): a spawn
+  // that lands on the bg socket reports paneId as a bg: REF, never the bare
+  // id -- that is what the pane column stores. The bare-id fake hid the
+  // double-prefix family for a full release.
   const agent = {
-    "agent:start": async (p: any) => { agentCalls.push(p); return { ok: true as const, data: { id: "ag-1", sessionId: "sess-w1", paneId: "w9:p1", tabId: "w9:t1", workspaceId: "w9", repo: p.repo, cwd: p.cwd, surface: "herdr", provider: "claude" } }; },
+    "agent:start": async (p: any) => { agentCalls.push(p); const paneId = p.herdrSocket === "/tmp/hidden.sock" ? "bg:w9:p1" : "w9:p1"; return { ok: true as const, data: { id: "ag-1", sessionId: "sess-w1", paneId, tabId: "w9:t1", workspaceId: "w9", repo: p.repo, cwd: p.cwd, surface: "herdr", provider: "claude" } }; },
   } as unknown as HerdDeps["agent"];
   const worktreeCalls: any[] = [];
   const worktree = {
@@ -82,6 +86,11 @@ export function harness(over: Partial<HerdDeps> = {}) {
     herdr: (async (method: string, params: any, o: any) => {
       socketCalls.push({ method, params, sock: o?.sockPath ?? null });
       order.push(`herdr:${method}`);
+      // Real herdr knows nothing of the bg: ref scheme -- a prefixed id is an
+      // unknown target on every socket. Honest rejection here is what keeps
+      // the parse-at-the-seam contract tested.
+      const target = params?.target ?? params?.pane_id;
+      if (typeof target === "string" && target.startsWith("bg:")) return { ok: false, code: "not_found", message: `unknown pane ${target}` };
       if (method === "session.snapshot") return { ok: true, result: { snapshot: { panes: [{ pane_id: "w9:p1", agent_status: "working" }] } } };
       if (method === "agent.get") {
         if (trust.registerFailures > 0) { trust.registerFailures -= 1; return { ok: false, code: "not_found", message: "no agent" }; }
@@ -98,6 +107,9 @@ export function harness(over: Partial<HerdDeps> = {}) {
       const allHerds = store.list();
       return async (args: string[]) => {
         herdrCalls.push(args);
+        // Same honesty as the socket fake: the herdr CLI takes bare pane
+        // ids; a bg:-prefixed argument is an unknown pane, exit 1.
+        if (args[0] === "pane" && typeof args[2] === "string" && args[2].startsWith("bg:")) return { stdout: `unknown pane ${args[2]}`, exitCode: 1 };
         if (args[0] === "workspace" && args[1] === "list") {
           const workspaces = allHerds.map((h) => ({ workspace_id: h.id, label: h.workspace }));
           return { stdout: JSON.stringify({ result: { workspaces } }), exitCode: 0 };
@@ -110,6 +122,7 @@ export function harness(over: Partial<HerdDeps> = {}) {
     bg, claims,
     jobsRoot: join(dir, "herds"),
     log,
+    registerBudgetMs: 2000,
     ...over,
   };
   const h = createHerdHandlers(deps);
@@ -494,7 +507,7 @@ describe("worker verbs", () => {
     const hx = harness();
     const s = await hx.h["herd:start"]({ ...START, hidden: true });
     if (!s.ok) throw new Error(s.error);
-    hx.store.upsertJob({ herd: s.data.herd, name: "job-a", worktree: "/w/job-a", handle: "job-a", status: "active", pane: "wh:p1", agentSession: "sess-w1" });
+    hx.store.upsertJob({ herd: s.data.herd, name: "job-a", worktree: "/w/job-a", handle: "job-a", status: "active", pane: "bg:wh:p1", agentSession: "sess-w1" });
     return { ...hx, herd: s.data.herd, room: s.data.room };
   }
 
@@ -841,7 +854,7 @@ describe("hidden verbs", () => {
     });
     const s = await hx.h["herd:start"]({ ...START, hidden: true });
     if (!s.ok) throw new Error(s.error);
-    hx.store.upsertJob({ herd: s.data.herd, name: "job-a", worktree: "/w", handle: "job-a", status: "active", pane: "wh:p1" });
+    hx.store.upsertJob({ herd: s.data.herd, name: "job-a", worktree: "/w", handle: "job-a", status: "active", pane: "bg:wh:p1" });
     const res = await hx.h["herd:attend"]({ herd: s.data.herd, job: "job-a", callerWorkspace: "wv" });
     if (!res.ok) throw new Error(res.error);
     expect(res.data).toEqual({ tab: "wv:t9", pane: "bg:wh:p1" });
@@ -877,7 +890,7 @@ describe("hidden verbs", () => {
     });
     const s = await hx.h["herd:start"]({ ...START, hidden: true });
     if (!s.ok) throw new Error(s.error);
-    hx.store.upsertJob({ herd: s.data.herd, name: "job-a", worktree: "/w", handle: "job-a", status: "active", pane: "wh:p1" });
+    hx.store.upsertJob({ herd: s.data.herd, name: "job-a", worktree: "/w", handle: "job-a", status: "active", pane: "bg:wh:p1" });
     const res = await hx.h["herd:attend"]({ herd: s.data.herd, job: "job-a", callerWorkspace: "wv" });
     expect(res.ok).toBe(false);
     if (res.ok) throw new Error("unreachable");
@@ -896,7 +909,7 @@ describe("hidden verbs", () => {
     });
     const s = await hx.h["herd:start"]({ ...START, hidden: true });
     if (!s.ok) throw new Error(s.error);
-    hx.store.upsertJob({ herd: s.data.herd, name: "job-a", worktree: "/w", handle: "job-a", status: "active", pane: "wh:p1" });
+    hx.store.upsertJob({ herd: s.data.herd, name: "job-a", worktree: "/w", handle: "job-a", status: "active", pane: "bg:wh:p1" });
     const res = await hx.h["herd:attend"]({ herd: s.data.herd, job: "job-a", callerWorkspace: "wv" });
     expect(res.ok).toBe(false);
     if (res.ok) throw new Error("unreachable");
@@ -981,10 +994,12 @@ describe("herd:wrap-up", () => {
     const hidden = await hx.h["herd:start"]({ ...START, hidden: true });
     if (!hidden.ok) throw new Error(hidden.error);
     const herd = hidden.data.herd;
-    hx.store.upsertJob({ herd, name: "job-a", worktree: "/w/job-a", handle: "job-a", status: "done", pane: "w9:p1" });
+    hx.store.upsertJob({ herd, name: "job-a", worktree: "/w/job-a", handle: "job-a", status: "done", pane: "bg:w9:p1" });
     const res = await hx.h["herd:wrap-up"]({ herd, closePanes: true });
     if (!res.ok) throw new Error(res.error);
     expect(res.data.closed).toEqual(["job-a"]);
+    // The stored value is a bg: ref; the herdr CLI only knows the bare id.
+    expect(hx.herdrCalls).toContainEqual(["pane", "close", "w9:p1"]);
     expect(hx.claims.list().map((c) => c.owner)).not.toContain(`herd:${herd}`);
   });
 
@@ -993,7 +1008,7 @@ describe("herd:wrap-up", () => {
     const hidden = await hx.h["herd:start"]({ ...START, hidden: true });
     if (!hidden.ok) throw new Error(hidden.error);
     const herd = hidden.data.herd;
-    hx.store.upsertJob({ herd, name: "job-a", worktree: "/w/job-a", handle: "job-a", status: "done", pane: "w9:p1" });
+    hx.store.upsertJob({ herd, name: "job-a", worktree: "/w/job-a", handle: "job-a", status: "done", pane: "bg:w9:p1" });
     const res = await hx.h["herd:wrap-up"]({ herd, closePanes: true });
     if (!res.ok) throw new Error(res.error);
     expect(res.data.closed).toEqual([]);
@@ -1021,13 +1036,13 @@ describe("herd:wrap-up", () => {
     const hidden = await hx.h["herd:start"]({ ...START, hidden: true });
     if (!hidden.ok) throw new Error(hidden.error);
     const herd = hidden.data.herd;
-    hx.store.upsertJob({ herd, name: "job-a", worktree: "/w/job-a", handle: "job-a", status: "done", pane: "w9:p1" });
+    hx.store.upsertJob({ herd, name: "job-a", worktree: "/w/job-a", handle: "job-a", status: "done", pane: "bg:w9:p1" });
 
     const first = await hx.h["herd:wrap-up"]({ herd, closePanes: true });
     if (!first.ok) throw new Error(first.error);
     expect(first.data.closed).toEqual([]);
     expect(hx.store.getJob(herd, "job-a")!.status).not.toBe("closed");
-    expect(hx.store.getJob(herd, "job-a")!.pane).toBe("w9:p1");
+    expect(hx.store.getJob(herd, "job-a")!.pane).toBe("bg:w9:p1");
     expect(hx.claims.list().map((c) => c.owner)).toContain(`herd:${herd}`);
 
     const second = await hx.h["herd:wrap-up"]({ herd, closePanes: true });

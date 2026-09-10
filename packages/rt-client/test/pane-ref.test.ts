@@ -20,4 +20,10 @@ describe("pane refs", () => {
   test("double prefix does not nest", () => {
     expect(parsePaneRef(BG_PREFIX + BG_PREFIX + "w1:p2").paneId).toBe(BG_PREFIX + "w1:p2");
   });
+  // A herdr pane id is w<N>:p<N> and can never itself start with "bg:", so
+  // formatting is safe to make idempotent -- callers that receive a value of
+  // unknown provenance (bare id or stored ref) must not double-prefix it.
+  test("format bg is idempotent on an already-formatted ref", () => {
+    expect(formatPaneRef(BG_PREFIX + "w1:p2", "bg")).toBe(BG_PREFIX + "w1:p2");
+  });
 });
