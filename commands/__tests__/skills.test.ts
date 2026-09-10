@@ -218,6 +218,7 @@ function computeGolden(mattstackDir: string) {
       mattstack: { dir: join(mattstackDir, "plugins", "mattstack"), version: "1.2.0" },
       acme: { dir: join(mattstackDir, "plugins", "acme"), version: "0.3.0" },
     },
+    list: [],
   };
   const verb: VerbDef = { name: "watch-ci", engine: "watch-ci", description: "Use when watching or triaging CI." };
   const step = loadStepSource("watch-ci", roots);

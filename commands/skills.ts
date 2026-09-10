@@ -432,7 +432,7 @@ function resolvePluginRootsFromDir(dir: string): PluginRoots {
     byName[name] = { dir: pluginDir, version };
   }
 
-  return { byName };
+  return { byName, list: [] };
 }
 
 type Resolved = {
@@ -504,7 +504,7 @@ async function resolve(flags: Flags): Promise<Resolved> {
   // skipping the `claude plugin list` subprocess keeps rosterless packs usable
   // even where the Claude CLI is absent.
   const pluginRoots: PluginRoots = fullRoster.length === 0
-    ? { byName: {} }
+    ? { byName: {}, list: [] }
     : flags.mattstackDir
       ? resolvePluginRootsFromDir(mattstackRoot)
       : resolvePluginRoots();

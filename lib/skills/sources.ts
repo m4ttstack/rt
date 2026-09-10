@@ -31,9 +31,25 @@ export function stripFrontmatter(
   return { body, frontmatter, bodyStartLine };
 }
 
-export type PluginRoots = { byName: Record<string, { dir: string; version: string }> };
-
 export type PluginListEntry = { id: string; installPath: string };
+
+export type PluginRoots = { byName: Record<string, { dir: string; version: string }>; list: PluginListEntry[] };
+
+export function listInstalledPlugins(): PluginListEntry[] {
+  const raw = execSync("claude plugin list --json", { encoding: "utf8" });
+  return JSON.parse(raw) as PluginListEntry[];
+}
+
+export function installedVersionFor(list: PluginListEntry[], id: string): string | null {
+  const entry = list.find((e) => e.id === id);
+  if (!entry || !existsSync(entry.installPath)) return null;
+  try {
+    const pluginJson = JSON.parse(readFileSync(join(entry.installPath, ".claude-plugin", "plugin.json"), "utf8"));
+    return typeof pluginJson.version === "string" ? pluginJson.version : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Entry-processing half of resolvePluginRoots, split out so it's testable
@@ -64,7 +80,7 @@ export function buildPluginRoots(list: PluginListEntry[]): PluginRoots {
     byName[name] = { dir, version };
   }
 
-  return { byName };
+  return { byName, list };
 }
 
 /**
@@ -74,9 +90,7 @@ export function buildPluginRoots(list: PluginListEntry[]): PluginRoots {
  * live against real installed plugins in integration coverage instead.
  */
 export function resolvePluginRoots(): PluginRoots {
-  const raw = execSync("claude plugin list --json", { encoding: "utf8" });
-  const list = JSON.parse(raw) as PluginListEntry[];
-  return buildPluginRoots(list);
+  return buildPluginRoots(listInstalledPlugins());
 }
 
 function parseSlots(raw: unknown): Record<string, SlotSpec> {

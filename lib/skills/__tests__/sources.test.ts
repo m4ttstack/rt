@@ -4,6 +4,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import {
   buildPluginRoots,
+  installedVersionFor,
   invocableRoster,
   loadAttachment,
   loadInclude,
@@ -98,6 +99,7 @@ function makeFixtureRoots(): { rootDir: string; roots: PluginRoots } {
       mattstack: { dir: mattstackDir, version: "1.2.0" },
       acme: { dir: acmeDir, version: "0.3.0" },
     },
+    list: [],
   };
 
   return { rootDir, roots };
@@ -220,7 +222,7 @@ describe("loadStepSource", () => {
       "metadata:", "  stage: plan", "  stage-consumes: ticket", "  stage-produces: approach evidence-plan",
       "---", "", "body {{slot:domain}}",
     ].join("\n"));
-    const step = loadStepSource("stage-plan", { byName: { mattstack: { dir: root, version: "1.0.0" } } });
+    const step = loadStepSource("stage-plan", { byName: { mattstack: { dir: root, version: "1.0.0" } }, list: [] });
     expect(step.stageMeta).toEqual({ stage: "plan", consumes: ["ticket"], produces: ["approach", "evidence-plan"] });
   });
 
@@ -236,7 +238,7 @@ describe("loadStepSource", () => {
       "  stage-produces:", "    - approach", "    - evidence-plan",
       "---", "", "body {{slot:domain}}",
     ].join("\n"));
-    const step = loadStepSource("stage-plan", { byName: { mattstack: { dir: root, version: "1.0.0" } } });
+    const step = loadStepSource("stage-plan", { byName: { mattstack: { dir: root, version: "1.0.0" } }, list: [] });
     expect(step.stageMeta).toEqual({ stage: "plan", consumes: ["ticket", "repo"], produces: ["approach", "evidence-plan"] });
   });
 
@@ -245,7 +247,7 @@ describe("loadStepSource", () => {
     const dir = join(root, "attachments", "work");
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "SKILL.md"), "---\nname: work\ndescription: w\ntype: pipeline-step\n---\n\nbody");
-    const step = loadStepSource("work", { byName: { mattstack: { dir: root, version: "1.0.0" } } });
+    const step = loadStepSource("work", { byName: { mattstack: { dir: root, version: "1.0.0" } }, list: [] });
     expect(step.stageMeta).toBeNull();
   });
 });
@@ -528,7 +530,7 @@ describe("parseStageQualifiedName", () => {
 describe("loadInclude", () => {
   const roots = () => {
     const root = mkdtempSync(join(tmpdir(), "rt-inc-"));
-    return { root, roots: { byName: { mattstack: { dir: root, version: "1.0.0" } } } };
+    return { root, roots: { byName: { mattstack: { dir: root, version: "1.0.0" } }, list: [] } };
   };
   const write = (root: string, name: string, md: string) => {
     mkdirSync(join(root, "attachments", name), { recursive: true });
@@ -563,5 +565,25 @@ describe("loadInclude", () => {
     expect(() => loadInclude("../escape", r)).toThrow(
       'loadInclude: include "../escape" is not a safe directory name (must not contain "/", "\\", or "..", or be empty or ".")',
     );
+  });
+});
+
+describe("installedVersionFor", () => {
+  test("installedVersionFor reads the version of the matching installed id", () => {
+    const install = realpathSync(mkdtempSync(join(tmpdir(), "rt-installed-")));
+    mkdirSync(join(install, ".claude-plugin"), { recursive: true });
+    writeFileSync(join(install, ".claude-plugin", "plugin.json"), JSON.stringify({ name: "acme", version: "0.5.2" }));
+    const list = [{ id: "acme@beacon", installPath: install }];
+    expect(installedVersionFor(list, "acme@beacon")).toBe("0.5.2");
+    expect(installedVersionFor(list, "acme@other")).toBeNull();
+    expect(installedVersionFor([{ id: "acme@beacon", installPath: join(install, "gone") }], "acme@beacon")).toBeNull();
+  });
+
+  test("buildPluginRoots preserves the raw entry list", () => {
+    const install = realpathSync(mkdtempSync(join(tmpdir(), "rt-roots-list-")));
+    mkdirSync(join(install, ".claude-plugin"), { recursive: true });
+    writeFileSync(join(install, ".claude-plugin", "plugin.json"), JSON.stringify({ version: "1.0.0" }));
+    const roots = buildPluginRoots([{ id: "acme@beacon", installPath: install }]);
+    expect(roots.list).toEqual([{ id: "acme@beacon", installPath: install }]);
   });
 });
