@@ -22,6 +22,7 @@ import {
   type SpineEntry,
   type WiringSpine,
 } from './outline';
+import { InstalledCachesBar } from './InstalledCachesBar';
 import { QuietBadge } from './QuietBadge';
 import { SOFT_RULE } from './SlotRow';
 import { useCompositionSnapshot, useSkillsCheck } from './useWiring';
@@ -389,6 +390,12 @@ export function HealthTab({ pack, onOpenSkill }: HealthTabProps) {
     groups.neverCompiledEntries.length === 0 &&
     unwiredRows.length === 0;
 
+  const hasDrift =
+    groups.staleEntries.length > 0 || groups.neverCompiledEntries.length > 0;
+  // An rt too old to report `installed` must not surface a bar claiming
+  // current-ness; drift alone still earns one (sync fixes exactly drift).
+  const showCachesBar = hasDrift || checkQuery.data?.installed != null;
+
   return (
     <Stack gap={0} data-testid="health-tab">
       <div
@@ -414,7 +421,17 @@ export function HealthTab({ pack, onOpenSkill }: HealthTabProps) {
         <StatCard count={unwiredRows.length} label="Unwired" color={null} />
       </div>
 
-      <div style={{ marginTop: 18 }}>
+      {showCachesBar && (
+        <div style={{ marginTop: 18 }}>
+          <InstalledCachesBar
+            pack={pack}
+            installed={checkQuery.data?.installed}
+            drift={hasDrift}
+          />
+        </div>
+      )}
+
+      <div style={{ marginTop: showCachesBar ? 14 : 18 }}>
         {clean ? (
           <Paper
             bg={bg.level2}
