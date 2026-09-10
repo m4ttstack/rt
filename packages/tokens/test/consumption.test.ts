@@ -73,6 +73,8 @@ const WAIVED_TUI: Record<string, string> = {
     "ported wholesale from mr-board's real stylesheet census (docs/token-census.md, scripts/census.ts) into the fontSize scale; this repo's currently-ported recipes do not reference this rung.",
   '--font-size-rem60':
     "ported wholesale from mr-board's real stylesheet census (docs/token-census.md, scripts/census.ts) into the fontSize scale; this repo's currently-ported recipes do not reference this rung.",
+  '--font-size-rem65':
+    'orphaned by a board lane font-size change that left this rung unreferenced; pending that lane re-referencing it or dropping the token.',
   '--font-size-rem68':
     "ported wholesale from mr-board's real stylesheet census (docs/token-census.md, scripts/census.ts) into the fontSize scale; this repo's currently-ported recipes do not reference this rung.",
   '--font-size-rem72':
