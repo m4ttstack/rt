@@ -158,7 +158,7 @@ Expected: PASS (existing callers only read `byName`).
 - [ ] **Step 5: Commit**
 
 ```bash
-git add lib/skills/packs.ts lib/skills/sources.ts commands/skills.ts lib/skills/__tests__/packs.test.ts lib/skills/__tests__/sources.test.ts
+git add lib/skills/packs.ts lib/skills/sources.ts commands/skills.ts commands/__tests__/skills.test.ts lib/skills/__tests__/packs.test.ts lib/skills/__tests__/sources.test.ts
 git commit -m "skills: carry marketplace key on PackInfo, expose installed plugin list"
 ```
 
