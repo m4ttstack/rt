@@ -289,6 +289,7 @@ export function createWorktreeReconciler(deps: ReconcilerDeps): {
           emit: deps.emit,
           log: deps.log,
           killProcesses: appConfig.killProcesses,
+          findRunningRun: deps.findRunningRunByWorktree,
         },
         await loadWorktreeRepoConfig(repoName, repoPath),
       );
