@@ -469,7 +469,10 @@ export function attachSlack<T extends { webUrl?: string | null }>(
         status: ref.status,
         permalink: ref.permalink,
         reactions: ref.reactions ?? [],
-        posted: ref.status === 'found' && !!ref.messageTs,
+        // "In slack" is the found status alone: a multi-MR ref has no
+        // messageTs until its first reaction reifies the threaded reply,
+        // and that reaction anchor must not gate display.
+        posted: ref.status === 'found',
       },
     };
   });

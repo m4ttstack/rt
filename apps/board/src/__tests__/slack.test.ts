@@ -212,7 +212,7 @@ describe('attachSlack', () => {
     });
   });
 
-  test('posted=false when a multi-MR ref has no reply reified yet', () => {
+  test('posted=true for a found multi-MR ref even before a reply is reified', () => {
     const refs = new Map<string, SlackRef>([
       [
         URL_A,
@@ -227,7 +227,7 @@ describe('attachSlack', () => {
       ],
     ]);
     const [a] = attachSlack([{ webUrl: URL_A }], refs);
-    expect(a!.slack?.posted).toBe(false);
+    expect(a!.slack?.posted).toBe(true);
   });
 });
 
