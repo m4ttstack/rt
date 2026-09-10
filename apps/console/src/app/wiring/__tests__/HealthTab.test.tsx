@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const compositionGet = vi.fn();
 const checkGet = vi.fn();
+const syncPost = vi.fn();
 
 vi.mock('../../api', () => ({
   client: {
@@ -13,6 +14,7 @@ vi.mock('../../api', () => ({
       skills: {
         composition: { $get: (...args: unknown[]) => compositionGet(...args) },
         check: { $get: (...args: unknown[]) => checkGet(...args) },
+        sync: { $post: (...args: unknown[]) => syncPost(...args) },
       },
     },
   },
@@ -273,6 +275,118 @@ describe('HealthTab: empty state', () => {
     ).not.toBeInTheDocument();
     expect(
       screen.queryByTestId('health-group-unwired')
+    ).not.toBeInTheDocument();
+  });
+});
+
+const LAG_CHECK = {
+  ...ALL_IN_SYNC_CHECK,
+  installed: {
+    plugin: 'demo',
+    marketplace: 'beacon',
+    version: '0.5.2',
+    sourceVersion: '0.5.3',
+    status: 'lagging',
+  },
+};
+
+const SYNC_REPORT = {
+  ok: true,
+  pack: 'demo',
+  steps: [
+    { name: 'check', status: 'ran', detail: 'no drift' },
+    { name: 'update-pack', status: 'ran', detail: 'demo@beacon' },
+  ],
+  versions: {
+    engine: { before: '0.17.3', after: '0.17.3' },
+    pack: {
+      source: '0.5.3',
+      installedBefore: '0.5.2',
+      installedAfter: '0.5.3',
+    },
+  },
+  warnings: [],
+  restartNeeded: true,
+};
+
+describe('HealthTab: installed caches bar', () => {
+  it('shows "update needed" with both versions when the installed cache lags and nothing drifts', async () => {
+    renderHealthTab(undefined, ALL_IN_SYNC_COMPOSITION, LAG_CHECK);
+
+    const bar = await screen.findByTestId('installed-caches-bar');
+    expect(bar).toHaveTextContent('update needed');
+    expect(bar).toHaveTextContent('0.5.2 installed');
+    expect(bar).toHaveTextContent('0.5.3 source');
+    expect(screen.getByTestId('installed-caches-sync')).toBeEnabled();
+  });
+
+  it('shows "recompile needed" on the bar when check reports drift', async () => {
+    renderHealthTab(undefined, COMPOSITION, {
+      ...CHECK,
+      installed: {
+        ...LAG_CHECK.installed,
+        status: 'current',
+        version: '0.5.3',
+      },
+    });
+
+    const bar = await screen.findByTestId('installed-caches-bar');
+    expect(bar).toHaveTextContent('recompile needed');
+  });
+
+  it('renders no bar when the rt payload has no installed field and nothing drifts', async () => {
+    renderHealthTab(undefined, ALL_IN_SYNC_COMPOSITION, ALL_IN_SYNC_CHECK);
+
+    expect(await screen.findByTestId('health-empty')).toBeInTheDocument();
+    expect(
+      screen.queryByTestId('installed-caches-bar')
+    ).not.toBeInTheDocument();
+  });
+
+  it('sync click posts the pack, then renders the report steps and the restart chip', async () => {
+    syncPost.mockResolvedValue(ok(SYNC_REPORT));
+    const user = userEvent.setup();
+    renderHealthTab(undefined, ALL_IN_SYNC_COMPOSITION, LAG_CHECK);
+
+    await user.click(await screen.findByTestId('installed-caches-sync'));
+
+    expect(syncPost).toHaveBeenCalledWith({ json: { pack: 'demo' } });
+    const steps = await screen.findByTestId('installed-caches-steps');
+    expect(steps).toHaveTextContent('update-pack');
+    expect(screen.getByTestId('installed-caches-restart')).toHaveTextContent(
+      'restart running sessions to apply'
+    );
+  });
+
+  it('a refusal report renders its refused step detail verbatim', async () => {
+    syncPost.mockResolvedValue(
+      ok({
+        ok: false,
+        pack: 'demo',
+        steps: [
+          {
+            name: 'recheck',
+            status: 'refused',
+            detail:
+              'content drift survives recompile; take the agent path (mattstack:editing-skills)',
+          },
+        ],
+        warnings: [],
+        restartNeeded: false,
+      })
+    );
+    const user = userEvent.setup();
+    renderHealthTab(undefined, COMPOSITION, {
+      ...CHECK,
+      installed: LAG_CHECK.installed,
+    });
+
+    await user.click(await screen.findByTestId('installed-caches-sync'));
+
+    const refusal = await screen.findByTestId('installed-caches-refusal');
+    expect(refusal).toHaveTextContent('content drift survives recompile');
+    expect(
+      screen.queryByTestId('installed-caches-restart')
     ).not.toBeInTheDocument();
   });
 });

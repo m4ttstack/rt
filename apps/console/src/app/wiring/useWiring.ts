@@ -315,6 +315,31 @@ export function useSkillsApply(pack: string) {
   return { surfaceApply, bind };
 }
 
+export type SkillsCheckPayload = InferResponseType<
+  typeof client.api.skills.check.$get,
+  200
+>;
+export type SkillsInstalled = NonNullable<SkillsCheckPayload['installed']>;
+export type SkillsSyncReport = InferResponseType<
+  typeof client.api.skills.sync.$post,
+  200
+>;
+
+/** Invalidation happens on settle, not only on success: sync mutates
+    checkouts and installed caches even when the chain ends in a refusal
+    (it may have pulled, bumped, and compiled first) -- the client mirror
+    of the server route's sweep-regardless-of-verdict rule. */
+export function useSkillsSync(pack: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      postSkillsWrite<SkillsSyncReport>(client.api.skills.sync.$post, {
+        pack,
+      }),
+    onSettled: () => invalidateSkillsQueries(queryClient, pack),
+  });
+}
+
 /** Fetches one verb's compiled preview on demand, sharing the exact cache
     entry `useCompilePreview` fills (same query key) so a verb whose drawer
     is already open is not fetched twice. Used by the copy-agent-context
