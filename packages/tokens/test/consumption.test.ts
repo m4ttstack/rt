@@ -9,10 +9,28 @@ import { describe, expect, it } from 'vitest';
  * Deletion is Phase 2 material.
  */
 const WAIVED_TUI: Record<string, string> = {
+  '--border-control-on-card':
+    "on-card contrast role read by apps/board's gate control edges (its --gate-control-edge alias); no kit recipe reads it yet.",
+  '--border-soft-on-card':
+    "soft rule for card grounds, read by apps/board's gate chrome (its --gate-soft-edge alias); no kit recipe reads it yet.",
+  '--surface-overlay':
+    "modal/overlay chrome role read by apps/board's decision-queue modal (its --gate-modal-ground alias); no kit recipe reads it yet.",
+  '--text-muted-on-card':
+    "on-card contrast role read by apps/board's gate muted text (its --gate-muted alias); no kit recipe reads it yet.",
+  '--surface-inset':
+    "inset-ground role read by apps/board's gate key chips (its --gate-key-bg alias); no kit recipe reads it yet.",
+  '--spacing-rem95':
+    "spacing rung read by apps/board's gate column gap (its --gate-gap alias); no kit recipe reads this rung yet.",
+  '--type-display':
+    "type-role alias contract (soribashi.config.ts's cssVariablesResolver); read by apps/board's --gate-font-* layer, outside this test's kit-CSS scope.",
+  '--type-body':
+    "type-role alias contract (soribashi.config.ts's cssVariablesResolver); read by apps/board's --gate-font-* layer, outside this test's kit-CSS scope.",
+  '--type-small':
+    "type-role alias contract (soribashi.config.ts's cssVariablesResolver); read by apps/board's --gate-font-* layer, outside this test's kit-CSS scope.",
+  '--type-micro':
+    "type-role alias contract (soribashi.config.ts's cssVariablesResolver); read by apps/board's --gate-font-* layer, outside this test's kit-CSS scope.",
   '--muted-text':
     "new text-role alias mirroring tokyo's --tk-muted-text naming; existing recipes still read --muted (unaffected, same value) -- Phase 3 apps are the intended consumer of the explicit name.",
-  '--accent-text':
-    "new text-role alias mirroring tokyo's --tk-accent-text naming; no recipe paints link/accent text through it yet -- Phase 3 apps are the intended consumer.",
   '--red-text':
     "new text-role alias mirroring tokyo's --tk-red-text naming; no recipe paints error/bad text through it yet -- Phase 3 apps are the intended consumer.",
   '--chrome':
@@ -47,8 +65,6 @@ const WAIVED_TUI: Record<string, string> = {
     "soribashi's default breakpoint scale; only the framework's `utilities` visibility-class layer reads it, and soribashi.config.ts sets `utilities: false` because this kit emits no such classes.",
   '--font-size-base':
     "ported wholesale from mr-board's real stylesheet census (docs/token-census.md, scripts/census.ts) into the fontSize scale; this repo's currently-ported recipes do not reference this rung.",
-  '--font-size-lg':
-    "ported wholesale from mr-board's real stylesheet census (docs/token-census.md, scripts/census.ts) into the fontSize scale; this repo's currently-ported recipes do not reference this rung.",
   '--font-size-md':
     "ported wholesale from mr-board's real stylesheet census (docs/token-census.md, scripts/census.ts) into the fontSize scale; referenced only from *.visual.test.tsx / workshop pages today.",
   '--font-size-px9':
@@ -62,10 +78,6 @@ const WAIVED_TUI: Record<string, string> = {
   '--font-size-rem72':
     "ported wholesale from mr-board's real stylesheet census (docs/token-census.md, scripts/census.ts) into the fontSize scale; this repo's currently-ported recipes do not reference this rung.",
   '--font-size-rem75':
-    "ported wholesale from mr-board's real stylesheet census (docs/token-census.md, scripts/census.ts) into the fontSize scale; this repo's currently-ported recipes do not reference this rung.",
-  '--font-size-rem78':
-    "ported wholesale from mr-board's real stylesheet census (docs/token-census.md, scripts/census.ts) into the fontSize scale; this repo's currently-ported recipes do not reference this rung.",
-  '--font-size-rem80':
     "ported wholesale from mr-board's real stylesheet census (docs/token-census.md, scripts/census.ts) into the fontSize scale; this repo's currently-ported recipes do not reference this rung.",
   '--font-size-rem82':
     "ported wholesale from mr-board's real stylesheet census (docs/token-census.md, scripts/census.ts) into the fontSize scale; this repo's currently-ported recipes do not reference this rung.",
@@ -100,6 +112,10 @@ const WAIVED_TUI: Record<string, string> = {
 };
 
 const WAIVED_TOKYO: Record<string, string> = {
+  '--tk-overlay':
+    "modal/overlay chrome role (dark sits below panel, light equals it), mirrored from the tui theme's --surface-overlay; no packages/ui component wires this surface yet.",
+  '--tk-soft-on-card':
+    "soft rule for card grounds (dark's --tk-border-soft is darker than the card it frames), mirrored from the tui theme's --border-soft-on-card; no packages/ui component wires it yet.",
   '--tk-red-text':
     "AA-compliant red TEXT role (>=4.5:1), mirrors --tk-muted-text/--tk-accent-text; packages/ui's --mantine-color-error still reads the raw --tk-red for the error surface, and no component paints red as inline text yet -- Phase 3 material.",
   '--tk-green':
@@ -116,6 +132,14 @@ const WAIVED_TOKYO: Record<string, string> = {
     "declared for full parity with tui-kit's hue palette (tokyo-theme.css header: 'every hex below is tui-kit's exact string ... parity with tui-kit is by construction'); no packages/ui component wires this dot role yet.",
   '--tk-dot-bad':
     "declared for full parity with tui-kit's hue palette (tokyo-theme.css header: 'every hex below is tui-kit's exact string ... parity with tui-kit is by construction'); no packages/ui component wires this dot role yet.",
+  '--tk-border-on-card':
+    'on-card contrast role for tui-kit border["on-card"]; no packages/ui component reads it yet.',
+  '--tk-control-edge':
+    'on-card contrast role for tui-kit border["control-on-card"]; no packages/ui component reads it yet.',
+  '--tk-muted-on-card':
+    'on-card contrast role for tui-kit text["muted-on-card"]; no packages/ui component reads it yet.',
+  '--tk-inset':
+    'on-card contrast role for tui-kit surface.inset; no packages/ui component reads it yet.',
 };
 
 const REPO_ROOT = join(import.meta.dirname, '..', '..', '..');

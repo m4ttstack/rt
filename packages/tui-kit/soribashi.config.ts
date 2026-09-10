@@ -74,6 +74,15 @@ const aliases: CssVariablesResolver = () => ({
     // theme token category to alias (ThemeTokens has no such family), and
     // "tabular-nums" is the whole value space this ever needs.
     "--font-numeric": "tabular-nums",
+    // Type roles: the six-size ladder the decision-queue surfaces read
+    // (display > title > body > meta > small > micro). Aliases, not new
+    // sizes: each points at the canonical fontSize rung.
+    "--type-display": "var(--font-size-rem100)",
+    "--type-title": "var(--font-size-rem90)",
+    "--type-body": "var(--font-size-lg)",
+    "--type-meta": "var(--font-size-rem78)",
+    "--type-small": "var(--font-size-sm)",
+    "--type-micro": "var(--font-size-rem62)",
     // Scheme-INVARIANT terminal surface, aliased straight off the night
     // palette object (not through --surface-*/--text-*): every
     // scheme-varying token collapses its light-dark() once at :root, so a

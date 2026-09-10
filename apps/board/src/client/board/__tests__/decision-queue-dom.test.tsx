@@ -180,8 +180,10 @@ test('decision queue: header entry opens, skip advances, close dismisses', async
       await new Promise(resolve => setTimeout(resolve, 0));
     });
 
-    const openButton = container.querySelector('.tui-dq-open');
-    expect(openButton).not.toBeNull();
+    const openButton = [...container.querySelectorAll('button')].find(b =>
+      b.textContent?.trim().startsWith('decision queue')
+    );
+    expect(openButton).not.toBeUndefined();
     expect(openButton?.textContent?.trim()).toBe('decision queue · 2');
 
     await React.act(async () => {
@@ -236,7 +238,9 @@ test('decision queue: skipping a gate does not bleed its selection into the next
       await new Promise(resolve => setTimeout(resolve, 0));
     });
 
-    const openButton = container.querySelector('.tui-dq-open');
+    const openButton = [...container.querySelectorAll('button')].find(b =>
+      b.textContent?.trim().startsWith('decision queue')
+    );
     await React.act(async () => {
       (openButton as HTMLElement).click();
     });

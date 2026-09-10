@@ -90,7 +90,19 @@ export const tuiIntentResolver: IntentResolver = ({ intent, variant }) => {
   const tone =
     family === "gray" ? "var(--color-gray-muted)" : `var(--color-${family}-500)`;
 
-  const result = singleShadeVariantColors(tone, variant) satisfies IntentResolverResult;
+  let result = singleShadeVariantColors(tone, variant) satisfies IntentResolverResult;
+
+  // filled paints scheme-inverting text: --bg flips near-white/near-black
+  // per scheme, so one rule clears both grounds where a literal white
+  // could not. Hover mixes the tone toward --fg (88%), the shipped value.
+  if (variant === "filled") {
+    result = {
+      ...result,
+      color: "var(--bg)",
+      hover: `color-mix(in srgb, ${tone} 88%, var(--fg))`,
+      border: "transparent",
+    };
+  }
 
   const weight = toneWeightFor(variant, intent);
   if (weight === undefined) return result;

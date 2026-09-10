@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { GateDomain } from '@mattstack/gate-kit';
-import { ICONS, Panel, SideDrawer, ToastHost } from '@mattstack/tui-kit';
+import {
+  Button,
+  ICONS,
+  Panel,
+  SideDrawer,
+  ToastHost,
+} from '@mattstack/tui-kit';
 import type { BoardMR } from '../../data.ts';
 import { inferRoster } from '../../data.ts';
 import type { MrAction } from '../../mr-action.ts';
@@ -937,13 +943,16 @@ export function Board() {
           </div>
           <div className="tui-controls tui-controls-header">
             {queueEntries.length > 0 && (
-              <button
+              <Button
                 type="button"
                 className="tui-dq-open"
+                variant="light"
+                intent="accent"
+                size="lg"
                 onClick={queue.openAtStart}
               >
                 decision queue · {queueEntries.length}
-              </button>
+              </Button>
             )}
             <Controls {...controlProps} />
           </div>

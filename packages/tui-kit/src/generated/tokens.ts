@@ -24,18 +24,24 @@ export const GENERATED_LIGHT_COLORS = {
     "muted": "#8990b3",
     "mutedText": "#565d80",
     "accentText": "#1c5fbf",
-    "redText": "#c8214f"
+    "redText": "#c8214f",
+    "mutedOnCard": "#565d80"
   },
   "surface": {
     "bg": "#f7f8fa",
     "panel": "#fbfbfc",
     "card": "#ffffff",
-    "chrome": "#f3f4f7"
+    "chrome": "#f3f4f7",
+    "inset": "#f7f8fa",
+    "overlay": "#fbfbfc"
   },
   "line": {
     "border": "#c8cad6",
     "soft": "#d5d7e2",
-    "grid": "rgba(52, 59, 88, 0.05)"
+    "grid": "rgba(52, 59, 88, 0.05)",
+    "edgeOnCard": "#c8cad6",
+    "controlEdgeOnCard": "#c8cad6",
+    "softOnCard": "#d5d7e2"
   },
   "dot": {
     "ok": "#1f9d3a",
@@ -68,18 +74,24 @@ export const GENERATED_DARK_COLORS = {
     "muted": "#7e86ad",
     "mutedText": "#969ec2",
     "accentText": "#7aa2f7",
-    "redText": "#f7768e"
+    "redText": "#f7768e",
+    "mutedOnCard": "#aab3d8"
   },
   "surface": {
     "bg": "#16161e",
     "panel": "#232a47",
     "card": "#2c3352",
-    "chrome": "#232a47"
+    "chrome": "#232a47",
+    "inset": "#1c2136",
+    "overlay": "#1c2136"
   },
   "line": {
     "border": "#3b4261",
     "soft": "#313853",
-    "grid": "rgba(122, 162, 247, 0.06)"
+    "grid": "rgba(122, 162, 247, 0.06)",
+    "edgeOnCard": "#505879",
+    "controlEdgeOnCard": "#6b7499",
+    "softOnCard": "#404866"
   },
   "dot": {
     "ok": "#4ade5b",

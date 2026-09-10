@@ -14,17 +14,23 @@
     --color-gray-accentText: light-dark(#1c5fbf, #7aa2f7);
     --color-gray-fg: light-dark(#222, #e3e7f6);
     --color-gray-muted: light-dark(#8990b3, #7e86ad);
+    --color-gray-mutedOnCard: light-dark(#565d80, #aab3d8);
     --color-gray-mutedText: light-dark(#565d80, #969ec2);
     --color-gray-redText: light-dark(#c8214f, #f7768e);
     --color-green-500: light-dark(#587539, #9ece6a);
     --color-line-border: light-dark(#c8cad6, #3b4261);
+    --color-line-controlEdgeOnCard: light-dark(#c8cad6, #6b7499);
+    --color-line-edgeOnCard: light-dark(#c8cad6, #505879);
     --color-line-grid: light-dark(rgba(52, 59, 88, 0.05), rgba(122, 162, 247, 0.06));
     --color-line-soft: light-dark(#d5d7e2, #313853);
+    --color-line-softOnCard: light-dark(#d5d7e2, #404866);
     --color-purple-500: light-dark(#7847bd, #bb9af7);
     --color-red-500: light-dark(#f52a65, #f7768e);
     --color-surface-bg: light-dark(#f7f8fa, #16161e);
     --color-surface-card: light-dark(#ffffff, #2c3352);
     --color-surface-chrome: light-dark(#f3f4f7, #232a47);
+    --color-surface-inset: light-dark(#f7f8fa, #1c2136);
+    --color-surface-overlay: light-dark(#fbfbfc, #1c2136);
     --color-surface-panel: light-dark(#fbfbfc, #232a47);
     --radius-lg: 8px;
     --radius-md: 6px;
@@ -62,6 +68,7 @@
     --spacing-rem55: 0.55rem;
     --spacing-rem75: 0.75rem;
     --spacing-rem80: 0.8rem;
+    --spacing-rem95: 0.95rem;
     --spacing-sm: 0.45rem;
     --spacing-xl: 0.9rem;
     --spacing-xs: 0.3rem;
@@ -78,6 +85,7 @@
     --font-size-rem100: 1rem;
     --font-size-rem105: 1.05rem;
     --font-size-rem60: 0.6rem;
+    --font-size-rem62: 0.62rem;
     --font-size-rem65: 0.65rem;
     --font-size-rem68: 0.68rem;
     --font-size-rem72: 0.72rem;
@@ -96,6 +104,7 @@
     --font-family-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     --font-family-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     --line-height-base: 1.55;
+    --line-height-snug: 1.4;
     --shadow-drawer: -6px 0 32px rgba(0, 0, 0, 0.3);
     --shadow-drawer-left: 4px 0 28px rgba(0, 0, 0, 0.3);
     --shadow-menu: 0 10px 30px rgba(0, 0, 0, 0.28), 0 2px 8px rgba(0, 0, 0, 0.18);
@@ -111,10 +120,13 @@
     --text-accentText: var(--color-gray-accentText);
     --text-badText: var(--color-gray-redText);
     --text-muted: var(--color-gray-mutedText);
+    --text-muted-on-card: var(--color-gray-mutedOnCard);
     --text-primary: var(--color-gray-fg);
     --surface-canvas: var(--color-surface-bg);
     --surface-card: var(--color-surface-card);
     --surface-chrome: var(--color-surface-chrome);
+    --surface-inset: var(--color-surface-inset);
+    --surface-overlay: var(--color-surface-overlay);
     --surface-panel: var(--color-surface-panel);
     --surface-wash-accent-14: color-mix(in srgb, var(--accent) 14%, transparent);
     --surface-wash-accent-16: color-mix(in srgb, var(--accent) 16%, transparent);
@@ -125,6 +137,7 @@
     --surface-wash-bg-55: color-mix(in srgb, var(--bg) 55%, transparent);
     --surface-wash-cyan-border-45: color-mix(in srgb, var(--cyan) 45%, var(--border));
     --surface-wash-cyan-panel-38: color-mix(in srgb, var(--cyan) 38%, var(--panel));
+    --surface-wash-fg-4-card: color-mix(in srgb, var(--fg) 4%, var(--card));
     --surface-wash-fg-5: color-mix(in srgb, var(--fg) 5%, transparent);
     --surface-wash-fg-8: color-mix(in srgb, var(--fg) 8%, transparent);
     --surface-wash-panel-100: color-mix(in srgb, var(--panel) 100%, transparent);
@@ -132,8 +145,11 @@
     --surface-wash-panel-70: color-mix(in srgb, var(--panel) 70%, transparent);
     --surface-wash-panel-88: color-mix(in srgb, var(--panel) 88%, transparent);
     --surface-wash-panel-94: color-mix(in srgb, var(--panel) 94%, transparent);
+    --border-control-on-card: var(--color-line-controlEdgeOnCard);
     --border-default: var(--color-line-border);
+    --border-on-card: var(--color-line-edgeOnCard);
     --border-soft: var(--color-line-soft);
+    --border-soft-on-card: var(--color-line-softOnCard);
     --bg: var(--surface-canvas);
     --panel: var(--surface-panel);
     --card: var(--surface-card);
@@ -157,6 +173,12 @@
     --font-mono: var(--font-family-mono);
     --font-sans: var(--font-family-sans);
     --font-numeric: tabular-nums;
+    --type-display: var(--font-size-rem100);
+    --type-title: var(--font-size-rem90);
+    --type-body: var(--font-size-lg);
+    --type-meta: var(--font-size-rem78);
+    --type-small: var(--font-size-sm);
+    --type-micro: var(--font-size-rem62);
     --terminal-bg: #16161e;
     --terminal-fg: #e3e7f6;
     --terminal-border: #3b4261;
@@ -346,6 +368,11 @@
     inherits: true;
     initial-value: 0.8rem;
   }
+  @property --spacing-rem95 {
+    syntax: "<length>";
+    inherits: true;
+    initial-value: 0.95rem;
+  }
   @property --spacing-sm {
     syntax: "<length>";
     inherits: true;
@@ -425,6 +452,11 @@
     syntax: "<length>";
     inherits: true;
     initial-value: 0.6rem;
+  }
+  @property --font-size-rem62 {
+    syntax: "<length>";
+    inherits: true;
+    initial-value: 0.62rem;
   }
   @property --font-size-rem65 {
     syntax: "<length>";

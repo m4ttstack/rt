@@ -15,9 +15,36 @@ export const BUTTON_PARTS = { root: "button" } as const;
 /** `as const` is load-bearing — see Chip.tsx's CHIP_VARIANTS note. `default`
     is first/the default variant: the panel+border box every other variant is
     a departure from. */
-const BUTTON_VARIANTS = ["default", "light", "outline", "subtle"] as const;
+const BUTTON_VARIANTS = ["default", "filled", "light", "outline", "subtle"] as const;
 
 const BUTTON_VOCABULARY_AXES = ["intent", "variant", "size"] as const;
+
+/**
+ * The three pre-existing gate-tier cells pin here, not in intent-resolver.ts
+ * (spec: docs/superpowers/specs/2026-09-10-polish-port-design.md): the
+ * shared resolver feeds autoVars for every recipe, so pinning them there
+ * would restyle shipped non-Button surfaces; pinning the quartet in Button's
+ * own `vars` keeps every other recipe on the resolver's retune-table output.
+ */
+const PINNED_CELLS: Record<string, { bg?: string; color: string; hover: string; border: string }> = {
+  "light|muted": {
+    bg: "color-mix(in srgb, var(--fg) 8%, transparent)",
+    color: "var(--fg)",
+    hover: "color-mix(in srgb, var(--fg) 13%, transparent)",
+    border: "transparent",
+  },
+  "light|accent": {
+    bg: "color-mix(in srgb, var(--accent) 14%, transparent)",
+    color: "var(--accent-text)",
+    hover: "color-mix(in srgb, var(--accent) 22%, transparent)",
+    border: "transparent",
+  },
+  "subtle|muted": {
+    color: "var(--fg)",
+    hover: "color-mix(in srgb, var(--fg) 6%, transparent)",
+    border: "transparent",
+  },
+};
 
 export interface ButtonOwnProps {
   children?: ReactNode;
@@ -54,11 +81,18 @@ export const Button = defineComponent<
   // Badge.tsx's --sb-badge-bg and Switch.tsx's --sb-switch-bg-* use.
   vars: (theme, props) => {
     const base = autoVars(theme, "Button", props as Record<string, unknown>, true);
+    const pinned = PINNED_CELLS[`${props.variant}|${props.intent}`];
     return {
       root: {
         ...base.root,
         // Keep in sync with LIGHT_VARIANT_TONE_WEIGHT.bad in intent-resolver.ts.
         "--sb-button-bad-color": "color-mix(in srgb, var(--red) 80%, var(--fg))",
+        ...(pinned && {
+          "--button-bg": pinned.bg ?? base.root?.["--button-bg"],
+          "--button-color": pinned.color,
+          "--button-hover": pinned.hover,
+          "--button-border": pinned.border,
+        }),
       },
     };
   },

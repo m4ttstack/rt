@@ -96,22 +96,12 @@
 .tui-controls-header [data-part='segmented-option'] {
   height: 100%;
 }
-/* The --gate-* tokens are scoped to the gate surfaces (Modal, chips), hence
-   the fallback -- this button sits in the plain header toolbar. */
+/* Rest-state chrome the kit's light tier doesn't carry: weight/nowrap keep
+   the header entry from reading lighter than the old board button and from
+   wrapping its label inside the 28px-high control. */
 .tui-dq-open {
-  padding: var(--gate-btn-pad, 5px 12px);
-  font: inherit;
-  font-size: 0.78rem;
   font-weight: 500;
-  cursor: pointer;
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-  border: 1px solid transparent;
-  border-radius: 6px;
-  color: var(--accent-text);
   white-space: nowrap;
-}
-.tui-dq-open:hover {
-  background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 .tui-author {
   color: var(--purple);
@@ -1383,29 +1373,33 @@
 .tui-triage-modal {
   /* Gate-scoped contrast lift: the kit's --border and --muted-text sit too
      close to --card in dark, so the gate chrome takes its own edge/text
-     values. The light halves match the kit tokens byte for byte. */
-  --gate-edge: light-dark(#c8cad6, #505879);
-  --gate-control-edge: light-dark(#c8cad6, #6b7499);
-  --gate-muted: light-dark(#565d80, #aab3d8);
-  --gate-key-bg: light-dark(#f7f8fa, #1c2136);
+     values -- now aliases onto the kit's own on-card tokens rather than a
+     hand-kept copy of them. */
+  --gate-edge: var(--border-on-card);
+  --gate-control-edge: var(--border-control-on-card);
+  --gate-muted: var(--text-muted-on-card);
+  --gate-key-bg: var(--surface-inset);
+  /* Soft rules on card grounds and the darker modal chrome: both are kit
+     roles now (dark's --border-soft is darker than the card it frames, and
+     the overlay ground sits a rung below the panel so cards read raised). */
+  --gate-soft-edge: var(--border-soft-on-card);
+  --gate-modal-ground: var(--surface-overlay);
   /* One scale for the whole surface: four text sizes, three rhythm steps,
      one button geometry. Every rule below consumes these. */
-  --gate-font-display: 1rem;
-  --gate-font-title: 0.9rem;
-  --gate-font-body: 0.85rem;
-  --gate-font-meta: 0.78rem;
-  --gate-font-small: 0.7rem;
-  --gate-font-micro: 0.62rem;
-  --gate-gap: 0.95rem;
-  --gate-gap-inner: 0.8rem;
-  --gate-gap-row: 10px;
-  --gate-pad-card: 1rem 1.1rem 1.1rem;
-  --gate-pad-chrome: 8px 10px;
-  --gate-btn-font: 0.8rem;
-  --gate-btn-pad: 5px 12px;
-  --gate-radius-card: 10px;
-  --gate-radius-control: 8px;
-  --gate-radius-btn: 6px;
+  --gate-font-display: var(--type-display);
+  --gate-font-title: var(--type-title);
+  --gate-font-body: var(--type-body);
+  --gate-font-meta: var(--type-meta);
+  --gate-font-small: var(--type-small);
+  --gate-font-micro: var(--type-micro);
+  --gate-gap: var(--spacing-rem95);
+  --gate-gap-inner: var(--spacing-rem80);
+  --gate-gap-row: var(--spacing-px10);
+  --gate-pad-card: var(--spacing-rem100) var(--spacing-xxl) var(--spacing-xxl);
+  --gate-pad-chrome: var(--spacing-px8) var(--spacing-px10);
+  --gate-radius-card: var(--radius-xl);
+  --gate-radius-control: var(--radius-lg);
+  --gate-radius-btn: var(--radius-md);
   margin-top: 8px;
   padding: 0.7rem 0.9rem;
   background: var(--card);
@@ -1455,8 +1449,8 @@
 .tui-gate-question[hidden] {
   display: none;
 }
-/* Same band as the context header: bleeds through the card padding, a
-   shade under the ground, sealed with a soft rule. */
+/* Bleeds through the card padding to the frame, a shade under the ground,
+   sealed with a soft rule. */
 .tui-gate-question-head {
   display: flex;
   align-items: baseline;
@@ -1464,8 +1458,8 @@
   gap: 10px;
   margin: -1rem -1.1rem 0;
   padding: 0.6rem 1.1rem;
-  background: color-mix(in srgb, var(--fg) 4%, var(--card));
-  border-bottom: 1px solid var(--border-soft);
+  background: var(--surface-wash-fg-4-card);
+  border-bottom: 1px solid var(--gate-soft-edge);
   border-radius: calc(var(--gate-radius-card) - 1px)
     calc(var(--gate-radius-card) - 1px) 0 0;
 }
@@ -1647,66 +1641,10 @@
   align-items: center;
   gap: 8px;
 }
-.tui-gate-nav {
-  padding: var(--gate-btn-pad);
-  font: inherit;
-  font-size: var(--gate-btn-font);
-  cursor: pointer;
-  background: color-mix(in srgb, var(--fg) 8%, transparent);
-  border: 1px solid transparent;
-  border-radius: var(--gate-radius-btn);
-  color: var(--gate-muted);
-}
-.tui-gate-nav:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--fg) 13%, transparent);
-  color: var(--fg);
-}
-.tui-gate-nav:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
 .tui-gate-error {
   margin-right: auto;
   color: var(--dot-bad);
   font-size: var(--gate-font-meta);
-}
-.tui-gate-submit {
-  padding: var(--gate-btn-pad);
-  font: inherit;
-  font-size: var(--gate-btn-font);
-  font-weight: 600;
-  cursor: pointer;
-  background: var(--amber);
-  border: 1px solid transparent;
-  border-radius: var(--gate-radius-btn);
-  color: var(--bg);
-}
-.tui-gate-submit:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--amber) 88%, var(--fg));
-}
-.tui-gate-submit:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-.tui-gate-focus,
-.tui-gate-ghost {
-  padding: var(--gate-btn-pad);
-  font: inherit;
-  font-size: var(--gate-btn-font);
-  cursor: pointer;
-  background: none;
-  border: 1px solid transparent;
-  border-radius: var(--gate-radius-btn);
-  color: var(--fg);
-}
-.tui-gate-focus:hover:not(:disabled),
-.tui-gate-ghost:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--fg) 6%, transparent);
-  color: var(--fg);
-}
-.tui-gate-ghost:disabled {
-  opacity: 0.5;
-  cursor: default;
 }
 .tui-gate-summary {
   margin: 0;
@@ -1742,6 +1680,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--gate-gap);
+  background: var(--gate-modal-ground);
 }
 /* The head is the recipe's accent title span, stretched so the gate cluster
    (kind + actions) can ride its right edge; everything inside resets the
@@ -1760,25 +1699,9 @@
   align-items: center;
   gap: 6px;
 }
-/* Gate actions read as buttons at rest: the light tier, not ghost text. */
-.tui-triage-head-actions .tui-gate-ghost {
-  font-size: var(--gate-btn-font);
+/* Rest-state weight the kit's light tier doesn't carry: board chrome only. */
+.tui-triage-head-actions [data-part='button'] {
   font-weight: 500;
-  letter-spacing: normal;
-  text-transform: none;
-  padding: var(--gate-btn-pad);
-  background: color-mix(in srgb, var(--fg) 8%, transparent);
-  color: var(--fg);
-}
-.tui-triage-head-actions .tui-gate-ghost:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--fg) 13%, transparent);
-}
-.tui-triage-head-actions .tui-triage-act-focus {
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-  color: var(--accent-text);
-}
-.tui-triage-head-actions .tui-triage-act-focus:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 /* The queue line sits under the head: count, pips and the gate kind get
    their own row so the head keeps only the title, actions and close. */
@@ -1838,46 +1761,6 @@
   gap: var(--gate-gap);
   min-height: 0;
 }
-.tui-triage-context {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  max-height: 46vh;
-  min-height: 0;
-  overflow: hidden;
-  padding: var(--gate-pad-card);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--gate-radius-card);
-  background: var(--card);
-  font-size: var(--gate-font-meta);
-}
-/* The pinned header wears its own band: bleeds through the pane padding to
-   the frame, a shade under the card ground, sealed with a soft rule. */
-.tui-triage-context-label {
-  font-family: var(--font-sans);
-  font-size: var(--gate-font-title);
-  font-weight: 600;
-  line-height: 1.4;
-  color: var(--accent-text);
-  flex-shrink: 0;
-  margin: -1rem -1.1rem 0.55rem;
-  padding: 0.6rem 1.1rem;
-  background: color-mix(in srgb, var(--fg) 4%, var(--card));
-  border-bottom: 1px solid var(--border-soft);
-  border-radius: calc(var(--gate-radius-card) - 1px)
-    calc(var(--gate-radius-card) - 1px) 0 0;
-}
-/* The scroll edge is the pane border, not the inner padding: the body bleeds
-   through the right padding and restores it inside, so the thin bar hugs the
-   frame with no visible gutter. */
-.tui-triage-context .tui-gate-context-body {
-  min-height: 0;
-  overflow-y: auto;
-  margin-right: -1.1rem;
-  padding-right: 1.1rem;
-  scrollbar-width: thin;
-  scrollbar-color: var(--gate-edge) transparent;
-}
 .tui-triage-form-col {
   min-width: 0;
   display: flex;
@@ -1893,7 +1776,7 @@
   display: flex;
   flex-direction: column;
   padding: var(--gate-pad-chrome);
-  border: 1px solid var(--border-soft);
+  border: 1px solid var(--gate-soft-edge);
   border-radius: var(--gate-radius-btn);
   background: var(--chrome);
 }
@@ -1938,7 +1821,7 @@
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: 10px;
-  border-top: 1px solid var(--border-soft);
+  border-top: 1px solid var(--gate-soft-edge);
   padding: 0.85rem 0 0.35rem;
 }
 .tui-triage-footer .tui-triage-pos {
@@ -1974,7 +1857,7 @@
   font: 500 0.7rem/1.4 var(--font-mono);
   color: var(--gate-muted);
 }
-.tui-triage-done .tui-gate-submit {
+.tui-triage-done-action {
   margin-top: 0.5rem;
 }
 .tui-gate-question legend.tui-gate-question-label {
@@ -1983,78 +1866,94 @@
 /* Gate context, rendered as markdown -- same prose recipe as .tui-cd-note-body
    (see its own comment for why the first/last-child margin collapse has to
    key on [data-part="markdown"] rather than a bare `>` selector), sized down
-   to sit quietly inside a gate card instead of the wider comments drawer. */
-.tui-gate-context-body {
+   to sit quietly inside the kit ScrollPane instead of the wider comments
+   drawer. Scoped under .tui-triage-modal since [data-part='scrollpane-body']
+   is a generic kit hook, not unique to the gate context pane. */
+.tui-triage-modal [data-part='scrollpane'] {
+  border-color: var(--gate-soft-edge);
+}
+.tui-triage-modal [data-part='scrollpane-head'] {
+  border-bottom-color: var(--gate-soft-edge);
+}
+.tui-triage-modal [data-part='scrollpane-body'] {
   font: inherit;
   color: inherit;
   overflow-wrap: anywhere;
 }
-.tui-gate-context-body [data-part='markdown'] > :first-child {
+.tui-triage-modal
+  [data-part='scrollpane-body']
+  [data-part='markdown']
+  > :first-child {
   margin-top: 0;
 }
-.tui-gate-context-body [data-part='markdown'] > :last-child {
+.tui-triage-modal
+  [data-part='scrollpane-body']
+  [data-part='markdown']
+  > :last-child {
   margin-bottom: 0;
 }
-.tui-gate-context-body p {
+.tui-triage-modal [data-part='scrollpane-body'] p {
   margin: 0 0 0.4rem;
 }
-.tui-gate-context-body a {
+.tui-triage-modal [data-part='scrollpane-body'] a {
   color: var(--accent-text);
 }
-.tui-gate-context-body code {
+.tui-triage-modal [data-part='scrollpane-body'] code {
   font-family: var(--font-mono);
   font-size: 0.9em;
   background: color-mix(in srgb, var(--fg) 8%, transparent);
   border-radius: 3px;
   padding: 0.05em 0.3em;
 }
-.tui-gate-context-body pre {
+.tui-triage-modal [data-part='scrollpane-body'] pre {
   background: color-mix(in srgb, var(--fg) 8%, transparent);
   border-radius: 6px;
   padding: 0.5rem 0.6rem;
   overflow-x: auto;
   margin: 0 0 0.4rem;
 }
-.tui-gate-context-body pre code {
+.tui-triage-modal [data-part='scrollpane-body'] pre code {
   background: none;
   padding: 0;
   font-size: 0.85em;
 }
-.tui-gate-context-body ul,
-.tui-gate-context-body ol {
+.tui-triage-modal [data-part='scrollpane-body'] ul,
+.tui-triage-modal [data-part='scrollpane-body'] ol {
   margin: 0 0 0.4rem;
   padding-left: 1.1rem;
 }
-.tui-gate-context-body li {
+.tui-triage-modal [data-part='scrollpane-body'] li {
   margin: 0.1rem 0;
 }
-.tui-gate-context-body blockquote {
+/* Quotes read on the CARD ground, where the base muted/border roles sit
+   too close in dark; the on-card roles equal them in light. */
+.tui-triage-modal [data-part='scrollpane-body'] blockquote {
   margin: 0 0 0.4rem;
   padding-left: 0.6rem;
-  border-left: 2px solid var(--border);
-  color: var(--muted-text);
+  border-left: 2px solid var(--border-on-card);
+  color: var(--text-muted-on-card);
 }
-.tui-gate-context-body h1,
-.tui-gate-context-body h2,
-.tui-gate-context-body h3,
-.tui-gate-context-body h4,
-.tui-gate-context-body h5,
-.tui-gate-context-body h6 {
+.tui-triage-modal [data-part='scrollpane-body'] h1,
+.tui-triage-modal [data-part='scrollpane-body'] h2,
+.tui-triage-modal [data-part='scrollpane-body'] h3,
+.tui-triage-modal [data-part='scrollpane-body'] h4,
+.tui-triage-modal [data-part='scrollpane-body'] h5,
+.tui-triage-modal [data-part='scrollpane-body'] h6 {
   margin: 0.35rem 0 0.25rem;
   font-size: 0.95em;
   font-weight: 700;
 }
-.tui-gate-context-body table {
+.tui-triage-modal [data-part='scrollpane-body'] table {
   border-collapse: collapse;
   margin: 0 0 0.4rem;
   font-size: 0.95em;
 }
-.tui-gate-context-body th,
-.tui-gate-context-body td {
-  border: 1px solid var(--border-soft);
+.tui-triage-modal [data-part='scrollpane-body'] th,
+.tui-triage-modal [data-part='scrollpane-body'] td {
+  border: 1px solid var(--gate-soft-edge);
   padding: 0.15rem 0.35rem;
 }
-.tui-gate-context-body img {
+.tui-triage-modal [data-part='scrollpane-body'] img {
   max-width: 100%;
 }
 /* slack review-signal reactions rendered next to the review badge */

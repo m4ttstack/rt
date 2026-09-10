@@ -10,7 +10,8 @@ import { tuiIntentResolver } from "./intent-resolver.ts";
 /**
  * `intent` is role-named where mr-board's CSS is hue-named; the join lives in
  * src/intent-resolver.ts. `variant` is soribashi 0.2.0's canonical vocabulary
- * minus `transparent`/`link`: nothing in the TUI look paints those, and a
+ * minus `transparent`/`link`, plus `filled` (restored: the gate surfaces ship
+ * a solid tier): nothing in the TUI look paints `transparent`/`link`, and a
  * variant the kit cannot render has no business in the vocabulary a prop
  * validates against. `default` (Button's own default) is not a neutral
  * afterthought — it IS the resolver's `default` branch: a NEUTRAL opaque
@@ -27,7 +28,7 @@ export const tuiVocabulary = {
     "purple",
     "muted",
   ] as const),
-  variant: defineVocabulary(["default", "light", "outline", "subtle"] as const),
+  variant: defineVocabulary(["default", "filled", "light", "outline", "subtle"] as const),
 };
 
 /**
@@ -95,6 +96,7 @@ export const tuiTheme = createTheme({
       rem55: "0.55rem",
       rem75: "0.75rem",
       rem80: "0.8rem",
+      rem95: "0.95rem",
       rem100: "1rem",
       rem120: "1.2rem",
       rem140: "1.4rem",
@@ -137,6 +139,7 @@ export const tuiTheme = createTheme({
       rem78: "0.78rem",
       rem80: "0.8rem",
       rem82: "0.82rem",
+      rem62: "0.62rem",
       rem90: "0.9rem",
       rem95: "0.95rem",
       rem100: "1rem",
@@ -156,7 +159,9 @@ export const tuiTheme = createTheme({
     // src/generated/theme.css by scripts/append-font-faces.ts, run as the
     // second half of the `codegen` script.
     fontFamily: GENERATED_FONT_FAMILY,
-    lineHeight: { base: GENERATED_LINE_HEIGHT_BASE },
+    // `snug` is the gate head band's line height: a literal in recipe CSS
+    // would trip the no-hardcoded-values gate.
+    lineHeight: { base: GENERATED_LINE_HEIGHT_BASE, snug: "1.4" },
     shadow: {
       menu: "0 10px 30px rgba(0, 0, 0, 0.28), 0 2px 8px rgba(0, 0, 0, 0.18)",
       modal: "0 12px 40px rgba(0, 0, 0, 0.25)",
@@ -182,6 +187,8 @@ export const tuiTheme = createTheme({
       panel: "colors.surface.panel",
       card: "colors.surface.card",
       chrome: "colors.surface.chrome",
+      inset: "colors.surface.inset",
+      overlay: "colors.surface.overlay",
       // Every distinct `color-mix()` expression in mr-board's stylesheet,
       // carried as RAW strings (validateRef only checks dotted-identifier
       // refs, so these pass through and emitCss writes them verbatim).
@@ -208,6 +215,10 @@ export const tuiTheme = createTheme({
       "wash-cyan-panel-38": "color-mix(in srgb, var(--cyan) 38%, var(--panel))",
       "wash-cyan-border-45":
         "color-mix(in srgb, var(--cyan) 45%, var(--border))",
+      // Mixes the ALIAS names (--fg, --card), not the underlying tokens, for
+      // the same reason as the washes above: a re-pointed alias re-points
+      // this wash with it.
+      "wash-fg-4-card": "color-mix(in srgb, var(--fg) 4%, var(--card))",
     },
     // Plain string refs only: `text` and `border` are typed
     // Record<string, SemanticReference>; only `surface` accepts the object form.
@@ -220,10 +231,14 @@ export const tuiTheme = createTheme({
       muted: "colors.gray.mutedText",
       accentText: "colors.gray.accentText",
       badText: "colors.gray.redText",
+      "muted-on-card": "colors.gray.mutedOnCard",
     },
     border: {
       default: "colors.line.border",
       soft: "colors.line.soft",
+      "on-card": "colors.line.edgeOnCard",
+      "control-on-card": "colors.line.controlEdgeOnCard",
+      "soft-on-card": "colors.line.softOnCard",
     },
   },
 });

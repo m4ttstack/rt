@@ -61,10 +61,11 @@ const label = { width: "4rem", color: "var(--muted)", fontSize: "var(--font-size
 // Column order preserves the PRE-rename fixture layout (`solid, outline,
 // subtle, ghost` -> `default, outline, light, subtle`) rather than the
 // vocabulary's own declaration order, so a baseline regen changes only cell
-// TEXT, never which column a box sits in.
-const VARIANTS = ["default", "outline", "light", "subtle"] as const;
+// TEXT, never which column a box sits in. `filled` is appended rather than
+// interleaved for the same reason.
+const VARIANTS = ["default", "outline", "light", "subtle", "filled"] as const;
 const INTENTS = ["accent", "bad"] as const;
-const SIZES = ["md", "sm"] as const;
+const SIZES = ["md", "sm", "lg"] as const;
 
 /** variant × intent, at both sizes — one size per row, one variant per cell. */
 function ButtonGrid() {

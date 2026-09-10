@@ -1,5 +1,5 @@
-/* Button — the kit's workhorse control, four canonical variants (default,
-   light, outline, subtle). Every variant's colour comes from the SAME
+/* Button: the kit's workhorse control, five canonical variants (default,
+   filled, light, outline, subtle). Every variant's colour comes from the SAME
    `--button-bg`/`--button-color`/`--button-border`/`--button-hover` quartet,
    which autoVars derives from the theme's intent resolver
    (tuiIntentResolver -> singleShadeVariantColors) per (intent, variant) —
@@ -47,9 +47,25 @@
     transform: translateY(1px);
   }
 
+  /* An author-origin display beats the UA [hidden] rule, so consumers
+     hiding a Button via the `hidden` attribute would otherwise get a
+     visually phantom button; this guard restores attribute-hiding. */
+  .root[hidden] {
+    display: none;
+  }
+
   .root[data-size="sm"] {
     font-size: var(--font-size-xs);
     padding: var(--spacing-xxs) var(--spacing-sm);
+  }
+
+  .root[data-size="lg"] {
+    font-size: var(--font-size-rem80);
+    padding: var(--spacing-px5) var(--spacing-px12);
+  }
+
+  .root[data-variant="filled"] {
+    font-weight: 600;
   }
 
   /* `--spacing-xxs` read as too tight around a 14px Icon glyph — bumped to
