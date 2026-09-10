@@ -3,10 +3,11 @@ import { execFileSync } from "child_process";
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { dirname, join } from "path";
-import { skillsCheck, skillsCompile, skillsComposition, skillsPacks } from "../skills.ts";
+import { installedInfoFor, skillsCheck, skillsCompile, skillsComposition, skillsPacks } from "../skills.ts";
 import { compileSkill } from "../../lib/skills/compile.ts";
 import { invocableRoster, loadAttachment, loadStepSource } from "../../lib/skills/sources.ts";
 import type { PluginRoots } from "../../lib/skills/sources.ts";
+import type { PackInfo } from "../../lib/skills/packs.ts";
 import type { VerbDef } from "../../lib/skills/types.ts";
 import { runExpectingCleanExit } from "../../lib/skills/__tests__/helpers.ts";
 
@@ -1312,6 +1313,65 @@ describe("skillsCheck", () => {
     expect(staleLine).toContain("watch-ci");
     expect(staleLine).toContain("SKILL.md");
     expect(process.exitCode).toBe(1);
+  });
+
+  test("check --json reports installed: null under --mattstack-dir and drift alone drives the exit code", async () => {
+    const mattstackDir = makeMattstackDir();
+    const packDir = makePackDir();
+    const manifestPath = makeManifest("t");
+
+    await skillsCompile(["--pack", "t", "--pack-dir", packDir, "--mattstack-dir", mattstackDir, "--manifest", manifestPath, "--verb", "watch-ci"]);
+    logs = [];
+
+    await skillsCheck(["--pack", "t", "--pack-dir", packDir, "--mattstack-dir", mattstackDir, "--manifest", manifestPath, "--verb", "watch-ci", "--json"]);
+
+    const payload = JSON.parse(logs.at(-1)!);
+    expect(payload.installed).toBeNull();
+    expect(payload.verbs.every((v: { status: string }) => v.status === "in-sync")).toBe(true);
+    expect(process.exitCode ?? 0).toBe(0);
+  });
+});
+
+describe("installedInfoFor", () => {
+  function installedFixture(version: string | null): PluginRoots {
+    if (version === null) return { byName: {}, list: [] };
+    const install = realpathSync(mkdtempSync(join(tmpdir(), "rt-check-installed-")));
+    mkdirSync(join(install, ".claude-plugin"), { recursive: true });
+    writeFileSync(join(install, ".claude-plugin", "plugin.json"), JSON.stringify({ name: "acme", version }));
+    return { byName: {}, list: [{ id: "acme@beacon", installPath: install }] };
+  }
+  function packAt(dir: string): PackInfo {
+    return { name: "acme", dir, layout: "flat", surfacePath: join(dir, "surface.jsonc"), marketplace: "beacon" };
+  }
+  function sourcePack(version: string): string {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "rt-check-src-")));
+    mkdirSync(join(dir, ".claude-plugin"), { recursive: true });
+    writeFileSync(join(dir, ".claude-plugin", "plugin.json"), JSON.stringify({ name: "acme", version }));
+    return dir;
+  }
+
+  test("lagging when installed is behind source", () => {
+    const dir = sourcePack("0.5.3");
+    const info = installedInfoFor({ packDir: dir, pluginRoots: installedFixture("0.5.2") }, [packAt(dir)]);
+    expect(info).toEqual({ plugin: "acme", marketplace: "beacon", version: "0.5.2", sourceVersion: "0.5.3", status: "lagging" });
+  });
+
+  test("current when versions match", () => {
+    const dir = sourcePack("0.5.3");
+    expect(installedInfoFor({ packDir: dir, pluginRoots: installedFixture("0.5.3") }, [packAt(dir)])!.status).toBe("current");
+  });
+
+  test("missing when no installed record", () => {
+    const dir = sourcePack("0.5.3");
+    const roots: PluginRoots = { byName: {}, list: [{ id: "other@beacon", installPath: dir }] };
+    expect(installedInfoFor({ packDir: dir, pluginRoots: roots }, [packAt(dir)])!.status).toBe("missing");
+  });
+
+  test("null when the pack has no marketplace or the list is empty", () => {
+    const dir = sourcePack("0.5.3");
+    expect(installedInfoFor({ packDir: dir, pluginRoots: installedFixture(null) }, [packAt(dir)])).toBeNull();
+    const noMkt = { ...packAt(dir), marketplace: null };
+    expect(installedInfoFor({ packDir: dir, pluginRoots: installedFixture("0.5.3") }, [noMkt])).toBeNull();
   });
 });
 
