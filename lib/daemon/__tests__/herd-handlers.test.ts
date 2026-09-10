@@ -851,8 +851,44 @@ describe("herd:wrap-up", () => {
     const res = await hx.h["herd:wrap-up"]({ herd, closePanes: true });
     if (!res.ok) throw new Error(res.error);
     expect(res.data.closed).toEqual([]);
-    expect(hx.store.getJob(herd, "job-a")!.status).toBe("closed");
+    expect(hx.store.getJob(herd, "job-a")!.status).toBe("done");
     expect(hx.claims.list().map((c) => c.owner)).toContain(`herd:${herd}`);
+  });
+
+  // CodeRabbit (PR #222): a failed close must not stamp the job "closed" --
+  // that forced status made a *second* wrap-up call see the job as already
+  // handled (skipped, not attempted), so `failed` came back empty and the
+  // claim was released while the pane was still alive. Status now reflects
+  // reality: only a close that actually succeeds moves the job to "closed",
+  // so a retry re-attempts it for real.
+  test("a failed close keeps the claim and the job pane-bearing; a retry that succeeds then releases it", async () => {
+    let closeCalls = 0;
+    const hx = harness({
+      herdrRunnerFor: () => async (args: string[]) => {
+        if (args[0] === "pane" && args[1] === "close") {
+          closeCalls += 1;
+          return closeCalls === 1 ? { stdout: "", exitCode: 1 } : { stdout: "", exitCode: 0 };
+        }
+        return { stdout: "{}", exitCode: 0 };
+      },
+    });
+    const hidden = await hx.h["herd:start"]({ ...START, hidden: true });
+    if (!hidden.ok) throw new Error(hidden.error);
+    const herd = hidden.data.herd;
+    hx.store.upsertJob({ herd, name: "job-a", worktree: "/w/job-a", handle: "job-a", status: "done", pane: "w9:p1" });
+
+    const first = await hx.h["herd:wrap-up"]({ herd, closePanes: true });
+    if (!first.ok) throw new Error(first.error);
+    expect(first.data.closed).toEqual([]);
+    expect(hx.store.getJob(herd, "job-a")!.status).not.toBe("closed");
+    expect(hx.store.getJob(herd, "job-a")!.pane).toBe("w9:p1");
+    expect(hx.claims.list().map((c) => c.owner)).toContain(`herd:${herd}`);
+
+    const second = await hx.h["herd:wrap-up"]({ herd, closePanes: true });
+    if (!second.ok) throw new Error(second.error);
+    expect(second.data.closed).toEqual(["job-a"]);
+    expect(hx.store.getJob(herd, "job-a")!.status).toBe("closed");
+    expect(hx.claims.list().map((c) => c.owner)).not.toContain(`herd:${herd}`);
   });
 
   test("wrap-up without --close-panes leaves a hidden herd's bg claim; bg:stop then refuses, naming it", async () => {
@@ -935,8 +971,11 @@ describe("herd:wrap-up", () => {
   });
 
   // A pane close that fails (closePane returns false) must not be counted
-  // either: `closed` names only panes that actually closed.
-  test("a job whose pane close fails is marked closed but not counted", async () => {
+  // either: `closed` names only panes that actually closed. Nor may it flip
+  // the job's status to "closed" -- a wrap-up retry re-derives `attempted`
+  // from `job.status !== "closed"`, so a forced status here would make the
+  // pane invisible to the next attempt.
+  test("a job whose pane close fails keeps its status and is not counted", async () => {
     const hx = harness({ herdrRunnerFor: () => async (args) => (args[0] === "pane" && args[1] === "close" ? { stdout: "", exitCode: 1 } : { stdout: "{}", exitCode: 0 }) });
     const s = await hx.h["herd:start"](START);
     if (!s.ok) throw new Error(s.error);
@@ -945,6 +984,6 @@ describe("herd:wrap-up", () => {
     const res = await hx.h["herd:wrap-up"]({ herd, closePanes: true });
     if (!res.ok) throw new Error(res.error);
     expect(res.data.closed).toEqual([]);
-    expect(hx.store.getJob(herd, "job-a")!.status).toBe("closed");
+    expect(hx.store.getJob(herd, "job-a")!.status).toBe("done");
   });
 });

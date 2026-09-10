@@ -230,6 +230,20 @@ export function createHerdLifecycle(opts: {
     // being spawned. Re-listing after the await was exactly this bug; a
     // claim that shows up mid-flight simply waits for the next sweep.
     const candidates = bgClaims.list();
+    // Same TOCTOU shape, for the herd pass below: herd:spawn does not gate
+    // on herd status, so a job (and its pane) can land on an already-wrapped
+    // herd between this capture and session.snapshot resolving. That
+    // snapshot then predates the new pane and never counts it live, even
+    // though the post-RPC store.jobs() read below would see it -- so the
+    // herd pass compares against this pre-RPC set and defers to the next
+    // sweep when it has moved, rather than releasing a claim whose herd
+    // just grew a real, live pane.
+    const herdJobPanesBefore = new Map<string, Set<string>>();
+    for (const claim of candidates) {
+      if (claim.pane || !claim.owner.startsWith("herd:")) continue;
+      const herdId = claim.owner.slice("herd:".length);
+      herdJobPanesBefore.set(herdId, new Set(store.jobs(herdId).map((j) => j.pane).filter((p): p is string => !!p)));
+    }
     const released: string[] = [];
     for (const claim of candidates) {
       if (claim.pane || !claim.owner.startsWith("runner:")) continue;
@@ -270,7 +284,11 @@ export function createHerdLifecycle(opts: {
         const herd = store.get(herdId);
         if (herd) {
           if (herd.status !== "wrapped") continue;
-          if (store.jobs(herdId).some((j) => j.pane && live.has(j.pane))) continue;
+          const jobsNow = store.jobs(herdId);
+          if (jobsNow.some((j) => j.pane && live.has(j.pane))) continue;
+          const panesNow = new Set(jobsNow.map((j) => j.pane).filter((p): p is string => !!p));
+          const before = herdJobPanesBefore.get(herdId) ?? new Set<string>();
+          if (panesNow.size !== before.size || [...panesNow].some((p) => !before.has(p))) continue;
         }
         if (bgClaims.release(claim.owner)) released.push(claim.owner);
       }
