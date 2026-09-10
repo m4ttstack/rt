@@ -34,7 +34,7 @@ import { createReposHandlers } from "./handlers/repos.ts";
 import { reconcileFreshness, getFreshnessSnapshot } from "./freshness.ts";
 import { wrapWithDemand } from "./demand-tracker.ts";
 import type { SystemProcessScanner } from "./system-process-scanner.ts";
-import { findRun } from "../runs/store.ts";
+import { findRun, findRunningRunByWorktree } from "../runs/store.ts";
 import { presenceForSession } from "../state/presence-store.ts";
 import { resolveInbox } from "../claude-registry.ts";
 import { probeInboxReachability } from "./inbox.ts";
@@ -140,6 +140,7 @@ export function buildRoutedHandlers(opts: {
     agent: agentHandlers,
     worktree: worktreeHandlers,
     runWorktree: (runId) => findRun(runId)?.fields.find((f) => f.key === "worktree")?.value ?? null,
+    findRunningRunByWorktree,
     presenceHandleForSession: (session) => presenceForSession(session, opts.stateDb)?.handle ?? null,
     probeInbox: async (session) => {
       const binding = resolveInbox(session);
