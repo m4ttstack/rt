@@ -767,7 +767,17 @@ export function Board() {
     for (const g of boardView.groups) nestStacks(g.mrs).forEach(collect);
     return out;
   }, [boardView]);
-  const queue = useDecisionQueue(queueEntries);
+  // Positive answer evidence for the queue's reconcile, from the RAW data:
+  // a gate answered on another surface must retire even if its MR is
+  // currently filtered out of view.
+  const answeredGateIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const mr of data?.mrs ?? [])
+      for (const gate of mr.gates ?? [])
+        if (gate.status === 'answered') ids.add(gate.gateId);
+    return ids;
+  }, [data]);
+  const queue = useDecisionQueue(queueEntries, answeredGateIds);
   const activeGateId = queue.active?.gate.gateId ?? null;
 
   if (!data) {

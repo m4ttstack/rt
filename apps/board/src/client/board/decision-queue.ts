@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { GateRow } from '../../gates/store.ts';
 import type { BoardMRWithReview } from '../types.ts';
@@ -122,14 +122,18 @@ export function advanceOrWrap(
 }
 
 /** Appends unseen actionable gates to `order` without touching existing
-    positions, then auto-answers an activeId that has vanished from entries
-    (the gate was resolved elsewhere) and advances past it -- unless `heldId`
-    names that same gate, in which case it stays active so its lost-answer
-    face can keep showing through the refresh that dropped it. */
+    positions, then retires an activeId that has vanished from entries ONLY
+    when `answeredIds` positively shows it answered elsewhere -- absence
+    alone is not evidence (a restarted board server briefly serves gate-less
+    MRs while its cache re-ingests, and a failed poll looks the same), so a
+    merely-missing active gate stays active until the data says otherwise.
+    `heldId` outranks even answer evidence: the lost-answer face is showing
+    the winning answer and must survive the refresh that reports it. */
 export function reconcile(
   session: QueueSession,
   entries: QueueEntry[],
-  heldId: string | null = null
+  heldId: string | null = null,
+  answeredIds?: ReadonlySet<string>
 ): QueueSession {
   const seen = new Set(session.order);
   const appended = entries.map(e => e.gate.gateId).filter(id => !seen.has(id));
@@ -137,10 +141,12 @@ export function reconcile(
     ? [...session.order, ...appended]
     : session.order;
 
-  if (session.activeId !== null && !entryFor(entries, session.activeId)) {
-    if (heldId !== null && heldId === session.activeId) {
-      return order === session.order ? session : { ...session, order };
-    }
+  if (
+    session.activeId !== null &&
+    !entryFor(entries, session.activeId) &&
+    (heldId === null || heldId !== session.activeId) &&
+    answeredIds?.has(session.activeId)
+  ) {
     const answered = session.answered.includes(session.activeId)
       ? session.answered
       : [...session.answered, session.activeId];
@@ -154,15 +160,22 @@ export function reconcile(
   return order === session.order ? session : { ...session, order };
 }
 
-export function useDecisionQueue(entries: QueueEntry[]): DecisionQueue {
+export function useDecisionQueue(
+  entries: QueueEntry[],
+  answeredIds?: ReadonlySet<string>
+): DecisionQueue {
   const [open, setOpen] = useState(false);
   const [session, setSession] = useState<QueueSession>(CLOSED_SESSION);
   const [heldId, setHeldId] = useState<string | null>(null);
+  // The last snapshot's entry for the current active gate, so the modal can
+  // keep rendering it through a transient snapshot that dropped the gate
+  // without answering it.
+  const lastActiveEntry = useRef<QueueEntry | null>(null);
 
   useEffect(() => {
     if (!open) return;
-    setSession(s => reconcile(s, entries, heldId));
-  }, [open, entries, heldId]);
+    setSession(s => reconcile(s, entries, heldId, answeredIds));
+  }, [open, entries, heldId, answeredIds]);
 
   const openAtStart = useCallback(() => {
     const order = entries.map(e => e.gate.gateId);
@@ -192,6 +205,7 @@ export function useDecisionQueue(entries: QueueEntry[]): DecisionQueue {
     setOpen(false);
     setSession(CLOSED_SESSION);
     setHeldId(null);
+    lastActiveEntry.current = null;
   }, []);
 
   const skip = useCallback(() => {
@@ -222,6 +236,18 @@ export function useDecisionQueue(entries: QueueEntry[]): DecisionQueue {
   }, []);
 
   const view = queueView(session, entries);
+
+  // Bridge a transient snapshot: an active gate reconcile kept (absent but
+  // not evidenced answered) has no entry this render, so serve the last
+  // snapshot's copy rather than blanking the open modal.
+  if (view.active) {
+    lastActiveEntry.current = view.active;
+  } else if (
+    session.activeId !== null &&
+    lastActiveEntry.current?.gate.gateId === session.activeId
+  ) {
+    view.active = lastActiveEntry.current;
+  }
 
   return {
     ...view,

@@ -47,10 +47,29 @@ test('reconcile appends new gates without reshuffling', () => {
   expect(next.order).toEqual(['g1', 'g2', 'g3', 'g4']);
 });
 
-test('reconcile auto-advances past a vanished active gate', () => {
-  const next = reconcile(session(), [entry('g2', 2), entry('g3', 3)]);
+test('reconcile retires a vanished active gate the data shows answered', () => {
+  const next = reconcile(
+    session(),
+    [entry('g2', 2), entry('g3', 3)],
+    null,
+    new Set(['g1'])
+  );
   expect(next.answered).toContain('g1');
   expect(next.activeId).toBe('g2');
+});
+
+test('reconcile keeps a vanished active gate absent without answer evidence', () => {
+  // A transient snapshot (server restart warming its gate cache, a failed
+  // poll) must never silently retire a real gate.
+  const next = reconcile(session(), [entry('g2', 2), entry('g3', 3)]);
+  expect(next.activeId).toBe('g1');
+  expect(next.answered).not.toContain('g1');
+});
+
+test('reconcile keeps the whole queue through an empty snapshot', () => {
+  const next = reconcile(session(), []);
+  expect(next.activeId).toBe('g1');
+  expect(next.answered).toEqual([]);
 });
 
 test('complete when nothing is left', () => {
@@ -61,14 +80,26 @@ test('complete when nothing is left', () => {
   expect(v.complete).toBe(true);
 });
 
-test('reconcile with a held vanished active keeps it active', () => {
-  const next = reconcile(session(), [entry('g2', 2), entry('g3', 3)], 'g1');
+test('a held vanished active stays active even with answer evidence', () => {
+  // Hold outranks evidence: the CAS-loss face is showing the winning answer
+  // and must survive the refresh that reports the gate answered.
+  const next = reconcile(
+    session(),
+    [entry('g2', 2), entry('g3', 3)],
+    'g1',
+    new Set(['g1'])
+  );
   expect(next.activeId).toBe('g1');
   expect(next.answered).not.toContain('g1');
 });
 
-test('hold cleared then reconcile retires the vanished active gate', () => {
-  const next = reconcile(session(), [entry('g2', 2), entry('g3', 3)], null);
+test('hold cleared then reconcile retires the answered vanished active gate', () => {
+  const next = reconcile(
+    session(),
+    [entry('g2', 2), entry('g3', 3)],
+    null,
+    new Set(['g1'])
+  );
   expect(next.answered).toContain('g1');
   expect(next.activeId).toBe('g2');
 });

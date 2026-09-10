@@ -11,9 +11,14 @@ import { afterAll, beforeAll, expect, test } from 'bun:test';
 GlobalRegistrator.register({ url: 'http://localhost/' });
 
 // happy-dom has no EventSource; the board's SSE-push hook only needs one
-// that can be constructed and closed without a real connection.
+// that can be constructed and closed without a real connection. `last`
+// lets a test fire the push nudge that makes the board refetch.
 class FakeEventSource {
+  static last: FakeEventSource | null = null;
   onmessage: ((ev: MessageEvent) => void) | null = null;
+  constructor() {
+    FakeEventSource.last = this;
+  }
   close(): void {}
 }
 (globalThis as unknown as { EventSource: unknown }).EventSource =
@@ -136,11 +141,15 @@ let Board: typeof import('../Board.tsx').Board;
 // added afterwards must be rolled back by hand.
 const realFetch = globalThis.fetch;
 
+// Mutable so a test can serve a different snapshot mid-flight (the
+// gate-less warm-up regression below), then restore it.
+let servedData: typeof BOARD_DATA = BOARD_DATA;
+
 beforeAll(async () => {
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = typeof input === 'string' ? input : input.toString();
     if (url.startsWith('/data.json')) {
-      return new Response(JSON.stringify(BOARD_DATA), { status: 200 });
+      return new Response(JSON.stringify(servedData), { status: 200 });
     }
     return new Response('{}', { status: 200 });
   }) as typeof fetch;
@@ -218,6 +227,68 @@ test('decision queue: header entry opens, skip advances, close dismisses', async
     );
     expect(dialog).toBeNull();
   } finally {
+    await React.act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  }
+});
+
+test('decision queue: a gate-less snapshot (server warm-up) does not complete the open queue', async () => {
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+
+  const root = createRoot(container);
+  try {
+    await React.act(async () => {
+      root.render(React.createElement(Board));
+    });
+    await React.act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 0));
+    });
+
+    const openButton = [...container.querySelectorAll('button')].find(b =>
+      b.textContent?.trim().startsWith('decision queue')
+    );
+    await React.act(async () => {
+      (openButton as HTMLElement).click();
+    });
+
+    let dialog = container.querySelector(
+      '[role="dialog"][aria-label="decision queue"]'
+    );
+    expect(dialog?.textContent).toContain('first mr title');
+
+    // A restarted board server briefly serves MRs with no gates while its
+    // cache re-ingests; the SSE nudge makes the client refetch that snapshot.
+    servedData = {
+      ...BOARD_DATA,
+      mrs: BOARD_DATA.mrs.map(mr => ({ ...mr, gates: [] })),
+    };
+    await React.act(async () => {
+      FakeEventSource.last?.onmessage?.({} as MessageEvent);
+      await new Promise(resolve => setTimeout(resolve, 0));
+    });
+
+    dialog = container.querySelector(
+      '[role="dialog"][aria-label="decision queue"]'
+    );
+    expect(dialog).not.toBeNull();
+    expect(dialog?.textContent).toContain('first mr title');
+
+    // The cache finishes warming; the same gates come back untouched.
+    servedData = BOARD_DATA;
+    await React.act(async () => {
+      FakeEventSource.last?.onmessage?.({} as MessageEvent);
+      await new Promise(resolve => setTimeout(resolve, 0));
+    });
+
+    dialog = container.querySelector(
+      '[role="dialog"][aria-label="decision queue"]'
+    );
+    expect(dialog?.textContent).toContain('first mr title');
+  } finally {
+    servedData = BOARD_DATA;
     await React.act(async () => {
       root.unmount();
     });
