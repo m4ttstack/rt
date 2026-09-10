@@ -307,7 +307,7 @@ body {
   grid-template-columns: 1.75rem minmax(0, 1fr);
   column-gap: 0.5rem;
   align-items: start;
-  padding: 0.5rem 1rem 0.55rem 1.4rem;
+  padding: 0.7rem 1rem 0.75rem 1.4rem;
   cursor: pointer;
   position: relative;
 }
