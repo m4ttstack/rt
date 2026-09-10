@@ -103,6 +103,7 @@ describe("restoreTree", () => {
       emit: (type, data) => events.push({ type, data }),
       log: { info: () => {}, warn: () => {} },
       killProcesses: false,
+      findRunningRun: () => null,
     };
   }
 

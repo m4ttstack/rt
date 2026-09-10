@@ -58,6 +58,9 @@ export interface ReconcilerDeps {
   repoIndex: () => Record<string, string>;
   emit: (type: string, data: unknown) => void;
   log: Logger;
+  /** Threaded into every dispose call this reconciler makes (merge reactor and
+      shrink); wired from `findRunningRunByWorktree` in lib/runs/store.ts. */
+  findRunningRunByWorktree: (worktree: string) => { id: string; currentStage: string } | null;
   /** Test seam: overrides RECONCILER_PASS_DEADLINE_MS for the pass latch. */
   passDeadlineMs?: number;
 }
@@ -243,6 +246,7 @@ export function createWorktreeReconciler(deps: ReconcilerDeps): {
           cacheEntries: deps.cache.entries,
           emit: deps.emit,
           log: deps.log,
+          findRunningRun: deps.findRunningRunByWorktree,
         }),
       );
     } catch (err) {
@@ -258,7 +262,7 @@ export function createWorktreeReconciler(deps: ReconcilerDeps): {
     }
     try {
       await replenishAndShrink(
-        { repoName, repoPath, emit: deps.emit, log: deps.log, backoff },
+        { repoName, repoPath, emit: deps.emit, log: deps.log, backoff, findRunningRun: deps.findRunningRunByWorktree },
         creationPromises,
         appConfig,
       );

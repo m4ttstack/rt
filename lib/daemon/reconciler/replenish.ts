@@ -127,7 +127,11 @@ export function poolCounts(repoName: string): {
  * attempt per window instead of `onDeck` attempts per cache tick.
  */
 export async function replenishAndShrink(
-  deps: FreshenDeps & { backoff?: CreateBackoffMap },
+  deps: FreshenDeps & {
+    backoff?: CreateBackoffMap;
+    /** Threaded into the shrink path's disposeTree call; wired from `findRunningRunByWorktree` in lib/runs/store.ts. */
+    findRunningRun: (worktree: string) => { id: string; currentStage: string } | null;
+  },
   creationPromises: Map<string, Promise<void>>,
   appConfig: WorktreeAppConfig,
 ): Promise<void> {
@@ -222,7 +226,7 @@ export async function replenishAndShrink(
         return;
       }
       await disposeTree(
-        { repoName, repoPath, cacheEntries: {}, emit, log, killProcesses: appConfig.killProcesses },
+        { repoName, repoPath, cacheEntries: {}, emit, log, killProcesses: appConfig.killProcesses, findRunningRun: deps.findRunningRun },
         fresh,
         { auto: false },
       );

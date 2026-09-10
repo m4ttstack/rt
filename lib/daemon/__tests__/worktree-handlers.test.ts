@@ -111,6 +111,7 @@ function makeHandlers(
     cdCacheKick: () => { state.cdCacheKicks++; },
     creationInFlight: () => null,
     withReconcilerHeld: async (fn) => fn(),
+    findRunningRunByWorktree: () => null,
   });
   return {
     h,

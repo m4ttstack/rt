@@ -413,7 +413,9 @@ export interface WorktreeProvisionData {
 export interface WorktreeCreateData { tree: string; path: string }
 export interface WorktreeDisposeData {
   disposed: string[];
-  refused: Array<{ tree: string; reason: string }>;
+  /** `detail` is set only for a refusal whose bare `reason` code can't name
+      what a human needs to act on it (the run id and stage for `running-run`). */
+  refused: Array<{ tree: string; reason: string; detail?: string }>;
   recoverable: Array<{ tree: string; path: string; until: string }>;
 }
 export interface WorktreeRestoreData {
@@ -422,7 +424,7 @@ export interface WorktreeRestoreData {
 export interface WorktreeFreshenData { ran: string[] }
 export interface WorktreeAdoptData {
   main: string; claimed: string[]; unmanaged: string[]; disposed: string[];
-  refused: Array<{ tree: string; reason: string }>;
+  refused: Array<{ tree: string; reason: string; detail?: string }>;
 }
 
 /** Duplicated shape on purpose: mirrors lib/endpoint/store.ts's EndpointClaim. */

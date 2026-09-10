@@ -9,7 +9,7 @@ import { execSync } from "child_process";
 import { mkdtempSync, realpathSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { basename, join } from "path";
-import { repoLabel, worktreeAwaitReady, worktreeList, worktreeProvision } from "../worktree.ts";
+import { repoLabel, worktreeAwaitReady, worktreeDispose, worktreeList, worktreeProvision } from "../worktree.ts";
 import { getRepoIdentity } from "../../lib/repo.ts";
 import { closeStateDb } from "../../lib/state/index.ts";
 import { deriveRepoIdentity, serializeIdentity } from "../../lib/settings/identity.ts";
@@ -275,6 +275,32 @@ describe("worktree CLI identity plumbing", () => {
     }
 
     expect(logs.some((l) => l.includes("held pending approval"))).toBe(true);
+  });
+
+  test("a running-run dispose refusal prints the run id and abandon pointer", async () => {
+    installFakeDaemon({
+      ok: true,
+      data: {
+        disposed: [],
+        refused: [{ tree: "tree-a", reason: "running-run", detail: "running run run-1 at implement; rt runs abandon run-1" }],
+        recoverable: [],
+      },
+    });
+    const logs: string[] = [];
+    const originalLog = console.log;
+    console.log = (...parts: unknown[]) => { logs.push(parts.map(String).join(" ")); };
+
+    try {
+      await worktreeDispose(["tree-a"], {});
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(logs.some((l) =>
+      l.includes("tree-a") &&
+      l.includes("running-run") &&
+      l.includes("running run run-1 at implement; rt runs abandon run-1"),
+    )).toBe(true);
   });
 });
 

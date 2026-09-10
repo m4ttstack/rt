@@ -101,6 +101,8 @@ export interface ReactorDeps {
   cacheEntries: Record<string, ReactorCacheEntry>;
   emit: (type: string, data: unknown) => void;
   log: Logger;
+  /** Threaded straight into disposeTree's DisposeDeps; wired from `findRunningRunByWorktree` in lib/runs/store.ts. */
+  findRunningRun: (worktree: string) => { id: string; currentStage: string } | null;
 }
 
 /**
@@ -301,6 +303,7 @@ async function actOnTree(
       emit: deps.emit,
       log: deps.log,
       killProcesses: appConfig.killProcesses,
+      findRunningRun: deps.findRunningRun,
     },
     rec,
     { auto: true },
