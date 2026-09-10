@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync, readlinkSync, realpathSync, writeFileSync } from "fs";
+import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync, realpathSync, writeFileSync } from "fs";
 import { join } from "path";
 import { CLAUDE_BIN_FALLBACKS } from "../claude-bin.ts";
 import type { PackInfo } from "./packs.ts";
@@ -29,6 +29,12 @@ export type SyncReport = {
   restartNeeded: boolean;
 };
 
+function writeManifestVersion(packDir: string, version: string): void {
+  const path = join(packDir, ".claude-plugin", "plugin.json");
+  const manifest = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+  writeFileSync(path, JSON.stringify({ ...manifest, version }, null, 2) + "\n");
+}
+
 export function bumpPatchVersion(packDir: string): { before: string; after: string } {
   const path = join(packDir, ".claude-plugin", "plugin.json");
   const manifest = JSON.parse(readFileSync(path, "utf8")) as { version?: string };
@@ -36,7 +42,7 @@ export function bumpPatchVersion(packDir: string): { before: string; after: stri
   const m = typeof before === "string" ? before.match(/^(\d+)\.(\d+)\.(\d+)$/) : null;
   if (!m) throw new Error(`cannot bump non-semver version in ${path}: ${String(before)}`);
   const after = `${m[1]}.${m[2]}.${Number(m[3]) + 1}`;
-  writeFileSync(path, JSON.stringify({ ...manifest, version: after }, null, 2) + "\n");
+  writeManifestVersion(packDir, after);
   return { before: before as string, after };
 }
 
@@ -93,6 +99,22 @@ function isAlignedSymlink(pluginsPath: string, target: string): boolean {
   }
 }
 
+/** Unlike existsSync, true for a dangling symlink -- that entry must reach isAlignedSymlink (and its warning) rather than be skipped as absent. */
+function pathExists(path: string): boolean {
+  try {
+    lstatSync(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function listInstalled(deps: SyncDeps): Promise<PluginListEntry[]> {
+  const res = await deps.run(deps.claudeBin!, ["plugin", "list", "--json"]);
+  if (res.code !== 0) throw new Error(`claude plugin list --json failed: ${res.stderr.trim()}`);
+  return JSON.parse(res.stdout) as PluginListEntry[];
+}
+
 export async function syncPack(pack: PackInfo, engine: PackInfo, deps: SyncDeps): Promise<SyncReport> {
   const steps: SyncStep[] = [];
   const warnings: string[] = [];
@@ -104,6 +126,7 @@ export async function syncPack(pack: PackInfo, engine: PackInfo, deps: SyncDeps)
   let installedPackAfter: string | null = null;
   let engineSourceVersion = "";
   let packSourceVersion = "";
+  let bumpBefore: string | null = null;
   let bumpAfter: string | null = null;
   let drift = false;
 
@@ -119,9 +142,11 @@ export async function syncPack(pack: PackInfo, engine: PackInfo, deps: SyncDeps)
     restartNeeded: steps.some((s) => (s.name === "update-engine" || s.name === "update-pack") && s.status === "ran"),
   });
 
-  // guards also seeds the version/installed-list bookkeeping every later
+  // guards also seeds the installed-list "before" bookkeeping every later
   // step reads, so a throw during that seeding still resolves to a single
-  // "guards" failure rather than an uncaught rejection.
+  // "guards" failure rather than an uncaught rejection. Manifest versions are
+  // NOT read here -- pull-engine/pull-pack can move them, so they are read
+  // fresh right after each pull instead (see below).
   const guards = await tryStep(async () => {
     if (!deps.claudeBin) {
       return refused(
@@ -142,24 +167,34 @@ export async function syncPack(pack: PackInfo, engine: PackInfo, deps: SyncDeps)
     }
 
     const engineStatus = await deps.run("git", ["status", "--porcelain"], { cwd: engine.dir });
+    if (engineStatus.code !== 0) return failed(`git status failed in ${engine.dir}: ${engineStatus.stderr.trim()}`);
     if (engineStatus.stdout.trim() !== "") {
       return refused(`engine checkout dirty at ${engine.dir}: "${engineStatus.stdout.trim()}"; commit or stash and re-run`);
     }
     if (!sameCheckout) {
       const packStatus = await deps.run("git", ["status", "--porcelain"], { cwd: pack.dir });
+      if (packStatus.code !== 0) return failed(`git status failed in ${pack.dir}: ${packStatus.stderr.trim()}`);
       if (packStatus.stdout.trim() !== "") {
         return refused(`pack checkout dirty at ${pack.dir}: "${packStatus.stdout.trim()}"; commit or stash and re-run`);
       }
     }
 
-    const branch = (await deps.run("git", ["branch", "--show-current"], { cwd: engine.dir })).stdout.trim();
-    if (branch !== "main") {
-      return refused(`engine checkout on branch "${branch}"; check out main and re-run`);
+    const engineBranchRes = await deps.run("git", ["branch", "--show-current"], { cwd: engine.dir });
+    if (engineBranchRes.code !== 0) return failed(`git branch --show-current failed in ${engine.dir}: ${engineBranchRes.stderr.trim()}`);
+    const engineBranch = engineBranchRes.stdout.trim();
+    if (engineBranch !== "main") {
+      return refused(`engine checkout on branch "${engineBranch}"; check out main and re-run`);
+    }
+    if (!sameCheckout) {
+      const packBranchRes = await deps.run("git", ["branch", "--show-current"], { cwd: pack.dir });
+      if (packBranchRes.code !== 0) return failed(`git branch --show-current failed in ${pack.dir}: ${packBranchRes.stderr.trim()}`);
+      const packBranch = packBranchRes.stdout.trim();
+      if (packBranch !== "main") {
+        return refused(`pack checkout on branch "${packBranch}"; check out main and re-run`);
+      }
     }
 
-    engineSourceVersion = readManifestVersion(engine.dir);
-    packSourceVersion = readManifestVersion(pack.dir);
-    const list = JSON.parse((await deps.run(deps.claudeBin, ["plugin", "list", "--json"])).stdout) as PluginListEntry[];
+    const list = await listInstalled(deps);
     installedEngineBefore = installedVersionFor(list, pluginId(engine));
     installedPackBefore = installedVersionFor(list, pluginId(pack));
 
@@ -173,6 +208,7 @@ export async function syncPack(pack: PackInfo, engine: PackInfo, deps: SyncDeps)
     : await tryStep(async () => {
         const res = await deps.run("git", ["pull", "--ff-only"], { cwd: engine.dir });
         if (res.code !== 0) return refused(`git pull --ff-only failed in ${engine.dir}: ${res.stderr.trim()}; resolve manually and re-run`);
+        engineSourceVersion = readManifestVersion(engine.dir);
         return ran(res.stdout.trim() || "up to date");
       });
   steps.push({ name: "pull-engine", ...pullEngine });
@@ -181,6 +217,8 @@ export async function syncPack(pack: PackInfo, engine: PackInfo, deps: SyncDeps)
   const pullPack = await tryStep(async () => {
     const res = await deps.run("git", ["pull", "--ff-only"], { cwd: pack.dir });
     if (res.code !== 0) return refused(`git pull --ff-only failed in ${pack.dir}: ${res.stderr.trim()}; resolve manually and re-run`);
+    packSourceVersion = readManifestVersion(pack.dir);
+    if (sameCheckout) engineSourceVersion = packSourceVersion;
     return ran(res.stdout.trim() || "up to date");
   });
   steps.push({ name: "pull-pack", ...pullPack });
@@ -192,6 +230,7 @@ export async function syncPack(pack: PackInfo, engine: PackInfo, deps: SyncDeps)
     const id = pluginId(engine);
     const res = await deps.run(deps.claudeBin!, ["plugin", "update", id]);
     if (res.code !== 0) return failed(`claude plugin update ${id} failed: ${res.stderr.trim()}`);
+    installedEngineAfter = engineSourceVersion;
     return ran(`updated ${id}`);
   });
   steps.push({ name: "update-engine", ...updateEngine });
@@ -211,6 +250,7 @@ export async function syncPack(pack: PackInfo, engine: PackInfo, deps: SyncDeps)
   const bump = await tryStep(async () => {
     if (!drift) return skipped("no drift; skipping version bump");
     const { before, after } = bumpPatchVersion(pack.dir);
+    bumpBefore = before;
     bumpAfter = after;
     packSourceVersion = after;
     return ran(`bumped ${before} -> ${after}`);
@@ -221,7 +261,16 @@ export async function syncPack(pack: PackInfo, engine: PackInfo, deps: SyncDeps)
   const compile = await tryStep(async () => {
     if (!drift) return skipped("no drift; skipping compile");
     const result = await deps.compilePack(pack.name);
-    if (!result.ok) return refused(result.errors.join("; "));
+    if (!result.ok) {
+      // A refused compile must leave the checkout exactly as the dirty guard
+      // found it (clean) so a re-run does not strand a bare-file bump the
+      // guard cannot see committed anywhere -- revert the write-back, no git.
+      if (bumpBefore) {
+        writeManifestVersion(pack.dir, bumpBefore);
+        packSourceVersion = bumpBefore;
+      }
+      return refused(`${result.errors.join("; ")}; reverted plugin.json to ${bumpBefore} so the checkout stays clean for the next run`);
+    }
     return ran("compiled clean");
   });
   steps.push({ name: "compile", ...compile });
@@ -230,7 +279,11 @@ export async function syncPack(pack: PackInfo, engine: PackInfo, deps: SyncDeps)
   const recheck = await tryStep(async () => {
     if (!drift) return skipped("no drift; skipping recheck");
     const result = await deps.checkPack(pack.name);
-    if (result.drift) return refused("content drift survives recompile; take the agent path (mattstack:editing-skills)");
+    if (result.drift) {
+      return refused(
+        `content drift survives recompile; pack checkout carries an uncommitted version bump (${bumpBefore} -> ${bumpAfter}) and its compiled output; take the agent path (mattstack:editing-skills), continuing from this working tree`,
+      );
+    }
     return ran("drift resolved");
   });
   steps.push({ name: "recheck", ...recheck });
@@ -238,7 +291,8 @@ export async function syncPack(pack: PackInfo, engine: PackInfo, deps: SyncDeps)
 
   const commitPush = await tryStep(async () => {
     if (!drift) return skipped("no drift; skipping commit");
-    const add = await deps.run("git", ["add", "-A", "."], { cwd: pack.dir });
+    const addPaths = [join(".claude-plugin", "plugin.json"), "skills", "attachments"].filter((rel) => existsSync(join(pack.dir, rel)));
+    const add = await deps.run("git", ["add", "--", ...addPaths], { cwd: pack.dir });
     if (add.code !== 0) return failed(`git add failed: ${add.stderr.trim()}`);
     const commit = await deps.run("git", ["commit", "-m", `skills sync: ${pack.name} v${bumpAfter}`], { cwd: pack.dir });
     if (commit.code !== 0) return failed(`git commit failed: ${commit.stderr.trim()}`);
@@ -249,8 +303,10 @@ export async function syncPack(pack: PackInfo, engine: PackInfo, deps: SyncDeps)
   steps.push({ name: "commit-push", ...commitPush });
   if (stops(commitPush)) return finish();
 
+  // Reached only when drift is true, or drift is false with installedPackBefore
+  // !== packSourceVersion (the noOp return above already exited the other case) --
+  // an update is always due here, so there is no further skip to check.
   const updatePack = await tryStep(async () => {
-    if (!drift && installedPackBefore === packSourceVersion) return skipped("pack already current and no drift");
     const id = pluginId(pack);
     const res = await deps.run(deps.claudeBin!, ["plugin", "update", id]);
     if (res.code !== 0) return failed(`claude plugin update ${id} failed: ${res.stderr.trim()}`);
@@ -260,7 +316,7 @@ export async function syncPack(pack: PackInfo, engine: PackInfo, deps: SyncDeps)
   if (stops(updatePack)) return finish();
 
   const verifyInstalled = await tryStep(async () => {
-    const list = JSON.parse((await deps.run(deps.claudeBin!, ["plugin", "list", "--json"])).stdout) as PluginListEntry[];
+    const list = await listInstalled(deps);
     installedPackAfter = installedVersionFor(list, pluginId(pack));
     installedEngineAfter = installedVersionFor(list, pluginId(engine));
     if (installedPackAfter !== packSourceVersion) {
@@ -278,7 +334,7 @@ export async function syncPack(pack: PackInfo, engine: PackInfo, deps: SyncDeps)
     for (const entry of readdirSync(deps.cswapSessionsDir, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
       const pluginsPath = join(deps.cswapSessionsDir, entry.name, "plugins");
-      if (!existsSync(pluginsPath)) continue;
+      if (!pathExists(pluginsPath)) continue;
       if (!isAlignedSymlink(pluginsPath, target)) {
         flagged++;
         warnings.push(`cswap session "${entry.name}" plugins dir (${pluginsPath}) does not point at ${target}`);
