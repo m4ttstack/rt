@@ -33,6 +33,9 @@ function baseRow(overrides: Partial<GateRow> = {}): GateRow {
     nudge: null,
     delivery: null,
     released: false,
+    supersededBy: null,
+    owner: null,
+    escalatedAt: null,
     ...overrides,
   };
 }

@@ -145,8 +145,13 @@ function DecisionQueueModal({
           <span className="tui-row-sep">·</span>
           <span>{ago(new Date(gate.openedAt).toISOString(), Date.now())}</span>
           {gate.origin && (
-            <span>
-              {[gate.origin.worktree, gate.origin.paneId]
+            // Panes pass the worktree as a full path; the strip shows only
+            // its basename (the full value stays on hover).
+            <span title={gate.origin.worktree}>
+              {[
+                gate.origin.worktree?.split('/').filter(Boolean).pop(),
+                gate.origin.paneId,
+              ]
                 .filter(Boolean)
                 .join(' · ')}
             </span>

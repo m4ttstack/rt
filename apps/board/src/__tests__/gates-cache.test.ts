@@ -26,6 +26,9 @@ function row(overrides: Partial<FacilityGateRow> = {}): FacilityGateRow {
     nudge: null,
     delivery: null,
     released: false,
+    supersededBy: null,
+    owner: null,
+    escalatedAt: null,
     ...overrides,
   };
 }
@@ -462,6 +465,9 @@ describe('attachGates', () => {
       row({
         status: 'answered',
         released: false,
+        supersededBy: null,
+        owner: null,
+        escalatedAt: null,
         answer: { answers: { q1: 'yes' }, by: 'board-ui', answeredAt: 2000 },
       })
     );
@@ -674,6 +680,9 @@ describe('attachGates', () => {
       nudge: null,
       delivery: null,
       released: false,
+      supersededBy: null,
+      owner: null,
+      escalatedAt: null,
       context: 'ctx',
       origin: { worktree: '/tmp/wt' },
     });

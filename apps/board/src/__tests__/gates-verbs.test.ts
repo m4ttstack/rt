@@ -63,6 +63,9 @@ function gateRow(overrides: Partial<GateRow> & { id: string }): GateRow {
     nudge: null,
     delivery: null,
     released: false,
+    supersededBy: null,
+    owner: null,
+    escalatedAt: null,
     ...overrides,
   };
 }

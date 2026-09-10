@@ -152,6 +152,12 @@ export class GateCache {
       nudge: null,
       delivery: null,
       released: false,
+      // The opened event predates any ownership/supersession action, so the
+      // optimistic row starts these RT-117 fields empty the same way the
+      // daemon's own fresh row does.
+      supersededBy: null,
+      owner: null,
+      escalatedAt: null,
       context: typeof payload.context === 'string' ? payload.context : null,
       origin: isRecord(payload.origin)
         ? (payload.origin as FacilityGateRow['origin'])

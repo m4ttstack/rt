@@ -1827,17 +1827,19 @@
 .tui-triage-footer .tui-triage-pos {
   justify-self: end;
 }
+/* Long next-gate titles wrap to a second line instead of truncating. */
 .tui-triage-peek {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 6px;
   font-size: var(--gate-font-meta);
   color: var(--gate-muted);
   min-height: 1lh;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+}
+.tui-triage-peek > span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .tui-triage-peek-k {
   font-weight: 500;
@@ -1891,6 +1893,13 @@
   [data-part='markdown']
   > :last-child {
   margin-bottom: 0;
+}
+/* Pane context is often transcript-shaped plain text: markdown treats its
+   single newlines as soft breaks and runs the lines together, so the pane
+   honors them (and indent runs) instead. */
+.tui-triage-modal [data-part='scrollpane-body'] p,
+.tui-triage-modal [data-part='scrollpane-body'] li {
+  white-space: pre-wrap;
 }
 .tui-triage-modal [data-part='scrollpane-body'] p {
   margin: 0 0 0.4rem;
