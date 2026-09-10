@@ -184,6 +184,8 @@ function assertValidSubject(subject: string): void {
   }
 }
 
+const DEAD_SUBSCRIPTION_RETENTION_MS = 24 * 60 * 60 * 1000;
+
 export function createGatesStore(opts: {
   dbPath: string;
   log: Logger;
@@ -269,6 +271,11 @@ export function createGatesStore(opts: {
     db.exec("UPDATE gate_subscriptions SET scope = 'prefix' WHERE scope IS NULL;");
   }
   if (!subCols.has("ownerRef")) db.exec("ALTER TABLE gate_subscriptions ADD COLUMN ownerRef TEXT;");
+
+  const performPruneDeadSubscriptions = (olderThanMs: number, now = Date.now()): number => {
+    const { changes } = pruneDeadSubStmt.run(now - olderThanMs);
+    return changes;
+  };
 
   const getStmt = db.prepare("SELECT * FROM gates WHERE id = ?");
   const insertStmt = db.prepare(`
@@ -588,9 +595,8 @@ export function createGatesStore(opts: {
       markEscalatedStmt.run(Date.now(), id);
     },
 
-    pruneDeadSubscriptions(olderThanMs, now = Date.now()) {
-      const { changes } = pruneDeadSubStmt.run(now - olderThanMs);
-      return changes;
+    pruneDeadSubscriptions(olderThanMs, now) {
+      return performPruneDeadSubscriptions(olderThanMs, now);
     },
 
     deadPanePushes() {
@@ -601,6 +607,8 @@ export function createGatesStore(opts: {
       const cutoff = Date.now() - retentionMs;
       const { changes } = sweepStmt.run(cutoff, retentionFloor);
       if (changes > 0) log.debug({ deleted: changes }, "gates retention sweep");
+      const deadSubDeleted = performPruneDeadSubscriptions(DEAD_SUBSCRIPTION_RETENTION_MS);
+      if (deadSubDeleted > 0) log.info({ deleted: deadSubDeleted }, "pruned dead subscriptions");
       return changes;
     },
 
