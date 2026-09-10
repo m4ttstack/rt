@@ -186,7 +186,7 @@ existing recipe test conventions.
   gate).
 - `soribashi.config.ts` aliases gain the role names:
 
-```
+```css
 --type-display: var(--font-size-rem100)
 --type-title:   var(--font-size-rem90)
 --type-body:    var(--font-size-lg)
