@@ -577,16 +577,30 @@ describe('tombstone resurrection', () => {
     expect(calls).toEqual([]);
   });
 
-  test('a tombstone with no latch on the MR is dropped', async () => {
+  test('a tombstone whose MR has discussions but no latch is dropped', async () => {
     const { deps, calls, resurrects, drops } = harness({
       ...tombstoned,
-      detail: detail(),
+      detail: detail(disc('plain', 'just a human thread', '2026-09-01', false)),
     });
     const result = await runLatchPass(deps);
     expect(drops).toEqual([MR]);
     expect(resurrects).toEqual([]);
     expect(result.resurrected).toBe(0);
     expect(calls).toEqual([]);
+  });
+
+  // The daemon answers an unrecognized identity with an empty-but-ok result
+  // (see LatchMrFacts.rtRepo). Dropping the tombstone on that wobble would
+  // destroy the one record that lets the latch ever be found again.
+  test('a tombstone is kept when the MR reads back zero discussions', async () => {
+    const { deps, resurrects, drops } = harness({
+      ...tombstoned,
+      detail: detail(),
+    });
+    const result = await runLatchPass(deps);
+    expect(drops).toEqual([]);
+    expect(resurrects).toEqual([]);
+    expect(result.skipped).toBe(1);
   });
 
   test('a tombstone whose only latch is spent is dropped', async () => {

@@ -142,6 +142,14 @@ export async function runLatchPass(
       const latches = findLatches(detail);
       let review = live;
       if (!review) {
+        // Zero discussions is indistinguishable from the daemon's
+        // empty-but-ok answer for an unrecognized identity (see
+        // LatchMrFacts.rtRepo), so the tombstone is kept for the next tick
+        // rather than destroyed on what may be a transient wobble.
+        if (detail.discussions.length === 0) {
+          result.skipped++;
+          continue;
+        }
         // The armed latch is the proof the tombstone still matters: without
         // one there is nothing a revived row could ever act on, and dropping
         // the tombstone keeps this MR out of every later tick's reads.
