@@ -8,7 +8,7 @@ import { getKvValue } from './kv-blob.ts';
 import { importLegacyState } from './legacy-import.ts';
 
 export type DbFlavor = 'server' | 'cli';
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 const BUSY_TIMEOUT_MS: Record<DbFlavor, number> = { server: 250, cli: 5000 };
 const MIGRATION_BUSY_TIMEOUT_MS = 5000;
@@ -101,7 +101,13 @@ CREATE TABLE IF NOT EXISTS kv (
 `;
 
 type Migration = (db: Database) => void;
-const MIGRATIONS: Migration[] = [db => db.run(V1_SCHEMA)];
+const MIGRATIONS: Migration[] = [
+  db => db.run(V1_SCHEMA),
+  // v2: prune tombstones agent_states rows (pruned_at stamp) instead of
+  // deleting them, so a review row survives its MR leaving the board and the
+  // latch pass can resurrect it when the MR returns.
+  db => db.run('ALTER TABLE agent_states ADD COLUMN pruned_at INTEGER'),
+];
 
 // SCHEMA_VERSION is the public constant other modules reason about;
 // MIGRATIONS.length is what runMigrations actually applies. They must never
