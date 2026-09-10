@@ -48,7 +48,7 @@
 - Modify: `lib/skills/packs.ts`
 - Modify: `lib/skills/sources.ts`
 - Modify: `commands/skills.ts` (only the `resolvePluginRootsFromDir` return shape and the two `PluginRoots` literals in `resolve()`)
-- Modify: the two existing typed test literals that annotate `: PluginRoots` — `lib/skills/__tests__/sources.test.ts:96` and `commands/__tests__/skills.test.ts:216` (`computeGolden`) — each gains `list: []` (the root tsconfig type-checks test files, so `bunx tsc --noEmit` fails without this)
+- Modify: the two existing typed test literals that annotate `: PluginRoots` (`lib/skills/__tests__/sources.test.ts:96` and `commands/__tests__/skills.test.ts:216`, `computeGolden`) each gain `list: []` (the root tsconfig type-checks test files, so `bunx tsc --noEmit` fails without this)
 - Test: `lib/skills/__tests__/packs.test.ts`, `lib/skills/__tests__/sources.test.ts`
 
 **Interfaces:**
@@ -420,7 +420,7 @@ git commit -m "skills compile: extract performCompile, expose compilePackAll"
 - Test: `lib/__tests__/claude-bin.test.ts`, `lib/skills/__tests__/sync.test.ts`
 
 **Interfaces:**
-- Consumes: `PackInfo` (with `marketplace`), `installedVersionFor`, `PluginListEntry`, `checkPack`/`compilePackAll` signatures (injected, never imported here — `lib/` must not import from `commands/`).
+- Consumes: `PackInfo` (with `marketplace`), `installedVersionFor`, `PluginListEntry`, `checkPack`/`compilePackAll` signatures (injected, never imported here; `lib/` must not import from `commands/`).
 - Produces:
 
 ```ts
@@ -488,7 +488,7 @@ test("resolveClaudeBin returns an absolute path or null", () => {
 });
 ```
 
-`lib/skills/__tests__/sync.test.ts` — build a `FakeWorld` around the deps:
+`lib/skills/__tests__/sync.test.ts`: build a `FakeWorld` around the deps:
 
 ```ts
 type Call = { cmd: string; args: string[]; cwd?: string };
@@ -712,5 +712,5 @@ git commit -m "add rt skills sync verb"
 **Files:** none new.
 
 - [ ] **Step 1:** `bun run test:all` (unit + e2e). Known repo trap: the full suite rotates flakes on main; a failure in a file this branch never touched gets isolated and re-run on its own before being blamed on the branch.
-- [ ] **Step 2:** `bun run picker:check && bunx tsc --noEmit && sh scripts/repo-purity.sh` — all clean.
+- [ ] **Step 2:** `bun run picker:check && bunx tsc --noEmit && sh scripts/repo-purity.sh`: all clean.
 - [ ] **Step 3:** Commit anything docs:gen or the suites surfaced, then stop; PR creation is the session driver's step, not the implementer's.

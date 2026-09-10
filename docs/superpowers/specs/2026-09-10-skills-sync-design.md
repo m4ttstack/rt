@@ -1,4 +1,4 @@
-# rt skills sync — Design
+# rt skills sync: Design
 
 **Goal:** one deterministic verb, `rt skills sync --pack <name>`, that brings a pack's
 compiled skills and installed plugin caches current with their sources, plus a console
@@ -31,17 +31,17 @@ reuses that seam, and the CLI keeps the verb usable from a terminal by humans an
 Nothing is assumed; every name comes from the surfaces rt already reads:
 
 - Marketplace registration: `extraKnownMarketplaces` in the Claude `settings.json`
-  (under `CLAUDE_CONFIG_DIR`, default `~/.claude`) — the same source
+  (under `CLAUDE_CONFIG_DIR`, default `~/.claude`)... the same source
   `discoverPacks` (`lib/skills/packs.ts`) walks today. The registration key is the
   `<marketplace>` half of `claude plugin update <plugin>@<marketplace>`; discovery is
   extended to carry it on `PackInfo` alongside the plugin name it already captures
   (the marketplace entry's `name`). The two names routinely differ (an `acme` pack can
   ship as `acme@beacon`), so neither is ever derived from the other.
-- The **engine** checkout and pair: the pack named `mattstack` in that same discovery —
+- The **engine** checkout and pair: the pack named `mattstack` in that same discovery...
   its marketplace entry is a `file://` url source, which `discoverPacks` already
   resolves to the checkout directory. `mattstack` as the engine's plugin name is the
   existing convention (`pluginRoots.byName.mattstack` in `commands/skills.ts`).
-- Installed versions: `claude plugin list --json` — the seam the compiler already
+- Installed versions: `claude plugin list --json`, the seam the compiler already
   resolves installed plugins through (`buildPluginRoots` in `lib/skills/sources.ts`),
   extended to read the version per `<plugin>@<marketplace>` id. The cache directory is
   never globbed for versions: it can hold several.
@@ -71,7 +71,7 @@ any failure is "fix the named problem, run sync again."
 2. **Freshen sources:** `git pull --ff-only` in the engine checkout and the pack
    checkout; a pull that cannot fast-forward (diverged, no remote) is a refusal. Sync
    never bumps the engine version; it only consumes what `main` says.
-3. **Freshen installed engine:** `claude plugin update <engine>@<marketplace>` — skipped
+3. **Freshen installed engine:** `claude plugin update <engine>@<marketplace>`, skipped
    when the installed engine version already equals the checkout's manifest version.
 4. **Decide, via the check facility (in-process):**
    - compiled output drifts from sources → patch-bump the pack's `plugin.json` version
@@ -79,7 +79,7 @@ any failure is "fix the named problem, run sync again."
      compile in-process, re-check. Drift **survives** the recompile → refuse: content
      changes are pending; take the agent path. Compile itself performs no git
      operations, so sync then commits the bump plus the compiled output in the pack
-     checkout (a `git add` scoped to the pack directory — safe because the dirty guard
+     checkout (a `git add` scoped to the pack directory, safe because the dirty guard
      proved the tree clean) and pushes.
    - no drift, installed pack cache lagging → skip bump/compile, fall through to 5.
    - no drift, installed current → no-op report, exit 0.
@@ -88,11 +88,11 @@ any failure is "fix the named problem, run sync again."
 6. **cswap sweep (warning only):** readlink each `~/.claude-swap-backup/sessions/*/plugins`;
    any that is not a symlink resolving to `<config>/plugins` is reported as a named
    warning. Today all sessions share the canonical cache, so this is an invariant check,
-   not an update loop — sync never writes into another account's config dir.
+   not an update loop; sync never writes into another account's config dir.
 7. **Report.**
 
 **The mattstack pack itself:** compile and check for `--pack mattstack` read the
-checkout, not the installed cache, so the chain degenerates cleanly — the engine and the
+checkout, not the installed cache, so the chain degenerates cleanly: the engine and the
 pack are the same repo, steps 2/3 collapse into one pull + one update, and the rest is
 unchanged. No special-casing beyond deduplicating the checkout.
 
@@ -102,7 +102,7 @@ stale cache masked.
 
 ## CLI shape
 
-- `rt skills sync --pack <name> [--manifest <path>] [--json]` — `--pack` and
+- `rt skills sync --pack <name> [--manifest <path>] [--json]`: `--pack` and
   `--manifest` behave exactly as on `check`/`compile` (auto-find when omitted). Flags
   only, no required positional, so no `omitBehavior` entry is needed; the leaf is
   agent-safe by construction (no picker, no TTY dependence).
@@ -112,11 +112,11 @@ stale cache masked.
 - JSON payload: `{ ok, pack, steps: [{ name, status: "ran"|"skipped"|"refused"|"failed",
   detail }], versions: { engine: { before, after }, pack: { source, installedBefore,
   installedAfter } }, warnings: [], restartNeeded }`. `restartNeeded` is true whenever an
-  installed cache changed — running sessions keep their old cache; that is a badge for
+  installed cache changed; running sessions keep their old cache, so that is a badge for
   surfaces, never an action sync takes.
 - The `claude` binary is resolved explicitly (PATH probe with known install-location
   fallbacks, mirroring how the console resolves `rt` in its `rt-bin` module) and its
-  absence is a refusal with the probed locations named — the console server runs under
+  absence is a refusal with the probed locations named, since the console server runs under
   launchd, where PATH is not a login shell's.
 
 ## `rt skills check` grows the installed dimension
@@ -127,7 +127,7 @@ Check gains a third comparison per pack: installed plugin version
 as a human summary line naming both versions and the fix (`rt skills sync`).
 
 **Exit-code compatibility:** source drift keeps exit 1. Installed lag *alone* exits 0
-with the warning line — existing flows assert "check → current" at points where the
+with the warning line: existing flows assert "check → current" at points where the
 installed cache necessarily still lags (between compile and plugin update), and sync
 itself re-checks mid-chain at exactly such a point. Surfaces that care about lag (the
 console badge, sync's decide step) read the JSON dimension, which carries it regardless
@@ -143,12 +143,12 @@ In the console's skills server module, which already spawns rt for check/compile
   compile routes would report).
 - Badge states, driven by check's JSON: in-sync; recompile needed (drift); update needed
   (installed lag). After a successful sync the response's `restartNeeded` flips the badge
-  to "restart sessions to apply" — informational, not clickable.
+  to "restart sessions to apply" (informational, not clickable).
 - One Sync button per stale pack badge (matching badge granularity), disabled while a
   sync is in flight; refusal and failure text renders verbatim, including the
   content-drift refusal that points at the agent path.
 - The UI half enters implementation only after a short design pass over the badge,
-  button, in-flight, and result states — no UI code before that sign-off.
+  button, in-flight, and result states; no UI code before that sign-off.
 
 ## Error handling
 
@@ -166,7 +166,7 @@ In the console's skills server module, which already spawns rt for check/compile
 
 ## Testing
 
-- `lib/skills/__tests__/sync.test.ts`: the chain with an injected runner — step
+- `lib/skills/__tests__/sync.test.ts`: the chain with an injected runner: step
   ordering, every guard's refusal message, skip logic per starting state (no-op, lag
   only, drift, drift-survives-compile), the mattstack degenerate case, derivation
   failures, and the cswap sweep against fixture symlinks. Fixture
