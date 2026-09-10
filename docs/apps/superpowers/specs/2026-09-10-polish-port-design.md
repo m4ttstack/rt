@@ -171,6 +171,9 @@ existing recipe test conventions.
 - `theme.ts` `fontSize` gains `rem62: "0.62rem"`; `spacing` gains
   `rem95: "0.95rem"`. These are the only two gate values missing from the
   scale (census check during implementation confirms before adding).
+- `theme.ts` `lineHeight` gains `snug: "1.4"` (the head band's line
+  height; a literal in recipe CSS would trip the no-hardcoded-values
+  gate).
 - `soribashi.config.ts` aliases gain the role names:
 
 ```
