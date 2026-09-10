@@ -73,8 +73,9 @@ export interface GatesStore {
   /** Deletes closed/answered rows past the retention window, floor respected.
       Returns the number of rows removed. */
   sweep(): number;
-  /** Deletes dead subscription rows whose last delivery attempt (or creation,
-      if never delivered) is older than `olderThanMs`. Returns rows removed. */
+  /** Deletes dead subscription rows whose last delivery attempt is older
+      than `olderThanMs`; a dead row that was never delivered is pruned
+      immediately, regardless of `olderThanMs`. Returns rows removed. */
   pruneDeadSubscriptions(olderThanMs: number, now?: number): number;
   close_(): void;
   /** Test-only debug accessor for the underlying handle (e.g. pragma checks). Not for feature code. */

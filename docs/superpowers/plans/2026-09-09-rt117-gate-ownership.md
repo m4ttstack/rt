@@ -622,10 +622,10 @@ git commit -m "gates sweep: prune dead subscription rows after 24h" -m "Co-Autho
 
 ---
 
-### Task 13: claimview pack migration (mattstack-skills repo)
+### Task 13: the team pack migration (mattstack-skills repo)
 
 **Files (in `~/Documents/GitHub/mattstack-skills`, NOT this repo):**
-- Modify: the claimview team pack's shepherdr skill sources: `scripts/herd-init.py` and the skill text that instructs `rt gate subscribe --subject-prefix run:`
+- Modify: the team pack's shepherdr skill sources: `scripts/herd-init.py` and the skill text that instructs `rt gate subscribe --subject-prefix run:`
 - Modify: the pack's gate-open templates (pipeline stage gates)
 
 Before touching anything there, load the `mattstack:editing-skills` skill (compiled/vendored pipeline verbs have their own edit-and-promote flow) and work on a branch in that repo.

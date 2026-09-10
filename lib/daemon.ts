@@ -473,11 +473,13 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
 
   // 0 is a meaningful value here (escalate on the first sweep), unlike
   // logRetentionDays's n > 0 guard -- so this only rejects negative/NaN.
+  // A typeof guard (not Number(v)) matters because Number(null) === 0: an
+  // explicitly-null stored setting must fall back to the default, not be
+  // read as the valid "escalate immediately" value.
   const escalationTtlMinutes = (): number => {
     try {
       const v = getSetting<unknown>("rt.gates.escalationTtlMinutes").value;
-      const n = Number(v);
-      return Number.isFinite(n) && n >= 0 ? n : 10;
+      return typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : 10;
     } catch {
       return 10;
     }

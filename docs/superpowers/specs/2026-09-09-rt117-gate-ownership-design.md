@@ -96,7 +96,7 @@ The notify seam consults ownership before surfacing a gate to the human:
 
 ## Companion work (mattstack-skills, same plan)
 
-The claimview pack's herd-init migrates to `rt herd start` so every shepherded run resolves an owner (spawned_by carries `herd:<id>`), and pack gate-open templates declare `presentation`. Executed in the mattstack-skills repo as tasks of this plan; rt-side changes do not depend on it landing first (legacy runs simply derive `owner: human`, today's behavior).
+The team pack's herd-init migrates to `rt herd start` so every shepherded run resolves an owner (spawned_by carries `herd:<id>`), and pack gate-open templates declare `presentation`. Executed in the mattstack-skills repo as tasks of this plan; rt-side changes do not depend on it landing first (legacy runs simply derive `owner: human`, today's behavior).
 
 ## Out of scope
 
