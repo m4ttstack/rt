@@ -1,8 +1,8 @@
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { describe, expect, test } from 'bun:test';
 import { Database } from 'bun:sqlite';
+import { describe, expect, test } from 'bun:test';
 
 import {
   dropPrunedState,

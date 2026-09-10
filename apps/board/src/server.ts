@@ -936,11 +936,12 @@ const httpServer = Bun.serve({
         // check them back in.
         const visible = config.members.filter(m => !m.hidden);
         const visibleMrs = visibleMrsFor(snapshot.mrs, visible);
-        // Retain review/respond/doctor state for exactly as long as its MR is on
-        // the board; prune once it merges/closes/goes stale and drops off. Gated
-        // on a healthy, non-empty snapshot so a failed fetch (stale/empty data)
-        // can't wipe live state. Keyed on the full board (all members, incl.
-        // hidden), not just the visible subset.
+        // Retain review/respond/doctor state live for exactly as long as its
+        // MR is on the board; tombstone it (resurrectable by the triage latch
+        // pass, never hard-deleted here) once the MR merges/closes/goes stale
+        // and drops off. Gated on a healthy, non-empty snapshot so a failed
+        // fetch (stale/empty data) can't hide live state. Keyed on the full
+        // board (all members, incl. hidden), not just the visible subset.
         if (!snapshot.fetchError && snapshot.mrs.length > 0) {
           const onBoard = new Set(
             snapshot.mrs.map(m => m.webUrl).filter((u): u is string => !!u)
