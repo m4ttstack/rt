@@ -266,12 +266,25 @@ export async function gates(args: string[]): Promise<void> {
   for (const g of data.gates) console.log(`${g.id}  ${g.kind}  ${g.subject}  ${g.questions.map((q) => q.label).join(" | ")}`);
 }
 
+/** Wall-clock, not an injected `now()`: this formats a push timestamp for a
+    one-shot CLI render, and there is no seam worth threading for it. */
+function pushAge(lastDelivery: HerdStatusData["push"]["lastDelivery"]): string {
+  if (!lastDelivery) return "never";
+  const mins = Math.floor((Date.now() - lastDelivery.at) / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
 /** A missing subscription and an answered-but-undelivered gate are the two
     states the shepherd must act on, so both name their own remedy inline. */
 export function renderStatus(data: HerdStatusData): string {
   const sub = data.subscription ? `subscription ${data.subscription.id}${data.subscription.dead ? " DEAD" : ""}` : "subscription MISSING (run rt herd resume)";
+  const push = `push: ${data.push.state} (last delivery ${pushAge(data.push.lastDelivery)})`;
   const lines = [
-    `${data.herd.id}  room ${data.herd.room}  unread ${data.unread}  lifecycle ${data.lifecycleConnected ? "connected" : "OFF"}${data.hiddenUp === null ? "" : `  hidden ${data.hiddenUp ? "up" : "DOWN"}`}  ${sub}`,
+    `${data.herd.id}  room ${data.herd.room}  unread ${data.unread}  lifecycle ${data.lifecycleConnected ? "connected" : "OFF"}${data.hiddenUp === null ? "" : `  hidden ${data.hiddenUp ? "up" : "DOWN"}`}  ${push}  ${sub}`,
   ];
   for (const j of data.jobs) {
     const notWoken = j.lastGateStatus === "answered" && j.lastGateDelivery === "dead-pane" ? `  gate ${j.lastGate} answered, worker not woken: rt chat dm ${j.handle}` : "";

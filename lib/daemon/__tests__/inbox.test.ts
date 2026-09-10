@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { DEFAULT_TIMEOUT_MS, deliverToInbox, deliveryLabel, renderDeliveries, wrapCrossSession } from "../inbox.ts";
+import { DEFAULT_TIMEOUT_MS, deliverToInbox, deliveryLabel, probeInboxReachability, renderDeliveries, wrapCrossSession } from "../inbox.ts";
 
 test("the default push timeout is 3000ms, not the original 1000ms that made one slow recipient look like a dropped push", () => {
   expect(DEFAULT_TIMEOUT_MS).toBe(3000);
@@ -57,6 +57,27 @@ test("deliverToInbox writes exactly one msgV:1 user frame line", async () => {
 test("deliverToInbox reports failure on a dead socket", async () => {
   const res = await deliverToInbox(join(tmpdir(), "nope.sock"), "x", { timeoutMs: 200 });
   expect(res.ok).toBe(false);
+});
+
+test("probeInboxReachability reports reachable on a listening socket without writing to it", async () => {
+  const path = join(mkdtempSync(join(tmpdir(), "inbox-probe-")), "s.sock");
+  const lines: string[] = [];
+  const server = Bun.listen({ unix: path, socket: { data(_s, d) { lines.push(d.toString()); } } });
+  const state = await probeInboxReachability(path);
+  await Bun.sleep(30);
+  server.stop(true);
+  expect(state).toBe("reachable");
+  expect(lines.join("")).toBe("");
+});
+
+test("probeInboxReachability reports unreachable on a dead socket", async () => {
+  const state = await probeInboxReachability(join(tmpdir(), "nope-probe.sock"), { timeoutMs: 200 });
+  expect(state).toBe("unreachable");
+});
+
+test("probeInboxReachability reports unreachable once the timeout elapses", async () => {
+  const state = await probeInboxReachability(join(tmpdir(), "nope-probe-2.sock"), { timeoutMs: 1 });
+  expect(state).toBe("unreachable");
 });
 
 test("no frame is written after a failed connect has settled", async () => {
