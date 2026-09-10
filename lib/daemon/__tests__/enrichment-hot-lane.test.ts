@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { selectEnrichmentBranches, COLD_RECHECK_MS, COLD_PER_CYCLE } from "../cache-refresh.ts";
+import { selectEnrichmentBranches, isEnrichableBranchName, COLD_RECHECK_MS, COLD_PER_CYCLE } from "../cache-refresh.ts";
 import type { CacheEntry } from "../../state/index.ts";
 
 const NOW = 10_000_000;
@@ -20,6 +20,20 @@ function cand(branch: string, worktree = false) {
 function lookupFrom(map: Record<string, CacheEntry>) {
   return (branch: string) => map[branch];
 }
+
+test("plumbing and backup branch names are not enrichable", () => {
+  // on-deck/* is pool plumbing, rt-backup/* is rt's own rebase backups, and
+  // backup/* is the human convention for parked copies — none can carry an MR
+  // of its own, so querying GitLab about them is pure waste in the hot set
+  // and an hourly waste in the cold rotation.
+  expect(isEnrichableBranchName("on-deck/pool-1")).toBe(false);
+  expect(isEnrichableBranchName("rt-backup/rebase/acme-1761/2026-05-12T17-06-09")).toBe(false);
+  expect(isEnrichableBranchName("backup/acme-1509-pre-squash")).toBe(false);
+
+  expect(isEnrichableBranchName("acme-1234-feature")).toBe(true);
+  expect(isEnrichableBranchName("backup-acme-2769-preclean")).toBe(true); // dash, not slash: a real branch name
+  expect(isEnrichableBranchName("feature/backup-tool")).toBe(true);
+});
 
 test("the repo's default branch is never selected, worktree or not", () => {
   // The 2026-09-09 incident's real poison: the main checkout sits on master,
