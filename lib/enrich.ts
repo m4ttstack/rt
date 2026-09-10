@@ -245,14 +245,30 @@ const MR_STATE_GLYPHS: Record<string, { glyph: string; tone: string }> = {
 };
 
 /**
+ * The picker clips overflowing rows at the left/right seam, so an untruncated
+ * ticket title eats the whole row and takes the [state] tag with it.
+ */
+const MAX_TICKET_TITLE = 64;
+
+function clipTitle(title: string): string {
+  if (title.length <= MAX_TICKET_TITLE) return title;
+  return title.slice(0, MAX_TICKET_TITLE - 1).trimEnd() + "…";
+}
+
+/**
  * Segment-form sibling of `formatBranchLabelParts` for the rt-ui picker's row
  * model — same source fields and the same leading/trailing split, but tones
  * and hex values replace ANSI escapes so the picker can recolor per-theme and
  * step cursor-row weight itself. Linear's `stateColor` rides as `hex` because
  * it's a workspace's own dynamic truecolor, not one of the picker's named
  * theme tones.
+ *
+ * `match` is the row's filter text: the picker only ranks against left-side
+ * text by default, which would make the right-pinned linearId — and, on
+ * ticket rows, the branch name and the clipped-off tail of the title —
+ * unsearchable. It carries dirName, branch, full title, [state], and linearId.
  */
-export function formatBranchSegments(eb: EnrichedBranch): { left: PickSegment[]; right: PickSegment[] } {
+export function formatBranchSegments(eb: EnrichedBranch): { left: PickSegment[]; right: PickSegment[]; match: string } {
   const right: PickSegment[] = [];
   if (eb.mr?.pipeline) {
     const g = PIPELINE_GLYPHS[eb.mr.pipeline.status];
@@ -268,21 +284,31 @@ export function formatBranchSegments(eb: EnrichedBranch): { left: PickSegment[];
 
   const isDefault = DEFAULT_BRANCHES.has(eb.branch);
   const isTicketBranch = !!(eb.linearId && eb.ticket);
+  const stateTag = isTicketBranch && eb.ticket!.stateName ? `[${eb.ticket!.stateName}]` : "";
+  const match = [
+    eb.dirName,
+    eb.branch,
+    isTicketBranch ? eb.ticket!.title : "",
+    stateTag,
+    eb.linearId ?? "",
+  ].filter(Boolean).join(" ");
 
   if (isTicketBranch) {
     const left: PickSegment[] = [
       { text: eb.dirName, tone: "text", bold: true },
       { text: " · ", tone: "faint" },
-      { text: eb.ticket!.title, tone: "text", bold: true },
+      { text: clipTitle(eb.ticket!.title), tone: "text", bold: true },
     ];
-    if (eb.ticket!.stateName) {
+    if (stateTag) {
       left.push(
         eb.ticket!.stateColor
-          ? { text: ` [${eb.ticket!.stateName}]`, hex: eb.ticket!.stateColor }
-          : { text: ` [${eb.ticket!.stateName}]`, tone: "dim" },
+          ? { text: ` ${stateTag}`, hex: eb.ticket!.stateColor }
+          : { text: ` ${stateTag}`, tone: "dim" },
       );
     }
-    return { left, right };
+    if (right.length > 0) right.push({ text: " " });
+    right.push({ text: eb.linearId!, tone: "dimmer" });
+    return { left, right, match };
   }
 
   const left: PickSegment[] = eb.branch
@@ -303,7 +329,7 @@ export function formatBranchSegments(eb: EnrichedBranch): { left: PickSegment[];
     right.push({ text: " " }, { text: eb.linearId, tone: "dimmer" });
   }
 
-  return { left, right };
+  return { left, right, match };
 }
 
 // ─── Public enrichment API ───────────────────────────────────────────────────
