@@ -8,7 +8,7 @@ import { spawnSync } from "child_process";
 import { randomBytes } from "crypto";
 import type { CommandContext } from "../lib/command-tree.ts";
 import { herdrRequest } from "../lib/herdr/client.ts";
-import { bgEnsure, bgRelease } from "../packages/rt-client/src/index.ts";
+import { bgEnsure, bgRelease, formatPaneRef, paneFocus } from "../packages/rt-client/src/index.ts";
 import { HerdrEngine } from "../lib/runner/engine.ts";
 import { Runner, SessionDied, type RunnerDeps, type SeedEntry } from "../lib/runner/runner.ts";
 import { createTmuxEngine, killTmuxServer } from "../lib/runner/tmux-engine.ts";
@@ -53,12 +53,30 @@ export async function acquireBgSocket(
   return { sock, release };
 }
 
+/**
+ * Board focus on the bg backend: the daemon's pane:focus attend verb
+ * (RT-113) opens an attached tab in the board's own herdr workspace.
+ * Engine-level tab focus is wrong here -- the bg server is headless, so
+ * focusing a tab on it is invisible. Outside herdr (no
+ * HERDR_WORKSPACE_ID) the daemon's error comes back verbatim and the
+ * board pins it on the entry.
+ */
+export async function focusBgPane(
+  paneId: string,
+  deps: { paneFocus: typeof paneFocus } = { paneFocus },
+): Promise<void> {
+  const callerWorkspace = process.env.HERDR_WORKSPACE_ID;
+  const res = await deps.paneFocus({ paneId: formatPaneRef(paneId, "bg"), ...(callerWorkspace && { callerWorkspace }) });
+  if (!res.ok) throw new Error(res.error ?? "pane:focus failed");
+}
+
 /** The exact deps the success path hands to Runner; pulled out so the assembly is unit-testable without a real herdr socket. */
 export function buildRunnerDeps(args: string[], ctx: CommandContext, sock: string, seed?: SeedEntry[]): RunnerDeps {
   return {
     engine: new HerdrEngine(sock),
     openSession,
     resolve: () => resolveRun(args.filter((a) => a !== "--resolve-only"), ctx, { board: true }),
+    focusPane: (paneId) => focusBgPane(paneId),
     now: () => new Date(),
     sleep: (ms) => Bun.sleep(ms),
     openUrl: async (url: string) => {
