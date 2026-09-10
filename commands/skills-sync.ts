@@ -89,7 +89,10 @@ export async function skillsSync(args: string[]): Promise<void> {
     );
   }
   const engineResult = deriveEngine(packs, pack!);
-  if ("error" in engineResult) fail(engineResult.error);
+  if ("error" in engineResult) {
+    fail(engineResult.error);
+    return;
+  }
   const engine = engineResult.engine;
 
   const configDir = process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude");
