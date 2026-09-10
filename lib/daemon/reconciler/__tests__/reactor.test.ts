@@ -78,6 +78,7 @@ describe("terminal-state catch-up (missed edges)", () => {
       cacheEntries: entries as any,
       emit: () => {},
       log: fakeLog(),
+      findRunningRun: () => ({ kind: "none" as const }),
     });
   }
 

@@ -43,8 +43,8 @@ export const DEEP_RECONCILE_MS = 24 * 60 * 60 * 1000;
 export const DELTA_OVERLAP_MS = 2 * 60 * 1000;
 /** After a staleness-forced deep fails, hold deep retries this long; delta covers the gap. */
 export const DEEP_RETRY_BACKOFF_MS = 60 * 60 * 1000;
-/** A demand client that hasn't renewed in this long drops out of the scope on the next deep. */
-export const DEMAND_IDLE_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
+/** A demand client that hasn't renewed in this long drops out of the scope on the next cycle. Live clients re-declare on every read, so only dead ones (a closed tab, an ephemeral dev run) ever go idle this long. */
+export const DEMAND_IDLE_EXPIRY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Union of every live demand's authors plus the repo's own user, sorted and
@@ -66,10 +66,10 @@ export function effectiveSections(record: ProjectMRStore | undefined): string[] 
   return [...sections].sort();
 }
 
-/** Demanded sections with an unapproved CODE_OWNER rule, sorted; [] when none. Sorted here so every producer (deep, delta, backfill) stores the same canonical order regardless of `demanded`'s order. */
+/** Demanded sections with a CODE_OWNER rule, sorted; [] when none. Approval does NOT drop the match: a tagged MR stays in its section queue until merge/close, when the opened-only sweep prunes it. Sorted here so every producer (deep, delta, backfill) stores the same canonical order regardless of `demanded`'s order. */
 export function sectionsMatching(rules: ApprovalRuleLite[], demanded: string[]): string[] {
   return demanded
-    .filter((s) => rules.some((r) => r.type === "CODE_OWNER" && !r.approved && r.section === s))
+    .filter((s) => rules.some((r) => r.type === "CODE_OWNER" && r.section === s))
     .sort();
 }
 
@@ -175,6 +175,11 @@ async function syncImpl(
   overrides: ProjectSyncOverrides,
 ): Promise<void> {
   const store = overrides.store ?? getProjectMRs();
+  // Idle demand clients (a closed board tab, a dev run on an ephemeral
+  // port) must not keep pinning their authors or sections into the scope:
+  // reap on every cycle, not just the daily deep, so a dead client's
+  // demand outlives it by at most the idle TTL.
+  store.expireDemands(repoName, DEMAND_IDLE_EXPIRY_MS);
   const record = store.read(repoName);
 
   const explicitDeep = overrides.mode === "deep";
@@ -199,9 +204,6 @@ async function syncImpl(
   });
 
   if (isDeep) {
-    // Idle demand clients (a board tab closed a week ago) must not keep
-    // pinning their authors into the scope forever.
-    store.expireDemands(repoName, DEMAND_IDLE_EXPIRY_MS);
     const windowDays = overrides.windowDays ?? grants(loadRepoTracking(), repoName).projectMrsWindowDays;
 
     // Resolving self costs a network round trip (via getRepoContext), so it
