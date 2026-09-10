@@ -474,10 +474,12 @@ export interface PrunedEntry {
   retained?: true;
   /** Set with `retained`: the verb that resolves this row. */
   hint?: string;
-  /** Set only for `missing`: the row's worktree registry held nothing but
-      dead `main` records (re-derived on registration, unlike claim state),
-      so it was dropped along with the row instead of retaining it. */
-  registry?: "dropped";
+  /** Set only for `missing`. `"dropped"`: the row's worktree registry held
+      nothing but dead `main` records (re-derived on registration, unlike
+      claim state), so it was dropped along with the row. `"busy"`: the drop
+      could not be verified (db busy), so the row was retained — evicting it
+      anyway would orphan the registry; the next prune retries. */
+  registry?: "dropped" | "busy";
 }
 
 /** Outcome of carrying everything keyed to a retired name onto the live name. */
@@ -716,8 +718,12 @@ export function pruneRepoIndex(opts: { dryRun?: boolean } = {}): PrunedEntry[] {
     try {
       ownsRegistry = hasKvValue(WORKTREE_REGISTRY_NS, entry.repoName);
       if (ownsRegistry) {
-        const records = getKvValue<TreeRecord[]>(WORKTREE_REGISTRY_NS, entry.repoName, []);
-        deadRegistry = records.every((r) => r.kind === "main" && !existsSync(r.path));
+        // A corrupt row must NOT read as dead: getKvValue's [] fallback would
+        // otherwise classify unparseable claim state as droppable.
+        let corrupt = false;
+        const records = getKvValue<TreeRecord[]>(WORKTREE_REGISTRY_NS, entry.repoName, [], undefined, () => { corrupt = true; });
+        if (corrupt) console.warn(`rt: ${entry.repoName}'s worktree registry is corrupt JSON, leaving it in place`);
+        deadRegistry = !corrupt && records.every((r) => r.kind === "main" && !existsSync(r.path));
       }
     } catch { /* unreadable db — treat as no registry and prune as before */ }
     removed.push({
@@ -745,7 +751,17 @@ export function pruneRepoIndex(opts: { dryRun?: boolean } = {}): PrunedEntry[] {
 
   for (const r of removed) {
     if (r.retained) continue;
-    if (r.registry === "dropped") deleteKvValue(WORKTREE_REGISTRY_NS, r.repoName);
+    if (r.registry === "dropped") {
+      deleteKvValue(WORKTREE_REGISTRY_NS, r.repoName);
+      // deleteKvValue is warn-and-defer: a busy db swallows the delete. The
+      // index row must not go first — that orphans the registry under a key
+      // nothing iterates, the incident the retention exists for.
+      if (hasKvValue(WORKTREE_REGISTRY_NS, r.repoName)) {
+        r.registry = "busy";
+        r.retained = true;
+        continue;
+      }
+    }
     deleteKvValue(REPO_INDEX_NS, r.repoName);
   }
   writeRepoIndexCompat(loadRepoIndex());
