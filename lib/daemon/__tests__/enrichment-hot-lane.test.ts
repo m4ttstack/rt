@@ -21,6 +21,25 @@ function lookupFrom(map: Record<string, CacheEntry>) {
   return (branch: string) => map[branch];
 }
 
+test("the repo's default branch is never selected, worktree or not", () => {
+  // The 2026-09-09 incident's real poison: the main checkout sits on master,
+  // `git worktree list` includes it, and sourceBranches:["master"] sends
+  // GitLab's planner into a 60s scan that its LB kills as a 500 — failing the
+  // whole enrichment cycle for a branch that cannot have an MR of its own.
+  const sel = selectEnrichmentBranches(
+    [cand("master", true), cand("acme-1", true), cand("acme-2")],
+    lookupFrom({}),
+    NOW,
+    "master",
+  );
+  expect(sel.map((s) => s.branch).sort()).toEqual(["acme-1", "acme-2"]);
+});
+
+test("no default branch known means no exclusion", () => {
+  const sel = selectEnrichmentBranches([cand("master", true)], lookupFrom({}), NOW, undefined);
+  expect(sel.map((s) => s.branch)).toEqual(["master"]);
+});
+
 test("worktree branches are always selected, even when cached merged and fresh", () => {
   const sel = selectEnrichmentBranches(
     [cand("acme-1", true), cand("acme-2", true)],
