@@ -2,7 +2,7 @@ import { describe, expect, setSystemTime, test } from "bun:test";
 import { mkdtempSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { syncProjectMRs, backfillAuthors, backfillSections, effectiveSections, sectionsMatching, DEEP_RECONCILE_MS, DEEP_RETRY_BACKOFF_MS, DELTA_OVERLAP_MS } from "../project-sync.ts";
+import { syncProjectMRs, backfillAuthors, backfillSections, effectiveSections, sectionsMatching, DEEP_RECONCILE_MS, DEEP_RETRY_BACKOFF_MS, DELTA_OVERLAP_MS, DEMAND_IDLE_EXPIRY_MS } from "../project-sync.ts";
 import { createProjectMRs } from "../project-mrs-store.ts";
 import { openStateDb } from "../../state/index.ts";
 import type { PullRequest } from "@mattstack/glance";
@@ -961,6 +961,20 @@ describe("demand-scoped sync", () => {
       ] }),
     });
     expect(store.read("s7")!.mrs[8]).toBeDefined();
+  });
+
+  test("a delta cycle expires idle demand clients -- expiry is not deep-only", async () => {
+    const store = tmpStore();
+    store.fullSync("s8", "g/p", [], Date.now() - 1000); // fresh record → delta path
+    store.registerDemand("s8", "board:dead", ["alice"], Date.now());
+    store.registerDemand("s8", "board:live", ["bob"], Date.now());
+    store.read("s8")!.demands!["board:dead"]!.lastSeenAt = Date.now() - DEMAND_IDLE_EXPIRY_MS - 60_000;
+    await syncProjectMRs(deps("s8"), "s8", {
+      store,
+      fetchDelta: async () => ({ projectPath: "g/p", prs: [] }),
+    });
+    expect(store.read("s8")!.demands!["board:dead"]).toBeUndefined();
+    expect(store.read("s8")!.demands!["board:live"]).toBeDefined();
   });
 });
 
