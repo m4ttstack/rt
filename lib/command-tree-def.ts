@@ -1782,6 +1782,16 @@ export const TREE: Record<string, CommandNode> = {
           SETUP_JSON_ARG,
         ],
       },
+      sync: {
+        description: "Bring a pack's compiled skills and installed plugin caches current (recompile and plugin-update chain; refuses on content drift)",
+        module: "./commands/skills-sync.ts",
+        fn: "skillsSync",
+        args: [
+          { name: "Pack", flag: "--pack", type: "text", placeholder: "acme", hint: "Pack to sync; auto-selects when only one pack exists" },
+          { name: "Manifest", flag: "--manifest", type: "text", placeholder: "/path/to/skills.jsonc", hint: "Manifest path; omit to auto-find the newest ~/.mattstack/repos/*/skills.jsonc naming this pack" },
+          SETUP_JSON_ARG,
+        ],
+      },
       surface: {
         description: "List, set, or apply the pack's public/internal skill surface (bare invocation opens a multi-toggle palette)",
         module: "./commands/skills.ts",
