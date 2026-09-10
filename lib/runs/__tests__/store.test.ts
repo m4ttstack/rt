@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
-import { findRun, findRunsBySession, listRuns, readRun } from "../store.ts";
+import { findRun, findRunningRunByWorktree, findRunsBySession, listRuns, readRun } from "../store.ts";
 import { root, seedRun } from "./fixtures.ts";
 
 afterEach(() => { delete process.env.RT_RUNS_ROOT; });
@@ -171,5 +171,49 @@ describe("findRunsBySession", () => {
     setSessionField(dir, "alpha", "20260821-010101-aaaa", "sess-1");
 
     expect(findRunsBySession("sess-1").map((m) => m.summary.id)).toEqual(["20260821-010101-aaaa"]);
+  });
+});
+
+function setWorktreeField(dir: string, repo: string, id: string, worktree: string, at = 0): void {
+  const db = new Database(join(dir, repo, id, "state.db"));
+  db.exec(`INSERT INTO fields VALUES ('${id}', 'worktree', '${worktree}', 'plan', ${at});`);
+  db.close();
+}
+
+describe("findRunningRunByWorktree", () => {
+  test("matches a running run whose worktree field equals the given path", () => {
+    const dir = root();
+    seedRun(dir, "alpha", "20260821-010101-aaaa", 1000);
+    setWorktreeField(dir, "alpha", "20260821-010101-aaaa", "/w/job-a");
+    expect(findRunningRunByWorktree("/w/job-a")).toEqual({
+      kind: "match",
+      run: { id: "20260821-010101-aaaa", currentStage: "plan" },
+    });
+  });
+
+  test("a done run's worktree does not match", () => {
+    const dir = root();
+    seedRun(dir, "alpha", "20260821-020202-bbbb", 1000, 1, { status: "done" });
+    setWorktreeField(dir, "alpha", "20260821-020202-bbbb", "/w/job-b");
+    expect(findRunningRunByWorktree("/w/job-b")).toEqual({ kind: "none" });
+  });
+
+  test("no run's worktree matches the given path", () => {
+    const dir = root();
+    seedRun(dir, "alpha", "20260821-030303-cccc", 1000);
+    setWorktreeField(dir, "alpha", "20260821-030303-cccc", "/w/other");
+    expect(findRunningRunByWorktree("/w/nope")).toEqual({ kind: "none" });
+  });
+
+  // A directory named state.db reproduces what a corrupt/permission-denied
+  // run dir does to Bun's sqlite constructor: it throws at open, before any
+  // query runs. The scan used to skip that run silently and report "none";
+  // it must now report "incomplete" so a dispose guard can fail closed.
+  test("a run dir whose state.db cannot be opened makes the scan incomplete, even when a later run would have matched", () => {
+    const dir = root();
+    mkdirSync(join(dir, "alpha", "corrupt", "state.db"), { recursive: true });
+    seedRun(dir, "alpha", "20260821-040404-dddd", 1000);
+    setWorktreeField(dir, "alpha", "20260821-040404-dddd", "/w/nope");
+    expect(findRunningRunByWorktree("/w/job-a")).toEqual({ kind: "incomplete" });
   });
 });

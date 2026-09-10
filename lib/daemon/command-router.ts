@@ -34,8 +34,10 @@ import { createReposHandlers } from "./handlers/repos.ts";
 import { reconcileFreshness, getFreshnessSnapshot } from "./freshness.ts";
 import { wrapWithDemand } from "./demand-tracker.ts";
 import type { SystemProcessScanner } from "./system-process-scanner.ts";
-import { findRun } from "../runs/store.ts";
+import { findRun, findRunningRunByWorktree } from "../runs/store.ts";
 import { presenceForSession } from "../state/presence-store.ts";
+import { resolveInbox } from "../claude-registry.ts";
+import { probeInboxReachability } from "./inbox.ts";
 import { herdrRequest } from "../herdr/client.ts";
 import { defaultHerdrRunner } from "../agent-herdr.ts";
 import type { EventsBus } from "./events-bus.ts";
@@ -124,7 +126,12 @@ export function buildRoutedHandlers(opts: {
     bg: opts.bgService, bgClaims: opts.bgClaims, lifecycle: opts.herdLifecycle,
   });
   const worktreeHandlers = createWorktreeHandlers({ repoIndex: ctx.repoIndex, cache: ctx.cache, log: ctx.log }, opts.worktree);
-  const gateHandlers = createGateHandlers(opts.gatesStore, opts.eventsBus, broadcast, { push: opts.gatePush, log: ctx.log });
+  const gateHandlers = createGateHandlers(opts.gatesStore, opts.eventsBus, broadcast, {
+    push: opts.gatePush,
+    log: ctx.log,
+    runSpawnedBy: (runId) => findRun(runId)?.run.spawned_by ?? null,
+    herdShepherd: (herdId) => opts.herdStore.get(herdId)?.shepherdSession ?? null,
+  });
   const herdHandlers = createHerdHandlers({
     store: opts.herdStore,
     gateStore: opts.gatesStore,
@@ -133,7 +140,12 @@ export function buildRoutedHandlers(opts: {
     agent: agentHandlers,
     worktree: worktreeHandlers,
     runWorktree: (runId) => findRun(runId)?.fields.find((f) => f.key === "worktree")?.value ?? null,
+    findRunningRunByWorktree,
     presenceHandleForSession: (session) => presenceForSession(session, opts.stateDb)?.handle ?? null,
+    probeInbox: async (session) => {
+      const binding = resolveInbox(session);
+      return binding ? probeInboxReachability(binding.socketPath) : "unreachable";
+    },
     herdr: herdrRequest,
     herdrRunnerFor: (socket) => defaultHerdrRunner(socket ? { ...process.env, HERDR_SOCKET_PATH: socket } : process.env),
     lifecycle: opts.herdLifecycle,

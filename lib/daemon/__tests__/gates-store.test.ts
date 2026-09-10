@@ -285,6 +285,30 @@ describe("gates store — sweep", () => {
     expect(removed).toBe(0); // the floor (1) covers this single terminal row
     expect(s.get(id)).not.toBeNull();
   });
+
+  test("sweep prunes dead subscription rows older than 24h, leaves newer ones", () => {
+    const s: GatesStore = createGatesStore({ dbPath: tmp("gates.db"), log });
+    const oldSub = s.subscribe({ subjectPrefix: "run:", session: "sess-1" });
+    const newSub = s.subscribe({ subjectPrefix: "mr:", session: "sess-2" });
+    s.markSubscriptionDead(oldSub.id);
+    s.markSubscriptionDead(newSub.id);
+    // Backdate oldSub's lastDelivery to 25h ago
+    const now = Date.now();
+    const twentyFiveHoursAgo = now - 25 * 60 * 60 * 1000;
+    s.__db!.run("UPDATE gate_subscriptions SET lastDelivery = ? WHERE id = ?", [
+      JSON.stringify({ outcome: "failed", at: twentyFiveHoursAgo }),
+      oldSub.id,
+    ]);
+    // Keep newSub with a recent delivery (1h ago, within 24h retention)
+    const oneHourAgo = now - 1 * 60 * 60 * 1000;
+    s.__db!.run("UPDATE gate_subscriptions SET lastDelivery = ? WHERE id = ?", [
+      JSON.stringify({ outcome: "failed", at: oneHourAgo }),
+      newSub.id,
+    ]);
+    s.sweep();
+    expect(s.subscriptions()).toHaveLength(1);
+    expect(s.subscriptions()[0]!.id).toBe(newSub.id);
+  });
 });
 
 test("an existing gates.db without the W4 columns gains them on open (ALTER migration)", () => {
@@ -314,6 +338,36 @@ test("an existing gates.db without the W4 columns gains them on open (ALTER migr
   expect(row.context).toBe("why");
   expect(row.origin).toEqual({ presentation: "form", paneId: "p1" });
   store.close_();
+});
+
+describe("gates store (ownership)", () => {
+  test("open stores owner and get returns it", () => {
+    const s = store();
+    const { row } = s.open({ subject: "herd:h/j1", kind: "question", questions: qs(), owner: "herd:h-1" });
+    expect(s.get(row.id)?.owner).toBe("herd:h-1");
+  });
+
+  test("owner defaults to null and markEscalated stamps escalatedAt once", () => {
+    const s = store();
+    const { row } = s.open({ subject: "run:r1", kind: "clarify", questions: qs() });
+    expect(row.owner).toBeNull();
+    expect(row.escalatedAt).toBeNull();
+    s.markEscalated(row.id);
+    const stamped = s.get(row.id)!.escalatedAt;
+    expect(typeof stamped).toBe("number");
+  });
+
+  test("subscriptions carry scope and ownerRef; prune removes stale dead rows", () => {
+    const s = store();
+    s.subscribe({ subjectPrefix: "", session: "s1", scope: "owner", ownerRef: "herd:h-1" });
+    const sub = s.subscriptions({ live: true })[0]!;
+    expect(sub.scope).toBe("owner");
+    expect(sub.ownerRef).toBe("herd:h-1");
+    s.markSubscriptionDelivery(sub.id, "failed");
+    s.markSubscriptionDead(sub.id);
+    expect(s.pruneDeadSubscriptions(0)).toBe(1);
+    expect(s.subscriptions({}).length).toBe(0);
+  });
 });
 
 test("deadPanePushes lists answered nudged rows whose last push was dead-pane and are unreleased; never closed ones", () => {

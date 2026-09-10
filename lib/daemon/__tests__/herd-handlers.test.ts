@@ -77,6 +77,7 @@ export function harness(over: Partial<HerdDeps> = {}) {
   const deps: HerdDeps = {
     store, gateStore, gate, chat, agent, worktree,
     runWorktree: () => null,
+    findRunningRunByWorktree: () => ({ kind: "none" }),
     presenceHandleForSession: () => null,
     herdr: (async (method: string, params: any, o: any) => {
       socketCalls.push({ method, params, sock: o?.sockPath ?? null });
@@ -105,6 +106,7 @@ export function harness(over: Partial<HerdDeps> = {}) {
       };
     },
     lifecycle: { connected: () => true, watch: () => {}, sweepClaims: async () => {} },
+    probeInbox: async () => "reachable",
     bg, claims,
     jobsRoot: join(dir, "herds"),
     log,
@@ -132,9 +134,20 @@ describe("herd:start", () => {
     expect(chatCalls[0]!.payload).toMatchObject({ sessionId: "sess-shep", baseHandle: "shepherd", noRoom: true });
     expect(chatCalls[1]!.payload).toMatchObject({ room: res.data.room, handle: "shepherd" });
     const subs = gateStore.subscriptions({ live: true });
-    expect(subs).toHaveLength(1);
-    expect(subs[0]).toMatchObject({ subjectPrefix: `herd:${res.data.herd}/`, session: "sess-shep" });
-    expect(res.data.subscription).toBe(subs[0]!.id);
+    expect(subs).toHaveLength(2);
+    const prefixSub = subs.find((s) => s.scope === "prefix")!;
+    const ownerSub = subs.find((s) => s.scope === "owner")!;
+    expect(prefixSub).toMatchObject({ subjectPrefix: `herd:${res.data.herd}/`, session: "sess-shep" });
+    expect(ownerSub).toMatchObject({ subjectPrefix: "", ownerRef: `herd:${res.data.herd}`, session: "sess-shep" });
+    expect(res.data.subscription).toBe(prefixSub.id);
+  });
+
+  test("herd start subscribes the shepherd to its own gates by owner", async () => {
+    const { h, gateStore } = harness();
+    const res = await h["herd:start"](START);
+    if (!res.ok) throw new Error(res.error);
+    const subs = gateStore.subscriptions({ live: true });
+    expect(subs.some((s) => s.scope === "owner" && s.ownerRef?.startsWith("herd:"))).toBe(true);
   });
 
   test("rejects an invalid name and a missing session", async () => {
@@ -209,10 +222,60 @@ describe("herd:resume / status / close", () => {
     const res = await h["herd:resume"]({ herd, session: "sess-shep-2" });
     if (!res.ok) throw new Error(res.error);
     expect(store.get(herd)!.shepherdSession).toBe("sess-shep-2");
-    expect(gateStore.subscriptions({ live: true, session: "sess-shep-2" })).toHaveLength(1);
+    const subs = gateStore.subscriptions({ live: true, session: "sess-shep-2" });
+    expect(subs).toHaveLength(2);
+    expect(subs.map((s) => s.scope).sort()).toEqual(["owner", "prefix"]);
     expect(res.data.gates).toHaveLength(1);
     expect(res.data.unread).toBe(3);
     expect(res.data.status.jobs[0]).toMatchObject({ name: "job-a", openGate: res.data.gates[0]!.id, paneStatus: "working" });
+  });
+
+  test("resume drops only the prior shepherd's subscriptions for this herd; an unrelated session's herd-prefix subscription survives", async () => {
+    const { h, gateStore, herd } = await started();
+    const before = gateStore.subscriptions({ live: true });
+    expect(before).toHaveLength(2);
+    // A co-observer on this herd's prefix (e.g. a manual `rt gate subscribe`
+    // or a board relay) must not be caught by the resume re-point.
+    const observer = gateStore.subscribe({ subjectPrefix: `herd:${herd}/`, session: "observer" });
+    const res = await h["herd:resume"]({ herd, session: "sess-shep-2" });
+    if (!res.ok) throw new Error(res.error);
+    const after = gateStore.subscriptions({ live: true });
+    const shepSubs = after.filter((s) => s.session === "sess-shep-2");
+    expect(shepSubs).toHaveLength(2);
+    for (const b of before) expect(after.some((a) => a.id === b.id)).toBe(false);
+    expect(after.some((a) => a.id === observer.id)).toBe(true);
+  });
+
+  // Regression: replacement must create both new rows before dropping the
+  // prior session's, and roll back cleanly if the second (owner) row fails --
+  // never leave the prior session's fan-out gone with nothing to replace it.
+  test("resume rolls back a failed owner-subscribe on replacement, leaving the prior session's rows untouched and no new prefix row", async () => {
+    const { h, gateStore, gate, herd } = await started();
+    const before = gateStore.subscriptions({ live: true });
+    expect(before).toHaveLength(2);
+    expect(before.every((s) => s.session === "sess-shep")).toBe(true);
+
+    const realSubscribe = gate["gate:subscribe"];
+    (gate as any)["gate:subscribe"] = async (p: any) => {
+      if (p.scope === "owner") return { ok: false as const, error: "owner subscribe failed" };
+      return realSubscribe(p);
+    };
+
+    const res = await h["herd:resume"]({ herd, session: "sess-shep-2" });
+    expect(res.ok).toBe(false);
+
+    const after = gateStore.subscriptions({ live: true });
+    expect(after).toHaveLength(2);
+    for (const b of before) expect(after.some((a) => a.id === b.id)).toBe(true);
+    expect(after.some((a) => a.session === "sess-shep-2")).toBe(false);
+  });
+
+  test("start never drops another session's subscription (no prior shepherd to re-point from)", async () => {
+    const { h, gateStore } = harness();
+    const observer = gateStore.subscribe({ subjectPrefix: "herd:demo-", session: "observer" });
+    const res = await h["herd:start"](START);
+    if (!res.ok) throw new Error(res.error);
+    expect(gateStore.subscriptions({ live: true }).some((s) => s.id === observer.id)).toBe(true);
   });
 
   test("resume on an unknown herd fails", async () => {
@@ -268,6 +331,53 @@ describe("herd:resume / status / close", () => {
     expect(res.data.jobs[0]).toMatchObject({ name: "job-a", paneStatus: null });
   });
 
+  test("status reports push reachability from the probe", async () => {
+    const { h, herd } = await started({ probeInbox: async () => "unreachable" });
+    const res = await h["herd:status"]({ herd });
+    if (!res.ok) throw new Error(res.error);
+    expect(res.data.push).toEqual({ state: "unreachable", lastDelivery: null });
+  });
+
+  test("status push.lastDelivery mirrors the shepherd's own subscription delivery", async () => {
+    const { h, gateStore, herd } = await started({ probeInbox: async () => "reachable" });
+    const sub = gateStore.subscriptions({ live: true }).find((s) => s.scope === "prefix")!;
+    gateStore.markSubscriptionDelivery(sub.id, "delivered");
+    const res = await h["herd:status"]({ herd });
+    if (!res.ok) throw new Error(res.error);
+    expect(res.data.push.state).toBe("reachable");
+    expect(res.data.push.lastDelivery).toMatchObject({ outcome: "delivered" });
+  });
+
+  // Run-gate pushes land on the owner-scoped row, never the prefix row
+  // (fanOut's first-match dedupe stops at whichever row matches first), so
+  // push.lastDelivery must also look there or steady pipeline pushes read
+  // as "never delivered" despite gate_pushed having actually landed.
+  test("status push.lastDelivery reflects a delivery recorded on the owner-scoped row, not just the prefix row", async () => {
+    const { h, gateStore, herd } = await started({ probeInbox: async () => "reachable" });
+    const prefixSub = gateStore.subscriptions({ live: true }).find((s) => s.scope === "prefix")!;
+    const ownerSub = gateStore.subscriptions({ live: true }).find((s) => s.scope === "owner")!;
+    expect(prefixSub.lastDelivery).toBeNull();
+    gateStore.markSubscriptionDelivery(ownerSub.id, "delivered");
+    const res = await h["herd:status"]({ herd });
+    if (!res.ok) throw new Error(res.error);
+    expect(res.data.push.lastDelivery).toMatchObject({ outcome: "delivered" });
+  });
+
+  test("resume counts run gates owned by the herd's jobs alongside its own gates", async () => {
+    const hx = harness({ runWorktree: (id) => (id === "run-1" ? "/w/job-a" : id === "run-2" ? "/elsewhere" : null) });
+    const s = await hx.h["herd:start"](START);
+    if (!s.ok) throw new Error(s.error);
+    const herd = s.data.herd;
+    hx.store.upsertJob({ herd, name: "job-a", worktree: "/w/job-a", handle: "job-a", status: "active" });
+    const Q = [{ id: "q", label: "?", multi: false, options: ["a"] }];
+    hx.gateStore.open({ subject: `herd:${herd}/job-a`, kind: "question", questions: Q });
+    hx.gateStore.open({ subject: "run:run-1", kind: "clarify", questions: Q });
+    hx.gateStore.open({ subject: "run:run-2", kind: "clarify", questions: Q });
+    const res = await hx.h["herd:resume"]({ herd, session: "sess-shep-2" });
+    if (!res.ok) throw new Error(res.error);
+    expect(res.data.gates.length).toBe(2);
+  });
+
   test("status reports a dead subscription rather than hiding it as missing", async () => {
     const { h, gateStore, herd } = await started();
     const sub = gateStore.subscriptions({ live: true })[0]!;
@@ -312,6 +422,42 @@ describe("herd:resume / status / close", () => {
     const res = await h["herd:close"]({ herd, job: "job-a" });
     expect(res.ok).toBe(true);
     expect(herdrCalls).toEqual([]);
+    expect(store.getJob(herd, "job-a")!.status).toBe("closed");
+  });
+
+  test("close on a job whose worktree still has a running run warns instead of blocking", async () => {
+    const { h, store, herd } = await started({
+      findRunningRunByWorktree: (worktree) =>
+        worktree === "/w/job-a" ? { kind: "match", run: { id: "run-1", currentStage: "implement" } } : { kind: "none" },
+    });
+    store.upsertJob({ herd, name: "job-a", worktree: "/w/job-a", handle: "job-a", status: "active" });
+    const res = await h["herd:close"]({ herd, job: "job-a" });
+    expect(res.ok).toBe(true);
+    if (!res.ok) throw new Error("unreachable");
+    expect(res.data.warning).toBe("job worktree has running run run-1 at implement; finish it or run: rt runs abandon run-1");
+    expect(store.getJob(herd, "job-a")!.status).toBe("closed");
+  });
+
+  test("close on a job with no running run carries no warning", async () => {
+    const { h, store, herd } = await started();
+    store.upsertJob({ herd, name: "job-a", worktree: "/w/job-a", handle: "job-a", status: "active" });
+    const res = await h["herd:close"]({ herd, job: "job-a" });
+    expect(res.ok).toBe(true);
+    if (!res.ok) throw new Error("unreachable");
+    expect(res.data.warning).toBeUndefined();
+  });
+
+  // Regression: an unreadable run DB must not read as "nothing running" --
+  // herd:close warns rather than silently closing the job clean.
+  test("close on a job whose run scan could not finish warns instead of reading it as clean", async () => {
+    const { h, store, herd } = await started({
+      findRunningRunByWorktree: () => ({ kind: "incomplete" }),
+    });
+    store.upsertJob({ herd, name: "job-a", worktree: "/w/job-a", handle: "job-a", status: "active" });
+    const res = await h["herd:close"]({ herd, job: "job-a" });
+    expect(res.ok).toBe(true);
+    if (!res.ok) throw new Error("unreachable");
+    expect(res.data.warning).toBe("could not verify runs; check manually");
     expect(store.getJob(herd, "job-a")!.status).toBe("closed");
   });
 });

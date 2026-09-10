@@ -277,6 +277,7 @@ describe("disposeTree", () => {
       emit: (type, data) => events.push({ type, data }),
       log: { info: () => {}, warn: () => {} },
       killProcesses: false,
+      findRunningRun: () => ({ kind: "none" }),
       ...overrides,
     };
   }
@@ -510,6 +511,84 @@ describe("disposeTree", () => {
     });
     const result = await disposeTree(deps, rec, { auto: false });
     expect(result).toEqual({ disposed: false, refusal: "unpushed" });
+    expect(existsSync(path)).toBe(true);
+  });
+
+  test("a running pipeline run anchored at the tree refuses with \"running-run\"", async () => {
+    const path = addTree(repo, "tree-a", "feature-a");
+    const rec = register(repoName, ephemeral("tree-a", path, "feature-a"));
+
+    const deps = makeDeps({
+      findRunningRun: (worktree) =>
+        worktree === path ? { kind: "match", run: { id: "run-1", currentStage: "implement" } } : { kind: "none" },
+    });
+    const result = await disposeTree(deps, rec, {});
+    expect(result).toEqual({
+      disposed: false,
+      refusal: "running-run",
+      detail: "running run run-1 at implement; rt runs abandon run-1",
+    });
+    expect(existsSync(path)).toBe(true);
+
+    const forced = await disposeTree(deps, rec, { force: true });
+    expect(forced).toMatchObject({ disposed: true });
+  });
+
+  test("guard order: unpushed is reported before running-run", async () => {
+    const path = addTree(repo, "tree-a", "feature-a");
+    commitIn(path, "new.txt", "local only\n");
+    const rec = register(repoName, ephemeral("tree-a", path, "feature-a"));
+
+    const deps = makeDeps({ findRunningRun: () => ({ kind: "match", run: { id: "run-1", currentStage: "implement" } }) });
+    const result = await disposeTree(deps, rec, {});
+    expect(result).toEqual({ disposed: false, refusal: "unpushed" });
+  });
+
+  test("guard order: running-run is reported before attended", async () => {
+    const path = addTree(repo, "tree-a", "feature-a");
+    const rec = register(repoName, ephemeral("tree-a", path, "feature-a"));
+    writeLease("acme-42.json", {
+      mr: "https://gitlab.com/acme/acme/-/merge_requests/42",
+      heartbeatAt: Date.now(),
+      ttlSeconds: 300,
+    });
+
+    const deps = makeDeps({
+      cacheEntries: { "feature-a": { mr: { iid: 42, sha: null }, repoName } },
+      findRunningRun: () => ({ kind: "match", run: { id: "run-1", currentStage: "implement" } }),
+    });
+    const result = await disposeTree(deps, rec, {});
+    expect(result).toMatchObject({ disposed: false, refusal: "running-run" });
+  });
+
+  test("findRunningRun reporting no match lets disposal proceed normally", async () => {
+    const path = addTree(repo, "tree-a", "feature-a");
+    commitIn(path, "new.txt", "pushed\n");
+    execSync(`git -C ${path} push origin feature-a && git -C ${repo} fetch origin`, {
+      shell: "/bin/zsh",
+      stdio: "pipe",
+    });
+    const rec = register(repoName, ephemeral("tree-a", path, "feature-a"));
+
+    const result = await disposeTree(makeDeps(), rec, {});
+    expect(result).toMatchObject({ disposed: true });
+  });
+
+  // Regression: a scan that could not finish (an unreadable run DB) must not
+  // read as "nothing running" -- disposal fails closed rather than deleting
+  // a worktree the scan failed to check.
+  test("a run scan that could not finish refuses with \"runs-unreadable\", never proceeds", async () => {
+    const path = addTree(repo, "tree-a", "feature-a");
+    commitIn(path, "new.txt", "pushed\n");
+    execSync(`git -C ${path} push origin feature-a && git -C ${repo} fetch origin`, {
+      shell: "/bin/zsh",
+      stdio: "pipe",
+    });
+    const rec = register(repoName, ephemeral("tree-a", path, "feature-a"));
+
+    const deps = makeDeps({ findRunningRun: () => ({ kind: "incomplete" }) });
+    const result = await disposeTree(deps, rec, {});
+    expect(result).toMatchObject({ disposed: false, refusal: "runs-unreadable" });
     expect(existsSync(path)).toBe(true);
   });
 
@@ -813,6 +892,7 @@ describe("disposeTree against the real branch_cache store (identity-keyed)", () 
       emit: (type, data) => events.push({ type, data }),
       log: { info: () => {}, warn: () => {} },
       killProcesses: false,
+      findRunningRun: () => ({ kind: "none" }),
     };
 
     const result = await disposeTree(deps, rec, { auto: true });
@@ -847,6 +927,7 @@ describe("disposeTree against the real branch_cache store (identity-keyed)", () 
       emit: (type, data) => events.push({ type, data }),
       log: { info: () => {}, warn: () => {} },
       killProcesses: false,
+      findRunningRun: () => ({ kind: "none" }),
     };
 
     // No MR joins (repoName mismatch), so the guard falls back to the

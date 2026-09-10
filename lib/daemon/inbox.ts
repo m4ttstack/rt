@@ -4,6 +4,61 @@
 // room to answer before the caller gives up on it.
 export const DEFAULT_TIMEOUT_MS = 3000;
 
+// A liveness probe, not a delivery attempt: 250ms is enough for a local
+// unix socket accept and short enough that `rt herd status` stays snappy
+// when the shepherd's own session is gone.
+export const DEFAULT_PROBE_TIMEOUT_MS = 250;
+
+/** Whether a socket at `socketPath` will accept a connection right now, without writing anything to it. */
+export async function probeInboxReachability(
+  socketPath: string,
+  opts?: { timeoutMs?: number },
+): Promise<"reachable" | "unreachable"> {
+  const timeoutMs = opts?.timeoutMs ?? DEFAULT_PROBE_TIMEOUT_MS;
+
+  // Shared across both racers so a late connect (after the timeout already
+  // resolved "unreachable") closes without ever resolving again.
+  let settled = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  const attempt = new Promise<"reachable" | "unreachable">((resolve) => {
+    Bun.connect({
+      unix: socketPath,
+      socket: {
+        open(socket) {
+          if (settled) { socket.end(); return; }
+          settled = true;
+          clearTimeout(timer);
+          socket.end();
+          resolve("reachable");
+        },
+        data() {},
+        error() {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          resolve("unreachable");
+        },
+      },
+    }).catch(() => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve("unreachable");
+    });
+  });
+
+  const timeout = new Promise<"unreachable">((resolve) => {
+    timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      resolve("unreachable");
+    }, timeoutMs);
+  });
+
+  return Promise.race([attempt, timeout]);
+}
+
 export async function deliverToInbox(
   socketPath: string,
   content: string,

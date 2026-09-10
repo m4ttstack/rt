@@ -85,7 +85,7 @@ export const REGISTRY: readonly SettingDef[] = [
     scopes: ["user"],
     default: [],
     merge: "replace",
-    description: "Event-bus glob rules that raise a desktop notification: [{pattern, category, title, message, subjectPrefix?, url?}]. pattern is matched against the events-bus topic (Bun.Glob semantics); title/message may interpolate `{field}` from the event payload, plus the computed `{question}` field (the event payload's first question label, `payload.questions[0].label`, empty string when absent); optional subjectPrefix matches the event payload's subject as a prefix. The optional url is interpolated the same way as title/message and becomes the notification's Open target; a gate rule should set it. A fresh key, not an ownership-latch port, so a default is fine here.",
+    description: "Event-bus glob rules that raise a desktop notification: [{pattern, category, title, message, subjectPrefix?, url?, owner?}]. pattern is matched against the events-bus topic (Bun.Glob semantics); title/message may interpolate `{field}` from the event payload, plus the computed `{question}` field (the event payload's first question label, `payload.questions[0].label`, empty string when absent); optional subjectPrefix matches the event payload's subject as a prefix. The optional url is interpolated the same way as title/message and becomes the notification's Open target; a gate rule should set it. The optional owner field (only literal \"human\" is valid) suppresses events whose payload.owner starts with \"herd:\", allowing gate rules to skip herd-owned events. A typical setup pairs a gate/opened rule with owner: \"human\" (human-owned gates notify) and a gate/escalated rule without owner (all escalations notify, whether human or herd). A fresh key, not an ownership-latch port, so a default is fine here.",
   },
   {
     key: "rt.cron",
@@ -686,5 +686,15 @@ export const REGISTRY: readonly SettingDef[] = [
     scopes: ["user", "machine"],
     merge: "replace",
     description: "Opaque extra claude arguments appended to every rt agent launch (escape hatch).",
+  },
+
+  // --- gates (escalation) ----------------------------------------------------
+  {
+    key: "rt.gates.escalationTtlMinutes",
+    type: "number",
+    scopes: ["user"],
+    default: 10,
+    merge: "replace",
+    description: "Minutes an open herd-owned gate waits before the escalation sweep surfaces it to the human (topic gate/escalated/<id>). Fires on either trigger: the TTL elapses (reason \"ttl\"), or the owning herd's shepherd subscription is gone or dead before the TTL (reason \"owner-dead\"). 0 escalates any eligible gate on the first sweep after it opens. A fresh key, not an ownership-latch port, so a default is fine here.",
   },
 ];

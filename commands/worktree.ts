@@ -511,7 +511,7 @@ export async function worktreeDispose(args: string[], _ctx: unknown): Promise<vo
 
   const { disposed, refused, recoverable } = ok.data as {
     disposed: string[];
-    refused: Array<{ tree: string; reason: string }>;
+    refused: Array<{ tree: string; reason: string; detail?: string }>;
     recoverable?: Array<{ tree: string; path: string; until: string }>;
   };
   // Set before either return path — --json must not exit 0 on a partial failure.
@@ -526,7 +526,7 @@ export async function worktreeDispose(args: string[], _ctx: unknown): Promise<vo
     console.log(`  ${green}✓${reset} ${name} disposed${note}`);
   }
   for (const r of refused) {
-    const hint = r.reason === "remove-failed" ? " — transient, try again" : "";
+    const hint = r.detail ? `: ${r.detail}` : r.reason === "remove-failed" ? ": transient, try again" : "";
     console.log(`  ${red}✗${reset} ${r.tree} ${dim}(${r.reason}${hint})${reset}`);
   }
   if (disposed.length === 0 && refused.length === 0) console.log(`  ${dim}nothing to dispose${reset}`);

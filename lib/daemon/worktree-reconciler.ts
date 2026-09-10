@@ -49,6 +49,7 @@ import {
   WORKTREE_MIN_FREE_DISK_GB,
   type CreateBackoffMap,
 } from "./reconciler/replenish.ts";
+import type { RunningRunScan } from "../runs/store.ts";
 
 export type { ReconcileDeps } from "./reconciler/reconcile.ts";
 export type { ReactorDeps } from "./reconciler/reactor.ts";
@@ -60,6 +61,9 @@ export interface ReconcilerDeps {
   repoIndex: () => Record<string, string>;
   emit: (type: string, data: unknown) => void;
   log: Logger;
+  /** Threaded into every dispose call this reconciler makes (merge reactor and
+      shrink); wired from `findRunningRunByWorktree` in lib/runs/store.ts. */
+  findRunningRunByWorktree: (worktree: string) => RunningRunScan;
   /** Test seam: overrides RECONCILER_PASS_DEADLINE_MS for the pass latch. */
   passDeadlineMs?: number;
 }
@@ -245,6 +249,7 @@ export function createWorktreeReconciler(deps: ReconcilerDeps): {
           cacheEntries: deps.cache.entries,
           emit: deps.emit,
           log: deps.log,
+          findRunningRun: deps.findRunningRunByWorktree,
         }),
       );
     } catch (err) {
@@ -260,7 +265,7 @@ export function createWorktreeReconciler(deps: ReconcilerDeps): {
     }
     try {
       await replenishAndShrink(
-        { repoName, repoPath, emit: deps.emit, log: deps.log, backoff },
+        { repoName, repoPath, emit: deps.emit, log: deps.log, backoff, findRunningRun: deps.findRunningRunByWorktree },
         creationPromises,
         appConfig,
       );

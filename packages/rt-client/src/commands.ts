@@ -110,7 +110,7 @@ export function gateOptionValue(o: GateOption): string {
 export function gateOptionLabel(o: GateOption): string {
   return typeof o === "string" ? o : (o.label || o.value);
 }
-export interface GateAnswer { answers: Record<string, string | string[] | { value: string | string[]; note?: string }>; by: string; answeredAt: number }
+export interface GateAnswer { answers: Record<string, string | string[] | { value: string | string[]; note?: string }>; by: string; answeredAt: number; overridden?: boolean }
 export interface GateRow {
   id: string; subject: string; kind: string;
   questions: GateQuestion[]; meta: Record<string, unknown> | null;
@@ -119,10 +119,14 @@ export interface GateRow {
   status: GateStatus; answer: GateAnswer | null;
   openedAt: number; parkedAt: number | null; closedAt: number | null;
   closedReason: "abandoned" | "superseded" | "pruned" | null;
+  /** Set only when `closedReason` is "superseded": the id of the gate that superseded this one. */
+  supersededBy: string | null;
   agent: string | null; pane: string | null;
   nudge: { session: string } | null;
   delivery: { outcome: "delivered" | "dead-pane"; at: number } | null;
   released: boolean;
+  owner: string | null;
+  escalatedAt: number | null;
 }
 
 export interface GateSubscription {
@@ -132,6 +136,8 @@ export interface GateSubscription {
   createdAt: number;
   lastDelivery: { outcome: "delivered" | "failed"; at: number } | null;
   dead: boolean;
+  scope: "prefix" | "owner";
+  ownerRef: string | null;
 }
 
 export interface HerdInfo { id: string; repo: string; room: string; workspace: string; shepherdSession: string; shepherdHandle: string; herdrSocket: string | null; hidden: boolean; status: "active" | "wrapped"; createdAt: number; wrappedAt: number | null }
@@ -147,6 +153,8 @@ export interface HerdStatusData {
   hiddenUp: boolean | null;
   /** The shepherd session's own `herd:<id>/` subscription row, or null when none is live. */
   subscription: { id: string; dead: boolean; lastDelivery: GateSubscription["lastDelivery"] } | null;
+  /** Whether the shepherd session's own inbox socket is reachable right now, probed fresh on every status call -- honest liveness, not the subscription row's bookkeeping. */
+  push: { state: "reachable" | "unreachable"; lastDelivery: GateSubscription["lastDelivery"] };
 }
 
 /**
@@ -405,7 +413,9 @@ export interface WorktreeProvisionData {
 export interface WorktreeCreateData { tree: string; path: string }
 export interface WorktreeDisposeData {
   disposed: string[];
-  refused: Array<{ tree: string; reason: string }>;
+  /** `detail` is set only for a refusal whose bare `reason` code can't name
+      what a human needs to act on it (the run id and stage for `running-run`). */
+  refused: Array<{ tree: string; reason: string; detail?: string }>;
   recoverable: Array<{ tree: string; path: string; until: string }>;
 }
 export interface WorktreeRestoreData {
@@ -414,7 +424,7 @@ export interface WorktreeRestoreData {
 export interface WorktreeFreshenData { ran: string[] }
 export interface WorktreeAdoptData {
   main: string; claimed: string[]; unmanaged: string[]; disposed: string[];
-  refused: Array<{ tree: string; reason: string }>;
+  refused: Array<{ tree: string; reason: string; detail?: string }>;
 }
 
 /** Duplicated shape on purpose: mirrors lib/endpoint/store.ts's EndpointClaim. */
@@ -616,8 +626,15 @@ export interface Commands {
    * `conflict:true` and the WINNING row, so every consumer gets the winner
    * typed with no envelope hacks. `ok:false` is reserved for
    * not-found/closed/validation failures.
+   *
+   * Owner enforcement adds two structured rejections beyond the plain
+   * `{ok:false, error:string}` shape (see `GateAnswerResult` in
+   * `lib/daemon/handlers/gate.ts`): a herd-owned gate answered by anyone but
+   * the owning shepherd's session, the answering pane, or an explicit human
+   * `override` returns `{ok:false, error:"owned-by", owner}`; a closed gate
+   * returns `{ok:false, error:"gate-closed", reason, supersededBy?}`.
    */
-  "gate:answer": { payload: { id: string; answers: GateAnswer["answers"]; by: string }; data: { row: GateRow; conflict?: true } };
+  "gate:answer": { payload: { id: string; answers: GateAnswer["answers"]; by: string; session?: string; override?: boolean }; data: { row: GateRow; conflict?: true } };
   /** `ok:false "not-found"` on an unknown id is terminal; the CLI loop must not re-enter on it.
    *  `timeout` carries no row (nothing settled); `answered`/`closed` always carry the settled row. */
   "gate:wait": { payload: { id: string; waitMs?: number }; data: { status: "timeout" } | { status: "answered" | "closed"; row: GateRow } };
@@ -626,7 +643,7 @@ export interface Commands {
   "gate:list": { payload: { open?: boolean; subjectPrefix?: string; kind?: string; limit?: number; cursor?: number }; data: { gates: GateRow[]; cursor: number } };
   "gate:park": { payload: { id: string }; data: { ok: true } };
   "gate:close": { payload: { id: string; reason: "abandoned" | "superseded" | "pruned" }; data: { ok: true } };
-  "gate:subscribe": { payload: { subjectPrefix: string; session: string }; data: { id: string } };
+  "gate:subscribe": { payload: { subjectPrefix: string; session: string; scope?: "owner"; ownerRef?: string }; data: { id: string } };
   "gate:unsubscribe": { payload: { id: string }; data: { removed: boolean } };
   /** The shepherd's gap-recovery liveness check and the observability window
    *  onto delivery outcomes (dead marks included). */
@@ -638,7 +655,7 @@ export interface Commands {
   "herd:status": { payload: { herd: string }; data: HerdStatusData };
   /** Active herds only unless `all`, so a shepherd's "which herd am I on" question has one answer. */
   "herd:list":   { payload: { all?: boolean }; data: { herds: HerdListRow[] } };
-  "herd:close":  { payload: { herd: string; job: string }; data: { job: string; status: "closed" } };
+  "herd:close":  { payload: { herd: string; job: string }; data: { job: string; status: "closed"; /** Advisory: a resumable run can still write into this job's worktree after close, so this warns rather than blocking. */ warning?: string } };
   /** `brief` is the brief TEXT, not a path: the CLI reads the file. It is stored at `<jobsRoot>/<herd>/<job>/job.md`, so a respawn with `dir` and no `brief` reads it back. */
   "herd:spawn":  { payload: { herd: string; job: string; brief?: string; dir?: string; model?: string; effort?: string; account?: string; disposable?: boolean }; data: { herd: string; job: string; pane: string; worktree: string; branch: string | null; tree: string | null; /** null = no provisioning ran (--dir); false = cold create, worth announcing. */ wasOnDeck: boolean | null; agentId: string; sessionId: string; handle: string } };
   "herd:gates":  { payload: { herd: string }; data: { gates: GateRow[] } };

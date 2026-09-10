@@ -13,8 +13,9 @@ const row: GateRow = {
   id: "gt-1", subject: "run:1", kind: "approve",
   questions: [{ id: "q1", label: "ok?", multi: false, options: ["yes", "no"] }],
   meta: null, status: "open", answer: null,
-  openedAt: 1, parkedAt: null, closedAt: null, closedReason: null,
+  openedAt: 1, parkedAt: null, closedAt: null, closedReason: null, supersededBy: null,
   agent: null, pane: null, nudge: null, delivery: null, released: false,
+  owner: null, escalatedAt: null,
 };
 
 describe("gateOpen", () => {
@@ -124,6 +125,17 @@ describe("gateSubscribe", () => {
     expect(res.data).toEqual({ id: "sub-1" });
     expect(seen).toEqual([{ cmd: "gate:subscribe", payload }]);
   });
+
+  test("forwards scope and ownerRef when present", async () => {
+    const { sock, seen, stop } = fakeDaemon({
+      "gate:subscribe": { ok: true, data: { id: "sub-1" } },
+    });
+    stops.push(stop);
+    const payload = { subjectPrefix: "", session: "sess-1", scope: "owner" as const, ownerRef: "herd:h-1" };
+    const res = await gateSubscribe(payload, { sockPath: sock });
+    expect(res.ok).toBe(true);
+    expect(seen).toEqual([{ cmd: "gate:subscribe", payload }]);
+  });
 });
 
 describe("gateUnsubscribe", () => {
@@ -145,6 +157,7 @@ describe("gateSubscriptions", () => {
     const sub: GateSubscription = {
       id: "sub-1", subjectPrefix: "run:", session: "sess-1",
       createdAt: 1, lastDelivery: null, dead: false,
+      scope: "prefix", ownerRef: null,
     };
     const { sock, seen, stop } = fakeDaemon({
       "gate:subscriptions": { ok: true, data: { subscriptions: [sub] } },

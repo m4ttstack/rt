@@ -16,6 +16,7 @@ import type { SecretPresence } from "./accounts.ts";
 import { forgeTokenLookupFromPresence, withholdFromUntrustedHost } from "../../team/forge-token.ts";
 import { probeTeamRepoAccess, forgeLabel, type RepoAccessVerdict } from "../../team/repo-access.ts";
 import { integrationDef } from "../integrations.ts";
+import { repoIdentitySlug } from "../../settings/identity.ts";
 
 const RECHECK_ACTION: Action = { type: "run", label: "Re-check", verb: ["setup", "status"] };
 
@@ -84,7 +85,7 @@ async function forgeRow(p: Probes, team: TeamSnapshot, intent: SetupIntent | nul
 
 async function repoRow(p: Probes, identity: string): Promise<Row> {
   const base = {
-    id: `access.repo.${identity.replace(/\//g, "-")}`,
+    id: `access.repo.${repoIdentitySlug(identity)}`,
     kind: "access" as const,
     title: identity,
     why: "Lets the board show this repo's MRs/PRs.",

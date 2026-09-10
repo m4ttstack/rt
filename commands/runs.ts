@@ -7,8 +7,10 @@
  * live in runs-write.ts and open the run DB directly.
  */
 import { daemonQuery } from "../lib/daemon-client.ts";
-import { resolveRepoArg } from "../lib/repo-arg.ts";
+import { tryResolveRepoArg } from "../lib/repo-arg.ts";
 import { repoLabel } from "../lib/repo-label.ts";
+import { parseIdentity, repoIdentitySlug } from "../lib/settings/identity.ts";
+import { listRunRepoDirs } from "../lib/runs/store.ts";
 import type { RunDetail, RunSummary } from "../packages/rt-client/src/commands.ts";
 
 function fail(msg: string): never {
@@ -67,30 +69,82 @@ export function formatRunDetail(d: RunDetail): string {
   return lines.join("\n");
 }
 
-class UnresolvedRepoArg extends Error {}
+/** Base for resolveRunsRepoArg's user-facing failures -- both need the same
+    fail()/JSON-envelope handling in resolveRepoFilter below. */
+abstract class RunsRepoArgError extends Error {}
+
+/** Thrown by `resolveRunsRepoArg` when `arg` neither resolves through the
+    identity resolver nor names an existing run directory. */
+export class UnknownRunsRepo extends RunsRepoArgError {
+  constructor(readonly arg: string) {
+    super(`unknown repo: ${arg}`);
+  }
+}
+
+/** Thrown by `resolveRunsRepoArg` when `arg` matches more than one
+    registered repo. An ambiguous selector must never fall through to the
+    run-dir fallback below, even when it happens to equal a legacy dir name --
+    that fallback exists for a resolver that found nothing, not one that
+    found too much. */
+export class AmbiguousRunsRepo extends RunsRepoArgError {}
 
 /**
- * Runs are keyed by their on-disk run-dir name: a serialized identity for
- * runs written after the cutover, but whatever key its pipeline used for a
- * run written before it. Resolve `--repo` like every other command when the
- * arg matches a known repo, and otherwise forward it verbatim as a dir key —
- * failing here would make `rt runs --repo <key>` reject exactly the keys
- * `rt runs` itself prints for pre-cutover runs.
+ * On disk, a run dir's name is `repoIdentitySlug` of the raw identity id
+ * (e.g. "gitlab.com-acme-acme-dev" for "gitlab.com/acme/acme-dev"), never the
+ * wire form resolveRepoArg returns (that form's ":" and "%" never named a
+ * real dir). This only translates a resolved identity into the key that
+ * already names them; it does not rename anything on disk.
  */
-async function resolveRunsRepoArg(arg: string): Promise<string> {
+export function runDisplayKey(identity: string): string {
+  const parsed = parseIdentity(identity);
+  return parsed ? repoIdentitySlug(parsed.id) : identity;
+}
+
+/**
+ * Runs are keyed by their on-disk run-dir name: the display key derived
+ * below for runs written after the cutover, but whatever key its pipeline
+ * used for a run written before it. Resolve `--repo` like every other
+ * command when the arg matches a known repo; when the identity resolver
+ * finds NOTHING, forward it verbatim ONLY if a run dir already exists under
+ * that literal name (a pre-cutover key). When the resolver instead finds
+ * more than one repo, the arg must stay unresolved -- an ambiguous selector
+ * that happens to equal a legacy dir name is not "no match", and silently
+ * picking the dir would resolve the ambiguity by accident.
+ */
+export async function resolveRunsRepoArg(arg: string): Promise<string> {
+  const resolution = await tryResolveRepoArg(arg);
+  if (resolution.kind === "resolved") return runDisplayKey(resolution.identity);
+  if (resolution.kind === "ambiguous") {
+    throw new AmbiguousRunsRepo(
+      `--repo "${arg}" matches more than one repo: ${resolution.matches.join(", ")} (pass the full identity)`,
+    );
+  }
+  if (listRunRepoDirs().includes(arg)) return arg;
+  throw new UnknownRunsRepo(arg);
+}
+
+/**
+ * Shared `--repo` handling for every runs subcommand: resolves the flag (if
+ * present) and exits on an unknown repo, matching the output mode (`--json`
+ * envelope vs plain stderr) the rest of each command already uses.
+ */
+async function resolveRepoFilter(args: string[]): Promise<string | undefined> {
+  const repoArg = flagValue(args, "--repo");
+  if (!repoArg) return undefined;
   try {
-    return await resolveRepoArg(arg, (msg): never => {
-      throw new UnresolvedRepoArg(msg);
-    });
+    return await resolveRunsRepoArg(repoArg);
   } catch (err) {
-    if (err instanceof UnresolvedRepoArg) return arg;
-    throw err;
+    if (!(err instanceof RunsRepoArgError)) throw err;
+    if (args.includes("--json")) {
+      console.log(JSON.stringify({ ok: false, error: err.message }));
+      process.exit(1);
+    }
+    fail(err.message);
   }
 }
 
 async function fetchRunsForPicker(args: string[]): Promise<RunSummary[]> {
-  const repoArg = flagValue(args, "--repo");
-  const repo = repoArg ? await resolveRunsRepoArg(repoArg) : undefined;
+  const repo = await resolveRepoFilter(args);
   const res = await daemonQuery("runs:list", { repo }, 10_000);
   if (!res || !res.ok) return [];
   return (res.data as { runs: RunSummary[] }).runs;
@@ -113,8 +167,7 @@ export async function runsList(args: string[]): Promise<void> {
     console.error(`rt runs: unknown subcommand "${stray}"\nusage: rt runs [--repo R] [--json] | rt runs <show|abandon|run-start|run-status|stage-start|stage-done|stage-fail|stage-redirect|field|decision|snapshot> ...`);
     process.exit(2);
   }
-  const repoArg = flagValue(args, "--repo");
-  const repo = repoArg ? await resolveRunsRepoArg(repoArg) : undefined;
+  const repo = await resolveRepoFilter(args);
   const res = await daemonQuery("runs:list", { repo }, 10_000);
   if (!res) fail("daemon unavailable — the run DB needs the rt daemon (rt daemon start)");
   if (!res.ok) fail(res.error ?? "list failed");
@@ -136,8 +189,7 @@ export async function runsShow(args: string[]): Promise<void> {
     if (!picked) process.exit(0);
     runId = picked;
   }
-  const repoArg = flagValue(args, "--repo");
-  const repo = repoArg ? await resolveRunsRepoArg(repoArg) : undefined;
+  const repo = await resolveRepoFilter(args);
   const res = await daemonQuery("runs:get", { runId, repo }, 10_000);
   if (!res) fail("daemon unavailable — the run DB needs the rt daemon (rt daemon start)");
   if (!res.ok) fail(res.error ?? "get failed");
@@ -160,8 +212,7 @@ export async function runsAbandon(args: string[]): Promise<void> {
     if (!picked) process.exit(0);
     runId = picked;
   }
-  const repoArg = flagValue(args, "--repo");
-  const repo = repoArg ? await resolveRunsRepoArg(repoArg) : undefined;
+  const repo = await resolveRepoFilter(args);
   const reason = flagValue(args, "--reason") ?? "reconciled by hand";
   const res = await daemonQuery("runs:abandon", { runId, repo, reason });
   if (!res) fail("daemon unavailable — the run DB needs the rt daemon (rt daemon start)");
