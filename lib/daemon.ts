@@ -95,6 +95,7 @@ import { createHerdLifecycle, type HerdLifecycle } from "./daemon/herd-lifecycle
 import { createBgService, type BgService } from "./daemon/bg-service.ts";
 import { createBgClaimsStore, type BgClaimsStore } from "./daemon/bg-claims-store.ts";
 import { createGatePush, type GatePush } from "./daemon/gate-push.ts";
+import { createGateEscalation, type GateEscalation } from "./daemon/gate-escalation.ts";
 import { createEscapeInjector } from "./daemon/gate-escape.ts";
 import { deliverToInbox } from "./daemon/inbox.ts";
 import { resolveInbox, resolveAllInboxes } from "./claude-registry.ts";
@@ -285,6 +286,7 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
   let herdLifecycle: HerdLifecycle | undefined;
   let bgClaims: BgClaimsStore;
   let gatePush: GatePush;
+  let gateEscalation: GateEscalation;
   let identity: {
     flavor: "dev" | "prod";
     version: string;
@@ -468,6 +470,18 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
     }
   };
 
+  // 0 is a meaningful value here (escalate on the first sweep), unlike
+  // logRetentionDays's n > 0 guard -- so this only rejects negative/NaN.
+  const escalationTtlMinutes = (): number => {
+    try {
+      const v = getSetting<unknown>("rt.gates.escalationTtlMinutes").value;
+      const n = Number(v);
+      return Number.isFinite(n) && n >= 0 ? n : 10;
+    } catch {
+      return 10;
+    }
+  };
+
   // ─── The ordered unit list ─────────────────────────────────────────────────
 
   units = [
@@ -573,6 +587,16 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
           log,
           injectEscape: createEscapeInjector(),
         });
+        gateEscalation = createGateEscalation({
+          store: gatesStore,
+          ttlMs: () => escalationTtlMinutes() * 60_000,
+          emit: (topic, payload) => {
+            const emittedAt = Date.now();
+            const eventId = eventsBus.emitAt(topic, payload, emittedAt);
+            emit("event", { id: eventId, topic, payload, emittedAt });
+          },
+          log,
+        });
         setPhase("events-db");
       },
       stop() {
@@ -656,6 +680,12 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
           "gate-nudge-retry",
           async () => { await gatePush.retryDeadPanes(); },
           { bootDelayMs: 30_000, intervalMs: 30_000 },
+          log,
+        ));
+        sweepHandles.push(scheduleSweep(
+          "gate-escalation",
+          () => { gateEscalation.sweep(); },
+          { bootDelayMs: 30_000, intervalMs: 60_000 },
           log,
         ));
         sweepHandles.push(scheduleSweep(

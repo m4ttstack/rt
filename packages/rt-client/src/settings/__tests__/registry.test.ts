@@ -90,6 +90,15 @@ describe("settings/registry", () => {
       expect(def!.pathGuardFields).toBeUndefined();
     });
 
+    test("rt.gates.escalationTtlMinutes is a user number, default 10 (a fresh key)", () => {
+      const def = getDef("rt.gates.escalationTtlMinutes");
+      expect(def).toBeDefined();
+      expect(def!.type).toBe("number");
+      expect(def!.scopes).toEqual(["user"]);
+      expect(def!.merge).toBe("replace");
+      expect(def!.default).toBe(10);
+    });
+
     test("rt.worktreeApp is a machine-only field-bag object with no default (ownership latch)", () => {
       const def = getDef("rt.worktreeApp");
 
@@ -297,8 +306,9 @@ describe("settings/registry", () => {
         "rt.trustedBrowserOrigins",
         "rt.daemonPath",
         "rt.notify.eventBridges",
+        "rt.gates.escalationTtlMinutes",
       ];
-      expect(suiteKeys).toHaveLength(57);
+      expect(suiteKeys).toHaveLength(58);
 
       expect(allDefs().map((d) => d.key).sort()).toEqual(
         [...migratedFalseKeys, ...migratedTrueKeys, ...suiteKeys].sort(),
