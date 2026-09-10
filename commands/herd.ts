@@ -337,6 +337,7 @@ export async function close(args: string[]): Promise<void> {
   if (!job || !herd) fail("usage: rt herd close <job> --herd <id>");
   const data = unwrap(await herdClose({ herd, job }), "close");
   emit(json, data, `${data.job} closed`);
+  if (!json && data.warning) console.log(`  ${data.warning}`);
 }
 
 export async function attend(args: string[]): Promise<void> {

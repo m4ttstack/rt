@@ -653,7 +653,7 @@ export interface Commands {
   "herd:status": { payload: { herd: string }; data: HerdStatusData };
   /** Active herds only unless `all`, so a shepherd's "which herd am I on" question has one answer. */
   "herd:list":   { payload: { all?: boolean }; data: { herds: HerdListRow[] } };
-  "herd:close":  { payload: { herd: string; job: string }; data: { job: string; status: "closed" } };
+  "herd:close":  { payload: { herd: string; job: string }; data: { job: string; status: "closed"; /** Advisory: a resumable run can still write into this job's worktree after close, so this warns rather than blocking. */ warning?: string } };
   /** `brief` is the brief TEXT, not a path: the CLI reads the file. It is stored at `<jobsRoot>/<herd>/<job>/job.md`, so a respawn with `dir` and no `brief` reads it back. */
   "herd:spawn":  { payload: { herd: string; job: string; brief?: string; dir?: string; model?: string; effort?: string; account?: string; disposable?: boolean }; data: { herd: string; job: string; pane: string; worktree: string; branch: string | null; tree: string | null; /** null = no provisioning ran (--dir); false = cold create, worth announcing. */ wasOnDeck: boolean | null; agentId: string; sessionId: string; handle: string } };
   "herd:gates":  { payload: { herd: string }; data: { gates: GateRow[] } };

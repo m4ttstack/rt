@@ -33,6 +33,8 @@ export interface HerdDeps {
   agent: Pick<ReturnType<typeof createAgentHandlers>, "agent:start">;
   worktree: { "worktree:provision": (payload: any) => Promise<any>; "worktree:dispose": (payload: any) => Promise<any> };
   runWorktree: (runId: string) => string | null;
+  /** Live-run lookup by worktree path, for herd:close's advisory warning; wired from `findRunningRunByWorktree` in lib/runs/store.ts. */
+  findRunningRunByWorktree: (worktree: string) => { id: string; currentStage: string } | null;
   /** The chat handle a session already holds, or null; wired from `presenceForSession` in lib/state/presence-store.ts. */
   presenceHandleForSession: (session: string) => string | null;
   /** Whether the shepherd session's own inbox socket is currently accepting connections; wired from `probeInboxReachability` in lib/daemon/inbox.ts over `resolveInbox`'s binding. */
@@ -337,7 +339,13 @@ export function createHerdHandlers(deps: HerdDeps) {
       if (!herd || !job) return { ok: false, error: `unknown job "${name}" in herd "${herdId}"` };
       if (job.pane) await closePane(herd.herdrSocket, job.pane, { herd: herdId, job: name });
       store.setJobStatus(herdId, name, "closed");
-      return { ok: true, data: { job: name, status: "closed" } };
+      // Advisory, not a refusal: an abandoned run is resumable, so a running
+      // pipeline in the job's worktree is worth flagging but never blocks close.
+      const running = deps.findRunningRunByWorktree(job.worktree);
+      const warning = running
+        ? `job worktree has running run ${running.id} at ${running.currentStage}; finish it or run: rt runs abandon ${running.id}`
+        : undefined;
+      return { ok: true, data: { job: name, status: "closed", ...(warning && { warning }) } };
     },
 
     "herd:spawn": async (raw: unknown): Promise<CommandResult<"herd:spawn">> => {

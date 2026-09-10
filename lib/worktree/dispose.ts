@@ -2,12 +2,12 @@
  * Dispose guard + removal (spec §8).
  *
  * Disposal is the only destructive verb in the lifecycle, so the guard is the
- * feature: five checks, in a fixed order, each returning a stable refusal
+ * feature: six checks, in a fixed order, each returning a stable refusal
  * string the reactor records as `disposableReason` and the CLI prints. The
- * order matters — cheap, local, categorical checks first, then the ones that
- * can hit the network (fetch) or someone else's coordination state (leases).
+ * order matters: cheap, local, categorical checks first, then the ones that
+ * can hit the network (fetch) or someone else's coordination state (runs, leases).
  *
- * `force` overrides guards 2-5 and never guard 1: "main" and "unmanaged" trees
+ * `force` overrides guards 2-6 and never guard 1: "main" and "unmanaged" trees
  * are categorically not rt's to delete, no matter what the caller asks for.
  */
 
@@ -126,6 +126,10 @@ export interface DisposeDeps {
   killProcesses: boolean;
   /** The calling CLI process (and its descendants) to spare from the kill. */
   callerPids?: number[];
+  /** Live-run lookup by worktree path, guard 4: wired from `findRunningRunByWorktree`
+      in lib/runs/store.ts. Optional so a caller that never touches herd worktrees
+      can omit it; omitting it skips the guard rather than failing closed. */
+  findRunningRun?: (worktree: string) => { id: string; currentStage: string } | null;
 }
 
 export type DisposeOutcome =
@@ -188,8 +192,8 @@ export async function disposeTree(
   const force = opts.force === true;
   const auto = opts.auto === true;
 
-  const refuse = (refusal: string): DisposeOutcome => {
-    const fields = { repo: repoName, tree: rec.name, refusal };
+  const refuse = (refusal: string, extra: Record<string, unknown> = {}): DisposeOutcome => {
+    const fields = { repo: repoName, tree: rec.name, refusal, ...extra };
     // Auto refusals repeat every reactor pass for as long as the tree sits
     // disposable, so they belong at debug; a human-driven refusal is a one-off.
     if (auto && log.debug) log.debug(fields, "worktree dispose refused");
@@ -239,12 +243,22 @@ export async function disposeTree(
       if (anchorRefusal) return refuse(anchorRefusal);
     }
 
-    // 4. Nobody is attending the MR right now.
+    // 4. No pipeline run is still live in this worktree: a running run can go
+    //    on writing to the filesystem disposal is about to remove.
+    const running = deps.findRunningRun?.(rec.path);
+    if (running) {
+      return refuse("running-run", {
+        runId: running.id, currentStage: running.currentStage,
+        hint: `finish it or run: rt runs abandon ${running.id}`,
+      });
+    }
+
+    // 5. Nobody is attending the MR right now.
     if (mr && typeof mr.iid === "number" && hasFreshAttendantLease(mr.iid)) {
       return refuse("attended");
     }
 
-    // 5. Auto only: a just-claimed tree can't be reaped by a stale merge event.
+    // 6. Auto only: a just-claimed tree can't be reaped by a stale merge event.
     if (auto && rec.claimedAt) {
       const claimedMs = Date.parse(rec.claimedAt);
       if (!Number.isNaN(claimedMs) && Date.now() - claimedMs < GRACE_MS) return refuse("grace");

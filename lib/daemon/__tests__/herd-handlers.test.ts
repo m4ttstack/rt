@@ -77,6 +77,7 @@ export function harness(over: Partial<HerdDeps> = {}) {
   const deps: HerdDeps = {
     store, gateStore, gate, chat, agent, worktree,
     runWorktree: () => null,
+    findRunningRunByWorktree: () => null,
     presenceHandleForSession: () => null,
     herdr: (async (method: string, params: any, o: any) => {
       socketCalls.push({ method, params, sock: o?.sockPath ?? null });
@@ -383,6 +384,27 @@ describe("herd:resume / status / close", () => {
     expect(res.ok).toBe(true);
     expect(herdrCalls).toEqual([]);
     expect(store.getJob(herd, "job-a")!.status).toBe("closed");
+  });
+
+  test("close on a job whose worktree still has a running run warns instead of blocking", async () => {
+    const { h, store, herd } = await started({
+      findRunningRunByWorktree: (worktree) => (worktree === "/w/job-a" ? { id: "run-1", currentStage: "implement" } : null),
+    });
+    store.upsertJob({ herd, name: "job-a", worktree: "/w/job-a", handle: "job-a", status: "active" });
+    const res = await h["herd:close"]({ herd, job: "job-a" });
+    expect(res.ok).toBe(true);
+    if (!res.ok) throw new Error("unreachable");
+    expect(res.data.warning).toBe("job worktree has running run run-1 at implement; finish it or run: rt runs abandon run-1");
+    expect(store.getJob(herd, "job-a")!.status).toBe("closed");
+  });
+
+  test("close on a job with no running run carries no warning", async () => {
+    const { h, store, herd } = await started();
+    store.upsertJob({ herd, name: "job-a", worktree: "/w/job-a", handle: "job-a", status: "active" });
+    const res = await h["herd:close"]({ herd, job: "job-a" });
+    expect(res.ok).toBe(true);
+    if (!res.ok) throw new Error("unreachable");
+    expect(res.data.warning).toBeUndefined();
   });
 });
 

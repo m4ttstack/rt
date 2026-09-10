@@ -513,6 +513,59 @@ describe("disposeTree", () => {
     expect(existsSync(path)).toBe(true);
   });
 
+  test("a running pipeline run anchored at the tree refuses with \"running-run\"", async () => {
+    const path = addTree(repo, "tree-a", "feature-a");
+    const rec = register(repoName, ephemeral("tree-a", path, "feature-a"));
+
+    const deps = makeDeps({ findRunningRun: (worktree) => (worktree === path ? { id: "run-1", currentStage: "implement" } : null) });
+    const result = await disposeTree(deps, rec, {});
+    expect(result).toEqual({ disposed: false, refusal: "running-run" });
+    expect(existsSync(path)).toBe(true);
+
+    const forced = await disposeTree(deps, rec, { force: true });
+    expect(forced).toMatchObject({ disposed: true });
+  });
+
+  test("guard order: unpushed is reported before running-run", async () => {
+    const path = addTree(repo, "tree-a", "feature-a");
+    commitIn(path, "new.txt", "local only\n");
+    const rec = register(repoName, ephemeral("tree-a", path, "feature-a"));
+
+    const deps = makeDeps({ findRunningRun: () => ({ id: "run-1", currentStage: "implement" }) });
+    const result = await disposeTree(deps, rec, {});
+    expect(result).toEqual({ disposed: false, refusal: "unpushed" });
+  });
+
+  test("guard order: running-run is reported before attended", async () => {
+    const path = addTree(repo, "tree-a", "feature-a");
+    const rec = register(repoName, ephemeral("tree-a", path, "feature-a"));
+    writeLease("acme-42.json", {
+      mr: "https://gitlab.com/acme/acme/-/merge_requests/42",
+      heartbeatAt: Date.now(),
+      ttlSeconds: 300,
+    });
+
+    const deps = makeDeps({
+      cacheEntries: { "feature-a": { mr: { iid: 42, sha: null }, repoName } },
+      findRunningRun: () => ({ id: "run-1", currentStage: "implement" }),
+    });
+    const result = await disposeTree(deps, rec, {});
+    expect(result).toEqual({ disposed: false, refusal: "running-run" });
+  });
+
+  test("no findRunningRun dep means no running-run guard runs at all", async () => {
+    const path = addTree(repo, "tree-a", "feature-a");
+    commitIn(path, "new.txt", "pushed\n");
+    execSync(`git -C ${path} push origin feature-a && git -C ${repo} fetch origin`, {
+      shell: "/bin/zsh",
+      stdio: "pipe",
+    });
+    const rec = register(repoName, ephemeral("tree-a", path, "feature-a"));
+
+    const result = await disposeTree(makeDeps(), rec, {});
+    expect(result).toMatchObject({ disposed: true });
+  });
+
   test("a fresh attendant lease on the joined MR refuses with \"attended\"", async () => {
     const path = addTree(repo, "tree-a", "feature-a");
     const rec = register(repoName, ephemeral("tree-a", path, "feature-a"));
