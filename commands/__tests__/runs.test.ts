@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { execSync } from "child_process";
-import { mkdtempSync, realpathSync, rmSync } from "fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { basename, join } from "path";
-import { formatRunLine, formatRunDetail, runsList, runsShow, runsAbandon } from "../runs.ts";
+import { formatRunLine, formatRunDetail, runDisplayKey, runsList, runsShow, runsAbandon } from "../runs.ts";
 import { closeStateDb } from "../../lib/state/index.ts";
 import { deriveRepoIdentity, serializeIdentity } from "../../lib/settings/identity.ts";
 import { updateRepoIndex } from "../../lib/repo-index.ts";
+import { runsRoot } from "../../lib/runs/paths.ts";
 import type { DaemonResponse } from "../../lib/daemon-client.ts";
 
 // mock.module mutates the live "../../lib/daemon-client.ts" namespace object
@@ -22,23 +23,28 @@ const realLastQueryTimedOut = realDaemonClient.lastQueryTimedOut;
  * mockRestore() clears .mock.calls, unlike jest's (matches
  * commands/__tests__/skills.test.ts's runExpectingCleanExit).
  */
-async function runExpectingCleanExit(fn: () => Promise<void>): Promise<{ exitCode: number | undefined; errors: string[] }> {
+async function runExpectingCleanExit(fn: () => Promise<void>): Promise<{ exitCode: number | undefined; errors: string[]; logs: string[] }> {
   const errors: string[] = [];
+  const logs: string[] = [];
   const exitSpy = spyOn(process, "exit").mockImplementation(() => {
     throw new Error("process.exit sentinel");
   });
   const errorSpy = spyOn(console, "error").mockImplementation((...args: unknown[]) => {
     errors.push(args.map(String).join(" "));
   });
+  const logSpy = spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+    logs.push(args.map(String).join(" "));
+  });
   try {
     await fn();
-    return { exitCode: undefined, errors };
+    return { exitCode: undefined, errors, logs };
   } catch {
     const exitCode = exitSpy.mock.calls.at(-1)?.[0] as number | undefined;
-    return { exitCode, errors };
+    return { exitCode, errors, logs };
   } finally {
     exitSpy.mockRestore();
     errorSpy.mockRestore();
+    logSpy.mockRestore();
   }
 }
 
@@ -180,7 +186,7 @@ describe("rt runs --repo identity resolution", () => {
     return dir;
   }
 
-  test("--repo <name> resolves to the serialized identity before it reaches the daemon", async () => {
+  test("--repo <name> resolves to the run-dir display key before it reaches the daemon", async () => {
     const repoPath = makeGitRepo("runs-named-repo");
     process.chdir(repoPath);
     const identity = serializeIdentity(await deriveRepoIdentity(repoPath));
@@ -195,8 +201,10 @@ describe("rt runs --repo identity resolution", () => {
 
     const call = calls.find((c) => c.cmd === "runs:list");
     expect(call).toBeDefined();
-    expect(call!.payload!.repo).toMatch(/^(remote|path):/);
-    expect(call!.payload!.repo).toBe(identity);
+    // The daemon's runs:* handlers key run dirs verbatim -- the wire identity
+    // (":", "%") never named a real dir, only the display key does.
+    expect(call!.payload!.repo).not.toMatch(/^(remote|path):/);
+    expect(call!.payload!.repo).toBe(runDisplayKey(identity));
   });
 
   test("--repo <path> derives the identity from the directory", async () => {
@@ -208,7 +216,7 @@ describe("rt runs --repo identity resolution", () => {
     await runsList(["--repo", repoPath, "--json"]);
 
     const call = calls.find((c) => c.cmd === "runs:list");
-    expect(call?.payload?.repo).toBe(identity);
+    expect(call?.payload?.repo).toBe(runDisplayKey(identity));
   });
 
   test("no --repo forwards undefined so the daemon lists across all repos", async () => {
@@ -229,7 +237,7 @@ describe("rt runs --repo identity resolution", () => {
     await runsShow(["some-run-id", "--repo", repoPath, "--json"]);
 
     const call = calls.find((c) => c.cmd === "runs:get");
-    expect(call?.payload?.repo).toBe(identity);
+    expect(call?.payload?.repo).toBe(runDisplayKey(identity));
   });
 
   test("runsAbandon resolves --repo the same way", async () => {
@@ -241,15 +249,60 @@ describe("rt runs --repo identity resolution", () => {
     await runsAbandon(["some-run-id", "--repo", repoPath]);
 
     const call = calls.find((c) => c.cmd === "runs:abandon");
-    expect(call?.payload?.repo).toBe(identity);
+    expect(call?.payload?.repo).toBe(runDisplayKey(identity));
   });
 
-  test("an unresolvable --repo forwards the raw arg as a run-dir key (pre-cutover run dirs keep their pipeline's key)", async () => {
+  test("an unresolvable --repo forwards the raw arg as a run-dir key when that dir already exists (pre-cutover run dirs keep their pipeline's key)", async () => {
+    mkdirSync(join(runsRoot(), "legacy-run-dir-name"), { recursive: true });
     const calls = installFakeDaemon({ ok: true, data: { runs: [] } });
 
     await runsList(["--repo", "legacy-run-dir-name", "--json"]);
 
     const call = calls.find((c) => c.cmd === "runs:list");
     expect(call?.payload?.repo).toBe("legacy-run-dir-name");
+  });
+
+  test("an unresolvable --repo with no matching run dir errors instead of silently listing nothing", async () => {
+    installFakeDaemon({ ok: true, data: { runs: [] } });
+
+    const { exitCode, logs } = await runExpectingCleanExit(() =>
+      runsList(["--repo", "definitely-not-a-repo", "--json"]),
+    );
+
+    expect(exitCode).toBe(1);
+    expect(JSON.parse(logs.at(-1)!)).toEqual({ ok: false, error: "unknown repo: definitely-not-a-repo" });
+  });
+
+  test("the same unknown --repo fails on stderr, exit 1, without --json", async () => {
+    installFakeDaemon({ ok: true, data: { runs: [] } });
+
+    const { exitCode, errors } = await runExpectingCleanExit(() =>
+      runsList(["--repo", "definitely-not-a-repo"]),
+    );
+
+    expect(exitCode).toBe(1);
+    expect(errors.join("\n")).toContain("unknown repo: definitely-not-a-repo");
+  });
+
+  test("runsShow surfaces the same unknown-repo error", async () => {
+    installFakeDaemon({ ok: true, data: { run: { id: "x" } } });
+
+    const { exitCode, logs } = await runExpectingCleanExit(() =>
+      runsShow(["some-run-id", "--repo", "definitely-not-a-repo", "--json"]),
+    );
+
+    expect(exitCode).toBe(1);
+    expect(JSON.parse(logs.at(-1)!)).toEqual({ ok: false, error: "unknown repo: definitely-not-a-repo" });
+  });
+
+  test("runsAbandon surfaces the same unknown-repo error", async () => {
+    installFakeDaemon({ ok: true, data: {} });
+
+    const { exitCode, logs } = await runExpectingCleanExit(() =>
+      runsAbandon(["some-run-id", "--repo", "definitely-not-a-repo", "--json"]),
+    );
+
+    expect(exitCode).toBe(1);
+    expect(JSON.parse(logs.at(-1)!)).toEqual({ ok: false, error: "unknown repo: definitely-not-a-repo" });
   });
 });
