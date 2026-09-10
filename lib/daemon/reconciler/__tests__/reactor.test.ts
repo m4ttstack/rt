@@ -58,6 +58,57 @@ function ephemeralTree(repo: string, repoName: string, name: string, branch: str
   return rec;
 }
 
+describe("terminal-state catch-up (missed edges)", () => {
+  const repoName = "acme";
+  let repo: string;
+
+  beforeEach(() => {
+    process.env.HOME = realpathSync(mkdtempSync(join(tmpdir(), "rtreactorcu-home-")));
+    closeStateDb();
+    repo = makeRepo();
+    addBareOrigin(repo);
+    writeJson(join(rtDir(), "worktrees.json"), { enabled: true, killProcesses: false });
+  });
+
+  function detect(entries: Record<string, unknown>): Promise<void> {
+    return detectTransitions({
+      repoName,
+      repoPath: repo,
+      cacheEntries: entries as any,
+      emit: () => {},
+      log: fakeLog(),
+    });
+  }
+
+  test("a cold boot on an already-merged MR with a claimed tree disposes it", async () => {
+    // No prior reactor state at all: the merge happened while the daemon was
+    // down, so no pass ever saw the MR "opened".
+    const rec = ephemeralTree(repo, repoName, "golf", "feat-golf");
+
+    await detect({ "feat-golf": { repoName, mr: { iid: 41, state: "merged" } } });
+
+    expect(loadRegistry(repoName).find((t) => t.path === rec.path)).toBeUndefined();
+    expect(__test__.loadReactorState().fired).toContain(`disposed:${repoName}:41:merged`);
+  });
+
+  test("catch-up never touches a main tree — auto-return stays edge-only", async () => {
+    sh(`git -C ${repo} checkout -q -b feat-hotel`);
+    sh(`git -C ${repo} push -q origin feat-hotel`);
+    const rec: TreeRecord = {
+      name: "main",
+      path: repo,
+      kind: "main",
+      branch: "feat-hotel",
+      createdAt: new Date().toISOString(),
+    };
+    saveRegistry(repoName, [...loadRegistry(repoName), rec]);
+
+    await detect({ "feat-hotel": { repoName, mr: { iid: 42, state: "merged" } } });
+
+    expect(execSync(`git -C ${repo} branch --show-current`, { encoding: "utf8" }).trim()).toBe("feat-hotel");
+  });
+});
+
 describe("R049: fired-ledger GC", () => {
   const repoName = "acme";
   let repo: string;
