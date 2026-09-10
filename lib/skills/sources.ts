@@ -1,7 +1,8 @@
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import { existsSync, readdirSync, readFileSync, realpathSync } from "fs";
 import { join, relative } from "path";
 import { parse as parseYaml } from "yaml";
+import { resolveClaudeBin } from "../claude-bin.ts";
 import { stripJsonc } from "../jsonc.ts";
 import { findPlaceholders } from "./placeholders.ts";
 import type { AttachmentSource, SlotSpec, StepSource, VerbDef } from "./types.ts";
@@ -36,7 +37,8 @@ export type PluginListEntry = { id: string; installPath: string };
 export type PluginRoots = { byName: Record<string, { dir: string; version: string }>; list: PluginListEntry[] };
 
 export function listInstalledPlugins(): PluginListEntry[] {
-  const raw = execSync("claude plugin list --json", { encoding: "utf8" });
+  const bin = resolveClaudeBin() ?? "claude";
+  const raw = execFileSync(bin, ["plugin", "list", "--json"], { encoding: "utf8" });
   return JSON.parse(raw) as PluginListEntry[];
 }
 
