@@ -61,6 +61,7 @@ import { createHooksGuard } from "./daemon/hooks-guard.ts";
 import { runBootIdentityMigration } from "./daemon/boot-migrate.ts";
 import { runCapture } from "./subprocess.ts";
 import { buildRoutedHandlers } from "./daemon/command-router.ts";
+import { findRunningRunByWorktree } from "./runs/store.ts";
 import { createChatDeliverySweep } from "./daemon/handlers/chat.ts";
 import { startSocketServer } from "./daemon/socket-server.ts";
 import { startApiServer, withApiPortParkRetry, broadcast, apiWsClientCount, clearWsClients } from "./daemon/api-server.ts";
@@ -911,6 +912,7 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
             cdCacheKick: () => void refreshCdCache(loggerHandle.childLogger("cd-cache")),
             creationInFlight: worktreeReconciler.creationInFlight,
             withReconcilerHeld: worktreeReconciler.withReconcilerHeld,
+            findRunningRunByWorktree,
           },
           eventsBus,
           gatesStore,
