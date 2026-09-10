@@ -105,6 +105,7 @@ export function harness(over: Partial<HerdDeps> = {}) {
       };
     },
     lifecycle: { connected: () => true, watch: () => {}, sweepClaims: async () => {} },
+    probeInbox: async () => "reachable",
     bg, claims,
     jobsRoot: join(dir, "herds"),
     log,
@@ -303,6 +304,38 @@ describe("herd:resume / status / close", () => {
     const res = await h["herd:status"]({ herd });
     if (!res.ok) throw new Error(res.error);
     expect(res.data.jobs[0]).toMatchObject({ name: "job-a", paneStatus: null });
+  });
+
+  test("status reports push reachability from the probe", async () => {
+    const { h, herd } = await started({ probeInbox: async () => "unreachable" });
+    const res = await h["herd:status"]({ herd });
+    if (!res.ok) throw new Error(res.error);
+    expect(res.data.push).toEqual({ state: "unreachable", lastDelivery: null });
+  });
+
+  test("status push.lastDelivery mirrors the shepherd's own subscription delivery", async () => {
+    const { h, gateStore, herd } = await started({ probeInbox: async () => "reachable" });
+    const sub = gateStore.subscriptions({ live: true }).find((s) => s.scope === "prefix")!;
+    gateStore.markSubscriptionDelivery(sub.id, "delivered");
+    const res = await h["herd:status"]({ herd });
+    if (!res.ok) throw new Error(res.error);
+    expect(res.data.push.state).toBe("reachable");
+    expect(res.data.push.lastDelivery).toMatchObject({ outcome: "delivered" });
+  });
+
+  test("resume counts run gates owned by the herd's jobs alongside its own gates", async () => {
+    const hx = harness({ runWorktree: (id) => (id === "run-1" ? "/w/job-a" : id === "run-2" ? "/elsewhere" : null) });
+    const s = await hx.h["herd:start"](START);
+    if (!s.ok) throw new Error(s.error);
+    const herd = s.data.herd;
+    hx.store.upsertJob({ herd, name: "job-a", worktree: "/w/job-a", handle: "job-a", status: "active" });
+    const Q = [{ id: "q", label: "?", multi: false, options: ["a"] }];
+    hx.gateStore.open({ subject: `herd:${herd}/job-a`, kind: "question", questions: Q });
+    hx.gateStore.open({ subject: "run:run-1", kind: "clarify", questions: Q });
+    hx.gateStore.open({ subject: "run:run-2", kind: "clarify", questions: Q });
+    const res = await hx.h["herd:resume"]({ herd, session: "sess-shep-2" });
+    if (!res.ok) throw new Error(res.error);
+    expect(res.data.gates.length).toBe(2);
   });
 
   test("status reports a dead subscription rather than hiding it as missing", async () => {

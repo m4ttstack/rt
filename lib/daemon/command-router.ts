@@ -36,6 +36,8 @@ import { wrapWithDemand } from "./demand-tracker.ts";
 import type { SystemProcessScanner } from "./system-process-scanner.ts";
 import { findRun } from "../runs/store.ts";
 import { presenceForSession } from "../state/presence-store.ts";
+import { resolveInbox } from "../claude-registry.ts";
+import { probeInboxReachability } from "./inbox.ts";
 import { herdrRequest } from "../herdr/client.ts";
 import { defaultHerdrRunner } from "../agent-herdr.ts";
 import type { EventsBus } from "./events-bus.ts";
@@ -139,6 +141,10 @@ export function buildRoutedHandlers(opts: {
     worktree: worktreeHandlers,
     runWorktree: (runId) => findRun(runId)?.fields.find((f) => f.key === "worktree")?.value ?? null,
     presenceHandleForSession: (session) => presenceForSession(session, opts.stateDb)?.handle ?? null,
+    probeInbox: async (session) => {
+      const binding = resolveInbox(session);
+      return binding ? probeInboxReachability(binding.socketPath) : "unreachable";
+    },
     herdr: herdrRequest,
     herdrRunnerFor: (socket) => defaultHerdrRunner(socket ? { ...process.env, HERDR_SOCKET_PATH: socket } : process.env),
     lifecycle: opts.herdLifecycle,

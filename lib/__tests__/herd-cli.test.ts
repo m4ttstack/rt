@@ -92,6 +92,7 @@ function statusData(over: Partial<HerdStatusData>): HerdStatusData {
     lifecycleConnected: true,
     hiddenUp: null,
     subscription: { id: "sub-1", dead: false, lastDelivery: null },
+    push: { state: "reachable", lastDelivery: null },
     ...over,
   };
 }
@@ -119,5 +120,14 @@ describe("renderStatus", () => {
   test("a delivered gate carries no not-woken warning", () => {
     const data = statusData({ jobs: [job({ lastGate: "gt-9", lastGateStatus: "answered", lastGateDelivery: "delivered" })] });
     expect(renderStatus(data)).not.toContain("worker not woken");
+  });
+
+  test("prints the push probe's reachability and delivery age instead of headlining dead", () => {
+    const reachable = renderStatus(statusData({ push: { state: "reachable", lastDelivery: null } }));
+    expect(reachable).toContain("push: reachable (last delivery never)");
+    expect(reachable).not.toContain("DEAD");
+
+    const unreachable = renderStatus(statusData({ push: { state: "unreachable", lastDelivery: { outcome: "delivered", at: Date.now() - 5 * 60_000 } } }));
+    expect(unreachable).toContain("push: unreachable (last delivery 5m ago)");
   });
 });

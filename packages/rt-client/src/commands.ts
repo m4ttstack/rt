@@ -153,6 +153,8 @@ export interface HerdStatusData {
   hiddenUp: boolean | null;
   /** The shepherd session's own `herd:<id>/` subscription row, or null when none is live. */
   subscription: { id: string; dead: boolean; lastDelivery: GateSubscription["lastDelivery"] } | null;
+  /** Whether the shepherd session's own inbox socket is reachable right now, probed fresh on every status call -- honest liveness, not the subscription row's bookkeeping. */
+  push: { state: "reachable" | "unreachable"; lastDelivery: GateSubscription["lastDelivery"] };
 }
 
 /**

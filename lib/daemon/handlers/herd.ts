@@ -35,6 +35,8 @@ export interface HerdDeps {
   runWorktree: (runId: string) => string | null;
   /** The chat handle a session already holds, or null; wired from `presenceForSession` in lib/state/presence-store.ts. */
   presenceHandleForSession: (session: string) => string | null;
+  /** Whether the shepherd session's own inbox socket is currently accepting connections; wired from `probeInboxReachability` in lib/daemon/inbox.ts over `resolveInbox`'s binding. */
+  probeInbox: (session: string) => Promise<"reachable" | "unreachable">;
   herdr: typeof herdrRequest;
   herdrRunnerFor: (socket: string | null) => HerdrRunner;
   lifecycle: { connected(socket: string | null): boolean; watch(socket: string): void; sweepClaims(): Promise<void> };
@@ -139,12 +141,26 @@ export function createHerdHandlers(deps: HerdDeps) {
     return res.ok ? res.data.gates : [];
   }
 
+  /** Open `run:*` gates whose worktree belongs to one of this herd's jobs --
+      shared by `herd:gates` (its own listing) and `herd:resume` (its count
+      of what a resumed shepherd is on the hook for). */
+  async function listHerdRunGates(herdId: string): Promise<GateRow[]> {
+    const runs = await deps.gate["gate:list"]({ open: true, subjectPrefix: "run:" });
+    if (!runs.ok) return [];
+    const trees = new Set(store.jobs(herdId).map((j) => j.worktree));
+    return runs.data.gates.filter((g) => {
+      const wt = deps.runWorktree(g.subject.slice("run:".length));
+      return wt !== null && trees.has(wt);
+    });
+  }
+
   async function statusData(herdId: string): Promise<HerdStatusData | null> {
     const herd = store.get(herdId);
     if (!herd) return null;
-    const [panes, gates, unread, subs] = await Promise.all([
+    const [panes, gates, unread, subs, pushState] = await Promise.all([
       paneStatuses(herd.herdrSocket), openHerdGates(herdId), unreadFor(herd.shepherdHandle, herd.room),
       deps.gate["gate:subscriptions"]({ session: herd.shepherdSession }),
+      deps.probeInbox(herd.shepherdSession),
     ]);
     const jobs = store.jobs(herdId).map((j: HerdJobRow) => {
       const last = j.lastGate ? deps.gateStore.get(j.lastGate) : null;
@@ -169,6 +185,7 @@ export function createHerdHandlers(deps: HerdDeps) {
       lifecycleConnected: deps.lifecycle.connected(herd.herdrSocket),
       hiddenUp: herd.hidden ? await deps.bg.up() : null,
       subscription: subRow ? { id: subRow.id, dead: subRow.dead, lastDelivery: subRow.lastDelivery } : null,
+      push: { state: pushState, lastDelivery: subRow?.lastDelivery ?? null },
     };
   }
 
@@ -294,7 +311,8 @@ export function createHerdHandlers(deps: HerdDeps) {
       if (!join.ok) return join;
       store.setShepherd(herdId, { session, handle });
       const status = (await statusData(herdId))!;
-      return { ok: true, data: { subscription: sub.data.id, gates: await openHerdGates(herdId), unread: status.unread, status, handle } };
+      const gates = [...(await openHerdGates(herdId)), ...(await listHerdRunGates(herdId))];
+      return { ok: true, data: { subscription: sub.data.id, gates, unread: status.unread, status, handle } };
     },
 
     "herd:status": async (raw: unknown): Promise<CommandResult<"herd:status">> => {
@@ -390,12 +408,7 @@ export function createHerdHandlers(deps: HerdDeps) {
       if (!herdId) return { ok: false, error: "herd is required" };
       if (!store.get(herdId)) return { ok: false, error: `unknown herd "${herdId}"` };
       const own = await openHerdGates(herdId);
-      const runs = await deps.gate["gate:list"]({ open: true, subjectPrefix: "run:" });
-      const trees = new Set(store.jobs(herdId).map((j) => j.worktree));
-      const matched = runs.ok ? runs.data.gates.filter((g) => {
-        const wt = deps.runWorktree(g.subject.slice("run:".length));
-        return wt !== null && trees.has(wt);
-      }) : [];
+      const matched = await listHerdRunGates(herdId);
       return { ok: true, data: { gates: [...own, ...matched] } };
     },
 
