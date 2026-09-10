@@ -963,7 +963,9 @@ async function runDm(args: string[]): Promise<void> {
     console.log(JSON.stringify({ ok: true, ...data }));
     return;
   }
-  // prints nothing on success — Global Constraint, same as post
+  console.log(`dm → ${to} #${data.id}`);
+  const url = chatViewerUrl(readChatViewerUrlSetting(), data.room, data.id);
+  if (url) console.log(`posted → ${url}`);
 }
 
 /**

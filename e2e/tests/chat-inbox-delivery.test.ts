@@ -245,6 +245,18 @@ describe("rt chat inbox delivery (e2e)", () => {
     );
   }, 30_000);
 
+  test("rt chat dm prints the `dm → <handle> #<id>` success line plus the viewer link", async () => {
+    await startDaemonForHome(home);
+    await signIn(home, "sess-a", "a", "testroom");
+    await signIn(home, "sess-b", "b", "testroom");
+
+    const res = await finished(runRt(["chat", "dm", "b", "hi", "--session", "sess-a"], home));
+    expect(res.exitCode).toBe(0);
+    const rooms = JSON.parse((await finished(runRt(["chat", "rooms", "--json", "--session", "sess-a"], home))).stdout);
+    const dmRoom = rooms.rooms.find((r: { kind?: string }) => r.kind === "dm").room;
+    expect(res.stdout).toBe(`dm → b #1\nposted → https://chat.mattstack/r/${dmRoom}#m-1\n`);
+  }, 30_000);
+
   test("a DM lands only on its recipient's inbox, and stops once that recipient signs out", async () => {
     const sessionA = "22222222-2222-2222-2222-222222222222";
     const sessionB = "33333333-3333-3333-3333-333333333333";
