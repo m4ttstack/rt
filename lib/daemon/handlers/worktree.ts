@@ -46,6 +46,7 @@ import { markHandoffDelivered, patchTree } from "../../worktree/patch.ts";
 import { disambiguate, slugifyTicketTitle } from "../../worktree/branch-name.ts";
 import { createTree } from "../../worktree/create.ts";
 import { classifyDirtyAsync, disposeTree, type DisposeDeps } from "../../worktree/dispose.ts";
+import type { RunningRunScan } from "../../runs/store.ts";
 import { restoreTree } from "../../worktree/restore.ts";
 import { branchOf, composeKey } from "../../state/branch-cache.ts";
 import { isTreeLocked, withTreeLock } from "../../worktree/locks.ts";
@@ -96,6 +97,8 @@ export interface WorktreeHandlerOpts {
   creationInFlight: (repoName: string) => Promise<void> | null;
   /** Excludes reconciler passes -- not other registry writers -- for the duration of `fn`. */
   withReconcilerHeld: <T>(fn: () => Promise<T>) => Promise<T>;
+  /** Live-run lookup by worktree path, threaded into disposeTree's running-run guard; wired from `findRunningRunByWorktree` in lib/runs/store.ts. */
+  findRunningRunByWorktree: (worktree: string) => RunningRunScan;
 }
 
 // ─── Small shared helpers ────────────────────────────────────────────────────
@@ -189,6 +192,7 @@ function disposeDeps(
     log: ctx.log,
     killProcesses: loadWorktreeAppConfig().killProcesses,
     callerPids,
+    findRunningRun: opts.findRunningRunByWorktree,
   };
 }
 
@@ -598,7 +602,7 @@ export function createWorktreeHandlers(
       if (!owner && targets.length > 1) return { ok: false, error: "tree-ambiguous" };
 
       const disposed: string[] = [];
-      const refused: Array<{ tree: string; reason: string }> = [];
+      const refused: Array<{ tree: string; reason: string; detail?: string }> = [];
       const recoverable: Array<{ tree: string; path: string; until: string }> = [];
 
       for (const { repoName, repoPath, rec } of targets) {
@@ -612,7 +616,7 @@ export function createWorktreeHandlers(
           if (outcome.trash) {
             recoverable.push({ tree: rec.name, path: outcome.trash.path, until: outcome.trash.keptUntil });
           }
-        } else refused.push({ tree: rec.name, reason: outcome.refusal });
+        } else refused.push({ tree: rec.name, reason: outcome.refusal, ...(outcome.detail && { detail: outcome.detail }) });
       }
 
       if (targets.length === 0 && treeName) refused.push({ tree: treeName, reason: "unknown" });
@@ -790,7 +794,7 @@ export function createWorktreeHandlers(
         const claimed: string[] = [];
         const unmanaged: string[] = [];
         const disposed: string[] = [];
-        const refused: Array<{ tree: string; reason: string }> = [];
+        const refused: Array<{ tree: string; reason: string; detail?: string }> = [];
 
         for (const rec of trees) {
           if (rec.kind === "main" || canon(rec.path) === canon(repoPath)) {
@@ -823,7 +827,7 @@ export function createWorktreeHandlers(
             );
             if (outcome === "busy") refused.push({ tree: rec.name, reason: "busy" });
             else if (outcome.disposed) disposed.push(rec.name);
-            else refused.push({ tree: rec.name, reason: outcome.refusal });
+            else refused.push({ tree: rec.name, reason: outcome.refusal, ...(outcome.detail && { detail: outcome.detail }) });
             continue;
           }
 

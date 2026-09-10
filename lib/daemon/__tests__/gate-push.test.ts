@@ -148,6 +148,32 @@ describe("gate-push", () => {
     expect(delivered[0]!.body).toContain(row.status);
   });
 
+  test("fanOut pushes owner-scoped subscriptions for owned gates only", async () => {
+    const { push, store, delivered } = harness();
+    store.subscribe({ subjectPrefix: "", session: "shep", scope: "owner", ownerRef: "herd:h-1" });
+    const owned = store.open({ subject: "run:r-1", kind: "clarify", questions: qs(), owner: "herd:h-1" }).row;
+    const foreign = store.open({ subject: "run:r-2", kind: "k2", questions: qs(), owner: "herd:h-2" }).row;
+    await push.onOpened(owned);
+    await push.onOpened(foreign);
+    expect(delivered.map((d) => d.sessionId)).toEqual(["shep"]);
+  });
+
+  test("fanOut delivers once per session even when both its prefix and owner rows match", async () => {
+    const { push, store, delivered } = harness();
+    store.subscribe({ subjectPrefix: "herd:h-1/", session: "shep" });
+    store.subscribe({ subjectPrefix: "", session: "shep", scope: "owner", ownerRef: "herd:h-1" });
+    const row = store.open({ subject: "herd:h-1/job-a", kind: "question", questions: qs(), owner: "herd:h-1" }).row;
+    await push.onOpened(row);
+    expect(delivered.filter((d) => d.sessionId === "shep").length).toBe(1);
+    // Only the row that matched first (the prefix row, subscribed first)
+    // records a delivery outcome -- the skipped owner row is left untouched.
+    const subs = store.subscriptions();
+    const prefixSub = subs.find((s) => s.scope === "prefix")!;
+    const ownerSub = subs.find((s) => s.scope === "owner")!;
+    expect(prefixSub.lastDelivery?.outcome).toBe("delivered");
+    expect(ownerSub.lastDelivery).toBeNull();
+  });
+
   test("fan-out resolves the subscriber registry ONCE per event when resolveAll is wired (F8)", async () => {
     const store = freshStore();
     const delivered: Array<{ sessionId: string; body: string }> = [];
@@ -241,7 +267,7 @@ describe("gate-push escape injection (W4)", () => {
     }
   });
 
-  test("form with no origin.paneId falls back to the top-level pane for the Escape (SKILLS-60)", async () => {
+  test("form with no origin.paneId falls back to the top-level pane for the Escape", async () => {
     const { push, store, events } = w4Harness();
     await push.onAnswered(answeredFormGate(store, "console", { presentation: "form" }));
     expect(events).toEqual(["deliver", "inject:pane-7"]);
@@ -372,6 +398,18 @@ describe("gate-push onClosed (supersede/close, W4 final-review M4)", () => {
     store.close(row.id, "abandoned");
     await push.onClosed(store.get(row.id)!);
     expect(events.length).toBe(0);
+  });
+});
+
+describe("GATE_SUBSCRIPTION_PHRASE", () => {
+  test("subscription phrase names presentation and owner", () => {
+    expect(GATE_SUBSCRIPTION_PHRASE({ id: "g", status: "open", origin: { presentation: "form" }, owner: "herd:h-1" } as any))
+      .toBe("[gate] g is now open (form, owner herd:h-1); re-read the gate registry.");
+  });
+
+  test("falls back to wait and human when origin/owner are absent", () => {
+    expect(GATE_SUBSCRIPTION_PHRASE({ id: "g", status: "answered", origin: null, owner: null } as any))
+      .toBe("[gate] g is now answered (wait, owner human); re-read the gate registry.");
   });
 });
 

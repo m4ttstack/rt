@@ -6,11 +6,22 @@
 
 import type { Logger } from "pino";
 import type { Commands } from "../../../packages/rt-client/src/commands.ts";
-import { gateOptionValue } from "../../../packages/rt-client/src/commands.ts";
+import { gateOptionValue, GATE_BY_PANE } from "../../../packages/rt-client/src/commands.ts";
 import type { CommandResult } from "./types.ts";
 import type { EventsBus } from "../events-bus.ts";
-import type { GatesStore, GateQuestion, GateAnswer, GateRow } from "../gates-store.ts";
+import type { GatesStore, GateQuestion, GateAnswer, GateRow, GateOrigin } from "../gates-store.ts";
 import type { GatePush } from "../gate-push.ts";
+
+/**
+ * gate:answer's two structured rejections: a non-owner's answer and
+ * a closed gate both need fields beyond the generic `{ok:false, error}`
+ * shape, so this widens just this one verb's result rather than every
+ * command in the catalog.
+ */
+export type GateAnswerResult =
+  | CommandResult<"gate:answer">
+  | { ok: false; error: "owned-by"; owner: string }
+  | { ok: false; error: "gate-closed"; reason: GateRow["closedReason"]; supersededBy?: string };
 
 /** Callers that omit `push` (e.g. handler-only tests) get a no-op: gate:*
     must work identically with or without the delivery layer wired in. */
@@ -96,6 +107,11 @@ function invalidOrigin(v: unknown): string | null {
       return `origin.${key} exceeds ${ORIGIN_FIELD_CAP_BYTES} bytes`;
     }
   }
+  // A pane origin without presentation leaves gate-push unable to decide
+  // whether Escape injection is safe: the opener must say "form" or "wait" up front.
+  if (typeof v.paneId === "string" && v.paneId.length > 0 && v.presentation === undefined) {
+    return 'pane origin requires presentation ("form" or "wait")';
+  }
   return null;
 }
 
@@ -163,13 +179,33 @@ function validateAnswers(questions: GateQuestion[], answers: Record<string, unkn
   return null;
 }
 
+/** Herd-spawned runs own their gates; everything else (no origin, no runId,
+    an unknown run, or a legacy spawner like "shepherdr") falls back to the
+    human owner. */
+export function deriveOwner(
+  origin: GateOrigin | undefined,
+  runSpawnedBy?: (runId: string) => string | null,
+): string {
+  const runId = origin?.runId;
+  if (runId && runSpawnedBy) {
+    const spawner = runSpawnedBy(runId);
+    if (spawner && spawner.startsWith("herd:")) return spawner;
+  }
+  return "human";
+}
+
 export function createGateHandlers(
   store: GatesStore,
   bus: EventsBus,
   broadcast: (type: string, data: any) => void,
-  deps: { push?: GatePush; log?: Logger } = {},
+  deps: {
+    push?: GatePush; log?: Logger;
+    runSpawnedBy?: (runId: string) => string | null;
+    /** Resolves a herd id to its shepherd's live session, for the owner guard below. */
+    herdShepherd?: (herdId: string) => string | null;
+  } = {},
 ): { "gate:open": (payload: unknown) => Promise<CommandResult<"gate:open">> }
-  & { "gate:answer": (payload: unknown) => Promise<CommandResult<"gate:answer">> }
+  & { "gate:answer": (payload: unknown) => Promise<GateAnswerResult> }
   & { "gate:wait": (payload: unknown, signal?: AbortSignal) => Promise<CommandResult<"gate:wait">> }
   & { "gate:list": (payload: unknown) => Promise<CommandResult<"gate:list">> }
   & { "gate:park": (payload: unknown) => Promise<CommandResult<"gate:park">> }
@@ -179,6 +215,8 @@ export function createGateHandlers(
   & { "gate:subscriptions": (payload: unknown) => Promise<CommandResult<"gate:subscriptions">> } {
   const push = deps.push ?? noopPush;
   const log = deps.log;
+  const runSpawnedBy = deps.runSpawnedBy;
+  const herdShepherd = deps.herdShepherd;
   // Fire-and-forget: a push/fan-out failure must never fail the verb that
   // triggered it. The promise itself is not expected to reject (gate-push
   // catches and records delivery outcomes internally), but a logged catch
@@ -252,10 +290,16 @@ export function createGateHandlers(
         }
       }
 
+      // Non-pane origins (run/tab/worktree-only) have no Escape seam to
+      // guard, so they default to "wait" rather than forcing every caller
+      // to spell it out; an explicit value always wins (spread order).
+      const origin = payload?.origin ? { presentation: "wait" as const, ...payload.origin } : undefined;
+
+      const owner = deriveOwner(origin, runSpawnedBy);
       const { row, supersededId } = store.open({
         subject, kind, questions,
         meta: payload?.meta, agent: payload?.agent, pane: payload?.pane, nudge: payload?.nudge,
-        context: payload?.context, origin: payload?.origin,
+        context: payload?.context, origin, owner,
       });
 
       // One timestamp for both the journal row and the broadcast frame (events:emit idiom).
@@ -264,7 +308,7 @@ export function createGateHandlers(
       const eventPayload = {
         id: row.id, subject: row.subject, kind: row.kind, questions: row.questions,
         meta: row.meta, agent: row.agent, paneId: row.pane, label,
-        context: row.context, origin: row.origin,
+        context: row.context, origin: row.origin, owner: row.owner,
       };
       emitGateEvent(`gate/opened/${row.id}`, eventPayload, emittedAt);
 
@@ -304,10 +348,31 @@ export function createGateHandlers(
 
       const gate = store.get(id);
       if (!gate) return { ok: false as const, error: "not-found" };
+
+      // A closed gate is a terminal rejection, checked before ownership or
+      // shape: a caller answering a superseded gate needs to know what
+      // replaced it, not that it lacks permission to answer a dead row.
+      if (gate.status === "closed") {
+        return {
+          ok: false as const, error: "gate-closed", reason: gate.closedReason,
+          ...(gate.supersededBy ? { supersededBy: gate.supersededBy } : {}),
+        };
+      }
+
+      // Herd-owned gates require the owning shepherd's own session (or the
+      // answering pane itself, or an explicit human --override); a null/
+      // "human" owner is open to any caller.
+      const owner = gate.owner;
+      if (owner?.startsWith("herd:") && payload?.override !== true && by !== GATE_BY_PANE) {
+        const shepherd = herdShepherd?.(owner.slice("herd:".length)) ?? null;
+        const session = typeof payload?.session === "string" ? payload.session : "";
+        if (!shepherd || session !== shepherd) return { ok: false as const, error: "owned-by", owner };
+      }
+
       const validationError = validateAnswers(gate.questions, answers as Record<string, unknown>);
       if (validationError) return { ok: false as const, error: validationError };
 
-      const result = store.answer(id, answers as GateAnswer["answers"], by);
+      const result = store.answer(id, answers as GateAnswer["answers"], by, { overridden: payload?.override === true });
       const emittedAt = Date.now();
 
       if (result.ok) {
@@ -395,9 +460,21 @@ export function createGateHandlers(
       const payload = rawPayload as Commands["gate:subscribe"]["payload"] | undefined;
       const subjectPrefix = typeof payload?.subjectPrefix === "string" ? payload.subjectPrefix.trim() : "";
       const session = typeof payload?.session === "string" ? payload.session.trim() : "";
-      if (!subjectPrefix) return { ok: false as const, error: "missing subjectPrefix" };
+      const isOwnerScope = payload?.scope === "owner";
+      const ownerRef = typeof payload?.ownerRef === "string" ? payload.ownerRef.trim() : "";
       if (!session) return { ok: false as const, error: "missing session" };
-      const sub = store.subscribe({ subjectPrefix, session });
+      // Owner rows carry an empty subjectPrefix by design (they route on
+      // row.owner, not on subject), so the prefix-required check below is
+      // only for prefix-scoped rows.
+      if (isOwnerScope) {
+        if (!ownerRef.startsWith("herd:")) return { ok: false as const, error: 'scope "owner" requires ownerRef starting "herd:"' };
+      } else if (!subjectPrefix) {
+        return { ok: false as const, error: "missing subjectPrefix" };
+      }
+      const sub = store.subscribe({
+        subjectPrefix, session,
+        ...(isOwnerScope && { scope: "owner" as const, ownerRef }),
+      });
       return { ok: true as const, data: { id: sub.id } };
     },
 

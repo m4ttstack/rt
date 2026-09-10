@@ -36,10 +36,14 @@ export const GATE_CLOSED_PHRASE = (id: string, reason: GateRow["closedReason"]) 
 
 /** Fan-out notification: push text is data, never instructions, and carries
     no opener-controlled content -- `subject` is opener-set and must never
-    ride a cross-session message body. id + status only; the W2 protocol
-    part imports this for priming. */
-export const GATE_SUBSCRIPTION_PHRASE = (row: Pick<GateRow, "id" | "status">) =>
-  `[gate] ${row.id} is now ${row.status}; re-read the gate registry.`;
+    ride a cross-session message body. id + status + presentation + owner
+    only, so a shepherd reading the doorbell already knows whether Escape
+    fires and who is on the hook to answer -- never the opener-set subject. */
+export const GATE_SUBSCRIPTION_PHRASE = (row: Pick<GateRow, "id" | "status" | "origin" | "owner">) => {
+  const presentation = row.origin?.presentation ?? "wait";
+  const owner = row.owner ?? "human";
+  return `[gate] ${row.id} is now ${row.status} (${presentation}, owner ${owner}); re-read the gate registry.`;
+};
 
 const DEFAULT_DEAD_AFTER_FAILURES = 3;
 const DEFAULT_MAX_PANE_RETRIES = 20;
@@ -157,7 +161,21 @@ export function createGatePush(opts: {
     // fan-out that doesn't match it, so a chronically-failing subscriber on
     // an untouched prefix could never reach deadAfterFailures.
     const allLive = store.subscriptions({ live: true });
-    const subs = allLive.filter((sub) => row.subject.startsWith(sub.subjectPrefix));
+    const matched = allLive.filter((sub) =>
+      sub.scope === "owner" ? row.owner !== null && row.owner === sub.ownerRef : row.subject.startsWith(sub.subjectPrefix),
+    );
+    // One session can hold both a prefix row and an owner row that both
+    // match the same gate (e.g. a herd shepherd's own job gate, which is
+    // both under its herd: prefix and owned by it) -- dedupe to one push per
+    // session, first match wins, so the other row's delivery outcome is left
+    // untouched rather than double-recorded.
+    const seenSessions = new Set<string>();
+    const subs: GateSubscription[] = [];
+    for (const sub of matched) {
+      if (seenSessions.has(sub.session)) continue;
+      seenSessions.add(sub.session);
+      subs.push(sub);
+    }
     // Batch registry resolution: one scan for the whole fan-out (resolveAll,
     // when wired) rather than resolveSession re-scanning per subscriber.
     const registry = resolveAll ? resolveAll() : null;

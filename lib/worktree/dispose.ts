@@ -2,12 +2,12 @@
  * Dispose guard + removal (spec §8).
  *
  * Disposal is the only destructive verb in the lifecycle, so the guard is the
- * feature: five checks, in a fixed order, each returning a stable refusal
+ * feature: six checks, in a fixed order, each returning a stable refusal
  * string the reactor records as `disposableReason` and the CLI prints. The
- * order matters — cheap, local, categorical checks first, then the ones that
- * can hit the network (fetch) or someone else's coordination state (leases).
+ * order matters: cheap, local, categorical checks first, then the ones that
+ * can hit the network (fetch) or someone else's coordination state (runs, leases).
  *
- * `force` overrides guards 2-5 and never guard 1: "main" and "unmanaged" trees
+ * `force` overrides guards 2-6 and never guard 1: "main" and "unmanaged" trees
  * are categorically not rt's to delete, no matter what the caller asks for.
  */
 
@@ -19,6 +19,7 @@ import { loadSyncConfig, matchRule } from "../sync-config.ts";
 import { deriveRepoIdentity } from "../settings/identity.ts";
 import { killWorktreeProcesses } from "../daemon/worktree-process-kill.ts";
 import { RETENTION_MS, reapTrashDir, retireTree, stripTrashDir, writeDisposalManifest } from "./trash.ts";
+import type { RunningRunScan } from "../runs/store.ts";
 
 /** Merge-reactor disposals ignore claims younger than this (stale-event protection). */
 const GRACE_MS = 10 * 60_000;
@@ -126,11 +127,19 @@ export interface DisposeDeps {
   killProcesses: boolean;
   /** The calling CLI process (and its descendants) to spare from the kill. */
   callerPids?: number[];
+  /** Live-run lookup by worktree path, guard 4: wired from `findRunningRunByWorktree`
+      in lib/runs/store.ts. Required (not optional) so a new construction site
+      can't forget it and silently fail open on a running-run tree. */
+  findRunningRun: (worktree: string) => RunningRunScan;
 }
 
 export type DisposeOutcome =
   | { disposed: true; trash?: { path: string; keptUntil: string } }
-  | { disposed: false; refusal: string };
+  /** `detail` is set only where the bare `refusal` code can't name what a
+      human needs to act on it (the run id and stage for `running-run`); every
+      caller that surfaces `refusal` to a person should print `detail` too
+      when present. */
+  | { disposed: false; refusal: string; detail?: string };
 
 /** The MR joined to this tree, if the branch cache knows one for this repo. */
 function joinedMr(
@@ -188,13 +197,13 @@ export async function disposeTree(
   const force = opts.force === true;
   const auto = opts.auto === true;
 
-  const refuse = (refusal: string): DisposeOutcome => {
-    const fields = { repo: repoName, tree: rec.name, refusal };
+  const refuse = (refusal: string, detail?: string): DisposeOutcome => {
+    const fields = { repo: repoName, tree: rec.name, refusal, ...(detail ? { detail } : {}) };
     // Auto refusals repeat every reactor pass for as long as the tree sits
     // disposable, so they belong at debug; a human-driven refusal is a one-off.
     if (auto && log.debug) log.debug(fields, "worktree dispose refused");
     else log.info(fields, "worktree dispose refused");
-    return { disposed: false, refusal };
+    return { disposed: false, refusal, ...(detail ? { detail } : {}) };
   };
 
   // All three callers hold the tree lock, but their record was collected
@@ -239,12 +248,24 @@ export async function disposeTree(
       if (anchorRefusal) return refuse(anchorRefusal);
     }
 
-    // 4. Nobody is attending the MR right now.
+    // 4. No pipeline run is still live in this worktree: a running run can go
+    //    on writing to the filesystem disposal is about to remove. A scan
+    //    that could not finish (an unreadable run DB) must refuse too --
+    //    reporting "none" here would let disposal race a run it failed to see.
+    const scan = deps.findRunningRun(rec.path);
+    if (scan.kind === "match") {
+      return refuse("running-run", `running run ${scan.run.id} at ${scan.run.currentStage}; rt runs abandon ${scan.run.id}`);
+    }
+    if (scan.kind === "incomplete") {
+      return refuse("runs-unreadable", "could not verify no run is live in this worktree; check manually with `rt runs`");
+    }
+
+    // 5. Nobody is attending the MR right now.
     if (mr && typeof mr.iid === "number" && hasFreshAttendantLease(mr.iid)) {
       return refuse("attended");
     }
 
-    // 5. Auto only: a just-claimed tree can't be reaped by a stale merge event.
+    // 6. Auto only: a just-claimed tree can't be reaped by a stale merge event.
     if (auto && rec.claimedAt) {
       const claimedMs = Date.parse(rec.claimedAt);
       if (!Number.isNaN(claimedMs) && Date.now() - claimedMs < GRACE_MS) return refuse("grace");

@@ -17,6 +17,7 @@ import { createTree } from "../../worktree/create.ts";
 import { disposeTree } from "../../worktree/dispose.ts";
 import { loadWorktreeRepoConfig, type WorktreeAppConfig } from "../../worktree/config.ts";
 import { backoffDelayMs, type FreshenDeps } from "./freshen.ts";
+import type { RunningRunScan } from "../../runs/store.ts";
 
 // Machine-side clamp (S077): no team declaration builds more than this on one laptop.
 export const WORKTREE_ONDECK_CEILING = 5;
@@ -127,7 +128,11 @@ export function poolCounts(repoName: string): {
  * attempt per window instead of `onDeck` attempts per cache tick.
  */
 export async function replenishAndShrink(
-  deps: FreshenDeps & { backoff?: CreateBackoffMap },
+  deps: FreshenDeps & {
+    backoff?: CreateBackoffMap;
+    /** Threaded into the shrink path's disposeTree call; wired from `findRunningRunByWorktree` in lib/runs/store.ts. */
+    findRunningRun: (worktree: string) => RunningRunScan;
+  },
   creationPromises: Map<string, Promise<void>>,
   appConfig: WorktreeAppConfig,
 ): Promise<void> {
@@ -222,7 +227,7 @@ export async function replenishAndShrink(
         return;
       }
       await disposeTree(
-        { repoName, repoPath, cacheEntries: {}, emit, log, killProcesses: appConfig.killProcesses },
+        { repoName, repoPath, cacheEntries: {}, emit, log, killProcesses: appConfig.killProcesses, findRunningRun: deps.findRunningRun },
         fresh,
         { auto: false },
       );

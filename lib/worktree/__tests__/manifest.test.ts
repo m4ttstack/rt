@@ -88,6 +88,7 @@ describe("dispose writes a durable manifest", () => {
       emit: (type, data) => events.push({ type, data }),
       log: { info: () => {}, warn: () => {} },
       killProcesses: false,
+      findRunningRun: () => ({ kind: "none" }),
     };
   }
 

@@ -774,6 +774,11 @@ function postAndNotify(
   const { room, handle, body, mentions, quiet } = args;
   const posted = postMessage({ room, handle, body, mentions, quiet }, db);
   if (!posted) return undefined;
+  // Outbound activity is itself presence: shared by chat:post and chat:dm
+  // (both funnel through here), so the author's own row never goes stale
+  // just because it happens to be a quiet stretch of pure sending.
+  const authorPresence = presenceForHandle(handle, db);
+  if (authorPresence) touchLastSeen(authorPresence.sessionId, Date.now(), db);
   // The row is durable at this point. The msg emit is best-effort: a throw
   // here (a full disk, an orphan daemon holding an events.db lock) must
   // never surface as a failed post — the caller would retry and post the
@@ -939,6 +944,8 @@ export function createChatHandlers(opts: {
               : `you are not a member of the room message #${id} is in`;
         return { ok: false, error: why };
       }
+      const ackerPresence = presenceForHandle(handle, db);
+      if (ackerPresence) touchLastSeen(ackerPresence.sessionId, Date.now(), db);
       // Only a first ack owes a receipt: a repeat is already recorded, and
       // re-waking the author is exactly the noise this verb exists to avoid.
       if (!res.already) {
@@ -1001,6 +1008,8 @@ export function createChatHandlers(opts: {
       const payload = rawPayload as Commands["chat:read"]["payload"];
       const { handle, room, limit, sinceMs } = payload;
       const rooms = readUnread({ handle, room, limit: clampLimit(limit, 20), sinceMs }, db);
+      const readerPresence = presenceForHandle(handle, db);
+      if (readerPresence) touchLastSeen(readerPresence.sessionId, Date.now(), db);
       return { ok: true, data: { rooms } };
     },
 

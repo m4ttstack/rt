@@ -12,6 +12,7 @@ import type { CommandResult } from "./types.ts";
 import type { HerdStore, HerdJobRow } from "../herd-store.ts";
 import { herdPrefix, herdSubject, isValidJobName, mintHerdId } from "../herd-store.ts";
 import type { GatesStore } from "../gates-store.ts";
+import type { RunningRunScan } from "../../runs/store.ts";
 import type { createGateHandlers } from "./gate.ts";
 import type { createChatHandlers } from "./chat.ts";
 import type { createAgentHandlers } from "./agent.ts";
@@ -28,13 +29,17 @@ const herdOwner = (herdId: string): string => `herd:${herdId}`;
 export interface HerdDeps {
   store: HerdStore;
   gateStore: Pick<GatesStore, "get">;
-  gate: Pick<ReturnType<typeof createGateHandlers>, "gate:open" | "gate:list" | "gate:close" | "gate:subscribe" | "gate:subscriptions">;
+  gate: Pick<ReturnType<typeof createGateHandlers>, "gate:open" | "gate:list" | "gate:close" | "gate:subscribe" | "gate:subscriptions" | "gate:unsubscribe">;
   chat: Pick<ReturnType<typeof createChatHandlers>, "chat:sign-in" | "chat:join" | "chat:post" | "chat:archive" | "chat:rooms">;
   agent: Pick<ReturnType<typeof createAgentHandlers>, "agent:start">;
   worktree: { "worktree:provision": (payload: any) => Promise<any>; "worktree:dispose": (payload: any) => Promise<any> };
   runWorktree: (runId: string) => string | null;
+  /** Live-run lookup by worktree path, for herd:close's advisory warning; wired from `findRunningRunByWorktree` in lib/runs/store.ts. */
+  findRunningRunByWorktree: (worktree: string) => RunningRunScan;
   /** The chat handle a session already holds, or null; wired from `presenceForSession` in lib/state/presence-store.ts. */
   presenceHandleForSession: (session: string) => string | null;
+  /** Whether the shepherd session's own inbox socket is currently accepting connections; wired from `probeInboxReachability` in lib/daemon/inbox.ts over `resolveInbox`'s binding. */
+  probeInbox: (session: string) => Promise<"reachable" | "unreachable">;
   herdr: typeof herdrRequest;
   herdrRunnerFor: (socket: string | null) => HerdrRunner;
   lifecycle: { connected(socket: string | null): boolean; watch(socket: string): void; sweepClaims(): Promise<void> };
@@ -65,11 +70,17 @@ const SETTLE_UNTIL = ["idle", "blocked", "done"];
 const str = (v: unknown): string | undefined => (typeof v === "string" && v.length > 0 ? v : undefined);
 /** A bare pane id headed into a gate's `pane` field: formatted per the herd's
     hidden-ness so the ref rides addressably wherever that field surfaces
-    (display, focus/resume) -- gate-push.ts's own contract for this field is
-    "a focus/resume ref, never a delivery target", so this is not an escape
-    round-trip; herd gates never carry origin.presentation === "form", the
-    only shape gate-push ever escape-injects into. */
+    (display, focus/resume, and now `origin.paneId`). */
 const refPane = (bare: string | undefined, hidden: boolean): string | undefined => (bare ? formatPaneRef(bare, hidden ? "bg" : "visible") : undefined);
+
+/** herd:ask/milestone's origin: a resolvable pane means the worker's own
+    turn is blocked on this gate in that pane, so presentation "form" lets
+    gate-push's Escape seam dismiss it on answer/close -- the same seam any
+    other pane-origin form gate gets. No resolvable pane (no --pane, no
+    job.pane on record) means no origin at all, the pre-Task-7 shape, and
+    owner derivation falls back to human as before. */
+const paneOrigin = (paneRef: string | undefined): { paneId: string; presentation: "form" } | undefined =>
+  paneRef ? { paneId: paneRef, presentation: "form" } : undefined;
 
 /** `shepherd-2` is a collision suffix chat mints, not a name to ask for again. */
 const baseHandleOf = (handle: string): string => handle.replace(/-\d+$/, "");
@@ -81,8 +92,43 @@ export function jobDir(jobsRoot: string, herdId: string, job: string): string { 
 export function createHerdHandlers(deps: HerdDeps) {
   const { store, log } = deps;
 
-  async function subscribeShepherd(herdId: string, session: string): Promise<CommandResult<"gate:subscribe">> {
-    return deps.gate["gate:subscribe"]({ subjectPrefix: herdPrefix(herdId), session });
+  /** Registers both the prefix row (herd:<id>/*, for the shepherd's own job
+      gates) and the owner row (routes any gate whose `owner` is this herd,
+      regardless of subject -- e.g. a run gate spawned by a job) BEFORE
+      dropping `priorSession`'s matching rows -- the herd's shepherdSession
+      before this call, passed by the resume caller only. Create-before-delete
+      is safe here (never a spurious no-op re-subscribe) because the store's
+      dedupe key is (scope, subjectPrefix, ownerRef, session) and `session`
+      always differs from `priorSession` when there is one to replace.
+      Ordering this way means a failed replacement leaves the prior
+      subscription intact instead of a session with no fan-out at all: if the
+      owner row fails, the just-created prefix row is rolled back and the
+      prior rows are never touched. Prior-row removal is scoped to that ONE
+      session deliberately: any OTHER session's herd-prefix or owner
+      subscription (a manual `rt gate subscribe`, a board relay) is a
+      legitimate co-observer and must survive a resume it had no part in. */
+  async function subscribeShepherd(herdId: string, session: string, priorSession?: string | null): Promise<CommandResult<"gate:subscribe">> {
+    const ownerRef = herdOwner(herdId);
+    const prefix = herdPrefix(herdId);
+
+    const prefixSub = await deps.gate["gate:subscribe"]({ subjectPrefix: prefix, session });
+    if (!prefixSub.ok) return prefixSub;
+    const ownerSub = await deps.gate["gate:subscribe"]({ scope: "owner", ownerRef, subjectPrefix: "", session });
+    if (!ownerSub.ok) {
+      await deps.gate["gate:unsubscribe"]({ id: prefixSub.data.id });
+      return ownerSub;
+    }
+
+    if (priorSession && priorSession !== session) {
+      const prior = await deps.gate["gate:subscriptions"]({ live: true, session: priorSession });
+      if (prior.ok) {
+        for (const sub of prior.data.subscriptions) {
+          const sameHerd = sub.scope === "owner" ? sub.ownerRef === ownerRef : sub.subjectPrefix === prefix;
+          if (sameHerd) await deps.gate["gate:unsubscribe"]({ id: sub.id });
+        }
+      }
+    }
+    return prefixSub;
   }
 
   async function paneStatuses(socket: string | null): Promise<Map<string, string>> {
@@ -109,12 +155,26 @@ export function createHerdHandlers(deps: HerdDeps) {
     return res.ok ? res.data.gates : [];
   }
 
+  /** Open `run:*` gates whose worktree belongs to one of this herd's jobs --
+      shared by `herd:gates` (its own listing) and `herd:resume` (its count
+      of what a resumed shepherd is on the hook for). */
+  async function listHerdRunGates(herdId: string): Promise<GateRow[]> {
+    const runs = await deps.gate["gate:list"]({ open: true, subjectPrefix: "run:" });
+    if (!runs.ok) return [];
+    const trees = new Set(store.jobs(herdId).map((j) => j.worktree));
+    return runs.data.gates.filter((g) => {
+      const wt = deps.runWorktree(g.subject.slice("run:".length));
+      return wt !== null && trees.has(wt);
+    });
+  }
+
   async function statusData(herdId: string): Promise<HerdStatusData | null> {
     const herd = store.get(herdId);
     if (!herd) return null;
-    const [panes, gates, unread, subs] = await Promise.all([
+    const [panes, gates, unread, subs, pushState] = await Promise.all([
       paneStatuses(herd.herdrSocket), openHerdGates(herdId), unreadFor(herd.shepherdHandle, herd.room),
       deps.gate["gate:subscriptions"]({ session: herd.shepherdSession }),
+      deps.probeInbox(herd.shepherdSession),
     ]);
     const jobs = store.jobs(herdId).map((j: HerdJobRow) => {
       const last = j.lastGate ? deps.gateStore.get(j.lastGate) : null;
@@ -134,11 +194,21 @@ export function createHerdHandlers(deps: HerdDeps) {
     // hide the very state `renderStatus` prints DEAD for.
     const mine = subs.ok ? subs.data.subscriptions.filter((s) => s.subjectPrefix === herdPrefix(herdId)) : [];
     const subRow = mine.findLast((s) => !s.dead) ?? mine.at(-1) ?? null;
+    // Run-gate pushes land on the owner-scoped row, never the prefix row
+    // (fanOut's first-match dedupe stops at whichever row matches first), so
+    // the freshest delivery for this herd can be sitting on either row.
+    const ownerRows = subs.ok ? subs.data.subscriptions.filter((s) => s.scope === "owner" && s.ownerRef === herdOwner(herdId)) : [];
+    const ownerRow = ownerRows.findLast((s) => !s.dead) ?? ownerRows.at(-1) ?? null;
+    const pushDelivery =
+      subRow?.lastDelivery && ownerRow?.lastDelivery
+        ? (subRow.lastDelivery.at >= ownerRow.lastDelivery.at ? subRow.lastDelivery : ownerRow.lastDelivery)
+        : (subRow?.lastDelivery ?? ownerRow?.lastDelivery ?? null);
     return {
       herd, jobs, unread,
       lifecycleConnected: deps.lifecycle.connected(herd.herdrSocket),
       hiddenUp: herd.hidden ? await deps.bg.up() : null,
       subscription: subRow ? { id: subRow.id, dead: subRow.dead, lastDelivery: subRow.lastDelivery } : null,
+      push: { state: pushState, lastDelivery: pushDelivery },
     };
   }
 
@@ -250,7 +320,7 @@ export function createHerdHandlers(deps: HerdDeps) {
       if (!herdId || !session) return { ok: false, error: "herd and session are required" };
       const herd = store.get(herdId);
       if (!herd) return { ok: false, error: `unknown herd "${herdId}"` };
-      const sub = await subscribeShepherd(herdId, session);
+      const sub = await subscribeShepherd(herdId, session, herd.shepherdSession);
       if (!sub.ok) return sub;
       // Presence binds a handle to a session: without a row for the relaunched
       // session, worker reports and lifecycle posts wake nobody.
@@ -264,7 +334,8 @@ export function createHerdHandlers(deps: HerdDeps) {
       if (!join.ok) return join;
       store.setShepherd(herdId, { session, handle });
       const status = (await statusData(herdId))!;
-      return { ok: true, data: { subscription: sub.data.id, gates: await openHerdGates(herdId), unread: status.unread, status, handle } };
+      const gates = [...(await openHerdGates(herdId)), ...(await listHerdRunGates(herdId))];
+      return { ok: true, data: { subscription: sub.data.id, gates, unread: status.unread, status, handle } };
     },
 
     "herd:status": async (raw: unknown): Promise<CommandResult<"herd:status">> => {
@@ -289,7 +360,18 @@ export function createHerdHandlers(deps: HerdDeps) {
       if (!herd || !job) return { ok: false, error: `unknown job "${name}" in herd "${herdId}"` };
       if (job.pane) await closePane(herd.herdrSocket, job.pane, { herd: herdId, job: name });
       store.setJobStatus(herdId, name, "closed");
-      return { ok: true, data: { job: name, status: "closed" } };
+      // Advisory, not a refusal: an abandoned run is resumable, so a running
+      // pipeline in the job's worktree is worth flagging but never blocks close.
+      // A scan that could not finish gets the same advisory treatment: warn
+      // rather than silently reading it as "nothing running".
+      const scan = deps.findRunningRunByWorktree(job.worktree);
+      const warning =
+        scan.kind === "match"
+          ? `job worktree has running run ${scan.run.id} at ${scan.run.currentStage}; finish it or run: rt runs abandon ${scan.run.id}`
+          : scan.kind === "incomplete"
+            ? "could not verify runs; check manually"
+            : undefined;
+      return { ok: true, data: { job: name, status: "closed", ...(warning && { warning }) } };
     },
 
     "herd:spawn": async (raw: unknown): Promise<CommandResult<"herd:spawn">> => {
@@ -360,12 +442,7 @@ export function createHerdHandlers(deps: HerdDeps) {
       if (!herdId) return { ok: false, error: "herd is required" };
       if (!store.get(herdId)) return { ok: false, error: `unknown herd "${herdId}"` };
       const own = await openHerdGates(herdId);
-      const runs = await deps.gate["gate:list"]({ open: true, subjectPrefix: "run:" });
-      const trees = new Set(store.jobs(herdId).map((j) => j.worktree));
-      const matched = runs.ok ? runs.data.gates.filter((g) => {
-        const wt = deps.runWorktree(g.subject.slice("run:".length));
-        return wt !== null && trees.has(wt);
-      }) : [];
+      const matched = await listHerdRunGates(herdId);
       return { ok: true, data: { gates: [...own, ...matched] } };
     },
 
@@ -376,10 +453,11 @@ export function createHerdHandlers(deps: HerdDeps) {
       const herd = store.get(herdId);
       const job = herd ? store.getJob(herdId, name) : null;
       if (!herd || !job) return { ok: false, error: `unknown job "${name}" in herd "${herdId}"` };
+      const paneRef = refPane(str(p?.pane) ?? job.pane ?? undefined, herd.hidden);
       const opened = await deps.gate["gate:open"]({
         subject: herdSubject(herdId, name), kind: "question", questions: p!.questions,
-        meta: { herd: herdId, job: name }, agent: name, pane: refPane(str(p?.pane) ?? job.pane ?? undefined, herd.hidden),
-        nudge: { session }, context: str(p?.context),
+        meta: { herd: herdId, job: name }, agent: name, pane: paneRef,
+        nudge: { session }, context: str(p?.context), origin: paneOrigin(paneRef),
       });
       if (!opened.ok) return opened;
       store.setJobStatus(herdId, name, "at-gate", { lastGate: opened.data.id });
@@ -395,11 +473,12 @@ export function createHerdHandlers(deps: HerdDeps) {
       const summary = str(p?.summary) ?? `milestone: ${artifact}`;
       const posted = await deps.chat["chat:post"]({ room: herd.room, handle: job.handle, body: `${summary}\n\nartifact: ${artifact}`, quiet: true });
       if (!posted.ok) return posted;
+      const milestonePaneRef = refPane(str(p?.pane) ?? job.pane ?? undefined, herd.hidden);
       const opened = await deps.gate["gate:open"]({
         subject: herdSubject(herdId, name), kind: "milestone",
         questions: [{ id: "decision", label: summary, multi: false, options: [...MILESTONE_OPTIONS] }],
         meta: { herd: herdId, job: name, artifact, message: posted.data.id },
-        agent: name, pane: refPane(str(p?.pane) ?? job.pane ?? undefined, herd.hidden), nudge: { session },
+        agent: name, pane: milestonePaneRef, nudge: { session }, origin: paneOrigin(milestonePaneRef),
       });
       if (!opened.ok) return opened;
       store.setJobStatus(herdId, name, "at-milestone", { lastGate: opened.data.id });

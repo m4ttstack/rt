@@ -20,6 +20,15 @@ function dirs(path: string): string[] {
   }
 }
 
+/**
+ * The repo keys `listRuns` currently has dirs for -- what the CLI's `--repo`
+ * filter checks a raw, unresolvable arg against before it decides the arg
+ * names a real (if pre-cutover) run-dir key rather than an unknown repo.
+ */
+export function listRunRepoDirs(): string[] {
+  return dirs(runsRoot());
+}
+
 function openRun(repo: string, runId: string): { db: Database; schemaAhead: boolean } | null {
   if (!isPathComponent(repo) || !isPathComponent(runId)) return null;
   const path = join(runsRoot(), repo, runId, "state.db");
@@ -189,6 +198,50 @@ export function findRun(runId: string, liveness?: RunLiveness): RunDetail | null
 // already destructures a RunSummary; pairing it with runDb here keeps that
 // contained.
 export type RunSessionMatch = { summary: RunSummary; runDb: string };
+
+export type RunningRunScan =
+  | { kind: "match"; run: { id: string; currentStage: string } }
+  | { kind: "none" }
+  | { kind: "incomplete" };
+
+/** Scans every run DB for a live run anchored at `worktree`, guarding herd
+    close/dispose against a filesystem a running pipeline still owns.
+    Distinguishes "found nothing" from "could not finish looking": a run dir
+    whose state.db could not be opened or queried makes the whole scan
+    `incomplete` rather than silently reporting `none` -- a caller gating a
+    destructive action on this must fail closed, never treat an unreadable
+    run DB as proof nothing is running there. */
+export function findRunningRunByWorktree(worktree: string): RunningRunScan {
+  let incomplete = false;
+  for (const repo of dirs(runsRoot())) {
+    for (const id of dirs(join(runsRoot(), repo))) {
+      if (!isPathComponent(repo) || !isPathComponent(id)) continue;
+      const path = join(runsRoot(), repo, id, "state.db");
+      if (!existsSync(path)) continue;
+      let db: Database;
+      try {
+        db = new Database(path, { readonly: true });
+      } catch {
+        incomplete = true;
+        continue;
+      }
+      try {
+        const run = db.query("SELECT status, current_stage FROM runs LIMIT 1").get() as
+          { status: string; current_stage: string | null } | undefined;
+        if (!run) { incomplete = true; continue; }
+        if (run.status !== "running") continue;
+        const field = db.query("SELECT value FROM fields WHERE key = 'worktree'").get() as
+          { value: string } | undefined;
+        if (field?.value === worktree) return { kind: "match", run: { id, currentStage: run.current_stage ?? "" } };
+      } catch {
+        incomplete = true;
+      } finally {
+        db.close();
+      }
+    }
+  }
+  return incomplete ? { kind: "incomplete" } : { kind: "none" };
+}
 
 export function findRunsBySession(sessionId: string): RunSessionMatch[] {
   const out: RunSessionMatch[] = [];
