@@ -1366,13 +1366,15 @@ function repoOptionValue(r: KnownRepo, i: number, duplicated: Set<string>): stri
   return duplicated.has(r.repoName) ? `${r.repoName}#${i}` : r.repoName;
 }
 
-/** Picker options for a repo list, alphabetical by label: short labels,
-    upgraded to owner/name where two repos would otherwise render identically,
-    and to the full decoded id when even owner/name collides (same owner/name
-    on two hosts; two path repos sharing a basename). Values are computed
-    against the caller's list order before sorting, so a `name#i` qualifier
-    still indexes the list it came from. Resolve what the picker returns with
-    `repoFromOptionValue` — the values are list-scoped, not bare index keys. */
+/** Picker options for a repo list, alphabetical by label with missing rows
+    last (a leftover awaiting locate must not sit above live repos): short
+    labels, upgraded to owner/name where two repos would otherwise render
+    identically, and to the full decoded id when even owner/name collides
+    (same owner/name on two hosts; two path repos sharing a basename). Values
+    are computed against the caller's list order before sorting, so a
+    `name#i` qualifier still indexes the list it came from. Resolve what the
+    picker returns with `repoFromOptionValue` — the values are list-scoped,
+    not bare index keys. */
 export function repoOptions(repos: KnownRepo[]): Array<ReturnType<typeof repoOption>> {
   const shortCounts = new Map<string, number>();
   const qualifiedCounts = new Map<string, number>();
@@ -1389,9 +1391,13 @@ export function repoOptions(repos: KnownRepo[]): Array<ReturnType<typeof repoOpt
     const label = (shortCounts.get(short) ?? 0) <= 1
       ? short
       : (qualifiedCounts.get(qualified) ?? 0) > 1 ? repoLabelFull(r.repoName) : qualified;
-    return { ...repoOption(r, label), value: repoOptionValue(r, i, duplicated) };
+    return { option: { ...repoOption(r, label), value: repoOptionValue(r, i, duplicated) }, missing: r.missing === true };
   });
-  return options.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" }));
+  return options
+    .sort((a, b) =>
+      Number(a.missing) - Number(b.missing) ||
+      a.option.label.localeCompare(b.option.label, undefined, { sensitivity: "base" }))
+    .map((o) => o.option);
 }
 
 /** The row a `repoOptions` value came from. The list must be the one the
