@@ -7,7 +7,7 @@ import { ScrollPane } from "./ScrollPane.tsx";
 /**
  * Visual tier for the ScrollPane recipe.
  *
- * BASELINES ARE TRACKED IN GIT — see Badge.visual.test.tsx.
+ * BASELINES ARE TRACKED IN GIT: see Badge.visual.test.tsx.
  *
  * No perpetual animation anywhere in ScrollPane.module.css, so unlike
  * Badge/StatusDot there is no motion freeze to install here.
