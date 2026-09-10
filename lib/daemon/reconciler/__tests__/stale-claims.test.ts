@@ -81,6 +81,7 @@ describe("stale-claim sweep", () => {
         emit: () => {},
         log: fakeLog(),
         killProcesses: false,
+        findRunningRun: () => ({ kind: "none" as const }),
         ...(liveCwds ? { liveCwds } : {}),
       },
       cfg,
