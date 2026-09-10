@@ -142,4 +142,34 @@ describe("detectLayout", () => {
     writeFile(join(dir, "attachments", "forge", "checkout", "SKILL.md"), "x");
     expect(detectLayout(dir)).toBe("grouped");
   });
+
+  test("discoverPacks carries the marketplace registration key", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "rt-packs-mkt-")));
+    const marketDir = join(root, "beacon-market");
+    const packDir = join(marketDir, "packs", "acme");
+    mkdirSync(join(packDir, "pack"), { recursive: true });
+    writeFileSync(join(packDir, "pack", "surface.jsonc"), `{ "public": [] }\n`);
+    mkdirSync(join(marketDir, ".claude-plugin"), { recursive: true });
+    writeFileSync(
+      join(marketDir, ".claude-plugin", "marketplace.json"),
+      JSON.stringify({ name: "beacon", plugins: [{ name: "acme", source: "./packs/acme" }] }),
+    );
+    const settingsPath = join(root, "settings.json");
+    writeFileSync(
+      settingsPath,
+      JSON.stringify({ extraKnownMarketplaces: { beacon: { source: { source: "directory", path: marketDir } } } }),
+    );
+
+    const packs = discoverPacks({ settingsPath });
+    expect(packs).toHaveLength(1);
+    expect(packs[0]!.name).toBe("acme");
+    expect(packs[0]!.marketplace).toBe("beacon");
+  });
+
+  test("extraPackDirs packs have no marketplace", () => {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "rt-packs-extra-")));
+    writeFileSync(join(dir, "surface.jsonc"), `{ "public": [] }\n`);
+    const packs = discoverPacks({ settingsPath: join(dir, "nope.json"), extraPackDirs: [{ name: "x", dir }] });
+    expect(packs[0]!.marketplace).toBeNull();
+  });
 });

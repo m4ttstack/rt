@@ -3,10 +3,11 @@ import { execFileSync } from "child_process";
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { dirname, join } from "path";
-import { skillsCheck, skillsCompile, skillsComposition, skillsPacks } from "../skills.ts";
+import { compilePackAll, installedCacheLine, installedInfoFor, skillsCheck, skillsCompile, skillsComposition, skillsPacks } from "../skills.ts";
 import { compileSkill } from "../../lib/skills/compile.ts";
 import { invocableRoster, loadAttachment, loadStepSource } from "../../lib/skills/sources.ts";
 import type { PluginRoots } from "../../lib/skills/sources.ts";
+import type { PackInfo } from "../../lib/skills/packs.ts";
 import type { VerbDef } from "../../lib/skills/types.ts";
 import { runExpectingCleanExit } from "../../lib/skills/__tests__/helpers.ts";
 
@@ -218,6 +219,7 @@ function computeGolden(mattstackDir: string) {
       mattstack: { dir: join(mattstackDir, "plugins", "mattstack"), version: "1.2.0" },
       acme: { dir: join(mattstackDir, "plugins", "acme"), version: "0.3.0" },
     },
+    list: [],
   };
   const verb: VerbDef = { name: "watch-ci", engine: "watch-ci", description: "Use when watching or triaging CI." };
   const step = loadStepSource("watch-ci", roots);
@@ -644,6 +646,29 @@ describe("skillsCompile", () => {
     expect(exitCode).toBe(1);
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain("skills.jsonc");
+  });
+
+  test("compilePackAll writes the pack and reports ok", async () => {
+    const mattstackDir = makeMattstackDir();
+    const packDir = makePackDir();
+    const manifest = makeManifest("t");
+
+    const result = await compilePackAll({ pack: "t", packDir, mattstackDir, manifest });
+
+    expect(result).toEqual({ ok: true, errors: [] });
+    expect(existsSync(join(packDir, "skills", "watch-ci", "SKILL.md"))).toBe(true);
+  });
+
+  test("compilePackAll surfaces lint failures as errors, writing nothing", async () => {
+    const mattstackDir = makeMattstackDir();
+    const packDir = makePackDir();
+    const manifest = makeManifest("t", false); // reuses the missing-required-binding fixture
+
+    const result = await compilePackAll({ pack: "t", packDir, mattstackDir, manifest });
+
+    expect(result.ok).toBe(false);
+    expect(result.errors.length).toBeGreaterThan(0);
+    expect(existsSync(join(packDir, "skills", "watch-ci"))).toBe(false);
   });
 });
 
@@ -1311,6 +1336,82 @@ describe("skillsCheck", () => {
     expect(staleLine).toContain("watch-ci");
     expect(staleLine).toContain("SKILL.md");
     expect(process.exitCode).toBe(1);
+  });
+
+  test("check --json reports installed: null under --mattstack-dir and drift alone drives the exit code", async () => {
+    const mattstackDir = makeMattstackDir();
+    const packDir = makePackDir();
+    const manifestPath = makeManifest("t");
+
+    await skillsCompile(["--pack", "t", "--pack-dir", packDir, "--mattstack-dir", mattstackDir, "--manifest", manifestPath, "--verb", "watch-ci"]);
+    logs = [];
+
+    await skillsCheck(["--pack", "t", "--pack-dir", packDir, "--mattstack-dir", mattstackDir, "--manifest", manifestPath, "--verb", "watch-ci", "--json"]);
+
+    const payload = JSON.parse(logs.at(-1)!);
+    expect(payload.installed).toBeNull();
+    expect(payload.verbs.every((v: { status: string }) => v.status === "in-sync")).toBe(true);
+    expect(process.exitCode ?? 0).toBe(0);
+  });
+});
+
+describe("installedInfoFor", () => {
+  function installedFixture(version: string | null): PluginRoots {
+    if (version === null) return { byName: {}, list: [] };
+    const install = realpathSync(mkdtempSync(join(tmpdir(), "rt-check-installed-")));
+    mkdirSync(join(install, ".claude-plugin"), { recursive: true });
+    writeFileSync(join(install, ".claude-plugin", "plugin.json"), JSON.stringify({ name: "acme", version }));
+    return { byName: {}, list: [{ id: "acme@beacon", installPath: install }] };
+  }
+  function packAt(dir: string): PackInfo {
+    return { name: "acme", dir, layout: "flat", surfacePath: join(dir, "surface.jsonc"), marketplace: "beacon" };
+  }
+  function sourcePack(version: string): string {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "rt-check-src-")));
+    mkdirSync(join(dir, ".claude-plugin"), { recursive: true });
+    writeFileSync(join(dir, ".claude-plugin", "plugin.json"), JSON.stringify({ name: "acme", version }));
+    return dir;
+  }
+
+  test("lagging when installed is behind source", () => {
+    const dir = sourcePack("0.5.3");
+    const info = installedInfoFor({ packDir: dir, pluginRoots: installedFixture("0.5.2") }, [packAt(dir)]);
+    expect(info).toEqual({ plugin: "acme", marketplace: "beacon", version: "0.5.2", sourceVersion: "0.5.3", status: "lagging" });
+  });
+
+  test("current when versions match", () => {
+    const dir = sourcePack("0.5.3");
+    expect(installedInfoFor({ packDir: dir, pluginRoots: installedFixture("0.5.3") }, [packAt(dir)])!.status).toBe("current");
+  });
+
+  test("missing when no installed record", () => {
+    const dir = sourcePack("0.5.3");
+    const roots: PluginRoots = { byName: {}, list: [{ id: "other@beacon", installPath: dir }] };
+    expect(installedInfoFor({ packDir: dir, pluginRoots: roots }, [packAt(dir)])!.status).toBe("missing");
+  });
+
+  test("null when the pack has no marketplace or the list is empty", () => {
+    const dir = sourcePack("0.5.3");
+    expect(installedInfoFor({ packDir: dir, pluginRoots: installedFixture(null) }, [packAt(dir)])).toBeNull();
+    const noMkt = { ...packAt(dir), marketplace: null };
+    expect(installedInfoFor({ packDir: dir, pluginRoots: installedFixture("0.5.3") }, [noMkt])).toBeNull();
+  });
+});
+
+describe("installedCacheLine", () => {
+  test("lagging: exact contract string", () => {
+    const line = installedCacheLine({ plugin: "acme", marketplace: "beacon", version: "0.5.2", sourceVersion: "0.5.3", status: "lagging" });
+    expect(line).toBe("installed cache: lagging (0.5.2 installed vs 0.5.3 source) -- run rt skills sync");
+  });
+
+  test("missing: exact contract string", () => {
+    const line = installedCacheLine({ plugin: "acme", marketplace: "beacon", version: null, sourceVersion: "0.5.3", status: "missing" });
+    expect(line).toBe("installed cache: missing (no installed record for acme@beacon) -- run rt skills sync");
+  });
+
+  test("current: no line", () => {
+    const line = installedCacheLine({ plugin: "acme", marketplace: "beacon", version: "0.5.3", sourceVersion: "0.5.3", status: "current" });
+    expect(line).toBeNull();
   });
 });
 

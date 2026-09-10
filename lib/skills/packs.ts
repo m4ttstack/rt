@@ -11,6 +11,7 @@ export type PackInfo = {
   dir: string;
   layout: PackLayout;
   surfacePath: string;
+  marketplace: string | null;
 };
 
 export type DiscoverOpts = {
@@ -51,7 +52,7 @@ export function detectLayout(dir: string): PackLayout {
     : "flat";
 }
 
-function packFromDir(name: string, dir: string): PackInfo | null {
+function packFromDir(name: string, dir: string, marketplace: string | null = null): PackInfo | null {
   let real: string;
   try {
     real = realpathSync(dir);
@@ -60,7 +61,7 @@ function packFromDir(name: string, dir: string): PackInfo | null {
   }
   const surfacePath = surfaceFileFor(real);
   if (!surfacePath) return null;
-  return { name, dir: real, layout: detectLayout(real), surfacePath };
+  return { name, dir: real, layout: detectLayout(real), surfacePath, marketplace };
 }
 
 type MarketplaceEntry = { name?: string; source?: string | { source?: string; path?: string; url?: string } };
@@ -98,7 +99,7 @@ export function discoverPacks(opts: DiscoverOpts = {}): PackInfo[] {
     } catch {
       settings = {};
     }
-    for (const marketplace of Object.values(settings.extraKnownMarketplaces ?? {})) {
+    for (const [marketplaceKey, marketplace] of Object.entries(settings.extraKnownMarketplaces ?? {})) {
       const src = marketplace.source;
       if (!src || src.source !== "directory" || !src.path) continue;
       const marketDir = src.path.startsWith("~") ? join(homedir(), src.path.slice(1)) : src.path;
@@ -114,14 +115,14 @@ export function discoverPacks(opts: DiscoverOpts = {}): PackInfo[] {
         if (!entry.name) continue;
         const pluginDir = pluginDirOf(marketDir, entry.source);
         if (!pluginDir) continue;
-        const pack = packFromDir(entry.name, pluginDir);
+        const pack = packFromDir(entry.name, pluginDir, marketplaceKey);
         if (pack && !found.has(pack.name)) found.set(pack.name, pack);
       }
     }
   }
 
   for (const extra of opts.extraPackDirs ?? []) {
-    const pack = packFromDir(extra.name, extra.dir);
+    const pack = packFromDir(extra.name, extra.dir, null);
     if (pack && !found.has(pack.name)) found.set(pack.name, pack);
   }
 
@@ -152,7 +153,7 @@ export function findEnclosingPack(startDir: string): PackInfo | null {
     // whose root directory is literally named "pack" loses this tiebreak and
     // resolves to its parent; that shape has no unambiguous marker.
     const parentClaimsSame = parent !== dir && surfaceFileFor(parent) === surfacePath;
-    if (surfacePath && !parentClaimsSame) return packFromDir(basename(dir), dir);
+    if (surfacePath && !parentClaimsSame) return packFromDir(basename(dir), dir, null);
     if (parent === dir) return null;
     dir = parent;
   }
