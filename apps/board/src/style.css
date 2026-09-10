@@ -2554,16 +2554,17 @@
   border-bottom: 1px solid var(--border);
 }
 /* The buttons carry the surface, not the strip: a tab sitting straight on the
-   page's grid-paper background is hard to read. The fill is the fg wash
-   (the kit's light tier), not --chrome: light's chrome is near-identical to
-   the page ground, so chrome-filled pills blended into it. */
+   page's grid-paper background is hard to read. The fill is the fg tint
+   mixed OVER --bg, not over transparent: light's chrome was near-identical
+   to the page ground, and a translucent wash let the grid pattern show
+   through the pill. */
 .tui-tab {
   padding: 7px 14px;
   border: 0;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
   border-radius: 6px 6px 0 0;
-  background: var(--surface-wash-fg-5);
+  background: color-mix(in srgb, var(--fg) 5%, var(--bg));
   color: var(--muted-text);
   font: inherit;
   font-size: 13px;
@@ -2578,7 +2579,7 @@
    on the page. */
 .tui-tab:hover {
   color: var(--fg);
-  background: var(--surface-wash-fg-8);
+  background: color-mix(in srgb, var(--fg) 8%, var(--bg));
 }
 .tui-tab.active {
   color: var(--fg);
