@@ -116,6 +116,14 @@ const WAIVED_TOKYO: Record<string, string> = {
     "declared for full parity with tui-kit's hue palette (tokyo-theme.css header: 'every hex below is tui-kit's exact string ... parity with tui-kit is by construction'); no packages/ui component wires this dot role yet.",
   '--tk-dot-bad':
     "declared for full parity with tui-kit's hue palette (tokyo-theme.css header: 'every hex below is tui-kit's exact string ... parity with tui-kit is by construction'); no packages/ui component wires this dot role yet.",
+  '--tk-border-on-card':
+    'on-card contrast role for tui-kit border["on-card"]; no packages/ui component reads it yet.',
+  '--tk-control-edge':
+    'on-card contrast role for tui-kit border["control-on-card"]; no packages/ui component reads it yet.',
+  '--tk-muted-on-card':
+    'on-card contrast role for tui-kit text["muted-on-card"]; no packages/ui component reads it yet.',
+  '--tk-inset':
+    'on-card contrast role for tui-kit surface.inset; no packages/ui component reads it yet.',
 };
 
 const REPO_ROOT = join(import.meta.dirname, '..', '..', '..');

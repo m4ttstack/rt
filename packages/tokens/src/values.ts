@@ -13,17 +13,22 @@ export interface ColorScheme {
     mutedText: string;
     accentText: string;
     redText: string;
+    mutedOnCard: string;
   };
   surface: {
     chrome: string;
     bg: string;
     panel: string;
     card: string;
+    inset: string;
   };
   line: {
     border: string;
     soft: string;
     grid: string;
+    // On-card contrast roles: --border/--muted-text sit too close to --card in dark; these are the stronger pairings gate surfaces read.
+    edgeOnCard: string;
+    controlEdgeOnCard: string;
   };
   dot: {
     ok: string;
@@ -62,17 +67,21 @@ export const TOKENS: Tokens = {
       mutedText: '#565d80',
       accentText: '#1c5fbf',
       redText: '#c8214f',
+      mutedOnCard: '#565d80',
     },
     surface: {
       chrome: '#f3f4f7',
       bg: '#f7f8fa',
       panel: '#fbfbfc',
       card: '#ffffff',
+      inset: '#f7f8fa',
     },
     line: {
       border: '#c8cad6',
       soft: '#d5d7e2',
       grid: 'rgba(52, 59, 88, 0.05)',
+      edgeOnCard: '#c8cad6',
+      controlEdgeOnCard: '#c8cad6',
     },
     dot: {
       ok: '#1f9d3a',
@@ -96,17 +105,21 @@ export const TOKENS: Tokens = {
       mutedText: '#969ec2',
       accentText: '#7aa2f7',
       redText: '#f7768e',
+      mutedOnCard: '#aab3d8',
     },
     surface: {
       chrome: '#232a47',
       bg: '#16161e',
       panel: '#232a47',
       card: '#2c3352',
+      inset: '#1c2136',
     },
     line: {
       border: '#3b4261',
       soft: '#313853',
       grid: 'rgba(122, 162, 247, 0.06)',
+      edgeOnCard: '#505879',
+      controlEdgeOnCard: '#6b7499',
     },
     dot: {
       ok: '#4ade5b',

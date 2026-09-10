@@ -54,3 +54,41 @@ describe('CSS_TEXT overrides', () => {
     }
   });
 });
+
+describe('on-card contrast roles', () => {
+  it.each(SCHEMES)('%s: mutedOnCard clears 4.5:1 on card', scheme => {
+    const t = TOKENS[scheme];
+    expect(
+      contrastRatio(t.text.mutedOnCard, t.surface.card)
+    ).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it.each(SCHEMES)(
+    '%s: edgeOnCard at least as strong as border against card',
+    scheme => {
+      const t = TOKENS[scheme];
+      expect(
+        contrastRatio(t.line.edgeOnCard, t.surface.card)
+      ).toBeGreaterThanOrEqual(contrastRatio(t.line.border, t.surface.card));
+    }
+  );
+
+  it.each(SCHEMES)(
+    '%s: controlEdgeOnCard at least as strong as edgeOnCard against card',
+    scheme => {
+      const t = TOKENS[scheme];
+      expect(
+        contrastRatio(t.line.controlEdgeOnCard, t.surface.card)
+      ).toBeGreaterThanOrEqual(
+        contrastRatio(t.line.edgeOnCard, t.surface.card)
+      );
+    }
+  );
+
+  it.each(SCHEMES)('%s: inset sits below card in luminance', scheme => {
+    const t = TOKENS[scheme];
+    expect(srgbLuminance(t.surface.inset)).toBeLessThan(
+      srgbLuminance(t.surface.card)
+    );
+  });
+});

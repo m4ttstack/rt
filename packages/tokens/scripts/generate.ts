@@ -39,9 +39,9 @@ function pick(path: string, value: string): string {
 /**
  * Maps a TOKENS color scheme onto tui-kit's `tuiTheme.tokens.colors` /
  * `TUI_DARK_COLORS` shape. tui-kit has one canonical shade per hue (`"500"`)
- * where TOKENS has a bare hex, and collapses `text` to the five leaves
- * (`fg`, `muted`, `mutedText`, `accentText`, `redText`) it consumes --
- * `wash` is a percentage, not a color, and stays out of this map.
+ * where TOKENS has a bare hex, and collapses `text` to the six leaves
+ * (`fg`, `muted`, `mutedText`, `accentText`, `redText`, `mutedOnCard`) it
+ * consumes -- `wash` is a percentage, not a color, and stays out of this map.
  */
 function buildTuiKitColors(scheme: 'light' | 'dark') {
   const t: ColorScheme = TOKENS[scheme];
@@ -59,17 +59,21 @@ function buildTuiKitColors(scheme: 'light' | 'dark') {
       mutedText: at('text.mutedText', t.text.mutedText),
       accentText: at('text.accentText', t.text.accentText),
       redText: at('text.redText', t.text.redText),
+      mutedOnCard: at('text.mutedOnCard', t.text.mutedOnCard),
     },
     surface: {
       bg: at('surface.bg', t.surface.bg),
       panel: at('surface.panel', t.surface.panel),
       card: at('surface.card', t.surface.card),
       chrome: at('surface.chrome', t.surface.chrome),
+      inset: at('surface.inset', t.surface.inset),
     },
     line: {
       border: at('line.border', t.line.border),
       soft: at('line.soft', t.line.soft),
       grid: at('line.grid', t.line.grid),
+      edgeOnCard: at('line.edgeOnCard', t.line.edgeOnCard),
+      controlEdgeOnCard: at('line.controlEdgeOnCard', t.line.controlEdgeOnCard),
     },
     dot: {
       ok: at('dot.ok', t.dot.ok),
@@ -150,9 +154,13 @@ function buildTokyoDeclarations(scheme: 'light' | 'dark') {
     card: at('surface.card', t.surface.card),
     border: at('line.border', t.line.border),
     borderSoft: at('line.soft', t.line.soft),
+    borderOnCard: at('line.edgeOnCard', t.line.edgeOnCard),
+    controlEdge: at('line.controlEdgeOnCard', t.line.controlEdgeOnCard),
     fg: at('text.fg', t.text.fg),
     muted: at('text.muted', t.text.muted),
     mutedText: at('text.mutedText', t.text.mutedText),
+    mutedOnCard: at('text.mutedOnCard', t.text.mutedOnCard),
+    inset: at('surface.inset', t.surface.inset),
     accent: at('hue.accent', t.hue.accent),
     accentText: at('text.accentText', t.text.accentText),
     green: at('hue.ok', t.hue.ok),
@@ -191,12 +199,16 @@ function renderTokyoSchemeBlock(scheme: 'light' | 'dark'): string {
     `  --tk-bg: ${d.bg};`,
     `  --tk-panel: ${d.panel};`,
     `  --tk-card: ${d.card};`,
+    `  --tk-inset: ${d.inset};`,
     `  --tk-border: ${d.border};`,
     `  --tk-border-soft: ${d.borderSoft};`,
+    `  --tk-border-on-card: ${d.borderOnCard};`,
+    `  --tk-control-edge: ${d.controlEdge};`,
     `  --tk-fg: ${d.fg};`,
     `  --tk-muted: ${d.muted};`,
     mutedTextComment,
     `  --tk-muted-text: ${d.mutedText};`,
+    `  --tk-muted-on-card: ${d.mutedOnCard};`,
     `  --tk-accent: ${d.accent};`,
     accentTextComment,
     `  --tk-accent-text: ${d.accentText};`,
