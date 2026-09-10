@@ -126,7 +126,7 @@ describe("gateSubscribe", () => {
     expect(seen).toEqual([{ cmd: "gate:subscribe", payload }]);
   });
 
-  test("forwards scope and ownerRef when present (RT-117)", async () => {
+  test("forwards scope and ownerRef when present", async () => {
     const { sock, seen, stop } = fakeDaemon({
       "gate:subscribe": { ok: true, data: { id: "sub-1" } },
     });

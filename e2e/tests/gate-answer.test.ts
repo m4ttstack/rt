@@ -1,5 +1,5 @@
 /**
- * e2e: gate:answer owner enforcement against a real daemon (RT-117). A gate
+ * e2e: gate:answer owner enforcement against a real daemon. A gate
  * opened on a run whose spawner is a herd is herd-owned; answering it needs
  * the owning shepherd's session, the answering pane itself, or an explicit
  * human --override. A closed (superseded) gate is refused with the id of
@@ -81,7 +81,7 @@ async function openGate(home: string, runId: string, kind = "clarify"): Promise<
   return (JSON.parse(res.stdout) as { id: string }).id;
 }
 
-describe("rt gate answer owner enforcement (RT-117 e2e)", () => {
+describe("rt gate answer owner enforcement e2e", () => {
   let home: string;
   let cleanup: () => void;
   let daemon: ReturnType<typeof runRt>;

@@ -69,7 +69,7 @@ const SETTLE_UNTIL = ["idle", "blocked", "done"];
 const str = (v: unknown): string | undefined => (typeof v === "string" && v.length > 0 ? v : undefined);
 /** A bare pane id headed into a gate's `pane` field: formatted per the herd's
     hidden-ness so the ref rides addressably wherever that field surfaces
-    (display, focus/resume, and now `origin.paneId` -- RT-117 Task 7). */
+    (display, focus/resume, and now `origin.paneId`). */
 const refPane = (bare: string | undefined, hidden: boolean): string | undefined => (bare ? formatPaneRef(bare, hidden ? "bg" : "visible") : undefined);
 
 /** herd:ask/milestone's origin: a resolvable pane means the worker's own

@@ -52,7 +52,7 @@ function harness(opts: {
   return { handlers, store, emitted, broadcasts };
 }
 
-/** Alias read at the RT-117 owner-enforcement call sites below: same harness,
+/** Alias read at the owner-enforcement call sites below: same harness,
     named for what those tests are building (a handler map to answer against). */
 const makeHandlers = harness;
 
@@ -615,7 +615,7 @@ describe("gate:open W4 fields", () => {
   });
 });
 
-describe("gate:open owner derivation (RT-117)", () => {
+describe("gate:open owner derivation", () => {
   test("gate:open derives herd owner from the run's spawner", async () => {
     const { handlers, store } = harness({ runSpawnedBy: () => "herd:h-9" });
     const res = await handlers["gate:open"]({ ...openPayload(), origin: { runId: "r-1", presentation: "wait" } });
@@ -637,7 +637,7 @@ describe("gate:open owner derivation (RT-117)", () => {
   });
 });
 
-describe("gate:open presentation requirement for pane origins (RT-117 Task 7)", () => {
+describe("gate:open presentation requirement for pane origins", () => {
   test("gate:open rejects a pane origin without presentation", async () => {
     const { handlers } = harness();
     const res = await handlers["gate:open"]({ ...openPayload(), origin: { paneId: "bg:w1:p1" } });
@@ -660,7 +660,7 @@ describe("gate:open presentation requirement for pane origins (RT-117 Task 7)", 
   });
 });
 
-describe("gate:answer owner enforcement (RT-117)", () => {
+describe("gate:answer owner enforcement", () => {
   test("gate:answer refuses a non-owner session", async () => {
     const { handlers } = makeHandlers({ runSpawnedBy: () => "herd:h-1", herdShepherd: () => "shep-session" });
     const open = await handlers["gate:open"]({ ...openPayload(), origin: { runId: "r", presentation: "wait" } });

@@ -133,7 +133,7 @@ export function buildAnswerPayload(args: string[], env: NodeJS.ProcessEnv): Comm
   return payload;
 }
 
-/** Turns gate:answer's two structured rejections (RT-117) into the operator-facing
+/** Turns gate:answer's two structured rejections into the operator-facing
     sentences; every other error keeps falling through to its bare `error` string. */
 function answerRejectionMessage(res: RtResponse<Commands["gate:answer"]["data"]>, id: string): string {
   if (res.error === "owned-by") {
@@ -264,7 +264,7 @@ export function buildListPayload(args: string[]): Commands["gate:list"]["payload
 
 /** Every listed row names presentation and owner directly, the same
     wait/human fallback GATE_SUBSCRIPTION_PHRASE uses, so a reader never has
-    to reach into `origin` or special-case a null owner (RT-117 Task 7). */
+    to reach into `origin` or special-case a null owner. */
 export function withGateTokens(
   gates: GateRow[],
 ): Array<GateRow & { presentation: "form" | "wait"; owner: string }> {

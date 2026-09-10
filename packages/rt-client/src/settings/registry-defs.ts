@@ -688,7 +688,7 @@ export const REGISTRY: readonly SettingDef[] = [
     description: "Opaque extra claude arguments appended to every rt agent launch (escape hatch).",
   },
 
-  // --- gates (RT-117 escalation) --------------------------------------------
+  // --- gates (escalation) ----------------------------------------------------
   {
     key: "rt.gates.escalationTtlMinutes",
     type: "number",

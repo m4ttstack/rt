@@ -148,7 +148,7 @@ describe("gate-push", () => {
     expect(delivered[0]!.body).toContain(row.status);
   });
 
-  test("fanOut pushes owner-scoped subscriptions for owned gates only (RT-117)", async () => {
+  test("fanOut pushes owner-scoped subscriptions for owned gates only", async () => {
     const { push, store, delivered } = harness();
     store.subscribe({ subjectPrefix: "", session: "shep", scope: "owner", ownerRef: "herd:h-1" });
     const owned = store.open({ subject: "run:r-1", kind: "clarify", questions: qs(), owner: "herd:h-1" }).row;
@@ -158,7 +158,7 @@ describe("gate-push", () => {
     expect(delivered.map((d) => d.sessionId)).toEqual(["shep"]);
   });
 
-  test("fanOut delivers once per session even when both its prefix and owner rows match (RT-117 dedupe)", async () => {
+  test("fanOut delivers once per session even when both its prefix and owner rows match", async () => {
     const { push, store, delivered } = harness();
     store.subscribe({ subjectPrefix: "herd:h-1/", session: "shep" });
     store.subscribe({ subjectPrefix: "", session: "shep", scope: "owner", ownerRef: "herd:h-1" });
@@ -267,7 +267,7 @@ describe("gate-push escape injection (W4)", () => {
     }
   });
 
-  test("form with no origin.paneId falls back to the top-level pane for the Escape (SKILLS-60)", async () => {
+  test("form with no origin.paneId falls back to the top-level pane for the Escape", async () => {
     const { push, store, events } = w4Harness();
     await push.onAnswered(answeredFormGate(store, "console", { presentation: "form" }));
     expect(events).toEqual(["deliver", "inject:pane-7"]);
@@ -401,7 +401,7 @@ describe("gate-push onClosed (supersede/close, W4 final-review M4)", () => {
   });
 });
 
-describe("GATE_SUBSCRIPTION_PHRASE (RT-117 Task 7)", () => {
+describe("GATE_SUBSCRIPTION_PHRASE", () => {
   test("subscription phrase names presentation and owner", () => {
     expect(GATE_SUBSCRIPTION_PHRASE({ id: "g", status: "open", origin: { presentation: "form" }, owner: "herd:h-1" } as any))
       .toBe("[gate] g is now open (form, owner herd:h-1); re-read the gate registry.");

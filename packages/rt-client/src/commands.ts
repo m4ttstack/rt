@@ -627,7 +627,7 @@ export interface Commands {
    * typed with no envelope hacks. `ok:false` is reserved for
    * not-found/closed/validation failures.
    *
-   * RT-117 owner enforcement adds two structured rejections beyond the plain
+   * Owner enforcement adds two structured rejections beyond the plain
    * `{ok:false, error:string}` shape (see `GateAnswerResult` in
    * `lib/daemon/handlers/gate.ts`): a herd-owned gate answered by anyone but
    * the owning shepherd's session, the answering pane, or an explicit human

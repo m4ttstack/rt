@@ -13,7 +13,7 @@ import type { GatesStore, GateQuestion, GateAnswer, GateRow, GateOrigin } from "
 import type { GatePush } from "../gate-push.ts";
 
 /**
- * gate:answer's two structured rejections (RT-117): a non-owner's answer and
+ * gate:answer's two structured rejections: a non-owner's answer and
  * a closed gate both need fields beyond the generic `{ok:false, error}`
  * shape, so this widens just this one verb's result rather than every
  * command in the catalog.
@@ -108,8 +108,7 @@ function invalidOrigin(v: unknown): string | null {
     }
   }
   // A pane origin without presentation leaves gate-push unable to decide
-  // whether Escape injection is safe (SKILLS-60's silently-unblockable-form
-  // risk, generalized): the opener must say "form" or "wait" up front.
+  // whether Escape injection is safe: the opener must say "form" or "wait" up front.
   if (typeof v.paneId === "string" && v.paneId.length > 0 && v.presentation === undefined) {
     return 'pane origin requires presentation ("form" or "wait")';
   }
@@ -182,7 +181,7 @@ function validateAnswers(questions: GateQuestion[], answers: Record<string, unkn
 
 /** Herd-spawned runs own their gates; everything else (no origin, no runId,
     an unknown run, or a legacy spawner like "shepherdr") falls back to the
-    human owner -- the only two owner shapes RT-117 defines. */
+    human owner. */
 export function deriveOwner(
   origin: GateOrigin | undefined,
   runSpawnedBy?: (runId: string) => string | null,
@@ -362,7 +361,7 @@ export function createGateHandlers(
 
       // Herd-owned gates require the owning shepherd's own session (or the
       // answering pane itself, or an explicit human --override); a null/
-      // "human" owner (including pre-RT-117 rows) is open to any caller.
+      // "human" owner is open to any caller.
       const owner = gate.owner;
       if (owner?.startsWith("herd:") && payload?.override !== true && by !== GATE_BY_PANE) {
         const shepherd = herdShepherd?.(owner.slice("herd:".length)) ?? null;
