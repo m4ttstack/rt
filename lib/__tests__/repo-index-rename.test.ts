@@ -252,6 +252,34 @@ describe("repo-index — rename drift (RT-60)", () => {
       expect(listKvValues("worktree-registry")["moved"]).toBeDefined();
     });
 
+    test("a missing row whose registry holds only dead main records is evicted and the registry dropped", () => {
+      indexRepoAt("deleted", join(scratch, "deleted-repo"), 1_000);
+      setKvValue("worktree-registry", "deleted", [
+        { name: "deleted", path: join(scratch, "deleted-repo"), kind: "main", branch: "main", createdAt: "2026-01-01T00:00:00.000Z" },
+      ]);
+
+      const removed = pruneRepoIndex();
+      const row = removed.find((r) => r.repoName === "deleted");
+
+      expect(row).toMatchObject({ reason: "missing", registry: "dropped" });
+      expect(row?.retained).toBeUndefined();
+      expect(loadRepoIndexEntries()).toEqual([]);
+      expect(listKvValues("worktree-registry")["deleted"]).toBeUndefined();
+    });
+
+    test("--dry-run reports a dead registry as dropped but deletes nothing", () => {
+      indexRepoAt("deleted", join(scratch, "deleted-repo"), 1_000);
+      setKvValue("worktree-registry", "deleted", [
+        { name: "deleted", path: join(scratch, "deleted-repo"), kind: "main", branch: "main", createdAt: "2026-01-01T00:00:00.000Z" },
+      ]);
+
+      const dry = pruneRepoIndex({ dryRun: true });
+
+      expect(dry.find((r) => r.repoName === "deleted")?.registry).toBe("dropped");
+      expect(loadRepoIndexEntries().map((e) => e.repoName)).toEqual(["deleted"]);
+      expect(listKvValues("worktree-registry")["deleted"]).toBeDefined();
+    });
+
     test("a missing row with no registry is still evicted", () => {
       indexRepoAt("gone", join(scratch, "never-existed"), 1_000);
 

@@ -474,6 +474,10 @@ export interface PrunedEntry {
   retained?: true;
   /** Set with `retained`: the verb that resolves this row. */
   hint?: string;
+  /** Set only for `missing`: the row's worktree registry held nothing but
+      dead `main` records (re-derived on registration, unlike claim state),
+      so it was dropped along with the row instead of retaining it. */
+  registry?: "dropped";
 }
 
 /** Outcome of carrying everything keyed to a retired name onto the live name. */
@@ -702,16 +706,26 @@ export function pruneRepoIndex(opts: { dryRun?: boolean } = {}): PrunedEntry[] {
     }
     // A gone path whose registry is still here is a MOVE, not a deletion:
     // dropping the row orphans the pool's claim state under a key nothing
-    // iterates any more.
+    // iterates any more. But only claim state (ephemeral/unmanaged records,
+    // or any record still on disk) is worth stranding the row for — a
+    // registry holding nothing but dead `main` records is re-derived on
+    // registration, so a DELETED repo would otherwise litter the index
+    // forever as an unprunable `missing` row.
     let ownsRegistry = false;
+    let deadRegistry = false;
     try {
       ownsRegistry = hasKvValue(WORKTREE_REGISTRY_NS, entry.repoName);
+      if (ownsRegistry) {
+        const records = getKvValue<TreeRecord[]>(WORKTREE_REGISTRY_NS, entry.repoName, []);
+        deadRegistry = records.every((r) => r.kind === "main" && !existsSync(r.path));
+      }
     } catch { /* unreadable db — treat as no registry and prune as before */ }
     removed.push({
       repoName: entry.repoName,
       path: entry.path,
       reason: "missing",
-      ...(ownsRegistry ? { retained: true as const, hint: "rt repos locate" } : {}),
+      ...(ownsRegistry && !deadRegistry ? { retained: true as const, hint: "rt repos locate" } : {}),
+      ...(ownsRegistry && deadRegistry ? { registry: "dropped" as const } : {}),
     });
   }
 
@@ -731,6 +745,7 @@ export function pruneRepoIndex(opts: { dryRun?: boolean } = {}): PrunedEntry[] {
 
   for (const r of removed) {
     if (r.retained) continue;
+    if (r.registry === "dropped") deleteKvValue(WORKTREE_REGISTRY_NS, r.repoName);
     deleteKvValue(REPO_INDEX_NS, r.repoName);
   }
   writeRepoIndexCompat(loadRepoIndex());
