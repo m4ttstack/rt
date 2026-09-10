@@ -253,7 +253,11 @@ const SYNC_REPORT = {
   steps: [{ name: 'check', status: 'ran', detail: 'no drift' }],
   versions: {
     engine: { before: '0.17.3', after: '0.17.3' },
-    pack: { source: '0.5.3', installedBefore: '0.5.2', installedAfter: '0.5.3' },
+    pack: {
+      source: '0.5.3',
+      installedBefore: '0.5.2',
+      installedAfter: '0.5.3',
+    },
   },
   warnings: [],
   restartNeeded: true,
@@ -335,8 +339,12 @@ describe('skills sync route', () => {
     expect(res.status).toBe(503);
   });
 
-  it('invalidates this pack\'s cached reads: a check after sync re-spawns rt', async () => {
-    const checkStdout = JSON.stringify({ pack: 'demo', packDir: '/p', verbs: [] });
+  it("invalidates this pack's cached reads: a check after sync re-spawns rt", async () => {
+    const checkStdout = JSON.stringify({
+      pack: 'demo',
+      packDir: '/p',
+      verbs: [],
+    });
     const calls: string[][] = [];
     const run = vi.fn(async (argv: string[]) => {
       calls.push(argv);

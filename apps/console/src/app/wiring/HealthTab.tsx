@@ -14,6 +14,7 @@ import type { MantineColor } from '@mattstack/app-kit/core';
 import { useSchemeColors } from '@mattstack/app-kit/hooks';
 import { Icons } from '@mattstack/app-kit/icons';
 
+import { InstalledCachesBar } from './InstalledCachesBar';
 import {
   buildSpine,
   spineRows,
@@ -22,7 +23,6 @@ import {
   type SpineEntry,
   type WiringSpine,
 } from './outline';
-import { InstalledCachesBar } from './InstalledCachesBar';
 import { QuietBadge } from './QuietBadge';
 import { SOFT_RULE } from './SlotRow';
 import { useCompositionSnapshot, useSkillsCheck } from './useWiring';

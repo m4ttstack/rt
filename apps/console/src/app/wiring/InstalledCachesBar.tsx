@@ -1,4 +1,11 @@
-import { Badge, Group, Paper, Stack, Text, UnstyledButton } from '@mattstack/app-kit/core';
+import {
+  Badge,
+  Group,
+  Paper,
+  Stack,
+  Text,
+  UnstyledButton,
+} from '@mattstack/app-kit/core';
 import type { MantineColor } from '@mattstack/app-kit/core';
 import { useSchemeColors } from '@mattstack/app-kit/hooks';
 import { Icons } from '@mattstack/app-kit/icons';
@@ -19,12 +26,7 @@ export interface InstalledCachesBarProps {
 }
 
 type BarState =
-  | 'syncing'
-  | 'synced'
-  | 'refused'
-  | 'recompile'
-  | 'update'
-  | 'in-sync';
+  'syncing' | 'synced' | 'refused' | 'recompile' | 'update' | 'in-sync';
 
 const STATE_LABEL: Record<BarState, string> = {
   syncing: 'syncing',
@@ -151,7 +153,11 @@ export function InstalledCachesBar({
             style={{ borderRadius: 999, padding: '5px 12px', flex: 'none' }}
             data-testid="installed-caches-restart"
           >
-            <Icons.info size={12} color={text.highContrast('accent')} aria-hidden />
+            <Icons.info
+              size={12}
+              color={text.highContrast('accent')}
+              aria-hidden
+            />
             <Text fz={11} c={text.muted}>
               restart running sessions to apply
             </Text>
@@ -213,7 +219,12 @@ export function InstalledCachesBar({
         >
           {report.steps.map(step => (
             <Group key={step.name} gap={8} align="center" wrap="nowrap">
-              <Text ff="monospace" fz={11} c={stepTone(step.status)} style={{ flex: 'none' }}>
+              <Text
+                ff="monospace"
+                fz={11}
+                c={stepTone(step.status)}
+                style={{ flex: 'none' }}
+              >
                 {step.name}
               </Text>
               <Text ff="monospace" fz={11} c={text.muted} truncate>
@@ -223,7 +234,12 @@ export function InstalledCachesBar({
             </Group>
           ))}
           {report.warnings?.map(warning => (
-            <Text key={warning} ff="monospace" fz={11} c={text.highContrast('warn')}>
+            <Text
+              key={warning}
+              ff="monospace"
+              fz={11}
+              c={text.highContrast('warn')}
+            >
               {warning}
             </Text>
           ))}
