@@ -8,7 +8,7 @@
 import { execSync } from "child_process";
 import { join } from "path";
 import { getRepoIdentity, pickWorktreeFromRepo, getWorkspacePackages, repoOptions, repoFromOptionValue, missingRepoRefusal, pickerWorktrees, type KnownRepo } from "./repo.ts";
-import { enrichBranches, formatBranchSegments, type EnrichedBranch } from "./enrich.ts";
+import { enrichBranches, formatBranchSegments, isDefaultBranch, type EnrichedBranch } from "./enrich.ts";
 import { repoLabel } from "./repo-label.ts";
 import type { PickHandle } from "./ui/pick.ts";
 import type { PickAction, PickRow, PickSegment } from "./ui/protocol.ts";
@@ -38,16 +38,26 @@ function annotateCurrent(right: PickSegment[], isCurrent: boolean): PickSegment[
   return right.length > 0 ? [...right, { text: "  " }, marker] : [marker];
 }
 
-/** Cheap `dirName · branch` row shown the instant the picker opens, before enrichment resolves. */
+/**
+ * Cheap `branch · dirName` row shown the instant the picker opens, before
+ * enrichment resolves — same branch-leads/dirName-leads split as
+ * formatBranchSegments, so enrichment doesn't reorder rows' leading text.
+ */
 function cheapWorktreeRow(wt: { path: string; branch: string }, currentPath: string): PickRow {
   const dirName = dirNameOf(wt.path);
-  const left: PickSegment[] = wt.branch
-    ? [
-        { text: dirName, tone: "text", bold: true },
-        { text: " · ", tone: "faint" },
-        { text: wt.branch, tone: "dim" },
-      ]
-    : [{ text: dirName, tone: "text", bold: true }];
+  const left: PickSegment[] = !wt.branch
+    ? [{ text: dirName, tone: "text", bold: true }]
+    : isDefaultBranch(wt.branch)
+      ? [
+          { text: dirName, tone: "text", bold: true },
+          { text: " · ", tone: "faint" },
+          { text: wt.branch, tone: "dim" },
+        ]
+      : [
+          { text: wt.branch, tone: "text", bold: true },
+          { text: " · ", tone: "faint" },
+          { text: dirName, tone: "dim" },
+        ];
   return { value: wt.path, left, right: annotateCurrent([], wt.path === currentPath) };
 }
 
