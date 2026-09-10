@@ -96,6 +96,13 @@
 .tui-controls-header [data-part='segmented-option'] {
   height: 100%;
 }
+/* Rest-state chrome the kit's light tier doesn't carry: weight/nowrap keep
+   the header entry from reading lighter than the old board button and from
+   wrapping its label inside the 28px-high control. */
+.tui-dq-open {
+  font-weight: 500;
+  white-space: nowrap;
+}
 .tui-author {
   color: var(--purple);
   white-space: nowrap;
@@ -1685,6 +1692,10 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+/* Rest-state weight the kit's light tier doesn't carry: board chrome only. */
+.tui-triage-head-actions [data-part='button'] {
+  font-weight: 500;
 }
 /* The queue line sits under the head: count, pips and the gate kind get
    their own row so the head keeps only the title, actions and close. */

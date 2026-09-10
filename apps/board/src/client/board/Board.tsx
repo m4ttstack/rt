@@ -939,6 +939,7 @@ export function Board() {
             {queueEntries.length > 0 && (
               <Button
                 type="button"
+                className="tui-dq-open"
                 variant="light"
                 intent="accent"
                 size="lg"

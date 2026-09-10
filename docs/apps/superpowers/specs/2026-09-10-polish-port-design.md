@@ -128,6 +128,9 @@ Radius stays the base `var(--radius-md)` (6px), matching
 `--gate-radius-btn`. Add `font-weight: 600` scoped to
 `.root[data-variant="filled"]` (board: `.tui-gate-submit`). No other base
 rule changes; existing sizes and consumers are untouched.
+`Button.module.css` also carries a `.root[hidden] { display: none; }`
+guard: the recipe's own `display: inline-flex` would otherwise beat the UA
+`[hidden]` rule and defeat attribute-hiding for any consumer.
 
 ## 3. ScrollPane recipe (tui-kit, new)
 
@@ -143,9 +146,11 @@ New recipe `src/recipes/ScrollPane/`, lifted verbatim from
 - **Root:** flex column; `max-height: var(--sb-scrollpane-max)`;
   `min-height: 0` and `overflow: hidden` (the flex automatic-minimum-size
   trap defeats a bare max-height; this pairing is the fix and gets a
-  comment stating that constraint); `border: 1px solid var(--border-soft)`;
+  comment stating that constraint); `min-width: 0` (the flex-row shrink
+  guard); `border: 1px solid var(--border-soft)`;
   `border-radius: var(--radius-xl)`; `background: var(--card)`;
-  `padding: var(--spacing-rem100) var(--spacing-xxl) var(--spacing-xxl)`.
+  `padding: var(--spacing-rem100) var(--spacing-xxl) var(--spacing-xxl)`;
+  `font-size: var(--type-meta)` (the density the context pane shipped at).
 - **Head (the card-head band):** pinned (flex-shrink 0), bleeds through the
   root padding with negative margins
   (`margin: -1rem -1.1rem 0.55rem; padding: 0.6rem 1.1rem` in token form:
