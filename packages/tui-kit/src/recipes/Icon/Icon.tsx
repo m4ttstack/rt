@@ -146,6 +146,7 @@ export const ICONS: Record<string, ReactNode> = {
     <Icon d="M2 21a8 8 0 0 1 13.292-6M5 8a5 5 0 1 0 10 0a5 5 0 1 0-10 0M16 19l2 2 4-4" />
   ),
   "rotate-ccw": <Icon d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8M3 3v5h5" />,
+  "chevron-right": <Icon d="m9 18 6-6-6-6" />,
 };
 
 /** Outside ICONS because CopyButton toggles between them by path, not by name. */

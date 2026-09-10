@@ -1,5 +1,7 @@
 import type { KeyboardEvent, ReactNode } from 'react';
 
+import { ICONS } from '@mattstack/tui-kit';
+
 /** A collapsible body that animates height via grid-template-rows, so
     content of any height opens and closes smoothly without measuring. The
     body stays mounted either way (a half-typed field survives a collapse) and
@@ -61,7 +63,7 @@ export function DisclosureHead({
       onKeyDown={onKeyDown}
     >
       <span className="tui-disclosure-chevron" aria-hidden="true">
-        ▸
+        {ICONS['chevron-right']}
       </span>
       {children}
     </div>

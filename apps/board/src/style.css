@@ -2326,14 +2326,18 @@
 }
 .tui-disclosure-chevron {
   flex: 0 0 auto;
-  display: inline-block;
-  width: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
   color: var(--muted-text);
-  font-size: 0.8rem;
-  line-height: 1;
   transition:
     transform 180ms ease,
     color 120ms ease;
+}
+.tui-disclosure-chevron svg {
+  width: 16px;
+  height: 16px;
 }
 .tui-disclosure-head.open .tui-disclosure-chevron {
   transform: rotate(90deg);
