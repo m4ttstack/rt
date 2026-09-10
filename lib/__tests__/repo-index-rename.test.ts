@@ -12,6 +12,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { Database } from "bun:sqlite";
 import { execSync } from "child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
@@ -250,6 +251,69 @@ describe("repo-index — rename drift (RT-60)", () => {
       expect(row).toMatchObject({ reason: "missing", retained: true, hint: "rt repos locate" });
       expect(loadRepoIndexEntries().map((e) => e.repoName)).toEqual(["moved"]);
       expect(listKvValues("worktree-registry")["moved"]).toBeDefined();
+    });
+
+    test("a missing row whose registry holds only dead main records is evicted and the registry dropped", () => {
+      indexRepoAt("deleted", join(scratch, "deleted-repo"), 1_000);
+      setKvValue("worktree-registry", "deleted", [
+        { name: "deleted", path: join(scratch, "deleted-repo"), kind: "main", branch: "main", createdAt: "2026-01-01T00:00:00.000Z" },
+      ]);
+
+      const removed = pruneRepoIndex();
+      const row = removed.find((r) => r.repoName === "deleted");
+
+      expect(row).toMatchObject({ reason: "missing", registry: "dropped" });
+      expect(row?.retained).toBeUndefined();
+      expect(loadRepoIndexEntries()).toEqual([]);
+      expect(listKvValues("worktree-registry")["deleted"]).toBeUndefined();
+    });
+
+    test("a missing row whose registry JSON is corrupt is KEPT — corruption is not dead", () => {
+      indexRepoAt("hurt", join(scratch, "gone-away"), 1_000);
+      getStateDb().query("INSERT INTO kv (ns, k, v, updated_at) VALUES (?, ?, ?, ?)").run("worktree-registry", "hurt", "{not json", Date.now());
+
+      const removed = pruneRepoIndex();
+      const row = removed.find((r) => r.repoName === "hurt");
+
+      expect(row).toMatchObject({ reason: "missing", retained: true });
+      expect(row?.registry).toBeUndefined();
+      expect(loadRepoIndexEntries().map((e) => e.repoName)).toEqual(["hurt"]);
+      expect(getStateDb().query("SELECT v FROM kv WHERE ns = 'worktree-registry' AND k = 'hurt'").get()).not.toBeNull();
+    });
+
+    test("a busy db during the registry drop keeps the index row — never orphan the registry", () => {
+      indexRepoAt("deleted", join(scratch, "deleted-repo"), 1_000);
+      setKvValue("worktree-registry", "deleted", [
+        { name: "deleted", path: join(scratch, "deleted-repo"), kind: "main", branch: "main", createdAt: "2026-01-01T00:00:00.000Z" },
+      ]);
+      getStateDb().run("PRAGMA busy_timeout = 50;");
+      const locker = new Database(join(rtDir(), "state.db"));
+      try {
+        locker.run("BEGIN IMMEDIATE;");
+
+        const removed = pruneRepoIndex();
+        const row = removed.find((r) => r.repoName === "deleted");
+
+        expect(row).toMatchObject({ reason: "missing", retained: true, registry: "busy" });
+      } finally {
+        locker.run("ROLLBACK;");
+        locker.close();
+      }
+      expect(loadRepoIndexEntries().map((e) => e.repoName)).toEqual(["deleted"]);
+      expect(listKvValues("worktree-registry")["deleted"]).toBeDefined();
+    });
+
+    test("--dry-run reports a dead registry as dropped but deletes nothing", () => {
+      indexRepoAt("deleted", join(scratch, "deleted-repo"), 1_000);
+      setKvValue("worktree-registry", "deleted", [
+        { name: "deleted", path: join(scratch, "deleted-repo"), kind: "main", branch: "main", createdAt: "2026-01-01T00:00:00.000Z" },
+      ]);
+
+      const dry = pruneRepoIndex({ dryRun: true });
+
+      expect(dry.find((r) => r.repoName === "deleted")?.registry).toBe("dropped");
+      expect(loadRepoIndexEntries().map((e) => e.repoName)).toEqual(["deleted"]);
+      expect(listKvValues("worktree-registry")["deleted"]).toBeDefined();
     });
 
     test("a missing row with no registry is still evicted", () => {

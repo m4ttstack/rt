@@ -474,6 +474,12 @@ export interface PrunedEntry {
   retained?: true;
   /** Set with `retained`: the verb that resolves this row. */
   hint?: string;
+  /** Set only for `missing`. `"dropped"`: the row's worktree registry held
+      nothing but dead `main` records (re-derived on registration, unlike
+      claim state), so it was dropped along with the row. `"busy"`: the drop
+      could not be verified (db busy), so the row was retained — evicting it
+      anyway would orphan the registry; the next prune retries. */
+  registry?: "dropped" | "busy";
 }
 
 /** Outcome of carrying everything keyed to a retired name onto the live name. */
@@ -702,16 +708,30 @@ export function pruneRepoIndex(opts: { dryRun?: boolean } = {}): PrunedEntry[] {
     }
     // A gone path whose registry is still here is a MOVE, not a deletion:
     // dropping the row orphans the pool's claim state under a key nothing
-    // iterates any more.
+    // iterates any more. But only claim state (ephemeral/unmanaged records,
+    // or any record still on disk) is worth stranding the row for — a
+    // registry holding nothing but dead `main` records is re-derived on
+    // registration, so a DELETED repo would otherwise litter the index
+    // forever as an unprunable `missing` row.
     let ownsRegistry = false;
+    let deadRegistry = false;
     try {
       ownsRegistry = hasKvValue(WORKTREE_REGISTRY_NS, entry.repoName);
+      if (ownsRegistry) {
+        // A corrupt row must NOT read as dead: getKvValue's [] fallback would
+        // otherwise classify unparseable claim state as droppable.
+        let corrupt = false;
+        const records = getKvValue<TreeRecord[]>(WORKTREE_REGISTRY_NS, entry.repoName, [], undefined, () => { corrupt = true; });
+        if (corrupt) console.warn(`rt: ${entry.repoName}'s worktree registry is corrupt JSON, leaving it in place`);
+        deadRegistry = !corrupt && records.every((r) => r.kind === "main" && !existsSync(r.path));
+      }
     } catch { /* unreadable db — treat as no registry and prune as before */ }
     removed.push({
       repoName: entry.repoName,
       path: entry.path,
       reason: "missing",
-      ...(ownsRegistry ? { retained: true as const, hint: "rt repos locate" } : {}),
+      ...(ownsRegistry && !deadRegistry ? { retained: true as const, hint: "rt repos locate" } : {}),
+      ...(ownsRegistry && deadRegistry ? { registry: "dropped" as const } : {}),
     });
   }
 
@@ -731,6 +751,17 @@ export function pruneRepoIndex(opts: { dryRun?: boolean } = {}): PrunedEntry[] {
 
   for (const r of removed) {
     if (r.retained) continue;
+    if (r.registry === "dropped") {
+      deleteKvValue(WORKTREE_REGISTRY_NS, r.repoName);
+      // deleteKvValue is warn-and-defer: a busy db swallows the delete. The
+      // index row must not go first — that orphans the registry under a key
+      // nothing iterates, the incident the retention exists for.
+      if (hasKvValue(WORKTREE_REGISTRY_NS, r.repoName)) {
+        r.registry = "busy";
+        r.retained = true;
+        continue;
+      }
+    }
     deleteKvValue(REPO_INDEX_NS, r.repoName);
   }
   writeRepoIndexCompat(loadRepoIndex());
@@ -1351,13 +1382,15 @@ function repoOptionValue(r: KnownRepo, i: number, duplicated: Set<string>): stri
   return duplicated.has(r.repoName) ? `${r.repoName}#${i}` : r.repoName;
 }
 
-/** Picker options for a repo list, alphabetical by label: short labels,
-    upgraded to owner/name where two repos would otherwise render identically,
-    and to the full decoded id when even owner/name collides (same owner/name
-    on two hosts; two path repos sharing a basename). Values are computed
-    against the caller's list order before sorting, so a `name#i` qualifier
-    still indexes the list it came from. Resolve what the picker returns with
-    `repoFromOptionValue` — the values are list-scoped, not bare index keys. */
+/** Picker options for a repo list, alphabetical by label with missing rows
+    last (a leftover awaiting locate must not sit above live repos): short
+    labels, upgraded to owner/name where two repos would otherwise render
+    identically, and to the full decoded id when even owner/name collides
+    (same owner/name on two hosts; two path repos sharing a basename). Values
+    are computed against the caller's list order before sorting, so a
+    `name#i` qualifier still indexes the list it came from. Resolve what the
+    picker returns with `repoFromOptionValue` — the values are list-scoped,
+    not bare index keys. */
 export function repoOptions(repos: KnownRepo[]): Array<ReturnType<typeof repoOption>> {
   const shortCounts = new Map<string, number>();
   const qualifiedCounts = new Map<string, number>();
@@ -1374,9 +1407,13 @@ export function repoOptions(repos: KnownRepo[]): Array<ReturnType<typeof repoOpt
     const label = (shortCounts.get(short) ?? 0) <= 1
       ? short
       : (qualifiedCounts.get(qualified) ?? 0) > 1 ? repoLabelFull(r.repoName) : qualified;
-    return { ...repoOption(r, label), value: repoOptionValue(r, i, duplicated) };
+    return { option: { ...repoOption(r, label), value: repoOptionValue(r, i, duplicated) }, missing: r.missing === true };
   });
-  return options.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" }));
+  return options
+    .sort((a, b) =>
+      Number(a.missing) - Number(b.missing) ||
+      a.option.label.localeCompare(b.option.label, undefined, { sensitivity: "base" }))
+    .map((o) => o.option);
 }
 
 /** The row a `repoOptions` value came from. The list must be the one the

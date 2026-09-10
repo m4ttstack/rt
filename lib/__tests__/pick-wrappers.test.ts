@@ -75,6 +75,15 @@ describe("filterableSelect", () => {
     expect(rows[0]!.right ?? []).toHaveLength(0);
   });
 
+  test("rows match against the label only, never the hint", async () => {
+    fake = installFakePick([resultStep({ action: "select", value: "a" })]);
+    await filterableSelect({
+      message: "Pick one",
+      options: [{ value: "a", label: "rt", hint: "missing — rt repos locate" }],
+    });
+    expect(fake.calls[0]!.request.rows[0]!.match).toBe("rt");
+  });
+
   test("extras.rows overrides the options translation verbatim", async () => {
     fake = installFakePick([resultStep({ action: "select", value: "x" })]);
     const rows = [{ value: "x", left: [{ text: "custom" }] }];

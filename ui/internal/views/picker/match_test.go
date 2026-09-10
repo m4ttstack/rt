@@ -16,6 +16,16 @@ func TestRankEmptyQueryKeepsOrder(t *testing.T) {
 	}
 }
 
+// A whole-word hint match ("rt" after "— ") and a label match at string start
+// score identically in fzf; the shorter target must win the tie, or list
+// order puts a hint hit above the row actually named by the query.
+func TestRankBreaksScoreTiesByLength(t *testing.T) {
+	ms := Rank("rt", []string{"board  missing — rt repos locate", "rt  26 worktrees"}, false)
+	if len(ms) != 2 || ms[0].Index != 1 {
+		t.Fatalf("shorter target should rank first: %+v", ms)
+	}
+}
+
 func TestRankExactMode(t *testing.T) {
 	if len(Rank("prov", []string{"worktree"}, true)) != 0 {
 		t.Fatal("exact should not fuzz")

@@ -32,7 +32,9 @@ func initAlgo() {
 
 // Rank scores targets against query using fzf's FuzzyMatchV2 (or
 // ExactMatchNaive when exact is true) and returns them sorted by score
-// descending, ties broken by original index ascending for stability.
+// descending, ties broken by shorter target then original index — fzf's own
+// default tiebreak (score, length), which keeps a row named exactly by the
+// query ahead of a longer row whose hint happens to contain it.
 // An empty query short-circuits to all rows in their original order with
 // no positions, matching fzf's own "no filter" behavior.
 func Rank(query string, targets []string, exact bool) []Match {
@@ -73,8 +75,15 @@ func Rank(query string, targets []string, exact bool) []Match {
 		matches = append(matches, Match{Index: i, Score: result.Score, Positions: positions})
 	}
 
+	lengths := make([]int, len(targets))
+	for i, target := range targets {
+		lengths[i] = len([]rune(target))
+	}
 	sort.SliceStable(matches, func(a, b int) bool {
-		return matches[a].Score > matches[b].Score
+		if matches[a].Score != matches[b].Score {
+			return matches[a].Score > matches[b].Score
+		}
+		return lengths[matches[a].Index] < lengths[matches[b].Index]
 	})
 
 	return matches
