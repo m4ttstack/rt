@@ -80,11 +80,18 @@ export function selectEnrichmentBranches(
   candidates: EnrichmentCandidate[],
   lookup: (branch: string) => { mr: { state?: string } | null; fetchedAt: number } | undefined,
   now: number,
+  defaultBranch?: string,
 ): Array<{ path: string; branch: string }> {
   const hot: Array<{ path: string; branch: string }> = [];
   const coldDue: Array<{ path: string; branch: string; fetchedAt: number }> = [];
 
   for (const c of candidates) {
+    // The default branch can't have an MR of its own, and it reaches the
+    // candidate list whenever the main checkout sits on it (`git worktree
+    // list` includes the primary tree). Never send it: sourceBranches
+    // containing the default branch ran GitLab's planner past its LB's 60s
+    // limit and 500'd the whole batch (2026-09-09).
+    if (defaultBranch !== undefined && c.branch === defaultBranch) continue;
     const cached = c.worktree ? undefined : lookup(c.branch);
     if (c.worktree || cached === undefined) {
       hot.push({ path: c.path, branch: c.branch });
@@ -277,10 +284,17 @@ export function createCacheRefresher(deps: CacheRefresherDeps): () => Promise<vo
 
           // 3. Hot/slow-lane selection: only branches that can still change
           // go to GitLab every cycle; known-dead ones rotate through hourly.
+          // A failed origin/HEAD read excludes nothing rather than guessing —
+          // the exclusion is a poison guard, not a correctness requirement.
+          const headRef = await runGit(repoPath, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], { signal });
+          const defaultBranch = headRef.exitCode === 0
+            ? headRef.stdout.trim().replace(/^origin\//, "") || undefined
+            : undefined;
           const branches = selectEnrichmentBranches(
             candidates,
             (branch) => cache.entries[composeKey(repoName, branch)],
             Date.now(),
+            defaultBranch,
           );
           if (branches.length < candidates.length) {
             log.debug(
