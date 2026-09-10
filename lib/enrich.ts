@@ -160,6 +160,11 @@ function hexToAnsi(hex: string): string {
 
 const DEFAULT_BRANCHES = new Set(["master", "main", "develop", "development", "staging", "production"]);
 
+/** Exported so pre-enrichment rows can apply the same dirName-leads exception. */
+export function isDefaultBranch(branch: string): boolean {
+  return DEFAULT_BRANCHES.has(branch);
+}
+
 /**
  * A split label: `leading` is the dir + branch/title text (grows, clips on
  * overflow), `trailing` is the right-edge metadata (icons, state tags) that
@@ -270,6 +275,10 @@ function clipTitle(title: string): string {
  * text by default, which would make the right-pinned linearId — and, on
  * ticket rows, the branch name and the clipped-off tail of the title —
  * unsearchable. It carries dirName, branch, full title, [state], and linearId.
+ *
+ * The meaningful half leads: ticket title / branch first, the worktree slot
+ * name trailing dim. Default-branch rows are the exception — there the
+ * checkout name IS the identity, so dirName keeps the lead.
  */
 export function formatBranchSegments(eb: EnrichedBranch): { left: PickSegment[]; right: PickSegment[]; match: string } {
   const right: PickSegment[] = [];
@@ -298,8 +307,6 @@ export function formatBranchSegments(eb: EnrichedBranch): { left: PickSegment[];
 
   if (isTicketBranch) {
     const left: PickSegment[] = [
-      { text: eb.dirName, tone: "text", bold: true },
-      { text: " · ", tone: "faint" },
       { text: clipTitle(eb.ticket!.title), tone: "text", bold: true },
     ];
     if (stateTag) {
@@ -309,18 +316,25 @@ export function formatBranchSegments(eb: EnrichedBranch): { left: PickSegment[];
           : { text: ` ${stateTag}`, tone: "dim" },
       );
     }
+    left.push({ text: " · ", tone: "faint" }, { text: eb.dirName, tone: "dim" });
     if (right.length > 0) right.push({ text: " " });
     right.push({ text: eb.linearId!, tone: "dimmer" });
     return { left, right, match };
   }
 
-  const left: PickSegment[] = eb.branch
-    ? [
-        { text: eb.dirName, tone: "text", bold: true },
-        { text: " · ", tone: "faint" },
-        { text: eb.branch, tone: "dim" },
-      ]
-    : [{ text: eb.dirName, tone: "text", bold: true }];
+  const left: PickSegment[] = !eb.branch
+    ? [{ text: eb.dirName, tone: "text", bold: true }]
+    : isDefault
+      ? [
+          { text: eb.dirName, tone: "text", bold: true },
+          { text: " · ", tone: "faint" },
+          { text: eb.branch, tone: "dim" },
+        ]
+      : [
+          { text: eb.branch, tone: "text", bold: true },
+          { text: " · ", tone: "faint" },
+          { text: eb.dirName, tone: "dim" },
+        ];
 
   if (right.length === 0) {
     right.push(

@@ -67,10 +67,10 @@ describe("formatBranchSegments", () => {
     const { left } = formatBranchSegments(eb);
 
     expect(left).toEqual([
-      { text: "neville", tone: "text", bold: true },
-      { text: " · ", tone: "faint" },
       { text: "Claim chat sidebar", tone: "text", bold: true },
       { text: " [Done]", hex: "#4CB782" },
+      { text: " · ", tone: "faint" },
+      { text: "neville", tone: "dim" },
     ]);
   });
 
@@ -80,7 +80,7 @@ describe("formatBranchSegments", () => {
       ticket: mkTicket({ stateName: "Backlog", stateColor: null }),
     });
     const { left } = formatBranchSegments(eb);
-    expect(left.at(-1)).toEqual({ text: " [Backlog]", tone: "dim" });
+    expect(left[1]).toEqual({ text: " [Backlog]", tone: "dim" });
   });
 
   test("non-ticket branch with no MR/ticket/linearId is [Local Only], dimmer", () => {
@@ -88,9 +88,9 @@ describe("formatBranchSegments", () => {
     const { left, right } = formatBranchSegments(eb);
 
     expect(left).toEqual([
-      { text: "gitq-1", tone: "text", bold: true },
+      { text: "on-deck/bill", tone: "text", bold: true },
       { text: " · ", tone: "faint" },
-      { text: "on-deck/bill", tone: "dim" },
+      { text: "gitq-1", tone: "dim" },
     ]);
     expect(right).toEqual([{ text: "[Local Only]", tone: "dimmer" }]);
   });
@@ -105,6 +105,16 @@ describe("formatBranchSegments", () => {
     const eb = mkBranch({ dirName: "harbor", branch: "main" });
     const { right } = formatBranchSegments(eb);
     expect(right).toEqual([{ text: "[main branch]", tone: "dimmer" }]);
+  });
+
+  test("default branch keeps dirName leading — the checkout name is the identity there", () => {
+    const eb = mkBranch({ dirName: "repo-tools", branch: "main" });
+    const { left } = formatBranchSegments(eb);
+    expect(left).toEqual([
+      { text: "repo-tools", tone: "text", bold: true },
+      { text: " · ", tone: "faint" },
+      { text: "main", tone: "dim" },
+    ]);
   });
 
   test("default branch WITH icons never shows the [main branch] tag", () => {
@@ -209,26 +219,26 @@ describe("formatBranchSegments", () => {
     });
     const { left } = formatBranchSegments(eb);
 
-    const titleSeg = left[2]!;
+    const titleSeg = left[0]!;
     expect(titleSeg.text.length).toBe(64);
     expect(titleSeg.text.endsWith("…")).toBe(true);
     expect(titleSeg.text.startsWith("`selectedMeshType` acts as a permanent cache")).toBe(true);
-    expect(left.at(-1)).toEqual({ text: " [Code Review]", tone: "dim" });
+    expect(left[1]).toEqual({ text: " [Code Review]", tone: "dim" });
   });
 
   test("a 64-char ticket title is not clipped", () => {
     const title = "x".repeat(64);
     const eb = mkBranch({ linearId: "ACME-1", ticket: mkTicket({ title }) });
     const { left } = formatBranchSegments(eb);
-    expect(left[2]!.text).toBe(title);
+    expect(left[0]!.text).toBe(title);
   });
 
   test("clipping never splits a surrogate pair at the boundary", () => {
     const title = "x".repeat(62) + "🚀" + "y".repeat(10);
     const eb = mkBranch({ linearId: "ACME-1", ticket: mkTicket({ title }) });
     const { left } = formatBranchSegments(eb);
-    expect(left[2]!.text.isWellFormed()).toBe(true);
-    expect(left[2]!.text.endsWith("🚀…")).toBe(true);
+    expect(left[0]!.text.isWellFormed()).toBe(true);
+    expect(left[0]!.text.endsWith("🚀…")).toBe(true);
   });
 
   test("ticket-row match text carries branch, full title, and linearId for filtering", () => {
