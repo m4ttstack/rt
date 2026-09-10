@@ -541,6 +541,32 @@ describe("createWorktreeReconciler", () => {
     expect(existsSync(live)).toBe(true);
   });
 
+  test("runOnce sweeps a stale claim through guarded dispose", async () => {
+    addBareOrigin(repo);
+    await declareWorktrees(repo, repoName, {});
+    const treePath = join(repo, ".worktrees", "stale");
+    execSync(`git worktree add -q -b feat-stale ${treePath} && git -C ${treePath} push -q origin feat-stale`, {
+      cwd: repo,
+      shell: "/bin/zsh",
+    });
+    const old = new Date(Date.now() - 8 * 24 * 3600_000).toISOString();
+    saveRegistry(repoName, [
+      ...loadRegistry(repoName),
+      { name: "stale", path: treePath, kind: "ephemeral", state: "claimed", branch: "feat-stale", createdAt: old, claimedAt: old },
+    ]);
+
+    const reconciler = createWorktreeReconciler({
+      cache: { entries: {} },
+      repoIndex: () => ({ [repoName]: repo }),
+      emit: () => {},
+      log: fakeLog(),
+    });
+
+    await reconciler.runOnce();
+
+    expect(loadRegistry(repoName).find((t) => t.path === treePath)).toBeUndefined();
+  });
+
   test("runOnce with the app disabled still syncs the registry, but skips reactor/freshen/replenish", async () => {
     // A dedicated repoName (not the shared "acme" the other tests in this
     // describe use): the prior test's `kick()` is deliberately unawaited by
@@ -794,19 +820,17 @@ describe("merge reactor (detectTransitions)", () => {
     ]);
   }
 
-  test("cold boot on an already-merged cache entry deletes nothing", async () => {
+  test("cold boot on an already-merged cache entry catches up: the claimed tree disposes", async () => {
     const rec = ephemeralTree("cold", "feat-cold");
 
-    // FIRST call ever against an empty state file: the daemon has no "opened"
-    // snapshot to compare against, so there is no edge and nothing may happen.
+    // FIRST call ever against an empty state file: the merge edge fell in a
+    // daemon restart. The catch-up path still disposes a claimed ephemeral
+    // tree (guards + retention bound the blast radius) — before it, a missed
+    // edge stranded the tree as claimed forever.
     await detect(mrCache("feat-cold", "merged"));
 
-    expect(existsSync(rec.path)).toBe(true);
-    expect(tracked(rec.path)!.state).toBe("claimed");
-    expect(tracked(rec.path)!.disposableReason).toBeUndefined();
-    expect(events.length).toBe(0);
-    expect(reactorState().fired).toEqual([]);
-    // The snapshot still records what it saw, so a later reopen→merge fires.
+    expect(tracked(rec.path)).toBeUndefined();
+    expect(reactorState().fired).toContain(`disposed:${repoName}:42:merged`);
     expect(reactorState().mrState[`${repoName}:feat-cold`]).toBe("merged");
   });
 
