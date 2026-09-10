@@ -75,6 +75,32 @@ export function retunedTextColor(tone: string, variant: string, intent: string):
 }
 
 /**
+ * The gate surfaces' ratified cells, pinned verbatim (spec:
+ * docs/superpowers/specs/2026-09-10-polish-port-design.md). Pins take
+ * precedence over the tone-weight retune: these cells' whole quartet is
+ * design-fixed, not a derived value with a corrected text tone.
+ */
+const PINNED_CELLS: Record<string, Partial<IntentResolverResult>> = {
+  "light|muted": {
+    background: "color-mix(in srgb, var(--fg) 8%, transparent)",
+    color: "var(--fg)",
+    hover: "color-mix(in srgb, var(--fg) 13%, transparent)",
+    border: "transparent",
+  },
+  "light|accent": {
+    background: "color-mix(in srgb, var(--accent) 14%, transparent)",
+    color: "var(--accent-text)",
+    hover: "color-mix(in srgb, var(--accent) 22%, transparent)",
+    border: "transparent",
+  },
+  "subtle|muted": {
+    color: "var(--fg)",
+    hover: "color-mix(in srgb, var(--fg) 6%, transparent)",
+    border: "transparent",
+  },
+};
+
+/**
  * tui-kit's intent resolver: maps `intent` to its family's single canonical
  * tone (the TUI palette has one value per hue, no ramp — `muted`'s family
  * carries no `500`, so it resolves to `--color-gray-muted` instead), then
@@ -90,7 +116,22 @@ export const tuiIntentResolver: IntentResolver = ({ intent, variant }) => {
   const tone =
     family === "gray" ? "var(--color-gray-muted)" : `var(--color-${family}-500)`;
 
-  const result = singleShadeVariantColors(tone, variant) satisfies IntentResolverResult;
+  let result = singleShadeVariantColors(tone, variant) satisfies IntentResolverResult;
+
+  // filled paints scheme-inverting text: --bg flips near-white/near-black
+  // per scheme, so one rule clears both grounds where a literal white
+  // could not. Hover mixes the tone toward --fg (88%), the shipped value.
+  if (variant === "filled") {
+    result = {
+      ...result,
+      color: "var(--bg)",
+      hover: `color-mix(in srgb, ${tone} 88%, var(--fg))`,
+      border: "transparent",
+    };
+  }
+
+  const pinned = PINNED_CELLS[`${variant}|${intent}`];
+  if (pinned) return { ...result, ...pinned };
 
   const weight = toneWeightFor(variant, intent);
   if (weight === undefined) return result;

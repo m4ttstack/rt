@@ -24,13 +24,38 @@ export interface ContrastDebtEntry {
   scheme: ContrastScheme;
   state: ButtonInteractionState;
   measuredRatio: number;
+  reason: string;
 }
 
-// Currently empty: every Button rest-state cell clears the WCAG AA 4.5:1 floor
-// via intent-resolver.ts's per-intent `color` retune (see its header comment).
-// Left as an array, not deleted, so the ratchet contract above still has
-// somewhere to record future debt.
-export const KNOWN_CONTRAST_DEBT: readonly ContrastDebtEntry[] = [];
+export const KNOWN_CONTRAST_DEBT: readonly ContrastDebtEntry[] = [
+  {
+    variant: "filled",
+    intent: "accent",
+    scheme: "light",
+    state: "rest",
+    measuredRatio: 3.781,
+    reason:
+      "filled text is var(--bg) by design (gate solid tier); tone too mid-luminance for AA at rest",
+  },
+  {
+    variant: "filled",
+    intent: "bad",
+    scheme: "light",
+    state: "rest",
+    measuredRatio: 3.659,
+    reason:
+      "filled text is var(--bg) by design (gate solid tier); tone too mid-luminance for AA at rest",
+  },
+  {
+    variant: "filled",
+    intent: "muted",
+    scheme: "light",
+    state: "rest",
+    measuredRatio: 2.948,
+    reason:
+      "filled text is var(--bg) by design (gate solid tier); tone too mid-luminance for AA at rest",
+  },
+];
 
 export function contrastDebtKey(
   entry: Pick<ContrastDebtEntry, "variant" | "intent" | "scheme" | "state">,

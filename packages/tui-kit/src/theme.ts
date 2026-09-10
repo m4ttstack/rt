@@ -10,7 +10,8 @@ import { tuiIntentResolver } from "./intent-resolver.ts";
 /**
  * `intent` is role-named where mr-board's CSS is hue-named; the join lives in
  * src/intent-resolver.ts. `variant` is soribashi 0.2.0's canonical vocabulary
- * minus `transparent`/`link`: nothing in the TUI look paints those, and a
+ * minus `transparent`/`link`, plus `filled` (restored: the gate surfaces ship
+ * a solid tier): nothing in the TUI look paints `transparent`/`link`, and a
  * variant the kit cannot render has no business in the vocabulary a prop
  * validates against. `default` (Button's own default) is not a neutral
  * afterthought — it IS the resolver's `default` branch: a NEUTRAL opaque
@@ -27,7 +28,7 @@ export const tuiVocabulary = {
     "purple",
     "muted",
   ] as const),
-  variant: defineVocabulary(["default", "light", "outline", "subtle"] as const),
+  variant: defineVocabulary(["default", "filled", "light", "outline", "subtle"] as const),
 };
 
 /**

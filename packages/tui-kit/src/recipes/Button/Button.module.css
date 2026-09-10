@@ -52,6 +52,15 @@
     padding: var(--spacing-xxs) var(--spacing-sm);
   }
 
+  .root[data-size="lg"] {
+    font-size: var(--font-size-rem80);
+    padding: var(--spacing-px5) var(--spacing-px12);
+  }
+
+  .root[data-variant="filled"] {
+    font-weight: 600;
+  }
+
   /* `--spacing-xxs` read as too tight around a 14px Icon glyph — bumped to
      `--spacing-xs`, with a min-width/min-height floor so a `sm` iconOnly
      button still comes out an even ~28px square rather than shrinking to
