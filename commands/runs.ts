@@ -9,7 +9,7 @@
 import { daemonQuery } from "../lib/daemon-client.ts";
 import { resolveRepoArg } from "../lib/repo-arg.ts";
 import { repoLabel } from "../lib/repo-label.ts";
-import { parseIdentity } from "../lib/settings/identity.ts";
+import { parseIdentity, repoIdentitySlug } from "../lib/settings/identity.ts";
 import { listRunRepoDirs } from "../lib/runs/store.ts";
 import type { RunDetail, RunSummary } from "../packages/rt-client/src/commands.ts";
 
@@ -80,7 +80,7 @@ export class UnknownRunsRepo extends Error {
 }
 
 /**
- * On disk, a run dir's name is the raw identity id with "/" flattened to "-"
+ * On disk, a run dir's name is `repoIdentitySlug` of the raw identity id
  * (e.g. "gitlab.com-acme-acme-dev" for "gitlab.com/acme/acme-dev"), never the
  * wire form resolveRepoArg returns (that form's ":" and "%" never named a
  * real dir). This only translates a resolved identity into the key that
@@ -88,7 +88,7 @@ export class UnknownRunsRepo extends Error {
  */
 export function runDisplayKey(identity: string): string {
   const parsed = parseIdentity(identity);
-  return parsed ? parsed.id.replace(/\//g, "-") : identity;
+  return parsed ? repoIdentitySlug(parsed.id) : identity;
 }
 
 /**
