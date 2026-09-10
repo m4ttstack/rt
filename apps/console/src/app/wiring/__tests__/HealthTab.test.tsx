@@ -358,6 +358,39 @@ describe('HealthTab: installed caches bar', () => {
     );
   });
 
+  it('a no-op sync (versions unchanged) says "matches source", never "x installed to x"', async () => {
+    syncPost.mockResolvedValue(
+      ok({
+        ...SYNC_REPORT,
+        restartNeeded: false,
+        versions: {
+          engine: { before: '0.17.3', after: '0.17.3' },
+          pack: {
+            source: '0.5.3',
+            installedBefore: '0.5.3',
+            installedAfter: '0.5.3',
+          },
+        },
+      })
+    );
+    const user = userEvent.setup();
+    renderHealthTab(undefined, ALL_IN_SYNC_COMPOSITION, {
+      ...ALL_IN_SYNC_CHECK,
+      installed: {
+        ...LAG_CHECK.installed,
+        status: 'current',
+        version: '0.5.3',
+      },
+    });
+
+    await user.click(await screen.findByTestId('installed-caches-sync'));
+
+    const bar = await screen.findByTestId('installed-caches-bar');
+    await screen.findByTestId('installed-caches-steps');
+    expect(bar).toHaveTextContent('matches source');
+    expect(bar).not.toHaveTextContent('installed to');
+  });
+
   it('a refusal report renders its refused step detail verbatim', async () => {
     syncPost.mockResolvedValue(
       ok({
