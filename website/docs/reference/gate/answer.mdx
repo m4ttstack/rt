@@ -22,6 +22,8 @@ rt gate answer <id> [flags]
 | `<id>` | text |  | Gate id |
 | `--answers` | text |  | JSON answers keyed by question id |
 | `--by` | text |  | Answering surface |
+| `--session` | text |  | Session id claiming the owning shepherd (default: CLAUDE_CODE_SESSION_ID) |
+| `--override` | boolean | `false` | Answer a herd-owned gate anyway (human escalation) |
 
 _See code: [commands/gate.ts › gateAnswer](https://github.com/m4ttstack/rt/blob/main/commands/gate.ts)_
 
