@@ -659,6 +659,16 @@ export const REGISTRY: readonly SettingDef[] = [
   // --- agent (rt agent handoff) --------------------------------------------
   // No defaults by design: an unset key means the flag is omitted from the
   // claude invocation entirely (spec "Settings").
+  // --- gates (RT-117 escalation) --------------------------------------------
+  {
+    key: "rt.gates.escalationTtlMinutes",
+    type: "number",
+    scopes: ["user"],
+    default: 10,
+    merge: "replace",
+    description: "Minutes an open herd-owned gate waits before the escalation sweep surfaces it to the human (topic gate/escalated/<id>). Fires on either trigger: the TTL elapses (reason \"ttl\"), or the owning herd's shepherd subscription is gone or dead before the TTL (reason \"owner-dead\"). 0 escalates any eligible gate on the first sweep after it opens. A fresh key, not an ownership-latch port, so a default is fine here.",
+  },
+
   {
     key: "agent.model",
     type: "string",
