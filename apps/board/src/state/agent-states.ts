@@ -180,18 +180,24 @@ function readRows(
   return out;
 }
 
-/** Bring a tombstoned row back to life, state untouched. A no-op on live or
-    absent rows. */
+/** Bring a tombstoned row back to life, state untouched. Returns whether the
+    claim landed: false means the row is live (a concurrent write already
+    revived it, so any snapshot of the tombstone is stale) or absent. */
 export function resurrectState(
   lane: Lane,
   mrUrl: string,
   db: Database = getStateDb()
-): void {
+): boolean {
+  let claimed = false;
   runCriticalWrite('agent-state resurrect', () => {
-    db.query(
-      'UPDATE agent_states SET pruned_at = NULL WHERE lane = ? AND mr_url = ? AND pruned_at IS NOT NULL'
-    ).run(lane, mrUrl);
+    const { changes } = db
+      .query(
+        'UPDATE agent_states SET pruned_at = NULL WHERE lane = ? AND mr_url = ? AND pruned_at IS NOT NULL'
+      )
+      .run(lane, mrUrl);
+    claimed = changes > 0;
   });
+  return claimed;
 }
 
 /** Hard-delete a tombstone whose revival turned out to have nothing to act

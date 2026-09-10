@@ -280,14 +280,21 @@ describe('tombstones', () => {
     expect(readPrunedStates('review', d).size).toBe(0);
   });
 
-  test('resurrectState restores the tombstoned row unchanged', () => {
+  test('resurrectState restores the tombstoned row unchanged and reports the claim', () => {
     const { d } = prunedRow();
-    resurrectState('review', URL, d);
+    expect(resurrectState('review', URL, d)).toBe(true);
     expect(readStates('review', d).get(URL)).toMatchObject({
       status: 'done',
       outcome: 'comment',
     });
     expect(readPrunedStates('review', d).size).toBe(0);
+  });
+
+  test('resurrectState reports false when the row is already live or absent', () => {
+    const { d } = prunedRow();
+    resurrectState('review', URL, d);
+    expect(resurrectState('review', URL, d)).toBe(false);
+    expect(resurrectState('review', 'https://x.example/mr/1', d)).toBe(false);
   });
 
   test('dropPrunedState removes a tombstone but never a live row', () => {

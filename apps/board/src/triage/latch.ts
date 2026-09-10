@@ -46,7 +46,9 @@ export interface LatchPassDeps {
       commented one whose MR is back in scope and still carries an armed
       latch is resurrected; one whose latch is gone is dropped for good. */
   readPrunedReviewStates(): Map<string, ReviewState>;
-  resurrectReviewState(mrUrl: string): void;
+  /** False when the claim is lost (the row already went live again): the
+      snapshot's tombstone is stale and must not drive a dispatch. */
+  resurrectReviewState(mrUrl: string): boolean;
   dropPrunedReviewState(mrUrl: string): void;
   fetchLatchMrs(): Promise<LatchMrFacts[]>;
   readDetail(mr: LatchMrFacts): Promise<MRDetail | null>;
@@ -158,7 +160,13 @@ export async function runLatchPass(
           result.skipped++;
           continue;
         }
-        deps.resurrectReviewState(mr.mrUrl);
+        // A lost claim means a concurrent write revived the row (a relaunch,
+        // a status CLI): the next tick reads it live and fresh, so acting on
+        // this tick's stale snapshot would risk doubling a review in flight.
+        if (!deps.resurrectReviewState(mr.mrUrl)) {
+          result.skipped++;
+          continue;
+        }
         deps.appendAudit({
           ts: now,
           mrUrl: mr.mrUrl,

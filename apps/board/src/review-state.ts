@@ -145,12 +145,14 @@ export function readPrunedReviewStates(
   return readPrunedStates('review', db) as Map<string, ReviewState>;
 }
 
-/** Revive a tombstoned review row, state untouched. */
+/** Revive a tombstoned review row, state untouched. False means the claim
+    was lost: the row is already live again (or gone), so the caller's
+    tombstone snapshot must not be acted on. */
 export function resurrectReviewState(
   mrUrl: string,
   db: Database = getStateDb()
-): void {
-  resurrectState('review', mrUrl, db);
+): boolean {
+  return resurrectState('review', mrUrl, db);
 }
 
 /** Discard a review tombstone whose MR carries no armed latch: nothing left

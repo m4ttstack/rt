@@ -103,6 +103,7 @@ function harness(
     readPrunedReviewStates: () => new Map(),
     resurrectReviewState: url => {
       resurrects.push(url);
+      return true;
     },
     dropPrunedReviewState: url => {
       drops.push(url);
@@ -586,6 +587,23 @@ describe('tombstone resurrection', () => {
     expect(drops).toEqual([MR]);
     expect(resurrects).toEqual([]);
     expect(result.resurrected).toBe(0);
+    expect(calls).toEqual([]);
+  });
+
+  // A live write (relaunch, status CLI) can revive the row between this
+  // pass's snapshot read and its claim; the snapshot's tomb is then stale
+  // and dispatching on it could double up on a review already in flight.
+  test('a lost resurrection claim skips the MR without dispatching', async () => {
+    const { deps, calls, launches } = harness({
+      ...tombstoned,
+      resurrectReviewState: () => false,
+      detail: detail(disc('d1', armedLatchBody(IMG), '2026-09-01', true)),
+    });
+    const result = await runLatchPass(deps);
+    expect(result.dispatched).toBe(0);
+    expect(result.resurrected).toBe(0);
+    expect(result.skipped).toBe(1);
+    expect(launches).toEqual([]);
     expect(calls).toEqual([]);
   });
 
