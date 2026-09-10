@@ -35,12 +35,15 @@ export interface PickerExtras {
 
 const BACK_ACTION_ID = "back";
 
-/** Two-column look: bold label padded to the widest label, then a dim hint. */
+/** Two-column look: bold label padded to the widest label, then a dim hint.
+    Filtering sees the label only; the hint is display (same contract as
+    navOptionsToRows) — without an explicit match, Go ranks the full left
+    concatenation and hint text outbids the labels the query names. */
 export function optionsToRows(options: SelectOption[]): PickRow[] {
   return options.map((o) => {
     const left: PickSegment[] = [{ text: o.label, bold: true, column: true }];
     if (o.hint) left.push({ text: `  ${o.hint}`, tone: "dim" });
-    return { value: o.value, left };
+    return { value: o.value, match: o.label, left };
   });
 }
 

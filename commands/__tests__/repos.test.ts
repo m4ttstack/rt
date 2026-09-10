@@ -271,6 +271,20 @@ describe("reposPrune", () => {
     expect(loadRepoIndexEntries().map((e) => e.repoName)).toEqual(["gone"]);
   });
 
+  test("a dropped dead registry is named in the removal line", async () => {
+    updateRepoIndex("deleted", join(home, "deleted-repo"));
+    setKvValue("worktree-registry", "deleted", [
+      { name: "deleted", path: join(home, "deleted-repo"), kind: "main", branch: "main", createdAt: "2026-01-01T00:00:00.000Z" },
+    ]);
+    const deps = testDeps();
+
+    await reposPrune([], {}, deps);
+
+    expect(deps.lines).toEqual([
+      `removed deleted (${join(home, "deleted-repo").replace(homedir(), "~")}) — path no longer exists; dropped its worktree registry (held only dead main records)`,
+    ]);
+  });
+
   test("--json emits the removals in an envelope", async () => {
     updateRepoIndex("gone", join(home, "never-existed"));
     const deps = testDeps();

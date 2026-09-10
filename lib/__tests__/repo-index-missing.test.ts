@@ -94,11 +94,18 @@ describe("missing index rows", () => {
     const scanned: KnownRepo = { repoName: "mu", worktrees: [{ path: "/x/live/mu", branch: "", isBare: false }], dataDir: "/d", registered: false };
     const repos = [lost, scanned];
 
-    const [lostOpt, scannedOpt] = repoOptions(repos);
+    const [scannedOpt, lostOpt] = repoOptions(repos);
 
     expect(lostOpt!.value).not.toBe(scannedOpt!.value);
     expect(repoFromOptionValue(repos, lostOpt!.value)).toBe(lost);
     expect(repoFromOptionValue(repos, scannedOpt!.value)).toBe(scanned);
+  });
+
+  test("missing rows sort after live rows in the picker options", () => {
+    const missing: KnownRepo = { repoName: "aardvark", worktrees: [{ path: "/x/gone", branch: "", isBare: false }], dataDir: "/d", missing: true };
+    const live: KnownRepo = { repoName: "zebra", worktrees: [{ path: "/x/zebra", branch: "", isBare: false }], dataDir: "/d" };
+
+    expect(repoOptions([missing, live]).map((o) => o.label)).toEqual(["zebra", "aardvark"]);
   });
 
   test("an uncontested name keeps the raw index key as its picker value", () => {
