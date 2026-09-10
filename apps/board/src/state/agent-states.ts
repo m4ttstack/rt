@@ -57,12 +57,13 @@ export function insertAgentState(
     db.query(
       // The ON CONFLICT branch resets report to NULL, so this must only ever
       // run for a genuine new cycle: relaunching over an imported row hits
-      // this branch too and would drop an already-ingested report.
+      // this branch too and would drop an already-ingested report. It also
+      // clears pruned_at: a relaunch over a tombstoned row is a live cycle.
       `INSERT INTO agent_states (lane, mr_url, state, handle, report, updated_at)
        VALUES (?, ?, ?, ?, NULL, ?)
        ON CONFLICT(lane, mr_url) DO UPDATE SET
          state = excluded.state, handle = excluded.handle, report = NULL,
-         updated_at = excluded.updated_at`
+         updated_at = excluded.updated_at, pruned_at = NULL`
     ).run(lane, mrUrl, JSON.stringify(full), handle, Date.now());
   });
 }
@@ -86,7 +87,7 @@ export function updateByHandle(
         updatedAt: now,
       };
       db.query(
-        'UPDATE agent_states SET state = ?, updated_at = ? WHERE lane = ? AND mr_url = ?'
+        'UPDATE agent_states SET state = ?, updated_at = ?, pruned_at = NULL WHERE lane = ? AND mr_url = ?'
       ).run(JSON.stringify(merged), now, row.lane, row.mr_url);
       result = merged;
     });
@@ -130,7 +131,7 @@ export function updateByMr(
         updatedAt: now,
       };
       db.query(
-        'UPDATE agent_states SET state = ?, updated_at = ? WHERE lane = ? AND mr_url = ?'
+        'UPDATE agent_states SET state = ?, updated_at = ?, pruned_at = NULL WHERE lane = ? AND mr_url = ?'
       ).run(JSON.stringify(merged), now, lane, mrUrl);
       result = merged;
     });
@@ -139,15 +140,36 @@ export function updateByMr(
   return result;
 }
 
-/** Every lane row keyed by mrUrl. `reportReady` is computed at read time
-    from the report column, never persisted to the state JSON blob. */
+/** Every live lane row keyed by mrUrl. `reportReady` is computed at read time
+    from the report column, never persisted to the state JSON blob. Tombstoned
+    rows (see pruneStates) are invisible here; readPrunedStates serves those. */
 export function readStates(
   lane: Lane,
   db: Database = getStateDb()
 ): Map<string, object> {
+  return readRows(lane, 'pruned_at IS NULL', db);
+}
+
+/** Every tombstoned lane row keyed by mrUrl, in readStates' shape. The latch
+    pass reads these to spot an MR that left the board with review state and
+    came back without it. */
+export function readPrunedStates(
+  lane: Lane,
+  db: Database = getStateDb()
+): Map<string, object> {
+  return readRows(lane, 'pruned_at IS NOT NULL', db);
+}
+
+function readRows(
+  lane: Lane,
+  prunedClause: string,
+  db: Database
+): Map<string, object> {
   const out = new Map<string, object>();
   const rows = db
-    .query('SELECT mr_url, state, report FROM agent_states WHERE lane = ?')
+    .query(
+      `SELECT mr_url, state, report FROM agent_states WHERE lane = ? AND ${prunedClause}`
+    )
     .all(lane) as { mr_url: string; state: string; report: string | null }[];
   for (const row of rows) {
     out.set(row.mr_url, {
@@ -156,6 +178,40 @@ export function readStates(
     });
   }
   return out;
+}
+
+/** Bring a tombstoned row back to life, state untouched. Returns whether the
+    claim landed: false means the row is live (a concurrent write already
+    revived it, so any snapshot of the tombstone is stale) or absent. */
+export function resurrectState(
+  lane: Lane,
+  mrUrl: string,
+  db: Database = getStateDb()
+): boolean {
+  let claimed = false;
+  runCriticalWrite('agent-state resurrect', () => {
+    const { changes } = db
+      .query(
+        'UPDATE agent_states SET pruned_at = NULL WHERE lane = ? AND mr_url = ? AND pruned_at IS NOT NULL'
+      )
+      .run(lane, mrUrl);
+    claimed = changes > 0;
+  });
+  return claimed;
+}
+
+/** Hard-delete a tombstone whose revival turned out to have nothing to act
+    on. Never touches a live row. */
+export function dropPrunedState(
+  lane: Lane,
+  mrUrl: string,
+  db: Database = getStateDb()
+): void {
+  persistOrWarn('agent-state tombstone drop', () => {
+    db.query(
+      'DELETE FROM agent_states WHERE lane = ? AND mr_url = ? AND pruned_at IS NOT NULL'
+    ).run(lane, mrUrl);
+  });
 }
 
 export function readReport(
@@ -214,34 +270,40 @@ export function ingestReport(
   }
 }
 
-/** Drop rows whose MR has left the board (kept while the MR is shown), and
-    best-effort unlink each removed row's handle-sibling .md scratch file so
-    pane report handoffs never accumulate once their row is gone. */
+/** Tombstone rows whose MR has left the board (kept live while the MR is
+    shown): stamp pruned_at and null the ingested report rather than delete,
+    so a review row can be resurrected if its MR returns to the board still
+    carrying an armed latch. Best-effort unlink each tombstoned row's
+    handle-sibling .md scratch file so pane report handoffs never accumulate
+    once their row goes dark. */
 export function pruneStates(
   lane: Lane,
   keepUrls: ReadonlySet<string>,
   db: Database = getStateDb()
 ): void {
-  // The SELECT and the DELETEs share one transaction snapshot: a row a
+  // The SELECT and the UPDATEs share one transaction snapshot: a row a
   // concurrent insertAgentState changes between them invalidates that
-  // snapshot, so the DELETE raises a busy error instead of silently removing
-  // a row the caller can no longer prove is stale. `committed` gates the
-  // unlink loop on the transaction actually finishing -- a busy-aborted
-  // prune must not unlink a handle's report file for a delete that never
-  // happened (the handle path is reused by the next cycle's relaunch).
+  // snapshot, so the UPDATE raises a busy error instead of silently
+  // tombstoning a row the caller can no longer prove is stale. `committed`
+  // gates the unlink loop on the transaction actually finishing -- a
+  // busy-aborted prune must not unlink a handle's report file for a
+  // tombstone that never landed (the handle path is reused by the next
+  // cycle's relaunch). Already-tombstoned rows are excluded up front so a
+  // repeat prune never restamps them or re-runs their unlink.
   let stale: { mr_url: string; handle: string }[] = [];
   let committed = false;
   persistOrWarn('agent-state prune', () => {
     const tx = db.transaction(() => {
       const rows = db
-        .query('SELECT mr_url, handle FROM agent_states WHERE lane = ?')
+        .query(
+          'SELECT mr_url, handle FROM agent_states WHERE lane = ? AND pruned_at IS NULL'
+        )
         .all(lane) as { mr_url: string; handle: string }[];
       stale = rows.filter(row => !keepUrls.has(row.mr_url));
       for (const row of stale) {
-        db.query('DELETE FROM agent_states WHERE lane = ? AND mr_url = ?').run(
-          lane,
-          row.mr_url
-        );
+        db.query(
+          'UPDATE agent_states SET pruned_at = ?, report = NULL WHERE lane = ? AND mr_url = ?'
+        ).run(Date.now(), lane, row.mr_url);
       }
     });
     tx();

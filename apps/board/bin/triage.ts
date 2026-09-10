@@ -25,7 +25,12 @@ import { makeEnvelope } from '../src/peer/envelope.ts';
 import { markNudgeHandled, readNudges } from '../src/peer/nudges.ts';
 import { drainOutbox, enqueueOutbox } from '../src/peer/outbox.ts';
 import { launchReReview } from '../src/review-launch.ts';
-import { readReviewStates } from '../src/review-state.ts';
+import {
+  dropPrunedReviewState,
+  readPrunedReviewStates,
+  readReviewStates,
+  resurrectReviewState,
+} from '../src/review-state.ts';
 import {
   claimLease,
   DEFAULT_ATTENDANT_TTL_SECONDS,
@@ -133,12 +138,21 @@ try {
   // The latch pass's mirror image of fetchOwnMrs: every MR this board holds a
   // done review state for, whatever its outcome, rather than the MRs this
   // identity authored. Approve-outcome states stay in scope so a half-finished
-  // spend can be repaired; without them nothing ever would be.
+  // spend can be repaired; without them nothing ever would be. A commented
+  // TOMBSTONE also qualifies: its MR left the board with review state and came
+  // back without it, and the pass decides between resurrecting and dropping.
   const fetchLatchMrs = async (): Promise<LatchMrFacts[]> => {
     const states = readReviewStates();
+    const pruned = readPrunedReviewStates();
+    const inScope = (url: string | null | undefined): boolean => {
+      if (!url) return false;
+      if (states.get(url)?.status === 'done') return true;
+      const tomb = pruned.get(url);
+      return tomb?.status === 'done' && tomb.outcome === 'comment';
+    };
     const { prs, tags } = await collectProjectPRs(boardConfig, readProjectMRs);
     return buildBoard(prs, boardConfig, undefined, tags)
-      .filter(m => m.webUrl && states.get(m.webUrl)?.status === 'done')
+      .filter(m => inScope(m.webUrl))
       .map(m => ({
         mrUrl: m.webUrl!,
         iid: m.iid,
@@ -256,6 +270,9 @@ try {
     try {
       const latchResult = await runLatchPass({
         readReviewStates,
+        readPrunedReviewStates,
+        resurrectReviewState,
+        dropPrunedReviewState,
         fetchLatchMrs,
         readDetail: async mr => {
           const res = await readDiscussions(mr.rtRepo, mr.iid);

@@ -96,8 +96,18 @@ function harness(
     },
   };
   const memory: DispatchMemory = { identity: null, mrs: {} };
+  const resurrects: string[] = [];
+  const drops: string[] = [];
   const deps: LatchPassDeps = {
     readReviewStates: () => new Map([[MR, commented]]),
+    readPrunedReviewStates: () => new Map(),
+    resurrectReviewState: url => {
+      resurrects.push(url);
+      return true;
+    },
+    dropPrunedReviewState: url => {
+      drops.push(url);
+    },
     fetchLatchMrs: async () => [facts],
     readDetail: async () =>
       over.detail === undefined ? detail() : over.detail,
@@ -114,7 +124,7 @@ function harness(
     now: () => NOW,
     ...over,
   };
-  return { deps, calls, launches, memory, noteBodies };
+  return { deps, calls, launches, memory, noteBodies, resurrects, drops };
 }
 
 describe('step 0: no latch', () => {
@@ -270,6 +280,7 @@ describe('the re-review switch is board.reReview, not board.triage', () => {
       rejected: 0,
       spent: 0,
       repaired: 0,
+      resurrected: 0,
       skipped: 0,
       failed: 0,
     });
@@ -532,5 +543,145 @@ describe('per-MR isolation', () => {
     expect(result.failed).toBe(1);
     expect(result.posted).toBe(1);
     expect(calls).toEqual(['upload', 'createDiscussion']);
+  });
+});
+
+describe('tombstone resurrection', () => {
+  const tombstoned = {
+    readReviewStates: () => new Map<string, ReviewState>(),
+    readPrunedReviewStates: () => new Map([[MR, commented]]),
+  };
+
+  test('an armed resolved latch revives the tombstone and dispatches', async () => {
+    const { deps, calls, launches, resurrects, drops } = harness({
+      ...tombstoned,
+      detail: detail(disc('d1', armedLatchBody(IMG), '2026-09-01', true)),
+    });
+    const result = await runLatchPass(deps);
+    expect(resurrects).toEqual([MR]);
+    expect(drops).toEqual([]);
+    expect(result.resurrected).toBe(1);
+    expect(result.dispatched).toBe(1);
+    expect(launches).toEqual([MR]);
+    expect(calls).toEqual(['reply:d1', 'unresolve:d1']);
+  });
+
+  test('an armed unresolved latch revives the tombstone and waits', async () => {
+    const { deps, calls, resurrects } = harness({
+      ...tombstoned,
+      detail: detail(disc('d1', armedLatchBody(IMG), '2026-09-01', false)),
+    });
+    const result = await runLatchPass(deps);
+    expect(resurrects).toEqual([MR]);
+    expect(result.resurrected).toBe(1);
+    expect(result.dispatched).toBe(0);
+    expect(calls).toEqual([]);
+  });
+
+  test('a tombstone whose MR has discussions but no latch is dropped', async () => {
+    const { deps, calls, resurrects, drops } = harness({
+      ...tombstoned,
+      detail: detail(disc('plain', 'just a human thread', '2026-09-01', false)),
+    });
+    const result = await runLatchPass(deps);
+    expect(drops).toEqual([MR]);
+    expect(resurrects).toEqual([]);
+    expect(result.resurrected).toBe(0);
+    expect(calls).toEqual([]);
+  });
+
+  // A live write (relaunch, status CLI) can revive the row between this
+  // pass's snapshot read and its claim; the snapshot's tomb is then stale
+  // and dispatching on it could double up on a review already in flight.
+  test('a lost resurrection claim skips the MR without dispatching', async () => {
+    const { deps, calls, launches } = harness({
+      ...tombstoned,
+      resurrectReviewState: () => false,
+      detail: detail(disc('d1', armedLatchBody(IMG), '2026-09-01', true)),
+    });
+    const result = await runLatchPass(deps);
+    expect(result.dispatched).toBe(0);
+    expect(result.resurrected).toBe(0);
+    expect(result.skipped).toBe(1);
+    expect(launches).toEqual([]);
+    expect(calls).toEqual([]);
+  });
+
+  // The daemon answers an unrecognized identity with an empty-but-ok result
+  // (see LatchMrFacts.rtRepo). Dropping the tombstone on that wobble would
+  // destroy the one record that lets the latch ever be found again.
+  test('a tombstone is kept when the MR reads back zero discussions', async () => {
+    const { deps, resurrects, drops } = harness({
+      ...tombstoned,
+      detail: detail(),
+    });
+    const result = await runLatchPass(deps);
+    expect(drops).toEqual([]);
+    expect(resurrects).toEqual([]);
+    expect(result.skipped).toBe(1);
+  });
+
+  test('a tombstone whose only latch is spent is dropped', async () => {
+    const { deps, calls, drops } = harness({
+      ...tombstoned,
+      detail: detail(disc('relic', spentLatchBody(IMG), '2026-09-01', true)),
+    });
+    await runLatchPass(deps);
+    expect(drops).toEqual([MR]);
+    expect(calls).toEqual([]);
+  });
+
+  test('an approved MR revives the tombstone and spends the latch', async () => {
+    const { deps, calls, resurrects } = harness({
+      ...tombstoned,
+      fetchLatchMrs: async () => [{ ...facts, isApproved: true }],
+      detail: detail(disc('d1', armedLatchBody(IMG), '2026-09-01', true)),
+    });
+    const result = await runLatchPass(deps);
+    expect(resurrects).toEqual([MR]);
+    expect(result.spent).toBe(1);
+    expect(calls).toEqual(['updateNote:1', 'resolve:d1']);
+  });
+
+  test('an unreadable detail leaves the tombstone in place for the next tick', async () => {
+    const { deps, resurrects, drops } = harness({
+      ...tombstoned,
+      detail: null,
+    });
+    const result = await runLatchPass(deps);
+    expect(resurrects).toEqual([]);
+    expect(drops).toEqual([]);
+    expect(result.skipped).toBe(1);
+  });
+
+  test('an approve-outcome tombstone is not revived and never read', async () => {
+    let reads = 0;
+    const { deps, drops } = harness({
+      readReviewStates: () => new Map<string, ReviewState>(),
+      readPrunedReviewStates: () =>
+        new Map([[MR, { ...commented, outcome: 'approve' as const }]]),
+      readDetail: async () => {
+        reads++;
+        return detail();
+      },
+    });
+    const result = await runLatchPass(deps);
+    expect(reads).toBe(0);
+    expect(drops).toEqual([]);
+    expect(result.skipped).toBe(1);
+  });
+
+  test('no live row and no tombstone skips without reading discussions', async () => {
+    let reads = 0;
+    const { deps } = harness({
+      readReviewStates: () => new Map<string, ReviewState>(),
+      readDetail: async () => {
+        reads++;
+        return detail();
+      },
+    });
+    const result = await runLatchPass(deps);
+    expect(reads).toBe(0);
+    expect(result.skipped).toBe(1);
   });
 });

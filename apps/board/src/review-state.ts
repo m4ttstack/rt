@@ -1,13 +1,16 @@
 import { Database } from 'bun:sqlite';
 
 import {
+  dropPrunedState,
   getStateDb,
   insertAgentState,
   mintHandle,
   pruneStates,
+  readPrunedStates,
   readReport,
   readStates,
   reportPathForHandle,
+  resurrectState,
   updateByHandle,
 } from './state/index.ts';
 
@@ -120,16 +123,46 @@ export function readReviewStates(
   return readStates('review', db) as Map<string, ReviewState>;
 }
 
-/** Delete review states (and their sibling `.md` reports) whose MR is no longer
-    on the board... so a review is kept exactly as long as its MR is shown, then
-    dropped once the MR merges/closes/goes stale. `keepUrls` is the current board
-    MR set; callers gate this on a healthy snapshot so a failed fetch can't wipe
-    live state. */
+/** Tombstone review states (and unlink their sibling `.md` reports) whose MR
+    is no longer on the board... so a review is live exactly as long as its MR
+    is shown, then goes dark once the MR merges/closes/goes stale. `keepUrls`
+    is the current board MR set; callers gate this on a healthy snapshot so a
+    failed fetch can't hide live state. Tombstones stay resurrectable: see
+    readPrunedReviewStates/resurrectReviewState. */
 export function pruneReviewStates(
   keepUrls: ReadonlySet<string>,
   db: Database = getStateDb()
 ): void {
   pruneStates('review', keepUrls, db);
+}
+
+/** Tombstoned review rows keyed by mrUrl. The triage latch pass checks these
+    for a board MR whose review state was pruned while it was off the board:
+    an armed latch there means the row must come back to life. */
+export function readPrunedReviewStates(
+  db: Database = getStateDb()
+): Map<string, ReviewState> {
+  return readPrunedStates('review', db) as Map<string, ReviewState>;
+}
+
+/** Revive a tombstoned review row, state untouched. False means the claim
+    was lost: the row is already live again (or gone), so the caller's
+    tombstone snapshot must not be acted on. */
+export function resurrectReviewState(
+  mrUrl: string,
+  db: Database = getStateDb()
+): boolean {
+  return resurrectState('review', mrUrl, db);
+}
+
+/** Discard a review tombstone whose MR carries no armed latch: nothing left
+    to resurrect for, and dropping it keeps the MR out of the latch pass's
+    discussion reads on every later tick. */
+export function dropPrunedReviewState(
+  mrUrl: string,
+  db: Database = getStateDb()
+): void {
+  dropPrunedState('review', mrUrl, db);
 }
 
 /** Attach each MR's review state (matched by webUrl) as a `review` field. Non-mutating. */
