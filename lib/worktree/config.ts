@@ -97,6 +97,7 @@ export interface WorktreeRepoConfig {
   root: string; // default worktreePoolRoot(serializedIdentity), out of the clone (RT-52)
   branchFormat: string; // default "<ticket>-<slug>"
   ready: ReadyStep[]; // declared domain steps ONLY (implicit install prepended at resolve time)
+  staleClaimDays: number; // default 7; 0 disables the stale-claim sweep
 }
 
 export interface WorktreeAppConfig {
@@ -167,6 +168,11 @@ function sanitizeBranchFormat(raw: unknown): string {
   return typeof raw === "string" && raw.length > 0 ? raw : "<ticket>-<slug>";
 }
 
+/** Days before a claimed tree is swept through guarded dispose; 0 disables. */
+export function sanitizeStaleClaimDays(raw: unknown): number {
+  return typeof raw === "number" && Number.isInteger(raw) && raw >= 0 ? raw : 7;
+}
+
 /** Declared domain steps; an entry without a string `run` is not a step. */
 function sanitizeReady(raw: unknown): ReadyStep[] {
   if (!Array.isArray(raw)) return [];
@@ -208,6 +214,7 @@ export async function loadWorktreeRepoConfig(
     root: sanitizeRoot(declared.root, serialized),
     branchFormat: sanitizeBranchFormat(declared.branchFormat),
     ready: sanitizeReady(declared.ready),
+    staleClaimDays: sanitizeStaleClaimDays(declared.staleClaimDays),
   };
   const namePool = sanitizeNamePool(declared.namePool);
   if (namePool) cfg.namePool = namePool;

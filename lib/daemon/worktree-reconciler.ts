@@ -22,6 +22,8 @@ import {
   type WorktreeAppConfig,
 } from "../worktree/config.ts";
 import { reapExpiredTrash, reapTrashInRoots } from "../worktree/trash.ts";
+import { branchOf } from "../state/branch-cache.ts";
+import { sweepStaleClaims } from "./reconciler/stale-claims.ts";
 import {
   MISSING_PRUNE_PASSES,
   reconcileRepo,
@@ -264,6 +266,29 @@ export function createWorktreeReconciler(deps: ReconcilerDeps): {
       );
     } catch (err) {
       deps.log.warn({ err, repo: repoName }, "worktree reconciler: replenish/shrink pass failed");
+    }
+    try {
+      // Bare-branch scoping mirrors the reactor's: disposeTree's joinedMr
+      // looks up by bare branch and must never see another repo's entry.
+      const scopedEntries: Record<string, { mr: any; repoName?: string }> = {};
+      for (const [key, entry] of Object.entries(deps.cache.entries)) {
+        const attributed = (entry as { repoName?: string }).repoName;
+        if (attributed && attributed !== repoName) continue;
+        scopedEntries[branchOf(key)] = entry as { mr: any; repoName?: string };
+      }
+      await sweepStaleClaims(
+        {
+          repoName,
+          repoPath,
+          cacheEntries: scopedEntries,
+          emit: deps.emit,
+          log: deps.log,
+          killProcesses: appConfig.killProcesses,
+        },
+        await loadWorktreeRepoConfig(repoName, repoPath),
+      );
+    } catch (err) {
+      deps.log.warn({ err, repo: repoName }, "worktree reconciler: stale-claim sweep failed");
     }
     try {
       await reapRepoTrash({ repoName, repoPath, log: deps.log });

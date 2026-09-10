@@ -71,7 +71,19 @@ describe("worktree config", () => {
         root: await defaultRoot(repoPath),
         branchFormat: "<ticket>-<slug>",
         ready: [],
+        staleClaimDays: 7,
       });
+    });
+
+    test("staleClaimDays: 0 disables the sweep; junk falls back to 7", async () => {
+      const repoPath = tmpRepoPath("rtcfg-stale-");
+      expect((await loadWorktreeRepoConfig("myrepo", repoPath)).staleClaimDays).toBe(7);
+      const { sanitizeStaleClaimDays } = await import("../config.ts");
+      expect(sanitizeStaleClaimDays(0)).toBe(0);
+      expect(sanitizeStaleClaimDays(3)).toBe(3);
+      expect(sanitizeStaleClaimDays(-1)).toBe(7);
+      expect(sanitizeStaleClaimDays(2.5)).toBe(7);
+      expect(sanitizeStaleClaimDays("14")).toBe(7);
     });
   });
 
@@ -91,6 +103,7 @@ describe("worktree config", () => {
         ready: [
           { run: "pnpm genTypes", when: "changed:db/schema/**" },
         ],
+        staleClaimDays: 3,
       };
       writeStore(machineSettingsPath(), { repos: { [IDENTITY]: { "rt.worktrees": declared } } });
 
@@ -133,6 +146,7 @@ describe("worktree config", () => {
         root: "/machine/wt-root", // machine-only field
         branchFormat: "<ticket>", // machine-only field
         ready: [{ run: "pnpm install", when: "changed:pnpm-lock.yaml" }], // team-only field
+        staleClaimDays: 7, // nobody declared it — reader default
       });
     });
 
@@ -212,6 +226,7 @@ describe("worktree config", () => {
         root: await defaultRoot(repoPath),
         branchFormat: "<ticket>-<slug>",
         ready: [],
+        staleClaimDays: 7,
       });
     });
   });
@@ -352,6 +367,7 @@ describe("worktree config", () => {
       writeFileSync(join(repoPath, "pnpm-lock.yaml"), "");
       const cfg: WorktreeRepoConfig = {
         onDeck: 0,
+        staleClaimDays: 7,
         root: join(repoPath, ".worktrees"),
         branchFormat: "<ticket>-<slug>",
         ready: [{ run: "node scripts/gen-types.js", when: "changed:db/schema/**" }],
@@ -368,6 +384,7 @@ describe("worktree config", () => {
       writeFileSync(join(repoPath, "pnpm-lock.yaml"), "");
       const cfg: WorktreeRepoConfig = {
         onDeck: 0,
+        staleClaimDays: 7,
         root: join(repoPath, ".worktrees"),
         branchFormat: "<ticket>-<slug>",
         ready: [
@@ -384,6 +401,7 @@ describe("worktree config", () => {
       writeFileSync(join(repoPath, "pnpm-lock.yaml"), "");
       const cfg: WorktreeRepoConfig = {
         onDeck: 0,
+        staleClaimDays: 7,
         root: join(repoPath, ".worktrees"),
         branchFormat: "<ticket>-<slug>",
         ready: [{ run: "pnpm lint" }],
@@ -398,6 +416,7 @@ describe("worktree config", () => {
       const repoPath = tmpRepoPath("rtcfg-resolve3-");
       const cfg: WorktreeRepoConfig = {
         onDeck: 0,
+        staleClaimDays: 7,
         root: join(repoPath, ".worktrees"),
         branchFormat: "<ticket>-<slug>",
         ready: [{ run: "echo hi" }],
@@ -411,6 +430,7 @@ describe("worktree config", () => {
       writeFileSync(join(repoPath, "pnpm-lock.yaml"), "");
       const cfg: WorktreeRepoConfig = {
         onDeck: 0,
+        staleClaimDays: 7,
         root: join(repoPath, ".worktrees"),
         branchFormat: "<ticket>-<slug>",
         ready: [{ run: "SKIP_GEN_TYPES=1 pnpm install --side-effects-cache" }],
@@ -424,6 +444,7 @@ describe("worktree config", () => {
       writeFileSync(join(repoPath, "pnpm-lock.yaml"), "");
       const cfg: WorktreeRepoConfig = {
         onDeck: 0,
+        staleClaimDays: 7,
         root: join(repoPath, ".worktrees"),
         branchFormat: "<ticket>-<slug>",
         ready: [{ run: "env FOO=bar pnpm install" }],
@@ -437,6 +458,7 @@ describe("worktree config", () => {
       writeFileSync(join(repoPath, "pnpm-lock.yaml"), "");
       const cfg: WorktreeRepoConfig = {
         onDeck: 0,
+        staleClaimDays: 7,
         root: join(repoPath, ".worktrees"),
         branchFormat: "<ticket>-<slug>",
         ready: [{ run: "env -i PATH=/usr/bin pnpm install" }],
@@ -450,6 +472,7 @@ describe("worktree config", () => {
       writeFileSync(join(repoPath, "pnpm-lock.yaml"), "");
       const cfg: WorktreeRepoConfig = {
         onDeck: 0,
+        staleClaimDays: 7,
         root: join(repoPath, ".worktrees"),
         branchFormat: "<ticket>-<slug>",
         ready: [{ run: "pnpm installer" }],
@@ -466,6 +489,7 @@ describe("worktree config", () => {
       writeFileSync(join(repoPath, "pnpm-lock.yaml"), "");
       const cfg: WorktreeRepoConfig = {
         onDeck: 0,
+        staleClaimDays: 7,
         root: join(repoPath, ".worktrees"),
         branchFormat: "<ticket>-<slug>",
         ready: [{ run: "SKIP_X=1 pnpm lint" }],

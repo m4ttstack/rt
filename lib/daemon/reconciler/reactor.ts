@@ -36,9 +36,12 @@ import { killWorktreeProcesses } from "../worktree-process-kill.ts";
  * The reactor's own memory, at `~/.mattstack/rt/worktree-reactor-state.json`.
  *
  * `mrState` is the last-seen MR state per `<repo>:<branch>`, compared against
- * the live cache to find `opened → merged|closed` edges. A branch the file has
- * never seen fails the `prev === "opened"` gate, which is what makes a cold
- * boot on an already-merged cache entry a no-op rather than a mass disposal.
+ * the live cache to find `opened → merged|closed` edges. A witnessed edge acts
+ * on every registered tree for the branch. An UNWITNESSED terminal state (the
+ * edge fell in a daemon restart) still acts — a missed edge used to strand
+ * claimed trees forever — but only on ephemeral claimed/disposable trees,
+ * where the dispose guards and the retention trash make a stale-ledger
+ * mistake recoverable; main-tree auto-return remains edge-only.
  *
  * `fired` is keyed by MR, not branch: `disposed:<repo>:<mr-iid>:<state>`.
  * Branch keys are wrong here because this design derives branch names from
@@ -437,15 +440,28 @@ export async function detectTransitions(deps: ReactorDeps): Promise<void> {
     }
 
     nextMrState[mrKey] = cur;
-    if (prev !== "opened") continue; // cold-boot safety: unknown prev never fires
     if (!cur || !MR_TERMINAL_STATES.has(cur)) continue;
 
     const fireKey = `disposed:${repoName}:${iid}:${cur}`;
     if (fired.has(fireKey)) continue;
 
-    const trees = findByBranch(loadRegistry(repoName), branch);
+    // An unwitnessed terminal state (the edge fell in a daemon restart, or
+    // predates this ledger) still acts, but only on ephemeral trees still
+    // claimed/disposable on the branch — the dispose guards and retention
+    // trash bound the blast radius there. Main-tree auto-return stays
+    // edge-only: it mutates a live main checkout, where a stale-ledger
+    // mistake is not recoverable from a trash dir.
+    const witnessed = prev === "opened";
+    const registered = findByBranch(loadRegistry(repoName), branch);
+    const trees = witnessed
+      ? registered
+      : registered.filter((r) => r.kind === "ephemeral" && (r.state === "claimed" || r.state === "disposable"));
     if (trees.length === 0) {
-      log.debug?.({ repo: repoName, branch, mrState: cur }, "reactor: no registered tree on the branch");
+      // An unwitnessed terminal observation is SPENT even with nothing to
+      // act on: left unspent, a later claim on a reused branch name would
+      // reach dispose for an MR that merged before that tree existed.
+      if (!witnessed) fired.add(fireKey);
+      log.debug?.({ repo: repoName, branch, mrState: cur, witnessed }, "reactor: no actionable tree on the branch");
       continue;
     }
 
