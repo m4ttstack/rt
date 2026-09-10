@@ -240,6 +240,136 @@ describe('skills routes', () => {
   });
 });
 
+const postSync = (app: Hono, pack?: string) =>
+  app.request('/api/skills/sync', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(pack === undefined ? {} : { pack }),
+  });
+
+const SYNC_REPORT = {
+  ok: true,
+  pack: 'demo',
+  steps: [{ name: 'check', status: 'ran', detail: 'no drift' }],
+  versions: {
+    engine: { before: '0.17.3', after: '0.17.3' },
+    pack: { source: '0.5.3', installedBefore: '0.5.2', installedAfter: '0.5.3' },
+  },
+  warnings: [],
+  restartNeeded: true,
+};
+
+describe('skills sync route', () => {
+  it('spawns rt skills sync --pack <x> --json and returns the report', async () => {
+    const rt = fakeRt({
+      code: 0,
+      stdout: JSON.stringify(SYNC_REPORT),
+      stderr: '',
+    });
+    const app = mountSkills(new Hono(), rt.run);
+
+    const res = await postSync(app, 'demo');
+
+    expect(res.status).toBe(200);
+    expect(rt.calls[0]).toEqual(['skills', 'sync', '--pack', 'demo', '--json']);
+    await expect(res.json()).resolves.toEqual(SYNC_REPORT);
+  });
+
+  it('a refusal (exit 1 WITH a parseable report) is 200 -- the payload carries ok: false', async () => {
+    const refusal = {
+      ...SYNC_REPORT,
+      ok: false,
+      restartNeeded: false,
+      steps: [
+        {
+          name: 'recheck',
+          status: 'refused',
+          detail:
+            'content drift survives recompile; take the agent path (mattstack:editing-skills)',
+        },
+      ],
+    };
+    const rt = fakeRt({ code: 1, stdout: JSON.stringify(refusal), stderr: '' });
+    const app = mountSkills(new Hono(), rt.run);
+
+    const res = await postSync(app, 'demo');
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual(refusal);
+  });
+
+  it('a usage error (exit 1, empty stdout) is 502 with rt stderr', async () => {
+    const rt = fakeRt({
+      code: 1,
+      stdout: '',
+      stderr: 'rt skills sync: no pack named "nope"',
+    });
+    const app = mountSkills(new Hono(), rt.run);
+
+    const res = await postSync(app, 'nope');
+
+    expect(res.status).toBe(502);
+    await expect(res.json()).resolves.toMatchObject({
+      error: expect.stringContaining('nope'),
+    });
+  });
+
+  it('requires pack in the body', async () => {
+    const rt = fakeRt({ code: 0, stdout: '{}', stderr: '' });
+    const app = mountSkills(new Hono(), rt.run);
+
+    const res = await postSync(app);
+
+    expect(res.status).toBe(400);
+    expect(rt.run).not.toHaveBeenCalled();
+  });
+
+  it('returns 503 when rt cannot be found', async () => {
+    const run = vi.fn(async () => {
+      throw new RtNotFoundError(['/home/nobody/.local/bin/rt']);
+    });
+    const app = mountSkills(new Hono(), run);
+
+    const res = await postSync(app, 'demo');
+
+    expect(res.status).toBe(503);
+  });
+
+  it('invalidates this pack\'s cached reads: a check after sync re-spawns rt', async () => {
+    const checkStdout = JSON.stringify({ pack: 'demo', packDir: '/p', verbs: [] });
+    const calls: string[][] = [];
+    const run = vi.fn(async (argv: string[]) => {
+      calls.push(argv);
+      if (argv[1] === 'sync')
+        return { code: 0, stdout: JSON.stringify(SYNC_REPORT), stderr: '' };
+      return { code: 0, stdout: checkStdout, stderr: '' };
+    });
+    const app = mountSkills(new Hono(), run);
+
+    await app.request('/api/skills/check?pack=demo');
+    await postSync(app, 'demo');
+    await app.request('/api/skills/check?pack=demo');
+
+    const checkCalls = calls.filter(argv => argv[1] === 'check');
+    expect(checkCalls).toHaveLength(2);
+  });
+
+  it('never serves sync itself from the cache: two posts spawn twice', async () => {
+    const rt = fakeRt({
+      code: 0,
+      stdout: JSON.stringify(SYNC_REPORT),
+      stderr: '',
+    });
+    const app = mountSkills(new Hono(), rt.run);
+
+    await postSync(app, 'demo');
+    await postSync(app, 'demo');
+
+    const syncCalls = rt.calls.filter(argv => argv[1] === 'sync');
+    expect(syncCalls).toHaveLength(2);
+  });
+});
+
 const PACK_DIR = '/Users/matt/.mattstack/teams/demo/mattstack/packs/demo';
 const REPO_ROOT = '/Users/matt/.mattstack/teams/demo';
 

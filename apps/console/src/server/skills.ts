@@ -79,10 +79,47 @@ interface SkillsCheckVerbRow {
   staleFiles: string[];
   orphanFiles: string[];
 }
+/** Installed-plugin-cache comparison. Optional because an rt older than the
+    field answers without it; null when rt could not derive it (no marketplace
+    registration, or a fixture-mode run with no plugin list). */
+interface SkillsCheckInstalled {
+  plugin: string;
+  marketplace: string;
+  version: string | null;
+  sourceVersion: string;
+  status: 'current' | 'lagging' | 'missing';
+}
 interface SkillsCheckResponse {
   pack: string;
   packDir: string;
   verbs: SkillsCheckVerbRow[];
+  installed?: SkillsCheckInstalled | null;
+}
+
+/** `rt skills sync --pack <x> --json`, passed through verbatim. Exit 1 with
+    a parseable payload is rt ANSWERING (a refusal or failed step the report
+    itself describes), never a transport error; `ok` is the verdict. The
+    pre-chain refusal shape `{ ok: false, error }` rides the same channel. */
+interface SkillsSyncStep {
+  name: string;
+  status: 'ran' | 'skipped' | 'refused' | 'failed';
+  detail: string;
+}
+interface SkillsSyncReport {
+  ok: boolean;
+  pack?: string;
+  error?: string;
+  steps?: SkillsSyncStep[];
+  versions?: {
+    engine: { before: string | null; after: string | null };
+    pack: {
+      source: string;
+      installedBefore: string | null;
+      installedAfter: string | null;
+    };
+  };
+  warnings?: string[];
+  restartNeeded?: boolean;
 }
 
 interface SkillsSurfaceRow {
@@ -405,6 +442,11 @@ const bindBody = validator(
   }
 );
 
+const syncBody = validator('json', (value): { pack?: string } => {
+  const v = value as { pack?: unknown };
+  return { pack: typeof v?.pack === 'string' ? v.pack : undefined };
+});
+
 const compileQuery = validator(
   'query',
   (value): { pack?: string; verb?: string } => {
@@ -541,6 +583,46 @@ export function mountSkills(
           );
         }
         return c.json(payload as SkillsCheckResponse, 200);
+      } catch (err) {
+        if (err instanceof RtNotFoundError) {
+          return c.json({ error: err.message }, 503);
+        }
+        return c.json({ error: (err as Error).message }, 502);
+      }
+    })
+    .post('/api/skills/sync', syncBody, async c => {
+      const { pack } = c.req.valid('json');
+      if (!pack) return c.json({ error: 'pack is required' }, 400);
+      try {
+        // Never `cachedRun`: sync mutates checkouts and installed caches, and
+        // every click must reach the real chain, not a memoized report.
+        const { stdout, stderr } = await runRt([
+          'skills',
+          'sync',
+          '--pack',
+          pack,
+          '--json',
+        ]);
+        // Swept even on a refusal: a chain that stopped at recheck has still
+        // pulled, bumped, and compiled, so every cached read naming this pack
+        // is stale regardless of the report's verdict.
+        for (const key of cache.keys()) {
+          let argv: unknown;
+          try {
+            argv = JSON.parse(key);
+          } catch {
+            continue;
+          }
+          if (Array.isArray(argv) && argv.includes(pack)) cache.delete(key);
+        }
+        const payload = parseJsonPayload(stdout);
+        if (payload === undefined) {
+          return c.json(
+            { error: stderr.trim() || 'rt produced no output' },
+            502
+          );
+        }
+        return c.json(payload as SkillsSyncReport, 200);
       } catch (err) {
         if (err instanceof RtNotFoundError) {
           return c.json({ error: err.message }, 503);
