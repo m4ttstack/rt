@@ -427,7 +427,7 @@ export const REGISTRY: readonly SettingDef[] = [
     type: "array",
     scopes: ["team"],
     merge: "replace",
-    description: "Board tabs ({id, label, source, slackChannel?, reviewSkill?}), editable from the board's settings modal. source.kind 'authors' is the classic roster board; 'codeowners' lists MRs from any author blocked on an unapproved CODEOWNERS section. Absent = one implicit authors tab (fallback lives in the board reader, never here).",
+    description: "Board tabs ({id, label, source, slackChannel?, reviewSkill?}), editable from the board's settings modal. source.kind 'authors' is the classic roster board; 'codeowners' lists any author's open MRs carrying a CODE_OWNER rule for the section, until merge/close. Absent = one implicit authors tab (fallback lives in the board reader, never here).",
   },
 
   // --- board (user) ----------------------------------------------------------
