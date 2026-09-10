@@ -389,6 +389,27 @@ test("every wash expression from the census is emitted, verbatim", () => {
   for (const wash of washes) expect(css).toContain(wash);
 });
 
+test("polish-port roles and aliases are emitted", () => {
+  for (const decl of [
+    "--border-on-card:",
+    "--border-control-on-card:",
+    "--text-muted-on-card:",
+    "--surface-inset:",
+    "--surface-wash-fg-4-card:",
+    "--type-display:",
+    "--type-title:",
+    "--type-body:",
+    "--type-meta:",
+    "--type-small:",
+    "--type-micro:",
+    "--font-size-rem62:",
+    "--spacing-rem95:",
+    "--line-height-snug:",
+  ]) {
+    expect(css).toContain(decl);
+  }
+});
+
 test("dark block flips color-scheme and carries no font redeclarations", () => {
   expect(css).toContain("color-scheme: light;");
   expect(css).toContain("color-scheme: dark;");
