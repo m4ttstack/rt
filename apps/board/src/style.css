@@ -1379,6 +1379,11 @@
   --gate-control-edge: var(--border-control-on-card);
   --gate-muted: var(--text-muted-on-card);
   --gate-key-bg: var(--surface-inset);
+  /* Soft rules on card grounds and the darker modal chrome: both are kit
+     roles now (dark's --border-soft is darker than the card it frames, and
+     the overlay ground sits a rung below the panel so cards read raised). */
+  --gate-soft-edge: var(--border-soft-on-card);
+  --gate-modal-ground: var(--surface-overlay);
   /* One scale for the whole surface: four text sizes, three rhythm steps,
      one button geometry. Every rule below consumes these. */
   --gate-font-display: var(--type-display);
@@ -1454,7 +1459,7 @@
   margin: -1rem -1.1rem 0;
   padding: 0.6rem 1.1rem;
   background: var(--surface-wash-fg-4-card);
-  border-bottom: 1px solid var(--border-soft);
+  border-bottom: 1px solid var(--gate-soft-edge);
   border-radius: calc(var(--gate-radius-card) - 1px)
     calc(var(--gate-radius-card) - 1px) 0 0;
 }
@@ -1675,6 +1680,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--gate-gap);
+  background: var(--gate-modal-ground);
 }
 /* The head is the recipe's accent title span, stretched so the gate cluster
    (kind + actions) can ride its right edge; everything inside resets the
@@ -1770,7 +1776,7 @@
   display: flex;
   flex-direction: column;
   padding: var(--gate-pad-chrome);
-  border: 1px solid var(--border-soft);
+  border: 1px solid var(--gate-soft-edge);
   border-radius: var(--gate-radius-btn);
   background: var(--chrome);
 }
@@ -1815,7 +1821,7 @@
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: 10px;
-  border-top: 1px solid var(--border-soft);
+  border-top: 1px solid var(--gate-soft-edge);
   padding: 0.85rem 0 0.35rem;
 }
 .tui-triage-footer .tui-triage-pos {
@@ -1863,15 +1869,27 @@
    to sit quietly inside the kit ScrollPane instead of the wider comments
    drawer. Scoped under .tui-triage-modal since [data-part='scrollpane-body']
    is a generic kit hook, not unique to the gate context pane. */
+.tui-triage-modal [data-part='scrollpane'] {
+  border-color: var(--gate-soft-edge);
+}
+.tui-triage-modal [data-part='scrollpane-head'] {
+  border-bottom-color: var(--gate-soft-edge);
+}
 .tui-triage-modal [data-part='scrollpane-body'] {
   font: inherit;
   color: inherit;
   overflow-wrap: anywhere;
 }
-.tui-triage-modal [data-part='scrollpane-body'] [data-part='markdown'] > :first-child {
+.tui-triage-modal
+  [data-part='scrollpane-body']
+  [data-part='markdown']
+  > :first-child {
   margin-top: 0;
 }
-.tui-triage-modal [data-part='scrollpane-body'] [data-part='markdown'] > :last-child {
+.tui-triage-modal
+  [data-part='scrollpane-body']
+  [data-part='markdown']
+  > :last-child {
   margin-bottom: 0;
 }
 .tui-triage-modal [data-part='scrollpane-body'] p {
@@ -1907,11 +1925,13 @@
 .tui-triage-modal [data-part='scrollpane-body'] li {
   margin: 0.1rem 0;
 }
+/* Quotes read on the CARD ground, where the base muted/border roles sit
+   too close in dark; the on-card roles equal them in light. */
 .tui-triage-modal [data-part='scrollpane-body'] blockquote {
   margin: 0 0 0.4rem;
   padding-left: 0.6rem;
-  border-left: 2px solid var(--border);
-  color: var(--muted-text);
+  border-left: 2px solid var(--border-on-card);
+  color: var(--text-muted-on-card);
 }
 .tui-triage-modal [data-part='scrollpane-body'] h1,
 .tui-triage-modal [data-part='scrollpane-body'] h2,
@@ -1930,7 +1950,7 @@
 }
 .tui-triage-modal [data-part='scrollpane-body'] th,
 .tui-triage-modal [data-part='scrollpane-body'] td {
-  border: 1px solid var(--border-soft);
+  border: 1px solid var(--gate-soft-edge);
   padding: 0.15rem 0.35rem;
 }
 .tui-triage-modal [data-part='scrollpane-body'] img {

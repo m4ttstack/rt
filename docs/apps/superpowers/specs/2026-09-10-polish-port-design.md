@@ -271,6 +271,23 @@ change:
 
 Anything else that shifts in Storybook is a defect, not a delta.
 
+### Dark tune (ratified live, 2026-09-10 afternoon)
+
+Matt reviewed the dark scheme on the wired branch and ratified three
+dark-only changes (light is byte-identical in all three):
+
+1. Context-pane quotes read the on-card roles
+   (`--text-muted-on-card` text, `--border-on-card` rule) instead of the
+   base muted/border, which sit too close to the card in dark.
+2. New role `line.softOnCard` (`light-dark(#d5d7e2, #404866)`), emitted as
+   `--border-soft-on-card` / `--tk-soft-on-card`: every soft rule in the
+   modal (pane frame, band seals, strip frame, footer rule, table cells)
+   reads it, because dark's `--border-soft` is darker than the card it
+   frames and those rules were invisible.
+3. New role `surface.overlay` (`light-dark(#fbfbfc, #1c2136)`), emitted as
+   `--surface-overlay` / `--tk-overlay`: the decision-queue modal's ground,
+   a rung below the panel in dark so the card surfaces read raised.
+
 ## Testing / gates (definition of done)
 
 - `packages/tokens`: its test suite green; `generate.ts` run committed
