@@ -149,15 +149,34 @@ describe('scan meta', () => {
 });
 
 describe('metrics rows', () => {
-  it('mergedMetricsKeys returns only rows whose index state is merged', () => {
+  it('freshMergedMetricsKeys returns merged rows whose stored metrics reflect the latest update', () => {
     const s = getStore();
     s.upsertIndexRows([
-      row({ iid: 1, state: 'merged' }),
-      row({ iid: 2, state: 'opened', mergedAt: null }),
+      row({ iid: 1, state: 'merged', updatedAt: '2026-05-02T00:00:00Z' }),
+      row({ iid: 2, state: 'merged', updatedAt: '2026-05-09T00:00:00Z' }),
+      row({ iid: 3, state: 'opened', mergedAt: null }),
     ]);
-    s.upsertMrMetrics([metrics('g/p', 1), metrics('g/p', 2)]);
-    const keys = s.mergedMetricsKeys([mrKey('g/p', 1), mrKey('g/p', 2)]);
+    s.upsertMrMetrics([
+      { ...metrics('g/p', 1), updatedAt: '2026-05-02T00:00:00Z' },
+      { ...metrics('g/p', 2), updatedAt: '2026-05-02T00:00:00Z' },
+      { ...metrics('g/p', 3), updatedAt: '2026-05-02T00:00:00Z' },
+    ]);
+    const keys = s.freshMergedMetricsKeys([
+      mrKey('g/p', 1),
+      mrKey('g/p', 2),
+      mrKey('g/p', 3),
+    ]);
+    // iid 1 merged and current -> skippable; iid 2 merged but its metrics predate the
+    // latest update -> must re-fetch; iid 3 is not merged.
     expect([...keys]).toEqual([mrKey('g/p', 1)]);
+  });
+
+  it('freshMergedMetricsKeys treats a metrics row with no timestamp as stale', () => {
+    const s = getStore();
+    s.upsertIndexRows([row({ iid: 1, state: 'merged' })]);
+    // updatedAt omitted -> persisted as NULL, which cannot prove the snapshot is current.
+    s.upsertMrMetrics([metrics('g/p', 1)]);
+    expect([...s.freshMergedMetricsKeys([mrKey('g/p', 1)])]).toEqual([]);
   });
 
   it('round-trips notes, diffStats, fileStats, labels, and approvers', () => {

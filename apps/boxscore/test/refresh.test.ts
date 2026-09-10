@@ -452,36 +452,51 @@ describe('runRefresh: eligible-for-detail set', () => {
 });
 
 describe('runRefresh: metrics re-fetch rule', () => {
-  it('skips a merged row already in mr_metrics but re-fetches a non-merged stored row and a missing one', async () => {
+  // A merged MR is only immutable once its metrics snapshot reflects its latest updatedAt.
+  // Review comments and approvals land right before merge, so a snapshot taken while the MR
+  // was still open must be refreshed, or that review activity is lost.
+  const storedMetrics = (iid: number, updatedAt: string) => ({
+    projectPath: 'g/p',
+    iid,
+    description: 'old',
+    diffStats: null,
+    fileStats: [],
+    labels: [],
+    approvedByUsernames: [],
+    notes: [],
+    updatedAt,
+  });
+
+  it('re-fetches a merged MR whose metrics predate its latest update, skips a current one, and re-fetches non-merged and missing rows', async () => {
     const store = getStore();
     store.upsertIndexRows(
       [
-        indexRow({ iid: 1, state: 'merged' }),
-        indexRow({ iid: 2, state: 'opened' }),
+        // merged, metrics already reflect this updatedAt -> skipped
+        indexRow({
+          iid: 1,
+          state: 'merged',
+          updatedAt: '2026-05-06T00:00:00.000Z',
+        }),
+        // merged, but review activity bumped updatedAt past the snapshot -> re-fetched
+        indexRow({
+          iid: 2,
+          state: 'merged',
+          updatedAt: '2026-05-08T00:00:00.000Z',
+        }),
+        // non-merged stored row -> re-fetched
         indexRow({ iid: 3, state: 'opened' }),
+        // merged with no stored metrics -> re-fetched
+        indexRow({
+          iid: 4,
+          state: 'merged',
+          updatedAt: '2026-05-06T00:00:00.000Z',
+        }),
       ].map(r => toIndexRow(r, '2026-05-01T00:00:00.000Z'))
     );
     store.upsertMrMetrics([
-      {
-        projectPath: 'g/p',
-        iid: 1,
-        description: 'old',
-        diffStats: null,
-        fileStats: [],
-        labels: [],
-        approvedByUsernames: [],
-        notes: [],
-      },
-      {
-        projectPath: 'g/p',
-        iid: 2,
-        description: 'old',
-        diffStats: null,
-        fileStats: [],
-        labels: [],
-        approvedByUsernames: [],
-        notes: [],
-      },
+      storedMetrics(1, '2026-05-06T00:00:00.000Z'),
+      storedMetrics(2, '2026-05-06T00:00:00.000Z'),
+      storedMetrics(3, '2026-05-06T00:00:00.000Z'),
     ]);
     const { provider, calls } = makeFakeProvider({
       fetchMergeRequestMetrics: async (_p, iid) =>
@@ -499,7 +514,7 @@ describe('runRefresh: metrics re-fetch rule', () => {
     const fetchedIids = calls
       .filter(c => c.method === 'fetchMergeRequestMetrics')
       .map(c => c.args[1]);
-    expect(fetchedIids.sort()).toEqual([2, 3]);
+    expect(fetchedIids.sort()).toEqual([2, 3, 4]);
   });
 });
 

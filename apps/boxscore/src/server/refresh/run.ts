@@ -20,7 +20,11 @@ import {
 } from '../source/index.js';
 import type { GitProvider, SourceProvider } from '../source/index.js';
 import { mrKey } from '../store/index.js';
-import type { Store, StoredIdentity, StoredMetrics } from '../store/index.js';
+import type {
+  Store,
+  StoredIdentity,
+  StoredMetricsWrite,
+} from '../store/index.js';
 import { buildFetchResult, storedIdentities } from '../store/query.js';
 import { mapLimit } from '../util/concurrency.js';
 
@@ -171,7 +175,7 @@ export async function runRefresh(
       isRevertTitle(r.title)
   );
   const eligibleKeys = eligibleRows.map(r => mrKey(r.projectPath, r.iid));
-  const doneKeys = store.mergedMetricsKeys(eligibleKeys);
+  const doneKeys = store.freshMergedMetricsKeys(eligibleKeys);
   const toFetch = eligibleRows.filter(
     r => !doneKeys.has(mrKey(r.projectPath, r.iid))
   );
@@ -184,7 +188,7 @@ export async function runRefresh(
   });
   let detailFailures = 0;
   let lastDetailError = '';
-  const pending: StoredMetrics[] = [];
+  const pending: StoredMetricsWrite[] = [];
   const flush = () => {
     if (pending.length > 0) store.upsertMrMetrics(pending.splice(0));
   };
@@ -199,7 +203,9 @@ export async function runRefresh(
             signal,
           });
           if (detail) {
-            pending.push(detail);
+            // Stamp the snapshot with the MR's updatedAt so a later refresh can tell a
+            // settled merged MR from one whose review activity moved on after this fetch.
+            pending.push({ ...detail, updatedAt: row.updatedAt });
             if (pending.length >= PERSIST_BATCH) flush();
           }
         } catch (err) {

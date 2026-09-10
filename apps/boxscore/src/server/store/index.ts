@@ -40,6 +40,15 @@ export interface StoredMetrics {
   notes: StoredNote[];
 }
 
+/**
+ * A metrics row on the way into the store, carrying the MR's `updatedAt` at fetch time.
+ * `freshMergedMetricsKeys` compares it against the index's `updatedAt` so a merged MR whose
+ * notes/approvals changed after the snapshot is re-fetched; null means unknown, so re-fetch.
+ */
+export interface StoredMetricsWrite extends StoredMetrics {
+  updatedAt?: string | null;
+}
+
 export interface StoredPipeline {
   /** Glance's scoped id, e.g. "gitlab:pipeline:9". */
   id: string;
@@ -153,7 +162,7 @@ function buildStore() {
   );
 
   const stmtUpsertMetrics = db.query(
-    'INSERT OR REPLACE INTO mr_metrics (key, project_path, iid, data) VALUES (?, ?, ?, ?)'
+    'INSERT OR REPLACE INTO mr_metrics (key, project_path, iid, data, metrics_updated_at) VALUES (?, ?, ?, ?, ?)'
   );
 
   const stmtUpsertPipeline = db.query(
@@ -257,28 +266,37 @@ function buildStore() {
       stmtRecordScan.run(projectPath, scan.at, scan.from);
     },
 
-    upsertMrMetrics(rows: readonly StoredMetrics[]): void {
-      const tx = db.transaction((batch: readonly StoredMetrics[]) => {
+    upsertMrMetrics(rows: readonly StoredMetricsWrite[]): void {
+      const tx = db.transaction((batch: readonly StoredMetricsWrite[]) => {
         for (const r of batch) {
-          const { projectPath, iid, ...rest } = r;
+          const { projectPath, iid, updatedAt, ...rest } = r;
           stmtUpsertMetrics.run(
             mrKey(projectPath, iid),
             projectPath,
             iid,
-            JSON.stringify(rest)
+            JSON.stringify(rest),
+            updatedAt ?? null
           );
         }
       });
       tx(rows);
     },
 
-    mergedMetricsKeys(keys: readonly string[]): Set<string> {
+    /**
+     * Merged rows whose stored metrics already reflect the index's latest `updatedAt`, and so
+     * are safe to skip re-fetching. A merged row whose metrics predate its latest update (a
+     * snapshot taken while it was still open) is excluded, so its late review activity is
+     * fetched; a null stamp counts as stale for the same reason.
+     */
+    freshMergedMetricsKeys(keys: readonly string[]): Set<string> {
       if (keys.length === 0) return new Set();
       const rows = db
         .query(
           `SELECT mi.key as key FROM mr_index mi
            JOIN mr_metrics mm ON mm.key = mi.key
-           WHERE mi.key IN ${placeholders(keys.length)} AND mi.state = 'merged'`
+           WHERE mi.key IN ${placeholders(keys.length)} AND mi.state = 'merged'
+             AND mm.metrics_updated_at IS NOT NULL
+             AND mm.metrics_updated_at >= mi.updated_at`
         )
         .all(...keys) as { key: string }[];
       return new Set(rows.map(r => r.key));

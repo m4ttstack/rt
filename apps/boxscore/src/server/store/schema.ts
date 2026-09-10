@@ -1,5 +1,5 @@
 /** Bump whenever the DDL below changes; db.ts drops and recreates every table on mismatch. */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 export const TABLES = [
   'mr_index',
@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS mr_index (
 CREATE INDEX IF NOT EXISTS mr_index_updated ON mr_index (updated_at);
 CREATE INDEX IF NOT EXISTS mr_index_merged ON mr_index (merged_at);
 CREATE TABLE IF NOT EXISTS scan_meta (project_path TEXT PRIMARY KEY, last_scan TEXT NOT NULL, first_scan TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS mr_metrics (key TEXT PRIMARY KEY, project_path TEXT NOT NULL, iid INTEGER NOT NULL, data TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS mr_metrics (key TEXT PRIMARY KEY, project_path TEXT NOT NULL, iid INTEGER NOT NULL, data TEXT NOT NULL, metrics_updated_at TEXT);
 CREATE TABLE IF NOT EXISTS pipelines (key TEXT PRIMARY KEY, project_path TEXT NOT NULL, username TEXT, status TEXT NOT NULL, created_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS pipelines_created ON pipelines (created_at);
 CREATE TABLE IF NOT EXISTS push_events (key TEXT PRIMARY KEY, username TEXT NOT NULL, created_at TEXT NOT NULL, repository_id TEXT);
