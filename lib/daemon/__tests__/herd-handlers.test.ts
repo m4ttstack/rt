@@ -77,7 +77,7 @@ export function harness(over: Partial<HerdDeps> = {}) {
   const deps: HerdDeps = {
     store, gateStore, gate, chat, agent, worktree,
     runWorktree: () => null,
-    findRunningRunByWorktree: () => null,
+    findRunningRunByWorktree: () => ({ kind: "none" }),
     presenceHandleForSession: () => null,
     herdr: (async (method: string, params: any, o: any) => {
       socketCalls.push({ method, params, sock: o?.sockPath ?? null });
@@ -246,6 +246,30 @@ describe("herd:resume / status / close", () => {
     expect(after.some((a) => a.id === observer.id)).toBe(true);
   });
 
+  // Regression: replacement must create both new rows before dropping the
+  // prior session's, and roll back cleanly if the second (owner) row fails --
+  // never leave the prior session's fan-out gone with nothing to replace it.
+  test("resume rolls back a failed owner-subscribe on replacement, leaving the prior session's rows untouched and no new prefix row", async () => {
+    const { h, gateStore, gate, herd } = await started();
+    const before = gateStore.subscriptions({ live: true });
+    expect(before).toHaveLength(2);
+    expect(before.every((s) => s.session === "sess-shep")).toBe(true);
+
+    const realSubscribe = gate["gate:subscribe"];
+    (gate as any)["gate:subscribe"] = async (p: any) => {
+      if (p.scope === "owner") return { ok: false as const, error: "owner subscribe failed" };
+      return realSubscribe(p);
+    };
+
+    const res = await h["herd:resume"]({ herd, session: "sess-shep-2" });
+    expect(res.ok).toBe(false);
+
+    const after = gateStore.subscriptions({ live: true });
+    expect(after).toHaveLength(2);
+    for (const b of before) expect(after.some((a) => a.id === b.id)).toBe(true);
+    expect(after.some((a) => a.session === "sess-shep-2")).toBe(false);
+  });
+
   test("start never drops another session's subscription (no prior shepherd to re-point from)", async () => {
     const { h, gateStore } = harness();
     const observer = gateStore.subscribe({ subjectPrefix: "herd:demo-", session: "observer" });
@@ -403,7 +427,8 @@ describe("herd:resume / status / close", () => {
 
   test("close on a job whose worktree still has a running run warns instead of blocking", async () => {
     const { h, store, herd } = await started({
-      findRunningRunByWorktree: (worktree) => (worktree === "/w/job-a" ? { id: "run-1", currentStage: "implement" } : null),
+      findRunningRunByWorktree: (worktree) =>
+        worktree === "/w/job-a" ? { kind: "match", run: { id: "run-1", currentStage: "implement" } } : { kind: "none" },
     });
     store.upsertJob({ herd, name: "job-a", worktree: "/w/job-a", handle: "job-a", status: "active" });
     const res = await h["herd:close"]({ herd, job: "job-a" });
@@ -420,6 +445,20 @@ describe("herd:resume / status / close", () => {
     expect(res.ok).toBe(true);
     if (!res.ok) throw new Error("unreachable");
     expect(res.data.warning).toBeUndefined();
+  });
+
+  // Regression: an unreadable run DB must not read as "nothing running" --
+  // herd:close warns rather than silently closing the job clean.
+  test("close on a job whose run scan could not finish warns instead of reading it as clean", async () => {
+    const { h, store, herd } = await started({
+      findRunningRunByWorktree: () => ({ kind: "incomplete" }),
+    });
+    store.upsertJob({ herd, name: "job-a", worktree: "/w/job-a", handle: "job-a", status: "active" });
+    const res = await h["herd:close"]({ herd, job: "job-a" });
+    expect(res.ok).toBe(true);
+    if (!res.ok) throw new Error("unreachable");
+    expect(res.data.warning).toBe("could not verify runs; check manually");
+    expect(store.getJob(herd, "job-a")!.status).toBe("closed");
   });
 });
 

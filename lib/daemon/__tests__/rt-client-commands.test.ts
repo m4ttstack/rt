@@ -97,7 +97,7 @@ describe("rt-client command coverage", () => {
         kick: () => {},
         creationInFlight: () => null,
         withReconcilerHeld: async (fn) => fn(),
-        findRunningRunByWorktree: () => null,
+        findRunningRunByWorktree: () => ({ kind: "none" }),
       },
       eventsBus: createEventsBus({ dbPath: ":memory:", log: pino({ level: "silent" }) }),
       gatesStore: createGatesStore({ dbPath: ":memory:", log: pino({ level: "silent" }) }),

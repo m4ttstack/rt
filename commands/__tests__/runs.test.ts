@@ -3,10 +3,10 @@ import { execSync } from "child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { basename, join } from "path";
-import { formatRunLine, formatRunDetail, runDisplayKey, runsList, runsShow, runsAbandon } from "../runs.ts";
-import { closeStateDb } from "../../lib/state/index.ts";
+import { formatRunLine, formatRunDetail, runDisplayKey, runsList, runsShow, runsAbandon, resolveRunsRepoArg, AmbiguousRunsRepo } from "../runs.ts";
+import { closeStateDb, setKvValue } from "../../lib/state/index.ts";
 import { deriveRepoIdentity, serializeIdentity } from "../../lib/settings/identity.ts";
-import { updateRepoIndex } from "../../lib/repo-index.ts";
+import { updateRepoIndex, REPO_INDEX_NS } from "../../lib/repo-index.ts";
 import { runsRoot } from "../../lib/runs/paths.ts";
 import type { DaemonResponse } from "../../lib/daemon-client.ts";
 
@@ -304,5 +304,27 @@ describe("rt runs --repo identity resolution", () => {
 
     expect(exitCode).toBe(1);
     expect(JSON.parse(logs.at(-1)!)).toEqual({ ok: false, error: "unknown repo: definitely-not-a-repo" });
+  });
+
+  // Regression: an ambiguous selector must never fall through to the
+  // literal-dir fallback, even when it happens to equal a legacy run dir's
+  // name -- that fallback is for a resolver that found nothing, not one that
+  // found two repos and can't tell them apart.
+  test("an ambiguous --repo that also matches a legacy run dir errors ambiguous, never falls back to the dir", async () => {
+    setKvValue(REPO_INDEX_NS, "remote:github.com%2Fone%2Fwidgets", "/repos/a/widgets");
+    setKvValue(REPO_INDEX_NS, "remote:github.com%2Ftwo%2Fwidgets", "/repos/b/widgets");
+    mkdirSync(join(runsRoot(), "widgets"), { recursive: true });
+
+    await expect(resolveRunsRepoArg("widgets")).rejects.toBeInstanceOf(AmbiguousRunsRepo);
+
+    installFakeDaemon({ ok: true, data: { runs: [] } });
+    const { exitCode, logs } = await runExpectingCleanExit(() =>
+      runsList(["--repo", "widgets", "--json"]),
+    );
+    expect(exitCode).toBe(1);
+    const parsed = JSON.parse(logs.at(-1)!);
+    expect(parsed.ok).toBe(false);
+    expect(parsed.error).toContain("matches more than one repo");
+    expect(parsed.error).not.toContain("unknown repo");
   });
 });

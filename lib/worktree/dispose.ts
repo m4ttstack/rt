@@ -19,6 +19,7 @@ import { loadSyncConfig, matchRule } from "../sync-config.ts";
 import { deriveRepoIdentity } from "../settings/identity.ts";
 import { killWorktreeProcesses } from "../daemon/worktree-process-kill.ts";
 import { RETENTION_MS, reapTrashDir, retireTree, stripTrashDir, writeDisposalManifest } from "./trash.ts";
+import type { RunningRunScan } from "../runs/store.ts";
 
 /** Merge-reactor disposals ignore claims younger than this (stale-event protection). */
 const GRACE_MS = 10 * 60_000;
@@ -129,7 +130,7 @@ export interface DisposeDeps {
   /** Live-run lookup by worktree path, guard 4: wired from `findRunningRunByWorktree`
       in lib/runs/store.ts. Required (not optional) so a new construction site
       can't forget it and silently fail open on a running-run tree. */
-  findRunningRun: (worktree: string) => { id: string; currentStage: string } | null;
+  findRunningRun: (worktree: string) => RunningRunScan;
 }
 
 export type DisposeOutcome =
@@ -248,10 +249,15 @@ export async function disposeTree(
     }
 
     // 4. No pipeline run is still live in this worktree: a running run can go
-    //    on writing to the filesystem disposal is about to remove.
-    const running = deps.findRunningRun(rec.path);
-    if (running) {
-      return refuse("running-run", `running run ${running.id} at ${running.currentStage}; rt runs abandon ${running.id}`);
+    //    on writing to the filesystem disposal is about to remove. A scan
+    //    that could not finish (an unreadable run DB) must refuse too --
+    //    reporting "none" here would let disposal race a run it failed to see.
+    const scan = deps.findRunningRun(rec.path);
+    if (scan.kind === "match") {
+      return refuse("running-run", `running run ${scan.run.id} at ${scan.run.currentStage}; rt runs abandon ${scan.run.id}`);
+    }
+    if (scan.kind === "incomplete") {
+      return refuse("runs-unreadable", "could not verify no run is live in this worktree; check manually with `rt runs`");
     }
 
     // 5. Nobody is attending the MR right now.

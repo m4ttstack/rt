@@ -182,7 +182,7 @@ describe("replenish.ts: per-instance backoff", () => {
     const instanceBackoff = new Map<string, { failures: number; nextRetryAt: string }>();
 
     await replenishAndShrink(
-      { repoName, repoPath: repo, emit: () => {}, log: fakeLog(), backoff: instanceBackoff, findRunningRun: () => null },
+      { repoName, repoPath: repo, emit: () => {}, log: fakeLog(), backoff: instanceBackoff, findRunningRun: () => ({ kind: "none" }) },
       new Map(),
       fakeAppConfig(),
     );
@@ -196,7 +196,7 @@ describe("replenish.ts: per-instance backoff", () => {
     await declareWorktrees(repo, repoName, { onDeck: 1, root: join(repo, ".worktrees"), ready: [{ run: "exit 1" }] });
     const a = new Map<string, { failures: number; nextRetryAt: string }>();
     const b = new Map<string, { failures: number; nextRetryAt: string }>();
-    const deps = { repoName, repoPath: repo, emit: () => {}, log: fakeLog(), findRunningRun: () => null };
+    const deps = { repoName, repoPath: repo, emit: () => {}, log: fakeLog(), findRunningRun: () => ({ kind: "none" as const }) };
 
     await replenishAndShrink({ ...deps, backoff: a }, new Map(), fakeAppConfig());
     // A now holds an active backoff deadline. A shared map would make B skip its

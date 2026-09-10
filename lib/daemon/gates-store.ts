@@ -580,7 +580,12 @@ export function createGatesStore(opts: {
       if (filter?.live) clauses.push("dead = 0");
       if (filter?.session) { clauses.push("session = ?"); params.push(filter.session); }
       const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
-      const rows = db.query(`SELECT * FROM gate_subscriptions ${where} ORDER BY createdAt`).all(...params) as SubscriptionColumns[];
+      // rowid tiebreak: two subscriptions minted in the same millisecond (a
+      // shepherd's prefix + owner rows, subscribed back to back) would
+      // otherwise sort in whatever order SQLite feels like, and callers that
+      // dedupe "first match wins" by session (gate-push.ts's fanOut) need
+      // that order to be insertion order, deterministically, every run.
+      const rows = db.query(`SELECT * FROM gate_subscriptions ${where} ORDER BY createdAt, rowid`).all(...params) as SubscriptionColumns[];
       return rows.map(rowToSubscription);
     },
 
