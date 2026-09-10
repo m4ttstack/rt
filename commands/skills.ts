@@ -43,6 +43,7 @@ import { findPlaceholders } from "../lib/skills/placeholders.ts";
 import { buildStageEntries, hostDir, outDirFor, otherSideDir, targetOutDirs } from "../lib/skills/layout.ts";
 import { computePackSha, maskProvenance, mattstackProvenance, packPluginIdentity } from "../lib/skills/provenance.ts";
 import {
+  installedVersionFor,
   invocableRoster,
   loadAttachment,
   loadInclude,
@@ -432,7 +433,7 @@ function resolvePluginRootsFromDir(dir: string): PluginRoots {
     byName[name] = { dir: pluginDir, version };
   }
 
-  return { byName };
+  return { byName, list: [] };
 }
 
 type Resolved = {
@@ -504,7 +505,7 @@ async function resolve(flags: Flags): Promise<Resolved> {
   // skipping the `claude plugin list` subprocess keeps rosterless packs usable
   // even where the Claude CLI is absent.
   const pluginRoots: PluginRoots = fullRoster.length === 0
-    ? { byName: {} }
+    ? { byName: {}, list: [] }
     : flags.mattstackDir
       ? resolvePluginRootsFromDir(mattstackRoot)
       : resolvePluginRoots();
@@ -772,6 +773,69 @@ function compileTargets(resolved: Resolved, publicSet: Set<string> | null, verbF
   return { targets, verbSides, knownTargetDirs };
 }
 
+/**
+ * The real-write path shared by skillsCompile and compilePackAll: compiles
+ * every target, writes on success (sweeping a stale other-side dir first),
+ * and scans for misplaced entries. `write` false is skillsCompile's
+ * --dry-run -- outcomes and misplaced are still computed so both callers see
+ * what a real run would do, but writeCompiledVerb never runs. No printing
+ * and no process.exit here: callers own how outcomes/failures/misplaced
+ * become human or JSON output and how the process exits.
+ */
+function performCompile(resolved: Resolved, verbFilter: string[] | null, write: boolean): {
+  outcomes: { target: CompileTarget; outcome: CompileOutcome }[];
+  failures: string[];
+  misplaced: string[];
+} {
+  const publicSet = resolved.surface ? new Set(resolved.surface.public) : null;
+  const { targets, verbSides, knownTargetDirs } = compileTargets(resolved, publicSet, verbFilter);
+  // Lint accepts a relative path to any KNOWN target, not only emitted ones: a
+  // scoped compile still renders {{verb.path}} to siblings it is not writing.
+  const emittedTargetDirs = knownTargetDirs;
+
+  // Every target is compiled before any is written: a run that aborts midway
+  // leaves already-emitted verbs referencing stage dirs that never landed.
+  const outcomes: { target: CompileTarget; outcome: CompileOutcome }[] = targets.map(
+    (target) => ({ target, outcome: tryCompileVerb(target, resolved, emittedTargetDirs, verbSides) }),
+  );
+  const failures = outcomes.flatMap(({ outcome }) => (outcome.ok ? [] : [outcome.message]));
+
+  const writing = write && failures.length === 0;
+  if (writing) {
+    for (const { target, outcome } of outcomes) {
+      if (!outcome.ok) continue;
+      const { verb, isPublic } = target;
+      // A pack's own engine source may live at attachments/<verb>/SKILL.md while
+      // its door compiles into skills/<verb>/: the other side is only stale when
+      // it carries the compiler header, never when it is the hand-written source.
+      const stale = otherSideDir(resolved.packDir, verb.name, isPublic);
+      if (existsSync(stale) && !isHandWrittenDir(stale)) rmSync(stale, { recursive: true, force: true });
+      writeCompiledVerb(outDirFor(resolved.packDir, verb.name, isPublic), outcome.result);
+    }
+  }
+
+  const misplaced: string[] = [];
+  if (publicSet) {
+    // Prediction must match what the write pass leaves behind: a target's
+    // stale compiler-headed other-side dir gets swept by the real run, so
+    // a dry-run must not call it misplaced. A failure-aborted run sweeps
+    // nothing, so it gets no such credit -- its stale dirs stay on disk.
+    const wouldBeSwept = new Set<string>();
+    if (!write && failures.length === 0) {
+      for (const { target, outcome } of outcomes) {
+        if (!outcome.ok) continue;
+        const stale = otherSideDir(resolved.packDir, target.verb.name, target.isPublic);
+        if (existsSync(stale) && !isHandWrittenDir(stale)) wouldBeSwept.add(target.verb.name);
+      }
+    }
+    for (const name of enumerateRegistered(resolved.packDir).keys()) {
+      if (!publicSet.has(name) && !wouldBeSwept.has(name)) misplaced.push(name);
+    }
+  }
+
+  return { outcomes, failures, misplaced };
+}
+
 export async function skillsCompile(args: string[]): Promise<void> {
   await withCleanErrors(async () => {
     const flags = parseFlags(args);
@@ -791,12 +855,11 @@ export async function skillsCompile(args: string[]): Promise<void> {
     const chainErrors = pipelineChainErrors(resolved);
     if (chainErrors.length > 0) throw new SkillsUsageError(chainErrors.join("\n"));
 
-    const { targets, verbSides, knownTargetDirs } = compileTargets(resolved, publicSet, flags.verbs);
-    // Lint accepts a relative path to any KNOWN target, not only emitted ones: a
-    // scoped compile still renders {{verb.path}} to siblings it is not writing.
-    const emittedTargetDirs = knownTargetDirs;
-
     if (flags.preview) {
+      const { targets, verbSides, knownTargetDirs } = compileTargets(resolved, publicSet, flags.verbs);
+      // Lint accepts a relative path to any KNOWN target, not only emitted ones: a
+      // scoped compile still renders {{verb.path}} to siblings it is not writing.
+      const emittedTargetDirs = knownTargetDirs;
       for (const target of targets) {
         const { verb } = target;
         const outcome = tryCompileVerb(target, resolved, emittedTargetDirs, verbSides);
@@ -819,12 +882,7 @@ export async function skillsCompile(args: string[]): Promise<void> {
       return;
     }
 
-    // Every target is compiled before any is written: a run that aborts midway
-    // leaves already-emitted verbs referencing stage dirs that never landed.
-    const outcomes: { target: CompileTarget; outcome: CompileOutcome }[] = targets.map(
-      (target) => ({ target, outcome: tryCompileVerb(target, resolved, emittedTargetDirs, verbSides) }),
-    );
-    const failures = outcomes.flatMap(({ outcome }) => (outcome.ok ? [] : [outcome.message]));
+    const { outcomes, failures, misplaced } = performCompile(resolved, flags.verbs, !flags.dryRun);
     if (failures.length > 0 && !flags.json) {
       for (const message of failures) console.error(`rt skills: ${message}`);
       process.exit(1);
@@ -834,7 +892,7 @@ export async function skillsCompile(args: string[]): Promise<void> {
     for (const { target, outcome } of outcomes) {
       if (!outcome.ok) continue;
       const { verb, isPublic } = target;
-      const side = verbSides[verb.name]!;
+      const side: Side = isPublic ? "skills" : "attachments";
 
       if (!writing) {
         if (!flags.json) {
@@ -844,40 +902,15 @@ export async function skillsCompile(args: string[]): Promise<void> {
         continue;
       }
 
-      // A pack's own engine source may live at attachments/<verb>/SKILL.md while
-      // its door compiles into skills/<verb>/: the other side is only stale when
-      // it carries the compiler header, never when it is the hand-written source.
-      const stale = otherSideDir(resolved.packDir, verb.name, isPublic);
-      if (existsSync(stale) && !isHandWrittenDir(stale)) rmSync(stale, { recursive: true, force: true });
-      writeCompiledVerb(outDirFor(resolved.packDir, verb.name, isPublic), outcome.result);
       if (!flags.json) {
         console.log(`compiled ${verb.name} -> ${side} (${outcome.result.files.length} files, ${outcome.result.warnings.length} warnings)`);
         for (const warning of outcome.result.warnings) console.log(`  ${warning}`);
       }
     }
 
-    const misplaced: string[] = [];
-    if (publicSet) {
-      // Prediction must match what the write pass leaves behind: a target's
-      // stale compiler-headed other-side dir gets swept by the real run, so
-      // a dry-run must not call it misplaced. A failure-aborted run sweeps
-      // nothing, so it gets no such credit -- its stale dirs stay on disk.
-      const wouldBeSwept = new Set<string>();
-      if (flags.dryRun && failures.length === 0) {
-        for (const { target, outcome } of outcomes) {
-          if (!outcome.ok) continue;
-          const stale = otherSideDir(resolved.packDir, target.verb.name, target.isPublic);
-          if (existsSync(stale) && !isHandWrittenDir(stale)) wouldBeSwept.add(target.verb.name);
-        }
-      }
-      for (const name of enumerateRegistered(resolved.packDir).keys()) {
-        if (!publicSet.has(name) && !wouldBeSwept.has(name)) misplaced.push(name);
-      }
-    }
-
     if (flags.json) {
       const rows: CompileVerbRow[] = outcomes.map(({ target, outcome }) => {
-        const side = verbSides[target.verb.name]!;
+        const side: Side = target.isPublic ? "skills" : "attachments";
         return outcome.ok
           ? { name: target.verb.name, status: "compiled", files: outcome.result.files.map((f) => ({ path: f.path })), warnings: outcome.result.warnings, errors: [], side }
           : { name: target.verb.name, status: "errored", files: [], warnings: [], errors: [outcome.message], side };
@@ -898,6 +931,26 @@ export async function skillsCompile(args: string[]): Promise<void> {
   });
 }
 
+/**
+ * The in-process compile call for the later sync chain: full-pack real
+ * compile, no printing, no process.exit. `ok` is false on chain errors,
+ * lint failures, or misplaced verbs -- each named in `errors` -- with no
+ * partial write on failure, exactly as the handler behaves today.
+ */
+export async function compilePackAll(opts: { pack?: string; packDir?: string; manifest?: string; mattstackDir?: string }): Promise<{ ok: boolean; errors: string[] }> {
+  const args: string[] = [];
+  if (opts.pack) args.push("--pack", opts.pack);
+  if (opts.packDir) args.push("--pack-dir", opts.packDir);
+  if (opts.manifest) args.push("--manifest", opts.manifest);
+  if (opts.mattstackDir) args.push("--mattstack-dir", opts.mattstackDir);
+  const resolved = await resolve(parseFlags(args));
+  const chainErrors = pipelineChainErrors(resolved);
+  if (chainErrors.length > 0) return { ok: false, errors: chainErrors };
+  const { failures, misplaced } = performCompile(resolved, null, true);
+  const errors = [...failures, ...misplaced.map((name) => `misplaced: ${name}`)];
+  return { ok: errors.length === 0, errors };
+}
+
 type CheckVerbStatus = "in-sync" | "stale" | "never-compiled";
 type CheckVerbRow = {
   name: string;
@@ -908,100 +961,179 @@ type CheckVerbRow = {
   staleBecause?: DriftCause[];
 };
 
-export async function skillsCheck(args: string[]): Promise<void> {
-  await withCleanErrors(async () => {
-    const flags = parseFlags(args);
-    const resolved = await resolve(flags);
-    // No surface.jsonc means the pack has no public/internal split yet -- every roster verb is public.
-    const publicSet = resolved.surface ? new Set(resolved.surface.public) : null;
+export type InstalledInfo = {
+  plugin: string;
+  marketplace: string;
+  version: string | null;
+  sourceVersion: string;
+  status: "current" | "lagging" | "missing";
+};
 
-    let anyStale = false;
-    const rows: CheckVerbRow[] = [];
+/**
+ * The installed plugin cache lags a source checkout until the next `rt
+ * skills sync`; nothing about drift (source vs. compiled output) implies
+ * anything about this second, independent dimension.
+ */
+export function installedInfoFor(
+  resolved: { packDir: string; pluginRoots: PluginRoots },
+  packs: PackInfo[],
+): InstalledInfo | null {
+  const self = packPluginIdentity(resolved.packDir);
+  if (!self || resolved.pluginRoots.list.length === 0) return null;
+  const marketplace = packs.find((p) => p.dir === resolved.packDir)?.marketplace ?? null;
+  if (!marketplace) return null;
+  const version = installedVersionFor(resolved.pluginRoots.list, `${self.name}@${marketplace}`);
+  const status = version === null ? "missing" : version === self.version ? "current" : "lagging";
+  return { plugin: self.name, marketplace, version, sourceVersion: self.version, status };
+}
 
-    // Pack-level staleness: the stage list a compiled orchestrator carries no
-    // longer folds, so recompiling would refuse. No row can express that, so
-    // --json carries it alongside them instead of leaving the exit code alone
-    // to say a payload of current rows is a failure.
-    const chainErrors = pipelineChainErrors(resolved);
-    if (chainErrors.length > 0) anyStale = true;
-    if (!flags.json) for (const chainError of chainErrors) console.log(chainError);
+export type CheckPayload = {
+  pack: string;
+  packDir: string;
+  verbs: CheckVerbRow[];
+  chainErrors: string[];
+  installed: InstalledInfo | null;
+  drift: boolean;
+};
 
-    const { targets, verbSides, knownTargetDirs } = compileTargets(resolved, publicSet, flags.verbs);
-    // Lint accepts a relative path to any KNOWN target, not only emitted ones: a
-    // scoped compile still renders {{verb.path}} to siblings it is not writing.
-    const emittedTargetDirs = knownTargetDirs;
+async function computeCheck(flags: Flags): Promise<CheckPayload> {
+  const resolved = await resolve(flags);
+  // No surface.jsonc means the pack has no public/internal split yet -- every roster verb is public.
+  const publicSet = resolved.surface ? new Set(resolved.surface.public) : null;
 
-    for (const target of targets) {
-      const { verb, isPublic } = target;
-      const outDir = outDirFor(resolved.packDir, verb.name, isPublic);
-      const side: Side = isPublic ? "skills" : "attachments";
+  let anyStale = false;
+  const rows: CheckVerbRow[] = [];
 
-      if (!existsSync(outDir)) {
-        anyStale = true;
-        rows.push({ name: verb.name, status: "never-compiled", staleFiles: [], orphanFiles: [], side });
-        if (!flags.json) console.log(`${verb.name}: stale (never compiled -- outDir missing; run rt skills compile)`);
-        continue;
-      }
+  // Pack-level staleness: the stage list a compiled orchestrator carries no
+  // longer folds, so recompiling would refuse. No row can express that, so
+  // --json carries it alongside them instead of leaving the exit code alone
+  // to say a payload of current rows is a failure.
+  const chainErrors = pipelineChainErrors(resolved);
+  if (chainErrors.length > 0) anyStale = true;
 
-      const result = compileVerb(target, resolved, emittedTargetDirs, verbSides);
-      const staleFiles: string[] = [];
-      const orphanFiles: string[] = [];
-      const expectedPaths = new Set(result.files.map((f) => f.path));
-      const causes: DriftCause[] = [];
-      const addCause = (cause: DriftCause) => {
-        if (!causes.includes(cause)) causes.push(cause);
-      };
+  const { targets, verbSides, knownTargetDirs } = compileTargets(resolved, publicSet, flags.verbs);
+  // Lint accepts a relative path to any KNOWN target, not only emitted ones: a
+  // scoped compile still renders {{verb.path}} to siblings it is not writing.
+  const emittedTargetDirs = knownTargetDirs;
 
-      for (const file of result.files) {
-        const dest = join(outDir, file.path);
-        const expected = "content" in file ? Buffer.from(file.content) : readFileSync(file.copyFrom);
-        // SKILL.md carries the compiler's own version/sha stamps -- a version bump or
-        // a fresh checkout sha with no inlined body change is not drift worth flagging.
-        if (file.path.endsWith("SKILL.md")) {
-          const maskedExpected = maskProvenance(expected.toString("utf8"));
-          const maskedOnDisk = existsSync(dest) ? maskProvenance(readFileSync(dest, "utf8")) : null;
-          if (maskedOnDisk === null || maskedOnDisk !== maskedExpected) {
-            staleFiles.push(file.path);
-            if (maskedOnDisk === null) addCause("structure");
-            else for (const cause of skillMdDriftCauses(maskedOnDisk, maskedExpected)) addCause(cause);
-          }
-        } else {
-          const stale = !existsSync(dest) || !readFileSync(dest).equals(expected);
-          if (stale) {
-            staleFiles.push(file.path);
-            addCause("vendored");
-          }
-        }
-      }
+  for (const target of targets) {
+    const { verb, isPublic } = target;
+    const outDir = outDirFor(resolved.packDir, verb.name, isPublic);
+    const side: Side = isPublic ? "skills" : "attachments";
 
-      // A file left behind by an earlier compile: writeCompiledVerb would delete it on
-      // the next real compile, so "current" here would be a false clean bill of health.
-      const onDiskFiles = listFilesRecursive(outDir);
-      const outRel = relativePath(resolved.packDir, outDir);
-      const ignored = gitIgnoredFiles(resolved.packDir, onDiskFiles.map((f) => join(outRel, f)));
-      for (const onDisk of onDiskFiles) {
-        if (expectedPaths.has(onDisk) || ignored.has(join(outRel, onDisk))) continue;
-        orphanFiles.push(onDisk);
-      }
+    if (!existsSync(outDir)) {
+      anyStale = true;
+      rows.push({ name: verb.name, status: "never-compiled", staleFiles: [], orphanFiles: [], side });
+      continue;
+    }
 
-      if (staleFiles.length > 0 || orphanFiles.length > 0) {
-        anyStale = true;
-        rows.push({ name: verb.name, status: "stale", staleFiles, orphanFiles, side, staleBecause: causes });
-        if (!flags.json) {
-          const humanFiles = [...staleFiles, ...orphanFiles.map((f) => `${f} (orphan)`)];
-          const movedPrefix = causes.length > 0 ? `${causes.join(", ")} moved; ` : "";
-          console.log(`${verb.name}: stale (${movedPrefix}recompile or investigate drift with git diff) -- ${humanFiles.join(", ")}`);
+    const result = compileVerb(target, resolved, emittedTargetDirs, verbSides);
+    const staleFiles: string[] = [];
+    const orphanFiles: string[] = [];
+    const expectedPaths = new Set(result.files.map((f) => f.path));
+    const causes: DriftCause[] = [];
+    const addCause = (cause: DriftCause) => {
+      if (!causes.includes(cause)) causes.push(cause);
+    };
+
+    for (const file of result.files) {
+      const dest = join(outDir, file.path);
+      const expected = "content" in file ? Buffer.from(file.content) : readFileSync(file.copyFrom);
+      // SKILL.md carries the compiler's own version/sha stamps -- a version bump or
+      // a fresh checkout sha with no inlined body change is not drift worth flagging.
+      if (file.path.endsWith("SKILL.md")) {
+        const maskedExpected = maskProvenance(expected.toString("utf8"));
+        const maskedOnDisk = existsSync(dest) ? maskProvenance(readFileSync(dest, "utf8")) : null;
+        if (maskedOnDisk === null || maskedOnDisk !== maskedExpected) {
+          staleFiles.push(file.path);
+          if (maskedOnDisk === null) addCause("structure");
+          else for (const cause of skillMdDriftCauses(maskedOnDisk, maskedExpected)) addCause(cause);
         }
       } else {
-        rows.push({ name: verb.name, status: "in-sync", staleFiles, orphanFiles, side });
-        if (!flags.json) console.log(`${verb.name}: current`);
+        const stale = !existsSync(dest) || !readFileSync(dest).equals(expected);
+        if (stale) {
+          staleFiles.push(file.path);
+          addCause("vendored");
+        }
       }
     }
 
-    if (anyStale) process.exitCode = 1;
+    // A file left behind by an earlier compile: writeCompiledVerb would delete it on
+    // the next real compile, so "current" here would be a false clean bill of health.
+    const onDiskFiles = listFilesRecursive(outDir);
+    const outRel = relativePath(resolved.packDir, outDir);
+    const ignored = gitIgnoredFiles(resolved.packDir, onDiskFiles.map((f) => join(outRel, f)));
+    for (const onDisk of onDiskFiles) {
+      if (expectedPaths.has(onDisk) || ignored.has(join(outRel, onDisk))) continue;
+      orphanFiles.push(onDisk);
+    }
+
+    if (staleFiles.length > 0 || orphanFiles.length > 0) {
+      anyStale = true;
+      rows.push({ name: verb.name, status: "stale", staleFiles, orphanFiles, side, staleBecause: causes });
+    } else {
+      rows.push({ name: verb.name, status: "in-sync", staleFiles, orphanFiles, side });
+    }
+  }
+
+  // The settings/marketplace walk in discoverPacks() is skipped when no plugin
+  // is actually installed (fixture mode's list is always empty): there is
+  // nothing to compare against, so it would only cost a real filesystem scan
+  // for a null result.
+  const installed = resolved.pluginRoots.list.length === 0 ? null : installedInfoFor(resolved, discoverPacks());
+
+  return { pack: resolved.team, packDir: resolved.packDir, verbs: rows, chainErrors, installed, drift: anyStale };
+}
+
+export async function checkPack(opts: { pack?: string; packDir?: string; manifest?: string; mattstackDir?: string }): Promise<CheckPayload> {
+  const args: string[] = [];
+  if (opts.pack) args.push("--pack", opts.pack);
+  if (opts.packDir) args.push("--pack-dir", opts.packDir);
+  if (opts.manifest) args.push("--manifest", opts.manifest);
+  if (opts.mattstackDir) args.push("--mattstack-dir", opts.mattstackDir);
+  return computeCheck(parseFlags(args));
+}
+
+export function installedCacheLine(installed: InstalledInfo): string | null {
+  if (installed.status === "lagging") {
+    return `installed cache: lagging (${installed.version} installed vs ${installed.sourceVersion} source) -- run rt skills sync`;
+  }
+  if (installed.status === "missing") {
+    return `installed cache: missing (no installed record for ${installed.plugin}@${installed.marketplace}) -- run rt skills sync`;
+  }
+  return null;
+}
+
+export async function skillsCheck(args: string[]): Promise<void> {
+  await withCleanErrors(async () => {
+    const flags = parseFlags(args);
+    const payload = await computeCheck(flags);
+
+    if (!flags.json) {
+      for (const chainError of payload.chainErrors) console.log(chainError);
+      for (const row of payload.verbs) {
+        if (row.status === "never-compiled") {
+          console.log(`${row.name}: stale (never compiled -- outDir missing; run rt skills compile)`);
+        } else if (row.status === "stale") {
+          const humanFiles = [...row.staleFiles, ...row.orphanFiles.map((f) => `${f} (orphan)`)];
+          const causes = row.staleBecause ?? [];
+          const movedPrefix = causes.length > 0 ? `${causes.join(", ")} moved; ` : "";
+          console.log(`${row.name}: stale (${movedPrefix}recompile or investigate drift with git diff) -- ${humanFiles.join(", ")}`);
+        } else {
+          console.log(`${row.name}: current`);
+        }
+      }
+      if (payload.installed) {
+        const line = installedCacheLine(payload.installed);
+        if (line) console.log(line);
+      }
+    }
+
+    if (payload.drift) process.exitCode = 1;
 
     if (flags.json) {
-      console.log(JSON.stringify({ pack: resolved.team, packDir: resolved.packDir, verbs: rows, chainErrors }));
+      const { pack, packDir, verbs, chainErrors, installed } = payload;
+      console.log(JSON.stringify({ pack, packDir, verbs, chainErrors, installed }));
     }
   });
 }
