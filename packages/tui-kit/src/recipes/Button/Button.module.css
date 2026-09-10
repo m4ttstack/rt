@@ -1,5 +1,5 @@
-/* Button — the kit's workhorse control, four canonical variants (default,
-   light, outline, subtle). Every variant's colour comes from the SAME
+/* Button — the kit's workhorse control, five canonical variants (default,
+   filled, light, outline, subtle). Every variant's colour comes from the SAME
    `--button-bg`/`--button-color`/`--button-border`/`--button-hover` quartet,
    which autoVars derives from the theme's intent resolver
    (tuiIntentResolver -> singleShadeVariantColors) per (intent, variant) —

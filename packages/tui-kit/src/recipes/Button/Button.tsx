@@ -21,7 +21,7 @@ const BUTTON_VOCABULARY_AXES = ["intent", "variant", "size"] as const;
 
 /**
  * The three pre-existing gate-tier cells pin here, not in intent-resolver.ts
- * (spec: docs/superpowers/specs/2026-09-10-polish-port-design.md) — the
+ * (spec: docs/superpowers/specs/2026-09-10-polish-port-design.md): the
  * shared resolver feeds autoVars for every recipe, so pinning them there
  * would restyle shipped non-Button surfaces; pinning the quartet in Button's
  * own `vars` keeps every other recipe on the resolver's retune-table output.
