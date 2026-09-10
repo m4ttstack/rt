@@ -103,6 +103,7 @@ function deps(over: Partial<RunnerDeps> & { sessions: SessionHandle[]; engine?: 
     openUrl: over.openUrl ?? (async () => {}),
     workspaceLabel: "rt-runner-test",
     seed: over.seed,
+    focusPane: over.focusPane,
   };
 }
 
@@ -257,6 +258,38 @@ test("focus failure pins an error on the entry and the board stays up", async ()
   const r = new Runner(d);
   await r.run();
   expect(r.entries[0]!.error).toContain("boom");
+});
+
+// The bg backend's panes are headless: engine-level tab focus is a no-op
+// nobody can see, so a wired focusPane (the daemon's pane:focus attend
+// verb) takes over, keyed by the entry's PANE.
+test("focus uses deps.focusPane with the entry's pane when wired, never engine tab focus", async () => {
+  const s = new FakeSession([{ t: "intent", name: "add" }]);
+  const s2 = new FakeSession([{ t: "intent", name: "focus", entryId: "e1" }, { t: "intent", name: "quit" }]);
+  const focused: string[] = [];
+  const d = deps({
+    sessions: [s, s2],
+    resolve: async () => ({ kind: "resolved", result: { targetDir: "/repo/web", packageLabel: "web", worktree: "/repo", branch: "main", commandTemplate: "bun run dev", script: "dev" } }),
+    focusPane: async (paneId: string) => { focused.push(paneId); },
+  });
+  const r = new Runner(d);
+  await r.run();
+  expect(focused).toEqual(["wX:p1"]);
+  expect(d.engine.calls.some((c) => c.startsWith("focus:"))).toBe(false);
+  expect(r.entries[0]!.error).toBeNull();
+});
+
+test("a focusPane failure pins its error on the entry and the board stays up", async () => {
+  const s = new FakeSession([{ t: "intent", name: "add" }]);
+  const s2 = new FakeSession([{ t: "intent", name: "focus", entryId: "e1" }, { t: "intent", name: "quit" }]);
+  const d = deps({
+    sessions: [s, s2],
+    resolve: async () => ({ kind: "resolved", result: { targetDir: "/repo/web", packageLabel: "web", worktree: "/repo", branch: "main", commandTemplate: "bun run dev", script: "dev" } }),
+    focusPane: async () => { throw new Error("callerWorkspace (HERDR_WORKSPACE_ID) is required"); },
+  });
+  const r = new Runner(d);
+  await r.run();
+  expect(r.entries[0]!.error).toContain("HERDR_WORKSPACE_ID");
 });
 
 test("tail intent reads immediately and pushes a model with tail for that entry only", async () => {
