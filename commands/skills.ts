@@ -773,6 +773,69 @@ function compileTargets(resolved: Resolved, publicSet: Set<string> | null, verbF
   return { targets, verbSides, knownTargetDirs };
 }
 
+/**
+ * The real-write path shared by skillsCompile and compilePackAll: compiles
+ * every target, writes on success (sweeping a stale other-side dir first),
+ * and scans for misplaced entries. `write` false is skillsCompile's
+ * --dry-run -- outcomes and misplaced are still computed so both callers see
+ * what a real run would do, but writeCompiledVerb never runs. No printing
+ * and no process.exit here: callers own how outcomes/failures/misplaced
+ * become human or JSON output and how the process exits.
+ */
+function performCompile(resolved: Resolved, verbFilter: string[] | null, write: boolean): {
+  outcomes: { target: CompileTarget; outcome: CompileOutcome }[];
+  failures: string[];
+  misplaced: string[];
+} {
+  const publicSet = resolved.surface ? new Set(resolved.surface.public) : null;
+  const { targets, verbSides, knownTargetDirs } = compileTargets(resolved, publicSet, verbFilter);
+  // Lint accepts a relative path to any KNOWN target, not only emitted ones: a
+  // scoped compile still renders {{verb.path}} to siblings it is not writing.
+  const emittedTargetDirs = knownTargetDirs;
+
+  // Every target is compiled before any is written: a run that aborts midway
+  // leaves already-emitted verbs referencing stage dirs that never landed.
+  const outcomes: { target: CompileTarget; outcome: CompileOutcome }[] = targets.map(
+    (target) => ({ target, outcome: tryCompileVerb(target, resolved, emittedTargetDirs, verbSides) }),
+  );
+  const failures = outcomes.flatMap(({ outcome }) => (outcome.ok ? [] : [outcome.message]));
+
+  const writing = write && failures.length === 0;
+  if (writing) {
+    for (const { target, outcome } of outcomes) {
+      if (!outcome.ok) continue;
+      const { verb, isPublic } = target;
+      // A pack's own engine source may live at attachments/<verb>/SKILL.md while
+      // its door compiles into skills/<verb>/: the other side is only stale when
+      // it carries the compiler header, never when it is the hand-written source.
+      const stale = otherSideDir(resolved.packDir, verb.name, isPublic);
+      if (existsSync(stale) && !isHandWrittenDir(stale)) rmSync(stale, { recursive: true, force: true });
+      writeCompiledVerb(outDirFor(resolved.packDir, verb.name, isPublic), outcome.result);
+    }
+  }
+
+  const misplaced: string[] = [];
+  if (publicSet) {
+    // Prediction must match what the write pass leaves behind: a target's
+    // stale compiler-headed other-side dir gets swept by the real run, so
+    // a dry-run must not call it misplaced. A failure-aborted run sweeps
+    // nothing, so it gets no such credit -- its stale dirs stay on disk.
+    const wouldBeSwept = new Set<string>();
+    if (!write && failures.length === 0) {
+      for (const { target, outcome } of outcomes) {
+        if (!outcome.ok) continue;
+        const stale = otherSideDir(resolved.packDir, target.verb.name, target.isPublic);
+        if (existsSync(stale) && !isHandWrittenDir(stale)) wouldBeSwept.add(target.verb.name);
+      }
+    }
+    for (const name of enumerateRegistered(resolved.packDir).keys()) {
+      if (!publicSet.has(name) && !wouldBeSwept.has(name)) misplaced.push(name);
+    }
+  }
+
+  return { outcomes, failures, misplaced };
+}
+
 export async function skillsCompile(args: string[]): Promise<void> {
   await withCleanErrors(async () => {
     const flags = parseFlags(args);
@@ -792,12 +855,11 @@ export async function skillsCompile(args: string[]): Promise<void> {
     const chainErrors = pipelineChainErrors(resolved);
     if (chainErrors.length > 0) throw new SkillsUsageError(chainErrors.join("\n"));
 
-    const { targets, verbSides, knownTargetDirs } = compileTargets(resolved, publicSet, flags.verbs);
-    // Lint accepts a relative path to any KNOWN target, not only emitted ones: a
-    // scoped compile still renders {{verb.path}} to siblings it is not writing.
-    const emittedTargetDirs = knownTargetDirs;
-
     if (flags.preview) {
+      const { targets, verbSides, knownTargetDirs } = compileTargets(resolved, publicSet, flags.verbs);
+      // Lint accepts a relative path to any KNOWN target, not only emitted ones: a
+      // scoped compile still renders {{verb.path}} to siblings it is not writing.
+      const emittedTargetDirs = knownTargetDirs;
       for (const target of targets) {
         const { verb } = target;
         const outcome = tryCompileVerb(target, resolved, emittedTargetDirs, verbSides);
@@ -820,12 +882,7 @@ export async function skillsCompile(args: string[]): Promise<void> {
       return;
     }
 
-    // Every target is compiled before any is written: a run that aborts midway
-    // leaves already-emitted verbs referencing stage dirs that never landed.
-    const outcomes: { target: CompileTarget; outcome: CompileOutcome }[] = targets.map(
-      (target) => ({ target, outcome: tryCompileVerb(target, resolved, emittedTargetDirs, verbSides) }),
-    );
-    const failures = outcomes.flatMap(({ outcome }) => (outcome.ok ? [] : [outcome.message]));
+    const { outcomes, failures, misplaced } = performCompile(resolved, flags.verbs, !flags.dryRun);
     if (failures.length > 0 && !flags.json) {
       for (const message of failures) console.error(`rt skills: ${message}`);
       process.exit(1);
@@ -835,7 +892,7 @@ export async function skillsCompile(args: string[]): Promise<void> {
     for (const { target, outcome } of outcomes) {
       if (!outcome.ok) continue;
       const { verb, isPublic } = target;
-      const side = verbSides[verb.name]!;
+      const side: Side = isPublic ? "skills" : "attachments";
 
       if (!writing) {
         if (!flags.json) {
@@ -845,40 +902,15 @@ export async function skillsCompile(args: string[]): Promise<void> {
         continue;
       }
 
-      // A pack's own engine source may live at attachments/<verb>/SKILL.md while
-      // its door compiles into skills/<verb>/: the other side is only stale when
-      // it carries the compiler header, never when it is the hand-written source.
-      const stale = otherSideDir(resolved.packDir, verb.name, isPublic);
-      if (existsSync(stale) && !isHandWrittenDir(stale)) rmSync(stale, { recursive: true, force: true });
-      writeCompiledVerb(outDirFor(resolved.packDir, verb.name, isPublic), outcome.result);
       if (!flags.json) {
         console.log(`compiled ${verb.name} -> ${side} (${outcome.result.files.length} files, ${outcome.result.warnings.length} warnings)`);
         for (const warning of outcome.result.warnings) console.log(`  ${warning}`);
       }
     }
 
-    const misplaced: string[] = [];
-    if (publicSet) {
-      // Prediction must match what the write pass leaves behind: a target's
-      // stale compiler-headed other-side dir gets swept by the real run, so
-      // a dry-run must not call it misplaced. A failure-aborted run sweeps
-      // nothing, so it gets no such credit -- its stale dirs stay on disk.
-      const wouldBeSwept = new Set<string>();
-      if (flags.dryRun && failures.length === 0) {
-        for (const { target, outcome } of outcomes) {
-          if (!outcome.ok) continue;
-          const stale = otherSideDir(resolved.packDir, target.verb.name, target.isPublic);
-          if (existsSync(stale) && !isHandWrittenDir(stale)) wouldBeSwept.add(target.verb.name);
-        }
-      }
-      for (const name of enumerateRegistered(resolved.packDir).keys()) {
-        if (!publicSet.has(name) && !wouldBeSwept.has(name)) misplaced.push(name);
-      }
-    }
-
     if (flags.json) {
       const rows: CompileVerbRow[] = outcomes.map(({ target, outcome }) => {
-        const side = verbSides[target.verb.name]!;
+        const side: Side = target.isPublic ? "skills" : "attachments";
         return outcome.ok
           ? { name: target.verb.name, status: "compiled", files: outcome.result.files.map((f) => ({ path: f.path })), warnings: outcome.result.warnings, errors: [], side }
           : { name: target.verb.name, status: "errored", files: [], warnings: [], errors: [outcome.message], side };
@@ -897,6 +929,26 @@ export async function skillsCompile(args: string[]): Promise<void> {
       process.exitCode = 1;
     }
   });
+}
+
+/**
+ * The in-process compile call for the later sync chain: full-pack real
+ * compile, no printing, no process.exit. `ok` is false on chain errors,
+ * lint failures, or misplaced verbs -- each named in `errors` -- with no
+ * partial write on failure, exactly as the handler behaves today.
+ */
+export async function compilePackAll(opts: { pack?: string; packDir?: string; manifest?: string; mattstackDir?: string }): Promise<{ ok: boolean; errors: string[] }> {
+  const args: string[] = [];
+  if (opts.pack) args.push("--pack", opts.pack);
+  if (opts.packDir) args.push("--pack-dir", opts.packDir);
+  if (opts.manifest) args.push("--manifest", opts.manifest);
+  if (opts.mattstackDir) args.push("--mattstack-dir", opts.mattstackDir);
+  const resolved = await resolve(parseFlags(args));
+  const chainErrors = pipelineChainErrors(resolved);
+  if (chainErrors.length > 0) return { ok: false, errors: chainErrors };
+  const { failures, misplaced } = performCompile(resolved, null, true);
+  const errors = [...failures, ...misplaced.map((name) => `misplaced: ${name}`)];
+  return { ok: errors.length === 0, errors };
 }
 
 type CheckVerbStatus = "in-sync" | "stale" | "never-compiled";

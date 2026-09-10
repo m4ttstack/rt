@@ -3,7 +3,7 @@ import { execFileSync } from "child_process";
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { dirname, join } from "path";
-import { installedCacheLine, installedInfoFor, skillsCheck, skillsCompile, skillsComposition, skillsPacks } from "../skills.ts";
+import { compilePackAll, installedCacheLine, installedInfoFor, skillsCheck, skillsCompile, skillsComposition, skillsPacks } from "../skills.ts";
 import { compileSkill } from "../../lib/skills/compile.ts";
 import { invocableRoster, loadAttachment, loadStepSource } from "../../lib/skills/sources.ts";
 import type { PluginRoots } from "../../lib/skills/sources.ts";
@@ -646,6 +646,29 @@ describe("skillsCompile", () => {
     expect(exitCode).toBe(1);
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain("skills.jsonc");
+  });
+
+  test("compilePackAll writes the pack and reports ok", async () => {
+    const mattstackDir = makeMattstackDir();
+    const packDir = makePackDir();
+    const manifest = makeManifest("t");
+
+    const result = await compilePackAll({ pack: "t", packDir, mattstackDir, manifest });
+
+    expect(result).toEqual({ ok: true, errors: [] });
+    expect(existsSync(join(packDir, "skills", "watch-ci", "SKILL.md"))).toBe(true);
+  });
+
+  test("compilePackAll surfaces lint failures as errors, writing nothing", async () => {
+    const mattstackDir = makeMattstackDir();
+    const packDir = makePackDir();
+    const manifest = makeManifest("t", false); // reuses the missing-required-binding fixture
+
+    const result = await compilePackAll({ pack: "t", packDir, mattstackDir, manifest });
+
+    expect(result.ok).toBe(false);
+    expect(result.errors.length).toBeGreaterThan(0);
+    expect(existsSync(join(packDir, "skills", "watch-ci"))).toBe(false);
   });
 });
 
