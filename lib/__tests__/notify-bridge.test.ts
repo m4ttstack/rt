@@ -455,6 +455,80 @@ describe("subjectPrefix rule filter", () => {
   });
 });
 
+describe("owner rule filter", () => {
+  test("owner:human rule suppresses herd-owned gate events", async () => {
+    const bus = fakeBus();
+    const enqueued: NotificationEvent[] = [];
+
+    startNotifyBridge({
+      onBroadcast: bus.onBroadcast,
+      rules: () => [{ pattern: "gate/opened/**", category: "gate", title: "t", message: "m", owner: "human" as const }],
+      enqueue: (e) => { enqueued.push(e); },
+      paneFocused: async () => false,
+    });
+
+    await bus.emit("event", {
+      id: 1,
+      topic: "gate/opened/g1",
+      payload: { id: "g1", owner: "herd:h-1" },
+      emittedAt: Date.now(),
+    });
+
+    expect(enqueued).toHaveLength(0);
+
+    await bus.emit("event", {
+      id: 2,
+      topic: "gate/opened/g2",
+      payload: { id: "g2", owner: "human" },
+      emittedAt: Date.now(),
+    });
+
+    expect(enqueued).toHaveLength(1);
+  });
+
+  test("a rule without owner accepts all events regardless of payload.owner", async () => {
+    const bus = fakeBus();
+    const enqueued: NotificationEvent[] = [];
+
+    startNotifyBridge({
+      onBroadcast: bus.onBroadcast,
+      rules: () => [{ pattern: "gate/opened/**", category: "gate", title: "t", message: "m" }],
+      enqueue: (e) => { enqueued.push(e); },
+      paneFocused: async () => false,
+    });
+
+    await bus.emit("event", {
+      id: 1,
+      topic: "gate/opened/g1",
+      payload: { id: "g1", owner: "herd:h-1" },
+      emittedAt: Date.now(),
+    });
+
+    expect(enqueued).toHaveLength(1);
+  });
+
+  test("owner:human rule accepts events with no owner field", async () => {
+    const bus = fakeBus();
+    const enqueued: NotificationEvent[] = [];
+
+    startNotifyBridge({
+      onBroadcast: bus.onBroadcast,
+      rules: () => [{ pattern: "gate/opened/**", category: "gate", title: "t", message: "m", owner: "human" as const }],
+      enqueue: (e) => { enqueued.push(e); },
+      paneFocused: async () => false,
+    });
+
+    await bus.emit("event", {
+      id: 1,
+      topic: "gate/opened/g1",
+      payload: { id: "g1" },
+      emittedAt: Date.now(),
+    });
+
+    expect(enqueued).toHaveLength(1);
+  });
+});
+
 describe("parseEventBridgeRules", () => {
   function noopWarn(): void {}
 
@@ -490,6 +564,31 @@ describe("parseEventBridgeRules", () => {
     );
     expect(rules).toHaveLength(1);
     expect(rules[0]!.subjectPrefix).toBe("mr:");
+  });
+
+  test("keeps a rule with owner:human", () => {
+    const rules = parseEventBridgeRules(
+      [{ pattern: "gate/opened/*", category: "gate", title: "t", message: "m", owner: "human" }],
+      noopWarn,
+    );
+    expect(rules).toHaveLength(1);
+    expect(rules[0]!.owner).toBe("human");
+  });
+
+  test("drops a rule with an invalid owner value and warns", () => {
+    const warnings: unknown[] = [];
+    const raw = [{ pattern: "p", category: "c", title: "t", message: "m", owner: "herd:x" }];
+    const rules = parseEventBridgeRules(raw, (o) => { warnings.push(o); });
+    expect(rules).toHaveLength(0);
+    expect(warnings.length).toBeGreaterThan(0);
+  });
+
+  test("drops a rule with a numeric owner and warns", () => {
+    const warnings: unknown[] = [];
+    const raw = [{ pattern: "p", category: "c", title: "t", message: "m", owner: 42 }];
+    const rules = parseEventBridgeRules(raw, (o) => { warnings.push(o); });
+    expect(rules).toHaveLength(0);
+    expect(warnings.length).toBeGreaterThan(0);
   });
 
   test("skips an entry missing a required field and warns", () => {
