@@ -324,6 +324,21 @@ describe("herd:resume / status / close", () => {
     expect(res.data.push.lastDelivery).toMatchObject({ outcome: "delivered" });
   });
 
+  // Run-gate pushes land on the owner-scoped row, never the prefix row
+  // (fanOut's first-match dedupe stops at whichever row matches first), so
+  // push.lastDelivery must also look there or steady pipeline pushes read
+  // as "never delivered" despite gate_pushed having actually landed.
+  test("status push.lastDelivery reflects a delivery recorded on the owner-scoped row, not just the prefix row", async () => {
+    const { h, gateStore, herd } = await started({ probeInbox: async () => "reachable" });
+    const prefixSub = gateStore.subscriptions({ live: true }).find((s) => s.scope === "prefix")!;
+    const ownerSub = gateStore.subscriptions({ live: true }).find((s) => s.scope === "owner")!;
+    expect(prefixSub.lastDelivery).toBeNull();
+    gateStore.markSubscriptionDelivery(ownerSub.id, "delivered");
+    const res = await h["herd:status"]({ herd });
+    if (!res.ok) throw new Error(res.error);
+    expect(res.data.push.lastDelivery).toMatchObject({ outcome: "delivered" });
+  });
+
   test("resume counts run gates owned by the herd's jobs alongside its own gates", async () => {
     const hx = harness({ runWorktree: (id) => (id === "run-1" ? "/w/job-a" : id === "run-2" ? "/elsewhere" : null) });
     const s = await hx.h["herd:start"](START);

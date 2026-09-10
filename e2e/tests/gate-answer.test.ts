@@ -104,7 +104,7 @@ describe("rt gate answer owner enforcement (RT-117 e2e)", () => {
     cleanup();
   });
 
-  test("a non-owner is refused; --override lets a human answer anyway; the owning shepherd's session succeeds", async () => {
+  test("a non-owner is refused; --override lets a human answer anyway", async () => {
     const runId = await startRun(home, "herd:h-1");
 
     const intruderGate = await openGate(home, runId, "clarify-a");

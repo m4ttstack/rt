@@ -182,12 +182,21 @@ export function createHerdHandlers(deps: HerdDeps) {
     // hide the very state `renderStatus` prints DEAD for.
     const mine = subs.ok ? subs.data.subscriptions.filter((s) => s.subjectPrefix === herdPrefix(herdId)) : [];
     const subRow = mine.findLast((s) => !s.dead) ?? mine.at(-1) ?? null;
+    // Run-gate pushes land on the owner-scoped row, never the prefix row
+    // (fanOut's first-match dedupe stops at whichever row matches first), so
+    // the freshest delivery for this herd can be sitting on either row.
+    const ownerRows = subs.ok ? subs.data.subscriptions.filter((s) => s.scope === "owner" && s.ownerRef === herdOwner(herdId)) : [];
+    const ownerRow = ownerRows.findLast((s) => !s.dead) ?? ownerRows.at(-1) ?? null;
+    const pushDelivery =
+      subRow?.lastDelivery && ownerRow?.lastDelivery
+        ? (subRow.lastDelivery.at >= ownerRow.lastDelivery.at ? subRow.lastDelivery : ownerRow.lastDelivery)
+        : (subRow?.lastDelivery ?? ownerRow?.lastDelivery ?? null);
     return {
       herd, jobs, unread,
       lifecycleConnected: deps.lifecycle.connected(herd.herdrSocket),
       hiddenUp: herd.hidden ? await deps.bg.up() : null,
       subscription: subRow ? { id: subRow.id, dead: subRow.dead, lastDelivery: subRow.lastDelivery } : null,
-      push: { state: pushState, lastDelivery: subRow?.lastDelivery ?? null },
+      push: { state: pushState, lastDelivery: pushDelivery },
     };
   }
 
