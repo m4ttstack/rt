@@ -10,6 +10,7 @@ import type { MRDetail } from '@mattstack/glance';
 import {
   canonicalLatch,
   findLatches,
+  hasArmedLatch,
   requestCarriers,
   type LatchRef,
 } from '../latch/discussions.ts';
@@ -41,6 +42,12 @@ export interface LatchMrFacts {
 
 export interface LatchPassDeps {
   readReviewStates(): Map<string, ReviewState>;
+  /** Tombstoned review rows (pruned while the MR was off the board). A
+      commented one whose MR is back in scope and still carries an armed
+      latch is resurrected; one whose latch is gone is dropped for good. */
+  readPrunedReviewStates(): Map<string, ReviewState>;
+  resurrectReviewState(mrUrl: string): void;
+  dropPrunedReviewState(mrUrl: string): void;
   fetchLatchMrs(): Promise<LatchMrFacts[]>;
   readDetail(mr: LatchMrFacts): Promise<MRDetail | null>;
   gateway: LatchGateway;
@@ -61,6 +68,7 @@ export interface LatchPassResult {
   rejected: number;
   spent: number;
   repaired: number;
+  resurrected: number;
   skipped: number;
   failed: number;
 }
@@ -87,6 +95,7 @@ export async function runLatchPass(
     rejected: 0,
     spent: 0,
     repaired: 0,
+    resurrected: 0,
     skipped: 0,
     failed: 0,
   };
@@ -97,6 +106,7 @@ export async function runLatchPass(
   const policy: TriageConfig = { ...deps.cfg, enabled: true };
 
   const reviews = deps.readReviewStates();
+  const pruned = deps.readPrunedReviewStates();
   const now = deps.now();
   const dayStamp = new Date(now).toISOString().slice(0, 10);
   const mrs = await deps.fetchLatchMrs();
@@ -106,10 +116,21 @@ export async function runLatchPass(
     // transient 500) must not abort the tick and starve every MR queued
     // after it while the condition lasts.
     try {
-      const review = reviews.get(mr.mrUrl);
+      const live = reviews.get(mr.mrUrl);
+      // Only a commented tombstone is a resurrection candidate: an approve
+      // outcome's latch is already spent-terminal, so reviving its row buys
+      // nothing and would cost a discussion read every tick.
+      const dead = live ? undefined : pruned.get(mr.mrUrl);
+      const tomb =
+        dead?.status === 'done' && dead.outcome === 'comment'
+          ? dead
+          : undefined;
       // A done state with no outcome records no verdict, so there is nothing to
       // arm and nothing to spend. decideRequest treats it the same way.
-      if (!review || review.status !== 'done' || !review.outcome) {
+      if (
+        (!live && !tomb) ||
+        (live && (live.status !== 'done' || !live.outcome))
+      ) {
         result.skipped++;
         continue;
       }
@@ -119,6 +140,31 @@ export async function runLatchPass(
         continue;
       }
       const latches = findLatches(detail);
+      let review = live;
+      if (!review) {
+        // The armed latch is the proof the tombstone still matters: without
+        // one there is nothing a revived row could ever act on, and dropping
+        // the tombstone keeps this MR out of every later tick's reads.
+        if (!hasArmedLatch(latches)) {
+          deps.dropPrunedReviewState(mr.mrUrl);
+          result.skipped++;
+          continue;
+        }
+        deps.resurrectReviewState(mr.mrUrl);
+        deps.appendAudit({
+          ts: now,
+          mrUrl: mr.mrUrl,
+          iid: mr.iid,
+          event: 'latch',
+          action: 'resurrected',
+        });
+        result.resurrected++;
+        review = tomb;
+      }
+      if (!review) {
+        result.skipped++;
+        continue;
+      }
       const canon = canonicalLatch(latches);
 
       // Step 0: nothing to act on. A spent relic with no live latch is the
