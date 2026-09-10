@@ -401,6 +401,18 @@ describe("gate-push onClosed (supersede/close, W4 final-review M4)", () => {
   });
 });
 
+describe("GATE_SUBSCRIPTION_PHRASE (RT-117 Task 7)", () => {
+  test("subscription phrase names presentation and owner", () => {
+    expect(GATE_SUBSCRIPTION_PHRASE({ id: "g", status: "open", origin: { presentation: "form" }, owner: "herd:h-1" } as any))
+      .toBe("[gate] g is now open (form, owner herd:h-1); re-read the gate registry.");
+  });
+
+  test("falls back to wait and human when origin/owner are absent", () => {
+    expect(GATE_SUBSCRIPTION_PHRASE({ id: "g", status: "answered", origin: null, owner: null } as any))
+      .toBe("[gate] g is now answered (wait, owner human); re-read the gate registry.");
+  });
+});
+
 describe("retryDeadPanes", () => {
   test("re-pushes dead-pane rows, marks delivered on success, gives up after the cap", async () => {
     const store = freshStore();

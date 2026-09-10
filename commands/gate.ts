@@ -262,11 +262,20 @@ export function buildListPayload(args: string[]): Commands["gate:list"]["payload
   return payload;
 }
 
+/** Every listed row names presentation and owner directly, the same
+    wait/human fallback GATE_SUBSCRIPTION_PHRASE uses, so a reader never has
+    to reach into `origin` or special-case a null owner (RT-117 Task 7). */
+export function withGateTokens(
+  gates: GateRow[],
+): Array<GateRow & { presentation: "form" | "wait"; owner: string }> {
+  return gates.map((g) => ({ ...g, presentation: g.origin?.presentation ?? "wait", owner: g.owner ?? "human" }));
+}
+
 export async function gateList(args: string[]): Promise<void> {
   const payload = buildListPayload(args);
   const res = await clientList(payload);
   const data = unwrap(res, "list");
-  console.log(JSON.stringify({ ok: true, gates: data.gates, cursor: data.cursor }));
+  console.log(JSON.stringify({ ok: true, gates: withGateTokens(data.gates), cursor: data.cursor }));
 }
 
 // ─── park / close ────────────────────────────────────────────────────────────
