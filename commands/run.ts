@@ -64,6 +64,12 @@ export class RunAborted extends Error {
 export type RunResolution =
   | { kind: "resolved"; result: RunResolveResult }
   | { kind: "launched" }
+  // A preset resolved FOR a live board: the entries land on the board that
+  // asked, on its own engine. resolveRun launching a nested seeded board
+  // here instead is the bug this kind exists to prevent -- the nested board
+  // is hard-wired to the tmux default, abandoning a --herdr board's bg
+  // server and leaking its claim.
+  | { kind: "seed"; entries: SeedEntry[] }
   | { kind: "cancelled"; code: number };
 
 export interface RunResolveResult {
@@ -368,7 +374,10 @@ async function selectPackageAndScript(
   ctx: CommandContext,
   contextLabel?: string,
   queue?: QueuedItem[],
-): Promise<ScriptSelection | typeof QUEUE_LAUNCHED | null> {
+  // Resolving for a live board: a preset pick returns its seed rows to that
+  // board instead of launching a nested one (see RunResolution's seed kind).
+  board?: boolean,
+): Promise<ScriptSelection | typeof QUEUE_LAUNCHED | { seed: SeedEntry[] } | null> {
   const packages = getWorkspacePackages(worktreePath);
   const label = contextLabel ? `${contextLabel}` : "";
   // contextLabel reads "repo / worktree" for the on-screen message; the crumb
@@ -516,6 +525,7 @@ async function selectPackageAndScript(
           const presetName = val.slice(PRESET_PREFIX.length, -2); // strip prefix + trailing "__"
           const preset = findPreset(repoIdentity, presetName);
           if (preset) {
+            if (board) return { seed: presetToSeed(preset, worktreePath) };
             await launchPreset(preset, worktreePath, ctx);
             return QUEUE_LAUNCHED; // signal "already launched" — q is empty, launchQueue() is a no-op
           }
@@ -853,6 +863,7 @@ export async function launchPreset(preset: Preset, worktreePath: string, ctx: Co
 export async function resolveRun(
   args: string[],
   ctx: CommandContext,
+  opts?: { board?: boolean },
 ): Promise<RunResolution> {
   try {
     // Definite-assignment asserted: every path to the build-result section
@@ -883,6 +894,7 @@ export async function resolveRun(
         const derivedIdentity = await deriveRepoIdentity(worktreePath);
         const preset = findPreset(derivedIdentity.kind === "remote" ? derivedIdentity.id : null, presetArg);
         if (preset) {
+          if (opts?.board) return { kind: "seed", entries: presetToSeed(preset, worktreePath) };
           await launchPreset(preset, worktreePath, ctx);
           return { kind: "launched" };
         }
@@ -899,12 +911,13 @@ export async function resolveRun(
       }
 
       const ctxLabel = `${ctx.identity!.repoName} / ${basename(worktreePath)}`;
-      const sel = await selectPackageAndScript(worktreePath, repoName, ctx, ctxLabel, queue);
+      const sel = await selectPackageAndScript(worktreePath, repoName, ctx, ctxLabel, queue, opts?.board);
       if (sel === QUEUE_LAUNCHED) {
         // Queue was built and user chose "Launch all" -- launch and exit
         await launchQueue(queue, worktreePath);
         return { kind: "launched" };
       }
+      if (sel && "seed" in sel) return { kind: "seed", entries: sel.seed };
       if (sel) {
         packagePath = sel.packagePath;
         packageLabel = sel.packageLabel;
@@ -1028,11 +1041,12 @@ export async function resolveRun(
             const wtCtx = worktrees.length > 1
               ? `${repoLabel(selectedRepo.repoName)} / ${basename(worktreePath)}`
               : repoLabel(selectedRepo.repoName);
-            const sel = await selectPackageAndScript(worktreePath, repoName, ctx, wtCtx, queue);
+            const sel = await selectPackageAndScript(worktreePath, repoName, ctx, wtCtx, queue, opts?.board);
             if (sel === QUEUE_LAUNCHED) {
               await launchQueue(queue, worktreePath);
               return { kind: "launched" };
             }
+            if (sel && "seed" in sel) return { kind: "seed", entries: sel.seed };
             if (!sel) {
               process.stderr.write("\x1b[2J\x1b[H");
               if (worktrees.length > 1) break; // re-show worktree picker
@@ -1083,6 +1097,9 @@ export async function runCommand(
   const res = await resolveRun(args, ctx);
   if (res.kind === "launched") return;
   if (res.kind === "cancelled") process.exit(res.code);
+  // Seed resolutions exist only under the board option, which this caller
+  // never passes.
+  if (res.kind === "seed") throw new Error("seed resolution outside a board resolve");
   const result = res.result;
 
   if (resolveOnly) {
