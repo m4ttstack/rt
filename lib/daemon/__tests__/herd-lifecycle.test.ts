@@ -413,6 +413,36 @@ describe("herd-lifecycle", () => {
     expect(bgClaims.list().map((c) => c.owner)).toEqual(["herd:demo-1"]);
   });
 
+  // CodeRabbit (PR #222): herd:spawn does not gate on herd status, so it can
+  // land on an already-wrapped herd. If its job row (and pane) appears
+  // between this sweep capturing the herd pass and session.snapshot
+  // resolving, the snapshot predates that pane and never counts it "live" --
+  // yet the fresh post-RPC store.jobs() read would see it. Comparing the
+  // job-pane set to what it was before the RPC catches that drift and defers
+  // the release to the next sweep instead of releasing a claim whose herd
+  // just grew a real, live pane.
+  test("sweepClaims defers releasing a wrapped herd's claim when a job's pane appears during the snapshot RPC (a spawn landed mid-flight)", async () => {
+    let resolveSnapshot: () => void = () => {};
+    const gate = new Promise<void>((resolve) => { resolveSnapshot = resolve; });
+    const { lc, store, bgClaims } = fx({
+      bgSocket: "/bg.sock",
+      claims: [{ owner: "herd:hd-1", pane: null }],
+      herdr: async () => {
+        // Same shape as herd:spawn: a job row lands mid-flight, after this
+        // sweep already captured the pre-RPC herd-pass state.
+        store.upsertJob({ herd: "hd-1", name: "job-new", worktree: "/w/job-new", handle: "job-new", status: "spawning", pane: "w9:pNew" });
+        await gate;
+        return { ok: true, result: { snapshot: { panes: [] } } };
+      },
+    });
+    store.create({ id: "hd-1", repo: "r", room: "herd-hd-1", workspace: "herd: hd-1", shepherdSession: "s", shepherdHandle: "shepherd", herdrSocket: "/bg.sock", hidden: true });
+    store.setHerdStatus("hd-1", "wrapped");
+    const sweepPromise = lc.sweepClaims();
+    resolveSnapshot();
+    await sweepPromise;
+    expect(bgClaims.list().map((c) => c.owner)).toEqual(["herd:hd-1"]);
+  });
+
   test("sweepClaims skips the herd pass (but still checks the pane and runner passes) when the snapshot call fails", async () => {
     const { lc, store, bgClaims } = fx({
       bgSocket: "/bg.sock",
