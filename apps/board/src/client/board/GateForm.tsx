@@ -16,7 +16,7 @@ import {
   Questionnaire,
   useGateDraft,
 } from '@mattstack/gate-kit/react';
-import { Chip } from '@mattstack/tui-kit';
+import { Button, Chip } from '@mattstack/tui-kit';
 import type { GateRow } from '../../gates/store.ts';
 import type { BoardMRWithReview } from '../types.ts';
 import { Disclosure, DisclosureHead } from './Disclosure.tsx';
@@ -373,18 +373,25 @@ function GateForm({
         );
       })}
       <div className="tui-gate-actions">
-        <Questionnaire.Previous className="tui-gate-nav" disabled={busy}>
+        <Questionnaire.Previous
+          disabled={busy}
+          render={props => (
+            <Button {...props} variant="light" intent="muted" size="lg" />
+          )}
+        >
           previous
         </Questionnaire.Previous>
         {stepped && (
-          <button
+          <Button
             type="reset"
-            className="tui-gate-ghost"
+            variant="subtle"
+            intent="muted"
+            size="lg"
             disabled={busy}
             onClick={resetAll}
           >
             reset
-          </button>
+          </Button>
         )}
         <div className="tui-gate-actions-end">
           {failed && (
@@ -396,19 +403,23 @@ function GateForm({
           {showFocusAction &&
             (gate.status === 'parked' ? (
               gate.domain && (
-                <button
+                <Button
                   type="button"
-                  className="tui-gate-focus"
+                  variant="subtle"
+                  intent="muted"
+                  size="lg"
                   title="resume this gate's flow in a fresh pane"
                   onClick={() => onFocusPane(mr, gate.domain!)}
                 >
                   focus pane
-                </button>
+                </Button>
               )
             ) : (
-              <button
+              <Button
                 type="button"
-                className="tui-gate-focus"
+                variant="subtle"
+                intent="muted"
+                size="lg"
                 disabled={!originFocusable || focusBusy}
                 title={
                   originFocusable
@@ -418,13 +429,15 @@ function GateForm({
                 onClick={() => void focusGate()}
               >
                 focus pane
-              </button>
+              </Button>
             ))}
           <Questionnaire.Next
-            className="tui-gate-submit"
             render={(props, state) => (
-              <button
+              <Button
                 {...props}
+                variant="filled"
+                intent="warn"
+                size="lg"
                 disabled={busy || state.status !== 'answered'}
               />
             )}
@@ -432,10 +445,12 @@ function GateForm({
             next
           </Questionnaire.Next>
           <Questionnaire.Submit
-            className="tui-gate-submit"
             render={(props, state) => (
-              <button
+              <Button
                 {...props}
+                variant="filled"
+                intent="warn"
+                size="lg"
                 disabled={busy || state.status !== 'answered'}
               />
             )}

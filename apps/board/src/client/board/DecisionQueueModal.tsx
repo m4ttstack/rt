@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 
 import type { GateDomain } from '@mattstack/gate-kit';
-import { Chip, Markdown, Modal } from '@mattstack/tui-kit';
+import { Button, Chip, Markdown, Modal, ScrollPane } from '@mattstack/tui-kit';
 import type { GateRow } from '../../gates/store.ts';
 import { extractTicketId, ticketUrl } from '../../ticket.ts';
 import type { BoardMRWithReview } from '../types.ts';
@@ -71,19 +71,23 @@ function DecisionQueueModal({
         <span className="tui-triage-head-actions">
           {gate.status === 'parked' ? (
             gate.domain && (
-              <button
+              <Button
                 type="button"
-                className="tui-gate-ghost tui-triage-act-focus"
+                variant="light"
+                intent="accent"
+                size="lg"
                 title="resume this gate's flow in a fresh pane"
                 onClick={() => onFocusPane(mr, gate.domain!)}
               >
                 focus pane
-              </button>
+              </Button>
             )
           ) : (
-            <button
+            <Button
               type="button"
-              className="tui-gate-ghost tui-triage-act-focus"
+              variant="light"
+              intent="accent"
+              size="lg"
               disabled={!form.originFocusable || form.focusBusy}
               title={
                 form.originFocusable
@@ -93,15 +97,17 @@ function DecisionQueueModal({
               onClick={() => void form.focusGate()}
             >
               focus pane
-            </button>
+            </Button>
           )}
-          <button
+          <Button
             type="button"
-            className="tui-gate-ghost tui-triage-act-skip"
+            variant="light"
+            intent="muted"
+            size="lg"
             onClick={onSkip}
           >
             skip gate
-          </button>
+          </Button>
         </span>
       </div>
       <div className="tui-triage-strip">
@@ -178,13 +184,15 @@ function DecisionQueueModal({
                   answer: { answers: form.lost.answers, by: form.lost.by },
                 }}
               />
-              <button
+              <Button
                 type="button"
-                className="tui-gate-submit"
+                variant="filled"
+                intent="warn"
+                size="lg"
                 onClick={onContinue}
               >
                 continue
-              </button>
+              </Button>
             </>
           ) : (
             <GateForm
@@ -202,14 +210,11 @@ function DecisionQueueModal({
         return (
           <div className="tui-triage-body">
             {gate.context && (
-              <div className="tui-triage-context">
-                <div className="tui-triage-context-label">Decision context</div>
-                <div className="tui-gate-context-body">
-                  <Markdown unstyled linkTargetBlank>
-                    {gate.context}
-                  </Markdown>
-                </div>
-              </div>
+              <ScrollPane title="Decision context" maxHeight="46vh">
+                <Markdown unstyled linkTargetBlank>
+                  {gate.context}
+                </Markdown>
+              </ScrollPane>
             )}
             <div className="tui-triage-form-col">{face}</div>
           </div>
@@ -260,9 +265,16 @@ function DecisionQueueComplete({
         <span className="tui-triage-done-counts">
           {answered} answered{skipped > 0 && ` · ${skipped} skipped`}
         </span>
-        <button type="button" className="tui-gate-submit" onClick={onClose}>
+        <Button
+          type="button"
+          className="tui-triage-done-action"
+          variant="filled"
+          intent="warn"
+          size="lg"
+          onClick={onClose}
+        >
           done
-        </button>
+        </Button>
       </div>
     </Modal>
   );
