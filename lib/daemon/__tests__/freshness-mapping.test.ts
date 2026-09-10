@@ -651,7 +651,7 @@ describe("applyInvalidationBatch", () => {
     expect(broadcasts.some((b) => b.type === "project-mrs" && b.data.iids.includes(9))).toBe(true);
   });
 
-  test("an approved invalidation re-checks rules and untags", async () => {
+  test("an approved invalidation re-checks rules and untags when the rule no longer matches", async () => {
     const store = pmrsStore();
     store.fullSync("repo-x", "g/p", [fakePR(9, { sourceBranch: "branch-9" })], Date.now() - 1000);
     store.setSectionTags("repo-x", { 9: ["Acme"] });
@@ -670,13 +670,35 @@ describe("applyInvalidationBatch", () => {
       ...noNotify, grantsFor: projectGrants, projectStore: store,
       fetchRulesByIid: async (iids: number[]) => {
         rulesCalls.push(iids);
-        return [{ iid: 9, rules: [{ type: "CODE_OWNER", approved: true, section: "Acme" }] }];
+        return [{ iid: 9, rules: [{ type: "CODE_OWNER", approved: false, section: "Other" }] }];
       },
     });
     expect(rulesCalls).toEqual([[9]]);                                        // rules re-checked for exactly this iid
-    expect(store.read("repo-x")!.mrs[9]!.codeownerSections).toBeUndefined();   // healed: rule is now approved
+    expect(store.read("repo-x")!.mrs[9]!.codeownerSections).toBeUndefined();   // healed: section rule is gone
     const projectBroadcasts = broadcasts.filter((b) => b.type === "project-mrs");
     expect(projectBroadcasts.some((b) => b.data.iids.includes(9))).toBe(true);
+  });
+
+  test("an approved invalidation keeps the tag while the rule still matches: queue holds until merge", async () => {
+    const store = pmrsStore();
+    store.fullSync("repo-x", "g/p", [fakePR(9, { sourceBranch: "branch-9" })], Date.now() - 1000);
+    store.setSectionTags("repo-x", { 9: ["Acme"] });
+    store.setScope("repo-x", { authors: ["ada"], sections: ["Acme"], windowDays: 30 });
+    const { env } = makeEnv({});
+    const target: RepoTarget = {
+      repoName: "repo-x", projectPath: "g/p",
+      provider: {
+        fetchSingleMR: async (_pp: string, iid: number) => fakePR(iid, { sourceBranch: "branch-9" }),
+        fetchPullRequestByBranch: async () => { throw new Error("unexpected"); },
+        fetchPullRequestsByBranches: async () => { throw new Error("unexpected"); },
+      } as any,
+    };
+    await applyInvalidationBatch(env, target, makeRunner(), [{ kind: "mr", ref: "9", cause: "approved" }], {
+      ...noNotify, grantsFor: projectGrants, projectStore: store,
+      fetchRulesByIid: async () =>
+        [{ iid: 9, rules: [{ type: "CODE_OWNER", approved: true, section: "Acme" }] }],
+    });
+    expect(store.read("repo-x")!.mrs[9]!.codeownerSections).toEqual(["Acme"]);
   });
 
   test("notes: no discussions grant → no refresh; grant without cached discussions → no refresh; both → refresh", async () => {

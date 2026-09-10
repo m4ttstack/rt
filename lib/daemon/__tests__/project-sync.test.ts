@@ -978,7 +978,7 @@ describe("codeowner section sweep (deep)", () => {
        { type: "CODE_OWNER", approved: true, section: "Beta" },
        { type: "REGULAR", approved: false, section: null }],
       ["Acme", "Beta"],
-    )).toEqual(["Acme"]);
+    )).toEqual(["Acme", "Beta"]);
   });
 
   test("deep with a sections demand sweeps rules, hydrates matches, keeps them past fullSync", async () => {
@@ -996,9 +996,10 @@ describe("codeowner section sweep (deep)", () => {
       fetchSingle: async (_r, _p, iid) => { hydrated.push(iid); return pr(iid, { author: { username: "stranger" } as any }); },
     });
     const rec = store.read("r1")!;
-    expect(hydrated).toEqual([9]);                       // 1 is author-covered, 5 unmatched
-    expect(Object.keys(rec.mrs).sort()).toEqual(["1", "9"]);
+    expect(hydrated.sort()).toEqual([5, 9]);             // 1 is author-covered; 5 matches despite approval
+    expect(Object.keys(rec.mrs).sort()).toEqual(["1", "5", "9"]);
     expect(rec.mrs[9]!.codeownerSections).toEqual(["Acme"]);
+    expect(rec.mrs[5]!.codeownerSections).toEqual(["Acme"]); // approved rule still tags: queue holds until merge
     expect(rec.mrs[1]!.codeownerSections).toEqual(["Acme"]); // tagged even when author-covered
     expect(rec.scope).toMatchObject({ sections: ["Acme"] });
   });
@@ -1325,7 +1326,7 @@ describe("delta retag and keep-tagged-strangers", () => {
     expect(rec.mrs[3]).toBeUndefined();                             // untagged stranger filtered
   });
 
-  test("delta untags an MR whose rule got approved in-window", async () => {
+  test("delta untags an MR whose rules no longer match in-window", async () => {
     const { store, deps } = await seededSectionStore();
     // iid 9 also carries a pr update this cycle, so applyDelta's own
     // preserve-copy runs on the same entry the fresh sweep is about to
@@ -1337,13 +1338,30 @@ describe("delta retag and keep-tagged-strangers", () => {
         pr(9, { author: { username: "self" } as any, title: "v2" }),
       ] }),
       fetchRules: async () => ({ projectPath: "g/p", rules: [
-        { iid: 9, rules: [{ type: "CODE_OWNER", approved: true, section: "Acme" }] },
+        { iid: 9, rules: [{ type: "CODE_OWNER", approved: false, section: "Other" }] },
       ] }),
     });
     const rec = store.read("r")!;
     expect(rec.mrs[9]!.pr.title).toBe("v2");         // the delta update itself still landed
     // Tag cleared; the row itself waits for the deep prune.
     expect(rec.mrs[9]!.codeownerSections).toBeUndefined();
+  });
+
+  test("delta keeps the tag when the rule got approved in-window: queue holds until merge", async () => {
+    const { store, deps } = await seededSectionStore();
+    await syncProjectMRs(deps, "r", {
+      store, selfUsername: "self", windowDays: 30,
+      fetchDelta: async () => ({ projectPath: "g/p", prs: [
+        pr(9, { author: { username: "stranger" } as any, title: "v2" }),
+      ] }),
+      fetchRules: async () => ({ projectPath: "g/p", rules: [
+        { iid: 9, rules: [{ type: "CODE_OWNER", approved: true, section: "Acme" }] },
+      ] }),
+      fetchSingle: async () => { throw new Error("nothing to hydrate"); },
+    });
+    const rec = store.read("r")!;
+    expect(rec.mrs[9]!.pr.title).toBe("v2");
+    expect(rec.mrs[9]!.codeownerSections).toEqual(["Acme"]);
   });
 
   test("delta hydrates AND tags a brand-new match in the same cycle", async () => {

@@ -66,10 +66,10 @@ export function effectiveSections(record: ProjectMRStore | undefined): string[] 
   return [...sections].sort();
 }
 
-/** Demanded sections with an unapproved CODE_OWNER rule, sorted; [] when none. Sorted here so every producer (deep, delta, backfill) stores the same canonical order regardless of `demanded`'s order. */
+/** Demanded sections with a CODE_OWNER rule, sorted; [] when none. Approval does NOT drop the match: a tagged MR stays in its section queue until merge/close, when the opened-only sweep prunes it. Sorted here so every producer (deep, delta, backfill) stores the same canonical order regardless of `demanded`'s order. */
 export function sectionsMatching(rules: ApprovalRuleLite[], demanded: string[]): string[] {
   return demanded
-    .filter((s) => rules.some((r) => r.type === "CODE_OWNER" && !r.approved && r.section === s))
+    .filter((s) => rules.some((r) => r.type === "CODE_OWNER" && r.section === s))
     .sort();
 }
 
