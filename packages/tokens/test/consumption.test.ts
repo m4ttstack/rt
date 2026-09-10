@@ -9,10 +9,26 @@ import { describe, expect, it } from 'vitest';
  * Deletion is Phase 2 material.
  */
 const WAIVED_TUI: Record<string, string> = {
+  '--border-control-on-card':
+    "on-card contrast role read by apps/board's gate control edges (its --gate-control-edge alias); no kit recipe reads it yet.",
+  '--text-muted-on-card':
+    "on-card contrast role read by apps/board's gate muted text (its --gate-muted alias); no kit recipe reads it yet.",
+  '--surface-inset':
+    "inset-ground role read by apps/board's gate key chips (its --gate-key-bg alias); no kit recipe reads it yet.",
+  '--spacing-rem95':
+    "spacing rung read by apps/board's gate column gap (its --gate-gap alias); no kit recipe reads this rung yet.",
+  '--type-display':
+    "type-role alias contract (soribashi.config.ts's cssVariablesResolver); read by apps/board's --gate-font-* layer, outside this test's kit-CSS scope.",
+  '--type-body':
+    "type-role alias contract (soribashi.config.ts's cssVariablesResolver); read by apps/board's --gate-font-* layer, outside this test's kit-CSS scope.",
+  '--type-meta':
+    "type-role alias contract (soribashi.config.ts's cssVariablesResolver); read by apps/board's --gate-font-* layer, outside this test's kit-CSS scope.",
+  '--type-small':
+    "type-role alias contract (soribashi.config.ts's cssVariablesResolver); read by apps/board's --gate-font-* layer, outside this test's kit-CSS scope.",
+  '--type-micro':
+    "type-role alias contract (soribashi.config.ts's cssVariablesResolver); read by apps/board's --gate-font-* layer, outside this test's kit-CSS scope.",
   '--muted-text':
     "new text-role alias mirroring tokyo's --tk-muted-text naming; existing recipes still read --muted (unaffected, same value) -- Phase 3 apps are the intended consumer of the explicit name.",
-  '--accent-text':
-    "new text-role alias mirroring tokyo's --tk-accent-text naming; no recipe paints link/accent text through it yet -- Phase 3 apps are the intended consumer.",
   '--red-text':
     "new text-role alias mirroring tokyo's --tk-red-text naming; no recipe paints error/bad text through it yet -- Phase 3 apps are the intended consumer.",
   '--chrome':
@@ -47,8 +63,6 @@ const WAIVED_TUI: Record<string, string> = {
     "soribashi's default breakpoint scale; only the framework's `utilities` visibility-class layer reads it, and soribashi.config.ts sets `utilities: false` because this kit emits no such classes.",
   '--font-size-base':
     "ported wholesale from mr-board's real stylesheet census (docs/token-census.md, scripts/census.ts) into the fontSize scale; this repo's currently-ported recipes do not reference this rung.",
-  '--font-size-lg':
-    "ported wholesale from mr-board's real stylesheet census (docs/token-census.md, scripts/census.ts) into the fontSize scale; this repo's currently-ported recipes do not reference this rung.",
   '--font-size-md':
     "ported wholesale from mr-board's real stylesheet census (docs/token-census.md, scripts/census.ts) into the fontSize scale; referenced only from *.visual.test.tsx / workshop pages today.",
   '--font-size-px9':
@@ -62,10 +76,6 @@ const WAIVED_TUI: Record<string, string> = {
   '--font-size-rem72':
     "ported wholesale from mr-board's real stylesheet census (docs/token-census.md, scripts/census.ts) into the fontSize scale; this repo's currently-ported recipes do not reference this rung.",
   '--font-size-rem75':
-    "ported wholesale from mr-board's real stylesheet census (docs/token-census.md, scripts/census.ts) into the fontSize scale; this repo's currently-ported recipes do not reference this rung.",
-  '--font-size-rem78':
-    "ported wholesale from mr-board's real stylesheet census (docs/token-census.md, scripts/census.ts) into the fontSize scale; this repo's currently-ported recipes do not reference this rung.",
-  '--font-size-rem80':
     "ported wholesale from mr-board's real stylesheet census (docs/token-census.md, scripts/census.ts) into the fontSize scale; this repo's currently-ported recipes do not reference this rung.",
   '--font-size-rem82':
     "ported wholesale from mr-board's real stylesheet census (docs/token-census.md, scripts/census.ts) into the fontSize scale; this repo's currently-ported recipes do not reference this rung.",
