@@ -903,4 +903,17 @@ describe("pickerWorktrees", () => {
     };
     expect(pickerWorktrees(repo).map((w) => w.path)).toEqual(["/pool/x/main", "/pool/x/charlie"]);
   });
+
+  test("excludes gitq work slots by their gitq-<n> basename, wherever they sit", () => {
+    const repo = {
+      repoName: "x", dataDir: "/d",
+      worktrees: [
+        wt("/pool/x/main", "master"),
+        wt("/Users/u/.cache/gitq/work/10e91a6f238e7615/gitq-1", ""),
+        wt("/Users/u/.mattstack/gitq/work/aa11bb22cc33dd44/gitq-12", "feat-mid-surgery"),
+        wt("/pool/x/gitq-ish", "rt-4-live"),
+      ],
+    };
+    expect(pickerWorktrees(repo).map((w) => w.path)).toEqual(["/pool/x/main", "/pool/x/gitq-ish"]);
+  });
 });
