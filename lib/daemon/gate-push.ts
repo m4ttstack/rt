@@ -36,10 +36,14 @@ export const GATE_CLOSED_PHRASE = (id: string, reason: GateRow["closedReason"]) 
 
 /** Fan-out notification: push text is data, never instructions, and carries
     no opener-controlled content -- `subject` is opener-set and must never
-    ride a cross-session message body. id + status only; the W2 protocol
-    part imports this for priming. */
-export const GATE_SUBSCRIPTION_PHRASE = (row: Pick<GateRow, "id" | "status">) =>
-  `[gate] ${row.id} is now ${row.status}; re-read the gate registry.`;
+    ride a cross-session message body. id + status + presentation + owner
+    only, so a shepherd reading the doorbell already knows whether Escape
+    fires and who is on the hook to answer -- never the opener-set subject. */
+export const GATE_SUBSCRIPTION_PHRASE = (row: Pick<GateRow, "id" | "status" | "origin" | "owner">) => {
+  const presentation = row.origin?.presentation ?? "wait";
+  const owner = row.owner ?? "human";
+  return `[gate] ${row.id} is now ${row.status} (${presentation}, owner ${owner}); re-read the gate registry.`;
+};
 
 const DEFAULT_DEAD_AFTER_FAILURES = 3;
 const DEFAULT_MAX_PANE_RETRIES = 20;

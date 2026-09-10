@@ -107,6 +107,12 @@ function invalidOrigin(v: unknown): string | null {
       return `origin.${key} exceeds ${ORIGIN_FIELD_CAP_BYTES} bytes`;
     }
   }
+  // A pane origin without presentation leaves gate-push unable to decide
+  // whether Escape injection is safe (SKILLS-60's silently-unblockable-form
+  // risk, generalized): the opener must say "form" or "wait" up front.
+  if (typeof v.paneId === "string" && v.paneId.length > 0 && v.presentation === undefined) {
+    return 'pane origin requires presentation ("form" or "wait")';
+  }
   return null;
 }
 
@@ -285,11 +291,16 @@ export function createGateHandlers(
         }
       }
 
-      const owner = deriveOwner(payload?.origin, runSpawnedBy);
+      // Non-pane origins (run/tab/worktree-only) have no Escape seam to
+      // guard, so they default to "wait" rather than forcing every caller
+      // to spell it out; an explicit value always wins (spread order).
+      const origin = payload?.origin ? { presentation: "wait" as const, ...payload.origin } : undefined;
+
+      const owner = deriveOwner(origin, runSpawnedBy);
       const { row, supersededId } = store.open({
         subject, kind, questions,
         meta: payload?.meta, agent: payload?.agent, pane: payload?.pane, nudge: payload?.nudge,
-        context: payload?.context, origin: payload?.origin, owner,
+        context: payload?.context, origin, owner,
       });
 
       // One timestamp for both the journal row and the broadcast frame (events:emit idiom).

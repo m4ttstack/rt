@@ -65,11 +65,17 @@ const SETTLE_UNTIL = ["idle", "blocked", "done"];
 const str = (v: unknown): string | undefined => (typeof v === "string" && v.length > 0 ? v : undefined);
 /** A bare pane id headed into a gate's `pane` field: formatted per the herd's
     hidden-ness so the ref rides addressably wherever that field surfaces
-    (display, focus/resume) -- gate-push.ts's own contract for this field is
-    "a focus/resume ref, never a delivery target", so this is not an escape
-    round-trip; herd gates never carry origin.presentation === "form", the
-    only shape gate-push ever escape-injects into. */
+    (display, focus/resume, and now `origin.paneId` -- RT-117 Task 7). */
 const refPane = (bare: string | undefined, hidden: boolean): string | undefined => (bare ? formatPaneRef(bare, hidden ? "bg" : "visible") : undefined);
+
+/** herd:ask/milestone's origin: a resolvable pane means the worker's own
+    turn is blocked on this gate in that pane, so presentation "form" lets
+    gate-push's Escape seam dismiss it on answer/close -- the same seam any
+    other pane-origin form gate gets. No resolvable pane (no --pane, no
+    job.pane on record) means no origin at all, the pre-Task-7 shape, and
+    owner derivation falls back to human as before. */
+const paneOrigin = (paneRef: string | undefined): { paneId: string; presentation: "form" } | undefined =>
+  paneRef ? { paneId: paneRef, presentation: "form" } : undefined;
 
 /** `shepherd-2` is a collision suffix chat mints, not a name to ask for again. */
 const baseHandleOf = (handle: string): string => handle.replace(/-\d+$/, "");
@@ -400,10 +406,11 @@ export function createHerdHandlers(deps: HerdDeps) {
       const herd = store.get(herdId);
       const job = herd ? store.getJob(herdId, name) : null;
       if (!herd || !job) return { ok: false, error: `unknown job "${name}" in herd "${herdId}"` };
+      const paneRef = refPane(str(p?.pane) ?? job.pane ?? undefined, herd.hidden);
       const opened = await deps.gate["gate:open"]({
         subject: herdSubject(herdId, name), kind: "question", questions: p!.questions,
-        meta: { herd: herdId, job: name }, agent: name, pane: refPane(str(p?.pane) ?? job.pane ?? undefined, herd.hidden),
-        nudge: { session }, context: str(p?.context),
+        meta: { herd: herdId, job: name }, agent: name, pane: paneRef,
+        nudge: { session }, context: str(p?.context), origin: paneOrigin(paneRef),
       });
       if (!opened.ok) return opened;
       store.setJobStatus(herdId, name, "at-gate", { lastGate: opened.data.id });
@@ -419,11 +426,12 @@ export function createHerdHandlers(deps: HerdDeps) {
       const summary = str(p?.summary) ?? `milestone: ${artifact}`;
       const posted = await deps.chat["chat:post"]({ room: herd.room, handle: job.handle, body: `${summary}\n\nartifact: ${artifact}`, quiet: true });
       if (!posted.ok) return posted;
+      const milestonePaneRef = refPane(str(p?.pane) ?? job.pane ?? undefined, herd.hidden);
       const opened = await deps.gate["gate:open"]({
         subject: herdSubject(herdId, name), kind: "milestone",
         questions: [{ id: "decision", label: summary, multi: false, options: [...MILESTONE_OPTIONS] }],
         meta: { herd: herdId, job: name, artifact, message: posted.data.id },
-        agent: name, pane: refPane(str(p?.pane) ?? job.pane ?? undefined, herd.hidden), nudge: { session },
+        agent: name, pane: milestonePaneRef, nudge: { session }, origin: paneOrigin(milestonePaneRef),
       });
       if (!opened.ok) return opened;
       store.setJobStatus(herdId, name, "at-milestone", { lastGate: opened.data.id });

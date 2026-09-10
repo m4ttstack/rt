@@ -637,6 +637,29 @@ describe("gate:open owner derivation (RT-117)", () => {
   });
 });
 
+describe("gate:open presentation requirement for pane origins (RT-117 Task 7)", () => {
+  test("gate:open rejects a pane origin without presentation", async () => {
+    const { handlers } = harness();
+    const res = await handlers["gate:open"]({ ...openPayload(), origin: { paneId: "bg:w1:p1" } });
+    expect(res).toEqual({ ok: false, error: 'pane origin requires presentation ("form" or "wait")' });
+  });
+
+  test("gate:open defaults non-pane origins to wait", async () => {
+    const { handlers, store } = harness();
+    const res = await handlers["gate:open"]({ ...openPayload(), origin: { runId: "r-1" } });
+    expect(store.get((res as any).data.id)?.origin?.presentation).toBe("wait");
+  });
+
+  test("an explicit presentation on a pane origin is preserved, not overwritten by the default", async () => {
+    const { handlers, store } = harness();
+    const res = await handlers["gate:open"]({
+      ...openPayload(), nudge: { session: "sess-1" },
+      origin: { paneId: "p1", presentation: "form" as never },
+    });
+    expect(store.get((res as any).data.id)?.origin?.presentation).toBe("form");
+  });
+});
+
 describe("gate:answer owner enforcement (RT-117)", () => {
   test("gate:answer refuses a non-owner session", async () => {
     const { handlers } = makeHandlers({ runSpawnedBy: () => "herd:h-1", herdShepherd: () => "shep-session" });

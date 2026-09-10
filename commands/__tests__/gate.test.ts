@@ -5,6 +5,7 @@ import {
   buildListPayload,
   buildSubscriptionsPayload,
   waitForGate,
+  withGateTokens,
 } from "../gate.ts";
 import type { Commands, GateRow, RtResponse } from "../../packages/rt-client/src/index.ts";
 
@@ -122,6 +123,16 @@ describe("buildListPayload", () => {
       exitSpy.mockRestore();
       errorSpy.mockRestore();
     }
+  });
+});
+
+describe("withGateTokens (RT-117 Task 7)", () => {
+  test("names presentation and owner, falling back to wait and human", () => {
+    const withOrigin = fakeRow({ origin: { presentation: "form" }, owner: "herd:h-1" });
+    const bare = fakeRow({ origin: null, owner: null });
+    const [a, b] = withGateTokens([withOrigin, bare]);
+    expect(a).toMatchObject({ presentation: "form", owner: "herd:h-1" });
+    expect(b).toMatchObject({ presentation: "wait", owner: "human" });
   });
 });
 
