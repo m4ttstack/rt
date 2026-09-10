@@ -21,8 +21,6 @@ const WAIVED_TUI: Record<string, string> = {
     "type-role alias contract (soribashi.config.ts's cssVariablesResolver); read by apps/board's --gate-font-* layer, outside this test's kit-CSS scope.",
   '--type-body':
     "type-role alias contract (soribashi.config.ts's cssVariablesResolver); read by apps/board's --gate-font-* layer, outside this test's kit-CSS scope.",
-  '--type-meta':
-    "type-role alias contract (soribashi.config.ts's cssVariablesResolver); read by apps/board's --gate-font-* layer, outside this test's kit-CSS scope.",
   '--type-small':
     "type-role alias contract (soribashi.config.ts's cssVariablesResolver); read by apps/board's --gate-font-* layer, outside this test's kit-CSS scope.",
   '--type-micro':

@@ -9,6 +9,7 @@
        the cap real and push the scrolling into .body. */
     max-height: var(--sb-scrollpane-max);
     min-height: 0;
+    min-width: 0;
     overflow: hidden;
     box-sizing: border-box;
     border: 1px solid var(--border-soft);
@@ -16,6 +17,7 @@
     background: var(--card);
     padding: var(--spacing-rem100) var(--spacing-xxl) var(--spacing-xxl);
     font-family: var(--font-sans);
+    font-size: var(--type-meta);
   }
 
   .head {

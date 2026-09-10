@@ -396,6 +396,22 @@ describe("Button (browser)", () => {
     });
   });
 
+  describe("[hidden] attribute", () => {
+    it("hides the button (an author display rule must not defeat the UA [hidden] rule)", async () => {
+      const screen = await renderWithTheme(
+        <div>
+          <Button hidden>ghost</Button>
+          <Button>visible</Button>
+        </div>,
+      );
+      const buttons = screen.container.querySelectorAll("button");
+      expect(buttons.length).toBe(2);
+
+      expect(getComputedStyle(buttons[0]!).display).toBe("none");
+      expect(getComputedStyle(buttons[1]!).display).not.toBe("none");
+    });
+  });
+
   it("rejects an out-of-vocabulary variant at the type level", async () => {
     await renderWithTheme(
       // @ts-expect-error -- "link" is not in the kit's variant vocabulary
