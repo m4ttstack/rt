@@ -1433,9 +1433,11 @@ export function pickerWorktrees(repo: Pick<KnownRepo, "worktrees">): KnownRepo["
   // on-deck/* trees are unclaimed pool plumbing: entering one bypasses claim
   // tracking and the freshen/shrink cycle can dispose it underfoot, so no
   // picker offers them. Explicit --worktree branch resolution bypasses this
-  // seam deliberately.
+  // seam deliberately. gitq work slots are that tool's surgery scratch trees;
+  // gitq's own recognition contract is the `gitq-<n>` basename (its slot
+  // roots have moved twice), so the filter matches on the same.
   const [main, ...rest] = repo.worktrees.filter(
-    (wt) => !isTrashPath(wt.path) && !wt.branch.startsWith("on-deck/"),
+    (wt) => !isTrashPath(wt.path) && !wt.branch.startsWith("on-deck/") && !/^gitq-\d+$/.test(basename(wt.path)),
   );
   if (!main) return [];
   const label = (wt: KnownRepo["worktrees"][number]) => wt.branch || basename(wt.path);
