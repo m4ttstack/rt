@@ -42,7 +42,7 @@ export const REGISTRY: readonly SettingDef[] = [
     merge: "deep",
     repoScoped: true,
     migrated: true,
-    description: "Per-repo worktree pool config (onDeck size, ready steps, name pool); root/branchFormat/ready computed-or-empty in the reader.",
+    description: "Per-repo worktree pool config (onDeck size, ready steps, name pool, staleClaimDays); root/branchFormat/ready computed-or-empty in the reader.",
   },
   {
     key: "rt.worktreeReadyApproval",
