@@ -273,6 +273,7 @@ describe("syncPack", () => {
     expect(report.steps[0]!.status).toBe("refused");
     expect(report.steps[0]!.detail).toContain(".claude/local/claude");
     expect(report.steps[0]!.detail).toContain("/opt/homebrew/bin/claude");
+    expect(report.steps[0]!.detail).toContain("install the Claude CLI or put it on PATH, then re-run");
     expect(calls).toEqual([]);
   });
 

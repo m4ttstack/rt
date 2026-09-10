@@ -124,7 +124,9 @@ export async function syncPack(pack: PackInfo, engine: PackInfo, deps: SyncDeps)
   // "guards" failure rather than an uncaught rejection.
   const guards = await tryStep(async () => {
     if (!deps.claudeBin) {
-      return refused(`claude binary not found; checked PATH, ${CLAUDE_BIN_FALLBACKS.join(", ")}`);
+      return refused(
+        `claude binary not found; checked PATH, ${CLAUDE_BIN_FALLBACKS.join(", ")}; install the Claude CLI or put it on PATH, then re-run`,
+      );
     }
     if (!pack.marketplace) {
       return refused(`pack "${pack.name}" has no marketplace; it must be installed from a directory marketplace to sync`);
