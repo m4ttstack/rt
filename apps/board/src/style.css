@@ -2096,6 +2096,9 @@ body {
   padding: 0.15rem 0.28rem;
   border-radius: 3px;
   line-height: 1;
+  /* The title line aligns to baseline, which floats this tight pill off
+     the title's visual middle; the pill centers itself instead. */
+  align-self: center;
 }
 
 /* held-draft drawer: the verbatim note text plus the post/dismiss gate */

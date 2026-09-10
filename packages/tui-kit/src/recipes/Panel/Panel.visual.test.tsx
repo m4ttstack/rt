@@ -8,12 +8,11 @@ import { Panel } from "./Panel.tsx";
  * Visual tier for the Panel recipe.
  *
  *  * NO TRANSITION/ANIMATION FREEZE IS INSTALLED HERE. `.tui-panel-caret`
- * declares `transition: transform 120ms ease` (lifted verbatim in
- * Panel.module.css), but nothing in mr-board's own CSS — or this recipe's —
- * ever sets a `transform` on it: the expanded/collapsed indication is the ▾/▸
- * GLYPH SWAP in Panel.tsx, not a CSS rotation. The transition is dead board
- * CSS, carried forward unchanged rather than "fixed"; there is nothing for a
- * capture to catch mid-interpolation either way.
+ * declares `transition: transform 120ms ease` and the chevron icon rotates
+ * via `transform` while expanded, but every fixture below mounts in its
+ * final state (localStorage seeded before the effect runs, no click before
+ * capture), and a transition never animates an initial value -- only a
+ * change. There is still nothing for a capture to catch mid-interpolation.
  *
  * Fixtures mount already-collapsed by seeding localStorage before the effect
  * runs (rather than clicking then screenshotting), so the capture never races

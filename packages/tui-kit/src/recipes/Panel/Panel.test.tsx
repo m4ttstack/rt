@@ -95,21 +95,22 @@ describe("Panel (browser)", () => {
     }
   });
 
-  it("the caret flips glyph between expanded (▾) and collapsed (▸)", async () => {
+  it("the caret is the chevron icon, rotated only while expanded", async () => {
     const { restore } = stubLocalStorage();
     try {
       const screen = await renderWithTheme(<Panel title="caret test" count={1} />);
       const button = screen.getByRole("button", { name: /caret test/ });
 
-      expect(screen.container.querySelector(`[data-part="${PANEL_PARTS.caret}"]`)?.textContent).toBe(
-        "▾",
-      );
+      const caret = screen.container.querySelector(`[data-part="${PANEL_PARTS.caret}"]`);
+      expect(caret?.querySelector("svg")).not.toBeNull();
+      expect(getComputedStyle(caret as Element).transform).not.toBe("none");
 
       await button.click();
 
-      expect(screen.container.querySelector(`[data-part="${PANEL_PARTS.caret}"]`)?.textContent).toBe(
-        "▸",
-      );
+      // The rotation transitions over 120ms; poll for the settled value.
+      await expect
+        .poll(() => getComputedStyle(caret as Element).transform)
+        .toBe("none");
     } finally {
       restore();
     }
