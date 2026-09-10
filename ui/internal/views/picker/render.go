@@ -620,7 +620,7 @@ func rowLineWidth(m *Model, i int, width int) string {
 		spacer = 0
 	}
 
-	rightRendered := renderSegments(row.Right, rowBg, argsDim)
+	rightRendered := renderSegments(row.Right, rowBg, argsDim, highlightPositions(m, plainConcat(row.Right)))
 	if argsBadge {
 		rightRendered = lipgloss.NewStyle().Background(theme.Lav).Foreground(theme.Bg).Bold(true).Render(rightPlain)
 	}
@@ -689,14 +689,30 @@ func renderHighlightedLeft(row protocol.PickRow, keptRunes int, positions []int,
 
 // renderSegments paints Right's own tone/hex/bold as declared, except while
 // dim overrides every segment to a flat Faint -- see renderHighlightedLeft.
-func renderSegments(segs []protocol.PickSegment, rowBg lipgloss.Style, dim bool) string {
+// positions are the left-side highlight's mirror, re-ranked against the
+// concatenated right text (rune-indexed), so a right-pinned ticket id
+// lights up under the query the same way the left text does.
+func renderSegments(segs []protocol.PickSegment, rowBg lipgloss.Style, dim bool, positions []int) string {
+	matched := make(map[int]bool, len(positions))
+	for _, p := range positions {
+		matched[p] = true
+	}
 	var out strings.Builder
+	runeIdx := 0
 	for _, seg := range segs {
 		color, bold := segColor(seg), seg.Bold
 		if dim {
 			color, bold = theme.Faint, false
 		}
-		out.WriteString(rowBg.Foreground(color).Bold(bold).Render(seg.Text))
+		base := rowBg.Foreground(color).Bold(bold)
+		for _, r := range seg.Text {
+			style := base
+			if !dim && matched[runeIdx] {
+				style = rowBg.Foreground(theme.Cyan).Bold(true)
+			}
+			out.WriteString(style.Render(string(r)))
+			runeIdx++
+		}
 	}
 	return out.String()
 }
