@@ -6,7 +6,7 @@ import { __test__ as gate } from "../../lib/ui/gate.ts";
 import { __test__ as spawnTest, openSession } from "../../lib/ui/spawn.ts";
 import { HerdrEngine } from "../../lib/runner/engine.ts";
 import { TmuxEngine } from "../../lib/runner/tmux-engine.ts";
-import { acquireBgSocket, buildRunnerDeps, buildTmuxRunnerDeps, runnerCommand, runSeededBoard, tmuxAvailable } from "../runner.ts";
+import { acquireBgSocket, buildRunnerDeps, buildTmuxRunnerDeps, focusBgPane, runnerCommand, runSeededBoard, tmuxAvailable } from "../runner.ts";
 
 const REAL_PATH = process.env.PATH ?? "";
 const REAL_HOME = process.env.HOME;
@@ -139,6 +139,30 @@ test("both deps builders resolve with the board option set", async () => {
     mock.module("../run.ts", () => realRun);
   }
   expect(seen).toEqual([{ board: true }, { board: true }]);
+});
+
+// f on a bg-backend board goes through the daemon's pane:focus attend verb
+// (RT-113), never raw herdr tab focus on the headless server.
+test("focusBgPane calls pane:focus with the bg: ref and the board's HERDR_WORKSPACE_ID", async () => {
+  const calls: unknown[] = [];
+  process.env.HERDR_WORKSPACE_ID = "wCALLER";
+  try {
+    await focusBgPane("w5:p1", { paneFocus: async (p: unknown) => { calls.push(p); return { ok: true as const, data: { paneId: "bg:w5:p1", focused: true, attendTab: "wv:t9" } }; } });
+  } finally {
+    delete process.env.HERDR_WORKSPACE_ID;
+  }
+  expect(calls).toEqual([{ paneId: "bg:w5:p1", callerWorkspace: "wCALLER" }]);
+});
+
+test("focusBgPane surfaces a pane:focus failure by throwing its error", async () => {
+  await expect(
+    focusBgPane("w5:p1", { paneFocus: async () => ({ ok: false as const, error: "callerWorkspace (HERDR_WORKSPACE_ID) is required" }) }),
+  ).rejects.toThrow(/HERDR_WORKSPACE_ID/);
+});
+
+test("the herdr deps builder wires focusPane; the tmux builder leaves engine tab focus in charge", () => {
+  expect(buildRunnerDeps([], {} as never, "/tmp/sock").focusPane).toBeDefined();
+  expect(buildTmuxRunnerDeps([], {} as never).focusPane).toBeUndefined();
 });
 
 test("acquireBgSocket passes the claim to bgEnsure and returns its socket", async () => {
