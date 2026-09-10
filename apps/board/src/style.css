@@ -17,6 +17,19 @@
    rules on any conflict -- nothing here needs `!important` to win.
    ─────────────────────────────────────────────────────────────────── */
 
+/* ── app scale ────────────────────────────────────────────────────────
+   One knob for the whole app: every font-size below is rem (none may be a
+   px literal, or it silently opts out of the knob), so the root size
+   scales all of it together. 17px is a ~6% step over the browser's 16px
+   default. The kit canvas body base is 13.5px by identity; re-expressed
+   here in rem (13.5/16) so body text rides the same knob. */
+html {
+  font-size: 17px;
+}
+body {
+  font-size: 0.84375rem;
+}
+
 /* ── header ───────────────────────────────────────────────────────── */
 /* The header is a zone, not a card, so it takes --chrome and the soft border
    rather than a card's fill. Flat, not a mix: --chrome sits BELOW --bg on the
@@ -827,7 +840,7 @@
   margin: 0 0 4px;
   padding: 0 4px;
   color: var(--muted-text);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-family: var(--font-sans);
 }
 .tui-main {
@@ -1665,11 +1678,11 @@
   color: var(--fg);
 }
 .tui-gate-chip {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--tui-text, inherit);
 }
 .tui-gate-summary-note {
-  font-size: 11px;
+  font-size: 0.6875rem;
   opacity: 0.7;
 }
 /* ── gate triage modal ────────────────────────────────────────────── */
@@ -1970,7 +1983,7 @@
   display: inline-flex;
   gap: 4px;
   align-items: center;
-  font-size: 13px;
+  font-size: 0.8125rem;
   line-height: 1;
 }
 .tui-slack-reaction {
@@ -1994,7 +2007,7 @@
   bottom: -4px;
   background: var(--dot-ok);
   color: #fff;
-  font-size: 9px;
+  font-size: 0.5625rem;
   line-height: 1;
   width: 11px;
   height: 11px;
@@ -2237,7 +2250,7 @@
 }
 .tui-menu-note-hint {
   font-family: var(--font-sans);
-  font-size: 10px;
+  font-size: 0.625rem;
   color: var(--muted-text);
   padding: 6px 3px 2px;
 }
@@ -2245,7 +2258,7 @@
    in-flight spinner that replaces it while the reaction is being written. */
 .tui-menu-check {
   color: var(--dot-ok);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .tui-menu-spin {
   width: 12px;
@@ -2576,7 +2589,7 @@
   background: color-mix(in srgb, var(--fg) 5%, var(--bg));
   color: var(--muted-text);
   font: inherit;
-  font-size: 13px;
+  font-size: 0.8125rem;
   cursor: pointer;
   transition:
     color 150ms ease,
@@ -2642,7 +2655,7 @@
   gap: 6px;
   flex: 1;
   min-width: 0;
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .tui-roster-who .tui-invite-input {
   flex: 1;
@@ -2651,11 +2664,11 @@
 .tui-roster-handle {
   color: var(--muted-text);
   font-family: var(--font-sans);
-  font-size: 11px;
+  font-size: 0.6875rem;
 }
 .tui-roster-out {
   color: var(--muted-text);
-  font-size: 11px;
+  font-size: 0.6875rem;
 }
 .tui-roster-add {
   display: flex;
@@ -2672,7 +2685,7 @@
   background: var(--card);
   color: var(--fg);
   font: inherit;
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .tui-modal-btn {
   padding: 6px 10px;
@@ -2681,7 +2694,7 @@
   background: var(--card);
   color: var(--muted-text);
   font: inherit;
-  font-size: 12px;
+  font-size: 0.75rem;
   cursor: pointer;
   transition:
     color 150ms ease,
@@ -2701,7 +2714,7 @@
 .tui-modal-error {
   margin: 4px 0 0;
   color: var(--red-text);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 @media (prefers-reduced-motion: reduce) {
   .tui-modal-btn {
@@ -2730,7 +2743,7 @@
 .tui-tabs-item-head .tui-invite-input {
   flex: 1;
   min-width: 0;
-  font-size: 14px;
+  font-size: 0.875rem;
 }
 .tui-tabs-fields {
   display: grid;
@@ -2744,7 +2757,7 @@
 .tui-tabs-field > span {
   color: var(--muted-text);
   font-family: var(--font-sans);
-  font-size: 11px;
+  font-size: 0.6875rem;
   white-space: nowrap;
 }
 .tui-tabs-field .tui-invite-input {
