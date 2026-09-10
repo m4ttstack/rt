@@ -96,6 +96,8 @@ export interface WorktreeHandlerOpts {
   creationInFlight: (repoName: string) => Promise<void> | null;
   /** Excludes reconciler passes -- not other registry writers -- for the duration of `fn`. */
   withReconcilerHeld: <T>(fn: () => Promise<T>) => Promise<T>;
+  /** Live-run lookup by worktree path, threaded into disposeTree's running-run guard; wired from `findRunningRunByWorktree` in lib/runs/store.ts. */
+  findRunningRunByWorktree?: (worktree: string) => { id: string; currentStage: string } | null;
 }
 
 // ─── Small shared helpers ────────────────────────────────────────────────────
@@ -189,6 +191,7 @@ function disposeDeps(
     log: ctx.log,
     killProcesses: loadWorktreeAppConfig().killProcesses,
     callerPids,
+    findRunningRun: opts.findRunningRunByWorktree,
   };
 }
 
