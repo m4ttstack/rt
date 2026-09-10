@@ -133,4 +133,19 @@ describe("stale-claim sweep", () => {
     const cwds = await liveProcessCwds();
     expect(cwds.has(realpathSync(process.cwd()))).toBe(true);
   });
+
+  test("a failed live-cwd snapshot aborts the sweep — fail closed, never dispose blind", async () => {
+    const rec = claimedTree(repo, repoName, "foxtrot", "feat-foxtrot", { claimedAgoMs: 8 * DAY_MS });
+
+    await sweep(cfgWith(7), async () => {
+      throw new Error("lsof unavailable");
+    });
+
+    expect(loadRegistry(repoName).find((t) => t.path === rec.path)?.state).toBe("claimed");
+  });
+
+  test("liveProcessCwds throws on a non-zero exit and on a spawn failure", async () => {
+    expect(liveProcessCwds(["false"])).rejects.toThrow();
+    expect(liveProcessCwds(["/nonexistent-rtstale-binary"])).rejects.toThrow();
+  });
 });

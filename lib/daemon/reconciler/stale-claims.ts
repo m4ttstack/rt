@@ -29,24 +29,23 @@ export interface StaleClaimSweepDeps extends DisposeDeps {
 }
 
 /**
- * Every process's current working directory, per lsof. Best-effort: an lsof
- * failure returns the empty set, which the caller must treat as "nothing
- * proven live" only because the age threshold already bounds how recently a
- * session can have been using the tree.
+ * Every process's current working directory, per lsof. Throws on a spawn
+ * failure or non-zero exit — an empty set from a broken lsof would read as
+ * "nothing is live" and let the sweep dispose a tree an active session sits
+ * in, so the caller must fail closed instead. `argv` is injectable for the
+ * failure-path tests (Bun.spawn resolves PATH at process start, so a PATH
+ * shim cannot substitute the binary).
  */
-export async function liveProcessCwds(): Promise<Set<string>> {
-  try {
-    const proc = Bun.spawn(["lsof", "-d", "cwd", "-Fn"], { stdin: "ignore", stdout: "pipe", stderr: "ignore" });
-    const out = await new Response(proc.stdout).text();
-    await proc.exited;
-    const cwds = new Set<string>();
-    for (const line of out.split("\n")) {
-      if (line.startsWith("n/")) cwds.add(line.slice(1));
-    }
-    return cwds;
-  } catch {
-    return new Set();
+export async function liveProcessCwds(argv: string[] = ["lsof", "-d", "cwd", "-Fn"]): Promise<Set<string>> {
+  const proc = Bun.spawn(argv, { stdin: "ignore", stdout: "pipe", stderr: "ignore" });
+  const out = await new Response(proc.stdout).text();
+  const exitCode = await proc.exited;
+  if (exitCode !== 0) throw new Error(`${argv[0]} exited ${exitCode}`);
+  const cwds = new Set<string>();
+  for (const line of out.split("\n")) {
+    if (line.startsWith("n/")) cwds.add(line.slice(1));
   }
+  return cwds;
 }
 
 function insideTree(cwd: string, treePath: string): boolean {
@@ -73,7 +72,15 @@ export async function sweepStaleClaims(deps: StaleClaimSweepDeps, cfg: WorktreeR
   const candidates = staleClaims(deps.repoName, days, now);
   if (candidates.length === 0) return;
 
-  const cwds = await (deps.liveCwds ?? liveProcessCwds)();
+  let cwds: Set<string>;
+  try {
+    cwds = await (deps.liveCwds ?? liveProcessCwds)();
+  } catch (err) {
+    // Fail closed: without liveness ground truth, a dispose could kill an
+    // active session's processes. Skip the pass; the next one retries.
+    deps.log.warn({ err, repo: deps.repoName }, "stale-claim sweep skipped: live-cwd snapshot failed");
+    return;
+  }
 
   for (const rec of candidates) {
     if ([...cwds].some((cwd) => insideTree(cwd, rec.path))) {

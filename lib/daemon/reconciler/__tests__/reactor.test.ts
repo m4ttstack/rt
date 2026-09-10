@@ -91,6 +91,19 @@ describe("terminal-state catch-up (missed edges)", () => {
     expect(__test__.loadReactorState().fired).toContain(`disposed:${repoName}:41:merged`);
   });
 
+  test("an unwitnessed terminal state with no actionable tree is spent — a later recut claim survives", async () => {
+    // Pass 1: merged MR in the cache, no tree on the branch at all. The
+    // observation must be recorded as fired even though nothing was done.
+    await detect({ "feat-recut": { repoName, mr: { iid: 55, state: "merged" } } });
+    expect(__test__.loadReactorState().fired).toContain(`disposed:${repoName}:55:merged`);
+
+    // A new claimed tree reuses the branch with new pushed work; the stale
+    // merged entry must not reap it.
+    const rec = ephemeralTree(repo, repoName, "india", "feat-recut");
+    await detect({ "feat-recut": { repoName, mr: { iid: 55, state: "merged" } } });
+    expect(loadRegistry(repoName).find((t) => t.path === rec.path)?.state).toBe("claimed");
+  });
+
   test("catch-up never touches a main tree — auto-return stays edge-only", async () => {
     sh(`git -C ${repo} checkout -q -b feat-hotel`);
     sh(`git -C ${repo} push -q origin feat-hotel`);

@@ -457,6 +457,10 @@ export async function detectTransitions(deps: ReactorDeps): Promise<void> {
       ? registered
       : registered.filter((r) => r.kind === "ephemeral" && (r.state === "claimed" || r.state === "disposable"));
     if (trees.length === 0) {
+      // An unwitnessed terminal observation is SPENT even with nothing to
+      // act on: left unspent, a later claim on a reused branch name would
+      // reach dispose for an MR that merged before that tree existed.
+      if (!witnessed) fired.add(fireKey);
       log.debug?.({ repo: repoName, branch, mrState: cur, witnessed }, "reactor: no actionable tree on the branch");
       continue;
     }
