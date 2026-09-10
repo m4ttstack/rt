@@ -20,6 +20,15 @@ function dirs(path: string): string[] {
   }
 }
 
+/**
+ * The repo keys `listRuns` currently has dirs for -- what the CLI's `--repo`
+ * filter checks a raw, unresolvable arg against before it decides the arg
+ * names a real (if pre-cutover) run-dir key rather than an unknown repo.
+ */
+export function listRunRepoDirs(): string[] {
+  return dirs(runsRoot());
+}
+
 function openRun(repo: string, runId: string): { db: Database; schemaAhead: boolean } | null {
   if (!isPathComponent(repo) || !isPathComponent(runId)) return null;
   const path = join(runsRoot(), repo, runId, "state.db");
