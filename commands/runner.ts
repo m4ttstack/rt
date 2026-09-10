@@ -58,7 +58,7 @@ export function buildRunnerDeps(args: string[], ctx: CommandContext, sock: strin
   return {
     engine: new HerdrEngine(sock),
     openSession,
-    resolve: () => resolveRun(args.filter((a) => a !== "--resolve-only"), ctx),
+    resolve: () => resolveRun(args.filter((a) => a !== "--resolve-only"), ctx, { board: true }),
     now: () => new Date(),
     sleep: (ms) => Bun.sleep(ms),
     openUrl: async (url: string) => {
@@ -79,7 +79,7 @@ export function buildTmuxRunnerDeps(args: string[], ctx: CommandContext, seed?: 
   return {
     engine: createTmuxEngine(),
     openSession,
-    resolve: () => resolveRun(args.filter((a) => a !== "--resolve-only"), ctx),
+    resolve: () => resolveRun(args.filter((a) => a !== "--resolve-only"), ctx, { board: true }),
     now: () => new Date(),
     sleep: (ms) => Bun.sleep(ms),
     openUrl: async (url: string) => {
