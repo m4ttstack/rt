@@ -61,6 +61,9 @@ function versionsLine(
 ): string | null {
   if (report?.versions) {
     const { installedBefore, installedAfter, source } = report.versions.pack;
+    if (installedBefore === installedAfter && installedAfter === source) {
+      return 'matches source';
+    }
     return `${installedBefore ?? 'none'} installed to ${installedAfter ?? 'none'} (source ${source})`;
   }
   if (!installed) return null;
