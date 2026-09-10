@@ -254,7 +254,7 @@ export function createGatesStore(opts: {
     );
   `);
 
-  // Idempotent migration for a gates.db predating the W4/RT-117 columns:
+  // Idempotent migration for a gates.db predating the newer columns:
   // CREATE TABLE IF NOT EXISTS above never adds columns to an existing table.
   const gateCols = new Set(
     (db.query("PRAGMA table_info(gates)").all() as Array<{ name: string }>).map((c) => c.name),

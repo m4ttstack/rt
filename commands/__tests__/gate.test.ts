@@ -70,7 +70,7 @@ describe("buildAnswerPayload", () => {
     expect(payload).toEqual({ id: "gt-1a2b3c4d", answers: { q1: "yes" }, by: "human" });
   });
 
-  test("--session overrides CLAUDE_CODE_SESSION_ID; --override sets a boolean flag (RT-117)", () => {
+  test("--session overrides CLAUDE_CODE_SESSION_ID; --override sets a boolean flag", () => {
     const payload = buildAnswerPayload(
       ["gt-1a2b3c4d", "--answers", '{"q1":"yes"}', "--by", "human", "--session", "explicit-session", "--override"],
       { CLAUDE_CODE_SESSION_ID: "ambient-session" },
@@ -78,12 +78,12 @@ describe("buildAnswerPayload", () => {
     expect(payload).toEqual({ id: "gt-1a2b3c4d", answers: { q1: "yes" }, by: "human", session: "explicit-session", override: true });
   });
 
-  test("--session defaults to CLAUDE_CODE_SESSION_ID when omitted (RT-117)", () => {
+  test("--session defaults to CLAUDE_CODE_SESSION_ID when omitted", () => {
     const payload = buildAnswerPayload(["gt-1a2b3c4d", "--answers", '{"q1":"yes"}', "--by", "human"], { CLAUDE_CODE_SESSION_ID: "ambient-session" });
     expect(payload).toEqual({ id: "gt-1a2b3c4d", answers: { q1: "yes" }, by: "human", session: "ambient-session" });
   });
 
-  test("no --session and no CLAUDE_CODE_SESSION_ID leaves session unset (RT-117)", () => {
+  test("no --session and no CLAUDE_CODE_SESSION_ID leaves session unset", () => {
     const payload = buildAnswerPayload(["gt-1a2b3c4d", "--answers", '{"q1":"yes"}', "--by", "human"], {});
     expect(payload).toEqual({ id: "gt-1a2b3c4d", answers: { q1: "yes" }, by: "human" });
   });
@@ -126,7 +126,7 @@ describe("buildListPayload", () => {
   });
 });
 
-describe("withGateTokens (RT-117 Task 7)", () => {
+describe("withGateTokens", () => {
   test("names presentation and owner, falling back to wait and human", () => {
     const withOrigin = fakeRow({ origin: { presentation: "form" }, owner: "herd:h-1" });
     const bare = fakeRow({ origin: null, owner: null });

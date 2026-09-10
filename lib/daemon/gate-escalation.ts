@@ -1,6 +1,6 @@
 /**
- * gate-escalation: surfaces an unanswered herd-owned gate to the human
- * (RT-117). Runs as a periodic sweep, not on the answer/close hot path:
+ * gate-escalation: surfaces an unanswered herd-owned gate to the human.
+ * Runs as a periodic sweep, not on the answer/close hot path:
  * both trigger reasons (TTL elapsed, owner's subscription gone) are only
  * knowable by re-checking the clock and the subscription table, not by
  * reacting to a single event.

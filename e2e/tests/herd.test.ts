@@ -300,7 +300,7 @@ describe("rt herd (e2e)", () => {
 
     const opened = await waitForFrame(shepherd.frames, (f) => frameContent(f).includes(`[gate] ${gate} is now open`), 10_000);
     expect(frameContent(opened)).toContain("re-read the gate registry");
-    // RT-117 Task 7: a worker's `herd ask` resolves its own spawned pane, so
+    // a worker's `herd ask` resolves its own spawned pane, so
     // the doorbell names presentation "form" (the Escape seam applies) and
     // the default "human" owner (this gate carries no herd-spawner origin).
     expect(frameContent(opened)).toContain(`[gate] ${gate} is now open (form, owner human); re-read the gate registry.`);
