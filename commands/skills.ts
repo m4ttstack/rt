@@ -1042,7 +1042,7 @@ export async function checkPack(opts: { pack?: string; packDir?: string; manifes
   return computeCheck(parseFlags(args));
 }
 
-function installedCacheLine(installed: InstalledInfo): string | null {
+export function installedCacheLine(installed: InstalledInfo): string | null {
   if (installed.status === "lagging") {
     return `installed cache: lagging (${installed.version} installed vs ${installed.sourceVersion} source) -- run rt skills sync`;
   }

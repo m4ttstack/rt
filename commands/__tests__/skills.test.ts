@@ -3,7 +3,7 @@ import { execFileSync } from "child_process";
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { dirname, join } from "path";
-import { installedInfoFor, skillsCheck, skillsCompile, skillsComposition, skillsPacks } from "../skills.ts";
+import { installedCacheLine, installedInfoFor, skillsCheck, skillsCompile, skillsComposition, skillsPacks } from "../skills.ts";
 import { compileSkill } from "../../lib/skills/compile.ts";
 import { invocableRoster, loadAttachment, loadStepSource } from "../../lib/skills/sources.ts";
 import type { PluginRoots } from "../../lib/skills/sources.ts";
@@ -1372,6 +1372,23 @@ describe("installedInfoFor", () => {
     expect(installedInfoFor({ packDir: dir, pluginRoots: installedFixture(null) }, [packAt(dir)])).toBeNull();
     const noMkt = { ...packAt(dir), marketplace: null };
     expect(installedInfoFor({ packDir: dir, pluginRoots: installedFixture("0.5.3") }, [noMkt])).toBeNull();
+  });
+});
+
+describe("installedCacheLine", () => {
+  test("lagging: exact contract string", () => {
+    const line = installedCacheLine({ plugin: "acme", marketplace: "beacon", version: "0.5.2", sourceVersion: "0.5.3", status: "lagging" });
+    expect(line).toBe("installed cache: lagging (0.5.2 installed vs 0.5.3 source) -- run rt skills sync");
+  });
+
+  test("missing: exact contract string", () => {
+    const line = installedCacheLine({ plugin: "acme", marketplace: "beacon", version: null, sourceVersion: "0.5.3", status: "missing" });
+    expect(line).toBe("installed cache: missing (no installed record for acme@beacon) -- run rt skills sync");
+  });
+
+  test("current: no line", () => {
+    const line = installedCacheLine({ plugin: "acme", marketplace: "beacon", version: "0.5.3", sourceVersion: "0.5.3", status: "current" });
+    expect(line).toBeNull();
   });
 });
 
