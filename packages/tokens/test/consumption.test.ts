@@ -11,6 +11,10 @@ import { describe, expect, it } from 'vitest';
 const WAIVED_TUI: Record<string, string> = {
   '--border-control-on-card':
     "on-card contrast role read by apps/board's gate control edges (its --gate-control-edge alias); no kit recipe reads it yet.",
+  '--border-soft-on-card':
+    "soft rule for card grounds, read by apps/board's gate chrome (its --gate-soft-edge alias); no kit recipe reads it yet.",
+  '--surface-overlay':
+    "modal/overlay chrome role read by apps/board's decision-queue modal (its --gate-modal-ground alias); no kit recipe reads it yet.",
   '--text-muted-on-card':
     "on-card contrast role read by apps/board's gate muted text (its --gate-muted alias); no kit recipe reads it yet.",
   '--surface-inset':
@@ -108,6 +112,10 @@ const WAIVED_TUI: Record<string, string> = {
 };
 
 const WAIVED_TOKYO: Record<string, string> = {
+  '--tk-overlay':
+    "modal/overlay chrome role (dark sits below panel, light equals it), mirrored from the tui theme's --surface-overlay; no packages/ui component wires this surface yet.",
+  '--tk-soft-on-card':
+    "soft rule for card grounds (dark's --tk-border-soft is darker than the card it frames), mirrored from the tui theme's --border-soft-on-card; no packages/ui component wires it yet.",
   '--tk-red-text':
     "AA-compliant red TEXT role (>=4.5:1), mirrors --tk-muted-text/--tk-accent-text; packages/ui's --mantine-color-error still reads the raw --tk-red for the error surface, and no component paints red as inline text yet -- Phase 3 material.",
   '--tk-green':

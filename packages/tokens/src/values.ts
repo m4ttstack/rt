@@ -21,6 +21,8 @@ export interface ColorScheme {
     panel: string;
     card: string;
     inset: string;
+    // Modal/overlay chrome: dark sits a rung below panel so card surfaces read raised on it; light equals panel.
+    overlay: string;
   };
   line: {
     border: string;
@@ -29,6 +31,8 @@ export interface ColorScheme {
     // On-card contrast roles: --border/--muted-text sit too close to --card in dark; these are the stronger pairings gate surfaces read.
     edgeOnCard: string;
     controlEdgeOnCard: string;
+    // Soft rule that stays visible on card grounds in dark (base soft is darker than the card there); light equals soft.
+    softOnCard: string;
   };
   dot: {
     ok: string;
@@ -75,6 +79,7 @@ export const TOKENS: Tokens = {
       panel: '#fbfbfc',
       card: '#ffffff',
       inset: '#f7f8fa',
+      overlay: '#fbfbfc',
     },
     line: {
       border: '#c8cad6',
@@ -82,6 +87,7 @@ export const TOKENS: Tokens = {
       grid: 'rgba(52, 59, 88, 0.05)',
       edgeOnCard: '#c8cad6',
       controlEdgeOnCard: '#c8cad6',
+      softOnCard: '#d5d7e2',
     },
     dot: {
       ok: '#1f9d3a',
@@ -113,6 +119,7 @@ export const TOKENS: Tokens = {
       panel: '#232a47',
       card: '#2c3352',
       inset: '#1c2136',
+      overlay: '#1c2136',
     },
     line: {
       border: '#3b4261',
@@ -120,6 +127,7 @@ export const TOKENS: Tokens = {
       grid: 'rgba(122, 162, 247, 0.06)',
       edgeOnCard: '#505879',
       controlEdgeOnCard: '#6b7499',
+      softOnCard: '#404866',
     },
     dot: {
       ok: '#4ade5b',

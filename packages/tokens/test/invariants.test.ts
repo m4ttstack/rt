@@ -91,4 +91,24 @@ describe('on-card contrast roles', () => {
       srgbLuminance(t.surface.card)
     );
   });
+
+  it.each(SCHEMES)(
+    '%s: softOnCard at least as strong as soft against card',
+    scheme => {
+      const t = TOKENS[scheme];
+      expect(
+        contrastRatio(t.line.softOnCard, t.surface.card)
+      ).toBeGreaterThanOrEqual(contrastRatio(t.line.soft, t.surface.card));
+    }
+  );
+
+  it.each(SCHEMES)(
+    '%s: overlay never sits above panel in luminance',
+    scheme => {
+      const t = TOKENS[scheme];
+      expect(srgbLuminance(t.surface.overlay)).toBeLessThanOrEqual(
+        srgbLuminance(t.surface.panel)
+      );
+    }
+  );
 });

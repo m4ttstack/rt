@@ -54,10 +54,12 @@
   --tk-panel: #fbfbfc;
   --tk-card: #ffffff;
   --tk-inset: #f7f8fa;
+  --tk-overlay: #fbfbfc;
   --tk-border: #c8cad6;
   --tk-border-soft: #d5d7e2;
   --tk-border-on-card: #c8cad6;
   --tk-control-edge: #c8cad6;
+  --tk-soft-on-card: #d5d7e2;
   --tk-fg: #222;
   --tk-muted: #8990b3;
   /* AA-compliant muted for TEXT (>=4.5:1 on bg 1-3). The raw muted token above
@@ -95,10 +97,12 @@
   --tk-panel: #232a47;
   --tk-card: #2c3352;
   --tk-inset: #1c2136;
+  --tk-overlay: #1c2136;
   --tk-border: #3b4261;
   --tk-border-soft: #313853;
   --tk-border-on-card: #505879;
   --tk-control-edge: #6b7499;
+  --tk-soft-on-card: #404866;
   --tk-fg: #e3e7f6;
   --tk-muted: #7e86ad;
   /* AA-compliant muted text for the dark scheme (>=4.5:1 on bg 1-3). */

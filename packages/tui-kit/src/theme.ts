@@ -188,6 +188,7 @@ export const tuiTheme = createTheme({
       card: "colors.surface.card",
       chrome: "colors.surface.chrome",
       inset: "colors.surface.inset",
+      overlay: "colors.surface.overlay",
       // Every distinct `color-mix()` expression in mr-board's stylesheet,
       // carried as RAW strings (validateRef only checks dotted-identifier
       // refs, so these pass through and emitCss writes them verbatim).
@@ -237,6 +238,7 @@ export const tuiTheme = createTheme({
       soft: "colors.line.soft",
       "on-card": "colors.line.edgeOnCard",
       "control-on-card": "colors.line.controlEdgeOnCard",
+      "soft-on-card": "colors.line.softOnCard",
     },
   },
 });

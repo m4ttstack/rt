@@ -393,8 +393,10 @@ test("polish-port roles and aliases are emitted", () => {
   for (const decl of [
     "--border-on-card:",
     "--border-control-on-card:",
+    "--border-soft-on-card:",
     "--text-muted-on-card:",
     "--surface-inset:",
+    "--surface-overlay:",
     "--surface-wash-fg-4-card:",
     "--type-display:",
     "--type-title:",
