@@ -28,21 +28,23 @@ reuses that seam, and the CLI keeps the verb usable from a terminal by humans an
 
 ## Name and path derivation
 
-Nothing is assumed; every name is read from the same data `claude plugin update` reads,
-under the Claude config dir (`CLAUDE_CONFIG_DIR`, default `~/.claude`):
+Nothing is assumed; every name comes from the surfaces rt already reads:
 
-- `plugins/known_marketplaces.json` maps marketplace name → source. Local marketplaces
-  are `directory` or `file://` url sources; their paths are how sync finds checkouts.
-- The **pack's** `<plugin>@<marketplace>` pair: the marketplace whose
-  `.claude-plugin/marketplace.json` lists a plugin whose resolved source directory equals
-  the pack directory (from the existing packs discovery). The plugin name comes from that
-  entry, the marketplace name from the marketplace manifest — they routinely differ
-  (an `acme` pack can ship as `acme@beacon`), so neither is ever derived from the other.
-- The **engine** checkout and pair: the marketplace entry for the mattstack plugin, whose
-  url source names the checkout directory.
-- `plugins/installed_plugins.json` is the authority for installed versions (`version`
-  per `<plugin>@<marketplace>` record). The cache directory is never globbed for
-  versions: it can hold several.
+- Marketplace registration: `extraKnownMarketplaces` in the Claude `settings.json`
+  (under `CLAUDE_CONFIG_DIR`, default `~/.claude`) — the same source
+  `discoverPacks` (`lib/skills/packs.ts`) walks today. The registration key is the
+  `<marketplace>` half of `claude plugin update <plugin>@<marketplace>`; discovery is
+  extended to carry it on `PackInfo` alongside the plugin name it already captures
+  (the marketplace entry's `name`). The two names routinely differ (an `acme` pack can
+  ship as `acme@beacon`), so neither is ever derived from the other.
+- The **engine** checkout and pair: the pack named `mattstack` in that same discovery —
+  its marketplace entry is a `file://` url source, which `discoverPacks` already
+  resolves to the checkout directory. `mattstack` as the engine's plugin name is the
+  existing convention (`pluginRoots.byName.mattstack` in `commands/skills.ts`).
+- Installed versions: `claude plugin list --json` — the seam the compiler already
+  resolves installed plugins through (`buildPluginRoots` in `lib/skills/sources.ts`),
+  extended to read the version per `<plugin>@<marketplace>` id. The cache directory is
+  never globbed for versions: it can hold several.
 
 A missing derivation (pack not listed in any local marketplace, no installed record) is
 a refusal naming what was looked for and where, never a guess.
@@ -65,9 +67,11 @@ any failure is "fix the named problem, run sync again."
 4. **Decide, via the check facility (in-process):**
    - compiled output drifts from sources → patch-bump the pack's `plugin.json` version
      (the version stamps into compiled output, so the bump precedes the compile),
-     compile in-process (auto-commit + push, as `rt skills compile` does today),
-     re-check. Drift **survives** the recompile → refuse: content changes are pending;
-     take the agent path.
+     compile in-process, re-check. Drift **survives** the recompile → refuse: content
+     changes are pending; take the agent path. Compile itself performs no git
+     operations, so sync then commits the bump plus the compiled output in the pack
+     checkout (a `git add` scoped to the pack directory — safe because the dirty guard
+     proved the tree clean) and pushes.
    - no drift, installed pack cache lagging → skip bump/compile, fall through to 5.
    - no drift, installed current → no-op report, exit 0.
 5. **Freshen installed pack:** `claude plugin update <pack>@<marketplace>`, then verify
