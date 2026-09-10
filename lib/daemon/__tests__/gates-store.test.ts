@@ -285,6 +285,30 @@ describe("gates store — sweep", () => {
     expect(removed).toBe(0); // the floor (1) covers this single terminal row
     expect(s.get(id)).not.toBeNull();
   });
+
+  test("sweep prunes dead subscription rows older than 24h, leaves newer ones", () => {
+    const s: GatesStore = createGatesStore({ dbPath: tmp("gates.db"), log });
+    const oldSub = s.subscribe({ subjectPrefix: "run:", session: "sess-1" });
+    const newSub = s.subscribe({ subjectPrefix: "mr:", session: "sess-2" });
+    s.markSubscriptionDead(oldSub.id);
+    s.markSubscriptionDead(newSub.id);
+    // Backdate oldSub's lastDelivery to 25h ago
+    const now = Date.now();
+    const twentyFiveHoursAgo = now - 25 * 60 * 60 * 1000;
+    s.__db!.run("UPDATE gate_subscriptions SET lastDelivery = ? WHERE id = ?", [
+      JSON.stringify({ outcome: "failed", at: twentyFiveHoursAgo }),
+      oldSub.id,
+    ]);
+    // Keep newSub with a recent delivery (1h ago, within 24h retention)
+    const oneHourAgo = now - 1 * 60 * 60 * 1000;
+    s.__db!.run("UPDATE gate_subscriptions SET lastDelivery = ? WHERE id = ?", [
+      JSON.stringify({ outcome: "failed", at: oneHourAgo }),
+      newSub.id,
+    ]);
+    s.sweep();
+    expect(s.subscriptions()).toHaveLength(1);
+    expect(s.subscriptions()[0]!.id).toBe(newSub.id);
+  });
 });
 
 test("an existing gates.db without the W4 columns gains them on open (ALTER migration)", () => {
