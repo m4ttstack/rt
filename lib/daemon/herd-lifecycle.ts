@@ -24,8 +24,11 @@ export interface HerdLifecycle {
   reconcilePanes(): void;
   /** Reconciles the bg claims registry against reality: a claimed `bg:` pane
       missing from a live snapshot releases (crashed/closed pane the event
-      stream missed), and a `runner:<pid>` claim whose process is gone
-      releases too. Inert when bgSocket/bgClaims are not configured. */
+      stream missed), a `runner:<pid>` claim whose process is gone releases
+      too, and a pane-less `herd:<id>` claim (herd:start's own claim -- see
+      handlers/herd.ts) releases once its herd row is gone or wrapped with
+      none of its jobs holding a live pane in the snapshot. Inert when
+      bgSocket/bgClaims are not configured. */
   sweepClaims(): Promise<void>;
 }
 
@@ -227,6 +230,20 @@ export function createHerdLifecycle(opts: {
     // being spawned. Re-listing after the await was exactly this bug; a
     // claim that shows up mid-flight simply waits for the next sweep.
     const candidates = bgClaims.list();
+    // Same TOCTOU shape, for the herd pass below: herd:spawn does not gate
+    // on herd status, so a job (and its pane) can land on an already-wrapped
+    // herd between this capture and session.snapshot resolving. That
+    // snapshot then predates the new pane and never counts it live, even
+    // though the post-RPC store.jobs() read below would see it -- so the
+    // herd pass compares against this pre-RPC set and defers to the next
+    // sweep when it has moved, rather than releasing a claim whose herd
+    // just grew a real, live pane.
+    const herdJobPanesBefore = new Map<string, Set<string>>();
+    for (const claim of candidates) {
+      if (claim.pane || !claim.owner.startsWith("herd:")) continue;
+      const herdId = claim.owner.slice("herd:".length);
+      herdJobPanesBefore.set(herdId, new Set(store.jobs(herdId).map((j) => j.pane).filter((p): p is string => !!p)));
+    }
     const released: string[] = [];
     for (const claim of candidates) {
       if (claim.pane || !claim.owner.startsWith("runner:")) continue;
@@ -252,6 +269,28 @@ export function createHerdLifecycle(opts: {
         const ref = parsePaneRef(claim.pane);
         if (ref.server !== "bg" || live.has(ref.paneId)) continue;
         released.push(...bgClaims.releaseByPane(claim.pane));
+      }
+      // A pane-less herd:<id> claim (herd:start's own, never carries a pane)
+      // has no other release path: the event path only fires on a pane
+      // close, and neither pass above touches it (no pid, no pane). Release
+      // once the herd row is gone (a store row that outlived its claim
+      // somehow) or the herd is wrapped and none of its jobs still holds a
+      // pane in this snapshot -- a wrapped herd with a job pane still alive
+      // (item 5's bare-wrap-up case) keeps its claim, and an active herd
+      // always keeps its claim regardless of what the snapshot shows.
+      for (const claim of candidates) {
+        if (claim.pane || !claim.owner.startsWith("herd:")) continue;
+        const herdId = claim.owner.slice("herd:".length);
+        const herd = store.get(herdId);
+        if (herd) {
+          if (herd.status !== "wrapped") continue;
+          const jobsNow = store.jobs(herdId);
+          if (jobsNow.some((j) => j.pane && live.has(j.pane))) continue;
+          const panesNow = new Set(jobsNow.map((j) => j.pane).filter((p): p is string => !!p));
+          const before = herdJobPanesBefore.get(herdId) ?? new Set<string>();
+          if (panesNow.size !== before.size || [...panesNow].some((p) => !before.has(p))) continue;
+        }
+        if (bgClaims.release(claim.owner)) released.push(claim.owner);
       }
     }
     if (released.length > 0) log.info({ released }, "herd lifecycle: bg claim sweep released stale claims");
