@@ -2550,14 +2550,16 @@
   border-bottom: 1px solid var(--border);
 }
 /* The buttons carry the surface, not the strip: a tab sitting straight on the
-   page's grid-paper background is hard to read. */
+   page's grid-paper background is hard to read. The fill is the fg wash
+   (the kit's light tier), not --chrome: light's chrome is near-identical to
+   the page ground, so chrome-filled pills blended into it. */
 .tui-tab {
   padding: 7px 14px;
   border: 0;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
   border-radius: 6px 6px 0 0;
-  background: var(--chrome);
+  background: var(--surface-wash-fg-5);
   color: var(--muted-text);
   font: inherit;
   font-size: 13px;
@@ -2567,11 +2569,12 @@
     border-color 150ms ease,
     background 150ms ease;
 }
-/* Resting, hover and active all share the strip's --chrome. The active tab is
-   marked by the accent underline and --fg text, not by a lighter fill: a white
-   active tab against a --chrome strip was the loudest seam on the page. */
+/* The active tab is marked by the accent underline and --fg text, not by a
+   lighter fill: a white active tab against the strip was the loudest seam
+   on the page. */
 .tui-tab:hover {
   color: var(--fg);
+  background: var(--surface-wash-fg-8);
 }
 .tui-tab.active {
   color: var(--fg);
