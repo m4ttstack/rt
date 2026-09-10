@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "fs";
 import { join } from "path";
 import type { Logger } from "pino";
 import type { Commands, GateRow, HerdStatusData } from "../../../packages/rt-client/src/commands.ts";
-import { formatPaneRef } from "../../../packages/rt-client/src/index.ts";
+import { formatPaneRef, parsePaneRef } from "../../../packages/rt-client/src/index.ts";
 import type { CommandResult } from "./types.ts";
 import type { HerdStore, HerdJobRow } from "../herd-store.ts";
 import { herdPrefix, herdSubject, isValidJobName, mintHerdId } from "../herd-store.ts";
@@ -180,12 +180,13 @@ export function createHerdHandlers(deps: HerdDeps) {
       const last = j.lastGate ? deps.gateStore.get(j.lastGate) : null;
       return {
         ...j,
-        // Round-trip rule: a job's stored pane is bare, but every surface
-        // that prints one must print it addressable (bg: prefix for a
-        // hidden herd's panes).
+        // Round-trip rule: the row stores the addressable ref (agent:start
+        // formats bg spawns; formatPaneRef is idempotent so pre-ref rows and
+        // visible bares both come out addressable). The snapshot map keys on
+        // the bare id, so the lookup parses.
         pane: j.pane ? formatPaneRef(j.pane, herd.hidden ? "bg" : "visible") : j.pane,
         openGate: gates.find((g) => g.subject === herdSubject(herdId, j.name))?.id ?? null,
-        paneStatus: j.pane ? (panes.get(j.pane) ?? null) : null,
+        paneStatus: j.pane ? (panes.get(parsePaneRef(j.pane).paneId) ?? null) : null,
         lastGateStatus: last?.status ?? null,
         lastGateDelivery: last?.delivery?.outcome ?? null,
       };
@@ -216,7 +217,9 @@ export function createHerdHandlers(deps: HerdDeps) {
       non-zero exit) must not block the caller's own bookkeeping. */
   async function closePane(socket: string | null, pane: string, context: Record<string, unknown>): Promise<boolean> {
     try {
-      const r = await deps.herdrRunnerFor(socket)(["pane", "close", pane]);
+      // The row stores the addressable ref (bg:-prefixed on a hidden herd);
+      // the herdr CLI only knows the bare pane id.
+      const r = await deps.herdrRunnerFor(socket)(["pane", "close", parsePaneRef(pane).paneId]);
       if (r.exitCode === 0) return true;
       log.warn({ ...context, pane, exitCode: r.exitCode }, "herd: pane close failed");
     } catch (err) {
@@ -229,8 +232,11 @@ export function createHerdHandlers(deps: HerdDeps) {
       worktree's first turn until it is dismissed, and `agent:start` stops at
       launching the pane. Best effort throughout: the pane and the job row are
       already real, so nothing here may fail the spawn. */
-  async function acceptTrustDialog(socket: string | null, pane: string, context: Record<string, unknown>): Promise<void> {
+  async function acceptTrustDialog(socket: string | null, paneRef: string, context: Record<string, unknown>): Promise<void> {
     const sock = socket ? { sockPath: socket } : {};
+    // agent:start hands back the addressable ref; every herdr call below
+    // targets the bare pane id on the herd's own socket.
+    const pane = parsePaneRef(paneRef).paneId;
     try {
       // herdr registers the agent a few hundred ms after the shell starts
       // claude, and `agent.wait` errors immediately on an unregistered target
@@ -518,7 +524,7 @@ export function createHerdHandlers(deps: HerdDeps) {
       if (!herd.hidden || !herd.herdrSocket) return { ok: false, error: "herd is not hidden; focus the pane directly" };
       if (!job.pane) return { ok: false, error: `job "${name}" has no pane` };
       const res = await attendPane({
-        socket: herd.herdrSocket, paneId: job.pane, session: BG_SESSION, label: `attend: ${name}`,
+        socket: herd.herdrSocket, paneId: parsePaneRef(job.pane).paneId, session: BG_SESSION, label: `attend: ${name}`,
         callerWorkspace, herdrRunnerFor: deps.herdrRunnerFor,
       });
       if (!res.ok) return res;
