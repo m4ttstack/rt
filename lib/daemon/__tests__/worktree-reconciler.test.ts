@@ -565,6 +565,7 @@ describe("createWorktreeReconciler", () => {
       repoIndex: () => ({ [repoName]: repo }),
       emit: () => {},
       log: fakeLog(),
+      findRunningRunByWorktree: () => ({ kind: "none" }),
     });
 
     await reconciler.runOnce();
