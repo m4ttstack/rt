@@ -351,9 +351,11 @@ body {
 /* 500, not the 200 this carried under JetBrains Mono. Mono stays sturdy that
    light; a system sans at 200 renders spindly, so the title was reading
    thinner than the metadata line beneath it. */
+/* Title/meta pairing matches the decision-queue strip (body over meta),
+   so the row reads at one size everywhere it appears. */
 .tui-title {
   font-weight: 500;
-  font-size: 0.75rem;
+  font-size: var(--type-body);
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -365,7 +367,7 @@ body {
   align-items: center;
   gap: 0.55rem;
   color: var(--muted-text);
-  font-size: 0.6rem;
+  font-size: var(--type-meta);
   margin-top: 0.15rem;
 }
 .tui-branch {
