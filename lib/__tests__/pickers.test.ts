@@ -255,7 +255,7 @@ describe("pickWorktreeWithSwitch: never gets a reload action", () => {
 });
 
 describe("pickWorktreeWithSwitch: incremental enrichment", () => {
-  test("opens with cheap dirName·branch rows, then pushes enriched segment rows once enrichBranches resolves", async () => {
+  test("opens with cheap branch·dirName rows, then pushes enriched segment rows once enrichBranches resolves", async () => {
     let resolveEnrich!: (v: EnrichedBranch[]) => void;
     const enrichPromise = new Promise<EnrichedBranch[]>((res) => { resolveEnrich = res; });
     const enrichSpy = spyOn(enrichModule, "enrichBranches").mockReturnValue(enrichPromise);
@@ -283,7 +283,7 @@ describe("pickWorktreeWithSwitch: incremental enrichment", () => {
     const call = fake.calls[0]!;
     expect(call.request.rows).toHaveLength(2);
     const cheap = call.request.rows.find((r) => r.value === "/a/wt1")!;
-    expect(cheap.left.map((s) => s.text).join("")).toBe("wt1 · eng-123-fix-thing");
+    expect(cheap.left.map((s) => s.text).join("")).toBe("eng-123-fix-thing · wt1");
     expect(call.updates).toHaveLength(0);
 
     const enriched: EnrichedBranch[] = [
