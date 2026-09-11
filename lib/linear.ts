@@ -23,7 +23,6 @@ const RT_SECRET_DOMAIN = "rt";
 interface Secrets {
   linearApiKey?: string;
   gitlabToken?: string;
-  /** For forge-token reads (secrets:forge-token); nothing in rt itself calls GitHub yet. */
   githubToken?: string;
   linearTeamId?: string;
   linearTeamKey?: string;
