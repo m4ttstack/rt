@@ -33,34 +33,33 @@ function TunnelBadge({
   const label = restarting
     ? 'restarting…'
     : (health?.detail ?? (up ? 'up' : 'down'));
-  const tip = health?.hint
+  const hint = health?.hint
     ? `${tunnels.map(t => t.name).join(', ')} · ${health.hint}`
-    : tunnels.map(t => t.name).join(', ');
-  return (
-    <Tooltip tip={tip}>
-      <button
-        className="tunnel-badge"
-        onClick={() => onOpen(tunnels[0]!.name)}
-        aria-label={`cloudflare tunnel ${label}`}
+    : null;
+  const btn = (
+    <button
+      className="tunnel-badge"
+      onClick={() => onOpen(tunnels[0]!.name)}
+      aria-label={`cloudflare tunnel ${label}`}
+    >
+      <svg
+        width="15"
+        height="15"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
       >
-        <svg
-          width="15"
-          height="15"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" />
-        </svg>
-        <span className="muted tunnel-label">tunnel</span>
-        <Badge intent={intent}>{label}</Badge>
-      </button>
-    </Tooltip>
+        <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" />
+      </svg>
+      <span className="muted tunnel-label">tunnel</span>
+      <Badge intent={intent}>{label}</Badge>
+    </button>
   );
+  return hint ? <Tooltip tip={hint}>{btn}</Tooltip> : btn;
 }
 
 export function Board() {
