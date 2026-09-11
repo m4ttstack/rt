@@ -73,7 +73,9 @@ export function isGitLabRemote(url: string | undefined): boolean {
 }
 
 export function isGitHubRemote(url: string | undefined): boolean {
-  return !!url && /github\.com/i.test(url);
+  if (!url) return false;
+  const parsed = parseRemoteUrl(url);
+  return parsed?.host === "https://github.com";
 }
 
 /**

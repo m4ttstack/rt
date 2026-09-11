@@ -59,6 +59,11 @@ describe("isGitHubRemote", () => {
     expect(isGitHubRemote("")).toBe(false);
   });
 
+  test("false for hostname suffixes containing github.com", () => {
+    expect(isGitHubRemote("git@notgithub.com:acme/repo.git")).toBe(false);
+    expect(isGitHubRemote("https://fakegithub.com/acme/repo.git")).toBe(false);
+  });
+
   test("mutually exclusive with isGitLabRemote for common forges", () => {
     const github = "git@github.com:m4ttstack/rt.git";
     const gitlab = "git@gitlab.com:acme/acme-dev.git";
