@@ -67,11 +67,14 @@ export async function forgeTokenLookupReal(p: Probes, remote: string): Promise<F
  */
 const UNSPOOFABLE_FORGE_HOSTS = new Set(["github.com", "gitlab.com"]);
 
-export function mayOfferToken(remote: string, confirmedHost: string | null | undefined): boolean {
-  const host = hostFromRemote(remote);
+export function mayOfferTokenToHost(host: string | null, confirmedHost: string | null | undefined): boolean {
   if (host === null) return false;
   if (UNSPOOFABLE_FORGE_HOSTS.has(host)) return true;
   return confirmedHost !== null && confirmedHost !== undefined && host === confirmedHost;
+}
+
+export function mayOfferToken(remote: string, confirmedHost: string | null | undefined): boolean {
+  return mayOfferTokenToHost(hostFromRemote(remote), confirmedHost);
 }
 
 /**

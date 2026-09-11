@@ -878,6 +878,47 @@ describe("path.link / settings.seed / repos.clone / intercepts.install (real HOM
     expect(clone.env?.GIT_TERMINAL_PROMPT).toBe("0");
   });
 
+  test("repos.clone: the stored token is withheld from a tracked identity on a host the user never confirmed — the clone still runs, tokenless", async () => {
+    setSetting("rt.repoRoots", [join(home, "code")], "machine");
+    mkdirSync(join(home, "code"), { recursive: true });
+    const seen: { argv: string[]; env?: Record<string, string> }[] = [];
+    const p = fakeProbes({
+      home,
+      exec: async (argv, opts) => {
+        seen.push({ argv, env: opts?.env });
+        return ok();
+      },
+    });
+    stageSecret(p, "rt", "gitlabToken", "glpat_staged");
+    const { ctx } = makeCtx(p, { snapshot: { slug: "acme", integrations: {}, trackingIdentities: ["gitlab.evil.example/acme/acme-dev"], marketplaces: [], plugins: [], remote: null } });
+
+    const outcome = await reposCloneStep.run(ctx);
+    expect(outcome).toEqual({ state: "done", detail: "cloned 1, present 0, failed 0" });
+    const clone = seen.find((c) => c.argv.includes("clone"))!;
+    expect(clone.env?.RT_GIT_TOKEN).toBeUndefined();
+  });
+
+  test("repos.clone: a tracked identity on the user-confirmed host still gets the token", async () => {
+    setSetting("rt.repoRoots", [join(home, "code")], "machine");
+    setSetting("rt.integrations", { forgeHost: "gitlab.corp.example" }, "user");
+    mkdirSync(join(home, "code"), { recursive: true });
+    const seen: { argv: string[]; env?: Record<string, string> }[] = [];
+    const p = fakeProbes({
+      home,
+      exec: async (argv, opts) => {
+        seen.push({ argv, env: opts?.env });
+        return ok();
+      },
+    });
+    stageSecret(p, "rt", "gitlabToken", "glpat_staged");
+    const { ctx } = makeCtx(p, { snapshot: { slug: "acme", integrations: {}, trackingIdentities: ["gitlab.corp.example/acme/acme-dev"], marketplaces: [], plugins: [], remote: null } });
+
+    const outcome = await reposCloneStep.run(ctx);
+    expect(outcome).toEqual({ state: "done", detail: "cloned 1, present 0, failed 0" });
+    const clone = seen.find((c) => c.argv.includes("clone"))!;
+    expect(clone.env?.RT_GIT_TOKEN).toBe("glpat_staged");
+  });
+
   test("repos.clone: an already-present, genuinely-matching clone is skipped (idempotent re-run never re-clones)", async () => {
     setSetting("rt.repoRoots", [join(home, "code")], "machine");
     const dest = join(home, "code", "acme-dev");

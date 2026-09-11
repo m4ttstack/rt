@@ -7,7 +7,8 @@
 import { readSecret } from "../../secrets/store.ts";
 import type { ApplyContext } from "../apply.ts";
 import { readStagedSecret } from "../staging.ts";
-import { forgeTokenLookup, tokenOrNull } from "../../team/forge-token.ts";
+import { forgeTokenLookup, mayOfferToken, tokenOrNull } from "../../team/forge-token.ts";
+import { readUserIntegrationOverrides } from "../team-settings.ts";
 
 /** Null when rt holds no token for the remote's host. */
 export async function forgeTokenFor(ctx: ApplyContext, remote: string): Promise<string | null> {
@@ -17,4 +18,17 @@ export async function forgeTokenFor(ctx: ApplyContext, remote: string): Promise<
       readStaged: (d, k) => readStagedSecret(ctx.p, d, k),
     })
   );
+}
+
+/**
+ * `forgeTokenFor` behind the confirmed-host gate, for remotes built from
+ * team-store data (tracked identities, a declared forge host): the token is
+ * offered only to an unspoofable forge or the one host the user confirmed
+ * through `rt setup <forge> connect --host` — a joined team's own declaration
+ * never qualifies on its own.
+ */
+export async function trustedForgeTokenFor(ctx: ApplyContext, remote: string): Promise<string | null> {
+  const confirmedHost = readUserIntegrationOverrides().forgeHost ?? null;
+  if (!mayOfferToken(remote, confirmedHost)) return null;
+  return forgeTokenFor(ctx, remote);
 }
