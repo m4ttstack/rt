@@ -15,6 +15,7 @@
  * only when a candidate qualifies, so quiet passes never spawn it.
  */
 
+import { canon } from "../../fs-canon.ts";
 import { withTreeLock } from "../../worktree/locks.ts";
 import { loadRegistry, type TreeRecord } from "../../worktree/registry.ts";
 import { disposeTree, type DisposeDeps } from "../../worktree/dispose.ts";
@@ -52,6 +53,17 @@ function insideTree(cwd: string, treePath: string): boolean {
   return cwd === treePath || cwd.startsWith(treePath + "/");
 }
 
+/**
+ * lsof reports kernel-resolved realpaths while the registry stores the
+ * configured spelling, so the tree side must be canonicalized or a symlink
+ * anywhere in the root (macOS /tmp, a linked volume) hides every live
+ * session from the compare. Shared with the reactor's unwitnessed catch-up.
+ */
+export function hasLiveCwdInside(cwds: Set<string>, treePath: string): boolean {
+  const tree = canon(treePath);
+  return [...cwds].some((cwd) => insideTree(cwd, tree));
+}
+
 function staleClaims(repoName: string, days: number, now: number): TreeRecord[] {
   return loadRegistry(repoName).filter((rec) => {
     if (rec.kind !== "ephemeral" || rec.state !== "claimed") return false;
@@ -83,7 +95,7 @@ export async function sweepStaleClaims(deps: StaleClaimSweepDeps, cfg: WorktreeR
   }
 
   for (const rec of candidates) {
-    if ([...cwds].some((cwd) => insideTree(cwd, rec.path))) {
+    if (hasLiveCwdInside(cwds, rec.path)) {
       deps.log.debug?.(
         { repo: deps.repoName, tree: rec.name },
         "stale-claim sweep: live process cwd inside the tree, skipping",

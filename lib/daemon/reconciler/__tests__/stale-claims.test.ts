@@ -1,8 +1,8 @@
 import { describe, test, expect, beforeEach } from "bun:test";
 import { execSync } from "child_process";
-import { mkdtempSync, realpathSync, writeFileSync } from "fs";
+import { mkdtempSync, realpathSync, symlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
-import { join } from "path";
+import { basename, dirname, join } from "path";
 import type { Logger } from "pino";
 import { loadRegistry, saveRegistry, type TreeRecord } from "../../../worktree/registry.ts";
 import type { WorktreeRepoConfig } from "../../../worktree/config.ts";
@@ -110,6 +110,21 @@ describe("stale-claim sweep", () => {
     await sweep(cfgWith(7), async () => new Set([join(rec.path, "node_modules")]));
 
     expect(loadRegistry(repoName).find((t) => t.path === rec.path)?.state).toBe("claimed");
+  });
+
+  test("a live cwd is still detected when the registry stores the tree path through a symlink", async () => {
+    const rec = claimedTree(repo, repoName, "golf", "feat-golf", { claimedAgoMs: 8 * DAY_MS });
+    // A symlinked pool root (macOS /tmp -> /private/tmp, a linked volume)
+    // registers the tree under the symlink spelling, while lsof reports
+    // kernel-resolved realpaths.
+    const linkRoot = join(realpathSync(mkdtempSync(join(tmpdir(), "rtstale-link-"))), "trees");
+    symlinkSync(dirname(rec.path), linkRoot);
+    const linkedPath = join(linkRoot, basename(rec.path));
+    saveRegistry(repoName, loadRegistry(repoName).map((t) => (t.path === rec.path ? { ...t, path: linkedPath } : t)));
+
+    await sweep(cfgWith(7), async () => new Set([join(rec.path, "src")]));
+
+    expect(loadRegistry(repoName).find((t) => t.path === linkedPath)?.state).toBe("claimed");
   });
 
   test("a stale claim with unpushed commits is refused and stays claimed", async () => {
