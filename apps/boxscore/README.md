@@ -131,10 +131,14 @@ See `gitlab-leaderboard-spec.md` for the exact definitions.
   **Refresh** re-scans each configured project from its last watermark and upserts what
   changed; a plain load re-runs the same query against what's already stored, with no
   network call.
-- **Merged MRs are immutable.** Once an MR's metrics (diff stats, notes, approvals) are
-  stored with a `merged` state, the refresh never re-fetches them, so a comment left after
-  merge cannot retroactively move review-latency or review-depth for that MR (spec section
-  7, "edge cases"). Only non-merged rows are re-fetched on each refresh.
+- **Merged MRs are re-fetched until their snapshot settles.** Each stored metrics row
+  carries the MR's `updatedAt` at fetch time (`mr_metrics.metrics_updated_at`); a refresh
+  skips a merged MR only once that stamp covers the index's latest `updatedAt`. If review
+  activity (a note, an approval) moved the MR after the snapshot, it is re-fetched. This
+  matters because reviews land right before merge: a snapshot taken while the MR was still
+  open would otherwise freeze that review out, undercounting MRs reviewed, review depth,
+  review latency, reciprocity, and even the diff totals. Non-merged rows are always
+  re-fetched.
 - **Trend storage** is limited to "current vs. one prior window." No long-run time series.
 - **Coding days** only count push events visible to your token.
 
