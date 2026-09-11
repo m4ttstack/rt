@@ -24,7 +24,6 @@ import type {
 import { resolveLivePane, type LivePane, type PaneHints } from "./pane-resolve-live.ts";
 import type { EscapeInjector } from "./gate-escape.ts";
 import { computeView, gateAgentId } from "./reconciler-view.ts";
-import { deriveOwner } from "./handlers/gate.ts";
 import { listKvValues, setKvValue } from "../state/kv-blob.ts";
 
 const CLEARED_NS = "reconciler.cleared";
@@ -122,6 +121,19 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
     }
   }
 
+  /** Ownership routing (spec "Ownership routing"): a herd member's own
+      gates carry their shepherd as owner (`herd:<id>`); the attention gate
+      for that agent must route the same way, not fall back to human. Takes
+      the first non-"human" owner among the agent's joined open/parked
+      gates; "human" (including no joined gates at all) is the default. */
+  function ownerForAttentionGate(v: ExecutorView, gatesSnapshot: GateRow[]): string {
+    for (const gateId of v.openGateIds) {
+      const joined = gatesSnapshot.find((row) => row.id === gateId);
+      if (joined?.owner && joined.owner !== "human") return joined.owner;
+    }
+    return "human";
+  }
+
   /** Opens the attention gate and records it, pushing the new row into
       `gatesSnapshot` too so a later agent in the same sweep pass that
       somehow shares a subject still sees it occupied. */
@@ -132,7 +144,7 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
     gatesSnapshot: GateRow[],
   ): Promise<void> {
     const context = await peekFor(v.paneRef, panes);
-    const owner = deriveOwner(undefined);
+    const owner = ownerForAttentionGate(v, gatesSnapshot);
     const { row } = deps.store.open({
       subject: v.subject ?? `agent:${v.agentId}`,
       kind: "pane-attention",
@@ -151,12 +163,11 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
     if (!gateId) return;
     const row = deps.store.get(gateId);
     if (row && (row.status === "open" || row.status === "parked")) {
-      // gates-store.close() only accepts "abandoned" | "superseded" |
-      // "pruned" -- the spec's "resolved" is not a legal value here.
-      // "abandoned" is the least-wrong of the three (no coupled field like
-      // supersededBy, unlike "superseded"); see task report for the
-      // tradeoff and the case for widening the union.
-      deps.store.close(gateId, "abandoned");
+      // "resolved" (not "abandoned"): the pane came back on its own, it
+      // wasn't given up on. clear() below uses "abandoned" for the
+      // human/user-initiated close -- the two must read differently in
+      // any UI that surfaces closedReason.
+      deps.store.close(gateId, "resolved");
     }
   }
 

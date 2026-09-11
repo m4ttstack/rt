@@ -58,7 +58,7 @@ export interface GatesStore {
   list(filter: { open?: boolean; subjectPrefix?: string; kind?: string; limit?: number; cursor?: number }): { gates: GateRow[]; cursor: number };
   answer(id: string, answers: GateAnswer["answers"], by: string, opts?: { overridden?: boolean }): AnswerResult;
   park(id: string): { ok: true } | { ok: false; reason: "not-found" | "not-open"; row: GateRow | null };
-  close(id: string, reason: "abandoned" | "superseded" | "pruned"): { ok: true } | { ok: false; reason: "not-found" | "already-answered" | "already-closed" };
+  close(id: string, reason: "abandoned" | "superseded" | "pruned" | "resolved"): { ok: true } | { ok: false; reason: "not-found" | "already-answered" | "already-closed" };
   markDelivery(id: string, outcome: "delivered" | "dead-pane" | "confirmed" | "stuck"): void;
   /** `null` clears the stamp (row goes back to no `execution` field on read). */
   markExecution(id: string, execution: "unassigned" | null): void;
@@ -98,7 +98,7 @@ interface GateColumns {
   openedAt: number;
   parkedAt: number | null;
   closedAt: number | null;
-  closedReason: "abandoned" | "superseded" | "pruned" | null;
+  closedReason: "abandoned" | "superseded" | "pruned" | "resolved" | null;
   supersededBy: string | null;
   agent: string | null;
   pane: string | null;
