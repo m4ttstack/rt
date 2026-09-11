@@ -44,3 +44,30 @@ test("a failed gather (null) keeps tracked windows and lastResult intact", async
   expect(s.getTracked(4242)?.firstSeen).toBe(firstSeen);
   expect(during.find((p) => p.pid === 4242)).toBeTruthy();
 });
+
+// RT-128: with the tray polling faster than a gather finishes (a machine
+// whose spawns are slow), each queued poll used to launch its own full
+// fan-out (git worktree list per repo + lsof), feeding the very slowness
+// that queued it. Concurrent refreshes must share ONE in-flight gather.
+test("concurrent refresh calls share one in-flight gather", async () => {
+  let gathers = 0;
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  class SlowScanner extends SystemProcessScanner {
+    protected override async gather(): Promise<any[] | null> {
+      gathers++;
+      await gate;
+      return [fakeProcess(4242, 10)];
+    }
+  }
+  const s = new SlowScanner();
+
+  const a = s.refresh();
+  const b = s.refresh();
+  release();
+  const [ra, rb] = await Promise.all([a, b]);
+
+  expect(gathers).toBe(1);
+  expect(ra.find((p) => p.pid === 4242)).toBeTruthy();
+  expect(rb.find((p) => p.pid === 4242)).toBeTruthy();
+});
