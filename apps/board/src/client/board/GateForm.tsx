@@ -431,6 +431,19 @@ function GateForm({
                 focus pane
               </Button>
             ))}
+          {/* The primitive hides this on required items, so it only ever
+              shows on a skippable multi -- where it reads as the "none of
+              these" answer, not navigation (the queue modal already has a
+              "skip" that means something else). Skipping submits an
+              explicit []. */}
+          <Questionnaire.Skip
+            disabled={busy}
+            render={props => (
+              <Button {...props} variant="light" intent="muted" size="lg" />
+            )}
+          >
+            none
+          </Questionnaire.Skip>
           <Questionnaire.Next
             render={(props, state) => (
               <Button
@@ -438,7 +451,10 @@ function GateForm({
                 variant="filled"
                 intent="warn"
                 size="lg"
-                disabled={busy || state.status !== 'answered'}
+                disabled={
+                  busy ||
+                  (state.status !== 'answered' && state.status !== 'skipped')
+                }
               />
             )}
           >
@@ -451,7 +467,10 @@ function GateForm({
                 variant="filled"
                 intent="warn"
                 size="lg"
-                disabled={busy || state.status !== 'answered'}
+                disabled={
+                  busy ||
+                  (state.status !== 'answered' && state.status !== 'skipped')
+                }
               />
             )}
           >
