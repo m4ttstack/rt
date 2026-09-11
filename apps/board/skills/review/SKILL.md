@@ -153,9 +153,18 @@ remembered in the conversation.
      Options carry display labels: the `tiers` question's options are
      `{"value": "<Tier>", "label": "<Tier> (<count>)"}` objects, the count being
      that tier's finding count from the report (e.g. value `Major`, label
-     `Major (2)`); the `outcome` options stay bare strings. The `--context`
+     `Major (2)`); the `outcome` options stay bare strings unless marked as
+     recommended. The `--context`
      text is the tier counts line followed by one line per finding title from
      the report, verbatim from the report file, never re-summarized.
+
+     Mark the outcome you would recommend by listing it FIRST and giving it
+     a label ending in " (recommended)", e.g.
+     `[{"value": "approve", "label": "approve (recommended)"}, "comment"]`.
+     The board lifts the suffix into a badge and the native form renders it
+     as its own (Recommended) affordance, so every surface shows the one
+     recommendation decided here. Mark at most one outcome option and never
+     a tiers option; recommending is offering, and the human still decides.
 
    - **Open the gate:**
      `<status-bin> gate open <state> --kind review-post --questions <json> --context <context text>`
@@ -164,7 +173,18 @@ remembered in the conversation.
      rules above); if it would exceed 8192 UTF-8 bytes, omit `--context`
      entirely rather than trimming it.
    - **presentation "form":** present the SAME questions as the native
-     structured-question form. Render each option's `label` when it has one
+     structured-question form, as a mechanical rendering of the gate JSON:
+     one form question per gate question in gate order (tiers before
+     outcome: the human weighs the findings before choosing a verdict),
+     question text the gate label verbatim, one form option per gate option
+     in gate order with labels verbatim. A label's " (recommended)" suffix
+     becomes the form's own (Recommended) affordance instead of staying in
+     the text. Your framing and reasoning go in the pane prose before the
+     form or in option descriptions, never into rewritten question or
+     option text, and never as an option that folds another question's
+     answer in (no "skip and approve clean" combo option): "post nothing"
+     is the tiers question answered as an explicit empty array, which the
+     daemon records. Render each option's `label` when it has one
      and submit the chosen option's `value` verbatim; never an index, never a
      paraphrase. Submit exactly one
      `<status-bin> gate answer <state> --answers <json> --by pane` after the
@@ -201,6 +221,8 @@ remembered in the conversation.
        `["critical","nit"]`) — the daemon rejects anything else. Carry the
        human's phrasing, hedges, or nuance in the note form instead:
        `{"outcome": {"value": "comment", "note": "approve once CI is green"}}`.
+       A multi question's explicit empty array (`{"tiers": []}`) is also
+       valid: it records the decision to post none of these findings.
      - **CAS loss.** `gate answer` prints nothing and exits 0 when the
        pane's answer was recorded and stands. If it instead prints one JSON
        line, someone answered first through another surface — that printed
@@ -213,7 +235,8 @@ remembered in the conversation.
      open time), fall back to ONE combined `AskUserQuestion` carrying the
      same questions the gate would have — both `tiers` and `outcome` when
      levels are present, `outcome` alone when they aren't — never the old
-     two-gate pair, and proceed on its answers. A failing `gate wait` is not
+     two-gate pair, rendered by the same mechanical rules as presentation
+     "form" above, and proceed on its answers. A failing `gate wait` is not
      itself degradation — per the presentation branches above, re-run it; only
      if it keeps failing, and never with the closed message or the terminal
      errors above (those end cleanly per "Closed or missing gate" instead),
