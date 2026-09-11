@@ -11,8 +11,8 @@ import { FETCH, USERS, WINDOW } from './fixtures.js';
 
 const SIZE_BAND = { tooSmall: 10, tooLarge: 400 };
 
-// Only MR1 references an ENG ticket (through its source branch), so with a Linear team set
-// the merged cohort shrinks and every merged-backed table must shrink with it.
+// MR1 references an ENG ticket (through its source branch); the others don't. A Linear
+// team no longer gates authoredMerged, so every merged MR counts regardless.
 const GATED: FetchResult = {
   ...FETCH,
   mrs: FETCH.mrs.map(m =>
@@ -20,13 +20,13 @@ const GATED: FetchResult = {
   ),
 };
 
-describe('snapshot and evidence agree when a Linear team gates the merged cohort', () => {
+describe('snapshot and evidence agree with a Linear team configured', () => {
   const opts = { window: WINDOW, sizeBand: SIZE_BAND, linearTeam: 'ENG' };
   const snap = computeSnapshot(GATED, { ...opts, users: USERS });
 
-  it('the gate bites in this fixture', () => {
-    expect(snap.byUser.alice!.mrsMerged).toBe(1);
-    expect(snap.byUser.bob!.mrsMerged).toBe(0);
+  it('authoredMerged is not gated by team ticket reference', () => {
+    expect(snap.byUser.alice!.mrsMerged).toBe(2);
+    expect(snap.byUser.bob!.mrsMerged).toBe(2);
   });
 
   for (const u of USERS) {
@@ -49,12 +49,12 @@ describe('snapshot and evidence agree when a Linear team gates the merged cohort
     });
   }
 
-  it('the merged summary counts the gated cohort, not every merged MR', () => {
+  it('the merged summary counts every merged MR, gated or not', () => {
     const ev = buildUserEvidence(GATED, 'alice', {
       ...opts,
       baseUrl: 'https://gitlab.com',
     });
-    expect(ev.mrsMerged!.summary).toBe('1 MRs merged');
+    expect(ev.mrsMerged!.summary).toBe('2 MRs merged');
   });
 
   const corpus = buildCorpus(GATED, opts);

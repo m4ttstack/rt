@@ -122,7 +122,10 @@ describe('issuesCompleted drops gated-out issues from the rows', () => {
   it('sorts by ticket number descending, not lexicographically', () => {
     const withHighNumber: FetchResult = {
       ...FETCH,
-      linearIssues: [...(FETCH.linearIssues ?? []), issue('ENG-10')],
+      linearIssues: [
+        ...(FETCH.linearIssues ?? []),
+        issue('ENG-10', { closedAt: '2026-05-15T00:00:00.000Z' }),
+      ],
     };
     const evNum = buildUserEvidence(withHighNumber, 'alice', CTX);
     const ids = evNum.issuesCompleted!.rows.map(r => r.cells[0]);

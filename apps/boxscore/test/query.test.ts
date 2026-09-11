@@ -81,7 +81,8 @@ describe('buildFetchResult: window characterization (ported from test/slicing.te
         updatedAt: '2026-06-02T00:00:00.000Z',
         mergedAt: '2026-06-02T00:00:00.000Z',
         sourceBranch: 'feat/ENG-99-old',
-      }), // out-of-window MR carrying a Linear ticket; the ticket must vanish too
+      }), // out-of-window MR carrying a Linear ticket; the issue still surfaces here
+      // since windowing on closedAt happens downstream in cohorts.ts, not by MR linkage
       row({
         iid: 7,
         createdAt: '2026-07-02T00:00:00.000Z',
@@ -153,18 +154,18 @@ describe('buildFetchResult: window characterization (ported from test/slicing.te
       {
         id: '1',
         identifier: 'ENG-1',
-        title: 'In window',
+        title: 'Closed in window',
         url: 'https://linear.app/x/ENG-1',
         creditedUser: 'alice',
         linkedMrs: [{ iid: 1, projectPath: 'acme/app', via: 'mention' }],
-        closedAt: null,
+        closedAt: '2026-07-09T00:00:00.000Z',
         stateType: 'completed',
         stateName: 'Done',
       },
       {
         id: '2',
         identifier: 'ENG-99',
-        title: 'Out of window',
+        title: 'Not closed',
         url: 'https://linear.app/x/ENG-99',
         creditedUser: 'alice',
         linkedMrs: [{ iid: 6, projectPath: 'acme/app', via: 'mention' }],
@@ -197,10 +198,13 @@ describe('buildFetchResult: window characterization (ported from test/slicing.te
     ]);
   });
 
-  it('keeps only Linear tickets linked to an in-window MR', () => {
+  it('returns every stored Linear issue, unfiltered by MR window or linkage', () => {
     const s = seedWideScenario();
     const fetched = buildFetchResult(s, W_7D, ['alice', 'bob']);
-    expect(fetched.linearIssues.map(i => i.identifier)).toEqual(['ENG-1']);
+    expect(fetched.linearIssues.map(i => i.identifier).sort()).toEqual([
+      'ENG-1',
+      'ENG-99',
+    ]);
   });
 
   it('slices the prior window to a disjoint, non-empty set', () => {

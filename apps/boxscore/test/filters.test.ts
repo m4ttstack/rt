@@ -62,39 +62,6 @@ describe('buildMetricFilters', () => {
     expect(f.lineCounts(m)).toBe(f.lineCounts(m));
   });
 
-  it('hasTeamTicket scans title, branch, and description, and passes everything with no team', () => {
-    const gated = buildMetricFilters({ linearTeam: 'ENG' });
-    expect(
-      gated.hasTeamTicket({
-        title: 'fix',
-        sourceBranch: 'eng-12-fix',
-        description: null,
-      })
-    ).toBe(true);
-    expect(
-      gated.hasTeamTicket({
-        title: 'fix',
-        sourceBranch: null,
-        description: 'closes ENG:9',
-      })
-    ).toBe(true);
-    expect(
-      gated.hasTeamTicket({
-        title: 'fix',
-        sourceBranch: null,
-        description: null,
-      })
-    ).toBe(false);
-    const open = buildMetricFilters({});
-    expect(
-      open.hasTeamTicket({
-        title: 'fix',
-        sourceBranch: null,
-        description: null,
-      })
-    ).toBe(true);
-  });
-
   it('isBot honors extra patterns and skips a bad regex', () => {
     const f = buildMetricFilters({ extraBotPatterns: ['^ci-', '('] });
     expect(f.isBot('ci-runner')).toBe(true);

@@ -4,7 +4,8 @@ import {
   buildCorpus,
   buildUserCohorts,
 } from '../src/server/metrics/cohorts.js';
-import { FETCH, mr, WINDOW } from './fixtures.js';
+import type { FetchResult } from '../src/server/store/model.js';
+import { FETCH, li, mr, WINDOW } from './fixtures.js';
 
 const OPTS = { window: WINDOW, sizeBand: { tooSmall: 10, tooLarge: 400 } };
 
@@ -80,17 +81,12 @@ describe('buildUserCohorts for alice', () => {
       counted: FETCH.linearIssues!.slice(0, 2),
       teamExcluded: 0,
       stateExcluded: 0,
+      windowExcluded: 0,
     });
   });
 });
 
-describe('the Linear team gate', () => {
-  it('removes merged MRs with no team ticket from authoredMerged', () => {
-    const gated = buildCorpus(FETCH, { ...OPTS, linearTeam: 'ENG' });
-    const c = buildUserCohorts(gated, 'alice', { ...OPTS, linearTeam: 'ENG' });
-    expect(c.authoredMerged).toEqual([]);
-  });
-
+describe('the Linear team gate on issues', () => {
   it('tallies issues excluded by team and by state', () => {
     const withNoise = {
       ...FETCH,
@@ -111,5 +107,28 @@ describe('the Linear team gate', () => {
     expect(c.issues.counted.map(i => i.identifier)).toEqual(['ENG-1', 'ENG-2']);
     expect(c.issues.teamExcluded).toBe(1);
     expect(c.issues.stateExcluded).toBe(1);
+  });
+});
+
+describe('closedAt windowing and the ungated merged cohort', () => {
+  it('counts an issue only when closedAt falls inside the window', () => {
+    const fetched: FetchResult = {
+      ...FETCH,
+      linearIssues: [
+        li('ENG-10', 'alice', '2026-05-15T00:00:00.000Z'),
+        li('ENG-11', 'alice', '2026-04-01T00:00:00.000Z'),
+        li('ENG-12', 'alice', null),
+      ],
+    };
+    const c = buildUserCohorts(buildCorpus(fetched, OPTS), 'alice', OPTS);
+    expect(c.issues.counted.map(i => i.identifier)).toEqual(['ENG-10']);
+    expect(c.issues.windowExcluded).toBe(2);
+  });
+
+  it('counts merged MRs without any team-ticket reference', () => {
+    const opts = { ...OPTS, linearTeam: 'ENG' };
+    const c = buildUserCohorts(buildCorpus(FETCH, opts), 'alice', opts);
+    // MR1 and MR2 carry no ENG-* reference anywhere yet still count.
+    expect(c.authoredMerged.map(m => m.iid)).toEqual([1, 2]);
   });
 });

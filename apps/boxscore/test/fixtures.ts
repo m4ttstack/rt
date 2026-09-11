@@ -102,7 +102,7 @@ const MR4 = mr({
   deletions: 100,
 });
 
-const li = (
+export const li = (
   identifier: string,
   creditedUser: string | null,
   closedAt: string | null = '2026-05-15T00:00:00.000Z'

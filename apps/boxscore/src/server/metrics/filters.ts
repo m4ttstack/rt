@@ -1,4 +1,3 @@
-import { mrTicketHaystack, teamTicketRegex } from '../linear/ticket.js';
 import type { NormMr } from '../store/model.js';
 import { compileBotPatterns, isBotUsername } from './stats.js';
 
@@ -80,19 +79,14 @@ export interface MetricFilters {
   /** Additions/deletions with excluded files removed, memoized per MR. */
   lineCounts(mr: NormMr): { additions: number; deletions: number };
   isBot(username: string | null): boolean;
-  hasTeamTicket(
-    mr: Pick<NormMr, 'title' | 'sourceBranch' | 'description'>
-  ): boolean;
 }
 
 export function buildMetricFilters(opts: {
-  linearTeam?: string;
   extraBotPatterns?: string[];
   excludeFilePatterns?: string[];
 }): MetricFilters {
   const excludeRes = (opts.excludeFilePatterns ?? []).map(globToRegExp);
   const extraBots = compileBotPatterns(opts.extraBotPatterns);
-  const ticketRe = opts.linearTeam ? teamTicketRegex(opts.linearTeam) : null;
   const counts = new WeakMap<
     NormMr,
     { additions: number; deletions: number }
@@ -107,7 +101,6 @@ export function buildMetricFilters(opts: {
       return c;
     },
     isBot: username => isBotUsername(username, extraBots),
-    hasTeamTicket: mr => !ticketRe || ticketRe.test(mrTicketHaystack(mr)),
   };
 }
 
