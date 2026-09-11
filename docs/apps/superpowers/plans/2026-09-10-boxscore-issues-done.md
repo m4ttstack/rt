@@ -313,7 +313,7 @@ describe('legacy row normalization', () => {
   it('reads pre-redesign rows with defaults for the new fields', () => {
     // Rows written before this change carry assignedUser, no closedAt, and
     // linkedMrs entries without via. Write one raw to prove reads normalize it.
-    getStore().__rawInsertLinearIssue?.('ACME-9', JSON.stringify({
+    getStore().__rawInsertLinearIssue('ACME-9', JSON.stringify({
       id: 'uuid-ACME-9', identifier: 'ACME-9', title: 'old', url: 'https://linear.app/acme/issue/ACME-9',
       assignedUser: 'alice', linkedMrs: [{ iid: 7, projectPath: 'org/app' }],
       stateType: 'completed', stateName: 'Done',

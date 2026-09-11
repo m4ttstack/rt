@@ -55,11 +55,13 @@ point at its real MRs.
 ### Qualifying MRs
 
 The issue's *qualifying merged MRs* are its merged attachment-grade MRs;
-when the issue has no gitlab attachments at all, its merged closing-grade
+when the issue has no MR-shaped gitlab attachment at all (attachments to
+issues or commits leave the fallback open), its merged closing-grade
 MRs (spike: the fallback recovers 2 tickets; 9 lack attachments). An
 attachment pointing at an MR the store has never scanned resolves to
 nothing, deliberately: a ticket implemented before the data horizon must
-not count in a recent window.
+not count in a recent window, and its unresolved MR attachment still
+suppresses the text fallback.
 
 ### Counting rule
 
