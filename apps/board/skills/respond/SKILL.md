@@ -207,7 +207,13 @@ conversation.
      it would exceed the cap, omit `--context` entirely rather than trimming
      it.
    - **presentation "form":** present the SAME questions as the native
-     structured-question form. The form tool takes at most four questions
+     structured-question form, as a mechanical rendering of the gate JSON:
+     one form question per gate question in gate order, question text the
+     gate label verbatim, one form option per gate option in gate order
+     with labels verbatim. Your framing and reasoning go in the pane prose
+     before the form or in option descriptions, never into rewritten
+     question or option text, and never as an option that folds another
+     question's answer in. The form tool takes at most four questions
      per call, so chunk: the thread questions in order, up to four per
      call, until every thread is asked; then, if any thread's answer is a
      `fix:` value, ask `code-changes` in one more call, otherwise fill
@@ -278,7 +284,15 @@ conversation.
      it would exceed the cap, omit `--context` entirely rather than trimming
      it.
    - **presentation "form":** present the SAME questions as the native
-     structured-question form. Render each option's `label` when it has one
+     structured-question form, as a mechanical rendering of the gate JSON:
+     one form question per gate question in gate order, question text the
+     gate label verbatim, one form option per gate option in gate order
+     with labels verbatim. Your framing and reasoning go in the pane prose
+     before the form or in option descriptions, never into rewritten
+     question or option text, and never as an option that folds another
+     question's answer in: "post no replies" is the `replies` question
+     answered as an explicit empty array, which the daemon records.
+     Render each option's `label` when it has one
      and submit the chosen option's `value` verbatim; never an index, never a
      paraphrase. Submit exactly one
      `<status-bin> gate answer <state> --answers <json> --by pane` after the
@@ -352,6 +366,8 @@ the thread id is in the value, and the `thread-<n>` key is never a join key.
     `"fix:t1"`) — the daemon rejects anything else. Carry the
     human's phrasing, hedges, or nuance in the note form instead:
     `{"code-changes": {"value": "approve", "note": "approve but hold off on thread 3"}}`.
+    A multi question's explicit empty array (`{"replies": []}`) is also
+    valid: it records the decision to post none of the drafted replies.
   - **CAS loss.** `gate answer` prints nothing and exits 0 when the pane's
     answer was recorded and stands. If it instead prints one JSON line,
     someone answered first through another surface — that printed answer is
