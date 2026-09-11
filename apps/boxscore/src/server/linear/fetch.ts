@@ -88,12 +88,14 @@ function earliestMr<T extends { projectPath: string; iid: number }>(
 /**
  * Extract a GitLab merge request's project path and iid from its URL, e.g.
  * "https://gitlab.com/org/app/-/merge_requests/43944" -> { projectPath: "org/app", iid: 43944 }.
- * Returns null for anything else (issues, snippets, a differently-shaped host).
+ * Returns null for anything else (issues, snippets).
  */
 export function parseMrUrl(
   url: string
 ): { projectPath: string; iid: number } | null {
-  const m = url.match(/^https?:\/\/[^/]+\/(.+?)\/-\/merge_requests\/(\d+)(?:[/?#]|$)/);
+  const m = url.match(
+    /^https?:\/\/[^/]+\/(.+?)\/-\/merge_requests\/(\d+)(?:[/?#]|$)/
+  );
   return m ? { projectPath: m[1]!, iid: Number(m[2]) } : null;
 }
 
@@ -105,13 +107,16 @@ export function parseMrUrl(
  * attachment-graded links does a closing-grade text link qualify instead.
  */
 function qualifyingMrs(candidates: readonly LinkCandidate[]): LinkCandidate[] {
-  const merged = candidates.filter(
-    c => c.state === 'merged' && c.mergedAt !== null && !isRevertTitle(c.title)
+  const grade: LinkVia = candidates.some(c => c.via === 'attachment')
+    ? 'attachment'
+    : 'closing';
+  return candidates.filter(
+    c =>
+      c.via === grade &&
+      c.state === 'merged' &&
+      c.mergedAt !== null &&
+      !isRevertTitle(c.title)
   );
-  const attached = merged.filter(c => c.via === 'attachment');
-  return attached.length > 0
-    ? attached
-    : merged.filter(c => c.via === 'closing');
 }
 
 /** Credit the earliest-merged qualifying MR's author, preferring a roster author. */
@@ -332,9 +337,8 @@ export async function resolveLinearTickets(
       if (!identifier) continue;
       const ref = ticketMap.get(identifier);
 
-      // An attachment collapses a same-MR text link onto it: the map preserves
-      // insertion order for the un-collapsed entries, and attachment entries
-      // (added last) overwrite their text-linked counterpart's grade.
+      // An attachment entry overwrites its text-linked counterpart, so the grade
+      // collapses to 'attachment'.
       const byKey = new Map(ref?.mrs ?? []);
       for (const attached of resolveAttachments(raw)) {
         byKey.set(mrKey(attached.projectPath, attached.iid), attached);

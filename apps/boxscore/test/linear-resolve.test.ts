@@ -11,7 +11,10 @@ import {
   vi,
 } from 'vitest';
 
-import { parseMrUrl, resolveLinearTickets } from '../src/server/linear/fetch.js';
+import {
+  parseMrUrl,
+  resolveLinearTickets,
+} from '../src/server/linear/fetch.js';
 import { __resetStore, getStore } from '../src/server/store/index.js';
 import type { NormMr } from '../src/server/store/model.js';
 import type { LeaderboardWarning } from '../src/shared/types.js';
@@ -305,8 +308,6 @@ describe('resolveLinearTickets credit rule', () => {
     expect(await resolveCredit([a, b])).toBeNull();
   });
 
-  // The old unmerged single-author fallback is gone: nothing merged means nothing
-  // qualifies, regardless of how many linked MRs agree on an author.
   it('yields null credit when nothing merged, even if every linked MR shares one author', async () => {
     const a = linkedMr({
       iid: 1,
@@ -354,7 +355,9 @@ const rawWithAttachment = (id: string, urls: string[]) => ({
 describe('parseMrUrl', () => {
   it('extracts projectPath and iid', () => {
     expect(
-      parseMrUrl('https://gitlab.com/assured/assured-dev/-/merge_requests/43944')
+      parseMrUrl(
+        'https://gitlab.com/assured/assured-dev/-/merge_requests/43944'
+      )
     ).toEqual({ projectPath: 'assured/assured-dev', iid: 43944 });
   });
   it('rejects non-MR urls', () => {
@@ -476,6 +479,38 @@ describe('attachment-graded resolution', () => {
     stubLinear(ids => okData(ids, id => rawFor(id)));
     const issues = await resolveLinearTickets('key', [open], [], ['alice']);
     const issue = issues.find(i => i.identifier === 'ACME-4')!;
+    expect(issue.creditedUser).toBeNull();
+    expect(issue.closedAt).toBeNull();
+  });
+
+  it('yields null credit and closedAt when the only attachment is unmerged, even with a merged closing-grade text link', async () => {
+    const textLinked = mr({
+      iid: 800,
+      authorUsername: 'alice',
+      title: 'ACME-5: ship it',
+      mergedAt: '2026-05-15T00:00:00.000Z',
+    });
+    const openAttached = mr({
+      iid: 700,
+      authorUsername: 'bob',
+      title: 'wip',
+      state: 'opened',
+      mergedAt: null,
+    });
+    stubLinear(ids =>
+      okData(ids, id =>
+        rawWithAttachment(id, [
+          'https://gitlab.example/org/app/-/merge_requests/700',
+        ])
+      )
+    );
+    const issues = await resolveLinearTickets(
+      'key',
+      [textLinked, openAttached],
+      [],
+      ['alice', 'bob']
+    );
+    const issue = issues.find(i => i.identifier === 'ACME-5')!;
     expect(issue.creditedUser).toBeNull();
     expect(issue.closedAt).toBeNull();
   });
