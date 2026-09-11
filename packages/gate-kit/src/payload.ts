@@ -14,13 +14,17 @@ export type GateSelections = Record<string, string | string[]>;
 /**
  * Shapes UI-collected selections into an answer body: a `multi` question's
  * selection becomes a string array, a single-select's becomes a bare string.
- * Every question with at least one option is required -- the moment one's
- * selection is missing or empty, this returns null instead of a partial
- * payload, so a caller can disable submit (or skip the fetch) on that alone
- * rather than let an incomplete answer reach the server. A zero-option
- * question (e.g. a `tiers` question when a clean review reports no severity
- * levels) has nothing to select, so it is excluded from the required set
- * entirely -- otherwise a gate with no possible answer could never be closed.
+ * A single-select is required, and a multi question must be PRESENT: the
+ * moment either is missing (or a single-select is empty), this returns null
+ * instead of a partial payload, so a caller can disable submit (or skip the
+ * fetch) on that alone rather than let an incomplete answer reach the
+ * server. A multi question's explicit empty array passes through as a
+ * deliberate "none" -- the daemon rejects a missing question id but records
+ * `[]`, and the consumers already read an empty tier/reply set as
+ * nothing-to-post. A zero-option question (e.g. a `tiers` question when a
+ * clean review reports no severity levels) has nothing to select, so it is
+ * excluded entirely -- otherwise a gate with no possible answer could never
+ * be closed.
  */
 export function gateAnswerPayload(
   questions: GateQuestion[],
@@ -31,7 +35,7 @@ export function gateAnswerPayload(
     if (q.options.length === 0) continue;
     const value = selections[q.id];
     if (q.multi) {
-      if (!Array.isArray(value) || value.length === 0) return null;
+      if (!Array.isArray(value)) return null;
       answers[q.id] = value;
     } else {
       if (typeof value !== 'string' || value.length === 0) return null;

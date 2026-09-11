@@ -51,6 +51,31 @@ describe('answeredGateSummary chip', () => {
     expect(chip).toBe('review !44043 · comment, nothing posted');
   });
 
+  test('an explicit empty multi answer chips the same nothing-posted marker as the zero-option shape', () => {
+    const questions: GateQuestion[] = [
+      {
+        id: 'tiers',
+        label: 'Post which findings?',
+        multi: true,
+        options: ['Minor', 'Major'],
+      },
+      REVIEW_QUESTIONS[1]!,
+    ];
+    const { chip } = answeredGateSummary({
+      subject:
+        'mr:https://gitlab.example.invalid/group/proj/-/merge_requests/44043',
+      kind: 'review-post',
+      status: 'answered',
+      questions,
+      answer: {
+        answers: { tiers: [], outcome: 'comment' },
+        by: 'pane',
+        answeredAt: 1,
+      },
+    });
+    expect(chip).toBe('review !44043 · comment, nothing posted');
+  });
+
   test('a respond chip counts non-skip thread verbs, renders labels, and names a non-pane decider', () => {
     const { chip } = answeredGateSummary({
       subject: MR_SUBJECT,

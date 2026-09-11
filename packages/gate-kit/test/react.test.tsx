@@ -72,7 +72,7 @@ describe('gateItems', () => {
       },
       {
         name: 'flags',
-        required: true,
+        required: false,
         choices: [{ value: 'lint' }, { value: 'types' }],
       },
     ]);
@@ -87,6 +87,7 @@ describe('gateItems', () => {
       ],
     });
     expect(display[1]!.multiple).toBe(true);
+    expect(display[1]!.required).toBe(false);
   });
 
   test('a zero-option question is excluded: nothing to collect, and the payload rule already exempts it', () => {
@@ -149,7 +150,7 @@ describe('gateItems', () => {
 });
 
 describe('answersFromForm', () => {
-  test('reads a radio with get and checkboxes with getAll, and refuses an incomplete form', () => {
+  test('reads a radio with get and checkboxes with getAll, and refuses a missing single-select', () => {
     const complete = new FormData();
     complete.set('outcome', 'pass');
     complete.append('flags', 'lint');
@@ -159,8 +160,16 @@ describe('answersFromForm', () => {
     });
 
     const incomplete = new FormData();
-    incomplete.set('outcome', 'pass');
+    incomplete.append('flags', 'lint');
     expect(answersFromForm(PLAIN_GATE, incomplete)).toBeNull();
+  });
+
+  test("a multi question absent from the form submits [] -- a skipped multi's inputs post nothing, and the daemon requires the key but accepts the empty array", () => {
+    const skipped = new FormData();
+    skipped.set('outcome', 'pass');
+    expect(answersFromForm(PLAIN_GATE, skipped)).toEqual({
+      answers: { outcome: 'pass', flags: [] },
+    });
   });
 
   test('the structurally excluded code-changes item submits the sentinel', () => {
@@ -322,6 +331,7 @@ function Harness({
         );
       })}
       <Questionnaire.Previous>previous</Questionnaire.Previous>
+      <Questionnaire.Skip>none</Questionnaire.Skip>
       <Questionnaire.Next>next</Questionnaire.Next>
       <Questionnaire.Submit>submit</Questionnaire.Submit>
     </Questionnaire.Root>
@@ -392,6 +402,37 @@ describe('step contract', () => {
       'Choose an answer to continue.'
     );
     expect(screen.getByRole('progressbar')).toHaveTextContent('1 of 2');
+  });
+
+  test('the skip control hides on a required single-select and shows on a skippable multi', async () => {
+    render(<Harness gate={PLAIN_GATE} onAnswers={() => {}} />);
+    expect(screen.queryByRole('button', { name: 'none' })).toBeNull();
+    await userEvent.click(screen.getByRole('radio', { name: 'passed' }));
+    await userEvent.click(screen.getByRole('button', { name: 'next' }));
+    expect(screen.getByRole('button', { name: 'none' })).toBeVisible();
+  });
+
+  test('skipping a multi question submits its explicit empty array', async () => {
+    const onAnswers = vi.fn();
+    render(<Harness gate={PLAIN_GATE} onAnswers={onAnswers} />);
+    await userEvent.click(screen.getByRole('radio', { name: 'passed' }));
+    await userEvent.click(screen.getByRole('button', { name: 'next' }));
+    await userEvent.click(screen.getByRole('button', { name: 'none' }));
+    expect(onAnswers).toHaveBeenCalledWith({
+      answers: { outcome: 'pass', flags: [] },
+    });
+  });
+
+  test('skipping a checked multi discards its picks: the submitted answer is [], not the stale selection', async () => {
+    const onAnswers = vi.fn();
+    render(<Harness gate={PLAIN_GATE} onAnswers={onAnswers} />);
+    await userEvent.click(screen.getByRole('radio', { name: 'passed' }));
+    await userEvent.click(screen.getByRole('button', { name: 'next' }));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'lint' }));
+    await userEvent.click(screen.getByRole('button', { name: 'none' }));
+    expect(onAnswers).toHaveBeenCalledWith({
+      answers: { outcome: 'pass', flags: [] },
+    });
   });
 
   test('the code-changes item joins as a new last step on a fix pick, Submit moves to it, and it leaves again when the fix is unticked', async () => {

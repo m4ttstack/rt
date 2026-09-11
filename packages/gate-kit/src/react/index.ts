@@ -58,10 +58,12 @@ export interface GateItems {
  * returned items until some other selection carries a `fix:` value, so
  * inclusion is reactive to `selections` and the hidden question never
  * renders at all. Zero-option questions are excluded too -- they have
- * nothing to collect and gateAnswerPayload already exempts them. Every
- * included item is required: strict option membership means an
- * option-carrying question must be answered from its own set (never a
- * freeform QuestionnaireInput).
+ * nothing to collect and gateAnswerPayload already exempts them.
+ * Single-selects are required (strict option membership: an answer comes
+ * from the question's own set, never a freeform QuestionnaireInput); a
+ * multi question is skippable, because "none of these" is a legitimate
+ * multi answer -- the questionnaire's skip affordance submits it as an
+ * explicit `[]`, which the daemon records.
  */
 export function gateItems(
   gate: GateForItems,
@@ -75,7 +77,7 @@ export function gateItems(
     name: q.id,
     prompt: q.label,
     multiple: q.multi,
-    required: true,
+    required: !q.multi,
     choices: q.options.map(opt => {
       const d = optionDisplayFor(opt);
       return {
@@ -106,9 +108,14 @@ export function noteFieldName(questionId: string): string {
  * The native form back to one atomic wire answer: `get` for a single-select,
  * `getAll` for a multi, then through effectiveSelections (the structurally
  * excluded code-changes item submits the sentinel) into gateAnswerPayload.
- * Null while any required question lacks an answer, so a caller can refuse
- * the submit on that alone. A question whose note field is non-empty after
- * trimming submits `{ value, note }`; every other question submits the bare
+ * Null while any single-select lacks an answer, so a caller can refuse the
+ * submit on that alone. A multi question with no form entries submits an
+ * explicit `[]`: a skipped item's inputs drop their `name` and post
+ * nothing, and the questionnaire's own submit validation guarantees every
+ * rendered item was answered or deliberately skipped before this runs --
+ * while the daemon requires the question id to be present even when the
+ * answer is empty. A question whose note field is non-empty after trimming
+ * submits `{ value, note }`; every other question submits the bare
  * selection, and the injected sentinel never carries a note.
  */
 export function answersFromForm(
@@ -118,10 +125,9 @@ export function answersFromForm(
   const selections: GateSelections = {};
   for (const q of gate.questions) {
     if (q.multi) {
-      const values = formData
+      selections[q.id] = formData
         .getAll(q.id)
         .filter((v): v is string => typeof v === 'string');
-      if (values.length > 0) selections[q.id] = values;
     } else {
       const value = formData.get(q.id);
       if (typeof value === 'string' && value.length > 0)

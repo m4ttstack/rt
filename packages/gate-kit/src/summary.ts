@@ -128,6 +128,13 @@ export function answeredGateSummary(row: GateSummaryInput): GateSummary {
       }
       const { value } = unwrapGateAnswer(raw);
       if (Array.isArray(value)) {
+        // An explicit [] answer (skipped multi) joins the zero-option shape's
+        // marker rather than falling into verbCounts, whose empty-input
+        // "all skipped" reads as a verb tally that never happened.
+        if (value.length === 0) {
+          markers.push('nothing posted');
+          continue;
+        }
         fragments.push(
           verbCounts(value) ??
             value.map(v => displayForValue(v, q.options).text).join(', ')

@@ -33,12 +33,14 @@ test("gateAnswerPayload refuses when a multi question's selection is missing", (
   expect(payload).toBeNull();
 });
 
-test("gateAnswerPayload refuses when a multi question's selection is an empty array", () => {
+test("gateAnswerPayload accepts a multi question's explicit empty array as a deliberate 'none'", () => {
   const payload = gateAnswerPayload(QUESTIONS, {
     tiers: [],
     outcome: 'approve',
   });
-  expect(payload).toBeNull();
+  expect(payload).toEqual({
+    answers: { tiers: [], outcome: 'approve' },
+  });
 });
 
 test("gateAnswerPayload refuses when a single question's selection is missing", () => {
