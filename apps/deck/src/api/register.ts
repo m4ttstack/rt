@@ -39,8 +39,10 @@ import {
   type ResolvedShape,
   type ServeShapeDeps,
 } from '../registry/serve-shape.ts';
+import { serviceEnv } from '../registry/service-env.ts';
 import { composeServicePath, resolveProgram } from '../services/exec-env.ts';
 import {
+  readInstalledEnvironment,
   readInstalledProgramArguments,
   readInstalledWorkingDirectory,
 } from '../services/launchd.ts';
@@ -50,6 +52,7 @@ import {
   type ServiceManager,
   type ServiceSpec,
 } from '../services/manager.ts';
+import { renderedEnvironment } from '../services/plist.ts';
 import { resetDevModeCache } from './dev-mode.ts';
 import { getPlatformSettings } from './platform-settings.ts';
 import { logsDir } from './state.ts';
@@ -102,7 +105,7 @@ export function setServeShapeDeps(deps: ServeShapeDeps): void {
  * an app that is silently, inexplicably down.
  */
 function specFor(record: AppRecord, shape: ResolvedShape): ServiceSpec {
-  const env = { ...(record.env ?? {}), PORT: String(record.port) };
+  const env = serviceEnv(record);
   const path = env.PATH ?? composeServicePath();
   const [argv0, ...rest] = shape.command;
   const program = resolveProgram(argv0!, path);
@@ -116,6 +119,16 @@ function specFor(record: AppRecord, shape: ResolvedShape): ServiceSpec {
     stdoutPath: join(logsDir(), `${record.name}.out.log`),
     stderrPath: join(logsDir(), `${record.name}.err.log`),
   };
+}
+
+function sameEnvironment(
+  a: Record<string, string>,
+  b: Record<string, string>
+): boolean {
+  const keys = Object.keys(a);
+  return (
+    keys.length === Object.keys(b).length && keys.every(k => a[k] === b[k])
+  );
 }
 
 /**
@@ -389,9 +402,10 @@ export async function restartManagedApps(
  * Selective restart behind a mattstack dev/prod mode flip: rt pokes this after
  * `rt settings dev-mode` changes, so every managed app must re-resolve its
  * shape, but only the ones whose resolved command actually moved get torn
- * down and rebuilt. The diff is against the installed plist's
- * ProgramArguments, not any last-resolved value on the record, so a flip and
- * a flip-back reads as the same "unchanged" outcome both times.
+ * down and rebuilt. The diff is against the installed plist (ProgramArguments,
+ * WorkingDirectory, EnvironmentVariables), not any last-resolved value on the
+ * record, so a flip and a flip-back reads as the same "unchanged" outcome
+ * both times.
  */
 export async function reresolveManagedApps(
   drivers: Drivers
@@ -426,11 +440,14 @@ export async function reresolveManagedApps(
     }
     const installed = readInstalledProgramArguments(record.label);
     const installedCwd = readInstalledWorkingDirectory(record.label);
+    const installedEnv = readInstalledEnvironment(record.label);
     if (
       installed !== null &&
       installed.length === spec.programArguments.length &&
       installed.every((a, i) => a === spec.programArguments[i]) &&
-      installedCwd === spec.workingDirectory
+      installedCwd === spec.workingDirectory &&
+      installedEnv !== null &&
+      sameEnvironment(installedEnv, renderedEnvironment(spec))
     ) {
       unchanged.push(record.name);
       continue;

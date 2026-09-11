@@ -13,6 +13,7 @@ import {
   restartService,
   tailFile,
 } from '../../core/discover.ts';
+import { localhostRedirect } from '../../core/localhost-redirect.ts';
 import {
   isAuthorized,
   startRestartDetached,
@@ -63,7 +64,7 @@ import {
   commandRunStatus,
   startCommandRun,
 } from '../services/command-runner.ts';
-import { isPlatformManagedBy } from '../services/manager.ts';
+import { isPlatformManagedBy, PLATFORM_NAME } from '../services/manager.ts';
 import { isDevMode } from './dev-mode.ts';
 import { buildDiscoveryApps, iconResponse } from './discovery.ts';
 import {
@@ -308,6 +309,12 @@ export function startApi(deps: ApiDeps) {
         req.headers.get('x-forwarded-host') ??
         req.headers.get('host') ??
         undefined;
+      const redirect = localhostRedirect(
+        host,
+        url,
+        `${PLATFORM_NAME}.${MATTSTACK_TLD}`
+      );
+      if (redirect) return redirect;
       const isPublic = publicDomainFor(host) !== null;
       const statusOpts = {
         requestHost: host,

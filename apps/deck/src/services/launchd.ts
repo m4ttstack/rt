@@ -18,49 +18,60 @@ export function agentsDir(): string {
   );
 }
 
+// Unescape in reverse order of esc(): &lt; to <, &gt; to >, &amp; to & last.
+// Reversing the order is critical: if &amp; was unescaped first, then & in
+// &lt; would be replaced again, corrupting the result.
+function unescapePlist(s: string): string {
+  return s
+    .replaceAll('&lt;', '<')
+    .replaceAll('&gt;', '>')
+    .replaceAll('&amp;', '&');
+}
+
+function readInstalledPlist(label: string): string | null {
+  try {
+    return readFileSync(join(agentsDir(), `${label}.plist`), 'utf8');
+  } catch {
+    return null;
+  }
+}
+
 /** ProgramArguments read back from an installed plist deck itself rendered
     (renderPlist's known shape); the plist stays the source of truth for
     "what is actually running" so no last-resolved command is stored. */
 export function readInstalledProgramArguments(label: string): string[] | null {
-  let xml: string;
-  try {
-    xml = readFileSync(join(agentsDir(), `${label}.plist`), 'utf8');
-  } catch {
-    return null;
-  }
-  const array = xml.match(
+  const array = readInstalledPlist(label)?.match(
     /<key>ProgramArguments<\/key>\s*<array>([\s\S]*?)<\/array>/
   );
   if (!array) return null;
-  // Unescape in reverse order of esc(): &lt; to <, &gt; to >, &amp; to & last.
-  // Reversing the order is critical: if &amp; was unescaped first, then & in
-  // &lt; would be replaced again, corrupting the result.
   return [...array[1]!.matchAll(/<string>([\s\S]*?)<\/string>/g)].map(m =>
-    m[1]!
-      .replaceAll('&lt;', '<')
-      .replaceAll('&gt;', '>')
-      .replaceAll('&amp;', '&')
+    unescapePlist(m[1]!)
   );
 }
 
 /** WorkingDirectory read back from an installed plist, same contract as
     readInstalledProgramArguments: null when the plist or the key is absent. */
 export function readInstalledWorkingDirectory(label: string): string | null {
-  let xml: string;
-  try {
-    xml = readFileSync(join(agentsDir(), `${label}.plist`), 'utf8');
-  } catch {
-    return null;
-  }
-  const match = xml.match(
+  const match = readInstalledPlist(label)?.match(
     /<key>WorkingDirectory<\/key>\s*<string>([\s\S]*?)<\/string>/
   );
-  if (!match) return null;
-  // Same reverse-of-esc() ordering as readInstalledProgramArguments: &amp; last.
-  return match[1]!
-    .replaceAll('&lt;', '<')
-    .replaceAll('&gt;', '>')
-    .replaceAll('&amp;', '&');
+  return match ? unescapePlist(match[1]!) : null;
+}
+
+/** EnvironmentVariables read back from an installed plist, same contract. */
+export function readInstalledEnvironment(
+  label: string
+): Record<string, string> | null {
+  const dict = readInstalledPlist(label)?.match(
+    /<key>EnvironmentVariables<\/key>\s*<dict>([\s\S]*?)<\/dict>/
+  );
+  if (!dict) return null;
+  const env: Record<string, string> = {};
+  for (const m of dict[1]!.matchAll(
+    /<key>([\s\S]*?)<\/key>\s*<string>([\s\S]*?)<\/string>/g
+  ))
+    env[unescapePlist(m[1]!)] = unescapePlist(m[2]!);
+  return env;
 }
 
 export class LaunchdManager implements ServiceManager {

@@ -8,6 +8,12 @@ function esc(s: string): string {
     .replaceAll('>', '&gt;');
 }
 
+/** The EnvironmentVariables dict a spec renders to; the diff in
+    reresolveManagedApps compares an installed plist against this. */
+export function renderedEnvironment(spec: ServiceSpec): Record<string, string> {
+  return { PATH: composeServicePath(), ...spec.environment };
+}
+
 /** The exact agent shape the matt:local-app skill has proven: RunAtLoad + KeepAlive. */
 export function renderPlist(spec: ServiceSpec): string {
   const args = spec.programArguments
@@ -20,8 +26,7 @@ export function renderPlist(spec: ServiceSpec): string {
   // rendering process: that process's PATH is one shell's snapshot, and a
   // shell-centric version manager contributes directories to it that die
   // with the shell. An explicit PATH on the spec always wins.
-  const environment = { PATH: composeServicePath(), ...spec.environment };
-  const env = Object.entries(environment)
+  const env = Object.entries(renderedEnvironment(spec))
     .map(
       ([k, v]) =>
         `        <key>${esc(k)}</key>\n        <string>${esc(v)}</string>`

@@ -1,6 +1,6 @@
 import { MATTSTACK_TLD, readRoutes } from '../../core/discover.ts';
 import { ensureRoute } from '../../core/routes-writer.ts';
-import { listRecords } from '../registry/records.ts';
+import { isMattstackOwned, listRecords } from '../registry/records.ts';
 import {
   getPlatformSettings,
   updatePlatformSettings,
@@ -13,8 +13,7 @@ import {
     hand-authored configuration. */
 export function reconcileMattstackTld(): void {
   for (const r of listRecords()) {
-    const owned = r.managedBy != null && r.managedBy !== 'user';
-    if (owned && r.port != null)
+    if (isMattstackOwned(r) && r.port != null)
       ensureRoute(`${r.name}.${MATTSTACK_TLD}`, r.port);
   }
   const next = deriveTlds(readRoutes().map(r => String(r.hostname)));

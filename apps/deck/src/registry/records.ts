@@ -63,6 +63,13 @@ export interface AppRecord {
   remote?: RemoteState;
 }
 
+/** A mattstack product (rt-registered, or deck itself) rather than a user's own app. */
+export function isMattstackOwned(
+  record: Pick<AppRecord, 'managedBy'>
+): boolean {
+  return record.managedBy != null && record.managedBy !== 'user';
+}
+
 interface RegistryFile {
   version: 1;
   apps: Record<string, AppRecord>;

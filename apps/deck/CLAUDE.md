@@ -47,6 +47,20 @@ linked app that moves its entry point keeps a stale unit, with a correct
 manifest, until something re-registers it. `deck register --dir <path>`
 rewrites the unit from the manifest and is the fix.
 
+## .localhost redirects to .mattstack, app-side
+
+portless proxies `<name>.localhost` and `<name>.mattstack` straight to the
+app's port; the gateway on `:7950` only ever sees tunnel traffic, so a
+hostname redirect cannot live there. Instead `serviceEnv`
+(`src/registry/service-env.ts`) puts `MATTSTACK_CANONICAL_HOST=<name>.mattstack`
+into every mattstack-owned unit's environment, app-server's `createApp`
+(and board's own handler) answer a `.localhost` request with a 302 to it, and
+deck's api server does the same for `deck.localhost`. A dev-port override
+repoints `.localhost` at a process deck did not launch, so that process has no
+canonical host and keeps serving. `reresolveManagedApps` diffs the installed
+plist's environment too, so an env change reinstalls the unit on the next
+`POST /api/v1/apps/managed/reresolve`.
+
 ## Settings and secrets go through rt, never raw files
 
 - Settings: `getSetting`/`setSetting` from `@mattstack/rt-client` (bundled into

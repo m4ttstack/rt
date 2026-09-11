@@ -18,6 +18,7 @@ import {
   reloadRegistry,
   type AppRecord,
 } from './records.ts';
+import { serviceEnv } from './service-env.ts';
 
 export interface ConvertResult {
   converted: string[];
@@ -64,7 +65,7 @@ function specFor(record: AppRecord, label: string): ServiceSpec {
     label,
     programArguments: record.command ?? [],
     workingDirectory: record.workingDirectory ?? '',
-    environment: { ...(record.env ?? {}), PORT: String(record.port) },
+    environment: serviceEnv(record),
     stdoutPath: join(logsDir(), `${record.name}.out.log`),
     stderrPath: join(logsDir(), `${record.name}.err.log`),
   };

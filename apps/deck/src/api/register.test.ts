@@ -126,6 +126,27 @@ test('register: manifest env reaches the service, but never overrides PORT', asy
   expect(spec.environment.PORT).toBe(String(getRecord('envd')!.port));
 });
 
+test('register: a mattstack-owned service carries MATTSTACK_CANONICAL_HOST, a user service does not', async () => {
+  const h = bundleHelpers('owned');
+  await registerApp(
+    {
+      ...input,
+      name: 'owned',
+      managedBy: 'rt',
+      command: h.command('owned', 'serve'),
+    },
+    drivers
+  );
+  await registerApp({ ...input, name: 'mine' }, drivers);
+  expect(
+    drivers.manager.installed.get(`${LABEL_PREFIX}owned`)!.environment
+      .MATTSTACK_CANONICAL_HOST
+  ).toBe('owned.mattstack');
+  expect(
+    drivers.manager.installed.get(`${LABEL_PREFIX}mine`)!.environment
+  ).not.toHaveProperty('MATTSTACK_CANONICAL_HOST');
+});
+
 test('register with staticPort creates an external record and no service', async () => {
   const res = await registerApp({ name: 'ext', staticPort: 4200 }, drivers);
   expect(res.status).toBe(201);
@@ -920,7 +941,8 @@ test('removeManagedApps: a driver failure keeps the record and reports it in fai
 function seedPlist(
   label: string,
   programArguments: string[],
-  workingDirectory = '/tmp'
+  workingDirectory = '/tmp',
+  environment: Record<string, string> = {}
 ): void {
   mkdirSync(agentsDir(), { recursive: true });
   writeFileSync(
@@ -929,7 +951,7 @@ function seedPlist(
       label,
       programArguments,
       workingDirectory,
-      environment: {},
+      environment,
       stdoutPath: '/tmp/o',
       stderrPath: '/tmp/e',
     })
@@ -986,12 +1008,14 @@ test('reresolve: reinstalls only the app whose resolved command differs from its
   seedPlist(
     sameSpec.label,
     sameSpec.programArguments,
-    sameSpec.workingDirectory
+    sameSpec.workingDirectory,
+    sameSpec.environment
   );
   seedPlist(
     changedSpec.label,
     [...changedSpec.programArguments.slice(0, -1), 'stale-arg'],
-    changedSpec.workingDirectory
+    changedSpec.workingDirectory,
+    changedSpec.environment
   );
   counting.installCalls = [];
   counting.uninstallCalls = [];
@@ -1007,6 +1031,37 @@ test('reresolve: reinstalls only the app whose resolved command differs from its
   });
   expect(counting.uninstallCalls).toEqual([changedSpec.label]);
   expect(counting.installCalls).toEqual([changedSpec.label]);
+});
+
+test('reresolve: an installed plist whose environment lags the rendered one is reinstalled', async () => {
+  const counting = new CountingManager();
+  const reresolveDrivers = { manager: counting, edge: drivers.edge };
+  const h = bundleHelpers('envd');
+  await registerApp(
+    {
+      ...input,
+      name: 'envd',
+      managedBy: 'rt',
+      command: h.command('envd', 'serve'),
+    },
+    reresolveDrivers
+  );
+  const spec = counting.installed.get(`${LABEL_PREFIX}envd`)!;
+  const stale = { ...spec.environment };
+  delete stale.MATTSTACK_CANONICAL_HOST;
+  seedPlist(spec.label, spec.programArguments, spec.workingDirectory, stale);
+  counting.installCalls = [];
+  counting.uninstallCalls = [];
+
+  const res = await reresolveManagedApps(reresolveDrivers);
+
+  expect(res.body).toMatchObject({
+    ok: true,
+    restarted: ['envd'],
+    unchanged: [],
+  });
+  expect(counting.uninstallCalls).toEqual([spec.label]);
+  expect(counting.installCalls).toEqual([spec.label]);
 });
 
 test('reresolve: a flip-then-flip-back is a no-op (restarts nothing, churns no driver calls)', async () => {
@@ -1034,7 +1089,12 @@ test('reresolve: a flip-then-flip-back is a no-op (restarts nothing, churns no d
   );
   for (const name of ['app1', 'app2']) {
     const spec = counting.installed.get(`${LABEL_PREFIX}${name}`)!;
-    seedPlist(spec.label, spec.programArguments, spec.workingDirectory);
+    seedPlist(
+      spec.label,
+      spec.programArguments,
+      spec.workingDirectory,
+      spec.environment
+    );
   }
   counting.installCalls = [];
   counting.uninstallCalls = [];
@@ -1074,7 +1134,12 @@ test('reresolve: restarts an app whose working directory changed even though its
     reresolveDrivers
   );
   const spec = counting.installed.get(`${LABEL_PREFIX}cwdapp`)!;
-  seedPlist(spec.label, spec.programArguments, spec.workingDirectory); // baseline: argv and cwd both match dirA
+  seedPlist(
+    spec.label,
+    spec.programArguments,
+    spec.workingDirectory,
+    spec.environment
+  ); // baseline: argv and cwd both match dirA
   const rec = getRecord('cwdapp')!;
   // Re-linking to a different clone of the same repo: same dev.start argv, a new cwd.
   putRecord({
@@ -1197,7 +1262,11 @@ test('reresolve: a specFor throw for one app does not block a healthy app in the
   seedPlist(
     healthySpec.label,
     healthySpec.programArguments,
-    healthySpec.workingDirectory
+    healthySpec.workingDirectory,
+    {
+      ...healthySpec.environment,
+      MATTSTACK_CANONICAL_HOST: 'healthy.mattstack',
+    }
   );
   putRecord({
     ...getRecord('healthy')!,
