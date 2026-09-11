@@ -1,13 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { GateDomain } from '@mattstack/gate-kit';
-import {
-  Button,
-  ICONS,
-  Panel,
-  SideDrawer,
-  ToastHost,
-} from '@mattstack/tui-kit';
+import { ICONS, Panel, SideDrawer, ToastHost } from '@mattstack/tui-kit';
 import type { BoardMR } from '../../data.ts';
 import { inferRoster } from '../../data.ts';
 import type { MrAction } from '../../mr-action.ts';
@@ -924,6 +918,11 @@ export function Board() {
         onConfig={openConfig}
         scopeUncovered={data.scopeUncovered}
         note={isCodeownersTab ? 'authors in this queue' : undefined}
+        queue={
+          queueEntries.length > 0
+            ? { count: queueEntries.length, open: queue.openAtStart }
+            : null
+        }
       />
 
       <div className="tui-main">
@@ -954,18 +953,6 @@ export function Board() {
             </p>
           </div>
           <div className="tui-controls tui-controls-header">
-            {queueEntries.length > 0 && (
-              <Button
-                type="button"
-                className="tui-dq-open"
-                variant="light"
-                intent="accent"
-                size="lg"
-                onClick={queue.openAtStart}
-              >
-                decision queue · {queueEntries.length}
-              </Button>
-            )}
             <Controls {...controlProps} />
           </div>
           <div className="tui-app-launcher">
@@ -1103,6 +1090,17 @@ export function Board() {
             onConfig={openConfig}
             scopeUncovered={data.scopeUncovered}
             note={isCodeownersTab ? 'authors in this queue' : undefined}
+            queue={
+              queueEntries.length > 0
+                ? {
+                    count: queueEntries.length,
+                    open: () => {
+                      setMenuOpen(false);
+                      queue.openAtStart();
+                    },
+                  }
+                : null
+            }
           />
           <div className="tui-drawer-controls">
             <Controls {...controlProps} stacked />
