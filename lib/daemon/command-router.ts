@@ -45,6 +45,7 @@ import type { GatesStore } from "./gates-store.ts";
 import type { HerdStore } from "./herd-store.ts";
 import type { GatePush } from "./gate-push.ts";
 import type { Reconciler } from "./reconciler.ts";
+import type { AgentRecord } from "../state/agents-store.ts";
 import type { HomeSnapshotHandle } from "./home-snapshot.ts";
 import type { TeamSnapshotsHandle } from "./team-snapshots.ts";
 import type { BgService } from "./bg-service.ts";
@@ -76,6 +77,10 @@ export function buildRoutedHandlers(opts: {
   /** The daemon's agent:resume verb, the same closure the reconciler itself
       is given (lib/daemon.ts wires both from one function). */
   resumeAgent?: (agentId: string) => Promise<{ ok: boolean; error?: string }>;
+  /** lib/state/agents-store.ts's getAgent: the attention-gate "resume"
+      route's expectation hints resolve through the agent's own record, not
+      the gate row (attention gates carry no origin/pane/nudge). */
+  getAgentRecord?: (agentId: string) => Pick<AgentRecord, "paneId" | "sessionId" | "cwd"> | undefined;
   /** Herd registry backing herd:* (one row per shepherd run and worker job). */
   herdStore: HerdStore;
   /** Herdr lifecycle-stream liveness the shepherd's status reads. */
@@ -141,6 +146,7 @@ export function buildRoutedHandlers(opts: {
     herdShepherd: (herdId) => opts.herdStore.get(herdId)?.shepherdSession ?? null,
     reconciler: opts.reconciler,
     resumeAgent: opts.resumeAgent,
+    getAgentRecord: opts.getAgentRecord,
   });
   const herdHandlers = createHerdHandlers({
     store: opts.herdStore,

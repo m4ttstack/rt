@@ -5,11 +5,13 @@ import { tmpdir } from "os";
 import pino from "pino";
 import { createGatesStore, type GatesStore, type GateQuestion, type GateRow } from "../gates-store.ts";
 import { createGateHandlers, relaunchExecutor } from "../handlers/gate.ts";
+import { createReconciler } from "../reconciler.ts";
 import type { EventsBus } from "../events-bus.ts";
 import type { GatePush } from "../gate-push.ts";
 import type { Reconciler, Expectation } from "../reconciler.ts";
 import type { LivePane } from "../pane-resolve-live.ts";
 import type { ExecutorState } from "../../../packages/rt-client/src/commands.ts";
+import type { AgentRecord } from "../../state/agents-store.ts";
 
 const log = pino({ level: "silent" });
 
@@ -63,8 +65,13 @@ function harness(opts: {
   push?: GatePush;
   reconciler?: Pick<Reconciler, "executorFor" | "expect" | "clear" | "agentIdFor">;
   resumeAgent?: (agentId: string) => Promise<{ ok: boolean; error?: string }>;
+  getAgentRecord?: (agentId: string) => Pick<AgentRecord, "paneId" | "sessionId" | "cwd"> | undefined;
+  /** Tests that need the SAME store outside the handlers (e.g. to wire a
+      real reconciler against it, or to open rows before harness exists)
+      pass one in; omitted, harness mints its own fresh one. */
+  store?: GatesStore;
 } = {}) {
-  const store = freshStore();
+  const store = opts.store ?? freshStore();
   const emitted: Array<{ topic: string; payload: unknown }> = [];
   let nextId = 1;
   const bus = {
@@ -76,6 +83,7 @@ function harness(opts: {
     log,
     reconciler: opts.reconciler,
     resumeAgent: opts.resumeAgent,
+    getAgentRecord: opts.getAgentRecord,
   });
   return { handlers, store, emitted, broadcasts };
 }
@@ -285,12 +293,16 @@ describe("gate:answer attention-gate routing (kind pane-attention)", () => {
     expect(clearCalls).toEqual(["agent-9"]);
   });
 
+  const agentRecord = (over: Partial<Pick<AgentRecord, "paneId" | "sessionId" | "cwd">> = {}) =>
+    ({ paneId: "pane-9", sessionId: "sess-9", cwd: "/wt/a", ...over });
+
   test('"resume" triggers the relaunch path and registers appear-live on success', async () => {
     const { push } = pushSpy();
     const { reconciler, expectCalls } = reconcilerStub();
     const resumeCalls: string[] = [];
     const resumeAgent = async (agentId: string) => { resumeCalls.push(agentId); return { ok: true }; };
-    const { handlers, store } = harness({ push, reconciler, resumeAgent });
+    const getAgentRecord = (agentId: string) => (agentId === "agent-9" ? agentRecord() : undefined);
+    const { handlers, store } = harness({ push, reconciler, resumeAgent, getAgentRecord });
     const row = openAttentionGate(store, "agent-9");
 
     await handlers["gate:answer"]({ id: row.id, answers: { action: "resume" }, by: "board" });
@@ -301,7 +313,57 @@ describe("gate:answer attention-gate routing (kind pane-attention)", () => {
     expect(expectCalls[0]).toMatchObject({ agentId: "agent-9", expect: "appear-live" });
   });
 
-  test('"dismiss" closes the gate only -- no clear, no resume', async () => {
+  test('"resume" with no resolvable agent record stamps unassigned WITHOUT calling resumeAgent', async () => {
+    const { push } = pushSpy();
+    const { reconciler, expectCalls } = reconcilerStub();
+    const resumeCalls: string[] = [];
+    const resumeAgent = async (agentId: string) => { resumeCalls.push(agentId); return { ok: true }; };
+    const getAgentRecord = () => undefined;
+    const { handlers, store, emitted } = harness({ push, reconciler, resumeAgent, getAgentRecord });
+    const row = openAttentionGate(store, "agent-9");
+
+    await handlers["gate:answer"]({ id: row.id, answers: { action: "resume" }, by: "board" });
+    await flush();
+
+    expect(resumeCalls).toHaveLength(0);
+    expect(expectCalls).toHaveLength(0);
+    expect(store.get(row.id)!.execution).toBe("unassigned");
+    expect(emitted.some((e) => e.topic === "reconciler.execution" && (e.payload as any).execution === "unassigned")).toBe(true);
+  });
+
+  test('"resume" registers an expectation whose hints carry the agent record\'s sessionId; a matching live pane resolves it', async () => {
+    const { push } = pushSpy();
+    const store = freshStore();
+    let panesValue: LivePane[] | null = [];
+    const reconcilerEmitted: Array<{ topic: string; payload: Record<string, unknown> }> = [];
+    const reconciler = createReconciler({
+      store,
+      listAgents: () => [],
+      snapshot: async () => panesValue,
+      peek: async () => "",
+      emit: (topic, payload) => { reconcilerEmitted.push({ topic, payload }); },
+      injectEscape: async () => ({ ok: true, paneRef: "resolved" }),
+      resumeAgent: async () => ({ ok: true }),
+      log,
+    });
+    const resumeAgent = async () => ({ ok: true });
+    const getAgentRecord = (agentId: string) => (agentId === "agent-9" ? agentRecord() : undefined);
+    const { handlers } = harness({ push, reconciler, resumeAgent, getAgentRecord, store });
+    const row = openAttentionGate(store, "agent-9");
+
+    await handlers["gate:answer"]({ id: row.id, answers: { action: "resume" }, by: "board" });
+    await flush();
+
+    panesValue = [{ paneRef: "pane-9", sockPath: "/s", workspaceId: "w1", agentStatus: "idle", sessionId: "sess-9", cwd: "/wt/a" }];
+    await reconciler.sweep();
+
+    expect(reconcilerEmitted).toContainEqual({
+      topic: "reconciler.execution",
+      payload: { gateId: row.id, execution: null },
+    });
+  });
+
+  test('"dismiss" closes the gate: status "closed", closedReason "abandoned" -- no clear, no resume', async () => {
     const { push } = pushSpy();
     const { reconciler, clearCalls } = reconcilerStub();
     const resumeCalls: string[] = [];
@@ -315,9 +377,25 @@ describe("gate:answer attention-gate routing (kind pane-attention)", () => {
     expect(res.ok).toBe(true);
     expect(clearCalls).toHaveLength(0);
     expect(resumeCalls).toHaveLength(0);
+    const after = store.get(row.id)!;
+    expect(after.status).toBe("closed");
+    expect(after.closedReason).toBe("abandoned");
   });
 
-  test('"focus-pane" is a server-side no-op', async () => {
+  test('"dismiss" closes the gate even with no reconciler wired', async () => {
+    const { push } = pushSpy();
+    const { handlers, store } = harness({ push });
+    const row = openAttentionGate(store, "agent-9");
+
+    await handlers["gate:answer"]({ id: row.id, answers: { action: "dismiss" }, by: "board" });
+    await flush();
+
+    const after = store.get(row.id)!;
+    expect(after.status).toBe("closed");
+    expect(after.closedReason).toBe("abandoned");
+  });
+
+  test('"focus-pane" is a server-side no-op: no clear, no resume, gate stays "answered"', async () => {
     const { push } = pushSpy();
     const { reconciler, clearCalls } = reconcilerStub();
     const resumeCalls: string[] = [];
@@ -330,6 +408,19 @@ describe("gate:answer attention-gate routing (kind pane-attention)", () => {
 
     expect(clearCalls).toHaveLength(0);
     expect(resumeCalls).toHaveLength(0);
+    expect(store.get(row.id)!.status).toBe("answered");
+  });
+
+  test('"clear" does not itself close the row (reconciler.clear owns that separately)', async () => {
+    const { push } = pushSpy();
+    const { reconciler } = reconcilerStub();
+    const { handlers, store } = harness({ push, reconciler });
+    const row = openAttentionGate(store, "agent-9");
+
+    await handlers["gate:answer"]({ id: row.id, answers: { action: "clear" }, by: "board" });
+    await flush();
+
+    expect(store.get(row.id)!.status).toBe("answered");
   });
 });
 

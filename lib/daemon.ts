@@ -52,7 +52,7 @@ import { unknownCommandReply } from "./daemon/unknown-command.ts";
 // ./state/db.ts directly: importing the barrel is what guarantees every
 // store module has registered its legacy-JSON importer before the one-shot
 // v0->v1 migration runs (see lib/state/index.ts).
-import { getBranchCacheStore, getStateDb, closeStateDb, persistOrWarn, prunePresence, pruneMessages, pruneAgents, snapshotRegistryDeps, quickCheck, backupTo, stampedBackupPath, pruneStateBackups, setBusyLogSink, enqueueNotification, listAgents, type BranchCacheStore } from "./state/index.ts";
+import { getBranchCacheStore, getStateDb, closeStateDb, persistOrWarn, prunePresence, pruneMessages, pruneAgents, snapshotRegistryDeps, quickCheck, backupTo, stampedBackupPath, pruneStateBackups, setBusyLogSink, enqueueNotification, listAgents, getAgent, type BranchCacheStore } from "./state/index.ts";
 import { createCacheRefresher } from "./daemon/cache-refresh.ts";
 import { createWorktreeReconciler } from "./daemon/worktree-reconciler.ts";
 import { loadRepoIndex } from "./daemon/repo-index.ts";
@@ -967,6 +967,7 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
           gatePush,
           reconciler,
           resumeAgent,
+          getAgentRecord: (agentId) => getAgent(agentId, getStateDb("daemon")),
           herdStore,
           // The lifecycle is built from this router's own gate/chat handlers,
           // so it cannot exist yet; the holder delegates once it does.

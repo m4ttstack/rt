@@ -13,6 +13,8 @@ import type { GatesStore, GateQuestion, GateAnswer, GateRow, GateOrigin } from "
 import type { GatePush } from "../gate-push.ts";
 import { gateHints } from "../gate-push.ts";
 import type { Reconciler } from "../reconciler.ts";
+import type { AgentRecord } from "../../state/agents-store.ts";
+import type { PaneHints } from "../pane-resolve-live.ts";
 
 /**
  * gate:answer's two structured rejections: a non-owner's answer and
@@ -238,6 +240,11 @@ interface GuaranteeDeps {
   store: GatesStore;
   reconciler?: Pick<Reconciler, "executorFor" | "expect" | "clear" | "agentIdFor">;
   resumeAgent?: (agentId: string) => Promise<{ ok: boolean; error?: string }>;
+  /** Attention gates carry `meta.agentId`, not origin/pane/nudge, so
+      gateHints(row) resolves to an empty PaneHints for them -- the
+      "resume" route needs the agent's OWN record (paneId/sessionId/cwd)
+      to build hints an expectation can actually resolve against. */
+  getAgentRecord?: (agentId: string) => Pick<AgentRecord, "paneId" | "sessionId" | "cwd"> | undefined;
   emitExecution: (gateId: string, execution: "unassigned" | null) => void;
 }
 
@@ -278,13 +285,20 @@ async function runExecutorGuarantee(row: GateRow, deps: GuaranteeDeps): Promise<
  * Attention-gate answers (kind "pane-attention") route by the chosen
  * option instead of tracking pane liveness: the gate itself already names
  * the reconciler's diagnosis (`meta.reason`), the human is choosing what to
- * do about it. "dismiss" and "focus-pane" need nothing beyond the recorded
- * answer -- dismiss just lets the notice go, focus-pane is the board's own
- * client-side affordance.
+ * do about it. "focus-pane" needs nothing beyond the recorded answer --
+ * it's the board's own client-side affordance. "dismiss" closes the
+ * attention gate itself (it's a notice, not a decision with a follow-up);
+ * answering already left it at status "answered", so closing it needs
+ * closeAnswered's dedicated transition, not the open/parked-only close().
  */
 async function runAttentionRouting(row: GateRow, deps: GuaranteeDeps): Promise<void> {
-  if (!deps.reconciler) return;
   const action = unwrapAnswerValue(row.answer?.answers?.["action"]);
+
+  if (action === "dismiss") {
+    deps.store.closeAnswered(row.id, "abandoned");
+    return;
+  }
+  if (!deps.reconciler) return;
   const agentId = typeof row.meta?.["agentId"] === "string" ? (row.meta["agentId"] as string) : undefined;
   if (!agentId) return;
 
@@ -292,16 +306,22 @@ async function runAttentionRouting(row: GateRow, deps: GuaranteeDeps): Promise<v
     deps.reconciler.clear(agentId);
     return;
   }
-  if (action !== "resume") return; // "dismiss" / "focus-pane": no server-side action.
+  if (action !== "resume") return; // "focus-pane": no server-side action.
 
-  if (!deps.resumeAgent) {
+  // The expectation's hints must resolve to the agent's OWN live pane, not
+  // gateHints(row) (empty here -- attention gates carry no origin/pane/
+  // nudge). No agent row at all means agent:resume would fail anyway, so
+  // skip the relaunch attempt and go straight to unassigned.
+  const rec = deps.getAgentRecord?.(agentId);
+  if (!deps.resumeAgent || !rec) {
     deps.store.markExecution(row.id, "unassigned");
     deps.emitExecution(row.id, "unassigned");
     return;
   }
+  const hints: PaneHints = { paneId: rec.paneId, sessionId: rec.sessionId, worktree: rec.cwd };
   const res = await relaunchExecutor(deps.resumeAgent, row.id, agentId);
   if (res.ok) {
-    deps.reconciler.expect({ gateId: row.id, agentId, hints: gateHints(row), expect: "appear-live", deadlineSweeps: 4, retriesLeft: 0 });
+    deps.reconciler.expect({ gateId: row.id, agentId, hints, expect: "appear-live", deadlineSweeps: 4, retriesLeft: 0 });
   } else {
     deps.store.markExecution(row.id, "unassigned");
     deps.emitExecution(row.id, "unassigned");
@@ -329,6 +349,9 @@ export function createGateHandlers(
     /** The daemon's agent:resume verb, exposed the same way the reconciler
         itself consumes it -- one shared closure, wired in lib/daemon.ts. */
     resumeAgent?: (agentId: string) => Promise<{ ok: boolean; error?: string }>;
+    /** lib/state/agents-store.ts's getAgent, for the attention-gate
+        "resume" route's expectation hints (see GuaranteeDeps). */
+    getAgentRecord?: (agentId: string) => Pick<AgentRecord, "paneId" | "sessionId" | "cwd"> | undefined;
   } = {},
 ): { "gate:open": (payload: unknown) => Promise<CommandResult<"gate:open">> }
   & { "gate:answer": (payload: unknown) => Promise<GateAnswerResult> }
@@ -376,6 +399,7 @@ export function createGateHandlers(
     store,
     reconciler: deps.reconciler,
     resumeAgent: deps.resumeAgent,
+    getAgentRecord: deps.getAgentRecord,
     emitExecution,
   };
 
@@ -390,9 +414,9 @@ export function createGateHandlers(
     run().catch((err) => log?.warn({ err, gateId: row.id, kind: row.kind }, "gate:answer: post-answer executor guarantee failed"));
   };
 
-  // Controller ruling: a retried answer (already-answered, unassigned,
-  // identical answers) re-runs ONLY the guarantee -- the original push
-  // already delivered, so it is not repeated.
+  // A retried answer (already-answered, unassigned, identical answers) is
+  // the SAME logical request replayed, not a new one: the original push
+  // already delivered, so only the guarantee re-runs here, not the push.
   const fireGuaranteeRetry = (row: GateRow): void => {
     dispatchGuarantee(row, guaranteeDeps)
       .catch((err) => log?.warn({ err, gateId: row.id, kind: row.kind }, "gate:answer: retry executor guarantee failed"));
@@ -552,10 +576,10 @@ export function createGateHandlers(
       if (result.released) emitReleased(result.row!, emittedAt);
 
       // A CAS loss is a defined outcome, not an error: the loser gets the
-      // winning row typed, not an envelope hack. Controller ruling: when
-      // the recorded execution is "unassigned" and the posted answers
-      // deep-equal what's on the row, this is a RETRY of the same request
-      // (not a genuine conflict) -- re-run the guarantee and return ok
+      // winning row typed, not an envelope hack. When the recorded
+      // execution is "unassigned" and the posted answers deep-equal what's
+      // on the row, this is the SAME request replayed (a client retry),
+      // not a genuine conflict -- re-run the guarantee and return ok
       // clean, never conflict:true.
       if (result.reason === "already-answered") {
         const recordedRow = result.row!;
