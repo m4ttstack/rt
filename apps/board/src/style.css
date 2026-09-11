@@ -1796,6 +1796,36 @@ body {
   width: 100%;
   max-width: 30rem;
 }
+.tui-attention-card {
+  width: 100%;
+  max-width: 30rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--gate-gap-inner);
+}
+.tui-attention-reason {
+  margin: 0;
+  color: var(--gate-muted);
+  font-size: var(--gate-font-meta);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.tui-attention-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+.tui-subject {
+  flex: 0 0 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--gate-font-meta);
+  color: var(--gate-muted);
+}
 .tui-triage-strip {
   display: flex;
   flex-direction: column;

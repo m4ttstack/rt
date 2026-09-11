@@ -7,7 +7,10 @@ import { cleanTitle } from './format.ts';
 
 export interface QueueEntry {
   gate: GateRow;
-  mr: BoardMRWithReview;
+  /** Absent for a `queueExtras` entry (a human-owned gate with no MR row --
+      a pane-attention gate is the first kind of these) -- the modal renders
+      its strip and face off `gate` alone when this is undefined. */
+  mr?: BoardMRWithReview;
 }
 
 export interface QueueView {
@@ -85,7 +88,9 @@ export function queueView(
     position,
     states,
     nextPeek: nextEntry
-      ? `!${nextEntry.mr.iid} · ${cleanTitle(nextEntry.mr.title)}`
+      ? nextEntry.mr
+        ? `!${nextEntry.mr.iid} · ${cleanTitle(nextEntry.mr.title)}`
+        : nextEntry.gate.label
       : undefined,
     complete: session.activeId === null && session.order.length > 0,
     answeredCount: session.answered.length,

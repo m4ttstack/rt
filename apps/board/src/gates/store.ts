@@ -52,4 +52,10 @@ export interface GateRow {
   context?: string;
   origin?: GateOrigin;
   domain?: GateDomain;
+  /** The facility row's own `meta`, carried through untyped -- a pane-attention
+      row's `{ agentId, paneRef, reason }` lives here; a reader narrows per kind. */
+  meta?: Record<string, unknown>;
+  /** Set when the daemon escalated this gate to a human; drives the
+      "escalated" chip alongside the "parked" one. */
+  escalatedAt?: number;
 }

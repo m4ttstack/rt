@@ -761,8 +761,13 @@ export function Board() {
       node.children.forEach(collect);
     };
     for (const g of boardView.groups) nestStacks(g.mrs).forEach(collect);
+    // Human-owned, non-MR gates (queueExtras -- a pane-attention gate is the
+    // first kind of these) join the same queue with no `mr` at all.
+    for (const gate of data?.queueExtras ?? [])
+      if (gate.status === 'open' || gate.status === 'parked')
+        out.push({ gate });
     return out;
-  }, [boardView]);
+  }, [boardView, data]);
   // Positive answer evidence for the queue's reconcile, from the RAW data:
   // a gate answered on another surface must retire even if its MR is
   // currently filtered out of view.
@@ -771,6 +776,8 @@ export function Board() {
     for (const mr of data?.mrs ?? [])
       for (const gate of mr.gates ?? [])
         if (gate.status === 'answered') ids.add(gate.gateId);
+    for (const gate of data?.queueExtras ?? [])
+      if (gate.status === 'answered') ids.add(gate.gateId);
     return ids;
   }, [data]);
   const queue = useDecisionQueue(queueEntries, answeredGateIds);

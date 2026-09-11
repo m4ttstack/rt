@@ -5,6 +5,7 @@ import { Button, Chip, Markdown, Modal, ScrollPane } from '@mattstack/tui-kit';
 import type { GateRow } from '../../gates/store.ts';
 import { extractTicketId, ticketUrl } from '../../ticket.ts';
 import type { BoardMRWithReview } from '../types.ts';
+import { AttentionCard } from './AttentionCard.tsx';
 import { ago, cleanTitle } from './format.ts';
 import { AnsweredChip, GateForm, useGateForm } from './GateForm.tsx';
 
@@ -35,7 +36,9 @@ function DecisionQueueModal({
   onLostChange,
 }: {
   gate: GateRow;
-  mr: BoardMRWithReview;
+  /** Absent for a non-MR gate (queueExtras) -- the strip and face below
+      render off `gate` alone rather than crash on a missing MR. */
+  mr?: BoardMRWithReview;
   /** 1-based place of the active gate in the queue. */
   position: number;
   /** One entry per queued gate, in queue order. */
@@ -70,7 +73,8 @@ function DecisionQueueModal({
       <div className="tui-triage-queue-row">
         <span className="tui-triage-head-actions">
           {gate.status === 'parked' ? (
-            gate.domain && (
+            gate.domain &&
+            mr && (
               <Button
                 type="button"
                 variant="light"
@@ -112,35 +116,60 @@ function DecisionQueueModal({
       </div>
       <div className="tui-triage-strip">
         <div className="tui-triage-row-1">
-          <span className="tui-title">{cleanTitle(mr.title)}</span>
-          {mr.sourceBranch && extractTicketId(mr.sourceBranch, mr.title) && (
-            <a
-              className="tui-ticket"
-              href={ticketUrl(extractTicketId(mr.sourceBranch, mr.title)!)}
-              target="_blank"
-              rel="noopener noreferrer"
-              title={`open ${extractTicketId(mr.sourceBranch, mr.title)} in Linear`}
-            >
-              {extractTicketId(mr.sourceBranch, mr.title)}
-            </a>
+          {mr ? (
+            <>
+              <span className="tui-title">{cleanTitle(mr.title)}</span>
+              {mr.sourceBranch &&
+                extractTicketId(mr.sourceBranch, mr.title) && (
+                  <a
+                    className="tui-ticket"
+                    href={ticketUrl(
+                      extractTicketId(mr.sourceBranch, mr.title)!
+                    )}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={`open ${extractTicketId(mr.sourceBranch, mr.title)} in Linear`}
+                  >
+                    {extractTicketId(mr.sourceBranch, mr.title)}
+                  </a>
+                )}
+              <span className="tui-triage-kind">{gate.label}</span>
+            </>
+          ) : (
+            <span className="tui-title">{gate.label}</span>
           )}
-          <span className="tui-triage-kind">{gate.label}</span>
           {gate.status === 'parked' && (
             <Chip intent="warn" variant="outline" uppercase data-gate="parked">
               parked
             </Chip>
           )}
+          {gate.escalatedAt != null && (
+            <Chip
+              intent="warn"
+              variant="outline"
+              uppercase
+              data-gate="escalated"
+            >
+              escalated
+            </Chip>
+          )}
         </div>
         <div className="tui-row-2">
-          {mr.author && (
-            <span className="tui-author-tag">
-              {mr.author.name || mr.author.username}
-            </span>
-          )}
-          <span className="tui-mr-iid">!{mr.iid}</span>
-          <span className="tui-row-sep">|</span>
-          {mr.sourceBranch && (
-            <span className="tui-branch">{mr.sourceBranch}</span>
+          {mr ? (
+            <>
+              {mr.author && (
+                <span className="tui-author-tag">
+                  {mr.author.name || mr.author.username}
+                </span>
+              )}
+              <span className="tui-mr-iid">!{mr.iid}</span>
+              <span className="tui-row-sep">|</span>
+              {mr.sourceBranch && (
+                <span className="tui-branch">{mr.sourceBranch}</span>
+              )}
+            </>
+          ) : (
+            <span className="tui-subject">{gate.subject}</span>
           )}
           <span className="tui-row-sep">·</span>
           <span>{ago(new Date(gate.openedAt).toISOString(), Date.now())}</span>
@@ -199,6 +228,13 @@ function DecisionQueueModal({
                 continue
               </Button>
             </>
+          ) : gate.kind === 'pane-attention' ? (
+            <AttentionCard
+              gate={gate}
+              form={form}
+              mr={mr}
+              onFocusPane={onFocusPane}
+            />
           ) : (
             <GateForm
               gate={gate}

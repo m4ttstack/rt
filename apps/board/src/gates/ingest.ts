@@ -179,6 +179,8 @@ export function buildQueueExtras(rows: FacilityGateRow[]): GateRow[] {
       context: row.context ?? undefined,
       origin: row.origin ?? undefined,
       domain: domainForKind(row.kind),
+      meta: row.meta ?? undefined,
+      escalatedAt: row.escalatedAt ?? undefined,
     });
   }
   return out;
