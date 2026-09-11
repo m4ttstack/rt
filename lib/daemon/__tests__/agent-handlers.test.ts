@@ -1,13 +1,14 @@
 import { expect, test } from "bun:test";
 import { tmpdir } from "os";
 import { join } from "path";
-import { mkdtempSync, rmSync } from "fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "fs";
 import pino from "pino";
 import { AGENT_NAMES } from "../../chat-names.ts";
 import { openStateDb, signIn } from "../../state/index.ts";
 import { createAgentHandlers, type HeadlessChild } from "../handlers/agent.ts";
 import { createBgClaimsStore, type BgClaimsStore } from "../bg-claims-store.ts";
 import { bgSocketPath } from "../bg-service.ts";
+import { DAEMON_SOCK_PATH } from "../../daemon-config.ts";
 import type { HerdrRunner } from "../../agent-herdr.ts";
 import { repoLabel } from "../../repo-arg.ts";
 
@@ -80,7 +81,7 @@ function fakeLifecycle(): FakeLifecycle {
 function fresh(over: {
   runner?: HerdrRunner;
   runnerFactory?: (socket: string) => HerdrRunner;
-  spawn?: (argv: string[], cwd: string) => HeadlessChild;
+  spawn?: (argv: string[], cwd: string, env: Record<string, string>) => HeadlessChild;
   emit?: (t: string, p?: unknown) => void;
   insertAgentFn?: (...args: unknown[]) => void;
   bg?: FakeBg;
@@ -326,7 +327,10 @@ test("agent:start herdr reserves a handle not held by live presence, passes it a
   expect(paneRun?.[3]).toContain(`'--settings' '{"crossSessionInbound":"accept"}'`);
 });
 
-test("agent:start headless never reserves a handle or passes --name/--settings", async () => {
+// Headless still never reserves a handle or passes --name / the inline
+// crossSessionInbound JSON; it DOES now carry --settings, but only for the
+// gate-fork hook file (see the dedicated headless hook test above).
+test("agent:start headless never reserves a handle or passes --name/inline --settings", async () => {
   let argv: string[] = [];
   const h = fresh({
     spawn: (a) => {
@@ -339,7 +343,7 @@ test("agent:start headless never reserves a handle or passes --name/--settings",
   if (!res.ok) throw new Error("unreachable");
   expect(res.data.handle).toBeUndefined();
   expect(argv).not.toContain("--name");
-  expect(argv).not.toContain("--settings");
+  expect(argv).not.toContain('{"crossSessionInbound":"accept"}');
 });
 
 test("agent:resume threads the reserved handle back into --name", async () => {
@@ -354,13 +358,96 @@ test("agent:resume threads the reserved handle back into --name", async () => {
   expect(paneRun?.[3]).toContain(`'--name' '${started.data.handle}'`);
 });
 
+// The gate env vars ride alongside a caller's own env, not in place of it --
+// they are appended after it, so this no longer asserts adjacency to "claude".
 test("agent:start passes env into the pane command", async () => {
   const calls: string[][] = [];
   const h = fresh({ runner: okRunner(calls) });
   const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr", env: { HERD_ID: "demo-1" } });
   expect(res.ok).toBe(true);
   const paneRun = calls.find((c) => c[0] === "pane" && c[1] === "run");
-  expect(paneRun?.[3]).toContain("HERD_ID='demo-1' claude");
+  expect(paneRun?.[3]).toContain("HERD_ID='demo-1'");
+  expect(paneRun?.[3]).toContain("claude");
+});
+
+test("agent:start herdr stamps gate env and injects the gate-fork hook via --settings", async () => {
+  const calls: string[][] = [];
+  const h = fresh({ runner: okRunner(calls) });
+  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr" });
+  expect(res.ok).toBe(true);
+  if (!res.ok) throw new Error("unreachable");
+  const cmd = calls.find((c) => c[0] === "pane" && c[1] === "run")?.[3] ?? "";
+  expect(cmd).toContain(`RT_AGENT_ID='${res.data.id}'`);
+  expect(cmd).toContain(`RT_GATE_SUBJECT='agent:${res.data.id}'`);
+  expect(cmd).toContain(`RT_DAEMON_SOCK='${DAEMON_SOCK_PATH}'`);
+  const settingsMatch = cmd.match(/--settings' '([^']*agent-hooks[^']*)'/);
+  expect(settingsMatch).toBeTruthy();
+  const parsed = JSON.parse(readFileSync(settingsMatch![1]!, "utf8"));
+  expect(parsed.hooks.PreToolUse[0].matcher).toBe("AskUserQuestion");
+  const hookCommand = parsed.hooks.PreToolUse[0].hooks[0].command;
+  expect(hookCommand).toMatch(/scripts\/hooks\/gate-fork\.sh$/);
+  expect(existsSync(hookCommand)).toBe(true);
+});
+
+test("agent:start headless argv carries --settings for the gate-fork hook; spawn env carries the gate vars", async () => {
+  let argv: string[] = [];
+  let spawnEnv: Record<string, string> = {};
+  const h = fresh({
+    spawn: (a: string[], _cwd: string, env: Record<string, string>) => {
+      argv = a;
+      spawnEnv = env ?? {};
+      return { exited: Promise.resolve(0), stdout: async () => "{}" };
+    },
+  });
+  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", surface: "headless", prompt: "go" });
+  expect(res.ok).toBe(true);
+  if (!res.ok) throw new Error("unreachable");
+  expect(spawnEnv.RT_AGENT_ID).toBe(res.data.id);
+  expect(spawnEnv.RT_GATE_SUBJECT).toBe(`agent:${res.data.id}`);
+  expect(spawnEnv.RT_DAEMON_SOCK).toBe(DAEMON_SOCK_PATH);
+  const idx = argv.indexOf("--settings");
+  expect(idx).toBeGreaterThan(-1);
+  const parsed = JSON.parse(readFileSync(argv[idx + 1]!, "utf8"));
+  expect(parsed.hooks.PreToolUse[0].hooks[0].command).toMatch(/gate-fork\.sh$/);
+});
+
+test("agent:resume re-stamps the same gate env, preserving a custom subject", async () => {
+  const calls: string[][] = [];
+  const h = fresh({ runner: okRunner(calls) });
+  const subject = "mr:https://gitlab.example.com/a/b/-/merge_requests/9";
+  const started = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr", subject });
+  if (!started.ok) throw new Error("unreachable");
+  expect(started.data.subject).toBe(subject);
+  calls.length = 0;
+  const resumed = await h["agent:resume"]({ id: started.data.id });
+  expect(resumed.ok).toBe(true);
+  const cmd = calls.find((c) => c[0] === "pane" && c[1] === "run")?.[3] ?? "";
+  expect(cmd).toContain(`RT_AGENT_ID='${started.data.id}'`);
+  expect(cmd).toContain(`RT_GATE_SUBJECT='${subject}'`);
+  expect(cmd).toContain(`RT_DAEMON_SOCK='${DAEMON_SOCK_PATH}'`);
+});
+
+test("agent:start rejects an empty subject", async () => {
+  const h = fresh();
+  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr", subject: "" });
+  expect(res.ok).toBe(false);
+  if (res.ok) throw new Error("unreachable");
+  expect(res.error).toMatch(/subject/);
+});
+
+// extraArgs carrying its own --settings wins outright: merge is not
+// attempted, so hook injection is skipped rather than risk clobbering it.
+test("agent:start with extraArgs carrying --settings skips gate-fork hook injection", async () => {
+  const calls: string[][] = [];
+  const h = fresh({ runner: okRunner(calls) });
+  const res = await h["agent:start"]({
+    repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr",
+    extraArgs: "--settings /custom/settings.json",
+  });
+  expect(res.ok).toBe(true);
+  const cmd = calls.find((c) => c[0] === "pane" && c[1] === "run")?.[3] ?? "";
+  expect(cmd).toContain("/custom/settings.json");
+  expect(cmd).not.toContain("agent-hooks");
 });
 
 // buildPaneCommand quotes env values but not keys, so a key that is not a
