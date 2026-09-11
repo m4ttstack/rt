@@ -353,7 +353,7 @@ const EMPTY_RECONCILER_VIEW: ReconcilerView = {
   executors: [],
 };
 
-/** GET /reconciler: the rt daemon's own executor sweep (SDD
+/** GET /api/reconciler: the rt daemon's own executor sweep (SDD
     executor-reconciler, task 12's partner lane). An older daemon 404s the
     route entirely, the daemon may simply be down, or (a test's fake
     unix-socket daemon that stubs other verbs only) it may answer 200 with
@@ -362,7 +362,7 @@ const EMPTY_RECONCILER_VIEW: ReconcilerView = {
     read on this page already honors. */
 async function fetchReconcilerView(): Promise<ReconcilerView> {
   try {
-    const res = await fetch('http://localhost/reconciler', {
+    const res = await fetch('http://localhost/api/reconciler', {
       unix: DEFAULT_SOCK,
       method: 'GET',
       signal: AbortSignal.timeout(5000),
@@ -2111,7 +2111,7 @@ const httpServer = Bun.serve({
       }
       case '/reconciler/clear': {
         // Proxies the daemon's `reconciler:clear` verb (REST `POST
-        // /reconciler/clear`): tombstones a dead/hidden executor's kv entry
+        // /api/reconciler/clear`): tombstones a dead/hidden executor's kv entry
         // and closes its other gates. The orphan strip's own "clear" button
         // is the only caller -- same degrade-on-failure shape as
         // /gate/focus above, since the reconciler view itself is refetched
@@ -2136,7 +2136,7 @@ const httpServer = Bun.serve({
             status: 400,
           });
         try {
-          const res = await fetch('http://localhost/reconciler/clear', {
+          const res = await fetch('http://localhost/api/reconciler/clear', {
             unix: DEFAULT_SOCK,
             method: 'POST',
             headers: { 'content-type': 'application/json' },

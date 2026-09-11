@@ -9,6 +9,10 @@ import { afterAll, expect, test } from 'bun:test';
 // failure rather than throwing 500, and gate on method/CSRF/body shape like
 // every other POST route. Minimal boot, same recipe as
 // server-healthz-fast.test.ts: no MR/gitlab traffic needed for this route.
+//
+// The daemon side of the proxy targets its uniform `/api` prefix
+// (`/api/reconciler`, `/api/reconciler/clear`) -- only the board's own
+// incoming route stays at `/reconciler/clear` for its own callers.
 const fakeHome = mkdtempSync(join(tmpdir(), 'board-reconciler-clear-'));
 
 const teamDir = join(fakeHome, '.mattstack', 'teams', 'testteam', 'mattstack');
@@ -37,12 +41,18 @@ const rtDaemon = Bun.serve({
     const body =
       req.method === 'POST' ? await req.json().catch(() => null) : null;
     seen.push({ pathname, body });
-    if (pathname === '/reconciler/clear') {
+    if (pathname === '/api/reconciler/clear') {
       if (clearOutcome === 'fail')
         return new Response('daemon refused', { status: 500 });
       return new Response(JSON.stringify({ ok: true }), {
         headers: { 'content-type': 'application/json' },
       });
+    }
+    if (pathname === '/api/reconciler') {
+      return new Response(
+        JSON.stringify({ sweptAt: 0, herdrReachable: true, executors: [] }),
+        { headers: { 'content-type': 'application/json' } }
+      );
     }
     return new Response(
       JSON.stringify({ ok: false, error: 'not implemented' }),
@@ -105,7 +115,7 @@ test('forwards { agentId } to the daemon and returns ok', async () => {
   const res = await clear({ agentId: 'agent-9' });
   expect(res.status).toBe(200);
   expect(await res.json()).toEqual({ ok: true });
-  const forwarded = seen.find(s => s.pathname === '/reconciler/clear');
+  const forwarded = seen.find(s => s.pathname === '/api/reconciler/clear');
   expect(forwarded?.body).toEqual({ agentId: 'agent-9' });
 }, 15_000);
 
@@ -133,4 +143,11 @@ test('a daemon failure degrades to a 502 JSON error rather than throwing', async
   } finally {
     clearOutcome = 'ok';
   }
+}, 15_000);
+
+test('GET /data.json sweeps the reconciler view at the daemon api prefix', async () => {
+  await ready();
+  await fetch(`http://127.0.0.1:${PORT}/data.json`);
+  expect(seen.some(s => s.pathname === '/api/reconciler')).toBe(true);
+  expect(seen.some(s => s.pathname === '/reconciler')).toBe(false);
 }, 15_000);

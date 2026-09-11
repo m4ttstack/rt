@@ -348,6 +348,11 @@ key other than `code-changes`, unwrapping a `{value, note}` object to its
 `value`, and splitting at the first `:` into the verb and the thread id:
 the thread id is in the value, and the `thread-<n>` key is never a join key.
 
+A PreToolUse hook may deny native AskUserQuestion when no gate is open; that
+denial is the gate protocol speaking: open the gate as this section
+describes. When the daemon is down the hook allows the native form
+(degraded mode is unchanged).
+
 - **Closed or missing gate.** If `gate wait` fails with `gate <id> closed (<reason>)`,
   the decision site itself was abandoned — superseded, abandoned, or pruned
   when the MR left the board. A `not-found` error or `no gate open for <url>`

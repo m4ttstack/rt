@@ -128,6 +128,11 @@ remembered in the conversation.
    for this invocation; it supersedes any two-gate or per-skill posting-gate
    protocol you might recall from an earlier transcript or session.
 
+   A PreToolUse hook may deny native AskUserQuestion when no gate is open;
+   that denial is the gate protocol speaking: open the gate as this section
+   describes. When the daemon is down the hook allows the native form
+   (degraded mode is unchanged).
+
    - **Build the questions.** Always one `outcome` question (single-select,
      comment/approve). Add a `tiers` question (multi-select over the
      severity levels the domain skill reported present, or your own
