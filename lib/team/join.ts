@@ -37,7 +37,7 @@ import { withoutUrls } from "./redact.ts";
 import type { RelayClient } from "./relay-client.ts";
 import { storedForgeToken } from "./stored-forge-token.ts";
 import { forgeLabel, probeTeamRepoAccess, type RepoAccessVerdict } from "./repo-access.ts";
-import { forgeTokenLookupForRemote, mayOfferToken, mayOfferTokenToHost } from "./forge-token.ts";
+import { forgeTokenLookupForRemote, mayOfferToken, mayOfferTokenToHost, tokenLookupRemoteForHost } from "./forge-token.ts";
 import { readTeamLocal, updateTeamLocal } from "./team-local.ts";
 
 export interface JoinResult {
@@ -403,9 +403,13 @@ export async function joinRedeem(
   const snapshot = readTeamSnapshot(p, pointer.team, { read: seams.read, warn: seams.warn });
   const forge = snapshot.integrations.forge ?? forgeFromRemote(pointer.remote) ?? undefined;
   // The snapshot was just cloned from the inviter's repo, so its declared
-  // forge host is as untrusted as the pointer: the token follows only to a
-  // host the gate would offer it to in its own right.
-  const loginToken = forge && mayOfferTokenToHost(forge.host, confirmedHost) ? token : null;
+  // forge host is as untrusted as the pointer: it gets a token only if the
+  // gate would offer one in its own right, and then the FORGE host's own
+  // token — the clone credential belongs to pointer.remote's host and is
+  // never forwarded across hosts, even between two trusted ones.
+  const loginToken = forge && mayOfferTokenToHost(forge.host, confirmedHost)
+    ? await seams.forgeToken(p, tokenLookupRemoteForHost(forge.host))
+    : null;
   const handle = forge ? await seams.forgeLogin(p, forge.provider, forge.host, loginToken) : null;
   if (!handle) {
     const cli = forge?.provider === "gitlab" ? "glab" : "gh";

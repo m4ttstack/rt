@@ -576,6 +576,28 @@ describe("joinRedeem", () => {
     expect(seamCalls.forgeLogin[0]?.[3]).toBe("glpat-secret");
   });
 
+  test("a trusted forge declaration on a different host gets ITS OWN token, never the clone remote's credential", async () => {
+    // github.com clone, gitlab.com forge declaration: both hosts pass the
+    // gate on their own, but the github credential must not be forwarded to
+    // the gitlab host -- forge-login's token is looked up for forge.host.
+    const p = redeemProbes();
+    const relay = fakeRelay();
+    const tokenReads: string[] = [];
+    const { seams, calls: seamCalls } = baseJoinRedeemSeams({
+      read: fakeRead({ "mattstack.integrations": { forge: { host: "gitlab.com", provider: "gitlab" } } }),
+      forgeToken: async (_p, remote) => {
+        tokenReads.push(remote);
+        return remote.includes("gitlab.com") ? "glpat-for-gitlab" : "ghp-for-github";
+      },
+    });
+
+    const result = await joinRedeem(p, relay.client, () => NO_SECRETS, { code: CODE }, seams);
+
+    expect(result.access).toBe("ok");
+    expect(seamCalls.forgeLogin[0]?.[2]).toBe("gitlab.com");
+    expect(seamCalls.forgeLogin[0]?.[3]).toBe("glpat-for-gitlab");
+  });
+
   test("a cloned team's own forge declaration cannot route the token to an unconfirmed host: forge-login there runs tokenless", async () => {
     const calls: { argv: string[]; opts?: Parameters<Probes["exec"]>[1] }[] = [];
     const p = redeemProbes({
