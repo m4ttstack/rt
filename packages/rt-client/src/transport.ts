@@ -38,8 +38,13 @@ export interface RtClientOptions {
 // lib/, so this literal cannot import rtDir(). repo-tools/lib/rt-paths.ts is
 // the authority — change there first, mirror here (same convention as
 // settings/paths.ts's call-time `home()`).
+//
+// RT_DAEMON_SOCK wins over the HOME-derived default (same pattern as
+// lib/daemon-client.ts's RT_APP_SOCKET for tray.sock) — an isolated daemon
+// (per-agent launch, an e2e run) points every rt-client caller, including
+// the `rt` CLI's own subcommands, at its own socket without repointing HOME.
 function defaultSock(): string {
-  return join(process.env.HOME ?? homedir(), ".mattstack", "rt", "rt.sock");
+  return process.env.RT_DAEMON_SOCK || join(process.env.HOME ?? homedir(), ".mattstack", "rt", "rt.sock");
 }
 
 /**
