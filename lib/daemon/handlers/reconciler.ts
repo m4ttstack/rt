@@ -1,9 +1,9 @@
 /**
- * reconciler:* — read-only status and manual clear over the executor
+ * reconciler:* : read-only status and manual clear over the executor
  * reconciler (lib/daemon/reconciler.ts). The reconciler itself emits
  * `reconciler.transition`, `reconciler.delivery`, and `reconciler.execution`
  * from its sweep and expectation-checking loop (and handlers/gate.ts's
- * answer-time guarantee reuses the same topics) -- this module adds no new
+ * answer-time guarantee reuses the same topics); this module adds no new
  * emit paths, it only reads `status()` and drives `clear()`.
  */
 import type { Commands } from "../../../packages/rt-client/src/commands.ts";
