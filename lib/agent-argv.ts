@@ -37,9 +37,19 @@ export interface ClaudeInvocation {
   prompt?: string;
   /** Extra environment for the pane shell, exported before the claude head. Values are single-quoted verbatim. */
   env?: Record<string, string>;
-  /** Absolute path to a settings JSON file, passed as an independent `--settings <path>` alongside (never replacing) the `--name`-triggered inline JSON below. */
+  /**
+   * Absolute path to a settings JSON file. A launch never emits two
+   * `--settings` flags (repeated-flag semantics are unverified against the
+   * real CLI): when set, this REPLACES the `--name`-triggered inline
+   * CROSS_SESSION_INBOUND_SETTINGS JSON below -- the caller (lib/agent-hooks.ts's
+   * mergeGateForkHookSettings, via lib/daemon/handlers/agent.ts) is
+   * responsible for folding that same object into the file's content first.
+   */
   settingsPath?: string;
 }
+
+/** The inline `--settings` JSON a reserved chat handle triggers on its own (no settingsPath). Exported so a settingsPath caller can merge it into the SAME file instead of the flag being emitted twice. */
+export const CROSS_SESSION_INBOUND_SETTINGS = { crossSessionInbound: "accept" } as const;
 
 export function resolveClaudeBin(): string {
   return Bun.which("claude") ?? join(process.env.HOME ?? homedir(), ".local", "bin", "claude");
@@ -63,7 +73,10 @@ function claudeArgs(inv: ClaudeInvocation): string[] {
   // Headless (-p) never signs into chat, so a reserved handle is not passed
   // there even when one is set on the invocation.
   if (!inv.headless && inv.name) {
-    args.push("--name", inv.name, "--settings", JSON.stringify({ crossSessionInbound: "accept" }));
+    args.push("--name", inv.name);
+    // Never both: a settingsPath caller has already folded this same object
+    // into the file it points at (see CROSS_SESSION_INBOUND_SETTINGS above).
+    if (!inv.settingsPath) args.push("--settings", JSON.stringify(CROSS_SESSION_INBOUND_SETTINGS));
   }
   if (inv.settingsPath) args.push("--settings", inv.settingsPath);
   if (inv.session.kind === "start") args.push("--session-id", inv.session.sessionId);

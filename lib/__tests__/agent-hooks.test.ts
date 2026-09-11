@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { gateForkHookSettings, resolveGateForkHookPath, type GateForkHookProbes } from "../agent-hooks.ts";
+import { gateForkHookSettings, mergeGateForkHookSettings, resolveGateForkHookPath, type GateForkHookProbes } from "../agent-hooks.ts";
 
 function probes(over: Partial<GateForkHookProbes>): GateForkHookProbes {
   return {
@@ -46,6 +46,47 @@ describe("gateForkHookSettings", () => {
     expect(gateForkHookSettings("/abs/gate-fork.sh")).toEqual({
       hooks: {
         PreToolUse: [
+          { matcher: "AskUserQuestion", hooks: [{ type: "command", command: "/abs/gate-fork.sh" }] },
+        ],
+      },
+    });
+  });
+});
+
+describe("mergeGateForkHookSettings", () => {
+  test("no base: reduces to the plain hook settings", () => {
+    expect(mergeGateForkHookSettings(undefined, "/abs/gate-fork.sh")).toEqual({
+      hooks: {
+        PreToolUse: [
+          { matcher: "AskUserQuestion", hooks: [{ type: "command", command: "/abs/gate-fork.sh" }] },
+        ],
+      },
+    });
+  });
+
+  test("base with no hooks key: hook block added alongside base's own keys, base keys untouched", () => {
+    const merged = mergeGateForkHookSettings({ crossSessionInbound: "accept" }, "/abs/gate-fork.sh");
+    expect(merged).toEqual({
+      crossSessionInbound: "accept",
+      hooks: {
+        PreToolUse: [
+          { matcher: "AskUserQuestion", hooks: [{ type: "command", command: "/abs/gate-fork.sh" }] },
+        ],
+      },
+    });
+  });
+
+  test("base already defining hooks.PreToolUse: concatenates, never displaces the base entry", () => {
+    const base = {
+      other: "kept",
+      hooks: { PreToolUse: [{ matcher: "SomeOtherTool", hooks: [{ type: "command", command: "/other.sh" }] }] },
+    };
+    const merged = mergeGateForkHookSettings(base, "/abs/gate-fork.sh");
+    expect(merged).toEqual({
+      other: "kept",
+      hooks: {
+        PreToolUse: [
+          { matcher: "SomeOtherTool", hooks: [{ type: "command", command: "/other.sh" }] },
           { matcher: "AskUserQuestion", hooks: [{ type: "command", command: "/abs/gate-fork.sh" }] },
         ],
       },

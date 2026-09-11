@@ -309,7 +309,10 @@ test("agent:resume honors workspace and tab overrides", async () => {
   expect(tabArg).toBe("⟲ !5");
 });
 
-test("agent:start herdr reserves a handle not held by live presence, passes it as --name, and stamps AgentRecord.handle", async () => {
+// A launch never emits two --settings flags (controller ruling, fix round
+// 1): the reserved-handle inline crossSessionInbound JSON and the gate-fork
+// hook block must live in the SAME per-agent file behind one flag.
+test("agent:start herdr reserves a handle not held by live presence, passes it as --name, and merges crossSessionInbound with the gate-fork hook into one --settings file", async () => {
   const calls: string[][] = [];
   const h = fresh({ runner: okRunner(calls) });
   const held = AGENT_NAMES[0]!;
@@ -322,9 +325,15 @@ test("agent:start herdr reserves a handle not held by live presence, passes it a
   expect(AGENT_NAMES).toContain(res.data.handle!);
   expect(res.data.handle).not.toBe(held);
 
-  const paneRun = calls.find((c) => c[0] === "pane" && c[1] === "run");
-  expect(paneRun?.[3]).toContain(`'--name' '${res.data.handle}'`);
-  expect(paneRun?.[3]).toContain(`'--settings' '{"crossSessionInbound":"accept"}'`);
+  const cmd = calls.find((c) => c[0] === "pane" && c[1] === "run")?.[3] ?? "";
+  expect(cmd).toContain(`'--name' '${res.data.handle}'`);
+  expect(cmd).not.toContain('{"crossSessionInbound":"accept"}');
+  expect(cmd.match(/--settings'/g)).toHaveLength(1);
+  const settingsMatch = cmd.match(/--settings' '([^']+)'/);
+  expect(settingsMatch).toBeTruthy();
+  const parsed = JSON.parse(readFileSync(settingsMatch![1]!, "utf8"));
+  expect(parsed.crossSessionInbound).toBe("accept");
+  expect(parsed.hooks.PreToolUse[0].matcher).toBe("AskUserQuestion");
 });
 
 // Headless still never reserves a handle or passes --name / the inline
@@ -370,7 +379,10 @@ test("agent:start passes env into the pane command", async () => {
   expect(paneRun?.[3]).toContain("claude");
 });
 
-test("agent:start herdr stamps gate env and injects the gate-fork hook via --settings", async () => {
+// This default herdr start reserves a handle (no explicit handle passed),
+// so it also pins the merged-file shape: crossSessionInbound and the hook
+// block share one file behind one --settings flag, never two.
+test("agent:start herdr stamps gate env and injects the gate-fork hook via --settings, merged with the reserved handle's inbound-accept settings", async () => {
   const calls: string[][] = [];
   const h = fresh({ runner: okRunner(calls) });
   const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr" });
@@ -380,9 +392,12 @@ test("agent:start herdr stamps gate env and injects the gate-fork hook via --set
   expect(cmd).toContain(`RT_AGENT_ID='${res.data.id}'`);
   expect(cmd).toContain(`RT_GATE_SUBJECT='agent:${res.data.id}'`);
   expect(cmd).toContain(`RT_DAEMON_SOCK='${DAEMON_SOCK_PATH}'`);
+  expect(cmd.match(/--settings'/g)).toHaveLength(1);
+  expect(cmd).not.toContain('{"crossSessionInbound":"accept"}');
   const settingsMatch = cmd.match(/--settings' '([^']*agent-hooks[^']*)'/);
   expect(settingsMatch).toBeTruthy();
   const parsed = JSON.parse(readFileSync(settingsMatch![1]!, "utf8"));
+  expect(parsed.crossSessionInbound).toBe("accept");
   expect(parsed.hooks.PreToolUse[0].matcher).toBe("AskUserQuestion");
   const hookCommand = parsed.hooks.PreToolUse[0].hooks[0].command;
   expect(hookCommand).toMatch(/scripts\/hooks\/gate-fork\.sh$/);
