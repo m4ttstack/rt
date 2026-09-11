@@ -87,7 +87,7 @@ function earliestMr<T extends { projectPath: string; iid: number }>(
 
 /**
  * Extract a GitLab merge request's project path and iid from its URL, e.g.
- * "https://gitlab.com/org/app/-/merge_requests/43944" -> { projectPath: "org/app", iid: 43944 }.
+ * "https://gitlab.example.com/org/app/-/merge_requests/12345" -> { projectPath: "org/app", iid: 12345 }.
  * Returns null for anything else (issues, snippets).
  */
 export function parseMrUrl(
@@ -101,15 +101,22 @@ export function parseMrUrl(
 
 /**
  * Qualifying merged MRs for credit/closedAt: merged, non-revert (a revert's title proves
- * nothing about who finished the ticket), and attachment-graded when any exist -- an
- * attachment is a deliberate link, so it outranks a same-ticket text mention that only
- * happened to land in a merged MR's title or description. Only when the issue has zero
- * attachment-graded links does a closing-grade text link qualify instead.
+ * nothing about who finished the ticket), and attachment-graded when the issue has any
+ * MR-shaped gitlab attachment -- an attachment is a deliberate link, so it outranks a
+ * same-ticket text mention that only happened to land in a merged MR's title or
+ * description. `hadMrAttachment` stays true for an attachment that parsed as an MR URL but
+ * resolved to no known MR, so a ticket implemented before the data horizon qualifies
+ * nothing rather than falling back to text links. Gitlab attachments that are not MR URLs
+ * (issues, commits) leave the fallback open.
  */
-function qualifyingMrs(candidates: readonly LinkCandidate[]): LinkCandidate[] {
-  const grade: LinkVia = candidates.some(c => c.via === 'attachment')
-    ? 'attachment'
-    : 'closing';
+function qualifyingMrs(
+  candidates: readonly LinkCandidate[],
+  hadMrAttachment: boolean
+): LinkCandidate[] {
+  const grade: LinkVia =
+    hadMrAttachment || candidates.some(c => c.via === 'attachment')
+      ? 'attachment'
+      : 'closing';
   return candidates.filter(
     c =>
       c.via === grade &&
@@ -285,14 +292,18 @@ export async function resolveLinearTickets(
   /**
    * Resolve one issue's attached GitLab MR links: source MRs first, then the store's
    * index for MRs outside this refresh's scan. A URL that resolves to neither is
-   * dropped -- it names an MR this refresh has no evidence of.
+   * dropped -- it names an MR this refresh has no evidence of. `hadMrAttachment`
+   * still reports it, so the grade decision can tell "no MR attachments" from
+   * "MR attachments that resolved to nothing".
    */
-  const resolveAttachments = (raw: RawIssue): LinkCandidate[] => {
+  const resolveAttachments = (
+    raw: RawIssue
+  ): { candidates: LinkCandidate[]; hadMrAttachment: boolean } => {
     const parsed = (raw.attachments?.nodes ?? [])
       .filter(n => n.sourceType === 'gitlab')
       .map(n => parseMrUrl(n.url))
       .filter((p): p is { projectPath: string; iid: number } => p !== null);
-    if (parsed.length === 0) return [];
+    if (parsed.length === 0) return { candidates: [], hadMrAttachment: false };
 
     const result: LinkCandidate[] = [];
     const indexKeys: string[] = [];
@@ -326,7 +337,7 @@ export async function resolveLinearTickets(
         });
       }
     }
-    return result;
+    return { candidates: result, hadMrAttachment: true };
   };
 
   const collectResults = (data: VerifyResult, chunk: readonly string[]) => {
@@ -340,12 +351,13 @@ export async function resolveLinearTickets(
       // An attachment entry overwrites its text-linked counterpart, so the grade
       // collapses to 'attachment'.
       const byKey = new Map(ref?.mrs ?? []);
-      for (const attached of resolveAttachments(raw)) {
-        byKey.set(mrKey(attached.projectPath, attached.iid), attached);
+      const { candidates: attached, hadMrAttachment } = resolveAttachments(raw);
+      for (const a of attached) {
+        byKey.set(mrKey(a.projectPath, a.iid), a);
       }
       const linkCandidates = [...byKey.values()];
 
-      const qualifying = qualifyingMrs(linkCandidates);
+      const qualifying = qualifyingMrs(linkCandidates, hadMrAttachment);
       const creditedUser = creditedUserOf(qualifying, rosterSet);
       const closedAt = closedAtOf(qualifying);
       const linkedMrs: LinkedMr[] = linkCandidates.map(

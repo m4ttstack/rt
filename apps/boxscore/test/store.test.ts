@@ -354,10 +354,10 @@ describe('linear issue stickiness', () => {
   const closed = (
     over: Partial<StoredLinearIssue> = {}
   ): StoredLinearIssue => ({
-    id: 'uuid-CV-1',
-    identifier: 'CV-1',
-    title: 'Ticket CV-1',
-    url: 'https://linear.app/acme/issue/CV-1',
+    id: 'uuid-ACME-1',
+    identifier: 'ACME-1',
+    title: 'Ticket ACME-1',
+    url: 'https://linear.app/acme/issue/ACME-1',
     creditedUser: 'alice',
     linkedMrs: [{ iid: 10, projectPath: 'org/app', via: 'attachment' }],
     closedAt: '2026-05-10T00:00:00.000Z',
@@ -378,7 +378,7 @@ describe('linear issue stickiness', () => {
     ]);
     const row = getStore()
       .allLinearIssues()
-      .find(i => i.identifier === 'CV-1')!;
+      .find(i => i.identifier === 'ACME-1')!;
     expect(row.closedAt).toBe('2026-05-10T00:00:00.000Z');
     expect(row.creditedUser).toBe('alice');
     expect(row.linkedMrs).toEqual([
@@ -394,7 +394,7 @@ describe('linear issue stickiness', () => {
     ]);
     const row = getStore()
       .allLinearIssues()
-      .find(i => i.identifier === 'CV-1')!;
+      .find(i => i.identifier === 'ACME-1')!;
     expect(row.closedAt).toBe('2026-05-20T00:00:00.000Z');
     expect(row.creditedUser).toBe('bob');
   });
@@ -413,13 +413,13 @@ describe('indexRowsByKeys', () => {
 
 describe('legacy row normalization', () => {
   it('reads pre-redesign rows with defaults for the new fields', () => {
-    getStore().__rawInsertLinearIssue?.(
-      'CV-9',
+    getStore().__rawInsertLinearIssue(
+      'ACME-9',
       JSON.stringify({
-        id: 'uuid-CV-9',
-        identifier: 'CV-9',
+        id: 'uuid-ACME-9',
+        identifier: 'ACME-9',
         title: 'old',
-        url: 'https://linear.app/acme/issue/CV-9',
+        url: 'https://linear.app/acme/issue/ACME-9',
         assignedUser: 'alice',
         linkedMrs: [{ iid: 7, projectPath: 'org/app' }],
         stateType: 'completed',
@@ -428,7 +428,7 @@ describe('legacy row normalization', () => {
     );
     const row = getStore()
       .allLinearIssues()
-      .find(i => i.identifier === 'CV-9')!;
+      .find(i => i.identifier === 'ACME-9')!;
     expect(row.closedAt).toBeNull();
     expect(row.creditedUser).toBe('alice');
     expect(row.linkedMrs).toEqual([
@@ -437,13 +437,13 @@ describe('legacy row normalization', () => {
   });
 
   it('a null-closedAt upsert over a legacy stored row keeps the incoming linkedMrs', () => {
-    getStore().__rawInsertLinearIssue?.(
-      'CV-10',
+    getStore().__rawInsertLinearIssue(
+      'ACME-10',
       JSON.stringify({
-        id: 'uuid-CV-10',
-        identifier: 'CV-10',
+        id: 'uuid-ACME-10',
+        identifier: 'ACME-10',
         title: 'old',
-        url: 'https://linear.app/acme/issue/CV-10',
+        url: 'https://linear.app/acme/issue/ACME-10',
         assignedUser: 'alice',
         linkedMrs: [{ iid: 7, projectPath: 'org/app' }],
         stateType: 'completed',
@@ -452,10 +452,10 @@ describe('legacy row normalization', () => {
     );
     getStore().upsertLinearIssues([
       {
-        id: 'uuid-CV-10',
-        identifier: 'CV-10',
+        id: 'uuid-ACME-10',
+        identifier: 'ACME-10',
         title: 'old',
-        url: 'https://linear.app/acme/issue/CV-10',
+        url: 'https://linear.app/acme/issue/ACME-10',
         creditedUser: 'bob',
         linkedMrs: [{ iid: 11, projectPath: 'org/app', via: 'attachment' }],
         closedAt: null,
@@ -465,7 +465,7 @@ describe('legacy row normalization', () => {
     ]);
     const row = getStore()
       .allLinearIssues()
-      .find(i => i.identifier === 'CV-10')!;
+      .find(i => i.identifier === 'ACME-10')!;
     expect(row.closedAt).toBeNull();
     expect(row.linkedMrs).toEqual([
       { iid: 11, projectPath: 'org/app', via: 'attachment' },

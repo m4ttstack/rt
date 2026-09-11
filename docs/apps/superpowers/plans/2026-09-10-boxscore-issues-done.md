@@ -16,7 +16,7 @@
 - Comments only state constraints code cannot show (repo rule: clean-code comments); no decision-history or reviewer-facing comments.
 - Full gates: `bun run typecheck && bun run test && bun run lint` must pass at every commit; a task may not leave the suite red.
 - Closing keywords: `close/closes/closed/closing`, `fix/fixes/fixed/fixing`, `resolve/resolves/resolved/resolving`, `implement/implements/implemented/implementing`; keyword and identifier at most 40 non-newline chars apart.
-- Identifier matching must not prefix-match (CV-302 must not match CV-3027); branch form accepts `cv-123` and `cv_123`; title/description form accepts `CV-123` and `CV:123`, case-insensitive.
+- Identifier matching must not prefix-match (ACME-302 must not match ACME-3027); branch form accepts `acme-123` and `acme_123`; title/description form accepts `ACME-123` and `ACME:123`, case-insensitive.
 - Revert MRs (`isRevertTitle` from `src/shared/reverts.ts`) never earn closing grade.
 - Verify-query chunk size is 25 (attachments raise per-issue query cost; the spike ran 20 without a failure, 100 risks complexity limits).
 
@@ -44,42 +44,42 @@ const base = { title: 'Refactor widgets', sourceBranch: 'refactor-widgets', desc
 
 describe('textRefGrade', () => {
   it('grades a title reference closing', () => {
-    expect(textRefGrade({ ...base, title: 'CV-3027: delete v1 components' }, 'CV-3027')).toBe('closing');
+    expect(textRefGrade({ ...base, title: 'ACME-3027: delete v1 components' }, 'ACME-3027')).toBe('closing');
   });
 
   it('grades a branch reference closing, in dash and underscore forms', () => {
-    expect(textRefGrade({ ...base, sourceBranch: 'cv-3027-delete-v1' }, 'CV-3027')).toBe('closing');
-    expect(textRefGrade({ ...base, sourceBranch: 'cv_3027_delete_v1' }, 'CV-3027')).toBe('closing');
+    expect(textRefGrade({ ...base, sourceBranch: 'acme-3027-delete-v1' }, 'ACME-3027')).toBe('closing');
+    expect(textRefGrade({ ...base, sourceBranch: 'acme_3027_delete_v1' }, 'ACME-3027')).toBe('closing');
   });
 
   it('grades a closing keyword in the description closing, through markdown links', () => {
-    const description = 'Closes [CV-2994](https://linear.app/acme/issue/CV-2994/foo).';
-    expect(textRefGrade({ ...base, description }, 'CV-2994')).toBe('closing');
+    const description = 'Closes [ACME-2994](https://linear.app/acme/issue/ACME-2994/foo).';
+    expect(textRefGrade({ ...base, description }, 'ACME-2994')).toBe('closing');
   });
 
   it('grades a bare description mention as mention', () => {
-    expect(textRefGrade({ ...base, description: 'context from CV-28 applies here' }, 'CV-28')).toBe('mention');
+    expect(textRefGrade({ ...base, description: 'context from ACME-28 applies here' }, 'ACME-28')).toBe('mention');
   });
 
   it('keeps a keyword too far from the identifier at mention grade', () => {
-    const description = `Fixes the flaky loader. ${'x'.repeat(40)} CV-28 is related.`;
-    expect(textRefGrade({ ...base, description }, 'CV-28')).toBe('mention');
+    const description = `Fixes the flaky loader. ${'x'.repeat(40)} ACME-28 is related.`;
+    expect(textRefGrade({ ...base, description }, 'ACME-28')).toBe('mention');
   });
 
   it('does not prefix-match identifiers', () => {
-    expect(textRefGrade({ ...base, title: 'CV-3027: thing' }, 'CV-302')).toBeNull();
+    expect(textRefGrade({ ...base, title: 'ACME-3027: thing' }, 'ACME-302')).toBeNull();
   });
 
   it('returns null when the identifier appears nowhere', () => {
-    expect(textRefGrade(base, 'CV-1')).toBeNull();
+    expect(textRefGrade(base, 'ACME-1')).toBeNull();
   });
 
   it('caps revert MRs at mention grade even with a title reference', () => {
-    expect(textRefGrade({ ...base, title: 'Revert "CV-3027: delete v1 components"' }, 'CV-3027')).toBe('mention');
+    expect(textRefGrade({ ...base, title: 'Revert "ACME-3027: delete v1 components"' }, 'ACME-3027')).toBe('mention');
   });
 
   it('accepts the colon identifier form', () => {
-    expect(textRefGrade({ ...base, description: 'fixes CV:28' }, 'CV-28')).toBe('closing');
+    expect(textRefGrade({ ...base, description: 'fixes ACME:28' }, 'ACME-28')).toBe('closing');
   });
 });
 ```
@@ -265,10 +265,10 @@ Append to `test/store.test.ts` (reuse its existing store setup helpers):
 ```typescript
 describe('linear issue stickiness', () => {
   const closed = (over: Partial<StoredLinearIssue> = {}): StoredLinearIssue => ({
-    id: 'uuid-CV-1',
-    identifier: 'CV-1',
-    title: 'Ticket CV-1',
-    url: 'https://linear.app/acme/issue/CV-1',
+    id: 'uuid-ACME-1',
+    identifier: 'ACME-1',
+    title: 'Ticket ACME-1',
+    url: 'https://linear.app/acme/issue/ACME-1',
     creditedUser: 'alice',
     linkedMrs: [{ iid: 10, projectPath: 'org/app', via: 'attachment' }],
     closedAt: '2026-05-10T00:00:00.000Z',
@@ -282,7 +282,7 @@ describe('linear issue stickiness', () => {
     getStore().upsertLinearIssues([
       closed({ creditedUser: null, linkedMrs: [], closedAt: null, stateName: 'Ready for Release' }),
     ]);
-    const row = getStore().allLinearIssues().find(i => i.identifier === 'CV-1')!;
+    const row = getStore().allLinearIssues().find(i => i.identifier === 'ACME-1')!;
     expect(row.closedAt).toBe('2026-05-10T00:00:00.000Z');
     expect(row.creditedUser).toBe('alice');
     expect(row.linkedMrs).toEqual([{ iid: 10, projectPath: 'org/app', via: 'attachment' }]);
@@ -294,7 +294,7 @@ describe('linear issue stickiness', () => {
     getStore().upsertLinearIssues([
       closed({ creditedUser: 'bob', closedAt: '2026-05-20T00:00:00.000Z' }),
     ]);
-    const row = getStore().allLinearIssues().find(i => i.identifier === 'CV-1')!;
+    const row = getStore().allLinearIssues().find(i => i.identifier === 'ACME-1')!;
     expect(row.closedAt).toBe('2026-05-20T00:00:00.000Z');
     expect(row.creditedUser).toBe('bob');
   });
@@ -313,12 +313,12 @@ describe('legacy row normalization', () => {
   it('reads pre-redesign rows with defaults for the new fields', () => {
     // Rows written before this change carry assignedUser, no closedAt, and
     // linkedMrs entries without via. Write one raw to prove reads normalize it.
-    getStore().__rawInsertLinearIssue?.('CV-9', JSON.stringify({
-      id: 'uuid-CV-9', identifier: 'CV-9', title: 'old', url: 'https://linear.app/acme/issue/CV-9',
+    getStore().__rawInsertLinearIssue?.('ACME-9', JSON.stringify({
+      id: 'uuid-ACME-9', identifier: 'ACME-9', title: 'old', url: 'https://linear.app/acme/issue/ACME-9',
       assignedUser: 'alice', linkedMrs: [{ iid: 7, projectPath: 'org/app' }],
       stateType: 'completed', stateName: 'Done',
     }));
-    const row = getStore().allLinearIssues().find(i => i.identifier === 'CV-9')!;
+    const row = getStore().allLinearIssues().find(i => i.identifier === 'ACME-9')!;
     expect(row.closedAt).toBeNull();
     expect(row.creditedUser).toBe('alice');
     expect(row.linkedMrs).toEqual([{ iid: 7, projectPath: 'org/app', via: 'mention' }]);
@@ -428,11 +428,11 @@ const rawWithAttachment = (id: string, urls: string[]) => ({
 
 describe('parseMrUrl', () => {
   it('extracts projectPath and iid', () => {
-    expect(parseMrUrl('https://gitlab.com/assured/assured-dev/-/merge_requests/43944'))
-      .toEqual({ projectPath: 'assured/assured-dev', iid: 43944 });
+    expect(parseMrUrl('https://gitlab.example.com/acme/monorepo/-/merge_requests/12345'))
+      .toEqual({ projectPath: 'acme/monorepo', iid: 12345 });
   });
   it('rejects non-MR urls', () => {
-    expect(parseMrUrl('https://gitlab.com/assured/assured-dev/-/issues/9')).toBeNull();
+    expect(parseMrUrl('https://gitlab.example.com/acme/monorepo/-/issues/9')).toBeNull();
   });
 });
 
@@ -653,7 +653,7 @@ Expected: all PASS.
 - [ ] **Step 2: Replay the real board**
 
 Run (from `apps/boxscore/`): `bun run report -- --range 90d` against the live store (`~/.mattstack/boxscore/boxscore.sqlite`, read via a `--refresh`-free invocation; it may need one refresh first to populate `closedAt`: `bun run report -- --range 90d --refresh`).
-Expected: Issues-done column lands near the spike's R2-last numbers (Matthew ~102, Doug ~74, Jorge ~36, Ed ~37 as of 2026-09-10; drift from new merges is fine). `bun run validate` reports no integrity failures.
+Expected: Issues-done column lands near the spike's R2-last numbers (the top rows near ~102/~74/~37/~36 per the spike replay as of 2026-09-10; drift from new merges is fine). `bun run validate` reports no integrity failures.
 
 - [ ] **Step 3: Report the observed numbers in the task report** (not in code comments), then commit any straggler fixes.
 

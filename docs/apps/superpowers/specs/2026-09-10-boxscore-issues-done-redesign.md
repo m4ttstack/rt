@@ -12,10 +12,10 @@ source branch, or description, (b) the ticket's current state is in
 is no notion of when the ticket was closed and no distinction between an
 implementing MR and an incidental mention.
 
-Verified failure (live store): CV-28 is credited to the author of MR !43944,
-a cleanup MR that mentions it in prose; CV-28's real implementing MR is
-!17564, merged 2025-07, by someone else. Cleanup MRs link up to 27 tickets
-each. A 2026-09-10 spike over all 493 stored identifiers measured the
+Verified failure (live store): a ticket was credited to the author of a
+cleanup MR that merely mentions it in prose; that ticket's real implementing
+MR merged a year earlier, authored by someone else. Cleanup MRs link up to
+27 tickets each. A 2026-09-10 spike over all 493 stored identifiers measured the
 inflation at roughly 20-25% per person (90d: 124 -> 102, 96 -> 74 for the
 top two rows), with the stricter rules a strict subset of today's counts.
 
@@ -123,17 +123,17 @@ intended: their descriptions already claim "merged MRs the user authored".
 - `metrics/cohorts.ts`: issue cohort filters on `closedAt` in window and
   `creditedUser`; `authoredMerged` loses `hasTeamTicket`.
 - `metrics/evidence.ts`: issues table gains a Closed column; summary keeps
-  the team/state exclusion counts and adds a count of mention-only links
-  ignored.
+  the team/state exclusion counts and appends the count of team+state
+  survivors excluded because `closedAt` is null or outside the window.
 - `shared/metrics.ts`: rewrite the `issuesCompleted` description to match
   reality (merge-anchored, attachment-linked, credited to the MR author);
   delete the phantom "completed within 90 days of being filed" claim.
 
 ## Testing
 
-- Classifier: title/branch/keyword/mention grades, `Closes [CV-1](url)`
-  markdown form, keyword distance bound, revert exclusion, `CV_123` branch
-  form, no prefix-number false matches (CV-302 vs CV-3027).
+- Classifier: title/branch/keyword/mention grades, `Closes [ACME-1](url)`
+  markdown form, keyword distance bound, revert exclusion, `ACME_123` branch
+  form, no prefix-number false matches (ACME-302 vs ACME-3027).
 - Credit: earliest-merged roster preference over qualifying sets; null
   credit with nothing merged.
 - Store: sticky upsert preserves the three fields only when the incoming

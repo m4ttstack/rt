@@ -356,13 +356,13 @@ describe('parseMrUrl', () => {
   it('extracts projectPath and iid', () => {
     expect(
       parseMrUrl(
-        'https://gitlab.com/assured/assured-dev/-/merge_requests/43944'
+        'https://gitlab.example.com/acme/monorepo/-/merge_requests/12345'
       )
-    ).toEqual({ projectPath: 'assured/assured-dev', iid: 43944 });
+    ).toEqual({ projectPath: 'acme/monorepo', iid: 12345 });
   });
   it('rejects non-MR urls', () => {
     expect(
-      parseMrUrl('https://gitlab.com/assured/assured-dev/-/issues/9')
+      parseMrUrl('https://gitlab.example.com/acme/monorepo/-/issues/9')
     ).toBeNull();
   });
 });
@@ -513,5 +513,33 @@ describe('attachment-graded resolution', () => {
     const issue = issues.find(i => i.identifier === 'ACME-5')!;
     expect(issue.creditedUser).toBeNull();
     expect(issue.closedAt).toBeNull();
+  });
+
+  it('yields null credit and closedAt when the only attachment names an MR outside the data horizon', async () => {
+    const textLinked = mr({
+      iid: 900,
+      authorUsername: 'alice',
+      title: 'ACME-6: ship it',
+      mergedAt: '2026-05-18T00:00:00.000Z',
+    });
+    stubLinear(ids =>
+      okData(ids, id =>
+        rawWithAttachment(id, [
+          'https://gitlab.example/org/app/-/merge_requests/999',
+        ])
+      )
+    );
+    const issues = await resolveLinearTickets(
+      'key',
+      [textLinked],
+      [],
+      ['alice']
+    );
+    const issue = issues.find(i => i.identifier === 'ACME-6')!;
+    expect(issue.creditedUser).toBeNull();
+    expect(issue.closedAt).toBeNull();
+    expect(issue.linkedMrs).toEqual([
+      { iid: 900, projectPath: 'org/app', via: 'closing' },
+    ]);
   });
 });

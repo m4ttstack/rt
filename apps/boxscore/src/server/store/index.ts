@@ -526,7 +526,7 @@ function buildStore() {
       tx();
     },
 
-    /** Test-only: bypasses the typed upsert to plant a legacy-shaped row raw. */
+    /** Test-only escape hatch: raw INSERT, bypassing upsertLinearIssues's normalization. */
     __rawInsertLinearIssue(identifier: string, json: string): void {
       stmtUpsertLinearIssue.run(identifier, json);
     },
