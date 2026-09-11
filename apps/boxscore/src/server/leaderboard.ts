@@ -96,7 +96,6 @@ function metricOptionsFromSettings() {
   return {
     users: s.users,
     sizeBand: s.sizeBand,
-    linearTeam: s.linearTeam || undefined,
     doneStates: s.doneStates,
     extraBotPatterns: s.botPatterns,
     excludeFilePatterns: s.excludeFilePatterns,

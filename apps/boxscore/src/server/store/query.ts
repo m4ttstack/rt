@@ -1,5 +1,4 @@
 import type { TimeWindow } from '../../shared/types.js';
-import { eligibleForLinearDiscovery } from '../linear/fetch.js';
 import {
   mrKey,
   type IndexRow,
@@ -80,12 +79,8 @@ export function buildFetchResult(
     .filter(e => rosterSet.has(e.username))
     .map(e => ({ username: e.username, createdAt: e.createdAt }));
 
-  // Tickets are discovered only from in-window MRs eligible for discovery, the only
-  // thing that has ever scoped them to a window (mirrors slice.ts:36-43).
-  const eligibleKeys = mrs
-    .filter(eligibleForLinearDiscovery)
-    .map(m => mrKey(m.projectPath, m.iid));
-  const linearIssues = store.linearIssuesForMrKeys(eligibleKeys);
+  // Issues are windowed downstream in cohorts.ts by closedAt, not here by MR linkage.
+  const linearIssues = store.allLinearIssues();
 
   // A tier-capability flag (does this GitLab tier expose approvals at all), not a
   // per-window content check. Parity with fetch.ts:68, which also hardcodes true:

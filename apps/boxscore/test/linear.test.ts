@@ -14,6 +14,7 @@ const rawIssue = (overrides: Partial<RawIssue> = {}): RawIssue => ({
   title: 'Some issue',
   url: 'https://linear.app/acme/issue/ENG-1',
   state: null,
+  attachments: null,
   ...overrides,
 });
 
@@ -42,17 +43,18 @@ describe('eligibleForLinearDiscovery', () => {
 
 describe('mapIssue', () => {
   it('maps a raw issue to a normalized one, attributing to the given user', () => {
-    const norm = mapIssue(rawIssue(), 'alice', []);
-    expect(norm.assignedUser).toBe('alice');
+    const norm = mapIssue(rawIssue(), 'alice', [], null);
+    expect(norm.creditedUser).toBe('alice');
     expect(norm.identifier).toBe('ENG-1');
     expect(norm.title).toBe('Some issue');
     expect(norm.url).toBe('https://linear.app/acme/issue/ENG-1');
     expect(norm.linkedMrs).toEqual([]);
+    expect(norm.closedAt).toBeNull();
   });
 
-  it('accepts null for the assigned user (e.g. unlinked ticket)', () => {
-    const norm = mapIssue(rawIssue(), null, []);
-    expect(norm.assignedUser).toBeNull();
+  it('accepts null for the credited user (e.g. unlinked ticket)', () => {
+    const norm = mapIssue(rawIssue(), null, [], null);
+    expect(norm.creditedUser).toBeNull();
   });
 });
 
@@ -70,8 +72,8 @@ describe('issuesCompleted metric', () => {
     expect(snap.byUser.bob!.issuesCompleted).toBe(1);
   });
 
-  it('ignores tickets with a null assigned user', () => {
-    // ENG-5 has assignedUser: null — it doesn't count for anyone.
+  it('ignores tickets with a null credited user', () => {
+    // ENG-5 has creditedUser: null ... it doesn't count for anyone.
     const total =
       snap.byUser.alice!.issuesCompleted + snap.byUser.bob!.issuesCompleted;
     expect(total).toBe(3);

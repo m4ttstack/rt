@@ -39,7 +39,7 @@ const METRIC_TABLE = [
     group: 'delivery',
     better: 'desc',
     description:
-      'Linear issues (by assignee, all teams) completed in the window, excluding stale backlog closed long after creation (default: completed within 90 days of being filed). Guards against bulk backlog-grooming inflating the count.',
+      "Linear issues closed by merged work: an issue counts in the window its implementing MR merged (Linear's attached MR, or one referencing the issue in its title, branch, or a closing phrase), credited to that MR's author. Issues whose current state is not a done state, or with no merged implementing MR, do not count. Tickets from every Linear team count, not just one configured team.",
   },
 
   // --- Volume (spec 4.1-4.4): gameable output counts ---

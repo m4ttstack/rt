@@ -31,7 +31,6 @@ const SETTINGS: BoxscoreSettings = {
   roster: [{ username: 'alice' }],
   hiddenMembers: [],
   users: ['alice'],
-  linearTeam: '',
   doneStates: [],
   sizeBand: { tooSmall: 10, tooLarge: 400 },
   excludeFilePatterns: [],

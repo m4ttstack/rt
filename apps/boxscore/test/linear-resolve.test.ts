@@ -11,7 +11,10 @@ import {
   vi,
 } from 'vitest';
 
-import { resolveLinearTickets } from '../src/server/linear/fetch.js';
+import {
+  parseMrUrl,
+  resolveLinearTickets,
+} from '../src/server/linear/fetch.js';
 import { __resetStore, getStore } from '../src/server/store/index.js';
 import type { NormMr } from '../src/server/store/model.js';
 import type { LeaderboardWarning } from '../src/shared/types.js';
@@ -233,7 +236,7 @@ describe('resolveLinearTickets credit rule', () => {
     const warnings: LeaderboardWarning[] = [];
     const issues = await resolveLinearTickets('key', mrs, warnings, roster);
     expect(issues).toHaveLength(1);
-    return issues[0]!.assignedUser;
+    return issues[0]!.creditedUser;
   };
 
   it("credits the merged MR's author over an open one, regardless of scan order", async () => {
@@ -288,7 +291,7 @@ describe('resolveLinearTickets credit rule', () => {
     expect(await resolveCredit([nonRoster, roster], ['alice'])).toBe('alice');
   });
 
-  it('leaves assignedUser null when nothing merged and several distinct authors are linked', async () => {
+  it('leaves creditedUser null when nothing merged and several distinct authors are linked', async () => {
     const a = linkedMr({
       iid: 1,
       authorUsername: 'alice',
@@ -305,7 +308,7 @@ describe('resolveLinearTickets credit rule', () => {
     expect(await resolveCredit([a, b])).toBeNull();
   });
 
-  it('credits the sole author when nothing merged but every linked MR shares one author', async () => {
+  it('yields null credit when nothing merged, even if every linked MR shares one author', async () => {
     const a = linkedMr({
       iid: 1,
       authorUsername: 'alice',
@@ -319,7 +322,7 @@ describe('resolveLinearTickets credit rule', () => {
       mergedAt: null,
     });
 
-    expect(await resolveCredit([a, b])).toBe('alice');
+    expect(await resolveCredit([a, b])).toBeNull();
   });
 
   it('breaks a tie between merged MRs with identical mergedAt by the lower (projectPath, iid)', async () => {
@@ -341,5 +344,202 @@ describe('resolveLinearTickets credit rule', () => {
 
     expect(await resolveCredit([higher, lower])).toBe('alice');
     expect(await resolveCredit([lower, higher])).toBe('alice');
+  });
+});
+
+const rawWithAttachment = (id: string, urls: string[]) => ({
+  ...rawFor(id),
+  attachments: { nodes: urls.map(url => ({ url, sourceType: 'gitlab' })) },
+});
+
+describe('parseMrUrl', () => {
+  it('extracts projectPath and iid', () => {
+    expect(
+      parseMrUrl(
+        'https://gitlab.example.com/acme/monorepo/-/merge_requests/12345'
+      )
+    ).toEqual({ projectPath: 'acme/monorepo', iid: 12345 });
+  });
+  it('rejects non-MR urls', () => {
+    expect(
+      parseMrUrl('https://gitlab.example.com/acme/monorepo/-/issues/9')
+    ).toBeNull();
+  });
+});
+
+describe('attachment-graded resolution', () => {
+  it('credits and dates from the attached MR, not the mentioning MR', async () => {
+    // impl is the real (attached) MR, merged 05-10; cleanup only mentions the id in prose.
+    const impl = mr({
+      iid: 100,
+      authorUsername: 'alice',
+      title: 'ACME-1: build it',
+      mergedAt: '2026-05-10T00:00:00.000Z',
+    });
+    const cleanup = mr({
+      iid: 200,
+      authorUsername: 'bob',
+      title: 'delete dead code',
+      description: 'context from ACME-1 applies',
+      mergedAt: '2026-05-20T00:00:00.000Z',
+    });
+    stubLinear(ids =>
+      okData(ids, id =>
+        rawWithAttachment(id, [
+          'https://gitlab.example/org/app/-/merge_requests/100',
+        ])
+      )
+    );
+    const issues = await resolveLinearTickets(
+      'key',
+      [impl, cleanup],
+      [],
+      ['alice', 'bob']
+    );
+    const issue = issues.find(i => i.identifier === 'ACME-1')!;
+    expect(issue.creditedUser).toBe('alice');
+    expect(issue.closedAt).toBe('2026-05-10T00:00:00.000Z');
+    expect(issue.linkedMrs).toContainEqual({
+      iid: 100,
+      projectPath: 'org/app',
+      via: 'attachment',
+    });
+    expect(issue.linkedMrs).toContainEqual({
+      iid: 200,
+      projectPath: 'org/app',
+      via: 'mention',
+    });
+  });
+
+  it('falls back to closing-grade text links when no attachment exists', async () => {
+    const impl = mr({
+      iid: 300,
+      authorUsername: 'alice',
+      title: 'ACME-2: ship it',
+      mergedAt: '2026-05-12T00:00:00.000Z',
+    });
+    stubLinear(ids => okData(ids, id => rawFor(id)));
+    const issues = await resolveLinearTickets('key', [impl], [], ['alice']);
+    const issue = issues.find(i => i.identifier === 'ACME-2')!;
+    expect(issue.creditedUser).toBe('alice');
+    expect(issue.closedAt).toBe('2026-05-12T00:00:00.000Z');
+  });
+
+  it('resolves an attached MR outside the source set via the store index', async () => {
+    // org/app:400 (merged 2026-05-01, author carol) is only in the store's index,
+    // never passed as a source MR; the attachment must still resolve it.
+    getStore().upsertIndexRows([
+      {
+        projectPath: 'org/app',
+        iid: 400,
+        title: 'ACME-3: implement thing',
+        state: 'merged',
+        createdAt: '2026-04-25T00:00:00.000Z',
+        updatedAt: '2026-05-01T00:00:00.000Z',
+        mergedAt: '2026-05-01T00:00:00.000Z',
+        authorUsername: 'carol',
+        sourceBranch: null,
+        labels: [],
+        scannedAt: '2026-05-01T00:00:00.000Z',
+      },
+    ]);
+    const mention = mr({
+      iid: 500,
+      authorUsername: 'bob',
+      title: 'notes',
+      description: 'see ACME-3',
+      mergedAt: '2026-05-21T00:00:00.000Z',
+    });
+    stubLinear(ids =>
+      okData(ids, id =>
+        rawWithAttachment(id, [
+          'https://gitlab.example/org/app/-/merge_requests/400',
+        ])
+      )
+    );
+    const issues = await resolveLinearTickets(
+      'key',
+      [mention],
+      [],
+      ['bob', 'carol']
+    );
+    const issue = issues.find(i => i.identifier === 'ACME-3')!;
+    expect(issue.creditedUser).toBe('carol');
+    expect(issue.closedAt).toBe('2026-05-01T00:00:00.000Z');
+  });
+
+  it('yields null credit and closedAt when nothing qualifying merged', async () => {
+    const open = mr({
+      iid: 600,
+      authorUsername: 'alice',
+      title: 'ACME-4: wip',
+      state: 'opened',
+      mergedAt: null,
+    });
+    stubLinear(ids => okData(ids, id => rawFor(id)));
+    const issues = await resolveLinearTickets('key', [open], [], ['alice']);
+    const issue = issues.find(i => i.identifier === 'ACME-4')!;
+    expect(issue.creditedUser).toBeNull();
+    expect(issue.closedAt).toBeNull();
+  });
+
+  it('yields null credit and closedAt when the only attachment is unmerged, even with a merged closing-grade text link', async () => {
+    const textLinked = mr({
+      iid: 800,
+      authorUsername: 'alice',
+      title: 'ACME-5: ship it',
+      mergedAt: '2026-05-15T00:00:00.000Z',
+    });
+    const openAttached = mr({
+      iid: 700,
+      authorUsername: 'bob',
+      title: 'wip',
+      state: 'opened',
+      mergedAt: null,
+    });
+    stubLinear(ids =>
+      okData(ids, id =>
+        rawWithAttachment(id, [
+          'https://gitlab.example/org/app/-/merge_requests/700',
+        ])
+      )
+    );
+    const issues = await resolveLinearTickets(
+      'key',
+      [textLinked, openAttached],
+      [],
+      ['alice', 'bob']
+    );
+    const issue = issues.find(i => i.identifier === 'ACME-5')!;
+    expect(issue.creditedUser).toBeNull();
+    expect(issue.closedAt).toBeNull();
+  });
+
+  it('yields null credit and closedAt when the only attachment names an MR outside the data horizon', async () => {
+    const textLinked = mr({
+      iid: 900,
+      authorUsername: 'alice',
+      title: 'ACME-6: ship it',
+      mergedAt: '2026-05-18T00:00:00.000Z',
+    });
+    stubLinear(ids =>
+      okData(ids, id =>
+        rawWithAttachment(id, [
+          'https://gitlab.example/org/app/-/merge_requests/999',
+        ])
+      )
+    );
+    const issues = await resolveLinearTickets(
+      'key',
+      [textLinked],
+      [],
+      ['alice']
+    );
+    const issue = issues.find(i => i.identifier === 'ACME-6')!;
+    expect(issue.creditedUser).toBeNull();
+    expect(issue.closedAt).toBeNull();
+    expect(issue.linkedMrs).toEqual([
+      { iid: 900, projectPath: 'org/app', via: 'closing' },
+    ]);
   });
 });

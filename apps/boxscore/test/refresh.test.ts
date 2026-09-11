@@ -152,7 +152,6 @@ function settings(over: Partial<BoxscoreSettings> = {}): BoxscoreSettings {
     roster,
     hiddenMembers,
     users: roster.filter(r => !hidden.has(r.username)).map(r => r.username),
-    linearTeam: '',
     doneStates: [],
     sizeBand: { tooSmall: 10, tooLarge: 400 },
     excludeFilePatterns: [],
@@ -849,7 +848,7 @@ function stubLinearVerify(): void {
 describe('runRefresh: Linear issue persistence', () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it('persists resolved Linear issues so linearIssuesForMrKeys can find them', async () => {
+  it('persists resolved Linear issues so allLinearIssues can find them', async () => {
     const store = getStore();
     const { provider } = makeFakeProvider({
       fetchMergeRequestIndex: async () => [
@@ -871,7 +870,12 @@ describe('runRefresh: Linear issue persistence', () => {
       window: WINDOW,
     });
 
-    const issues = store.linearIssuesForMrKeys([mrKey('g/p', 42)]);
+    const key = mrKey('g/p', 42);
+    const issues = store
+      .allLinearIssues()
+      .filter(i =>
+        i.linkedMrs.some(lm => mrKey(lm.projectPath, lm.iid) === key)
+      );
     expect(issues).toHaveLength(1);
     expect(issues[0]).toMatchObject({
       identifier: 'ACME-9001',
@@ -889,8 +893,9 @@ describe('runRefresh: Linear issue persistence', () => {
         identifier: 'ACME-1',
         title: 'Ticket',
         url: 'https://linear.app/acme/issue/ACME-1',
-        assignedUser: 'alice',
-        linkedMrs: [{ iid: 42, projectPath: 'g/p' }],
+        creditedUser: 'alice',
+        linkedMrs: [{ iid: 42, projectPath: 'g/p', via: 'mention' }],
+        closedAt: null,
         stateType: 'started',
         stateName: 'In Progress',
       },
@@ -914,7 +919,12 @@ describe('runRefresh: Linear issue persistence', () => {
       window: WINDOW,
     });
 
-    const issues = store.linearIssuesForMrKeys([mrKey('g/p', 42)]);
+    const key = mrKey('g/p', 42);
+    const issues = store
+      .allLinearIssues()
+      .filter(i =>
+        i.linkedMrs.some(lm => mrKey(lm.projectPath, lm.iid) === key)
+      );
     expect(issues).toHaveLength(1);
     expect(issues[0]).toMatchObject({ identifier: 'ACME-1' });
   });

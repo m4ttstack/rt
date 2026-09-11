@@ -1,4 +1,3 @@
-import { mrTicketHaystack, teamTicketRegex } from '../linear/ticket.js';
 import type { NormMr } from '../store/model.js';
 import { compileBotPatterns, isBotUsername } from './stats.js';
 
@@ -80,19 +79,14 @@ export interface MetricFilters {
   /** Additions/deletions with excluded files removed, memoized per MR. */
   lineCounts(mr: NormMr): { additions: number; deletions: number };
   isBot(username: string | null): boolean;
-  hasTeamTicket(
-    mr: Pick<NormMr, 'title' | 'sourceBranch' | 'description'>
-  ): boolean;
 }
 
 export function buildMetricFilters(opts: {
-  linearTeam?: string;
   extraBotPatterns?: string[];
   excludeFilePatterns?: string[];
 }): MetricFilters {
   const excludeRes = (opts.excludeFilePatterns ?? []).map(globToRegExp);
   const extraBots = compileBotPatterns(opts.extraBotPatterns);
-  const ticketRe = opts.linearTeam ? teamTicketRegex(opts.linearTeam) : null;
   const counts = new WeakMap<
     NormMr,
     { additions: number; deletions: number }
@@ -107,13 +101,14 @@ export function buildMetricFilters(opts: {
       return c;
     },
     isBot: username => isBotUsername(username, extraBots),
-    hasTeamTicket: mr => !ticketRe || ticketRe.test(mrTicketHaystack(mr)),
   };
 }
 
 /**
- * True when a ticket's current state counts as "done". When doneStates is empty,
- * falls back to type-based default: issues whose stateType is "completed" or "canceled".
+ * True when a ticket's current state counts as "done": the name is in the configured
+ * doneStates, or the type is "completed"/"canceled". The type fallback matters because
+ * doneStates names come from one team's Linear workflow and must not silently exclude a
+ * completed or canceled ticket from a different team's workflow.
  */
 export function isDoneState(
   stateType: string | null,
@@ -121,16 +116,8 @@ export function isDoneState(
   doneStates?: string[]
 ): boolean {
   if (stateType === null) return true; // missing data... fall open
-  if (doneStates && doneStates.length > 0) {
-    return stateName !== null && doneStates.includes(stateName);
+  if (doneStates && stateName !== null && doneStates.includes(stateName)) {
+    return true;
   }
   return stateType === 'completed' || stateType === 'canceled';
-}
-
-/** True when a Linear identifier belongs to the configured team (no team = all match). */
-export function matchesTeam(identifier: string, linearTeam?: string): boolean {
-  return (
-    !linearTeam ||
-    identifier.toUpperCase().startsWith(linearTeam.toUpperCase() + '-')
-  );
 }

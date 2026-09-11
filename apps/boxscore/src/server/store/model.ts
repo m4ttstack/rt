@@ -55,6 +55,15 @@ export interface NormPushEvent {
   createdAt: string;
 }
 
+export type LinkVia = 'attachment' | 'closing' | 'mention';
+
+/** One MR that referenced a Linear ticket, and how it was linked. */
+export interface LinkedMr {
+  iid: number;
+  projectPath: string;
+  via: LinkVia;
+}
+
 /** A Linear issue verified to exist, linked from a merged MR. */
 export interface NormLinearIssue {
   id: string;
@@ -63,10 +72,12 @@ export interface NormLinearIssue {
   title: string;
   /** Canonical Linear deep link. */
   url: string;
-  /** The GitLab username of the MR author who merged the MR linking this ticket. */
-  assignedUser: string | null;
+  /** GitLab author of the earliest-merged qualifying MR; null when nothing qualifying merged. */
+  creditedUser: string | null;
   /** MR(s) that referenced this ticket (iid + projectPath so evidence can build deep links). */
-  linkedMrs: { iid: number; projectPath: string }[];
+  linkedMrs: LinkedMr[];
+  /** Latest mergedAt among qualifying merged MRs; null until one is visible. */
+  closedAt: string | null;
   /** Current Linear state. */
   stateType: string | null;
   stateName: string | null;

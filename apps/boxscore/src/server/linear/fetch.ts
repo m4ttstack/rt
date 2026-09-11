@@ -1,14 +1,21 @@
+import { isRevertTitle } from '../../shared/reverts.js';
 import type {
   LeaderboardWarning,
   RefreshProgress,
 } from '../../shared/types.js';
-import { getStore } from '../store/index.js';
-import type { MrState, NormLinearIssue, NormMr } from '../store/model.js';
+import { getStore, mrKey } from '../store/index.js';
+import type {
+  LinkedMr,
+  LinkVia,
+  MrState,
+  NormLinearIssue,
+  NormMr,
+} from '../store/model.js';
 import { mapLimit } from '../util/concurrency.js';
 import { linearRequest } from './client.js';
 import { mapIssue } from './map.js';
 import type { RawIssue } from './raw-types.js';
-import { mrTicketHaystack } from './ticket.js';
+import { mrTicketHaystack, textRefGrade } from './ticket.js';
 
 /** Extract Linear identifiers from a string, e.g. "ACME-123", "ENG-456", "HUB:299". */
 const LINEAR_ID_RE = /\b([A-Z]+[-:]\d+)\b/gi;
@@ -30,7 +37,8 @@ const VALID_LINEAR_ID_RE = /^[A-Z]{2,}-\d+$/;
  * Each alias is `_N` so we can match results back to identifiers.
  */
 function buildVerifyQuery(identifiers: readonly string[]): string {
-  const fields = 'id identifier title url state { type name }';
+  const fields =
+    'id identifier title url state { type name } attachments(first: 50) { nodes { url sourceType } }';
   const aliases = identifiers
     .map((id, i) => `_${i}: issue(id: ${JSON.stringify(id)}) { ${fields} }`)
     .join('\n');
@@ -45,18 +53,19 @@ interface VerifyOutcome {
   failed: string[];
 }
 
-const CHUNK_SIZE = 100;
+const CHUNK_SIZE = 25;
 
 const LINEAR_CONCURRENCY = 6;
 
-/** One linked MR's identity plus the fields the credit rule needs. */
-interface TicketMr {
+/** One linked MR's identity plus the fields the qualifying/credit rules need. */
+interface LinkCandidate {
   iid: number;
   projectPath: string;
-  authorUsername: string;
+  authorUsername: string | null;
   state: MrState;
-  createdAt: string;
   mergedAt: string | null;
+  title: string;
+  via: LinkVia;
 }
 
 /**
@@ -77,26 +86,70 @@ function earliestMr<T extends { projectPath: string; iid: number }>(
 }
 
 /**
- * Credit a ticket to a person from its linked MRs. Merged work is the only thing that
- * proves someone finished it, so it always outranks anything still open; among merged
- * MRs, a roster author is preferred over an outside contributor whose branch happened
- * to also reference the ticket, and ties resolve to whichever merged earliest. With
- * nothing merged yet, only an uncontested single author is safe to credit -- several
- * candidates with nothing shipped is a guess, not an attribution.
+ * Extract a GitLab merge request's project path and iid from its URL, e.g.
+ * "https://gitlab.example.com/org/app/-/merge_requests/12345" -> { projectPath: "org/app", iid: 12345 }.
+ * Returns null for anything else (issues, snippets).
  */
-function creditedAuthor(
-  mrs: readonly TicketMr[],
+export function parseMrUrl(
+  url: string
+): { projectPath: string; iid: number } | null {
+  const m = url.match(
+    /^https?:\/\/[^/]+\/(.+?)\/-\/merge_requests\/(\d+)(?:[/?#]|$)/
+  );
+  return m ? { projectPath: m[1]!, iid: Number(m[2]) } : null;
+}
+
+/**
+ * Qualifying merged MRs for credit/closedAt: merged, non-revert (a revert's title proves
+ * nothing about who finished the ticket), and attachment-graded when the issue has any
+ * MR-shaped gitlab attachment -- an attachment is a deliberate link, so it outranks a
+ * same-ticket text mention that only happened to land in a merged MR's title or
+ * description. `hadMrAttachment` stays true for an attachment that parsed as an MR URL but
+ * resolved to no known MR, so a ticket implemented before the data horizon qualifies
+ * nothing rather than falling back to text links. Gitlab attachments that are not MR URLs
+ * (issues, commits) leave the fallback open.
+ */
+function qualifyingMrs(
+  candidates: readonly LinkCandidate[],
+  hadMrAttachment: boolean
+): LinkCandidate[] {
+  const grade: LinkVia =
+    hadMrAttachment || candidates.some(c => c.via === 'attachment')
+      ? 'attachment'
+      : 'closing';
+  return candidates.filter(
+    c =>
+      c.via === grade &&
+      c.state === 'merged' &&
+      c.mergedAt !== null &&
+      !isRevertTitle(c.title)
+  );
+}
+
+/** Credit the earliest-merged qualifying MR's author, preferring a roster author. */
+function creditedUserOf(
+  qualifying: readonly LinkCandidate[],
   roster: ReadonlySet<string>
 ): string | null {
-  const merged = mrs.filter(m => m.state === 'merged' && m.mergedAt);
-  if (merged.length > 0) {
-    const rosterMerged = merged.filter(m => roster.has(m.authorUsername));
-    const pool = rosterMerged.length > 0 ? rosterMerged : merged;
-    return earliestMr(pool, m => m.mergedAt!).authorUsername;
-  }
-  const authors = new Set(mrs.map(m => m.authorUsername));
-  if (authors.size !== 1) return null;
-  return earliestMr(mrs, m => m.createdAt).authorUsername;
+  const withAuthor = qualifying.filter(
+    (c): c is LinkCandidate & { authorUsername: string } =>
+      c.authorUsername !== null
+  );
+  if (withAuthor.length === 0) return null;
+  const rosterMatches = withAuthor.filter(c => roster.has(c.authorUsername));
+  const pool = rosterMatches.length > 0 ? rosterMatches : withAuthor;
+  return earliestMr(pool, m => m.mergedAt!).authorUsername;
+}
+
+/** Latest mergedAt among qualifying merged MRs, or null when none qualify. */
+function closedAtOf(qualifying: readonly LinkCandidate[]): string | null {
+  return qualifying.reduce<string | null>(
+    (latest, c) =>
+      latest === null || Date.parse(c.mergedAt!) > Date.parse(latest)
+        ? c.mergedAt!
+        : latest,
+    null
+  );
 }
 
 /**
@@ -166,7 +219,7 @@ export function eligibleForLinearDiscovery(m: NormMr): boolean {
  * Scan the given MRs for Linear ticket identifiers, batch-verify them against the Linear
  * API via `issue(id:)` lookups, and return verified tickets attributed to each MR's author.
  *
- * Resilient: batched in chunks of 100, with automatic per-identifier fallback when a
+ * Resilient: batched in chunks of 25, with automatic per-identifier fallback when a
  * chunk fails (one bad identifier can't zero out the result).
  */
 export async function resolveLinearTickets(
@@ -181,8 +234,14 @@ export async function resolveLinearTickets(
 
   const rosterSet = roster instanceof Set ? roster : new Set(roster);
 
+  const sourceMrByKey = new Map<string, NormMr>();
+  for (const m of sourceMrs) {
+    sourceMrByKey.set(mrKey(m.projectPath, m.iid), m);
+  }
+
+  /** Text-scanned links for one identifier, keyed by mrKey so an attachment can collapse onto them. */
   interface TicketRef {
-    mrs: TicketMr[];
+    mrs: Map<string, LinkCandidate>;
   }
   const ticketMap = new Map<string, TicketRef>();
   for (const mr of sourceMrs) {
@@ -190,17 +249,19 @@ export async function resolveLinearTickets(
     for (const id of ids) {
       const normalized = id.toUpperCase().replace(':', '-');
       if (!mr.authorUsername) continue;
-      const ref = ticketMap.get(normalized) ?? { mrs: [] };
-      if (
-        !ref.mrs.some(m => m.iid === mr.iid && m.projectPath === mr.projectPath)
-      ) {
-        ref.mrs.push({
+      const via = textRefGrade(mr, normalized);
+      if (!via) continue;
+      const ref = ticketMap.get(normalized) ?? { mrs: new Map() };
+      const key = mrKey(mr.projectPath, mr.iid);
+      if (!ref.mrs.has(key)) {
+        ref.mrs.set(key, {
           iid: mr.iid,
           projectPath: mr.projectPath,
           authorUsername: mr.authorUsername,
           state: mr.state,
-          createdAt: mr.createdAt,
           mergedAt: mr.mergedAt,
+          title: mr.title,
+          via,
         });
       }
       ticketMap.set(normalized, ref);
@@ -228,6 +289,57 @@ export async function resolveLinearTickets(
 
   const issues: NormLinearIssue[] = [];
 
+  /**
+   * Resolve one issue's attached GitLab MR links: source MRs first, then the store's
+   * index for MRs outside this refresh's scan. A URL that resolves to neither is
+   * dropped -- it names an MR this refresh has no evidence of. `hadMrAttachment`
+   * still reports it, so the grade decision can tell "no MR attachments" from
+   * "MR attachments that resolved to nothing".
+   */
+  const resolveAttachments = (
+    raw: RawIssue
+  ): { candidates: LinkCandidate[]; hadMrAttachment: boolean } => {
+    const parsed = (raw.attachments?.nodes ?? [])
+      .filter(n => n.sourceType === 'gitlab')
+      .map(n => parseMrUrl(n.url))
+      .filter((p): p is { projectPath: string; iid: number } => p !== null);
+    if (parsed.length === 0) return { candidates: [], hadMrAttachment: false };
+
+    const result: LinkCandidate[] = [];
+    const indexKeys: string[] = [];
+    for (const p of parsed) {
+      const key = mrKey(p.projectPath, p.iid);
+      const src = sourceMrByKey.get(key);
+      if (src) {
+        result.push({
+          iid: src.iid,
+          projectPath: src.projectPath,
+          authorUsername: src.authorUsername,
+          state: src.state,
+          mergedAt: src.mergedAt,
+          title: src.title,
+          via: 'attachment',
+        });
+      } else {
+        indexKeys.push(key);
+      }
+    }
+    if (indexKeys.length > 0) {
+      for (const row of store.indexRowsByKeys(indexKeys)) {
+        result.push({
+          iid: row.iid,
+          projectPath: row.projectPath,
+          authorUsername: row.authorUsername,
+          state: row.state,
+          mergedAt: row.mergedAt,
+          title: row.title,
+          via: 'attachment',
+        });
+      }
+    }
+    return { candidates: result, hadMrAttachment: true };
+  };
+
   const collectResults = (data: VerifyResult, chunk: readonly string[]) => {
     for (const [alias, raw] of Object.entries(data)) {
       if (!raw) continue;
@@ -235,20 +347,32 @@ export async function resolveLinearTickets(
       const identifier = chunk[idx];
       if (!identifier) continue;
       const ref = ticketMap.get(identifier);
-      const author = ref ? creditedAuthor(ref.mrs, rosterSet) : null;
-      const linkedMrs = (ref?.mrs ?? []).map(({ iid, projectPath }) => ({
-        iid,
-        projectPath,
-      }));
-      issues.push(mapIssue(raw, author, linkedMrs));
+
+      // An attachment entry overwrites its text-linked counterpart, so the grade
+      // collapses to 'attachment'.
+      const byKey = new Map(ref?.mrs ?? []);
+      const { candidates: attached, hadMrAttachment } = resolveAttachments(raw);
+      for (const a of attached) {
+        byKey.set(mrKey(a.projectPath, a.iid), a);
+      }
+      const linkCandidates = [...byKey.values()];
+
+      const qualifying = qualifyingMrs(linkCandidates, hadMrAttachment);
+      const creditedUser = creditedUserOf(qualifying, rosterSet);
+      const closedAt = closedAtOf(qualifying);
+      const linkedMrs: LinkedMr[] = linkCandidates.map(
+        ({ iid, projectPath, via }) => ({ iid, projectPath, via })
+      );
+      issues.push(mapIssue(raw, creditedUser, linkedMrs, closedAt));
     }
   };
 
   const allFailed: string[] = [];
 
   // Phase 1: batch-query known-valid identifiers. A chunk can still fail transiently
-  // (rate limits during a big refresh); silently dropping it removes ~100 tickets from
-  // the envelope, so fall back to individual lookups exactly like the unknown path.
+  // (rate limits during a big refresh); silently dropping it removes a whole chunk's
+  // tickets from the envelope, so fall back to individual lookups exactly like the
+  // unknown path.
   const validChunks = Math.ceil(knownValid.length / CHUNK_SIZE);
   for (let ci = 0; ci < validChunks; ci++) {
     signal?.throwIfAborted();

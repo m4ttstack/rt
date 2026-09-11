@@ -88,8 +88,9 @@ describe('issuesCompleted drops gated-out issues from the rows', () => {
     identifier,
     title: `Issue ${identifier}`,
     url: `https://linear.app/acme/issue/${identifier}`,
-    assignedUser: 'alice',
+    creditedUser: 'alice',
     linkedMrs: [],
+    closedAt: null,
     stateType: 'completed',
     stateName: 'Done',
     ...over,
@@ -98,34 +99,74 @@ describe('issuesCompleted drops gated-out issues from the rows', () => {
     ...FETCH,
     linearIssues: [
       ...(FETCH.linearIssues ?? []),
-      issue('PLA-9'), // wrong team — mentioned in prose of one of alice's MRs
+      // A different Linear team's ticket now counts like any other.
+      issue('NARWHAL-9', { closedAt: '2026-05-15T00:00:00.000Z' }),
       issue('ENG-9', { stateType: 'started', stateName: 'In Progress' }),
     ],
   };
-  const gated = buildUserEvidence(fetchWithNoise, 'alice', {
-    ...CTX,
-    linearTeam: 'ENG',
+  const withEveryTeam = buildUserEvidence(fetchWithNoise, 'alice', CTX);
+
+  it('counts a ticket from any Linear team, omitting only state exclusions', () => {
+    const ids = withEveryTeam.issuesCompleted!.rows.map(r => r.cells[0]);
+    expect(ids).toEqual(['NARWHAL-9', 'ENG-2', 'ENG-1']);
   });
 
-  it('omits issues excluded by team or state', () => {
-    const ids = gated.issuesCompleted!.rows.map(r => r.cells[0]);
-    expect(ids).toEqual(['ENG-2', 'ENG-1']);
-  });
-
-  it('still tallies the exclusions in the summary', () => {
-    expect(gated.issuesCompleted!.summary).toBe(
-      '2 counted · 1 excluded by team · 1 excluded by state'
+  it('still tallies the state exclusion in the summary', () => {
+    expect(withEveryTeam.issuesCompleted!.summary).toBe(
+      '3 counted · 1 excluded by state'
     );
   });
 
   it('sorts by ticket number descending, not lexicographically', () => {
     const withHighNumber: FetchResult = {
       ...FETCH,
-      linearIssues: [...(FETCH.linearIssues ?? []), issue('ENG-10')],
+      linearIssues: [
+        ...(FETCH.linearIssues ?? []),
+        issue('ENG-10', { closedAt: '2026-05-15T00:00:00.000Z' }),
+      ],
     };
     const evNum = buildUserEvidence(withHighNumber, 'alice', CTX);
     const ids = evNum.issuesCompleted!.rows.map(r => r.cells[0]);
     expect(ids).toEqual(['ENG-10', 'ENG-2', 'ENG-1']);
+  });
+});
+
+describe('issuesCompleted shows the closed date and non-mention links only', () => {
+  const fetchedWithIssues: FetchResult = {
+    ...FETCH,
+    linearIssues: [
+      ...(FETCH.linearIssues ?? []),
+      {
+        id: 'ENG-10',
+        identifier: 'ENG-10',
+        title: 'Issue ENG-10',
+        url: 'https://linear.app/acme/issue/ENG-10',
+        creditedUser: 'alice',
+        linkedMrs: [
+          { iid: 100, projectPath: 'org/app', via: 'closing' },
+          { iid: 200, projectPath: 'org/app', via: 'mention' },
+        ],
+        closedAt: '2026-05-15T00:00:00.000Z',
+        stateType: 'completed',
+        stateName: 'Done',
+      },
+    ],
+  };
+
+  it('issue evidence shows the closed date and ignores mention-only links in the MR column', () => {
+    const ev = buildUserEvidence(fetchedWithIssues, 'alice', CTX);
+    const issues = ev.issuesCompleted!;
+    expect(issues.columns).toEqual([
+      'Issue',
+      'Title',
+      'State',
+      'Closed',
+      'MR(s)',
+    ]);
+    const row = issues.rows.find(r => r.cells[0] === 'ENG-10')!;
+    expect(row.cells[3]).toBe('2026-05-15');
+    expect(row.cells[4]).not.toContain('!200'); // 200 is the mention-only link
+    expect(row.cells[4]).toContain('!100');
   });
 });
 

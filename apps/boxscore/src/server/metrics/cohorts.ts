@@ -12,7 +12,6 @@ import {
   buildIgnoredMrSet,
   buildMetricFilters,
   isDoneState,
-  matchesTeam,
   type MetricFilters,
 } from './filters.js';
 import { buildRevertedTitleSet, isReverted } from './reverts.js';
@@ -20,8 +19,6 @@ import { buildRevertedTitleSet, isReverted } from './reverts.js';
 export interface CohortOptions {
   window: TimeWindow;
   sizeBand: { tooSmall: number; tooLarge: number };
-  /** Linear team key. When set, only merged MRs referencing this team's tickets count. */
-  linearTeam?: string;
   /** Linear state names that count as "done". Empty = default (completed + canceled types). */
   doneStates?: string[];
   /** Additional regex patterns for bot username detection, from settings. */
@@ -82,8 +79,8 @@ export interface WaitedMr {
 
 export interface IssueCohort {
   counted: NormLinearIssue[];
-  teamExcluded: number;
   stateExcluded: number;
+  windowExcluded: number;
 }
 
 /**
@@ -91,7 +88,7 @@ export interface IssueCohort {
  * snapshot.ts turns these into numbers and evidence.ts into rows, so the two cannot drift.
  */
 export interface UserCohorts {
-  /** Authored, merged in window, and (when a Linear team is set) referencing a team ticket. */
+  /** Authored and merged in window. */
   authoredMerged: NormMr[];
   inBand: (mr: NormMr) => boolean;
   /** The subset of authoredMerged that a later MR reverted. */
@@ -123,7 +120,6 @@ export function buildUserCohorts(
     m =>
       m.authorUsername === u &&
       m.state === 'merged' &&
-      f.hasTeamTicket(m) &&
       inWindow(m.mergedAt, window)
   );
 
@@ -210,17 +206,17 @@ export function buildUserCohorts(
 
   const issues: IssueCohort = {
     counted: [],
-    teamExcluded: 0,
     stateExcluded: 0,
+    windowExcluded: 0,
   };
   for (const i of corpus.linearIssues) {
-    if (i.assignedUser !== u) continue;
-    if (!matchesTeam(i.identifier, opts.linearTeam)) {
-      issues.teamExcluded++;
-      continue;
-    }
+    if (i.creditedUser !== u) continue;
     if (!isDoneState(i.stateType, i.stateName, opts.doneStates)) {
       issues.stateExcluded++;
+      continue;
+    }
+    if (i.closedAt === null || !inWindow(i.closedAt, window)) {
+      issues.windowExcluded++;
       continue;
     }
     issues.counted.push(i);

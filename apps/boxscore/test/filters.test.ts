@@ -5,7 +5,6 @@ import {
   buildMetricFilters,
   globToRegExp,
   isDoneState,
-  matchesTeam,
 } from '../src/server/metrics/filters.js';
 import { mr } from './fixtures.js';
 
@@ -62,39 +61,6 @@ describe('buildMetricFilters', () => {
     expect(f.lineCounts(m)).toBe(f.lineCounts(m));
   });
 
-  it('hasTeamTicket scans title, branch, and description, and passes everything with no team', () => {
-    const gated = buildMetricFilters({ linearTeam: 'ENG' });
-    expect(
-      gated.hasTeamTicket({
-        title: 'fix',
-        sourceBranch: 'eng-12-fix',
-        description: null,
-      })
-    ).toBe(true);
-    expect(
-      gated.hasTeamTicket({
-        title: 'fix',
-        sourceBranch: null,
-        description: 'closes ENG:9',
-      })
-    ).toBe(true);
-    expect(
-      gated.hasTeamTicket({
-        title: 'fix',
-        sourceBranch: null,
-        description: null,
-      })
-    ).toBe(false);
-    const open = buildMetricFilters({});
-    expect(
-      open.hasTeamTicket({
-        title: 'fix',
-        sourceBranch: null,
-        description: null,
-      })
-    ).toBe(true);
-  });
-
   it('isBot honors extra patterns and skips a bad regex', () => {
     const f = buildMetricFilters({ extraBotPatterns: ['^ci-', '('] });
     expect(f.isBot('ci-runner')).toBe(true);
@@ -103,16 +69,12 @@ describe('buildMetricFilters', () => {
 });
 
 describe('Linear gates', () => {
-  it('matchesTeam is a case-insensitive prefix check', () => {
-    expect(matchesTeam('eng-1', 'ENG')).toBe(true);
-    expect(matchesTeam('ENGX-1', 'ENG')).toBe(false);
-    expect(matchesTeam('PLA-1', undefined)).toBe(true);
-  });
-
   it('isDoneState falls open on missing data and honors explicit state names', () => {
     expect(isDoneState(null, null, ['Done'])).toBe(true);
     expect(isDoneState('started', 'In Progress', ['Done'])).toBe(false);
-    expect(isDoneState('completed', 'Shipped', ['Done'])).toBe(false);
+    // A name absent from the configured list still counts via the completed/canceled
+    // type fallback, since doneStates comes from one team's workflow.
+    expect(isDoneState('completed', 'Shipped', ['Done'])).toBe(true);
     expect(isDoneState('canceled', "Won't do", [])).toBe(true);
   });
 });
