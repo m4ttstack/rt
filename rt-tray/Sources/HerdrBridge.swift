@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import MattstackCore
 
 /// A pane discovered via `herdr pane list`, before any process matching.
 private struct HerdrPaneListEntry: Decodable {
@@ -212,12 +213,17 @@ class HerdrBridge {
     func focusPane(_ pane: HerdrPane) {
         run(["workspace", "focus", pane.workspaceId])
         run(["tab", "focus", pane.tabId])
-        if let terminalPid = Self.terminalAppPid(ancestorOf: pane.hostPid) {
+        // Shell ancestry only reaches the terminal when the pane runs under
+        // it; a daemon-hosted pane's shell hangs off the launchd-parented
+        // herdr server, so fall back to walking up from an attach client.
+        let terminalPid = Self.terminalAppPid(ancestorOf: pane.hostPid)
+            ?? Self.terminalAppPidViaHerdrClient()
+        if let terminalPid {
             DispatchQueue.main.async {
-                NSRunningApplication(processIdentifier: terminalPid)?.activate(options: [.activateAllWindows])
+                NSRunningApplication(processIdentifier: pid_t(terminalPid))?.activate(options: [.activateAllWindows])
             }
         } else {
-            TrayLog.warn("no terminal ancestor found for herdr pane", ["pane_id": pane.paneId, "host_pid": pane.hostPid])
+            TrayLog.warn("no terminal found for herdr pane", ["pane_id": pane.paneId, "host_pid": pane.hostPid])
         }
     }
 
@@ -237,27 +243,31 @@ class HerdrBridge {
         return .focused
     }
 
-    /// Bundle-path fragments for terminal emulators known to host herdr.
-    private static let terminalBundleMarkers = [
-        "/Ghostty.app/", "/iTerm.app/", "/Terminal.app/",
-        "/WezTerm.app/", "/kitty.app/", "/Alacritty.app/", "/Warp.app/",
-    ]
+    /// Ancestry walk over the live process table (TerminalResolver holds the
+    /// logic; this binds the libproc lookups). herdr's socket API exposes no
+    /// way to learn which OS process/window hosts a pane, so ancestry is the
+    /// only way to find something activatable.
+    private static func terminalAppPid(ancestorOf pid: Int) -> Int? {
+        TerminalResolver.terminalAppPid(
+            ancestorOf: pid,
+            parentOf: { parentPid(of: pid_t($0)).map(Int.init) },
+            pathOf: { executablePath(for: pid_t($0)) })
+    }
 
-    /// Walks a pid's ancestor chain looking for a process whose executable
-    /// lives inside a known terminal emulator's app bundle. herdr's socket
-    /// API exposes no way to learn which OS process/window hosts a pane, so
-    /// this is the only way to find something activatable.
-    private static func terminalAppPid(ancestorOf pid: Int) -> pid_t? {
-        var current = pid_t(pid)
-        for _ in 0..<32 {
-            if let path = executablePath(for: current),
-               terminalBundleMarkers.contains(where: { path.contains($0) }) {
-                return current
-            }
-            guard let parent = parentPid(of: current), parent > 1, parent != current else { return nil }
-            current = parent
-        }
-        return nil
+    private static func terminalAppPidViaHerdrClient() -> Int? {
+        TerminalResolver.terminalAppPidViaHerdrClient(
+            allPids: allPids(),
+            parentOf: { parentPid(of: pid_t($0)).map(Int.init) },
+            pathOf: { executablePath(for: pid_t($0)) })
+    }
+
+    private static func allPids() -> [Int] {
+        let capacity = proc_listallpids(nil, 0)
+        guard capacity > 0 else { return [] }
+        var pids = [pid_t](repeating: 0, count: Int(capacity) + 64)
+        let filled = proc_listallpids(&pids, Int32(pids.count) * Int32(MemoryLayout<pid_t>.stride))
+        guard filled > 0 else { return [] }
+        return pids.prefix(Int(filled)).map(Int.init)
     }
 
     /// libproc's PROC_PIDPATHINFO_MAXSIZE (4 * MAXPATHLEN) isn't visible to
