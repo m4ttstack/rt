@@ -67,11 +67,26 @@ export async function forgeTokenLookupReal(p: Probes, remote: string): Promise<F
  */
 const UNSPOOFABLE_FORGE_HOSTS = new Set(["github.com", "gitlab.com"]);
 
-export function mayOfferToken(remote: string, confirmedHost: string | null | undefined): boolean {
-  const host = hostFromRemote(remote);
+export function mayOfferTokenToHost(host: string | null, confirmedHost: string | null | undefined): boolean {
   if (host === null) return false;
   if (UNSPOOFABLE_FORGE_HOSTS.has(host)) return true;
   return confirmedHost !== null && confirmedHost !== undefined && host === confirmedHost;
+}
+
+export function mayOfferToken(remote: string, confirmedHost: string | null | undefined): boolean {
+  // Cleartext http would transmit the credential in the open; no amount of
+  // host standing rescues that, so the scheme is checked before the host.
+  if (/^http:\/\//i.test(remote)) return false;
+  return mayOfferTokenToHost(hostFromRemote(remote), confirmedHost);
+}
+
+/**
+ * A host as a token-lookup remote: `forgeTokenKey` derives the key from a
+ * full remote URL, and a bare `https://host/` does not parse as one. The
+ * path segment is inert; only the host decides which token rt holds.
+ */
+export function tokenLookupRemoteForHost(host: string): string {
+  return `https://${host}/mattstack/identity`;
 }
 
 /**

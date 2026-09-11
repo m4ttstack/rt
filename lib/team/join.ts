@@ -37,7 +37,7 @@ import { withoutUrls } from "./redact.ts";
 import type { RelayClient } from "./relay-client.ts";
 import { storedForgeToken } from "./stored-forge-token.ts";
 import { forgeLabel, probeTeamRepoAccess, type RepoAccessVerdict } from "./repo-access.ts";
-import { forgeTokenLookupForRemote } from "./forge-token.ts";
+import { forgeTokenLookupForRemote, mayOfferToken, mayOfferTokenToHost, tokenLookupRemoteForHost } from "./forge-token.ts";
 import { readTeamLocal, updateTeamLocal } from "./team-local.ts";
 
 export interface JoinResult {
@@ -365,7 +365,12 @@ export async function joinRedeem(
   // pusher, so this stamp is skipped rather than flipping it pull-only.
   if (!priorLocal.createdByRt) updateTeamLocal(p, pointer.team, { joinedByRt: true });
 
-  const token = await seams.forgeToken(p, pointer.remote);
+  // The same confirmed-host gate the dry-run applies: `pointer.remote` is
+  // attacker-controlled, so the stored token is offered only to an
+  // unspoofable forge or the one host the user confirmed themselves — the
+  // seam is not even consulted otherwise, so no seam impl can leak it.
+  const confirmedHost = readUserIntegrationOverrides({ read: seams.read, warn: seams.warn }).forgeHost ?? null;
+  const token = mayOfferToken(pointer.remote, confirmedHost) ? await seams.forgeToken(p, pointer.remote) : null;
   const existingOrigin = p.exists(dir) ? readOrigin(p, dir) : null;
   let alreadyCloned = false;
 
@@ -397,7 +402,15 @@ export async function joinRedeem(
   // would be the exact half-state R-T18-b exists to prevent.
   const snapshot = readTeamSnapshot(p, pointer.team, { read: seams.read, warn: seams.warn });
   const forge = snapshot.integrations.forge ?? forgeFromRemote(pointer.remote) ?? undefined;
-  const handle = forge ? await seams.forgeLogin(p, forge.provider, forge.host, token) : null;
+  // The snapshot was just cloned from the inviter's repo, so its declared
+  // forge host is as untrusted as the pointer: it gets a token only if the
+  // gate would offer one in its own right, and then the FORGE host's own
+  // token — the clone credential belongs to pointer.remote's host and is
+  // never forwarded across hosts, even between two trusted ones.
+  const loginToken = forge && mayOfferTokenToHost(forge.host, confirmedHost)
+    ? await seams.forgeToken(p, tokenLookupRemoteForHost(forge.host))
+    : null;
+  const handle = forge ? await seams.forgeLogin(p, forge.provider, forge.host, loginToken) : null;
   if (!handle) {
     const cli = forge?.provider === "gitlab" ? "glab" : "gh";
     throw new UserActionableError(

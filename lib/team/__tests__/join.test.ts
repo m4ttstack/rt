@@ -526,6 +526,102 @@ describe("joinRedeem", () => {
     expect(seamCalls.forgeLogin[0]?.[3]).toBe("glpat-secret");
   });
 
+  test("the stored token is withheld from a pointer remote on a host the user never confirmed: the token seam is not consulted, the clone and forge-login run tokenless", async () => {
+    const hostile: InvitePointer = { ...POINTER, remote: "https://gitlab.evil.example/acme/widgets.git" };
+    const calls: { argv: string[]; opts?: Parameters<Probes["exec"]>[1] }[] = [];
+    const p = redeemProbes({
+      exec: (argv, opts) => {
+        calls.push({ argv, opts });
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    });
+    const relay = fakeRelay({ fetch: relayServing(hostile) });
+    const tokenReads: string[] = [];
+    const { seams, calls: seamCalls } = baseJoinRedeemSeams({
+      forgeToken: async (_p, remote) => {
+        tokenReads.push(remote);
+        return "glpat-secret";
+      },
+    });
+
+    const result = await joinRedeem(p, relay.client, () => NO_SECRETS, { code: CODE }, seams);
+
+    expect(result.access).toBe("ok");
+    expect(tokenReads).toEqual([]);
+    const clone = calls.find((c) => c.argv.includes("clone"))!;
+    expect(clone.opts?.env?.RT_GIT_TOKEN).toBeUndefined();
+    expect(seamCalls.forgeLogin[0]?.[3]).toBeNull();
+  });
+
+  test("the stored token IS offered to the one self-hosted host the user confirmed through rt setup connect", async () => {
+    const pointer: InvitePointer = { ...POINTER, remote: "https://gitlab.corp.example/acme/widgets.git" };
+    const calls: { argv: string[]; opts?: Parameters<Probes["exec"]>[1] }[] = [];
+    const p = redeemProbes({
+      exec: (argv, opts) => {
+        calls.push({ argv, opts });
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    });
+    const relay = fakeRelay({ fetch: relayServing(pointer) });
+    const { seams, calls: seamCalls } = baseJoinRedeemSeams({
+      read: fakeRead({ "rt.integrations": { forgeHost: "gitlab.corp.example" } }),
+      forgeToken: async () => "glpat-secret",
+    });
+
+    const result = await joinRedeem(p, relay.client, () => NO_SECRETS, { code: CODE }, seams);
+
+    expect(result.access).toBe("ok");
+    const clone = calls.find((c) => c.argv.includes("clone"))!;
+    expect(clone.opts?.env?.RT_GIT_TOKEN).toBe("glpat-secret");
+    expect(seamCalls.forgeLogin[0]?.[3]).toBe("glpat-secret");
+  });
+
+  test("a trusted forge declaration on a different host gets ITS OWN token, never the clone remote's credential", async () => {
+    // github.com clone, gitlab.com forge declaration: both hosts pass the
+    // gate on their own, but the github credential must not be forwarded to
+    // the gitlab host -- forge-login's token is looked up for forge.host.
+    const p = redeemProbes();
+    const relay = fakeRelay();
+    const tokenReads: string[] = [];
+    const { seams, calls: seamCalls } = baseJoinRedeemSeams({
+      read: fakeRead({ "mattstack.integrations": { forge: { host: "gitlab.com", provider: "gitlab" } } }),
+      forgeToken: async (_p, remote) => {
+        tokenReads.push(remote);
+        return remote.includes("gitlab.com") ? "glpat-for-gitlab" : "ghp-for-github";
+      },
+    });
+
+    const result = await joinRedeem(p, relay.client, () => NO_SECRETS, { code: CODE }, seams);
+
+    expect(result.access).toBe("ok");
+    expect(seamCalls.forgeLogin[0]?.[2]).toBe("gitlab.com");
+    expect(seamCalls.forgeLogin[0]?.[3]).toBe("glpat-for-gitlab");
+  });
+
+  test("a cloned team's own forge declaration cannot route the token to an unconfirmed host: forge-login there runs tokenless", async () => {
+    const calls: { argv: string[]; opts?: Parameters<Probes["exec"]>[1] }[] = [];
+    const p = redeemProbes({
+      exec: (argv, opts) => {
+        calls.push({ argv, opts });
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    });
+    const relay = fakeRelay();
+    const { seams, calls: seamCalls } = baseJoinRedeemSeams({
+      read: fakeRead({ "mattstack.integrations": { forge: { host: "gitlab.evil.example", provider: "gitlab" } } }),
+      forgeToken: async () => "ghp-secret",
+    });
+
+    const result = await joinRedeem(p, relay.client, () => NO_SECRETS, { code: CODE }, seams);
+
+    expect(result.access).toBe("ok");
+    // The clone target (github.com) is unspoofable, so the clone keeps its token.
+    const clone = calls.find((c) => c.argv.includes("clone"))!;
+    expect(clone.opts?.env?.RT_GIT_TOKEN).toBe("ghp-secret");
+    expect(seamCalls.forgeLogin[0]?.[2]).toBe("gitlab.evil.example");
+    expect(seamCalls.forgeLogin[0]?.[3]).toBeNull();
+  });
+
   test("checkpoints the resumable intent as soon as the pointer resolves, before cloning", async () => {
     const p = redeemProbes({
       exec: (argv) => {

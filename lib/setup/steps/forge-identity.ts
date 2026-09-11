@@ -9,22 +9,14 @@
 
 import type { ApplyContext } from "../apply.ts";
 import { isValidHostname } from "../host-validate.ts";
+import { tokenLookupRemoteForHost } from "../../team/forge-token.ts";
 import { forgeFromHost, forgeFromRemote, readUserIntegrationOverrides } from "../team-settings.ts";
-import { forgeTokenFor } from "./forge-token.ts";
+import { trustedForgeTokenFor } from "./forge-token.ts";
 
 export interface ResolvedForge {
   host: string;
   provider: "github" | "gitlab";
   token: string | null;
-}
-
-/**
- * `forgeTokenFor` derives the token's key from the host inside a full remote
- * URL, and a bare `https://host/` does not parse as one. The path segment is
- * inert: only the host decides which token rt holds.
- */
-function tokenRemoteFor(host: string): string {
-  return `https://${host}/mattstack/identity`;
 }
 
 /**
@@ -41,9 +33,11 @@ export async function resolveForge(ctx: ApplyContext): Promise<ResolvedForge | n
     ctx.snapshot?.integrations.forge ??
     (ctx.snapshot?.remote ? forgeFromRemote(ctx.snapshot.remote) : null) ??
     connectedForge();
-  if (!forge) return null;
+  // The snapshot branches carry a host the TEAM declared, so they need the
+  // same hostname gate `connectedForge` applies before gh/glab sees it.
+  if (!forge || !isValidHostname(forge.host)) return null;
 
-  const token = await forgeTokenFor(ctx, tokenRemoteFor(forge.host));
+  const token = await trustedForgeTokenFor(ctx, tokenLookupRemoteForHost(forge.host));
   if (token) ctx.redact(token);
   return { host: forge.host, provider: forge.provider, token };
 }

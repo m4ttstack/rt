@@ -55,6 +55,11 @@ describe("mayOfferToken", () => {
     expect(mayOfferToken("https://gitlab.com/acme/team.git", null)).toBe(true);
   });
 
+  test("a cleartext http remote never gets the token, even on an unspoofable host", () => {
+    expect(mayOfferToken("http://github.com/acme/team.git", null)).toBe(false);
+    expect(mayOfferToken("http://gitlab.acme.internal/acme/team.git", "gitlab.acme.internal")).toBe(false);
+  });
+
   test("a gitlab-shaped host an inviter chose is refused until the user confirms it", () => {
     expect(mayOfferToken("https://gitlab.evil.example/acme/team.git", null)).toBe(false);
     expect(mayOfferToken("https://gitlab.evil.example/acme/team.git", "gitlab.acme.internal")).toBe(false);
