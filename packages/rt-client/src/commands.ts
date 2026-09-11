@@ -648,6 +648,12 @@ export interface Commands {
   "repos:locate": { payload: { newPath: string; repo?: string; dryRun?: boolean }; data: unknown };
   "freshness:reconcile": { payload: Record<string, never>; data: unknown };
 
+  // ─── Reconciler (executor state; lib/daemon/reconciler.ts) ───────────────
+  /** Read-only: the last sweep's snapshot. Never triggers a sweep itself. */
+  "reconciler:status": { payload: Record<string, never>; data: ReconcilerStatus };
+  /** Manual override: marks the agent cleared and closes its open/parked gates (reconciler.ts's clear()). */
+  "reconciler:clear": { payload: { agentId: string }; data: { cleared: true } };
+
   // ─── Gate facility (BOARD-20/21) ─────────────────────────────────────────
   "gate:open": { payload: { subject: string; kind: string; questions: GateQuestion[]; meta?: Record<string, unknown>; agent?: string; pane?: string; nudge?: { session: string }; context?: string; origin?: GateOrigin }; data: { id: string; supersededId: string | null } };
   /**
@@ -798,6 +804,8 @@ export const COMMAND_NAMES: readonly CommandName[] = [
   "endpoint:status",
   "repos:locate",
   "freshness:reconcile",
+  "reconciler:status",
+  "reconciler:clear",
   "gate:open",
   "gate:answer",
   "gate:wait",

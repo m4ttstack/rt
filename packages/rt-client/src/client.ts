@@ -446,6 +446,20 @@ export function paneFocus(
   return rtCommand<Commands["pane:focus"]["data"]>("pane:focus", payload, { sockPath: o.sockPath, timeoutMs: o.timeoutMs ?? 10_000 });
 }
 
+// ─── Reconciler (executor state; lib/daemon/reconciler.ts) ────────────────
+
+/** Never triggers a sweep; a plain read of the last one's snapshot. */
+export function reconcilerStatus(o: RtClientOptions = {}): Promise<RtResponse<Commands["reconciler:status"]["data"]>> {
+  return rtCommand<Commands["reconciler:status"]["data"]>("reconciler:status", {}, { sockPath: o.sockPath, timeoutMs: o.timeoutMs ?? 10_000 });
+}
+
+export function reconcilerClear(
+  a: Commands["reconciler:clear"]["payload"],
+  o: RtClientOptions = {},
+): Promise<RtResponse<Commands["reconciler:clear"]["data"]>> {
+  return rtCommand<Commands["reconciler:clear"]["data"]>("reconciler:clear", { agentId: a.agentId }, { sockPath: o.sockPath, timeoutMs: o.timeoutMs ?? 10_000 });
+}
+
 // ─── Gates (BOARD-20/21 gate facility) ─────────────────────────────────────
 
 export function gateOpen(

@@ -192,6 +192,28 @@ const bgSubcommands: Record<string, CommandNode> = {
   },
 };
 
+const reconcilerSubcommands: Record<string, CommandNode> = {
+  status: {
+    description: "Executor reconciler: last sweep's snapshot (herdr reachability, per-agent state)",
+    module: "./commands/reconciler.ts",
+    fn: "reconcilerStatus",
+    omitBehavior: "list",
+    args: [
+      { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Emit the status record as JSON" },
+    ],
+  },
+  clear: {
+    description: "Manually clear one agent's reconciler state and its open/parked gates",
+    module: "./commands/reconciler.ts",
+    fn: "reconcilerClear",
+    omitBehavior: { exempt: "agent ids are opaque; list first with rt reconciler status" },
+    args: [
+      { name: "Agent id", type: "text", placeholder: "ag-1a2b3c4d", hint: "Agent id" },
+      { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Emit the clear record as JSON" },
+    ],
+  },
+};
+
 const herdSubcommands: Record<string, CommandNode> = {
   start: {
     description: "Start a herd: registry row, chat room, herdr workspace, gate subscription",
@@ -1196,6 +1218,11 @@ export const TREE: Record<string, CommandNode> = {
   bg: {
     description: "Daemon-owned background herdr server: status, claims, stop",
     subcommands: bgSubcommands,
+  },
+
+  reconciler: {
+    description: "Executor reconciler: pane-derived agent state, attention gates",
+    subcommands: reconcilerSubcommands,
   },
 
   herd: {
