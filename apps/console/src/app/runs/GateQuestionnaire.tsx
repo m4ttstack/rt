@@ -64,6 +64,14 @@ export function GateQuestionnaire({
   );
   const stepped = display.length > 1;
   const activeStep = step ?? display[0]?.name;
+  // The morph below swaps next/submit for the skip control while a
+  // skippable question has nothing picked, so the primary button is always
+  // live -- a disabled next beside a separate skip read as a dead end.
+  const activeDisplay = display.find(q => q.name === activeStep);
+  const activeSkippable =
+    activeDisplay !== undefined && !activeDisplay.required;
+  const lastStep =
+    display.length > 0 && activeStep === display[display.length - 1]!.name;
 
   const toggle = (
     name: string,
@@ -252,54 +260,51 @@ export function GateQuestionnaire({
         <Group gap="xs" ml="auto" align="center">
           {status}
           {focus}
-          {/* Only ever visible on a skippable multi (the primitive hides it
-              on required items), where it reads as the "none of these"
-              answer -- skipping submits an explicit []. */}
+          {/* While a skippable multi has nothing picked, the skip control IS
+              the primary button ("next · none" / "submit · none") and
+              next/submit render null -- skipping submits an explicit [].
+              The primitive hides skip on required items, so required steps
+              keep plain next/submit. */}
           <Questionnaire.Skip
             render={(props, state) =>
-              state.visible ? (
+              state.visible && state.status !== 'answered' ? (
                 <Button
                   {...props}
                   size="xs"
-                  variant="subtle"
                   disabled={busy}
                   data-testid="gate-skip"
                 />
               ) : null
             }
           >
-            none
+            {lastStep ? 'submit · none' : 'next · none'}
           </Questionnaire.Skip>
           <Questionnaire.Next
             render={(props, state) =>
-              state.visible ? (
+              !state.visible ||
+              (activeSkippable && state.status !== 'answered') ? null : (
                 <Button
                   {...props}
                   size="xs"
-                  disabled={
-                    busy ||
-                    (state.status !== 'answered' && state.status !== 'skipped')
-                  }
+                  disabled={busy || state.status !== 'answered'}
                   data-testid="gate-next"
                 />
-              ) : null
+              )
             }
           >
             next
           </Questionnaire.Next>
           <Questionnaire.Submit
             render={(props, state) =>
-              state.visible ? (
+              !state.visible ||
+              (activeSkippable && state.status !== 'answered') ? null : (
                 <Button
                   {...props}
                   size="xs"
-                  disabled={
-                    busy ||
-                    (state.status !== 'answered' && state.status !== 'skipped')
-                  }
+                  disabled={busy || state.status !== 'answered'}
                   data-testid="gate-submit"
                 />
-              ) : null
+              )
             }
           >
             {busy ? 'submitting…' : 'submit'}

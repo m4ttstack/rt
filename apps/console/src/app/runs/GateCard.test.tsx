@@ -110,7 +110,7 @@ describe('GateCard: open/actionable', () => {
     expect(screen.getByTestId('gate-progress')).toHaveTextContent('2 of 2');
   });
 
-  it('disables Next until the active question is answered, then Submit until the last one is', async () => {
+  it('disables Next until the required question is answered; the skippable last step swaps in submit once answered', async () => {
     renderCard(gateRow());
 
     expect(
@@ -123,10 +123,13 @@ describe('GateCard: open/actionable', () => {
     expect(next).toBeEnabled();
     await userEvent.click(next);
 
-    const submit = screen.getByRole('button', { name: 'submit' });
-    expect(submit).toBeDisabled();
+    // Unanswered skippable step: no plain submit, the none path stands in.
+    expect(
+      screen.queryByRole('button', { name: 'submit' })
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId('gate-skip')).toBeEnabled();
     await userEvent.click(screen.getByRole('checkbox', { name: 'lint' }));
-    expect(submit).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'submit' })).toBeEnabled();
   });
 
   it('posts {answers} keyed to the gate id in the URL -- no mrUrl anywhere', async () => {
@@ -150,7 +153,7 @@ describe('GateCard: open/actionable', () => {
     );
   });
 
-  it('a skippable multi offers none -- skipping submits its explicit empty array', async () => {
+  it('an unanswered skippable multi morphs the primary button into "submit · none" and submits []', async () => {
     answerPost.mockResolvedValue({
       ok: true,
       status: 200,
@@ -158,13 +161,24 @@ describe('GateCard: open/actionable', () => {
     });
     renderCard(gateRow());
 
-    // The required single-select never offers the skip.
+    // The required single-select never offers the none path.
     expect(screen.queryByTestId('gate-skip')).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('radio', { name: 'pass' }));
     await userEvent.click(screen.getByTestId('gate-next'));
-    // Skip on the last step auto-submits with the empty selection.
-    await userEvent.click(screen.getByTestId('gate-skip'));
 
+    // Nothing checked: the none button replaces submit outright.
+    const skip = screen.getByTestId('gate-skip');
+    expect(skip).toHaveTextContent('submit · none');
+    expect(screen.queryByTestId('gate-submit')).not.toBeInTheDocument();
+
+    // Checking a box morphs it back to a plain submit.
+    await userEvent.click(screen.getByRole('checkbox', { name: 'lint' }));
+    expect(screen.queryByTestId('gate-skip')).not.toBeInTheDocument();
+    expect(screen.getByTestId('gate-submit')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('checkbox', { name: 'lint' }));
+
+    // The none path on the last step auto-submits the empty selection.
+    await userEvent.click(screen.getByTestId('gate-skip'));
     await waitFor(() =>
       expect(answerPost).toHaveBeenCalledWith({
         param: { id: 'g1' },

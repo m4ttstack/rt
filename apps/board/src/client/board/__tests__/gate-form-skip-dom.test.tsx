@@ -88,19 +88,23 @@ async function click(el: Element) {
   });
 }
 
-test('the multi step offers none, the single-select does not, and skipping submits tiers: []', async () => {
+test('an unanswered multi step progresses through "next · none" and submits tiers: []', async () => {
   let answered = false;
   await React.act(async () => {
     root.render(<Host onAnswered={() => (answered = true)} />);
   });
 
-  const none = buttonByText('none');
-  expect(none).not.toBeNull();
+  // With nothing checked the primary button IS the way forward: no dead
+  // disabled "next" beside a side affordance.
+  const nextNone = buttonByText('next · none');
+  expect(nextNone).not.toBeNull();
+  expect(buttonByText('next')).toBeNull();
 
-  await click(none!);
+  await click(nextNone!);
 
-  // Skip advanced to the required Verdict step, where none has no business.
-  expect(buttonByText('none')).toBeNull();
+  // Advanced to the required Verdict step, which never offers a none path.
+  expect(buttonByText('next · none')).toBeNull();
+  expect(buttonByText('submit · none')).toBeNull();
 
   const comment = [...container.querySelectorAll('input[type=radio]')].find(
     i => (i as HTMLInputElement).value === 'comment'
@@ -118,7 +122,7 @@ test('the multi step offers none, the single-select does not, and skipping submi
   expect(answered).toBe(true);
 });
 
-test('a checked tier then none still submits [] -- the skip discards the stale picks', async () => {
+test('checking a tier morphs the button back to a plain next; unchecking restores the none path', async () => {
   await React.act(async () => {
     root.render(<Host onAnswered={() => {}} />);
   });
@@ -128,7 +132,12 @@ test('a checked tier then none still submits [] -- the skip discards the stale p
   );
   expect(minor).toBeDefined();
   await click(minor!);
-  await click(buttonByText('none')!);
+  expect(buttonByText('next · none')).toBeNull();
+  expect(buttonByText('next')).not.toBeNull();
+
+  await click(minor!);
+  expect(buttonByText('next')).toBeNull();
+  await click(buttonByText('next · none')!);
 
   const comment = [...container.querySelectorAll('input[type=radio]')].find(
     i => (i as HTMLInputElement).value === 'comment'
