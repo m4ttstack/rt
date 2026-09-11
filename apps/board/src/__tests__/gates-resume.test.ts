@@ -81,8 +81,8 @@ function makeKindIo(opts: {
       calls.resolveSkill.push({ mrUrl, tabId });
       return `acme:${opts.wrapper}`;
     },
-    prompt: async (mrUrl, statePath, skill, resumedGate) =>
-      `/board:${opts.wrapper} ${mrUrl}\n  --state ${statePath}\n  --skill ${skill}\n  --resumed-gate ${resumedGate}`,
+    prompt: async (mrUrl, statePath, skill, resumedGate, resumedGateKind) =>
+      `/board:${opts.wrapper} ${mrUrl}\n  --state ${statePath}\n  --skill ${skill}\n  --resumed-gate ${resumedGate}\n  --resumed-gate-kind ${resumedGateKind}`,
     resumedStatus: opts.resumedStatus,
     workspaceLabel: opts.workspaceLabel,
   };
@@ -163,6 +163,9 @@ describe('resumeParkedGate', () => {
     expect(call.prompt).toContain('/board:review');
     expect(call.prompt).toContain('--state');
     expect(call.prompt).toContain(`--resumed-gate ${GATE_ID}`);
+    // The resumed pane can't discover the kind itself: --state is an opaque
+    // handle and `gate wait` returns only the answer.
+    expect(call.prompt).toContain('--resumed-gate-kind review-post');
 
     expect(reviewCalls.writeState.length).toBe(1);
     expect(reviewCalls.writeState[0]!.patch).toMatchObject({

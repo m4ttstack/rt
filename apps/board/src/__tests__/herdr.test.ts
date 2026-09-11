@@ -860,6 +860,38 @@ describe('--resumed-gate flag (parked-gate resume marker)', () => {
     expect(p).not.toContain('--resumed-gate');
   });
 
+  test('--resumed-gate-kind rides alongside --resumed-gate, so a resumed pane can branch on which gate woke it', () => {
+    const p = respondPrompt({
+      mrUrl: 'https://x/mr/1',
+      statePath: '/s/1.json',
+      statusBin: '/b/respond-status.ts',
+      reportPath: '/s/1.md',
+      skill: 'myteam:respond',
+      resumedGate: 'gate-42',
+      resumedGateKind: 'respond-post',
+    });
+    expect(p).toBe(
+      `/board:respond https://x/mr/1
+  --state /s/1.json
+  --status-bin /b/respond-status.ts
+  --report /s/1.md
+  --skill myteam:respond
+  --resumed-gate gate-42
+  --resumed-gate-kind respond-post`
+    );
+  });
+
+  test('a launch with no resumed gate carries no kind flag either', () => {
+    const p = respondPrompt({
+      mrUrl: 'https://x/mr/1',
+      statePath: '/s/1.json',
+      statusBin: '/b/respond-status.ts',
+      reportPath: '/s/1.md',
+      skill: 'myteam:respond',
+    });
+    expect(p).not.toContain('--resumed-gate-kind');
+  });
+
   test('a re-review (reReview: true, no resumedGate) also omits the flag', () => {
     const p = reviewPrompt({
       mrUrl: 'https://x/mr/1',

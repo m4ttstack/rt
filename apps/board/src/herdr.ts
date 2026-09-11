@@ -156,6 +156,12 @@ export interface SkillPromptOpts {
       `gate open` and go straight back into the domain skill. Absent on every
       normal launch and on a re-review. */
   resumedGate?: string;
+  /** Review/respond/doctor only: the `kind` of the gate `resumedGate` names
+      (e.g. "respond-post"). The wrapper cannot discover this for itself --
+      `--state` is an opaque handle and `gate wait` returns only the answer --
+      so a resumed pane that must branch on which gate woke it reads this
+      flag. Present exactly when `resumedGate` is. */
+  resumedGateKind?: string;
 }
 
 /** The trailing paragraph a launch note becomes. The framing tells the wrapper
@@ -208,6 +214,7 @@ function dispatchArgs(o: SkillPromptOpts, skillPath?: string | null): string {
   flag('--report', o.reportPath);
   flag('--skill', o.skill);
   flag('--resumed-gate', o.resumedGate);
+  flag('--resumed-gate-kind', o.resumedGateKind);
   flag('--skill-path', skillPath);
   if (o.reReview) parts.push('--re-review');
   flag('--tier', o.tier);

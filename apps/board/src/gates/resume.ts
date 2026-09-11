@@ -49,6 +49,7 @@ export interface KindResumeIo {
     statePath: string,
     skill: string,
     resumedGate: string,
+    resumedGateKind: string,
     resolvePath: SkillPathResolver
   ): Promise<string>;
   /** The status this kind's state settles into once its pane resumes.
@@ -142,6 +143,7 @@ export async function resumeParkedGate(
     statePath,
     skill,
     gate.gateId,
+    gate.kind,
     resolvePath
   );
 

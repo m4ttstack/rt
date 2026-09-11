@@ -30,6 +30,7 @@ tool-specific knowledge — the board injects everything it needs as flags:
 | `--skill-path <path>` | absolute path to that skill's SKILL.md, when the board already resolved it (optional; see "Resolving the domain skill") |
 | `--re-review` | this is a re-review of an already-reviewed MR (optional; see "Re-review mode") |
 | `--resumed-gate <gateId>` | this invocation is a parked-gate resume, not a fresh review (optional; see "Steps") |
+| `--resumed-gate-kind <kind>` | the `kind` of the gate `--resumed-gate` names (e.g. `review-post`). Present exactly when `--resumed-gate` is, and the only way to learn it: `--state` is an opaque handle and `gate wait` returns only the answer. |
 
 Write status **only** by running the injected `--status-bin`:
 

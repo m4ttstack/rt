@@ -2784,7 +2784,14 @@ function reviewResumeIo(): KindResumeIo {
     filePath: reviewFilePath,
     resolveSkill: (mrUrl, tabId) =>
       reviewSkillForTab(config, tabId, mrUrl, resolveLaunchSkill),
-    prompt: (mrUrl, statePath, skill, resumedGate, resolvePath) =>
+    prompt: (
+      mrUrl,
+      statePath,
+      skill,
+      resumedGate,
+      resumedGateKind,
+      resolvePath
+    ) =>
       dispatchPrompt(
         'board:review',
         {
@@ -2794,6 +2801,7 @@ function reviewResumeIo(): KindResumeIo {
           reportPath: reviewReportPath(statePath),
           skill,
           resumedGate,
+          resumedGateKind,
         },
         resolvePath
       ),
@@ -2812,7 +2820,14 @@ function respondResumeIo(): KindResumeIo {
       ),
     filePath: respondFilePath,
     resolveSkill: mrUrl => resolveLaunchSkill('respond', mrUrl),
-    prompt: (mrUrl, statePath, skill, resumedGate, resolvePath) =>
+    prompt: (
+      mrUrl,
+      statePath,
+      skill,
+      resumedGate,
+      resumedGateKind,
+      resolvePath
+    ) =>
       dispatchPrompt(
         'board:respond',
         {
@@ -2822,6 +2837,7 @@ function respondResumeIo(): KindResumeIo {
           reportPath: respondReportPath(statePath),
           skill,
           resumedGate,
+          resumedGateKind,
         },
         resolvePath
       ),
@@ -2840,7 +2856,14 @@ function doctorResumeIo(): KindResumeIo {
       ),
     filePath: doctorFilePath,
     resolveSkill: mrUrl => resolveLaunchSkill('doctor', mrUrl),
-    prompt: (mrUrl, statePath, skill, resumedGate, resolvePath) =>
+    prompt: (
+      mrUrl,
+      statePath,
+      skill,
+      resumedGate,
+      resumedGateKind,
+      resolvePath
+    ) =>
       dispatchPrompt(
         'board:doctor',
         {
@@ -2849,6 +2872,7 @@ function doctorResumeIo(): KindResumeIo {
           statusBin: statusBinPath(),
           skill,
           resumedGate,
+          resumedGateKind,
           ...doctorResumeDispatchFields(readDoctorStates().get(mrUrl)),
         },
         resolvePath

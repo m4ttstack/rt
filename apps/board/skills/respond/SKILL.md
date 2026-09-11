@@ -29,6 +29,7 @@ MRs and report status back to the board through its status CLI. This wrapper car
 | `--skill <name>` | the domain skill that owns the actual work (optional) |
 | `--skill-path <path>` | absolute path to that skill's SKILL.md, when the board already resolved it (optional; see "Resolving the domain skill") |
 | `--resumed-gate <gateId>` | this invocation is a parked-gate resume, not a fresh run (optional; see "Steps") |
+| `--resumed-gate-kind <kind>` | the `kind` of the gate `--resumed-gate` names (e.g. `respond-post`). Present exactly when `--resumed-gate` is, and the only way to learn it: `--state` is an opaque handle and `gate wait` returns only the answer. |
 
 Write status **only** by running the injected `--status-bin`:
 
@@ -92,8 +93,8 @@ old one. Instead:
 - **Re-emit the correct status first, before anything else.** The board's
   resume plumbing always lands this pane's state at `implementing` regardless
   of which gate resumed it, so your first act must correct that: read
-  `gateKind` off the state file to learn which gate `--resumed-gate` names —
-  never guess it from context — and re-emit the status it actually implies:
+  `--resumed-gate-kind` to learn which gate `--resumed-gate` names, never
+  guessing it from context, and re-emit the status it actually implies:
   - `respond-plan` → `<status-bin> respond-status <state> implementing`
     (already correct, but emit it anyway so a stale write can never linger).
   - `respond-post` → `<status-bin> respond-status <state> drafting`
@@ -102,7 +103,7 @@ old one. Instead:
 - `<status-bin> gate wait <state>` — the verb is registry-status-first, so on
   an already-answered gate it returns the recorded answer at once instead of
   blocking.
-- **Act on the answer, by `gateKind`.** Read `--report <path>` first — it
+- **Act on the answer, by `--resumed-gate-kind`.** Read `--report <path>` first — it
   holds the adjudication table and drafted/finalized replies a fresh pane has
   no other way to recover once the pane that produced them is gone. Never
   re-adjudicate and never re-implement from scratch:
