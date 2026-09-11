@@ -1,18 +1,30 @@
 import { herdrRequest } from "../herdr/client.ts";
-import { resolvePaneRef } from "./pane-ref-socket.ts";
+import { resolveLivePane, snapshotPanes, type LivePane, type PaneHints } from "./pane-resolve-live.ts";
 
-export type EscapeInjector = (ref: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+export type EscapeInjector = (hints: PaneHints) => Promise<{ ok: true; paneRef: string } | { ok: false; error: string }>;
 
 /** Drives herdr's existing pane.send_keys verb; deliberately NOT
     injectIntoPane, which refuses blocked panes, and a pane holding a
     pending form is exactly that state. Escape-only by construction: this
-    is the sole key the gate delivery layer is allowed to send. The
-    argument is a pane REF (`bg:w1:p2` or bare): resolved here so a gate
-    row's origin.paneId round-trips to whichever server actually holds it. */
-export function createEscapeInjector(herdr: typeof herdrRequest = herdrRequest): EscapeInjector {
-  return async (ref) => {
-    const { paneId, sockPath } = resolvePaneRef(ref);
-    const res = await herdr("pane.send_keys", { pane_id: paneId, keys: ["escape"] }, { sockPath });
-    return res.ok ? { ok: true as const } : { ok: false as const, error: `${res.code}: ${res.message}` };
+    is the sole key the gate delivery layer is allowed to send. Hints are
+    resolved against a fresh snapshot on every call, not the paneId alone,
+    so a pane that moved (workspace restart, herdr respawn) is still found
+    by session or worktree instead of silently missing the escape. */
+export function createEscapeInjector(deps: {
+  herdr?: typeof herdrRequest;
+  snapshot?: () => Promise<LivePane[] | null>;
+} = {}): EscapeInjector {
+  const herdr = deps.herdr ?? herdrRequest;
+  const snapshot = deps.snapshot ?? snapshotPanes;
+  return async (hints) => {
+    const panes = await snapshot();
+    if (!panes) return { ok: false as const, error: "no herdr server reachable" };
+    const pane = resolveLivePane(hints, panes);
+    if (!pane) return { ok: false as const, error: "no live pane resolved from hints" };
+    const paneId = pane.paneRef.startsWith("bg:") ? pane.paneRef.slice("bg:".length) : pane.paneRef;
+    const res = await herdr("pane.send_keys", { pane_id: paneId, keys: ["escape"] }, { sockPath: pane.sockPath });
+    return res.ok
+      ? { ok: true as const, paneRef: pane.paneRef }
+      : { ok: false as const, error: `${res.code}: ${res.message}` };
   };
 }
