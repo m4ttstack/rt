@@ -84,7 +84,7 @@ describe("reconciler sweep: blocked", () => {
     expect(attentionGates()).toHaveLength(0);
   });
 
-  test("blocked then live closes the attention gate (closest legal closedReason)", async () => {
+  test("blocked then live closes the attention gate with closedReason resolved", async () => {
     panesValue = [buildPane({ agentStatus: "blocked" })];
     await reconciler.sweep();
     await reconciler.sweep();
@@ -96,10 +96,9 @@ describe("reconciler sweep: blocked", () => {
 
     const row = store.get(opened!.id)!;
     expect(row.status).toBe("closed");
-    // gates-store.close() has no "resolved" reason (spec names it, the
-    // store's union doesn't have it); "abandoned" is the closest legal
-    // value -- see task report.
-    expect(row.closedReason).toBe("abandoned");
+    // "resolved", not "abandoned": the pane came back on its own.
+    // clear() (below) is the one that uses "abandoned".
+    expect(row.closedReason).toBe("resolved");
   });
 
   test("context is truncated to 8192 bytes", async () => {
@@ -145,6 +144,35 @@ describe("reconciler sweep: gone", () => {
     panesValue = [buildPane({ agentStatus: "idle" })];
     await reconciler.sweep();
     expect(store.get(attn.id)!.status).toBe("closed");
+    expect(store.get(attn.id)!.closedReason).toBe("resolved");
+  });
+});
+
+describe("reconciler sweep: attention gate ownership", () => {
+  // "blocked" can never exercise inheritance: its own dedupe guard skips
+  // opening whenever ANY gate (including the joined one whose owner we'd
+  // inherit from) already occupies the subject. "gone" is the real case:
+  // the joined gate is the trigger, not a blocker, so both rows coexist.
+  test("inherits the first non-human owner among the agent's joined gates", async () => {
+    const { row: openGate } = store.open({
+      subject: "run:owned", kind: "clarify", questions: qs(), nudge: { session: "s-1" }, owner: "herd:shep-1",
+    });
+    panesValue = [];
+    await reconciler.sweep();
+    await reconciler.sweep();
+    expect(store.get(openGate.id)!.executor).toBe("gone");
+    const attn = attentionGates().find((g) => g.subject === "run:owned")!;
+    expect(attn).toBeDefined();
+    expect(attn.owner).toBe("herd:shep-1");
+  });
+
+  test("falls back to human when the agent has no joined gates", async () => {
+    panesValue = [buildPane({ agentStatus: "blocked" })];
+    await reconciler.sweep();
+    await reconciler.sweep();
+    const [attn] = attentionGates();
+    expect(attn).toBeDefined();
+    expect(attn!.owner).toBe("human");
   });
 });
 

@@ -120,7 +120,10 @@ export interface GateRow {
   origin?: GateOrigin | null;
   status: GateStatus; answer: GateAnswer | null;
   openedAt: number; parkedAt: number | null; closedAt: number | null;
-  closedReason: "abandoned" | "superseded" | "pruned" | null;
+  /** "resolved" is stamped only by the reconciler's auto-recovery close
+      (a blocked/gone pane came back); every other closer uses one of the
+      other three. */
+  closedReason: "abandoned" | "superseded" | "pruned" | "resolved" | null;
   /** Set only when `closedReason` is "superseded": the id of the gate that superseded this one. */
   supersededBy: string | null;
   agent: string | null; pane: string | null;
