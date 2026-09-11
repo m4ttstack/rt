@@ -6,6 +6,7 @@ import {
   type PullRequest,
 } from '@mattstack/glance';
 import type { DemandDecl, ProjectMRsScope } from '@mattstack/rt-client';
+import type { ExecutorState, ExecutorView } from './client/types.ts';
 import type { BoardConfig, Member } from './config.ts';
 import { extractTicketId } from './ticket.ts';
 
@@ -382,6 +383,65 @@ export function inferRoster(mrs: BoardMR[]): RosterMember[] {
   return [...byUsername.values()].sort(
     (a, b) => b.count - a.count || a.username.localeCompare(b.username)
   );
+}
+
+/**
+ * Tags each gate row with `executor` when the reconciler sweep's
+ * `openGateIds` names its id -- the pane state currently blocking on that
+ * gate. A gate no executor claims is returned untouched (no `executor` key
+ * at all, not `undefined` written in), matching how the rest of the payload
+ * only carries fields it has real data for.
+ */
+export function joinGateExecutors<G extends { gateId: string }>(
+  gates: G[],
+  executors: ExecutorView[]
+): Array<G & { executor?: ExecutorState }> {
+  const stateByGateId = new Map<string, ExecutorState>();
+  for (const executor of executors) {
+    for (const gateId of executor.openGateIds) {
+      stateByGateId.set(gateId, executor.state);
+    }
+  }
+  return gates.map((gate): G & { executor?: ExecutorState } => {
+    const state = stateByGateId.get(gate.gateId);
+    return state ? { ...gate, executor: state } : gate;
+  });
+}
+
+/**
+ * Splits the reconciler sweep's dead/hidden executors: a `gone` or `hidden`
+ * one whose subject matches an MR row on this board attaches to that row as
+ * `orphan`; a `gone` one matching no row falls through to the top-level
+ * `orphans` leftover. A `hidden` executor matching no row has nothing to
+ * anchor to and is dropped -- it isn't gone yet, just off this board's
+ * radar, so surfacing it board-wide would be noise.
+ */
+export function joinExecutorOrphans<T extends { webUrl?: string | null }>(
+  mrs: T[],
+  executors: ExecutorView[]
+): { mrs: Array<T & { orphan?: ExecutorView }>; orphans: ExecutorView[] } {
+  const bySubject = new Map<string, ExecutorView>();
+  for (const executor of executors) {
+    if (
+      (executor.state === 'gone' || executor.state === 'hidden') &&
+      executor.subject
+    ) {
+      bySubject.set(executor.subject, executor);
+    }
+  }
+  const matchedSubjects = new Set<string>();
+  const joinedMrs = mrs.map((mr): T & { orphan?: ExecutorView } => {
+    if (!mr.webUrl) return mr;
+    const subject = `mr:${mr.webUrl}`;
+    const match = bySubject.get(subject);
+    if (!match) return mr;
+    matchedSubjects.add(subject);
+    return { ...mr, orphan: match };
+  });
+  const orphans = executors.filter(
+    e => e.state === 'gone' && (!e.subject || !matchedSubjects.has(e.subject))
+  );
+  return { mrs: joinedMrs, orphans };
 }
 
 export function reviewSkillForTab(

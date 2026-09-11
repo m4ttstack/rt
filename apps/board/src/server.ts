@@ -16,6 +16,7 @@ import {
   ReadBackFailedError,
 } from '@mattstack/glance';
 import {
+  DEFAULT_SOCK,
   eventsHead,
   eventsList,
   gateAnswer as gateAnswerFacility,
@@ -41,6 +42,7 @@ import {
 import { APP_ROOT, IS_COMPILED } from './app-root.ts';
 import { SnapshotCache } from './cache.ts';
 import { getClientAssets } from './client-assets.ts';
+import type { ExecutorView } from './client/types.ts';
 import {
   closeOnDone,
   type TabIdClearer,
@@ -72,6 +74,8 @@ import {
   buildRoster,
   channelForMR,
   configuredSlackChannels,
+  joinExecutorOrphans,
+  joinGateExecutors,
   projectPathFromWebUrl,
   reviewSkillForTab,
   visibleMrsFor,
@@ -112,7 +116,9 @@ import {
 } from './gates/execute-sweep-action.ts';
 import {
   boardBridgeRule,
+  buildQueueExtras,
   ingestRelayFrame,
+  reconcileAttentionGatesOnBoot,
   reconcileGatesOnBoot,
   type GateEventFrame,
 } from './gates/ingest.ts';
@@ -334,6 +340,52 @@ async function gitlab(): Promise<GitLabProvider> {
 // the relay handler below (ingestRelayFrame) and the boot gateList reconcile
 // (reconcileGatesOnBoot).
 const gateCache = new GateCache();
+
+interface ReconcilerView {
+  sweptAt: number;
+  herdrReachable: boolean;
+  executors: ExecutorView[];
+}
+
+const EMPTY_RECONCILER_VIEW: ReconcilerView = {
+  sweptAt: 0,
+  herdrReachable: false,
+  executors: [],
+};
+
+/** GET /reconciler: the rt daemon's own executor sweep (SDD
+    executor-reconciler, task 12's partner lane). An older daemon 404s the
+    route entirely, the daemon may simply be down, or (a test's fake
+    unix-socket daemon that stubs other verbs only) it may answer 200 with
+    an unrelated JSON body -- every one of those degrades to an empty view
+    rather than failing /data.json, the same contract every other daemon
+    read on this page already honors. */
+async function fetchReconcilerView(): Promise<ReconcilerView> {
+  try {
+    const res = await fetch('http://localhost/reconciler', {
+      unix: DEFAULT_SOCK,
+      method: 'GET',
+      signal: AbortSignal.timeout(5000),
+    } as RequestInit);
+    if (!res.ok) return EMPTY_RECONCILER_VIEW;
+    const data: unknown = await res.json();
+    if (
+      typeof data !== 'object' ||
+      data === null ||
+      !Array.isArray((data as { executors?: unknown }).executors)
+    ) {
+      return EMPTY_RECONCILER_VIEW;
+    }
+    const view = data as ReconcilerView;
+    return {
+      sweptAt: typeof view.sweptAt === 'number' ? view.sweptAt : 0,
+      herdrReachable: view.herdrReachable === true,
+      executors: view.executors,
+    };
+  } catch {
+    return EMPTY_RECONCILER_VIEW;
+  }
+}
 
 // Optional peer relay. Both a configured url and a token are required; without
 // either, peering stays unstarted and every peer feature (publish, poll,
@@ -972,6 +1024,30 @@ const httpServer = Bun.serve({
         const responds = readRespondStates();
         const doctors = readDoctorStates();
         const slackRefs = readSlackRefs();
+        const reconciler = await fetchReconcilerView();
+        const mrsWithGates = attachPeerState(
+          attachDrafts(
+            attachSlack(
+              attachGates(
+                attachDoctors(
+                  attachResponds(attachReviews(visibleMrs, reviews), responds),
+                  doctors
+                ),
+                gateCache
+              ),
+              slackRefs
+            ),
+            heldDraftsByMr(readDrafts())
+          )
+        ).map(mr => ({
+          ...mr,
+          gates: joinGateExecutors(mr.gates, reconciler.executors),
+        }));
+        const { mrs: mrsWithOrphans, orphans } = joinExecutorOrphans(
+          mrsWithGates,
+          reconciler.executors
+        );
+        const queueExtras = buildQueueExtras(gateCache.rows(), snapshot.mrs);
         return new Response(
           JSON.stringify({
             title: config.title,
@@ -992,24 +1068,9 @@ const httpServer = Bun.serve({
                 : snapshot.mrs.filter(mr => mr.author.username === m.username)
                     .length,
             })),
-            mrs: attachPeerState(
-              attachDrafts(
-                attachSlack(
-                  attachGates(
-                    attachDoctors(
-                      attachResponds(
-                        attachReviews(visibleMrs, reviews),
-                        responds
-                      ),
-                      doctors
-                    ),
-                    gateCache
-                  ),
-                  slackRefs
-                ),
-                heldDraftsByMr(readDrafts())
-              )
-            ),
+            mrs: mrsWithOrphans,
+            queueExtras,
+            orphans,
             local: isLocalRequest(req),
             canInvite:
               isLocalRequest(req) &&
@@ -3186,6 +3247,11 @@ if (!FIXTURE_DIR) {
   void reconcileGatesOnBoot(gateList, gateCache).catch(err =>
     console.error(
       `gate boot reconcile failed: ${err instanceof Error ? err.message : err}`
+    )
+  );
+  void reconcileAttentionGatesOnBoot(gateList, gateCache).catch(err =>
+    console.error(
+      `gate boot reconcile (attention) failed: ${err instanceof Error ? err.message : err}`
     )
   );
   // Independent of the cache reconcile above (reads the facility directly),

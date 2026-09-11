@@ -22,6 +22,23 @@ export interface ConfigMember {
   count: number | null;
 }
 
+/** One row from the rt daemon's `/reconciler` sweep (SDD executor-reconciler,
+    task 12) -- defined locally rather than imported from rt-client, since
+    that endpoint's client-side type lands in a parallel lane. */
+export type ExecutorState =
+  'live' | 'blocked' | 'hidden' | 'gone' | 'cleared' | 'unknown';
+export interface ExecutorView {
+  agentId: string;
+  repo: string | null;
+  subject: string | null;
+  surface: string;
+  sessionId: string;
+  paneRef: string | null;
+  state: ExecutorState;
+  since: number;
+  openGateIds: string[];
+}
+
 export type ReviewStatus = 'queued' | 'reviewing' | 'done' | 'error';
 export interface ReviewInfo {
   status: ReviewStatus;
@@ -102,7 +119,13 @@ export type BoardMRWithReview = BoardMR & {
   peerReviews?: PeerReviewInfo[];
   sentNudge?: SentNudgeInfo;
   nudges?: InboundNudgeInfo[];
-  gates: GateRow[];
+  /** Each gate carries `executor` when the reconciler sweep's `openGateIds`
+      names it -- the pane state currently blocking on that gate. */
+  gates: Array<GateRow & { executor?: ExecutorState }>;
+  /** A dead/hidden reconciler executor whose subject matched this row --
+      distinct from `BoardData.orphans`, which only holds the leftover
+      entries no MR row claimed. */
+  orphan?: ExecutorView;
 };
 
 export interface BoardData {
@@ -145,6 +168,12 @@ export interface BoardData {
   /** Board tabs, in display order. Always non-empty (config.tabs falls back to
       IMPLICIT_TABS server-side). */
   tabs: TabConfig[];
+  /** Human-owned gates (pane-attention or otherwise) whose subject matched no
+      MR row on this board -- a herd-owned gate never reaches this list. */
+  queueExtras: GateRow[];
+  /** Reconciler executors in state "gone" that matched no MR row's subject;
+      one that did match rides that row's own `orphan` field instead. */
+  orphans: ExecutorView[];
 }
 
 export type ThemeMode = 'light' | 'dark' | 'system';
