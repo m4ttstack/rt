@@ -29,6 +29,10 @@ export interface RunnerDeps {
   seed?: SeedEntry[];
   registerWorkspace?: (id: string) => void;
   unregisterWorkspace?: (id: string) => void;
+  /** When set, focus routes here with the entry's PANE instead of engine
+      tab focus -- the bg backend's panes are headless, so tab focus there
+      is invisible; this is the daemon's pane:focus attend verb. */
+  focusPane?: (paneId: string) => Promise<void>;
 }
 
 const LIVENESS_MS = 1500;
@@ -313,9 +317,13 @@ export class Runner {
 
   private async focus(id: string | undefined): Promise<void> {
     const e = this.find(id);
-    if (!e?.tabId) return;
+    if (!e) return;
     try {
-      await this.deps.engine.focusTab(e.tabId);
+      if (this.deps.focusPane) {
+        if (e.paneId) await this.deps.focusPane(e.paneId);
+      } else if (e.tabId) {
+        await this.deps.engine.focusTab(e.tabId);
+      }
     } catch (err) {
       this.pin(e, err);
     }
