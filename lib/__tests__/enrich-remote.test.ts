@@ -5,7 +5,7 @@
  */
 
 import { describe, test, expect } from "bun:test";
-import { isGitLabRemote, parseRemoteUrl } from "../enrich.ts";
+import { isGitLabRemote, isGitHubRemote, parseRemoteUrl } from "../enrich.ts";
 
 describe("isGitLabRemote", () => {
   test("true for gitlab.com remotes (ssh + https)", () => {
@@ -36,5 +36,35 @@ describe("isGitLabRemote", () => {
     const parsed = parseRemoteUrl("git@github.com:m4ttstack/rt.git");
     expect(parsed).toEqual({ host: "https://github.com", projectPath: "m4ttstack/rt" });
     expect(isGitLabRemote("git@github.com:m4ttstack/rt.git")).toBe(false);
+  });
+});
+
+describe("isGitHubRemote", () => {
+  test("true for github.com remotes (ssh + https)", () => {
+    expect(isGitHubRemote("git@github.com:m4ttstack/rt.git")).toBe(true);
+    expect(isGitHubRemote("https://github.com/m4ttstack/rt.git")).toBe(true);
+  });
+
+  test("false for GitLab remotes", () => {
+    expect(isGitHubRemote("git@gitlab.com:acme/acme-dev.git")).toBe(false);
+    expect(isGitHubRemote("https://gitlab.com/acme/acme-dev.git")).toBe(false);
+  });
+
+  test("false for self-hosted gitlab.* hosts", () => {
+    expect(isGitHubRemote("git@gitlab.example.com:team/app.git")).toBe(false);
+  });
+
+  test("false for undefined / empty", () => {
+    expect(isGitHubRemote(undefined)).toBe(false);
+    expect(isGitHubRemote("")).toBe(false);
+  });
+
+  test("mutually exclusive with isGitLabRemote for common forges", () => {
+    const github = "git@github.com:m4ttstack/rt.git";
+    const gitlab = "git@gitlab.com:acme/acme-dev.git";
+    expect(isGitHubRemote(github)).toBe(true);
+    expect(isGitLabRemote(github)).toBe(false);
+    expect(isGitHubRemote(gitlab)).toBe(false);
+    expect(isGitLabRemote(gitlab)).toBe(true);
   });
 });
