@@ -28,6 +28,10 @@ export function EvidenceTable({
   const wrapCol = evidence.columns.findIndex(c =>
     /title|message|description/i.test(c)
   );
+  // MR-list cells ("!1, !2, ...") grow without bound, so they must wrap too;
+  // other MR-named columns hold single tokens, which wrapping cannot split.
+  const wraps = (i: number) =>
+    i === wrapCol || /^mr/i.test(evidence.columns[i] ?? '');
 
   return (
     <Table withTableBorder radius="md" verticalSpacing={6}>
@@ -61,8 +65,9 @@ export function EvidenceTable({
                 key={ci}
                 style={{
                   verticalAlign: 'top',
-                  whiteSpace: ci === wrapCol ? 'normal' : 'nowrap',
+                  whiteSpace: wraps(ci) ? 'normal' : 'nowrap',
                   wordBreak: ci === wrapCol ? 'break-word' : undefined,
+                  minWidth: ci === wrapCol ? 160 : undefined,
                   color: 'var(--ui-text-muted)',
                 }}
               >
