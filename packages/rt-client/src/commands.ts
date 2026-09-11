@@ -675,10 +675,6 @@ export interface Commands {
    *  onto delivery outcomes (dead marks included). */
   "gate:subscriptions": { payload: { session?: string; live?: boolean }; data: { subscriptions: GateSubscription[] } };
 
-  // ─── Reconciler (executor liveness sweep) ────────────────────────────────
-  "reconciler:status": { payload: Record<string, never>; data: ReconcilerStatus };
-  "reconciler:clear": { payload: { agentId: string }; data: { cleared: true } };
-
   // ─── Herd (shepherd run registry) ────────────────────────────────────────
   "herd:start":  { payload: { name: string; repo: string; session: string; hidden?: boolean }; data: { herd: string; room: string; workspace: string; subscription: string; handle: string; hidden: boolean } };
   "herd:resume": { payload: { herd: string; session: string }; data: { subscription: string; gates: GateRow[]; unread: number; status: HerdStatusData; handle: string } };
@@ -808,8 +804,6 @@ export const COMMAND_NAMES: readonly CommandName[] = [
   "gate:subscribe",
   "gate:unsubscribe",
   "gate:subscriptions",
-  "reconciler:status",
-  "reconciler:clear",
   "herd:start",
   "herd:resume",
   "herd:status",
