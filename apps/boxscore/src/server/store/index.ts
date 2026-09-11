@@ -184,6 +184,9 @@ function buildStore() {
   const stmtUpsertLinearIssue = db.query(
     'INSERT OR REPLACE INTO linear_issues (identifier, data) VALUES (?, ?)'
   );
+  const stmtGetLinearIssue = db.query(
+    'SELECT data FROM linear_issues WHERE identifier = ?'
+  );
   const stmtAllLinearIssues = db.query('SELECT data FROM linear_issues');
 
   const stmtIsValidLinearId = db.query(
@@ -379,18 +382,50 @@ function buildStore() {
 
     upsertLinearIssues(rows: readonly StoredLinearIssue[]): void {
       const tx = db.transaction((batch: readonly StoredLinearIssue[]) => {
-        for (const r of batch)
-          stmtUpsertLinearIssue.run(r.identifier, JSON.stringify(r));
+        for (const r of batch) {
+          let toWrite = r;
+          // A null closedAt on the incoming row means "still open per this scan", not
+          // "reopened": a prior non-null closure (and the credit/links that came with
+          // it) must survive until a fresh non-null closedAt actually replaces it.
+          if (r.closedAt === null) {
+            const existing = stmtGetLinearIssue.get(r.identifier) as {
+              data: string;
+            } | null;
+            if (existing) {
+              const prev = JSON.parse(existing.data) as StoredLinearIssue;
+              if (prev.closedAt !== null) {
+                toWrite = {
+                  ...r,
+                  closedAt: prev.closedAt,
+                  creditedUser: prev.creditedUser,
+                  linkedMrs: prev.linkedMrs,
+                };
+              }
+            }
+          }
+          stmtUpsertLinearIssue.run(toWrite.identifier, JSON.stringify(toWrite));
+        }
       });
       tx(rows);
     },
-    linearIssuesForMrKeys(keys: readonly string[]): StoredLinearIssue[] {
-      const keySet = new Set(keys);
+    allLinearIssues(): StoredLinearIssue[] {
       const rows = stmtAllLinearIssues.all() as { data: string }[];
-      const issues = rows.map(r => JSON.parse(r.data) as StoredLinearIssue);
-      return issues.filter(issue =>
-        issue.linkedMrs.some(lm => keySet.has(mrKey(lm.projectPath, lm.iid)))
-      );
+      // Rows written before the redesign carry assignedUser, no closedAt, and
+      // linkedMrs without via; normalize on read so no caller sees the old shape.
+      return rows.map(r => {
+        const raw = JSON.parse(r.data) as StoredLinearIssue & {
+          assignedUser?: string | null;
+        };
+        return {
+          ...raw,
+          creditedUser: raw.creditedUser ?? raw.assignedUser ?? null,
+          closedAt: raw.closedAt ?? null,
+          linkedMrs: (raw.linkedMrs ?? []).map(m => ({
+            ...m,
+            via: m.via ?? 'mention',
+          })),
+        };
+      });
     },
 
     isValidLinearId(id: string): boolean | null {
@@ -473,6 +508,11 @@ function buildStore() {
         for (const table of TABLES) db.exec(`DELETE FROM ${table}`);
       });
       tx();
+    },
+
+    /** Test-only: bypasses the typed upsert to plant a legacy-shaped row raw. */
+    __rawInsertLinearIssue(identifier: string, json: string): void {
+      stmtUpsertLinearIssue.run(identifier, json);
     },
 
     close(): void {

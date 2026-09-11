@@ -82,10 +82,14 @@ export function buildFetchResult(
 
   // Tickets are discovered only from in-window MRs eligible for discovery, the only
   // thing that has ever scoped them to a window (mirrors slice.ts:36-43).
-  const eligibleKeys = mrs
-    .filter(eligibleForLinearDiscovery)
-    .map(m => mrKey(m.projectPath, m.iid));
-  const linearIssues = store.linearIssuesForMrKeys(eligibleKeys);
+  const eligibleKeys = new Set(
+    mrs.filter(eligibleForLinearDiscovery).map(m => mrKey(m.projectPath, m.iid))
+  );
+  const linearIssues = store
+    .allLinearIssues()
+    .filter(issue =>
+      issue.linkedMrs.some(lm => eligibleKeys.has(mrKey(lm.projectPath, lm.iid)))
+    );
 
   // A tier-capability flag (does this GitLab tier expose approvals at all), not a
   // per-window content check. Parity with fetch.ts:68, which also hardcodes true:

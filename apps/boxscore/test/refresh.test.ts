@@ -849,7 +849,7 @@ function stubLinearVerify(): void {
 describe('runRefresh: Linear issue persistence', () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it('persists resolved Linear issues so linearIssuesForMrKeys can find them', async () => {
+  it('persists resolved Linear issues so allLinearIssues can find them', async () => {
     const store = getStore();
     const { provider } = makeFakeProvider({
       fetchMergeRequestIndex: async () => [
@@ -871,7 +871,10 @@ describe('runRefresh: Linear issue persistence', () => {
       window: WINDOW,
     });
 
-    const issues = store.linearIssuesForMrKeys([mrKey('g/p', 42)]);
+    const key = mrKey('g/p', 42);
+    const issues = store
+      .allLinearIssues()
+      .filter(i => i.linkedMrs.some(lm => mrKey(lm.projectPath, lm.iid) === key));
     expect(issues).toHaveLength(1);
     expect(issues[0]).toMatchObject({
       identifier: 'ACME-9001',
@@ -915,7 +918,10 @@ describe('runRefresh: Linear issue persistence', () => {
       window: WINDOW,
     });
 
-    const issues = store.linearIssuesForMrKeys([mrKey('g/p', 42)]);
+    const key = mrKey('g/p', 42);
+    const issues = store
+      .allLinearIssues()
+      .filter(i => i.linkedMrs.some(lm => mrKey(lm.projectPath, lm.iid) === key));
     expect(issues).toHaveLength(1);
     expect(issues[0]).toMatchObject({ identifier: 'ACME-1' });
   });
