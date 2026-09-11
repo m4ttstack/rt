@@ -8,6 +8,8 @@ function deps(overrides: Partial<ParkDeps> = {}): ParkDeps & { logs: string[]; s
     myFlavor: "dev",
     resolveIntent: () => ({ mode: "dev", provenance: "setting" as const }),
     probeHolder: async () => null,
+    myLaunchdLabel: () => null,
+    activeLaunchdLabel: () => "com.mattstack.daemon.dev",
     sleep: async (ms: number) => { sleeps.push(ms); },
     log: { info: (_o: unknown, m: string) => logs.push(`info:${m}`), warn: (_o: unknown, m: string) => logs.push(`warn:${m}`) },
     logs,
@@ -69,5 +71,52 @@ describe("parkUntilIntended", () => {
     const d = deps({ probeHolder: async () => ({ flavor: "unknown flavor", pid: 222 }) });
     await parkUntilIntended(d);
     expect(d.sleeps).toEqual([]);
+  });
+
+  // In dev mode the app bundle's rt hands off to the dev source, so BOTH
+  // launchd jobs exec a dev-flavored daemon: daemonFlavor() reads "dev" on
+  // each, intent matches on each, and nothing below the gate stops them from
+  // SIGTERMing each other through the shared rt.pid forever (137 daemon
+  // instances in one day). The launching job's label is the only signal that
+  // separates them.
+  test("launched by the inactive flavor's job: parks even though the build flavor matches intent", async () => {
+    let reads = 0;
+    const d = deps({
+      myLaunchdLabel: () => "com.mattstack.daemon",
+      activeLaunchdLabel: () =>
+        ++reads < 2 ? "com.mattstack.daemon.dev" : "com.mattstack.daemon",
+    });
+    await parkUntilIntended(d);
+    expect(d.sleeps.length).toBe(1);
+    expect(d.logs.some((l) => l.includes("wrong launchd job"))).toBe(true);
+  });
+
+  test("launched by the active flavor's job returns immediately", async () => {
+    const d = deps({
+      myLaunchdLabel: () => "com.mattstack.daemon.dev",
+      activeLaunchdLabel: () => "com.mattstack.daemon.dev",
+    });
+    await parkUntilIntended(d);
+    expect(d.sleeps).toEqual([]);
+  });
+
+  test("not launchd-launched (foreground run, e2e) is unaffected by the label gate", async () => {
+    const d = deps({
+      myLaunchdLabel: () => null,
+      activeLaunchdLabel: () => "com.mattstack.daemon.dev",
+    });
+    await parkUntilIntended(d);
+    expect(d.sleeps).toEqual([]);
+  });
+
+  test("a label park ends the moment the mode flips to name this job active", async () => {
+    let reads = 0;
+    const d = deps({
+      myLaunchdLabel: () => "com.mattstack.daemon",
+      activeLaunchdLabel: () =>
+        ++reads < 3 ? "com.mattstack.daemon.dev" : "com.mattstack.daemon",
+    });
+    await parkUntilIntended(d);
+    expect(d.sleeps.length).toBe(2);
   });
 });

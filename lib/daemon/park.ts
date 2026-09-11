@@ -32,6 +32,24 @@ export interface ParkDeps {
   probeHolder: () => Promise<SocketHolder | null>;
   sleep: (ms: number) => Promise<void>;
   log: { info: (o: unknown, m: string) => void; warn: (o: unknown, m: string) => void };
+  /** The mattstack daemon label of the launchd job that started this process,
+      or null when launchd did not start it (foreground `rt daemon`, e2e). */
+  myLaunchdLabel: () => string | null;
+  /** The label the CURRENT mode says should be serving. Read inside the loop,
+      never cached, so flipping dev-mode releases a parked daemon. */
+  activeLaunchdLabel: () => string;
+}
+
+/**
+ * The label of the launchd job that started us, or null if launchd did not.
+ * launchd sets XPC_SERVICE_NAME to the job label; anything that is not one of
+ * our two daemon labels (a login shell's "0", an unrelated agent, unset) is
+ * null, so every non-launchd path falls through the gate untouched.
+ */
+export function launchdLabelFromEnv(env: Record<string, string | undefined> = process.env): string | null {
+  const label = env.XPC_SERVICE_NAME;
+  if (label !== "com.mattstack.daemon" && label !== "com.mattstack.daemon.dev") return null;
+  return label;
 }
 
 const PARK_INTERVAL_MS = 30_000;
@@ -40,8 +58,29 @@ export async function parkUntilIntended(deps: ParkDeps): Promise<void> {
   let intent: IntendedMode = { mode: deps.myFlavor, provenance: "derived-from-wrapper" };
   let announcedPark = false;
   let announcedStandoff = false;
+  let announcedWrongJob = false;
 
   for (;;) {
+    // Job label before build flavor: in dev mode the bundle's rt hands off to
+    // the dev source, so the prod job also produces a dev-flavored daemon and
+    // daemonFlavor() cannot tell the two jobs apart. Both would then clear the
+    // intent check below and evict each other through the shared rt.pid.
+    const myLabel = deps.myLaunchdLabel();
+    if (myLabel !== null) {
+      const activeLabel = deps.activeLaunchdLabel();
+      if (myLabel !== activeLabel) {
+        if (!announcedWrongJob) {
+          deps.log.info(
+            { myLabel, activeLabel },
+            `parked: started by the wrong launchd job (${myLabel}); ${activeLabel} is the active one — rechecking every ${PARK_INTERVAL_MS / 1000}s`,
+          );
+          announcedWrongJob = true;
+        }
+        await deps.sleep(PARK_INTERVAL_MS);
+        continue;
+      }
+    }
+
     try {
       intent = deps.resolveIntent();
     } catch (err) {
