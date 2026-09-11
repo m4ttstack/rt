@@ -44,6 +44,7 @@ import type { EventsBus } from "./events-bus.ts";
 import type { GatesStore } from "./gates-store.ts";
 import type { HerdStore } from "./herd-store.ts";
 import type { GatePush } from "./gate-push.ts";
+import type { Reconciler } from "./reconciler.ts";
 import type { HomeSnapshotHandle } from "./home-snapshot.ts";
 import type { TeamSnapshotsHandle } from "./team-snapshots.ts";
 import type { BgService } from "./bg-service.ts";
@@ -68,6 +69,13 @@ export function buildRoutedHandlers(opts: {
   gatesStore: GatesStore;
   /** Pane push + subscription fan-out for gate:open/gate:answer (BOARD-20/21). */
   gatePush: GatePush;
+  /** Answer-time executor guarantee seams (spec "Answer-time executor
+      guarantee"): omitted, gate:answer's post-record side effects reduce to
+      push-only, as before Task 7. */
+  reconciler?: Pick<Reconciler, "executorFor" | "expect" | "clear" | "agentIdFor">;
+  /** The daemon's agent:resume verb, the same closure the reconciler itself
+      is given (lib/daemon.ts wires both from one function). */
+  resumeAgent?: (agentId: string) => Promise<{ ok: boolean; error?: string }>;
   /** Herd registry backing herd:* (one row per shepherd run and worker job). */
   herdStore: HerdStore;
   /** Herdr lifecycle-stream liveness the shepherd's status reads. */
@@ -131,6 +139,8 @@ export function buildRoutedHandlers(opts: {
     log: ctx.log,
     runSpawnedBy: (runId) => findRun(runId)?.run.spawned_by ?? null,
     herdShepherd: (herdId) => opts.herdStore.get(herdId)?.shepherdSession ?? null,
+    reconciler: opts.reconciler,
+    resumeAgent: opts.resumeAgent,
   });
   const herdHandlers = createHerdHandlers({
     store: opts.herdStore,

@@ -318,6 +318,19 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
   let discussionsPoller: ReturnType<typeof createDiscussionsPoller> | null = null;
   let freshnessInitTimer: ReturnType<typeof setTimeout> | null = null;
 
+  // Shared by the reconciler's own dep (phase 4, "events-db") and the gate
+  // handlers' answer-time executor guarantee (phase 7, "handlers"): both
+  // relaunch through the SAME agent:resume verb, one closure so they can
+  // never drift. routedHandlers (phase 7) is not built yet when phase 4
+  // runs, so this always reads it fresh at call time, never before the
+  // boot-delayed sweeps that are its only callers.
+  const resumeAgent = async (agentId: string): Promise<{ ok: boolean; error?: string }> => {
+    const handlers = routedHandlers;
+    if (!handlers) return { ok: false, error: "daemon handlers not ready yet" };
+    const res = await handlers["agent:resume"]!({ id: agentId }) as CommandResult<"agent:resume">;
+    return res.ok ? { ok: true } : { ok: false, error: res.error };
+  };
+
   const sweepHandles: Array<{ stop(): void }> = [];
   // Shared with buildRoutedHandlers (phase 7) below, so the delivery sweep
   // (phase 6) and a normal chat:post/chat:dm push serialize through the
@@ -623,22 +636,7 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
             emit("event", { id: eventId, topic, payload, emittedAt });
           },
           injectEscape: createEscapeInjector(),
-          // routedHandlers (phase 7) is not built yet at this point in boot;
-          // the sweep never calls resumeAgent before phase 7 completes
-          // (sweeps start no sooner than the boot-delay in phase 6), so this
-          // indirection only ever reads a populated routedHandlers.
-          resumeAgent: async (agentId) => {
-            // Local const, not the captured `let`: TS drops narrowing on an
-            // outer-scope `let` across an `await` inside a closure.
-            const handlers = routedHandlers;
-            if (!handlers) return { ok: false, error: "daemon handlers not ready yet" };
-            // buildRoutedHandlers's inferred return type loses "agent:resume"'s
-            // precise result shape through the object-spread merge; recover
-            // it with the same CommandResult<K> the handler is declared to
-            // return (handlers/types.ts).
-            const res = await handlers["agent:resume"]!({ id: agentId }) as CommandResult<"agent:resume">;
-            return res.ok ? { ok: true } : { ok: false, error: res.error };
-          },
+          resumeAgent,
           log,
         });
         setPhase("events-db");
@@ -967,6 +965,8 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
           eventsBus,
           gatesStore,
           gatePush,
+          reconciler,
+          resumeAgent,
           herdStore,
           // The lifecycle is built from this router's own gate/chat handlers,
           // so it cannot exist yet; the holder delegates once it does.

@@ -23,6 +23,19 @@ import { deliverToInbox, wrapCrossSession } from "./inbox.ts";
 import type { GateRow, GateSubscription, GatesStore } from "./gates-store.ts";
 import { GATE_BY_PANE } from "./gates-store.ts";
 import type { EscapeInjector } from "./gate-escape.ts";
+import type { PaneHints } from "./pane-resolve-live.ts";
+
+/** Shared hint-construction for the Escape injector here and for the
+    answer-time executor guarantee (handlers/gate.ts): origin.paneId wins
+    over the top-level pane column, matching sameOpenerPane's own
+    precedence. */
+export function gateHints(row: Pick<GateRow, "origin" | "pane" | "nudge">): PaneHints {
+  return {
+    paneId: row.origin?.paneId || row.pane || undefined,
+    sessionId: row.nudge?.session,
+    worktree: row.origin?.worktree,
+  };
+}
 
 export const GATE_ANSWERED_PHRASE = (id: string) =>
   `[gate] ${id} answered elsewhere; re-read the registry and proceed on the recorded answer.`;
@@ -117,11 +130,7 @@ export function createGatePush(opts: {
     if (!ok || !opts.injectEscape) return;
     if (row.origin?.presentation !== "form") return;
     if (row.answer?.by === GATE_BY_PANE) return;
-    const hints = {
-      paneId: row.origin?.paneId || row.pane || undefined,
-      sessionId,
-      worktree: row.origin?.worktree,
-    };
+    const hints = gateHints(row);
     const injected = await opts.injectEscape(hints);
     if (injected.ok) {
       log.debug({ gateId: row.id, paneRef: injected.paneRef }, "gate-push: escape injected");
