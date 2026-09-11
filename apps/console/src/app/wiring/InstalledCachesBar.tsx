@@ -9,6 +9,7 @@ import {
 import type { MantineColor } from '@mattstack/app-kit/core';
 import { useSchemeColors } from '@mattstack/app-kit/hooks';
 import { Icons } from '@mattstack/app-kit/icons';
+import { modals } from '@mattstack/app-kit/modals';
 
 import { SOFT_RULE } from './SlotRow';
 import {
@@ -168,7 +169,14 @@ export function InstalledCachesBar({
         ) : (
           <UnstyledButton
             type="button"
-            onClick={() => sync.mutate()}
+            onClick={() =>
+              modals.confirm({
+                title: `Sync ${pack}?`,
+                message: `Pulls the engine and pack checkouts, and may bump, compile, commit, push, and update the installed plugins for ${pack}. Refuses safely on dirty trees or content drift.`,
+                labels: { confirm: 'Run sync', cancel: 'Cancel' },
+                onConfirm: () => sync.mutate(),
+              })
+            }
             disabled={sync.isPending}
             data-testid="installed-caches-sync"
             style={{
