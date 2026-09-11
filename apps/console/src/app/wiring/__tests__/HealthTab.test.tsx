@@ -1,6 +1,6 @@
 import { renderWithProviders } from '@mattstack/app-kit/test-utils';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { screen } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -349,6 +349,11 @@ describe('HealthTab: installed caches bar', () => {
     renderHealthTab(undefined, ALL_IN_SYNC_COMPOSITION, LAG_CHECK);
 
     await user.click(await screen.findByTestId('installed-caches-sync'));
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', {
+        name: 'Run sync',
+      })
+    );
 
     expect(syncPost).toHaveBeenCalledWith({ json: { pack: 'demo' } });
     const steps = await screen.findByTestId('installed-caches-steps');
@@ -384,11 +389,34 @@ describe('HealthTab: installed caches bar', () => {
     });
 
     await user.click(await screen.findByTestId('installed-caches-sync'));
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', {
+        name: 'Run sync',
+      })
+    );
 
     const bar = await screen.findByTestId('installed-caches-bar');
     await screen.findByTestId('installed-caches-steps');
     expect(bar).toHaveTextContent('matches source');
     expect(bar).not.toHaveTextContent('installed to');
+  });
+
+  it('sync asks for confirmation first; cancel never posts', async () => {
+    const user = userEvent.setup();
+    renderHealthTab(undefined, ALL_IN_SYNC_COMPOSITION, LAG_CHECK);
+
+    await user.click(await screen.findByTestId('installed-caches-sync'));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveTextContent('Sync demo?');
+    expect(syncPost).not.toHaveBeenCalled();
+
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+    expect(syncPost).not.toHaveBeenCalled();
+    expect(
+      screen.queryByTestId('installed-caches-steps')
+    ).not.toBeInTheDocument();
   });
 
   it('a refusal report renders its refused step detail verbatim', async () => {
@@ -415,6 +443,11 @@ describe('HealthTab: installed caches bar', () => {
     });
 
     await user.click(await screen.findByTestId('installed-caches-sync'));
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', {
+        name: 'Run sync',
+      })
+    );
 
     const refusal = await screen.findByTestId('installed-caches-refusal');
     expect(refusal).toHaveTextContent('content drift survives recompile');
