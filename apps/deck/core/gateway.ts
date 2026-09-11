@@ -1,7 +1,7 @@
 import type { Server } from 'bun';
 
 import { getPlatformSettings } from '../src/api/platform-settings.ts';
-import { bareName, dedupeRoutes, readRoutes } from './discover.ts';
+import { bareName, dedupeRoutes, MATTSTACK_TLD, readRoutes } from './discover.ts';
 import {
   pageLogin,
   pageNothingHere,
@@ -90,12 +90,20 @@ export function decide(input: {
 // --- runtime-only state below (not exercised by the pure tests) ---
 
 let routes = new Map<string, number>();
+let mattstackApps = new Set<string>();
 function loadRoutes(): void {
   const map = new Map<string, number>();
+  const managed = new Set<string>();
   const tlds = getPlatformSettings().tlds;
-  for (const r of dedupeRoutes(readRoutes(), tlds))
+  const raw = readRoutes();
+  for (const r of raw) {
+    if (r.hostname.endsWith(`.${MATTSTACK_TLD}`))
+      managed.add(bareName(r.hostname, tlds));
+  }
+  for (const r of dedupeRoutes(raw, tlds))
     map.set(bareName(r.hostname, tlds), r.port);
   routes = map;
+  mattstackApps = managed;
 }
 
 const attempts = new Map<string, { count: number; until: number }>();
@@ -241,6 +249,13 @@ export function startGateway(port = 7950): Server<WsProxyData> {
         getPlatformSettings().publicDomain,
         getPlatformSettings().tlds
       );
+      // Redirect <name>.localhost → <name>.mattstack for mattstack-managed apps.
+      const rawHost = host.replace(/:\d+$/, '');
+      if (rawHost.endsWith('.localhost') && mattstackApps.has(app)) {
+        const target = `https://${app}.${MATTSTACK_TLD}${url.pathname}${url.search}`;
+        return new Response(null, { status: 302, headers: { location: target } });
+      }
+
       const ip =
         req.headers.get('cf-connecting-ip') ??
         server.requestIP(req)?.address ??
