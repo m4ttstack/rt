@@ -331,10 +331,23 @@ async function reconcilePass(deps: ReconcileDeps, attempt: number): Promise<Pass
 
   // (c) ground-truth branch sync for every registered tree git still knows
   // about. kind/state/owner are never touched here.
+  //
+  // Activity tracking (RT-129) rides the same pass: a HEAD move since the
+  // last-seen sha means a commit, rebase, or amend landed since someone last
+  // looked, which is exactly the "still being worked on" signal the
+  // stale-claim sweep needs and `claimedAt` (stamped once at provision) can't
+  // give it. The first sighting of a tree (no prior lastSeenHeadSha) only
+  // baselines the sha... it is not itself activity, or every freshly claimed
+  // tree would start with a bumped lastActiveAt for free.
   for (const rec of trees) {
     const entry = gitByCanon.get(canon(rec.path));
     if (entry && rec.branch !== entry.branch) {
       rec.branch = entry.branch;
+      changed = true;
+    }
+    if (entry?.headSha && entry.headSha !== rec.lastSeenHeadSha) {
+      if (rec.lastSeenHeadSha) rec.lastActiveAt = new Date().toISOString();
+      rec.lastSeenHeadSha = entry.headSha;
       changed = true;
     }
   }
