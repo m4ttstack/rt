@@ -246,6 +246,7 @@ export class SystemProcessScanner {
   private lastResult: SystemProcess[] = [];
   private config: Required<ScannerConfig>;
   private lastScanAt: number | null = null;
+  private refreshInFlight: Promise<SystemProcess[]> | null = null;
 
   constructor(config: ScannerConfig = {}) {
     const storeConfig = loadRunawayConfig();
@@ -347,7 +348,19 @@ export class SystemProcessScanner {
    * full `scan`, so badges persist but faster polling can't trip a premature
    * alert. Also advances `lastScanAt` so freshness checks see the update.
    */
-  async refresh(portEntries: PortEntry[] = []): Promise<SystemProcess[]> {
+  refresh(portEntries: PortEntry[] = []): Promise<SystemProcess[]> {
+    // One gather serves every caller queued behind it (RT-128): tray polls
+    // outpace a gather on a machine whose spawns are slow, and a per-caller
+    // gather multiplies the fan-out (git worktree list per repo + lsof)
+    // that made the first one slow. Late callers ride the running gather's
+    // port entries; ports only decorate rows and refresh again in 1.5s.
+    this.refreshInFlight ??= this.refreshOnce(portEntries).finally(() => {
+      this.refreshInFlight = null;
+    });
+    return this.refreshInFlight;
+  }
+
+  private async refreshOnce(portEntries: PortEntry[]): Promise<SystemProcess[]> {
     const gathered = await this.gather(portEntries);
     if (gathered === null) return this.lastResult; // failed tick: preserve tracked/lastResult/lastScanAt
     try {

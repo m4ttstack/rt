@@ -38,10 +38,12 @@ export interface HeldReadyLaddersOpts {
 }
 
 let cache: { at: number; value: ReadyHeldRepo[] } | null = null;
+let inFlight: Promise<ReadyHeldRepo[]> | null = null;
 
 /** Test-only: drop the memo so a test can force recomputation. */
 export function resetHeldReadyLaddersCache(): void {
   cache = null;
+  inFlight = null;
 }
 
 /**
@@ -115,7 +117,7 @@ async function compute(repoIndex: Record<string, string>): Promise<ReadyHeldRepo
  * Repos whose team-authored `ready` ladder is held pending approval, with the
  * hash `rt worktree ready-approve` would pin. Empty when nothing is held.
  */
-export async function heldReadyLadders(
+export function heldReadyLadders(
   repoIndex: Record<string, string>,
   opts: HeldReadyLaddersOpts = {},
 ): Promise<ReadyHeldRepo[]> {
@@ -123,9 +125,19 @@ export async function heldReadyLadders(
   const ttlMs = opts.ttlMs ?? DEFAULT_TTL_MS;
   const at = now();
 
-  if (cache && at - cache.at < ttlMs) return cache.value;
+  if (cache && at - cache.at < ttlMs) return Promise.resolve(cache.value);
 
-  const value = await compute(repoIndex);
-  cache = { at, value };
-  return value;
+  // One compute serves every caller queued behind it (RT-128): on a machine
+  // whose spawns are slow, tray polls outpace the compute, and a per-caller
+  // compute multiplies the very fan-out that made the first one slow. The
+  // shared promise is returned as-is so overlap is observable.
+  inFlight ??= compute(repoIndex)
+    .then((value) => {
+      cache = { at, value };
+      return value;
+    })
+    .finally(() => {
+      inFlight = null;
+    });
+  return inFlight;
 }
