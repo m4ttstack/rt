@@ -237,14 +237,20 @@ export function buildUserEvidence(
     parts.push(`${c.issues.teamExcluded} excluded by team`);
   if (c.issues.stateExcluded > 0)
     parts.push(`${c.issues.stateExcluded} excluded by state`);
+  if (c.issues.windowExcluded > 0)
+    parts.push(`${c.issues.windowExcluded} outside window`);
   out.issuesCompleted = {
-    columns: ['Issue', 'Title', 'State', 'MR(s)'],
+    columns: ['Issue', 'Title', 'State', 'Closed', 'MR(s)'],
     rows: counted.map(i => ({
       cells: [
         i.identifier,
         i.title,
         i.stateName ?? i.stateType ?? '—',
-        i.linkedMrs.map(m => `!${m.iid}`).join(', ') || '—',
+        day(i.closedAt),
+        i.linkedMrs
+          .filter(m => m.via !== 'mention')
+          .map(m => `!${m.iid}`)
+          .join(', ') || '—',
       ],
       href: i.url,
     })),

@@ -133,6 +133,45 @@ describe('issuesCompleted drops gated-out issues from the rows', () => {
   });
 });
 
+describe('issuesCompleted shows the closed date and non-mention links only', () => {
+  const fetchedWithIssues: FetchResult = {
+    ...FETCH,
+    linearIssues: [
+      ...(FETCH.linearIssues ?? []),
+      {
+        id: 'ENG-10',
+        identifier: 'ENG-10',
+        title: 'Issue ENG-10',
+        url: 'https://linear.app/acme/issue/ENG-10',
+        creditedUser: 'alice',
+        linkedMrs: [
+          { iid: 100, projectPath: 'org/app', via: 'closing' },
+          { iid: 200, projectPath: 'org/app', via: 'mention' },
+        ],
+        closedAt: '2026-05-15T00:00:00.000Z',
+        stateType: 'completed',
+        stateName: 'Done',
+      },
+    ],
+  };
+
+  it('issue evidence shows the closed date and ignores mention-only links in the MR column', () => {
+    const ev = buildUserEvidence(fetchedWithIssues, 'alice', CTX);
+    const issues = ev.issuesCompleted!;
+    expect(issues.columns).toEqual([
+      'Issue',
+      'Title',
+      'State',
+      'Closed',
+      'MR(s)',
+    ]);
+    const row = issues.rows.find(r => r.cells[0] === 'ENG-10')!;
+    expect(row.cells[3]).toBe('2026-05-15');
+    expect(row.cells[4]).not.toContain('!200'); // 200 is the mention-only link
+    expect(row.cells[4]).toContain('!100');
+  });
+});
+
 describe('evidence row ordering', () => {
   it('MR tables sort by MR number, highest first', () => {
     expect(ev.mrsMerged!.rows.map(r => r.cells[0])).toEqual(['!2', '!1']);
