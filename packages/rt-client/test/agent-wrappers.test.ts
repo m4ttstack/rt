@@ -31,3 +31,18 @@ test("agentResume forwards workspace and tab", async () => {
   const seen = fake.seen.find((s) => s.cmd === "agent:resume");
   expect(seen?.payload).toMatchObject({ id: "ag-1", prompt: "go", workspace: "reviews", tab: "⟲ !5" });
 });
+
+// Pins the allowlist in agentStart's forwarding loop: a field left out there
+// is silently dropped before it ever reaches the daemon, no matter what the
+// Commands payload type declares.
+test("agentStart forwards subject", async () => {
+  const fake = fakeDaemon({ "agent:start": { ok: true, data: { id: "ag-1" } } });
+  const res = await agentStart(
+    { repo: "remote:example.com%2Fa%2Fb", cwd: "/tmp/x", prompt: "hi", subject: "mr:https://example.com/mr/1" },
+    { sockPath: fake.sock },
+  );
+  fake.stop();
+  expect(res.ok).toBe(true);
+  const seen = fake.seen.find((s) => s.cmd === "agent:start");
+  expect(seen?.payload).toMatchObject({ subject: "mr:https://example.com/mr/1" });
+});
