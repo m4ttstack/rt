@@ -7,9 +7,10 @@
  * docs/superpowers/specs/2026-09-11-executor-reconciler-design.md,
  * "Reconciler sweep" and "Attention gates".
  *
- * Expectation CHECKING (retry/stuck handling for in-flight Escape/resume
- * sends) is Task 6's job; this module only declares the type and queues
- * what `expect()` is given.
+ * Expectation checking (retry/stuck handling for in-flight Escape/resume
+ * sends) runs at the end of every sweep, against the same fresh snapshot
+ * used for transition handling. See docs/superpowers/specs/
+ * 2026-09-11-executor-reconciler-design.md, "Expectations".
  */
 
 import type { Logger } from "pino";
@@ -37,17 +38,28 @@ const CONTEXT_CAP_BYTES = 8192;
 
 export interface Expectation {
   gateId: string;
-  agentId: string;
+  agentId?: string;
+  hints: PaneHints;
   expect: "leave-blocked" | "appear-live";
-  deadlineAt: number;
+  /** Decremented per sweep; reset to its own starting value on a
+      leave-blocked retry (not a fixed default) so a caller who passes a
+      non-default deadline keeps that cadence across retries. */
+  deadlineSweeps: number;
   retriesLeft: number;
+}
+
+/** The queue's internal shape: `initialDeadlineSweeps` is what "reset the
+    deadline" resets to, captured once at `expect()` time since the public
+    `Expectation` type carries only the live, decrementing countdown. */
+interface PendingExpectation extends Expectation {
+  readonly initialDeadlineSweeps: number;
 }
 
 export interface Reconciler {
   sweep(): Promise<void>;
   status(): ReconcilerStatus;
-  /** Queues an expectation for Task 6's sweep-time check hook; this task
-      never inspects or resolves the queue itself. */
+  /** Queues an expectation for checking at the end of every subsequent
+      sweep, against a freshly resolved pane. */
   expect(e: Expectation): void;
   clear(agentId: string): void;
   executorFor(hints: PaneHints): { state: ExecutorState; pane: LivePane | null };
@@ -93,7 +105,7 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
   const pendingBlocked = new Map<string, number>();
   const pendingGone = new Map<string, number>();
   const attentionGateByAgent = new Map<string, string>();
-  const expectations: Expectation[] = [];
+  const expectations: PendingExpectation[] = [];
   let lastPanes: LivePane[] | null = null;
   let lastStatus: ReconcilerStatus = { sweptAt: 0, herdrReachable: false, executors: [] };
 
@@ -171,6 +183,65 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
     }
   }
 
+  /** Checks each pending expectation against `panes` and resolves, retries,
+      or drops it. `panes === null` (herdr unreachable) is a no-op for the
+      whole queue: an unknown read proves nothing about pane state, so a
+      sweep that can't reach herdr must not consume anyone's deadline
+      (spec "Expectations"; controller ruling). */
+  async function checkExpectations(panes: LivePane[] | null): Promise<void> {
+    if (panes === null) return;
+
+    const remaining: PendingExpectation[] = [];
+    for (const pe of expectations) {
+      const pane = resolveLivePane(pe.hints, panes);
+      const paneLive = pane !== null && pane.agentStatus !== "blocked";
+
+      if (pe.expect === "leave-blocked") {
+        if (paneLive) {
+          deps.store.markDelivery(pe.gateId, "confirmed");
+          deps.emit("reconciler.delivery", { gateId: pe.gateId, outcome: "confirmed" });
+          continue;
+        }
+        const deadlineSweeps = pe.deadlineSweeps - 1;
+        if (deadlineSweeps > 0) {
+          remaining.push({ ...pe, deadlineSweeps });
+          continue;
+        }
+        if (pe.retriesLeft > 0) {
+          const res = await deps.injectEscape(pe.hints);
+          if (!res.ok) {
+            log.warn(
+              { gateId: pe.gateId, err: res.error },
+              "reconciler: expectation retry escape inject failed",
+            );
+          }
+          remaining.push({ ...pe, deadlineSweeps: pe.initialDeadlineSweeps, retriesLeft: pe.retriesLeft - 1 });
+          continue;
+        }
+        deps.store.markDelivery(pe.gateId, "stuck");
+        deps.emit("reconciler.delivery", { gateId: pe.gateId, outcome: "stuck" });
+        continue;
+      }
+
+      // appear-live
+      if (paneLive) {
+        deps.store.markExecution(pe.gateId, null);
+        deps.emit("reconciler.execution", { gateId: pe.gateId, execution: null });
+        continue;
+      }
+      const deadlineSweeps = pe.deadlineSweeps - 1;
+      if (deadlineSweeps > 0) {
+        remaining.push({ ...pe, deadlineSweeps });
+        continue;
+      }
+      deps.store.markExecution(pe.gateId, "unassigned");
+      deps.emit("reconciler.execution", { gateId: pe.gateId, execution: "unassigned" });
+    }
+
+    expectations.length = 0;
+    expectations.push(...remaining);
+  }
+
   async function sweep(): Promise<void> {
     const panes = await deps.snapshot();
     lastPanes = panes;
@@ -245,6 +316,8 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
       }
     }
 
+    await checkExpectations(panes);
+
     lastStatus = { sweptAt: now, herdrReachable, executors: view };
   }
 
@@ -277,7 +350,7 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
     sweep,
     status: () => lastStatus,
     expect(e) {
-      expectations.push(e);
+      expectations.push({ ...e, initialDeadlineSweeps: e.deadlineSweeps });
     },
     clear,
     executorFor,
