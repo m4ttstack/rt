@@ -49,6 +49,13 @@ export interface ReviewState {
       live event fires again. `released` can never stand in for this: it
       stays false forever for the board's unattended gates. */
   resumedGateId?: string;
+  /** Stamp of the last operator reopen of a finished pane ("resume review"),
+      written with the SAME clock value the write's updatedAt gets. While
+      reopenedAt >= updatedAt the done+tabId shape is a deliberately reopened
+      pane, so the gate sweep's close-missed-done must not fire on it; any
+      later write bumps updatedAt past it and the exemption lapses on its
+      own -- nothing ever clears this field. */
+  reopenedAt?: number;
   startedAt: number;
   updatedAt: number;
   /** Whether the agent has written its full review markdown yet. Computed at
@@ -108,6 +115,7 @@ export function writeReviewState(
     gateId: patch.gateId,
     gateKind: patch.gateKind,
     resumedGateId: patch.resumedGateId,
+    reopenedAt: patch.reopenedAt,
     startedAt: now,
     updatedAt: now,
   };

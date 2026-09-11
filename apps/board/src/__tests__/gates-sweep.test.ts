@@ -233,6 +233,85 @@ describe('planSweep', () => {
     expect(actions).toEqual([]);
   });
 
+  test('a reopened done review (reopenedAt = updatedAt) is exempt from close-missed-done', () => {
+    const s = states({
+      reviews: new Map([
+        [
+          MR_URL,
+          baseReview({
+            status: 'done',
+            tabId: 'tab-2',
+            updatedAt: NOW - 500,
+            reopenedAt: NOW - 500,
+          }),
+        ],
+      ]),
+    });
+    const actions = planSweep([], s, NOW, GRACE_MS);
+    expect(actions).toEqual([]);
+  });
+
+  test('a reopen exemption lapses once a later write bumps updatedAt past reopenedAt', () => {
+    const s = states({
+      reviews: new Map([
+        [
+          MR_URL,
+          baseReview({
+            status: 'done',
+            tabId: 'tab-2',
+            updatedAt: NOW - 500,
+            reopenedAt: NOW - 900,
+          }),
+        ],
+      ]),
+    });
+    const actions = planSweep([], s, NOW, GRACE_MS);
+    expect(actions).toEqual([
+      {
+        kind: 'close-missed-done',
+        domain: 'review',
+        mrUrl: MR_URL,
+        tabId: 'tab-2',
+      },
+    ]);
+  });
+
+  test('a reopened done respond is exempt from close-missed-done', () => {
+    const s = states({
+      responds: new Map([
+        [
+          MR_URL,
+          baseRespond({
+            status: 'done',
+            tabId: 'respond-tab',
+            updatedAt: NOW - 500,
+            reopenedAt: NOW - 500,
+          }),
+        ],
+      ]),
+    });
+    const actions = planSweep([], s, NOW, GRACE_MS);
+    expect(actions).toEqual([]);
+  });
+
+  test('a reopened done doctor is exempt from close-missed-done', () => {
+    const s = states({
+      doctors: new Map([
+        [
+          MR_URL,
+          baseDoctor({
+            status: 'done',
+            tabId: 'doctor-tab',
+            updatedAt: NOW - 500,
+            reopenedAt: NOW - 500,
+          }),
+        ],
+      ]),
+    });
+    const actions = planSweep([], s, NOW, GRACE_MS);
+    expect(actions).toEqual([]);
+  });
+
   test('a non-done review with a tabId is untouched', () => {
     const s = states({
       reviews: new Map([

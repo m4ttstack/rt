@@ -29,6 +29,13 @@ export interface GateSweepStates {
 
 const MR_SUBJECT_PREFIX = 'mr:';
 
+function reopenedSinceLastWrite(state: {
+  reopenedAt?: number;
+  updatedAt: number;
+}): boolean {
+  return state.reopenedAt !== undefined && state.reopenedAt >= state.updatedAt;
+}
+
 function tabIdFor(
   domain: GateDomain,
   mrUrl: string,
@@ -60,6 +67,10 @@ function tabIdFor(
  *   done review's missed close fires even while a respond gate is open on
  *   the same MR. Executing the action clears `tabId` from that domain's
  *   state, so the same MR never re-fires this action for that domain.
+ *   Exemption: a state whose `reopenedAt` is >= its `updatedAt` is a pane
+ *   an operator deliberately reopened (the resume write stamps both with
+ *   one clock value) -- done+tabId there is not a missed close, so it is
+ *   skipped until some later write bumps `updatedAt` past the reopen.
  */
 export function planSweep(
   rows: GateRow[],
@@ -111,6 +122,7 @@ export function planSweep(
   for (const [mrUrl, review] of states.reviews) {
     if (review.status !== 'done' || !review.tabId) continue;
     if (openByDomain.review.has(mrUrl)) continue;
+    if (reopenedSinceLastWrite(review)) continue;
     actions.push({
       kind: 'close-missed-done',
       domain: 'review',
@@ -121,6 +133,7 @@ export function planSweep(
   for (const [mrUrl, respond] of states.responds) {
     if (respond.status !== 'done' || !respond.tabId) continue;
     if (openByDomain.respond.has(mrUrl)) continue;
+    if (reopenedSinceLastWrite(respond)) continue;
     actions.push({
       kind: 'close-missed-done',
       domain: 'respond',
@@ -131,6 +144,7 @@ export function planSweep(
   for (const [mrUrl, doctor] of states.doctors) {
     if (doctor.status !== 'done' || !doctor.tabId) continue;
     if (openByDomain.doctor.has(mrUrl)) continue;
+    if (reopenedSinceLastWrite(doctor)) continue;
     actions.push({
       kind: 'close-missed-done',
       domain: 'doctor',

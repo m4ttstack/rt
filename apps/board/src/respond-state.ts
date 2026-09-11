@@ -49,6 +49,10 @@ export interface RespondState {
   /** Id of the gate the board has already resumed a parked-then-answered
       session for -- the exactly-once dedup marker (see gates/resume.ts). */
   resumedGateId?: string;
+  /** Stamp of the last operator reopen of a finished pane, written with the
+      SAME clock value the write's updatedAt gets. See ReviewState's own
+      reopenedAt for the sweep-exemption contract, which this mirrors. */
+  reopenedAt?: number;
   startedAt: number;
   updatedAt: number;
   /** Whether the fill has written its adjudication (verdict table + drafted
@@ -107,6 +111,7 @@ export function writeRespondState(
     gateId: patch.gateId,
     gateKind: patch.gateKind,
     resumedGateId: patch.resumedGateId,
+    reopenedAt: patch.reopenedAt,
     startedAt: now,
     updatedAt: now,
   };

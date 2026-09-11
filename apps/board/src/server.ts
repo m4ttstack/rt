@@ -181,6 +181,7 @@ import {
   type PeerReviewState,
 } from './peer/peer-reviews.ts';
 import { makePeering } from './peer/runtime.ts';
+import { launchReopen, type ReopenIo } from './reopen-launch.ts';
 import {
   attachResponds,
   parseRespondRequestBody,
@@ -1288,68 +1289,31 @@ const httpServer = Bun.serve({
           });
         }
         if (resume) {
-          const statePath = reviewFilePath(parsed.mrUrl);
+          if (!existing?.agentId && !existing?.sessionId)
+            return new Response('no session id on file for this review', {
+              status: 400,
+            });
           // A plain reopen (no --re-review) stays promptless and interactive --
           // it must NEVER carry the re-review slash command (that belongs only
           // to the /review re-review flow above). An operator note, if any, is
           // the only thing sent as the first message.
-          const prompt = reopenPrompt(note);
-          if (existing?.agentId) {
-            void resumeAgentPane({
-              agentId: existing.agentId,
-              prompt,
+          void launchReopen(
+            existing,
+            {
+              mrUrl: parsed.mrUrl,
+              iid: parsed.iid,
+              cwd: config.reviewCwd,
+              repo,
               workspaceLabel: config.reviewsWorkspace,
+              workspaceKind: 'review',
+              statePath: reviewFilePath(parsed.mrUrl),
+              prompt: reopenPrompt(note),
+              author,
               tabLabel: mrTabLabel(parsed.iid, author, '↺'),
-            })
-              .then(result => {
-                if (result.focusedExisting) return;
-                writeReviewState(statePath, {
-                  status: existing?.status ?? 'done',
-                  tabId: result.tabId,
-                  workspaceId: result.workspaceId,
-                  agentId: result.agentId,
-                  paneId: result.paneId,
-                });
-              })
-              .catch(err =>
-                console.error(
-                  `review resume failed: ${err instanceof Error ? err.message : err}`
-                )
-              );
-            return new Response(JSON.stringify({ ok: true, resumed: true }), {
-              headers: { 'content-type': 'application/json' },
-            });
-          }
-          const sessionId = existing?.sessionId;
-          if (!sessionId)
-            return new Response('no session id on file for this review', {
-              status: 400,
-            });
-          void launchLegacyResume({
-            mrUrl: parsed.mrUrl,
-            iid: parsed.iid,
-            cwd: config.reviewCwd,
-            repo,
-            workspaceLabel: config.reviewsWorkspace,
-            statePath,
-            sessionId,
-            workspaceKind: 'review',
-            author,
-            prompt,
-            claudeCommand: config.claudeCommand,
-          })
-            .then(({ tabId, workspaceId }) =>
-              writeReviewState(statePath, {
-                status: existing?.status ?? 'done',
-                tabId,
-                workspaceId,
-              })
-            )
-            .catch(err =>
-              console.error(
-                `review resume failed: ${err instanceof Error ? err.message : err}`
-              )
-            );
+              claudeCommand: config.claudeCommand,
+            },
+            reviewReopenIo()
+          );
           return new Response(JSON.stringify({ ok: true, resumed: true }), {
             headers: { 'content-type': 'application/json' },
           });
@@ -1464,66 +1428,29 @@ const httpServer = Bun.serve({
           parsed.mrUrl
         );
         if (resume) {
-          const statePath = respondFilePath(parsed.mrUrl);
-          // A plain reopen (no note) stays promptless and interactive -- same
-          // rule as the review resume above.
-          const prompt = reopenPrompt(note);
-          if (existing?.agentId) {
-            void resumeAgentPane({
-              agentId: existing.agentId,
-              prompt,
-              workspaceLabel: config.respondsWorkspace,
-              tabLabel: mrTabLabel(parsed.iid, author, '↺'),
-            })
-              .then(result => {
-                if (result.focusedExisting) return;
-                writeRespondState(statePath, {
-                  status: existing?.status ?? 'done',
-                  tabId: result.tabId,
-                  workspaceId: result.workspaceId,
-                  agentId: result.agentId,
-                  paneId: result.paneId,
-                });
-              })
-              .catch(err =>
-                console.error(
-                  `respond resume failed: ${err instanceof Error ? err.message : err}`
-                )
-              );
-            return new Response(JSON.stringify({ ok: true, resumed: true }), {
-              headers: { 'content-type': 'application/json' },
-            });
-          }
-          const sessionId = existing?.sessionId;
-          if (!sessionId)
+          if (!existing?.agentId && !existing?.sessionId)
             return new Response('no session id on file for this response', {
               status: 400,
             });
-          void launchLegacyResume({
-            mrUrl: parsed.mrUrl,
-            iid: parsed.iid,
-            cwd: cwd,
-            repo,
-            workspaceLabel: config.respondsWorkspace,
-            statePath,
-            sessionId,
-            workspaceKind: 'respond',
-            author,
-            prompt,
-            claudeCommand: config.claudeCommand,
-          })
-            .then(({ tabId, workspaceId }) =>
-              writeRespondState(statePath, {
-                status: existing?.status ?? 'done',
-                tabId,
-                workspaceId,
-              })
-            )
-            .catch(err =>
-              console.error(
-                `respond resume failed: ${err instanceof Error ? err.message : err}`
-              )
-            );
+          // A plain reopen (no note) stays promptless and interactive -- same
+          // rule as the review resume above.
+          void launchReopen(
+            existing,
+            {
+              mrUrl: parsed.mrUrl,
+              iid: parsed.iid,
+              cwd,
+              repo,
+              workspaceLabel: config.respondsWorkspace,
+              workspaceKind: 'respond',
+              statePath: respondFilePath(parsed.mrUrl),
+              prompt: reopenPrompt(note),
+              author,
+              tabLabel: mrTabLabel(parsed.iid, author, '↺'),
+              claudeCommand: config.claudeCommand,
+            },
+            respondReopenIo()
+          );
           return new Response(JSON.stringify({ ok: true, resumed: true }), {
             headers: { 'content-type': 'application/json' },
           });
@@ -2806,6 +2733,36 @@ function sweepActionIo(): ExecuteSweepActionIo {
     now: () => Date.now(),
     graceMinutes: config.gateGraceMinutes,
     log: message => console.log(message),
+    logError: message => console.error(message),
+  };
+}
+
+// Reopen io per domain (the operator "resume review/response" path), built
+// fresh per call for the same config-reassignment reason as sweepActionIo.
+function reviewReopenIo(): ReopenIo {
+  return {
+    resumeAgentPane,
+    launchLegacyResume,
+    writeState: (path, patch, now) =>
+      writeReviewState(
+        path,
+        patch as Partial<ReviewState> & { status: ReviewStatus },
+        now
+      ),
+    logError: message => console.error(message),
+  };
+}
+
+function respondReopenIo(): ReopenIo {
+  return {
+    resumeAgentPane,
+    launchLegacyResume,
+    writeState: (path, patch, now) =>
+      writeRespondState(
+        path,
+        patch as Partial<RespondState> & { status: RespondStatus },
+        now
+      ),
     logError: message => console.error(message),
   };
 }
