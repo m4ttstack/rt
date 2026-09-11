@@ -189,7 +189,7 @@ export interface NormLinearIssue {
 ```
 
 ```typescript
-// linear/raw-types.ts — RawIssue gains:
+// linear/raw-types.ts ... RawIssue gains:
 attachments: { nodes: { url: string; sourceType: string | null }[] } | null;
 ```
 
@@ -245,7 +245,7 @@ git commit -m "boxscore: rename assignedUser to creditedUser, add closedAt and l
 
 ---
 
-### Task 3: Store — sticky upsert, key lookup, all-rows read
+### Task 3: Store ... sticky upsert, key lookup, all-rows read
 
 **Files:**
 - Modify: `src/server/store/index.ts`
@@ -256,7 +256,7 @@ git commit -m "boxscore: rename assignedUser to creditedUser, add closedAt and l
   - `indexRowsByKeys(keys: readonly string[]): IndexRow[]` (Task 4 resolves attachment MR keys with it)
   - `allLinearIssues(): StoredLinearIssue[]` (Task 5's query layer reads it)
   - `upsertLinearIssues` sticky contract: an incoming row with `closedAt: null` never clears a stored row's non-null `closedAt`, `creditedUser`, or `linkedMrs`; an incoming row with non-null `closedAt` replaces all three.
-- Removes: `linearIssuesForMrKeys` (its only caller, `store/query.ts`, is rewritten in Task 5; leave `query.ts` compiling by switching it to `allLinearIssues()` filtered the same way it filters today — Task 5 then deletes the filter).
+- Removes: `linearIssuesForMrKeys` (its only caller, `store/query.ts`, is rewritten in Task 5; leave `query.ts` compiling by switching it to `allLinearIssues()` filtered the same way it filters today ... Task 5 then deletes the filter).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -397,7 +397,7 @@ git commit -m "boxscore: sticky linear-issue upsert, indexRowsByKeys, allLinearI
 
 ---
 
-### Task 4: Fetch — attachments, qualifying links, credit, closedAt
+### Task 4: Fetch ... attachments, qualifying links, credit, closedAt
 
 **Files:**
 - Modify: `src/server/linear/fetch.ts`, `src/server/linear/raw-types.ts` (if not finished in Task 2)
@@ -410,7 +410,7 @@ git commit -m "boxscore: sticky linear-issue upsert, indexRowsByKeys, allLinearI
 **Behavior to implement:**
 
 1. `FIELDS` gains `attachments(first: 50) { nodes { url sourceType } }`; `CHUNK_SIZE` becomes 25.
-2. For each verified issue: text links come from the existing `ticketMap` scan, but each carries `via: textRefGrade(mr, identifier)` (skip null grades — identifier extraction already guarantees a hit, but reverts downgrade). Attachment links come from `raw.attachments.nodes` where `sourceType === 'gitlab'`, parsed by `parseMrUrl`; resolve each key first against the scanned source MRs, then via `getStore().indexRowsByKeys`. A key found nowhere is dropped. An MR that is both attached and text-linked collapses to `via: 'attachment'`.
+2. For each verified issue: text links come from the existing `ticketMap` scan, but each carries `via: textRefGrade(mr, identifier)` (skip null grades ... identifier extraction already guarantees a hit, but reverts downgrade). Attachment links come from `raw.attachments.nodes` where `sourceType === 'gitlab'`, parsed by `parseMrUrl`; resolve each key first against the scanned source MRs, then via `getStore().indexRowsByKeys`. A key found nowhere is dropped. An MR that is both attached and text-linked collapses to `via: 'attachment'`.
 3. Qualifying merged MRs: merged, non-revert, `via: 'attachment'`; when the issue has zero attachment-grade links, merged non-revert `via: 'closing'` instead.
 4. `creditedUser`: earliest-merged qualifying MR, roster authors preferred (keep the existing `earliestMr` tiebreak helper); null when nothing qualifies. Delete the unmerged single-author fallback in `creditedAuthor`.
 5. `closedAt`: max `mergedAt` over qualifying merged MRs; null when none.
@@ -515,7 +515,7 @@ git commit -m "boxscore: grade linear links, credit and date issues from qualify
 
 ---
 
-### Task 5: Cohorts and query — closedAt windowing, ungated MRs merged
+### Task 5: Cohorts and query ... closedAt windowing, ungated MRs merged
 
 **Files:**
 - Modify: `src/server/metrics/cohorts.ts`, `src/server/store/query.ts`, `src/server/metrics/filters.ts`, `src/server/linear/ticket.ts` (delete `teamTicketRegex` if now unreferenced)
