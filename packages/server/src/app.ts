@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 
 import { daemonHealth } from '@mattstack/rt-client';
+import { canonicalHostRedirect } from './canonical-host';
 
 export interface CreateAppOptions {
   name: string;
@@ -17,6 +18,11 @@ export interface CreateAppOptions {
  */
 export function createApp({ name, version, routes }: CreateAppOptions): Hono {
   const app = new Hono()
+    .use(async (c, next) => {
+      const redirect = canonicalHostRedirect(c.req.raw);
+      if (redirect) return redirect;
+      await next();
+    })
     .get('/api/health', c => c.json({ ok: true, name, version }, 200))
     .get('/api/daemon', async c =>
       c.json(await daemonHealth({ sockPath: process.env.RT_SOCK_PATH }), 200)

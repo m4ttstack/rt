@@ -1,6 +1,7 @@
 import { readFileSync, watch } from 'fs';
 import { basename, dirname, join } from 'path';
 
+import { canonicalHostRedirect } from '@mattstack/app-server/canonical-host';
 import {
   deckAppUrl,
   ensureEventBridgeRule,
@@ -735,6 +736,8 @@ const httpServer = Bun.serve({
   // Bun's 10s default; give it room so the first request doesn't time out.
   idleTimeout: 60,
   async fetch(req) {
+    const redirect = canonicalHostRedirect(req);
+    if (redirect) return redirect;
     const { pathname } = new URL(req.url);
     if (FIXTURE_DIR) {
       if (req.method !== 'GET')

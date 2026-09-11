@@ -11,7 +11,10 @@ vi.mock('@mattstack/rt-client', () => ({
   })),
 }));
 
-afterEach(() => vi.clearAllMocks());
+afterEach(() => {
+  vi.clearAllMocks();
+  vi.unstubAllEnvs();
+});
 
 function app() {
   const routes = new Hono()
@@ -62,4 +65,28 @@ test('an HTTPException keeps its status', async () => {
   const res = await app().request('/api/teapot');
   expect(res.status).toBe(418);
   expect(await res.json()).toEqual({ error: 'short and stout' });
+});
+
+test('a .localhost request is sent to MATTSTACK_CANONICAL_HOST before any route', async () => {
+  vi.stubEnv('MATTSTACK_CANONICAL_HOST', 'probe.mattstack');
+  const res = await app().request('/api/ok?x=1', {
+    headers: { 'x-forwarded-host': 'probe.localhost' },
+  });
+  expect(res.status).toBe(302);
+  expect(res.headers.get('location')).toBe(
+    'https://probe.mattstack/api/ok?x=1'
+  );
+});
+
+test('the canonical host itself, and any host with no canonical configured, is served', async () => {
+  vi.stubEnv('MATTSTACK_CANONICAL_HOST', 'probe.mattstack');
+  const canonical = await app().request('/api/ok', {
+    headers: { 'x-forwarded-host': 'probe.mattstack' },
+  });
+  expect(canonical.status).toBe(200);
+  vi.unstubAllEnvs();
+  const unconfigured = await app().request('/api/ok', {
+    headers: { 'x-forwarded-host': 'probe.localhost' },
+  });
+  expect(unconfigured.status).toBe(200);
 });
