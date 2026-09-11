@@ -21,6 +21,7 @@ import { createSecretsHandlers } from "./handlers/secrets.ts";
 import { createProjectMRsHandlers } from "./handlers/project-mrs.ts";
 import { createEventsHandlers } from "./handlers/events.ts";
 import { createGateHandlers } from "./handlers/gate.ts";
+import { createReconcilerHandlers } from "./handlers/reconciler.ts";
 import { createHerdHandlers, type HerdDeps } from "./handlers/herd.ts";
 import { createBgHandlers } from "./handlers/bg.ts";
 import { createChatHandlers } from "./handlers/chat.ts";
@@ -72,8 +73,10 @@ export function buildRoutedHandlers(opts: {
   gatePush: GatePush;
   /** Answer-time executor guarantee seams (spec "Answer-time executor
       guarantee"): omitted, gate:answer's post-record side effects reduce to
-      push-only, as before Task 7. */
-  reconciler?: Pick<Reconciler, "executorFor" | "expect" | "clear" | "agentIdFor">;
+      push-only, as before Task 7. Also backs reconciler:status/reconciler:clear
+      (Task 8) via the same "status"/"clear" picks; omitted there, those two
+      verbs fall back to createReconcilerHandlers's own noop default. */
+  reconciler?: Pick<Reconciler, "executorFor" | "expect" | "clear" | "agentIdFor" | "status">;
   /** The daemon's agent:resume verb, the same closure the reconciler itself
       is given (lib/daemon.ts wires both from one function). */
   resumeAgent?: (agentId: string) => Promise<{ ok: boolean; error?: string }>;
@@ -170,6 +173,7 @@ export function buildRoutedHandlers(opts: {
     jobsRoot: opts.herdJobsRoot,
     log: ctx.log,
   });
+  const reconcilerHandlers = createReconcilerHandlers({ reconciler: opts.reconciler });
   const bgHandlers = createBgHandlers({
     service: opts.bgService,
     claims: opts.bgClaims,
@@ -197,6 +201,7 @@ export function buildRoutedHandlers(opts: {
     ...createProjectMRsHandlers({ repoIndex: ctx.repoIndex, log: ctx.log }, broadcast),
     ...createEventsHandlers(opts.eventsBus, broadcast),
     ...gateHandlers,
+    ...reconcilerHandlers,
     ...herdHandlers,
     ...bgHandlers,
     ...chatHandlers,
