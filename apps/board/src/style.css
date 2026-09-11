@@ -463,7 +463,6 @@ body {
 .tui-comments-btn {
   background: none;
   border: none;
-  padding: 0;
   cursor: pointer;
   /* font-family only — NOT `font: inherit`, which would reset the size to the
      row's 13.5px instead of the .tui-phrase 0.62rem the other labels use. Leave
