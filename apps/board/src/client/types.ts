@@ -212,6 +212,16 @@ export interface RowContext {
   onOpenGate: (gateId: string) => void;
   selected: ReadonlySet<string>;
   onToggleSelect: (webUrl: string) => void;
+  /** Human-owned, non-MR gates -- the orphan strip's own attention-gate
+      lookup falls back here when the row's own `gates` carries none (see
+      RowView's findAttentionGate). */
+  queueExtras: GateRow[];
+  /** Resume: answers the orphan's attention gate with `{ action: "resume"
+      }` (the daemon's answer-time guarantee relaunches from there). */
+  onResumeOrphan: (gate: GateRow) => void;
+  /** Clear: POSTs /reconciler/clear for the orphan's agentId -- available
+      whether or not an attention gate exists to resume from. */
+  onClearOrphan: (agentId: string) => void;
 }
 
 export type ThreadStatus = 'resolved' | 'replied' | 'awaiting';

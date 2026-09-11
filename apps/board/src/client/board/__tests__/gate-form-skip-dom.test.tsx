@@ -6,7 +6,7 @@
 
 import React from 'react';
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
-import { afterEach, beforeEach, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeEach, expect, test } from 'bun:test';
 import { createRoot, type Root } from 'react-dom/client';
 
 import type { GateRow } from '../../../gates/store.ts';
@@ -14,6 +14,14 @@ import type { BoardMRWithReview } from '../../types.ts';
 import { GateForm, useGateForm } from '../GateForm.tsx';
 
 GlobalRegistrator.register({ url: 'http://localhost/' });
+
+// Missing before task 14: bun test shares one global realm across files, and
+// this file never unregistered -- whichever DOM test happened to load next
+// (by bun's own file-run order, not necessarily filename order) then failed
+// registering its own happy-dom instance. See orphan-strip-dom.test.tsx.
+afterAll(async () => {
+  await GlobalRegistrator.unregister();
+});
 
 (
   globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }

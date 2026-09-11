@@ -7,7 +7,64 @@ import { extractTicketId, ticketUrl } from '../../ticket.ts';
 import type { BoardMRWithReview } from '../types.ts';
 import { AttentionCard } from './AttentionCard.tsx';
 import { ago, cleanTitle } from './format.ts';
-import { AnsweredChip, GateForm, useGateForm } from './GateForm.tsx';
+import {
+  AnsweredChip,
+  GateForm,
+  useGateForm,
+  type GateFormState,
+} from './GateForm.tsx';
+import {
+  DELIVERY_STUCK_MESSAGE,
+  EXECUTION_UNASSIGNED_MESSAGE,
+} from './GateRowChips.tsx';
+
+/** The face for an answered gate the daemon's executor guarantee could not
+    fully deliver: "stuck" reuses `form.focusGate()` (the same `/gate/focus`
+    POST GateForm's own focus button makes) to jump into the blocked pane;
+    "unassigned" reuses `form.submit` with the gate's OWN recorded answers to
+    retry the relaunch the daemon gave up on -- both paths lean on
+    `useGateForm`'s existing busy/error plumbing rather than a third fetch
+    implementation. */
+function DeliveryStatusCard({
+  kind,
+  gate,
+  form,
+}: {
+  kind: 'stuck' | 'unassigned';
+  gate: GateRow;
+  form: GateFormState;
+}) {
+  const stuck = kind === 'stuck';
+  return (
+    <div className="tui-gate-delivery-status" data-gate-delivery-state={kind}>
+      <p className="tui-gate-delivery-message">
+        {stuck ? DELIVERY_STUCK_MESSAGE : EXECUTION_UNASSIGNED_MESSAGE}
+      </p>
+      <Button
+        type="button"
+        variant="filled"
+        intent="warn"
+        size="lg"
+        disabled={stuck ? form.focusBusy : form.busy}
+        onClick={() =>
+          stuck
+            ? void form.focusGate()
+            : void form.submit({ answers: gate.answers ?? {} })
+        }
+      >
+        {stuck ? 'focus pane' : 'retry'}
+      </Button>
+      {stuck && form.focusError && (
+        <span className="tui-gate-error">{form.focusError}</span>
+      )}
+      {!stuck && form.failed && (
+        <span className="tui-gate-error">
+          retry failed... nothing was sent, try again
+        </span>
+      )}
+    </div>
+  );
+}
 
 /** One pip per queued gate. `skipped` gates come from the queue's local
     skip action, which advances without answering and leaves the gate (and
@@ -57,6 +114,8 @@ function DecisionQueueModal({
   const form = useGateForm(gate, onAnswered);
   const answered = gate.status === 'answered';
   const actionable = gate.status === 'open' || gate.status === 'parked';
+  const deliveryStuck = answered && gate.delivery?.outcome === 'stuck';
+  const executionUnassigned = answered && gate.execution === 'unassigned';
 
   useEffect(() => {
     onLostChange?.(form.lost !== null);
@@ -189,7 +248,13 @@ function DecisionQueueModal({
       </div>
       {(() => {
         const face =
-          answered || !actionable ? (
+          deliveryStuck || executionUnassigned ? (
+            <DeliveryStatusCard
+              kind={deliveryStuck ? 'stuck' : 'unassigned'}
+              gate={gate}
+              form={form}
+            />
+          ) : answered || !actionable ? (
             <AnsweredChip
               row={{
                 subject: gate.subject,

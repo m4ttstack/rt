@@ -2109,6 +2109,62 @@ const httpServer = Bun.serve({
           headers: { 'content-type': 'application/json' },
         });
       }
+      case '/reconciler/clear': {
+        // Proxies the daemon's `reconciler:clear` verb (REST `POST
+        // /reconciler/clear`): tombstones a dead/hidden executor's kv entry
+        // and closes its other gates. The orphan strip's own "clear" button
+        // is the only caller -- same degrade-on-failure shape as
+        // /gate/focus above, since the reconciler view itself is refetched
+        // fresh on the next /data.json poll rather than cached here.
+        if (req.method !== 'POST')
+          return new Response('method not allowed', { status: 405 });
+        if (!isLocalRequest(req))
+          return new Response('forbidden', { status: 403 });
+        {
+          const notJson = requireJsonBody(req);
+          if (notJson) return notJson;
+        }
+        let body: unknown;
+        try {
+          body = await req.json();
+        } catch {
+          return new Response('invalid json', { status: 400 });
+        }
+        const agentId = (body as { agentId?: unknown })?.agentId;
+        if (typeof agentId !== 'string' || !agentId)
+          return new Response('expected { agentId: string }', {
+            status: 400,
+          });
+        try {
+          const res = await fetch('http://localhost/reconciler/clear', {
+            unix: DEFAULT_SOCK,
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ agentId }),
+            signal: AbortSignal.timeout(5000),
+          } as RequestInit);
+          if (!res.ok) {
+            return new Response(
+              JSON.stringify({
+                ok: false,
+                error: `reconciler clear failed (${res.status})`,
+              }),
+              { status: 502, headers: { 'content-type': 'application/json' } }
+            );
+          }
+        } catch (err) {
+          return new Response(
+            JSON.stringify({
+              ok: false,
+              error: err instanceof Error ? err.message : String(err),
+            }),
+            { status: 502, headers: { 'content-type': 'application/json' } }
+          );
+        }
+        return new Response(JSON.stringify({ ok: true }), {
+          headers: { 'content-type': 'application/json' },
+        });
+      }
       case '/nudge': {
         // Ask a peer's agent for a re-review of YOUR OWN MR. The board only
         // relays the human's click; all policy runs in the peer's triage.
