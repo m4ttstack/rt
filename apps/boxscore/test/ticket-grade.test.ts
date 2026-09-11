@@ -80,4 +80,28 @@ describe('textRefGrade', () => {
       textRefGrade({ ...base, description: 'fixes ACME:28' }, 'ACME-28')
     ).toBe('closing');
   });
+
+  it('keeps a feature-flag slug near a fix verb at mention grade', () => {
+    const description =
+      'N/A. Fixes behavior behind the existing `acme-8010-reason-for-calling` gate on the entry point.';
+    expect(textRefGrade({ ...base, description }, 'ACME-8010')).toBe('mention');
+  });
+
+  it('keeps a flag slug in the title at mention grade', () => {
+    expect(
+      textRefGrade(
+        { ...base, title: 'Remove the acme-8010-reason-for-calling flag' },
+        'ACME-8010'
+      )
+    ).toBe('mention');
+  });
+
+  it('still grades a plain title reference closing when a slug also appears', () => {
+    expect(
+      textRefGrade(
+        { ...base, title: 'ACME-8010: remove the acme-8010-reason flag' },
+        'ACME-8010'
+      )
+    ).toBe('closing');
+  });
 });

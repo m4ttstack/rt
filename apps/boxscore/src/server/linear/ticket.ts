@@ -36,20 +36,24 @@ export function textRefGrade(
   const t = escapeRegex(team);
   const idRe = new RegExp(`\\b${t}[-:]${num}\\b`, 'i');
   const branchRe = new RegExp(`\\b${t}[-_]${num}(?!\\d)`, 'i');
+  // An identifier continuing as a kebab slug (acme-8010-reason-for-calling) is a
+  // feature-flag or branch NAME, not a ticket reference; only branches may
+  // earn closing grade from that shape.
+  const plainRef = `\\b${t}[-:]${num}(?![-_]\\w)`;
   const anywhere =
     idRe.test(mr.title) ||
     (mr.description !== null && idRe.test(mr.description)) ||
     (mr.sourceBranch !== null && branchRe.test(mr.sourceBranch));
   if (!anywhere) return null;
   if (isRevertTitle(mr.title)) return 'mention';
-  if (idRe.test(mr.title)) return 'closing';
+  if (new RegExp(plainRef, 'i').test(mr.title)) return 'closing';
   if (mr.sourceBranch !== null && branchRe.test(mr.sourceBranch)) {
     return 'closing';
   }
   if (
     mr.description !== null &&
     new RegExp(
-      `\\b(?:${CLOSING_KEYWORD})\\b[^\\n]{0,40}?\\b${t}[-:]${num}\\b`,
+      `\\b(?:${CLOSING_KEYWORD})\\b[^\\n]{0,40}?${plainRef}`,
       'i'
     ).test(mr.description)
   ) {
