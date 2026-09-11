@@ -336,8 +336,8 @@ export function Board() {
     reload: load,
   });
   const handleLaunch = useCallback(
-    (mr: BoardMR, note?: string) =>
-      launchReview(mr, { tabId: state.tab }, note),
+    (mr: BoardMR, note?: string, intent?: 'launch' | 'focus') =>
+      launchReview(mr, { tabId: state.tab }, note, intent),
     [launchReview, state.tab]
   );
 
@@ -366,7 +366,8 @@ export function Board() {
     reload: load,
   });
   const handleRespond = useCallback(
-    (mr: BoardMR, note?: string) => respondAction(mr, {}, note),
+    (mr: BoardMR, note?: string, intent?: 'launch' | 'focus') =>
+      respondAction(mr, {}, note, intent),
     [respondAction]
   );
 
@@ -380,7 +381,8 @@ export function Board() {
     reload: load,
   });
   const handleDoctor = useCallback(
-    (mr: BoardMR, note?: string) => doctorAction(mr, {}, note),
+    (mr: BoardMR, note?: string, intent?: 'launch' | 'focus') =>
+      doctorAction(mr, {}, note, intent),
     [doctorAction]
   );
   // The doctor chassis scoped to a checkout rebase — the fallback when the
@@ -397,9 +399,9 @@ export function Board() {
   // invents a distinct focus call.
   const handleFocusPane = useCallback(
     (mr: BoardMR, domain: GateDomain) => {
-      if (domain === 'review') handleLaunch(mr);
-      else if (domain === 'respond') handleRespond(mr);
-      else handleDoctor(mr);
+      if (domain === 'review') handleLaunch(mr, undefined, 'focus');
+      else if (domain === 'respond') handleRespond(mr, undefined, 'focus');
+      else handleDoctor(mr, undefined, 'focus');
     },
     [handleLaunch, handleRespond, handleDoctor]
   );

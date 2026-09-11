@@ -32,13 +32,25 @@ export interface LaunchFlowDeps {
 export async function runLaunchFlow(
   deps: LaunchFlowDeps,
   mr: BoardMR,
-  extra: Record<string, unknown>
+  extra: Record<string, unknown>,
+  intent: 'launch' | 'focus' = 'launch'
 ): Promise<void> {
   if (!mr.webUrl) return;
-  deps.setQueued();
-  deps.addToast(`${deps.verbing} for !${mr.iid}…`);
+  // Focus clicks ride the same endpoint (the server's in-flight dedup does
+  // the focusing), but claiming "queued" or toasting a launch would misstate
+  // what the click asked for -- the pane is already running.
+  if (intent === 'launch') {
+    deps.setQueued();
+    deps.addToast(`${deps.verbing} for !${mr.iid}…`);
+  }
   const result = await deps.post({ mrUrl: mr.webUrl, iid: mr.iid, ...extra });
   if (!result.ok) {
+    if (intent === 'focus') {
+      deps.addToast(
+        `couldn't focus ${deps.noun} tab for !${mr.iid} (${result.status})`
+      );
+      return;
+    }
     deps.rollback();
     deps.addToast(
       deps.failureMessage
@@ -53,7 +65,15 @@ export async function runLaunchFlow(
   // changes, at which point resume would start showing this toast too.
   if (result.body?.focused)
     deps.addToast(
-      `${deps.noun} already running for !${mr.iid} — focused its tab`
+      intent === 'focus'
+        ? `focused ${deps.noun} tab for !${mr.iid}`
+        : `${deps.noun} already running for !${mr.iid} — focused its tab`
+    );
+  else if (intent === 'focus')
+    // The pane finished (or died) between render and click, so the server
+    // launched fresh instead of deduping -- say so rather than claim a focus.
+    deps.addToast(
+      `${deps.noun} wasn't running for !${mr.iid}; launched a fresh one`
     );
   deps.reload();
 }
