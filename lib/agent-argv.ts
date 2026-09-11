@@ -37,6 +37,8 @@ export interface ClaudeInvocation {
   prompt?: string;
   /** Extra environment for the pane shell, exported before the claude head. Values are single-quoted verbatim. */
   env?: Record<string, string>;
+  /** Absolute path to a settings JSON file, passed as an independent `--settings <path>` alongside (never replacing) the `--name`-triggered inline JSON below. */
+  settingsPath?: string;
 }
 
 export function resolveClaudeBin(): string {
@@ -63,6 +65,7 @@ function claudeArgs(inv: ClaudeInvocation): string[] {
   if (!inv.headless && inv.name) {
     args.push("--name", inv.name, "--settings", JSON.stringify({ crossSessionInbound: "accept" }));
   }
+  if (inv.settingsPath) args.push("--settings", inv.settingsPath);
   if (inv.session.kind === "start") args.push("--session-id", inv.session.sessionId);
   else args.push("--resume", inv.session.sessionId);
   if (inv.extraArgs) args.push(...inv.extraArgs.split(/\s+/).filter(Boolean));

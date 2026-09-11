@@ -77,6 +77,26 @@ describe("buildClaudeArgv", () => {
     expect(argv).not.toContain("--name");
     expect(argv).not.toContain("--settings");
   });
+
+  test("settingsPath is its own --settings flag, independent of --name's inline JSON", () => {
+    const argv = buildClaudeArgv({
+      name: "kai", settingsPath: "/hooks/ag-1.json",
+      session: { kind: "start", sessionId: UUID }, headless: false,
+    }, bins);
+    expect(argv).toEqual([
+      "/abs/claude", "--name", "kai", "--settings", '{"crossSessionInbound":"accept"}',
+      "--settings", "/hooks/ag-1.json", "--session-id", UUID,
+    ]);
+  });
+
+  test("settingsPath alone (no name) still emits --settings for headless", () => {
+    const argv = buildClaudeArgv({
+      settingsPath: "/hooks/ag-2.json",
+      session: { kind: "start", sessionId: UUID }, headless: true, prompt: "go",
+    }, bins);
+    expect(argv).toContain("--settings");
+    expect(argv).toContain("/hooks/ag-2.json");
+  });
 });
 
 describe("buildPaneCommand", () => {

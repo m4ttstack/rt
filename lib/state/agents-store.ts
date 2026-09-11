@@ -15,13 +15,15 @@ export interface AgentRecord {
   surface: AgentSurface; sessionId: string;
   model?: string; effort?: string; account?: string;
   label?: string; caller?: string; handle?: string;
+  /** The gate-protocol subject stamped as RT_GATE_SUBJECT at launch (payload.subject, or "agent:<id>" by default), persisted so a resume re-stamps the same one. */
+  subject?: string;
   paneId?: string; tabId?: string; workspaceId?: string;
   extraArgs?: string; exitCode?: number; resultPath?: string;
   createdAt: number; lastResumedAt?: number; finishedAt?: number;
 }
 
 const COLUMNS =
-  "id, repo, cwd, provider, surface, session_id, model, effort, account, label, caller, handle, " +
+  "id, repo, cwd, provider, surface, session_id, model, effort, account, label, caller, handle, subject, " +
   "pane_id, tab_id, workspace_id, extra_args, exit_code, result_path, " +
   "created_at, last_resumed_at, finished_at";
 
@@ -46,6 +48,7 @@ interface AgentRow {
   id: string; repo: string; cwd: string; provider: string; surface: string;
   session_id: string; model: string | null; effort: string | null;
   account: string | null; label: string | null; caller: string | null; handle: string | null;
+  subject: string | null;
   pane_id: string | null; tab_id: string | null; workspace_id: string | null;
   extra_args: string | null; exit_code: number | null; result_path: string | null;
   created_at: number; last_resumed_at: number | null; finished_at: number | null;
@@ -63,6 +66,7 @@ function rowToRecord(r: AgentRow): AgentRecord {
   if (r.label !== null) rec.label = r.label;
   if (r.caller !== null) rec.caller = r.caller;
   if (r.handle !== null) rec.handle = r.handle;
+  if (r.subject !== null) rec.subject = r.subject;
   if (r.pane_id !== null) rec.paneId = r.pane_id;
   if (r.tab_id !== null) rec.tabId = r.tab_id;
   if (r.workspace_id !== null) rec.workspaceId = r.workspace_id;
@@ -83,7 +87,7 @@ export function insertAgent(rec: AgentRecord, db: Database = getStateDb()): void
     db.query(INSERT_SQL).run(
       rec.id, rec.repo, rec.cwd, rec.provider, rec.surface, rec.sessionId,
       rec.model ?? null, rec.effort ?? null, rec.account ?? null,
-      rec.label ?? null, rec.caller ?? null, rec.handle ?? null,
+      rec.label ?? null, rec.caller ?? null, rec.handle ?? null, rec.subject ?? null,
       rec.paneId ?? null, rec.tabId ?? null, rec.workspaceId ?? null,
       rec.extraArgs ?? null, rec.exitCode ?? null, rec.resultPath ?? null,
       rec.createdAt, rec.lastResumedAt ?? null, rec.finishedAt ?? null,
