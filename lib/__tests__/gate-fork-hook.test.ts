@@ -1,4 +1,4 @@
-// PreToolUse hook (matcher AskUserQuestion) — see docs/superpowers/specs/
+// PreToolUse hook (matcher AskUserQuestion): see docs/superpowers/specs/
 // 2026-09-11-executor-reconciler-design.md "AskUserQuestion hook" / "Hook
 // contract". Driven as a real subprocess against a stub `rt` on PATH so the
 // decision branches (daemon down, missing CLI, open/parked/closed gate)
