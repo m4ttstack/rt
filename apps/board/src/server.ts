@@ -1047,7 +1047,7 @@ const httpServer = Bun.serve({
           mrsWithGates,
           reconciler.executors
         );
-        const queueExtras = buildQueueExtras(gateCache.rows(), snapshot.mrs);
+        const queueExtras = buildQueueExtras(gateCache.rows());
         return new Response(
           JSON.stringify({
             title: config.title,

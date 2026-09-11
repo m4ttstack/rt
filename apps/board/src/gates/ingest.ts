@@ -148,25 +148,20 @@ export async function reconcileAttentionGatesOnBoot(
 
 /**
  * Client-shaped rows for the board's decision queue: a human-owned gate
- * (pane-attention or otherwise) whose subject matched no MR row on this
- * board. A herd-owned gate is excluded outright -- that herd's own board (or
- * shepherd) owns it, not this one -- and a closed row never renders, same
- * rule `attachGates` applies to MR-attached gates.
+ * (pane-attention or otherwise) whose subject is NOT `mr:`-prefixed --
+ * admission is by subject prefix, not by "no MR row currently matches it".
+ * An `mr:` gate whose MR dropped out of the polled snapshot (merged/closed
+ * while the gate stays open) must still attach through the normal MR join,
+ * not leak in here as a queue item. A herd-owned gate is excluded outright
+ * -- that herd's own board (or shepherd) owns it, not this one -- and a
+ * closed row never renders, same rule `attachGates` applies to MR-attached
+ * gates.
  */
-export function buildQueueExtras(
-  rows: FacilityGateRow[],
-  mrs: Array<{ webUrl?: string | null }>
-): GateRow[] {
-  const mrSubjects = new Set(
-    mrs
-      .map(mr => mr.webUrl)
-      .filter((u): u is string => !!u)
-      .map(u => `mr:${u}`)
-  );
+export function buildQueueExtras(rows: FacilityGateRow[]): GateRow[] {
   const out: GateRow[] = [];
   for (const row of rows) {
     if (row.owner !== 'human') continue;
-    if (mrSubjects.has(row.subject)) continue;
+    if (row.subject.startsWith('mr:')) continue;
     if (row.status === 'closed') continue;
     const label =
       typeof row.meta?.label === 'string' ? row.meta.label : row.kind;

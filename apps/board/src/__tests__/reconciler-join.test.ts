@@ -56,7 +56,7 @@ function executorView(overrides: Partial<ExecutorView> = {}): ExecutorView {
 describe('buildQueueExtras', () => {
   test('a pane-attention gate with owner human lands in queueExtras', () => {
     const row = fakeRow({ owner: 'human' });
-    const extras = buildQueueExtras([row], []);
+    const extras = buildQueueExtras([row]);
     expect(extras).toHaveLength(1);
     expect(extras[0]?.gateId).toBe('gate-1');
     expect(extras[0]?.kind).toBe('pane-attention');
@@ -65,33 +65,35 @@ describe('buildQueueExtras', () => {
 
   test('a herd-owned pane-attention gate is excluded entirely', () => {
     const row = fakeRow({ owner: 'herd:acme' });
-    expect(buildQueueExtras([row], [])).toEqual([]);
+    expect(buildQueueExtras([row])).toEqual([]);
   });
 
   test('an owner-less (null) gate is excluded -- only explicit human ownership qualifies', () => {
     const row = fakeRow({ owner: null });
-    expect(buildQueueExtras([row], [])).toEqual([]);
+    expect(buildQueueExtras([row])).toEqual([]);
   });
 
-  test('a human-owned gate whose subject matches an MR row is excluded (that row carries it instead)', () => {
+  test('a human-owned "mr:"-subject gate is excluded by prefix, even with no matching MR row', () => {
+    // Regression: admission is by subject PREFIX, not by "no MR row
+    // currently matches it". An ordinary review-post gate whose MR merged
+    // or closed out of the polled snapshot while the gate stayed open must
+    // never leak into queueExtras as a non-MR item -- it stays excluded on
+    // prefix alone and attaches (or fails to) through the normal MR join.
     const row = fakeRow({
       owner: 'human',
-      subject: 'mr:https://gitlab.com/acme/webapp/-/merge_requests/1',
+      kind: 'review-post',
+      subject: 'mr:https://gitlab.com/acme/webapp/-/merge_requests/999',
     });
-    const extras = buildQueueExtras(
-      [row],
-      [{ webUrl: 'https://gitlab.com/acme/webapp/-/merge_requests/1' }]
-    );
-    expect(extras).toEqual([]);
+    expect(buildQueueExtras([row])).toEqual([]);
   });
 
-  test('a human-owned gate of any kind (not just pane-attention) with no matching MR still lands in queueExtras', () => {
+  test('a human-owned gate of any kind (not just pane-attention) with a non-mr: subject lands in queueExtras', () => {
     const row = fakeRow({
       owner: 'human',
       kind: 'some-other-kind',
       subject: 'agent:pane-9',
     });
-    const extras = buildQueueExtras([row], []);
+    const extras = buildQueueExtras([row]);
     expect(extras).toHaveLength(1);
   });
 
@@ -101,7 +103,7 @@ describe('buildQueueExtras', () => {
       status: 'closed',
       closedReason: 'abandoned',
     });
-    expect(buildQueueExtras([row], [])).toEqual([]);
+    expect(buildQueueExtras([row])).toEqual([]);
   });
 });
 
