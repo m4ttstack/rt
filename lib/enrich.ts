@@ -28,6 +28,7 @@ import { composeKey } from "./state/branch-cache.ts";
 import { identityFromRemote, serializeIdentity } from "./settings/identity.ts";
 import {
   GitLabProvider,
+  GitHubProvider,
   type PullRequest,
   getMRDashboardProps,
   type MRDashboardProps,
@@ -69,6 +70,12 @@ export function parseRemoteUrl(url: string): { host: string; projectPath: string
  */
 export function isGitLabRemote(url: string | undefined): boolean {
   return !!url && /gitlab\./i.test(url);
+}
+
+export function isGitHubRemote(url: string | undefined): boolean {
+  if (!url) return false;
+  const parsed = parseRemoteUrl(url);
+  return parsed?.host === "https://github.com";
 }
 
 /**
@@ -426,7 +433,7 @@ async function enrichRealBranches(
 
   // ── Existing logic (state.db cache + fetch) ──
   const secrets = await loadSecrets();
-  const willFetch = !!(secrets.linearApiKey || secrets.gitlabToken);
+  const willFetch = !!(secrets.linearApiKey || secrets.gitlabToken || secrets.githubToken);
   const store = getBranchCacheStore();
   const identity = identityForRemote(remoteUrl);
 
@@ -463,7 +470,8 @@ async function fetchAndCache(
   silent: boolean,
 ): Promise<EnrichedBranch[]> {
   const secrets = await loadSecrets();
-  const willFetch = !!(secrets.linearApiKey || secrets.gitlabToken);
+  const hasForgeToken = !!(secrets.gitlabToken || secrets.githubToken);
+  const willFetch = !!(secrets.linearApiKey || hasForgeToken);
   const identity = identityForRemote(remoteUrl);
 
   let showSpinner = false;
@@ -472,21 +480,25 @@ async function fetchAndCache(
     process.stderr.write(`  ${cyan}⟳${reset} Fetching branch info…\r`);
   }
 
-  // ── Step 1: Fetch GitLab MR data via glance-sdk (already batched) ──
+  // ── Step 1: Fetch MR/PR data via glance-sdk (already batched) ──
   let mrMap = new Map<string, PullRequest | null>();
   let mrFetchSucceeded = false;
 
-  if (secrets.gitlabToken && remoteUrl && isGitLabRemote(remoteUrl)) {
-    const remote = parseRemoteUrl(remoteUrl);
-    if (remote) {
+  const remote = remoteUrl ? parseRemoteUrl(remoteUrl) : null;
+  if (remote) {
+    const branchNames = branches.map(b => b.branch).filter(b => b !== "");
+    if (branchNames.length > 0) {
       try {
-        const provider = new GitLabProvider(remote.host, secrets.gitlabToken);
-        const branchNames = branches.map(b => b.branch).filter(b => b !== "");
-        if (branchNames.length > 0) {
+        if (secrets.gitlabToken && isGitLabRemote(remoteUrl)) {
+          const provider = new GitLabProvider(remote.host, secrets.gitlabToken);
+          mrMap = await provider.fetchPullRequestsByBranches(remote.projectPath, branchNames);
+          mrFetchSucceeded = true;
+        } else if (secrets.githubToken && isGitHubRemote(remoteUrl)) {
+          const provider = new GitHubProvider(remote.host, secrets.githubToken);
           mrMap = await provider.fetchPullRequestsByBranches(remote.projectPath, branchNames);
           mrFetchSucceeded = true;
         }
-      } catch { /* GitLab fetch failed — continue without MR data */ }
+      } catch { /* forge fetch failed, continue without MR data */ }
     }
   }
 
@@ -592,32 +604,31 @@ export async function refreshAllMRs(
   const store = getBranchCacheStore();
   const now = Date.now();
 
-  // ── Step 1: Fetch MRs for all branches in 1 GraphQL call ──────────────
+  // ── Step 1: Fetch MRs/PRs for all branches in one call ────────────────
   let mrsByBranch = new Map<string, PullRequest | null>();
   let mrFetchSucceeded = false;
 
-  if (secrets.gitlabToken && remoteUrl && isGitLabRemote(remoteUrl)) {
-    const remote = parseRemoteUrl(remoteUrl);
-    if (remote) {
+  const remote = remoteUrl ? parseRemoteUrl(remoteUrl) : null;
+  if (remote) {
+    const branchNames = branches.map(b => b.branch).filter(b => b !== "");
+    if (branchNames.length > 0) {
       try {
-        const provider = new GitLabProvider(remote.host, secrets.gitlabToken);
-        const branchNames = branches.map(b => b.branch).filter(b => b !== "");
-        if (branchNames.length > 0) {
-          // Fetch all states in one query. The cache keeps whatever state
-          // the SDK returns (opened/merged/closed); the notifier uses it to
-          // fire distinct merged vs closed transitions, and readers filter
-          // on it themselves.
+        if (secrets.gitlabToken && isGitLabRemote(remoteUrl)) {
+          const provider = new GitLabProvider(remote.host, secrets.gitlabToken);
+          mrsByBranch = await provider.fetchPullRequestsByBranches(remote.projectPath, branchNames, 'all');
+          mrFetchSucceeded = true;
+        } else if (secrets.githubToken && isGitHubRemote(remoteUrl)) {
+          const provider = new GitHubProvider(remote.host, secrets.githubToken);
           mrsByBranch = await provider.fetchPullRequestsByBranches(remote.projectPath, branchNames, 'all');
           mrFetchSucceeded = true;
         }
       } catch (err) {
-        onError?.(`GitLab MR fetch failed for ${remote.projectPath}: ${err}`);
-        // keep stale MR data to avoid false transitions in notifications
+        onError?.(`MR/PR fetch failed for ${remote.projectPath}: ${err}`);
       }
     }
   }
 
-  // A deadline that fires while the GitLab await above was in flight must
+  // A deadline that fires while the forge await above was in flight must
   // discard this cycle's result rather than let a slower, now-stale cycle
   // overwrite a newer one's cache rows (the coalescer permits a new cycle
   // the moment this one's deadline passes).
