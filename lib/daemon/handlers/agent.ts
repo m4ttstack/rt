@@ -21,8 +21,8 @@ import {
   deleteAgent, finishAgent, getAgent, insertAgent, isValidChatName, listAgents, markAgentResumed,
   newAgentId, reserveAgentHandle, updateAgentPane, type AgentRecord, type AgentSurface,
 } from "../../state/index.ts";
-import { buildClaudeArgv, buildPaneCommand, type ClaudeInvocation } from "../../agent-argv.ts";
-import { gateForkHookSettings, resolveGateForkHookPath } from "../../agent-hooks.ts";
+import { buildClaudeArgv, buildPaneCommand, CROSS_SESSION_INBOUND_SETTINGS, type ClaudeInvocation } from "../../agent-argv.ts";
+import { mergeGateForkHookSettings, resolveGateForkHookPath } from "../../agent-hooks.ts";
 import { defaultHerdrRunner, launchInWorkspace, type HerdrRunner } from "../../agent-herdr.ts";
 import { repoLabel } from "../../repo-label.ts";
 import { getSetting } from "../../settings/resolve.ts";
@@ -86,6 +86,15 @@ function extraArgsHasSettingsFlag(extraArgs: string | undefined): boolean {
  * skipped. Two skip cases, both non-fatal to the launch: extraArgs already
  * sets --settings (merge is not attempted -- the user's own value wins
  * outright), or gate-fork.sh cannot be resolved on this machine.
+ *
+ * A launch never emits two --settings flags (repeated-flag semantics are
+ * unverified against the real CLI): when this launch would otherwise get
+ * the --name-triggered inline CROSS_SESSION_INBOUND_SETTINGS JSON (a
+ * reserved handle, non-headless -- claudeArgs' own condition), that object
+ * is folded into this SAME file via mergeGateForkHookSettings instead of
+ * being emitted as a second flag. lib/agent-argv.ts's claudeArgs skips its
+ * inline JSON whenever settingsPath is set, so the fold here is the only
+ * place that JSON survives for such a launch.
  */
 function resolveHookSettingsPath(rec: AgentRecord, log: Logger): string | undefined {
   if (extraArgsHasSettingsFlag(rec.extraArgs)) {
@@ -97,10 +106,12 @@ function resolveHookSettingsPath(rec: AgentRecord, log: Logger): string | undefi
     log.debug({ id: rec.id }, "agent: gate-fork.sh not found; hook injection skipped");
     return undefined;
   }
+  const inlineBase = rec.surface !== "headless" && rec.handle !== undefined ? CROSS_SESSION_INBOUND_SETTINGS : undefined;
+  const settings = mergeGateForkHookSettings(inlineBase, hookPath);
   const settingsPath = agentHookSettingsPath(rec.id);
   try {
     mkdirSync(dirname(settingsPath), { recursive: true });
-    writeFileSync(settingsPath, JSON.stringify(gateForkHookSettings(hookPath)));
+    writeFileSync(settingsPath, JSON.stringify(settings));
     return settingsPath;
   } catch (err) {
     log.warn({ err, id: rec.id }, "agent: failed to write gate-fork hook settings file");

@@ -78,15 +78,20 @@ describe("buildClaudeArgv", () => {
     expect(argv).not.toContain("--settings");
   });
 
-  test("settingsPath is its own --settings flag, independent of --name's inline JSON", () => {
+  // A launch never emits two --settings flags: settingsPath REPLACES the
+  // --name-triggered inline JSON on the argv line. The caller is on the
+  // hook for folding that same object into the settingsPath file's content
+  // (lib/agent-hooks.ts's mergeGateForkHookSettings, exercised in
+  // lib/daemon/__tests__/agent-handlers.test.ts).
+  test("settingsPath replaces --name's inline JSON on the argv line, never both", () => {
     const argv = buildClaudeArgv({
       name: "kai", settingsPath: "/hooks/ag-1.json",
       session: { kind: "start", sessionId: UUID }, headless: false,
     }, bins);
     expect(argv).toEqual([
-      "/abs/claude", "--name", "kai", "--settings", '{"crossSessionInbound":"accept"}',
-      "--settings", "/hooks/ag-1.json", "--session-id", UUID,
+      "/abs/claude", "--name", "kai", "--settings", "/hooks/ag-1.json", "--session-id", UUID,
     ]);
+    expect(argv.filter((a) => a === "--settings")).toHaveLength(1);
   });
 
   test("settingsPath alone (no name) still emits --settings for headless", () => {

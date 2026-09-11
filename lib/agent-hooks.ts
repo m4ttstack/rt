@@ -65,19 +65,45 @@ export function resolveGateForkHookPath(p: GateForkHookProbes = defaultGateForkH
   return null;
 }
 
+export interface GateForkHookEntry {
+  matcher: "AskUserQuestion";
+  hooks: [{ type: "command"; command: string }];
+}
+
 export interface GateForkHookSettings {
-  hooks: {
-    PreToolUse: [{ matcher: "AskUserQuestion"; hooks: [{ type: "command"; command: string }] }];
-  };
+  hooks: { PreToolUse: [GateForkHookEntry] };
+}
+
+function gateForkHookEntry(hookPath: string): GateForkHookEntry {
+  return { matcher: "AskUserQuestion", hooks: [{ type: "command", command: hookPath }] };
 }
 
 /** The exact PreToolUse settings block Task 9's hook contract requires, gated on the resolved absolute path to gate-fork.sh. */
 export function gateForkHookSettings(hookPath: string): GateForkHookSettings {
+  return { hooks: { PreToolUse: [gateForkHookEntry(hookPath)] } };
+}
+
+/**
+ * A launch never emits two `--settings` flags (repeated-flag semantics are
+ * unverified against the real CLI, and a silent last-wins would drop
+ * whichever settings lost), so a launch that already carries its own inline
+ * settings object (today, only lib/agent-argv.ts's
+ * CROSS_SESSION_INBOUND_SETTINGS) must fold the hook into that SAME object
+ * instead of writing a second file. Additive only: every key of `base`
+ * survives untouched, and the hook's PreToolUse entry is appended to
+ * `base`'s own hooks.PreToolUse array (concatenated, never displacing it) --
+ * the hook block wins nothing. `base` undefined (no inline settings on this
+ * launch) reduces to the plain gateForkHookSettings shape above.
+ */
+export function mergeGateForkHookSettings(
+  base: Record<string, unknown> | undefined,
+  hookPath: string,
+): Record<string, unknown> {
+  if (!base) return { hooks: gateForkHookSettings(hookPath).hooks };
+  const baseHooks = (base.hooks && typeof base.hooks === "object") ? base.hooks as Record<string, unknown> : {};
+  const basePreToolUse = Array.isArray(baseHooks.PreToolUse) ? baseHooks.PreToolUse : [];
   return {
-    hooks: {
-      PreToolUse: [
-        { matcher: "AskUserQuestion", hooks: [{ type: "command", command: hookPath }] },
-      ],
-    },
+    ...base,
+    hooks: { ...baseHooks, PreToolUse: [...basePreToolUse, gateForkHookEntry(hookPath)] },
   };
 }
