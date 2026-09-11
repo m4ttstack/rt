@@ -98,7 +98,7 @@ function loadRoutes(): void {
   const raw = readRoutes();
   for (const r of raw) {
     if (r.hostname.endsWith(`.${MATTSTACK_TLD}`))
-      managed.add(bareName(r.hostname, tlds));
+      managed.add(r.hostname.slice(0, -(MATTSTACK_TLD.length + 1)));
   }
   for (const r of dedupeRoutes(raw, tlds))
     map.set(bareName(r.hostname, tlds), r.port);
