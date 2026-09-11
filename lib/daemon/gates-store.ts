@@ -19,9 +19,10 @@ import {
   type GateRow,
   type GateOrigin,
   type GateSubscription,
+  type ExecutorState,
 } from "../../packages/rt-client/src/commands.ts";
 
-export type { GateStatus, GateQuestion, GateAnswer, GateRow, GateOrigin, GateSubscription };
+export type { GateStatus, GateQuestion, GateAnswer, GateRow, GateOrigin, GateSubscription, ExecutorState };
 export { GATE_BY_PANE };
 
 export type WaitResult =
@@ -58,7 +59,11 @@ export interface GatesStore {
   answer(id: string, answers: GateAnswer["answers"], by: string, opts?: { overridden?: boolean }): AnswerResult;
   park(id: string): { ok: true } | { ok: false; reason: "not-found" | "not-open"; row: GateRow | null };
   close(id: string, reason: "abandoned" | "superseded" | "pruned"): { ok: true } | { ok: false; reason: "not-found" | "already-answered" | "already-closed" };
-  markDelivery(id: string, outcome: "delivered" | "dead-pane"): void;
+  markDelivery(id: string, outcome: "delivered" | "dead-pane" | "confirmed" | "stuck"): void;
+  /** `null` clears the stamp (row goes back to no `execution` field on read). */
+  markExecution(id: string, execution: "unassigned" | null): void;
+  /** `null` clears the stamp (row goes back to no `executor` field on read). */
+  markExecutor(id: string, executor: ExecutorState | null): void;
   wait(id: string, opts: { waitMs?: number; signal?: AbortSignal }): Promise<WaitResult>;
   /** Idempotent on (scope, subjectPrefix, ownerRef, session): a live match
       returns the existing row rather than minting a duplicate. */
@@ -104,6 +109,8 @@ interface GateColumns {
   origin: string | null;
   owner: string | null;
   escalatedAt: number | null;
+  execution: string | null;
+  executor: string | null;
 }
 
 interface SubscriptionColumns {
@@ -153,6 +160,8 @@ function rowToGate(row: GateColumns): GateRow {
     origin: row.origin == null ? null : JSON.parse(row.origin),
     owner: row.owner ?? null,
     escalatedAt: row.escalatedAt ?? null,
+    ...(row.execution === "unassigned" ? { execution: row.execution } : {}),
+    ...(row.executor != null ? { executor: row.executor as ExecutorState } : {}),
   };
 }
 
@@ -238,7 +247,9 @@ export function createGatesStore(opts: {
       context       TEXT,
       origin        TEXT,
       owner         TEXT,
-      escalatedAt   INTEGER
+      escalatedAt   INTEGER,
+      execution     TEXT,
+      executor      TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_gates_subject_kind_status ON gates(subject, kind, status);
 
@@ -259,7 +270,7 @@ export function createGatesStore(opts: {
   const gateCols = new Set(
     (db.query("PRAGMA table_info(gates)").all() as Array<{ name: string }>).map((c) => c.name),
   );
-  for (const col of ["context", "origin", "owner", "supersededBy"]) {
+  for (const col of ["context", "origin", "owner", "supersededBy", "execution", "executor"]) {
     if (!gateCols.has(col)) db.exec(`ALTER TABLE gates ADD COLUMN ${col} TEXT;`);
   }
   if (!gateCols.has("escalatedAt")) db.exec("ALTER TABLE gates ADD COLUMN escalatedAt INTEGER;");
@@ -308,6 +319,8 @@ export function createGatesStore(opts: {
   );
   const releaseStmt = db.prepare("UPDATE gates SET released = 1 WHERE id = ?");
   const markDeliveryStmt = db.prepare("UPDATE gates SET delivery = ? WHERE id = ?");
+  const markExecutionStmt = db.prepare("UPDATE gates SET execution = ? WHERE id = ?");
+  const markExecutorStmt = db.prepare("UPDATE gates SET executor = ? WHERE id = ?");
   const markEscalatedStmt = db.prepare("UPDATE gates SET escalatedAt = ? WHERE id = ? AND escalatedAt IS NULL");
   const maxRowidStmt = db.prepare("SELECT COALESCE(MAX(rowid), 0) AS maxId FROM gates");
   // Row floor scoped to terminal rows only: open/parked rows are never swept
@@ -524,6 +537,14 @@ export function createGatesStore(opts: {
 
     markDelivery(id, outcome) {
       markDeliveryStmt.run(JSON.stringify({ outcome, at: Date.now() }), id);
+    },
+
+    markExecution(id, execution) {
+      markExecutionStmt.run(execution, id);
+    },
+
+    markExecutor(id, executor) {
+      markExecutorStmt.run(executor, id);
     },
 
     wait(id, opts) {

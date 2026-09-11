@@ -171,6 +171,27 @@ describe("gates store — transitions", () => {
     expect(gates.length).toBe(1);
     expect(gates[0]!.subject).toBe("run:r1");
   });
+
+  test("markDelivery accepts confirmed and stuck", () => {
+    const s = store();
+    const { id } = s.open({ subject: "mr:x", kind: "review-post", questions: qs() }).row;
+    s.markDelivery(id, "confirmed");
+    expect(s.get(id)!.delivery!.outcome).toBe("confirmed");
+    s.markDelivery(id, "stuck");
+    expect(s.get(id)!.delivery!.outcome).toBe("stuck");
+    s.close_();
+  });
+
+  test("markExecution and markExecutor round-trip and clear", () => {
+    const s = store();
+    const { id } = s.open({ subject: "mr:x", kind: "review-post", questions: qs() }).row;
+    s.markExecution(id, "unassigned");
+    s.markExecutor(id, "gone");
+    expect(s.get(id)).toMatchObject({ execution: "unassigned", executor: "gone" });
+    s.markExecution(id, null);
+    expect(s.get(id)!.execution).toBeUndefined();
+    s.close_();
+  });
 });
 
 describe("gates store — wait", () => {

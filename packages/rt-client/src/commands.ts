@@ -95,6 +95,8 @@ export interface EventsBusEvent { id: number; topic: string; payload: unknown; e
 export const GATE_BY_PANE = "pane";
 
 export type GateStatus = "open" | "answered" | "parked" | "closed";
+/** Reconciler's view of an agent's liveness; also the value `GateRow.executor` is stamped with. */
+export type ExecutorState = "live" | "blocked" | "hidden" | "gone" | "cleared" | "unknown";
 export type GateOption = string | { value: string; label: string };
 export interface GateOrigin {
   paneId?: string;
@@ -123,10 +125,15 @@ export interface GateRow {
   supersededBy: string | null;
   agent: string | null; pane: string | null;
   nudge: { session: string } | null;
-  delivery: { outcome: "delivered" | "dead-pane"; at: number } | null;
+  delivery: { outcome: "delivered" | "dead-pane" | "confirmed" | "stuck"; at: number } | null;
   released: boolean;
   owner: string | null;
   escalatedAt: number | null;
+  /** Set by answer-time execution handling: an answered gate whose executor
+      couldn't be resumed. Cleared (absent) once resumption succeeds. */
+  execution?: "unassigned";
+  /** Stamped by the reconciler sweep for open/parked rows only. */
+  executor?: ExecutorState;
 }
 
 export interface GateSubscription {
@@ -147,7 +154,7 @@ export interface HerdJobInfo { herd: string; name: string; worktree: string; bra
 /** `lastGateStatus`/`lastGateDelivery` come from the job's `lastGate` row: an `answered` gate whose delivery is `dead-pane` is the "answered, worker not woken" case the shepherd must act on. */
 export interface HerdStatusData {
   herd: HerdInfo;
-  jobs: Array<HerdJobInfo & { openGate: string | null; paneStatus: string | null; lastGateStatus: GateStatus | null; lastGateDelivery: "delivered" | "dead-pane" | null }>;
+  jobs: Array<HerdJobInfo & { openGate: string | null; paneStatus: string | null; lastGateStatus: GateStatus | null; lastGateDelivery: "delivered" | "dead-pane" | "confirmed" | "stuck" | null }>;
   unread: number;
   lifecycleConnected: boolean;
   hiddenUp: boolean | null;
@@ -304,6 +311,25 @@ export interface RunDecisionRow { contract: string; scope: string; selection: st
 export interface RunDetail { run: RunSummary; stages: RunStageRow[]; fields: RunFieldRow[]; decisions: RunDecisionRow[]; schemaAhead: boolean; }
 
 export type AgentSurface = "herdr" | "headless";
+
+/** The reconciler's per-agent snapshot: one row per agent it knows about, live or not. */
+export interface ExecutorView {
+  agentId: string;
+  repo: string | null;
+  subject: string | null;
+  surface: AgentSurface;
+  sessionId: string;
+  paneRef: string | null;
+  state: ExecutorState;
+  since: number;
+  openGateIds: string[];
+}
+
+export interface ReconcilerStatus {
+  sweptAt: number;
+  herdrReachable: boolean;
+  executors: ExecutorView[];
+}
 
 export interface AgentRecord {
   id: string; repo: string; cwd: string; provider: string;
@@ -649,6 +675,10 @@ export interface Commands {
    *  onto delivery outcomes (dead marks included). */
   "gate:subscriptions": { payload: { session?: string; live?: boolean }; data: { subscriptions: GateSubscription[] } };
 
+  // ─── Reconciler (executor liveness sweep) ────────────────────────────────
+  "reconciler:status": { payload: Record<string, never>; data: ReconcilerStatus };
+  "reconciler:clear": { payload: { agentId: string }; data: { cleared: true } };
+
   // ─── Herd (shepherd run registry) ────────────────────────────────────────
   "herd:start":  { payload: { name: string; repo: string; session: string; hidden?: boolean }; data: { herd: string; room: string; workspace: string; subscription: string; handle: string; hidden: boolean } };
   "herd:resume": { payload: { herd: string; session: string }; data: { subscription: string; gates: GateRow[]; unread: number; status: HerdStatusData; handle: string } };
@@ -778,6 +808,8 @@ export const COMMAND_NAMES: readonly CommandName[] = [
   "gate:subscribe",
   "gate:unsubscribe",
   "gate:subscriptions",
+  "reconciler:status",
+  "reconciler:clear",
   "herd:start",
   "herd:resume",
   "herd:status",
