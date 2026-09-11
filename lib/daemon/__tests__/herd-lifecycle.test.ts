@@ -268,6 +268,42 @@ describe("herd-lifecycle", () => {
     expect(posts[0].body).toContain("job-a exited");
   });
 
+  // Production stores the ADDRESSABLE ref in a hidden herd's job rows
+  // (agent:start rewrites rec.paneId to bg:<id> before herd:spawn persists
+  // it), while herdr's event stream and session.snapshot always carry bare
+  // pane ids -- so every stored-ref-to-bare comparison must parse first.
+  // These fixtures seed what production actually stores.
+
+  test("a hidden herd's job row stores the bg: ref; a bare-id pane.exited still finds it, marks crashed, and posts", async () => {
+    const { store, lc, posts } = fx({ bgSocket: "/bg.sock" });
+    store.create({ id: "hid-1", repo: "r", room: "herd-hid-1", workspace: "w", shepherdSession: "s", shepherdHandle: "shepherd", herdrSocket: "/bg.sock", hidden: true });
+    store.upsertJob({ herd: "hid-1", name: "job-a", worktree: "/w", handle: "job-a", status: "active", pane: "bg:w1:p1" });
+    await lc.handleEvent("/bg.sock", { type: "pane.exited", pane_id: "w1:p1" });
+    expect(store.getJob("hid-1", "job-a")!.status).toBe("crashed");
+    expect(posts[0].body).toContain("job-a exited (pane bg:w1:p1)");
+  });
+
+  test("a hidden herd's blocked alert still fires when the job row stores the bg: ref", async () => {
+    const { store, lc, posts, timers } = fx({ bgSocket: "/bg.sock" });
+    store.create({ id: "hid-1", repo: "r", room: "herd-hid-1", workspace: "w", shepherdSession: "s", shepherdHandle: "shepherd", herdrSocket: "/bg.sock", hidden: true });
+    store.upsertJob({ herd: "hid-1", name: "job-a", worktree: "/w", handle: "job-a", status: "active", pane: "bg:w1:p1" });
+    await lc.handleEvent("/bg.sock", { type: "pane.agent_status_changed", pane_id: "w1:p1", agent_status: "blocked" });
+    const debounce = timers.filter((t) => t.ms === 30_000 && !t.cleared);
+    expect(debounce).toHaveLength(1);
+    debounce[0]!.fn();
+    await Bun.sleep(0);
+    expect(posts).toHaveLength(1);
+    expect(posts[0].body).toContain("job-a blocked (pane bg:w1:p1)");
+  });
+
+  test("reconcilePanes subscribes with the bare pane id even when the job row stores the bg: ref", () => {
+    const { store, lc, paneSubs } = fx({ bgSocket: "/bg.sock" });
+    store.create({ id: "hid-1", repo: "r", room: "herd-hid-1", workspace: "w", shepherdSession: "s", shepherdHandle: "shepherd", herdrSocket: "/bg.sock", hidden: true });
+    store.upsertJob({ herd: "hid-1", name: "job-a", worktree: "/w", handle: "job-a", status: "active", pane: "bg:w1:p1" });
+    lc.start();
+    expect(paneSubs().map((s) => s.subscriptions[0]!.pane_id)).toEqual(["w1:p1"]);
+  });
+
   test("start also watches the configured bg socket, not just default and herd rows", () => {
     const { lc, wildcard } = fx({ bgSocket: "/bg.sock" });
     lc.start();
@@ -396,7 +432,9 @@ describe("herd-lifecycle", () => {
       herdr: async () => ({ ok: true, result: { snapshot: { panes: [{ pane_id: "w9:p1" }] } } }),
     });
     store.create({ id: "hd-1", repo: "r", room: "herd-hd-1", workspace: "herd: hd-1", shepherdSession: "s", shepherdHandle: "shepherd", herdrSocket: "/bg.sock", hidden: true });
-    store.upsertJob({ herd: "hd-1", name: "job-a", worktree: "/w/job-a", handle: "job-a", status: "active", pane: "w9:p1" });
+    // The honest fixture: production stores the bg: ref, the snapshot lists
+    // the bare id -- the keep-alive must parse before comparing.
+    store.upsertJob({ herd: "hd-1", name: "job-a", worktree: "/w/job-a", handle: "job-a", status: "active", pane: "bg:w9:p1" });
     store.setHerdStatus("hd-1", "wrapped");
     await lc.sweepClaims();
     expect(bgClaims.list().map((c) => c.owner)).toEqual(["herd:hd-1"]);

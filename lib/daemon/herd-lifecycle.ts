@@ -107,7 +107,12 @@ export function createHerdLifecycle(opts: {
     const wanted = new Map<string, { socket: string | null; pane: string }>();
     for (const herd of store.list({ status: "active" })) {
       for (const job of store.jobs(herd.id)) {
-        if (job.pane && WATCHED.has(job.status)) wanted.set(paneKey(herd.herdrSocket, job.pane), { socket: herd.herdrSocket, pane: job.pane });
+        // A hidden herd's row stores the bg: ref; herdr only knows the bare
+        // id, so the subscription (and the pane key handleEvent will use)
+        // must carry the parsed form.
+        if (!job.pane || !WATCHED.has(job.status)) continue;
+        const pane = parsePaneRef(job.pane).paneId;
+        wanted.set(paneKey(herd.herdrSocket, pane), { socket: herd.herdrSocket, pane });
       }
     }
     for (const key of [...paneSubs.keys()]) {
@@ -122,10 +127,12 @@ export function createHerdLifecycle(opts: {
 
   /** A pane id is reused across a herd's lifetime and `jobsByPane` is
       unordered, so a finished row can shadow the job the event is really
-      about; a watched row always wins over one that is not. */
+      about; a watched row always wins over one that is not. Events carry the
+      bare pane id while a hidden herd's row stores the bg: ref (and pre-ref
+      rows the bare id), so both spellings are looked up. */
   function jobFor(socket: string | null, pane: string): { job: HerdJobRow; room: string; shepherd: string; hidden: boolean } | null {
     let stale: { job: HerdJobRow; room: string; shepherd: string; hidden: boolean } | null = null;
-    for (const job of store.jobsByPane(pane)) {
+    for (const job of [...store.jobsByPane(pane), ...store.jobsByPane(formatPaneRef(pane, "bg"))]) {
       const herd = store.get(job.herd);
       if (!herd || herd.status !== "active") continue;
       if (socketKey(herd.herdrSocket) !== socketKey(socket)) continue;
@@ -285,7 +292,8 @@ export function createHerdLifecycle(opts: {
         if (herd) {
           if (herd.status !== "wrapped") continue;
           const jobsNow = store.jobs(herdId);
-          if (jobsNow.some((j) => j.pane && live.has(j.pane))) continue;
+          // Job rows store the bg: ref; the snapshot lists bare ids.
+          if (jobsNow.some((j) => j.pane && live.has(parsePaneRef(j.pane).paneId))) continue;
           const panesNow = new Set(jobsNow.map((j) => j.pane).filter((p): p is string => !!p));
           const before = herdJobPanesBefore.get(herdId) ?? new Set<string>();
           if (panesNow.size !== before.size || [...panesNow].some((p) => !before.has(p))) continue;
