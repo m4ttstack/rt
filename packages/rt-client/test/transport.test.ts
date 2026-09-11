@@ -56,4 +56,18 @@ describe("rtCommand", () => {
       rmSync(fakeHome, { recursive: true, force: true });
     }
   });
+
+  test("RT_DAEMON_SOCK env overrides the default socket path, ahead of HOME", async () => {
+    const origSock = process.env.RT_DAEMON_SOCK;
+    const sockPath = join(tmpdir(), `rt-client-daemon-sock-override-${process.pid}.sock`);
+    process.env.RT_DAEMON_SOCK = sockPath;
+    try {
+      const res = await rtCommand("project-mrs:read", { repoName: "x" }, {});
+      expect(res.ok).toBe(false);
+      expect(res.error).toContain(`rt daemon unreachable at ${sockPath}`);
+    } finally {
+      if (origSock === undefined) delete process.env.RT_DAEMON_SOCK;
+      else process.env.RT_DAEMON_SOCK = origSock;
+    }
+  });
 });
