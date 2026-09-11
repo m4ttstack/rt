@@ -1,5 +1,5 @@
 /**
- * lib/daemon/reconciler.ts — the executor reconciler sweep: derives each
+ * lib/daemon/reconciler.ts: the executor reconciler sweep. Derives each
  * agent's live pane state from a fresh herdr snapshot every pass, debounces
  * blocked/gone transitions across consecutive sweeps before acting, and
  * opens/closes "pane-attention" gates so a wedged or orphaned pane surfaces
