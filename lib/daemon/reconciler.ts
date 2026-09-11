@@ -63,6 +63,11 @@ export interface Reconciler {
   expect(e: Expectation): void;
   clear(agentId: string): void;
   executorFor(hints: PaneHints): { state: ExecutorState; pane: LivePane | null };
+  /** The agent behind a gate row, via the same pane-then-field join the
+      sweep's own view computation uses (reconciler-view.ts's gateAgentId).
+      Read fresh against the last-swept pane snapshot -- stale between
+      sweeps in exactly the way status()/executorFor() already are. */
+  agentIdFor(gate: GateRow): string | null;
 }
 
 export interface ReconcilerDeps {
@@ -346,6 +351,10 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
     return { state: pane.agentStatus === "blocked" ? "blocked" : "live", pane };
   }
 
+  function agentIdFor(gate: GateRow): string | null {
+    return gateAgentId(gate, deps.listAgents(), lastPanes);
+  }
+
   return {
     sweep,
     status: () => lastStatus,
@@ -354,5 +363,6 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
     },
     clear,
     executorFor,
+    agentIdFor,
   };
 }
