@@ -169,6 +169,21 @@ describe("heldReadyLadders", () => {
     expect(await heldReadyLadders(index, { now })).toHaveLength(1);
   });
 
+  // RT-128: with the tray polling faster than a compute finishes (a machine
+  // whose spawns are slow), each queued poll used to launch its own full
+  // store walk — N concurrent callers must share ONE in-flight compute.
+  test("concurrent calls share one in-flight compute: overlapping callers get the same promise", async () => {
+    teamReady(LADDER);
+    const now = () => 1_000;
+
+    const first = heldReadyLadders(index, { now });
+    const second = heldReadyLadders(index, { now });
+
+    expect(second).toBe(first);
+    expect(await first).toHaveLength(1);
+    expect(await second).toHaveLength(1);
+  });
+
   test("the snapshot recomputes once the TTL elapses", async () => {
     teamReady(LADDER);
     let clock = 1_000;
