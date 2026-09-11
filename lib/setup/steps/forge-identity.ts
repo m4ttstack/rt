@@ -10,7 +10,7 @@
 import type { ApplyContext } from "../apply.ts";
 import { isValidHostname } from "../host-validate.ts";
 import { forgeFromHost, forgeFromRemote, readUserIntegrationOverrides } from "../team-settings.ts";
-import { forgeTokenFor } from "./forge-token.ts";
+import { trustedForgeTokenFor } from "./forge-token.ts";
 
 export interface ResolvedForge {
   host: string;
@@ -41,9 +41,11 @@ export async function resolveForge(ctx: ApplyContext): Promise<ResolvedForge | n
     ctx.snapshot?.integrations.forge ??
     (ctx.snapshot?.remote ? forgeFromRemote(ctx.snapshot.remote) : null) ??
     connectedForge();
-  if (!forge) return null;
+  // The snapshot branches carry a host the TEAM declared, so they need the
+  // same hostname gate `connectedForge` applies before gh/glab sees it.
+  if (!forge || !isValidHostname(forge.host)) return null;
 
-  const token = await forgeTokenFor(ctx, tokenRemoteFor(forge.host));
+  const token = await trustedForgeTokenFor(ctx, tokenRemoteFor(forge.host));
   if (token) ctx.redact(token);
   return { host: forge.host, provider: forge.provider, token };
 }

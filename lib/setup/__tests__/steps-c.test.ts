@@ -838,6 +838,49 @@ describe("apply steps C: plugins, git.identity, fast-browser, herdr, extension, 
       expect(redacted).toContain("ghp_staged");
       expect(p.calls.exec.flat().join(" ")).not.toContain("ghp_staged");
     });
+
+    test("a team-declared forge host the user never confirmed gets no token: glab runs tokenless against it", async () => {
+      const seen: (Record<string, string> | undefined)[] = [];
+      const p = fakeProbes({
+        home,
+        exec: async (argv, opts) => {
+          if (argv[0] === "git" && argv.length === 4) return unset;
+          seen.push(opts?.env);
+          return ok(JSON.stringify({ username: "zaphod", name: "Zaphod", id: 42, commit_email: "zaphod@acme.example" }));
+        },
+      });
+      stageSecret(p, "rt", "gitlabToken", "glpat_staged");
+      const { ctx } = makeCtx(p, { snapshot: { ...GITHUB_FORGE, integrations: { forge: { host: "gitlab.internal.example", provider: "gitlab" } } } });
+
+      expect((await gitIdentityStep.run(ctx)).state).toBe("done");
+      expect(seen[0]?.GITLAB_TOKEN).toBeUndefined();
+    });
+
+    test("a declared forge host the user HAS confirmed still gets the token", async () => {
+      setSetting("rt.integrations", { forgeHost: "gitlab.internal.example" }, "user");
+      const seen: (Record<string, string> | undefined)[] = [];
+      const p = fakeProbes({
+        home,
+        exec: async (argv, opts) => {
+          if (argv[0] === "git" && argv.length === 4) return unset;
+          seen.push(opts?.env);
+          return ok(JSON.stringify({ username: "zaphod", name: "Zaphod", id: 42, commit_email: "zaphod@acme.example" }));
+        },
+      });
+      stageSecret(p, "rt", "gitlabToken", "glpat_staged");
+      const { ctx } = makeCtx(p, { snapshot: { ...GITHUB_FORGE, integrations: { forge: { host: "gitlab.internal.example", provider: "gitlab" } } } });
+
+      expect((await gitIdentityStep.run(ctx)).state).toBe("done");
+      expect(seen[0]?.GITLAB_TOKEN).toBe("glpat_staged");
+    });
+
+    test("a team-declared forge host that is not a hostname is refused, never handed to a forge CLI", async () => {
+      const p = fakeProbes({ home, exec: async () => unset });
+      const { ctx } = makeCtx(p, { snapshot: { ...GITHUB_FORGE, integrations: { forge: { host: "gitlab.example.com/../evil", provider: "gitlab" } } } });
+
+      expect((await gitIdentityStep.run(ctx)).state).toBe("skipped");
+      expect(p.calls.exec).toEqual([READ_NAME, READ_EMAIL]);
+    });
   });
 
   // ─── fastbrowser.setup ──────────────────────────────────────────────────
