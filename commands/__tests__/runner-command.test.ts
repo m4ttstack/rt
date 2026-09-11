@@ -145,11 +145,13 @@ test("both deps builders resolve with the board option set", async () => {
 // (RT-113), never raw herdr tab focus on the headless server.
 test("focusBgPane calls pane:focus with the bg: ref and the board's HERDR_WORKSPACE_ID", async () => {
   const calls: unknown[] = [];
+  const previousWorkspace = process.env.HERDR_WORKSPACE_ID;
   process.env.HERDR_WORKSPACE_ID = "wCALLER";
   try {
     await focusBgPane("w5:p1", { paneFocus: async (p: unknown) => { calls.push(p); return { ok: true as const, data: { paneId: "bg:w5:p1", focused: true, attendTab: "wv:t9" } }; } });
   } finally {
-    delete process.env.HERDR_WORKSPACE_ID;
+    if (previousWorkspace === undefined) delete process.env.HERDR_WORKSPACE_ID;
+    else process.env.HERDR_WORKSPACE_ID = previousWorkspace;
   }
   expect(calls).toEqual([{ paneId: "bg:w5:p1", callerWorkspace: "wCALLER" }]);
 });
