@@ -28,8 +28,9 @@ describe('textRefGrade', () => {
     expect(textRefGrade({ ...base, description }, 'CV-28')).toBe('mention');
   });
 
-  it('does not prefix-match identifiers', () => {
+  it('does not prefix-match identifiers in title or branch', () => {
     expect(textRefGrade({ ...base, title: 'CV-3027: thing' }, 'CV-302')).toBeNull();
+    expect(textRefGrade({ ...base, sourceBranch: 'cv-3027-delete-v1' }, 'CV-302')).toBeNull();
   });
 
   it('returns null when the identifier appears nowhere', () => {

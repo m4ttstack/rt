@@ -41,7 +41,7 @@ export function textRefGrade(
   if (!team || !num) return null;
   const t = escapeRegex(team);
   const idRe = new RegExp(`\\b${t}[-:]${num}\\b`, 'i');
-  const branchRe = new RegExp(`\\b${t}[-_]${num}`, 'i');
+  const branchRe = new RegExp(`\\b${t}[-_]${num}(?!\\d)`, 'i');
   const anywhere =
     idRe.test(mr.title) ||
     (mr.description !== null && idRe.test(mr.description)) ||
