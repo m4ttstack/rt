@@ -96,3 +96,65 @@ test('launch flow: failureMessage override replaces the default failure toast', 
     'toast:resume review failed for !7 (400): no session id on file',
   ]);
 });
+test('launch flow: focus intent skips queued and launch toast, toasts the focus', async () => {
+  const events: string[] = [];
+  await runLaunchFlow(
+    {
+      post: async () => ({
+        ok: true,
+        status: 200,
+        body: { focused: true },
+        text: '',
+      }),
+      setQueued: () => events.push('queued'),
+      rollback: () => events.push('rollback'),
+      addToast: t => events.push(`toast:${t}`),
+      reload: () => events.push('reload'),
+      verbing: 'calling doctor',
+      noun: 'doctor',
+    },
+    { webUrl: 'u', iid: 7 } as never,
+    {},
+    'focus'
+  );
+  expect(events).toEqual(['toast:focused doctor tab for !7', 'reload']);
+});
+test('launch flow: focus intent failure toasts the focus failure, no rollback', async () => {
+  const events: string[] = [];
+  await runLaunchFlow(
+    {
+      post: async () => ({ ok: false, status: 502, body: null, text: '' }),
+      setQueued: () => events.push('queued'),
+      rollback: () => events.push('rollback'),
+      addToast: t => events.push(`toast:${t}`),
+      reload: () => events.push('reload'),
+      verbing: 'calling doctor',
+      noun: 'doctor',
+    },
+    { webUrl: 'u', iid: 7 } as never,
+    {},
+    'focus'
+  );
+  expect(events).toEqual(["toast:couldn't focus doctor tab for !7 (502)"]);
+});
+test('launch flow: focus intent that lands on a fresh launch says so', async () => {
+  const events: string[] = [];
+  await runLaunchFlow(
+    {
+      post: async () => ({ ok: true, status: 200, body: {}, text: '' }),
+      setQueued: () => events.push('queued'),
+      rollback: () => events.push('rollback'),
+      addToast: t => events.push(`toast:${t}`),
+      reload: () => events.push('reload'),
+      verbing: 'calling doctor',
+      noun: 'doctor',
+    },
+    { webUrl: 'u', iid: 7 } as never,
+    {},
+    'focus'
+  );
+  expect(events).toEqual([
+    "toast:doctor wasn't running for !7; launched a fresh one",
+    'reload',
+  ]);
+});

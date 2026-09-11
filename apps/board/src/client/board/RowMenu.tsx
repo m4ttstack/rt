@@ -44,7 +44,7 @@ function RowMenu({
   menu: RowMenuState;
   ctx: RowContext;
   onClose: () => void;
-  onLaunch: (mr: BoardMR, note?: string) => void;
+  onLaunch: (mr: BoardMR, note?: string, intent?: 'launch' | 'focus') => void;
   onReReview: (mr: BoardMR, note?: string) => void;
   onCopy: (mr: BoardMR) => void;
   onResolveSlack: (mr: BoardMR) => void;
@@ -54,9 +54,9 @@ function RowMenu({
     remove: boolean
   ) => Promise<string[] | null>;
   onPostSlack: (mr: BoardMR) => void;
-  onRespond: (mr: BoardMR, note?: string) => void;
+  onRespond: (mr: BoardMR, note?: string, intent?: 'launch' | 'focus') => void;
   canRespond: boolean;
-  onDoctor: (mr: BoardMR, note?: string) => void;
+  onDoctor: (mr: BoardMR, note?: string, intent?: 'launch' | 'focus') => void;
   canDoctor: boolean;
   onDraftState: (mr: BoardMR, draft: boolean) => void;
   canDraftState: boolean;
@@ -219,7 +219,7 @@ function RowMenu({
             hint={reviewRunning ? 'herdr' : paneHint}
             onClick={
               reviewRunning
-                ? run(() => onLaunch(mr))
+                ? run(() => onLaunch(mr, undefined, 'focus'))
                 : paneClick(item.label, note =>
                     item.kind === 're-review'
                       ? onReReview(mr, note)
@@ -245,7 +245,7 @@ function RowMenu({
           }
           onClick={
             respondItemLabel(mrx.respond?.status) === 'focus response tab'
-              ? run(() => onRespond(mr))
+              ? run(() => onRespond(mr, undefined, 'focus'))
               : paneClick(respondItemLabel(mrx.respond?.status), note =>
                   onRespond(mr, note)
                 )
@@ -271,7 +271,7 @@ function RowMenu({
           }
           onClick={
             doctorItemLabel(mrx.doctor?.status) === 'focus doctor tab'
-              ? run(() => onDoctor(mr))
+              ? run(() => onDoctor(mr, undefined, 'focus'))
               : paneClick(doctorItemLabel(mrx.doctor?.status), note =>
                   onDoctor(mr, note)
                 )

@@ -216,7 +216,12 @@ export function useLaunchAction(opts: {
   addToast: (t: string) => void;
   reload: () => void;
   failureMessage?: LaunchFlowDeps['failureMessage'];
-}): (mr: BoardMR, extra?: Record<string, unknown>, note?: string) => void {
+}): (
+  mr: BoardMR,
+  extra?: Record<string, unknown>,
+  note?: string,
+  intent?: 'launch' | 'focus'
+) => void {
   const {
     axis,
     path,
@@ -228,7 +233,12 @@ export function useLaunchAction(opts: {
     failureMessage,
   } = opts;
   return useCallback(
-    (mr: BoardMR, extra: Record<string, unknown> = {}, note?: string) => {
+    (
+      mr: BoardMR,
+      extra: Record<string, unknown> = {},
+      note?: string,
+      intent?: 'launch' | 'focus'
+    ) => {
       const url = mr.webUrl;
       const deps: LaunchFlowDeps = {
         post: payload => postAction(path, payload),
@@ -241,7 +251,7 @@ export function useLaunchAction(opts: {
         noun,
         failureMessage,
       };
-      void runLaunchFlow(deps, mr, { ...extra, note });
+      void runLaunchFlow(deps, mr, { ...extra, note }, intent);
     },
     [axis, path, verbing, noun, optimistic, addToast, reload, failureMessage]
   );
