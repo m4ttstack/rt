@@ -238,8 +238,9 @@ describe('linear', () => {
         identifier: 'ENG-1',
         title: 'a',
         url: 'u1',
-        assignedUser: 'ada',
-        linkedMrs: [{ projectPath: 'g/p', iid: 1 }],
+        creditedUser: 'ada',
+        linkedMrs: [{ projectPath: 'g/p', iid: 1, via: 'mention' }],
+        closedAt: null,
         stateType: 'completed',
         stateName: 'Done',
       },
@@ -248,15 +249,18 @@ describe('linear', () => {
         identifier: 'ENG-2',
         title: 'b',
         url: 'u2',
-        assignedUser: 'bob',
-        linkedMrs: [{ projectPath: 'g/p', iid: 99 }],
+        creditedUser: 'bob',
+        linkedMrs: [{ projectPath: 'g/p', iid: 99, via: 'mention' }],
+        closedAt: null,
         stateType: 'started',
         stateName: 'In Progress',
       },
     ]);
     const got = s.linearIssuesForMrKeys([mrKey('g/p', 1)]);
     expect(got.map(i => i.identifier)).toEqual(['ENG-1']);
-    expect(got[0]!.linkedMrs).toEqual([{ projectPath: 'g/p', iid: 1 }]);
+    expect(got[0]!.linkedMrs).toEqual([
+      { projectPath: 'g/p', iid: 1, via: 'mention' },
+    ]);
   });
   it('id validity is tri-state and cached', () => {
     const s = getStore();

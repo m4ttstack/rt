@@ -1,4 +1,4 @@
-import type { NormLinearIssue } from '../store/model.js';
+import type { LinkedMr, NormLinearIssue } from '../store/model.js';
 import type { RawIssue } from './raw-types.js';
 
 /**
@@ -7,16 +7,18 @@ import type { RawIssue } from './raw-types.js';
  */
 export function mapIssue(
   raw: RawIssue,
-  assignedUser: string | null,
-  linkedMrs: { iid: number; projectPath: string }[]
+  creditedUser: string | null,
+  linkedMrs: LinkedMr[],
+  closedAt: string | null
 ): NormLinearIssue {
   return {
     id: raw.id,
     identifier: raw.identifier,
     title: raw.title,
     url: raw.url,
-    assignedUser,
+    creditedUser,
     linkedMrs,
+    closedAt,
     stateType: raw.state?.type ?? null,
     stateName: raw.state?.name ?? null,
   };

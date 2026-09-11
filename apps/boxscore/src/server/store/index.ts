@@ -1,5 +1,6 @@
 import { getDb, resetDb } from './db.js';
 import { TABLES } from './schema.js';
+import type { LinkVia } from './model.js';
 
 export type MrState = 'merged' | 'opened' | 'closed' | 'locked';
 
@@ -69,8 +70,9 @@ export interface StoredLinearIssue {
   identifier: string;
   title: string;
   url: string;
-  assignedUser: string | null;
-  linkedMrs: { iid: number; projectPath: string }[];
+  creditedUser: string | null;
+  linkedMrs: { iid: number; projectPath: string; via: LinkVia }[];
+  closedAt: string | null;
   stateType: string | null;
   stateName: string | null;
 }

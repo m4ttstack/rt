@@ -104,14 +104,16 @@ const MR4 = mr({
 
 const li = (
   identifier: string,
-  assignedUser: string | null
+  creditedUser: string | null,
+  closedAt: string | null = '2026-05-15T00:00:00.000Z'
 ): NormLinearIssue => ({
   id: identifier,
   identifier,
   title: `Issue ${identifier}`,
   url: `https://linear.app/acme/issue/${identifier}`,
-  assignedUser,
+  creditedUser,
   linkedMrs: [],
+  closedAt,
   stateType: 'completed',
   stateName: 'Done',
 });

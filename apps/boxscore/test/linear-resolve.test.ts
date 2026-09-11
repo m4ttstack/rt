@@ -233,7 +233,7 @@ describe('resolveLinearTickets credit rule', () => {
     const warnings: LeaderboardWarning[] = [];
     const issues = await resolveLinearTickets('key', mrs, warnings, roster);
     expect(issues).toHaveLength(1);
-    return issues[0]!.assignedUser;
+    return issues[0]!.creditedUser;
   };
 
   it("credits the merged MR's author over an open one, regardless of scan order", async () => {
@@ -288,7 +288,7 @@ describe('resolveLinearTickets credit rule', () => {
     expect(await resolveCredit([nonRoster, roster], ['alice'])).toBe('alice');
   });
 
-  it('leaves assignedUser null when nothing merged and several distinct authors are linked', async () => {
+  it('leaves creditedUser null when nothing merged and several distinct authors are linked', async () => {
     const a = linkedMr({
       iid: 1,
       authorUsername: 'alice',

@@ -88,8 +88,9 @@ describe('issuesCompleted drops gated-out issues from the rows', () => {
     identifier,
     title: `Issue ${identifier}`,
     url: `https://linear.app/acme/issue/${identifier}`,
-    assignedUser: 'alice',
+    creditedUser: 'alice',
     linkedMrs: [],
+    closedAt: null,
     stateType: 'completed',
     stateName: 'Done',
     ...over,
@@ -98,7 +99,7 @@ describe('issuesCompleted drops gated-out issues from the rows', () => {
     ...FETCH,
     linearIssues: [
       ...(FETCH.linearIssues ?? []),
-      issue('PLA-9'), // wrong team — mentioned in prose of one of alice's MRs
+      issue('PLA-9'), // wrong team ... mentioned in prose of one of alice's MRs
       issue('ENG-9', { stateType: 'started', stateName: 'In Progress' }),
     ],
   };

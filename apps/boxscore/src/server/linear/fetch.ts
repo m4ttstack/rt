@@ -239,8 +239,9 @@ export async function resolveLinearTickets(
       const linkedMrs = (ref?.mrs ?? []).map(({ iid, projectPath }) => ({
         iid,
         projectPath,
+        via: 'mention' as const,
       }));
-      issues.push(mapIssue(raw, author, linkedMrs));
+      issues.push(mapIssue(raw, author, linkedMrs, null));
     }
   };
 

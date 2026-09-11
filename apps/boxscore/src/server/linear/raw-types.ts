@@ -7,6 +7,7 @@ export interface RawIssue {
   /** Canonical Linear deep link to the issue. */
   url: string;
   state: { type: string; name: string } | null;
+  attachments: { nodes: { url: string; sourceType: string | null }[] } | null;
 }
 
 export interface RawPageInfo {

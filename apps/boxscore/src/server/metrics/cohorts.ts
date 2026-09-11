@@ -214,7 +214,7 @@ export function buildUserCohorts(
     stateExcluded: 0,
   };
   for (const i of corpus.linearIssues) {
-    if (i.assignedUser !== u) continue;
+    if (i.creditedUser !== u) continue;
     if (!matchesTeam(i.identifier, opts.linearTeam)) {
       issues.teamExcluded++;
       continue;
