@@ -410,4 +410,28 @@ describe('legacy row normalization', () => {
     expect(row.creditedUser).toBe('alice');
     expect(row.linkedMrs).toEqual([{ iid: 7, projectPath: 'org/app', via: 'mention' }]);
   });
+
+  it('a null-closedAt upsert over a legacy stored row keeps the incoming linkedMrs', () => {
+    getStore().__rawInsertLinearIssue?.('CV-10', JSON.stringify({
+      id: 'uuid-CV-10', identifier: 'CV-10', title: 'old', url: 'https://linear.app/acme/issue/CV-10',
+      assignedUser: 'alice', linkedMrs: [{ iid: 7, projectPath: 'org/app' }],
+      stateType: 'completed', stateName: 'Done',
+    }));
+    getStore().upsertLinearIssues([
+      {
+        id: 'uuid-CV-10',
+        identifier: 'CV-10',
+        title: 'old',
+        url: 'https://linear.app/acme/issue/CV-10',
+        creditedUser: 'bob',
+        linkedMrs: [{ iid: 11, projectPath: 'org/app', via: 'attachment' }],
+        closedAt: null,
+        stateType: 'started',
+        stateName: 'In Progress',
+      },
+    ]);
+    const row = getStore().allLinearIssues().find(i => i.identifier === 'CV-10')!;
+    expect(row.closedAt).toBeNull();
+    expect(row.linkedMrs).toEqual([{ iid: 11, projectPath: 'org/app', via: 'attachment' }]);
+  });
 });

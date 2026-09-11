@@ -103,6 +103,23 @@ function placeholders(n: number): string {
   return `(${Array(n).fill('?').join(',')})`;
 }
 
+/**
+ * Rows written before the redesign carry assignedUser, no closedAt, and linkedMrs
+ * without via. Both the read path and the sticky-upsert's "is the stored row already
+ * closed" check must see the normalized shape, or a legacy row's absent closedAt
+ * (undefined) reads as "closed" under a raw `!== null` check.
+ */
+function normalizeStoredLinearIssue(
+  raw: StoredLinearIssue & { assignedUser?: string | null }
+): StoredLinearIssue {
+  return {
+    ...raw,
+    creditedUser: raw.creditedUser ?? raw.assignedUser ?? null,
+    closedAt: raw.closedAt ?? null,
+    linkedMrs: (raw.linkedMrs ?? []).map(m => ({ ...m, via: m.via ?? 'mention' })),
+  };
+}
+
 interface IndexRowRecord {
   project_path: string;
   iid: number;
@@ -392,7 +409,9 @@ function buildStore() {
               data: string;
             } | null;
             if (existing) {
-              const prev = JSON.parse(existing.data) as StoredLinearIssue;
+              const prev = normalizeStoredLinearIssue(
+                JSON.parse(existing.data) as StoredLinearIssue
+              );
               if (prev.closedAt !== null) {
                 toWrite = {
                   ...r,
@@ -410,22 +429,13 @@ function buildStore() {
     },
     allLinearIssues(): StoredLinearIssue[] {
       const rows = stmtAllLinearIssues.all() as { data: string }[];
-      // Rows written before the redesign carry assignedUser, no closedAt, and
-      // linkedMrs without via; normalize on read so no caller sees the old shape.
-      return rows.map(r => {
-        const raw = JSON.parse(r.data) as StoredLinearIssue & {
-          assignedUser?: string | null;
-        };
-        return {
-          ...raw,
-          creditedUser: raw.creditedUser ?? raw.assignedUser ?? null,
-          closedAt: raw.closedAt ?? null,
-          linkedMrs: (raw.linkedMrs ?? []).map(m => ({
-            ...m,
-            via: m.via ?? 'mention',
-          })),
-        };
-      });
+      return rows.map(r =>
+        normalizeStoredLinearIssue(
+          JSON.parse(r.data) as StoredLinearIssue & {
+            assignedUser?: string | null;
+          }
+        )
+      );
     },
 
     isValidLinearId(id: string): boolean | null {
