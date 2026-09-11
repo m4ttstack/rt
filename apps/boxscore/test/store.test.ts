@@ -351,7 +351,9 @@ describe('lifecycle', () => {
 });
 
 describe('linear issue stickiness', () => {
-  const closed = (over: Partial<StoredLinearIssue> = {}): StoredLinearIssue => ({
+  const closed = (
+    over: Partial<StoredLinearIssue> = {}
+  ): StoredLinearIssue => ({
     id: 'uuid-CV-1',
     identifier: 'CV-1',
     title: 'Ticket CV-1',
@@ -367,12 +369,21 @@ describe('linear issue stickiness', () => {
   it('an incoming null closedAt preserves the stored closure', () => {
     getStore().upsertLinearIssues([closed()]);
     getStore().upsertLinearIssues([
-      closed({ creditedUser: null, linkedMrs: [], closedAt: null, stateName: 'Ready for Release' }),
+      closed({
+        creditedUser: null,
+        linkedMrs: [],
+        closedAt: null,
+        stateName: 'Ready for Release',
+      }),
     ]);
-    const row = getStore().allLinearIssues().find(i => i.identifier === 'CV-1')!;
+    const row = getStore()
+      .allLinearIssues()
+      .find(i => i.identifier === 'CV-1')!;
     expect(row.closedAt).toBe('2026-05-10T00:00:00.000Z');
     expect(row.creditedUser).toBe('alice');
-    expect(row.linkedMrs).toEqual([{ iid: 10, projectPath: 'org/app', via: 'attachment' }]);
+    expect(row.linkedMrs).toEqual([
+      { iid: 10, projectPath: 'org/app', via: 'attachment' },
+    ]);
     expect(row.stateName).toBe('Ready for Release');
   });
 
@@ -381,7 +392,9 @@ describe('linear issue stickiness', () => {
     getStore().upsertLinearIssues([
       closed({ creditedUser: 'bob', closedAt: '2026-05-20T00:00:00.000Z' }),
     ]);
-    const row = getStore().allLinearIssues().find(i => i.identifier === 'CV-1')!;
+    const row = getStore()
+      .allLinearIssues()
+      .find(i => i.identifier === 'CV-1')!;
     expect(row.closedAt).toBe('2026-05-20T00:00:00.000Z');
     expect(row.creditedUser).toBe('bob');
   });
@@ -400,23 +413,43 @@ describe('indexRowsByKeys', () => {
 
 describe('legacy row normalization', () => {
   it('reads pre-redesign rows with defaults for the new fields', () => {
-    getStore().__rawInsertLinearIssue?.('CV-9', JSON.stringify({
-      id: 'uuid-CV-9', identifier: 'CV-9', title: 'old', url: 'https://linear.app/acme/issue/CV-9',
-      assignedUser: 'alice', linkedMrs: [{ iid: 7, projectPath: 'org/app' }],
-      stateType: 'completed', stateName: 'Done',
-    }));
-    const row = getStore().allLinearIssues().find(i => i.identifier === 'CV-9')!;
+    getStore().__rawInsertLinearIssue?.(
+      'CV-9',
+      JSON.stringify({
+        id: 'uuid-CV-9',
+        identifier: 'CV-9',
+        title: 'old',
+        url: 'https://linear.app/acme/issue/CV-9',
+        assignedUser: 'alice',
+        linkedMrs: [{ iid: 7, projectPath: 'org/app' }],
+        stateType: 'completed',
+        stateName: 'Done',
+      })
+    );
+    const row = getStore()
+      .allLinearIssues()
+      .find(i => i.identifier === 'CV-9')!;
     expect(row.closedAt).toBeNull();
     expect(row.creditedUser).toBe('alice');
-    expect(row.linkedMrs).toEqual([{ iid: 7, projectPath: 'org/app', via: 'mention' }]);
+    expect(row.linkedMrs).toEqual([
+      { iid: 7, projectPath: 'org/app', via: 'mention' },
+    ]);
   });
 
   it('a null-closedAt upsert over a legacy stored row keeps the incoming linkedMrs', () => {
-    getStore().__rawInsertLinearIssue?.('CV-10', JSON.stringify({
-      id: 'uuid-CV-10', identifier: 'CV-10', title: 'old', url: 'https://linear.app/acme/issue/CV-10',
-      assignedUser: 'alice', linkedMrs: [{ iid: 7, projectPath: 'org/app' }],
-      stateType: 'completed', stateName: 'Done',
-    }));
+    getStore().__rawInsertLinearIssue?.(
+      'CV-10',
+      JSON.stringify({
+        id: 'uuid-CV-10',
+        identifier: 'CV-10',
+        title: 'old',
+        url: 'https://linear.app/acme/issue/CV-10',
+        assignedUser: 'alice',
+        linkedMrs: [{ iid: 7, projectPath: 'org/app' }],
+        stateType: 'completed',
+        stateName: 'Done',
+      })
+    );
     getStore().upsertLinearIssues([
       {
         id: 'uuid-CV-10',
@@ -430,8 +463,12 @@ describe('legacy row normalization', () => {
         stateName: 'In Progress',
       },
     ]);
-    const row = getStore().allLinearIssues().find(i => i.identifier === 'CV-10')!;
+    const row = getStore()
+      .allLinearIssues()
+      .find(i => i.identifier === 'CV-10')!;
     expect(row.closedAt).toBeNull();
-    expect(row.linkedMrs).toEqual([{ iid: 11, projectPath: 'org/app', via: 'attachment' }]);
+    expect(row.linkedMrs).toEqual([
+      { iid: 11, projectPath: 'org/app', via: 'attachment' },
+    ]);
   });
 });

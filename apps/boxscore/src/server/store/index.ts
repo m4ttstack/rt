@@ -1,6 +1,6 @@
 import { getDb, resetDb } from './db.js';
-import { TABLES } from './schema.js';
 import type { LinkVia } from './model.js';
+import { TABLES } from './schema.js';
 
 export type MrState = 'merged' | 'opened' | 'closed' | 'locked';
 
@@ -116,7 +116,10 @@ function normalizeStoredLinearIssue(
     ...raw,
     creditedUser: raw.creditedUser ?? raw.assignedUser ?? null,
     closedAt: raw.closedAt ?? null,
-    linkedMrs: (raw.linkedMrs ?? []).map(m => ({ ...m, via: m.via ?? 'mention' })),
+    linkedMrs: (raw.linkedMrs ?? []).map(m => ({
+      ...m,
+      via: m.via ?? 'mention',
+    })),
   };
 }
 
@@ -422,7 +425,10 @@ function buildStore() {
               }
             }
           }
-          stmtUpsertLinearIssue.run(toWrite.identifier, JSON.stringify(toWrite));
+          stmtUpsertLinearIssue.run(
+            toWrite.identifier,
+            JSON.stringify(toWrite)
+          );
         }
       });
       tx(rows);

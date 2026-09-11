@@ -874,7 +874,9 @@ describe('runRefresh: Linear issue persistence', () => {
     const key = mrKey('g/p', 42);
     const issues = store
       .allLinearIssues()
-      .filter(i => i.linkedMrs.some(lm => mrKey(lm.projectPath, lm.iid) === key));
+      .filter(i =>
+        i.linkedMrs.some(lm => mrKey(lm.projectPath, lm.iid) === key)
+      );
     expect(issues).toHaveLength(1);
     expect(issues[0]).toMatchObject({
       identifier: 'ACME-9001',
@@ -921,7 +923,9 @@ describe('runRefresh: Linear issue persistence', () => {
     const key = mrKey('g/p', 42);
     const issues = store
       .allLinearIssues()
-      .filter(i => i.linkedMrs.some(lm => mrKey(lm.projectPath, lm.iid) === key));
+      .filter(i =>
+        i.linkedMrs.some(lm => mrKey(lm.projectPath, lm.iid) === key)
+      );
     expect(issues).toHaveLength(1);
     expect(issues[0]).toMatchObject({ identifier: 'ACME-1' });
   });
