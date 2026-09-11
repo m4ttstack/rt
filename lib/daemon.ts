@@ -28,7 +28,7 @@ import type { Server } from "bun";
 import type { Logger } from "pino";
 import type { Database } from "bun:sqlite";
 
-import { RT_DIR, DAEMON_PID_PATH } from "./daemon-config.ts";
+import { RT_DIR, DAEMON_PID_PATH, activeLaunchdLabel } from "./daemon-config.ts";
 import { resolveIntendedMode } from "./dev-mode.ts";
 import {
   getDaemonLogger,
@@ -43,7 +43,7 @@ import { createRealProbes } from "./setup/probes.ts";
 
 import { SystemProcessScanner } from "./daemon/system-process-scanner.ts";
 
-import { parkUntilIntended, probeSocketHolder, daemonFlavor } from "./daemon/park.ts";
+import { parkUntilIntended, probeSocketHolder, daemonFlavor, launchdLabelFromEnv } from "./daemon/park.ts";
 import { evictStaleDaemon } from "./daemon/boot-reconcile.ts";
 import { resolveUserPath } from "./daemon/user-path.ts";
 import { shortReqId, makeSuppressor } from "./daemon/command-attribution.ts";
@@ -237,6 +237,8 @@ function realSeams(): BootSeams {
         myFlavor: daemonFlavor(),
         resolveIntent: resolveIntendedMode,
         probeHolder: probeSocketHolder,
+        myLaunchdLabel: () => launchdLabelFromEnv(),
+        activeLaunchdLabel,
         sleep: (ms) => Bun.sleep(ms),
         log,
       }),
