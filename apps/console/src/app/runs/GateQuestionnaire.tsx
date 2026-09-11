@@ -28,8 +28,8 @@ import classes from './GateQuestionnaire.module.css';
     answer. Every choice is controlled from `selections` so a question that
     unmounts and comes back (the respond collapse) remounts wearing its
     answer, and the FormData the submit reads still mirrors that state.
-    Next and Submit disable until the active item is answered, so the
-    enabled button always does something; Cmd/Ctrl+Enter stays the
+    Next and Submit disable until the active item is answered or skipped,
+    so the enabled button always does something; Cmd/Ctrl+Enter stays the
     primitive's validate-and-advance path and surfaces the error line. */
 export function GateQuestionnaire({
   gate,
@@ -252,13 +252,34 @@ export function GateQuestionnaire({
         <Group gap="xs" ml="auto" align="center">
           {status}
           {focus}
+          {/* Only ever visible on a skippable multi (the primitive hides it
+              on required items), where it reads as the "none of these"
+              answer -- skipping submits an explicit []. */}
+          <Questionnaire.Skip
+            render={(props, state) =>
+              state.visible ? (
+                <Button
+                  {...props}
+                  size="xs"
+                  variant="subtle"
+                  disabled={busy}
+                  data-testid="gate-skip"
+                />
+              ) : null
+            }
+          >
+            none
+          </Questionnaire.Skip>
           <Questionnaire.Next
             render={(props, state) =>
               state.visible ? (
                 <Button
                   {...props}
                   size="xs"
-                  disabled={busy || state.status !== 'answered'}
+                  disabled={
+                    busy ||
+                    (state.status !== 'answered' && state.status !== 'skipped')
+                  }
                   data-testid="gate-next"
                 />
               ) : null
@@ -272,7 +293,10 @@ export function GateQuestionnaire({
                 <Button
                   {...props}
                   size="xs"
-                  disabled={busy || state.status !== 'answered'}
+                  disabled={
+                    busy ||
+                    (state.status !== 'answered' && state.status !== 'skipped')
+                  }
                   data-testid="gate-submit"
                 />
               ) : null

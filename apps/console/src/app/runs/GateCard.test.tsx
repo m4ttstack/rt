@@ -150,6 +150,29 @@ describe('GateCard: open/actionable', () => {
     );
   });
 
+  it('a skippable multi offers none -- skipping submits its explicit empty array', async () => {
+    answerPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ row: gateRow({ status: 'answered' }) }),
+    });
+    renderCard(gateRow());
+
+    // The required single-select never offers the skip.
+    expect(screen.queryByTestId('gate-skip')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('radio', { name: 'pass' }));
+    await userEvent.click(screen.getByTestId('gate-next'));
+    // Skip on the last step auto-submits with the empty selection.
+    await userEvent.click(screen.getByTestId('gate-skip'));
+
+    await waitFor(() =>
+      expect(answerPost).toHaveBeenCalledWith({
+        param: { id: 'g1' },
+        json: { answers: { outcome: 'pass', flags: [] } },
+      })
+    );
+  });
+
   it('renders Mantine Radio/Checkbox for the choice inputs, and a click through them still reaches FormData', async () => {
     answerPost.mockResolvedValue({
       ok: true,
