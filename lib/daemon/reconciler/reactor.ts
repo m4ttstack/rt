@@ -31,6 +31,7 @@ import { branchOf } from "../../state/branch-cache.ts";
 import { classifyDirtyAsync, disposeTree } from "../../worktree/dispose.ts";
 import { loadWorktreeAppConfig, type WorktreeAppConfig } from "../../worktree/config.ts";
 import { killWorktreeProcesses } from "../worktree-process-kill.ts";
+import { hasLiveCwdInside, liveProcessCwds } from "./stale-claims.ts";
 import type { RunningRunScan } from "../../runs/store.ts";
 
 /**
@@ -107,6 +108,8 @@ export interface ReactorDeps {
   log: Logger;
   /** Threaded straight into disposeTree's DisposeDeps; wired from `findRunningRunByWorktree` in lib/runs/store.ts. */
   findRunningRun: (worktree: string) => RunningRunScan;
+  /** Injectable for tests; defaults to the stale-claim sweep's lsof snapshot. */
+  liveCwds?: () => Promise<Set<string>>;
 }
 
 /**
@@ -411,6 +414,22 @@ export async function detectTransitions(deps: ReactorDeps): Promise<void> {
   const fired = new Set(state.fired);
   gcFiredLedger(repoName, fired, liveMrIdsForRepo(repoName, cacheEntries));
 
+  // One lsof snapshot per pass, taken only when an unwitnessed candidate
+  // actually needs it; null means the snapshot failed and every unwitnessed
+  // action this pass fails closed (a dispose without liveness ground truth
+  // could kill a live session's workload and retire the tree under it).
+  let liveSnap: Set<string> | null | undefined;
+  const liveCwdsOnce = async (): Promise<Set<string> | null> => {
+    if (liveSnap !== undefined) return liveSnap;
+    try {
+      liveSnap = await (deps.liveCwds ?? liveProcessCwds)();
+    } catch (err) {
+      log.warn({ err, repo: repoName }, "reactor: live-cwd snapshot failed; unwitnessed catch-up skipped this pass");
+      liveSnap = null;
+    }
+    return liveSnap;
+  };
+
   // Snapshots are per repo; other repos' keys ride through untouched so a
   // single-repo pass can't erase their memory, while this repo's stale
   // branches drop out by being rebuilt from the live cache.
@@ -457,14 +476,36 @@ export async function detectTransitions(deps: ReactorDeps): Promise<void> {
     // mistake is not recoverable from a trash dir.
     const witnessed = prev === "opened";
     const registered = findByBranch(loadRegistry(repoName), branch);
-    const trees = witnessed
+    let trees = witnessed
       ? registered
       : registered.filter((r) => r.kind === "ephemeral" && (r.state === "claimed" || r.state === "disposable"));
+
+    // The unwitnessed path has no edge vouching for the MR belonging to THIS
+    // tree (a reused branch name, a fresh ledger), so it gets the same
+    // liveness gate the stale-claim sweep applies: a tree someone is sitting
+    // in is deferred, and the fired key stays unspent so the dispose happens
+    // once the session ends. A witnessed edge keeps its existing guards.
+    let skippedLive = false;
+    if (!witnessed && trees.length > 0) {
+      const cwds = await liveCwdsOnce();
+      if (cwds === null) continue;
+      const alive = trees.filter((r) => hasLiveCwdInside(cwds, r.path));
+      if (alive.length > 0) {
+        skippedLive = true;
+        trees = trees.filter((r) => !alive.includes(r));
+        log.info(
+          { repo: repoName, branch, trees: alive.map((r) => r.name) },
+          "reactor: unwitnessed catch-up deferred; live process cwd inside the tree",
+        );
+      }
+    }
+
     if (trees.length === 0) {
       // An unwitnessed terminal observation is SPENT even with nothing to
       // act on: left unspent, a later claim on a reused branch name would
-      // reach dispose for an MR that merged before that tree existed.
-      if (!witnessed) fired.add(fireKey);
+      // reach dispose for an MR that merged before that tree existed. A
+      // live-deferred tree is the exception: its dispose is still owed.
+      if (!witnessed && !skippedLive) fired.add(fireKey);
       log.debug?.({ repo: repoName, branch, mrState: cur, witnessed }, "reactor: no actionable tree on the branch");
       continue;
     }
@@ -477,7 +518,7 @@ export async function detectTransitions(deps: ReactorDeps): Promise<void> {
     }
 
     if (reaction === "retry") nextMrState[mrKey] = "opened";
-    else if (reaction === "fired") fired.add(fireKey);
+    else if (reaction === "fired" && !skippedLive) fired.add(fireKey);
   }
 
   saveReactorState({ mrState: nextMrState, fired: [...fired] }, log);

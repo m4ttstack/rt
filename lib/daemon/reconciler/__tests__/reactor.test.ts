@@ -71,7 +71,7 @@ describe("terminal-state catch-up (missed edges)", () => {
     writeJson(join(rtDir(), "worktrees.json"), { enabled: true, killProcesses: false });
   });
 
-  function detect(entries: Record<string, unknown>): Promise<void> {
+  function detect(entries: Record<string, unknown>, liveCwds?: () => Promise<Set<string>>): Promise<void> {
     return detectTransitions({
       repoName,
       repoPath: repo,
@@ -79,6 +79,7 @@ describe("terminal-state catch-up (missed edges)", () => {
       emit: () => {},
       log: fakeLog(),
       findRunningRun: () => ({ kind: "none" as const }),
+      ...(liveCwds ? { liveCwds } : { liveCwds: async () => new Set<string>() }),
     });
   }
 
@@ -104,6 +105,31 @@ describe("terminal-state catch-up (missed edges)", () => {
     const rec = ephemeralTree(repo, repoName, "india", "feat-recut");
     await detect({ "feat-recut": { repoName, mr: { iid: 55, state: "merged" } } });
     expect(loadRegistry(repoName).find((t) => t.path === rec.path)?.state).toBe("claimed");
+  });
+
+  test("an unwitnessed dispose skips a claimed tree with a live process cwd inside, then acts once the session is gone", async () => {
+    const rec = ephemeralTree(repo, repoName, "kilo", "feat-kilo");
+
+    await detect({ "feat-kilo": { repoName, mr: { iid: 77, state: "merged" } } }, async () => new Set([join(rec.path, "src")]));
+
+    expect(loadRegistry(repoName).find((t) => t.path === rec.path)?.state).toBe("claimed");
+    expect(__test__.loadReactorState().fired).not.toContain(`disposed:${repoName}:77:merged`);
+
+    await detect({ "feat-kilo": { repoName, mr: { iid: 77, state: "merged" } } });
+
+    expect(loadRegistry(repoName).find((t) => t.path === rec.path)).toBeUndefined();
+    expect(__test__.loadReactorState().fired).toContain(`disposed:${repoName}:77:merged`);
+  });
+
+  test("an unwitnessed pass whose live-cwd snapshot fails acts on nothing and spends nothing (fail closed)", async () => {
+    const rec = ephemeralTree(repo, repoName, "lima", "feat-lima");
+
+    await detect({ "feat-lima": { repoName, mr: { iid: 78, state: "merged" } } }, async () => {
+      throw new Error("lsof unavailable");
+    });
+
+    expect(loadRegistry(repoName).find((t) => t.path === rec.path)?.state).toBe("claimed");
+    expect(__test__.loadReactorState().fired).not.toContain(`disposed:${repoName}:78:merged`);
   });
 
   test("catch-up never touches a main tree — auto-return stays edge-only", async () => {
