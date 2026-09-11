@@ -52,7 +52,7 @@ import { unknownCommandReply } from "./daemon/unknown-command.ts";
 // ./state/db.ts directly: importing the barrel is what guarantees every
 // store module has registered its legacy-JSON importer before the one-shot
 // v0->v1 migration runs (see lib/state/index.ts).
-import { getBranchCacheStore, getStateDb, closeStateDb, persistOrWarn, prunePresence, pruneMessages, pruneAgents, snapshotRegistryDeps, quickCheck, backupTo, stampedBackupPath, pruneStateBackups, setBusyLogSink, enqueueNotification, type BranchCacheStore } from "./state/index.ts";
+import { getBranchCacheStore, getStateDb, closeStateDb, persistOrWarn, prunePresence, pruneMessages, pruneAgents, snapshotRegistryDeps, quickCheck, backupTo, stampedBackupPath, pruneStateBackups, setBusyLogSink, enqueueNotification, listAgents, type BranchCacheStore } from "./state/index.ts";
 import { createCacheRefresher } from "./daemon/cache-refresh.ts";
 import { createWorktreeReconciler } from "./daemon/worktree-reconciler.ts";
 import { loadRepoIndex } from "./daemon/repo-index.ts";
@@ -98,6 +98,9 @@ import { createBgClaimsStore, type BgClaimsStore } from "./daemon/bg-claims-stor
 import { createGatePush, type GatePush } from "./daemon/gate-push.ts";
 import { createGateEscalation, type GateEscalation } from "./daemon/gate-escalation.ts";
 import { createEscapeInjector } from "./daemon/gate-escape.ts";
+import { createReconciler, type Reconciler } from "./daemon/reconciler.ts";
+import { snapshotPanes, type LivePane } from "./daemon/pane-resolve-live.ts";
+import type { CommandResult } from "./daemon/handlers/types.ts";
 import { deliverToInbox } from "./daemon/inbox.ts";
 import { resolveInbox, resolveAllInboxes } from "./claude-registry.ts";
 import {
@@ -290,6 +293,7 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
   let bgClaims: BgClaimsStore;
   let gatePush: GatePush;
   let gateEscalation: GateEscalation;
+  let reconciler: Reconciler;
   let identity: {
     flavor: "dev" | "prod";
     version: string;
@@ -602,6 +606,41 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
           },
           log,
         });
+        reconciler = createReconciler({
+          store: gatesStore,
+          listAgents: () => listAgents({}, getStateDb("daemon")),
+          snapshot: snapshotPanes,
+          peek: async (pane: LivePane) => {
+            const paneId = pane.paneRef.startsWith("bg:") ? pane.paneRef.slice("bg:".length) : pane.paneRef;
+            const res = await herdrRequest<{ read: { text: string } }>(
+              "pane.read", { pane_id: paneId, source: "visible" }, { sockPath: pane.sockPath },
+            );
+            return res.ok ? res.result.read.text : "";
+          },
+          emit: (topic, payload) => {
+            const emittedAt = Date.now();
+            const eventId = eventsBus.emitAt(topic, payload, emittedAt);
+            emit("event", { id: eventId, topic, payload, emittedAt });
+          },
+          injectEscape: createEscapeInjector(),
+          // routedHandlers (phase 7) is not built yet at this point in boot;
+          // the sweep never calls resumeAgent before phase 7 completes
+          // (sweeps start no sooner than the boot-delay in phase 6), so this
+          // indirection only ever reads a populated routedHandlers.
+          resumeAgent: async (agentId) => {
+            // Local const, not the captured `let`: TS drops narrowing on an
+            // outer-scope `let` across an `await` inside a closure.
+            const handlers = routedHandlers;
+            if (!handlers) return { ok: false, error: "daemon handlers not ready yet" };
+            // buildRoutedHandlers's inferred return type loses "agent:resume"'s
+            // precise result shape through the object-spread merge; recover
+            // it with the same CommandResult<K> the handler is declared to
+            // return (handlers/types.ts).
+            const res = await handlers["agent:resume"]!({ id: agentId }) as CommandResult<"agent:resume">;
+            return res.ok ? { ok: true } : { ok: false, error: res.error };
+          },
+          log,
+        });
         setPhase("events-db");
       },
       stop() {
@@ -690,6 +729,12 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
         sweepHandles.push(scheduleSweep(
           "gate-escalation",
           () => { gateEscalation.sweep(); },
+          { bootDelayMs: 30_000, intervalMs: 60_000 },
+          log,
+        ));
+        sweepHandles.push(scheduleSweep(
+          "reconciler-sweep",
+          async () => { await reconciler.sweep(); },
           { bootDelayMs: 30_000, intervalMs: 60_000 },
           log,
         ));
