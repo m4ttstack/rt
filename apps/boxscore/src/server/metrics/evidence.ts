@@ -233,8 +233,6 @@ export function buildUserEvidence(
     b.identifier.localeCompare(a.identifier, undefined, { numeric: true })
   );
   const parts: string[] = [`${counted.length} counted`];
-  if (c.issues.teamExcluded > 0)
-    parts.push(`${c.issues.teamExcluded} excluded by team`);
   if (c.issues.stateExcluded > 0)
     parts.push(`${c.issues.stateExcluded} excluded by state`);
   if (c.issues.windowExcluded > 0)

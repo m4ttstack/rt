@@ -67,8 +67,12 @@ suppresses the text fallback.
 
 An issue counts toward `issuesCompleted` in window W for user U iff:
 
-1. its identifier matches the configured `linearTeam` (unchanged),
-2. its current state is in `linearDoneStates` (unchanged),
+1. its identifier belongs to any Linear team (the `linearTeam` setting no
+   longer gates counting),
+2. its current state is in `linearDoneStates`, or its type is `completed`
+   or `canceled` (a name absent from `linearDoneStates` still counts
+   through this type fallback, since that list comes from one team's
+   workflow and must not exclude another team's),
 3. it has at least one qualifying merged MR and its `closedAt` lies in W,
 4. U is its `creditedUser`.
 

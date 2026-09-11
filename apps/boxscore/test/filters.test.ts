@@ -5,7 +5,6 @@ import {
   buildMetricFilters,
   globToRegExp,
   isDoneState,
-  matchesTeam,
 } from '../src/server/metrics/filters.js';
 import { mr } from './fixtures.js';
 
@@ -70,16 +69,12 @@ describe('buildMetricFilters', () => {
 });
 
 describe('Linear gates', () => {
-  it('matchesTeam is a case-insensitive prefix check', () => {
-    expect(matchesTeam('eng-1', 'ENG')).toBe(true);
-    expect(matchesTeam('ENGX-1', 'ENG')).toBe(false);
-    expect(matchesTeam('PLA-1', undefined)).toBe(true);
-  });
-
   it('isDoneState falls open on missing data and honors explicit state names', () => {
     expect(isDoneState(null, null, ['Done'])).toBe(true);
     expect(isDoneState('started', 'In Progress', ['Done'])).toBe(false);
-    expect(isDoneState('completed', 'Shipped', ['Done'])).toBe(false);
+    // A name absent from the configured list still counts via the completed/canceled
+    // type fallback, since doneStates comes from one team's workflow.
+    expect(isDoneState('completed', 'Shipped', ['Done'])).toBe(true);
     expect(isDoneState('canceled', "Won't do", [])).toBe(true);
   });
 });

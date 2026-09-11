@@ -28,14 +28,12 @@ describe('readSettings', () => {
       'boxscore.defaultRange': '7d',
       'mattstack.integrations': {
         forge: { host: 'gitlab.example', provider: 'gitlab' },
-        linear: { teamKey: 'CV' },
       },
     });
     const s = readSettings();
     expect(s.users).toEqual(['ada', 'bob']);
     expect(s.roster).toHaveLength(3);
     expect(s.projects).toEqual(['g/p']);
-    expect(s.linearTeam).toBe('CV');
     expect(s.doneStates).toEqual(['Done']);
     expect(s.sizeBand).toEqual({ tooSmall: 5, tooLarge: 300 });
     expect(s.excludeFilePatterns).toEqual(['**/*.json']);
@@ -50,7 +48,6 @@ describe('readSettings', () => {
     const s = readSettings();
     expect(s.projects).toEqual([]);
     expect(s.users).toEqual([]);
-    expect(s.linearTeam).toBe('');
     expect(s.doneStates).toEqual([]);
     expect(s.sizeBand).toEqual({ tooSmall: 10, tooLarge: 400 });
     expect(s.excludeFilePatterns).toEqual([]);

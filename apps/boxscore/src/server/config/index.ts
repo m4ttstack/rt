@@ -27,8 +27,6 @@ export interface BoxscoreSettings {
   hiddenMembers: string[];
   /** Roster usernames minus hiddenMembers: the leaderboard's comparison set. */
   users: string[];
-  /** "" = Linear unconfigured. */
-  linearTeam: string;
   doneStates: string[];
   sizeBand: { tooSmall: number; tooLarge: number };
   excludeFilePatterns: string[];
@@ -60,7 +58,6 @@ function read<T>(key: string): T | undefined {
 
 interface Integrations {
   forge?: { host?: string };
-  linear?: { teamKey?: string };
 }
 
 function baseUrlFrom(host: string | undefined): string {
@@ -80,7 +77,6 @@ export function readSettings(): BoxscoreSettings {
     roster,
     hiddenMembers,
     users: roster.filter(m => !hidden.has(m.username)).map(m => m.username),
-    linearTeam: integrations.linear?.teamKey ?? '',
     doneStates: read<string[]>('boxscore.linearDoneStates') ?? [],
     sizeBand: read<{ tooSmall: number; tooLarge: number }>(
       'boxscore.sizeBand'

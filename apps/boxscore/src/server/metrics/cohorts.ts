@@ -12,7 +12,6 @@ import {
   buildIgnoredMrSet,
   buildMetricFilters,
   isDoneState,
-  matchesTeam,
   type MetricFilters,
 } from './filters.js';
 import { buildRevertedTitleSet, isReverted } from './reverts.js';
@@ -20,8 +19,6 @@ import { buildRevertedTitleSet, isReverted } from './reverts.js';
 export interface CohortOptions {
   window: TimeWindow;
   sizeBand: { tooSmall: number; tooLarge: number };
-  /** Linear team key. When set, only issues whose identifier belongs to this team count. */
-  linearTeam?: string;
   /** Linear state names that count as "done". Empty = default (completed + canceled types). */
   doneStates?: string[];
   /** Additional regex patterns for bot username detection, from settings. */
@@ -82,7 +79,6 @@ export interface WaitedMr {
 
 export interface IssueCohort {
   counted: NormLinearIssue[];
-  teamExcluded: number;
   stateExcluded: number;
   windowExcluded: number;
 }
@@ -210,16 +206,11 @@ export function buildUserCohorts(
 
   const issues: IssueCohort = {
     counted: [],
-    teamExcluded: 0,
     stateExcluded: 0,
     windowExcluded: 0,
   };
   for (const i of corpus.linearIssues) {
     if (i.creditedUser !== u) continue;
-    if (!matchesTeam(i.identifier, opts.linearTeam)) {
-      issues.teamExcluded++;
-      continue;
-    }
     if (!isDoneState(i.stateType, i.stateName, opts.doneStates)) {
       issues.stateExcluded++;
       continue;

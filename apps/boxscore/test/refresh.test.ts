@@ -152,7 +152,6 @@ function settings(over: Partial<BoxscoreSettings> = {}): BoxscoreSettings {
     roster,
     hiddenMembers,
     users: roster.filter(r => !hidden.has(r.username)).map(r => r.username),
-    linearTeam: '',
     doneStates: [],
     sizeBand: { tooSmall: 10, tooLarge: 400 },
     excludeFilePatterns: [],

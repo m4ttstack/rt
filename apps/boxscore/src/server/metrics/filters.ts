@@ -105,8 +105,10 @@ export function buildMetricFilters(opts: {
 }
 
 /**
- * True when a ticket's current state counts as "done". When doneStates is empty,
- * falls back to type-based default: issues whose stateType is "completed" or "canceled".
+ * True when a ticket's current state counts as "done": the name is in the configured
+ * doneStates, or the type is "completed"/"canceled". The type fallback matters because
+ * doneStates names come from one team's Linear workflow and must not silently exclude a
+ * completed or canceled ticket from a different team's workflow.
  */
 export function isDoneState(
   stateType: string | null,
@@ -114,16 +116,8 @@ export function isDoneState(
   doneStates?: string[]
 ): boolean {
   if (stateType === null) return true; // missing data... fall open
-  if (doneStates && doneStates.length > 0) {
-    return stateName !== null && doneStates.includes(stateName);
+  if (doneStates && stateName !== null && doneStates.includes(stateName)) {
+    return true;
   }
   return stateType === 'completed' || stateType === 'canceled';
-}
-
-/** True when a Linear identifier belongs to the configured team (no team = all match). */
-export function matchesTeam(identifier: string, linearTeam?: string): boolean {
-  return (
-    !linearTeam ||
-    identifier.toUpperCase().startsWith(linearTeam.toUpperCase() + '-')
-  );
 }

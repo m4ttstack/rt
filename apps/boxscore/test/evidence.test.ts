@@ -99,23 +99,21 @@ describe('issuesCompleted drops gated-out issues from the rows', () => {
     ...FETCH,
     linearIssues: [
       ...(FETCH.linearIssues ?? []),
-      issue('PLA-9'), // wrong team ... mentioned in prose of one of alice's MRs
+      // A different Linear team's ticket now counts like any other.
+      issue('NARWHAL-9', { closedAt: '2026-05-15T00:00:00.000Z' }),
       issue('ENG-9', { stateType: 'started', stateName: 'In Progress' }),
     ],
   };
-  const gated = buildUserEvidence(fetchWithNoise, 'alice', {
-    ...CTX,
-    linearTeam: 'ENG',
+  const withEveryTeam = buildUserEvidence(fetchWithNoise, 'alice', CTX);
+
+  it('counts a ticket from any Linear team, omitting only state exclusions', () => {
+    const ids = withEveryTeam.issuesCompleted!.rows.map(r => r.cells[0]);
+    expect(ids).toEqual(['NARWHAL-9', 'ENG-2', 'ENG-1']);
   });
 
-  it('omits issues excluded by team or state', () => {
-    const ids = gated.issuesCompleted!.rows.map(r => r.cells[0]);
-    expect(ids).toEqual(['ENG-2', 'ENG-1']);
-  });
-
-  it('still tallies the exclusions in the summary', () => {
-    expect(gated.issuesCompleted!.summary).toBe(
-      '2 counted · 1 excluded by team · 1 excluded by state'
+  it('still tallies the state exclusion in the summary', () => {
+    expect(withEveryTeam.issuesCompleted!.summary).toBe(
+      '3 counted · 1 excluded by state'
     );
   });
 

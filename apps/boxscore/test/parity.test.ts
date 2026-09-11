@@ -11,8 +11,8 @@ import { FETCH, USERS, WINDOW } from './fixtures.js';
 
 const SIZE_BAND = { tooSmall: 10, tooLarge: 400 };
 
-// MR1 references an ENG ticket (through its source branch); the others don't. A Linear
-// team no longer gates authoredMerged, so every merged MR counts regardless.
+// MR1 references an ENG ticket (through its source branch); the others don't. No Linear
+// team setting gates authoredMerged, so every merged MR counts regardless.
 const GATED: FetchResult = {
   ...FETCH,
   mrs: FETCH.mrs.map(m =>
@@ -20,8 +20,8 @@ const GATED: FetchResult = {
   ),
 };
 
-describe('snapshot and evidence agree with a Linear team configured', () => {
-  const opts = { window: WINDOW, sizeBand: SIZE_BAND, linearTeam: 'ENG' };
+describe('snapshot and evidence agree across cohorts', () => {
+  const opts = { window: WINDOW, sizeBand: SIZE_BAND };
   const snap = computeSnapshot(GATED, { ...opts, users: USERS });
 
   it('authoredMerged is not gated by team ticket reference', () => {

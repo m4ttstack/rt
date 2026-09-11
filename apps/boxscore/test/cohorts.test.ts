@@ -79,20 +79,23 @@ describe('buildUserCohorts for alice', () => {
     ]);
     expect(c.issues).toEqual({
       counted: FETCH.linearIssues!.slice(0, 2),
-      teamExcluded: 0,
       stateExcluded: 0,
       windowExcluded: 0,
     });
   });
 });
 
-describe('the Linear team gate on issues', () => {
-  it('tallies issues excluded by team and by state', () => {
+describe('issues from every Linear team, gated only by done-state', () => {
+  it('counts a different team prefix alongside a state-excluded ticket', () => {
     const withNoise = {
       ...FETCH,
       linearIssues: [
         ...FETCH.linearIssues!,
-        { ...FETCH.linearIssues![0]!, id: 'PLA-9', identifier: 'PLA-9' },
+        {
+          ...FETCH.linearIssues![0]!,
+          id: 'NARWHAL-7',
+          identifier: 'NARWHAL-7',
+        },
         {
           ...FETCH.linearIssues![0]!,
           id: 'ENG-9',
@@ -102,10 +105,12 @@ describe('the Linear team gate on issues', () => {
         },
       ],
     };
-    const opts = { ...OPTS, linearTeam: 'ENG' };
-    const c = buildUserCohorts(buildCorpus(withNoise, opts), 'alice', opts);
-    expect(c.issues.counted.map(i => i.identifier)).toEqual(['ENG-1', 'ENG-2']);
-    expect(c.issues.teamExcluded).toBe(1);
+    const c = buildUserCohorts(buildCorpus(withNoise, OPTS), 'alice', OPTS);
+    expect(c.issues.counted.map(i => i.identifier)).toEqual([
+      'ENG-1',
+      'ENG-2',
+      'NARWHAL-7',
+    ]);
     expect(c.issues.stateExcluded).toBe(1);
   });
 });
@@ -126,8 +131,7 @@ describe('closedAt windowing and the ungated merged cohort', () => {
   });
 
   it('counts merged MRs without any team-ticket reference', () => {
-    const opts = { ...OPTS, linearTeam: 'ENG' };
-    const c = buildUserCohorts(buildCorpus(FETCH, opts), 'alice', opts);
+    const c = buildUserCohorts(buildCorpus(FETCH, OPTS), 'alice', OPTS);
     // MR1 and MR2 carry no ENG-* reference anywhere yet still count.
     expect(c.authoredMerged.map(m => m.iid)).toEqual([1, 2]);
   });
