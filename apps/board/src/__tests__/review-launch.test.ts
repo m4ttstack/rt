@@ -113,7 +113,7 @@ describe('launchReReview: agentId on file (arm i -- resumeAgentPane)', () => {
     expect(resumeCalls[0]).toMatchObject({
       agentId: 'agent-old',
       workspaceLabel: CTX.workspaceLabel,
-      tabLabel: '⟲ !4821 Grace Hopper',
+      tabLabel: 'RE !4821 Grace Hopper',
     });
     const prompt = resumeCalls[0]!.prompt as string;
     expect(prompt.startsWith('/board:review ')).toBe(true);
@@ -219,7 +219,7 @@ describe('launchReReview: sessionId only on file, no agentId (arm ii -- launchLe
       statePath: reviewFilePath(URL_A),
       sessionId: 'sess-abc',
       workspaceKind: 'review',
-      tabPrefix: '⟲',
+      tabPrefix: 'RE',
       author: CTX.author,
     });
     const prompt = legacyResumeCalls[0]!.prompt as string;

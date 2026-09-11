@@ -353,7 +353,10 @@ export interface LaunchPaneOpts {
 }
 
 /** Tab label for an MR pane: the MR id, the author beside it when known, and an
-    optional leading glyph (↺ resume, ⟲ re-review) that keeps pane kinds distinct. */
+    optional leading marker (↺ resume, RE re-review) that keeps pane kinds
+    distinct. RE is deliberately letters, not a glyph: the circular-arrow
+    glyphs it replaced were indistinguishable from ↺ at tab-bar size, so a
+    re-review pane read as an ordinary reopen. */
 export function mrTabLabel(
   iid: number,
   author?: string,
@@ -443,7 +446,7 @@ export async function launchReview(
   const tabLabel = mrTabLabel(
     opts.iid,
     opts.author,
-    opts.reReview ? '⟲' : undefined
+    opts.reReview ? 'RE' : undefined
   );
   return startAgentPane(
     {
@@ -539,7 +542,7 @@ export async function launchDoctor(
     The tab is labelled with a leading glyph (default `↺`) so a resumed pane is
     visually distinct from a fresh launch when the workspace has both. An
     optional `prompt` is sent as the first message (re-review uses this to
-    direct the resumed session); `tabPrefix` overrides the glyph (e.g. `⟲` for
+    direct the resumed session); `tabPrefix` overrides the marker (e.g. `RE` for
     a re-review resume). */
 export async function launchLegacyResume(
   opts: LaunchPaneOpts & {

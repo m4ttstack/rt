@@ -263,7 +263,7 @@ describe('command builders', () => {
     expect(mrTabLabel(4821, undefined)).toBe('!4821');
   });
   test('mrTabLabel keeps the prefix glyph ahead of the id + author', () => {
-    expect(mrTabLabel(42, 'Ada', '⟲')).toBe('⟲ !42 Ada');
+    expect(mrTabLabel(42, 'Ada', 'RE')).toBe('RE !42 Ada');
     expect(mrTabLabel(42, undefined, '↺')).toBe('↺ !42');
   });
 });
@@ -379,7 +379,7 @@ describe('launchReview / launchRespond / launchDoctor (rt agent)', () => {
       },
       io
     );
-    expect(startCalls[0]!.tab).toBe('⟲ !4821 Grace Hopper');
+    expect(startCalls[0]!.tab).toBe('RE !4821 Grace Hopper');
     expect(startCalls[0]!.prompt).toContain('--re-review');
   });
 
@@ -652,7 +652,7 @@ describe('launchLegacyResume (pre-rt-agent sessionId resume, over HerdrRunner)',
         sessionId: 'sess-1',
         workspaceKind: 'review',
         prompt: 're-review please',
-        tabPrefix: '⟲',
+        tabPrefix: 'RE',
       },
       runner
     );
@@ -666,7 +666,7 @@ describe('launchLegacyResume (pre-rt-agent sessionId resume, over HerdrRunner)',
       '--workspace',
       'w40',
       '--label',
-      '⟲ !4821',
+      'RE !4821',
       '--no-focus',
     ]);
   });

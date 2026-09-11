@@ -23,7 +23,7 @@ knowledge; the board injects it:
 | flag | meaning |
 |------|---------|
 | `<mrUrl>` (positional) | the merge request to repair |
-| `--state <path>` | lifecycle status file the board polls |
+| `--state <handle>` | opaque board handle for this MR's repair. Pass it verbatim to `--status-bin`, `--draft-bin`, and the `gate` verbs; never read, stat, or write it. It looks like a `.json` path but no such file exists: board state lives in the board's database, and the path is only a key. Its absence on disk says nothing about whether the board is tracking this pass. |
 | `--status-bin <path>` | absolute path to the board's status-writer CLI |
 | `--skill <name>` | the domain skill that owns the actual repair (optional) |
 | `--skill-path <path>` | absolute path to that skill's SKILL.md, when the board already resolved it (optional; see "Resolving the domain skill") |
@@ -230,7 +230,7 @@ keyed by the gate's own question id (`action`). Read `answers.action`.
   transient — do not re-run any of them. End cleanly: say so in the pane and
   stop. Do not invent an answer, do not mark `done`, and do not write `error`
   either — when the reason is a fresh pane superseding this one, that fresh
-  pane already owns this MR's state file, and a late write here would stomp
+  pane already owns this MR's board state, and a late write here would stomp
   it.
 - **In-pane escape hatch.** If a human interrupts the wait and answers you
   conversationally in the pane instead of through the board, record it so
@@ -351,15 +351,16 @@ optional.
 - Always write `diagnosing` first and a terminal `done`/`error` when finished,
   so the board badge never gets stuck — except a closed or missing escalation
   gate (see "Gate protocol" above): end without either, since a fresh pane
-  may already own the state file.
-- The state and status-bin paths are absolute and given to you. Only write
-  status via `--status-bin`; never touch the state file directly.
+  may already own this MR's board state.
+- The state handle and status-bin path are given to you. Only write status via
+  `--status-bin`; never try to read or write `--state` yourself, since it is a
+  handle, not a file (see the flag table).
 - No `--no-verify`, no bypassing pre-commit hooks. Force-push uses
   `--force-with-lease`, never `--force`.
 - The human is not watching. Do not ask questions in the pane on your own
   initiative — an enumerable decision goes through the escalation gate above,
   and a non-enumerable one is a plain `error` with the decision committed to
-  the state file's message.
+  the board status message.
 - Open the escalation gate only when the decision genuinely reduces to a
   short, concrete, executable list of options. When in doubt whether a
   failure is enumerable, it isn't — emit `error` instead of inventing options

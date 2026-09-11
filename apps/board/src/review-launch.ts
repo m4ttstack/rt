@@ -113,7 +113,7 @@ export async function launchReReview(
         agentId: existing.agentId,
         prompt,
         workspaceLabel: ctx.workspaceLabel,
-        tabLabel: mrTabLabel(iid, ctx.author, '⟲'),
+        tabLabel: mrTabLabel(iid, ctx.author, 'RE'),
       });
       if (!result.focusedExisting) {
         io.writeReviewState(statePath, {
@@ -149,7 +149,7 @@ export async function launchReReview(
         sessionId: existing.sessionId,
         workspaceKind: 'review',
         prompt,
-        tabPrefix: '⟲',
+        tabPrefix: 'RE',
         author: ctx.author,
         claudeCommand: ctx.claudeCommand,
       });

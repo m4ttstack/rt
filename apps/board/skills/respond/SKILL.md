@@ -2,8 +2,8 @@
 name: board:respond
 description: >-
   Thin, domain-agnostic wrapper the mr-board launches to process review feedback
-  on your OWN MR in a fresh herdr pane. Emits lifecycle status to a state file
-  the board reads, then delegates the actual work to the skill named by --skill.
+  on your OWN MR in a fresh herdr pane. Emits lifecycle status through the
+  board's status CLI, then delegates the actual work to the skill named by --skill.
   Invoked as "/board:respond <mrUrl> --state <path> --status-bin
   <path> [--report <path>] [--skill <name>]". When no --skill is given, the domain skill is
   resolved from the respond slot binding in .mattstack/skills.jsonc. Not for
@@ -17,13 +17,13 @@ metadata:
 # mr-board respond runner
 
 The mr-board spawned this pane to process the review feedback on ONE of your own
-MRs and report status back to the board via a state file. This wrapper carries
+MRs and report status back to the board through its status CLI. This wrapper carries
 **no** domain knowledge — the board injects it:
 
 | flag | meaning |
 |------|---------|
 | `<mrUrl>` (positional) | your merge request whose feedback to process |
-| `--state <path>` | lifecycle status file the board polls |
+| `--state <handle>` | opaque board handle for this MR's response. Pass it verbatim to `--status-bin` and the `gate` verbs; never read, stat, or write it. It looks like a `.json` path but no such file exists: board state lives in the board's database, and the path is only a key. Its absence on disk says nothing about whether the board is tracking this pass. |
 | `--status-bin <path>` | absolute path to the board's status-writer CLI |
 | `--report <path>` | where the fill saves the adjudication table and drafted/finalized replies; a resumed pane posts from it |
 | `--skill <name>` | the domain skill that owns the actual work (optional) |
@@ -355,7 +355,7 @@ the thread id is in the value, and the `thread-<n>` key is never a join key.
   transient — do not re-run any of them. End cleanly: say so in the pane and
   stop. Do not invent an answer, do not mark `done`, and do not write `error`
   either — when the reason is a fresh pane superseding this one, that fresh
-  pane already owns this MR's state file, and a late write here would stomp
+  pane already owns this MR's board state, and a late write here would stomp
   it.
 - **In-pane escape hatch.** If a human interrupts the wait and answers you
   conversationally in the pane instead of through the board, record it so
@@ -391,11 +391,12 @@ the thread id is in the value, and the `thread-<n>` key is never a join key.
 - Always write `triaging` first and a terminal `done`/`error` when finished,
   so the board badge never gets stuck — except a closed or missing gate (see
   "Closed or missing gate" above): end without either, since a fresh pane may
-  already own the state file. The board owns `queued`; you own the middle.
-- The state, status-bin, and report paths are absolute and given to you. Only
+  already own this MR's board state. The board owns `queued`; you own the middle.
+- The state handle, status-bin, and report paths are given to you. Only
   write status via `--status-bin`, and drafted/finalized replies only to
   `--report`. Always save the report before Gate 1 opens, and update it with
-  finalized replies before Gate 2 opens. Never touch the state file directly.
+  finalized replies before Gate 2 opens. Never try to read or write `--state`
+  yourself; it is a handle, not a file (see the flag table).
 - Both gates are non-negotiable. Never implement fixes or post replies
   without the human's explicit answer at the relevant gate, even to hurry
   the badge to `done`. `done` follows the human's Gate 2 pick, not your own

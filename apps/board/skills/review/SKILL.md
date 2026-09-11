@@ -2,7 +2,7 @@
 name: board:review
 description: >-
   Thin, domain-agnostic wrapper the mr-board launches to review an MR in a fresh
-  herdr pane. Emits lifecycle status to a state file the board reads, then
+  herdr pane. Emits lifecycle status through the board's status CLI, then
   delegates the actual review to the skill named by --skill (or reviews
   generically when none is given). Invoked as "/board:review
   <mrUrl> --state <path> --status-bin <path> [--report <path>] [--skill <name>]
@@ -17,13 +17,13 @@ metadata:
 # mr-board review runner
 
 The mr-board spawned this pane to review one MR and report status back to the
-board via a state file. This wrapper carries **no** repo-, team-, or
+board through its status CLI. This wrapper carries **no** repo-, team-, or
 tool-specific knowledge — the board injects everything it needs as flags:
 
 | flag | meaning |
 |------|---------|
 | `<mrUrl>` (positional) | the merge request to review |
-| `--state <path>` | lifecycle status file the board polls |
+| `--state <handle>` | opaque board handle for this MR's review. Pass it verbatim to `--status-bin` and the `gate` verbs; never read, stat, or write it. It looks like a `.json` path but no such file exists: board state lives in the board's database, and the path is only a key. Its absence on disk says nothing about whether the board is tracking this pass. |
 | `--status-bin <path>` | absolute path to the board's status-writer CLI; run it to emit status |
 | `--report <path>` | where to save the written review the board shows in a modal |
 | `--skill <name>` | the domain skill that owns the actual review (optional) |
@@ -94,7 +94,9 @@ remembered in the conversation.
 
 **Otherwise, a fresh review:**
 
-1. **Mark reviewing.** `<status-bin> review-status <state> reviewing`
+1. **Mark reviewing.** `<status-bin> review-status <state> reviewing`. If
+   `--re-review` was passed, print that mode's announcement banner ("Re-review
+   mode", step 0) before this write.
 2. **Review.** If `--re-review` was passed, read "Re-review mode" below first —
    it changes how you frame this step (and what you hand the `--skill`).
    - **If a domain skill resolved** (explicit `--skill`, else the `review`
@@ -211,7 +213,7 @@ remembered in the conversation.
      three are terminal, not transient — do not re-run any of them. End cleanly: say so in the
      pane and stop. Do not invent an answer, do not mark `done`, and do not write `error` either
      — when the reason is a re-review superseding this gate, a fresh pane already owns this MR's
-     state file, and a late write here would stomp it.
+     board state, and a late write here would stomp it.
    - **In-pane escape hatch.** If a human interrupts the wait and answers you
      conversationally in the pane instead of through the board, record it so
      any parked resume stays in sync:
@@ -271,6 +273,21 @@ should have responded to that feedback — replied to or resolved comment thread
 and/or pushed new commits. Your job is to re-review with that in mind, not to
 start from a blank slate.
 
+A resumed pane replays the whole prior session above your first message, so the
+top of this pane shows the ORIGINAL review's prompt and transcript. That
+scrollback is history, not your instructions. `--re-review` on THIS invocation
+is what governs, and a reader scrolling from the top has no way to tell the two
+apart, which is why step 0 exists.
+
+0. **Announce the mode, as your first output, verbatim:**
+
+   ```
+   === RE-REVIEW !<iid>: prior review exists; scrollback above is history ===
+   ```
+
+   REQUIRED. It is the only marker that separates this pass from the replayed
+   original above it. Print it before any tool call, including the `reviewing`
+   status write.
 1. **Load the prior review, if any.** If a file exists at `--report <path>`, it
    holds the previous review — read it first so you know exactly what was flagged.
    (If it's missing, there's no board record of a prior review; carry on with the
@@ -296,8 +313,10 @@ protocol) is unchanged — a re-review is still a review.
 - Always write `reviewing` before starting and a terminal `done`/`error` when
   finished, so the board badge never gets stuck — except a closed or missing
   gate (see "Closed or missing gate" above): end without either, since a
-  fresh pane may already own the state file.
-- The state, status-bin, and report paths are absolute and given to you. Write
+  fresh pane may already own this MR's board state.
+- The state handle, status-bin, and report paths are given to you. Write
   status only via `--status-bin`, and the review Markdown only to `--report`.
+  `--report` is a real file you write; `--state` is a handle you only ever
+  pass through (see the flag table).
   Always save the report before marking `done`.
 - After marking done, stay in the pane so the human can act on the draft.
