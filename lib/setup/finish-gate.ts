@@ -6,7 +6,9 @@
  */
 
 import { getSetting } from "../settings/resolve.ts";
-import type { Group } from "./contract.ts";
+import { setSetting } from "../settings/write.ts";
+import { FINISH_GATED_ROW_IDS, type Group } from "./contract.ts";
+import { UserActionableError } from "./errors.ts";
 import type { SettingsReader } from "./team-settings.ts";
 
 export const WAIVED_SETTING_KEY = "setup.waived";
@@ -43,4 +45,39 @@ export function applyFinishGate(groups: Group[], mode: "plan" | "status", waived
       return r;
     }),
   }));
+}
+
+export interface WaiverStore {
+  read: () => string[];
+  write: (ids: string[]) => void;
+}
+
+/** The only writer of `setup.waived`, and only at machine scope. */
+export function realWaiverStore(): WaiverStore {
+  return { read: () => readWaived(), write: (ids) => setSetting(WAIVED_SETTING_KEY, ids, "machine") };
+}
+
+function assertFinishGated(id: string): void {
+  if (FINISH_GATED_ROW_IDS.includes(id)) return;
+  throw new UserActionableError("not-finish-gated", `${id} is not a finish-gated row; finish-gated rows: ${FINISH_GATED_ROW_IDS.join(", ")}`);
+}
+
+/** Records `id` as skipped on this Mac; a second call writes nothing. Returns the stored list. */
+export function waiveRow(id: string, store: WaiverStore): string[] {
+  assertFinishGated(id);
+  const current = store.read();
+  if (current.includes(id)) return current;
+  const next = [...current, id];
+  store.write(next);
+  return next;
+}
+
+/** Re-arms `id` on this Mac; an id that was not waived writes nothing. Returns the stored list. */
+export function unwaiveRow(id: string, store: WaiverStore): string[] {
+  assertFinishGated(id);
+  const current = store.read();
+  if (!current.includes(id)) return current;
+  const next = current.filter((x) => x !== id);
+  store.write(next);
+  return next;
 }

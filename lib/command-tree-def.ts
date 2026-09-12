@@ -1959,6 +1959,26 @@ export const TREE: Record<string, CommandNode> = {
           SETUP_JSON_ARG,
         ],
       },
+      waive: {
+        description: "Skip a finish-gated checklist row on this Mac so setup can finish without it",
+        module: "./commands/setup.ts",
+        fn: "setupWaive",
+        omitBehavior: "picker",
+        args: [
+          { name: "Row", type: "text", placeholder: "tool.fast-browser-extension", hint: "Finish-gated row id (today only tool.fast-browser-extension)" },
+          SETUP_JSON_ARG,
+        ],
+      },
+      unwaive: {
+        description: "Re-arm a finish-gated checklist row you skipped on this Mac",
+        module: "./commands/setup.ts",
+        fn: "setupUnwaive",
+        omitBehavior: "picker",
+        args: [
+          { name: "Row", type: "text", placeholder: "tool.fast-browser-extension", hint: "Finish-gated row id (today only tool.fast-browser-extension)" },
+          SETUP_JSON_ARG,
+        ],
+      },
       github: integrationNode("github", "GitHub"),
       gitlab: integrationNode("gitlab", "GitLab"),
       linear: integrationNode("linear", "Linear"),
