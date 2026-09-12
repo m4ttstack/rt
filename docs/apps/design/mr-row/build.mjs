@@ -167,17 +167,18 @@ const MR = {
   title: 'CV-3074 Port the CV2 stealth-mode and access-links case c…',
 };
 const MR2 = { iid: 44720, branch: 'feature/cv-3163', adds: 79, dels: 27, threads: 0, age: '8h', title: 'CV-3163 Let screenshot.cjs capture the auth handshake' };
+const MR4 = { iid: 44712, branch: 'feature/cv-3201', adds: 41, dels: 9, threads: 0, age: '3h', title: 'CV-3201 Vendor the report fonts so CI stops flaking' };
 const MR3 = { iid: 43946, branch: 'feature/cv-3028', adds: 18, dels: 1253, threads: 7, age: '9d', title: 'CV-3028 Delete unreachable legacy dashboards' };
 
 const AMB_FULL = `<span class="amb"><span class="on" title="posted in slack">▣✓</span><span title="reactions">👀✅</span><span class="ask" title="peer reviewing">⇄</span><span title="held draft">✉</span></span>`;
 
 // ════════════════════════════════════════════════════════════════════
-// Main — direction A, the leading candidate, on real rows
+// Main: direction A, the leading candidate, on real rows
 // ════════════════════════════════════════════════════════════════════
 const mainBody = `
 <h2>direction a · activity lines (leading)</h2>
 <p class="note">The chip pile becomes a short ledger: one slim line per active lane
-(review / response / doctor / decision), always in the same slot with the same anatomy —
+(review / response / doctor / decision), always in the same slot with the same anatomy:
 lane · status word · detail · actions. Attention states tint the line itself (amber = your move,
 red = something died); there is no separate banner to bolt on. Ambient social marks (slack,
 peer, nudge, draft) shrink into a quiet cluster at the meta line's right end. A quiet row is
@@ -212,11 +213,11 @@ just two lines again.</p>
   )}
 </div>
 <p class="cap"><b>Reading order:</b> row facts stay two lines; agent activity is a block you can
-count on — nothing wraps, nothing competes. New lane kinds get a new line, not a new chip species.</p>
+count on... nothing wraps, nothing competes. New lane kinds get a new line, not a new chip species.</p>
 `;
 
 // ════════════════════════════════════════════════════════════════════
-// DirectionB — urgency rail + one synthesized phrase
+// DirectionB: urgency rail + one synthesized phrase
 // ════════════════════════════════════════════════════════════════════
 const dirBBody = `
 <h2>direction b · one phrase + urgency rail</h2>
@@ -237,7 +238,7 @@ Details and actions live in the row menu / an expandable drawer, not on the row.
     r2({ ...MR3, amb: `<span class="sum warn">2 findings to post · decide</span>` }), 'railrow')}
   ${row(`<span class="rail rail-quiet"></span>` +
     r1({ dots: ['var(--green)'], title: 'CV-3149 Widen the transform contract', phrase: 'APPROVED', phraseColor: 'var(--green)' }) +
-    r2({ iid: 44684, branch: 'feature/cv-3149', adds: 296, dels: 16, threads: 2, age: '9h', amb: `<span class="sum quiet">—</span>` }), 'railrow')}
+    r2({ iid: 44684, branch: 'feature/cv-3149', adds: 296, dels: 16, threads: 2, age: '9h', amb: `<span class="sum quiet">·</span>` }), 'railrow')}
 </div>
 <p class="cap"><b>Tradeoff:</b> calmest board by far and scans instantly, but one phrase can hide
 concurrent facts (a doctor working while a decision waits) and every action costs a click into
@@ -245,7 +246,7 @@ the menu or drawer.</p>
 `;
 
 // ════════════════════════════════════════════════════════════════════
-// DirectionC — disciplined chips
+// DirectionC: disciplined chips
 // ════════════════════════════════════════════════════════════════════
 const dirCBody = `
 <h2>direction c · chip grammar (least change)</h2>
@@ -265,7 +266,7 @@ meta cluster. No second row of bolted-on banners, ever.</p>
   ${row(
     r1({ dots: ['var(--amber)'], title: MR2.title, phrase: 'NEEDS REVIEW' }) +
     r2({ ...MR2 }) +
-    `<div class="chips"><span class="chip warn pulse">⌕ reviewing…</span></div>`
+    `<div class="chips"><span class="chip purple pulse">⌕ reviewing…</span></div>`
   )}
   ${row(
     r1({ dots: ['var(--green)'], title: MR3.title, phrase: 'APPROVED', phraseColor: 'var(--green)' }) +
@@ -277,11 +278,11 @@ meta cluster. No second row of bolted-on banners, ever.</p>
   )}
 </div>
 <p class="cap"><b>Tradeoff:</b> familiar and cheap to ship, but the grammar is convention, not
-structure — the next bolted-on feature can still break it, and chips still wrap on narrow rows.</p>
+structure... the next bolted-on feature can still break it, and chips still wrap on narrow rows.</p>
 `;
 
 // ════════════════════════════════════════════════════════════════════
-// All states — direction A
+// All states: direction A
 // ════════════════════════════════════════════════════════════════════
 const lanesBody = `
 <h2>review lane · every state</h2>
@@ -308,19 +309,19 @@ const lanesBody = `
 
 <h2>doctor lane</h2>
 <div class="list">
-  ${row(r1({ title: MR2.title, phrase: 'CI FAILING', phraseColor: 'var(--red)' }) + r2(MR2) + `<div class="acts">${act('quiet', 'doctor', 'queued')}</div>`)}
-  ${row(r1({ title: MR2.title, phrase: 'CI FAILING', phraseColor: 'var(--red)' }) + r2(MR2) + `<div class="acts">${act('work', 'doctor', 'diagnosing…', 'auto', [], true)}</div>`)}
-  ${row(r1({ title: MR2.title, phrase: 'CI FAILING', phraseColor: 'var(--red)' }) + r2(MR2) + `<div class="acts">${act('work', 'doctor', 'rebasing…', '', [], true)}</div>`)}
-  ${row(r1({ title: MR2.title, phrase: 'CI FAILING', phraseColor: 'var(--red)' }) + r2(MR2) + `<div class="acts">${act('work', 'doctor', 'fixing…', '', [], true)}</div>`)}
-  ${row(r1({ title: MR2.title, phrase: 'CI FAILING', phraseColor: 'var(--red)' }) + r2(MR2) + `<div class="acts">${act('work', 'doctor', 'watching CI…', '', [], true)}</div>`)}
-  ${row(r1({ title: MR2.title, phrase: 'CI FAILING', phraseColor: 'var(--red)' }) + r2(MR2) + `<div class="acts">${act('go', 'doctor', 'diagnosed', 'held a note', [['read note']])}</div>`)}
-  ${row(r1({ title: MR2.title, phrase: 'CI FAILING', phraseColor: 'var(--red)' }) + r2(MR2) + `<div class="acts">${act('bad', 'doctor', 'doctor stuck', '', [['call again']])}</div>`)}
+  ${row(r1({ title: MR4.title, phrase: 'CI FAILING', phraseColor: 'var(--red)' }) + r2(MR4) + `<div class="acts">${act('quiet', 'doctor', 'queued')}</div>`)}
+  ${row(r1({ title: MR4.title, phrase: 'CI FAILING', phraseColor: 'var(--red)' }) + r2(MR4) + `<div class="acts">${act('work', 'doctor', 'diagnosing…', 'auto', [], true)}</div>`)}
+  ${row(r1({ title: MR4.title, phrase: 'CI FAILING', phraseColor: 'var(--red)' }) + r2(MR4) + `<div class="acts">${act('work', 'doctor', 'rebasing…', '', [], true)}</div>`)}
+  ${row(r1({ title: MR4.title, phrase: 'CI FAILING', phraseColor: 'var(--red)' }) + r2(MR4) + `<div class="acts">${act('work', 'doctor', 'fixing…', '', [], true)}</div>`)}
+  ${row(r1({ title: MR4.title, phrase: 'CI FAILING', phraseColor: 'var(--red)' }) + r2(MR4) + `<div class="acts">${act('work', 'doctor', 'watching CI…', '', [], true)}</div>`)}
+  ${row(r1({ title: MR4.title, phrase: 'CI FAILING', phraseColor: 'var(--red)' }) + r2(MR4) + `<div class="acts">${act('go', 'doctor', 'diagnosed', 'held a note', [['read note']])}</div>`)}
+  ${row(r1({ title: MR4.title, phrase: 'CI FAILING', phraseColor: 'var(--red)' }) + r2(MR4) + `<div class="acts">${act('bad', 'doctor', 'doctor stuck', '', [['call again']])}</div>`)}
 </div>
 `;
 
 const attentionBody = `
-<h2>decisions & attention · every state</h2>
-<p class="note">Gates and executor trouble share the activity block — the "decide" lane for
+<h2>decisions &amp; attention · every state</h2>
+<p class="note">Gates and executor trouble share the activity block: the "decide" lane for
 questions waiting on you, and attention tinting on whichever lane broke. The red banner is gone;
 red is reserved for a line inside the block.</p>
 <div class="list">
@@ -346,12 +347,12 @@ red is reserved for a line inside the block.</p>
     ${act('quiet', 'review', 'off-screen', 'pane hidden, still running', [['focus']])}
   </div>`)}
 </div>
-<p class="cap"><b>Herd note:</b> a herd-owned gate never lands here — only escalated ones
+<p class="cap"><b>Herd note:</b> a herd-owned gate never lands here... only escalated ones
 surface, in the same "decide" slot with an <b>escalated</b> detail.</p>
 `;
 
 const ambientBody = `
-<h2>ambient & social · every state</h2>
+<h2>ambient &amp; social · every state</h2>
 <p class="note">Everything that is context, not work-in-flight: quiet marks at the meta line's
 right end, one glyph each, monochrome until they matter. Hover names them; the row menu holds
 their verbs.</p>
@@ -364,23 +365,23 @@ their verbs.</p>
     `<p class="cap" style="margin:4px 0 0">slack reactions on the request message</p>`)}
   ${row(r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: 'var(--green)' }) +
     r2({ ...MR3, amb: `<span class="amb"><span class="ask">⇄ geoff reviewing</span></span>` }) +
-    `<p class="cap" style="margin:4px 0 0">peer board reviewing / commented / approved / reviewed — same slot, intent color</p>`)}
+    `<p class="cap" style="margin:4px 0 0">peer board reviewing / commented / approved / reviewed... same slot, intent color</p>`)}
   ${row(r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: 'var(--green)' }) +
     r2({ ...MR3, amb: `<span class="amb"><span class="ask">⇄ nudged by sam · 30m</span></span>` }) +
-    `<p class="cap" style="margin:4px 0 0">inbound nudge (someone waits on you) — the one ambient mark allowed weight</p>`)}
+    `<p class="cap" style="margin:4px 0 0">inbound nudge (someone waits on you)... the one ambient mark allowed weight</p>`)}
   ${row(r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: 'var(--green)' }) +
     r2({ ...MR3, amb: `<span class="amb"><span style="color:var(--amber)">✉ held: verification note</span></span>` }) +
-    `<p class="cap" style="margin:4px 0 0">doctor-drafted note held for approval — click opens the draft modal</p>`)}
+    `<p class="cap" style="margin:4px 0 0">doctor-drafted note held for approval... click opens the draft modal</p>`)}
   ${row(r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: 'var(--green)' }) +
     r2({ ...MR3 }) +
-    `<div class="acts">${act('quiet', '', '👀 alice is reviewing right now')}</div>`)}
+    `<div class="acts">${act('quiet', 'live', '👀 alice is reviewing right now')}</div>`)}
 </div>
 `;
 
 const stressBody = `
 <h2>stress test · everything at once</h2>
 <p class="note">The worst real row: a review that died, a response mid-flight, a doctor watching
-CI, a decision waiting, every ambient mark lit. Direction A holds shape — the block grows line by
+CI, a decision waiting, every ambient mark lit. Direction A holds shape: the block grows line by
 line and stays scannable; nothing wraps unpredictably.</p>
 <div class="list">
   ${row(
@@ -435,8 +436,8 @@ const canvas = {
     { file: 'DirectionC.dc.html', title: 'Direction C · chip grammar', x: 1720, y: 0, w: 780, h: 470 },
     { file: 'StatesLanes.dc.html', title: 'Lanes · every state', x: 0, y: 0, w: 780, h: 1560, page: 'page-2' },
     { file: 'StatesAttention.dc.html', title: 'Decisions & attention', x: 860, y: 0, w: 780, h: 800, page: 'page-2' },
-    { file: 'StatesAmbient.dc.html', title: 'Ambient & social', x: 860, y: 920, w: 780, h: 760, page: 'page-2' },
-    { file: 'StatesStress.dc.html', title: 'Stress test vs today', x: 1720, y: 0, w: 780, h: 760, page: 'page-2' },
+    { file: 'StatesAmbient.dc.html', title: 'Ambient & social', x: 860, y: 920, w: 780, h: 700, page: 'page-2' },
+    { file: 'StatesStress.dc.html', title: 'Stress test vs today', x: 1720, y: 0, w: 780, h: 700, page: 'page-2' },
   ],
   annotations: [
     {
@@ -445,7 +446,7 @@ const canvas = {
       y: -170,
       w: 330,
       text:
-        'MR row redesign — the row is outgrowing chips-on-chips.\n' +
+        'MR row redesign: the row is outgrowing chips-on-chips.\n' +
         'Page 1: three directions on the same rows.\n' +
         'Page 2: every state, drawn in direction A.\n' +
         'Tokens lifted verbatim from tui-kit (Tokyo light/dark).',
