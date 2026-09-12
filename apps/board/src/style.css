@@ -502,8 +502,15 @@ body {
   color: color-mix(in srgb, var(--red) 70%, var(--muted-text));
 }
 .tui-behind {
-  color: var(--amber);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   flex-shrink: 0;
+  font-weight: 500;
+  color: var(--muted-text);
+}
+.tui-behind svg {
+  color: color-mix(in srgb, var(--muted-text) 75%, transparent);
 }
 .tui-rail {
   margin-left: auto;
@@ -533,19 +540,32 @@ body {
   font-size: 0.7rem;
   color: color-mix(in srgb, var(--muted-text) 75%, transparent);
 }
-/* Author identity in a row (All view, non-author grouping). */
-.tui-author-tag {
+/* The header line's identity slot: the author in the mixed view, the
+   ticket when the author is the group header. Muted, not purple: the line's
+   color belongs to the flags. */
+.tui-author-tag,
+.tui-ticket-tag {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   flex-shrink: 0;
-  color: var(--purple);
-  font-size: 0.7rem;
+  color: var(--muted-text);
   white-space: nowrap;
+  text-decoration: none;
+}
+.tui-ticket-tag {
+  font-weight: 500;
+}
+.tui-ticket-tag svg {
+  color: color-mix(in srgb, var(--muted-text) 75%, transparent);
+}
+.tui-ticket-tag:hover {
+  color: var(--fg);
+  text-decoration: underline;
 }
 .tui-author-tag .tui-avatar {
-  width: 13px;
-  height: 13px;
+  width: 12px;
+  height: 12px;
 }
 
 /* Line 3: the status line. */

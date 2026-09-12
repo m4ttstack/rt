@@ -14,6 +14,8 @@ import type { BoardMRWithReview, RowContext } from '../types.ts';
 import { ThreadsLink } from './CommentsDrawer.tsx';
 import { ago, cleanTitle, getSlackMarks, mrLine } from './format.ts';
 import {
+  ArrowDownGlyph,
+  ArrowOutGlyph,
   Bubble,
   DiscCheck,
   Eyes,
@@ -156,8 +158,8 @@ function Rail({ mr, now }: { mr: BoardMR; now: number }) {
   );
 }
 
-/** Shown when the view mixes authors (the All view grouped by anything but
-    author, where the group header is not the name). */
+/** The header line's identity slot when the view mixes authors (the All
+    view grouped by anything but author). */
 function AuthorTag({ mr }: { mr: BoardMR }) {
   const name = mr.author.name || mr.author.username;
   return (
@@ -166,9 +168,27 @@ function AuthorTag({ mr }: { mr: BoardMR }) {
         id={mr.author.username}
         palette="css-vars"
         className="tui-avatar"
-      />{' '}
+      />
       {name}
     </span>
+  );
+}
+
+/** The same slot when the author is the group header: the ticket, as a
+    link, so the line still leads with identity. */
+function TicketTag({ ticket }: { ticket: string }) {
+  return (
+    <a
+      className="tui-ticket-tag"
+      href={ticketUrl(ticket)}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={`open ${ticket} in Linear`}
+      onClick={e => e.stopPropagation()}
+    >
+      {ticket}
+      <ArrowOutGlyph />
+    </a>
   );
 }
 
@@ -215,7 +235,18 @@ function RowView({
         <div className="tui-row-body">
           <div className="tui-row-0">
             <span className="tui-row-lead">
+              {showAuthor ? (
+                <AuthorTag mr={mr} />
+              ) : (
+                ticket && <TicketTag ticket={ticket} />
+              )}
               <StatusFlags mr={mr} nested={nested} />
+              {behind && (
+                <span className="tui-behind" title={behind.title}>
+                  <ArrowDownGlyph />
+                  {behind.text}
+                </span>
+              )}
             </span>
             <SlackMarks mr={mr} />
             <StatusPhrase mr={mr} />
@@ -224,7 +255,6 @@ function RowView({
             <span className="tui-title">{cleanTitle(mr.title)}</span>
           </div>
           <div className="tui-row-2">
-            {showAuthor && <AuthorTag mr={mr} />}
             <span className="tui-mr-iid">!{mr.iid}</span>
             <span className="tui-branch">{mr.sourceBranch}</span>
             {mr.diff && (
@@ -234,11 +264,6 @@ function RowView({
               >
                 <span className="tui-adds">+{mr.diff.additions}</span>{' '}
                 <span className="tui-dels">−{mr.diff.deletions}</span>
-              </span>
-            )}
-            {behind && (
-              <span className="tui-behind" title={behind.title}>
-                {behind.text}
               </span>
             )}
             <Rail mr={mr} now={now} />

@@ -105,9 +105,15 @@ afterEach(async () => {
   container.remove();
 });
 
-async function render(rows: BoardMRWithReview[], c = ctx()) {
+async function render(
+  rows: BoardMRWithReview[],
+  c = ctx(),
+  showAuthor = false
+) {
   await React.act(async () => {
-    root.render(<RowView mrs={rows} now={NOW} showAuthor={false} ctx={c} />);
+    root.render(
+      <RowView mrs={rows} now={NOW} showAuthor={showAuthor} ctx={c} />
+    );
   });
 }
 
@@ -316,4 +322,49 @@ test('the pill carries its hue as data, no color class', async () => {
   expect(pill.textContent).toBe('needs review');
   expect(pill.getAttribute('data-hue')).toBe('amber');
   expect(pill.className).toBe('tui-phrase');
+});
+
+test('the header line leads with the author when the view mixes authors', async () => {
+  await render(
+    [
+      mr({
+        behindTarget: 206,
+        blockers: { any: true, hasConflicts: true },
+      } as never),
+    ],
+    ctx(),
+    true
+  );
+  const lead = container.querySelector('.tui-row-0 .tui-row-lead')!;
+  const kinds = [...lead.children].map(c => c.className);
+  expect(kinds).toEqual(['tui-author-tag', 'tui-flag', 'tui-behind']);
+  expect(lead.querySelector('.tui-author-tag')!.textContent).toContain('Pat');
+  const behind = lead.querySelector('.tui-behind')!;
+  expect(behind.textContent).toBe('206 behind');
+  expect(behind.getAttribute('title')).toBe('206 commits behind target');
+  expect(behind.querySelector('svg')).not.toBeNull();
+  expect(container.querySelector('.tui-row-2 .tui-behind')).toBeNull();
+  expect(container.querySelector('.tui-row-2 .tui-author-tag')).toBeNull();
+});
+
+test('with the author hidden the ticket takes its slot on the header line', async () => {
+  await render([mr()]);
+  const lead = container.querySelector('.tui-row-0 .tui-row-lead')!;
+  const ticket = lead.querySelector('a.tui-ticket-tag')!;
+  expect(ticket.textContent).toBe('ACME-2214');
+  expect(ticket.getAttribute('href')).toContain('ACME-2214');
+  expect(ticket.querySelector('svg')).not.toBeNull();
+  expect(lead.querySelector('.tui-author-tag')).toBeNull();
+});
+
+test('with neither author nor ticket the header line holds only the flags', async () => {
+  await render([
+    mr({
+      title: 'warm the thumbnail cache',
+      sourceBranch: 'ops/thumbnails',
+      blockers: { any: true, pipelineFailing: true },
+    } as never),
+  ]);
+  const lead = container.querySelector('.tui-row-0 .tui-row-lead')!;
+  expect([...lead.children].map(c => c.className)).toEqual(['tui-flag']);
 });

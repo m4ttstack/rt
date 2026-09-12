@@ -117,17 +117,18 @@ export function statusFlags(
   return flags;
 }
 
-/** The behind-target meta token: `↓N` when the source branch trails the
-    target by N commits. Null when not behind — and when glance reports null,
-    which is "not measured on this fetch path", never zero
+/** The behind-target meta token: "N behind" when the source branch trails
+    the target by N commits. Null when not behind... and when glance reports
+    null, which is "not measured on this fetch path", never zero
     (MRDashboardProps.behindTarget documents the distinction). */
 export function behindToken(
   mr: BoardMR
-): { text: string; title: string } | null {
+): { n: number; text: string; title: string } | null {
   const n = mr.behindTarget;
   if (n == null || n <= 0) return null;
   return {
-    text: `↓${n}`,
+    n,
+    text: `${n} behind`,
     title: `${n} commit${n === 1 ? '' : 's'} behind target`,
   };
 }

@@ -332,16 +332,15 @@ describe('statusFlags', () => {
 });
 
 describe('behindToken', () => {
-  test('behind by N renders ↓N with a plural title', () => {
+  test('behind by N reads "N behind" with a plural title', () => {
     expect(behindToken(mr({ behindTarget: 3 } as any))).toEqual({
-      text: '↓3',
+      n: 3,
+      text: '3 behind',
       title: '3 commits behind target',
     });
-  });
-
-  test('behind by one keeps the title singular', () => {
     expect(behindToken(mr({ behindTarget: 1 } as any))).toEqual({
-      text: '↓1',
+      n: 1,
+      text: '1 behind',
       title: '1 commit behind target',
     });
   });
