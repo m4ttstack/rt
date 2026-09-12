@@ -880,6 +880,7 @@ export function Board() {
   // board-owned bits every row/menu needs that aren't specific to one MR.
   const rowCtx: RowContext = {
     local: data.local,
+    self: data.defaultMember === 'all' ? null : data.defaultMember,
     slackTemplates: data.slackTemplates,
     slackEnabled: data.slackEnabled,
     onContext: openRowMenu,

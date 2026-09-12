@@ -204,7 +204,7 @@ function RowView({
   const renderRow = (mr: BoardMRWithReview, depth: number) => {
     const ticket = extractTicketId(mr.sourceBranch, mr.title);
     const nested = depth > 0;
-    const status = rowStatus(mr, now, ctx.draftResolved);
+    const status = rowStatus(mr, now, ctx.draftResolved, ctx.self);
     const behind = behindToken(mr);
     return (
       <div

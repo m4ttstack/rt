@@ -11,6 +11,7 @@ import {
 
 const NOW = Date.parse('2026-09-12T12:00:00Z');
 const NONE: ReadonlyMap<string, 'posted' | 'dismissed'> = new Map();
+const ME = 'me';
 
 function mr(over: Partial<BoardMRWithReview> = {}): BoardMRWithReview {
   return {
@@ -44,15 +45,181 @@ const gate = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
+type Over = Record<string, unknown>;
+const own = (over: Over = {}) =>
+  mr({ author: { username: 'me', name: 'Me' }, ...over } as never);
+const settled = (over: Over = {}) =>
+  mr({
+    reviews: { isApproved: true, required: 1, given: 1, reviewers: [] },
+    blockers: { any: false },
+    threadSummary: { awaiting: 0, replied: 0, resolved: 2 },
+    ...over,
+  } as never);
+const unapproved = (given: number, required: number) => ({
+  reviews: { isApproved: false, required, given, reviewers: [] },
+});
+const blockedBy = (flags: Over) => ({ blockers: { any: true, ...flags } });
+
 describe('rowStatus: the quiet row', () => {
-  test('no activity yields the all-clear line with the open verb and no bar', () => {
-    const s = rowStatus(mr(), NOW, NONE);
+  test("someone else's settled MR earns the sun: all clear, open verb, no bar", () => {
+    const s = rowStatus(settled(), NOW, NONE, ME);
     expect(s.line.tone).toBe('clear');
     expect(s.line.word).toBe('all clear');
     expect(s.line.detail).toBe('enjoy the sunshine');
     expect(s.line.verbs.map(v => v.kind)).toEqual(['open-mr']);
     expect(s.more).toEqual([]);
     expect(s.bar).toBeNull();
+  });
+
+  test("someone else's unapproved MR awaits review, with the review verb and the approval tally", () => {
+    const [line] = candidateLines(mr(), NOW, NONE, ME);
+    expect(line).toMatchObject({
+      tone: 'quiet',
+      word: 'awaiting review',
+      verbs: [{ kind: 'launch-review', label: 'review' }],
+    });
+    expect(line!.detail).toBeUndefined();
+    const [partial] = candidateLines(
+      mr(unapproved(1, 2) as never),
+      NOW,
+      NONE,
+      ME
+    );
+    expect(partial!.detail).toBe('1 of 2 approvals');
+  });
+
+  test("conflicts on someone else's unapproved MR do not change whose move it is", () => {
+    const [line] = candidateLines(
+      mr(blockedBy({ hasConflicts: true, pipelineFailing: true }) as never),
+      NOW,
+      NONE,
+      ME
+    );
+    expect(line!.word).toBe('awaiting review');
+  });
+
+  test('threads awaiting the author, or an approved MR still blocked, wait on the author', () => {
+    const [threads] = candidateLines(
+      mr({ threadSummary: { awaiting: 2, replied: 0, resolved: 0 } }),
+      NOW,
+      NONE,
+      ME
+    );
+    expect(threads).toMatchObject({
+      tone: 'quiet',
+      word: 'waiting on the author',
+      verbs: [{ kind: 'open-mr' }],
+    });
+    const [rebase] = candidateLines(
+      settled(blockedBy({ hasConflicts: true })),
+      NOW,
+      NONE,
+      ME
+    );
+    expect(rebase).toMatchObject({
+      word: 'waiting on the author',
+      detail: 'for a rebase',
+    });
+  });
+
+  test('my own MR: a settled one is ready to merge (go), never the sun', () => {
+    const [line] = candidateLines(
+      settled({ author: { username: 'me', name: 'Me' } }),
+      NOW,
+      NONE,
+      ME
+    );
+    expect(line).toMatchObject({
+      tone: 'go',
+      word: 'ready to merge',
+      verbs: [{ kind: 'open-mr' }],
+    });
+  });
+
+  test('my own MR: repair first, worded by what the doctor would do', () => {
+    const [both] = candidateLines(
+      own(blockedBy({ hasConflicts: true, pipelineFailing: true })),
+      NOW,
+      NONE,
+      ME
+    );
+    expect(both).toMatchObject({
+      tone: 'quiet',
+      word: 'needs a rebase and a ci fix',
+      verbs: [{ kind: 'call-doctor', label: 'call doctor' }],
+    });
+    const [ci] = candidateLines(
+      own(blockedBy({ pipelineFailing: true })),
+      NOW,
+      NONE,
+      ME
+    );
+    expect(ci!.word).toBe('needs a ci fix');
+    const [rebase] = candidateLines(
+      own(blockedBy({ needsRebase: true })),
+      NOW,
+      NONE,
+      ME
+    );
+    expect(rebase!.word).toBe('needs a rebase');
+  });
+
+  test('my own MR: threads awaiting me carry the respond verb; otherwise I wait on reviewers', () => {
+    const [one] = candidateLines(
+      own({ threadSummary: { awaiting: 1, replied: 0, resolved: 0 } }),
+      NOW,
+      NONE,
+      ME
+    );
+    expect(one).toMatchObject({
+      word: 'a thread awaits you',
+      verbs: [{ kind: 'launch-respond', label: 'respond' }],
+    });
+    const [three] = candidateLines(
+      own({ threadSummary: { awaiting: 3, replied: 1, resolved: 0 } }),
+      NOW,
+      NONE,
+      ME
+    );
+    expect(three!.word).toBe('3 threads await you');
+    const [waiting] = candidateLines(own(unapproved(1, 2)), NOW, NONE, ME);
+    expect(waiting).toMatchObject({
+      tone: 'quiet',
+      word: 'waiting on reviewers',
+      detail: '1 of 2 approvals',
+      verbs: [{ kind: 'open-mr' }],
+    });
+  });
+
+  test('a running pipeline is a working line for either seat', () => {
+    const [theirs] = candidateLines(
+      settled(blockedBy({ pipelineRunning: true })),
+      NOW,
+      NONE,
+      ME
+    );
+    expect(theirs).toMatchObject({
+      tone: 'work',
+      word: 'ci running…',
+      spin: true,
+    });
+    const [mine] = candidateLines(
+      own(blockedBy({ pipelineRunning: true })),
+      NOW,
+      NONE,
+      ME
+    );
+    expect(mine!.word).toBe('ci running…');
+  });
+
+  test('with no self, every row reads from the reviewer seat', () => {
+    const [line] = candidateLines(
+      settled({ author: { username: 'me', name: 'Me' } }),
+      NOW,
+      NONE,
+      null
+    );
+    expect(line!.word).toBe('all clear');
   });
 });
 
@@ -61,7 +228,8 @@ describe('rowStatus: review lane', () => {
     const [line] = candidateLines(
       mr({ review: { status: 'queued' } }),
       NOW,
-      NONE
+      NONE,
+      ME
     );
     expect(line).toMatchObject({
       tone: 'quiet',
@@ -74,7 +242,8 @@ describe('rowStatus: review lane', () => {
     const [line] = candidateLines(
       mr({ review: { status: 'reviewing', startedAt: NOW - 4 * 60_000 } }),
       NOW,
-      NONE
+      NONE,
+      ME
     );
     expect(line).toMatchObject({
       tone: 'work',
@@ -97,7 +266,8 @@ describe('rowStatus: review lane', () => {
         },
       }),
       NOW,
-      NONE
+      NONE,
+      ME
     );
     expect(line).toMatchObject({
       tone: 'go',
@@ -116,7 +286,8 @@ describe('rowStatus: review lane', () => {
         },
       }),
       NOW,
-      NONE
+      NONE,
+      ME
     );
     expect(s.line).toMatchObject({
       tone: 'bad',
@@ -148,7 +319,8 @@ describe('rowStatus: interrupted executor', () => {
     const s = rowStatus(
       mr({ review: { status: 'reviewing', sessionId: 'sess-1' }, orphan }),
       NOW,
-      NONE
+      NONE,
+      ME
     );
     expect(s.line).toMatchObject({
       tone: 'warn',
@@ -168,7 +340,8 @@ describe('rowStatus: interrupted executor', () => {
     const s = rowStatus(
       mr({ respond: { status: 'implementing', sessionId: 'sess-1' }, orphan }),
       NOW,
-      NONE
+      NONE,
+      ME
     );
     expect(s.line.word).toBe('response interrupted');
     expect(s.line.verbs[0]).toEqual({
@@ -185,7 +358,8 @@ describe('rowStatus: interrupted executor', () => {
         orphan: { ...orphan, state: 'hidden' },
       }),
       NOW,
-      NONE
+      NONE,
+      ME
     );
     expect(line).toMatchObject({
       tone: 'quiet',
@@ -203,7 +377,8 @@ describe('rowStatus: interrupted executor', () => {
     const s = rowStatus(
       mr({ review: { status: 'queued' }, orphan }),
       NOW,
-      NONE
+      NONE,
+      ME
     );
     expect(s.line).toMatchObject({ tone: 'warn', word: 'review interrupted' });
     expect(s.line.verbs.map(v => v.kind)).toEqual(['relaunch', 'clear']);
@@ -223,7 +398,8 @@ describe('rowStatus: interrupted executor', () => {
         orphan,
       }),
       NOW,
-      NONE
+      NONE,
+      ME
     );
     expect(s.line).toMatchObject({ tone: 'go', word: 'review ready' });
     expect(s.line.verbs).toEqual([{ kind: 'read-review', label: 'read ↗' }]);
@@ -242,7 +418,8 @@ describe('rowStatus: interrupted executor', () => {
     const s = rowStatus(
       mr({ doctor: { status: 'fixing', origin: 'manual' }, orphan }),
       NOW,
-      NONE
+      NONE,
+      ME
     );
     expect(s.line).toMatchObject({ tone: 'work', word: 'fixing…' });
     expect(s.more.map(l => l.word)).toEqual(['pane gone']);
@@ -250,7 +427,7 @@ describe('rowStatus: interrupted executor', () => {
   });
 
   test('no lane at all with a gone orphan is the quiet pane-gone line with clear only', () => {
-    const s = rowStatus(mr({ orphan }), NOW, NONE);
+    const s = rowStatus(mr({ orphan }), NOW, NONE, ME);
     expect(s.line).toMatchObject({
       tone: 'quiet',
       word: 'pane gone',
@@ -267,7 +444,8 @@ describe('rowStatus: interrupted executor', () => {
     const s = rowStatus(
       mr({ review: { status: 'reviewing', sessionId: 'sess-2' }, orphan }),
       NOW,
-      NONE
+      NONE,
+      ME
     );
     expect(s.line.word).toBe('review running…');
     expect(s.more.map(l => l.word)).toEqual(['pane gone']);
@@ -276,7 +454,7 @@ describe('rowStatus: interrupted executor', () => {
 
 describe('rowStatus: gates', () => {
   test('an open gate is the decide line: the first question, lowercased, with answer', () => {
-    const s = rowStatus(mr({ gates: [gate()] as never }), NOW, NONE);
+    const s = rowStatus(mr({ gates: [gate()] as never }), NOW, NONE, ME);
     expect(s.line).toMatchObject({
       tone: 'warn',
       word: 'post which findings?',
@@ -290,7 +468,8 @@ describe('rowStatus: gates', () => {
     const [line] = candidateLines(
       mr({ gates: [gate({ status: 'parked' })] as never }),
       NOW,
-      NONE
+      NONE,
+      ME
     );
     expect(line!.detail).toBe('parked');
   });
@@ -313,7 +492,8 @@ describe('rowStatus: gates', () => {
         },
       }),
       NOW,
-      NONE
+      NONE,
+      ME
     );
     expect(s.line.word).toBe('post which findings?');
     expect(s.more.map(l => l.word)).toEqual(['review interrupted']);
@@ -331,7 +511,8 @@ describe('rowStatus: gates', () => {
         ] as never,
       }),
       NOW,
-      NONE
+      NONE,
+      ME
     );
     expect(s.line).toMatchObject({ tone: 'bad', word: DELIVERY_STUCK_MESSAGE });
     expect(s.line.verbs).toEqual([
@@ -351,7 +532,8 @@ describe('rowStatus: gates', () => {
         ] as never,
       }),
       NOW,
-      NONE
+      NONE,
+      ME
     );
     expect(s.line).toMatchObject({
       tone: 'bad',
@@ -373,7 +555,8 @@ describe('rowStatus: gates', () => {
         ] as never,
       }),
       NOW,
-      NONE
+      NONE,
+      ME
     );
     expect(line).toMatchObject({
       tone: 'quiet',
@@ -391,7 +574,7 @@ describe('rowStatus: respond lane', () => {
       ['implementing', 'implementing…'],
       ['drafting', 'drafting replies…'],
     ] as const) {
-      const [line] = candidateLines(mr({ respond: { status } }), NOW, NONE);
+      const [line] = candidateLines(mr({ respond: { status } }), NOW, NONE, ME);
       expect(line).toMatchObject({ tone: 'work', word, spin: true });
       expect(line!.verbs[0]).toEqual({
         kind: 'focus',
@@ -407,7 +590,8 @@ describe('rowStatus: respond lane', () => {
         respond: { status: 'done', posted: 3, threads: 3, reportReady: true },
       }),
       NOW,
-      NONE
+      NONE,
+      ME
     );
     expect(line).toMatchObject({
       tone: 'go',
@@ -423,7 +607,8 @@ describe('rowStatus: respond lane', () => {
         respond: { status: 'done', posted: 2, threads: 3, sessionId: 's' },
       }),
       NOW,
-      NONE
+      NONE,
+      ME
     );
     expect(line).toMatchObject({
       tone: 'warn',
@@ -442,7 +627,8 @@ describe('rowStatus: respond lane', () => {
         respond: { status: 'done', posted: 0, threads: 2, sessionId: 's' },
       }),
       NOW,
-      NONE
+      NONE,
+      ME
     );
     expect(line).toMatchObject({ tone: 'warn', word: 'drafted, not posted' });
   });
@@ -451,7 +637,8 @@ describe('rowStatus: respond lane', () => {
     const [line] = candidateLines(
       mr({ respond: { status: 'error' } }),
       NOW,
-      NONE
+      NONE,
+      ME
     );
     expect(line).toMatchObject({ tone: 'bad', word: 'response failed' });
     expect(line!.verbs[0]).toEqual({
@@ -464,7 +651,8 @@ describe('rowStatus: respond lane', () => {
     const [line] = candidateLines(
       mr({ respond: { status: 'done' } }),
       NOW,
-      NONE
+      NONE,
+      ME
     );
     expect(line).toMatchObject({ tone: 'quiet', word: 'response done' });
   });
@@ -475,7 +663,8 @@ describe('rowStatus: doctor lane', () => {
     const [line] = candidateLines(
       mr({ doctor: { status: 'watching', origin: 'auto' } }),
       NOW,
-      NONE
+      NONE,
+      ME
     );
     expect(line).toMatchObject({
       tone: 'work',
@@ -489,7 +678,8 @@ describe('rowStatus: doctor lane', () => {
     const [line] = candidateLines(
       mr({ doctor: { status: 'error' } }),
       NOW,
-      NONE
+      NONE,
+      ME
     );
     expect(line).toMatchObject({ tone: 'bad', word: 'doctor stuck' });
     expect(line!.verbs[0]).toEqual({
@@ -502,7 +692,8 @@ describe('rowStatus: doctor lane', () => {
     const [line] = candidateLines(
       mr({ doctor: { status: 'done', message: 'rebased on target' } }),
       NOW,
-      NONE
+      NONE,
+      ME
     );
     expect(line).toMatchObject({
       tone: 'go',
@@ -517,7 +708,8 @@ describe('rowStatus: social lanes', () => {
     const [line] = candidateLines(
       mr({ nudges: [{ from: 'jo', receivedAt: NOW - 30 * 60_000 }] }),
       NOW,
-      NONE
+      NONE,
+      ME
     );
     expect(line).toMatchObject({
       tone: 'warn',
@@ -536,7 +728,8 @@ describe('rowStatus: social lanes', () => {
         ],
       }),
       NOW,
-      NONE
+      NONE,
+      ME
     );
     expect(s.line.word).toBe('jo asked for a re-review');
     expect(s.more.map(l => l.word)).toEqual(['kim asked for a re-review']);
@@ -545,7 +738,7 @@ describe('rowStatus: social lanes', () => {
   test('a held draft is warn with the read verb carrying the draft; a resolved one is skipped', () => {
     const draft = { kind: 'verification note', body: 'x', createdAt: NOW };
     const url = 'https://gitlab.example.com/acme/webapp/-/merge_requests/1418';
-    const [line] = candidateLines(mr({ drafts: [draft] }), NOW, NONE);
+    const [line] = candidateLines(mr({ drafts: [draft] }), NOW, NONE, ME);
     expect(line).toMatchObject({
       tone: 'warn',
       word: 'held: verification note',
@@ -559,9 +752,9 @@ describe('rowStatus: social lanes', () => {
     const resolved: ReadonlyMap<string, 'posted' | 'dismissed'> = new Map([
       [`${url}#${draft.kind}`, 'posted'],
     ]);
-    expect(candidateLines(mr({ drafts: [draft] }), NOW, resolved)).toEqual([
-      expect.objectContaining({ tone: 'clear' }),
-    ]);
+    expect(
+      candidateLines(settled({ drafts: [draft] }), NOW, resolved, ME)
+    ).toEqual([expect.objectContaining({ tone: 'clear' })]);
   });
 
   test('a live peer review is a working line with the view verb', () => {
@@ -578,7 +771,8 @@ describe('rowStatus: social lanes', () => {
         ],
       }),
       NOW,
-      NONE
+      NONE,
+      ME
     );
     expect(line).toMatchObject({
       tone: 'work',
@@ -603,7 +797,8 @@ describe('rowStatus: social lanes', () => {
         ],
       }),
       NOW,
-      NONE
+      NONE,
+      ME
     );
     expect(line).toMatchObject({ tone: 'go', word: 'pat approved' });
   });
@@ -618,7 +813,8 @@ describe('rowStatus: social lanes', () => {
         } as never,
       }),
       NOW,
-      NONE
+      NONE,
+      ME
     );
     expect(quiet).toMatchObject({
       tone: 'quiet',
@@ -635,7 +831,8 @@ describe('rowStatus: social lanes', () => {
         } as never,
       }),
       NOW,
-      NONE
+      NONE,
+      ME
     );
     expect(retry).toMatchObject({
       tone: 'quiet',
@@ -658,7 +855,8 @@ describe('rowStatus: social lanes', () => {
         },
       } as never),
       NOW,
-      NONE
+      NONE,
+      ME
     );
     expect(line).toMatchObject({
       tone: 'quiet',
@@ -670,7 +868,8 @@ describe('rowStatus: social lanes', () => {
     const [line] = candidateLines(
       mr({ sentNudge: { display: 'confirmed', reviewer: 'jo' } as never }),
       NOW,
-      NONE
+      NONE,
+      ME
     );
     expect(line).toMatchObject({
       tone: 'work',
@@ -701,7 +900,8 @@ describe('rowStatus: the stress row', () => {
         },
       }),
       NOW,
-      NONE
+      NONE,
+      ME
     );
     expect(s.line.word).toBe('post which findings?');
     expect(s.more).toHaveLength(3);

@@ -41,6 +41,7 @@ function ctx(over: Partial<RowContext> = {}): RowContext {
   const noop = () => {};
   return {
     local: true,
+    self: 'me',
     slackTemplates: { single: '', multiHeader: '', multiItem: '' },
     slackEnabled: false,
     onContext: noop,

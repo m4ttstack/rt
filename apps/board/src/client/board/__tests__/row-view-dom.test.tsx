@@ -70,6 +70,7 @@ function ctx(over: Partial<RowContext> = {}): RowContext {
   const noop = () => {};
   return {
     local: true,
+    self: 'me',
     slackTemplates: { single: '{title}', multiHeader: '', multiItem: '' },
     slackEnabled: true,
     onContext: noop,
@@ -110,7 +111,7 @@ async function render(rows: BoardMRWithReview[], c = ctx()) {
   });
 }
 
-test('a quiet row: three lines, no bar, no separator glyphs, all-clear status', async () => {
+test('a quiet row: four lines, no bar, no separator glyphs, the standing state on the status line', async () => {
   await render([mr()]);
   const row = container.querySelector('.tui-row')!;
   expect(row.querySelector('.tui-row-bar')).toBeNull();
@@ -123,7 +124,10 @@ test('a quiet row: three lines, no bar, no separator glyphs, all-clear status', 
   expect(row.querySelector('.tui-threads')!.textContent).toBe('1 thread');
   expect(row.querySelector('.tui-age')!.textContent).toBe('32h');
   expect(row.querySelector('.tui-status')!.getAttribute('data-tone')).toBe(
-    'clear'
+    'quiet'
+  );
+  expect(row.querySelector('.tui-status-word')!.textContent).toBe(
+    'waiting on the author'
   );
   expect(row.textContent).not.toContain('·');
   expect(row.textContent).not.toContain('|');

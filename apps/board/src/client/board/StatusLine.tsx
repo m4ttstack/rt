@@ -28,6 +28,7 @@ function runVerb(verb: Verb, mr: BoardMRWithReview, ctx: RowContext): void {
     case 'launch-review':
       ctx.onLaunch(mr);
       return;
+    case 'launch-respond':
     case 'restart-respond':
       ctx.onRespond(mr);
       return;

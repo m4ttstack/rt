@@ -1,3 +1,4 @@
+import { hasChangesRequested } from '../../data.ts';
 import { respondOutcome, type RespondStatus } from '../../respond-outcome.ts';
 import type { BoardMRWithReview, DraftInfo, ReviewStatus } from '../types.ts';
 import {
@@ -20,6 +21,7 @@ export type VerbKind =
   | 'resume-respond'
   | 'focus'
   | 'launch-review'
+  | 'launch-respond'
   | 'restart-respond'
   | 'call-doctor'
   | 're-review'
@@ -457,10 +459,119 @@ function socialLines(
   return out;
 }
 
+const OPEN: Verb = { kind: 'open-mr', label: 'open ↗' };
+
+function approvalsDetail(mr: BoardMRWithReview): string | undefined {
+  const { given, required } = mr.reviews;
+  return given > 0 && required > 0
+    ? `${given} of ${required} approvals`
+    : undefined;
+}
+
+/** The author's standing state: what the MR needs from them before anyone
+    else can move it, in the order they would fix it. */
+function authorLine(mr: BoardMRWithReview): StatusLine {
+  const b = mr.blockers;
+  const rebase = !!(b?.hasConflicts || b?.needsRebase);
+  const ci = !!b?.pipelineFailing;
+  if (rebase || ci) {
+    const needs =
+      rebase && ci ? 'a rebase and a ci fix' : rebase ? 'a rebase' : 'a ci fix';
+    return {
+      tone: 'quiet',
+      word: `needs ${needs}`,
+      verbs: [{ kind: 'call-doctor', label: 'call doctor' }],
+    };
+  }
+  const respond: Verb = { kind: 'launch-respond', label: 'respond' };
+  if (hasChangesRequested(mr))
+    return { tone: 'quiet', word: 'changes requested', verbs: [respond] };
+  const awaiting = mr.threadSummary?.awaiting ?? 0;
+  if (awaiting > 0) {
+    return {
+      tone: 'quiet',
+      word:
+        awaiting === 1
+          ? 'a thread awaits you'
+          : `${awaiting} threads await you`,
+      verbs: [respond],
+    };
+  }
+  if (mr.isDraft)
+    return { tone: 'quiet', word: 'draft, not marked ready', verbs: [OPEN] };
+  if (b?.pipelineRunning)
+    return { tone: 'work', word: 'ci running…', spin: true, verbs: [OPEN] };
+  if (!mr.reviews.isApproved) {
+    return {
+      tone: 'quiet',
+      word: 'waiting on reviewers',
+      detail: approvalsDetail(mr),
+      verbs: [OPEN],
+    };
+  }
+  if (b?.hasUnresolvedDiscussions)
+    return { tone: 'quiet', word: 'threads to resolve', verbs: [OPEN] };
+  if (b?.hasMergeError) {
+    return {
+      tone: 'quiet',
+      word: 'merge error',
+      detail: b.mergeError ?? undefined,
+      verbs: [OPEN],
+    };
+  }
+  if (b?.any) return { tone: 'quiet', word: 'blocked', verbs: [OPEN] };
+  return { tone: 'go', word: 'ready to merge', verbs: [OPEN] };
+}
+
+/** A reviewer's standing state on someone else's MR: whether the next move
+    is theirs (review) or the author's (everything else). Only an approved,
+    unblocked MR with nothing awaiting anyone earns the sun. */
+function reviewerLine(mr: BoardMRWithReview): StatusLine {
+  const b = mr.blockers;
+  const awaiting = mr.threadSummary?.awaiting ?? 0;
+  if (hasChangesRequested(mr))
+    return { tone: 'quiet', word: 'changes requested', verbs: [OPEN] };
+  if (awaiting > 0)
+    return { tone: 'quiet', word: 'waiting on the author', verbs: [OPEN] };
+  if (!mr.reviews.isApproved) {
+    return {
+      tone: 'quiet',
+      word: 'awaiting review',
+      detail: approvalsDetail(mr),
+      verbs: [{ kind: 'launch-review', label: 'review' }],
+    };
+  }
+  if (b?.pipelineRunning)
+    return { tone: 'work', word: 'ci running…', spin: true, verbs: [OPEN] };
+  if (b?.any) {
+    const why =
+      b.hasConflicts || b.needsRebase
+        ? 'for a rebase'
+        : b.pipelineFailing
+          ? 'for a ci fix'
+          : b.hasUnresolvedDiscussions
+            ? 'to resolve threads'
+            : undefined;
+    return {
+      tone: 'quiet',
+      word: 'waiting on the author',
+      detail: why,
+      verbs: [OPEN],
+    };
+  }
+  return {
+    tone: 'clear',
+    word: 'all clear',
+    detail: 'enjoy the sunshine',
+    verbs: [OPEN],
+  };
+}
+
 export function candidateLines(
   mr: BoardMRWithReview,
   now: number,
-  draftResolved: Resolved
+  draftResolved: Resolved,
+  self: string | null
 ): StatusLine[] {
   const interrupted = interruptedLane(mr);
   const lines: StatusLine[] = [
@@ -471,28 +582,22 @@ export function candidateLines(
     doctorLine(mr),
     ...socialLines(mr, now, draftResolved),
   ].filter((l): l is StatusLine => l !== null);
-  if (lines.length === 0) {
-    return [
-      {
-        tone: 'clear',
-        word: 'all clear',
-        detail: 'enjoy the sunshine',
-        verbs: [{ kind: 'open-mr', label: 'open ↗' }],
-      },
-    ];
-  }
-  return lines;
+  if (lines.length > 0) return lines;
+  const mine = self !== null && mr.author.username === self;
+  return [mine ? authorLine(mr) : reviewerLine(mr)];
 }
 
 /** The single status line a row shows: the hottest candidate, with ties
     settled by source order (gates before lanes before social), so a decision
-    always outranks the lane it came from. */
+    always outranks the lane it came from. With no candidate at all the row
+    falls back to its standing GitLab state, worded for whoever `self` is. */
 export function rowStatus(
   mr: BoardMRWithReview,
   now: number,
-  draftResolved: Resolved
+  draftResolved: Resolved,
+  self: string | null
 ): RowStatus {
-  const lines = candidateLines(mr, now, draftResolved);
+  const lines = candidateLines(mr, now, draftResolved, self);
   const ranked = lines
     .map((line, index) => ({ line, index }))
     .sort(

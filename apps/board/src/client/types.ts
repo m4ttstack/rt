@@ -201,6 +201,10 @@ export interface RowMenuState {
     work than the individual props it replaces. */
 export interface RowContext {
   local: boolean;
+  /** The board's own seat (`BoardData.defaultMember`): rows this user
+      authored word their standing state as the author's move, every other
+      row as the reviewer's. Null when the board is set to "all". */
+  self: string | null;
   slackTemplates: SlackTemplates;
   slackEnabled: boolean;
   onContext: (e: MouseEvent, mr: BoardMR) => void;
