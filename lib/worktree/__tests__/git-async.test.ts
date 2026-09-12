@@ -58,7 +58,30 @@ describe("git-async", () => {
     execSync(`git -C ${repo} worktree add ${repo}-wt -b side`, { shell: "/bin/zsh" });
     const trees = (await listWorktreesAsync(repo))!;
     expect(trees.length).toBe(2);
-    expect(trees[1]).toEqual({ path: `${repo}-wt`, branch: "side", isBare: false });
+    expect(trees[1]).toEqual({ path: `${repo}-wt`, branch: "side", headSha: await headSha(repo), isBare: false });
+  });
+
+  test("listWorktreesAsync reports the porcelain HEAD sha per worktree", async () => {
+    execSync(`git -C ${repo} worktree add ${repo}-wt -b side`, { shell: "/bin/zsh" });
+    writeFileSync(join(`${repo}-wt`, "f.txt"), "x\n");
+    execSync(`git add -A && git -c user.email=t@t -c user.name=t commit -q -m work`, { cwd: `${repo}-wt`, shell: "/bin/zsh" });
+    const trees = (await listWorktreesAsync(repo))!;
+    const main = trees.find((t) => t.path === repo)!;
+    const side = trees.find((t) => t.path === `${repo}-wt`)!;
+    expect(main.headSha).toBe(await headSha(repo));
+    expect(side.headSha).toBe(await headSha(`${repo}-wt`));
+    expect(side.headSha).not.toBe(main.headSha);
+  });
+
+  test("listWorktreesAsync reports headSha null for an unborn HEAD (no commits yet)", async () => {
+    // Git's porcelain listing reports the all-zero object id for an unborn
+    // HEAD, not an absent line; a real WorktreeEntry.headSha must never be
+    // that literal string (2026-09-12 CodeRabbit finding on RT-129).
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "rtgit-unborn-")));
+    execSync("git init -q -b main .", { cwd: dir, shell: "/bin/zsh" });
+    const trees = (await listWorktreesAsync(dir))!;
+    expect(trees.length).toBe(1);
+    expect(trees[0]!.headSha).toBeNull();
   });
 
   test("listWorktreesAsync returns null on a nonzero git exit", async () => {
