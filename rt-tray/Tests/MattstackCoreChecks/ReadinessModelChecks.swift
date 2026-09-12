@@ -431,6 +431,64 @@ let readinessModelChecks: [Check] = [
                                 optionalNote: nil, status: .needsYou, recheck: .onActivate, finishGated: true, waived: true)
         c.expectEqual(fieldOnly.isWaived, true)
     },
+    Check("overlapping fetches: the last-issued request wins, a stale reply writes nothing, and only the latest reply clears isLoading") { c in
+        let held = HeldPlans()
+        let m = await MainActor.run { ReadinessModel(plans: held, permissions: FakePermissions(), ticker: FakeTicker()) }
+        let blocked = makeManualPlan(extensionStatus: .needsYou)
+        let clear = makeManualPlan(extensionStatus: .ready)
+
+        // Newer reply first, then the stale one: the stale one must not win.
+        let first = Task { await m.load() }
+        try c.require(await waitUntil { held.fetches == 1 }, "first request never registered")
+        let second = Task { await m.recheckAll() }
+        try c.require(await waitUntil { held.fetches == 2 }, "second request never registered")
+        await MainActor.run { c.expectEqual(m.isLoading, true) }
+        held.releaseNewest(blocked)
+        await second.value
+        await MainActor.run {
+            c.expectEqual(m.finishBlockedBy, ["tool.fast-browser-extension"])
+            c.expectEqual(m.isLoading, false, "the latest reply landed; nothing newer is in flight")
+        }
+        held.releaseOldest(clear)
+        await first.value
+        await MainActor.run {
+            c.expectEqual(m.finishBlockedBy, ["tool.fast-browser-extension"], "a stale reply must not overwrite the newer plan")
+            c.expectEqual(m.lastError, nil)
+        }
+
+        // Stale reply first: it is dropped and the model stays loading until the latest lands.
+        let third = Task { await m.load() }
+        try c.require(await waitUntil { held.fetches == 3 }, "third request never registered")
+        let fourth = Task { await m.recheckAll() }
+        try c.require(await waitUntil { held.fetches == 4 }, "fourth request never registered")
+        held.releaseOldest(clear)
+        await third.value
+        await MainActor.run {
+            c.expectEqual(m.finishBlockedBy, ["tool.fast-browser-extension"], "a stale reply is dropped even when it arrives first")
+            c.expectEqual(m.isLoading, true, "the latest request is still in flight")
+        }
+        held.releaseNewest(clear)
+        await fourth.value
+        await MainActor.run {
+            c.expectEqual(m.finishBlockedBy, [])
+            c.expectEqual(m.isLoading, false)
+        }
+
+        // A stale failure is dropped too: it must not surface as the latest error.
+        let fifth = Task { await m.load() }
+        try c.require(await waitUntil { held.fetches == 5 }, "fifth request never registered")
+        let sixth = Task { await m.recheckAll() }
+        try c.require(await waitUntil { held.fetches == 6 }, "sixth request never registered")
+        held.failOldest(RtClientError.exited(1, stderr: "stale boom"))
+        await fifth.value
+        await MainActor.run { c.expectEqual(m.lastError, nil, "a stale failure is not the latest word") }
+        held.releaseNewest(blocked)
+        await sixth.value
+        await MainActor.run {
+            c.expectEqual(m.finishBlockedBy, ["tool.fast-browser-extension"])
+            c.expect(!m.lastRefreshFailed)
+        }
+    },
     Check("StatusGlyph follows the spec's symbols") { c in
         c.expectEqual(StatusGlyph.symbol(for: .ready), "checkmark.circle.fill")
         c.expectEqual(StatusGlyph.symbol(for: .error), "xmark.circle")

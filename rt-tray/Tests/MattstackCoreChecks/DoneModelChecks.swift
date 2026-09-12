@@ -10,29 +10,60 @@ private func doneFixture(plans: [Plan], answers: [String: (Int32, String)] = [:]
     return (model, readiness, rt, fake)
 }
 
-/// A plan source the check releases by hand, so a post-install check can be
-/// observed while it is still in flight.
+/// A plan source the check releases by hand, so a fetch can be observed
+/// while it is still in flight. Requests are held in arrival order and can
+/// be answered oldest- or newest-first, which is how out-of-order replies
+/// are staged. An answer given before any request is waiting is kept for
+/// the next one, so a release can never be lost to a timing gap.
 final class HeldPlans: PlanSource, @unchecked Sendable {
     private let lock = NSLock()
     private var waiters: [CheckedContinuation<Plan, Error>] = []
+    private var pending: [Result<Plan, Error>] = []
     private var fetchCount = 0
     var fetches: Int { lock.lock(); defer { lock.unlock() }; return fetchCount }
     func fetchPlan() async throws -> Plan {
         try await withCheckedThrowingContinuation { cont in
-            lock.lock(); fetchCount += 1; waiters.append(cont); lock.unlock()
+            lock.lock()
+            fetchCount += 1
+            if !pending.isEmpty {
+                let answer = pending.removeFirst()
+                lock.unlock()
+                cont.resume(with: answer)
+                return
+            }
+            waiters.append(cont)
+            lock.unlock()
         }
     }
+    /// Answers every waiting request (or the next one to arrive).
     func release(_ plan: Plan) {
-        lock.lock(); let ws = waiters; waiters = []; lock.unlock()
+        lock.lock()
+        let ws = waiters; waiters = []
+        if ws.isEmpty { pending.append(.success(plan)) }
+        lock.unlock()
         ws.forEach { $0.resume(returning: plan) }
+    }
+    func releaseOldest(_ plan: Plan) { answer(.success(plan), newest: false) }
+    func releaseNewest(_ plan: Plan) { answer(.success(plan), newest: true) }
+    func failOldest(_ error: Error) { answer(.failure(error), newest: false) }
+    private func answer(_ result: Result<Plan, Error>, newest: Bool) {
+        lock.lock()
+        guard !waiters.isEmpty else { pending.append(result); lock.unlock(); return }
+        let w = newest ? waiters.removeLast() : waiters.removeFirst()
+        lock.unlock()
+        w.resume(with: result)
     }
 }
 
-private func waitUntil(_ cond: @escaping @MainActor () -> Bool, tries: Int = 200) async {
+/// True once `cond` held; false when it never did within the budget, so a
+/// caller can fail its check instead of releasing into a waiter that never
+/// registered and hanging on the task it spawned.
+func waitUntil(_ cond: @escaping @MainActor () -> Bool, tries: Int = 200) async -> Bool {
     for _ in 0..<tries {
-        if await MainActor.run(body: cond) { return }
+        if await MainActor.run(body: cond) { return true }
         try? await Task.sleep(nanoseconds: 10_000_000)
     }
+    return false
 }
 
 let doneModelChecks: [Check] = [
@@ -41,7 +72,7 @@ let doneModelChecks: [Check] = [
         let readiness = await MainActor.run { ReadinessModel(plans: held, permissions: FakePermissions(), ticker: FakeTicker()) }
         let m = await MainActor.run { DoneModel(readiness: readiness, waivers: WaiverClient(rt: ScriptedRt(), readiness: readiness), checkTimeout: 0.05) }
         let run = Task { await m.checkPostInstall() }
-        await waitUntil { m.refreshFailed }
+        try c.require(await waitUntil { m.refreshFailed }, "the watchdog never fired")
         await MainActor.run {
             c.expectEqual(m.refreshFailed, true, "a hung rt must not hold Finish shut")
             c.expectEqual(m.finishEnabled, true)
@@ -60,7 +91,7 @@ let doneModelChecks: [Check] = [
         let readiness = await MainActor.run { ReadinessModel(plans: held, permissions: FakePermissions(), ticker: FakeTicker()) }
         let m = await MainActor.run { DoneModel(readiness: readiness, waivers: WaiverClient(rt: ScriptedRt(), readiness: readiness)) }
         let first = Task { await m.checkPostInstall() }
-        await waitUntil { held.fetches == 1 }
+        try c.require(await waitUntil { held.fetches == 1 }, "the first check never asked for a plan")
         held.release(makeManualPlan(extensionStatus: .ready))
         await first.value
         await MainActor.run {
@@ -68,7 +99,7 @@ let doneModelChecks: [Check] = [
             c.expectEqual(m.finishEnabled, true)
         }
         let second = Task { await m.checkPostInstall() }
-        await waitUntil { held.fetches == 2 }
+        try c.require(await waitUntil { held.fetches == 2 }, "the second check never asked for a plan")
         await MainActor.run {
             c.expectEqual(m.hasCheckedSincePostInstall, false, "entering the check resets the flag")
             c.expectEqual(m.finishEnabled, false, "in flight reads closed, not the last run's answer")
