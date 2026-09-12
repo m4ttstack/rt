@@ -357,6 +357,16 @@ function addQuietColumnIfMissing(db: Database): void {
   db.exec("ALTER TABLE chat_messages ADD COLUMN quiet INTEGER NOT NULL DEFAULT 0;");
 }
 
+/** agents.subject: the gate-protocol subject stamped as RT_GATE_SUBJECT at
+    launch, persisted so a resume re-stamps the same one instead of reverting
+    to the "agent:<id>" default. Same conditional-exec rule as `sections`,
+    `archived_at`, `handle` and `quiet` above. */
+function addSubjectColumnIfMissing(db: Database): void {
+  const columns = db.query("PRAGMA table_info(agents);").all() as { name: string }[];
+  if (columns.some((c) => c.name === "subject")) return;
+  db.exec("ALTER TABLE agents ADD COLUMN subject TEXT;");
+}
+
 /**
  * endpoint_claims.start_time (S068): the claiming pid's start-time, so a
  * recycled pid across a reboot reads as dead rather than pinning a port
@@ -526,7 +536,7 @@ function importLegacyStores(db: Database, dir: string): string[] {
 /**
  * The race-proof migration runner (spec "Schema versioning"): BEGIN
  * IMMEDIATE takes the write lock up front, and every statement in
- * `SCHEMAS.join("")` plus the three guarded column helpers below is IF NOT
+ * `SCHEMAS.join("")` plus the guarded column helpers below is IF NOT
  * EXISTS or table_info-guarded, so the whole block runs UNCONDITIONALLY on
  * every open, not only while `user_version < SCHEMA_VERSION` (R015/R056): a
  * db already at SCHEMA_VERSION but missing a table or column self-heals on
@@ -548,6 +558,7 @@ function runMigrations(db: Database, dir: string): void {
     addArchivedAtColumnIfMissing(db);
     addHandleColumnIfMissing(db);
     addQuietColumnIfMissing(db);
+    addSubjectColumnIfMissing(db);
     // Legacy-JSON import is single-shot and only correct from a true
     // v0 (never-migrated) database: branch-cache's UPSERT would silently
     // overwrite current rows with stale ones, and project-mrs-store's

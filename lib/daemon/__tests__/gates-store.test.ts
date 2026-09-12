@@ -139,6 +139,29 @@ describe("gates store — transitions", () => {
     if (!r.ok) expect(r.reason).toBe("closed");
   });
 
+  test("closeAnswered transitions an answered gate straight to closed, without touching close()'s open/parked-only CAS", () => {
+    const s = store();
+    const answered = openGate(s, "run:r1");
+    s.answer(answered, { q: "a" }, "board");
+    const r = s.closeAnswered(answered, "abandoned");
+    expect(r.ok).toBe(true);
+    const row = s.get(answered)!;
+    expect(row.status).toBe("closed");
+    expect(row.closedReason).toBe("abandoned");
+
+    // Unanswered (open) and already-closed rows are both rejected: this is
+    // the answered-only transition, not a wider close().
+    const open = openGate(s, "run:r2");
+    expect(s.closeAnswered(open, "abandoned").ok).toBe(false);
+    expect(s.closeAnswered(answered, "abandoned").ok).toBe(false);
+    expect(s.closeAnswered("missing-id", "abandoned").ok).toBe(false);
+
+    // close()'s own terminal-state invariant is untouched by closeAnswered existing.
+    const other = openGate(s, "run:r3");
+    s.answer(other, { q: "a" }, "board");
+    expect(s.close(other, "pruned").ok).toBe(false);
+  });
+
   test("closing an already-closed gate rejects distinctly, closedReason unchanged", () => {
     const s = store();
     const id = openGate(s, "run:r1");
@@ -170,6 +193,27 @@ describe("gates store — transitions", () => {
     const { gates } = s.list({ open: true, subjectPrefix: "run:" });
     expect(gates.length).toBe(1);
     expect(gates[0]!.subject).toBe("run:r1");
+  });
+
+  test("markDelivery accepts confirmed and stuck", () => {
+    const s = store();
+    const { id } = s.open({ subject: "mr:x", kind: "review-post", questions: qs() }).row;
+    s.markDelivery(id, "confirmed");
+    expect(s.get(id)!.delivery!.outcome).toBe("confirmed");
+    s.markDelivery(id, "stuck");
+    expect(s.get(id)!.delivery!.outcome).toBe("stuck");
+    s.close_();
+  });
+
+  test("markExecution and markExecutor round-trip and clear", () => {
+    const s = store();
+    const { id } = s.open({ subject: "mr:x", kind: "review-post", questions: qs() }).row;
+    s.markExecution(id, "unassigned");
+    s.markExecutor(id, "gone");
+    expect(s.get(id)).toMatchObject({ execution: "unassigned", executor: "gone" });
+    s.markExecution(id, null);
+    expect(s.get(id)!.execution).toBeUndefined();
+    s.close_();
   });
 });
 

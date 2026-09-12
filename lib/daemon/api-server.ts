@@ -41,6 +41,8 @@ function buildApiIndex(port: number) {
     { method: "GET",  path: "/api/secrets",          description: "Whitelisted secret values (linearApiKey, gitlabToken) — token-gated" },
     { method: "GET",  path: "/api/runs",            description: "Pipeline runs, newest first (?repo= to scope)" },
     { method: "GET",  path: "/api/runs/:repo/:runId", description: "One run: stages, fields, decisions" },
+    { method: "GET",  path: "/api/reconciler",       description: "Executor reconciler's last sweep snapshot" },
+    { method: "POST", path: "/api/reconciler/clear", description: "Manually clear an agent's reconciler state and open/parked gates" },
   ],
   websocket_events: [
     { type: "status",         description: "Full daemon status — after each cache refresh (~5 min)" },
@@ -70,6 +72,8 @@ const REST_ROUTES: Record<string, { cmd: string; method: string }> = {
   "/api/events/emit":   { cmd: "events:emit", method: "POST" },
   "/api/events":        { cmd: "events:list", method: "GET" },
   "/api/runs":          { cmd: "runs:list", method: "GET" },
+  "/api/reconciler":       { cmd: "reconciler:status", method: "GET" },
+  "/api/reconciler/clear": { cmd: "reconciler:clear", method: "POST" },
   // "/api/secrets" is NOT here — see the dedicated block in fetch() below:
   // it needs its header token forwarded into the command payload (the
   // secrets:read handler checks payload.token itself, not just this layer),

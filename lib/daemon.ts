@@ -52,7 +52,7 @@ import { unknownCommandReply } from "./daemon/unknown-command.ts";
 // ./state/db.ts directly: importing the barrel is what guarantees every
 // store module has registered its legacy-JSON importer before the one-shot
 // v0->v1 migration runs (see lib/state/index.ts).
-import { getBranchCacheStore, getStateDb, closeStateDb, persistOrWarn, prunePresence, pruneMessages, pruneAgents, snapshotRegistryDeps, quickCheck, backupTo, stampedBackupPath, pruneStateBackups, setBusyLogSink, enqueueNotification, type BranchCacheStore } from "./state/index.ts";
+import { getBranchCacheStore, getStateDb, closeStateDb, persistOrWarn, prunePresence, pruneMessages, pruneAgents, snapshotRegistryDeps, quickCheck, backupTo, stampedBackupPath, pruneStateBackups, setBusyLogSink, enqueueNotification, listAgents, getAgent, type BranchCacheStore } from "./state/index.ts";
 import { createCacheRefresher } from "./daemon/cache-refresh.ts";
 import { createWorktreeReconciler } from "./daemon/worktree-reconciler.ts";
 import { loadRepoIndex } from "./daemon/repo-index.ts";
@@ -98,6 +98,9 @@ import { createBgClaimsStore, type BgClaimsStore } from "./daemon/bg-claims-stor
 import { createGatePush, type GatePush } from "./daemon/gate-push.ts";
 import { createGateEscalation, type GateEscalation } from "./daemon/gate-escalation.ts";
 import { createEscapeInjector } from "./daemon/gate-escape.ts";
+import { createReconciler, type Reconciler } from "./daemon/reconciler.ts";
+import { snapshotPanes, type LivePane } from "./daemon/pane-resolve-live.ts";
+import type { CommandResult } from "./daemon/handlers/types.ts";
 import { deliverToInbox } from "./daemon/inbox.ts";
 import { resolveInbox, resolveAllInboxes } from "./claude-registry.ts";
 import {
@@ -290,6 +293,7 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
   let bgClaims: BgClaimsStore;
   let gatePush: GatePush;
   let gateEscalation: GateEscalation;
+  let reconciler: Reconciler;
   let identity: {
     flavor: "dev" | "prod";
     version: string;
@@ -313,6 +317,19 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
   let pollersHandle: ReturnType<typeof startPollers> | null = null;
   let discussionsPoller: ReturnType<typeof createDiscussionsPoller> | null = null;
   let freshnessInitTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // Shared by the reconciler's own dep (phase 4, "events-db") and the gate
+  // handlers' answer-time executor guarantee (phase 7, "handlers"): both
+  // relaunch through the SAME agent:resume verb, one closure so they can
+  // never drift. routedHandlers (phase 7) is not built yet when phase 4
+  // runs, so this always reads it fresh at call time, never before the
+  // boot-delayed sweeps that are its only callers.
+  const resumeAgent = async (agentId: string): Promise<{ ok: boolean; error?: string }> => {
+    const handlers = routedHandlers;
+    if (!handlers) return { ok: false, error: "daemon handlers not ready yet" };
+    const res = await handlers["agent:resume"]!({ id: agentId }) as CommandResult<"agent:resume">;
+    return res.ok ? { ok: true } : { ok: false, error: res.error };
+  };
 
   const sweepHandles: Array<{ stop(): void }> = [];
   // Shared with buildRoutedHandlers (phase 7) below, so the delivery sweep
@@ -602,6 +619,26 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
           },
           log,
         });
+        reconciler = createReconciler({
+          store: gatesStore,
+          listAgents: () => listAgents({}, getStateDb("daemon")),
+          snapshot: snapshotPanes,
+          peek: async (pane: LivePane) => {
+            const paneId = pane.paneRef.startsWith("bg:") ? pane.paneRef.slice("bg:".length) : pane.paneRef;
+            const res = await herdrRequest<{ read: { text: string } }>(
+              "pane.read", { pane_id: paneId, source: "visible" }, { sockPath: pane.sockPath },
+            );
+            return res.ok ? res.result.read.text : "";
+          },
+          emit: (topic, payload) => {
+            const emittedAt = Date.now();
+            const eventId = eventsBus.emitAt(topic, payload, emittedAt);
+            emit("event", { id: eventId, topic, payload, emittedAt });
+          },
+          injectEscape: createEscapeInjector(),
+          resumeAgent,
+          log,
+        });
         setPhase("events-db");
       },
       stop() {
@@ -690,6 +727,12 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
         sweepHandles.push(scheduleSweep(
           "gate-escalation",
           () => { gateEscalation.sweep(); },
+          { bootDelayMs: 30_000, intervalMs: 60_000 },
+          log,
+        ));
+        sweepHandles.push(scheduleSweep(
+          "reconciler-sweep",
+          async () => { await reconciler.sweep(); },
           { bootDelayMs: 30_000, intervalMs: 60_000 },
           log,
         ));
@@ -922,6 +965,9 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
           eventsBus,
           gatesStore,
           gatePush,
+          reconciler,
+          resumeAgent,
+          getAgentRecord: (agentId) => getAgent(agentId, getStateDb("daemon")),
           herdStore,
           // The lifecycle is built from this router's own gate/chat handlers,
           // so it cannot exist yet; the holder delegates once it does.

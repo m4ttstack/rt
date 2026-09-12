@@ -21,6 +21,7 @@ import { createSecretsHandlers } from "./handlers/secrets.ts";
 import { createProjectMRsHandlers } from "./handlers/project-mrs.ts";
 import { createEventsHandlers } from "./handlers/events.ts";
 import { createGateHandlers } from "./handlers/gate.ts";
+import { createReconcilerHandlers } from "./handlers/reconciler.ts";
 import { createHerdHandlers, type HerdDeps } from "./handlers/herd.ts";
 import { createBgHandlers } from "./handlers/bg.ts";
 import { createChatHandlers } from "./handlers/chat.ts";
@@ -44,6 +45,8 @@ import type { EventsBus } from "./events-bus.ts";
 import type { GatesStore } from "./gates-store.ts";
 import type { HerdStore } from "./herd-store.ts";
 import type { GatePush } from "./gate-push.ts";
+import type { Reconciler } from "./reconciler.ts";
+import type { AgentRecord } from "../state/agents-store.ts";
 import type { HomeSnapshotHandle } from "./home-snapshot.ts";
 import type { TeamSnapshotsHandle } from "./team-snapshots.ts";
 import type { BgService } from "./bg-service.ts";
@@ -68,6 +71,19 @@ export function buildRoutedHandlers(opts: {
   gatesStore: GatesStore;
   /** Pane push + subscription fan-out for gate:open/gate:answer (BOARD-20/21). */
   gatePush: GatePush;
+  /** Answer-time executor guarantee seams (spec "Answer-time executor
+      guarantee"): omitted, gate:answer's post-record side effects reduce to
+      push-only, as before Task 7. Also backs reconciler:status/reconciler:clear
+      (Task 8) via the same "status"/"clear" picks; omitted there, those two
+      verbs fall back to createReconcilerHandlers's own noop default. */
+  reconciler?: Pick<Reconciler, "executorFor" | "expect" | "clear" | "agentIdFor" | "status">;
+  /** The daemon's agent:resume verb, the same closure the reconciler itself
+      is given (lib/daemon.ts wires both from one function). */
+  resumeAgent?: (agentId: string) => Promise<{ ok: boolean; error?: string }>;
+  /** lib/state/agents-store.ts's getAgent: the attention-gate "resume"
+      route's expectation hints resolve through the agent's own record, not
+      the gate row (attention gates carry no origin/pane/nudge). */
+  getAgentRecord?: (agentId: string) => Pick<AgentRecord, "paneId" | "sessionId" | "cwd"> | undefined;
   /** Herd registry backing herd:* (one row per shepherd run and worker job). */
   herdStore: HerdStore;
   /** Herdr lifecycle-stream liveness the shepherd's status reads. */
@@ -131,6 +147,9 @@ export function buildRoutedHandlers(opts: {
     log: ctx.log,
     runSpawnedBy: (runId) => findRun(runId)?.run.spawned_by ?? null,
     herdShepherd: (herdId) => opts.herdStore.get(herdId)?.shepherdSession ?? null,
+    reconciler: opts.reconciler,
+    resumeAgent: opts.resumeAgent,
+    getAgentRecord: opts.getAgentRecord,
   });
   const herdHandlers = createHerdHandlers({
     store: opts.herdStore,
@@ -154,6 +173,7 @@ export function buildRoutedHandlers(opts: {
     jobsRoot: opts.herdJobsRoot,
     log: ctx.log,
   });
+  const reconcilerHandlers = createReconcilerHandlers({ reconciler: opts.reconciler });
   const bgHandlers = createBgHandlers({
     service: opts.bgService,
     claims: opts.bgClaims,
@@ -181,6 +201,7 @@ export function buildRoutedHandlers(opts: {
     ...createProjectMRsHandlers({ repoIndex: ctx.repoIndex, log: ctx.log }, broadcast),
     ...createEventsHandlers(opts.eventsBus, broadcast),
     ...gateHandlers,
+    ...reconcilerHandlers,
     ...herdHandlers,
     ...bgHandlers,
     ...chatHandlers,
