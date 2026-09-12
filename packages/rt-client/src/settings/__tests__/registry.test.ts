@@ -253,6 +253,7 @@ describe("settings/registry", () => {
         "mattstack.tracking",
         "mattstack.appPath",
         "mattstack.mode",
+        "setup.waived",
         "mattstack.roster",
         "claude.marketplaces",
         "claude.plugins",
@@ -308,7 +309,7 @@ describe("settings/registry", () => {
         "rt.notify.eventBridges",
         "rt.gates.escalationTtlMinutes",
       ];
-      expect(suiteKeys).toHaveLength(58);
+      expect(suiteKeys).toHaveLength(59);
 
       expect(allDefs().map((d) => d.key).sort()).toEqual(
         [...migratedFalseKeys, ...migratedTrueKeys, ...suiteKeys].sort(),

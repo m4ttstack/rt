@@ -1,7 +1,11 @@
 import { describe, test, expect } from "bun:test";
 import { applyInstallSatisfiedFlip, composePlan } from "../plan.ts";
 import { FINISH_GATED_ROW_IDS, finalizePlan, row, type Group, type Row } from "../contract.ts";
-import { applyFinishGate } from "../finish-gate.ts";
+import { WAIVED_NOTE, applyFinishGate } from "../finish-gate.ts";
+import { setSetting } from "../../settings/write.ts";
+import { mkdtempSync, rmSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import { UserActionableError } from "../errors.ts";
 import { writeIntent, type SetupIntent } from "../intent.ts";
 import type { SecretPresence } from "../validators/accounts.ts";
@@ -295,5 +299,41 @@ describe("finish gate", () => {
       const plan = await composePlan({ p, secrets: fakeSecrets(), ci: false, mode, teams: [] });
       expect(Array.isArray(plan.finishBlockedBy)).toBe(true);
     }
+  });
+
+  test("a waived finish-gated row reads optional with the skipped-on-this-Mac note, keeps its status and action, and leaves finishBlockedBy, in both modes", () => {
+    for (const mode of ["plan", "status"] as const) {
+      const plan = gatedPlan("needs-you", mode, ["tool.fast-browser-extension"]);
+      const r = plan.groups[0]!.rows[0]!;
+      expect(r.required).toBe(false);
+      expect(r.optionalNote).toBe(WAIVED_NOTE);
+      expect(r.status).toBe("needs-you");
+      expect(r.action?.type).toBe("steps");
+      expect(plan.finishBlockedBy).toEqual([]);
+    }
+  });
+
+  test("composePlan reads the waiver through the resolver when none is injected", async () => {
+    const prevHome = process.env.HOME;
+    const home = mkdtempSync(join(tmpdir(), "rt-plan-waived-"));
+    process.env.HOME = home;
+    try {
+      setSetting("setup.waived", ["tool.fast-browser-extension"], "machine");
+      const p = fakeProbes({ exec: readyExec, tray: grantedTray });
+      const plan = await composePlan({ p, secrets: fakeSecrets(), ci: false, mode: "status", teams: [] });
+      const r = plan.groups.find((g) => g.id === "tools")!.rows.find((r) => r.id === "tool.fast-browser-extension")!;
+      expect(r.optionalNote).toBe(WAIVED_NOTE);
+      expect(plan.finishBlockedBy).toEqual([]);
+    } finally {
+      process.env.HOME = prevHome;
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test("an injected waived list wins over the store", async () => {
+    const p = fakeProbes({ exec: readyExec, tray: grantedTray });
+    const plan = await composePlan({ p, secrets: fakeSecrets(), ci: false, mode: "status", teams: [], waived: ["tool.fast-browser-extension"] });
+    const r = plan.groups.find((g) => g.id === "tools")!.rows.find((r) => r.id === "tool.fast-browser-extension")!;
+    expect(r.optionalNote).toBe(WAIVED_NOTE);
   });
 });

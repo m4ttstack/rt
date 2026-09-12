@@ -13,7 +13,7 @@ import { createRealAgeKeySeam } from "../home/age-key.ts";
 import { createRealSecretsExecSeam, NoAgeKeyError, readSecret, type SecretsSeams } from "../secrets/store.ts";
 import { finalizePlan, GROUP_TITLES, row, type Group, type GroupId, type Plan, type Row, type TeamRef } from "./contract.ts";
 import { UserActionableError } from "./errors.ts";
-import { applyFinishGate } from "./finish-gate.ts";
+import { applyFinishGate, readWaived } from "./finish-gate.ts";
 import { readIntent, teamRefFromIntent, type SetupIntent } from "./intent.ts";
 import { fetchPermissions, permissionRows } from "./permissions.ts";
 import { createRealProbes, type Probes } from "./probes.ts";
@@ -34,6 +34,8 @@ export interface PlanInputs {
   /** Discovered team slugs — the real caller passes `listTeams()`; tests inject their own list instead of swapping process.env.HOME. */
   teams: string[];
   teamOverride?: string;
+  /** Row ids waived on this Mac; defaults to the resolver's `setup.waived`. Tests inject their own list instead of writing a store. */
+  waived?: string[];
 }
 
 const EMPTY_SNAPSHOT: TeamSnapshot = { slug: "", integrations: {}, trackingIdentities: [], marketplaces: [], plugins: [], remote: null };
@@ -168,7 +170,8 @@ export async function composePlan(i: PlanInputs): Promise<Plan> {
     }),
   ]);
 
-  return finalizePlan(team, applyFinishGate(applyInstallSatisfiedFlip(groups, i.mode), i.mode), i.p.now());
+  const waived = i.waived ?? readWaived();
+  return finalizePlan(team, applyFinishGate(applyInstallSatisfiedFlip(groups, i.mode), i.mode, waived), i.p.now(), waived);
 }
 
 /**
