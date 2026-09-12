@@ -36,6 +36,11 @@ public final class SetupFlowModel: ObservableObject {
     /// and start a real `rt setup apply` — whose next `start()` SIGTERMs the
     /// previous process, killing a live install the onboarding window owns.
     public let readOnly: Bool
+    /// The Done model's `finishEnabled`, mirrored in by the setup view: the
+    /// window controller observes only the flow, and restyles the titlebar's
+    /// close and minimize buttons off `windowMayClose` whenever this moves.
+    /// One boolean for both, so the buttons can never disagree with Finish.
+    @Published public var finishGateOpen = true
     public init(readOnly: Bool = false) { self.readOnly = readOnly }
 
     public var showsBack: Bool { !readOnly }
@@ -58,7 +63,7 @@ public final class SetupFlowModel: ObservableObject {
         default: return "Continue"
         }
     }
-    public var windowMayClose: Bool { step == .done }
+    public var windowMayClose: Bool { step == .done && finishGateOpen }
 
     public func next() { if let n = SetupStep(rawValue: step.rawValue + 1) { step = n } }
     public func back() { guard canGoBack, let p = SetupStep(rawValue: step.rawValue - 1) else { return }; step = p }

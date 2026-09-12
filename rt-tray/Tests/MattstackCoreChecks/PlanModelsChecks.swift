@@ -61,6 +61,20 @@ let planModelsChecks: [Check] = [
         let again = try JSONDecoder().decode(Plan.self, from: data)
         c.expectEqual(again, plan)
     },
+    Check("finishGated, waived and finishBlockedBy decode, and default to false / false / [] when an older rt omits them") { c in
+        let plan = try JSONDecoder().decode(Plan.self, from: Data(samplePlanJSON.utf8))
+        c.expectEqual(plan.finishBlockedBy, [])
+        c.expect(plan.groups.flatMap(\.rows).allSatisfy { !$0.finishGated && !$0.waived })
+        let gated = samplePlanJSON
+            .replacingOccurrences(of: "\"id\": \"tool.chrome\", \"kind\": \"tool\",", with: "\"id\": \"tool.chrome\", \"kind\": \"tool\", \"finishGated\": true, \"waived\": true,")
+            .replacingOccurrences(of: "\"requiredMissing\": [\"perm.fda\", \"account.gitlab\"]", with: "\"requiredMissing\": [\"perm.fda\", \"account.gitlab\"], \"finishBlockedBy\": [\"tool.chrome\"]")
+        let decoded = try JSONDecoder().decode(Plan.self, from: Data(gated.utf8))
+        c.expectEqual(decoded.finishBlockedBy, ["tool.chrome"])
+        c.expectEqual(decoded.groups.flatMap(\.rows).first { $0.id == "tool.chrome" }?.finishGated, true)
+        c.expectEqual(decoded.groups.flatMap(\.rows).first { $0.id == "tool.chrome" }?.waived, true)
+        let again = try JSONDecoder().decode(Plan.self, from: JSONEncoder().encode(decoded))
+        c.expectEqual(again, decoded)
+    },
     Check("an ActionField with no `secret` key decodes as not-secret instead of failing the whole plan") { c in
         let json = Data(#"{"name":"token","label":"Personal access token","hint":"scopes: read_api"}"#.utf8)
         let field = try JSONDecoder().decode(ActionField.self, from: json)

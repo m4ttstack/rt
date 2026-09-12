@@ -67,6 +67,26 @@ else
   bad "no tray socket at $SOCK"
 fi
 
+# The finish gate: drive-setup.sh records whether it had to skip the Fast
+# Browser extension on the Done screen. Skipped means the machine store must
+# hold the id (written only through rt, never a hand edit); open means nothing
+# was waived. `rt settings get --json` is the one undecorated read of the store.
+GATE=$(cat "$LOGS/finish-gate.txt" 2>/dev/null || echo "")
+WAIVED=$(rt settings get setup.waived --json 2>/dev/null)
+case "$GATE" in
+  skipped)
+    case "$WAIVED" in
+      *tool.fast-browser-extension*) ok "setup.waived holds tool.fast-browser-extension after Skip for now";;
+      *) bad "Skip for now was confirmed but setup.waived does not hold the id: $WAIVED";;
+    esac;;
+  open)
+    case "$WAIVED" in
+      *tool.fast-browser-extension*) bad "nothing was skipped on the Done screen but setup.waived holds the id: $WAIVED";;
+      *) ok "setup.waived is empty (the gate never closed)";;
+    esac;;
+  *) if [ "$HEADLESS" = 1 ]; then ok "finish gate not driven (headless)"; else bad "no finish-gate.txt from drive-setup.sh"; fi;;
+esac
+
 # mattstack.appPath (V3): the app records where it runs from. --json is the only stable, undecorated form of `rt settings get`.
 AP=$(rt settings get mattstack.appPath --json 2>/dev/null)
 case "$AP" in

@@ -4,6 +4,8 @@
  *
  *   rt setup plan [--team <name>] [--json]     pre-install: canInstall reachable
  *   rt setup status [--json]                   post-install health view
+ *   rt setup waive <row-id> [--json]           skip a finish-gated row on this Mac
+ *   rt setup unwaive <row-id> [--json]         re-arm it
  *
  * rt setup <integration> status|connect + rt setup slack create-app — the
  * per-integration verbs the app spawns when a user clicks a row's action.
@@ -21,9 +23,10 @@ import { NoTeamRecipientsError, createRealTeamSecretsSeams, readTeamSecret, writ
 import { listTeams } from "../lib/settings/stores.ts";
 import { setSetting } from "../lib/settings/write.ts";
 import { createApplyContext, runApplyWith, type ApplyContext, type CreateApplyContextDeps, type StepDef } from "../lib/setup/apply.ts";
-import { envelope, STEP_IDS, type ConnectField, type Integration, type StepId } from "../lib/setup/contract.ts";
+import { envelope, FINISH_GATED_ROW_IDS, STEP_IDS, type ConnectField, type Integration, type StepId } from "../lib/setup/contract.ts";
 import { createHumanEmitter, createNdjsonEmitter } from "../lib/setup/emit.ts";
 import { UserActionableError, userErrorPayload } from "../lib/setup/errors.ts";
+import { realWaiverStore, unwaiveRow, waiveRow, type WaiverChange, type WaiverStore } from "../lib/setup/finish-gate.ts";
 import { isValidHostname, isValidHttpsUrl } from "../lib/setup/host-validate.ts";
 import { integrationDef, type ValidateCtx } from "../lib/setup/integrations.ts";
 import { clearIntent, readIntent, teamRefFromIntent, writeIntent } from "../lib/setup/intent.ts";
@@ -96,6 +99,11 @@ export function renderPlanHuman(plan: Plan): string[] {
   return lines;
 }
 
+/** The wizard's other gate, printed beside the Install line by `setup status`: Finish waits on finish-gated rows that are not ready, skipped, or waived on this Mac. */
+export function renderFinishLine(plan: Plan): string {
+  return plan.finishBlockedBy.length === 0 ? "Finish: ready" : `Finish: blocked by: ${plan.finishBlockedBy.join(", ")}`;
+}
+
 /** `rt setup <integration> connect`, for a missing account row — only "connect"/"oauth" actions name that verb; the owner-once slack-app row (and any row still waiting on it, which carries no action at all) has no per-integration connect flow to point at. */
 function accountConnectVerb(r: { status: RowStatus; action: Row["action"] }): string | null {
   if (r.status !== "missing") return null;
@@ -136,6 +144,7 @@ async function runPlan(args: string[], deps: SetupDeps, mode: "plan" | "status",
   for (const line of renderPlanHuman(plan)) deps.print(line);
 
   if (mode === "status") {
+    deps.print(renderFinishLine(plan));
     const missingAccounts = missingAccountLines(plan);
     if (missingAccounts.length > 0) {
       deps.print("");
@@ -431,7 +440,7 @@ export async function setupIntent(args: string[], _ctx: CommandContext = {}, dep
 // ─── Per-integration verbs ─────────────────────────────────────────────────
 
 /** Prints the exit-2 envelope (JSON or a one-line human message) then exits 2, through `deps.exit` so tests never kill the process. Timestamps via `deps.probes.now()`, the same clock every success envelope uses. */
-function exitWithUserError(err: UserActionableError, json: boolean, verb: string, deps: SetupDeps): never {
+function exitWithUserError(err: UserActionableError, json: boolean, verb: string, deps: Pick<SetupDeps, "probes" | "print" | "exit">): never {
   deps.print(json ? JSON.stringify(userErrorPayload(err, deps.probes.now())) : `rt ${verb}: ${err.message}`);
   return (deps.exit ?? process.exit)(2);
 }
@@ -769,6 +778,79 @@ export async function integrationStatus(id: Integration, args: string[], deps: S
     if (err instanceof UserActionableError) return exitWithUserError(err, json, verb, deps);
     throw err;
   }
+}
+
+// ─── waive / unwaive (`rt setup waive|unwaive <row-id>`) ───────────────────
+
+export interface WaiveDeps {
+  probes: Probes;
+  store: WaiverStore;
+  print: (s: string) => void;
+  printError: (s: string) => void;
+  exit: (code: number) => never;
+  isTTY: () => boolean;
+  pick: (message: string, options: string[]) => Promise<string | null>;
+}
+
+export function realWaiveDeps(): WaiveDeps {
+  return {
+    probes: createRealProbes(),
+    store: realWaiverStore(),
+    print: (s) => console.log(s),
+    printError: (s) => console.error(s),
+    exit: process.exit,
+    isTTY: () => process.stdin.isTTY === true,
+    pick: async (message, options) => {
+      const { filterableSelect } = await import("../lib/pick-wrappers.ts");
+      return filterableSelect({ message, options: options.map((n) => ({ value: n, label: n })), stderr: true });
+    },
+  };
+}
+
+const WAIVER_COPY: Record<"waive" | "unwaive", Record<"changed" | "unchanged", string>> = {
+  waive: { changed: "skipped on this Mac", unchanged: "was already skipped on this Mac" },
+  unwaive: { changed: "re-armed on this Mac", unchanged: "was not skipped on this Mac" },
+};
+
+async function runWaiver(args: string[], deps: WaiveDeps, verb: "waive" | "unwaive"): Promise<void> {
+  const json = args.includes("--json");
+  let id = args.find((a) => !a.startsWith("--"));
+  if (!id) {
+    // unwaive can only act on rows already skipped here; an empty set falls
+    // through to the usage error rather than an empty picker.
+    const candidates = verb === "waive" ? [...FINISH_GATED_ROW_IDS] : deps.store.read();
+    if (deps.isTTY() && !json && !process.env.RT_BATCH && candidates.length > 0) {
+      id = (await deps.pick(verb === "waive" ? "Skip which row on this Mac?" : "Re-arm which row on this Mac?", candidates)) ?? undefined;
+      if (!id) return deps.exit(0);
+    } else {
+      return exitWithUserError(new UserActionableError("usage", `usage: rt setup ${verb} <row-id> [--json]`), json, `setup ${verb}`, deps);
+    }
+  }
+
+  let change: WaiverChange;
+  try {
+    change = verb === "waive" ? waiveRow(id, deps.store) : unwaiveRow(id, deps.store);
+  } catch (err) {
+    if (err instanceof UserActionableError) return exitWithUserError(err, json, `setup ${verb}`, deps);
+    // A store the resolver refused to edit is reported as it was raised; the
+    // app shows it in its sheet and keeps the gate closed.
+    deps.printError(`rt setup ${verb}: ${err instanceof Error ? err.message : String(err)}`);
+    return deps.exit(1);
+  }
+
+  if (json) {
+    deps.print(JSON.stringify(envelope({ ok: true, id, changed: change.changed, waived: change.waived }, deps.probes.now())));
+    return;
+  }
+  deps.print(`setup ${verb}: ${id} ${WAIVER_COPY[verb][change.changed ? "changed" : "unchanged"]}`);
+}
+
+export async function setupWaive(args: string[], _ctx: CommandContext = {}, deps: WaiveDeps = realWaiveDeps()): Promise<void> {
+  await runWaiver(args, deps, "waive");
+}
+
+export async function setupUnwaive(args: string[], _ctx: CommandContext = {}, deps: WaiveDeps = realWaiveDeps()): Promise<void> {
+  await runWaiver(args, deps, "unwaive");
 }
 
 // ─── connect ────────────────────────────────────────────────────────────

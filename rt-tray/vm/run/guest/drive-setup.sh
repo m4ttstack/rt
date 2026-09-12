@@ -175,6 +175,30 @@ screen_install() {
 screen_done() {
   ax_wait_screen done 10 || ax_fail "setup.done.screen did not appear"
   ax_shot 05-done
+  # The Fast Browser extension gates Finish on a Mac with Chrome and no
+  # extension loaded. A guest without Chrome reports the row skipped and the
+  # gate open, so the skip path is driven only when the gate is closed; the
+  # outcome is recorded for assert-installed.sh either way. Neither state can
+  # be read until the screen's own re-check lands, hence the wait.
+  ax_wait_done_gate 60 || ax_fail "Done never settled: no Before you finish section and Finish still disabled (or a refresh error is up)"
+  if ax_find setup.done.beforeYouFinish >/dev/null 2>&1; then
+    ax_find setup.done.beforeYouFinish.tool.fast-browser-extension >/dev/null 2>&1 || ax_fail "Before you finish is shown without the extension row"
+    [ "$(ax_enabled_or_fail setup.done.continue)" = false ] || ax_fail "Finish is enabled while Before you finish lists a row"
+    ax_click setup.done.skip.tool.fast-browser-extension
+    ax_wait_text "Skip the Fast Browser extension?" 10 || ax_fail "skip confirm sheet did not appear"
+    ax_wait_text "Without the Fast Browser extension, agents cannot capture screenshots or annotate evidence from your browser. You can load it later from Settings." 5 || ax_fail "skip confirm sheet body is not the pinned copy"
+    ax_shot 05-skip-confirm
+    ax_click_sheet_button "Skip for now" || ax_fail "could not click Skip for now in the sheet"
+    ax_wait_enabled setup.done.continue 30 || ax_fail "Finish did not enable after Skip for now"
+    ax_find setup.done.beforeYouFinish >/dev/null 2>&1 && ax_fail "Before you finish is still shown after Skip for now"
+    ax_find setup.done.stillToDo.tool.fast-browser-extension >/dev/null 2>&1 || ax_fail "the skipped row did not move to Still to do"
+    ax_shot 05-skipped
+    echo skipped > "$GUEST_RUN/logs/finish-gate.txt"
+  else
+    [ "$(ax_enabled_or_fail setup.done.continue)" = true ] || ax_fail "Finish is disabled with no Before you finish section"
+    ax_find setup.done.refreshError >/dev/null 2>&1 && ax_fail "Done fell open on a failed re-check: $(ax_texts | grep -F "Couldn't confirm the checklist" | head -1)"
+    echo open > "$GUEST_RUN/logs/finish-gate.txt"
+  fi
   ax_click setup.done.continue
 }
 

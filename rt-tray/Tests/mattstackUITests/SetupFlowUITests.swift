@@ -64,8 +64,22 @@ final class SetupFlowUITests: XCTestCase {
         XCTAssertTrue(el(id).waitForExistence(timeout: timeout), "missing \(id)")
     }
 
-    func testJoinHappyWalksAllFiveScreens() {
-        launch("join-happy")
+    private func waitUntilEnabled(_ id: String, _ timeout: TimeInterval = 20) {
+        expectation(for: NSPredicate(format: "isEnabled == true"), evaluatedWith: el(id))
+        waitForExpectations(timeout: timeout)
+    }
+
+    /// Finish closes the setup window; a click that does nothing would
+    /// otherwise pass, since tearDown terminates the app either way.
+    private func waitUntilGone(_ id: String, _ timeout: TimeInterval = 10) {
+        expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: el(id))
+        waitForExpectations(timeout: timeout)
+    }
+
+    /// Welcome through Install for a join scenario whose plan is installable
+    /// out of the box, leaving the Done screen on screen.
+    private func joinThroughInstall(_ scenario: String) {
+        launch(scenario)
         waitFor("setup.welcome.screen")
         el("setup.welcome.continue").click()
         waitFor("setup.team.screen")
@@ -76,7 +90,7 @@ final class SetupFlowUITests: XCTestCase {
         waitFor("setup.checklist.screen")
         waitFor("setup.checklist.row.perm.fda")
         XCTAssertTrue(el("setup.checklist.continue").waitForExistence(timeout: 20))
-        XCTAssertTrue(el("setup.checklist.continue").isEnabled, "join-happy plan is installable")
+        XCTAssertTrue(el("setup.checklist.continue").isEnabled, "\(scenario) plan is installable")
         el("setup.checklist.continue").click()
         waitFor("setup.install.screen")
         // Not waited on individually: the stub's apply() finishes all 11
@@ -85,12 +99,44 @@ final class SetupFlowUITests: XCTestCase {
         // screen appearing, then done appearing, is what actually proves the
         // run went through.
         waitFor("setup.done.screen", 60)
+    }
+
+    func testJoinHappyWalksAllFiveScreens() {
+        joinThroughInstall("join-happy")
         // Not clicked: DoneScreen.openBoard() logs instead of opening a real
         // browser tab under stub mode, but there's nothing to assert on from
         // here besides existence/enablement, so leave the real click unfired.
         waitFor("setup.done.openBoard")
         XCTAssertTrue(el("setup.done.openBoard").isEnabled)
+        // Finish stays disabled until the Done screen's own post-install
+        // re-check lands; a click before that is a no-op the test would not
+        // notice.
+        waitUntilEnabled("setup.done.continue")
+        XCTAssertFalse(el("setup.done.beforeYouFinish").exists, "join-happy's plan gates nothing")
         el("setup.done.continue").click()
+        waitUntilGone("setup.done.screen")
+    }
+
+    /// The finish gate end to end: a plan that names the extension row in
+    /// finishBlockedBy holds Finish shut, Skip for now confirms with the
+    /// pinned copy, and the waived plan re-opens Finish with the row under
+    /// Still to do.
+    func testFinishGateSkipForNowEnablesFinish() {
+        joinThroughInstall("finish-gate")
+        waitFor("setup.done.beforeYouFinish.tool.fast-browser-extension", 30)
+        XCTAssertFalse(el("setup.done.continue").isEnabled, "Finish waits on the extension")
+        XCTAssertFalse(el("setup.done.stillToDo.tool.fast-browser-extension").exists, "a blocked row is not listed twice")
+        el("setup.done.skip.tool.fast-browser-extension").click()
+        waitFor("setup.done.skipConfirm")
+        XCTAssertTrue(app.staticTexts["Skip the Fast Browser extension?"].exists)
+        XCTAssertTrue(app.staticTexts["Without the Fast Browser extension, agents cannot capture screenshots or annotate evidence from your browser. You can load it later from Settings."].exists)
+        el("setup.done.skipConfirm.skip").click()
+        waitUntilEnabled("setup.done.continue", 30)
+        waitFor("setup.done.stillToDo.tool.fast-browser-extension")
+        XCTAssertFalse(el("setup.done.beforeYouFinish").exists, "the skipped row left Before you finish")
+        XCTAssertFalse(el("setup.done.skipConfirm").exists, "the sheet closed on success")
+        el("setup.done.continue").click()
+        waitUntilGone("setup.done.screen")
     }
 
     func testCreateHappyShowsSlugAndReachesChecklist() {
