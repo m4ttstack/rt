@@ -63,8 +63,24 @@ describe('buildQueueExtras', () => {
     expect(extras[0]?.subject).toBe('agent:pane-1');
   });
 
-  test('a herd-owned pane-attention gate is excluded entirely', () => {
-    const row = fakeRow({ owner: 'herd:acme' });
+  test('an unescalated herd-owned pane-attention gate is excluded entirely', () => {
+    const row = fakeRow({ owner: 'herd:acme', escalatedAt: null });
+    expect(buildQueueExtras([row])).toEqual([]);
+  });
+
+  test('an escalated herd-owned gate is admitted, marked with escalatedAt', () => {
+    const row = fakeRow({ owner: 'herd:acme', escalatedAt: 6000 });
+    const extras = buildQueueExtras([row]);
+    expect(extras).toHaveLength(1);
+    expect(extras[0]?.escalatedAt).toBe(6000);
+  });
+
+  test('an escalated herd-owned "mr:"-subject gate stays excluded by prefix', () => {
+    const row = fakeRow({
+      owner: 'herd:acme',
+      escalatedAt: 6000,
+      subject: 'mr:https://gitlab.com/acme/webapp/-/merge_requests/999',
+    });
     expect(buildQueueExtras([row])).toEqual([]);
   });
 
@@ -291,8 +307,10 @@ describe('joinExecutorOrphans', () => {
     expect(() => joinExecutorOrphans(mrs, [executor])).not.toThrow();
     const { mrs: joined, orphans } = joinExecutorOrphans(mrs, [executor]);
     expect(joined[0]?.orphan).toBeUndefined();
-    // No subject at all -- can't match an MR row, and nothing to key the
-    // top-level leftover by either, so it's dropped like an unmatched hidden.
+    // No subject at all -- can't match an MR row, but a "gone" executor
+    // still needs surfacing somewhere, so it lands in the top-level
+    // orphans leftover (unlike an unmatched "hidden", which really is
+    // dropped -- see the "hidden ... matching no MR row" test above).
     expect(orphans).toEqual([executor]);
   });
 });

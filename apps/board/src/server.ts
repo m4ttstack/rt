@@ -16,7 +16,6 @@ import {
   ReadBackFailedError,
 } from '@mattstack/glance';
 import {
-  DEFAULT_SOCK,
   eventsHead,
   eventsList,
   gateAnswer as gateAnswerFacility,
@@ -27,6 +26,7 @@ import {
   paneList,
   readDiscussions,
   readProjectMRs,
+  rtCommand,
   setSetting,
   subscribe,
 } from '@mattstack/rt-client';
@@ -109,7 +109,7 @@ import { upsertEnvKeys } from './env-file.ts';
 import faviconSvg from './favicon.svg' with { type: 'text' };
 import { focusPane } from './focus-pane.ts';
 import { answerGate } from './gates/answer.ts';
-import { attachGates, GateCache } from './gates/cache.ts';
+import { attachGates, GateCache, isRowAnswerable } from './gates/cache.ts';
 import {
   executeSweepAction,
   type ExecuteSweepActionIo,
@@ -353,38 +353,29 @@ const EMPTY_RECONCILER_VIEW: ReconcilerView = {
   executors: [],
 };
 
-/** GET /api/reconciler: the rt daemon's own executor sweep (SDD
-    executor-reconciler, task 12's partner lane). An older daemon 404s the
-    route entirely, the daemon may simply be down, or (a test's fake
-    unix-socket daemon that stubs other verbs only) it may answer 200 with
-    an unrelated JSON body -- every one of those degrades to an empty view
-    rather than failing /data.json, the same contract every other daemon
-    read on this page already honors. */
+/** `reconciler:status`: the rt daemon's own executor sweep (SDD
+    executor-reconciler, task 12's partner lane). Like every other rt-client
+    command, the daemon's pathname IS the command name and success/failure
+    rides the `{ok, data}` envelope in the HTTP 200 body, never the HTTP
+    status -- an older daemon that doesn't know this command, a down daemon,
+    or an envelope missing `executors` all degrade to an empty view rather
+    than failing /data.json, the same contract every other daemon read on
+    this page already honors. */
 async function fetchReconcilerView(): Promise<ReconcilerView> {
-  try {
-    const res = await fetch('http://localhost/api/reconciler', {
-      unix: DEFAULT_SOCK,
-      method: 'GET',
-      signal: AbortSignal.timeout(5000),
-    } as RequestInit);
-    if (!res.ok) return EMPTY_RECONCILER_VIEW;
-    const data: unknown = await res.json();
-    if (
-      typeof data !== 'object' ||
-      data === null ||
-      !Array.isArray((data as { executors?: unknown }).executors)
-    ) {
-      return EMPTY_RECONCILER_VIEW;
-    }
-    const view = data as ReconcilerView;
-    return {
-      sweptAt: typeof view.sweptAt === 'number' ? view.sweptAt : 0,
-      herdrReachable: view.herdrReachable === true,
-      executors: view.executors,
-    };
-  } catch {
+  const res = await rtCommand<ReconcilerView>(
+    'reconciler:status',
+    {},
+    { timeoutMs: 5000 }
+  );
+  if (!res.ok || !res.data || !Array.isArray(res.data.executors)) {
     return EMPTY_RECONCILER_VIEW;
   }
+  const view = res.data;
+  return {
+    sweptAt: typeof view.sweptAt === 'number' ? view.sweptAt : 0,
+    herdrReachable: view.herdrReachable === true,
+    executors: view.executors,
+  };
 }
 
 // Optional peer relay. Both a configured url and a token are required; without
@@ -2010,10 +2001,8 @@ const httpServer = Bun.serve({
           });
         }
         const result = await answerGate(gateId, answers as GateAnswers, {
-          isAnswerable: id => {
-            const row = gateCache.rows().find(r => r.id === id);
-            return !!row && (row.status === 'open' || row.status === 'parked');
-          },
+          isAnswerable: id =>
+            isRowAnswerable(gateCache.rows().find(r => r.id === id)),
           gateAnswer: gateAnswerFacility,
         });
         switch (result.kind) {
@@ -2110,12 +2099,14 @@ const httpServer = Bun.serve({
         });
       }
       case '/reconciler/clear': {
-        // Proxies the daemon's `reconciler:clear` verb (REST `POST
-        // /api/reconciler/clear`): tombstones a dead/hidden executor's kv entry
-        // and closes its other gates. The orphan strip's own "clear" button
-        // is the only caller -- same degrade-on-failure shape as
-        // /gate/focus above, since the reconciler view itself is refetched
-        // fresh on the next /data.json poll rather than cached here.
+        // Proxies the daemon's `reconciler:clear` command: tombstones a
+        // dead/hidden executor's kv entry and closes its other gates. The
+        // orphan strip's own "clear" button is the only caller. Same
+        // pathname-is-command-name, envelope-in-the-body contract as
+        // `fetchReconcilerView` above -- an `{ok: false}` envelope at HTTP
+        // 200 is a daemon-side refusal, not success, and degrades to a 502
+        // here rather than throwing, since the reconciler view itself is
+        // refetched fresh on the next /data.json poll rather than cached.
         if (req.method !== 'POST')
           return new Response('method not allowed', { status: 405 });
         if (!isLocalRequest(req))
@@ -2135,28 +2126,16 @@ const httpServer = Bun.serve({
           return new Response('expected { agentId: string }', {
             status: 400,
           });
-        try {
-          const res = await fetch('http://localhost/api/reconciler/clear', {
-            unix: DEFAULT_SOCK,
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ agentId }),
-            signal: AbortSignal.timeout(5000),
-          } as RequestInit);
-          if (!res.ok) {
-            return new Response(
-              JSON.stringify({
-                ok: false,
-                error: `reconciler clear failed (${res.status})`,
-              }),
-              { status: 502, headers: { 'content-type': 'application/json' } }
-            );
-          }
-        } catch (err) {
+        const res = await rtCommand(
+          'reconciler:clear',
+          { agentId },
+          { timeoutMs: 5000 }
+        );
+        if (!res.ok) {
           return new Response(
             JSON.stringify({
               ok: false,
-              error: err instanceof Error ? err.message : String(err),
+              error: res.error ?? 'reconciler clear failed',
             }),
             { status: 502, headers: { 'content-type': 'application/json' } }
           );

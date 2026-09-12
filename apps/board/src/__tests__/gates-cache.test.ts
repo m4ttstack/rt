@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import type { GateRow as FacilityGateRow } from '@mattstack/rt-client';
-import { attachGates, GateCache } from '../gates/cache.ts';
+import { attachGates, GateCache, isRowAnswerable } from '../gates/cache.ts';
 
 const SUBJECT_A = 'mr:https://gitlab.com/acme/webapp/-/merge_requests/4821';
 const SUBJECT_B = 'mr:https://gitlab.com/acme/webapp/-/merge_requests/1';
@@ -409,6 +409,8 @@ describe('attachGates', () => {
         context: undefined,
         origin: undefined,
         domain: 'review',
+        meta: { label: 'review gate !4821' },
+        escalatedAt: undefined,
       },
     ]);
   });
@@ -693,5 +695,105 @@ describe('attachGates', () => {
     expect(mr!.gates[0]!.context).toBe('ctx');
     expect(mr!.gates[0]!.origin).toEqual({ worktree: '/tmp/wt' });
     expect(mr!.gates[0]!.domain).toBe('review');
+  });
+
+  test('attachGates carries meta and escalatedAt onto an open row', () => {
+    const cache = new GateCache();
+    cache.applyRow(
+      row({
+        status: 'open',
+        meta: { agentId: 'agent-1', reason: 'blocked' },
+        escalatedAt: 5000,
+      })
+    );
+    const [mr] = attachGates(
+      [{ webUrl: 'https://gitlab.com/acme/webapp/-/merge_requests/4821' }],
+      cache
+    );
+    expect(mr!.gates[0]?.meta).toEqual({
+      agentId: 'agent-1',
+      reason: 'blocked',
+    });
+    expect(mr!.gates[0]?.escalatedAt).toBe(5000);
+  });
+
+  test('attachGates carries delivery and execution onto an answered row', () => {
+    const cache = new GateCache();
+    cache.applyRow({
+      ...row({
+        status: 'answered',
+        meta: { label: 'review gate' },
+        escalatedAt: 4000,
+        answer: { answers: { q1: 'yes' }, by: 'board-ui', answeredAt: 2000 },
+      }),
+      // Not on the facility's own typed GateRow yet (SDD
+      // executor-reconciler): the daemon already emits these on the wire.
+      delivery: { outcome: 'confirmed', at: 3000 },
+      execution: 'unassigned',
+    } as unknown as FacilityGateRow);
+    const [mr] = attachGates(
+      [{ webUrl: 'https://gitlab.com/acme/webapp/-/merge_requests/4821' }],
+      cache
+    );
+    expect(mr!.gates[0]?.meta).toEqual({ label: 'review gate' });
+    expect(mr!.gates[0]?.escalatedAt).toBe(4000);
+    expect(mr!.gates[0]?.delivery).toEqual({ outcome: 'confirmed', at: 3000 });
+    expect(mr!.gates[0]?.execution).toBe('unassigned');
+  });
+
+  test('attachGates leaves delivery/execution undefined when the cached row carries neither', () => {
+    const cache = new GateCache();
+    cache.applyRow(
+      row({
+        status: 'answered',
+        answer: { answers: { q1: 'yes' }, by: 'board-ui', answeredAt: 2000 },
+      })
+    );
+    const [mr] = attachGates(
+      [{ webUrl: 'https://gitlab.com/acme/webapp/-/merge_requests/4821' }],
+      cache
+    );
+    expect(mr!.gates[0]?.delivery).toBeUndefined();
+    expect(mr!.gates[0]?.execution).toBeUndefined();
+  });
+});
+
+describe('isRowAnswerable', () => {
+  test('an open row is answerable', () => {
+    expect(isRowAnswerable(row({ status: 'open' }))).toBe(true);
+  });
+
+  test('a parked row is answerable', () => {
+    expect(isRowAnswerable(row({ status: 'parked' }))).toBe(true);
+  });
+
+  test('an unknown id (no row) is not answerable', () => {
+    expect(isRowAnswerable(undefined)).toBe(false);
+  });
+
+  test('a closed row is not answerable', () => {
+    expect(isRowAnswerable(row({ status: 'closed' }))).toBe(false);
+  });
+
+  test('an answered row with no execution field is not answerable', () => {
+    expect(
+      isRowAnswerable(
+        row({
+          status: 'answered',
+          answer: { answers: {}, by: 'agent', answeredAt: 1 },
+        })
+      )
+    ).toBe(false);
+  });
+
+  test('an answered row with execution "unassigned" IS answerable -- the retry path', () => {
+    const answeredUnassigned = {
+      ...row({
+        status: 'answered',
+        answer: { answers: {}, by: 'agent', answeredAt: 1 },
+      }),
+      execution: 'unassigned',
+    } as unknown as FacilityGateRow;
+    expect(isRowAnswerable(answeredUnassigned)).toBe(true);
   });
 });

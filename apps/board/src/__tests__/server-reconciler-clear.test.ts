@@ -4,15 +4,18 @@ import { join } from 'path';
 import { afterAll, expect, test } from 'bun:test';
 
 // Proves POST /reconciler/clear (SDD executor-reconciler task 14): a thin
-// proxy onto the daemon's own `reconciler:clear` verb, same shape as
-// /gate/focus -- forward the body, degrade to a 502 JSON error on a daemon
-// failure rather than throwing 500, and gate on method/CSRF/body shape like
-// every other POST route. Minimal boot, same recipe as
+// proxy onto the daemon's `reconciler:clear` command, same shape as
+// /gate/focus -- forward the body, degrade to a 502 JSON error when the
+// daemon's own `{ok, data}` envelope says `ok: false` (never trust HTTP
+// status alone, since the daemon answers every command with HTTP 200 and
+// encodes success/failure in the body), and gate on method/CSRF/body shape
+// like every other POST route. Minimal boot, same recipe as
 // server-healthz-fast.test.ts: no MR/gitlab traffic needed for this route.
 //
-// The daemon side of the proxy targets its uniform `/api` prefix
-// (`/api/reconciler`, `/api/reconciler/clear`) -- only the board's own
-// incoming route stays at `/reconciler/clear` for its own callers.
+// The fake daemon below mirrors rt-client's real transport contract: the
+// request PATHNAME IS THE COMMAND NAME (`/reconciler:status`,
+// `/reconciler:clear`), POSTed with a JSON payload, answered with a JSON
+// `{ok, data}` or `{ok: false, error}` body at HTTP 200.
 const fakeHome = mkdtempSync(join(tmpdir(), 'board-reconciler-clear-'));
 
 const teamDir = join(fakeHome, '.mattstack', 'teams', 'testteam', 'mattstack');
@@ -30,27 +33,34 @@ const rtDir = join(fakeHome, '.mattstack', 'rt');
 mkdirSync(rtDir, { recursive: true });
 writeFileSync(join(rtDir, 'api-token'), 'fake-token\n');
 
-// Records every request the board forwards and answers per-path so a test
-// can flip one route's outcome without touching the others.
-const seen: Array<{ pathname: string; body: unknown }> = [];
+// Records every command the board forwards and answers per-command so a
+// test can flip one outcome without touching the others.
+const seen: Array<{ cmd: string; body: unknown }> = [];
 let clearOutcome: 'ok' | 'fail' = 'ok';
 const rtDaemon = Bun.serve({
   unix: join(rtDir, 'rt.sock'),
   async fetch(req) {
     const { pathname } = new URL(req.url);
+    const cmd = pathname.slice(1);
     const body =
       req.method === 'POST' ? await req.json().catch(() => null) : null;
-    seen.push({ pathname, body });
-    if (pathname === '/api/reconciler/clear') {
+    seen.push({ cmd, body });
+    if (cmd === 'reconciler:clear') {
       if (clearOutcome === 'fail')
-        return new Response('daemon refused', { status: 500 });
+        return new Response(
+          JSON.stringify({ ok: false, error: 'daemon refused' }),
+          { headers: { 'content-type': 'application/json' } }
+        );
       return new Response(JSON.stringify({ ok: true }), {
         headers: { 'content-type': 'application/json' },
       });
     }
-    if (pathname === '/api/reconciler') {
+    if (cmd === 'reconciler:status') {
       return new Response(
-        JSON.stringify({ sweptAt: 0, herdrReachable: true, executors: [] }),
+        JSON.stringify({
+          ok: true,
+          data: { sweptAt: 0, herdrReachable: true, executors: [] },
+        }),
         { headers: { 'content-type': 'application/json' } }
       );
     }
@@ -110,12 +120,12 @@ function clear(
   });
 }
 
-test('forwards { agentId } to the daemon and returns ok', async () => {
+test('forwards { agentId } to the daemon as reconciler:clear and returns ok', async () => {
   await ready();
   const res = await clear({ agentId: 'agent-9' });
   expect(res.status).toBe(200);
   expect(await res.json()).toEqual({ ok: true });
-  const forwarded = seen.find(s => s.pathname === '/api/reconciler/clear');
+  const forwarded = seen.find(s => s.cmd === 'reconciler:clear');
   expect(forwarded?.body).toEqual({ agentId: 'agent-9' });
 }, 15_000);
 
@@ -131,7 +141,7 @@ test('rejects a body missing agentId with 400', async () => {
   expect(res.status).toBe(400);
 }, 15_000);
 
-test('a daemon failure degrades to a 502 JSON error rather than throwing', async () => {
+test('an {ok:false} envelope from the daemon degrades to a 502 and never reports success', async () => {
   await ready();
   clearOutcome = 'fail';
   try {
@@ -139,15 +149,17 @@ test('a daemon failure degrades to a 502 JSON error rather than throwing', async
     expect(res.status).toBe(502);
     const body = (await res.json()) as { ok: boolean; error: string };
     expect(body.ok).toBe(false);
-    expect(body.error).toContain('reconciler clear failed');
+    expect(body.error).toBe('daemon refused');
   } finally {
     clearOutcome = 'ok';
   }
 }, 15_000);
 
-test('GET /data.json sweeps the reconciler view at the daemon api prefix', async () => {
+test('GET /data.json sweeps the reconciler view via the reconciler:status command', async () => {
   await ready();
   await fetch(`http://127.0.0.1:${PORT}/data.json`);
-  expect(seen.some(s => s.pathname === '/api/reconciler')).toBe(true);
-  expect(seen.some(s => s.pathname === '/reconciler')).toBe(false);
+  expect(seen.some(s => s.cmd === 'reconciler:status')).toBe(true);
+  expect(
+    seen.some(s => s.cmd === 'reconciler' || s.cmd === 'api/reconciler')
+  ).toBe(false);
 }, 15_000);

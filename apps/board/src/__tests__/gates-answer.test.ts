@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import type { Commands, GateRow, RtResponse } from '@mattstack/rt-client';
 import { answerGate, type AnswerGateIo } from '../gates/answer.ts';
+import { isRowAnswerable } from '../gates/cache.ts';
 import type { GateAnswers } from '../gates/store.ts';
 
 const MR_URL = 'https://gitlab.com/acme/webapp/-/merge_requests/4821';
@@ -184,5 +185,47 @@ describe('answerGate', () => {
     const result = await answerGate(GATE_ID, { outcome: 'approve' }, io);
 
     expect(result).toEqual({ kind: 'unreachable', reason: message });
+  });
+
+  test('a retry POST on an ANSWERED row left execution: "unassigned" reaches the daemon forward, not a 404', async () => {
+    // Wires isAnswerable to the real predicate server.ts uses (gates/cache.ts's
+    // isRowAnswerable) instead of a hardcoded boolean, so this proves the
+    // same row shape server.ts's gate cache produces on a stuck retry
+    // actually reaches gateAnswer rather than short-circuiting to not-found.
+    const answeredUnassigned = {
+      ...baseRow({
+        status: 'answered',
+        answer: { answers: { outcome: 'approve' }, by: 'agent', answeredAt: 1 },
+      }),
+      execution: 'unassigned',
+    } as unknown as GateRow;
+    const calls: GateAnswerPayload[] = [];
+    const io: AnswerGateIo = {
+      isAnswerable: gateId =>
+        isRowAnswerable(gateId === GATE_ID ? answeredUnassigned : undefined),
+      gateAnswer: async payload => {
+        calls.push(payload);
+        return {
+          ok: true,
+          data: {
+            row: baseRow({
+              status: 'answered',
+              answer: {
+                answers: { outcome: 'approve' },
+                by: 'board',
+                answeredAt: 2,
+              },
+            }),
+          },
+        };
+      },
+    };
+
+    const result = await answerGate(GATE_ID, { outcome: 'approve' }, io);
+
+    expect(result).toEqual({ kind: 'ok' });
+    expect(calls).toEqual([
+      { id: GATE_ID, answers: { outcome: 'approve' }, by: 'board' },
+    ]);
   });
 });

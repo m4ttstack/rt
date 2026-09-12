@@ -168,8 +168,9 @@ export interface BoardData {
   /** Board tabs, in display order. Always non-empty (config.tabs falls back to
       IMPLICIT_TABS server-side). */
   tabs: TabConfig[];
-  /** Human-owned gates (pane-attention or otherwise) whose subject matched no
-      MR row on this board -- a herd-owned gate never reaches this list. */
+  /** Human-owned gates (pane-attention or otherwise), plus escalated
+      herd-owned gates, admitted by non-"mr:" subject prefix -- an
+      unescalated herd-owned gate never reaches this list. */
   queueExtras: GateRow[];
   /** Reconciler executors in state "gone" that matched no MR row's subject;
       one that did match rides that row's own `orphan` field instead. */

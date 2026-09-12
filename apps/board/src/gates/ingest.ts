@@ -152,15 +152,21 @@ export async function reconcileAttentionGatesOnBoot(
  * admission is by subject prefix, not by "no MR row currently matches it".
  * An `mr:` gate whose MR dropped out of the polled snapshot (merged/closed
  * while the gate stays open) must still attach through the normal MR join,
- * not leak in here as a queue item. A herd-owned gate is excluded outright
- * -- that herd's own board (or shepherd) owns it, not this one -- and a
- * closed row never renders, same rule `attachGates` applies to MR-attached
- * gates.
+ * not leak in here as a queue item. A herd-owned gate is excluded UNLESS
+ * the daemon has already escalated it to a human (`escalatedAt` set) --
+ * that herd's own board (or shepherd) owns it otherwise, not this one --
+ * and a closed row never renders, same rule `attachGates` applies to
+ * MR-attached gates.
  */
 export function buildQueueExtras(rows: FacilityGateRow[]): GateRow[] {
   const out: GateRow[] = [];
   for (const row of rows) {
-    if (row.owner !== 'human') continue;
+    const isHuman = row.owner === 'human';
+    const isEscalatedHerd =
+      typeof row.owner === 'string' &&
+      row.owner.startsWith('herd:') &&
+      row.escalatedAt != null;
+    if (!isHuman && !isEscalatedHerd) continue;
     if (row.subject.startsWith('mr:')) continue;
     if (row.status === 'closed') continue;
     const label =
