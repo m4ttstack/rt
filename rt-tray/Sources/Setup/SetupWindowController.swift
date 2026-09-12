@@ -22,6 +22,7 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
     static let width: CGFloat = 560
     let flow: SetupFlowModel
     let team: TeamChoiceModel
+    let done: DoneModel
     /// Set by the caller (e.g. re-entering an already-complete setup, or the
     /// read-only "Setup status…" view) to make the window closable even
     /// though `flow` itself hasn't reached `.done` — a wizard step must never
@@ -35,6 +36,7 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         self.environment = environment
         self.flow = SetupFlowModel(readOnly: environment.readOnly)
         self.team = TeamChoiceModel(rt: environment.rt, pasteboard: SystemPasteboard())
+        self.done = DoneModel(readiness: environment.readiness, waivers: WaiverClient(rt: environment.rt, readiness: environment.readiness))
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: Self.width, height: 620),
                               styleMask: [.titled], backing: .buffered, defer: false)
         window.title = "mattstack Setup"
@@ -42,7 +44,7 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         window.center()
         super.init(window: window)
         window.delegate = self
-        let root = SetupView(flow: flow, team: team, readiness: environment.readiness, install: environment.install,
+        let root = SetupView(flow: flow, team: team, readiness: environment.readiness, install: environment.install, done: done,
                              permissions: environment.permissions, env: environment,
                              onFinish: { [weak self] in self?.window?.close() })
         window.contentViewController = NSHostingController(rootView: root)

@@ -24,6 +24,7 @@ public final class ReadinessModel: ObservableObject {
     @Published public private(set) var team: TeamInfo?
     @Published public private(set) var canInstall = false
     @Published public private(set) var requiredMissing: [String] = []
+    @Published public private(set) var finishBlockedBy: [String] = []
     @Published public private(set) var isLoading = false
     @Published public private(set) var lastError: String?
     @Published public private(set) var checkingRowIds: Set<String> = []
@@ -66,16 +67,20 @@ public final class ReadinessModel: ObservableObject {
         canInstall && allRows.contains { !$0.required && $0.status != .ready }
     }
 
+    /// The rows Finish waits on, in plan order.
+    public var finishBlockedRows: [PlanRow] { finishBlockedBy.compactMap { row($0) } }
+
     /// Steps Install could not take for the user and will not take on a
     /// retry: optional rows still not ready whose action a person performs by
     /// hand. `skipped` is excluded deliberately, since it means the row had
     /// nothing to check rather than something outstanding. A row whose own
     /// `optionalNote` opens with "works without" is a supported end state
     /// rather than an obligation, so it is excluded even when its status and
-    /// action otherwise qualify.
+    /// action otherwise qualify. A row currently blocking Finish is excluded
+    /// too: the Done screen lists it in its own section, not twice.
     public var outstandingManualRows: [PlanRow] {
         allRows.filter { row in
-            guard !row.required, row.status != .ready, row.status != .skipped else { return false }
+            guard !row.required, row.status != .ready, row.status != .skipped, !finishBlockedBy.contains(row.id) else { return false }
             guard let type = row.action?.type, type == .steps || type == .openURL else { return false }
             if let note = row.optionalNote, note.lowercased().hasPrefix("works without") { return false }
             return true
@@ -130,6 +135,7 @@ public final class ReadinessModel: ObservableObject {
             let plan = try await plans.fetchPlan()
             team = plan.team
             groups = plan.groups
+            finishBlockedBy = plan.finishBlockedBy
             planCanInstall = plan.canInstall
             lastError = nil
             // Only re-overlay once a local probe has actually run; before

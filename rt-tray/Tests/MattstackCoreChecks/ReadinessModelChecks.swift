@@ -100,12 +100,16 @@ func makeSweepPlan() -> Plan {
                 canInstall: true, requiredMissing: [])
 }
 
-func makeManualPlan(extensionStatus: RowStatus, chromeStatus: RowStatus = .ready, requiredNotReady: Bool = false) -> Plan {
+/// The extension row is finish-gated the way rt emits it; `waived` mirrors
+/// rt's own rendering of a skipped-on-this-Mac row (optional, note swapped,
+/// status and action kept) and drops it from `finishBlockedBy`.
+func makeManualPlan(extensionStatus: RowStatus, chromeStatus: RowStatus = .ready, requiredNotReady: Bool = false, waived: Bool = false) -> Plan {
+    let waivedNote = FinishGate.waivedNotePrefix + ": agents cannot capture screenshots or annotate evidence from your browser. Load it later from Settings."
     var rows = [
         PlanRow(id: "tool.fast-browser", kind: .tool, title: "Fast Browser", why: "w", required: true, status: .ready, recheck: .onActivate),
         PlanRow(id: "tool.fast-browser-extension", kind: .tool, title: "Fast Browser extension", why: "w", required: false,
-                optionalNote: "You load this into Chrome yourself; Install cannot do it for you.", status: extensionStatus,
-                action: RowAction(type: .steps, label: "Show steps...", steps: ["Open chrome://extensions"]), recheck: .onActivate),
+                optionalNote: waived ? waivedNote : "You load this into Chrome yourself; Install cannot do it for you.", status: extensionStatus,
+                action: RowAction(type: .steps, label: "Show steps...", steps: ["Open chrome://extensions"]), recheck: .onActivate, finishGated: true),
         PlanRow(id: "tool.chrome", kind: .tool, title: "Google Chrome", why: "w", required: false, status: chromeStatus,
                 action: RowAction(type: .openURL, label: "Download", url: "https://www.google.com/chrome/"), recheck: .onActivate),
         PlanRow(id: "tool.mission-control", kind: .tool, title: "Mission Control shortcut", why: "w", required: false, status: .needsYou,
@@ -117,9 +121,10 @@ func makeManualPlan(extensionStatus: RowStatus, chromeStatus: RowStatus = .ready
                              recheck: .onActivate))
     }
     let missing = rows.filter { $0.required && $0.status != .ready }.map(\.id)
+    let blocked = waived || extensionStatus == .ready || extensionStatus == .skipped ? [] : ["tool.fast-browser-extension"]
     return Plan(at: "t", team: TeamInfo(slug: "acme", name: "Acme", mode: .join),
                 groups: [PlanGroup(id: "tools", title: "Tools", rows: rows)],
-                canInstall: missing.isEmpty, requiredMissing: missing)
+                canInstall: missing.isEmpty, requiredMissing: missing, finishBlockedBy: blocked)
 }
 
 let readinessModelChecks: [Check] = [
@@ -350,8 +355,10 @@ let readinessModelChecks: [Check] = [
         c.expectEqual(planA.fetches, 2, "A's own fetch count is untouched by B's activity")
         c.expectEqual(planB.fetches, 2, "B's own fetch count is untouched by A's activity")
     },
+    // The extension row is waived in these two fixtures: unwaived it blocks
+    // Finish and belongs to the Done screen's own section instead.
     Check("outstandingManualRows lists only optional, not-ready rows whose action a person can act on") { c in
-        let m = await MainActor.run { ReadinessModel(plans: FakePlans([makeManualPlan(extensionStatus: .needsYou)]), permissions: FakePermissions(), ticker: FakeTicker()) }
+        let m = await MainActor.run { ReadinessModel(plans: FakePlans([makeManualPlan(extensionStatus: .needsYou, waived: true)]), permissions: FakePermissions(), ticker: FakeTicker()) }
         await m.load()
         await MainActor.run {
             c.expectEqual(m.outstandingManualRows.map(\.id), ["tool.fast-browser-extension"],
@@ -359,7 +366,7 @@ let readinessModelChecks: [Check] = [
         }
     },
     Check("outstandingManualRows includes a not-ready open-url row and stays in plan order") { c in
-        let m = await MainActor.run { ReadinessModel(plans: FakePlans([makeManualPlan(extensionStatus: .needsYou, chromeStatus: .missing)]), permissions: FakePermissions(), ticker: FakeTicker()) }
+        let m = await MainActor.run { ReadinessModel(plans: FakePlans([makeManualPlan(extensionStatus: .needsYou, chromeStatus: .missing, waived: true)]), permissions: FakePermissions(), ticker: FakeTicker()) }
         await m.load()
         await MainActor.run {
             c.expectEqual(m.outstandingManualRows.map(\.id), ["tool.fast-browser-extension", "tool.chrome"])
@@ -393,6 +400,29 @@ let readinessModelChecks: [Check] = [
             c.expect(!m.outstandingManualRows.map(\.id).contains("home.backup"), "home.backup's own note says local-only is fully supported")
             c.expect(!m.outstandingManualRows.map(\.id).contains("tool.chrome"), "tool.chrome's own note says it works without this")
         }
+    },
+    Check("finishBlockedBy comes from the plan, blocked rows resolve in plan order, and a blocked row leaves outstandingManualRows") { c in
+        let m = await MainActor.run { ReadinessModel(plans: FakePlans([makeManualPlan(extensionStatus: .needsYou)]), permissions: FakePermissions(), ticker: FakeTicker()) }
+        await m.load()
+        await MainActor.run {
+            c.expectEqual(m.finishBlockedBy, ["tool.fast-browser-extension"])
+            c.expectEqual(m.finishBlockedRows.map(\.id), ["tool.fast-browser-extension"])
+            c.expect(!m.outstandingManualRows.map(\.id).contains("tool.fast-browser-extension"), "a row blocking Finish is not also still-to-do")
+        }
+    },
+    Check("a waived extension row is not blocked, reads as waived, and is back in outstandingManualRows") { c in
+        let m = await MainActor.run { ReadinessModel(plans: FakePlans([makeManualPlan(extensionStatus: .needsYou, waived: true)]), permissions: FakePermissions(), ticker: FakeTicker()) }
+        await m.load()
+        await MainActor.run {
+            c.expectEqual(m.finishBlockedBy, [])
+            c.expectEqual(m.row("tool.fast-browser-extension")?.isWaived, true)
+            c.expect(m.outstandingManualRows.map(\.id).contains("tool.fast-browser-extension"), "the Done screen still lists a skipped row under Still to do")
+        }
+    },
+    Check("an unwaived extension row is not waived, even when ready") { c in
+        let m = await MainActor.run { ReadinessModel(plans: FakePlans([makeManualPlan(extensionStatus: .ready)]), permissions: FakePermissions(), ticker: FakeTicker()) }
+        await m.load()
+        await MainActor.run { c.expectEqual(m.row("tool.fast-browser-extension")?.isWaived, false) }
     },
     Check("StatusGlyph follows the spec's symbols") { c in
         c.expectEqual(StatusGlyph.symbol(for: .ready), "checkmark.circle.fill")

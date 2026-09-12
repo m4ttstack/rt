@@ -82,6 +82,7 @@ function plan(): unknown {
     ],
     canInstall: requiredMissing.length === 0,
     requiredMissing,
+    finishBlockedBy: [],
   };
 }
 
