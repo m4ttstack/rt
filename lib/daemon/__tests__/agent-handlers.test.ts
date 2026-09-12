@@ -319,8 +319,8 @@ test("agent:start herdr reserves a handle not held by live presence, passes it a
   signIn({ sessionId: "s-held", baseHandle: held, cwd: "/tmp/held" }, h.db);
 
   // An explicit subject: the merged-file/hook-injection shape this test
-  // pins only applies when the launch carries one (progressive arming
-  // ruling -- see the dedicated subjectless tests below).
+  // pins only applies when the launch carries one (see the dedicated
+  // subjectless tests below).
   const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr", subject: "mr:test/1" });
   expect(res.ok).toBe(true);
   if (!res.ok) throw new Error("unreachable");
@@ -385,8 +385,7 @@ test("agent:start passes env into the pane command", async () => {
 // This default herdr start reserves a handle (no explicit handle passed),
 // so it also pins the merged-file shape: crossSessionInbound and the hook
 // block share one file behind one --settings flag, never two. An explicit
-// subject is required for the hook half of that merge (progressive arming
-// ruling); see the dedicated subjectless tests below for the no-subject case.
+// subject is required for the hook half of that merge; see the dedicated subjectless tests below for the no-subject case.
 test("agent:start herdr stamps gate env and injects the gate-fork hook via --settings, merged with the reserved handle's inbound-accept settings", async () => {
   const calls: string[][] = [];
   const h = fresh({ runner: okRunner(calls) });
@@ -433,7 +432,7 @@ test("agent:start headless argv carries --settings for the gate-fork hook; spawn
   expect(parsed.hooks.PreToolUse[0].hooks[0].command).toMatch(/gate-fork\.sh$/);
 });
 
-// Progressive arming ruling: a launch with no explicit subject gets no gate-
+// A launch with no explicit subject gets no gate-
 // fork hook at all -- there is no gate for the hook to check, so it would
 // only ever degrade to allow. Env vars still stamp (RT_GATE_SUBJECT falls
 // back to "agent:<id>"), and the reserved-handle inline JSON reverts to

@@ -20,7 +20,7 @@ export interface AgentRecord {
       back to "agent:<id>" at launch time -- see handlers/agent.ts's
       gateEnv); an explicit value is persisted so a resume re-stamps the
       same one, AND gates whether the gate-fork PreToolUse hook gets
-      injected at all (progressive arming ruling: no subject means no gate
+      injected at all (no subject means no gate
       for the hook to check). */
   subject?: string;
   paneId?: string; tabId?: string; workspaceId?: string;

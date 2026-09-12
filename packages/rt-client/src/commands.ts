@@ -343,7 +343,7 @@ export interface AgentRecord {
       undefined when the caller passed none (RT_GATE_SUBJECT still falls
       back to "agent:<id>" at launch time); an explicit value is persisted
       so a resume re-stamps the same one, AND gates whether the gate-fork
-      PreToolUse hook gets injected at all (progressive arming ruling). */
+      PreToolUse hook gets injected at all. */
   subject?: string;
   paneId?: string; tabId?: string; workspaceId?: string;
   extraArgs?: string; exitCode?: number; resultPath?: string;

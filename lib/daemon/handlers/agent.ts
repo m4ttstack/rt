@@ -11,7 +11,7 @@
  * unconditionally. The AskUserQuestion PreToolUse hook (docs/superpowers/
  * specs/2026-09-11-executor-reconciler-design.md "AskUserQuestion hook")
  * only gets injected via a per-agent `--settings` file when the launch
- * carries an explicit subject (progressive arming ruling: a launch with no
+ * carries an explicit subject (a launch with no
  * subject has no gate to fork against, so the deny-by-default hook would
  * only ever degrade to allow -- skip writing it at all); see
  * resolveHookSettingsPath below.
@@ -89,7 +89,7 @@ function extraArgsHasSettingsFlag(extraArgs: string | undefined): boolean {
  * Absolute path to a freshly written per-agent settings file carrying the
  * AskUserQuestion PreToolUse hook (Task 9), or undefined when injection is
  * skipped. Three skip cases, all non-fatal to the launch: the launch
- * carries no explicit subject (progressive arming ruling -- with no
+ * carries no explicit subject (with no
  * subject there is no gate for the hook to check, so it would only ever
  * degrade to allow; skip writing it rather than ship a no-op hook file),
  * extraArgs already sets --settings (merge is not attempted -- the user's
@@ -299,7 +299,7 @@ export function createAgentHandlers(opts: {
         createdAt: Date.now(),
       };
       // Left undefined rather than defaulted to "agent:<id>" when the
-      // caller passes no subject (progressive arming ruling): launch()'s
+      // caller passes no subject: launch()'s
       // gateEnv still falls back to agentOwner(rec.id) for RT_GATE_SUBJECT,
       // and that fallback is a pure function of rec.id, so a later resume
       // recomputing it lands on the exact same value. What DOES change on
