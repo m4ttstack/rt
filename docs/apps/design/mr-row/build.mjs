@@ -56,13 +56,13 @@ const CSS = `
   .list { border: 1px solid var(--border-soft); border-radius: 8px; background: var(--bg); overflow: hidden; }
 
   /* one content edge: 44px gutter column, then text. */
-  .row { display: grid; grid-template-columns: 44px minmax(0,1fr); align-items: start;
+  .row { display: grid; grid-template-columns: 40px minmax(0,1fr); align-items: start;
          padding: 12px 16px 12px 0; position: relative; }
   .row + .row { border-top: 1px solid var(--border-soft); }
-  .gut { display: flex; align-items: center; justify-content: center; gap: 6px; height: 20px; }
-  .gut input { accent-color: var(--accent); margin: 0; }
+  .row.hov { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+  .gut { display: flex; align-items: center; justify-content: center; height: 20px; }
   .dot { font-size: 10px; line-height: 1; }
-  .bar { position: absolute; left: 6px; top: 12px; bottom: 12px; width: 3px; border-radius: 2px; }
+  .bar { position: absolute; left: 0; top: 0; bottom: 0; width: 3px; border-radius: 0 2px 2px 0; }
   .bar-warn { background: var(--amber); }
   .bar-bad { background: var(--red); }
 
@@ -92,10 +92,12 @@ const CSS = `
   .act-bad .w { color: var(--red); }
   .act-quiet .w { color: var(--muted); font-weight: 500; }
   .act .d { margin-left: 8px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .act .sep { flex-shrink: 0; }
   .act .spin { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: currentColor;
                margin-left: 8px; align-self: center; animation: pulse 1.6s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity: .25; } }
-  .act .do { display: inline-flex; gap: 14px; margin-left: 16px; flex-shrink: 0; }
+  .act .do { display: none; }
+  .row.hov .act .do { display: inline-flex; gap: 14px; margin-left: auto; padding-left: 16px; flex-shrink: 0; }
   .act .do a { font-size: .72rem; font-weight: 600; text-decoration: none; color: var(--accent); }
   .act .do a.mut { color: var(--muted); font-weight: 500; }
 
@@ -168,17 +170,14 @@ const act = (tone, lane, word, detail = '', actions = [], spin = false) => `
     <span class="lane">${lane}</span>
     <span class="w">${word}</span>
     ${spin ? '<span class="spin"></span>' : ''}
-    ${detail ? `<span class="d">${detail}</span>` : ''}
+    ${detail ? `<span class="sep" style="margin-left:8px;opacity:.45">·</span><span class="d">${detail}</span>` : ''}
     ${actions.length ? `<span class="do">${actions.map(([t, mut]) => `<a href="#" class="${mut ? 'mut' : ''}">${t}</a>`).join('')}</span>` : ''}
   </div>`;
 
 // bar: '' | 'warn' | 'bad'. The row's single attention device, in the gutter.
-const row = (dot, bar, inner) => `<div class="row">
+const row = (dot, bar, inner, hov = false) => `<div class="row${hov ? ' hov' : ''}">
   ${bar ? `<span class="bar bar-${bar}"></span>` : ''}
-  <div class="gut">
-    <input type="checkbox" disabled>
-    <span class="dot" style="color:${dot}">●</span>
-  </div>
+  <div class="gut"><span class="dot" style="color:${dot}">●</span></div>
   <div style="min-width:0">${inner}</div>
 </div>`;
 
@@ -199,11 +198,13 @@ const RED = 'var(--red)';
 // ════════════════════════════════════════════════════════════════════
 const mainBody = `
 <h2>direction a · activity lines (leading)</h2>
-<p class="note">Five rules. One content edge: title, meta and ledger share a left edge; dots and
-bars live in the gutter. A strict spacing scale (12/16 padding, 4 then 8 between lines, 20px
-ledger lines). Attention is one device: a 3px gutter bar plus the colored status word. Actions
-finish the sentence, never flung to the far edge. Passive context is off the row entirely
-(hover card, row menu); only things with a verb earn a ledger line.</p>
+<p class="note">Six rules. One content edge: title, meta and ledger share a left edge; the
+status dot has the gutter to itself (the checkbox appears there on hover and in select mode).
+A strict spacing scale: 12/16 padding, 4 then 8 between lines, 20px ledger lines. Attention is
+one device: a 3px full-height edge bar plus the colored status word. At rest a row shows state
+only; verbs appear on hover, right-aligned on their line (the first row is drawn hovered).
+Passive context is off the row entirely (hover card, row menu); only things with a verb earn a
+ledger line.</p>
 
 <div class="list">
   ${row(AMBER, 'warn',
@@ -211,7 +212,8 @@ finish the sentence, never flung to the far edge. Passive context is off the row
     r2(MR) +
     `<div class="acts">
       ${act('warn', 'review', 'interrupted', 'pane closed 12m ago', [['relaunch'], ['clear', true]])}
-    </div>`
+    </div>`,
+    true
   )}
   ${row(AMBER, '',
     r1({ title: MR2.title, phrase: 'NEEDS REVIEW' }) +
@@ -307,7 +309,8 @@ structure... the next bolted-on feature can still break it, and chips still wrap
 const L = (tone, lane, word, detail, actions, spin, bar = '', mr = MR, dot = AMBER, phrase = 'NEEDS REVIEW', phraseColor = AMBER) =>
   row(dot, bar,
     r1({ title: mr.title, phrase, phraseColor }) + r2(mr) +
-    `<div class="acts">${act(tone, lane, word, detail, actions, spin)}</div>`);
+    `<div class="acts">${act(tone, lane, word, detail, actions, spin)}</div>`,
+    actions.length > 0);
 
 const lanesBody = `
 <h2>review lane · every state</h2>
@@ -406,7 +409,8 @@ most urgent line.</p>
       ${act('work', 'response', 'implementing…', '3 threads', [], true)}
       ${act('work', 'doctor', 'watching CI…', 'auto', [], true)}
       ${act('warn', 'decide', 'post 2 findings?', '', [['answer']])}
-    </div>`
+    </div>`,
+    true
   )}
 </div>
 

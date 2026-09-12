@@ -40,13 +40,13 @@
   .list { border: 1px solid var(--border-soft); border-radius: 8px; background: var(--bg); overflow: hidden; }
 
   /* one content edge: 44px gutter column, then text. */
-  .row { display: grid; grid-template-columns: 44px minmax(0,1fr); align-items: start;
+  .row { display: grid; grid-template-columns: 40px minmax(0,1fr); align-items: start;
          padding: 12px 16px 12px 0; position: relative; }
   .row + .row { border-top: 1px solid var(--border-soft); }
-  .gut { display: flex; align-items: center; justify-content: center; gap: 6px; height: 20px; }
-  .gut input { accent-color: var(--accent); margin: 0; }
+  .row.hov { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+  .gut { display: flex; align-items: center; justify-content: center; height: 20px; }
   .dot { font-size: 10px; line-height: 1; }
-  .bar { position: absolute; left: 6px; top: 12px; bottom: 12px; width: 3px; border-radius: 2px; }
+  .bar { position: absolute; left: 0; top: 0; bottom: 0; width: 3px; border-radius: 0 2px 2px 0; }
   .bar-warn { background: var(--amber); }
   .bar-bad { background: var(--red); }
 
@@ -76,10 +76,12 @@
   .act-bad .w { color: var(--red); }
   .act-quiet .w { color: var(--muted); font-weight: 500; }
   .act .d { margin-left: 8px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .act .sep { flex-shrink: 0; }
   .act .spin { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: currentColor;
                margin-left: 8px; align-self: center; animation: pulse 1.6s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity: .25; } }
-  .act .do { display: inline-flex; gap: 14px; margin-left: 16px; flex-shrink: 0; }
+  .act .do { display: none; }
+  .row.hov .act .do { display: inline-flex; gap: 14px; margin-left: auto; padding-left: 16px; flex-shrink: 0; }
   .act .do a { font-size: .72rem; font-weight: 600; text-decoration: none; color: var(--accent); }
   .act .do a.mut { color: var(--muted); font-weight: 500; }
 
@@ -112,12 +114,9 @@
 a decision waiting. The ledger grows line by line; the gutter bar stays singular and matches the
 most urgent line.</p>
 <div class="list">
-  <div class="row">
+  <div class="row hov">
   <span class="bar bar-warn"></span>
-  <div class="gut">
-    <input type="checkbox" disabled>
-    <span class="dot" style="color:var(--amber)">●</span>
-  </div>
+  <div class="gut"><span class="dot" style="color:var(--amber)">●</span></div>
   <div style="min-width:0"><div class="r1"><span class="title">CV-3074 Port the CV2 stealth-mode and access-links case c…</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span></div><div class="r2">
     <span>!44451</span><span class="sep">·</span>
     <span class="branch">feature/cv-3074</span>
@@ -132,7 +131,7 @@ most urgent line.</p>
     <span class="lane">review</span>
     <span class="w">interrupted</span>
     
-    <span class="d">pane closed 12m ago</span>
+    <span class="sep" style="margin-left:8px;opacity:.45">·</span><span class="d">pane closed 12m ago</span>
     <span class="do"><a href="#" class="">relaunch</a><a href="#" class="mut">clear</a></span>
   </div>
       
@@ -140,7 +139,7 @@ most urgent line.</p>
     <span class="lane">response</span>
     <span class="w">implementing…</span>
     <span class="spin"></span>
-    <span class="d">3 threads</span>
+    <span class="sep" style="margin-left:8px;opacity:.45">·</span><span class="d">3 threads</span>
     
   </div>
       
@@ -148,7 +147,7 @@ most urgent line.</p>
     <span class="lane">doctor</span>
     <span class="w">watching CI…</span>
     <span class="spin"></span>
-    <span class="d">auto</span>
+    <span class="sep" style="margin-left:8px;opacity:.45">·</span><span class="d">auto</span>
     
   </div>
       
@@ -168,10 +167,7 @@ most urgent line.</p>
 <div class="list">
   <div class="row">
   
-  <div class="gut">
-    <input type="checkbox" disabled>
-    <span class="dot" style="color:var(--amber)">●</span>
-  </div>
+  <div class="gut"><span class="dot" style="color:var(--amber)">●</span></div>
   <div style="min-width:0"><div class="r1"><span class="title">CV-3074 Port the CV2 stealth-mode and access-links case c…</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span></div><div class="r2">
     <span>!44451</span><span class="sep">·</span>
     <span class="branch">feature/cv-3074</span>
