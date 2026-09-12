@@ -18,6 +18,17 @@ struct DoneScreen: View {
                     Text(verifySummary).foregroundStyle(.secondary)
                 }
             }
+            if model.refreshFailed {
+                HStack {
+                    Text("Couldn't confirm the checklist: \(model.refreshError ?? "unknown error")")
+                        .font(.callout).foregroundStyle(.red)
+                        .accessibilityIdentifier(AXID.doneRefreshError)
+                    Spacer()
+                    Button("Try again") { Task { await model.retryCheck() } }
+                        .controlSize(.small)
+                        .accessibilityIdentifier(AXID.doneRetryCheck)
+                }
+            }
             Form {
                 Section("Where things live") {
                     LabeledContent("Menu bar") { Text("the m at the top right") }

@@ -76,6 +76,8 @@ enum AXID {
     static let doneSkipConfirmSkip = "setup.done.skipConfirm.skip"
     static let doneSkipConfirmCancel = "setup.done.skipConfirm.cancel"
     static let doneSkipConfirmError = "setup.done.skipConfirm.error"
+    static let doneRefreshError = "setup.done.refreshError"
+    static let doneRetryCheck = "setup.done.retryCheck"
 
     // Settings
     static func settingsTab(_ pane: String) -> String { "settings.tab.\(pane)" }

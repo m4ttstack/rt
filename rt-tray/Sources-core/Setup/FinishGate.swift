@@ -55,7 +55,10 @@ public final class WaiverClient {
 /// The Done screen's state: which rows block Finish, which are merely still
 /// to do, and the Skip for now sheet. Nothing is listed until the
 /// post-install re-check lands, since the model still holds the pre-Install
-/// plan before then; the gate reads closed, never open, in that window.
+/// plan before then; the gate reads closed while that check is in flight.
+/// A check that fails reads open with the failure shown: a gate that could
+/// not be evaluated must never strand the wizard, and the pre-Install rows
+/// are not evidence either way.
 @MainActor
 public final class DoneModel: ObservableObject {
     @Published public private(set) var hasCheckedSincePostInstall = false
@@ -74,7 +77,10 @@ public final class DoneModel: ObservableObject {
 
     public var blockedRows: [PlanRow] { hasCheckedSincePostInstall ? readiness.finishBlockedRows : [] }
     public var stillToDoRows: [PlanRow] { hasCheckedSincePostInstall ? readiness.outstandingManualRows : [] }
-    public var finishEnabled: Bool { hasCheckedSincePostInstall && readiness.finishBlockedBy.isEmpty }
+    /// True after a post-install check failed and no later one succeeded.
+    public var refreshFailed: Bool { !hasCheckedSincePostInstall && readiness.lastRefreshFailed }
+    public var refreshError: String? { refreshFailed ? readiness.lastError : nil }
+    public var finishEnabled: Bool { hasCheckedSincePostInstall ? readiness.finishBlockedBy.isEmpty : readiness.lastRefreshFailed }
 
     public var headline: String {
         let blocked = blockedRows.count
@@ -83,12 +89,15 @@ public final class DoneModel: ObservableObject {
         return outstanding == 0 ? "Everything's working" : "Installed, with \(outstanding) step\(outstanding == 1 ? "" : "s") left for you"
     }
 
-    /// A failed refresh leaves `readiness` holding the stale pre-Install plan;
-    /// the gate stays closed rather than presenting that as freshly confirmed.
+    /// A failed refresh leaves `readiness` holding the stale pre-Install plan,
+    /// which is never presented as freshly confirmed: the rows stay hidden
+    /// and the failure is shown instead.
     public func checkPostInstall() async {
         await readiness.recheckAll()
         if !readiness.lastRefreshFailed { hasCheckedSincePostInstall = true }
     }
+
+    public func retryCheck() async { await checkPostInstall() }
 
     public func requestSkip(_ row: PlanRow) { skipError = nil; skipTarget = row }
     public func cancelSkip() { skipTarget = nil; skipError = nil }
