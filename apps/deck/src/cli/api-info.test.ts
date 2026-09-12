@@ -72,3 +72,11 @@ test('returns null when api.json is stale and there is no self record', async ()
 
   expect(resolveApiInfo()).toBeNull();
 });
+
+test("falls back to the self record's port when api.json carries no pid to vouch for it", async () => {
+  const { resolveApiInfo } = await import('./api-info.ts');
+  await putSelfRecord(11007);
+  writeFileSync(join(dir, 'api.json'), JSON.stringify({ port: 7940 }));
+
+  expect(resolveApiInfo()).toEqual({ port: 11007 });
+});

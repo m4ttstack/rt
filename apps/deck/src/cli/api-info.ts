@@ -18,9 +18,7 @@ function isAlive(pid: number): boolean {
  */
 export function resolveApiInfo(): { port: number } | null {
   const info = readApiInfo();
-  if (info && (info.pid === undefined || isAlive(info.pid))) {
-    return { port: info.port };
-  }
+  if (info && isAlive(info.pid)) return { port: info.port };
   const self = getRecord('deck');
   return self ? { port: self.port } : null;
 }
