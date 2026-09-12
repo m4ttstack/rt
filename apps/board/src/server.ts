@@ -76,6 +76,7 @@ import {
   configuredSlackChannels,
   joinExecutorOrphans,
   joinGateExecutors,
+  lanesClearedByExecutor,
   projectPathFromWebUrl,
   reviewSkillForTab,
   visibleMrsFor,
@@ -2139,6 +2140,29 @@ const httpServer = Bun.serve({
             }),
             { status: 502, headers: { 'content-type': 'application/json' } }
           );
+        }
+        // The tombstone removes the "gone" signal, so any in-flight lane the
+        // dead pane was running must settle too -- otherwise its own state
+        // goes back to claiming "reviewing…" forever with nothing running.
+        {
+          const view = await fetchReconcilerView();
+          const executor = view.executors.find(e => e.agentId === agentId);
+          const settle = lanesClearedByExecutor(
+            agentId,
+            executor?.sessionId,
+            readReviewStates(),
+            readRespondStates()
+          );
+          for (const mrUrl of settle.reviews)
+            writeReviewState(reviewFilePath(mrUrl), {
+              status: 'error',
+              message: 'pane closed... cleared from the board',
+            });
+          for (const mrUrl of settle.responds)
+            writeRespondState(respondFilePath(mrUrl), {
+              status: 'error',
+              message: 'pane closed... cleared from the board',
+            });
         }
         return new Response(JSON.stringify({ ok: true }), {
           headers: { 'content-type': 'application/json' },

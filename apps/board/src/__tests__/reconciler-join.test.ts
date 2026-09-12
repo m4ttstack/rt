@@ -2,7 +2,11 @@ import { describe, expect, test } from 'bun:test';
 
 import type { GateRow as FacilityGateRow } from '@mattstack/rt-client';
 import type { ExecutorView } from '../client/types.ts';
-import { joinExecutorOrphans, joinGateExecutors } from '../data.ts';
+import {
+  joinExecutorOrphans,
+  joinGateExecutors,
+  lanesClearedByExecutor,
+} from '../data.ts';
 import {
   buildQueueExtras,
   ingestRelayFrame,
@@ -442,5 +446,38 @@ describe('joinExecutorOrphans', () => {
     expect(joined[0]?.orphan).toEqual(hidden);
     // The stranger matched nothing: still a gone orphan at top level.
     expect(orphans).toEqual([stranger]);
+  });
+});
+
+describe('lanesClearedByExecutor', () => {
+  const reviews = new Map([
+    [
+      'https://g/1',
+      { status: 'reviewing', agentId: 'ag-1', sessionId: 'sess-1' },
+    ],
+    ['https://g/2', { status: 'done', agentId: 'ag-1', sessionId: 'sess-1' }],
+    ['https://g/3', { status: 'queued', sessionId: 'sess-9' }],
+  ]);
+  const responds = new Map([
+    ['https://g/4', { status: 'implementing', sessionId: 'sess-9' }],
+    ['https://g/5', { status: 'error', sessionId: 'sess-9' }],
+  ]);
+
+  test('an in-flight lane matching by agentId settles; a done lane does not', () => {
+    const out = lanesClearedByExecutor('ag-1', undefined, reviews, responds);
+    expect(out.reviews).toEqual(['https://g/1']);
+    expect(out.responds).toEqual([]);
+  });
+
+  test('sessionId matches lanes that never recorded an agentId, skipping terminal ones', () => {
+    const out = lanesClearedByExecutor('ag-x', 'sess-9', reviews, responds);
+    expect(out.reviews).toEqual(['https://g/3']);
+    expect(out.responds).toEqual(['https://g/4']);
+  });
+
+  test('no match settles nothing', () => {
+    const out = lanesClearedByExecutor('ag-z', 'sess-z', reviews, responds);
+    expect(out.reviews).toEqual([]);
+    expect(out.responds).toEqual([]);
   });
 });

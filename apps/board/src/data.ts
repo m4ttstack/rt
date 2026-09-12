@@ -422,6 +422,41 @@ const RESPOND_IN_FLIGHT = new Set([
   'drafting',
 ]);
 
+interface ClearableLane {
+  agentId?: string;
+  sessionId?: string | null;
+  status?: string;
+}
+
+/**
+ * The in-flight lanes a manual executor clear should settle, keyed back by
+ * mrUrl. Clearing tombstones the executor daemon-side, which removes the
+ * gone signal -- without this, the lane's own state would go back to
+ * claiming "reviewing…" forever with nothing running. A lane matches on
+ * the executor's agentId (a board launch records it) or, failing that, its
+ * sessionId; terminal lanes (done/error) are already true and stay put.
+ */
+export function lanesClearedByExecutor(
+  agentId: string,
+  sessionId: string | undefined,
+  reviews: Map<string, ClearableLane>,
+  responds: Map<string, ClearableLane>
+): { reviews: string[]; responds: string[] } {
+  const matches = (lane: ClearableLane, inFlight: Set<string>): boolean => {
+    if (!inFlight.has(lane.status ?? '')) return false;
+    if (lane.agentId) return lane.agentId === agentId;
+    return !!sessionId && lane.sessionId === sessionId;
+  };
+  const pick = (lanes: Map<string, ClearableLane>, inFlight: Set<string>) =>
+    [...lanes.entries()]
+      .filter(([, lane]) => matches(lane, inFlight))
+      .map(([mrUrl]) => mrUrl);
+  return {
+    reviews: pick(reviews, REVIEW_IN_FLIGHT),
+    responds: pick(responds, RESPOND_IN_FLIGHT),
+  };
+}
+
 /** The session id a gone executor may claim this row through: only an
     in-flight lane's. A finished or failed lane keeps its sessionId for
     resume, but its pane dying afterwards is ordinary teardown, and wearing
