@@ -46,6 +46,8 @@ export interface ReviewInfo {
   reportReady?: boolean;
   sessionId?: string;
   tabId?: string;
+  startedAt?: number;
+  outcome?: string;
 }
 export interface RespondInfo {
   status: RespondStatus;
@@ -55,6 +57,7 @@ export interface RespondInfo {
   posted?: number;
   threads?: number;
   tabId?: string;
+  startedAt?: number;
 }
 export type DoctorStatus =
   | 'queued'
@@ -69,6 +72,7 @@ export interface DoctorInfo {
   message?: string;
   origin?: 'auto' | 'manual';
   tabId?: string;
+  startedAt?: number;
 }
 export interface DraftInfo {
   kind: string;
@@ -104,6 +108,7 @@ export interface SentNudgeInfo {
     | 'no-response';
   reviewer: string;
   reason?: string;
+  sentAt?: number;
 }
 /** A peer waiting on us: an inbound re-review request we haven't handled yet. */
 export interface InboundNudgeInfo {
@@ -208,20 +213,17 @@ export interface RowContext {
       the same dedup-and-focus path launching that domain again already takes
       (see GateForm's "focus pane" button), not a distinct endpoint. */
   onFocusPane: (mr: BoardMRWithReview, domain: GateDomain) => void;
+  onLaunch: (mr: BoardMR, note?: string, intent?: 'launch' | 'focus') => void;
+  onReReview: (mr: BoardMR, note?: string) => void;
+  onRespond: (mr: BoardMR, note?: string, intent?: 'launch' | 'focus') => void;
+  onDoctor: (mr: BoardMR, note?: string, intent?: 'launch' | 'focus') => void;
   /** Opens the decision queue modal to the given gate -- a row's chip face
       never mounts a form itself. */
   onOpenGate: (gateId: string) => void;
   selected: ReadonlySet<string>;
   onToggleSelect: (webUrl: string) => void;
-  /** Human-owned, non-MR gates -- the orphan strip's own attention-gate
-      lookup falls back here when the row's own `gates` carries none (see
-      RowView's findAttentionGate). */
-  queueExtras: GateRow[];
-  /** Resume: answers the orphan's attention gate with `{ action: "resume"
-      }` (the daemon's answer-time guarantee relaunches from there). */
-  onResumeOrphan: (gate: GateRow) => void;
-  /** Clear: POSTs /reconciler/clear for the orphan's agentId -- available
-      whether or not an attention gate exists to resume from. */
+  /** The status line's clear verb: POSTs /reconciler/clear for the gone
+      orphan's agentId, whether or not an attention gate still exists. */
   onClearOrphan: (agentId: string) => void;
 }
 

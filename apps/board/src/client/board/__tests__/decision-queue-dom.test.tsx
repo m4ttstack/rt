@@ -1,12 +1,13 @@
 /** DOM-level test for the decision queue wired into Board.tsx: a real
     happy-dom document and a real Board render, covering the header entry
-    point (`decision queue · N`) through open, skip, and close -- the wiring
-    a component-level test of the queue hook or the modal alone can't
-    exercise, since it depends on Board's own entries builder and the
-    `rowContext.onOpenGate` hookup. */
+    point (`decision queue · N`) through open, skip, and close, and the
+    row's own way in (the status line's answer verb on a stuck or unassigned
+    gate) -- the wiring a component-level test of the queue hook or the
+    modal alone can't exercise, since it depends on Board's own entries
+    builder and the `rowContext.onOpenGate` hookup. */
 
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
-import { afterAll, beforeAll, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, expect, test } from 'bun:test';
 
 GlobalRegistrator.register({ url: 'http://localhost/' });
 
@@ -143,13 +144,21 @@ const realFetch = globalThis.fetch;
 
 // Mutable so a test can serve a different snapshot mid-flight (the
 // gate-less warm-up regression below), then restore it.
-let servedData: typeof BOARD_DATA = BOARD_DATA;
+let servedData: Record<string, unknown> = BOARD_DATA;
+let posts: Array<{ url: string; body: unknown }> = [];
 
 beforeAll(async () => {
-  globalThis.fetch = (async (input: RequestInfo | URL) => {
+  globalThis.fetch = (async (
+    input: RequestInfo | URL,
+    init?: { body?: string }
+  ) => {
     const url = typeof input === 'string' ? input : input.toString();
     if (url.startsWith('/data.json')) {
       return new Response(JSON.stringify(servedData), { status: 200 });
+    }
+    if (url === '/gate/answer') {
+      posts.push({ url, body: init?.body ? JSON.parse(init.body) : null });
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
     }
     return new Response('{}', { status: 200 });
   }) as typeof fetch;
@@ -161,11 +170,51 @@ beforeAll(async () => {
   ({ Board } = await import('../Board.tsx'));
 });
 
+beforeEach(() => {
+  posts = [];
+  servedData = BOARD_DATA;
+});
+
 afterAll(async () => {
   globalThis.fetch = realFetch;
   delete (globalThis as unknown as { EventSource?: unknown }).EventSource;
   await GlobalRegistrator.unregister();
 });
+
+/** The first MR alone, carrying one answered gate in the given state. */
+function withAnsweredGate(gate: Record<string, unknown>) {
+  const [first] = BOARD_DATA.mrs;
+  return {
+    ...BOARD_DATA,
+    mrs: [
+      {
+        ...first,
+        gates: [
+          {
+            gateId: 'g-answered',
+            subject: first!.gates[0]!.subject,
+            kind: 'review-post',
+            label: 'review',
+            status: 'answered',
+            openedAt: 1,
+            questions: [
+              {
+                id: 'verdict',
+                label: 'verdict?',
+                multi: false,
+                options: ['approve'],
+              },
+            ],
+            answers: { verdict: 'approve' },
+            answeredBy: 'pane',
+            answeredAt: 1,
+            ...gate,
+          },
+        ],
+      },
+    ],
+  };
+}
 
 function findByText(root: ParentNode, tag: string, text: string): Element {
   const found = [...root.querySelectorAll(tag)].find(
@@ -340,6 +389,98 @@ test('decision queue: skipping a gate does not bleed its selection into the next
     );
     expect(dialog?.textContent).toContain('second mr title');
     expect(dialog!.querySelector('.tui-gate-choice-input:checked')).toBeNull();
+  } finally {
+    await React.act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  }
+});
+
+test('a stuck-delivery gate: the row reads the stuck message and its answer verb opens the queue on the retry face', async () => {
+  servedData = withAnsweredGate({
+    delivery: { outcome: 'stuck', at: 2 },
+    origin: { paneId: 'pane-1', worktree: 'widgets' },
+  });
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+
+  const root = createRoot(container);
+  try {
+    await React.act(async () => {
+      root.render(React.createElement(Board));
+    });
+    await React.act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 0));
+    });
+
+    const row = container.querySelector('[data-mr-iid="1"]')!;
+    expect(row.querySelector('.tui-status-word')?.textContent).toBe(
+      "pane didn't pick up the answer"
+    );
+    const verb = row.querySelector('button[data-verb="answer"]') as HTMLElement;
+    expect(verb).not.toBeNull();
+    expect(verb.textContent).toBe('retry');
+
+    await React.act(async () => {
+      verb.click();
+    });
+    const dialog = container.querySelector(
+      '[role="dialog"][aria-label="decision queue"]'
+    );
+    expect(dialog).not.toBeNull();
+    expect(
+      dialog?.querySelector('[data-gate-delivery-state="stuck"]')
+    ).not.toBeNull();
+    expect(findByText(dialog!, 'button', 'focus pane')).not.toBeNull();
+  } finally {
+    await React.act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  }
+});
+
+test('an unassigned-execution gate: the row opens the queue, whose retry re-posts the recorded answers', async () => {
+  servedData = withAnsweredGate({ execution: 'unassigned' });
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+
+  const root = createRoot(container);
+  try {
+    await React.act(async () => {
+      root.render(React.createElement(Board));
+    });
+    await React.act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 0));
+    });
+
+    const row = container.querySelector('[data-mr-iid="1"]')!;
+    expect(row.querySelector('.tui-status-word')?.textContent).toBe(
+      'answered, no pane to execute'
+    );
+    const verb = row.querySelector('button[data-verb="answer"]') as HTMLElement;
+    expect(verb.textContent).toBe('relaunch');
+
+    await React.act(async () => {
+      verb.click();
+    });
+    const dialog = container.querySelector(
+      '[role="dialog"][aria-label="decision queue"]'
+    );
+    expect(dialog).not.toBeNull();
+    const retryButton = findByText(dialog!, 'button', 'retry') as HTMLElement;
+
+    await React.act(async () => {
+      retryButton.click();
+      await new Promise(resolve => setTimeout(resolve, 0));
+    });
+    const answerPost = posts.find(p => p.url === '/gate/answer');
+    expect(answerPost).toBeDefined();
+    expect(answerPost!.body).toEqual({
+      gateId: 'g-answered',
+      answers: { verdict: 'approve' },
+    });
   } finally {
     await React.act(async () => {
       root.unmount();

@@ -80,8 +80,8 @@ const STATE_KEY = 'mrs-view-state';
 
 // A gate stuck on delivery or left execution-unassigned stays in the
 // decision queue despite being `answered` -- it still needs a human action
-// (focus-pane / retry), and GateRowChips/DecisionQueueModal only render
-// that action inside the queue.
+// (focus-pane / retry), and the row's status line only points at the queue,
+// which is the one place that action renders.
 const needsQueue = (gate: GateRow): boolean =>
   gate.status === 'open' ||
   gate.status === 'parked' ||
@@ -484,30 +484,8 @@ export function Board() {
     [addToast, load]
   );
 
-  // Orphan-strip resume: answers the row's own attention gate with the
-  // literal action the daemon's answer-time guarantee relaunches from --
-  // the question id comes off the gate itself (AttentionCard's own
-  // fallback-to-"action" convention) rather than being hardcoded, since a
-  // future attention-gate kind could name it differently.
-  const handleResumeOrphan = useCallback(
-    (gate: GateRow) => {
-      const questionId = gate.questions[0]?.id ?? 'action';
-      postAction('/gate/answer', {
-        gateId: gate.gateId,
-        answers: { [questionId]: 'resume' },
-      }).then(result => {
-        if (!result.ok) {
-          addToast(`could not resume the executor (${result.status})`);
-          return;
-        }
-        load();
-      });
-    },
-    [addToast, load]
-  );
-
-  // Orphan-strip clear: tombstones the dead run daemon-side regardless of
-  // whether an attention gate exists to resume from.
+  // The status line's clear verb: tombstones the dead run daemon-side
+  // regardless of whether an attention gate exists to resume from.
   const handleClearOrphan = useCallback(
     (agentId: string) => {
       postAction('/reconciler/clear', { agentId }).then(result => {
@@ -801,8 +779,8 @@ export function Board() {
   const queueEntries = useMemo(() => {
     if (!boardView) return [];
     const out: QueueEntry[] = [];
-    const collect = (node: StackNode) => {
-      const mr = node.mr as BoardMRWithReview;
+    const collect = (node: StackNode<BoardMRWithReview>) => {
+      const mr = node.mr;
       for (const gate of mr.gates ?? [])
         if (needsQueue(gate)) out.push({ gate, mr });
       node.children.forEach(collect);
@@ -896,8 +874,8 @@ export function Board() {
   // member filters.
   const selectedMrs = selectionOf(mrs, selected);
   const summaryText = boardSummary(flatMrs, data.slackTemplates);
-  const postableMrs = postableOf(flatMrs as BoardMRWithReview[]);
-  const postableSelected = postableOf(selectedMrs as BoardMRWithReview[]);
+  const postableMrs = postableOf(flatMrs);
+  const postableSelected = postableOf(selectedMrs);
   // One context object threaded through RowView and RowMenu — the
   // board-owned bits every row/menu needs that aren't specific to one MR.
   const rowCtx: RowContext = {
@@ -911,11 +889,13 @@ export function Board() {
     draftResolved,
     onResumeRespond: handleResumeRespond,
     onFocusPane: handleFocusPane,
+    onLaunch: handleLaunch,
+    onReReview: handleReReview,
+    onRespond: handleRespond,
+    onDoctor: handleDoctor,
     onOpenGate: queue.openAt,
     selected,
     onToggleSelect: toggleSelect,
-    queueExtras: data.queueExtras,
-    onResumeOrphan: handleResumeOrphan,
     onClearOrphan: handleClearOrphan,
   };
   const openSettings = () => {

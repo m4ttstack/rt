@@ -21,5 +21,8 @@ switchboard/*.sqlite*
 # screenshot-capture scratch output (tests/baselines/ is the committed baseline)
 tests/.captures/
 
+# fixture boot's sqlite files (a fixture run of tests/fixture writes these)
+tests/fixture/state.db*
+
 # compiled binary + build-time client bundle (bun run build)
 dist/

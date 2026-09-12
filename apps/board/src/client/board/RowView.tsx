@@ -1,8 +1,8 @@
+import { useEffect } from 'react';
 import { Invadr } from 'invadrs/react';
 
 import { Chip, CopyButton, SelectBox } from '@mattstack/tui-kit';
 import type { BoardMR } from '../../data.ts';
-import type { GateRow } from '../../gates/store.ts';
 import { extractTicketId, ticketUrl } from '../../ticket.ts';
 import {
   behindToken,
@@ -11,34 +11,36 @@ import {
   type FlagClass,
 } from '../../view.ts';
 import type { BoardMRWithReview, RowContext } from '../types.ts';
-import { BoardBadges } from './BoardBadges.tsx';
-import { CommentsButton, CommentsToken } from './CommentsDrawer.tsx';
+import { ThreadsLink } from './CommentsDrawer.tsx';
 import {
-  activeReviewers,
   ago,
   cleanTitle,
+  commentCount,
   flattenStack,
+  getSlackMarks,
   mrLine,
   statusPhrase,
+  statusReasons,
 } from './format.ts';
-import { GateRowChips } from './GateRowChips.tsx';
+import { Bubble, DiscCheck, Eyes, SlackLogo } from './icons.tsx';
+import { rowStatus } from './row-status.ts';
+import { slackLadder, type SlackStage } from './slack-ladder.ts';
 import { StatusDot } from './StatusDot.tsx';
+import { StatusLine } from './StatusLine.tsx';
+import { markSeen, seenCount, threadNewness } from './threads-seen.ts';
 
 /** Plain click opens the MR in GitLab; right-click opens the row action menu
     (wired separately). Clicks on inner links/buttons are left to those. */
 function onRowClick(e: React.MouseEvent, mr: BoardMR) {
   if ((e.target as HTMLElement).closest('a, button')) return;
-  if (mr.webUrl) window.open(mr.webUrl, '_blank', 'noopener');
+  if (mr.webUrl) {
+    markSeen(mr.webUrl, commentCount(mr));
+    window.open(mr.webUrl, '_blank', 'noopener');
+  }
 }
 
-/** statusFlags() keeps emitting the board's own token classes (`.tui-phrase`
-    shares them), so the flag row translates them to Chip intents here rather
-    than making view.ts -- a DOM-free module with its own tests -- speak the
-    kit's vocabulary. Keyed on view.ts's own `FlagClass` union, which is what
-    retired the `?? "muted"` fallback the lookup used to need: a fourth token
-    class now fails to compile here instead of silently rendering grey.
-    `data-flag` is the hook style.css scopes the flag's standing 0.9 dim and
-    its own zero-padding box to. */
+/** Keyed on view.ts's own `FlagClass` so a fourth token class fails to
+    compile here instead of silently rendering grey. */
 const FLAG_INTENT: Record<FlagClass, 'ok' | 'bad' | 'warn' | 'cyan'> = {
   't-ok': 'ok',
   't-bad': 'bad',
@@ -64,30 +66,47 @@ function StatusFlags({
   );
 }
 
+/** The pill's tooltip carries the merge blockers: the gutter dot has the same
+    tip, but it yields to the checkbox under the pointer. */
 function StatusPhrase({ mr }: { mr: BoardMR }) {
-  const { text, cls, comments } = statusPhrase(mr);
-  if (comments) return <CommentsButton mr={mr} label={text} cls={cls} />;
-  return <span className={`tui-phrase ${cls}`}>{text}</span>;
+  const { text, cls } = statusPhrase(mr);
+  return (
+    <span className={`tui-phrase ${cls}`} title={statusReasons(mr)}>
+      {text}
+    </span>
+  );
 }
 
-function MetaTokens({ mr, now }: { mr: BoardMR; now: number }) {
-  const behind = behindToken(mr);
+const STAGE_ICON: Record<SlackStage, () => React.JSX.Element> = {
+  looking: Eyes,
+  commented: Bubble,
+  approved: DiscCheck,
+};
+const STAGE_TITLE: Record<SlackStage, string> = {
+  looking: 'someone is looking at this',
+  commented: 'commented in slack',
+  approved: 'approved in slack',
+};
+
+/** Line 1's Slack ladder: the furthest reaction as a mono mark, then the
+    brand-colored logo once the MR is posted. Nothing renders before that. */
+function SlackMarks({ mr }: { mr: BoardMRWithReview }) {
+  const ladder = slackLadder(mr.slack, getSlackMarks());
+  if (!ladder.posted) return null;
+  const Stage = ladder.stage ? STAGE_ICON[ladder.stage] : null;
   return (
-    <span className="tui-meta">
-      {mr.diff && (
-        <span className="t-dim" title={`${mr.diff.filesChanged} files changed`}>
-          <span className="t-ok">+{mr.diff.additions}</span>{' '}
-          <span className="t-bad">−{mr.diff.deletions}</span>
+    <span className="tui-row-marks">
+      {Stage && ladder.stage && (
+        <span
+          className="tui-mark"
+          data-slack-stage={ladder.stage}
+          title={STAGE_TITLE[ladder.stage]}
+        >
+          <Stage />
         </span>
       )}
-      {behind && (
-        <span className="t-warn" title={behind.title}>
-          {behind.text}
-        </span>
-      )}
-      <CommentsToken mr={mr} />
-      <span className="t-muted" title="last updated">
-        {ago(mr.updatedAt, now)}
+      <span className="tui-mark" data-slack-logo="" title="posted in slack">
+        <SlackLogo />
       </span>
     </span>
   );
@@ -117,128 +136,41 @@ function TicketLink({ ticket }: { ticket: string }) {
   );
 }
 
-function Watching({ mr }: { mr: BoardMR }) {
-  const names = activeReviewers(mr);
-  if (!names.length) return null;
+/** The facts line's right rail: the thread count (the drawer's entry) and
+    the age as the corner anchor. Newness is measured against the count the
+    board last recorded for this MR; a first sighting, or a count that fell
+    below the record, rewrites that baseline after commit, so an abandoned
+    render never records a count the user did not see. */
+function Facts({ mr, now }: { mr: BoardMR; now: number }) {
+  const count = commentCount(mr);
+  const seen = mr.webUrl ? seenCount(mr.webUrl) : null;
+  const newness = threadNewness(seen, count);
+  const { record } = newness;
+  const webUrl = mr.webUrl;
+  useEffect(() => {
+    if (record !== null && webUrl) markSeen(webUrl, record);
+  }, [record, webUrl]);
+  const grew = seen === null ? 0 : count - seen;
   return (
-    <div className="tui-watching">
-      👀 {names.join(', ')} {names.length === 1 ? 'is' : 'are'} reviewing right
-      now
-    </div>
-  );
-}
-
-type ExecutorDotState = 'gone' | 'hidden' | 'stuck';
-
-/** The row's own dead/blocked-delivery signal, cheapest-first: the sweep's
-    per-row `orphan` (an executor whose subject already resolved to this MR)
-    wins over a raw per-gate signal, which only fires when no orphan is
-    attached yet -- an executor's own subject can be `run:`/`agent:`-scoped
-    while one of its gates still carries this MR's `mr:` subject. */
-function executorDotState(mr: BoardMRWithReview): ExecutorDotState | undefined {
-  if (mr.orphan?.state === 'gone') return 'gone';
-  if (mr.orphan?.state === 'hidden') return 'hidden';
-  for (const gate of mr.gates) {
-    if (gate.delivery?.outcome === 'stuck') return 'stuck';
-    if (gate.executor === 'gone') return 'gone';
-    if (gate.executor === 'hidden') return 'hidden';
-  }
-  return undefined;
-}
-
-function ExecutorDot({ mr }: { mr: BoardMRWithReview }) {
-  const state = executorDotState(mr);
-  if (!state) return null;
-  return (
-    <span
-      className="tui-executor-dot"
-      data-executor-state={state}
-      title={`executor ${state}`}
-    >
-      ●
+    <span className="tui-facts">
+      {count > 0 && (
+        <ThreadsLink
+          mr={mr}
+          count={count}
+          fresh={newness.fresh}
+          grew={grew}
+          onOpen={() => mr.webUrl && markSeen(mr.webUrl, count)}
+        />
+      )}
+      <span className="tui-age" title="last updated">
+        {ago(mr.updatedAt, now)}
+      </span>
     </span>
   );
 }
 
-const OPEN_ATTENTION_GATE = (g: { kind: string; status: string }) =>
-  g.kind === 'pane-attention' && (g.status === 'open' || g.status === 'parked');
-
-/** The row's own attention gate for its orphaned run, if one is open or
-    parked right now -- checked on the row's own gates first (the sweep
-    already resolved the attention gate's subject to this MR), then
-    `queueExtras` by the orphan's `agent:<id>` subject, which is where an
-    attention gate lands before that resolution happens. Both lookups also
-    require `meta.agentId` to match the orphan's own `agentId`: an MR can
-    carry more than one attention gate (one per orphaned executor that ever
-    touched it), so matching on kind/status alone would let the strip answer
-    a DIFFERENT executor's gate. Undefined (no orphan, no agentId match)
-    means "clear" is the only offer the strip has. */
-function findAttentionGate(
-  mr: BoardMRWithReview,
-  queueExtras: GateRow[]
-): GateRow | undefined {
-  if (!mr.orphan) return undefined;
-  const agentId = mr.orphan.agentId;
-  const own = mr.gates.find(
-    g => OPEN_ATTENTION_GATE(g) && g.meta?.agentId === agentId
-  );
-  if (own) return own;
-  const subject = `agent:${agentId}`;
-  return queueExtras.find(
-    g =>
-      OPEN_ATTENTION_GATE(g) &&
-      g.subject === subject &&
-      g.meta?.agentId === agentId
-  );
-}
-
-/** A dead/hidden run's own strip: "relaunch" (the gate's resume option,
-    worn with the verb that says the pane is dead) only appears once an
-    attention gate exists to answer, "clear" is always available (it
-    tombstones the run regardless of whether one ever opened).
-    `stopPropagation` matches GateRowChips: a strip click must not bubble
-    to onRowClick. */
-function OrphanStrip({ mr, ctx }: { mr: BoardMRWithReview; ctx: RowContext }) {
-  const orphan = mr.orphan;
-  if (!orphan) return null;
-  const attentionGate = findAttentionGate(mr, ctx.queueExtras);
-  return (
-    <div
-      className="tui-orphan-strip"
-      data-orphan-state={orphan.state}
-      onClick={e => e.stopPropagation()}
-    >
-      <span className="tui-orphan-reason">executor {orphan.state}</span>
-      {attentionGate && (
-        <Chip
-          as="button"
-          intent="warn"
-          variant="outline"
-          uppercase
-          data-orphan-action="resume"
-          onClick={() => ctx.onResumeOrphan(attentionGate)}
-        >
-          relaunch
-        </Chip>
-      )}
-      <Chip
-        as="button"
-        intent="muted"
-        variant="outline"
-        uppercase
-        data-orphan-action="clear"
-        onClick={() => ctx.onClearOrphan(orphan.agentId)}
-      >
-        clear
-      </Chip>
-    </div>
-  );
-}
-
-// ── views ──────────────────────────────────────────────────────────────────
-
-/** Author identity for a row — shown when the view mixes authors (the All
-    view grouped by anything but author, where the group header isn't the name). */
+/** Shown when the view mixes authors (the All view grouped by anything but
+    author, where the group header is not the name). */
 function AuthorTag({ mr }: { mr: BoardMR }) {
   const name = mr.author.name || mr.author.username;
   return (
@@ -259,27 +191,32 @@ function RowView({
   showAuthor,
   ctx,
 }: {
-  mrs: BoardMR[];
+  mrs: BoardMRWithReview[];
   now: number;
   showAuthor: boolean;
   ctx: RowContext;
 }) {
-  const renderRow = (mr: BoardMR, depth: number) => {
+  const renderRow = (mr: BoardMRWithReview, depth: number) => {
     const ticket = extractTicketId(mr.sourceBranch, mr.title);
     const nested = depth > 0;
+    const status = rowStatus(mr, now, ctx.draftResolved);
+    const behind = behindToken(mr);
     return (
       <div
         key={mr.iid}
         className={nested ? 'tui-row tui-row-nested' : 'tui-row'}
         data-mr-iid={mr.iid}
+        data-tone={status.bar ?? undefined}
         data-local={ctx.local ? '1' : undefined}
         title={ctx.local ? 'right-click for actions' : undefined}
         onClick={e => onRowClick(e, mr)}
         onContextMenu={e => ctx.onContext(e, mr)}
       >
-        {/* Its own leftmost column, full row height, so the checkbox is a
-                target you can hit without aiming and never crowds the title. */}
+        {status.bar && (
+          <span className="tui-row-bar" data-tone={status.bar} aria-hidden />
+        )}
         <div className="tui-row-pick">
+          <StatusDot mr={mr} />
           {mr.webUrl && (
             <SelectBox
               checked={ctx.selected.has(mr.webUrl)}
@@ -288,73 +225,65 @@ function RowView({
           )}
         </div>
         <div className="tui-row-body">
-          {statusFlags(mr, { nested }).length > 0 && (
-            <div className="tui-row-review">
-              <StatusFlags mr={mr} nested={nested} />
-            </div>
-          )}
           <div className="tui-row-1">
-            <StatusDot mr={mr} />
-            <ExecutorDot mr={mr as BoardMRWithReview} />
-            {/* The draft marker is the chip family's small-caps register
-                  (`uppercase`); its tighter pill is the one part of the old
-                  `.tui-draft` box the recipe does not carry, restored from
-                  style.css off `data-draft`. */}
             {mr.isDraft && (
               <Chip
                 intent="muted"
                 variant="subtle"
                 uppercase
                 data-draft=""
-                title="draft — right-click to mark ready"
+                title="draft, right-click to mark ready"
               >
                 draft
               </Chip>
             )}
             <span className="tui-title">{cleanTitle(mr.title)}</span>
-            <StatusPhrase mr={mr} />
             {ticket && <TicketLink ticket={ticket} />}
             <CopyButton
               text={mrLine(mr, ctx.slackTemplates)}
               className="tui-copy-inline"
               title="copy this MR for Slack"
             />
+            <SlackMarks mr={mr} />
+            <StatusPhrase mr={mr} />
+            <StatusFlags mr={mr} nested={nested} />
           </div>
           <div className="tui-row-2">
             {showAuthor && <AuthorTag mr={mr} />}
             <span className="tui-mr-iid">!{mr.iid}</span>
-            <span className="tui-row-sep">|</span>
             <span className="tui-branch">{mr.sourceBranch}</span>
-            <MetaTokens mr={mr} now={now} />
+            {mr.diff && (
+              <span
+                className="tui-diff"
+                title={`${mr.diff.filesChanged} files changed`}
+              >
+                <span className="tui-adds">+{mr.diff.additions}</span>{' '}
+                <span className="tui-dels">−{mr.diff.deletions}</span>
+              </span>
+            )}
+            {behind && (
+              <span className="tui-behind" title={behind.title}>
+                {behind.text}
+              </span>
+            )}
+            <Facts mr={mr} now={now} />
           </div>
-          <BoardBadges
-            mr={mr as BoardMRWithReview}
-            now={now}
-            ctx={ctx}
-            className="tui-row-board"
-          />
-          <Watching mr={mr} />
-          {/* A row carries no form controls: each gate is a chip that opens
-                the decision queue, or the answered summary. */}
-          <GateRowChips
-            gates={(mr as BoardMRWithReview).gates ?? []}
-            onOpenGate={ctx.onOpenGate}
-          />
-          <OrphanStrip mr={mr as BoardMRWithReview} ctx={ctx} />
+          <StatusLine mr={mr} status={status} ctx={ctx} />
         </div>
       </div>
     );
   };
   return (
-    <div className="tui-rows">
+    <div
+      className="tui-rows"
+      data-selecting={ctx.selected.size > 0 ? 'true' : undefined}
+    >
       {nestStacks(mrs).map(node =>
         node.children.length === 0 ? (
           renderRow(node.mr, 0)
         ) : (
           <div key={node.mr.iid} className="tui-stack-rows">
             {renderRow(node.mr, 0)}
-            {/* The children get their own box so the thread rail can span
-                exactly them, whatever heights the rows come out at. */}
             <div className="tui-stack-children">
               {flattenStack(node)
                 .slice(1)
@@ -371,11 +300,7 @@ export {
   onRowClick,
   StatusFlags,
   StatusPhrase,
-  MetaTokens,
   TicketLink,
   AuthorTag,
-  Watching,
-  executorDotState,
-  findAttentionGate,
   RowView,
 };

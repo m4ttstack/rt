@@ -2,8 +2,9 @@ import { CopyButton, ICONS, LabeledSeg, Segmented } from '@mattstack/tui-kit';
 import { GROUP_KEYS, SORT_KEYS } from '../../view.ts';
 import type { ViewState } from '../../view.ts';
 import type { ThemeMode } from '../types.ts';
-import { SLACK_ICON, SlackPostedMark } from './chips.tsx';
+import { SlackPostedMark } from './chips.tsx';
 import { GROUP_LABEL, SORT_LABEL } from './format.ts';
+import { SlackLogo } from './icons.tsx';
 
 // ── controls (shared: desktop header + mobile drawer) ───────────────────────
 
@@ -118,7 +119,8 @@ function Controls({
             disabled={postingSummary}
             title="post this summary to slack"
           >
-            {SLACK_ICON} {postingSummary ? 'posting…' : 'post summary to slack'}
+            <SlackLogo />{' '}
+            {postingSummary ? 'posting…' : 'post summary to slack'}
           </button>
         )}
       </>

@@ -16,7 +16,7 @@ import {
 import {
   DELIVERY_STUCK_MESSAGE,
   EXECUTION_UNASSIGNED_MESSAGE,
-} from './GateRowChips.tsx';
+} from './row-status.ts';
 
 /** The face for an answered gate the daemon's executor guarantee could not
     fully deliver: "stuck" reuses `form.focusGate()` (the same `/gate/focus`

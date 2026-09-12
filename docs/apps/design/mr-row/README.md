@@ -81,3 +81,11 @@ the artboards):
 Differences in font rendering across the artboard's system stack and the
 app's real stack are expected; differences in layout, spacing, color or
 weight are defects.
+
+## Implemented
+
+`apps/board/src/client/board/row-status.ts` derives the status line,
+`slack-ladder.ts` the marks, `threads-seen.ts` the thread newness,
+`StatusLine.tsx` renders the line, `RowView.tsx` the row. The fixture board
+(`apps/board/tests/fixture`) carries every state drawn here, and
+`bun run capture:compare` holds the recorded baselines.

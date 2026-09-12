@@ -1,27 +1,24 @@
-# Review: ACME-1273 point AGENTS.md at the merge request description
+# Review: ACME-1236 compress stored cache entries in redis
 
-Looked this over against the contributor conventions doc and the existing
-`AGENTS.md` pointer pattern used elsewhere in the repo. Overall this is a
-small, low-risk doc change... three suggestions below, none blocking.
+Looked this over against the cache client's existing key conventions and
+the eviction tests in `cache/__tests__`. Overall a contained change with
+a clear win on memory... three suggestions below, none blocking.
 
 ## Findings
 
-- The new pointer paragraph reads a little dense; a short bullet list would
-  scan faster than one long sentence.
-- `AGENTS.md` already links to the conventions doc from a different section,
-  so it is worth cross-referencing rather than duplicating the explanation.
-- The placeholder text left in the second paragraph (`<!-- TODO: link -->`)
-  should either be filled in or removed before merge.
+- Compressed entries share a key prefix with the uncompressed ones, so a
+  rollback would read gzip bytes as JSON. A `z:` prefix keeps the two
+  generations apart.
+- The 512-byte compression threshold is a literal in two places; one
+  constant in `cache/config.ts` keeps them from drifting.
+- No test covers eviction of a compressed entry; the existing eviction
+  fixture only seeds plain values.
 
-## Suggested rewrite
+## Suggested constant
 
-```markdown
-See the merge request description for the authoritative task context:
-
-- what changed and why
-- linked ticket(s)
-- rollout / follow-up notes
+```ts
+export const COMPRESS_ABOVE_BYTES = 512;
 ```
 
 Nothing here blocks the change from landing. Happy to re-look once the
-placeholder is resolved.
+prefix is in.

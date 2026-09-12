@@ -2,39 +2,38 @@ import { useEffect, useState } from 'react';
 
 import { ICONS, Markdown, SideDrawer } from '@mattstack/tui-kit';
 import type { BoardMR } from '../../data.ts';
-import { commentDot } from '../../view.ts';
 import { getDiscussions } from '../api.ts';
 import type { CommentNote, CommentThread, GeneralComment } from '../types.ts';
-import {
-  ago,
-  cleanTitle,
-  commentCount,
-  statusPhrase,
-  THREAD_ICON,
-  THREAD_LABEL,
-} from './format.ts';
+import { ago, cleanTitle, THREAD_ICON, THREAD_LABEL } from './format.ts';
 
-/** A button that opens the comments drawer. Shared by the "N comments" status
-    label and the persistent 💬 token, so both routes reach the same drawer. */
+/** A button that opens the comments drawer. `stopPropagation` keeps the
+    click off the row's own handler, which would open the MR in GitLab. */
 function CommentsTrigger({
   mr,
   className,
   title,
+  fresh = false,
+  onOpen,
   children,
 }: {
   mr: BoardMR;
   className: string;
   title: string;
+  fresh?: boolean;
+  onOpen?: () => void;
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   return (
     <>
       <button
+        type="button"
         className={className}
+        data-new={fresh ? 'true' : undefined}
         title={title}
         onClick={e => {
           e.stopPropagation();
+          onOpen?.();
           setOpen(true);
         }}
       >
@@ -45,57 +44,40 @@ function CommentsTrigger({
   );
 }
 
-/** The "N comments" / "comments resolved" status label; clicking it opens the
-    drawer. A dot beside it hints whether the author has acted (see `commentDot`). */
-function CommentsButton({
+/** The thread count on the facts line: the row's one entry into the
+    comments drawer. `fresh` lights it (style.css keys on `data-new`);
+    opening the drawer is what records the count as seen, via `onOpen`.
+    The count the drawer was opened at settles the link locally until the
+    next board render catches up; a later count relights it. */
+function ThreadsLink({
   mr,
-  label,
-  cls,
+  count,
+  fresh,
+  grew,
+  onOpen,
 }: {
   mr: BoardMR;
-  label: string;
-  cls: string;
+  count: number;
+  fresh: boolean;
+  grew: number;
+  onOpen: () => void;
 }) {
-  const dot = commentDot(mr.threadSummary);
-  return (
-    <>
-      <CommentsTrigger
-        mr={mr}
-        className={`tui-phrase tui-comments-btn ${cls}`}
-        title="view comment threads"
-      >
-        {label}
-      </CommentsTrigger>
-      {dot && (
-        <span
-          className={`tui-comment-dot ${dot.cls}`}
-          title={dot.title}
-          aria-label={dot.title}
-        >
-          ●
-        </span>
-      )}
-    </>
-  );
-}
-
-/** Persistent 💬 token in the row meta, shown whenever an MR has comment activity
-    even in states where the status phrase isn't the clickable comments label (e.g.
-    approved). Hidden when the status label already opens the drawer, to avoid two
-    entry points on the same row. */
-function CommentsToken({ mr }: { mr: BoardMR }) {
-  const n = commentCount(mr);
-  if (n === 0 || statusPhrase(mr).comments) return null;
+  const [openedAt, setOpenedAt] = useState<number | null>(null);
+  const lit = fresh && openedAt !== count;
   return (
     <CommentsTrigger
       mr={mr}
-      className="tui-comment-token"
-      title="view comments"
+      className="tui-threads"
+      title={
+        lit ? `${grew} new since you last looked` : 'open the comments drawer'
+      }
+      fresh={lit}
+      onOpen={() => {
+        setOpenedAt(count);
+        onOpen();
+      }}
     >
-      <span className="tui-comment-token-icon" aria-hidden>
-        💬
-      </span>
-      <span>{n}</span>
+      {count} thread{count === 1 ? '' : 's'}
     </CommentsTrigger>
   );
 }
@@ -147,7 +129,7 @@ function CommentNoteView({
 }
 
 /** Right-side drawer showing an MR's review threads (each with its status and
-    notes) plus a section for general MR comments — the Overview-tab notes that
+    notes) plus a section for general MR comments: the Overview-tab notes that
     aren't threads, so a later author comment isn't invisible. Lazily fetched. */
 function CommentsDrawer({ mr, onClose }: { mr: BoardMR; onClose: () => void }) {
   const [data, setData] = useState<{
@@ -243,10 +225,4 @@ function CommentsDrawer({ mr, onClose }: { mr: BoardMR; onClose: () => void }) {
   );
 }
 
-export {
-  CommentsTrigger,
-  CommentsButton,
-  CommentsToken,
-  CommentNoteView,
-  CommentsDrawer,
-};
+export { CommentsTrigger, ThreadsLink, CommentNoteView, CommentsDrawer };

@@ -90,7 +90,20 @@ async function newPage(width: number, theme: 'light' | 'dark'): Promise<Page> {
   return page;
 }
 
+/** The kit's JetBrains Mono is a lazily activated `@font-face` with
+    `font-display: swap`: the first mono text on the page (the comments
+    drawer's inline code) lays out in the fallback and swaps a frame later,
+    so a shot taken straight after a selector wait can catch either side of
+    that swap. Waiting on the font set before every shot settles it. */
 async function shoot(page: Page, name: string): Promise<void> {
+  await page.evaluate(
+    () =>
+      (
+        globalThis as unknown as {
+          document: { fonts: { ready: Promise<unknown> } };
+        }
+      ).document.fonts.ready
+  );
   await page.screenshot({ path: join(OUT, `${name}.png`), fullPage: true });
   console.log(`  ✓ ${name}`);
 }
@@ -111,8 +124,9 @@ for (const theme of ['light', 'dark'] as const) {
   // this is a single-layer Escape-close smoke test, not multi-layer LIFO
   // evidence. The LIFO stack invariant is covered by the unit test in
   // src/__tests__/escape-stack.test.ts. This still checks that Escape closes
-  // the drawer without taking the board down with it.
-  const t2 = page.locator('.tui-comments-btn, .tui-comment-token').first();
+  // the drawer without taking the board down with it. `.tui-threads` is the
+  // facts line's thread count, the row's one entry into the drawer.
+  const t2 = page.locator('.tui-threads').first();
   if (await t2.count()) {
     await t2.click();
     await page.waitForSelector('[data-part="sidedrawer"][data-side="right"]');
@@ -124,22 +138,18 @@ for (const theme of ['light', 'dark'] as const) {
       throw new Error('escape assertion: board vanished');
   }
   await page.keyboard.press('Escape');
-  // comments drawer (first comments trigger, if the fixture has one)
-  const trigger = page.locator('.tui-comments-btn, .tui-comment-token').first();
+  // comments drawer (first thread link, if the fixture has one)
+  const trigger = page.locator('.tui-threads').first();
   if (await trigger.count()) {
     await trigger.click();
     await page.waitForSelector('[data-part="sidedrawer"][data-side="right"]');
     await shoot(page, `comments-${theme}`);
     await page.keyboard.press('Escape');
   }
-  // review modal (badge with a saved report)
-  // The badge classes are gone: the clickable review chip is Chip's `as="button"`
-  // form, identified by the recipe's data-part plus the board's own data-review
-  // cell. Same two facts the old `.tui-review-open.tui-review-done` pair named
-  // (it is a button, and it is the review-done cell), no looser.
-  const reviewBtn = page
-    .locator('button[data-part="chip"][data-review="done"]')
-    .first();
+  // review modal: the status line's `read` verb on a row whose finished
+  // review is its hottest fact (a hotter line would hide the verb in
+  // "+N active", so the fixture keeps one such row).
+  const reviewBtn = page.locator('button[data-verb="read-review"]').first();
   if (await reviewBtn.count()) {
     await reviewBtn.click();
     await page.waitForSelector(

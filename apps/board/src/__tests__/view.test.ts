@@ -4,7 +4,6 @@ import type { TabConfig } from '../config.ts';
 import type { BoardMR } from '../data.ts';
 import {
   behindToken,
-  commentDot,
   dataAgeLabel,
   DEFAULT_VIEW,
   filterByMember,
@@ -201,38 +200,6 @@ describe('filterByTab', () => {
       source: { kind: 'codeowners', section: 'Acme', excludeMembers: true },
     };
     expect(filterByTab(rows, q, members).some(m => m.iid === 3)).toBe(false);
-  });
-});
-
-describe('commentDot', () => {
-  test('no summary → no dot (fetch skipped/failed)', () => {
-    expect(commentDot(undefined)).toBeNull();
-  });
-  test('nothing unresolved → no dot', () => {
-    expect(commentDot({ awaiting: 0, replied: 0, resolved: 3 })).toBeNull();
-  });
-  test('any thread awaiting the author → amber, action needed', () => {
-    expect(commentDot({ awaiting: 1, replied: 0, resolved: 0 })).toEqual({
-      cls: 'warn',
-      title: '1 awaiting your reply',
-    });
-  });
-  test('amber title lists both awaiting and replied counts', () => {
-    expect(commentDot({ awaiting: 1, replied: 2, resolved: 0 })).toEqual({
-      cls: 'warn',
-      title: '1 awaiting your reply · 2 you replied to',
-    });
-  });
-  test('all replied, none awaiting → green', () => {
-    expect(commentDot({ awaiting: 0, replied: 2, resolved: 0 })).toEqual({
-      cls: 'ok',
-      title: "you've replied to every comment",
-    });
-  });
-  test('resolved threads never force amber', () => {
-    expect(commentDot({ awaiting: 0, replied: 1, resolved: 5 })?.cls).toBe(
-      'ok'
-    );
   });
 });
 

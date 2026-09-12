@@ -205,6 +205,27 @@
         "reactions": [],
         "posted": true
       },
+      "review": {
+        "mrUrl": "https://gitlab.example.com/acme/webapp/-/merge_requests/1204",
+        "iid": 1204,
+        "status": "reviewing",
+        "tabId": "w12:t1",
+        "workspaceId": "w12",
+        "sessionId": "sess-a",
+        "startedAt": 1755602280000,
+        "updatedAt": 1755602880000
+      },
+      "orphan": {
+        "agentId": "ag-a",
+        "repo": null,
+        "subject": "agent:ag-a",
+        "surface": "herdr",
+        "sessionId": "sess-a",
+        "paneRef": null,
+        "state": "gone",
+        "since": 1755602880000,
+        "openGateIds": []
+      },
       "gates": []
     },
     {
@@ -751,26 +772,39 @@
       },
       "reviews": {
         "required": 2,
-        "given": 0,
-        "remaining": 2,
-        "isApproved": false,
-        "approvedBy": [],
+        "given": 2,
+        "remaining": 0,
+        "isApproved": true,
+        "approvedBy": [
+          {
+            "id": "gitlab:user:1004",
+            "username": "dolveira",
+            "name": "Dani Oliveira",
+            "avatarUrl": null
+          },
+          {
+            "id": "gitlab:user:1005",
+            "username": "nkessler",
+            "name": "Nils Kessler",
+            "avatarUrl": null
+          }
+        ],
         "reviewers": [],
         "totalAssigned": 0,
         "haveActed": 0,
         "havePending": 0,
         "haveNotStarted": 0
       },
-      "status": "blocked",
-      "statusDetail": "not_approved",
-      "isReady": false,
+      "status": "mergeable",
+      "statusDetail": "mergeable",
+      "isReady": true,
       "isCheckingMergeability": false,
       "isMerging": false,
       "isRebasing": false,
       "isLoading": false,
       "mergeButton": {
         "visible": true,
-        "disabled": true,
+        "disabled": false,
         "loading": false,
         "label": "Merge"
       },
@@ -793,15 +827,15 @@
         "needsRebase": false,
         "pipelineFailing": false,
         "pipelineRunning": false,
-        "awaitingApprovals": true,
-        "hasUnresolvedDiscussions": true,
+        "awaitingApprovals": false,
+        "hasUnresolvedDiscussions": false,
         "hasMergeError": false,
         "mergeError": null,
-        "any": true
+        "any": false
       },
       "connection": "idle",
       "updatedAt": "2025-08-19T09:05:00Z",
-      "unresolvedThreads": 5,
+      "unresolvedThreads": 0,
       "reviewerComments": 5,
       "pipelineState": "passed",
       "repositoryId": "gitlab:1000042",
@@ -809,16 +843,25 @@
       "codeownerSections": [],
       "threadSummary": {
         "awaiting": 0,
-        "replied": 5,
-        "resolved": 0
+        "replied": 0,
+        "resolved": 5
       },
-      "generalComments": 1,
+      "generalComments": 0,
       "slack": {
         "status": "found",
         "permalink": "https://example.slack.com/archives/C0100000000/p1700000000000002",
         "reactions": ["eyes"],
         "posted": true
       },
+      "peerReviews": [
+        {
+          "mrUrl": "https://gitlab.example.com/acme/webapp/-/merge_requests/1235",
+          "iid": 1235,
+          "reviewer": "pat",
+          "status": "reviewing",
+          "updatedAt": 1755603420000
+        }
+      ],
       "gates": []
     },
     {
@@ -1081,6 +1124,19 @@
         "startedAt": 1786999854990,
         "updatedAt": 1787003357832
       },
+      "review": {
+        "mrUrl": "https://gitlab.example.com/acme/webapp/-/merge_requests/1236",
+        "iid": 1236,
+        "status": "done",
+        "message": "3 suggestions: key prefix, compression threshold, eviction test",
+        "tabId": "w8Y:t1",
+        "workspaceId": "w8Y",
+        "outcome": "comment",
+        "sessionId": "22222222-2222-4222-8222-222222222222",
+        "startedAt": 1787062674525,
+        "updatedAt": 1787063356985,
+        "reportReady": true
+      },
       "slack": {
         "status": "notfound",
         "reactions": [],
@@ -1219,7 +1275,50 @@
         "startedAt": 1755595000000,
         "updatedAt": 1755596000000
       },
-      "gates": []
+      "doctor": {
+        "mrUrl": "https://gitlab.example.com/acme/webapp/-/merge_requests/1271",
+        "iid": 1271,
+        "status": "watching",
+        "message": "rebased onto main, waiting on the re-run",
+        "tabId": "w15:t1",
+        "workspaceId": "w15",
+        "origin": "auto",
+        "startedAt": 1755602700000,
+        "updatedAt": 1755603300000
+      },
+      "gates": [
+        {
+          "gateId": "gate-review-post-1271",
+          "subject": "mr:https://gitlab.example.com/acme/webapp/-/merge_requests/1271",
+          "kind": "review-post",
+          "label": "review-post",
+          "status": "open",
+          "openedAt": 1755603000000,
+          "domain": "review",
+          "origin": {
+            "paneId": "pane-1271",
+            "tabId": "w16:t1",
+            "worktree": "webapp"
+          },
+          "questions": [
+            {
+              "id": "findings",
+              "label": "Post which findings?",
+              "multi": true,
+              "options": [
+                {
+                  "value": "finding:separator",
+                  "label": "the bullet separator still renders after an empty label (recommended)"
+                },
+                {
+                  "value": "finding:coverage",
+                  "label": "no test covers the label-only tab"
+                }
+              ]
+            }
+          ]
+        }
+      ]
     },
     {
       "provider": "gitlab",
@@ -1246,7 +1345,7 @@
       "sourceBranch": "feature/acme-1273",
       "targetBranch": "main",
       "isStacked": false,
-      "behindTarget": 30,
+      "behindTarget": 0,
       "diff": {
         "additions": 3,
         "deletions": 0,
@@ -1415,26 +1514,33 @@
       },
       "reviews": {
         "required": 1,
-        "given": 0,
-        "remaining": 1,
-        "isApproved": false,
-        "approvedBy": [],
+        "given": 1,
+        "remaining": 0,
+        "isApproved": true,
+        "approvedBy": [
+          {
+            "id": "gitlab:user:1002",
+            "username": "tclearwater",
+            "name": "Tom Clearwater",
+            "avatarUrl": null
+          }
+        ],
         "reviewers": [],
         "totalAssigned": 0,
         "haveActed": 0,
         "havePending": 0,
         "haveNotStarted": 0
       },
-      "status": "blocked",
-      "statusDetail": "not_approved",
-      "isReady": false,
+      "status": "mergeable",
+      "statusDetail": "mergeable",
+      "isReady": true,
       "isCheckingMergeability": false,
       "isMerging": false,
       "isRebasing": false,
       "isLoading": false,
       "mergeButton": {
         "visible": true,
-        "disabled": true,
+        "disabled": false,
         "loading": false,
         "label": "Merge"
       },
@@ -1457,52 +1563,32 @@
         "needsRebase": false,
         "pipelineFailing": false,
         "pipelineRunning": false,
-        "awaitingApprovals": true,
-        "hasUnresolvedDiscussions": true,
+        "awaitingApprovals": false,
+        "hasUnresolvedDiscussions": false,
         "hasMergeError": false,
         "mergeError": null,
-        "any": true
+        "any": false
       },
       "connection": "idle",
       "updatedAt": "2025-08-15T12:00:00Z",
-      "unresolvedThreads": 3,
-      "reviewerComments": 3,
+      "unresolvedThreads": 0,
+      "reviewerComments": 0,
       "pipelineState": "passed",
       "repositoryId": "gitlab:1000042",
       "rtRepo": "webapp",
       "codeownerSections": [],
       "threadSummary": {
-        "awaiting": 3,
+        "awaiting": 0,
         "replied": 0,
         "resolved": 0
       },
-      "generalComments": 1,
-      "review": {
-        "mrUrl": "https://gitlab.example.com/acme/webapp/-/merge_requests/1273",
-        "iid": 1273,
-        "status": "done",
-        "message": "3 suggestions: bullet density, placeholder text, wording",
-        "tabId": "w8Y:t1",
-        "workspaceId": "w8Y",
-        "outcome": "comment",
-        "sessionId": "22222222-2222-4222-8222-222222222222",
-        "startedAt": 1787062674525,
-        "updatedAt": 1787063356985,
-        "reportReady": true
-      },
+      "generalComments": 0,
       "slack": {
         "status": "found",
         "permalink": "https://example.slack.com/archives/C0100000000/p1700000000000004",
-        "reactions": ["eyes", "comment"],
+        "reactions": ["white_check_mark"],
         "posted": true
       },
-      "drafts": [
-        {
-          "kind": "note",
-          "body": "held draft body",
-          "createdAt": 1755590000000
-        }
-      ],
       "gates": []
     },
     {
@@ -1608,6 +1694,16 @@
         "permalink": "https://example.slack.com/archives/C0100000000/p1700000000000005",
         "reactions": [],
         "posted": true
+      },
+      "review": {
+        "mrUrl": "https://gitlab.example.com/acme/webapp/-/merge_requests/1374",
+        "iid": 1374,
+        "status": "reviewing",
+        "tabId": "w14:t1",
+        "workspaceId": "w14",
+        "sessionId": "33333333-3333-4333-8333-333333333333",
+        "startedAt": 1755603360000,
+        "updatedAt": 1755603360000
       },
       "gates": []
     },
@@ -1881,6 +1977,13 @@
         "startedAt": 1787093479261,
         "updatedAt": 1787097715532
       },
+      "drafts": [
+        {
+          "kind": "note",
+          "body": "held draft body",
+          "createdAt": 1755590000000
+        }
+      ],
       "slack": {
         "status": "notfound",
         "reactions": [],

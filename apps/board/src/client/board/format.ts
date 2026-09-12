@@ -1,7 +1,7 @@
 import { getReviewDisplayState } from '@mattstack/glance';
 import type { BoardMR } from '../../data.ts';
 import { hasChangesRequested, stripDraftPrefix } from '../../data.ts';
-import type { RespondOutcome, RespondStatus } from '../../respond-outcome.ts';
+import type { RespondStatus } from '../../respond-outcome.ts';
 import {
   renderMr,
   renderMulti,
@@ -86,23 +86,6 @@ function cleanTitle(title: string): string {
   return stripDraftPrefix(title).replace(/^[A-Za-z]+-\d+:\s*/, '');
 }
 
-const REVIEW_LABEL: Record<ReviewStatus, string> = {
-  queued: 'review queued',
-  reviewing: 'reviewing…',
-  done: 'review ready',
-  error: 'review failed',
-};
-
-// `done` is deliberately absent: what a finished run should say depends on what
-// it did with its replies, which respondDoneLabel derives from the counts.
-const RESPOND_LABEL: Record<Exclude<RespondStatus, 'done'>, string> = {
-  queued: 'response queued',
-  triaging: 'triaging…',
-  implementing: 'implementing…',
-  drafting: 'drafting replies…',
-  error: 'response failed',
-};
-
 const RESPOND_ACTIVE = new Set<RespondStatus>([
   'queued',
   'triaging',
@@ -133,55 +116,14 @@ const DOCTOR_ACTIVE = new Set<DoctorStatus>([
 
 // ── peer switchboard ────────────────────────────────────────────────────────
 
-/** The peer-review states this board has words for. A status it doesn't
-    recognise renders nothing at all, rather than putting a mystery word from
-    another board's vocabulary on the row. */
-type PeerState = 'reviewing' | 'commented' | 'approved' | 'done';
-
-const PEER_PHRASE: Record<PeerState, string> = {
-  reviewing: 'reviewing',
-  commented: 'commented',
-  approved: 'approved',
-  done: 'reviewed',
-};
-
-/** A `done` review with no outcome is the peer's human never answering their
-    posting gate, so it reads as a plain "reviewed": it is finished, but it is
-    not an approval. */
-function peerState(peer: PeerReviewInfo): PeerState | null {
-  if (peer.status === 'queued' || peer.status === 'reviewing')
-    return 'reviewing';
-  if (peer.status !== 'done') return null;
-  if (peer.outcome === 'comment') return 'commented';
-  if (peer.outcome === 'approve') return 'approved';
-  return 'done';
-}
-
 /** Nudge states that leave the ask unanswered, so asking again is the honest
-    next move. Shared by the chip's hint and the menu item's condition -- the
-    item reappearing IS the retry affordance. */
+    next move. Shared by the status line's wording and the menu item's
+    condition -- the item reappearing IS the retry affordance. */
 const NUDGE_RETRYABLE = new Set<SentNudgeInfo['display']>([
   'rejected',
   'expired',
   'no-response',
 ]);
-
-/** What a sent nudge reads as. A refusal carries the peer's own reason where
-    they gave one, since "why not" is the only part a human can act on. */
-function nudgeChipText(nudge: SentNudgeInfo): string {
-  switch (nudge.display) {
-    case 'requested':
-      return 're-review requested';
-    case 'confirmed':
-    case 'launched':
-      return 're-reviewing';
-    case 'rejected':
-    case 'expired':
-      return `nudge: ${nudge.reason ?? nudge.display}`;
-    case 'no-response':
-      return 'no response, retry?';
-  }
-}
 
 /** Peers we can ask to look again: their review finished with comments (so
     there's something to re-check) and no ask of ours is still outstanding. */
@@ -191,91 +133,6 @@ function nudgeTargets(mrx: BoardMRWithReview): PeerReviewInfo[] {
     p => p.status === 'done' && p.outcome === 'comment'
   );
 }
-
-// ── chip cell contract ──────────────────────────────────────────────────────
-
-/** The one vocabulary a respond chip's cell can carry. A finished run shows
-    its DERIVED outcome and an unfinished one its raw status, so `done` is the
-    single respond word that never reaches a chip, and every outcome word does. */
-type RespondCell = Exclude<RespondStatus, 'done'> | RespondOutcome;
-
-/** THE CHIP CELL CONTRACT, and the only place it is written down.
-
-    Every status chip stamps its state word into a `data-*` attribute
-    (`data-review`, `data-respond`, `data-doctor`, `data-peer`, `data-nudge`)
-    and style.css keys a dozen colour rules and three dim rules off those exact
-    words. CSS selectors are invisible to a typechecker, so the words are
-    pinned from three sides instead:
-
-      - `satisfies` below ties every word to the SAME union its stamp site is
-        keyed on (chips.tsx's intent maps are `Record<ReviewStatus, …>` and
-        friends), so a typo here stops compiling;
-      - `UnlistedCellWord` makes each list EXHAUSTIVE over its union, so a new
-        lifecycle state cannot be added without landing here — and, from here,
-        without someone deciding whether it needs a colour rule of its own or
-        inherits the neutral chip;
-      - client-format.test.ts asserts the same equality at runtime against the
-        label maps above, which is what catches a word renamed in one
-        vocabulary and not the other.
-
-    Deliberately not consumed by the render path: this is a contract, not a
-    lookup. The render path reads each state word off the MR. */
-const CHIP_CELL_WORDS = {
-  review: ['queued', 'reviewing', 'done', 'error'],
-  respond: [
-    'queued',
-    'triaging',
-    'implementing',
-    'drafting',
-    'error',
-    'posted',
-    'partial',
-    'drafted',
-    'none',
-    'unknown',
-  ],
-  doctor: [
-    'queued',
-    'diagnosing',
-    'rebasing',
-    'fixing',
-    'watching',
-    'done',
-    'error',
-  ],
-  peer: ['reviewing', 'commented', 'approved', 'done'],
-  nudge: [
-    'requested',
-    'confirmed',
-    'launched',
-    'rejected',
-    'expired',
-    'no-response',
-  ],
-} as const satisfies {
-  review: readonly ReviewStatus[];
-  respond: readonly RespondCell[];
-  doctor: readonly DoctorStatus[];
-  peer: readonly PeerState[];
-  nudge: readonly SentNudgeInfo['display'][];
-};
-
-/** Every state word NOT listed above — `never` while the table is complete. */
-type UnlistedCellWord =
-  | Exclude<ReviewStatus, (typeof CHIP_CELL_WORDS.review)[number]>
-  | Exclude<RespondCell, (typeof CHIP_CELL_WORDS.respond)[number]>
-  | Exclude<DoctorStatus, (typeof CHIP_CELL_WORDS.doctor)[number]>
-  | Exclude<PeerState, (typeof CHIP_CELL_WORDS.peer)[number]>
-  | Exclude<SentNudgeInfo['display'], (typeof CHIP_CELL_WORDS.nudge)[number]>;
-
-/** The exhaustiveness half, as a compile error rather than a convention: the
-    annotation resolves to `true` only while `UnlistedCellWord` is `never`, so a
-    state word missing from the table turns this into "`true` is not assignable
-    to `never`" — and the hover text on `UnlistedCellWord` names the word. */
-const _everyCellWordIsListed: [UnlistedCellWord] extends [never]
-  ? true
-  : never = true;
-void _everyCellWordIsListed;
 
 /** Key for the App-level map of optimistically resolved drafts. Resolution
     lives above the badge because the acting happens in DraftModal; the next
@@ -349,29 +206,6 @@ function setSlackMarks(emoji: {
   SLACK_MARKS = buildSlackMarks(emoji);
 }
 
-function hasReviewReactions(mr: BoardMR): boolean {
-  const reactions = (mr as BoardMRWithReview).slack?.reactions;
-  if (!reactions?.length) return false;
-  return SLACK_MARKS.some(m => reactions.includes(m.emoji));
-}
-
-/** Does this MR have anything for the board-managed badge line? Rows and cards
-    share the test so a new axis can't land on one view and miss the other. */
-function hasBoardBadges(mr: BoardMR): boolean {
-  const mrx = mr as BoardMRWithReview;
-  return !!(
-    mrx.review ||
-    mrx.respond ||
-    mrx.doctor ||
-    mrx.drafts?.length ||
-    mrx.peerReviews?.length ||
-    mrx.sentNudge ||
-    mrx.nudges?.length ||
-    hasReviewReactions(mr) ||
-    mrx.slack?.posted
-  );
-}
-
 // ── slack summary ───────────────────────────────────────────────────────────
 
 function factsFor(mr: BoardMR): MrFacts {
@@ -406,32 +240,22 @@ function boardSummary(
   );
 }
 
-/** The single most important state, for the row's right side. `comments` marks
-    the state that gets the hover card of per-thread comment status. */
-/** The review-state phrase — the human review axis only. Mechanical blockers
-    (conflicts / ci) are NOT folded in here; they render as flag chips above the
-    title so this always shows where the MR actually is in review. */
-function statusPhrase(mr: BoardMR): {
-  text: string;
-  cls: string;
-  comments?: boolean;
-} {
+/** The review-state phrase for line 1's state pill: the human review axis
+    only. Mechanical blockers (conflicts / ci) are NOT folded in here; they
+    render as flag chips beside it so this always shows where the MR actually
+    is in review. */
+function statusPhrase(mr: BoardMR): { text: string; cls: string } {
   const comments = mr.reviewerComments;
-  // Formal "changes requested" reviewer state — a reviewer explicitly blocked it.
   if (hasChangesRequested(mr))
     return { text: 'changes requested', cls: 't-bad' };
   if (mr.reviews.isApproved) return { text: 'approved', cls: 't-ok' };
-  // Comments without a formal verdict: someone left feedback to look at.
   if (comments > 0)
     return {
       text: `${comments} comment${comments === 1 ? '' : 's'}`,
       cls: 't-warn',
-      comments: true,
     };
-  // Reviewed, every thread resolved, not yet approved. Still clickable (`comments`)
-  // so you can open the drawer and read the resolved threads.
   if (commentsAllResolved(mr))
-    return { text: 'comments resolved', cls: 't-ok', comments: true };
+    return { text: 'comments resolved', cls: 't-ok' };
   if (mr.reviews.required > 0 && mr.reviews.given > 0)
     return {
       text: `${mr.reviews.given}/${mr.reviews.required} approved`,
@@ -442,10 +266,10 @@ function statusPhrase(mr: BoardMR): {
 
 /** Depth-first flattening of one stack tree, for views that render a chain as
     consecutive indented items rather than nested markup. */
-function flattenStack(
-  node: StackNode,
+function flattenStack<M extends BoardMR>(
+  node: StackNode<M>,
   depth = 0
-): Array<{ mr: BoardMR; depth: number }> {
+): Array<{ mr: M; depth: number }> {
   return [
     { mr: node.mr, depth },
     ...node.children.flatMap(c => flattenStack(c, depth + 1)),
@@ -570,25 +394,17 @@ export {
   statusReasons,
   activeReviewers,
   cleanTitle,
-  REVIEW_LABEL,
-  RESPOND_LABEL,
   RESPOND_ACTIVE,
   DOCTOR_LABEL,
   DOCTOR_ACTIVE,
-  PEER_PHRASE,
-  peerState,
-  CHIP_CELL_WORDS,
   NUDGE_RETRYABLE,
   gitlabMenuItems,
   laneInterrupted,
-  nudgeChipText,
   nudgeTargets,
   draftKey,
   buildSlackMarks,
   getSlackMarks,
   setSlackMarks,
-  hasReviewReactions,
-  hasBoardBadges,
   factsFor,
   mrLine,
   boardSummary,
@@ -601,7 +417,3 @@ export {
   respondItemLabel,
   doctorItemLabel,
 };
-/** The two cell vocabularies that are DERIVED rather than declared elsewhere —
-    chips.tsx keys its peer and respond intent maps on these, so the maps and
-    CHIP_CELL_WORDS above stay exhaustive over the same union. */
-export type { PeerState, RespondCell };

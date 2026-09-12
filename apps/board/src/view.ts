@@ -20,25 +20,6 @@ export const SLACK_FILTER_KEYS: readonly SlackFilter[] = ['all', 'posted'];
 /** Sentinel that sorts after any ISO date, so null timestamps land last. */
 const LATEST = '9999';
 
-/** Whether the author has acted on the row's unresolved comment threads, for the
-    dot beside "N comments": amber while any thread awaits the author, green once
-    they've replied to every one. Resolved threads have already left the count, so
-    they never force amber. Null when there's no per-thread breakdown (fetch
-    skipped/failed) or nothing unresolved to describe. */
-export function commentDot(
-  summary: BoardMR['threadSummary']
-): { cls: 'ok' | 'warn'; title: string } | null {
-  if (!summary) return null;
-  const { awaiting, replied } = summary;
-  if (awaiting + replied === 0) return null;
-  if (awaiting > 0) {
-    const parts = [`${awaiting} awaiting your reply`];
-    if (replied > 0) parts.push(`${replied} you replied to`);
-    return { cls: 'warn', title: parts.join(' · ') };
-  }
-  return { cls: 'ok', title: "you've replied to every comment" };
-}
-
 /** True when every reviewer thread has been resolved and none awaits action — the
     MR was reviewed and its comments are handled, distinct from an untouched "needs
     review". Relies on the `threadSummary` the server attaches; undefined summary
@@ -120,10 +101,13 @@ export function behindToken(
   };
 }
 
-export interface StackNode {
-  mr: BoardMR;
+/** The pipeline below is generic over the row type so a caller feeding it
+    `BoardMRWithReview[]` gets the same type back out, instead of every
+    consumer re-asserting what `groupMRs` erased. */
+export interface StackNode<M extends BoardMR = BoardMR> {
+  mr: M;
   /** Stacked MRs whose parent is `mr`, in the input list's order. */
-  children: StackNode[];
+  children: StackNode<M>[];
 }
 
 /** Resolve child -> parent links across a set of MRs: a stacked MR whose
@@ -133,15 +117,15 @@ export interface StackNode {
     than vanishing into an unwalkable loop. Shared by nestStacks (which draws
     the tree) and groupMRs (which pulls a child into its parent's group), so
     the two can never disagree about who is whose child. */
-function stackParents(mrs: BoardMR[]): Map<BoardMR, BoardMR> {
+function stackParents<M extends BoardMR>(mrs: M[]): Map<M, M> {
   const branchKey = (mr: BoardMR, branch: string) =>
     `${projectKeyOf(mr.webUrl ?? '')}::${branch}`;
-  const bySource = new Map<string, BoardMR>();
+  const bySource = new Map<string, M>();
   for (const m of mrs) {
     if (m.webUrl) bySource.set(branchKey(m, m.sourceBranch), m);
   }
 
-  const parentOf = new Map<BoardMR, BoardMR>();
+  const parentOf = new Map<M, M>();
   for (const m of mrs) {
     if (!m.isStacked || !m.webUrl) continue;
     const parent = bySource.get(branchKey(m, m.targetBranch));
@@ -150,9 +134,9 @@ function stackParents(mrs: BoardMR[]): Map<BoardMR, BoardMR> {
   // Sever cycles: every MR whose parent walk revisits a node renders flat.
   // Collected first, deleted after, so one member's severed link can't hide
   // the cycle from the other members' walks.
-  const cyclic: BoardMR[] = [];
+  const cyclic: M[] = [];
   for (const m of parentOf.keys()) {
-    const seen = new Set<BoardMR>([m]);
+    const seen = new Set<M>([m]);
     for (let p = parentOf.get(m); p; p = parentOf.get(p)) {
       if (seen.has(p)) {
         cyclic.push(m);
@@ -170,13 +154,13 @@ function stackParents(mrs: BoardMR[]): Map<BoardMR, BoardMR> {
     root in input order. Run per group AFTER grouping -- groupMRs has already
     pulled every child into its parent's group, so a stack that spans buckets
     arrives here intact. */
-export function nestStacks(mrs: BoardMR[]): StackNode[] {
+export function nestStacks<M extends BoardMR>(mrs: M[]): StackNode<M>[] {
   const parentOf = stackParents(mrs);
 
-  const nodes = new Map<BoardMR, StackNode>(
+  const nodes = new Map<M, StackNode<M>>(
     mrs.map(m => [m, { mr: m, children: [] }])
   );
-  const roots: StackNode[] = [];
+  const roots: StackNode<M>[] = [];
   for (const m of mrs) {
     const parent = parentOf.get(m);
     if (parent) nodes.get(parent)!.children.push(nodes.get(m)!);
@@ -192,7 +176,10 @@ function progress(mr: BoardMR): number {
   return mr.reviews.given > 0 ? 1 : 0;
 }
 
-export function filterByMember(mrs: BoardMR[], member: string): BoardMR[] {
+export function filterByMember<M extends BoardMR>(
+  mrs: M[],
+  member: string
+): M[] {
   return member === 'all' ? mrs : mrs.filter(m => m.author.username === member);
 }
 
@@ -229,11 +216,11 @@ export function rosterUsernamesFor(
     authors tab too. A codeowners tab narrows to rows tagged with its section;
     excludeMembers additionally drops the roster's own authors, so the tab
     reads as the outside-the-team queue for that section. */
-export function filterByTab(
-  mrs: BoardMR[],
+export function filterByTab<M extends BoardMR>(
+  mrs: M[],
   tab: TabConfig,
   members: Set<string>
-): BoardMR[] {
+): M[] {
   if (tab.source.kind === 'authors')
     return mrs.filter(mr => members.has(mr.author.username));
   const { section, excludeMembers } = tab.source;
@@ -245,7 +232,7 @@ export function filterByTab(
 }
 
 /** Return a new array ordered by the chosen sort. Never mutates the input. */
-export function sortMRs(mrs: BoardMR[], sort: SortKey): BoardMR[] {
+export function sortMRs<M extends BoardMR>(mrs: M[], sort: SortKey): M[] {
   // Order by last activity (updatedAt) — the same axis the row's age token and
   // the age grouping use — so "oldest" means stalest-first and the visible ages
   // read in order. (Was createdAt, which mismatched the displayed times.)
@@ -263,9 +250,9 @@ export function sortMRs(mrs: BoardMR[], sort: SortKey): BoardMR[] {
   return copy;
 }
 
-export interface Group {
+export interface Group<M extends BoardMR = BoardMR> {
   label: string;
-  mrs: BoardMR[];
+  mrs: M[];
 }
 
 /** Age band by last activity: by day for the first week, then weekly. Uses the
@@ -328,11 +315,11 @@ function reviewBucket(mr: ReviewedMR): { label: string; order: number } {
 }
 
 /** Group by a keyed bucket, ordering groups by the bucket's `order`. */
-function groupBy(
-  mrs: BoardMR[],
-  bucket: (mr: BoardMR) => { label: string; order: number }
-): Group[] {
-  const map = new Map<string, { order: number; mrs: BoardMR[] }>();
+function groupBy<M extends BoardMR>(
+  mrs: M[],
+  bucket: (mr: M) => { label: string; order: number }
+): Group<M>[] {
+  const map = new Map<string, { order: number; mrs: M[] }>();
   for (const mr of mrs) {
     const b = bucket(mr);
     const entry = map.get(b.label) ?? { order: b.order, mrs: [] };
@@ -345,9 +332,12 @@ function groupBy(
 }
 
 /** One group per member, in config order; members with no MRs are skipped. */
-function groupByAuthor(mrs: BoardMR[], memberOrder: string[]): Group[] {
+function groupByAuthor<M extends BoardMR>(
+  mrs: M[],
+  memberOrder: string[]
+): Group<M>[] {
   const rank = new Map(memberOrder.map((u, i) => [u, i]));
-  const byUser = new Map<string, BoardMR[]>();
+  const byUser = new Map<string, M[]>();
   for (const mr of mrs) {
     const u = mr.author.username;
     const list = byUser.get(u) ?? [];
@@ -368,18 +358,21 @@ function groupByAuthor(mrs: BoardMR[], memberOrder: string[]): Group[] {
     the branch chain does not. The root's own bucket decides for the whole
     stack; groups emptied by the move are dropped, and group order and the
     order within each group are otherwise untouched. */
-function pullStacksIntoParentGroups(groups: Group[], mrs: BoardMR[]): Group[] {
+function pullStacksIntoParentGroups<M extends BoardMR>(
+  groups: Group<M>[],
+  mrs: M[]
+): Group<M>[] {
   const parentOf = stackParents(mrs);
   if (parentOf.size === 0) return groups;
 
-  const groupOf = new Map<BoardMR, number>();
+  const groupOf = new Map<M, number>();
   groups.forEach((g, i) => {
     for (const m of g.mrs) groupOf.set(m, i);
   });
   // Walk to the root, not just the immediate parent: in a 3-deep stack the
   // middle MR may itself be moving, so only the root's bucket is settled.
   // stackParents has already severed cycles, so the walk terminates.
-  const rootGroupOf = (mr: BoardMR): number => {
+  const rootGroupOf = (mr: M): number => {
     let cur = mr;
     for (;;) {
       const p = parentOf.get(cur);
@@ -388,7 +381,7 @@ function pullStacksIntoParentGroups(groups: Group[], mrs: BoardMR[]): Group[] {
     }
   };
 
-  const moved: BoardMR[][] = groups.map(() => []);
+  const moved: M[][] = groups.map(() => []);
   for (const g of groups) {
     for (const m of g.mrs) moved[rootGroupOf(m)]!.push(m);
   }
@@ -402,13 +395,13 @@ function pullStacksIntoParentGroups(groups: Group[], mrs: BoardMR[]): Group[] {
  * the dimension; ordering WITHIN each group is the caller's job (apply sortMRs
  * to each group's `mrs`).
  */
-export function groupMRs(
-  mrs: BoardMR[],
+export function groupMRs<M extends BoardMR>(
+  mrs: M[],
   group: GroupKey,
   memberOrder: string[],
   now: number
-): Group[] {
-  const grouped = (): Group[] => {
+): Group<M>[] {
+  const grouped = (): Group<M>[] => {
     switch (group) {
       case 'age':
         return groupBy(mrs, mr => ageBucket(mr.updatedAt, now));
@@ -417,7 +410,7 @@ export function groupMRs(
       case 'status':
         return groupBy(mrs, statusBucket);
       case 'review':
-        return groupBy(mrs as ReviewedMR[], reviewBucket);
+        return groupBy(mrs, mr => reviewBucket(mr as ReviewedMR));
     }
   };
   return pullStacksIntoParentGroups(grouped(), mrs);

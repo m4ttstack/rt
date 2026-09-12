@@ -8,8 +8,8 @@ import {
   selectionHeader,
   type SlackTemplates,
 } from '../../template.ts';
-import { SLACK_ICON } from './chips.tsx';
 import { boardSummary } from './format.ts';
+import { SlackLogo } from './icons.tsx';
 
 /** Shown only while something is selected. Carries the count, an editable
     header line, and the actions retargeted to the selection. */
@@ -91,7 +91,7 @@ function SelectionBar({
             disabled={posting}
             title="post the selection to slack"
           >
-            {SLACK_ICON} {posting ? 'posting…' : `post ${slackPost.count}`}
+            <SlackLogo /> {posting ? 'posting…' : `post ${slackPost.count}`}
           </button>
         )}
         <button

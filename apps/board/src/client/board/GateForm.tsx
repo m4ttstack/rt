@@ -47,7 +47,7 @@ function SummaryDetail({ detail }: { detail: GateSummaryDetailRow[] }) {
 /** The compact answered face: one chip line, detail on demand. The conflict
     path passes startOpen -- the winning answer someone else recorded is the
     whole message there. Exported for its own Storybook coverage and for
-    GateRowChips, which renders it directly for any non-actionable gate. */
+    DecisionQueueModal, which renders it directly for any non-actionable gate. */
 function AnsweredChip({
   row,
   startOpen = false,

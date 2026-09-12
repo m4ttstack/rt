@@ -178,14 +178,17 @@ body {
   opacity: 0;
   transition: opacity 0.1s ease;
 }
-.tui-row:hover .tui-copy-inline {
+/* Hover-only, but kept in flow (opacity, not display) so line 1 never
+   shifts when the pointer arrives. focus-within covers keyboard users. */
+.tui-row:hover .tui-copy-inline,
+.tui-row:focus-within .tui-copy-inline {
   opacity: 0.9;
 }
-.tui-copy-inline:hover {
+.tui-row .tui-copy-inline:hover {
   opacity: 1;
   color: var(--fg);
 }
-.tui-copy-inline[data-copied] {
+.tui-row .tui-copy-inline[data-copied] {
   opacity: 1;
   color: var(--green);
 }
@@ -193,12 +196,6 @@ body {
   position: absolute;
   top: 0.45rem;
   right: 0.45rem;
-}
-/* Row copy button is always faintly present (not a hidden empty slot), so line
-   1 reaches the right edge like the meta line below it — no phantom gap. It
-   brightens on row hover. */
-.tui-row .tui-copy-inline {
-  opacity: 0.3;
 }
 
 /* ── selection ────────────────────────────────────────────────────── */
@@ -283,51 +280,34 @@ body {
 .tui-invite-btn:focus-visible,
 .tui-draft-act:focus-visible,
 .tui-modal-x:focus-visible,
-.tui-comments-btn:focus-visible,
-.tui-comment-token:focus-visible,
 .tui-join-toggle:focus-visible,
 .tui-drawer-action:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
-/* ── rows ─────────────────────────────────────────────────────────── */
-/* Two columns: the select box gets its own gutter so it never competes with the
-   title for space, and the body keeps the single-column stack it always had.
-   The left padding is still the ❯ hover marker's gutter, which sits outside the
-   grid in the row's padding. */
+/* ── the row ─────────────────────────────────────────────────────────
+   Fixed height, three lines, one content edge. The gutter holds the status
+   dot (and the checkbox on hover / in select mode); the attention bar is
+   flush to the row's left edge. Nothing on a row may grow it. */
+.tui-rows {
+  --row-h: 92px;
+}
 .tui-row {
   display: grid;
-  grid-template-columns: 1.75rem minmax(0, 1fr);
-  column-gap: 0.5rem;
+  grid-template-columns: 40px minmax(0, 1fr);
   align-items: start;
-  padding: 0.7rem 1rem 0.75rem 1.4rem;
+  height: var(--row-h);
+  box-sizing: border-box;
+  padding: 12px 16px 12px 0;
   cursor: pointer;
   position: relative;
-}
-/* Full row height and centred, so the checkbox is a large, forgiving target
-   rather than a glyph you have to aim at. */
-.tui-row-pick {
-  align-self: stretch;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.tui-row-body {
-  min-width: 0;
+  overflow: hidden;
 }
 .tui-row + .tui-row {
   border-top: 1px solid var(--border-soft);
 }
 .tui-row:hover {
-  background: color-mix(in srgb, var(--accent) 7%, transparent);
-}
-.tui-row:hover::before {
-  content: '❯';
-  position: absolute;
-  left: 0.45rem;
-  top: 0.5rem;
-  /* Decorative ::before glyph, not read text: stays paired with the row's own accent wash above, not the -text ramp. */
-  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
 }
 /* `?gate=<id>` deep link: the row a notification click resolves to gets a
    brief outline ring, same accent as the keyboard focus rings above. */
@@ -335,17 +315,67 @@ body {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
-.tui-row-1 {
+.tui-row-bar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+}
+.tui-row-bar[data-tone='warn'] {
+  background: var(--amber);
+}
+.tui-row-bar[data-tone='bad'] {
+  background: var(--red);
+}
+/* Gutter: the dot at rest, the checkbox under the pointer or while a
+   selection exists. Both stay in the flow (opacity, not display) so the
+   stack rail's pseudo-elements keep their anchor. The kit stamps
+   `data-part="statusdot"` / `"selectbox"` on the two recipes' roots. */
+.tui-row-pick {
+  position: relative;
+  /* Own stacking context, so a stack rail segment can sit under the dot. */
+  isolation: isolate;
+  height: 20px;
   display: flex;
-  align-items: baseline;
-  gap: 0.55rem;
+  align-items: center;
+  justify-content: center;
+}
+.tui-row-pick > [data-part='statusdot'] {
+  position: absolute;
+  transition: opacity 0.12s;
+}
+.tui-row-pick > [data-part='selectbox'] {
+  position: absolute;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.tui-row:hover .tui-row-pick > [data-part='statusdot'],
+.tui-row-pick:focus-within > [data-part='statusdot'],
+.tui-rows[data-selecting] .tui-row-pick > [data-part='statusdot'] {
+  opacity: 0;
+}
+.tui-row:hover .tui-row-pick > [data-part='selectbox'],
+.tui-row-pick:focus-within > [data-part='selectbox'],
+.tui-rows[data-selecting] .tui-row-pick > [data-part='selectbox'] {
+  opacity: 1;
+}
+.tui-row-body {
   min-width: 0;
 }
-/* 500, not the 200 this carried under JetBrains Mono. Mono stays sturdy that
-   light; a system sans at 200 renders spindly, so the title was reading
-   thinner than the metadata line beneath it. */
-/* Title/meta pairing matches the decision-queue strip (body over meta),
-   so the row reads at one size everywhere it appears. */
+.tui-row [data-part='statusdot-dot'] {
+  font-size: 10px;
+}
+
+/* Line 1: identity. */
+.tui-row-1 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 20px;
+}
 .tui-title {
   font-weight: 500;
   font-size: var(--type-body);
@@ -355,54 +385,88 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.tui-row-marks {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.tui-mark {
+  display: inline-flex;
+  color: var(--muted-text);
+  opacity: 0.55;
+}
+.tui-mark[data-slack-logo] {
+  opacity: 1;
+}
+
+/* Line 2: facts. Junctions step in weight or color; no glyphs. 0.76rem is
+   the design's facts and status size (docs/design/mr-row/build.mjs), one
+   step under --type-meta so line 1 keeps its lead. */
 .tui-row-2 {
   display: flex;
   align-items: center;
-  gap: 0.55rem;
+  gap: 10px;
   color: var(--muted-text);
-  font-size: var(--type-meta);
-  margin-top: 0.15rem;
+  font-size: 0.76rem;
+  line-height: 16px;
+  margin-top: 4px;
+  min-width: 0;
+}
+.tui-mr-iid {
+  color: color-mix(in srgb, var(--fg) 70%, var(--muted-text));
+  font-weight: 500;
+  flex-shrink: 0;
 }
 .tui-branch {
-  flex: 1;
   min-width: 0;
+  max-width: 34ch;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.tui-arrow {
-  color: var(--muted-text);
-  opacity: 0.7;
+.tui-diff {
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
-/* Executor dot: the row's own dead/blocked-delivery signal, next to the
-   status dot in row-1. Reuses the status-dot colour tokens (bad for a
-   vanished executor, warn for a stuck delivery) plus a cyan glyph for
-   "hidden" (not gone, just off this board's radar right now). */
-.tui-executor-dot {
-  font-size: 0.7rem;
-  line-height: 1;
-  cursor: default;
+.tui-adds {
+  color: color-mix(in srgb, var(--green) 70%, var(--muted-text));
+}
+.tui-dels {
+  color: color-mix(in srgb, var(--red) 70%, var(--muted-text));
+}
+.tui-behind {
+  color: var(--amber);
   flex-shrink: 0;
 }
-.tui-executor-dot[data-executor-state='gone'] {
-  color: var(--dot-bad);
+.tui-facts {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
 }
-.tui-executor-dot[data-executor-state='stuck'] {
-  color: var(--dot-warn);
+.tui-threads {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+  color: color-mix(in srgb, var(--accent) 35%, var(--muted-text));
 }
-.tui-executor-dot[data-executor-state='hidden'] {
-  color: var(--cyan);
+.tui-threads[data-new] {
+  color: var(--accent-text);
+  font-weight: 700;
 }
-.tui-mr-iid {
-  color: var(--muted-text);
+.tui-threads:hover {
+  text-decoration: underline;
 }
-/* Draft marker on a row: now Chip's small-caps register (`uppercase` -- the
-   transform, the 0.06em tracking, the 0.55rem/700 type) inside the neutral
-   `subtle` frame, muted. Only the tighter pill is left here; see the chip
-   outliers block below. */
-.tui-row-sep {
-  color: var(--muted-text);
-  opacity: 0.5;
+.tui-age {
+  font-size: 0.7rem;
+  color: color-mix(in srgb, var(--muted-text) 75%, transparent);
 }
 /* Author identity in a row (All view, non-author grouping). */
 .tui-author-tag {
@@ -419,18 +483,111 @@ body {
   height: 13px;
 }
 
-/* ── status dot + tooltip: now @mattstack/tui-kit's StatusDot ─────────
-   The `.tui-dot` glyph (including its -2px optical nudge), the three
-   `--dot-*` colour rules, `.tui-dot-wrap` and its `attr(data-tip)` tooltip
-   are the recipe's two slots, `[data-part="statusdot"]` /
-   `[data-part="statusdot-dot"]`. The board keeps the DERIVATION
-   (blockers -> intent, statusReasons -> tip) in
-   src/client/board/StatusDot.tsx. `.tui-comment-dot` below is a SEPARATE
-   family that happens to reuse two of the same colours -- left alone. */
-/* The recipe's 1rem glyph reads oversized beside the row title at the
-   app's scaled root; row dots take the meta size. */
-.tui-row [data-part='statusdot-dot'] {
-  font-size: var(--type-meta);
+/* Line 3: the status line. */
+.tui-status {
+  display: flex;
+  align-items: baseline;
+  margin-top: 8px;
+  font-size: 0.76rem;
+  line-height: 20px;
+  color: var(--muted-text);
+  min-width: 0;
+}
+.tui-status-word {
+  font-weight: 600;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.tui-status[data-tone='bad'] .tui-status-word {
+  color: var(--red-text);
+}
+.tui-status[data-tone='warn'] .tui-status-word {
+  color: var(--amber);
+}
+.tui-status[data-tone='work'] .tui-status-word,
+.tui-status[data-tone='work'] .tui-status-ring {
+  color: var(--purple);
+}
+.tui-status[data-tone='go'] .tui-status-word {
+  color: var(--green);
+}
+.tui-status[data-tone='quiet'] .tui-status-word {
+  font-weight: 500;
+}
+.tui-status[data-tone='clear'] .tui-status-word {
+  font-weight: 500;
+  color: color-mix(in srgb, var(--green) 40%, var(--muted-text));
+}
+/* Muted on every tone: the word carries the temperature, the detail never
+   competes with it. */
+.tui-status-detail {
+  margin-left: 10px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tui-status-ring {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1.5px solid color-mix(in srgb, currentColor 35%, transparent);
+  border-top-color: currentColor;
+  margin-left: 8px;
+  align-self: center;
+  animation: tui-status-rot 1s linear infinite;
+}
+@keyframes tui-status-rot {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.tui-status-more {
+  margin-left: 8px;
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  color: color-mix(in srgb, var(--muted-text) 70%, transparent);
+}
+.tui-status-verbs {
+  margin-left: auto;
+  padding-left: 16px;
+  display: inline-flex;
+  gap: 14px;
+  flex-shrink: 0;
+}
+.tui-status-verb {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--muted-text);
+  cursor: pointer;
+}
+.tui-status-verb[data-hot] {
+  color: var(--accent-text);
+  font-weight: 600;
+}
+.tui-status-verb:hover {
+  text-decoration: underline;
+}
+.tui-status-verb[data-secondary] {
+  display: none;
+}
+.tui-row:hover .tui-status-verb[data-secondary],
+.tui-row:focus-within .tui-status-verb[data-secondary] {
+  display: inline;
+}
+/* The decision queue's strip separates its facts with this glyph; rows carry
+   no separators. */
+.tui-row-sep {
+  color: var(--muted-text);
+  opacity: 0.5;
 }
 
 /* ── tokens ───────────────────────────────────────────────────────── */
@@ -446,14 +603,6 @@ body {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-}
-.tui-meta {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.8rem;
-  font-size: 0.76rem;
-  flex-shrink: 0;
-  white-space: nowrap;
 }
 .t-ok {
   color: var(--green);
@@ -473,60 +622,8 @@ body {
 .t-accent {
   color: var(--accent-text);
 }
-.t-dim .t-ok,
-.t-dim .t-bad {
-  opacity: 0.75;
-}
 
 /* ── comments drawer ──────────────────────────────────────────────── */
-.tui-comments-btn {
-  background: none;
-  border: none;
-  cursor: pointer;
-  /* font-family only — NOT `font: inherit`, which would reset the size to the
-     row's 13.5px instead of the .tui-phrase 0.62rem the other labels use. Leave
-     color to the t-warn class so the label stays amber. */
-  font-family: inherit;
-}
-.tui-comments-btn:hover {
-  background: color-mix(in srgb, currentColor 10%, transparent);
-}
-/* Hint beside "N comments": has the author acted on the threads yet. */
-.tui-comment-dot {
-  margin-left: 0.35rem;
-  font-size: 0.7rem;
-  line-height: 1;
-  vertical-align: middle;
-  cursor: default;
-  flex-shrink: 0;
-}
-.tui-comment-dot.ok {
-  color: var(--dot-ok);
-}
-.tui-comment-dot.warn {
-  color: var(--dot-warn);
-}
-/* Persistent 💬 token in the row meta — opens the drawer even when the status
-   isn't a comment state (e.g. approved). Inherits the meta row's font size. */
-.tui-comment-token {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.15rem;
-  background: none;
-  border: none;
-  padding: 0;
-  cursor: pointer;
-  line-height: 1;
-  font-family: inherit;
-  font-size: inherit;
-  color: var(--muted-text);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-.tui-comment-token:hover {
-  color: var(--fg);
-}
-
 /* General MR-comments section in the drawer (notes that aren't resolvable threads). */
 .tui-cd-comments-head {
   font-size: 0.72rem;
@@ -770,32 +867,18 @@ body {
 .tui-ticket:hover {
   opacity: 1;
 }
-
-/* ── watching strip ───────────────────────────────────────────────── */
-.tui-watching {
-  color: var(--amber);
-  font: 500 0.78rem/1.5 var(--font-sans);
-  margin-top: 0.2rem;
+/* On a row the link is hover-only like the copy button beside it; the
+   decision queue's strip keeps it visible at rest. */
+.tui-row .tui-ticket {
+  opacity: 0;
+  transition: opacity 0.1s ease;
 }
-
-/* ── orphan strip ─────────────────────────────────────────────────── */
-/* A row's dead/hidden run: same bordered-box family as .tui-banner, red so
-   it reads as the row's own alarm rather than a routine badge. */
-.tui-orphan-strip {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-top: 0.35rem;
-  padding: 0.3rem 0.6rem;
-  border: 1px solid color-mix(in srgb, var(--red) 45%, transparent);
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--red) 7%, transparent);
+.tui-row:hover .tui-ticket,
+.tui-row:focus-within .tui-ticket {
+  opacity: 0.75;
 }
-.tui-orphan-reason {
-  color: var(--red-text);
-  font: 500 0.78rem/1.5 var(--font-sans);
-  flex: 1;
-  min-width: 0;
+.tui-row .tui-ticket:hover {
+  opacity: 1;
 }
 
 /* ── chrome ───────────────────────────────────────────────────────── */
@@ -1099,6 +1182,13 @@ body {
   [data-part='sidedrawer-overlay'][data-side='left'] {
     display: flex;
   }
+  /* The row keeps its 92px; only the two elastic spans give way. */
+  .tui-branch {
+    max-width: 16ch;
+  }
+  .tui-status-detail {
+    display: none;
+  }
 }
 
 /* ── settings modal ───────────────────────────────────────────────── */
@@ -1308,21 +1398,21 @@ body {
   color: var(--fg);
 }
 
-/* review status badge: now @mattstack/tui-kit's Chip. The box (`.tui-review`),
-   the icon wrapper (`.tui-badge-emoji`) and `.tui-review svg`'s flex-shrink
-   are the recipe's `root` and `icon` slots. */
 /* ── stacked chains ───────────────────────────────────────────────── */
 /* A chain reads as one unit: a single thread rail spans the children
    (cyan to match the t-cyan stacked chip), the row dividers inside the
    chain go quiet, and the boundary dividers move to the wrapper since the
-   wrapper breaks .tui-row + .tui-row adjacency. Indent is inline
-   (depth-scaled) on each nested row. */
+   wrapper breaks .tui-row + .tui-row adjacency. */
 /* Opaque rail color (cyan over the panel tone): the rail is drawn as
    overlapping per-row segments, and translucent segments double up into
    darker patches at every joint. */
 .tui-stack-rows {
   position: relative;
   --stack-rail: color-mix(in srgb, var(--cyan) 38%, var(--panel));
+  /* Less than the gutter's 20px center: a row clips its overflow, so the
+     rail (drawn at the parent's dot x) must fall inside the nested row's
+     own box, not in its margin. */
+  --stack-indent: 12px;
 }
 .tui-row + .tui-stack-rows,
 .tui-stack-rows + .tui-row,
@@ -1331,65 +1421,54 @@ body {
 }
 .tui-stack-children .tui-row {
   border-top: none;
-  padding-top: 0.3rem;
 }
 /* One indent level regardless of depth: chain order alone carries the
    hierarchy, so a deep stack never marches off the right edge. */
 .tui-row-nested {
-  margin-left: 1.4rem;
+  margin-left: var(--stack-indent);
 }
-/* The thread anchors to the pick column: it is row-height and the checkbox
-   is centered in it, so 50% is exactly the checkbox line in every row, no
-   matter how many flag/badge rows the body grows. All segments live on
-   tui-row-pick pseudo-elements, which also keeps them clear of the row's
-   hover ❯ (a tui-row::before). */
-.tui-row-pick {
-  position: relative;
-}
-/* Parent: a stub from just under its checkbox down through its bottom edge. */
+/* Every segment lives on a tui-row-pick pseudo-element: the gutter is a
+   fixed 20px box at the top of every row, so the dot's center is always
+   10px below the pick's top and 12px below the row's edge. Segments run to
+   the row's edges (the row clips there) and butt end to end. */
+/* Parent: a stub from under its dot down through its bottom edge. */
 .tui-stack-rows > .tui-row > .tui-row-pick::after {
   content: '';
   position: absolute;
   width: 2px;
   background: var(--stack-rail);
   left: calc(50% - 1px);
-  top: calc(50% + 0.55rem);
-  bottom: -0.6rem;
+  top: 20px;
+  bottom: calc(-1 * (var(--row-h) - 20px - 12px));
 }
-/* Children: the rail continues at the parent checkbox's x — the child row is
-   indented 1.4rem, so the parent's pick-center sits 0.525rem left of the
-   child's own pick column. The last child's segment stops at its arm. */
-/* The pick column spans the grid area, not the row's vertical padding, so
-   each segment reaches 1rem up past its own top to bridge the previous row's
-   bottom padding (0.55rem) plus its own top padding (0.3rem). Overlaps are
-   invisible: the rail color is opaque and every segment shares one x. */
+/* Children: the rail continues at the parent's dot x, which in the nested
+   pick's coordinates is 20px less the indent. The last child's segment
+   stops at its own dot's center, where the arm meets it. */
 .tui-row-nested .tui-row-pick::before {
   content: '';
   position: absolute;
   width: 2px;
   background: var(--stack-rail);
-  left: calc(-0.525rem - 1px);
-  top: -1rem;
-  bottom: 0;
+  left: calc(20px - var(--stack-indent) - 1px);
+  top: -12px;
+  bottom: calc(-1 * (var(--row-h) - 20px - 12px));
 }
 .tui-row-nested:last-child .tui-row-pick::before {
   bottom: auto;
-  height: calc(50% + 1rem);
+  height: calc(12px + 10px);
 }
-/* Arm from the rail into the child's checkbox, on its center line. It starts
-   at the same x as the rail segments so the corner joins cleanly. */
+/* Arm from the rail to the child's dot, on the dot's center line. It starts
+   at the rail's own x so the corner joins cleanly, and runs under the dot
+   (the gutter isolates its stacking) to the dot's center. */
 .tui-row-nested .tui-row-pick::after {
   content: '';
   position: absolute;
+  z-index: -1;
   height: 2px;
   background: var(--stack-rail);
-  left: calc(-0.525rem - 1px);
-  width: 0.95rem;
-  top: calc(50% - 1px);
-}
-/* The hover ❯ would sit on the thread; the row highlight already marks hover. */
-.tui-row-nested:hover::before {
-  content: none;
+  left: calc(20px - var(--stack-indent) - 1px);
+  width: calc(var(--stack-indent) + 1px);
+  top: 9px;
 }
 /* In grid view a whole chain shares one bordered cluster cell. */
 .tui-stack-cluster {
@@ -1411,27 +1490,8 @@ body {
   color: var(--cyan);
 }
 
-/* review badge sits on its own line above the title */
-.tui-row-review {
-  margin-bottom: 5px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-/* Board-managed badges (review/respond/doctor + slack chips) live on their own
-   row below the branch, so they don't compete with GitLab-native flags. */
-.tui-row-board {
-  margin-top: 5px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
 /* review gate card: the questions a review pane opened on this row, answered
-   inline. Its own bordered block below the badge row so a row carrying a
-   gate visibly grows rather than crowding the badges. */
+   inline in the triage modal. */
 .tui-gate-card,
 .tui-triage-modal {
   /* Gate-scoped contrast lift: the kit's --border and --muted-text sit too
@@ -1471,15 +1531,6 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
-}
-/* Rows carry no form controls: a gate is a chip that opens the decision
-   queue, or the answered summary. */
-.tui-gate-row-face {
-  margin-top: 12px;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 10px;
 }
 .tui-gate-head {
   display: flex;
@@ -2076,17 +2127,8 @@ body {
 .tui-triage-modal [data-part='scrollpane-body'] img {
   max-width: 100%;
 }
-/* slack review-signal reactions rendered next to the review badge */
-.tui-slack-reactions {
-  display: inline-flex;
-  gap: 4px;
-  align-items: center;
-  font-size: 0.8125rem;
-  line-height: 1;
-}
-.tui-slack-reaction {
-  user-select: none;
-}
+/* The header's posted-to-slack filter glyph (Controls.tsx's SlackPostedMark);
+   rows carry their own `.tui-mark` marks instead. */
 .tui-slack-posted {
   position: relative;
   display: inline-flex;
@@ -2120,62 +2162,19 @@ body {
    Every badge and flag on the board is `[data-part="chip"]` now: the box, the
    1.4s pulse, the dim, the small-caps register and the clickable `<button>`
    form all live in the Chip recipe, chosen at the call site with
-   intent/pulse/dimmed/uppercase/as. Two groups survive here, each scoped by a
-   data attribute its own call site stamps so no chip family can bleed into
-   another:
-
-   1. THE DOT-COLOUR CELLS. Twelve review/respond/doctor/peer states paint from
-      the brighter STATUS-DOT trio (--dot-ok #1f9d3a / --dot-warn #e08a00 /
-      --dot-bad #e5153f) while the kit's shared intent resolver maps
-      ok/warn/bad onto the hue families (--green / --amber / --red). The dot
-      trio belongs to StatusDot, so the one shade of difference comes back here
-      rather than bending the resolver for one consumer. `border-color:
-      currentColor` rides along on each: the recipe's outline variant paints
-      its border from `--chip-border` (the hue), not from the text colour we
-      just overrode -- exactly what these rules said before the adoption.
-   2. THE OUTLIER BOXES. Chip's `dimmed` is one canonical 0.7; three cells want
-      0.75, 0.6 and 0.9. And two cells keep a box the recipe deliberately
-      unified away -- `.tui-flag`'s zero-padding/1.5-line-height frame and
-      `.tui-draft`'s tighter pill.
+   intent/pulse/dimmed/uppercase/as. Two outlier boxes survive here, each
+   scoped by a data attribute its own call site stamps so no chip family can
+   bleed into another: Chip's `dimmed` is one canonical 0.7 and the flag wants
+   0.9, and both keep a frame the recipe unified away.
 
    THE PROPERTY ROUTE IS THE ONLY ONE THAT WORKS, and getting it wrong is
    silent: the recipe's `--sb-chip-*` scalars are emitted into the element's
    INLINE style by its vars resolver, so an app-side rule setting one is never
    read. Setting the PROPERTY wins at any specificity, because this file is
    unlayered and the recipe sits inside `@layer soribashi.recipes`. */
-[data-part='chip'][data-review='reviewing'],
-[data-part='chip'][data-respond='partial'],
-[data-part='chip'][data-respond='drafted'],
-[data-part='chip'][data-peer='commented'] {
-  color: var(--dot-warn);
-  border-color: currentColor;
-}
-[data-part='chip'][data-review='done'],
-[data-part='chip'][data-respond='posted'],
-[data-part='chip'][data-respond='none'],
-[data-part='chip'][data-doctor='done'],
-[data-part='chip'][data-peer='approved'] {
-  color: var(--dot-ok);
-  border-color: currentColor;
-}
-[data-part='chip'][data-review='error'],
-[data-part='chip'][data-respond='error'],
-[data-part='chip'][data-doctor='error'] {
-  color: var(--dot-bad);
-  border-color: currentColor;
-}
-/* A sent nudge's pending state is quieter than the canonical dim by 0.05. */
-[data-part='chip'][data-nudge='requested'] {
-  opacity: 0.75;
-}
-/* A resolved held note is the deepest of the board's four quiet values. */
-[data-part='chip'][data-held-draft='resolved'] {
-  opacity: 0.6;
-}
-/* Mechanical-blocker flags (conflicts / ci / stacked) carry a standing 0.9 and
-   keep their own frame: no vertical padding, and the 1.5 line-height that was
-   what claimed the box back. The recipe unified the two boxes onto the badge's
-   1px/6px; this row sits above the title and its height is load-bearing. */
+/* Mechanical-blocker flags (conflicts / ci / stacked) keep a frame with no
+   vertical padding: on a row they sit inline on the 20px identity line, and
+   the frame must not outgrow it. */
 [data-part='chip'][data-flag] {
   opacity: 0.9;
   padding: 0 6px;
@@ -2187,9 +2186,6 @@ body {
   padding: 0.15rem 0.28rem;
   border-radius: 3px;
   line-height: 1;
-  /* The title line aligns to baseline, which floats this tight pill off
-     the title's visual middle; the pill centers itself instead. */
-  align-self: center;
 }
 
 /* held-draft drawer: the verbatim note text plus the post/dismiss gate */
@@ -2256,7 +2252,7 @@ body {
   background: var(--amber);
   opacity: 0.9;
 }
-/* clickable badge (a saved review exists) — `.tui-review-open`'s font reset,
+/* clickable badge (a saved review exists): `.tui-review-open`'s font reset,
    pointer cursor, hover wash and focus ring are Chip's `as="button"` form,
    keyed on the element (`:is(button, a)`) inside the recipe. */
 
@@ -2416,7 +2412,7 @@ body {
 .tui-config-row + .tui-config-row {
   border-top: 1px solid var(--border-soft);
 }
-/* the bar means "present in a store" — board.* rows carry no registry
+/* the bar means "present in a store": board.* rows carry no registry
    defaults, so the alternative is the app-side fallback, not a default */
 .tui-config-row.set::before {
   content: '';
