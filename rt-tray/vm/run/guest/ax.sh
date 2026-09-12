@@ -211,6 +211,28 @@ ax_enabled() {  # <axid> -> true|false
     end tell" 2>/dev/null
 }
 
+# The enabled state, or a failure that names the element: an axid that is
+# not on screen must never read as "disabled" or "enabled" and fail a later
+# assertion with the wrong diagnosis.
+ax_enabled_or_fail() {  # <axid> -> true|false
+  local s; s=$(ax_enabled "$1" || true)
+  [ -n "$s" ] || ax_fail "$1 not found"
+  printf '%s' "$s"
+}
+
+# The Done screen's gate settles only once its post-install re-check lands:
+# until then Finish is disabled and no section is shown, which is neither of
+# the two states a driver can act on. Waits for either.
+ax_wait_done_gate() {  # <timeout-s>
+  local deadline=$((SECONDS + ${1:-60}))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    ax_find setup.done.beforeYouFinish >/dev/null 2>&1 && { ax_log "done gate: Before you finish shown"; return 0; }
+    [ "$(ax_enabled setup.done.continue || true)" = true ] && { ax_log "done gate: Finish enabled"; return 0; }
+    sleep 1
+  done
+  ax_log "done gate did not settle within ${1:-60}s"; return 1
+}
+
 ax_wait_enabled() {  # <axid> <timeout-s>
   local deadline=$((SECONDS + ${2:-30})) s
   while [ "$SECONDS" -lt "$deadline" ]; do
