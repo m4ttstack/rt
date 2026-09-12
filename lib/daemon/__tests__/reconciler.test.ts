@@ -229,6 +229,19 @@ describe("reconciler.clear", () => {
     expect(status.executors.find((e) => e.agentId === agentId)!.state).toBe("cleared");
   });
 
+  test("flips the cached status entry to cleared immediately, before any sweep", async () => {
+    panesValue = [];
+    await reconciler.sweep();
+    expect(reconciler.status().executors.find((e) => e.agentId === agentId)!.state).toBe("gone");
+
+    // A status consumer refetching right after the clear round-trips (the
+    // board reloads on the click) must see cleared, not wait out the next
+    // 60s sweep -- the tombstone IS the state, computeView-wise.
+    reconciler.clear(agentId);
+    const entry = reconciler.status().executors.find((e) => e.agentId === agentId)!;
+    expect(entry.state).toBe("cleared");
+  });
+
   test("also closes a tracked attention gate that has no direct join hints", async () => {
     panesValue = [buildPane({ agentStatus: "blocked" })];
     await reconciler.sweep();
