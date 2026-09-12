@@ -6,7 +6,7 @@
       "x": 0,
       "y": 0,
       "w": 780,
-      "h": 560
+      "h": 640
     },
     {
       "file": "DirectionB.dc.html",
@@ -14,7 +14,7 @@
       "x": 860,
       "y": 0,
       "w": 780,
-      "h": 480
+      "h": 500
     },
     {
       "file": "DirectionC.dc.html",
@@ -22,7 +22,7 @@
       "x": 1720,
       "y": 0,
       "w": 780,
-      "h": 470
+      "h": 500
     },
     {
       "file": "StatesLanes.dc.html",
@@ -30,7 +30,7 @@
       "x": 0,
       "y": 0,
       "w": 780,
-      "h": 1560,
+      "h": 2200,
       "page": "page-2"
     },
     {
@@ -39,16 +39,16 @@
       "x": 860,
       "y": 0,
       "w": 780,
-      "h": 800,
+      "h": 1080,
       "page": "page-2"
     },
     {
       "file": "StatesAmbient.dc.html",
-      "title": "Ambient & social",
+      "title": "Context off-row",
       "x": 860,
-      "y": 920,
+      "y": 1200,
       "w": 780,
-      "h": 700,
+      "h": 640,
       "page": "page-2"
     },
     {
@@ -57,7 +57,7 @@
       "x": 1720,
       "y": 0,
       "w": 780,
-      "h": 700,
+      "h": 820,
       "page": "page-2"
     }
   ],

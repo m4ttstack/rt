@@ -2,13 +2,27 @@
 // Generates the mr-row redesign artboards. Every value is lifted from
 // apps/board/src/style.css + packages/tui-kit/src/generated/theme.css
 // (Tokyo light/dark), not eyeballed. Edit this file, re-run it, re-seed.
+//
+// The design system (direction A, v3):
+//   1. One content edge. Title, meta and ledger all start at the same x.
+//      The status dot and the attention bar live in the gutter, never
+//      shifting the text edge.
+//   2. A strict 4px spacing scale. 12/16 row padding, 4 title-to-meta,
+//      8 meta-to-ledger, 20px ledger line height.
+//   3. Attention is ONE device: a 3px gutter bar (amber = your move,
+//      red = something died) plus the colored status word. No washes,
+//      no banners, no ticks.
+//   4. Actions read inline, as the end of the sentence. Nothing is flung
+//      to the far edge of the row.
+//   5. Passive context (slack, peers, reactions) is not on the row. It
+//      lives in the hover card and the row menu. If it has a verb, it is
+//      a ledger line.
 import { writeFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
 const OUT = dirname(fileURLToPath(import.meta.url));
 
-// ── tokens (verbatim from theme.css) ────────────────────────────────
 const CSS = `
   :root { color-scheme: light dark; }
   body {
@@ -36,71 +50,62 @@ const CSS = `
        color: var(--purple); margin: 22px 0 8px; }
   h2:first-child { margin-top: 0; }
   p.note { font-size: 11.5px; line-height: 1.55; color: var(--muted); margin: 2px 0 12px; max-width: 74ch; }
+  .cap { font-size: 11px; color: var(--muted); margin: 6px 2px 14px; line-height: 1.5; max-width: 74ch; }
+  .cap b { color: var(--fg); font-weight: 600; }
 
   .list { border: 1px solid var(--border-soft); border-radius: 8px; background: var(--bg); overflow: hidden; }
-  .row { display: grid; grid-template-columns: 1.75rem minmax(0,1fr); column-gap: .5rem;
-         padding: .7rem 1rem .75rem 1.4rem; position: relative; }
+
+  /* one content edge: 44px gutter column, then text. */
+  .row { display: grid; grid-template-columns: 44px minmax(0,1fr); align-items: start;
+         padding: 12px 16px 12px 0; position: relative; }
   .row + .row { border-top: 1px solid var(--border-soft); }
-  .pick { align-self: stretch; display: flex; align-items: center; justify-content: center; }
-  .pick input { accent-color: var(--accent); }
-  .r1 { display: flex; align-items: baseline; gap: .55rem; min-width: 0; }
-  .dot { font-size: .78rem; line-height: 1; }
+  .gut { display: flex; align-items: center; justify-content: center; gap: 6px; height: 20px; }
+  .gut input { accent-color: var(--accent); margin: 0; }
+  .dot { font-size: 10px; line-height: 1; }
+  .bar { position: absolute; left: 6px; top: 12px; bottom: 12px; width: 3px; border-radius: 2px; }
+  .bar-warn { background: var(--amber); }
+  .bar-bad { background: var(--red); }
+
+  .r1 { display: flex; align-items: baseline; gap: 8px; min-width: 0; height: 20px; }
   .title { font-weight: 500; font-size: .85rem; flex: 1; min-width: 0; overflow: hidden;
            text-overflow: ellipsis; white-space: nowrap; }
   .phrase { flex-shrink: 0; display: inline-flex; align-items: center; padding: 1px 6px;
             border: 1px solid currentColor; border-radius: 4px; font-size: .62rem; font-weight: 700;
             text-transform: uppercase; letter-spacing: .04em; }
-  .r2 { display: flex; align-items: center; gap: .55rem; color: var(--muted); font-size: .78rem; margin-top: .15rem; }
+  .r2 { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: .76rem;
+        line-height: 16px; margin-top: 4px; }
+  .r2 .sep { opacity: .45; }
   .branch { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .grow { flex: 1; }
   .adds { color: color-mix(in srgb, var(--green) 70%, var(--muted)); }
   .dels { color: color-mix(in srgb, var(--red) 70%, var(--muted)); }
-  .cnt { display: inline-flex; align-items: center; gap: 3px; }
 
-  /* direction A: activity lines */
-  .acts { margin-top: 6px; display: flex; flex-direction: column; gap: 2px; }
-  .act { display: flex; align-items: center; gap: .5rem; font-size: .78rem; line-height: 1.5;
-         padding: 1px 6px 1px 8px; border-left: 2px solid transparent; border-radius: 2px; color: var(--muted); }
+  /* the ledger: 20px lines on the shared content edge. */
+  .acts { margin-top: 8px; display: flex; flex-direction: column; gap: 2px; }
+  .act { display: flex; align-items: baseline; font-size: .76rem; line-height: 20px;
+         color: var(--muted); min-width: 0; }
+  .act .lane { width: 64px; flex-shrink: 0; font-size: .7rem; color: color-mix(in srgb, var(--muted) 75%, transparent); }
   .act .w { font-weight: 600; }
-  .act .lane { color: var(--muted); opacity: .8; min-width: 4.2em; }
-  .act .spin { display: inline-block; margin-left: 1px; width: 6px; height: 6px; border-radius: 50%; background: currentColor;
-               animation: pulse 1.6s ease-in-out infinite; }
-  @keyframes pulse { 50% { opacity: .25; } }
-  .act-work  { border-left-color: color-mix(in srgb, var(--purple) 35%, transparent); }
   .act-work .w { color: var(--purple); }
-  .act-go    { border-left-color: color-mix(in srgb, var(--green) 35%, transparent); }
   .act-go .w { color: var(--green); }
-  .act-warn  { border-left-color: var(--amber);
-               background: color-mix(in srgb, var(--amber) 8%, transparent); }
   .act-warn .w { color: var(--amber); }
-  .act-bad   { border-left-color: var(--red);
-               background: color-mix(in srgb, var(--red) 8%, transparent); }
   .act-bad .w { color: var(--red); }
   .act-quiet .w { color: var(--muted); font-weight: 500; }
-  .act .do { margin-left: auto; display: inline-flex; gap: .9rem; flex-shrink: 0; }
+  .act .d { margin-left: 8px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .act .spin { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: currentColor;
+               margin-left: 8px; align-self: center; animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .25; } }
+  .act .do { display: inline-flex; gap: 14px; margin-left: 16px; flex-shrink: 0; }
   .act .do a { font-size: .72rem; font-weight: 600; text-decoration: none; color: var(--accent); }
-  .act .do a.mut { color: var(--muted); }
-  .act-warn .d, .act-bad .d { color: color-mix(in srgb, var(--fg) 75%, var(--muted)); }
+  .act .do a.mut { color: var(--muted); font-weight: 500; }
 
-  /* ambient cluster (right end of r2) */
-  .amb { display: inline-flex; align-items: center; gap: .5rem; flex-shrink: 0; color: var(--muted); font-size: .72rem; }
-  .amb .g { opacity: .5; display: inline-flex; align-items: center; gap: 3px; }
-  .amb .on { color: var(--green); }
-  .amb .ask { color: var(--accent); font-weight: 600; }
-
-  /* direction B: rail + synthesized phrase */
-  .railrow { position: relative; }
-  .rail { position: absolute; left: 0; top: 6px; bottom: 6px; width: 3px; border-radius: 2px; }
-  .rail-quiet { background: transparent; }
-  .rail-work { background: var(--purple); animation: pulse 1.6s ease-in-out infinite; }
-  .rail-warn { background: var(--amber); }
-  .rail-bad { background: var(--red); }
-  .sum { font-size: .78rem; font-weight: 600; flex-shrink: 0; }
+  /* direction B leftovers */
+  .sum { font-size: .76rem; font-weight: 600; flex-shrink: 0; }
   .sum.work { color: var(--purple); } .sum.warn { color: var(--amber); }
-  .sum.bad { color: var(--red); } .sum.ok { color: var(--green); } .sum.quiet { color: var(--muted); font-weight: 500; }
+  .sum.bad { color: var(--red); } .sum.quiet { color: var(--muted); font-weight: 500; }
 
-  /* direction C: disciplined chips (the kit Chip recipe, verbatim) */
-  .chips { margin-top: 5px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  /* direction C chips */
+  .chips { margin-top: 8px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
   .chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 6px; border: 1px solid currentColor;
           border-radius: 4px; font-size: 11px; white-space: nowrap; background: transparent; }
   .chip.sub { border-color: var(--border); color: var(--muted); opacity: .7; }
@@ -109,8 +114,11 @@ const CSS = `
   .chip .x { opacity: .65; font-weight: 400; }
   .chip.pulse { animation: pulse 1.6s ease-in-out infinite; }
 
-  .cap { font-size: 11px; color: var(--muted); margin: 6px 2px 14px; line-height: 1.5; max-width: 74ch; }
-  .cap b { color: var(--fg); font-weight: 600; }
+  /* hover card (context off-row) */
+  .hover { display: inline-block; margin: 10px 0 4px 44px; padding: 10px 14px; border: 1px solid var(--border);
+           border-radius: 8px; background: var(--card); box-shadow: 0 8px 28px rgba(0,0,0,.28);
+           font-size: .74rem; color: var(--muted); line-height: 1.9; }
+  .hover b { color: var(--fg); font-weight: 600; }
 `;
 
 const page = (title, body) => `<!doctype html>
@@ -133,32 +141,25 @@ ${body}
 
 const svgIcon = (paths) => `<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px">${paths}</svg>`;
 const IC = {
-  slack: svgIcon('<rect x="2.5" y="2.5" width="11" height="11" rx="3"/><path d="M5.5 8.4l1.9 1.9 3.1-3.8"/>'),
-  eye: svgIcon('<path d="M1.8 8s2.3-4 6.2-4 6.2 4 6.2 4-2.3 4-6.2 4S1.8 8 1.8 8z"/><circle cx="8" cy="8" r="1.8"/>'),
-  check: svgIcon('<circle cx="8" cy="8" r="6"/><path d="M5.4 8.3l1.8 1.8 3.4-4"/>'),
-  swap: svgIcon('<path d="M3 5.5h8.5M9 2.5l3 3-3 3"/><path d="M13 10.5H4.5M7 13.5l-3-3 3-3"/>'),
-  mail: svgIcon('<rect x="2" y="3.5" width="12" height="9" rx="1.5"/><path d="M2.5 4.5L8 9l5.5-4.5"/>'),
   bubble: svgIcon('<path d="M2.5 3.5h11a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H8l-3 2.5V11.5H2.5a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z"/>'),
+  eye: svgIcon('<path d="M1.8 8s2.3-4 6.2-4 6.2 4 6.2 4-2.3 4-6.2 4S1.8 8 1.8 8z"/><circle cx="8" cy="8" r="1.8"/>'),
 };
 
 // ── row scaffolding ─────────────────────────────────────────────────
-const AVATAR = `<span style="display:inline-block;width:13px;height:13px;border-radius:4px;background:var(--purple);opacity:.45;flex-shrink:0"></span>`;
-
-function r1({ dots = ['var(--amber)'], title, phrase, phraseColor = 'var(--amber)' }) {
-  const dotHtml = dots.map(c => `<span class="dot" style="color:${c}">●</span>`).join('');
+function r1({ title, phrase, phraseColor = 'var(--amber)' }) {
   const ph = phrase ? `<span class="phrase" style="color:${phraseColor}">${phrase}</span>` : '';
-  return `<div class="r1">${dotHtml}<span class="title">${title}</span>${ph}${AVATAR}</div>`;
+  return `<div class="r1"><span class="title">${title}</span>${ph}</div>`;
 }
 
-function r2({ iid, branch, adds, dels, threads, age, amb = '' }) {
+function r2({ iid, branch, adds, dels, threads, age }, extra = '') {
   return `<div class="r2">
-    <span>!${iid}</span><span style="opacity:.5">|</span>
+    <span>!${iid}</span><span class="sep">·</span>
     <span class="branch">${branch}</span>
     <span class="grow"></span>
     <span><span class="adds">+${adds}</span> <span class="dels">−${dels}</span></span>
-    ${threads ? `<span class="cnt">${IC.bubble} ${threads}</span>` : ''}
-    <span>${age}</span>
-    ${amb}
+    ${threads ? `<span class="sep">·</span><span>${threads} thread${threads > 1 ? 's' : ''}</span>` : ''}
+    <span class="sep">·</span><span>${age}</span>
+    ${extra}
   </div>`;
 }
 
@@ -171,8 +172,13 @@ const act = (tone, lane, word, detail = '', actions = [], spin = false) => `
     ${actions.length ? `<span class="do">${actions.map(([t, mut]) => `<a href="#" class="${mut ? 'mut' : ''}">${t}</a>`).join('')}</span>` : ''}
   </div>`;
 
-const row = (inner, cls = '') => `<div class="row ${cls}">
-  <div class="pick"><input type="checkbox" disabled></div>
+// bar: '' | 'warn' | 'bad'. The row's single attention device, in the gutter.
+const row = (dot, bar, inner) => `<div class="row">
+  ${bar ? `<span class="bar bar-${bar}"></span>` : ''}
+  <div class="gut">
+    <input type="checkbox" disabled>
+    <span class="dot" style="color:${dot}">●</span>
+  </div>
   <div style="min-width:0">${inner}</div>
 </div>`;
 
@@ -184,50 +190,51 @@ const MR2 = { iid: 44720, branch: 'feature/cv-3163', adds: 79, dels: 27, threads
 const MR4 = { iid: 44712, branch: 'feature/cv-3201', adds: 41, dels: 9, threads: 0, age: '3h', title: 'CV-3201 Vendor the report fonts so CI stops flaking' };
 const MR3 = { iid: 43946, branch: 'feature/cv-3028', adds: 18, dels: 1253, threads: 7, age: '9d', title: 'CV-3028 Delete unreachable legacy dashboards' };
 
-const AMB_FULL = `<span class="amb"><span class="g" title="posted in slack">${IC.slack}</span><span class="g" title="seen in slack">${IC.eye}</span><span class="g" title="peer reviewing">${IC.swap}</span></span>`;
+const AMBER = 'var(--amber)';
+const GREEN = 'var(--green)';
+const RED = 'var(--red)';
 
 // ════════════════════════════════════════════════════════════════════
-// Main: direction A, the leading candidate, on real rows
+// Main: direction A, the leading candidate
 // ════════════════════════════════════════════════════════════════════
 const mainBody = `
 <h2>direction a · activity lines (leading)</h2>
-<p class="note">The chip pile becomes a short ledger: one slim line per active lane
-(review / response / doctor / decision), always in the same slot with the same anatomy:
-lane · status word · detail · actions. Attention states tint the line itself (amber = your move,
-red = something died); there is no separate banner to bolt on. Ambient social marks (slack,
-peer, nudge, draft) shrink into a quiet cluster at the meta line's right end. A quiet row is
-just two lines again.</p>
+<p class="note">Five rules. One content edge: title, meta and ledger share a left edge; dots and
+bars live in the gutter. A strict spacing scale (12/16 padding, 4 then 8 between lines, 20px
+ledger lines). Attention is one device: a 3px gutter bar plus the colored status word. Actions
+finish the sentence, never flung to the far edge. Passive context is off the row entirely
+(hover card, row menu); only things with a verb earn a ledger line.</p>
 
 <div class="list">
-  ${row(
-    r1({ dots: ['var(--amber)'], title: MR.title, phrase: 'NEEDS REVIEW' }) +
-    r2({ ...MR, amb: AMB_FULL }) +
+  ${row(AMBER, 'warn',
+    r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) +
+    r2(MR) +
     `<div class="acts">
       ${act('warn', 'review', 'interrupted', 'pane closed 12m ago', [['relaunch'], ['clear', true]])}
     </div>`
   )}
-  ${row(
-    r1({ dots: ['var(--amber)'], title: MR2.title, phrase: 'NEEDS REVIEW' }) +
-    r2({ ...MR2 }) +
+  ${row(AMBER, '',
+    r1({ title: MR2.title, phrase: 'NEEDS REVIEW' }) +
+    r2(MR2) +
     `<div class="acts">
       ${act('work', 'review', 'running…', 'started 4m ago', [], true)}
     </div>`
   )}
-  ${row(
-    r1({ dots: ['var(--green)'], title: MR3.title, phrase: 'APPROVED', phraseColor: 'var(--green)' }) +
-    r2({ ...MR3 }) +
+  ${row(GREEN, 'warn',
+    r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: GREEN }) +
+    r2(MR3) +
     `<div class="acts">
       ${act('go', 'review', 'ready', '', [['read ↗']])}
-      ${act('warn', 'decide', 'post 2 findings?', 'review-post gate', [['answer']])}
+      ${act('warn', 'decide', 'post 2 findings?', '', [['answer']])}
     </div>`
   )}
-  ${row(
-    r1({ dots: ['var(--green)'], title: 'CV-3149 Widen the transform contract', phrase: 'APPROVED', phraseColor: 'var(--green)' }) +
+  ${row(GREEN, '',
+    r1({ title: 'CV-3149 Widen the transform contract', phrase: 'APPROVED', phraseColor: GREEN }) +
     r2({ iid: 44684, branch: 'feature/cv-3149', adds: 296, dels: 16, threads: 2, age: '9h' })
   )}
 </div>
-<p class="cap"><b>Reading order:</b> row facts stay two lines; agent activity is a block you can
-count on... nothing wraps, nothing competes. New lane kinds get a new line, not a new chip species.</p>
+<p class="cap"><b>Scan path:</b> gutter bars first (what needs me), colored words second (what is
+happening), everything else stays gray until you ask for it.</p>
 `;
 
 // ════════════════════════════════════════════════════════════════════
@@ -235,28 +242,30 @@ count on... nothing wraps, nothing competes. New lane kinds get a new line, not 
 // ════════════════════════════════════════════════════════════════════
 const dirBBody = `
 <h2>direction b · one phrase + urgency rail</h2>
-<p class="note">Maximum compression: the board synthesizes ONE status phrase per row
-("review interrupted · relaunch?"), right-aligned in the meta line, and a 3px rail on the row's
-left edge carries urgency (red = dead, amber = your move, pulsing purple = working, none = quiet).
-Details and actions live in the row menu / an expandable drawer, not on the row.</p>
+<p class="note">Maximum compression: the board synthesizes ONE status phrase per row, right after
+the age in the meta line, and the gutter bar carries urgency alone. Details and actions live in
+the row menu and a drawer.</p>
 
 <div class="list">
-  ${row(`<span class="rail rail-bad"></span>` +
-    r1({ dots: ['var(--amber)'], title: MR.title, phrase: 'NEEDS REVIEW' }) +
-    r2({ ...MR, amb: `<span class="sum bad">review interrupted · relaunch?</span>` }), 'railrow')}
-  ${row(`<span class="rail rail-work"></span>` +
-    r1({ dots: ['var(--amber)'], title: MR2.title, phrase: 'NEEDS REVIEW' }) +
-    r2({ ...MR2, amb: `<span class="sum work">reviewing… 4m</span>` }), 'railrow')}
-  ${row(`<span class="rail rail-warn"></span>` +
-    r1({ dots: ['var(--green)'], title: MR3.title, phrase: 'APPROVED', phraseColor: 'var(--green)' }) +
-    r2({ ...MR3, amb: `<span class="sum warn">2 findings to post · decide</span>` }), 'railrow')}
-  ${row(`<span class="rail rail-quiet"></span>` +
-    r1({ dots: ['var(--green)'], title: 'CV-3149 Widen the transform contract', phrase: 'APPROVED', phraseColor: 'var(--green)' }) +
-    r2({ iid: 44684, branch: 'feature/cv-3149', adds: 296, dels: 16, threads: 2, age: '9h', amb: `<span class="sum quiet">·</span>` }), 'railrow')}
+  ${row(AMBER, 'bad',
+    r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) +
+    r2(MR, `<span class="sep">·</span><span class="sum bad">review interrupted</span>`)
+  )}
+  ${row(AMBER, '',
+    r1({ title: MR2.title, phrase: 'NEEDS REVIEW' }) +
+    r2(MR2, `<span class="sep">·</span><span class="sum work">reviewing… 4m</span>`)
+  )}
+  ${row(GREEN, 'warn',
+    r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: GREEN }) +
+    r2(MR3, `<span class="sep">·</span><span class="sum warn">2 findings to post</span>`)
+  )}
+  ${row(GREEN, '',
+    r1({ title: 'CV-3149 Widen the transform contract', phrase: 'APPROVED', phraseColor: GREEN }) +
+    r2({ iid: 44684, branch: 'feature/cv-3149', adds: 296, dels: 16, threads: 2, age: '9h' })
+  )}
 </div>
-<p class="cap"><b>Tradeoff:</b> calmest board by far and scans instantly, but one phrase can hide
-concurrent facts (a doctor working while a decision waits) and every action costs a click into
-the menu or drawer.</p>
+<p class="cap"><b>Tradeoff:</b> calmest board and scans instantly, but one phrase can hide
+concurrent facts and every action costs a click into the menu or drawer.</p>
 `;
 
 // ════════════════════════════════════════════════════════════════════
@@ -264,30 +273,27 @@ the menu or drawer.</p>
 // ════════════════════════════════════════════════════════════════════
 const dirCBody = `
 <h2>direction c · chip grammar (least change)</h2>
-<p class="note">Keep chips, impose grammar: at most one chip per lane, fixed order
-(review · response · doctor · decision), actions fold INTO the chip as a suffix verb, attention
-states recolor the lane's own chip instead of adding elements, and ambient marks collapse to the
-meta cluster. No second row of bolted-on banners, ever.</p>
+<p class="note">Keep chips, impose grammar: at most one chip per lane, fixed order, verbs fold
+INTO the chip, attention recolors the lane's own chip, ambient marks leave the row. No second
+row of bolted-on banners, ever.</p>
 
 <div class="list">
-  ${row(
-    r1({ dots: ['var(--amber)'], title: MR.title, phrase: 'NEEDS REVIEW' }) +
-    r2({ ...MR, amb: AMB_FULL }) +
-    `<div class="chips">
-      <span class="chip warn">⌕ interrupted <span class="x">· relaunch ↻</span></span>
-    </div>`
+  ${row(AMBER, '',
+    r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) +
+    r2(MR) +
+    `<div class="chips"><span class="chip warn">interrupted <span class="x">· relaunch</span></span></div>`
   )}
-  ${row(
-    r1({ dots: ['var(--amber)'], title: MR2.title, phrase: 'NEEDS REVIEW' }) +
-    r2({ ...MR2 }) +
-    `<div class="chips"><span class="chip purple pulse">⌕ reviewing…</span></div>`
+  ${row(AMBER, '',
+    r1({ title: MR2.title, phrase: 'NEEDS REVIEW' }) +
+    r2(MR2) +
+    `<div class="chips"><span class="chip purple pulse">reviewing…</span></div>`
   )}
-  ${row(
-    r1({ dots: ['var(--green)'], title: MR3.title, phrase: 'APPROVED', phraseColor: 'var(--green)' }) +
-    r2({ ...MR3 }) +
+  ${row(GREEN, '',
+    r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: GREEN }) +
+    r2(MR3) +
     `<div class="chips">
-      <span class="chip ok">⌕ review ready <span class="x">↗</span></span>
-      <span class="chip warn">⚑ post 2 findings? <span class="x">· answer</span></span>
+      <span class="chip ok">review ready <span class="x">↗</span></span>
+      <span class="chip warn">post 2 findings? <span class="x">· answer</span></span>
     </div>`
   )}
 </div>
@@ -298,116 +304,108 @@ structure... the next bolted-on feature can still break it, and chips still wrap
 // ════════════════════════════════════════════════════════════════════
 // All states: direction A
 // ════════════════════════════════════════════════════════════════════
+const L = (tone, lane, word, detail, actions, spin, bar = '', mr = MR, dot = AMBER, phrase = 'NEEDS REVIEW', phraseColor = AMBER) =>
+  row(dot, bar,
+    r1({ title: mr.title, phrase, phraseColor }) + r2(mr) +
+    `<div class="acts">${act(tone, lane, word, detail, actions, spin)}</div>`);
+
 const lanesBody = `
 <h2>review lane · every state</h2>
 <div class="list">
-  ${row(r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) + r2(MR) + `<div class="acts">${act('quiet', 'review', 'queued')}</div>`)}
-  ${row(r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) + r2(MR) + `<div class="acts">${act('work', 'review', 'running…', 'started 4m ago', [], true)}</div>`)}
-  ${row(r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) + r2(MR) + `<div class="acts">${act('go', 'review', 'ready', '', [['read ↗']])}</div>`)}
-  ${row(r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) + r2(MR) + `<div class="acts">${act('bad', 'review', 'failed', 'pane closed… cleared from the board', [['launch again']])}</div>`)}
-  ${row(r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) + r2(MR) + `<div class="acts">${act('warn', 'review', 'interrupted', 'pane closed 12m ago', [['relaunch'], ['clear', true]])}</div>`)}
+  ${L('quiet', 'review', 'queued', '', [], false)}
+  ${L('work', 'review', 'running…', 'started 4m ago', [], true)}
+  ${L('go', 'review', 'ready', '', [['read ↗']], false)}
+  ${L('bad', 'review', 'failed', 'pane closed… cleared from the board', [['launch again']], false, 'bad')}
+  ${L('warn', 'review', 'interrupted', 'pane closed 12m ago', [['relaunch'], ['clear', true]], false, 'warn')}
 </div>
 
 <h2>response lane</h2>
 <div class="list">
-  ${row(r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) + r2(MR) + `<div class="acts">${act('quiet', 'response', 'queued')}</div>`)}
-  ${row(r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) + r2(MR) + `<div class="acts">${act('work', 'response', 'triaging…', '', [], true)}</div>`)}
-  ${row(r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) + r2(MR) + `<div class="acts">${act('work', 'response', 'implementing…', '3 threads', [], true)}</div>`)}
-  ${row(r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) + r2(MR) + `<div class="acts">${act('work', 'response', 'drafting replies…', '', [], true)}</div>`)}
-  ${row(r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) + r2(MR) + `<div class="acts">${act('go', 'response', 'replies posted', '3 of 3', [['read ↗']])}</div>`)}
-  ${row(r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) + r2(MR) + `<div class="acts">${act('warn', 'response', '2 of 3 posted', 'one thread waiting', [['resume ↗']])}</div>`)}
-  ${row(r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) + r2(MR) + `<div class="acts">${act('warn', 'response', 'drafted, not posted', '', [['resume ↗']])}</div>`)}
-  ${row(r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) + r2(MR) + `<div class="acts">${act('bad', 'response', 'failed', '', [['restart']])}</div>`)}
-  ${row(r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) + r2(MR) + `<div class="acts">${act('warn', 'response', 'interrupted', 'pane closed', [['relaunch'], ['clear', true]])}</div>`)}
+  ${L('quiet', 'response', 'queued', '', [], false)}
+  ${L('work', 'response', 'triaging…', '', [], true)}
+  ${L('work', 'response', 'implementing…', '3 threads', [], true)}
+  ${L('work', 'response', 'drafting replies…', '', [], true)}
+  ${L('go', 'response', 'replies posted', '3 of 3', [['read ↗']], false)}
+  ${L('warn', 'response', '2 of 3 posted', 'one thread waiting', [['resume ↗']], false, 'warn')}
+  ${L('warn', 'response', 'drafted, not posted', '', [['resume ↗']], false, 'warn')}
+  ${L('bad', 'response', 'failed', '', [['restart']], false, 'bad')}
+  ${L('warn', 'response', 'interrupted', 'pane closed', [['relaunch'], ['clear', true]], false, 'warn')}
 </div>
 
 <h2>doctor lane</h2>
 <div class="list">
-  ${row(r1({ title: MR4.title, phrase: 'CI FAILING', phraseColor: 'var(--red)' }) + r2(MR4) + `<div class="acts">${act('quiet', 'doctor', 'queued')}</div>`)}
-  ${row(r1({ title: MR4.title, phrase: 'CI FAILING', phraseColor: 'var(--red)' }) + r2(MR4) + `<div class="acts">${act('work', 'doctor', 'diagnosing…', 'auto', [], true)}</div>`)}
-  ${row(r1({ title: MR4.title, phrase: 'CI FAILING', phraseColor: 'var(--red)' }) + r2(MR4) + `<div class="acts">${act('work', 'doctor', 'rebasing…', '', [], true)}</div>`)}
-  ${row(r1({ title: MR4.title, phrase: 'CI FAILING', phraseColor: 'var(--red)' }) + r2(MR4) + `<div class="acts">${act('work', 'doctor', 'fixing…', '', [], true)}</div>`)}
-  ${row(r1({ title: MR4.title, phrase: 'CI FAILING', phraseColor: 'var(--red)' }) + r2(MR4) + `<div class="acts">${act('work', 'doctor', 'watching CI…', '', [], true)}</div>`)}
-  ${row(r1({ title: MR4.title, phrase: 'CI FAILING', phraseColor: 'var(--red)' }) + r2(MR4) + `<div class="acts">${act('go', 'doctor', 'diagnosed', 'held a note', [['read note']])}</div>`)}
-  ${row(r1({ title: MR4.title, phrase: 'CI FAILING', phraseColor: 'var(--red)' }) + r2(MR4) + `<div class="acts">${act('bad', 'doctor', 'stuck', '', [['call again']])}</div>`)}
+  ${L('quiet', 'doctor', 'queued', '', [], false, '', MR4, RED, 'CI FAILING', RED)}
+  ${L('work', 'doctor', 'diagnosing…', 'auto', [], true, '', MR4, RED, 'CI FAILING', RED)}
+  ${L('work', 'doctor', 'rebasing…', '', [], true, '', MR4, RED, 'CI FAILING', RED)}
+  ${L('work', 'doctor', 'fixing…', '', [], true, '', MR4, RED, 'CI FAILING', RED)}
+  ${L('work', 'doctor', 'watching CI…', '', [], true, '', MR4, RED, 'CI FAILING', RED)}
+  ${L('go', 'doctor', 'diagnosed', 'held a note', [['read note']], false, '', MR4, RED, 'CI FAILING', RED)}
+  ${L('bad', 'doctor', 'stuck', '', [['call again']], false, 'bad', MR4, RED, 'CI FAILING', RED)}
 </div>
 `;
 
 const attentionBody = `
 <h2>decisions &amp; attention · every state</h2>
-<p class="note">Gates and executor trouble share the activity block: the "decide" lane for
-questions waiting on you, and attention tinting on whichever lane broke. The red banner is gone;
-red is reserved for a line inside the block.</p>
+<p class="note">Gates and executor trouble share the ledger: "decide" for questions waiting on
+you, attention tones on whichever lane broke. The gutter bar always matches the row's most
+urgent line (red beats amber).</p>
 <div class="list">
-  ${row(r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) + r2(MR) + `<div class="acts">
-    ${act('warn', 'decide', 'post 2 findings?', 'review-post gate · recommended: post', [['answer']])}
-  </div>`)}
-  ${row(r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) + r2(MR) + `<div class="acts">
-    ${act('warn', 'decide', 'pane needs attention', 'blocked 3m on a prompt', [['focus'], ['dismiss', true]])}
-  </div>`)}
-  ${row(r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) + r2(MR) + `<div class="acts">
-    ${act('quiet', 'decide', 'answered · parked', 'resumes when the pane returns')}
-  </div>`)}
-  ${row(r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) + r2(MR) + `<div class="acts">
-    ${act('bad', 'decide', 'answered, no pane to execute', '', [['relaunch'], ['dismiss', true]])}
-  </div>`)}
-  ${row(r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) + r2(MR) + `<div class="acts">
-    ${act('bad', 'decide', 'answer stuck', 'delivery failed twice', [['retry'], ['dismiss', true]])}
-  </div>`)}
-  ${row(r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) + r2(MR) + `<div class="acts">
-    ${act('warn', 'review', 'interrupted', 'pane closed 12m ago', [['relaunch'], ['clear', true]])}
-  </div>`)}
-  ${row(r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) + r2(MR) + `<div class="acts">
-    ${act('quiet', 'review', 'off-screen', 'pane hidden, still running', [['focus']])}
-  </div>`)}
+  ${L('warn', 'decide', 'post 2 findings?', 'recommended: post', [['answer']], false, 'warn')}
+  ${L('warn', 'decide', 'pane needs attention', 'blocked 3m on a prompt', [['focus'], ['dismiss', true]], false, 'warn')}
+  ${L('quiet', 'decide', 'answered · parked', 'resumes when the pane returns', [], false)}
+  ${L('bad', 'decide', 'answered, no pane to execute', '', [['relaunch'], ['dismiss', true]], false, 'bad')}
+  ${L('bad', 'decide', 'answer stuck', 'delivery failed twice', [['retry'], ['dismiss', true]], false, 'bad')}
+  ${L('warn', 'nudge', 'sam asked for a re-review', '30m ago', [['re-review']], false, 'warn')}
+  ${L('warn', 'note', 'held: verification note', 'doctor draft', [['read'], ['dismiss', true]], false, 'warn')}
+  ${L('quiet', 'review', 'off-screen', 'pane hidden, still running', [['focus']], false)}
 </div>
 <p class="cap"><b>Herd note:</b> a herd-owned gate never lands here... only escalated ones
 surface, in the same "decide" slot with an <b>escalated</b> detail.</p>
 `;
 
 const ambientBody = `
-<h2>ambient &amp; social · every state</h2>
-<p class="note">The coherence rule: passive context (posted, seen, a peer looking) may be a
-ghost icon at the meta line's right end, all identical in weight; anything with a verb (a nudge,
-a held note) is a ledger line instead. Icons never carry color and never ask for a click.</p>
+<h2>context lives off-row</h2>
+<p class="note">Slack presence, reactions and peer activity are context, not work: the row shows
+none of it. Hovering the meta line (or opening the row menu) reveals the context card. Anything
+with a verb (a nudge, a held note) is a ledger line on the attention board instead.</p>
 <div class="list">
-  ${row(r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: 'var(--green)' }) +
-    r2({ ...MR3, amb: `<span class="amb"><span class="g">${IC.slack}</span></span>` }) +
-    `<p class="cap" style="margin:4px 0 0">posted in slack</p>`)}
-  ${row(r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: 'var(--green)' }) +
-    r2({ ...MR3, amb: `<span class="amb"><span class="g">${IC.slack}</span><span class="g">${IC.eye}</span></span>` }) +
-    `<p class="cap" style="margin:4px 0 0">slack reactions on the request message</p>`)}
-  ${row(r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: 'var(--green)' }) +
-    r2({ ...MR3, amb: `<span class="amb"><span class="g">${IC.swap} geoff reviewing</span></span>` }) +
-    `<p class="cap" style="margin:4px 0 0">peer board reviewing / commented / approved / reviewed... same slot, intent color</p>`)}
-  ${row(r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: 'var(--green)' }) +
-    r2({ ...MR3 }) +
-    `<div class="acts">${act('warn', 'nudge', 'sam asked for a re-review', '30m ago', [['re-review']])}</div>` +
-    `<p class="cap" style="margin:4px 0 0">inbound nudge: someone waits on you, so it is a ledger line, not an icon</p>`)}
-  ${row(r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: 'var(--green)' }) +
-    r2({ ...MR3 }) +
-    `<div class="acts">${act('warn', 'note', 'held: verification note', 'doctor draft', [['read'], ['dismiss', true]])}</div>` +
-    `<p class="cap" style="margin:4px 0 0">doctor-drafted note held for approval... actionable, so it leaves the cluster too</p>`)}
-  ${row(r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: 'var(--green)' }) +
-    r2({ ...MR3 }) +
-    `<div class="acts">${act('quiet', 'live', `${IC.eye} alice is reviewing right now`)}</div>`)}
+  ${row(GREEN, '',
+    r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: GREEN }) +
+    r2(MR3)
+  )}
+</div>
+<div class="hover">
+  <b>context</b><br>
+  ${IC.bubble} posted in #mr-reviews · reactions 👀 ✅<br>
+  ${IC.eye} geoff is reviewing this on his board
+</div>
+<p class="cap">The hover card is where reactions keep their real emoji faces; the row itself
+never renders one.</p>
+
+<h2>live human reviewer</h2>
+<div class="list">
+  ${row(GREEN, '',
+    r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: GREEN }) +
+    r2(MR3) +
+    `<div class="acts">${act('quiet', 'live', 'alice is reviewing right now')}</div>`
+  )}
 </div>
 `;
 
 const stressBody = `
 <h2>stress test · everything at once</h2>
-<p class="note">The worst real row: a review that died, a response mid-flight, a doctor watching
-CI, a decision waiting, every ambient mark lit. Direction A holds shape: the block grows line by
-line and stays scannable; nothing wraps unpredictably.</p>
+<p class="note">The worst real row: a dead review, a response mid-flight, a doctor watching CI,
+a decision waiting. The ledger grows line by line; the gutter bar stays singular and matches the
+most urgent line.</p>
 <div class="list">
-  ${row(
-    r1({ dots: ['var(--amber)', 'var(--red)'], title: MR.title, phrase: 'NEEDS REVIEW' }) +
-    r2({ ...MR, amb: AMB_FULL }) +
+  ${row(AMBER, 'warn',
+    r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) +
+    r2(MR) +
     `<div class="acts">
       ${act('warn', 'review', 'interrupted', 'pane closed 12m ago', [['relaunch'], ['clear', true]])}
       ${act('work', 'response', 'implementing…', '3 threads', [], true)}
       ${act('work', 'doctor', 'watching CI…', 'auto', [], true)}
-      ${act('warn', 'decide', 'post 2 findings?', 'review-post gate', [['answer']])}
+      ${act('warn', 'decide', 'post 2 findings?', '', [['answer']])}
     </div>`
   )}
 </div>
@@ -415,9 +413,9 @@ line and stays scannable; nothing wraps unpredictably.</p>
 <h2>same row, today</h2>
 <p class="note">For contrast: the current design's chips-on-chips rendering of that state.</p>
 <div class="list">
-  ${row(
-    r1({ dots: ['var(--amber)', 'var(--red)'], title: MR.title, phrase: 'NEEDS REVIEW' }) +
-    r2({ ...MR }) +
+  ${row(AMBER, '',
+    r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) +
+    r2(MR) +
     `<div class="chips">
       <span class="chip warn">⌕ interrupted</span>
       <span class="chip purple pulse">↩ implementing…</span>
@@ -428,8 +426,8 @@ line and stays scannable; nothing wraps unpredictably.</p>
       <span class="chip warn">✉ held: verification note</span>
       <span class="chip sub">▣✓</span><span class="chip sub">👀✅</span>
     </div>
-    <div style="margin-top:.35rem;padding:.3rem .6rem;border:1px solid color-mix(in srgb, var(--red) 45%, transparent);border-radius:6px;background:color-mix(in srgb, var(--red) 7%, transparent);display:flex;align-items:center;gap:.5rem">
-      <span style="color:var(--red);font-size:.78rem;font-weight:500;flex:1">executor gone</span>
+    <div style="margin-top:8px;padding:5px 10px;border:1px solid color-mix(in srgb, var(--red) 45%, transparent);border-radius:6px;background:color-mix(in srgb, var(--red) 7%, transparent);display:flex;align-items:center;gap:8px">
+      <span style="color:var(--red);font-size:.76rem;font-weight:500;flex:1">executor gone</span>
       <span class="chip" style="color:var(--amber)">RELAUNCH</span>
       <span class="chip sub">CLEAR</span>
     </div>`
@@ -442,18 +440,18 @@ writeFileSync(join(OUT, 'DirectionB.dc.html'), page('MR Row · direction B', dir
 writeFileSync(join(OUT, 'DirectionC.dc.html'), page('MR Row · direction C', dirCBody));
 writeFileSync(join(OUT, 'StatesLanes.dc.html'), page('Lane states', lanesBody));
 writeFileSync(join(OUT, 'StatesAttention.dc.html'), page('Attention states', attentionBody));
-writeFileSync(join(OUT, 'StatesAmbient.dc.html'), page('Ambient states', ambientBody));
+writeFileSync(join(OUT, 'StatesAmbient.dc.html'), page('Context off-row', ambientBody));
 writeFileSync(join(OUT, 'StatesStress.dc.html'), page('Stress test', stressBody));
 
 const canvas = {
   artboards: [
-    { file: 'Main.dc.html', title: 'Direction A · activity lines', x: 0, y: 0, w: 780, h: 560 },
-    { file: 'DirectionB.dc.html', title: 'Direction B · one phrase + rail', x: 860, y: 0, w: 780, h: 480 },
-    { file: 'DirectionC.dc.html', title: 'Direction C · chip grammar', x: 1720, y: 0, w: 780, h: 470 },
-    { file: 'StatesLanes.dc.html', title: 'Lanes · every state', x: 0, y: 0, w: 780, h: 1560, page: 'page-2' },
-    { file: 'StatesAttention.dc.html', title: 'Decisions & attention', x: 860, y: 0, w: 780, h: 800, page: 'page-2' },
-    { file: 'StatesAmbient.dc.html', title: 'Ambient & social', x: 860, y: 920, w: 780, h: 700, page: 'page-2' },
-    { file: 'StatesStress.dc.html', title: 'Stress test vs today', x: 1720, y: 0, w: 780, h: 700, page: 'page-2' },
+    { file: 'Main.dc.html', title: 'Direction A · activity lines', x: 0, y: 0, w: 780, h: 640 },
+    { file: 'DirectionB.dc.html', title: 'Direction B · one phrase + rail', x: 860, y: 0, w: 780, h: 500 },
+    { file: 'DirectionC.dc.html', title: 'Direction C · chip grammar', x: 1720, y: 0, w: 780, h: 500 },
+    { file: 'StatesLanes.dc.html', title: 'Lanes · every state', x: 0, y: 0, w: 780, h: 2200, page: 'page-2' },
+    { file: 'StatesAttention.dc.html', title: 'Decisions & attention', x: 860, y: 0, w: 780, h: 1080, page: 'page-2' },
+    { file: 'StatesAmbient.dc.html', title: 'Context off-row', x: 860, y: 1200, w: 780, h: 640, page: 'page-2' },
+    { file: 'StatesStress.dc.html', title: 'Stress test vs today', x: 1720, y: 0, w: 780, h: 820, page: 'page-2' },
   ],
   annotations: [
     {
