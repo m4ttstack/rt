@@ -95,6 +95,8 @@ export interface EventsBusEvent { id: number; topic: string; payload: unknown; e
 export const GATE_BY_PANE = "pane";
 
 export type GateStatus = "open" | "answered" | "parked" | "closed";
+/** Reconciler's view of an agent's liveness; also the value `GateRow.executor` is stamped with. */
+export type ExecutorState = "live" | "blocked" | "hidden" | "gone" | "cleared" | "unknown";
 export type GateOption = string | { value: string; label: string };
 export interface GateOrigin {
   paneId?: string;
@@ -118,15 +120,23 @@ export interface GateRow {
   origin?: GateOrigin | null;
   status: GateStatus; answer: GateAnswer | null;
   openedAt: number; parkedAt: number | null; closedAt: number | null;
-  closedReason: "abandoned" | "superseded" | "pruned" | null;
+  /** "resolved" is stamped only by the reconciler's auto-recovery close
+      (a blocked/gone pane came back); every other closer uses one of the
+      other three. */
+  closedReason: "abandoned" | "superseded" | "pruned" | "resolved" | null;
   /** Set only when `closedReason` is "superseded": the id of the gate that superseded this one. */
   supersededBy: string | null;
   agent: string | null; pane: string | null;
   nudge: { session: string } | null;
-  delivery: { outcome: "delivered" | "dead-pane"; at: number } | null;
+  delivery: { outcome: "delivered" | "dead-pane" | "confirmed" | "stuck"; at: number } | null;
   released: boolean;
   owner: string | null;
   escalatedAt: number | null;
+  /** Set by answer-time execution handling: an answered gate whose executor
+      couldn't be resumed. Cleared (absent) once resumption succeeds. */
+  execution?: "unassigned";
+  /** Stamped by the reconciler sweep for open/parked rows only. */
+  executor?: ExecutorState;
 }
 
 export interface GateSubscription {
@@ -147,7 +157,7 @@ export interface HerdJobInfo { herd: string; name: string; worktree: string; bra
 /** `lastGateStatus`/`lastGateDelivery` come from the job's `lastGate` row: an `answered` gate whose delivery is `dead-pane` is the "answered, worker not woken" case the shepherd must act on. */
 export interface HerdStatusData {
   herd: HerdInfo;
-  jobs: Array<HerdJobInfo & { openGate: string | null; paneStatus: string | null; lastGateStatus: GateStatus | null; lastGateDelivery: "delivered" | "dead-pane" | null }>;
+  jobs: Array<HerdJobInfo & { openGate: string | null; paneStatus: string | null; lastGateStatus: GateStatus | null; lastGateDelivery: "delivered" | "dead-pane" | "confirmed" | "stuck" | null }>;
   unread: number;
   lifecycleConnected: boolean;
   hiddenUp: boolean | null;
@@ -305,11 +315,36 @@ export interface RunDetail { run: RunSummary; stages: RunStageRow[]; fields: Run
 
 export type AgentSurface = "herdr" | "headless";
 
+/** The reconciler's per-agent snapshot: one row per agent it knows about, live or not. */
+export interface ExecutorView {
+  agentId: string;
+  repo: string | null;
+  subject: string | null;
+  surface: AgentSurface;
+  sessionId: string;
+  paneRef: string | null;
+  state: ExecutorState;
+  since: number;
+  openGateIds: string[];
+}
+
+export interface ReconcilerStatus {
+  sweptAt: number;
+  herdrReachable: boolean;
+  executors: ExecutorView[];
+}
+
 export interface AgentRecord {
   id: string; repo: string; cwd: string; provider: string;
   surface: AgentSurface; sessionId: string;
   model?: string; effort?: string; account?: string;
   label?: string; caller?: string; handle?: string;
+  /** The gate-protocol subject stamped as RT_GATE_SUBJECT at launch. Left
+      undefined when the caller passed none (RT_GATE_SUBJECT still falls
+      back to "agent:<id>" at launch time); an explicit value is persisted
+      so a resume re-stamps the same one, AND gates whether the gate-fork
+      PreToolUse hook gets injected at all. */
+  subject?: string;
   paneId?: string; tabId?: string; workspaceId?: string;
   extraArgs?: string; exitCode?: number; resultPath?: string;
   createdAt: number; lastResumedAt?: number; finishedAt?: number;
@@ -568,7 +603,7 @@ export interface Commands {
   "chat:dm-open": { payload: { from: string; to: string; sessionId?: string }; data: { room: string; created: boolean } };
 
   // ─── Agent handoff (rt agent) ────────────────────────────────────────────
-  "agent:start": { payload: { repo: string; cwd: string; prompt?: string; surface?: AgentSurface; model?: string; effort?: string; account?: string; label?: string; caller?: string; workspace?: string; tab?: string; extraArgs?: string; env?: Record<string, string>; herdrSocket?: string; handle?: string; bg?: boolean }; data: AgentRecord };
+  "agent:start": { payload: { repo: string; cwd: string; prompt?: string; surface?: AgentSurface; model?: string; effort?: string; account?: string; label?: string; caller?: string; workspace?: string; tab?: string; extraArgs?: string; env?: Record<string, string>; herdrSocket?: string; handle?: string; bg?: boolean; subject?: string }; data: AgentRecord };
   "agent:resume": { payload: { id: string; prompt?: string; surface?: AgentSurface; workspace?: string; tab?: string }; data: AgentRecord };
   "agent:get": { payload: { id: string }; data: AgentRecord };
   "agent:list": { payload: { repo?: string }; data: { agents: AgentRecord[] } };
@@ -618,6 +653,12 @@ export interface Commands {
 
   "repos:locate": { payload: { newPath: string; repo?: string; dryRun?: boolean }; data: unknown };
   "freshness:reconcile": { payload: Record<string, never>; data: unknown };
+
+  // ─── Reconciler (executor state; lib/daemon/reconciler.ts) ───────────────
+  /** Read-only: the last sweep's snapshot. Never triggers a sweep itself. */
+  "reconciler:status": { payload: Record<string, never>; data: ReconcilerStatus };
+  /** Manual override: marks the agent cleared and closes its open/parked gates (reconciler.ts's clear()). */
+  "reconciler:clear": { payload: { agentId: string }; data: { cleared: true } };
 
   // ─── Gate facility (BOARD-20/21) ─────────────────────────────────────────
   "gate:open": { payload: { subject: string; kind: string; questions: GateQuestion[]; meta?: Record<string, unknown>; agent?: string; pane?: string; nudge?: { session: string }; context?: string; origin?: GateOrigin }; data: { id: string; supersededId: string | null } };
@@ -769,6 +810,8 @@ export const COMMAND_NAMES: readonly CommandName[] = [
   "endpoint:status",
   "repos:locate",
   "freshness:reconcile",
+  "reconciler:status",
+  "reconciler:clear",
   "gate:open",
   "gate:answer",
   "gate:wait",

@@ -532,9 +532,12 @@ describe("worker verbs", () => {
       seenSock.push(o?.sockPath);
       return { ok: true, result: {} };
     }) as typeof herdrRequest;
-    const escapeInjector = createEscapeInjector(fakeHerdrRecording);
-    const injected = await escapeInjector(g.pane!);
-    expect(injected).toEqual({ ok: true });
+    const escapeInjector = createEscapeInjector({
+      herdr: fakeHerdrRecording,
+      snapshot: async () => [{ paneRef: g.pane!, sockPath: bgSocketPath(), workspaceId: "wh", agentStatus: "blocked" }],
+    });
+    const injected = await escapeInjector({ paneId: g.pane! });
+    expect(injected).toEqual({ ok: true, paneRef: g.pane! });
     expect(seenSock).toEqual([bgSocketPath()]);
   });
 
