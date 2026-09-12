@@ -195,10 +195,9 @@ export interface RowMenuState {
   mr: BoardMR;
 }
 
-/** Shared per-render context threaded through RowView and RowMenu —
-    the board-owned bits every row/menu needs that aren't specific to one MR.
-    Built once in Board.tsx per render, not memoized: recreating it is no more
-    work than the individual props it replaces. */
+/** Shared per-render context threaded through RowView and RowMenu: the
+    board-owned bits every row and menu needs that are not specific to one
+    MR. */
 export interface RowContext {
   local: boolean;
   /** The board's own seat (`BoardData.defaultMember`): rows this user
@@ -221,8 +220,8 @@ export interface RowContext {
   onReReview: (mr: BoardMR, note?: string) => void;
   onRespond: (mr: BoardMR, note?: string, intent?: 'launch' | 'focus') => void;
   onDoctor: (mr: BoardMR, note?: string, intent?: 'launch' | 'focus') => void;
-  /** Opens the decision queue modal to the given gate -- a row's chip face
-      never mounts a form itself. */
+  /** Opens the decision queue modal at this gate: the status line's answer
+      verb, which never mounts a form on the row itself. */
   onOpenGate: (gateId: string) => void;
   selected: ReadonlySet<string>;
   onToggleSelect: (webUrl: string) => void;

@@ -876,8 +876,6 @@ export function Board() {
   const summaryText = boardSummary(flatMrs, data.slackTemplates);
   const postableMrs = postableOf(flatMrs);
   const postableSelected = postableOf(selectedMrs);
-  // One context object threaded through RowView and RowMenu — the
-  // board-owned bits every row/menu needs that aren't specific to one MR.
   const rowCtx: RowContext = {
     local: data.local,
     self: data.defaultMember === 'all' ? null : data.defaultMember,

@@ -225,4 +225,4 @@ function CommentsDrawer({ mr, onClose }: { mr: BoardMR; onClose: () => void }) {
   );
 }
 
-export { CommentsTrigger, ThreadsLink, CommentNoteView, CommentsDrawer };
+export { ThreadsLink, CommentsDrawer };

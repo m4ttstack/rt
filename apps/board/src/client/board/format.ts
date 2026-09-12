@@ -1,6 +1,6 @@
 import { getReviewDisplayState } from '@mattstack/glance';
 import type { BoardMR } from '../../data.ts';
-import { hasChangesRequested, stripDraftPrefix } from '../../data.ts';
+import { stripDraftPrefix } from '../../data.ts';
 import type { RespondStatus } from '../../respond-outcome.ts';
 import {
   renderMr,
@@ -9,12 +9,7 @@ import {
   type SlackTemplates,
 } from '../../template.ts';
 import { extractTicketId } from '../../ticket.ts';
-import {
-  commentsAllResolved,
-  type GroupKey,
-  type SortKey,
-  type StackNode,
-} from '../../view.ts';
+import type { GroupKey, SortKey } from '../../view.ts';
 import type {
   BoardMRWithReview,
   DoctorStatus,
@@ -23,6 +18,7 @@ import type {
   SentNudgeInfo,
   ThreadStatus,
 } from '../types.ts';
+import type { SlackStage } from './slack-ladder.ts';
 
 const GROUP_LABEL: Record<GroupKey, string> = {
   age: 'age',
@@ -46,38 +42,14 @@ function ago(iso: string | null, now: number): string {
   return `${Math.round(hours / 24)}d`;
 }
 
-function statusReasons(mr: BoardMR): string {
-  const b = mr.blockers;
-  if (!b?.any) return 'ready to merge';
-  const reasons: string[] = [];
-  if (b.isDraft) reasons.push('marked as draft');
-  if (b.hasConflicts) reasons.push('merge conflicts with target branch');
-  if (b.needsRebase) reasons.push('source branch needs a rebase');
-  if (b.pipelineFailing) reasons.push('pipeline is failing');
-  if (b.pipelineRunning) reasons.push('pipeline still running');
-  if (b.awaitingApprovals)
-    reasons.push(
-      `awaiting approvals (${mr.reviews.given}/${mr.reviews.required})`
-    );
-  if (b.hasUnresolvedDiscussions)
-    reasons.push(`unresolved discussions (${mr.unresolvedThreads})`);
-  if (b.hasMergeError)
-    reasons.push(`merge error: ${b.mergeError ?? 'unknown'}`);
-  return reasons.length
-    ? `blocked:\n${reasons.map(r => `· ${r}`).join('\n')}`
-    : 'blocked';
-}
-
 function activeReviewers(mr: BoardMR): string[] {
   // getReviewDisplayState maps the raw reviewState to the UI taxonomy; the SDK
   // never populates r.displayState, so derive it rather than reading that field.
-  return (mr.reviews?.reviewers ?? [])
+  return mr.reviews.reviewers
     .filter(r => getReviewDisplayState(r.reviewState ?? null) === 'reviewing')
     .map(r => r.name || r.username);
 }
 
-/** Title with any leading ticket prefix ("ACME-2369: ") removed — the ticket
-    already shows via the Linear link and the branch name. */
 /** Drop what the row already says elsewhere: the leading ticket id (the ticket
     link carries it) and any draft marker (the DRAFT chip carries that). glance
     already strips the marker off GitLab titles, so the draft pass is only a
@@ -143,10 +115,12 @@ function draftKey(mrUrl: string, kind: string): string {
 
 // ── row action menu (right-click) ────────────────────────────────────────────
 
-/** The three review-signal reactions, in menu order. The glyph and wording are
-    fixed per role; the emoji *name* sent to Slack comes from the server's
-    configured `slack.emoji` map (standard-emoji defaults until data loads). */
+/** The three review-signal reactions, in ladder order. The stage, glyph and
+    wording are fixed per role; the emoji *name* sent to Slack comes from the
+    server's configured `slack.emoji` map (standard-emoji defaults until data
+    loads). */
 interface SlackMark {
+  stage: SlackStage;
   emoji: string;
   glyph: string;
   label: string;
@@ -160,18 +134,21 @@ function buildSlackMarks(e: {
 }): SlackMark[] {
   return [
     {
+      stage: 'looking',
       emoji: e.looking,
       glyph: '👀',
       label: 'mark 👀 on slack',
       title: "someone's looking (in slack)",
     },
     {
+      stage: 'commented',
       emoji: e.commented,
       glyph: '💬',
       label: 'mark 💬 on slack',
       title: 'commented in slack',
     },
     {
+      stage: 'approved',
       emoji: e.approved,
       glyph: '✅',
       label: 'mark ✅ on slack',
@@ -240,40 +217,6 @@ function boardSummary(
   );
 }
 
-/** The review-state phrase for line 1's state pill: the human review axis
-    only. Mechanical blockers (conflicts / ci) are NOT folded in here; they
-    render as flag chips beside it so this always shows where the MR actually
-    is in review. */
-function statusPhrase(mr: BoardMR): { text: string; cls: string } {
-  const comments = mr.reviewerComments;
-  if (hasChangesRequested(mr))
-    return { text: 'changes requested', cls: 't-bad' };
-  if (mr.reviews.isApproved) return { text: 'approved', cls: 't-ok' };
-  // The count itself lives on the facts line's thread link (the one drawer
-  // entry on every row); the pill only names the state.
-  if (comments > 0) return { text: 'commented', cls: 't-warn' };
-  if (commentsAllResolved(mr))
-    return { text: 'comments resolved', cls: 't-ok' };
-  if (mr.reviews.required > 0 && mr.reviews.given > 0)
-    return {
-      text: `${mr.reviews.given}/${mr.reviews.required} approved`,
-      cls: 't-warn',
-    };
-  return { text: 'needs review', cls: 't-warn' };
-}
-
-/** Depth-first flattening of one stack tree, for views that render a chain as
-    consecutive indented items rather than nested markup. */
-function flattenStack<M extends BoardMR>(
-  node: StackNode<M>,
-  depth = 0
-): Array<{ mr: M; depth: number }> {
-  return [
-    { mr: node.mr, depth },
-    ...node.children.flatMap(c => flattenStack(c, depth + 1)),
-  ];
-}
-
 const THREAD_ICON: Record<ThreadStatus, string> = {
   resolved: '✓',
   replied: '↩',
@@ -284,14 +227,6 @@ const THREAD_LABEL: Record<ThreadStatus, string> = {
   replied: 'author replied',
   awaiting: 'awaiting author',
 };
-
-/** Total comment activity on an MR — resolvable threads plus general MR comments —
-    for the 💬 token. Zero when the board has no breakdown or none exist. */
-function commentCount(mr: BoardMR): number {
-  const s = mr.threadSummary;
-  const threads = s ? s.awaiting + s.replied + s.resolved : 0;
-  return threads + (mr.generalComments ?? 0);
-}
 
 /** The review launch items for a row, by current review state. `re-review` is
     available whenever a review isn't actively running — even with no prior board
@@ -389,7 +324,6 @@ export {
   GROUP_LABEL,
   SORT_LABEL,
   ago,
-  statusReasons,
   activeReviewers,
   cleanTitle,
   RESPOND_ACTIVE,
@@ -398,19 +332,15 @@ export {
   NUDGE_RETRYABLE,
   gitlabMenuItems,
   laneInterrupted,
+  type SlackMark,
   nudgeTargets,
   draftKey,
-  buildSlackMarks,
   getSlackMarks,
   setSlackMarks,
-  factsFor,
   mrLine,
   boardSummary,
-  statusPhrase,
-  flattenStack,
   THREAD_ICON,
   THREAD_LABEL,
-  commentCount,
   reviewMenuItems,
   respondItemLabel,
   doctorItemLabel,

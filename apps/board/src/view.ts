@@ -1,3 +1,4 @@
+import type { ReviewStatus } from './client/types.ts';
 import type { TabConfig } from './config.ts';
 import type { BoardMR } from './data.ts';
 import { hasChangesRequested } from './data.ts';
@@ -56,12 +57,9 @@ export function dataAgeLabel(
   return { text: `data as of ${hh}:${mm}`, stale };
 }
 
-/** The token classes a status flag can carry. Named as a union rather
-    than a bare `string` because the client translates each one into a Chip
-    intent: with `string` that lookup needed a silent `?? "muted"` fallback,
-    which would have quietly greyed out an unmapped class instead of failing.
-    This module stays DOM-free and knows nothing of the kit's vocabulary — the
-    translation is RowView's, the exhaustiveness is this type's. */
+/** The token classes a status flag can carry. A union, not a string:
+    RowView keys a Record on it, so an unmapped class fails to compile
+    instead of rendering grey. */
 export type FlagClass = 't-ok' | 't-bad' | 't-warn' | 't-cyan';
 
 /** GitLab-native facts shown as chips above the title: armed auto-merge
@@ -74,11 +72,11 @@ export function statusFlags(
 ): { text: string; cls: FlagClass; title?: string }[] {
   const b = mr.blockers;
   const flags: { text: string; cls: FlagClass; title?: string }[] = [];
-  if (mr.autoMergeButton?.isActive)
+  if (mr.autoMergeButton.isActive)
     flags.push({ text: 'auto-merge', cls: 't-ok' });
-  if (b?.hasConflicts) flags.push({ text: 'conflicts', cls: 't-bad' });
-  if (b?.pipelineFailing) flags.push({ text: 'ci failing', cls: 't-bad' });
-  if (b?.pipelineRunning) flags.push({ text: 'ci running', cls: 't-warn' });
+  if (b.hasConflicts) flags.push({ text: 'conflicts', cls: 't-bad' });
+  if (b.pipelineFailing) flags.push({ text: 'ci failing', cls: 't-bad' });
+  if (b.pipelineRunning) flags.push({ text: 'ci running', cls: 't-warn' });
   // A row nested under its parent already shows the relationship; the chip
   // only earns its place when the parent is not visible above the row.
   if (mr.isStacked && !opts?.nested)
@@ -173,6 +171,18 @@ export function nestStacks<M extends BoardMR>(mrs: M[]): StackNode<M>[] {
   return roots;
 }
 
+/** Depth-first flattening of one stack tree, for views that render a chain as
+    consecutive indented items rather than nested markup. */
+export function flattenStack<M extends BoardMR>(
+  node: StackNode<M>,
+  depth = 0
+): Array<{ mr: M; depth: number }> {
+  return [
+    { mr: node.mr, depth },
+    ...node.children.flatMap(c => flattenStack(c, depth + 1)),
+  ];
+}
+
 /** Approval ratio in [0,1]; used by the "progress" sort. */
 function progress(mr: BoardMR): number {
   const req = mr.reviews.required;
@@ -237,9 +247,9 @@ export function filterByTab<M extends BoardMR>(
 
 /** Return a new array ordered by the chosen sort. Never mutates the input. */
 export function sortMRs<M extends BoardMR>(mrs: M[], sort: SortKey): M[] {
-  // Order by last activity (updatedAt) — the same axis the row's age token and
-  // the age grouping use — so "oldest" means stalest-first and the visible ages
-  // read in order. (Was createdAt, which mismatched the displayed times.)
+  // Order by last activity (updatedAt), the same axis the row's age token and
+  // the age grouping use, so "oldest" means stalest-first and the visible ages
+  // read in order.
   const byOldest = (a: BoardMR, b: BoardMR) =>
     (a.updatedAt ?? LATEST).localeCompare(b.updatedAt ?? LATEST);
   const copy = [...mrs];
@@ -293,12 +303,8 @@ function statusBucket(mr: BoardMR): { label: string; order: number } {
 }
 
 /** An MR carrying the app-initiated review status the client attaches at
-    render time. Kept as a loose local shape (not imported from review-state.ts)
-    so view.ts stays free of that module's `fs` deps and can bundle for the
-    browser. */
-type ReviewedMR = BoardMR & {
-  review?: { status: 'queued' | 'reviewing' | 'done' | 'error' };
-};
+    render time. */
+type ReviewedMR = BoardMR & { review?: { status: ReviewStatus } };
 
 /** Bucket by the review a member kicked off through the board, most-active
     first. MRs with no launched review fall to "not reviewed". Orthogonal to
@@ -399,7 +405,7 @@ function pullStacksIntoParentGroups<M extends BoardMR>(
  * the dimension; ordering WITHIN each group is the caller's job (apply sortMRs
  * to each group's `mrs`).
  */
-export function groupMRs<M extends BoardMR>(
+export function groupMRs<M extends ReviewedMR>(
   mrs: M[],
   group: GroupKey,
   memberOrder: string[],
@@ -414,7 +420,7 @@ export function groupMRs<M extends BoardMR>(
       case 'status':
         return groupBy(mrs, statusBucket);
       case 'review':
-        return groupBy(mrs, mr => reviewBucket(mr as ReviewedMR));
+        return groupBy(mrs, reviewBucket);
     }
   };
   return pullStacksIntoParentGroups(grouped(), mrs);

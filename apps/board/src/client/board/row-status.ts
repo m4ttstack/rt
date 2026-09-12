@@ -1,6 +1,21 @@
+/** The row's state, on two lines. Line 0's pill is GitLab's review axis
+    (a noun: needs review, commented, approved). Line 3 is the move: every
+    source on the row (gates, the executor, the three lanes, peers, humans)
+    offers a candidate, the hottest one becomes the line, the rest fold into
+    "+N active", and a row with no candidate at all reads its standing state
+    for whoever the board's seat is. The pill and the line may name the same
+    fact ("changes requested" twice): one is where the MR is, the other is
+    what to do about it. */
+import type { BoardMR } from '../../data.ts';
 import { hasChangesRequested } from '../../data.ts';
-import { respondOutcome, type RespondStatus } from '../../respond-outcome.ts';
-import type { BoardMRWithReview, DraftInfo, ReviewStatus } from '../types.ts';
+import { respondOutcome } from '../../respond-outcome.ts';
+import { commentsAllResolved } from '../../view.ts';
+import type {
+  BoardMRWithReview,
+  DoctorStatus,
+  DraftInfo,
+  ReviewStatus,
+} from '../types.ts';
 import {
   activeReviewers,
   ago,
@@ -8,11 +23,12 @@ import {
   draftKey,
   laneInterrupted,
   NUDGE_RETRYABLE,
+  RESPOND_ACTIVE,
 } from './format.ts';
 
-export type Tone = 'bad' | 'warn' | 'work' | 'go' | 'quiet' | 'clear';
+type Tone = 'bad' | 'warn' | 'work' | 'go' | 'quiet' | 'clear';
 
-export type VerbKind =
+type VerbKind =
   | 'relaunch'
   | 'clear'
   | 'answer'
@@ -38,7 +54,8 @@ export interface Verb {
   draft?: DraftInfo;
 }
 
-export interface StatusLine {
+/** One source's offer for the status line. */
+export interface Candidate {
   tone: Tone;
   word: string;
   detail?: string;
@@ -47,8 +64,8 @@ export interface StatusLine {
 }
 
 export interface RowStatus {
-  line: StatusLine;
-  more: StatusLine[];
+  line: Candidate;
+  more: Candidate[];
   bar: 'bad' | 'warn' | null;
 }
 
@@ -57,59 +74,54 @@ export interface RowStatus {
 export const DELIVERY_STUCK_MESSAGE = "pane didn't pick up the answer";
 export const EXECUTION_UNASSIGNED_MESSAGE = 'answered, no pane to execute';
 
-const CLAUSE_CAP = 44;
-const CLAUSE_MIN = CLAUSE_CAP / 2;
-const CLAUSE_BOUNDARY = /;|\. |\s\(/g;
+// ── line 0: the pill ────────────────────────────────────────────────────────
 
-/** The status line's detail slot fits one clause; agent messages arrive as
-    whole sentences. Cut a long message at its first natural boundary (a
-    semicolon, a sentence stop, an opening parenthesis) in the cap's second
-    half, else at the last word inside the cap, and hand the full text back
-    for a tooltip. A boundary in the first half would keep a label and drop
-    the fact ("STACKED MR: !1234"), so the word cut wins there. `full` is
-    null when nothing was cut. */
-export function clauseOf(detail: string): {
-  text: string;
-  full: string | null;
-} {
-  if (detail.length <= CLAUSE_CAP) return { text: detail, full: null };
-  for (const m of detail.matchAll(CLAUSE_BOUNDARY)) {
-    const at = m.index ?? 0;
-    if (at < CLAUSE_MIN) continue;
-    if (at > CLAUSE_CAP) break;
-    return { text: detail.slice(0, at).trimEnd(), full: detail };
-  }
-  const head = detail.slice(0, CLAUSE_CAP - 1);
-  const endsOnWord = detail.charAt(CLAUSE_CAP - 1) === ' ';
-  const space = head.lastIndexOf(' ');
-  const cut = endsOnWord || space <= CLAUSE_MIN ? head : head.slice(0, space);
-  return { text: `${cut.trimEnd()}…`, full: detail };
+/** The pill's tooltip: every merge blocker GitLab reports, or the good news. */
+export function statusReasons(mr: BoardMR): string {
+  const b = mr.blockers;
+  if (!b.any) return 'ready to merge';
+  const reasons: string[] = [];
+  if (b.isDraft) reasons.push('marked as draft');
+  if (b.hasConflicts) reasons.push('merge conflicts with target branch');
+  if (b.needsRebase) reasons.push('source branch needs a rebase');
+  if (b.pipelineFailing) reasons.push('pipeline is failing');
+  if (b.pipelineRunning) reasons.push('pipeline still running');
+  if (b.awaitingApprovals)
+    reasons.push(
+      `awaiting approvals (${mr.reviews.given}/${mr.reviews.required})`
+    );
+  if (b.hasUnresolvedDiscussions)
+    reasons.push(`unresolved discussions (${mr.unresolvedThreads})`);
+  if (b.hasMergeError)
+    reasons.push(`merge error: ${b.mergeError ?? 'unknown'}`);
+  return reasons.length
+    ? `blocked:\n${reasons.map(r => `· ${r}`).join('\n')}`
+    : 'blocked';
 }
 
-const TONE_RANK: Record<Tone, number> = {
-  bad: 0,
-  warn: 1,
-  work: 2,
-  go: 3,
-  quiet: 4,
-  clear: 5,
-};
+/** The pill's phrase: the human review axis only. Mechanical blockers
+    (conflicts / ci) are flags beside it, never folded in, so the pill always
+    shows where the MR is in review. The thread count lives on the facts
+    line's thread link, the one drawer entry on every row. */
+export function statusPhrase(mr: BoardMR): { text: string; cls: string } {
+  if (hasChangesRequested(mr))
+    return { text: 'changes requested', cls: 't-bad' };
+  if (mr.reviews.isApproved) return { text: 'approved', cls: 't-ok' };
+  if (mr.reviewerComments > 0) return { text: 'commented', cls: 't-warn' };
+  if (commentsAllResolved(mr))
+    return { text: 'comments resolved', cls: 't-ok' };
+  if (mr.reviews.required > 0 && mr.reviews.given > 0)
+    return {
+      text: `${mr.reviews.given}/${mr.reviews.required} approved`,
+      cls: 't-warn',
+    };
+  return { text: 'needs review', cls: 't-warn' };
+}
 
-const RESPOND_WORKING: Partial<Record<RespondStatus, string>> = {
-  triaging: 'triaging…',
-  implementing: 'implementing…',
-  drafting: 'drafting replies…',
-};
+// ── line 3: the candidates ──────────────────────────────────────────────────
 
 const REVIEW_IN_FLIGHT = new Set<ReviewStatus>(['queued', 'reviewing']);
-const RESPOND_IN_FLIGHT = new Set<RespondStatus>([
-  'queued',
-  'triaging',
-  'implementing',
-  'drafting',
-]);
-
-const DOCTOR_WORKING = new Set([
+const DOCTOR_WORKING = new Set<DoctorStatus>([
   'diagnosing',
   'rebasing',
   'fixing',
@@ -127,9 +139,18 @@ function lowerFirst(s: string): string {
   return s.charAt(0).toLowerCase() + s.slice(1);
 }
 
-function gateLines(mr: BoardMRWithReview): StatusLine[] {
-  const out: StatusLine[] = [];
-  for (const gate of mr.gates ?? []) {
+function verdictWord(
+  outcome: string | undefined,
+  fallback?: string
+): string | undefined {
+  if (outcome === 'approve') return 'approved';
+  if (outcome === 'comment') return 'commented';
+  return fallback;
+}
+
+function gateLines(mr: BoardMRWithReview): Candidate[] {
+  const out: Candidate[] = [];
+  for (const gate of mr.gates) {
     if (gate.status === 'open' || gate.status === 'parked') {
       out.push({
         tone: 'warn',
@@ -189,32 +210,36 @@ function interruptedLane(mr: BoardMRWithReview): Lane | null {
     return 'review';
   if (
     mr.respond &&
-    RESPOND_IN_FLIGHT.has(mr.respond.status) &&
+    RESPOND_ACTIVE.has(mr.respond.status) &&
     laneInterrupted(orphan, mr.respond)
   )
     return 'respond';
   return null;
 }
 
-function runningLane(mr: BoardMRWithReview): Lane {
+/** The domain a hidden pane is presumably running, for its focus verb;
+    null when nothing on the row is in flight. */
+function hiddenLane(mr: BoardMRWithReview): Verb['domain'] | null {
   if (mr.review && REVIEW_IN_FLIGHT.has(mr.review.status)) return 'review';
-  if (mr.respond && RESPOND_IN_FLIGHT.has(mr.respond.status)) return 'respond';
-  return 'review';
+  if (mr.respond && RESPOND_ACTIVE.has(mr.respond.status)) return 'respond';
+  if (mr.doctor && DOCTOR_WORKING.has(mr.doctor.status)) return 'doctor';
+  return null;
 }
 
 function orphanLine(
   mr: BoardMRWithReview,
   now: number,
   interrupted: Lane | null
-): StatusLine | null {
+): Candidate | null {
   const orphan = mr.orphan;
   if (!orphan) return null;
   if (orphan.state === 'hidden') {
+    const domain = hiddenLane(mr);
     return {
       tone: 'quiet',
       word: 'off-screen',
       detail: 'pane hidden, still running',
-      verbs: [{ kind: 'focus', label: 'focus', domain: runningLane(mr) }],
+      verbs: domain ? [{ kind: 'focus', label: 'focus', domain }] : [],
     };
   }
   if (orphan.state !== 'gone') return null;
@@ -242,7 +267,7 @@ function reviewLine(
   mr: BoardMRWithReview,
   now: number,
   interrupted: Lane | null
-): StatusLine | null {
+): Candidate | null {
   const r = mr.review;
   if (!r || interrupted === 'review') return null;
   switch (r.status) {
@@ -258,20 +283,13 @@ function reviewLine(
           (r.startedAt ? `started ${agoMs(r.startedAt, now)}` : undefined),
         verbs: [{ kind: 'focus', label: 'focus', domain: 'review' }],
       };
-    case 'done': {
-      const outcome = r.outcome;
+    case 'done':
       return {
         tone: 'go',
         word: 'review ready',
-        detail:
-          outcome === 'approve'
-            ? 'approved'
-            : outcome === 'comment'
-              ? 'commented'
-              : undefined,
+        detail: verdictWord(r.outcome),
         verbs: r.reportReady ? [{ kind: 'read-review', label: 'read ↗' }] : [],
       };
-    }
     case 'error':
       return {
         tone: 'bad',
@@ -282,36 +300,11 @@ function reviewLine(
   }
 }
 
-function respondLine(
-  mr: BoardMRWithReview,
-  interrupted: Lane | null
-): StatusLine | null {
-  const r = mr.respond;
-  if (!r || interrupted === 'respond') return null;
-  if (r.status === 'queued')
-    return { tone: 'quiet', word: 'response queued', verbs: [] };
-  const working = RESPOND_WORKING[r.status];
-  if (working) {
-    return {
-      tone: 'work',
-      word: working,
-      spin: true,
-      detail: r.message || undefined,
-      verbs: [{ kind: 'focus', label: 'focus', domain: 'respond' }],
-    };
-  }
-  if (r.status === 'error') {
-    return {
-      tone: 'bad',
-      word: 'response failed',
-      detail: r.message || undefined,
-      verbs: [{ kind: 'restart-respond', label: 'restart' }],
-    };
-  }
-  const outcome = respondOutcome(r.posted, r.threads);
-  const posted = Math.min(r.posted ?? 0, r.threads ?? 0);
+function respondDoneLine(mr: BoardMRWithReview): Candidate {
+  const r = mr.respond!;
   const threads = r.threads ?? 0;
-  switch (outcome) {
+  const posted = Math.min(r.posted ?? 0, threads);
+  switch (respondOutcome(r.posted, r.threads)) {
     case 'posted':
       return {
         tone: 'go',
@@ -337,47 +330,98 @@ function respondLine(
       };
     case 'none':
       return { tone: 'go', word: 'no replies needed', verbs: [] };
-    default:
+    case 'unknown':
       return { tone: 'quiet', word: 'response done', verbs: [] };
   }
 }
 
-function doctorLine(mr: BoardMRWithReview): StatusLine | null {
-  const d = mr.doctor;
-  if (!d) return null;
-  if (d.status === 'queued')
-    return { tone: 'quiet', word: DOCTOR_LABEL[d.status], verbs: [] };
-  if (DOCTOR_WORKING.has(d.status)) {
-    return {
-      tone: 'work',
-      word: DOCTOR_LABEL[d.status],
-      spin: true,
-      detail: d.origin === 'auto' ? 'auto' : d.message || undefined,
-      verbs: [{ kind: 'focus', label: 'focus', domain: 'doctor' }],
-    };
+function respondLine(
+  mr: BoardMRWithReview,
+  interrupted: Lane | null
+): Candidate | null {
+  const r = mr.respond;
+  if (!r || interrupted === 'respond') return null;
+  const working = (word: string): Candidate => ({
+    tone: 'work',
+    word,
+    spin: true,
+    detail: r.message || undefined,
+    verbs: [{ kind: 'focus', label: 'focus', domain: 'respond' }],
+  });
+  switch (r.status) {
+    case 'queued':
+      return { tone: 'quiet', word: 'response queued', verbs: [] };
+    case 'triaging':
+      return working('triaging…');
+    case 'implementing':
+      return working('implementing…');
+    case 'drafting':
+      return working('drafting replies…');
+    case 'error':
+      return {
+        tone: 'bad',
+        word: 'response failed',
+        detail: r.message || undefined,
+        verbs: [{ kind: 'restart-respond', label: 'restart' }],
+      };
+    case 'done':
+      return respondDoneLine(mr);
   }
-  if (d.status === 'done') {
-    return {
-      tone: 'go',
-      word: DOCTOR_LABEL[d.status],
-      detail: d.message || undefined,
-      verbs: [],
-    };
-  }
-  return {
-    tone: 'bad',
-    word: DOCTOR_LABEL[d.status],
-    detail: d.message || undefined,
-    verbs: [{ kind: 'call-doctor', label: 'call again' }],
-  };
 }
 
-function socialLines(
-  mr: BoardMRWithReview,
-  now: number,
-  resolved: Resolved
-): StatusLine[] {
-  const out: StatusLine[] = [];
+function doctorLine(mr: BoardMRWithReview): Candidate | null {
+  const d = mr.doctor;
+  if (!d) return null;
+  switch (d.status) {
+    case 'queued':
+      return { tone: 'quiet', word: DOCTOR_LABEL[d.status], verbs: [] };
+    case 'diagnosing':
+    case 'rebasing':
+    case 'fixing':
+    case 'watching':
+      return {
+        tone: 'work',
+        word: DOCTOR_LABEL[d.status],
+        spin: true,
+        detail: d.origin === 'auto' ? 'auto' : d.message || undefined,
+        verbs: [{ kind: 'focus', label: 'focus', domain: 'doctor' }],
+      };
+    case 'done':
+      return {
+        tone: 'go',
+        word: DOCTOR_LABEL[d.status],
+        detail: d.message || undefined,
+        verbs: [],
+      };
+    case 'error':
+      return {
+        tone: 'bad',
+        word: DOCTOR_LABEL[d.status],
+        detail: d.message || undefined,
+        verbs: [{ kind: 'call-doctor', label: 'call again' }],
+      };
+  }
+}
+
+/** Notes the doctor held back for a human to post or dismiss. */
+function draftLines(mr: BoardMRWithReview, resolved: Resolved): Candidate[] {
+  const out: Candidate[] = [];
+  for (const draft of mr.drafts ?? []) {
+    if (resolved.get(draftKey(mr.webUrl ?? '', draft.kind))) continue;
+    out.push({
+      tone: 'warn',
+      word: `held: ${draft.kind}`,
+      detail: 'doctor draft',
+      verbs: [{ kind: 'read-note', label: 'read', draft }],
+    });
+  }
+  return out;
+}
+
+/** Peers and humans: re-review asks in both directions, peer boards'
+    reviews of this MR, and GitLab reviewers with a review open right now. */
+function peerLines(mr: BoardMRWithReview, now: number): Candidate[] {
+  const out: Candidate[] = [];
   const nudges = [...(mr.nudges ?? [])].sort(
     (a, b) => a.receivedAt - b.receivedAt
   );
@@ -387,15 +431,6 @@ function socialLines(
       word: `${n.from} asked for a re-review`,
       detail: agoMs(n.receivedAt, now),
       verbs: [{ kind: 're-review', label: 're-review' }],
-    });
-  }
-  for (const draft of mr.drafts ?? []) {
-    if (resolved.get(draftKey(mr.webUrl ?? '', draft.kind))) continue;
-    out.push({
-      tone: 'warn',
-      word: `held: ${draft.kind}`,
-      detail: 'doctor draft',
-      verbs: [{ kind: 'read-note', label: 'read', draft }],
     });
   }
   const sent = mr.sentNudge;
@@ -408,13 +443,11 @@ function socialLines(
         verbs: [],
       });
     } else if (sent.display === 'requested') {
-      const at = sent.sentAt;
+      const since = agoMs(sent.sentAt, now);
       out.push({
         tone: 'quiet',
         word: `nudged ${sent.reviewer}`,
-        detail: at
-          ? `no answer yet, ${ago(new Date(at).toISOString(), now)}`
-          : 'no answer yet',
+        detail: since ? `no answer yet, ${since}` : 'no answer yet',
         verbs: [],
       });
     } else {
@@ -435,15 +468,9 @@ function socialLines(
         verbs: [{ kind: 'view-peer', label: 'view ↗' }],
       });
     } else if (p.status === 'done') {
-      const verdict =
-        p.outcome === 'approve'
-          ? 'approved'
-          : p.outcome === 'comment'
-            ? 'commented'
-            : 'reviewed';
       out.push({
         tone: 'go',
-        word: `${p.reviewer} ${verdict}`,
+        word: `${p.reviewer} ${verdictWord(p.outcome, 'reviewed')}`,
         verbs: [{ kind: 'view-peer', label: 'view ↗' }],
       });
     }
@@ -459,7 +486,15 @@ function socialLines(
   return out;
 }
 
+// ── line 3: the standing state ──────────────────────────────────────────────
+
 const OPEN: Verb = { kind: 'open-mr', label: 'open ↗' };
+const CI_RUNNING: Candidate = {
+  tone: 'work',
+  word: 'ci running…',
+  spin: true,
+  verbs: [OPEN],
+};
 
 function approvalsDetail(mr: BoardMRWithReview): string | undefined {
   const { given, required } = mr.reviews;
@@ -468,18 +503,25 @@ function approvalsDetail(mr: BoardMRWithReview): string | undefined {
     : undefined;
 }
 
+/** The repair a blocked MR needs from its author, as the doctor would do
+    it; null when nothing mechanical is wrong. */
+function repairPhrase(b: BoardMR['blockers']): string | null {
+  const rebase = b.hasConflicts || b.needsRebase;
+  if (rebase && b.pipelineFailing) return 'a rebase and a ci fix';
+  if (rebase) return 'a rebase';
+  if (b.pipelineFailing) return 'a ci fix';
+  return null;
+}
+
 /** The author's standing state: what the MR needs from them before anyone
     else can move it, in the order they would fix it. */
-function authorLine(mr: BoardMRWithReview): StatusLine {
+function authorLine(mr: BoardMRWithReview): Candidate {
   const b = mr.blockers;
-  const rebase = !!(b?.hasConflicts || b?.needsRebase);
-  const ci = !!b?.pipelineFailing;
-  if (rebase || ci) {
-    const needs =
-      rebase && ci ? 'a rebase and a ci fix' : rebase ? 'a rebase' : 'a ci fix';
+  const repair = repairPhrase(b);
+  if (repair) {
     return {
       tone: 'quiet',
-      word: `needs ${needs}`,
+      word: `needs ${repair}`,
       verbs: [{ kind: 'call-doctor', label: 'call doctor' }],
     };
   }
@@ -499,8 +541,7 @@ function authorLine(mr: BoardMRWithReview): StatusLine {
   }
   if (mr.isDraft)
     return { tone: 'quiet', word: 'draft, not marked ready', verbs: [OPEN] };
-  if (b?.pipelineRunning)
-    return { tone: 'work', word: 'ci running…', spin: true, verbs: [OPEN] };
+  if (b.pipelineRunning) return CI_RUNNING;
   if (!mr.reviews.isApproved) {
     return {
       tone: 'quiet',
@@ -509,9 +550,9 @@ function authorLine(mr: BoardMRWithReview): StatusLine {
       verbs: [OPEN],
     };
   }
-  if (b?.hasUnresolvedDiscussions)
+  if (b.hasUnresolvedDiscussions)
     return { tone: 'quiet', word: 'threads to resolve', verbs: [OPEN] };
-  if (b?.hasMergeError) {
+  if (b.hasMergeError) {
     return {
       tone: 'quiet',
       word: 'merge error',
@@ -519,14 +560,14 @@ function authorLine(mr: BoardMRWithReview): StatusLine {
       verbs: [OPEN],
     };
   }
-  if (b?.any) return { tone: 'quiet', word: 'blocked', verbs: [OPEN] };
+  if (b.any) return { tone: 'quiet', word: 'blocked', verbs: [OPEN] };
   return { tone: 'go', word: 'ready to merge', verbs: [OPEN] };
 }
 
 /** A reviewer's standing state on someone else's MR: whether the next move
     is theirs (review) or the author's (everything else). Only an approved,
     unblocked MR with nothing awaiting anyone earns the sun. */
-function reviewerLine(mr: BoardMRWithReview): StatusLine {
+function reviewerLine(mr: BoardMRWithReview): Candidate {
   const b = mr.blockers;
   const awaiting = mr.threadSummary?.awaiting ?? 0;
   if (hasChangesRequested(mr))
@@ -541,21 +582,17 @@ function reviewerLine(mr: BoardMRWithReview): StatusLine {
       verbs: [{ kind: 'launch-review', label: 'review' }],
     };
   }
-  if (b?.pipelineRunning)
-    return { tone: 'work', word: 'ci running…', spin: true, verbs: [OPEN] };
-  if (b?.any) {
-    const why =
-      b.hasConflicts || b.needsRebase
-        ? 'for a rebase'
-        : b.pipelineFailing
-          ? 'for a ci fix'
-          : b.hasUnresolvedDiscussions
-            ? 'to resolve threads'
-            : undefined;
+  if (b.pipelineRunning) return CI_RUNNING;
+  if (b.any) {
+    const repair = repairPhrase(b);
     return {
       tone: 'quiet',
       word: 'waiting on the author',
-      detail: why,
+      detail: repair
+        ? `for ${repair}`
+        : b.hasUnresolvedDiscussions
+          ? 'to resolve threads'
+          : undefined,
       verbs: [OPEN],
     };
   }
@@ -567,30 +604,42 @@ function reviewerLine(mr: BoardMRWithReview): StatusLine {
   };
 }
 
+// ── the line ────────────────────────────────────────────────────────────────
+
+/** Every source's offer, in source order; exported for the tests. */
 export function candidateLines(
   mr: BoardMRWithReview,
   now: number,
   draftResolved: Resolved,
   self: string | null
-): StatusLine[] {
+): Candidate[] {
   const interrupted = interruptedLane(mr);
-  const lines: StatusLine[] = [
+  const lines: Candidate[] = [
     ...gateLines(mr),
     orphanLine(mr, now, interrupted),
     reviewLine(mr, now, interrupted),
     respondLine(mr, interrupted),
     doctorLine(mr),
-    ...socialLines(mr, now, draftResolved),
-  ].filter((l): l is StatusLine => l !== null);
+    ...draftLines(mr, draftResolved),
+    ...peerLines(mr, now),
+  ].filter((l): l is Candidate => l !== null);
   if (lines.length > 0) return lines;
   const mine = self !== null && mr.author.username === self;
   return [mine ? authorLine(mr) : reviewerLine(mr)];
 }
 
+const TONE_RANK: Record<Tone, number> = {
+  bad: 0,
+  warn: 1,
+  work: 2,
+  go: 3,
+  quiet: 4,
+  clear: 5,
+};
+
 /** The single status line a row shows: the hottest candidate, with ties
-    settled by source order (gates before lanes before social), so a decision
-    always outranks the lane it came from. With no candidate at all the row
-    falls back to its standing GitLab state, worded for whoever `self` is. */
+    settled by source order (gates before lanes before peers), so a decision
+    always outranks the lane it came from. */
 export function rowStatus(
   mr: BoardMRWithReview,
   now: number,

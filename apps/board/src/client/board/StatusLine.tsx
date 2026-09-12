@@ -1,8 +1,9 @@
 import type { ReactNode } from 'react';
 
 import type { BoardMRWithReview, RowContext } from '../types.ts';
+import { clauseOf } from './clause.ts';
 import { Sun } from './icons.tsx';
-import { clauseOf, type RowStatus, type Verb } from './row-status.ts';
+import type { RowStatus, Verb } from './row-status.ts';
 
 function runVerb(verb: Verb, mr: BoardMRWithReview, ctx: RowContext): void {
   switch (verb.kind) {
@@ -76,13 +77,13 @@ export function StatusLine({
     <div className="tui-status" data-tone={line.tone}>
       <span className="tui-status-word">{line.word}</span>
       {line.spin && <span className="tui-status-ring" aria-hidden />}
+      {line.tone === 'clear' && (
+        <span className="tui-status-sun" aria-hidden>
+          <Sun />
+        </span>
+      )}
       {detail && (
         <span className="tui-status-detail" title={detail.full ?? undefined}>
-          {line.tone === 'clear' && (
-            <>
-              <Sun />{' '}
-            </>
-          )}
           {detail.text}
         </span>
       )}

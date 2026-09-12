@@ -249,7 +249,6 @@ test('mechanical flags share the state line with the pill; the title stands alon
     } as never),
   ]);
   const row = container.querySelector('.tui-row')!;
-  expect(row.querySelector('.tui-row-review')).toBeNull();
   expect(
     row.querySelector('.tui-row-0 .tui-row-flags [data-flag]')
   ).not.toBeNull();

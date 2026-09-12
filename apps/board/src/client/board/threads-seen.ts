@@ -1,4 +1,15 @@
+import type { BoardMR } from '../../data.ts';
+
 const KEY_PREFIX = 'board.threads.seen:';
+
+/** The number the thread link shows and newness is measured against:
+    resolvable threads plus general MR comments. Zero when the board has no
+    breakdown or none exist. */
+export function commentCount(mr: BoardMR): number {
+  const s = mr.threadSummary;
+  const threads = s ? s.awaiting + s.replied + s.resolved : 0;
+  return threads + (mr.generalComments ?? 0);
+}
 
 /** Whether a thread count has grown since the board last recorded it. A
     missing record is a first sighting: not new, and the count becomes the

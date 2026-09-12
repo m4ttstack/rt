@@ -164,33 +164,6 @@ body {
     transform: rotate(360deg);
   }
 }
-.tui-copy-inline {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 0.2rem;
-  cursor: pointer;
-  flex-shrink: 0;
-  align-self: center;
-  background: transparent;
-  border: none;
-  color: var(--muted-text);
-  opacity: 0.8;
-  transition: opacity 0.1s ease;
-}
-.tui-row .tui-copy-inline:hover {
-  opacity: 1;
-  color: var(--fg);
-}
-.tui-row .tui-copy-inline[data-copied] {
-  opacity: 1;
-  color: var(--green);
-}
-.tui-copy-card {
-  position: absolute;
-  top: 0.45rem;
-  right: 0.45rem;
-}
 
 /* ── selection ────────────────────────────────────────────────────── */
 .tui-selbar {
@@ -280,24 +253,29 @@ body {
   outline-offset: 2px;
 }
 /* ── the row ─────────────────────────────────────────────────────────
-   Fixed height, four lines, one content edge: state, title, facts, status.
-   The gutter holds the status dot (and the checkbox on hover / in select
-   mode) level with the title, one state line below the row's top edge; the
-   attention bar is flush to the row's left edge. Nothing on a row may grow
-   it. */
+   Fixed height, four lines, one content edge: line 0 state, line 1 title,
+   line 2 facts, line 3 status. The gutter holds the status dot (and the
+   checkbox on hover / in select mode) level with the title; the attention
+   bar is flush to the row's left edge. Nothing on a row may grow it. */
 .tui-rows {
-  --row-h: 114px;
+  --row-pad: 12px;
+  --gutter-w: 40px;
+  --pick-h: 20px;
   /* Line 0's height plus its gap: how far the gutter sits below the row's
-     content edge. The stack rail's segment math depends on it. */
+     top padding. */
   --pick-offset: 22px;
+  /* pad 12 + line 0 (20 + 2) + line 1 20 + line 2 (4 + 16) + line 3 (8 + 20)
+     + pad 12. The row clips overflow, so a changed margin below silently
+     cuts line 3 instead of growing the row: keep this sum current. */
+  --row-h: 114px;
 }
 .tui-row {
   display: grid;
-  grid-template-columns: 40px minmax(0, 1fr);
+  grid-template-columns: var(--gutter-w) minmax(0, 1fr);
   align-items: start;
   height: var(--row-h);
   box-sizing: border-box;
-  padding: 12px 16px 12px 0;
+  padding: var(--row-pad) 16px var(--row-pad) 0;
   cursor: pointer;
   position: relative;
   overflow: hidden;
@@ -330,13 +308,15 @@ body {
 }
 /* Gutter: the dot at rest, the checkbox under the pointer or while a
    selection exists. Both stay in the flow (opacity, not display) so the
-   stack rail's pseudo-elements keep their anchor. The kit stamps
-   `data-part="statusdot"` / `"selectbox"` on the two recipes' roots. */
+   stack rail's pseudo-elements keep their anchor; the rail's segment math
+   (below, "stacks") reads --gutter-w, --pick-h, --pick-offset and
+   --row-pad. The kit stamps `data-part="statusdot"` / `"selectbox"` on
+   the two recipes' roots. */
 .tui-row-pick {
   position: relative;
   /* Own stacking context, so a stack rail segment can sit under the dot. */
   isolation: isolate;
-  height: 20px;
+  height: var(--pick-h);
   margin-top: var(--pick-offset);
   display: flex;
   align-items: center;
@@ -387,6 +367,45 @@ body {
   overflow: hidden;
   white-space: nowrap;
 }
+.tui-row-marks {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.tui-mark {
+  display: inline-flex;
+  color: var(--muted-text);
+  opacity: 0.55;
+}
+.tui-mark[data-slack-logo] {
+  opacity: 1;
+}
+.tui-phrase {
+  flex-shrink: 0;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.t-ok {
+  color: var(--green);
+}
+.t-bad {
+  color: var(--red-text);
+}
+.t-warn {
+  color: var(--amber);
+}
+.t-cyan {
+  color: var(--cyan);
+}
 
 /* Line 1: the title, alone. */
 .tui-row-1 {
@@ -403,20 +422,6 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.tui-row-marks {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
-.tui-mark {
-  display: inline-flex;
-  color: var(--muted-text);
-  opacity: 0.55;
-}
-.tui-mark[data-slack-logo] {
-  opacity: 1;
 }
 
 /* Line 2: facts. Junctions step in weight or color; no glyphs. 0.76rem is
@@ -459,7 +464,7 @@ body {
   color: var(--amber);
   flex-shrink: 0;
 }
-.tui-facts {
+.tui-rail {
   margin-left: auto;
   display: inline-flex;
   align-items: center;
@@ -596,111 +601,119 @@ body {
 .tui-status-verb:hover {
   text-decoration: underline;
 }
-/* Secondary verbs and the row tools (ticket, copy) are out of sight at rest
-   but never out of the tab order: clipped to a point, not display: none, so
-   focus-within can reveal them for keyboard users. Touch has no hover, so
-   coarse pointers get them at rest. */
-.tui-status-verb[data-secondary],
-.tui-status-tools {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
+.tui-status-sun {
+  display: inline-flex;
+  margin-left: 10px;
+  /* Sits on the text baseline the way the inline icon did (its -2.5px
+     vertical-align), which a flex item cannot express directly. */
+  transform: translateY(2.5px);
 }
+.tui-status-sun + .tui-status-detail {
+  margin-left: 4px;
+}
+/* The row tools (ticket, copy) ride the status line's right end. */
 .tui-status-tools {
+  display: inline-flex;
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
 }
-.tui-row:hover .tui-status-verb[data-secondary],
-.tui-row:focus-within .tui-status-verb[data-secondary] {
-  position: static;
-  width: auto;
-  height: auto;
-  overflow: visible;
-  clip-path: none;
-}
-/* Revealed tools take the auto margin and the verbs give theirs up, so the
-   verb keeps its corner and the tools stack to its left. */
-.tui-row:hover .tui-status-tools,
-.tui-row:focus-within .tui-status-tools {
-  position: static;
+.tui-copy-inline {
   display: inline-flex;
-  width: auto;
-  height: auto;
-  overflow: visible;
-  clip-path: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.2rem;
+  cursor: pointer;
+  flex-shrink: 0;
+  align-self: center;
+  background: transparent;
+  border: none;
+  color: var(--muted-text);
+  opacity: 0.8;
+  transition: opacity 0.1s ease;
+}
+.tui-copy-inline:hover {
+  opacity: 1;
+  color: var(--fg);
+}
+.tui-copy-inline[data-copied] {
+  opacity: 1;
+  color: var(--green);
+}
+/* In-flow tools take the auto margin and the verbs give theirs up, so the
+   verb keeps its corner and the tools stack to its left. Coarse pointers
+   have no hover, so they get this at rest. */
+.tui-status-tools {
   margin-left: auto;
   padding-left: 16px;
 }
-.tui-row:hover .tui-status-tools + .tui-status-verbs,
-.tui-row:focus-within .tui-status-tools + .tui-status-verbs {
+.tui-status-tools + .tui-status-verbs {
   margin-left: 0;
   padding-left: 14px;
 }
-@media (hover: none) {
-  .tui-status-verb[data-secondary] {
-    position: static;
-    width: auto;
-    height: auto;
-    overflow: visible;
-    clip-path: none;
-  }
+/* Under a pointer, secondary verbs and the tools wait out of sight at rest
+   but never out of the tab order: clipped to a point, not display: none,
+   so focus-within can reveal them for keyboard users. Clipped tools are out
+   of flow, so the verbs hold the auto margin until the reveal. */
+@media (hover: hover) {
+  .tui-status-verb[data-secondary],
   .tui-status-tools {
-    position: static;
-    display: inline-flex;
-    width: auto;
-    height: auto;
-    overflow: visible;
-    clip-path: none;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .tui-status-tools + .tui-status-verbs {
     margin-left: auto;
     padding-left: 16px;
   }
-  .tui-status-tools + .tui-status-verbs {
+  .tui-row:is(:hover, :focus-within) .tui-status-verb[data-secondary],
+  .tui-row:is(:hover, :focus-within) .tui-status-tools {
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip-path: none;
+  }
+  .tui-row:is(:hover, :focus-within) .tui-status-tools + .tui-status-verbs {
     margin-left: 0;
     padding-left: 14px;
   }
 }
-/* The decision queue's strip separates its facts with this glyph; rows carry
-   no separators. */
-.tui-row-sep {
-  color: var(--muted-text);
-  opacity: 0.5;
-}
 
-/* ── tokens ───────────────────────────────────────────────────────── */
-.tui-phrase {
-  flex-shrink: 0;
-  white-space: nowrap;
-  display: inline-flex;
-  align-items: center;
-  padding: 1px 6px;
-  border: 1px solid currentColor;
-  border-radius: 4px;
-  font-size: 0.62rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+/* The row at narrow widths. */
+@media (max-width: 720px) {
+  /* The row keeps its fixed height; only the two elastic spans give way. */
+  .tui-branch {
+    max-width: 16ch;
+  }
+  .tui-status-detail {
+    display: none;
+  }
 }
-.t-ok {
-  color: var(--green);
-}
-.t-bad {
-  color: var(--red-text);
-}
-.t-warn {
-  color: var(--amber);
-}
-.t-cyan {
-  color: var(--cyan);
-}
-.t-muted {
-  color: var(--muted-text);
-}
-.t-accent {
-  color: var(--accent-text);
+/* Phone width: the branch and behind-target are unreadable at this width
+   anyway; the reaction stage yields to the logo; the pill tightens. */
+@media (max-width: 480px) {
+  .tui-branch,
+  .tui-behind,
+  .tui-mark[data-slack-stage] {
+    display: none;
+  }
+  .tui-row-2 {
+    gap: 8px;
+  }
+  .tui-phrase {
+    font-size: 0.55rem;
+    padding: 1px 4px;
+    letter-spacing: 0.02em;
+  }
+  /* The avatar alone names the author; the title attribute keeps the name. */
+  .tui-author-tag {
+    font-size: 0;
+    gap: 0;
+  }
 }
 
 /* ── comments drawer ──────────────────────────────────────────────── */
@@ -945,9 +958,6 @@ body {
   padding: 0.15rem;
 }
 .tui-ticket:hover {
-  opacity: 1;
-}
-.tui-row .tui-ticket:hover {
   opacity: 1;
 }
 
@@ -1252,35 +1262,6 @@ body {
   [data-part='sidedrawer-overlay'][data-side='left'] {
     display: flex;
   }
-  /* The row keeps its 92px; only the two elastic spans give way. */
-  .tui-branch {
-    max-width: 16ch;
-  }
-  .tui-status-detail {
-    display: none;
-  }
-}
-/* Phone width: the branch and behind-target are unreadable at this width
-   anyway; the reaction stage yields to the logo; the pill tightens. */
-@media (max-width: 480px) {
-  .tui-branch,
-  .tui-behind,
-  .tui-mark[data-slack-stage] {
-    display: none;
-  }
-  .tui-row-2 {
-    gap: 8px;
-  }
-  .tui-phrase {
-    font-size: 0.55rem;
-    padding: 1px 4px;
-    letter-spacing: 0.02em;
-  }
-  /* The avatar alone names the author; the title attribute keeps the name. */
-  .tui-author-tag {
-    font-size: 0;
-    gap: 0;
-  }
 }
 
 /* ── settings modal ───────────────────────────────────────────────── */
@@ -1519,9 +1500,15 @@ body {
   padding-left: var(--stack-indent);
 }
 /* Every segment lives on a tui-row-pick pseudo-element: the gutter is a
-   fixed 20px box sitting --pick-offset below every row's 12px top padding,
-   so the dot's center is always 10px below the pick's top. Segments run to
+   --pick-h box sitting --pick-offset below every row's --row-pad, so the
+   dot's center is always half a pick below the pick's top. Segments run to
    the row's edges (the row clips there) and butt end to end. */
+.tui-stack-rows {
+  --dot-x: calc(var(--gutter-w) / 2);
+  --pick-below: calc(
+    var(--row-h) - var(--row-pad) - var(--pick-offset) - var(--pick-h)
+  );
+}
 /* Parent: a stub from under its dot down through its bottom edge. */
 .tui-stack-rows > .tui-row > .tui-row-pick::after {
   content: '';
@@ -1529,24 +1516,24 @@ body {
   width: 2px;
   background: var(--stack-rail);
   left: calc(50% - 1px);
-  top: 20px;
-  bottom: calc(-1 * (var(--row-h) - 20px - 12px - var(--pick-offset)));
+  top: var(--pick-h);
+  bottom: calc(-1 * var(--pick-below));
 }
 /* Children: the rail continues at the parent's dot x, which in the nested
-   pick's coordinates is 20px less the indent. The last child's segment
+   pick's coordinates is that x less the indent. The last child's segment
    stops at its own dot's center, where the arm meets it. */
 .tui-row-nested .tui-row-pick::before {
   content: '';
   position: absolute;
   width: 2px;
   background: var(--stack-rail);
-  left: calc(20px - var(--stack-indent) - 1px);
-  top: calc(-12px - var(--pick-offset));
-  bottom: calc(-1 * (var(--row-h) - 20px - 12px - var(--pick-offset)));
+  left: calc(var(--dot-x) - var(--stack-indent) - 1px);
+  top: calc(-1 * (var(--row-pad) + var(--pick-offset)));
+  bottom: calc(-1 * var(--pick-below));
 }
 .tui-row-nested:last-child .tui-row-pick::before {
   bottom: auto;
-  height: calc(12px + var(--pick-offset) + 10px);
+  height: calc(var(--row-pad) + var(--pick-offset) + var(--pick-h) / 2);
 }
 /* Arm from the rail to the child's dot, on the dot's center line. It starts
    at the rail's own x so the corner joins cleanly, and runs under the dot
@@ -1557,28 +1544,9 @@ body {
   z-index: -1;
   height: 2px;
   background: var(--stack-rail);
-  left: calc(20px - var(--stack-indent) - 1px);
+  left: calc(var(--dot-x) - var(--stack-indent) - 1px);
   width: calc(var(--stack-indent) + 1px);
-  top: 9px;
-}
-/* In grid view a whole chain shares one bordered cluster cell. */
-.tui-stack-cluster {
-  position: relative;
-  border: 1px dashed color-mix(in srgb, var(--cyan) 45%, var(--border));
-  border-radius: 10px;
-  padding: 1rem 0.6rem 0.6rem;
-  display: flex;
-  flex-direction: column;
-  gap: 1.1rem;
-}
-.tui-stack-label {
-  position: absolute;
-  top: -0.7em;
-  left: 0.7rem;
-  background: var(--bg);
-  padding: 0 0.45rem;
-  font-size: 0.7rem;
-  color: var(--cyan);
+  top: calc(var(--pick-h) / 2 - 1px);
 }
 
 /* review gate card: the questions a review pane opened on this row, answered
@@ -2033,9 +2001,14 @@ body {
   border-radius: var(--gate-radius-btn);
   background: var(--chrome);
 }
-/* Tuned from the row's 0.6rem: one size for the whole line, and the branch
-   gives up the row's flex stretch so age and origin stay clustered left
-   instead of stranding at the far edge of a 760px strip. */
+/* The strip separates its facts with this glyph; rows carry no separators. */
+.tui-triage-strip .tui-row-sep {
+  color: var(--muted-text);
+  opacity: 0.5;
+}
+/* One size for the whole line, and the branch gives up the row's flex
+   stretch so age and origin stay clustered left instead of stranding at the
+   far edge of a 760px strip. */
 .tui-triage-strip .tui-row-2 {
   align-items: baseline;
   font-size: var(--gate-font-meta);
@@ -2249,14 +2222,9 @@ body {
   font-weight: 700;
   border: 1.5px solid var(--panel);
 }
-/* ── chip cells the kit deliberately does not reproduce ───────────────
-   Every badge and flag on the board is `[data-part="chip"]` now: the box, the
-   1.4s pulse, the dim, the small-caps register and the clickable `<button>`
-   form all live in the Chip recipe, chosen at the call site with
-   intent/pulse/dimmed/uppercase/as. Two outlier boxes survive here, each
-   scoped by a data attribute its own call site stamps so no chip family can
-   bleed into another: Chip's `dimmed` is one canonical 0.7 and the flag wants
-   0.9, and both keep a frame the recipe unified away.
+/* ── chip cells the kit does not reproduce ────────────────────────────
+   Two chip boxes the Chip recipe cannot express, each scoped by a data
+   attribute its own call site stamps so no chip family bleeds into another.
 
    THE PROPERTY ROUTE IS THE ONLY ONE THAT WORKS, and getting it wrong is
    silent: the recipe's `--sb-chip-*` scalars are emitted into the element's
@@ -2264,15 +2232,16 @@ body {
    read. Setting the PROPERTY wins at any specificity, because this file is
    unlayered and the recipe sits inside `@layer soribashi.recipes`. */
 /* Mechanical-blocker flags (conflicts / ci / stacked) keep a frame with no
-   vertical padding: on a row they sit inline on the 20px state line, and
-   the frame must not outgrow it. */
+   vertical padding: they sit inline on the row's 20px state line, and the
+   frame must not outgrow it. */
 [data-part='chip'][data-flag] {
   opacity: 0.9;
   padding: 0 6px;
   line-height: 1.5;
 }
-/* The row's draft marker: small-caps type in a pill tighter than a badge's, so
-   it reads as a marker beside the title rather than another status chip. */
+/* The row's draft marker: small-caps type in a pill tighter than a badge's,
+   so it reads as a marker on the state line rather than another status
+   chip. */
 [data-part='chip'][data-draft] {
   padding: 0.15rem 0.28rem;
   border-radius: 3px;

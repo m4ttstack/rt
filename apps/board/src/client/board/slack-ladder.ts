@@ -2,24 +2,24 @@ import type { SlackInfo } from '../types.ts';
 
 export type SlackStage = 'looking' | 'commented' | 'approved';
 
-export interface SlackLadder {
-  posted: boolean;
-  stage: SlackStage | null;
-}
+const RUNG: Record<SlackStage, number> = {
+  looking: 0,
+  commented: 1,
+  approved: 2,
+};
 
-const STAGES: SlackStage[] = ['looking', 'commented', 'approved'];
-
-/** The furthest review-signal reaction on the posted message, in the
-    marks' fixed order (looking, commented, approved). Reactions on an
+/** The furthest review-signal reaction on the posted message, returned as
+    the mark that carries it (its stage, icon title, emoji). Reactions on an
     unposted message are noise from another thread and count for nothing. */
-export function slackLadder(
+export function slackLadder<M extends { emoji: string; stage: SlackStage }>(
   slack: SlackInfo | undefined,
-  marks: ReadonlyArray<{ emoji: string }>
-): SlackLadder {
-  if (!slack?.posted) return { posted: false, stage: null };
-  let stage: SlackStage | null = null;
-  marks.forEach((mark, i) => {
-    if (slack.reactions.includes(mark.emoji)) stage = STAGES[i] ?? stage;
-  });
-  return { posted: true, stage };
+  marks: ReadonlyArray<M>
+): { posted: boolean; mark: M | null } {
+  if (!slack?.posted) return { posted: false, mark: null };
+  let mark: M | null = null;
+  for (const m of marks) {
+    if (!slack.reactions.includes(m.emoji)) continue;
+    if (!mark || RUNG[m.stage] > RUNG[mark.stage]) mark = m;
+  }
+  return { posted: true, mark };
 }

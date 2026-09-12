@@ -7,8 +7,8 @@ import {
   laneInterrupted,
   respondItemLabel,
   reviewMenuItems,
-  statusReasons,
 } from '../client/board/format.ts';
+import { statusReasons } from '../client/board/row-status.ts';
 
 test('ago buckets minutes, hours, days', () => {
   const now = Date.parse('2026-08-19T12:00:00Z');

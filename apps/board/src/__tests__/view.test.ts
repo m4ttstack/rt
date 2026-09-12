@@ -32,6 +32,7 @@ function mr(overrides: Partial<BoardMR>): BoardMR {
     reviewerComments: 0,
     reviews: { required: 2, given: 0, isApproved: false },
     blockers: {},
+    autoMergeButton: { visible: false, isActive: false },
     ...overrides,
   } as unknown as BoardMR;
 }

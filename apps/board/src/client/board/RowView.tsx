@@ -6,28 +6,25 @@ import type { BoardMR } from '../../data.ts';
 import { extractTicketId, ticketUrl } from '../../ticket.ts';
 import {
   behindToken,
+  flattenStack,
   nestStacks,
   statusFlags,
   type FlagClass,
 } from '../../view.ts';
 import type { BoardMRWithReview, RowContext } from '../types.ts';
 import { ThreadsLink } from './CommentsDrawer.tsx';
-import {
-  ago,
-  cleanTitle,
-  commentCount,
-  flattenStack,
-  getSlackMarks,
-  mrLine,
-  statusPhrase,
-  statusReasons,
-} from './format.ts';
-import { Bubble, DiscCheck, Eyes, SlackLogo } from './icons.tsx';
-import { rowStatus } from './row-status.ts';
+import { ago, cleanTitle, getSlackMarks, mrLine } from './format.ts';
+import { Bubble, DiscCheck, Eyes, LinearLogo, SlackLogo } from './icons.tsx';
+import { rowStatus, statusPhrase, statusReasons } from './row-status.ts';
 import { slackLadder, type SlackStage } from './slack-ladder.ts';
 import { StatusDot } from './StatusDot.tsx';
 import { StatusLine } from './StatusLine.tsx';
-import { markSeen, seenCount, threadNewness } from './threads-seen.ts';
+import {
+  commentCount,
+  markSeen,
+  seenCount,
+  threadNewness,
+} from './threads-seen.ts';
 
 /** Plain click opens the MR in GitLab; right-click opens the row action menu
     (wired separately). Clicks on inner links/buttons are left to those. */
@@ -87,25 +84,20 @@ const STAGE_ICON: Record<SlackStage, () => React.JSX.Element> = {
   commented: Bubble,
   approved: DiscCheck,
 };
-const STAGE_TITLE: Record<SlackStage, string> = {
-  looking: 'someone is looking at this',
-  commented: 'commented in slack',
-  approved: 'approved in slack',
-};
 
-/** Line 1's Slack ladder: the furthest reaction as a mono mark, then the
+/** Line 0's Slack ladder: the furthest reaction as a mono mark, then the
     brand-colored logo once the MR is posted. Nothing renders before that. */
 function SlackMarks({ mr }: { mr: BoardMRWithReview }) {
-  const ladder = slackLadder(mr.slack, getSlackMarks());
-  if (!ladder.posted) return null;
-  const Stage = ladder.stage ? STAGE_ICON[ladder.stage] : null;
+  const { posted, mark } = slackLadder(mr.slack, getSlackMarks());
+  if (!posted) return null;
+  const Stage = mark ? STAGE_ICON[mark.stage] : null;
   return (
     <span className="tui-row-marks">
-      {Stage && ladder.stage && (
+      {Stage && mark && (
         <span
           className="tui-mark"
-          data-slack-stage={ladder.stage}
-          title={STAGE_TITLE[ladder.stage]}
+          data-slack-stage={mark.stage}
+          title={mark.title}
         >
           <Stage />
         </span>
@@ -128,15 +120,7 @@ function TicketLink({ ticket }: { ticket: string }) {
       aria-label={`open ${ticket} in Linear`}
       onClick={e => e.stopPropagation()}
     >
-      <svg
-        viewBox="0 0 100 100"
-        width="13"
-        height="13"
-        fill="currentColor"
-        aria-hidden
-      >
-        <path d="M1.22541 61.5228c-.2225-.9485.90748-1.5459 1.59638-.857L39.3342 97.1783c.6889.6889.0915 1.8189-.857 1.5964C20.0515 94.4522 5.54779 79.9485 1.22541 61.5228ZM.00189135 46.8891c-.01764375.2833.08887215.5599.28957165.7606L52.3503 99.7085c.2007.2007.4773.3072.7606.2896 2.3692-.1476 4.6938-.46 6.9624-.9259.7645-.157 1.0301-1.0963.4782-1.6481L2.57595 39.4485c-.55186-.5519-1.49117-.2863-1.648174.4782-.465915 2.2686-.77832 4.5932-.92588465 6.9624ZM4.21093 29.7054c-.16649.3738-.08169.8106.20765 1.1l64.77602 64.776c.2894.2894.7262.3742 1.1.2077 1.7861-.7956 3.5171-1.6927 5.1855-2.684.5521-.328.6373-1.0867.1832-1.5407L8.43566 24.3367c-.45409-.4541-1.21271-.3689-1.54074.1832-.99128 1.6684-1.88843 3.3994-2.68399 5.1855ZM12.6587 18.074c-.3701-.3701-.393-.9637-.0443-1.3541C21.7795 6.45931 35.1114 0 49.9519 0 77.5927 0 100 22.4073 100 50.0481c0 14.8405-6.4593 28.1724-16.7199 37.3375-.3904.3487-.984.3258-1.3541-.0443L12.6587 18.074Z" />
-      </svg>
+      <LinearLogo />
     </a>
   );
 }
@@ -146,7 +130,7 @@ function TicketLink({ ticket }: { ticket: string }) {
     board last recorded for this MR; a first sighting, or a count that fell
     below the record, rewrites that baseline after commit, so an abandoned
     render never records a count the user did not see. */
-function Facts({ mr, now }: { mr: BoardMR; now: number }) {
+function Rail({ mr, now }: { mr: BoardMR; now: number }) {
   const count = commentCount(mr);
   const seen = mr.webUrl ? seenCount(mr.webUrl) : null;
   const newness = threadNewness(seen, count);
@@ -157,7 +141,7 @@ function Facts({ mr, now }: { mr: BoardMR; now: number }) {
   }, [record, webUrl]);
   const grew = seen === null ? 0 : count - seen;
   return (
-    <span className="tui-facts">
+    <span className="tui-rail">
       {count > 0 && (
         <ThreadsLink
           mr={mr}
@@ -206,6 +190,7 @@ function RowView({
     const nested = depth > 0;
     const status = rowStatus(mr, now, ctx.draftResolved, ctx.self);
     const behind = behindToken(mr);
+    const url = mr.webUrl;
     return (
       <div
         key={mr.iid}
@@ -222,10 +207,10 @@ function RowView({
         )}
         <div className="tui-row-pick">
           <StatusDot mr={mr} />
-          {mr.webUrl && (
+          {url && (
             <SelectBox
-              checked={ctx.selected.has(mr.webUrl)}
-              onToggle={() => ctx.onToggleSelect(mr.webUrl!)}
+              checked={ctx.selected.has(url)}
+              onToggle={() => ctx.onToggleSelect(url)}
             />
           )}
         </div>
@@ -269,7 +254,7 @@ function RowView({
                 {behind.text}
               </span>
             )}
-            <Facts mr={mr} now={now} />
+            <Rail mr={mr} now={now} />
           </div>
           <StatusLine
             mr={mr}
@@ -313,11 +298,4 @@ function RowView({
   );
 }
 
-export {
-  onRowClick,
-  StatusFlags,
-  StatusPhrase,
-  TicketLink,
-  AuthorTag,
-  RowView,
-};
+export { RowView };

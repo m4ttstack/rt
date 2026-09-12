@@ -178,7 +178,7 @@ test('an answer verb opens the queue on its gate', async () => {
   expect(opened).toEqual(['g1']);
 });
 
-test('the all-clear line puts the word first and the sun leading the detail, with an open verb', async () => {
+test('the all-clear line puts the word first, then the sun, then the detail, with an open verb', async () => {
   await render(
     {
       line: {
@@ -196,9 +196,11 @@ test('the all-clear line puts the word first and the sun leading the detail, wit
   const word = line.querySelector('.tui-status-word')!;
   expect(word.textContent).toBe('all clear');
   expect(word.querySelector('svg')).toBeNull();
+  expect(word.nextElementSibling!.className).toBe('tui-status-sun');
+  expect(word.nextElementSibling!.querySelector('svg')).not.toBeNull();
   const detail = line.querySelector('.tui-status-detail')!;
-  expect(detail.firstElementChild!.tagName.toLowerCase()).toBe('svg');
-  expect(detail.textContent).toBe(' enjoy the sunshine');
+  expect(detail.querySelector('svg')).toBeNull();
+  expect(detail.textContent).toBe('enjoy the sunshine');
   expect(
     container.querySelector('button[data-verb="open-mr"]')!.textContent
   ).toBe('open ↗');
