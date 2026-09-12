@@ -12,7 +12,7 @@ import {
   SlackPostedChip,
   SlackReactionChips,
 } from './chips.tsx';
-import { draftKey, hasBoardBadges } from './format.ts';
+import { draftKey, hasBoardBadges, laneInterrupted } from './format.ts';
 
 /** The badge/chip row under each MR row, wrapped in the caller's layout class
     ("tui-row-board"). Internalizes the hasBoardBadges guard: callers drop
@@ -31,9 +31,14 @@ export function BoardBadges({
   if (!hasBoardBadges(mr)) return null;
   return (
     <div className={className}>
-      <ReviewBadge review={mr.review} onOpen={() => ctx.onOpenReview(mr)} />
+      <ReviewBadge
+        review={mr.review}
+        interrupted={laneInterrupted(mr.orphan, mr.review)}
+        onOpen={() => ctx.onOpenReview(mr)}
+      />
       <RespondBadge
         respond={mr.respond}
+        interrupted={laneInterrupted(mr.orphan, mr.respond)}
         onResume={() => ctx.onResumeRespond(mr)}
         onOpen={() => ctx.onOpenRespond(mr)}
       />

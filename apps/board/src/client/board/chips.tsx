@@ -93,24 +93,34 @@ const REVIEW_INTENT: Record<ReviewStatus, ChipIntent> = {
 
 function ReviewBadge({
   review,
+  interrupted,
   onOpen,
 }: {
   review?: ReviewInfo;
+  interrupted?: boolean;
   onOpen?: () => void;
 }) {
   if (!review) return null;
-  const label = REVIEW_LABEL[review.status];
-  const title = review.message || label;
+  // A gone executor only contradicts the in-flight states: "done"/"error"
+  // are already true whether or not the pane survived.
+  const cut =
+    !!interrupted &&
+    (review.status === 'queued' || review.status === 'reviewing');
+  const label = cut ? 'interrupted' : REVIEW_LABEL[review.status];
+  const title = cut
+    ? 'pane closed mid-review — right-click to relaunch'
+    : review.message || label;
   // `queued` is the only state that keeps the neutral frame; every other one
   // painted `border-color: currentColor` over it, which IS the outline variant.
-  const queued = review.status === 'queued';
+  const queued = review.status === 'queued' && !cut;
   const look = {
-    intent: REVIEW_INTENT[review.status],
+    intent: cut ? ('warn' as const) : REVIEW_INTENT[review.status],
     variant: queued ? ('subtle' as const) : ('outline' as const),
     dimmed: queued,
-    pulse: review.status === 'reviewing',
+    pulse: !cut && review.status === 'reviewing',
     icon: BADGE_ICON.review,
     'data-review': review.status,
+    ...(cut ? { 'data-interrupted': true } : null),
   };
   // When the agent has saved its write-up, the badge becomes a button that
   // opens the review modal. onRowClick ignores clicks on buttons, so this
@@ -164,10 +174,12 @@ const RESPOND_PULSING = new Set<RespondCell>([
     a posted run from drafts left waiting. */
 function RespondBadge({
   respond,
+  interrupted,
   onResume,
   onOpen,
 }: {
   respond?: RespondInfo;
+  interrupted?: boolean;
   onResume?: () => void;
   onOpen?: () => void;
 }) {
@@ -189,14 +201,22 @@ function RespondBadge({
     respond.status === 'done'
       ? respondOutcome(respond.posted, respond.threads)
       : respond.status;
-  const queued = cell === 'queued';
+  // Same rule as ReviewBadge: only the in-flight cells contradict a gone
+  // executor; a finished or failed run's word stands on its own.
+  const cut = !!interrupted && (cell === 'queued' || RESPOND_PULSING.has(cell));
+  const cutLabel = cut ? 'interrupted' : label;
+  const cutTitle = cut
+    ? 'pane closed mid-response — right-click to relaunch'
+    : title;
+  const queued = cell === 'queued' && !cut;
   const look = {
-    intent: RESPOND_INTENT[cell],
+    intent: cut ? ('warn' as const) : RESPOND_INTENT[cell],
     variant: queued ? ('subtle' as const) : ('outline' as const),
     dimmed: queued,
-    pulse: RESPOND_PULSING.has(cell),
+    pulse: !cut && RESPOND_PULSING.has(cell),
     icon: BADGE_ICON.respond,
     'data-respond': cell,
+    ...(cut ? { 'data-interrupted': true } : null),
   };
   // Unposted replies mean a pane is still parked at the posting gate holding
   // them, so the badge doubles as the way back into it. Takes priority over
@@ -235,8 +255,8 @@ function RespondBadge({
     );
   }
   return (
-    <Chip {...look} title={title}>
-      {label}
+    <Chip {...look} title={cutTitle}>
+      {cutLabel}
     </Chip>
   );
 }

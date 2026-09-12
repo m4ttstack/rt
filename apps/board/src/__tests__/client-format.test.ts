@@ -6,6 +6,7 @@ import {
   cleanTitle,
   DOCTOR_LABEL,
   gitlabMenuItems,
+  laneInterrupted,
   nudgeChipText,
   PEER_PHRASE,
   peerState,
@@ -168,4 +169,25 @@ test('gitlabMenuItems: nothing raised means an empty list', () => {
       behindTarget: null,
     } as never)
   ).toEqual([]);
+});
+
+test('laneInterrupted: a gone orphan cuts the lane its sessionId names', () => {
+  const orphan = { state: 'gone', sessionId: 'sess-1' } as never;
+  expect(laneInterrupted(orphan, { sessionId: 'sess-1' })).toBe(true);
+  // A lane on a DIFFERENT session (relaunched since) is not interrupted.
+  expect(laneInterrupted(orphan, { sessionId: 'sess-2' })).toBe(false);
+});
+
+test('laneInterrupted: subject-matched orphans (no session tie) cut any lane', () => {
+  const orphan = { state: 'gone', sessionId: 'sess-1' } as never;
+  // The lane never recorded a session id (queued): the orphan still applies.
+  expect(laneInterrupted(orphan, {})).toBe(true);
+});
+
+test('laneInterrupted: hidden or missing orphans and missing lanes never cut', () => {
+  const hidden = { state: 'hidden', sessionId: 'sess-1' } as never;
+  expect(laneInterrupted(hidden, { sessionId: 'sess-1' })).toBe(false);
+  expect(laneInterrupted(undefined, { sessionId: 'sess-1' })).toBe(false);
+  const gone = { state: 'gone', sessionId: 'sess-1' } as never;
+  expect(laneInterrupted(gone, undefined)).toBe(false);
 });

@@ -500,6 +500,22 @@ function doctorItemLabel(status?: DoctorStatus): string {
   return 'focus doctor tab';
 }
 
+/** Whether a lane (review/respond) was cut down by its executor pane dying:
+    the row's orphan is `gone` and the lane is the one it ran. When both
+    sides recorded a session id, the ids must agree -- a lane relaunched on
+    a fresh session is not interrupted by its predecessor's corpse. When
+    either side lacks one (a queued lane, a subject-matched orphan), the
+    gone executor is the best signal available and applies. */
+function laneInterrupted(
+  orphan: { state: string; sessionId?: string | null } | undefined,
+  lane: { sessionId?: string | null } | undefined
+): boolean {
+  if (orphan?.state !== 'gone' || !lane) return false;
+  if (lane.sessionId && orphan.sessionId)
+    return lane.sessionId === orphan.sessionId;
+  return true;
+}
+
 /** The GitLab-side actions the row menu offers for this MR, driven by the
     view-model button state glance already computed. The rebase item also
     raises on plain behind-ness: glance keeps rebaseButton mirroring GitLab's
@@ -553,6 +569,7 @@ export {
   CHIP_CELL_WORDS,
   NUDGE_RETRYABLE,
   gitlabMenuItems,
+  laneInterrupted,
   nudgeChipText,
   nudgeTargets,
   draftKey,
