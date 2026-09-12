@@ -219,3 +219,30 @@ test('suppressed candidates render as +N active with their words in the title', 
   expect(more.textContent).toBe('+2 active');
   expect(more.getAttribute('title')).toBe('implementing…, watching CI…');
 });
+
+test('a long detail renders its first clause and keeps the whole message as the tooltip', async () => {
+  const full =
+    'rebased acme-2214 onto origin/main (pat); resolved Overview.test.tsx conflict (kept both sides)';
+  await render(
+    {
+      line: { tone: 'go', word: 'diagnosed', detail: full, verbs: [] },
+      more: [],
+      bar: null,
+    },
+    ctx()
+  );
+  const detail = container.querySelector('.tui-status-detail')!;
+  expect(detail.textContent).toBe('rebased acme-2214 onto origin/main');
+  expect(detail.getAttribute('title')).toBe(full);
+  await render(
+    {
+      line: { tone: 'go', word: 'diagnosed', detail: 'short', verbs: [] },
+      more: [],
+      bar: null,
+    },
+    ctx()
+  );
+  expect(
+    container.querySelector('.tui-status-detail')!.getAttribute('title')
+  ).toBeNull();
+});

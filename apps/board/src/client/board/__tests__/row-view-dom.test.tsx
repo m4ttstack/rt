@@ -238,7 +238,7 @@ test('a thread count that shrinks lowers the baseline instead of holding the old
   ).toBe('true');
 });
 
-test('mechanical flags render inline on line 1, never as their own line', async () => {
+test('mechanical flags share the state line with the pill; the title stands alone', async () => {
   await render([
     mr({
       blockers: { any: true, hasConflicts: true, pipelineFailing: false },
@@ -246,7 +246,12 @@ test('mechanical flags render inline on line 1, never as their own line', async 
   ]);
   const row = container.querySelector('.tui-row')!;
   expect(row.querySelector('.tui-row-review')).toBeNull();
-  expect(row.querySelector('.tui-row-1 [data-flag]')).not.toBeNull();
+  expect(
+    row.querySelector('.tui-row-0 .tui-row-flags [data-flag]')
+  ).not.toBeNull();
+  expect(row.querySelector('.tui-row-0 .tui-phrase')).not.toBeNull();
+  expect(row.querySelector('.tui-row-1')!.children).toHaveLength(1);
+  expect(row.querySelector('.tui-row-1 .tui-title')).not.toBeNull();
 });
 
 test('the state pill carries the merge blockers in its tooltip', async () => {

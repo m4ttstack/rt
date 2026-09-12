@@ -38,6 +38,9 @@ Validated against Matt's daily use before the design was drawn.
 
 ## The anatomy, as approved
 
+(Superseded in part by the rulings under "Implemented" below: the served
+row is four lines, with a state line above the title.)
+
 - Row: 92px fixed (78px in the compact variant), 12/16 padding, 40px
   gutter holding only the status dot; the 3px attention bar is flush to
   the row's left edge and spans its full height.
@@ -89,3 +92,24 @@ weight are defects.
 `StatusLine.tsx` renders the line, `RowView.tsx` the row. The fixture board
 (`apps/board/tests/fixture`) carries every state drawn here, and
 `bun run capture:compare` holds the recorded baselines.
+
+### Rulings after live use (2026-09-12)
+
+The served board departs from the artboards above in these ways; the
+recorded capture baselines, not the artboards, are the reference for them.
+
+- **A state line above the title.** Line 1 as drawn (title, marks, pill,
+  then the mechanical flags) put the flags on the corner: the one spot
+  that should hold a single anchored badge moved around and grew chips.
+  The row is now four lines at 114px: line 0 holds the flags (draft,
+  conflicts, ci failing, stacked) at the left edge and the Slack marks plus
+  the state pill at the corner; the title owns line 1 alone. The gutter dot
+  sits level with the state line.
+- **One comments entry.** The pill reads "commented" without a count; the
+  count lives only on the facts line's thread link, the drawer's entry.
+- **Tools left of the verb.** The ticket and copy tools appear under the
+  pointer to the left of the primary verb, so the verb never moves.
+- **Long details clamp.** A status detail past 44 characters is cut at its
+  first clause boundary (`;`, `. `, or an opening paren) or the last word
+  before the cap, with the full text in the tooltip (`clauseOf` in
+  `row-status.ts`).

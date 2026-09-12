@@ -96,14 +96,25 @@ async function newPage(width: number, theme: 'light' | 'dark'): Promise<Page> {
     so a shot taken straight after a selector wait can catch either side of
     that swap. Waiting on the font set before every shot settles it. */
 async function shoot(page: Page, name: string): Promise<void> {
-  await page.evaluate(
-    () =>
-      (
-        globalThis as unknown as {
-          document: { fonts: { ready: Promise<unknown> } };
-        }
-      ).document.fonts.ready
-  );
+  await page.evaluate(async () => {
+    const { document, requestAnimationFrame } = globalThis as unknown as {
+      document: {
+        fonts: { ready: Promise<unknown>; status: 'loading' | 'loaded' };
+      };
+      requestAnimationFrame: (cb: () => void) => void;
+    };
+    const frame = () =>
+      new Promise<void>(r => requestAnimationFrame(() => r()));
+    // A face requested by content that laid out after the last `ready`
+    // settled (the drawer's code font) starts loading a frame later; loop
+    // until a settled `ready` is followed by a frame with nothing loading.
+    for (let i = 0; i < 10; i++) {
+      await document.fonts.ready;
+      await frame();
+      await frame();
+      if (document.fonts.status === 'loaded') return;
+    }
+  });
   await page.screenshot({ path: join(OUT, `${name}.png`), fullPage: true });
   console.log(`  ✓ ${name}`);
 }
@@ -112,6 +123,12 @@ for (const theme of ['light', 'dark'] as const) {
   // rows view, desktop
   let page = await newPage(1280, theme);
   await shoot(page, `rows-${theme}`);
+  // a row under the pointer: the checkbox swaps in, the secondary verbs and
+  // the tools appear left of the primary verb, which must not move
+  await page.locator('.tui-row').first().hover();
+  await page.waitForSelector('.tui-row:hover .tui-status-tools');
+  await shoot(page, `rowhover-${theme}`);
+  await page.mouse.move(0, 0);
   // row menu open (right-click the first row)
   await page.click('.tui-row', { button: 'right' });
   // `.tui-menu` is gone: the menu shell is the kit's ContextMenu recipe, named
@@ -181,6 +198,11 @@ for (const theme of ['light', 'dark'] as const) {
   await page.click('.tui-burger');
   await page.waitForSelector('[data-part="sidedrawer"][data-side="left"]');
   await shoot(page, `drawer-${theme}`);
+  await page.close();
+
+  // phone width (the 480px rules: branch and behind hidden, pill tightened)
+  page = await newPage(400, theme);
+  await shoot(page, `phone-${theme}`);
   await page.close();
 
   // focus states: tab from the top and shoot the first few focus stops

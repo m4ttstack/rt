@@ -249,11 +249,9 @@ function statusPhrase(mr: BoardMR): { text: string; cls: string } {
   if (hasChangesRequested(mr))
     return { text: 'changes requested', cls: 't-bad' };
   if (mr.reviews.isApproved) return { text: 'approved', cls: 't-ok' };
-  if (comments > 0)
-    return {
-      text: `${comments} comment${comments === 1 ? '' : 's'}`,
-      cls: 't-warn',
-    };
+  // The count itself lives on the facts line's thread link (the one drawer
+  // entry on every row); the pill only names the state.
+  if (comments > 0) return { text: 'commented', cls: 't-warn' };
   if (commentsAllResolved(mr))
     return { text: 'comments resolved', cls: 't-ok' };
   if (mr.reviews.required > 0 && mr.reviews.given > 0)

@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 
 import type { BoardMRWithReview, RowContext } from '../types.ts';
 import { Sun } from './icons.tsx';
-import type { RowStatus, Verb } from './row-status.ts';
+import { clauseOf, type RowStatus, type Verb } from './row-status.ts';
 
 function runVerb(verb: Verb, mr: BoardMRWithReview, ctx: RowContext): void {
   switch (verb.kind) {
@@ -64,24 +64,25 @@ export function StatusLine({
   status: RowStatus;
   ctx: RowContext;
   /** Row utilities that are verbs too (open the ticket, copy for Slack):
-      they ride the status line's right end and show only under the pointer,
-      so line 1 stays the title's. */
+      they ride the status line's right end, left of the verbs so the verb
+      never moves when they appear, and show only under the pointer. */
   tools?: ReactNode;
 }) {
   const { line, more } = status;
   const hot = line.tone === 'bad' || line.tone === 'warn';
+  const detail = line.detail ? clauseOf(line.detail) : null;
   return (
     <div className="tui-status" data-tone={line.tone}>
       <span className="tui-status-word">{line.word}</span>
       {line.spin && <span className="tui-status-ring" aria-hidden />}
-      {line.detail && (
-        <span className="tui-status-detail">
+      {detail && (
+        <span className="tui-status-detail" title={detail.full ?? undefined}>
           {line.tone === 'clear' && (
             <>
               <Sun />{' '}
             </>
           )}
-          {line.detail}
+          {detail.text}
         </span>
       )}
       {more.length > 0 && (
@@ -92,6 +93,7 @@ export function StatusLine({
           +{more.length} active
         </span>
       )}
+      {tools && <span className="tui-status-tools">{tools}</span>}
       {line.verbs.length > 0 && (
         <span className="tui-status-verbs">
           {line.verbs.map((verb, i) => (
@@ -112,7 +114,6 @@ export function StatusLine({
           ))}
         </span>
       )}
-      {tools && <span className="tui-status-tools">{tools}</span>}
     </div>
   );
 }

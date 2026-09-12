@@ -230,22 +230,26 @@ function RowView({
           )}
         </div>
         <div className="tui-row-body">
-          <div className="tui-row-1">
-            {mr.isDraft && (
-              <Chip
-                intent="muted"
-                variant="subtle"
-                uppercase
-                data-draft=""
-                title="draft, right-click to mark ready"
-              >
-                draft
-              </Chip>
-            )}
-            <span className="tui-title">{cleanTitle(mr.title)}</span>
+          <div className="tui-row-0">
+            <span className="tui-row-flags">
+              {mr.isDraft && (
+                <Chip
+                  intent="muted"
+                  variant="subtle"
+                  uppercase
+                  data-draft=""
+                  title="draft, right-click to mark ready"
+                >
+                  draft
+                </Chip>
+              )}
+              <StatusFlags mr={mr} nested={nested} />
+            </span>
             <SlackMarks mr={mr} />
             <StatusPhrase mr={mr} />
-            <StatusFlags mr={mr} nested={nested} />
+          </div>
+          <div className="tui-row-1">
+            <span className="tui-title">{cleanTitle(mr.title)}</span>
           </div>
           <div className="tui-row-2">
             {showAuthor && <AuthorTag mr={mr} />}

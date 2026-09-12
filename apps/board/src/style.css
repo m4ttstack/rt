@@ -280,11 +280,12 @@ body {
   outline-offset: 2px;
 }
 /* ── the row ─────────────────────────────────────────────────────────
-   Fixed height, three lines, one content edge. The gutter holds the status
-   dot (and the checkbox on hover / in select mode); the attention bar is
-   flush to the row's left edge. Nothing on a row may grow it. */
+   Fixed height, four lines, one content edge: state, title, facts, status.
+   The gutter holds the status dot (and the checkbox on hover / in select
+   mode) level with the state line; the attention bar is flush to the row's
+   left edge. Nothing on a row may grow it. */
 .tui-rows {
-  --row-h: 92px;
+  --row-h: 114px;
 }
 .tui-row {
   display: grid;
@@ -362,11 +363,30 @@ body {
   font-size: 10px;
 }
 
-/* Line 1: identity. */
-.tui-row-1 {
+/* Line 0: state. Flags sit at the left edge and clip before the pill does;
+   the Slack marks and the pill hold the corner. */
+.tui-row-0 {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+  height: 20px;
+  margin-bottom: 2px;
+}
+.tui-row-flags {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* Line 1: the title, alone. */
+.tui-row-1 {
+  display: flex;
+  align-items: center;
   min-width: 0;
   height: 20px;
 }
@@ -597,6 +617,8 @@ body {
   overflow: visible;
   clip-path: none;
 }
+/* Revealed tools take the auto margin and the verbs give theirs up, so the
+   verb keeps its corner and the tools stack to its left. */
 .tui-row:hover .tui-status-tools,
 .tui-row:focus-within .tui-status-tools {
   position: static;
@@ -608,10 +630,10 @@ body {
   margin-left: auto;
   padding-left: 16px;
 }
-.tui-row:hover .tui-status-verbs + .tui-status-tools,
-.tui-row:focus-within .tui-status-verbs + .tui-status-tools {
+.tui-row:hover .tui-status-tools + .tui-status-verbs,
+.tui-row:focus-within .tui-status-tools + .tui-status-verbs {
   margin-left: 0;
-  padding-left: 12px;
+  padding-left: 14px;
 }
 @media (hover: none) {
   .tui-status-verb[data-secondary] {
@@ -631,9 +653,9 @@ body {
     margin-left: auto;
     padding-left: 16px;
   }
-  .tui-status-verbs + .tui-status-tools {
+  .tui-status-tools + .tui-status-verbs {
     margin-left: 0;
-    padding-left: 12px;
+    padding-left: 14px;
   }
 }
 /* The decision queue's strip separates its facts with this glyph; rows carry
@@ -1233,9 +1255,8 @@ body {
     display: none;
   }
 }
-/* Phone width: the title owns line 1. The branch and behind-target are
-   unreadable at this width anyway; the reaction stage yields to the logo;
-   the pill tightens. */
+/* Phone width: the branch and behind-target are unreadable at this width
+   anyway; the reaction stage yields to the logo; the pill tightens. */
 @media (max-width: 480px) {
   .tui-branch,
   .tui-behind,
@@ -1249,9 +1270,6 @@ body {
     font-size: 0.55rem;
     padding: 1px 4px;
     letter-spacing: 0.02em;
-  }
-  .tui-row-1 [data-flag] {
-    display: none;
   }
   /* The avatar alone names the author; the title attribute keeps the name. */
   .tui-author-tag {
@@ -2241,7 +2259,7 @@ body {
    read. Setting the PROPERTY wins at any specificity, because this file is
    unlayered and the recipe sits inside `@layer soribashi.recipes`. */
 /* Mechanical-blocker flags (conflicts / ci / stacked) keep a frame with no
-   vertical padding: on a row they sit inline on the 20px identity line, and
+   vertical padding: on a row they sit inline on the 20px state line, and
    the frame must not outgrow it. */
 [data-part='chip'][data-flag] {
   opacity: 0.9;
