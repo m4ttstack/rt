@@ -130,7 +130,15 @@ function TicketLink({ ticket }: { ticket: string }) {
     board last recorded for this MR; a first sighting, or a count that fell
     below the record, rewrites that baseline after commit, so an abandoned
     render never records a count the user did not see. */
-function Rail({ mr, now }: { mr: BoardMR; now: number }) {
+function Rail({
+  mr,
+  now,
+  self,
+}: {
+  mr: BoardMR;
+  now: number;
+  self: string | null;
+}) {
   const count = commentCount(mr);
   const seen = mr.webUrl ? seenCount(mr.webUrl) : null;
   const newness = threadNewness(seen, count);
@@ -140,6 +148,11 @@ function Rail({ mr, now }: { mr: BoardMR; now: number }) {
     if (record !== null && webUrl) markSeen(webUrl, record);
   }, [record, webUrl]);
   const grew = seen === null ? 0 : count - seen;
+  const mine = self !== null && mr.author.username === self;
+  const awaitYou = mine ? (mr.threadSummary?.awaiting ?? 0) : 0;
+  const my = mr.myThreads;
+  const replied =
+    !mine && !!my && my.awaiting === 0 && my.replied + my.resolved > 0;
   return (
     <span className="tui-rail">
       {count > 0 && (
@@ -148,6 +161,8 @@ function Rail({ mr, now }: { mr: BoardMR; now: number }) {
           count={count}
           fresh={newness.fresh}
           grew={grew}
+          awaitYou={awaitYou}
+          replied={replied}
           onOpen={() => mr.webUrl && markSeen(mr.webUrl, count)}
         />
       )}
@@ -266,7 +281,7 @@ function RowView({
                 <span className="tui-dels">−{mr.diff.deletions}</span>
               </span>
             )}
-            <Rail mr={mr} now={now} />
+            <Rail mr={mr} now={now} self={ctx.self} />
           </div>
           <StatusLine
             mr={mr}

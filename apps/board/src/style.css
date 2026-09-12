@@ -520,6 +520,9 @@ body {
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
 }
+/* The threads token: the drawer's entry, read at full weight. Newness is
+   accent and bold with a dot; the qualifiers are their own color so no
+   glyph separates them from the count. */
 .tui-threads {
   margin: 0;
   padding: 0;
@@ -527,13 +530,41 @@ body {
   background: none;
   font: inherit;
   cursor: pointer;
-  color: color-mix(in srgb, var(--accent) 35%, var(--muted-text));
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 500;
+  color: var(--fg);
+}
+.tui-threads svg {
+  color: var(--muted-text);
 }
 .tui-threads[data-new] {
   color: var(--accent-text);
   font-weight: 700;
 }
-.tui-threads:hover {
+.tui-threads[data-new] svg {
+  color: var(--accent-text);
+}
+.tui-threads[data-new] .tui-threads-count::after {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: middle;
+}
+.tui-threads-await {
+  color: var(--amber);
+  font-weight: 600;
+}
+.tui-threads-replied {
+  color: var(--accent-text);
+  font-weight: 600;
+}
+.tui-threads:hover .tui-threads-count {
   text-decoration: underline;
 }
 .tui-age {

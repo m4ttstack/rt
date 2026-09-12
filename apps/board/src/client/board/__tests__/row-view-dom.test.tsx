@@ -368,3 +368,42 @@ test('with neither author nor ticket the header line holds only the flags', asyn
   const lead = container.querySelector('.tui-row-0 .tui-row-lead')!;
   expect([...lead.children].map(c => c.className)).toEqual(['tui-flag']);
 });
+
+test('the threads token: icon, count, and no qualifier on a stranger MR', async () => {
+  await render([mr({ threadSummary: { awaiting: 2, replied: 1, resolved: 2 } } as never)]);
+  const link = container.querySelector('.tui-threads')!;
+  expect(link.querySelector('svg')).not.toBeNull();
+  expect(link.querySelector('.tui-threads-count')!.textContent).toBe('5 threads');
+  expect(link.textContent).toBe('5 threads');
+  expect(link.querySelector('.tui-threads-await')).toBeNull();
+  expect(link.querySelector('.tui-threads-replied')).toBeNull();
+});
+
+test('on my own MR the token counts the threads awaiting me', async () => {
+  await render(
+    [mr({ author: { username: 'me', name: 'Me' }, threadSummary: { awaiting: 2, replied: 0, resolved: 2 } } as never)],
+    ctx({ self: 'me' })
+  );
+  const link = container.querySelector('.tui-threads')!;
+  expect(link.querySelector('.tui-threads-count')!.textContent).toBe('4 threads');
+  expect(link.querySelector('.tui-threads-await')!.textContent).toBe('2 await you');
+  expect(link.textContent).not.toContain('·');
+  await render(
+    [mr({ author: { username: 'me', name: 'Me' }, threadSummary: { awaiting: 1, replied: 0, resolved: 0 } } as never)],
+    ctx({ self: 'me' })
+  );
+  expect(container.querySelector('.tui-threads-await')!.textContent).toBe('1 awaits you');
+});
+
+test("on someone else's MR the token says the author replied to my threads", async () => {
+  await render(
+    [mr({ threadSummary: { awaiting: 0, replied: 1, resolved: 1 }, myThreads: { awaiting: 0, replied: 1, resolved: 1 } } as never)],
+    ctx({ self: 'me' })
+  );
+  expect(container.querySelector('.tui-threads-replied')!.textContent).toBe('author replied');
+  await render(
+    [mr({ threadSummary: { awaiting: 1, replied: 1, resolved: 0 }, myThreads: { awaiting: 1, replied: 1, resolved: 0 } } as never)],
+    ctx({ self: 'me' })
+  );
+  expect(container.querySelector('.tui-threads-replied')).toBeNull();
+});
