@@ -435,6 +435,19 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
     pendingBlocked.delete(agentId);
     pendingGone.delete(agentId);
     previousStates.delete(agentId);
+
+    // The tombstone maps this agent to "cleared" on every future sweep
+    // (computeView checks clearedAgentIds first), but lastStatus is only
+    // rebuilt on the sweep tick -- up to a full interval away. A status
+    // consumer refetching right after the clear round-trips (the board
+    // reloads on the click) must see the state the tombstone already
+    // decided, so flip the cached entry in place.
+    const cached = lastStatus.executors.find((e) => e.agentId === agentId);
+    if (cached && cached.state !== "cleared") {
+      cached.state = "cleared";
+      cached.since = Date.now();
+      sinceByAgent.set(agentId, { state: "cleared", since: cached.since });
+    }
   }
 
   function executorFor(hints: PaneHints): { state: ExecutorState; pane: LivePane | null } {
