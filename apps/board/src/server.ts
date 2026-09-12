@@ -955,8 +955,19 @@ const httpServer = Bun.serve({
               heldDraftsByMr(readDrafts())
             )
           );
+          // Reconciler joins too, for the same wholesale-replace reason: rows
+          // served here without `orphan`/`executor` made the interrupted
+          // badge and orphan strip blink out on every 15s member poll.
+          const reconciler = await fetchReconcilerView();
+          const { mrs: withOrphans } = joinExecutorOrphans(
+            withState.map(mr => ({
+              ...mr,
+              gates: joinGateExecutors(mr.gates, reconciler.executors),
+            })),
+            reconciler.executors
+          );
           return new Response(
-            JSON.stringify({ mrs: withState, fetchedAt: Date.now() }),
+            JSON.stringify({ mrs: withOrphans, fetchedAt: Date.now() }),
             {
               headers: { 'content-type': 'application/json' },
             }
