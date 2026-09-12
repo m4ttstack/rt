@@ -73,6 +73,17 @@ describe("git-async", () => {
     expect(side.headSha).not.toBe(main.headSha);
   });
 
+  test("listWorktreesAsync reports headSha null for an unborn HEAD (no commits yet)", async () => {
+    // Git's porcelain listing reports the all-zero object id for an unborn
+    // HEAD, not an absent line; a real WorktreeEntry.headSha must never be
+    // that literal string (2026-09-12 CodeRabbit finding on RT-129).
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "rtgit-unborn-")));
+    execSync("git init -q -b main .", { cwd: dir, shell: "/bin/zsh" });
+    const trees = (await listWorktreesAsync(dir))!;
+    expect(trees.length).toBe(1);
+    expect(trees[0]!.headSha).toBeNull();
+  });
+
   test("listWorktreesAsync returns null on a nonzero git exit", async () => {
     const notARepo = mkdtempSync(join(tmpdir(), "rtgit-notrepo-"));
     expect(await listWorktreesAsync(notARepo)).toBeNull();
