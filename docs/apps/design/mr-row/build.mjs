@@ -227,12 +227,12 @@ const row = (dot, bar, inner, hov = false) => `<div class="row${hov ? ' hov' : '
 </div>`;
 
 const MR = {
-  iid: 44451, branch: 'feature/cv-3074', adds: 1455, dels: 13, threads: 1, age: '32h',
-  title: 'CV-3074 Port the CV2 stealth-mode and access-links case c…',
+  iid: 1418, branch: 'feature/acme-2214', adds: 1455, dels: 13, threads: 1, age: '32h',
+  title: 'ACME-2214 Port the v2 quiet-mode and share-link flows to…',
 };
-const MR2 = { iid: 44720, branch: 'feature/cv-3163', adds: 79, dels: 27, threads: 0, age: '8h', title: 'CV-3163 Let screenshot.cjs capture the auth handshake' };
-const MR4 = { iid: 44712, branch: 'feature/cv-3201', adds: 41, dels: 9, threads: 0, age: '3h', title: 'CV-3201 Vendor the report fonts so CI stops flaking' };
-const MR3 = { iid: 43946, branch: 'feature/cv-3028', adds: 18, dels: 1253, threads: 7, age: '9d', title: 'CV-3028 Delete unreachable legacy dashboards' };
+const MR2 = { iid: 1442, branch: 'feature/acme-2231', adds: 79, dels: 27, threads: 0, age: '8h', title: 'ACME-2231 Let capture.cjs record the sign-in handshake' };
+const MR4 = { iid: 1439, branch: 'feature/acme-2240', adds: 41, dels: 9, threads: 0, age: '3h', title: 'ACME-2240 Vendor the report fonts so CI stops flaking' };
+const MR3 = { iid: 1371, branch: 'feature/acme-2187', adds: 18, dels: 1253, threads: 7, age: '9d', title: 'ACME-2187 Delete unreachable legacy dashboards' };
 
 const AMBER = 'var(--amber)';
 const GREEN = 'var(--green)';
@@ -278,15 +278,15 @@ A quiet row's status line says <b>all clear</b>, softly; the height never change
     </div>`
   )}
   ${row(GREEN, '',
-    r1({ title: 'CV-3149 Widen the transform contract', phrase: 'APPROVED', phraseColor: GREEN, slack: 'looking' }) +
-    r2({ iid: 44684, branch: 'feature/cv-3149', adds: 296, dels: 16, threads: 5, age: '9h', fresh: 2 }) +
+    r1({ title: 'ACME-2226 Widen the transform contract', phrase: 'APPROVED', phraseColor: GREEN, slack: 'looking' }) +
+    r2({ iid: 1436, branch: 'feature/acme-2226', adds: 296, dels: 16, threads: 5, age: '9h', fresh: 2 }) +
     `<div class="acts">
-      ${act('work', 'geoff is reviewing…', '', [['view ↗', true]], true)}
+      ${act('work', 'pat is reviewing…', '', [['view ↗', true]], true)}
     </div>`
   )}
   ${row(GREEN, '',
-    r1({ title: 'CV-3114 Carry the standard onto the legacy grid', phrase: 'APPROVED', phraseColor: GREEN, slack: 'approved' }) +
-    r2({ iid: 44740, branch: 'feature/cv-3114', adds: 114, dels: 0, threads: 0, age: '6h' }) +
+    r1({ title: 'ACME-2209 Carry the standard onto the legacy grid', phrase: 'APPROVED', phraseColor: GREEN, slack: 'approved' }) +
+    r2({ iid: 1447, branch: 'feature/acme-2209', adds: 114, dels: 0, threads: 0, age: '6h' }) +
     `<div class="acts">${act('clear', 'all clear', `${IC.sun} enjoy the sunshine`, [['open ↗', true]])}</div>`
   )}
 </div>
@@ -317,8 +317,8 @@ the row menu and a drawer.</p>
     r2(MR3, `<span class="sep">·</span><span class="sum warn">2 findings to post</span>`)
   )}
   ${row(GREEN, '',
-    r1({ title: 'CV-3149 Widen the transform contract', phrase: 'APPROVED', phraseColor: GREEN, slack: 'looking' }) +
-    r2({ iid: 44684, branch: 'feature/cv-3149', adds: 296, dels: 16, threads: 2, age: '9h' })
+    r1({ title: 'ACME-2226 Widen the transform contract', phrase: 'APPROVED', phraseColor: GREEN, slack: 'looking' }) +
+    r2({ iid: 1436, branch: 'feature/acme-2226', adds: 296, dels: 16, threads: 2, age: '9h' })
   )}
 </div>
 <p class="cap"><b>Tradeoff:</b> calmest board and scans instantly, but one phrase can hide
@@ -402,8 +402,8 @@ const densityBody = `
     `<div class="acts">${act('work', 'running…', 'started 4m ago', [], true)}</div>`
   )}
   ${row(GREEN, '',
-    r1({ title: 'CV-3149 Widen the transform contract', phrase: 'APPROVED', phraseColor: GREEN, slack: 'looking' }) +
-    r2({ iid: 44684, branch: 'feature/cv-3149', adds: 296, dels: 16, threads: 2, age: '9h' }) +
+    r1({ title: 'ACME-2226 Widen the transform contract', phrase: 'APPROVED', phraseColor: GREEN, slack: 'looking' }) +
+    r2({ iid: 1436, branch: 'feature/acme-2226', adds: 296, dels: 16, threads: 2, age: '9h' }) +
     `<div class="acts">${act('clear', 'all clear', `${IC.sun} enjoy the sunshine`, [])}</div>`
   )}
 </div>
@@ -415,8 +415,8 @@ const densityBody = `
     `<div class="acts">${act('work', 'running…', 'started 4m ago', [], true)}</div>`
   )}
   ${row(GREEN, '',
-    r1({ title: 'CV-3149 Widen the transform contract', phrase: 'APPROVED', phraseColor: GREEN, slack: 'looking' }) +
-    r2({ iid: 44684, branch: 'feature/cv-3149', adds: 296, dels: 16, threads: 2, age: '9h' }) +
+    r1({ title: 'ACME-2226 Widen the transform contract', phrase: 'APPROVED', phraseColor: GREEN, slack: 'looking' }) +
+    r2({ iid: 1436, branch: 'feature/acme-2226', adds: 296, dels: 16, threads: 2, age: '9h' }) +
     `<div class="acts">${act('clear', 'all clear', `${IC.sun} enjoy the sunshine`, [])}</div>`
   )}
 </div>
@@ -478,7 +478,7 @@ urgent line (red beats amber).</p>
   ${L('quiet', 'answered · parked', 'resumes when the pane returns', [], false)}
   ${L('bad', 'answered, no pane to execute', '', [['relaunch'], ['dismiss', true]], false, 'bad')}
   ${L('bad', 'answer stuck', 'delivery failed twice', [['retry'], ['dismiss', true]], false, 'bad')}
-  ${L('warn', 'sam asked for a re-review', '30m ago', [['re-review']], false, 'warn')}
+  ${L('warn', 'jo asked for a re-review', '30m ago', [['re-review']], false, 'warn')}
   ${L('warn', 'held: verification note', 'doctor draft', [['read'], ['dismiss', true]], false, 'warn')}
   ${L('quiet', 'off-screen', 'pane hidden, still running', [['focus']], false)}
 </div>
@@ -496,18 +496,18 @@ for you turns into a hot line.</p>
   ${row(GREEN, '',
     r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: GREEN }) +
     r2({ ...MR3, fresh: 2 }) +
-    `<div class="acts">${act('work', 'geoff is reviewing…', '', [], true)}</div>`
+    `<div class="acts">${act('work', 'pat is reviewing…', '', [], true)}</div>`
   )}
   ${row(GREEN, '',
     r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: GREEN }) +
     r2({ ...MR3 }) +
-    `<div class="acts">${act('quiet', 'nudged sam', 'no answer yet, 30m', [], false)}</div>`
+    `<div class="acts">${act('quiet', 'nudged jo', 'no answer yet, 30m', [], false)}</div>`
   )}
 </div>
 <div class="hover">
   <b>context</b><br>
-  ${IC.slack} posted in #mr-reviews · reactions 👀 ✅<br>
-  ${IC.eye} geoff opened it 20m ago · alice reviewed yesterday
+  ${IC.slack} posted in #reviews · reactions 👀 ✅<br>
+  ${IC.eye} pat opened it 20m ago · kim reviewed yesterday
 </div>
 <p class="cap">The hover card carries the settled detail; reactions keep their emoji faces
 there, never on the row.</p>
@@ -533,7 +533,7 @@ hover names it; the full reaction detail lives in the context card.</p>
   ${row(GREEN, '',
     r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: GREEN }) +
     r2(MR3) +
-    `<div class="acts">${act('quiet', 'alice is reviewing right now')}</div>`
+    `<div class="acts">${act('quiet', 'kim is reviewing right now')}</div>`
   )}
 </div>
 `;
