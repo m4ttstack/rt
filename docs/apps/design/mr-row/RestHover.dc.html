@@ -38,14 +38,15 @@
   .cap b { color: var(--fg); font-weight: 600; }
 
   .list { border: 1px solid var(--border-soft); border-radius: 8px; background: var(--bg); overflow: hidden; }
-  .tight .row { padding: 8px 12px 8px 0; }
+  .tight .row { padding: 8px 12px 8px 0; height: 78px; }
   .tight .r2 { margin-top: 2px; }
   .tight .acts { margin-top: 5px; }
   .tight .act { line-height: 18px; }
 
   /* one content edge: 44px gutter column, then text. */
   .row { display: grid; grid-template-columns: 40px minmax(0,1fr); align-items: start;
-         padding: 12px 16px 12px 0; position: relative; }
+         padding: 12px 16px 12px 0; position: relative; height: 92px; box-sizing: border-box;
+         overflow: hidden; }
   .row + .row { border-top: 1px solid var(--border-soft); }
   .row.hov { background: color-mix(in srgb, var(--accent) 6%, transparent); }
   .gut { display: flex; align-items: center; justify-content: center; height: 20px; }
@@ -69,6 +70,11 @@
   .dels { color: color-mix(in srgb, var(--red) 70%, var(--muted)); }
   .fresh { color: var(--accent); font-weight: 600; }
   .mark { display: inline-flex; opacity: .55; }
+  .slot { flex-shrink: 0; text-align: right; font-variant-numeric: tabular-nums; }
+  .slot.diff { min-width: 9ch; }
+  .slot.thr { min-width: 11ch; }
+  .slot.age { min-width: 3.2ch; }
+  .slot.mk { width: 14px; display: inline-flex; justify-content: flex-end; }
 
   /* the ledger: 20px lines on the shared content edge. */
   .acts { margin-top: 8px; display: flex; flex-direction: column; gap: 2px; }
@@ -83,6 +89,7 @@
   .act-quiet .w { color: var(--muted); font-weight: 500; }
   .act .d { margin-left: 8px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .act .sep { flex-shrink: 0; }
+  .more { margin-left: 8px; flex-shrink: 0; color: color-mix(in srgb, var(--muted) 70%, transparent); font-size: .7rem; }
   .act .spin { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: currentColor;
                margin-left: 8px; align-self: center; animation: pulse 1.6s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity: .25; } }
@@ -128,10 +135,10 @@
     <span>!44451</span><span class="sep">·</span>
     <span class="branch">feature/cv-3074</span>
     <span class="grow"></span>
-    <span><span class="adds">+1455</span> <span class="dels">−13</span></span>
-    <span class="sep">·</span><span>1 thread</span>
-    <span class="sep">·</span><span>32h</span>
-    
+    <span class="slot diff"><span class="adds">+1455</span> <span class="dels">−13</span></span>
+    <span class="slot thr">1 thread</span>
+    <span class="slot age">32h</span>
+    <span class="slot mk"></span>
     
   </div><div class="acts">
       
@@ -140,6 +147,7 @@
     <span class="w">interrupted</span>
     
     <span class="sep" style="margin-left:8px;opacity:.45">·</span><span class="d">pane closed 12m ago</span>
+    
     <span class="do"><a href="#" class="">relaunch</a><a href="#" class="mut sec">clear</a></span>
   </div>
     </div></div>
@@ -156,10 +164,10 @@
     <span>!44451</span><span class="sep">·</span>
     <span class="branch">feature/cv-3074</span>
     <span class="grow"></span>
-    <span><span class="adds">+1455</span> <span class="dels">−13</span></span>
-    <span class="sep">·</span><span>1 thread</span>
-    <span class="sep">·</span><span>32h</span>
-    
+    <span class="slot diff"><span class="adds">+1455</span> <span class="dels">−13</span></span>
+    <span class="slot thr">1 thread</span>
+    <span class="slot age">32h</span>
+    <span class="slot mk"></span>
     
   </div><div class="acts">
       
@@ -168,6 +176,7 @@
     <span class="w">interrupted</span>
     
     <span class="sep" style="margin-left:8px;opacity:.45">·</span><span class="d">pane closed 12m ago</span>
+    
     <span class="do"><a href="#" class="">relaunch</a><a href="#" class="mut sec">clear</a></span>
   </div>
     </div></div>

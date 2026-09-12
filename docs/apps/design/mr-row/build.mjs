@@ -10,9 +10,10 @@
 //   2. Zoom: glance (edge bars) -> rest -> hover (all verbs, context
 //      card) -> menu/queue. The queue is the gate seat; the row only
 //      points at it. Nothing skips a level.
-//   3. The row is a sentence: identity line, facts line, one ledger
-//      line per active lane. New features conjugate; they never add a
-//      new element species. Peers and nudges are lanes, not chips.
+//   3. The row is a sentence with ONE predicate: identity line, facts
+//      line, and a single status line. The hottest fact wins it; "+N
+//      active" points at the rest. Rows are a fixed height, always.
+//      Peers and nudges are lanes, not chips.
 //   4. Color is a verb: amber decide, red repair, purple wait, green
 //      read. Workflow marks (slack posted) stay mono. One hue per edge.
 //   5. Position is meaning: urgency at the edge, identity line 1,
@@ -55,14 +56,15 @@ const CSS = `
   .cap b { color: var(--fg); font-weight: 600; }
 
   .list { border: 1px solid var(--border-soft); border-radius: 8px; background: var(--bg); overflow: hidden; }
-  .tight .row { padding: 8px 12px 8px 0; }
+  .tight .row { padding: 8px 12px 8px 0; height: 78px; }
   .tight .r2 { margin-top: 2px; }
   .tight .acts { margin-top: 5px; }
   .tight .act { line-height: 18px; }
 
   /* one content edge: 44px gutter column, then text. */
   .row { display: grid; grid-template-columns: 40px minmax(0,1fr); align-items: start;
-         padding: 12px 16px 12px 0; position: relative; }
+         padding: 12px 16px 12px 0; position: relative; height: 92px; box-sizing: border-box;
+         overflow: hidden; }
   .row + .row { border-top: 1px solid var(--border-soft); }
   .row.hov { background: color-mix(in srgb, var(--accent) 6%, transparent); }
   .gut { display: flex; align-items: center; justify-content: center; height: 20px; }
@@ -86,6 +88,11 @@ const CSS = `
   .dels { color: color-mix(in srgb, var(--red) 70%, var(--muted)); }
   .fresh { color: var(--accent); font-weight: 600; }
   .mark { display: inline-flex; opacity: .55; }
+  .slot { flex-shrink: 0; text-align: right; font-variant-numeric: tabular-nums; }
+  .slot.diff { min-width: 9ch; }
+  .slot.thr { min-width: 11ch; }
+  .slot.age { min-width: 3.2ch; }
+  .slot.mk { width: 14px; display: inline-flex; justify-content: flex-end; }
 
   /* the ledger: 20px lines on the shared content edge. */
   .acts { margin-top: 8px; display: flex; flex-direction: column; gap: 2px; }
@@ -100,6 +107,7 @@ const CSS = `
   .act-quiet .w { color: var(--muted); font-weight: 500; }
   .act .d { margin-left: 8px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .act .sep { flex-shrink: 0; }
+  .more { margin-left: 8px; flex-shrink: 0; color: color-mix(in srgb, var(--muted) 70%, transparent); font-size: .7rem; }
   .act .spin { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: currentColor;
                margin-left: 8px; align-self: center; animation: pulse 1.6s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity: .25; } }
@@ -170,20 +178,21 @@ function r2({ iid, branch, adds, dels, threads, age, fresh = 0, slack = false },
     <span>!${iid}</span><span class="sep">·</span>
     <span class="branch">${branch}</span>
     <span class="grow"></span>
-    <span><span class="adds">+${adds}</span> <span class="dels">−${dels}</span></span>
-    ${threads ? `<span class="sep">·</span><span>${threads} thread${threads > 1 ? 's' : ''}${freshTag}</span>` : ''}
-    <span class="sep">·</span><span>${age}</span>
-    ${slack ? `<span class="mark" title="posted in slack">${IC.slack}</span>` : ''}
+    <span class="slot diff"><span class="adds">+${adds}</span> <span class="dels">−${dels}</span></span>
+    <span class="slot thr">${threads ? `${threads} thread${threads > 1 ? 's' : ''}${freshTag}` : ''}</span>
+    <span class="slot age">${age}</span>
+    <span class="slot mk">${slack ? `<span class="mark" title="posted in slack">${IC.slack}</span>` : ''}</span>
     ${extra}
   </div>`;
 }
 
-const act = (tone, lane, word, detail = '', actions = [], spin = false) => `
+const act = (tone, lane, word, detail = '', actions = [], spin = false, more = 0) => `
   <div class="act act-${tone}">
     <span class="lane">${lane}</span>
     <span class="w">${word}</span>
     ${spin ? '<span class="spin"></span>' : ''}
     ${detail ? `<span class="sep" style="margin-left:8px;opacity:.45">·</span><span class="d">${detail}</span>` : ''}
+    ${more ? `<span class="more">+${more} active</span>` : ''}
     ${actions.length ? `<span class="do">${actions.map(([t, mut, sec]) => `<a href="#" class="${[mut ? 'mut' : '', sec ? 'sec' : ''].join(' ').trim()}">${t}</a>`).join('')}</span>` : ''}
   </div>`;
 
@@ -211,11 +220,12 @@ const RED = 'var(--red)';
 // ════════════════════════════════════════════════════════════════════
 const mainBody = `
 <h2>the row · final design</h2>
-<p class="note">Rest shows every system's LIVE state, quietly: identity, evidence (with the
-slack posted-mark and fresh-activity count), one ledger line per active lane. A hot line
-carries its primary verb at rest ("one click, no ceremony"); secondary verbs and the checkbox
-wait for hover. The edge bar marks hot rows for the glance pass. The queue is the gate seat:
-"answer" on a decide line opens it.</p>
+<p class="note">Every row is the same fixed height: identity, evidence, and exactly ONE status
+line. The hottest fact wins the line (decide beats interrupted beats running beats ready);
+"+N active" marks the rest, revealed by hover or the menu. Decide implies review: a gate line
+subsumes its lane's state ("post 2 findings? · review ready"). A hot line carries its primary
+verb at rest; secondary verbs and the checkbox wait for hover. A quiet row simply leaves the
+line empty; the height never changes.</p>
 
 <div class="list">
   ${row(AMBER, 'warn',
@@ -236,8 +246,7 @@ wait for hover. The edge bar marks hot rows for the glance pass. The queue is th
     r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: GREEN }) +
     r2(MR3) +
     `<div class="acts">
-      ${act('go', 'review', 'ready', '', [['read ↗']])}
-      ${act('warn', 'decide', 'post 2 findings?', '', [['answer']])}
+      ${act('warn', 'decide', 'post 2 findings?', 'review ready', [['answer']])}
     </div>`
   )}
   ${row(GREEN, '',
@@ -485,17 +494,14 @@ there, never on the row.</p>
 const stressBody = `
 <h2>stress test · everything at once</h2>
 <p class="note">The worst real row: a dead review, a response mid-flight, a doctor watching CI,
-a decision waiting. The ledger grows line by line; the gutter bar stays singular and matches the
-most urgent line.</p>
+a decision waiting. One line still: the hottest fact wins, "+3 active" carries the rest to
+hover and the menu. The row is the same height as every other row on the board.</p>
 <div class="list">
   ${row(AMBER, 'warn',
     r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) +
     r2(MR) +
     `<div class="acts">
-      ${act('warn', 'review', 'interrupted', 'pane closed 12m ago', [['relaunch'], ['clear', true]])}
-      ${act('work', 'response', 'implementing…', '3 threads', [], true)}
-      ${act('work', 'doctor', 'watching CI…', 'auto', [], true)}
-      ${act('warn', 'decide', 'post 2 findings?', '', [['answer']])}
+      ${act('warn', 'decide', 'post 2 findings?', 'review interrupted', [['answer']], false, 3)}
     </div>`,
     true
   )}

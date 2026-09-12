@@ -38,14 +38,15 @@
   .cap b { color: var(--fg); font-weight: 600; }
 
   .list { border: 1px solid var(--border-soft); border-radius: 8px; background: var(--bg); overflow: hidden; }
-  .tight .row { padding: 8px 12px 8px 0; }
+  .tight .row { padding: 8px 12px 8px 0; height: 78px; }
   .tight .r2 { margin-top: 2px; }
   .tight .acts { margin-top: 5px; }
   .tight .act { line-height: 18px; }
 
   /* one content edge: 44px gutter column, then text. */
   .row { display: grid; grid-template-columns: 40px minmax(0,1fr); align-items: start;
-         padding: 12px 16px 12px 0; position: relative; }
+         padding: 12px 16px 12px 0; position: relative; height: 92px; box-sizing: border-box;
+         overflow: hidden; }
   .row + .row { border-top: 1px solid var(--border-soft); }
   .row.hov { background: color-mix(in srgb, var(--accent) 6%, transparent); }
   .gut { display: flex; align-items: center; justify-content: center; height: 20px; }
@@ -69,6 +70,11 @@
   .dels { color: color-mix(in srgb, var(--red) 70%, var(--muted)); }
   .fresh { color: var(--accent); font-weight: 600; }
   .mark { display: inline-flex; opacity: .55; }
+  .slot { flex-shrink: 0; text-align: right; font-variant-numeric: tabular-nums; }
+  .slot.diff { min-width: 9ch; }
+  .slot.thr { min-width: 11ch; }
+  .slot.age { min-width: 3.2ch; }
+  .slot.mk { width: 14px; display: inline-flex; justify-content: flex-end; }
 
   /* the ledger: 20px lines on the shared content edge. */
   .acts { margin-top: 8px; display: flex; flex-direction: column; gap: 2px; }
@@ -83,6 +89,7 @@
   .act-quiet .w { color: var(--muted); font-weight: 500; }
   .act .d { margin-left: 8px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .act .sep { flex-shrink: 0; }
+  .more { margin-left: 8px; flex-shrink: 0; color: color-mix(in srgb, var(--muted) 70%, transparent); font-size: .7rem; }
   .act .spin { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: currentColor;
                margin-left: 8px; align-self: center; animation: pulse 1.6s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity: .25; } }
@@ -127,15 +134,16 @@
     <span>!44451</span><span class="sep">·</span>
     <span class="branch">feature/cv-3074</span>
     <span class="grow"></span>
-    <span><span class="adds">+1455</span> <span class="dels">−13</span></span>
-    <span class="sep">·</span><span>1 thread</span>
-    <span class="sep">·</span><span>32h</span>
-    
+    <span class="slot diff"><span class="adds">+1455</span> <span class="dels">−13</span></span>
+    <span class="slot thr">1 thread</span>
+    <span class="slot age">32h</span>
+    <span class="slot mk"></span>
     
   </div><div class="acts">
   <div class="act act-quiet">
     <span class="lane">review</span>
     <span class="w">queued</span>
+    
     
     
     
@@ -148,10 +156,10 @@
     <span>!44451</span><span class="sep">·</span>
     <span class="branch">feature/cv-3074</span>
     <span class="grow"></span>
-    <span><span class="adds">+1455</span> <span class="dels">−13</span></span>
-    <span class="sep">·</span><span>1 thread</span>
-    <span class="sep">·</span><span>32h</span>
-    
+    <span class="slot diff"><span class="adds">+1455</span> <span class="dels">−13</span></span>
+    <span class="slot thr">1 thread</span>
+    <span class="slot age">32h</span>
+    <span class="slot mk"></span>
     
   </div><div class="acts">
   <div class="act act-work">
@@ -159,6 +167,7 @@
     <span class="w">running…</span>
     <span class="spin"></span>
     <span class="sep" style="margin-left:8px;opacity:.45">·</span><span class="d">started 4m ago</span>
+    
     
   </div></div></div>
 </div>
@@ -169,15 +178,16 @@
     <span>!44451</span><span class="sep">·</span>
     <span class="branch">feature/cv-3074</span>
     <span class="grow"></span>
-    <span><span class="adds">+1455</span> <span class="dels">−13</span></span>
-    <span class="sep">·</span><span>1 thread</span>
-    <span class="sep">·</span><span>32h</span>
-    
+    <span class="slot diff"><span class="adds">+1455</span> <span class="dels">−13</span></span>
+    <span class="slot thr">1 thread</span>
+    <span class="slot age">32h</span>
+    <span class="slot mk"></span>
     
   </div><div class="acts">
   <div class="act act-go">
     <span class="lane">review</span>
     <span class="w">ready</span>
+    
     
     
     <span class="do"><a href="#" class="">read ↗</a></span>
@@ -190,10 +200,10 @@
     <span>!44451</span><span class="sep">·</span>
     <span class="branch">feature/cv-3074</span>
     <span class="grow"></span>
-    <span><span class="adds">+1455</span> <span class="dels">−13</span></span>
-    <span class="sep">·</span><span>1 thread</span>
-    <span class="sep">·</span><span>32h</span>
-    
+    <span class="slot diff"><span class="adds">+1455</span> <span class="dels">−13</span></span>
+    <span class="slot thr">1 thread</span>
+    <span class="slot age">32h</span>
+    <span class="slot mk"></span>
     
   </div><div class="acts">
   <div class="act act-bad">
@@ -201,6 +211,7 @@
     <span class="w">failed</span>
     
     <span class="sep" style="margin-left:8px;opacity:.45">·</span><span class="d">pane closed… cleared from the board</span>
+    
     <span class="do"><a href="#" class="">launch again</a></span>
   </div></div></div>
 </div>
@@ -211,10 +222,10 @@
     <span>!44451</span><span class="sep">·</span>
     <span class="branch">feature/cv-3074</span>
     <span class="grow"></span>
-    <span><span class="adds">+1455</span> <span class="dels">−13</span></span>
-    <span class="sep">·</span><span>1 thread</span>
-    <span class="sep">·</span><span>32h</span>
-    
+    <span class="slot diff"><span class="adds">+1455</span> <span class="dels">−13</span></span>
+    <span class="slot thr">1 thread</span>
+    <span class="slot age">32h</span>
+    <span class="slot mk"></span>
     
   </div><div class="acts">
   <div class="act act-warn">
@@ -222,6 +233,7 @@
     <span class="w">interrupted</span>
     
     <span class="sep" style="margin-left:8px;opacity:.45">·</span><span class="d">pane closed 12m ago</span>
+    
     <span class="do"><a href="#" class="">relaunch</a><a href="#" class="mut">clear</a></span>
   </div></div></div>
 </div>
@@ -236,10 +248,10 @@
     <span>!44451</span><span class="sep">·</span>
     <span class="branch">feature/cv-3074</span>
     <span class="grow"></span>
-    <span><span class="adds">+1455</span> <span class="dels">−13</span></span>
-    <span class="sep">·</span><span>1 thread</span>
-    <span class="sep">·</span><span>32h</span>
-    
+    <span class="slot diff"><span class="adds">+1455</span> <span class="dels">−13</span></span>
+    <span class="slot thr">1 thread</span>
+    <span class="slot age">32h</span>
+    <span class="slot mk"></span>
     
   </div><div class="acts">
   <div class="act act-quiet">
@@ -248,6 +260,7 @@
     
     
     
+    
   </div></div></div>
 </div>
   <div class="row">
@@ -257,10 +270,10 @@
     <span>!44451</span><span class="sep">·</span>
     <span class="branch">feature/cv-3074</span>
     <span class="grow"></span>
-    <span><span class="adds">+1455</span> <span class="dels">−13</span></span>
-    <span class="sep">·</span><span>1 thread</span>
-    <span class="sep">·</span><span>32h</span>
-    
+    <span class="slot diff"><span class="adds">+1455</span> <span class="dels">−13</span></span>
+    <span class="slot thr">1 thread</span>
+    <span class="slot age">32h</span>
+    <span class="slot mk"></span>
     
   </div><div class="acts">
   <div class="act act-work">
@@ -269,6 +282,7 @@
     <span class="spin"></span>
     
     
+    
   </div></div></div>
 </div>
   <div class="row">
@@ -278,10 +292,10 @@
     <span>!44451</span><span class="sep">·</span>
     <span class="branch">feature/cv-3074</span>
     <span class="grow"></span>
-    <span><span class="adds">+1455</span> <span class="dels">−13</span></span>
-    <span class="sep">·</span><span>1 thread</span>
-    <span class="sep">·</span><span>32h</span>
-    
+    <span class="slot diff"><span class="adds">+1455</span> <span class="dels">−13</span></span>
+    <span class="slot thr">1 thread</span>
+    <span class="slot age">32h</span>
+    <span class="slot mk"></span>
     
   </div><div class="acts">
   <div class="act act-work">
@@ -290,6 +304,7 @@
     <span class="spin"></span>
     <span class="sep" style="margin-left:8px;opacity:.45">·</span><span class="d">3 threads</span>
     
+    
   </div></div></div>
 </div>
   <div class="row">
@@ -299,16 +314,17 @@
     <span>!44451</span><span class="sep">·</span>
     <span class="branch">feature/cv-3074</span>
     <span class="grow"></span>
-    <span><span class="adds">+1455</span> <span class="dels">−13</span></span>
-    <span class="sep">·</span><span>1 thread</span>
-    <span class="sep">·</span><span>32h</span>
-    
+    <span class="slot diff"><span class="adds">+1455</span> <span class="dels">−13</span></span>
+    <span class="slot thr">1 thread</span>
+    <span class="slot age">32h</span>
+    <span class="slot mk"></span>
     
   </div><div class="acts">
   <div class="act act-work">
     <span class="lane">response</span>
     <span class="w">drafting replies…</span>
     <span class="spin"></span>
+    
     
     
   </div></div></div>
@@ -320,10 +336,10 @@
     <span>!44451</span><span class="sep">·</span>
     <span class="branch">feature/cv-3074</span>
     <span class="grow"></span>
-    <span><span class="adds">+1455</span> <span class="dels">−13</span></span>
-    <span class="sep">·</span><span>1 thread</span>
-    <span class="sep">·</span><span>32h</span>
-    
+    <span class="slot diff"><span class="adds">+1455</span> <span class="dels">−13</span></span>
+    <span class="slot thr">1 thread</span>
+    <span class="slot age">32h</span>
+    <span class="slot mk"></span>
     
   </div><div class="acts">
   <div class="act act-go">
@@ -331,6 +347,7 @@
     <span class="w">replies posted</span>
     
     <span class="sep" style="margin-left:8px;opacity:.45">·</span><span class="d">3 of 3</span>
+    
     <span class="do"><a href="#" class="">read ↗</a></span>
   </div></div></div>
 </div>
@@ -341,10 +358,10 @@
     <span>!44451</span><span class="sep">·</span>
     <span class="branch">feature/cv-3074</span>
     <span class="grow"></span>
-    <span><span class="adds">+1455</span> <span class="dels">−13</span></span>
-    <span class="sep">·</span><span>1 thread</span>
-    <span class="sep">·</span><span>32h</span>
-    
+    <span class="slot diff"><span class="adds">+1455</span> <span class="dels">−13</span></span>
+    <span class="slot thr">1 thread</span>
+    <span class="slot age">32h</span>
+    <span class="slot mk"></span>
     
   </div><div class="acts">
   <div class="act act-warn">
@@ -352,6 +369,7 @@
     <span class="w">2 of 3 posted</span>
     
     <span class="sep" style="margin-left:8px;opacity:.45">·</span><span class="d">one thread waiting</span>
+    
     <span class="do"><a href="#" class="">resume ↗</a></span>
   </div></div></div>
 </div>
@@ -362,15 +380,16 @@
     <span>!44451</span><span class="sep">·</span>
     <span class="branch">feature/cv-3074</span>
     <span class="grow"></span>
-    <span><span class="adds">+1455</span> <span class="dels">−13</span></span>
-    <span class="sep">·</span><span>1 thread</span>
-    <span class="sep">·</span><span>32h</span>
-    
+    <span class="slot diff"><span class="adds">+1455</span> <span class="dels">−13</span></span>
+    <span class="slot thr">1 thread</span>
+    <span class="slot age">32h</span>
+    <span class="slot mk"></span>
     
   </div><div class="acts">
   <div class="act act-warn">
     <span class="lane">response</span>
     <span class="w">drafted, not posted</span>
+    
     
     
     <span class="do"><a href="#" class="">resume ↗</a></span>
@@ -383,15 +402,16 @@
     <span>!44451</span><span class="sep">·</span>
     <span class="branch">feature/cv-3074</span>
     <span class="grow"></span>
-    <span><span class="adds">+1455</span> <span class="dels">−13</span></span>
-    <span class="sep">·</span><span>1 thread</span>
-    <span class="sep">·</span><span>32h</span>
-    
+    <span class="slot diff"><span class="adds">+1455</span> <span class="dels">−13</span></span>
+    <span class="slot thr">1 thread</span>
+    <span class="slot age">32h</span>
+    <span class="slot mk"></span>
     
   </div><div class="acts">
   <div class="act act-bad">
     <span class="lane">response</span>
     <span class="w">failed</span>
+    
     
     
     <span class="do"><a href="#" class="">restart</a></span>
@@ -404,10 +424,10 @@
     <span>!44451</span><span class="sep">·</span>
     <span class="branch">feature/cv-3074</span>
     <span class="grow"></span>
-    <span><span class="adds">+1455</span> <span class="dels">−13</span></span>
-    <span class="sep">·</span><span>1 thread</span>
-    <span class="sep">·</span><span>32h</span>
-    
+    <span class="slot diff"><span class="adds">+1455</span> <span class="dels">−13</span></span>
+    <span class="slot thr">1 thread</span>
+    <span class="slot age">32h</span>
+    <span class="slot mk"></span>
     
   </div><div class="acts">
   <div class="act act-warn">
@@ -415,6 +435,7 @@
     <span class="w">interrupted</span>
     
     <span class="sep" style="margin-left:8px;opacity:.45">·</span><span class="d">pane closed</span>
+    
     <span class="do"><a href="#" class="">relaunch</a><a href="#" class="mut">clear</a></span>
   </div></div></div>
 </div>
@@ -429,10 +450,10 @@
     <span>!44712</span><span class="sep">·</span>
     <span class="branch">feature/cv-3201</span>
     <span class="grow"></span>
-    <span><span class="adds">+41</span> <span class="dels">−9</span></span>
-    
-    <span class="sep">·</span><span>3h</span>
-    
+    <span class="slot diff"><span class="adds">+41</span> <span class="dels">−9</span></span>
+    <span class="slot thr"></span>
+    <span class="slot age">3h</span>
+    <span class="slot mk"></span>
     
   </div><div class="acts">
   <div class="act act-quiet">
@@ -441,6 +462,7 @@
     
     
     
+    
   </div></div></div>
 </div>
   <div class="row">
@@ -450,10 +472,10 @@
     <span>!44712</span><span class="sep">·</span>
     <span class="branch">feature/cv-3201</span>
     <span class="grow"></span>
-    <span><span class="adds">+41</span> <span class="dels">−9</span></span>
-    
-    <span class="sep">·</span><span>3h</span>
-    
+    <span class="slot diff"><span class="adds">+41</span> <span class="dels">−9</span></span>
+    <span class="slot thr"></span>
+    <span class="slot age">3h</span>
+    <span class="slot mk"></span>
     
   </div><div class="acts">
   <div class="act act-work">
@@ -462,6 +484,7 @@
     <span class="spin"></span>
     <span class="sep" style="margin-left:8px;opacity:.45">·</span><span class="d">auto</span>
     
+    
   </div></div></div>
 </div>
   <div class="row">
@@ -471,10 +494,10 @@
     <span>!44712</span><span class="sep">·</span>
     <span class="branch">feature/cv-3201</span>
     <span class="grow"></span>
-    <span><span class="adds">+41</span> <span class="dels">−9</span></span>
-    
-    <span class="sep">·</span><span>3h</span>
-    
+    <span class="slot diff"><span class="adds">+41</span> <span class="dels">−9</span></span>
+    <span class="slot thr"></span>
+    <span class="slot age">3h</span>
+    <span class="slot mk"></span>
     
   </div><div class="acts">
   <div class="act act-work">
@@ -483,6 +506,7 @@
     <span class="spin"></span>
     
     
+    
   </div></div></div>
 </div>
   <div class="row">
@@ -492,10 +516,10 @@
     <span>!44712</span><span class="sep">·</span>
     <span class="branch">feature/cv-3201</span>
     <span class="grow"></span>
-    <span><span class="adds">+41</span> <span class="dels">−9</span></span>
-    
-    <span class="sep">·</span><span>3h</span>
-    
+    <span class="slot diff"><span class="adds">+41</span> <span class="dels">−9</span></span>
+    <span class="slot thr"></span>
+    <span class="slot age">3h</span>
+    <span class="slot mk"></span>
     
   </div><div class="acts">
   <div class="act act-work">
@@ -504,6 +528,7 @@
     <span class="spin"></span>
     
     
+    
   </div></div></div>
 </div>
   <div class="row">
@@ -513,16 +538,17 @@
     <span>!44712</span><span class="sep">·</span>
     <span class="branch">feature/cv-3201</span>
     <span class="grow"></span>
-    <span><span class="adds">+41</span> <span class="dels">−9</span></span>
-    
-    <span class="sep">·</span><span>3h</span>
-    
+    <span class="slot diff"><span class="adds">+41</span> <span class="dels">−9</span></span>
+    <span class="slot thr"></span>
+    <span class="slot age">3h</span>
+    <span class="slot mk"></span>
     
   </div><div class="acts">
   <div class="act act-work">
     <span class="lane">doctor</span>
     <span class="w">watching CI…</span>
     <span class="spin"></span>
+    
     
     
   </div></div></div>
@@ -534,10 +560,10 @@
     <span>!44712</span><span class="sep">·</span>
     <span class="branch">feature/cv-3201</span>
     <span class="grow"></span>
-    <span><span class="adds">+41</span> <span class="dels">−9</span></span>
-    
-    <span class="sep">·</span><span>3h</span>
-    
+    <span class="slot diff"><span class="adds">+41</span> <span class="dels">−9</span></span>
+    <span class="slot thr"></span>
+    <span class="slot age">3h</span>
+    <span class="slot mk"></span>
     
   </div><div class="acts">
   <div class="act act-go">
@@ -545,6 +571,7 @@
     <span class="w">diagnosed</span>
     
     <span class="sep" style="margin-left:8px;opacity:.45">·</span><span class="d">held a note</span>
+    
     <span class="do"><a href="#" class="">read note</a></span>
   </div></div></div>
 </div>
@@ -555,15 +582,16 @@
     <span>!44712</span><span class="sep">·</span>
     <span class="branch">feature/cv-3201</span>
     <span class="grow"></span>
-    <span><span class="adds">+41</span> <span class="dels">−9</span></span>
-    
-    <span class="sep">·</span><span>3h</span>
-    
+    <span class="slot diff"><span class="adds">+41</span> <span class="dels">−9</span></span>
+    <span class="slot thr"></span>
+    <span class="slot age">3h</span>
+    <span class="slot mk"></span>
     
   </div><div class="acts">
   <div class="act act-bad">
     <span class="lane">doctor</span>
     <span class="w">stuck</span>
+    
     
     
     <span class="do"><a href="#" class="">call again</a></span>
