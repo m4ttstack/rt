@@ -173,7 +173,7 @@ ${body}
 const svgIcon = (paths) => `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2.5px">${paths}</svg>`;
 const IC = {
   bubble: svgIcon('<path d="M2.5 3h11a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1H8.2L5 14.2V11.5H2.5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><circle cx="6" cy="7.3" r="1" fill="currentColor" stroke="none"/><circle cx="10" cy="7.3" r="1" fill="currentColor" stroke="none"/>'),
-  eye: svgIcon('<path d="M1.2 8.4l2.7 2.7 4.4-5.2"/><path d="M7 8.6l2.5 2.5 5.3-6.2"/>'),
+  eye: svgIcon('<ellipse cx="4.7" cy="8" rx="2.7" ry="4.6"/><ellipse cx="11.3" cy="8" rx="2.7" ry="4.6"/><circle cx="4" cy="8.7" r="1.15" fill="currentColor" stroke="none"/><circle cx="10.6" cy="8.7" r="1.15" fill="currentColor" stroke="none"/>'),
   slack: svgIcon('<path d="M14 2.2L2.3 6.8l4.6 2.3L9.2 13.7 14 2.2z"/><path d="M14 2.2L6.9 9.1"/>'),
   check: svgIcon('<circle cx="8" cy="8" r="6.6" fill="currentColor" stroke="none"/><path d="M5.1 8.3l1.9 1.9 3.9-4.5" stroke="var(--bg)" stroke-width="1.8"/>'),
   sun: svgIcon('<circle cx="8" cy="8" r="3"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M12.6 3.4l-1.4 1.4M4.8 11.2l-1.4 1.4"/>'),
@@ -182,7 +182,7 @@ const IC = {
 // ── row scaffolding ─────────────────────────────────────────────────
 const SLACK_STAGE = {
   posted: { title: 'posted in slack' },
-  seen: { title: 'seen in slack' },
+  seen: { title: 'someone is looking at this' },
   commented: { title: 'commented in slack' },
   approved: { title: 'approved in slack' },
 };
@@ -514,7 +514,7 @@ there, never on the row.</p>
 hover names it; the full reaction detail lives in the context card.</p>
 <div class="legend">
   <span>${IC.slack} posted</span>
-  <span>${IC.eye} seen</span>
+  <span>${IC.eye} looking</span>
   <span>${IC.bubble} commented</span>
   <span>${IC.check} approved</span>
 </div>
