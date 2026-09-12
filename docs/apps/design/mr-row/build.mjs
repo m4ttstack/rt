@@ -82,15 +82,14 @@ const CSS = `
   .r2 { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: .76rem;
         line-height: 16px; margin-top: 4px; }
   .r2 .sep { opacity: .45; }
-  .branch { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .branch { min-width: 0; max-width: 34ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .grow { flex: 1; }
   .adds { color: color-mix(in srgb, var(--green) 70%, var(--muted)); }
   .dels { color: color-mix(in srgb, var(--red) 70%, var(--muted)); }
   .fresh { color: var(--accent); font-weight: 600; }
   .mark { display: inline-flex; opacity: .55; }
+  .diffs { flex-shrink: 0; font-variant-numeric: tabular-nums; }
   .slot { flex-shrink: 0; text-align: right; font-variant-numeric: tabular-nums; }
-  .slot.diff { min-width: 9ch; }
-  .slot.thr { min-width: 11ch; }
   .slot.age { min-width: 3.2ch; }
   .slot.mk { width: 14px; display: inline-flex; justify-content: flex-end; }
 
@@ -105,6 +104,7 @@ const CSS = `
   .act-warn .w { color: var(--amber); }
   .act-bad .w { color: var(--red); }
   .act-quiet .w { color: var(--muted); font-weight: 500; }
+  .act-clear .w { color: color-mix(in srgb, var(--green) 45%, var(--muted)); font-weight: 500; }
   .act .d { margin-left: 8px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .act .sep { flex-shrink: 0; }
   .more { margin-left: 8px; flex-shrink: 0; color: color-mix(in srgb, var(--muted) 70%, transparent); font-size: .7rem; }
@@ -176,10 +176,10 @@ function r2({ iid, branch, adds, dels, threads, age, fresh = 0, slack = false },
   const freshTag = fresh ? ` <span class="fresh">${fresh} new</span>` : '';
   return `<div class="r2">
     <span>!${iid}</span><span class="sep">·</span>
-    <span class="branch">${branch}</span>
+    <span class="branch">${branch}</span><span class="sep">·</span>
+    <span class="diffs"><span class="adds">+${adds}</span> <span class="dels">−${dels}</span></span>
     <span class="grow"></span>
-    <span class="slot diff"><span class="adds">+${adds}</span> <span class="dels">−${dels}</span></span>
-    <span class="slot thr">${threads ? `${threads} thread${threads > 1 ? 's' : ''}${freshTag}` : ''}</span>
+    ${threads ? `<span>${threads} thread${threads > 1 ? 's' : ''}${freshTag}</span><span class="sep">·</span>` : ''}
     <span class="slot age">${age}</span>
     <span class="slot mk">${slack ? `<span class="mark" title="posted in slack">${IC.slack}</span>` : ''}</span>
     ${extra}
@@ -224,8 +224,10 @@ const mainBody = `
 line. The hottest fact wins the line (decide beats interrupted beats running beats ready);
 "+N active" marks the rest, revealed by hover or the menu. Decide implies review: a gate line
 subsumes its lane's state ("post 2 findings? · review ready"). A hot line carries its primary
-verb at rest; secondary verbs and the checkbox wait for hover. A quiet row simply leaves the
-line empty; the height never changes.</p>
+verb at rest; secondary verbs and the checkbox wait for hover. The diff counts read inline
+after the branch (left flow, where variable width is natural) so no color floats mid-air on
+the right; the right side is just threads · age · mark, age pinned to the edge. A quiet row's
+status line says <b>all clear</b>, softly; the height never changes.</p>
 
 <div class="list">
   ${row(AMBER, 'warn',
@@ -258,7 +260,8 @@ line empty; the height never changes.</p>
   )}
   ${row(GREEN, '',
     r1({ title: 'CV-3114 Carry the standard onto the legacy grid', phrase: 'APPROVED', phraseColor: GREEN }) +
-    r2({ iid: 44740, branch: 'feature/cv-3114', adds: 114, dels: 0, threads: 0, age: '6h', slack: true })
+    r2({ iid: 44740, branch: 'feature/cv-3114', adds: 114, dels: 0, threads: 0, age: '6h', slack: true }) +
+    `<div class="acts">${act('clear', '', 'all clear')}</div>`
   )}
 </div>
 <p class="cap"><b>Scan path:</b> edge bars, then colored words, then the quiet facts. Row 4 is
@@ -374,7 +377,8 @@ const densityBody = `
   )}
   ${row(GREEN, '',
     r1({ title: 'CV-3149 Widen the transform contract', phrase: 'APPROVED', phraseColor: GREEN }) +
-    r2({ iid: 44684, branch: 'feature/cv-3149', adds: 296, dels: 16, threads: 2, age: '9h', slack: true })
+    r2({ iid: 44684, branch: 'feature/cv-3149', adds: 296, dels: 16, threads: 2, age: '9h', slack: true }) +
+    `<div class="acts">${act('clear', '', 'all clear')}</div>`
   )}
 </div>
 
@@ -386,7 +390,8 @@ const densityBody = `
   )}
   ${row(GREEN, '',
     r1({ title: 'CV-3149 Widen the transform contract', phrase: 'APPROVED', phraseColor: GREEN }) +
-    r2({ iid: 44684, branch: 'feature/cv-3149', adds: 296, dels: 16, threads: 2, age: '9h', slack: true })
+    r2({ iid: 44684, branch: 'feature/cv-3149', adds: 296, dels: 16, threads: 2, age: '9h', slack: true }) +
+    `<div class="acts">${act('clear', '', 'all clear')}</div>`
   )}
 </div>
 <p class="cap">Same anatomy, two scales; pick by feel.</p>
