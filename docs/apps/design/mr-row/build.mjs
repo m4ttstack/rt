@@ -86,11 +86,12 @@ const CSS = `
   .grow { flex: 1; }
   .adds { color: color-mix(in srgb, var(--green) 70%, var(--muted)); }
   .dels { color: color-mix(in srgb, var(--red) 70%, var(--muted)); }
-  .unread { display: inline-flex; align-items: center; justify-content: center;
-            min-width: 15px; height: 15px; padding: 0 4px; margin-left: 6px; border-radius: 8px;
-            background: var(--accent); color: var(--bg); font-size: .62rem; font-weight: 700;
-            vertical-align: 1px; }
+  .unread { position: relative; top: -4px; margin-left: 2px;
+            color: var(--accent); font-size: 9.5px; font-weight: 700; line-height: 1;
+            font-variant-numeric: tabular-nums; }
   .mark { display: inline-flex; opacity: .55; }
+  .mark.slk { opacity: 1; }
+  .mark.ghost { opacity: .22; }
   .pair { white-space: nowrap; flex-shrink: 0; font-variant-numeric: tabular-nums; }
   .facts { display: inline-flex; align-items: center; gap: 12px; flex-shrink: 0;
            font-variant-numeric: tabular-nums; }
@@ -176,21 +177,24 @@ const IC = {
   eye: svgIcon('<ellipse cx="4.6" cy="8" rx="3.1" ry="5.2" fill="currentColor" stroke="none"/><ellipse cx="11.4" cy="8" rx="3.1" ry="5.2" fill="currentColor" stroke="none"/><circle cx="4" cy="9" r="1.4" fill="var(--bg)" stroke="none"/><circle cx="10.8" cy="9" r="1.4" fill="var(--bg)" stroke="none"/>'),
   slack: `<svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-2.5px" fill="currentColor"><path d="M5 15a2 2 0 1 1-2-2h2v2Zm1 0a2 2 0 0 1 4 0v5a2 2 0 1 1-4 0v-5Z"/><path d="M9 5a2 2 0 1 1 2-2v2H9Zm0 1a2 2 0 0 1 0 4H4a2 2 0 1 1 0-4h5Z"/><path d="M19 9a2 2 0 1 1 2 2h-2V9Zm-1 0a2 2 0 0 1-4 0V4a2 2 0 1 1 4 0v5Z"/><path d="M15 19a2 2 0 1 1-2 2v-2h2Zm0-1a2 2 0 0 1 0-4h5a2 2 0 1 1 0 4h-5Z"/></svg>`,
   check: svgIcon('<circle cx="8" cy="8" r="6.6" fill="currentColor" stroke="none"/><path d="M5.1 8.3l1.9 1.9 3.9-4.5" stroke="var(--bg)" stroke-width="1.8"/>'),
+  slackColor: `<svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-2.5px"><path fill="#E01E5A" d="M5 15a2 2 0 1 1-2-2h2v2Zm1 0a2 2 0 0 1 4 0v5a2 2 0 1 1-4 0v-5Z"/><path fill="#36C5F0" d="M9 5a2 2 0 1 1 2-2v2H9Zm0 1a2 2 0 0 1 0 4H4a2 2 0 1 1 0-4h5Z"/><path fill="#2EB67D" d="M19 9a2 2 0 1 1 2 2h-2V9Zm-1 0a2 2 0 0 1-4 0V4a2 2 0 1 1 4 0v5Z"/><path fill="#ECB22E" d="M15 19a2 2 0 1 1-2 2v-2h2Zm0-1a2 2 0 0 1 0-4h5a2 2 0 1 1 0 4h-5Z"/></svg>`,
   sun: svgIcon('<circle cx="8" cy="8" r="3.3" fill="currentColor" stroke="none"/><path d="M8 1.2v2.2M8 12.6v2.2M1.2 8h2.2M12.6 8h2.2M3.2 3.2l1.6 1.6M11.2 11.2l1.6 1.6M12.8 3.2l-1.6 1.6M4.8 11.2l-1.6 1.6" stroke-width="1.8"/>'),
 };
 
 // ── row scaffolding ─────────────────────────────────────────────────
 const SLACK_STAGE = {
-  posted: { title: 'posted in slack' },
-  seen: { title: 'someone is looking at this' },
-  commented: { title: 'commented in slack' },
-  approved: { title: 'approved in slack' },
+  looking: { icon: 'eye', title: 'someone is looking at this' },
+  commented: { icon: 'bubble', title: 'commented in slack' },
+  approved: { icon: 'check', title: 'approved in slack' },
 };
 function r1({ title, phrase, phraseColor = 'var(--amber)', slack = null }) {
   const ph = phrase ? `<span class="phrase" style="color:${phraseColor}">${phrase}</span>` : '';
-  const icon = { posted: 'slack', seen: 'eye', commented: 'bubble', approved: 'check' }[slack];
-  const mk = slack ? `<span class="mark" title="${SLACK_STAGE[slack].title}">${IC[icon]}</span>` : '';
-  return `<div class="r1"><span class="title">${title}</span>${mk}${ph}</div>`;
+  const st = SLACK_STAGE[slack];
+  const stage = st ? `<span class="mark" title="${st.title}">${IC[st.icon]}</span>` : '';
+  const logo = slack
+    ? `<span class="mark slk" title="posted in slack">${IC.slackColor}</span>`
+    : '';
+  return `<div class="r1"><span class="title">${title}</span>${stage}${logo}${ph}</div>`;
 }
 
 function r2({ iid, branch, adds, dels, threads, age, fresh = 0, slack = false }, extra = '') {
@@ -275,7 +279,7 @@ A quiet row's status line says <b>all clear</b>, softly; the height never change
     </div>`
   )}
   ${row(GREEN, '',
-    r1({ title: 'CV-3149 Widen the transform contract', phrase: 'APPROVED', phraseColor: GREEN, slack: 'seen' }) +
+    r1({ title: 'CV-3149 Widen the transform contract', phrase: 'APPROVED', phraseColor: GREEN, slack: 'looking' }) +
     r2({ iid: 44684, branch: 'feature/cv-3149', adds: 296, dels: 16, threads: 5, age: '9h', fresh: 2 }) +
     `<div class="acts">
       ${act('work', 'geoff is reviewing…', '', [['view ↗', true]], true)}
@@ -314,7 +318,7 @@ the row menu and a drawer.</p>
     r2(MR3, `<span class="sep">·</span><span class="sum warn">2 findings to post</span>`)
   )}
   ${row(GREEN, '',
-    r1({ title: 'CV-3149 Widen the transform contract', phrase: 'APPROVED', phraseColor: GREEN, slack: 'seen' }) +
+    r1({ title: 'CV-3149 Widen the transform contract', phrase: 'APPROVED', phraseColor: GREEN, slack: 'looking' }) +
     r2({ iid: 44684, branch: 'feature/cv-3149', adds: 296, dels: 16, threads: 2, age: '9h' })
   )}
 </div>
@@ -399,7 +403,7 @@ const densityBody = `
     `<div class="acts">${act('work', 'running…', 'started 4m ago', [], true)}</div>`
   )}
   ${row(GREEN, '',
-    r1({ title: 'CV-3149 Widen the transform contract', phrase: 'APPROVED', phraseColor: GREEN, slack: 'seen' }) +
+    r1({ title: 'CV-3149 Widen the transform contract', phrase: 'APPROVED', phraseColor: GREEN, slack: 'looking' }) +
     r2({ iid: 44684, branch: 'feature/cv-3149', adds: 296, dels: 16, threads: 2, age: '9h' }) +
     `<div class="acts">${act('clear', 'all clear', `${IC.sun} enjoy the sunshine`, [])}</div>`
   )}
@@ -412,7 +416,7 @@ const densityBody = `
     `<div class="acts">${act('work', 'running…', 'started 4m ago', [], true)}</div>`
   )}
   ${row(GREEN, '',
-    r1({ title: 'CV-3149 Widen the transform contract', phrase: 'APPROVED', phraseColor: GREEN, slack: 'seen' }) +
+    r1({ title: 'CV-3149 Widen the transform contract', phrase: 'APPROVED', phraseColor: GREEN, slack: 'looking' }) +
     r2({ iid: 44684, branch: 'feature/cv-3149', adds: 296, dels: 16, threads: 2, age: '9h' }) +
     `<div class="acts">${act('clear', 'all clear', `${IC.sun} enjoy the sunshine`, [])}</div>`
   )}
@@ -513,14 +517,14 @@ there, never on the row.</p>
 <p class="note">The mark beside the pill shows the FURTHEST slack stage. One glyph, mono,
 hover names it; the full reaction detail lives in the context card.</p>
 <div class="legend">
-  <span>${IC.slack} posted</span>
+  <span>${IC.slackColor} posted</span>
   <span>${IC.eye} looking</span>
   <span>${IC.bubble} commented</span>
   <span>${IC.check} approved</span>
 </div>
 <div class="list">
   ${row(GREEN, '', r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: GREEN, slack: 'posted' }) + r2(MR3))}
-  ${row(GREEN, '', r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: GREEN, slack: 'seen' }) + r2(MR3))}
+  ${row(GREEN, '', r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: GREEN, slack: 'looking' }) + r2(MR3))}
   ${row(GREEN, '', r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: GREEN, slack: 'commented' }) + r2(MR3))}
   ${row(GREEN, '', r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: GREEN, slack: 'approved' }) + r2(MR3))}
 </div>

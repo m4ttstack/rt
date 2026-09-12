@@ -68,11 +68,12 @@
   .grow { flex: 1; }
   .adds { color: color-mix(in srgb, var(--green) 70%, var(--muted)); }
   .dels { color: color-mix(in srgb, var(--red) 70%, var(--muted)); }
-  .unread { display: inline-flex; align-items: center; justify-content: center;
-            min-width: 15px; height: 15px; padding: 0 4px; margin-left: 6px; border-radius: 8px;
-            background: var(--accent); color: var(--bg); font-size: .62rem; font-weight: 700;
-            vertical-align: 1px; }
+  .unread { position: relative; top: -4px; margin-left: 2px;
+            color: var(--accent); font-size: 9.5px; font-weight: 700; line-height: 1;
+            font-variant-numeric: tabular-nums; }
   .mark { display: inline-flex; opacity: .55; }
+  .mark.slk { opacity: 1; }
+  .mark.ghost { opacity: .22; }
   .pair { white-space: nowrap; flex-shrink: 0; font-variant-numeric: tabular-nums; }
   .facts { display: inline-flex; align-items: center; gap: 12px; flex-shrink: 0;
            font-variant-numeric: tabular-nums; }
@@ -216,7 +217,7 @@ A quiet row's status line says <b>all clear</b>, softly; the height never change
   <div class="row">
   
   <div class="gut"><span class="dot" style="color:var(--green)">●</span></div>
-  <div style="min-width:0"><div class="r1"><span class="title">CV-3149 Widen the transform contract</span><span class="mark" title="someone is looking at this"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2.5px"><ellipse cx="4.6" cy="8" rx="3.1" ry="5.2" fill="currentColor" stroke="none"/><ellipse cx="11.4" cy="8" rx="3.1" ry="5.2" fill="currentColor" stroke="none"/><circle cx="4" cy="9" r="1.4" fill="var(--bg)" stroke="none"/><circle cx="10.8" cy="9" r="1.4" fill="var(--bg)" stroke="none"/></svg></span><span class="phrase" style="color:var(--green)">APPROVED</span></div><div class="r2">
+  <div style="min-width:0"><div class="r1"><span class="title">CV-3149 Widen the transform contract</span><span class="mark" title="someone is looking at this"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2.5px"><ellipse cx="4.6" cy="8" rx="3.1" ry="5.2" fill="currentColor" stroke="none"/><ellipse cx="11.4" cy="8" rx="3.1" ry="5.2" fill="currentColor" stroke="none"/><circle cx="4" cy="9" r="1.4" fill="var(--bg)" stroke="none"/><circle cx="10.8" cy="9" r="1.4" fill="var(--bg)" stroke="none"/></svg></span><span class="mark slk" title="posted in slack"><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-2.5px"><path fill="#E01E5A" d="M5 15a2 2 0 1 1-2-2h2v2Zm1 0a2 2 0 0 1 4 0v5a2 2 0 1 1-4 0v-5Z"/><path fill="#36C5F0" d="M9 5a2 2 0 1 1 2-2v2H9Zm0 1a2 2 0 0 1 0 4H4a2 2 0 1 1 0-4h5Z"/><path fill="#2EB67D" d="M19 9a2 2 0 1 1 2 2h-2V9Zm-1 0a2 2 0 0 1-4 0V4a2 2 0 1 1 4 0v5Z"/><path fill="#ECB22E" d="M15 19a2 2 0 1 1-2 2v-2h2Zm0-1a2 2 0 0 1 0-4h5a2 2 0 1 1 0 4h-5Z"/></svg></span><span class="phrase" style="color:var(--green)">APPROVED</span></div><div class="r2">
     <span class="iid">!44684</span>
     <span class="branch">feature/cv-3149</span>
     <span class="pair"><span class="adds">+296</span> <span class="dels">−16</span></span>
@@ -237,7 +238,7 @@ A quiet row's status line says <b>all clear</b>, softly; the height never change
   <div class="row">
   
   <div class="gut"><span class="dot" style="color:var(--green)">●</span></div>
-  <div style="min-width:0"><div class="r1"><span class="title">CV-3114 Carry the standard onto the legacy grid</span><span class="mark" title="approved in slack"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2.5px"><circle cx="8" cy="8" r="6.6" fill="currentColor" stroke="none"/><path d="M5.1 8.3l1.9 1.9 3.9-4.5" stroke="var(--bg)" stroke-width="1.8"/></svg></span><span class="phrase" style="color:var(--green)">APPROVED</span></div><div class="r2">
+  <div style="min-width:0"><div class="r1"><span class="title">CV-3114 Carry the standard onto the legacy grid</span><span class="mark" title="approved in slack"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2.5px"><circle cx="8" cy="8" r="6.6" fill="currentColor" stroke="none"/><path d="M5.1 8.3l1.9 1.9 3.9-4.5" stroke="var(--bg)" stroke-width="1.8"/></svg></span><span class="mark slk" title="posted in slack"><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-2.5px"><path fill="#E01E5A" d="M5 15a2 2 0 1 1-2-2h2v2Zm1 0a2 2 0 0 1 4 0v5a2 2 0 1 1-4 0v-5Z"/><path fill="#36C5F0" d="M9 5a2 2 0 1 1 2-2v2H9Zm0 1a2 2 0 0 1 0 4H4a2 2 0 1 1 0-4h5Z"/><path fill="#2EB67D" d="M19 9a2 2 0 1 1 2 2h-2V9Zm-1 0a2 2 0 0 1-4 0V4a2 2 0 1 1 4 0v5Z"/><path fill="#ECB22E" d="M15 19a2 2 0 1 1-2 2v-2h2Zm0-1a2 2 0 0 1 0-4h5a2 2 0 1 1 0 4h-5Z"/></svg></span><span class="phrase" style="color:var(--green)">APPROVED</span></div><div class="r2">
     <span class="iid">!44740</span>
     <span class="branch">feature/cv-3114</span>
     <span class="pair"><span class="adds">+114</span> <span class="dels">−0</span></span>

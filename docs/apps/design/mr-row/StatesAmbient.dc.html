@@ -68,11 +68,12 @@
   .grow { flex: 1; }
   .adds { color: color-mix(in srgb, var(--green) 70%, var(--muted)); }
   .dels { color: color-mix(in srgb, var(--red) 70%, var(--muted)); }
-  .unread { display: inline-flex; align-items: center; justify-content: center;
-            min-width: 15px; height: 15px; padding: 0 4px; margin-left: 6px; border-radius: 8px;
-            background: var(--accent); color: var(--bg); font-size: .62rem; font-weight: 700;
-            vertical-align: 1px; }
+  .unread { position: relative; top: -4px; margin-left: 2px;
+            color: var(--accent); font-size: 9.5px; font-weight: 700; line-height: 1;
+            font-variant-numeric: tabular-nums; }
   .mark { display: inline-flex; opacity: .55; }
+  .mark.slk { opacity: 1; }
+  .mark.ghost { opacity: .22; }
   .pair { white-space: nowrap; flex-shrink: 0; font-variant-numeric: tabular-nums; }
   .facts { display: inline-flex; align-items: center; gap: 12px; flex-shrink: 0;
            font-variant-numeric: tabular-nums; }
@@ -193,7 +194,7 @@ there, never on the row.</p>
 <p class="note">The mark beside the pill shows the FURTHEST slack stage. One glyph, mono,
 hover names it; the full reaction detail lives in the context card.</p>
 <div class="legend">
-  <span><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-2.5px" fill="currentColor"><path d="M5 15a2 2 0 1 1-2-2h2v2Zm1 0a2 2 0 0 1 4 0v5a2 2 0 1 1-4 0v-5Z"/><path d="M9 5a2 2 0 1 1 2-2v2H9Zm0 1a2 2 0 0 1 0 4H4a2 2 0 1 1 0-4h5Z"/><path d="M19 9a2 2 0 1 1 2 2h-2V9Zm-1 0a2 2 0 0 1-4 0V4a2 2 0 1 1 4 0v5Z"/><path d="M15 19a2 2 0 1 1-2 2v-2h2Zm0-1a2 2 0 0 1 0-4h5a2 2 0 1 1 0 4h-5Z"/></svg> posted</span>
+  <span><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-2.5px"><path fill="#E01E5A" d="M5 15a2 2 0 1 1-2-2h2v2Zm1 0a2 2 0 0 1 4 0v5a2 2 0 1 1-4 0v-5Z"/><path fill="#36C5F0" d="M9 5a2 2 0 1 1 2-2v2H9Zm0 1a2 2 0 0 1 0 4H4a2 2 0 1 1 0-4h5Z"/><path fill="#2EB67D" d="M19 9a2 2 0 1 1 2 2h-2V9Zm-1 0a2 2 0 0 1-4 0V4a2 2 0 1 1 4 0v5Z"/><path fill="#ECB22E" d="M15 19a2 2 0 1 1-2 2v-2h2Zm0-1a2 2 0 0 1 0-4h5a2 2 0 1 1 0 4h-5Z"/></svg> posted</span>
   <span><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2.5px"><ellipse cx="4.6" cy="8" rx="3.1" ry="5.2" fill="currentColor" stroke="none"/><ellipse cx="11.4" cy="8" rx="3.1" ry="5.2" fill="currentColor" stroke="none"/><circle cx="4" cy="9" r="1.4" fill="var(--bg)" stroke="none"/><circle cx="10.8" cy="9" r="1.4" fill="var(--bg)" stroke="none"/></svg> looking</span>
   <span><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2.5px"><path d="M2.5 2.5h11a1.2 1.2 0 0 1 1.2 1.2v6.6a1.2 1.2 0 0 1-1.2 1.2H8.4L5 14.5v-3H2.5a1.2 1.2 0 0 1-1.2-1.2V3.7a1.2 1.2 0 0 1 1.2-1.2z" fill="currentColor" stroke="none"/><circle cx="5.6" cy="7" r="1.05" fill="var(--bg)" stroke="none"/><circle cx="10.4" cy="7" r="1.05" fill="var(--bg)" stroke="none"/></svg> commented</span>
   <span><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2.5px"><circle cx="8" cy="8" r="6.6" fill="currentColor" stroke="none"/><path d="M5.1 8.3l1.9 1.9 3.9-4.5" stroke="var(--bg)" stroke-width="1.8"/></svg> approved</span>
@@ -202,7 +203,7 @@ hover names it; the full reaction detail lives in the context card.</p>
   <div class="row">
   
   <div class="gut"><span class="dot" style="color:var(--green)">●</span></div>
-  <div style="min-width:0"><div class="r1"><span class="title">CV-3028 Delete unreachable legacy dashboards</span><span class="mark" title="posted in slack"><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-2.5px" fill="currentColor"><path d="M5 15a2 2 0 1 1-2-2h2v2Zm1 0a2 2 0 0 1 4 0v5a2 2 0 1 1-4 0v-5Z"/><path d="M9 5a2 2 0 1 1 2-2v2H9Zm0 1a2 2 0 0 1 0 4H4a2 2 0 1 1 0-4h5Z"/><path d="M19 9a2 2 0 1 1 2 2h-2V9Zm-1 0a2 2 0 0 1-4 0V4a2 2 0 1 1 4 0v5Z"/><path d="M15 19a2 2 0 1 1-2 2v-2h2Zm0-1a2 2 0 0 1 0-4h5a2 2 0 1 1 0 4h-5Z"/></svg></span><span class="phrase" style="color:var(--green)">APPROVED</span></div><div class="r2">
+  <div style="min-width:0"><div class="r1"><span class="title">CV-3028 Delete unreachable legacy dashboards</span><span class="mark slk" title="posted in slack"><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-2.5px"><path fill="#E01E5A" d="M5 15a2 2 0 1 1-2-2h2v2Zm1 0a2 2 0 0 1 4 0v5a2 2 0 1 1-4 0v-5Z"/><path fill="#36C5F0" d="M9 5a2 2 0 1 1 2-2v2H9Zm0 1a2 2 0 0 1 0 4H4a2 2 0 1 1 0-4h5Z"/><path fill="#2EB67D" d="M19 9a2 2 0 1 1 2 2h-2V9Zm-1 0a2 2 0 0 1-4 0V4a2 2 0 1 1 4 0v5Z"/><path fill="#ECB22E" d="M15 19a2 2 0 1 1-2 2v-2h2Zm0-1a2 2 0 0 1 0-4h5a2 2 0 1 1 0 4h-5Z"/></svg></span><span class="phrase" style="color:var(--green)">APPROVED</span></div><div class="r2">
     <span class="iid">!43946</span>
     <span class="branch">feature/cv-3028</span>
     <span class="pair"><span class="adds">+18</span> <span class="dels">−1253</span></span>
@@ -214,7 +215,7 @@ hover names it; the full reaction detail lives in the context card.</p>
   <div class="row">
   
   <div class="gut"><span class="dot" style="color:var(--green)">●</span></div>
-  <div style="min-width:0"><div class="r1"><span class="title">CV-3028 Delete unreachable legacy dashboards</span><span class="mark" title="someone is looking at this"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2.5px"><ellipse cx="4.6" cy="8" rx="3.1" ry="5.2" fill="currentColor" stroke="none"/><ellipse cx="11.4" cy="8" rx="3.1" ry="5.2" fill="currentColor" stroke="none"/><circle cx="4" cy="9" r="1.4" fill="var(--bg)" stroke="none"/><circle cx="10.8" cy="9" r="1.4" fill="var(--bg)" stroke="none"/></svg></span><span class="phrase" style="color:var(--green)">APPROVED</span></div><div class="r2">
+  <div style="min-width:0"><div class="r1"><span class="title">CV-3028 Delete unreachable legacy dashboards</span><span class="mark" title="someone is looking at this"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2.5px"><ellipse cx="4.6" cy="8" rx="3.1" ry="5.2" fill="currentColor" stroke="none"/><ellipse cx="11.4" cy="8" rx="3.1" ry="5.2" fill="currentColor" stroke="none"/><circle cx="4" cy="9" r="1.4" fill="var(--bg)" stroke="none"/><circle cx="10.8" cy="9" r="1.4" fill="var(--bg)" stroke="none"/></svg></span><span class="mark slk" title="posted in slack"><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-2.5px"><path fill="#E01E5A" d="M5 15a2 2 0 1 1-2-2h2v2Zm1 0a2 2 0 0 1 4 0v5a2 2 0 1 1-4 0v-5Z"/><path fill="#36C5F0" d="M9 5a2 2 0 1 1 2-2v2H9Zm0 1a2 2 0 0 1 0 4H4a2 2 0 1 1 0-4h5Z"/><path fill="#2EB67D" d="M19 9a2 2 0 1 1 2 2h-2V9Zm-1 0a2 2 0 0 1-4 0V4a2 2 0 1 1 4 0v5Z"/><path fill="#ECB22E" d="M15 19a2 2 0 1 1-2 2v-2h2Zm0-1a2 2 0 0 1 0-4h5a2 2 0 1 1 0 4h-5Z"/></svg></span><span class="phrase" style="color:var(--green)">APPROVED</span></div><div class="r2">
     <span class="iid">!43946</span>
     <span class="branch">feature/cv-3028</span>
     <span class="pair"><span class="adds">+18</span> <span class="dels">−1253</span></span>
@@ -226,7 +227,7 @@ hover names it; the full reaction detail lives in the context card.</p>
   <div class="row">
   
   <div class="gut"><span class="dot" style="color:var(--green)">●</span></div>
-  <div style="min-width:0"><div class="r1"><span class="title">CV-3028 Delete unreachable legacy dashboards</span><span class="mark" title="commented in slack"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2.5px"><path d="M2.5 2.5h11a1.2 1.2 0 0 1 1.2 1.2v6.6a1.2 1.2 0 0 1-1.2 1.2H8.4L5 14.5v-3H2.5a1.2 1.2 0 0 1-1.2-1.2V3.7a1.2 1.2 0 0 1 1.2-1.2z" fill="currentColor" stroke="none"/><circle cx="5.6" cy="7" r="1.05" fill="var(--bg)" stroke="none"/><circle cx="10.4" cy="7" r="1.05" fill="var(--bg)" stroke="none"/></svg></span><span class="phrase" style="color:var(--green)">APPROVED</span></div><div class="r2">
+  <div style="min-width:0"><div class="r1"><span class="title">CV-3028 Delete unreachable legacy dashboards</span><span class="mark" title="commented in slack"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2.5px"><path d="M2.5 2.5h11a1.2 1.2 0 0 1 1.2 1.2v6.6a1.2 1.2 0 0 1-1.2 1.2H8.4L5 14.5v-3H2.5a1.2 1.2 0 0 1-1.2-1.2V3.7a1.2 1.2 0 0 1 1.2-1.2z" fill="currentColor" stroke="none"/><circle cx="5.6" cy="7" r="1.05" fill="var(--bg)" stroke="none"/><circle cx="10.4" cy="7" r="1.05" fill="var(--bg)" stroke="none"/></svg></span><span class="mark slk" title="posted in slack"><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-2.5px"><path fill="#E01E5A" d="M5 15a2 2 0 1 1-2-2h2v2Zm1 0a2 2 0 0 1 4 0v5a2 2 0 1 1-4 0v-5Z"/><path fill="#36C5F0" d="M9 5a2 2 0 1 1 2-2v2H9Zm0 1a2 2 0 0 1 0 4H4a2 2 0 1 1 0-4h5Z"/><path fill="#2EB67D" d="M19 9a2 2 0 1 1 2 2h-2V9Zm-1 0a2 2 0 0 1-4 0V4a2 2 0 1 1 4 0v5Z"/><path fill="#ECB22E" d="M15 19a2 2 0 1 1-2 2v-2h2Zm0-1a2 2 0 0 1 0-4h5a2 2 0 1 1 0 4h-5Z"/></svg></span><span class="phrase" style="color:var(--green)">APPROVED</span></div><div class="r2">
     <span class="iid">!43946</span>
     <span class="branch">feature/cv-3028</span>
     <span class="pair"><span class="adds">+18</span> <span class="dels">−1253</span></span>
@@ -238,7 +239,7 @@ hover names it; the full reaction detail lives in the context card.</p>
   <div class="row">
   
   <div class="gut"><span class="dot" style="color:var(--green)">●</span></div>
-  <div style="min-width:0"><div class="r1"><span class="title">CV-3028 Delete unreachable legacy dashboards</span><span class="mark" title="approved in slack"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2.5px"><circle cx="8" cy="8" r="6.6" fill="currentColor" stroke="none"/><path d="M5.1 8.3l1.9 1.9 3.9-4.5" stroke="var(--bg)" stroke-width="1.8"/></svg></span><span class="phrase" style="color:var(--green)">APPROVED</span></div><div class="r2">
+  <div style="min-width:0"><div class="r1"><span class="title">CV-3028 Delete unreachable legacy dashboards</span><span class="mark" title="approved in slack"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2.5px"><circle cx="8" cy="8" r="6.6" fill="currentColor" stroke="none"/><path d="M5.1 8.3l1.9 1.9 3.9-4.5" stroke="var(--bg)" stroke-width="1.8"/></svg></span><span class="mark slk" title="posted in slack"><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-2.5px"><path fill="#E01E5A" d="M5 15a2 2 0 1 1-2-2h2v2Zm1 0a2 2 0 0 1 4 0v5a2 2 0 1 1-4 0v-5Z"/><path fill="#36C5F0" d="M9 5a2 2 0 1 1 2-2v2H9Zm0 1a2 2 0 0 1 0 4H4a2 2 0 1 1 0-4h5Z"/><path fill="#2EB67D" d="M19 9a2 2 0 1 1 2 2h-2V9Zm-1 0a2 2 0 0 1-4 0V4a2 2 0 1 1 4 0v5Z"/><path fill="#ECB22E" d="M15 19a2 2 0 1 1-2 2v-2h2Zm0-1a2 2 0 0 1 0-4h5a2 2 0 1 1 0 4h-5Z"/></svg></span><span class="phrase" style="color:var(--green)">APPROVED</span></div><div class="r2">
     <span class="iid">!43946</span>
     <span class="branch">feature/cv-3028</span>
     <span class="pair"><span class="adds">+18</span> <span class="dels">−1253</span></span>
