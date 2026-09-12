@@ -63,6 +63,7 @@
             text-transform: uppercase; letter-spacing: .04em; }
   .r2 { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: .76rem;
         line-height: 16px; margin-top: 4px; }
+  .iid { color: color-mix(in srgb, var(--fg) 70%, var(--muted)); font-weight: 500; }
   .branch { min-width: 0; max-width: 34ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .grow { flex: 1; }
   .adds { color: color-mix(in srgb, var(--green) 70%, var(--muted)); }
@@ -72,7 +73,10 @@
   .pair { white-space: nowrap; flex-shrink: 0; font-variant-numeric: tabular-nums; }
   .facts { display: inline-flex; align-items: center; gap: 12px; flex-shrink: 0;
            font-variant-numeric: tabular-nums; }
-  .facts .age { text-align: right; }
+  .facts .thr { color: var(--accent); text-decoration: none; }
+  .facts .thr:hover { text-decoration: underline; }
+  .facts .age { text-align: right; font-size: .7rem;
+                color: color-mix(in srgb, var(--muted) 75%, transparent); }
 
   /* the ledger: 20px lines on the shared content edge. */
   .acts { margin-top: 8px; display: flex; flex-direction: column; gap: 2px; }
@@ -133,11 +137,11 @@
   
   <div class="gut"><span class="dot" style="color:var(--amber)">●</span></div>
   <div style="min-width:0"><div class="r1"><span class="title">CV-3074 Port the CV2 stealth-mode and access-links case c…</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span></div><div class="r2">
-    <span>!44451</span>
+    <span class="iid">!44451</span>
     <span class="branch">feature/cv-3074</span>
     <span class="pair"><span class="adds">+1455</span> <span class="dels">−13</span></span>
     <span class="grow"></span>
-    <span class="facts"><span>1 thread</span><span class="age">32h</span></span>
+    <span class="facts"><a href="#" class="thr" title="open the comments drawer">1 thread</a><span class="age">32h</span></span>
     
   </div><div class="acts">
   <div class="act act-quiet">
@@ -152,11 +156,11 @@
   
   <div class="gut"><span class="dot" style="color:var(--amber)">●</span></div>
   <div style="min-width:0"><div class="r1"><span class="title">CV-3074 Port the CV2 stealth-mode and access-links case c…</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span></div><div class="r2">
-    <span>!44451</span>
+    <span class="iid">!44451</span>
     <span class="branch">feature/cv-3074</span>
     <span class="pair"><span class="adds">+1455</span> <span class="dels">−13</span></span>
     <span class="grow"></span>
-    <span class="facts"><span>1 thread</span><span class="age">32h</span></span>
+    <span class="facts"><a href="#" class="thr" title="open the comments drawer">1 thread</a><span class="age">32h</span></span>
     
   </div><div class="acts">
   <div class="act act-work">
@@ -171,11 +175,11 @@
   
   <div class="gut"><span class="dot" style="color:var(--amber)">●</span></div>
   <div style="min-width:0"><div class="r1"><span class="title">CV-3074 Port the CV2 stealth-mode and access-links case c…</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span></div><div class="r2">
-    <span>!44451</span>
+    <span class="iid">!44451</span>
     <span class="branch">feature/cv-3074</span>
     <span class="pair"><span class="adds">+1455</span> <span class="dels">−13</span></span>
     <span class="grow"></span>
-    <span class="facts"><span>1 thread</span><span class="age">32h</span></span>
+    <span class="facts"><a href="#" class="thr" title="open the comments drawer">1 thread</a><span class="age">32h</span></span>
     
   </div><div class="acts">
   <div class="act act-go">
@@ -190,11 +194,11 @@
   <span class="bar bar-bad"></span>
   <div class="gut"><span class="dot" style="color:var(--amber)">●</span></div>
   <div style="min-width:0"><div class="r1"><span class="title">CV-3074 Port the CV2 stealth-mode and access-links case c…</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span></div><div class="r2">
-    <span>!44451</span>
+    <span class="iid">!44451</span>
     <span class="branch">feature/cv-3074</span>
     <span class="pair"><span class="adds">+1455</span> <span class="dels">−13</span></span>
     <span class="grow"></span>
-    <span class="facts"><span>1 thread</span><span class="age">32h</span></span>
+    <span class="facts"><a href="#" class="thr" title="open the comments drawer">1 thread</a><span class="age">32h</span></span>
     
   </div><div class="acts">
   <div class="act act-bad">
@@ -209,11 +213,11 @@
   <span class="bar bar-warn"></span>
   <div class="gut"><span class="dot" style="color:var(--amber)">●</span></div>
   <div style="min-width:0"><div class="r1"><span class="title">CV-3074 Port the CV2 stealth-mode and access-links case c…</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span></div><div class="r2">
-    <span>!44451</span>
+    <span class="iid">!44451</span>
     <span class="branch">feature/cv-3074</span>
     <span class="pair"><span class="adds">+1455</span> <span class="dels">−13</span></span>
     <span class="grow"></span>
-    <span class="facts"><span>1 thread</span><span class="age">32h</span></span>
+    <span class="facts"><a href="#" class="thr" title="open the comments drawer">1 thread</a><span class="age">32h</span></span>
     
   </div><div class="acts">
   <div class="act act-warn">
@@ -232,11 +236,11 @@
   
   <div class="gut"><span class="dot" style="color:var(--amber)">●</span></div>
   <div style="min-width:0"><div class="r1"><span class="title">CV-3074 Port the CV2 stealth-mode and access-links case c…</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span></div><div class="r2">
-    <span>!44451</span>
+    <span class="iid">!44451</span>
     <span class="branch">feature/cv-3074</span>
     <span class="pair"><span class="adds">+1455</span> <span class="dels">−13</span></span>
     <span class="grow"></span>
-    <span class="facts"><span>1 thread</span><span class="age">32h</span></span>
+    <span class="facts"><a href="#" class="thr" title="open the comments drawer">1 thread</a><span class="age">32h</span></span>
     
   </div><div class="acts">
   <div class="act act-quiet">
@@ -251,11 +255,11 @@
   
   <div class="gut"><span class="dot" style="color:var(--amber)">●</span></div>
   <div style="min-width:0"><div class="r1"><span class="title">CV-3074 Port the CV2 stealth-mode and access-links case c…</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span></div><div class="r2">
-    <span>!44451</span>
+    <span class="iid">!44451</span>
     <span class="branch">feature/cv-3074</span>
     <span class="pair"><span class="adds">+1455</span> <span class="dels">−13</span></span>
     <span class="grow"></span>
-    <span class="facts"><span>1 thread</span><span class="age">32h</span></span>
+    <span class="facts"><a href="#" class="thr" title="open the comments drawer">1 thread</a><span class="age">32h</span></span>
     
   </div><div class="acts">
   <div class="act act-work">
@@ -270,11 +274,11 @@
   
   <div class="gut"><span class="dot" style="color:var(--amber)">●</span></div>
   <div style="min-width:0"><div class="r1"><span class="title">CV-3074 Port the CV2 stealth-mode and access-links case c…</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span></div><div class="r2">
-    <span>!44451</span>
+    <span class="iid">!44451</span>
     <span class="branch">feature/cv-3074</span>
     <span class="pair"><span class="adds">+1455</span> <span class="dels">−13</span></span>
     <span class="grow"></span>
-    <span class="facts"><span>1 thread</span><span class="age">32h</span></span>
+    <span class="facts"><a href="#" class="thr" title="open the comments drawer">1 thread</a><span class="age">32h</span></span>
     
   </div><div class="acts">
   <div class="act act-work">
@@ -289,11 +293,11 @@
   
   <div class="gut"><span class="dot" style="color:var(--amber)">●</span></div>
   <div style="min-width:0"><div class="r1"><span class="title">CV-3074 Port the CV2 stealth-mode and access-links case c…</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span></div><div class="r2">
-    <span>!44451</span>
+    <span class="iid">!44451</span>
     <span class="branch">feature/cv-3074</span>
     <span class="pair"><span class="adds">+1455</span> <span class="dels">−13</span></span>
     <span class="grow"></span>
-    <span class="facts"><span>1 thread</span><span class="age">32h</span></span>
+    <span class="facts"><a href="#" class="thr" title="open the comments drawer">1 thread</a><span class="age">32h</span></span>
     
   </div><div class="acts">
   <div class="act act-work">
@@ -308,11 +312,11 @@
   
   <div class="gut"><span class="dot" style="color:var(--amber)">●</span></div>
   <div style="min-width:0"><div class="r1"><span class="title">CV-3074 Port the CV2 stealth-mode and access-links case c…</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span></div><div class="r2">
-    <span>!44451</span>
+    <span class="iid">!44451</span>
     <span class="branch">feature/cv-3074</span>
     <span class="pair"><span class="adds">+1455</span> <span class="dels">−13</span></span>
     <span class="grow"></span>
-    <span class="facts"><span>1 thread</span><span class="age">32h</span></span>
+    <span class="facts"><a href="#" class="thr" title="open the comments drawer">1 thread</a><span class="age">32h</span></span>
     
   </div><div class="acts">
   <div class="act act-go">
@@ -327,11 +331,11 @@
   <span class="bar bar-warn"></span>
   <div class="gut"><span class="dot" style="color:var(--amber)">●</span></div>
   <div style="min-width:0"><div class="r1"><span class="title">CV-3074 Port the CV2 stealth-mode and access-links case c…</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span></div><div class="r2">
-    <span>!44451</span>
+    <span class="iid">!44451</span>
     <span class="branch">feature/cv-3074</span>
     <span class="pair"><span class="adds">+1455</span> <span class="dels">−13</span></span>
     <span class="grow"></span>
-    <span class="facts"><span>1 thread</span><span class="age">32h</span></span>
+    <span class="facts"><a href="#" class="thr" title="open the comments drawer">1 thread</a><span class="age">32h</span></span>
     
   </div><div class="acts">
   <div class="act act-warn">
@@ -346,11 +350,11 @@
   <span class="bar bar-warn"></span>
   <div class="gut"><span class="dot" style="color:var(--amber)">●</span></div>
   <div style="min-width:0"><div class="r1"><span class="title">CV-3074 Port the CV2 stealth-mode and access-links case c…</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span></div><div class="r2">
-    <span>!44451</span>
+    <span class="iid">!44451</span>
     <span class="branch">feature/cv-3074</span>
     <span class="pair"><span class="adds">+1455</span> <span class="dels">−13</span></span>
     <span class="grow"></span>
-    <span class="facts"><span>1 thread</span><span class="age">32h</span></span>
+    <span class="facts"><a href="#" class="thr" title="open the comments drawer">1 thread</a><span class="age">32h</span></span>
     
   </div><div class="acts">
   <div class="act act-warn">
@@ -365,11 +369,11 @@
   <span class="bar bar-bad"></span>
   <div class="gut"><span class="dot" style="color:var(--amber)">●</span></div>
   <div style="min-width:0"><div class="r1"><span class="title">CV-3074 Port the CV2 stealth-mode and access-links case c…</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span></div><div class="r2">
-    <span>!44451</span>
+    <span class="iid">!44451</span>
     <span class="branch">feature/cv-3074</span>
     <span class="pair"><span class="adds">+1455</span> <span class="dels">−13</span></span>
     <span class="grow"></span>
-    <span class="facts"><span>1 thread</span><span class="age">32h</span></span>
+    <span class="facts"><a href="#" class="thr" title="open the comments drawer">1 thread</a><span class="age">32h</span></span>
     
   </div><div class="acts">
   <div class="act act-bad">
@@ -384,11 +388,11 @@
   <span class="bar bar-warn"></span>
   <div class="gut"><span class="dot" style="color:var(--amber)">●</span></div>
   <div style="min-width:0"><div class="r1"><span class="title">CV-3074 Port the CV2 stealth-mode and access-links case c…</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span></div><div class="r2">
-    <span>!44451</span>
+    <span class="iid">!44451</span>
     <span class="branch">feature/cv-3074</span>
     <span class="pair"><span class="adds">+1455</span> <span class="dels">−13</span></span>
     <span class="grow"></span>
-    <span class="facts"><span>1 thread</span><span class="age">32h</span></span>
+    <span class="facts"><a href="#" class="thr" title="open the comments drawer">1 thread</a><span class="age">32h</span></span>
     
   </div><div class="acts">
   <div class="act act-warn">
@@ -407,7 +411,7 @@
   
   <div class="gut"><span class="dot" style="color:var(--red)">●</span></div>
   <div style="min-width:0"><div class="r1"><span class="title">CV-3201 Vendor the report fonts so CI stops flaking</span><span class="phrase" style="color:var(--red)">CI FAILING</span></div><div class="r2">
-    <span>!44712</span>
+    <span class="iid">!44712</span>
     <span class="branch">feature/cv-3201</span>
     <span class="pair"><span class="adds">+41</span> <span class="dels">−9</span></span>
     <span class="grow"></span>
@@ -426,7 +430,7 @@
   
   <div class="gut"><span class="dot" style="color:var(--red)">●</span></div>
   <div style="min-width:0"><div class="r1"><span class="title">CV-3201 Vendor the report fonts so CI stops flaking</span><span class="phrase" style="color:var(--red)">CI FAILING</span></div><div class="r2">
-    <span>!44712</span>
+    <span class="iid">!44712</span>
     <span class="branch">feature/cv-3201</span>
     <span class="pair"><span class="adds">+41</span> <span class="dels">−9</span></span>
     <span class="grow"></span>
@@ -445,7 +449,7 @@
   
   <div class="gut"><span class="dot" style="color:var(--red)">●</span></div>
   <div style="min-width:0"><div class="r1"><span class="title">CV-3201 Vendor the report fonts so CI stops flaking</span><span class="phrase" style="color:var(--red)">CI FAILING</span></div><div class="r2">
-    <span>!44712</span>
+    <span class="iid">!44712</span>
     <span class="branch">feature/cv-3201</span>
     <span class="pair"><span class="adds">+41</span> <span class="dels">−9</span></span>
     <span class="grow"></span>
@@ -464,7 +468,7 @@
   
   <div class="gut"><span class="dot" style="color:var(--red)">●</span></div>
   <div style="min-width:0"><div class="r1"><span class="title">CV-3201 Vendor the report fonts so CI stops flaking</span><span class="phrase" style="color:var(--red)">CI FAILING</span></div><div class="r2">
-    <span>!44712</span>
+    <span class="iid">!44712</span>
     <span class="branch">feature/cv-3201</span>
     <span class="pair"><span class="adds">+41</span> <span class="dels">−9</span></span>
     <span class="grow"></span>
@@ -483,7 +487,7 @@
   
   <div class="gut"><span class="dot" style="color:var(--red)">●</span></div>
   <div style="min-width:0"><div class="r1"><span class="title">CV-3201 Vendor the report fonts so CI stops flaking</span><span class="phrase" style="color:var(--red)">CI FAILING</span></div><div class="r2">
-    <span>!44712</span>
+    <span class="iid">!44712</span>
     <span class="branch">feature/cv-3201</span>
     <span class="pair"><span class="adds">+41</span> <span class="dels">−9</span></span>
     <span class="grow"></span>
@@ -502,7 +506,7 @@
   
   <div class="gut"><span class="dot" style="color:var(--red)">●</span></div>
   <div style="min-width:0"><div class="r1"><span class="title">CV-3201 Vendor the report fonts so CI stops flaking</span><span class="phrase" style="color:var(--red)">CI FAILING</span></div><div class="r2">
-    <span>!44712</span>
+    <span class="iid">!44712</span>
     <span class="branch">feature/cv-3201</span>
     <span class="pair"><span class="adds">+41</span> <span class="dels">−9</span></span>
     <span class="grow"></span>
@@ -521,7 +525,7 @@
   <span class="bar bar-bad"></span>
   <div class="gut"><span class="dot" style="color:var(--red)">●</span></div>
   <div style="min-width:0"><div class="r1"><span class="title">CV-3201 Vendor the report fonts so CI stops flaking</span><span class="phrase" style="color:var(--red)">CI FAILING</span></div><div class="r2">
-    <span>!44712</span>
+    <span class="iid">!44712</span>
     <span class="branch">feature/cv-3201</span>
     <span class="pair"><span class="adds">+41</span> <span class="dels">−9</span></span>
     <span class="grow"></span>

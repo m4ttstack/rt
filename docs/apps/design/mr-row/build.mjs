@@ -81,6 +81,7 @@ const CSS = `
             text-transform: uppercase; letter-spacing: .04em; }
   .r2 { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: .76rem;
         line-height: 16px; margin-top: 4px; }
+  .iid { color: color-mix(in srgb, var(--fg) 70%, var(--muted)); font-weight: 500; }
   .branch { min-width: 0; max-width: 34ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .grow { flex: 1; }
   .adds { color: color-mix(in srgb, var(--green) 70%, var(--muted)); }
@@ -90,7 +91,10 @@ const CSS = `
   .pair { white-space: nowrap; flex-shrink: 0; font-variant-numeric: tabular-nums; }
   .facts { display: inline-flex; align-items: center; gap: 12px; flex-shrink: 0;
            font-variant-numeric: tabular-nums; }
-  .facts .age { text-align: right; }
+  .facts .thr { color: var(--accent); text-decoration: none; }
+  .facts .thr:hover { text-decoration: underline; }
+  .facts .age { text-align: right; font-size: .7rem;
+                color: color-mix(in srgb, var(--muted) 75%, transparent); }
 
   /* the ledger: 20px lines on the shared content edge. */
   .acts { margin-top: 8px; display: flex; flex-direction: column; gap: 2px; }
@@ -179,12 +183,12 @@ function r1({ title, phrase, phraseColor = 'var(--amber)', slack = false }) {
 function r2({ iid, branch, adds, dels, threads, age, fresh = 0, slack = false }, extra = '') {
   const freshTag = fresh ? ` <span class="fresh">${fresh} new</span>` : '';
   return `<div class="r2">
-    <span>!${iid}</span>
+    <span class="iid">!${iid}</span>
     <span class="branch">${branch}</span>
     <span class="pair"><span class="adds">+${adds}</span> <span class="dels">−${dels}</span></span>
     <span class="grow"></span>
     <span class="facts">${
-      threads ? `<span>${threads} thread${threads > 1 ? 's' : ''}${freshTag}</span>` : ''
+      threads ? `<a href="#" class="thr" title="open the comments drawer">${threads} thread${threads > 1 ? 's' : ''}${freshTag}</a>` : ''
     }<span class="age">${age}</span></span>
     ${extra}
   </div>`;

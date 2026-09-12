@@ -63,6 +63,7 @@
             text-transform: uppercase; letter-spacing: .04em; }
   .r2 { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: .76rem;
         line-height: 16px; margin-top: 4px; }
+  .iid { color: color-mix(in srgb, var(--fg) 70%, var(--muted)); font-weight: 500; }
   .branch { min-width: 0; max-width: 34ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .grow { flex: 1; }
   .adds { color: color-mix(in srgb, var(--green) 70%, var(--muted)); }
@@ -72,7 +73,10 @@
   .pair { white-space: nowrap; flex-shrink: 0; font-variant-numeric: tabular-nums; }
   .facts { display: inline-flex; align-items: center; gap: 12px; flex-shrink: 0;
            font-variant-numeric: tabular-nums; }
-  .facts .age { text-align: right; }
+  .facts .thr { color: var(--accent); text-decoration: none; }
+  .facts .thr:hover { text-decoration: underline; }
+  .facts .age { text-align: right; font-size: .7rem;
+                color: color-mix(in srgb, var(--muted) 75%, transparent); }
 
   /* the ledger: 20px lines on the shared content edge. */
   .acts { margin-top: 8px; display: flex; flex-direction: column; gap: 2px; }
@@ -133,7 +137,7 @@
   
   <div class="gut"><span class="dot" style="color:var(--amber)">●</span></div>
   <div style="min-width:0"><div class="r1"><span class="title">CV-3163 Let screenshot.cjs capture the auth handshake</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span></div><div class="r2">
-    <span>!44720</span>
+    <span class="iid">!44720</span>
     <span class="branch">feature/cv-3163</span>
     <span class="pair"><span class="adds">+79</span> <span class="dels">−27</span></span>
     <span class="grow"></span>
@@ -152,11 +156,11 @@
   
   <div class="gut"><span class="dot" style="color:var(--green)">●</span></div>
   <div style="min-width:0"><div class="r1"><span class="title">CV-3149 Widen the transform contract</span><span class="mark" title="posted in slack"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><rect x="2.5" y="2.5" width="11" height="11" rx="3"/><path d="M5.5 8.4l1.9 1.9 3.1-3.8"/></svg></span><span class="phrase" style="color:var(--green)">APPROVED</span></div><div class="r2">
-    <span>!44684</span>
+    <span class="iid">!44684</span>
     <span class="branch">feature/cv-3149</span>
     <span class="pair"><span class="adds">+296</span> <span class="dels">−16</span></span>
     <span class="grow"></span>
-    <span class="facts"><span>2 threads</span><span class="age">9h</span></span>
+    <span class="facts"><a href="#" class="thr" title="open the comments drawer">2 threads</a><span class="age">9h</span></span>
     
   </div><div class="acts">
   <div class="act act-clear">
@@ -175,7 +179,7 @@
   
   <div class="gut"><span class="dot" style="color:var(--amber)">●</span></div>
   <div style="min-width:0"><div class="r1"><span class="title">CV-3163 Let screenshot.cjs capture the auth handshake</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span></div><div class="r2">
-    <span>!44720</span>
+    <span class="iid">!44720</span>
     <span class="branch">feature/cv-3163</span>
     <span class="pair"><span class="adds">+79</span> <span class="dels">−27</span></span>
     <span class="grow"></span>
@@ -194,11 +198,11 @@
   
   <div class="gut"><span class="dot" style="color:var(--green)">●</span></div>
   <div style="min-width:0"><div class="r1"><span class="title">CV-3149 Widen the transform contract</span><span class="mark" title="posted in slack"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><rect x="2.5" y="2.5" width="11" height="11" rx="3"/><path d="M5.5 8.4l1.9 1.9 3.1-3.8"/></svg></span><span class="phrase" style="color:var(--green)">APPROVED</span></div><div class="r2">
-    <span>!44684</span>
+    <span class="iid">!44684</span>
     <span class="branch">feature/cv-3149</span>
     <span class="pair"><span class="adds">+296</span> <span class="dels">−16</span></span>
     <span class="grow"></span>
-    <span class="facts"><span>2 threads</span><span class="age">9h</span></span>
+    <span class="facts"><a href="#" class="thr" title="open the comments drawer">2 threads</a><span class="age">9h</span></span>
     
   </div><div class="acts">
   <div class="act act-clear">
