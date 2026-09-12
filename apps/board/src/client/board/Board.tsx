@@ -212,6 +212,13 @@ export function Board() {
         );
         setGateDeepLinkIid(linkedIid);
       }
+      // Landing on the seat tab without a grouping in the URL means its own
+      // grouping; a grouping the user picked there rides in the URL.
+      if (
+        resolved.tab === NEEDS_ME_TAB.id &&
+        !new URLSearchParams(location.search).has('group')
+      )
+        resolved = { ...resolved, group: 'needs' };
       setState(resolved);
     } else {
       // Validated against the ACTIVE TAB's roster: a codeowners tab's is

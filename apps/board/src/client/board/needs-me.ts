@@ -36,14 +36,18 @@ type Resolved = ReadonlyMap<string, 'posted' | 'dismissed'>;
 
 const DECIDE_VERBS = new Set<Verb['kind']>(['answer', 'read-note']);
 
-/** A hot status line is always the seat's move; its verb says which. */
-function hotNeed(
+/** What the status line says about the seat's move: a hot line is always
+    theirs (its verb says which kind); a working line means an agent has the
+    row for now, so nothing standing counts either; anything else defers to
+    the seat's standing relationship. */
+function lineNeed(
   mr: BoardMRWithReview,
   now: number,
   resolved: Resolved,
   self: string
-): Need | null {
+): Need | null | 'busy' {
   const { line, bar } = rowStatus(mr, now, resolved, self);
+  if (line.tone === 'work') return 'busy';
   if (!bar) return null;
   if (line.tone === 'bad') return 'unstick';
   const kind = line.verbs[0]?.kind;
@@ -84,8 +88,10 @@ export function needOf(
   now: number,
   resolved: Resolved
 ): Need | null {
+  const fromLine = lineNeed(mr, now, resolved, self);
+  if (fromLine === 'busy') return null;
   return (
-    hotNeed(mr, now, resolved, self) ??
+    fromLine ??
     (mr.author.username === self ? authorNeed(mr) : reviewerNeed(mr, self))
   );
 }

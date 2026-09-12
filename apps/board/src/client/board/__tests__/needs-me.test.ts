@@ -88,8 +88,16 @@ describe("needOf: hot rows are the seat's move whoever authored them", () => {
     );
   });
 
-  test("a running review is nobody's move", () => {
+  test("a working agent has the row: nobody's move, even with threads awaiting the author", () => {
     expect(need(mr({ review: { status: 'reviewing' } }))).toBeNull();
+    expect(
+      need(
+        own({
+          respond: { status: 'triaging' },
+          threadSummary: { awaiting: 2, replied: 0, resolved: 0 },
+        })
+      )
+    ).toBeNull();
   });
 });
 
