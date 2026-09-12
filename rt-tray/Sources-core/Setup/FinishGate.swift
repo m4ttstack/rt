@@ -4,7 +4,6 @@ import Combine
 /// Copy and rules for the finish gate: finish-gated rows block the wizard's
 /// Finish until ready, skipped, or waived on this Mac by `rt setup waive`.
 public enum FinishGate {
-    public static let waivedNotePrefix = "Skipped on this Mac"
     public static let beforeYouFinishTitle = "Before you finish"
     public static let skipSheetTitle = "Skip the Fast Browser extension?"
     public static let skipSheetBody = "Without the Fast Browser extension, agents cannot capture screenshots or annotate evidence from your browser. You can load it later from Settings."
@@ -17,9 +16,8 @@ public enum FinishGate {
 }
 
 public extension PlanRow {
-    /// rt marks a waived row by its note, the same way a "works without"
-    /// row is recognised; the contract carries no separate flag.
-    var isWaived: Bool { finishGated && (optionalNote?.hasPrefix(FinishGate.waivedNotePrefix) ?? false) }
+    /// The contract's own flag; the note beside it is copy, never the state.
+    var isWaived: Bool { finishGated && waived }
 }
 
 /// Runs the two waiver verbs and refreshes the plan after either succeeds,

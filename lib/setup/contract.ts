@@ -38,6 +38,8 @@ export interface Row {
   recheck: Recheck;
   /** Blocks the wizard's Finish (never Install) until ready, skipped, or waived on this Mac. */
   finishGated?: boolean;
+  /** Set on a finish-gated row the user skipped on this Mac; the app's Un-skip affordance keys on this, never on the note's wording. */
+  waived?: boolean;
 }
 
 export interface Group {

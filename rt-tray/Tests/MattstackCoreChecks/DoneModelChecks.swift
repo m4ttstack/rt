@@ -87,7 +87,6 @@ let doneModelChecks: [Check] = [
         c.expectEqual(FinishGate.skipSheetBody, "Without the Fast Browser extension, agents cannot capture screenshots or annotate evidence from your browser. You can load it later from Settings.")
         c.expectEqual(FinishGate.skipSheetConfirm, "Skip for now")
         c.expectEqual(FinishGate.skipSheetCancel, "Cancel")
-        c.expectEqual(FinishGate.waivedNotePrefix, "Skipped on this Mac")
         c.expectEqual(FinishGate.headline(blocked: 1), "One step left before you finish")
         c.expectEqual(FinishGate.headline(blocked: 2), "2 steps left before you finish")
     },

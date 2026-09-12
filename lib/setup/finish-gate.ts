@@ -40,7 +40,7 @@ export function applyFinishGate(groups: Group[], mode: "plan" | "status", waived
     ...g,
     rows: g.rows.map((r) => {
       if (!r.finishGated) return r;
-      if (waived.includes(r.id)) return { ...r, required: false, optionalNote: WAIVED_NOTE };
+      if (waived.includes(r.id)) return { ...r, required: false, waived: true, optionalNote: WAIVED_NOTE };
       if (mode === "status" && r.status !== "skipped") return { ...r, required: true, optionalNote: null };
       return r;
     }),
