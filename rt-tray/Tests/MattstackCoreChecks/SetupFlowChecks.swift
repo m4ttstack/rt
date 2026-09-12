@@ -43,15 +43,15 @@ let setupFlowChecks: [Check] = [
             c.expectEqual(wizard.mayStartInstall, true)
         }
     },
-    Check("windowMayClose follows the finish gate on Done and nowhere else") { c in
+    Check("windowMayClose follows the one finish-gate boolean on Done and nowhere else") { c in
         await MainActor.run {
             let f = SetupFlowModel()
             f.jump(to: .done)
-            c.expectEqual(f.windowMayClose, true)
-            f.finishBlockedBy = ["tool.fast-browser-extension"]
-            c.expectEqual(f.windowMayClose, false, "a blocked Finish closes the titlebar buttons too")
+            c.expectEqual(f.windowMayClose, true, "a flow nobody mirrors a gate into reads open")
+            f.finishGateOpen = false
+            c.expectEqual(f.windowMayClose, false, "a closed Finish closes the titlebar buttons too")
             c.expectEqual(f.continueTitle, "Finish")
-            f.finishBlockedBy = []
+            f.finishGateOpen = true
             c.expectEqual(f.windowMayClose, true)
             f.jump(to: .checklist)
             c.expectEqual(f.windowMayClose, false, "the gate never opens a non-Done step")

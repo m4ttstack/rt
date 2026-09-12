@@ -10,7 +10,77 @@ private func doneFixture(plans: [Plan], answers: [String: (Int32, String)] = [:]
     return (model, readiness, rt, fake)
 }
 
+/// A plan source the check releases by hand, so a post-install check can be
+/// observed while it is still in flight.
+final class HeldPlans: PlanSource, @unchecked Sendable {
+    private let lock = NSLock()
+    private var waiters: [CheckedContinuation<Plan, Error>] = []
+    private var fetchCount = 0
+    var fetches: Int { lock.lock(); defer { lock.unlock() }; return fetchCount }
+    func fetchPlan() async throws -> Plan {
+        try await withCheckedThrowingContinuation { cont in
+            lock.lock(); fetchCount += 1; waiters.append(cont); lock.unlock()
+        }
+    }
+    func release(_ plan: Plan) {
+        lock.lock(); let ws = waiters; waiters = []; lock.unlock()
+        ws.forEach { $0.resume(returning: plan) }
+    }
+}
+
+private func waitUntil(_ cond: @escaping @MainActor () -> Bool, tries: Int = 200) async {
+    for _ in 0..<tries {
+        if await MainActor.run(body: cond) { return }
+        try? await Task.sleep(nanoseconds: 10_000_000)
+    }
+}
+
 let doneModelChecks: [Check] = [
+    Check("a post-install check that never answers fails open once the watchdog fires, with the timeout shown") { c in
+        let held = HeldPlans()
+        let readiness = await MainActor.run { ReadinessModel(plans: held, permissions: FakePermissions(), ticker: FakeTicker()) }
+        let m = await MainActor.run { DoneModel(readiness: readiness, waivers: WaiverClient(rt: ScriptedRt(), readiness: readiness), checkTimeout: 0.05) }
+        let run = Task { await m.checkPostInstall() }
+        await waitUntil { m.refreshFailed }
+        await MainActor.run {
+            c.expectEqual(m.refreshFailed, true, "a hung rt must not hold Finish shut")
+            c.expectEqual(m.finishEnabled, true)
+            c.expect(m.refreshError?.contains("did not answer") == true)
+        }
+        held.release(makeManualPlan(extensionStatus: .needsYou))
+        await run.value
+        await MainActor.run {
+            c.expectEqual(m.hasCheckedSincePostInstall, true, "a late answer is still the truth")
+            c.expectEqual(m.finishEnabled, false)
+            c.expectEqual(m.blockedRows.map(\.id), ["tool.fast-browser-extension"])
+        }
+    },
+    Check("a second arrival at Done re-checks from scratch: the previous run's rows are not shown as fresh while the new check is in flight") { c in
+        let held = HeldPlans()
+        let readiness = await MainActor.run { ReadinessModel(plans: held, permissions: FakePermissions(), ticker: FakeTicker()) }
+        let m = await MainActor.run { DoneModel(readiness: readiness, waivers: WaiverClient(rt: ScriptedRt(), readiness: readiness)) }
+        let first = Task { await m.checkPostInstall() }
+        await waitUntil { held.fetches == 1 }
+        held.release(makeManualPlan(extensionStatus: .ready))
+        await first.value
+        await MainActor.run {
+            c.expectEqual(m.hasCheckedSincePostInstall, true)
+            c.expectEqual(m.finishEnabled, true)
+        }
+        let second = Task { await m.checkPostInstall() }
+        await waitUntil { held.fetches == 2 }
+        await MainActor.run {
+            c.expectEqual(m.hasCheckedSincePostInstall, false, "entering the check resets the flag")
+            c.expectEqual(m.finishEnabled, false, "in flight reads closed, not the last run's answer")
+            c.expectEqual(m.blockedRows.map(\.id), [])
+        }
+        held.release(makeManualPlan(extensionStatus: .needsYou))
+        await second.value
+        await MainActor.run {
+            c.expectEqual(m.blockedRows.map(\.id), ["tool.fast-browser-extension"])
+            c.expectEqual(m.finishEnabled, false)
+        }
+    },
     Check("finish gate copy is pinned byte for byte") { c in
         c.expectEqual(FinishGate.beforeYouFinishTitle, "Before you finish")
         c.expectEqual(FinishGate.skipSheetTitle, "Skip the Fast Browser extension?")
