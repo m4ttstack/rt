@@ -107,6 +107,26 @@ test("gate with no matching hints joins nothing", () => {
   expect(v!.subject).toBe("agent:a1");
 });
 
+test("no joined gates, but the agent record carries its own subject: that subject wins over agent:<id>", () => {
+  const [v] = computeView({ ...base, agents: [agent({ subject: "mr:x" })], panes: [pane()] }, 10);
+  expect(v!.subject).toBe("mr:x");
+  expect(v!.openGateIds).toEqual([]);
+});
+
+test("a resolved pane whose paneRef starts with bg: is hidden, not live", () => {
+  const [v] = computeView({ ...base, agents: [agent()], panes: [pane({ paneRef: "bg:w1:p1" })] }, 10);
+  expect(v!.state).toBe("hidden");
+  expect(v!.paneRef).toBe("bg:w1:p1");
+});
+
+test("blocked wins over a bg: pane's hidden state", () => {
+  const [v] = computeView(
+    { ...base, agents: [agent()], panes: [pane({ paneRef: "bg:w1:p1", agentStatus: "blocked" })] },
+    10,
+  );
+  expect(v!.state).toBe("blocked");
+});
+
 test("gate joined to one agent does not leak onto another agent's view", () => {
   const g = gateRow({ id: "g1", subject: "run:x", nudge: { session: "s-1" } });
   const other = agent({ id: "a2", sessionId: "s-2", cwd: "/wt/b" });
