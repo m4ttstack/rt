@@ -151,8 +151,16 @@ function Rail({
   const mine = self !== null && mr.author.username === self;
   const awaitYou = mine ? (mr.threadSummary?.awaiting ?? 0) : 0;
   const my = mr.myThreads;
+  const me = self
+    ? mr.reviews.reviewers.find(r => r.username === self)
+    : undefined;
+  const approved = me?.reviewState === 'APPROVED';
   const replied =
-    !mine && !!my && my.awaiting === 0 && my.replied + my.resolved > 0;
+    !mine &&
+    !approved &&
+    !!my &&
+    my.awaiting === 0 &&
+    my.replied + my.resolved > 0;
   return (
     <span className="tui-rail">
       {count > 0 && (

@@ -1,11 +1,11 @@
 /** The row's state, on two lines. Line 0's pill is GitLab's review axis
-    (a noun: needs review, commented, approved). Line 3 is the move: every
-    source on the row (gates, the executor, the three lanes, peers, humans)
-    offers a candidate, the hottest one becomes the line, the rest fold into
-    "+N active", and a row with no candidate at all reads its standing state
-    for whoever the board's seat is. The pill and the line may name the same
-    fact ("changes requested" twice): one is where the MR is, the other is
-    what to do about it. */
+    (needs review, N/M approved, approved, changes requested). Line 3 is
+    the move: every source on the row (gates, the executor, the three
+    lanes, peers, humans) offers a candidate, the hottest one becomes the
+    line, the rest fold into "+N active", and a row with no candidate at
+    all reads its standing state for whoever the board's seat is. The
+    pill and the line may name the same fact ("changes requested" twice):
+    one is where the MR is, the other is what to do about it. */
 import type { BoardMR } from '../../data.ts';
 import { hasChangesRequested } from '../../data.ts';
 import { respondOutcome } from '../../respond-outcome.ts';

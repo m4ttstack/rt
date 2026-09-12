@@ -123,11 +123,10 @@ export function statusFlags(
     (MRDashboardProps.behindTarget documents the distinction). */
 export function behindToken(
   mr: BoardMR
-): { n: number; text: string; title: string } | null {
+): { text: string; title: string } | null {
   const n = mr.behindTarget;
   if (n == null || n <= 0) return null;
   return {
-    n,
     text: `${n} behind`,
     title: `${n} commit${n === 1 ? '' : 's'} behind target`,
   };
@@ -328,9 +327,10 @@ function ageBucket(
   return { label: 'Older', order: 9 };
 }
 
-/** Coarse review-readiness bucket, most-blocking first. Mirrors the row's
-    status label: a formal "changes requested" review is distinct from someone
-    just leaving comments. Partial approvals fold into "needs review". */
+/** Coarse review-readiness bucket, most-blocking first. Groups by GitLab's
+    review state, including the conversation states ("commented", "comments
+    resolved") the row's pill no longer shows: the pill is the approval
+    axis now, the threads token is the conversation. */
 function statusBucket(mr: BoardMR): { label: string; order: number } {
   // Review-state axis only. Mechanical blockers (conflicts / CI) are row flags,
   // not their own groups, so an MR with conflicts still shows under its review

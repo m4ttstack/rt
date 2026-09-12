@@ -334,12 +334,10 @@ describe('statusFlags', () => {
 describe('behindToken', () => {
   test('behind by N reads "N behind" with a plural title', () => {
     expect(behindToken(mr({ behindTarget: 3 } as any))).toEqual({
-      n: 3,
       text: '3 behind',
       title: '3 commits behind target',
     });
     expect(behindToken(mr({ behindTarget: 1 } as any))).toEqual({
-      n: 1,
       text: '1 behind',
       title: '1 commit behind target',
     });

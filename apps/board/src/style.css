@@ -349,8 +349,9 @@ body {
   font-size: 10px;
 }
 
-/* Line 0: state. Flags sit at the left edge and clip before the pill does;
-   the Slack marks and the pill hold the corner. */
+/* Line 0: the lead. Identity (author or ticket) comes first, then the
+   flags, then the behind count; the Slack marks and the pill hold the
+   corner. Clips from the right. */
 .tui-row-0 {
   display: flex;
   align-items: center;
@@ -395,6 +396,44 @@ body {
 .tui-flag[data-flag='stacked'] {
   --flag: var(--cyan);
 }
+.tui-behind {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  font-weight: 500;
+  color: var(--muted-text);
+}
+.tui-behind svg {
+  color: color-mix(in srgb, var(--muted-text) 75%, transparent);
+}
+/* The header line's identity slot: the author in the mixed view, the
+   ticket when the author is the group header. Muted, not purple: the line's
+   color belongs to the flags. */
+.tui-author-tag,
+.tui-ticket-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  color: var(--muted-text);
+  white-space: nowrap;
+  text-decoration: none;
+}
+.tui-ticket-tag {
+  font-weight: 500;
+}
+.tui-ticket-tag svg {
+  color: color-mix(in srgb, var(--muted-text) 75%, transparent);
+}
+.tui-ticket-tag:hover {
+  color: var(--fg);
+  text-decoration: underline;
+}
+.tui-author-tag .tui-avatar {
+  width: 12px;
+  height: 12px;
+}
 .tui-row-marks {
   display: inline-flex;
   align-items: center;
@@ -435,18 +474,6 @@ body {
 }
 .tui-phrase[data-hue='red'] {
   --pill: var(--red-text);
-}
-.t-ok {
-  color: var(--green);
-}
-.t-bad {
-  color: var(--red-text);
-}
-.t-warn {
-  color: var(--amber);
-}
-.t-cyan {
-  color: var(--cyan);
 }
 
 /* Line 1: the title, alone. */
@@ -501,17 +528,6 @@ body {
 }
 .tui-dels {
   color: color-mix(in srgb, var(--red) 70%, var(--muted-text));
-}
-.tui-behind {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  flex-shrink: 0;
-  font-weight: 500;
-  color: var(--muted-text);
-}
-.tui-behind svg {
-  color: color-mix(in srgb, var(--muted-text) 75%, transparent);
 }
 .tui-rail {
   margin-left: auto;
@@ -571,33 +587,6 @@ body {
 .tui-age {
   font-size: 0.7rem;
   color: color-mix(in srgb, var(--muted-text) 75%, transparent);
-}
-/* The header line's identity slot: the author in the mixed view, the
-   ticket when the author is the group header. Muted, not purple: the line's
-   color belongs to the flags. */
-.tui-author-tag,
-.tui-ticket-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex-shrink: 0;
-  color: var(--muted-text);
-  white-space: nowrap;
-  text-decoration: none;
-}
-.tui-ticket-tag {
-  font-weight: 500;
-}
-.tui-ticket-tag svg {
-  color: color-mix(in srgb, var(--muted-text) 75%, transparent);
-}
-.tui-ticket-tag:hover {
-  color: var(--fg);
-  text-decoration: underline;
-}
-.tui-author-tag .tui-avatar {
-  width: 12px;
-  height: 12px;
 }
 
 /* Line 3: the status line. */
@@ -1568,7 +1557,7 @@ body {
 
 /* ── stacked chains ───────────────────────────────────────────────── */
 /* A chain reads as one unit: a single thread rail spans the children
-   (cyan to match the t-cyan stacked chip), the row dividers inside the
+   (cyan to match the stacked flag), the row dividers inside the
    chain go quiet, and the boundary dividers move to the wrapper since the
    wrapper breaks .tui-row + .tui-row adjacency. */
 /* Opaque rail color (cyan over the panel tone): the rail is drawn as
