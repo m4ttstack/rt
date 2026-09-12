@@ -146,6 +146,7 @@ describe("renderPlanHuman", () => {
       ],
       canInstall: false,
       requiredMissing: ["perm.fda"],
+      finishBlockedBy: [],
     };
 
     const lines = renderPlanHuman(plan);
@@ -170,6 +171,7 @@ describe("renderPlanHuman", () => {
       ],
       canInstall: false,
       requiredMissing: ["account.linear"],
+      finishBlockedBy: [],
     };
 
     expect(renderPlanHuman(plan)[1]).toBe(`  ${red}✗${reset} Linear  no account connected`);
@@ -183,6 +185,7 @@ describe("renderPlanHuman", () => {
       groups: [],
       canInstall: true,
       requiredMissing: [],
+      finishBlockedBy: [],
     };
     expect(renderPlanHuman(plan).at(-1)).toBe("Install: ready");
   });

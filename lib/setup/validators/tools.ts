@@ -281,10 +281,10 @@ const FAST_BROWSER_LOAD_STEPS: Action = {
 const FAST_BROWSER_PAIR_STEPS: Action = { type: "steps", label: "Show steps…", steps: PAIRING_STEPS };
 
 /**
- * Never gates Install in any Chrome state. Loading an unpacked extension is a
- * Chrome step rt cannot perform: fast-browser ships no CRX and has no Web
- * Store listing, and Chrome's unattended paths accept neither an unpacked
- * directory nor a signing key rt holds. The Done screen names it instead.
+ * Never gates Install in any Chrome state: loading an unpacked extension is a
+ * Chrome step rt cannot perform, and nothing on the checklist can create the
+ * extension directory before Install does. It gates Finish instead
+ * (`finishGated`), unless the user waives it on this Mac.
  */
 function fastBrowserExtensionRow(p: Probes, probe: FastBrowserProbe): Row {
   const base = {
@@ -294,6 +294,7 @@ function fastBrowserExtensionRow(p: Probes, probe: FastBrowserProbe): Row {
     why: "Fast Browser drives your real Chrome session through this extension.",
     required: false,
     optionalNote: "You load this into Chrome yourself; Install cannot do it for you.",
+    finishGated: true,
     recheck: "on-activate" as const,
   };
 
