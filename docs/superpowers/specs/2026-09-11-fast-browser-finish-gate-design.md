@@ -101,8 +101,9 @@ fnfikoifhimpdedpdepehibjjkcfbacm`; that swap is MAT-414's scope, not this.
 - A doctor read failure keeps the row `skipped` and the gate open, as today:
   the fault is reported by `tool.fast-browser`, and a missing doctor must not
   strand the wizard.
-- Nothing here writes to any store other than the machine scope, and nothing
-  syncs.
+- Nothing here writes to any store other than the machine scope; the waiver
+  travels keyed per machine like every machine-scope key, never to a team or
+  user scope.
 
 ## Testing
 
