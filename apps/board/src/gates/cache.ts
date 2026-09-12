@@ -250,8 +250,10 @@ export function isRowAnswerable(row: FacilityGateRow | undefined): boolean {
 /** Same story as `cachedExecution`: the facility's typed `delivery.outcome`
     (`"delivered" | "dead-pane"`) lags the board's own richer set
     (`"delivered" | "confirmed" | "stuck"`) the daemon already emits --
-    validated defensively rather than cast straight through. */
-function cachedDelivery(row: FacilityGateRow): GateRow['delivery'] {
+    validated defensively rather than cast straight through. Exported so
+    `ingest.ts`'s `buildQueueExtras` reads the same field the same way
+    `attachGates` below does, rather than duplicating the cast/validation. */
+export function cachedDelivery(row: FacilityGateRow): GateRow['delivery'] {
   const raw = (row as unknown as { delivery?: unknown }).delivery;
   if (!isRecord(raw)) return undefined;
   const { outcome, at } = raw;

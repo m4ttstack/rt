@@ -121,6 +121,36 @@ describe('buildQueueExtras', () => {
     });
     expect(buildQueueExtras([row])).toEqual([]);
   });
+
+  test('an answered row left execution "unassigned" surfaces the field, which is what needsQueue admits it on', () => {
+    const row = {
+      ...fakeRow({
+        owner: 'human',
+        status: 'answered',
+        answer: { answers: { verdict: 'approve' }, by: 'pane', answeredAt: 5 },
+      }),
+      // Not on the facility's own typed GateRow yet (SDD
+      // executor-reconciler): the daemon already emits this on the wire.
+      execution: 'unassigned',
+    } as unknown as FacilityGateRow;
+    const extras = buildQueueExtras([row]);
+    expect(extras).toHaveLength(1);
+    expect(extras[0]?.execution).toBe('unassigned');
+  });
+
+  test('an answered row stuck on delivery surfaces the delivery field', () => {
+    const row = {
+      ...fakeRow({
+        owner: 'human',
+        status: 'answered',
+        answer: { answers: { verdict: 'approve' }, by: 'pane', answeredAt: 5 },
+      }),
+      delivery: { outcome: 'stuck', at: 3000 },
+    } as unknown as FacilityGateRow;
+    const extras = buildQueueExtras([row]);
+    expect(extras).toHaveLength(1);
+    expect(extras[0]?.delivery).toEqual({ outcome: 'stuck', at: 3000 });
+  });
 });
 
 describe('ingestRelayFrame: pane-attention widening', () => {

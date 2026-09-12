@@ -167,17 +167,29 @@ const OPEN_ATTENTION_GATE = (g: { kind: string; status: string }) =>
     parked right now -- checked on the row's own gates first (the sweep
     already resolved the attention gate's subject to this MR), then
     `queueExtras` by the orphan's `agent:<id>` subject, which is where an
-    attention gate lands before that resolution happens. Undefined means
-    "clear" is the only offer the strip has. */
+    attention gate lands before that resolution happens. Both lookups also
+    require `meta.agentId` to match the orphan's own `agentId`: an MR can
+    carry more than one attention gate (one per orphaned executor that ever
+    touched it), so matching on kind/status alone would let the strip answer
+    a DIFFERENT executor's gate. Undefined (no orphan, no agentId match)
+    means "clear" is the only offer the strip has. */
 function findAttentionGate(
   mr: BoardMRWithReview,
   queueExtras: GateRow[]
 ): GateRow | undefined {
-  const own = mr.gates.find(OPEN_ATTENTION_GATE);
-  if (own) return own;
   if (!mr.orphan) return undefined;
-  const subject = `agent:${mr.orphan.agentId}`;
-  return queueExtras.find(g => OPEN_ATTENTION_GATE(g) && g.subject === subject);
+  const agentId = mr.orphan.agentId;
+  const own = mr.gates.find(
+    g => OPEN_ATTENTION_GATE(g) && g.meta?.agentId === agentId
+  );
+  if (own) return own;
+  const subject = `agent:${agentId}`;
+  return queueExtras.find(
+    g =>
+      OPEN_ATTENTION_GATE(g) &&
+      g.subject === subject &&
+      g.meta?.agentId === agentId
+  );
 }
 
 /** A dead/hidden run's own strip: "resume" only appears once an attention

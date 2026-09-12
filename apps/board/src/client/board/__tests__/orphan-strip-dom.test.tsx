@@ -54,6 +54,30 @@ const ATTENTION_GATE = {
   meta: { agentId: 'agent-9', paneRef: null, reason: 'gone' },
 };
 
+const OWN_GATE_MISMATCH = {
+  gateId: 'g-own-mismatch',
+  subject: 'mr:gitlab.example.com/g/p/-/merge_requests/1',
+  kind: 'pane-attention',
+  label: 'pane needs attention',
+  status: 'open',
+  openedAt: 1000,
+  questions: [
+    {
+      id: 'action',
+      label: 'Pane needs attention',
+      multi: false,
+      options: ['focus-pane', 'resume', 'clear', 'dismiss'],
+    },
+  ],
+  meta: { agentId: 'agent-other', paneRef: null, reason: 'gone' },
+};
+
+const OWN_GATE_MATCH = {
+  ...OWN_GATE_MISMATCH,
+  gateId: 'g-own-match',
+  meta: { agentId: 'agent-9', paneRef: null, reason: 'gone' },
+};
+
 function mr(overrides: Record<string, unknown>) {
   return {
     iid: 1,
@@ -236,6 +260,70 @@ test('an orphan with a queueExtras attention gate renders both resume and clear'
     expect(
       strip?.querySelector('[data-orphan-action="resume"]')
     ).not.toBeNull();
+    expect(strip?.querySelector('[data-orphan-action="clear"]')).not.toBeNull();
+  } finally {
+    await React.act(async () => root.unmount());
+    container.remove();
+  }
+});
+
+test("an own-row pane-attention gate for a different agent's orphan renders no resume button", async () => {
+  servedData = boardData({
+    mrs: [mr({ orphan: ORPHAN, gates: [OWN_GATE_MISMATCH] })],
+  });
+  const { container, root } = await renderBoard();
+  try {
+    const strip = container.querySelector('.tui-orphan-strip');
+    expect(strip).not.toBeNull();
+    expect(strip?.querySelector('[data-orphan-action="resume"]')).toBeNull();
+    expect(strip?.querySelector('[data-orphan-action="clear"]')).not.toBeNull();
+  } finally {
+    await React.act(async () => root.unmount());
+    container.remove();
+  }
+});
+
+test("an own-row pane-attention gate matching the orphan's agentId renders resume and answers that gate", async () => {
+  servedData = boardData({
+    mrs: [mr({ orphan: ORPHAN, gates: [OWN_GATE_MATCH] })],
+  });
+  const { container, root } = await renderBoard();
+  try {
+    const resumeButton = container.querySelector(
+      '[data-orphan-action="resume"]'
+    ) as HTMLElement;
+    expect(resumeButton).not.toBeNull();
+    await React.act(async () => {
+      resumeButton.click();
+      await new Promise(resolve => setTimeout(resolve, 0));
+    });
+    const answerPost = posts.find(p => p.url === '/gate/answer');
+    expect(answerPost).toBeDefined();
+    expect(answerPost!.body).toEqual({
+      gateId: 'g-own-match',
+      answers: { action: 'resume' },
+    });
+  } finally {
+    await React.act(async () => root.unmount());
+    container.remove();
+  }
+});
+
+test('a queueExtras attention gate whose subject matches but meta.agentId belongs to another agent renders no resume button', async () => {
+  servedData = boardData({
+    mrs: [mr({ orphan: ORPHAN })],
+    queueExtras: [
+      {
+        ...ATTENTION_GATE,
+        meta: { agentId: 'agent-other', paneRef: null, reason: 'gone' },
+      },
+    ],
+  });
+  const { container, root } = await renderBoard();
+  try {
+    const strip = container.querySelector('.tui-orphan-strip');
+    expect(strip).not.toBeNull();
+    expect(strip?.querySelector('[data-orphan-action="resume"]')).toBeNull();
     expect(strip?.querySelector('[data-orphan-action="clear"]')).not.toBeNull();
   } finally {
     await React.act(async () => root.unmount());

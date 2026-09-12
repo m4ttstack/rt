@@ -1,6 +1,7 @@
 import type { EventBridgeRule } from '@mattstack/app-server/event-bridge';
 import { domainForKind } from '@mattstack/gate-kit';
 import type { GateRow as FacilityGateRow } from '@mattstack/rt-client';
+import { cachedDelivery, cachedExecution } from './cache.ts';
 import type { GateAnswers, GateQuestion, GateRow } from './store.ts';
 
 /** Shape shared by a relay `("event", frame)` push and an `events:list` row --
@@ -187,6 +188,8 @@ export function buildQueueExtras(rows: FacilityGateRow[]): GateRow[] {
       domain: domainForKind(row.kind),
       meta: row.meta ?? undefined,
       escalatedAt: row.escalatedAt ?? undefined,
+      delivery: cachedDelivery(row),
+      execution: cachedExecution(row),
     });
   }
   return out;
