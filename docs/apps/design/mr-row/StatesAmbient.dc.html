@@ -59,12 +59,12 @@
          padding: 1px 6px 1px 8px; border-left: 2px solid transparent; border-radius: 2px; color: var(--muted); }
   .act .w { font-weight: 600; }
   .act .lane { color: var(--muted); opacity: .8; min-width: 4.2em; }
-  .act .spin { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: currentColor;
+  .act .spin { display: inline-block; margin-left: 1px; width: 6px; height: 6px; border-radius: 50%; background: currentColor;
                animation: pulse 1.6s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity: .25; } }
-  .act-work  { border-left-color: color-mix(in srgb, var(--purple) 55%, transparent); }
+  .act-work  { border-left-color: color-mix(in srgb, var(--purple) 35%, transparent); }
   .act-work .w { color: var(--purple); }
-  .act-go    { border-left-color: color-mix(in srgb, var(--green) 55%, transparent); }
+  .act-go    { border-left-color: color-mix(in srgb, var(--green) 35%, transparent); }
   .act-go .w { color: var(--green); }
   .act-warn  { border-left-color: var(--amber);
                background: color-mix(in srgb, var(--amber) 8%, transparent); }
@@ -76,9 +76,11 @@
   .act .do { margin-left: auto; display: inline-flex; gap: .9rem; flex-shrink: 0; }
   .act .do a { font-size: .72rem; font-weight: 600; text-decoration: none; color: var(--accent); }
   .act .do a.mut { color: var(--muted); }
+  .act-warn .d, .act-bad .d { color: color-mix(in srgb, var(--fg) 75%, var(--muted)); }
 
   /* ambient cluster (right end of r2) */
-  .amb { display: inline-flex; align-items: center; gap: .5rem; flex-shrink: 0; color: var(--muted); }
+  .amb { display: inline-flex; align-items: center; gap: .45rem; flex-shrink: 0; color: var(--muted); font-size: .72rem; }
+  .amb .g { filter: grayscale(1); opacity: .55; }
   .amb .on { color: var(--green); }
   .amb .ask { color: var(--accent); font-weight: 600; }
 
@@ -123,7 +125,7 @@ their verbs.</p>
     <span><span class="adds">+18</span> <span class="dels">−1253</span></span>
     <span>💬 7</span>
     <span>9d</span>
-    <span class="amb"><span class="on">▣✓</span></span>
+    <span class="amb"><span class="g">▣✓</span></span>
   </div><p class="cap" style="margin:4px 0 0">posted in slack</p></div>
 </div>
   <div class="row ">
@@ -135,7 +137,7 @@ their verbs.</p>
     <span><span class="adds">+18</span> <span class="dels">−1253</span></span>
     <span>💬 7</span>
     <span>9d</span>
-    <span class="amb"><span class="on">▣✓</span><span>👀 ✅</span></span>
+    <span class="amb"><span class="g">▣✓</span><span class="g">👀 ✅</span></span>
   </div><p class="cap" style="margin:4px 0 0">slack reactions on the request message</p></div>
 </div>
   <div class="row ">
@@ -147,7 +149,7 @@ their verbs.</p>
     <span><span class="adds">+18</span> <span class="dels">−1253</span></span>
     <span>💬 7</span>
     <span>9d</span>
-    <span class="amb"><span class="ask">⇄ geoff reviewing</span></span>
+    <span class="amb"><span class="g" style="filter:none">⇄ geoff reviewing</span></span>
   </div><p class="cap" style="margin:4px 0 0">peer board reviewing / commented / approved / reviewed... same slot, intent color</p></div>
 </div>
   <div class="row ">
@@ -186,9 +188,9 @@ their verbs.</p>
     
   </div><div class="acts">
   <div class="act act-quiet">
-    
     <span class="lane">live</span>
     <span class="w">👀 alice is reviewing right now</span>
+    
     
     
   </div></div></div>

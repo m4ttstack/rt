@@ -59,12 +59,12 @@
          padding: 1px 6px 1px 8px; border-left: 2px solid transparent; border-radius: 2px; color: var(--muted); }
   .act .w { font-weight: 600; }
   .act .lane { color: var(--muted); opacity: .8; min-width: 4.2em; }
-  .act .spin { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: currentColor;
+  .act .spin { display: inline-block; margin-left: 1px; width: 6px; height: 6px; border-radius: 50%; background: currentColor;
                animation: pulse 1.6s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity: .25; } }
-  .act-work  { border-left-color: color-mix(in srgb, var(--purple) 55%, transparent); }
+  .act-work  { border-left-color: color-mix(in srgb, var(--purple) 35%, transparent); }
   .act-work .w { color: var(--purple); }
-  .act-go    { border-left-color: color-mix(in srgb, var(--green) 55%, transparent); }
+  .act-go    { border-left-color: color-mix(in srgb, var(--green) 35%, transparent); }
   .act-go .w { color: var(--green); }
   .act-warn  { border-left-color: var(--amber);
                background: color-mix(in srgb, var(--amber) 8%, transparent); }
@@ -76,9 +76,11 @@
   .act .do { margin-left: auto; display: inline-flex; gap: .9rem; flex-shrink: 0; }
   .act .do a { font-size: .72rem; font-weight: 600; text-decoration: none; color: var(--accent); }
   .act .do a.mut { color: var(--muted); }
+  .act-warn .d, .act-bad .d { color: color-mix(in srgb, var(--fg) 75%, var(--muted)); }
 
   /* ambient cluster (right end of r2) */
-  .amb { display: inline-flex; align-items: center; gap: .5rem; flex-shrink: 0; color: var(--muted); }
+  .amb { display: inline-flex; align-items: center; gap: .45rem; flex-shrink: 0; color: var(--muted); font-size: .72rem; }
+  .amb .g { filter: grayscale(1); opacity: .55; }
   .amb .on { color: var(--green); }
   .amb .ask { color: var(--accent); font-weight: 600; }
 
@@ -123,9 +125,9 @@
     
   </div><div class="acts">
   <div class="act act-quiet">
-    
     <span class="lane">review</span>
     <span class="w">queued</span>
+    
     
     
   </div></div></div>
@@ -142,10 +144,10 @@
     
   </div><div class="acts">
   <div class="act act-work">
-    <span class="spin"></span>
     <span class="lane">review</span>
-    <span class="w">reviewing…</span>
-    <span>started 4m ago</span>
+    <span class="w">running…</span>
+    <span class="spin"></span>
+    <span class="d">started 4m ago</span>
     
   </div></div></div>
 </div>
@@ -161,9 +163,9 @@
     
   </div><div class="acts">
   <div class="act act-go">
-    
     <span class="lane">review</span>
-    <span class="w">review ready</span>
+    <span class="w">ready</span>
+    
     
     <span class="do"><a href="#" class="">read ↗</a></span>
   </div></div></div>
@@ -180,10 +182,10 @@
     
   </div><div class="acts">
   <div class="act act-bad">
-    
     <span class="lane">review</span>
-    <span class="w">review failed</span>
-    <span>pane closed… cleared from the board</span>
+    <span class="w">failed</span>
+    
+    <span class="d">pane closed… cleared from the board</span>
     <span class="do"><a href="#" class="">launch again</a></span>
   </div></div></div>
 </div>
@@ -199,10 +201,10 @@
     
   </div><div class="acts">
   <div class="act act-warn">
-    
     <span class="lane">review</span>
     <span class="w">interrupted</span>
-    <span>pane closed 12m ago</span>
+    
+    <span class="d">pane closed 12m ago</span>
     <span class="do"><a href="#" class="">relaunch</a><a href="#" class="mut">clear</a></span>
   </div></div></div>
 </div>
@@ -222,11 +224,11 @@
     
   </div><div class="acts">
   <div class="act act-quiet">
-    
     <span class="lane">response</span>
     <span class="w">queued</span>
     
     
+    
   </div></div></div>
 </div>
   <div class="row ">
@@ -241,9 +243,9 @@
     
   </div><div class="acts">
   <div class="act act-work">
-    <span class="spin"></span>
     <span class="lane">response</span>
     <span class="w">triaging…</span>
+    <span class="spin"></span>
     
     
   </div></div></div>
@@ -260,10 +262,10 @@
     
   </div><div class="acts">
   <div class="act act-work">
-    <span class="spin"></span>
     <span class="lane">response</span>
     <span class="w">implementing…</span>
-    <span>3 threads</span>
+    <span class="spin"></span>
+    <span class="d">3 threads</span>
     
   </div></div></div>
 </div>
@@ -279,9 +281,9 @@
     
   </div><div class="acts">
   <div class="act act-work">
-    <span class="spin"></span>
     <span class="lane">response</span>
     <span class="w">drafting replies…</span>
+    <span class="spin"></span>
     
     
   </div></div></div>
@@ -298,10 +300,10 @@
     
   </div><div class="acts">
   <div class="act act-go">
-    
     <span class="lane">response</span>
     <span class="w">replies posted</span>
-    <span>3 of 3</span>
+    
+    <span class="d">3 of 3</span>
     <span class="do"><a href="#" class="">read ↗</a></span>
   </div></div></div>
 </div>
@@ -317,10 +319,10 @@
     
   </div><div class="acts">
   <div class="act act-warn">
-    
     <span class="lane">response</span>
     <span class="w">2 of 3 posted</span>
-    <span>one thread waiting</span>
+    
+    <span class="d">one thread waiting</span>
     <span class="do"><a href="#" class="">resume ↗</a></span>
   </div></div></div>
 </div>
@@ -336,9 +338,9 @@
     
   </div><div class="acts">
   <div class="act act-warn">
-    
     <span class="lane">response</span>
-    <span class="w">replies drafted, not posted</span>
+    <span class="w">drafted, not posted</span>
+    
     
     <span class="do"><a href="#" class="">resume ↗</a></span>
   </div></div></div>
@@ -355,9 +357,9 @@
     
   </div><div class="acts">
   <div class="act act-bad">
-    
     <span class="lane">response</span>
-    <span class="w">response failed</span>
+    <span class="w">failed</span>
+    
     
     <span class="do"><a href="#" class="">restart</a></span>
   </div></div></div>
@@ -374,10 +376,10 @@
     
   </div><div class="acts">
   <div class="act act-warn">
-    
     <span class="lane">response</span>
     <span class="w">interrupted</span>
-    <span>pane closed</span>
+    
+    <span class="d">pane closed</span>
     <span class="do"><a href="#" class="">relaunch</a><a href="#" class="mut">clear</a></span>
   </div></div></div>
 </div>
@@ -397,11 +399,11 @@
     
   </div><div class="acts">
   <div class="act act-quiet">
-    
     <span class="lane">doctor</span>
     <span class="w">queued</span>
     
     
+    
   </div></div></div>
 </div>
   <div class="row ">
@@ -416,10 +418,10 @@
     
   </div><div class="acts">
   <div class="act act-work">
-    <span class="spin"></span>
     <span class="lane">doctor</span>
     <span class="w">diagnosing…</span>
-    <span>auto</span>
+    <span class="spin"></span>
+    <span class="d">auto</span>
     
   </div></div></div>
 </div>
@@ -435,9 +437,9 @@
     
   </div><div class="acts">
   <div class="act act-work">
-    <span class="spin"></span>
     <span class="lane">doctor</span>
     <span class="w">rebasing…</span>
+    <span class="spin"></span>
     
     
   </div></div></div>
@@ -454,9 +456,9 @@
     
   </div><div class="acts">
   <div class="act act-work">
-    <span class="spin"></span>
     <span class="lane">doctor</span>
     <span class="w">fixing…</span>
+    <span class="spin"></span>
     
     
   </div></div></div>
@@ -473,9 +475,9 @@
     
   </div><div class="acts">
   <div class="act act-work">
-    <span class="spin"></span>
     <span class="lane">doctor</span>
     <span class="w">watching CI…</span>
+    <span class="spin"></span>
     
     
   </div></div></div>
@@ -492,10 +494,10 @@
     
   </div><div class="acts">
   <div class="act act-go">
-    
     <span class="lane">doctor</span>
     <span class="w">diagnosed</span>
-    <span>held a note</span>
+    
+    <span class="d">held a note</span>
     <span class="do"><a href="#" class="">read note</a></span>
   </div></div></div>
 </div>
@@ -511,9 +513,9 @@
     
   </div><div class="acts">
   <div class="act act-bad">
-    
     <span class="lane">doctor</span>
-    <span class="w">doctor stuck</span>
+    <span class="w">stuck</span>
+    
     
     <span class="do"><a href="#" class="">call again</a></span>
   </div></div></div>

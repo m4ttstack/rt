@@ -59,12 +59,12 @@
          padding: 1px 6px 1px 8px; border-left: 2px solid transparent; border-radius: 2px; color: var(--muted); }
   .act .w { font-weight: 600; }
   .act .lane { color: var(--muted); opacity: .8; min-width: 4.2em; }
-  .act .spin { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: currentColor;
+  .act .spin { display: inline-block; margin-left: 1px; width: 6px; height: 6px; border-radius: 50%; background: currentColor;
                animation: pulse 1.6s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity: .25; } }
-  .act-work  { border-left-color: color-mix(in srgb, var(--purple) 55%, transparent); }
+  .act-work  { border-left-color: color-mix(in srgb, var(--purple) 35%, transparent); }
   .act-work .w { color: var(--purple); }
-  .act-go    { border-left-color: color-mix(in srgb, var(--green) 55%, transparent); }
+  .act-go    { border-left-color: color-mix(in srgb, var(--green) 35%, transparent); }
   .act-go .w { color: var(--green); }
   .act-warn  { border-left-color: var(--amber);
                background: color-mix(in srgb, var(--amber) 8%, transparent); }
@@ -76,9 +76,11 @@
   .act .do { margin-left: auto; display: inline-flex; gap: .9rem; flex-shrink: 0; }
   .act .do a { font-size: .72rem; font-weight: 600; text-decoration: none; color: var(--accent); }
   .act .do a.mut { color: var(--muted); }
+  .act-warn .d, .act-bad .d { color: color-mix(in srgb, var(--fg) 75%, var(--muted)); }
 
   /* ambient cluster (right end of r2) */
-  .amb { display: inline-flex; align-items: center; gap: .5rem; flex-shrink: 0; color: var(--muted); }
+  .amb { display: inline-flex; align-items: center; gap: .45rem; flex-shrink: 0; color: var(--muted); font-size: .72rem; }
+  .amb .g { filter: grayscale(1); opacity: .55; }
   .amb .on { color: var(--green); }
   .amb .ask { color: var(--accent); font-weight: 600; }
 
@@ -125,7 +127,7 @@ meta cluster. No second row of bolted-on banners, ever.</p>
     <span><span class="adds">+1455</span> <span class="dels">−13</span></span>
     <span>💬 1</span>
     <span>32h</span>
-    <span class="amb"><span class="on" title="posted in slack">▣✓</span><span title="reactions">👀✅</span><span class="ask" title="peer reviewing">⇄</span><span title="held draft">✉</span></span>
+    <span class="amb"><span class="g" title="posted in slack">▣✓</span><span class="g" title="reactions">👀✅</span><span class="g" title="peer reviewing">⇄</span><span style="color:var(--amber)" title="held draft">✉</span></span>
   </div><div class="chips">
       <span class="chip warn">⌕ interrupted <span class="x">· relaunch ↻</span></span>
     </div></div>

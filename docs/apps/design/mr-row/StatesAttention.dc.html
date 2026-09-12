@@ -59,12 +59,12 @@
          padding: 1px 6px 1px 8px; border-left: 2px solid transparent; border-radius: 2px; color: var(--muted); }
   .act .w { font-weight: 600; }
   .act .lane { color: var(--muted); opacity: .8; min-width: 4.2em; }
-  .act .spin { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: currentColor;
+  .act .spin { display: inline-block; margin-left: 1px; width: 6px; height: 6px; border-radius: 50%; background: currentColor;
                animation: pulse 1.6s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity: .25; } }
-  .act-work  { border-left-color: color-mix(in srgb, var(--purple) 55%, transparent); }
+  .act-work  { border-left-color: color-mix(in srgb, var(--purple) 35%, transparent); }
   .act-work .w { color: var(--purple); }
-  .act-go    { border-left-color: color-mix(in srgb, var(--green) 55%, transparent); }
+  .act-go    { border-left-color: color-mix(in srgb, var(--green) 35%, transparent); }
   .act-go .w { color: var(--green); }
   .act-warn  { border-left-color: var(--amber);
                background: color-mix(in srgb, var(--amber) 8%, transparent); }
@@ -76,9 +76,11 @@
   .act .do { margin-left: auto; display: inline-flex; gap: .9rem; flex-shrink: 0; }
   .act .do a { font-size: .72rem; font-weight: 600; text-decoration: none; color: var(--accent); }
   .act .do a.mut { color: var(--muted); }
+  .act-warn .d, .act-bad .d { color: color-mix(in srgb, var(--fg) 75%, var(--muted)); }
 
   /* ambient cluster (right end of r2) */
-  .amb { display: inline-flex; align-items: center; gap: .5rem; flex-shrink: 0; color: var(--muted); }
+  .amb { display: inline-flex; align-items: center; gap: .45rem; flex-shrink: 0; color: var(--muted); font-size: .72rem; }
+  .amb .g { filter: grayscale(1); opacity: .55; }
   .amb .on { color: var(--green); }
   .amb .ask { color: var(--accent); font-weight: 600; }
 
@@ -127,10 +129,10 @@ red is reserved for a line inside the block.</p>
   </div><div class="acts">
     
   <div class="act act-warn">
-    
     <span class="lane">decide</span>
     <span class="w">post 2 findings?</span>
-    <span>review-post gate · recommended: post</span>
+    
+    <span class="d">review-post gate · recommended: post</span>
     <span class="do"><a href="#" class="">answer</a></span>
   </div>
   </div></div>
@@ -148,10 +150,10 @@ red is reserved for a line inside the block.</p>
   </div><div class="acts">
     
   <div class="act act-warn">
-    
     <span class="lane">decide</span>
     <span class="w">pane needs attention</span>
-    <span>blocked 3m on a prompt</span>
+    
+    <span class="d">blocked 3m on a prompt</span>
     <span class="do"><a href="#" class="">focus</a><a href="#" class="mut">dismiss</a></span>
   </div>
   </div></div>
@@ -169,10 +171,10 @@ red is reserved for a line inside the block.</p>
   </div><div class="acts">
     
   <div class="act act-quiet">
-    
     <span class="lane">decide</span>
     <span class="w">answered · parked</span>
-    <span>resumes when the pane returns</span>
+    
+    <span class="d">resumes when the pane returns</span>
     
   </div>
   </div></div>
@@ -190,9 +192,9 @@ red is reserved for a line inside the block.</p>
   </div><div class="acts">
     
   <div class="act act-bad">
-    
     <span class="lane">decide</span>
     <span class="w">answered, no pane to execute</span>
+    
     
     <span class="do"><a href="#" class="">relaunch</a><a href="#" class="mut">dismiss</a></span>
   </div>
@@ -211,10 +213,10 @@ red is reserved for a line inside the block.</p>
   </div><div class="acts">
     
   <div class="act act-bad">
-    
     <span class="lane">decide</span>
     <span class="w">answer stuck</span>
-    <span>delivery failed twice</span>
+    
+    <span class="d">delivery failed twice</span>
     <span class="do"><a href="#" class="">retry</a><a href="#" class="mut">dismiss</a></span>
   </div>
   </div></div>
@@ -232,10 +234,10 @@ red is reserved for a line inside the block.</p>
   </div><div class="acts">
     
   <div class="act act-warn">
-    
     <span class="lane">review</span>
     <span class="w">interrupted</span>
-    <span>pane closed 12m ago</span>
+    
+    <span class="d">pane closed 12m ago</span>
     <span class="do"><a href="#" class="">relaunch</a><a href="#" class="mut">clear</a></span>
   </div>
   </div></div>
@@ -253,10 +255,10 @@ red is reserved for a line inside the block.</p>
   </div><div class="acts">
     
   <div class="act act-quiet">
-    
     <span class="lane">review</span>
     <span class="w">off-screen</span>
-    <span>pane hidden, still running</span>
+    
+    <span class="d">pane hidden, still running</span>
     <span class="do"><a href="#" class="">focus</a></span>
   </div>
   </div></div>

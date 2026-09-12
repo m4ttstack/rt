@@ -61,12 +61,12 @@ const CSS = `
          padding: 1px 6px 1px 8px; border-left: 2px solid transparent; border-radius: 2px; color: var(--muted); }
   .act .w { font-weight: 600; }
   .act .lane { color: var(--muted); opacity: .8; min-width: 4.2em; }
-  .act .spin { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: currentColor;
+  .act .spin { display: inline-block; margin-left: 1px; width: 6px; height: 6px; border-radius: 50%; background: currentColor;
                animation: pulse 1.6s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity: .25; } }
-  .act-work  { border-left-color: color-mix(in srgb, var(--purple) 55%, transparent); }
+  .act-work  { border-left-color: color-mix(in srgb, var(--purple) 35%, transparent); }
   .act-work .w { color: var(--purple); }
-  .act-go    { border-left-color: color-mix(in srgb, var(--green) 55%, transparent); }
+  .act-go    { border-left-color: color-mix(in srgb, var(--green) 35%, transparent); }
   .act-go .w { color: var(--green); }
   .act-warn  { border-left-color: var(--amber);
                background: color-mix(in srgb, var(--amber) 8%, transparent); }
@@ -78,9 +78,11 @@ const CSS = `
   .act .do { margin-left: auto; display: inline-flex; gap: .9rem; flex-shrink: 0; }
   .act .do a { font-size: .72rem; font-weight: 600; text-decoration: none; color: var(--accent); }
   .act .do a.mut { color: var(--muted); }
+  .act-warn .d, .act-bad .d { color: color-mix(in srgb, var(--fg) 75%, var(--muted)); }
 
   /* ambient cluster (right end of r2) */
-  .amb { display: inline-flex; align-items: center; gap: .5rem; flex-shrink: 0; color: var(--muted); }
+  .amb { display: inline-flex; align-items: center; gap: .45rem; flex-shrink: 0; color: var(--muted); font-size: .72rem; }
+  .amb .g { filter: grayscale(1); opacity: .55; }
   .amb .on { color: var(--green); }
   .amb .ask { color: var(--accent); font-weight: 600; }
 
@@ -150,10 +152,10 @@ function r2({ iid, branch, adds, dels, threads, age, amb = '' }) {
 
 const act = (tone, lane, word, detail = '', actions = [], spin = false) => `
   <div class="act act-${tone}">
-    ${spin ? '<span class="spin"></span>' : ''}
     <span class="lane">${lane}</span>
     <span class="w">${word}</span>
-    ${detail ? `<span>${detail}</span>` : ''}
+    ${spin ? '<span class="spin"></span>' : ''}
+    ${detail ? `<span class="d">${detail}</span>` : ''}
     ${actions.length ? `<span class="do">${actions.map(([t, mut]) => `<a href="#" class="${mut ? 'mut' : ''}">${t}</a>`).join('')}</span>` : ''}
   </div>`;
 
@@ -170,7 +172,7 @@ const MR2 = { iid: 44720, branch: 'feature/cv-3163', adds: 79, dels: 27, threads
 const MR4 = { iid: 44712, branch: 'feature/cv-3201', adds: 41, dels: 9, threads: 0, age: '3h', title: 'CV-3201 Vendor the report fonts so CI stops flaking' };
 const MR3 = { iid: 43946, branch: 'feature/cv-3028', adds: 18, dels: 1253, threads: 7, age: '9d', title: 'CV-3028 Delete unreachable legacy dashboards' };
 
-const AMB_FULL = `<span class="amb"><span class="on" title="posted in slack">▣✓</span><span title="reactions">👀✅</span><span class="ask" title="peer reviewing">⇄</span><span title="held draft">✉</span></span>`;
+const AMB_FULL = `<span class="amb"><span class="g" title="posted in slack">▣✓</span><span class="g" title="reactions">👀✅</span><span class="g" title="peer reviewing">⇄</span><span style="color:var(--amber)" title="held draft">✉</span></span>`;
 
 // ════════════════════════════════════════════════════════════════════
 // Main: direction A, the leading candidate, on real rows
@@ -196,14 +198,14 @@ just two lines again.</p>
     r1({ dots: ['var(--amber)'], title: MR2.title, phrase: 'NEEDS REVIEW' }) +
     r2({ ...MR2 }) +
     `<div class="acts">
-      ${act('work', 'review', 'reviewing…', 'started 4m ago', [], true)}
+      ${act('work', 'review', 'running…', 'started 4m ago', [], true)}
     </div>`
   )}
   ${row(
     r1({ dots: ['var(--green)'], title: MR3.title, phrase: 'APPROVED', phraseColor: 'var(--green)' }) +
     r2({ ...MR3 }) +
     `<div class="acts">
-      ${act('go', 'review', 'review ready', '', [['read ↗']])}
+      ${act('go', 'review', 'ready', '', [['read ↗']])}
       ${act('warn', 'decide', 'post 2 findings?', 'review-post gate', [['answer']])}
     </div>`
   )}
@@ -288,9 +290,9 @@ const lanesBody = `
 <h2>review lane · every state</h2>
 <div class="list">
   ${row(r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) + r2(MR) + `<div class="acts">${act('quiet', 'review', 'queued')}</div>`)}
-  ${row(r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) + r2(MR) + `<div class="acts">${act('work', 'review', 'reviewing…', 'started 4m ago', [], true)}</div>`)}
-  ${row(r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) + r2(MR) + `<div class="acts">${act('go', 'review', 'review ready', '', [['read ↗']])}</div>`)}
-  ${row(r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) + r2(MR) + `<div class="acts">${act('bad', 'review', 'review failed', 'pane closed… cleared from the board', [['launch again']])}</div>`)}
+  ${row(r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) + r2(MR) + `<div class="acts">${act('work', 'review', 'running…', 'started 4m ago', [], true)}</div>`)}
+  ${row(r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) + r2(MR) + `<div class="acts">${act('go', 'review', 'ready', '', [['read ↗']])}</div>`)}
+  ${row(r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) + r2(MR) + `<div class="acts">${act('bad', 'review', 'failed', 'pane closed… cleared from the board', [['launch again']])}</div>`)}
   ${row(r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) + r2(MR) + `<div class="acts">${act('warn', 'review', 'interrupted', 'pane closed 12m ago', [['relaunch'], ['clear', true]])}</div>`)}
 </div>
 
@@ -302,8 +304,8 @@ const lanesBody = `
   ${row(r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) + r2(MR) + `<div class="acts">${act('work', 'response', 'drafting replies…', '', [], true)}</div>`)}
   ${row(r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) + r2(MR) + `<div class="acts">${act('go', 'response', 'replies posted', '3 of 3', [['read ↗']])}</div>`)}
   ${row(r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) + r2(MR) + `<div class="acts">${act('warn', 'response', '2 of 3 posted', 'one thread waiting', [['resume ↗']])}</div>`)}
-  ${row(r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) + r2(MR) + `<div class="acts">${act('warn', 'response', 'replies drafted, not posted', '', [['resume ↗']])}</div>`)}
-  ${row(r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) + r2(MR) + `<div class="acts">${act('bad', 'response', 'response failed', '', [['restart']])}</div>`)}
+  ${row(r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) + r2(MR) + `<div class="acts">${act('warn', 'response', 'drafted, not posted', '', [['resume ↗']])}</div>`)}
+  ${row(r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) + r2(MR) + `<div class="acts">${act('bad', 'response', 'failed', '', [['restart']])}</div>`)}
   ${row(r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) + r2(MR) + `<div class="acts">${act('warn', 'response', 'interrupted', 'pane closed', [['relaunch'], ['clear', true]])}</div>`)}
 </div>
 
@@ -315,7 +317,7 @@ const lanesBody = `
   ${row(r1({ title: MR4.title, phrase: 'CI FAILING', phraseColor: 'var(--red)' }) + r2(MR4) + `<div class="acts">${act('work', 'doctor', 'fixing…', '', [], true)}</div>`)}
   ${row(r1({ title: MR4.title, phrase: 'CI FAILING', phraseColor: 'var(--red)' }) + r2(MR4) + `<div class="acts">${act('work', 'doctor', 'watching CI…', '', [], true)}</div>`)}
   ${row(r1({ title: MR4.title, phrase: 'CI FAILING', phraseColor: 'var(--red)' }) + r2(MR4) + `<div class="acts">${act('go', 'doctor', 'diagnosed', 'held a note', [['read note']])}</div>`)}
-  ${row(r1({ title: MR4.title, phrase: 'CI FAILING', phraseColor: 'var(--red)' }) + r2(MR4) + `<div class="acts">${act('bad', 'doctor', 'doctor stuck', '', [['call again']])}</div>`)}
+  ${row(r1({ title: MR4.title, phrase: 'CI FAILING', phraseColor: 'var(--red)' }) + r2(MR4) + `<div class="acts">${act('bad', 'doctor', 'stuck', '', [['call again']])}</div>`)}
 </div>
 `;
 
@@ -358,13 +360,13 @@ right end, one glyph each, monochrome until they matter. Hover names them; the r
 their verbs.</p>
 <div class="list">
   ${row(r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: 'var(--green)' }) +
-    r2({ ...MR3, amb: `<span class="amb"><span class="on">▣✓</span></span>` }) +
+    r2({ ...MR3, amb: `<span class="amb"><span class="g">▣✓</span></span>` }) +
     `<p class="cap" style="margin:4px 0 0">posted in slack</p>`)}
   ${row(r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: 'var(--green)' }) +
-    r2({ ...MR3, amb: `<span class="amb"><span class="on">▣✓</span><span>👀 ✅</span></span>` }) +
+    r2({ ...MR3, amb: `<span class="amb"><span class="g">▣✓</span><span class="g">👀 ✅</span></span>` }) +
     `<p class="cap" style="margin:4px 0 0">slack reactions on the request message</p>`)}
   ${row(r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: 'var(--green)' }) +
-    r2({ ...MR3, amb: `<span class="amb"><span class="ask">⇄ geoff reviewing</span></span>` }) +
+    r2({ ...MR3, amb: `<span class="amb"><span class="g" style="filter:none">⇄ geoff reviewing</span></span>` }) +
     `<p class="cap" style="margin:4px 0 0">peer board reviewing / commented / approved / reviewed... same slot, intent color</p>`)}
   ${row(r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: 'var(--green)' }) +
     r2({ ...MR3, amb: `<span class="amb"><span class="ask">⇄ nudged by sam · 30m</span></span>` }) +
