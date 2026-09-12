@@ -66,7 +66,8 @@ Every key is declared in the suite registry
 (`packages/rt-client/src/settings/registry-defs.ts`): name, type, allowed
 scopes, merge (`deep` merges across scopes for objects), description, optional
 default. Prefixes: `rt.*`, `deck.*`, `board.*`, `gitq.*`, `mattstack.*`,
-`claude.*`. `rt settings set/get/explain/list` accept any registered key;
+`claude.*`, and `setup.*` for machine-local installer state such as
+`setup.waived`. `rt settings set/get/explain/list` accept any registered key;
 `rt settings explain <key>` shows per-scope provenance and is the first
 debugging move.
 

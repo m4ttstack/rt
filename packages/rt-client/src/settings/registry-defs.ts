@@ -296,6 +296,15 @@ export const REGISTRY: readonly SettingDef[] = [
     description: "The machine's intended flavor, \"dev\" or \"prod\". Normally written by `rt settings dev-mode` after a successful handoff; a manual `rt settings set` is the blessed repair escape hatch — the daemon park loop converges on whatever this says. Unset ⇒ derived from the dev wrapper's presence.",
   },
   {
+    key: "setup.waived",
+    type: "array",
+    scopes: ["machine"],
+    default: [],
+    merge: "replace",
+    description:
+      "Finish-gated setup rows the user skipped on this Mac through `rt setup waive` (today only tool.fast-browser-extension); the wizard's Finish no longer waits on them. Machine-only: a loaded Chrome extension is a per-profile fact and the choice is per machine, so it never travels with a team or user store.",
+  },
+  {
     key: "rt.integrations",
     type: "object",
     scopes: ["user"],
