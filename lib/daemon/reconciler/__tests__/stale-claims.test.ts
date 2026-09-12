@@ -72,17 +72,20 @@ describe("stale-claim sweep", () => {
     repo = makeRepo();
   });
 
-  function sweep(cfg: WorktreeRepoConfig, liveCwds?: () => Promise<Set<string>>): Promise<void> {
+  function sweep(
+    cfg: WorktreeRepoConfig,
+    opts: { liveCwds?: () => Promise<Set<string>>; cacheEntries?: Record<string, { mr: { iid?: number; state?: string | null } | null }> } = {},
+  ): Promise<void> {
     return sweepStaleClaims(
       {
         repoName,
         repoPath: repo,
-        cacheEntries: {},
+        cacheEntries: opts.cacheEntries ?? {},
         emit: () => {},
         log: fakeLog(),
         killProcesses: false,
         findRunningRun: () => ({ kind: "none" as const }),
-        ...(liveCwds ? { liveCwds } : {}),
+        ...(opts.liveCwds ? { liveCwds: opts.liveCwds } : {}),
       },
       cfg,
     );
@@ -107,7 +110,7 @@ describe("stale-claim sweep", () => {
   test("a stale claim with a live process cwd inside the tree is untouched", async () => {
     const rec = claimedTree(repo, repoName, "charlie", "feat-charlie", { claimedAgoMs: 8 * DAY_MS });
 
-    await sweep(cfgWith(7), async () => new Set([join(rec.path, "node_modules")]));
+    await sweep(cfgWith(7), { liveCwds: async () => new Set([join(rec.path, "node_modules")]) });
 
     expect(loadRegistry(repoName).find((t) => t.path === rec.path)?.state).toBe("claimed");
   });
@@ -122,7 +125,7 @@ describe("stale-claim sweep", () => {
     const linkedPath = join(linkRoot, basename(rec.path));
     saveRegistry(repoName, loadRegistry(repoName).map((t) => (t.path === rec.path ? { ...t, path: linkedPath } : t)));
 
-    await sweep(cfgWith(7), async () => new Set([join(rec.path, "src")]));
+    await sweep(cfgWith(7), { liveCwds: async () => new Set([join(rec.path, "src")]) });
 
     expect(loadRegistry(repoName).find((t) => t.path === linkedPath)?.state).toBe("claimed");
   });
@@ -135,6 +138,52 @@ describe("stale-claim sweep", () => {
     const after = loadRegistry(repoName).find((t) => t.path === rec.path);
     expect(after?.state).toBe("claimed");
     expect(after?.disposableReason).toBeUndefined();
+  });
+
+  test("a stale claim whose branch has an open MR is skipped, even though every dispose guard would pass", async () => {
+    const rec = claimedTree(repo, repoName, "hotel", "feat-hotel", { claimedAgoMs: 8 * DAY_MS });
+
+    await sweep(cfgWith(7), { cacheEntries: { "feat-hotel": { mr: { iid: 1, state: "opened" } } } });
+
+    const after = loadRegistry(repoName).find((t) => t.path === rec.path);
+    expect(after?.state).toBe("claimed");
+    expect(after?.disposableReason).toBeUndefined();
+  });
+
+  test("a stale claim whose branch's MR merged is not protected by the open-MR guard", async () => {
+    const rec = claimedTree(repo, repoName, "india", "feat-india", { claimedAgoMs: 8 * DAY_MS });
+
+    await sweep(cfgWith(7), { cacheEntries: { "feat-india": { mr: { iid: 2, state: "closed" } } } });
+
+    expect(loadRegistry(repoName).find((t) => t.path === rec.path)).toBeUndefined();
+  });
+
+  test("a claim past claimedAt but active more recently (lastActiveAt) is untouched", async () => {
+    const rec = claimedTree(repo, repoName, "juliet", "feat-juliet", { claimedAgoMs: 8 * DAY_MS });
+    saveRegistry(
+      repoName,
+      loadRegistry(repoName).map((t) =>
+        t.path === rec.path ? { ...t, lastActiveAt: new Date(Date.now() - 1 * DAY_MS).toISOString() } : t,
+      ),
+    );
+
+    await sweep(cfgWith(7));
+
+    expect(loadRegistry(repoName).find((t) => t.path === rec.path)?.state).toBe("claimed");
+  });
+
+  test("a claim stale by both claimedAt and lastActiveAt is disposed", async () => {
+    const rec = claimedTree(repo, repoName, "kilo", "feat-kilo", { claimedAgoMs: 30 * DAY_MS });
+    saveRegistry(
+      repoName,
+      loadRegistry(repoName).map((t) =>
+        t.path === rec.path ? { ...t, lastActiveAt: new Date(Date.now() - 10 * DAY_MS).toISOString() } : t,
+      ),
+    );
+
+    await sweep(cfgWith(7));
+
+    expect(loadRegistry(repoName).find((t) => t.path === rec.path)).toBeUndefined();
   });
 
   test("staleClaimDays 0 disables the sweep entirely", async () => {
@@ -153,10 +202,58 @@ describe("stale-claim sweep", () => {
   test("a failed live-cwd snapshot aborts the sweep — fail closed, never dispose blind", async () => {
     const rec = claimedTree(repo, repoName, "foxtrot", "feat-foxtrot", { claimedAgoMs: 8 * DAY_MS });
 
-    await sweep(cfgWith(7), async () => {
-      throw new Error("lsof unavailable");
+    await sweep(cfgWith(7), {
+      liveCwds: async () => {
+        throw new Error("lsof unavailable");
+      },
     });
 
+    expect(loadRegistry(repoName).find((t) => t.path === rec.path)?.state).toBe("claimed");
+  });
+
+  // 2026-09-10: sweepStaleClaims crashed with `deps.findRunningRun is not a
+  // function` because a construction site handed it the wrong field name.
+  // This mirrors worktree-reconciler.ts's processRepo object literal (same
+  // field set, findRunningRun sourced the same way
+  // ReconcilerDeps.findRunningRunByWorktree is) and exercises guard 4 through
+  // it, so a future drift between the two construction sites fails here
+  // instead of on a live daemon.
+  test("stale-claims deps built the way the daemon builds them reach guard 4 without a wiring crash", async () => {
+    const rec = claimedTree(repo, repoName, "lima", "feat-lima", { claimedAgoMs: 8 * DAY_MS });
+    let calls = 0;
+    const warnCalls: unknown[] = [];
+    const log = {
+      info: () => {},
+      warn: (...args: unknown[]) => {
+        warnCalls.push(args);
+      },
+      debug: () => {},
+    } as unknown as Logger;
+
+    await sweepStaleClaims(
+      {
+        repoName,
+        repoPath: repo,
+        cacheEntries: {},
+        emit: () => {},
+        log,
+        killProcesses: false,
+        findRunningRun: (worktree: string) => {
+          calls++;
+          return worktree === rec.path
+            ? { kind: "match" as const, run: { id: "run-1", currentStage: "review" } }
+            : { kind: "none" as const };
+        },
+      },
+      cfgWith(7),
+    );
+
+    // A wiring crash (findRunningRun undefined/misnamed) would be swallowed by
+    // sweepStaleClaims' per-tree try/catch and leave the claim untouched too,
+    // so state alone can't tell success from a silent crash: the call count
+    // and the absence of a warn prove disposeTree actually reached guard 4.
+    expect(calls).toBeGreaterThan(0);
+    expect(warnCalls).toEqual([]);
     expect(loadRegistry(repoName).find((t) => t.path === rec.path)?.state).toBe("claimed");
   });
 

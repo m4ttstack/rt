@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach } from "bun:test";
 import { execSync } from "child_process";
-import { mkdtempSync, realpathSync } from "fs";
+import { mkdtempSync, realpathSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import type { Logger } from "pino";
@@ -81,6 +81,70 @@ describe("reconcile.ts: reconcileRepo", () => {
     const held = loadRegistry(repoName).find((t) => t.name === "amber");
     expect(held).toBeDefined();
     expect(held?.missCount ?? 0).toBe(0); // a held pass never accrues a miss
+  });
+
+  test("RT-129: a tree's first reconcile pass baselines HEAD without bumping lastActiveAt", async () => {
+    execSync(`git -C ${repo} worktree add -q -b feat-alpha ${join(repo, ".worktrees", "alpha")}`, { cwd: repo, shell: "/bin/zsh" });
+    const rec: TreeRecord = {
+      name: "alpha",
+      path: join(repo, ".worktrees", "alpha"),
+      kind: "ephemeral",
+      state: "claimed",
+      branch: "feat-alpha",
+      createdAt: new Date().toISOString(),
+      claimedAt: new Date().toISOString(),
+    };
+    saveRegistry(repoName, [rec]);
+
+    await reconcileRepo({ repoName, repoPath: repo, emit: () => {}, log: fakeLog() });
+
+    const after = loadRegistry(repoName).find((t) => t.name === "alpha");
+    expect(after?.lastSeenHeadSha).toBeTruthy();
+    expect(after?.lastActiveAt).toBeUndefined();
+  });
+
+  test("RT-129: a commit landing between two reconcile passes bumps lastActiveAt", async () => {
+    const treePath = join(repo, ".worktrees", "bravo");
+    execSync(`git -C ${repo} worktree add -q -b feat-bravo ${treePath}`, { cwd: repo, shell: "/bin/zsh" });
+    const rec: TreeRecord = {
+      name: "bravo",
+      path: treePath,
+      kind: "ephemeral",
+      state: "claimed",
+      branch: "feat-bravo",
+      createdAt: new Date().toISOString(),
+      claimedAt: new Date().toISOString(),
+    };
+    saveRegistry(repoName, [rec]);
+
+    await reconcileRepo({ repoName, repoPath: repo, emit: () => {}, log: fakeLog() });
+    expect(loadRegistry(repoName).find((t) => t.name === "bravo")?.lastActiveAt).toBeUndefined();
+
+    writeFileSync(join(treePath, "f.txt"), "work\n");
+    execSync("git add -A && git -c user.email=t@t -c user.name=t commit -q -m work", { cwd: treePath, shell: "/bin/zsh" });
+
+    await reconcileRepo({ repoName, repoPath: repo, emit: () => {}, log: fakeLog() });
+    expect(loadRegistry(repoName).find((t) => t.name === "bravo")?.lastActiveAt).toBeTruthy();
+  });
+
+  test("RT-129: a reconcile pass with no new commits never touches lastActiveAt", async () => {
+    const treePath = join(repo, ".worktrees", "charlie");
+    execSync(`git -C ${repo} worktree add -q -b feat-charlie ${treePath}`, { cwd: repo, shell: "/bin/zsh" });
+    const rec: TreeRecord = {
+      name: "charlie",
+      path: treePath,
+      kind: "ephemeral",
+      state: "claimed",
+      branch: "feat-charlie",
+      createdAt: new Date().toISOString(),
+      claimedAt: new Date().toISOString(),
+    };
+    saveRegistry(repoName, [rec]);
+
+    await reconcileRepo({ repoName, repoPath: repo, emit: () => {}, log: fakeLog() });
+    await reconcileRepo({ repoName, repoPath: repo, emit: () => {}, log: fakeLog() });
+
+    expect(loadRegistry(repoName).find((t) => t.name === "charlie")?.lastActiveAt).toBeUndefined();
   });
 });
 
