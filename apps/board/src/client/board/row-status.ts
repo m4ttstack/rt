@@ -56,14 +56,16 @@ export const DELIVERY_STUCK_MESSAGE = "pane didn't pick up the answer";
 export const EXECUTION_UNASSIGNED_MESSAGE = 'answered, no pane to execute';
 
 const CLAUSE_CAP = 44;
-const CLAUSE_MIN = 12;
+const CLAUSE_MIN = CLAUSE_CAP / 2;
 const CLAUSE_BOUNDARY = /;|\. |\s\(/g;
 
 /** The status line's detail slot fits one clause; agent messages arrive as
     whole sentences. Cut a long message at its first natural boundary (a
-    semicolon, a sentence stop, an opening parenthesis) past a minimum, else
-    at the last word inside the cap, and hand the full text back for a
-    tooltip. `full` is null when nothing was cut. */
+    semicolon, a sentence stop, an opening parenthesis) in the cap's second
+    half, else at the last word inside the cap, and hand the full text back
+    for a tooltip. A boundary in the first half would keep a label and drop
+    the fact ("STACKED MR: !1234"), so the word cut wins there. `full` is
+    null when nothing was cut. */
 export function clauseOf(detail: string): {
   text: string;
   full: string | null;

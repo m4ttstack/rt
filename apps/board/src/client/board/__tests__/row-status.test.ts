@@ -746,4 +746,10 @@ describe('clauseOf', () => {
       'ok. rebased onto main after the conflict…'
     );
   });
+
+  test('an early parenthesis keeps the fact after it instead of stopping at the label', () => {
+    const msg =
+      'STACKED MR: !4321 (pat) targets acme-widget-port, not main, so the doctor does not rebase it';
+    expect(clauseOf(msg).text).toBe('STACKED MR: !4321 (pat) targets…');
+  });
 });
