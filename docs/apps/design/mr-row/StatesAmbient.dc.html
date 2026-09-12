@@ -51,7 +51,9 @@
   .r2 { display: flex; align-items: center; gap: .55rem; color: var(--muted); font-size: .78rem; margin-top: .15rem; }
   .branch { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .grow { flex: 1; }
-  .adds { color: var(--green); } .dels { color: var(--red); }
+  .adds { color: color-mix(in srgb, var(--green) 70%, var(--muted)); }
+  .dels { color: color-mix(in srgb, var(--red) 70%, var(--muted)); }
+  .cnt { display: inline-flex; align-items: center; gap: 3px; }
 
   /* direction A: activity lines */
   .acts { margin-top: 6px; display: flex; flex-direction: column; gap: 2px; }
@@ -80,9 +82,7 @@
 
   /* ambient cluster (right end of r2) */
   .amb { display: inline-flex; align-items: center; gap: .5rem; flex-shrink: 0; color: var(--muted); font-size: .72rem; }
-  .amb .g { opacity: .55; display: inline-flex; align-items: center; gap: 3px; }
-  .amb .hot { color: var(--amber); display: inline-flex; align-items: center; gap: 3px; }
-  .amb .ask { display: inline-flex; align-items: center; gap: 3px; }
+  .amb .g { opacity: .5; display: inline-flex; align-items: center; gap: 3px; }
   .amb .on { color: var(--green); }
   .amb .ask { color: var(--accent); font-weight: 600; }
 
@@ -114,78 +114,92 @@
 </helmet>
 
 <h2>ambient &amp; social · every state</h2>
-<p class="note">Everything that is context, not work-in-flight: quiet marks at the meta line's
-right end, one glyph each, monochrome until they matter. Hover names them; the row menu holds
-their verbs.</p>
+<p class="note">The coherence rule: passive context (posted, seen, a peer looking) may be a
+ghost icon at the meta line's right end, all identical in weight; anything with a verb (a nudge,
+a held note) is a ledger line instead. Icons never carry color and never ask for a click.</p>
 <div class="list">
   <div class="row ">
   <div class="pick"><input type="checkbox" disabled></div>
-  <div style="min-width:0"><div class="r1"><span class="dot" style="color:var(--amber)">●</span><span class="title">CV-3028 Delete unreachable legacy dashboards</span><span class="phrase" style="color:var(--green)">APPROVED</span><span style="display:inline-block;width:13px;height:13px;border-radius:4px;background:var(--purple);opacity:.75;flex-shrink:0"></span></div><div class="r2">
+  <div style="min-width:0"><div class="r1"><span class="dot" style="color:var(--amber)">●</span><span class="title">CV-3028 Delete unreachable legacy dashboards</span><span class="phrase" style="color:var(--green)">APPROVED</span><span style="display:inline-block;width:13px;height:13px;border-radius:4px;background:var(--purple);opacity:.45;flex-shrink:0"></span></div><div class="r2">
     <span>!43946</span><span style="opacity:.5">|</span>
     <span class="branch">feature/cv-3028</span>
     <span class="grow"></span>
     <span><span class="adds">+18</span> <span class="dels">−1253</span></span>
-    <span>💬 7</span>
+    <span class="cnt"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><path d="M2.5 3.5h11a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H8l-3 2.5V11.5H2.5a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z"/></svg> 7</span>
     <span>9d</span>
     <span class="amb"><span class="g"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><rect x="2.5" y="2.5" width="11" height="11" rx="3"/><path d="M5.5 8.4l1.9 1.9 3.1-3.8"/></svg></span></span>
   </div><p class="cap" style="margin:4px 0 0">posted in slack</p></div>
 </div>
   <div class="row ">
   <div class="pick"><input type="checkbox" disabled></div>
-  <div style="min-width:0"><div class="r1"><span class="dot" style="color:var(--amber)">●</span><span class="title">CV-3028 Delete unreachable legacy dashboards</span><span class="phrase" style="color:var(--green)">APPROVED</span><span style="display:inline-block;width:13px;height:13px;border-radius:4px;background:var(--purple);opacity:.75;flex-shrink:0"></span></div><div class="r2">
+  <div style="min-width:0"><div class="r1"><span class="dot" style="color:var(--amber)">●</span><span class="title">CV-3028 Delete unreachable legacy dashboards</span><span class="phrase" style="color:var(--green)">APPROVED</span><span style="display:inline-block;width:13px;height:13px;border-radius:4px;background:var(--purple);opacity:.45;flex-shrink:0"></span></div><div class="r2">
     <span>!43946</span><span style="opacity:.5">|</span>
     <span class="branch">feature/cv-3028</span>
     <span class="grow"></span>
     <span><span class="adds">+18</span> <span class="dels">−1253</span></span>
-    <span>💬 7</span>
+    <span class="cnt"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><path d="M2.5 3.5h11a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H8l-3 2.5V11.5H2.5a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z"/></svg> 7</span>
     <span>9d</span>
-    <span class="amb"><span class="g"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><rect x="2.5" y="2.5" width="11" height="11" rx="3"/><path d="M5.5 8.4l1.9 1.9 3.1-3.8"/></svg></span><span class="g"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><path d="M1.8 8s2.3-4 6.2-4 6.2 4 6.2 4-2.3 4-6.2 4S1.8 8 1.8 8z"/><circle cx="8" cy="8" r="1.8"/></svg></span><span class="g"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><circle cx="8" cy="8" r="6"/><path d="M5.4 8.3l1.8 1.8 3.4-4"/></svg></span></span>
+    <span class="amb"><span class="g"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><rect x="2.5" y="2.5" width="11" height="11" rx="3"/><path d="M5.5 8.4l1.9 1.9 3.1-3.8"/></svg></span><span class="g"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><path d="M1.8 8s2.3-4 6.2-4 6.2 4 6.2 4-2.3 4-6.2 4S1.8 8 1.8 8z"/><circle cx="8" cy="8" r="1.8"/></svg></span></span>
   </div><p class="cap" style="margin:4px 0 0">slack reactions on the request message</p></div>
 </div>
   <div class="row ">
   <div class="pick"><input type="checkbox" disabled></div>
-  <div style="min-width:0"><div class="r1"><span class="dot" style="color:var(--amber)">●</span><span class="title">CV-3028 Delete unreachable legacy dashboards</span><span class="phrase" style="color:var(--green)">APPROVED</span><span style="display:inline-block;width:13px;height:13px;border-radius:4px;background:var(--purple);opacity:.75;flex-shrink:0"></span></div><div class="r2">
+  <div style="min-width:0"><div class="r1"><span class="dot" style="color:var(--amber)">●</span><span class="title">CV-3028 Delete unreachable legacy dashboards</span><span class="phrase" style="color:var(--green)">APPROVED</span><span style="display:inline-block;width:13px;height:13px;border-radius:4px;background:var(--purple);opacity:.45;flex-shrink:0"></span></div><div class="r2">
     <span>!43946</span><span style="opacity:.5">|</span>
     <span class="branch">feature/cv-3028</span>
     <span class="grow"></span>
     <span><span class="adds">+18</span> <span class="dels">−1253</span></span>
-    <span>💬 7</span>
+    <span class="cnt"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><path d="M2.5 3.5h11a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H8l-3 2.5V11.5H2.5a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z"/></svg> 7</span>
     <span>9d</span>
-    <span class="amb"><span class="g" style="opacity:.75"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><path d="M3 5.5h8.5M9 2.5l3 3-3 3"/><path d="M13 10.5H4.5M7 13.5l-3-3 3-3"/></svg> geoff reviewing</span></span>
+    <span class="amb"><span class="g"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><path d="M3 5.5h8.5M9 2.5l3 3-3 3"/><path d="M13 10.5H4.5M7 13.5l-3-3 3-3"/></svg> geoff reviewing</span></span>
   </div><p class="cap" style="margin:4px 0 0">peer board reviewing / commented / approved / reviewed... same slot, intent color</p></div>
 </div>
   <div class="row ">
   <div class="pick"><input type="checkbox" disabled></div>
-  <div style="min-width:0"><div class="r1"><span class="dot" style="color:var(--amber)">●</span><span class="title">CV-3028 Delete unreachable legacy dashboards</span><span class="phrase" style="color:var(--green)">APPROVED</span><span style="display:inline-block;width:13px;height:13px;border-radius:4px;background:var(--purple);opacity:.75;flex-shrink:0"></span></div><div class="r2">
+  <div style="min-width:0"><div class="r1"><span class="dot" style="color:var(--amber)">●</span><span class="title">CV-3028 Delete unreachable legacy dashboards</span><span class="phrase" style="color:var(--green)">APPROVED</span><span style="display:inline-block;width:13px;height:13px;border-radius:4px;background:var(--purple);opacity:.45;flex-shrink:0"></span></div><div class="r2">
     <span>!43946</span><span style="opacity:.5">|</span>
     <span class="branch">feature/cv-3028</span>
     <span class="grow"></span>
     <span><span class="adds">+18</span> <span class="dels">−1253</span></span>
-    <span>💬 7</span>
+    <span class="cnt"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><path d="M2.5 3.5h11a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H8l-3 2.5V11.5H2.5a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z"/></svg> 7</span>
     <span>9d</span>
-    <span class="amb"><span class="ask"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><path d="M3 5.5h8.5M9 2.5l3 3-3 3"/><path d="M13 10.5H4.5M7 13.5l-3-3 3-3"/></svg> nudged by sam · 30m</span></span>
-  </div><p class="cap" style="margin:4px 0 0">inbound nudge (someone waits on you)... the one ambient mark allowed weight</p></div>
+    
+  </div><div class="acts">
+  <div class="act act-warn">
+    <span class="lane">nudge</span>
+    <span class="w">sam asked for a re-review</span>
+    
+    <span class="d">30m ago</span>
+    <span class="do"><a href="#" class="">re-review</a></span>
+  </div></div><p class="cap" style="margin:4px 0 0">inbound nudge: someone waits on you, so it is a ledger line, not an icon</p></div>
 </div>
   <div class="row ">
   <div class="pick"><input type="checkbox" disabled></div>
-  <div style="min-width:0"><div class="r1"><span class="dot" style="color:var(--amber)">●</span><span class="title">CV-3028 Delete unreachable legacy dashboards</span><span class="phrase" style="color:var(--green)">APPROVED</span><span style="display:inline-block;width:13px;height:13px;border-radius:4px;background:var(--purple);opacity:.75;flex-shrink:0"></span></div><div class="r2">
+  <div style="min-width:0"><div class="r1"><span class="dot" style="color:var(--amber)">●</span><span class="title">CV-3028 Delete unreachable legacy dashboards</span><span class="phrase" style="color:var(--green)">APPROVED</span><span style="display:inline-block;width:13px;height:13px;border-radius:4px;background:var(--purple);opacity:.45;flex-shrink:0"></span></div><div class="r2">
     <span>!43946</span><span style="opacity:.5">|</span>
     <span class="branch">feature/cv-3028</span>
     <span class="grow"></span>
     <span><span class="adds">+18</span> <span class="dels">−1253</span></span>
-    <span>💬 7</span>
+    <span class="cnt"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><path d="M2.5 3.5h11a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H8l-3 2.5V11.5H2.5a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z"/></svg> 7</span>
     <span>9d</span>
-    <span class="amb"><span class="hot"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><rect x="2" y="3.5" width="12" height="9" rx="1.5"/><path d="M2.5 4.5L8 9l5.5-4.5"/></svg> held: verification note</span></span>
-  </div><p class="cap" style="margin:4px 0 0">doctor-drafted note held for approval... click opens the draft modal</p></div>
+    
+  </div><div class="acts">
+  <div class="act act-warn">
+    <span class="lane">note</span>
+    <span class="w">held: verification note</span>
+    
+    <span class="d">doctor draft</span>
+    <span class="do"><a href="#" class="">read</a><a href="#" class="mut">dismiss</a></span>
+  </div></div><p class="cap" style="margin:4px 0 0">doctor-drafted note held for approval... actionable, so it leaves the cluster too</p></div>
 </div>
   <div class="row ">
   <div class="pick"><input type="checkbox" disabled></div>
-  <div style="min-width:0"><div class="r1"><span class="dot" style="color:var(--amber)">●</span><span class="title">CV-3028 Delete unreachable legacy dashboards</span><span class="phrase" style="color:var(--green)">APPROVED</span><span style="display:inline-block;width:13px;height:13px;border-radius:4px;background:var(--purple);opacity:.75;flex-shrink:0"></span></div><div class="r2">
+  <div style="min-width:0"><div class="r1"><span class="dot" style="color:var(--amber)">●</span><span class="title">CV-3028 Delete unreachable legacy dashboards</span><span class="phrase" style="color:var(--green)">APPROVED</span><span style="display:inline-block;width:13px;height:13px;border-radius:4px;background:var(--purple);opacity:.45;flex-shrink:0"></span></div><div class="r2">
     <span>!43946</span><span style="opacity:.5">|</span>
     <span class="branch">feature/cv-3028</span>
     <span class="grow"></span>
     <span><span class="adds">+18</span> <span class="dels">−1253</span></span>
-    <span>💬 7</span>
+    <span class="cnt"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><path d="M2.5 3.5h11a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H8l-3 2.5V11.5H2.5a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z"/></svg> 7</span>
     <span>9d</span>
     
   </div><div class="acts">

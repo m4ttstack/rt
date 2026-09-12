@@ -51,7 +51,9 @@
   .r2 { display: flex; align-items: center; gap: .55rem; color: var(--muted); font-size: .78rem; margin-top: .15rem; }
   .branch { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .grow { flex: 1; }
-  .adds { color: var(--green); } .dels { color: var(--red); }
+  .adds { color: color-mix(in srgb, var(--green) 70%, var(--muted)); }
+  .dels { color: color-mix(in srgb, var(--red) 70%, var(--muted)); }
+  .cnt { display: inline-flex; align-items: center; gap: 3px; }
 
   /* direction A: activity lines */
   .acts { margin-top: 6px; display: flex; flex-direction: column; gap: 2px; }
@@ -80,9 +82,7 @@
 
   /* ambient cluster (right end of r2) */
   .amb { display: inline-flex; align-items: center; gap: .5rem; flex-shrink: 0; color: var(--muted); font-size: .72rem; }
-  .amb .g { opacity: .55; display: inline-flex; align-items: center; gap: 3px; }
-  .amb .hot { color: var(--amber); display: inline-flex; align-items: center; gap: 3px; }
-  .amb .ask { display: inline-flex; align-items: center; gap: 3px; }
+  .amb .g { opacity: .5; display: inline-flex; align-items: center; gap: 3px; }
   .amb .on { color: var(--green); }
   .amb .ask { color: var(--accent); font-weight: 600; }
 
@@ -120,12 +120,12 @@ red is reserved for a line inside the block.</p>
 <div class="list">
   <div class="row ">
   <div class="pick"><input type="checkbox" disabled></div>
-  <div style="min-width:0"><div class="r1"><span class="dot" style="color:var(--amber)">●</span><span class="title">CV-3074 Port the CV2 stealth-mode and access-links case c…</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span><span style="display:inline-block;width:13px;height:13px;border-radius:4px;background:var(--purple);opacity:.75;flex-shrink:0"></span></div><div class="r2">
+  <div style="min-width:0"><div class="r1"><span class="dot" style="color:var(--amber)">●</span><span class="title">CV-3074 Port the CV2 stealth-mode and access-links case c…</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span><span style="display:inline-block;width:13px;height:13px;border-radius:4px;background:var(--purple);opacity:.45;flex-shrink:0"></span></div><div class="r2">
     <span>!44451</span><span style="opacity:.5">|</span>
     <span class="branch">feature/cv-3074</span>
     <span class="grow"></span>
     <span><span class="adds">+1455</span> <span class="dels">−13</span></span>
-    <span>💬 1</span>
+    <span class="cnt"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><path d="M2.5 3.5h11a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H8l-3 2.5V11.5H2.5a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z"/></svg> 1</span>
     <span>32h</span>
     
   </div><div class="acts">
@@ -141,12 +141,12 @@ red is reserved for a line inside the block.</p>
 </div>
   <div class="row ">
   <div class="pick"><input type="checkbox" disabled></div>
-  <div style="min-width:0"><div class="r1"><span class="dot" style="color:var(--amber)">●</span><span class="title">CV-3074 Port the CV2 stealth-mode and access-links case c…</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span><span style="display:inline-block;width:13px;height:13px;border-radius:4px;background:var(--purple);opacity:.75;flex-shrink:0"></span></div><div class="r2">
+  <div style="min-width:0"><div class="r1"><span class="dot" style="color:var(--amber)">●</span><span class="title">CV-3074 Port the CV2 stealth-mode and access-links case c…</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span><span style="display:inline-block;width:13px;height:13px;border-radius:4px;background:var(--purple);opacity:.45;flex-shrink:0"></span></div><div class="r2">
     <span>!44451</span><span style="opacity:.5">|</span>
     <span class="branch">feature/cv-3074</span>
     <span class="grow"></span>
     <span><span class="adds">+1455</span> <span class="dels">−13</span></span>
-    <span>💬 1</span>
+    <span class="cnt"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><path d="M2.5 3.5h11a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H8l-3 2.5V11.5H2.5a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z"/></svg> 1</span>
     <span>32h</span>
     
   </div><div class="acts">
@@ -162,12 +162,12 @@ red is reserved for a line inside the block.</p>
 </div>
   <div class="row ">
   <div class="pick"><input type="checkbox" disabled></div>
-  <div style="min-width:0"><div class="r1"><span class="dot" style="color:var(--amber)">●</span><span class="title">CV-3074 Port the CV2 stealth-mode and access-links case c…</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span><span style="display:inline-block;width:13px;height:13px;border-radius:4px;background:var(--purple);opacity:.75;flex-shrink:0"></span></div><div class="r2">
+  <div style="min-width:0"><div class="r1"><span class="dot" style="color:var(--amber)">●</span><span class="title">CV-3074 Port the CV2 stealth-mode and access-links case c…</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span><span style="display:inline-block;width:13px;height:13px;border-radius:4px;background:var(--purple);opacity:.45;flex-shrink:0"></span></div><div class="r2">
     <span>!44451</span><span style="opacity:.5">|</span>
     <span class="branch">feature/cv-3074</span>
     <span class="grow"></span>
     <span><span class="adds">+1455</span> <span class="dels">−13</span></span>
-    <span>💬 1</span>
+    <span class="cnt"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><path d="M2.5 3.5h11a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H8l-3 2.5V11.5H2.5a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z"/></svg> 1</span>
     <span>32h</span>
     
   </div><div class="acts">
@@ -183,12 +183,12 @@ red is reserved for a line inside the block.</p>
 </div>
   <div class="row ">
   <div class="pick"><input type="checkbox" disabled></div>
-  <div style="min-width:0"><div class="r1"><span class="dot" style="color:var(--amber)">●</span><span class="title">CV-3074 Port the CV2 stealth-mode and access-links case c…</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span><span style="display:inline-block;width:13px;height:13px;border-radius:4px;background:var(--purple);opacity:.75;flex-shrink:0"></span></div><div class="r2">
+  <div style="min-width:0"><div class="r1"><span class="dot" style="color:var(--amber)">●</span><span class="title">CV-3074 Port the CV2 stealth-mode and access-links case c…</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span><span style="display:inline-block;width:13px;height:13px;border-radius:4px;background:var(--purple);opacity:.45;flex-shrink:0"></span></div><div class="r2">
     <span>!44451</span><span style="opacity:.5">|</span>
     <span class="branch">feature/cv-3074</span>
     <span class="grow"></span>
     <span><span class="adds">+1455</span> <span class="dels">−13</span></span>
-    <span>💬 1</span>
+    <span class="cnt"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><path d="M2.5 3.5h11a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H8l-3 2.5V11.5H2.5a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z"/></svg> 1</span>
     <span>32h</span>
     
   </div><div class="acts">
@@ -204,12 +204,12 @@ red is reserved for a line inside the block.</p>
 </div>
   <div class="row ">
   <div class="pick"><input type="checkbox" disabled></div>
-  <div style="min-width:0"><div class="r1"><span class="dot" style="color:var(--amber)">●</span><span class="title">CV-3074 Port the CV2 stealth-mode and access-links case c…</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span><span style="display:inline-block;width:13px;height:13px;border-radius:4px;background:var(--purple);opacity:.75;flex-shrink:0"></span></div><div class="r2">
+  <div style="min-width:0"><div class="r1"><span class="dot" style="color:var(--amber)">●</span><span class="title">CV-3074 Port the CV2 stealth-mode and access-links case c…</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span><span style="display:inline-block;width:13px;height:13px;border-radius:4px;background:var(--purple);opacity:.45;flex-shrink:0"></span></div><div class="r2">
     <span>!44451</span><span style="opacity:.5">|</span>
     <span class="branch">feature/cv-3074</span>
     <span class="grow"></span>
     <span><span class="adds">+1455</span> <span class="dels">−13</span></span>
-    <span>💬 1</span>
+    <span class="cnt"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><path d="M2.5 3.5h11a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H8l-3 2.5V11.5H2.5a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z"/></svg> 1</span>
     <span>32h</span>
     
   </div><div class="acts">
@@ -225,12 +225,12 @@ red is reserved for a line inside the block.</p>
 </div>
   <div class="row ">
   <div class="pick"><input type="checkbox" disabled></div>
-  <div style="min-width:0"><div class="r1"><span class="dot" style="color:var(--amber)">●</span><span class="title">CV-3074 Port the CV2 stealth-mode and access-links case c…</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span><span style="display:inline-block;width:13px;height:13px;border-radius:4px;background:var(--purple);opacity:.75;flex-shrink:0"></span></div><div class="r2">
+  <div style="min-width:0"><div class="r1"><span class="dot" style="color:var(--amber)">●</span><span class="title">CV-3074 Port the CV2 stealth-mode and access-links case c…</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span><span style="display:inline-block;width:13px;height:13px;border-radius:4px;background:var(--purple);opacity:.45;flex-shrink:0"></span></div><div class="r2">
     <span>!44451</span><span style="opacity:.5">|</span>
     <span class="branch">feature/cv-3074</span>
     <span class="grow"></span>
     <span><span class="adds">+1455</span> <span class="dels">−13</span></span>
-    <span>💬 1</span>
+    <span class="cnt"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><path d="M2.5 3.5h11a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H8l-3 2.5V11.5H2.5a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z"/></svg> 1</span>
     <span>32h</span>
     
   </div><div class="acts">
@@ -246,12 +246,12 @@ red is reserved for a line inside the block.</p>
 </div>
   <div class="row ">
   <div class="pick"><input type="checkbox" disabled></div>
-  <div style="min-width:0"><div class="r1"><span class="dot" style="color:var(--amber)">●</span><span class="title">CV-3074 Port the CV2 stealth-mode and access-links case c…</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span><span style="display:inline-block;width:13px;height:13px;border-radius:4px;background:var(--purple);opacity:.75;flex-shrink:0"></span></div><div class="r2">
+  <div style="min-width:0"><div class="r1"><span class="dot" style="color:var(--amber)">●</span><span class="title">CV-3074 Port the CV2 stealth-mode and access-links case c…</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span><span style="display:inline-block;width:13px;height:13px;border-radius:4px;background:var(--purple);opacity:.45;flex-shrink:0"></span></div><div class="r2">
     <span>!44451</span><span style="opacity:.5">|</span>
     <span class="branch">feature/cv-3074</span>
     <span class="grow"></span>
     <span><span class="adds">+1455</span> <span class="dels">−13</span></span>
-    <span>💬 1</span>
+    <span class="cnt"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><path d="M2.5 3.5h11a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H8l-3 2.5V11.5H2.5a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z"/></svg> 1</span>
     <span>32h</span>
     
   </div><div class="acts">

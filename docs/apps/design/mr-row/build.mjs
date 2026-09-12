@@ -53,7 +53,9 @@ const CSS = `
   .r2 { display: flex; align-items: center; gap: .55rem; color: var(--muted); font-size: .78rem; margin-top: .15rem; }
   .branch { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .grow { flex: 1; }
-  .adds { color: var(--green); } .dels { color: var(--red); }
+  .adds { color: color-mix(in srgb, var(--green) 70%, var(--muted)); }
+  .dels { color: color-mix(in srgb, var(--red) 70%, var(--muted)); }
+  .cnt { display: inline-flex; align-items: center; gap: 3px; }
 
   /* direction A: activity lines */
   .acts { margin-top: 6px; display: flex; flex-direction: column; gap: 2px; }
@@ -82,9 +84,7 @@ const CSS = `
 
   /* ambient cluster (right end of r2) */
   .amb { display: inline-flex; align-items: center; gap: .5rem; flex-shrink: 0; color: var(--muted); font-size: .72rem; }
-  .amb .g { opacity: .55; display: inline-flex; align-items: center; gap: 3px; }
-  .amb .hot { color: var(--amber); display: inline-flex; align-items: center; gap: 3px; }
-  .amb .ask { display: inline-flex; align-items: center; gap: 3px; }
+  .amb .g { opacity: .5; display: inline-flex; align-items: center; gap: 3px; }
   .amb .on { color: var(--green); }
   .amb .ask { color: var(--accent); font-weight: 600; }
 
@@ -138,10 +138,11 @@ const IC = {
   check: svgIcon('<circle cx="8" cy="8" r="6"/><path d="M5.4 8.3l1.8 1.8 3.4-4"/>'),
   swap: svgIcon('<path d="M3 5.5h8.5M9 2.5l3 3-3 3"/><path d="M13 10.5H4.5M7 13.5l-3-3 3-3"/>'),
   mail: svgIcon('<rect x="2" y="3.5" width="12" height="9" rx="1.5"/><path d="M2.5 4.5L8 9l5.5-4.5"/>'),
+  bubble: svgIcon('<path d="M2.5 3.5h11a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H8l-3 2.5V11.5H2.5a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z"/>'),
 };
 
 // ── row scaffolding ─────────────────────────────────────────────────
-const AVATAR = `<span style="display:inline-block;width:13px;height:13px;border-radius:4px;background:var(--purple);opacity:.75;flex-shrink:0"></span>`;
+const AVATAR = `<span style="display:inline-block;width:13px;height:13px;border-radius:4px;background:var(--purple);opacity:.45;flex-shrink:0"></span>`;
 
 function r1({ dots = ['var(--amber)'], title, phrase, phraseColor = 'var(--amber)' }) {
   const dotHtml = dots.map(c => `<span class="dot" style="color:${c}">●</span>`).join('');
@@ -155,7 +156,7 @@ function r2({ iid, branch, adds, dels, threads, age, amb = '' }) {
     <span class="branch">${branch}</span>
     <span class="grow"></span>
     <span><span class="adds">+${adds}</span> <span class="dels">−${dels}</span></span>
-    ${threads ? `<span>💬 ${threads}</span>` : ''}
+    ${threads ? `<span class="cnt">${IC.bubble} ${threads}</span>` : ''}
     <span>${age}</span>
     ${amb}
   </div>`;
@@ -183,7 +184,7 @@ const MR2 = { iid: 44720, branch: 'feature/cv-3163', adds: 79, dels: 27, threads
 const MR4 = { iid: 44712, branch: 'feature/cv-3201', adds: 41, dels: 9, threads: 0, age: '3h', title: 'CV-3201 Vendor the report fonts so CI stops flaking' };
 const MR3 = { iid: 43946, branch: 'feature/cv-3028', adds: 18, dels: 1253, threads: 7, age: '9d', title: 'CV-3028 Delete unreachable legacy dashboards' };
 
-const AMB_FULL = `<span class="amb"><span class="g" title="posted in slack">${IC.slack}</span><span class="g" title="seen in slack">${IC.eye}</span><span class="g" title="approved in slack">${IC.check}</span><span class="g" title="peer reviewing">${IC.swap}</span><span class="hot" title="held draft">${IC.mail}</span></span>`;
+const AMB_FULL = `<span class="amb"><span class="g" title="posted in slack">${IC.slack}</span><span class="g" title="seen in slack">${IC.eye}</span><span class="g" title="peer reviewing">${IC.swap}</span></span>`;
 
 // ════════════════════════════════════════════════════════════════════
 // Main: direction A, the leading candidate, on real rows
@@ -366,25 +367,27 @@ surface, in the same "decide" slot with an <b>escalated</b> detail.</p>
 
 const ambientBody = `
 <h2>ambient &amp; social · every state</h2>
-<p class="note">Everything that is context, not work-in-flight: quiet marks at the meta line's
-right end, one glyph each, monochrome until they matter. Hover names them; the row menu holds
-their verbs.</p>
+<p class="note">The coherence rule: passive context (posted, seen, a peer looking) may be a
+ghost icon at the meta line's right end, all identical in weight; anything with a verb (a nudge,
+a held note) is a ledger line instead. Icons never carry color and never ask for a click.</p>
 <div class="list">
   ${row(r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: 'var(--green)' }) +
     r2({ ...MR3, amb: `<span class="amb"><span class="g">${IC.slack}</span></span>` }) +
     `<p class="cap" style="margin:4px 0 0">posted in slack</p>`)}
   ${row(r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: 'var(--green)' }) +
-    r2({ ...MR3, amb: `<span class="amb"><span class="g">${IC.slack}</span><span class="g">${IC.eye}</span><span class="g">${IC.check}</span></span>` }) +
+    r2({ ...MR3, amb: `<span class="amb"><span class="g">${IC.slack}</span><span class="g">${IC.eye}</span></span>` }) +
     `<p class="cap" style="margin:4px 0 0">slack reactions on the request message</p>`)}
   ${row(r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: 'var(--green)' }) +
-    r2({ ...MR3, amb: `<span class="amb"><span class="g" style="opacity:.75">${IC.swap} geoff reviewing</span></span>` }) +
+    r2({ ...MR3, amb: `<span class="amb"><span class="g">${IC.swap} geoff reviewing</span></span>` }) +
     `<p class="cap" style="margin:4px 0 0">peer board reviewing / commented / approved / reviewed... same slot, intent color</p>`)}
   ${row(r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: 'var(--green)' }) +
-    r2({ ...MR3, amb: `<span class="amb"><span class="ask">${IC.swap} nudged by sam · 30m</span></span>` }) +
-    `<p class="cap" style="margin:4px 0 0">inbound nudge (someone waits on you)... the one ambient mark allowed weight</p>`)}
+    r2({ ...MR3 }) +
+    `<div class="acts">${act('warn', 'nudge', 'sam asked for a re-review', '30m ago', [['re-review']])}</div>` +
+    `<p class="cap" style="margin:4px 0 0">inbound nudge: someone waits on you, so it is a ledger line, not an icon</p>`)}
   ${row(r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: 'var(--green)' }) +
-    r2({ ...MR3, amb: `<span class="amb"><span class="hot">${IC.mail} held: verification note</span></span>` }) +
-    `<p class="cap" style="margin:4px 0 0">doctor-drafted note held for approval... click opens the draft modal</p>`)}
+    r2({ ...MR3 }) +
+    `<div class="acts">${act('warn', 'note', 'held: verification note', 'doctor draft', [['read'], ['dismiss', true]])}</div>` +
+    `<p class="cap" style="margin:4px 0 0">doctor-drafted note held for approval... actionable, so it leaves the cluster too</p>`)}
   ${row(r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: 'var(--green)' }) +
     r2({ ...MR3 }) +
     `<div class="acts">${act('quiet', 'live', `${IC.eye} alice is reviewing right now`)}</div>`)}

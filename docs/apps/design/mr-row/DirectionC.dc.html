@@ -51,7 +51,9 @@
   .r2 { display: flex; align-items: center; gap: .55rem; color: var(--muted); font-size: .78rem; margin-top: .15rem; }
   .branch { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .grow { flex: 1; }
-  .adds { color: var(--green); } .dels { color: var(--red); }
+  .adds { color: color-mix(in srgb, var(--green) 70%, var(--muted)); }
+  .dels { color: color-mix(in srgb, var(--red) 70%, var(--muted)); }
+  .cnt { display: inline-flex; align-items: center; gap: 3px; }
 
   /* direction A: activity lines */
   .acts { margin-top: 6px; display: flex; flex-direction: column; gap: 2px; }
@@ -80,9 +82,7 @@
 
   /* ambient cluster (right end of r2) */
   .amb { display: inline-flex; align-items: center; gap: .5rem; flex-shrink: 0; color: var(--muted); font-size: .72rem; }
-  .amb .g { opacity: .55; display: inline-flex; align-items: center; gap: 3px; }
-  .amb .hot { color: var(--amber); display: inline-flex; align-items: center; gap: 3px; }
-  .amb .ask { display: inline-flex; align-items: center; gap: 3px; }
+  .amb .g { opacity: .5; display: inline-flex; align-items: center; gap: 3px; }
   .amb .on { color: var(--green); }
   .amb .ask { color: var(--accent); font-weight: 600; }
 
@@ -122,21 +122,21 @@ meta cluster. No second row of bolted-on banners, ever.</p>
 <div class="list">
   <div class="row ">
   <div class="pick"><input type="checkbox" disabled></div>
-  <div style="min-width:0"><div class="r1"><span class="dot" style="color:var(--amber)">●</span><span class="title">CV-3074 Port the CV2 stealth-mode and access-links case c…</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span><span style="display:inline-block;width:13px;height:13px;border-radius:4px;background:var(--purple);opacity:.75;flex-shrink:0"></span></div><div class="r2">
+  <div style="min-width:0"><div class="r1"><span class="dot" style="color:var(--amber)">●</span><span class="title">CV-3074 Port the CV2 stealth-mode and access-links case c…</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span><span style="display:inline-block;width:13px;height:13px;border-radius:4px;background:var(--purple);opacity:.45;flex-shrink:0"></span></div><div class="r2">
     <span>!44451</span><span style="opacity:.5">|</span>
     <span class="branch">feature/cv-3074</span>
     <span class="grow"></span>
     <span><span class="adds">+1455</span> <span class="dels">−13</span></span>
-    <span>💬 1</span>
+    <span class="cnt"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><path d="M2.5 3.5h11a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H8l-3 2.5V11.5H2.5a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z"/></svg> 1</span>
     <span>32h</span>
-    <span class="amb"><span class="g" title="posted in slack"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><rect x="2.5" y="2.5" width="11" height="11" rx="3"/><path d="M5.5 8.4l1.9 1.9 3.1-3.8"/></svg></span><span class="g" title="seen in slack"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><path d="M1.8 8s2.3-4 6.2-4 6.2 4 6.2 4-2.3 4-6.2 4S1.8 8 1.8 8z"/><circle cx="8" cy="8" r="1.8"/></svg></span><span class="g" title="approved in slack"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><circle cx="8" cy="8" r="6"/><path d="M5.4 8.3l1.8 1.8 3.4-4"/></svg></span><span class="g" title="peer reviewing"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><path d="M3 5.5h8.5M9 2.5l3 3-3 3"/><path d="M13 10.5H4.5M7 13.5l-3-3 3-3"/></svg></span><span class="hot" title="held draft"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><rect x="2" y="3.5" width="12" height="9" rx="1.5"/><path d="M2.5 4.5L8 9l5.5-4.5"/></svg></span></span>
+    <span class="amb"><span class="g" title="posted in slack"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><rect x="2.5" y="2.5" width="11" height="11" rx="3"/><path d="M5.5 8.4l1.9 1.9 3.1-3.8"/></svg></span><span class="g" title="seen in slack"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><path d="M1.8 8s2.3-4 6.2-4 6.2 4 6.2 4-2.3 4-6.2 4S1.8 8 1.8 8z"/><circle cx="8" cy="8" r="1.8"/></svg></span><span class="g" title="peer reviewing"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><path d="M3 5.5h8.5M9 2.5l3 3-3 3"/><path d="M13 10.5H4.5M7 13.5l-3-3 3-3"/></svg></span></span>
   </div><div class="chips">
       <span class="chip warn">⌕ interrupted <span class="x">· relaunch ↻</span></span>
     </div></div>
 </div>
   <div class="row ">
   <div class="pick"><input type="checkbox" disabled></div>
-  <div style="min-width:0"><div class="r1"><span class="dot" style="color:var(--amber)">●</span><span class="title">CV-3163 Let screenshot.cjs capture the auth handshake</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span><span style="display:inline-block;width:13px;height:13px;border-radius:4px;background:var(--purple);opacity:.75;flex-shrink:0"></span></div><div class="r2">
+  <div style="min-width:0"><div class="r1"><span class="dot" style="color:var(--amber)">●</span><span class="title">CV-3163 Let screenshot.cjs capture the auth handshake</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span><span style="display:inline-block;width:13px;height:13px;border-radius:4px;background:var(--purple);opacity:.45;flex-shrink:0"></span></div><div class="r2">
     <span>!44720</span><span style="opacity:.5">|</span>
     <span class="branch">feature/cv-3163</span>
     <span class="grow"></span>
@@ -148,12 +148,12 @@ meta cluster. No second row of bolted-on banners, ever.</p>
 </div>
   <div class="row ">
   <div class="pick"><input type="checkbox" disabled></div>
-  <div style="min-width:0"><div class="r1"><span class="dot" style="color:var(--green)">●</span><span class="title">CV-3028 Delete unreachable legacy dashboards</span><span class="phrase" style="color:var(--green)">APPROVED</span><span style="display:inline-block;width:13px;height:13px;border-radius:4px;background:var(--purple);opacity:.75;flex-shrink:0"></span></div><div class="r2">
+  <div style="min-width:0"><div class="r1"><span class="dot" style="color:var(--green)">●</span><span class="title">CV-3028 Delete unreachable legacy dashboards</span><span class="phrase" style="color:var(--green)">APPROVED</span><span style="display:inline-block;width:13px;height:13px;border-radius:4px;background:var(--purple);opacity:.45;flex-shrink:0"></span></div><div class="r2">
     <span>!43946</span><span style="opacity:.5">|</span>
     <span class="branch">feature/cv-3028</span>
     <span class="grow"></span>
     <span><span class="adds">+18</span> <span class="dels">−1253</span></span>
-    <span>💬 7</span>
+    <span class="cnt"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><path d="M2.5 3.5h11a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H8l-3 2.5V11.5H2.5a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z"/></svg> 7</span>
     <span>9d</span>
     
   </div><div class="chips">
