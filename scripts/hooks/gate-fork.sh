@@ -52,9 +52,15 @@ fi
 
 # `rt gate list` has no exact-subject filter, only a prefix one, so a
 # same-prefix sibling subject (e.g. "mr:1" vs "mr:10") can share this
-# payload. Split gate objects onto their own line before grepping so a
-# sibling's status can never be attributed to this subject's gate.
-gate_lines=$(printf '%s' "$gates_json" | awk '{gsub(/\},\{/, "}\n{"); print}')
+# payload. Split gate ROWS onto their own line before grepping so a
+# sibling's status can never be attributed to this subject's gate. Anchor
+# the split on `{"id":"...","subject":` (a gate row's own first two
+# fields, in that order) rather than on every `},{` boundary: a multi-
+# question gate's own questions/options arrays contain `},{` boundaries
+# of their own (and each question object starts with its own "id" field
+# too), so splitting there would land a row's subject and status on
+# different lines and misread every multi-question gate as unanswerable.
+gate_lines=$(printf '%s' "$gates_json" | awk '{gsub(/\{"id":"[^"]*","subject":/, "\n&"); print}')
 subject_lines=$(printf '%s\n' "$gate_lines" | grep -F "\"subject\":\"$RT_GATE_SUBJECT\"")
 
 printf '%s\n' "$subject_lines" | grep -Eq '"status":"(open|parked)"' && allow

@@ -105,14 +105,49 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
   // In-memory only, by design (spec "Reconciler sweep"): a daemon restart
   // re-derives every agent's state in one sweep, and the only replays that
   // causes (a re-opened attention gate) are idempotent via the store's own
-  // subject check below, not this memory.
+  // subject check below, not this memory. Recovery CLOSE, unlike open, never
+  // relies on this memory (see closeStaleAttentionGates): it re-derives its
+  // targets from a fresh gate list every sweep, so it survives a restart
+  // this memory alone could not.
   const previousStates = new Map<string, ExecutorState>();
   const pendingBlocked = new Map<string, number>();
   const pendingGone = new Map<string, number>();
   const attentionGateByAgent = new Map<string, string>();
+  // Onset tracking for ExecutorView.since (spec "since"): keyed independent
+  // of previousStates so it stays correct through herdr-unreachable sweeps
+  // too, where previousStates is deliberately left untouched.
+  const sinceByAgent = new Map<string, { state: ExecutorState; since: number }>();
   const expectations: PendingExpectation[] = [];
   let lastPanes: LivePane[] | null = null;
   let lastStatus: ReconcilerStatus = { sweptAt: 0, herdrReachable: false, executors: [] };
+
+  /** Same dual-path emit shape handlers/gate.ts's own gate:open/gate:close
+      emit (journal + broadcast, one topic per event) -- copied here rather
+      than shared so a live consumer (board, notify bridge) sees an
+      attention gate's own open/close exactly the way it sees any other
+      gate's (spec "Attention gates are visible to live consumers"). */
+  function emitGateOpened(row: GateRow): void {
+    const label = typeof row.meta?.["label"] === "string" ? (row.meta["label"] as string) : row.kind;
+    deps.emit(`gate/opened/${row.id}`, {
+      id: row.id, subject: row.subject, kind: row.kind, questions: row.questions,
+      meta: row.meta, agent: row.agent, paneId: row.pane, label,
+      context: row.context, origin: row.origin, owner: row.owner,
+    });
+  }
+
+  function emitGateClosed(row: Pick<GateRow, "id" | "subject" | "kind" | "closedReason">): void {
+    deps.emit(`gate/closed/${row.id}`, { id: row.id, subject: row.subject, kind: row.kind, reason: row.closedReason });
+  }
+
+  /** origin.paneId/worktree for an attention gate, so the board's
+      focus-pane route can resolve it the same way it resolves any other
+      gate's origin. Omitted (not an empty object) when neither is known. */
+  function attentionOrigin(v: ExecutorView, cwd: string | undefined): { paneId?: string; worktree?: string } | undefined {
+    const origin: { paneId?: string; worktree?: string } = {};
+    if (v.paneRef) origin.paneId = v.paneRef;
+    if (cwd) origin.worktree = cwd;
+    return Object.keys(origin).length > 0 ? origin : undefined;
+  }
 
   function fetchOpenAndParkedGates(): GateRow[] {
     const out: GateRow[] = [];
@@ -159,9 +194,11 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
     reason: "blocked" | "gone",
     panes: LivePane[] | null,
     gatesSnapshot: GateRow[],
+    cwd: string | undefined,
   ): Promise<void> {
     const context = await peekFor(v.paneRef, panes);
     const owner = ownerForAttentionGate(v, gatesSnapshot);
+    const origin = attentionOrigin(v, cwd);
     const { row } = deps.store.open({
       subject: v.subject ?? `agent:${v.agentId}`,
       kind: "pane-attention",
@@ -169,22 +206,43 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
       meta: { agentId: v.agentId, paneRef: v.paneRef, reason },
       context,
       owner,
+      ...(origin ? { origin } : {}),
     });
     attentionGateByAgent.set(v.agentId, row.id);
     gatesSnapshot.push(row);
+    emitGateOpened(row);
   }
 
-  function closeAttentionGateIfAny(agentId: string): void {
-    const gateId = attentionGateByAgent.get(agentId);
-    attentionGateByAgent.delete(agentId);
-    if (!gateId) return;
-    const row = deps.store.get(gateId);
-    if (row && (row.status === "open" || row.status === "parked")) {
+  /** Recovery close (spec "Recovery close survives a restart"): derives its
+      targets from a FRESH open/parked gate list every call, never from
+      `attentionGateByAgent` -- that map is only ever populated by THIS
+      process's own openAttentionGate calls, so relying on it here would
+      strand an attention gate open forever across a daemon restart even
+      after its pane came back live. Matches on `meta.agentId` (attention
+      gates carry no origin/pane/nudge join hints of their own). */
+  function closeStaleAttentionGates(agentId: string, gatesSnapshot: GateRow[]): void {
+    for (const g of gatesSnapshot) {
+      if (g.kind !== "pane-attention") continue;
+      if (g.meta?.["agentId"] !== agentId) continue;
       // "resolved" (not "abandoned"): the pane came back on its own, it
       // wasn't given up on. clear() below uses "abandoned" for the
       // human/user-initiated close -- the two must read differently in
       // any UI that surfaces closedReason.
-      deps.store.close(gateId, "resolved");
+      deps.store.close(g.id, "resolved");
+      emitGateClosed({ id: g.id, subject: g.subject, kind: g.kind, closedReason: "resolved" });
+    }
+    attentionGateByAgent.delete(agentId);
+  }
+
+  /** Stale executor-stamp clear (spec "Answer-time executor guarantee"
+      companion): a gate stamped executor "gone" while its agent was gone
+      must not keep reading "gone" once that same agent is live again --
+      the stamp is cleared back to unset, the same round trip markExecutor
+      itself documents. */
+  function clearStaleExecutorStamps(v: ExecutorView, gatesSnapshot: GateRow[]): void {
+    for (const gateId of v.openGateIds) {
+      const g = gatesSnapshot.find((row) => row.id === gateId);
+      if (g?.executor === "gone") deps.store.markExecutor(gateId, null);
     }
   }
 
@@ -290,7 +348,8 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
           // or an attention gate from an earlier pass) means skip.
           const occupied = openParkedGates.some((g) => g.subject === subject);
           if (count >= debounceSweeps && !occupied) {
-            await openAttentionGate(v, "blocked", panes, openParkedGates);
+            const cwd = agents.find((a) => a.id === v.agentId)?.cwd;
+            await openAttentionGate(v, "blocked", panes, openParkedGates, cwd);
           }
         } else {
           pendingBlocked.delete(v.agentId);
@@ -307,14 +366,25 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
             const hasAttentionGate = openParkedGates.some(
               (g) => g.kind === "pane-attention" && g.subject === subject,
             );
-            if (!hasAttentionGate) await openAttentionGate(v, "gone", panes, openParkedGates);
+            if (!hasAttentionGate) {
+              const cwd = agents.find((a) => a.id === v.agentId)?.cwd;
+              await openAttentionGate(v, "gone", panes, openParkedGates, cwd);
+            }
           }
         } else {
           pendingGone.delete(v.agentId);
         }
 
-        if (v.state === "live" && (prevState === "blocked" || prevState === "gone")) {
-          closeAttentionGateIfAny(v.agentId);
+        // Recovery close and stale-stamp clearing run on every "live"
+        // reading, not just a detected blocked/gone -> live TRANSITION:
+        // after a daemon restart, previousStates starts empty, so the first
+        // post-restart sweep for an agent that came back live while the
+        // daemon was down would never satisfy a `prevState === "blocked"`
+        // check even though its attention gate and "gone" executor stamp
+        // are both still sitting open from before the restart.
+        if (v.state === "live") {
+          closeStaleAttentionGates(v.agentId, openParkedGates);
+          clearStaleExecutorStamps(v, openParkedGates);
         }
 
         previousStates.set(v.agentId, v.state);
@@ -323,6 +393,22 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
 
     await checkExpectations(panes);
 
+    // Onset tracking (spec "since"): carries the prior onset forward when
+    // an agent's state is unchanged from the last sweep that saw it, so
+    // ReconcilerStatus consumers read "since when has this been true", not
+    // "when did we last sweep". Runs unconditionally (not gated on
+    // herdrReachable) so "unknown" during an outage gets its own honest
+    // onset too, rather than ticking forward on every unreachable sweep.
+    for (const v of view) {
+      const prior = sinceByAgent.get(v.agentId);
+      if (prior && prior.state === v.state) {
+        v.since = prior.since;
+      } else {
+        sinceByAgent.set(v.agentId, { state: v.state, since: now });
+        v.since = now;
+      }
+    }
+
     lastStatus = { sweptAt: now, herdrReachable, executors: view };
   }
 
@@ -330,13 +416,20 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
     setKvValue(CLEARED_NS, agentId, { clearedAt: Date.now() });
 
     const agents = deps.listAgents();
-    const toClose = new Set<string>();
-    for (const g of fetchOpenAndParkedGates()) {
-      if (gateAgentId(g, agents, lastPanes) === agentId) toClose.add(g.id);
+    const gatesSnapshot = fetchOpenAndParkedGates();
+    const toClose = new Map<string, GateRow>();
+    for (const g of gatesSnapshot) {
+      if (gateAgentId(g, agents, lastPanes) === agentId) toClose.set(g.id, g);
     }
     const trackedAttentionGate = attentionGateByAgent.get(agentId);
-    if (trackedAttentionGate) toClose.add(trackedAttentionGate);
-    for (const id of toClose) deps.store.close(id, "abandoned");
+    if (trackedAttentionGate && !toClose.has(trackedAttentionGate)) {
+      const row = gatesSnapshot.find((g) => g.id === trackedAttentionGate) ?? deps.store.get(trackedAttentionGate);
+      if (row) toClose.set(row.id, row);
+    }
+    for (const [id, row] of toClose) {
+      deps.store.close(id, "abandoned");
+      emitGateClosed({ id, subject: row.subject, kind: row.kind, closedReason: "abandoned" });
+    }
 
     attentionGateByAgent.delete(agentId);
     pendingBlocked.delete(agentId);

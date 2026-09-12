@@ -339,7 +339,11 @@ export interface AgentRecord {
   surface: AgentSurface; sessionId: string;
   model?: string; effort?: string; account?: string;
   label?: string; caller?: string; handle?: string;
-  /** The gate-protocol subject stamped as RT_GATE_SUBJECT at launch (payload.subject, or "agent:<id>" by default), persisted so a resume re-stamps the same one. */
+  /** The gate-protocol subject stamped as RT_GATE_SUBJECT at launch. Left
+      undefined when the caller passed none (RT_GATE_SUBJECT still falls
+      back to "agent:<id>" at launch time); an explicit value is persisted
+      so a resume re-stamps the same one, AND gates whether the gate-fork
+      PreToolUse hook gets injected at all (progressive arming ruling). */
   subject?: string;
   paneId?: string; tabId?: string; workspaceId?: string;
   extraArgs?: string; exitCode?: number; resultPath?: string;

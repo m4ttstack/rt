@@ -6,11 +6,15 @@
  * any spawn; resume always runs under the RECORDED account because claude
  * transcripts are per-cswap-profile.
  *
- * Every launch (start and resume, herdr and headless) also stamps the
- * gate-protocol env (RT_AGENT_ID, RT_GATE_SUBJECT, RT_DAEMON_SOCK) and
- * injects the AskUserQuestion PreToolUse hook via a per-agent `--settings`
- * file (docs/superpowers/specs/2026-09-11-executor-reconciler-design.md
- * "AskUserQuestion hook"); see resolveHookSettingsPath below.
+ * Every launch (start and resume, herdr and headless) stamps the
+ * gate-protocol env (RT_AGENT_ID, RT_GATE_SUBJECT, RT_DAEMON_SOCK)
+ * unconditionally. The AskUserQuestion PreToolUse hook (docs/superpowers/
+ * specs/2026-09-11-executor-reconciler-design.md "AskUserQuestion hook")
+ * only gets injected via a per-agent `--settings` file when the launch
+ * carries an explicit subject (progressive arming ruling: a launch with no
+ * subject has no gate to fork against, so the deny-by-default hook would
+ * only ever degrade to allow -- skip writing it at all); see
+ * resolveHookSettingsPath below.
  */
 
 import { mkdirSync, writeFileSync } from "fs";
@@ -75,17 +79,22 @@ function agentHookSettingsPath(id: string): string {
   return join(rtDir(), "agent-hooks", `${id}.json`);
 }
 
-/** Tokenized the same way claudeArgs splits extraArgs, so a match here is exactly a flag claude will also see. */
+/** Tokenized the same way claudeArgs splits extraArgs, so a match here is exactly a flag claude will also see. Matches both the split ("--settings", "<path>") and "--settings=<path>" spellings. */
 function extraArgsHasSettingsFlag(extraArgs: string | undefined): boolean {
-  return !!extraArgs && extraArgs.split(/\s+/).filter(Boolean).includes("--settings");
+  if (!extraArgs) return false;
+  return extraArgs.split(/\s+/).filter(Boolean).some((tok) => tok === "--settings" || tok.startsWith("--settings="));
 }
 
 /**
  * Absolute path to a freshly written per-agent settings file carrying the
  * AskUserQuestion PreToolUse hook (Task 9), or undefined when injection is
- * skipped. Two skip cases, both non-fatal to the launch: extraArgs already
- * sets --settings (merge is not attempted -- the user's own value wins
- * outright), or gate-fork.sh cannot be resolved on this machine.
+ * skipped. Three skip cases, all non-fatal to the launch: the launch
+ * carries no explicit subject (progressive arming ruling -- with no
+ * subject there is no gate for the hook to check, so it would only ever
+ * degrade to allow; skip writing it rather than ship a no-op hook file),
+ * extraArgs already sets --settings (merge is not attempted -- the user's
+ * own value wins outright), or gate-fork.sh cannot be resolved on this
+ * machine.
  *
  * A launch never emits two --settings flags (repeated-flag semantics are
  * unverified against the real CLI): when this launch would otherwise get
@@ -94,9 +103,15 @@ function extraArgsHasSettingsFlag(extraArgs: string | undefined): boolean {
  * is folded into this SAME file via mergeGateForkHookSettings instead of
  * being emitted as a second flag. lib/agent-argv.ts's claudeArgs skips its
  * inline JSON whenever settingsPath is set, so the fold here is the only
- * place that JSON survives for such a launch.
+ * place that JSON survives for such a launch. A subjectless launch skips
+ * this file entirely, so that inline JSON reverts to riding its own
+ * --settings flag exactly as it did before the gate-fork hook existed.
  */
 function resolveHookSettingsPath(rec: AgentRecord, log: Logger): string | undefined {
+  if (rec.subject === undefined) {
+    log.debug({ id: rec.id }, "agent: no explicit subject; gate-fork hook injection skipped");
+    return undefined;
+  }
   if (extraArgsHasSettingsFlag(rec.extraArgs)) {
     log.debug({ id: rec.id }, "agent: extraArgs already sets --settings; gate-fork hook injection skipped");
     return undefined;
@@ -283,10 +298,14 @@ export function createAgentHandlers(opts: {
         sessionId: crypto.randomUUID(),
         createdAt: Date.now(),
       };
-      // Always stamped, defaulted, and persisted (not left undefined) so a
-      // later resume re-stamps this SAME value instead of recomputing
-      // "agent:<id>" against an id-only default (see launch()'s gateEnv).
-      rec.subject = payload.subject ?? agentOwner(rec.id);
+      // Left undefined rather than defaulted to "agent:<id>" when the
+      // caller passes no subject (progressive arming ruling): launch()'s
+      // gateEnv still falls back to agentOwner(rec.id) for RT_GATE_SUBJECT,
+      // and that fallback is a pure function of rec.id, so a later resume
+      // recomputing it lands on the exact same value. What DOES change on
+      // this field is whether resolveHookSettingsPath sees an explicit
+      // subject to gate hook injection on.
+      if (payload.subject !== undefined) rec.subject = payload.subject;
       const model = payload.model ?? fromSetting("agent.model", log);
       const effort = payload.effort ?? fromSetting("agent.effort", log);
       const account = payload.account ?? fromSetting("agent.account", log);

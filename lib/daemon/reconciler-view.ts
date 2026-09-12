@@ -105,7 +105,14 @@ export function computeView(input: ViewInput, now: number): ExecutorView[] {
         paneRef = pane.paneRef;
         if (pane.agentStatus === "blocked") {
           state = "blocked";
-        } else if (visibleWorkspaceIds !== null && !visibleWorkspaceIds.has(pane.workspaceId)) {
+        } else if (
+          pane.paneRef.startsWith("bg:") ||
+          (visibleWorkspaceIds !== null && !visibleWorkspaceIds.has(pane.workspaceId))
+        ) {
+          // A resolved bg-server pane is never on-screen for a human to see
+          // (visible-workspace detection is the general form of this and
+          // stays a follow-up -- see the design doc's "Hidden state"), so it
+          // reads "hidden" unconditionally rather than waiting on that.
           state = "hidden";
         } else {
           state = "live";
@@ -114,7 +121,7 @@ export function computeView(input: ViewInput, now: number): ExecutorView[] {
     }
 
     const joinedGates = gatesByAgent.get(rec.id) ?? [];
-    const subject = joinedGates.length > 0 ? joinedGates[0]!.subject : `agent:${rec.id}`;
+    const subject = joinedGates[0]?.subject ?? rec.subject ?? `agent:${rec.id}`;
 
     return {
       agentId: rec.id,

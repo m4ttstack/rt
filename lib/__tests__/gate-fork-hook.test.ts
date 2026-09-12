@@ -118,4 +118,19 @@ describe("scripts/hooks/gate-fork.sh", () => {
     expect(exitCode).toBe(0);
     expect(JSON.parse(stdout.trim()).hookSpecificOutput.permissionDecision).toBe("deny");
   });
+
+  test("an open multi-question gate (multi tiers question with object options, plus a single outcome question) allows", async () => {
+    const questions = [
+      {
+        id: "tiers", label: "Which tiers", multi: true,
+        options: [{ value: "gold", label: "Gold" }, { value: "silver", label: "Silver" }],
+      },
+      { id: "outcome", label: "Outcome", multi: false, options: ["approve", "reject"] },
+    ];
+    const mine = gateRow("open", { id: "g1", questions });
+    const path = pathWithStubRt(JSON.stringify({ ok: true, gates: [mine], cursor: 0 }), 0);
+    const { stdout, exitCode } = await runHook(path, SUBJECT);
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(stdout.trim())).toEqual(ALLOW);
+  });
 });

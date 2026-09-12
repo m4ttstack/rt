@@ -318,7 +318,10 @@ test("agent:start herdr reserves a handle not held by live presence, passes it a
   const held = AGENT_NAMES[0]!;
   signIn({ sessionId: "s-held", baseHandle: held, cwd: "/tmp/held" }, h.db);
 
-  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr" });
+  // An explicit subject: the merged-file/hook-injection shape this test
+  // pins only applies when the launch carries one (progressive arming
+  // ruling -- see the dedicated subjectless tests below).
+  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr", subject: "mr:test/1" });
   expect(res.ok).toBe(true);
   if (!res.ok) throw new Error("unreachable");
   expect(res.data.handle).toBeTruthy();
@@ -381,16 +384,19 @@ test("agent:start passes env into the pane command", async () => {
 
 // This default herdr start reserves a handle (no explicit handle passed),
 // so it also pins the merged-file shape: crossSessionInbound and the hook
-// block share one file behind one --settings flag, never two.
+// block share one file behind one --settings flag, never two. An explicit
+// subject is required for the hook half of that merge (progressive arming
+// ruling); see the dedicated subjectless tests below for the no-subject case.
 test("agent:start herdr stamps gate env and injects the gate-fork hook via --settings, merged with the reserved handle's inbound-accept settings", async () => {
   const calls: string[][] = [];
   const h = fresh({ runner: okRunner(calls) });
-  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr" });
+  const subject = "mr:test/2";
+  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr", subject });
   expect(res.ok).toBe(true);
   if (!res.ok) throw new Error("unreachable");
   const cmd = calls.find((c) => c[0] === "pane" && c[1] === "run")?.[3] ?? "";
   expect(cmd).toContain(`RT_AGENT_ID='${res.data.id}'`);
-  expect(cmd).toContain(`RT_GATE_SUBJECT='agent:${res.data.id}'`);
+  expect(cmd).toContain(`RT_GATE_SUBJECT='${subject}'`);
   expect(cmd).toContain(`RT_DAEMON_SOCK='${DAEMON_SOCK_PATH}'`);
   expect(cmd.match(/--settings'/g)).toHaveLength(1);
   expect(cmd).not.toContain('{"crossSessionInbound":"accept"}');
@@ -414,16 +420,51 @@ test("agent:start headless argv carries --settings for the gate-fork hook; spawn
       return { exited: Promise.resolve(0), stdout: async () => "{}" };
     },
   });
-  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", surface: "headless", prompt: "go" });
+  const subject = "mr:test/3";
+  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", surface: "headless", prompt: "go", subject });
   expect(res.ok).toBe(true);
   if (!res.ok) throw new Error("unreachable");
   expect(spawnEnv.RT_AGENT_ID).toBe(res.data.id);
-  expect(spawnEnv.RT_GATE_SUBJECT).toBe(`agent:${res.data.id}`);
+  expect(spawnEnv.RT_GATE_SUBJECT).toBe(subject);
   expect(spawnEnv.RT_DAEMON_SOCK).toBe(DAEMON_SOCK_PATH);
   const idx = argv.indexOf("--settings");
   expect(idx).toBeGreaterThan(-1);
   const parsed = JSON.parse(readFileSync(argv[idx + 1]!, "utf8"));
   expect(parsed.hooks.PreToolUse[0].hooks[0].command).toMatch(/gate-fork\.sh$/);
+});
+
+// Progressive arming ruling: a launch with no explicit subject gets no gate-
+// fork hook at all -- there is no gate for the hook to check, so it would
+// only ever degrade to allow. Env vars still stamp (RT_GATE_SUBJECT falls
+// back to "agent:<id>"), and the reserved-handle inline JSON reverts to
+// riding its own bare --settings flag instead of being folded into a file.
+test("agent:start herdr with no explicit subject skips gate-fork hook injection entirely", async () => {
+  const calls: string[][] = [];
+  const h = fresh({ runner: okRunner(calls) });
+  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr" });
+  expect(res.ok).toBe(true);
+  if (!res.ok) throw new Error("unreachable");
+  const cmd = calls.find((c) => c[0] === "pane" && c[1] === "run")?.[3] ?? "";
+  expect(cmd).toContain(`RT_AGENT_ID='${res.data.id}'`);
+  expect(cmd).toContain(`RT_GATE_SUBJECT='agent:${res.data.id}'`);
+  expect(cmd).not.toContain("agent-hooks");
+  expect(cmd).not.toContain("gate-fork");
+  expect(cmd).toContain('--settings\' \'{"crossSessionInbound":"accept"}\'');
+});
+
+test("agent:start headless with no explicit subject skips gate-fork hook injection entirely (no --settings at all)", async () => {
+  let argv: string[] = [];
+  const h = fresh({
+    spawn: (a: string[]) => {
+      argv = a;
+      return { exited: Promise.resolve(0), stdout: async () => "{}" };
+    },
+  });
+  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", surface: "headless", prompt: "go" });
+  expect(res.ok).toBe(true);
+  if (!res.ok) throw new Error("unreachable");
+  expect(argv).not.toContain("--settings");
+  expect(argv.join(" ")).not.toContain("gate-fork");
 });
 
 test("agent:resume re-stamps the same gate env, preserving a custom subject", async () => {
@@ -452,12 +493,31 @@ test("agent:start rejects an empty subject", async () => {
 
 // extraArgs carrying its own --settings wins outright: merge is not
 // attempted, so hook injection is skipped rather than risk clobbering it.
+// An explicit subject is set so this exercises the extraArgs skip path
+// specifically, not the (also-skipping) no-subject path above.
 test("agent:start with extraArgs carrying --settings skips gate-fork hook injection", async () => {
   const calls: string[][] = [];
   const h = fresh({ runner: okRunner(calls) });
   const res = await h["agent:start"]({
-    repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr",
+    repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr", subject: "mr:test/4",
     extraArgs: "--settings /custom/settings.json",
+  });
+  expect(res.ok).toBe(true);
+  const cmd = calls.find((c) => c[0] === "pane" && c[1] === "run")?.[3] ?? "";
+  expect(cmd).toContain("/custom/settings.json");
+  expect(cmd).not.toContain("agent-hooks");
+});
+
+// The "--settings=<path>" spelling (one token, no space) must be recognized
+// too, or a caller using it would get gate-fork hook injection folded in on
+// top of their own --settings, contrary to the "user's own value wins
+// outright" rule the space-separated spelling already gets.
+test("agent:start with extraArgs carrying --settings=<path> also skips gate-fork hook injection", async () => {
+  const calls: string[][] = [];
+  const h = fresh({ runner: okRunner(calls) });
+  const res = await h["agent:start"]({
+    repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr", subject: "mr:test/5",
+    extraArgs: "--settings=/custom/settings.json",
   });
   expect(res.ok).toBe(true);
   const cmd = calls.find((c) => c[0] === "pane" && c[1] === "run")?.[3] ?? "";

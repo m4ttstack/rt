@@ -241,6 +241,109 @@ describe("reconciler.clear", () => {
   });
 });
 
+describe("reconciler recovery close survives a restart", () => {
+  test("an attention gate opened before a restart closes resolved once a FRESH reconciler sweeps a live pane", async () => {
+    const { row: attn } = store.open({
+      subject: `agent:${agentId}`, kind: "pane-attention", questions: qs(),
+      meta: { agentId, paneRef: "w1:p1", reason: "blocked" },
+    });
+    // A brand-new reconciler sharing the same store but none of the first
+    // one's in-memory maps -- simulates exactly what a daemon restart
+    // leaves behind: the gate row persists, nothing in memory does.
+    const restarted = createReconciler({
+      store, listAgents: () => agentsList, snapshot: async () => panesValue,
+      peek: async () => peekText, emit: () => {}, injectEscape: async () => ({ ok: false, error: "n/a" }),
+      resumeAgent: async () => ({ ok: true }), log,
+    });
+    panesValue = [buildPane({ agentStatus: "idle" })];
+    await restarted.sweep();
+
+    const row = store.get(attn.id)!;
+    expect(row.status).toBe("closed");
+    expect(row.closedReason).toBe("resolved");
+  });
+});
+
+describe("reconciler clears a stale executor stamp on recovery", () => {
+  test("a gate's executor stamp goes gone -> unset once its agent reads live again", async () => {
+    const { row: openGate } = store.open({ subject: "run:stale", kind: "clarify", questions: qs(), nudge: { session: "s-1" } });
+    panesValue = [];
+    await reconciler.sweep();
+    await reconciler.sweep();
+    expect(store.get(openGate.id)!.executor).toBe("gone");
+
+    panesValue = [buildPane({ agentStatus: "idle" })];
+    await reconciler.sweep();
+    expect(store.get(openGate.id)!.executor).toBeUndefined();
+  });
+});
+
+describe("reconciler status: since (onset) tracking", () => {
+  test("since stays the onset time while state is unchanged; a state change updates it", async () => {
+    panesValue = [buildPane({ agentStatus: "idle" })];
+    await reconciler.sweep();
+    const firstSince = reconciler.status().executors[0]!.since;
+
+    await new Promise((r) => setTimeout(r, 2));
+    await reconciler.sweep();
+    expect(reconciler.status().executors[0]!.since).toBe(firstSince);
+
+    await new Promise((r) => setTimeout(r, 2));
+    panesValue = [buildPane({ agentStatus: "blocked" })];
+    await reconciler.sweep();
+    const secondSince = reconciler.status().executors[0]!.since;
+    expect(secondSince).not.toBe(firstSince);
+
+    await new Promise((r) => setTimeout(r, 2));
+    await reconciler.sweep();
+    expect(reconciler.status().executors[0]!.since).toBe(secondSince);
+  });
+});
+
+describe("reconciler emits gate lifecycle events for attention gates", () => {
+  test("opening an attention gate emits gate/opened/<id> in the handlers/gate.ts shape, with an origin stamp", async () => {
+    panesValue = [buildPane({ agentStatus: "blocked" })];
+    await reconciler.sweep();
+    await reconciler.sweep();
+    const [row] = attentionGates();
+    const opened = emitted.find((e) => e.topic === `gate/opened/${row!.id}`);
+    expect(opened).toBeDefined();
+    expect(opened!.payload).toMatchObject({
+      id: row!.id, subject: row!.subject, kind: "pane-attention",
+      questions: row!.questions, meta: row!.meta, paneId: row!.pane,
+      label: "pane-attention", context: row!.context, owner: row!.owner,
+    });
+    expect(opened!.payload["origin"]).toMatchObject({ paneId: "w1:p1", worktree: "/wt/a" });
+  });
+
+  test("recovery close emits gate/closed/<id> with reason resolved", async () => {
+    panesValue = [buildPane({ agentStatus: "blocked" })];
+    await reconciler.sweep();
+    await reconciler.sweep();
+    const [row] = attentionGates();
+    emitted.length = 0;
+
+    panesValue = [buildPane({ agentStatus: "idle" })];
+    await reconciler.sweep();
+    const closed = emitted.find((e) => e.topic === `gate/closed/${row!.id}`);
+    expect(closed).toBeDefined();
+    expect(closed!.payload).toMatchObject({ id: row!.id, subject: row!.subject, kind: "pane-attention", reason: "resolved" });
+  });
+
+  test("clear() emits gate/closed/<id> with reason abandoned for a closed attention gate", async () => {
+    panesValue = [buildPane({ agentStatus: "blocked" })];
+    await reconciler.sweep();
+    await reconciler.sweep();
+    const [row] = attentionGates();
+    emitted.length = 0;
+
+    reconciler.clear(agentId);
+    const closed = emitted.find((e) => e.topic === `gate/closed/${row!.id}`);
+    expect(closed).toBeDefined();
+    expect(closed!.payload).toMatchObject({ id: row!.id, subject: row!.subject, kind: "pane-attention", reason: "abandoned" });
+  });
+});
+
 describe("reconciler.executorFor", () => {
   test("returns unknown before any sweep has run", () => {
     const fresh = createReconciler({
