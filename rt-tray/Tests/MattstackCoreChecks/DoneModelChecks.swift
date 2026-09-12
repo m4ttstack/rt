@@ -37,14 +37,35 @@ let doneModelChecks: [Check] = [
             c.expectEqual(m.headline, "One step left before you finish")
         }
     },
-    Check("a failed post-install refresh keeps the gate closed") { c in
-        final class Boom: PlanSource, @unchecked Sendable { func fetchPlan() async throws -> Plan { throw FakePlansExhausted() } }
-        let readiness = await MainActor.run { ReadinessModel(plans: Boom(), permissions: FakePermissions(), ticker: FakeTicker()) }
+    Check("a failed post-install refresh fails open: the error is shown, Finish is enabled, and Try again re-checks and closes the gate on success") { c in
+        final class BoomOnce: PlanSource, @unchecked Sendable {
+            var n = 0
+            func fetchPlan() async throws -> Plan {
+                n += 1
+                if n == 1 { throw RtClientError.exited(1, stderr: "boom") }
+                return makeManualPlan(extensionStatus: .needsYou)
+            }
+        }
+        let readiness = await MainActor.run { ReadinessModel(plans: BoomOnce(), permissions: FakePermissions(), ticker: FakeTicker()) }
         let m = await MainActor.run { DoneModel(readiness: readiness, waivers: WaiverClient(rt: ScriptedRt(), readiness: readiness)) }
+        await MainActor.run {
+            c.expectEqual(m.refreshFailed, false, "nothing has failed before the first check")
+            c.expectEqual(m.finishEnabled, false, "in flight is closed")
+        }
         await m.checkPostInstall()
         await MainActor.run {
             c.expectEqual(m.hasCheckedSincePostInstall, false)
-            c.expectEqual(m.finishEnabled, false)
+            c.expectEqual(m.refreshFailed, true)
+            c.expect(m.refreshError?.contains("boom") == true, "the error is what the screen shows next to Try again")
+            c.expectEqual(m.finishEnabled, true, "a gate that could not be evaluated must never strand the wizard")
+            c.expectEqual(m.blockedRows.map(\.id), [])
+        }
+        await m.retryCheck()
+        await MainActor.run {
+            c.expectEqual(m.refreshFailed, false)
+            c.expectEqual(m.hasCheckedSincePostInstall, true)
+            c.expectEqual(m.blockedRows.map(\.id), ["tool.fast-browser-extension"])
+            c.expectEqual(m.finishEnabled, false, "a fresh plan that names a blocker closes the gate again")
         }
     },
     Check("no blockers after the check: Finish enabled, headline reads as installed") { c in
