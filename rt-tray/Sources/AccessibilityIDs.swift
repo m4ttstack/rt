@@ -67,6 +67,15 @@ enum AXID {
     static func doneStillToDoRow(_ id: String) -> String { "setup.done.stillToDo.\(id)" }
     static func doneStillToDoRowStatus(_ id: String) -> String { "setup.done.stillToDo.\(id).status" }
     static func doneStillToDoRowAction(_ id: String) -> String { "setup.done.stillToDo.\(id).action" }
+    static let doneBeforeYouFinish = "setup.done.beforeYouFinish"
+    static func doneBeforeYouFinishRow(_ id: String) -> String { "setup.done.beforeYouFinish.\(id)" }
+    static func doneBeforeYouFinishRowStatus(_ id: String) -> String { "setup.done.beforeYouFinish.\(id).status" }
+    static func doneBeforeYouFinishRowAction(_ id: String) -> String { "setup.done.beforeYouFinish.\(id).action" }
+    static func doneSkipRow(_ id: String) -> String { "setup.done.skip.\(id)" }
+    static let doneSkipConfirm = "setup.done.skipConfirm"
+    static let doneSkipConfirmSkip = "setup.done.skipConfirm.skip"
+    static let doneSkipConfirmCancel = "setup.done.skipConfirm.cancel"
+    static let doneSkipConfirmError = "setup.done.skipConfirm.error"
 
     // Settings
     static func settingsTab(_ pane: String) -> String { "settings.tab.\(pane)" }

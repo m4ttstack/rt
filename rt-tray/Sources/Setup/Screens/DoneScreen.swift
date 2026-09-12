@@ -2,23 +2,19 @@ import SwiftUI
 import MattstackCore
 
 struct DoneScreen: View {
+    @ObservedObject var model: DoneModel
     @ObservedObject var install: InstallRunModel
     @ObservedObject var readiness: ReadinessModel
     let isOwner: Bool
     let onInvite: () -> Void
     @State private var steps: (title: String, steps: [String])?
-    /// `readiness.load()` for the checklist screen is never re-run for Done,
-    /// so the model still holds the pre-Install plan until this screen's own
-    /// `.task` fetch lands. Gating on it keeps the pre-Install row count from
-    /// flashing before the post-Install one replaces it.
-    @State private var hasCheckedSincePostInstall = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(spacing: 12) {
                 Image(systemName: headlineSymbol).font(.system(size: 40)).foregroundStyle(headlineTint)
                 VStack(alignment: .leading) {
-                    Text(headline).font(.title3.weight(.semibold))
+                    Text(model.headline).font(.title3.weight(.semibold))
                     Text(verifySummary).foregroundStyle(.secondary)
                 }
             }
@@ -28,9 +24,27 @@ struct DoneScreen: View {
                     LabeledContent("Terminal") { Text("rt — open a new terminal window").font(.system(.body, design: .monospaced)) }
                     LabeledContent("Board") { Link("https://board.mattstack", destination: URL(string: "https://board.mattstack")!) }
                 }
-                if !visibleOutstandingRows.isEmpty {
+                if !model.blockedRows.isEmpty {
+                    Section(FinishGate.beforeYouFinishTitle) {
+                        ForEach(model.blockedRows) { row in
+                            VStack(alignment: .leading, spacing: 6) {
+                                RowView(row: row, isChecking: false, rowID: AXID.doneBeforeYouFinishRow(row.id),
+                                        actionID: AXID.doneBeforeYouFinishRowAction(row.id), statusID: AXID.doneBeforeYouFinishRowStatus(row.id)) { show(row) }
+                                HStack {
+                                    Spacer()
+                                    Button(FinishGate.skipSheetConfirm) { model.requestSkip(row) }
+                                        .controlSize(.small)
+                                        .accessibilityIdentifier(AXID.doneSkipRow(row.id))
+                                }
+                            }
+                        }
+                    }
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier(AXID.doneBeforeYouFinish)
+                }
+                if !model.stillToDoRows.isEmpty {
                     Section("Still to do") {
-                        ForEach(visibleOutstandingRows) { row in
+                        ForEach(model.stillToDoRows) { row in
                             RowView(row: row, isChecking: false, rowID: AXID.doneStillToDoRow(row.id),
                                     actionID: AXID.doneStillToDoRowAction(row.id), statusID: AXID.doneStillToDoRowStatus(row.id)) { show(row) }
                         }
@@ -48,13 +62,7 @@ struct DoneScreen: View {
             Spacer()
         }
         .padding(24)
-        .task {
-            await readiness.recheckAll()
-            // A failed refresh leaves `readiness` holding the stale pre-Install
-            // plan; the gate must stay closed rather than presenting that as
-            // freshly confirmed.
-            if !readiness.lastRefreshFailed { hasCheckedSincePostInstall = true }
-        }
+        .task { await model.checkPostInstall() }
         .sheet(isPresented: Binding(get: { steps != nil }, set: { presented in
             guard !presented else { return }
             steps = nil
@@ -64,6 +72,9 @@ struct DoneScreen: View {
         })) {
             if let steps { StepsSheet(title: steps.title, steps: steps.steps) }
         }
+        .sheet(item: $model.skipTarget) { _ in
+            SkipConfirmSheet(model: model)
+        }
         // .contain: without it, the plain HStack's buttons (Open the board,
         // Invite teammates…) report THIS screen-level identifier instead of
         // their own -- same fix as InstallScreen's stepRow and ChecklistScreen.
@@ -71,11 +82,14 @@ struct DoneScreen: View {
         .accessibilityIdentifier(AXID.doneScreen)
     }
 
-    private var visibleOutstandingRows: [PlanRow] { hasCheckedSincePostInstall ? readiness.outstandingManualRows : [] }
-    private var outstanding: Int { visibleOutstandingRows.count }
-    private var headline: String { outstanding == 0 ? "Everything's working" : "Installed, with \(outstanding) step\(outstanding == 1 ? "" : "s") left for you" }
-    private var headlineSymbol: String { outstanding == 0 ? "checkmark.seal.fill" : "checkmark.seal" }
-    private var headlineTint: Color { outstanding == 0 ? .green : .accentColor }
+    private var headlineSymbol: String {
+        if !model.blockedRows.isEmpty { return "exclamationmark.triangle" }
+        return model.stillToDoRows.isEmpty ? "checkmark.seal.fill" : "checkmark.seal"
+    }
+    private var headlineTint: Color {
+        if !model.blockedRows.isEmpty { return .yellow }
+        return model.stillToDoRows.isEmpty ? .green : .accentColor
+    }
 
     private func show(_ row: PlanRow) {
         guard let action = row.action else { return }
@@ -104,5 +118,34 @@ struct DoneScreen: View {
             return
         }
         NSWorkspace.shared.open(URL(string: "https://board.mattstack")!)
+    }
+}
+
+/// Confirms a Skip for now with the cost stated. Buttons are driven by
+/// their wording from the VM walkthrough, so the labels are the contract.
+struct SkipConfirmSheet: View {
+    @ObservedObject var model: DoneModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(FinishGate.skipSheetTitle).font(.headline)
+            Text(FinishGate.skipSheetBody).fixedSize(horizontal: false, vertical: true)
+            if let e = model.skipError {
+                Text(e).font(.caption).foregroundStyle(.red).accessibilityIdentifier(AXID.doneSkipConfirmError)
+            }
+            HStack {
+                Spacer()
+                Button(FinishGate.skipSheetCancel) { model.cancelSkip() }
+                    .keyboardShortcut(.cancelAction)
+                    .disabled(model.isSkipping)
+                    .accessibilityIdentifier(AXID.doneSkipConfirmCancel)
+                Button(FinishGate.skipSheetConfirm, role: .destructive) { Task { await model.confirmSkip() } }
+                    .disabled(model.isSkipping)
+                    .accessibilityIdentifier(AXID.doneSkipConfirmSkip)
+            }
+        }
+        .padding(20).frame(width: 440)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(AXID.doneSkipConfirm)
     }
 }

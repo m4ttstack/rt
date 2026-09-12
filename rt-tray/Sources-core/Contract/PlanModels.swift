@@ -125,12 +125,32 @@ public struct PlanRow: Codable, Equatable, Identifiable, Sendable {
     public var detail: String?
     public var action: RowAction?
     public var recheck: RecheckPolicy
+    /// Blocks the wizard's Finish (never Install) until ready, skipped, or
+    /// waived on this Mac.
+    public var finishGated: Bool
     public init(id: String, kind: RowKind, title: String, why: String, required: Bool,
                 optionalNote: String? = nil, status: RowStatus, detail: String? = nil,
-                action: RowAction? = nil, recheck: RecheckPolicy) {
+                action: RowAction? = nil, recheck: RecheckPolicy, finishGated: Bool = false) {
         self.id = id; self.kind = kind; self.title = title; self.why = why; self.required = required
         self.optionalNote = optionalNote; self.status = status; self.detail = detail
-        self.action = action; self.recheck = recheck
+        self.action = action; self.recheck = recheck; self.finishGated = finishGated
+    }
+    /// `finishGated` is newer than the rest of the contract: an rt that
+    /// predates it omits the key, and that must read as "not gated" rather
+    /// than fail the whole plan.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        kind = try c.decode(RowKind.self, forKey: .kind)
+        title = try c.decode(String.self, forKey: .title)
+        why = try c.decode(String.self, forKey: .why)
+        required = try c.decode(Bool.self, forKey: .required)
+        optionalNote = try c.decodeIfPresent(String.self, forKey: .optionalNote)
+        status = try c.decode(RowStatus.self, forKey: .status)
+        detail = try c.decodeIfPresent(String.self, forKey: .detail)
+        action = try c.decodeIfPresent(RowAction.self, forKey: .action)
+        recheck = try c.decode(RecheckPolicy.self, forKey: .recheck)
+        finishGated = try c.decodeIfPresent(Bool.self, forKey: .finishGated) ?? false
     }
 }
 
@@ -148,9 +168,23 @@ public struct Plan: Codable, Equatable, Sendable {
     public var groups: [PlanGroup]
     public var canInstall: Bool
     public var requiredMissing: [String]
+    /// Finish-gated rows that are neither ready, skipped, nor waived on this
+    /// Mac; the wizard's Finish and the window's close buttons wait on it.
+    public var finishBlockedBy: [String]
     public init(contract: Int = 1, at: String, team: TeamInfo, groups: [PlanGroup],
-                canInstall: Bool, requiredMissing: [String]) {
+                canInstall: Bool, requiredMissing: [String], finishBlockedBy: [String] = []) {
         self.contract = contract; self.at = at; self.team = team; self.groups = groups
-        self.canInstall = canInstall; self.requiredMissing = requiredMissing
+        self.canInstall = canInstall; self.requiredMissing = requiredMissing; self.finishBlockedBy = finishBlockedBy
+    }
+    /// Same rule as `PlanRow.finishGated`: an older rt omits the key.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        contract = try c.decode(Int.self, forKey: .contract)
+        at = try c.decode(String.self, forKey: .at)
+        team = try c.decode(TeamInfo.self, forKey: .team)
+        groups = try c.decode([PlanGroup].self, forKey: .groups)
+        canInstall = try c.decode(Bool.self, forKey: .canInstall)
+        requiredMissing = try c.decode([String].self, forKey: .requiredMissing)
+        finishBlockedBy = try c.decodeIfPresent([String].self, forKey: .finishBlockedBy) ?? []
     }
 }

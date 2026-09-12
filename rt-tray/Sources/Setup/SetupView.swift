@@ -6,6 +6,7 @@ struct SetupView: View {
     @ObservedObject var team: TeamChoiceModel
     @ObservedObject var readiness: ReadinessModel
     @ObservedObject var install: InstallRunModel
+    @ObservedObject var done: DoneModel
     let permissions: PermissionsService
     let env: SetupEnvironment
     let onFinish: () -> Void
@@ -22,7 +23,7 @@ struct SetupView: View {
                 case .team: TeamScreen(model: team).transition(pushTransition)
                 case .checklist: ChecklistScreen(model: readiness, permissions: permissions, rt: env.rt).transition(pushTransition)
                 case .install: InstallScreen(model: install).transition(pushTransition)
-                case .done: DoneScreen(install: install, readiness: readiness, isOwner: team.choice == .create, onInvite: { NotificationCenter.default.post(name: .rtShowSettingsTeam, object: nil) }).transition(pushTransition)
+                case .done: DoneScreen(model: done, install: install, readiness: readiness, isOwner: team.choice == .create, onInvite: { NotificationCenter.default.post(name: .rtShowSettingsTeam, object: nil) }).transition(pushTransition)
                 }
             }
             .animation(.easeInOut(duration: 0.22), value: flow.step)
@@ -58,6 +59,9 @@ struct SetupView: View {
             flow.isInstalling = (phase == .running)
             if flow.step == .install, phase == .succeeded { flow.next() }
         }
+        // The window controller observes only the flow, so the gate is
+        // mirrored there for the titlebar's close and minimize buttons.
+        .onChange(of: readiness.finishBlockedBy, initial: true) { _, ids in flow.finishBlockedBy = ids }
     }
 
     private var pushTransition: AnyTransition {
@@ -104,7 +108,7 @@ struct SetupView: View {
         case .team: return team.canContinue
         case .checklist: return readiness.canInstall
         case .install: return install.phase == .succeeded
-        case .done: return true
+        case .done: return done.finishEnabled
         }
     }
 
