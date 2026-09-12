@@ -269,6 +269,11 @@ body {
      cuts line 3 instead of growing the row: keep this sum current. */
   --row-h: 114px;
   --orange: light-dark(#b15c00, #ff9e64);
+  /* The gutter markers are drawn shapes, not the kit's glyphs, so the stack
+     rail can meet them at their true center and edge; the rail math below
+     reads both sizes. */
+  --dot-size: 8px;
+  --check-size: 13px;
 }
 .tui-row {
   display: grid;
@@ -345,8 +350,35 @@ body {
 .tui-row-body {
   min-width: 0;
 }
+/* The kit renders the dot as a text glyph with an optical nudge; a glyph's
+   ink lands where the font puts it, so the board draws the circle itself
+   and the rail can hit its center. */
 .tui-row [data-part='statusdot-dot'] {
-  font-size: 10px;
+  display: block;
+  width: var(--dot-size);
+  height: var(--dot-size);
+  border-radius: 50%;
+  background: var(--sd-color);
+  font-size: 0;
+  top: 0;
+}
+/* Same for the checkbox: the kit's box glyph becomes a drawn square, the
+   design's 13px with a 1.5px stroke; checked fills it with a card-colored
+   inset ring. */
+.tui-row-pick > [data-part='selectbox'] {
+  font-size: 0;
+}
+.tui-row-pick > [data-part='selectbox']::before {
+  content: '';
+  box-sizing: border-box;
+  width: var(--check-size);
+  height: var(--check-size);
+  border: 1.5px solid currentColor;
+  border-radius: 1.5px;
+}
+.tui-row-pick > [data-part='selectbox'][data-checked]::before {
+  background: currentColor;
+  box-shadow: inset 0 0 0 2px var(--card);
 }
 
 /* Line 0: the lead. Identity (author or ticket) comes first, then the
@@ -1600,7 +1632,7 @@ body {
   width: 2px;
   background: var(--stack-rail);
   left: calc(50% - 1px);
-  top: var(--pick-h);
+  top: calc((var(--pick-h) + var(--dot-size)) / 2);
   bottom: calc(-1 * var(--pick-below));
 }
 /* Children: the rail continues at the parent's dot x, which in the nested
@@ -1629,8 +1661,15 @@ body {
   height: 2px;
   background: var(--stack-rail);
   left: calc(var(--dot-x) - var(--stack-indent) - 1px);
-  width: calc(var(--stack-indent) + 1px);
+  width: calc(var(--stack-indent) + 1px - var(--dot-size) / 2);
   top: calc(var(--pick-h) / 2 - 1px);
+}
+/* The arm ends at whichever marker is showing: the dot at rest, the wider
+   checkbox under the pointer or while a selection exists. */
+.tui-row-nested:hover .tui-row-pick::after,
+.tui-row-nested .tui-row-pick:focus-within::after,
+.tui-rows[data-selecting] .tui-row-nested .tui-row-pick::after {
+  width: calc(var(--stack-indent) + 1px - var(--check-size) / 2);
 }
 
 /* review gate card: the questions a review pane opened on this row, answered
