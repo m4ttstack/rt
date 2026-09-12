@@ -106,7 +106,7 @@ function wireCycle(): Wiring {
   // fire (an empty branch list would short-circuit refreshAllMRs entirely and
   // make FLAKY look clean, defeating the test).
   spyOn(gitAsync, "listWorktreesAsync").mockImplementation(async (repoPath: string) => [
-    { path: repoPath, branch: `wt-${repoPath}`, isBare: false },
+    { path: repoPath, branch: `wt-${repoPath}`, headSha: null, isBare: false },
   ]);
   spyOn(gitAsync, "listWorktreeRootsAsync").mockResolvedValue([]);
 
