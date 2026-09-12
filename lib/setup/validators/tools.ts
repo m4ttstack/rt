@@ -279,12 +279,15 @@ const FAST_BROWSER_LOAD_STEPS: Action = {
   steps: ["Open chrome://extensions", "Turn on Developer mode", "Load unpacked → ~/.fast-browser/extension/current/unpacked", ...PAIRING_STEPS],
 };
 const FAST_BROWSER_PAIR_STEPS: Action = { type: "steps", label: "Show steps…", steps: PAIRING_STEPS };
+/** A doctor report this build cannot read blocks Finish like any other non-ready state, so the row carries its own way out rather than leaving Skip for now as the only affordance. */
+const FAST_BROWSER_RECHECK: Action = { type: "run", label: "Re-check", verb: ["setup", "status"] };
+const DOCTOR_CHECK_MISSING_REMEDY = "update Fast Browser, then Re-check";
 
 /**
- * Never gates Install in any Chrome state. Loading an unpacked extension is a
- * Chrome step rt cannot perform: fast-browser ships no CRX and has no Web
- * Store listing, and Chrome's unattended paths accept neither an unpacked
- * directory nor a signing key rt holds. The Done screen names it instead.
+ * Never gates Install in any Chrome state: loading an unpacked extension is a
+ * Chrome step rt cannot perform, and nothing on the checklist can create the
+ * extension directory before Install does. It gates Finish instead
+ * (`finishGated`), unless the user waives it on this Mac.
  */
 function fastBrowserExtensionRow(p: Probes, probe: FastBrowserProbe): Row {
   const base = {
@@ -294,6 +297,7 @@ function fastBrowserExtensionRow(p: Probes, probe: FastBrowserProbe): Row {
     why: "Fast Browser drives your real Chrome session through this extension.",
     required: false,
     optionalNote: "You load this into Chrome yourself; Install cannot do it for you.",
+    finishGated: true,
     recheck: "on-activate" as const,
   };
 
@@ -303,7 +307,7 @@ function fastBrowserExtensionRow(p: Probes, probe: FastBrowserProbe): Row {
   if (!probe.doctor) return row({ ...base, status: "skipped", detail: "fast-browser doctor could not be read (see Fast Browser)" });
 
   const extension = checkState(probe.doctor, "extension-loaded");
-  if (extension === "absent") return row({ ...base, status: "error", detail: "fast-browser doctor report has no extension-loaded check" });
+  if (extension === "absent") return row({ ...base, status: "error", detail: `fast-browser doctor report has no extension-loaded check; ${DOCTOR_CHECK_MISSING_REMEDY}`, action: FAST_BROWSER_RECHECK });
   if (extension === "fail") return row({ ...base, status: "needs-you", detail: "not loaded in Chrome", action: FAST_BROWSER_LOAD_STEPS });
 
   // Trust doctor's own pairing check rather than a separate rule: pairing
@@ -311,7 +315,7 @@ function fastBrowserExtensionRow(p: Probes, probe: FastBrowserProbe): Row {
   // documented default, so a loaded-but-unpaired manual-mode machine is not
   // an outstanding step.
   const pairing = checkState(probe.doctor, "pairing");
-  if (pairing === "absent") return row({ ...base, status: "error", detail: "fast-browser doctor report has no pairing check" });
+  if (pairing === "absent") return row({ ...base, status: "error", detail: `fast-browser doctor report has no pairing check; ${DOCTOR_CHECK_MISSING_REMEDY}`, action: FAST_BROWSER_RECHECK });
   if (pairing === "fail") return row({ ...base, status: "needs-you", detail: "loaded but not paired", action: FAST_BROWSER_PAIR_STEPS });
   return row({ ...base, status: "ready", detail: "loaded and paired" });
 }

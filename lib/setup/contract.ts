@@ -36,6 +36,10 @@ export interface Row {
   detail: string;
   action: Action | null;
   recheck: Recheck;
+  /** Blocks the wizard's Finish (never Install) until ready, skipped, or waived on this Mac. */
+  finishGated?: boolean;
+  /** Set on a finish-gated row the user skipped on this Mac; the app's Un-skip affordance keys on this, never on the note's wording. */
+  waived?: boolean;
 }
 
 export interface Group {
@@ -59,9 +63,13 @@ export interface Plan {
   groups: Group[];
   canInstall: boolean;
   requiredMissing: string[];
+  finishBlockedBy: string[];
 }
 
 export const GROUP_TITLES: Record<GroupId, string> = { mac: "Your Mac", accounts: "Accounts", access: "Access", tools: "Tools" };
+
+/** The rows that gate Finish. Enumerated here so `rt setup waive` can refuse anything else and offer a picker over the set. */
+export const FINISH_GATED_ROW_IDS: readonly string[] = ["tool.fast-browser-extension"];
 
 export type StepKind = "rt" | "app" | "privileged";
 export type StepState = "pending" | "running" | "done" | "failed" | "skipped";
@@ -120,8 +128,15 @@ export function row(r: Omit<Row, "optionalNote" | "action" | "recheck"> & Partia
   return { optionalNote: null, action: null, recheck: "on-change", ...r };
 }
 
-/** Install enables only when every required row is ready; requiredMissing lists the others in group order. */
-export function finalizePlan(team: TeamRef, groups: Group[], now: Date = new Date()): Plan {
-  const requiredMissing = groups.flatMap((g) => g.rows.filter((r) => r.required && r.status !== "ready").map((r) => r.id));
-  return envelope({ team, groups, canInstall: requiredMissing.length === 0, requiredMissing }, now);
+/** A finish-gated row that is neither ready nor skipped, and not waived on this Mac, blocks Finish. `skipped` means there is nothing to load into, or another row already reports the fault. */
+export function finishBlockers(groups: Group[], waived: readonly string[] = []): string[] {
+  return groups.flatMap((g) =>
+    g.rows.filter((r) => r.finishGated === true && r.status !== "ready" && r.status !== "skipped" && !waived.includes(r.id)).map((r) => r.id),
+  );
+}
+
+/** Install enables only when every required row is ready; requiredMissing lists the others in group order. A finish-gated row is Finish's concern whatever its `required` reads, so it never lands here. */
+export function finalizePlan(team: TeamRef, groups: Group[], now: Date = new Date(), waived: readonly string[] = []): Plan {
+  const requiredMissing = groups.flatMap((g) => g.rows.filter((r) => r.required && !r.finishGated && r.status !== "ready").map((r) => r.id));
+  return envelope({ team, groups, canInstall: requiredMissing.length === 0, requiredMissing, finishBlockedBy: finishBlockers(groups, waived) }, now);
 }

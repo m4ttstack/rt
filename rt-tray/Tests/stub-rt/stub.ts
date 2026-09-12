@@ -21,6 +21,7 @@ function stateBump(key: string): number {
   writeFileSync(join(stateDir, key), String(n));
   return n;
 }
+function stateSet(key: string, n: number): void { writeFileSync(join(stateDir, key), String(n)); }
 function emit(obj: unknown) { process.stdout.write(JSON.stringify({ contract: 1, at, ...(obj as object) }) + "\n"); }
 function fail(code: string, message: string): never { emit({ error: { code, message } }); process.exit(2); }
 async function readStdinJSON(): Promise<Record<string, unknown>> {
@@ -31,6 +32,22 @@ async function readStdinJSON(): Promise<Record<string, unknown>> {
 const row = (id: string, kind: string, title: string, why: string, required: boolean, status: string,
              detail: string | null, action: unknown, recheck = "on-change", optionalNote: string | null = null) =>
   ({ id, kind, title, why, required, optionalNote, status, detail, action, recheck });
+
+// The finish-gate scenario: the one row that gates Finish, rendered the way
+// rt renders it before and after `setup waive`.
+const EXTENSION_ID = "tool.fast-browser-extension";
+const WAIVED_NOTE = "Skipped on this Mac: agents cannot capture screenshots or annotate evidence from your browser. Load it later from Settings.";
+function extensionRow() {
+  const waived = stateGet("waived") > 0;
+  return {
+    ...row(EXTENSION_ID, "tool", "Fast Browser extension", "Fast Browser drives your real Chrome session through this extension.", false,
+           "needs-you", "not loaded in Chrome",
+           { type: "steps", label: "Show steps…", steps: ["Open chrome://extensions", "Turn on Developer mode", "Load unpacked → ~/.fast-browser/extension/current/unpacked"] },
+           "on-activate", waived ? WAIVED_NOTE : "You load this into Chrome yourself; Install cannot do it for you."),
+    finishGated: true,
+    waived,
+  };
+}
 
 function plan(): unknown {
   const fdaCalls = stateBump("plan-calls");
@@ -67,21 +84,24 @@ function plan(): unknown {
   // Scenarios other than perm-denied-then-granted are installable out of the box so
   // flows can reach Install without connecting anything; perm-denied-then-granted
   // gates only on perm.fda so the second plan() call can flip canInstall to true.
-  const installableScenario = ["join-happy", "create-happy", "apply-fail-retry", "restore", "uninstall", "perm-denied-then-granted"].includes(scenario);
+  const installableScenario = ["join-happy", "create-happy", "apply-fail-retry", "restore", "uninstall", "perm-denied-then-granted", "finish-gate"].includes(scenario);
   // accounts[0] and tools[1] are the fixed literal elements built above — non-null
   // is safe, not a runtime guess.
   if (installableScenario) { accounts[0]!.status = "ready"; accounts[0]!.detail = "token can see group acme"; tools[1]!.status = "ready"; tools[1]!.detail = "extension loaded"; }
+  const gated = scenario === "finish-gate" ? [extensionRow()] : [];
   const requiredMissing = [...mac, ...accounts, ...access, ...tools].filter((r) => r.required && r.status !== "ready").map((r) => r.id);
+  const finishBlockedBy = gated.filter((r) => !r.waived).map((r) => r.id);
   return {
     team: { slug: "acme", name: "Acme", mode },
     groups: [
       { id: "mac", title: "Your Mac", rows: mac },
       { id: "accounts", title: "Accounts", rows: accounts },
       { id: "access", title: "Access", rows: access },
-      { id: "tools", title: "Tools", rows: tools },
+      { id: "tools", title: "Tools", rows: [...tools, ...gated] },
     ],
     canInstall: requiredMissing.length === 0,
     requiredMissing,
+    finishBlockedBy,
   };
 }
 
@@ -147,6 +167,12 @@ if (a0 === "setup" && (a1 === "plan" || a1 === "status")) emit(plan());
 else if (a0 === "setup" && a1 === "apply") await apply();
 else if (a0 === "setup" && a1 === "github" && a2 === "status") emit({ integration: "github", status: "ready", detail: "gh authenticated as matt", scopesSeen: ["repo", "read:org"], handle: "matt", owners: ["matt", "acme"] });
 else if (a0 === "setup" && a1 === "intent" && a2 === "restore") emit({ ok: true, intent: "restore", repo: args[3] });
+else if (a0 === "setup" && (a1 === "waive" || a1 === "unwaive")) {
+  if (a2 !== EXTENSION_ID) fail("not-finish-gated", `${a2} is not a finish-gated row; finish-gated rows: ${EXTENSION_ID}`);
+  const wasWaived = stateGet("waived") > 0;
+  stateSet("waived", a1 === "waive" ? 1 : 0);
+  emit({ ok: true, id: a2, changed: wasWaived !== (a1 === "waive"), waived: a1 === "waive" ? [a2] : [] });
+}
 else if (a0 === "setup" && a2 === "status") emit({ integration: a1, status: stateGet(`${a1}-connected`) ? "ready" : "missing", detail: null });
 else if (a0 === "setup" && a2 === "connect") {
   const body = await readStdinJSON();

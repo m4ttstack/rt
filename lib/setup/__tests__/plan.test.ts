@@ -1,6 +1,11 @@
 import { describe, test, expect } from "bun:test";
 import { applyInstallSatisfiedFlip, composePlan } from "../plan.ts";
-import { finalizePlan, row, type Group, type Row } from "../contract.ts";
+import { FINISH_GATED_ROW_IDS, finalizePlan, row, type Group, type Row } from "../contract.ts";
+import { WAIVED_NOTE, applyFinishGate } from "../finish-gate.ts";
+import { setSetting } from "../../settings/write.ts";
+import { mkdtempSync, rmSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import { UserActionableError } from "../errors.ts";
 import { writeIntent, type SetupIntent } from "../intent.ts";
 import type { SecretPresence } from "../validators/accounts.ts";
@@ -26,6 +31,14 @@ const readyExec: ExecScript = (argv) => {
   if (argv[0] === "brew") return ok("Homebrew 4.0.0");
   if (argv[0] === "rt") return ok("rt v1.0.0");
   return ok();
+};
+
+/** `readyExec` plus a fast-browser on PATH whose doctor reports the extension not loaded. */
+const fastBrowserNotLoadedExec: ExecScript = (argv) => {
+  if (argv[0] === "/opt/tools/fast-browser" && argv[1] === "doctor") {
+    return ok(JSON.stringify({ schemaVersion: 1, ok: false, checks: [{ id: "runtime-checksum", status: "pass" }, { id: "extension-loaded", status: "fail" }, { id: "pairing", status: "pass" }] }));
+  }
+  return readyExec(argv);
 };
 
 const grantedTray = fakeTray({
@@ -203,11 +216,18 @@ describe("composePlan — install-satisfied flip", () => {
   // The extension is loaded by hand in Chrome, so it must never reach
   // requiredMissing in either mode: status mode is what the verify Install
   // step runs, and a critical failure there would end every successful
-  // install in failure.
-  test("tool.fast-browser-extension never counts against canInstall, in either mode", async () => {
-    const p = fakeProbes({ exec: readyExec, tray: grantedTray });
+  // install in failure. Chrome plus a doctor report that says "not loaded"
+  // is the one shape that makes the row needs-you through the real seams;
+  // without both it reads skipped and the assertion proves nothing.
+  test("tool.fast-browser-extension never counts against canInstall, in either mode, even while status mode reads it required", async () => {
+    const p = fakeProbes({ exec: fastBrowserNotLoadedExec, tray: grantedTray, env: { PATH: "/opt/tools" }, files: { "/opt/tools/fast-browser": "#!/bin/sh" } });
+    p.mkdirp("/Applications/Google Chrome.app");
     for (const mode of ["plan", "status"] as const) {
       const plan = await composePlan({ p, secrets: fakeSecrets(), ci: false, mode, teams: [] });
+      const r = plan.groups.find((g) => g.id === "tools")!.rows.find((r) => r.id === "tool.fast-browser-extension")!;
+      expect(r.status).toBe("needs-you");
+      expect(r.required).toBe(mode === "status");
+      expect(plan.finishBlockedBy).toEqual(["tool.fast-browser-extension"]);
       expect(plan.requiredMissing).not.toContain("tool.fast-browser-extension");
     }
   });
@@ -234,4 +254,125 @@ test("on a machine with no claude, the skipped plugin rows do not block Install 
   ]);
   expect(plan.requiredMissing).toEqual([]);
   expect(plan.canInstall).toBe(true);
+});
+
+function gatedRow(status: Row["status"]): Row {
+  return row({
+    id: "tool.fast-browser-extension",
+    kind: "tool",
+    title: "Fast Browser extension",
+    why: "x",
+    required: false,
+    optionalNote: "You load this into Chrome yourself; Install cannot do it for you.",
+    status,
+    detail: "d",
+    action: { type: "steps", label: "Show steps…", steps: ["Open chrome://extensions"] },
+    finishGated: true,
+  });
+}
+
+function gatedPlan(status: Row["status"], mode: "plan" | "status", waived: string[] = []) {
+  const groups: Group[] = [{ id: "tools", title: "Tools", rows: [gatedRow(status)] }];
+  return finalizePlan({ slug: "acme", name: "Acme", mode: "none" }, applyFinishGate(groups, mode, waived), new Date(), waived);
+}
+
+describe("finish gate", () => {
+  test("the contract names exactly one finish-gated row today", () => {
+    expect([...FINISH_GATED_ROW_IDS]).toEqual(["tool.fast-browser-extension"]);
+  });
+
+  test("a needs-you finish-gated row blocks Finish in both modes and never Install", () => {
+    for (const mode of ["plan", "status"] as const) {
+      const plan = gatedPlan("needs-you", mode);
+      expect(plan.finishBlockedBy).toEqual(["tool.fast-browser-extension"]);
+      expect(plan.requiredMissing).toEqual([]);
+      expect(plan.canInstall).toBe(true);
+    }
+  });
+
+  test("ready and skipped finish-gated rows block nothing", () => {
+    expect(gatedPlan("ready", "status").finishBlockedBy).toEqual([]);
+    expect(gatedPlan("skipped", "status").finishBlockedBy).toEqual([]);
+  });
+
+  test("status mode reads an unwaived finish-gated row as required with no optionalNote; plan mode keeps the validator's shape", () => {
+    const status = gatedPlan("needs-you", "status").groups[0]!.rows[0]!;
+    expect(status.required).toBe(true);
+    expect(status.optionalNote).toBeNull();
+    const planned = gatedPlan("needs-you", "plan").groups[0]!.rows[0]!;
+    expect(planned.required).toBe(false);
+    expect(planned.optionalNote).toBe("You load this into Chrome yourself; Install cannot do it for you.");
+  });
+
+  test("a skipped finish-gated row stays optional in status mode", () => {
+    expect(gatedPlan("skipped", "status").groups[0]!.rows[0]!.required).toBe(false);
+  });
+
+  test("composePlan's envelope carries finishBlockedBy in both modes", async () => {
+    const p = fakeProbes({ exec: readyExec, tray: grantedTray });
+    for (const mode of ["plan", "status"] as const) {
+      const plan = await composePlan({ p, secrets: fakeSecrets(), ci: false, mode, teams: [] });
+      expect(Array.isArray(plan.finishBlockedBy)).toBe(true);
+    }
+  });
+
+  test("a waived finish-gated row reads optional with the skipped-on-this-Mac note, carries waived:true, keeps its status and action, and leaves finishBlockedBy, in both modes", () => {
+    for (const mode of ["plan", "status"] as const) {
+      const plan = gatedPlan("needs-you", mode, ["tool.fast-browser-extension"]);
+      const r = plan.groups[0]!.rows[0]!;
+      expect(r.required).toBe(false);
+      expect(r.waived).toBe(true);
+      expect(r.optionalNote).toBe(WAIVED_NOTE);
+      expect(r.status).toBe("needs-you");
+      expect(r.action?.type).toBe("steps");
+      expect(plan.finishBlockedBy).toEqual([]);
+    }
+  });
+
+  test("an unwaived finish-gated row never carries waived:true, and a row that is not finish-gated never carries the field at all", () => {
+    expect(gatedPlan("needs-you", "status").groups[0]!.rows[0]!.waived).toBeFalsy();
+    const plain = row({ id: "tool.chrome", kind: "tool", title: "Chrome", why: "x", required: false, status: "missing", detail: "d" });
+    const groups: Group[] = [{ id: "tools", title: "Tools", rows: [plain] }];
+    expect("waived" in applyFinishGate(groups, "status", ["tool.chrome"])[0]!.rows[0]!).toBe(false);
+  });
+
+  test("composePlan reads the waiver through the resolver when none is injected", async () => {
+    const prevHome = process.env.HOME;
+    const home = mkdtempSync(join(tmpdir(), "rt-plan-waived-"));
+    process.env.HOME = home;
+    try {
+      setSetting("setup.waived", ["tool.fast-browser-extension"], "machine");
+      const p = fakeProbes({ exec: readyExec, tray: grantedTray });
+      const plan = await composePlan({ p, secrets: fakeSecrets(), ci: false, mode: "status", teams: [] });
+      const r = plan.groups.find((g) => g.id === "tools")!.rows.find((r) => r.id === "tool.fast-browser-extension")!;
+      expect(r.optionalNote).toBe(WAIVED_NOTE);
+      expect(plan.finishBlockedBy).toEqual([]);
+    } finally {
+      process.env.HOME = prevHome;
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test("an injected waived list wins over the store, in both directions", async () => {
+    const prevHome = process.env.HOME;
+    const home = mkdtempSync(join(tmpdir(), "rt-plan-waived-"));
+    process.env.HOME = home;
+    try {
+      const p = fakeProbes({ exec: readyExec, tray: grantedTray });
+      const extension = (plan: Awaited<ReturnType<typeof composePlan>>) => plan.groups.find((g) => g.id === "tools")!.rows.find((r) => r.id === "tool.fast-browser-extension")!;
+
+      setSetting("setup.waived", [], "machine");
+      const injectedWaived = await composePlan({ p, secrets: fakeSecrets(), ci: false, mode: "status", teams: [], waived: ["tool.fast-browser-extension"] });
+      expect(extension(injectedWaived).waived).toBe(true);
+
+      setSetting("setup.waived", ["tool.fast-browser-extension"], "machine");
+      const injectedNone = await composePlan({ p, secrets: fakeSecrets(), ci: false, mode: "status", teams: [], waived: [] });
+      expect(extension(injectedNone).waived).toBeFalsy();
+      const fromStore = await composePlan({ p, secrets: fakeSecrets(), ci: false, mode: "status", teams: [] });
+      expect(extension(fromStore).waived).toBe(true);
+    } finally {
+      process.env.HOME = prevHome;
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
 });

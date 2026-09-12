@@ -12,6 +12,9 @@ struct SettingsView: View {
             PermissionsPane(env: env)
                 .tabItem { Label("Permissions", systemImage: "lock.shield").accessibilityIdentifier(AXID.settingsTab(SettingsPane.permissions.rawValue)) }
                 .tag(SettingsPane.permissions)
+            FastBrowserPane(env: env)
+                .tabItem { Label("Fast Browser", systemImage: "globe").accessibilityIdentifier(AXID.settingsTab(SettingsPane.fastBrowser.rawValue)) }
+                .tag(SettingsPane.fastBrowser)
             TeamPane(env: env)
                 .tabItem { Label("Team", systemImage: "person.3").accessibilityIdentifier(AXID.settingsTab(SettingsPane.team.rawValue)) }
                 .tag(SettingsPane.team)
