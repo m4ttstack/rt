@@ -69,6 +69,13 @@ final class SetupFlowUITests: XCTestCase {
         waitForExpectations(timeout: timeout)
     }
 
+    /// Finish closes the setup window; a click that does nothing would
+    /// otherwise pass, since tearDown terminates the app either way.
+    private func waitUntilGone(_ id: String, _ timeout: TimeInterval = 10) {
+        expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: el(id))
+        waitForExpectations(timeout: timeout)
+    }
+
     /// Welcome through Install for a join scenario whose plan is installable
     /// out of the box, leaving the Done screen on screen.
     private func joinThroughInstall(_ scenario: String) {
@@ -107,6 +114,7 @@ final class SetupFlowUITests: XCTestCase {
         waitUntilEnabled("setup.done.continue")
         XCTAssertFalse(el("setup.done.beforeYouFinish").exists, "join-happy's plan gates nothing")
         el("setup.done.continue").click()
+        waitUntilGone("setup.done.screen")
     }
 
     /// The finish gate end to end: a plan that names the extension row in
@@ -128,6 +136,7 @@ final class SetupFlowUITests: XCTestCase {
         XCTAssertFalse(el("setup.done.beforeYouFinish").exists, "the skipped row left Before you finish")
         XCTAssertFalse(el("setup.done.skipConfirm").exists, "the sheet closed on success")
         el("setup.done.continue").click()
+        waitUntilGone("setup.done.screen")
     }
 
     func testCreateHappyShowsSlugAndReachesChecklist() {
