@@ -6,6 +6,7 @@ import pino from "pino";
 import { createGatesStore, type GatesStore, type GateQuestion } from "../gates-store.ts";
 import { createGatePush, GATE_ANSWERED_PHRASE, GATE_CLOSED_PHRASE, GATE_SUBSCRIPTION_PHRASE } from "../gate-push.ts";
 import { wrapCrossSession } from "../inbox.ts";
+import type { PaneHints } from "../pane-resolve-live.ts";
 
 const log = pino({ level: "silent" });
 
@@ -212,11 +213,11 @@ function w4Harness(opts: { deliverOk?: boolean; injectOk?: boolean; withInjector
     events.push("deliver");
     return opts.deliverOk === false ? { ok: false as const, error: "boom" } : { ok: true as const };
   };
-  const injectEscape = async (paneId: string) => {
-    events.push(`inject:${paneId}`);
+  const injectEscape = async (hints: PaneHints) => {
+    events.push(`inject:${hints.paneId ?? "none"}`);
     return opts.injectOk === false
       ? { ok: false as const, error: "pane_not_found: gone" }
-      : { ok: true as const };
+      : { ok: true as const, paneRef: hints.paneId ?? "resolved-via-session" };
   };
   const push = createGatePush({
     store,
@@ -279,10 +280,10 @@ describe("gate-push escape injection (W4)", () => {
     expect(events).toEqual(["deliver", "inject:pane-9"]);
   });
 
-  test("form with neither origin.paneId nor a top-level pane stays doorbell-only", async () => {
+  test("form with neither origin.paneId nor a top-level pane still attempts escape injection via the session hint", async () => {
     const { push, store, events } = w4Harness();
     await push.onAnswered(answeredFormGate(store, "console", { presentation: "form" }, null));
-    expect(events).toEqual(["deliver"]);
+    expect(events).toEqual(["deliver", "inject:none"]);
   });
 
   test("no injection when the doorbell failed (dead-pane degrades to reconcile-at-next-touch)", async () => {
@@ -360,7 +361,7 @@ describe("gate-push onClosed (supersede/close, W4 final-review M4)", () => {
     }
   });
 
-  test("close: form with no origin.paneId falls back to the top-level pane; no pane at all stays doorbell-only", async () => {
+  test("close: form with no origin.paneId falls back to the top-level pane; no pane at all still attempts injection via session", async () => {
     const { push, store, events } = w4Harness();
     const row = openFormGate(store, { presentation: "form" });
     store.close(row.id, "abandoned");
@@ -371,7 +372,7 @@ describe("gate-push onClosed (supersede/close, W4 final-review M4)", () => {
     const bareRow = openFormGate(bare.store, { presentation: "form" }, null);
     bare.store.close(bareRow.id, "abandoned");
     await bare.push.onClosed(bare.store.get(bareRow.id)!);
-    expect(bare.events).toEqual(["deliver"]);
+    expect(bare.events).toEqual(["deliver", "inject:none"]);
   });
 
   test("no injection when the close doorbell failed (dead-pane degrades to reconcile-at-next-touch)", async () => {
