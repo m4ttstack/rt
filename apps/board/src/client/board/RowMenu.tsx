@@ -9,6 +9,7 @@ import {
   doctorItemLabel,
   getSlackMarks,
   gitlabMenuItems,
+  laneInterrupted,
   nudgeTargets,
   respondItemLabel,
   reviewMenuItems,
@@ -198,6 +199,16 @@ function RowMenu({
 
   const reviewRunning =
     mrx.review?.status === 'queued' || mrx.review?.status === 'reviewing';
+  // Both the focus and relaunch words ride the same 'focus' intent: the
+  // launch route already re-opens a dead pane, the label just stops lying
+  // about which of the two it is about to do.
+  const respondLabel = respondItemLabel(
+    mrx.respond?.status,
+    laneInterrupted(mrx.orphan, mrx.respond)
+  );
+  const respondFocuses =
+    respondLabel === 'focus response tab' ||
+    respondLabel === 'relaunch response pane';
   return (
     // The other half of the pair above: two menus of the same element type at
     // the same position are only distinct instances to React if the keys differ.
@@ -212,7 +223,10 @@ function RowMenu({
 
       {ctx.local && <ContextMenu.Label>agent actions</ContextMenu.Label>}
       {ctx.local &&
-        reviewMenuItems(mrx.review?.status).map(item => (
+        reviewMenuItems(
+          mrx.review?.status,
+          laneInterrupted(mrx.orphan, mrx.review)
+        ).map(item => (
           <ContextMenu.Item
             key={item.kind}
             label={item.label}
@@ -237,18 +251,12 @@ function RowMenu({
       )}
       {ctx.local && canRespond && (
         <ContextMenu.Item
-          label={respondItemLabel(mrx.respond?.status)}
-          hint={
-            respondItemLabel(mrx.respond?.status) === 'focus response tab'
-              ? 'herdr'
-              : paneHint
-          }
+          label={respondLabel}
+          hint={respondFocuses ? 'herdr' : paneHint}
           onClick={
-            respondItemLabel(mrx.respond?.status) === 'focus response tab'
+            respondFocuses
               ? run(() => onRespond(mr, undefined, 'focus'))
-              : paneClick(respondItemLabel(mrx.respond?.status), note =>
-                  onRespond(mr, note)
-                )
+              : paneClick(respondLabel, note => onRespond(mr, note))
           }
         />
       )}

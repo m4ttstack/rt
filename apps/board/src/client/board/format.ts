@@ -474,12 +474,20 @@ function commentCount(mr: BoardMR): number {
 /** The review launch items for a row, by current review state. `re-review` is
     available whenever a review isn't actively running — even with no prior board
     review (it degrades to a generic re-review) — so it covers MRs a human reviewed
-    outside the board. A live review collapses to a single "focus review tab". */
+    outside the board. A live review collapses to a single "focus review tab" —
+    or "relaunch review pane" once the sweep says the pane is gone, since the
+    same focus route re-opens a dead pane and "focus" would undersell it. */
 function reviewMenuItems(
-  status?: ReviewStatus
+  status?: ReviewStatus,
+  interrupted?: boolean
 ): Array<{ kind: 'launch' | 're-review'; label: string }> {
   if (status === 'queued' || status === 'reviewing')
-    return [{ kind: 'launch', label: 'focus review tab' }];
+    return [
+      {
+        kind: 'launch',
+        label: interrupted ? 'relaunch review pane' : 'focus review tab',
+      },
+    ];
   if (status === 'done') return [{ kind: 're-review', label: 're-review' }];
   // none | error: offer a cold first review and the re-review path side by side.
   return [
@@ -488,10 +496,13 @@ function reviewMenuItems(
   ];
 }
 
-function respondItemLabel(status?: RespondStatus): string {
+function respondItemLabel(
+  status?: RespondStatus,
+  interrupted?: boolean
+): string {
   if (!status || status === 'error') return 'respond to review';
   if (status === 'done') return 'restart response';
-  return 'focus response tab';
+  return interrupted ? 'relaunch response pane' : 'focus response tab';
 }
 
 function doctorItemLabel(status?: DoctorStatus): string {

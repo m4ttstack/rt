@@ -192,10 +192,12 @@ function findAttentionGate(
   );
 }
 
-/** A dead/hidden run's own strip: "resume" only appears once an attention
-    gate exists to answer, "clear" is always available (it tombstones the
-    run regardless of whether one ever opened). `stopPropagation` matches
-    GateRowChips: a strip click must not bubble to onRowClick. */
+/** A dead/hidden run's own strip: "relaunch" (the gate's resume option,
+    worn with the verb that says the pane is dead) only appears once an
+    attention gate exists to answer, "clear" is always available (it
+    tombstones the run regardless of whether one ever opened).
+    `stopPropagation` matches GateRowChips: a strip click must not bubble
+    to onRowClick. */
 function OrphanStrip({ mr, ctx }: { mr: BoardMRWithReview; ctx: RowContext }) {
   const orphan = mr.orphan;
   if (!orphan) return null;
@@ -216,7 +218,7 @@ function OrphanStrip({ mr, ctx }: { mr: BoardMRWithReview; ctx: RowContext }) {
           data-orphan-action="resume"
           onClick={() => ctx.onResumeOrphan(attentionGate)}
         >
-          resume
+          relaunch
         </Chip>
       )}
       <Chip

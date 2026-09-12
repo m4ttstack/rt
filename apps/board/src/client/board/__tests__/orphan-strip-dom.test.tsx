@@ -257,9 +257,11 @@ test('an orphan with a queueExtras attention gate renders both resume and clear'
   try {
     const strip = container.querySelector('.tui-orphan-strip');
     expect(strip).not.toBeNull();
-    expect(
-      strip?.querySelector('[data-orphan-action="resume"]')
-    ).not.toBeNull();
+    const resume = strip?.querySelector('[data-orphan-action="resume"]');
+    expect(resume).not.toBeNull();
+    // The verb is "relaunch": the pane is dead, and "resume" is already
+    // taken by the row menu's resume-review/resume-response items.
+    expect(resume?.textContent?.trim()).toBe('relaunch');
     expect(strip?.querySelector('[data-orphan-action="clear"]')).not.toBeNull();
   } finally {
     await React.act(async () => root.unmount());

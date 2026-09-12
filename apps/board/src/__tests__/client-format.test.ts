@@ -11,7 +11,9 @@ import {
   PEER_PHRASE,
   peerState,
   RESPOND_LABEL,
+  respondItemLabel,
   REVIEW_LABEL,
+  reviewMenuItems,
   statusReasons,
 } from '../client/board/format.ts';
 import { respondOutcome } from '../respond-outcome.ts';
@@ -190,4 +192,26 @@ test('laneInterrupted: hidden or missing orphans and missing lanes never cut', (
   expect(laneInterrupted(undefined, { sessionId: 'sess-1' })).toBe(false);
   const gone = { state: 'gone', sessionId: 'sess-1' } as never;
   expect(laneInterrupted(gone, undefined)).toBe(false);
+});
+
+test('reviewMenuItems: an interrupted running review offers relaunch instead of focus', () => {
+  expect(reviewMenuItems('reviewing', true)).toEqual([
+    { kind: 'launch', label: 'relaunch review pane' },
+  ]);
+  expect(reviewMenuItems('queued', true)).toEqual([
+    { kind: 'launch', label: 'relaunch review pane' },
+  ]);
+  // Not running: the flag changes nothing.
+  expect(reviewMenuItems('done', true)).toEqual([
+    { kind: 're-review', label: 're-review' },
+  ]);
+  expect(reviewMenuItems('reviewing')).toEqual([
+    { kind: 'launch', label: 'focus review tab' },
+  ]);
+});
+
+test('respondItemLabel: an interrupted in-flight response offers relaunch', () => {
+  expect(respondItemLabel('implementing', true)).toBe('relaunch response pane');
+  expect(respondItemLabel('implementing')).toBe('focus response tab');
+  expect(respondItemLabel('done', true)).toBe('restart response');
 });
