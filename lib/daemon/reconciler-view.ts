@@ -35,8 +35,9 @@ function normalizeWorktree(p: string): string {
 /** Field-layered fallback, mirroring resolveLivePane's own layering: exact
     paneId, then exact session, then a worktree match that must be unique. */
 function directMatch(gate: GateRow, agents: AgentRecord[]): string | null {
-  if (gate.origin?.paneId) {
-    const hit = agents.find((rec) => rec.paneId === gate.origin!.paneId);
+  const paneId = gate.origin?.paneId || gate.pane;
+  if (paneId) {
+    const hit = agents.find((rec) => rec.paneId === paneId);
     if (hit) return hit.id;
   }
   if (gate.nudge?.session) {
@@ -57,8 +58,9 @@ function directMatch(gate: GateRow, agents: AgentRecord[]): string | null {
     are unreachable, or resolution is ambiguous). */
 export function gateAgentId(gate: GateRow, agents: AgentRecord[], panes: LivePane[] | null): string | null {
   if (panes !== null) {
+    const paneId = gate.origin?.paneId || gate.pane;
     const gateHints: PaneHints = {
-      ...(gate.origin?.paneId ? { paneId: gate.origin.paneId } : {}),
+      ...(paneId ? { paneId } : {}),
       ...(gate.nudge?.session ? { sessionId: gate.nudge.session } : {}),
       ...(gate.origin?.worktree ? { worktree: gate.origin.worktree } : {}),
     };

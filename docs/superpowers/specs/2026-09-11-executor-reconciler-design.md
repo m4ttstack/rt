@@ -252,10 +252,13 @@ owner, not by domain.
 ### Hook contract
 
 PreToolUse, matcher `AskUserQuestion`. Env: `RT_AGENT_ID`,
-`RT_GATE_SUBJECT`, `RT_DAEMON_SOCK`. Exit 0 with `{"decision": "allow"}` or
-`{"decision": "deny", "reason": "<gate-protocol instruction>"}` on stdout
-per the Claude Code hook protocol. The deny reason text is part of the
-contract: it names `rt gate open`, the subject, and the status-bin form.
+`RT_GATE_SUBJECT`, `RT_DAEMON_SOCK`. Exit 0 with the Claude Code hook
+envelope on stdout: `{"hookSpecificOutput": {"hookEventName": "PreToolUse",
+"permissionDecision": "allow"}}` or `{"hookSpecificOutput":
+{"hookEventName": "PreToolUse", "permissionDecision": "deny",
+"permissionDecisionReason": "<gate-protocol instruction>"}}`. The deny
+reason text is part of the contract: it names `rt gate open`, the subject,
+and the status-bin form.
 
 ## Parallel lanes
 

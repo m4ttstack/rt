@@ -437,3 +437,98 @@ describe("gate:answer executor guarantee: no reconciler wired", () => {
     expect(onAnsweredCalls).toHaveLength(1);
   });
 });
+
+describe("gate:answer executor guarantee: rejecting resumeAgent", () => {
+  test("runExecutorGuarantee (gone): a rejecting resumeAgent still stamps unassigned and emits", async () => {
+    const { push } = pushSpy();
+    const { reconciler } = reconcilerStub({ executorState: "gone", agentId: "agent-1" });
+    const resumeAgent = async (): Promise<{ ok: boolean; error?: string }> => { throw new Error("herdr crashed"); };
+    const { handlers, store, emitted } = harness({ push, reconciler, resumeAgent });
+    const row = await openFormGate(store);
+
+    await handlers["gate:answer"]({ id: row.id, answers: { q: "a" }, by: "console" });
+    await flush();
+
+    expect(store.get(row.id)!.execution).toBe("unassigned");
+    expect(emitted.some((e) => e.topic === "reconciler.execution" && (e.payload as any).execution === "unassigned")).toBe(true);
+  });
+
+  test("runAttentionRouting (resume): a rejecting resumeAgent still stamps unassigned and emits", async () => {
+    const { push } = pushSpy();
+    const { reconciler } = reconcilerStub();
+    const resumeAgent = async (): Promise<{ ok: boolean; error?: string }> => { throw new Error("herdr crashed"); };
+    const getAgentRecord = (agentId: string) => (agentId === "agent-9" ? { paneId: "pane-9", sessionId: "sess-9", cwd: "/wt/a" } : undefined);
+    const { handlers, store, emitted } = harness({ push, reconciler, resumeAgent, getAgentRecord });
+    const row = openAttentionGate(store, "agent-9");
+
+    await handlers["gate:answer"]({ id: row.id, answers: { action: "resume" }, by: "board" });
+    await flush();
+
+    expect(store.get(row.id)!.execution).toBe("unassigned");
+    expect(emitted.some((e) => e.topic === "reconciler.execution" && (e.payload as any).execution === "unassigned")).toBe(true);
+  });
+
+  test("single-flight: a rejected relaunch is not retained, a later call for the same gate re-invokes resumeAgent", async () => {
+    let calls = 0;
+    const resumeAgent = async (agentId: string): Promise<{ ok: boolean; error?: string }> => {
+      calls++;
+      if (calls === 1) throw new Error("herdr crashed");
+      return { ok: true };
+    };
+
+    const first = await relaunchExecutor(resumeAgent, "gate-reject-1", "agent-1");
+    expect(first).toEqual({ ok: false, error: "herdr crashed" });
+
+    const second = await relaunchExecutor(resumeAgent, "gate-reject-1", "agent-1");
+    expect(second).toMatchObject({ ok: true });
+    expect(calls).toBe(2);
+  });
+
+  function openAttentionGate(store: GatesStore, agentId = "agent-1"): GateRow {
+    const { row } = store.open({
+      subject: "agent:agent-1", kind: "pane-attention",
+      questions: [{ id: "action", label: "Pane needs attention", multi: false, options: ["focus-pane", "resume", "clear", "dismiss"] }],
+      meta: { agentId, paneRef: "pane-7", reason: "blocked" },
+    });
+    return row;
+  }
+});
+
+describe("gate:answer: push and guarantee are decoupled", () => {
+  test("a throwing push.onAnswered still lets the guarantee run (leave-blocked expectation registered)", async () => {
+    const push: GatePush = {
+      onAnswered: async () => { throw new Error("push transport down"); },
+      onOpened: async () => {},
+      onClosed: async () => {},
+      retryDeadPanes: async () => ({ retried: 0, delivered: 0, gaveUp: 0 }),
+    };
+    const { reconciler, expectCalls } = reconcilerStub({ executorState: "live" });
+    const { handlers, store } = harness({ push, reconciler });
+    const row = await openFormGate(store);
+
+    await handlers["gate:answer"]({ id: row.id, answers: { q: "a" }, by: "console" });
+    await flush();
+
+    expect(expectCalls).toHaveLength(1);
+    expect(expectCalls[0]).toMatchObject({ gateId: row.id, expect: "leave-blocked" });
+  });
+
+  test("a throwing push.onAnswered still lets a gone-executor relaunch run", async () => {
+    const push: GatePush = {
+      onAnswered: async () => { throw new Error("push transport down"); },
+      onOpened: async () => {},
+      onClosed: async () => {},
+      retryDeadPanes: async () => ({ retried: 0, delivered: 0, gaveUp: 0 }),
+    };
+    const { reconciler } = reconcilerStub({ executorState: "gone", agentId: "agent-1" });
+    const resumeCalls: string[] = [];
+    const resumeAgent = async (agentId: string) => { resumeCalls.push(agentId); return { ok: true }; };
+    const { handlers, store } = harness({ push, reconciler, resumeAgent });
+    const row = await openFormGate(store);
+
+    await handlers["gate:answer"]({ id: row.id, answers: { q: "a" }, by: "console" });
+    await flush();
+
+    expect(resumeCalls).toEqual(["agent-1"]);
+  });
+});

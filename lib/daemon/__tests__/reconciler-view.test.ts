@@ -127,6 +127,26 @@ test("blocked wins over a bg: pane's hidden state", () => {
   expect(v!.state).toBe("blocked");
 });
 
+test("gate joins by top-level pane field when origin.paneId is absent (directMatch)", () => {
+  const g = gateRow({ id: "g1", subject: "run:x", pane: "w1:p1" });
+  const rec = agent({ paneId: "w1:p1" });
+  const id = gateAgentId(g, [rec], []);
+  expect(id).toBe("a1");
+});
+
+test("gate with pane set and no origin.paneId joins its agent in computeView (openGateIds includes it)", () => {
+  const g = gateRow({ id: "g1", subject: "run:x", pane: "w1:p1" });
+  const views = computeView({ ...base, agents: [agent({ paneId: "w1:p1" })], panes: [], openGates: [g] }, 10);
+  expect(views[0]!.openGateIds).toEqual(["g1"]);
+});
+
+test("origin.paneId still wins over pane when both are set", () => {
+  const g = gateRow({ id: "g1", subject: "run:x", origin: { paneId: "w1:p1" }, pane: "w1:other" });
+  const rec = agent({ paneId: "w1:p1" });
+  const id = gateAgentId(g, [rec], []);
+  expect(id).toBe("a1");
+});
+
 test("gate joined to one agent does not leak onto another agent's view", () => {
   const g = gateRow({ id: "g1", subject: "run:x", nudge: { session: "s-1" } });
   const other = agent({ id: "a2", sessionId: "s-2", cwd: "/wt/b" });
