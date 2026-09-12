@@ -412,18 +412,24 @@ describe("toolRows - tool.fast-browser-extension", () => {
     expect(rows.find((r) => r.id === "tool.fast-browser-extension")?.status).toBe("ready");
   });
 
-  test("extension-loaded check absent from the report -> error, not a false ready or a false accusation", async () => {
+  // An error row blocks Finish like any other non-ready state, so its detail
+  // has to carry the way out; Skip for now must never be the only affordance.
+  test("extension-loaded check absent from the report -> error naming the remedy, not a false ready or a false accusation", async () => {
     const p = withChrome(doctorExec(withoutCheck(REAL_DOCTOR, "extension-loaded")));
     const r = await pickRow(toolRows(p, [], { hasBrew: true, secrets: NO_SECRETS }, fastBrowserSeams()), "tool.fast-browser-extension");
     expect(r.status).toBe("error");
     expect(r.detail).toContain("extension-loaded");
+    expect(r.detail).toContain("update Fast Browser, then Re-check");
+    expect(r.action).toEqual({ type: "run", label: "Re-check", verb: ["setup", "status"] });
   });
 
-  test("pairing check absent from the report -> error, not a false ready or a false accusation", async () => {
+  test("pairing check absent from the report -> error naming the remedy, not a false ready or a false accusation", async () => {
     const p = withChrome(doctorExec(withoutCheck(REAL_DOCTOR, "pairing")));
     const r = await pickRow(toolRows(p, [], { hasBrew: true, secrets: NO_SECRETS }, fastBrowserSeams()), "tool.fast-browser-extension");
     expect(r.status).toBe("error");
     expect(r.detail).toContain("pairing");
+    expect(r.detail).toContain("update Fast Browser, then Re-check");
+    expect(r.action).toEqual({ type: "run", label: "Re-check", verb: ["setup", "status"] });
   });
 
   // tool.fast-browser already reports an unreadable doctor; two rows for one
