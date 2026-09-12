@@ -1,0 +1,87 @@
+{
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "title": "Direction A · activity lines",
+      "x": 0,
+      "y": 0,
+      "w": 780,
+      "h": 560
+    },
+    {
+      "file": "DirectionB.dc.html",
+      "title": "Direction B · one phrase + rail",
+      "x": 860,
+      "y": 0,
+      "w": 780,
+      "h": 480
+    },
+    {
+      "file": "DirectionC.dc.html",
+      "title": "Direction C · chip grammar",
+      "x": 1720,
+      "y": 0,
+      "w": 780,
+      "h": 470
+    },
+    {
+      "file": "StatesLanes.dc.html",
+      "title": "Lanes · every state",
+      "x": 0,
+      "y": 0,
+      "w": 780,
+      "h": 1560,
+      "page": "page-2"
+    },
+    {
+      "file": "StatesAttention.dc.html",
+      "title": "Decisions & attention",
+      "x": 860,
+      "y": 0,
+      "w": 780,
+      "h": 800,
+      "page": "page-2"
+    },
+    {
+      "file": "StatesAmbient.dc.html",
+      "title": "Ambient & social",
+      "x": 860,
+      "y": 920,
+      "w": 780,
+      "h": 760,
+      "page": "page-2"
+    },
+    {
+      "file": "StatesStress.dc.html",
+      "title": "Stress test vs today",
+      "x": 1720,
+      "y": 0,
+      "w": 780,
+      "h": 760,
+      "page": "page-2"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "brief",
+      "x": 0,
+      "y": -170,
+      "w": 330,
+      "text": "MR row redesign — the row is outgrowing chips-on-chips.\nPage 1: three directions on the same rows.\nPage 2: every state, drawn in direction A.\nTokens lifted verbatim from tui-kit (Tokyo light/dark)."
+    }
+  ],
+  "pages": [
+    {
+      "id": "page-1",
+      "name": "Directions"
+    },
+    {
+      "id": "page-2",
+      "name": "All states"
+    }
+  ],
+  "launch": {
+    "view": "canvas",
+    "page": "page-1"
+  }
+}

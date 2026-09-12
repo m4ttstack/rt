@@ -1,0 +1,174 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+  :root { color-scheme: light dark; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 13.5px;
+    background: light-dark(#f7f8fa, #16161e);
+    color: light-dark(#222, #e3e7f6);
+    --bg: light-dark(#f7f8fa, #16161e);
+    --card: light-dark(#ffffff, #2c3352);
+    --fg: light-dark(#222, #e3e7f6);
+    --muted: light-dark(#565d80, #969ec2);
+    --border: light-dark(#c8cad6, #3b4261);
+    --border-soft: light-dark(#dcdee6, #2c3352);
+    --accent: light-dark(#2e7de9, #7aa2f7);
+    --green: light-dark(#587539, #9ece6a);
+    --red: light-dark(#f52a65, #f7768e);
+    --amber: light-dark(#8c6c3e, #e0af68);
+    --purple: light-dark(#7847bd, #bb9af7);
+    --cyan: light-dark(#007197, #7dcfff);
+    padding: 18px 22px;
+  }
+  a { color: var(--accent); } a:hover { color: var(--accent); }
+  h2 { font: 600 12px/1.4 inherit; letter-spacing: .07em; text-transform: uppercase;
+       color: var(--purple); margin: 22px 0 8px; }
+  h2:first-child { margin-top: 0; }
+  p.note { font-size: 11.5px; line-height: 1.55; color: var(--muted); margin: 2px 0 12px; max-width: 74ch; }
+
+  .list { border: 1px solid var(--border-soft); border-radius: 8px; background: var(--bg); overflow: hidden; }
+  .row { display: grid; grid-template-columns: 1.75rem minmax(0,1fr); column-gap: .5rem;
+         padding: .7rem 1rem .75rem 1.4rem; position: relative; }
+  .row + .row { border-top: 1px solid var(--border-soft); }
+  .pick { align-self: stretch; display: flex; align-items: center; justify-content: center; }
+  .pick input { accent-color: var(--accent); }
+  .r1 { display: flex; align-items: baseline; gap: .55rem; min-width: 0; }
+  .dot { font-size: .78rem; line-height: 1; }
+  .title { font-weight: 500; font-size: .85rem; flex: 1; min-width: 0; overflow: hidden;
+           text-overflow: ellipsis; white-space: nowrap; }
+  .phrase { flex-shrink: 0; display: inline-flex; align-items: center; padding: 1px 6px;
+            border: 1px solid currentColor; border-radius: 4px; font-size: .62rem; font-weight: 700;
+            text-transform: uppercase; letter-spacing: .04em; }
+  .r2 { display: flex; align-items: center; gap: .55rem; color: var(--muted); font-size: .78rem; margin-top: .15rem; }
+  .branch { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .grow { flex: 1; }
+  .adds { color: var(--green); } .dels { color: var(--red); }
+
+  /* direction A: activity lines */
+  .acts { margin-top: 6px; display: flex; flex-direction: column; gap: 2px; }
+  .act { display: flex; align-items: center; gap: .5rem; font-size: .78rem; line-height: 1.5;
+         padding: 1px 6px 1px 8px; border-left: 2px solid transparent; border-radius: 2px; color: var(--muted); }
+  .act .w { font-weight: 600; }
+  .act .lane { color: var(--muted); opacity: .8; min-width: 4.2em; }
+  .act .spin { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: currentColor;
+               animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .25; } }
+  .act-work  { border-left-color: color-mix(in srgb, var(--purple) 55%, transparent); }
+  .act-work .w { color: var(--purple); }
+  .act-go    { border-left-color: color-mix(in srgb, var(--green) 55%, transparent); }
+  .act-go .w { color: var(--green); }
+  .act-warn  { border-left-color: var(--amber);
+               background: color-mix(in srgb, var(--amber) 8%, transparent); }
+  .act-warn .w { color: var(--amber); }
+  .act-bad   { border-left-color: var(--red);
+               background: color-mix(in srgb, var(--red) 8%, transparent); }
+  .act-bad .w { color: var(--red); }
+  .act-quiet .w { color: var(--muted); font-weight: 500; }
+  .act .do { margin-left: auto; display: inline-flex; gap: .9rem; flex-shrink: 0; }
+  .act .do a { font-size: .72rem; font-weight: 600; text-decoration: none; color: var(--accent); }
+  .act .do a.mut { color: var(--muted); }
+
+  /* ambient cluster (right end of r2) */
+  .amb { display: inline-flex; align-items: center; gap: .5rem; flex-shrink: 0; color: var(--muted); }
+  .amb .on { color: var(--green); }
+  .amb .ask { color: var(--accent); font-weight: 600; }
+
+  /* direction B: rail + synthesized phrase */
+  .railrow { position: relative; }
+  .rail { position: absolute; left: 0; top: 6px; bottom: 6px; width: 3px; border-radius: 2px; }
+  .rail-quiet { background: transparent; }
+  .rail-work { background: var(--purple); animation: pulse 1.6s ease-in-out infinite; }
+  .rail-warn { background: var(--amber); }
+  .rail-bad { background: var(--red); }
+  .sum { font-size: .78rem; font-weight: 600; flex-shrink: 0; }
+  .sum.work { color: var(--purple); } .sum.warn { color: var(--amber); }
+  .sum.bad { color: var(--red); } .sum.ok { color: var(--green); } .sum.quiet { color: var(--muted); font-weight: 500; }
+
+  /* direction C: disciplined chips (the kit Chip recipe, verbatim) */
+  .chips { margin-top: 5px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 6px; border: 1px solid currentColor;
+          border-radius: 4px; font-size: 11px; white-space: nowrap; background: transparent; }
+  .chip.sub { border-color: var(--border); color: var(--muted); opacity: .7; }
+  .chip.ok { color: var(--green); } .chip.warn { color: var(--amber); } .chip.bad { color: var(--red); }
+  .chip.purple { color: var(--purple); } .chip.cyan { color: var(--cyan); } .chip.accent { color: var(--accent); }
+  .chip .x { opacity: .65; font-weight: 400; }
+  .chip.pulse { animation: pulse 1.6s ease-in-out infinite; }
+
+  .cap { font-size: 11px; color: var(--muted); margin: 6px 2px 14px; line-height: 1.5; max-width: 74ch; }
+  .cap b { color: var(--fg); font-weight: 600; }
+</style>
+  <title>MR Row · direction B</title>
+</helmet>
+
+<h2>direction b · one phrase + urgency rail</h2>
+<p class="note">Maximum compression: the board synthesizes ONE status phrase per row
+("review interrupted · relaunch?"), right-aligned in the meta line, and a 3px rail on the row's
+left edge carries urgency (red = dead, amber = your move, pulsing purple = working, none = quiet).
+Details and actions live in the row menu / an expandable drawer, not on the row.</p>
+
+<div class="list">
+  <div class="row railrow">
+  <div class="pick"><input type="checkbox" disabled></div>
+  <div style="min-width:0"><span class="rail rail-bad"></span><div class="r1"><span class="dot" style="color:var(--amber)">●</span><span class="title">CV-3074 Port the CV2 stealth-mode and access-links case c…</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span><span style="display:inline-block;width:13px;height:13px;border-radius:4px;background:var(--purple);opacity:.75;flex-shrink:0"></span></div><div class="r2">
+    <span>!44451</span><span style="opacity:.5">|</span>
+    <span class="branch">feature/cv-3074</span>
+    <span class="grow"></span>
+    <span><span class="adds">+1455</span> <span class="dels">−13</span></span>
+    <span>💬 1</span>
+    <span>32h</span>
+    <span class="sum bad">review interrupted · relaunch?</span>
+  </div></div>
+</div>
+  <div class="row railrow">
+  <div class="pick"><input type="checkbox" disabled></div>
+  <div style="min-width:0"><span class="rail rail-work"></span><div class="r1"><span class="dot" style="color:var(--amber)">●</span><span class="title">CV-3163 Let screenshot.cjs capture the auth handshake</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span><span style="display:inline-block;width:13px;height:13px;border-radius:4px;background:var(--purple);opacity:.75;flex-shrink:0"></span></div><div class="r2">
+    <span>!44720</span><span style="opacity:.5">|</span>
+    <span class="branch">feature/cv-3163</span>
+    <span class="grow"></span>
+    <span><span class="adds">+79</span> <span class="dels">−27</span></span>
+    
+    <span>8h</span>
+    <span class="sum work">reviewing… 4m</span>
+  </div></div>
+</div>
+  <div class="row railrow">
+  <div class="pick"><input type="checkbox" disabled></div>
+  <div style="min-width:0"><span class="rail rail-warn"></span><div class="r1"><span class="dot" style="color:var(--green)">●</span><span class="title">CV-3028 Delete unreachable legacy dashboards</span><span class="phrase" style="color:var(--green)">APPROVED</span><span style="display:inline-block;width:13px;height:13px;border-radius:4px;background:var(--purple);opacity:.75;flex-shrink:0"></span></div><div class="r2">
+    <span>!43946</span><span style="opacity:.5">|</span>
+    <span class="branch">feature/cv-3028</span>
+    <span class="grow"></span>
+    <span><span class="adds">+18</span> <span class="dels">−1253</span></span>
+    <span>💬 7</span>
+    <span>9d</span>
+    <span class="sum warn">2 findings to post · decide</span>
+  </div></div>
+</div>
+  <div class="row railrow">
+  <div class="pick"><input type="checkbox" disabled></div>
+  <div style="min-width:0"><span class="rail rail-quiet"></span><div class="r1"><span class="dot" style="color:var(--green)">●</span><span class="title">CV-3149 Widen the transform contract</span><span class="phrase" style="color:var(--green)">APPROVED</span><span style="display:inline-block;width:13px;height:13px;border-radius:4px;background:var(--purple);opacity:.75;flex-shrink:0"></span></div><div class="r2">
+    <span>!44684</span><span style="opacity:.5">|</span>
+    <span class="branch">feature/cv-3149</span>
+    <span class="grow"></span>
+    <span><span class="adds">+296</span> <span class="dels">−16</span></span>
+    <span>💬 2</span>
+    <span>9h</span>
+    <span class="sum quiet">—</span>
+  </div></div>
+</div>
+</div>
+<p class="cap"><b>Tradeoff:</b> calmest board by far and scans instantly, but one phrase can hide
+concurrent facts (a doctor working while a decision waits) and every action costs a click into
+the menu or drawer.</p>
+
+</x-dc>
+</body>
+</html>
