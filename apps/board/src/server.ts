@@ -41,7 +41,7 @@ import {
 } from './agent-status/feed.ts';
 import { APP_ROOT, IS_COMPILED } from './app-root.ts';
 import { SnapshotCache } from './cache.ts';
-import { getClientAssets } from './client-assets.ts';
+import { getClientAssets, watchClientAssets } from './client-assets.ts';
 import type { ExecutorView } from './client/types.ts';
 import {
   closeOnDone,
@@ -738,8 +738,19 @@ void refreshMemberNames();
 
 // Client bundle: a fresh Bun.build at boot in dev, pre-built + embedded
 // assets injected by src/compiled.ts when running as a standalone binary.
-// The react-singleton constraint story lives in client-bundle.ts.
-const { appJs, appCss } = await getClientAssets();
+// The react-singleton constraint story lives in client-bundle.ts. In dev the
+// bundle is rebuilt on every client edit and open browsers are told to
+// reload (see sseReload below); the binary carries one bundle for life.
+let clientAssets = await getClientAssets();
+if (!IS_COMPILED) {
+  watchClientAssets({
+    onBundle: assets => {
+      clientAssets = assets;
+      sseReload();
+    },
+    onStyle: sseReload,
+  });
+}
 
 const shell = `<!doctype html>
 <html lang="en">
@@ -871,7 +882,7 @@ const httpServer = Bun.serve({
       // and canvas.css is unlayered but earlier, so the board's own unlayered
       // rules still win every conflict.
       case '/app.css':
-        return new Response(appCss, {
+        return new Response(clientAssets.appCss, {
           headers: { 'content-type': 'text/css; charset=utf-8' },
         });
       case '/style.css': {
@@ -885,7 +896,7 @@ const httpServer = Bun.serve({
           headers: { 'content-type': 'image/svg+xml; charset=utf-8' },
         });
       case '/app.js':
-        return new Response(appJs, {
+        return new Response(clientAssets.appJs, {
           headers: { 'content-type': 'text/javascript; charset=utf-8' },
         });
     }
@@ -2847,6 +2858,12 @@ function sseSend(frame: Uint8Array): void {
 
 function sseNudge(): void {
   sseSend(sseEncoder.encode('data: changed\n\n'));
+}
+
+/** Dev live reload: the one message the client answers with a page reload
+    instead of a data re-pull. */
+function sseReload(): void {
+  sseSend(sseEncoder.encode('data: reload\n\n'));
 }
 
 // Comment frames keep quiet connections under Bun's idleTimeout and prune

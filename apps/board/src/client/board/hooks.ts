@@ -137,11 +137,13 @@ export function useBoardData(
   }, [load]);
 
   // Server push: rt relay events land as SSE nudges; re-pull the board.
-  // Polling stays as the fallback when the stream is down.
+  // Polling stays as the fallback when the stream is down. The dev server's
+  // rebuilt-bundle signal rides the same stream as a "reload" message.
   useEffect(() => {
     const es = new EventSource('/events');
-    es.onmessage = () => {
-      if (!document.hidden) load();
+    es.onmessage = (e: MessageEvent<string>) => {
+      if (e.data === 'reload') location.reload();
+      else if (!document.hidden) load();
     };
     return () => es.close();
   }, [load]);
