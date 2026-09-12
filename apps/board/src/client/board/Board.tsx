@@ -827,32 +827,39 @@ export function Board() {
     };
   }, [data, optimisticLifecycle.state, state, draftResolved]);
 
-  // Actionable gates on VISIBLE rows only, in board order: group order, then
-  // the group's own sort, then stack nesting -- exactly the order and scope
-  // `boardView.groups` renders, since it's the same array.
+  // Actionable gates on every row the board holds, visible rows first in
+  // board order (group order, the group's own sort, stack nesting: exactly
+  // what `boardView.groups` renders), then the rows the current tab or
+  // filter hides, in the same sort. A decision is owed whichever author is
+  // picked, so the queue button never vanishes behind a filter.
   const queueEntries = useMemo(() => {
     if (!boardView) return [];
     const out: QueueEntry[] = [];
+    const seen = new Set<BoardMRWithReview>();
+    const collectMr = (mr: BoardMRWithReview) => {
+      if (seen.has(mr)) return;
+      seen.add(mr);
+      for (const gate of mr.gates) if (needsQueue(gate)) out.push({ gate, mr });
+    };
     const collect = (node: StackNode<BoardMRWithReview>) => {
-      const mr = node.mr;
-      for (const gate of mr.gates ?? [])
-        if (needsQueue(gate)) out.push({ gate, mr });
+      collectMr(node.mr);
       node.children.forEach(collect);
     };
     for (const g of boardView.groups) nestStacks(g.mrs).forEach(collect);
+    for (const mr of sortMRs(boardView.mrs, state.sort)) collectMr(mr);
     // Human-owned, non-MR gates (queueExtras -- a pane-attention gate is the
     // first kind of these) join the same queue with no `mr` at all.
     for (const gate of data?.queueExtras ?? [])
       if (needsQueue(gate)) out.push({ gate });
     return out;
-  }, [boardView, data]);
+  }, [boardView, data, state.sort]);
   // Positive answer evidence for the queue's reconcile, from the RAW data:
   // a gate answered on another surface must retire even if its MR is
   // currently filtered out of view.
   const answeredGateIds = useMemo(() => {
     const ids = new Set<string>();
     for (const mr of data?.mrs ?? [])
-      for (const gate of mr.gates ?? [])
+      for (const gate of mr.gates)
         if (gate.status === 'answered') ids.add(gate.gateId);
     for (const gate of data?.queueExtras ?? [])
       if (gate.status === 'answered') ids.add(gate.gateId);

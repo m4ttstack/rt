@@ -490,3 +490,51 @@ test('an unassigned-execution gate: the row opens the queue, whose retry re-post
     container.remove();
   }
 });
+
+test('the queue counts gates on rows an author filter hides, visible rows first', async () => {
+  const [first, second] = BOARD_DATA.mrs;
+  servedData = {
+    ...BOARD_DATA,
+    members: [
+      { username: 'matt', name: 'Matthew Goodwin', count: 1 },
+      { username: 'jo', name: 'Jo Author', count: 1 },
+    ],
+    mrs: [
+      { ...first, author: { username: 'matt', name: 'Matthew Goodwin' } },
+      { ...second, author: { username: 'jo', name: 'Jo Author' } },
+    ],
+  };
+  localStorage.setItem('mrs-view-state', JSON.stringify({ member: 'jo' }));
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  try {
+    await React.act(async () => {
+      root.render(React.createElement(Board));
+    });
+    await React.act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 0));
+    });
+    expect(container.querySelectorAll('.tui-row')).toHaveLength(1);
+    const openButton = [...container.querySelectorAll('button')].find(b =>
+      b.textContent?.trim().startsWith('decision queue')
+    );
+    expect(openButton?.textContent?.trim()).toBe('decision queue · 2');
+
+    await React.act(async () => {
+      (openButton as HTMLElement).click();
+    });
+    const dialog = container.querySelector(
+      '[role="dialog"][aria-label="decision queue"]'
+    );
+    expect(dialog?.textContent).toContain('second mr title');
+    expect(dialog?.textContent).toMatch(/next:\s*!1/);
+    expect(dialog?.textContent).toContain('gate 1 of 2');
+  } finally {
+    localStorage.removeItem('mrs-view-state');
+    await React.act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  }
+});
