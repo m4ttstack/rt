@@ -5,7 +5,8 @@ import { join } from "path";
 import { getDef, validateValue } from "../../settings/registry.ts";
 import { getSetting } from "../../settings/resolve.ts";
 import { setSetting } from "../../settings/write.ts";
-import { WAIVED_SETTING_KEY, readWaived } from "../finish-gate.ts";
+import { UserActionableError } from "../errors.ts";
+import { WAIVED_SETTING_KEY, readWaived, realWaiverStore, unwaiveRow, waiveRow } from "../finish-gate.ts";
 
 let home: string;
 let prevHome: string | undefined;
@@ -62,5 +63,52 @@ describe("readWaived", () => {
     expect(ids).toEqual([]);
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toContain("setup.waived");
+  });
+});
+
+function fakeStore(initial: string[] = []) {
+  const writes: string[][] = [];
+  let ids = initial;
+  return {
+    writes,
+    store: {
+      read: () => ids,
+      write: (next: string[]) => {
+        writes.push(next);
+        ids = next;
+      },
+    },
+  };
+}
+
+describe("waiveRow / unwaiveRow", () => {
+  test("waive adds the id once; a second waive writes nothing", () => {
+    const { store, writes } = fakeStore();
+    expect(waiveRow("tool.fast-browser-extension", store)).toEqual(["tool.fast-browser-extension"]);
+    expect(waiveRow("tool.fast-browser-extension", store)).toEqual(["tool.fast-browser-extension"]);
+    expect(writes).toEqual([["tool.fast-browser-extension"]]);
+  });
+
+  test("unwaive removes the id; unwaiving an absent id writes nothing", () => {
+    const { store, writes } = fakeStore(["tool.fast-browser-extension"]);
+    expect(unwaiveRow("tool.fast-browser-extension", store)).toEqual([]);
+    expect(unwaiveRow("tool.fast-browser-extension", store)).toEqual([]);
+    expect(writes).toEqual([[]]);
+  });
+
+  test("an id that is not finish-gated is a user error, and nothing is written", () => {
+    const { store, writes } = fakeStore();
+    expect(() => waiveRow("tool.chrome", store)).toThrow(UserActionableError);
+    expect(() => unwaiveRow("tool.chrome", store)).toThrow(UserActionableError);
+    expect(writes).toEqual([]);
+  });
+
+  test("the real store round-trips through the machine scope", () => {
+    const store = realWaiverStore();
+    waiveRow("tool.fast-browser-extension", store);
+    expect(readWaived()).toEqual(["tool.fast-browser-extension"]);
+    expect(getSetting(WAIVED_SETTING_KEY).provenance.map((p) => p.scope)).toEqual(["machine"]);
+    unwaiveRow("tool.fast-browser-extension", store);
+    expect(readWaived()).toEqual([]);
   });
 });
