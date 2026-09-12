@@ -3,20 +3,21 @@
 // apps/board/src/style.css + packages/tui-kit/src/generated/theme.css
 // (Tokyo light/dark), not eyeballed. Edit this file, re-run it, re-seed.
 //
-// The design system (direction A, v3):
-//   1. One content edge. Title, meta and ledger all start at the same x.
-//      The status dot and the attention bar live in the gutter, never
-//      shifting the text edge.
-//   2. A strict 4px spacing scale. 12/16 row padding, 4 title-to-meta,
-//      8 meta-to-ledger, 20px ledger line height.
-//   3. Attention is ONE device: a 3px gutter bar (amber = your move,
-//      red = something died) plus the colored status word. No washes,
-//      no banners, no ticks.
-//   4. Actions read inline, as the end of the sentence. Nothing is flung
-//      to the far edge of the row.
-//   5. Passive context (slack, peers, reactions) is not on the row. It
-//      lives in the hover card and the row menu. If it has a verb, it is
-//      a ledger line.
+// The laws (validated against daily use, 2026-09-11):
+//   1. Temperature: hot = my move is the bottleneck; warm = live and
+//      moving without me; settled = done/history. Rest shows hot and
+//      warm and live workflow marks; settled is summoned (hover, menu).
+//   2. Zoom: glance (edge bars) -> rest -> hover (all verbs, context
+//      card) -> menu/queue. The queue is the gate seat; the row only
+//      points at it. Nothing skips a level.
+//   3. The row is a sentence: identity line, facts line, one ledger
+//      line per active lane. New features conjugate; they never add a
+//      new element species. Peers and nudges are lanes, not chips.
+//   4. Color is a verb: amber decide, red repair, purple wait, green
+//      read. Workflow marks (slack posted) stay mono. One hue per edge.
+//   5. Position is meaning: urgency at the edge, identity line 1,
+//      evidence line 2, activity below. A hot line's PRIMARY verb sits
+//      on it at rest; secondary verbs wait for hover.
 import { writeFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
@@ -54,6 +55,10 @@ const CSS = `
   .cap b { color: var(--fg); font-weight: 600; }
 
   .list { border: 1px solid var(--border-soft); border-radius: 8px; background: var(--bg); overflow: hidden; }
+  .tight .row { padding: 8px 12px 8px 0; }
+  .tight .r2 { margin-top: 2px; }
+  .tight .acts { margin-top: 5px; }
+  .tight .act { line-height: 18px; }
 
   /* one content edge: 44px gutter column, then text. */
   .row { display: grid; grid-template-columns: 40px minmax(0,1fr); align-items: start;
@@ -79,6 +84,8 @@ const CSS = `
   .grow { flex: 1; }
   .adds { color: color-mix(in srgb, var(--green) 70%, var(--muted)); }
   .dels { color: color-mix(in srgb, var(--red) 70%, var(--muted)); }
+  .fresh { color: var(--accent); font-weight: 600; }
+  .mark { display: inline-flex; opacity: .55; }
 
   /* the ledger: 20px lines on the shared content edge. */
   .acts { margin-top: 8px; display: flex; flex-direction: column; gap: 2px; }
@@ -96,10 +103,13 @@ const CSS = `
   .act .spin { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: currentColor;
                margin-left: 8px; align-self: center; animation: pulse 1.6s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity: .25; } }
-  .act .do { display: none; }
-  .row.hov .act .do { display: inline-flex; gap: 14px; margin-left: auto; padding-left: 16px; flex-shrink: 0; }
+  .act .do { display: inline-flex; gap: 14px; margin-left: auto; padding-left: 16px; flex-shrink: 0; }
   .act .do a { font-size: .72rem; font-weight: 600; text-decoration: none; color: var(--accent); }
   .act .do a.mut { color: var(--muted); font-weight: 500; }
+  .act .do a.sec { display: none; }
+  .row.hov .act .do a.sec { display: inline; }
+  .row.restless .act .do { display: none; }
+  .row.restless.hov .act .do { display: inline-flex; }
 
   /* direction B leftovers */
   .sum { font-size: .76rem; font-weight: 600; flex-shrink: 0; }
@@ -145,6 +155,7 @@ const svgIcon = (paths) => `<svg width="12" height="12" viewBox="0 0 16 16" fill
 const IC = {
   bubble: svgIcon('<path d="M2.5 3.5h11a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H8l-3 2.5V11.5H2.5a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z"/>'),
   eye: svgIcon('<path d="M1.8 8s2.3-4 6.2-4 6.2 4 6.2 4-2.3 4-6.2 4S1.8 8 1.8 8z"/><circle cx="8" cy="8" r="1.8"/>'),
+  slack: svgIcon('<rect x="2.5" y="2.5" width="11" height="11" rx="3"/><path d="M5.5 8.4l1.9 1.9 3.1-3.8"/>'),
 };
 
 // ── row scaffolding ─────────────────────────────────────────────────
@@ -153,14 +164,16 @@ function r1({ title, phrase, phraseColor = 'var(--amber)' }) {
   return `<div class="r1"><span class="title">${title}</span>${ph}</div>`;
 }
 
-function r2({ iid, branch, adds, dels, threads, age }, extra = '') {
+function r2({ iid, branch, adds, dels, threads, age, fresh = 0, slack = false }, extra = '') {
+  const freshTag = fresh ? ` <span class="fresh">${fresh} new</span>` : '';
   return `<div class="r2">
     <span>!${iid}</span><span class="sep">·</span>
     <span class="branch">${branch}</span>
     <span class="grow"></span>
     <span><span class="adds">+${adds}</span> <span class="dels">−${dels}</span></span>
-    ${threads ? `<span class="sep">·</span><span>${threads} thread${threads > 1 ? 's' : ''}</span>` : ''}
+    ${threads ? `<span class="sep">·</span><span>${threads} thread${threads > 1 ? 's' : ''}${freshTag}</span>` : ''}
     <span class="sep">·</span><span>${age}</span>
+    ${slack ? `<span class="mark" title="posted in slack">${IC.slack}</span>` : ''}
     ${extra}
   </div>`;
 }
@@ -171,7 +184,7 @@ const act = (tone, lane, word, detail = '', actions = [], spin = false) => `
     <span class="w">${word}</span>
     ${spin ? '<span class="spin"></span>' : ''}
     ${detail ? `<span class="sep" style="margin-left:8px;opacity:.45">·</span><span class="d">${detail}</span>` : ''}
-    ${actions.length ? `<span class="do">${actions.map(([t, mut]) => `<a href="#" class="${mut ? 'mut' : ''}">${t}</a>`).join('')}</span>` : ''}
+    ${actions.length ? `<span class="do">${actions.map(([t, mut, sec]) => `<a href="#" class="${[mut ? 'mut' : '', sec ? 'sec' : ''].join(' ').trim()}">${t}</a>`).join('')}</span>` : ''}
   </div>`;
 
 // bar: '' | 'warn' | 'bad'. The row's single attention device, in the gutter.
@@ -197,23 +210,20 @@ const RED = 'var(--red)';
 // Main: direction A, the leading candidate
 // ════════════════════════════════════════════════════════════════════
 const mainBody = `
-<h2>direction a · activity lines (leading)</h2>
-<p class="note">Six rules. One content edge: title, meta and ledger share a left edge; the
-status dot has the gutter to itself (the checkbox appears there on hover and in select mode).
-A strict spacing scale: 12/16 padding, 4 then 8 between lines, 20px ledger lines. Attention is
-one device: a 3px full-height edge bar plus the colored status word. At rest a row shows state
-only; verbs appear on hover, right-aligned on their line (the first row is drawn hovered).
-Passive context is off the row entirely (hover card, row menu); only things with a verb earn a
-ledger line.</p>
+<h2>the row · final design</h2>
+<p class="note">Rest shows every system's LIVE state, quietly: identity, evidence (with the
+slack posted-mark and fresh-activity count), one ledger line per active lane. A hot line
+carries its primary verb at rest ("one click, no ceremony"); secondary verbs and the checkbox
+wait for hover. The edge bar marks hot rows for the glance pass. The queue is the gate seat:
+"answer" on a decide line opens it.</p>
 
 <div class="list">
   ${row(AMBER, 'warn',
     r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) +
     r2(MR) +
     `<div class="acts">
-      ${act('warn', 'review', 'interrupted', 'pane closed 12m ago', [['relaunch'], ['clear', true]])}
-    </div>`,
-    true
+      ${act('warn', 'review', 'interrupted', 'pane closed 12m ago', [['relaunch'], ['clear', true, true]])}
+    </div>`
   )}
   ${row(AMBER, '',
     r1({ title: MR2.title, phrase: 'NEEDS REVIEW' }) +
@@ -232,11 +242,18 @@ ledger line.</p>
   )}
   ${row(GREEN, '',
     r1({ title: 'CV-3149 Widen the transform contract', phrase: 'APPROVED', phraseColor: GREEN }) +
-    r2({ iid: 44684, branch: 'feature/cv-3149', adds: 296, dels: 16, threads: 2, age: '9h' })
+    r2({ iid: 44684, branch: 'feature/cv-3149', adds: 296, dels: 16, threads: 5, age: '9h', fresh: 2, slack: true }) +
+    `<div class="acts">
+      ${act('work', 'peer', 'geoff reviewing…', 'on his board', [], true)}
+    </div>`
+  )}
+  ${row(GREEN, '',
+    r1({ title: 'CV-3114 Carry the standard onto the legacy grid', phrase: 'APPROVED', phraseColor: GREEN }) +
+    r2({ iid: 44740, branch: 'feature/cv-3114', adds: 114, dels: 0, threads: 0, age: '6h', slack: true })
   )}
 </div>
-<p class="cap"><b>Scan path:</b> gutter bars first (what needs me), colored words second (what is
-happening), everything else stays gray until you ask for it.</p>
+<p class="cap"><b>Scan path:</b> edge bars, then colored words, then the quiet facts. Row 4 is
+your own MR: slack posted-mark at rest, "2 new" since you last looked, a peer live on it.</p>
 `;
 
 // ════════════════════════════════════════════════════════════════════
@@ -303,6 +320,68 @@ row of bolted-on banners, ever.</p>
 structure... the next bolted-on feature can still break it, and chips still wrap on narrow rows.</p>
 `;
 
+
+// ════════════════════════════════════════════════════════════════════
+// RestHover: the same hot row at rest and under the pointer
+// ════════════════════════════════════════════════════════════════════
+const restHoverBody = `
+<h2>rest</h2>
+<p class="note">Primary verb only; nothing else asks for the pointer.</p>
+<div class="list">
+  ${row(AMBER, 'warn',
+    r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) +
+    r2(MR) +
+    `<div class="acts">
+      ${act('warn', 'review', 'interrupted', 'pane closed 12m ago', [['relaunch'], ['clear', true, true]])}
+    </div>`
+  )}
+</div>
+
+<h2>hover</h2>
+<p class="note">Secondary verbs and the checkbox materialize; the accent wash marks the row.</p>
+<div class="list">
+  ${row(AMBER, 'warn',
+    `<span style="position:absolute;left:14px;top:14px"><input type="checkbox" style="accent-color:var(--accent);margin:0"></span>` +
+    r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) +
+    r2(MR) +
+    `<div class="acts">
+      ${act('warn', 'review', 'interrupted', 'pane closed 12m ago', [['relaunch'], ['clear', true, true]])}
+    </div>`,
+    true
+  )}
+</div>
+<p class="cap">The dot yields to the checkbox on hover; right-click still opens the full menu.</p>
+`;
+
+// ════════════════════════════════════════════════════════════════════
+// Density: comfortable (current scale) vs compact
+// ════════════════════════════════════════════════════════════════════
+const densityBody = `
+<h2>comfortable · 12/16 padding, 20px lines</h2>
+<div class="list">
+  ${row(AMBER, '',
+    r1({ title: MR2.title, phrase: 'NEEDS REVIEW' }) + r2(MR2) +
+    `<div class="acts">${act('work', 'review', 'running…', 'started 4m ago', [], true)}</div>`
+  )}
+  ${row(GREEN, '',
+    r1({ title: 'CV-3149 Widen the transform contract', phrase: 'APPROVED', phraseColor: GREEN }) +
+    r2({ iid: 44684, branch: 'feature/cv-3149', adds: 296, dels: 16, threads: 2, age: '9h', slack: true })
+  )}
+</div>
+
+<h2>compact · 8/12 padding, 18px lines</h2>
+<div class="list tight">
+  ${row(AMBER, '',
+    r1({ title: MR2.title, phrase: 'NEEDS REVIEW' }) + r2(MR2) +
+    `<div class="acts">${act('work', 'review', 'running…', 'started 4m ago', [], true)}</div>`
+  )}
+  ${row(GREEN, '',
+    r1({ title: 'CV-3149 Widen the transform contract', phrase: 'APPROVED', phraseColor: GREEN }) +
+    r2({ iid: 44684, branch: 'feature/cv-3149', adds: 296, dels: 16, threads: 2, age: '9h', slack: true })
+  )}
+</div>
+<p class="cap">Same anatomy, two scales; pick by feel.</p>
+`;
 // ════════════════════════════════════════════════════════════════════
 // All states: direction A
 // ════════════════════════════════════════════════════════════════════
@@ -350,7 +429,8 @@ const lanesBody = `
 const attentionBody = `
 <h2>decisions &amp; attention · every state</h2>
 <p class="note">Gates and executor trouble share the ledger: "decide" for questions waiting on
-you, attention tones on whichever lane broke. The gutter bar always matches the row's most
+you, attention tones on whichever lane broke. "answer" always opens the decision queue (the
+queue is the gate seat; the row never grows a form). The edge bar matches the row's most
 urgent line (red beats amber).</p>
 <div class="list">
   ${L('warn', 'decide', 'post 2 findings?', 'recommended: post', [['answer']], false, 'warn')}
@@ -367,23 +447,30 @@ surface, in the same "decide" slot with an <b>escalated</b> detail.</p>
 `;
 
 const ambientBody = `
-<h2>context lives off-row</h2>
-<p class="note">Slack presence, reactions and peer activity are context, not work: the row shows
-none of it. Hovering the meta line (or opening the row menu) reveals the context card. Anything
-with a verb (a nudge, a held note) is a ledger line on the attention board instead.</p>
+<h2>context · at rest and summoned</h2>
+<p class="note">Live context sits quietly on the row: the slack posted-mark and fresh-activity
+count in the facts line, a live peer as a warm ledger line. Settled context (reaction detail,
+posting history, past nudges) is summoned by hover or the menu. Anything that becomes an ask
+for you turns into a hot line.</p>
 <div class="list">
   ${row(GREEN, '',
     r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: GREEN }) +
-    r2(MR3)
+    r2({ ...MR3, fresh: 2, slack: true }) +
+    `<div class="acts">${act('work', 'peer', 'geoff reviewing…', 'on his board', [], true)}</div>`
+  )}
+  ${row(GREEN, '',
+    r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: GREEN }) +
+    r2({ ...MR3, slack: true }) +
+    `<div class="acts">${act('quiet', 'peer', 'nudged sam', 'no answer yet · 30m', [], false)}</div>`
   )}
 </div>
 <div class="hover">
   <b>context</b><br>
-  ${IC.bubble} posted in #mr-reviews · reactions 👀 ✅<br>
-  ${IC.eye} geoff is reviewing this on his board
+  ${IC.slack} posted in #mr-reviews · reactions 👀 ✅<br>
+  ${IC.eye} geoff opened it 20m ago · alice reviewed yesterday
 </div>
-<p class="cap">The hover card is where reactions keep their real emoji faces; the row itself
-never renders one.</p>
+<p class="cap">The hover card carries the settled detail; reactions keep their emoji faces
+there, never on the row.</p>
 
 <h2>live human reviewer</h2>
 <div class="list">
@@ -439,7 +526,9 @@ most urgent line.</p>
 </div>
 `;
 
-writeFileSync(join(OUT, 'Main.dc.html'), page('MR Row · direction A', mainBody));
+writeFileSync(join(OUT, 'Main.dc.html'), page('MR Row · the design', mainBody));
+writeFileSync(join(OUT, 'RestHover.dc.html'), page('Rest and hover', restHoverBody));
+writeFileSync(join(OUT, 'Density.dc.html'), page('Density', densityBody));
 writeFileSync(join(OUT, 'DirectionB.dc.html'), page('MR Row · direction B', dirBBody));
 writeFileSync(join(OUT, 'DirectionC.dc.html'), page('MR Row · direction C', dirCBody));
 writeFileSync(join(OUT, 'StatesLanes.dc.html'), page('Lane states', lanesBody));
@@ -449,9 +538,11 @@ writeFileSync(join(OUT, 'StatesStress.dc.html'), page('Stress test', stressBody)
 
 const canvas = {
   artboards: [
-    { file: 'Main.dc.html', title: 'Direction A · activity lines', x: 0, y: 0, w: 780, h: 640 },
-    { file: 'DirectionB.dc.html', title: 'Direction B · one phrase + rail', x: 860, y: 0, w: 780, h: 500 },
-    { file: 'DirectionC.dc.html', title: 'Direction C · chip grammar', x: 1720, y: 0, w: 780, h: 500 },
+    { file: 'Main.dc.html', title: 'The design', x: 0, y: 0, w: 780, h: 760 },
+    { file: 'RestHover.dc.html', title: 'Rest vs hover', x: 860, y: 0, w: 780, h: 560 },
+    { file: 'Density.dc.html', title: 'Density A/B', x: 860, y: 680, w: 780, h: 620 },
+    { file: 'DirectionB.dc.html', title: 'Direction B · one phrase + rail', x: 1720, y: 0, w: 780, h: 500 },
+    { file: 'DirectionC.dc.html', title: 'Direction C · chip grammar', x: 1720, y: 620, w: 780, h: 500 },
     { file: 'StatesLanes.dc.html', title: 'Lanes · every state', x: 0, y: 0, w: 780, h: 2200, page: 'page-2' },
     { file: 'StatesAttention.dc.html', title: 'Decisions & attention', x: 860, y: 0, w: 780, h: 1080, page: 'page-2' },
     { file: 'StatesAmbient.dc.html', title: 'Context off-row', x: 860, y: 1200, w: 780, h: 640, page: 'page-2' },
@@ -464,10 +555,11 @@ const canvas = {
       y: -170,
       w: 330,
       text:
-        'MR row redesign: the row is outgrowing chips-on-chips.\n' +
-        'Page 1: three directions on the same rows.\n' +
-        'Page 2: every state, drawn in direction A.\n' +
-        'Tokens lifted verbatim from tui-kit (Tokyo light/dark).',
+        'MR row redesign, from the validated laws:\n' +
+        'hot/warm/settled temperatures; zoom levels; the row\n' +
+        'is a sentence; color is a verb; position is meaning.\n' +
+        'Page 1: the design + rest/hover + density (B and C\n' +
+        'kept as rejected directions). Page 2: every state.',
     },
   ],
   pages: [
@@ -477,4 +569,4 @@ const canvas = {
   launch: { view: 'canvas', page: 'page-1' },
 };
 writeFileSync(join(OUT, 'canvas.json'), JSON.stringify(canvas, null, 2) + '\n');
-console.log('wrote 7 artboards + canvas.json');
+console.log('wrote 9 artboards + canvas.json');

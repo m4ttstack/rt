@@ -2,16 +2,32 @@
   "artboards": [
     {
       "file": "Main.dc.html",
-      "title": "Direction A · activity lines",
+      "title": "The design",
       "x": 0,
       "y": 0,
       "w": 780,
-      "h": 640
+      "h": 760
+    },
+    {
+      "file": "RestHover.dc.html",
+      "title": "Rest vs hover",
+      "x": 860,
+      "y": 0,
+      "w": 780,
+      "h": 560
+    },
+    {
+      "file": "Density.dc.html",
+      "title": "Density A/B",
+      "x": 860,
+      "y": 680,
+      "w": 780,
+      "h": 620
     },
     {
       "file": "DirectionB.dc.html",
       "title": "Direction B · one phrase + rail",
-      "x": 860,
+      "x": 1720,
       "y": 0,
       "w": 780,
       "h": 500
@@ -20,7 +36,7 @@
       "file": "DirectionC.dc.html",
       "title": "Direction C · chip grammar",
       "x": 1720,
-      "y": 0,
+      "y": 620,
       "w": 780,
       "h": 500
     },
@@ -67,7 +83,7 @@
       "x": 0,
       "y": -170,
       "w": 330,
-      "text": "MR row redesign: the row is outgrowing chips-on-chips.\nPage 1: three directions on the same rows.\nPage 2: every state, drawn in direction A.\nTokens lifted verbatim from tui-kit (Tokyo light/dark)."
+      "text": "MR row redesign, from the validated laws:\nhot/warm/settled temperatures; zoom levels; the row\nis a sentence; color is a verb; position is meaning.\nPage 1: the design + rest/hover + density (B and C\nkept as rejected directions). Page 2: every state."
     }
   ],
   "pages": [

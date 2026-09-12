@@ -38,6 +38,10 @@
   .cap b { color: var(--fg); font-weight: 600; }
 
   .list { border: 1px solid var(--border-soft); border-radius: 8px; background: var(--bg); overflow: hidden; }
+  .tight .row { padding: 8px 12px 8px 0; }
+  .tight .r2 { margin-top: 2px; }
+  .tight .acts { margin-top: 5px; }
+  .tight .act { line-height: 18px; }
 
   /* one content edge: 44px gutter column, then text. */
   .row { display: grid; grid-template-columns: 40px minmax(0,1fr); align-items: start;
@@ -63,6 +67,8 @@
   .grow { flex: 1; }
   .adds { color: color-mix(in srgb, var(--green) 70%, var(--muted)); }
   .dels { color: color-mix(in srgb, var(--red) 70%, var(--muted)); }
+  .fresh { color: var(--accent); font-weight: 600; }
+  .mark { display: inline-flex; opacity: .55; }
 
   /* the ledger: 20px lines on the shared content edge. */
   .acts { margin-top: 8px; display: flex; flex-direction: column; gap: 2px; }
@@ -80,10 +86,13 @@
   .act .spin { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: currentColor;
                margin-left: 8px; align-self: center; animation: pulse 1.6s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity: .25; } }
-  .act .do { display: none; }
-  .row.hov .act .do { display: inline-flex; gap: 14px; margin-left: auto; padding-left: 16px; flex-shrink: 0; }
+  .act .do { display: inline-flex; gap: 14px; margin-left: auto; padding-left: 16px; flex-shrink: 0; }
   .act .do a { font-size: .72rem; font-weight: 600; text-decoration: none; color: var(--accent); }
   .act .do a.mut { color: var(--muted); font-weight: 500; }
+  .act .do a.sec { display: none; }
+  .row.hov .act .do a.sec { display: inline; }
+  .row.restless .act .do { display: none; }
+  .row.restless.hov .act .do { display: inline-flex; }
 
   /* direction B leftovers */
   .sum { font-size: .76rem; font-weight: 600; flex-shrink: 0; }
@@ -122,6 +131,7 @@
     <span class="sep">·</span><span>1 thread</span>
     <span class="sep">·</span><span>32h</span>
     
+    
   </div><div class="acts">
   <div class="act act-quiet">
     <span class="lane">review</span>
@@ -141,6 +151,7 @@
     <span><span class="adds">+1455</span> <span class="dels">−13</span></span>
     <span class="sep">·</span><span>1 thread</span>
     <span class="sep">·</span><span>32h</span>
+    
     
   </div><div class="acts">
   <div class="act act-work">
@@ -162,6 +173,7 @@
     <span class="sep">·</span><span>1 thread</span>
     <span class="sep">·</span><span>32h</span>
     
+    
   </div><div class="acts">
   <div class="act act-go">
     <span class="lane">review</span>
@@ -182,6 +194,7 @@
     <span class="sep">·</span><span>1 thread</span>
     <span class="sep">·</span><span>32h</span>
     
+    
   </div><div class="acts">
   <div class="act act-bad">
     <span class="lane">review</span>
@@ -201,6 +214,7 @@
     <span><span class="adds">+1455</span> <span class="dels">−13</span></span>
     <span class="sep">·</span><span>1 thread</span>
     <span class="sep">·</span><span>32h</span>
+    
     
   </div><div class="acts">
   <div class="act act-warn">
@@ -226,6 +240,7 @@
     <span class="sep">·</span><span>1 thread</span>
     <span class="sep">·</span><span>32h</span>
     
+    
   </div><div class="acts">
   <div class="act act-quiet">
     <span class="lane">response</span>
@@ -245,6 +260,7 @@
     <span><span class="adds">+1455</span> <span class="dels">−13</span></span>
     <span class="sep">·</span><span>1 thread</span>
     <span class="sep">·</span><span>32h</span>
+    
     
   </div><div class="acts">
   <div class="act act-work">
@@ -266,6 +282,7 @@
     <span class="sep">·</span><span>1 thread</span>
     <span class="sep">·</span><span>32h</span>
     
+    
   </div><div class="acts">
   <div class="act act-work">
     <span class="lane">response</span>
@@ -285,6 +302,7 @@
     <span><span class="adds">+1455</span> <span class="dels">−13</span></span>
     <span class="sep">·</span><span>1 thread</span>
     <span class="sep">·</span><span>32h</span>
+    
     
   </div><div class="acts">
   <div class="act act-work">
@@ -306,6 +324,7 @@
     <span class="sep">·</span><span>1 thread</span>
     <span class="sep">·</span><span>32h</span>
     
+    
   </div><div class="acts">
   <div class="act act-go">
     <span class="lane">response</span>
@@ -325,6 +344,7 @@
     <span><span class="adds">+1455</span> <span class="dels">−13</span></span>
     <span class="sep">·</span><span>1 thread</span>
     <span class="sep">·</span><span>32h</span>
+    
     
   </div><div class="acts">
   <div class="act act-warn">
@@ -346,6 +366,7 @@
     <span class="sep">·</span><span>1 thread</span>
     <span class="sep">·</span><span>32h</span>
     
+    
   </div><div class="acts">
   <div class="act act-warn">
     <span class="lane">response</span>
@@ -366,6 +387,7 @@
     <span class="sep">·</span><span>1 thread</span>
     <span class="sep">·</span><span>32h</span>
     
+    
   </div><div class="acts">
   <div class="act act-bad">
     <span class="lane">response</span>
@@ -385,6 +407,7 @@
     <span><span class="adds">+1455</span> <span class="dels">−13</span></span>
     <span class="sep">·</span><span>1 thread</span>
     <span class="sep">·</span><span>32h</span>
+    
     
   </div><div class="acts">
   <div class="act act-warn">
@@ -410,6 +433,7 @@
     
     <span class="sep">·</span><span>3h</span>
     
+    
   </div><div class="acts">
   <div class="act act-quiet">
     <span class="lane">doctor</span>
@@ -429,6 +453,7 @@
     <span><span class="adds">+41</span> <span class="dels">−9</span></span>
     
     <span class="sep">·</span><span>3h</span>
+    
     
   </div><div class="acts">
   <div class="act act-work">
@@ -450,6 +475,7 @@
     
     <span class="sep">·</span><span>3h</span>
     
+    
   </div><div class="acts">
   <div class="act act-work">
     <span class="lane">doctor</span>
@@ -469,6 +495,7 @@
     <span><span class="adds">+41</span> <span class="dels">−9</span></span>
     
     <span class="sep">·</span><span>3h</span>
+    
     
   </div><div class="acts">
   <div class="act act-work">
@@ -490,6 +517,7 @@
     
     <span class="sep">·</span><span>3h</span>
     
+    
   </div><div class="acts">
   <div class="act act-work">
     <span class="lane">doctor</span>
@@ -510,6 +538,7 @@
     
     <span class="sep">·</span><span>3h</span>
     
+    
   </div><div class="acts">
   <div class="act act-go">
     <span class="lane">doctor</span>
@@ -529,6 +558,7 @@
     <span><span class="adds">+41</span> <span class="dels">−9</span></span>
     
     <span class="sep">·</span><span>3h</span>
+    
     
   </div><div class="acts">
   <div class="act act-bad">
