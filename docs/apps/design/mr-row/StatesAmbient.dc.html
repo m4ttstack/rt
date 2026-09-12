@@ -68,7 +68,10 @@
   .grow { flex: 1; }
   .adds { color: color-mix(in srgb, var(--green) 70%, var(--muted)); }
   .dels { color: color-mix(in srgb, var(--red) 70%, var(--muted)); }
-  .fresh { color: var(--accent); font-weight: 600; }
+  .unread { display: inline-flex; align-items: center; justify-content: center;
+            min-width: 15px; height: 15px; padding: 0 4px; margin-left: 6px; border-radius: 8px;
+            background: var(--accent); color: var(--bg); font-size: .62rem; font-weight: 700;
+            vertical-align: 1px; }
   .mark { display: inline-flex; opacity: .55; }
   .pair { white-space: nowrap; flex-shrink: 0; font-variant-numeric: tabular-nums; }
   .facts { display: inline-flex; align-items: center; gap: 12px; flex-shrink: 0;
@@ -145,7 +148,7 @@ for you turns into a hot line.</p>
     <span class="branch">feature/cv-3028</span>
     <span class="pair"><span class="adds">+18</span> <span class="dels">−1253</span></span>
     <span class="grow"></span>
-    <span class="facts"><a href="#" class="thr" title="open the comments drawer">7 threads <span class="fresh">2 new</span></a><span class="age">9d</span></span>
+    <span class="facts"><a href="#" class="thr" title="open the comments drawer">7 threads<span class="unread" title="2 new since you last looked">2</span></a><span class="age">9d</span></span>
     
   </div><div class="acts">
   <div class="act act-work">

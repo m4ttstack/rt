@@ -86,7 +86,10 @@ const CSS = `
   .grow { flex: 1; }
   .adds { color: color-mix(in srgb, var(--green) 70%, var(--muted)); }
   .dels { color: color-mix(in srgb, var(--red) 70%, var(--muted)); }
-  .fresh { color: var(--accent); font-weight: 600; }
+  .unread { display: inline-flex; align-items: center; justify-content: center;
+            min-width: 15px; height: 15px; padding: 0 4px; margin-left: 6px; border-radius: 8px;
+            background: var(--accent); color: var(--bg); font-size: .62rem; font-weight: 700;
+            vertical-align: 1px; }
   .mark { display: inline-flex; opacity: .55; }
   .pair { white-space: nowrap; flex-shrink: 0; font-variant-numeric: tabular-nums; }
   .facts { display: inline-flex; align-items: center; gap: 12px; flex-shrink: 0;
@@ -181,7 +184,7 @@ function r1({ title, phrase, phraseColor = 'var(--amber)', slack = false }) {
 }
 
 function r2({ iid, branch, adds, dels, threads, age, fresh = 0, slack = false }, extra = '') {
-  const freshTag = fresh ? ` <span class="fresh">${fresh} new</span>` : '';
+  const freshTag = fresh ? `<span class="unread" title="${fresh} new since you last looked">${fresh}</span>` : '';
   return `<div class="r2">
     <span class="iid">!${iid}</span>
     <span class="branch">${branch}</span>

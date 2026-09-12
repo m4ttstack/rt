@@ -68,7 +68,10 @@
   .grow { flex: 1; }
   .adds { color: color-mix(in srgb, var(--green) 70%, var(--muted)); }
   .dels { color: color-mix(in srgb, var(--red) 70%, var(--muted)); }
-  .fresh { color: var(--accent); font-weight: 600; }
+  .unread { display: inline-flex; align-items: center; justify-content: center;
+            min-width: 15px; height: 15px; padding: 0 4px; margin-left: 6px; border-radius: 8px;
+            background: var(--accent); color: var(--bg); font-size: .62rem; font-weight: 700;
+            vertical-align: 1px; }
   .mark { display: inline-flex; opacity: .55; }
   .pair { white-space: nowrap; flex-shrink: 0; font-variant-numeric: tabular-nums; }
   .facts { display: inline-flex; align-items: center; gap: 12px; flex-shrink: 0;
@@ -216,7 +219,7 @@ A quiet row's status line says <b>all clear</b>, softly; the height never change
     <span class="branch">feature/cv-3149</span>
     <span class="pair"><span class="adds">+296</span> <span class="dels">−16</span></span>
     <span class="grow"></span>
-    <span class="facts"><a href="#" class="thr" title="open the comments drawer">5 threads <span class="fresh">2 new</span></a><span class="age">9h</span></span>
+    <span class="facts"><a href="#" class="thr" title="open the comments drawer">5 threads<span class="unread" title="2 new since you last looked">2</span></a><span class="age">9h</span></span>
     
   </div><div class="acts">
       
