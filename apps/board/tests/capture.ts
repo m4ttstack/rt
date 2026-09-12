@@ -72,7 +72,9 @@ async function newPage(width: number, theme: 'light' | 'dark'): Promise<Page> {
     (mode: string) => localStorage.setItem('mrs-theme', mode),
     theme
   );
-  await page.goto(BASE);
+  // The fixture has a seat (rmarlow), which would open the board filtered to
+  // her rows; every shot but the seat tab's wants the whole team.
+  await page.goto(`${BASE}/?member=all`);
   // Kill animations/transitions so pulsing badges and spinners can't smear.
   await page.addStyleTag({
     content:
@@ -129,6 +131,12 @@ for (const theme of ['light', 'dark'] as const) {
   await page.waitForSelector('.tui-row:hover .tui-status-tools');
   await shoot(page, `rowhover-${theme}`);
   await page.mouse.move(0, 0);
+  // the seat tab: every row needing rmarlow's move, grouped by need
+  await page.click('[role="tab"]:has-text("Needs me")');
+  await page.waitForSelector('[data-part="panel-title"]:has-text("decide")');
+  await shoot(page, `needsme-${theme}`);
+  await page.click('[role="tab"]:has-text("Team")');
+  await page.waitForSelector('.tui-row');
   // row menu open (right-click the first row)
   await page.click('.tui-row', { button: 'right' });
   // `.tui-menu` is gone: the menu shell is the kit's ContextMenu recipe, named

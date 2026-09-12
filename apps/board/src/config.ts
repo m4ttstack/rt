@@ -98,9 +98,12 @@ export function resolveLaunchRepo(
 export interface TabConfig {
   id: string;
   label: string;
+  /** `needs-me` is the built-in tab the client appends (view.ts's
+      NEEDS_ME_TAB), never a configured one: parseTabs rejects it from config. */
   source:
     | { kind: 'authors' }
-    | { kind: 'codeowners'; section: string; excludeMembers?: boolean };
+    | { kind: 'codeowners'; section: string; excludeMembers?: boolean }
+    | { kind: 'needs-me' };
   /** Overrides slack.channel for this tab's index, reactions, and posts. */
   slackChannel?: string;
   /** Overrides review-launch skill resolution for this tab. Empty/absent = normal resolution. */

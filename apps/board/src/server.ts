@@ -85,6 +85,7 @@ import {
 } from './data.ts';
 import {
   summarizeDiscussions,
+  threadsOpenedBy,
   threadStatusCounts,
   unresolvedReviewerCount,
 } from './discussions.ts';
@@ -577,6 +578,10 @@ async function enrichReviewerComments(mrs: BoardMR[]): Promise<void> {
           );
           m.reviewerComments = unresolvedReviewerCount(threads);
           m.threadSummary = threadStatusCounts(threads);
+          if (config.defaultMember !== 'all')
+            m.myThreads = threadStatusCounts(
+              threadsOpenedBy(threads, config.defaultMember)
+            );
           m.generalComments = comments.length;
         } catch {
           // Keep the coarse fallback (unresolvedThreads) for this MR.

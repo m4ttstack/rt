@@ -565,21 +565,41 @@ function authorLine(mr: BoardMRWithReview): Candidate {
 }
 
 /** A reviewer's standing state on someone else's MR: whether the next move
-    is theirs (review) or the author's (everything else). Only an approved,
-    unblocked MR with nothing awaiting anyone earns the sun. */
-function reviewerLine(mr: BoardMRWithReview): Candidate {
+    is theirs (review, or a second look once the author answered their
+    threads or a push reset their approval) or the author's (everything
+    else). Only an approved, unblocked MR with nothing awaiting anyone earns
+    the sun. */
+function reviewerLine(mr: BoardMRWithReview, self: string | null): Candidate {
   const b = mr.blockers;
   const awaiting = mr.threadSummary?.awaiting ?? 0;
   if (hasChangesRequested(mr))
     return { tone: 'quiet', word: 'changes requested', verbs: [OPEN] };
   if (awaiting > 0)
     return { tone: 'quiet', word: 'waiting on the author', verbs: [OPEN] };
+  const review: Verb = { kind: 'launch-review', label: 'review' };
+  const me = self
+    ? mr.reviews.reviewers.find(r => r.username === self)
+    : undefined;
+  if (me && me.reviewState === 'UNAPPROVED')
+    return { tone: 'quiet', word: 'your approval was reset', verbs: [review] };
+  const mine = mr.myThreads;
+  if (me && me.reviewState !== 'APPROVED' && mine && mine.awaiting === 0) {
+    const answered = mine.replied + mine.resolved;
+    if (answered > 0) {
+      return {
+        tone: 'quiet',
+        word: 'author answered you',
+        detail: answered === 1 ? 'one thread' : `${answered} threads`,
+        verbs: [OPEN],
+      };
+    }
+  }
   if (!mr.reviews.isApproved) {
     return {
       tone: 'quiet',
       word: 'awaiting review',
       detail: approvalsDetail(mr),
-      verbs: [{ kind: 'launch-review', label: 'review' }],
+      verbs: [review],
     };
   }
   if (b.pipelineRunning) return CI_RUNNING;
@@ -625,7 +645,7 @@ export function candidateLines(
   ].filter((l): l is Candidate => l !== null);
   if (lines.length > 0) return lines;
   const mine = self !== null && mr.author.username === self;
-  return [mine ? authorLine(mr) : reviewerLine(mr)];
+  return [mine ? authorLine(mr) : reviewerLine(mr, self)];
 }
 
 const TONE_RANK: Record<Tone, number> = {

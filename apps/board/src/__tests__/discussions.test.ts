@@ -5,6 +5,7 @@ import {
   isBotUsername,
   summarizeDiscussions,
   summarizeThreads,
+  threadsOpenedBy,
   unresolvedReviewerCount,
 } from '../discussions.ts';
 import { armedLatchBody, spentLatchBody } from '../latch/markers.ts';
@@ -289,5 +290,20 @@ describe('latch exclusion', () => {
     ]);
     const { comments } = summarizeDiscussions(d, AUTHOR);
     expect(comments).toHaveLength(0);
+  });
+});
+
+describe('threadsOpenedBy', () => {
+  const AUTHOR = 'dorothy';
+  test("keeps the threads whose first note is the reviewer's, whoever replied", () => {
+    const d = detail([
+      { notes: [note('me'), note(AUTHOR)] },
+      { notes: [note('other'), note('me')] },
+      { notes: [note('me')] },
+    ]);
+    const { threads } = summarizeDiscussions(d, AUTHOR);
+    expect(threadsOpenedBy(threads, 'me')).toHaveLength(2);
+    expect(threadsOpenedBy(threads, 'other')).toHaveLength(1);
+    expect(threadsOpenedBy(threads, 'nobody')).toHaveLength(0);
   });
 });

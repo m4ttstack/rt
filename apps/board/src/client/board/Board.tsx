@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { GateDomain } from '@mattstack/gate-kit';
 import { ICONS, Panel, SideDrawer, ToastHost } from '@mattstack/tui-kit';
+import type { TabConfig } from '../../config.ts';
 import type { BoardMR } from '../../data.ts';
 import { inferRoster } from '../../data.ts';
 import type { GateRow } from '../../gates/store.ts';
@@ -17,7 +18,9 @@ import {
   filterByMember,
   filterBySlack,
   filterByTab,
+  GROUP_KEYS,
   groupMRs,
+  NEEDS_ME_TAB,
   nestStacks,
   parseViewState,
   rosterUsernamesFor,
@@ -58,6 +61,7 @@ import {
   useOptimisticLifecycle,
   useToasts,
 } from './hooks.ts';
+import { NEED_LABEL, NEED_ORDER, needOf } from './needs-me.ts';
 import { overlay } from './optimistic.ts';
 import { RespondModal, ReviewModal } from './ReviewModal.tsx';
 import { RowMenu } from './RowMenu.tsx';
@@ -87,6 +91,13 @@ const needsQueue = (gate: GateRow): boolean =>
   gate.status === 'parked' ||
   gate.execution === 'unassigned' ||
   gate.delivery?.outcome === 'stuck';
+
+/** The tabs the board shows: the configured ones plus the built-in seat tab
+    whenever the board has a seat (never on an "all" board, where nobody's
+    move is anybody's). The config editor keeps `data.tabs` alone. */
+function boardTabs(d: Pick<BoardData, 'tabs' | 'defaultMember'>): TabConfig[] {
+  return d.defaultMember === 'all' ? d.tabs : [...d.tabs, NEEDS_ME_TAB];
+}
 
 // ── board ──────────────────────────────────────────────────────────────────
 
@@ -119,11 +130,22 @@ export function Board() {
     const clearsSelection = tabChangeClearsSelection(patch, state.tab);
     // Each tab has its own roster (a codeowners tab's is inferred from the rows
     // in view), so a member picked on one tab usually does not exist on the
-    // next: carrying it over would land on an empty board.
+    // next: carrying it over would land on an empty board. The seat tab's
+    // whole point is its grouping by need, so it opens grouped that way and
+    // leaves that grouping behind on the way out.
+    const entersSeat = patch.tab === NEEDS_ME_TAB.id && state.tab !== patch.tab;
+    const leavesSeat =
+      patch.tab !== undefined &&
+      patch.tab !== NEEDS_ME_TAB.id &&
+      state.tab === NEEDS_ME_TAB.id;
     const next = {
       ...state,
       ...patch,
       ...(clearsSelection ? { member: 'all' } : {}),
+      ...(entersSeat && !patch.group ? { group: 'needs' as const } : {}),
+      ...(leavesSeat && state.group === 'needs'
+        ? { group: 'age' as const }
+        : {}),
     };
     localStorage.setItem(STATE_KEY, JSON.stringify(next));
     history.replaceState(
@@ -157,7 +179,8 @@ export function Board() {
       // Two passes because the member's valid set depends on which tab wins:
       // a codeowners tab's roster is its own authors, so a stored pick there
       // would otherwise be dropped as "not on the team" on every reload.
-      const tabIds = d.tabs.map(t => t.id);
+      const tabs = boardTabs(d);
+      const tabIds = tabs.map(t => t.id);
       const firstPass = parseViewState(
         location.search,
         stored,
@@ -165,8 +188,8 @@ export function Board() {
         d.defaultMember,
         tabIds
       );
-      const tab = d.tabs.find(t => t.id === firstPass.tab) ?? d.tabs[0];
-      const validMembers = [...rosterUsernamesFor(d.mrs, tab, usernames)];
+      const tab = tabs.find(t => t.id === firstPass.tab) ?? tabs[0];
+      const validMembers = [...rosterUsernamesFor(d.mrs, tab, usernames, tabs)];
       let resolved = parseViewState(
         location.search,
         stored,
@@ -183,7 +206,7 @@ export function Board() {
         resolved = viewStateForGate(
           resolved,
           d.mrs,
-          d.tabs,
+          tabs,
           new Set(usernames),
           linkedIid
         );
@@ -197,10 +220,11 @@ export function Board() {
       setState(prev => {
         // A tab dropped in the settings modal must not linger as the active
         // id, or re-adding one with that id would silently jump to it.
-        const tab = d.tabs.find(t => t.id === prev.tab) ?? d.tabs[0]!;
+        const tabs = boardTabs(d);
+        const tab = tabs.find(t => t.id === prev.tab) ?? tabs[0]!;
         const next = tab.id === prev.tab ? prev : { ...prev, tab: tab.id };
         if (next.member === 'all') return next;
-        return rosterUsernamesFor(d.mrs, tab, usernames).has(next.member)
+        return rosterUsernamesFor(d.mrs, tab, usernames, tabs).has(next.member)
           ? next
           : { ...next, member: 'all' };
       });
@@ -724,24 +748,40 @@ export function Board() {
   const boardView = useMemo(() => {
     if (!data) return null;
     const total = data.members.reduce((n, m) => n + m.count, 0);
-    // data.tabs is always non-empty (server falls back to IMPLICIT_TABS);
+    const now = Date.now();
+    const self = data.defaultMember === 'all' ? null : data.defaultMember;
+    const tabs = boardTabs(data);
+    // tabs is always non-empty (server falls back to IMPLICIT_TABS);
     // state.tab itself may briefly lag on the very first render before
     // onData's validation pass lands, so fall back to the first tab rather
     // than trust it blindly.
-    const activeTab = data.tabs.find(t => t.id === state.tab) ?? data.tabs[0]!;
+    const activeTab = tabs.find(t => t.id === state.tab) ?? tabs[0]!;
     const isCodeownersTab = activeTab.source.kind === 'codeowners';
+    const isSeatTab = activeTab.source.kind === 'needs-me';
     // A codeowners tab's "who counts as roster" set for excludeMembers.
     const rosterUsernames = new Set(data.members.map(m => m.username));
     // Server state wins; otherwise show an optimistic "queued" badge if pending.
     const mrs = overlay(data.mrs, optimisticLifecycle.state);
-    const tabFiltered = filterByTab(mrs, activeTab, rosterUsernames);
-    // Codeowners tabs bypass member filtering entirely (and the sidebar that
-    // drives it) -- the queue is scoped by section, not by roster author.
-    // A codeowners tab lists other teams' MRs, so the configured roster has
-    // nothing to drive there. Inferring one from the rows in view keeps the
-    // author filter (and the settings gears that live in this panel) available.
-    const roster = isCodeownersTab ? inferRoster(tabFiltered) : data.members;
-    const rosterTotal = isCodeownersTab ? tabFiltered.length : total;
+    const need = (mr: BoardMRWithReview) =>
+      self === null ? null : needOf(mr, self, now, draftResolved);
+    const needsMe = (rows: BoardMRWithReview[]) =>
+      rows.filter(mr => need(mr) !== null);
+    const tabFiltered = isSeatTab
+      ? needsMe(filterByTab(mrs, activeTab, rosterUsernames, tabs))
+      : filterByTab(mrs, activeTab, rosterUsernames, tabs);
+    // The seat tab's count shows on the tab strip from every tab.
+    const needsMeCount =
+      self === null
+        ? null
+        : needsMe(filterByTab(mrs, NEEDS_ME_TAB, rosterUsernames, tabs)).length;
+    // Codeowners and seat tabs bypass member filtering entirely (and the
+    // sidebar that drives it) -- their rows are scoped by section or by
+    // need, not by roster author, and may come from outside the team. Inferring
+    // a roster from the rows in view keeps the author filter (and the settings
+    // gears that live in this panel) available.
+    const inferred = isCodeownersTab || isSeatTab;
+    const roster = inferred ? inferRoster(tabFiltered) : data.members;
+    const rosterTotal = inferred ? tabFiltered.length : total;
     // A stored "posted" pick with slack unconfigured would hide every row
     // behind a control that isn't rendered, so the filter only bites when
     // there are refs to filter on.
@@ -754,14 +794,21 @@ export function Board() {
       filtered,
       state.group,
       data.members.map(m => m.username),
-      Date.now()
+      now,
+      mr => {
+        const n = need(mr);
+        return n && { label: NEED_LABEL[n], order: NEED_ORDER.indexOf(n) };
+      }
     ).map(g => ({
       label: g.label,
       mrs: sortMRs(g.mrs, state.sort),
     }));
     return {
+      tabs,
       activeTab,
       isCodeownersTab,
+      isSeatTab,
+      needsMeCount,
       rosterUsernames,
       mrs,
       tabFiltered,
@@ -771,7 +818,7 @@ export function Board() {
       filtered,
       groups,
     };
-  }, [data, optimisticLifecycle.state, state]);
+  }, [data, optimisticLifecycle.state, state, draftResolved]);
 
   // Actionable gates on VISIBLE rows only, in board order: group order, then
   // the group's own sort, then stack nesting -- exactly the order and scope
@@ -816,8 +863,11 @@ export function Board() {
   }
 
   const {
+    tabs,
     activeTab,
     isCodeownersTab,
+    isSeatTab,
+    needsMeCount,
     rosterUsernames,
     mrs,
     tabFiltered,
@@ -920,9 +970,16 @@ export function Board() {
       load();
     });
   };
+  const inferredNote = isCodeownersTab
+    ? 'authors in this queue'
+    : isSeatTab
+      ? 'authors needing you'
+      : undefined;
   const controlProps = {
     state,
     update,
+    // Grouping by need only means something on the seat tab.
+    groupKeys: isSeatTab ? GROUP_KEYS : GROUP_KEYS.filter(k => k !== 'needs'),
     theme,
     pickTheme,
     // The bar owns copy while a selection is live -- its header input has to
@@ -952,7 +1009,7 @@ export function Board() {
         onSettings={openSettings}
         onConfig={openConfig}
         scopeUncovered={data.scopeUncovered}
-        note={isCodeownersTab ? 'authors in this queue' : undefined}
+        note={inferredNote}
         queue={
           queueEntries.length > 0
             ? { count: queueEntries.length, open: queue.openAtStart }
@@ -996,8 +1053,11 @@ export function Board() {
         </header>
 
         <TabBar
-          tabs={data.tabs}
+          tabs={tabs}
           active={state.tab}
+          counts={
+            needsMeCount === null ? {} : { [NEEDS_ME_TAB.id]: needsMeCount }
+          }
           onPick={tab => update({ tab })}
           syncing={tabSyncing}
           unknown={unknownTabs}
@@ -1124,7 +1184,7 @@ export function Board() {
             onSettings={openSettings}
             onConfig={openConfig}
             scopeUncovered={data.scopeUncovered}
-            note={isCodeownersTab ? 'authors in this queue' : undefined}
+            note={inferredNote}
             queue={
               queueEntries.length > 0
                 ? {

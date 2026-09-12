@@ -1,6 +1,6 @@
 import { CopyButton, ICONS, LabeledSeg, Segmented } from '@mattstack/tui-kit';
 import { GROUP_KEYS, SORT_KEYS } from '../../view.ts';
-import type { ViewState } from '../../view.ts';
+import type { GroupKey, ViewState } from '../../view.ts';
 import type { ThemeMode } from '../types.ts';
 import { SlackPostedMark } from './chips.tsx';
 import { GROUP_LABEL, SORT_LABEL } from './format.ts';
@@ -21,10 +21,13 @@ function Controls({
   canPostSummary,
   postingSummary,
   slackFilter,
+  groupKeys = GROUP_KEYS,
   stacked = false,
 }: {
   state: ViewState;
   update: (patch: Partial<ViewState>) => void;
+  /** The groupings this tab offers (the seat tab alone offers "needs"). */
+  groupKeys?: readonly GroupKey[];
   theme: ThemeMode;
   pickTheme: (m: ThemeMode) => void;
   canCopy: boolean;
@@ -41,7 +44,7 @@ function Controls({
   const group = (
     <LabeledSeg
       legend="group"
-      options={GROUP_KEYS}
+      options={groupKeys}
       labels={GROUP_LABEL}
       value={state.group}
       onChange={g => update({ group: g })}

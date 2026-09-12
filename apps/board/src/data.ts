@@ -26,6 +26,11 @@ export type BoardMR = MRDashboardProps & {
       (amber while any thread awaits the author, green once all are handled).
       Undefined when the discussions fetch was skipped or failed. */
   threadSummary?: { awaiting: number; replied: number; resolved: number };
+  /** The same counts over the threads the board's default member opened, so
+      a reviewer can tell "the author answered me" from "someone else's
+      thread moved". Undefined when the discussions fetch was skipped or the
+      board has no default member. */
+  myThreads?: { awaiting: number; replied: number; resolved: number };
   /** Count of general (non-resolvable) MR comments — the Overview-tab notes that
       aren't resolvable threads. Drives the 💬 token's total and lets a
       general-comment-only MR still be flagged as having comment activity. */

@@ -2764,6 +2764,15 @@ body {
   color: var(--fg);
   border-bottom-color: var(--accent, var(--fg));
 }
+/* A tab's live count: the group header's count in miniature, so the strip
+   reads the way the groups below it do. */
+.tui-tab-count {
+  margin-left: 6px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-text);
+}
 .tui-tabs .tui-chip {
   margin-left: auto;
 }

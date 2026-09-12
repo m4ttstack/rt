@@ -1,6 +1,6 @@
 {
   "title": "MR Board",
-  "defaultMember": "all",
+  "defaultMember": "rmarlow",
   "members": [
     {
       "username": "rmarlow",
@@ -789,7 +789,15 @@
             "avatarUrl": null
           }
         ],
-        "reviewers": [],
+        "reviewers": [
+          {
+            "id": "gitlab:user:rmarlow",
+            "username": "rmarlow",
+            "name": "Rae Marlow",
+            "avatarUrl": null,
+            "reviewState": "UNREVIEWED"
+          }
+        ],
         "totalAssigned": 0,
         "haveActed": 0,
         "havePending": 0,
@@ -1525,7 +1533,15 @@
             "avatarUrl": null
           }
         ],
-        "reviewers": [],
+        "reviewers": [
+          {
+            "id": "gitlab:user:rmarlow",
+            "username": "rmarlow",
+            "name": "Rae Marlow",
+            "avatarUrl": null,
+            "reviewState": "REVIEWED"
+          }
+        ],
         "totalAssigned": 0,
         "haveActed": 0,
         "havePending": 0,
@@ -1579,8 +1595,8 @@
       "codeownerSections": [],
       "threadSummary": {
         "awaiting": 0,
-        "replied": 0,
-        "resolved": 0
+        "replied": 1,
+        "resolved": 1
       },
       "generalComments": 0,
       "slack": {
@@ -1589,7 +1605,12 @@
         "reactions": ["white_check_mark"],
         "posted": true
       },
-      "gates": []
+      "gates": [],
+      "myThreads": {
+        "awaiting": 0,
+        "replied": 1,
+        "resolved": 1
+      }
     },
     {
       "provider": "gitlab",

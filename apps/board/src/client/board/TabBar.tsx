@@ -9,12 +9,15 @@ import type { TabConfig } from '../../config.ts';
 export function TabBar({
   tabs,
   active,
+  counts = {},
   onPick,
   syncing,
   unknown,
 }: {
   tabs: TabConfig[];
   active: string;
+  /** Live counts shown beside a tab's label, keyed by tab id. */
+  counts?: Record<string, number>;
   onPick: (tab: string) => void;
   /** The active codeowners tab's section is still mid-backfill. */
   syncing: boolean;
@@ -36,6 +39,9 @@ export function TabBar({
             onClick={() => onPick(tab.id)}
           >
             {tab.label}
+            {counts[tab.id] !== undefined && (
+              <span className="tui-tab-count">{counts[tab.id]}</span>
+            )}
           </button>
           {unknown.includes(tab.id) && (
             <Chip

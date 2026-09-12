@@ -4,7 +4,7 @@ import type { BoardMR } from './data.ts';
 import { hasChangesRequested } from './data.ts';
 import { projectKeyOf } from './triage/stack.ts';
 
-export type GroupKey = 'age' | 'author' | 'status' | 'review';
+export type GroupKey = 'age' | 'author' | 'status' | 'review' | 'needs';
 export type SortKey = 'oldest' | 'progress';
 
 export type SlackFilter = 'all' | 'posted';
@@ -14,12 +14,24 @@ export const GROUP_KEYS: readonly GroupKey[] = [
   'author',
   'status',
   'review',
+  'needs',
 ];
 export const SORT_KEYS: readonly SortKey[] = ['oldest', 'progress'];
 export const SLACK_FILTER_KEYS: readonly SlackFilter[] = ['all', 'posted'];
 
 /** Sentinel that sorts after any ISO date, so null timestamps land last. */
 const LATEST = '9999';
+
+/** The board's own seat, as a tab: every row from every other tab that
+    needs the default member's move. Appended after the configured tabs by
+    the client whenever the board has a default member. Lives here, not in
+    config.ts, because config.ts is server-only and this is bundled for the
+    browser. */
+export const NEEDS_ME_TAB: TabConfig = {
+  id: 'needs-me',
+  label: 'Needs me',
+  source: { kind: 'needs-me' },
+};
 
 /** True when every reviewer thread has been resolved and none awaits action — the
     MR was reviewed and its comments are handled, distinct from an untouched "needs
@@ -213,11 +225,12 @@ export function filterBySlack<
 export function rosterUsernamesFor(
   mrs: BoardMR[],
   tab: TabConfig | undefined,
-  configUsernames: string[]
+  configUsernames: string[],
+  tabs: readonly TabConfig[] = []
 ): Set<string> {
   if (!tab || tab.source.kind === 'authors') return new Set(configUsernames);
   return new Set(
-    filterByTab(mrs, tab, new Set(configUsernames)).map(
+    filterByTab(mrs, tab, new Set(configUsernames), tabs).map(
       mr => mr.author.username
     )
   );
@@ -229,20 +242,31 @@ export function rosterUsernamesFor(
     server's visibility gate for the codeowners tab) would leak onto the
     authors tab too. A codeowners tab narrows to rows tagged with its section;
     excludeMembers additionally drops the roster's own authors, so the tab
-    reads as the outside-the-team queue for that section. */
+    reads as the outside-the-team queue for that section. The needs-me tab
+    is the union of every other tab in `tabs`; who actually needs the seat's
+    move is the client's needOf, applied on top. */
 export function filterByTab<M extends BoardMR>(
   mrs: M[],
   tab: TabConfig,
-  members: Set<string>
+  members: Set<string>,
+  tabs: readonly TabConfig[] = []
 ): M[] {
-  if (tab.source.kind === 'authors')
-    return mrs.filter(mr => members.has(mr.author.username));
-  const { section, excludeMembers } = tab.source;
-  return mrs.filter(
-    mr =>
-      mr.codeownerSections.includes(section) &&
-      (!excludeMembers || !members.has(mr.author.username))
-  );
+  const source = tab.source;
+  switch (source.kind) {
+    case 'authors':
+      return mrs.filter(mr => members.has(mr.author.username));
+    case 'codeowners':
+      return mrs.filter(
+        mr =>
+          mr.codeownerSections.includes(source.section) &&
+          (!source.excludeMembers || !members.has(mr.author.username))
+      );
+    case 'needs-me': {
+      const others = tabs.filter(t => t.source.kind !== 'needs-me');
+      const shown = new Set(others.flatMap(t => filterByTab(mrs, t, members)));
+      return mrs.filter(mr => shown.has(mr));
+    }
+  }
 }
 
 /** Return a new array ordered by the chosen sort. Never mutates the input. */
@@ -409,7 +433,10 @@ export function groupMRs<M extends ReviewedMR>(
   mrs: M[],
   group: GroupKey,
   memberOrder: string[],
-  now: number
+  now: number,
+  /** The needs-me bucket for a row (the client's needOf); a row it does not
+      claim, or a caller without one, lands in "other". */
+  needBucket?: (mr: M) => { label: string; order: number } | null
 ): Group<M>[] {
   const grouped = (): Group<M>[] => {
     switch (group) {
@@ -421,6 +448,11 @@ export function groupMRs<M extends ReviewedMR>(
         return groupBy(mrs, statusBucket);
       case 'review':
         return groupBy(mrs, reviewBucket);
+      case 'needs':
+        return groupBy(
+          mrs,
+          mr => needBucket?.(mr) ?? { label: 'other', order: 99 }
+        );
     }
   };
   return pullStacksIntoParentGroups(grouped(), mrs);

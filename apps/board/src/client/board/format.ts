@@ -25,6 +25,7 @@ const GROUP_LABEL: Record<GroupKey, string> = {
   author: 'author',
   status: 'status',
   review: 'my reviews',
+  needs: 'need',
 };
 const SORT_LABEL: Record<SortKey, string> = {
   oldest: 'oldest',

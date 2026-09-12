@@ -161,3 +161,11 @@ export function threadStatusCounts(threads: CommentThread[]): {
   for (const t of threads) counts[t.status]++;
   return counts;
 }
+
+/** The threads one reviewer opened (their note starts the thread). */
+export function threadsOpenedBy(
+  threads: CommentThread[],
+  username: string
+): CommentThread[] {
+  return threads.filter(t => t.notes[0]?.username === username);
+}

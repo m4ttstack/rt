@@ -212,6 +212,55 @@ describe('rowStatus: the quiet row', () => {
     expect(mine!.word).toBe('ci running…');
   });
 
+  test('as an assigned reviewer: the author answering my threads, or a push resetting my approval, is my move again', () => {
+    const asMe = (reviewState: string, over: Over = {}) =>
+      mr({
+        reviews: {
+          isApproved: true,
+          required: 1,
+          given: 1,
+          reviewers: [{ username: 'me', name: 'Me', reviewState }],
+        },
+        blockers: { any: false },
+        threadSummary: { awaiting: 0, replied: 2, resolved: 1 },
+        ...over,
+      } as never);
+    const [answered] = candidateLines(
+      asMe('REVIEWED', { myThreads: { awaiting: 0, replied: 2, resolved: 0 } }),
+      NOW,
+      NONE,
+      ME
+    );
+    expect(answered).toMatchObject({
+      tone: 'quiet',
+      word: 'author answered you',
+      detail: '2 threads',
+      verbs: [{ kind: 'open-mr' }],
+    });
+    const [reset] = candidateLines(asMe('UNAPPROVED'), NOW, NONE, ME);
+    expect(reset).toMatchObject({
+      word: 'your approval was reset',
+      verbs: [{ kind: 'launch-review', label: 'review' }],
+    });
+    const [stillMine] = candidateLines(
+      asMe('REVIEWED', {
+        threadSummary: { awaiting: 1, replied: 1, resolved: 0 },
+        myThreads: { awaiting: 1, replied: 1, resolved: 0 },
+      }),
+      NOW,
+      NONE,
+      ME
+    );
+    expect(stillMine!.word).toBe('waiting on the author');
+    const [approved] = candidateLines(
+      asMe('APPROVED', { myThreads: { awaiting: 0, replied: 2, resolved: 0 } }),
+      NOW,
+      NONE,
+      ME
+    );
+    expect(approved!.word).toBe('all clear');
+  });
+
   test('with no self, every row reads from the reviewer seat', () => {
     const [line] = candidateLines(
       settled({ author: { username: 'me', name: 'Me' } }),

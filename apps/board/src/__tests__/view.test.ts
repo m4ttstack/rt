@@ -12,6 +12,7 @@ import {
   groupMRs,
   joinRowState,
   memberPeerState,
+  NEEDS_ME_TAB,
   nestStacks,
   parseViewState,
   rosterUsernamesFor,
@@ -201,6 +202,54 @@ describe('filterByTab', () => {
       source: { kind: 'codeowners', section: 'Acme', excludeMembers: true },
     };
     expect(filterByTab(rows, q, members).some(m => m.iid === 3)).toBe(false);
+  });
+
+  test('the needs-me tab is the union of every other tab, itself excluded', () => {
+    const team: TabConfig = {
+      id: 't',
+      label: 'T',
+      source: { kind: 'authors' },
+    };
+    const q: TabConfig = {
+      id: 'q',
+      label: 'Q',
+      source: { kind: 'codeowners', section: 'Acme', excludeMembers: true },
+    };
+    const tabs = [team, q, NEEDS_ME_TAB];
+    expect(
+      filterByTab(rows, NEEDS_ME_TAB, members, tabs)
+        .map(m => m.iid)
+        .sort()
+    ).toEqual([1, 2]);
+    expect(filterByTab(rows, NEEDS_ME_TAB, members, [NEEDS_ME_TAB])).toEqual(
+      []
+    );
+  });
+});
+
+describe('groupMRs by need', () => {
+  test("rows bucket by the caller's need, in its order; unclaimed rows land in other", () => {
+    const a = mr({ iid: 1 });
+    const b = mr({ iid: 2 });
+    const c = mr({ iid: 3 });
+    const needOf = (m: BoardMR) =>
+      m.iid === 1
+        ? { label: 'review', order: 5 }
+        : m.iid === 2
+          ? { label: 'decide', order: 0 }
+          : null;
+    const groups = groupMRs(
+      [a, b, c],
+      'needs',
+      [],
+      Date.parse('2026-07-13T12:00:00Z'),
+      needOf
+    );
+    expect(groups.map(g => [g.label, g.mrs.map(m => m.iid)])).toEqual([
+      ['decide', [2]],
+      ['review', [1]],
+      ['other', [3]],
+    ]);
   });
 });
 
