@@ -213,8 +213,9 @@ describe('statusFlags', () => {
       } as any)
     );
     expect(flags[flags.length - 1]).toEqual({
-      text: 'stacked → parent-branch',
+      text: 'stacked',
       cls: 't-cyan',
+      title: 'stacked on parent-branch',
     });
     expect(flags[0]).toEqual({ text: 'conflicts', cls: 't-bad' });
   });
@@ -246,7 +247,7 @@ describe('statusFlags', () => {
       } as any)
     );
     expect(flags[0]).toEqual({ text: 'auto-merge', cls: 't-ok' });
-    expect(flags.at(-1)?.text).toBe('stacked → parent-branch');
+    expect(flags.at(-1)?.text).toBe('stacked');
   });
 
   test('no auto-merge flag when it is not armed', () => {

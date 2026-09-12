@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react';
+
 import type { BoardMRWithReview, RowContext } from '../types.ts';
 import { Sun } from './icons.tsx';
 import type { RowStatus, Verb } from './row-status.ts';
@@ -56,10 +58,15 @@ export function StatusLine({
   mr,
   status,
   ctx,
+  tools,
 }: {
   mr: BoardMRWithReview;
   status: RowStatus;
   ctx: RowContext;
+  /** Row utilities that are verbs too (open the ticket, copy for Slack):
+      they ride the status line's right end and show only under the pointer,
+      so line 1 stays the title's. */
+  tools?: ReactNode;
 }) {
   const { line, more } = status;
   const hot = line.tone === 'bad' || line.tone === 'warn';
@@ -105,6 +112,7 @@ export function StatusLine({
           ))}
         </span>
       )}
+      {tools && <span className="tui-status-tools">{tools}</span>}
     </div>
   );
 }

@@ -71,9 +71,9 @@ export type FlagClass = 't-ok' | 't-bad' | 't-warn' | 't-cyan';
 export function statusFlags(
   mr: BoardMR,
   opts?: { nested?: boolean }
-): { text: string; cls: FlagClass }[] {
+): { text: string; cls: FlagClass; title?: string }[] {
   const b = mr.blockers;
-  const flags: { text: string; cls: FlagClass }[] = [];
+  const flags: { text: string; cls: FlagClass; title?: string }[] = [];
   if (mr.autoMergeButton?.isActive)
     flags.push({ text: 'auto-merge', cls: 't-ok' });
   if (b?.hasConflicts) flags.push({ text: 'conflicts', cls: 't-bad' });
@@ -82,7 +82,11 @@ export function statusFlags(
   // A row nested under its parent already shows the relationship; the chip
   // only earns its place when the parent is not visible above the row.
   if (mr.isStacked && !opts?.nested)
-    flags.push({ text: `stacked → ${mr.targetBranch}`, cls: 't-cyan' });
+    flags.push({
+      text: 'stacked',
+      cls: 't-cyan',
+      title: `stacked on ${mr.targetBranch}`,
+    });
   return flags;
 }
 

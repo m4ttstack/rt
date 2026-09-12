@@ -175,14 +175,8 @@ body {
   background: transparent;
   border: none;
   color: var(--muted-text);
-  opacity: 0;
+  opacity: 0.8;
   transition: opacity 0.1s ease;
-}
-/* Hover-only, but kept in flow (opacity, not display) so line 1 never
-   shifts when the pointer arrives. focus-within covers keyboard users. */
-.tui-row:hover .tui-copy-inline,
-.tui-row:focus-within .tui-copy-inline {
-  opacity: 0.9;
 }
 .tui-row .tui-copy-inline:hover {
   opacity: 1;
@@ -485,6 +479,7 @@ body {
 
 /* Line 3: the status line. */
 .tui-status {
+  position: relative;
   display: flex;
   align-items: baseline;
   margin-top: 8px;
@@ -576,12 +571,70 @@ body {
 .tui-status-verb:hover {
   text-decoration: underline;
 }
-.tui-status-verb[data-secondary] {
-  display: none;
+/* Secondary verbs and the row tools (ticket, copy) are out of sight at rest
+   but never out of the tab order: clipped to a point, not display: none, so
+   focus-within can reveal them for keyboard users. Touch has no hover, so
+   coarse pointers get them at rest. */
+.tui-status-verb[data-secondary],
+.tui-status-tools {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.tui-status-tools {
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 .tui-row:hover .tui-status-verb[data-secondary],
 .tui-row:focus-within .tui-status-verb[data-secondary] {
-  display: inline;
+  position: static;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip-path: none;
+}
+.tui-row:hover .tui-status-tools,
+.tui-row:focus-within .tui-status-tools {
+  position: static;
+  display: inline-flex;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip-path: none;
+  margin-left: auto;
+  padding-left: 16px;
+}
+.tui-row:hover .tui-status-verbs + .tui-status-tools,
+.tui-row:focus-within .tui-status-verbs + .tui-status-tools {
+  margin-left: 0;
+  padding-left: 12px;
+}
+@media (hover: none) {
+  .tui-status-verb[data-secondary] {
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip-path: none;
+  }
+  .tui-status-tools {
+    position: static;
+    display: inline-flex;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip-path: none;
+    margin-left: auto;
+    padding-left: 16px;
+  }
+  .tui-status-verbs + .tui-status-tools {
+    margin-left: 0;
+    padding-left: 12px;
+  }
 }
 /* The decision queue's strip separates its facts with this glyph; rows carry
    no separators. */
@@ -866,16 +919,6 @@ body {
 }
 .tui-ticket:hover {
   opacity: 1;
-}
-/* On a row the link is hover-only like the copy button beside it; the
-   decision queue's strip keeps it visible at rest. */
-.tui-row .tui-ticket {
-  opacity: 0;
-  transition: opacity 0.1s ease;
-}
-.tui-row:hover .tui-ticket,
-.tui-row:focus-within .tui-ticket {
-  opacity: 0.75;
 }
 .tui-row .tui-ticket:hover {
   opacity: 1;
@@ -1190,6 +1233,32 @@ body {
     display: none;
   }
 }
+/* Phone width: the title owns line 1. The branch and behind-target are
+   unreadable at this width anyway; the reaction stage yields to the logo;
+   the pill tightens. */
+@media (max-width: 480px) {
+  .tui-branch,
+  .tui-behind,
+  .tui-mark[data-slack-stage] {
+    display: none;
+  }
+  .tui-row-2 {
+    gap: 8px;
+  }
+  .tui-phrase {
+    font-size: 0.55rem;
+    padding: 1px 4px;
+    letter-spacing: 0.02em;
+  }
+  .tui-row-1 [data-flag] {
+    display: none;
+  }
+  /* The avatar alone names the author; the title attribute keeps the name. */
+  .tui-author-tag {
+    font-size: 0;
+    gap: 0;
+  }
+}
 
 /* ── settings modal ───────────────────────────────────────────────── */
 /* The frame itself (overlay / panel / head) is the Modal recipe's now. These
@@ -1409,10 +1478,7 @@ body {
 .tui-stack-rows {
   position: relative;
   --stack-rail: color-mix(in srgb, var(--cyan) 38%, var(--panel));
-  /* Less than the gutter's 20px center: a row clips its overflow, so the
-     rail (drawn at the parent's dot x) must fall inside the nested row's
-     own box, not in its margin. */
-  --stack-indent: 12px;
+  --stack-indent: 20px;
 }
 .tui-row + .tui-stack-rows,
 .tui-stack-rows + .tui-row,
@@ -1424,8 +1490,10 @@ body {
 }
 /* One indent level regardless of depth: chain order alone carries the
    hierarchy, so a deep stack never marches off the right edge. */
+/* Padding, not margin: the row box (and its attention bar) stays flush to
+   the list edge; only the gutter and body step in. */
 .tui-row-nested {
-  margin-left: var(--stack-indent);
+  padding-left: var(--stack-indent);
 }
 /* Every segment lives on a tui-row-pick pseudo-element: the gutter is a
    fixed 20px box at the top of every row, so the dot's center is always
