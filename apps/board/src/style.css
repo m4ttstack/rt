@@ -386,13 +386,26 @@ body {
   white-space: nowrap;
   display: inline-flex;
   align-items: center;
-  padding: 1px 6px;
-  border: 1px solid currentColor;
+  padding: 2px 6px;
   border-radius: 4px;
   font-size: 0.62rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  color: var(--pill);
+  background: color-mix(in srgb, var(--pill) 17%, transparent);
+}
+.tui-phrase[data-hue='amber'] {
+  --pill: var(--amber);
+}
+.tui-phrase[data-hue='cyan'] {
+  --pill: var(--cyan);
+}
+.tui-phrase[data-hue='green'] {
+  --pill: var(--green);
+}
+.tui-phrase[data-hue='red'] {
+  --pill: var(--red-text);
 }
 .t-ok {
   color: var(--green);

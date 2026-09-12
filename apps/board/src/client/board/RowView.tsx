@@ -71,9 +71,9 @@ function StatusFlags({
 /** The pill's tooltip carries the merge blockers: the gutter dot has the same
     tip, but it yields to the checkbox under the pointer. */
 function StatusPhrase({ mr }: { mr: BoardMR }) {
-  const { text, cls } = statusPhrase(mr);
+  const { text, hue } = statusPhrase(mr);
   return (
-    <span className={`tui-phrase ${cls}`} title={statusReasons(mr)}>
+    <span className="tui-phrase" data-hue={hue} title={statusReasons(mr)}>
       {text}
     </span>
   );

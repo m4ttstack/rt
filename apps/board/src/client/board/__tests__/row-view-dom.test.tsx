@@ -299,3 +299,11 @@ test('selection mode marks the list so the gutter checkboxes show at rest', asyn
     container.querySelector('.tui-rows')!.getAttribute('data-selecting')
   ).toBe('true');
 });
+
+test('the pill carries its hue as data, no color class', async () => {
+  await render([mr()]);
+  const pill = container.querySelector('.tui-phrase')!;
+  expect(pill.textContent).toBe('needs review');
+  expect(pill.getAttribute('data-hue')).toBe('amber');
+  expect(pill.className).toBe('tui-phrase');
+});

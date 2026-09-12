@@ -9,7 +9,6 @@
 import type { BoardMR } from '../../data.ts';
 import { hasChangesRequested } from '../../data.ts';
 import { respondOutcome } from '../../respond-outcome.ts';
-import { commentsAllResolved } from '../../view.ts';
 import type {
   BoardMRWithReview,
   DoctorStatus,
@@ -99,23 +98,20 @@ export function statusReasons(mr: BoardMR): string {
     : 'blocked';
 }
 
-/** The pill's phrase: the human review axis only. Mechanical blockers
-    (conflicts / ci) are flags beside it, never folded in, so the pill always
-    shows where the MR is in review. The thread count lives on the facts
-    line's thread link, the one drawer entry on every row. */
-export function statusPhrase(mr: BoardMR): { text: string; cls: string } {
-  if (hasChangesRequested(mr))
-    return { text: 'changes requested', cls: 't-bad' };
-  if (mr.reviews.isApproved) return { text: 'approved', cls: 't-ok' };
-  if (mr.reviewerComments > 0) return { text: 'commented', cls: 't-warn' };
-  if (commentsAllResolved(mr))
-    return { text: 'comments resolved', cls: 't-ok' };
+export type PillHue = 'red' | 'green' | 'cyan' | 'amber';
+
+/** The pill's phrase: the approval axis only. Mechanical blockers are flags
+    beside it and the conversation is the facts line's threads token, so the
+    pill always shows where the MR is in review. */
+export function statusPhrase(mr: BoardMR): { text: string; hue: PillHue } {
+  if (hasChangesRequested(mr)) return { text: 'changes requested', hue: 'red' };
+  if (mr.reviews.isApproved) return { text: 'approved', hue: 'green' };
   if (mr.reviews.required > 0 && mr.reviews.given > 0)
     return {
       text: `${mr.reviews.given}/${mr.reviews.required} approved`,
-      cls: 't-warn',
+      hue: 'cyan',
     };
-  return { text: 'needs review', cls: 't-warn' };
+  return { text: 'needs review', hue: 'amber' };
 }
 
 // ── line 3: the candidates ──────────────────────────────────────────────────

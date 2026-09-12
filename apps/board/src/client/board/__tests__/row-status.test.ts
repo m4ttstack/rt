@@ -6,6 +6,7 @@ import {
   DELIVERY_STUCK_MESSAGE,
   EXECUTION_UNASSIGNED_MESSAGE,
   rowStatus,
+  statusPhrase,
 } from '../row-status.ts';
 
 const NOW = Date.parse('2026-09-12T12:00:00Z');
@@ -962,5 +963,49 @@ describe('rowStatus: the stress row', () => {
     expect(s.line.word).toBe('post which findings?');
     expect(s.more).toHaveLength(3);
     expect(s.bar).toBe('warn');
+  });
+});
+
+describe('statusPhrase: the pill is the approval axis only', () => {
+  test('changes requested is red', () => {
+    const m = settled({
+      reviews: {
+        isApproved: false,
+        required: 2,
+        given: 0,
+        reviewers: [{ username: 'pat', reviewState: 'REQUESTED_CHANGES' }],
+      },
+    });
+    expect(statusPhrase(m)).toEqual({ text: 'changes requested', hue: 'red' });
+  });
+
+  test('approved is green', () => {
+    expect(statusPhrase(settled())).toEqual({ text: 'approved', hue: 'green' });
+  });
+
+  test('a partial approval count is cyan', () => {
+    expect(statusPhrase(settled(unapproved(1, 3)))).toEqual({
+      text: '1/3 approved',
+      hue: 'cyan',
+    });
+  });
+
+  test('needs review is amber, even with reviewer comments or resolved threads', () => {
+    expect(statusPhrase(settled(unapproved(0, 2)))).toEqual({
+      text: 'needs review',
+      hue: 'amber',
+    });
+    expect(
+      statusPhrase(settled({ ...unapproved(0, 2), reviewerComments: 3 }))
+    ).toEqual({ text: 'needs review', hue: 'amber' });
+    expect(
+      statusPhrase(
+        settled({
+          ...unapproved(0, 2),
+          reviewerComments: 0,
+          threadSummary: { awaiting: 0, replied: 0, resolved: 4 },
+        })
+      )
+    ).toEqual({ text: 'needs review', hue: 'amber' });
   });
 });
