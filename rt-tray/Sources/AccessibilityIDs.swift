@@ -88,6 +88,12 @@ enum AXID {
     static func settingsPermissionAction(_ id: String) -> String { "settings.permissions.row.\(id).action" }
     static let settingsPermissionsReset = "settings.permissions.reset"
     static let settingsPermissionsRelaunch = "settings.permissions.relaunch"
+    static let settingsFastBrowserRow = "settings.fastBrowser.row"
+    static let settingsFastBrowserRowStatus = "settings.fastBrowser.row.status"
+    static let settingsFastBrowserRowAction = "settings.fastBrowser.row.action"
+    static let settingsFastBrowserSkipped = "settings.fastBrowser.skipped"
+    static let settingsFastBrowserUnskip = "settings.fastBrowser.unskip"
+    static let settingsFastBrowserError = "settings.fastBrowser.error"
     static let settingsTeamInviteHandle = "settings.team.inviteHandle"
     static let settingsTeamInvite = "settings.team.invite"
     static let settingsTeamCopyRemote = "settings.team.copyRemote"

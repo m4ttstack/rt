@@ -3,7 +3,7 @@ import SwiftUI
 import Combine
 import MattstackCore
 
-enum SettingsPane: String, CaseIterable { case general, permissions, team, uninstall }
+enum SettingsPane: String, CaseIterable { case general, permissions, fastBrowser, team, uninstall }
 
 final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     static let paneKey = "MSSettingsPane"
@@ -78,6 +78,7 @@ struct SettingsEnvironment {
     let readiness: ReadinessModel
     let updater: UpdaterController
     let team: TeamSettingsModel
+    let waivers: WaiverClient
     let isDevBuild: Bool
     let version: String
     let onJoinAnotherTeam: () -> Void
