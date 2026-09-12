@@ -173,13 +173,21 @@ const IC = {
   bubble: svgIcon('<path d="M2.5 3.5h11a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H8l-3 2.5V11.5H2.5a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z"/>'),
   eye: svgIcon('<path d="M1.8 8s2.3-4 6.2-4 6.2 4 6.2 4-2.3 4-6.2 4S1.8 8 1.8 8z"/><circle cx="8" cy="8" r="1.8"/>'),
   slack: svgIcon('<rect x="2.5" y="2.5" width="11" height="11" rx="3"/><path d="M5.5 8.4l1.9 1.9 3.1-3.8"/>'),
+  check: svgIcon('<circle cx="8" cy="8" r="6"/><path d="M5.4 8.3l1.8 1.8 3.4-4"/>'),
   sun: svgIcon('<circle cx="8" cy="8" r="3"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M12.6 3.4l-1.4 1.4M4.8 11.2l-1.4 1.4"/>'),
 };
 
 // ── row scaffolding ─────────────────────────────────────────────────
-function r1({ title, phrase, phraseColor = 'var(--amber)', slack = false }) {
+const SLACK_STAGE = {
+  posted: { title: 'posted in slack' },
+  seen: { title: 'seen in slack' },
+  commented: { title: 'commented in slack' },
+  approved: { title: 'approved in slack' },
+};
+function r1({ title, phrase, phraseColor = 'var(--amber)', slack = null }) {
   const ph = phrase ? `<span class="phrase" style="color:${phraseColor}">${phrase}</span>` : '';
-  const mk = slack ? `<span class="mark" title="posted in slack">${IC.slack}</span>` : '';
+  const icon = { posted: 'slack', seen: 'eye', commented: 'bubble', approved: 'check' }[slack];
+  const mk = slack ? `<span class="mark" title="${SLACK_STAGE[slack].title}">${IC[icon]}</span>` : '';
   return `<div class="r1"><span class="title">${title}</span>${mk}${ph}</div>`;
 }
 
@@ -265,14 +273,14 @@ A quiet row's status line says <b>all clear</b>, softly; the height never change
     </div>`
   )}
   ${row(GREEN, '',
-    r1({ title: 'CV-3149 Widen the transform contract', phrase: 'APPROVED', phraseColor: GREEN, slack: true }) +
+    r1({ title: 'CV-3149 Widen the transform contract', phrase: 'APPROVED', phraseColor: GREEN, slack: 'seen' }) +
     r2({ iid: 44684, branch: 'feature/cv-3149', adds: 296, dels: 16, threads: 5, age: '9h', fresh: 2 }) +
     `<div class="acts">
       ${act('work', 'geoff is reviewing…', '', [['view ↗', true]], true)}
     </div>`
   )}
   ${row(GREEN, '',
-    r1({ title: 'CV-3114 Carry the standard onto the legacy grid', phrase: 'APPROVED', phraseColor: GREEN, slack: true }) +
+    r1({ title: 'CV-3114 Carry the standard onto the legacy grid', phrase: 'APPROVED', phraseColor: GREEN, slack: 'approved' }) +
     r2({ iid: 44740, branch: 'feature/cv-3114', adds: 114, dels: 0, threads: 0, age: '6h' }) +
     `<div class="acts">${act('clear', 'all clear', `${IC.sun} enjoy the sunshine`, [['open ↗', true]])}</div>`
   )}
@@ -304,7 +312,7 @@ the row menu and a drawer.</p>
     r2(MR3, `<span class="sep">·</span><span class="sum warn">2 findings to post</span>`)
   )}
   ${row(GREEN, '',
-    r1({ title: 'CV-3149 Widen the transform contract', phrase: 'APPROVED', phraseColor: GREEN, slack: true }) +
+    r1({ title: 'CV-3149 Widen the transform contract', phrase: 'APPROVED', phraseColor: GREEN, slack: 'seen' }) +
     r2({ iid: 44684, branch: 'feature/cv-3149', adds: 296, dels: 16, threads: 2, age: '9h' })
   )}
 </div>
@@ -389,7 +397,7 @@ const densityBody = `
     `<div class="acts">${act('work', 'running…', 'started 4m ago', [], true)}</div>`
   )}
   ${row(GREEN, '',
-    r1({ title: 'CV-3149 Widen the transform contract', phrase: 'APPROVED', phraseColor: GREEN, slack: true }) +
+    r1({ title: 'CV-3149 Widen the transform contract', phrase: 'APPROVED', phraseColor: GREEN, slack: 'seen' }) +
     r2({ iid: 44684, branch: 'feature/cv-3149', adds: 296, dels: 16, threads: 2, age: '9h' }) +
     `<div class="acts">${act('clear', 'all clear', `${IC.sun} enjoy the sunshine`, [])}</div>`
   )}
@@ -402,7 +410,7 @@ const densityBody = `
     `<div class="acts">${act('work', 'running…', 'started 4m ago', [], true)}</div>`
   )}
   ${row(GREEN, '',
-    r1({ title: 'CV-3149 Widen the transform contract', phrase: 'APPROVED', phraseColor: GREEN, slack: true }) +
+    r1({ title: 'CV-3149 Widen the transform contract', phrase: 'APPROVED', phraseColor: GREEN, slack: 'seen' }) +
     r2({ iid: 44684, branch: 'feature/cv-3149', adds: 296, dels: 16, threads: 2, age: '9h' }) +
     `<div class="acts">${act('clear', 'all clear', `${IC.sun} enjoy the sunshine`, [])}</div>`
   )}
@@ -488,7 +496,7 @@ for you turns into a hot line.</p>
   ${row(GREEN, '',
     r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: GREEN }) +
     r2({ ...MR3 }) +
-    `<div class="acts">${act('quiet', 'nudged sam', 'no answer yet · 30m', [], false)}</div>`
+    `<div class="acts">${act('quiet', 'nudged sam', 'no answer yet, 30m', [], false)}</div>`
   )}
 </div>
 <div class="hover">
@@ -498,6 +506,17 @@ for you turns into a hot line.</p>
 </div>
 <p class="cap">The hover card carries the settled detail; reactions keep their emoji faces
 there, never on the row.</p>
+
+<h2>the slack ladder · four stages, one slot</h2>
+<p class="note">The mark beside the pill shows the FURTHEST slack stage: posted, seen,
+commented, approved. One glyph, mono, hover names it; the full reaction detail lives in the
+context card.</p>
+<div class="list">
+  ${row(GREEN, '', r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: GREEN, slack: 'posted' }) + r2(MR3))}
+  ${row(GREEN, '', r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: GREEN, slack: 'seen' }) + r2(MR3))}
+  ${row(GREEN, '', r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: GREEN, slack: 'commented' }) + r2(MR3))}
+  ${row(GREEN, '', r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: GREEN, slack: 'approved' }) + r2(MR3))}
+</div>
 
 <h2>live human reviewer</h2>
 <div class="list">
