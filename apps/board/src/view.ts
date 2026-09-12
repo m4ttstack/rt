@@ -69,40 +69,57 @@ export function dataAgeLabel(
   return { text: `data as of ${hh}:${mm}`, stale };
 }
 
-/** The token classes a status flag can carry. A union, not a string:
-    RowView keys a Record on it, so an unmapped class fails to compile
-    instead of rendering grey. */
-export type FlagClass = 't-ok' | 't-bad' | 't-warn' | 't-cyan';
+/** Keyed, not classed: RowView keys its icon and CSS on the key, so an
+    unmapped flag fails to compile instead of rendering grey. */
+export type FlagKey =
+  | 'draft'
+  | 'auto-merge'
+  | 'conflicts'
+  | 'ci-failing'
+  | 'ci-running'
+  | 'stacked';
 
-/** GitLab-native facts shown as chips above the title: armed auto-merge
-    first, then mechanical blockers (conflicts / CI) most severe first, plus
-    the stacked marker for MRs targeting a parent branch instead of the
-    default branch. */
+export interface StatusFlag {
+  key: FlagKey;
+  text: string;
+  title?: string;
+}
+
+/** GitLab-native facts on the header line: draft first, armed auto-merge,
+    then mechanical blockers (conflicts / CI) most severe first, plus the
+    stacked marker for MRs targeting a parent branch instead of the default
+    branch. */
 export function statusFlags(
   mr: BoardMR,
   opts?: { nested?: boolean }
-): { text: string; cls: FlagClass; title?: string }[] {
+): StatusFlag[] {
   const b = mr.blockers;
-  const flags: { text: string; cls: FlagClass; title?: string }[] = [];
+  const flags: StatusFlag[] = [];
+  if (mr.isDraft)
+    flags.push({
+      key: 'draft',
+      text: 'draft',
+      title: 'draft, right-click to mark ready',
+    });
   if (mr.autoMergeButton.isActive)
-    flags.push({ text: 'auto-merge', cls: 't-ok' });
-  if (b.hasConflicts) flags.push({ text: 'conflicts', cls: 't-bad' });
-  if (b.pipelineFailing) flags.push({ text: 'ci failing', cls: 't-bad' });
-  if (b.pipelineRunning) flags.push({ text: 'ci running', cls: 't-warn' });
-  // A row nested under its parent already shows the relationship; the chip
+    flags.push({ key: 'auto-merge', text: 'auto-merge' });
+  if (b.hasConflicts) flags.push({ key: 'conflicts', text: 'conflicts' });
+  if (b.pipelineFailing) flags.push({ key: 'ci-failing', text: 'ci failing' });
+  if (b.pipelineRunning) flags.push({ key: 'ci-running', text: 'ci running' });
+  // A row nested under its parent already shows the relationship; the flag
   // only earns its place when the parent is not visible above the row.
   if (mr.isStacked && !opts?.nested)
     flags.push({
+      key: 'stacked',
       text: 'stacked',
-      cls: 't-cyan',
       title: `stacked on ${mr.targetBranch}`,
     });
   return flags;
 }
 
-/** The behind-target meta token: `↓N` when the source branch trails the
-    target by N commits. Null when not behind — and when glance reports null,
-    which is "not measured on this fetch path", never zero
+/** The behind-target meta token: "N behind" when the source branch trails
+    the target by N commits. Null when not behind... and when glance reports
+    null, which is "not measured on this fetch path", never zero
     (MRDashboardProps.behindTarget documents the distinction). */
 export function behindToken(
   mr: BoardMR
@@ -110,7 +127,7 @@ export function behindToken(
   const n = mr.behindTarget;
   if (n == null || n <= 0) return null;
   return {
-    text: `↓${n}`,
+    text: `${n} behind`,
     title: `${n} commit${n === 1 ? '' : 's'} behind target`,
   };
 }
@@ -310,9 +327,10 @@ function ageBucket(
   return { label: 'Older', order: 9 };
 }
 
-/** Coarse review-readiness bucket, most-blocking first. Mirrors the row's
-    status label: a formal "changes requested" review is distinct from someone
-    just leaving comments. Partial approvals fold into "needs review". */
+/** Coarse review-readiness bucket, most-blocking first. Groups by GitLab's
+    review state, including the conversation states ("commented", "comments
+    resolved") the row's pill no longer shows: the pill is the approval
+    axis now, the threads token is the conversation. */
 function statusBucket(mr: BoardMR): { label: string; order: number } {
   // Review-state axis only. Mechanical blockers (conflicts / CI) are row flags,
   // not their own groups, so an MR with conflicts still shows under its review

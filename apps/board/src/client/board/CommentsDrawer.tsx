@@ -5,6 +5,7 @@ import type { BoardMR } from '../../data.ts';
 import { getDiscussions } from '../api.ts';
 import type { CommentNote, CommentThread, GeneralComment } from '../types.ts';
 import { ago, cleanTitle, THREAD_ICON, THREAD_LABEL } from './format.ts';
+import { MessageGlyph } from './icons.tsx';
 
 /** A button that opens the comments drawer. `stopPropagation` keeps the
     click off the row's own handler, which would open the MR in GitLab. */
@@ -44,22 +45,24 @@ function CommentsTrigger({
   );
 }
 
-/** The thread count on the facts line: the row's one entry into the
-    comments drawer. `fresh` lights it (style.css keys on `data-new`);
-    opening the drawer is what records the count as seen, via `onOpen`.
-    The count the drawer was opened at settles the link locally until the
-    next board render catches up; a later count relights it. */
+/** The facts line's threads token, the drawer's entry. `awaitYou` counts
+    the seat's own MR threads waiting on them; `replied` says the author
+    answered the seat's threads on someone else's MR. */
 function ThreadsLink({
   mr,
   count,
   fresh,
   grew,
+  awaitYou,
+  replied,
   onOpen,
 }: {
   mr: BoardMR;
   count: number;
   fresh: boolean;
   grew: number;
+  awaitYou: number;
+  replied: boolean;
   onOpen: () => void;
 }) {
   const [openedAt, setOpenedAt] = useState<number | null>(null);
@@ -77,7 +80,16 @@ function ThreadsLink({
         onOpen();
       }}
     >
-      {count} thread{count === 1 ? '' : 's'}
+      <MessageGlyph />
+      <span className="tui-threads-count">
+        {count} thread{count === 1 ? '' : 's'}
+      </span>
+      {awaitYou > 0 && (
+        <span className="tui-threads-await">
+          {awaitYou} await{awaitYou === 1 ? 's' : ''} you
+        </span>
+      )}
+      {replied && <span className="tui-threads-replied">author replied</span>}
     </CommentsTrigger>
   );
 }

@@ -268,6 +268,7 @@ body {
      + pad 12. The row clips overflow, so a changed margin below silently
      cuts line 3 instead of growing the row: keep this sum current. */
   --row-h: 114px;
+  --orange: light-dark(#b15c00, #ff9e64);
 }
 .tui-row {
   display: grid;
@@ -348,29 +349,95 @@ body {
   font-size: 10px;
 }
 
-/* Line 0: state. Flags sit at the left edge and clip before the pill does;
-   the Slack marks and the pill hold the corner. */
+/* Line 0: the lead. Identity (author or ticket) comes first, then the
+   flags, then the behind count; the Slack marks and the pill hold the
+   corner. Clips from the right. */
 .tui-row-0 {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
   height: 20px;
   margin-bottom: 2px;
 }
-.tui-row-flags {
+.tui-row-lead {
   flex: 1;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
+  font-size: 0.72rem;
+}
+.tui-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  font-weight: 500;
+  color: var(--flag);
+}
+.tui-flag[data-flag='draft'] {
+  --flag: color-mix(in srgb, var(--muted-text) 75%, transparent);
+}
+.tui-flag[data-flag='auto-merge'] {
+  --flag: var(--green);
+}
+.tui-flag[data-flag='conflicts'] {
+  --flag: var(--orange);
+}
+.tui-flag[data-flag='ci-failing'] {
+  --flag: var(--red-text);
+}
+.tui-flag[data-flag='ci-running'] {
+  --flag: var(--amber);
+}
+.tui-flag[data-flag='stacked'] {
+  --flag: var(--cyan);
+}
+.tui-behind {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  font-weight: 500;
+  color: var(--muted-text);
+}
+.tui-behind svg {
+  color: color-mix(in srgb, var(--muted-text) 75%, transparent);
+}
+/* The header line's identity slot: the author in the mixed view, the
+   ticket when the author is the group header. Muted, not purple: the line's
+   color belongs to the flags. */
+.tui-author-tag,
+.tui-ticket-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  color: var(--muted-text);
+  white-space: nowrap;
+  text-decoration: none;
+}
+.tui-ticket-tag {
+  font-weight: 500;
+}
+.tui-ticket-tag svg {
+  color: color-mix(in srgb, var(--muted-text) 75%, transparent);
+}
+.tui-ticket-tag:hover {
+  color: var(--fg);
+  text-decoration: underline;
+}
+.tui-author-tag .tui-avatar {
+  width: 12px;
+  height: 12px;
 }
 .tui-row-marks {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-shrink: 0;
 }
 .tui-mark {
@@ -386,25 +453,27 @@ body {
   white-space: nowrap;
   display: inline-flex;
   align-items: center;
-  padding: 1px 6px;
-  border: 1px solid currentColor;
+  padding: 2px 6px;
   border-radius: 4px;
   font-size: 0.62rem;
+  line-height: 1.2;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  color: var(--pill);
+  background: color-mix(in srgb, var(--pill) 17%, transparent);
 }
-.t-ok {
-  color: var(--green);
+.tui-phrase[data-hue='amber'] {
+  --pill: var(--amber);
 }
-.t-bad {
-  color: var(--red-text);
+.tui-phrase[data-hue='cyan'] {
+  --pill: var(--cyan);
 }
-.t-warn {
-  color: var(--amber);
+.tui-phrase[data-hue='green'] {
+  --pill: var(--green);
 }
-.t-cyan {
-  color: var(--cyan);
+.tui-phrase[data-hue='red'] {
+  --pill: var(--red-text);
 }
 
 /* Line 1: the title, alone. */
@@ -460,18 +529,17 @@ body {
 .tui-dels {
   color: color-mix(in srgb, var(--red) 70%, var(--muted-text));
 }
-.tui-behind {
-  color: var(--amber);
-  flex-shrink: 0;
-}
 .tui-rail {
   margin-left: auto;
   display: inline-flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
 }
+/* The threads token: the drawer's entry, read at full weight. Newness is
+   accent and bold with a dot; the qualifiers are their own color so no
+   glyph separates them from the count. */
 .tui-threads {
   margin: 0;
   padding: 0;
@@ -479,32 +547,46 @@ body {
   background: none;
   font: inherit;
   cursor: pointer;
-  color: color-mix(in srgb, var(--accent) 35%, var(--muted-text));
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 500;
+  color: var(--fg);
+}
+.tui-threads svg {
+  color: var(--muted-text);
 }
 .tui-threads[data-new] {
   color: var(--accent-text);
   font-weight: 700;
 }
-.tui-threads:hover {
+.tui-threads[data-new] svg {
+  color: var(--accent-text);
+}
+.tui-threads[data-new] .tui-threads-count::after {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: middle;
+}
+.tui-threads-await {
+  color: var(--amber);
+  font-weight: 600;
+}
+.tui-threads-replied {
+  color: var(--accent-text);
+  font-weight: 600;
+}
+.tui-threads:hover .tui-threads-count {
   text-decoration: underline;
 }
 .tui-age {
   font-size: 0.7rem;
   color: color-mix(in srgb, var(--muted-text) 75%, transparent);
-}
-/* Author identity in a row (All view, non-author grouping). */
-.tui-author-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-  color: var(--purple);
-  font-size: 0.7rem;
-  white-space: nowrap;
-}
-.tui-author-tag .tui-avatar {
-  width: 13px;
-  height: 13px;
 }
 
 /* Line 3: the status line. */
@@ -604,17 +686,19 @@ body {
 .tui-status-sun {
   display: inline-flex;
   margin-left: 10px;
+  color: var(--amber);
   /* Sits on the text baseline the way the inline icon did (its -2.5px
      vertical-align), which a flex item cannot express directly. */
   transform: translateY(2.5px);
 }
-.tui-status-sun + .tui-status-detail {
-  margin-left: 4px;
-}
-/* The row tools (ticket, copy) ride the status line's right end. */
+/* The row tools (ticket, copy) ride the status line's right end. Centered,
+   not baseline-aligned: an icon-only box has no text baseline, so under the
+   line's baseline alignment its bottom edge would push the verb down the
+   moment the tools appear. */
 .tui-status-tools {
   display: inline-flex;
   align-items: center;
+  align-self: center;
   gap: 8px;
   flex-shrink: 0;
 }
@@ -1473,7 +1557,7 @@ body {
 
 /* ── stacked chains ───────────────────────────────────────────────── */
 /* A chain reads as one unit: a single thread rail spans the children
-   (cyan to match the t-cyan stacked chip), the row dividers inside the
+   (cyan to match the stacked flag), the row dividers inside the
    chain go quiet, and the boundary dividers move to the wrapper since the
    wrapper breaks .tui-row + .tui-row adjacency. */
 /* Opaque rail color (cyan over the panel tone): the rail is drawn as
@@ -2222,32 +2306,6 @@ body {
   font-weight: 700;
   border: 1.5px solid var(--panel);
 }
-/* ── chip cells the kit does not reproduce ────────────────────────────
-   Two chip boxes the Chip recipe cannot express, each scoped by a data
-   attribute its own call site stamps so no chip family bleeds into another.
-
-   THE PROPERTY ROUTE IS THE ONLY ONE THAT WORKS, and getting it wrong is
-   silent: the recipe's `--sb-chip-*` scalars are emitted into the element's
-   INLINE style by its vars resolver, so an app-side rule setting one is never
-   read. Setting the PROPERTY wins at any specificity, because this file is
-   unlayered and the recipe sits inside `@layer soribashi.recipes`. */
-/* Mechanical-blocker flags (conflicts / ci / stacked) keep a frame with no
-   vertical padding: they sit inline on the row's 20px state line, and the
-   frame must not outgrow it. */
-[data-part='chip'][data-flag] {
-  opacity: 0.9;
-  padding: 0 6px;
-  line-height: 1.5;
-}
-/* The row's draft marker: small-caps type in a pill tighter than a badge's,
-   so it reads as a marker on the state line rather than another status
-   chip. */
-[data-part='chip'][data-draft] {
-  padding: 0.15rem 0.28rem;
-  border-radius: 3px;
-  line-height: 1;
-}
-
 /* held-draft drawer: the verbatim note text plus the post/dismiss gate */
 .tui-draft-modal {
   max-width: 680px;

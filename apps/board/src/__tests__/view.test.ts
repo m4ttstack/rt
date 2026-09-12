@@ -254,7 +254,30 @@ describe('groupMRs by need', () => {
 });
 
 describe('statusFlags', () => {
-  test('statusFlags adds the stacked chip last for stacked MRs', () => {
+  test('flags carry a key, draft first, stacked last', () => {
+    const flags = statusFlags(
+      mr({
+        isDraft: true,
+        isStacked: true,
+        targetBranch: 'parent-branch',
+        blockers: { hasConflicts: true, pipelineFailing: true },
+      } as any)
+    );
+    expect(flags.map(f => f.key)).toEqual([
+      'draft',
+      'conflicts',
+      'ci-failing',
+      'stacked',
+    ]);
+    expect(flags[0]).toEqual({
+      key: 'draft',
+      text: 'draft',
+      title: 'draft, right-click to mark ready',
+    });
+    expect(flags[3]!.title).toBe('stacked on parent-branch');
+  });
+
+  test('statusFlags adds the stacked flag last for stacked MRs', () => {
     const flags = statusFlags(
       mr({
         isStacked: true,
@@ -263,19 +286,19 @@ describe('statusFlags', () => {
       } as any)
     );
     expect(flags[flags.length - 1]).toEqual({
+      key: 'stacked',
       text: 'stacked',
-      cls: 't-cyan',
       title: 'stacked on parent-branch',
     });
-    expect(flags[0]).toEqual({ text: 'conflicts', cls: 't-bad' });
+    expect(flags[0]).toEqual({ key: 'conflicts', text: 'conflicts' });
   });
 
-  test('statusFlags has no stacked chip for default-target MRs', () => {
+  test('statusFlags has no stacked flag for default-target MRs', () => {
     const flags = statusFlags(mr({ targetBranch: 'main' } as any));
     expect(flags.some(f => f.text.startsWith('stacked'))).toBe(false);
   });
 
-  test('nested option drops the stacked chip but keeps the rest', () => {
+  test('nested option drops the stacked flag but keeps the rest', () => {
     const flags = statusFlags(
       mr({
         isStacked: true,
@@ -285,10 +308,10 @@ describe('statusFlags', () => {
       { nested: true }
     );
     expect(flags.some(f => f.text.startsWith('stacked'))).toBe(false);
-    expect(flags[0]).toEqual({ text: 'conflicts', cls: 't-bad' });
+    expect(flags[0]).toEqual({ key: 'conflicts', text: 'conflicts' });
   });
 
-  test('armed auto-merge shows an ok flag, before the stacked chip', () => {
+  test('armed auto-merge shows an auto-merge flag, before the stacked flag', () => {
     const flags = statusFlags(
       mr({
         isStacked: true,
@@ -296,7 +319,7 @@ describe('statusFlags', () => {
         autoMergeButton: { isActive: true },
       } as any)
     );
-    expect(flags[0]).toEqual({ text: 'auto-merge', cls: 't-ok' });
+    expect(flags[0]).toEqual({ key: 'auto-merge', text: 'auto-merge' });
     expect(flags.at(-1)?.text).toBe('stacked');
   });
 
@@ -309,16 +332,13 @@ describe('statusFlags', () => {
 });
 
 describe('behindToken', () => {
-  test('behind by N renders ↓N with a plural title', () => {
+  test('behind by N reads "N behind" with a plural title', () => {
     expect(behindToken(mr({ behindTarget: 3 } as any))).toEqual({
-      text: '↓3',
+      text: '3 behind',
       title: '3 commits behind target',
     });
-  });
-
-  test('behind by one keeps the title singular', () => {
     expect(behindToken(mr({ behindTarget: 1 } as any))).toEqual({
-      text: '↓1',
+      text: '1 behind',
       title: '1 commit behind target',
     });
   });

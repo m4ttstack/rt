@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { Invadr } from 'invadrs/react';
 
-import { Chip, CopyButton, SelectBox } from '@mattstack/tui-kit';
+import { CopyButton, SelectBox } from '@mattstack/tui-kit';
 import type { BoardMR } from '../../data.ts';
 import { extractTicketId, ticketUrl } from '../../ticket.ts';
 import {
@@ -9,12 +9,20 @@ import {
   flattenStack,
   nestStacks,
   statusFlags,
-  type FlagClass,
 } from '../../view.ts';
 import type { BoardMRWithReview, RowContext } from '../types.ts';
 import { ThreadsLink } from './CommentsDrawer.tsx';
 import { ago, cleanTitle, getSlackMarks, mrLine } from './format.ts';
-import { Bubble, DiscCheck, Eyes, LinearLogo, SlackLogo } from './icons.tsx';
+import {
+  ArrowDownGlyph,
+  ArrowOutGlyph,
+  Bubble,
+  DiscCheck,
+  Eyes,
+  FlagGlyph,
+  LinearLogo,
+  SlackLogo,
+} from './icons.tsx';
 import { rowStatus, statusPhrase, statusReasons } from './row-status.ts';
 import { slackLadder, type SlackStage } from './slack-ladder.ts';
 import { StatusDot } from './StatusDot.tsx';
@@ -36,15 +44,6 @@ function onRowClick(e: React.MouseEvent, mr: BoardMR) {
   }
 }
 
-/** Keyed on view.ts's own `FlagClass` so a fourth token class fails to
-    compile here instead of silently rendering grey. */
-const FLAG_INTENT: Record<FlagClass, 'ok' | 'bad' | 'warn' | 'cyan'> = {
-  't-ok': 'ok',
-  't-bad': 'bad',
-  't-warn': 'warn',
-  't-cyan': 'cyan',
-};
-
 function StatusFlags({
   mr,
   nested = false,
@@ -55,14 +54,15 @@ function StatusFlags({
   return (
     <>
       {statusFlags(mr, { nested }).map(f => (
-        <Chip
-          key={f.text}
-          intent={FLAG_INTENT[f.cls]}
-          data-flag=""
+        <span
+          key={f.key}
+          className="tui-flag"
+          data-flag={f.key}
           title={f.title}
         >
+          <FlagGlyph kind={f.key} />
           {f.text}
-        </Chip>
+        </span>
       ))}
     </>
   );
@@ -71,9 +71,9 @@ function StatusFlags({
 /** The pill's tooltip carries the merge blockers: the gutter dot has the same
     tip, but it yields to the checkbox under the pointer. */
 function StatusPhrase({ mr }: { mr: BoardMR }) {
-  const { text, cls } = statusPhrase(mr);
+  const { text, hue } = statusPhrase(mr);
   return (
-    <span className={`tui-phrase ${cls}`} title={statusReasons(mr)}>
+    <span className="tui-phrase" data-hue={hue} title={statusReasons(mr)}>
       {text}
     </span>
   );
@@ -130,7 +130,15 @@ function TicketLink({ ticket }: { ticket: string }) {
     board last recorded for this MR; a first sighting, or a count that fell
     below the record, rewrites that baseline after commit, so an abandoned
     render never records a count the user did not see. */
-function Rail({ mr, now }: { mr: BoardMR; now: number }) {
+function Rail({
+  mr,
+  now,
+  self,
+}: {
+  mr: BoardMR;
+  now: number;
+  self: string | null;
+}) {
   const count = commentCount(mr);
   const seen = mr.webUrl ? seenCount(mr.webUrl) : null;
   const newness = threadNewness(seen, count);
@@ -140,6 +148,19 @@ function Rail({ mr, now }: { mr: BoardMR; now: number }) {
     if (record !== null && webUrl) markSeen(webUrl, record);
   }, [record, webUrl]);
   const grew = seen === null ? 0 : count - seen;
+  const mine = self !== null && mr.author.username === self;
+  const awaitYou = mine ? (mr.threadSummary?.awaiting ?? 0) : 0;
+  const my = mr.myThreads;
+  const me = self
+    ? mr.reviews.reviewers.find(r => r.username === self)
+    : undefined;
+  const approved = me?.reviewState === 'APPROVED';
+  const replied =
+    !mine &&
+    !approved &&
+    !!my &&
+    my.awaiting === 0 &&
+    my.replied + my.resolved > 0;
   return (
     <span className="tui-rail">
       {count > 0 && (
@@ -148,6 +169,8 @@ function Rail({ mr, now }: { mr: BoardMR; now: number }) {
           count={count}
           fresh={newness.fresh}
           grew={grew}
+          awaitYou={awaitYou}
+          replied={replied}
           onOpen={() => mr.webUrl && markSeen(mr.webUrl, count)}
         />
       )}
@@ -158,8 +181,8 @@ function Rail({ mr, now }: { mr: BoardMR; now: number }) {
   );
 }
 
-/** Shown when the view mixes authors (the All view grouped by anything but
-    author, where the group header is not the name). */
+/** The header line's identity slot when the view mixes authors (the All
+    view grouped by anything but author). */
 function AuthorTag({ mr }: { mr: BoardMR }) {
   const name = mr.author.name || mr.author.username;
   return (
@@ -168,9 +191,27 @@ function AuthorTag({ mr }: { mr: BoardMR }) {
         id={mr.author.username}
         palette="css-vars"
         className="tui-avatar"
-      />{' '}
+      />
       {name}
     </span>
+  );
+}
+
+/** The same slot when the author is the group header: the ticket, as a
+    link, so the line still leads with identity. */
+function TicketTag({ ticket }: { ticket: string }) {
+  return (
+    <a
+      className="tui-ticket-tag"
+      href={ticketUrl(ticket)}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={`open ${ticket} in Linear`}
+      onClick={e => e.stopPropagation()}
+    >
+      {ticket}
+      <ArrowOutGlyph />
+    </a>
   );
 }
 
@@ -216,19 +257,19 @@ function RowView({
         </div>
         <div className="tui-row-body">
           <div className="tui-row-0">
-            <span className="tui-row-flags">
-              {mr.isDraft && (
-                <Chip
-                  intent="muted"
-                  variant="subtle"
-                  uppercase
-                  data-draft=""
-                  title="draft, right-click to mark ready"
-                >
-                  draft
-                </Chip>
+            <span className="tui-row-lead">
+              {showAuthor ? (
+                <AuthorTag mr={mr} />
+              ) : (
+                ticket && <TicketTag ticket={ticket} />
               )}
               <StatusFlags mr={mr} nested={nested} />
+              {behind && (
+                <span className="tui-behind" title={behind.title}>
+                  <ArrowDownGlyph />
+                  {behind.text}
+                </span>
+              )}
             </span>
             <SlackMarks mr={mr} />
             <StatusPhrase mr={mr} />
@@ -237,7 +278,6 @@ function RowView({
             <span className="tui-title">{cleanTitle(mr.title)}</span>
           </div>
           <div className="tui-row-2">
-            {showAuthor && <AuthorTag mr={mr} />}
             <span className="tui-mr-iid">!{mr.iid}</span>
             <span className="tui-branch">{mr.sourceBranch}</span>
             {mr.diff && (
@@ -249,12 +289,7 @@ function RowView({
                 <span className="tui-dels">−{mr.diff.deletions}</span>
               </span>
             )}
-            {behind && (
-              <span className="tui-behind" title={behind.title}>
-                {behind.text}
-              </span>
-            )}
-            <Rail mr={mr} now={now} />
+            <Rail mr={mr} now={now} self={ctx.self} />
           </div>
           <StatusLine
             mr={mr}

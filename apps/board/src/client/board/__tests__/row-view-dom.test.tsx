@@ -105,9 +105,15 @@ afterEach(async () => {
   container.remove();
 });
 
-async function render(rows: BoardMRWithReview[], c = ctx()) {
+async function render(
+  rows: BoardMRWithReview[],
+  c = ctx(),
+  showAuthor = false
+) {
   await React.act(async () => {
-    root.render(<RowView mrs={rows} now={NOW} showAuthor={false} ctx={c} />);
+    root.render(
+      <RowView mrs={rows} now={NOW} showAuthor={showAuthor} ctx={c} />
+    );
   });
 }
 
@@ -242,19 +248,29 @@ test('a thread count that shrinks lowers the baseline instead of holding the old
   ).toBe('true');
 });
 
-test('mechanical flags share the state line with the pill; the title stands alone', async () => {
+test('flags are icon-and-word tokens on the header line, keyed by data-flag; the title stands alone', async () => {
   await render([
     mr({
-      blockers: { any: true, hasConflicts: true, pipelineFailing: false },
+      isDraft: true,
+      blockers: { any: true, hasConflicts: true, pipelineFailing: true },
     } as never),
   ]);
   const row = container.querySelector('.tui-row')!;
-  expect(
-    row.querySelector('.tui-row-0 .tui-row-flags [data-flag]')
-  ).not.toBeNull();
+  const flags = [...row.querySelectorAll('.tui-row-0 .tui-flag')];
+  expect(flags.map(f => f.getAttribute('data-flag'))).toEqual([
+    'draft',
+    'conflicts',
+    'ci-failing',
+  ]);
+  expect(flags.map(f => f.textContent)).toEqual([
+    'draft',
+    'conflicts',
+    'ci failing',
+  ]);
+  for (const f of flags) expect(f.querySelector('svg')).not.toBeNull();
+  expect(row.querySelector('[data-part="chip"]')).toBeNull();
   expect(row.querySelector('.tui-row-0 .tui-phrase')).not.toBeNull();
   expect(row.querySelector('.tui-row-1')!.children).toHaveLength(1);
-  expect(row.querySelector('.tui-row-1 .tui-title')).not.toBeNull();
 });
 
 test('the state pill carries the merge blockers in its tooltip', async () => {
@@ -298,4 +314,147 @@ test('selection mode marks the list so the gutter checkboxes show at rest', asyn
   expect(
     container.querySelector('.tui-rows')!.getAttribute('data-selecting')
   ).toBe('true');
+});
+
+test('the pill carries its hue as data, no color class', async () => {
+  await render([mr()]);
+  const pill = container.querySelector('.tui-phrase')!;
+  expect(pill.textContent).toBe('needs review');
+  expect(pill.getAttribute('data-hue')).toBe('amber');
+  expect(pill.className).toBe('tui-phrase');
+});
+
+test('the header line leads with the author when the view mixes authors', async () => {
+  await render(
+    [
+      mr({
+        behindTarget: 206,
+        blockers: { any: true, hasConflicts: true },
+      } as never),
+    ],
+    ctx(),
+    true
+  );
+  const lead = container.querySelector('.tui-row-0 .tui-row-lead')!;
+  const kinds = [...lead.children].map(c => c.className);
+  expect(kinds).toEqual(['tui-author-tag', 'tui-flag', 'tui-behind']);
+  expect(lead.querySelector('.tui-author-tag')!.textContent).toContain('Pat');
+  const behind = lead.querySelector('.tui-behind')!;
+  expect(behind.textContent).toBe('206 behind');
+  expect(behind.getAttribute('title')).toBe('206 commits behind target');
+  expect(behind.querySelector('svg')).not.toBeNull();
+  expect(container.querySelector('.tui-row-2 .tui-behind')).toBeNull();
+  expect(container.querySelector('.tui-row-2 .tui-author-tag')).toBeNull();
+});
+
+test('with the author hidden the ticket takes its slot on the header line', async () => {
+  await render([mr()]);
+  const lead = container.querySelector('.tui-row-0 .tui-row-lead')!;
+  const ticket = lead.querySelector('a.tui-ticket-tag')!;
+  expect(ticket.textContent).toBe('ACME-2214');
+  expect(ticket.getAttribute('href')).toContain('ACME-2214');
+  expect(ticket.querySelector('svg')).not.toBeNull();
+  expect(lead.querySelector('.tui-author-tag')).toBeNull();
+});
+
+test('with neither author nor ticket the header line holds only the flags', async () => {
+  await render([
+    mr({
+      title: 'warm the thumbnail cache',
+      sourceBranch: 'ops/thumbnails',
+      blockers: { any: true, pipelineFailing: true },
+    } as never),
+  ]);
+  const lead = container.querySelector('.tui-row-0 .tui-row-lead')!;
+  expect([...lead.children].map(c => c.className)).toEqual(['tui-flag']);
+});
+
+test('the threads token: icon, count, and no qualifier on a stranger MR', async () => {
+  await render([
+    mr({ threadSummary: { awaiting: 2, replied: 1, resolved: 2 } } as never),
+  ]);
+  const link = container.querySelector('.tui-threads')!;
+  expect(link.querySelector('svg')).not.toBeNull();
+  expect(link.querySelector('.tui-threads-count')!.textContent).toBe(
+    '5 threads'
+  );
+  expect(link.textContent).toBe('5 threads');
+  expect(link.querySelector('.tui-threads-await')).toBeNull();
+  expect(link.querySelector('.tui-threads-replied')).toBeNull();
+});
+
+test('on my own MR the token counts the threads awaiting me', async () => {
+  await render(
+    [
+      mr({
+        author: { username: 'me', name: 'Me' },
+        threadSummary: { awaiting: 2, replied: 0, resolved: 2 },
+      } as never),
+    ],
+    ctx({ self: 'me' })
+  );
+  const link = container.querySelector('.tui-threads')!;
+  expect(link.querySelector('.tui-threads-count')!.textContent).toBe(
+    '4 threads'
+  );
+  expect(link.querySelector('.tui-threads-await')!.textContent).toBe(
+    '2 await you'
+  );
+  expect(link.textContent).not.toContain('·');
+  await render(
+    [
+      mr({
+        author: { username: 'me', name: 'Me' },
+        threadSummary: { awaiting: 1, replied: 0, resolved: 0 },
+      } as never),
+    ],
+    ctx({ self: 'me' })
+  );
+  expect(container.querySelector('.tui-threads-await')!.textContent).toBe(
+    '1 awaits you'
+  );
+});
+
+test("on someone else's MR the token says the author replied to my threads", async () => {
+  await render(
+    [
+      mr({
+        threadSummary: { awaiting: 0, replied: 1, resolved: 1 },
+        myThreads: { awaiting: 0, replied: 1, resolved: 1 },
+      } as never),
+    ],
+    ctx({ self: 'me' })
+  );
+  expect(container.querySelector('.tui-threads-replied')!.textContent).toBe(
+    'author replied'
+  );
+  await render(
+    [
+      mr({
+        threadSummary: { awaiting: 1, replied: 1, resolved: 0 },
+        myThreads: { awaiting: 1, replied: 1, resolved: 0 },
+      } as never),
+    ],
+    ctx({ self: 'me' })
+  );
+  expect(container.querySelector('.tui-threads-replied')).toBeNull();
+});
+
+test('the replied qualifier goes quiet once I have approved', async () => {
+  await render(
+    [
+      mr({
+        reviews: {
+          isApproved: true,
+          required: 1,
+          given: 1,
+          reviewers: [{ username: 'me', reviewState: 'APPROVED' }],
+        },
+        threadSummary: { awaiting: 0, replied: 1, resolved: 1 },
+        myThreads: { awaiting: 0, replied: 1, resolved: 1 },
+      } as never),
+    ],
+    ctx({ self: 'me' })
+  );
+  expect(container.querySelector('.tui-threads-replied')).toBeNull();
 });
