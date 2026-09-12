@@ -1303,6 +1303,7 @@
           "status": "open",
           "openedAt": 1755603000000,
           "domain": "review",
+          "context": "MR 1271 (WEB-418) has two unresolved findings from the review pass. Adjudication is done; one is a real defect, one is a coverage gap.\n\n=== finding-1 TabBar.tsx:58 (verdict: valid, recommend post) ===\nreviewer: \"An empty label still renders the bullet separator, so a label-only tab shows a stray dot before nothing. The separator should key on the label being non-empty, not on the tab having a label field at all.\"\nAdjudication: correct. The separator check reads `label !== undefined`, and the fixture's label-only tab passes an empty string. Fix is a one-line predicate change at :58.\n\n=== finding-2 TabBar.test.tsx (verdict: valid, recommend post) ===\nreviewer: \"No test covers the label-only tab, which is the shape the separator bug lives in. Adding one would have caught this before review.\"\nAdjudication: correct. The suite covers icon-plus-label and icon-only tabs; label-only is the missing third shape. One new case in the existing describe block.\n\n=== also ===\nNot a finding: the tab strip's hover ring is one pixel wider than the design spec at the 480px breakpoint. Cosmetic, out of scope, noted for a follow-up ticket.",
           "origin": {
             "paneId": "pane-1271",
             "tabId": "w16:t1",

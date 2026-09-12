@@ -1926,13 +1926,16 @@ body {
    a modal at all, so the frame is sized for it whether or not this gate's
    asker supplied context, and never resizes as the queue advances. */
 /* Context sits ABOVE the form, the way a real pane reads: transcript on
-   top, prompt below. The pane scrolls on its own past its cap. */
+   top, prompt below. The pane scrolls on its own past its cap. No
+   `min-height: 0` here: it would let the body shrink under the modal's
+   height cap, and the only child able to give is the context pane, which
+   collapses to its header on a short viewport. Held at content height, the
+   modal itself scrolls to the form instead. */
 .tui-triage-body {
   display: flex;
   flex-direction: column;
   align-items: stretch;
   gap: var(--gate-gap);
-  min-height: 0;
 }
 .tui-triage-form-col {
   min-width: 0;
