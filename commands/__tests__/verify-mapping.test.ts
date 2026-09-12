@@ -69,6 +69,12 @@ describe("rowsToChecks", () => {
     expect(check.severity).toBe("critical");
   });
 
+  test("a required finish-gated row that is not ready -> warn, never critical: the gate is Finish's, and apply's verify runs before anything could be loaded", () => {
+    const check = oneCheck([baseRow({ id: "tool.fast-browser-extension", status: "needs-you", required: true, detail: "not loaded in Chrome", finishGated: true })], { ci: false });
+    expect(check.status).toBe("warn");
+    expect(check.severity).toBe("warning");
+  });
+
   // The clean-room reached step 20 of 20 and then failed here on
   // tool.herdr / tool.claude / tool.fast-browser — none of which a bare
   // runner can satisfy.

@@ -1,6 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { applyInstallSatisfiedFlip, composePlan } from "../plan.ts";
-import { finalizePlan, row, type Group, type Row } from "../contract.ts";
+import { FINISH_GATED_ROW_IDS, finalizePlan, row, type Group, type Row } from "../contract.ts";
+import { applyFinishGate } from "../finish-gate.ts";
 import { UserActionableError } from "../errors.ts";
 import { writeIntent, type SetupIntent } from "../intent.ts";
 import type { SecretPresence } from "../validators/accounts.ts";
@@ -234,4 +235,65 @@ test("on a machine with no claude, the skipped plugin rows do not block Install 
   ]);
   expect(plan.requiredMissing).toEqual([]);
   expect(plan.canInstall).toBe(true);
+});
+
+function gatedRow(status: Row["status"]): Row {
+  return row({
+    id: "tool.fast-browser-extension",
+    kind: "tool",
+    title: "Fast Browser extension",
+    why: "x",
+    required: false,
+    optionalNote: "You load this into Chrome yourself; Install cannot do it for you.",
+    status,
+    detail: "d",
+    action: { type: "steps", label: "Show steps…", steps: ["Open chrome://extensions"] },
+    finishGated: true,
+  });
+}
+
+function gatedPlan(status: Row["status"], mode: "plan" | "status", waived: string[] = []) {
+  const groups: Group[] = [{ id: "tools", title: "Tools", rows: [gatedRow(status)] }];
+  return finalizePlan({ slug: "acme", name: "Acme", mode: "none" }, applyFinishGate(groups, mode, waived), new Date(), waived);
+}
+
+describe("finish gate", () => {
+  test("the contract names exactly one finish-gated row today", () => {
+    expect([...FINISH_GATED_ROW_IDS]).toEqual(["tool.fast-browser-extension"]);
+  });
+
+  test("a needs-you finish-gated row blocks Finish in both modes and never Install", () => {
+    for (const mode of ["plan", "status"] as const) {
+      const plan = gatedPlan("needs-you", mode);
+      expect(plan.finishBlockedBy).toEqual(["tool.fast-browser-extension"]);
+      expect(plan.requiredMissing).toEqual([]);
+      expect(plan.canInstall).toBe(true);
+    }
+  });
+
+  test("ready and skipped finish-gated rows block nothing", () => {
+    expect(gatedPlan("ready", "status").finishBlockedBy).toEqual([]);
+    expect(gatedPlan("skipped", "status").finishBlockedBy).toEqual([]);
+  });
+
+  test("status mode reads an unwaived finish-gated row as required with no optionalNote; plan mode keeps the validator's shape", () => {
+    const status = gatedPlan("needs-you", "status").groups[0]!.rows[0]!;
+    expect(status.required).toBe(true);
+    expect(status.optionalNote).toBeNull();
+    const planned = gatedPlan("needs-you", "plan").groups[0]!.rows[0]!;
+    expect(planned.required).toBe(false);
+    expect(planned.optionalNote).toBe("You load this into Chrome yourself; Install cannot do it for you.");
+  });
+
+  test("a skipped finish-gated row stays optional in status mode", () => {
+    expect(gatedPlan("skipped", "status").groups[0]!.rows[0]!.required).toBe(false);
+  });
+
+  test("composePlan's envelope carries finishBlockedBy in both modes", async () => {
+    const p = fakeProbes({ exec: readyExec, tray: grantedTray });
+    for (const mode of ["plan", "status"] as const) {
+      const plan = await composePlan({ p, secrets: fakeSecrets(), ci: false, mode, teams: [] });
+      expect(Array.isArray(plan.finishBlockedBy)).toBe(true);
+    }
+  });
 });

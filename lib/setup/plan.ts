@@ -13,6 +13,7 @@ import { createRealAgeKeySeam } from "../home/age-key.ts";
 import { createRealSecretsExecSeam, NoAgeKeyError, readSecret, type SecretsSeams } from "../secrets/store.ts";
 import { finalizePlan, GROUP_TITLES, row, type Group, type GroupId, type Plan, type Row, type TeamRef } from "./contract.ts";
 import { UserActionableError } from "./errors.ts";
+import { applyFinishGate } from "./finish-gate.ts";
 import { readIntent, teamRefFromIntent, type SetupIntent } from "./intent.ts";
 import { fetchPermissions, permissionRows } from "./permissions.ts";
 import { createRealProbes, type Probes } from "./probes.ts";
@@ -167,7 +168,7 @@ export async function composePlan(i: PlanInputs): Promise<Plan> {
     }),
   ]);
 
-  return finalizePlan(team, applyInstallSatisfiedFlip(groups, i.mode), i.p.now());
+  return finalizePlan(team, applyFinishGate(applyInstallSatisfiedFlip(groups, i.mode), i.mode), i.p.now());
 }
 
 /**

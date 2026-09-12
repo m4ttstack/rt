@@ -4,7 +4,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { __test__ as bundleLayoutTest } from "../../bundle-layout.ts";
 import { setSetting } from "../../settings/write.ts";
-import { STEP_IDS } from "../contract.ts";
+import { FINISH_GATED_ROW_IDS, STEP_IDS } from "../contract.ts";
 import { toolRows, extractVersion } from "../validators/tools.ts";
 import type { ToolsSeams } from "../validators/tools.ts";
 import { fakeProbes, ok, missing } from "./fakes.ts";
@@ -432,6 +432,12 @@ describe("toolRows - tool.fast-browser-extension", () => {
     const p = withChrome(() => ({ code: 1, stdout: "", stderr: "boom" }));
     const r = await pickRow(toolRows(p, [], { hasBrew: true, secrets: NO_SECRETS }, fastBrowserSeams()), "tool.fast-browser-extension");
     expect(r.status).toBe("skipped");
+  });
+
+  test("the extension row is finish-gated, and it is the only tool row that is", async () => {
+    const p = withChrome(doctorExec(withCheckStatus(REAL_DOCTOR, "extension-loaded", "fail")));
+    const rows = await toolRows(p, [], { hasBrew: true, secrets: NO_SECRETS }, fastBrowserSeams());
+    expect(rows.filter((r) => r.finishGated).map((r) => r.id)).toEqual([...FINISH_GATED_ROW_IDS]);
   });
 });
 

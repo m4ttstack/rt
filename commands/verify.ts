@@ -92,7 +92,9 @@ function rowToCheck(r: Row, opts: { ci: boolean }): CheckResult {
   if (r.status === "skipped" || r.status === "checking") return { name: r.id, status: "skip", detail, severity: "info" };
 
   // missing | invalid | error | needs-you
-  if (r.required && !ciNeverCritical(r, opts.ci) && !deliberateChoice(r)) return { name: r.id, status: "fail", detail, severity: "critical" };
+  // A finish-gated row blocks the wizard's Finish, not the install: apply's
+  // own verify step runs before the user could have loaded anything.
+  if (r.required && !r.finishGated && !ciNeverCritical(r, opts.ci) && !deliberateChoice(r)) return { name: r.id, status: "fail", detail, severity: "critical" };
   return { name: r.id, status: "warn", detail, severity: "warning" };
 }
 
