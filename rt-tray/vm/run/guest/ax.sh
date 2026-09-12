@@ -201,6 +201,99 @@ ax_wait_status_not() {  # <rowId> <status-to-leave> <timeout-s>
   ax_log "row $1 still '${s:-?}'"; return 1
 }
 
+ax_enabled() {  # <axid> -> true|false
+  local id; id=$(ax_esc "$1")
+  ax_osa "$AX_WALK_AS
+    tell application \"System Events\" to tell process \"$AX_APP\"
+      set r to my walk(window 1, \"$id\")
+      if r is missing value then error \"axid not found: $id\"
+      return (enabled of r) as text
+    end tell" 2>/dev/null
+}
+
+ax_wait_enabled() {  # <axid> <timeout-s>
+  local deadline=$((SECONDS + ${2:-30})) s
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    s=$(ax_enabled "$1" || true)
+    [ "$s" = true ] && { ax_log "$1 enabled"; return 0; }
+    sleep 1
+  done
+  ax_log "$1 still '${s:-?}' (wanted enabled)"; return 1
+}
+
+# Every static text under every sheet of window 1, then (a sheet some OS
+# builds expose as its own window) under every other window, one per line.
+# Walked recursively for the same reason ax_dump_ids is.
+ax_texts() {
+  ax_osa "
+using terms from application \"System Events\"
+  on walkTexts(el, acc)
+    try
+      if (class of el) is static text then set end of acc to (value of el as text)
+    end try
+    try
+      repeat with c in UI elements of el
+        my walkTexts(c, acc)
+      end repeat
+    end try
+  end walkTexts
+end using terms from
+tell application \"System Events\" to tell process \"$AX_APP\"
+  set acc to {}
+  if exists window 1 then
+    repeat with s in (every sheet of window 1)
+      my walkTexts(s, acc)
+    end repeat
+  end if
+  repeat with w in (every window)
+    my walkTexts(w, acc)
+  end repeat
+  set AppleScript's text item delimiters to linefeed
+  return acc as text
+end tell" 2>/dev/null
+}
+
+ax_wait_text() {  # <exact text> <timeout-s>
+  local deadline=$((SECONDS + ${2:-10}))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    ax_texts | grep -qxF -- "$1" && { ax_log "text on screen: $1"; return 0; }
+    sleep 1
+  done
+  ax_log "text never appeared: $1"; return 1
+}
+
+# Clicks a button by its wording inside the front sheet, the way the trust
+# prompt is driven; window 1's own buttons are never candidates, so a row
+# button with the same title as the sheet's confirm cannot take the click.
+ax_click_sheet_button() {  # <name>
+  local nm; nm=$(ax_esc "$1")
+  ax_osa "
+using terms from application \"System Events\"
+  on findButton(el, wanted)
+    try
+      if (class of el) is button and (name of el as text) is wanted then return el
+    end try
+    try
+      repeat with c in UI elements of el
+        set r to my findButton(c, wanted)
+        if r is not missing value then return r
+      end repeat
+    end try
+    return missing value
+  end findButton
+end using terms from
+tell application \"System Events\" to tell process \"$AX_APP\"
+  set frontmost to true
+  set r to missing value
+  repeat with s in (every sheet of window 1)
+    if r is missing value then set r to my findButton(s, \"$nm\")
+  end repeat
+  if r is missing value then error \"sheet button not found: $nm\"
+  click r
+end tell" >/dev/null || return 1
+  ax_log "clicked sheet button '$1'"
+}
+
 # SecurityAgent admin prompt (privileged step, FDA/Login Items toggles by a standard user).
 # One-shot, non-blocking: returns immediately when no dialog is up. A poll loop must use this
 # form, not ax_admin_auth's own 30s wait-for-appearance — that form belongs only at call sites
