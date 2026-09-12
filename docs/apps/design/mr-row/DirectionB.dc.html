@@ -70,10 +70,11 @@
   .dels { color: color-mix(in srgb, var(--red) 70%, var(--muted)); }
   .fresh { color: var(--accent); font-weight: 600; }
   .mark { display: inline-flex; opacity: .55; }
-  .diffs { flex-shrink: 0; font-variant-numeric: tabular-nums; }
-  .slot { flex-shrink: 0; text-align: right; font-variant-numeric: tabular-nums; }
-  .slot.age { min-width: 3.2ch; }
-  .slot.mk { width: 14px; display: inline-flex; justify-content: flex-end; }
+  .pair { white-space: nowrap; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+  .facts { display: inline-flex; align-items: center; flex-shrink: 0;
+           font-variant-numeric: tabular-nums; }
+  .facts .sep { margin: 0 6px; }
+  .facts .age { text-align: right; }
 
   /* the ledger: 20px lines on the shared content edge. */
   .acts { margin-top: 8px; display: flex; flex-direction: column; gap: 2px; }
@@ -86,7 +87,8 @@
   .act-warn .w { color: var(--amber); }
   .act-bad .w { color: var(--red); }
   .act-quiet .w { color: var(--muted); font-weight: 500; }
-  .act-clear .w { color: color-mix(in srgb, var(--green) 45%, var(--muted)); font-weight: 500;
+  .act-clear .lane { color: color-mix(in srgb, var(--green) 45%, var(--muted)); }
+  .act-clear .w { color: color-mix(in srgb, var(--green) 40%, var(--muted)); font-weight: 500;
                   display: inline-flex; align-items: center; gap: 6px; }
   .act-clear .w svg { opacity: .8; }
   .act .d { margin-left: 8px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -139,11 +141,9 @@ the row menu and a drawer.</p>
   <div style="min-width:0"><div class="r1"><span class="title">CV-3074 Port the CV2 stealth-mode and access-links case c…</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span></div><div class="r2">
     <span>!44451</span><span class="sep">·</span>
     <span class="branch">feature/cv-3074</span><span class="sep">·</span>
-    <span class="diffs"><span class="adds">+1455</span> <span class="dels">−13</span></span>
-    <span class="sep">·</span><span>1 thread</span>
+    <span class="pair"><span class="adds">+1455</span> <span class="dels">−13</span></span>
     <span class="grow"></span>
-    <span class="slot age">32h</span>
-    <span class="slot mk"></span>
+    <span class="facts"><span>1 thread</span><span class="sep">·</span><span class="age">32h</span></span>
     <span class="sep">·</span><span class="sum bad">review interrupted</span>
   </div></div>
 </div>
@@ -153,11 +153,9 @@ the row menu and a drawer.</p>
   <div style="min-width:0"><div class="r1"><span class="title">CV-3163 Let screenshot.cjs capture the auth handshake</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span></div><div class="r2">
     <span>!44720</span><span class="sep">·</span>
     <span class="branch">feature/cv-3163</span><span class="sep">·</span>
-    <span class="diffs"><span class="adds">+79</span> <span class="dels">−27</span></span>
-    
+    <span class="pair"><span class="adds">+79</span> <span class="dels">−27</span></span>
     <span class="grow"></span>
-    <span class="slot age">8h</span>
-    <span class="slot mk"></span>
+    <span class="facts"><span class="age">8h</span></span>
     <span class="sep">·</span><span class="sum work">reviewing… 4m</span>
   </div></div>
 </div>
@@ -167,25 +165,21 @@ the row menu and a drawer.</p>
   <div style="min-width:0"><div class="r1"><span class="title">CV-3028 Delete unreachable legacy dashboards</span><span class="phrase" style="color:var(--green)">APPROVED</span></div><div class="r2">
     <span>!43946</span><span class="sep">·</span>
     <span class="branch">feature/cv-3028</span><span class="sep">·</span>
-    <span class="diffs"><span class="adds">+18</span> <span class="dels">−1253</span></span>
-    <span class="sep">·</span><span>7 threads</span>
+    <span class="pair"><span class="adds">+18</span> <span class="dels">−1253</span></span>
     <span class="grow"></span>
-    <span class="slot age">9d</span>
-    <span class="slot mk"></span>
+    <span class="facts"><span>7 threads</span><span class="sep">·</span><span class="age">9d</span></span>
     <span class="sep">·</span><span class="sum warn">2 findings to post</span>
   </div></div>
 </div>
   <div class="row">
   
   <div class="gut"><span class="dot" style="color:var(--green)">●</span></div>
-  <div style="min-width:0"><div class="r1"><span class="title">CV-3149 Widen the transform contract</span><span class="phrase" style="color:var(--green)">APPROVED</span></div><div class="r2">
+  <div style="min-width:0"><div class="r1"><span class="title">CV-3149 Widen the transform contract</span><span class="mark" title="posted in slack"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><rect x="2.5" y="2.5" width="11" height="11" rx="3"/><path d="M5.5 8.4l1.9 1.9 3.1-3.8"/></svg></span><span class="phrase" style="color:var(--green)">APPROVED</span></div><div class="r2">
     <span>!44684</span><span class="sep">·</span>
     <span class="branch">feature/cv-3149</span><span class="sep">·</span>
-    <span class="diffs"><span class="adds">+296</span> <span class="dels">−16</span></span>
-    <span class="sep">·</span><span>2 threads</span>
+    <span class="pair"><span class="adds">+296</span> <span class="dels">−16</span></span>
     <span class="grow"></span>
-    <span class="slot age">9h</span>
-    <span class="slot mk"></span>
+    <span class="facts"><span>2 threads</span><span class="sep">·</span><span class="age">9h</span></span>
     
   </div></div>
 </div>

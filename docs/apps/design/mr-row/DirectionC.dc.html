@@ -70,10 +70,11 @@
   .dels { color: color-mix(in srgb, var(--red) 70%, var(--muted)); }
   .fresh { color: var(--accent); font-weight: 600; }
   .mark { display: inline-flex; opacity: .55; }
-  .diffs { flex-shrink: 0; font-variant-numeric: tabular-nums; }
-  .slot { flex-shrink: 0; text-align: right; font-variant-numeric: tabular-nums; }
-  .slot.age { min-width: 3.2ch; }
-  .slot.mk { width: 14px; display: inline-flex; justify-content: flex-end; }
+  .pair { white-space: nowrap; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+  .facts { display: inline-flex; align-items: center; flex-shrink: 0;
+           font-variant-numeric: tabular-nums; }
+  .facts .sep { margin: 0 6px; }
+  .facts .age { text-align: right; }
 
   /* the ledger: 20px lines on the shared content edge. */
   .acts { margin-top: 8px; display: flex; flex-direction: column; gap: 2px; }
@@ -86,7 +87,8 @@
   .act-warn .w { color: var(--amber); }
   .act-bad .w { color: var(--red); }
   .act-quiet .w { color: var(--muted); font-weight: 500; }
-  .act-clear .w { color: color-mix(in srgb, var(--green) 45%, var(--muted)); font-weight: 500;
+  .act-clear .lane { color: color-mix(in srgb, var(--green) 45%, var(--muted)); }
+  .act-clear .w { color: color-mix(in srgb, var(--green) 40%, var(--muted)); font-weight: 500;
                   display: inline-flex; align-items: center; gap: 6px; }
   .act-clear .w svg { opacity: .8; }
   .act .d { margin-left: 8px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -139,11 +141,9 @@ row of bolted-on banners, ever.</p>
   <div style="min-width:0"><div class="r1"><span class="title">CV-3074 Port the CV2 stealth-mode and access-links case c…</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span></div><div class="r2">
     <span>!44451</span><span class="sep">·</span>
     <span class="branch">feature/cv-3074</span><span class="sep">·</span>
-    <span class="diffs"><span class="adds">+1455</span> <span class="dels">−13</span></span>
-    <span class="sep">·</span><span>1 thread</span>
+    <span class="pair"><span class="adds">+1455</span> <span class="dels">−13</span></span>
     <span class="grow"></span>
-    <span class="slot age">32h</span>
-    <span class="slot mk"></span>
+    <span class="facts"><span>1 thread</span><span class="sep">·</span><span class="age">32h</span></span>
     
   </div><div class="chips"><span class="chip warn">interrupted <span class="x">· relaunch</span></span></div></div>
 </div>
@@ -153,11 +153,9 @@ row of bolted-on banners, ever.</p>
   <div style="min-width:0"><div class="r1"><span class="title">CV-3163 Let screenshot.cjs capture the auth handshake</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span></div><div class="r2">
     <span>!44720</span><span class="sep">·</span>
     <span class="branch">feature/cv-3163</span><span class="sep">·</span>
-    <span class="diffs"><span class="adds">+79</span> <span class="dels">−27</span></span>
-    
+    <span class="pair"><span class="adds">+79</span> <span class="dels">−27</span></span>
     <span class="grow"></span>
-    <span class="slot age">8h</span>
-    <span class="slot mk"></span>
+    <span class="facts"><span class="age">8h</span></span>
     
   </div><div class="chips"><span class="chip purple pulse">reviewing…</span></div></div>
 </div>
@@ -167,11 +165,9 @@ row of bolted-on banners, ever.</p>
   <div style="min-width:0"><div class="r1"><span class="title">CV-3028 Delete unreachable legacy dashboards</span><span class="phrase" style="color:var(--green)">APPROVED</span></div><div class="r2">
     <span>!43946</span><span class="sep">·</span>
     <span class="branch">feature/cv-3028</span><span class="sep">·</span>
-    <span class="diffs"><span class="adds">+18</span> <span class="dels">−1253</span></span>
-    <span class="sep">·</span><span>7 threads</span>
+    <span class="pair"><span class="adds">+18</span> <span class="dels">−1253</span></span>
     <span class="grow"></span>
-    <span class="slot age">9d</span>
-    <span class="slot mk"></span>
+    <span class="facts"><span>7 threads</span><span class="sep">·</span><span class="age">9d</span></span>
     
   </div><div class="chips">
       <span class="chip ok">review ready <span class="x">↗</span></span>

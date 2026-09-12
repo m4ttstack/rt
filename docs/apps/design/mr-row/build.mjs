@@ -88,10 +88,11 @@ const CSS = `
   .dels { color: color-mix(in srgb, var(--red) 70%, var(--muted)); }
   .fresh { color: var(--accent); font-weight: 600; }
   .mark { display: inline-flex; opacity: .55; }
-  .diffs { flex-shrink: 0; font-variant-numeric: tabular-nums; }
-  .slot { flex-shrink: 0; text-align: right; font-variant-numeric: tabular-nums; }
-  .slot.age { min-width: 3.2ch; }
-  .slot.mk { width: 14px; display: inline-flex; justify-content: flex-end; }
+  .pair { white-space: nowrap; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+  .facts { display: inline-flex; align-items: center; flex-shrink: 0;
+           font-variant-numeric: tabular-nums; }
+  .facts .sep { margin: 0 6px; }
+  .facts .age { text-align: right; }
 
   /* the ledger: 20px lines on the shared content edge. */
   .acts { margin-top: 8px; display: flex; flex-direction: column; gap: 2px; }
@@ -104,7 +105,8 @@ const CSS = `
   .act-warn .w { color: var(--amber); }
   .act-bad .w { color: var(--red); }
   .act-quiet .w { color: var(--muted); font-weight: 500; }
-  .act-clear .w { color: color-mix(in srgb, var(--green) 45%, var(--muted)); font-weight: 500;
+  .act-clear .lane { color: color-mix(in srgb, var(--green) 45%, var(--muted)); }
+  .act-clear .w { color: color-mix(in srgb, var(--green) 40%, var(--muted)); font-weight: 500;
                   display: inline-flex; align-items: center; gap: 6px; }
   .act-clear .w svg { opacity: .8; }
   .act .d { margin-left: 8px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -170,9 +172,10 @@ const IC = {
 };
 
 // ── row scaffolding ─────────────────────────────────────────────────
-function r1({ title, phrase, phraseColor = 'var(--amber)' }) {
+function r1({ title, phrase, phraseColor = 'var(--amber)', slack = false }) {
   const ph = phrase ? `<span class="phrase" style="color:${phraseColor}">${phrase}</span>` : '';
-  return `<div class="r1"><span class="title">${title}</span>${ph}</div>`;
+  const mk = slack ? `<span class="mark" title="posted in slack">${IC.slack}</span>` : '';
+  return `<div class="r1"><span class="title">${title}</span>${mk}${ph}</div>`;
 }
 
 function r2({ iid, branch, adds, dels, threads, age, fresh = 0, slack = false }, extra = '') {
@@ -180,11 +183,11 @@ function r2({ iid, branch, adds, dels, threads, age, fresh = 0, slack = false },
   return `<div class="r2">
     <span>!${iid}</span><span class="sep">·</span>
     <span class="branch">${branch}</span><span class="sep">·</span>
-    <span class="diffs"><span class="adds">+${adds}</span> <span class="dels">−${dels}</span></span>
-    ${threads ? `<span class="sep">·</span><span>${threads} thread${threads > 1 ? 's' : ''}${freshTag}</span>` : ''}
+    <span class="pair"><span class="adds">+${adds}</span> <span class="dels">−${dels}</span></span>
     <span class="grow"></span>
-    <span class="slot age">${age}</span>
-    <span class="slot mk">${slack ? `<span class="mark" title="posted in slack">${IC.slack}</span>` : ''}</span>
+    <span class="facts">${
+      threads ? `<span>${threads} thread${threads > 1 ? 's' : ''}${freshTag}</span><span class="sep">·</span>` : ''
+    }<span class="age">${age}</span></span>
     ${extra}
   </div>`;
 }
@@ -194,7 +197,7 @@ const act = (tone, lane, word, detail = '', actions = [], spin = false, more = 0
     <span class="lane">${lane}</span>
     <span class="w">${word}</span>
     ${spin ? '<span class="spin"></span>' : ''}
-    ${detail ? `<span class="sep" style="margin-left:8px;opacity:.45">·</span><span class="d">${detail}</span>` : ''}
+    ${detail ? `${spin ? '' : '<span class="sep" style="margin-left:8px;opacity:.45">·</span>'}<span class="d">${detail}</span>` : ''}
     ${more ? `<span class="more">+${more} active</span>` : ''}
     ${actions.length ? `<span class="do">${actions.map(([t, mut, sec]) => `<a href="#" class="${[mut ? 'mut' : '', sec ? 'sec' : ''].join(' ').trim()}">${t}</a>`).join('')}</span>` : ''}
   </div>`;
@@ -227,9 +230,12 @@ const mainBody = `
 line. The hottest fact wins the line (decide beats interrupted beats running beats ready);
 "+N active" marks the rest, revealed by hover or the menu. Decide implies review: a gate line
 subsumes its lane's state ("post 2 findings? · review ready"). A hot line carries its primary
-verb at rest; secondary verbs and the checkbox wait for hover. All variable evidence reads
-left in one flow (!iid · branch · +/− · threads); the right corner holds exactly one thing,
-the age, with a reserved mark slot beside it. Verbs are always the status line's right end.
+verb at rest; secondary verbs and the checkbox wait for hover. The right rail has one meaning
+per line: the pill (with the slack posted-mark beside it), then threads · age flush to the
+edge with the age as the corner anchor, then the verb. The diff count reads with the branch,
+where the code facts live. The status line's right end is
+never empty on an active row: the next verb lives there, accent when hot (relaunch, answer),
+muted when warm (focus, view).
 A quiet row's status line says <b>all clear</b>, softly; the height never changes.</p>
 
 <div class="list">
@@ -244,7 +250,7 @@ A quiet row's status line says <b>all clear</b>, softly; the height never change
     r1({ title: MR2.title, phrase: 'NEEDS REVIEW' }) +
     r2(MR2) +
     `<div class="acts">
-      ${act('work', 'review', 'running…', 'started 4m ago', [], true)}
+      ${act('work', 'review', 'running…', 'started 4m ago', [['focus', true]], true)}
     </div>`
   )}
   ${row(GREEN, 'warn',
@@ -255,16 +261,16 @@ A quiet row's status line says <b>all clear</b>, softly; the height never change
     </div>`
   )}
   ${row(GREEN, '',
-    r1({ title: 'CV-3149 Widen the transform contract', phrase: 'APPROVED', phraseColor: GREEN }) +
-    r2({ iid: 44684, branch: 'feature/cv-3149', adds: 296, dels: 16, threads: 5, age: '9h', fresh: 2, slack: true }) +
+    r1({ title: 'CV-3149 Widen the transform contract', phrase: 'APPROVED', phraseColor: GREEN, slack: true }) +
+    r2({ iid: 44684, branch: 'feature/cv-3149', adds: 296, dels: 16, threads: 5, age: '9h', fresh: 2 }) +
     `<div class="acts">
-      ${act('work', 'peer', 'geoff reviewing…', 'on his board', [], true)}
+      ${act('work', 'peer', 'geoff reviewing…', 'on his board', [['view ↗', true]], true)}
     </div>`
   )}
   ${row(GREEN, '',
-    r1({ title: 'CV-3114 Carry the standard onto the legacy grid', phrase: 'APPROVED', phraseColor: GREEN }) +
-    r2({ iid: 44740, branch: 'feature/cv-3114', adds: 114, dels: 0, threads: 0, age: '6h', slack: true }) +
-    `<div class="acts">${act('clear', '', `${IC.sun} all clear, enjoy the sun`)}</div>`
+    r1({ title: 'CV-3114 Carry the standard onto the legacy grid', phrase: 'APPROVED', phraseColor: GREEN, slack: true }) +
+    r2({ iid: 44740, branch: 'feature/cv-3114', adds: 114, dels: 0, threads: 0, age: '6h' }) +
+    `<div class="acts">${act('clear', 'all clear', `${IC.sun} enjoy the sunshine`, '', [['open ↗', true]])}</div>`
   )}
 </div>
 <p class="cap"><b>Scan path:</b> edge bars, then colored words, then the quiet facts. Row 4 is
@@ -294,7 +300,7 @@ the row menu and a drawer.</p>
     r2(MR3, `<span class="sep">·</span><span class="sum warn">2 findings to post</span>`)
   )}
   ${row(GREEN, '',
-    r1({ title: 'CV-3149 Widen the transform contract', phrase: 'APPROVED', phraseColor: GREEN }) +
+    r1({ title: 'CV-3149 Widen the transform contract', phrase: 'APPROVED', phraseColor: GREEN, slack: true }) +
     r2({ iid: 44684, branch: 'feature/cv-3149', adds: 296, dels: 16, threads: 2, age: '9h' })
   )}
 </div>
@@ -379,9 +385,9 @@ const densityBody = `
     `<div class="acts">${act('work', 'review', 'running…', 'started 4m ago', [], true)}</div>`
   )}
   ${row(GREEN, '',
-    r1({ title: 'CV-3149 Widen the transform contract', phrase: 'APPROVED', phraseColor: GREEN }) +
-    r2({ iid: 44684, branch: 'feature/cv-3149', adds: 296, dels: 16, threads: 2, age: '9h', slack: true }) +
-    `<div class="acts">${act('clear', '', `${IC.sun} all clear, enjoy the sun`)}</div>`
+    r1({ title: 'CV-3149 Widen the transform contract', phrase: 'APPROVED', phraseColor: GREEN, slack: true }) +
+    r2({ iid: 44684, branch: 'feature/cv-3149', adds: 296, dels: 16, threads: 2, age: '9h' }) +
+    `<div class="acts">${act('clear', 'all clear', `${IC.sun} enjoy the sunshine`)}</div>`
   )}
 </div>
 
@@ -392,9 +398,9 @@ const densityBody = `
     `<div class="acts">${act('work', 'review', 'running…', 'started 4m ago', [], true)}</div>`
   )}
   ${row(GREEN, '',
-    r1({ title: 'CV-3149 Widen the transform contract', phrase: 'APPROVED', phraseColor: GREEN }) +
-    r2({ iid: 44684, branch: 'feature/cv-3149', adds: 296, dels: 16, threads: 2, age: '9h', slack: true }) +
-    `<div class="acts">${act('clear', '', `${IC.sun} all clear, enjoy the sun`)}</div>`
+    r1({ title: 'CV-3149 Widen the transform contract', phrase: 'APPROVED', phraseColor: GREEN, slack: true }) +
+    r2({ iid: 44684, branch: 'feature/cv-3149', adds: 296, dels: 16, threads: 2, age: '9h' }) +
+    `<div class="acts">${act('clear', 'all clear', `${IC.sun} enjoy the sunshine`)}</div>`
   )}
 </div>
 <p class="cap">Same anatomy, two scales; pick by feel.</p>
@@ -472,12 +478,12 @@ for you turns into a hot line.</p>
 <div class="list">
   ${row(GREEN, '',
     r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: GREEN }) +
-    r2({ ...MR3, fresh: 2, slack: true }) +
+    r2({ ...MR3, fresh: 2 }) +
     `<div class="acts">${act('work', 'peer', 'geoff reviewing…', 'on his board', [], true)}</div>`
   )}
   ${row(GREEN, '',
     r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: GREEN }) +
-    r2({ ...MR3, slack: true }) +
+    r2({ ...MR3 }) +
     `<div class="acts">${act('quiet', 'peer', 'nudged sam', 'no answer yet · 30m', [], false)}</div>`
   )}
 </div>

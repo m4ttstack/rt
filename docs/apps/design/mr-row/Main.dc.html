@@ -70,10 +70,11 @@
   .dels { color: color-mix(in srgb, var(--red) 70%, var(--muted)); }
   .fresh { color: var(--accent); font-weight: 600; }
   .mark { display: inline-flex; opacity: .55; }
-  .diffs { flex-shrink: 0; font-variant-numeric: tabular-nums; }
-  .slot { flex-shrink: 0; text-align: right; font-variant-numeric: tabular-nums; }
-  .slot.age { min-width: 3.2ch; }
-  .slot.mk { width: 14px; display: inline-flex; justify-content: flex-end; }
+  .pair { white-space: nowrap; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+  .facts { display: inline-flex; align-items: center; flex-shrink: 0;
+           font-variant-numeric: tabular-nums; }
+  .facts .sep { margin: 0 6px; }
+  .facts .age { text-align: right; }
 
   /* the ledger: 20px lines on the shared content edge. */
   .acts { margin-top: 8px; display: flex; flex-direction: column; gap: 2px; }
@@ -86,7 +87,8 @@
   .act-warn .w { color: var(--amber); }
   .act-bad .w { color: var(--red); }
   .act-quiet .w { color: var(--muted); font-weight: 500; }
-  .act-clear .w { color: color-mix(in srgb, var(--green) 45%, var(--muted)); font-weight: 500;
+  .act-clear .lane { color: color-mix(in srgb, var(--green) 45%, var(--muted)); }
+  .act-clear .w { color: color-mix(in srgb, var(--green) 40%, var(--muted)); font-weight: 500;
                   display: inline-flex; align-items: center; gap: 6px; }
   .act-clear .w svg { opacity: .8; }
   .act .d { margin-left: 8px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -132,9 +134,12 @@
 line. The hottest fact wins the line (decide beats interrupted beats running beats ready);
 "+N active" marks the rest, revealed by hover or the menu. Decide implies review: a gate line
 subsumes its lane's state ("post 2 findings? · review ready"). A hot line carries its primary
-verb at rest; secondary verbs and the checkbox wait for hover. All variable evidence reads
-left in one flow (!iid · branch · +/− · threads); the right corner holds exactly one thing,
-the age, with a reserved mark slot beside it. Verbs are always the status line's right end.
+verb at rest; secondary verbs and the checkbox wait for hover. The right rail has one meaning
+per line: the pill (with the slack posted-mark beside it), then threads · age flush to the
+edge with the age as the corner anchor, then the verb. The diff count reads with the branch,
+where the code facts live. The status line's right end is
+never empty on an active row: the next verb lives there, accent when hot (relaunch, answer),
+muted when warm (focus, view).
 A quiet row's status line says <b>all clear</b>, softly; the height never changes.</p>
 
 <div class="list">
@@ -144,11 +149,9 @@ A quiet row's status line says <b>all clear</b>, softly; the height never change
   <div style="min-width:0"><div class="r1"><span class="title">CV-3074 Port the CV2 stealth-mode and access-links case c…</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span></div><div class="r2">
     <span>!44451</span><span class="sep">·</span>
     <span class="branch">feature/cv-3074</span><span class="sep">·</span>
-    <span class="diffs"><span class="adds">+1455</span> <span class="dels">−13</span></span>
-    <span class="sep">·</span><span>1 thread</span>
+    <span class="pair"><span class="adds">+1455</span> <span class="dels">−13</span></span>
     <span class="grow"></span>
-    <span class="slot age">32h</span>
-    <span class="slot mk"></span>
+    <span class="facts"><span>1 thread</span><span class="sep">·</span><span class="age">32h</span></span>
     
   </div><div class="acts">
       
@@ -168,11 +171,9 @@ A quiet row's status line says <b>all clear</b>, softly; the height never change
   <div style="min-width:0"><div class="r1"><span class="title">CV-3163 Let screenshot.cjs capture the auth handshake</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span></div><div class="r2">
     <span>!44720</span><span class="sep">·</span>
     <span class="branch">feature/cv-3163</span><span class="sep">·</span>
-    <span class="diffs"><span class="adds">+79</span> <span class="dels">−27</span></span>
-    
+    <span class="pair"><span class="adds">+79</span> <span class="dels">−27</span></span>
     <span class="grow"></span>
-    <span class="slot age">8h</span>
-    <span class="slot mk"></span>
+    <span class="facts"><span class="age">8h</span></span>
     
   </div><div class="acts">
       
@@ -180,9 +181,9 @@ A quiet row's status line says <b>all clear</b>, softly; the height never change
     <span class="lane">review</span>
     <span class="w">running…</span>
     <span class="spin"></span>
-    <span class="sep" style="margin-left:8px;opacity:.45">·</span><span class="d">started 4m ago</span>
+    <span class="d">started 4m ago</span>
     
-    
+    <span class="do"><a href="#" class="mut">focus</a></span>
   </div>
     </div></div>
 </div>
@@ -192,11 +193,9 @@ A quiet row's status line says <b>all clear</b>, softly; the height never change
   <div style="min-width:0"><div class="r1"><span class="title">CV-3028 Delete unreachable legacy dashboards</span><span class="phrase" style="color:var(--green)">APPROVED</span></div><div class="r2">
     <span>!43946</span><span class="sep">·</span>
     <span class="branch">feature/cv-3028</span><span class="sep">·</span>
-    <span class="diffs"><span class="adds">+18</span> <span class="dels">−1253</span></span>
-    <span class="sep">·</span><span>7 threads</span>
+    <span class="pair"><span class="adds">+18</span> <span class="dels">−1253</span></span>
     <span class="grow"></span>
-    <span class="slot age">9d</span>
-    <span class="slot mk"></span>
+    <span class="facts"><span>7 threads</span><span class="sep">·</span><span class="age">9d</span></span>
     
   </div><div class="acts">
       
@@ -213,14 +212,12 @@ A quiet row's status line says <b>all clear</b>, softly; the height never change
   <div class="row">
   
   <div class="gut"><span class="dot" style="color:var(--green)">●</span></div>
-  <div style="min-width:0"><div class="r1"><span class="title">CV-3149 Widen the transform contract</span><span class="phrase" style="color:var(--green)">APPROVED</span></div><div class="r2">
+  <div style="min-width:0"><div class="r1"><span class="title">CV-3149 Widen the transform contract</span><span class="mark" title="posted in slack"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><rect x="2.5" y="2.5" width="11" height="11" rx="3"/><path d="M5.5 8.4l1.9 1.9 3.1-3.8"/></svg></span><span class="phrase" style="color:var(--green)">APPROVED</span></div><div class="r2">
     <span>!44684</span><span class="sep">·</span>
     <span class="branch">feature/cv-3149</span><span class="sep">·</span>
-    <span class="diffs"><span class="adds">+296</span> <span class="dels">−16</span></span>
-    <span class="sep">·</span><span>5 threads <span class="fresh">2 new</span></span>
+    <span class="pair"><span class="adds">+296</span> <span class="dels">−16</span></span>
     <span class="grow"></span>
-    <span class="slot age">9h</span>
-    <span class="slot mk"><span class="mark" title="posted in slack"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><rect x="2.5" y="2.5" width="11" height="11" rx="3"/><path d="M5.5 8.4l1.9 1.9 3.1-3.8"/></svg></span></span>
+    <span class="facts"><span>5 threads <span class="fresh">2 new</span></span><span class="sep">·</span><span class="age">9h</span></span>
     
   </div><div class="acts">
       
@@ -228,32 +225,30 @@ A quiet row's status line says <b>all clear</b>, softly; the height never change
     <span class="lane">peer</span>
     <span class="w">geoff reviewing…</span>
     <span class="spin"></span>
-    <span class="sep" style="margin-left:8px;opacity:.45">·</span><span class="d">on his board</span>
+    <span class="d">on his board</span>
     
-    
+    <span class="do"><a href="#" class="mut">view ↗</a></span>
   </div>
     </div></div>
 </div>
   <div class="row">
   
   <div class="gut"><span class="dot" style="color:var(--green)">●</span></div>
-  <div style="min-width:0"><div class="r1"><span class="title">CV-3114 Carry the standard onto the legacy grid</span><span class="phrase" style="color:var(--green)">APPROVED</span></div><div class="r2">
+  <div style="min-width:0"><div class="r1"><span class="title">CV-3114 Carry the standard onto the legacy grid</span><span class="mark" title="posted in slack"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><rect x="2.5" y="2.5" width="11" height="11" rx="3"/><path d="M5.5 8.4l1.9 1.9 3.1-3.8"/></svg></span><span class="phrase" style="color:var(--green)">APPROVED</span></div><div class="r2">
     <span>!44740</span><span class="sep">·</span>
     <span class="branch">feature/cv-3114</span><span class="sep">·</span>
-    <span class="diffs"><span class="adds">+114</span> <span class="dels">−0</span></span>
-    
+    <span class="pair"><span class="adds">+114</span> <span class="dels">−0</span></span>
     <span class="grow"></span>
-    <span class="slot age">6h</span>
-    <span class="slot mk"><span class="mark" title="posted in slack"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><rect x="2.5" y="2.5" width="11" height="11" rx="3"/><path d="M5.5 8.4l1.9 1.9 3.1-3.8"/></svg></span></span>
+    <span class="facts"><span class="age">6h</span></span>
     
   </div><div class="acts">
   <div class="act act-clear">
-    <span class="lane"></span>
-    <span class="w"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><circle cx="8" cy="8" r="3"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M12.6 3.4l-1.4 1.4M4.8 11.2l-1.4 1.4"/></svg> all clear, enjoy the sun</span>
+    <span class="lane">all clear</span>
+    <span class="w"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><circle cx="8" cy="8" r="3"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M12.6 3.4l-1.4 1.4M4.8 11.2l-1.4 1.4"/></svg> enjoy the sunshine</span>
     
     
     
-    
+    <span class="do"><a href="#" class="mut">open ↗</a></span>
   </div></div></div>
 </div>
 </div>
