@@ -110,6 +110,18 @@ recorded capture baselines, not the artboards, are the reference for them.
 - **Tools left of the verb.** The ticket and copy tools appear under the
   pointer to the left of the primary verb, so the verb never moves.
 - **Long details clamp.** A status detail past 44 characters is cut at its
-  first clause boundary (`;`, `. `, or an opening paren) or the last word
-  before the cap, with the full text in the tooltip (`clauseOf` in
-  `row-status.ts`).
+  first clause boundary (`;`, `. `, or an opening paren) in the cap's second
+  half, else at the last word before the cap, with the full text in the
+  tooltip (`clauseOf` in `row-status.ts`).
+- **The dot sits on the title line**, not the state line; the stack rail's
+  segment math keys on `--pick-offset`.
+- **Only a settled MR earns the sun.** With no agent lane, gate or social
+  fact, the status line states the MR's standing GitLab state for whoever
+  the board's seat is (`RowContext.self`). The author reads what the MR
+  needs from them: "needs a rebase / a ci fix" with the doctor verb,
+  "N threads await you" with the respond verb, "waiting on reviewers",
+  "ready to merge" (go). Everyone else reads "awaiting review" with the
+  review verb, or "waiting on the author" (for a rebase, for a ci fix, to
+  resolve threads). "all clear, enjoy the sunshine" is reserved for someone
+  else's approved, unblocked MR with nothing awaiting anyone. These lines
+  are quiet (no edge bar): the bar stays the agent workflow's signal.
