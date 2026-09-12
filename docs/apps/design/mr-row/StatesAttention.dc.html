@@ -79,8 +79,10 @@
   .act-warn .d, .act-bad .d { color: color-mix(in srgb, var(--fg) 75%, var(--muted)); }
 
   /* ambient cluster (right end of r2) */
-  .amb { display: inline-flex; align-items: center; gap: .45rem; flex-shrink: 0; color: var(--muted); font-size: .72rem; }
-  .amb .g { filter: grayscale(1); opacity: .55; }
+  .amb { display: inline-flex; align-items: center; gap: .5rem; flex-shrink: 0; color: var(--muted); font-size: .72rem; }
+  .amb .g { opacity: .55; display: inline-flex; align-items: center; gap: 3px; }
+  .amb .hot { color: var(--amber); display: inline-flex; align-items: center; gap: 3px; }
+  .amb .ask { display: inline-flex; align-items: center; gap: 3px; }
   .amb .on { color: var(--green); }
   .amb .ask { color: var(--accent); font-weight: 600; }
 

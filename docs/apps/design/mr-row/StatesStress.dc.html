@@ -79,8 +79,10 @@
   .act-warn .d, .act-bad .d { color: color-mix(in srgb, var(--fg) 75%, var(--muted)); }
 
   /* ambient cluster (right end of r2) */
-  .amb { display: inline-flex; align-items: center; gap: .45rem; flex-shrink: 0; color: var(--muted); font-size: .72rem; }
-  .amb .g { filter: grayscale(1); opacity: .55; }
+  .amb { display: inline-flex; align-items: center; gap: .5rem; flex-shrink: 0; color: var(--muted); font-size: .72rem; }
+  .amb .g { opacity: .55; display: inline-flex; align-items: center; gap: 3px; }
+  .amb .hot { color: var(--amber); display: inline-flex; align-items: center; gap: 3px; }
+  .amb .ask { display: inline-flex; align-items: center; gap: 3px; }
   .amb .on { color: var(--green); }
   .amb .ask { color: var(--accent); font-weight: 600; }
 
@@ -125,7 +127,7 @@ line and stays scannable; nothing wraps unpredictably.</p>
     <span><span class="adds">+1455</span> <span class="dels">−13</span></span>
     <span>💬 1</span>
     <span>32h</span>
-    <span class="amb"><span class="g" title="posted in slack">▣✓</span><span class="g" title="reactions">👀✅</span><span class="g" title="peer reviewing">⇄</span><span style="color:var(--amber)" title="held draft">✉</span></span>
+    <span class="amb"><span class="g" title="posted in slack"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><rect x="2.5" y="2.5" width="11" height="11" rx="3"/><path d="M5.5 8.4l1.9 1.9 3.1-3.8"/></svg></span><span class="g" title="seen in slack"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><path d="M1.8 8s2.3-4 6.2-4 6.2 4 6.2 4-2.3 4-6.2 4S1.8 8 1.8 8z"/><circle cx="8" cy="8" r="1.8"/></svg></span><span class="g" title="approved in slack"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><circle cx="8" cy="8" r="6"/><path d="M5.4 8.3l1.8 1.8 3.4-4"/></svg></span><span class="g" title="peer reviewing"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><path d="M3 5.5h8.5M9 2.5l3 3-3 3"/><path d="M13 10.5H4.5M7 13.5l-3-3 3-3"/></svg></span><span class="hot" title="held draft"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px"><rect x="2" y="3.5" width="12" height="9" rx="1.5"/><path d="M2.5 4.5L8 9l5.5-4.5"/></svg></span></span>
   </div><div class="acts">
       
   <div class="act act-warn">
