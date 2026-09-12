@@ -150,7 +150,11 @@ struct SkipConfirmSheet: View {
                     .keyboardShortcut(.cancelAction)
                     .disabled(model.isSkipping)
                     .accessibilityIdentifier(AXID.doneSkipConfirmCancel)
+                // `role: .destructive` alone draws nothing outside an alert on
+                // macOS; the prominent style plus the red tint is what shows.
                 Button(FinishGate.skipSheetConfirm, role: .destructive) { Task { await model.confirmSkip() } }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
                     .disabled(model.isSkipping)
                     .accessibilityIdentifier(AXID.doneSkipConfirmSkip)
             }
