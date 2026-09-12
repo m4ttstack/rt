@@ -144,6 +144,8 @@ const CSS = `
   .chip.pulse { animation: pulse 1.6s ease-in-out infinite; }
 
   /* hover card (context off-row) */
+  .legend { display: flex; gap: 26px; margin: 2px 2px 12px; font-size: .74rem; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
   .hover { display: inline-block; margin: 10px 0 4px 44px; padding: 10px 14px; border: 1px solid var(--border);
            border-radius: 8px; background: var(--card); box-shadow: 0 8px 28px rgba(0,0,0,.28);
            font-size: .74rem; color: var(--muted); line-height: 1.9; }
@@ -170,10 +172,10 @@ ${body}
 
 const svgIcon = (paths) => `<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1.5px">${paths}</svg>`;
 const IC = {
-  bubble: svgIcon('<path d="M2.5 3.5h11a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H8l-3 2.5V11.5H2.5a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z"/>'),
-  eye: svgIcon('<path d="M1.8 8s2.3-4 6.2-4 6.2 4 6.2 4-2.3 4-6.2 4S1.8 8 1.8 8z"/><circle cx="8" cy="8" r="1.8"/>'),
-  slack: svgIcon('<rect x="2.5" y="2.5" width="11" height="11" rx="3"/><path d="M5.5 8.4l1.9 1.9 3.1-3.8"/>'),
-  check: svgIcon('<circle cx="8" cy="8" r="6"/><path d="M5.4 8.3l1.8 1.8 3.4-4"/>'),
+  bubble: svgIcon('<path d="M2.5 3h11a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1H8.2L5 14.2V11.5H2.5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><circle cx="6" cy="7.3" r="1" fill="currentColor" stroke="none"/><circle cx="10" cy="7.3" r="1" fill="currentColor" stroke="none"/>'),
+  eye: svgIcon('<path d="M1.5 8C3.9 4.4 12.1 4.4 14.5 8 12.1 11.6 3.9 11.6 1.5 8z"/><circle cx="8" cy="8" r="1.9" fill="currentColor" stroke="none"/>'),
+  slack: svgIcon('<path d="M14 2.2L2.3 6.8l4.6 2.3L9.2 13.7 14 2.2z"/><path d="M14 2.2L6.9 9.1"/>'),
+  check: svgIcon('<path d="M3 8.6l3.4 3.4L13 4.2" stroke-width="2.2"/>'),
   sun: svgIcon('<circle cx="8" cy="8" r="3"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M12.6 3.4l-1.4 1.4M4.8 11.2l-1.4 1.4"/>'),
 };
 
@@ -508,9 +510,14 @@ for you turns into a hot line.</p>
 there, never on the row.</p>
 
 <h2>the slack ladder · four stages, one slot</h2>
-<p class="note">The mark beside the pill shows the FURTHEST slack stage: posted, seen,
-commented, approved. One glyph, mono, hover names it; the full reaction detail lives in the
-context card.</p>
+<p class="note">The mark beside the pill shows the FURTHEST slack stage. One glyph, mono,
+hover names it; the full reaction detail lives in the context card.</p>
+<div class="legend">
+  <span>${IC.slack} posted</span>
+  <span>${IC.eye} seen</span>
+  <span>${IC.bubble} commented</span>
+  <span>${IC.check} approved</span>
+</div>
 <div class="list">
   ${row(GREEN, '', r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: GREEN, slack: 'posted' }) + r2(MR3))}
   ${row(GREEN, '', r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: GREEN, slack: 'seen' }) + r2(MR3))}
