@@ -128,16 +128,19 @@ public struct PlanRow: Codable, Equatable, Identifiable, Sendable {
     /// Blocks the wizard's Finish (never Install) until ready, skipped, or
     /// waived on this Mac.
     public var finishGated: Bool
+    /// Skipped on this Mac by `rt setup waive`; the state the Un-skip
+    /// affordance keys on, never the note's wording.
+    public var waived: Bool
     public init(id: String, kind: RowKind, title: String, why: String, required: Bool,
                 optionalNote: String? = nil, status: RowStatus, detail: String? = nil,
-                action: RowAction? = nil, recheck: RecheckPolicy, finishGated: Bool = false) {
+                action: RowAction? = nil, recheck: RecheckPolicy, finishGated: Bool = false, waived: Bool = false) {
         self.id = id; self.kind = kind; self.title = title; self.why = why; self.required = required
         self.optionalNote = optionalNote; self.status = status; self.detail = detail
-        self.action = action; self.recheck = recheck; self.finishGated = finishGated
+        self.action = action; self.recheck = recheck; self.finishGated = finishGated; self.waived = waived
     }
-    /// `finishGated` is newer than the rest of the contract: an rt that
-    /// predates it omits the key, and that must read as "not gated" rather
-    /// than fail the whole plan.
+    /// `finishGated` and `waived` are newer than the rest of the contract: an
+    /// rt that predates them omits the keys, and that must read as "not
+    /// gated, not waived" rather than fail the whole plan.
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id)
@@ -151,6 +154,7 @@ public struct PlanRow: Codable, Equatable, Identifiable, Sendable {
         action = try c.decodeIfPresent(RowAction.self, forKey: .action)
         recheck = try c.decode(RecheckPolicy.self, forKey: .recheck)
         finishGated = try c.decodeIfPresent(Bool.self, forKey: .finishGated) ?? false
+        waived = try c.decodeIfPresent(Bool.self, forKey: .waived) ?? false
     }
 }
 

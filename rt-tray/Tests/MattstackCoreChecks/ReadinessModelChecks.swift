@@ -101,15 +101,16 @@ func makeSweepPlan() -> Plan {
 }
 
 /// The extension row is finish-gated the way rt emits it; `waived` mirrors
-/// rt's own rendering of a skipped-on-this-Mac row (optional, note swapped,
-/// status and action kept) and drops it from `finishBlockedBy`.
+/// rt's own rendering of a skipped-on-this-Mac row (optional, `waived: true`,
+/// note swapped, status and action kept) and drops it from `finishBlockedBy`.
 func makeManualPlan(extensionStatus: RowStatus, chromeStatus: RowStatus = .ready, requiredNotReady: Bool = false, waived: Bool = false) -> Plan {
-    let waivedNote = FinishGate.waivedNotePrefix + ": agents cannot capture screenshots or annotate evidence from your browser. Load it later from Settings."
+    let waivedNote = "Skipped on this Mac: agents cannot capture screenshots or annotate evidence from your browser. Load it later from Settings."
     var rows = [
         PlanRow(id: "tool.fast-browser", kind: .tool, title: "Fast Browser", why: "w", required: true, status: .ready, recheck: .onActivate),
         PlanRow(id: "tool.fast-browser-extension", kind: .tool, title: "Fast Browser extension", why: "w", required: false,
                 optionalNote: waived ? waivedNote : "You load this into Chrome yourself; Install cannot do it for you.", status: extensionStatus,
-                action: RowAction(type: .steps, label: "Show steps...", steps: ["Open chrome://extensions"]), recheck: .onActivate, finishGated: true),
+                action: RowAction(type: .steps, label: "Show steps...", steps: ["Open chrome://extensions"]), recheck: .onActivate,
+                finishGated: true, waived: waived),
         PlanRow(id: "tool.chrome", kind: .tool, title: "Google Chrome", why: "w", required: false, status: chromeStatus,
                 action: RowAction(type: .openURL, label: "Download", url: "https://www.google.com/chrome/"), recheck: .onActivate),
         PlanRow(id: "tool.mission-control", kind: .tool, title: "Mission Control shortcut", why: "w", required: false, status: .needsYou,
@@ -419,10 +420,16 @@ let readinessModelChecks: [Check] = [
             c.expect(m.outstandingManualRows.map(\.id).contains("tool.fast-browser-extension"), "the Done screen still lists a skipped row under Still to do")
         }
     },
-    Check("an unwaived extension row is not waived, even when ready") { c in
+    Check("an unwaived extension row is not waived, even when ready, and the field is what decides it, never the note") { c in
         let m = await MainActor.run { ReadinessModel(plans: FakePlans([makeManualPlan(extensionStatus: .ready)]), permissions: FakePermissions(), ticker: FakeTicker()) }
         await m.load()
         await MainActor.run { c.expectEqual(m.row("tool.fast-browser-extension")?.isWaived, false) }
+        let noteOnly = PlanRow(id: "tool.fast-browser-extension", kind: .tool, title: "t", why: "w", required: false,
+                               optionalNote: "Skipped on this Mac: something", status: .needsYou, recheck: .onActivate, finishGated: true)
+        c.expectEqual(noteOnly.isWaived, false, "copy is copy; the contract's waived flag is the state")
+        let fieldOnly = PlanRow(id: "tool.fast-browser-extension", kind: .tool, title: "t", why: "w", required: false,
+                                optionalNote: nil, status: .needsYou, recheck: .onActivate, finishGated: true, waived: true)
+        c.expectEqual(fieldOnly.isWaived, true)
     },
     Check("StatusGlyph follows the spec's symbols") { c in
         c.expectEqual(StatusGlyph.symbol(for: .ready), "checkmark.circle.fill")

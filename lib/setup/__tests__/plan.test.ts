@@ -301,16 +301,24 @@ describe("finish gate", () => {
     }
   });
 
-  test("a waived finish-gated row reads optional with the skipped-on-this-Mac note, keeps its status and action, and leaves finishBlockedBy, in both modes", () => {
+  test("a waived finish-gated row reads optional with the skipped-on-this-Mac note, carries waived:true, keeps its status and action, and leaves finishBlockedBy, in both modes", () => {
     for (const mode of ["plan", "status"] as const) {
       const plan = gatedPlan("needs-you", mode, ["tool.fast-browser-extension"]);
       const r = plan.groups[0]!.rows[0]!;
       expect(r.required).toBe(false);
+      expect(r.waived).toBe(true);
       expect(r.optionalNote).toBe(WAIVED_NOTE);
       expect(r.status).toBe("needs-you");
       expect(r.action?.type).toBe("steps");
       expect(plan.finishBlockedBy).toEqual([]);
     }
+  });
+
+  test("an unwaived finish-gated row never carries waived:true, and a row that is not finish-gated never carries the field at all", () => {
+    expect(gatedPlan("needs-you", "status").groups[0]!.rows[0]!.waived).toBeFalsy();
+    const plain = row({ id: "tool.chrome", kind: "tool", title: "Chrome", why: "x", required: false, status: "missing", detail: "d" });
+    const groups: Group[] = [{ id: "tools", title: "Tools", rows: [plain] }];
+    expect("waived" in applyFinishGate(groups, "status", ["tool.chrome"])[0]!.rows[0]!).toBe(false);
   });
 
   test("composePlan reads the waiver through the resolver when none is injected", async () => {
