@@ -172,11 +172,11 @@ ${body}
 
 const svgIcon = (paths) => `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2.5px">${paths}</svg>`;
 const IC = {
-  bubble: svgIcon('<path d="M2.5 3h11a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1H8.2L5 14.2V11.5H2.5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><circle cx="6" cy="7.3" r="1" fill="currentColor" stroke="none"/><circle cx="10" cy="7.3" r="1" fill="currentColor" stroke="none"/>'),
-  eye: svgIcon('<ellipse cx="4.7" cy="8" rx="2.7" ry="4.6"/><ellipse cx="11.3" cy="8" rx="2.7" ry="4.6"/><circle cx="4" cy="8.7" r="1.15" fill="currentColor" stroke="none"/><circle cx="10.6" cy="8.7" r="1.15" fill="currentColor" stroke="none"/>'),
-  slack: svgIcon('<path d="M14 2.2L2.3 6.8l4.6 2.3L9.2 13.7 14 2.2z"/><path d="M14 2.2L6.9 9.1"/>'),
+  bubble: svgIcon('<path d="M2.5 2.5h11a1.2 1.2 0 0 1 1.2 1.2v6.6a1.2 1.2 0 0 1-1.2 1.2H8.4L5 14.5v-3H2.5a1.2 1.2 0 0 1-1.2-1.2V3.7a1.2 1.2 0 0 1 1.2-1.2z" fill="currentColor" stroke="none"/><circle cx="5.6" cy="7" r="1.05" fill="var(--bg)" stroke="none"/><circle cx="10.4" cy="7" r="1.05" fill="var(--bg)" stroke="none"/>'),
+  eye: svgIcon('<ellipse cx="4.6" cy="8" rx="3.1" ry="5.2" fill="currentColor" stroke="none"/><ellipse cx="11.4" cy="8" rx="3.1" ry="5.2" fill="currentColor" stroke="none"/><circle cx="4" cy="9" r="1.4" fill="var(--bg)" stroke="none"/><circle cx="10.8" cy="9" r="1.4" fill="var(--bg)" stroke="none"/>'),
+  slack: `<svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" style="vertical-align:-2.5px" fill="currentColor"><path d="M5 15a2 2 0 1 1-2-2h2v2Zm1 0a2 2 0 0 1 4 0v5a2 2 0 1 1-4 0v-5Z"/><path d="M9 5a2 2 0 1 1 2-2v2H9Zm0 1a2 2 0 0 1 0 4H4a2 2 0 1 1 0-4h5Z"/><path d="M19 9a2 2 0 1 1 2 2h-2V9Zm-1 0a2 2 0 0 1-4 0V4a2 2 0 1 1 4 0v5Z"/><path d="M15 19a2 2 0 1 1-2 2v-2h2Zm0-1a2 2 0 0 1 0-4h5a2 2 0 1 1 0 4h-5Z"/></svg>`,
   check: svgIcon('<circle cx="8" cy="8" r="6.6" fill="currentColor" stroke="none"/><path d="M5.1 8.3l1.9 1.9 3.9-4.5" stroke="var(--bg)" stroke-width="1.8"/>'),
-  sun: svgIcon('<circle cx="8" cy="8" r="3"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M12.6 3.4l-1.4 1.4M4.8 11.2l-1.4 1.4"/>'),
+  sun: svgIcon('<circle cx="8" cy="8" r="3.3" fill="currentColor" stroke="none"/><path d="M8 1.2v2.2M8 12.6v2.2M1.2 8h2.2M12.6 8h2.2M3.2 3.2l1.6 1.6M11.2 11.2l1.6 1.6M12.8 3.2l-1.6 1.6M4.8 11.2l-1.6 1.6" stroke-width="1.8"/>'),
 };
 
 // ── row scaffolding ─────────────────────────────────────────────────
