@@ -279,6 +279,9 @@ const FAST_BROWSER_LOAD_STEPS: Action = {
   steps: ["Open chrome://extensions", "Turn on Developer mode", "Load unpacked → ~/.fast-browser/extension/current/unpacked", ...PAIRING_STEPS],
 };
 const FAST_BROWSER_PAIR_STEPS: Action = { type: "steps", label: "Show steps…", steps: PAIRING_STEPS };
+/** A doctor report this build cannot read blocks Finish like any other non-ready state, so the row carries its own way out rather than leaving Skip for now as the only affordance. */
+const FAST_BROWSER_RECHECK: Action = { type: "run", label: "Re-check", verb: ["setup", "status"] };
+const DOCTOR_CHECK_MISSING_REMEDY = "update Fast Browser, then Re-check";
 
 /**
  * Never gates Install in any Chrome state: loading an unpacked extension is a
@@ -304,7 +307,7 @@ function fastBrowserExtensionRow(p: Probes, probe: FastBrowserProbe): Row {
   if (!probe.doctor) return row({ ...base, status: "skipped", detail: "fast-browser doctor could not be read (see Fast Browser)" });
 
   const extension = checkState(probe.doctor, "extension-loaded");
-  if (extension === "absent") return row({ ...base, status: "error", detail: "fast-browser doctor report has no extension-loaded check" });
+  if (extension === "absent") return row({ ...base, status: "error", detail: `fast-browser doctor report has no extension-loaded check; ${DOCTOR_CHECK_MISSING_REMEDY}`, action: FAST_BROWSER_RECHECK });
   if (extension === "fail") return row({ ...base, status: "needs-you", detail: "not loaded in Chrome", action: FAST_BROWSER_LOAD_STEPS });
 
   // Trust doctor's own pairing check rather than a separate rule: pairing
@@ -312,7 +315,7 @@ function fastBrowserExtensionRow(p: Probes, probe: FastBrowserProbe): Row {
   // documented default, so a loaded-but-unpaired manual-mode machine is not
   // an outstanding step.
   const pairing = checkState(probe.doctor, "pairing");
-  if (pairing === "absent") return row({ ...base, status: "error", detail: "fast-browser doctor report has no pairing check" });
+  if (pairing === "absent") return row({ ...base, status: "error", detail: `fast-browser doctor report has no pairing check; ${DOCTOR_CHECK_MISSING_REMEDY}`, action: FAST_BROWSER_RECHECK });
   if (pairing === "fail") return row({ ...base, status: "needs-you", detail: "loaded but not paired", action: FAST_BROWSER_PAIR_STEPS });
   return row({ ...base, status: "ready", detail: "loaded and paired" });
 }

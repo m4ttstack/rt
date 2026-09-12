@@ -104,15 +104,22 @@ struct DoneScreen: View {
 
     private func show(_ row: PlanRow) {
         guard let action = row.action else { return }
-        if action.type == .openURL {
+        switch action.type {
+        case .openURL:
             // Mirrors RowActionDispatcher's own rejection: an unsupported
             // scheme does nothing rather than presenting a title with no steps.
             guard let raw = action.url, let url = URL(string: raw), url.scheme?.hasPrefix("http") == true else { return }
             NSWorkspace.shared.open(url)
             Task { await readiness.recheckAll() }
-            return
+        case .steps:
+            steps = (title: row.title, steps: action.steps ?? [])
+        case .run:
+            // The only run verb a Done row carries is a re-check; this screen
+            // re-reads the plan itself rather than spawning it a second way.
+            Task { await model.retryCheck() }
+        default:
+            break
         }
-        steps = (title: row.title, steps: action.steps ?? [])
     }
 
     private var verifySummary: String {
