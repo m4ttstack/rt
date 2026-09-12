@@ -148,4 +148,45 @@ describe("rt setup unwaive", () => {
     expect(await exitCode(() => setupUnwaive(["tool.chrome"], {}, t.d))).toBe(2);
     expect(t.lines[0]).toStartWith("rt setup unwaive: ");
   });
+
+  test("a row that was never skipped says so instead of claiming to re-arm it, and the envelope carries changed:false", async () => {
+    const t = deps();
+    await setupUnwaive(["tool.fast-browser-extension"], {}, t.d);
+    expect(t.writes).toEqual([]);
+    expect(t.lines).toEqual(["setup unwaive: tool.fast-browser-extension was not skipped on this Mac"]);
+    const j = deps();
+    await setupUnwaive(["tool.fast-browser-extension", "--json"], {}, j.d);
+    expect(JSON.parse(j.lines[0]!)).toMatchObject({ ok: true, id: "tool.fast-browser-extension", changed: false, waived: [] });
+  });
+
+  test("a real re-arm carries changed:true", async () => {
+    const t = deps({ initial: ["tool.fast-browser-extension"] });
+    await setupUnwaive(["tool.fast-browser-extension", "--json"], {}, t.d);
+    expect(JSON.parse(t.lines[0]!)).toMatchObject({ ok: true, changed: true, waived: [] });
+  });
+
+  test("no id on a TTY offers a picker over the rows skipped on this Mac only", async () => {
+    const t = deps({ initial: ["tool.fast-browser-extension"], isTTY: () => true });
+    expect(await exitCode(() => setupUnwaive([], {}, t.d))).toBe(0);
+    expect(t.picked()?.options).toEqual(["tool.fast-browser-extension"]);
+  });
+
+  test("no id on a TTY with nothing skipped falls through to the usage error, never an empty picker", async () => {
+    const t = deps({ isTTY: () => true });
+    expect(await exitCode(() => setupUnwaive([], {}, t.d))).toBe(2);
+    expect(t.picked()).toBeNull();
+    expect(t.lines[0]).toBe("rt setup unwaive: usage: rt setup unwaive <row-id> [--json]");
+  });
+});
+
+describe("rt setup waive envelope", () => {
+  test("a second waive of the same row is a no-op the copy admits, with changed:false", async () => {
+    const t = deps({ initial: ["tool.fast-browser-extension"] });
+    await setupWaive(["tool.fast-browser-extension"], {}, t.d);
+    expect(t.writes).toEqual([]);
+    expect(t.lines).toEqual(["setup waive: tool.fast-browser-extension was already skipped on this Mac"]);
+    const j = deps({ initial: ["tool.fast-browser-extension"] });
+    await setupWaive(["tool.fast-browser-extension", "--json"], {}, j.d);
+    expect(JSON.parse(j.lines[0]!)).toMatchObject({ ok: true, changed: false, waived: ["tool.fast-browser-extension"] });
+  });
 });

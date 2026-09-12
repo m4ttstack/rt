@@ -26,7 +26,7 @@ import { createApplyContext, runApplyWith, type ApplyContext, type CreateApplyCo
 import { envelope, FINISH_GATED_ROW_IDS, STEP_IDS, type ConnectField, type Integration, type StepId } from "../lib/setup/contract.ts";
 import { createHumanEmitter, createNdjsonEmitter } from "../lib/setup/emit.ts";
 import { UserActionableError, userErrorPayload } from "../lib/setup/errors.ts";
-import { realWaiverStore, unwaiveRow, waiveRow, type WaiverStore } from "../lib/setup/finish-gate.ts";
+import { realWaiverStore, unwaiveRow, waiveRow, type WaiverChange, type WaiverStore } from "../lib/setup/finish-gate.ts";
 import { isValidHostname, isValidHttpsUrl } from "../lib/setup/host-validate.ts";
 import { integrationDef, type ValidateCtx } from "../lib/setup/integrations.ts";
 import { clearIntent, readIntent, teamRefFromIntent, writeIntent } from "../lib/setup/intent.ts";
@@ -807,21 +807,29 @@ export function realWaiveDeps(): WaiveDeps {
   };
 }
 
+const WAIVER_COPY: Record<"waive" | "unwaive", Record<"changed" | "unchanged", string>> = {
+  waive: { changed: "skipped on this Mac", unchanged: "was already skipped on this Mac" },
+  unwaive: { changed: "re-armed on this Mac", unchanged: "was not skipped on this Mac" },
+};
+
 async function runWaiver(args: string[], deps: WaiveDeps, verb: "waive" | "unwaive"): Promise<void> {
   const json = args.includes("--json");
   let id = args.find((a) => !a.startsWith("--"));
   if (!id) {
-    if (deps.isTTY() && !json && !process.env.RT_BATCH) {
-      id = (await deps.pick(verb === "waive" ? "Skip which row on this Mac?" : "Re-arm which row on this Mac?", [...FINISH_GATED_ROW_IDS])) ?? undefined;
+    // unwaive can only act on rows already skipped here; an empty set falls
+    // through to the usage error rather than an empty picker.
+    const candidates = verb === "waive" ? [...FINISH_GATED_ROW_IDS] : deps.store.read();
+    if (deps.isTTY() && !json && !process.env.RT_BATCH && candidates.length > 0) {
+      id = (await deps.pick(verb === "waive" ? "Skip which row on this Mac?" : "Re-arm which row on this Mac?", candidates)) ?? undefined;
       if (!id) return deps.exit(0);
     } else {
       return exitWithUserError(new UserActionableError("usage", `usage: rt setup ${verb} <row-id> [--json]`), json, `setup ${verb}`, deps);
     }
   }
 
-  let waived: string[];
+  let change: WaiverChange;
   try {
-    waived = verb === "waive" ? waiveRow(id, deps.store) : unwaiveRow(id, deps.store);
+    change = verb === "waive" ? waiveRow(id, deps.store) : unwaiveRow(id, deps.store);
   } catch (err) {
     if (err instanceof UserActionableError) return exitWithUserError(err, json, `setup ${verb}`, deps);
     // A store the resolver refused to edit is reported as it was raised; the
@@ -831,10 +839,10 @@ async function runWaiver(args: string[], deps: WaiveDeps, verb: "waive" | "unwai
   }
 
   if (json) {
-    deps.print(JSON.stringify(envelope({ ok: true, id, waived }, deps.probes.now())));
+    deps.print(JSON.stringify(envelope({ ok: true, id, changed: change.changed, waived: change.waived }, deps.probes.now())));
     return;
   }
-  deps.print(verb === "waive" ? `setup waive: ${id} skipped on this Mac` : `setup unwaive: ${id} re-armed on this Mac`);
+  deps.print(`setup ${verb}: ${id} ${WAIVER_COPY[verb][change.changed ? "changed" : "unchanged"]}`);
 }
 
 export async function setupWaive(args: string[], _ctx: CommandContext = {}, deps: WaiveDeps = realWaiveDeps()): Promise<void> {

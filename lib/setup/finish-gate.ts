@@ -62,22 +62,29 @@ function assertFinishGated(id: string): void {
   throw new UserActionableError("not-finish-gated", `${id} is not a finish-gated row; finish-gated rows: ${FINISH_GATED_ROW_IDS.join(", ")}`);
 }
 
-/** Records `id` as skipped on this Mac; a second call writes nothing. Returns the stored list. */
-export function waiveRow(id: string, store: WaiverStore): string[] {
-  assertFinishGated(id);
-  const current = store.read();
-  if (current.includes(id)) return current;
-  const next = [...current, id];
-  store.write(next);
-  return next;
+export interface WaiverChange {
+  /** The stored list after the call. */
+  waived: string[];
+  /** False when the store already read that way and nothing was written. */
+  changed: boolean;
 }
 
-/** Re-arms `id` on this Mac; an id that was not waived writes nothing. Returns the stored list. */
-export function unwaiveRow(id: string, store: WaiverStore): string[] {
+/** Records `id` as skipped on this Mac; a second call writes nothing and says so. */
+export function waiveRow(id: string, store: WaiverStore): WaiverChange {
   assertFinishGated(id);
   const current = store.read();
-  if (!current.includes(id)) return current;
+  if (current.includes(id)) return { waived: current, changed: false };
+  const next = [...current, id];
+  store.write(next);
+  return { waived: next, changed: true };
+}
+
+/** Re-arms `id` on this Mac; an id that was not waived writes nothing and says so. */
+export function unwaiveRow(id: string, store: WaiverStore): WaiverChange {
+  assertFinishGated(id);
+  const current = store.read();
+  if (!current.includes(id)) return { waived: current, changed: false };
   const next = current.filter((x) => x !== id);
   store.write(next);
-  return next;
+  return { waived: next, changed: true };
 }

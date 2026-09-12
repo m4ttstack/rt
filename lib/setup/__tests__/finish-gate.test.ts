@@ -82,17 +82,17 @@ function fakeStore(initial: string[] = []) {
 }
 
 describe("waiveRow / unwaiveRow", () => {
-  test("waive adds the id once; a second waive writes nothing", () => {
+  test("waive adds the id once; a second waive writes nothing and reports no change", () => {
     const { store, writes } = fakeStore();
-    expect(waiveRow("tool.fast-browser-extension", store)).toEqual(["tool.fast-browser-extension"]);
-    expect(waiveRow("tool.fast-browser-extension", store)).toEqual(["tool.fast-browser-extension"]);
+    expect(waiveRow("tool.fast-browser-extension", store)).toEqual({ waived: ["tool.fast-browser-extension"], changed: true });
+    expect(waiveRow("tool.fast-browser-extension", store)).toEqual({ waived: ["tool.fast-browser-extension"], changed: false });
     expect(writes).toEqual([["tool.fast-browser-extension"]]);
   });
 
-  test("unwaive removes the id; unwaiving an absent id writes nothing", () => {
+  test("unwaive removes the id; unwaiving an absent id writes nothing and reports no change", () => {
     const { store, writes } = fakeStore(["tool.fast-browser-extension"]);
-    expect(unwaiveRow("tool.fast-browser-extension", store)).toEqual([]);
-    expect(unwaiveRow("tool.fast-browser-extension", store)).toEqual([]);
+    expect(unwaiveRow("tool.fast-browser-extension", store)).toEqual({ waived: [], changed: true });
+    expect(unwaiveRow("tool.fast-browser-extension", store)).toEqual({ waived: [], changed: false });
     expect(writes).toEqual([[]]);
   });
 

@@ -169,8 +169,9 @@ else if (a0 === "setup" && a1 === "github" && a2 === "status") emit({ integratio
 else if (a0 === "setup" && a1 === "intent" && a2 === "restore") emit({ ok: true, intent: "restore", repo: args[3] });
 else if (a0 === "setup" && (a1 === "waive" || a1 === "unwaive")) {
   if (a2 !== EXTENSION_ID) fail("not-finish-gated", `${a2} is not a finish-gated row; finish-gated rows: ${EXTENSION_ID}`);
+  const wasWaived = stateGet("waived") > 0;
   stateSet("waived", a1 === "waive" ? 1 : 0);
-  emit({ ok: true, id: a2, waived: a1 === "waive" ? [a2] : [] });
+  emit({ ok: true, id: a2, changed: wasWaived !== (a1 === "waive"), waived: a1 === "waive" ? [a2] : [] });
 }
 else if (a0 === "setup" && a2 === "status") emit({ integration: a1, status: stateGet(`${a1}-connected`) ? "ready" : "missing", detail: null });
 else if (a0 === "setup" && a2 === "connect") {
