@@ -612,12 +612,7 @@ function reviewerLine(mr: BoardMRWithReview, self: string | null): Candidate {
       verbs: [OPEN],
     };
   }
-  return {
-    tone: 'clear',
-    word: 'all clear',
-    detail: 'enjoy the sunshine',
-    verbs: [OPEN],
-  };
+  return { tone: 'clear', word: 'all clear', verbs: [OPEN] };
 }
 
 // ── the line ────────────────────────────────────────────────────────────────

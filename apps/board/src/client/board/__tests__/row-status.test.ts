@@ -66,7 +66,7 @@ describe('rowStatus: the quiet row', () => {
     const s = rowStatus(settled(), NOW, NONE, ME);
     expect(s.line.tone).toBe('clear');
     expect(s.line.word).toBe('all clear');
-    expect(s.line.detail).toBe('enjoy the sunshine');
+    expect(s.line.detail).toBeUndefined();
     expect(s.line.verbs.map(v => v.kind)).toEqual(['open-mr']);
     expect(s.more).toEqual([]);
     expect(s.bar).toBeNull();

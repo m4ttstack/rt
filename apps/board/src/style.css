@@ -700,9 +700,6 @@ body {
      vertical-align), which a flex item cannot express directly. */
   transform: translateY(2.5px);
 }
-.tui-status-sun + .tui-status-detail {
-  margin-left: 4px;
-}
 /* The row tools (ticket, copy) ride the status line's right end. */
 .tui-status-tools {
   display: inline-flex;
