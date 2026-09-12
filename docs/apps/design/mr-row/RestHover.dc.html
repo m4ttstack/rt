@@ -61,9 +61,8 @@
   .phrase { flex-shrink: 0; display: inline-flex; align-items: center; padding: 1px 6px;
             border: 1px solid currentColor; border-radius: 4px; font-size: .62rem; font-weight: 700;
             text-transform: uppercase; letter-spacing: .04em; }
-  .r2 { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: .76rem;
+  .r2 { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: .76rem;
         line-height: 16px; margin-top: 4px; }
-  .r2 .sep { opacity: .45; }
   .branch { min-width: 0; max-width: 34ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .grow { flex: 1; }
   .adds { color: color-mix(in srgb, var(--green) 70%, var(--muted)); }
@@ -71,31 +70,30 @@
   .fresh { color: var(--accent); font-weight: 600; }
   .mark { display: inline-flex; opacity: .55; }
   .pair { white-space: nowrap; flex-shrink: 0; font-variant-numeric: tabular-nums; }
-  .facts { display: inline-flex; align-items: center; flex-shrink: 0;
+  .facts { display: inline-flex; align-items: center; gap: 12px; flex-shrink: 0;
            font-variant-numeric: tabular-nums; }
-  .facts .sep { margin: 0 6px; }
   .facts .age { text-align: right; }
 
   /* the ledger: 20px lines on the shared content edge. */
   .acts { margin-top: 8px; display: flex; flex-direction: column; gap: 2px; }
   .act { display: flex; align-items: baseline; font-size: .76rem; line-height: 20px;
          color: var(--muted); min-width: 0; }
-  .act .lane { width: 64px; flex-shrink: 0; font-size: .7rem; color: color-mix(in srgb, var(--muted) 75%, transparent); }
   .act .w { font-weight: 600; }
-  .act-work .w { color: var(--purple); }
+  .act-work .w, .act-work .ring { color: var(--purple); }
   .act-go .w { color: var(--green); }
   .act-warn .w { color: var(--amber); }
   .act-bad .w { color: var(--red); }
   .act-quiet .w { color: var(--muted); font-weight: 500; }
-  .act-clear .lane { color: color-mix(in srgb, var(--green) 45%, var(--muted)); }
   .act-clear .w { color: color-mix(in srgb, var(--green) 40%, var(--muted)); font-weight: 500;
                   display: inline-flex; align-items: center; gap: 6px; }
   .act-clear .w svg { opacity: .8; }
-  .act .d { margin-left: 8px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .act .sep { flex-shrink: 0; }
+  .act .d { margin-left: 10px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .more { margin-left: 8px; flex-shrink: 0; color: color-mix(in srgb, var(--muted) 70%, transparent); font-size: .7rem; }
-  .act .spin { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: currentColor;
-               margin-left: 8px; align-self: center; animation: pulse 1.6s ease-in-out infinite; }
+  .act .ring { display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+               border: 1.5px solid color-mix(in srgb, currentColor 35%, transparent);
+               border-top-color: currentColor; margin-left: 8px; align-self: center;
+               animation: rot 1s linear infinite; }
+  @keyframes rot { to { transform: rotate(360deg); } }
   @keyframes pulse { 50% { opacity: .25; } }
   .act .do { display: inline-flex; gap: 14px; margin-left: auto; padding-left: 16px; flex-shrink: 0; }
   .act .do a { font-size: .72rem; font-weight: 600; text-decoration: none; color: var(--accent); }
@@ -136,19 +134,18 @@
   <span class="bar bar-warn"></span>
   <div class="gut"><span class="dot" style="color:var(--amber)">●</span></div>
   <div style="min-width:0"><div class="r1"><span class="title">CV-3074 Port the CV2 stealth-mode and access-links case c…</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span></div><div class="r2">
-    <span>!44451</span><span class="sep">·</span>
-    <span class="branch">feature/cv-3074</span><span class="sep">·</span>
+    <span>!44451</span>
+    <span class="branch">feature/cv-3074</span>
     <span class="pair"><span class="adds">+1455</span> <span class="dels">−13</span></span>
     <span class="grow"></span>
-    <span class="facts"><span>1 thread</span><span class="sep">·</span><span class="age">32h</span></span>
+    <span class="facts"><span>1 thread</span><span class="age">32h</span></span>
     
   </div><div class="acts">
       
   <div class="act act-warn">
-    <span class="lane">review</span>
     <span class="w">interrupted</span>
     
-    <span class="sep" style="margin-left:8px;opacity:.45">·</span><span class="d">pane closed 12m ago</span>
+    <span class="d">pane closed 12m ago</span>
     
     <span class="do"><a href="#" class="">relaunch</a><a href="#" class="mut sec">clear</a></span>
   </div>
@@ -163,19 +160,18 @@
   <span class="bar bar-warn"></span>
   <div class="gut"><span class="dot" style="color:var(--amber)">●</span></div>
   <div style="min-width:0"><span style="position:absolute;left:14px;top:14px"><input type="checkbox" style="accent-color:var(--accent);margin:0"></span><div class="r1"><span class="title">CV-3074 Port the CV2 stealth-mode and access-links case c…</span><span class="phrase" style="color:var(--amber)">NEEDS REVIEW</span></div><div class="r2">
-    <span>!44451</span><span class="sep">·</span>
-    <span class="branch">feature/cv-3074</span><span class="sep">·</span>
+    <span>!44451</span>
+    <span class="branch">feature/cv-3074</span>
     <span class="pair"><span class="adds">+1455</span> <span class="dels">−13</span></span>
     <span class="grow"></span>
-    <span class="facts"><span>1 thread</span><span class="sep">·</span><span class="age">32h</span></span>
+    <span class="facts"><span>1 thread</span><span class="age">32h</span></span>
     
   </div><div class="acts">
       
   <div class="act act-warn">
-    <span class="lane">review</span>
     <span class="w">interrupted</span>
     
-    <span class="sep" style="margin-left:8px;opacity:.45">·</span><span class="d">pane closed 12m ago</span>
+    <span class="d">pane closed 12m ago</span>
     
     <span class="do"><a href="#" class="">relaunch</a><a href="#" class="mut sec">clear</a></span>
   </div>

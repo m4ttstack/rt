@@ -79,9 +79,8 @@ const CSS = `
   .phrase { flex-shrink: 0; display: inline-flex; align-items: center; padding: 1px 6px;
             border: 1px solid currentColor; border-radius: 4px; font-size: .62rem; font-weight: 700;
             text-transform: uppercase; letter-spacing: .04em; }
-  .r2 { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: .76rem;
+  .r2 { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: .76rem;
         line-height: 16px; margin-top: 4px; }
-  .r2 .sep { opacity: .45; }
   .branch { min-width: 0; max-width: 34ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .grow { flex: 1; }
   .adds { color: color-mix(in srgb, var(--green) 70%, var(--muted)); }
@@ -89,31 +88,30 @@ const CSS = `
   .fresh { color: var(--accent); font-weight: 600; }
   .mark { display: inline-flex; opacity: .55; }
   .pair { white-space: nowrap; flex-shrink: 0; font-variant-numeric: tabular-nums; }
-  .facts { display: inline-flex; align-items: center; flex-shrink: 0;
+  .facts { display: inline-flex; align-items: center; gap: 12px; flex-shrink: 0;
            font-variant-numeric: tabular-nums; }
-  .facts .sep { margin: 0 6px; }
   .facts .age { text-align: right; }
 
   /* the ledger: 20px lines on the shared content edge. */
   .acts { margin-top: 8px; display: flex; flex-direction: column; gap: 2px; }
   .act { display: flex; align-items: baseline; font-size: .76rem; line-height: 20px;
          color: var(--muted); min-width: 0; }
-  .act .lane { width: 64px; flex-shrink: 0; font-size: .7rem; color: color-mix(in srgb, var(--muted) 75%, transparent); }
   .act .w { font-weight: 600; }
-  .act-work .w { color: var(--purple); }
+  .act-work .w, .act-work .ring { color: var(--purple); }
   .act-go .w { color: var(--green); }
   .act-warn .w { color: var(--amber); }
   .act-bad .w { color: var(--red); }
   .act-quiet .w { color: var(--muted); font-weight: 500; }
-  .act-clear .lane { color: color-mix(in srgb, var(--green) 45%, var(--muted)); }
   .act-clear .w { color: color-mix(in srgb, var(--green) 40%, var(--muted)); font-weight: 500;
                   display: inline-flex; align-items: center; gap: 6px; }
   .act-clear .w svg { opacity: .8; }
-  .act .d { margin-left: 8px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .act .sep { flex-shrink: 0; }
+  .act .d { margin-left: 10px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .more { margin-left: 8px; flex-shrink: 0; color: color-mix(in srgb, var(--muted) 70%, transparent); font-size: .7rem; }
-  .act .spin { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: currentColor;
-               margin-left: 8px; align-self: center; animation: pulse 1.6s ease-in-out infinite; }
+  .act .ring { display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+               border: 1.5px solid color-mix(in srgb, currentColor 35%, transparent);
+               border-top-color: currentColor; margin-left: 8px; align-self: center;
+               animation: rot 1s linear infinite; }
+  @keyframes rot { to { transform: rotate(360deg); } }
   @keyframes pulse { 50% { opacity: .25; } }
   .act .do { display: inline-flex; gap: 14px; margin-left: auto; padding-left: 16px; flex-shrink: 0; }
   .act .do a { font-size: .72rem; font-weight: 600; text-decoration: none; color: var(--accent); }
@@ -181,23 +179,22 @@ function r1({ title, phrase, phraseColor = 'var(--amber)', slack = false }) {
 function r2({ iid, branch, adds, dels, threads, age, fresh = 0, slack = false }, extra = '') {
   const freshTag = fresh ? ` <span class="fresh">${fresh} new</span>` : '';
   return `<div class="r2">
-    <span>!${iid}</span><span class="sep">·</span>
-    <span class="branch">${branch}</span><span class="sep">·</span>
+    <span>!${iid}</span>
+    <span class="branch">${branch}</span>
     <span class="pair"><span class="adds">+${adds}</span> <span class="dels">−${dels}</span></span>
     <span class="grow"></span>
     <span class="facts">${
-      threads ? `<span>${threads} thread${threads > 1 ? 's' : ''}${freshTag}</span><span class="sep">·</span>` : ''
+      threads ? `<span>${threads} thread${threads > 1 ? 's' : ''}${freshTag}</span>` : ''
     }<span class="age">${age}</span></span>
     ${extra}
   </div>`;
 }
 
-const act = (tone, lane, word, detail = '', actions = [], spin = false, more = 0) => `
+const act = (tone, word, detail = '', actions = [], spin = false, more = 0) => `
   <div class="act act-${tone}">
-    <span class="lane">${lane}</span>
     <span class="w">${word}</span>
-    ${spin ? '<span class="spin"></span>' : ''}
-    ${detail ? `${spin ? '' : '<span class="sep" style="margin-left:8px;opacity:.45">·</span>'}<span class="d">${detail}</span>` : ''}
+    ${spin ? '<span class="ring"></span>' : ''}
+    ${detail ? `<span class="d">${detail}</span>` : ''}
     ${more ? `<span class="more">+${more} active</span>` : ''}
     ${actions.length ? `<span class="do">${actions.map(([t, mut, sec]) => `<a href="#" class="${[mut ? 'mut' : '', sec ? 'sec' : ''].join(' ').trim()}">${t}</a>`).join('')}</span>` : ''}
   </div>`;
@@ -243,34 +240,34 @@ A quiet row's status line says <b>all clear</b>, softly; the height never change
     r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) +
     r2(MR) +
     `<div class="acts">
-      ${act('warn', 'review', 'interrupted', 'pane closed 12m ago', [['relaunch'], ['clear', true, true]])}
+      ${act('warn', 'interrupted', 'pane closed 12m ago', [['relaunch'], ['clear', true, true]])}
     </div>`
   )}
   ${row(AMBER, '',
     r1({ title: MR2.title, phrase: 'NEEDS REVIEW' }) +
     r2(MR2) +
     `<div class="acts">
-      ${act('work', 'review', 'running…', 'started 4m ago', [['focus', true]], true)}
+      ${act('work', 'review running…', 'started 4m ago', [['focus', true]], true)}
     </div>`
   )}
   ${row(GREEN, 'warn',
     r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: GREEN }) +
     r2(MR3) +
     `<div class="acts">
-      ${act('warn', 'decide', 'post 2 findings?', 'review ready', [['answer']])}
+      ${act('warn', 'post 2 findings?', '', [['answer']])}
     </div>`
   )}
   ${row(GREEN, '',
     r1({ title: 'CV-3149 Widen the transform contract', phrase: 'APPROVED', phraseColor: GREEN, slack: true }) +
     r2({ iid: 44684, branch: 'feature/cv-3149', adds: 296, dels: 16, threads: 5, age: '9h', fresh: 2 }) +
     `<div class="acts">
-      ${act('work', 'peer', 'geoff reviewing…', 'on his board', [['view ↗', true]], true)}
+      ${act('work', 'geoff is reviewing…', '', [['view ↗', true]], true)}
     </div>`
   )}
   ${row(GREEN, '',
     r1({ title: 'CV-3114 Carry the standard onto the legacy grid', phrase: 'APPROVED', phraseColor: GREEN, slack: true }) +
     r2({ iid: 44740, branch: 'feature/cv-3114', adds: 114, dels: 0, threads: 0, age: '6h' }) +
-    `<div class="acts">${act('clear', 'all clear', `${IC.sun} enjoy the sunshine`, '', [['open ↗', true]])}</div>`
+    `<div class="acts">${act('clear', 'all clear', `${IC.sun} enjoy the sunshine`, [['open ↗', true]])}</div>`
   )}
 </div>
 <p class="cap"><b>Scan path:</b> edge bars, then colored words, then the quiet facts. Row 4 is
@@ -353,7 +350,7 @@ const restHoverBody = `
     r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) +
     r2(MR) +
     `<div class="acts">
-      ${act('warn', 'review', 'interrupted', 'pane closed 12m ago', [['relaunch'], ['clear', true, true]])}
+      ${act('warn', 'interrupted', 'pane closed 12m ago', [['relaunch'], ['clear', true, true]])}
     </div>`
   )}
 </div>
@@ -366,7 +363,7 @@ const restHoverBody = `
     r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) +
     r2(MR) +
     `<div class="acts">
-      ${act('warn', 'review', 'interrupted', 'pane closed 12m ago', [['relaunch'], ['clear', true, true]])}
+      ${act('warn', 'interrupted', 'pane closed 12m ago', [['relaunch'], ['clear', true, true]])}
     </div>`,
     true
   )}
@@ -382,12 +379,12 @@ const densityBody = `
 <div class="list">
   ${row(AMBER, '',
     r1({ title: MR2.title, phrase: 'NEEDS REVIEW' }) + r2(MR2) +
-    `<div class="acts">${act('work', 'review', 'running…', 'started 4m ago', [], true)}</div>`
+    `<div class="acts">${act('work', 'running…', 'started 4m ago', [], true)}</div>`
   )}
   ${row(GREEN, '',
     r1({ title: 'CV-3149 Widen the transform contract', phrase: 'APPROVED', phraseColor: GREEN, slack: true }) +
     r2({ iid: 44684, branch: 'feature/cv-3149', adds: 296, dels: 16, threads: 2, age: '9h' }) +
-    `<div class="acts">${act('clear', 'all clear', `${IC.sun} enjoy the sunshine`)}</div>`
+    `<div class="acts">${act('clear', 'all clear', `${IC.sun} enjoy the sunshine`, [])}</div>`
   )}
 </div>
 
@@ -395,12 +392,12 @@ const densityBody = `
 <div class="list tight">
   ${row(AMBER, '',
     r1({ title: MR2.title, phrase: 'NEEDS REVIEW' }) + r2(MR2) +
-    `<div class="acts">${act('work', 'review', 'running…', 'started 4m ago', [], true)}</div>`
+    `<div class="acts">${act('work', 'running…', 'started 4m ago', [], true)}</div>`
   )}
   ${row(GREEN, '',
     r1({ title: 'CV-3149 Widen the transform contract', phrase: 'APPROVED', phraseColor: GREEN, slack: true }) +
     r2({ iid: 44684, branch: 'feature/cv-3149', adds: 296, dels: 16, threads: 2, age: '9h' }) +
-    `<div class="acts">${act('clear', 'all clear', `${IC.sun} enjoy the sunshine`)}</div>`
+    `<div class="acts">${act('clear', 'all clear', `${IC.sun} enjoy the sunshine`, [])}</div>`
   )}
 </div>
 <p class="cap">Same anatomy, two scales; pick by feel.</p>
@@ -408,44 +405,44 @@ const densityBody = `
 // ════════════════════════════════════════════════════════════════════
 // All states: direction A
 // ════════════════════════════════════════════════════════════════════
-const L = (tone, lane, word, detail, actions, spin, bar = '', mr = MR, dot = AMBER, phrase = 'NEEDS REVIEW', phraseColor = AMBER) =>
+const L = (tone, word, detail, actions, spin, bar = '', mr = MR, dot = AMBER, phrase = 'NEEDS REVIEW', phraseColor = AMBER) =>
   row(dot, bar,
     r1({ title: mr.title, phrase, phraseColor }) + r2(mr) +
-    `<div class="acts">${act(tone, lane, word, detail, actions, spin)}</div>`,
+    `<div class="acts">${act(tone, word, detail, actions, spin)}</div>`,
     actions.length > 0);
 
 const lanesBody = `
 <h2>review lane · every state</h2>
 <div class="list">
-  ${L('quiet', 'review', 'queued', '', [], false)}
-  ${L('work', 'review', 'running…', 'started 4m ago', [], true)}
-  ${L('go', 'review', 'ready', '', [['read ↗']], false)}
-  ${L('bad', 'review', 'failed', 'pane closed… cleared from the board', [['launch again']], false, 'bad')}
-  ${L('warn', 'review', 'interrupted', 'pane closed 12m ago', [['relaunch'], ['clear', true]], false, 'warn')}
+  ${L('quiet', 'review queued', '', [], false)}
+  ${L('work', 'review running…', 'started 4m ago', [], true)}
+  ${L('go', 'review ready', '', [['read ↗']], false)}
+  ${L('bad', 'review failed', 'pane closed… cleared from the board', [['launch again']], false, 'bad')}
+  ${L('warn', 'interrupted', 'pane closed 12m ago', [['relaunch'], ['clear', true]], false, 'warn')}
 </div>
 
 <h2>response lane</h2>
 <div class="list">
-  ${L('quiet', 'response', 'queued', '', [], false)}
-  ${L('work', 'response', 'triaging…', '', [], true)}
-  ${L('work', 'response', 'implementing…', '3 threads', [], true)}
-  ${L('work', 'response', 'drafting replies…', '', [], true)}
-  ${L('go', 'response', 'replies posted', '3 of 3', [['read ↗']], false)}
-  ${L('warn', 'response', '2 of 3 posted', 'one thread waiting', [['resume ↗']], false, 'warn')}
-  ${L('warn', 'response', 'drafted, not posted', '', [['resume ↗']], false, 'warn')}
-  ${L('bad', 'response', 'failed', '', [['restart']], false, 'bad')}
-  ${L('warn', 'response', 'interrupted', 'pane closed', [['relaunch'], ['clear', true]], false, 'warn')}
+  ${L('quiet', 'response queued', '', [], false)}
+  ${L('work', 'triaging…', '', [], true)}
+  ${L('work', 'implementing…', '3 threads', [], true)}
+  ${L('work', 'drafting replies…', '', [], true)}
+  ${L('go', 'replies posted', '3 of 3', [['read ↗']], false)}
+  ${L('warn', '2 of 3 posted', 'one thread waiting', [['resume ↗']], false, 'warn')}
+  ${L('warn', 'drafted, not posted', '', [['resume ↗']], false, 'warn')}
+  ${L('bad', 'response failed', '', [['restart']], false, 'bad')}
+  ${L('warn', 'interrupted', 'pane closed', [['relaunch'], ['clear', true]], false, 'warn')}
 </div>
 
 <h2>doctor lane</h2>
 <div class="list">
-  ${L('quiet', 'doctor', 'queued', '', [], false, '', MR4, RED, 'CI FAILING', RED)}
-  ${L('work', 'doctor', 'diagnosing…', 'auto', [], true, '', MR4, RED, 'CI FAILING', RED)}
-  ${L('work', 'doctor', 'rebasing…', '', [], true, '', MR4, RED, 'CI FAILING', RED)}
-  ${L('work', 'doctor', 'fixing…', '', [], true, '', MR4, RED, 'CI FAILING', RED)}
-  ${L('work', 'doctor', 'watching CI…', '', [], true, '', MR4, RED, 'CI FAILING', RED)}
-  ${L('go', 'doctor', 'diagnosed', 'held a note', [['read note']], false, '', MR4, RED, 'CI FAILING', RED)}
-  ${L('bad', 'doctor', 'stuck', '', [['call again']], false, 'bad', MR4, RED, 'CI FAILING', RED)}
+  ${L('quiet', 'doctor queued', '', [], false, '', MR4, RED, 'CI FAILING', RED)}
+  ${L('work', 'diagnosing…', 'auto', [], true, '', MR4, RED, 'CI FAILING', RED)}
+  ${L('work', 'rebasing…', '', [], true, '', MR4, RED, 'CI FAILING', RED)}
+  ${L('work', 'fixing…', '', [], true, '', MR4, RED, 'CI FAILING', RED)}
+  ${L('work', 'watching CI…', '', [], true, '', MR4, RED, 'CI FAILING', RED)}
+  ${L('go', 'diagnosed', 'held a note', [['read note']], false, '', MR4, RED, 'CI FAILING', RED)}
+  ${L('bad', 'doctor stuck', '', [['call again']], false, 'bad', MR4, RED, 'CI FAILING', RED)}
 </div>
 `;
 
@@ -456,14 +453,14 @@ you, attention tones on whichever lane broke. "answer" always opens the decision
 queue is the gate seat; the row never grows a form). The edge bar matches the row's most
 urgent line (red beats amber).</p>
 <div class="list">
-  ${L('warn', 'decide', 'post 2 findings?', 'recommended: post', [['answer']], false, 'warn')}
-  ${L('warn', 'decide', 'pane needs attention', 'blocked 3m on a prompt', [['focus'], ['dismiss', true]], false, 'warn')}
-  ${L('quiet', 'decide', 'answered · parked', 'resumes when the pane returns', [], false)}
-  ${L('bad', 'decide', 'answered, no pane to execute', '', [['relaunch'], ['dismiss', true]], false, 'bad')}
-  ${L('bad', 'decide', 'answer stuck', 'delivery failed twice', [['retry'], ['dismiss', true]], false, 'bad')}
-  ${L('warn', 'nudge', 'sam asked for a re-review', '30m ago', [['re-review']], false, 'warn')}
-  ${L('warn', 'note', 'held: verification note', 'doctor draft', [['read'], ['dismiss', true]], false, 'warn')}
-  ${L('quiet', 'review', 'off-screen', 'pane hidden, still running', [['focus']], false)}
+  ${L('warn', 'post 2 findings?', 'recommended: post', [['answer']], false, 'warn')}
+  ${L('warn', 'pane needs attention', 'blocked 3m on a prompt', [['focus'], ['dismiss', true]], false, 'warn')}
+  ${L('quiet', 'answered · parked', 'resumes when the pane returns', [], false)}
+  ${L('bad', 'answered, no pane to execute', '', [['relaunch'], ['dismiss', true]], false, 'bad')}
+  ${L('bad', 'answer stuck', 'delivery failed twice', [['retry'], ['dismiss', true]], false, 'bad')}
+  ${L('warn', 'sam asked for a re-review', '30m ago', [['re-review']], false, 'warn')}
+  ${L('warn', 'held: verification note', 'doctor draft', [['read'], ['dismiss', true]], false, 'warn')}
+  ${L('quiet', 'off-screen', 'pane hidden, still running', [['focus']], false)}
 </div>
 <p class="cap"><b>Herd note:</b> a herd-owned gate never lands here... only escalated ones
 surface, in the same "decide" slot with an <b>escalated</b> detail.</p>
@@ -479,12 +476,12 @@ for you turns into a hot line.</p>
   ${row(GREEN, '',
     r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: GREEN }) +
     r2({ ...MR3, fresh: 2 }) +
-    `<div class="acts">${act('work', 'peer', 'geoff reviewing…', 'on his board', [], true)}</div>`
+    `<div class="acts">${act('work', 'geoff is reviewing…', '', [], true)}</div>`
   )}
   ${row(GREEN, '',
     r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: GREEN }) +
     r2({ ...MR3 }) +
-    `<div class="acts">${act('quiet', 'peer', 'nudged sam', 'no answer yet · 30m', [], false)}</div>`
+    `<div class="acts">${act('quiet', 'nudged sam', 'no answer yet · 30m', [], false)}</div>`
   )}
 </div>
 <div class="hover">
@@ -500,7 +497,7 @@ there, never on the row.</p>
   ${row(GREEN, '',
     r1({ title: MR3.title, phrase: 'APPROVED', phraseColor: GREEN }) +
     r2(MR3) +
-    `<div class="acts">${act('quiet', 'live', 'alice is reviewing right now')}</div>`
+    `<div class="acts">${act('quiet', 'alice is reviewing right now')}</div>`
   )}
 </div>
 `;
@@ -515,7 +512,7 @@ hover and the menu. The row is the same height as every other row on the board.<
     r1({ title: MR.title, phrase: 'NEEDS REVIEW' }) +
     r2(MR) +
     `<div class="acts">
-      ${act('warn', 'decide', 'post 2 findings?', 'review interrupted', [['answer']], false, 3)}
+      ${act('warn', 'post 2 findings?', 'review interrupted', [['answer']], false, 3)}
     </div>`,
     true
   )}
