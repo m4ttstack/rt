@@ -61,26 +61,51 @@ public final class WaiverClient {
 /// are not evidence either way.
 @MainActor
 public final class DoneModel: ObservableObject {
-    @Published public private(set) var hasCheckedSincePostInstall = false
+    public enum CheckState: Equatable, Sendable {
+        case unchecked, checking, checked
+        case failed(String)
+    }
+
+    /// How long a post-install check may run before it is treated as failed.
+    /// `RtClient.run` has no timeout of its own, so without this a hung rt
+    /// would hold Finish shut with nothing on screen to act on.
+    public static let defaultCheckTimeout: TimeInterval = 30
+
+    @Published public private(set) var checkState: CheckState = .unchecked
     @Published public var skipTarget: PlanRow?
     @Published public private(set) var skipError: String?
     @Published public private(set) var isSkipping = false
 
     private let readiness: ReadinessModel
     private let waivers: WaiverClient
+    private let checkTimeout: TimeInterval
+    private var checkGeneration = 0
     private var forward: AnyCancellable?
 
-    public init(readiness: ReadinessModel, waivers: WaiverClient) {
-        self.readiness = readiness; self.waivers = waivers
+    public init(readiness: ReadinessModel, waivers: WaiverClient, checkTimeout: TimeInterval = DoneModel.defaultCheckTimeout) {
+        self.readiness = readiness; self.waivers = waivers; self.checkTimeout = checkTimeout
         forward = readiness.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
     }
 
+    public var hasCheckedSincePostInstall: Bool { checkState == .checked }
     public var blockedRows: [PlanRow] { hasCheckedSincePostInstall ? readiness.finishBlockedRows : [] }
     public var stillToDoRows: [PlanRow] { hasCheckedSincePostInstall ? readiness.outstandingManualRows : [] }
-    /// True after a post-install check failed and no later one succeeded.
-    public var refreshFailed: Bool { !hasCheckedSincePostInstall && readiness.lastRefreshFailed }
-    public var refreshError: String? { refreshFailed ? readiness.lastError : nil }
-    public var finishEnabled: Bool { hasCheckedSincePostInstall ? readiness.finishBlockedBy.isEmpty : readiness.lastRefreshFailed }
+    /// True after a post-install check failed or timed out and no later one succeeded.
+    public var refreshFailed: Bool { refreshError != nil }
+    public var refreshError: String? {
+        if case .failed(let message) = checkState { return message }
+        return nil
+    }
+    /// The one boolean Finish and the window's close buttons both follow:
+    /// closed while a check is in flight, the plan's answer once it landed,
+    /// open when the check could not be completed.
+    public var finishEnabled: Bool {
+        switch checkState {
+        case .checked: return readiness.finishBlockedBy.isEmpty
+        case .failed: return true
+        case .unchecked, .checking: return false
+        }
+    }
 
     public var headline: String {
         let blocked = blockedRows.count
@@ -89,12 +114,26 @@ public final class DoneModel: ObservableObject {
         return outstanding == 0 ? "Everything's working" : "Installed, with \(outstanding) step\(outstanding == 1 ? "" : "s") left for you"
     }
 
-    /// A failed refresh leaves `readiness` holding the stale pre-Install plan,
-    /// which is never presented as freshly confirmed: the rows stay hidden
-    /// and the failure is shown instead.
+    /// Every arrival at Done checks from scratch: the previous run's rows are
+    /// never presented as fresh. A failed refresh leaves `readiness` holding
+    /// the stale pre-Install plan, which is likewise never presented as
+    /// confirmed: the rows stay hidden and the failure is shown instead. A
+    /// check that outlives the watchdog is reported the same way, and its
+    /// late answer, if one arrives, still becomes the truth.
     public func checkPostInstall() async {
+        checkGeneration += 1
+        let generation = checkGeneration
+        checkState = .checking
+        let seconds = checkTimeout
+        let watchdog = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            guard let self, !Task.isCancelled, self.checkGeneration == generation, self.checkState == .checking else { return }
+            self.checkState = .failed("rt setup plan did not answer within \(Int(seconds.rounded())) s")
+        }
         await readiness.recheckAll()
-        if !readiness.lastRefreshFailed { hasCheckedSincePostInstall = true }
+        watchdog.cancel()
+        guard checkGeneration == generation else { return }
+        checkState = readiness.lastRefreshFailed ? .failed(readiness.lastError ?? "unknown error") : .checked
     }
 
     public func retryCheck() async { await checkPostInstall() }

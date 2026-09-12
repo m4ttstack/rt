@@ -61,7 +61,7 @@ struct SetupView: View {
         }
         // The window controller observes only the flow, so the gate is
         // mirrored there for the titlebar's close and minimize buttons.
-        .onChange(of: readiness.finishBlockedBy, initial: true) { _, ids in flow.finishBlockedBy = ids }
+        .onChange(of: done.finishEnabled, initial: true) { _, open in flow.finishGateOpen = open }
     }
 
     private var pushTransition: AnyTransition {
