@@ -1,5 +1,5 @@
 import { describe, test, expect, spyOn } from "bun:test";
-import { setupPlan, setupStatus, renderPlanHuman, type SetupDeps } from "../setup.ts";
+import { setupPlan, setupStatus, renderFinishLine, renderPlanHuman, type SetupDeps } from "../setup.ts";
 import type { Plan } from "../../lib/setup/contract.ts";
 import { writeIntent } from "../../lib/setup/intent.ts";
 import type { SecretPresence } from "../../lib/setup/validators/accounts.ts";
@@ -188,5 +188,33 @@ describe("renderPlanHuman", () => {
       finishBlockedBy: [],
     };
     expect(renderPlanHuman(plan).at(-1)).toBe("Install: ready");
+  });
+});
+
+describe("renderFinishLine", () => {
+  const base: Plan = { contract: 1, at: "2026-08-21T00:00:00.000Z", team: { slug: "", name: "", mode: "none" }, groups: [], canInstall: true, requiredMissing: [], finishBlockedBy: [] };
+
+  test("no blockers -> Finish: ready", () => {
+    expect(renderFinishLine(base)).toBe("Finish: ready");
+  });
+
+  test("blockers are listed by id", () => {
+    expect(renderFinishLine({ ...base, finishBlockedBy: ["tool.fast-browser-extension"] })).toBe("Finish: blocked by: tool.fast-browser-extension");
+  });
+});
+
+describe("setupStatus Finish line", () => {
+  test("human mode prints the Finish line right after the Install line", async () => {
+    const deps = captureDeps();
+    await setupStatus([], {}, deps);
+    const install = deps.lines.findIndex((l) => l.startsWith("Install: "));
+    expect(install).toBeGreaterThan(0);
+    expect(deps.lines[install + 1]).toBe("Finish: ready");
+  });
+
+  test("setup plan (human) prints no Finish line", async () => {
+    const deps = captureDeps();
+    await setupPlan([], {}, deps);
+    expect(deps.lines.some((l) => l.startsWith("Finish: "))).toBe(false);
   });
 });
