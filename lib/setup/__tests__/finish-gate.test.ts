@@ -30,9 +30,9 @@ describe("setup.waived registry row", () => {
     expect(validateValue(def, "tool.fast-browser-extension").ok).toBe(false);
   });
 
-  test("a user or team scope write is refused by the resolver", () => {
-    expect(() => setSetting(WAIVED_SETTING_KEY, ["tool.fast-browser-extension"], "user")).toThrow();
-    expect(() => setSetting(WAIVED_SETTING_KEY, ["tool.fast-browser-extension"], "team")).toThrow();
+  test("a user or team scope write is refused by the resolver's own scope check", () => {
+    expect(() => setSetting(WAIVED_SETTING_KEY, ["tool.fast-browser-extension"], "user")).toThrow(/cannot be set in the user store \(allowed: machine\)/);
+    expect(() => setSetting(WAIVED_SETTING_KEY, ["tool.fast-browser-extension"], "team")).toThrow(/cannot be set in the team store \(allowed: machine\)/);
   });
 });
 

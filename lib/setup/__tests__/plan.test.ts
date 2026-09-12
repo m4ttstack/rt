@@ -33,6 +33,14 @@ const readyExec: ExecScript = (argv) => {
   return ok();
 };
 
+/** `readyExec` plus a fast-browser on PATH whose doctor reports the extension not loaded. */
+const fastBrowserNotLoadedExec: ExecScript = (argv) => {
+  if (argv[0] === "/opt/tools/fast-browser" && argv[1] === "doctor") {
+    return ok(JSON.stringify({ schemaVersion: 1, ok: false, checks: [{ id: "runtime-checksum", status: "pass" }, { id: "extension-loaded", status: "fail" }, { id: "pairing", status: "pass" }] }));
+  }
+  return readyExec(argv);
+};
+
 const grantedTray = fakeTray({
   "GET /permissions": () => ({
     status: 200,
@@ -208,11 +216,18 @@ describe("composePlan — install-satisfied flip", () => {
   // The extension is loaded by hand in Chrome, so it must never reach
   // requiredMissing in either mode: status mode is what the verify Install
   // step runs, and a critical failure there would end every successful
-  // install in failure.
-  test("tool.fast-browser-extension never counts against canInstall, in either mode", async () => {
-    const p = fakeProbes({ exec: readyExec, tray: grantedTray });
+  // install in failure. Chrome plus a doctor report that says "not loaded"
+  // is the one shape that makes the row needs-you through the real seams;
+  // without both it reads skipped and the assertion proves nothing.
+  test("tool.fast-browser-extension never counts against canInstall, in either mode, even while status mode reads it required", async () => {
+    const p = fakeProbes({ exec: fastBrowserNotLoadedExec, tray: grantedTray, env: { PATH: "/opt/tools" }, files: { "/opt/tools/fast-browser": "#!/bin/sh" } });
+    p.mkdirp("/Applications/Google Chrome.app");
     for (const mode of ["plan", "status"] as const) {
       const plan = await composePlan({ p, secrets: fakeSecrets(), ci: false, mode, teams: [] });
+      const r = plan.groups.find((g) => g.id === "tools")!.rows.find((r) => r.id === "tool.fast-browser-extension")!;
+      expect(r.status).toBe("needs-you");
+      expect(r.required).toBe(mode === "status");
+      expect(plan.finishBlockedBy).toEqual(["tool.fast-browser-extension"]);
       expect(plan.requiredMissing).not.toContain("tool.fast-browser-extension");
     }
   });
@@ -338,10 +353,26 @@ describe("finish gate", () => {
     }
   });
 
-  test("an injected waived list wins over the store", async () => {
-    const p = fakeProbes({ exec: readyExec, tray: grantedTray });
-    const plan = await composePlan({ p, secrets: fakeSecrets(), ci: false, mode: "status", teams: [], waived: ["tool.fast-browser-extension"] });
-    const r = plan.groups.find((g) => g.id === "tools")!.rows.find((r) => r.id === "tool.fast-browser-extension")!;
-    expect(r.optionalNote).toBe(WAIVED_NOTE);
+  test("an injected waived list wins over the store, in both directions", async () => {
+    const prevHome = process.env.HOME;
+    const home = mkdtempSync(join(tmpdir(), "rt-plan-waived-"));
+    process.env.HOME = home;
+    try {
+      const p = fakeProbes({ exec: readyExec, tray: grantedTray });
+      const extension = (plan: Awaited<ReturnType<typeof composePlan>>) => plan.groups.find((g) => g.id === "tools")!.rows.find((r) => r.id === "tool.fast-browser-extension")!;
+
+      setSetting("setup.waived", [], "machine");
+      const injectedWaived = await composePlan({ p, secrets: fakeSecrets(), ci: false, mode: "status", teams: [], waived: ["tool.fast-browser-extension"] });
+      expect(extension(injectedWaived).waived).toBe(true);
+
+      setSetting("setup.waived", ["tool.fast-browser-extension"], "machine");
+      const injectedNone = await composePlan({ p, secrets: fakeSecrets(), ci: false, mode: "status", teams: [], waived: [] });
+      expect(extension(injectedNone).waived).toBeFalsy();
+      const fromStore = await composePlan({ p, secrets: fakeSecrets(), ci: false, mode: "status", teams: [] });
+      expect(extension(fromStore).waived).toBe(true);
+    } finally {
+      process.env.HOME = prevHome;
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 });
