@@ -99,6 +99,11 @@ export function renderPlanHuman(plan: Plan): string[] {
   return lines;
 }
 
+/** The wizard's other gate, printed beside the Install line by `setup status`: Finish waits on finish-gated rows that are not ready, skipped, or waived on this Mac. */
+export function renderFinishLine(plan: Plan): string {
+  return plan.finishBlockedBy.length === 0 ? "Finish: ready" : `Finish: blocked by: ${plan.finishBlockedBy.join(", ")}`;
+}
+
 /** `rt setup <integration> connect`, for a missing account row — only "connect"/"oauth" actions name that verb; the owner-once slack-app row (and any row still waiting on it, which carries no action at all) has no per-integration connect flow to point at. */
 function accountConnectVerb(r: { status: RowStatus; action: Row["action"] }): string | null {
   if (r.status !== "missing") return null;
@@ -139,6 +144,7 @@ async function runPlan(args: string[], deps: SetupDeps, mode: "plan" | "status",
   for (const line of renderPlanHuman(plan)) deps.print(line);
 
   if (mode === "status") {
+    deps.print(renderFinishLine(plan));
     const missingAccounts = missingAccountLines(plan);
     if (missingAccounts.length > 0) {
       deps.print("");
