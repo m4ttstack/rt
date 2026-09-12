@@ -343,4 +343,87 @@ describe('joinExecutorOrphans', () => {
     // dropped -- see the "hidden ... matching no MR row" test above).
     expect(orphans).toEqual([executor]);
   });
+
+  test("a 'gone' executor with an agent: subject attaches by review sessionId", () => {
+    // The !44451 case: rt agent launched without an mr: subject, so the
+    // executor's subject is agent:<id> and matches no row by URL -- but
+    // the board's own review lane recorded the pane's session id.
+    const executor = executorView({
+      state: 'gone',
+      subject: 'agent:abc123',
+      sessionId: 'sess-review-1',
+    });
+    const mrs = [
+      {
+        webUrl: 'https://gitlab.com/acme/webapp/-/merge_requests/44451',
+        review: { status: 'reviewing', sessionId: 'sess-review-1' },
+      },
+    ];
+    const { mrs: joined, orphans } = joinExecutorOrphans(mrs, [executor]);
+    expect(joined[0]?.orphan).toEqual(executor);
+    expect(orphans).toEqual([]);
+  });
+
+  test("a 'gone' executor attaches by respond sessionId too", () => {
+    const executor = executorView({
+      state: 'gone',
+      subject: 'agent:abc123',
+      sessionId: 'sess-respond-1',
+    });
+    const mrs = [
+      {
+        webUrl: 'https://gitlab.com/acme/webapp/-/merge_requests/2',
+        respond: { status: 'implementing', sessionId: 'sess-respond-1' },
+      },
+    ];
+    const { mrs: joined, orphans } = joinExecutorOrphans(mrs, [executor]);
+    expect(joined[0]?.orphan).toEqual(executor);
+    expect(orphans).toEqual([]);
+  });
+
+  test('subject match wins over a sessionId match on a different row', () => {
+    const executor = executorView({
+      state: 'gone',
+      subject: 'mr:https://gitlab.com/acme/webapp/-/merge_requests/1',
+      sessionId: 'sess-1',
+    });
+    const mrs = [
+      { webUrl: 'https://gitlab.com/acme/webapp/-/merge_requests/1' },
+      {
+        webUrl: 'https://gitlab.com/acme/webapp/-/merge_requests/2',
+        review: { status: 'reviewing', sessionId: 'sess-1' },
+      },
+    ];
+    const { mrs: joined, orphans } = joinExecutorOrphans(mrs, [executor]);
+    expect(joined[0]?.orphan).toEqual(executor);
+    expect(joined[1]?.orphan).toBeUndefined();
+    expect(orphans).toEqual([]);
+  });
+
+  test("a 'hidden' executor matching a row by sessionId attaches; unmatched sessionIds change nothing", () => {
+    const hidden = executorView({
+      state: 'hidden',
+      subject: 'agent:h1',
+      sessionId: 'sess-h',
+    });
+    const stranger = executorView({
+      agentId: 'agent-2',
+      state: 'gone',
+      subject: 'agent:x1',
+      sessionId: 'sess-nobody',
+    });
+    const mrs = [
+      {
+        webUrl: 'https://gitlab.com/acme/webapp/-/merge_requests/3',
+        review: { status: 'queued', sessionId: 'sess-h' },
+      },
+    ];
+    const { mrs: joined, orphans } = joinExecutorOrphans(mrs, [
+      hidden,
+      stranger,
+    ]);
+    expect(joined[0]?.orphan).toEqual(hidden);
+    // The stranger matched nothing: still a gone orphan at top level.
+    expect(orphans).toEqual([stranger]);
+  });
 });

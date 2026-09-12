@@ -408,39 +408,47 @@ export function joinGateExecutors<G extends { gateId: string }>(
   });
 }
 
+interface OrphanJoinRow {
+  webUrl?: string | null;
+  review?: { sessionId?: string | null } | null;
+  respond?: { sessionId?: string | null } | null;
+}
+
 /**
  * Splits the reconciler sweep's dead/hidden executors: a `gone` or `hidden`
- * one whose subject matches an MR row on this board attaches to that row as
- * `orphan`; a `gone` one matching no row falls through to the top-level
- * `orphans` leftover. A `hidden` executor matching no row has nothing to
- * anchor to and is dropped -- it isn't gone yet, just off this board's
- * radar, so surfacing it board-wide would be noise.
+ * one whose subject matches an MR row on this board -- or, failing that,
+ * whose sessionId matches the row's own review/respond lane (an rt-agent
+ * launch without an mr: subject reports `agent:<id>`, so the session id the
+ * lane recorded is the only shared key) -- attaches to that row as `orphan`.
+ * A `gone` executor matching no row falls through to the top-level `orphans`
+ * leftover. A `hidden` executor matching no row has nothing to anchor to and
+ * is dropped -- it isn't gone yet, just off this board's radar, so surfacing
+ * it board-wide would be noise.
  */
-export function joinExecutorOrphans<T extends { webUrl?: string | null }>(
+export function joinExecutorOrphans<T extends OrphanJoinRow>(
   mrs: T[],
   executors: ExecutorView[]
 ): { mrs: Array<T & { orphan?: ExecutorView }>; orphans: ExecutorView[] } {
   const bySubject = new Map<string, ExecutorView>();
+  const bySessionId = new Map<string, ExecutorView>();
   for (const executor of executors) {
-    if (
-      (executor.state === 'gone' || executor.state === 'hidden') &&
-      executor.subject
-    ) {
-      bySubject.set(executor.subject, executor);
-    }
+    if (executor.state !== 'gone' && executor.state !== 'hidden') continue;
+    if (executor.subject) bySubject.set(executor.subject, executor);
+    if (executor.sessionId) bySessionId.set(executor.sessionId, executor);
   }
-  const matchedSubjects = new Set<string>();
+  const matched = new Set<ExecutorView>();
   const joinedMrs = mrs.map((mr): T & { orphan?: ExecutorView } => {
-    if (!mr.webUrl) return mr;
-    const subject = `mr:${mr.webUrl}`;
-    const match = bySubject.get(subject);
-    if (!match) return mr;
-    matchedSubjects.add(subject);
+    const subjectMatch = mr.webUrl
+      ? bySubject.get(`mr:${mr.webUrl}`)
+      : undefined;
+    const sessionId = mr.review?.sessionId ?? mr.respond?.sessionId;
+    const match =
+      subjectMatch ?? (sessionId ? bySessionId.get(sessionId) : undefined);
+    if (!match || matched.has(match)) return mr;
+    matched.add(match);
     return { ...mr, orphan: match };
   });
-  const orphans = executors.filter(
-    e => e.state === 'gone' && (!e.subject || !matchedSubjects.has(e.subject))
-  );
+  const orphans = executors.filter(e => e.state === 'gone' && !matched.has(e));
   return { mrs: joinedMrs, orphans };
 }
 
