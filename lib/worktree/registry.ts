@@ -16,6 +16,8 @@ export interface TreeRecord {
   disposal?: DisposalMode;
   createdAt: string; // ISO
   claimedAt?: string;
+  lastActiveAt?: string; // ISO; bumped when the reconciler observes HEAD move (RT-129)
+  lastSeenHeadSha?: string; // reconcile's own bookkeeping for the lastActiveAt diff, not a readiness signal
   readyAt?: string; // last successful full readiness (ISO)
   readyStamp?: string; // commit sha the ready steps last ran against
   readyPendingAt?: string; // ISO; claim-time steps queued to a background task (RT-96)
