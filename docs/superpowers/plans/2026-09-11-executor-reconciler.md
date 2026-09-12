@@ -92,7 +92,7 @@ describe("resolveLivePane", () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify failure** — `bun test lib/daemon/__tests__/pane-resolve-live.test.ts`; expect module-not-found.
+- [ ] **Step 2: Run to verify failure** ... `bun test lib/daemon/__tests__/pane-resolve-live.test.ts`; expect module-not-found.
 - [ ] **Step 3: Implement**
 
 ```ts
@@ -170,8 +170,8 @@ export async function snapshotPanes(): Promise<LivePane[] | null> {
 
 Adjust the snapshot field access to the real `HerdrSnapshot` type in `lib/daemon/handlers/pane.ts` (import and reuse that type rather than `Record<string, unknown>` if it is exported; if not, export it from there in this task).
 
-- [ ] **Step 4: Run tests** — expect PASS.
-- [ ] **Step 5: Commit** — `git commit -m "daemon: layered live-pane resolver (paneId, session, worktree)"`
+- [ ] **Step 4: Run tests** ... expect PASS.
+- [ ] **Step 5: Commit** ... `git commit -m "daemon: layered live-pane resolver (paneId, session, worktree)"`
 
 ---
 
@@ -221,8 +221,8 @@ test("no resolvable pane returns ok:false without sending", async () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify failure** — signature mismatch / assertion failure.
-- [ ] **Step 3: Implement** — rewrite `createEscapeInjector` to take `{ herdr?, snapshot? }` deps (defaults `herdrRequest` / `snapshotPanes`), resolve `hints` via `resolveLivePane` over the snapshot, strip any `bg:` prefix for the `pane_id` payload and use the resolved pane's own `sockPath`. In `gate-push.ts` `pushToPane`, build hints from the row and pass them:
+- [ ] **Step 2: Run to verify failure** ... signature mismatch / assertion failure.
+- [ ] **Step 3: Implement** ... rewrite `createEscapeInjector` to take `{ herdr?, snapshot? }` deps (defaults `herdrRequest` / `snapshotPanes`), resolve `hints` via `resolveLivePane` over the snapshot, strip any `bg:` prefix for the `pane_id` payload and use the resolved pane's own `sockPath`. In `gate-push.ts` `pushToPane`, build hints from the row and pass them:
 
 ```ts
 const injected = await opts.injectEscape({
@@ -234,8 +234,8 @@ const injected = await opts.injectEscape({
 
 Keep the existing guards (`presentation === "form"`, answered-by-pane skip) unchanged. Log the resolved `paneRef` on success at debug.
 
-- [ ] **Step 4: Run** — `bun test lib/daemon/__tests__/gate-escape.test.ts lib/daemon/__tests__/gate-push.test.ts` and the full `bun run test`; expect PASS.
-- [ ] **Step 5: Commit** — `git commit -m "daemon: Escape injection resolves panes by session and worktree, not stale paneId"`
+- [ ] **Step 4: Run** ... `bun test lib/daemon/__tests__/gate-escape.test.ts lib/daemon/__tests__/gate-push.test.ts` and the full `bun run test`; expect PASS.
+- [ ] **Step 5: Commit** ... `git commit -m "daemon: Escape injection resolves panes by session and worktree, not stale paneId"`
 
 This task alone fixes the observed 2026-09-11 miss and is shippable on its own.
 
@@ -280,7 +280,7 @@ gates-store:
 - `markExecutor(id: string, executor: ExecutorState | null): void`
 - `GateRow` gains `execution?: "unassigned"` and `executor?: ExecutorState`.
 
-- [ ] **Step 1: Write failing tests** — extend the gates-store suite:
+- [ ] **Step 1: Write failing tests** ... extend the gates-store suite:
 
 ```ts
 test("markDelivery accepts confirmed and stuck", () => {
@@ -303,7 +303,7 @@ test("markExecution and markExecutor round-trip and clear", () => {
 - [ ] **Step 2: Run to verify failure.**
 - [ ] **Step 3: Implement.** Delivery is a serialized column: widen the union only. `execution`/`executor` are new columns: add them inside the schema's `IF NOT EXISTS` table creation, guarded by a `PRAGMA table_info` check for existing dbs per the repo's schema footgun; announce the gates.db version bump to other sessions before merge.
 - [ ] **Step 4: Run gates-store suite + `cd packages/rt-client && bun run build && bun run typecheck`.**
-- [ ] **Step 5: Commit** — `git commit -m "gates-store + rt-client: reconciler contract types, delivery confirmed/stuck, execution and executor stamps"`
+- [ ] **Step 5: Commit** ... `git commit -m "gates-store + rt-client: reconciler contract types, delivery confirmed/stuck, execution and executor stamps"`
 
 ---
 
@@ -379,7 +379,7 @@ Write the gate-join test with a real `GateRow` fixture copied from the gates-sto
 - [ ] **Step 2: Run to verify failure.**
 - [ ] **Step 3: Implement** `computeView`: per agent, `cleared` from tombstones; else `unknown` when `panes === null`; else resolve via `resolveLivePane({ paneId: rec.paneId, sessionId: rec.sessionId, worktree: rec.cwd }, panes)`; `gone` on null; `blocked` when `agentStatus === "blocked"`; `hidden` when resolved but workspace not in `visibleWorkspaceIds` (when that set is known); else `live`. `openGateIds` joins gates whose origin paneId / nudge session / worktree resolves to the same agent. `since` carries `now` on state change (the caller owns previous-state comparison; here return current `now`).
 - [ ] **Step 4: Run tests, expect PASS.**
-- [ ] **Step 5: Commit** — `git commit -m "daemon: pure reconciler view computation"`
+- [ ] **Step 5: Commit** ... `git commit -m "daemon: pure reconciler view computation"`
 
 ---
 
@@ -391,7 +391,7 @@ Write the gate-join test with a real `GateRow` fixture copied from the gates-sto
 - Test: `lib/daemon/__tests__/reconciler.test.ts`
 
 **Interfaces:**
-- Consumes: Tasks 1, 3, 4; `deriveOwner` (`lib/daemon/handlers/gate.ts`), kv (`lib/state/kv-blob.ts`: `setKvValue`, `listKvValues`, namespace `"reconciler.cleared"`), `listAgents` (`lib/state/agents-store.ts:99` — extend with an `unfinishedOnly` filter or filter in the caller), pane peek verb used by `rt pane peek`.
+- Consumes: Tasks 1, 3, 4; `deriveOwner` (`lib/daemon/handlers/gate.ts`), kv (`lib/state/kv-blob.ts`: `setKvValue`, `listKvValues`, namespace `"reconciler.cleared"`), `listAgents` (`lib/state/agents-store.ts:99` ... extend with an `unfinishedOnly` filter or filter in the caller), pane peek verb used by `rt pane peek`.
 - Produces:
   ```ts
   export interface Reconciler {
@@ -430,7 +430,7 @@ Write each as a real test against the interface above; drive multiple sweeps by 
 - [ ] **Step 2: Run to verify failure.**
 - [ ] **Step 3: Implement.** Keep previous states + pending debounce counters in module memory. Answer handling for attention gates lives in Task 7 (the answer handler routes `resume`/`clear`/`dismiss`). Wire into `lib/daemon.ts` on the escalation sweep's cadence, pushing a `{ stop() }` handle into `sweepHandles`.
 - [ ] **Step 4: Run reconciler + full daemon test suites.**
-- [ ] **Step 5: Commit** — `git commit -m "daemon: reconciler sweep with executor transitions and attention gates"`
+- [ ] **Step 5: Commit** ... `git commit -m "daemon: reconciler sweep with executor transitions and attention gates"`
 
 ---
 
@@ -463,7 +463,7 @@ Write each as a real test against the interface above; drive multiple sweeps by 
 - [ ] **Step 2: Run to verify failure.**
 - [ ] **Step 3: Implement** inside the sweep after transition handling: check each pending expectation against the fresh view.
 - [ ] **Step 4: Run, expect PASS.**
-- [ ] **Step 5: Commit** — `git commit -m "daemon: reconciler expectations confirm or retry gate answer delivery"`
+- [ ] **Step 5: Commit** ... `git commit -m "daemon: reconciler expectations confirm or retry gate answer delivery"`
 
 ---
 
@@ -488,7 +488,7 @@ Write each as a real test against the interface above; drive multiple sweeps by 
 - [ ] **Step 2: Run to verify failure.**
 - [ ] **Step 3: Implement.** All side effects run after the answer is recorded and the response is built (never on the hot path); wrap in try/catch that logs at warn per the catch policy.
 - [ ] **Step 4: Run the daemon gate suites + `bun run test`.**
-- [ ] **Step 5: Commit** — `git commit -m "daemon: answered gates relaunch gone executors and verify delivery"`
+- [ ] **Step 5: Commit** ... `git commit -m "daemon: answered gates relaunch gone executors and verify delivery"`
 
 ---
 
@@ -500,11 +500,11 @@ Write each as a real test against the interface above; drive multiple sweeps by 
 - Create: `commands/reconciler.ts` + entry in `lib/command-tree-def.ts` (`rt reconciler status --json`; leaf has no required positional, no `omitBehavior` needed) + `lib/module-registry.ts` thunk
 - Test: `lib/daemon/__tests__/reconciler-handlers.test.ts`, `e2e/tests/reconciler.test.ts`
 
-- [ ] **Step 1: Write failing handler tests** — `reconciler:status` returns the `ReconcilerStatus` shape verbatim from the reconciler stub; `reconciler:clear` validates `agentId` presence and calls `reconciler.clear`.
+- [ ] **Step 1: Write failing handler tests** ... `reconciler:status` returns the `ReconcilerStatus` shape verbatim from the reconciler stub; `reconciler:clear` validates `agentId` presence and calls `reconciler.clear`.
 - [ ] **Step 2: Run to verify failure.**
 - [ ] **Step 3: Implement** handler + REST + CLI + rt-client wrappers. Emit topics are already produced by Tasks 5-6; document them in the handler header: `reconciler.transition`, `reconciler.delivery`, `reconciler.execution`.
 - [ ] **Step 4: Write the e2e exact-string test for `rt reconciler status --json` envelope and run `bun run test:all`.**
-- [ ] **Step 5: Commit** — `git commit -m "rt: reconciler status/clear verbs, REST, CLI, events"`
+- [ ] **Step 5: Commit** ... `git commit -m "rt: reconciler status/clear verbs, REST, CLI, events"`
 
 ---
 
@@ -520,14 +520,14 @@ Write each as a real test against the interface above; drive multiple sweeps by 
   - allow: `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}}`
   - deny: `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Blocking forks go through the gate protocol: run `rt gate open --subject \"$RT_GATE_SUBJECT\" --kind <scope> --questions <json>` and wait per the gate protocol skill, instead of AskUserQuestion."}}`
 
-- [ ] **Step 1: Write failing tests** — spawn the script with:
+- [ ] **Step 1: Write failing tests** ... spawn the script with:
   - `RT_DAEMON_SOCK` pointing at a nonexistent socket: expect allow.
   - a fake socket served by the test (Bun.listen on a unix socket answering the gate-list request with one open gate for the subject): expect allow.
   - the fake socket answering with no open gates: expect deny, reason contains `rt gate open`.
 - [ ] **Step 2: Run to verify failure.**
 - [ ] **Step 3: Implement** in POSIX sh: probe with a short-timeout `rt gate list --subject "$RT_GATE_SUBJECT" --json` (the CLI already exists; `RT_DAEMON_SOCK` overrides the socket path if the env override exists in `lib/`; if not, add it where the socket path is resolved). Any CLI failure = allow. Parse with `grep -c '"status":"open"\|"status":"parked"'` on the filtered output rather than jq (jq is not a guaranteed dependency of installed bundles).
 - [ ] **Step 4: Run, expect PASS.**
-- [ ] **Step 5: Commit** — `git commit -m "hooks: gate-fork PreToolUse script denies improvised AskUserQuestion forks"`
+- [ ] **Step 5: Commit** ... `git commit -m "hooks: gate-fork PreToolUse script denies improvised AskUserQuestion forks"`
 
 ---
 
@@ -546,11 +546,11 @@ Write each as a real test against the interface above; drive multiple sweeps by 
   ```
 - Env stamped into the pane/headless environment: `RT_AGENT_ID=<rec.id>`, `RT_GATE_SUBJECT=<payload.subject ?? "agent:" + rec.id>`, `RT_DAEMON_SOCK=<daemon socket path>`. `agent:start` payload gains optional `subject?: string`; the board's launch paths pass their `mr:<url>`.
 
-- [ ] **Step 1: Write failing tests** — `agent:start` (herdr surface) produces a pane command/env containing the three vars and a `--settings` file whose JSON parses to the hook block above; headless launch argv carries the same `--settings`; resume re-stamps the same env.
+- [ ] **Step 1: Write failing tests** ... `agent:start` (herdr surface) produces a pane command/env containing the three vars and a `--settings` file whose JSON parses to the hook block above; headless launch argv carries the same `--settings`; resume re-stamps the same env.
 - [ ] **Step 2: Run to verify failure.**
 - [ ] **Step 3: Implement.** Settings file per agent under the daemon's state dir (`~/.mattstack/rt/agent-hooks/<agentId>.json`), written at launch, path recorded on the rec if useful for cleanup; merge-safe: this file is passed via `--settings`, not written into any repo.
 - [ ] **Step 4: Run agent handler suite.**
-- [ ] **Step 5: Commit** — `git commit -m "rt agent: launches stamp gate env and inject the gate-fork hook"`
+- [ ] **Step 5: Commit** ... `git commit -m "rt agent: launches stamp gate env and inject the gate-fork hook"`
 
 ---
 
@@ -565,7 +565,7 @@ Write each as a real test against the interface above; drive multiple sweeps by 
 - [ ] **Step 2: Add the line + launch payload change.**
 - [ ] **Step 3: Re-run the micro-test with the line; expect convergence on opening a gate.**
 - [ ] **Step 4: `bun run board:typecheck && bun run board:test && bun run format:check`.**
-- [ ] **Step 5: Commit** — `git commit -m "board: launch subjects + skill notes for the gate-fork hook"`
+- [ ] **Step 5: Commit** ... `git commit -m "board: launch subjects + skill notes for the gate-fork hook"`
 
 ---
 
@@ -577,11 +577,11 @@ Write each as a real test against the interface above; drive multiple sweeps by 
 - Modify: `apps/board/src/client/types.ts` (payload types: `executor?: ExecutorState` on gates, `queueExtras: GateRow[]`, `orphans: ExecutorView[]`)
 - Test: `apps/board/src/__tests__/` server-side tests for the join and ingest changes
 
-- [ ] **Step 1: Write failing ingest/join tests** — a pane-attention gate with owner human lands in `queueExtras`; a herd-owned one does not; an `ExecutorView` with `state: "gone"` and a subject matching an MR row attaches to that row as `orphan`.
+- [ ] **Step 1: Write failing ingest/join tests** ... a pane-attention gate with owner human lands in `queueExtras`; a herd-owned one does not; an `ExecutorView` with `state: "gone"` and a subject matching an MR row attaches to that row as `orphan`.
 - [ ] **Step 2: Run to verify failure.**
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Run board server suites.**
-- [ ] **Step 5: Commit** — `git commit -m "board: server joins reconciler view and admits non-MR human gates"`
+- [ ] **Step 5: Commit** ... `git commit -m "board: server joins reconciler view and admits non-MR human gates"`
 
 ---
 
@@ -593,11 +593,11 @@ Write each as a real test against the interface above; drive multiple sweeps by 
 - Modify: `apps/board/src/client/board/DecisionQueueModal.tsx` (render AttentionCard for `kind === "pane-attention"`; non-MR gates render without the MR strip)
 - Test: `apps/board/src/client/board/__tests__/attention-card-dom.test.tsx`
 
-- [ ] **Step 1: Write failing DOM tests** — a pane-attention gate in the queue renders four buttons (focus pane, resume, clear, dismiss); clicking clear POSTs `/gate/answer` with `{ action: "clear" }`; the sidebar decision-queue count includes extras; a gate with `escalatedAt` set renders an "escalated" chip on its queue card.
+- [ ] **Step 1: Write failing DOM tests** ... a pane-attention gate in the queue renders four buttons (focus pane, resume, clear, dismiss); clicking clear POSTs `/gate/answer` with `{ action: "clear" }`; the sidebar decision-queue count includes extras; a gate with `escalatedAt` set renders an "escalated" chip on its queue card.
 - [ ] **Step 2: Run to verify failure.**
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: `bun run board:typecheck && bun run board:test`.**
-- [ ] **Step 5: Commit** — `git commit -m "board: decision queue admits attention cards and non-MR gates"`
+- [ ] **Step 5: Commit** ... `git commit -m "board: decision queue admits attention cards and non-MR gates"`
 
 ---
 
@@ -613,7 +613,7 @@ Write each as a real test against the interface above; drive multiple sweeps by 
 - [ ] **Step 2: Run to verify failure.**
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Full board gates: typecheck, test, `format:check`, `scripts/repo-purity.sh`, `bun run board:build`.**
-- [ ] **Step 5: Commit** — `git commit -m "board: executor badges, orphan resume/clear, stuck and unassigned states"`
+- [ ] **Step 5: Commit** ... `git commit -m "board: executor badges, orphan resume/clear, stuck and unassigned states"`
 
 ---
 
@@ -621,5 +621,5 @@ Write each as a real test against the interface above; drive multiple sweeps by 
 
 - [ ] repo-tools: `bun run test:all`; announce the gates.db schema bump.
 - [ ] `packages/rt-client`: `bun run build`; consumers reinstall (board's dist-freshness guard).
-- [ ] Manual: reboot-simulation smoke on this machine — open a gate from a spawned pane (isolated HOME per the CLAUDE.md rule), kill the pane, answer from the board, observe relaunch and `confirmed` delivery.
+- [ ] Manual: reboot-simulation smoke on this machine ... open a gate from a spawned pane (isolated HOME per the CLAUDE.md rule), kill the pane, answer from the board, observe relaunch and `confirmed` delivery.
 - [ ] Update `docs/architecture.md` links if the reconciler warrants a row.
