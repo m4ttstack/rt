@@ -36,6 +36,8 @@ struct FastBrowserPane: View {
                 }
                 if let error {
                     Text(error).font(.caption).foregroundStyle(.red).accessibilityIdentifier(AXID.settingsFastBrowserError)
+                } else if readiness.lastRefreshFailed, let e = readiness.lastError {
+                    Text("Couldn't re-read the checklist: \(e)").font(.caption).foregroundStyle(.red).accessibilityIdentifier(AXID.settingsFastBrowserError)
                 }
             }
         }
@@ -55,12 +57,16 @@ struct FastBrowserPane: View {
         steps = (title: row.title, steps: action.steps ?? [])
     }
 
+    /// The verb is awaited; the re-read is not, so a slow or hung plan can
+    /// never pin the button. The pane renders whatever `readiness` says once
+    /// it lands, including its error line above.
     private func unskip() {
         busy = true
         error = nil
         Task {
-            defer { busy = false }
             error = await env.waivers.unwaive(Self.rowId)
+            busy = false
+            if error == nil { await readiness.recheckAll() }
         }
     }
 }

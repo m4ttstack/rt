@@ -20,19 +20,18 @@ public extension PlanRow {
     var isWaived: Bool { finishGated && waived }
 }
 
-/// Runs the two waiver verbs and refreshes the plan after either succeeds,
-/// so the row's shape on screen always comes from rt, never a local guess.
+/// Runs the two waiver verbs. It never re-reads the plan itself: the row's
+/// shape on screen must come from rt, and the caller owns that re-read
+/// through its own bounded path (the Done model's check, or the Settings
+/// pane's refresh), so a hung or failed re-read is reported there and not
+/// swallowed here.
 @MainActor
 public final class WaiverClient {
     private let rt: RtRunning
-    private let readiness: ReadinessModel
 
-    public init(rt: RtRunning, readiness: ReadinessModel) {
-        self.rt = rt; self.readiness = readiness
-    }
+    public init(rt: RtRunning) { self.rt = rt }
 
-    /// nil once the verb succeeded and the plan was re-read; otherwise the
-    /// user-facing failure copy, with the plan left as it was.
+    /// nil once the verb succeeded; otherwise the user-facing failure copy.
     public func waive(_ rowId: String) async -> String? { await run("waive", rowId) }
     public func unwaive(_ rowId: String) async -> String? { await run("unwaive", rowId) }
 
@@ -45,7 +44,6 @@ public final class WaiverClient {
         } catch {
             return (error as? RtClientError)?.copy ?? "rt setup \(verb) failed to start."
         }
-        await readiness.recheckAll()
         return nil
     }
 }
@@ -73,6 +71,10 @@ public final class DoneModel: ObservableObject {
     @Published public var skipTarget: PlanRow?
     @Published public private(set) var skipError: String?
     @Published public private(set) var isSkipping = false
+    /// A re-read the user asked for from a screen already showing a
+    /// confirmed plan keeps those rows up while the gate closes; an arrival
+    /// at Done shows nothing until its own check lands.
+    @Published private var showsConfirmedRowsWhileChecking = false
 
     private let readiness: ReadinessModel
     private let waivers: WaiverClient
@@ -86,8 +88,9 @@ public final class DoneModel: ObservableObject {
     }
 
     public var hasCheckedSincePostInstall: Bool { checkState == .checked }
-    public var blockedRows: [PlanRow] { hasCheckedSincePostInstall ? readiness.finishBlockedRows : [] }
-    public var stillToDoRows: [PlanRow] { hasCheckedSincePostInstall ? readiness.outstandingManualRows : [] }
+    private var showsRows: Bool { hasCheckedSincePostInstall || (checkState == .checking && showsConfirmedRowsWhileChecking) }
+    public var blockedRows: [PlanRow] { showsRows ? readiness.finishBlockedRows : [] }
+    public var stillToDoRows: [PlanRow] { showsRows ? readiness.outstandingManualRows : [] }
     /// True after a post-install check failed or timed out and no later one succeeded.
     public var refreshFailed: Bool { refreshError != nil }
     public var refreshError: String? {
@@ -113,14 +116,23 @@ public final class DoneModel: ObservableObject {
     }
 
     /// Every arrival at Done checks from scratch: the previous run's rows are
-    /// never presented as fresh. A failed refresh leaves `readiness` holding
-    /// the stale pre-Install plan, which is likewise never presented as
-    /// confirmed: the rows stay hidden and the failure is shown instead. A
-    /// check that outlives the watchdog is reported the same way, and its
-    /// late answer, if one arrives, still becomes the truth.
-    public func checkPostInstall() async {
+    /// never presented as fresh.
+    public func checkPostInstall() async { await runCheck(keepingConfirmedRows: false) }
+
+    /// The one re-read path for everything that happens on Done after the
+    /// first check (Try again, a dismissed steps sheet, an opened URL, a
+    /// confirmed skip): bounded by the same watchdog, and a confirmed plan
+    /// stays on screen while it is re-read.
+    public func retryCheck() async { await runCheck(keepingConfirmedRows: checkState == .checked) }
+
+    /// A failed refresh leaves `readiness` holding the last plan, which is
+    /// never presented as confirmed: the rows stay hidden and the failure is
+    /// shown instead. A check that outlives the watchdog is reported the same
+    /// way, and its late answer, if one arrives, still becomes the truth.
+    private func runCheck(keepingConfirmedRows: Bool) async {
         checkGeneration += 1
         let generation = checkGeneration
+        showsConfirmedRowsWhileChecking = keepingConfirmedRows
         checkState = .checking
         let seconds = checkTimeout
         let watchdog = Task { @MainActor [weak self] in
@@ -131,25 +143,28 @@ public final class DoneModel: ObservableObject {
         await readiness.recheckAll()
         watchdog.cancel()
         guard checkGeneration == generation else { return }
+        showsConfirmedRowsWhileChecking = false
         checkState = readiness.lastRefreshFailed ? .failed(readiness.lastError ?? "unknown error") : .checked
     }
-
-    public func retryCheck() async { await checkPostInstall() }
 
     public func requestSkip(_ row: PlanRow) { skipError = nil; skipTarget = row }
     public func cancelSkip() { skipTarget = nil; skipError = nil }
 
-    /// Success closes the sheet; the re-read plan moves the row to Still to
-    /// do. Failure keeps the sheet up with the message and the gate closed.
+    /// A verb failure keeps the sheet up with the message and the gate
+    /// closed. Success closes the sheet and re-reads the plan through the
+    /// bounded path, so the row moves to Still to do, or a failed re-read
+    /// shows its error with Try again and fails open.
     public func confirmSkip() async {
         guard let row = skipTarget else { return }
         isSkipping = true
-        defer { isSkipping = false }
         if let error = await waivers.waive(row.id) {
             skipError = error
+            isSkipping = false
             return
         }
         skipTarget = nil
         skipError = nil
+        isSkipping = false
+        await retryCheck()
     }
 }

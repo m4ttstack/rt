@@ -79,7 +79,7 @@ struct DoneScreen: View {
             steps = nil
             // The row's real state changes outside the app (Chrome, a
             // download) -- only the sheet's dismissal tells us to look again.
-            Task { await readiness.recheckAll() }
+            Task { await model.retryCheck() }
         })) {
             if let steps { StepsSheet(title: steps.title, steps: steps.steps) }
         }
@@ -110,7 +110,7 @@ struct DoneScreen: View {
             // scheme does nothing rather than presenting a title with no steps.
             guard let raw = action.url, let url = URL(string: raw), url.scheme?.hasPrefix("http") == true else { return }
             NSWorkspace.shared.open(url)
-            Task { await readiness.recheckAll() }
+            Task { await model.retryCheck() }
         case .steps:
             steps = (title: row.title, steps: action.steps ?? [])
         case .run:

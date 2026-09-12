@@ -99,7 +99,7 @@ final class SetupCoordinator {
     func showSettings(pane: SettingsPane? = nil) {
         if settingsWindow == nil {
             let env = SettingsEnvironment(rt: rt, permissions: permissions, readiness: readiness, updater: updater, team: teamSettings,
-                                          waivers: WaiverClient(rt: rt, readiness: readiness),
+                                          waivers: WaiverClient(rt: rt),
                                           isDevBuild: BundleFlavor.isDevBuild,
                                           version: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev",
                                           onJoinAnotherTeam: { [weak self] in

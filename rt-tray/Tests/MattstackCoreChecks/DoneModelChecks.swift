@@ -6,7 +6,7 @@ private func doneFixture(plans: [Plan], answers: [String: (Int32, String)] = [:]
     rt.answers = answers
     let fake = FakePlans(plans)
     let readiness = await MainActor.run { ReadinessModel(plans: fake, permissions: FakePermissions(), ticker: FakeTicker()) }
-    let model = await MainActor.run { DoneModel(readiness: readiness, waivers: WaiverClient(rt: rt, readiness: readiness)) }
+    let model = await MainActor.run { DoneModel(readiness: readiness, waivers: WaiverClient(rt: rt)) }
     return (model, readiness, rt, fake)
 }
 
@@ -70,7 +70,7 @@ let doneModelChecks: [Check] = [
     Check("a post-install check that never answers fails open once the watchdog fires, with the timeout shown") { c in
         let held = HeldPlans()
         let readiness = await MainActor.run { ReadinessModel(plans: held, permissions: FakePermissions(), ticker: FakeTicker()) }
-        let m = await MainActor.run { DoneModel(readiness: readiness, waivers: WaiverClient(rt: ScriptedRt(), readiness: readiness), checkTimeout: 0.05) }
+        let m = await MainActor.run { DoneModel(readiness: readiness, waivers: WaiverClient(rt: ScriptedRt()), checkTimeout: 0.05) }
         let run = Task { await m.checkPostInstall() }
         try c.require(await waitUntil { m.refreshFailed }, "the watchdog never fired")
         await MainActor.run {
@@ -89,7 +89,7 @@ let doneModelChecks: [Check] = [
     Check("a second arrival at Done re-checks from scratch: the previous run's rows are not shown as fresh while the new check is in flight") { c in
         let held = HeldPlans()
         let readiness = await MainActor.run { ReadinessModel(plans: held, permissions: FakePermissions(), ticker: FakeTicker()) }
-        let m = await MainActor.run { DoneModel(readiness: readiness, waivers: WaiverClient(rt: ScriptedRt(), readiness: readiness)) }
+        let m = await MainActor.run { DoneModel(readiness: readiness, waivers: WaiverClient(rt: ScriptedRt())) }
         let first = Task { await m.checkPostInstall() }
         try c.require(await waitUntil { held.fetches == 1 }, "the first check never asked for a plan")
         held.release(makeManualPlan(extensionStatus: .ready))
@@ -147,7 +147,7 @@ let doneModelChecks: [Check] = [
             }
         }
         let readiness = await MainActor.run { ReadinessModel(plans: BoomOnce(), permissions: FakePermissions(), ticker: FakeTicker()) }
-        let m = await MainActor.run { DoneModel(readiness: readiness, waivers: WaiverClient(rt: ScriptedRt(), readiness: readiness)) }
+        let m = await MainActor.run { DoneModel(readiness: readiness, waivers: WaiverClient(rt: ScriptedRt())) }
         await MainActor.run {
             c.expectEqual(m.refreshFailed, false, "nothing has failed before the first check")
             c.expectEqual(m.finishEnabled, false, "in flight is closed")
@@ -220,16 +220,63 @@ let doneModelChecks: [Check] = [
         await MainActor.run { c.expectEqual(m.skipTarget?.id, nil) }
         c.expectEqual(rt.calls.count, 0)
     },
-    Check("WaiverClient.unwaive runs rt setup unwaive <id> --json and re-checks") { c in
+    Check("WaiverClient.unwaive runs rt setup unwaive <id> --json and nothing else: the caller owns the re-read") { c in
         let (_, readiness, rt, plans) = await doneFixture(
             plans: [makeManualPlan(extensionStatus: .needsYou, waived: true), makeManualPlan(extensionStatus: .needsYou)],
             answers: ["setup unwaive tool.fast-browser-extension --json": (0, #"{"contract":1,"at":"t","ok":true,"id":"tool.fast-browser-extension","waived":[]}"#)])
         await readiness.load()
-        let waivers = await MainActor.run { WaiverClient(rt: rt, readiness: readiness) }
+        let waivers = await MainActor.run { WaiverClient(rt: rt) }
         let err = await waivers.unwaive("tool.fast-browser-extension")
         c.expectEqual(err, nil)
         c.expectEqual(rt.calls.map(\.args), [["setup", "unwaive", "tool.fast-browser-extension", "--json"]])
-        c.expectEqual(plans.fetches, 2)
-        await MainActor.run { c.expectEqual(readiness.finishBlockedBy, ["tool.fast-browser-extension"]) }
+        c.expectEqual(plans.fetches, 1, "no unbounded refresh hides inside the verb")
+        await MainActor.run { c.expectEqual(readiness.finishBlockedBy, [], "the plan is untouched until the caller re-reads it") }
+    },
+    Check("a waive whose re-read fails closes the sheet and lands in the fail-open state with the error and Try again, never a silent stale gate") { c in
+        final class BlockedThenBoom: PlanSource, @unchecked Sendable {
+            var n = 0
+            func fetchPlan() async throws -> Plan {
+                n += 1
+                if n == 1 { return makeManualPlan(extensionStatus: .needsYou) }
+                throw RtClientError.exited(1, stderr: "plan boom")
+            }
+        }
+        let rt = ScriptedRt()
+        rt.answers = ["setup waive tool.fast-browser-extension --json": (0, #"{"contract":1,"at":"t","ok":true,"id":"tool.fast-browser-extension","waived":["tool.fast-browser-extension"]}"#)]
+        let readiness = await MainActor.run { ReadinessModel(plans: BlockedThenBoom(), permissions: FakePermissions(), ticker: FakeTicker()) }
+        let m = await MainActor.run { DoneModel(readiness: readiness, waivers: WaiverClient(rt: rt)) }
+        await m.checkPostInstall()
+        let row = try await MainActor.run { try c.requireSome(m.blockedRows.first) }
+        await MainActor.run { m.requestSkip(row) }
+        await m.confirmSkip()
+        c.expectEqual(rt.calls.count, 1)
+        await MainActor.run {
+            c.expectEqual(m.skipTarget?.id, nil, "the verb succeeded, so the sheet is done")
+            c.expectEqual(m.refreshFailed, true)
+            c.expect(m.refreshError?.contains("plan boom") == true)
+            c.expectEqual(m.finishEnabled, true, "a gate that could not be re-evaluated fails open")
+            c.expectEqual(m.blockedRows.map(\.id), [], "the pre-waive rows are not presented as current")
+        }
+    },
+    Check("retryCheck from a confirmed plan keeps the rows on screen while the re-read is in flight, and the gate closes for the duration") { c in
+        let held = HeldPlans()
+        let readiness = await MainActor.run { ReadinessModel(plans: held, permissions: FakePermissions(), ticker: FakeTicker()) }
+        let m = await MainActor.run { DoneModel(readiness: readiness, waivers: WaiverClient(rt: ScriptedRt())) }
+        let first = Task { await m.checkPostInstall() }
+        try c.require(await waitUntil { held.fetches == 1 }, "the first check never asked for a plan")
+        held.release(makeManualPlan(extensionStatus: .needsYou))
+        await first.value
+        let retry = Task { await m.retryCheck() }
+        try c.require(await waitUntil { held.fetches == 2 }, "the re-check never asked for a plan")
+        await MainActor.run {
+            c.expectEqual(m.blockedRows.map(\.id), ["tool.fast-browser-extension"], "a confirmed plan stays up while it is re-read")
+            c.expectEqual(m.finishEnabled, false, "but the gate is closed until the answer lands")
+        }
+        held.release(makeManualPlan(extensionStatus: .needsYou, waived: true))
+        await retry.value
+        await MainActor.run {
+            c.expectEqual(m.blockedRows.map(\.id), [])
+            c.expectEqual(m.finishEnabled, true)
+        }
     },
 ]
