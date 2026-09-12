@@ -68,16 +68,15 @@
   .grow { flex: 1; }
   .adds { color: color-mix(in srgb, var(--green) 70%, var(--muted)); }
   .dels { color: color-mix(in srgb, var(--red) 70%, var(--muted)); }
-  .unread { position: relative; top: -4px; margin-left: 2px;
-            color: var(--accent); font-size: 9.5px; font-weight: 700; line-height: 1;
-            font-variant-numeric: tabular-nums; }
+
   .mark { display: inline-flex; opacity: .55; }
   .mark.slk { opacity: 1; }
   .mark.ghost { opacity: .22; }
   .pair { white-space: nowrap; flex-shrink: 0; font-variant-numeric: tabular-nums; }
   .facts { display: inline-flex; align-items: center; gap: 12px; flex-shrink: 0;
            font-variant-numeric: tabular-nums; }
-  .facts .thr { color: var(--accent); text-decoration: none; }
+  .facts .thr { color: color-mix(in srgb, var(--accent) 35%, var(--muted)); text-decoration: none; }
+  .facts .thr.new { color: var(--accent); font-weight: 700; }
   .facts .thr:hover { text-decoration: underline; }
   .facts .age { text-align: right; font-size: .7rem;
                 color: color-mix(in srgb, var(--muted) 75%, transparent); }
@@ -222,7 +221,7 @@ A quiet row's status line says <b>all clear</b>, softly; the height never change
     <span class="branch">feature/cv-3149</span>
     <span class="pair"><span class="adds">+296</span> <span class="dels">−16</span></span>
     <span class="grow"></span>
-    <span class="facts"><a href="#" class="thr" title="open the comments drawer">5 threads<span class="unread" title="2 new since you last looked">2</span></a><span class="age">9h</span></span>
+    <span class="facts"><a href="#" class="thr new" title="2 new since you last looked">5 threads</a><span class="age">9h</span></span>
     
   </div><div class="acts">
       
@@ -256,7 +255,7 @@ A quiet row's status line says <b>all clear</b>, softly; the height never change
 </div>
 </div>
 <p class="cap"><b>Scan path:</b> edge bars, then colored words, then the quiet facts. Row 4 is
-your own MR: slack posted-mark at rest, "2 new" since you last looked, a peer live on it.</p>
+your own MR: slack posted-mark at rest, threads bold blue when new activity waits, a peer live on it.</p>
 
 </x-dc>
 </body>

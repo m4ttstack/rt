@@ -86,16 +86,15 @@ const CSS = `
   .grow { flex: 1; }
   .adds { color: color-mix(in srgb, var(--green) 70%, var(--muted)); }
   .dels { color: color-mix(in srgb, var(--red) 70%, var(--muted)); }
-  .unread { position: relative; top: -4px; margin-left: 2px;
-            color: var(--accent); font-size: 9.5px; font-weight: 700; line-height: 1;
-            font-variant-numeric: tabular-nums; }
+
   .mark { display: inline-flex; opacity: .55; }
   .mark.slk { opacity: 1; }
   .mark.ghost { opacity: .22; }
   .pair { white-space: nowrap; flex-shrink: 0; font-variant-numeric: tabular-nums; }
   .facts { display: inline-flex; align-items: center; gap: 12px; flex-shrink: 0;
            font-variant-numeric: tabular-nums; }
-  .facts .thr { color: var(--accent); text-decoration: none; }
+  .facts .thr { color: color-mix(in srgb, var(--accent) 35%, var(--muted)); text-decoration: none; }
+  .facts .thr.new { color: var(--accent); font-weight: 700; }
   .facts .thr:hover { text-decoration: underline; }
   .facts .age { text-align: right; font-size: .7rem;
                 color: color-mix(in srgb, var(--muted) 75%, transparent); }
@@ -198,14 +197,14 @@ function r1({ title, phrase, phraseColor = 'var(--amber)', slack = null }) {
 }
 
 function r2({ iid, branch, adds, dels, threads, age, fresh = 0, slack = false }, extra = '') {
-  const freshTag = fresh ? `<span class="unread" title="${fresh} new since you last looked">${fresh}</span>` : '';
+  
   return `<div class="r2">
     <span class="iid">!${iid}</span>
     <span class="branch">${branch}</span>
     <span class="pair"><span class="adds">+${adds}</span> <span class="dels">−${dels}</span></span>
     <span class="grow"></span>
     <span class="facts">${
-      threads ? `<a href="#" class="thr" title="open the comments drawer">${threads} thread${threads > 1 ? 's' : ''}${freshTag}</a>` : ''
+      threads ? `<a href="#" class="thr${fresh ? ' new' : ''}" title="${fresh ? `${fresh} new since you last looked` : 'open the comments drawer'}">${threads} thread${threads > 1 ? 's' : ''}</a>` : ''
     }<span class="age">${age}</span></span>
     ${extra}
   </div>`;
@@ -292,7 +291,7 @@ A quiet row's status line says <b>all clear</b>, softly; the height never change
   )}
 </div>
 <p class="cap"><b>Scan path:</b> edge bars, then colored words, then the quiet facts. Row 4 is
-your own MR: slack posted-mark at rest, "2 new" since you last looked, a peer live on it.</p>
+your own MR: slack posted-mark at rest, threads bold blue when new activity waits, a peer live on it.</p>
 `;
 
 // ════════════════════════════════════════════════════════════════════
