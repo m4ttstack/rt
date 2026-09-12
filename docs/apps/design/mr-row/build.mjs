@@ -104,7 +104,9 @@ const CSS = `
   .act-warn .w { color: var(--amber); }
   .act-bad .w { color: var(--red); }
   .act-quiet .w { color: var(--muted); font-weight: 500; }
-  .act-clear .w { color: color-mix(in srgb, var(--green) 45%, var(--muted)); font-weight: 500; }
+  .act-clear .w { color: color-mix(in srgb, var(--green) 45%, var(--muted)); font-weight: 500;
+                  display: inline-flex; align-items: center; gap: 6px; }
+  .act-clear .w svg { opacity: .8; }
   .act .d { margin-left: 8px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .act .sep { flex-shrink: 0; }
   .more { margin-left: 8px; flex-shrink: 0; color: color-mix(in srgb, var(--muted) 70%, transparent); font-size: .7rem; }
@@ -164,6 +166,7 @@ const IC = {
   bubble: svgIcon('<path d="M2.5 3.5h11a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H8l-3 2.5V11.5H2.5a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z"/>'),
   eye: svgIcon('<path d="M1.8 8s2.3-4 6.2-4 6.2 4 6.2 4-2.3 4-6.2 4S1.8 8 1.8 8z"/><circle cx="8" cy="8" r="1.8"/>'),
   slack: svgIcon('<rect x="2.5" y="2.5" width="11" height="11" rx="3"/><path d="M5.5 8.4l1.9 1.9 3.1-3.8"/>'),
+  sun: svgIcon('<circle cx="8" cy="8" r="3"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M12.6 3.4l-1.4 1.4M4.8 11.2l-1.4 1.4"/>'),
 };
 
 // ── row scaffolding ─────────────────────────────────────────────────
@@ -178,8 +181,8 @@ function r2({ iid, branch, adds, dels, threads, age, fresh = 0, slack = false },
     <span>!${iid}</span><span class="sep">·</span>
     <span class="branch">${branch}</span><span class="sep">·</span>
     <span class="diffs"><span class="adds">+${adds}</span> <span class="dels">−${dels}</span></span>
+    ${threads ? `<span class="sep">·</span><span>${threads} thread${threads > 1 ? 's' : ''}${freshTag}</span>` : ''}
     <span class="grow"></span>
-    ${threads ? `<span>${threads} thread${threads > 1 ? 's' : ''}${freshTag}</span><span class="sep">·</span>` : ''}
     <span class="slot age">${age}</span>
     <span class="slot mk">${slack ? `<span class="mark" title="posted in slack">${IC.slack}</span>` : ''}</span>
     ${extra}
@@ -224,10 +227,10 @@ const mainBody = `
 line. The hottest fact wins the line (decide beats interrupted beats running beats ready);
 "+N active" marks the rest, revealed by hover or the menu. Decide implies review: a gate line
 subsumes its lane's state ("post 2 findings? · review ready"). A hot line carries its primary
-verb at rest; secondary verbs and the checkbox wait for hover. The diff counts read inline
-after the branch (left flow, where variable width is natural) so no color floats mid-air on
-the right; the right side is just threads · age · mark, age pinned to the edge. A quiet row's
-status line says <b>all clear</b>, softly; the height never changes.</p>
+verb at rest; secondary verbs and the checkbox wait for hover. All variable evidence reads
+left in one flow (!iid · branch · +/− · threads); the right corner holds exactly one thing,
+the age, with a reserved mark slot beside it. Verbs are always the status line's right end.
+A quiet row's status line says <b>all clear</b>, softly; the height never changes.</p>
 
 <div class="list">
   ${row(AMBER, 'warn',
@@ -261,7 +264,7 @@ status line says <b>all clear</b>, softly; the height never changes.</p>
   ${row(GREEN, '',
     r1({ title: 'CV-3114 Carry the standard onto the legacy grid', phrase: 'APPROVED', phraseColor: GREEN }) +
     r2({ iid: 44740, branch: 'feature/cv-3114', adds: 114, dels: 0, threads: 0, age: '6h', slack: true }) +
-    `<div class="acts">${act('clear', '', 'all clear')}</div>`
+    `<div class="acts">${act('clear', '', `${IC.sun} all clear, enjoy the sun`)}</div>`
   )}
 </div>
 <p class="cap"><b>Scan path:</b> edge bars, then colored words, then the quiet facts. Row 4 is
@@ -378,7 +381,7 @@ const densityBody = `
   ${row(GREEN, '',
     r1({ title: 'CV-3149 Widen the transform contract', phrase: 'APPROVED', phraseColor: GREEN }) +
     r2({ iid: 44684, branch: 'feature/cv-3149', adds: 296, dels: 16, threads: 2, age: '9h', slack: true }) +
-    `<div class="acts">${act('clear', '', 'all clear')}</div>`
+    `<div class="acts">${act('clear', '', `${IC.sun} all clear, enjoy the sun`)}</div>`
   )}
 </div>
 
@@ -391,7 +394,7 @@ const densityBody = `
   ${row(GREEN, '',
     r1({ title: 'CV-3149 Widen the transform contract', phrase: 'APPROVED', phraseColor: GREEN }) +
     r2({ iid: 44684, branch: 'feature/cv-3149', adds: 296, dels: 16, threads: 2, age: '9h', slack: true }) +
-    `<div class="acts">${act('clear', '', 'all clear')}</div>`
+    `<div class="acts">${act('clear', '', `${IC.sun} all clear, enjoy the sun`)}</div>`
   )}
 </div>
 <p class="cap">Same anatomy, two scales; pick by feel.</p>
