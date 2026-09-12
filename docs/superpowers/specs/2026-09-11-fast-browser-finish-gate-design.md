@@ -34,8 +34,17 @@ of the wizard: Finish.
 
 ### A third row class: finish-gated
 
-A row can be `finishGated: true` (new optional field on `Row`, default
-false). Semantics:
+Two new optional boolean fields on `Row`, both default false, with distinct
+meanings:
+
+- `finishGated`: the row blocks the wizard's Finish (never Install) until it
+  is ready, skipped, or waived on this Mac. Set by the validator.
+- `waived`: the user skipped this finish-gated row on this Mac through
+  `rt setup waive`. Set by the plan composer from `setup.waived`. Clients
+  read this field for the skipped state and the Un-skip affordance; the
+  note beside it is copy, never parsed.
+
+A row can be `finishGated: true`. Semantics:
 
 - It never enters `requiredMissing` in plan mode, so `canInstall` and the
   `setup apply` gate are unchanged.
@@ -58,12 +67,13 @@ false). Semantics:
   declare `omitBehavior: "picker"` over the finish-gated rows (exempt is wrong:
   the set is enumerable). Waiving an id that is not finish-gated is a usage
   error, exit 2.
-- A waived finish-gated row renders `required: false`, keeps its status and
-  action, and gets `optionalNote` "Skipped on this Mac: agents cannot capture
-  screenshots or annotate evidence from your browser. Load it later from
-  Settings." It stays in `outstandingManualRows` so the Done screen still
-  lists it (the existing "works without" prefix exclusion does not match this
-  note by design).
+- A waived finish-gated row renders `required: false` and `waived: true`,
+  keeps its status and action, and gets `optionalNote` "Skipped on this Mac:
+  agents cannot capture screenshots or annotate evidence from your browser.
+  Load it later from Settings." It stays in `outstandingManualRows` so the
+  Done screen still lists it (the existing "works without" prefix exclusion
+  does not match this note by design). The app keys on `waived`, never on the
+  note's wording.
 
 ### App
 
@@ -78,9 +88,9 @@ false). Semantics:
   Fast Browser extension?", body exactly: "Without the Fast Browser extension,
   agents cannot capture screenshots or annotate evidence from your browser.
   You can load it later from Settings." Buttons "Skip for now" (destructive
-  style) and "Cancel". Confirming runs `rt setup waive tool.fast-browser-
-  extension`, then `readiness.recheckAll()`; the row moves to "Still to do"
-  and Finish enables.
+  style) and "Cancel". Confirming runs
+  `rt setup waive tool.fast-browser-extension`, then re-reads the plan; the
+  row moves to "Still to do" and Finish enables.
 - `windowMayClose` becomes `step == .done && finishBlockedBy.isEmpty` so the
   close/minimize buttons follow the gate exactly as Finish does. `readOnly`
   (settings-launched) flows are unaffected: they never reach Done.
