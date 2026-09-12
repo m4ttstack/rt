@@ -204,6 +204,10 @@ export function deriveOwner(
     executor. Exported so the single-flight property is directly testable. */
 const relaunchInFlight = new Map<string, Promise<{ ok: boolean; error?: string }>>();
 
+/** Never rejects: a thrown/rejected resumeAgent is folded into the same
+    { ok: false, error } shape a normal failure returns, so both call sites
+    (runExecutorGuarantee, runAttentionRouting) can treat rejection and
+    ok:false identically without their own try/catch. */
 export function relaunchExecutor(
   resumeAgent: (agentId: string) => Promise<{ ok: boolean; error?: string }>,
   gateId: string,
@@ -211,7 +215,9 @@ export function relaunchExecutor(
 ): Promise<{ ok: boolean; error?: string }> {
   const existing = relaunchInFlight.get(gateId);
   if (existing) return existing;
-  const p = resumeAgent(agentId).finally(() => relaunchInFlight.delete(gateId));
+  const p = resumeAgent(agentId)
+    .catch((err): { ok: boolean; error?: string } => ({ ok: false, error: err instanceof Error ? err.message : String(err) }))
+    .finally(() => relaunchInFlight.delete(gateId));
   relaunchInFlight.set(gateId, p);
   return p;
 }
@@ -403,15 +409,15 @@ export function createGateHandlers(
     emitExecution,
   };
 
-  // Off the hot path (response already built): delivers nudge+Escape as
-  // today, THEN runs the executor guarantee against a freshly-read
-  // reconciler state -- never awaited by the handler itself.
+  // Off the hot path (response already built): delivers nudge+Escape and
+  // runs the executor guarantee independently, never awaited by the handler
+  // itself. Not chained -- a push failure (transport down) must never skip
+  // the guarantee, and vice versa, so each gets its own catch.
   const firePostAnswerEffects = (row: GateRow): void => {
-    const run = async () => {
-      await push.onAnswered(row);
-      await dispatchGuarantee(row, guaranteeDeps);
-    };
-    run().catch((err) => log?.warn({ err, gateId: row.id, kind: row.kind }, "gate:answer: post-answer executor guarantee failed"));
+    push.onAnswered(row)
+      .catch((err) => log?.warn({ err, gateId: row.id, kind: row.kind }, "gate:answer: post-answer push failed"));
+    dispatchGuarantee(row, guaranteeDeps)
+      .catch((err) => log?.warn({ err, gateId: row.id, kind: row.kind }, "gate:answer: post-answer executor guarantee failed"));
   };
 
   // A retried answer (already-answered, unassigned, identical answers) is
