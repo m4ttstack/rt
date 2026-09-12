@@ -268,6 +268,7 @@ body {
      + pad 12. The row clips overflow, so a changed margin below silently
      cuts line 3 instead of growing the row: keep this sum current. */
   --row-h: 114px;
+  --orange: light-dark(#b15c00, #ff9e64);
 }
 .tui-row {
   display: grid;
@@ -358,14 +359,41 @@ body {
   height: 20px;
   margin-bottom: 2px;
 }
-.tui-row-flags {
+.tui-row-lead {
   flex: 1;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
+  font-size: 0.72rem;
+}
+.tui-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  font-weight: 500;
+  color: var(--flag);
+}
+.tui-flag[data-flag='draft'] {
+  --flag: color-mix(in srgb, var(--muted-text) 75%, transparent);
+}
+.tui-flag[data-flag='auto-merge'] {
+  --flag: var(--green);
+}
+.tui-flag[data-flag='conflicts'] {
+  --flag: var(--orange);
+}
+.tui-flag[data-flag='ci-failing'] {
+  --flag: var(--red-text);
+}
+.tui-flag[data-flag='ci-running'] {
+  --flag: var(--amber);
+}
+.tui-flag[data-flag='stacked'] {
+  --flag: var(--cyan);
 }
 .tui-row-marks {
   display: inline-flex;
@@ -2235,32 +2263,6 @@ body {
   font-weight: 700;
   border: 1.5px solid var(--panel);
 }
-/* ── chip cells the kit does not reproduce ────────────────────────────
-   Two chip boxes the Chip recipe cannot express, each scoped by a data
-   attribute its own call site stamps so no chip family bleeds into another.
-
-   THE PROPERTY ROUTE IS THE ONLY ONE THAT WORKS, and getting it wrong is
-   silent: the recipe's `--sb-chip-*` scalars are emitted into the element's
-   INLINE style by its vars resolver, so an app-side rule setting one is never
-   read. Setting the PROPERTY wins at any specificity, because this file is
-   unlayered and the recipe sits inside `@layer soribashi.recipes`. */
-/* Mechanical-blocker flags (conflicts / ci / stacked) keep a frame with no
-   vertical padding: they sit inline on the row's 20px state line, and the
-   frame must not outgrow it. */
-[data-part='chip'][data-flag] {
-  opacity: 0.9;
-  padding: 0 6px;
-  line-height: 1.5;
-}
-/* The row's draft marker: small-caps type in a pill tighter than a badge's,
-   so it reads as a marker on the state line rather than another status
-   chip. */
-[data-part='chip'][data-draft] {
-  padding: 0.15rem 0.28rem;
-  border-radius: 3px;
-  line-height: 1;
-}
-
 /* held-draft drawer: the verbatim note text plus the post/dismiss gate */
 .tui-draft-modal {
   max-width: 680px;

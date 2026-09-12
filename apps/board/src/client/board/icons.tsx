@@ -1,3 +1,5 @@
+import type { FlagKey } from '../../view.ts';
+
 const ICON = {
   width: 14,
   height: 14,
@@ -99,6 +101,64 @@ export function Sun() {
     >
       <circle cx="8" cy="8" r="3.3" stroke="none" />
       <path d="M8 1.2v2.2M8 12.6v2.2M1.2 8h2.2M12.6 8h2.2M3.2 3.2l1.6 1.6M11.2 11.2l1.6 1.6M12.8 3.2l-1.6 1.6M4.8 11.2l-1.6 1.6" />
+    </svg>
+  );
+}
+
+const GLYPH = {
+  width: 12,
+  height: 12,
+  viewBox: '0 0 24 24',
+  fill: 'none',
+  stroke: 'currentColor',
+  strokeWidth: 2,
+  strokeLinecap: 'round',
+  strokeLinejoin: 'round',
+  'aria-hidden': true,
+  style: { flexShrink: 0 } as const,
+} as const;
+
+const FLAG_PATHS: Record<FlagKey, string> = {
+  draft: 'M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z',
+  'auto-merge':
+    'M4 14a1 1 0 0 1-.8-1.6l8.7-10.5a.5.5 0 0 1 .9.4l-1.3 6.9h7.5a1 1 0 0 1 .8 1.6l-8.7 10.5a.5.5 0 0 1-.9-.4l1.3-6.9Z',
+  conflicts:
+    'M18 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM6 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM6 21V9a9 9 0 0 0 9 9',
+  'ci-failing': 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20ZM15 9l-6 6M9 9l6 6',
+  'ci-running': 'M21 12a9 9 0 1 1-6.2-8.6',
+  stacked:
+    'M12.8 2.2a2 2 0 0 0-1.7 0L2.9 6.1a1 1 0 0 0 0 1.8l8.2 3.9a2 2 0 0 0 1.7 0l8.2-3.9a1 1 0 0 0 0-1.8ZM2.3 15.4l9 4.3a2 2 0 0 0 1.5 0l9-4.3M2.3 10.9l9 4.3a2 2 0 0 0 1.5 0l9-4.3',
+};
+
+/** The header line's flag icon, 12px, in the flag's own color. */
+export function FlagGlyph({ kind }: { kind: FlagKey }) {
+  return (
+    <svg {...GLYPH}>
+      <path d={FLAG_PATHS[kind]} />
+    </svg>
+  );
+}
+
+export function ArrowDownGlyph() {
+  return (
+    <svg {...GLYPH}>
+      <path d="M12 5v14M19 12l-7 7-7-7" />
+    </svg>
+  );
+}
+
+export function ArrowOutGlyph() {
+  return (
+    <svg {...GLYPH} width={11} height={11}>
+      <path d="M7 7h10v10M7 17 17 7" />
+    </svg>
+  );
+}
+
+export function MessageGlyph() {
+  return (
+    <svg {...GLYPH}>
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z" />
     </svg>
   );
 }

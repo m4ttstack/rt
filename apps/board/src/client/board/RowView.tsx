@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { Invadr } from 'invadrs/react';
 
-import { Chip, CopyButton, SelectBox } from '@mattstack/tui-kit';
+import { CopyButton, SelectBox } from '@mattstack/tui-kit';
 import type { BoardMR } from '../../data.ts';
 import { extractTicketId, ticketUrl } from '../../ticket.ts';
 import {
@@ -9,12 +9,18 @@ import {
   flattenStack,
   nestStacks,
   statusFlags,
-  type FlagClass,
 } from '../../view.ts';
 import type { BoardMRWithReview, RowContext } from '../types.ts';
 import { ThreadsLink } from './CommentsDrawer.tsx';
 import { ago, cleanTitle, getSlackMarks, mrLine } from './format.ts';
-import { Bubble, DiscCheck, Eyes, LinearLogo, SlackLogo } from './icons.tsx';
+import {
+  Bubble,
+  DiscCheck,
+  Eyes,
+  FlagGlyph,
+  LinearLogo,
+  SlackLogo,
+} from './icons.tsx';
 import { rowStatus, statusPhrase, statusReasons } from './row-status.ts';
 import { slackLadder, type SlackStage } from './slack-ladder.ts';
 import { StatusDot } from './StatusDot.tsx';
@@ -36,15 +42,6 @@ function onRowClick(e: React.MouseEvent, mr: BoardMR) {
   }
 }
 
-/** Keyed on view.ts's own `FlagClass` so a fourth token class fails to
-    compile here instead of silently rendering grey. */
-const FLAG_INTENT: Record<FlagClass, 'ok' | 'bad' | 'warn' | 'cyan'> = {
-  't-ok': 'ok',
-  't-bad': 'bad',
-  't-warn': 'warn',
-  't-cyan': 'cyan',
-};
-
 function StatusFlags({
   mr,
   nested = false,
@@ -55,14 +52,15 @@ function StatusFlags({
   return (
     <>
       {statusFlags(mr, { nested }).map(f => (
-        <Chip
-          key={f.text}
-          intent={FLAG_INTENT[f.cls]}
-          data-flag=""
+        <span
+          key={f.key}
+          className="tui-flag"
+          data-flag={f.key}
           title={f.title}
         >
+          <FlagGlyph kind={f.key} />
           {f.text}
-        </Chip>
+        </span>
       ))}
     </>
   );
@@ -216,18 +214,7 @@ function RowView({
         </div>
         <div className="tui-row-body">
           <div className="tui-row-0">
-            <span className="tui-row-flags">
-              {mr.isDraft && (
-                <Chip
-                  intent="muted"
-                  variant="subtle"
-                  uppercase
-                  data-draft=""
-                  title="draft, right-click to mark ready"
-                >
-                  draft
-                </Chip>
-              )}
+            <span className="tui-row-lead">
               <StatusFlags mr={mr} nested={nested} />
             </span>
             <SlackMarks mr={mr} />

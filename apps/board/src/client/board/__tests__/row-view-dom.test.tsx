@@ -242,19 +242,29 @@ test('a thread count that shrinks lowers the baseline instead of holding the old
   ).toBe('true');
 });
 
-test('mechanical flags share the state line with the pill; the title stands alone', async () => {
+test('flags are icon-and-word tokens on the header line, keyed by data-flag; the title stands alone', async () => {
   await render([
     mr({
-      blockers: { any: true, hasConflicts: true, pipelineFailing: false },
+      isDraft: true,
+      blockers: { any: true, hasConflicts: true, pipelineFailing: true },
     } as never),
   ]);
   const row = container.querySelector('.tui-row')!;
-  expect(
-    row.querySelector('.tui-row-0 .tui-row-flags [data-flag]')
-  ).not.toBeNull();
+  const flags = [...row.querySelectorAll('.tui-row-0 .tui-flag')];
+  expect(flags.map(f => f.getAttribute('data-flag'))).toEqual([
+    'draft',
+    'conflicts',
+    'ci-failing',
+  ]);
+  expect(flags.map(f => f.textContent)).toEqual([
+    'draft',
+    'conflicts',
+    'ci failing',
+  ]);
+  for (const f of flags) expect(f.querySelector('svg')).not.toBeNull();
+  expect(row.querySelector('[data-part="chip"]')).toBeNull();
   expect(row.querySelector('.tui-row-0 .tui-phrase')).not.toBeNull();
   expect(row.querySelector('.tui-row-1')!.children).toHaveLength(1);
-  expect(row.querySelector('.tui-row-1 .tui-title')).not.toBeNull();
 });
 
 test('the state pill carries the merge blockers in its tooltip', async () => {
