@@ -5,6 +5,16 @@
  * Session uuids are minted here and validated in lib/agent-argv.ts before
  * any spawn; resume always runs under the RECORDED account because claude
  * transcripts are per-cswap-profile.
+ *
+ * Every launch (start and resume, herdr and headless) stamps the
+ * gate-protocol env (RT_AGENT_ID, RT_GATE_SUBJECT, RT_DAEMON_SOCK)
+ * unconditionally. The AskUserQuestion PreToolUse hook (docs/superpowers/
+ * specs/2026-09-11-executor-reconciler-design.md "AskUserQuestion hook")
+ * only gets injected via a per-agent `--settings` file when the launch
+ * carries an explicit subject (a launch with no
+ * subject has no gate to fork against, so the deny-by-default hook would
+ * only ever degrade to allow -- skip writing it at all); see
+ * resolveHookSettingsPath below.
  */
 
 import { mkdirSync, writeFileSync } from "fs";
@@ -15,11 +25,13 @@ import {
   deleteAgent, finishAgent, getAgent, insertAgent, isValidChatName, listAgents, markAgentResumed,
   newAgentId, reserveAgentHandle, updateAgentPane, type AgentRecord, type AgentSurface,
 } from "../../state/index.ts";
-import { buildClaudeArgv, buildPaneCommand, type ClaudeInvocation } from "../../agent-argv.ts";
+import { buildClaudeArgv, buildPaneCommand, CROSS_SESSION_INBOUND_SETTINGS, type ClaudeInvocation } from "../../agent-argv.ts";
+import { mergeGateForkHookSettings, resolveGateForkHookPath } from "../../agent-hooks.ts";
 import { defaultHerdrRunner, launchInWorkspace, type HerdrRunner } from "../../agent-herdr.ts";
 import { repoLabel } from "../../repo-label.ts";
 import { getSetting } from "../../settings/resolve.ts";
 import { rtDir } from "../../rt-paths.ts";
+import { DAEMON_SOCK_PATH } from "../../daemon-config.ts";
 import { lazyChildLogger } from "../../daemon-logger.ts";
 import { formatPaneRef, parsePaneRef } from "../../../packages/rt-client/src/index.ts";
 import type { Commands } from "../../../packages/rt-client/src/commands.ts";
@@ -33,10 +45,10 @@ export interface HeadlessChild {
   stdout: () => Promise<string>;
 }
 
-function defaultSpawnHeadless(argv: string[], cwd: string): HeadlessChild {
+function defaultSpawnHeadless(argv: string[], cwd: string, env: Record<string, string> = {}): HeadlessChild {
   const proc = Bun.spawn(argv as [string, ...string[]], {
     cwd,
-    env: { ...process.env },
+    env: { ...process.env, ...env },
     stdin: "ignore",
     stdout: "pipe",
     stderr: "ignore",
@@ -60,6 +72,66 @@ function fromSetting(key: string, log: Logger): string | undefined {
 /** Deterministic from the id alone, so it can be known and stored before the headless process is even spawned. */
 function agentResultPath(id: string): string {
   return join(rtDir(), "agents", `${id}.json`);
+}
+
+/** Deterministic from the id alone, mirroring agentResultPath above. */
+function agentHookSettingsPath(id: string): string {
+  return join(rtDir(), "agent-hooks", `${id}.json`);
+}
+
+/** Tokenized the same way claudeArgs splits extraArgs, so a match here is exactly a flag claude will also see. Matches both the split ("--settings", "<path>") and "--settings=<path>" spellings. */
+function extraArgsHasSettingsFlag(extraArgs: string | undefined): boolean {
+  if (!extraArgs) return false;
+  return extraArgs.split(/\s+/).filter(Boolean).some((tok) => tok === "--settings" || tok.startsWith("--settings="));
+}
+
+/**
+ * Absolute path to a freshly written per-agent settings file carrying the
+ * AskUserQuestion PreToolUse hook (Task 9), or undefined when injection is
+ * skipped. Three skip cases, all non-fatal to the launch: the launch
+ * carries no explicit subject (with no
+ * subject there is no gate for the hook to check, so it would only ever
+ * degrade to allow; skip writing it rather than ship a no-op hook file),
+ * extraArgs already sets --settings (merge is not attempted -- the user's
+ * own value wins outright), or gate-fork.sh cannot be resolved on this
+ * machine.
+ *
+ * A launch never emits two --settings flags (repeated-flag semantics are
+ * unverified against the real CLI): when this launch would otherwise get
+ * the --name-triggered inline CROSS_SESSION_INBOUND_SETTINGS JSON (a
+ * reserved handle, non-headless -- claudeArgs' own condition), that object
+ * is folded into this SAME file via mergeGateForkHookSettings instead of
+ * being emitted as a second flag. lib/agent-argv.ts's claudeArgs skips its
+ * inline JSON whenever settingsPath is set, so the fold here is the only
+ * place that JSON survives for such a launch. A subjectless launch skips
+ * this file entirely, so that inline JSON reverts to riding its own
+ * --settings flag exactly as it did before the gate-fork hook existed.
+ */
+function resolveHookSettingsPath(rec: AgentRecord, log: Logger): string | undefined {
+  if (rec.subject === undefined) {
+    log.debug({ id: rec.id }, "agent: no explicit subject; gate-fork hook injection skipped");
+    return undefined;
+  }
+  if (extraArgsHasSettingsFlag(rec.extraArgs)) {
+    log.debug({ id: rec.id }, "agent: extraArgs already sets --settings; gate-fork hook injection skipped");
+    return undefined;
+  }
+  const hookPath = resolveGateForkHookPath();
+  if (!hookPath) {
+    log.debug({ id: rec.id }, "agent: gate-fork.sh not found; hook injection skipped");
+    return undefined;
+  }
+  const inlineBase = rec.surface !== "headless" && rec.handle !== undefined ? CROSS_SESSION_INBOUND_SETTINGS : undefined;
+  const settings = mergeGateForkHookSettings(inlineBase, hookPath);
+  const settingsPath = agentHookSettingsPath(rec.id);
+  try {
+    mkdirSync(dirname(settingsPath), { recursive: true });
+    writeFileSync(settingsPath, JSON.stringify(settings));
+    return settingsPath;
+  } catch (err) {
+    log.warn({ err, id: rec.id }, "agent: failed to write gate-fork hook settings file");
+    return undefined;
+  }
 }
 
 function isStringRecord(v: unknown): v is Record<string, string> {
@@ -89,7 +161,7 @@ export function createAgentHandlers(opts: {
   log?: Logger;
   herdrRunner?: HerdrRunner;
   herdrRunnerForSocket?: (socket: string) => HerdrRunner;
-  spawnHeadless?: (argv: string[], cwd: string) => HeadlessChild;
+  spawnHeadless?: (argv: string[], cwd: string, env: Record<string, string>) => HeadlessChild;
   insertAgentFn?: typeof insertAgent;
   /** The daemon-owned background herdr server `--bg` launches onto (spec "The bg service"). Omitted, `bg: true` is refused. */
   bg?: Pick<BgService, "ensure" | "reprobe">;
@@ -117,6 +189,13 @@ export function createAgentHandlers(opts: {
     workspaceLabel: string,
     extra: { env?: Record<string, string>; herdrSocket?: string } = {},
   ): Promise<CommandResult<"agent:start">> {
+    const gateEnv: Record<string, string> = {
+      RT_AGENT_ID: rec.id,
+      RT_GATE_SUBJECT: rec.subject ?? agentOwner(rec.id),
+      RT_DAEMON_SOCK: DAEMON_SOCK_PATH,
+    };
+    const settingsPath = resolveHookSettingsPath(rec, log);
+
     const inv: ClaudeInvocation = {
       session,
       headless: rec.surface === "headless",
@@ -126,7 +205,11 @@ export function createAgentHandlers(opts: {
       ...(rec.handle !== undefined && { name: rec.handle }),
       ...(rec.extraArgs !== undefined && { extraArgs: rec.extraArgs }),
       ...(prompt !== undefined && { prompt }),
-      ...(extra.env !== undefined && { env: extra.env }),
+      // Headless has no pane shell line for buildPaneCommand to interpolate
+      // env into (see the payload.env rejection above); its gate env instead
+      // rides the spawnHeadless call itself, below.
+      ...(rec.surface === "herdr" && { env: { ...extra.env, ...gateEnv } }),
+      ...(settingsPath !== undefined && { settingsPath }),
     };
 
     if (rec.surface === "herdr") {
@@ -158,7 +241,7 @@ export function createAgentHandlers(opts: {
     // The caller inserts rec before invoking launch() for every headless
     // path (start and resume alike), so the row already exists here --
     // finishAgent below can never race an insert that hasn't happened yet.
-    const child = spawnHeadless(argv, rec.cwd);
+    const child = spawnHeadless(argv, rec.cwd, gateEnv);
     void child.exited.then(async (exitCode) => {
       try {
         writeFileSync(resultPath, await child.stdout());
@@ -206,12 +289,23 @@ export function createAgentHandlers(opts: {
       if (payload.handle !== undefined && !isValidChatName(payload.handle)) {
         return { ok: false, error: "invalid handle" };
       }
+      if (payload.subject !== undefined && (typeof payload.subject !== "string" || payload.subject.length === 0)) {
+        return { ok: false, error: "subject must be a non-empty string" };
+      }
       const rec: AgentRecord = {
         id: newAgentId(),
         repo, cwd, provider: "claude", surface,
         sessionId: crypto.randomUUID(),
         createdAt: Date.now(),
       };
+      // Left undefined rather than defaulted to "agent:<id>" when the
+      // caller passes no subject: launch()'s
+      // gateEnv still falls back to agentOwner(rec.id) for RT_GATE_SUBJECT,
+      // and that fallback is a pure function of rec.id, so a later resume
+      // recomputing it lands on the exact same value. What DOES change on
+      // this field is whether resolveHookSettingsPath sees an explicit
+      // subject to gate hook injection on.
+      if (payload.subject !== undefined) rec.subject = payload.subject;
       const model = payload.model ?? fromSetting("agent.model", log);
       const effort = payload.effort ?? fromSetting("agent.effort", log);
       const account = payload.account ?? fromSetting("agent.account", log);

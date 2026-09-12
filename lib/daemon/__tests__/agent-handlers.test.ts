@@ -1,13 +1,14 @@
 import { expect, test } from "bun:test";
 import { tmpdir } from "os";
 import { join } from "path";
-import { mkdtempSync, rmSync } from "fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "fs";
 import pino from "pino";
 import { AGENT_NAMES } from "../../chat-names.ts";
 import { openStateDb, signIn } from "../../state/index.ts";
 import { createAgentHandlers, type HeadlessChild } from "../handlers/agent.ts";
 import { createBgClaimsStore, type BgClaimsStore } from "../bg-claims-store.ts";
 import { bgSocketPath } from "../bg-service.ts";
+import { DAEMON_SOCK_PATH } from "../../daemon-config.ts";
 import type { HerdrRunner } from "../../agent-herdr.ts";
 import { repoLabel } from "../../repo-arg.ts";
 
@@ -80,7 +81,7 @@ function fakeLifecycle(): FakeLifecycle {
 function fresh(over: {
   runner?: HerdrRunner;
   runnerFactory?: (socket: string) => HerdrRunner;
-  spawn?: (argv: string[], cwd: string) => HeadlessChild;
+  spawn?: (argv: string[], cwd: string, env: Record<string, string>) => HeadlessChild;
   emit?: (t: string, p?: unknown) => void;
   insertAgentFn?: (...args: unknown[]) => void;
   bg?: FakeBg;
@@ -308,25 +309,40 @@ test("agent:resume honors workspace and tab overrides", async () => {
   expect(tabArg).toBe("⟲ !5");
 });
 
-test("agent:start herdr reserves a handle not held by live presence, passes it as --name, and stamps AgentRecord.handle", async () => {
+// A launch never emits two --settings flags (controller ruling, fix round
+// 1): the reserved-handle inline crossSessionInbound JSON and the gate-fork
+// hook block must live in the SAME per-agent file behind one flag.
+test("agent:start herdr reserves a handle not held by live presence, passes it as --name, and merges crossSessionInbound with the gate-fork hook into one --settings file", async () => {
   const calls: string[][] = [];
   const h = fresh({ runner: okRunner(calls) });
   const held = AGENT_NAMES[0]!;
   signIn({ sessionId: "s-held", baseHandle: held, cwd: "/tmp/held" }, h.db);
 
-  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr" });
+  // An explicit subject: the merged-file/hook-injection shape this test
+  // pins only applies when the launch carries one (see the dedicated
+  // subjectless tests below).
+  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr", subject: "mr:test/1" });
   expect(res.ok).toBe(true);
   if (!res.ok) throw new Error("unreachable");
   expect(res.data.handle).toBeTruthy();
   expect(AGENT_NAMES).toContain(res.data.handle!);
   expect(res.data.handle).not.toBe(held);
 
-  const paneRun = calls.find((c) => c[0] === "pane" && c[1] === "run");
-  expect(paneRun?.[3]).toContain(`'--name' '${res.data.handle}'`);
-  expect(paneRun?.[3]).toContain(`'--settings' '{"crossSessionInbound":"accept"}'`);
+  const cmd = calls.find((c) => c[0] === "pane" && c[1] === "run")?.[3] ?? "";
+  expect(cmd).toContain(`'--name' '${res.data.handle}'`);
+  expect(cmd).not.toContain('{"crossSessionInbound":"accept"}');
+  expect(cmd.match(/--settings'/g)).toHaveLength(1);
+  const settingsMatch = cmd.match(/--settings' '([^']+)'/);
+  expect(settingsMatch).toBeTruthy();
+  const parsed = JSON.parse(readFileSync(settingsMatch![1]!, "utf8"));
+  expect(parsed.crossSessionInbound).toBe("accept");
+  expect(parsed.hooks.PreToolUse[0].matcher).toBe("AskUserQuestion");
 });
 
-test("agent:start headless never reserves a handle or passes --name/--settings", async () => {
+// Headless still never reserves a handle or passes --name / the inline
+// crossSessionInbound JSON; it DOES now carry --settings, but only for the
+// gate-fork hook file (see the dedicated headless hook test above).
+test("agent:start headless never reserves a handle or passes --name/inline --settings", async () => {
   let argv: string[] = [];
   const h = fresh({
     spawn: (a) => {
@@ -339,7 +355,7 @@ test("agent:start headless never reserves a handle or passes --name/--settings",
   if (!res.ok) throw new Error("unreachable");
   expect(res.data.handle).toBeUndefined();
   expect(argv).not.toContain("--name");
-  expect(argv).not.toContain("--settings");
+  expect(argv).not.toContain('{"crossSessionInbound":"accept"}');
 });
 
 test("agent:resume threads the reserved handle back into --name", async () => {
@@ -354,13 +370,158 @@ test("agent:resume threads the reserved handle back into --name", async () => {
   expect(paneRun?.[3]).toContain(`'--name' '${started.data.handle}'`);
 });
 
+// The gate env vars ride alongside a caller's own env, not in place of it --
+// they are appended after it, so this no longer asserts adjacency to "claude".
 test("agent:start passes env into the pane command", async () => {
   const calls: string[][] = [];
   const h = fresh({ runner: okRunner(calls) });
   const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr", env: { HERD_ID: "demo-1" } });
   expect(res.ok).toBe(true);
   const paneRun = calls.find((c) => c[0] === "pane" && c[1] === "run");
-  expect(paneRun?.[3]).toContain("HERD_ID='demo-1' claude");
+  expect(paneRun?.[3]).toContain("HERD_ID='demo-1'");
+  expect(paneRun?.[3]).toContain("claude");
+});
+
+// This default herdr start reserves a handle (no explicit handle passed),
+// so it also pins the merged-file shape: crossSessionInbound and the hook
+// block share one file behind one --settings flag, never two. An explicit
+// subject is required for the hook half of that merge; see the dedicated subjectless tests below for the no-subject case.
+test("agent:start herdr stamps gate env and injects the gate-fork hook via --settings, merged with the reserved handle's inbound-accept settings", async () => {
+  const calls: string[][] = [];
+  const h = fresh({ runner: okRunner(calls) });
+  const subject = "mr:test/2";
+  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr", subject });
+  expect(res.ok).toBe(true);
+  if (!res.ok) throw new Error("unreachable");
+  const cmd = calls.find((c) => c[0] === "pane" && c[1] === "run")?.[3] ?? "";
+  expect(cmd).toContain(`RT_AGENT_ID='${res.data.id}'`);
+  expect(cmd).toContain(`RT_GATE_SUBJECT='${subject}'`);
+  expect(cmd).toContain(`RT_DAEMON_SOCK='${DAEMON_SOCK_PATH}'`);
+  expect(cmd.match(/--settings'/g)).toHaveLength(1);
+  expect(cmd).not.toContain('{"crossSessionInbound":"accept"}');
+  const settingsMatch = cmd.match(/--settings' '([^']*agent-hooks[^']*)'/);
+  expect(settingsMatch).toBeTruthy();
+  const parsed = JSON.parse(readFileSync(settingsMatch![1]!, "utf8"));
+  expect(parsed.crossSessionInbound).toBe("accept");
+  expect(parsed.hooks.PreToolUse[0].matcher).toBe("AskUserQuestion");
+  const hookCommand = parsed.hooks.PreToolUse[0].hooks[0].command;
+  expect(hookCommand).toMatch(/scripts\/hooks\/gate-fork\.sh$/);
+  expect(existsSync(hookCommand)).toBe(true);
+});
+
+test("agent:start headless argv carries --settings for the gate-fork hook; spawn env carries the gate vars", async () => {
+  let argv: string[] = [];
+  let spawnEnv: Record<string, string> = {};
+  const h = fresh({
+    spawn: (a: string[], _cwd: string, env: Record<string, string>) => {
+      argv = a;
+      spawnEnv = env ?? {};
+      return { exited: Promise.resolve(0), stdout: async () => "{}" };
+    },
+  });
+  const subject = "mr:test/3";
+  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", surface: "headless", prompt: "go", subject });
+  expect(res.ok).toBe(true);
+  if (!res.ok) throw new Error("unreachable");
+  expect(spawnEnv.RT_AGENT_ID).toBe(res.data.id);
+  expect(spawnEnv.RT_GATE_SUBJECT).toBe(subject);
+  expect(spawnEnv.RT_DAEMON_SOCK).toBe(DAEMON_SOCK_PATH);
+  const idx = argv.indexOf("--settings");
+  expect(idx).toBeGreaterThan(-1);
+  const parsed = JSON.parse(readFileSync(argv[idx + 1]!, "utf8"));
+  expect(parsed.hooks.PreToolUse[0].hooks[0].command).toMatch(/gate-fork\.sh$/);
+});
+
+// A launch with no explicit subject gets no gate-
+// fork hook at all -- there is no gate for the hook to check, so it would
+// only ever degrade to allow. Env vars still stamp (RT_GATE_SUBJECT falls
+// back to "agent:<id>"), and the reserved-handle inline JSON reverts to
+// riding its own bare --settings flag instead of being folded into a file.
+test("agent:start herdr with no explicit subject skips gate-fork hook injection entirely", async () => {
+  const calls: string[][] = [];
+  const h = fresh({ runner: okRunner(calls) });
+  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr" });
+  expect(res.ok).toBe(true);
+  if (!res.ok) throw new Error("unreachable");
+  const cmd = calls.find((c) => c[0] === "pane" && c[1] === "run")?.[3] ?? "";
+  expect(cmd).toContain(`RT_AGENT_ID='${res.data.id}'`);
+  expect(cmd).toContain(`RT_GATE_SUBJECT='agent:${res.data.id}'`);
+  expect(cmd).not.toContain("agent-hooks");
+  expect(cmd).not.toContain("gate-fork");
+  expect(cmd).toContain('--settings\' \'{"crossSessionInbound":"accept"}\'');
+});
+
+test("agent:start headless with no explicit subject skips gate-fork hook injection entirely (no --settings at all)", async () => {
+  let argv: string[] = [];
+  const h = fresh({
+    spawn: (a: string[]) => {
+      argv = a;
+      return { exited: Promise.resolve(0), stdout: async () => "{}" };
+    },
+  });
+  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", surface: "headless", prompt: "go" });
+  expect(res.ok).toBe(true);
+  if (!res.ok) throw new Error("unreachable");
+  expect(argv).not.toContain("--settings");
+  expect(argv.join(" ")).not.toContain("gate-fork");
+});
+
+test("agent:resume re-stamps the same gate env, preserving a custom subject", async () => {
+  const calls: string[][] = [];
+  const h = fresh({ runner: okRunner(calls) });
+  const subject = "mr:https://gitlab.example.com/a/b/-/merge_requests/9";
+  const started = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr", subject });
+  if (!started.ok) throw new Error("unreachable");
+  expect(started.data.subject).toBe(subject);
+  calls.length = 0;
+  const resumed = await h["agent:resume"]({ id: started.data.id });
+  expect(resumed.ok).toBe(true);
+  const cmd = calls.find((c) => c[0] === "pane" && c[1] === "run")?.[3] ?? "";
+  expect(cmd).toContain(`RT_AGENT_ID='${started.data.id}'`);
+  expect(cmd).toContain(`RT_GATE_SUBJECT='${subject}'`);
+  expect(cmd).toContain(`RT_DAEMON_SOCK='${DAEMON_SOCK_PATH}'`);
+});
+
+test("agent:start rejects an empty subject", async () => {
+  const h = fresh();
+  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr", subject: "" });
+  expect(res.ok).toBe(false);
+  if (res.ok) throw new Error("unreachable");
+  expect(res.error).toMatch(/subject/);
+});
+
+// extraArgs carrying its own --settings wins outright: merge is not
+// attempted, so hook injection is skipped rather than risk clobbering it.
+// An explicit subject is set so this exercises the extraArgs skip path
+// specifically, not the (also-skipping) no-subject path above.
+test("agent:start with extraArgs carrying --settings skips gate-fork hook injection", async () => {
+  const calls: string[][] = [];
+  const h = fresh({ runner: okRunner(calls) });
+  const res = await h["agent:start"]({
+    repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr", subject: "mr:test/4",
+    extraArgs: "--settings /custom/settings.json",
+  });
+  expect(res.ok).toBe(true);
+  const cmd = calls.find((c) => c[0] === "pane" && c[1] === "run")?.[3] ?? "";
+  expect(cmd).toContain("/custom/settings.json");
+  expect(cmd).not.toContain("agent-hooks");
+});
+
+// The "--settings=<path>" spelling (one token, no space) must be recognized
+// too, or a caller using it would get gate-fork hook injection folded in on
+// top of their own --settings, contrary to the "user's own value wins
+// outright" rule the space-separated spelling already gets.
+test("agent:start with extraArgs carrying --settings=<path> also skips gate-fork hook injection", async () => {
+  const calls: string[][] = [];
+  const h = fresh({ runner: okRunner(calls) });
+  const res = await h["agent:start"]({
+    repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr", subject: "mr:test/5",
+    extraArgs: "--settings=/custom/settings.json",
+  });
+  expect(res.ok).toBe(true);
+  const cmd = calls.find((c) => c[0] === "pane" && c[1] === "run")?.[3] ?? "";
+  expect(cmd).toContain("/custom/settings.json");
+  expect(cmd).not.toContain("agent-hooks");
 });
 
 // buildPaneCommand quotes env values but not keys, so a key that is not a
