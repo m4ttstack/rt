@@ -41,6 +41,7 @@ public final class ReadinessModel: ObservableObject {
     private var tick: TickerHandle?
     private var hasProbedPermissions = false
     private var planCanInstall = false
+    private var fetchGeneration = 0
     /// Setup and Settings can both be visible at once and both call
     /// became{Visible,Hidden} on this shared model; a depth count means
     /// either one hiding while the other is still up leaves the tick running.
@@ -128,11 +129,18 @@ public final class ReadinessModel: ObservableObject {
         Task { await probePermissions(); await fetch() }
     }
 
+    /// `load`, `recheckAll`, `afterAction` and `didBecomeActive` each spawn
+    /// their own `rt` run and the replies land in any order. Only the
+    /// last-issued request may write the plan, the error, or clear
+    /// `isLoading`; an older reply arriving later is dropped, so a stale
+    /// `finishBlockedBy` can never overwrite the newer one Finish reads.
     private func fetch() async {
+        fetchGeneration += 1
+        let generation = fetchGeneration
         isLoading = true
-        defer { isLoading = false }
         do {
             let plan = try await plans.fetchPlan()
+            guard generation == fetchGeneration else { return }
             team = plan.team
             groups = plan.groups
             finishBlockedBy = plan.finishBlockedBy
@@ -144,8 +152,10 @@ public final class ReadinessModel: ObservableObject {
             if hasProbedPermissions { applyOverlay(permissionSnapshot) }
             recomputeEnablement()
         } catch {
+            guard generation == fetchGeneration else { return }
             lastError = String(describing: error)
         }
+        isLoading = false
     }
 
     private func probePermissions() async {
