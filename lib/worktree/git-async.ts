@@ -44,6 +44,10 @@ export const MUTATING_TIMEOUT_MS = 5 * 60_000;
 
 const DESKTOP_STASH_RE = /!!GitHub_Desktop<(.+)>$/;
 
+/** Git's placeholder object id for an unborn HEAD (a worktree with no commits
+ *  yet); the porcelain listing reports this literal string, not an absent line. */
+const UNBORN_HEAD_SHA = "0".repeat(40);
+
 /** Run a git command with hooks suppressed, capturing stdout+stderr. Never
  *  throws. `signal` cancels the child (see runCapture). */
 export async function runGit(
@@ -152,7 +156,8 @@ export async function listWorktreesAsync(repoPath: string, signal?: AbortSignal)
       curHeadSha = null;
       curBare = false;
     } else if (line.startsWith("HEAD ")) {
-      curHeadSha = line.slice("HEAD ".length).trim();
+      const sha = line.slice("HEAD ".length).trim();
+      curHeadSha = sha === UNBORN_HEAD_SHA ? null : sha;
     } else if (line.startsWith("branch ")) {
       curBranch = line.slice("branch ".length).trim().replace(/^refs\/heads\//, "");
     } else if (line === "bare") {
