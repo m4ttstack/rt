@@ -282,10 +282,14 @@ body {
 /* ── the row ─────────────────────────────────────────────────────────
    Fixed height, four lines, one content edge: state, title, facts, status.
    The gutter holds the status dot (and the checkbox on hover / in select
-   mode) level with the state line; the attention bar is flush to the row's
-   left edge. Nothing on a row may grow it. */
+   mode) level with the title, one state line below the row's top edge; the
+   attention bar is flush to the row's left edge. Nothing on a row may grow
+   it. */
 .tui-rows {
   --row-h: 114px;
+  /* Line 0's height plus its gap: how far the gutter sits below the row's
+     content edge. The stack rail's segment math depends on it. */
+  --pick-offset: 22px;
 }
 .tui-row {
   display: grid;
@@ -333,6 +337,7 @@ body {
   /* Own stacking context, so a stack rail segment can sit under the dot. */
   isolation: isolate;
   height: 20px;
+  margin-top: var(--pick-offset);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1514,8 +1519,8 @@ body {
   padding-left: var(--stack-indent);
 }
 /* Every segment lives on a tui-row-pick pseudo-element: the gutter is a
-   fixed 20px box at the top of every row, so the dot's center is always
-   10px below the pick's top and 12px below the row's edge. Segments run to
+   fixed 20px box sitting --pick-offset below every row's 12px top padding,
+   so the dot's center is always 10px below the pick's top. Segments run to
    the row's edges (the row clips there) and butt end to end. */
 /* Parent: a stub from under its dot down through its bottom edge. */
 .tui-stack-rows > .tui-row > .tui-row-pick::after {
@@ -1525,7 +1530,7 @@ body {
   background: var(--stack-rail);
   left: calc(50% - 1px);
   top: 20px;
-  bottom: calc(-1 * (var(--row-h) - 20px - 12px));
+  bottom: calc(-1 * (var(--row-h) - 20px - 12px - var(--pick-offset)));
 }
 /* Children: the rail continues at the parent's dot x, which in the nested
    pick's coordinates is 20px less the indent. The last child's segment
@@ -1536,12 +1541,12 @@ body {
   width: 2px;
   background: var(--stack-rail);
   left: calc(20px - var(--stack-indent) - 1px);
-  top: -12px;
-  bottom: calc(-1 * (var(--row-h) - 20px - 12px));
+  top: calc(-12px - var(--pick-offset));
+  bottom: calc(-1 * (var(--row-h) - 20px - 12px - var(--pick-offset)));
 }
 .tui-row-nested:last-child .tui-row-pick::before {
   bottom: auto;
-  height: calc(12px + 10px);
+  height: calc(12px + var(--pick-offset) + 10px);
 }
 /* Arm from the rail to the child's dot, on the dot's center line. It starts
    at the rail's own x so the corner joins cleanly, and runs under the dot
