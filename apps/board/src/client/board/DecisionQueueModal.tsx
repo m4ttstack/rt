@@ -5,8 +5,66 @@ import { Button, Chip, Markdown, Modal, ScrollPane } from '@mattstack/tui-kit';
 import type { GateRow } from '../../gates/store.ts';
 import { extractTicketId, ticketUrl } from '../../ticket.ts';
 import type { BoardMRWithReview } from '../types.ts';
+import { AttentionCard } from './AttentionCard.tsx';
 import { ago, cleanTitle } from './format.ts';
-import { AnsweredChip, GateForm, useGateForm } from './GateForm.tsx';
+import {
+  AnsweredChip,
+  GateForm,
+  useGateForm,
+  type GateFormState,
+} from './GateForm.tsx';
+import {
+  DELIVERY_STUCK_MESSAGE,
+  EXECUTION_UNASSIGNED_MESSAGE,
+} from './GateRowChips.tsx';
+
+/** The face for an answered gate the daemon's executor guarantee could not
+    fully deliver: "stuck" reuses `form.focusGate()` (the same `/gate/focus`
+    POST GateForm's own focus button makes) to jump into the blocked pane;
+    "unassigned" reuses `form.submit` with the gate's OWN recorded answers to
+    retry the relaunch the daemon gave up on -- both paths lean on
+    `useGateForm`'s existing busy/error plumbing rather than a third fetch
+    implementation. */
+function DeliveryStatusCard({
+  kind,
+  gate,
+  form,
+}: {
+  kind: 'stuck' | 'unassigned';
+  gate: GateRow;
+  form: GateFormState;
+}) {
+  const stuck = kind === 'stuck';
+  return (
+    <div className="tui-gate-delivery-status" data-gate-delivery-state={kind}>
+      <p className="tui-gate-delivery-message">
+        {stuck ? DELIVERY_STUCK_MESSAGE : EXECUTION_UNASSIGNED_MESSAGE}
+      </p>
+      <Button
+        type="button"
+        variant="filled"
+        intent="warn"
+        size="lg"
+        disabled={stuck ? form.focusBusy : form.busy}
+        onClick={() =>
+          stuck
+            ? void form.focusGate()
+            : void form.submit({ answers: gate.answers ?? {} })
+        }
+      >
+        {stuck ? 'focus pane' : 'retry'}
+      </Button>
+      {stuck && form.focusError && (
+        <span className="tui-gate-error">{form.focusError}</span>
+      )}
+      {!stuck && form.failed && (
+        <span className="tui-gate-error">
+          retry failed... nothing was sent, try again
+        </span>
+      )}
+    </div>
+  );
+}
 
 /** One pip per queued gate. `skipped` gates come from the queue's local
     skip action, which advances without answering and leaves the gate (and
@@ -35,7 +93,9 @@ function DecisionQueueModal({
   onLostChange,
 }: {
   gate: GateRow;
-  mr: BoardMRWithReview;
+  /** Absent for a non-MR gate (queueExtras) -- the strip and face below
+      render off `gate` alone rather than crash on a missing MR. */
+  mr?: BoardMRWithReview;
   /** 1-based place of the active gate in the queue. */
   position: number;
   /** One entry per queued gate, in queue order. */
@@ -54,6 +114,8 @@ function DecisionQueueModal({
   const form = useGateForm(gate, onAnswered);
   const answered = gate.status === 'answered';
   const actionable = gate.status === 'open' || gate.status === 'parked';
+  const deliveryStuck = answered && gate.delivery?.outcome === 'stuck';
+  const executionUnassigned = answered && gate.execution === 'unassigned';
 
   useEffect(() => {
     onLostChange?.(form.lost !== null);
@@ -70,7 +132,8 @@ function DecisionQueueModal({
       <div className="tui-triage-queue-row">
         <span className="tui-triage-head-actions">
           {gate.status === 'parked' ? (
-            gate.domain && (
+            gate.domain &&
+            mr && (
               <Button
                 type="button"
                 variant="light"
@@ -112,35 +175,60 @@ function DecisionQueueModal({
       </div>
       <div className="tui-triage-strip">
         <div className="tui-triage-row-1">
-          <span className="tui-title">{cleanTitle(mr.title)}</span>
-          {mr.sourceBranch && extractTicketId(mr.sourceBranch, mr.title) && (
-            <a
-              className="tui-ticket"
-              href={ticketUrl(extractTicketId(mr.sourceBranch, mr.title)!)}
-              target="_blank"
-              rel="noopener noreferrer"
-              title={`open ${extractTicketId(mr.sourceBranch, mr.title)} in Linear`}
-            >
-              {extractTicketId(mr.sourceBranch, mr.title)}
-            </a>
+          {mr ? (
+            <>
+              <span className="tui-title">{cleanTitle(mr.title)}</span>
+              {mr.sourceBranch &&
+                extractTicketId(mr.sourceBranch, mr.title) && (
+                  <a
+                    className="tui-ticket"
+                    href={ticketUrl(
+                      extractTicketId(mr.sourceBranch, mr.title)!
+                    )}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={`open ${extractTicketId(mr.sourceBranch, mr.title)} in Linear`}
+                  >
+                    {extractTicketId(mr.sourceBranch, mr.title)}
+                  </a>
+                )}
+              <span className="tui-triage-kind">{gate.label}</span>
+            </>
+          ) : (
+            <span className="tui-title">{gate.label}</span>
           )}
-          <span className="tui-triage-kind">{gate.label}</span>
           {gate.status === 'parked' && (
             <Chip intent="warn" variant="outline" uppercase data-gate="parked">
               parked
             </Chip>
           )}
+          {gate.escalatedAt != null && (
+            <Chip
+              intent="warn"
+              variant="outline"
+              uppercase
+              data-gate="escalated"
+            >
+              escalated
+            </Chip>
+          )}
         </div>
         <div className="tui-row-2">
-          {mr.author && (
-            <span className="tui-author-tag">
-              {mr.author.name || mr.author.username}
-            </span>
-          )}
-          <span className="tui-mr-iid">!{mr.iid}</span>
-          <span className="tui-row-sep">|</span>
-          {mr.sourceBranch && (
-            <span className="tui-branch">{mr.sourceBranch}</span>
+          {mr ? (
+            <>
+              {mr.author && (
+                <span className="tui-author-tag">
+                  {mr.author.name || mr.author.username}
+                </span>
+              )}
+              <span className="tui-mr-iid">!{mr.iid}</span>
+              <span className="tui-row-sep">|</span>
+              {mr.sourceBranch && (
+                <span className="tui-branch">{mr.sourceBranch}</span>
+              )}
+            </>
+          ) : (
+            <span className="tui-subject">{gate.subject}</span>
           )}
           <span className="tui-row-sep">·</span>
           <span>{ago(new Date(gate.openedAt).toISOString(), Date.now())}</span>
@@ -160,7 +248,13 @@ function DecisionQueueModal({
       </div>
       {(() => {
         const face =
-          answered || !actionable ? (
+          deliveryStuck || executionUnassigned ? (
+            <DeliveryStatusCard
+              kind={deliveryStuck ? 'stuck' : 'unassigned'}
+              gate={gate}
+              form={form}
+            />
+          ) : answered || !actionable ? (
             <AnsweredChip
               row={{
                 subject: gate.subject,
@@ -199,6 +293,13 @@ function DecisionQueueModal({
                 continue
               </Button>
             </>
+          ) : gate.kind === 'pane-attention' ? (
+            <AttentionCard
+              gate={gate}
+              form={form}
+              mr={mr}
+              onFocusPane={onFocusPane}
+            />
           ) : (
             <GateForm
               gate={gate}

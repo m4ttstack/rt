@@ -224,6 +224,50 @@ function isTerminal(status: string | undefined): boolean {
   return status === 'done' || status === 'error';
 }
 
+/** `execution` isn't declared on the facility's own `GateRow` type yet (SDD
+    executor-reconciler: the daemon emits it on the wire ahead of a
+    rt-client republish) -- read it defensively off the row rather than
+    widening the imported type. Exported so server.ts's retry-answerable
+    check (an ANSWERED row with `execution === "unassigned"`) reads the
+    same field the same way. */
+export function cachedExecution(row: FacilityGateRow): GateRow['execution'] {
+  const raw = (row as unknown as { execution?: unknown }).execution;
+  return raw === 'unassigned' ? 'unassigned' : undefined;
+}
+
+/** Whether a cached row still has something to answer: the ordinary
+    `open`/`parked` case, plus the retry path -- an already-ANSWERED row
+    left `execution: "unassigned"` (the answer-time relaunch never ran) --
+    the daemon accepts a same-answers repeat there, so the board must not
+    404 it. Anything else (answered-and-executed, closed, unknown id) has
+    nothing left to answer. */
+export function isRowAnswerable(row: FacilityGateRow | undefined): boolean {
+  if (!row) return false;
+  if (row.status === 'open' || row.status === 'parked') return true;
+  return row.status === 'answered' && cachedExecution(row) === 'unassigned';
+}
+
+/** Same story as `cachedExecution`: the facility's typed `delivery.outcome`
+    (`"delivered" | "dead-pane"`) lags the board's own richer set
+    (`"delivered" | "confirmed" | "stuck"`) the daemon already emits --
+    validated defensively rather than cast straight through. Exported so
+    `ingest.ts`'s `buildQueueExtras` reads the same field the same way
+    `attachGates` below does, rather than duplicating the cast/validation. */
+export function cachedDelivery(row: FacilityGateRow): GateRow['delivery'] {
+  const raw = (row as unknown as { delivery?: unknown }).delivery;
+  if (!isRecord(raw)) return undefined;
+  const { outcome, at } = raw;
+  if (
+    (outcome === 'delivered' ||
+      outcome === 'confirmed' ||
+      outcome === 'stuck') &&
+    typeof at === 'number'
+  ) {
+    return { outcome, at };
+  }
+  return undefined;
+}
+
 type GateHost = {
   review?: { status: ReviewStatus };
   respond?: { status: RespondStatus };
@@ -271,6 +315,8 @@ export function attachGates<T extends { webUrl?: string | null } & GateHost>(
           context: row.context ?? undefined,
           origin: row.origin ?? undefined,
           domain: domainForKind(row.kind),
+          meta: row.meta ?? undefined,
+          escalatedAt: row.escalatedAt ?? undefined,
         });
       } else if (
         row.status === 'answered' &&
@@ -290,6 +336,10 @@ export function attachGates<T extends { webUrl?: string | null } & GateHost>(
           context: row.context ?? undefined,
           origin: row.origin ?? undefined,
           domain: domainForKind(row.kind),
+          meta: row.meta ?? undefined,
+          escalatedAt: row.escalatedAt ?? undefined,
+          delivery: cachedDelivery(row),
+          execution: cachedExecution(row),
         });
       }
     }

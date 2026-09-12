@@ -114,7 +114,8 @@ type FakeGateListResult =
   | { ok: true; data: { gates: FacilityGateRow[]; cursor: number } }
   | { ok: false; error: string };
 type FakeGateListPayload = {
-  subjectPrefix: string;
+  subjectPrefix?: string;
+  kind?: string;
   cursor?: number;
   limit?: number;
 };

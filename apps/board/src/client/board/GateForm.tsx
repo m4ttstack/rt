@@ -226,7 +226,9 @@ function GateForm({
   showFocusAction = true,
 }: {
   gate: GateRow;
-  mr: BoardMRWithReview;
+  /** Absent for a non-MR gate (queueExtras); the focus-pane-via-domain branch
+      below only fires when both this and `gate.domain` are present. */
+  mr?: BoardMRWithReview;
   form: GateFormState;
   onFocusPane: (mr: BoardMRWithReview, domain: GateDomain) => void;
   showFocusAction?: boolean;
@@ -410,7 +412,8 @@ function GateForm({
           {focusError && <span className="tui-gate-error">{focusError}</span>}
           {showFocusAction &&
             (gate.status === 'parked' ? (
-              gate.domain && (
+              gate.domain &&
+              mr && (
                 <Button
                   type="button"
                   variant="subtle"

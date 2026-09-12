@@ -65,6 +65,18 @@ const answeredGate: GateRow = {
   answeredAt: 0,
 };
 
+const stuckGate: GateRow = {
+  ...answeredGate,
+  gateId: 'g-stuck',
+  delivery: { outcome: 'stuck', at: 0 },
+};
+
+const unassignedGate: GateRow = {
+  ...answeredGate,
+  gateId: 'g-unassigned',
+  execution: 'unassigned',
+};
+
 test('rows render chips, not forms', async () => {
   const container = document.createElement('div');
   document.body.appendChild(container);
@@ -89,6 +101,68 @@ test('rows render chips, not forms', async () => {
     expect(opened).toEqual(['g-open']);
 
     expect(container.querySelector('[data-gate="chip"]')).not.toBeNull();
+  } finally {
+    await React.act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  }
+});
+
+test('a stuck-delivery answered gate renders the stuck message as an openable chip', async () => {
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+
+  const opened: string[] = [];
+  const root = createRoot(container);
+  try {
+    await React.act(async () => {
+      root.render(
+        React.createElement(GateRowChips, {
+          gates: [stuckGate],
+          onOpenGate: (gateId: string) => opened.push(gateId),
+        })
+      );
+    });
+
+    const chip = container.querySelector('[data-gate-delivery="stuck"]');
+    expect(chip).not.toBeNull();
+    expect(chip?.textContent?.toLowerCase()).toContain(
+      "pane didn't pick up the answer"
+    );
+    (chip as HTMLElement).click();
+    expect(opened).toEqual(['g-stuck']);
+  } finally {
+    await React.act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  }
+});
+
+test('an unassigned-execution answered gate renders the unassigned message as an openable chip', async () => {
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+
+  const opened: string[] = [];
+  const root = createRoot(container);
+  try {
+    await React.act(async () => {
+      root.render(
+        React.createElement(GateRowChips, {
+          gates: [unassignedGate],
+          onOpenGate: (gateId: string) => opened.push(gateId),
+        })
+      );
+    });
+
+    const chip = container.querySelector('[data-gate-execution="unassigned"]');
+    expect(chip).not.toBeNull();
+    expect(chip?.textContent?.toLowerCase()).toContain(
+      'answered, no pane to execute'
+    );
+    (chip as HTMLElement).click();
+    expect(opened).toEqual(['g-unassigned']);
   } finally {
     await React.act(async () => {
       root.unmount();

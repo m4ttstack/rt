@@ -26,6 +26,7 @@ import {
   paneList,
   readDiscussions,
   readProjectMRs,
+  rtCommand,
   setSetting,
   subscribe,
 } from '@mattstack/rt-client';
@@ -41,6 +42,7 @@ import {
 import { APP_ROOT, IS_COMPILED } from './app-root.ts';
 import { SnapshotCache } from './cache.ts';
 import { getClientAssets } from './client-assets.ts';
+import type { ExecutorView } from './client/types.ts';
 import {
   closeOnDone,
   type TabIdClearer,
@@ -72,6 +74,8 @@ import {
   buildRoster,
   channelForMR,
   configuredSlackChannels,
+  joinExecutorOrphans,
+  joinGateExecutors,
   projectPathFromWebUrl,
   reviewSkillForTab,
   visibleMrsFor,
@@ -105,14 +109,16 @@ import { upsertEnvKeys } from './env-file.ts';
 import faviconSvg from './favicon.svg' with { type: 'text' };
 import { focusPane } from './focus-pane.ts';
 import { answerGate } from './gates/answer.ts';
-import { attachGates, GateCache } from './gates/cache.ts';
+import { attachGates, GateCache, isRowAnswerable } from './gates/cache.ts';
 import {
   executeSweepAction,
   type ExecuteSweepActionIo,
 } from './gates/execute-sweep-action.ts';
 import {
   boardBridgeRule,
+  buildQueueExtras,
   ingestRelayFrame,
+  reconcileAttentionGatesOnBoot,
   reconcileGatesOnBoot,
   type GateEventFrame,
 } from './gates/ingest.ts';
@@ -334,6 +340,43 @@ async function gitlab(): Promise<GitLabProvider> {
 // the relay handler below (ingestRelayFrame) and the boot gateList reconcile
 // (reconcileGatesOnBoot).
 const gateCache = new GateCache();
+
+interface ReconcilerView {
+  sweptAt: number;
+  herdrReachable: boolean;
+  executors: ExecutorView[];
+}
+
+const EMPTY_RECONCILER_VIEW: ReconcilerView = {
+  sweptAt: 0,
+  herdrReachable: false,
+  executors: [],
+};
+
+/** `reconciler:status`: the rt daemon's own executor sweep (SDD
+    executor-reconciler, task 12's partner lane). Like every other rt-client
+    command, the daemon's pathname IS the command name and success/failure
+    rides the `{ok, data}` envelope in the HTTP 200 body, never the HTTP
+    status -- an older daemon that doesn't know this command, a down daemon,
+    or an envelope missing `executors` all degrade to an empty view rather
+    than failing /data.json, the same contract every other daemon read on
+    this page already honors. */
+async function fetchReconcilerView(): Promise<ReconcilerView> {
+  const res = await rtCommand<ReconcilerView>(
+    'reconciler:status',
+    {},
+    { timeoutMs: 5000 }
+  );
+  if (!res.ok || !res.data || !Array.isArray(res.data.executors)) {
+    return EMPTY_RECONCILER_VIEW;
+  }
+  const view = res.data;
+  return {
+    sweptAt: typeof view.sweptAt === 'number' ? view.sweptAt : 0,
+    herdrReachable: view.herdrReachable === true,
+    executors: view.executors,
+  };
+}
 
 // Optional peer relay. Both a configured url and a token are required; without
 // either, peering stays unstarted and every peer feature (publish, poll,
@@ -972,6 +1015,30 @@ const httpServer = Bun.serve({
         const responds = readRespondStates();
         const doctors = readDoctorStates();
         const slackRefs = readSlackRefs();
+        const reconciler = await fetchReconcilerView();
+        const mrsWithGates = attachPeerState(
+          attachDrafts(
+            attachSlack(
+              attachGates(
+                attachDoctors(
+                  attachResponds(attachReviews(visibleMrs, reviews), responds),
+                  doctors
+                ),
+                gateCache
+              ),
+              slackRefs
+            ),
+            heldDraftsByMr(readDrafts())
+          )
+        ).map(mr => ({
+          ...mr,
+          gates: joinGateExecutors(mr.gates, reconciler.executors),
+        }));
+        const { mrs: mrsWithOrphans, orphans } = joinExecutorOrphans(
+          mrsWithGates,
+          reconciler.executors
+        );
+        const queueExtras = buildQueueExtras(gateCache.rows());
         return new Response(
           JSON.stringify({
             title: config.title,
@@ -992,24 +1059,9 @@ const httpServer = Bun.serve({
                 : snapshot.mrs.filter(mr => mr.author.username === m.username)
                     .length,
             })),
-            mrs: attachPeerState(
-              attachDrafts(
-                attachSlack(
-                  attachGates(
-                    attachDoctors(
-                      attachResponds(
-                        attachReviews(visibleMrs, reviews),
-                        responds
-                      ),
-                      doctors
-                    ),
-                    gateCache
-                  ),
-                  slackRefs
-                ),
-                heldDraftsByMr(readDrafts())
-              )
-            ),
+            mrs: mrsWithOrphans,
+            queueExtras,
+            orphans,
             local: isLocalRequest(req),
             canInvite:
               isLocalRequest(req) &&
@@ -1949,10 +2001,8 @@ const httpServer = Bun.serve({
           });
         }
         const result = await answerGate(gateId, answers as GateAnswers, {
-          isAnswerable: id => {
-            const row = gateCache.rows().find(r => r.id === id);
-            return !!row && (row.status === 'open' || row.status === 'parked');
-          },
+          isAnswerable: id =>
+            isRowAnswerable(gateCache.rows().find(r => r.id === id)),
           gateAnswer: gateAnswerFacility,
         });
         switch (result.kind) {
@@ -2042,6 +2092,52 @@ const httpServer = Bun.serve({
               status: 502,
               headers: { 'content-type': 'application/json' },
             }
+          );
+        }
+        return new Response(JSON.stringify({ ok: true }), {
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      case '/reconciler/clear': {
+        // Proxies the daemon's `reconciler:clear` command: tombstones a
+        // dead/hidden executor's kv entry and closes its other gates. The
+        // orphan strip's own "clear" button is the only caller. Same
+        // pathname-is-command-name, envelope-in-the-body contract as
+        // `fetchReconcilerView` above -- an `{ok: false}` envelope at HTTP
+        // 200 is a daemon-side refusal, not success, and degrades to a 502
+        // here rather than throwing, since the reconciler view itself is
+        // refetched fresh on the next /data.json poll rather than cached.
+        if (req.method !== 'POST')
+          return new Response('method not allowed', { status: 405 });
+        if (!isLocalRequest(req))
+          return new Response('forbidden', { status: 403 });
+        {
+          const notJson = requireJsonBody(req);
+          if (notJson) return notJson;
+        }
+        let body: unknown;
+        try {
+          body = await req.json();
+        } catch {
+          return new Response('invalid json', { status: 400 });
+        }
+        const agentId = (body as { agentId?: unknown })?.agentId;
+        if (typeof agentId !== 'string' || !agentId)
+          return new Response('expected { agentId: string }', {
+            status: 400,
+          });
+        const res = await rtCommand(
+          'reconciler:clear',
+          { agentId },
+          { timeoutMs: 5000 }
+        );
+        if (!res.ok) {
+          return new Response(
+            JSON.stringify({
+              ok: false,
+              error: res.error ?? 'reconciler clear failed',
+            }),
+            { status: 502, headers: { 'content-type': 'application/json' } }
           );
         }
         return new Response(JSON.stringify({ ok: true }), {
@@ -3186,6 +3282,11 @@ if (!FIXTURE_DIR) {
   void reconcileGatesOnBoot(gateList, gateCache).catch(err =>
     console.error(
       `gate boot reconcile failed: ${err instanceof Error ? err.message : err}`
+    )
+  );
+  void reconcileAttentionGatesOnBoot(gateList, gateCache).catch(err =>
+    console.error(
+      `gate boot reconcile (attention) failed: ${err instanceof Error ? err.message : err}`
     )
   );
   // Independent of the cache reconcile above (reads the facility directly),

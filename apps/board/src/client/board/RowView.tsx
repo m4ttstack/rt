@@ -2,6 +2,7 @@ import { Invadr } from 'invadrs/react';
 
 import { Chip, CopyButton, SelectBox } from '@mattstack/tui-kit';
 import type { BoardMR } from '../../data.ts';
+import type { GateRow } from '../../gates/store.ts';
 import { extractTicketId, ticketUrl } from '../../ticket.ts';
 import {
   behindToken,
@@ -127,6 +128,111 @@ function Watching({ mr }: { mr: BoardMR }) {
   );
 }
 
+type ExecutorDotState = 'gone' | 'hidden' | 'stuck';
+
+/** The row's own dead/blocked-delivery signal, cheapest-first: the sweep's
+    per-row `orphan` (an executor whose subject already resolved to this MR)
+    wins over a raw per-gate signal, which only fires when no orphan is
+    attached yet -- an executor's own subject can be `run:`/`agent:`-scoped
+    while one of its gates still carries this MR's `mr:` subject. */
+function executorDotState(mr: BoardMRWithReview): ExecutorDotState | undefined {
+  if (mr.orphan?.state === 'gone') return 'gone';
+  if (mr.orphan?.state === 'hidden') return 'hidden';
+  for (const gate of mr.gates) {
+    if (gate.delivery?.outcome === 'stuck') return 'stuck';
+    if (gate.executor === 'gone') return 'gone';
+    if (gate.executor === 'hidden') return 'hidden';
+  }
+  return undefined;
+}
+
+function ExecutorDot({ mr }: { mr: BoardMRWithReview }) {
+  const state = executorDotState(mr);
+  if (!state) return null;
+  return (
+    <span
+      className="tui-executor-dot"
+      data-executor-state={state}
+      title={`executor ${state}`}
+    >
+      ●
+    </span>
+  );
+}
+
+const OPEN_ATTENTION_GATE = (g: { kind: string; status: string }) =>
+  g.kind === 'pane-attention' && (g.status === 'open' || g.status === 'parked');
+
+/** The row's own attention gate for its orphaned run, if one is open or
+    parked right now -- checked on the row's own gates first (the sweep
+    already resolved the attention gate's subject to this MR), then
+    `queueExtras` by the orphan's `agent:<id>` subject, which is where an
+    attention gate lands before that resolution happens. Both lookups also
+    require `meta.agentId` to match the orphan's own `agentId`: an MR can
+    carry more than one attention gate (one per orphaned executor that ever
+    touched it), so matching on kind/status alone would let the strip answer
+    a DIFFERENT executor's gate. Undefined (no orphan, no agentId match)
+    means "clear" is the only offer the strip has. */
+function findAttentionGate(
+  mr: BoardMRWithReview,
+  queueExtras: GateRow[]
+): GateRow | undefined {
+  if (!mr.orphan) return undefined;
+  const agentId = mr.orphan.agentId;
+  const own = mr.gates.find(
+    g => OPEN_ATTENTION_GATE(g) && g.meta?.agentId === agentId
+  );
+  if (own) return own;
+  const subject = `agent:${agentId}`;
+  return queueExtras.find(
+    g =>
+      OPEN_ATTENTION_GATE(g) &&
+      g.subject === subject &&
+      g.meta?.agentId === agentId
+  );
+}
+
+/** A dead/hidden run's own strip: "resume" only appears once an attention
+    gate exists to answer, "clear" is always available (it tombstones the
+    run regardless of whether one ever opened). `stopPropagation` matches
+    GateRowChips: a strip click must not bubble to onRowClick. */
+function OrphanStrip({ mr, ctx }: { mr: BoardMRWithReview; ctx: RowContext }) {
+  const orphan = mr.orphan;
+  if (!orphan) return null;
+  const attentionGate = findAttentionGate(mr, ctx.queueExtras);
+  return (
+    <div
+      className="tui-orphan-strip"
+      data-orphan-state={orphan.state}
+      onClick={e => e.stopPropagation()}
+    >
+      <span className="tui-orphan-reason">executor {orphan.state}</span>
+      {attentionGate && (
+        <Chip
+          as="button"
+          intent="warn"
+          variant="outline"
+          uppercase
+          data-orphan-action="resume"
+          onClick={() => ctx.onResumeOrphan(attentionGate)}
+        >
+          resume
+        </Chip>
+      )}
+      <Chip
+        as="button"
+        intent="muted"
+        variant="outline"
+        uppercase
+        data-orphan-action="clear"
+        onClick={() => ctx.onClearOrphan(orphan.agentId)}
+      >
+        clear
+      </Chip>
+    </div>
+  );
+}
+
 // ── views ──────────────────────────────────────────────────────────────────
 
 /** Author identity for a row — shown when the view mixes authors (the All
@@ -187,6 +293,7 @@ function RowView({
           )}
           <div className="tui-row-1">
             <StatusDot mr={mr} />
+            <ExecutorDot mr={mr as BoardMRWithReview} />
             {/* The draft marker is the chip family's small-caps register
                   (`uppercase`); its tighter pill is the one part of the old
                   `.tui-draft` box the recipe does not carry, restored from
@@ -231,6 +338,7 @@ function RowView({
             gates={(mr as BoardMRWithReview).gates ?? []}
             onOpenGate={ctx.onOpenGate}
           />
+          <OrphanStrip mr={mr as BoardMRWithReview} ctx={ctx} />
         </div>
       </div>
     );
@@ -265,5 +373,7 @@ export {
   TicketLink,
   AuthorTag,
   Watching,
+  executorDotState,
+  findAttentionGate,
   RowView,
 };

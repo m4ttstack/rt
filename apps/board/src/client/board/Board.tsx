@@ -4,6 +4,7 @@ import type { GateDomain } from '@mattstack/gate-kit';
 import { ICONS, Panel, SideDrawer, ToastHost } from '@mattstack/tui-kit';
 import type { BoardMR } from '../../data.ts';
 import { inferRoster } from '../../data.ts';
+import type { GateRow } from '../../gates/store.ts';
 import type { MrAction } from '../../mr-action.ts';
 import { sectionStatus } from '../../sections.ts';
 import {
@@ -76,6 +77,16 @@ declare global {
 
 const THEME_KEY = 'mrs-theme';
 const STATE_KEY = 'mrs-view-state';
+
+// A gate stuck on delivery or left execution-unassigned stays in the
+// decision queue despite being `answered` -- it still needs a human action
+// (focus-pane / retry), and GateRowChips/DecisionQueueModal only render
+// that action inside the queue.
+const needsQueue = (gate: GateRow): boolean =>
+  gate.status === 'open' ||
+  gate.status === 'parked' ||
+  gate.execution === 'unassigned' ||
+  gate.delivery?.outcome === 'stuck';
 
 // ── board ──────────────────────────────────────────────────────────────────
 
@@ -473,6 +484,43 @@ export function Board() {
     [addToast, load]
   );
 
+  // Orphan-strip resume: answers the row's own attention gate with the
+  // literal action the daemon's answer-time guarantee relaunches from --
+  // the question id comes off the gate itself (AttentionCard's own
+  // fallback-to-"action" convention) rather than being hardcoded, since a
+  // future attention-gate kind could name it differently.
+  const handleResumeOrphan = useCallback(
+    (gate: GateRow) => {
+      const questionId = gate.questions[0]?.id ?? 'action';
+      postAction('/gate/answer', {
+        gateId: gate.gateId,
+        answers: { [questionId]: 'resume' },
+      }).then(result => {
+        if (!result.ok) {
+          addToast(`could not resume the executor (${result.status})`);
+          return;
+        }
+        load();
+      });
+    },
+    [addToast, load]
+  );
+
+  // Orphan-strip clear: tombstones the dead run daemon-side regardless of
+  // whether an attention gate exists to resume from.
+  const handleClearOrphan = useCallback(
+    (agentId: string) => {
+      postAction('/reconciler/clear', { agentId }).then(result => {
+        if (!result.ok) {
+          addToast(`could not clear the executor (${result.status})`);
+          return;
+        }
+        load();
+      });
+    },
+    [addToast, load]
+  );
+
   // Flip one of your own MRs between draft and ready. No optimistic state: the
   // flip lives in GitLab, so the row waits for the reload rather than claiming a
   // change the API might have refused.
@@ -756,13 +804,16 @@ export function Board() {
     const collect = (node: StackNode) => {
       const mr = node.mr as BoardMRWithReview;
       for (const gate of mr.gates ?? [])
-        if (gate.status === 'open' || gate.status === 'parked')
-          out.push({ gate, mr });
+        if (needsQueue(gate)) out.push({ gate, mr });
       node.children.forEach(collect);
     };
     for (const g of boardView.groups) nestStacks(g.mrs).forEach(collect);
+    // Human-owned, non-MR gates (queueExtras -- a pane-attention gate is the
+    // first kind of these) join the same queue with no `mr` at all.
+    for (const gate of data?.queueExtras ?? [])
+      if (needsQueue(gate)) out.push({ gate });
     return out;
-  }, [boardView]);
+  }, [boardView, data]);
   // Positive answer evidence for the queue's reconcile, from the RAW data:
   // a gate answered on another surface must retire even if its MR is
   // currently filtered out of view.
@@ -771,6 +822,8 @@ export function Board() {
     for (const mr of data?.mrs ?? [])
       for (const gate of mr.gates ?? [])
         if (gate.status === 'answered') ids.add(gate.gateId);
+    for (const gate of data?.queueExtras ?? [])
+      if (gate.status === 'answered') ids.add(gate.gateId);
     return ids;
   }, [data]);
   const queue = useDecisionQueue(queueEntries, answeredGateIds);
@@ -861,6 +914,9 @@ export function Board() {
     onOpenGate: queue.openAt,
     selected,
     onToggleSelect: toggleSelect,
+    queueExtras: data.queueExtras,
+    onResumeOrphan: handleResumeOrphan,
+    onClearOrphan: handleClearOrphan,
   };
   const openSettings = () => {
     setMenuOpen(false);

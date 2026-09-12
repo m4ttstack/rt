@@ -52,4 +52,22 @@ export interface GateRow {
   context?: string;
   origin?: GateOrigin;
   domain?: GateDomain;
+  /** The facility row's own `meta`, carried through untyped -- a pane-attention
+      row's `{ agentId, paneRef, reason }` lives here; a reader narrows per kind. */
+  meta?: Record<string, unknown>;
+  /** Set when the daemon escalated this gate to a human; drives the
+      "escalated" chip alongside the "parked" one. */
+  escalatedAt?: number;
+  /** Set on an answered row once the daemon's answer-time executor
+      guarantee resolves the nudge/relaunch it fired: "stuck" is a blocked
+      pane that never left blocked after retries, "confirmed" is a resumed
+      pane that came up live. Board-local (SDD executor-reconciler task 14)
+      until the reconciler daemon lane republishes rt-client with a
+      matching field -- nothing populates it end to end yet. */
+  delivery?: { outcome: 'delivered' | 'confirmed' | 'stuck'; at: number };
+  /** Set when the answer-time relaunch could not even run (herdr down, no
+      agent row) or its expectation failed -- answered with no pane left to
+      execute it. Cleared once execution succeeds. Same board-local caveat
+      as `delivery`. */
+  execution?: 'unassigned';
 }
