@@ -410,8 +410,28 @@ export function joinGateExecutors<G extends { gateId: string }>(
 
 interface OrphanJoinRow {
   webUrl?: string | null;
-  review?: { sessionId?: string | null } | null;
-  respond?: { sessionId?: string | null } | null;
+  review?: { status?: string; sessionId?: string | null } | null;
+  respond?: { status?: string; sessionId?: string | null } | null;
+}
+
+const REVIEW_IN_FLIGHT = new Set(['queued', 'reviewing']);
+const RESPOND_IN_FLIGHT = new Set([
+  'queued',
+  'triaging',
+  'implementing',
+  'drafting',
+]);
+
+/** The session id a gone executor may claim this row through: only an
+    in-flight lane's. A finished or failed lane keeps its sessionId for
+    resume, but its pane dying afterwards is ordinary teardown, and wearing
+    an "executor gone" strip for it would be noise. */
+function activeLaneSessionId(mr: OrphanJoinRow): string | undefined {
+  if (REVIEW_IN_FLIGHT.has(mr.review?.status ?? '') && mr.review?.sessionId)
+    return mr.review.sessionId;
+  if (RESPOND_IN_FLIGHT.has(mr.respond?.status ?? '') && mr.respond?.sessionId)
+    return mr.respond.sessionId;
+  return undefined;
 }
 
 /**
@@ -441,7 +461,7 @@ export function joinExecutorOrphans<T extends OrphanJoinRow>(
     const subjectMatch = mr.webUrl
       ? bySubject.get(`mr:${mr.webUrl}`)
       : undefined;
-    const sessionId = mr.review?.sessionId ?? mr.respond?.sessionId;
+    const sessionId = activeLaneSessionId(mr);
     const match =
       subjectMatch ?? (sessionId ? bySessionId.get(sessionId) : undefined);
     if (!match || matched.has(match)) return mr;

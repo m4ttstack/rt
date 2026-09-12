@@ -344,6 +344,23 @@ describe('joinExecutorOrphans', () => {
     expect(orphans).toEqual([executor]);
   });
 
+  test("a done lane's sessionId never attaches -- a pane closed after finishing is teardown, not an orphan", () => {
+    const executor = executorView({
+      state: 'gone',
+      subject: 'agent:abc123',
+      sessionId: 'sess-done',
+    });
+    const mrs = [
+      {
+        webUrl: 'https://gitlab.com/acme/webapp/-/merge_requests/7',
+        review: { status: 'done', sessionId: 'sess-done' },
+      },
+    ];
+    const { mrs: joined, orphans } = joinExecutorOrphans(mrs, [executor]);
+    expect(joined[0]?.orphan).toBeUndefined();
+    expect(orphans).toEqual([executor]);
+  });
+
   test("a 'gone' executor with an agent: subject attaches by review sessionId", () => {
     // The !44451 case: rt agent launched without an mr: subject, so the
     // executor's subject is agent:<id> and matches no row by URL -- but
