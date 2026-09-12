@@ -63,12 +63,15 @@ export function writeApiInfo(port: number): void {
   );
 }
 
-export function readApiInfo(): { port: number } | null {
+export function readApiInfo(): { port: number; pid?: number } | null {
   try {
     const parsed = JSON.parse(
       readFileSync(join(stateDir(), 'api.json'), 'utf8')
     );
-    return Number.isInteger(parsed.port) ? { port: parsed.port } : null;
+    if (!Number.isInteger(parsed.port)) return null;
+    return Number.isInteger(parsed.pid)
+      ? { port: parsed.port, pid: parsed.pid }
+      : { port: parsed.port };
   } catch {
     return null;
   }

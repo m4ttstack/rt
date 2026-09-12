@@ -2,7 +2,8 @@ import { existsSync } from 'fs';
 import { dirname, join } from 'path';
 import { $ } from 'bun';
 
-import { logsDir, readApiInfo } from '../src/api/state.ts';
+import { logsDir } from '../src/api/state.ts';
+import { resolveApiInfo } from '../src/cli/api-info.ts';
 import { deployTarget } from '../src/cli/deploy-target.ts';
 
 // The plist's ProgramArguments[0], read from deck's own registry record rather
@@ -29,9 +30,9 @@ await $`mv -f ${target}.new ${target}`;
 // sees a closed socket even when it worked; tolerate that and prove the new
 // build is up by health rather than by that call's exit code.
 await $`deck restart deck`.nothrow();
-const info = readApiInfo();
+const info = resolveApiInfo();
 if (!info)
-  throw new Error('deck api.json missing after restart; run `deck setup`');
+  throw new Error('no running deck and no self record; run `deck setup`');
 
 async function healthy(deadlineMs: number): Promise<boolean> {
   const deadline = Date.now() + deadlineMs;
