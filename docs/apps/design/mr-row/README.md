@@ -124,4 +124,13 @@ recorded capture baselines, not the artboards, are the reference for them.
   review verb, or "waiting on the author" (for a rebase, for a ci fix, to
   resolve threads). "all clear, enjoy the sunshine" is reserved for someone
   else's approved, unblocked MR with nothing awaiting anyone. These lines
-  are quiet (no edge bar): the bar stays the agent workflow's signal.
+  are quiet (no edge bar): the bar stays the agent workflow's signal. An
+  assigned reviewer also reads "author answered you" (their own threads
+  replied or resolved, from the server's per-seat `myThreads`) and "your
+  approval was reset" (GitLab's `UNAPPROVED` after a push).
+- **A "Needs me" tab.** The client appends a built-in third tab whenever
+  the board has a seat: the union of every configured tab's rows, filtered
+  by `needOf` (`needs-me.ts`) and grouped by the move it needs (decide,
+  unstick, respond, fix, re-review, review, merge), with a live count on
+  the strip. Hot rows read off the status line; a working agent holds its
+  row off the tab; otherwise the seat's standing relationship decides.
