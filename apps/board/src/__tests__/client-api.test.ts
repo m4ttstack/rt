@@ -119,11 +119,15 @@ test('launch flow: focus intent skips queued and launch toast, toasts the focus'
   );
   expect(events).toEqual(['toast:focused doctor tab for !7', 'reload']);
 });
-test('launch flow: focus intent failure toasts the focus failure, no rollback', async () => {
+test('launch flow: focus intent posts focus:true, and a refusal toasts the server text and reloads', async () => {
   const events: string[] = [];
+  let posted: Record<string, unknown> | undefined;
   await runLaunchFlow(
     {
-      post: async () => ({ ok: false, status: 502, body: null, text: '' }),
+      post: async payload => {
+        posted = payload;
+        return { ok: false, status: 409, body: null, text: 'pane is gone' };
+      },
       setQueued: () => events.push('queued'),
       rollback: () => events.push('rollback'),
       addToast: t => events.push(`toast:${t}`),
@@ -135,26 +139,29 @@ test('launch flow: focus intent failure toasts the focus failure, no rollback', 
     {},
     'focus'
   );
-  expect(events).toEqual(["toast:couldn't focus doctor tab for !7 (502)"]);
-});
-test('launch flow: focus intent that lands on a fresh launch says so', async () => {
-  const events: string[] = [];
-  await runLaunchFlow(
-    {
-      post: async () => ({ ok: true, status: 200, body: {}, text: '' }),
-      setQueued: () => events.push('queued'),
-      rollback: () => events.push('rollback'),
-      addToast: t => events.push(`toast:${t}`),
-      reload: () => events.push('reload'),
-      verbing: 'calling doctor',
-      noun: 'doctor',
-    },
-    { webUrl: 'u', iid: 7 } as never,
-    {},
-    'focus'
-  );
+  expect(posted).toEqual({ mrUrl: 'u', iid: 7, focus: true });
   expect(events).toEqual([
-    "toast:doctor wasn't running for !7; launched a fresh one",
+    "toast:couldn't focus doctor pane for !7: pane is gone",
     'reload',
   ]);
+});
+test('launch flow: a launch never sends focus:true', async () => {
+  let posted: Record<string, unknown> | undefined;
+  await runLaunchFlow(
+    {
+      post: async payload => {
+        posted = payload;
+        return { ok: true, status: 200, body: {}, text: '' };
+      },
+      setQueued: () => {},
+      rollback: () => {},
+      addToast: () => {},
+      reload: () => {},
+      verbing: 'calling doctor',
+      noun: 'doctor',
+    },
+    { webUrl: 'u', iid: 7 } as never,
+    { mode: 'rebase' }
+  );
+  expect(posted).toEqual({ mrUrl: 'u', iid: 7, mode: 'rebase' });
 });

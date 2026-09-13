@@ -81,11 +81,18 @@ export function updateByHandle(
         .query('SELECT lane, mr_url, state FROM agent_states WHERE handle = ?')
         .get(handle) as { lane: string; mr_url: string; state: string } | null;
       if (!row) return;
-      const merged = {
-        ...JSON.parse(row.state),
-        ...definedFields(patch),
-        updatedAt: now,
-      };
+      const prev = JSON.parse(row.state) as { status?: unknown };
+      const next = definedFields(patch) as { status?: unknown };
+      // A message explains the status it was written with; a write that moves
+      // the status on without its own explanation must not inherit the old one
+      // (a cleared pane's "pane closed" riding along on the next "reviewing").
+      if (
+        next.status !== undefined &&
+        next.status !== prev.status &&
+        !('message' in next)
+      )
+        delete (prev as { message?: unknown }).message;
+      const merged = { ...prev, ...next, updatedAt: now };
       db.query(
         'UPDATE agent_states SET state = ?, updated_at = ?, pruned_at = NULL WHERE lane = ? AND mr_url = ?'
       ).run(JSON.stringify(merged), now, row.lane, row.mr_url);

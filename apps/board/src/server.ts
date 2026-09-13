@@ -149,6 +149,12 @@ import {
 import { findLatches, hasArmedLatch } from './latch/discussions.ts';
 import { latchGateway } from './latch/gateway.ts';
 import { postLatch, spendAllLatches } from './latch/post.ts';
+import {
+  dedupInFlight,
+  DOCTOR_IN_FLIGHT,
+  RESPOND_IN_FLIGHT,
+  REVIEW_IN_FLIGHT,
+} from './launch-dedup.ts';
 import { isLocalRequest, requireJsonBody } from './local.ts';
 import { resolveBoardSkill, type BoardSkillKind } from './manifest-bindings.ts';
 import { memoizeAsync } from './memoize-async.ts';
@@ -1314,6 +1320,7 @@ const httpServer = Bun.serve({
             status: 400,
           });
         const resume = (body as { resume?: unknown })?.resume === true;
+        const focusOnly = (body as { focus?: unknown })?.focus === true;
         const reReview = (body as { reReview?: unknown })?.reReview === true;
         const tabId = (body as { tabId?: unknown })?.tabId;
         const noteParse = parseLaunchNote(body);
@@ -1401,20 +1408,18 @@ const httpServer = Bun.serve({
             headers: { 'content-type': 'application/json' },
           });
         }
-        // Dedup: a live review for this MR re-focuses its tab instead of spawning another.
-        if (
-          existing &&
-          existing.tabId &&
-          (existing.status === 'queued' || existing.status === 'reviewing')
-        ) {
-          try {
-            await focusPane(existing);
+        {
+          const dedup = await dedupInFlight(
+            existing,
+            REVIEW_IN_FLIGHT,
+            focusOnly
+          );
+          if (dedup.kind === 'focused')
             return new Response(JSON.stringify({ ok: true, focused: true }), {
               headers: { 'content-type': 'application/json' },
             });
-          } catch {
-            // tab is gone — fall through and start a fresh review
-          }
+          if (dedup.kind === 'refused')
+            return new Response(dedup.reason, { status: 409 });
         }
         const statePath = reviewFilePath(parsed.mrUrl);
         writeReviewState(statePath, {
@@ -1493,6 +1498,7 @@ const httpServer = Bun.serve({
             status: 400,
           });
         const resume = (body as { resume?: unknown })?.resume === true;
+        const focusOnly = (body as { focus?: unknown })?.focus === true;
         const noteParse = parseLaunchNote(body);
         if (!noteParse.ok)
           return new Response(noteParse.error, { status: 400 });
@@ -1538,21 +1544,18 @@ const httpServer = Bun.serve({
             headers: { 'content-type': 'application/json' },
           });
         }
-        const inFlight = new Set([
-          'queued',
-          'triaging',
-          'implementing',
-          'drafting',
-        ]);
-        if (existing && existing.tabId && inFlight.has(existing.status)) {
-          try {
-            await focusPane(existing);
+        {
+          const dedup = await dedupInFlight(
+            existing,
+            RESPOND_IN_FLIGHT,
+            focusOnly
+          );
+          if (dedup.kind === 'focused')
             return new Response(JSON.stringify({ ok: true, focused: true }), {
               headers: { 'content-type': 'application/json' },
             });
-          } catch {
-            // tab is gone -- fall through and start a fresh response
-          }
+          if (dedup.kind === 'refused')
+            return new Response(dedup.reason, { status: 409 });
         }
         const statePath = respondFilePath(parsed.mrUrl);
         writeRespondState(statePath, {
@@ -1622,6 +1625,7 @@ const httpServer = Bun.serve({
           return new Response('expected { mrUrl: string, iid: number }', {
             status: 400,
           });
+        const focusOnly = (body as { focus?: unknown })?.focus === true;
         const noteParse = parseLaunchNote(body);
         if (!noteParse.ok)
           return new Response(noteParse.error, { status: 400 });
@@ -1639,22 +1643,18 @@ const httpServer = Bun.serve({
           projectPathFromWebUrl(parsed.mrUrl, config.gitlabHost) ?? '',
           parsed.mrUrl
         );
-        const inFlight = new Set([
-          'queued',
-          'diagnosing',
-          'rebasing',
-          'fixing',
-          'watching',
-        ]);
-        if (existing && existing.tabId && inFlight.has(existing.status)) {
-          try {
-            await focusPane(existing);
+        {
+          const dedup = await dedupInFlight(
+            existing,
+            DOCTOR_IN_FLIGHT,
+            focusOnly
+          );
+          if (dedup.kind === 'focused')
             return new Response(JSON.stringify({ ok: true, focused: true }), {
               headers: { 'content-type': 'application/json' },
             });
-          } catch {
-            // tab is gone -- fall through and start a fresh doctor session
-          }
+          if (dedup.kind === 'refused')
+            return new Response(dedup.reason, { status: 409 });
         }
         const triage = loadTriageConfig();
         // Token validation happens here, OUTSIDE the lock, since it's a

@@ -38,17 +38,25 @@ export async function runLaunchFlow(
   if (!mr.webUrl) return;
   // Focus clicks ride the same endpoint (the server's in-flight dedup does
   // the focusing), but claiming "queued" or toasting a launch would misstate
-  // what the click asked for -- the pane is already running.
+  // what the click asked for -- the pane is already running. `focus: true`
+  // tells the server it may only focus: a pane that turns out to be gone is
+  // a refusal, never a fresh launch, and the reload shows the row's real state.
   if (intent === 'launch') {
     deps.setQueued();
     deps.addToast(`${deps.verbing} for !${mr.iid}…`);
   }
-  const result = await deps.post({ mrUrl: mr.webUrl, iid: mr.iid, ...extra });
+  const result = await deps.post({
+    mrUrl: mr.webUrl,
+    iid: mr.iid,
+    ...extra,
+    ...(intent === 'focus' ? { focus: true } : {}),
+  });
   if (!result.ok) {
     if (intent === 'focus') {
       deps.addToast(
-        `couldn't focus ${deps.noun} tab for !${mr.iid} (${result.status})`
+        `couldn't focus ${deps.noun} pane for !${mr.iid}${result.text ? `: ${result.text}` : ` (${result.status})`}`
       );
+      deps.reload();
       return;
     }
     deps.rollback();
@@ -68,12 +76,6 @@ export async function runLaunchFlow(
       intent === 'focus'
         ? `focused ${deps.noun} tab for !${mr.iid}`
         : `${deps.noun} already running for !${mr.iid} — focused its tab`
-    );
-  else if (intent === 'focus')
-    // The pane finished (or died) between render and click, so the server
-    // launched fresh instead of deduping -- say so rather than claim a focus.
-    deps.addToast(
-      `${deps.noun} wasn't running for !${mr.iid}; launched a fresh one`
     );
   deps.reload();
 }

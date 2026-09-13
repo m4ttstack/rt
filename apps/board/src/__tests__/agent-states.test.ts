@@ -55,6 +55,34 @@ describe('agent states', () => {
     });
   });
 
+  test('a status change drops the old message unless the write brings its own', () => {
+    const d = db();
+    const h = mintHandle('review', URL, '/tmp/fake-root');
+    insertAgentState(
+      'review',
+      URL,
+      7,
+      { mrUrl: URL, iid: 7, status: 'queued', startedAt: 1, updatedAt: 1 },
+      h,
+      d
+    );
+    updateByHandle(h, { status: 'error', message: 'pane closed' }, 2, d);
+    // Same status: the message describes it and stays.
+    expect(
+      updateByHandle(h, { status: 'error', tabId: 't1' }, 3, d)
+    ).toMatchObject({ status: 'error', message: 'pane closed', tabId: 't1' });
+    // New status, no message of its own: the old one would be a lie.
+    const relaunched = updateByHandle(h, { status: 'reviewing' }, 4, d) as {
+      message?: string;
+    };
+    expect(relaunched).toMatchObject({ status: 'reviewing' });
+    expect('message' in relaunched).toBe(false);
+    // New status with its own message keeps that one.
+    expect(
+      updateByHandle(h, { status: 'error', message: 'crashed' }, 5, d)
+    ).toMatchObject({ status: 'error', message: 'crashed' });
+  });
+
   test('update by unknown handle returns null, writes nothing', () => {
     const d = db();
     expect(

@@ -431,8 +431,9 @@ export function Board() {
   // GateForm's "focus pane" escape hatch: jump into whichever domain's pane
   // opened the gate, via the exact same launch endpoint a fresh launch from
   // the row would use -- the server-side dedup (existing tabId + in-flight
-  // status) re-focuses that pane instead of spawning another, so this never
-  // invents a distinct focus call.
+  // status) re-focuses that pane, and the focus intent makes a gone pane a
+  // refusal rather than a fresh launch, so this never invents a distinct
+  // focus call.
   const handleFocusPane = useCallback(
     (mr: BoardMR, domain: GateDomain) => {
       if (domain === 'review') handleLaunch(mr, undefined, 'focus');
