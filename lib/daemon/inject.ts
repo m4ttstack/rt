@@ -104,7 +104,8 @@ export async function injectAfterTurn(opts: AfterTurnOptions): Promise<void> {
     const settled = await herdr("agent.wait", { target: paneId, until: AFTER_TURN_STATES, timeout_ms: legMs }, { timeoutMs: waitTimeout(legMs), sockPath });
     if (settled.ok) {
       const res = await injectIntoPane({ paneId, text, herdr, sockPath });
-      if (res.ok) log?.info(res.data, "pane:send continuation delivered");
+      if (res.ok && res.data.delivered === "refused") log?.warn(res.data, "pane:send continuation refused");
+      else if (res.ok) log?.info(res.data, "pane:send continuation delivered");
       else log?.warn({ paneId, err: res.error }, "pane:send continuation failed");
       return;
     }
