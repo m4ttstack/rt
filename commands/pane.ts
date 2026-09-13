@@ -11,11 +11,11 @@
  *
  * Every verb needs herdr; without it the daemon answers "herdr unavailable".
  */
-import type { ChatPane, RtResponse } from "../packages/rt-client/src/index.ts";
+import type { ChatPane, PaneSendResult, RtResponse } from "../packages/rt-client/src/index.ts";
 import { BG_PREFIX, paneAccounts as paneAccountsRt, paneDirectories as paneDirectoriesRt, paneFocus as paneFocusRt, paneList as paneListRt, panePeek as panePeekRt, paneSend as paneSendRt, paneSpawn as paneSpawnRt } from "../packages/rt-client/src/index.ts";
 import { selfPaneRef } from "../lib/self-pane.ts";
 
-const FLAGS_WITH_VALUES = new Set(["--lines", "--cwd", "--account", "--model", "--effort", "--prompt", "--workspace", "--q", "--sock", "--text"]);
+const FLAGS_WITH_VALUES = new Set(["--lines", "--cwd", "--account", "--model", "--effort", "--prompt", "--workspace", "--q", "--sock", "--text", "--then"]);
 
 function positional(args: string[]): string | undefined {
   for (let i = 0; i < args.length; i++) {
@@ -116,9 +116,21 @@ export async function paneSend(args: string[]): Promise<void> {
   if (target === SELF_TARGET && !own) fail(NOT_IN_PANE);
   const paneId = target === SELF_TARGET ? own! : target;
   const callerPane = target === SELF_TARGET ? undefined : own;
-  const data = unwrap(await paneSendRt({ paneId, text, ...(callerPane ? { callerPane } : {}) }, opts(args)), "pane send");
-  if (args.includes("--json")) return void console.log(JSON.stringify({ ok: true, ...data }));
-  console.log(`${data.paneId} ${data.delivered}${data.reason ? ` (${data.reason})` : ""}`);
+  const send = async (body: string, label: string): Promise<PaneSendResult> =>
+    unwrap(await paneSendRt({ paneId, text: body, ...(callerPane ? { callerPane } : {}) }, opts(args)), label);
+  const data = await send(text, "pane send");
+  const thenText = flagValue(args, "--then");
+  const then = thenText !== undefined && data.delivered !== "refused" ? await send(thenText, "pane send --then") : undefined;
+  if (args.includes("--json")) {
+    const thenJson = then ? { then: then.reason ? { delivered: then.delivered, reason: then.reason } : { delivered: then.delivered } } : {};
+    return void console.log(JSON.stringify({ ok: true, ...data, ...thenJson }));
+  }
+  console.log(renderDelivery(data));
+  if (then) console.log(`then: ${renderDelivery(then)}`);
+}
+
+function renderDelivery(d: PaneSendResult): string {
+  return `${d.paneId} ${d.delivered}${d.reason ? ` (${d.reason})` : ""}`;
 }
 
 export function renderPaneFocus(data: { paneId: string; focused: boolean; attendTab?: string }): string {
