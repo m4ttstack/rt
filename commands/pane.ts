@@ -5,7 +5,7 @@
  *   rt pane peek <pane> [--lines 8] [--json]                      the last lines of a pane's screen
  *   rt pane spawn --cwd <path> [--account <a>] [--model <m>]
  *                 [--effort <e>] [--prompt <text>] [--workspace <label>] [--json]
- *   rt pane send <pane|self> --text <text> [--then <text>]        inject text into a pane; self is this pane (--text - reads stdin)
+ *   rt pane send <pane|self> --text <text> [--then <text>]        inject text into a pane; self is this pane; --then lands after its turn (--text - reads stdin)
  *   rt pane accounts [--json]                                     cswap accounts with headroom
  *   rt pane directories [--q <text>] [--json]                     repos and worktrees for --cwd
  *
@@ -116,20 +116,18 @@ export async function paneSend(args: string[]): Promise<void> {
   if (target === SELF_TARGET && !own) fail(NOT_IN_PANE);
   const paneId = target === SELF_TARGET ? own! : target;
   const callerPane = target === SELF_TARGET ? undefined : own;
-  const send = async (body: string, label: string): Promise<PaneSendResult> =>
-    unwrap(await paneSendRt({ paneId, text: body, ...(callerPane ? { callerPane } : {}) }, opts(args)), label);
-  const data = await send(text, "pane send");
-  const thenText = flagValue(args, "--then");
-  const then = thenText !== undefined && data.delivered !== "refused" ? await send(thenText, "pane send --then") : undefined;
-  if (args.includes("--json")) {
-    const thenJson = then ? { then: then.reason ? { delivered: then.delivered, reason: then.reason } : { delivered: then.delivered } } : {};
-    return void console.log(JSON.stringify({ ok: true, ...data, ...thenJson }));
-  }
-  console.log(renderDelivery(data));
-  if (then) console.log(`then: ${renderDelivery(then)}`);
+  const continuation = flagValue(args, "--then");
+  const data = unwrap(
+    await paneSendRt({ paneId, text, ...(callerPane ? { callerPane } : {}), ...(continuation !== undefined ? { continuation } : {}) }, opts(args)),
+    "pane send",
+  );
+  const { continuation: then, ...first } = data;
+  if (args.includes("--json")) return void console.log(JSON.stringify({ ok: true, ...first, ...(then ? { then } : {}) }));
+  console.log(renderDelivery(first));
+  if (then) console.log(`then: ${first.paneId} ${then.delivered}`);
 }
 
-function renderDelivery(d: PaneSendResult): string {
+function renderDelivery(d: Pick<PaneSendResult, "paneId" | "delivered" | "reason">): string {
   return `${d.paneId} ${d.delivered}${d.reason ? ` (${d.reason})` : ""}`;
 }
 

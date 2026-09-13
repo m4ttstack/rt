@@ -1691,7 +1691,7 @@ export const TREE: Record<string, CommandNode> = {
         args: [
           { name: "Pane", type: "text", placeholder: "w7A:pY | self", hint: "herdr pane id to send to, or self for the pane this command runs in (HERDR_PANE_ID)" },
           { name: "Text", flag: "--text", type: "text", placeholder: "standup in 5", hint: "Body to inject; pass - to read the body from stdin" },
-          { name: "Then", flag: "--then", type: "text", optional: true, placeholder: "Continue: enter worktree foo", hint: "A second line queued after the first, sent only when the first was accepted or queued" },
+          { name: "Then", flag: "--then", type: "text", optional: true, placeholder: "Continue: enter worktree foo", hint: "A second line the daemon types once the pane's current turn has ended, so it lands after a slash command; skipped when the first line is refused" },
           { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Emit the delivery result as JSON instead of the plain line" },
         ],
       },
