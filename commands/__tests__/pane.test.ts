@@ -248,6 +248,52 @@ test("pane send with a literal copy of the caller's own id still sends callerPan
   }
 });
 
+// ─── pane send --then ────────────────────────────────────────────────────────
+
+test("pane send --then queues a second line to the same target after a queued first", async () => {
+  replies = { "pane:send": { ok: true, data: { paneId: "w1:p1", delivered: "queued" } } };
+  const orig = process.env.HERDR_PANE_ID;
+  process.env.HERDR_PANE_ID = "w1:p1";
+  try {
+    const r = await run(paneSend, ["self", "--text", "/cd /repos/acme", "--then", "Continue: enter worktree foo"]);
+    expect(seen).toEqual([
+      { cmd: "pane:send", payload: { paneId: "w1:p1", text: "/cd /repos/acme" } },
+      { cmd: "pane:send", payload: { paneId: "w1:p1", text: "Continue: enter worktree foo" } },
+    ]);
+    expect(r.stdout).toBe("w1:p1 queued\nthen: w1:p1 queued");
+    expect(r.code).toBe(0);
+  } finally {
+    if (orig === undefined) delete process.env.HERDR_PANE_ID; else process.env.HERDR_PANE_ID = orig;
+  }
+});
+
+test("pane send --then is skipped when the first line is refused", async () => {
+  replies = { "pane:send": { ok: true, data: { paneId: "w1:p2", delivered: "refused", reason: "at a prompt" } } };
+  const r = await run(paneSend, ["w1:p2", "--text", "hi", "--then", "and again"]);
+  expect(seen).toHaveLength(1);
+  expect(r.stdout).toBe("w1:p2 refused (at a prompt)");
+  expect(r.code).toBe(0);
+});
+
+test("pane send --then --json nests the second delivery under then", async () => {
+  replies = { "pane:send": { ok: true, data: { paneId: "w1:p2", delivered: "accepted" } } };
+  const r = await run(paneSend, ["w1:p2", "--text", "hi", "--then", "and again", "--json"]);
+  expect(seen).toHaveLength(2);
+  expect(JSON.parse(r.stdout)).toEqual({ ok: true, paneId: "w1:p2", delivered: "accepted", then: { delivered: "accepted" } });
+});
+
+test("pane send --then --json omits then when the first line is refused", async () => {
+  replies = { "pane:send": { ok: true, data: { paneId: "w1:p2", delivered: "refused", reason: "not a claude pane" } } };
+  const r = await run(paneSend, ["w1:p2", "--text", "hi", "--then", "and again", "--json"]);
+  expect(JSON.parse(r.stdout)).toEqual({ ok: true, paneId: "w1:p2", delivered: "refused", reason: "not a claude pane" });
+});
+
+test("pane send --then value is not mistaken for the positional pane", async () => {
+  replies = { "pane:send": { ok: true, data: { paneId: "w1:p2", delivered: "accepted" } } };
+  await run(paneSend, ["--then", "and again", "w1:p2", "--text", "hi"]);
+  expect(seen[0]!.payload).toMatchObject({ paneId: "w1:p2", text: "hi" });
+});
+
 // ─── pane focus (Task 7: bg refs / attend) ─────────────────────────────────
 
 test("renderPaneFocus prints focused/not-focused for a plain result", () => {
