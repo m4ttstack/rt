@@ -25,13 +25,13 @@ rt pane send self --text <text> [--then <text>] [--json]
 - `self` is a target keyword. The CLI resolves it with `selfPaneRef()`
   (`lib/self-pane.ts`), which already addresses bg panes in ref space. When
   `HERDR_PANE_ID` is unset the CLI fails before any daemon call:
-  `rt pane send: not in a herdr pane (HERDR_PANE_ID unset)`, exit 1. That
+  `rt pane: not in a herdr pane (HERDR_PANE_ID unset)`, exit 1. That
   error is the branch a skill takes to ask the human to type the line.
 - For `self` the CLI omits `callerPane` from the payload, so the daemon's
   same-pane guard never fires. Any other target, including a literal copy of
   the caller's own id, still sends `callerPane` and still refuses. `self` is
-  the only spelling that reaches your own pane; the daemon and rt-client are
-  untouched.
+  the only spelling that reaches your own pane; the daemon and rt-client
+  change only for the continuation (below).
 - `--then <text>` queues a second line after the first, delivered by the
   daemon once the target's current turn has ended (see "Deferred
   continuation"). It is allowed for any target. The CLI reports it as
@@ -124,8 +124,9 @@ Points at `rt:herdr-inject` for the rules.
 - `commands/__tests__/pane.test.ts`: `self` resolves from `HERDR_PANE_ID`
   (visible and bg), the payload carries no `callerPane` for `self` and does
   for a literal id, unset env fails with the exact message before any
-  daemon call, `--then` sends a second call only after `accepted`/`queued`
-  and not after `refused`, plain and JSON shapes.
+  daemon call, `--then` rides the one call as `continuation`, an empty
+  `--then` is a usage error, and the `then` output appears only when the
+  reply carried `continuation`.
 - `lib/daemon/__tests__/inject.test.ts` (or the pane-handlers suite):
   `injectAfterTurn` waits through a timed-out leg, injects once the fake
   herdr reports `idle`, keeps waiting on `blocked`, abandons on a foreign
