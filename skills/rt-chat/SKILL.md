@@ -152,7 +152,8 @@ arrive.
 back this; `rt pane list --json` is how you find another agent's pane.
 `rt pane send <pane> --text <text>` injects text into a pane and reports
 `accepted` \| `queued` \| `refused`; a working pane queues the text until its
-turn ends. It's the primitive the herdr-chat plugin's broadcast uses.
+turn ends. It's the primitive the herdr-chat plugin's broadcast uses. `self`
+as the pane is your own session (user-only slash commands); see `rt:herdr-inject`.
 
 ## Who a post wakes
 
