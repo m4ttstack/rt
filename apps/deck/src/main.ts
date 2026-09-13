@@ -8,7 +8,6 @@ import {
   startCanaryListener,
   type Freshness,
 } from '../core/canary.ts';
-import { startGateway } from '../core/gateway.ts';
 import { isAuthorized, startRestartDetached } from '../core/proxy-restart.ts';
 import { reconcileOnce } from '../core/reconcile.ts';
 import { startApi } from './api/server.ts';
@@ -17,6 +16,7 @@ import { reconcileMattstackTld } from './api/tld-reconcile.ts';
 import { resolveCfDns, type CfDns } from './edge/cf-dns.ts';
 import { PortlessCli } from './edge/portless.ts';
 import { CloudflaredCli } from './edge/tunnel.ts';
+import { bindGatewayOrExit } from './gateway-boot.ts';
 import { migrateManagedDevShape } from './registry/migrate-dev-shape.ts';
 import { listRecords } from './registry/records.ts';
 import { LaunchdManager } from './services/launchd.ts';
@@ -121,17 +121,13 @@ export function serve(): void {
     reconcileOnce().catch(err => console.error('reconcile tick failed:', err));
   }, 5000);
 
-  let gatewayServer: ReturnType<typeof startGateway> | null = null;
+  let gatewayServer: ReturnType<typeof bindGatewayOrExit> = null;
   let canaryServer: ReturnType<typeof startCanaryListener> | null = null;
   let canaryInterval: ReturnType<typeof setInterval> | null = null;
   let canaryTimeout: ReturnType<typeof setTimeout> | null = null;
 
   if (process.env.LOCAL_APPS_NO_GATEWAY !== '1') {
-    try {
-      gatewayServer = startGateway();
-    } catch (err) {
-      console.error('gateway failed to start:', err);
-    }
+    gatewayServer = bindGatewayOrExit();
     try {
       canaryServer = startCanaryListener(CANARY_PORT, PORT);
       canaryTimeout = setTimeout(runCanaryCheck, 10_000);

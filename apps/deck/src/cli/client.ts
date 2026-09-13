@@ -1,11 +1,11 @@
 // src/cli/client.ts
-import { readApiInfo } from '../api/state.ts';
+import { resolveApiInfo } from './api-info.ts';
 
 export async function apiFetch(
   path: string,
   init?: RequestInit
 ): Promise<Response> {
-  const info = readApiInfo();
+  const info = resolveApiInfo();
   if (!info) {
     throw new Error(
       "Deck isn't running. Start it with `deck serve` or install it with `deck setup`."
