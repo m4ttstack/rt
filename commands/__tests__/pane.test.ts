@@ -190,6 +190,64 @@ test("pane send exits non-zero when the daemon fails", async () => {
   expect(r.stderr).toContain("herdr unavailable");
 });
 
+// ─── pane send self ────────────────────────────────────────────────────────
+
+test("pane send self targets HERDR_PANE_ID and omits callerPane", async () => {
+  replies = { "pane:send": { ok: true, data: { paneId: "w1:p1", delivered: "queued" } } };
+  const orig = process.env.HERDR_PANE_ID;
+  process.env.HERDR_PANE_ID = "w1:p1";
+  try {
+    const r = await run(paneSend, ["self", "--text", "/cd /repos/acme"]);
+    expect(seen[0]).toEqual({ cmd: "pane:send", payload: { paneId: "w1:p1", text: "/cd /repos/acme" } });
+    expect(r.stdout).toBe("w1:p1 queued");
+    expect(r.code).toBe(0);
+  } finally {
+    if (orig === undefined) delete process.env.HERDR_PANE_ID; else process.env.HERDR_PANE_ID = orig;
+  }
+});
+
+test("pane send self from a bg pane targets the bg: ref", async () => {
+  replies = { "pane:send": { ok: true, data: { paneId: "bg:w1:p1", delivered: "queued" } } };
+  const origPane = process.env.HERDR_PANE_ID;
+  const origSession = process.env.HERDR_SESSION;
+  process.env.HERDR_PANE_ID = "w1:p1";
+  process.env.HERDR_SESSION = "bg";
+  try {
+    await run(paneSend, ["self", "--text", "/cd /repos/acme"]);
+    expect(seen[0]).toEqual({ cmd: "pane:send", payload: { paneId: "bg:w1:p1", text: "/cd /repos/acme" } });
+  } finally {
+    if (origPane === undefined) delete process.env.HERDR_PANE_ID; else process.env.HERDR_PANE_ID = origPane;
+    if (origSession === undefined) delete process.env.HERDR_SESSION; else process.env.HERDR_SESSION = origSession;
+  }
+});
+
+test("pane send self outside a herdr pane fails before any daemon call", async () => {
+  replies = { "pane:send": { ok: true, data: { paneId: "w1:p1", delivered: "queued" } } };
+  const orig = process.env.HERDR_PANE_ID;
+  delete process.env.HERDR_PANE_ID;
+  try {
+    const r = await run(paneSend, ["self", "--text", "/cd /repos/acme"]);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toBe("rt pane: not in a herdr pane (HERDR_PANE_ID unset)");
+    expect(seen).toEqual([]);
+  } finally {
+    if (orig !== undefined) process.env.HERDR_PANE_ID = orig;
+  }
+});
+
+test("pane send with a literal copy of the caller's own id still sends callerPane", async () => {
+  replies = { "pane:send": { ok: true, data: { paneId: "w1:p1", delivered: "refused", reason: "that is this pane" } } };
+  const orig = process.env.HERDR_PANE_ID;
+  process.env.HERDR_PANE_ID = "w1:p1";
+  try {
+    const r = await run(paneSend, ["w1:p1", "--text", "/cd /repos/acme"]);
+    expect(seen[0]).toEqual({ cmd: "pane:send", payload: { paneId: "w1:p1", text: "/cd /repos/acme", callerPane: "w1:p1" } });
+    expect(r.stdout).toBe("w1:p1 refused (that is this pane)");
+  } finally {
+    if (orig === undefined) delete process.env.HERDR_PANE_ID; else process.env.HERDR_PANE_ID = orig;
+  }
+});
+
 // ─── pane focus (Task 7: bg refs / attend) ─────────────────────────────────
 
 test("renderPaneFocus prints focused/not-focused for a plain result", () => {
