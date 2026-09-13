@@ -359,7 +359,7 @@ export function createPaneHandlers(opts: {
       // addressably, every verb (including this one's own reply) prints
       // addressably back.
       const data = { ...res.data, paneId: payload.paneId };
-      if (payload.continuation === undefined || res.data.delivered === "refused") return { ok: true, data };
+      if (!payload.continuation || res.data.delivered === "refused") return { ok: true, data };
       schedule(injectAfterTurn({ paneId, text: payload.continuation, herdr, sockPath, log }));
       return { ok: true, data: { ...data, continuation: { delivered: "deferred" } } };
     },
