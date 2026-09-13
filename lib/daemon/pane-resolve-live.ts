@@ -19,8 +19,11 @@ function normalizePath(p: string): string {
 }
 
 /** paneId, then agent-session id, then unique normalized cwd. Null on miss
-    or ambiguity: a wrong pane is worse than no pane. Exact-socket semantics:
-    "bg:" hints match only "bg:" paneRefs, bare hints match only bare paneRefs. */
+    or ambiguity: a wrong pane is worse than no pane. The cwd layer skips a
+    pane that names a different session than the hint: board agents all run
+    in one shared checkout, and the operator's own pane there would otherwise
+    stand in for every dead one of them. Exact-socket semantics: "bg:" hints
+    match only "bg:" paneRefs, bare hints match only bare paneRefs. */
 export function resolveLivePane(hints: PaneHints, panes: LivePane[]): LivePane | null {
   if (hints.paneId) {
     if (hints.paneId.startsWith("bg:")) {
@@ -37,7 +40,12 @@ export function resolveLivePane(hints: PaneHints, panes: LivePane[]): LivePane |
   }
   if (hints.worktree) {
     const want = normalizePath(hints.worktree);
-    const hits = panes.filter((p) => p.cwd !== undefined && normalizePath(p.cwd) === want);
+    const hits = panes.filter(
+      (p) =>
+        p.cwd !== undefined &&
+        normalizePath(p.cwd) === want &&
+        (!hints.sessionId || !p.sessionId || p.sessionId === hints.sessionId),
+    );
     if (hits.length === 1) return hits[0]!;
   }
   return null;
