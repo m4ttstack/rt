@@ -104,6 +104,7 @@ const stop = createRelay({                                     // one daemon sub
 | `chatPost` / `chatDm` / `chatDmOpen` / `chatRead` / `chatMessages` / `chatMark` | messages: post, DM, open a DM room without posting, read-and-advance, page, advance the cursor |
 | `paneList` / `panePeek` / `paneSpawn` / `paneAccounts` / `paneDirectories` | herdr panes: list with presence joined, peek a screen, start claude in a tab, cswap accounts, directory suggestions |
 | `chatInvite` | type `/chat:join <room>` into a pane; `accepted`, `queued` or `refused` |
+| `paneSend` | type a line into a pane; `accepted`, `queued` or `refused`, plus an optional `continuation` the daemon types once the pane's turn has ended |
 | `createRelay` / `subscribe` | the event stream; `daemonHealth` the reachability probe |
 
 Pass `{ sockPath }` as the trailing options to reach a non-default daemon
