@@ -28,6 +28,8 @@ rt pane send self --text "/cd <repo>" --then "Continue: enter worktree <name> fo
 
   Both lines run in order after the turn ends; the second arrives as your
   next user message, so phrase it as the instruction you want to receive.
+- `--then` prints `deferred`: the daemon types it once your turn has ended.
+  A daemon restart in between drops it; nothing tells you.
 - `not in a herdr pane (HERDR_PANE_ID unset)` means there is no pane to
   type into. Ask the human to type the line; never guess a pane id or fall
   back to the herdr CLI.
