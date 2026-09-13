@@ -278,6 +278,13 @@ test("pane send --then \"\" is a usage error before any daemon call", async () =
   expect(seen).toEqual([]);
 });
 
+test("pane send --then as the last argument is a usage error, not an omitted flag", async () => {
+  const r = await run(paneSend, ["w1:p2", "--text", "hi", "--then"]);
+  expect(r.code).toBe(1);
+  expect(r.stderr).toContain("--then needs a body");
+  expect(seen).toEqual([]);
+});
+
 test("pane send --then rides the payload as continuation and prints the deferred line", async () => {
   replies = { "pane:send": { ok: true, data: { paneId: "w1:p1", delivered: "queued", continuation: { delivered: "deferred" } } } };
   const orig = process.env.HERDR_PANE_ID;
