@@ -67,8 +67,6 @@ your own pane, then end the turn:
 rt pane send self --text "/cd /Users/matt/Documents/GitHub/chat" --then "Continue: EnterWorktree name chat-42 for CHAT-42"
 ```
 
-The `/cd` runs when your turn ends and the `--then` line arrives as your
-next message, so the worktree step happens in the right repo without
-anyone typing "continue". Outside a herdr pane the command says so; ask
-Matt to run the `/cd` instead. Rules and the other-pane form:
-`rt:herdr-inject`.
+End the turn right after; the `--then` line arrives as your next message,
+in the right repo. Outside a herdr pane the command says so: ask Matt to
+run the `/cd`. Rules and the other-pane form: `rt:herdr-inject`.
