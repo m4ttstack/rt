@@ -113,10 +113,10 @@ export async function paneSend(args: string[]): Promise<void> {
   // The daemon refuses a callerPane equal to the target, so `self` is the one
   // spelling that reaches this pane: it sends the own ref as the target and no
   // callerPane. A literal copy of the own id keeps the guard.
-  if (target === SELF_TARGET && !own) fail(NOT_IN_PANE);
-  const paneId = target === SELF_TARGET ? own! : target;
+  const paneId = target === SELF_TARGET ? (own ?? fail(NOT_IN_PANE)) : target;
   const callerPane = target === SELF_TARGET ? undefined : own;
   const continuation = flagValue(args, "--then");
+  if (continuation === "") fail("--then needs a body");
   const data = unwrap(
     await paneSendRt({ paneId, text, ...(callerPane ? { callerPane } : {}), ...(continuation !== undefined ? { continuation } : {}) }, opts(args)),
     "pane send",
