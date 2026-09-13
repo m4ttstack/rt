@@ -45,9 +45,11 @@ function CommentsTrigger({
   );
 }
 
-/** The facts line's threads token, the drawer's entry. `awaitYou` counts
-    the seat's own MR threads waiting on them; `replied` says the author
-    answered the seat's threads on someone else's MR. */
+/** The facts line's threads token, the drawer's entry. A status outranks
+    the count and takes its place, with the total in the tooltip: `awaitYou`
+    (the seat's own MR threads waiting on them) reads "N threads waiting",
+    `replied` (the author answered the seat's threads on someone else's MR)
+    reads "author replied". */
 function ThreadsLink({
   mr,
   count,
@@ -67,13 +69,19 @@ function ThreadsLink({
 }) {
   const [openedAt, setOpenedAt] = useState<number | null>(null);
   const lit = fresh && openedAt !== count;
+  const total = `${count} thread${count === 1 ? '' : 's'}`;
+  const title = lit
+    ? `${grew} new since you last looked`
+    : awaitYou > 0
+      ? `${total}, ${awaitYou} waiting on you`
+      : replied
+        ? `${total}, the author answered yours`
+        : 'open the comments drawer';
   return (
     <CommentsTrigger
       mr={mr}
       className="tui-threads"
-      title={
-        lit ? `${grew} new since you last looked` : 'open the comments drawer'
-      }
+      title={title}
       fresh={lit}
       onOpen={() => {
         setOpenedAt(count);
@@ -81,15 +89,15 @@ function ThreadsLink({
       }}
     >
       <MessageGlyph />
-      <span className="tui-threads-count">
-        {count} thread{count === 1 ? '' : 's'}
-      </span>
-      {awaitYou > 0 && (
+      {awaitYou > 0 ? (
         <span className="tui-threads-await">
-          {awaitYou} await{awaitYou === 1 ? 's' : ''} you
+          {awaitYou} thread{awaitYou === 1 ? '' : 's'} waiting
         </span>
+      ) : replied ? (
+        <span className="tui-threads-replied">author replied</span>
+      ) : (
+        <span className="tui-threads-count">{total}</span>
       )}
-      {replied && <span className="tui-threads-replied">author replied</span>}
     </CommentsTrigger>
   );
 }

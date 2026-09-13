@@ -12,19 +12,15 @@ import {
 } from '../../view.ts';
 import type { BoardMRWithReview, RowContext } from '../types.ts';
 import { ThreadsLink } from './CommentsDrawer.tsx';
-import { ago, cleanTitle, getSlackMarks, mrLine } from './format.ts';
+import { ago, getSlackMarks, mrLine, rowTitle } from './format.ts';
 import {
   ArrowDownGlyph,
   ArrowOutGlyph,
-  Bubble,
-  DiscCheck,
-  Eyes,
   FlagGlyph,
-  LinearLogo,
   SlackLogo,
 } from './icons.tsx';
 import { rowStatus, statusPhrase, statusReasons } from './row-status.ts';
-import { slackLadder, type SlackStage } from './slack-ladder.ts';
+import { slackLadder } from './slack-ladder.ts';
 import { StatusDot } from './StatusDot.tsx';
 import { StatusLine } from './StatusLine.tsx';
 import {
@@ -79,49 +75,27 @@ function StatusPhrase({ mr }: { mr: BoardMR }) {
   );
 }
 
-const STAGE_ICON: Record<SlackStage, () => React.JSX.Element> = {
-  looking: Eyes,
-  commented: Bubble,
-  approved: DiscCheck,
-};
-
-/** Line 0's Slack ladder: the furthest reaction as a mono mark, then the
-    brand-colored logo once the MR is posted. Nothing renders before that. */
+/** Line 0's Slack ladder: the furthest reaction as the emoji Slack shows
+    for it, then the brand-colored logo once the MR is posted. Nothing
+    renders before that. */
 function SlackMarks({ mr }: { mr: BoardMRWithReview }) {
   const { posted, mark } = slackLadder(mr.slack, getSlackMarks());
   if (!posted) return null;
-  const Stage = mark ? STAGE_ICON[mark.stage] : null;
   return (
     <span className="tui-row-marks">
-      {Stage && mark && (
+      {mark && (
         <span
           className="tui-mark"
           data-slack-stage={mark.stage}
           title={mark.title}
         >
-          <Stage />
+          {mark.glyph}
         </span>
       )}
       <span className="tui-mark" data-slack-logo="" title="posted in slack">
         <SlackLogo />
       </span>
     </span>
-  );
-}
-
-function TicketLink({ ticket }: { ticket: string }) {
-  return (
-    <a
-      className="tui-ticket"
-      href={ticketUrl(ticket)}
-      target="_blank"
-      rel="noopener noreferrer"
-      title={`open ${ticket} in Linear`}
-      aria-label={`open ${ticket} in Linear`}
-      onClick={e => e.stopPropagation()}
-    >
-      <LinearLogo />
-    </a>
   );
 }
 
@@ -197,8 +171,9 @@ function AuthorTag({ mr }: { mr: BoardMR }) {
   );
 }
 
-/** The same slot when the author is the group header: the ticket, as a
-    link, so the line still leads with identity. */
+/** The facts line's identity after the iid: the ticket, as a Linear link.
+    The branch's only fact worth the space is the ticket it carries, so the
+    branch itself shows only when no ticket can be read off it. */
 function TicketTag({ ticket }: { ticket: string }) {
   return (
     <a
@@ -258,11 +233,7 @@ function RowView({
         <div className="tui-row-body">
           <div className="tui-row-0">
             <span className="tui-row-lead">
-              {showAuthor ? (
-                <AuthorTag mr={mr} />
-              ) : (
-                ticket && <TicketTag ticket={ticket} />
-              )}
+              {showAuthor && <AuthorTag mr={mr} />}
               <StatusFlags mr={mr} nested={nested} />
               {behind && (
                 <span className="tui-behind" title={behind.title}>
@@ -275,11 +246,15 @@ function RowView({
             <StatusPhrase mr={mr} />
           </div>
           <div className="tui-row-1">
-            <span className="tui-title">{cleanTitle(mr.title)}</span>
+            <span className="tui-title">{rowTitle(mr.title, ticket)}</span>
           </div>
           <div className="tui-row-2">
             <span className="tui-mr-iid">!{mr.iid}</span>
-            <span className="tui-branch">{mr.sourceBranch}</span>
+            {ticket ? (
+              <TicketTag ticket={ticket} />
+            ) : (
+              <span className="tui-branch">{mr.sourceBranch}</span>
+            )}
             {mr.diff && (
               <span
                 className="tui-diff"
@@ -296,14 +271,11 @@ function RowView({
             status={status}
             ctx={ctx}
             tools={
-              <>
-                {ticket && <TicketLink ticket={ticket} />}
-                <CopyButton
-                  text={mrLine(mr, ctx.slackTemplates)}
-                  className="tui-copy-inline"
-                  title="copy this MR for Slack"
-                />
-              </>
+              <CopyButton
+                text={mrLine(mr, ctx.slackTemplates)}
+                className="tui-copy-inline"
+                title="copy this MR for Slack"
+              />
             }
           />
         </div>

@@ -2,8 +2,37 @@ import type { ReactNode } from 'react';
 
 import type { BoardMRWithReview, RowContext } from '../types.ts';
 import { clauseOf } from './clause.ts';
-import { Sun } from './icons.tsx';
-import type { RowStatus, Verb } from './row-status.ts';
+import { AgentGlyph, Sun } from './icons.tsx';
+import type { RowStatus, Verb, VerbKind } from './row-status.ts';
+
+type Lane = 'review' | 'respond' | 'doctor';
+
+/** The lane an agent verb launches, re-runs or jumps into. The color of the
+    verb is the lane, so a reader knows which agent a click starts before
+    reading the word; `relaunch` and `focus` name theirs on the verb. */
+const AGENT_LANE: Partial<Record<VerbKind, Lane>> = {
+  'launch-review': 'review',
+  're-review': 'review',
+  'launch-respond': 'respond',
+  'restart-respond': 'respond',
+  'resume-respond': 'respond',
+  'call-doctor': 'doctor',
+};
+
+function laneOf(verb: Verb): Lane | undefined {
+  if (verb.kind === 'relaunch' || verb.kind === 'focus') return verb.domain;
+  return AGENT_LANE[verb.kind];
+}
+
+/** The primary verb holds the line's right end at rest; the secondaries
+    appear under the pointer to its LEFT, so it never moves. */
+function ordered(verbs: Verb[]): Array<{ verb: Verb; primary: boolean }> {
+  const [primary, ...rest] = verbs;
+  return [
+    ...rest.map(verb => ({ verb, primary: false })),
+    ...(primary ? [{ verb: primary, primary: true }] : []),
+  ];
+}
 
 function runVerb(verb: Verb, mr: BoardMRWithReview, ctx: RowContext): void {
   switch (verb.kind) {
@@ -98,22 +127,28 @@ export function StatusLine({
       {tools && <span className="tui-status-tools">{tools}</span>}
       {line.verbs.length > 0 && (
         <span className="tui-status-verbs">
-          {line.verbs.map((verb, i) => (
-            <button
-              key={`${verb.kind}-${i}`}
-              type="button"
-              className="tui-status-verb"
-              data-verb={verb.kind}
-              data-hot={hot && i === 0 ? 'true' : undefined}
-              data-secondary={i > 0 ? 'true' : undefined}
-              onClick={e => {
-                e.stopPropagation();
-                runVerb(verb, mr, ctx);
-              }}
-            >
-              {verb.label}
-            </button>
-          ))}
+          {ordered(line.verbs).map(({ verb, primary }) => {
+            const lane = laneOf(verb);
+            return (
+              <button
+                key={`${verb.kind}-${verb.label}`}
+                type="button"
+                className="tui-status-verb"
+                data-verb={verb.kind}
+                data-lane={lane}
+                data-decide={verb.kind === 'answer' ? 'true' : undefined}
+                data-hot={hot && primary ? 'true' : undefined}
+                data-secondary={primary ? undefined : 'true'}
+                onClick={e => {
+                  e.stopPropagation();
+                  runVerb(verb, mr, ctx);
+                }}
+              >
+                {lane && <AgentGlyph />}
+                {verb.label}
+              </button>
+            );
+          })}
         </span>
       )}
     </div>

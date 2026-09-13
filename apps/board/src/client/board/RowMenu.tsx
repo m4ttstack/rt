@@ -12,8 +12,53 @@ import {
   laneInterrupted,
   nudgeTargets,
   respondItemLabel,
+  reviewLogged,
   reviewMenuItems,
 } from './format.ts';
+import {
+  AgentGlyph,
+  ArrowOutGlyph,
+  FlagGlyph,
+  MenuGlyph,
+  SlackLogo,
+} from './icons.tsx';
+
+type Lane = 'review' | 'respond' | 'doctor';
+
+/** An agent action's label: the bot mark in the lane's color, then the
+    row's own verb, so the menu and the status line say the same thing. */
+function agentLabel(lane: Lane, text: string) {
+  return (
+    <span className="tui-menu-agent" data-lane={lane}>
+      <AgentGlyph />
+      {text}
+    </span>
+  );
+}
+
+/** Every other item: one icon that says where the click lands, then the
+    words. The icon replaces the old trailing "gitlab" / "herdr" hints. */
+function iconLabel(icon: React.ReactNode, text: string) {
+  return (
+    <span className="tui-menu-icon-label">
+      {icon}
+      {text}
+    </span>
+  );
+}
+
+const FileGlyph = () => <MenuGlyph kind="file" />;
+const PeopleGlyph = () => <MenuGlyph kind="people" />;
+const CopyGlyph = () => <MenuGlyph kind="copy" />;
+const GITLAB_GLYPH: Record<
+  ReturnType<typeof gitlabMenuItems>[number]['kind'],
+  React.ReactNode
+> = {
+  merge: <FlagGlyph kind="conflicts" />,
+  rebase: <MenuGlyph kind="branch" />,
+  setAutoMerge: <FlagGlyph kind="auto-merge" />,
+  cancelAutoMerge: <FlagGlyph kind="auto-merge" />,
+};
 
 /** Context menu anchored at the cursor. The kit's ContextMenu recipe owns the
     shell -- the box, the viewport clamp, the parts, and all four dismissals.
@@ -126,7 +171,7 @@ function RowMenu({
       fire();
       onClose();
     };
-  const paneHint = altHeld ? '+ note' : 'herdr';
+  const paneHint = altHeld ? '+ note' : undefined;
   // Slack marks stay open (set several at once) and drive per-item pending +
   // a live check, so the click has immediate feedback. Clicking an item that
   // already carries our reaction removes it — the ✓ toggles the mark.
@@ -207,8 +252,127 @@ function RowMenu({
     laneInterrupted(mrx.orphan, mrx.respond)
   );
   const respondFocuses =
-    respondLabel === 'focus response tab' ||
-    respondLabel === 'relaunch response pane';
+    respondLabel === 'focus response' || respondLabel === 'relaunch response';
+  const doctorLabel = doctorItemLabel(mrx.doctor?.status);
+  const doctorFocuses = doctorLabel === 'focus doctor';
+  // Only what is possible right now renders: a blocked GitLab action is
+  // absent, not greyed, and a section with nothing in it has no label.
+  const gitlab = ctx.local ? gitlabItems.filter(item => !item.disabled) : [];
+  const agentItems: React.ReactNode[] = [];
+  if (ctx.local) {
+    for (const item of reviewMenuItems(
+      mrx.review?.status,
+      laneInterrupted(mrx.orphan, mrx.review),
+      reviewLogged(mr)
+    )) {
+      agentItems.push(
+        <ContextMenu.Item
+          key={item.kind}
+          label={agentLabel('review', item.label)}
+          hint={reviewRunning ? undefined : paneHint}
+          onClick={
+            reviewRunning
+              ? run(() => onLaunch(mr, undefined, 'focus'))
+              : paneClick(item.label, note =>
+                  item.kind === 're-review'
+                    ? onReReview(mr, note)
+                    : onLaunch(mr, note)
+                )
+          }
+        />
+      );
+    }
+    if (mrx.review?.sessionId)
+      agentItems.push(
+        <ContextMenu.Item
+          key="resume-review"
+          label={agentLabel('review', 'resume review')}
+          hint={paneHint}
+          onClick={paneClick('resume review', note => onResumeReview(mr, note))}
+        />
+      );
+    if (canRespond)
+      agentItems.push(
+        <ContextMenu.Item
+          key="respond"
+          label={agentLabel('respond', respondLabel)}
+          hint={respondFocuses ? undefined : paneHint}
+          onClick={
+            respondFocuses
+              ? run(() => onRespond(mr, undefined, 'focus'))
+              : paneClick(respondLabel, note => onRespond(mr, note))
+          }
+        />
+      );
+    if (canRespond && mrx.respond?.sessionId)
+      agentItems.push(
+        <ContextMenu.Item
+          key="resume-respond"
+          label={agentLabel('respond', 'resume response')}
+          hint={paneHint}
+          onClick={paneClick('resume response', note =>
+            ctx.onResumeRespond(mr, note)
+          )}
+        />
+      );
+    if (canDoctor)
+      agentItems.push(
+        <ContextMenu.Item
+          key="doctor"
+          label={agentLabel('doctor', doctorLabel)}
+          hint={doctorFocuses ? undefined : paneHint}
+          onClick={
+            doctorFocuses
+              ? run(() => onDoctor(mr, undefined, 'focus'))
+              : paneClick(doctorLabel, note => onDoctor(mr, note))
+          }
+        />
+      );
+    // The doctor chassis scoped to a checkout rebase, offered whenever a
+    // rebase is plausibly wanted (conflicts, GitLab's own rebase button
+    // raised, or merely behind target), since it's the fallback for the
+    // gitlab-section rebase failing. A doctor already in flight re-focuses
+    // via the endpoint's dedup rather than spawning a second pane.
+    if (canRebaseLocal)
+      agentItems.push(
+        <ContextMenu.Item
+          key="rebase-local"
+          label={agentLabel('doctor', 'rebase locally')}
+          hint={paneHint}
+          onClick={paneClick('rebase locally', note => onRebaseLocal(mr, note))}
+        />
+      );
+  }
+  if (mrx.review?.reportReady)
+    agentItems.push(
+      <ContextMenu.Item
+        key="view-review"
+        label={iconLabel(<FileGlyph />, 'view agent review')}
+        onClick={run(() => ctx.onOpenReview(mrx))}
+      />
+    );
+  if (mrx.respond?.reportReady)
+    agentItems.push(
+      <ContextMenu.Item
+        key="view-respond"
+        label={iconLabel(<FileGlyph />, 'view agent response')}
+        onClick={run(() => ctx.onOpenRespond(mrx))}
+      />
+    );
+  // Ask a peer whose review left comments to look again. Only ever offered
+  // for your own MR, and only while no ask of yours is still outstanding.
+  for (const peer of peers)
+    agentItems.push(
+      <ContextMenu.Item
+        key={`nudge-${peer.reviewer}`}
+        label={iconLabel(
+          <PeopleGlyph />,
+          `ask ${peer.reviewer}'s agent to re-review`
+        )}
+        onClick={run(() => onNudge(mr, peer.reviewer))}
+      />
+    );
+
   return (
     // The other half of the pair above: two menus of the same element type at
     // the same position are only distinct instances to React if the keys differ.
@@ -221,211 +385,104 @@ function RowMenu({
     >
       <ContextMenu.Label>!{mr.iid}</ContextMenu.Label>
 
-      {ctx.local && <ContextMenu.Label>agent actions</ContextMenu.Label>}
-      {ctx.local &&
-        reviewMenuItems(
-          mrx.review?.status,
-          laneInterrupted(mrx.orphan, mrx.review)
-        ).map(item => (
-          <ContextMenu.Item
-            key={item.kind}
-            label={item.label}
-            hint={reviewRunning ? 'herdr' : paneHint}
-            onClick={
-              reviewRunning
-                ? run(() => onLaunch(mr, undefined, 'focus'))
-                : paneClick(item.label, note =>
-                    item.kind === 're-review'
-                      ? onReReview(mr, note)
-                      : onLaunch(mr, note)
-                  )
-            }
-          />
-        ))}
-      {ctx.local && mrx.review?.sessionId && (
-        <ContextMenu.Item
-          label="resume review"
-          hint={paneHint}
-          onClick={paneClick('resume review', note => onResumeReview(mr, note))}
-        />
-      )}
-      {ctx.local && canRespond && (
-        <ContextMenu.Item
-          label={respondLabel}
-          hint={respondFocuses ? 'herdr' : paneHint}
-          onClick={
-            respondFocuses
-              ? run(() => onRespond(mr, undefined, 'focus'))
-              : paneClick(respondLabel, note => onRespond(mr, note))
-          }
-        />
-      )}
-      {ctx.local && canRespond && mrx.respond?.sessionId && (
-        <ContextMenu.Item
-          label="resume response"
-          hint={paneHint}
-          onClick={paneClick('resume response', note =>
-            ctx.onResumeRespond(mr, note)
-          )}
-        />
-      )}
-      {ctx.local && canDoctor && (
-        <ContextMenu.Item
-          label={doctorItemLabel(mrx.doctor?.status)}
-          hint={
-            doctorItemLabel(mrx.doctor?.status) === 'focus doctor tab'
-              ? 'herdr'
-              : paneHint
-          }
-          onClick={
-            doctorItemLabel(mrx.doctor?.status) === 'focus doctor tab'
-              ? run(() => onDoctor(mr, undefined, 'focus'))
-              : paneClick(doctorItemLabel(mrx.doctor?.status), note =>
-                  onDoctor(mr, note)
-                )
-          }
-        />
-      )}
-      {/* The doctor chassis scoped to a checkout rebase — offered whenever a
-          rebase is plausibly wanted (conflicts, GitLab's own rebase button
-          raised, or merely behind target), since it's the fallback for the
-          gitlab-section rebase failing. A doctor already in flight re-focuses
-          via the endpoint's dedup rather than spawning a second pane. */}
-      {ctx.local && canRebaseLocal && (
-        <ContextMenu.Item
-          label="rebase locally"
-          hint={paneHint}
-          onClick={paneClick('rebase locally', note => onRebaseLocal(mr, note))}
-        />
-      )}
-      {ctx.local && (gitlabItems.length > 0 || canDraftState) && (
+      {agentItems.length > 0 && (
         <>
-          <ContextMenu.Separator />
-          <ContextMenu.Label>gitlab</ContextMenu.Label>
+          <ContextMenu.Label>agent actions</ContextMenu.Label>
+          {agentItems}
         </>
       )}
-      {ctx.local &&
-        gitlabItems.map(item => (
-          <ContextMenu.Item
-            key={item.kind}
-            label={
-              item.kind === 'merge' && confirmMerge
-                ? 'really merge?'
-                : item.label
-            }
-            hint="gitlab"
-            disabled={item.disabled}
-            onClick={
-              item.kind === 'merge' && !confirmMerge
-                ? () => setConfirmMerge(true)
-                : run(() => onMrAction(mr, item.kind))
-            }
-          />
-        ))}
+
+      <ContextMenu.Separator />
+      <ContextMenu.Label>gitlab</ContextMenu.Label>
+      {gitlab.map(item => (
+        <ContextMenu.Item
+          key={item.kind}
+          label={iconLabel(
+            GITLAB_GLYPH[item.kind],
+            item.kind === 'merge' && confirmMerge ? 'really merge?' : item.label
+          )}
+          onClick={
+            item.kind === 'merge' && !confirmMerge
+              ? () => setConfirmMerge(true)
+              : run(() => onMrAction(mr, item.kind))
+          }
+        />
+      ))}
       {ctx.local && canDraftState && (
         <ContextMenu.Item
-          label={mr.isDraft ? 'mark ready' : 'mark as draft'}
-          hint="gitlab"
+          label={iconLabel(
+            <FlagGlyph kind="draft" />,
+            mr.isDraft ? 'mark ready' : 'mark as draft'
+          )}
           onClick={run(() => onDraftState(mr, !mr.isDraft))}
         />
       )}
-      {/* On a remote board no pane/gitlab section renders above, so the misc
-          items sit right under the title and need no divider of their own. */}
-      {ctx.local && (
-        <>
-          <ContextMenu.Separator />
-          <ContextMenu.Label>misc</ContextMenu.Label>
-        </>
-      )}
-      {/* Ask a peer whose review left comments to look again. Only ever offered
-          for your own MR, and only while no ask of yours is still outstanding. */}
-      {peers.map(peer => (
-        <ContextMenu.Item
-          key={peer.reviewer}
-          label={`request re-review from ${peer.reviewer}`}
-          hint="peer"
-          onClick={run(() => onNudge(mr, peer.reviewer))}
-        />
-      ))}
-      {mrx.review?.reportReady && (
-        <ContextMenu.Item
-          label="view review"
-          onClick={run(() => ctx.onOpenReview(mrx))}
-        />
-      )}
-      {mrx.respond?.reportReady && (
-        <ContextMenu.Item
-          label="view respond"
-          onClick={run(() => ctx.onOpenRespond(mrx))}
-        />
-      )}
       <ContextMenu.Item
-        label="open in gitlab"
+        label={iconLabel(<ArrowOutGlyph />, 'open in gitlab')}
         onClick={run(
           () => mr.webUrl && window.open(mr.webUrl, '_blank', 'noopener')
         )}
       />
-      <ContextMenu.Item
-        label="copy for slack"
-        onClick={run(() => onCopy(mr))}
-      />
 
-      {showSlack && (
+      <ContextMenu.Separator />
+      <ContextMenu.Label>slack</ContextMenu.Label>
+      {showSlack && found && (
         <>
-          <ContextMenu.Separator />
-          {found ? (
-            <>
-              {getSlackMarks().map(m => {
-                const isPending = pending.includes(m.emoji);
-                const isMarked = reactions.includes(m.emoji);
-                return (
-                  <ContextMenu.Item
-                    key={m.emoji}
-                    label={isMarked ? `unmark ${m.glyph} on slack` : m.label}
-                    disabled={isPending}
-                    // Caller-supplied trailing nodes: the recipe never inspects
-                    // them, so both keep their board-side classes.
-                    trailing={
-                      isPending ? (
-                        <span className="tui-menu-spin" aria-label="working" />
-                      ) : isMarked ? (
-                        <span className="tui-menu-check">✓</span>
-                      ) : undefined
-                    }
-                    onClick={() => react(m.emoji)}
-                  />
-                );
-              })}
-              {slack?.permalink && (
-                <ContextMenu.Item
-                  label="open MR post in slack"
-                  onClick={run(() =>
-                    window.open(slack.permalink!, '_blank', 'noopener')
-                  )}
-                />
-              )}
-            </>
-          ) : (
-            <>
+          {getSlackMarks().map(m => {
+            const isPending = pending.includes(m.emoji);
+            const isMarked = reactions.includes(m.emoji);
+            return (
               <ContextMenu.Item
-                label={
-                  slack?.status === 'notfound'
-                    ? 'no thread — retry find'
-                    : 'find slack thread'
+                key={m.emoji}
+                label={iconLabel(
+                  <span className="tui-menu-emoji">{m.glyph}</span>,
+                  isMarked ? `unmark ${m.word}` : `mark as ${m.word}`
+                )}
+                disabled={isPending}
+                // Caller-supplied trailing nodes: the recipe never inspects
+                // them, so both keep their board-side classes.
+                trailing={
+                  isPending ? (
+                    <span className="tui-menu-spin" aria-label="working" />
+                  ) : isMarked ? (
+                    <span className="tui-menu-check">✓</span>
+                  ) : undefined
                 }
-                onClick={run(() => onResolveSlack(mr))}
+                onClick={() => react(m.emoji)}
               />
-              <ContextMenu.Item
-                label="post to slack"
-                onClick={run(() => onPostSlack(mr))}
-              />
-              {getSlackMarks().map(m => (
-                <ContextMenu.Item key={m.emoji} label={m.label} disabled />
-              ))}
-            </>
+            );
+          })}
+          {slack?.permalink && (
+            <ContextMenu.Item
+              label={iconLabel(<SlackLogo />, 'open MR post in slack')}
+              onClick={run(() =>
+                window.open(slack.permalink!, '_blank', 'noopener')
+              )}
+            />
           )}
         </>
       )}
+      {showSlack && !found && (
+        <>
+          <ContextMenu.Item
+            label={iconLabel(
+              <SlackLogo />,
+              slack?.status === 'notfound'
+                ? 'no thread, find it again'
+                : 'find slack thread'
+            )}
+            onClick={run(() => onResolveSlack(mr))}
+          />
+          <ContextMenu.Item
+            label={iconLabel(<SlackLogo />, 'post to slack')}
+            onClick={run(() => onPostSlack(mr))}
+          />
+        </>
+      )}
+      <ContextMenu.Item
+        label={iconLabel(<CopyGlyph />, 'copy for slack')}
+        onClick={run(() => onCopy(mr))}
+      />
     </ContextMenu>
   );
 }

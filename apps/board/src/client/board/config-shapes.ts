@@ -1,4 +1,5 @@
 import type { SettingDefWire } from '@mattstack/settings-kit/react';
+import { DEFAULT_SLACK_EMOJI } from '../../slack-emoji.ts';
 
 export type ConfigDef = SettingDefWire;
 
@@ -8,7 +9,13 @@ export type LeafType =
 export type CompositeShape =
   | { kind: 'stringList' }
   | { kind: 'pairList'; fields: readonly [string, string] }
-  | { kind: 'leaves'; fields: Record<string, LeafType> }
+  | {
+      kind: 'leaves';
+      fields: Record<string, LeafType>;
+      /** What the reader applies when a leaf is unset, shown as the empty
+          control's placeholder so a default in effect never reads "unset". */
+      fallbacks?: Record<string, string>;
+    }
   | { kind: 'roster' }
   | { kind: 'tabs' };
 
@@ -41,6 +48,11 @@ export const COMPOSITE_SHAPES: Record<string, CompositeShape> = {
       'emoji.looking': 'string',
       'emoji.commented': 'string',
       'emoji.approved': 'string',
+    },
+    fallbacks: {
+      'emoji.looking': DEFAULT_SLACK_EMOJI.looking,
+      'emoji.commented': DEFAULT_SLACK_EMOJI.commented,
+      'emoji.approved': DEFAULT_SLACK_EMOJI.approved,
     },
   },
   'board.triage': {

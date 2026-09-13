@@ -2,6 +2,7 @@ import { getReviewDisplayState } from '@mattstack/glance';
 import type { BoardMR } from '../../data.ts';
 import { stripDraftPrefix } from '../../data.ts';
 import type { RespondStatus } from '../../respond-outcome.ts';
+import { DEFAULT_SLACK_EMOJI } from '../../slack-emoji.ts';
 import {
   renderMr,
   renderMulti,
@@ -56,7 +57,18 @@ function activeReviewers(mr: BoardMR): string[] {
     already strips the marker off GitLab titles, so the draft pass is only a
     guard for titles that arrive with it still attached. */
 function cleanTitle(title: string): string {
-  return stripDraftPrefix(title).replace(/^[A-Za-z]+-\d+:\s*/, '');
+  const undrafted = stripDraftPrefix(title);
+  return undrafted.replace(/^[A-Za-z]+-\d+:\s*/, '') || undrafted;
+}
+
+/** The row's title: `cleanTitle` plus the ticket the facts line now carries
+    as a link, so the id never appears twice one line apart. Row-only: the
+    Slack templates' `{title}` keeps the id, which the team reads in Slack. */
+function rowTitle(title: string, ticket: string | null): string {
+  const clean = cleanTitle(title);
+  if (!ticket) return clean;
+  const escaped = ticket.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return clean.replace(new RegExp(`^${escaped}\\b[:\\s-]*`, 'i'), '') || clean;
 }
 
 const RESPOND_ACTIVE = new Set<RespondStatus>([
@@ -124,7 +136,8 @@ interface SlackMark {
   stage: SlackStage;
   emoji: string;
   glyph: string;
-  label: string;
+  /** The stage as a word, for the menu's "mark as looking" wording. */
+  word: string;
   title: string;
 }
 
@@ -138,21 +151,21 @@ function buildSlackMarks(e: {
       stage: 'looking',
       emoji: e.looking,
       glyph: '👀',
-      label: 'mark 👀 on slack',
+      word: 'looking',
       title: "someone's looking (in slack)",
     },
     {
       stage: 'commented',
       emoji: e.commented,
       glyph: '💬',
-      label: 'mark 💬 on slack',
+      word: 'commented',
       title: 'commented in slack',
     },
     {
       stage: 'approved',
       emoji: e.approved,
       glyph: '✅',
-      label: 'mark ✅ on slack',
+      word: 'approved',
       title: 'approved in slack',
     },
   ];
@@ -160,11 +173,7 @@ function buildSlackMarks(e: {
 
 /** Module-level so every component reads the same list; rebuilt when /data.json
     arrives (which always precedes a re-render of anything that shows marks). */
-let SLACK_MARKS = buildSlackMarks({
-  looking: 'eyes',
-  commented: 'speech_balloon',
-  approved: 'white_check_mark',
-});
+let SLACK_MARKS = buildSlackMarks(DEFAULT_SLACK_EMOJI);
 
 /** Read the current review-signal marks. Accessor rather than a bare export so
     a later reassignment (see `setSlackMarks`) is visible to every caller —
@@ -235,38 +244,57 @@ const THREAD_LABEL: Record<ThreadStatus, string> = {
     outside the board. A live review collapses to a single "focus review tab" —
     or "relaunch review pane" once the sweep says the pane is gone, since the
     same focus route re-opens a dead pane and "focus" would undersell it. */
+/** The review items for the menu, worded like the row's verbs. Re-review
+    is offered only once a review is logged: the board's own finished one,
+    or a person's on GitLab (`reviewLogged`); cold, it would be a second
+    launch button. */
 function reviewMenuItems(
   status?: ReviewStatus,
-  interrupted?: boolean
+  interrupted?: boolean,
+  logged = false
 ): Array<{ kind: 'launch' | 're-review'; label: string }> {
   if (status === 'queued' || status === 'reviewing')
     return [
       {
         kind: 'launch',
-        label: interrupted ? 'relaunch review pane' : 'focus review tab',
+        label: interrupted ? 'relaunch review' : 'focus review',
       },
     ];
   if (status === 'done') return [{ kind: 're-review', label: 're-review' }];
-  // none | error: offer a cold first review and the re-review path side by side.
-  return [
-    { kind: 'launch', label: 'launch review' },
-    { kind: 're-review', label: 're-review' },
+  const items: Array<{ kind: 'launch' | 're-review'; label: string }> = [
+    { kind: 'launch', label: 'review' },
   ];
+  if (logged) items.push({ kind: 're-review', label: 're-review' });
+  return items;
+}
+
+/** Whether anyone has reviewed the MR on GitLab: a reviewer who commented,
+    approved or requested changes, an approval on the tally, or reviewer
+    threads. The thing a re-review would re-check. */
+function reviewLogged(mr: BoardMR): boolean {
+  const states = new Set(['REVIEWED', 'APPROVED', 'REQUESTED_CHANGES']);
+  return (
+    mr.reviews.given > 0 ||
+    mr.reviewerComments > 0 ||
+    (mr.reviews.reviewers ?? []).some(
+      r => !!r.reviewState && states.has(r.reviewState)
+    )
+  );
 }
 
 function respondItemLabel(
   status?: RespondStatus,
   interrupted?: boolean
 ): string {
-  if (!status || status === 'error') return 'respond to review';
+  if (!status || status === 'error') return 'respond';
   if (status === 'done') return 'restart response';
-  return interrupted ? 'relaunch response pane' : 'focus response tab';
+  return interrupted ? 'relaunch response' : 'focus response';
 }
 
 function doctorItemLabel(status?: DoctorStatus): string {
-  if (!status || status === 'error') return 'call the doctor';
-  if (status === 'done') return 'call the doctor again';
-  return 'focus doctor tab';
+  if (!status || status === 'error') return 'call doctor';
+  if (status === 'done') return 'call doctor again';
+  return 'focus doctor';
 }
 
 /** Whether a lane (review/respond) was cut down by its executor pane dying:
@@ -327,6 +355,7 @@ export {
   ago,
   activeReviewers,
   cleanTitle,
+  rowTitle,
   RESPOND_ACTIVE,
   DOCTOR_LABEL,
   DOCTOR_ACTIVE,
@@ -343,6 +372,7 @@ export {
   THREAD_ICON,
   THREAD_LABEL,
   reviewMenuItems,
+  reviewLogged,
   respondItemLabel,
   doctorItemLabel,
 };

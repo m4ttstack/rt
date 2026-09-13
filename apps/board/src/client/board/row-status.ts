@@ -27,7 +27,7 @@ import {
 
 type Tone = 'bad' | 'warn' | 'work' | 'go' | 'quiet' | 'clear';
 
-type VerbKind =
+export type VerbKind =
   | 'relaunch'
   | 'clear'
   | 'answer'
@@ -283,7 +283,10 @@ function reviewLine(
       return {
         tone: 'go',
         word: 'review ready',
-        detail: verdictWord(r.outcome),
+        detail:
+          r.outcome === 'approve' && mr.reviews.isApproved
+            ? undefined
+            : verdictWord(r.outcome),
         verbs: r.reportReady ? [{ kind: 'read-review', label: 'read ↗' }] : [],
       };
     case 'error':
@@ -499,6 +502,20 @@ function approvalsDetail(mr: BoardMRWithReview): string | undefined {
     : undefined;
 }
 
+/** A reviewer's line on an unapproved MR. The pill already says "needs
+    review", so the line carries the one fact the pill lacks: who has
+    approved so far. */
+function approvalsSoFar(mr: BoardMRWithReview): string {
+  const names = mr.reviews.reviewers
+    .filter(r => r.reviewState === 'APPROVED')
+    .map(r => r.name || r.username);
+  if (names.length) return `${names.join(', ')} approved`;
+  return (
+    approvalsDetail(mr) ??
+    (mr.reviews.required > 0 ? 'no approvals yet' : 'no review yet')
+  );
+}
+
 /** The repair a blocked MR needs from its author, as the doctor would do
     it; null when nothing mechanical is wrong. */
 function repairPhrase(b: BoardMR['blockers']): string | null {
@@ -591,12 +608,7 @@ function reviewerLine(mr: BoardMRWithReview, self: string | null): Candidate {
     }
   }
   if (!mr.reviews.isApproved) {
-    return {
-      tone: 'quiet',
-      word: 'awaiting review',
-      detail: approvalsDetail(mr),
-      verbs: [review],
-    };
+    return { tone: 'quiet', word: approvalsSoFar(mr), verbs: [review] };
   }
   if (b.pipelineRunning) return CI_RUNNING;
   if (b.any) {

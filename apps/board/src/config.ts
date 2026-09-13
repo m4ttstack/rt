@@ -15,6 +15,7 @@ import {
   type BoardSecretsDeps,
 } from './board-secrets.ts';
 import { shellSingleQuote } from './shell-quote.ts';
+import { DEFAULT_SLACK_EMOJI, type SlackEmojiConfig } from './slack-emoji.ts';
 
 /** A bare "host/path" config value (not a full remote URL) never matches
     identityFromRemote's URL/scp-like parsing — it has no scheme and no
@@ -198,14 +199,7 @@ export interface SwitchboardBoardConfig {
   url: string;
 }
 
-/** The three review-signal reactions by role, as Slack emoji names (no colons).
-    Adapt these to your workspace's convention — e.g. a custom `comment` emoji
-    instead of the standard `speech_balloon`. */
-export interface SlackEmojiConfig {
-  looking: string;
-  commented: string;
-  approved: string;
-}
+export { DEFAULT_SLACK_EMOJI, type SlackEmojiConfig };
 
 export interface SlackConfig {
   /** Channel name (no #) where MR review requests live and where "post to slack" posts. */
@@ -221,12 +215,6 @@ export interface SlackConfig {
   autoResolveIntervalMinutes: number;
   emoji: SlackEmojiConfig;
 }
-
-export const DEFAULT_SLACK_EMOJI: SlackEmojiConfig = {
-  looking: 'eyes',
-  commented: 'speech_balloon',
-  approved: 'white_check_mark',
-};
 
 const DEFAULT_SLACK: SlackConfig = {
   channel: 'code-review',

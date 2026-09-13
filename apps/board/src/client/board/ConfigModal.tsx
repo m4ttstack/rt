@@ -212,11 +212,13 @@ function LeavesControl({
   def,
   value,
   fields,
+  fallbacks,
   row,
 }: {
   def: ConfigDef;
   value: unknown;
   fields: Record<string, LeafType>;
+  fallbacks?: Record<string, string>;
   row: ReturnType<typeof useRowSave>;
 }) {
   const commit = (path: string, leaf: unknown) =>
@@ -260,7 +262,7 @@ function LeavesControl({
           control = (
             <TextField
               value={leaf === undefined ? '' : String(leaf)}
-              placeholder="unset"
+              placeholder={fallbacks?.[path] ?? 'unset'}
               ariaLabel={label}
               disabled={row.busy}
               onCommit={text => {
@@ -394,6 +396,7 @@ function CompositeControl({
           def={def}
           value={value}
           fields={shape.fields}
+          fallbacks={shape.fallbacks}
           row={row}
         />
       );

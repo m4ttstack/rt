@@ -25,6 +25,10 @@
    here in rem (13.5/16) so body text rides the same knob. */
 html {
   font-size: 17px;
+  /* Tokyo Night's orange, absent from the kit palette: the conflicts flag
+     and the doctor lane, on the row and in its menu (which portals outside
+     the row list). */
+  --orange: light-dark(#b15c00, #ff9e64);
 }
 body {
   font-size: 0.84375rem;
@@ -268,7 +272,6 @@ body {
      + pad 12. The row clips overflow, so a changed margin below silently
      cuts line 3 instead of growing the row: keep this sum current. */
   --row-h: 114px;
-  --orange: light-dark(#b15c00, #ff9e64);
   /* The gutter markers are drawn shapes, not the kit's glyphs, so the stack
      rail can meet them at their true center and edge; the rail math below
      reads both sizes. */
@@ -474,11 +477,13 @@ body {
 }
 .tui-mark {
   display: inline-flex;
-  color: var(--muted-text);
-  opacity: 0.55;
+  align-items: center;
 }
-.tui-mark[data-slack-logo] {
-  opacity: 1;
+/* The stage mark is the reaction emoji as Slack shows it (the team reads
+   these off the Slack message), so it keeps its own color. */
+.tui-mark[data-slack-stage] {
+  font-size: 13px;
+  line-height: 1;
 }
 .tui-phrase {
   flex-shrink: 0;
@@ -595,7 +600,9 @@ body {
 .tui-threads[data-new] svg {
   color: var(--accent-text);
 }
-.tui-threads[data-new] .tui-threads-count::after {
+.tui-threads[data-new] .tui-threads-count::after,
+.tui-threads[data-new] .tui-threads-await::after,
+.tui-threads[data-new] .tui-threads-replied::after {
   content: '';
   display: inline-block;
   width: 6px;
@@ -613,7 +620,9 @@ body {
   color: var(--accent-text);
   font-weight: 600;
 }
-.tui-threads:hover .tui-threads-count {
+.tui-threads:hover .tui-threads-count,
+.tui-threads:hover .tui-threads-await,
+.tui-threads:hover .tui-threads-replied {
   text-decoration: underline;
 }
 .tui-age {
@@ -690,30 +699,66 @@ body {
   font-size: 0.7rem;
   color: color-mix(in srgb, var(--muted-text) 70%, transparent);
 }
+/* Centered like the tools, not baseline-aligned: the line's baseline would
+   otherwise follow whichever verb is first, and a secondary appearing left
+   of the primary under the pointer would shift the primary by a pixel. */
 .tui-status-verbs {
   margin-left: auto;
-  padding-left: 16px;
+  padding-left: 10px;
   display: inline-flex;
-  gap: 14px;
+  align-items: center;
+  align-self: center;
+  gap: 6px;
   flex-shrink: 0;
 }
+/* Verbs are subtle buttons: nothing at rest but the word, a tint under the
+   pointer. An agent verb wears its lane's color and the bot mark, so the
+   reader knows which agent a click starts before reading the word; a decide
+   verb is amber; a secondary verb (hover only) is muted; navigation (open,
+   read, view) stays quiet text. */
 .tui-status-verb {
   margin: 0;
-  padding: 0;
+  padding: 1px 6px;
   border: 0;
+  border-radius: var(--radius-px5);
   background: none;
   font: inherit;
   font-size: 0.72rem;
   font-weight: 500;
+  line-height: 16px;
   color: var(--muted-text);
   cursor: pointer;
-}
-.tui-status-verb[data-hot] {
-  color: var(--accent-text);
-  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 .tui-status-verb:hover {
-  text-decoration: underline;
+  background: color-mix(
+    in srgb,
+    var(--verb, var(--muted-text)) 12%,
+    transparent
+  );
+}
+.tui-status-verb[data-lane],
+.tui-status-verb[data-decide],
+.tui-status-verb[data-secondary] {
+  color: var(--verb);
+  font-weight: 600;
+}
+.tui-status-verb[data-lane='review'] {
+  --verb: var(--accent-text);
+}
+.tui-status-verb[data-lane='respond'] {
+  --verb: var(--green);
+}
+.tui-status-verb[data-lane='doctor'] {
+  --verb: var(--orange);
+}
+.tui-status-verb[data-decide] {
+  --verb: var(--amber);
+}
+.tui-status-verb[data-secondary] {
+  --verb: var(--muted-text);
 }
 .tui-status-sun {
   display: inline-flex;
@@ -2509,6 +2554,38 @@ body {
   font-size: 0.625rem;
   color: var(--muted-text);
   padding: 6px 3px 2px;
+}
+/* Item labels: every item leads with one icon that says where the click
+   lands; an agent action wears the bot mark in its lane's color, the same
+   grammar as the status line's verbs. */
+.tui-menu-icon-label,
+.tui-menu-agent {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+.tui-menu-icon-label svg {
+  color: var(--muted-text);
+  flex-shrink: 0;
+}
+.tui-menu-emoji {
+  font-size: 13px;
+  line-height: 1;
+  width: 13px;
+  text-align: center;
+}
+.tui-menu-agent {
+  font-weight: 600;
+  color: var(--lane);
+}
+.tui-menu-agent[data-lane='review'] {
+  --lane: var(--accent-text);
+}
+.tui-menu-agent[data-lane='respond'] {
+  --lane: var(--green);
+}
+.tui-menu-agent[data-lane='doctor'] {
+  --lane: var(--orange);
 }
 /* Trailing nodes a slack-mark item hands the shell: the set mark, and the
    in-flight spinner that replaces it while the reaction is being written. */

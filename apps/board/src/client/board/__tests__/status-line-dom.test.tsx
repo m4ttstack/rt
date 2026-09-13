@@ -81,7 +81,7 @@ async function render(status: RowStatus, c: RowContext) {
   });
 }
 
-test('a hot line renders its word, detail, and the primary verb; the secondary verb is marked hover-only', async () => {
+test('a hot line renders its word, detail, and the primary verb at the end; the secondary verb sits to its left, marked hover-only; agent verbs carry their lane and the bot mark', async () => {
   const calls: string[] = [];
   await render(
     {
@@ -113,12 +113,65 @@ test('a hot line renders its word, detail, and the primary verb; the secondary v
   const verbs = [
     ...line.querySelectorAll<HTMLButtonElement>('button[data-verb]'),
   ];
-  expect(verbs.map(v => v.dataset.verb)).toEqual(['relaunch', 'clear']);
-  expect(verbs[0]!.dataset.secondary).toBeUndefined();
-  expect(verbs[1]!.dataset.secondary).toBe('true');
-  await React.act(async () => verbs[0]!.click());
-  await React.act(async () => verbs[1]!.click());
+  expect(verbs.map(v => v.dataset.verb)).toEqual(['clear', 'relaunch']);
+  const [clear, relaunch] = verbs as [HTMLButtonElement, HTMLButtonElement];
+  expect(clear.dataset.secondary).toBe('true');
+  expect(clear.dataset.lane).toBeUndefined();
+  expect(clear.querySelector('svg')).toBeNull();
+  expect(relaunch.dataset.secondary).toBeUndefined();
+  expect(relaunch.dataset.lane).toBe('review');
+  expect(relaunch.querySelector('svg')).not.toBeNull();
+  await React.act(async () => relaunch.click());
+  await React.act(async () => clear.click());
   expect(calls).toEqual(['focus:review', 'clear:ag-1']);
+});
+
+test('every agent verb wears its lane; answer is a decide verb; navigation carries neither', async () => {
+  const lanes: Array<
+    [import('../row-status.ts').VerbKind, string | undefined]
+  > = [
+    ['launch-review', 'review'],
+    ['re-review', 'review'],
+    ['launch-respond', 'respond'],
+    ['restart-respond', 'respond'],
+    ['resume-respond', 'respond'],
+    ['call-doctor', 'doctor'],
+    ['open-mr', undefined],
+    ['read-review', undefined],
+  ];
+  for (const [kind, lane] of lanes) {
+    await render(
+      {
+        line: { tone: 'quiet', word: 'x', verbs: [{ kind, label: kind }] },
+        more: [],
+        bar: null,
+      },
+      ctx()
+    );
+    const b = container.querySelector<HTMLButtonElement>('button[data-verb]')!;
+    expect([kind, b.dataset.lane]).toEqual([kind, lane]);
+    expect([kind, b.querySelector('svg') !== null]).toEqual([
+      kind,
+      lane !== undefined,
+    ]);
+    expect(b.dataset.decide).toBeUndefined();
+  }
+  await render(
+    {
+      line: {
+        tone: 'warn',
+        word: 'x',
+        verbs: [{ kind: 'answer', label: 'answer', gateId: 'g' }],
+      },
+      more: [],
+      bar: 'warn',
+    },
+    ctx()
+  );
+  const answer =
+    container.querySelector<HTMLButtonElement>('button[data-verb]')!;
+  expect(answer.dataset.decide).toBe('true');
+  expect(answer.dataset.lane).toBeUndefined();
 });
 
 test('a focus verb carries its lane to onFocusPane', async () => {

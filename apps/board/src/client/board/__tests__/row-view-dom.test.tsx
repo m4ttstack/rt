@@ -123,8 +123,12 @@ test('a quiet row: four lines, no bar, no separator glyphs, the standing state o
   expect(row.querySelector('.tui-row-bar')).toBeNull();
   expect(row.getAttribute('data-tone')).toBeNull();
   expect(row.querySelector('.tui-mr-iid')!.textContent).toBe('!1418');
-  expect(row.querySelector('.tui-branch')!.textContent).toBe(
-    'feature/acme-2214'
+  const ticket = row.querySelector('.tui-row-2 a.tui-ticket-tag')!;
+  expect(ticket.textContent).toBe('ACME-2214');
+  expect(ticket.getAttribute('href')).toContain('ACME-2214');
+  expect(row.querySelector('.tui-branch')).toBeNull();
+  expect(row.querySelector('.tui-title')!.textContent).toBe(
+    'Port the v2 quiet-mode flows'
   );
   expect(row.querySelector('.tui-diff')!.textContent).toBe('+1455 −13');
   expect(row.querySelector('.tui-threads')!.textContent).toBe('1 thread');
@@ -186,9 +190,10 @@ test('the slack ladder: logo only once posted, stage mark for the furthest react
     }),
   ]);
   const marks = container.querySelector('.tui-row-marks')!;
-  expect(
-    marks.querySelector('[data-slack-stage]')!.getAttribute('data-slack-stage')
-  ).toBe('approved');
+  const stage = marks.querySelector('[data-slack-stage]')!;
+  expect(stage.getAttribute('data-slack-stage')).toBe('approved');
+  expect(stage.textContent).toBe('✅');
+  expect(stage.querySelector('svg')).toBeNull();
   expect(marks.querySelector('[data-slack-logo]')).not.toBeNull();
 });
 
@@ -298,7 +303,7 @@ test('a row with no webUrl renders, records no seen count and lights no thread l
   ]);
   const row = container.querySelector('.tui-row')!;
   expect(row.querySelector('.tui-title')!.textContent).toBe(
-    'ACME-2214 Port the v2 quiet-mode flows'
+    'Port the v2 quiet-mode flows'
   );
   expect(row.querySelector('[data-part="selectbox"]')).toBeNull();
   const link = row.querySelector('.tui-threads')!;
@@ -347,17 +352,17 @@ test('the header line leads with the author when the view mixes authors', async 
   expect(container.querySelector('.tui-row-2 .tui-author-tag')).toBeNull();
 });
 
-test('with the author hidden the ticket takes its slot on the header line', async () => {
-  await render([mr()]);
+test('with the author hidden the header line holds only the flags; the ticket lives on the facts line', async () => {
+  await render([mr({ blockers: { any: true, hasConflicts: true } } as never)]);
   const lead = container.querySelector('.tui-row-0 .tui-row-lead')!;
-  const ticket = lead.querySelector('a.tui-ticket-tag')!;
-  expect(ticket.textContent).toBe('ACME-2214');
-  expect(ticket.getAttribute('href')).toContain('ACME-2214');
-  expect(ticket.querySelector('svg')).not.toBeNull();
-  expect(lead.querySelector('.tui-author-tag')).toBeNull();
+  expect([...lead.children].map(c => c.className)).toEqual(['tui-flag']);
+  expect(lead.querySelector('.tui-ticket-tag')).toBeNull();
+  expect(
+    container.querySelector('.tui-row-2 a.tui-ticket-tag')!.textContent
+  ).toBe('ACME-2214');
 });
 
-test('with neither author nor ticket the header line holds only the flags', async () => {
+test('without a ticket the facts line falls back to the branch and the title keeps its words', async () => {
   await render([
     mr({
       title: 'warm the thumbnail cache',
@@ -365,8 +370,14 @@ test('with neither author nor ticket the header line holds only the flags', asyn
       blockers: { any: true, pipelineFailing: true },
     } as never),
   ]);
-  const lead = container.querySelector('.tui-row-0 .tui-row-lead')!;
-  expect([...lead.children].map(c => c.className)).toEqual(['tui-flag']);
+  const row = container.querySelector('.tui-row')!;
+  expect(row.querySelector('.tui-row-2 .tui-ticket-tag')).toBeNull();
+  expect(row.querySelector('.tui-row-2 .tui-branch')!.textContent).toBe(
+    'ops/thumbnails'
+  );
+  expect(row.querySelector('.tui-title')!.textContent).toBe(
+    'warm the thumbnail cache'
+  );
 });
 
 test('the threads token: icon, count, and no qualifier on a stranger MR', async () => {
@@ -383,7 +394,7 @@ test('the threads token: icon, count, and no qualifier on a stranger MR', async 
   expect(link.querySelector('.tui-threads-replied')).toBeNull();
 });
 
-test('on my own MR the token counts the threads awaiting me', async () => {
+test('on my own MR the token says only how many threads wait on me; the total moves to the tooltip', async () => {
   await render(
     [
       mr({
@@ -394,13 +405,12 @@ test('on my own MR the token counts the threads awaiting me', async () => {
     ctx({ self: 'me' })
   );
   const link = container.querySelector('.tui-threads')!;
-  expect(link.querySelector('.tui-threads-count')!.textContent).toBe(
-    '4 threads'
-  );
+  expect(link.querySelector('.tui-threads-count')).toBeNull();
   expect(link.querySelector('.tui-threads-await')!.textContent).toBe(
-    '2 await you'
+    '2 threads waiting'
   );
-  expect(link.textContent).not.toContain('·');
+  expect(link.textContent).toBe('2 threads waiting');
+  expect(link.getAttribute('title')).toBe('4 threads, 2 waiting on you');
   await render(
     [
       mr({
@@ -411,11 +421,11 @@ test('on my own MR the token counts the threads awaiting me', async () => {
     ctx({ self: 'me' })
   );
   expect(container.querySelector('.tui-threads-await')!.textContent).toBe(
-    '1 awaits you'
+    '1 thread waiting'
   );
 });
 
-test("on someone else's MR the token says the author replied to my threads", async () => {
+test("on someone else's MR the token says only that the author replied to my threads; the total moves to the tooltip", async () => {
   await render(
     [
       mr({
@@ -425,8 +435,14 @@ test("on someone else's MR the token says the author replied to my threads", asy
     ],
     ctx({ self: 'me' })
   );
-  expect(container.querySelector('.tui-threads-replied')!.textContent).toBe(
+  const link = container.querySelector('.tui-threads')!;
+  expect(link.querySelector('.tui-threads-replied')!.textContent).toBe(
     'author replied'
+  );
+  expect(link.querySelector('.tui-threads-count')).toBeNull();
+  expect(link.textContent).toBe('author replied');
+  expect(link.getAttribute('title')).toBe(
+    '2 threads, the author answered yours'
   );
   await render(
     [

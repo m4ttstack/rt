@@ -3,10 +3,13 @@ import { expect, test } from 'bun:test';
 import {
   ago,
   cleanTitle,
+  doctorItemLabel,
   gitlabMenuItems,
   laneInterrupted,
   respondItemLabel,
+  reviewLogged,
   reviewMenuItems,
+  rowTitle,
 } from '../client/board/format.ts';
 import { statusReasons } from '../client/board/row-status.ts';
 
@@ -125,24 +128,107 @@ test('laneInterrupted: hidden or missing orphans and missing lanes never cut', (
   expect(laneInterrupted(gone, undefined)).toBe(false);
 });
 
-test('reviewMenuItems: an interrupted running review offers relaunch instead of focus', () => {
+test('reviewMenuItems: worded like the row; an interrupted running review offers relaunch instead of focus', () => {
   expect(reviewMenuItems('reviewing', true)).toEqual([
-    { kind: 'launch', label: 'relaunch review pane' },
+    { kind: 'launch', label: 'relaunch review' },
   ]);
   expect(reviewMenuItems('queued', true)).toEqual([
-    { kind: 'launch', label: 'relaunch review pane' },
+    { kind: 'launch', label: 'relaunch review' },
   ]);
   // Not running: the flag changes nothing.
   expect(reviewMenuItems('done', true)).toEqual([
     { kind: 're-review', label: 're-review' },
   ]);
   expect(reviewMenuItems('reviewing')).toEqual([
-    { kind: 'launch', label: 'focus review tab' },
+    { kind: 'launch', label: 'focus review' },
   ]);
 });
 
-test('respondItemLabel: an interrupted in-flight response offers relaunch', () => {
-  expect(respondItemLabel('implementing', true)).toBe('relaunch response pane');
-  expect(respondItemLabel('implementing')).toBe('focus response tab');
+test('reviewMenuItems: re-review is offered cold only once a review is logged', () => {
+  expect(reviewMenuItems(undefined)).toEqual([
+    { kind: 'launch', label: 'review' },
+  ]);
+  expect(reviewMenuItems('error', false, false)).toEqual([
+    { kind: 'launch', label: 'review' },
+  ]);
+  expect(reviewMenuItems(undefined, false, true)).toEqual([
+    { kind: 'launch', label: 'review' },
+    { kind: 're-review', label: 're-review' },
+  ]);
+});
+
+test('reviewLogged: an approval, a reviewer thread, or a reviewer state counts; an untouched MR does not', () => {
+  const base = {
+    reviews: { isApproved: false, required: 2, given: 0, reviewers: [] },
+    reviewerComments: 0,
+  } as never;
+  expect(reviewLogged(base)).toBe(false);
+  expect(
+    reviewLogged({ ...(base as object), reviewerComments: 2 } as never)
+  ).toBe(true);
+  expect(
+    reviewLogged({
+      reviews: { isApproved: false, required: 2, given: 1, reviewers: [] },
+      reviewerComments: 0,
+    } as never)
+  ).toBe(true);
+  expect(
+    reviewLogged({
+      reviews: {
+        isApproved: false,
+        required: 2,
+        given: 0,
+        reviewers: [{ username: 'tom', reviewState: 'REQUESTED_CHANGES' }],
+      },
+      reviewerComments: 0,
+    } as never)
+  ).toBe(true);
+  expect(
+    reviewLogged({
+      reviews: {
+        isApproved: false,
+        required: 2,
+        given: 0,
+        reviewers: [{ username: 'tom', reviewState: 'UNREVIEWED' }],
+      },
+      reviewerComments: 0,
+    } as never)
+  ).toBe(false);
+});
+
+test('respondItemLabel and doctorItemLabel are worded like the row', () => {
+  expect(respondItemLabel(undefined)).toBe('respond');
+  expect(respondItemLabel('implementing', true)).toBe('relaunch response');
+  expect(respondItemLabel('implementing')).toBe('focus response');
   expect(respondItemLabel('done', true)).toBe('restart response');
+  expect(doctorItemLabel(undefined)).toBe('call doctor');
+  expect(doctorItemLabel('done')).toBe('call doctor again');
+  expect(doctorItemLabel('rebasing')).toBe('focus doctor');
+});
+
+test('rowTitle also drops the ticket the facts line carries, with or without a colon; Slack titles keep it', () => {
+  expect(rowTitle('ACME-2214 Port the flows', 'ACME-2214')).toBe(
+    'Port the flows'
+  );
+  expect(rowTitle('ACME-2214: Port the flows', 'ACME-2214')).toBe(
+    'Port the flows'
+  );
+  expect(rowTitle('acme-2214 - Port the flows', 'ACME-2214')).toBe(
+    'Port the flows'
+  );
+  expect(rowTitle('ACME-22140 is not the ticket', 'ACME-2214')).toBe(
+    'ACME-22140 is not the ticket'
+  );
+  expect(rowTitle('Port the flows', null)).toBe('Port the flows');
+  expect(cleanTitle('ACME-2214 Port the flows')).toBe(
+    'ACME-2214 Port the flows'
+  );
+});
+
+test('a title that is only the ticket keeps the ticket rather than going blank', () => {
+  expect(rowTitle('ACME-2214', 'ACME-2214')).toBe('ACME-2214');
+  expect(rowTitle('ACME-2214 -', 'ACME-2214')).toBe('ACME-2214 -');
+  expect(rowTitle('ACME-2214:', 'ACME-2214')).toBe('ACME-2214:');
+  expect(cleanTitle('ACME-2214:')).toBe('ACME-2214:');
+  expect(cleanTitle('Draft: ACME-2214:')).toBe('ACME-2214:');
 });

@@ -38,6 +38,12 @@ required up to 12), with invented names throughout:
 - `B4 · Mechanical and stress`: long title and branch, huge diff and behind
   counts, partial approvals, auto-merge, draft, four flags at once, a
   three-deep stack, the author-grouped view
+- `B5 · Polish round 2`: the six live-use findings below (emoji marks,
+  ticket for branch, threads waiting, no pill repeats, subtle lane-colored
+  verbs, secondaries left of the primary); `B5b` the verb identity options
+  it chose from
+- `B6 · Row menu`: the right-click menu synced with B5, today's beside two
+  states of the new one
 
 ## The rulings
 
@@ -51,6 +57,12 @@ Everything below is drawn in B and its scenario boards; the laws in
   (red, circle-x), `ci running` (amber, loader), `stacked` (cyan, layers),
   `draft` (dim, pencil), `auto-merge` (green, zap). The Slack marks and the
   pill hold the corner as before.
+- **The Slack stage mark is the reaction emoji as Slack shows it** (`👀`
+  looking, `💬` commented, `✅` approved, 13px) beside the brand-colored
+  logo, because the team reads those reactions off the Slack message and
+  the mark says "marked this way on Slack". This supersedes the mr-row
+  rule against emoji on the row for this one mark; a mono icon here read
+  as a second chat bubble next to the threads token.
 - **Conflicts and ci failing never share a color.** Conflicts is orange
   (Tokyo Night `#ff9e64` / `#b15c00`), ci failing is red.
 - **Behind count moves to the header line**, after the flags, as a muted
@@ -67,25 +79,61 @@ Everything below is drawn in B and its scenario boards; the laws in
 - **The threads token is the drawer's entry and reads at full weight.**
   A 12px message icon plus `N threads` in foreground color, 500 weight.
   New activity since the drawer was last opened: accent, 700, plus a 6px
-  accent dot. A qualifier follows the count as its own colored span, no
-  glyph between them (the no-separator law): threads awaiting the seat
-  on their own MR read `N await you` in amber, 600; the author having
-  replied to the seat's thread on someone else's MR reads `author
-  replied` in accent, 600. Hover underlines the count.
+  accent dot. Threads awaiting the seat on their own MR replace the count
+  with `N threads waiting` in amber, 600 (the total moves to the tooltip:
+  the waiting count is the fact the author needs, the total is noise).
+  The author having replied to the seat's thread on someone else's MR
+  likewise replaces the count with `author replied` in accent, 600: a
+  status outranks the count and takes its place. Hover underlines the
+  words.
 - **All clear is the words and the sun.** `all clear ☀`, no tagline.
 - **Hover replaces the dot with main's bespoke square checkbox**: 13px,
   1.5px muted stroke at 55% opacity, near-square corners, centered on the
-  dot's point. The row tints, and the ticket and copy tools plus the
-  secondary verbs appear left of the primary verb, which never moves.
+  dot's point. The row tints, and the copy tool plus the secondary verbs
+  appear to the LEFT of the primary verb, which never moves; secondaries
+  are muted 600, never plain text.
+- **The facts line carries the ticket, not the branch.** `!iid`, then the
+  ticket as a Linear link (muted 500 with an arrow), then the diff. The
+  branch's only fact worth the space was its ticket; it shows only when no
+  ticket can be read off it. The title drops its ticket prefix so the id
+  never sits twice one line apart; Slack templates keep it.
+- **The status line never repeats the pill.** An approved MR's finished
+  review reads `review ready` alone (the outcome detail stays when the
+  review only recommends it, or found comments). Someone else's unapproved
+  MR reads who has approved so far (`no approvals yet`, `1 of 2
+  approvals`, `Tom approved`) with the review verb, since the pill already
+  says needs review.
+- **Verbs are subtle buttons in three classes.** Nothing at rest but the
+  word, a tint under the pointer. Agent verbs (review, respond, call
+  doctor, relaunch, resume, re-review, focus) carry the bot mark in their
+  lane's color: review accent blue, respond green, doctor orange, so the
+  color says which agent a click starts before the word is read. Decide
+  verbs (answer, retry) are amber. Navigation (open, read, view ↗) stays
+  quiet text.
 - **Stacked children indent 20px** (`--stack-indent`); the rail is 2px in
   the cyan tint, drops from the parent's dot, and its arm ends at the
   child dot's edge.
 - **Clipping order.** The header clips from the right (flags before marks
   and pill), the title from the right, the branch at 34ch before the diff,
   so the pill, the diff and the age never move.
-- **Author-grouped view.** With the author tag gone, the ticket id takes
-  its slot on the header line (muted, with an arrow). With no ticket
-  either, the header holds only the flags.
+- **Author-grouped view.** With the author tag gone the header line holds
+  only the flags and the behind count; the ticket lives on the facts line
+  in every view.
+- **The row menu speaks the row's grammar.** Three sections: agent
+  actions, gitlab, slack (no misc). Agent actions carry the bot mark in
+  their lane's color and use the row's verbs (review, re-review, respond,
+  call doctor, rebase locally, relaunch, resume, focus); the agent's
+  report opens from there (view agent review), and asking a teammate's
+  agent to look again sits last with a people icon. Every other item leads
+  with one icon that says where the click lands, in place of the old
+  trailing "herdr" / "gitlab" hints; the Slack items carry the row's Slack
+  logo and the marks the reaction emoji (`mark as looking`, `unmark
+  approved` with a check trailing). Only actions possible right now
+  render: a blocked GitLab action is absent, not greyed; the marks appear
+  once the MR is posted; an empty section has no label. Re-review appears
+  only once a review is logged: the board's own finished review, or a
+  person's on GitLab (an approval, a reviewer thread, or a reviewer who
+  commented, approved or requested changes).
 
 ## Implementation touch points
 

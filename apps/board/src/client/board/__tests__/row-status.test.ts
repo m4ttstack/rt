@@ -72,21 +72,46 @@ describe('rowStatus: the quiet row', () => {
     expect(s.bar).toBeNull();
   });
 
-  test("someone else's unapproved MR awaits review, with the review verb and the approval tally", () => {
+  test("someone else's unapproved MR: the review verb, and who has approved so far (the pill already says needs review)", () => {
     const [line] = candidateLines(mr(), NOW, NONE, ME);
     expect(line).toMatchObject({
       tone: 'quiet',
-      word: 'awaiting review',
+      word: 'no approvals yet',
       verbs: [{ kind: 'launch-review', label: 'review' }],
     });
     expect(line!.detail).toBeUndefined();
-    const [partial] = candidateLines(
+    const [tally] = candidateLines(
       mr(unapproved(1, 2) as never),
       NOW,
       NONE,
       ME
     );
-    expect(partial!.detail).toBe('1 of 2 approvals');
+    expect(tally!.word).toBe('1 of 2 approvals');
+    const [named] = candidateLines(
+      mr({
+        reviews: {
+          isApproved: false,
+          required: 2,
+          given: 1,
+          reviewers: [
+            { username: 'tom', name: 'Tom', reviewState: 'APPROVED' },
+            { username: 'bea', name: 'Bea', reviewState: 'UNREVIEWED' },
+          ],
+        },
+      } as never),
+      NOW,
+      NONE,
+      ME
+    );
+    expect(named!.word).toBe('Tom approved');
+    expect(named!.detail).toBeUndefined();
+    const [noRule] = candidateLines(
+      mr(unapproved(0, 0) as never),
+      NOW,
+      NONE,
+      ME
+    );
+    expect(noRule!.word).toBe('no review yet');
   });
 
   test("conflicts on someone else's unapproved MR do not change whose move it is", () => {
@@ -96,7 +121,8 @@ describe('rowStatus: the quiet row', () => {
       NONE,
       ME
     );
-    expect(line!.word).toBe('awaiting review');
+    expect(line!.word).toBe('no approvals yet');
+    expect(line!.verbs[0]!.kind).toBe('launch-review');
   });
 
   test('threads awaiting the author, or an approved MR still blocked, wait on the author', () => {
@@ -306,25 +332,34 @@ describe('rowStatus: review lane', () => {
     ]);
   });
 
-  test('done with a report is a go line whose verb opens the review', () => {
-    const [line] = candidateLines(
-      mr({
-        review: {
-          status: 'done',
-          reportReady: true,
-          outcome: 'approve',
-        },
-      }),
-      NOW,
-      NONE,
-      ME
-    );
+  test('done with a report is a go line whose verb opens the review; the outcome stays off the line once the pill shows the approval', () => {
+    const review = {
+      status: 'done',
+      reportReady: true,
+      outcome: 'approve',
+    } as const;
+    const [line] = candidateLines(mr({ review }), NOW, NONE, ME);
     expect(line).toMatchObject({
       tone: 'go',
       word: 'review ready',
       detail: 'approved',
     });
     expect(line!.verbs[0]).toEqual({ kind: 'read-review', label: 'read ↗' });
+    const [posted] = candidateLines(
+      mr({ review, ...settled() } as never),
+      NOW,
+      NONE,
+      ME
+    );
+    expect(posted!.word).toBe('review ready');
+    expect(posted!.detail).toBeUndefined();
+    const [commented] = candidateLines(
+      mr({ review: { ...review, outcome: 'comment' }, ...settled() } as never),
+      NOW,
+      NONE,
+      ME
+    );
+    expect(commented!.detail).toBe('commented');
   });
 
   test('error is a bad line with the launch-again verb and a red bar', () => {
