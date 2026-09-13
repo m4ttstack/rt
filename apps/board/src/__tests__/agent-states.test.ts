@@ -392,4 +392,47 @@ describe('tombstones', () => {
       status: 'done',
     });
   });
+
+  test("a v2 db's in-flight rows shed the error message that outlived its status", () => {
+    const path = join(mkdtempSync(join(tmpdir(), 'board-as-v2-')), 'state.db');
+    const raw = new Database(path, { create: true });
+    raw.run(`CREATE TABLE agent_states (
+      lane TEXT NOT NULL, mr_url TEXT NOT NULL, state TEXT NOT NULL,
+      handle TEXT NOT NULL, report TEXT, updated_at INTEGER NOT NULL,
+      pruned_at INTEGER, PRIMARY KEY (lane, mr_url));`);
+    raw.run(
+      'CREATE UNIQUE INDEX idx_agent_states_handle ON agent_states(handle);'
+    );
+    const insert = raw.query(
+      `INSERT INTO agent_states (lane, mr_url, state, handle, report, updated_at)
+       VALUES (?, ?, ?, ?, NULL, 1)`
+    );
+    const row = (lane: string, n: number, status: string, message: string) =>
+      insert.run(
+        lane,
+        `${URL}${n}`,
+        JSON.stringify({ mrUrl: `${URL}${n}`, iid: n, status, message }),
+        `/r/state/${lane}s/${n}.json`
+      );
+    row('review', 1, 'reviewing', 'pane closed... cleared from the board');
+    row('respond', 2, 'implementing', 'failed to launch respond pane');
+    row('review', 3, 'error', 'pane closed... cleared from the board');
+    row('review', 4, 'reviewing', 'reading the diff');
+    raw.run('PRAGMA user_version = 2');
+    raw.close();
+
+    const d = openStateDb(path);
+    const reviews = readStates('review', d);
+    const responds = readStates('respond', d);
+    expect('message' in reviews.get(`${URL}1`)!).toBe(false);
+    expect('message' in responds.get(`${URL}2`)!).toBe(false);
+    expect(reviews.get(`${URL}3`)).toMatchObject({
+      status: 'error',
+      message: 'pane closed... cleared from the board',
+    });
+    expect(reviews.get(`${URL}4`)).toMatchObject({
+      status: 'reviewing',
+      message: 'reading the diff',
+    });
+  });
 });

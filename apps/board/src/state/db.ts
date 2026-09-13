@@ -8,7 +8,7 @@ import { getKvValue } from './kv-blob.ts';
 import { importLegacyState } from './legacy-import.ts';
 
 export type DbFlavor = 'server' | 'cli';
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 const BUSY_TIMEOUT_MS: Record<DbFlavor, number> = { server: 250, cli: 5000 };
 const MIGRATION_BUSY_TIMEOUT_MS = 5000;
@@ -107,6 +107,22 @@ const MIGRATIONS: Migration[] = [
   // deleting them, so a review row survives its MR leaving the board and the
   // latch pass can resurrect it when the MR returns.
   db => db.run('ALTER TABLE agent_states ADD COLUMN pruned_at INTEGER'),
+  // v3: an error's explanation that outlived its status. Lane writes merge,
+  // and before updateByHandle dropped the message on a status change, the
+  // server's own error texts rode along onto the next in-flight status and
+  // read as its detail. Only those texts are known to be stale: a pane's own
+  // progress message on a running lane is legitimate and stays.
+  db =>
+    db.run(
+      `UPDATE agent_states SET state = json_remove(state, '$.message')
+       WHERE json_extract(state, '$.status') != 'error'
+         AND json_extract(state, '$.message') IN (
+           'pane closed... cleared from the board',
+           'failed to launch review pane',
+           'failed to launch re-review pane',
+           'failed to launch respond pane',
+           'failed to launch doctor pane')`
+    ),
 ];
 
 // SCHEMA_VERSION is the public constant other modules reason about;
