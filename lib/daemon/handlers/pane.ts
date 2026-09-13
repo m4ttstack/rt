@@ -3,13 +3,14 @@
  * lib/herdr/client.ts owns the socket; this module owns the join.
  */
 import type { Database } from "bun:sqlite";
+import type { Logger } from "pino";
 import { basename } from "path";
 import type { AgentStatus, BuddyStatus, ChatPane, Commands, PaneDirectory } from "../../../packages/rt-client/src/commands.ts";
 import { formatPaneRef, parsePaneRef } from "../../../packages/rt-client/src/index.ts";
 import { listCswapAccounts } from "../../cswap.ts";
 import { herdrRequest, waitTimeout, type HerdrResult } from "../../herdr/client.ts";
 import { trayRequest } from "../../daemon-client.ts";
-import { herdrError, injectIntoPane } from "../inject.ts";
+import { herdrError, injectAfterTurn, injectIntoPane } from "../inject.ts";
 import { resolvePaneRef } from "../pane-ref-socket.ts";
 import { attendPane } from "../attend.ts";
 import { BG_SESSION, bgSocketPath, type BgService } from "../bg-service.ts";
@@ -146,6 +147,10 @@ export function createPaneHandlers(opts: {
   bg?: BgService;
   /** attendPane's herdr-CLI runner factory, wired the same way herd:attend gets it (lib/daemon/command-router.ts). */
   herdrRunnerFor?: (socket: string | null) => HerdrRunner;
+  /** Daemon logger for the continuation's outcome; the reply has already gone out by then. */
+  log?: Logger;
+  /** How a continuation's detached wait is started; tests capture the promise, the daemon fires and forgets. */
+  schedule?: (work: Promise<void>) => void;
 }):
   // Declared as direct `unknown`-payload members (not `Pick<TypedHandlers, ...>`)
   // rather than the narrower per-command payload types the catalog would
@@ -168,6 +173,8 @@ export function createPaneHandlers(opts: {
   const registryDeps = opts.registryDeps;
   const bg = opts.bg;
   const herdrRunnerFor = opts.herdrRunnerFor;
+  const log = opts.log;
+  const schedule = opts.schedule ?? ((work: Promise<void>) => { void work; });
 
   async function snapshot(sockPath?: string): Promise<HerdrResult<{ snapshot: HerdrSnapshot }>> {
     return herdr<{ snapshot: HerdrSnapshot }>("session.snapshot", {}, { sockPath });
@@ -351,7 +358,10 @@ export function createPaneHandlers(opts: {
       // resolved against: the round-trip rule -- whatever a caller sends
       // addressably, every verb (including this one's own reply) prints
       // addressably back.
-      return { ok: true, data: { ...res.data, paneId: payload.paneId } };
+      const data = { ...res.data, paneId: payload.paneId };
+      if (payload.continuation === undefined || res.data.delivered === "refused") return { ok: true, data };
+      schedule(injectAfterTurn({ paneId, text: payload.continuation, herdr, sockPath, log }));
+      return { ok: true, data: { ...data, continuation: { delivered: "deferred" } } };
     },
 
     // The tray owns focusing: herdr's socket has no `pane focus`, and raising
