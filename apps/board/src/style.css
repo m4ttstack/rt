@@ -1680,6 +1680,12 @@ body {
   top: calc((var(--pick-h) + var(--dot-size)) / 2);
   bottom: calc(-1 * var(--pick-below));
 }
+/* The stub starts under whichever marker is showing, like the arm below. */
+.tui-stack-rows > .tui-row:hover > .tui-row-pick::after,
+.tui-stack-rows > .tui-row > .tui-row-pick:focus-within::after,
+.tui-rows[data-selecting] .tui-stack-rows > .tui-row > .tui-row-pick::after {
+  top: calc((var(--pick-h) + var(--check-size)) / 2);
+}
 /* Children: the rail continues at the parent's dot x, which in the nested
    pick's coordinates is that x less the indent. The last child's segment
    stops at its own dot's center, where the arm meets it. */
