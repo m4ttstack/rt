@@ -218,3 +218,19 @@ test("injectAfterTurn passes sockPath through the wait and the injection", async
   await injectAfterTurn({ paneId: "w1:p1", text: "Continue", sockPath: sock, log: noLog, legMs: 50 });
   expect(seen.map((s) => s.method)).toEqual(["agent.wait", "agent.get", "agent.prompt"]);
 });
+
+test("injectAfterTurn logs a refused continuation at warn, not info", async () => {
+  const { herdr, seen } = on((method) => {
+    if (method === "agent.wait") return agent("idle");
+    if (method === "agent.get") return new HerdrFakeError("agent_not_found", "gone");
+    return new HerdrFakeError("invalid_request", method);
+  });
+  const logged: unknown[] = [];
+  const warned: unknown[] = [];
+  const log = { info: (o: unknown) => { logged.push(o); }, warn: (o: unknown) => { warned.push(o); } } as unknown as import("pino").Logger;
+  await injectAfterTurn({ paneId: "w1:p1", text: "Continue", herdr, log, legMs: 50 });
+  expect(seen.some((s) => s.method === "agent.prompt")).toBe(false);
+  expect(logged).toHaveLength(0);
+  expect(warned).toHaveLength(1);
+  expect(warned[0]).toMatchObject({ paneId: "w1:p1", delivered: "refused" });
+});
