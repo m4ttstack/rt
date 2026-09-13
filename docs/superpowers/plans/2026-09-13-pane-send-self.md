@@ -4,7 +4,7 @@
 
 **Goal:** Let an agent in a herdr pane queue a line into its own pane (`rt pane send self`), optionally followed by a continuation line (`--then`), and teach agents to reach for it through `rt:herdr-inject` and a "Crossing repos" section in `rt:worktree`.
 
-**Architecture:** All code lands in the CLI module `commands/pane.ts`; the daemon verb `pane:send` and `packages/rt-client` are untouched. `self` resolves through the existing `selfPaneRef()` and simply omits `callerPane`, which is what the daemon's same-pane guard keys on. `--then` is a second sequential daemon call gated on the first delivery. A live spike gates implementation.
+**Architecture:** `self` lands in the CLI module `commands/pane.ts`: it resolves through the existing `selfPaneRef()` and simply omits `callerPane`, which is what the daemon's same-pane guard keys on. `--then` rides the `pane:send` payload as `continuation`; the daemon injects the first line, then in a detached wait injects the second once the target's turn has ended (Tasks 6-7; the original Task 2 design of two immediate calls inverted the order in the live check). rt-client gains the field and bumps to 0.20.0.
 
 **Tech Stack:** Bun, TypeScript, `bun:test` (the fake rt daemon over a unix socket in `commands/__tests__/pane.test.ts`), herdr socket API via the running rt daemon, Claude Code skills (Markdown + YAML frontmatter).
 
@@ -15,7 +15,8 @@
 - No em dashes or en dashes anywhere (code, comments, commit messages, skills). Use `...`, parens, or rephrase.
 - Comments only for constraints the code cannot show. No narration, no process citations, no ticket ids.
 - Commit after every task with a short imperative message; every commit message ends with `Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>`.
-- The daemon (`lib/daemon/**`) and `packages/rt-client/**` are out of scope; if the spike forces a daemon change, stop and report instead of making it.
+- Daemon and rt-client changes are limited to the deferred continuation (Task 6): `lib/daemon/inject.ts`, `lib/daemon/handlers/pane.ts`, `lib/daemon/command-router.ts`, and the `pane:send` types, wrapper, version and README row in `packages/rt-client`. Nothing else in `lib/daemon/**` or `packages/rt-client/**` changes. `bun run build` in `packages/rt-client` after touching it.
+- Wire and type field name is `continuation`, never `then` (a `then` property reads as a thenable); only the CLI flag and the CLI's own output say `then`.
 - Every skill edit goes through `superpowers:writing-skills` (RED baseline first).
 - Worktree Bash guard: one plain command per Bash call (no `&&`, no heredocs, no `-C`, no loops). Use the Write/Edit tools for files.
 - Exact CLI strings from the spec: usage `usage: rt pane send <pane|self> --text <text> [--then <text>]  (--text - reads stdin)`; not-in-pane error `not in a herdr pane (HERDR_PANE_ID unset)` (the module's `fail()` prefixes `rt pane: `); plain `--then` line prefix `then: `.
@@ -520,9 +521,12 @@ git commit -m "skills: rt:worktree crossing repos, rt:chat points at self" -m "C
 
 ---
 
-### Task 5: Verify end to end and open the PR
+### Task 5: Verify end to end and open the PR (SUPERSEDED by Task 8)
 
-**Files:** none new.
+Ran once on 2026-09-13: full suite green, but the live check inverted the
+order of `/cd` and the `--then` line (see the spec's "Deferred
+continuation"). Tasks 6 and 7 rework `--then`; Task 8 repeats this task's
+verification and opens the PR. The steps below are kept for the record.
 
 - [ ] **Step 1: Full test run**
 
@@ -550,3 +554,455 @@ Write `pr-body.md` with the Write tool first: a short framing paragraph, "What c
 - [ ] **Step 4: Post-merge (controller, not the PR)**
 
 After merge and a `git pull` in the main checkout: `ln -s /Users/matt/Documents/GitHub/repo-tools/skills/rt-herdr-inject ~/.claude/skills/rt:herdr-inject`. The existing `rt:worktree` and `rt:chat` symlinks pick their edits up on pull. Matt's `~/.claude/CLAUDE.md` "inject it via herdr" line can then point at `rt:herdr-inject`.
+
+---
+
+### Task 6: Daemon-deferred continuation (`injectAfterTurn`, `pane:send continuation`, rt-client 0.20.0)
+
+**Files:**
+- Modify: `lib/daemon/inject.ts` (add `injectAfterTurn`)
+- Modify: `lib/daemon/handlers/pane.ts` (`createPaneHandlers` opts gain `log?`; `pane:send` schedules the continuation)
+- Modify: `lib/daemon/command-router.ts:136-139` (pass `log: ctx.log`)
+- Modify: `packages/rt-client/src/commands.ts:263-264,619` (types)
+- Modify: `packages/rt-client/src/client.ts:429-436` (`paneSend` forwards `continuation`)
+- Modify: `packages/rt-client/package.json:3` (`0.19.1` -> `0.20.0`)
+- Modify: `packages/rt-client/README.md:105-106` (one row)
+- Test: `lib/daemon/__tests__/inject.test.ts`, `lib/daemon/__tests__/pane-handlers.test.ts`
+
+**Interfaces:**
+- Consumes: `injectIntoPane`, `herdrRequest`, `waitTimeout` (all in place); `Logger` from `pino` (the type `lib/daemon/handlers/types.ts` already imports).
+- Produces: `injectAfterTurn(opts: AfterTurnOptions): Promise<void>` exported from `lib/daemon/inject.ts`; `Commands["pane:send"]` payload `{ paneId; text; callerPane?; continuation? }` and data `PaneSendResult { paneId; delivered; reason?; continuation?: { delivered: "deferred" } }`; `paneSend` wrapper forwarding `continuation`. Task 7 consumes all three.
+
+- [ ] **Step 1: Write the failing `injectAfterTurn` tests**
+
+Append to `lib/daemon/__tests__/inject.test.ts`:
+
+```ts
+import { injectAfterTurn } from "../inject.ts";
+
+// ─── injectAfterTurn ───────────────────────────────────────────────────────
+
+const noLog = { info: () => {}, warn: () => {} } as unknown as import("pino").Logger;
+
+test("injectAfterTurn waits for the turn to end, then injects the continuation", async () => {
+  let waits = 0;
+  const { herdr, seen } = on((method, params) => {
+    if (method === "agent.wait") return ++waits === 1 ? new HerdrFakeError("timeout", "timed out waiting for agent status") : agent("idle");
+    if (method === "agent.get") return agent("idle");
+    if (method === "agent.prompt") return { type: "agent_prompted", agent: { ...agent("working").agent, text: params.text } };
+    return new HerdrFakeError("invalid_request", method);
+  });
+  const logged: unknown[] = [];
+  const log = { info: (o: unknown) => { logged.push(o); }, warn: () => {} } as unknown as import("pino").Logger;
+  await injectAfterTurn({ paneId: "w1:p1", text: "Continue", herdr, log, legMs: 50 });
+  const methods = seen.map((s) => s.method);
+  expect(methods).toEqual(["agent.wait", "agent.wait", "agent.get", "agent.prompt"]);
+  expect(seen[0]!.params).toEqual({ target: "w1:p1", until: ["idle", "done"], timeout_ms: 50 });
+  expect(seen[3]!.params).toMatchObject({ target: "w1:p1", text: "Continue" });
+  expect(logged[0]).toMatchObject({ paneId: "w1:p1", delivered: "accepted" });
+});
+
+test("injectAfterTurn abandons on a herdr error that is not a leg timeout", async () => {
+  const { herdr, seen } = on((method) => (method === "agent.wait" ? new HerdrFakeError("agent_not_found", "gone") : new HerdrFakeError("invalid_request", method)));
+  const warned: unknown[] = [];
+  const log = { info: () => {}, warn: (o: unknown) => { warned.push(o); } } as unknown as import("pino").Logger;
+  await injectAfterTurn({ paneId: "w1:p1", text: "Continue", herdr, log, legMs: 50 });
+  expect(seen.map((s) => s.method)).toEqual(["agent.wait"]);
+  expect(warned[0]).toMatchObject({ paneId: "w1:p1" });
+});
+
+test("injectAfterTurn abandons at the deadline when the turn never ends", async () => {
+  const { herdr, seen } = on((method) => (method === "agent.wait" ? new HerdrFakeError("timeout", "timed out") : new HerdrFakeError("invalid_request", method)));
+  const warned: unknown[] = [];
+  const log = { info: () => {}, warn: (o: unknown) => { warned.push(o); } } as unknown as import("pino").Logger;
+  await injectAfterTurn({ paneId: "w1:p1", text: "Continue", herdr, log, legMs: 20, maxWaitMs: 70 });
+  expect(seen.every((s) => s.method === "agent.wait")).toBe(true);
+  expect(seen.length).toBeGreaterThanOrEqual(2);
+  expect(warned).toHaveLength(1);
+});
+
+test("injectAfterTurn passes sockPath through the wait and the injection", async () => {
+  const { sock, seen, stop } = fakeHerdr((method, params) => {
+    if (method === "agent.wait") return agent("idle");
+    if (method === "agent.get") return agent("idle");
+    if (method === "agent.prompt") return { type: "agent_prompted", agent: { ...agent("working").agent, text: params.text } };
+    return new HerdrFakeError("invalid_request", method);
+  });
+  stops.push(stop);
+  await injectAfterTurn({ paneId: "w1:p1", text: "Continue", sockPath: sock, log: noLog, legMs: 50 });
+  expect(seen.map((s) => s.method)).toEqual(["agent.wait", "agent.get", "agent.prompt"]);
+});
+```
+
+Put the `import { injectAfterTurn } ...` line with the other imports at the top of the file rather than mid-file (merge it into the existing `import { injectIntoPane } from "../inject.ts";`).
+
+- [ ] **Step 2: Run to verify they fail**
+
+Run: `bun test lib/daemon/__tests__/inject.test.ts -t "injectAfterTurn"`
+
+Expected: FAIL, `injectAfterTurn` is not exported.
+
+- [ ] **Step 3: Implement `injectAfterTurn`**
+
+Append to `lib/daemon/inject.ts` (add `import type { Logger } from "pino";` at the top):
+
+```ts
+const AFTER_TURN_STATES = ["idle", "done"];
+const AFTER_TURN_LEG_MS = 60_000;
+const AFTER_TURN_MAX_MS = 30 * 60_000;
+
+export interface AfterTurnOptions {
+  paneId: string;
+  text: string;
+  herdr?: typeof herdrRequest;
+  sockPath?: string;
+  log?: Logger;
+  legMs?: number;
+  maxWaitMs?: number;
+}
+
+/**
+ * Injects `text` once the target's current turn has ended. Claude Code hands
+ * a plain line queued mid-turn to the model inside that turn, while a slash
+ * command waits for the turn's end, so a continuation sent right behind one
+ * would run first; waiting for idle restores the order. `blocked` is a
+ * prompt mid-turn, not an end, so it keeps waiting. The caller is often the
+ * very pane whose turn must end, so this never blocks a reply: handlers
+ * schedule it with `void`.
+ */
+export async function injectAfterTurn(opts: AfterTurnOptions): Promise<void> {
+  const { paneId, text, sockPath, log } = opts;
+  const herdr = opts.herdr ?? herdrRequest;
+  const legMs = opts.legMs ?? AFTER_TURN_LEG_MS;
+  const deadline = Date.now() + (opts.maxWaitMs ?? AFTER_TURN_MAX_MS);
+  while (Date.now() < deadline) {
+    const settled = await herdr("agent.wait", { target: paneId, until: AFTER_TURN_STATES, timeout_ms: legMs }, { timeoutMs: waitTimeout(legMs), sockPath });
+    if (settled.ok) {
+      const res = await injectIntoPane({ paneId, text, herdr, sockPath });
+      if (res.ok) log?.info({ paneId, ...res.data }, "pane:send continuation delivered");
+      else log?.warn({ paneId, err: res.error }, "pane:send continuation failed");
+      return;
+    }
+    if (settled.code !== "timeout") {
+      log?.warn({ paneId, err: settled.message }, "pane:send continuation abandoned");
+      return;
+    }
+  }
+  log?.warn({ paneId }, "pane:send continuation abandoned: turn never ended");
+}
+```
+
+- [ ] **Step 4: Run to verify they pass**
+
+Run: `bun test lib/daemon/__tests__/inject.test.ts`
+
+Expected: all PASS (the existing 15 plus 4 new).
+
+- [ ] **Step 5: rt-client types and wrapper**
+
+In `packages/rt-client/src/commands.ts` replace lines 263-264 with:
+
+```ts
+export type PaneDelivery = "accepted" | "queued" | "refused";
+/** `continuation` is present only when the daemon scheduled a second line for after the target's current turn. */
+export interface PaneSendResult { paneId: string; delivered: PaneDelivery; reason?: string; continuation?: { delivered: "deferred" } }
+```
+
+and line 619 with:
+
+```ts
+  "pane:send": { payload: { paneId: string; text: string; callerPane?: string; continuation?: string }; data: PaneSendResult };
+```
+
+In `packages/rt-client/src/client.ts`, in `paneSend`, after the `callerPane` line add:
+
+```ts
+  if (a.continuation !== undefined) payload.continuation = a.continuation;
+```
+
+In `packages/rt-client/package.json` change `"version": "0.19.1"` to `"version": "0.20.0"`.
+
+In `packages/rt-client/README.md` after line 105 add a row:
+
+```markdown
+| `paneSend` | type a line into a pane; `accepted`, `queued` or `refused`, plus an optional `continuation` the daemon types once the pane's turn has ended |
+```
+
+- [ ] **Step 6: Write the failing handler tests**
+
+Append to `lib/daemon/__tests__/pane-handlers.test.ts` after the `pane:send is herdr unavailable` test:
+
+```ts
+test("pane:send with a continuation replies deferred and schedules the second line for after the turn", async () => {
+  const claude = (status: string) => ({ type: "agent_info", agent: { pane_id: "w1:p1", agent: "claude", agent_status: status } });
+  let waited = false;
+  const { sock, seen, stop } = fakeHerdr((method, params) => {
+    if (method === "agent.get") return claude(waited ? "idle" : "working");
+    if (method === "agent.prompt") return { type: "agent_prompted", agent: { ...claude("working").agent, text: params.text } };
+    if (method === "agent.wait") { waited = true; return claude("idle"); }
+    return new HerdrFakeError("invalid_request", method);
+  });
+  stops.push(stop);
+  const herdr: typeof herdrRequest = (m, p, o) => herdrRequest(m, p, { ...o, sockPath: sock });
+  const scheduled: Array<Promise<void>> = [];
+  const pane = createPaneHandlers({ db: freshDb(), repoIndex: () => ({}), herdr, schedule: (p) => { scheduled.push(p); } });
+  const res = await pane["pane:send"]({ paneId: "w1:p1", text: "/cd /repos/chat", continuation: "Continue: enter worktree" });
+  expect(res).toEqual({ ok: true, data: { paneId: "w1:p1", delivered: "queued", continuation: { delivered: "deferred" } } });
+  expect(scheduled).toHaveLength(1);
+  await scheduled[0];
+  const prompts = seen.filter((s) => s.method === "agent.prompt").map((s) => s.params.text);
+  expect(prompts).toEqual(["/cd /repos/chat", "Continue: enter worktree"]);
+  expect(seen.findIndex((s) => s.method === "agent.wait")).toBeGreaterThan(seen.findIndex((s) => s.params.text === "/cd /repos/chat"));
+});
+
+test("pane:send with a continuation after a refused first line schedules nothing and omits continuation", async () => {
+  const scheduled: Array<Promise<void>> = [];
+  const { sock, stop } = fakeHerdr(() => new HerdrFakeError("invalid_request", "unused"));
+  stops.push(stop);
+  const herdr: typeof herdrRequest = (m, p, o) => herdrRequest(m, p, { ...o, sockPath: sock });
+  const pane = createPaneHandlers({ db: freshDb(), repoIndex: () => ({}), herdr, schedule: (p) => { scheduled.push(p); } });
+  const res = await pane["pane:send"]({ paneId: "w1:p1", text: "x", callerPane: "w1:p1", continuation: "y" });
+  expect(res).toEqual({ ok: true, data: { paneId: "w1:p1", delivered: "refused", reason: "that is this pane" } });
+  expect(scheduled).toHaveLength(0);
+});
+```
+
+- [ ] **Step 7: Run to verify they fail**
+
+Run: `bun test lib/daemon/__tests__/pane-handlers.test.ts -t "continuation"`
+
+Expected: FAIL (`schedule` is not an option; the reply has no `continuation`).
+
+- [ ] **Step 8: Implement the handler side**
+
+In `lib/daemon/handlers/pane.ts`:
+
+Add to the imports: `import type { Logger } from "pino";` and change the inject import to `import { herdrError, injectAfterTurn, injectIntoPane } from "../inject.ts";`.
+
+Add two fields to `createPaneHandlers`'s `opts` type, after `herdrRunnerFor`:
+
+```ts
+  /** Daemon logger for the continuation's outcome; the reply has already gone out by then. */
+  log?: Logger;
+  /** How a continuation's detached wait is started; tests capture the promise, the daemon fires and forgets. */
+  schedule?: (work: Promise<void>) => void;
+```
+
+In the destructuring block after `const herdrRunnerFor = opts.herdrRunnerFor;` add:
+
+```ts
+  const log = opts.log;
+  const schedule = opts.schedule ?? ((work: Promise<void>) => { void work; });
+```
+
+Replace the `pane:send` handler with:
+
+```ts
+    "pane:send": async (rawPayload: unknown): Promise<CommandResult<"pane:send">> => {
+      const payload = rawPayload as Commands["pane:send"]["payload"];
+      const { paneId, sockPath } = resolvePaneRef(payload.paneId);
+      const res = await injectIntoPane({ paneId, text: payload.text, callerPane: payload.callerPane, herdr, sockPath });
+      if (!res.ok) return res;
+      // Echo the ref the caller passed in, not the bare id injectIntoPane
+      // resolved against: the round-trip rule -- whatever a caller sends
+      // addressably, every verb (including this one's own reply) prints
+      // addressably back.
+      const data = { ...res.data, paneId: payload.paneId };
+      if (payload.continuation === undefined || res.data.delivered === "refused") return { ok: true, data };
+      schedule(injectAfterTurn({ paneId, text: payload.continuation, herdr, sockPath, log }));
+      return { ok: true, data: { ...data, continuation: { delivered: "deferred" } } };
+    },
+```
+
+In `lib/daemon/command-router.ts` change the `createPaneHandlers({` call to pass the logger:
+
+```ts
+  const paneHandlers = createPaneHandlers({
+    db: opts.stateDb, repoIndex: ctx.repoIndex, bg: opts.bgService, log: ctx.log,
+    herdrRunnerFor: (socket) => defaultHerdrRunner(socket ? { ...process.env, HERDR_SOCKET_PATH: socket } : process.env),
+  });
+```
+
+- [ ] **Step 9: Build rt-client, run the tests**
+
+Run: `bun run build` with cwd `packages/rt-client` (use the Bash tool's working directory by running `bun run --cwd packages/rt-client build`).
+
+Run: `bun test lib/daemon/__tests__/inject.test.ts lib/daemon/__tests__/pane-handlers.test.ts packages/rt-client/test`
+
+Expected: all PASS, including `packages/rt-client/test/dist-freshness.test.ts`.
+
+Run: `bun test commands/__tests__/pane.test.ts`
+
+Expected: PASS still (the CLI is untouched until Task 7; the daemon ignores the CLI's second call and the CLI ignores the new field).
+
+- [ ] **Step 10: Commit**
+
+```bash
+git add lib/daemon/inject.ts lib/daemon/handlers/pane.ts lib/daemon/command-router.ts lib/daemon/__tests__/inject.test.ts lib/daemon/__tests__/pane-handlers.test.ts packages/rt-client/src/commands.ts packages/rt-client/src/client.ts packages/rt-client/package.json packages/rt-client/README.md
+git commit -m "pane:send: continuation delivered after the target's turn ends; rt-client 0.20.0" -m "Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
+```
+
+---
+
+### Task 7: CLI `--then` rides the payload
+
+**Files:**
+- Modify: `commands/pane.ts` (`paneSend`, `renderDelivery`, header comment)
+- Modify: `lib/command-tree-def.ts` (the `Then` arg hint)
+- Test: `commands/__tests__/pane.test.ts`
+
+**Interfaces:**
+- Consumes: `paneSend` wrapper forwarding `continuation`; `PaneSendResult.continuation?: { delivered: "deferred" }` (Task 6).
+- Produces: `rt pane send <pane|self> --text <text> [--then <text>]` making ONE daemon call; plain output second line `then: <ref> deferred`; JSON `{ ok, paneId, delivered, reason?, then?: { delivered: "deferred" } }`.
+
+- [ ] **Step 1: Rewrite the `--then` tests**
+
+In `commands/__tests__/pane.test.ts`, replace the five Task 2 tests (from `test("pane send --then queues a second line ...` through the end of `test("pane send --then value is not mistaken ...`) with:
+
+```ts
+test("pane send --then rides the payload as continuation and prints the deferred line", async () => {
+  replies = { "pane:send": { ok: true, data: { paneId: "w1:p1", delivered: "queued", continuation: { delivered: "deferred" } } } };
+  const orig = process.env.HERDR_PANE_ID;
+  process.env.HERDR_PANE_ID = "w1:p1";
+  try {
+    const r = await run(paneSend, ["self", "--text", "/cd /repos/acme", "--then", "Continue: enter worktree foo"]);
+    expect(seen).toEqual([{ cmd: "pane:send", payload: { paneId: "w1:p1", text: "/cd /repos/acme", continuation: "Continue: enter worktree foo" } }]);
+    expect(r.stdout).toBe("w1:p1 queued\nthen: w1:p1 deferred");
+    expect(r.code).toBe(0);
+  } finally {
+    if (orig === undefined) delete process.env.HERDR_PANE_ID; else process.env.HERDR_PANE_ID = orig;
+  }
+});
+
+test("pane send --then prints no then line when the daemon scheduled nothing", async () => {
+  replies = { "pane:send": { ok: true, data: { paneId: "w1:p2", delivered: "refused", reason: "at a prompt" } } };
+  const r = await run(paneSend, ["w1:p2", "--text", "hi", "--then", "and again"]);
+  expect(seen).toHaveLength(1);
+  expect(seen[0]!.payload).toMatchObject({ paneId: "w1:p2", text: "hi", continuation: "and again" });
+  expect(r.stdout).toBe("w1:p2 refused (at a prompt)");
+  expect(r.code).toBe(0);
+});
+
+test("pane send --then --json maps continuation to then", async () => {
+  replies = { "pane:send": { ok: true, data: { paneId: "w1:p2", delivered: "accepted", continuation: { delivered: "deferred" } } } };
+  const r = await run(paneSend, ["w1:p2", "--text", "hi", "--then", "and again", "--json"]);
+  expect(JSON.parse(r.stdout)).toEqual({ ok: true, paneId: "w1:p2", delivered: "accepted", then: { delivered: "deferred" } });
+});
+
+test("pane send --then --json omits then when the daemon scheduled nothing", async () => {
+  replies = { "pane:send": { ok: true, data: { paneId: "w1:p2", delivered: "refused", reason: "not a claude pane" } } };
+  const r = await run(paneSend, ["w1:p2", "--text", "hi", "--then", "and again", "--json"]);
+  expect(JSON.parse(r.stdout)).toEqual({ ok: true, paneId: "w1:p2", delivered: "refused", reason: "not a claude pane" });
+});
+
+test("pane send without --then sends no continuation", async () => {
+  replies = { "pane:send": { ok: true, data: { paneId: "w1:p2", delivered: "accepted" } } };
+  await run(paneSend, ["w1:p2", "--text", "hi"]);
+  expect(seen[0]!.payload).not.toHaveProperty("continuation");
+});
+
+test("pane send --then value is not mistaken for the positional pane", async () => {
+  replies = { "pane:send": { ok: true, data: { paneId: "w1:p2", delivered: "accepted" } } };
+  await run(paneSend, ["--then", "and again", "w1:p2", "--text", "hi"]);
+  expect(seen[0]!.payload).toMatchObject({ paneId: "w1:p2", text: "hi" });
+});
+```
+
+- [ ] **Step 2: Run to verify they fail**
+
+Run: `bun test commands/__tests__/pane.test.ts -t "then"`
+
+Expected: the first three FAIL (two daemon calls are made; no `continuation` in the payload; no `then` in the JSON). The others pass.
+
+- [ ] **Step 3: Rewrite `paneSend`**
+
+In `commands/pane.ts` replace `paneSend` and `renderDelivery` with:
+
+```ts
+export async function paneSend(args: string[]): Promise<void> {
+  const target = positional(args);
+  const rawText = flagValue(args, "--text");
+  if (!target || rawText === undefined) fail("usage: rt pane send <pane|self> --text <text> [--then <text>]  (--text - reads stdin)");
+  const text = rawText === "-" ? await new Response(Bun.stdin.stream()).text() : rawText;
+  const own = selfPaneRef();
+  // The daemon refuses a callerPane equal to the target, so `self` is the one
+  // spelling that reaches this pane: it sends the own ref as the target and no
+  // callerPane. A literal copy of the own id keeps the guard.
+  if (target === SELF_TARGET && !own) fail(NOT_IN_PANE);
+  const paneId = target === SELF_TARGET ? own! : target;
+  const callerPane = target === SELF_TARGET ? undefined : own;
+  const continuation = flagValue(args, "--then");
+  const data = unwrap(
+    await paneSendRt({ paneId, text, ...(callerPane ? { callerPane } : {}), ...(continuation !== undefined ? { continuation } : {}) }, opts(args)),
+    "pane send",
+  );
+  const { continuation: then, ...first } = data;
+  if (args.includes("--json")) return void console.log(JSON.stringify({ ok: true, ...first, ...(then ? { then } : {}) }));
+  console.log(renderDelivery(first));
+  if (then) console.log(`then: ${first.paneId} ${then.delivered}`);
+}
+
+function renderDelivery(d: Pick<PaneSendResult, "paneId" | "delivered" | "reason">): string {
+  return `${d.paneId} ${d.delivered}${d.reason ? ` (${d.reason})` : ""}`;
+}
+```
+
+Update the header comment line for send to:
+
+```
+ *   rt pane send <pane|self> --text <text> [--then <text>]        inject text into a pane; self is this pane; --then lands after its turn (--text - reads stdin)
+```
+
+In `lib/command-tree-def.ts` change the `Then` arg hint to:
+
+```ts
+          { name: "Then", flag: "--then", type: "text", optional: true, placeholder: "Continue: enter worktree foo", hint: "A second line the daemon types once the pane's current turn has ended, so it lands after a slash command; skipped when the first line is refused" },
+```
+
+- [ ] **Step 4: Run to verify they pass**
+
+Run: `bun test commands/__tests__/pane.test.ts lib/__tests__/picker-conformance.test.ts lib/__tests__/no-ui-in-cli.test.ts`
+
+Expected: all PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add commands/pane.ts commands/__tests__/pane.test.ts lib/command-tree-def.ts
+git commit -m "pane send: --then rides the payload as continuation" -m "Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
+```
+
+---
+
+### Task 8: Verify end to end and open the PR
+
+**Files:** none new.
+
+- [ ] **Step 1: Full test run**
+
+Run: `bun run test:all > <scratchpad>/test-all-2.log 2>&1`, then grep the log for the pass/fail summary lines.
+
+Expected: green. Re-run a failing file alone if it is unrelated to this branch (the suite has rotating flakes on main); report any real failure by test name.
+
+- [ ] **Step 2: Live check against a daemon running THIS branch**
+
+The dev daemon runs the main checkout's code, so the continuation path is not live until a daemon on this branch is up. The controller decides how (restart the dev daemon from this worktree, or run an isolated daemon under `env -i HOME=<temp>`); never spawn a competing daemon against the real `rt.sock`.
+
+Never target `self` from this session (pane `wD0:pB`). Spawn a throwaway pane: `rt pane spawn --cwd /private/tmp --prompt "Run the shell command sleep 20 in the foreground, then say READY" --json`, record its id `T`, then within the 20 s run:
+
+`bun run cli.ts pane send <T> --text "/cd /Users/matt" --then "Say DONE and print pwd" --json`
+
+Expected: `{"ok":true,"paneId":"<T>","delivered":"queued","then":{"delivered":"deferred"}}`. After ~40 s, `rt pane peek <T> --lines 40` shows, in order: READY, `/cd /Users/matt` with `Moved to /Users/matt`, then DONE and `/Users/matt`. Close the pane with `herdr pane close <T>`.
+
+- [ ] **Step 3: Push and open the PR**
+
+```bash
+git push -u origin pane-send-self
+gh pr create --title "rt pane send self: an agent's door into its own pane" --body-file /private/tmp/claude-501/-Users-matt-Documents-GitHub-repo-tools/3e0d4051-6753-464e-8149-f13602948e5e/scratchpad/pr-body.md
+```
+
+Write `pr-body.md` with the Write tool first: a short framing paragraph; "What changed" bullets (self target, `--then` as a daemon-deferred continuation, rt-client 0.20.0, two skills, one pointer); the spike verdict and the ordering finding that forced the daemon change, with the peek excerpts; the rt-client version bump announced for other lanes; the closing line `🤖 Generated with [Claude Code](https://claude.com/claude-code)`.
+
+- [ ] **Step 4: Post-merge (controller, not the PR)**
+
+After merge and a `git pull` in the main checkout: `ln -s /Users/matt/Documents/GitHub/repo-tools/skills/rt-herdr-inject ~/.claude/skills/rt:herdr-inject`; restart the dev daemon so `pane:send continuation` is live (a merged daemon change is not live until then). Matt's `~/.claude/CLAUDE.md` "inject it via herdr" line can then point at `rt:herdr-inject`.
