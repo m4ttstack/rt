@@ -32,19 +32,54 @@ rt pane send self --text <text> [--then <text>] [--json]
   the caller's own id, still sends `callerPane` and still refuses. `self` is
   the only spelling that reaches your own pane; the daemon and rt-client are
   untouched.
-- `--then <text>` queues a second line after the first. It is a second
-  sequential `pane:send` to the same resolved target, sent only when the
-  first was `accepted` or `queued`. It is allowed for any target.
+- `--then <text>` queues a second line after the first, delivered by the
+  daemon once the target's current turn has ended (see "Deferred
+  continuation"). It is allowed for any target. The CLI reports it as
+  `deferred`; it cannot wait for the outcome because, for `self`, the turn
+  that must end is its own.
 - Self delivery always reports `queued`: the agent is mid-turn when it
   calls, so herdr sees `working`, and the line sits in the composer until
   the turn ends. The skill states this plainly.
 
 Output. Plain: one line per delivery, `<ref> <delivered> (<reason>)` as
-today, the `--then` line prefixed `then:`. JSON:
-`{ ok, paneId, delivered, reason?, then?: { delivered, reason? } }`; `then`
-is present only when a `--then` line was attempted.
+today, the `--then` line prefixed `then:` (`then: w1:p1 deferred`). JSON:
+`{ ok, paneId, delivered, reason?, then?: { delivered: "deferred" } }`;
+`then` is present only when the daemon scheduled the continuation, which
+it never does after a `refused` first line.
 
 The `--then` value is read like `--text`: a literal string, no stdin form.
+
+## Deferred continuation
+
+The live check of a naive `--then` (a second `pane:send` fired right behind
+the first) inverted the order: Claude Code hands a plain line queued
+mid-turn to the model inside that same turn (steering), while a local
+slash command such as `/cd` waits for the turn to end. The continuation
+ran first, in the old cwd, and nothing was left to wake the agent after
+the `/cd`. The spike missed it because its turns ended within seconds, so
+every line landed post-turn.
+
+So the daemon owns the second line. `pane:send` gains a payload field
+`continuation?: string` (the CLI's `--then`; the wire name avoids a `then`
+property, which reads as a thenable to anyone who returns the result from
+an async function). The handler injects the first line as today; when the
+verdict is `accepted` or `queued` and a continuation is present it
+schedules `injectAfterTurn` in `lib/daemon/inject.ts` and replies at once
+with `continuation: { delivered: "deferred" }`. A `refused` first line
+schedules nothing and the reply carries no `continuation`.
+
+`injectAfterTurn` runs detached: it loops `agent.wait until idle,done` in
+60 s legs until the target settles (a `blocked` pane is mid-turn at a
+prompt, so it keeps waiting), then calls `injectIntoPane` with the
+continuation and logs the verdict at `info` through the daemon logger. A
+herdr error other than a leg timeout, or 30 minutes without the turn
+ending, abandons the continuation with a `warn` line. The CLI maps
+`continuation` to its `then` output.
+
+rt-client: `PaneSendResult` gains `continuation?: { delivered: "deferred" }`,
+the `paneSend` wrapper forwards `continuation`, and the package version
+bumps `0.19.1 -> 0.20.0` (announced in the PR; renumber if another lane
+lands first). `bun run build` in `packages/rt-client` after the change.
 
 ## Spike (throwaway, before implementation)
 
@@ -91,6 +126,12 @@ Points at `rt:herdr-inject` for the rules.
   for a literal id, unset env fails with the exact message before any
   daemon call, `--then` sends a second call only after `accepted`/`queued`
   and not after `refused`, plain and JSON shapes.
+- `lib/daemon/__tests__/inject.test.ts` (or the pane-handlers suite):
+  `injectAfterTurn` waits through a timed-out leg, injects once the fake
+  herdr reports `idle`, keeps waiting on `blocked`, abandons on a foreign
+  herdr error and at the deadline; `pane:send` with `continuation` replies
+  `deferred` after `accepted`/`queued` and carries no `continuation` after
+  `refused`.
 - `lib/__tests__/picker-conformance.test.ts` stays green (the leaf keeps its
   `exempt` `omitBehavior`; `self` is a value, not a flag).
 - Skills: `superpowers:writing-skills`, RED baseline on a subagent that has
@@ -99,5 +140,5 @@ Points at `rt:herdr-inject` for the rules.
 ## Out of scope
 
 Multiline bodies, a pane picker for `send`, changing `chat invite`'s
-self-refusal, herdr-less fallbacks (tmux), and any daemon change unless the
-spike forces one.
+self-refusal, herdr-less fallbacks (tmux), and any daemon change beyond
+the deferred continuation.
