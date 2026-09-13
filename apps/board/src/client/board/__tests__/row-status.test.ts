@@ -367,7 +367,7 @@ describe('rowStatus: review lane', () => {
       mr({
         review: {
           status: 'error',
-          message: 'pane closed... cleared from the board',
+          message: 'pane closed',
         },
       }),
       NOW,
@@ -377,7 +377,7 @@ describe('rowStatus: review lane', () => {
     expect(s.line).toMatchObject({
       tone: 'bad',
       word: 'review failed',
-      detail: 'pane closed... cleared from the board',
+      detail: 'pane closed',
     });
     expect(s.line.verbs[0]).toEqual({
       kind: 'launch-review',

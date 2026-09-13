@@ -2183,12 +2183,12 @@ const httpServer = Bun.serve({
           for (const mrUrl of settle.reviews)
             writeReviewState(reviewFilePath(mrUrl), {
               status: 'error',
-              message: 'pane closed... cleared from the board',
+              message: 'pane closed',
             });
           for (const mrUrl of settle.responds)
             writeRespondState(respondFilePath(mrUrl), {
               status: 'error',
-              message: 'pane closed... cleared from the board',
+              message: 'pane closed',
             });
         }
         return new Response(JSON.stringify({ ok: true }), {
