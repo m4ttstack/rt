@@ -250,42 +250,45 @@ test("pane send with a literal copy of the caller's own id still sends callerPan
 
 // ─── pane send --then ────────────────────────────────────────────────────────
 
-test("pane send --then queues a second line to the same target after a queued first", async () => {
-  replies = { "pane:send": { ok: true, data: { paneId: "w1:p1", delivered: "queued" } } };
+test("pane send --then rides the payload as continuation and prints the deferred line", async () => {
+  replies = { "pane:send": { ok: true, data: { paneId: "w1:p1", delivered: "queued", continuation: { delivered: "deferred" } } } };
   const orig = process.env.HERDR_PANE_ID;
   process.env.HERDR_PANE_ID = "w1:p1";
   try {
     const r = await run(paneSend, ["self", "--text", "/cd /repos/acme", "--then", "Continue: enter worktree foo"]);
-    expect(seen).toEqual([
-      { cmd: "pane:send", payload: { paneId: "w1:p1", text: "/cd /repos/acme" } },
-      { cmd: "pane:send", payload: { paneId: "w1:p1", text: "Continue: enter worktree foo" } },
-    ]);
-    expect(r.stdout).toBe("w1:p1 queued\nthen: w1:p1 queued");
+    expect(seen).toEqual([{ cmd: "pane:send", payload: { paneId: "w1:p1", text: "/cd /repos/acme", continuation: "Continue: enter worktree foo" } }]);
+    expect(r.stdout).toBe("w1:p1 queued\nthen: w1:p1 deferred");
     expect(r.code).toBe(0);
   } finally {
     if (orig === undefined) delete process.env.HERDR_PANE_ID; else process.env.HERDR_PANE_ID = orig;
   }
 });
 
-test("pane send --then is skipped when the first line is refused", async () => {
+test("pane send --then prints no then line when the daemon scheduled nothing", async () => {
   replies = { "pane:send": { ok: true, data: { paneId: "w1:p2", delivered: "refused", reason: "at a prompt" } } };
   const r = await run(paneSend, ["w1:p2", "--text", "hi", "--then", "and again"]);
   expect(seen).toHaveLength(1);
+  expect(seen[0]!.payload).toMatchObject({ paneId: "w1:p2", text: "hi", continuation: "and again" });
   expect(r.stdout).toBe("w1:p2 refused (at a prompt)");
   expect(r.code).toBe(0);
 });
 
-test("pane send --then --json nests the second delivery under then", async () => {
-  replies = { "pane:send": { ok: true, data: { paneId: "w1:p2", delivered: "accepted" } } };
+test("pane send --then --json maps continuation to then", async () => {
+  replies = { "pane:send": { ok: true, data: { paneId: "w1:p2", delivered: "accepted", continuation: { delivered: "deferred" } } } };
   const r = await run(paneSend, ["w1:p2", "--text", "hi", "--then", "and again", "--json"]);
-  expect(seen).toHaveLength(2);
-  expect(JSON.parse(r.stdout)).toEqual({ ok: true, paneId: "w1:p2", delivered: "accepted", then: { delivered: "accepted" } });
+  expect(JSON.parse(r.stdout)).toEqual({ ok: true, paneId: "w1:p2", delivered: "accepted", then: { delivered: "deferred" } });
 });
 
-test("pane send --then --json omits then when the first line is refused", async () => {
+test("pane send --then --json omits then when the daemon scheduled nothing", async () => {
   replies = { "pane:send": { ok: true, data: { paneId: "w1:p2", delivered: "refused", reason: "not a claude pane" } } };
   const r = await run(paneSend, ["w1:p2", "--text", "hi", "--then", "and again", "--json"]);
   expect(JSON.parse(r.stdout)).toEqual({ ok: true, paneId: "w1:p2", delivered: "refused", reason: "not a claude pane" });
+});
+
+test("pane send without --then sends no continuation", async () => {
+  replies = { "pane:send": { ok: true, data: { paneId: "w1:p2", delivered: "accepted" } } };
+  await run(paneSend, ["w1:p2", "--text", "hi"]);
+  expect(seen[0]!.payload).not.toHaveProperty("continuation");
 });
 
 test("pane send --then value is not mistaken for the positional pane", async () => {
