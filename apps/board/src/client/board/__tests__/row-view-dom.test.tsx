@@ -85,6 +85,9 @@ function ctx(over: Partial<RowContext> = {}): RowContext {
     onToggleSelect: noop,
     onClearOrphan: noop,
     onDismissLane: noop,
+    noteEditing: null,
+    onEditNote: noop,
+    onSaveNote: noop,
     onLaunch: noop,
     onReReview: noop,
     onRespond: noop,
@@ -474,4 +477,98 @@ test('the replied qualifier goes quiet once I have approved', async () => {
     ctx({ self: 'me' })
   );
   expect(container.querySelector('.tui-threads-replied')).toBeNull();
+});
+
+test("a note renders as the row's last line, and only when there is one", async () => {
+  await render([mr()]);
+  expect(container.querySelector('.tui-row-note')).toBeNull();
+  expect(container.querySelector('.tui-row')!.getAttribute('data-note')).toBe(
+    null
+  );
+
+  await render([mr({ note: 'waiting on Dana to confirm the copy' })]);
+  const row = container.querySelector('.tui-row')!;
+  expect(row.getAttribute('data-note')).toBe('1');
+  const band = row.querySelector('.tui-row-note')!;
+  expect(band.querySelector('.tui-row-note-text')!.textContent).toBe(
+    'waiting on Dana to confirm the copy'
+  );
+  // Last child of the body: under line 3, not between the row's own lines.
+  const body = row.querySelector('.tui-row-body')!;
+  expect(body.lastElementChild).toBe(band);
+});
+
+test('"dismiss note" saves an empty note, which is the clear', async () => {
+  const saved: Array<[number, string]> = [];
+  await render(
+    [mr({ note: 'rebase after !1290 lands' })],
+    ctx({ onSaveNote: (m, text) => saved.push([m.iid, text]) })
+  );
+  const button = container.querySelector<HTMLButtonElement>(
+    '.tui-row-note-dismiss'
+  )!;
+  expect(button.textContent).toBe('dismiss note');
+  await React.act(async () => button.click());
+  expect(saved).toEqual([[1418, '']]);
+});
+
+test('the note tool opens the editor, and the editor saves on Enter', async () => {
+  const opened: Array<string | null> = [];
+  await render([mr()], ctx({ onEditNote: url => opened.push(url) }));
+  const tool = [
+    ...container.querySelectorAll<HTMLButtonElement>(
+      '.tui-status-tools button'
+    ),
+  ].find(b => (b.getAttribute('title') ?? '').includes('note'))!;
+  expect(tool.getAttribute('title')).toBe('add a note');
+  await React.act(async () => tool.click());
+  expect(opened).toEqual([URL]);
+
+  const saved: Array<[number, string]> = [];
+  await render(
+    [mr()],
+    ctx({
+      noteEditing: URL,
+      onSaveNote: (m, text) => saved.push([m.iid, text]),
+    })
+  );
+  const box = container.querySelector<HTMLTextAreaElement>(
+    '.tui-row-note-input'
+  )!;
+  expect(
+    container.querySelector('.tui-row-note')!.getAttribute('data-editing')
+  ).toBe('true');
+  await React.act(async () => {
+    // React tracks the value it last set, so a plain assignment looks like
+    // no change to its onChange. Go through the prototype setter the way a
+    // real keystroke does.
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLTextAreaElement.prototype,
+      'value'
+    )!.set!;
+    setter.call(box, 'ping Nils about the capture set');
+    box.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await React.act(async () => {
+    box.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
+    );
+  });
+  expect(saved).toEqual([[1418, 'ping Nils about the capture set']]);
+});
+
+test('the slack marks are a button onto the post, and plain marks without one', async () => {
+  const slack = { status: 'found' as const, reactions: ['eyes'], posted: true };
+  await render([
+    mr({ slack: { ...slack, permalink: 'https://slack.test/p/1' } }),
+  ]);
+  const marks = container.querySelector('.tui-row-marks')!;
+  expect(marks.tagName).toBe('BUTTON');
+  expect(marks.className).toContain('tui-copy-inline');
+  expect(marks.getAttribute('title')).toContain('open in slack');
+
+  await render([mr({ slack })]);
+  const plain = container.querySelector('.tui-row-marks')!;
+  expect(plain.tagName).toBe('SPAN');
+  expect(plain.getAttribute('title')).toBe('posted in slack');
 });

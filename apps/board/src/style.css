@@ -289,6 +289,13 @@ body {
   position: relative;
   overflow: hidden;
 }
+/* The one row feature allowed to grow the row: a note adds its band under
+   line 3 and the row takes whatever that band needs (B10). Everything else
+   still lives inside the fixed four lines. */
+.tui-row[data-note] {
+  height: auto;
+  min-height: var(--row-h);
+}
 .tui-row + .tui-row {
   border-top: 1px solid var(--border-soft);
 }
@@ -807,6 +814,96 @@ body {
 .tui-copy-inline[data-copied] {
   opacity: 1;
   color: var(--green);
+}
+/* ── the row's note (B10) ─────────────────────────────────────────────
+   The seat's own line, under everything the row already says. A band, not
+   a status line: it carries no tone and never takes a lane's hue, and its
+   cyan is the one hue the row does not spend on a verb. */
+.tui-row-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  padding: 5px 10px 5px 8px;
+  border-radius: var(--radius-px5);
+  /* Opaque, mixed into the panel the rows sit on, never an alpha wash: a
+     translucent band would take the row's hover tint and the ground's grid
+     with it, so the same note would read a different color under the
+     pointer than at rest. */
+  background: color-mix(in srgb, var(--cyan) 16%, var(--panel));
+  color: var(--fg);
+  font-size: 0.72rem;
+  line-height: 1.35;
+  cursor: text;
+  text-align: left;
+}
+.tui-row-note > svg {
+  flex: 0 0 auto;
+  color: var(--cyan);
+}
+.tui-row-note-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+/* The quick clear, in the verbs' own shape: hidden until the pointer is on
+   the row, so the band at rest is the note and nothing else. */
+.tui-row-note-dismiss {
+  flex: 0 0 auto;
+  margin: 0;
+  border: 0;
+  padding: 1px 7px;
+  border-radius: var(--radius-px5);
+  background: none;
+  font: 600 0.72rem / 16px var(--font-sans);
+  color: var(--muted-text);
+  cursor: pointer;
+  visibility: hidden;
+}
+.tui-row:is(:hover, :focus-within) .tui-row-note-dismiss {
+  visibility: visible;
+}
+.tui-row-note-dismiss:hover {
+  background: color-mix(in srgb, var(--muted-text) 12%, transparent);
+  color: var(--fg);
+}
+/* Editing: the band keeps its place and its color; the text becomes the
+   same auto-growing textarea the selection bar and the launch note use. */
+.tui-row-note[data-editing] {
+  display: block;
+  cursor: default;
+  outline: 1px solid var(--accent);
+}
+.tui-row-note-lead {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+.tui-row-note-lead > svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--cyan);
+}
+.tui-row-note-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  color: var(--fg);
+  resize: none;
+  overflow: hidden;
+}
+.tui-row-note-input:focus-visible {
+  outline: none;
+}
+.tui-row-note-hint {
+  margin-top: 2px;
+  font-size: 0.66rem;
+  color: var(--muted-text);
 }
 /* In-flow tools take the auto margin and the verbs give theirs up, so the
    verb keeps its corner and the tools stack to its left. Coarse pointers
@@ -1694,6 +1791,13 @@ body {
 .tui-stack-rows > .tui-row > .tui-row-pick:focus-within::after,
 .tui-rows[data-selecting] .tui-stack-rows > .tui-row > .tui-row-pick::after {
   top: calc((var(--pick-h) + var(--check-size)) / 2);
+}
+/* A row carrying a note is taller than --row-h, so its rail segment cannot
+   be measured from that constant. The row clips, so an overshoot lands on
+   the row's own bottom edge exactly. */
+.tui-stack-rows > .tui-row[data-note] > .tui-row-pick::after,
+.tui-row-nested[data-note] .tui-row-pick::before {
+  bottom: -400px;
 }
 /* Children: the rail continues at the parent's dot x, which in the nested
    pick's coordinates is that x less the indent. The last child's segment

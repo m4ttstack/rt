@@ -17,9 +17,11 @@ import {
   ArrowDownGlyph,
   ArrowOutGlyph,
   FlagGlyph,
+  NoteGlyph,
   SlackLogo,
 } from './icons.tsx';
 import { rowStatus, statusPhrase, statusReasons } from './row-status.ts';
+import { RowNote } from './RowNote.tsx';
 import { slackLadder } from './slack-ladder.ts';
 import { StatusDot } from './StatusDot.tsx';
 import { StatusLine } from './StatusLine.tsx';
@@ -81,8 +83,9 @@ function StatusPhrase({ mr }: { mr: BoardMR }) {
 function SlackMarks({ mr }: { mr: BoardMRWithReview }) {
   const { posted, mark } = slackLadder(mr.slack, getSlackMarks());
   if (!posted) return null;
-  return (
-    <span className="tui-row-marks">
+  const permalink = mr.slack?.permalink;
+  const marks = (
+    <>
       {mark && (
         <span
           className="tui-mark"
@@ -92,10 +95,32 @@ function SlackMarks({ mr }: { mr: BoardMRWithReview }) {
           {mark.glyph}
         </span>
       )}
-      <span className="tui-mark" data-slack-logo="" title="posted in slack">
+      <span className="tui-mark" data-slack-logo="" aria-hidden>
         <SlackLogo />
       </span>
-    </span>
+    </>
+  );
+  // With a permalink the marks are the way into the thread, so they wear the
+  // row tool's button shape; without one there is nothing to open and they
+  // stay the plain marks they were.
+  if (!permalink)
+    return (
+      <span className="tui-row-marks" title="posted in slack">
+        {marks}
+      </span>
+    );
+  return (
+    <button
+      type="button"
+      className="tui-row-marks tui-copy-inline"
+      title={mark ? `${mark.title} · open in slack` : 'open in slack'}
+      onClick={e => {
+        e.stopPropagation();
+        window.open(permalink, '_blank', 'noopener');
+      }}
+    >
+      {marks}
+    </button>
   );
 }
 
@@ -207,12 +232,14 @@ function RowView({
     const status = rowStatus(mr, now, ctx.draftResolved, ctx.self);
     const behind = behindToken(mr);
     const url = mr.webUrl;
+    const noteOpen = !!url && ctx.noteEditing === url;
     return (
       <div
         key={mr.iid}
         className={nested ? 'tui-row tui-row-nested' : 'tui-row'}
         data-mr-iid={mr.iid}
         data-tone={status.bar ?? undefined}
+        data-note={mr.note || noteOpen ? '1' : undefined}
         data-local={ctx.local ? '1' : undefined}
         title={ctx.local ? 'right-click for actions' : undefined}
         onClick={e => onRowClick(e, mr)}
@@ -271,13 +298,32 @@ function RowView({
             status={status}
             ctx={ctx}
             tools={
-              <CopyButton
-                text={mrLine(mr, ctx.slackTemplates)}
-                className="tui-copy-inline"
-                title="copy this MR for Slack"
-              />
+              <>
+                {url && (
+                  <button
+                    type="button"
+                    className="tui-copy-inline"
+                    title={mr.note ? 'edit this note' : 'add a note'}
+                    data-has-note={mr.note ? '1' : undefined}
+                    onClick={e => {
+                      e.stopPropagation();
+                      ctx.onEditNote(noteOpen ? null : url);
+                    }}
+                  >
+                    <NoteGlyph />
+                  </button>
+                )}
+                <CopyButton
+                  text={mrLine(mr, ctx.slackTemplates)}
+                  className="tui-copy-inline"
+                  title="copy this MR for Slack"
+                />
+              </>
             }
           />
+          {(mr.note || noteOpen) && (
+            <RowNote mr={mr} ctx={ctx} editing={noteOpen} />
+          )}
         </div>
       </div>
     );

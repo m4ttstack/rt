@@ -9,7 +9,12 @@ export {
   closeStateDb,
 } from './db.ts';
 
-export { getKvValue, setKvValue, deleteKvValue } from './kv-blob.ts';
+export {
+  getKvValue,
+  setKvValue,
+  deleteKvValue,
+  listKvValues,
+} from './kv-blob.ts';
 
 export { persistOrWarn, runCriticalWrite } from './busy.ts';
 

@@ -126,6 +126,18 @@ export function MessageGlyph() {
   );
 }
 
+/** The row note's mark (B10): a sticky note with its corner folded, drawn
+    at the same 13px the row's other tools use. */
+export function NoteGlyph({ size = 13 }: { size?: number }) {
+  return (
+    <svg {...GLYPH} width={size} height={size}>
+      <path d="M15.5 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h9l7-7V5a2 2 0 0 0-2-2Z" />
+      <path d="M14 21v-5a2 2 0 0 1 2-2h5" />
+      <path d="M7 8h8M7 12h5" />
+    </svg>
+  );
+}
+
 const MENU_PATHS = {
   file: 'M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7ZM14 2v4a2 2 0 0 0 2 2h4M10 9H8M16 13H8M16 17H8',
   people:
@@ -134,6 +146,7 @@ const MENU_PATHS = {
   branch:
     'M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM15 6a9 9 0 0 0-9 9',
   dismiss: 'M18 6 6 18M6 6l12 12',
+  note: 'M15.5 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h9l7-7V5a2 2 0 0 0-2-2ZM14 21v-5a2 2 0 0 1 2-2h5M7 8h8M7 12h5',
 } as const;
 
 /** The row menu's non-agent icons: what a click lands on, in place of the

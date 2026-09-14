@@ -226,7 +226,8 @@
         "since": 1755602880000,
         "openGateIds": []
       },
-      "gates": []
+      "gates": [],
+      "note": "ask design whether the empty state copy changes before this ships, then re-run the capture set and hand the diff to Nils"
     },
     {
       "provider": "gitlab",
@@ -1656,7 +1657,8 @@
         "awaiting": 0,
         "replied": 1,
         "resolved": 1
-      }
+      },
+      "note": "waiting on Dana to confirm the copy before this merges"
     },
     {
       "provider": "gitlab",
@@ -2066,7 +2068,7 @@
           "openedAt": 1755603600000,
           "parkedAt": 1755607200000,
           "domain": "respond",
-          "context": "MR 1429 (WEB-440) has 4 unresolved threads from Nils Kessler. Fresh-context adjudication done. Recommendation per thread below.\n\n=== thread-1 harness.ts:212 — verdict pushback → recommend REPLY ===\nNils: \"The slot key drops the widget's version suffix, so two versions of one widget collapse into a single slot. Should the key carry the version?\"\nAdjudication: the key is built from the normalized slot, and normalizeSlot keeps the version (it strips the trailing slash only). The fixture cited mounts the same version twice. Reply with the normalizer's contract and the test that pins it.\n\n=== thread-2 stubHost.ts:58 — verdict valid → recommend FIX ===\nNils: \"stubHost keeps the first response's headers even when they are empty and the second response has some.\"\nAdjudication: correct. Prefer the non-empty headers per response; one helper, one test.\n\n=== thread-3 useWidgetRows.ts:91 — verdict needs-clarification → recommend REPLY ===\nNils: \"Is the render order stable across a hot reload? Widgets looked reordered in the preview.\"\nAdjudication: a reload keeps insertion order and sorts by mount time, which the preview's two widgets share. Reply with the tiebreak (widget id) and ask whether the preview expected declaration order instead.\n\n=== thread-4 harness.test.ts:140 — verdict valid → recommend FIX ===\nNils: \"No test covers the two-versions-one-slot case.\"\nAdjudication: correct. Add the case beside the existing slot test.\n\n=== code-changes ===\nThreads 2 and 4 are the proposed fixes; one commit, no behavior change outside the stub host and its test.",
+          "context": "MR 1429 (WEB-440) has 4 unresolved threads from Nils Kessler. Fresh-context adjudication done. Recommendation per thread below.\n\n=== thread-1 harness.ts:212 \u2014 verdict pushback \u2192 recommend REPLY ===\nNils: \"The slot key drops the widget's version suffix, so two versions of one widget collapse into a single slot. Should the key carry the version?\"\nAdjudication: the key is built from the normalized slot, and normalizeSlot keeps the version (it strips the trailing slash only). The fixture cited mounts the same version twice. Reply with the normalizer's contract and the test that pins it.\n\n=== thread-2 stubHost.ts:58 \u2014 verdict valid \u2192 recommend FIX ===\nNils: \"stubHost keeps the first response's headers even when they are empty and the second response has some.\"\nAdjudication: correct. Prefer the non-empty headers per response; one helper, one test.\n\n=== thread-3 useWidgetRows.ts:91 \u2014 verdict needs-clarification \u2192 recommend REPLY ===\nNils: \"Is the render order stable across a hot reload? Widgets looked reordered in the preview.\"\nAdjudication: a reload keeps insertion order and sorts by mount time, which the preview's two widgets share. Reply with the tiebreak (widget id) and ask whether the preview expected declaration order instead.\n\n=== thread-4 harness.test.ts:140 \u2014 verdict valid \u2192 recommend FIX ===\nNils: \"No test covers the two-versions-one-slot case.\"\nAdjudication: correct. Add the case beside the existing slot test.\n\n=== code-changes ===\nThreads 2 and 4 are the proposed fixes; one commit, no behavior change outside the stub host and its test.",
           "origin": {
             "paneId": "pane-1429",
             "tabId": "w17:t1",
