@@ -396,6 +396,38 @@ check_helpers() { # app
     else
         fail "$exe Helpers/fast-browser package missing"
     fi
+    # The state-backup claim, end to end from inside the seal: a fresh Mac has
+    # no Homebrew and the daemon's launchd PATH would not reach one anyway, so
+    # the whole compress → encrypt → decrypt → decompress chain has to run on
+    # the bundle's own copies. Each tool's --version is already asserted by the
+    # row loop above; this is the part a version smoke cannot tell you.
+    local bt_age="$app/Contents/Helpers/age" bt_keygen="$app/Contents/Helpers/age-keygen"
+    local bt_zstd="$app/Contents/Helpers/zstd" bt_lfs="$app/Contents/Helpers/git-lfs" bt_dir
+    if [ -x "$bt_age" ] && [ -x "$bt_keygen" ] && [ -x "$bt_zstd" ]; then
+        bt_dir="$(mktemp -d /tmp/mattstack-check-backup.XXXXXX)"
+        CLEANUP+=("$bt_dir")
+        if "$bt_keygen" -o "$bt_dir/key.txt" >/dev/null 2>&1 \
+            && "$bt_keygen" -y -o "$bt_dir/recipients.txt" "$bt_dir/key.txt" >/dev/null 2>&1 \
+            && printf 'state backup payload\n' > "$bt_dir/plain" \
+            && "$bt_zstd" -19 -f -o "$bt_dir/plain.zst" "$bt_dir/plain" >/dev/null 2>&1 \
+            && "$bt_age" -R "$bt_dir/recipients.txt" -o "$bt_dir/plain.zst.age" "$bt_dir/plain.zst" >/dev/null 2>&1 \
+            && "$bt_age" -d -i "$bt_dir/key.txt" -o "$bt_dir/back.zst" "$bt_dir/plain.zst.age" >/dev/null 2>&1 \
+            && "$bt_zstd" -d -f -o "$bt_dir/back" "$bt_dir/back.zst" >/dev/null 2>&1 \
+            && cmp -s "$bt_dir/plain" "$bt_dir/back"; then
+            pass "$exe state backup round-trips through Helpers/{zstd,age,age-keygen}"
+        else
+            fail "$exe state backup chain failed using only the bundle's own zstd/age/age-keygen"
+        fi
+    else
+        fail "$exe missing one of Helpers/{age,age-keygen,zstd} — state backup would need Homebrew"
+    fi
+    # `version`, not `--version`: the subcommand form is what the backup code
+    # and every git-lfs doc use, and it exercises the repo-less path.
+    if [ -x "$bt_lfs" ] && "$bt_lfs" version >/dev/null 2>&1; then
+        pass "$exe Helpers/git-lfs answers version"
+    else
+        fail "$exe Helpers/git-lfs does not run from inside the bundle"
+    fi
     # First-party helper (built from ui/, not a deps.lock row). The dev bundle
     # runs from source and resolves ui/dist/rt-ui directly, so it ships none.
     if [ "$exe" = mattstack ]; then
