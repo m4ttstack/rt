@@ -2011,7 +2011,108 @@
         "reactions": [],
         "posted": false
       },
-      "gates": []
+      "gates": [
+        {
+          "gateId": "gate-respond-plan-1429",
+          "subject": "mr:https://gitlab.example.com/acme/webapp/-/merge_requests/1429",
+          "kind": "respond-plan",
+          "label": "respond gate !1429",
+          "status": "parked",
+          "openedAt": 1755603600000,
+          "parkedAt": 1755607200000,
+          "domain": "respond",
+          "context": "MR 1429 (WEB-440) has 4 unresolved threads from Nils Kessler. Fresh-context adjudication done. Recommendation per thread below.\n\n=== thread-1 harness.ts:212 — verdict pushback → recommend REPLY ===\nNils: \"The slot key drops the widget's version suffix, so two versions of one widget collapse into a single slot. Should the key carry the version?\"\nAdjudication: the key is built from the normalized slot, and normalizeSlot keeps the version (it strips the trailing slash only). The fixture cited mounts the same version twice. Reply with the normalizer's contract and the test that pins it.\n\n=== thread-2 stubHost.ts:58 — verdict valid → recommend FIX ===\nNils: \"stubHost keeps the first response's headers even when they are empty and the second response has some.\"\nAdjudication: correct. Prefer the non-empty headers per response; one helper, one test.\n\n=== thread-3 useWidgetRows.ts:91 — verdict needs-clarification → recommend REPLY ===\nNils: \"Is the render order stable across a hot reload? Widgets looked reordered in the preview.\"\nAdjudication: a reload keeps insertion order and sorts by mount time, which the preview's two widgets share. Reply with the tiebreak (widget id) and ask whether the preview expected declaration order instead.\n\n=== thread-4 harness.test.ts:140 — verdict valid → recommend FIX ===\nNils: \"No test covers the two-versions-one-slot case.\"\nAdjudication: correct. Add the case beside the existing slot test.\n\n=== code-changes ===\nThreads 2 and 4 are the proposed fixes; one commit, no behavior change outside the stub host and its test.",
+          "origin": {
+            "paneId": "pane-1429",
+            "tabId": "w17:t1",
+            "worktree": "webapp"
+          },
+          "questions": [
+            {
+              "id": "thread-1",
+              "label": "harness.ts:212",
+              "multi": false,
+              "options": [
+                {
+                  "value": "reply:a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+                  "label": "reply"
+                },
+                {
+                  "value": "fix:a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+                  "label": "fix"
+                },
+                {
+                  "value": "skip:a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+                  "label": "skip"
+                }
+              ]
+            },
+            {
+              "id": "thread-2",
+              "label": "stubHost.ts:58",
+              "multi": false,
+              "options": [
+                {
+                  "value": "reply:b2c3d4e5f60718293a4b5c6d7e8f901234567891",
+                  "label": "reply"
+                },
+                {
+                  "value": "fix:b2c3d4e5f60718293a4b5c6d7e8f901234567891",
+                  "label": "fix"
+                },
+                {
+                  "value": "skip:b2c3d4e5f60718293a4b5c6d7e8f901234567891",
+                  "label": "skip"
+                }
+              ]
+            },
+            {
+              "id": "thread-3",
+              "label": "useWidgetRows.ts:91",
+              "multi": false,
+              "options": [
+                {
+                  "value": "reply:c3d4e5f60718293a4b5c6d7e8f9012345678912a",
+                  "label": "reply"
+                },
+                {
+                  "value": "fix:c3d4e5f60718293a4b5c6d7e8f9012345678912a",
+                  "label": "fix"
+                },
+                {
+                  "value": "skip:c3d4e5f60718293a4b5c6d7e8f9012345678912a",
+                  "label": "skip"
+                }
+              ]
+            },
+            {
+              "id": "thread-4",
+              "label": "harness.test.ts:140",
+              "multi": false,
+              "options": [
+                {
+                  "value": "reply:d4e5f60718293a4b5c6d7e8f9012345678912ab3",
+                  "label": "reply"
+                },
+                {
+                  "value": "fix:d4e5f60718293a4b5c6d7e8f9012345678912ab3",
+                  "label": "fix"
+                },
+                {
+                  "value": "skip:d4e5f60718293a4b5c6d7e8f9012345678912ab3",
+                  "label": "skip"
+                }
+              ]
+            },
+            {
+              "id": "code-changes",
+              "label": "Approve the proposed code changes?",
+              "multi": false,
+              "options": ["approve", "revise", "skip"]
+            }
+          ]
+        }
+      ]
     }
   ],
   "local": true,

@@ -20,6 +20,11 @@ import { Button, Chip } from '@mattstack/tui-kit';
 import type { GateRow } from '../../gates/store.ts';
 import type { BoardMRWithReview } from '../types.ts';
 import { Disclosure, DisclosureHead } from './Disclosure.tsx';
+import {
+  parseGateContext,
+  sectionFor,
+  type ContextSection,
+} from './gate-context.ts';
 
 function SummaryDetail({ detail }: { detail: GateSummaryDetailRow[] }) {
   return (
@@ -218,6 +223,41 @@ export type GateFormState = ReturnType<typeof useGateForm>;
     which in step mode means a new last step appears and Submit moves to it.
     `showFocusAction` keeps the footer's focus-pane button out of hosts that
     surface it elsewhere (the triage modal's gate strip). */
+/** The question's own slice of the gate context (B7): the reviewer's
+    quote, the verdict with its recommendation, and the adjudication; a
+    section with none of those shows its body as one paragraph. */
+function QuestionContext({ section }: { section: ContextSection }) {
+  const { quote, verdict, recommendation, adjudication, remainder, body } =
+    section;
+  const detail = adjudication ?? remainder ?? (quote ? undefined : body);
+  return (
+    <div className="tui-gate-context">
+      {quote && (
+        <blockquote className="tui-gate-quote">
+          <span className="tui-gate-quote-who">{quote.who}</span>
+          <p className="tui-gate-quote-text">{quote.text}</p>
+        </blockquote>
+      )}
+      {(verdict || recommendation) && (
+        <div className="tui-gate-verdict">
+          {verdict && <span className="tui-gate-verdict-word">{verdict}</span>}
+          {recommendation && (
+            <Chip
+              intent="accent"
+              variant="outline"
+              uppercase
+              className="tui-gate-recommends"
+            >
+              recommends {recommendation}
+            </Chip>
+          )}
+        </div>
+      )}
+      {detail && <p className="tui-gate-adjudication">{detail}</p>}
+    </div>
+  );
+}
+
 function GateForm({
   gate,
   mr,
@@ -261,6 +301,14 @@ function GateForm({
     activeDisplay !== undefined && !activeDisplay.required;
   const lastStep =
     display.length > 0 && activeStep === display[display.length - 1]!.name;
+  const context = useMemo(() => parseGateContext(gate.context), [gate.context]);
+  const threadKeys = useMemo(
+    () =>
+      context
+        ? [...context.sections.keys()].filter(k => /^thread-\d+$/.test(k))
+        : [],
+    [context]
+  );
   return (
     <Questionnaire.Root
       className="tui-gate-form"
@@ -281,6 +329,8 @@ function GateForm({
       {display.map(q => {
         const current = selections[q.name];
         const picked = new Set(Array.isArray(current) ? current : []);
+        const section = sectionFor(context, { id: q.name, label: q.prompt });
+        const threadAt = section ? threadKeys.indexOf(section.key) : -1;
         return (
           <Questionnaire.Item
             key={q.name}
@@ -288,8 +338,14 @@ function GateForm({
             required={q.required}
             multiple={q.multiple}
             className="tui-gate-question"
+            data-sectioned={section ? 'true' : undefined}
           >
             <div className="tui-gate-question-head">
+              {threadAt >= 0 && (
+                <span className="tui-gate-question-ord">
+                  thread {threadAt + 1} of {threadKeys.length}
+                </span>
+              )}
               <Questionnaire.Title className="tui-gate-question-label">
                 {q.prompt}
               </Questionnaire.Title>
@@ -313,55 +369,64 @@ function GateForm({
                           />
                         ))}
                       </span>
-                      Question {state.current} of {state.total}
+                      {!section &&
+                        `Question ${state.current} of ${state.total}`}
                     </span>
                   )}
                 />
               )}
             </div>
+            {section && <QuestionContext section={section} />}
             <Questionnaire.Choices className="tui-gate-choices">
-              {q.choices.map(choice => (
-                <Questionnaire.Choice
-                  key={choice.value}
-                  value={choice.value}
-                  checked={
-                    q.multiple
-                      ? picked.has(choice.value)
-                      : current === choice.value
-                  }
-                  onChange={event =>
-                    q.multiple
-                      ? toggleMulti(
-                          q.name,
-                          choice.value,
-                          event.currentTarget.checked
-                        )
-                      : setSingle(q.name, choice.value)
-                  }
-                  className="tui-gate-choice"
-                >
-                  <Questionnaire.ChoiceInput
-                    render={props => (
-                      <input {...props} className="tui-gate-choice-input" />
-                    )}
-                  />
-                  <Questionnaire.ChoiceLabel className="tui-gate-choice-label">
-                    <span title={choice.description}>{choice.label}</span>
-                    {choice.recommended && (
-                      <Chip
-                        intent="ok"
-                        variant="outline"
-                        uppercase
-                        data-gate="recommended"
-                        className="tui-gate-recommended"
-                      >
-                        recommended
-                      </Chip>
-                    )}
-                  </Questionnaire.ChoiceLabel>
-                  <Questionnaire.ChoiceShortcut className="tui-gate-key" />
-                </Questionnaire.Choice>
-              ))}
+              {q.choices.map(choice => {
+                const recommended =
+                  choice.recommended === true ||
+                  (section?.recommendation !== undefined &&
+                    choice.label.toLowerCase() === section.recommendation);
+                return (
+                  <Questionnaire.Choice
+                    key={choice.value}
+                    value={choice.value}
+                    data-recommended={recommended ? 'true' : undefined}
+                    checked={
+                      q.multiple
+                        ? picked.has(choice.value)
+                        : current === choice.value
+                    }
+                    onChange={event =>
+                      q.multiple
+                        ? toggleMulti(
+                            q.name,
+                            choice.value,
+                            event.currentTarget.checked
+                          )
+                        : setSingle(q.name, choice.value)
+                    }
+                    className="tui-gate-choice"
+                  >
+                    <Questionnaire.ChoiceInput
+                      render={props => (
+                        <input {...props} className="tui-gate-choice-input" />
+                      )}
+                    />
+                    <Questionnaire.ChoiceLabel className="tui-gate-choice-label">
+                      <span title={choice.description}>{choice.label}</span>
+                      {recommended && (
+                        <Chip
+                          intent="ok"
+                          variant="outline"
+                          uppercase
+                          data-gate="recommended"
+                          className="tui-gate-recommended"
+                        >
+                          recommended
+                        </Chip>
+                      )}
+                    </Questionnaire.ChoiceLabel>
+                    <Questionnaire.ChoiceShortcut className="tui-gate-key" />
+                  </Questionnaire.Choice>
+                );
+              })}
             </Questionnaire.Choices>
             <Questionnaire.Error className="tui-gate-invalid" />
             <input

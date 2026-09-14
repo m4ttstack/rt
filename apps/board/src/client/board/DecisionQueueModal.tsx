@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import type { GateDomain } from '@mattstack/gate-kit';
 import { Button, Chip, Markdown, Modal, ScrollPane } from '@mattstack/tui-kit';
@@ -7,6 +7,11 @@ import { extractTicketId, ticketUrl } from '../../ticket.ts';
 import type { BoardMRWithReview, ExecutorState } from '../types.ts';
 import { AttentionCard } from './AttentionCard.tsx';
 import { ago, cleanTitle } from './format.ts';
+import {
+  parseGateContext,
+  sectionFor,
+  type ParsedGateContext,
+} from './gate-context.ts';
 import {
   AnsweredChip,
   GateForm,
@@ -71,6 +76,51 @@ function DeliveryStatusCard({
     its draft) untouched. */
 export type TriageGateState = 'done' | 'active' | 'todo' | 'skipped';
 
+function plural(verb: string): string {
+  if (/[^aeiou]y$/.test(verb)) return `${verb.slice(0, -1)}ies`;
+  if (/(s|x|z|ch|sh)$/.test(verb)) return `${verb}es`;
+  return `${verb}s`;
+}
+
+/** One line standing in for a context the form has split onto its
+    questions: the preamble, a tally of the sections' recommendations, and
+    the disclosure that brings the full pane back. */
+function OverviewStrip({
+  parsed,
+  open,
+  onToggle,
+}: {
+  parsed: ParsedGateContext;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const tally = new Map<string, number>();
+  for (const s of parsed.sections.values())
+    if (s.recommendation)
+      tally.set(s.recommendation, (tally.get(s.recommendation) ?? 0) + 1);
+  const recommends = [...tally.entries()]
+    .map(([verb, n]) => `${n} ${n === 1 ? verb : plural(verb)}`)
+    .join(', ');
+  return (
+    <div className="tui-triage-overview">
+      <span className="tui-triage-overview-title">Decision context</span>
+      <span className="tui-triage-overview-text">
+        {[parsed.preamble, recommends && `recommends ${recommends}`]
+          .filter(Boolean)
+          .join(' · ')}
+      </span>
+      <button
+        type="button"
+        className="tui-triage-overview-toggle"
+        aria-expanded={open}
+        onClick={onToggle}
+      >
+        {open ? 'less ▴' : 'full text ▾'}
+      </button>
+    </div>
+  );
+}
+
 /** The queue-hosted face of one gate: `GateForm` inside the kit Modal, with
     queue chrome around it -- the only place a gate's form actually mounts,
     since a row now shows a chip that opens this modal rather than the form
@@ -113,6 +163,18 @@ function DecisionQueueModal({
 }) {
   const form = useGateForm(gate, onAnswered);
   const paneGone = gate.executor === 'gone';
+  // Only a context the questions actually pick up collapses to the strip;
+  // sections that match no question (a per-option split, say) stay in the
+  // pane where they can be read.
+  const sectioned = useMemo(() => {
+    const parsed = parseGateContext(gate.context);
+    return parsed &&
+      gate.questions.some(q => sectionFor(parsed, { id: q.id, label: q.label }))
+      ? parsed
+      : null;
+  }, [gate.context, gate.questions]);
+  const [fullContext, setFullContext] = useState(false);
+  useEffect(() => setFullContext(false), [gate.gateId]);
   const answered = gate.status === 'answered';
   const actionable = gate.status === 'open' || gate.status === 'parked';
   const deliveryStuck = answered && gate.delivery?.outcome === 'stuck';
@@ -316,10 +378,19 @@ function DecisionQueueModal({
         // The modal exists to give context room: unlike the row card's
         // collapsed disclosure, context renders open, above the form. One
         // frame size regardless, so the modal never resizes as the queue
-        // advances across gates with and without context.
+        // advances across gates with and without context. A context the
+        // form has already split onto its questions (B7) collapses to a
+        // one-line strip instead; the disclosure brings the pane back.
         return (
           <div className="tui-triage-body">
-            {gate.context && (
+            {gate.context && sectioned && (
+              <OverviewStrip
+                parsed={sectioned}
+                open={fullContext}
+                onToggle={() => setFullContext(v => !v)}
+              />
+            )}
+            {gate.context && (!sectioned || fullContext) && (
               <ScrollPane title="Decision context" maxHeight="46vh">
                 <Markdown unstyled linkTargetBlank>
                   {gate.context}

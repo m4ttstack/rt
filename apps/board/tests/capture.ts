@@ -183,6 +183,15 @@ for (const theme of ['light', 'dark'] as const) {
     await shoot(page, `reviewmodal-${theme}`);
     await page.keyboard.press('Escape');
   }
+  // decision queue: the fixture's respond gate queues first, so this is the
+  // sectioned face (B7): the overview strip and the question's own context.
+  await page.click('.tui-dq-open');
+  await page.waitForSelector('.tui-triage-body');
+  if (!(await page.locator('.tui-gate-question[data-sectioned]').count()))
+    await page.getByRole('button', { name: 'skip gate' }).click();
+  await page.waitForSelector('.tui-gate-question[data-sectioned]');
+  await shoot(page, `queue-${theme}`);
+  await page.keyboard.press('Escape');
   // settings modal
   await page.click('.tui-side-gear');
   await page.waitForSelector('[data-part="modal"]');

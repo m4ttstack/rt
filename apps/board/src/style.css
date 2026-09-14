@@ -1951,6 +1951,69 @@ body {
   background: var(--gate-key-bg);
   pointer-events: none;
 }
+/* B7: a question that owns a slice of the gate context. The head leads with
+   its ordinal among the threads and sets the file:line in mono; the slice
+   sits between the head and the choices: the reviewer's words as a quote
+   with a left rule, the verdict with the recommendation chip, then the
+   adjudication. The recommended choice is marked at rest so the eye lands
+   on it before the pointer does. */
+.tui-gate-question-ord {
+  flex-shrink: 0;
+  font: 600 var(--gate-font-micro) / 1.4 var(--font-sans);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--gate-muted);
+}
+.tui-gate-question[data-sectioned] .tui-gate-question-label {
+  font-family: var(--font-mono);
+  margin-right: auto;
+}
+.tui-gate-context {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gate-gap-row);
+  min-width: 0;
+}
+.tui-gate-quote {
+  margin: 0;
+  padding: 2px 0 2px 12px;
+  border-left: 2px solid var(--gate-edge);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.tui-gate-quote-who {
+  font: 600 var(--gate-font-meta) / 1.4 var(--font-sans);
+  color: var(--gate-muted);
+}
+.tui-gate-quote-text {
+  margin: 0;
+  font-size: var(--gate-font-meta);
+  line-height: 1.45;
+  color: var(--gate-muted);
+  overflow-wrap: anywhere;
+}
+.tui-gate-verdict {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.tui-gate-verdict-word {
+  font: 600 var(--gate-font-meta) / 1.4 var(--font-sans);
+  color: var(--fg);
+}
+.tui-gate-adjudication {
+  margin: 0;
+  font-size: var(--gate-font-meta);
+  line-height: 1.45;
+  color: var(--fg);
+  overflow-wrap: anywhere;
+}
+.tui-gate-choice[data-recommended]:not([data-checked]) {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--gate-edge));
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
 .tui-gate-invalid {
   margin: 0;
   font-size: var(--gate-font-meta);
@@ -2095,6 +2158,44 @@ body {
 .tui-triage-pip[data-state='skipped'] {
   background: var(--dot-warn);
   opacity: 0.55;
+}
+/* B7's stand-in for the context pane: one line with the preamble and a
+   tally of the sections' recommendations, the disclosure at its end. Same
+   card ground and soft edge as the strip above it. */
+.tui-triage-overview {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--gate-soft-edge);
+  border-radius: var(--gate-radius-control);
+  background: var(--card);
+  font-size: var(--gate-font-meta);
+  line-height: 1.4;
+}
+.tui-triage-overview-title {
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--accent-text);
+}
+.tui-triage-overview-text {
+  flex: 1;
+  min-width: 0;
+  color: var(--gate-muted);
+  overflow-wrap: anywhere;
+}
+.tui-triage-overview-toggle {
+  flex-shrink: 0;
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  color: var(--accent-text);
+  cursor: pointer;
+}
+.tui-triage-overview-toggle:hover {
+  text-decoration: underline;
 }
 /* One frame size for every gate: the pane is the point of hosting gates in
    a modal at all, so the frame is sized for it whether or not this gate's

@@ -14,7 +14,7 @@ import { chromium, type Browser, type Page } from 'playwright';
 const ROOT = join(import.meta.dir, '..');
 /** Tall enough for the modal chrome and the fixture gate's form to fit the
     80vh cap with room left over, so the pane's share is what's measured. */
-const ROOMY = { width: 1000, height: 1000 };
+const ROOMY = { width: 1000, height: 1100 };
 /** A laptop-height window: the form alone nearly fills the 80vh cap, which
     is where the pane used to collapse to its header. */
 const SHORT = { width: 1000, height: 812 };
@@ -94,6 +94,12 @@ async function openDecisionQueue(viewport: {
   await page.goto(`${BASE}/?member=all`);
   await page.waitForSelector('.tui-row');
   await page.click('.tui-dq-open');
+  // The fixture's respond gate queues first and shows its context on the
+  // questions (B7), not in the pane; the review gate behind it is the one
+  // whose pane this test measures.
+  await page.waitForSelector('.tui-triage-body');
+  if (await page.locator('.tui-triage-overview').count())
+    await page.getByRole('button', { name: 'skip gate' }).click();
   await page.waitForSelector(
     '.tui-triage-modal [data-part="scrollpane-body"] [data-part="markdown"] p'
   );
