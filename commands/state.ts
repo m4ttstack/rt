@@ -3,18 +3,28 @@
  *
  *   rt state backup [--json]
  *   rt state restore <copy> [--json]
+ *   rt state restore --from-backup [--only <app>] [--at <ts>] [--identity <path>] [--dry-run] [--json]
  *
  * `backup` writes a stamped VACUUM INTO copy under stateBackupsDir() and
  * prunes copies past the retention window. `restore` overwrites the live
  * state.db from a stamped copy (by filename or absolute path) after an
  * integrity check on the source; run it with the daemon stopped.
+ *
+ * `restore --from-backup` is the reverse of the encrypted pipeline in
+ * backup-orchestrator.ts: pull the home repo (git + LFS), decrypt and
+ * decompress the latest backup per source in BACKUP_SOURCES, integrity
+ * check, and place. `--identity` supplies the team key on a machine whose
+ * keychain has no age key yet (machine-loss recovery); without it, the
+ * keychain key is used.
  */
 
 import { Database } from "bun:sqlite";
-import { copyFileSync, existsSync, mkdirSync, unlinkSync } from "fs";
+import { copyFileSync, existsSync, mkdirSync, unlinkSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
+import { tmpdir } from "os";
 import type { CommandContext } from "../lib/command-tree.ts";
 import { isDaemonRunning } from "../lib/daemon-client.ts";
+import { flagValue } from "../lib/cli-args.ts";
 import {
   backupTo,
   closeStateDb,
@@ -27,6 +37,8 @@ import {
   stateDbPath,
 } from "../lib/state/index.ts";
 import { isBackupConfigured, pruneOldBackups, runFullBackup } from "../lib/state/backup-orchestrator.ts";
+import { pullHomeRepo, restoreFromBackup } from "../lib/state/backup-restore.ts";
+import { createRealAgeKeySeam, readAgeKey } from "../lib/home/age-key.ts";
 
 function fail(msg: string): never {
   console.error(`rt state: ${msg}`);
@@ -121,7 +133,77 @@ export async function stateBackup(args: string[], _ctx: CommandContext = {}): Pr
   }
 }
 
+/**
+ * `--from-backup` is a distinct pipeline from the plain positional-copy
+ * restore above (pull, decrypt, decompress, integrity check, place per
+ * source in BACKUP_SOURCES) rather than a variant of it, so it returns
+ * before any of the stamped-local-copy logic below runs.
+ */
+async function stateRestoreFromBackup(args: string[]): Promise<void> {
+  const json = args.includes("--json");
+  const force = args.includes("--force");
+  const dryRun = args.includes("--dry-run");
+  const only = flagValue(args, "--only");
+  const at = flagValue(args, "--at");
+  const identityFlag = flagValue(args, "--identity");
+
+  if (!force && (await isDaemonRunning())) {
+    fail("the daemon is running. Stop it first (rt daemon stop) or pass --force to override");
+  }
+
+  let identityPath: string;
+  let tmpKeyFile: string | null = null;
+
+  if (identityFlag) {
+    identityPath = identityFlag;
+  } else {
+    const keyResult = await readAgeKey(createRealAgeKeySeam());
+    if (!("key" in keyResult)) {
+      console.error("rt state restore: no age key found in the keychain.");
+      console.error("On a new machine, pass --identity <path-to-team-key> to decrypt with the team key.");
+      process.exit(1);
+    }
+
+    tmpKeyFile = join(tmpdir(), `age-identity-${process.pid}.txt`);
+    writeFileSync(tmpKeyFile, keyResult.key, { mode: 0o600 });
+    identityPath = tmpKeyFile;
+  }
+
+  try {
+    if (!dryRun) {
+      console.log("Pulling latest backups from home repo...");
+      await pullHomeRepo();
+      closeStateDb();
+    }
+
+    const result = await restoreFromBackup({
+      identityPath,
+      only,
+      at,
+      dryRun,
+    });
+
+    if (json) {
+      console.log(JSON.stringify({ ok: result.errors.length === 0, dryRun, ...result }));
+      if (result.errors.length > 0) process.exitCode = 1;
+      return;
+    }
+
+    if (dryRun) console.log("Dry run. Would restore:");
+    for (const r of result.restored) console.log(`  ${r.app} -> ${r.targetPath}`);
+    for (const s of result.skipped) console.log(`  skipped: ${s}`);
+    for (const e of result.errors) console.error(`  error: ${e}`);
+    if (result.errors.length > 0) process.exitCode = 1;
+  } finally {
+    if (tmpKeyFile) unlinkSync(tmpKeyFile);
+  }
+}
+
 export async function stateRestore(args: string[], _ctx: CommandContext = {}): Promise<void> {
+  if (args.includes("--from-backup")) {
+    return stateRestoreFromBackup(args);
+  }
+
   const json = args.includes("--json");
   const force = args.includes("--force");
 
