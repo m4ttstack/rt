@@ -776,26 +776,33 @@ body {
   display: inline-flex;
   align-items: center;
   align-self: center;
-  gap: 8px;
+  gap: 6px;
   flex-shrink: 0;
 }
+/* The copy tool is a verb in icon form, so it wears the verb's box: nothing
+   at rest, the same tint under the pointer, the same corner. */
 .tui-copy-inline {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0 0.2rem;
+  /* 14px icon + 2px: the verb's own 18px box, so the two tints line up. */
+  padding: 2px 5px;
+  border-radius: var(--radius-px5);
   cursor: pointer;
   flex-shrink: 0;
   align-self: center;
-  background: transparent;
+  background: none;
   border: none;
   color: var(--muted-text);
   opacity: 0.8;
-  transition: opacity 0.1s ease;
+  transition:
+    opacity 0.1s ease,
+    background-color 0.1s ease;
 }
 .tui-copy-inline:hover {
   opacity: 1;
   color: var(--fg);
+  background: color-mix(in srgb, var(--muted-text) 12%, transparent);
 }
 .tui-copy-inline[data-copied] {
   opacity: 1;
@@ -808,9 +815,11 @@ body {
   margin-left: auto;
   padding-left: 16px;
 }
+/* The tools wear the verb's box, so one gap runs the whole group: the 6px
+   that separates two verbs separates the last tool from the first verb. */
 .tui-status-tools + .tui-status-verbs {
   margin-left: 0;
-  padding-left: 14px;
+  padding-left: 6px;
 }
 /* Under a pointer, secondary verbs and the tools wait out of sight at rest
    but never out of the tab order: clipped to a point, not display: none,
@@ -840,7 +849,7 @@ body {
   }
   .tui-row:is(:hover, :focus-within) .tui-status-tools + .tui-status-verbs {
     margin-left: 0;
-    padding-left: 14px;
+    padding-left: 6px;
   }
 }
 

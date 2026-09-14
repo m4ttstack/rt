@@ -116,8 +116,8 @@ async function renderBoard(container: HTMLElement) {
 }
 
 async function openNeedsMe(container: HTMLElement) {
-  const tab = [...container.querySelectorAll('[role="tab"]')].find(
-    el => el.textContent?.includes('Needs me')
+  const tab = [...container.querySelectorAll('[role="tab"]')].find(el =>
+    el.textContent?.includes('Needs me')
   ) as HTMLElement | undefined;
   if (!tab) throw new Error('Needs me tab not found');
   await React.act(async () => {
