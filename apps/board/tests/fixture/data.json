@@ -1156,13 +1156,13 @@
       "connection": "idle",
       "updatedAt": "2025-08-16T20:00:00Z",
       "unresolvedThreads": 0,
-      "reviewerComments": 0,
+      "reviewerComments": 2,
       "pipelineState": "passed",
       "repositoryId": "gitlab:1000042",
       "rtRepo": "webapp",
       "codeownerSections": [],
       "threadSummary": {
-        "awaiting": 0,
+        "awaiting": 2,
         "replied": 0,
         "resolved": 0
       },

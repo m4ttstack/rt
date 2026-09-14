@@ -276,7 +276,8 @@ function orphanLine(
 function reviewLine(
   mr: BoardMRWithReview,
   now: number,
-  interrupted: Lane | null
+  interrupted: Lane | null,
+  self: string | null
 ): Candidate | null {
   const r = mr.review;
   if (!r || interrupted === 'review' || laneDismissed(r)) return null;
@@ -297,11 +298,22 @@ function reviewLine(
       // The status line never repeats the pill: an approved MR's approve
       // verdict, or a commented one's comment verdict, is already the badge.
       const verdict = verdictWord(r.outcome);
+      const read: Verb[] = r.reportReady
+        ? [{ kind: 'read-review', label: 'read ↗' }]
+        : [];
+      // A finished review that left threads for the author is a row with a
+      // move on it, not just something to read: respond leads, and the
+      // report stays one hover away.
+      const mine = self !== null && mr.author.username === self;
+      const awaiting = mr.threadSummary?.awaiting ?? 0;
       return {
         tone: 'go',
         word: 'review ready',
         detail: verdict === statusPhrase(mr).text ? undefined : verdict,
-        verbs: r.reportReady ? [{ kind: 'read-review', label: 'read ↗' }] : [],
+        verbs:
+          mine && awaiting > 0
+            ? [{ kind: 'launch-respond', label: 'respond' }, ...read]
+            : read,
       };
     }
     case 'error':
@@ -674,7 +686,7 @@ export function candidateLines(
   const lines: Candidate[] = [
     ...gateLines(mr),
     orphanLine(mr, now, interrupted),
-    reviewLine(mr, now, interrupted),
+    reviewLine(mr, now, interrupted, self),
     respondLine(mr, interrupted),
     doctorLine(mr),
     ...draftLines(mr, draftResolved),

@@ -198,6 +198,11 @@ for (const theme of ['light', 'dark'] as const) {
   // "+N active", so the fixture keeps one such row).
   const reviewBtn = page.locator('button[data-verb="read-review"]').first();
   if (await reviewBtn.count()) {
+    // On an author's row with threads still awaiting them, respond leads and
+    // the report is the secondary verb, which only unhides under the pointer.
+    await reviewBtn
+      .locator('xpath=ancestor::*[contains(@class,"tui-row")][1]')
+      .hover();
     await reviewBtn.click();
     await page.waitForSelector(
       '.tui-review-modal [data-part="markdown"] h1, .tui-review-modal [data-part="markdown"] p'

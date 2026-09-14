@@ -1045,6 +1045,42 @@ describe('rowStatus: the stress row', () => {
   });
 });
 
+describe('a finished review that left threads for the author', () => {
+  const reviewed = (over: Over = {}) =>
+    mr({
+      author: { username: ME, name: 'Me' },
+      review: { status: 'done', outcome: 'comment', reportReady: true },
+      threadSummary: { awaiting: 5, replied: 0, resolved: 0 },
+      ...over,
+    } as never);
+
+  test('respond leads the line, with the report one hover away', () => {
+    const s = rowStatus(reviewed(), NOW, NONE, ME);
+    expect(s.line.word).toBe('review ready');
+    expect(s.line.verbs.map(v => v.kind)).toEqual([
+      'launch-respond',
+      'read-review',
+    ]);
+  });
+
+  test("nothing awaiting, or someone else's MR: the report alone", () => {
+    const settledThreads = rowStatus(
+      reviewed({ threadSummary: { awaiting: 0, replied: 0, resolved: 3 } }),
+      NOW,
+      NONE,
+      ME
+    );
+    expect(settledThreads.line.verbs.map(v => v.kind)).toEqual(['read-review']);
+    const theirs = rowStatus(
+      reviewed({ author: { username: 'pat', name: 'Pat' } }),
+      NOW,
+      NONE,
+      ME
+    );
+    expect(theirs.line.verbs.map(v => v.kind)).toEqual(['read-review']);
+  });
+});
+
 describe('statusPhrase: the pill says what the status group says', () => {
   test('changes requested is red', () => {
     const m = settled({

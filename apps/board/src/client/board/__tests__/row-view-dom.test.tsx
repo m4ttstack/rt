@@ -535,6 +535,8 @@ test('the note tool opens the editor, and the editor saves on Enter', async () =
   const box = container.querySelector<HTMLTextAreaElement>(
     '.tui-row-note-input'
   )!;
+  // Opening the editor puts the caret in the box, so typing can start at once.
+  expect(document.activeElement).toBe(box);
   expect(
     container.querySelector('.tui-row-note')!.getAttribute('data-editing')
   ).toBe('true');

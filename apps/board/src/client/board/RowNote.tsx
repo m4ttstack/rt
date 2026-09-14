@@ -26,6 +26,16 @@ export function RowNote({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing, mr.webUrl]);
   const ref = useAutoGrowTextarea([editing, text]);
+  // Opening the editor puts the caret in it: the tool and the menu item both
+  // mean "write the note now", and a box you have to click into first is a
+  // second click for the same intent. The caret lands after the text.
+  useEffect(() => {
+    if (!editing) return;
+    const el = ref.current;
+    if (!el) return;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+  }, [editing, ref]);
 
   if (editing)
     return (
