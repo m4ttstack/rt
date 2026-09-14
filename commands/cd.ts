@@ -245,7 +245,6 @@ export async function worktreePicker(args: string[]): Promise<void> {
 
   // ── Parse flags ─────────────────────────────────────────────────────────────────────
   const forceRepo    = args.includes("--repo");
-  const wantPackages = args.includes("--package") || args.includes("--packages");
   const wtIdx        = args.indexOf("--worktree");
   const wtBranch     = wtIdx !== -1 ? args[wtIdx + 1] : undefined;
 
@@ -277,6 +276,15 @@ export async function worktreePicker(args: string[]): Promise<void> {
   // Cd.dc.html/Enrichment.dc.html.
   const CD_BREADCRUMB = ["rt", "cd"];
 
+  /** After resolving a worktree, drill into its packages when it's a monorepo. */
+  async function maybeDrillPackages(repo: KnownRepo, wtPath: string): Promise<string> {
+    const packages = getWorkspacePackages(wtPath);
+    if (packages.length > 0) {
+      return pickPackageWithEscape(repo, wtPath, repos, { stderr: true, breadcrumb: CD_BREADCRUMB });
+    }
+    return wtPath;
+  }
+
   // ── --repo flag: always go to repo picker ────────────────────────────────────
   if (forceRepo) {
     if (wtBranch) {
@@ -298,12 +306,13 @@ export async function worktreePicker(args: string[]): Promise<void> {
       const lower = wtBranch.toLowerCase();
       const hit = pickedRepo.worktrees.filter((wt) => wt.branch.toLowerCase().startsWith(lower));
       if (hit.length === 1) {
-        selectedPath = hit[0]!.path;
+        selectedPath = await maybeDrillPackages(pickedRepo, hit[0]!.path);
       } else {
-        selectedPath = await resolveWorktreeByBranch(wtBranch, [pickedRepo], { stderr: true, breadcrumb: CD_BREADCRUMB });
+        const wtPath = await resolveWorktreeByBranch(wtBranch, [pickedRepo], { stderr: true, breadcrumb: CD_BREADCRUMB });
+        selectedPath = await maybeDrillPackages(pickedRepo, wtPath);
       }
     } else {
-      selectedPath = await pickFromAllRepos(repos, { stderr: true, includePackages: wantPackages, onReload: reloadRepos, breadcrumb: CD_BREADCRUMB });
+      selectedPath = await pickFromAllRepos(repos, { stderr: true, includePackages: true, onReload: reloadRepos, breadcrumb: CD_BREADCRUMB });
     }
 
   // ── --worktree flag only: resolve branch in current repo (then all repos) ──
@@ -313,24 +322,28 @@ export async function worktreePicker(args: string[]): Promise<void> {
     const inCurrent = currentRepo?.worktrees.filter((wt) => wt.branch.toLowerCase().startsWith(lower)) ?? [];
     // If not found in current repo, broaden to all repos
     const finalRepos = inCurrent.length > 0 ? searchRepos : repos;
-    selectedPath = await resolveWorktreeByBranch(wtBranch, finalRepos, { stderr: true, breadcrumb: CD_BREADCRUMB });
-
-  // ── --package in a monorepo: package picker (opt-in) ─────────────────────
-  } else if (wantPackages && currentRepo && getWorkspacePackages(identity!.repoRoot).length > 0) {
-    selectedPath = await pickPackageWithEscape(currentRepo, identity!.repoRoot, repos, { stderr: true, breadcrumb: CD_BREADCRUMB });
+    const wtPath = await resolveWorktreeByBranch(wtBranch, finalRepos, { stderr: true, breadcrumb: CD_BREADCRUMB });
+    const wtRepo = currentRepo ?? repos.find(r => r.worktrees.some(w => w.path === wtPath)) ?? null;
+    selectedPath = wtRepo ? await maybeDrillPackages(wtRepo, wtPath) : wtPath;
 
   // ── In a multi-worktree repo: worktree picker ────────────────────────────
   } else if (currentRepo && currentRepo.worktrees.length > 1) {
     // pickWorktreeWithSwitch exits internally on cancel (its abort line rides
     // the shared lib/pickers.ts cancel path), so result is never falsy here.
     const result = await pickWorktreeWithSwitch(currentRepo, identity!.repoRoot, { stderr: true, breadcrumb: CD_BREADCRUMB });
-    selectedPath = isSwitchRepo(result)
-      ? await pickFromAllRepos(repos, { stderr: true, includePackages: wantPackages, onReload: reloadRepos, breadcrumb: CD_BREADCRUMB })
-      : result;
+    if (isSwitchRepo(result)) {
+      selectedPath = await pickFromAllRepos(repos, { stderr: true, includePackages: true, onReload: reloadRepos, breadcrumb: CD_BREADCRUMB });
+    } else {
+      selectedPath = await maybeDrillPackages(currentRepo, result);
+    }
+
+  // ── In a monorepo (single worktree): package picker ─────────────────────
+  } else if (currentRepo && getWorkspacePackages(identity!.repoRoot).length > 0) {
+    selectedPath = await pickPackageWithEscape(currentRepo, identity!.repoRoot, repos, { stderr: true, breadcrumb: CD_BREADCRUMB });
 
   // ── Not in a tracked repo or single-worktree: repo picker ───────────────
   } else {
-    selectedPath = await pickFromAllRepos(repos, { stderr: true, includePackages: wantPackages, onReload: reloadRepos, breadcrumb: CD_BREADCRUMB });
+    selectedPath = await pickFromAllRepos(repos, { stderr: true, includePackages: true, onReload: reloadRepos, breadcrumb: CD_BREADCRUMB });
   }
 
   // Restore stdout and print just the path

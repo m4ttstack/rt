@@ -6,6 +6,7 @@
  */
 
 import { execSync } from "child_process";
+import { readFileSync } from "fs";
 import { join } from "path";
 import { pickWorktreeFromRepo, getWorkspacePackages, repoOptions, repoFromOptionValue, missingRepoRefusal, pickerWorktrees, type KnownRepo } from "./repo.ts";
 import { enrichBranches, formatBranchSegments, isDefaultBranch, type EnrichedBranch } from "./enrich.ts";
@@ -246,6 +247,38 @@ export function isSwitchRepo(value: string): boolean {
 
 // ─── Monorepo package picker ─────────────────────────────────────────────────
 
+const GLYPH_APP     = "\u{F06D5}"; // nf-md-web
+const GLYPH_PACKAGE = "\u{F03D7}"; // nf-md-package-variant
+
+function dropNestedPackages(packages: { name: string; path: string }[]): typeof packages {
+  return packages.filter((p) =>
+    !packages.some((other) => other !== p && p.path.startsWith(other.path + "/")),
+  );
+}
+
+function packageGroup(path: string): string {
+  const top = path.split("/")[0] ?? "";
+  if (top === "apps") return "apps";
+  if (top === "packages") return "packages";
+  return top || "root";
+}
+
+function packageRow(
+  value: string,
+  label: string,
+  hint: string,
+  group: string,
+): PickRow {
+  const glyph = group === "apps" ? GLYPH_APP : GLYPH_PACKAGE;
+  const tone = group === "apps" ? "cyan" : "lav";
+  const left: PickSegment[] = [
+    { text: glyph + " ", tone },
+    { text: label, bold: true, column: true },
+    { text: `  ${hint}`, tone: "dim" },
+  ];
+  return { value, match: label, left, group };
+}
+
 /**
  * Package picker for monorepos (pnpm workspace). Shows all packages in the
  * current worktree plus escape hatches to switch worktree or repo.
@@ -261,7 +294,7 @@ export async function pickPackageWithEscape(
 ): Promise<string> {
   const { filterableSelect, BackNavigation } = await import("./pick-wrappers.ts");
 
-  let packages = getWorkspacePackages(worktreePath);
+  let packages = dropNestedPackages(getWorkspacePackages(worktreePath));
   let currentBranch = repo.worktrees.find((wt) => wt.path === worktreePath)?.branch ?? "";
   const hasMultipleWorktrees = repo.worktrees.length > 1;
 
@@ -269,13 +302,36 @@ export async function pickPackageWithEscape(
   const hasMultipleRepos   = allRepos.length > 1;
 
   while (true) {
-    const options: { value: string; label: string; hint: string }[] = [
-      { value: worktreePath, label: "(root)", hint: currentBranch },
-      ...packages.map((p) => ({
-        value: join(worktreePath, p.path),
-        label: p.name,
-        hint: p.path,
-      })),
+    let rootLabel = "(root)";
+    try {
+      const pkg = JSON.parse(readFileSync(join(worktreePath, "package.json"), "utf8"));
+      if (pkg.name) rootLabel = pkg.name;
+    } catch { /* no package.json or unreadable */ }
+
+    const hasApps = packages.some((p) => packageGroup(p.path) === "apps");
+
+    const rootRow: PickRow = {
+      value: worktreePath,
+      match: hasApps ? "(root)" : rootLabel,
+      left: hasApps
+        ? [
+            { text: " ", tone: "blue" },
+            { text: "(root)", bold: true, column: true },
+            { text: `  ${currentBranch}`, tone: "dim" },
+          ]
+        : [
+            { text: GLYPH_APP + " ", tone: "cyan" },
+            { text: rootLabel, bold: true, column: true },
+            { text: `  ${currentBranch}`, tone: "dim" },
+          ],
+    };
+
+    const rows: PickRow[] = [
+      rootRow,
+      ...packages.map((p) => {
+        const group = packageGroup(p.path);
+        return packageRow(join(worktreePath, p.path), p.name, p.path, group);
+      }),
     ];
 
     const backLabel = hasMultipleWorktrees
@@ -285,13 +341,16 @@ export async function pickPackageWithEscape(
         : undefined;
 
     try {
-      const picked = await filterableSelect({
-        message: repoLabel(repo.repoName),
-        options,
-        backLabel,
-        ...(opts?.stderr ? { stderr: true } : {}),
-        ...(opts?.breadcrumb ? { breadcrumb: opts.breadcrumb, crumbSuffix: ` · ${repoLabel(repo.repoName)}` } : {}),
-      });
+      const picked = await filterableSelect(
+        {
+          message: repoLabel(repo.repoName),
+          options: [],
+          backLabel,
+          ...(opts?.stderr ? { stderr: true } : {}),
+          ...(opts?.breadcrumb ? { breadcrumb: opts.breadcrumb, crumbSuffix: ` · ${repoLabel(repo.repoName)}` } : {}),
+        },
+        { rows },
+      );
 
       if (!picked) process.exit(1);
       return picked;
@@ -315,7 +374,7 @@ export async function pickPackageWithEscape(
             worktreePath = newPath;
           }
           // Re-enter the loop with the new worktree's packages
-          packages = getWorkspacePackages(worktreePath);
+          packages = dropNestedPackages(getWorkspacePackages(worktreePath));
           currentBranch = repo.worktrees.find((wt) => wt.path === worktreePath)?.branch ?? "";
           continue;
         } else if (hasMultipleRepos) {
