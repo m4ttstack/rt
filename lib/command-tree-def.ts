@@ -1362,10 +1362,27 @@ export const TREE: Record<string, CommandNode> = {
         fn: "stateBackup",
         args: [
           { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Print the outcome as JSON" },
+          { name: "Local", flag: "--local", type: "boolean", default: false, hint: "Local-only VACUUM INTO backup (no compression or encryption)" },
         ],
+        subcommands: {
+          init: {
+            description: "Set up encrypted state backup: install LFS, create recipients, verify round-trip",
+            module: "./commands/state-backup-init.ts",
+            fn: "stateBackupInit",
+            args: [],
+          },
+          status: {
+            description: "Show state backup health: last backup time, sizes, recipients",
+            module: "./commands/state-backup-status.ts",
+            fn: "stateBackupStatus",
+            args: [
+              { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Print as JSON" },
+            ],
+          },
+        },
       },
       restore: {
-        description: "Restore state.db from a stamped backup copy (refuses while the daemon is running unless --force)",
+        description: "Restore state.db from a local copy or from encrypted backup (--from-backup). Refuses while the daemon is running unless --force.",
         module: "./commands/state.ts",
         fn: "stateRestore",
         omitBehavior: "picker",
@@ -1373,6 +1390,11 @@ export const TREE: Record<string, CommandNode> = {
           { name: "Copy", type: "text", placeholder: "state-2026-08-29T12-00-00-000Z.db", hint: "Backup filename (under rt state's backups dir) or an absolute path" },
           { name: "Force", flag: "--force", type: "boolean", default: false, hint: "Override the running-daemon refusal (state.db is shared and WAL-mode; stop the daemon instead when possible)" },
           { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Print the outcome as JSON" },
+          { name: "FromBackup", flag: "--from-backup", type: "boolean", default: false, hint: "Restore from the encrypted backup in the home repo instead of a local stamped copy" },
+          { name: "Only", flag: "--only", type: "text", optional: true, hint: "Restore only this app's backup (rt, board, gitq)" },
+          { name: "At", flag: "--at", type: "text", optional: true, hint: "Restore the backup at this timestamp instead of the latest" },
+          { name: "Identity", flag: "--identity", type: "text", optional: true, hint: "Path to an age identity file (team key restore on a new machine with no keychain key yet)" },
+          { name: "DryRun", flag: "--dry-run", type: "boolean", default: false, hint: "Show what --from-backup would restore without changing anything" },
         ],
       },
     },

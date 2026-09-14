@@ -1,8 +1,9 @@
 /**
  * commands/state.ts -- rt state backup/restore CLI coverage (R055).
  */
+import { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "fs";
+import { mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { dirname, join } from "path";
 import { DAEMON_SOCK_PATH } from "../../lib/daemon-config.ts";
@@ -69,25 +70,47 @@ describe("rt state backup/restore", () => {
 
   test("backup writes a stamped copy under the backups dir", async () => {
     getStateDb(); // create the source db
-    const result = await runCapturingExit(() => stateBackup([]));
+    const result = await runCapturingExit(() => stateBackup(["--local"]));
     expect(result.exitCode).toBeUndefined();
     expect(listStateBackups().length).toBe(1);
   });
 
   test("backup --json reports the written path as an existing file", async () => {
     getStateDb();
-    const result = await runCapturingExit(() => stateBackup(["--json"]));
+    const result = await runCapturingExit(() => stateBackup(["--local", "--json"]));
     expect(result.exitCode).toBeUndefined();
     const payload = JSON.parse(result.logs.at(-1)!);
     expect(payload.ok).toBe(true);
     expect(typeof payload.path).toBe("string");
   });
 
+  test("--local runs the legacy VACUUM INTO backup", async () => {
+    const localHome = realpathSync(mkdtempSync(join(tmpdir(), "sb-local-")));
+    const origLocalHome = process.env.HOME!;
+    process.env.HOME = localHome;
+
+    try {
+      mkdirSync(join(localHome, ".mattstack", "rt"), { recursive: true });
+      const db = new Database(join(localHome, ".mattstack", "rt", "state.db"));
+      db.run("CREATE TABLE t (v TEXT)");
+      db.close();
+
+      await stateBackup(["--local"], {});
+
+      const backupsDir = join(localHome, ".mattstack", "rt", "backups");
+      const files = readdirSync(backupsDir);
+      expect(files.some((f) => f.startsWith("state-"))).toBe(true);
+    } finally {
+      process.env.HOME = origLocalHome;
+      rmSync(localHome, { recursive: true, force: true });
+    }
+  });
+
   test("restore round-trips: reverts a later write back to the backed-up value", async () => {
     const db = getStateDb();
     db.query("INSERT INTO kv (ns, k, v, updated_at) VALUES (?, ?, ?, ?)").run("marker", "value", "\"before\"", Date.now());
 
-    await runCapturingExit(() => stateBackup([]));
+    await runCapturingExit(() => stateBackup(["--local"]));
     const [name] = listStateBackups();
     expect(name).toBeDefined();
 
@@ -129,7 +152,7 @@ describe("rt state restore -- live daemon guard", () => {
 
   test("refuses to restore while the daemon is running, and --force overrides it", async () => {
     getStateDb();
-    await runCapturingExit(() => stateBackup([]));
+    await runCapturingExit(() => stateBackup(["--local"]));
     const [name] = listStateBackups();
     expect(name).toBeDefined();
 

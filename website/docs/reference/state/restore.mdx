@@ -7,7 +7,7 @@ sidebar_label: restore
 
 `rt › state › restore`
 
-Restore state.db from a stamped backup copy (refuses while the daemon is running unless --force)
+Restore state.db from a local copy or from encrypted backup (--from-backup). Refuses while the daemon is running unless --force.
 
 ## Usage
 
@@ -22,6 +22,11 @@ rt state restore <copy> [flags]
 | `<copy>` | text |  | Backup filename (under rt state's backups dir) or an absolute path |
 | `--force` | boolean | `false` | Override the running-daemon refusal (state.db is shared and WAL-mode; stop the daemon instead when possible) |
 | [`--json`](/guides/common-flags) | boolean | `false` | Print the outcome as JSON |
+| `--from-backup` | boolean | `false` | Restore from the encrypted backup in the home repo instead of a local stamped copy |
+| `--only` | text |  | Restore only this app's backup (rt, board, gitq) |
+| `--at` | text |  | Restore the backup at this timestamp instead of the latest |
+| `--identity` | text |  | Path to an age identity file (team key restore on a new machine with no keychain key yet) |
+| [`--dry-run`](/guides/common-flags) | boolean | `false` | Show what --from-backup would restore without changing anything |
 
 _See code: [commands/state.ts › stateRestore](https://github.com/m4ttstack/rt/blob/main/commands/state.ts)_
 
