@@ -53,6 +53,11 @@ export interface RespondState {
       SAME clock value the write's updatedAt gets. See ReviewState's own
       reopenedAt for the sweep-exemption contract, which this mirrors. */
   reopenedAt?: number;
+  /** Stamp of the operator dismissing this lane's line from the row. While
+      it is at least as new as `updatedAt` the row skips the lane entirely;
+      any later write (a relaunch, the pane's own status CLI) outranks it and
+      the lane speaks again. Never clears a thing: the run stays readable. */
+  dismissedAt?: number;
   startedAt: number;
   updatedAt: number;
   /** Whether the fill has written its adjudication (verdict table + drafted
@@ -112,6 +117,7 @@ export function writeRespondState(
     gateKind: patch.gateKind,
     resumedGateId: patch.resumedGateId,
     reopenedAt: patch.reopenedAt,
+    dismissedAt: patch.dismissedAt,
     startedAt: now,
     updatedAt: now,
   };

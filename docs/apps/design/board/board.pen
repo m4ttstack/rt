@@ -109413,6 +109413,663 @@
           ]
         }
       ]
+    },
+    {
+      "type": "frame",
+      "id": "D2j8O",
+      "x": 3040,
+      "y": 9900,
+      "name": "B8 · Dismiss a stuck lane",
+      "theme": {
+        "mode": "dark"
+      },
+      "width": 1440,
+      "fill": "$bg",
+      "layout": "vertical",
+      "gap": 20,
+      "padding": 40,
+      "children": [
+        {
+          "type": "text",
+          "id": "xlsyf",
+          "name": "title",
+          "fill": "$fg",
+          "content": "B8 · Dismiss a stuck lane",
+          "fontFamily": "$font-sans",
+          "fontSize": 20,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "s1y2n",
+          "name": "description",
+          "fill": "$muted",
+          "textGrowth": "fixed-width",
+          "width": "fill_container",
+          "content": "A failed lane (review failed, response failed, doctor stuck) offers only its relaunch verb, so a run whose answer was \"nothing to do here\" sits in the decide group forever. Dismiss is the secondary beside it, muted like clear: it stamps the lane dismissed and the line goes quiet, leaving the row's next-hottest line to speak. Nothing is deleted: the stamp only outranks the state until the lane is written again, so a later relaunch brings the lane back on its own. The row menu carries the same verb under agent actions.",
+          "fontFamily": "$font-sans",
+          "fontSize": 13,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "Z1UsS",
+          "name": "rows",
+          "layout": "vertical",
+          "gap": 16,
+          "children": [
+            {
+              "type": "frame",
+              "id": "k9WqtL",
+              "name": "at rest",
+              "layout": "vertical",
+              "gap": 10,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "WbCql",
+                  "name": "AT REST · THE ROW AS IT SITS IN THE DECIDE GROUP",
+                  "fill": "$dim",
+                  "content": "AT REST · THE ROW AS IT SITS IN THE DECIDE GROUP",
+                  "fontFamily": "$font-sans",
+                  "fontSize": 10,
+                  "fontWeight": "600"
+                },
+                {
+                  "type": "frame",
+                  "id": "KKXOV",
+                  "name": "doctor stuck",
+                  "width": 640,
+                  "fill": "$panel",
+                  "cornerRadius": 10,
+                  "stroke": "$border-soft",
+                  "strokeWidth": 1,
+                  "gap": 12,
+                  "padding": [
+                    10,
+                    14
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "ellipse",
+                      "id": "Q6IKR",
+                      "name": "dot",
+                      "fill": "$red",
+                      "width": 8,
+                      "height": 8
+                    },
+                    {
+                      "type": "frame",
+                      "id": "d7J3h",
+                      "name": "body",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 3,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "n3cl6",
+                          "name": "title",
+                          "fill": "$fg",
+                          "content": "move the pictogram catalog into the package",
+                          "fontFamily": "$font-sans",
+                          "fontSize": 13,
+                          "fontWeight": "600"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "C0Rpsa",
+                          "name": "status",
+                          "width": "fill_container",
+                          "gap": 8,
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "jkBMK",
+                              "name": "word",
+                              "fill": "$red",
+                              "content": "doctor stuck",
+                              "fontFamily": "$font-sans",
+                              "fontSize": 12,
+                              "fontWeight": "600"
+                            },
+                            {
+                              "type": "text",
+                              "id": "cwZ3m",
+                              "name": "detail",
+                              "fill": "$muted",
+                              "textGrowth": "fixed-width",
+                              "width": 300,
+                              "content": "registry push flake on preview:build:docker",
+                              "fontFamily": "$font-sans",
+                              "fontSize": 12,
+                              "fontWeight": "normal"
+                            },
+                            {
+                              "type": "frame",
+                              "id": "goHcI",
+                              "name": "spacer",
+                              "width": "fill_container",
+                              "height": 1
+                            },
+                            {
+                              "type": "frame",
+                              "id": "cklRU",
+                              "name": "call again",
+                              "cornerRadius": 5,
+                              "padding": [
+                                2,
+                                8
+                              ],
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "m8yCBO",
+                                  "name": "call again",
+                                  "fill": "$orange-text",
+                                  "content": "call again",
+                                  "fontFamily": "$font-sans",
+                                  "fontSize": 12
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "zZxpx",
+                  "name": "review failed",
+                  "width": 640,
+                  "fill": "$panel",
+                  "cornerRadius": 10,
+                  "stroke": "$border-soft",
+                  "strokeWidth": 1,
+                  "gap": 12,
+                  "padding": [
+                    10,
+                    14
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "ellipse",
+                      "id": "lNg2k",
+                      "name": "dot",
+                      "fill": "$red",
+                      "width": 8,
+                      "height": 8
+                    },
+                    {
+                      "type": "frame",
+                      "id": "hYJjZ",
+                      "name": "body",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 3,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "uZ4ro",
+                          "name": "title",
+                          "fill": "$fg",
+                          "content": "warm the thumbnail cache on render events",
+                          "fontFamily": "$font-sans",
+                          "fontSize": 13,
+                          "fontWeight": "600"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "ZRNSi",
+                          "name": "status",
+                          "width": "fill_container",
+                          "gap": 8,
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "ODtCE",
+                              "name": "word",
+                              "fill": "$red",
+                              "content": "review failed",
+                              "fontFamily": "$font-sans",
+                              "fontSize": 12,
+                              "fontWeight": "600"
+                            },
+                            {
+                              "type": "text",
+                              "id": "zMZkK",
+                              "name": "detail",
+                              "fill": "$muted",
+                              "textGrowth": "fixed-width",
+                              "width": 300,
+                              "content": "pane closed",
+                              "fontFamily": "$font-sans",
+                              "fontSize": 12,
+                              "fontWeight": "normal"
+                            },
+                            {
+                              "type": "frame",
+                              "id": "HZzVm",
+                              "name": "spacer",
+                              "width": "fill_container",
+                              "height": 1
+                            },
+                            {
+                              "type": "frame",
+                              "id": "pBlox",
+                              "name": "launch again",
+                              "cornerRadius": 5,
+                              "padding": [
+                                2,
+                                8
+                              ],
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "RWDE5",
+                                  "name": "launch again",
+                                  "fill": "$accent-text",
+                                  "content": "launch again",
+                                  "fontFamily": "$font-sans",
+                                  "fontSize": 12
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "gPgYs",
+                  "name": "response failed",
+                  "width": 640,
+                  "fill": "$panel",
+                  "cornerRadius": 10,
+                  "stroke": "$border-soft",
+                  "strokeWidth": 1,
+                  "gap": 12,
+                  "padding": [
+                    10,
+                    14
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "ellipse",
+                      "id": "LON30",
+                      "name": "dot",
+                      "fill": "$red",
+                      "width": 8,
+                      "height": 8
+                    },
+                    {
+                      "type": "frame",
+                      "id": "nYL5C",
+                      "name": "body",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 3,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "UAFVD",
+                          "name": "title",
+                          "fill": "$fg",
+                          "content": "route host imports through the plugin port",
+                          "fontFamily": "$font-sans",
+                          "fontSize": 13,
+                          "fontWeight": "600"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "jRHJB",
+                          "name": "status",
+                          "width": "fill_container",
+                          "gap": 8,
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "XNrdE",
+                              "name": "word",
+                              "fill": "$red",
+                              "content": "response failed",
+                              "fontFamily": "$font-sans",
+                              "fontSize": 12,
+                              "fontWeight": "600"
+                            },
+                            {
+                              "type": "text",
+                              "id": "k3dNrX",
+                              "name": "detail",
+                              "fill": "$muted",
+                              "textGrowth": "fixed-width",
+                              "width": 300,
+                              "content": "failed to launch respond pane",
+                              "fontFamily": "$font-sans",
+                              "fontSize": 12,
+                              "fontWeight": "normal"
+                            },
+                            {
+                              "type": "frame",
+                              "id": "uds8C",
+                              "name": "spacer",
+                              "width": "fill_container",
+                              "height": 1
+                            },
+                            {
+                              "type": "frame",
+                              "id": "nXUmY",
+                              "name": "restart response",
+                              "cornerRadius": 5,
+                              "padding": [
+                                2,
+                                8
+                              ],
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "DqNox",
+                                  "name": "restart response",
+                                  "fill": "$green-text",
+                                  "content": "restart response",
+                                  "fontFamily": "$font-sans",
+                                  "fontSize": 12
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "VISwB",
+              "name": "hover",
+              "layout": "vertical",
+              "gap": 10,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "I5nk9J",
+                  "name": "UNDER THE POINTER · DISMISS APPEARS LEFT OF THE RELAUNCH, MUTED",
+                  "fill": "$dim",
+                  "content": "UNDER THE POINTER · DISMISS APPEARS LEFT OF THE RELAUNCH, MUTED",
+                  "fontFamily": "$font-sans",
+                  "fontSize": 10,
+                  "fontWeight": "600"
+                },
+                {
+                  "type": "frame",
+                  "id": "nwOWA",
+                  "name": "doctor stuck hover",
+                  "width": 640,
+                  "fill": "$hover",
+                  "cornerRadius": 10,
+                  "stroke": "$border-soft",
+                  "strokeWidth": 1,
+                  "gap": 12,
+                  "padding": [
+                    10,
+                    14
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "ellipse",
+                      "id": "D7uslu",
+                      "name": "dot",
+                      "fill": "$red",
+                      "width": 8,
+                      "height": 8
+                    },
+                    {
+                      "type": "frame",
+                      "id": "aleBh",
+                      "name": "body",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 3,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "HV9xR",
+                          "name": "title",
+                          "fill": "$fg",
+                          "content": "move the pictogram catalog into the package",
+                          "fontFamily": "$font-sans",
+                          "fontSize": 13,
+                          "fontWeight": "600"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "n68i1",
+                          "name": "status",
+                          "width": "fill_container",
+                          "gap": 8,
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "g3IAS",
+                              "name": "word",
+                              "fill": "$red",
+                              "content": "doctor stuck",
+                              "fontFamily": "$font-sans",
+                              "fontSize": 12,
+                              "fontWeight": "600"
+                            },
+                            {
+                              "type": "text",
+                              "id": "zJmy4",
+                              "name": "detail",
+                              "fill": "$muted",
+                              "textGrowth": "fixed-width",
+                              "width": 300,
+                              "content": "registry push flake on preview:build:docker",
+                              "fontFamily": "$font-sans",
+                              "fontSize": 12,
+                              "fontWeight": "normal"
+                            },
+                            {
+                              "type": "frame",
+                              "id": "nRyTZ",
+                              "name": "spacer",
+                              "width": "fill_container",
+                              "height": 1
+                            },
+                            {
+                              "type": "frame",
+                              "id": "BzEws",
+                              "name": "dismiss",
+                              "fill": "$muted-soft",
+                              "cornerRadius": 5,
+                              "padding": [
+                                2,
+                                8
+                              ],
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "mBlH2",
+                                  "name": "dismiss",
+                                  "fill": "$muted",
+                                  "content": "dismiss",
+                                  "fontFamily": "$font-sans",
+                                  "fontSize": 12
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "V4YVMb",
+                              "name": "call again",
+                              "cornerRadius": 5,
+                              "padding": [
+                                2,
+                                8
+                              ],
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "g7EaX5",
+                                  "name": "call again",
+                                  "fill": "$orange-text",
+                                  "content": "call again",
+                                  "fontFamily": "$font-sans",
+                                  "fontSize": 12
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "ihTnu",
+              "name": "after",
+              "layout": "vertical",
+              "gap": 10,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "vcull",
+                  "name": "AFTER · THE LANE GOES QUIET AND THE NEXT LINE SPEAKS",
+                  "fill": "$dim",
+                  "content": "AFTER · THE LANE GOES QUIET AND THE NEXT LINE SPEAKS",
+                  "fontFamily": "$font-sans",
+                  "fontSize": 10,
+                  "fontWeight": "600"
+                },
+                {
+                  "type": "frame",
+                  "id": "VvRQt",
+                  "name": "after",
+                  "width": 640,
+                  "fill": "$panel",
+                  "cornerRadius": 10,
+                  "stroke": "$border-soft",
+                  "strokeWidth": 1,
+                  "gap": 12,
+                  "padding": [
+                    10,
+                    14
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "ellipse",
+                      "id": "KmAxw",
+                      "name": "dot",
+                      "fill": "$amber",
+                      "width": 8,
+                      "height": 8
+                    },
+                    {
+                      "type": "frame",
+                      "id": "l2Te6",
+                      "name": "body",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 3,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "OrFyj",
+                          "name": "title",
+                          "fill": "$fg",
+                          "content": "move the pictogram catalog into the package",
+                          "fontFamily": "$font-sans",
+                          "fontSize": 13,
+                          "fontWeight": "600"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "xXl9h",
+                          "name": "status",
+                          "width": "fill_container",
+                          "gap": 8,
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "vkQZL",
+                              "name": "word",
+                              "fill": "$amber",
+                              "content": "needs review",
+                              "fontFamily": "$font-sans",
+                              "fontSize": 12,
+                              "fontWeight": "600"
+                            },
+                            {
+                              "type": "text",
+                              "id": "pY521",
+                              "name": "detail",
+                              "fill": "$muted",
+                              "textGrowth": "fixed-width",
+                              "width": 300,
+                              "content": "Tom approved · 1 of 2 approvals",
+                              "fontFamily": "$font-sans",
+                              "fontSize": 12,
+                              "fontWeight": "normal"
+                            },
+                            {
+                              "type": "frame",
+                              "id": "cRXQt",
+                              "name": "spacer",
+                              "width": "fill_container",
+                              "height": 1
+                            },
+                            {
+                              "type": "frame",
+                              "id": "NWIDV",
+                              "name": "review",
+                              "cornerRadius": 5,
+                              "padding": [
+                                2,
+                                8
+                              ],
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "s7RPnA",
+                                  "name": "review",
+                                  "fill": "$accent-text",
+                                  "content": "review",
+                                  "fontFamily": "$font-sans",
+                                  "fontSize": 12
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
     }
   ],
   "themes": {

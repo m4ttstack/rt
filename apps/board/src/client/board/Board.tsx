@@ -531,6 +531,23 @@ export function Board() {
     [addToast, load]
   );
 
+  // Dismiss a failed lane's line from the row (B8). The lane keeps its state
+  // and its report; the stamp only outranks it until something writes the
+  // lane again, so this is a "stop telling me" and never a delete.
+  const handleDismissLane = useCallback(
+    (mr: BoardMR, lane: 'review' | 'respond' | 'doctor') => {
+      if (!mr.webUrl) return;
+      postAction('/dismiss', { mrUrl: mr.webUrl, lane }).then(result => {
+        if (!result.ok) {
+          addToast(`could not dismiss the ${lane} line (${result.status})`);
+          return;
+        }
+        load();
+      });
+    },
+    [addToast, load]
+  );
+
   // Flip one of your own MRs between draft and ready. No optimistic state: the
   // flip lives in GitLab, so the row waits for the reload rather than claiming a
   // change the API might have refused.
@@ -961,6 +978,7 @@ export function Board() {
     selected,
     onToggleSelect: toggleSelect,
     onClearOrphan: handleClearOrphan,
+    onDismissLane: handleDismissLane,
   };
   const openSettings = () => {
     setMenuOpen(false);

@@ -81,8 +81,19 @@ export function updateByHandle(
         .query('SELECT lane, mr_url, state FROM agent_states WHERE handle = ?')
         .get(handle) as { lane: string; mr_url: string; state: string } | null;
       if (!row) return;
-      const prev = JSON.parse(row.state) as { status?: unknown };
-      const next = definedFields(patch) as { status?: unknown };
+      const prev = JSON.parse(row.state) as {
+        status?: unknown;
+        dismissedAt?: unknown;
+      };
+      const next = definedFields(patch) as {
+        status?: unknown;
+        dismissedAt?: unknown;
+      };
+      // A dismissal silences the lane until the lane does something else:
+      // any write that does not carry the stamp itself is that something,
+      // so the row speaks again (see laneDismissed, which reads presence and
+      // never compares clocks -- two writes can share a millisecond).
+      if (!('dismissedAt' in next)) delete prev.dismissedAt;
       // A message explains the status it was written with; a write that moves
       // the status on without its own explanation must not inherit the old one
       // (a cleared pane's "pane closed" riding along on the next "reviewing").
@@ -101,6 +112,18 @@ export function updateByHandle(
     tx();
   });
   return result;
+}
+
+/** Stamp a lane dismissed: the operator is done being told about this run.
+    Writes ONLY the stamp -- the status, the message and the report stay as
+    the lane left them, so a read of a row this touched is still the truth
+    about what the agent did. Null when no row matches the handle. */
+export function dismissByHandle(
+  handle: string,
+  now: number = Date.now(),
+  db: Database = getStateDb()
+): object | null {
+  return updateByHandle(handle, { dismissedAt: now }, now, db);
 }
 
 /** One row's state by handle, `reportReady` merged in the same shape

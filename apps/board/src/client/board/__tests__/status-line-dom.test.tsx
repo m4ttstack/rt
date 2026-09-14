@@ -55,6 +55,7 @@ function ctx(over: Partial<RowContext> = {}): RowContext {
     selected: new Set(),
     onToggleSelect: noop,
     onClearOrphan: noop,
+    onDismissLane: noop,
     onLaunch: noop,
     onReReview: noop,
     onRespond: noop,
@@ -298,4 +299,36 @@ test('a long detail renders its first clause and keeps the whole message as the 
   expect(
     container.querySelector('.tui-status-detail')!.getAttribute('title')
   ).toBeNull();
+});
+
+test('the dismiss secondary sits left of the relaunch and carries the lane it drops', async () => {
+  const calls: string[] = [];
+  await render(
+    {
+      line: {
+        tone: 'bad',
+        word: 'doctor stuck',
+        detail: 'registry push flake',
+        verbs: [
+          { kind: 'call-doctor', label: 'call again' },
+          { kind: 'dismiss', label: 'dismiss', domain: 'doctor' },
+        ],
+      },
+      more: [],
+      bar: 'bad',
+    },
+    ctx({ onDismissLane: (_mr, lane) => calls.push(`dismiss:${lane}`) })
+  );
+  const line = container.querySelector('.tui-status')!;
+  const verbs = [
+    ...line.querySelectorAll<HTMLButtonElement>('button[data-verb]'),
+  ];
+  expect(verbs.map(v => v.dataset.verb)).toEqual(['dismiss', 'call-doctor']);
+  const [dismiss] = verbs as [HTMLButtonElement];
+  expect(dismiss.dataset.secondary).toBe('true');
+  expect(dismiss.dataset.lane).toBeUndefined();
+  await React.act(async () => {
+    dismiss.click();
+  });
+  expect(calls).toEqual(['dismiss:doctor']);
 });

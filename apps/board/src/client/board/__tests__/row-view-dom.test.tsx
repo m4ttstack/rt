@@ -84,6 +84,7 @@ function ctx(over: Partial<RowContext> = {}): RowContext {
     selected: new Set(),
     onToggleSelect: noop,
     onClearOrphan: noop,
+    onDismissLane: noop,
     onLaunch: noop,
     onReReview: noop,
     onRespond: noop,
