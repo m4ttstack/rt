@@ -777,12 +777,45 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
         ));
         sweepHandles.push(scheduleSweep(
           "state-backup",
-          () => {
-            backupTo(getStateDb("daemon"), stampedBackupPath());
-            const { removed } = pruneStateBackups();
-            if (removed.length > 0) log.info({ removed: removed.length }, "pruned old state.db backups");
+          async () => {
+            const { isBackupConfigured, runFullBackup, pruneOldBackups } = await import("./state/backup-orchestrator");
+
+            if (!isBackupConfigured()) {
+              backupTo(getStateDb("daemon"), stampedBackupPath());
+              const { removed } = pruneStateBackups();
+              if (removed.length > 0) log.info({ removed: removed.length }, "pruned old state.db backups");
+              return;
+            }
+
+            try {
+              const result = await runFullBackup();
+
+              if (result.backed.length === 0 && result.errors.length > 0) {
+                log.error({ errors: result.errors }, "all encrypted sources failed, falling back to local");
+                backupTo(getStateDb("daemon"), stampedBackupPath());
+                pruneStateBackups();
+                return;
+              }
+
+              log.info(
+                { backed: result.backed.length, errors: result.errors.length },
+                "encrypted state backup complete",
+              );
+              if (result.errors.length > 0) {
+                log.warn({ errors: result.errors }, "backup errors");
+              }
+
+              const { removed } = await pruneOldBackups();
+              if (removed.length > 0) {
+                log.info({ removed: removed.length }, "pruned old encrypted backups");
+              }
+            } catch (err) {
+              log.error({ err }, "encrypted backup failed, falling back to local");
+              backupTo(getStateDb("daemon"), stampedBackupPath());
+              pruneStateBackups();
+            }
           },
-          { bootDelayMs: 60_000, intervalMs: 24 * 60 * 60 * 1000 },
+          { bootDelayMs: 60_000, intervalMs: 4 * 60 * 60 * 1000 },
           log,
         ));
         // Catches a chat delivery that neither deliverPost's own retry nor a

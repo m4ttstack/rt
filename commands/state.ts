@@ -26,6 +26,7 @@ import {
   stateBackupsDir,
   stateDbPath,
 } from "../lib/state/index.ts";
+import { isBackupConfigured, pruneOldBackups, runFullBackup } from "../lib/state/backup-orchestrator.ts";
 
 function fail(msg: string): never {
   console.error(`rt state: ${msg}`);
@@ -60,16 +61,64 @@ async function requireCopy(args: string[], usage: string): Promise<string> {
 
 export async function stateBackup(args: string[], _ctx: CommandContext = {}): Promise<void> {
   const json = args.includes("--json");
-  const path = stampedBackupPath();
-  backupTo(getStateDb(), path);
-  const { removed } = pruneStateBackups();
+  const local = args.includes("--local");
 
-  if (json) {
-    console.log(JSON.stringify({ ok: true, path, pruned: removed }));
+  if (local) {
+    const path = stampedBackupPath();
+    backupTo(getStateDb(), path);
+    const { removed } = pruneStateBackups();
+
+    if (json) {
+      console.log(JSON.stringify({ ok: true, path, pruned: removed }));
+      return;
+    }
+    console.log(`rt state backup: wrote ${path}`);
+    if (removed.length > 0) console.log(`rt state backup: pruned ${removed.length} old backup(s)`);
     return;
   }
-  console.log(`rt state backup: wrote ${path}`);
-  if (removed.length > 0) console.log(`rt state backup: pruned ${removed.length} old backup(s)`);
+
+  if (!isBackupConfigured()) {
+    console.error("Backup not configured. Run `rt state backup init` to set up encrypted backup.");
+    console.error("Use --local for a local-only unencrypted backup.");
+    process.exit(1);
+  }
+
+  try {
+    const result = await runFullBackup();
+
+    if (result.backed.length === 0 && result.errors.length > 0) {
+      if (json) {
+        console.log(JSON.stringify({ ok: true, fallback: "local", errors: result.errors }));
+      } else {
+        console.error(`All sources failed: ${result.errors.join(", ")}`);
+        console.error("Falling back to local-only backup");
+      }
+      backupTo(getStateDb(), stampedBackupPath());
+      pruneStateBackups();
+      return;
+    }
+
+    const { removed } = await pruneOldBackups();
+
+    if (json) {
+      console.log(JSON.stringify({ ...result, pruned: removed.length }));
+    } else {
+      for (const b of result.backed) {
+        console.log(`  ${b.app}: ${b.sizeBytes} bytes`);
+      }
+      if (result.errors.length > 0) {
+        console.error(`Errors: ${result.errors.join(", ")}`);
+      }
+      if (removed.length > 0) {
+        console.log(`Pruned ${removed.length} old backup(s)`);
+      }
+    }
+  } catch (err) {
+    console.error(`Encrypted backup failed: ${err instanceof Error ? err.message : err}`);
+    console.error("Falling back to local-only backup");
+    backupTo(getStateDb(), stampedBackupPath());
+    pruneStateBackups();
+  }
 }
 
 export async function stateRestore(args: string[], _ctx: CommandContext = {}): Promise<void> {
