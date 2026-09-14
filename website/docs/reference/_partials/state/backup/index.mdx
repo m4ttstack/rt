@@ -1,0 +1,11 @@
+Run `rt state backup` to trigger an immediate backup cycle outside the daemon's 4-hour schedule. Each source is snapshotted, compressed with zstd, encrypted with age, and placed in `~/.mattstack/user/state-backups/`. The home repo's snapshot engine commits and pushes the blobs shortly after.
+
+```bash
+rt state backup              # full encrypted backup
+rt state backup --local      # local-only VACUUM INTO, no encryption
+rt state backup status       # last cycle outcome per source
+```
+
+`--local` is useful for a quick pre-change snapshot when you do not need the encryption and push pipeline.
+
+See the [State backup guide](/guides/state-backup) for setup, restore, and the full lifecycle.

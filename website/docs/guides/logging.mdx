@@ -23,12 +23,12 @@ Because outcomes are already logged at these seams, feature code almost never ne
 Every surface (daemon, CLI, tray, and any future surface that follows the same convention) appends JSON lines to:
 
 ```
-~/.rt/logs/<surface>.YYYY-MM-DD[.N].log
+~/.mattstack/rt/logs/<surface>.YYYY-MM-DD[.N].log
 ```
 
 For example, `daemon.2026-07-17.log` or `cli.2026-07-17.1.log` (the `.N` suffix appears when a surface rotates more than once in a day).
 
-`rt daemon logs` auto-discovers surfaces by matching this filename pattern in `~/.rt/logs/` and following the newest file per surface. That means a new surface which adopts the convention shows up in the log viewer automatically, with nothing to register.
+`rt daemon logs` auto-discovers surfaces by matching this filename pattern in `~/.mattstack/rt/logs/` and following the newest file per surface. That means a new surface which adopts the convention shows up in the log viewer automatically, with nothing to register.
 
 ## Why this matters when adding a feature
 

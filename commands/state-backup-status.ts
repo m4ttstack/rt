@@ -3,6 +3,7 @@ import { join } from "path";
 import { mattstackHome } from "../lib/rt-paths.ts";
 import { isBackupConfigured } from "../lib/state/backup-orchestrator.ts";
 import { backupDestDir, recipientsPath } from "../lib/state/backup-sources.ts";
+import { findBackupTool } from "../lib/state/backup-tools.ts";
 import { originPushState } from "../lib/setup/home-git.ts";
 import { execWithTimeout } from "../lib/setup/probes.ts";
 import type { CommandContext } from "../lib/command-tree.ts";
@@ -66,7 +67,7 @@ export async function stateBackupStatus(args: string[], _ctx: CommandContext): P
       default: pushState = "unknown";
     }
 
-    const gitLfs = Bun.which("git-lfs", { PATH: process.env.PATH });
+    const gitLfs = findBackupTool("git-lfs");
     if (!gitLfs) {
       lfsState = "git-lfs not found";
     } else {

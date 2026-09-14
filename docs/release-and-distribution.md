@@ -53,6 +53,13 @@ signed with a warning when they are not; a **tag** hard-fails without them).
   runs every helper from inside the signed bundle (`--version` smoke).
   Adding a helper = a deps.lock entry; check-bundle picks it up from the
   lock, no script edit.
+- A helper the project publishes no darwin-arm64 binary for is compiled by
+  `fetch-deps.sh` from its sha-pinned source release (`archive: "make-src"`,
+  zstd today) rather than lifted from a Homebrew bottle, which links dylibs
+  under `/opt/homebrew` that a user's Mac does not have. Every make-src
+  build is then gated on `otool -L`: linking outside `/usr/lib` and
+  `/System` fails the fetch instead of shipping a binary that dies on a
+  brew-less machine.
 - Never rebuild, re-sign, or reinstall a bundle macOS has blessed
   (`/Applications/mattstack.app`, `rt-tray/mattstack-dev.app`) — re-signing
   silently invalidates Login Items and TCC/FDA grants. Build into scratch.
