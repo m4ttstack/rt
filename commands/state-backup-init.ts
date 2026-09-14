@@ -62,6 +62,19 @@ export async function stateBackupInit(_args: string[], _ctx: CommandContext = {}
     process.exit(1);
   }
 
+  const absGitLfs = Bun.which("git-lfs", { PATH: process.env.PATH });
+  if (absGitLfs) {
+    for (const key of ["filter.lfs.clean", "filter.lfs.smudge", "filter.lfs.process"]) {
+      const proc = Bun.spawnSync(["git", "config", "--local", "--get", key], { cwd: homeRepo });
+      const val = proc.stdout.toString().trim();
+      if (val && val.startsWith("git-lfs")) {
+        const absVal = val.replace("git-lfs", absGitLfs);
+        Bun.spawnSync(["git", "config", "--local", key, absVal], { cwd: homeRepo });
+      }
+    }
+    console.log("LFS filter paths set to absolute: " + absGitLfs);
+  }
+
   // Tracking rule must exist before the first .age file lands, or LFS never
   // picks up files already committed as plain git objects.
   const trackRule = "*.age filter=lfs diff=lfs merge=lfs -text\n";
