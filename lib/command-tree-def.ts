@@ -1362,7 +1362,16 @@ export const TREE: Record<string, CommandNode> = {
         fn: "stateBackup",
         args: [
           { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Print the outcome as JSON" },
+          { name: "Local", flag: "--local", type: "boolean", default: false, hint: "Local-only VACUUM INTO backup (no compression or encryption)" },
         ],
+        subcommands: {
+          init: {
+            description: "Set up encrypted state backup: install LFS, create recipients, verify round-trip",
+            module: "./commands/state-backup-init.ts",
+            fn: "stateBackupInit",
+            args: [],
+          },
+        },
       },
       restore: {
         description: "Restore state.db from a stamped backup copy (refuses while the daemon is running unless --force)",
