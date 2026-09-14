@@ -96,7 +96,7 @@ describe("readAllCredentialHealth", () => {
     });
     const rows = readAllCredentialHealth(db);
     expect(rows).toHaveLength(2);
-    expect(rows[0].integration).toBe("github");
-    expect(rows[1].integration).toBe("gitlab");
+    expect(rows[0]!.integration).toBe("github");
+    expect(rows[1]!.integration).toBe("gitlab");
   });
 });
