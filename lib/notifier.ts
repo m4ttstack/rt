@@ -124,6 +124,7 @@ export const NOTIFICATION_TYPES = [
   { key: "evidence_batch_ready", label: "Evidence batch ready", description: "All evidence requests for a branch settled; captures await review" },
   { key: "evidence_failed",      label: "Evidence capture failed", description: "A queued evidence capture failed in the sandbox" },
   { key: CHAT_NOTIFICATION_CATEGORY, label: "Chat mention", description: "When an agent mentions you in a chat room" },
+  { key: "credential_health", label: "Credential health", description: "When an integration token is rejected or nearing expiry" },
 ] as const;
 
 export type NotificationPrefs = Record<string, boolean>;

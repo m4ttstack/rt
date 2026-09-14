@@ -119,6 +119,8 @@ export function buildRoutedHandlers(opts: {
    * own private map.
    */
   chatDeliveryChains?: Map<string, Promise<void>>;
+  /** Runs one credential-health sweep cycle on demand (RT-132), the same closure the daemon's periodic accounts-sweep timer calls, so `rt accounts --recheck` sees an up-to-date credential_health table immediately. Omitted only by tests that don't exercise accounts-recheck. */
+  accountsSweep?: () => Promise<void>;
 }): Record<string, Handler> {
   const { ctx, broadcast, systemProcessScanner } = opts;
   // The bus owns frame-building + persistence (R020, events-bus.ts); this
@@ -218,6 +220,14 @@ export function buildRoutedHandlers(opts: {
     "freshness:reconcile": async () => {
       await reconcileFreshness({ ctx, broadcast });
       return { ok: true, data: getFreshnessSnapshot() };
+    },
+
+    // Runs the credential-health sweep on demand (RT-132), so `rt accounts
+    // --recheck` doesn't have to wait for the daemon's own interval.
+    "accounts-recheck": async () => {
+      if (!opts.accountsSweep) return { ok: false, error: "accounts sweep not wired" };
+      await opts.accountsSweep();
+      return { ok: true };
     },
   };
   // A tray/CLI/console read of any scan-backed command means "someone is

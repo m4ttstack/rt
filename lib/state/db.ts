@@ -21,8 +21,8 @@ import { rtDir } from "../rt-paths.ts";
 
 export type DbFlavor = "cli" | "daemon";
 
-/** PRAGMA user_version target for the combined schema below (v1 + v2 + v3 + v4 + v6 + v7 + v8 + v9 + v10 + v11). */
-export const SCHEMA_VERSION = 11;
+/** PRAGMA user_version target for the combined schema below (v1 + v2 + v3 + v4 + v6 + v7 + v8 + v9 + v12; v10 and v11 are DML-only migrations, not DDL blocks in SCHEMAS). */
+export const SCHEMA_VERSION = 12;
 
 // busy_timeout is per-process, not per-store (spec "The database"): a CLI
 // command may block briefly; the daemon's event loop must never block long,
@@ -307,6 +307,20 @@ CREATE TABLE IF NOT EXISTS chat_claims (
 );
 `;
 
+// Tables (v12): one row per integration tracking credential health (RT-132),
+// read and written by lib/credential-health/db.ts.
+const V12_SCHEMA = `
+CREATE TABLE IF NOT EXISTS credential_health (
+  integration        TEXT PRIMARY KEY,
+  status             TEXT NOT NULL,
+  detail             TEXT NOT NULL DEFAULT '',
+  expires_at         TEXT,
+  checked_at         INTEGER NOT NULL,
+  last_notified_at   INTEGER,
+  last_notified_kind TEXT
+);
+`;
+
 /**
  * Every schema block, in version order. `runMigrations` execs
  * `SCHEMAS.join("")` unconditionally on EVERY open (R015/R056): every
@@ -316,7 +330,7 @@ CREATE TABLE IF NOT EXISTS chat_claims (
  * A future schema block joins this array; leaving one out is caught by the
  * dynamic table-presence test in db-schema-convergence.test.ts.
  */
-const SCHEMAS = [V1_SCHEMA, V2_SCHEMA, V3_SCHEMA, V4_SCHEMA, V6_SCHEMA, V7_SCHEMA, V8_SCHEMA, V9_SCHEMA];
+const SCHEMAS = [V1_SCHEMA, V2_SCHEMA, V3_SCHEMA, V4_SCHEMA, V6_SCHEMA, V7_SCHEMA, V8_SCHEMA, V9_SCHEMA, V12_SCHEMA];
 
 /** project_mr_demands.sections (v6): SQLite's ALTER TABLE ADD COLUMN has no
     IF NOT EXISTS, so unlike every statement in the V*_SCHEMA strings above it
