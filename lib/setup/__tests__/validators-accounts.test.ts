@@ -431,6 +431,35 @@ describe("accountRows — per-entry isolation", () => {
   });
 });
 
+describe("accountRows, catch-path does not apply cached health (Fix 3)", () => {
+  function neutralize(integration: string): void {
+    writeCredentialHealth(getStateDb("cli"), {
+      integration, status: "error", detail: "test cleanup",
+      expiresAt: null, checkedAt: Date.now(), lastNotifiedAt: null, lastNotifiedKind: null,
+    });
+  }
+
+  test("secrets.has throwing yields bare error, not cached ready from credential_health", async () => {
+    const db = getStateDb("cli");
+    writeCredentialHealth(db, {
+      integration: "gitlab", status: "ready", detail: "gitlab token valid",
+      expiresAt: null, checkedAt: Date.now(), lastNotifiedAt: null, lastNotifiedKind: null,
+    });
+
+    try {
+      const team = baseTeam({ integrations: { forge: { host: "gitlab.example.com", provider: "gitlab" } } });
+      const secrets: SecretPresence = {
+        async has() { throw new Error("sops keychain failure"); },
+      };
+      const r = await pickRow(accountRows(fakeProbes(), team, [], secrets, null), "account.gitlab");
+      expect(r.status).toBe("error");
+      expect(r.detail).toContain("sops keychain failure");
+    } finally {
+      neutralize("gitlab");
+    }
+  });
+});
+
 describe("accountRows, credential_health integration (rt-132)", () => {
   // Neutralizes the row written by each test below to a non-interfering
   // "error" health entry once assertions are done: getStateDb("cli") is a

@@ -1632,7 +1632,7 @@ export const TREE: Record<string, CommandNode> = {
   },
 
   accounts: {
-    description: "Credential health for rt's integrations (github, gitlab tokens)",
+    description: "Show integration credential health",
     module: "./commands/accounts.ts",
     omitBehavior: "list",
     args: [

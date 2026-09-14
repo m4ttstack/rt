@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import type { IntegrationDef, ValidateCtx } from "../setup/integrations.ts";
 import type { Probes } from "../setup/probes.ts";
-import { readCredentialHealth, writeCredentialHealth } from "./db.ts";
+import { readAllCredentialHealth, readCredentialHealth, writeCredentialHealth, deleteCredentialHealth } from "./db.ts";
 
 const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
 const WARNING_DAYS = 7;
@@ -38,21 +38,36 @@ export async function runAccountsSweep(deps: SweepDeps): Promise<void> {
     return;
   }
 
+  const targetIds = new Set(targets.map((t) => t.id));
+
   for (const { id, def, token, ctx } of targets) {
     try {
       await checkOne(deps, id, def, token, ctx, probes, db, getNow());
     } catch (err) {
       log.warn(`accounts-sweep: ${id} threw`, { err });
       const now = getNow();
-      writeCredentialHealth(db, {
-        integration: id,
-        status: "error",
-        detail: err instanceof Error ? err.message : String(err),
-        expiresAt: null,
-        checkedAt: now,
-        lastNotifiedAt: null,
-        lastNotifiedKind: null,
-      });
+      const prev = readCredentialHealth(db, id);
+      if (prev && (prev.status === "ready" || prev.status === "invalid")) {
+        writeCredentialHealth(db, { ...prev, checkedAt: now });
+      } else {
+        writeCredentialHealth(db, {
+          integration: id,
+          status: "error",
+          detail: err instanceof Error ? err.message : String(err),
+          expiresAt: null,
+          checkedAt: now,
+          lastNotifiedAt: null,
+          lastNotifiedKind: null,
+        });
+      }
+    }
+  }
+
+  // Reconcile: remove health rows for integrations no longer in targets
+  // (e.g. the user deleted the credential from the secret store).
+  for (const row of readAllCredentialHealth(db)) {
+    if (!targetIds.has(row.integration)) {
+      deleteCredentialHealth(db, row.integration);
     }
   }
 }
@@ -70,19 +85,30 @@ async function checkOne(
   const result = await def.validate(probes, token, ctx);
   const { status, detail } = result;
 
+  const prev = readCredentialHealth(db, id);
+
+  // An indeterminate result (error) must never overwrite a determinate one
+  // (ready/invalid). If a previous determinate row exists, preserve it and
+  // only bump checkedAt to record that a check ran.
+  if (status === "error" && prev && (prev.status === "ready" || prev.status === "invalid")) {
+    writeCredentialHealth(db, { ...prev, checkedAt: now });
+    return;
+  }
+
   let expiresAt: string | null = null;
   if (def.expiry && status === "ready" && token) {
     try {
       const exp = await def.expiry(probes, token, ctx);
-      expiresAt = exp?.expiresAt ?? null;
+      if (exp !== null) {
+        expiresAt = exp.expiresAt;  // determinate: a date or definitively null
+      } else {
+        expiresAt = prev?.expiresAt ?? null;  // indeterminate: keep previous
+      }
     } catch {
-      // Expiry is a best-effort probe (see IntegrationDef.expiry); a failure
-      // here must not be conflated with a validate() failure, which is the
-      // only thing that can flip status to "error".
+      // Expiry probe failure: keep previous known expiry rather than erasing it
+      expiresAt = prev?.expiresAt ?? null;
     }
   }
-
-  const prev = readCredentialHealth(db, id);
 
   let notifyKind: "dead" | "expiring" | null = null;
 

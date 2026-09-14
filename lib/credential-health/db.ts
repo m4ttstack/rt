@@ -47,6 +47,13 @@ export function writeCredentialHealth(
   );
 }
 
+export function deleteCredentialHealth(
+  db: Database,
+  integration: string,
+): void {
+  db.query("DELETE FROM credential_health WHERE integration = ?").run(integration);
+}
+
 function mapRow(raw: Record<string, unknown>): CredentialHealthRow {
   return {
     integration: raw.integration as string,

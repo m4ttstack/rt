@@ -68,14 +68,20 @@ export async function run(args: string[]): Promise<void> {
   const recheck = args.includes("--recheck");
 
   if (recheck) {
-    const res = await daemonQuery("accounts-recheck", undefined, 30_000);
-    if (!json) {
-      if (res?.ok) {
-        console.log("Recheck complete.");
-      } else {
-        console.error("Recheck failed. Is the daemon running?");
+    let recheckOk = false;
+    try {
+      const res = await daemonQuery("accounts-recheck", undefined, 30_000);
+      recheckOk = !!res?.ok;
+    } catch { /* daemon unreachable */ }
+    if (!recheckOk) {
+      if (json) {
+        console.log(JSON.stringify({ ok: false, error: "Recheck failed. Is the daemon running?" }));
+        process.exit(1);
       }
+      console.error("Recheck failed. Is the daemon running?");
+      process.exit(1);
     }
+    if (!json) console.log("Recheck complete.");
   }
 
   const db = getStateDb("cli");
