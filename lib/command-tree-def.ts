@@ -1371,6 +1371,14 @@ export const TREE: Record<string, CommandNode> = {
             fn: "stateBackupInit",
             args: [],
           },
+          status: {
+            description: "Show state backup health: last backup time, sizes, recipients",
+            module: "./commands/state-backup-status.ts",
+            fn: "stateBackupStatus",
+            args: [
+              { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Print as JSON" },
+            ],
+          },
         },
       },
       restore: {
