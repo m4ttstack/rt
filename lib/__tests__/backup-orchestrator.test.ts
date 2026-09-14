@@ -121,6 +121,12 @@ describe("backup-orchestrator", () => {
       for (const [, files] of byPrefix) {
         expect(files.length).toBe(1);
       }
+
+      if (app === "rt") {
+        const prefixes = [...byPrefix.keys()];
+        expect(prefixes).toContain("rt-state");
+        expect(prefixes).toContain("rt-gates");
+      }
     }
   });
 

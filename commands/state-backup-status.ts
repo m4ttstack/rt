@@ -3,6 +3,8 @@ import { join } from "path";
 import { mattstackHome } from "../lib/rt-paths.ts";
 import { isBackupConfigured } from "../lib/state/backup-orchestrator.ts";
 import { backupDestDir, recipientsPath } from "../lib/state/backup-sources.ts";
+import { originPushState } from "../lib/setup/home-git.ts";
+import { execWithTimeout } from "../lib/setup/probes.ts";
 import type { CommandContext } from "../lib/command-tree.ts";
 
 export async function stateBackupStatus(args: string[], _ctx: CommandContext): Promise<void> {
@@ -56,25 +58,24 @@ export async function stateBackupStatus(args: string[], _ctx: CommandContext): P
   let lfsState = "unknown";
 
   if (existsSync(join(homeRepo, ".git"))) {
-    const ahead = Bun.spawnSync(
-      ["git", "rev-list", "--count", "@{u}..HEAD"],
-      { cwd: homeRepo, stderr: "pipe", env: { ...process.env } },
-    );
-    if (ahead.exitCode === 0) {
-      const count = parseInt(ahead.stdout.toString().trim(), 10);
-      pushState = count === 0 ? "synced" : `${count} commit(s) ahead`;
+    const ps = await originPushState(execWithTimeout, homeRepo);
+    switch (ps.kind) {
+      case "up-to-date": pushState = "synced"; break;
+      case "ahead": pushState = `${ps.count} commit(s) ahead`; break;
+      case "no-ref": pushState = "no remote tracking ref"; break;
+      default: pushState = "unknown";
     }
 
     const gitLfs = Bun.which("git-lfs", { PATH: process.env.PATH });
-    if (gitLfs) {
-      const lfs = Bun.spawnSync(["git", "lfs", "ls-files"], {
-        cwd: homeRepo,
-        stderr: "pipe",
-        env: { ...process.env },
-      });
-      lfsState = lfs.exitCode === 0 ? "healthy" : "error";
-    } else {
+    if (!gitLfs) {
       lfsState = "git-lfs not found";
+    } else {
+      const checkAttr = Bun.spawnSync(
+        ["git", "check-attr", "filter", "--", "*.age"],
+        { cwd: homeRepo, stderr: "pipe", env: { ...process.env } },
+      );
+      const attrOut = checkAttr.stdout.toString();
+      lfsState = attrOut.includes("filter: lfs") ? "filter active" : "filter not configured";
     }
   }
 
