@@ -137,15 +137,37 @@ describe("macRows — tool.path", () => {
     const r = await pickRow(macRows(p), "tool.path");
     expect(r.status).toBe("needs-you");
     expect(r.detail).toContain("not first");
+    // path.link would no-op here: the marker is already installed.
+    expect(r.action).toBeNull();
   });
 
-  test("marker absent from ~/.zshenv -> missing", async () => {
+  test("~/.local/bin first but no marker -> needs-you: precedence holds, rt is not what holds it", async () => {
     const p = fakeProbes({
       env: { PATH: "/fake-home/.local/bin:/usr/bin" },
       dirs: { "/fake-home/.local/bin": [], "/usr/bin": [] },
     });
     const r = await pickRow(macRows(p), "tool.path");
+    expect(r.status).toBe("needs-you");
+    expect(r.detail).toContain("not via rt's own");
+  });
+
+  test("the unowned-precedence row offers the step that makes rt own it", async () => {
+    const p = fakeProbes({
+      env: { PATH: "/fake-home/.local/bin:/usr/bin" },
+      dirs: { "/fake-home/.local/bin": [], "/usr/bin": [] },
+    });
+    const r = await pickRow(macRows(p), "tool.path");
+    expect(r.action).toEqual({ type: "run", label: "Add rt's PATH entry", verb: ["setup", "apply", "--only", "path.link"] });
+  });
+
+  test("neither first nor marked -> missing", async () => {
+    const p = fakeProbes({
+      env: { PATH: "/opt/homebrew/bin:/fake-home/.local/bin:/usr/bin" },
+      dirs: { "/opt/homebrew/bin": [], "/fake-home/.local/bin": [], "/usr/bin": [] },
+    });
+    const r = await pickRow(macRows(p), "tool.path");
     expect(r.status).toBe("missing");
     expect(r.detail).toContain("Install adds ~/.local/bin");
+    expect(r.action).toEqual({ type: "run", label: "Set up PATH", verb: ["setup", "apply", "--only", "path.link"] });
   });
 });

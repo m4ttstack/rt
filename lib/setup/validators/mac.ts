@@ -12,6 +12,10 @@ import type { Probes } from "../probes.ts";
 const CLT_INSTALL_ACTION: Action = { type: "install", label: "Install…", tool: "apple-clt", via: "apple-clt" };
 /** Byte-for-byte the marker T24's installZshenvPrecedence step writes into ~/.zshenv. */
 const PATH_PRECEDENCE_MARKER = "# mattstack — PATH precedence";
+/** `--only` runs the one step and leaves the rest of setup intent untouched (lib/setup/apply.ts). Per-branch label: the row means "set this up" when nothing is set up and "hand it to rt" when precedence already holds. */
+function pathLinkAction(label: string): Action {
+  return { type: "run", label, verb: ["setup", "apply", "--only", "path.link"] };
+}
 const RC_FILE_DISPLAY = "~/.zshenv";
 
 async function macosVersionRow(p: Probes): Promise<Row> {
@@ -81,7 +85,14 @@ function pathRow(p: Probes): Row {
   if (hasMarker) {
     return row({ ...base, status: "needs-you", detail: `~/.local/bin is on PATH but not first — team intercept shims may not fire (${RC_FILE_DISPLAY})` });
   }
-  return row({ ...base, status: "missing", detail: `Install adds ~/.local/bin to PATH (${RC_FILE_DISPLAY})` });
+  // Precedence holds without rt's marker. The detail names no owner (an
+  // unmarked block is unattributable) and predicts no failure; it also claims
+  // only that rt's own entry is absent, never that some other block exists in
+  // this file — the probe never establishes where the precedence came from.
+  if (firstExisting === localBin) {
+    return row({ ...base, status: "needs-you", detail: `~/.local/bin is first on PATH, but not via rt's own ${RC_FILE_DISPLAY} entry`, action: pathLinkAction("Add rt's PATH entry") });
+  }
+  return row({ ...base, status: "missing", detail: `Install adds ~/.local/bin to PATH (${RC_FILE_DISPLAY})`, action: pathLinkAction("Set up PATH") });
 }
 
 export async function macRows(p: Probes): Promise<Row[]> {
