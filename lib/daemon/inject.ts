@@ -73,9 +73,28 @@ export async function injectIntoPane(opts: InjectOptions): Promise<{ ok: true; d
 }
 
 const AFTER_TURN_STATES = ["idle", "done"];
-const AFTER_TURN_LEG_MS = 60_000;
+const AFTER_TURN_LEG_MS = 10_000;
 const AFTER_TURN_MAX_MS = 30 * 60_000;
 const AFTER_TURN_SETTLE_MS = 1_500;
+// herdr detection rule ids (its claude manifest): the parked-on-background-agents
+// line as the last line above a free prompt box. Both must match, and no blocker.
+const HOLD_RULES = ["background_agents_working", "live_prompt_box"];
+
+interface AgentExplain { explain: { state: string; evaluated_rules: Array<{ id: string; matched: boolean }> } }
+
+/**
+ * True while Claude Code has finished its message and is only waiting on
+ * background agents. herdr reports that as `working` (the title spinner and
+ * its background_agents rule), yet the composer is open: a queued slash
+ * command has already run and a typed line starts its own turn, so a
+ * continuation can land now instead of after the agents finish.
+ */
+async function onBackgroundHold(herdr: typeof herdrRequest, paneId: string, sockPath: string | undefined): Promise<boolean> {
+  const res = await herdr<AgentExplain>("agent.explain", { target: paneId }, { sockPath });
+  if (!res.ok || res.result.explain.state === "blocked") return false;
+  const matched = new Set(res.result.explain.evaluated_rules.filter((r) => r.matched).map((r) => r.id));
+  return HOLD_RULES.every((id) => matched.has(id));
+}
 
 export interface AfterTurnOptions {
   paneId: string;
@@ -97,7 +116,9 @@ export interface AfterTurnOptions {
  * very pane whose turn must end, so this never blocks a reply: handlers
  * schedule it with `void`. A settle window plus a re-probe after `agent.wait`
  * guards against a transient idle between a tool result and the next model
- * call, which would otherwise fire the continuation mid-turn.
+ * call, which would otherwise fire the continuation mid-turn. A turn parked
+ * on background agents never reaches idle until they finish, so each leg is
+ * preceded by the hold check, which injects without waiting for them.
  */
 export async function injectAfterTurn(opts: AfterTurnOptions): Promise<void> {
   const { paneId, text, sockPath, log } = opts;
@@ -105,17 +126,24 @@ export async function injectAfterTurn(opts: AfterTurnOptions): Promise<void> {
   const legMs = opts.legMs ?? AFTER_TURN_LEG_MS;
   const settleMs = opts.settleMs ?? AFTER_TURN_SETTLE_MS;
   const deadline = Date.now() + (opts.maxWaitMs ?? AFTER_TURN_MAX_MS);
+  const deliver = async () => {
+    const res = await injectIntoPane({ paneId, text, herdr, sockPath });
+    if (res.ok && res.data.delivered === "refused") log?.warn(res.data, "pane:send continuation refused");
+    else if (res.ok) log?.info(res.data, "pane:send continuation delivered");
+    else log?.warn({ paneId, err: res.error }, "pane:send continuation failed");
+  };
   try {
     while (Date.now() < deadline) {
+      if (await onBackgroundHold(herdr, paneId, sockPath)) {
+        await deliver();
+        return;
+      }
       const settled = await herdr("agent.wait", { target: paneId, until: AFTER_TURN_STATES, timeout_ms: legMs }, { timeoutMs: waitTimeout(legMs), sockPath });
       if (settled.ok) {
         await Bun.sleep(settleMs);
         const probe = await herdr<{ agent: { agent_status: string } }>("agent.get", { target: paneId }, { sockPath });
         if (probe.ok && AFTER_TURN_STATES.includes(probe.result.agent.agent_status)) {
-          const res = await injectIntoPane({ paneId, text, herdr, sockPath });
-          if (res.ok && res.data.delivered === "refused") log?.warn(res.data, "pane:send continuation refused");
-          else if (res.ok) log?.info(res.data, "pane:send continuation delivered");
-          else log?.warn({ paneId, err: res.error }, "pane:send continuation failed");
+          await deliver();
           return;
         }
         if (probe.ok) continue;

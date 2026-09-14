@@ -69,12 +69,19 @@ with `continuation: { delivered: "deferred" }`. A `refused` first line
 schedules nothing and the reply carries no `continuation`.
 
 `injectAfterTurn` runs detached: it loops `agent.wait until idle,done` in
-60 s legs until the target settles (a `blocked` pane is mid-turn at a
+10 s legs until the target settles (a `blocked` pane is mid-turn at a
 prompt, so it keeps waiting), then calls `injectIntoPane` with the
 continuation and logs the verdict at `info` through the daemon logger. A
 herdr error other than a leg timeout, or 30 minutes without the turn
 ending, abandons the continuation with a `warn` line. The CLI maps
 `continuation` to its `then` output.
+
+A turn parked on background agents ("Waiting for N background agents to
+finish") never reads idle until they finish, yet the composer is open: a
+queued slash command has already run and a typed line starts its own turn
+(verified live). So each leg is preceded by an `agent.explain` hold check:
+when herdr's `background_agents_working` and `live_prompt_box` rules both
+match and the state is not `blocked`, the continuation is injected at once.
 
 rt-client: `PaneSendResult` gains `continuation?: { delivered: "deferred" }`,
 the `paneSend` wrapper forwards `continuation`, and the package version
