@@ -138,6 +138,12 @@ describe("backup-pipeline", () => {
     });
 
     it("falls back to PATH when no bundle carries the tool", async () => {
+      // An empty bundle pinned as the app path, so this stays "no bundle" on a
+      // machine whose installed mattstack.app does ship zstd.
+      const emptyBundle = join(home, "Applications", "mattstack.app");
+      mkdirSync(emptyBundle, { recursive: true });
+      setSetting("mattstack.appPath", emptyBundle, "machine");
+
       const src = join(tmp, "path.db");
       const out = join(tmp, "path.db.zst");
       writeFileSync(src, Buffer.alloc(2048, "path"));

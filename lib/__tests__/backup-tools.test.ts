@@ -43,7 +43,10 @@ describe("backup tool resolution", () => {
     appRoot = join(home, "Applications", "mattstack.app");
     mkdirSync(join(appRoot, "Contents", "Resources"), { recursive: true });
     mkdirSync(join(appRoot, HELPERS_DIR), { recursive: true });
-    writeFileSync(join(appRoot, DEPS_LOCK_BUNDLE_PATH), lockJson());
+    // Pinned for every case, empty or not: unpinned, resolution would read
+    // whichever mattstack.app the machine running the suite has installed, and
+    // "no bundle" would stop meaning no bundle the moment it ships these.
+    setSetting("mattstack.appPath", appRoot, "machine");
   });
 
   afterEach(() => {
@@ -52,13 +55,17 @@ describe("backup tool resolution", () => {
     bundleLayoutTest.resetBundleLayoutMemo();
   });
 
+  function declareHelpers(): void {
+    writeFileSync(join(appRoot, DEPS_LOCK_BUNDLE_PATH), lockJson());
+  }
+
   function plantHelpers(): void {
+    declareHelpers();
     for (const name of BACKUP_TOOLS) {
       const path = join(appRoot, HELPERS_DIR, name);
       writeFileSync(path, "#!/bin/sh\n");
       chmodSync(path, 0o755);
     }
-    setSetting("mattstack.appPath", appRoot, "machine");
   }
 
   // The whole point of bundling them: a fresh Mac has no brew copy, and the
@@ -79,7 +86,7 @@ describe("backup tool resolution", () => {
   // A row declared in deps.lock but absent on disk (a pruned or half-copied
   // bundle) must not resolve to a path nothing can execute.
   test("a declared-but-absent helper falls through to PATH", () => {
-    setSetting("mattstack.appPath", appRoot, "machine");
+    declareHelpers();
     expect(findBackupTool("zstd", () => PATH_COPY)).toBe(PATH_COPY);
   });
 
