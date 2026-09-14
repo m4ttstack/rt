@@ -113,7 +113,12 @@ export function gateOptionValue(o: GateOption): string {
 export function gateOptionLabel(o: GateOption): string {
   return typeof o === "string" ? o : (o.label || o.value);
 }
-export interface GateAnswer { answers: Record<string, string | string[] | { value: string | string[]; note?: string }>; by: string; answeredAt: number; overridden?: boolean }
+/** `session` is the answering surface's own session id, recorded so the
+    push facility can tell a self-answer from a remote one and skip the
+    doorbell it would otherwise send back to the writer. Optional: a caller
+    that supplies none (the board status-bin answers `by: "pane"` with no
+    session) still matches self by `by === GATE_BY_PANE`. */
+export interface GateAnswer { answers: Record<string, string | string[] | { value: string | string[]; note?: string }>; by: string; answeredAt: number; overridden?: boolean; session?: string }
 export interface GateRow {
   id: string; subject: string; kind: string;
   questions: GateQuestion[]; meta: Record<string, unknown> | null;
