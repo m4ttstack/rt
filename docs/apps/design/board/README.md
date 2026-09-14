@@ -44,6 +44,9 @@ required up to 12), with invented names throughout:
   it chose from
 - `B6 · Row menu`: the right-click menu synced with B5, today's beside two
   states of the new one
+- `B9 · The decision context pane, grouped` (approved 2026-09-14): a
+  review gate's bracketed findings as one heading per label with its
+  count, prefixes dropped, beside today's flat run of prefixed lines
 - `B8 · Dismiss a stuck lane` (approved 2026-09-14): the muted secondary
   beside a failed lane's relaunch verb, drawn at rest, under the pointer,
   and after the dismissal, when the row's next line speaks

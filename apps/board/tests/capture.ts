@@ -191,6 +191,15 @@ for (const theme of ['light', 'dark'] as const) {
     await page.getByRole('button', { name: 'skip gate' }).click();
   await page.waitForSelector('.tui-gate-question[data-sectioned]');
   await shoot(page, `queue-${theme}`);
+  // The bracketed-findings gate (B9): the pane groups by label rather than
+  // leading every line with its own prefix.
+  for (let i = 0; i < 4; i++) {
+    if (await page.locator('.tui-gate-groups').count()) break;
+    await page.getByRole('button', { name: 'skip gate' }).click();
+    await page.waitForTimeout(120);
+  }
+  await page.waitForSelector('.tui-gate-groups');
+  await shoot(page, `queuegroups-${theme}`);
   await page.keyboard.press('Escape');
   // settings modal
   await page.click('.tui-side-gear');

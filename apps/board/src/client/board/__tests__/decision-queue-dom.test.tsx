@@ -361,6 +361,55 @@ test('a sectioned context: each question carries its slice, the pane collapses t
   }
 });
 
+test('a bracketed-findings context renders grouped, with a way back to the words as written', async () => {
+  servedData = withOpenGate({
+    context:
+      'Findings: Important (1), Minor (1)\n[Important] a `key` collides\n[Minor] doc overstates it',
+    questions: [
+      {
+        id: 'tiers',
+        label: 'Post which findings?',
+        multi: true,
+        options: [
+          { value: 'Important', label: 'Important (1)' },
+          { value: 'Minor', label: 'Minor (1)' },
+        ],
+      },
+    ],
+  });
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  try {
+    const dialog = await openQueue(container);
+    const groups = dialog.querySelectorAll('.tui-gate-group');
+    expect(
+      [...groups].map(
+        g => g.querySelector('.tui-gate-group-label')?.textContent
+      )
+    ).toEqual(['Important', 'Minor']);
+    expect(dialog.querySelector('.tui-gate-groups-total')?.textContent).toBe(
+      '2 findings'
+    );
+    // The tally-only preamble is gone; the finding's code span is live.
+    expect(dialog.querySelector('.tui-gate-groups-preamble')).toBeNull();
+    expect(
+      dialog.querySelector('.tui-gate-group-items code')?.textContent
+    ).toBe('key');
+
+    const raw = findByText(dialog, 'button', 'as written') as HTMLElement;
+    await React.act(async () => {
+      raw.click();
+    });
+    expect(dialog.querySelector('.tui-gate-groups')).toBeNull();
+    expect(
+      dialog.querySelector('[data-part="scrollpane-body"]')?.textContent
+    ).toContain('[Important] a key collides');
+    expect(findByText(dialog, 'button', 'grouped')).not.toBeNull();
+  } finally {
+    container.remove();
+  }
+});
+
 test('a context whose sections match no question keeps the pane and adds no strip', async () => {
   servedData = withOpenGate({ context: SECTIONED_CONTEXT });
   const container = document.createElement('div');
