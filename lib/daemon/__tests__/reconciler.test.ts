@@ -133,6 +133,51 @@ describe("reconciler sweep: gone", () => {
     expect(attentionGates()).toHaveLength(0);
   });
 
+  test("a parked-only executor stamps gone but opens no attention gate: its pane left by design", async () => {
+    const { row: parked } = store.open({ subject: "mr:u", kind: "respond-plan", questions: qs(), nudge: { session: "s-1" } });
+    expect(store.park(parked.id).ok).toBe(true);
+    panesValue = [];
+    await reconciler.sweep();
+    await reconciler.sweep();
+    await reconciler.sweep();
+    expect(store.get(parked.id)!.executor).toBe("gone");
+    expect(attentionGates()).toHaveLength(0);
+  });
+
+  test("a parked gate beside an open one still alarms", async () => {
+    const { row: parked } = store.open({ subject: "mr:v", kind: "respond-plan", questions: qs(), nudge: { session: "s-1" } });
+    expect(store.park(parked.id).ok).toBe(true);
+    store.open({ subject: "mr:v", kind: "clarify", questions: qs(), nudge: { session: "s-1" } });
+    panesValue = [];
+    await reconciler.sweep();
+    await reconciler.sweep();
+    expect(attentionGates().filter((g) => g.subject === "mr:v")).toHaveLength(1);
+  });
+
+  test("a dismissed gone alarm stays dismissed until the executor changes state", async () => {
+    store.open({ subject: "run:w", kind: "clarify", questions: qs(), nudge: { session: "s-1" } });
+    panesValue = [];
+    await reconciler.sweep();
+    await reconciler.sweep();
+    const first = attentionGates().find((g) => g.subject === "run:w")!;
+    expect(first).toBeDefined();
+
+    store.answer(first.id, { action: "dismiss" }, "human");
+    store.closeAnswered(first.id, "abandoned");
+    reconciler.dismissed(agentId);
+    await reconciler.sweep();
+    await reconciler.sweep();
+    expect(attentionGates().filter((g) => g.subject === "run:w" && g.status !== "closed")).toHaveLength(0);
+
+    // Back live, then gone again: a fresh disappearance is a fresh alarm.
+    panesValue = [buildPane({ agentStatus: "idle" })];
+    await reconciler.sweep();
+    panesValue = [];
+    await reconciler.sweep();
+    await reconciler.sweep();
+    expect(attentionGates().filter((g) => g.subject === "run:w" && g.status !== "closed")).toHaveLength(1);
+  });
+
   test("a pane coming back live closes the gone attention gate", async () => {
     store.open({ subject: "run:z", kind: "clarify", questions: qs(), nudge: { session: "s-1" } });
     panesValue = [];

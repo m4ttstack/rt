@@ -62,6 +62,9 @@ export interface Reconciler {
       sweep, against a freshly resolved pane. */
   expect(e: Expectation): void;
   clear(agentId: string): void;
+  /** The human dismissed this agent's attention gate: no new one for the
+      same reading until the agent's state changes. */
+  dismissed(agentId: string): void;
   executorFor(hints: PaneHints): { state: ExecutorState; pane: LivePane | null };
   /** The agent behind a gate row, via the same pane-then-field join the
       sweep's own view computation uses (reconciler-view.ts's gateAgentId).
@@ -113,6 +116,11 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
   const pendingBlocked = new Map<string, number>();
   const pendingGone = new Map<string, number>();
   const attentionGateByAgent = new Map<string, string>();
+  // Agents whose attention gate the human dismissed while the reading that
+  // raised it still holds. Without this the next sweep re-raises it (the
+  // debounce count never resets on a close), so dismiss never sticks. The
+  // latch lifts on any state change, so a fresh disappearance alarms again.
+  const dismissedWhile = new Map<string, ExecutorState>();
   // Onset tracking for ExecutorView.since (spec "since"): keyed independent
   // of previousStates so it stays correct through herdr-unreachable sweeps
   // too, where previousStates is deliberately left untouched.
@@ -339,6 +347,8 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
         }
 
         const subject = v.subject ?? `agent:${v.agentId}`;
+        if (dismissedWhile.get(v.agentId) !== v.state) dismissedWhile.delete(v.agentId);
+        const dismissed = dismissedWhile.has(v.agentId);
 
         if (v.state === "blocked") {
           const count = (pendingBlocked.get(v.agentId) ?? 0) + 1;
@@ -347,7 +357,7 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
           // open/parked gate already on the subject (the form gate itself,
           // or an attention gate from an earlier pass) means skip.
           const occupied = openParkedGates.some((g) => g.subject === subject);
-          if (count >= debounceSweeps && !occupied) {
+          if (count >= debounceSweeps && !occupied && !dismissed) {
             const cwd = agents.find((a) => a.id === v.agentId)?.cwd;
             await openAttentionGate(v, "blocked", panes, openParkedGates, cwd);
           }
@@ -366,7 +376,14 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
             const hasAttentionGate = openParkedGates.some(
               (g) => g.kind === "pane-attention" && g.subject === subject,
             );
-            if (!hasAttentionGate) {
+            // A parked gate's pane is gone by design: its owner parked the
+            // gate and closed the pane, and the recorded answer is what
+            // brings it back (answer-time executor guarantee). Only an OPEN
+            // joined gate makes the absence an orphaned run.
+            const allParked = v.openGateIds.every(
+              (id) => openParkedGates.find((g) => g.id === id)?.status === "parked",
+            );
+            if (!hasAttentionGate && !allParked && !dismissed) {
               const cwd = agents.find((a) => a.id === v.agentId)?.cwd;
               await openAttentionGate(v, "gone", panes, openParkedGates, cwd);
             }
@@ -468,6 +485,10 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
       expectations.push({ ...e, initialDeadlineSweeps: e.deadlineSweeps });
     },
     clear,
+    dismissed(agentId) {
+      const current = lastStatus.executors.find((v) => v.agentId === agentId)?.state;
+      if (current === "gone" || current === "blocked") dismissedWhile.set(agentId, current);
+    },
     executorFor,
     agentIdFor,
   };
