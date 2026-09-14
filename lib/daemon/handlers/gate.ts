@@ -88,7 +88,7 @@ function oversizedLabel(questions: GateQuestion[]): string | null {
   return null;
 }
 
-const ORIGIN_STRING_KEYS: ReadonlySet<string> = new Set(["paneId", "tabId", "runId", "worktree"]);
+const ORIGIN_STRING_KEYS: ReadonlySet<string> = new Set(["paneId", "tabId", "runId", "worktree", "surface"]);
 const ORIGIN_FIELD_CAP_BYTES = 1024;
 
 /** Returns an error message on an invalid origin, null when it validates.

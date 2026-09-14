@@ -35,8 +35,23 @@ rt verify
 | `mattstack.app` | Menu bar app... daemon health, notifications, auto-updates |
 | `rt-context` extension | VS Code/Cursor... branch + ticket in status bar |
 | Background daemon | Caches MR/branch data, scans ports, guards git hooks |
-| Bundled helpers | `jq`, `gh`, `glab`, `bun`, `node`, `fast-browser` — pinned and shipped inside the app, not installed onto your system |
+| Bundled helpers | `jq`, `gh`, `glab`, `bun`, `node`, `fast-browser` (pinned and shipped inside the app, not installed onto your system) |
 | Shell alias | `rtcd`... fast worktree directory switching |
+
+## Finishing setup
+
+The setup wizard gates its Finish step on one optional prerequisite: the [Fast Browser](https://chrome.google.com/webstore/detail/fast-browser) extension. Without it, agents cannot capture screenshots or annotate evidence from your browser.
+
+If Chrome is not installed, the gate is skipped automatically. Otherwise, the Done screen shows "One step left before you finish" with Finish disabled until the extension is detected.
+
+You can skip the gate from the wizard ("Skip for now") or from the CLI:
+
+```bash
+rt setup waive tool.fast-browser-extension     # skip on this Mac
+rt setup unwaive tool.fast-browser-extension   # re-arm later
+```
+
+In the app's Settings, the Fast Browser pane shows "Skipped on this Mac" with an **Un-skip** button when waived.
 
 ## Upgrade
 

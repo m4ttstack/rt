@@ -26,12 +26,12 @@ If `rt sdm connect` only shows recents, your session expired. It logs you back i
 
 ## Enrichment (optional, declarative)
 
-Raw StrongDM names (`example-alpha-staging`) work as-is, but you can give them nicer labels, group them by tier, and set connect defaults with a declarative file you own at `~/.rt/sdm/enrichment.jsonc`. Nothing runs to enrich; rt just reads this JSON and overlays it on the live catalog.
+Raw StrongDM names (`example-alpha-staging`) work as-is, but you can give them nicer labels, group them by tier, and set connect defaults with a declarative file you own at `~/.mattstack/rt/sdm/enrichment.jsonc`. Nothing runs to enrich; rt just reads this JSON and overlays it on the live catalog.
 
 Scaffold it from your current catalog, then fill in the labels:
 
 ```bash
-rt sdm enrichment init    # writes ~/.rt/sdm/enrichment.jsonc: every resource, blank labels
+rt sdm enrichment init    # writes ~/.mattstack/rt/sdm/enrichment.jsonc: every resource, blank labels
 rt sdm enrichment         # show the file path + how many resources are enriched vs raw
 ```
 
@@ -51,4 +51,4 @@ rt sdm enrichment         # show the file path + how many resources are enriched
 | `reasonSuggestion` | prefill for the access-request reason prompt |
 | `db` | `{ database, schema, user }` hints used to verify the tunnel after connecting |
 
-A resource missing from the file just shows its raw name and connects with Postgres defaults. Keep the file in your own repo and copy or symlink it to `~/.rt/sdm/enrichment.jsonc` to share it with your team.
+A resource missing from the file just shows its raw name and connects with Postgres defaults. Keep the file in your own repo and copy or symlink it to `~/.mattstack/rt/sdm/enrichment.jsonc` to share it with your team.

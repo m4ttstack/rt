@@ -103,6 +103,7 @@ export interface GateOrigin {
   tabId?: string;
   runId?: string;
   worktree?: string;
+  surface?: string;
   presentation?: "form" | "wait";
 }
 export interface GateQuestion { id: string; label: string; multi: boolean; options: GateOption[] }

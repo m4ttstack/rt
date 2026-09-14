@@ -1,0 +1,53 @@
+---
+sidebar_position: 12
+title: Runner
+---
+
+# Runner
+
+`rt runner` opens a fullscreen board for managing long-running commands (dev servers, watchers, compilers) as headless processes. Each command runs in its own detached process; the board lists them with a status glyph, name, the command string, and uptime.
+
+## Ephemeral and pane-owned
+
+The board exists only while it is on screen. Quitting tears down every process it launched. There is no persistent state, no supervision, no restart-on-crash. If anything is still running when you press `q`, a confirmation prompt appears.
+
+## Backends
+
+**tmux (default):** commands run in a detached tmux session created for this runner instance. Teardown kills the session. No herdr dependency.
+
+**`--herdr`:** commands run as background herdr panes via the daemon-owned bg server, addressed with `bg:` pane IDs.
+
+The board itself always renders via rt-ui in the current terminal.
+
+## Adding entries
+
+Press `a` to add a command. The board drops to the normal screen and shows the picker chain (repo, worktree, package, script). After selecting, the board reappears with the new row in "starting" state. Pressing Escape cancels and returns to the board unchanged.
+
+If the picked entry is a preset (a group of commands), all its rows land on the board at once.
+
+## Keys
+
+| Key | Action |
+|---|---|
+| `j`/`k`, ↑/↓ | Move selection |
+| `a` | Add a command |
+| `s` | Restart selected (sends Ctrl-C, waits for exit, re-runs in the same slot) |
+| `x` | Stop selected |
+| `f` | Focus: jump to the command's live terminal output |
+| `t` | Toggle tail peek (last ~8 lines of output inline on the board) |
+| `q` / Ctrl-C | Quit (confirms if anything is running) |
+
+## Focus
+
+`f` switches to the command's terminal output so you can see its full scrollback. On the tmux backend this opens an attached tab; on the herdr backend the daemon's focus verb opens the pane in the board's workspace.
+
+## Status glyphs
+
+| Glyph | State | Meaning |
+|---|---|---|
+| ● mint | running | Process active |
+| ○ dim | stopped | Clean exit (code 0 or 130) |
+| ✗ coral | crashed | Non-zero exit |
+| spinner | starting/stopping | Transitional |
+
+*A screenshot of the populated board with a tail peek open would help readers understand the layout. The design artboards exist but are not yet in the repo as images.*
