@@ -1,0 +1,25 @@
+Restores state databases from a local stamped copy or from the encrypted backup in the home repo.
+
+```bash
+# From encrypted backup (most common)
+rt state restore --from-backup
+
+# Restore only one app
+rt state restore --from-backup --only rt
+
+# Point-in-time restore
+rt state restore --from-backup --at 2026-09-10
+
+# New machine with no keychain key
+rt state restore --from-backup --identity ~/team-key.txt
+
+# Preview without writing
+rt state restore --from-backup --dry-run
+
+# From a local stamped copy
+rt state restore state-2026-09-13T12-00-00.db
+```
+
+The daemon must be stopped before restoring. The command refuses otherwise unless `--force` is passed.
+
+See the [State backup guide](/guides/state-backup) for the full restore flow.
