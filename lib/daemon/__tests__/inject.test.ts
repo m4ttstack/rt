@@ -170,9 +170,22 @@ test("the stall nudge and its recovery wait also carry sockPath", async () => {
 
 const noLog = { info: () => {}, warn: () => {} } as unknown as import("pino").Logger;
 
+// agent.explain's reply as the daemon reads it: the winning state plus every rule's matched flag.
+const explain = (state: string, matched: string[]) => ({
+  type: "agent_explain",
+  explain: {
+    state,
+    matched_rule: { id: matched[0] ?? "live_prompt_box", state },
+    evaluated_rules: ["osc_title_working", "live_turn_working", "background_agents_working", "live_prompt_box", "live_blocked_form"].map((id) => ({ id, matched: matched.includes(id) })),
+  },
+});
+const LIVE_TURN = explain("working", ["osc_title_working", "live_turn_working", "live_prompt_box"]);
+const BACKGROUND_HOLD = explain("working", ["osc_title_working", "background_agents_working", "live_prompt_box"]);
+
 test("injectAfterTurn waits for the turn to end, then injects the continuation", async () => {
   let waits = 0;
   const { herdr, seen } = on((method, params) => {
+    if (method === "agent.explain") return LIVE_TURN;
     if (method === "agent.wait") return ++waits === 1 ? new HerdrFakeError("timeout", "timed out waiting for agent status") : agent("idle");
     if (method === "agent.get") return agent("idle");
     if (method === "agent.prompt") return { type: "agent_prompted", agent: { ...agent("working").agent, text: params.text } };
@@ -182,10 +195,62 @@ test("injectAfterTurn waits for the turn to end, then injects the continuation",
   const log = { info: (o: unknown) => { logged.push(o); }, warn: () => {} } as unknown as import("pino").Logger;
   await injectAfterTurn({ paneId: "w1:p1", text: "Continue", herdr, log, legMs: 50, settleMs: 0 });
   const methods = seen.map((s) => s.method);
-  expect(methods).toEqual(["agent.wait", "agent.wait", "agent.get", "agent.get", "agent.prompt"]);
-  expect(seen[0]!.params).toEqual({ target: "w1:p1", until: ["idle", "done"], timeout_ms: 50 });
-  expect(seen[4]!.params).toMatchObject({ target: "w1:p1", text: "Continue" });
+  expect(methods).toEqual(["agent.explain", "agent.wait", "agent.explain", "agent.wait", "agent.get", "agent.get", "agent.prompt"]);
+  expect(seen[1]!.params).toEqual({ target: "w1:p1", until: ["idle", "done"], timeout_ms: 50 });
+  expect(seen[6]!.params).toMatchObject({ target: "w1:p1", text: "Continue" });
   expect(logged[0]).toMatchObject({ paneId: "w1:p1", delivered: "accepted" });
+});
+
+test("injectAfterTurn injects at once when the turn is parked on background agents", async () => {
+  const { herdr, seen } = on((method, params) => {
+    if (method === "agent.explain") return BACKGROUND_HOLD;
+    if (method === "agent.get") return agent("working");
+    if (method === "agent.prompt") return { type: "agent_prompted", agent: { ...agent("working").agent, text: params.text } };
+    return new HerdrFakeError("invalid_request", method);
+  });
+  const logged: unknown[] = [];
+  const log = { info: (o: unknown) => { logged.push(o); }, warn: () => {} } as unknown as import("pino").Logger;
+  await injectAfterTurn({ paneId: "w1:p1", text: "Continue", herdr, log, legMs: 50, settleMs: 0 });
+  expect(seen.map((s) => s.method)).toEqual(["agent.explain", "agent.get", "agent.prompt"]);
+  expect(seen[2]!.params).toMatchObject({ target: "w1:p1", text: "Continue" });
+  expect(logged[0]).toMatchObject({ paneId: "w1:p1", delivered: "queued" });
+});
+
+test("injectAfterTurn sees a hold that begins mid-leg on the next leg", async () => {
+  let explains = 0;
+  const { herdr, seen } = on((method, params) => {
+    if (method === "agent.explain") return ++explains === 1 ? LIVE_TURN : BACKGROUND_HOLD;
+    if (method === "agent.wait") return new HerdrFakeError("timeout", "timed out waiting for agent status");
+    if (method === "agent.get") return agent("working");
+    if (method === "agent.prompt") return { type: "agent_prompted", agent: { ...agent("working").agent, text: params.text } };
+    return new HerdrFakeError("invalid_request", method);
+  });
+  await injectAfterTurn({ paneId: "w1:p1", text: "Continue", herdr, log: noLog, legMs: 20, settleMs: 0 });
+  expect(seen.map((s) => s.method)).toEqual(["agent.explain", "agent.wait", "agent.explain", "agent.get", "agent.prompt"]);
+});
+
+test("injectAfterTurn keeps waiting when the background line shows under a blocking prompt", async () => {
+  let explains = 0;
+  const { herdr, seen } = on((method, params) => {
+    if (method === "agent.explain") return ++explains === 1 ? explain("blocked", ["live_blocked_form", "background_agents_working", "live_prompt_box"]) : BACKGROUND_HOLD;
+    if (method === "agent.wait") return new HerdrFakeError("timeout", "timed out waiting for agent status");
+    if (method === "agent.get") return agent("working");
+    if (method === "agent.prompt") return { type: "agent_prompted", agent: { ...agent("working").agent, text: params.text } };
+    return new HerdrFakeError("invalid_request", method);
+  });
+  await injectAfterTurn({ paneId: "w1:p1", text: "Continue", herdr, log: noLog, legMs: 20, settleMs: 0 });
+  expect(seen.map((s) => s.method)).toEqual(["agent.explain", "agent.wait", "agent.explain", "agent.get", "agent.prompt"]);
+});
+
+test("injectAfterTurn treats an explain error as no hold and keeps waiting", async () => {
+  const { herdr, seen } = on((method, params) => {
+    if (method === "agent.wait") return agent("idle");
+    if (method === "agent.get") return agent("idle");
+    if (method === "agent.prompt") return { type: "agent_prompted", agent: { ...agent("working").agent, text: params.text } };
+    return new HerdrFakeError("invalid_request", method);
+  });
+  await injectAfterTurn({ paneId: "w1:p1", text: "Continue", herdr, log: noLog, legMs: 50, settleMs: 0 });
+  expect(seen.map((s) => s.method)).toEqual(["agent.explain", "agent.wait", "agent.get", "agent.get", "agent.prompt"]);
 });
 
 test("injectAfterTurn abandons on a herdr error that is not a leg timeout", async () => {
@@ -193,7 +258,7 @@ test("injectAfterTurn abandons on a herdr error that is not a leg timeout", asyn
   const warned: unknown[] = [];
   const log = { info: () => {}, warn: (o: unknown) => { warned.push(o); } } as unknown as import("pino").Logger;
   await injectAfterTurn({ paneId: "w1:p1", text: "Continue", herdr, log, legMs: 50, settleMs: 0 });
-  expect(seen.map((s) => s.method)).toEqual(["agent.wait"]);
+  expect(seen.map((s) => s.method)).toEqual(["agent.explain", "agent.wait"]);
   expect(warned[0]).toMatchObject({ paneId: "w1:p1" });
 });
 
@@ -202,13 +267,14 @@ test("injectAfterTurn abandons at the deadline when the turn never ends", async 
   const warned: unknown[] = [];
   const log = { info: () => {}, warn: (o: unknown) => { warned.push(o); } } as unknown as import("pino").Logger;
   await injectAfterTurn({ paneId: "w1:p1", text: "Continue", herdr, log, legMs: 20, maxWaitMs: 70, settleMs: 0 });
-  expect(seen.every((s) => s.method === "agent.wait")).toBe(true);
-  expect(seen.length).toBeGreaterThanOrEqual(2);
+  expect(seen.every((s) => s.method === "agent.wait" || s.method === "agent.explain")).toBe(true);
+  expect(seen.filter((s) => s.method === "agent.wait").length).toBeGreaterThanOrEqual(2);
   expect(warned).toHaveLength(1);
 });
 
-test("injectAfterTurn passes sockPath through the wait and the injection", async () => {
+test("injectAfterTurn passes sockPath through the hold check, the wait and the injection", async () => {
   const { sock, seen, stop } = fakeHerdr((method, params) => {
+    if (method === "agent.explain") return LIVE_TURN;
     if (method === "agent.wait") return agent("idle");
     if (method === "agent.get") return agent("idle");
     if (method === "agent.prompt") return { type: "agent_prompted", agent: { ...agent("working").agent, text: params.text } };
@@ -216,7 +282,7 @@ test("injectAfterTurn passes sockPath through the wait and the injection", async
   });
   stops.push(stop);
   await injectAfterTurn({ paneId: "w1:p1", text: "Continue", sockPath: sock, log: noLog, legMs: 50, settleMs: 0 });
-  expect(seen.map((s) => s.method)).toEqual(["agent.wait", "agent.get", "agent.get", "agent.prompt"]);
+  expect(seen.map((s) => s.method)).toEqual(["agent.explain", "agent.wait", "agent.get", "agent.get", "agent.prompt"]);
 });
 
 test("injectAfterTurn re-probes after a transient idle, then injects once truly settled", async () => {
@@ -243,7 +309,7 @@ test("injectAfterTurn logs a refused continuation at warn, not info", async () =
   const warned: unknown[] = [];
   const log = { info: (o: unknown) => { logged.push(o); }, warn: (o: unknown) => { warned.push(o); } } as unknown as import("pino").Logger;
   await injectAfterTurn({ paneId: "w1:p1", text: "Continue", herdr, log, legMs: 50, settleMs: 0 });
-  expect(seen.map((s) => s.method)).toEqual(["agent.wait", "agent.get", "agent.get"]);
+  expect(seen.map((s) => s.method)).toEqual(["agent.explain", "agent.wait", "agent.get", "agent.get"]);
   expect(logged).toHaveLength(0);
   expect(warned).toHaveLength(1);
   expect(warned[0]).toMatchObject({ paneId: "w1:p1", delivered: "refused", reason: "at a prompt" });
@@ -258,7 +324,7 @@ test("injectAfterTurn abandons when the settle re-probe fails", async () => {
   const warned: unknown[] = [];
   const log = { info: () => { throw new Error("info must not be called"); }, warn: (o: unknown) => { warned.push(o); } } as unknown as import("pino").Logger;
   await injectAfterTurn({ paneId: "w1:p1", text: "Continue", herdr, log, legMs: 50, settleMs: 0 });
-  expect(seen.map((s) => s.method)).toEqual(["agent.wait", "agent.get"]);
+  expect(seen.map((s) => s.method)).toEqual(["agent.explain", "agent.wait", "agent.get"]);
   expect(warned).toHaveLength(1);
   expect(warned[0]).toMatchObject({ paneId: "w1:p1" });
 });
