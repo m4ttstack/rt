@@ -27,7 +27,7 @@ import {
   serializeViewState,
   sortMRs,
 } from '../../view.ts';
-import type { StackNode, ViewState } from '../../view.ts';
+import type { SlackFilter, StackNode, ViewState } from '../../view.ts';
 import { postAction } from '../api.ts';
 import type {
   BoardData,
@@ -97,6 +97,15 @@ const needsQueue = (gate: GateRow): boolean =>
     move is anybody's). The config editor keeps `data.tabs` alone. */
 function boardTabs(d: Pick<BoardData, 'tabs' | 'defaultMember'>): TabConfig[] {
   return d.defaultMember === 'all' ? d.tabs : [...d.tabs, NEEDS_ME_TAB];
+}
+
+/** Empty-list copy: the posted-in-slack chip persists across tabs, so an
+    empty view has to name the filter — and how many rows it hid — rather
+    than read as "this queue has no work". */
+function emptyQueueCopy(slackFilter: SlackFilter, hidden: number): string {
+  if (slackFilter !== 'posted') return 'nothing waiting on review ✓';
+  if (hidden === 0) return 'Nothing found in slack';
+  return `Nothing found in slack · ${hidden} item${hidden === 1 ? '' : 's'} hidden`;
 }
 
 // ── board ──────────────────────────────────────────────────────────────────
@@ -794,10 +803,9 @@ export function Board() {
     // behind a control that isn't rendered, so the filter only bites when
     // there are refs to filter on.
     const slackFilter = data.slackEnabled ? state.slack : 'all';
-    const filtered = filterBySlack(
-      filterByMember(tabFiltered, state.member),
-      slackFilter
-    );
+    const memberFiltered = filterByMember(tabFiltered, state.member);
+    const filtered = filterBySlack(memberFiltered, slackFilter);
+    const slackHidden = memberFiltered.length - filtered.length;
     const groups = groupMRs(
       filtered,
       state.group,
@@ -823,6 +831,7 @@ export function Board() {
       roster,
       rosterTotal,
       slackFilter,
+      slackHidden,
       filtered,
       groups,
     };
@@ -889,6 +898,7 @@ export function Board() {
     roster,
     rosterTotal,
     slackFilter,
+    slackHidden,
     filtered,
     groups,
   } = boardView!;
@@ -1131,9 +1141,7 @@ export function Board() {
         !data.fetchError &&
         !activeSection?.unknown ? (
           <p className="tui-empty">
-            {slackFilter === 'posted'
-              ? 'nothing posted in slack yet'
-              : 'nothing waiting on review ✓'}
+            {emptyQueueCopy(slackFilter, slackHidden)}
           </p>
         ) : (
           groups.map(g => (
