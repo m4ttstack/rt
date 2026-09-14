@@ -250,8 +250,136 @@ describe("error isolation", () => {
     ];
     const deps = makeDeps(db, targets, 1000);
     await runAccountsSweep(deps);
+    // No previous row for gitlab, so error is written as-is
     const gitlab = readCredentialHealth(db, "gitlab");
     expect(gitlab!.status).toBe("error");
+    const github = readCredentialHealth(db, "github");
+    expect(github!.status).toBe("ready");
+  });
+});
+
+describe("error preserves previous determinate state (Fix 1)", () => {
+  test("error preserves previous ready state", async () => {
+    writeCredentialHealth(db, {
+      integration: "gitlab", status: "ready", detail: "gitlab token valid",
+      expiresAt: null, checkedAt: 500, lastNotifiedAt: null, lastNotifiedKind: null,
+    });
+    const target = makeTarget({ validate: { status: "error", detail: "timeout", scopesSeen: [] } });
+    const deps = makeDeps(db, [target], 1000);
+    await runAccountsSweep(deps);
+    const row = readCredentialHealth(db, "gitlab");
+    expect(row!.status).toBe("ready");
+    expect(row!.detail).toBe("gitlab token valid");
+    expect(row!.checkedAt).toBe(1000);
+  });
+
+  test("error preserves previous invalid state with notification fields", async () => {
+    writeCredentialHealth(db, {
+      integration: "gitlab", status: "invalid", detail: "401 Unauthorized",
+      expiresAt: null, checkedAt: 500, lastNotifiedAt: 400, lastNotifiedKind: "dead",
+    });
+    const target = makeTarget({ validate: { status: "error", detail: "timeout", scopesSeen: [] } });
+    const deps = makeDeps(db, [target], 1000);
+    await runAccountsSweep(deps);
+    const row = readCredentialHealth(db, "gitlab");
+    expect(row!.status).toBe("invalid");
+    expect(row!.detail).toBe("401 Unauthorized");
+    expect(row!.lastNotifiedAt).toBe(400);
+    expect(row!.lastNotifiedKind).toBe("dead");
+    expect(row!.checkedAt).toBe(1000);
+  });
+
+  test("error on first check (no previous row) records error", async () => {
+    const target = makeTarget({ validate: { status: "error", detail: "timeout", scopesSeen: [] } });
+    const deps = makeDeps(db, [target], 1000);
+    await runAccountsSweep(deps);
+    const row = readCredentialHealth(db, "gitlab");
+    expect(row!.status).toBe("error");
+    expect(row!.detail).toBe("timeout");
+  });
+
+  test("outer catch preserves previous ready state", async () => {
+    writeCredentialHealth(db, {
+      integration: "gitlab", status: "ready", detail: "gitlab token valid",
+      expiresAt: "2026-12-01", checkedAt: 500, lastNotifiedAt: null, lastNotifiedKind: null,
+    });
+    const badDef = makeDef();
+    badDef.validate = async () => { throw new Error("network failure"); };
+    const targets: IntegrationTarget[] = [
+      { id: "gitlab", def: badDef, token: "tok", ctx: BASE_CTX },
+    ];
+    const deps = makeDeps(db, targets, 1000);
+    await runAccountsSweep(deps);
+    const row = readCredentialHealth(db, "gitlab");
+    expect(row!.status).toBe("ready");
+    expect(row!.detail).toBe("gitlab token valid");
+    expect(row!.expiresAt).toBe("2026-12-01");
+    expect(row!.checkedAt).toBe(1000);
+  });
+});
+
+describe("expiry null collapse (Fix 2)", () => {
+  test("indeterminate expiry (null) preserves previous known expiry", async () => {
+    writeCredentialHealth(db, {
+      integration: "gitlab", status: "ready", detail: "ok",
+      expiresAt: "2026-12-01", checkedAt: 500, lastNotifiedAt: null, lastNotifiedKind: null,
+    });
+    const def = makeDef({ validate: { status: "ready", detail: "ok", scopesSeen: [] } });
+    // expiry probe returns null (indeterminate, e.g. 403)
+    def.expiry = async () => null;
+    const target: IntegrationTarget = { id: "gitlab", def, token: "tok", ctx: BASE_CTX };
+    const deps = makeDeps(db, [target], 1000);
+    await runAccountsSweep(deps);
+    const row = readCredentialHealth(db, "gitlab");
+    expect(row!.expiresAt).toBe("2026-12-01");
+  });
+
+  test("determinate no-expiry ({expiresAt: null}) clears previous expiry", async () => {
+    writeCredentialHealth(db, {
+      integration: "gitlab", status: "ready", detail: "ok",
+      expiresAt: "2026-12-01", checkedAt: 500, lastNotifiedAt: null, lastNotifiedKind: null,
+    });
+    const target = makeTarget({
+      validate: { status: "ready", detail: "ok", scopesSeen: [] },
+      expiresAt: null,
+    });
+    const deps = makeDeps(db, [target], 1000);
+    await runAccountsSweep(deps);
+    const row = readCredentialHealth(db, "gitlab");
+    expect(row!.expiresAt).toBeNull();
+  });
+
+  test("expiry probe throw preserves previous known expiry", async () => {
+    writeCredentialHealth(db, {
+      integration: "gitlab", status: "ready", detail: "ok",
+      expiresAt: "2026-12-01", checkedAt: 500, lastNotifiedAt: null, lastNotifiedKind: null,
+    });
+    const def = makeDef({ validate: { status: "ready", detail: "ok", scopesSeen: [] } });
+    def.expiry = async () => { throw new Error("403 forbidden"); };
+    const target: IntegrationTarget = { id: "gitlab", def, token: "tok", ctx: BASE_CTX };
+    const deps = makeDeps(db, [target], 1000);
+    await runAccountsSweep(deps);
+    const row = readCredentialHealth(db, "gitlab");
+    expect(row!.expiresAt).toBe("2026-12-01");
+  });
+});
+
+describe("reconcile removed credentials (Fix 4)", () => {
+  test("health rows for integrations that lost their credential are deleted", async () => {
+    // Seed a health row for gitlab, but don't include it in targets
+    writeCredentialHealth(db, {
+      integration: "gitlab", status: "ready", detail: "ok",
+      expiresAt: null, checkedAt: 500, lastNotifiedAt: null, lastNotifiedKind: null,
+    });
+    // Only github in targets
+    const target = makeTarget({
+      id: "github", title: "GitHub",
+      validate: { status: "ready", detail: "ok", scopesSeen: [] },
+    });
+    const deps = makeDeps(db, [target], 1000);
+    await runAccountsSweep(deps);
+    const gitlab = readCredentialHealth(db, "gitlab");
+    expect(gitlab).toBeNull();
     const github = readCredentialHealth(db, "github");
     expect(github!.status).toBe("ready");
   });

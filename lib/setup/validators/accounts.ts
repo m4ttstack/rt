@@ -266,7 +266,10 @@ async function accountRowForSafe(p: Probes, entry: DeclaredEntry, team: TeamSnap
     const r = await accountRowFor(p, entry, team, secrets, intent, overrides);
     return withCredentialHealth(r, entry.id);
   } catch (err) {
-    const r = row({
+    // Only the success path (above) applies withCredentialHealth: the catch
+    // covers secrets.has failures and other pre-validate errors, so surfacing
+    // cached "ready" here could mask a keychain/sops problem.
+    return row({
       id: `account.${entry.id}`,
       kind: "account",
       title: entry.id,
@@ -276,7 +279,6 @@ async function accountRowForSafe(p: Probes, entry: DeclaredEntry, team: TeamSnap
       detail: err instanceof Error ? err.message : String(err),
       action: ACCOUNT_RECHECK_ACTION,
     });
-    return withCredentialHealth(r, entry.id);
   }
 }
 
