@@ -855,16 +855,17 @@ body {
 .tui-row-note-dismiss {
   position: absolute;
   top: 50%;
-  right: 4px;
+  right: 6px;
   transform: translateY(-50%);
   margin: 0;
   border: 0;
-  padding: 2px 8px;
+  padding: 1px 7px;
   border-radius: var(--radius-px5);
-  background: var(--panel);
-  box-shadow:
-    0 0 0 3px var(--panel),
-    0 2px 8px rgb(0 0 0 / 22%);
+  /* Translucent, so the words it lands on still read underneath, with a
+     shadow to lift it off them. */
+  background: color-mix(in srgb, var(--panel) 72%, transparent);
+  backdrop-filter: blur(2px);
+  box-shadow: 0 1px 5px rgb(0 0 0 / 16%);
   font: 600 0.72rem / 16px var(--font-sans);
   color: var(--muted-text);
   cursor: pointer;
@@ -874,6 +875,7 @@ body {
   display: block;
 }
 .tui-row-note-dismiss:hover {
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
   color: var(--fg);
 }
 /* Editing: the band keeps its place and its color; the text becomes the
