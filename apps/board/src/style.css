@@ -1951,6 +1951,118 @@ body {
   background: var(--gate-key-bg);
   pointer-events: none;
 }
+/* B9: a context the asker wrote as `[Label] text` lines. The label becomes
+   a small uppercase heading with its count and the findings sit beneath it
+   as bullets, so the severity is stated once per group instead of leading
+   every line. Groups after the first take a soft rule; the bullet is drawn
+   by the marker box so a wrapped line hangs under its own text, not under
+   the dot. */
+.tui-gate-groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gate-gap-inner);
+  min-width: 0;
+}
+.tui-gate-groups-total {
+  margin-left: 8px;
+  font-weight: 500;
+  font-size: var(--gate-font-meta);
+  color: var(--gate-muted);
+}
+.tui-gate-groups-preamble {
+  margin: 0;
+  font-size: var(--gate-font-meta);
+  color: var(--gate-muted);
+}
+.tui-gate-groups-preamble [data-part='markdown'] > * {
+  margin: 0;
+}
+/* The head's way back to the asker's own words. Quiet text, the pane's
+   own accent, no box: it is a view switch, not an action. */
+.tui-gate-groups-raw {
+  margin-left: auto;
+  border: 0;
+  padding: 0;
+  background: none;
+  font: 500 var(--gate-font-meta) / 1.4 var(--font-sans);
+  color: var(--accent-text);
+  cursor: pointer;
+}
+.tui-gate-groups-raw:hover {
+  text-decoration: underline;
+}
+.tui-triage-modal [data-part='scrollpane-head'] {
+  display: flex;
+  align-items: baseline;
+}
+.tui-gate-group + .tui-gate-group {
+  padding-top: var(--gate-gap-inner);
+  border-top: 1px solid var(--gate-soft-edge);
+}
+.tui-gate-group-head {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  margin: 0 0 6px;
+  font: 600 var(--gate-font-micro) / 1.4 var(--font-sans);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+/* Orange, not the pill's amber: in light Tokyo Night amber is a muted
+   brown (#8c6c3e) that reads dead on a card, while orange stays hot in
+   both themes and is the hue the row already spends on a real problem. */
+.tui-gate-group-label {
+  color: var(--orange);
+}
+/* Every group past the first reads as the quieter tail of the list: the
+   asker's own order puts what matters first, so only it takes the tone. */
+.tui-gate-group + .tui-gate-group .tui-gate-group-label {
+  color: var(--gate-muted);
+}
+/* The preamble is a <p> before the groups, so the first group is not the
+   pane's first child; keyed on type instead, the tone lands with or
+   without one. */
+.tui-gate-groups
+  .tui-gate-group:first-of-type
+  .tui-gate-group-items
+  li::marker {
+  color: var(--orange);
+}
+.tui-gate-group-count {
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--gate-muted);
+}
+.tui-gate-group-items {
+  margin: 0;
+  padding: 0 0 0 15px;
+  list-style: disc;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: var(--gate-font-meta);
+  line-height: 1.45;
+  color: var(--fg);
+}
+.tui-gate-group-items li {
+  padding-left: 3px;
+  overflow-wrap: anywhere;
+}
+/* A finding renders through the markdown recipe so links and code stay
+   live; it is one line inside a list item, so its block margins go. */
+.tui-gate-group-items li [data-part='markdown'] > * {
+  margin: 0;
+}
+.tui-gate-group-items li [data-part='markdown'] code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
+.tui-gate-group-items li::marker {
+  color: var(--gate-muted);
+  font-size: 0.85em;
+}
+
 /* B7: a question that owns a slice of the gate context. The head leads with
    its ordinal among the threads and sets the file:line in mono; the slice
    sits between the head and the choices: the reviewer's words as a quote
@@ -2003,12 +2115,28 @@ body {
   font: 600 var(--gate-font-meta) / 1.4 var(--font-sans);
   color: var(--fg);
 }
+.tui-gate-lead,
 .tui-gate-adjudication {
   margin: 0;
   font-size: var(--gate-font-meta);
   line-height: 1.45;
   color: var(--fg);
   overflow-wrap: anywhere;
+}
+.tui-gate-lead {
+  color: var(--gate-muted);
+}
+.tui-gate-lead [data-part='markdown'] > *,
+.tui-gate-adjudication [data-part='markdown'] > * {
+  margin: 0;
+}
+.tui-gate-lead [data-part='markdown'] > * + *,
+.tui-gate-adjudication [data-part='markdown'] > * + * {
+  margin-top: 6px;
+}
+.tui-gate-adjudication [data-part='markdown'] ul,
+.tui-gate-adjudication [data-part='markdown'] ol {
+  padding-left: 18px;
 }
 .tui-gate-choice[data-recommended]:not([data-checked]) {
   border-color: color-mix(in srgb, var(--accent) 55%, var(--gate-edge));

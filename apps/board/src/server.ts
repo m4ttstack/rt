@@ -234,6 +234,7 @@ import {
 } from './slack.ts';
 import {
   boardStateRoot,
+  dismissByHandle,
   getKvValue,
   getStateDb,
   persistOrWarn,
@@ -2123,6 +2124,54 @@ const httpServer = Bun.serve({
           );
         }
         return new Response(JSON.stringify({ ok: true }), {
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      case '/dismiss': {
+        // The status line's "dismiss" on a failed lane: stamp the lane
+        // dismissed so the row stops showing it. Nothing is deleted and no
+        // status changes -- the stamp only outranks the state it was written
+        // against (see laneDismissed), so a later launch or a status write
+        // from the pane brings the lane back on its own.
+        if (req.method !== 'POST')
+          return new Response('method not allowed', { status: 405 });
+        if (!isLocalRequest(req))
+          return new Response('forbidden', { status: 403 });
+        {
+          const notJson = requireJsonBody(req);
+          if (notJson) return notJson;
+        }
+        let body: unknown;
+        try {
+          body = await req.json();
+        } catch {
+          return new Response('invalid json', { status: 400 });
+        }
+        const { mrUrl, lane } = (body ?? {}) as {
+          mrUrl?: unknown;
+          lane?: unknown;
+        };
+        if (typeof mrUrl !== 'string' || !mrUrl)
+          return new Response('expected { mrUrl: string, lane: string }', {
+            status: 400,
+          });
+        if (lane !== 'review' && lane !== 'respond' && lane !== 'doctor')
+          return new Response('lane must be review, respond or doctor', {
+            status: 400,
+          });
+        const now = Date.now();
+        // The stamp is the whole write: re-stating the status read a moment
+        // ago could clobber one the pane wrote in between, and a dismissal
+        // is not a lifecycle event.
+        const handle =
+          lane === 'review'
+            ? reviewFilePath(mrUrl)
+            : lane === 'respond'
+              ? respondFilePath(mrUrl)
+              : doctorFilePath(mrUrl);
+        if (!dismissByHandle(handle, now))
+          return new Response(`no ${lane} row at "${handle}"`, { status: 404 });
+        return new Response(JSON.stringify({ ok: true, dismissedAt: now }), {
           headers: { 'content-type': 'application/json' },
         });
       }

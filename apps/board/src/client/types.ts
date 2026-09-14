@@ -48,6 +48,11 @@ export interface ReviewInfo {
   tabId?: string;
   startedAt?: number;
   outcome?: string;
+  /** Clock of the lane's last write, and of an operator dismissing its line
+      (see laneDismissed): the row skips the lane while the stamp is the
+      newer of the two. */
+  updatedAt?: number;
+  dismissedAt?: number;
 }
 export interface RespondInfo {
   status: RespondStatus;
@@ -58,6 +63,11 @@ export interface RespondInfo {
   threads?: number;
   tabId?: string;
   startedAt?: number;
+  /** Clock of the lane's last write, and of an operator dismissing its line
+      (see laneDismissed): the row skips the lane while the stamp is the
+      newer of the two. */
+  updatedAt?: number;
+  dismissedAt?: number;
 }
 export type DoctorStatus =
   | 'queued'
@@ -73,6 +83,11 @@ export interface DoctorInfo {
   origin?: 'auto' | 'manual';
   tabId?: string;
   startedAt?: number;
+  /** Clock of the lane's last write, and of an operator dismissing its line
+      (see laneDismissed): the row skips the lane while the stamp is the
+      newer of the two. */
+  updatedAt?: number;
+  dismissedAt?: number;
 }
 export interface DraftInfo {
   kind: string;
@@ -228,6 +243,8 @@ export interface RowContext {
   /** The status line's clear verb: POSTs /reconciler/clear for the gone
       orphan's agentId, whether or not an attention gate still exists. */
   onClearOrphan: (agentId: string) => void;
+  /** Stop showing a failed lane's line on the row; nothing is deleted. */
+  onDismissLane: (mr: BoardMR, lane: 'review' | 'respond' | 'doctor') => void;
 }
 
 export type ThreadStatus = 'resolved' | 'replied' | 'awaiting';

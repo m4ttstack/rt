@@ -870,7 +870,52 @@
           "updatedAt": 1755603420000
         }
       ],
-      "gates": []
+      "gates": [
+        {
+          "gateId": "gate-review-post-1235",
+          "subject": "mr:https://gitlab.example.com/acme/webapp/-/merge_requests/1235",
+          "kind": "review-post",
+          "label": "review-post",
+          "status": "open",
+          "openedAt": 1755604200000,
+          "domain": "review",
+          "context": "Findings: Important (2), Minor (4)\n[Important] Dropped guard exposes a state-changing mutation the host blocks (confirm safe)\n[Important] Share-link URL renders into a DOM anchor href; session replay is not in the threat model (confirm)\n[Minor] `key={link.name}` collides on duplicate contact names; see [the keying note](https://example.com/keys)\n[Minor] Non-menuitem interactive controls inside a menu (keyboard reachability)\n[Minor] Doc overstates the split rationale between the two controls\n[Minor] Unused renderer mock entry in the test setup",
+          "origin": {
+            "paneId": "pane-1235",
+            "tabId": "w18:t1",
+            "worktree": "webapp"
+          },
+          "questions": [
+            {
+              "id": "tiers",
+              "label": "Post which findings?",
+              "multi": true,
+              "options": [
+                {
+                  "value": "Important",
+                  "label": "Important (2)"
+                },
+                {
+                  "value": "Minor",
+                  "label": "Minor (4)"
+                }
+              ]
+            },
+            {
+              "id": "outcome",
+              "label": "Verdict",
+              "multi": false,
+              "options": [
+                {
+                  "value": "comment",
+                  "label": "comment (recommended)"
+                },
+                "approve"
+              ]
+            }
+          ]
+        }
+      ]
     },
     {
       "provider": "gitlab",

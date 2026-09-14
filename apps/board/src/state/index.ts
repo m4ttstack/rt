@@ -20,6 +20,7 @@ export {
   insertAgentState,
   readByHandle,
   updateByHandle,
+  dismissByHandle,
   updateByMr,
   readStates,
   readPrunedStates,

@@ -16,7 +16,7 @@ import {
   Questionnaire,
   useGateDraft,
 } from '@mattstack/gate-kit/react';
-import { Button, Chip } from '@mattstack/tui-kit';
+import { Button, Chip, Markdown } from '@mattstack/tui-kit';
 import type { GateRow } from '../../gates/store.ts';
 import type { BoardMRWithReview } from '../types.ts';
 import { Disclosure, DisclosureHead } from './Disclosure.tsx';
@@ -229,7 +229,10 @@ export type GateFormState = ReturnType<typeof useGateForm>;
 function QuestionContext({ section }: { section: ContextSection }) {
   const { quote, verdict, recommendation, adjudication, remainder, body } =
     section;
-  const detail = adjudication ?? remainder ?? (quote ? undefined : body);
+  // Everything the section said, in the order it said it: the lead-in the
+  // asker wrote between the quote and the verdict, then the adjudication;
+  // a section with neither shows its whole body. Nothing is left out.
+  const lead = remainder ?? (quote || adjudication ? undefined : body);
   return (
     <div className="tui-gate-context">
       {quote && (
@@ -253,7 +256,20 @@ function QuestionContext({ section }: { section: ContextSection }) {
           )}
         </div>
       )}
-      {detail && <p className="tui-gate-adjudication">{detail}</p>}
+      {lead && (
+        <div className="tui-gate-lead">
+          <Markdown unstyled linkTargetBlank>
+            {lead}
+          </Markdown>
+        </div>
+      )}
+      {adjudication && (
+        <div className="tui-gate-adjudication">
+          <Markdown unstyled linkTargetBlank>
+            {adjudication}
+          </Markdown>
+        </div>
+      )}
     </div>
   );
 }

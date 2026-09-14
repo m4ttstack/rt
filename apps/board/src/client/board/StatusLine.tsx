@@ -43,6 +43,9 @@ function runVerb(verb: Verb, mr: BoardMRWithReview, ctx: RowContext): void {
     case 'clear':
       if (verb.agentId) ctx.onClearOrphan(verb.agentId);
       return;
+    case 'dismiss':
+      if (verb.domain) ctx.onDismissLane(mr, verb.domain);
+      return;
     case 'answer':
       if (verb.gateId) ctx.onOpenGate(verb.gateId);
       return;

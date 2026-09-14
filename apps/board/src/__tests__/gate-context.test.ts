@@ -121,3 +121,73 @@ test('a context with no markers parses to null, so the form renders as before', 
   expect(parseGateContext('')).toBeNull();
   expect(sectionFor(null, { id: 'thread-1' })).toBeUndefined();
 });
+
+test('ASCII arrows and ellipses in a header parse like the unicode ones', () => {
+  const a = sectionFor(
+    parseGateContext(
+      '=== thread-1 a.ts:1 ... verdict valid -> recommend FIX ===\nbody'
+    ),
+    { id: 'thread-1' }
+  )!;
+  expect(a).toMatchObject({
+    label: 'a.ts:1',
+    verdict: 'valid',
+    recommendation: 'fix',
+  });
+  const b = sectionFor(
+    parseGateContext(
+      '=== thread-2 b.ts:2 - verdict pushback => recommend reply ===\nbody'
+    ),
+    { id: 'thread-2' }
+  )!;
+  expect(b).toMatchObject({
+    label: 'b.ts:2',
+    verdict: 'pushback',
+    recommendation: 'reply',
+  });
+});
+
+test('text between the quote and the adjudication is kept as the remainder', () => {
+  const s = sectionFor(
+    parseGateContext(
+      '=== thread-1 a.ts:1 ===\nNils: "why?"\nEvidence: normalize.ts:40 keeps the unit.\nAdjudication: because.'
+    ),
+    { id: 'thread-1' }
+  )!;
+  expect(s.quote?.text).toBe('why?');
+  expect(s.remainder).toBe('Evidence: normalize.ts:40 keeps the unit.');
+  expect(s.adjudication).toBe('because.');
+  // A paraphrase with no quote keeps its lead-in too.
+  const p = sectionFor(
+    parseGateContext(
+      '=== thread-1 a.ts:1 ===\nThe reviewer asks whether the key carries the unit.\nAdjudication: it does.'
+    ),
+    { id: 'thread-1' }
+  )!;
+  expect(p.quote).toBeUndefined();
+  expect(p.remainder).toBe(
+    'The reviewer asks whether the key carries the unit.'
+  );
+  expect(p.adjudication).toBe('it does.');
+});
+
+test('a quote that closes mid-line hands the rest of the line back to the body', () => {
+  const s = sectionFor(
+    parseGateContext(
+      '=== thread-1 a.ts:1 ===\nNils: "why?" Adjudication: because.'
+    ),
+    { id: 'thread-1' }
+  )!;
+  expect(s.quote).toEqual({ who: 'Nils', text: 'why?' });
+  expect(s.adjudication).toBe('because.');
+});
+
+test('list lines inside a body keep their line breaks so markdown can render them', () => {
+  const s = sectionFor(
+    parseGateContext(
+      '=== thread-1 a.ts:1 ===\nAdjudication: two reasons:\n- first\n- second'
+    ),
+    { id: 'thread-1' }
+  )!;
+  expect(s.adjudication).toBe('two reasons:\n- first\n- second');
+});

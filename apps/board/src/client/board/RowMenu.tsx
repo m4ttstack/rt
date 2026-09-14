@@ -22,6 +22,7 @@ import {
   MenuGlyph,
   SlackLogo,
 } from './icons.tsx';
+import { laneDismissed } from './row-status.ts';
 
 type Lane = 'review' | 'respond' | 'doctor';
 
@@ -50,6 +51,7 @@ function iconLabel(icon: React.ReactNode, text: string) {
 const FileGlyph = () => <MenuGlyph kind="file" />;
 const PeopleGlyph = () => <MenuGlyph kind="people" />;
 const CopyGlyph = () => <MenuGlyph kind="copy" />;
+const DismissGlyph = () => <MenuGlyph kind="dismiss" />;
 const GITLAB_GLYPH: Record<
   ReturnType<typeof gitlabMenuItems>[number]['kind'],
   React.ReactNode
@@ -359,6 +361,20 @@ function RowMenu({
         onClick={run(() => ctx.onOpenRespond(mrx))}
       />
     );
+  // Dismiss a failed lane's line (B8): same verb the status line carries,
+  // offered per failed lane so a run that ended in "nothing to do here" can
+  // leave the row without calling the agent again.
+  for (const lane of ['review', 'respond', 'doctor'] as const) {
+    const state = mrx[lane];
+    if (state?.status !== 'error' || laneDismissed(state)) continue;
+    agentItems.push(
+      <ContextMenu.Item
+        key={`dismiss-${lane}`}
+        label={iconLabel(<DismissGlyph />, `dismiss ${lane} line`)}
+        onClick={run(() => ctx.onDismissLane(mr, lane))}
+      />
+    );
+  }
   // Ask a peer whose review left comments to look again. Only ever offered
   // for your own MR, and only while no ask of yours is still outstanding.
   for (const peer of peers)

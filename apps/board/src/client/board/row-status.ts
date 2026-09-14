@@ -42,6 +42,7 @@ export type VerbKind =
   | 're-review'
   | 'read-note'
   | 'view-peer'
+  | 'dismiss'
   | 'open-mr';
 
 export interface Verb {
@@ -265,7 +266,7 @@ function reviewLine(
   interrupted: Lane | null
 ): Candidate | null {
   const r = mr.review;
-  if (!r || interrupted === 'review') return null;
+  if (!r || interrupted === 'review' || laneDismissed(r)) return null;
   switch (r.status) {
     case 'queued':
       return { tone: 'quiet', word: 'review queued', verbs: [] };
@@ -294,7 +295,10 @@ function reviewLine(
         tone: 'bad',
         word: 'review failed',
         detail: r.message || undefined,
-        verbs: [{ kind: 'launch-review', label: 'launch again' }],
+        verbs: [
+          { kind: 'launch-review', label: 'launch again' },
+          { kind: 'dismiss', label: 'dismiss', domain: 'review' },
+        ],
       };
   }
 }
@@ -339,7 +343,7 @@ function respondLine(
   interrupted: Lane | null
 ): Candidate | null {
   const r = mr.respond;
-  if (!r || interrupted === 'respond') return null;
+  if (!r || interrupted === 'respond' || laneDismissed(r)) return null;
   const working = (word: string): Candidate => ({
     tone: 'work',
     word,
@@ -361,16 +365,29 @@ function respondLine(
         tone: 'bad',
         word: 'response failed',
         detail: r.message || undefined,
-        verbs: [{ kind: 'restart-respond', label: 'restart' }],
+        verbs: [
+          { kind: 'restart-respond', label: 'restart' },
+          { kind: 'dismiss', label: 'dismiss', domain: 'respond' },
+        ],
       };
     case 'done':
       return respondDoneLine(mr);
   }
 }
 
+/** A lane the operator dismissed: the row skips it while the stamp is
+    there. Presence, never a clock comparison -- the stamping write and a
+    later one can share a millisecond; the state layer drops the stamp on
+    any write that is not the dismissal itself (updateByHandle). */
+export function laneDismissed(
+  lane: { dismissedAt?: number } | undefined
+): boolean {
+  return lane?.dismissedAt !== undefined;
+}
+
 function doctorLine(mr: BoardMRWithReview): Candidate | null {
   const d = mr.doctor;
-  if (!d) return null;
+  if (!d || laneDismissed(d)) return null;
   switch (d.status) {
     case 'queued':
       return { tone: 'quiet', word: DOCTOR_LABEL[d.status], verbs: [] };
@@ -397,7 +414,10 @@ function doctorLine(mr: BoardMRWithReview): Candidate | null {
         tone: 'bad',
         word: DOCTOR_LABEL[d.status],
         detail: d.message || undefined,
-        verbs: [{ kind: 'call-doctor', label: 'call again' }],
+        verbs: [
+          { kind: 'call-doctor', label: 'call again' },
+          { kind: 'dismiss', label: 'dismiss', domain: 'doctor' },
+        ],
       };
   }
 }

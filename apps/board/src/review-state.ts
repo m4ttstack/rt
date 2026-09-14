@@ -56,6 +56,11 @@ export interface ReviewState {
       later write bumps updatedAt past it and the exemption lapses on its
       own -- nothing ever clears this field. */
   reopenedAt?: number;
+  /** Stamp of the operator dismissing this lane's line from the row. While
+      it is at least as new as `updatedAt` the row skips the lane entirely;
+      any later write (a relaunch, the pane's own status CLI) outranks it and
+      the lane speaks again. Never clears a thing: the run stays readable. */
+  dismissedAt?: number;
   startedAt: number;
   updatedAt: number;
   /** Whether the agent has written its full review markdown yet. Computed at
@@ -116,6 +121,7 @@ export function writeReviewState(
     gateKind: patch.gateKind,
     resumedGateId: patch.resumedGateId,
     reopenedAt: patch.reopenedAt,
+    dismissedAt: patch.dismissedAt,
     startedAt: now,
     updatedAt: now,
   };

@@ -9,8 +9,10 @@ import { AttentionCard } from './AttentionCard.tsx';
 import { ago, cleanTitle } from './format.ts';
 import {
   parseGateContext,
+  parseLabelledLines,
   sectionFor,
   type ParsedGateContext,
+  type ParsedLabelledLines,
 } from './gate-context.ts';
 import {
   AnsweredChip,
@@ -80,6 +82,43 @@ function plural(verb: string): string {
   if (/[^aeiou]y$/.test(verb)) return `${verb.slice(0, -1)}ies`;
   if (/(s|x|z|ch|sh)$/.test(verb)) return `${verb}es`;
   return `${verb}s`;
+}
+
+/** A context the asker wrote as `[Label] text` lines: one small heading
+    per label with its count, the findings beneath it as bullets, the
+    prefixes gone. The preamble (a "Findings: ..." tally, say) leads. */
+function GroupedContext({ parsed }: { parsed: ParsedLabelledLines }) {
+  return (
+    <div className="tui-gate-groups">
+      {parsed.preamble && (
+        <div className="tui-gate-groups-preamble">
+          <Markdown unstyled linkTargetBlank>
+            {parsed.preamble}
+          </Markdown>
+        </div>
+      )}
+      {parsed.groups.map(group => (
+        <section key={group.label} className="tui-gate-group">
+          <h4 className="tui-gate-group-head">
+            <span className="tui-gate-group-label">{group.label}</span>
+            <span className="tui-gate-group-count">{group.items.length}</span>
+          </h4>
+          <ul className="tui-gate-group-items">
+            {group.items.map((item, i) => (
+              <li key={i}>
+                {/* A finding is prose the agent wrote: it can carry a link
+                    or a backticked symbol, which the pane rendered before
+                    the grouping existed and still has to. */}
+                <Markdown unstyled linkTargetBlank>
+                  {item}
+                </Markdown>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
+    </div>
+  );
 }
 
 /** One line standing in for a context the form has split onto its
@@ -174,7 +213,22 @@ function DecisionQueueModal({
       : null;
   }, [gate.context, gate.questions]);
   const [fullContext, setFullContext] = useState(false);
-  useEffect(() => setFullContext(false), [gate.gateId]);
+  // The grouped pane is a parse of the text, not the text: the toggle in
+  // its head brings the asker's own words back, so nothing the parse
+  // dropped is ever out of reach.
+  const [rawContext, setRawContext] = useState(false);
+  useEffect(() => {
+    setFullContext(false);
+    setRawContext(false);
+  }, [gate.gateId]);
+  // B9: a context that is nothing but `[Label] text` lines is a list the
+  // asker grouped by hand; the pane renders the groups instead of making
+  // every line carry its own prefix. Only when no question already owns
+  // the context (B7), which is the richer reading of the same blob.
+  const grouped = useMemo(
+    () => (sectioned ? null : parseLabelledLines(gate.context)),
+    [sectioned, gate.context]
+  );
   const answered = gate.status === 'answered';
   const actionable = gate.status === 'open' || gate.status === 'parked';
   const deliveryStuck = answered && gate.delivery?.outcome === 'stuck';
@@ -391,10 +445,36 @@ function DecisionQueueModal({
               />
             )}
             {gate.context && (!sectioned || fullContext) && (
-              <ScrollPane title="Decision context" maxHeight="46vh">
-                <Markdown unstyled linkTargetBlank>
-                  {gate.context}
-                </Markdown>
+              <ScrollPane
+                title={
+                  grouped ? (
+                    <>
+                      Decision context
+                      <span className="tui-gate-groups-total">
+                        {grouped.total} findings
+                      </span>
+                      <button
+                        type="button"
+                        className="tui-gate-groups-raw"
+                        aria-pressed={rawContext}
+                        onClick={() => setRawContext(v => !v)}
+                      >
+                        {rawContext ? 'grouped' : 'as written'}
+                      </button>
+                    </>
+                  ) : (
+                    'Decision context'
+                  )
+                }
+                maxHeight="46vh"
+              >
+                {grouped && !rawContext ? (
+                  <GroupedContext parsed={grouped} />
+                ) : (
+                  <Markdown unstyled linkTargetBlank>
+                    {gate.context}
+                  </Markdown>
+                )}
               </ScrollPane>
             )}
             <div className="tui-triage-form-col">{face}</div>

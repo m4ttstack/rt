@@ -133,6 +133,7 @@ const MENU_PATHS = {
   copy: 'M10 8h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2ZM4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2',
   branch:
     'M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM15 6a9 9 0 0 0-9 9',
+  dismiss: 'M18 6 6 18M6 6l12 12',
 } as const;
 
 /** The row menu's non-agent icons: what a click lands on, in place of the
