@@ -79,9 +79,13 @@ ending, abandons the continuation with a `warn` line. The CLI maps
 A turn parked on background agents ("Waiting for N background agents to
 finish") never reads idle until they finish, yet the composer is open: a
 queued slash command has already run and a typed line starts its own turn
-(verified live). So each leg is preceded by an `agent.explain` hold check:
-when herdr's `background_agents_working` and `live_prompt_box` rules both
-match and the state is not `blocked`, the continuation is injected at once.
+(verified live). So each leg is preceded by an `agent.explain` hold check: a
+free prompt box (`live_prompt_box`) with no live-turn marker
+(`live_turn_working`, `btw_overlay_working`) and no blocker, plus evidence of
+the park: one of herdr's background rules matched, or, once the slash
+command's own output has pushed the parked line up, the "Waiting for N
+background agents to finish" line still on the visible screen (`pane.read`).
+A hold is settled like idle (sleep, re-check) and then injected at once.
 
 rt-client: `PaneSendResult` gains `continuation?: { delivered: "deferred" }`,
 the `paneSend` wrapper forwards `continuation`, and the package version

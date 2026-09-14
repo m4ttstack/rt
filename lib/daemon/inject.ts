@@ -76,24 +76,33 @@ const AFTER_TURN_STATES = ["idle", "done"];
 const AFTER_TURN_LEG_MS = 10_000;
 const AFTER_TURN_MAX_MS = 30 * 60_000;
 const AFTER_TURN_SETTLE_MS = 1_500;
-// herdr detection rule ids (its claude manifest): the parked-on-background-agents
-// line as the last line above a free prompt box. Both must match, and no blocker.
-const HOLD_RULES = ["background_agents_working", "live_prompt_box"];
+// herdr detection rule ids from its claude manifest. A hold is a free prompt box
+// with no live-turn marker and no overlay; the parked line either wins one of
+// herdr's narrow background rules or, once a queued slash command's output has
+// pushed it up, still sits on the visible screen.
+const HOLD_COMPOSER_RULE = "live_prompt_box";
+const HOLD_EXCLUDES = ["live_turn_working", "btw_overlay_working"];
+const HOLD_BACKGROUND_RULES = ["background_agents_working", "background_mcp_task_working"];
+const HOLD_SCREEN_LINE = /Waiting for [1-9]\d* background agents? to finish/;
 
 interface AgentExplain { explain: { state: string; evaluated_rules: Array<{ id: string; matched: boolean }> } }
 
 /**
  * True while Claude Code has finished its message and is only waiting on
- * background agents. herdr reports that as `working` (the title spinner and
- * its background_agents rule), yet the composer is open: a queued slash
- * command has already run and a typed line starts its own turn, so a
- * continuation can land now instead of after the agents finish.
+ * background agents. herdr reports that as `working` (the title spinner),
+ * yet the composer is open: a queued slash command has already run and a
+ * typed line starts its own turn, so a continuation can land now instead of
+ * after the agents finish.
  */
 async function onBackgroundHold(herdr: typeof herdrRequest, paneId: string, sockPath: string | undefined): Promise<boolean> {
   const res = await herdr<AgentExplain>("agent.explain", { target: paneId }, { sockPath });
   if (!res.ok || res.result.explain.state === "blocked") return false;
   const matched = new Set(res.result.explain.evaluated_rules.filter((r) => r.matched).map((r) => r.id));
-  return HOLD_RULES.every((id) => matched.has(id));
+  if (!matched.has(HOLD_COMPOSER_RULE) || HOLD_EXCLUDES.some((id) => matched.has(id))) return false;
+  if (HOLD_BACKGROUND_RULES.some((id) => matched.has(id))) return true;
+  if (res.result.explain.state !== "working") return false;
+  const screen = await herdr<{ read: { text: string } }>("pane.read", { pane_id: paneId, source: "visible" }, { sockPath });
+  return screen.ok && HOLD_SCREEN_LINE.test(screen.result.read.text);
 }
 
 export interface AfterTurnOptions {
@@ -118,7 +127,8 @@ export interface AfterTurnOptions {
  * guards against a transient idle between a tool result and the next model
  * call, which would otherwise fire the continuation mid-turn. A turn parked
  * on background agents never reaches idle until they finish, so each leg is
- * preceded by the hold check, which injects without waiting for them.
+ * preceded by the hold check (settled the same way), which injects without
+ * waiting for them.
  */
 export async function injectAfterTurn(opts: AfterTurnOptions): Promise<void> {
   const { paneId, text, sockPath, log } = opts;
@@ -135,8 +145,11 @@ export async function injectAfterTurn(opts: AfterTurnOptions): Promise<void> {
   try {
     while (Date.now() < deadline) {
       if (await onBackgroundHold(herdr, paneId, sockPath)) {
-        await deliver();
-        return;
+        await Bun.sleep(settleMs);
+        if (await onBackgroundHold(herdr, paneId, sockPath)) {
+          await deliver();
+          return;
+        }
       }
       const settled = await herdr("agent.wait", { target: paneId, until: AFTER_TURN_STATES, timeout_ms: legMs }, { timeoutMs: waitTimeout(legMs), sockPath });
       if (settled.ok) {
