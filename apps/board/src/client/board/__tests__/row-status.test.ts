@@ -1045,7 +1045,7 @@ describe('rowStatus: the stress row', () => {
   });
 });
 
-describe('statusPhrase: the pill is the approval axis only', () => {
+describe('statusPhrase: the pill says what the status group says', () => {
   test('changes requested is red', () => {
     const m = settled({
       reviews: {
@@ -1069,14 +1069,22 @@ describe('statusPhrase: the pill is the approval axis only', () => {
     });
   });
 
-  test('needs review is amber, even with reviewer comments or resolved threads', () => {
+  test('an untouched MR is amber', () => {
     expect(statusPhrase(settled(unapproved(0, 2)))).toEqual({
       text: 'needs review',
       hue: 'amber',
     });
+  });
+
+  // The pill and the "status" grouping read the same bucket, so a row can
+  // never sit under a `commented` header wearing a `needs review` badge.
+  test('reviewer comments make it commented, in accent', () => {
     expect(
       statusPhrase(settled({ ...unapproved(0, 2), reviewerComments: 3 }))
-    ).toEqual({ text: 'needs review', hue: 'amber' });
+    ).toEqual({ text: 'commented', hue: 'accent' });
+  });
+
+  test('a reviewed MR with every thread resolved is purple', () => {
     expect(
       statusPhrase(
         settled({
@@ -1085,6 +1093,26 @@ describe('statusPhrase: the pill is the approval axis only', () => {
           threadSummary: { awaiting: 0, replied: 0, resolved: 4 },
         })
       )
-    ).toEqual({ text: 'needs review', hue: 'amber' });
+    ).toEqual({ text: 'comments resolved', hue: 'purple' });
+  });
+
+  test('changes requested and approval still outrank the conversation', () => {
+    expect(
+      statusPhrase(
+        settled({
+          reviews: {
+            isApproved: false,
+            required: 2,
+            given: 0,
+            reviewers: [{ username: 'pat', reviewState: 'REQUESTED_CHANGES' }],
+          },
+          reviewerComments: 5,
+        })
+      )
+    ).toEqual({ text: 'changes requested', hue: 'red' });
+    expect(statusPhrase(settled({ reviewerComments: 5 }))).toEqual({
+      text: 'approved',
+      hue: 'green',
+    });
   });
 });

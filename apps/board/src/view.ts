@@ -327,11 +327,11 @@ function ageBucket(
   return { label: 'Older', order: 9 };
 }
 
-/** Coarse review-readiness bucket, most-blocking first. Groups by GitLab's
-    review state, including the conversation states ("commented", "comments
-    resolved") the row's pill no longer shows: the pill is the approval
-    axis now, the threads token is the conversation. */
-function statusBucket(mr: BoardMR): { label: string; order: number } {
+/** Coarse review-readiness bucket, most-blocking first: GitLab's own review
+    state, conversation states included. The row's pill says the same thing
+    (see `statusPhrase`), so a row can never sit under a group header its own
+    badge contradicts. */
+export function statusBucket(mr: BoardMR): { label: string; order: number } {
   // Review-state axis only. Mechanical blockers (conflicts / CI) are row flags,
   // not their own groups, so an MR with conflicts still shows under its review
   // state instead of being hidden in a "conflicts" bucket.

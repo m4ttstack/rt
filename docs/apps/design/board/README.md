@@ -82,13 +82,20 @@ Everything below is drawn in B and its scenario boards; the laws in
   `↓ N behind` (arrow icon plus word). The facts line is then identity
   only: `!iid`, branch, `+adds −dels`, so the green/red diff is the only
   colored number on it.
-- **One hue per pill state, soft fill.** Four states: needs review amber,
-  N/M approved cyan, approved green, changes requested red. Soft-fill
-  style (tinted background, colored uppercase text, no border), 10px/700,
-  4px radius. `commented` and `comments resolved` are conversation
-  states, carried by the threads token, not the pill; draft is a flag.
-- **The pill owns the approval axis only.** It stops saying "commented";
-  the conversation lives in the threads token.
+- **One hue per pill state, soft fill.** Six states: needs review amber,
+  N/M approved cyan, commented accent, comments resolved purple, approved
+  green, changes requested red. Soft-fill style (tinted background,
+  colored uppercase text, no border), 10px/700, 4px radius; draft is a
+  flag, not a pill state.
+- **The pill says what the status group says** (2026-09-14, reversing the
+  round-2 "approval axis only" ruling). Both read one function,
+  `statusBucket`: a row grouped under `commented` cannot wear a `needs
+  review` badge, which is what the old split produced the first time Matt
+  grouped by status. The approval count refines the untouched state
+  (`N/M approved` in place of `needs review`) rather than replacing a
+  conversation state, and the threads token still carries how many
+  threads and whose move it is. The status line drops a verdict word the
+  pill already says.
 - **The threads token is the drawer's entry and reads at full weight.**
   A 12px message icon plus `N threads` in foreground color, 500 weight.
   New activity since the drawer was last opened: accent, 700, plus a 6px

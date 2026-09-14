@@ -9,6 +9,7 @@
 import type { BoardMR } from '../../data.ts';
 import { hasChangesRequested } from '../../data.ts';
 import { respondOutcome } from '../../respond-outcome.ts';
+import { statusBucket } from '../../view.ts';
 import type {
   BoardMRWithReview,
   DoctorStatus,
@@ -99,20 +100,32 @@ export function statusReasons(mr: BoardMR): string {
     : 'blocked';
 }
 
-export type PillHue = 'red' | 'green' | 'cyan' | 'amber';
+export type PillHue = 'red' | 'green' | 'cyan' | 'amber' | 'accent' | 'purple';
 
-/** The pill's phrase: the approval axis only. Mechanical blockers are flags
-    beside it and the conversation is the facts line's threads token, so the
-    pill always shows where the MR is in review. */
+const PILL_HUE: Record<string, PillHue> = {
+  'changes requested': 'red',
+  approved: 'green',
+  commented: 'accent',
+  'comments resolved': 'purple',
+  'needs review': 'amber',
+};
+
+/** The pill's phrase: GitLab's review state, read off the very bucket the
+    status grouping uses, so a row's badge can never contradict the header it
+    sits under. Mechanical blockers stay flags beside it, and how far the
+    approvals have got refines the untouched state rather than replacing it. */
 export function statusPhrase(mr: BoardMR): { text: string; hue: PillHue } {
-  if (hasChangesRequested(mr)) return { text: 'changes requested', hue: 'red' };
-  if (mr.reviews.isApproved) return { text: 'approved', hue: 'green' };
-  if (mr.reviews.required > 0 && mr.reviews.given > 0)
+  const { label } = statusBucket(mr);
+  if (
+    label === 'needs review' &&
+    mr.reviews.required > 0 &&
+    mr.reviews.given > 0
+  )
     return {
       text: `${mr.reviews.given}/${mr.reviews.required} approved`,
       hue: 'cyan',
     };
-  return { text: 'needs review', hue: 'amber' };
+  return { text: label, hue: PILL_HUE[label] ?? 'amber' };
 }
 
 // ── line 3: the candidates ──────────────────────────────────────────────────
@@ -280,16 +293,17 @@ function reviewLine(
           (r.startedAt ? `started ${agoMs(r.startedAt, now)}` : undefined),
         verbs: [{ kind: 'focus', label: 'focus', domain: 'review' }],
       };
-    case 'done':
+    case 'done': {
+      // The status line never repeats the pill: an approved MR's approve
+      // verdict, or a commented one's comment verdict, is already the badge.
+      const verdict = verdictWord(r.outcome);
       return {
         tone: 'go',
         word: 'review ready',
-        detail:
-          r.outcome === 'approve' && mr.reviews.isApproved
-            ? undefined
-            : verdictWord(r.outcome),
+        detail: verdict === statusPhrase(mr).text ? undefined : verdict,
         verbs: r.reportReady ? [{ kind: 'read-review', label: 'read ↗' }] : [],
       };
+    }
     case 'error':
       return {
         tone: 'bad',

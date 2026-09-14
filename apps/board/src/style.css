@@ -519,6 +519,12 @@ body {
 .tui-phrase[data-hue='red'] {
   --pill: var(--red-text);
 }
+.tui-phrase[data-hue='accent'] {
+  --pill: var(--accent-text);
+}
+.tui-phrase[data-hue='purple'] {
+  --pill: var(--purple);
+}
 
 /* Line 1: the title, alone. */
 .tui-row-1 {
