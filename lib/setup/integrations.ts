@@ -58,6 +58,8 @@ export interface IntegrationDef {
   /** Where connect stores the credential (user-scope secrets). Absent for a CLI-owned session (doppler/ldcli) that rt never holds a token for. */
   secret?: { domain: "rt" | "board"; key: string };
   validate(p: Probes, token: string, ctx: ValidateCtx): Promise<ValidateResult>;
+  /** Best-effort expiry lookup, separate from validate() since not every service exposes one. Null means "couldn't determine" (network error, unparsable response, insufficient scope) -- never a stand-in for "does not expire", which is `{ expiresAt: null }`. */
+  expiry?: (p: Probes, token: string, ctx: ValidateCtx) => Promise<{ expiresAt: string | null } | null>;
 }
 
 function githubHeaders(token: string): Record<string, string> {
@@ -112,6 +114,27 @@ function isCredentialRejection(status: number): boolean {
   return status === 401 || status === 403;
 }
 
+/** GitHub sends this header only for a fine-grained/classic token that has an expiration set at all; a token with no expiration omits it entirely. */
+async function githubExpiry(p: Probes, token: string, ctx: ValidateCtx): Promise<{ expiresAt: string | null } | null> {
+  const host = ctx.host || "api.github.com";
+  const res = await p.fetch(`https://${host}/user`, { headers: githubHeaders(token) });
+  if (res.status !== 200) return null;
+  const header = res.headers["github-authentication-token-expiration"];
+  if (!header) return { expiresAt: null };
+  const parsed = new Date(header);
+  if (isNaN(parsed.getTime())) return null;
+  return { expiresAt: parsed.toISOString().slice(0, 10) };
+}
+
+/** 403 here means the token's scopes can't read its own record, not that the token is invalid -- validate() already confirmed the token itself works, so this stays "couldn't determine" rather than "invalid". */
+async function gitlabExpiry(p: Probes, token: string, ctx: ValidateCtx): Promise<{ expiresAt: string | null } | null> {
+  const host = stripTrailingSlash(ctx.host ?? "gitlab.com");
+  const res = await p.fetch(`https://${host}/api/v4/personal_access_tokens/self`, { headers: { "PRIVATE-TOKEN": token } });
+  if (res.status !== 200) return null;
+  const body = JSON.parse(res.body) as { expires_at?: string | null };
+  return { expiresAt: body.expires_at ?? null };
+}
+
 export const INTEGRATIONS: Record<Integration, IntegrationDef> = {
   github: {
     id: "github",
@@ -136,6 +159,7 @@ export const INTEGRATIONS: Record<Integration, IntegrationDef> = {
       }
       return { status: "ready", detail: "github token valid", scopesSeen };
     },
+    expiry: githubExpiry,
   },
 
   gitlab: {
@@ -186,6 +210,7 @@ export const INTEGRATIONS: Record<Integration, IntegrationDef> = {
       }
       return { status: "ready", detail: "gitlab token valid", scopesSeen };
     },
+    expiry: gitlabExpiry,
   },
 
   linear: {
