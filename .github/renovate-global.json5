@@ -5,9 +5,9 @@
 // bumped in the consumers below. A repo that no longer exists fails the whole
 // run (platform-unknown-error), so this list must follow renames and
 // consolidations: deck, board, console, chat, tui-kit and app-kit all live in
-// m4ttstack/apps now. rt's own extensions/vscode/rt-context is skipped by
-// design: its rt-client dep matches a package published from this repo,
-// which Renovate treats as internal.
+// m4ttstack/apps now. rt's own extensions/vscode/rt-context is excluded on
+// purpose: its rt-client dep is bumped by hand alongside the package it
+// ships next to, never by a PR against this repo.
 {
   platform: "github",
   // default author is a Mend-owned identity whose commits GitHub flags Unverified
@@ -19,6 +19,7 @@
     "m4ttstack/gitq",
     "m4ttstack/fast-browser",
   ],
+  ignorePaths: ["extensions/vscode/rt-context/**"],
   onboarding: false,
   requireConfig: "optional",
   dependencyDashboard: false,
