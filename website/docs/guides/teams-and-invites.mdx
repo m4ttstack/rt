@@ -1,0 +1,87 @@
+---
+sidebar_position: 9
+title: Teams and invites
+---
+
+# Teams and invites
+
+A team is a shared configuration zone: settings, secrets, skill packs, and forge access, distributed to member machines through a git repo that rt manages.
+
+## Creating a team
+
+```bash
+rt team create my-team --remote git@github.com:org/mattstack-team-my-team.git
+```
+
+This scaffolds a team zone under `~/.mattstack/teams/my-team/` and points it at the given remote. If you do not have a repo ready, `--create-repo <owner>` has `gh` create one for you. `--others` marks the team as having members beyond yourself.
+
+After creating, push the zone to the remote:
+
+```bash
+rt team publish
+```
+
+## Inviting a member
+
+```bash
+rt team invite --handle alice
+```
+
+This mints an opaque invite code and prints a link: `https://mattstack.dev/join#<code>`. The code lives in the URL fragment and never reaches a server.
+
+The bare 77-character code is also printed as a fallback for chat clients that mangle links. Either form works.
+
+## What a joiner sees
+
+The joiner opens the invite link (or pastes the code into Setup's "Join a team" field). The setup checklist runs a forge-auth preflight against the team repo:
+
+- If the joiner's GitHub account cannot see the repo, a warning appears naming the problem and suggesting they ask the owner or org admin for access. The warning does not block proceeding, but the `access.team-repo` checklist row will block the Install step until access is resolved.
+- If access is confirmed, setup continues normally.
+
+## Member machines are pull-only
+
+A machine that joined by redeeming an invite code pulls the team zone but never commits or pushes to it. This prevents local commits that would diverge the clone and jam fast-forward pulls.
+
+Team-scope writes (`rt settings set --scope team`, `rt team publish`, `rt secrets --team`, `rt team invite`, `rt team members sync/remove`) are refused with exit 2 on member machines.
+
+## Forge grants
+
+When rt created the team repo itself (via `--create-repo`), it can manage forge membership on that repo:
+
+```bash
+rt team manage-membership on    # enable automatic grants
+rt team manage-membership off   # disable
+```
+
+Grant level is read-only: GitHub `pull`, GitLab Reporter. For repos that rt did not create (pasted `--remote` URLs), rt grants nothing and prints the forge's member page URL so you can add access manually.
+
+A TTY prompt at invite time also offers to toggle membership management.
+
+## Team packs
+
+Team skill packs are installed during setup but are **not enabled** by default. The daemon's snapshot engine converges the pack cache on every pull that moves HEAD: it runs `claude plugin update` (preserving the disabled state), never `install` (which would re-enable). A pack added to the team after a member joined installs on the next converging pull, ending disabled.
+
+`rt setup status` shows a row per team-served pack with its installed version, served version, and the command to enable it.
+
+## Skills sync
+
+```bash
+rt skills sync
+```
+
+Pulls the team's remote and re-links any updated skill packs, so local skills converge with the team's latest published versions without waiting for the daemon's periodic pull.
+
+## Quick reference
+
+| Command | What it does |
+|---|---|
+| `rt team create <name>` | Scaffold a team zone and set its remote |
+| `rt team publish` | Push the zone to the remote |
+| `rt team invite --handle <user>` | Mint an invite code |
+| `rt team manage-membership [on\|off]` | Control forge grants on rt-created repos |
+| `rt team join` | Redeem an invite code |
+| `rt team members sync` | Collect reply keys from members |
+| `rt team members remove <handle>` | Revoke access and re-encrypt |
+| `rt team status` | Show team summary |
+| `rt team pull` | Pull the clone via the daemon |
+| `rt skills sync` | Converge local skills with the team |
