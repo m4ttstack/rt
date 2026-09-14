@@ -105,7 +105,9 @@ export function RoomRail({
   // in FleetTree.tsx falls back to `#${room.room}` there). The server drops
   // the same room from the inbox for the same reason (`inbox.ts`); mirror
   // that here rather than let it render at all.
-  const directRooms = rooms.filter(r => r.kind === 'dm' && r.participants);
+  const directRooms = rooms
+    .filter(r => r.kind === 'dm' && r.participants)
+    .sort((a, b) => (b.lastPostedAt ?? 0) - (a.lastPostedAt ?? 0));
   const channelRooms = rooms.filter(r => r.kind !== 'dm');
   const online = buddies.filter(b => b.status !== 'offline').length;
 
