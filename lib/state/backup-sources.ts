@@ -60,19 +60,27 @@ export async function snapshotSource(
   return destPath;
 }
 
-export async function snapshotAll(
-  destDir: string,
-): Promise<Array<{ source: BackupSource; snapshotPath: string }>> {
+export interface SnapshotResult {
+  snapshots: Array<{ source: BackupSource; snapshotPath: string }>;
+  errors: string[];
+}
+
+export async function snapshotAll(destDir: string): Promise<SnapshotResult> {
   mkdirSync(destDir, { recursive: true });
-  const results: Array<{ source: BackupSource; snapshotPath: string }> = [];
+  const snapshots: Array<{ source: BackupSource; snapshotPath: string }> = [];
+  const errors: string[] = [];
 
   for (const source of BACKUP_SOURCES) {
     const fullPath = resolveSourcePath(source);
     if (!existsSync(fullPath)) continue;
 
-    const snapshotPath = await snapshotSource(source, destDir);
-    results.push({ source, snapshotPath });
+    try {
+      const snapshotPath = await snapshotSource(source, destDir);
+      snapshots.push({ source, snapshotPath });
+    } catch (err) {
+      errors.push(`${source.app}/${source.sourcePath}: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
-  return results;
+  return { snapshots, errors };
 }

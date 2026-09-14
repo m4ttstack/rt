@@ -72,10 +72,11 @@ export async function runFullBackup(): Promise<BackupResult> {
   const tmpDir = await mkdtemp(join(tmpdir(), "state-backup-"));
 
   try {
-    const snapshots = await snapshotAll(tmpDir);
+    const snapshotResult = await snapshotAll(tmpDir);
+    result.errors.push(...snapshotResult.errors);
     const ts = timestamp();
 
-    for (const { source, snapshotPath } of snapshots) {
+    for (const { source, snapshotPath } of snapshotResult.snapshots) {
       const appDir = join(backupDestDir(), source.app);
       mkdirSync(appDir, { recursive: true });
 
@@ -99,7 +100,7 @@ export async function runFullBackup(): Promise<BackupResult> {
         rtVersion: rtVersion(),
         sources: result.backed.map((b) => {
           const filePrefix = basename(b.path).split("-" + ts)[0];
-          const source = snapshots.find((s) => {
+          const source = snapshotResult.snapshots.find((s) => {
             const prefix = s.source.sourcePath.replace(/\//g, "-").replace(/\.[^.]+$/, "");
             return prefix === filePrefix;
           })?.source;

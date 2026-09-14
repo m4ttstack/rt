@@ -48,10 +48,10 @@ describe("backup-sources", () => {
     const destDir = join(home, "snapshots");
     mkdirSync(destDir, { recursive: true });
 
-    const results = await snapshotAll(destDir);
+    const { snapshots } = await snapshotAll(destDir);
 
-    expect(results.length).toBe(4); // state.db, gates.db, board/state.db, gitq/stacks
-    for (const r of results) {
+    expect(snapshots.length).toBe(4); // state.db, gates.db, board/state.db, gitq/stacks
+    for (const r of snapshots) {
       expect(existsSync(r.snapshotPath)).toBe(true);
     }
   });
@@ -61,8 +61,8 @@ describe("backup-sources", () => {
     const destDir = join(home, "snapshots");
     mkdirSync(destDir, { recursive: true });
 
-    const results = await snapshotAll(destDir);
-    const sqliteResults = results.filter((r) => r.source.type === "sqlite");
+    const { snapshots } = await snapshotAll(destDir);
+    const sqliteResults = snapshots.filter((r) => r.source.type === "sqlite");
 
     for (const r of sqliteResults) {
       const db = new Database(r.snapshotPath, { readonly: true });
@@ -77,8 +77,8 @@ describe("backup-sources", () => {
     const destDir = join(home, "snapshots");
     mkdirSync(destDir, { recursive: true });
 
-    const results = await snapshotAll(destDir);
-    const gitqResult = results.find((r) => r.source.app === "gitq");
+    const { snapshots } = await snapshotAll(destDir);
+    const gitqResult = snapshots.find((r) => r.source.app === "gitq");
     expect(gitqResult).toBeTruthy();
     expect(gitqResult!.snapshotPath).toEndWith(".tar");
   });
@@ -91,7 +91,7 @@ describe("backup-sources", () => {
     const destDir = join(home, "snapshots");
     mkdirSync(destDir, { recursive: true });
 
-    const results = await snapshotAll(destDir);
-    expect(results.length).toBe(3); // no board
+    const { snapshots } = await snapshotAll(destDir);
+    expect(snapshots.length).toBe(3); // no board
   });
 });

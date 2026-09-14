@@ -99,14 +99,16 @@ export async function stateBackup(args: string[], _ctx: CommandContext = {}): Pr
     const result = await runFullBackup();
 
     if (result.backed.length === 0 && result.errors.length > 0) {
-      if (json) {
-        console.log(JSON.stringify({ ok: true, fallback: "local", errors: result.errors }));
-      } else {
+      if (!json) {
         console.error(`All sources failed: ${result.errors.join(", ")}`);
         console.error("Falling back to local-only backup");
       }
-      backupTo(getStateDb(), stampedBackupPath());
-      pruneStateBackups();
+      const path = stampedBackupPath();
+      backupTo(getStateDb(), path);
+      const { removed } = pruneStateBackups();
+      if (json) {
+        console.log(JSON.stringify({ ok: true, fallback: "local", path, pruned: removed, errors: result.errors }));
+      }
       return;
     }
 
@@ -126,10 +128,16 @@ export async function stateBackup(args: string[], _ctx: CommandContext = {}): Pr
       }
     }
   } catch (err) {
-    console.error(`Encrypted backup failed: ${err instanceof Error ? err.message : err}`);
-    console.error("Falling back to local-only backup");
-    backupTo(getStateDb(), stampedBackupPath());
-    pruneStateBackups();
+    if (!json) {
+      console.error(`Encrypted backup failed: ${err instanceof Error ? err.message : err}`);
+      console.error("Falling back to local-only backup");
+    }
+    const path = stampedBackupPath();
+    backupTo(getStateDb(), path);
+    const { removed } = pruneStateBackups();
+    if (json) {
+      console.log(JSON.stringify({ ok: true, fallback: "local", path, pruned: removed, error: String(err) }));
+    }
   }
 }
 

@@ -1382,7 +1382,7 @@ export const TREE: Record<string, CommandNode> = {
         },
       },
       restore: {
-        description: "Restore state.db from a stamped backup copy (refuses while the daemon is running unless --force)",
+        description: "Restore state.db from a local copy or from encrypted backup (--from-backup). Refuses while the daemon is running unless --force.",
         module: "./commands/state.ts",
         fn: "stateRestore",
         omitBehavior: "picker",
