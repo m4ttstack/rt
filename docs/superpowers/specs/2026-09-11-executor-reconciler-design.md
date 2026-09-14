@@ -94,7 +94,18 @@ ships first (lane 4).
      or a non-terminal board status: stamp the run's gate rows `executor:
      "gone"`, and open an attention gate (`reason: "gone"`) so the orphan
      appears in the queue with resume/clear; a pane coming back closes it
-     (`closedReason: "resolved"`).
+     (`closedReason: "resolved"`). An executor whose joined gates are ALL
+     parked gets the stamp but no attention gate: parking is the owner's
+     designed release of the pane (gate facility "Parking POLICY": park
+     first, close the pane on success), and the answer-time executor
+     guarantee below is what brings that pane back. Any open joined gate
+     beside a parked one still alarms.
+   - A dismissed attention gate stays dismissed while the reading that
+     raised it holds: the daemon remembers `(agentId, state)` at dismiss
+     time and opens no new gate for that agent until its state changes.
+     Without this the debounce count never resets on a close and the next
+     sweep re-raises the same alarm. In-memory like the rest of the pass
+     state; a restart forgets it, and the worst case is one re-raise.
 5. Check pending **expectations** (below).
 6. Serve the computed view via `reconciler:status` and emit bus events on
    every transition so the board's SSE push refreshes without polling.
