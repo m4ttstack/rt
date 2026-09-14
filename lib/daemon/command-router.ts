@@ -76,7 +76,7 @@ export function buildRoutedHandlers(opts: {
       push-only, as before Task 7. Also backs reconciler:status/reconciler:clear
       (Task 8) via the same "status"/"clear" picks; omitted there, those two
       verbs fall back to createReconcilerHandlers's own noop default. */
-  reconciler?: Pick<Reconciler, "executorFor" | "expect" | "clear" | "agentIdFor" | "status">;
+  reconciler?: Pick<Reconciler, "executorFor" | "expect" | "clear" | "dismissed" | "agentIdFor" | "status">;
   /** The daemon's agent:resume verb, the same closure the reconciler itself
       is given (lib/daemon.ts wires both from one function). */
   resumeAgent?: (agentId: string) => Promise<{ ok: boolean; error?: string }>;
