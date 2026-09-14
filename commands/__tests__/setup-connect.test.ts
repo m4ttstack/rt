@@ -333,6 +333,60 @@ describe("integrationConnect — doppler/ldcli (CLI-session flow)", () => {
   });
 });
 
+// RT-141: switchboard has no credential (its `fields` is empty)... connect is
+// host-confirmation only, so the credential-less path in connectCredential
+// must never touch isTTY()/promptField/stdin at all.
+describe("integrationConnect - switchboard (credential-less, host-confirm flow)", () => {
+  test("--host <url>, empty stdin -> validates against /healthz, writes rt.integrations.switchboardUrl, never reads stdin or prompts", async () => {
+    const written: [string, unknown, string][] = [];
+    const fetch: Probes["fetch"] = async (url) => (url.endsWith("/healthz") ? { status: 200, body: "", headers: {} } : { status: 0, body: "", headers: {} });
+    const deps = baseDeps({
+      probes: fakeProbes({ fetch }),
+      stdin: neverCalled("stdin"),
+      isTTY: () => false,
+      promptField: neverCalled("promptField"),
+      writeSetting: ((key: string, value: unknown, scope: string) => { written.push([key, value, scope]); }) as unknown as ConnectDeps["writeSetting"],
+    });
+
+    await integrationConnect("switchboard", ["--host", "https://sw.example.com", "--json"], deps);
+
+    expect(written).toEqual([["rt.integrations", { switchboardUrl: "https://sw.example.com" }, "user"]]);
+    const body = JSON.parse(deps.lines[0]!) as { integration: string; status: string };
+    expect(body.integration).toBe("switchboard");
+    expect(body.status).toBe("ready");
+  });
+
+  test("no credential is ever staged or written: there is nothing to store", async () => {
+    const fetch: Probes["fetch"] = async (url) => (url.endsWith("/healthz") ? { status: 200, body: "", headers: {} } : { status: 0, body: "", headers: {} });
+    const probes = fakeProbes({ fetch });
+    const deps = baseDeps({
+      probes,
+      stdin: neverCalled("stdin"),
+      writer: { storeReady: neverCalled("writer.storeReady"), write: neverCalled("writer.write") },
+      writeSetting: async () => {},
+    });
+
+    await integrationConnect("switchboard", ["--host", "https://sw.example.com", "--json"], deps);
+
+    expect(Object.keys(probes.calls.writes).some((k) => k.endsWith("rt/setup-staging/rt.json"))).toBe(false);
+  });
+
+  test("validate fails (non-200 /healthz) -> exit 2, and rt.integrations is never written", async () => {
+    const fetch: Probes["fetch"] = async () => ({ status: 401, body: "", headers: {} });
+    const deps = baseDeps({
+      probes: fakeProbes({ fetch }),
+      stdin: neverCalled("stdin"),
+      writeSetting: neverCalled("writeSetting"),
+    });
+
+    await expectExit(() => integrationConnect("switchboard", ["--host", "https://sw.example.com", "--json"], deps));
+
+    expect(deps.exitCodes).toEqual([2]);
+    const payload = JSON.parse(deps.lines[0]!) as { error: { code: string } };
+    expect(payload.error.code).toBe("unreachable");
+  });
+});
+
 function slackTeamSnapshot(overrides: { clientId?: string; callbackPort?: number } = {}): TeamSnapshot {
   return {
     slug: "acme",

@@ -294,21 +294,45 @@ describe("slack validate", () => {
   });
 });
 
+// RT-141: switchboard has no credential rt can hold. /health gates on a
+// per-board token no user-supplied value can satisfy (it 401s with or
+// without a bearer), so the probe moved to the public, unauthenticated
+// /healthz and the def carries no fields/secret at all.
 describe("switchboard validate", () => {
   test("no host configured → invalid without a network call", async () => {
     const p = fakeProbes();
-    const result = await INTEGRATIONS.switchboard.validate(p, "token", noHost);
+    const result = await INTEGRATIONS.switchboard.validate(p, "", noHost);
     expect(result.status).toBe("invalid");
     expect(p.calls.fetch).toEqual([]);
   });
 
-  test("/health 200 → ready", async () => {
-    const p = fakeProbes({ fetch: async () => ({ status: 200, body: "", headers: {} }) });
-    const result = await INTEGRATIONS.switchboard.validate(p, "token", { host: "https://switchboard.example.com", team: { slug: "acme", remote: null } });
-    expect(result.status).toBe("ready");
+  // The user-confirmed-destination latch is unrelated to the credential
+  // removal: a team-declared switchboard URL is still shown, never fetched,
+  // until the user confirms it via `connect --host`: same text as before.
+  test("declared host, not user-confirmed → error, today's confirm-it-yourself text, no network call", async () => {
+    const p = fakeProbes();
+    const result = await INTEGRATIONS.switchboard.validate(p, "", { host: null, declaredHost: "https://switchboard.example.com", team: { slug: "acme", remote: null } });
+    expect(result.status).toBe("error");
+    expect(result.detail).toBe(
+      `your team declares switchboard at "https://switchboard.example.com" — unverified; run \`rt setup switchboard connect --host https://switchboard.example.com\` to confirm it yourself`,
+    );
+    expect(p.calls.fetch).toEqual([]);
   });
 
-  test("a trailing slash on ctx.host is stripped, no double slash before /health", async () => {
+  test("/healthz 200 → ready, and no Authorization header is sent (there is no credential)", async () => {
+    let seenInit: { headers?: Record<string, string> } | undefined;
+    const p = fakeProbes({
+      fetch: async (_url, init) => {
+        seenInit = init;
+        return { status: 200, body: "", headers: {} };
+      },
+    });
+    const result = await INTEGRATIONS.switchboard.validate(p, "", { host: "https://switchboard.example.com", team: { slug: "acme", remote: null } });
+    expect(result.status).toBe("ready");
+    expect(seenInit?.headers?.Authorization).toBeUndefined();
+  });
+
+  test("a trailing slash on ctx.host is stripped, no double slash before /healthz", async () => {
     const calledUrls: string[] = [];
     const p = fakeProbes({
       fetch: async (url) => {
@@ -316,15 +340,25 @@ describe("switchboard validate", () => {
         return { status: 200, body: "", headers: {} };
       },
     });
-    await INTEGRATIONS.switchboard.validate(p, "token", { host: "https://switchboard.example.com/", team: { slug: "acme", remote: null } });
-    expect(calledUrls).toEqual(["https://switchboard.example.com/health"]);
+    await INTEGRATIONS.switchboard.validate(p, "", { host: "https://switchboard.example.com/", team: { slug: "acme", remote: null } });
+    expect(calledUrls).toEqual(["https://switchboard.example.com/healthz"]);
   });
 
   test("status 0 (network down) → error, never invalid", async () => {
     const p = fakeProbes({ fetch: async () => ({ status: 0, body: "", headers: {} }) });
-    const result = await INTEGRATIONS.switchboard.validate(p, "token", { host: "https://switchboard.example.com", team: { slug: "acme", remote: null } });
+    const result = await INTEGRATIONS.switchboard.validate(p, "", { host: "https://switchboard.example.com", team: { slug: "acme", remote: null } });
     expect(result.status).toBe("error");
     expect(result.detail.toLowerCase()).not.toContain("invalid");
+  });
+
+  // The real deployed service returns 401 on /health with or without a
+  // bearer (no route rt could ever satisfy); the same must read as "error",
+  // never "invalid": there is no credential here to have been rejected.
+  test("a non-200 (e.g. 401, matching the real service's old /health behavior) → error naming the status, never invalid", async () => {
+    const p = fakeProbes({ fetch: async () => ({ status: 401, body: "", headers: {} }) });
+    const result = await INTEGRATIONS.switchboard.validate(p, "", { host: "https://switchboard.example.com", team: { slug: "acme", remote: null } });
+    expect(result.status).toBe("error");
+    expect(result.detail).toBe("switchboard /healthz returned 401");
   });
 });
 

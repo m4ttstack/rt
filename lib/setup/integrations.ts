@@ -32,8 +32,8 @@ export interface ValidateCtx {
    * -integration meaning, normalized (trailing slash stripped) before use:
    *  - gitlab: a bare hostname, e.g. "gitlab.example.com" (defaults to
    *    "gitlab.com" when null) — validate() prefixes `https://`.
-   *  - switchboard: a full https URL, e.g. "https://switchboard.example.com"
-   *    — validate() appends `/health` directly.
+   *  - switchboard: a full https URL, e.g. "https://switchboard.example.com";
+   *    validate() appends `/healthz` directly.
    *  - github/linear/slack/sdm/doppler/ldcli: ignored (fixed API host, or
    *    no network call at all).
    */
@@ -273,9 +273,12 @@ export const INTEGRATIONS: Record<Integration, IntegrationDef> = {
     id: "switchboard",
     title: "Switchboard",
     why: () => "Lets rt reach your team's switchboard service.",
-    fields: [{ name: "token", label: "Switchboard token", secret: true }],
-    secret: { domain: "rt", key: "switchboardToken" },
-    async validate(p, token, ctx) {
+    // RT-141: the deployed service has no route rt can authenticate a bearer
+    // against... /health falls through to per-board token auth and 404s past
+    // it, so no value rt could hold here would ever pass. There is nothing
+    // to connect: /healthz is public.
+    fields: [],
+    async validate(p, _token, ctx) {
       if (!ctx.host) {
         // Same rule as gitlab: a team-declared URL is shown, never fetched
         // against, until the user confirms it themselves via `connect --host`.
@@ -291,10 +294,10 @@ export const INTEGRATIONS: Record<Integration, IntegrationDef> = {
       }
       if (!isValidHttpsUrl(ctx.host)) return { status: "invalid", detail: `switchboard host "${ctx.host}" must be a valid https URL`, scopesSeen: [] };
       const base = stripTrailingSlash(ctx.host);
-      const res = await p.fetch(`${base}/health`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await p.fetch(`${base}/healthz`);
       if (res.status === 0) return { status: "error", detail: unreachableDetail(base), scopesSeen: [] };
-      if (isCredentialRejection(res.status)) return { status: "invalid", detail: `switchboard /health returned ${res.status}`, scopesSeen: [] };
-      if (res.status !== 200) return { status: "error", detail: `switchboard /health returned ${res.status}`, scopesSeen: [] };
+      // Never "invalid": there is no credential here to have been rejected.
+      if (res.status !== 200) return { status: "error", detail: `switchboard /healthz returned ${res.status}`, scopesSeen: [] };
       return { status: "ready", detail: "switchboard reachable", scopesSeen: [] };
     },
   },
