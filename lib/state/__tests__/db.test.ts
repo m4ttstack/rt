@@ -56,10 +56,10 @@ function userVersion(db: Database): number {
 }
 
 describe("openStateDb — fresh open", () => {
-  test("a fresh database reaches v11 directly, gaining every v1 through v11 change", () => {
+  test("a fresh database reaches v12 directly, gaining every v1 through v12 change", () => {
     const dbPath = join(dir, "state.db");
     const db = openStateDb(dbPath, "cli");
-    expect(SCHEMA_VERSION).toBe(11);
+    expect(SCHEMA_VERSION).toBe(12);
     expect(userVersion(db)).toBe(SCHEMA_VERSION);
     // Full table-list coverage lives in db-schema-convergence.test.ts's
     // dynamic presence test, derived from db.ts's own CREATE TABLE
@@ -684,7 +684,7 @@ describe("getStateDb / closeStateDb — lazy singleton", () => {
     // unrelated exports (reading SCHEMA_VERSION, pushing to LEGACY_IMPORTS)
     // never opens or creates a db file on its own.
     const before = SCHEMA_VERSION;
-    expect(before).toBe(11);
+    expect(before).toBe(12);
     LEGACY_IMPORTS.push({ file: "x.json", import: () => {} });
     LEGACY_IMPORTS.length = 0;
     // No db.ts function that touches disk was called above; nothing to assert
