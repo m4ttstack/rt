@@ -56,7 +56,9 @@ export interface GatesStore {
   }): OpenResult;
   get(id: string): GateRow | null;
   list(filter: { open?: boolean; subjectPrefix?: string; kind?: string; limit?: number; cursor?: number }): { gates: GateRow[]; cursor: number };
-  answer(id: string, answers: GateAnswer["answers"], by: string, opts?: { overridden?: boolean }): AnswerResult;
+  /** `opts.session` is the writer's own session id, recorded on the answer
+      so gate-push can skip notifying the surface that wrote it. */
+  answer(id: string, answers: GateAnswer["answers"], by: string, opts?: { overridden?: boolean; session?: string }): AnswerResult;
   park(id: string): { ok: true } | { ok: false; reason: "not-found" | "not-open"; row: GateRow | null };
   close(id: string, reason: "abandoned" | "superseded" | "pruned" | "resolved"): { ok: true } | { ok: false; reason: "not-found" | "already-answered" | "already-closed" };
   /** The one exception to close()'s open/parked-only CAS: an attention-gate
@@ -513,6 +515,7 @@ export function createGatesStore(opts: {
       const answer: GateAnswer = {
         answers, by, answeredAt: Date.now(),
         ...(opts?.overridden ? { overridden: true } : {}),
+        ...(opts?.session ? { session: opts.session } : {}),
       };
       // Winner: a pane that decided has provably reconciled (release commits with the answer).
       const { changed, released: winReleased } = answerWinTxn(JSON.stringify(answer), id, by);

@@ -311,7 +311,16 @@ describe("rt herd (e2e)", () => {
     ));
     expect(answered.exitCode).toBe(0);
 
-    await waitForFrame(worker.frames, (f) => frameContent(f).includes(`[gate] ${gate} answered elsewhere`), 10_000);
+    // RT-133: the doorbell names the answering surface, so a watcher that
+    // recognizes its own surface can no-op instead of re-reading.
+    const doorbell = await waitForFrame(
+      worker.frames,
+      (f) => frameContent(f).includes(`[gate] ${gate} answered by shepherd`),
+      10_000,
+    );
+    expect(frameContent(doorbell)).toContain(
+      `[gate] ${gate} answered by shepherd; re-read the registry and proceed on the recorded answer.`,
+    );
 
     const read = await finished(runRt(["herd", "answer", gate, "--json"], home));
     expect(read.exitCode).toBe(0);
