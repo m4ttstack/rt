@@ -75,7 +75,7 @@ On a machine that does not have the original Keychain key, pass an age identity 
 rt state restore --from-backup --identity ~/team-key.txt
 ```
 
-The personal Keychain key is tried first. If it is not available, the command falls back to the identity file.
+With `--identity`, that file is the key. Without it, the command reads your personal Keychain key, and says so plainly when there is none.
 
 ### Selective restore
 
