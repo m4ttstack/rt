@@ -263,6 +263,11 @@ interface GuaranteeDeps {
  */
 async function runExecutorGuarantee(row: GateRow, deps: GuaranteeDeps): Promise<void> {
   if (!deps.reconciler || !row.nudge?.session) return;
+  // A parked gate's pane was closed by the owner that parked it (gate
+  // facility "Parking POLICY"), and that owner resumes it on the answer with
+  // its own re-entry prompt. A daemon relaunch here opens a second pane on
+  // the same session, promptless, beside the owner's.
+  if (row.parkedAt != null) return;
   const hints = gateHints(row);
   const { state } = deps.reconciler.executorFor(hints);
 
