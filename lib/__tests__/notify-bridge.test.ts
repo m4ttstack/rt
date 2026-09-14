@@ -529,6 +529,54 @@ describe("owner rule filter", () => {
   });
 });
 
+describe("surface rule filter", () => {
+  const BOARD_RULE: EventBridgeRule = {
+    pattern: "gate/opened/*", category: "gate", title: "t", message: "m",
+    surface: "board", url: "https://board.mattstack?gate={id}",
+  };
+  const ANY_RULE: EventBridgeRule = {
+    pattern: "gate/opened/*", category: "gate", title: "t", message: "m",
+  };
+
+  test("a rule with surface matches only when payload.origin.surface matches", async () => {
+    const bus = fakeBus();
+    const enqueued: NotificationEvent[] = [];
+    startNotifyBridge({ onBroadcast: bus.onBroadcast, rules: () => [BOARD_RULE], enqueue: (e) => enqueued.push(e), paneFocused: async () => false });
+
+    await bus.emit("event", { id: 1, topic: "gate/opened/g1", payload: { id: "g1", origin: { surface: "board", paneId: "w1:p1", presentation: "form" } }, emittedAt: 0 });
+    expect(enqueued).toHaveLength(1);
+    expect(enqueued[0]!.url).toBe("https://board.mattstack?gate=g1");
+  });
+
+  test("a rule with surface skips events whose origin has a different surface", async () => {
+    const bus = fakeBus();
+    const enqueued: NotificationEvent[] = [];
+    startNotifyBridge({ onBroadcast: bus.onBroadcast, rules: () => [BOARD_RULE], enqueue: (e) => enqueued.push(e), paneFocused: async () => false });
+
+    await bus.emit("event", { id: 2, topic: "gate/opened/g2", payload: { id: "g2", origin: { paneId: "w1:p1", presentation: "form" } }, emittedAt: 0 });
+    expect(enqueued).toHaveLength(0);
+  });
+
+  test("a rule with surface skips events with no origin at all", async () => {
+    const bus = fakeBus();
+    const enqueued: NotificationEvent[] = [];
+    startNotifyBridge({ onBroadcast: bus.onBroadcast, rules: () => [BOARD_RULE], enqueue: (e) => enqueued.push(e), paneFocused: async () => false });
+
+    await bus.emit("event", { id: 3, topic: "gate/opened/g3", payload: { id: "g3" }, emittedAt: 0 });
+    expect(enqueued).toHaveLength(0);
+  });
+
+  test("a rule without surface matches regardless of origin.surface", async () => {
+    const bus = fakeBus();
+    const enqueued: NotificationEvent[] = [];
+    startNotifyBridge({ onBroadcast: bus.onBroadcast, rules: () => [ANY_RULE], enqueue: (e) => enqueued.push(e), paneFocused: async () => false });
+
+    await bus.emit("event", { id: 4, topic: "gate/opened/g4", payload: { id: "g4", origin: { surface: "board" } }, emittedAt: 0 });
+    await bus.emit("event", { id: 5, topic: "gate/opened/g5", payload: { id: "g5" }, emittedAt: 0 });
+    expect(enqueued).toHaveLength(2);
+  });
+});
+
 describe("parseEventBridgeRules", () => {
   function noopWarn(): void {}
 
@@ -586,6 +634,23 @@ describe("parseEventBridgeRules", () => {
   test("drops a rule with a numeric owner and warns", () => {
     const warnings: unknown[] = [];
     const raw = [{ pattern: "p", category: "c", title: "t", message: "m", owner: 42 }];
+    const rules = parseEventBridgeRules(raw, (o) => { warnings.push(o); });
+    expect(rules).toHaveLength(0);
+    expect(warnings.length).toBeGreaterThan(0);
+  });
+
+  test("keeps a rule with a string surface", () => {
+    const rules = parseEventBridgeRules(
+      [{ pattern: "gate/opened/*", category: "gate", title: "t", message: "m", surface: "board" }],
+      noopWarn,
+    );
+    expect(rules).toHaveLength(1);
+    expect(rules[0]!.surface).toBe("board");
+  });
+
+  test("drops a rule with a numeric surface and warns", () => {
+    const warnings: unknown[] = [];
+    const raw = [{ pattern: "p", category: "c", title: "t", message: "m", surface: 42 }];
     const rules = parseEventBridgeRules(raw, (o) => { warnings.push(o); });
     expect(rules).toHaveLength(0);
     expect(warnings.length).toBeGreaterThan(0);
