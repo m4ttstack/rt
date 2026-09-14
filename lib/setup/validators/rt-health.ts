@@ -11,6 +11,7 @@ import { existsSync, readdirSync } from "fs";
 import { join } from "path";
 import { RT_BUNDLE_PATH } from "../../bundle-layout.ts";
 import { activeLaunchdLabel, isDaemonInstalled } from "../../daemon-config.ts";
+import type { HomeSnapshotSettings } from "../../daemon/home-snapshot.ts";
 import type { TeamSnapshotEntry, TeamSnapshotSettings } from "../../daemon/team-snapshots.ts";
 import { clampPullIntervalSec, PULL_INTERVAL_FALLBACK_SEC } from "../../daemon/snapshot-interval.ts";
 import { currentMode, resolveIntendedMode } from "../../dev-mode.ts";
@@ -396,6 +397,16 @@ function pushFailureSummary(record: HomePushRecord): string | null {
   return firstLine.length > 160 ? `${firstLine.slice(0, 157)}…` : firstLine;
 }
 
+/** Same key and fallback lib/daemon/home-snapshot.ts's schedulePush() reads (SETTINGS_FALLBACK.pushDelaySec): a user who raises the delay must not recreate the false alarm this exists to avoid. */
+const HOME_PUSH_DELAY_FALLBACK_SEC = 60;
+/** The daemon's own push exec is itself bounded to ~30s (PUSH_TIMEOUT_MS in home-snapshot.ts): a commit whose scheduled push is still running inside that window is not evidence of anything broken. */
+const HOME_PUSH_GRACE_MS = 30_000;
+
+function homePushDelaySec(): number {
+  const raw = getSetting<HomeSnapshotSettings>("rt.homeSnapshot").value?.pushDelaySec;
+  return typeof raw === "number" && Number.isFinite(raw) && raw > 0 ? raw : HOME_PUSH_DELAY_FALLBACK_SEC;
+}
+
 /**
  * Green means a push actually happened, never merely that a remote is
  * configured — read from git's own remote-tracking ref, so this is right on
@@ -444,9 +455,22 @@ export async function homeBackupRow(
 
   const lastPush = readLastPush();
   if (state.kind === "ahead") {
-    const why = lastPush ? pushFailureSummary(lastPush) : null;
-    const detail = `${state.count} commit(s) not pushed${why ? ` — the last push failed: ${why}` : ""}`;
-    return row({ ...base, status: "needs-you", detail });
+    // A recorded failure is decisive either way, fresh or stale: the daemon
+    // already told us the push didn't happen.
+    if (lastPush && !lastPush.ok) {
+      const why = pushFailureSummary(lastPush);
+      const detail = `${state.count} commit(s) not pushed${why ? ` — the last push failed: ${why}` : ""}`;
+      return row({ ...base, status: "needs-you", detail });
+    }
+
+    const pushDelaySec = homePushDelaySec();
+    const withinPushWindow = state.committedAt !== null && Date.now() - state.committedAt.getTime() <= pushDelaySec * 1000 + HOME_PUSH_GRACE_MS;
+    if (withinPushWindow) {
+      return row({ ...base, status: "ready", detail: `${state.count} commit(s) queued for backup, pushes automatically within about ${pushDelaySec}s` });
+    }
+    // Outside the push window with no recorded failure: the daemon isn't
+    // doing what it said it would, which is a real alarm again.
+    return row({ ...base, status: "needs-you", detail: `${state.count} commit(s) not pushed; the backup daemon should have pushed by now` });
   }
 
   // `state.committedAt` is the tracking ref tip's COMMITTER date, not a push
