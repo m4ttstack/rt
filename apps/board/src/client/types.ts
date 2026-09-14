@@ -136,6 +136,9 @@ export type BoardMRWithReview = BoardMR & {
   doctor?: DoctorInfo;
   slack?: SlackInfo;
   drafts?: DraftInfo[];
+  /** The seat's own note on this MR (B10), kept in the board's state db and
+      shown as the row's last line. */
+  note?: string;
   peerReviews?: PeerReviewInfo[];
   sentNudge?: SentNudgeInfo;
   nudges?: InboundNudgeInfo[];
@@ -245,6 +248,12 @@ export interface RowContext {
   onClearOrphan: (agentId: string) => void;
   /** Stop showing a failed lane's line on the row; nothing is deleted. */
   onDismissLane: (mr: BoardMR, lane: 'review' | 'respond' | 'doctor') => void;
+  /** The MR whose note is open for editing, by webUrl: one row at a time,
+      and the row menu's item opens the same editor the note tool does. */
+  noteEditing: string | null;
+  onEditNote: (mrUrl: string | null) => void;
+  /** Write the row's note; an empty string clears it. */
+  onSaveNote: (mr: BoardMR, text: string) => void;
 }
 
 export type ThreadStatus = 'resolved' | 'replied' | 'awaiting';

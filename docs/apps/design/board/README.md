@@ -44,6 +44,9 @@ required up to 12), with invented names throughout:
   it chose from
 - `B6 · Row menu`: the right-click menu synced with B5, today's beside two
   states of the new one
+- `B10 · A note of your own` (approved 2026-09-14): the row's last line,
+  a note the seat writes for itself, drawn at rest, wrapping, under the
+  pointer with its "dismiss note" verb, and open in its editor
 - `B9 · The decision context pane, grouped` (approved 2026-09-14): a
   review gate's bracketed findings as one heading per label with its
   count, prefixes dropped, beside today's flat run of prefixed lines
@@ -144,6 +147,21 @@ Everything below is drawn in B and its scenario boards; the laws in
   only once a review is logged: the board's own finished review, or a
   person's on GitLab (an approval, a reviewer thread, or a reviewer who
   commented, approved or requested changes).
+- **The note is the row's last line, and the only thing allowed to grow
+  the row** (B10). A note the seat writes for itself: a band under the
+  status line in the row's cyan, opaque (mixed into the panel the rows
+  sit on, never an alpha wash, or the row's hover tint would change its
+  color), the glyph centred on the whole paragraph when it wraps. No
+  note, no band, and the row keeps its 114px. The way in is the note tool
+  that joins the copy tool under the pointer, or the row menu; clicking
+  the note edits it in place in the same auto-growing textarea the Slack
+  header and the launch note use (`↵` saves, `⇧↵` newline, `esc`
+  cancels, an empty save clears); under the pointer the band ends in
+  `dismiss note`. Notes live in the board's own state db, per machine,
+  and are never posted anywhere.
+- **The Slack marks are the way into the thread.** Once an MR is posted,
+  line 0's marks wear the row tool's button shape and open the Slack
+  post; with no permalink they stay the plain marks they were.
 
 ## Implementation touch points
 
@@ -154,6 +172,8 @@ and the commented state), `CommentsDrawer.tsx` (`ThreadsLink` states),
 (pill soft fill, flag words, header line, threads token, checkbox). The
 fixture at `apps/board/tests/fixture` plus `bun run capture:compare` are the
 visual parity gate, compared against `renders/B-*.png` and the `B0`-`B4`
-renders.
+renders. The row note (B10) adds `src/row-note.ts` (the kv-backed store and
+`attachNotes`), `POST /note`, `client/board/RowNote.tsx`, and the
+`note-*` / `noteedit-*` captures.
 
 Implemented on branch `mr-row-b`.

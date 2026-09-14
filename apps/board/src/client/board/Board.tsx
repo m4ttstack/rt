@@ -557,6 +557,25 @@ export function Board() {
     [addToast, load]
   );
 
+  // The row's own note (B10). One row's editor is open at a time; saving
+  // writes through and reloads, so the band renders from the stored note
+  // rather than from what was typed.
+  const [noteEditing, setNoteEditing] = useState<string | null>(null);
+  const handleSaveNote = useCallback(
+    (mr: BoardMR, text: string) => {
+      if (!mr.webUrl) return;
+      setNoteEditing(null);
+      postAction('/note', { mrUrl: mr.webUrl, text }).then(result => {
+        if (!result.ok) {
+          addToast(`could not save the note on !${mr.iid} (${result.status})`);
+          return;
+        }
+        load();
+      });
+    },
+    [addToast, load]
+  );
+
   // Flip one of your own MRs between draft and ready. No optimistic state: the
   // flip lives in GitLab, so the row waits for the reload rather than claiming a
   // change the API might have refused.
@@ -989,6 +1008,9 @@ export function Board() {
     onToggleSelect: toggleSelect,
     onClearOrphan: handleClearOrphan,
     onDismissLane: handleDismissLane,
+    noteEditing,
+    onEditNote: setNoteEditing,
+    onSaveNote: handleSaveNote,
   };
   const openSettings = () => {
     setMenuOpen(false);

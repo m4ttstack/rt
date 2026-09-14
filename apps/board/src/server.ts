@@ -222,6 +222,7 @@ import {
   type ReviewState,
   type ReviewStatus,
 } from './review-state.ts';
+import { attachNotes, MAX_NOTE_LEN, readNotes, writeNote } from './row-note.ts';
 import {
   attachSlack,
   postToSlack,
@@ -1052,18 +1053,24 @@ const httpServer = Bun.serve({
         const slackRefs = readSlackRefs();
         const reconciler = await fetchReconcilerView();
         const mrsWithGates = attachPeerState(
-          attachDrafts(
-            attachSlack(
-              attachGates(
-                attachDoctors(
-                  attachResponds(attachReviews(visibleMrs, reviews), responds),
-                  doctors
+          attachNotes(
+            attachDrafts(
+              attachSlack(
+                attachGates(
+                  attachDoctors(
+                    attachResponds(
+                      attachReviews(visibleMrs, reviews),
+                      responds
+                    ),
+                    doctors
+                  ),
+                  gateCache
                 ),
-                gateCache
+                slackRefs
               ),
-              slackRefs
+              heldDraftsByMr(readDrafts())
             ),
-            heldDraftsByMr(readDrafts())
+            readNotes()
           )
         ).map(mr => ({
           ...mr,
@@ -2172,6 +2179,40 @@ const httpServer = Bun.serve({
         if (!dismissByHandle(handle, now))
           return new Response(`no ${lane} row at "${handle}"`, { status: 404 });
         return new Response(JSON.stringify({ ok: true, dismissedAt: now }), {
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      case '/note': {
+        // The row's own note (B10): the seat's plain-text annotation on one
+        // MR. An empty body clears it, which is the editor's only delete.
+        if (req.method !== 'POST')
+          return new Response('method not allowed', { status: 405 });
+        if (!isLocalRequest(req))
+          return new Response('forbidden', { status: 403 });
+        {
+          const notJson = requireJsonBody(req);
+          if (notJson) return notJson;
+        }
+        let body: unknown;
+        try {
+          body = await req.json();
+        } catch {
+          return new Response('invalid json', { status: 400 });
+        }
+        const { mrUrl, text } = (body ?? {}) as {
+          mrUrl?: unknown;
+          text?: unknown;
+        };
+        if (typeof mrUrl !== 'string' || !mrUrl || typeof text !== 'string')
+          return new Response('expected { mrUrl: string, text: string }', {
+            status: 400,
+          });
+        if (text.length > MAX_NOTE_LEN)
+          return new Response(`note longer than ${MAX_NOTE_LEN} characters`, {
+            status: 400,
+          });
+        const note = writeNote(mrUrl, text);
+        return new Response(JSON.stringify({ ok: true, note: note ?? null }), {
           headers: { 'content-type': 'application/json' },
         });
       }

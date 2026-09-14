@@ -131,6 +131,26 @@ for (const theme of ['light', 'dark'] as const) {
   await page.waitForSelector('.tui-row:hover .tui-status-tools');
   await shoot(page, `rowhover-${theme}`);
   await page.mouse.move(0, 0);
+  // the row's note (B10): the band at rest, then the same row with its
+  // editor open -- the note tool is the first of the row's hover tools.
+  const noted = page.locator('.tui-row[data-note]').first();
+  if (await noted.count()) {
+    await noted.hover();
+    await page.waitForSelector('.tui-row[data-note] .tui-row-note');
+    await shoot(page, `note-${theme}`);
+    // This file has no DOM lib (see `shoot`), so the row is cast to the
+    // shape this click needs rather than typed as an element.
+    await noted.evaluate(row => {
+      const el = row as unknown as {
+        querySelector: (sel: string) => { click: () => void } | null;
+      };
+      el.querySelector('.tui-status-tools button')?.click();
+    });
+    await page.waitForSelector('.tui-row-note[data-editing]');
+    await shoot(page, `noteedit-${theme}`);
+    await page.keyboard.press('Escape');
+    await page.mouse.move(0, 0);
+  }
   // the seat tab: every row needing rmarlow's move, grouped by need
   await page.click('[role="tab"]:has-text("Needs me")');
   await page.waitForSelector('[data-part="panel-title"]:has-text("decide")');

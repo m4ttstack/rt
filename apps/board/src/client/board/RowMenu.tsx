@@ -52,6 +52,7 @@ const FileGlyph = () => <MenuGlyph kind="file" />;
 const PeopleGlyph = () => <MenuGlyph kind="people" />;
 const CopyGlyph = () => <MenuGlyph kind="copy" />;
 const DismissGlyph = () => <MenuGlyph kind="dismiss" />;
+const NoteMenuGlyph = () => <MenuGlyph kind="note" />;
 const GITLAB_GLYPH: Record<
   ReturnType<typeof gitlabMenuItems>[number]['kind'],
   React.ReactNode
@@ -498,6 +499,13 @@ function RowMenu({
       <ContextMenu.Item
         label={iconLabel(<CopyGlyph />, 'copy for slack')}
         onClick={run(() => onCopy(mr))}
+      />
+      <ContextMenu.Item
+        label={iconLabel(
+          <NoteMenuGlyph />,
+          mrx.note ? 'edit note' : 'add a note'
+        )}
+        onClick={run(() => ctx.onEditNote(mr.webUrl ?? null))}
       />
     </ContextMenu>
   );

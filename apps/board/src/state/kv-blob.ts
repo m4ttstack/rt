@@ -38,3 +38,24 @@ export function deleteKvValue(
 ): void {
   db.query('DELETE FROM kv WHERE ns = ? AND k = ?').run(ns, key);
 }
+
+/** Every value in one namespace, keyed by its key, for a store that holds a
+    row per subject (see row-note.ts) rather than one blob per key. */
+export function listKvValues(
+  ns: string,
+  db: Database = getStateDb()
+): Map<string, unknown> {
+  const out = new Map<string, unknown>();
+  const rows = db.query('SELECT k, v FROM kv WHERE ns = ?').all(ns) as {
+    k: string;
+    v: string;
+  }[];
+  for (const row of rows) {
+    try {
+      out.set(row.k, JSON.parse(row.v));
+    } catch {
+      // skip unreadable value
+    }
+  }
+  return out;
+}
