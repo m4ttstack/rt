@@ -47,3 +47,32 @@ rt daemon logs            # open the log viewer
 `rt daemon logs` opens a browser-based log viewer by default; pass `--terminal` (or `-t`) for a live tail in your terminal instead. All daemon (and other rt surface) logs live under `~/.rt/logs/`; see the [logging guide](/guides/logging) for the file convention and how the viewer discovers them.
 
 See the full command reference: [`rt daemon`](/reference/daemon), [`rt daemon status`](/reference/daemon/status), [`rt daemon logs`](/reference/daemon/logs), [`rt daemon track`](/reference/daemon/track), [`rt daemon install`](/reference/daemon/install), [`rt daemon start`](/reference/daemon/start), [`rt daemon stop`](/reference/daemon/stop), [`rt daemon restart`](/reference/daemon/restart), and [`rt daemon uninstall`](/reference/daemon/uninstall).
+
+## Background server
+
+The daemon owns a headless herdr server (session name `bg`) for agents that do not need a visible terminal. Any operation that creates a background pane starts the server automatically; you do not need to manage it yourself.
+
+```bash
+rt bg status              # up/down, socket path, live claims
+rt bg release <owner>     # release one claim (picker when omitted)
+rt bg stop                # shut down (refuses while claims are live)
+```
+
+Background panes use a `bg:` prefix in pane addressing (e.g. `bg:w1:p2`). All standard pane verbs (`rt pane list`, `rt pane peek`, `rt pane send`, `rt pane focus`) work with that prefix.
+
+Agents launched with `rt agent start --bg` run on the background server instead of the visible herdr instance.
+
+## Stale-claim sweep
+
+The daemon periodically reconciles its worktree and background-server claims against live state. A claimed worktree whose owning agent has exited, or whose MR has merged, is swept and returned to the pool. The sweep honors a grace period and checks for recent activity, so a momentarily idle agent is not reclaimed prematurely.
+
+## Gates
+
+Gates are daemon-persisted decisions that survive restarts. They are primarily agent-facing (the herd orchestrator opens them, workers wait on them), but the user-facing surface is how you answer a pending question or see what is waiting:
+
+```bash
+rt gate list --open       # show pending decisions
+rt gate answer <id>       # answer one (first answer wins)
+```
+
+`rt gate answer --override` lets a human answer a gate that belongs to a herd, escalating past the automated owner. Gates whose owner has exited are escalated automatically after their TTL expires.
