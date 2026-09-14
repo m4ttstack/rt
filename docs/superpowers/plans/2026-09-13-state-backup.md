@@ -520,7 +520,7 @@ export async function snapshotSource(
   destDir: string,
 ): Promise<string> {
   const fullPath = resolveSourcePath(source);
-  const baseName = source.sourcePath.replace(/\//g, "-");
+  const baseName = source.sourcePath.replace(/\//g, "-").replace(/\.[^.]+$/, "");
   const destPath = join(destDir, `${baseName}${source.ext}`);
 
   if (source.type === "sqlite") {
@@ -1091,7 +1091,7 @@ The existing tests at lines 72, 79, 90, 132 of `commands/__tests__/state-backup.
 Add a new test using the existing scaffolding pattern (isolated HOME, `runCapturingExit`):
 
 ```ts
-it("--local runs the legacy VACUUM INTO backup", async () => {
+test("--local runs the legacy VACUUM INTO backup", async () => {
   const home = realpathSync(mkdtempSync(join(tmpdir(), "sb-local-")));
   const origHome = process.env.HOME!;
   process.env.HOME = home;
@@ -1132,7 +1132,7 @@ export async function stateBackup(args: string[], _ctx: CommandContext = {}): Pr
     backupTo(getStateDb(), path);
     const { removed } = pruneStateBackups();
     if (json) {
-      console.log(JSON.stringify({ ok: true, path, pruned: removed.map((r: string) => r) }));
+      console.log(JSON.stringify({ ok: true, path, pruned: removed }));
     } else {
       console.log(`rt state backup: wrote ${path}`);
     }
@@ -1480,15 +1480,17 @@ export async function pullHomeRepo(): Promise<void> {
 
 In `commands/state.ts`, extend `stateRestore`. Handler receives `args: string[]`. Parse flags via `args.includes()` and `flagValue()` from `lib/cli-args.ts`:
 
-```ts
-`commands/state.ts` already imports `closeStateDb` (line 20). Add `tmpdir` to the `os` import and `writeFileSync`/`unlinkSync` to the `fs` import. Add these new imports:
+`commands/state.ts` already imports `closeStateDb` (line 20) and `unlinkSync` (line 14). Add `tmpdir` to the `os` import and `writeFileSync` to the `fs` import. Add these new imports:
 
 ```ts
 import { restoreFromBackup, pullHomeRepo } from "../lib/state/backup-restore";
 import { readAgeKey, createRealAgeKeySeam } from "../lib/home/age-key";
 import { flagValue } from "../lib/cli-args";
+```
 
-// At the top of stateRestore, before the existing positional-arg logic:
+At the top of `stateRestore`, before the existing positional-arg logic:
+
+```ts
 if (args.includes("--from-backup")) {
   const force = args.includes("--force");
   const dryRun = args.includes("--dry-run");
