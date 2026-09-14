@@ -790,7 +790,7 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
             try {
               const result = await runFullBackup();
 
-              if (result.backed.length === 0 && result.errors.length > 0) {
+              if (result.backed.length === 0 && result.skipped.length === 0 && result.errors.length > 0) {
                 log.error({ errors: result.errors }, "all encrypted sources failed, falling back to local");
                 backupTo(getStateDb("daemon"), stampedBackupPath());
                 pruneStateBackups();

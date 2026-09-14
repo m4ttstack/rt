@@ -1,6 +1,6 @@
 import { spawn } from "bun";
 import { unlink } from "fs/promises";
-import { mkdtempSync } from "fs";
+import { mkdtempSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
@@ -109,7 +109,7 @@ export async function backupPipeline(
     await encryptFile(compressed, dest, recipientsPath);
   } finally {
     await unlink(compressed).catch(() => {});
-    Bun.spawnSync(["rm", "-rf", tmpDir]);
+    rmSync(tmpDir, { recursive: true, force: true });
   }
 }
 
@@ -124,7 +124,7 @@ export async function restorePipeline(
     await decryptFile(src, compressed, identityPath);
     await decompressFile(compressed, dest);
   } finally {
-    Bun.spawnSync(["rm", "-rf", tmpDir]);
+    rmSync(tmpDir, { recursive: true, force: true });
   }
 }
 
@@ -139,6 +139,6 @@ export async function restorePipelineFromStdin(
     await decryptFileFromStdin(src, compressed, identityKey);
     await decompressFile(compressed, dest);
   } finally {
-    Bun.spawnSync(["rm", "-rf", tmpDir]);
+    rmSync(tmpDir, { recursive: true, force: true });
   }
 }

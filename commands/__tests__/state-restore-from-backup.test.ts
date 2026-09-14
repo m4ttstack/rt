@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync, realpathSync } from "fs";
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync, realpathSync, readFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { Database } from "bun:sqlite";
@@ -138,5 +138,36 @@ describe("state restore --from-backup", () => {
     });
 
     expect(result.skipped).toEqual(["gitq: no backup found"]);
+  });
+
+  it("restores via stdin identity key (no key on disk)", async () => {
+    const { restoreFromBackup } = await import("../../lib/state/backup-restore");
+    const keyContent = readFileSync(join(home, "test-key.txt"), "utf-8");
+
+    const result = await restoreFromBackup({
+      identityKey: keyContent,
+      only: "rt",
+    });
+
+    expect(result.errors).toEqual([]);
+    expect(result.restored.length).toBeGreaterThan(0);
+  });
+
+  it("refuses restore when target is held open by another process", async () => {
+    const dbPath = join(home, ".mattstack", "rt", "state.db");
+    const holder = new Database(dbPath);
+
+    try {
+      const { restoreFromBackup } = await import("../../lib/state/backup-restore");
+      const result = await restoreFromBackup({
+        identityPath: join(home, "test-key.txt"),
+        only: "rt",
+      });
+
+      const holderError = result.errors.find((e) => e.includes("held open"));
+      expect(holderError).toBeTruthy();
+    } finally {
+      holder.close();
+    }
   });
 });

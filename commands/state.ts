@@ -97,7 +97,7 @@ export async function stateBackup(args: string[], _ctx: CommandContext = {}): Pr
   try {
     const result = await runFullBackup();
 
-    if (result.backed.length === 0 && result.errors.length > 0) {
+    if (result.backed.length === 0 && result.skipped.length === 0 && result.errors.length > 0) {
       if (!json) {
         console.error(`All sources failed: ${result.errors.join(", ")}`);
         console.error("Falling back to local-only backup");
@@ -185,6 +185,7 @@ async function stateRestoreFromBackup(args: string[]): Promise<void> {
     only,
     at,
     dryRun,
+    force,
   });
 
   if (json) {

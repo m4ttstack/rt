@@ -14,6 +14,7 @@ export interface RestoreOptions {
   only?: string;
   at?: string;
   dryRun?: boolean;
+  force?: boolean;
 }
 
 export interface RestoreResult {
@@ -74,12 +75,6 @@ export async function restoreFromBackup(opts: RestoreOptions): Promise<RestoreRe
         continue;
       }
 
-      const holders = checkHolders(targetPath);
-      if (holders.length > 0) {
-        result.errors.push(`${source.app}: ${targetPath} is held open by pid(s) ${holders.join(", ")}. Stop those processes first.`);
-        continue;
-      }
-
       const restoredPath = join(tmpDir, `${sourcePrefix}${source.ext}`);
 
       try {
@@ -103,6 +98,14 @@ export async function restoreFromBackup(opts: RestoreOptions): Promise<RestoreRe
           if (problems.length > 0) {
             result.errors.push(`${source.app}: integrity check failed: ${problems.join("; ")}`);
             continue;
+          }
+
+          if (!opts.force) {
+            const holders = checkHolders(targetPath);
+            if (holders.length > 0) {
+              result.errors.push(`${source.app}: ${targetPath} is held open by pid(s) ${holders.join(", ")}. Stop those processes first, or pass --force.`);
+              continue;
+            }
           }
 
           mkdirSync(dirname(targetPath), { recursive: true });

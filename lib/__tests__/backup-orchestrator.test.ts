@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readdirSync, rmSync } from "fs";
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readdirSync, rmSync, readFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { Database } from "bun:sqlite";
@@ -100,5 +100,78 @@ describe("backup-orchestrator", () => {
 
     const { removed } = await pruneOldBackups(7);
     expect(removed.length).toBe(allFiles.length);
+  });
+
+  it("skips unchanged sources on second backup", async () => {
+    const { runFullBackup } = await import("../state/backup-orchestrator");
+    const first = await runFullBackup();
+    expect(first.backed.length).toBe(4);
+    expect(first.skipped.length).toBe(0);
+
+    const second = await runFullBackup();
+    expect(second.backed.length).toBe(0);
+    expect(second.skipped.length).toBe(4);
+  });
+
+  it("re-uploads a changed source even when others are unchanged", async () => {
+    const { runFullBackup } = await import("../state/backup-orchestrator");
+    await runFullBackup();
+
+    const db = new Database(join(home, ".mattstack", "rt", "state.db"));
+    db.run("INSERT INTO t VALUES ('changed')");
+    db.close();
+
+    const second = await runFullBackup();
+    expect(second.backed.length).toBe(1);
+    expect(second.backed[0].app).toBe("rt");
+    expect(second.skipped.length).toBe(3);
+  });
+
+  it("re-uploads when previous .age file is missing", async () => {
+    const { runFullBackup } = await import("../state/backup-orchestrator");
+    await runFullBackup();
+
+    const backupDir = join(home, ".mattstack", "user", "state-backups", "rt");
+    const ageFiles = readdirSync(backupDir).filter((f) => f.endsWith(".zst.age"));
+    for (const f of ageFiles) rmSync(join(backupDir, f));
+
+    const second = await runFullBackup();
+    const rtBacked = second.backed.filter((b) => b.app === "rt");
+    expect(rtBacked.length).toBe(2);
+  });
+
+  it("writes manifest with schema versions", async () => {
+    const { runFullBackup } = await import("../state/backup-orchestrator");
+    await runFullBackup();
+
+    const backupDir = join(home, ".mattstack", "user", "state-backups");
+    const manifests = readdirSync(backupDir).filter((f) => f.startsWith("manifest-"));
+    expect(manifests.length).toBe(1);
+
+    const manifest = JSON.parse(readFileSync(join(backupDir, manifests[0]), "utf-8"));
+    expect(manifest.rtVersion).toBeDefined();
+    expect(manifest.sources.length).toBe(4);
+    for (const s of manifest.sources) {
+      expect(s.contentHash).toBeTruthy();
+      if (s.sourcePath.endsWith(".db")) {
+        expect(typeof s.schemaVersion).toBe("number");
+      }
+    }
+  });
+
+  it("never writes unencrypted intermediates to the backup destination", async () => {
+    const { runFullBackup } = await import("../state/backup-orchestrator");
+    await runFullBackup();
+
+    const backupDir = join(home, ".mattstack", "user", "state-backups");
+    const allFiles: string[] = [];
+    for (const entry of readdirSync(backupDir, { recursive: true })) {
+      allFiles.push(String(entry));
+    }
+
+    const unencrypted = allFiles.filter(
+      (f) => (f.endsWith(".zst") || f.endsWith(".db")) && !f.endsWith(".zst.age"),
+    );
+    expect(unencrypted).toEqual([]);
   });
 });

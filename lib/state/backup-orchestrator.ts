@@ -98,17 +98,24 @@ export async function runFullBackup(): Promise<BackupResult> {
     const ts = timestamp();
 
     const prevManifest = readLatestManifest();
-    const prevHashes = new Map(
-      prevManifest?.sources.map((s) => [s.sourcePath, s.contentHash]) ?? [],
+    const prevBySource = new Map(
+      prevManifest?.sources.map((s) => [s.sourcePath, s]) ?? [],
     );
+
+    type ManifestSource = BackupManifest["sources"][number];
+    const manifestSources: ManifestSource[] = [];
 
     for (const { source, snapshotPath } of snapshotResult.snapshots) {
       const appDir = join(backupDestDir(), source.app);
       mkdirSync(appDir, { recursive: true });
 
       const contentHash = hashFile(snapshotPath);
-      if (prevHashes.get(source.sourcePath) === contentHash) {
+      const prev = prevBySource.get(source.sourcePath);
+      const prevFile = prev ? join(backupDestDir(), source.app, prev.file) : null;
+
+      if (prev && prev.contentHash === contentHash && prevFile && existsSync(prevFile)) {
         result.skipped.push(`${source.app}/${basename(source.sourcePath)}: unchanged`);
+        manifestSources.push(prev);
         continue;
       }
 
@@ -120,32 +127,27 @@ export async function runFullBackup(): Promise<BackupResult> {
         await backupPipeline(snapshotPath, destPath, recip);
         const size = statSync(destPath).size;
         result.backed.push({ app: source.app, path: destPath, sizeBytes: size, contentHash });
+        manifestSources.push({
+          app: source.app,
+          sourcePath: source.sourcePath,
+          schemaVersion: source.type === "sqlite" ? readSchemaVersion(snapshotPath) : null,
+          contentHash,
+          file: destName,
+          sizeBytes: size,
+        });
       } catch (err) {
         result.errors.push(
           `${source.app}/${basename(source.sourcePath)}: ${err instanceof Error ? err.message : String(err)}`,
         );
+        if (prev) manifestSources.push(prev);
       }
     }
-    if (result.backed.length > 0) {
+
+    if (manifestSources.length > 0) {
       const manifest: BackupManifest = {
         timestamp: ts,
         rtVersion: rtVersion(),
-        sources: result.backed.map((b) => {
-          const filePrefix = basename(b.path).split("-" + ts)[0];
-          const snap = snapshotResult.snapshots.find((s) => {
-            const prefix = s.source.sourcePath.replace(/\//g, "-").replace(/\.[^.]+$/, "");
-            return prefix === filePrefix;
-          });
-          const source = snap?.source;
-          return {
-            app: b.app,
-            sourcePath: source?.sourcePath ?? "",
-            schemaVersion: source?.type === "sqlite" && snap ? readSchemaVersion(snap.snapshotPath) : null,
-            contentHash: b.contentHash,
-            file: basename(b.path),
-            sizeBytes: b.sizeBytes,
-          };
-        }),
+        sources: manifestSources,
       };
       writeFileSync(
         join(backupDestDir(), `manifest-${ts}.json`),
