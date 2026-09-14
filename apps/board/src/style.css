@@ -2497,12 +2497,13 @@ body {
   align-items: center;
   gap: var(--gate-gap-inner);
 }
-/* The form takes the modal's own width. A 30rem column left a third of the
-   modal empty on both sides while a six-question gate with a long title ran
-   out of room inside the box. */
+/* The form takes most of the modal's width, not all of it. At 30rem a third
+   of the modal sat empty while a six-question gate ran out of room inside
+   the box; full bleed reads blown out, so it keeps a gutter of its own
+   against the context pane above. */
 .tui-triage-form-col .tui-gate-form {
   width: 100%;
-  max-width: none;
+  max-width: 40rem;
 }
 .tui-attention-card {
   width: 100%;
