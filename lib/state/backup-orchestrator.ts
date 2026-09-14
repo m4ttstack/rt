@@ -11,6 +11,8 @@ import {
   recipientsPath,
 } from "./backup-sources";
 import { backupPipeline } from "./backup-pipeline";
+import { findBackupTool } from "./backup-tools";
+import { writeLfsFilterConfig } from "./backup-lfs";
 
 declare const RT_VERSION: string | undefined;
 
@@ -89,6 +91,11 @@ export async function runFullBackup(): Promise<BackupResult> {
       "Backup not configured. Run `rt state backup init` first.",
     );
   }
+
+  // Every sweep, because the filter commands carry an absolute git-lfs path
+  // that an app move, a flavor switch or an uninstalled Homebrew copy can
+  // invalidate under a repo nobody is watching (see backup-lfs.ts).
+  writeLfsFilterConfig(join(mattstackHome(), "user"), findBackupTool("git-lfs"));
 
   const tmpDir = await mkdtemp(join(tmpdir(), "state-backup-"));
 
@@ -209,9 +216,11 @@ export async function pruneOldBackups(
 
   if (removed.length > 0) {
     const homeRepo = join(mattstackHome(), "user");
-    const gitLfs = Bun.which("git-lfs", { PATH: process.env.PATH });
+    const gitLfs = findBackupTool("git-lfs");
     if (gitLfs && existsSync(join(homeRepo, ".git"))) {
-      const proc = Bun.spawn(["git", "lfs", "prune"], {
+      // The binary directly, not `git lfs`: git resolves its subcommand off
+      // PATH, which under launchd carries neither the bundle nor Homebrew.
+      const proc = Bun.spawn([gitLfs, "prune"], {
         cwd: homeRepo,
         stdout: "ignore",
         stderr: "pipe",

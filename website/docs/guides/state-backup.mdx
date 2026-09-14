@@ -1,0 +1,100 @@
+---
+sidebar_position: 8
+title: State backup
+---
+
+# State backup
+
+rt backs up the databases and topology files that would be painful to lose, encrypts them with age, and pushes them to your home repo so they survive a disk failure or a new machine.
+
+## What is protected
+
+Four sources are backed up every cycle:
+
+| Source | Contains |
+|---|---|
+| `rt/state.db` | Worktree registry, branch/MR caches, daemon tracking, process inventory |
+| `rt/gates.db` | Multi-step gate progress (setup wizard state, pending decisions) |
+| `board/state.db` | Board agent states, triage memory, MR review verdicts |
+| `gitq/stacks/` | Branch parent-chain topology (archived as a tar) |
+
+Everything else (the events bus, background claims, herd state) is small and re-derivable, so it is not included.
+
+## Setting it up
+
+```bash
+rt state backup init
+```
+
+Init checks that `age`, `zstd`, and `git-lfs` are installed (all three come from Homebrew today; bundling is in progress), then:
+
+1. Installs Git LFS in the home repo (`~/.mattstack/user/`) and adds a `.gitattributes` rule so `.age` files are tracked by LFS.
+2. Creates `recipients.txt` with this machine's age public key, read from the macOS Keychain. The private key stays in the Keychain and is never written to disk.
+3. Runs the first full backup immediately.
+4. Verifies the backup can be decrypted (a round-trip sanity check).
+
+After init, the daemon's 4-hour sweep handles everything automatically.
+
+## The backup cycle
+
+Every 4 hours (with a 60-second delay after daemon start), the daemon:
+
+1. Snapshots each source (`VACUUM INTO` for SQLite databases, `tar -c` for gitq stacks) into a temp directory.
+2. Compresses with `zstd -19`.
+3. Encrypts with `age -R recipients.txt`.
+4. Moves the final `.age` blob into `~/.mattstack/user/state-backups/<app>/`.
+5. Prunes old backups (7-day retention, keeping the newest file per source prefix so a stable source always has at least one copy).
+
+The home repo's snapshot engine auto-commits and pushes within about 80 seconds, so the encrypted blobs land on the remote shortly after each cycle.
+
+Content-hash deduplication skips a source whose SHA-256 matches the previous cycle and whose `.age` file still exists on disk, so a quiet database does not produce duplicate blobs.
+
+You can also trigger a backup manually:
+
+```bash
+rt state backup            # run the full pipeline now
+rt state backup --local    # local-only VACUUM INTO, no encryption or push
+rt state backup status     # show the last cycle's outcome per source
+```
+
+## Restoring
+
+### Same machine
+
+```bash
+rt state restore --from-backup
+```
+
+This pulls the home repo (fetching LFS blobs), finds the most recent backup for each source, decrypts with the Keychain key, decompresses, integrity-checks the content hash against the manifest, and places the files. The daemon must be stopped first (the command refuses otherwise, unless you pass `--force`).
+
+### New machine
+
+On a machine that does not have the original Keychain key, pass an age identity file (typically the team key):
+
+```bash
+rt state restore --from-backup --identity ~/team-key.txt
+```
+
+With `--identity`, that file is the key. Without it, the command reads your personal Keychain key, and says so plainly when there is none.
+
+### Selective restore
+
+```bash
+rt state restore --from-backup --only rt       # just rt/state.db
+rt state restore --from-backup --at 2026-09-10  # point-in-time
+rt state restore --from-backup --dry-run        # preview without writing
+```
+
+### When something goes wrong
+
+- **Integrity check failure**: the command refuses to overwrite and suggests an older backup via `--at`.
+- **A source failed during backup**: the daemon logs a warning and skips that source for the cycle. It retries on the next sweep. `rt state backup status` shows the failure.
+- **Missing age or recipients.txt**: the sweep falls back to a local-only `VACUUM INTO` snapshot (unencrypted, not pushed).
+
+## The age key
+
+The private key lives in the macOS Keychain, never on the filesystem. `recipients.txt` holds public keys only (the personal key, plus an optional team key if one is added). Either key can decrypt independently, giving two recovery paths: the Keychain on the original machine, or the team identity file on a new one.
+
+## Dependencies
+
+`age`, `zstd`, and `git-lfs` must be on PATH. Today they come from Homebrew (`brew install age zstd git-lfs`). Bundling all three into the mattstack.app bundle is in progress but has not shipped yet.

@@ -8,7 +8,8 @@
  * key, runs the first full backup, and verifies a decrypt round-trip plus
  * the LFS filter attaching to the produced .age files. Requires
  * `rt home init` to have already run (the home repo must exist as a git
- * repo) and `age`/`zstd`/`git-lfs` to resolve on PATH.
+ * repo); `age`, `zstd` and `git-lfs` come from mattstack.app, or from PATH
+ * on a machine running rt from source.
  */
 
 import { existsSync, writeFileSync, mkdirSync, readFileSync, rmSync } from "fs";
@@ -19,29 +20,20 @@ import { ensureAgeKey, readAgeKey, createRealAgeKeySeam } from "../lib/home/age-
 import { recipientsPath, backupDestDir } from "../lib/state/backup-sources.ts";
 import { runFullBackup } from "../lib/state/backup-orchestrator.ts";
 import { restorePipelineFromStdin } from "../lib/state/backup-pipeline.ts";
+import { BACKUP_TOOLS, findBackupTool } from "../lib/state/backup-tools.ts";
+import { writeLfsFilterConfig } from "../lib/state/backup-lfs.ts";
 import { mattstackHome } from "../lib/rt-paths.ts";
 import type { CommandContext } from "../lib/command-tree.ts";
 
 export async function stateBackupInit(_args: string[], _ctx: CommandContext = {}): Promise<void> {
-  const PATH = process.env.PATH;
-
-  const age = Bun.which("age", { PATH });
-  if (!age) {
-    console.error("age not found. Install with: brew install age");
+  const resolved = new Map(BACKUP_TOOLS.map((name) => [name, findBackupTool(name)]));
+  const absent = BACKUP_TOOLS.filter((name) => !resolved.get(name));
+  if (absent.length > 0) {
+    console.error(`${absent.join(", ")} not found.`);
+    console.error("They ship inside mattstack.app; install the app, or: brew install " + absent.join(" "));
     process.exit(1);
   }
-
-  const zstd = Bun.which("zstd", { PATH });
-  if (!zstd) {
-    console.error("zstd not found. Install with: brew install zstd");
-    process.exit(1);
-  }
-
-  const gitLfs = Bun.which("git-lfs", { PATH });
-  if (!gitLfs) {
-    console.error("git-lfs not found. Install with: brew install git-lfs");
-    process.exit(1);
-  }
+  const gitLfs = resolved.get("git-lfs")!;
 
   console.log("Dependencies: age, zstd, git-lfs found");
 
@@ -53,7 +45,9 @@ export async function stateBackupInit(_args: string[], _ctx: CommandContext = {}
   }
   const gitattributes = join(homeRepo, ".gitattributes");
 
-  const lfsInit = Bun.spawnSync(["git", "lfs", "install", "--local"], {
+  // `git-lfs install`, not `git lfs install`: git resolves its subcommand off
+  // PATH, which carries no git-lfs on a machine that only has the bundled one.
+  const lfsInit = Bun.spawnSync([gitLfs, "install", "--local"], {
     cwd: homeRepo,
     env: { ...process.env },
   });
@@ -62,18 +56,10 @@ export async function stateBackupInit(_args: string[], _ctx: CommandContext = {}
     process.exit(1);
   }
 
-  const absGitLfs = Bun.which("git-lfs", { PATH: process.env.PATH });
-  if (absGitLfs) {
-    for (const key of ["filter.lfs.clean", "filter.lfs.smudge", "filter.lfs.process"]) {
-      const proc = Bun.spawnSync(["git", "config", "--local", "--get", key], { cwd: homeRepo });
-      const val = proc.stdout.toString().trim();
-      if (val && val.startsWith("git-lfs")) {
-        const absVal = val.replace("git-lfs", absGitLfs);
-        Bun.spawnSync(["git", "config", "--local", key, absVal], { cwd: homeRepo });
-      }
-    }
-    console.log("LFS filter paths set to absolute: " + absGitLfs);
-  }
+  // install writes PATH-relative filter commands; every backup sweep repoints
+  // them the same way, so an app move or a removed brew copy self-heals.
+  const filters = writeLfsFilterConfig(homeRepo, gitLfs);
+  if (filters.changed.length > 0) console.log("LFS filter paths set to: " + gitLfs);
 
   // Tracking rule must exist before the first .age file lands, or LFS never
   // picks up files already committed as plain git objects.
