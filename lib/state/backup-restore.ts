@@ -1,27 +1,16 @@
-/**
- * The reverse of backup-orchestrator's runFullBackup: pull the home repo,
- * decrypt+decompress the latest backup per source, integrity-check it, and
- * place it back at its live path.
- *
- * The `rt/` backup directory holds files for two distinct sources
- * (state.db and gates.db) sharing one app name, so `findLatestBackup` must
- * filter by the source's own filename prefix, not just its app directory --
- * a bare lexicographic "last file wins" pick can hand gates.db's slot
- * state.db's content or vice versa.
- */
-
 import { dirname, join } from "path";
-import { existsSync, readdirSync, mkdirSync, copyFileSync, rmSync } from "fs";
+import { existsSync, readdirSync, mkdirSync, renameSync, rmSync, copyFileSync } from "fs";
 import { mkdtemp } from "fs/promises";
 import { tmpdir } from "os";
 import { Database } from "bun:sqlite";
 import { mattstackHome } from "../rt-paths";
 import { quickCheck } from "./db";
-import { restorePipeline } from "./backup-pipeline";
+import { restorePipeline, restorePipelineFromStdin } from "./backup-pipeline";
 import { backupDestDir, BACKUP_SOURCES, resolveSourcePath, type BackupSource } from "./backup-sources";
 
 export interface RestoreOptions {
-  identityPath: string;
+  identityPath?: string;
+  identityKey?: string;
   only?: string;
   at?: string;
   dryRun?: boolean;
@@ -52,6 +41,14 @@ function findLatestBackup(appDir: string, sourcePrefix: string, atTimestamp?: st
   return files.length > 0 ? join(appDir, files[0]!) : null;
 }
 
+function checkHolders(filePath: string): string[] {
+  if (!existsSync(filePath)) return [];
+  const proc = Bun.spawnSync(["lsof", "-t", filePath], { stderr: "pipe" });
+  if (proc.exitCode !== 0) return [];
+  const pids = proc.stdout.toString().trim();
+  return pids ? pids.split("\n").map((p) => p.trim()).filter(Boolean) : [];
+}
+
 export async function restoreFromBackup(opts: RestoreOptions): Promise<RestoreResult> {
   const result: RestoreResult = { restored: [], skipped: [], errors: [] };
   const baseDir = backupDestDir();
@@ -77,10 +74,23 @@ export async function restoreFromBackup(opts: RestoreOptions): Promise<RestoreRe
         continue;
       }
 
+      const holders = checkHolders(targetPath);
+      if (holders.length > 0) {
+        result.errors.push(`${source.app}: ${targetPath} is held open by pid(s) ${holders.join(", ")}. Stop those processes first.`);
+        continue;
+      }
+
       const restoredPath = join(tmpDir, `${sourcePrefix}${source.ext}`);
 
       try {
-        await restorePipeline(backupFile, restoredPath, opts.identityPath);
+        if (opts.identityKey) {
+          await restorePipelineFromStdin(backupFile, restoredPath, opts.identityKey);
+        } else if (opts.identityPath) {
+          await restorePipeline(backupFile, restoredPath, opts.identityPath);
+        } else {
+          result.errors.push(`${source.app}: no identity key or path provided`);
+          continue;
+        }
 
         if (source.type === "sqlite") {
           const db = new Database(restoredPath, { readonly: true });
@@ -96,7 +106,9 @@ export async function restoreFromBackup(opts: RestoreOptions): Promise<RestoreRe
           }
 
           mkdirSync(dirname(targetPath), { recursive: true });
-          copyFileSync(restoredPath, targetPath);
+          const tmpTarget = targetPath + ".restore-tmp";
+          copyFileSync(restoredPath, tmpTarget);
+          renameSync(tmpTarget, targetPath);
           for (const ext of ["-wal", "-shm"]) {
             const sidecar = targetPath + ext;
             if (existsSync(sidecar)) rmSync(sidecar);
@@ -122,22 +134,16 @@ export async function restoreFromBackup(opts: RestoreOptions): Promise<RestoreRe
   return result;
 }
 
-/**
- * A new machine has no home repo checkout yet in most flows this ships
- * behind, but `rt home init` is the thing that clones it; this only pulls
- * an existing checkout current so the backup files it reads are the
- * latest, LFS objects included.
- */
 export async function pullHomeRepo(): Promise<void> {
   const homeRepo = join(mattstackHome(), "user");
 
   let proc = Bun.spawnSync(["git", "pull", "--ff-only"], { cwd: homeRepo, stderr: "pipe" });
   if (proc.exitCode !== 0) {
-    throw new Error(`git pull failed: ${proc.stderr.toString()}`);
+    throw new Error(`git pull failed (exit ${proc.exitCode})`);
   }
 
   proc = Bun.spawnSync(["git", "lfs", "pull"], { cwd: homeRepo, stderr: "pipe" });
   if (proc.exitCode !== 0) {
-    throw new Error(`git lfs pull failed: ${proc.stderr.toString()}`);
+    throw new Error(`git lfs pull failed (exit ${proc.exitCode})`);
   }
 }

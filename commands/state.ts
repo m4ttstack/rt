@@ -19,9 +19,8 @@
  */
 
 import { Database } from "bun:sqlite";
-import { copyFileSync, existsSync, mkdirSync, unlinkSync, writeFileSync } from "fs";
+import { copyFileSync, existsSync, mkdirSync, unlinkSync } from "fs";
 import { dirname, join } from "path";
-import { tmpdir } from "os";
 import type { CommandContext } from "../lib/command-tree.ts";
 import { isDaemonRunning } from "../lib/daemon-client.ts";
 import { flagValue } from "../lib/cli-args.ts";
@@ -159,8 +158,8 @@ async function stateRestoreFromBackup(args: string[]): Promise<void> {
     fail("the daemon is running. Stop it first (rt daemon stop) or pass --force to override");
   }
 
-  let identityPath: string;
-  let tmpKeyFile: string | null = null;
+  let identityPath: string | undefined;
+  let identityKey: string | undefined;
 
   if (identityFlag) {
     identityPath = identityFlag;
@@ -171,40 +170,34 @@ async function stateRestoreFromBackup(args: string[]): Promise<void> {
       console.error("On a new machine, pass --identity <path-to-team-key> to decrypt with the team key.");
       process.exit(1);
     }
-
-    tmpKeyFile = join(tmpdir(), `age-identity-${process.pid}.txt`);
-    writeFileSync(tmpKeyFile, keyResult.key, { mode: 0o600 });
-    identityPath = tmpKeyFile;
+    identityKey = keyResult.key;
   }
 
-  try {
-    if (!dryRun) {
-      console.log("Pulling latest backups from home repo...");
-      await pullHomeRepo();
-      closeStateDb();
-    }
+  if (!dryRun) {
+    console.log("Pulling latest backups from home repo...");
+    await pullHomeRepo();
+    closeStateDb();
+  }
 
-    const result = await restoreFromBackup({
-      identityPath,
-      only,
-      at,
-      dryRun,
-    });
+  const result = await restoreFromBackup({
+    identityPath,
+    identityKey,
+    only,
+    at,
+    dryRun,
+  });
 
-    if (json) {
-      console.log(JSON.stringify({ ok: result.errors.length === 0, dryRun, ...result }));
-      if (result.errors.length > 0) process.exitCode = 1;
-      return;
-    }
-
-    if (dryRun) console.log("Dry run. Would restore:");
-    for (const r of result.restored) console.log(`  ${r.app} -> ${r.targetPath}`);
-    for (const s of result.skipped) console.log(`  skipped: ${s}`);
-    for (const e of result.errors) console.error(`  error: ${e}`);
+  if (json) {
+    console.log(JSON.stringify({ ok: result.errors.length === 0, dryRun, ...result }));
     if (result.errors.length > 0) process.exitCode = 1;
-  } finally {
-    if (tmpKeyFile) unlinkSync(tmpKeyFile);
+    return;
   }
+
+  if (dryRun) console.log("Dry run. Would restore:");
+  for (const r of result.restored) console.log(`  ${r.app} -> ${r.targetPath}`);
+  for (const s of result.skipped) console.log(`  skipped: ${s}`);
+  for (const e of result.errors) console.error(`  error: ${e}`);
+  if (result.errors.length > 0) process.exitCode = 1;
 }
 
 export async function stateRestore(args: string[], _ctx: CommandContext = {}): Promise<void> {

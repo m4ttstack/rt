@@ -18,7 +18,7 @@ import { tmpdir } from "os";
 import { ensureAgeKey, readAgeKey, createRealAgeKeySeam } from "../lib/home/age-key.ts";
 import { recipientsPath, backupDestDir } from "../lib/state/backup-sources.ts";
 import { runFullBackup } from "../lib/state/backup-orchestrator.ts";
-import { restorePipeline } from "../lib/state/backup-pipeline.ts";
+import { restorePipelineFromStdin } from "../lib/state/backup-pipeline.ts";
 import { mattstackHome } from "../lib/rt-paths.ts";
 import type { CommandContext } from "../lib/command-tree.ts";
 
@@ -95,13 +95,10 @@ export async function stateBackupInit(_args: string[], _ctx: CommandContext = {}
     const keyResult = await readAgeKey(seams);
     if (!("key" in keyResult)) throw new Error("Age key not found in keychain");
 
-    const keyFile = join(verifyDir, "identity.txt");
-    writeFileSync(keyFile, keyResult.key, { mode: 0o600 });
-
     const first = result.backed[0];
     if (first) {
       const restoredPath = join(verifyDir, "verify.db");
-      await restorePipeline(first.path, restoredPath, keyFile);
+      await restorePipelineFromStdin(first.path, restoredPath, keyResult.key);
       console.log("Decrypt round-trip passed");
     } else {
       console.log("No sources found to back up yet; skipping round-trip verification");
