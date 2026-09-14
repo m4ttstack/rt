@@ -244,7 +244,7 @@ function deepEqual(a: unknown, b: unknown): boolean {
 
 interface GuaranteeDeps {
   store: GatesStore;
-  reconciler?: Pick<Reconciler, "executorFor" | "expect" | "clear" | "agentIdFor">;
+  reconciler?: Pick<Reconciler, "executorFor" | "expect" | "clear" | "dismissed" | "agentIdFor">;
   resumeAgent?: (agentId: string) => Promise<{ ok: boolean; error?: string }>;
   /** Attention gates carry `meta.agentId`, not origin/pane/nudge, so
       gateHints(row) resolves to an empty PaneHints for them -- the
@@ -300,12 +300,13 @@ async function runExecutorGuarantee(row: GateRow, deps: GuaranteeDeps): Promise<
 async function runAttentionRouting(row: GateRow, deps: GuaranteeDeps): Promise<void> {
   const action = unwrapAnswerValue(row.answer?.answers?.["action"]);
 
+  const agentId = typeof row.meta?.["agentId"] === "string" ? (row.meta["agentId"] as string) : undefined;
   if (action === "dismiss") {
     deps.store.closeAnswered(row.id, "abandoned");
+    if (agentId) deps.reconciler?.dismissed(agentId);
     return;
   }
   if (!deps.reconciler) return;
-  const agentId = typeof row.meta?.["agentId"] === "string" ? (row.meta["agentId"] as string) : undefined;
   if (!agentId) return;
 
   if (action === "clear") {
@@ -351,7 +352,7 @@ export function createGateHandlers(
     /** Answer-time executor guarantee (spec "Answer-time executor
         guarantee"): omitted, gate:answer's post-record side effects reduce
         to today's push-only behavior. */
-    reconciler?: Pick<Reconciler, "executorFor" | "expect" | "clear" | "agentIdFor">;
+    reconciler?: Pick<Reconciler, "executorFor" | "expect" | "clear" | "dismissed" | "agentIdFor">;
     /** The daemon's agent:resume verb, exposed the same way the reconciler
         itself consumes it -- one shared closure, wired in lib/daemon.ts. */
     resumeAgent?: (agentId: string) => Promise<{ ok: boolean; error?: string }>;

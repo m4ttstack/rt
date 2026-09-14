@@ -48,22 +48,24 @@ function pushSpy(): { push: GatePush; onAnsweredCalls: GateRow[] } {
 function reconcilerStub(opts: { executorState?: ExecutorState; agentId?: string | null } = {}) {
   const expectCalls: Expectation[] = [];
   const clearCalls: string[] = [];
+  const dismissedCalls: string[] = [];
   const executorForCalls: unknown[] = [];
-  const reconciler: Pick<Reconciler, "executorFor" | "expect" | "clear" | "agentIdFor"> = {
+  const reconciler: Pick<Reconciler, "executorFor" | "expect" | "clear" | "dismissed" | "agentIdFor"> = {
     executorFor: (hints) => {
       executorForCalls.push(hints);
       return { state: opts.executorState ?? "unknown", pane: null as LivePane | null };
     },
     expect: (e) => { expectCalls.push(e); },
     clear: (agentId) => { clearCalls.push(agentId); },
+    dismissed: (agentId) => { dismissedCalls.push(agentId); },
     agentIdFor: () => opts.agentId ?? null,
   };
-  return { reconciler, expectCalls, clearCalls, executorForCalls };
+  return { reconciler, expectCalls, clearCalls, dismissedCalls, executorForCalls };
 }
 
 function harness(opts: {
   push?: GatePush;
-  reconciler?: Pick<Reconciler, "executorFor" | "expect" | "clear" | "agentIdFor">;
+  reconciler?: Pick<Reconciler, "executorFor" | "expect" | "clear" | "dismissed" | "agentIdFor">;
   resumeAgent?: (agentId: string) => Promise<{ ok: boolean; error?: string }>;
   getAgentRecord?: (agentId: string) => Pick<AgentRecord, "paneId" | "sessionId" | "cwd"> | undefined;
   /** Tests that need the SAME store outside the handlers (e.g. to wire a
@@ -365,7 +367,7 @@ describe("gate:answer attention-gate routing (kind pane-attention)", () => {
 
   test('"dismiss" closes the gate: status "closed", closedReason "abandoned" -- no clear, no resume', async () => {
     const { push } = pushSpy();
-    const { reconciler, clearCalls } = reconcilerStub();
+    const { reconciler, clearCalls, dismissedCalls } = reconcilerStub();
     const resumeCalls: string[] = [];
     const resumeAgent = async (agentId: string) => { resumeCalls.push(agentId); return { ok: true }; };
     const { handlers, store } = harness({ push, reconciler, resumeAgent });
@@ -377,6 +379,9 @@ describe("gate:answer attention-gate routing (kind pane-attention)", () => {
     expect(res.ok).toBe(true);
     expect(clearCalls).toHaveLength(0);
     expect(resumeCalls).toHaveLength(0);
+    // The reconciler learns of the dismissal so the next sweep does not
+    // re-raise the same reading.
+    expect(dismissedCalls).toEqual(["agent-9"]);
     const after = store.get(row.id)!;
     expect(after.status).toBe("closed");
     expect(after.closedReason).toBe("abandoned");
