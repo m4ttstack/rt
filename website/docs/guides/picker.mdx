@@ -1,0 +1,58 @@
+---
+sidebar_position: 11
+title: The picker
+---
+
+# The picker
+
+Every interactive selection in rt (repos, worktrees, branches, scripts, arguments) goes through the same picker. It is a fullscreen fuzzy-search list rendered by rt-ui, the Go helper that handles all of rt's terminal UI.
+
+## Layout
+
+The picker fills the terminal. A filter input sits at the top, rows fill the middle, and a keybar docks to the bottom. Exiting the picker restores whatever was on screen before. A count in the header shows filtered and total rows (`6/118`); when the list overflows, a range appears in the footer (`4-17 of 118`) alongside a scroll thumb in the right margin.
+
+*A screenshot of a populated picker (e.g. `rt cd`) would help readers see the row layout, the keybar, and the scroll thumb together.*
+
+## Filtering
+
+The picker uses fzf's own `FuzzyMatchV2` algorithm as a Go library (not a subprocess), so ranking quality matches what fzf produces. Type to filter; matching is case-insensitive. Extended search syntax (`|`, `!` operators) is not supported.
+
+When nothing matches, the list is replaced with a faint "no matches" message and the footer swaps to `backspace edit filter, esc quit`.
+
+## Row anatomy
+
+Each row has left-aligned segments (the primary content, clipped only at real overflow) and right-aligned segments pinned to the row's right edge (never truncated). Segments marked as a column trigger column alignment across all rows, so two-column layouts (label + hint) line up cleanly.
+
+Data that arrives incrementally (like `rt cd`'s worktree enrichment from Linear and the forge) updates rows in place: the picker opens instantly with whatever is ready, and rows upgrade as enrichment completes. The cursor and filter survive the update.
+
+## Keybar and modifiers
+
+At rest, the keybar shows only the keys that work as-is. Keys are grouped and styled: a label for the group, then key-action pairs, with quit pinned to the right edge.
+
+On terminals that support the Kitty keyboard protocol, holding a modifier key (ctrl, alt) swaps the keybar to show that modifier's own actions under their bare keys. For example, if ctrl-h is "cd here," then while ctrl is held the footer shows just `h cd here`. On terminals without Kitty support, the keybar stays static and all keys work with their modifiers spelled out.
+
+Holding alt with rows that support alt-enter arg forms dims rows that do not support args; the cursor row shows an "enter pick args" badge.
+
+The full action list is always accessible via **ctrl-k** or a **right-click** context menu, which lists every registered action.
+
+*A screenshot comparing the keybar at rest vs. with a modifier held would help readers understand the swap.*
+
+## Multi-select
+
+When enabled, rows show a mint `◉` prefix when selected and a faint `○` when not. Space toggles the current row, tab toggles and advances, and ctrl-a toggles all/none. A pinned "selected" panel (a strip under the filter) is always visible when items are selected, showing a count (`◉ 3 selected`).
+
+*A screenshot of a multi-select with the pinned selected panel would illustrate this clearly.*
+
+## Group headers
+
+Rows with a `group` field render a faint uppercase header above the group. Group headers are visual only and never focusable.
+
+## Modal overlays
+
+Sort pickers, the ctrl-k action menu, and right-click context menus render as a modal overlay on top of the live picker. The parent dims underneath; the modal sits in a bordered panel. Esc or click-outside dismisses. The parent picker never tears down: filter, cursor, and all state survive.
+
+*A screenshot of a modal overlay (e.g. the ctrl-k menu or a sort picker) would show the parent dimming and modal panel together.*
+
+## Mouse
+
+Click to focus a row, double-click to accept. Click the `◉/○` prefix to toggle multi-select. Wheel scrolls the viewport. Right-click opens the context menu. Breadcrumb segments and keybar keys are clickable. Hover highlights the row without stealing the keyboard cursor. Terminals without SGR mouse support degrade gracefully to keyboard-only.
