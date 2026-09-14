@@ -184,13 +184,25 @@ export async function pruneOldBackups(
     const appDir = join(baseDir, app);
     if (!existsSync(appDir)) continue;
 
-    for (const file of readdirSync(appDir)) {
-      if (!file.endsWith(".zst.age")) continue;
-      const filePath = join(appDir, file);
-      const mtime = statSync(filePath).mtimeMs;
-      if (mtime < cutoff) {
-        unlinkSync(filePath);
-        removed.push(filePath);
+    const files = readdirSync(appDir).filter((f) => f.endsWith(".zst.age"));
+    const byPrefix = new Map<string, string[]>();
+    for (const file of files) {
+      const prefix = file.replace(/-\d{4}-\d{2}-\d{2}T.*$/, "");
+      const list = byPrefix.get(prefix) ?? [];
+      list.push(file);
+      byPrefix.set(prefix, list);
+    }
+
+    for (const [, group] of byPrefix) {
+      group.sort().reverse();
+      for (let i = 0; i < group.length; i++) {
+        const filePath = join(appDir, group[i]!);
+        const mtime = statSync(filePath).mtimeMs;
+        if (i === 0) continue;
+        if (mtime < cutoff) {
+          unlinkSync(filePath);
+          removed.push(filePath);
+        }
       }
     }
   }
