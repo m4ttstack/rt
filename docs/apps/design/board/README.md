@@ -44,6 +44,10 @@ required up to 12), with invented names throughout:
   it chose from
 - `B6 · Row menu`: the right-click menu synced with B5, today's beside two
   states of the new one
+- `B7 · Context travels with the question` (approved 2026-09-13): the
+  decision queue's respond gate with each thread's reviewer quote, verdict
+  and recommendation on its own question card, the overview pane collapsed
+  to one line with a disclosure; today's blob-above-the-form beside it
 
 ## The rulings
 
