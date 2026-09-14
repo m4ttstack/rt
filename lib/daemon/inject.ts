@@ -1,3 +1,4 @@
+import type { Logger } from "pino";
 import { herdrRequest, waitTimeout, HERDR_UNAVAILABLE } from "../herdr/client.ts";
 import { formatPaneRef } from "../../packages/rt-client/src/index.ts";
 import { bgSocketPath } from "./bg-service.ts";
@@ -69,4 +70,65 @@ export async function injectIntoPane(opts: InjectOptions): Promise<{ ok: true; d
   if (nudged.ok) return ok("accepted");
   if (nudged.code !== "timeout" && nudged.code !== "agent_prompt_stalled") return herdrError(nudged);
   return ok("queued");
+}
+
+const AFTER_TURN_STATES = ["idle", "done"];
+const AFTER_TURN_LEG_MS = 60_000;
+const AFTER_TURN_MAX_MS = 30 * 60_000;
+const AFTER_TURN_SETTLE_MS = 1_500;
+
+export interface AfterTurnOptions {
+  paneId: string;
+  text: string;
+  herdr?: typeof herdrRequest;
+  sockPath?: string;
+  log?: Logger;
+  legMs?: number;
+  maxWaitMs?: number;
+  settleMs?: number;
+}
+
+/**
+ * Injects `text` once the target's current turn has ended. Claude Code hands
+ * a plain line queued mid-turn to the model inside that turn, while a slash
+ * command waits for the turn's end, so a continuation sent right behind one
+ * would run first; waiting for idle restores the order. `blocked` is a
+ * prompt mid-turn, not an end, so it keeps waiting. The caller is often the
+ * very pane whose turn must end, so this never blocks a reply: handlers
+ * schedule it with `void`. A settle window plus a re-probe after `agent.wait`
+ * guards against a transient idle between a tool result and the next model
+ * call, which would otherwise fire the continuation mid-turn.
+ */
+export async function injectAfterTurn(opts: AfterTurnOptions): Promise<void> {
+  const { paneId, text, sockPath, log } = opts;
+  const herdr = opts.herdr ?? herdrRequest;
+  const legMs = opts.legMs ?? AFTER_TURN_LEG_MS;
+  const settleMs = opts.settleMs ?? AFTER_TURN_SETTLE_MS;
+  const deadline = Date.now() + (opts.maxWaitMs ?? AFTER_TURN_MAX_MS);
+  try {
+    while (Date.now() < deadline) {
+      const settled = await herdr("agent.wait", { target: paneId, until: AFTER_TURN_STATES, timeout_ms: legMs }, { timeoutMs: waitTimeout(legMs), sockPath });
+      if (settled.ok) {
+        await Bun.sleep(settleMs);
+        const probe = await herdr<{ agent: { agent_status: string } }>("agent.get", { target: paneId }, { sockPath });
+        if (probe.ok && AFTER_TURN_STATES.includes(probe.result.agent.agent_status)) {
+          const res = await injectIntoPane({ paneId, text, herdr, sockPath });
+          if (res.ok && res.data.delivered === "refused") log?.warn(res.data, "pane:send continuation refused");
+          else if (res.ok) log?.info(res.data, "pane:send continuation delivered");
+          else log?.warn({ paneId, err: res.error }, "pane:send continuation failed");
+          return;
+        }
+        if (probe.ok) continue;
+        log?.warn({ paneId, err: probe.message }, "pane:send continuation abandoned");
+        return;
+      }
+      if (settled.code !== "timeout") {
+        log?.warn({ paneId, err: settled.message }, "pane:send continuation abandoned");
+        return;
+      }
+    }
+    log?.warn({ paneId }, "pane:send continuation abandoned: turn never ended");
+  } catch (err) {
+    log?.warn({ paneId, err }, "pane:send continuation crashed");
+  }
 }

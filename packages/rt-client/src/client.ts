@@ -432,6 +432,7 @@ export function paneSend(
 ): Promise<RtResponse<Commands["pane:send"]["data"]>> {
   const payload: Record<string, unknown> = { paneId: a.paneId, text: a.text };
   if (a.callerPane !== undefined) payload.callerPane = a.callerPane;
+  if (a.continuation !== undefined) payload.continuation = a.continuation;
   return rtCommand<Commands["pane:send"]["data"]>("pane:send", payload, { sockPath: o.sockPath, timeoutMs: o.timeoutMs ?? 30_000 });
 }
 

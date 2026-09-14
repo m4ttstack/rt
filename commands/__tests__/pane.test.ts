@@ -190,6 +190,163 @@ test("pane send exits non-zero when the daemon fails", async () => {
   expect(r.stderr).toContain("herdr unavailable");
 });
 
+// ─── pane send self ────────────────────────────────────────────────────────
+
+test("pane send self targets HERDR_PANE_ID and omits callerPane", async () => {
+  replies = { "pane:send": { ok: true, data: { paneId: "w1:p1", delivered: "queued" } } };
+  const orig = process.env.HERDR_PANE_ID;
+  const origSession = process.env.HERDR_SESSION;
+  process.env.HERDR_PANE_ID = "w1:p1";
+  delete process.env.HERDR_SESSION;
+  try {
+    const r = await run(paneSend, ["self", "--text", "/cd /repos/acme"]);
+    expect(seen[0]).toEqual({ cmd: "pane:send", payload: { paneId: "w1:p1", text: "/cd /repos/acme" } });
+    expect(r.stdout).toBe("w1:p1 queued");
+    expect(r.code).toBe(0);
+  } finally {
+    if (orig === undefined) delete process.env.HERDR_PANE_ID; else process.env.HERDR_PANE_ID = orig;
+    if (origSession === undefined) delete process.env.HERDR_SESSION; else process.env.HERDR_SESSION = origSession;
+  }
+});
+
+test("pane send self --json prints the JSON shape", async () => {
+  replies = { "pane:send": { ok: true, data: { paneId: "w1:p1", delivered: "queued" } } };
+  const orig = process.env.HERDR_PANE_ID;
+  const origSession = process.env.HERDR_SESSION;
+  process.env.HERDR_PANE_ID = "w1:p1";
+  delete process.env.HERDR_SESSION;
+  try {
+    const r = await run(paneSend, ["self", "--text", "/cd /repos/acme", "--json"]);
+    expect(JSON.parse(r.stdout)).toEqual({ ok: true, paneId: "w1:p1", delivered: "queued" });
+  } finally {
+    if (orig === undefined) delete process.env.HERDR_PANE_ID; else process.env.HERDR_PANE_ID = orig;
+    if (origSession === undefined) delete process.env.HERDR_SESSION; else process.env.HERDR_SESSION = origSession;
+  }
+});
+
+test("pane send self from a bg pane targets the bg: ref", async () => {
+  replies = { "pane:send": { ok: true, data: { paneId: "bg:w1:p1", delivered: "queued" } } };
+  const origPane = process.env.HERDR_PANE_ID;
+  const origSession = process.env.HERDR_SESSION;
+  process.env.HERDR_PANE_ID = "w1:p1";
+  process.env.HERDR_SESSION = "bg";
+  try {
+    await run(paneSend, ["self", "--text", "/cd /repos/acme"]);
+    expect(seen[0]).toEqual({ cmd: "pane:send", payload: { paneId: "bg:w1:p1", text: "/cd /repos/acme" } });
+  } finally {
+    if (origPane === undefined) delete process.env.HERDR_PANE_ID; else process.env.HERDR_PANE_ID = origPane;
+    if (origSession === undefined) delete process.env.HERDR_SESSION; else process.env.HERDR_SESSION = origSession;
+  }
+});
+
+test("pane send self outside a herdr pane fails before any daemon call", async () => {
+  replies = { "pane:send": { ok: true, data: { paneId: "w1:p1", delivered: "queued" } } };
+  const orig = process.env.HERDR_PANE_ID;
+  delete process.env.HERDR_PANE_ID;
+  try {
+    const r = await run(paneSend, ["self", "--text", "/cd /repos/acme"]);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toBe("rt pane: not in a herdr pane (HERDR_PANE_ID unset)");
+    expect(seen).toEqual([]);
+  } finally {
+    if (orig !== undefined) process.env.HERDR_PANE_ID = orig;
+  }
+});
+
+test("pane send with a literal copy of the caller's own id still sends callerPane", async () => {
+  replies = { "pane:send": { ok: true, data: { paneId: "w1:p1", delivered: "refused", reason: "that is this pane" } } };
+  const orig = process.env.HERDR_PANE_ID;
+  const origSession = process.env.HERDR_SESSION;
+  process.env.HERDR_PANE_ID = "w1:p1";
+  delete process.env.HERDR_SESSION;
+  try {
+    const r = await run(paneSend, ["w1:p1", "--text", "/cd /repos/acme"]);
+    expect(seen[0]).toEqual({ cmd: "pane:send", payload: { paneId: "w1:p1", text: "/cd /repos/acme", callerPane: "w1:p1" } });
+    expect(r.stdout).toBe("w1:p1 refused (that is this pane)");
+  } finally {
+    if (orig === undefined) delete process.env.HERDR_PANE_ID; else process.env.HERDR_PANE_ID = orig;
+    if (origSession === undefined) delete process.env.HERDR_SESSION; else process.env.HERDR_SESSION = origSession;
+  }
+});
+
+// ─── pane send --then ────────────────────────────────────────────────────────
+
+test("pane send --then \"\" is a usage error before any daemon call", async () => {
+  const r = await run(paneSend, ["w1:p2", "--text", "hi", "--then", ""]);
+  expect(r.code).toBe(1);
+  expect(r.stderr).toContain("--then needs a body");
+  expect(seen).toEqual([]);
+});
+
+test("pane send --then as the last argument is a usage error, not an omitted flag", async () => {
+  const r = await run(paneSend, ["w1:p2", "--text", "hi", "--then"]);
+  expect(r.code).toBe(1);
+  expect(r.stderr).toContain("--then needs a body");
+  expect(seen).toEqual([]);
+});
+
+test("pane send --then rides the payload as continuation and prints the deferred line", async () => {
+  replies = { "pane:send": { ok: true, data: { paneId: "w1:p1", delivered: "queued", continuation: { delivered: "deferred" } } } };
+  const orig = process.env.HERDR_PANE_ID;
+  process.env.HERDR_PANE_ID = "w1:p1";
+  try {
+    const r = await run(paneSend, ["self", "--text", "/cd /repos/acme", "--then", "Continue: enter worktree foo"]);
+    expect(seen).toEqual([{ cmd: "pane:send", payload: { paneId: "w1:p1", text: "/cd /repos/acme", continuation: "Continue: enter worktree foo" } }]);
+    expect(r.stdout).toBe("w1:p1 queued\nthen: w1:p1 deferred");
+    expect(r.code).toBe(0);
+  } finally {
+    if (orig === undefined) delete process.env.HERDR_PANE_ID; else process.env.HERDR_PANE_ID = orig;
+  }
+});
+
+test("pane send --then prints no then line when the daemon scheduled nothing", async () => {
+  replies = { "pane:send": { ok: true, data: { paneId: "w1:p2", delivered: "refused", reason: "at a prompt" } } };
+  const r = await run(paneSend, ["w1:p2", "--text", "hi", "--then", "and again"]);
+  expect(seen).toHaveLength(1);
+  expect(seen[0]!.payload).toMatchObject({ paneId: "w1:p2", text: "hi", continuation: "and again" });
+  expect(r.stdout).toBe("w1:p2 refused (at a prompt)");
+  expect(r.code).toBe(0);
+});
+
+test("pane send --then --json maps continuation to then", async () => {
+  replies = { "pane:send": { ok: true, data: { paneId: "w1:p2", delivered: "accepted", continuation: { delivered: "deferred" } } } };
+  const r = await run(paneSend, ["w1:p2", "--text", "hi", "--then", "and again", "--json"]);
+  expect(JSON.parse(r.stdout)).toEqual({ ok: true, paneId: "w1:p2", delivered: "accepted", then: { delivered: "deferred" } });
+});
+
+test("pane send --then --json omits then when the daemon scheduled nothing", async () => {
+  replies = { "pane:send": { ok: true, data: { paneId: "w1:p2", delivered: "refused", reason: "not a claude pane" } } };
+  const r = await run(paneSend, ["w1:p2", "--text", "hi", "--then", "and again", "--json"]);
+  expect(JSON.parse(r.stdout)).toEqual({ ok: true, paneId: "w1:p2", delivered: "refused", reason: "not a claude pane" });
+});
+
+test("pane send without --then sends no continuation", async () => {
+  replies = { "pane:send": { ok: true, data: { paneId: "w1:p2", delivered: "accepted" } } };
+  await run(paneSend, ["w1:p2", "--text", "hi"]);
+  expect(seen[0]!.payload).not.toHaveProperty("continuation");
+});
+
+test("pane send --then value is not mistaken for the positional pane", async () => {
+  replies = { "pane:send": { ok: true, data: { paneId: "w1:p2", delivered: "accepted" } } };
+  await run(paneSend, ["--then", "and again", "w1:p2", "--text", "hi"]);
+  expect(seen[0]!.payload).toMatchObject({ paneId: "w1:p2", text: "hi" });
+});
+
+test("pane send --then with --text - reads the first line's body from stdin", async () => {
+  replies = { "pane:send": { ok: true, data: { paneId: "w1:p2", delivered: "queued", continuation: { delivered: "deferred" } } } };
+  const orig = process.env.HERDR_PANE_ID;
+  delete process.env.HERDR_PANE_ID;
+  const stdinSpy = spyOn(Bun.stdin, "stream").mockImplementation(() => new Response("line one\nline two").body!);
+  try {
+    const r = await run(paneSend, ["w1:p2", "--text", "-", "--then", "and again"]);
+    expect(seen[0]).toEqual({ cmd: "pane:send", payload: { paneId: "w1:p2", text: "line one\nline two", continuation: "and again" } });
+    expect(r.stdout).toBe("w1:p2 queued\nthen: w1:p2 deferred");
+  } finally {
+    stdinSpy.mockRestore();
+    if (orig !== undefined) process.env.HERDR_PANE_ID = orig;
+  }
+});
+
 // ─── pane focus (Task 7: bg refs / attend) ─────────────────────────────────
 
 test("renderPaneFocus prints focused/not-focused for a plain result", () => {

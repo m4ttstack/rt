@@ -389,6 +389,54 @@ test("pane:send is herdr unavailable when the socket is missing", async () => {
   expect(res.error.startsWith(HERDR_UNAVAILABLE)).toBe(true);
 });
 
+test("pane:send with a continuation replies deferred and schedules the second line for after the turn", async () => {
+  const claude = (status: string) => ({ type: "agent_info", agent: { pane_id: "w1:p1", agent: "claude", agent_status: status } });
+  let waited = false;
+  const { sock, seen, stop } = fakeHerdr((method, params) => {
+    if (method === "agent.get") return claude(waited ? "idle" : "working");
+    if (method === "agent.prompt") return { type: "agent_prompted", agent: { ...claude("working").agent, text: params.text } };
+    if (method === "agent.wait") { waited = true; return claude("idle"); }
+    return new HerdrFakeError("invalid_request", method);
+  });
+  stops.push(stop);
+  const herdr: typeof herdrRequest = (m, p, o) => herdrRequest(m, p, { ...o, sockPath: sock });
+  const scheduled: Array<Promise<void>> = [];
+  const pane = createPaneHandlers({ db: freshDb(), repoIndex: () => ({}), herdr, schedule: (p) => { scheduled.push(p); } });
+  const res = await pane["pane:send"]({ paneId: "w1:p1", text: "/cd /repos/chat", continuation: "Continue: enter worktree" });
+  expect(res).toEqual({ ok: true, data: { paneId: "w1:p1", delivered: "queued", continuation: { delivered: "deferred" } } });
+  expect(scheduled).toHaveLength(1);
+  await scheduled[0];
+  const prompts = seen.filter((s) => s.method === "agent.prompt").map((s) => s.params.text);
+  expect(prompts).toEqual(["/cd /repos/chat", "Continue: enter worktree"]);
+  expect(seen.findIndex((s) => s.method === "agent.wait")).toBeGreaterThan(seen.findIndex((s) => s.params.text === "/cd /repos/chat"));
+});
+
+test("pane:send with an empty continuation schedules nothing and omits continuation", async () => {
+  const claude = (status: string) => ({ type: "agent_info", agent: { pane_id: "w1:p1", agent: "claude", agent_status: status } });
+  const { sock, stop } = fakeHerdr((method, params) =>
+    method === "agent.get" ? claude("working")
+    : method === "agent.prompt" ? { type: "agent_prompted", agent: { ...claude("working").agent, text: params.text } }
+    : new HerdrFakeError("invalid_request", method));
+  stops.push(stop);
+  const herdr: typeof herdrRequest = (m, p, o) => herdrRequest(m, p, { ...o, sockPath: sock });
+  const scheduled: Array<Promise<void>> = [];
+  const pane = createPaneHandlers({ db: freshDb(), repoIndex: () => ({}), herdr, schedule: (p) => { scheduled.push(p); } });
+  const res = await pane["pane:send"]({ paneId: "w1:p1", text: "x", continuation: "" });
+  expect(res).toEqual({ ok: true, data: { paneId: "w1:p1", delivered: "queued" } });
+  expect(scheduled).toHaveLength(0);
+});
+
+test("pane:send with a continuation after a refused first line schedules nothing and omits continuation", async () => {
+  const scheduled: Array<Promise<void>> = [];
+  const { sock, stop } = fakeHerdr(() => new HerdrFakeError("invalid_request", "unused"));
+  stops.push(stop);
+  const herdr: typeof herdrRequest = (m, p, o) => herdrRequest(m, p, { ...o, sockPath: sock });
+  const pane = createPaneHandlers({ db: freshDb(), repoIndex: () => ({}), herdr, schedule: (p) => { scheduled.push(p); } });
+  const res = await pane["pane:send"]({ paneId: "w1:p1", text: "x", callerPane: "w1:p1", continuation: "y" });
+  expect(res).toEqual({ ok: true, data: { paneId: "w1:p1", delivered: "refused", reason: "that is this pane" } });
+  expect(scheduled).toHaveLength(0);
+});
+
 // pane:focus routes to the tray (which owns the herdr focus + native window
 // raise), never to herdr directly, so these fake the tray, not herdr.
 function fakeTray(reply: TrayReply, seen?: Array<{ path: string; method: string; body: unknown }>): TrayClient {

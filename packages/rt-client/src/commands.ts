@@ -261,7 +261,8 @@ export interface InviteResult { paneId: string; delivered: "accepted" | "queued"
 
 /** Duplicated shape on purpose: mirrors lib/daemon/inject.ts's InjectResult. */
 export type PaneDelivery = "accepted" | "queued" | "refused";
-export interface PaneSendResult { paneId: string; delivered: PaneDelivery; reason?: string }
+/** `continuation` is present only when the daemon scheduled a second line for after the target's current turn. */
+export interface PaneSendResult { paneId: string; delivered: PaneDelivery; reason?: string; continuation?: { delivered: "deferred" } }
 /** `attendTab` is set only for a `bg:` ref: focus for a background pane IS
     the attend flow (a visible tab running a terminal attach), and this is
     that tab's id. */
@@ -616,7 +617,7 @@ export interface Commands {
     payload: { cwd: string; account?: string; model?: string; effort?: string; prompt?: string; workspace?: string };
     data: { pane: ChatPane; ready: boolean };
   };
-  "pane:send": { payload: { paneId: string; text: string; callerPane?: string }; data: PaneSendResult };
+  "pane:send": { payload: { paneId: string; text: string; callerPane?: string; continuation?: string }; data: PaneSendResult };
   /** `callerWorkspace` (HERDR_WORKSPACE_ID) is required only for a `bg:`
       ref, whose focus opens an attend tab in the caller's own workspace. */
   "pane:focus": { payload: { paneId: string; callerWorkspace?: string }; data: PaneFocusResult };

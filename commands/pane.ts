@@ -5,17 +5,17 @@
  *   rt pane peek <pane> [--lines 8] [--json]                      the last lines of a pane's screen
  *   rt pane spawn --cwd <path> [--account <a>] [--model <m>]
  *                 [--effort <e>] [--prompt <text>] [--workspace <label>] [--json]
- *   rt pane send <pane> --text <text>                             inject text into a pane (--text - reads stdin)
+ *   rt pane send <pane|self> --text <text> [--then <text>]        inject text into a pane; self is this pane; --then lands after its turn (--text - reads stdin)
  *   rt pane accounts [--json]                                     cswap accounts with headroom
  *   rt pane directories [--q <text>] [--json]                     repos and worktrees for --cwd
  *
  * Every verb needs herdr; without it the daemon answers "herdr unavailable".
  */
-import type { ChatPane, RtResponse } from "../packages/rt-client/src/index.ts";
+import type { ChatPane, PaneSendResult, RtResponse } from "../packages/rt-client/src/index.ts";
 import { BG_PREFIX, paneAccounts as paneAccountsRt, paneDirectories as paneDirectoriesRt, paneFocus as paneFocusRt, paneList as paneListRt, panePeek as panePeekRt, paneSend as paneSendRt, paneSpawn as paneSpawnRt } from "../packages/rt-client/src/index.ts";
 import { selfPaneRef } from "../lib/self-pane.ts";
 
-const FLAGS_WITH_VALUES = new Set(["--lines", "--cwd", "--account", "--model", "--effort", "--prompt", "--workspace", "--q", "--sock", "--text"]);
+const FLAGS_WITH_VALUES = new Set(["--lines", "--cwd", "--account", "--model", "--effort", "--prompt", "--workspace", "--q", "--sock", "--text", "--then"]);
 
 function positional(args: string[]): string | undefined {
   for (let i = 0; i < args.length; i++) {
@@ -101,15 +101,34 @@ export async function paneSpawn(args: string[]): Promise<void> {
   console.log(`${data.ready ? "ready" : "not ready"}  ${renderPane(data.pane, data.pane.paneId.length)}`);
 }
 
+const SELF_TARGET = "self";
+export const NOT_IN_PANE = "not in a herdr pane (HERDR_PANE_ID unset)";
+
 export async function paneSend(args: string[]): Promise<void> {
-  const paneId = positional(args);
+  const target = positional(args);
   const rawText = flagValue(args, "--text");
-  if (!paneId || rawText === undefined) fail("usage: rt pane send <pane> --text <text>  (--text - reads stdin)");
+  if (!target || rawText === undefined) fail("usage: rt pane send <pane|self> --text <text> [--then <text>]  (--text - reads stdin)");
   const text = rawText === "-" ? await new Response(Bun.stdin.stream()).text() : rawText;
-  const callerPane = selfPaneRef();
-  const data = unwrap(await paneSendRt({ paneId, text, ...(callerPane ? { callerPane } : {}) }, opts(args)), "pane send");
-  if (args.includes("--json")) return void console.log(JSON.stringify({ ok: true, ...data }));
-  console.log(`${data.paneId} ${data.delivered}${data.reason ? ` (${data.reason})` : ""}`);
+  const own = selfPaneRef();
+  // The daemon refuses a callerPane equal to the target, so `self` is the one
+  // spelling that reaches this pane: it sends the own ref as the target and no
+  // callerPane. A literal copy of the own id keeps the guard.
+  const paneId = target === SELF_TARGET ? (own ?? fail(NOT_IN_PANE)) : target;
+  const callerPane = target === SELF_TARGET ? undefined : own;
+  const continuation = flagValue(args, "--then");
+  if (args.includes("--then") && !continuation) fail("--then needs a body");
+  const data = unwrap(
+    await paneSendRt({ paneId, text, ...(callerPane ? { callerPane } : {}), ...(continuation !== undefined ? { continuation } : {}) }, opts(args)),
+    "pane send",
+  );
+  const { continuation: then, ...first } = data;
+  if (args.includes("--json")) return void console.log(JSON.stringify({ ok: true, ...first, ...(then ? { then } : {}) }));
+  console.log(renderDelivery(first));
+  if (then) console.log(`then: ${first.paneId} ${then.delivered}`);
+}
+
+function renderDelivery(d: Pick<PaneSendResult, "paneId" | "delivered" | "reason">): string {
+  return `${d.paneId} ${d.delivered}${d.reason ? ` (${d.reason})` : ""}`;
 }
 
 export function renderPaneFocus(data: { paneId: string; focused: boolean; attendTab?: string }): string {

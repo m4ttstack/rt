@@ -7,7 +7,7 @@ sidebar_label: send
 
 `rt › pane › send`
 
-Inject text into a pane as if typed and submitted (--text - reads stdin)
+Inject text into a pane as if typed and submitted; self is this pane (--text - reads stdin)
 
 ## Usage
 
@@ -19,8 +19,9 @@ rt pane send <pane> [flags]
 
 | Flag / Arg | Type | Default | Description |
 | --- | --- | --- | --- |
-| `<pane>` | text |  | herdr pane id to send to |
+| `<pane>` | text |  | herdr pane id to send to, or self for the pane this command runs in (HERDR_PANE_ID) |
 | `--text` | text |  | Body to inject; pass - to read the body from stdin |
+| `--then` | text |  | A second line the daemon types once the pane's current turn has ended, so it lands after a slash command; skipped when the first line is refused |
 | [`--json`](/guides/common-flags) | boolean | `false` | Emit the delivery result as JSON instead of the plain line |
 
 _See code: [commands/pane.ts › paneSend](https://github.com/m4ttstack/rt/blob/main/commands/pane.ts)_

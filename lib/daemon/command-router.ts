@@ -134,7 +134,7 @@ export function buildRoutedHandlers(opts: {
     db: opts.stateDb, emitEvent, repoIndex: ctx.repoIndex, log: ctx.log, deliveryChains: opts.chatDeliveryChains,
   });
   const paneHandlers = createPaneHandlers({
-    db: opts.stateDb, repoIndex: ctx.repoIndex, bg: opts.bgService,
+    db: opts.stateDb, repoIndex: ctx.repoIndex, bg: opts.bgService, log: ctx.log,
     herdrRunnerFor: (socket) => defaultHerdrRunner(socket ? { ...process.env, HERDR_SOCKET_PATH: socket } : process.env),
   });
   const agentHandlers = createAgentHandlers({
