@@ -89,9 +89,9 @@ describe("notification transitions", () => {
     await runAccountsSweep(deps);
 
     expect(deps.notifications).toHaveLength(1);
-    expect(deps.notifications[0].category).toBe("credential_health");
-    expect(deps.notifications[0].title).toBe("GitLab token rejected");
-    expect(deps.notifications[0].message).toContain("401 Unauthorized");
+    expect(deps.notifications[0]!.category).toBe("credential_health");
+    expect(deps.notifications[0]!.title).toBe("GitLab token rejected");
+    expect(deps.notifications[0]!.message).toContain("401 Unauthorized");
 
     const row = readCredentialHealth(db, "gitlab");
     expect(row!.status).toBe("invalid");
@@ -163,7 +163,7 @@ describe("notification transitions", () => {
     await runAccountsSweep(deps);
 
     expect(deps.notifications).toHaveLength(1);
-    expect(deps.notifications[0].title).toMatch(/GitHub token expires in 3 day/);
+    expect(deps.notifications[0]!.title).toMatch(/GitHub token expires in 3 day/);
   });
 
   test("ready + expiring + notified < 24h ago: skips", async () => {
@@ -216,8 +216,8 @@ describe("events bus emission", () => {
     const deps = makeDeps(db, [target], 1000);
     await runAccountsSweep(deps);
     expect(deps.events).toHaveLength(1);
-    expect(deps.events[0].topic).toBe("credential/health");
-    expect(deps.events[0].payload).toMatchObject({ integration: "gitlab", transition: "dead" });
+    expect(deps.events[0]!.topic).toBe("credential/health");
+    expect(deps.events[0]!.payload).toMatchObject({ integration: "gitlab", transition: "dead" });
   });
 
   test("emits recovered on invalid to ready", async () => {
