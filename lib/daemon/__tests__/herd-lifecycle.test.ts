@@ -151,6 +151,102 @@ describe("herd-lifecycle", () => {
     expect(posts).toEqual([]);
   });
 
+  test("idle past the debounce with no open gate and no report posts exactly one notice", async () => {
+    const { store, lc, herd, posts, timers } = fx();
+    store.upsertJob({ herd: herd.id, name: "job-a", worktree: "/w", handle: "job-a", status: "active", pane: "w1:p1" });
+    await lc.handleEvent(null, { type: "pane.agent_status_changed", pane_id: "w1:p1", agent_status: "idle" });
+    expect(posts).toHaveLength(0);
+    const idle = timers.filter((t) => t.ms === 180_000 && !t.cleared);
+    expect(idle).toHaveLength(1);
+    idle[0]!.fn();
+    await Bun.sleep(0);
+    expect(posts).toHaveLength(1);
+    expect(posts[0]).toMatchObject({ room: "herd-demo-1", handle: "herdr", mentions: ["shepherd"] });
+    expect(posts[0].body).toContain("job-a idle with no open gate and no report");
+  });
+
+  test("idle with an open gate suppresses the notice", async () => {
+    const { store, gate, lc, herd, posts, timers } = fx();
+    store.upsertJob({ herd: herd.id, name: "job-a", worktree: "/w", handle: "job-a", status: "active", pane: "w1:p1" });
+    await gate["gate:open"]({ subject: "herd:demo-1/job-a", kind: "question", questions: [{ id: "q", label: "?", multi: false, options: ["a"] }] });
+    await lc.handleEvent(null, { type: "pane.agent_status_changed", pane_id: "w1:p1", agent_status: "idle" });
+    const idle = timers.filter((t) => t.ms === 180_000 && !t.cleared);
+    expect(idle).toHaveLength(1);
+    idle[0]!.fn();
+    await Bun.sleep(0);
+    expect(posts).toHaveLength(0);
+  });
+
+  test("idle after the job published its report posts nothing", async () => {
+    const { store, lc, herd, posts, timers } = fx();
+    store.upsertJob({ herd: herd.id, name: "job-a", worktree: "/w", handle: "job-a", status: "active", pane: "w1:p1" });
+    await lc.handleEvent(null, { type: "pane.agent_status_changed", pane_id: "w1:p1", agent_status: "idle" });
+    store.setJobStatus(herd.id, "job-a", "done", { lastReport: 42 });
+    const idle = timers.filter((t) => t.ms === 180_000 && !t.cleared);
+    expect(idle).toHaveLength(1);
+    idle[0]!.fn();
+    await Bun.sleep(0);
+    expect(posts).toHaveLength(0);
+  });
+
+  test("a status change back to working before the idle debounce cancels it", async () => {
+    const { store, lc, herd, posts, timers } = fx();
+    store.upsertJob({ herd: herd.id, name: "job-a", worktree: "/w", handle: "job-a", status: "active", pane: "w1:p1" });
+    await lc.handleEvent(null, { type: "pane.agent_status_changed", pane_id: "w1:p1", agent_status: "idle" });
+    const idle = timers.filter((t) => t.ms === 180_000 && !t.cleared);
+    expect(idle).toHaveLength(1);
+    await lc.handleEvent(null, { type: "pane.agent_status_changed", pane_id: "w1:p1", agent_status: "working" });
+    expect(idle[0]!.cleared).toBe(true);
+    expect(posts).toHaveLength(0);
+  });
+
+  test("blocked and idle timers coexist for one pane without interfering", async () => {
+    const { store, lc, herd, posts, timers } = fx();
+    store.upsertJob({ herd: herd.id, name: "job-a", worktree: "/w", handle: "job-a", status: "active", pane: "w1:p1" });
+    await lc.handleEvent(null, { type: "pane.agent_status_changed", pane_id: "w1:p1", agent_status: "blocked" });
+    const blocked = timers.filter((t) => t.ms === 30_000 && !t.cleared);
+    expect(blocked).toHaveLength(1);
+    blocked[0]!.fn();
+    await Bun.sleep(0);
+    expect(posts).toHaveLength(1);
+    expect(posts[0].body).toContain("blocked");
+    await lc.handleEvent(null, { type: "pane.agent_status_changed", pane_id: "w1:p1", agent_status: "working" });
+    await lc.handleEvent(null, { type: "pane.agent_status_changed", pane_id: "w1:p1", agent_status: "idle" });
+    const idle = timers.filter((t) => t.ms === 180_000 && !t.cleared);
+    expect(idle).toHaveLength(1);
+    idle[0]!.fn();
+    await Bun.sleep(0);
+    expect(posts).toHaveLength(2);
+    expect(posts[1].body).toContain("idle");
+  });
+
+  test("a gate answered during the idle debounce does not suppress: the fire-time check sees the gate is closed", async () => {
+    const { store, gate, lc, herd, posts, timers } = fx();
+    store.upsertJob({ herd: herd.id, name: "job-a", worktree: "/w", handle: "job-a", status: "active", pane: "w1:p1" });
+    const opened = await gate["gate:open"]({ subject: "herd:demo-1/job-a", kind: "question", questions: [{ id: "q", label: "?", multi: false, options: ["a"] }] });
+    if (!opened.ok) throw new Error(opened.error);
+    await lc.handleEvent(null, { type: "pane.agent_status_changed", pane_id: "w1:p1", agent_status: "idle" });
+    await gate["gate:answer"]({ id: opened.data.id, answers: { q: "a" }, by: "shepherd" });
+    const idle = timers.filter((t) => t.ms === 180_000 && !t.cleared);
+    expect(idle).toHaveLength(1);
+    idle[0]!.fn();
+    await Bun.sleep(0);
+    expect(posts).toHaveLength(1);
+    expect(posts[0].body).toContain("idle");
+  });
+
+  test("a gate opened during the idle debounce suppresses: the fire-time check sees the gate is open", async () => {
+    const { store, gate, lc, herd, posts, timers } = fx();
+    store.upsertJob({ herd: herd.id, name: "job-a", worktree: "/w", handle: "job-a", status: "active", pane: "w1:p1" });
+    await lc.handleEvent(null, { type: "pane.agent_status_changed", pane_id: "w1:p1", agent_status: "idle" });
+    await gate["gate:open"]({ subject: "herd:demo-1/job-a", kind: "question", questions: [{ id: "q", label: "?", multi: false, options: ["a"] }] });
+    const idle = timers.filter((t) => t.ms === 180_000 && !t.cleared);
+    expect(idle).toHaveLength(1);
+    idle[0]!.fn();
+    await Bun.sleep(0);
+    expect(posts).toHaveLength(0);
+  });
+
   test("exited on an active job posts, marks crashed, and closes its open gate as abandoned", async () => {
     const { store, gateStore, lc, herd, posts } = fx();
     store.upsertJob({ herd: herd.id, name: "job-a", worktree: "/w", handle: "job-a", status: "at-gate", pane: "w1:p1" });
