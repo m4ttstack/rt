@@ -199,6 +199,15 @@ describe("parseDepsLock repo field and pending-url rule", () => {
     const lock = parseDepsLock(lockWith({ status: "pending", url: "", sha256: "", version: "" }));
     expect(lock.tools[0]!.status).toBe("pending");
   });
+
+  test("make-src is an accepted archive kind (a helper built from a pinned source tarball)", () => {
+    const lock = parseDepsLock(lockWith({ archive: "make-src", extract: "x-1.0.0" }));
+    expect(lock.tools[0]!.archive).toBe("make-src");
+  });
+
+  test("an unknown archive kind is rejected", () => {
+    expect(() => parseDepsLock(lockWith({ archive: "cmake-src" }))).toThrow(/archive/);
+  });
 });
 
 describe("bundleRootFromExec", () => {

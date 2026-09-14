@@ -73,6 +73,26 @@ fetch() { # url sha → prints cached path
   echo "$dest"
 }
 
+# Everything the bundle ships has to run on a Mac with no Homebrew, so a
+# binary compiled HERE may link only libraries every Mac carries. Applies to
+# what this script builds itself; an upstream release binary is the vendor's
+# own contract, and its linkage is asserted by check-bundle's run smoke.
+assert_system_linkage() { # name path
+  local name="$1" path="$2" line lib bad=0
+  while IFS= read -r line; do
+    lib="${line%% (*}"
+    lib="${lib#"${lib%%[![:space:]]*}"}"
+    case "$lib" in
+      ""|/usr/lib/*|/System/*) ;;
+      *) echo "  x $name links outside the system libraries: $lib" >&2; bad=1 ;;
+    esac
+  done < <(otool -L "$path" | tail -n +2)
+  if [ "$bad" -ne 0 ]; then
+    rm -f "$path"
+    exit 1
+  fi
+}
+
 unpack() { # name archive-file archive-kind extract-path dest
   local name="$1" file="$2" kind="$3" extract="$4" dest="$5" tmp
   # Skills are cleared for every archive kind, not just the tar branch that
@@ -128,6 +148,34 @@ unpack() { # name archive-file archive-kind extract-path dest
       }
       rm -rf "$tmp"
       chmod 755 "$dest" ;;
+    make-src)
+      # Compiled from a sha-pinned source release because the project ships no
+      # darwin-arm64 binary, and a Homebrew bottle links dylibs that live only
+      # under /opt/homebrew. The Makefile target is the tool's own name.
+      tmp="$(mktemp -d)"
+      tar -xf "$file" -C "$tmp"
+      if [ ! -d "$tmp/$extract" ]; then
+        echo "  x $name: archive no longer contains $extract" >&2
+        rm -rf "$tmp"
+        exit 1
+      fi
+      if ! make -C "$tmp/$extract" "$name" -j"$(sysctl -n hw.ncpu 2>/dev/null || echo 4)" > "$tmp/make.log" 2>&1; then
+        echo "  x $name: make failed" >&2
+        tail -20 "$tmp/make.log" >&2
+        rm -rf "$tmp"
+        exit 1
+      fi
+      if [ ! -e "$tmp/$extract/$name" ]; then
+        echo "  x $name: make produced no $name under $extract" >&2
+        rm -rf "$tmp"
+        exit 1
+      fi
+      # Plain cp, which dereferences: the target commonly lands as a symlink
+      # into a subdirectory that is about to be deleted with $tmp.
+      cp "$tmp/$extract/$name" "$dest"
+      chmod 755 "$dest"
+      rm -rf "$tmp"
+      assert_system_linkage "$name" "$dest" ;;
     zip)
       tmp="$(mktemp -d)"
       ditto -x -k "$file" "$tmp"
