@@ -431,7 +431,7 @@ describe("accountRows — per-entry isolation", () => {
   });
 });
 
-describe("accountRows — credential_health integration (rt-132)", () => {
+describe("accountRows, credential_health integration (rt-132)", () => {
   // Neutralizes the row written by each test below to a non-interfering
   // "error" health entry once assertions are done: getStateDb("cli") is a
   // process-wide singleton over one file under the shared test HOME, so a
