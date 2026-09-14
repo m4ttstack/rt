@@ -155,8 +155,11 @@ export async function gateOpen(
   }
 
   const presentation = presentationFor(questions);
-  const origin: NonNullable<Commands['gate:open']['payload']['origin']> = {
+  const origin: NonNullable<Commands['gate:open']['payload']['origin']> & {
+    surface?: string;
+  } = {
     presentation,
+    surface: 'board',
   };
   if (state.paneId) origin.paneId = state.paneId;
   if (state.tabId) origin.tabId = state.tabId;
