@@ -50,6 +50,8 @@ t "drive-setup.sh records the finish-gate outcome"      bash -c 'grep -q "finish
 t "drive-setup.sh waits for the Done gate to settle before branching" bash -c 'grep -q "ax_wait_done_gate 60" run/guest/drive-setup.sh && grep -q "^ax_wait_done_gate()" run/guest/ax.sh'
 t "ax_enabled_or_fail names a missing axid"             env GUEST_RUN=/tmp/vmcheck-ax AX_APP=definitely-not-running bash -c 'source run/guest/ax.sh; out=$( (ax_enabled_or_fail setup.done.continue) 2>&1 ); [ $? -ne 0 ] && printf "%s" "$out" | grep -q "setup.done.continue not found"'
 t "assert-installed.sh asserts setup.waived"            bash -c 'grep -q "rt settings get setup.waived --json" run/guest/assert-installed.sh'
+t "assert-installed.sh takes a backup and asserts the .age plus the LFS filter" bash -c \
+  'grep -q "rt state backup init" run/guest/assert-installed.sh && grep -q "state-backups" run/guest/assert-installed.sh && grep -q "filter.lfs.process" run/guest/assert-installed.sh'
 t "drive-setup.sh refuses when GUEST_RUN unmounted" bash -c '! (env -u GUEST_RUN AX_APP=x bash run/guest/drive-setup.sh create >/dev/null 2>&1)'
 t "drive-setup.sh rejects unknown scenario"       bash -c '! (env GUEST_RUN=/tmp/vmcheck-ax AX_APP=x bash run/guest/drive-setup.sh bogus >/dev/null 2>&1)'
 t "drive-setup.sh rejects unknown forge"          bash -c '! (env GUEST_RUN=/tmp/vmcheck-ax AX_APP=x bash run/guest/drive-setup.sh create --forge bitbucket >/dev/null 2>&1)'
