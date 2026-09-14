@@ -75,6 +75,13 @@ export function createHerdLifecycle(opts: {
   const paneSubs = new Map<string, HerdrSubscription>();
   const blockedTimers = new Map<string, { clear(): void }>();
   const idleTimers = new Map<string, { clear(): void }>();
+  // The idle callback awaits a gate lookup, and a timer that has already
+  // fired cannot be cleared: without this, a pane that resumed (or exited)
+  // during the await still gets its notice posted. Every path that ends the
+  // idle state bumps the pane's generation, and the callback re-checks it
+  // immediately before posting.
+  const idleGen = new Map<string, number>();
+  const bumpIdleGen = (key: string) => idleGen.set(key, (idleGen.get(key) ?? 0) + 1);
   let unhookBus: (() => void) | undefined;
   let reconcileTimer: { clear(): void } | undefined;
 
@@ -193,6 +200,7 @@ export function createHerdLifecycle(opts: {
         blockedTimers.get(key)?.clear();
         blockedTimers.delete(key);
         if (idleTimers.has(key) || !WATCHED.has(job.status)) return;
+        const gen = idleGen.get(key) ?? 0;
         idleTimers.set(key, setTimer(() => {
           idleTimers.delete(key);
           fireAndForget((async () => {
@@ -201,6 +209,7 @@ export function createHerdLifecycle(opts: {
             const subject = herdSubject(fresh.job.herd, fresh.job.name);
             const gateRes = await opts.gate["gate:list"]({ open: true, subjectPrefix: subject });
             if (gateRes.ok && (gateRes.data.gates as Array<{ subject: string }>).some((g) => g.subject === subject)) return;
+            if ((idleGen.get(key) ?? 0) !== gen) return;
             await post(fresh.room, fresh.shepherd, `${fresh.job.name} idle with no open gate and no report (pane ${ref})`);
           })(), { socket, pane });
         }, idleDebounceMs));
@@ -209,6 +218,7 @@ export function createHerdLifecycle(opts: {
         blockedTimers.delete(key);
         idleTimers.get(key)?.clear();
         idleTimers.delete(key);
+        bumpIdleGen(key);
       }
       return;
     }
@@ -217,6 +227,7 @@ export function createHerdLifecycle(opts: {
       blockedTimers.delete(key);
       idleTimers.get(key)?.clear();
       idleTimers.delete(key);
+      bumpIdleGen(key);
       unwatchPane(socket, pane);
       if (WATCHED.has(job.status)) {
         store.setJobStatus(job.herd, job.name, "crashed");
@@ -361,6 +372,7 @@ export function createHerdLifecycle(opts: {
       blockedTimers.clear();
       for (const t of idleTimers.values()) t.clear();
       idleTimers.clear();
+      for (const k of idleGen.keys()) bumpIdleGen(k);
     },
     watch,
     connected: (socket) => subs.get(socketKey(socket))?.connected() ?? false,
