@@ -155,9 +155,7 @@ export async function gateOpen(
   }
 
   const presentation = presentationFor(questions);
-  const origin: NonNullable<Commands['gate:open']['payload']['origin']> & {
-    surface?: string;
-  } = {
+  const origin: NonNullable<Commands['gate:open']['payload']['origin']> = {
     presentation,
     surface: 'board',
   };

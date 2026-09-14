@@ -733,15 +733,13 @@ describe('gateOpen W4 (origin, nudge, presentation, context)', () => {
     );
     expect(result).toEqual({ gateId: 'g1', presentation: 'form' });
     const payload = calls.gateOpen[0]!;
-    expect(payload.origin).toEqual(
-      expect.objectContaining({
-        presentation: 'form',
-        paneId: 'pane-3',
-        tabId: 'tab-3',
-        worktree: '/tmp/wt',
-      })
-    );
-    expect((payload.origin as Record<string, unknown>)?.surface).toBe('board');
+    expect(payload.origin).toEqual({
+      presentation: 'form',
+      surface: 'board',
+      paneId: 'pane-3',
+      tabId: 'tab-3',
+      worktree: '/tmp/wt',
+    });
     expect(payload.pane).toBe('pane-3');
     expect(payload.nudge).toEqual({ session: 'sess-9' });
     expect(payload.context).toBe('tier counts');
