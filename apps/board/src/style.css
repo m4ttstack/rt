@@ -870,11 +870,21 @@ body {
   color: var(--muted-text);
   cursor: pointer;
   display: none;
+  transition:
+    opacity 0.12s ease,
+    background-color 0.12s ease;
 }
-.tui-row:is(:hover, :focus-within) .tui-row-note-dismiss {
+/* It belongs to the note, not the row: the band's own hover brings it in,
+   dim enough to stay out of the reading, and only the pointer on the verb
+   itself brings it up to full. */
+.tui-row-note:is(:hover, :focus-within) .tui-row-note-dismiss {
   display: block;
+  opacity: 0.4;
 }
-.tui-row-note-dismiss:hover {
+/* Keyed off the band too, or the dim rule above (two classes and a
+   pseudo-class) would outrank this one and the verb would never come up. */
+.tui-row-note:is(:hover, :focus-within) .tui-row-note-dismiss:hover {
+  opacity: 1;
   background: color-mix(in srgb, var(--panel) 92%, transparent);
   color: var(--fg);
 }

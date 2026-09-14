@@ -135,7 +135,9 @@ for (const theme of ['light', 'dark'] as const) {
   // editor open -- the note tool is the first of the row's hover tools.
   const noted = page.locator('.tui-row[data-note]').first();
   if (await noted.count()) {
-    await noted.hover();
+    // The band's own hover, not the row's: the dismiss verb belongs to the
+    // note and only appears (dim) when the pointer is on it.
+    await noted.locator('.tui-row-note').hover();
     await page.waitForSelector('.tui-row[data-note] .tui-row-note');
     await shoot(page, `note-${theme}`);
     // This file has no DOM lib (see `shoot`), so the row is cast to the
