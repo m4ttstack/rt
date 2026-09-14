@@ -150,7 +150,7 @@ Plugin commands merge into the root tree on every invocation. Built-ins always w
 
 ## IDE setup
 
-rt writes a types-only package to `~/.mattstack/rt/plugin-api/` (regenerated automatically whenever the embedded contract changes, e.g. after an rt upgrade). The scaffolded `package.json` depends on it via `"rt-plugin": "file:../../plugin-api"`, which is why `import type { RtCommandContext } from "rt-plugin"` resolves in your editor after `bun install`. The import is type-only and erased at runtime; if you accidentally value-import `rt-plugin`, it throws with a message explaining the API arrives via `ctx`.
+rt writes a types-only package to `~/.mattstack/rt/plugin-api/` (regenerated automatically whenever the embedded contract changes, e.g. after an rt upgrade). The scaffolded `package.json` depends on it via `"rt-plugin": "file:../../../rt/plugin-api"`, which is why `import type { RtCommandContext } from "rt-plugin"` resolves in your editor after `bun install`. The import is type-only and erased at runtime; if you accidentally value-import `rt-plugin`, it throws with a message explaining the API arrives via `ctx`.
 
 If your editor shows red squiggles in a plugin folder, run `bun install` in that folder. Typecheck a plugin any time with `bunx tsc --noEmit` from its folder.
 
