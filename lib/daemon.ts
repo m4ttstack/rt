@@ -36,10 +36,17 @@ import {
   redirectNativeStderr,
   type DaemonLoggerHandle,
 } from "./daemon-logger.ts";
-import { onNotification } from "./notifier.ts";
+import { onNotification, notifyEnabled } from "./notifier.ts";
 import { appBundleRoot } from "./bundle-layout.ts";
 import { reconcile as reconcileLinks } from "./deps/links.ts";
 import { createRealProbes } from "./setup/probes.ts";
+import { runAccountsSweep, type IntegrationTarget } from "./credential-health/sweep.ts";
+import { INTEGRATIONS, type ValidateCtx } from "./setup/integrations.ts";
+import type { Integration } from "./setup/contract.ts";
+import { isValidHostname, isValidHttpsUrl } from "./setup/host-validate.ts";
+import { discoverTeams, readTeamSnapshot, readUserIntegrationOverrides, type TeamSnapshot, type UserIntegrationOverrides } from "./setup/team-settings.ts";
+import { createRealAgeKeySeam } from "./home/age-key.ts";
+import { readSecret, createRealSecretsExecSeam, type SecretsSeams } from "./secrets/store.ts";
 
 import { SystemProcessScanner } from "./daemon/system-process-scanner.ts";
 
@@ -127,6 +134,31 @@ import { runUnits, stopUnits, type DaemonUnit } from "./daemon/lifecycle.ts";
 // Idempotent: the CLI entry (cli.ts) also runs it, but `bun run lib/daemon.ts`
 // skips cli.ts.
 import { migrateLegacyRtDir, migrateLegacyPluginsDir, LEGACY_RT_LABEL, RT_DIR_LABEL, logsDir } from "./rt-paths.ts";
+
+/**
+ * A third copy of `ctxFor` (lib/setup/validators/accounts.ts and
+ * commands/setup.ts each already carry one, by the same doc-comment
+ * convention: no shared ConnectDeps to route it through). Only a host the
+ * USER confirmed (rt.integrations, via `connect --host`) is ever eligible to
+ * receive the accounts-sweep token; a team's declared host is surfaced as
+ * `declaredHost` for the row's own detail text, never fetched against.
+ */
+function credentialHealthCtxFor(id: Integration, team: TeamSnapshot, overrides: UserIntegrationOverrides): ValidateCtx {
+  const base = { team: { slug: team.slug, remote: team.remote }, linearTeamKey: team.integrations.linear?.teamKey ?? null };
+  if (id === "gitlab") {
+    const declaredHost = team.integrations.forge?.provider === "gitlab" ? team.integrations.forge.host : null;
+    const host = overrides.forgeHost && isValidHostname(overrides.forgeHost) ? overrides.forgeHost : null;
+    return { ...base, host, declaredHost };
+  }
+  if (id === "switchboard") {
+    const declaredHost = team.integrations.switchboard?.url ?? null;
+    const host = overrides.switchboardUrl && isValidHttpsUrl(overrides.switchboardUrl) ? overrides.switchboardUrl : null;
+    return { ...base, host, declaredHost };
+  }
+  return { ...base, host: null };
+}
+
+const EMPTY_TEAM_SNAPSHOT: TeamSnapshot = { slug: "", integrations: {}, trackingIdentities: [], marketplaces: [], plugins: [], remote: null };
 
 type HandleCommand = (cmd: string, payload: any, signal?: AbortSignal) => Promise<any>;
 
@@ -304,6 +336,9 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
   let cron: ReturnType<typeof startCron>;
   let worktreeReconciler: ReturnType<typeof createWorktreeReconciler>;
   let refreshCache: () => Promise<void>;
+  // Set in phase 6 ("background-subsystems"), read in phase 7 ("handlers")
+  // when wiring the accounts-recheck IPC handler through buildRoutedHandlers.
+  let accountsSweepFn: () => Promise<void>;
   let homeSnapshot: ReturnType<typeof startHomeSnapshot>;
   let teamSnapshots: ReturnType<typeof startTeamSnapshots>;
   let agentStatusPoller: ReturnType<typeof startAgentStatusPoller>;
@@ -818,6 +853,55 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
           { bootDelayMs: 60_000, intervalMs: 4 * 60 * 60 * 1000 },
           log,
         ));
+        // Periodically re-validates every stored integration credential
+        // (RT-132): resolves one target per integration that has a stored
+        // secret, runs runAccountsSweep, and fires a desktop notification on
+        // a dead/expiring transition. accountsSweepFn is also handed to
+        // buildRoutedHandlers (phase 7) below as the accounts-recheck IPC
+        // handler's implementation, so `rt accounts --recheck` runs this
+        // exact same cycle on demand instead of waiting for the interval.
+        const accountsProbes = createRealProbes();
+        const accountsSecretsSeams: SecretsSeams = { ageKeySeam: createRealAgeKeySeam(), execSeam: createRealSecretsExecSeam() };
+        accountsSweepFn = async () => {
+          const teams = discoverTeams(accountsProbes);
+          const team = teams[0] ? readTeamSnapshot(accountsProbes, teams[0]) : EMPTY_TEAM_SNAPSHOT;
+          const overrides = readUserIntegrationOverrides();
+
+          const targets: IntegrationTarget[] = [];
+          for (const [id, def] of Object.entries(INTEGRATIONS)) {
+            if (!def.secret) continue;
+            let token: string | null;
+            try {
+              token = await readSecret(def.secret.domain, def.secret.key, accountsSecretsSeams);
+            } catch (err) {
+              log.warn({ err, integration: id }, "accounts-sweep: readSecret failed");
+              continue;
+            }
+            if (!token) continue;
+            const ctx = credentialHealthCtxFor(id as Integration, team, overrides);
+            targets.push({ id, def, token, ctx });
+          }
+
+          await runAccountsSweep({
+            db: getStateDb("daemon"),
+            targets: async () => targets,
+            probes: accountsProbes,
+            notifyEnabled,
+            emitEvent: (topic, payload) => {
+              const emittedAt = Date.now();
+              const eventId = eventsBus.emitAt(topic, payload, emittedAt);
+              emit("event", { id: eventId, topic, payload, emittedAt });
+            },
+            now: () => Date.now(),
+            log: loggerHandle.childLogger("accounts-sweep"),
+          });
+        };
+        sweepHandles.push(scheduleSweep(
+          "accounts-sweep",
+          accountsSweepFn,
+          { bootDelayMs: 90_000, intervalMs: 6 * 60 * 60 * 1000 },
+          log,
+        ));
         // Catches a chat delivery that neither deliverPost's own retry nor a
         // later post to the same recipient recovered -- the case a 2-party
         // DM at a wait-point can hit, since neither side sends again.
@@ -1020,6 +1104,7 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
           },
           stateDb: getStateDb("daemon"),
           chatDeliveryChains,
+          accountsSweep: accountsSweepFn,
         });
         herdLifecycle = createHerdLifecycle({
           store: herdStore,
