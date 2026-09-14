@@ -22,6 +22,8 @@ import type { Probes } from "../probes.ts";
 import { MATTSTACK_MARKETPLACE_SOURCE, pluginsInstallStep } from "../steps/plugins.ts";
 import { gitIdentityStep } from "../steps/git-identity.ts";
 import { linearMcpStep } from "../steps/linear-mcp.ts";
+import { applyBaselinePermissions, claudePermissionsStep } from "../steps/claude-permissions.ts";
+import { BASE_PERMISSIONS } from "../base-permissions.ts";
 import {
   extensionInstallRun,
   extensionInstallStep,
@@ -1469,6 +1471,132 @@ describe("apply steps C: plugins, git.identity, fast-browser, herdr, extension, 
       const { ctx } = makeCtx(p, { secretPresence: withKey, redact: (v: string) => redacted.push(v) });
       await linearMcpStep.run(ctx);
       expect(redacted).toContain(KEY);
+    });
+  });
+
+  describe("claude.permissions", () => {
+    const settingsPath = () => `${home}/.claude/settings.json`;
+
+    test("BASE_PERMISSIONS is exactly the seven declared entries, verbatim", () => {
+      expect(BASE_PERMISSIONS).toEqual([
+        "mcp__plugin_fast-browser_fast-browser",
+        "EnterWorktree",
+        "Bash(glab *)",
+        "Bash(glab mr approve *)",
+        "Bash(glab mr note *)",
+        "Bash(claude plugin update *)",
+        "Bash(rt skills sync *)",
+      ]);
+    });
+
+    test("existing allow keeps its entries and order, missing baseline entries are appended", async () => {
+      const existingAllow = ["Bash(glab *)", "Bash(npm publish)", "WebFetch"];
+      const p = fakeProbes({ home, env: {}, files: { [settingsPath()]: JSON.stringify({ permissions: { allow: existingAllow } }) } });
+      const { ctx } = makeCtx(p);
+      const outcome = await claudePermissionsStep.run(ctx);
+      expect(outcome.state).toBe("done");
+      const written = JSON.parse(p.readFile(settingsPath())!);
+      expect(written.permissions.allow.slice(0, 3)).toEqual(existingAllow);
+      expect(written.permissions.allow.slice(3)).toEqual(BASE_PERMISSIONS.filter((e) => e !== "Bash(glab *)"));
+    });
+
+    test("every unrelated top-level key survives the write with its exact value", async () => {
+      const before = {
+        model: "opus",
+        statusLine: { type: "command", command: "echo hi" },
+        env: { FOO: "bar" },
+        enabledPlugins: ["mattstack@mattstack"],
+        hooks: { PreToolUse: [] },
+      };
+      const p = fakeProbes({ home, env: {}, files: { [settingsPath()]: JSON.stringify(before) } });
+      const { ctx } = makeCtx(p);
+      expect((await claudePermissionsStep.run(ctx)).state).toBe("done");
+      const written = JSON.parse(p.readFile(settingsPath())!);
+      for (const [key, value] of Object.entries(before)) expect(written[key]).toEqual(value);
+    });
+
+    test("no permissions key at all -> created with allow only, no defaultMode", async () => {
+      const p = fakeProbes({ home, env: {}, files: { [settingsPath()]: JSON.stringify({ model: "sonnet" }) } });
+      const { ctx } = makeCtx(p);
+      await claudePermissionsStep.run(ctx);
+      const written = JSON.parse(p.readFile(settingsPath())!);
+      expect(written.permissions).toEqual({ allow: BASE_PERMISSIONS });
+    });
+
+    test("an existing defaultMode of any value is left untouched", async () => {
+      const p = fakeProbes({ home, env: {}, files: { [settingsPath()]: JSON.stringify({ permissions: { defaultMode: "acceptEdits", allow: [] } }) } });
+      const { ctx } = makeCtx(p);
+      await claudePermissionsStep.run(ctx);
+      const written = JSON.parse(p.readFile(settingsPath())!);
+      expect(written.permissions.defaultMode).toBe("acceptEdits");
+    });
+
+    test("absent file -> created at 0600, containing only the permissions block", async () => {
+      const p = fakeProbes({ home, env: {} });
+      const { ctx } = makeCtx(p);
+      const outcome = await claudePermissionsStep.run(ctx);
+      expect(outcome.state).toBe("done");
+      const written = JSON.parse(p.readFile(settingsPath())!);
+      expect(written).toEqual({ permissions: { allow: BASE_PERMISSIONS } });
+      expect(p.calls.modes[settingsPath()]).toBe(0o600);
+    });
+
+    test("an existing file's mode is preserved, not tightened to 0600", async () => {
+      const path = settingsPath();
+      const p = fakeProbes({ home, env: {}, files: { [path]: JSON.stringify({ model: "sonnet" }) }, modes: { [path]: 0o644 } });
+      const { ctx } = makeCtx(p);
+      await claudePermissionsStep.run(ctx);
+      expect(p.calls.modes[path]).toBe(0o644);
+    });
+
+    test("an unparsable settings.json fails, naming the path, nothing written", async () => {
+      const path = settingsPath();
+      const p = fakeProbes({ home, env: {}, files: { [path]: "{ not json" } });
+      const { ctx } = makeCtx(p);
+      const outcome = await claudePermissionsStep.run(ctx);
+      expect(outcome.state).toBe("failed");
+      expect(detailOf(outcome)).toContain(path);
+      expect(p.readFile(path)).toBe("{ not json");
+    });
+
+    test("a settings.json that exists but cannot be read fails, naming the path, nothing written", async () => {
+      const path = settingsPath();
+      const p = fakeProbes({ home, env: {}, files: { [path]: JSON.stringify({ model: "sonnet" }) }, unreadable: [path] });
+      const { ctx } = makeCtx(p);
+      const outcome = await claudePermissionsStep.run(ctx);
+      expect(outcome.state).toBe("failed");
+      expect(detailOf(outcome)).toContain(path);
+      expect(p.calls.writes).toEqual({});
+      expect(p.calls.renames).toEqual([]);
+    });
+
+    test("running twice is a no-op the second time", async () => {
+      const p = fakeProbes({ home, env: {} });
+      const { ctx } = makeCtx(p);
+      expect((await claudePermissionsStep.run(ctx)).state).toBe("done");
+      const afterFirst = p.readFile(settingsPath());
+      const renamesAfterFirst = p.calls.renames.length;
+      expect(await claudePermissionsStep.run(ctx)).toEqual({ state: "skipped", detail: "baseline permissions already present" });
+      expect(p.readFile(settingsPath())).toBe(afterFirst);
+      expect(p.calls.renames.length).toBe(renamesAfterFirst);
+    });
+
+    test("multiple config dirs each get their own union, independently", () => {
+      const p = fakeProbes({ home, env: {} });
+      const a = applyBaselinePermissions(p, `${home}/.claude`);
+      const b = applyBaselinePermissions(p, `${home}/alt-claude`);
+      expect(a.wrote).toBe(true);
+      expect(b.wrote).toBe(true);
+      expect(JSON.parse(p.readFile(`${home}/.claude/settings.json`)!).permissions.allow).toEqual(BASE_PERMISSIONS);
+      expect(JSON.parse(p.readFile(`${home}/alt-claude/settings.json`)!).permissions.allow).toEqual(BASE_PERMISSIONS);
+    });
+
+    test("CLAUDE_CONFIG_DIR is honored", async () => {
+      const p = fakeProbes({ home, env: { CLAUDE_CONFIG_DIR: `${home}/alt` } });
+      const { ctx } = makeCtx(p);
+      expect((await claudePermissionsStep.run(ctx)).state).toBe("done");
+      expect(p.readFile(`${home}/alt/settings.json`)).not.toBeNull();
+      expect(p.readFile(settingsPath())).toBeNull();
     });
   });
 });

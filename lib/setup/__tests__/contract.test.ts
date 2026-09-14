@@ -81,7 +81,7 @@ describe("row", () => {
 });
 
 describe("STEP_IDS", () => {
-  test("matches the contract's 25 ids in order", () => {
+  test("matches the contract's 26 ids in order", () => {
     expect(STEP_IDS).toEqual([
       "home.init",
       "home.restore",
@@ -102,6 +102,7 @@ describe("STEP_IDS", () => {
       "intercepts.install",
       "plugins.install",
       "linear.mcp",
+      "claude.permissions",
       "fastbrowser.setup",
       "herdr.integration",
       "extension.install",
