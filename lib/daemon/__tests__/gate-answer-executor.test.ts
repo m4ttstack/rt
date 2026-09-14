@@ -155,6 +155,24 @@ describe("gate:answer executor guarantee: gone", () => {
     expect(store.get(row.id)!.execution).toBeUndefined();
   });
 
+  test("a parked gate's answer relaunches nothing: the owner that parked it resumes the pane", async () => {
+    const { push } = pushSpy();
+    const { reconciler, expectCalls } = reconcilerStub({ executorState: "gone", agentId: "agent-1" });
+    const resumeCalls: string[] = [];
+    const resumeAgent = async (agentId: string) => { resumeCalls.push(agentId); return { ok: true }; };
+    const { handlers, store, emitted } = harness({ push, reconciler, resumeAgent });
+    const row = await openFormGate(store);
+    expect(store.park(row.id).ok).toBe(true);
+
+    await handlers["gate:answer"]({ id: row.id, answers: { q: "a" }, by: "board" });
+    await flush();
+
+    expect(resumeCalls).toEqual([]);
+    expect(expectCalls).toHaveLength(0);
+    expect(store.get(row.id)!.execution).toBeUndefined();
+    expect(emitted.some((e) => e.topic === "reconciler.execution")).toBe(false);
+  });
+
   test("resumeAgent failure stamps execution unassigned and emits reconciler.execution", async () => {
     const { push } = pushSpy();
     const { reconciler } = reconcilerStub({ executorState: "gone", agentId: "agent-1" });
