@@ -32,8 +32,10 @@ import { isValidBrewFormula } from "../tools-install.ts";
 import type { SecretPresence } from "./accounts.ts";
 
 const HERDR_FLOOR = "0.7.5";
-/** Every exec in this module is bounded — a hung team-declared `--version`, or a wedged herdr/claude/fast-browser subprocess, must surface as "error" (124), never hang `rt setup plan` forever. */
+/** Every exec in this module is bounded: a hung team-declared `--version`, or a wedged herdr/claude subprocess, must surface as "error" (124), never hang `rt setup plan` forever. This is the bound for a quick `--version`/status probe; `fast-browser doctor` is slow by design and uses DOCTOR_TIMEOUT_MS instead. */
 const PROBE_TIMEOUT_MS = 5000;
+/** `fast-browser doctor --json` runs ~22 real checks (runtime checksum, extension load, pairing) and takes about 20s on a healthy machine, so PROBE_TIMEOUT_MS reads a healthy doctor as hung. Only this one call gets the longer bound; a doctor that genuinely hangs still surfaces as "error" at 45s instead of never. */
+const DOCTOR_TIMEOUT_MS = 45_000;
 const CHROME_PATHS = (home: string): string[] => ["/Applications/Google Chrome.app", `${home}/Applications/Google Chrome.app`];
 
 const CLAUDE_SIGNIN_STEPS: Action = { type: "steps", label: "Show steps…", steps: ["Open a terminal", "Run: claude", "Follow the sign-in prompt"] };
@@ -72,8 +74,8 @@ function provisionedInstallAction(tool: string, hasBrew: boolean, label: "Instal
   return { type: "install", label, tool, via: hasBrew ? "brew" : "vendor" };
 }
 
-function exec(p: Probes, argv: string[]): Promise<ExecResult> {
-  return p.exec(argv, { timeoutMs: PROBE_TIMEOUT_MS });
+function exec(p: Probes, argv: string[], timeoutMs = PROBE_TIMEOUT_MS): Promise<ExecResult> {
+  return p.exec(argv, { timeoutMs });
 }
 
 /** Narrows past "parses as JSON" to "has fields worth dereferencing" — an array and null both pass typeof "object" in JS. */
@@ -231,7 +233,7 @@ async function probeFastBrowser(p: Probes, seams: ToolsSeams): Promise<FastBrows
   const resolved = seams.resolveTool(p, "fast-browser");
   if (!resolved.exec) return { resolvable: false, doctor: null, failure: null };
 
-  const res = await exec(p, [...resolved.exec, "doctor", "--json"]);
+  const res = await exec(p, [...resolved.exec, "doctor", "--json"], DOCTOR_TIMEOUT_MS);
   if (res.code === 124) return { resolvable: true, doctor: null, failure: "fast-browser doctor timed out" };
 
   // `doctor` is a health check: it commonly exits non-zero BECAUSE it found a

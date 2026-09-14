@@ -358,6 +358,25 @@ describe("toolRows — tool.fast-browser", () => {
     expect(rows.map((r) => r.id)).toContain("tool.fast-browser-extension");
     expect(p.calls.exec.filter((argv) => argv[2] === "doctor").length).toBe(1);
   });
+
+  // RT-138: `fast-browser doctor --json` runs 22 real checks and takes ~20s on
+  // a healthy machine, so the shared 5s probe bound was failing a healthy
+  // doctor with a 124. Only the doctor call gets the longer bound; every
+  // other probe in this module keeps 5000.
+  test("doctor exec is issued with a longer timeout than every other probe (RT-138)", async () => {
+    const seenTimeouts: Record<string, number | undefined> = {};
+    const exec: ExecScript = (argv, execOpts) => {
+      if (argv[2] === "doctor" && argv[3] === "--json") {
+        seenTimeouts.doctor = execOpts?.timeoutMs;
+        return doctorExec(REAL_DOCTOR)(argv);
+      }
+      if (argv[0] === "herdr" && argv[1] === "--version") seenTimeouts.herdr = execOpts?.timeoutMs;
+      return ok();
+    };
+    await toolRows(fakeProbes({ exec }), [], { hasBrew: true, secrets: NO_SECRETS }, fastBrowserSeams());
+    expect(seenTimeouts.doctor).toBe(45_000);
+    expect(seenTimeouts.herdr).toBe(5000);
+  });
 });
 
 describe("toolRows - tool.fast-browser-extension", () => {
