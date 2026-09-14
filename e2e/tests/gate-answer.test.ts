@@ -6,6 +6,11 @@
  * whatever replaced it. Both refusals are pinned on the CLI's exact stderr
  * text, which only an e2e run -- not the unit-level handler tests -- can
  * catch drifting.
+ *
+ * The winning path's stdout envelope is pinned here too (RT-133): the
+ * recorded standing answer comes back on success, not only on a CAS loss,
+ * so an answering surface never needs a follow-up `gate wait` to learn what
+ * it just wrote.
  */
 
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
@@ -123,6 +128,21 @@ describe("rt gate answer owner enforcement e2e", () => {
     expect(overridden.exitCode).toBe(0);
     const overriddenRow = JSON.parse(overridden.stdout).row;
     expect(overriddenRow.answer.overridden).toBe(true);
+  }, 30_000);
+
+  test("the winning path returns the recorded standing answer, not just conflicts", async () => {
+    const runId = await startRun(home);
+    const gateId = await openGate(home, runId, "clarify-d");
+    const res = await finished(runRt(
+      ["gate", "answer", gateId, "--answers", JSON.stringify({ q: "b" }), "--by", "console"],
+      home,
+      { CLAUDE_CODE_SESSION_ID: "sess-console" },
+    ));
+    expect(res.exitCode).toBe(0);
+    const out = JSON.parse(res.stdout) as { ok: boolean; conflict: boolean; row: { answer: Record<string, unknown> } };
+    expect(out.ok).toBe(true);
+    expect(out.conflict).toBe(false);
+    expect(out.row.answer).toMatchObject({ answers: { q: "b" }, by: "console", session: "sess-console" });
   }, 30_000);
 
   test("answering a superseded gate reports the structured closed rejection with supersededBy", async () => {
