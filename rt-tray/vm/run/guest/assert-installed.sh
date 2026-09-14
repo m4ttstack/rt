@@ -110,6 +110,31 @@ if [ -e /Applications/rt-tray.app ] || [ -e "$HOME/Applications/rt-tray.app" ]; 
 if [ "$HEADLESS" = 0 ]; then
   [ -d "$HOME/.mattstack/user/.git" ] && ok "~/.mattstack/user is the home repo" || bad "~/.mattstack/user is not a git repo (home-repo re-root ruling)"
 
+  # ── encrypted state backup, with no Homebrew anywhere ──────────────────────
+  # The PATH set at the top of this script carries no brew, so age, zstd and
+  # git-lfs can only come from inside the bundle. `init` is the whole chain:
+  # LFS filters, recipients from the keychain key, the first backup, and a
+  # decrypt round-trip.
+  if rt state backup init > "$LOGS/state-backup-init.log" 2>&1; then
+    ok "rt state backup init ran with no Homebrew on PATH"
+  else
+    bad "rt state backup init failed: $(tail -3 "$LOGS/state-backup-init.log" 2>/dev/null | tr '\n' ' ')"
+  fi
+  AGE_FILES=$(find "$HOME/.mattstack/user/state-backups" -name '*.age' 2>/dev/null | head -3)
+  if [ -n "$AGE_FILES" ]; then
+    ok "encrypted backup landed: $(printf '%s' "$AGE_FILES" | tr '\n' ' ')"
+  else
+    bad "no .age file under ~/.mattstack/user/state-backups"
+  fi
+  # The filter git runs on every add and checkout in the home repo: an
+  # absolute path into the bundle, rewritten by init and by every sweep.
+  LFS_FILTER=$(git -C "$HOME/.mattstack/user" config --local --get filter.lfs.process 2>/dev/null)
+  case "$LFS_FILTER" in
+    *mattstack.app/Contents/Helpers/git-lfs*) ok "LFS filter points at the bundled git-lfs";;
+    "")                                       bad "no filter.lfs.process in the home repo after backup init";;
+    *)                                        bad "filter.lfs.process does not name the bundled git-lfs: $LFS_FILTER";;
+  esac
+
   # ── the local HTTPS proxy ──────────────────────────────────────────────────
   # Headless has no app to answer proxy.install's need, so the whole block is
   # inside the same gate as the home repo rather than reporting a bare-machine

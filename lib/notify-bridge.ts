@@ -26,6 +26,7 @@ export interface EventBridgeRule {
   subjectPrefix?: string;
   url?: string;
   owner?: "human";
+  surface?: string;
 }
 
 /** Parses the rt.notify.eventBridges setting value into rules, shared by the
@@ -65,11 +66,17 @@ export function parseEventBridgeRules(raw: unknown, warn: (o: unknown, msg: stri
       warn({ entry }, "rt.notify.eventBridges: skipping rule with non-human owner");
       continue;
     }
+    const rawSurface = (e as { surface?: unknown }).surface;
+    if (rawSurface !== undefined && typeof rawSurface !== "string") {
+      warn({ entry }, "rt.notify.eventBridges: skipping rule with non-string surface");
+      continue;
+    }
     rules.push({
       pattern: e.pattern, category: e.category, title: e.title, message: e.message,
       ...(rawSubjectPrefix !== undefined ? { subjectPrefix: rawSubjectPrefix } : {}),
       ...(rawUrl !== undefined ? { url: rawUrl } : {}),
       ...(rawOwner !== undefined ? { owner: rawOwner } : {}),
+      ...(rawSurface !== undefined ? { surface: rawSurface } : {}),
     });
   }
   return rules;
@@ -197,6 +204,12 @@ export function startNotifyBridge(deps: {
         const payload = (data.payload && typeof data.payload === "object" ? data.payload : {}) as Record<string, unknown>;
         const owner = payload.owner;
         if (typeof owner === "string" && owner.startsWith("herd:")) continue;
+      }
+      if (rule.surface !== undefined) {
+        const payload = (data.payload && typeof data.payload === "object" ? data.payload : {}) as Record<string, unknown>;
+        const origin = payload.origin;
+        const originSurface = origin && typeof origin === "object" ? (origin as Record<string, unknown>).surface : undefined;
+        if (originSurface !== rule.surface) continue;
       }
       await handleMatch(data, rule);
     }
