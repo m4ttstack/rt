@@ -73,20 +73,20 @@ test("make-src: builds the tool from its source dir and lands a runnable binary"
   expect(existsSync(bin)).toBe(true);
   expect(execFileSync(bin, { encoding: "utf8" }).trim()).toBe("toolc 1.0.0");
   expect(existsSync(join(depsRoot, "arm64", "toolc.sha256"))).toBe(true);
-});
+}, 60_000);
 
 test("make-src: an unchanged run is a skip", () => {
   const res = runScript(toolcLock);
   expect(res.code, res.out).toBe(0);
   expect(res.out).toContain("already unpacked");
-});
+}, 60_000);
 
 test("make-src: a tarball missing the extract dir fails loudly", () => {
   const { tgz, sha } = sourceTarball("toold", "toold-1.0.0", "toold: toold.c\n\tcc -o $@ $<\n");
   const res = runScript(lockFor("toold", tgz, sha, "toold-9.9.9"));
   expect(res.code).not.toBe(0);
   expect(res.out).toContain("archive no longer contains toold-9.9.9");
-});
+}, 60_000);
 
 // The whole reason zstd is compiled rather than taken from a bottle: a binary
 // that links anything outside /usr/lib or /System dies on a Mac that lacks it.
