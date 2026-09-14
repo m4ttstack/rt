@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import pino from "pino";
-import { createGatesStore, type GatesStore, type GateQuestion } from "../gates-store.ts";
+import { createGatesStore, GATE_BY_PANE, type GatesStore, type GateQuestion } from "../gates-store.ts";
 import { createGatePush, GATE_ANSWERED_PHRASE, GATE_CLOSED_PHRASE, GATE_SUBSCRIPTION_PHRASE } from "../gate-push.ts";
 import { wrapCrossSession } from "../inbox.ts";
 import type { PaneHints } from "../pane-resolve-live.ts";
@@ -53,7 +53,7 @@ describe("gate-push", () => {
     const row = store.open({ subject: "mr:https://x/1", kind: "review-post", questions: qs(), nudge: { session: "sess-1" } }).row;
     store.answer(row.id, { q: "a" }, "console");
     await push.onAnswered(store.get(row.id)!);
-    expect(delivered[0]!.body).toBe(wrapCrossSession("gate-facility", GATE_ANSWERED_PHRASE(row.id)));
+    expect(delivered[0]!.body).toBe(wrapCrossSession("gate-facility", GATE_ANSWERED_PHRASE(row.id, "console")));
     expect(delivered[0]!.sessionId).toBe("sess-1");
     expect(store.get(row.id)!.delivery!.outcome).toBe("delivered");
     expect(store.get(row.id)!.released).toBe(false); // only pane reconciliation releases
@@ -254,10 +254,12 @@ describe("gate-push escape injection (W4)", () => {
     expect(store.get(row.id)!.delivery!.outcome).toBe("delivered");
   });
 
-  test("no injection when the pane answered its own gate", async () => {
+  test("neither doorbell nor injection when the pane answered its own gate", async () => {
     const { push, store, events } = w4Harness();
     await push.onAnswered(answeredFormGate(store, "pane"));
-    expect(events).toEqual(["deliver"]);
+    // RT-133: the writer is the pane, so it is told nothing at all -- the
+    // doorbell it would have received named its own answer back to it.
+    expect(events).toEqual([]);
   });
 
   test("no injection for wait presentation or missing origin", async () => {
@@ -434,7 +436,7 @@ describe("retryDeadPanes", () => {
     ok = true;
     expect(await push.retryDeadPanes()).toEqual({ retried: 1, delivered: 1, gaveUp: 0 });
     expect(store.get(row.id)!.delivery!.outcome).toBe("delivered");
-    expect(delivered.at(-1)).toBe(wrapCrossSession("gate-facility", GATE_ANSWERED_PHRASE(row.id)));
+    expect(delivered.at(-1)).toBe(wrapCrossSession("gate-facility", GATE_ANSWERED_PHRASE(row.id, "shepherd")));
   });
 
   test("gives up after maxPaneRetries and stops retrying that gate", async () => {
@@ -469,5 +471,46 @@ describe("retryDeadPanes", () => {
     expect(await second).toEqual({ retried: 0, delivered: 0, gaveUp: 0 });
     deliverResolve();
     expect(await first).toEqual({ retried: 1, delivered: 0, gaveUp: 0 });
+  });
+});
+
+describe("gate-push self-notification (RT-133)", () => {
+  test("the nudged pane that recorded the answer itself (by=pane) gets no doorbell", async () => {
+    const { push, store, delivered } = harness();
+    const row = store.open({
+      subject: "mr:https://x/1", kind: "review-post", questions: qs(),
+      pane: "w1:p1", nudge: { session: "sess-1" },
+      origin: { presentation: "form", paneId: "w1:p1" },
+    }).row;
+    store.answer(row.id, { q: "a" }, GATE_BY_PANE);
+    await push.onAnswered(store.get(row.id)!);
+    expect(delivered.filter((d) => d.sessionId === "sess-1")).toEqual([]);
+    expect(store.get(row.id)!.delivery).toBeNull();
+  });
+
+  test("the nudged pane gets no doorbell when the answering session IS its own", async () => {
+    const { push, store, delivered } = harness();
+    const row = store.open({ subject: "run:r1", kind: "clarify", questions: qs(), nudge: { session: "sess-1" } }).row;
+    store.answer(row.id, { q: "a" }, "console", { session: "sess-1" });
+    await push.onAnswered(store.get(row.id)!);
+    expect(delivered).toEqual([]);
+  });
+
+  test("a DIFFERENT session answering still doorbells the nudged pane", async () => {
+    const { push, store, delivered } = harness();
+    const row = store.open({ subject: "run:r1", kind: "clarify", questions: qs(), nudge: { session: "sess-1" } }).row;
+    store.answer(row.id, { q: "a" }, "console", { session: "sess-2" });
+    await push.onAnswered(store.get(row.id)!);
+    expect(delivered.map((d) => d.sessionId)).toEqual(["sess-1"]);
+  });
+
+  test("fan-out skips the subscriber that recorded the answer and still notifies the others", async () => {
+    const { push, store, delivered } = harness();
+    store.subscribe({ subjectPrefix: "run:", session: "shep-1" });
+    store.subscribe({ subjectPrefix: "run:", session: "shep-2" });
+    const row = store.open({ subject: "run:r1", kind: "clarify", questions: qs() }).row;
+    store.answer(row.id, { q: "a" }, "console", { session: "shep-1" });
+    await push.onAnswered(store.get(row.id)!);
+    expect(delivered.map((d) => d.sessionId)).toEqual(["shep-2"]);
   });
 });

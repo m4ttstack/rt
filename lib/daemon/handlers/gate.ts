@@ -567,7 +567,14 @@ export function createGateHandlers(
       const validationError = validateAnswers(gate.questions, answers as Record<string, unknown>);
       if (validationError) return { ok: false as const, error: validationError };
 
-      const result = store.answer(id, answers as GateAnswer["answers"], by, { overridden: payload?.override === true });
+      // The writer's own session travels onto the answer row so gate-push
+      // can skip notifying it (RT-133); it is not used for authorization
+      // here (the owner guard above already read it).
+      const writerSession = typeof payload?.session === "string" ? payload.session.trim() : "";
+      const result = store.answer(id, answers as GateAnswer["answers"], by, {
+        overridden: payload?.override === true,
+        ...(writerSession ? { session: writerSession } : {}),
+      });
       const emittedAt = Date.now();
 
       if (result.ok) {

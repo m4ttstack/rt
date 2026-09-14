@@ -7,10 +7,16 @@
  *
  * Binding rule: the pane push targets `row.nudge.session` ONLY. The opener records its own session id at `gate open`. No nudge means no push --
  * the unattended-gate case blocks in `gate wait` with nothing to wake.
+ *
  * The Escape injection passes `origin.paneId` (or the top-level `row.pane`),
  * `nudge.session`, and `origin.worktree` as resolver hints -- a stale or
  * missing paneId still resolves via session or worktree before the
  * injector gives up and leaves the gate doorbell-only.
+ *
+ * Self-answer rule (RT-133): a surface that RECORDED the answer is never
+ * notified of it -- not on the pane channel, not in the fan-out. It already
+ * holds the authoritative row (`gate:answer` returns it), so a notice there
+ * is pure noise that reads to an operator as a conflict that never happened.
  *
  * Answers never travel in the push body: it is always the fixed
  * envelope-wrapped phrase, so a stale or racing pane is told to re-read the
@@ -37,8 +43,37 @@ export function gateHints(row: Pick<GateRow, "origin" | "pane" | "nudge">): Pane
   };
 }
 
-export const GATE_ANSWERED_PHRASE = (id: string) =>
-  `[gate] ${id} answered elsewhere; re-read the registry and proceed on the recorded answer.`;
+/** `by` is caller-supplied free text (`gate answer --by <surface>`), and a
+    phrase is a cross-session message body: cap it and strip anything that
+    could break the frame or forge a second line. */
+const SURFACE_CAP = 32;
+export function safeSurface(by: string | undefined): string {
+  const cleaned = (by ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").trim();
+  if (!cleaned) return "another surface";
+  return cleaned.length > SURFACE_CAP ? `${cleaned.slice(0, SURFACE_CAP)}...` : cleaned;
+}
+
+/** Names the answering surface rather than saying "elsewhere" (RT-133), so a
+    watcher that recognizes its own surface can no-op. Still carries no
+    answer: see the header's no-answers-in-the-body rule. */
+export const GATE_ANSWERED_PHRASE = (id: string, by?: string) =>
+  `[gate] ${id} answered by ${safeSurface(by)}; re-read the registry and proceed on the recorded answer.`;
+
+/** True when the surface being notified is the one that recorded the answer.
+    Two signals, because not every writer supplies a session: an explicit
+    session match, and `by === "pane"`, which by construction means the
+    nudged pane itself wrote it (the same rule the Escape guard below uses). */
+export function answeredBySession(row: Pick<GateRow, "answer">, session: string | undefined): boolean {
+  const answer = row.answer;
+  if (!answer || !session) return false;
+  return answer.session === session;
+}
+
+function answeredByNudgedPane(row: Pick<GateRow, "answer" | "nudge">): boolean {
+  if (!row.answer) return false;
+  if (row.answer.by === GATE_BY_PANE) return true;
+  return answeredBySession(row, row.nudge?.session);
+}
 
 /** Sibling of GATE_ANSWERED_PHRASE for the supersede/close paths, which end
     a gate with no answer ever coming -- a form pane waiting on it needs the
@@ -53,10 +88,11 @@ export const GATE_CLOSED_PHRASE = (id: string, reason: GateRow["closedReason"]) 
     ride a cross-session message body. id + status + presentation + owner
     only, so a shepherd reading the doorbell already knows whether Escape
     fires and who is on the hook to answer -- never the opener-set subject. */
-export const GATE_SUBSCRIPTION_PHRASE = (row: Pick<GateRow, "id" | "status" | "origin" | "owner">) => {
+export const GATE_SUBSCRIPTION_PHRASE = (row: Pick<GateRow, "id" | "status" | "origin" | "owner" | "answer">) => {
   const presentation = row.origin?.presentation ?? "wait";
   const owner = row.owner ?? "human";
-  return `[gate] ${row.id} is now ${row.status} (${presentation}, owner ${owner}); re-read the gate registry.`;
+  const by = row.status === "answered" && row.answer ? ` by ${safeSurface(row.answer.by)}` : "";
+  return `[gate] ${row.id} is now ${row.status}${by} (${presentation}, owner ${owner}); re-read the gate registry.`;
 };
 
 const DEFAULT_DEAD_AFTER_FAILURES = 3;
@@ -189,6 +225,11 @@ export function createGatePush(opts: {
     for (const sub of matched) {
       if (seenSessions.has(sub.session)) continue;
       seenSessions.add(sub.session);
+      // Self-answer rule: the subscriber that wrote this answer already has
+      // it. Skipping is silent on purpose -- no delivery outcome is recorded,
+      // because nothing was attempted and a "failed" mark would push a
+      // healthy subscription toward `dead`.
+      if (answeredBySession(row, sub.session)) continue;
       subs.push(sub);
     }
     // Batch registry resolution: one scan for the whole fan-out (resolveAll,
@@ -206,7 +247,13 @@ export function createGatePush(opts: {
 
   return {
     async onAnswered(row) {
-      await Promise.all([pushToPane(row, GATE_ANSWERED_PHRASE(row.id)), fanOut(row)]);
+      // Self-answer rule: no doorbell back to the pane that recorded it. No
+      // delivery stamp either, so the row never enters deadPanePushes() and
+      // retryDeadPanes has nothing to redeliver.
+      const pane = answeredByNudgedPane(row)
+        ? Promise.resolve()
+        : pushToPane(row, GATE_ANSWERED_PHRASE(row.id, row.answer?.by));
+      await Promise.all([pane, fanOut(row)]);
     },
     async onOpened(row) {
       await fanOut(row);
@@ -226,7 +273,7 @@ export function createGatePush(opts: {
           if (attempts >= maxPaneRetries) continue;
           retried++;
           paneAttempts.set(row.id, attempts + 1);
-          await pushToPane(row, GATE_ANSWERED_PHRASE(row.id));
+          await pushToPane(row, GATE_ANSWERED_PHRASE(row.id, row.answer?.by));
           const after = store.get(row.id);
           if (after?.delivery?.outcome === "delivered") { delivered++; paneAttempts.delete(row.id); }
           else if (attempts + 1 >= maxPaneRetries) { gaveUp++; log.warn({ gateId: row.id, session: row.nudge?.session }, "gate-push: pane nudge gave up; worker was never woken"); }
