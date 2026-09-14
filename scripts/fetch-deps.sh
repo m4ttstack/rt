@@ -33,6 +33,15 @@ if [ "$LOCK_ARCH" != "$ARCH" ]; then
   exit 1
 fi
 
+# A make-src row compiles with the host toolchain's defaults, so an x86_64 Mac
+# would drop an x86_64 binary into deps/arm64 and every downstream check would
+# pass: the linkage gate reads library paths, never the CPU type.
+HOST_ARCH="$(uname -m)"
+if [ "$HOST_ARCH" != "arm64" ]; then
+  echo "  x build host is $HOST_ARCH; deps/$ARCH must be built on arm64" >&2
+  exit 1
+fi
+
 sha() { shasum -a 256 "$1" | cut -d' ' -f1; }
 
 fetch() { # url sha → prints cached path
@@ -77,6 +86,15 @@ fetch() { # url sha → prints cached path
 # binary compiled HERE may link only libraries every Mac carries. Applies to
 # what this script builds itself; an upstream release binary is the vendor's
 # own contract, and its linkage is asserted by check-bundle's run smoke.
+assert_arch() { # name path
+  local name="$1" path="$2" archs
+  archs="$(lipo -archs "$path" 2>/dev/null || true)"
+  case " $archs " in
+    *" $ARCH "*) ;;
+    *) echo "  x $name is $archs, not $ARCH" >&2; rm -f "$path"; exit 1 ;;
+  esac
+}
+
 assert_system_linkage() { # name path
   local name="$1" path="$2" line lib bad=0
   while IFS= read -r line; do
@@ -175,6 +193,7 @@ unpack() { # name archive-file archive-kind extract-path dest
       cp "$tmp/$extract/$name" "$dest"
       chmod 755 "$dest"
       rm -rf "$tmp"
+      assert_arch "$name" "$dest"
       assert_system_linkage "$name" "$dest" ;;
     zip)
       tmp="$(mktemp -d)"
