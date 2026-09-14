@@ -21,6 +21,8 @@ function fx(over: {
   claims?: Array<{ owner: string; pane: string | null }>;
   /** herd-lifecycle's `herdr` dep (session.snapshot for the sweep); default answers an empty bg snapshot. */
   herdr?: (method: string, params: unknown, opts2?: { sockPath?: string }) => Promise<any>;
+  /** Resolves when the idle callback's gate lookup should return, so a test can invalidate the idle state mid-await. */
+  gateListGate?: Promise<void>;
 } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "rt-herd-lc-"));
   dirs.push(dir);
@@ -73,8 +75,11 @@ function fx(over: {
     if (over.herdr) return over.herdr(method, params, opts2);
     return { ok: true, result: { snapshot: { panes: [] } } };
   }) as any;
+  const gateDep = over.gateListGate
+    ? { ...gate, "gate:list": async (p: any) => { await over.gateListGate; return gate["gate:list"](p); } }
+    : gate;
   const lc = createHerdLifecycle({
-    store, gate, chat, bus, gateStore, defaultSocket: "/default.sock",
+    store, gate: gateDep, chat, bus, gateStore, defaultSocket: "/default.sock",
     ...(over.bgSocket !== undefined && { bgSocket: over.bgSocket, bgClaims }),
     subscribe, herdr, setTimer, log: lcLog,
   });
@@ -163,6 +168,24 @@ describe("herd-lifecycle", () => {
     expect(posts).toHaveLength(1);
     expect(posts[0]).toMatchObject({ room: "herd-demo-1", handle: "herdr", mentions: ["shepherd"] });
     expect(posts[0].body).toContain("job-a idle with no open gate and no report");
+  });
+
+  test("a pane that resumes while the gate lookup is in flight posts nothing", async () => {
+    let release!: () => void;
+    const gateListGate = new Promise<void>((r) => { release = r; });
+    const { store, lc, herd, posts, timers } = fx({ gateListGate });
+    store.upsertJob({ herd: herd.id, name: "job-a", worktree: "/w", handle: "job-a", status: "active", pane: "w1:p1" });
+    await lc.handleEvent(null, { type: "pane.agent_status_changed", pane_id: "w1:p1", agent_status: "idle" });
+    const idle = timers.filter((t) => t.ms === 180_000 && !t.cleared);
+    expect(idle).toHaveLength(1);
+    idle[0]!.fn();
+    // The timer has fired and cannot be cleared; only the generation guard can
+    // stop the post now.
+    await lc.handleEvent(null, { type: "pane.agent_status_changed", pane_id: "w1:p1", agent_status: "working" });
+    release();
+    await Bun.sleep(0);
+    await Bun.sleep(0);
+    expect(posts).toHaveLength(0);
   });
 
   test("idle with an open gate suppresses the notice", async () => {
