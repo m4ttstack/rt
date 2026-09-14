@@ -6,6 +6,8 @@ import type { TeamSnapshot } from "../team-settings.ts";
 import type { PackRequirements } from "../requirements.ts";
 import type { SetupIntent } from "../intent.ts";
 import type { Integration } from "../contract.ts";
+import { writeCredentialHealth } from "../../credential-health/db.ts";
+import { getStateDb } from "../../state/index.ts";
 
 function baseTeam(overrides: Partial<TeamSnapshot> = {}): TeamSnapshot {
   return { slug: "acme", integrations: {}, trackingIdentities: [], marketplaces: [], plugins: [], remote: null, ...overrides };
@@ -426,5 +428,135 @@ describe("accountRows — per-entry isolation", () => {
     // as if gitlab's entry did not exist at all.
     const linear = rows.find((r) => r.id === "account.linear")!;
     expect(linear.status).toBe("missing");
+  });
+});
+
+describe("accountRows — credential_health integration (rt-132)", () => {
+  // Neutralizes the row written by each test below to a non-interfering
+  // "error" health entry once assertions are done: getStateDb("cli") is a
+  // process-wide singleton over one file under the shared test HOME, so a
+  // leftover "ready"/near-expiry row here would otherwise bleed into any
+  // later test file in the same `bun test` run that also builds a
+  // github/gitlab account row.
+  function neutralize(integration: string): void {
+    writeCredentialHealth(getStateDb("cli"), {
+      integration,
+      status: "error",
+      detail: "test cleanup",
+      expiresAt: null,
+      checkedAt: Date.now(),
+      lastNotifiedAt: null,
+      lastNotifiedKind: null,
+    });
+  }
+
+  test("ready row gets an expiry callout when credential_health shows the same integration expiring within 7 days", async () => {
+    const db = getStateDb("cli");
+    const expiresAt = new Date(Date.now() + 3 * 24 * 3600_000).toISOString().slice(0, 10);
+    writeCredentialHealth(db, {
+      integration: "github",
+      status: "ready",
+      detail: "ok",
+      expiresAt,
+      checkedAt: Date.now(),
+      lastNotifiedAt: null,
+      lastNotifiedKind: null,
+    });
+
+    try {
+      const fetch = async () => ({ status: 200, body: "{}", headers: {} });
+      const team = baseTeam({ integrations: { forge: { host: "github.com", provider: "github" } } });
+      const r = await pickRow(
+        accountRows(fakeProbes({ fetch }), team, [], fakeSecrets({ "rt.githubToken": "gh_tok" }), null),
+        "account.github",
+      );
+      expect(r.status).toBe("ready");
+      expect(r.detail).toContain("expires in 3 day");
+      expect(r.detail).toContain(expiresAt);
+    } finally {
+      neutralize("github");
+    }
+  });
+
+  test("ready row is untouched when credential_health has no expiry or expiry is more than 7 days out", async () => {
+    const db = getStateDb("cli");
+    const expiresAt = new Date(Date.now() + 30 * 24 * 3600_000).toISOString().slice(0, 10);
+    writeCredentialHealth(db, {
+      integration: "github",
+      status: "ready",
+      detail: "ok",
+      expiresAt,
+      checkedAt: Date.now(),
+      lastNotifiedAt: null,
+      lastNotifiedKind: null,
+    });
+
+    try {
+      const fetch = async () => ({ status: 200, body: "{}", headers: {} });
+      const team = baseTeam({ integrations: { forge: { host: "github.com", provider: "github" } } });
+      const r = await pickRow(
+        accountRows(fakeProbes({ fetch }), team, [], fakeSecrets({ "rt.githubToken": "gh_tok" }), null),
+        "account.github",
+      );
+      expect(r.status).toBe("ready");
+      expect(r.detail).toBe("github token valid");
+    } finally {
+      neutralize("github");
+    }
+  });
+
+  test("error row falls back to a fresh-enough cached credential_health result instead of reading as dead", async () => {
+    const db = getStateDb("cli");
+    writeCredentialHealth(db, {
+      integration: "gitlab",
+      status: "ready",
+      detail: "gitlab token valid",
+      expiresAt: null,
+      checkedAt: Date.now() - 4 * 3600_000,
+      lastNotifiedAt: null,
+      lastNotifiedKind: null,
+    });
+
+    try {
+      const fetch = async () => ({ status: 0, body: "", headers: {} });
+      const team = baseTeam({ integrations: { forge: { host: "gitlab.example.com", provider: "gitlab" } } });
+      const r = await pickRow(
+        accountRows(fakeProbes({ fetch }), team, [], fakeSecrets({ "rt.gitlabToken": "tok123" }), null, { forgeHost: "gitlab.example.com" }),
+        "account.gitlab",
+      );
+      // The live probe was unreachable ("error"), but a health row cached
+      // "ready" recently enough takes over the row's status and detail.
+      expect(r.status).toBe("ready");
+      expect(r.detail).toContain("last checked");
+      expect(r.detail).toContain("4h");
+    } finally {
+      neutralize("gitlab");
+    }
+  });
+
+  test("invalid row (a rejected credential, not a probe error) is never overridden by a stale cached health result", async () => {
+    const db = getStateDb("cli");
+    writeCredentialHealth(db, {
+      integration: "gitlab",
+      status: "ready",
+      detail: "gitlab token valid",
+      expiresAt: null,
+      checkedAt: Date.now() - 4 * 3600_000,
+      lastNotifiedAt: null,
+      lastNotifiedKind: null,
+    });
+
+    try {
+      const fetch = async () => ({ status: 401, body: "", headers: {} });
+      const team = baseTeam({ integrations: { forge: { host: "gitlab.example.com", provider: "gitlab" } } });
+      const r = await pickRow(
+        accountRows(fakeProbes({ fetch }), team, [], fakeSecrets({ "rt.gitlabToken": "tok123" }), null, { forgeHost: "gitlab.example.com" }),
+        "account.gitlab",
+      );
+      expect(r.status).toBe("invalid");
+      expect(r.detail).not.toContain("last checked");
+    } finally {
+      neutralize("gitlab");
+    }
   });
 });
