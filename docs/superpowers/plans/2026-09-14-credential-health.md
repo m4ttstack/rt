@@ -213,7 +213,7 @@ Bump `SCHEMA_VERSION`:
 export const SCHEMA_VERSION = 12;
 ```
 
-Update the version comment to include `+ v12`.
+Update the version comment to include `+ v12` (note: v10/v11 are DML-only migrations, not DDL blocks in the SCHEMAS array; v12 is a DDL block like v1-v9).
 
 - [ ] **Step 4: Write db.ts**
 
@@ -328,11 +328,10 @@ describe("github expiry probe", () => {
     const p = fakeProbes({
       fetch: async (url: string) => ({
         status: 200,
-        headers: new Headers({
+        body: JSON.stringify({ login: "test" }),
+        headers: {
           "github-authentication-token-expiration": "2026-12-01 00:00:00 UTC",
-        }),
-        json: async () => ({ login: "test" }),
-        text: async () => "",
+        },
       }),
     });
     const result = await def.expiry!(p, "ghp_test", baseCtx);
@@ -343,9 +342,8 @@ describe("github expiry probe", () => {
     const p = fakeProbes({
       fetch: async () => ({
         status: 200,
-        headers: new Headers(),
-        json: async () => ({ login: "test" }),
-        text: async () => "",
+        body: JSON.stringify({ login: "test" }),
+        headers: {},
       }),
     });
     const result = await def.expiry!(p, "ghp_test", baseCtx);
@@ -356,9 +354,8 @@ describe("github expiry probe", () => {
     const p = fakeProbes({
       fetch: async () => ({
         status: 401,
-        headers: new Headers(),
-        json: async () => ({}),
-        text: async () => "Unauthorized",
+        body: "Unauthorized",
+        headers: {},
       }),
     });
     const result = await def.expiry!(p, "ghp_test", baseCtx);
@@ -375,12 +372,11 @@ describe("gitlab expiry probe", () => {
         if (url.includes("personal_access_tokens/self")) {
           return {
             status: 200,
-            headers: new Headers(),
-            json: async () => ({ expires_at: "2026-12-01", active: true }),
-            text: async () => "",
+            body: JSON.stringify({ expires_at: "2026-12-01", active: true }),
+            headers: {},
           };
         }
-        return { status: 200, headers: new Headers(), json: async () => ({}), text: async () => "" };
+        return { status: 200, body: "{}", headers: {} };
       },
     });
     const result = await def.expiry!(p, "glpat-test", { ...baseCtx, host: "gitlab.com" });
@@ -393,12 +389,11 @@ describe("gitlab expiry probe", () => {
         if (url.includes("personal_access_tokens/self")) {
           return {
             status: 200,
-            headers: new Headers(),
-            json: async () => ({ expires_at: null, active: true }),
-            text: async () => "",
+            body: JSON.stringify({ expires_at: null, active: true }),
+            headers: {},
           };
         }
-        return { status: 200, headers: new Headers(), json: async () => ({}), text: async () => "" };
+        return { status: 200, body: "{}", headers: {} };
       },
     });
     const result = await def.expiry!(p, "glpat-test", { ...baseCtx, host: "gitlab.com" });
@@ -409,9 +404,9 @@ describe("gitlab expiry probe", () => {
     const p = fakeProbes({
       fetch: async (url: string) => {
         if (url.includes("personal_access_tokens/self")) {
-          return { status: 403, headers: new Headers(), json: async () => ({}), text: async () => "Forbidden" };
+          return { status: 403, body: "Forbidden", headers: {} };
         }
-        return { status: 200, headers: new Headers(), json: async () => ({}), text: async () => "" };
+        return { status: 200, body: "{}", headers: {} };
       },
     });
     const result = await def.expiry!(p, "glpat-test", { ...baseCtx, host: "gitlab.com" });
@@ -453,7 +448,8 @@ async function githubExpiry(
     headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" },
   });
   if (res.status !== 200) return null;
-  const header = res.headers.get("github-authentication-token-expiration");
+  // Probes.fetch returns headers as Record<string,string>, not a Headers object
+  const header = res.headers["github-authentication-token-expiration"];
   if (!header) return { expiresAt: null };
   const parsed = new Date(header);
   if (isNaN(parsed.getTime())) return null;
@@ -474,7 +470,8 @@ async function gitlabExpiry(
     headers: { "PRIVATE-TOKEN": token },
   });
   if (res.status === 403 || res.status !== 200) return null;
-  const body = (await res.json()) as { expires_at?: string | null };
+  // Probes.fetch returns body as string; parse it like the existing validators do
+  const body = JSON.parse(res.body) as { expires_at?: string | null };
   return { expiresAt: body.expires_at ?? null };
 }
 ```
@@ -1017,16 +1014,19 @@ git commit -m "add credential-health sweep engine with transition notifications"
 
 **Files:**
 - Modify: `lib/daemon.ts`
+- Modify: `lib/daemon/command-router.ts` (for the `accounts-recheck` IPC handler)
 
 **Interfaces:**
-- Consumes: `runAccountsSweep(deps)` from `lib/credential-health/sweep.ts`; `INTEGRATIONS` from `lib/setup/integrations.ts`; `readSecret` from `lib/secrets/store.ts`; `createRealProbes` from `lib/setup/probes.ts`; `scheduleSweep` (already imported in daemon.ts)
+- Consumes: `runAccountsSweep(deps)` from `lib/credential-health/sweep.ts`; `INTEGRATIONS` from `lib/setup/integrations.ts`; `readSecret` from `lib/secrets/store.ts`; `createRealProbes` from `lib/setup/probes.ts`; `scheduleSweep` (already imported in daemon.ts); `notifyEnabled` free function from `lib/notifier.ts`
 - Produces: `accounts-sweep` registered sweep; `accounts-recheck` daemon IPC handler
 
-**Implementation notes:** This task wires the sweep into the daemon's background-subsystems phase. The daemon already has access to `eventsBus`, `getStateDb("daemon")`, and the `emit`/`broadcast` helpers. The sweep also needs secrets, probes, and integration target resolution.
+**Implementation notes:** This task wires the sweep into the daemon's background-subsystems phase. The daemon already has access to `eventsBus`, `getStateDb("daemon")`, and the `emit`/`broadcast` helpers. The sweep also needs secrets, probes, and integration target resolution. All daemon IPC handlers go through `buildRoutedHandlers` in `lib/daemon/command-router.ts`, not inline in daemon.ts.
 
 - [ ] **Step 1: Identify the wiring point**
 
 Read `lib/daemon.ts` around the "background-subsystems" phase (line ~693). Find where `sweepHandles.push(scheduleSweep(...))` calls cluster. The new sweep goes after `state-backup`.
+
+Also read `lib/daemon/command-router.ts` to understand `buildRoutedHandlers` and how to add a new IPC handler that can reference sweep deps.
 
 - [ ] **Step 2: Add imports**
 
@@ -1037,9 +1037,10 @@ import { runAccountsSweep, type SweepDeps, type IntegrationTarget } from "./cred
 import { INTEGRATIONS, type ValidateCtx } from "./setup/integrations.ts";
 import { createRealProbes } from "./setup/probes.ts";
 import { readSecret, createRealSecretsExecSeam } from "./secrets/store.ts";
+import { notifyEnabled } from "./notifier.ts";
 ```
 
-Check the actual export names in `lib/secrets/store.ts` for the seam constructor. It might be `createRealSecretsExecSeam()` or similar. The goal is to get a `SecretsSeams` value the sweep can use to read secrets.
+Check the actual export names in `lib/secrets/store.ts` for the seam constructor. It might be `createRealSecretsExecSeam()` or similar. The goal is to get a `SecretsSeams` value the sweep can use to read secrets. `notifyEnabled` is a free function export from `lib/notifier.ts` (backed by `getDefaultNotifier()`); import it statically, never via `require()`.
 
 - [ ] **Step 3: Wire the sweep deps and register**
 
@@ -1064,10 +1065,7 @@ const accountsSweepFn = async () => {
     db,
     targets: async () => targets,
     probes: accountsProbes,
-    notifyEnabled: (category, title, message, url) => {
-      const { notifyEnabled: ne } = require("./notifier.ts");
-      ne(category, title, message, url);
-    },
+    notifyEnabled,
     emitEvent: (topic, payload) => {
       const emittedAt = Date.now();
       const eventId = eventsBus.emitAt(topic, payload, emittedAt);
@@ -1083,20 +1081,24 @@ sweepHandles.push(
 );
 ```
 
-**Important:** The `notifyEnabled` import path above is illustrative. Check how `lib/notifier.ts` exports `notifyEnabled` (it is a free function via `getDefaultNotifier()`). Import it at the top of `lib/daemon.ts` (check if already imported for other notification uses) rather than using `require` at call time. Also adapt the `ValidateCtx` construction: search for how other daemon code resolves the host for gitlab/switchboard integrations (check if `ctxFor` from `lib/setup/validators/accounts.ts` is appropriate, or build a minimal ctx from user settings). The baseline `{ host: null }` works for GitHub; GitLab and switchboard need the user-confirmed host from settings or overrides.
+**Important:** Adapt the `ValidateCtx` construction: search for how other daemon code resolves the host for gitlab/switchboard integrations (check if `ctxFor` from `lib/setup/validators/accounts.ts` is appropriate, or build a minimal ctx from user settings). The baseline `{ host: null }` works for GitHub; GitLab and switchboard need the user-confirmed host from settings or overrides.
 
 - [ ] **Step 4: Add the accounts-recheck IPC handler**
 
-In the daemon's command handler registration (search for where `handleCommand` routes are defined, likely in `lib/daemon/command-router.ts` or inline in `lib/daemon.ts`), add:
+All daemon IPC handlers go through `buildRoutedHandlers` in `lib/daemon/command-router.ts`. Register the `accounts-recheck` handler there, following the existing pattern. The sweep function must be reachable from the handler: either pass it through the `opts` parameter that `buildRoutedHandlers` receives, or expose it via a module-scoped setter that the daemon wires after construction.
+
+In `lib/daemon/command-router.ts`, add to the routed handlers:
 
 ```ts
 "accounts-recheck": async () => {
-  await accountsSweepFn();
+  await opts.accountsSweep();
   return { ok: true };
 },
 ```
 
-This lets the CLI trigger a sweep cycle via `p.daemon({ verb: "accounts-recheck" })`.
+And in the opts type, add: `accountsSweep: () => Promise<void>`. In daemon.ts, pass `accountsSweepFn` as that opt.
+
+This lets the CLI trigger a sweep cycle via `p.daemon("accounts-recheck")`.
 
 - [ ] **Step 5: Verify the daemon compiles**
 
@@ -1258,7 +1260,8 @@ export async function run(args: string[]): Promise<void> {
     const { createRealProbes } = await import("../lib/setup/probes.ts");
     const p = createRealProbes();
     try {
-      const res = await p.daemon({ verb: "accounts-recheck" });
+      // Probes.daemon signature: (cmd: string, payload?, timeoutMs?)
+      const res = await p.daemon("accounts-recheck");
       if (!json) {
         if (res && typeof res === "object" && "ok" in res && res.ok) {
           console.log("Recheck complete.");
@@ -1281,7 +1284,7 @@ export async function run(args: string[]): Promise<void> {
 }
 ```
 
-**Note:** Check the exact `p.daemon(...)` calling convention. The `Probes` interface has a `daemon` method; verify its signature in `lib/setup/probes.ts`. If the daemon IPC is reached differently from a CLI command (e.g., a direct socket call), adapt accordingly. Search for how existing CLI commands communicate with the daemon (e.g., `rt chat` commands calling daemon verbs).
+**Note:** `Probes.daemon` signature is `(cmd: string, payload?, timeoutMs?)`. If the daemon IPC is reached differently from a CLI command (e.g., a direct socket call via `lib/daemon-client.ts`), adapt accordingly. Search for how existing CLI commands communicate with the daemon (e.g., `rt chat` commands calling daemon verbs).
 
 - [ ] **Step 4: Add command tree entry**
 
