@@ -56,3 +56,17 @@ over anything remembered or written here.
 - If provision or list reports team `ready` steps held pending approval, a
   human must run `rt worktree ready-approve <repo>`; surface it to Matt
   rather than working around it.
+
+## Crossing repos
+
+`EnterWorktree` cannot leave the repo the session started in. When the
+task's repo is not the session cwd, queue the cd and the next step into
+your own pane, then end the turn:
+
+```bash
+rt pane send self --text "/cd /Users/matt/Documents/GitHub/chat" --then "Continue: EnterWorktree name chat-42 for CHAT-42"
+```
+
+End the turn right after; the `--then` line arrives as your next message,
+in the right repo. Outside a herdr pane the command says so: ask Matt to
+run the `/cd`. Rules and the other-pane form: `rt:herdr-inject`.
