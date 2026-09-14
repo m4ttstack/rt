@@ -18,6 +18,7 @@
 
 import { resolveTool } from "../../deps/resolve.ts";
 import { detectEditors } from "../../editors.ts";
+import { BACKUP_TOOLS as BACKUP_TOOL_NAMES } from "../../state/backup-tools.ts";
 import { BASE_PLUGINS } from "../base-plugins.ts";
 import { row, type Action, type Row } from "../contract.ts";
 import { integrationDef } from "../integrations.ts";
@@ -593,6 +594,55 @@ async function proxyRow(p: Probes): Promise<Row> {
   return row({ ...base, status: "ready", detail: `portless ${deployedVersion}` });
 }
 
+// ─── tool.state-backup ──────────────────────────────────────────────────────
+
+/**
+ * The three binaries the encrypted state-backup pipeline shells out to. None
+ * ships with macOS, so the bundle carrying them is what makes a brew-less Mac
+ * able to back up at all — and the daemon runs the same pipeline on a timer
+ * under launchd's PATH, which never reaches Homebrew. Resolution order here
+ * is the pipeline's own (lib/state/backup-tools.ts): the bundle, then PATH.
+ */
+function stateBackupRow(p: Probes, seams: ToolsSeams): Row {
+  const base = {
+    id: "tool.state-backup",
+    kind: "tool" as const,
+    title: "State backup tools",
+    why: "Encrypted state backup compresses with zstd, encrypts with age, and ships the result through git-lfs.",
+    required: false,
+    optionalNote: "Works without this; `rt state backup` is what needs them.",
+    recheck: "on-activate" as const,
+  };
+
+  const resolutions = BACKUP_TOOL_NAMES.map((tool) => seams.resolveTool(p, tool));
+  const missing = resolutions.filter((r) => !r.chosen).map((r) => r.tool);
+  if (missing.length > 0) {
+    return row({
+      ...base,
+      status: "needs-you",
+      detail: `not found: ${missing.join(", ")}`,
+      action: {
+        type: "steps",
+        label: "Show steps…",
+        steps: [
+          "Update mattstack.app — it ships age, zstd and git-lfs",
+          `Or install them yourself: brew install ${missing.join(" ")}`,
+          "Then re-run rt setup status",
+        ],
+      },
+    });
+  }
+
+  const bundled = resolutions.filter((r) => r.bundled).map((r) => r.tool);
+  const onPath = resolutions.filter((r) => !r.bundled).map((r) => r.tool);
+  if (onPath.length === 0) return row({ ...base, status: "ready", detail: `${bundled.join(", ")} from mattstack.app` });
+  if (bundled.length === 0) {
+    return row({ ...base, status: "ready", detail: `${onPath.join(", ")} from your own copies on PATH` });
+  }
+  const copies = onPath.length === 1 ? "copy" : "copies";
+  return row({ ...base, status: "ready", detail: `${bundled.join(", ")} from mattstack.app; ${onPath.join(", ")} from your own ${copies} on PATH` });
+}
+
 // ─── tool.linear-mcp ────────────────────────────────────────────────────────
 
 const CONNECT_LINEAR_ACTION: Action = { type: "connect", label: "Connect Linear", integration: "linear", fields: integrationDef("linear").fields };
@@ -666,6 +716,7 @@ export async function toolRows(
 
   rows.push(await missionControlRow(p));
   rows.push(await proxyRow(p));
+  rows.push(stateBackupRow(p, seams));
 
   for (const tool of dedupeTeamTools(reqs)) rows.push(await teamToolRow(p, tool, opts.hasBrew));
 

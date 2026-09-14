@@ -6,6 +6,8 @@ import { Database } from "bun:sqlite";
 import { mattstackHome } from "../rt-paths";
 import { quickCheck } from "./db";
 import { restorePipeline, restorePipelineFromStdin } from "./backup-pipeline";
+import { findBackupTool } from "./backup-tools";
+import { writeLfsFilterConfig } from "./backup-lfs";
 import { backupDestDir, BACKUP_SOURCES, resolveSourcePath, type BackupSource } from "./backup-sources";
 
 export interface RestoreOptions {
@@ -141,6 +143,12 @@ export async function pullHomeRepo(): Promise<{ pullOk: boolean; lfsOk: boolean 
   const homeRepo = join(mattstackHome(), "user");
   const result = { pullOk: true, lfsOk: true };
 
+  const gitLfs = findBackupTool("git-lfs");
+  // Before the pull, not after: checkout runs the repo's configured
+  // filter.lfs.process, and a filter naming a git-lfs that is not on PATH
+  // fails the checkout, leaving stale local backups that read as current.
+  writeLfsFilterConfig(homeRepo, gitLfs);
+
   let proc = Bun.spawnSync(["git", "pull", "--ff-only"], {
     cwd: homeRepo,
     stderr: "pipe",
@@ -151,9 +159,10 @@ export async function pullHomeRepo(): Promise<{ pullOk: boolean; lfsOk: boolean 
     result.pullOk = false;
   }
 
-  const gitLfs = Bun.which("git-lfs", { PATH: process.env.PATH });
   if (gitLfs) {
-    proc = Bun.spawnSync(["git", "lfs", "pull"], {
+    // The binary directly: `git lfs` resolves its subcommand off PATH, which
+    // a fresh Mac (and launchd's environment) does not carry git-lfs on.
+    proc = Bun.spawnSync([gitLfs, "pull"], {
       cwd: homeRepo,
       stderr: "pipe",
       env: { ...process.env },
