@@ -137,7 +137,10 @@ path):
   `agent:resume` (`resumeAgentPane`; the agentId is already in the agents
   table and on the board's state file). The wrapper's `--resumed-gate` path
   already reads a recorded answer and proceeds to execution. Register
-  expectation `appear-live`.
+  expectation `appear-live`. A gate that was PARKED is the exception: its
+  owner closed the pane on park and resumes it on the answer with the
+  wrapper's re-entry prompt (the board's `resumeParkedGate`), so the daemon
+  neither relaunches nor registers an expectation for it.
 - Relaunch impossible (herdr down, agent row missing) or expectation
   failed: stamp the gate row `execution: "unassigned"` and emit; the board
   shows "answered, no pane to execute" with a retry action.
