@@ -1,7 +1,8 @@
 import { join, basename } from "path";
-import { mkdirSync, existsSync, readdirSync, statSync, unlinkSync, rmSync } from "fs";
+import { mkdirSync, existsSync, readdirSync, statSync, unlinkSync, rmSync, writeFileSync } from "fs";
 import { mkdtemp } from "fs/promises";
 import { tmpdir } from "os";
+import { Database } from "bun:sqlite";
 import { mattstackHome } from "../rt-paths";
 import {
   snapshotAll,
@@ -10,6 +11,39 @@ import {
   type BackupSource,
 } from "./backup-sources";
 import { backupPipeline } from "./backup-pipeline";
+
+declare const RT_VERSION: string | undefined;
+
+function rtVersion(): string {
+  return typeof RT_VERSION !== "undefined" ? RT_VERSION : "source";
+}
+
+function readSchemaVersion(dbPath: string): number | null {
+  if (!existsSync(dbPath)) return null;
+  try {
+    const db = new Database(dbPath, { readonly: true });
+    try {
+      const row = db.query("PRAGMA user_version").get() as { user_version: number } | null;
+      return row?.user_version ?? null;
+    } finally {
+      db.close();
+    }
+  } catch {
+    return null;
+  }
+}
+
+export interface BackupManifest {
+  timestamp: string;
+  rtVersion: string;
+  sources: Array<{
+    app: string;
+    sourcePath: string;
+    schemaVersion: number | null;
+    file: string;
+    sizeBytes: number;
+  }>;
+}
 
 export interface BackupResult {
   backed: Array<{ app: string; path: string; sizeBytes: number }>;
@@ -59,6 +93,27 @@ export async function runFullBackup(): Promise<BackupResult> {
         );
       }
     }
+    if (result.backed.length > 0) {
+      const manifest: BackupManifest = {
+        timestamp: ts,
+        rtVersion: rtVersion(),
+        sources: result.backed.map((b) => {
+          const source = snapshots.find((s) => s.source.app === b.app)?.source;
+          const fullSourcePath = source ? join(mattstackHome(), source.sourcePath) : "";
+          return {
+            app: b.app,
+            sourcePath: source?.sourcePath ?? "",
+            schemaVersion: source?.type === "sqlite" ? readSchemaVersion(fullSourcePath) : null,
+            file: basename(b.path),
+            sizeBytes: b.sizeBytes,
+          };
+        }),
+      };
+      writeFileSync(
+        join(backupDestDir(), `manifest-${ts}.json`),
+        JSON.stringify(manifest, null, 2) + "\n",
+      );
+    }
   } finally {
     rmSync(tmpDir, { recursive: true, force: true });
   }
@@ -74,6 +129,16 @@ export async function pruneOldBackups(
   const removed: string[] = [];
   const cutoff = Date.now() - retentionDays * RETENTION_MS_PER_DAY;
   const baseDir = backupDestDir();
+
+  for (const file of readdirSync(baseDir)) {
+    if (!file.startsWith("manifest-") || !file.endsWith(".json")) continue;
+    const filePath = join(baseDir, file);
+    const mtime = statSync(filePath).mtimeMs;
+    if (mtime < cutoff) {
+      unlinkSync(filePath);
+      removed.push(filePath);
+    }
+  }
 
   for (const app of ["rt", "board", "gitq"]) {
     const appDir = join(baseDir, app);
