@@ -1,7 +1,10 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import { join } from "path";
+import { mattstackHome } from "../lib/rt-paths.ts";
 import { isBackupConfigured } from "../lib/state/backup-orchestrator.ts";
 import { backupDestDir, recipientsPath } from "../lib/state/backup-sources.ts";
+import { originPushState } from "../lib/setup/home-git.ts";
+import { execWithTimeout } from "../lib/setup/probes.ts";
 import type { CommandContext } from "../lib/command-tree.ts";
 
 export async function stateBackupStatus(args: string[], _ctx: CommandContext): Promise<void> {
@@ -50,8 +53,47 @@ export async function stateBackupStatus(args: string[], _ctx: CommandContext): P
     return;
   }
 
+  const homeRepo = join(mattstackHome(), "user");
+  let pushState = "unknown";
+  let lfsState = "unknown";
+
+  if (existsSync(join(homeRepo, ".git"))) {
+    const ps = await originPushState(execWithTimeout, homeRepo);
+    switch (ps.kind) {
+      case "up-to-date": pushState = "synced"; break;
+      case "ahead": pushState = `${ps.count} commit(s) ahead`; break;
+      case "no-ref": pushState = "no remote tracking ref"; break;
+      default: pushState = "unknown";
+    }
+
+    const gitLfs = Bun.which("git-lfs", { PATH: process.env.PATH });
+    if (!gitLfs) {
+      lfsState = "git-lfs not found";
+    } else {
+      const checkAttr = Bun.spawnSync(
+        ["git", "check-attr", "filter", "--", "*.age"],
+        { cwd: homeRepo, stderr: "pipe", env: { ...process.env } },
+      );
+      const attrOut = checkAttr.stdout.toString();
+      lfsState = attrOut.includes("filter: lfs") ? "filter active" : "filter not configured";
+    }
+  }
+
+  if (json) {
+    console.log(JSON.stringify({
+      configured: true,
+      recipients: recip.length,
+      pushState,
+      lfsState,
+      apps: status,
+    }));
+    return;
+  }
+
   console.log(`State backup: configured, ${recip.length} recipient(s)`);
   console.log(`Sweep: every 4 hours`);
+  console.log(`Push: ${pushState}`);
+  console.log(`LFS: ${lfsState}`);
   console.log("");
 
   for (const s of status) {

@@ -110,6 +110,23 @@ describe("backup-orchestrator", () => {
       if (!existsSync(appDir)) continue;
       const remaining = readdirSync(appDir).filter((f) => f.endsWith(".zst.age"));
       expect(remaining.length).toBeGreaterThan(0);
+
+      const byPrefix = new Map<string, string[]>();
+      for (const f of remaining) {
+        const prefix = f.replace(/-\d{4}-\d{2}-\d{2}T.*$/, "");
+        const list = byPrefix.get(prefix) ?? [];
+        list.push(f);
+        byPrefix.set(prefix, list);
+      }
+      for (const [, files] of byPrefix) {
+        expect(files.length).toBe(1);
+      }
+
+      if (app === "rt") {
+        const prefixes = [...byPrefix.keys()];
+        expect(prefixes).toContain("rt-state");
+        expect(prefixes).toContain("rt-gates");
+      }
     }
   });
 

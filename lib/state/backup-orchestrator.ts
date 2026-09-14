@@ -217,9 +217,16 @@ export async function pruneOldBackups(
         stderr: "pipe",
         env: { ...process.env },
       });
-      const timeout = setTimeout(() => proc.kill(), 30_000);
+      const timeout = setTimeout(() => {
+        proc.kill();
+        setTimeout(() => proc.kill(9), 5_000);
+      }, 30_000);
+      const stderr = await new Response(proc.stderr).text();
       await proc.exited;
       clearTimeout(timeout);
+      if (proc.exitCode !== 0 && stderr) {
+        console.error(`git lfs prune warning: ${stderr.slice(0, 200)}`);
+      }
     }
   }
 
