@@ -1631,6 +1631,16 @@ export const TREE: Record<string, CommandNode> = {
     },
   },
 
+  accounts: {
+    description: "Show integration credential health",
+    module: "./commands/accounts.ts",
+    omitBehavior: "list",
+    args: [
+      { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Output as JSON" },
+      { name: "Recheck", flag: "--recheck", type: "boolean", default: false, hint: "Force a sweep cycle before listing" },
+    ],
+  },
+
   secrets: {
     description: "sops-encrypted secrets under ~/.mattstack/user/secrets/",
     subcommands: {

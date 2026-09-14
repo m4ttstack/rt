@@ -12,6 +12,9 @@
 
 import type { Action, Integration, Row } from "../contract.ts";
 import { row } from "../contract.ts";
+import { readCredentialHealth, type CredentialHealthRow } from "../../credential-health/db.ts";
+import { daysUntil } from "../../credential-health/sweep.ts";
+import { getStateDb } from "../../state/index.ts";
 import { isValidHostname, isValidHttpsUrl } from "../host-validate.ts";
 import { integrationDef, type IntegrationDef, type ValidateCtx } from "../integrations.ts";
 import type { SetupIntent } from "../intent.ts";
@@ -214,11 +217,58 @@ async function accountRowFor(p: Probes, entry: DeclaredEntry, team: TeamSnapshot
 
 const ACCOUNT_RECHECK_ACTION: Action = { type: "run", label: "Re-check", verb: ["setup", "status"] };
 
+/**
+ * credential_health carries what rt-132's background sweep last observed for
+ * this integration, independent of and possibly fresher than this row's own
+ * live check. A "ready" row gets a near-expiry callout appended to its
+ * detail; an "error" row (validate couldn't reach the service, not that it
+ * rejected the credential) falls back to the sweep's last good result rather
+ * than reading as dead over what may be a transient network blip. Missing or
+ * unopenable state.db degrades silently... this only decorates a row already
+ * built from its own live check, never a reason to change it.
+ */
+function withCredentialHealth(r: Row, id: Integration): Row {
+  let health: CredentialHealthRow | null;
+  try {
+    const db = getStateDb("cli");
+    health = readCredentialHealth(db, id);
+  } catch {
+    return r;
+  }
+  if (!health) return r;
+
+  if (r.status === "ready" && health.status === "ready" && health.expiresAt) {
+    const days = daysUntil(health.expiresAt, Date.now());
+    if (days > 0 && days <= 7) {
+      return { ...r, detail: `${r.detail} (expires in ${days} day${days === 1 ? "" : "s"}, ${health.expiresAt})` };
+    }
+    return r;
+  }
+
+  if (r.status === "error" && health.status !== "error") {
+    const ago = humanCheckedAgo(Date.now() - health.checkedAt);
+    return { ...r, status: health.status, detail: `last checked ${ago} ago: ${health.status} (${health.detail})` };
+  }
+
+  return r;
+}
+
+function humanCheckedAgo(ms: number): string {
+  const hours = Math.floor(ms / 3_600_000);
+  if (hours < 1) return "<1h";
+  if (hours < 24) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
+}
+
 /** One entry's `secrets.has()`/`def.validate()` throwing (a bad recipient, a corrupt staged file, a network stack that throws instead of returning) must degrade to that entry's own error row — never take every other declared integration's row down with it. */
 async function accountRowForSafe(p: Probes, entry: DeclaredEntry, team: TeamSnapshot, secrets: SecretPresence, intent: SetupIntent | null, overrides: UserIntegrationOverrides): Promise<Row> {
   try {
-    return await accountRowFor(p, entry, team, secrets, intent, overrides);
+    const r = await accountRowFor(p, entry, team, secrets, intent, overrides);
+    return withCredentialHealth(r, entry.id);
   } catch (err) {
+    // Only the success path (above) applies withCredentialHealth: the catch
+    // covers secrets.has failures and other pre-validate errors, so surfacing
+    // cached "ready" here could mask a keychain/sops problem.
     return row({
       id: `account.${entry.id}`,
       kind: "account",
