@@ -119,7 +119,7 @@ export function buildRoutedHandlers(opts: {
    * own private map.
    */
   chatDeliveryChains?: Map<string, Promise<void>>;
-  /** Runs one credential-health sweep cycle on demand (RT-132) — the same closure the daemon's periodic accounts-sweep timer calls, so `rt accounts --recheck` sees an up-to-date credential_health table immediately. Omitted only by tests that don't exercise accounts-recheck. */
+  /** Runs one credential-health sweep cycle on demand (RT-132), the same closure the daemon's periodic accounts-sweep timer calls, so `rt accounts --recheck` sees an up-to-date credential_health table immediately. Omitted only by tests that don't exercise accounts-recheck. */
   accountsSweep?: () => Promise<void>;
 }): Record<string, Handler> {
   const { ctx, broadcast, systemProcessScanner } = opts;
