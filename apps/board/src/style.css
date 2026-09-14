@@ -820,6 +820,7 @@ body {
    a status line: it carries no tone and never takes a lane's hue, and its
    cyan is the one hue the row does not spend on a verb. */
 .tui-row-note {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -847,25 +848,32 @@ body {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
-/* The quick clear, in the verbs' own shape: hidden until the pointer is on
-   the row, so the band at rest is the note and nothing else. */
+/* The quick clear rides ABOVE the band rather than in it: absolute, so it
+   reserves no room at rest (the note would otherwise end early for a button
+   that isn't there), and opaque with a shadow so it reads over whatever
+   words it lands on. */
 .tui-row-note-dismiss {
-  flex: 0 0 auto;
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
   margin: 0;
   border: 0;
-  padding: 1px 7px;
+  padding: 2px 8px;
   border-radius: var(--radius-px5);
-  background: none;
+  background: var(--panel);
+  box-shadow:
+    0 0 0 3px var(--panel),
+    0 2px 8px rgb(0 0 0 / 22%);
   font: 600 0.72rem / 16px var(--font-sans);
   color: var(--muted-text);
   cursor: pointer;
-  visibility: hidden;
+  display: none;
 }
 .tui-row:is(:hover, :focus-within) .tui-row-note-dismiss {
-  visibility: visible;
+  display: block;
 }
 .tui-row-note-dismiss:hover {
-  background: color-mix(in srgb, var(--muted-text) 12%, transparent);
   color: var(--fg);
 }
 /* Editing: the band keeps its place and its color; the text becomes the

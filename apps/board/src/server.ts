@@ -962,21 +962,24 @@ const httpServer = Bun.serve({
           // wholesale on the client, so anything left off here would blink out
           // of the UI every 15s.
           const withState = attachPeerState(
-            attachDrafts(
-              attachSlack(
-                attachGates(
-                  attachDoctors(
-                    attachResponds(
-                      attachReviews(mrs, readReviewStates()),
-                      readRespondStates()
+            attachNotes(
+              attachDrafts(
+                attachSlack(
+                  attachGates(
+                    attachDoctors(
+                      attachResponds(
+                        attachReviews(mrs, readReviewStates()),
+                        readRespondStates()
+                      ),
+                      readDoctorStates()
                     ),
-                    readDoctorStates()
+                    gateCache
                   ),
-                  gateCache
+                  readSlackRefs()
                 ),
-                readSlackRefs()
+                heldDraftsByMr(readDrafts())
               ),
-              heldDraftsByMr(readDrafts())
+              readNotes()
             )
           );
           // Reconciler joins too, for the same wholesale-replace reason: rows
