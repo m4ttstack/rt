@@ -115,6 +115,52 @@ Logging is structural, not per-feature. Outcomes are logged at central seams; fe
 
 **The catch policy:** never swallow errors in a seam. Below a logged seam, an empty catch is acceptable only for genuinely expected conditions (socket already closed, file already gone) — anything else logs at `warn` with `{ err }`.
 
+## State backup
+
+Encrypted, compressed, off-machine backup of mattstack app state. Before
+touching `lib/state/backup-*.ts`, `commands/state-backup-*.ts`, the daemon's
+`state-backup` sweep, or anything that writes to
+`~/.mattstack/user/state-backups/`, read
+`docs/superpowers/specs/2026-09-13-state-backup-design.md`.
+
+**Pipeline:** `VACUUM INTO` (SQLite) or `tar -c` (gitq stacks) into a tmpdir,
+`zstd -19` compress, `age -R recipients.txt` encrypt, then the final `.age`
+blob lands in `~/.mattstack/user/state-backups/<app>/`. The home repo's
+snapshot engine auto-commits and pushes it (Git LFS tracks `*.age`).
+Intermediates never touch the home repo working tree.
+
+**Sources:** `rt/state.db`, `rt/gates.db`, `board/state.db`, `gitq/stacks/`.
+The registry is `BACKUP_SOURCES` in `lib/state/backup-sources.ts`.
+
+**Daemon sweep:** `scheduleSweep("state-backup", ...)` in `lib/daemon.ts`,
+every 4 hours, guarded on `recipients.txt` existence. Falls back to
+local-only `VACUUM INTO` if encrypted backup is not configured or all
+sources fail.
+
+**Key management:** encrypts to multiple age recipients (personal keychain
+key + optional team key). The age private key is never written to disk;
+decrypt pipes via `/dev/stdin`. `readAgeKey` and `ensureAgeKey` require an
+`AgeKeySeam` from `createRealAgeKeySeam()`.
+
+**Manifest:** each backup writes `manifest-<ts>.json` with schema versions
+(`PRAGMA user_version`), content hashes (SHA-256 of the plaintext snapshot),
+and rt version. The manifest carries ALL sources forward each cycle
+(unchanged sources keep their previous entry). Content-hash dedupe skips
+a source only when hash matches AND the referenced `.age` file still exists.
+
+**Restore:** `rt state restore --from-backup` pulls the home repo, decrypts,
+decompresses, integrity-checks, and places. `--identity <path>` for team key
+on a new machine. Checks `lsof -t` for holder processes immediately before
+rename. The daemon guard also checks `rt.sock` existence (a wedged daemon
+that times out the ping no longer reads as stopped).
+
+**Prune:** 7-day retention, keeps the newest file per source prefix so a
+stable source always has at least one copy on disk.
+
+**Dependencies:** `age`, `zstd`, and `git-lfs` resolve via PATH with
+explicit `{ PATH: process.env.PATH }` (the daemon's launchd PATH is
+minimal). RT-131 tracks bundling all three in `deps.lock`.
+
 ## Operating on this machine
 
 This repo's tooling runs as live services on the developer's own machine. Six
