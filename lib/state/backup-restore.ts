@@ -1,4 +1,4 @@
-import { dirname, join } from "path";
+import { basename, dirname, join } from "path";
 import { existsSync, readdirSync, mkdirSync, renameSync, rmSync, copyFileSync } from "fs";
 import { mkdtemp } from "fs/promises";
 import { tmpdir } from "os";
@@ -106,13 +106,13 @@ export async function restoreFromBackup(opts: RestoreOptions): Promise<RestoreRe
           }
 
           mkdirSync(dirname(targetPath), { recursive: true });
-          const tmpTarget = targetPath + ".restore-tmp";
-          copyFileSync(restoredPath, tmpTarget);
-          renameSync(tmpTarget, targetPath);
           for (const ext of ["-wal", "-shm"]) {
             const sidecar = targetPath + ext;
             if (existsSync(sidecar)) rmSync(sidecar);
           }
+          const tmpTarget = join(dirname(targetPath), `.${basename(targetPath)}.restore-tmp`);
+          copyFileSync(restoredPath, tmpTarget);
+          renameSync(tmpTarget, targetPath);
           result.restored.push({ app: source.app, targetPath });
         } else {
           mkdirSync(targetPath, { recursive: true });
@@ -134,16 +134,32 @@ export async function restoreFromBackup(opts: RestoreOptions): Promise<RestoreRe
   return result;
 }
 
-export async function pullHomeRepo(): Promise<void> {
+export async function pullHomeRepo(): Promise<{ pullOk: boolean; lfsOk: boolean }> {
   const homeRepo = join(mattstackHome(), "user");
+  const result = { pullOk: true, lfsOk: true };
 
-  let proc = Bun.spawnSync(["git", "pull", "--ff-only"], { cwd: homeRepo, stderr: "pipe" });
+  let proc = Bun.spawnSync(["git", "pull", "--ff-only"], {
+    cwd: homeRepo,
+    stderr: "pipe",
+    env: { ...process.env },
+  });
   if (proc.exitCode !== 0) {
-    throw new Error(`git pull failed (exit ${proc.exitCode})`);
+    console.error(`git pull failed (exit ${proc.exitCode}), continuing with local backups`);
+    result.pullOk = false;
   }
 
-  proc = Bun.spawnSync(["git", "lfs", "pull"], { cwd: homeRepo, stderr: "pipe" });
-  if (proc.exitCode !== 0) {
-    throw new Error(`git lfs pull failed (exit ${proc.exitCode})`);
+  const gitLfs = Bun.which("git-lfs", { PATH: process.env.PATH });
+  if (gitLfs) {
+    proc = Bun.spawnSync(["git", "lfs", "pull"], {
+      cwd: homeRepo,
+      stderr: "pipe",
+      env: { ...process.env },
+    });
+    if (proc.exitCode !== 0) {
+      console.error(`git lfs pull failed (exit ${proc.exitCode}), continuing with local backups`);
+      result.lfsOk = false;
+    }
   }
+
+  return result;
 }

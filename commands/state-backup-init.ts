@@ -46,9 +46,17 @@ export async function stateBackupInit(_args: string[], _ctx: CommandContext = {}
   console.log("Dependencies: age, zstd, git-lfs found");
 
   const homeRepo = join(mattstackHome(), "user");
+  if (!existsSync(join(homeRepo, ".git"))) {
+    console.error("Home repo not found at " + homeRepo);
+    console.error("Run `rt home init` first to set up the home repo.");
+    process.exit(1);
+  }
   const gitattributes = join(homeRepo, ".gitattributes");
 
-  const lfsInit = Bun.spawnSync(["git", "lfs", "install"], { cwd: homeRepo });
+  const lfsInit = Bun.spawnSync(["git", "lfs", "install", "--local"], {
+    cwd: homeRepo,
+    env: { ...process.env },
+  });
   if (lfsInit.exitCode !== 0) {
     console.error("git lfs install failed:", lfsInit.stderr.toString());
     process.exit(1);

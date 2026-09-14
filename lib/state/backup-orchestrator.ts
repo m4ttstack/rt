@@ -1,14 +1,14 @@
 import { join, basename } from "path";
-import { mkdirSync, existsSync, readdirSync, statSync, unlinkSync, rmSync, writeFileSync } from "fs";
+import { mkdirSync, existsSync, readdirSync, statSync, unlinkSync, rmSync, writeFileSync, readFileSync } from "fs";
 import { mkdtemp } from "fs/promises";
 import { tmpdir } from "os";
 import { Database } from "bun:sqlite";
+import { createHash } from "crypto";
 import { mattstackHome } from "../rt-paths";
 import {
   snapshotAll,
   backupDestDir,
   recipientsPath,
-  type BackupSource,
 } from "./backup-sources";
 import { backupPipeline } from "./backup-pipeline";
 
@@ -33,6 +33,26 @@ function readSchemaVersion(dbPath: string): number | null {
   }
 }
 
+function hashFile(path: string): string {
+  const content = readFileSync(path);
+  return createHash("sha256").update(content).digest("hex");
+}
+
+function readLatestManifest(): BackupManifest | null {
+  const baseDir = backupDestDir();
+  if (!existsSync(baseDir)) return null;
+  const manifests = readdirSync(baseDir)
+    .filter((f) => f.startsWith("manifest-") && f.endsWith(".json"))
+    .sort()
+    .reverse();
+  if (manifests.length === 0) return null;
+  try {
+    return JSON.parse(readFileSync(join(baseDir, manifests[0]!), "utf-8"));
+  } catch {
+    return null;
+  }
+}
+
 export interface BackupManifest {
   timestamp: string;
   rtVersion: string;
@@ -40,13 +60,14 @@ export interface BackupManifest {
     app: string;
     sourcePath: string;
     schemaVersion: number | null;
+    contentHash: string;
     file: string;
     sizeBytes: number;
   }>;
 }
 
 export interface BackupResult {
-  backed: Array<{ app: string; path: string; sizeBytes: number }>;
+  backed: Array<{ app: string; path: string; sizeBytes: number; contentHash: string }>;
   skipped: string[];
   errors: string[];
 }
@@ -76,9 +97,20 @@ export async function runFullBackup(): Promise<BackupResult> {
     result.errors.push(...snapshotResult.errors);
     const ts = timestamp();
 
+    const prevManifest = readLatestManifest();
+    const prevHashes = new Map(
+      prevManifest?.sources.map((s) => [s.sourcePath, s.contentHash]) ?? [],
+    );
+
     for (const { source, snapshotPath } of snapshotResult.snapshots) {
       const appDir = join(backupDestDir(), source.app);
       mkdirSync(appDir, { recursive: true });
+
+      const contentHash = hashFile(snapshotPath);
+      if (prevHashes.get(source.sourcePath) === contentHash) {
+        result.skipped.push(`${source.app}/${basename(source.sourcePath)}: unchanged`);
+        continue;
+      }
 
       const baseName = source.sourcePath.replace(/\//g, "-").replace(/\.[^.]+$/, "");
       const destName = `${baseName}-${ts}${source.ext}.zst.age`;
@@ -87,7 +119,7 @@ export async function runFullBackup(): Promise<BackupResult> {
       try {
         await backupPipeline(snapshotPath, destPath, recip);
         const size = statSync(destPath).size;
-        result.backed.push({ app: source.app, path: destPath, sizeBytes: size });
+        result.backed.push({ app: source.app, path: destPath, sizeBytes: size, contentHash });
       } catch (err) {
         result.errors.push(
           `${source.app}/${basename(source.sourcePath)}: ${err instanceof Error ? err.message : String(err)}`,
@@ -100,15 +132,16 @@ export async function runFullBackup(): Promise<BackupResult> {
         rtVersion: rtVersion(),
         sources: result.backed.map((b) => {
           const filePrefix = basename(b.path).split("-" + ts)[0];
-          const source = snapshotResult.snapshots.find((s) => {
+          const snap = snapshotResult.snapshots.find((s) => {
             const prefix = s.source.sourcePath.replace(/\//g, "-").replace(/\.[^.]+$/, "");
             return prefix === filePrefix;
-          })?.source;
-          const fullSourcePath = source ? join(mattstackHome(), source.sourcePath) : "";
+          });
+          const source = snap?.source;
           return {
             app: b.app,
             sourcePath: source?.sourcePath ?? "",
-            schemaVersion: source?.type === "sqlite" ? readSchemaVersion(fullSourcePath) : null,
+            schemaVersion: source?.type === "sqlite" && snap ? readSchemaVersion(snap.snapshotPath) : null,
+            contentHash: b.contentHash,
             file: basename(b.path),
             sizeBytes: b.sizeBytes,
           };
@@ -160,11 +193,19 @@ export async function pruneOldBackups(
     }
   }
 
-  // Prune local LFS cache for orphaned objects
   if (removed.length > 0) {
     const homeRepo = join(mattstackHome(), "user");
-    if (existsSync(join(homeRepo, ".git"))) {
-      Bun.spawnSync(["git", "lfs", "prune"], { cwd: homeRepo, stderr: "pipe" });
+    const gitLfs = Bun.which("git-lfs", { PATH: process.env.PATH });
+    if (gitLfs && existsSync(join(homeRepo, ".git"))) {
+      const proc = Bun.spawn(["git", "lfs", "prune"], {
+        cwd: homeRepo,
+        stdout: "ignore",
+        stderr: "pipe",
+        env: { ...process.env },
+      });
+      const timeout = setTimeout(() => proc.kill(), 30_000);
+      await proc.exited;
+      clearTimeout(timeout);
     }
   }
 
