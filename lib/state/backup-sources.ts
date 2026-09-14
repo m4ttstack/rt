@@ -46,7 +46,6 @@ export async function snapshotSource(
       db.close();
     }
   } else {
-    // tar the directory
     const proc = spawn(["tar", "-cf", destPath, "-C", fullPath, "."], {
       stdout: "ignore",
       stderr: "pipe",
