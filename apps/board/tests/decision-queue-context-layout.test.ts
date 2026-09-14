@@ -1,8 +1,10 @@
 /** Real-layout check for the decision queue's context pane, run in headless
     chromium against the fixture server: happy-dom does no layout, and the
-    law this guards (the modal never scrolls; the pane takes what the form
-    leaves and scrolls on its own) only exists once CSS flex sizing runs.
-    Boots on a free port so a concurrent `capture` run on 7941 is untouched. */
+    law this guards (the pane takes what the form leaves and scrolls on its
+    own, never below a floor of a few lines; the modal scrolls only when the
+    floor plus the form outgrow its cap) only exists once CSS flex sizing
+    runs. Boots on a free port so a concurrent `capture` run on 7941 is
+    untouched. */
 import { mkdtempSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -12,7 +14,12 @@ import { chromium, type Browser, type Page } from 'playwright';
 const ROOT = join(import.meta.dir, '..');
 /** Tall enough for the modal chrome and the fixture gate's form to fit the
     80vh cap with room left over, so the pane's share is what's measured. */
-const VIEWPORT = { width: 1000, height: 1000 };
+const ROOMY = { width: 1000, height: 1000 };
+/** A laptop-height window: the form alone nearly fills the 80vh cap, which
+    is where the pane used to collapse to its header. */
+const SHORT = { width: 1000, height: 812 };
+/** The floor in the pane's body: seven lines of the gate's meta type. */
+const FLOOR_LINES_PX = 140;
 
 /** The slice of the page's DOM the measurements touch; this tsconfig has no
     `dom` lib, so the evaluate callbacks reach it through a cast. */
@@ -75,8 +82,11 @@ afterAll(async () => {
   server?.kill();
 });
 
-async function openDecisionQueue(): Promise<Page> {
-  const ctx = await browser.newContext({ viewport: VIEWPORT });
+async function openDecisionQueue(viewport: {
+  width: number;
+  height: number;
+}): Promise<Page> {
+  const ctx = await browser.newContext({ viewport });
   await ctx.route(/^https:\/\/fonts\.(googleapis|gstatic)\.com\//, route =>
     route.abort()
   );
@@ -90,26 +100,61 @@ async function openDecisionQueue(): Promise<Page> {
   return page;
 }
 
-test('the modal never scrolls: the pane takes what the form leaves and scrolls itself', async () => {
-  const page = await openDecisionQueue();
-  const m = await page.evaluate(() => {
+type Layout = {
+  modalScrolls: boolean;
+  bodyScrolls: boolean;
+  bodyClient: number;
+  bodyScroll: number;
+  formHeight: number;
+  modalClient: number;
+  modalBottom: number;
+  footerBottom: number;
+  paneHeight: number;
+  paneScrolls: boolean;
+};
+
+function measure(page: Page): Promise<Layout> {
+  return page.evaluate(() => {
     const { document } = globalThis as unknown as PageGlobals;
     const modal = document.querySelector('.tui-triage-modal')!;
     const pane = document.querySelector(
       '.tui-triage-modal [data-part="scrollpane-body"]'
     )!;
     const footer = document.querySelector('.tui-triage-footer')!;
+    const body = document.querySelector('.tui-triage-body')!;
     return {
       modalScrolls: modal.scrollHeight > modal.clientHeight,
+      bodyScrolls: body.scrollHeight > body.clientHeight,
+      bodyClient: body.clientHeight,
+      bodyScroll: body.scrollHeight,
+      formHeight: document.querySelector('.tui-triage-form-col')!.clientHeight,
+      modalClient: modal.clientHeight,
       modalBottom: modal.getBoundingClientRect().bottom,
       footerBottom: footer.getBoundingClientRect().bottom,
       paneHeight: pane.clientHeight,
       paneScrolls: pane.scrollHeight > pane.clientHeight,
     };
   });
+}
+
+test('roomy: nothing but the pane scrolls; it takes what the form leaves', async () => {
+  const page = await openDecisionQueue(ROOMY);
+  const m = await measure(page);
+  expect(m.modalScrolls).toBe(false);
+  expect(m.bodyScrolls).toBe(false);
+  expect(m.footerBottom).toBeLessThanOrEqual(m.modalBottom);
+  expect(m.paneHeight).toBeGreaterThanOrEqual(FLOOR_LINES_PX);
+  expect(m.paneScrolls).toBe(true);
+  await page.context().close();
+}, 30_000);
+
+test('short: the pane keeps its floor and the body scrolls to the form under the pinned footer', async () => {
+  const page = await openDecisionQueue(SHORT);
+  const m = await measure(page);
+  expect(m.paneHeight).toBeGreaterThanOrEqual(FLOOR_LINES_PX);
+  expect(m.paneScrolls).toBe(true);
+  expect(m.bodyScrolls).toBe(true);
   expect(m.modalScrolls).toBe(false);
   expect(m.footerBottom).toBeLessThanOrEqual(m.modalBottom);
-  expect(m.paneHeight).toBeGreaterThan(0);
-  expect(m.paneScrolls).toBe(true);
   await page.context().close();
 }, 30_000);

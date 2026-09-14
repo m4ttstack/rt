@@ -4,7 +4,7 @@ import type { GateDomain } from '@mattstack/gate-kit';
 import { Button, Chip, Markdown, Modal, ScrollPane } from '@mattstack/tui-kit';
 import type { GateRow } from '../../gates/store.ts';
 import { extractTicketId, ticketUrl } from '../../ticket.ts';
-import type { BoardMRWithReview } from '../types.ts';
+import type { BoardMRWithReview, ExecutorState } from '../types.ts';
 import { AttentionCard } from './AttentionCard.tsx';
 import { ago, cleanTitle } from './format.ts';
 import {
@@ -92,7 +92,7 @@ function DecisionQueueModal({
   onContinue,
   onLostChange,
 }: {
-  gate: GateRow;
+  gate: GateRow & { executor?: ExecutorState };
   /** Absent for a non-MR gate (queueExtras) -- the strip and face below
       render off `gate` alone rather than crash on a missing MR. */
   mr?: BoardMRWithReview;
@@ -112,6 +112,7 @@ function DecisionQueueModal({
   onLostChange?: (lost: boolean) => void;
 }) {
   const form = useGateForm(gate, onAnswered);
+  const paneGone = gate.executor === 'gone';
   const answered = gate.status === 'answered';
   const actionable = gate.status === 'open' || gate.status === 'parked';
   const deliveryStuck = answered && gate.delivery?.outcome === 'stuck';
@@ -131,31 +132,34 @@ function DecisionQueueModal({
     >
       <div className="tui-triage-queue-row">
         <span className="tui-triage-head-actions">
+          {/* A parked gate has no pane: the board closed it on park, and the
+              recorded answer is what brings it back (resumeParkedGate). The
+              button stays so the head never rearranges, disabled with the
+              reason, as it is when the reconciler reports the pane gone. */}
           {gate.status === 'parked' ? (
-            gate.domain &&
-            mr && (
-              <Button
-                type="button"
-                variant="light"
-                intent="accent"
-                size="lg"
-                title="resume this gate's flow in a fresh pane"
-                onClick={() => onFocusPane(mr, gate.domain!)}
-              >
-                focus pane
-              </Button>
-            )
+            <Button
+              type="button"
+              variant="light"
+              intent="accent"
+              size="lg"
+              disabled
+              title="parked: answering this gate resumes its pane"
+            >
+              focus pane
+            </Button>
           ) : (
             <Button
               type="button"
               variant="light"
               intent="accent"
               size="lg"
-              disabled={!form.originFocusable || form.focusBusy}
+              disabled={!form.originFocusable || form.focusBusy || paneGone}
               title={
-                form.originFocusable
-                  ? 'jump into the pane behind this gate'
-                  : 'no origin on this gate'
+                paneGone
+                  ? 'pane is gone'
+                  : form.originFocusable
+                    ? 'jump into the pane behind this gate'
+                    : 'no origin on this gate'
               }
               onClick={() => void form.focusGate()}
             >

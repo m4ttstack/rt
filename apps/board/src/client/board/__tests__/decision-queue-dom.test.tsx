@@ -218,6 +218,72 @@ function withAnsweredGate(gate: Record<string, unknown>) {
   };
 }
 
+/** The first MR alone, carrying one open gate patched as given. */
+function withOpenGate(patch: Record<string, unknown>) {
+  const [first] = BOARD_DATA.mrs;
+  return {
+    ...BOARD_DATA,
+    mrs: [{ ...first, gates: [{ ...first!.gates[0]!, ...patch }] }],
+  };
+}
+
+async function openQueue(container: HTMLElement): Promise<Element> {
+  const root = createRoot(container);
+  await React.act(async () => {
+    root.render(React.createElement(Board));
+  });
+  await React.act(async () => {
+    await new Promise(resolve => setTimeout(resolve, 0));
+  });
+  const openButton = [...container.querySelectorAll('button')].find(b =>
+    b.textContent?.trim().startsWith('decision queue')
+  ) as HTMLElement;
+  await React.act(async () => {
+    openButton.click();
+  });
+  const dialog = container.querySelector(
+    '[role="dialog"][aria-label="decision queue"]'
+  );
+  if (!dialog) throw new Error('queue did not open');
+  return dialog;
+}
+
+test('a parked gate: focus pane is offered disabled, with the hint that answering resumes the pane', async () => {
+  servedData = withOpenGate({ status: 'parked', domain: 'respond' });
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  try {
+    const dialog = await openQueue(container);
+    const focus = findByText(
+      dialog,
+      'button',
+      'focus pane'
+    ) as HTMLButtonElement;
+    expect(focus.disabled).toBe(true);
+    expect(focus.title).toBe('parked: answering this gate resumes its pane');
+  } finally {
+    container.remove();
+  }
+});
+
+test('an open gate whose pane is gone: focus pane is offered disabled, saying so', async () => {
+  servedData = withOpenGate({ executor: 'gone' });
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  try {
+    const dialog = await openQueue(container);
+    const focus = findByText(
+      dialog,
+      'button',
+      'focus pane'
+    ) as HTMLButtonElement;
+    expect(focus.disabled).toBe(true);
+    expect(focus.title).toBe('pane is gone');
+  } finally {
+    container.remove();
+  }
+});
+
 function findByText(root: ParentNode, tag: string, text: string): Element {
   const found = [...root.querySelectorAll(tag)].find(
     el => el.textContent?.trim() === text
