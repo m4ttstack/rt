@@ -176,11 +176,16 @@ const explain = (state: string, matched: string[]) => ({
   explain: {
     state,
     matched_rule: { id: matched[0] ?? "live_prompt_box", state },
-    evaluated_rules: ["osc_title_working", "live_turn_working", "background_agents_working", "live_prompt_box", "live_blocked_form"].map((id) => ({ id, matched: matched.includes(id) })),
+    evaluated_rules: ["osc_title_working", "live_turn_working", "background_agents_working", "background_mcp_task_working", "btw_overlay_working", "live_prompt_box", "live_blocked_form"].map((id) => ({ id, matched: matched.includes(id) })),
   },
 });
 const LIVE_TURN = explain("working", ["osc_title_working", "live_turn_working", "live_prompt_box"]);
 const BACKGROUND_HOLD = explain("working", ["osc_title_working", "background_agents_working", "live_prompt_box"]);
+// The hold after a queued slash command ran: its output is now the last line, so herdr's
+// narrow background rule no longer matches, but the title spinner is on with no live turn.
+const HOLD_AFTER_SLASH = explain("working", ["osc_title_working", "live_prompt_box"]);
+const HOLD_SCREEN = { type: "pane_read", read: { text: "⏺ WAITING\n\n✻ Waiting for 1 background agent to finish\n\n❯ /cd /Users/matt\n  ⎿  Moved to /Users/matt\n\n\n❯\n" } };
+const PLAIN_SCREEN = { type: "pane_read", read: { text: "⏺ some answer\n\n\n❯\n" } };
 
 test("injectAfterTurn waits for the turn to end, then injects the continuation", async () => {
   let waits = 0;
@@ -211,9 +216,48 @@ test("injectAfterTurn injects at once when the turn is parked on background agen
   const logged: unknown[] = [];
   const log = { info: (o: unknown) => { logged.push(o); }, warn: () => {} } as unknown as import("pino").Logger;
   await injectAfterTurn({ paneId: "w1:p1", text: "Continue", herdr, log, legMs: 50, settleMs: 0 });
-  expect(seen.map((s) => s.method)).toEqual(["agent.explain", "agent.get", "agent.prompt"]);
-  expect(seen[2]!.params).toMatchObject({ target: "w1:p1", text: "Continue" });
+  expect(seen.map((s) => s.method)).toEqual(["agent.explain", "agent.explain", "agent.get", "agent.prompt"]);
+  expect(seen[3]!.params).toMatchObject({ target: "w1:p1", text: "Continue" });
   expect(logged[0]).toMatchObject({ paneId: "w1:p1", delivered: "queued" });
+});
+
+test("injectAfterTurn injects during the hold after the slash command ran, reading the background line off the screen", async () => {
+  const { herdr, seen } = on((method, params) => {
+    if (method === "agent.explain") return HOLD_AFTER_SLASH;
+    if (method === "pane.read") return HOLD_SCREEN;
+    if (method === "agent.get") return agent("working");
+    if (method === "agent.prompt") return { type: "agent_prompted", agent: { ...agent("working").agent, text: params.text } };
+    return new HerdrFakeError("invalid_request", method);
+  });
+  await injectAfterTurn({ paneId: "w1:p1", text: "Continue", herdr, log: noLog, legMs: 50, settleMs: 0 });
+  expect(seen.map((s) => s.method)).toEqual(["agent.explain", "pane.read", "agent.explain", "pane.read", "agent.get", "agent.prompt"]);
+  expect(seen[1]!.params).toEqual({ pane_id: "w1:p1", source: "visible" });
+});
+
+test("injectAfterTurn does not treat a working pane without the background line as a hold", async () => {
+  const { herdr, seen } = on((method, params) => {
+    if (method === "agent.explain") return HOLD_AFTER_SLASH;
+    if (method === "pane.read") return PLAIN_SCREEN;
+    if (method === "agent.wait") return agent("idle");
+    if (method === "agent.get") return agent("idle");
+    if (method === "agent.prompt") return { type: "agent_prompted", agent: { ...agent("working").agent, text: params.text } };
+    return new HerdrFakeError("invalid_request", method);
+  });
+  await injectAfterTurn({ paneId: "w1:p1", text: "Continue", herdr, log: noLog, legMs: 50, settleMs: 0 });
+  expect(seen.map((s) => s.method)).toEqual(["agent.explain", "pane.read", "agent.wait", "agent.get", "agent.get", "agent.prompt"]);
+});
+
+test("injectAfterTurn falls through to the wait when a hold clears during the settle window", async () => {
+  let explains = 0;
+  const { herdr, seen } = on((method, params) => {
+    if (method === "agent.explain") return ++explains === 1 ? BACKGROUND_HOLD : LIVE_TURN;
+    if (method === "agent.wait") return agent("idle");
+    if (method === "agent.get") return agent("idle");
+    if (method === "agent.prompt") return { type: "agent_prompted", agent: { ...agent("working").agent, text: params.text } };
+    return new HerdrFakeError("invalid_request", method);
+  });
+  await injectAfterTurn({ paneId: "w1:p1", text: "Continue", herdr, log: noLog, legMs: 50, settleMs: 0 });
+  expect(seen.map((s) => s.method)).toEqual(["agent.explain", "agent.explain", "agent.wait", "agent.get", "agent.get", "agent.prompt"]);
 });
 
 test("injectAfterTurn sees a hold that begins mid-leg on the next leg", async () => {
@@ -226,7 +270,7 @@ test("injectAfterTurn sees a hold that begins mid-leg on the next leg", async ()
     return new HerdrFakeError("invalid_request", method);
   });
   await injectAfterTurn({ paneId: "w1:p1", text: "Continue", herdr, log: noLog, legMs: 20, settleMs: 0 });
-  expect(seen.map((s) => s.method)).toEqual(["agent.explain", "agent.wait", "agent.explain", "agent.get", "agent.prompt"]);
+  expect(seen.map((s) => s.method)).toEqual(["agent.explain", "agent.wait", "agent.explain", "agent.explain", "agent.get", "agent.prompt"]);
 });
 
 test("injectAfterTurn keeps waiting when the background line shows under a blocking prompt", async () => {
@@ -239,7 +283,7 @@ test("injectAfterTurn keeps waiting when the background line shows under a block
     return new HerdrFakeError("invalid_request", method);
   });
   await injectAfterTurn({ paneId: "w1:p1", text: "Continue", herdr, log: noLog, legMs: 20, settleMs: 0 });
-  expect(seen.map((s) => s.method)).toEqual(["agent.explain", "agent.wait", "agent.explain", "agent.get", "agent.prompt"]);
+  expect(seen.map((s) => s.method)).toEqual(["agent.explain", "agent.wait", "agent.explain", "agent.explain", "agent.get", "agent.prompt"]);
 });
 
 test("injectAfterTurn treats an explain error as no hold and keeps waiting", async () => {
