@@ -43,14 +43,26 @@ export function gateHints(row: Pick<GateRow, "origin" | "pane" | "nudge">): Pane
   };
 }
 
-/** `by` is caller-supplied free text (`gate answer --by <surface>`), and a
-    phrase is a cross-session message body: cap it and strip anything that
-    could break the frame or forge a second line. */
+/** `by` is caller-supplied free text (`gate answer --by <surface>`) that rides
+    into a model-visible cross-session body, so it is a prompt-injection
+    surface: only a known surface is named back; anything else collapses to one
+    generic label rather than reaching an agent's context verbatim. The strip +
+    cap still runs on the lookup key so a known name survives odd whitespace and
+    an unknown one is bounded before it is discarded. */
 const SURFACE_CAP = 32;
+const KNOWN_SURFACES: Record<string, string> = {
+  [GATE_BY_PANE]: "pane",
+  console: "console",
+  board: "board",
+  shepherd: "shepherd",
+  human: "human",
+};
+const UNKNOWN_SURFACE = "another surface";
 export function safeSurface(by: string | undefined): string {
   const cleaned = (by ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").trim();
-  if (!cleaned) return "another surface";
-  return cleaned.length > SURFACE_CAP ? `${cleaned.slice(0, SURFACE_CAP)}...` : cleaned;
+  if (!cleaned) return UNKNOWN_SURFACE;
+  const key = cleaned.length > SURFACE_CAP ? cleaned.slice(0, SURFACE_CAP) : cleaned;
+  return KNOWN_SURFACES[key] ?? UNKNOWN_SURFACE;
 }
 
 /** Names the answering surface rather than saying "elsewhere" (RT-133), so a
@@ -59,10 +71,9 @@ export function safeSurface(by: string | undefined): string {
 export const GATE_ANSWERED_PHRASE = (id: string, by?: string) =>
   `[gate] ${id} answered by ${safeSurface(by)}; re-read the registry and proceed on the recorded answer.`;
 
-/** True when the surface being notified is the one that recorded the answer.
-    Two signals, because not every writer supplies a session: an explicit
-    session match, and `by === "pane"`, which by construction means the
-    nudged pane itself wrote it (the same rule the Escape guard below uses). */
+/** True when `session` is the surface that recorded this answer: a direct
+    answer.session comparison. Callers layer the `by === "pane"` fallback on
+    top for writers that supply no session (see answeredByNudgedPane). */
 export function answeredBySession(row: Pick<GateRow, "answer">, session: string | undefined): boolean {
   const answer = row.answer;
   if (!answer || !session) return false;
@@ -71,7 +82,12 @@ export function answeredBySession(row: Pick<GateRow, "answer">, session: string 
 
 function answeredByNudgedPane(row: Pick<GateRow, "answer" | "nudge">): boolean {
   if (!row.answer) return false;
-  if (row.answer.by === GATE_BY_PANE) return true;
+  // Session precedence: an explicit answer.session decides on its own, so a
+  // foreign surface that also stamps `by: "pane"` can never suppress the
+  // nudged pane's doorbell (or, for a form, its Escape). The `by === "pane"`
+  // fallback stands only for a writer that supplied no session (the board
+  // status-bin case).
+  if (!row.answer.session) return row.answer.by === GATE_BY_PANE;
   return answeredBySession(row, row.nudge?.session);
 }
 
@@ -165,7 +181,10 @@ export function createGatePush(opts: {
     // queued to find.
     if (!ok || !opts.injectEscape) return;
     if (row.origin?.presentation !== "form") return;
-    if (row.answer?.by === GATE_BY_PANE) return;
+    // Same self-answer test as the doorbell: a form the nudged pane answered
+    // itself has already dismissed, so Escape would land on the wrong frame.
+    // A foreign surface's `by: "pane"` must not gate this off -- session wins.
+    if (answeredByNudgedPane(row)) return;
     const hints = gateHints(row);
     const injected = await opts.injectEscape(hints);
     if (injected.ok) {
