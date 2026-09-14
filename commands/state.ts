@@ -24,6 +24,7 @@ import { dirname, join } from "path";
 import type { CommandContext } from "../lib/command-tree.ts";
 import { isDaemonRunning } from "../lib/daemon-client.ts";
 import { flagValue } from "../lib/cli-args.ts";
+import { mattstackHome } from "../lib/rt-paths.ts";
 import {
   backupTo,
   closeStateDb,
@@ -154,8 +155,12 @@ async function stateRestoreFromBackup(args: string[]): Promise<void> {
   const at = flagValue(args, "--at");
   const identityFlag = flagValue(args, "--identity");
 
-  if (!force && (await isDaemonRunning())) {
-    fail("the daemon is running. Stop it first (rt daemon stop) or pass --force to override");
+  if (!force) {
+    const daemonUp = await isDaemonRunning();
+    const sockExists = existsSync(join(mattstackHome(), "rt", "rt.sock"));
+    if (daemonUp || sockExists) {
+      fail("the daemon appears to be running (or its socket exists). Stop it first (rt daemon stop) or pass --force to override");
+    }
   }
 
   let identityPath: string | undefined;
