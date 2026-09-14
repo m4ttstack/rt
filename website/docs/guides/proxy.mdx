@@ -1,0 +1,51 @@
+---
+sidebar_position: 9
+title: Local proxy
+---
+
+# Local proxy
+
+rt installs a local HTTPS proxy so `.mattstack` domains (used by Deck apps and the console) resolve to `localhost` over TLS without port numbers. The proxy is a root-owned LaunchDaemon on port 443, powered by portless.
+
+## What gets installed
+
+When you run `rt setup` (or trigger the proxy step from `rt setup apply --only proxy.install`):
+
+1. A copy of portless is placed under `/Library/Application Support/mattstack/proxy/` (root-owned, so root never executes from the user-writable `/Applications` path).
+2. A LaunchDaemon plist (`sh.portless.proxy`) is bootstrapped to listen on port 443.
+3. A sudoers rule (`/etc/sudoers.d/mattstack-portless`) is installed so Deck can reload the proxy without a password prompt.
+4. Portless mints a local CA certificate and stores its state under `~/.portless`.
+5. The CA is added to the System keychain so browsers trust `.mattstack` TLS.
+
+## The two admin dialogs
+
+macOS asks for your password twice during install:
+
+1. An escalation prompt to run the helper as root (installs the daemon and sudoers rule).
+2. A separate "Certificate Trust Settings" prompt to trust the CA in the System keychain.
+
+These cannot be collapsed into one. macOS's trust-settings authorization requires its own interactive prompt every time; the credential from the first dialog is not reused.
+
+## Declining the certificate
+
+The CA trust step is non-fatal and runs last. If you decline it, the proxy still installs and serves, but browsers will show TLS warnings for `.mattstack` domains.
+
+The setup checklist will show a row: "Browsers will warn until the proxy certificate is trusted" with a **Trust certificate** action. Running it (or `rt setup apply --only proxy.install`) re-attempts only the trust step, which means one more password prompt.
+
+## Updating the proxy
+
+When mattstack.app ships a newer portless version, the setup checklist detects the drift (comparing the installed `VERSION` file against the bundle) and shows an **Update proxy** action. The update stops the running daemon, replaces the files (stage then rename), and bootstraps the new version. One admin prompt.
+
+Pre-mattstack portless installs (an existing plist with no `VERSION` file) are adopted through the same update flow.
+
+## Removing the proxy
+
+`rt uninstall` removes the proxy as part of its cleanup:
+
+1. Bootout the LaunchDaemon.
+2. Delete the plist.
+3. Delete the sudoers rule.
+4. Remove the CA from the System keychain.
+5. Delete the root copy under `/Library/Application Support/mattstack/proxy/`.
+
+Every step is idempotent: if any piece is already gone, that step succeeds silently.

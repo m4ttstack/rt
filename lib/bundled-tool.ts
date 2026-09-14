@@ -17,7 +17,11 @@ import { bundledHelperPath } from "./bundle-layout.ts";
 
 export type Which = (bin: string) => string | null;
 
-const defaultWhich: Which = (b) => Bun.which(b);
+// The live PATH, passed explicitly: a bare Bun.which() resolves against the
+// PATH captured when the process started, so the daemon's own prepend of the
+// bundle's Helpers dir and ~/.local/bin (lib/daemon.ts, path-resolution) would
+// be invisible to it.
+const defaultWhich: Which = (b) => Bun.which(b, { PATH: process.env.PATH ?? "" });
 
 /**
  * `bundledHelperPath` throws on a row mislabeled `kind: "buildtool"`. A bad
@@ -32,6 +36,15 @@ function bundled(name: string): string | null {
   }
 }
 
+/**
+ * The bundle's copy, then PATH, and null when neither has it — for callers
+ * that must tell "found at the bare name" apart from "found nowhere", which
+ * `resolveBundledTool`'s bare-name fallback deliberately blurs.
+ */
+export function findBundledTool(name: string, which: Which = defaultWhich): string | null {
+  return bundled(name) ?? which(name) ?? null;
+}
+
 export function resolveBundledTool(name: string, which: Which = defaultWhich): string {
-  return bundled(name) ?? which(name) ?? name;
+  return findBundledTool(name, which) ?? name;
 }
