@@ -26,6 +26,24 @@ else
   bad "team.sync row absent"
 fi
 
+# A joiner's first pass through the checklist runs before team.join clones the
+# team, so every team-declared required row is invisible then; requiredMissing
+# only fills in on this later pass, once the snapshot is real. Empty here is
+# the one claim that actually says a joiner can finish, not just that the run
+# went green.
+MISSING=$(printf '%s' "$SETUP_JSON" | jq -r '.requiredMissing[]?' 2>/dev/null)
+if [ -z "$MISSING" ]; then
+  ok "requiredMissing is empty"
+else
+  while IFS= read -r id; do
+    [ -n "$id" ] || continue
+    ROW=$(printf '%s' "$SETUP_JSON" | jq -c --arg id "$id" '.groups[]?.rows[]? | select(.id == $id)' 2>/dev/null | head -1)
+    RS=$(printf '%s' "$ROW" | jq -r '.status // "row absent"' 2>/dev/null)
+    RD=$(printf '%s' "$ROW" | jq -r '.detail // empty' 2>/dev/null)
+    bad "requiredMissing: $id ($RS: $RD)"
+  done <<< "$MISSING"
+fi
+
 # Without a global identity every commit on this Mac, the snapshot daemon's
 # included, carries git's auto-derived author instead of the operator's own.
 GIT_NAME=$(git config --global user.name 2>/dev/null)

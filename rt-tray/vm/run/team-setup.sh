@@ -45,6 +45,7 @@ case "$cmd" in
     umask 077; mkdir -p "$(dirname "$OUT")" "$VM_CACHE"
     if rt team invite --help >/dev/null 2>&1; then
       vm_require_cmd gh "brew install gh"
+      vm_require_cmd jq "brew install jq"
       need_pat
       # Real path: owner mints against the shared relay (L1 + L6). Team must exist locally: rt team create … first.
       if ! rt team create "$SLUG" --remote "https://github.com/$ORG/$TEAM_REPO.git" --others --json >/dev/null 2>&1; then vm_warn "rt team create returned non-zero (team may already exist)"; fi
@@ -59,6 +60,22 @@ case "$cmd" in
           rm -f "$tmp"
           vm_die "rt team invite returned no code: $(cat "$VM_CACHE/invite.err")"
         fi
+        # forgeAccess (lib/team/invite.ts, mintInvite/resolveForgeAccess) is the
+        # separate claim from minting a code: "skipped" means grantRead never
+        # even ran (no admin token, or the remote isn't one rt was asked to
+        # manage), so the joiner's clone is denied on a run that otherwise read
+        # as a clean success. "granted"/"manual" both leave a path forward;
+        # only "skipped" fails the pass outright.
+        ACCESS=$(printf '%s' "$out" | jq -r '.forgeAccess // empty')
+        case "$ACCESS" in
+          skipped)
+            vm_warn "rt team invite: forge access is skipped, so the joiner's clone will be denied. Manual steps:"
+            printf '%s' "$out" | jq -r '.manualSteps[]? | "    - " + .' >&2
+            vm_die "forge access was skipped for $HANDLE"
+            ;;
+          "") vm_warn "rt team invite --json carried no forgeAccess field (see $VM_CACHE/invite.err)";;
+          *)  vm_log "forge access: $ACCESS";;
+        esac
       else
         rm -f "$OUT"
         vm_die "rt team invite failed (relay down? L6 not deployed?): $(cat "$VM_CACHE/invite.err")"
