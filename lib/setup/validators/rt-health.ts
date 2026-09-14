@@ -464,7 +464,11 @@ export async function homeBackupRow(
     }
 
     const pushDelaySec = homePushDelaySec();
-    const withinPushWindow = state.committedAt !== null && Date.now() - state.committedAt.getTime() <= pushDelaySec * 1000 + HOME_PUSH_GRACE_MS;
+    // Bounded below as well as above: a committer date is whatever clock
+    // wrote it, so a skewed one lands in the future, and an upper bound
+    // alone would read that as freshly queued until the skew runs out.
+    const ageMs = state.committedAt === null ? null : Date.now() - state.committedAt.getTime();
+    const withinPushWindow = ageMs !== null && ageMs >= 0 && ageMs <= pushDelaySec * 1000 + HOME_PUSH_GRACE_MS;
     if (withinPushWindow) {
       return row({ ...base, status: "ready", detail: `${state.count} commit(s) queued for backup, pushes automatically within about ${pushDelaySec}s` });
     }

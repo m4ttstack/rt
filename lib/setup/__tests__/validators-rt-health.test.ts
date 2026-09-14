@@ -629,6 +629,20 @@ describe("rtHealthRows — home.backup (real git)", () => {
     expect(row.detail).not.toContain("queued for backup");
   });
 
+  // A committer date is whatever clock wrote it, so it can land in the
+  // future (skew, or a hand-set GIT_COMMITTER_DATE). An upper bound alone
+  // reads that as freshly queued and keeps saying so until the future
+  // arrives, which is the one answer this row must never give about a
+  // backup that is not happening.
+  test("commits ahead of the ref, committer date in the future: needs-you, never queued (RT-139)", async () => {
+    const repo = await pushedRepo();
+    await commit(repo, "later", { committerDate: new Date(Date.now() + 365 * 24 * 60 * 60_000).toISOString() });
+    const row = await homeBackupRow(repo, REAL_EXEC, NO_RECORD);
+    expect(row.status).toBe("needs-you");
+    expect(row.detail).toContain("1 commit(s)");
+    expect(row.detail).not.toContain("queued for backup");
+  });
+
   // RT-139: the window is read off rt.homeSnapshot.pushDelaySec, the same
   // key the daemon's own schedulePush() reads, so a user who raises the
   // delay does not recreate the false alarm this row exists to avoid.
