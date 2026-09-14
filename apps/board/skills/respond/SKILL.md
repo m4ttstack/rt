@@ -227,10 +227,12 @@ conversation.
      `code-changes`; never one per chunk. A printed conflict answer means
      another surface won: say so in one line and proceed on the printed
      winning answer. If the form is dismissed
-     under you and a message arrives saying the gate was answered elsewhere,
-     that message is a verify-only signal and never carries the answer: run
-     `<status-bin> gate wait <state> --max-ms 1000`, read the recorded
-     answer, and proceed on it.
+     under you and a message arrives saying the gate was answered by another
+     surface (it names which one), that message is a verify-only signal and
+     never carries the answer: run `<status-bin> gate wait <state> --max-ms
+     1000`, read the recorded answer, and proceed on it. This pane is never
+     notified of an answer it recorded itself; only another surface's answer
+     reaches it this way.
    - **presentation "wait":** do NOT present a form. Launch ONE background
      shell command (the shell tool's run-in-background mode) that loops
      `<status-bin> gate wait <state> --max-ms 90000`, re-running while it
@@ -299,10 +301,12 @@ conversation.
      `<status-bin> gate answer <state> --answers <json> --by pane` after the
      form. A printed conflict answer means another surface won: say so in one
      line and proceed on the printed winning answer. If the form is dismissed
-     under you and a message arrives saying the gate was answered elsewhere,
-     that message is a verify-only signal and never carries the answer: run
-     `<status-bin> gate wait <state> --max-ms 1000`, read the recorded
-     answer, and proceed on it.
+     under you and a message arrives saying the gate was answered by another
+     surface (it names which one), that message is a verify-only signal and
+     never carries the answer: run `<status-bin> gate wait <state> --max-ms
+     1000`, read the recorded answer, and proceed on it. This pane is never
+     notified of an answer it recorded itself; only another surface's answer
+     reaches it this way.
    - **presentation "wait":** do NOT present a form. Launch ONE background
      shell command (the shell tool's run-in-background mode) that loops
      `<status-bin> gate wait <state> --max-ms 90000`, re-running while it
