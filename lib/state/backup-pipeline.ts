@@ -3,18 +3,10 @@ import { unlink } from "fs/promises";
 import { mkdtempSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
+import { requireBackupTool } from "./backup-tools";
 
-function resolveZstd(): string {
-  const path = Bun.which("zstd", { PATH: process.env.PATH });
-  if (!path) throw new Error("zstd not found in PATH. Install with: brew install zstd");
-  return path;
-}
-
-function resolveAge(): string {
-  const path = Bun.which("age", { PATH: process.env.PATH });
-  if (!path) throw new Error("age not found in PATH. Install with: brew install age");
-  return path;
-}
+const resolveZstd = (): string => requireBackupTool("zstd");
+const resolveAge = (): string => requireBackupTool("age");
 
 export async function compressFile(src: string, dest: string): Promise<void> {
   const proc = spawn([resolveZstd(), "-19", "-f", "-o", dest, src], {
