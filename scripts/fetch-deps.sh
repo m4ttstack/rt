@@ -33,6 +33,15 @@ if [ "$LOCK_ARCH" != "$ARCH" ]; then
   exit 1
 fi
 
+# A make-src row compiles with the host toolchain's defaults, so an x86_64 Mac
+# would drop an x86_64 binary into deps/arm64 and every downstream check would
+# pass: the linkage gate reads library paths, never the CPU type.
+HOST_ARCH="$(uname -m)"
+if [ "$HOST_ARCH" != "arm64" ]; then
+  echo "  x build host is $HOST_ARCH; deps/$ARCH must be built on arm64" >&2
+  exit 1
+fi
+
 sha() { shasum -a 256 "$1" | cut -d' ' -f1; }
 
 fetch() { # url sha → prints cached path
@@ -71,6 +80,35 @@ fetch() { # url sha → prints cached path
     exit 1
   fi
   echo "$dest"
+}
+
+# Everything the bundle ships has to run on a Mac with no Homebrew, so a
+# binary compiled HERE may link only libraries every Mac carries. Applies to
+# what this script builds itself; an upstream release binary is the vendor's
+# own contract, and its linkage is asserted by check-bundle's run smoke.
+assert_arch() { # name path
+  local name="$1" path="$2" archs
+  archs="$(lipo -archs "$path" 2>/dev/null || true)"
+  case " $archs " in
+    *" $ARCH "*) ;;
+    *) echo "  x $name is $archs, not $ARCH" >&2; rm -f "$path"; exit 1 ;;
+  esac
+}
+
+assert_system_linkage() { # name path
+  local name="$1" path="$2" line lib bad=0
+  while IFS= read -r line; do
+    lib="${line%% (*}"
+    lib="${lib#"${lib%%[![:space:]]*}"}"
+    case "$lib" in
+      ""|/usr/lib/*|/System/*) ;;
+      *) echo "  x $name links outside the system libraries: $lib" >&2; bad=1 ;;
+    esac
+  done < <(otool -L "$path" | tail -n +2)
+  if [ "$bad" -ne 0 ]; then
+    rm -f "$path"
+    exit 1
+  fi
 }
 
 unpack() { # name archive-file archive-kind extract-path dest
@@ -128,6 +166,35 @@ unpack() { # name archive-file archive-kind extract-path dest
       }
       rm -rf "$tmp"
       chmod 755 "$dest" ;;
+    make-src)
+      # Compiled from a sha-pinned source release because the project ships no
+      # darwin-arm64 binary, and a Homebrew bottle links dylibs that live only
+      # under /opt/homebrew. The Makefile target is the tool's own name.
+      tmp="$(mktemp -d)"
+      tar -xf "$file" -C "$tmp"
+      if [ ! -d "$tmp/$extract" ]; then
+        echo "  x $name: archive no longer contains $extract" >&2
+        rm -rf "$tmp"
+        exit 1
+      fi
+      if ! make -C "$tmp/$extract" "$name" -j"$(sysctl -n hw.ncpu 2>/dev/null || echo 4)" > "$tmp/make.log" 2>&1; then
+        echo "  x $name: make failed" >&2
+        tail -20 "$tmp/make.log" >&2
+        rm -rf "$tmp"
+        exit 1
+      fi
+      if [ ! -e "$tmp/$extract/$name" ]; then
+        echo "  x $name: make produced no $name under $extract" >&2
+        rm -rf "$tmp"
+        exit 1
+      fi
+      # Plain cp, which dereferences: the target commonly lands as a symlink
+      # into a subdirectory that is about to be deleted with $tmp.
+      cp "$tmp/$extract/$name" "$dest"
+      chmod 755 "$dest"
+      rm -rf "$tmp"
+      assert_arch "$name" "$dest"
+      assert_system_linkage "$name" "$dest" ;;
     zip)
       tmp="$(mktemp -d)"
       ditto -x -k "$file" "$tmp"

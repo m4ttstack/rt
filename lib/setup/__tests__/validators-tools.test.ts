@@ -626,6 +626,94 @@ describe("toolRows — tool.editor", () => {
   });
 });
 
+// ─── toolRows: tool.state-backup ────────────────────────────────────────────
+// The three binaries `rt state backup` shells out to. None ships with macOS,
+// so before they were bundled every machine needed Homebrew — and the daemon,
+// which runs the same pipeline on a timer, never sees a brew copy under
+// launchd's PATH.
+
+describe("toolRows — tool.state-backup", () => {
+  const BACKUP_TOOLS = ["age", "zstd", "git-lfs"] as const;
+  type Where = "bundled" | "path" | "absent";
+
+  function backupSeams(where: Record<string, Where>): ToolsSeams {
+    return {
+      ...NOOP_SEAMS,
+      resolveTool: (_p, tool) => {
+        const place = where[tool] ?? "absent";
+        if (place === "bundled") {
+          const bundled = `/Applications/mattstack.app/Contents/Helpers/${tool}`;
+          return { tool, bundled, exec: [bundled], userCopy: null, linked: false, chosen: bundled };
+        }
+        if (place === "path") {
+          const userCopy = `/opt/homebrew/bin/${tool}`;
+          return { tool, bundled: null, exec: [userCopy], userCopy, linked: false, chosen: userCopy };
+        }
+        return noopResolution(tool);
+      },
+    };
+  }
+
+  async function backupRow(where: Record<string, Where>) {
+    const seams = backupSeams(where);
+    return pickRow(toolRows(fakeProbes(), [], { hasBrew: true, secrets: NO_SECRETS }, seams), "tool.state-backup");
+  }
+
+  const all = (place: Where): Record<string, Where> => Object.fromEntries(BACKUP_TOOLS.map((t) => [t, place]));
+
+  test("all three bundled -> ready, named as the app's", async () => {
+    const r = await backupRow(all("bundled"));
+    expect(r.status).toBe("ready");
+    expect(r.detail).toBe("age, zstd, git-lfs from mattstack.app");
+    expect(r.action).toBeNull();
+  });
+
+  // A source checkout with Homebrew is a supported machine; it just is not the
+  // one this bundling exists for.
+  test("all three only on PATH -> ready, named as the user's own", async () => {
+    const r = await backupRow(all("path"));
+    expect(r.status).toBe("ready");
+    expect(r.detail).toBe("age, zstd, git-lfs from your own copies on PATH");
+  });
+
+  test("mixed -> ready, each source named", async () => {
+    const r = await backupRow({ age: "bundled", zstd: "bundled", "git-lfs": "path" });
+    expect(r.status).toBe("ready");
+    expect(r.detail).toBe("age, zstd from mattstack.app; git-lfs from your own copy on PATH");
+  });
+
+  test("one unresolvable -> needs-you naming it, with the bundle remedy", async () => {
+    const r = await backupRow({ age: "bundled", zstd: "bundled", "git-lfs": "absent" });
+    expect(r.status).toBe("needs-you");
+    expect(r.detail).toBe("not found: git-lfs");
+    expect(r.action).toEqual({
+      type: "steps",
+      label: "Show steps…",
+      steps: [
+        "Update mattstack.app — it ships age, zstd and git-lfs",
+        "Or install them yourself: brew install git-lfs",
+        "Then re-run rt setup status",
+      ],
+    });
+  });
+
+  test("none resolvable -> needs-you naming all three", async () => {
+    const r = await backupRow(all("absent"));
+    expect(r.status).toBe("needs-you");
+    expect(r.detail).toBe("not found: age, zstd, git-lfs");
+  });
+
+  // Backup is opt-in (`rt state backup init`), so a machine missing the tools
+  // must never be blocked from installing.
+  test("never required, whatever the state", async () => {
+    for (const where of [all("bundled"), all("absent")]) {
+      const r = await backupRow(where);
+      expect(r.required).toBe(false);
+      expect(r.optionalNote).toBeTruthy();
+    }
+  });
+});
+
 describe("toolRows — tool.chrome / tool.chrome-signin", () => {
   test("not required by any pack, not found -> missing, required false, on-activate", async () => {
     const p = fakeProbes({});
