@@ -98,7 +98,11 @@ export async function runFullBackup(): Promise<BackupResult> {
         timestamp: ts,
         rtVersion: rtVersion(),
         sources: result.backed.map((b) => {
-          const source = snapshots.find((s) => s.source.app === b.app)?.source;
+          const filePrefix = basename(b.path).split("-" + ts)[0];
+          const source = snapshots.find((s) => {
+            const prefix = s.source.sourcePath.replace(/\//g, "-").replace(/\.[^.]+$/, "");
+            return prefix === filePrefix;
+          })?.source;
           const fullSourcePath = source ? join(mattstackHome(), source.sourcePath) : "";
           return {
             app: b.app,
