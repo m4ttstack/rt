@@ -1231,6 +1231,21 @@ export const TREE: Record<string, CommandNode> = {
     subcommands: gateSubcommands,
   },
 
+  mcp: {
+    description: "MCP servers rt hosts for agent runtimes",
+    hidden: true,
+    subcommands: {
+      serve: {
+        description: "stdio MCP server over the rt daemon (spawned by the mattstack plugin; not for interactive use)",
+        module: "./commands/mcp.ts",
+        fn: "mcpServe",
+        hidden: true,
+        omitBehavior: { exempt: "agent-facing; spawned by a plugin config, takes no positionals" },
+        args: [],
+      },
+    },
+  },
+
   bg: {
     description: "Daemon-owned background herdr server: status, claims, stop",
     subcommands: bgSubcommands,
