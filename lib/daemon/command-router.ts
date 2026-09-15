@@ -161,7 +161,7 @@ export function buildRoutedHandlers(opts: {
       })),
       agentBySession: (sid) => {
         const rec = getAgent(sid, opts.stateDb);
-        return rec?.sessionId === sid ? rec : undefined;
+        return rec?.sessionId === sid ? { id: rec.id, subject: rec.subject ?? null } : undefined;
       },
     }, args),
   });

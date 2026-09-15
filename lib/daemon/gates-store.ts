@@ -21,6 +21,7 @@ import {
   type GateSubscription,
   type ExecutorState,
 } from "../../packages/rt-client/src/commands.ts";
+import { normalizeGateQuestions } from "../../packages/rt-client/src/gate-options.ts";
 
 export type { GateStatus, GateQuestion, GateAnswer, GateRow, GateOrigin, GateSubscription, ExecutorState };
 export { GATE_BY_PANE };
@@ -463,11 +464,17 @@ export function createGatesStore(opts: {
       assertValidSubject(input.subject);
       const id = crypto.randomUUID();
       const openedAt = Date.now();
+      // Both openers (the gate:open handler and the reconciler's direct
+      // attention-gate opens) call this store method directly, and the
+      // reconciler's attention gates never go through the gate:open handler
+      // at all -- normalizing at the handler level instead would leave every
+      // attention row in the pre-normalized string shape.
+      const questions = normalizeGateQuestions(input.questions);
       const supersededId = openTxn({
         id,
         subject: input.subject,
         kind: input.kind,
-        questions: JSON.stringify(input.questions),
+        questions: JSON.stringify(questions),
         meta: input.meta ? JSON.stringify(input.meta) : null,
         openedAt,
         agent: input.agent ?? null,

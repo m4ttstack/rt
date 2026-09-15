@@ -678,11 +678,17 @@ export interface Commands {
   // ─── Gate facility (BOARD-20/21) ─────────────────────────────────────────
   "gate:open": { payload: { subject: string; kind: string; questions: GateQuestion[]; meta?: Record<string, unknown>; agent?: string; pane?: string; nudge?: { session: string }; context?: string; origin?: GateOrigin }; data: { id: string; supersededId: string | null } };
   /** Ceremony layer over gate:open: resolves subject from the caller's
-      session (explicit subject wins; else its single running run as
-      `run:<id>`; else its agent record as `agent:<id>`), computes
+      session (an explicit subject always wins as the subject, but still
+      picks up run linkage from the session's own running run; else its
+      single running run as `run:<id>`; else its agent record's recorded
+      subject, or `agent:<id>` when it has none), computes
       presentation via gatePresentation, supplies nudge/origin, and omits an
-      oversized context instead of rejecting it. Delegates to gate:open for
-      everything else (validation, supersede, events, push). */
+      oversized context instead of rejecting it. `meta` and `agent` forward
+      to gate:open verbatim; `origin` passthrough fields fill gaps in the
+      ceremony's own origin (presentation, paneId, runId, run-derived
+      worktree always win over a caller-supplied value for the same key).
+      Delegates to gate:open for everything else (validation, supersede,
+      events, push). */
   "gate:ask": {
     payload: {
       questions: GateQuestion[];
@@ -691,6 +697,9 @@ export interface Commands {
       subject?: string;
       sessionId?: string;
       paneId?: string;
+      meta?: Record<string, unknown>;
+      agent?: string;
+      origin?: { surface?: string; tabId?: string; worktree?: string };
     };
     data: { id: string; presentation: "form" | "wait"; subject: string; supersededId: string | null };
   };
