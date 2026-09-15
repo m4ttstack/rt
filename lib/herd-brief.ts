@@ -20,7 +20,10 @@ function parseStrategies(strategies: string): { name: string; body: string }[] {
   let match: RegExpExecArray | null;
   STRATEGY_RE.lastIndex = 0;
   while ((match = STRATEGY_RE.exec(strategies))) {
-    found.push({ name: match[1].trim(), body: match[2] });
+    const name = match[1];
+    const body = match[2];
+    if (name === undefined || body === undefined) continue; // regex guarantees both groups when the overall match succeeds
+    found.push({ name: name.trim(), body });
   }
   return found;
 }
@@ -64,6 +67,7 @@ function findLeftoverMarkers(doc: string): string[] {
     let m: RegExpExecArray | null;
     while ((m = MARKER_RE.exec(line))) {
       const name = m[1];
+      if (name === undefined) continue; // regex guarantees this group when the overall match succeeds
       if (!seen.has(name)) {
         seen.add(name);
         leftover.push(name);
