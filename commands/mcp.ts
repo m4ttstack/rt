@@ -1,15 +1,8 @@
 declare const RT_VERSION: string;
 
 /**
- * rt mcp serve — stdio MCP server over the tool registry in lib/mcp/tools.ts.
- *
- * The pinned SDK's McpServer.registerTool takes zod shapes, not raw JSON
- * Schema, so this uses the low-level Server with ListTools/CallTool request
- * handlers to serve each tool's JSON Schema verbatim.
- *
- * All SDK and registry imports are dynamic with literal specifiers so
- * `bun build --compile` can bundle them without paying startup cost on
- * every other rt command.
+ * McpServer.registerTool in the pinned SDK requires zod schemas, so this
+ * uses the low-level Server to serve each tool's raw JSON Schema unchanged.
  */
 export async function mcpServe(_args: string[]): Promise<void> {
   const [{ Server }, { StdioServerTransport }, { ListToolsRequestSchema, CallToolRequestSchema }, { mcpTools }] = await Promise.all([
@@ -29,17 +22,29 @@ export async function mcpServe(_args: string[]): Promise<void> {
     tools: tools.map((tool) => ({ name: tool.name, description: tool.description, inputSchema: tool.inputSchema })),
   }));
 
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const tool = toolByName.get(request.params.name);
-    if (!tool) return { isError: true, content: [{ type: "text" as const, text: `unknown tool: ${request.params.name}` }] };
+  // The SDK aborts every in-flight tools/call on close and drops its reply
+  // (it checks the abort signal before sending), so stdin EOF must wait for
+  // these to settle rather than close underneath them.
+  const pending = new Set<Promise<unknown>>();
 
-    const res = await tool.handler((request.params.arguments ?? {}) as Record<string, unknown>, process.env);
-    if (!res.ok) return { isError: true, content: [{ type: "text" as const, text: res.error ?? "failed" }] };
-    return { content: [{ type: "text" as const, text: JSON.stringify(res.body) }] };
+  server.setRequestHandler(CallToolRequestSchema, (request) => {
+    const call = (async () => {
+      const tool = toolByName.get(request.params.name);
+      if (!tool) return { isError: true, content: [{ type: "text" as const, text: `unknown tool: ${request.params.name}` }] };
+
+      const res = await tool.handler((request.params.arguments ?? {}) as Record<string, unknown>, process.env);
+      if (!res.ok) return { isError: true, content: [{ type: "text" as const, text: res.error ?? "failed" }] };
+      return { content: [{ type: "text" as const, text: JSON.stringify(res.body) }] };
+    })();
+    pending.add(call);
+    call.finally(() => pending.delete(call));
+    return call;
   });
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
+
+  const DRAIN_TIMEOUT_MS = 5000;
 
   // StdioServerTransport only listens for stdin "data"/"error"; it never
   // observes EOF, so without this the process would hang forever once the
@@ -47,7 +52,16 @@ export async function mcpServe(_args: string[]): Promise<void> {
   await new Promise<void>((resolve) => {
     server.onclose = () => resolve();
     process.stdin.on("end", () => {
-      server.close().catch(() => resolve());
+      void (async () => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const timeout = new Promise<void>((r) => { timer = setTimeout(r, DRAIN_TIMEOUT_MS); });
+        await Promise.race([Promise.allSettled(pending), timeout]);
+        if (timer) clearTimeout(timer);
+        // A macrotask boundary flushes the SDK's own send continuation,
+        // which is chained a tick past each settled call above.
+        await new Promise((r) => setImmediate(r));
+        server.close().catch(() => resolve());
+      })();
     });
   });
 }
