@@ -249,10 +249,14 @@ The machine store is `~/.mattstack/user/local/<machineKey()>/settings.local.json
 and `~/.mattstack/user` **is** the home repo. `setSetting` creates that tree
 with `mkdirSync(..., { recursive: true })` when the file is missing.
 
-On a fresh Mac nothing creates `user/` before Install. The Team screen only
-dry-runs (`rt team join --dry-run`, `rt home init --dry-run`); `restore` is the
-one mode that clones there for real. So a pre-Install write at machine scope
-would:
+On a fresh Mac nothing creates `user/` before Install in the `join` and
+`create` modes: the Team screen only dry-runs (`rt team join --dry-run`,
+`rt home init --dry-run`). `restore` is the exception and clones for real at
+Continue, which is why the branch tests the directory rather than the mode:
+under restore the true branch is correct and safe, and `homeInitStep.applies`
+is `ctx.intent?.mode !== "restore"` so nothing re-clones over it.
+
+In the two dry-run modes, a pre-Install write at machine scope would:
 
 1. create `~/.mattstack/user/local/<key>/settings.local.jsonc`, making `user/`
    exist, non-empty, and not a git repo
@@ -270,9 +274,15 @@ land in a profile directory the resolver then never reads.
 **So the answer is staged only while the store cannot hold it.** `rt setup
 repo-root set` branches on one condition:
 
+```ts
+p.exists(homeGitDir(p.home))   // join(p.home, ".mattstack", "user", ".git")
 ```
-p.exists(join(home, "user", ".git"))
-```
+
+`Probes.home` is the user's HOME, not `~/.mattstack`. `join(p.home, "user",
+".git")` would resolve to `~/user/.git`, be false forever, and silently restore
+the always-stage behaviour this branch exists to replace. `homeGitDir` already
+exists at `lib/setup/steps/home.ts:18` and is used exactly this way at `:74`;
+export it rather than re-spelling the path.
 
 - **false** (home repo not initialised yet): stage the path to
   `~/.mattstack/rt/repo-root.json`, outside the home repo. This follows
@@ -330,8 +340,9 @@ refusing it would substitute rt's judgment for theirs, which is the defect
 this whole design exists to remove.
 
 Picker conformance: `repo-root` is a branch node with a `set` leaf under it,
-not a leaf itself. The leaf's path argument is optional (a TTY prompts, a pipe
-reads stdin), so no `omitBehavior` is required. Registering `repo-root` as a
+not a leaf itself. The leaf's path argument is `optional` (a pipe can supply
+it), so no `omitBehavior` is required. It never prompts: see the no-prompt
+ruling above. Registering `repo-root` as a
 leaf with a required `set` positional would fail `bun run picker:check`.
 Confirm with that command rather than assuming either way.
 
