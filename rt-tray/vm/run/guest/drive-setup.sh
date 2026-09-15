@@ -147,10 +147,15 @@ screen_readiness() {
   # which an unattended run cannot answer. The harness is playing the user here,
   # not working around a defect. The recheck is not optional: the app's plan is
   # composed before this write, so Continue stays disabled without it.
-  mkdir -p "$HOME/code"
-  rt setup repo-root set "$HOME/code" --json
-  ax_click setup.checklist.recheck
-  ax_wait_status repos.root ready 30
+  # Presence-gated like account.$FORGE above: the row renders only for join
+  # mode or a repo-tracking team, so an unconditional wait would time out and,
+  # under set -e, kill every create run before Continue.
+  if ax_find setup.checklist.row.repos.root >/dev/null 2>&1; then
+    mkdir -p "$HOME/code"
+    rt setup repo-root set "$HOME/code" --json
+    ax_click setup.checklist.recheck
+    ax_wait_status repos.root ready 30 || ax_fail "repos.root never reached ready after the verb answered it"
+  fi
   ax_find setup.checklist.continue >/dev/null || ax_fail "setup.checklist.continue axid missing"
   ax_click setup.checklist.continue
 }

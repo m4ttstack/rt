@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { join } from "path";
 import type { TeamRef } from "../contract.ts";
 import { repoRootRow } from "../validators/repo-root.ts";
@@ -23,6 +23,11 @@ function snapshot(overrides: Partial<TeamSnapshot> = {}): TeamSnapshot {
 function clearConfiguredRoot(): void {
   setSetting("rt.repoRoots", [], "machine");
 }
+
+// The tests above author rt.repoRoots freely, including the ["${repoRoot}"]
+// poison value; one preload HOME is shared per bun process, so a later file
+// reading this key must not inherit whatever the last test here wrote.
+afterAll(() => setSetting("rt.repoRoots", [], "machine"));
 
 describe("repoRootRow: render gate", () => {
   test("absent when team.mode is none and trackingIdentities is empty", () => {

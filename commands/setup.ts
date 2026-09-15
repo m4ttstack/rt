@@ -21,6 +21,7 @@ import { promptSecret } from "../lib/prompt-secret.ts";
 import { NoAgeKeyError, createRealSecretsExecSeam, personalStoreReady, writeSecret, type SecretsSeams } from "../lib/secrets/store.ts";
 import { NoTeamRecipientsError, createRealTeamSecretsSeams, readTeamSecret, writeTeamSecret } from "../lib/secrets/team-store.ts";
 import { listTeams } from "../lib/settings/stores.ts";
+import { getSetting } from "../lib/settings/resolve.ts";
 import { setSetting } from "../lib/settings/write.ts";
 import { createApplyContext, runApplyWith, type ApplyContext, type CreateApplyContextDeps, type StepDef } from "../lib/setup/apply.ts";
 import { envelope, FINISH_GATED_ROW_IDS, STEP_IDS, type ConnectField, type Integration, type StepId } from "../lib/setup/contract.ts";
@@ -501,7 +502,17 @@ export async function setupRepoRootSet(args: string[], _ctx: CommandContext = {}
     if (!check.ok) throw new UserActionableError("bad-path", check.detail);
 
     if (deps.probes.exists(homeGitDir(deps.probes.home))) {
-      deps.writeSetting("rt.repoRoots", [check.path], "machine");
+      // Replace only the primary root: the tail entries are a supported state
+      // (added by hand via rt settings set), and dropping them would silently
+      // orphan every repo cloned under them.
+      const rest = (() => {
+        try {
+          return (getSetting<string[]>("rt.repoRoots").value ?? []).slice(1);
+        } catch {
+          return [];
+        }
+      })();
+      deps.writeSetting("rt.repoRoots", [check.path, ...rest], "machine");
     } else {
       stageRepoRoot(deps.probes, check.path);
     }

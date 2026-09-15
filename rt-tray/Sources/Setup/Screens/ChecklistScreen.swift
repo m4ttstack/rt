@@ -75,9 +75,13 @@ struct ChecklistScreen: View {
         case .requestPermission(let which):
             Task { _ = await permissions.request(which); await model.afterAction(rowId: row.id) }
         case .rtVerb(let args, let stdin):
-            // The dispatcher only fills stdin for `connect`/`owner-once` — the
-            // two action types that carry a user-entered secret — so a
-            // non-nil stdin is exactly the redact-stderr signal.
+            // Redaction over-approximates: stdin carries a secret for
+            // `connect`/`owner-once` but only a folder path for
+            // `choose-folder`, which still redacts here. Its verb exits 2 on
+            // every validation failure, and exit 2 routes through the JSON
+            // envelope instead of this copy, so the redacted branch is
+            // reachable for it only on a non-validation crash. Narrowing the
+            // signal to the secret-carrying action types is a named follow-up.
             let redactStderr = stdin != nil
             model.beginChecking(row.id)
             Task {

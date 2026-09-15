@@ -91,7 +91,12 @@ export function fakeProbes(opts: FakeProbesOpts = {}): Probes & {
     },
 
     statPath(path) {
-      return opts.statPaths?.[path] ?? null;
+      // A dir seeded via `dirs` must stat like the directory it claims to be,
+      // or `exists` and `statPath` answer differently about the same fixture
+      // and a test author debugs the fake instead of the code.
+      if (opts.statPaths && path in opts.statPaths) return opts.statPaths[path]!;
+      if (path in dirs) return { isDirectory: true, writable: true };
+      return null;
     },
 
     fileSize(path) {

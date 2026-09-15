@@ -1,4 +1,4 @@
-import { describe, test, expect } from "bun:test";
+import { afterAll, describe, test, expect } from "bun:test";
 import { join } from "path";
 import { setupRepoRootSet, type RepoRootDeps } from "../setup.ts";
 import { fakeProbes } from "../../lib/setup/__tests__/fakes.ts";
@@ -46,6 +46,10 @@ async function expectExit(fn: () => Promise<void>): Promise<void> {
     if (!(err instanceof Error) || err.message !== "exit sentinel") throw err;
   }
 }
+
+// This file's direct-write cases leave a real value in the shared per-process
+// test store; reset so file ordering cannot couple a later reader to it.
+afterAll(() => setSetting("rt.repoRoots", [], "machine"));
 
 describe("setupRepoRootSet: no home repo yet (stage only)", () => {
   test("a valid directory stages the expanded path and writes no setting", async () => {
@@ -149,6 +153,21 @@ describe("setupRepoRootSet: home repo already initialised (write directly)", () 
 
     expect(getSetting<string[]>("rt.repoRoots").value).toEqual([dev]);
     expect(readStagedRepoRoot(probes)).toBeNull();
+  });
+
+  // The tail entries are a supported hand-authored state, and this test exists
+  // because a version of the preservation shipped untested: a swallowed
+  // ReferenceError inside the read's try/catch made rest silently [] while
+  // every other case stayed green.
+  test("re-picking replaces only the primary root and preserves hand-added tail roots", async () => {
+    const c = join(HOME, "c");
+    setSetting("rt.repoRoots", [join(HOME, "a"), join(HOME, "b")], "machine");
+    const probes = fakeProbes({ home: HOME, statPaths: { [c]: DIR }, dirs: { [GIT_DIR]: [] } });
+    const deps = baseDeps({ probes, writeSetting: setSetting });
+
+    await setupRepoRootSet([c, "--json"], {}, deps);
+
+    expect(getSetting<string[]>("rt.repoRoots").value).toEqual([c, join(HOME, "b")]);
   });
 });
 

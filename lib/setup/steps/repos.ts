@@ -14,7 +14,7 @@ import { gitWithToken } from "../../team/git-credential.ts";
 import { withoutUrls } from "../../team/redact.ts";
 import type { ApplyContext } from "../apply.ts";
 import type { StepDef, StepOutcome } from "../apply.ts";
-import { promoteStagedRepoRoot } from "../repo-root.ts";
+import { expandHome, promoteStagedRepoRoot } from "../repo-root.ts";
 import { trustedForgeTokenFor } from "./forge-token.ts";
 import { toFailedOutcome } from "./step-utils.ts";
 
@@ -87,15 +87,19 @@ async function reposCloneRunUnsafe(ctx: ApplyContext): Promise<StepOutcome> {
     return { state: "skipped", detail: "no repos to clone" };
   }
 
-  // A fresh Mac with no `Documents/GitHub`-shaped directory yet has nothing
-  // for `settings.seed` (step 8) to detect and seed rt.repoRoots from — that
-  // is a normal fresh-machine condition, not a terminal one: `failed` would
-  // dead-end Install with a Retry that resumes at this same step and fails
-  // identically (the same class settings.seed's own docblock warns against).
+  // No root is a normal condition, not a terminal one: the repos.root row is
+  // the GUI's gate, but a CLI install can reach this step unanswered, and
+  // `failed` would dead-end Install with a Retry that resumes here and fails
+  // identically. The remedy names the validating verb, never a raw settings
+  // write, which would accept a path that does not exist.
   const root = getSetting<string[]>("rt.repoRoots").value?.[0];
   if (!root) {
-    return { state: "skipped", detail: "no repo root configured yet — set rt.repoRoots, then re-run rt setup apply to clone your tracked repos" };
+    return { state: "skipped", detail: "no repo root chosen yet ... run rt setup repo-root set <folder>, then re-run rt setup apply to clone your tracked repos" };
   }
+  // A hand-authored "~/dev" through rt settings set: the row reads it ready
+  // through the same expansion, so the clone must expand too or the two
+  // disagree about the identical stored string.
+  const rootPath = expandHome(p, root);
 
   let cloned = 0;
   let present = 0;
@@ -103,7 +107,7 @@ async function reposCloneRunUnsafe(ctx: ApplyContext): Promise<StepOutcome> {
 
   for (const identity of identities) {
     const base = repoBasename(identity);
-    const dest = join(root, base);
+    const dest = join(rootPath, base);
 
     if (p.exists(dest)) {
       if (!isCloneOf(p, dest, identity)) {
