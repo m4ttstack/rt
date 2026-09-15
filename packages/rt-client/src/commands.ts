@@ -648,6 +648,14 @@ export interface Commands {
   "discussions:reply": { payload: { repoName: string; iid: number; discussionId: string; body: string }; data: DiscussionsWriteData };
   "discussions:diffs": { payload: { repoName: string; iid: number }; data: DiscussionsDiffsData };
 
+  /** Positioned inline MR comment with server-side DiffNote verification:
+      posts, re-checks the created note's type, deletes and retries once on
+      the silent general-note degrade. `verified: true` means the check ran. */
+  "mr:comment-inline": {
+    payload: { repoName: string; iid: number; body: string; path: string; line: number; oldPath?: string; oldLine?: number };
+    data: { discussionId: string; noteId: number; verified: true };
+  };
+
   /** Wire reply is `{ok:true}` on success (no `data`); a failure is `{ok:false,error}`. */
   "mr:action": { payload: { repoName: string; iid: number; action: MRActionName; args?: unknown[] }; data: Record<string, never> };
   "mr:fetch-job-detail": { payload: { repoName: string; iid: number; jobId: number; pipelineId?: number }; data: MrJobDetail };
@@ -808,6 +816,7 @@ export const COMMAND_NAMES: readonly CommandName[] = [
   "discussions:resolve",
   "discussions:reply",
   "discussions:diffs",
+  "mr:comment-inline",
   "mr:action",
   "mr:fetch-job-detail",
   "mr:fetch-job-trace",
