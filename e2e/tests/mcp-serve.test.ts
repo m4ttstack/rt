@@ -167,9 +167,9 @@ class McpClient {
 
 const EXPECTED_TOOL_NAMES = [
   "chat_ack", "chat_claim", "chat_dm", "chat_post", "chat_release",
-  "gate_answer", "gate_list",
+  "gate_answer", "gate_ask", "gate_list",
   "herd_answer", "herd_ask", "herd_gates", "herd_report",
-  "mr_reply_thread",
+  "mr_comment_inline", "mr_map", "mr_reply_thread",
 ];
 
 describe("rt mcp serve e2e", () => {

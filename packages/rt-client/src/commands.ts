@@ -649,8 +649,12 @@ export interface Commands {
   "discussions:diffs": { payload: { repoName: string; iid: number }; data: DiscussionsDiffsData };
 
   /** Positioned inline MR comment with server-side DiffNote verification:
-      posts, re-checks the created note's type, deletes and retries once on
-      the silent general-note degrade. `verified: true` means the check ran. */
+      posts, re-checks the created note's type from the creation response,
+      and on the silent general-note degrade deletes the stray note and
+      retries ONCE with freshly fetched diff_refs. The retry repairs only
+      the stale-diff-refs degrade; a caller-supplied position GitLab
+      rejects stays rejected, and after a second degrade both stray notes
+      are deleted and the call fails. `verified: true` means the check ran. */
   "mr:comment-inline": {
     payload: { repoName: string; iid: number; body: string; path: string; line: number; oldPath?: string; oldLine?: number };
     data: { discussionId: string; noteId: number; verified: true };
