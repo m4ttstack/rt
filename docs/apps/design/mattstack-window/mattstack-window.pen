@@ -1,0 +1,447 @@
+{
+  "version": "2.17",
+  "children": [
+    {
+      "type": "frame",
+      "id": "h1IGc",
+      "x": 100,
+      "y": 100,
+      "name": "mattstack window · dark",
+      "clip": true,
+      "width": 1360,
+      "height": 860,
+      "fill": "$bg",
+      "cornerRadius": 12,
+      "effect": {
+        "type": "shadow",
+        "shadowType": "outer",
+        "color": "#00000080",
+        "offset": {
+          "x": 0,
+          "y": 24
+        },
+        "blur": 70
+      },
+      "children": [
+        {
+          "type": "frame",
+          "id": "SaemY",
+          "name": "Rail",
+          "width": 68,
+          "height": "fill_container",
+          "fill": "$rail",
+          "stroke": "$soft",
+          "strokeWidth": {
+            "right": 1
+          },
+          "strokeAlignment": "inner",
+          "layout": "vertical",
+          "padding": [
+            14,
+            0
+          ],
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "u1EsT",
+              "name": "Traffic Lights",
+              "gap": 8,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "ellipse",
+                  "id": "htDHU",
+                  "name": "light",
+                  "fill": "#ff5f57",
+                  "width": 12,
+                  "height": 12
+                },
+                {
+                  "type": "ellipse",
+                  "id": "rmLOe",
+                  "name": "light",
+                  "fill": "#febc2e",
+                  "width": 12,
+                  "height": 12
+                },
+                {
+                  "type": "ellipse",
+                  "id": "zEd0l",
+                  "name": "light",
+                  "fill": "#28c840",
+                  "width": 12,
+                  "height": 12
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "M4mdPb",
+              "name": "tl-gap",
+              "width": 10,
+              "height": 26
+            },
+            {
+              "type": "frame",
+              "id": "hVrFB",
+              "name": "App Icons",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 14,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "BYGlU",
+                  "name": "app · board",
+                  "width": "fill_container",
+                  "height": 44,
+                  "layout": "none",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "c3HbJ",
+                      "x": 15,
+                      "y": 3,
+                      "name": "tile",
+                      "width": 38,
+                      "height": 38,
+                      "fill": {
+                        "type": "image",
+                        "enabled": true,
+                        "url": "icons/board.png",
+                        "mode": "fill"
+                      },
+                      "cornerRadius": 9
+                    },
+                    {
+                      "type": "rectangle",
+                      "cornerRadius": [
+                        0,
+                        2,
+                        2,
+                        0
+                      ],
+                      "id": "T6JWU",
+                      "x": 0,
+                      "y": 10,
+                      "name": "active bar",
+                      "fill": "$accent",
+                      "width": 3,
+                      "height": 24
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "D7I9bB",
+                  "name": "app · boxscore",
+                  "width": "fill_container",
+                  "height": 44,
+                  "layout": "none",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "h2AUM",
+                      "x": 15,
+                      "y": 3,
+                      "name": "tile",
+                      "opacity": 0.68,
+                      "width": 38,
+                      "height": 38,
+                      "fill": {
+                        "type": "image",
+                        "enabled": true,
+                        "url": "icons/boxscore.png",
+                        "mode": "fill"
+                      },
+                      "cornerRadius": 9
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "f0miOV",
+                  "name": "app · chat",
+                  "width": "fill_container",
+                  "height": 44,
+                  "layout": "none",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "t2kZu",
+                      "x": 15,
+                      "y": 3,
+                      "name": "tile",
+                      "opacity": 0.68,
+                      "width": 38,
+                      "height": 38,
+                      "fill": {
+                        "type": "image",
+                        "enabled": true,
+                        "url": "icons/chat.png",
+                        "mode": "fill"
+                      },
+                      "cornerRadius": 9
+                    },
+                    {
+                      "type": "frame",
+                      "id": "YAUE8",
+                      "layoutPosition": "absolute",
+                      "x": 72,
+                      "y": 7,
+                      "name": "tooltip",
+                      "fill": "#232a47",
+                      "cornerRadius": 6,
+                      "stroke": "$border",
+                      "strokeWidth": 1,
+                      "effect": {
+                        "type": "shadow",
+                        "shadowType": "outer",
+                        "color": "#00000066",
+                        "offset": {
+                          "x": 0,
+                          "y": 4
+                        },
+                        "blur": 16
+                      },
+                      "gap": 6,
+                      "padding": [
+                        6,
+                        10
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "mFPDn",
+                          "name": "tip label",
+                          "fill": "$fg",
+                          "content": "Chat",
+                          "fontFamily": "$font",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "GjVd4",
+                          "name": "tip key",
+                          "fill": "$muted",
+                          "content": "⌘3",
+                          "fontFamily": "$mono",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "k9BTLH",
+                  "name": "app · console",
+                  "width": "fill_container",
+                  "height": 44,
+                  "layout": "none",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "EPwTH",
+                      "x": 15,
+                      "y": 3,
+                      "name": "tile",
+                      "opacity": 0.68,
+                      "width": 38,
+                      "height": 38,
+                      "fill": {
+                        "type": "image",
+                        "enabled": true,
+                        "url": "icons/console.png",
+                        "mode": "fill"
+                      },
+                      "cornerRadius": 9
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "MiJCk",
+                  "name": "app · gitq",
+                  "width": "fill_container",
+                  "height": 44,
+                  "layout": "none",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "ZAibU",
+                      "x": 15,
+                      "y": 3,
+                      "name": "tile",
+                      "opacity": 0.68,
+                      "width": 38,
+                      "height": 38,
+                      "fill": {
+                        "type": "image",
+                        "enabled": true,
+                        "url": "icons/gitq.png",
+                        "mode": "fill"
+                      },
+                      "cornerRadius": 9
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "ujVM1",
+              "name": "spacer",
+              "width": 10,
+              "height": "fill_container"
+            },
+            {
+              "type": "frame",
+              "id": "JEqlP",
+              "name": "rail bottom",
+              "layout": "vertical",
+              "gap": 12,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "V159fd",
+                  "name": "deck tile",
+                  "opacity": 0.8,
+                  "width": 36,
+                  "height": 36,
+                  "layout": "none",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "eCNRH",
+                      "x": 0,
+                      "y": 0,
+                      "name": "deck icon",
+                      "width": 36,
+                      "height": 36,
+                      "fill": {
+                        "type": "image",
+                        "enabled": true,
+                        "url": "icons/deck.png",
+                        "mode": "fill"
+                      },
+                      "cornerRadius": 8
+                    },
+                    {
+                      "type": "ellipse",
+                      "id": "A1y9U",
+                      "x": 26,
+                      "y": 26,
+                      "name": "deck ok badge",
+                      "fill": "$ok",
+                      "width": 10,
+                      "height": 10,
+                      "stroke": "$rail",
+                      "strokeWidth": 2,
+                      "strokeAlignment": "outer"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "mdyZP",
+          "name": "Content",
+          "clip": true,
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg",
+          "layout": "vertical",
+          "children": [
+            {
+              "type": "rectangle",
+              "id": "hCCkm",
+              "layoutPosition": "absolute",
+              "x": 0,
+              "y": 0,
+              "name": "board live",
+              "fill": {
+                "type": "image",
+                "enabled": true,
+                "url": "screenshot-board.mattstack.png",
+                "mode": "fill"
+              },
+              "width": 1292,
+              "height": 860
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "note",
+      "id": "H3hqZ6",
+      "x": 1500,
+      "y": 100,
+      "name": "design notes",
+      "width": 360,
+      "height": 320,
+      "content": "mattstack window · native shell for deck apps\n\n· Lives in mattstack.app (rt-tray), not a new Tauri app: the bundle already owns mattstack:// and ships Sparkle updates\n· Rail is dynamic: deck /api/apps supplies name, url, icon. New apps appear without an app update\n· Active app: accent bar + full-opacity tile. Inactive tiles dimmed to 68%\n· ⌘1..⌘9 switch apps, tooltip shows name + shortcut on hover\n· Webviews: one WKWebView per visited app, all kept warm (v1). Evaluate memory later\n· mattstack://open/<app>/<path> deep-links into an app inside the window\n· Traffic lights inline in the rail: no title bar, content is full-bleed\n· deck tile bottom-left: utility slot, opens the deck board; green badge = deck daemon healthy"
+    }
+  ],
+  "variables": {
+    "bg": {
+      "type": "color",
+      "value": "#16161e"
+    },
+    "rail": {
+      "type": "color",
+      "value": "#13131b"
+    },
+    "inset": {
+      "type": "color",
+      "value": "#1c2136"
+    },
+    "panel": {
+      "type": "color",
+      "value": "#232a47"
+    },
+    "soft": {
+      "type": "color",
+      "value": "#313853"
+    },
+    "border": {
+      "type": "color",
+      "value": "#3b4261"
+    },
+    "fg": {
+      "type": "color",
+      "value": "#e3e7f6"
+    },
+    "muted": {
+      "type": "color",
+      "value": "#7e86ad"
+    },
+    "accent": {
+      "type": "color",
+      "value": "#7aa2f7"
+    },
+    "ok": {
+      "type": "color",
+      "value": "#4ade5b"
+    },
+    "font": {
+      "type": "string",
+      "value": "Inter"
+    },
+    "mono": {
+      "type": "string",
+      "value": "JetBrains Mono"
+    }
+  },
+  "fileToken": "f9200993-3c28-4d6a-9c63-d81891bc022a"
+}
