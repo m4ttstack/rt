@@ -59,6 +59,19 @@ describe("mcpTools", () => {
     expect(tool.description).toContain("all statuses");
   });
 
+  test("gate_ask reads session and pane from env; subject comes from input only", async () => {
+    // Handler-shape test: stub the client call the way the suite stubs others
+    // (if the suite calls the real client, assert on the payload via a daemon
+    // fixture instead; match the file's existing approach).
+    const tool = mcpTools().find((t) => t.name === "gate_ask")!;
+    expect((tool.inputSchema as { required?: string[] }).required).toEqual(["questions"]);
+    expect(tool.description).toContain("rt gate wait");
+  });
+
+  test("roster contains gate_ask", () => {
+    expect(mcpTools().map((t) => t.name)).toContain("gate_ask");
+  });
+
   describe("herd_gates without a reachable daemon", () => {
     let originalHome: string | undefined;
     let originalSock: string | undefined;

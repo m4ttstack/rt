@@ -6,7 +6,7 @@
  */
 import {
   chatAck, chatClaim, chatDm, chatPost, chatRelease,
-  gateAnswer, gateList,
+  gateAnswer, gateAsk, gateList,
   herdAnswer, herdAsk, herdGates, herdList, herdReport,
   rtCommand,
 } from "../../packages/rt-client/src/index.ts";
@@ -177,6 +177,38 @@ export function mcpTools(): McpToolDef[] {
         if (input.kind !== undefined) payload.kind = input.kind as string;
         if (input.limit !== undefined) payload.limit = input.limit as number;
         return fromResponse(await gateList(payload));
+      },
+    },
+    {
+      name: "gate_ask",
+      description: "Open a decision gate with the daemon-side ceremony: subject resolves from this session (explicit subject wins, else its running run, else its agent record's own subject), presentation is computed, and the operator is nudged. Returns {id, presentation, subject, supersededId}; then run `rt gate wait <id>` as background bash and park. The wait itself is never a tool. Prefer {value, label} option objects; bare strings are accepted and stored normalized. Answers must be option VALUES verbatim.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          questions: { type: "array", items: GATE_QUESTION_SCHEMA },
+          context: { type: "string" },
+          kind: { type: "string" },
+          subject: { type: "string" },
+        },
+        required: ["questions"],
+        additionalProperties: false,
+      },
+      async handler(input, env) {
+        const bad = checkRequired(input, [{ name: "questions", type: "array" }]);
+        if (bad) return err(bad);
+        const payload: Commands["gate:ask"]["payload"] = {
+          questions: input.questions as GateQuestion[],
+        };
+        if (input.context !== undefined) payload.context = input.context as string;
+        if (input.kind !== undefined) payload.kind = input.kind as string;
+        // No RT_GATE_SUBJECT read (contract C13): the var carries an agent:<id>
+        // fallback on every rt-agent launch and would shadow the daemon
+        // ladder's run rung; absent an input subject, the daemon resolves
+        // session -> run -> the agent record's own subject.
+        if (input.subject !== undefined) payload.subject = input.subject as string;
+        if (env.CLAUDE_CODE_SESSION_ID) payload.sessionId = env.CLAUDE_CODE_SESSION_ID;
+        if (env.HERDR_PANE_ID) payload.paneId = env.HERDR_PANE_ID;
+        return fromResponse(await gateAsk(payload));
       },
     },
     {
