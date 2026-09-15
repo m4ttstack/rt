@@ -134,7 +134,11 @@ const GATE_OPTION_SCHEMA = {
     { type: "string" },
     {
       type: "object",
-      properties: { value: { type: "string" }, label: { type: "string" } },
+      properties: {
+        value: { type: "string" },
+        label: { type: "string" },
+        recommended: { type: "boolean", description: "Marks this option as the recommended choice; lifts into a '(Recommended)' label suffix." },
+      },
       required: ["value", "label"],
       additionalProperties: false,
     },

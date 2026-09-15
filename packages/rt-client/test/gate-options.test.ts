@@ -3,10 +3,10 @@ import { normalizeGateOptions, normalizeGateQuestions } from "../src/gate-option
 import type { GateQuestion } from "../src/commands.ts";
 
 describe("normalizeGateOptions", () => {
-  test("bare string becomes {value, label} with both set to the string", () => {
+  test("bare string becomes {value, label} with the label capitalized (word-like)", () => {
     expect(normalizeGateOptions(["yes", "no"])).toEqual([
-      { value: "yes", label: "yes" },
-      { value: "no", label: "no" },
+      { value: "yes", label: "Yes" },
+      { value: "no", label: "No" },
     ]);
   });
   test("objects pass through untouched", () => {
@@ -17,27 +17,27 @@ describe("normalizeGateOptions", () => {
   test("mixed input preserves order", () => {
     expect(normalizeGateOptions([{ value: "a", label: "A" }, "b"])).toEqual([
       { value: "a", label: "A" },
-      { value: "b", label: "b" },
+      { value: "b", label: "B" },
     ]);
   });
   test("empty options stay empty (free-form question)", () => {
     expect(normalizeGateOptions([])).toEqual([]);
   });
-  test("a partial object with only value fills label from value", () => {
+  test("a partial object with only value fills label from value (capitalized)", () => {
     expect(normalizeGateOptions([{ value: "a" } as unknown as GateQuestion["options"][number]])).toEqual([
-      { value: "a", label: "a" },
+      { value: "a", label: "A" },
     ]);
   });
-  test("a partial object with only label fills value from label", () => {
+  test("a partial object with only label fills value from label (label capitalized, value unchanged)", () => {
     expect(normalizeGateOptions([{ label: "x" } as unknown as GateQuestion["options"][number]])).toEqual([
-      { value: "x", label: "x" },
+      { value: "x", label: "X" },
     ]);
   });
   test("wire garbage (null, a number, an object with neither field) is coerced via String() into both fields", () => {
     expect(
       normalizeGateOptions([null, 42, {}] as unknown as GateQuestion["options"]),
     ).toEqual([
-      { value: "null", label: "null" },
+      { value: "null", label: "Null" },
       { value: "42", label: "42" },
       { value: "[object Object]", label: "[object Object]" },
     ]);
@@ -49,6 +49,58 @@ describe("normalizeGateOptions", () => {
       expect(typeof entry.label).toBe("string");
     }
   });
+
+  describe("recommended flag lifts into the label suffix", () => {
+    test("recommended: true appends ' (Recommended)' to the label", () => {
+      expect(normalizeGateOptions([{ value: "a", label: "fix", recommended: true }])).toEqual([
+        { value: "a", label: "Fix (Recommended)" },
+      ]);
+    });
+    test("the recommended field does not survive into the normalized output object", () => {
+      const [out] = normalizeGateOptions([{ value: "a", label: "fix", recommended: true }]);
+      expect(Object.keys(out!)).toEqual(["value", "label"]);
+    });
+    test("recommended: false or absent never appends the suffix", () => {
+      expect(normalizeGateOptions([{ value: "a", label: "fix", recommended: false }, { value: "b", label: "skip" }])).toEqual([
+        { value: "a", label: "Fix" },
+        { value: "b", label: "Skip" },
+      ]);
+    });
+    test("a label already ending with the suffix (case-insensitively) is not appended twice", () => {
+      expect(
+        normalizeGateOptions([{ value: "a", label: "Fix (recommended)", recommended: true }]),
+      ).toEqual([{ value: "a", label: "Fix (recommended)" }]);
+    });
+    test("an empty label with recommended: true stays empty, not just the suffix", () => {
+      expect(normalizeGateOptions([{ value: "a", label: "", recommended: true }])).toEqual([
+        { value: "a", label: "" },
+      ]);
+    });
+  });
+
+  describe("word-like label capitalization", () => {
+    test("an all-lowercase single word is capitalized", () => {
+      expect(normalizeGateOptions(["main"])).toEqual([{ value: "main", label: "Main" }]);
+    });
+    test("bare string 'fix' becomes {value:'fix', label:'Fix'} with the value unchanged", () => {
+      expect(normalizeGateOptions(["fix"])).toEqual([{ value: "fix", label: "Fix" }]);
+    });
+    test("bare string 'skip' becomes {value:'skip', label:'Skip'} with the value unchanged", () => {
+      expect(normalizeGateOptions(["skip"])).toEqual([{ value: "skip", label: "Skip" }]);
+    });
+    test("a label containing a digit is left untouched", () => {
+      expect(normalizeGateOptions(["rt-165"])).toEqual([{ value: "rt-165", label: "rt-165" }]);
+    });
+    test("a label containing a slash is left untouched", () => {
+      expect(normalizeGateOptions(["src/lib/foo.ts"])).toEqual([{ value: "src/lib/foo.ts", label: "src/lib/foo.ts" }]);
+    });
+    test("a label containing a colon and a digit is left untouched", () => {
+      expect(normalizeGateOptions(["reply:42"])).toEqual([{ value: "reply:42", label: "reply:42" }]);
+    });
+    test("an already mixed-case label is left untouched", () => {
+      expect(normalizeGateOptions(["gitLab"])).toEqual([{ value: "gitLab", label: "gitLab" }]);
+    });
+  });
 });
 
 describe("normalizeGateQuestions", () => {
@@ -58,7 +110,7 @@ describe("normalizeGateQuestions", () => {
       { id: "q2", label: "tiers", multi: true, options: [{ value: "t1", label: "Tier 1" }] },
     ];
     expect(normalizeGateQuestions(qs)).toEqual([
-      { id: "q1", label: "pick", multi: false, options: [{ value: "x", label: "x" }] },
+      { id: "q1", label: "pick", multi: false, options: [{ value: "x", label: "X" }] },
       { id: "q2", label: "tiers", multi: true, options: [{ value: "t1", label: "Tier 1" }] },
     ]);
   });

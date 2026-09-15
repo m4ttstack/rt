@@ -109,8 +109,8 @@ describe("gates store — option normalization", () => {
       questions: [{ id: "q1", label: "go?", multi: false, options: ["yes", "no"] }],
     });
     expect(row.questions[0]!.options).toEqual([
-      { value: "yes", label: "yes" },
-      { value: "no", label: "no" },
+      { value: "yes", label: "Yes" },
+      { value: "no", label: "No" },
     ]);
     expect(s.get(row.id)!.questions[0]!.options).toEqual(row.questions[0]!.options);
   });
