@@ -7,6 +7,7 @@ import {
   ensureEventBridgeRule,
   type EventBridgeRule,
 } from '@mattstack/app-server/event-bridge';
+import { shellHandoff } from '@mattstack/app-server/shell-handoff';
 import { panesForOrigin, resolveOriginFocus } from '@mattstack/gate-kit/server';
 import type { MRDetail, PullRequest } from '@mattstack/glance';
 import {
@@ -806,6 +807,8 @@ const httpServer = Bun.serve({
   async fetch(req) {
     const redirect = canonicalHostRedirect(req);
     if (redirect) return redirect;
+    const handoff = await shellHandoff(req);
+    if (handoff) return handoff;
     const { pathname } = new URL(req.url);
     if (FIXTURE_DIR) {
       if (req.method !== 'GET')

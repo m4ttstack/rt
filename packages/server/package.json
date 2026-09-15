@@ -23,7 +23,8 @@
     "./relays": "./src/relays.ts",
     "./static": "./src/static.ts",
     "./event-bridge": "./src/event-bridge.ts",
-    "./canonical-host": "./src/canonical-host.ts"
+    "./canonical-host": "./src/canonical-host.ts",
+    "./shell-handoff": "./src/shell-handoff.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

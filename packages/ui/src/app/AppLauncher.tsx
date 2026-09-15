@@ -3,6 +3,7 @@ import { ActionIcon, Anchor, Image, Popover, Text } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 
 import { Icon } from '@mattstack/app-kit/icons';
+import { isInsideMattstackShell } from '@mattstack/app-kit/utils';
 import classes from './AppLauncher.module.css';
 import { deriveDeckBase } from './deck-discovery';
 import type { DiscoveryApp } from './deck-discovery';
@@ -59,7 +60,9 @@ function Tile({ app, current }: { app: DiscoveryApp; current: boolean }) {
 /**
  * The shared cross-app switcher. Renders nothing when no deck base resolves
  * (an unrecognized origin with no `deckBase` override), so a non-mattstack
- * surface simply has no launcher rather than a dead button.
+ * surface simply has no launcher rather than a dead button. Also renders
+ * nothing inside the native mattstack window, whose own tabs are the
+ * switcher.
  */
 export function AppLauncher({ currentApp, deckBase }: AppLauncherProps) {
   // Read bare `location` (not `window.location`) so a test can control the
@@ -80,7 +83,7 @@ export function AppLauncher({ currentApp, deckBase }: AppLauncherProps) {
     void refresh();
   }, [refresh]);
 
-  if (!base) return null;
+  if (!base || isInsideMattstackShell()) return null;
 
   return (
     <Popover

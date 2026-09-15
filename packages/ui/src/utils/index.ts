@@ -4,3 +4,4 @@ export type {
   CreateDynamicTableParams,
   CreateDynamicTableResult,
 } from './createDynamicTable';
+export { isInsideMattstackShell } from './mattstack-shell';

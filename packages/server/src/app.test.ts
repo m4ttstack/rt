@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { afterEach, expect, test, vi } from 'vitest';
+import { afterEach, expect, it, test, vi } from 'vitest';
 
 import { createApp } from './app';
 
@@ -89,4 +89,27 @@ test('the canonical host itself, and any host with no canonical configured, is s
     headers: { 'x-forwarded-host': 'probe.localhost' },
   });
   expect(unconfigured.status).toBe(200);
+});
+
+it('hands off top-level .mattstack document requests to the shell', async () => {
+  const app = createApp({
+    name: 'x',
+    version: '0',
+    routes: new Hono().get('/', c => c.text('app page')),
+    shellHandoff: async () =>
+      new Response('stub', { headers: { 'content-type': 'text/html' } }),
+  });
+  const res = await app.request('https://x.mattstack/');
+  expect(await res.text()).toBe('stub');
+});
+
+it('serves normally when the shell declines', async () => {
+  const app = createApp({
+    name: 'x',
+    version: '0',
+    routes: new Hono().get('/', c => c.text('app page')),
+    shellHandoff: async () => null,
+  });
+  const res = await app.request('https://x.mattstack/');
+  expect(await res.text()).toBe('app page');
 });

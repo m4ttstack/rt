@@ -3,12 +3,15 @@ import { HTTPException } from 'hono/http-exception';
 
 import { daemonHealth } from '@mattstack/rt-client';
 import { canonicalHostRedirect } from './canonical-host';
+import { shellHandoff as defaultShellHandoff } from './shell-handoff';
 
 export interface CreateAppOptions {
   name: string;
   version: string;
   /** The app's own Hono chain; `typeof routes` stays the RPC AppType. */
   routes: Hono;
+  /** Test seam; production always uses the real helper. */
+  shellHandoff?: (req: Request) => Promise<Response | null>;
 }
 
 /**
@@ -16,11 +19,18 @@ export interface CreateAppOptions {
  * `res.ok` then parses JSON, so a text/plain 500 or an HTML 404 makes it
  * throw on the parse instead of surfacing the real error.
  */
-export function createApp({ name, version, routes }: CreateAppOptions): Hono {
+export function createApp({
+  name,
+  version,
+  routes,
+  shellHandoff = defaultShellHandoff,
+}: CreateAppOptions): Hono {
   const app = new Hono()
     .use(async (c, next) => {
       const redirect = canonicalHostRedirect(c.req.raw);
       if (redirect) return redirect;
+      const handoff = await shellHandoff(c.req.raw);
+      if (handoff) return handoff;
       await next();
     })
     .get('/api/health', c => c.json({ ok: true, name, version }, 200))

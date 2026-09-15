@@ -13,6 +13,15 @@ import { useDiscoveryApps } from './useDiscoveryApps.ts';
 
 const CURRENT_APP = 'board';
 
+const MATTSTACK_SHELL_UA_MARKER = ' mattstack-shell/';
+
+function isInsideMattstackShell(): boolean {
+  return (
+    typeof navigator !== 'undefined' &&
+    navigator.userAgent.includes(MATTSTACK_SHELL_UA_MARKER)
+  );
+}
+
 function sortApps(apps: DiscoveryApp[]): DiscoveryApp[] {
   return [...apps].sort((a, b) => {
     if (a.name === CURRENT_APP) return -1;
@@ -158,7 +167,9 @@ function Tile({ app }: { app: DiscoveryApp }) {
  * The board's cross-app switcher trigger + dropdown. Renders nothing when no
  * deck base resolves (an origin that's neither `*.mattstack` nor
  * `*.localhost`), so a non-mattstack surface simply has no launcher rather
- * than a dead button firing a doomed cross-origin fetch.
+ * than a dead button firing a doomed cross-origin fetch. Also renders
+ * nothing inside the native mattstack window, whose own tabs are the
+ * switcher.
  */
 export function AppLauncher() {
   const origin = typeof location === 'undefined' ? '' : location.origin;
@@ -187,7 +198,7 @@ export function AppLauncher() {
     return () => document.removeEventListener('mousedown', onPointerDown);
   }, [open]);
 
-  if (!base) return null;
+  if (!base || isInsideMattstackShell()) return null;
 
   const toggle = () => {
     if (!open) void refresh();

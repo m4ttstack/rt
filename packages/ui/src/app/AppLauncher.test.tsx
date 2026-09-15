@@ -70,6 +70,15 @@ test('renders no launcher when the origin is not a mattstack surface and no over
   expect(screen.queryByRole('button', { name: 'Apps' })).toBeNull();
 });
 
+test('renders no launcher inside the mattstack shell', () => {
+  vi.stubGlobal('navigator', {
+    userAgent:
+      'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 mattstack-shell/1.0',
+  });
+  renderWithProviders(<AppLauncher currentApp="chat" />);
+  expect(screen.queryByRole('button', { name: 'Apps' })).toBeNull();
+});
+
 test('sorts the current app first even when it is not first in the fetch response', async () => {
   const user = userEvent.setup();
   renderWithProviders(<AppLauncher currentApp="board" />);
