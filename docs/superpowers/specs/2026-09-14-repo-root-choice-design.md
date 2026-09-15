@@ -1,0 +1,412 @@
+# Let the user choose where their repos go
+
+**Date:** 2026-09-14
+**Status:** Design, pre-implementation
+
+## Problem
+
+On a machine where none of `~/Documents/GitHub`, `~/GitHub`, `~/code` or
+`~/src` exists, `settings.seed` creates `~/Documents/GitHub` and seeds
+`rt.repoRoots` with it. On a machine where one of them does exist, it adopts
+the first match. Neither path asks, and nothing in the wizard mentions that a
+directory was created or chosen. `grep -rn "repoRoots" rt-tray/Sources/`
+returns nothing: the app never surfaces the question at all.
+
+Three things are wrong with that.
+
+**It is one person's convention, hardcoded.** `CANDIDATE_ROOT_NAMES` is
+`["Documents/GitHub", "GitHub", "code", "src"]` and the entry rt *creates* is
+always the first. Someone who keeps code in `~/dev` gets a directory they did
+not ask for, with their team's repos cloned into it, somewhere they will not
+look.
+
+**`~/Documents` is TCC-protected.** rt holds Full Disk Access, so rt never
+sees a problem. Everything else on the machine can: the user's editor, their
+terminal's git, any agent or helper that later touches those repos. A wedged
+`tccd` is already on record in this estate as a failure mode.
+
+**It is silent.** No prompt, nothing on the Done screen, no row in the
+checklist.
+
+The detection itself is good and stays. What has to stop is rt deciding.
+
+## Design
+
+### The `repos.root` row
+
+A new checklist row, in the same group as the other tool rows.
+
+| | |
+|---|---|
+| `id` | `repos.root` |
+| `kind` | `tool` |
+| `title` | Repo folder |
+| `required` | `true` |
+| `recheck` | `on-activate` |
+
+It renders when **either** the user is joining a team right now, **or** a team
+already on this machine declares tracked repos:
+
+```
+team.mode === "join" || snapshot.trackingIdentities.length > 0
+```
+
+`join` rather than `mode !== "none"`: join is the only pre-Install mode where
+somebody else has already declared repos to clone. A user creating a team
+declares none at that moment, so asking them would be the noise this design
+set out to avoid. If their new team later tracks repos, the second condition
+picks it up.
+
+Both halves are needed, and the reason is the whole reason an earlier draft of
+this design was wrong.
+
+**`trackingIdentities` alone is empty exactly when it matters.** It comes from
+`mattstack.tracking`, a team-scoped key read out of
+`~/.mattstack/teams/<slug>/mattstack/settings.team.jsonc`. On a joiner's fresh
+Mac that clone does not exist until `team.join`, which runs **inside** Install.
+`enrichSnapshotForge` back-fills `integrations.forge` from the invite pointer
+but never tracking. So at checklist time a joiner's `trackingIdentities` is
+`[]`, the row would not render, `canInstall` would be true, Install would run
+with no repo root, and `repos.clone` would skip. A first-time joiner would
+clone zero repos: a regression caused by the fix.
+
+**`team.mode` alone goes blind after Install.** `teamRefFromIntent` returns
+`mode: "none"` for a machine whose teams are already cloned, because there is
+no live intent any more. A root that later went missing would then have no row
+to report it.
+
+Together they cover both: the join intent carries the pre-Install case, the
+snapshot carries the post-Install case.
+
+A genuinely team-less install (no intent, no cloned team) still never sees the
+row, which is the original ruling. A solo user who later joins a team meets the
+question at that point.
+
+The row has two possible sources, and **exactly one is live at a time**: before
+the home repo exists the answer is staged, and from the moment it exists the
+answer is in the store. See "Where the answer lives" below for why that
+invariant holds rather than being a precedence rule.
+
+| Condition | Status | Detail | Action |
+|---|---|---|---|
+| a root resolves, exists, and is a usable directory | `ready` | names the path, plus the TCC note when it applies | none |
+| no root resolves from either source | `needs-you` | "choose where rt should clone your team's repos" | choose-folder |
+| a root resolves but is missing or unusable | `needs-you` | names the path and what is wrong with it | choose-folder |
+
+The row and the verb share one validator (`checkRepoRoot`), so "the row says
+ready" and "the verb would accept it" can never disagree. A path that exists
+but is a file, or is not writable, reads `needs-you` rather than `ready`,
+because `repos.clone` would fail on it.
+
+`checkRepoRoot` needs more than `exists`: it needs is-a-directory and
+is-writable. Those go on `Probes` as one new `statPath` member beside `exists`,
+not as a default argument reaching `statSync` directly. `probes.ts` states the
+rule: the seam exists "so validators and steps stay pure functions over
+injected state and tests never touch the real machine". A row that took its
+candidate from a faked `p.exists` while stat-ing the developer's real disk
+would be half fake and half real, and no `composePlan` test could control it.
+
+**The emptiness test is `!getSetting<string[]>("rt.repoRoots").value?.[0]`, not
+`unwritten()`.** Those disagree for a key explicitly written as `[]` at machine
+scope, which is reachable by hand. Under `unwritten()` the row would read
+`ready` off a staged value while `repos.clone` and `board.keys` both saw no
+root and silently did nothing: green over an install that clones nothing. The
+same predicate is used by `repos.clone`'s own guard.
+
+The read of `rt.repoRoots` is wrapped in try/catch. `getSetting` on this key has
+a documented throw path for an authored `${repoRoot}` value, and `lib/repo-index.ts`
+already guards it for that reason. Unguarded here, a throw propagates to
+`buildGroup`'s catch, which replaces every tools row with a single required
+`tools.group-error` row whose only action re-runs the same failing read: a
+permanently unclearable Install block, fixable only by hand-editing the machine
+store. A throw must read as `needs-you` with the picker offered, never as an
+exception.
+
+`required: true` means Install cannot start until the question is answered.
+That ordering is deliberate: choose, then clone. It also means the row must
+obey the rule in §9 of the distribution checklist... a row that only Install
+can satisfy must not gate Install. This row is satisfied by the user, before
+Install, so it is not in that class and must NOT be added to
+`INSTALL_SATISFIED_IDS`.
+
+### What `settings.seed` becomes
+
+`detectOrCreateDefaultRoot` is deleted, and so are `detectRepoRoots`,
+`CANDIDATE_ROOT_NAMES` and `DEFAULT_ROOT_NAME`. The candidate list moves to the
+new `lib/setup/repo-root.ts` and lives in exactly one place; leaving a second
+copy behind in `settings.ts` is how the two drift.
+
+`settings.seed` no longer *chooses* a repo root and no longer calls `mkdirp`.
+rt stops creating directories on anyone's machine. Detection survives only as
+the *starting directory* the folder panel opens at, which is a suggestion the
+user confirms rather than a decision rt makes.
+
+It gains one new job: promoting the staged answer. **If a staged path exists,
+it wins**: `settings.seed` writes it at machine scope and removes the staging
+file, whether or not the key already holds something. A staged value is by
+construction a freshly validated answer the user gave on this machine, so it is
+never the stale one.
+
+Promotion consults no emptiness predicate: a staged value wins outright, so
+there is nothing here for one to decide. The predicate question belongs to the
+row and to `repos.clone`'s own guard, and is settled in the row's section above.
+
+Promotion is idempotent and also runs at the top of `repos.clone`, because
+`rt setup apply --only repos.clone` is a documented remedy channel that skips
+step 8; without that, a remedy run after a pre-Install answer would clone
+nothing.
+
+`repos.clone`'s existing `skipped` branch already covers "no root configured
+yet" and needs no change. It stays reachable: the GUI answers the row before
+Install, but a CLI install can still reach Install with the row unanswered.
+
+### The CLI has to be able to answer it too
+
+`rt setup apply` in a terminal cannot open a folder panel, so a required row
+whose only affordance is a GUI action would dead-end a CLI install. Two things
+prevent that:
+
+- The row's `detail` names the verb (`rt setup repo-root set`) as well as
+  describing the problem. `rt setup status` prints row details, so that is
+  where a terminal user reads what to run. Note that `missingRowLines` (the
+  list `rt setup apply` prints when it refuses) shows only the row title and
+  the action's label, so a blocked CLI install says `- Repo folder (Choose
+  folder…)` and nothing more. That is pre-existing behavior for every required
+  row, not something this feature introduces, and widening it is a separate
+  change.
+- `rt setup repo-root set <folder>` takes the path as an optional argument. At
+  a TTY it must be supplied; omitting it prints usage rather than prompting.
+  There is deliberately no prompt: the only prompt on the setup deps object is
+  `promptField`, wired to `promptSecret`, which sets raw mode and echoes
+  nothing. Masking a folder path would be absurd, and a worker told to "follow
+  `connectCredential`" would land on exactly that.
+- Stdin is read only when there is no argument and stdin is not a TTY, so a
+  piped `{"root": "..."}` works and a bare terminal invocation cannot hang on
+  EOF. That ordering (check `isTTY()` before any stdin read) is
+  `connectCredential`'s own rule and its comment says why.
+
+### The action
+
+A new variant on the `Action` union in `lib/setup/contract.ts`:
+
+```ts
+| { type: "choose-folder"; label: string; startAt: string | null }
+```
+
+`startAt` is the first detected candidate, or null when none exists. It is a
+suggestion for where the panel opens, never a value rt writes.
+
+Swift side, `rt-tray/Sources-core/Contract/PlanModels.swift`:
+
+- `ActionType` gains `case chooseFolder = "choose-folder"`
+- `RowAction` gains `public var startAt: String?`
+
+`ActionType.init(from:)` already maps an unrecognized string to `.unknown`,
+and the dispatcher returns `.none` for `.unknown`, so an older tray meeting
+this action renders a dead button rather than failing the decode. rt ships
+inside the app bundle so the two move together in practice, but the
+degradation is worth keeping.
+
+### The dispatcher
+
+`RowActionDispatcher` mirrors `connect` exactly, which is the existing
+two-phase pattern: first dispatch collects, second dispatch acts.
+
+```
+case .chooseFolder:
+    if let path = fieldValues?["root"] {
+        return .rtVerb(args: ["setup", "repo-root", "set", "--json"], stdin: json(["root": path]))
+    }
+    return .chooseFolder(startAt: action.startAt)
+```
+
+`DispatchedAction` gains `case chooseFolder(startAt: String?)`.
+
+`ChecklistScreen`'s switch gains one case that runs `NSOpenPanel` with
+`canChooseDirectories = true`, `canChooseFiles = false`, and
+`canCreateDirectories = true` so the user can make a folder in place rather
+than cancelling out to Finder. On a chosen URL it re-dispatches the same
+action with `fieldValues: ["root": url.path]`. On cancel it does nothing:
+no error, no state change.
+
+Reusing the existing `fieldValues` channel rather than adding a parallel one
+keeps the second dispatch identical in shape to `connect`'s, which is what
+makes this a small change rather than a new mechanism.
+
+### The verb
+
+`rt setup repo-root set --json`, taking the path as an argument or, from a
+pipe, as `{"root": "<path>"}` on stdin.
+
+A new verb rather than `rt settings set rt.repoRoots`, because `settings set`
+accepts any JSON value and would happily record a path that does not exist.
+This verb validates through the same `checkRepoRoot` the row uses:
+
+- the path must exist and be a directory
+- it must be writable by the current user
+- `~` and `${home}` are expanded before validation, matching what the
+  `rt.repoRoots` registry entry documents
+
+### Where the answer lives before Install
+
+The machine store is `~/.mattstack/user/local/<machineKey()>/settings.local.jsonc`,
+and `~/.mattstack/user` **is** the home repo. `setSetting` creates that tree
+with `mkdirSync(..., { recursive: true })` when the file is missing.
+
+On a fresh Mac nothing creates `user/` before Install in the `join` and
+`create` modes: the Team screen only dry-runs (`rt team join --dry-run`,
+`rt home init --dry-run`). `restore` is the exception and clones for real at
+Continue, which is why the branch tests the directory rather than the mode:
+under restore the true branch is correct and safe, and `homeInitStep.applies`
+is `ctx.intent?.mode !== "restore"` so nothing re-clones over it.
+
+In the two dry-run modes, a pre-Install write at machine scope would:
+
+1. create `~/.mattstack/user/local/<key>/settings.local.jsonc`, making `user/`
+   exist, non-empty, and not a git repo
+2. make `gatherHomeState`'s `userRepoPresent` false
+3. make `buildInitPlan` emit `cloneUserRepo`
+4. run `git clone <url> user` into a non-empty directory, which is fatal
+5. dead-end **Install step 1**, `home.init`, with a Retry that fails identically
+
+There is a second, quieter failure even if that clone succeeded: `machineKey()`
+falls back to the slugified hostname when `~/.mattstack/machine-key` is absent,
+and that file is written by `home init` **after** the clone lands, where it may
+adopt a profile name from the cloned `user/local/`. A pre-Install write would
+land in a profile directory the resolver then never reads.
+
+**So the answer is staged only while the store cannot hold it.** `rt setup
+repo-root set` branches on one condition:
+
+```ts
+p.exists(homeGitDir(p.home))   // join(p.home, ".mattstack", "user", ".git")
+```
+
+`Probes.home` is the user's HOME, not `~/.mattstack`. `join(p.home, "user",
+".git")` would resolve to `~/user/.git`, be false forever, and silently restore
+the always-stage behaviour this branch exists to replace. `homeGitDir` already
+exists at `lib/setup/steps/home.ts:18` and is used exactly this way at `:74`;
+export it rather than re-spelling the path.
+
+- **false** (home repo not initialised yet): stage the path to
+  `~/.mattstack/rt/repo-root.json`, outside the home repo. This follows
+  `lib/setup/staging.ts`, which exists for exactly this reason: "a durable
+  holding pen for values collected during `rt setup` before the [store] has a
+  live target". That module is shaped for per-domain secrets, so this is a
+  sibling file, not a reuse of `stageSecret`.
+- **true**: write `rt.repoRoots` directly at machine scope. The dangerous
+  precondition is gone, and so is any reason to defer.
+
+One window is soft and is accepted rather than gated: a **partially failed
+`home.init`** leaves `.git` present while `~/.mattstack/machine-key` is not yet
+written, since both are steps inside the one `rt home init` subprocess and the
+key follows the clone. The verb would take the true branch there. It is benign
+because on a fresh clone `user/local/` is empty, so `rt home init`'s
+profile-adoption prompt has nothing to offer and `machineKey()`'s hostname-slug
+fallback is the same key `home init` would go on to pick. Recorded because the
+reasoning is two inferences deep and lives in another file, so an auditor
+checking "true at every moment after `home.init`" will find this case and
+otherwise cannot tell whether it was considered.
+
+**This branch is what keeps the two sources from ever both being live**, and
+that matters more than it looks. An earlier draft had the verb always stage and
+the row read store-then-staged. That produced an unclearable required row: once
+the store held a path, a user whose folder had since been deleted could pick a
+new one, the verb would stage it, the row would keep reading the dead stored
+path, and `settings.seed` would refuse to promote because the key was already
+written. `canInstall` false, permanently, with no way out. That is the same
+defect family this whole design was written to remove, re-introduced by the fix
+for the previous one.
+
+`home.restore` makes that reachable rather than theoretical: a restored home
+repo carries another Mac's machine store, and `rt home init` offers to adopt an
+existing profile from the cloned `user/local/`. Taking that offer inherits an
+`rt.repoRoots` naming a path that does not exist on the new machine.
+
+`settings.seed` (step 8, after `home.init` at step 1) promotes the staged value
+into `rt.repoRoots` at **machine** scope, matching the registry's
+`scopes: ["machine"]`, and removes the staging file. By then the home repo
+exists and the machine key is settled, so the write lands where the resolver
+will read it.
+
+The row reads the staged value when the setting is unset, so it goes `ready` as
+soon as the user answers, before Install has run.
+
+This keeps the ordering the design promises ("choose, then clone") while moving
+the write to the only moment it is legal.
+
+**A validation failure exits 2, not 1.** `RtResult.userError` decodes the JSON
+error envelope only at exit 2; at any other non-zero code the app falls through
+to generic failure copy. Compounding that, `ChecklistScreen` sets
+`redactStderr = stdin != nil`, on the reasoning that only `connect` and
+`owner-once` put anything on stdin and those carry secrets. A path is not a
+secret, so this action breaks that assumption: at exit 1 with stdin present the
+user would be told "details withheld because the command carried a secret"
+instead of "that folder is not writable". Exiting 2 routes through the envelope
+and sidesteps the heuristic; narrowing the heuristic to the two secret-carrying
+action types is the cleaner follow-up and is noted as out of scope here.
+
+**The TCC warning is advisory, never a refusal.** A path under `~/Documents`,
+`~/Desktop` or `~/Downloads` is accepted and recorded, and the row's `ready`
+detail names the hazard: those directories are TCC-protected, so tools other
+than rt may hit permission prompts against repos stored there. It is the
+user's machine and `~/Documents/GitHub` is a genuinely common convention;
+refusing it would substitute rt's judgment for theirs, which is the defect
+this whole design exists to remove.
+
+Picker conformance: `repo-root` is a branch node with a `set` leaf under it,
+not a leaf itself. The leaf's path argument is `optional` (a pipe can supply
+it), so no `omitBehavior` is required. It never prompts: see the no-prompt
+ruling above. Registering `repo-root` as a
+leaf with a required `set` positional would fail `bun run picker:check`.
+Confirm with that command rather than assuming either way.
+
+## Error handling
+
+- Panel cancelled: nothing happens. Not an error state.
+- Path does not exist, is a file, or is unwritable: the verb returns a
+  `--json` error and the row shows it; `rt.repoRoots` is unchanged.
+- The chosen directory disappears later: the row's third state catches it on
+  the next recheck and offers the picker again.
+- `getSetting("rt.repoRoots")` throws on an authored `${repoRoot}` value: the
+  row catches it and reads `needs-you` with the picker offered. Unguarded, the
+  throw reaches `buildGroup`'s catch and collapses every tools row into one
+  unclearable required error row.
+- No app (CLI or the VM harness): the row is `needs-you`, and its detail names
+  `rt setup repo-root set` so a terminal user has something to run. The harness
+  answers it by running that verb, never by writing `rt.repoRoots` directly:
+  before Install the VM has no `~/.mattstack/user` either, so a direct write
+  would kill `home.init` inside the harness exactly as it would on a real Mac.
+  This is why the harness must answer the row before
+  driving Install, and the harness change is part of the work, not a
+  follow-up.
+
+## Testing
+
+- The row's three states, including the set-but-missing directory case.
+- The row is absent when the team declares no tracked repos, and present when
+  it declares one.
+- `settings.seed` writes no `rt.repoRoots` and creates no directory, on both
+  a machine with a detected candidate and one without. This is the regression
+  test for the behavior being removed, so it must fail against today's code.
+- The verb: valid directory, nonexistent path, a file, an unwritable
+  directory, `~` expansion, and that a `~/Documents` path is accepted with the
+  advisory rather than refused.
+- Dispatcher: `choose-folder` with no `fieldValues` returns `.chooseFolder`;
+  with `fieldValues["root"]` returns the `.rtVerb` with the path on stdin.
+- Decoding an unknown action type still yields `.unknown` and `.none`, so the
+  forward-compat property is pinned rather than assumed.
+- The VM harness answers the row with `rt setup repo-root set` before Install
+  and asserts the row reads `ready`. It must never write the setting directly.
+
+No test drives `NSOpenPanel`. The panel is three lines of configuration and a
+`runModal`; the logic worth testing is the dispatcher on either side of it.
+
+## Out of scope
+
+- Multiple repo roots. `rt.repoRoots` is an array and the resolver already
+  handles several, but the question "where do your repos go" has one answer
+  at setup time. Adding roots later stays a `rt settings set`.
+- Moving repos already cloned into a previously-chosen root.
+- Changing `CANDIDATE_ROOT_NAMES`. The list is fine as a detection heuristic;
+  the defect was treating a detection as a decision.

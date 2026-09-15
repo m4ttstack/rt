@@ -99,6 +99,18 @@ case "$AP" in
   *) bad "mattstack.appPath is not the canonical path (wanted /Applications/mattstack.app): $AP";;
 esac
 
+# repos.root: renders only when a team is being joined or a team on this
+# machine already tracks repos, so it is absent in headless and no-team runs.
+# drive-setup.sh answers it before Continue when it runs at all; absence here
+# is a stated pass, not a failure.
+JQ_ROOT=/Applications/mattstack.app/Contents/Helpers/jq
+ROOT_STATUS=$([ -x "$JQ_ROOT" ] && rt setup status --json 2>/dev/null | tail -1 | "$JQ_ROOT" -r '.groups[].rows[]|select(.id=="repos.root")|.status' 2>/dev/null)
+case "$ROOT_STATUS" in
+  ready) ok "repos.root ready";;
+  "")    ok "repos.root row absent (no team tracked, or headless)";;
+  *)     bad "repos.root present but not ready: $ROOT_STATUS";;
+esac
+
 # daemon registered + running under the canonical label
 launchctl print "gui/$(id -u)/com.mattstack.daemon" > "$LOGS/launchctl.txt" 2>&1
 if grep -qE 'pid = [0-9]+' "$LOGS/launchctl.txt"; then ok "com.mattstack.daemon running (pid $(grep -oE 'pid = [0-9]+' "$LOGS/launchctl.txt" | head -1 | awk '{print $3}'))"; else bad "com.mattstack.daemon not running"; fi

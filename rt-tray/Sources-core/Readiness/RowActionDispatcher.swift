@@ -6,6 +6,7 @@ public enum DispatchedAction: Equatable, Sendable {
     case rtVerb(args: [String], stdin: Data?)
     case openURL(URL)
     case showSteps([String])
+    case chooseFolder(startAt: String?)
     case collectFields([ActionField], integration: String, alternatives: [ActionAlternative])
     case none
 }
@@ -40,6 +41,11 @@ public enum RowActionDispatcher {
         case .openURL:
             guard let s = action.url, let u = URL(string: s), u.scheme?.hasPrefix("http") == true else { return .none }
             return .openURL(u)
+        case .chooseFolder:
+            if let path = fieldValues?["root"] {
+                return .rtVerb(args: ["setup", "repo-root", "set", "--json"], stdin: json(["root": path]))
+            }
+            return .chooseFolder(startAt: action.startAt)
         case .unknown: return .none
         }
     }

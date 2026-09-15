@@ -20,6 +20,8 @@ export interface FakeProbesOpts {
   sizes?: Record<string, number>;
   /** Starting fileMode() for a path seeded via `files`... a fixture that never goes through writeFile/chmod has no other way to carry a non-default mode into a test. */
   modes?: Record<string, number>;
+  /** statPath() answers, keyed by the queried path. A path absent from this map reads as null (cannot be stat'd), same as the real probe for anything missing. */
+  statPaths?: Record<string, { isDirectory: boolean; writable: boolean } | null>;
   exec?: ExecScript;
   fetch?: Probes["fetch"];
   tray?: TrayClient;
@@ -86,6 +88,15 @@ export function fakeProbes(opts: FakeProbesOpts = {}): Probes & {
 
     exists(path) {
       return resolveThroughLinks(path) !== null;
+    },
+
+    statPath(path) {
+      // A dir seeded via `dirs` must stat like the directory it claims to be,
+      // or `exists` and `statPath` answer differently about the same fixture
+      // and a test author debugs the fake instead of the code.
+      if (opts.statPaths && path in opts.statPaths) return opts.statPaths[path]!;
+      if (path in dirs) return { isDirectory: true, writable: true };
+      return null;
     },
 
     fileSize(path) {
