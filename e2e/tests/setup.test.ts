@@ -28,6 +28,20 @@ describe("rt setup verbs (e2e, no live app/daemon)", () => {
     return rt(args, { home, env: { RT_APP_SOCKET: "/nonexistent.sock" } });
   }
 
+  // The exact --json envelope is e2e's job (bun run test never sees the
+  // compiled verbatim shape). A bad path exercises the full parse-validate-
+  // envelope path without writing anything.
+  test("setup repo-root set --json: a bad path exits 2 with the error envelope", async () => {
+    const res = await run(["setup", "repo-root", "set", "/definitely/not/a/real/dir", "--json"]);
+    expect(res.exitCode).toBe(2);
+    const lines = res.stdout.trim().split("\n");
+    expect(lines).toHaveLength(1);
+    const envelope = JSON.parse(lines[0]!);
+    expect(envelope.contract).toBe(1);
+    expect(envelope.error.code).toBe("bad-path");
+    expect(envelope.error.message).toContain("does not exist");
+  });
+
   test("setup plan --json: one envelope line, contract-ordered groups, perm.fda reports no-app", async () => {
     const res = await run(["setup", "plan", "--json"]);
     expect(res.exitCode).toBe(0);

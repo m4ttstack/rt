@@ -5,7 +5,7 @@
  * the real machine.
  */
 
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync, renameSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "fs";
+import { accessSync, chmodSync, constants, existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync, renameSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 import { daemonSocketQuery, trayRequest, type DaemonResponse, type TrayClient } from "../daemon-client.ts";
@@ -22,6 +22,8 @@ export interface Probes {
   /** Never throws: a missing binary yields code 127 with stderr "ENOENT: <argv0>"; timeout yields 124. `inherit` hands the child the TTY (interactive logins) — stdout/stderr then come back empty. */
   exec(argv: string[], opts?: { cwd?: string; timeoutMs?: number; env?: Record<string, string>; input?: string; inherit?: boolean }): Promise<ExecResult>;
   exists(path: string): boolean;
+  /** isDirectory + writable-by-current-user, following symlinks; null when the path cannot be stat'd at all (missing, or unreadable). A path that cannot be stat'd is indistinguishable from one that is not there, and both mean "choose another". */
+  statPath(path: string): { isDirectory: boolean; writable: boolean } | null;
   /** Byte size, following symlinks, only for a REGULAR file (a directory, a symlink to one, or anything missing/unreadable is null) — the cheap "is this actually a file worth reading" check callers need before decoding one. */
   fileSize(path: string): number | null;
   /** The permission bits (masked to 0o777), following symlinks, only for a REGULAR file (null otherwise). Lets a rewrite carry a file's existing mode across a temp-file-plus-rename instead of the rename silently adopting the temp file's own mode. */
@@ -194,6 +196,22 @@ export function createRealProbes(): Probes {
 
     exists(path) {
       return existsSync(path);
+    },
+
+    statPath(path) {
+      let stat;
+      try {
+        stat = statSync(path);
+      } catch {
+        return null;
+      }
+      let writable = true;
+      try {
+        accessSync(path, constants.W_OK);
+      } catch {
+        writable = false;
+      }
+      return { isDirectory: stat.isDirectory(), writable };
     },
 
     fileSize(path) {

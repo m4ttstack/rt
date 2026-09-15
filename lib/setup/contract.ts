@@ -23,7 +23,9 @@ export type Action =
   | { type: "link-bundled"; label: string; tool: string }
   | { type: "steps"; label: string; steps: string[] }
   | { type: "open-url"; label: string; url: string }
-  | { type: "run"; label: string; verb: string[] };
+  | { type: "run"; label: string; verb: string[] }
+  // startAt is where the panel opens, never a value rt writes.
+  | { type: "choose-folder"; label: string; startAt: string | null };
 
 export interface Row {
   id: string;

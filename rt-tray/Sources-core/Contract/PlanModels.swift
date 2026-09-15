@@ -54,6 +54,7 @@ public enum ActionType: String, Codable, Equatable, Sendable {
     case ownerOnce = "owner-once"
     case linkBundled = "link-bundled"
     case openURL = "open-url"
+    case chooseFolder = "choose-folder"
     case unknown
     public init(from decoder: Decoder) throws {
         let raw = try decoder.singleValueContainer().decode(String.self)
@@ -104,13 +105,15 @@ public struct RowAction: Codable, Equatable, Sendable {
     public var via: String?
     public var steps: [String]?
     public var url: String?
+    public var startAt: String?
     public init(type: ActionType, label: String, target: String? = nil, which: String? = nil,
                 integration: String? = nil, fields: [ActionField]? = nil,
                 alternatives: [ActionAlternative]? = nil, verb: [String]? = nil, tool: String? = nil,
-                via: String? = nil, steps: [String]? = nil, url: String? = nil) {
+                via: String? = nil, steps: [String]? = nil, url: String? = nil, startAt: String? = nil) {
         self.type = type; self.label = label; self.target = target; self.which = which
         self.integration = integration; self.fields = fields; self.alternatives = alternatives
         self.verb = verb; self.tool = tool; self.via = via; self.steps = steps; self.url = url
+        self.startAt = startAt
     }
 }
 

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
-import { basename, join } from "path";
+import { basename, dirname, join } from "path";
 import { HELPERS_DIR, RT_BUNDLE_PATH, __test__ as bundleLayoutTest } from "../../bundle-layout.ts";
 import { getDaemonConfig } from "../../daemon-config.ts";
 import { updateRepoIndex } from "../../repo-index.ts";
@@ -875,6 +875,18 @@ describe("services B: services.register, proxy.install, deck.managed, skills.mat
       updateRepoIndex(repoName, repoDir);
       return { repoName, repoDir };
     }
+
+    // board.cwds is derived from rt.repoRoots, which settings.seed used to write at
+    // step 8. It is now the user's answer to the required repos.root row, set
+    // before Install starts. A regression here is silent: boardKeysRun logs and
+    // leaves the setting unset rather than failing.
+    test("board.keys still seeds board.cwds from a root the user chose before Install", async () => {
+      const { repoName, repoDir } = seedTrackedRepo();
+      setSetting("rt.repoRoots", [dirname(repoDir)], "machine");
+      const { ctx } = makeCtx(fakeProbes({ home }), { snapshot: { slug: "acme", integrations: {}, trackingIdentities: [`gitlab.com/acme/${repoName}`], marketplaces: [], plugins: [], remote: null } });
+      await boardKeysStep.run(ctx);
+      expect(getSetting<Record<string, string>>("board.cwds").value?.review).toBe(join(dirname(repoDir), repoName));
+    });
 
     test("never writes board.rtRepos: the board derives it from board.projects and board.gitlabHost", async () => {
       const { repoName } = seedTrackedRepo();
