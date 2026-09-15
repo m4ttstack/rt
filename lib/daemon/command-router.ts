@@ -159,7 +159,10 @@ export function buildRoutedHandlers(opts: {
         status: m.summary.status,
         worktree: m.summary.status === "running" ? (findRun(m.summary.id)?.fields.find((f) => f.key === "worktree")?.value ?? null) : null,
       })),
-      agentBySession: (sid) => getAgent(sid, opts.stateDb),
+      agentBySession: (sid) => {
+        const rec = getAgent(sid, opts.stateDb);
+        return rec?.sessionId === sid ? rec : undefined;
+      },
     }, args),
   });
   const herdHandlers = createHerdHandlers({

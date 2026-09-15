@@ -256,4 +256,23 @@ describe("gate:ask subject resolution through the real command-router wiring", (
     const row = gatesStore.get((res as any).data.id);
     expect(row?.origin?.runId).toBeUndefined();
   });
+
+  test("a sessionId that collides with an unrelated agent's own id is not resolved to that agent", async () => {
+    runsRoot = mkdtempSync(join(tmpdir(), "rt-gate-owner-router-"));
+    process.env.RT_RUNS_ROOT = runsRoot;
+
+    const { handlers, stateDb } = buildHandlers();
+    const otherAgentId = newAgentId();
+    insertAgent({
+      id: otherAgentId, repo: "widget-forge", cwd: "/wt/other", provider: "claude",
+      surface: "headless", sessionId: "s-real-owner", createdAt: Date.now(),
+    }, stateDb);
+
+    // getAgent's `WHERE id = ? OR session_id = ?` would match this row on
+    // `id = otherAgentId` alone; agentBySession must refuse it since its
+    // sessionId is "s-real-owner", not the id string itself, so resolution
+    // falls through to a refusal rather than silently naming the wrong agent.
+    const res = await handlers["gate:ask"]!({ sessionId: otherAgentId, questions: Q });
+    expect((res as any).ok).toBe(false);
+  });
 });
