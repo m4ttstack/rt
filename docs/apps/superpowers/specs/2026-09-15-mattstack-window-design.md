@@ -33,9 +33,9 @@ Push notifications stay with rt; the shell does nothing there.
 
 ## 1. Shell
 
-A single titlebar-less `NSWindow` with traffic lights inline at the top of
-the rail; content is full-bleed. One window only, no tabs. Frame persists
-across launches.
+A single titlebar-less `NSWindow` with the traffic lights inline in a thin
+top tab bar; content is full-bleed below the bar with no other chrome. One
+window only. Frame persists across launches.
 
 Activation policy: the app is `LSUIElement` today. While the window is open
 it flips to `.regular` (Dock icon, Cmd-Tab entry); when the window closes it
@@ -43,21 +43,34 @@ returns to `.accessory`. Entry points: an "Open mattstack" tray menu item, a
 global summon/toggle hotkey (default ctrl-opt-cmd-M, configurable), and URL
 opens (sections 4 and 7).
 
-## 2. Rail
+## 2. Top tab bar
+
+(Replaced the original left icon rail on 2026-09-15: rendering apps that
+carry their own left rail, chat and console, inside a shell rail produced a
+double rail. A top bar removes the duplication structurally. Mockup:
+`docs/design/mattstack-window/renders/window-tabs-dark.png`.)
 
 Populated from `GET https://deck.mattstack/api/apps` at window open: name,
 displayName, url, icon per app, rendered in API order. New deck apps appear
 with zero shell changes. Icons are the SVGs deck serves, loaded via
 `NSImage` (fine on the macOS 13 floor); a failed icon falls back to a
-monogram tile.
+monogram.
 
-- Active app: accent bar + full-opacity tile; inactive tiles dim to ~68%.
-- Cmd-1..Cmd-9 select by rail position; tooltips show displayName + shortcut.
-- Cmd-R reloads the active app's webview.
-- The deck tile is pinned bottom-left as a utility slot, outside the Cmd-N
-  ordering: it opens the deck board in the window and wears a green badge
-  while the deck daemon is reachable.
-- Right-click on any tile: Reload.
+- Bar: 34pt tall, fill `#0f0f15`, 1px bottom border `#313853`. System
+  traffic lights at their native position, then a 12pt gap, then the tabs.
+- Tabs: uniform 110pt wide, full bar height, square corners, 1px `#313853`
+  separators on every boundary including the first tab's leading edge.
+  Icon 18pt (corner radius 5) + lowercase displayName at 12px, left-anchored
+  with a 10pt inset and 6pt icon-label gap.
+- Active tab: fill `#1c2136`, full-color icon, label `#e3e7f6`, and a 2pt
+  accent (`#7aa2f7`) underline. Inactive: fill `#16161e`, icon fully
+  desaturated (SwiftUI `.saturation(0)`) at 75% opacity, label `#7e86ad`.
+- Cmd-1..Cmd-9 select by tab order; tooltips show displayName + shortcut;
+  right-click on a tab: Reload. Cmd-R reloads the active app's webview.
+- Deck mini at the bar's far right: 18pt deck glyph with a 7pt ok-green dot
+  at its top-right corner (2pt ring in the bar color) while the deck daemon
+  is reachable. Opens the deck board in the window; outside the Cmd-N
+  ordering.
 
 ## 3. Webviews
 

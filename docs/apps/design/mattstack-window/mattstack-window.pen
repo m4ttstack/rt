@@ -27,7 +27,7 @@
           "type": "frame",
           "id": "SaemY",
           "name": "Rail",
-          "width": 68,
+          "width": 64,
           "height": "fill_container",
           "fill": "$rail",
           "stroke": "$soft",
@@ -80,7 +80,7 @@
               "id": "M4mdPb",
               "name": "tl-gap",
               "width": 10,
-              "height": 26
+              "height": 18
             },
             {
               "type": "frame",
@@ -88,7 +88,7 @@
               "name": "App Icons",
               "width": "fill_container",
               "layout": "vertical",
-              "gap": 14,
+              "gap": 10,
               "alignItems": "center",
               "children": [
                 {
@@ -96,24 +96,110 @@
                   "id": "BYGlU",
                   "name": "app · board",
                   "width": "fill_container",
-                  "height": 44,
+                  "height": 36,
                   "layout": "none",
                   "children": [
                     {
                       "type": "frame",
                       "id": "c3HbJ",
-                      "x": 15,
-                      "y": 3,
+                      "x": 18,
+                      "y": 4,
                       "name": "tile",
-                      "width": 38,
-                      "height": 38,
+                      "opacity": 0.75,
+                      "width": 28,
+                      "height": 28,
                       "fill": {
                         "type": "image",
                         "enabled": true,
                         "url": "icons/board.png",
                         "mode": "fill"
                       },
-                      "cornerRadius": 9
+                      "cornerRadius": 7,
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "cornerRadius": 7,
+                          "id": "Odew9",
+                          "name": "desat",
+                          "fill": {
+                            "type": "color",
+                            "color": "#808080",
+                            "enabled": true,
+                            "blendMode": "saturation"
+                          },
+                          "width": 28,
+                          "height": 28
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "D7I9bB",
+                  "name": "app · boxscore",
+                  "width": "fill_container",
+                  "height": 36,
+                  "layout": "none",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "h2AUM",
+                      "x": 18,
+                      "y": 4,
+                      "name": "tile",
+                      "opacity": 0.75,
+                      "width": 28,
+                      "height": 28,
+                      "fill": {
+                        "type": "image",
+                        "enabled": true,
+                        "url": "icons/boxscore.png",
+                        "mode": "fill"
+                      },
+                      "cornerRadius": 7,
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "cornerRadius": 7,
+                          "id": "mXG4R",
+                          "name": "desat",
+                          "fill": {
+                            "type": "color",
+                            "color": "#808080",
+                            "enabled": true,
+                            "blendMode": "saturation"
+                          },
+                          "width": 28,
+                          "height": 28
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "f0miOV",
+                  "name": "app · chat",
+                  "width": "fill_container",
+                  "height": 36,
+                  "layout": "none",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "t2kZu",
+                      "x": 18,
+                      "y": 4,
+                      "name": "tile",
+                      "width": 28,
+                      "height": 28,
+                      "fill": {
+                        "type": "image",
+                        "enabled": true,
+                        "url": "icons/chat.png",
+                        "mode": "fill"
+                      },
+                      "cornerRadius": 7
                     },
                     {
                       "type": "rectangle",
@@ -125,115 +211,11 @@
                       ],
                       "id": "T6JWU",
                       "x": 0,
-                      "y": 10,
+                      "y": 8,
                       "name": "active bar",
                       "fill": "$accent",
                       "width": 3,
-                      "height": 24
-                    }
-                  ]
-                },
-                {
-                  "type": "frame",
-                  "id": "D7I9bB",
-                  "name": "app · boxscore",
-                  "width": "fill_container",
-                  "height": 44,
-                  "layout": "none",
-                  "children": [
-                    {
-                      "type": "frame",
-                      "id": "h2AUM",
-                      "x": 15,
-                      "y": 3,
-                      "name": "tile",
-                      "opacity": 0.68,
-                      "width": 38,
-                      "height": 38,
-                      "fill": {
-                        "type": "image",
-                        "enabled": true,
-                        "url": "icons/boxscore.png",
-                        "mode": "fill"
-                      },
-                      "cornerRadius": 9
-                    }
-                  ]
-                },
-                {
-                  "type": "frame",
-                  "id": "f0miOV",
-                  "name": "app · chat",
-                  "width": "fill_container",
-                  "height": 44,
-                  "layout": "none",
-                  "children": [
-                    {
-                      "type": "frame",
-                      "id": "t2kZu",
-                      "x": 15,
-                      "y": 3,
-                      "name": "tile",
-                      "opacity": 0.68,
-                      "width": 38,
-                      "height": 38,
-                      "fill": {
-                        "type": "image",
-                        "enabled": true,
-                        "url": "icons/chat.png",
-                        "mode": "fill"
-                      },
-                      "cornerRadius": 9
-                    },
-                    {
-                      "type": "frame",
-                      "id": "YAUE8",
-                      "layoutPosition": "absolute",
-                      "x": 72,
-                      "y": 7,
-                      "name": "tooltip",
-                      "fill": "#232a47",
-                      "cornerRadius": 6,
-                      "stroke": "$border",
-                      "strokeWidth": 1,
-                      "effect": {
-                        "type": "shadow",
-                        "shadowType": "outer",
-                        "color": "#00000066",
-                        "offset": {
-                          "x": 0,
-                          "y": 4
-                        },
-                        "blur": 16
-                      },
-                      "gap": 6,
-                      "padding": [
-                        6,
-                        10
-                      ],
-                      "alignItems": "center",
-                      "children": [
-                        {
-                          "type": "text",
-                          "id": "mFPDn",
-                          "name": "tip label",
-                          "fill": "$fg",
-                          "content": "Chat",
-                          "fontFamily": "$font",
-                          "fontSize": 12,
-                          "fontWeight": "normal"
-                        },
-                        {
-                          "type": "text",
-                          "id": "GjVd4",
-                          "name": "tip key",
-                          "fill": "$muted",
-                          "content": "⌘3",
-                          "fontFamily": "$mono",
-                          "fontSize": 11,
-                          "fontWeight": "normal"
-                        }
-                      ]
+                      "height": 20
                     }
                   ]
                 },
@@ -242,25 +224,41 @@
                   "id": "k9BTLH",
                   "name": "app · console",
                   "width": "fill_container",
-                  "height": 44,
+                  "height": 36,
                   "layout": "none",
                   "children": [
                     {
                       "type": "frame",
                       "id": "EPwTH",
-                      "x": 15,
-                      "y": 3,
+                      "x": 18,
+                      "y": 4,
                       "name": "tile",
-                      "opacity": 0.68,
-                      "width": 38,
-                      "height": 38,
+                      "opacity": 0.75,
+                      "width": 28,
+                      "height": 28,
                       "fill": {
                         "type": "image",
                         "enabled": true,
                         "url": "icons/console.png",
                         "mode": "fill"
                       },
-                      "cornerRadius": 9
+                      "cornerRadius": 7,
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "cornerRadius": 7,
+                          "id": "snEhB",
+                          "name": "desat",
+                          "fill": {
+                            "type": "color",
+                            "color": "#808080",
+                            "enabled": true,
+                            "blendMode": "saturation"
+                          },
+                          "width": 28,
+                          "height": 28
+                        }
+                      ]
                     }
                   ]
                 },
@@ -269,25 +267,41 @@
                   "id": "MiJCk",
                   "name": "app · gitq",
                   "width": "fill_container",
-                  "height": 44,
+                  "height": 36,
                   "layout": "none",
                   "children": [
                     {
                       "type": "frame",
                       "id": "ZAibU",
-                      "x": 15,
-                      "y": 3,
+                      "x": 18,
+                      "y": 4,
                       "name": "tile",
-                      "opacity": 0.68,
-                      "width": 38,
-                      "height": 38,
+                      "opacity": 0.75,
+                      "width": 28,
+                      "height": 28,
                       "fill": {
                         "type": "image",
                         "enabled": true,
                         "url": "icons/gitq.png",
                         "mode": "fill"
                       },
-                      "cornerRadius": 9
+                      "cornerRadius": 7,
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "cornerRadius": 7,
+                          "id": "sGpF9",
+                          "name": "desat",
+                          "fill": {
+                            "type": "color",
+                            "color": "#808080",
+                            "enabled": true,
+                            "blendMode": "saturation"
+                          },
+                          "width": 28,
+                          "height": 28
+                        }
+                      ]
                     }
                   ]
                 }
@@ -313,8 +327,8 @@
                   "id": "V159fd",
                   "name": "deck tile",
                   "opacity": 0.8,
-                  "width": 36,
-                  "height": 36,
+                  "width": 28,
+                  "height": 28,
                   "layout": "none",
                   "children": [
                     {
@@ -323,25 +337,25 @@
                       "x": 0,
                       "y": 0,
                       "name": "deck icon",
-                      "width": 36,
-                      "height": 36,
+                      "width": 28,
+                      "height": 28,
                       "fill": {
                         "type": "image",
                         "enabled": true,
                         "url": "icons/deck.png",
                         "mode": "fill"
                       },
-                      "cornerRadius": 8
+                      "cornerRadius": 7
                     },
                     {
                       "type": "ellipse",
                       "id": "A1y9U",
-                      "x": 26,
-                      "y": 26,
+                      "x": 20,
+                      "y": 20,
                       "name": "deck ok badge",
                       "fill": "$ok",
-                      "width": 10,
-                      "height": 10,
+                      "width": 9,
+                      "height": 9,
                       "stroke": "$rail",
                       "strokeWidth": 2,
                       "strokeAlignment": "outer"
@@ -369,6 +383,7 @@
               "x": 0,
               "y": 0,
               "name": "board live",
+              "enabled": false,
               "fill": {
                 "type": "image",
                 "enabled": true,
@@ -377,6 +392,22 @@
               },
               "width": 1292,
               "height": 860
+            },
+            {
+              "type": "rectangle",
+              "id": "TFdqU",
+              "layoutPosition": "absolute",
+              "x": 0,
+              "y": 0,
+              "name": "chat live",
+              "fill": {
+                "type": "image",
+                "enabled": true,
+                "url": "screenshot-chat.mattstack.png",
+                "mode": "fill"
+              },
+              "width": 1292,
+              "height": 2065
             }
           ]
         }
@@ -387,10 +418,882 @@
       "id": "H3hqZ6",
       "x": 1500,
       "y": 100,
-      "name": "design notes",
-      "width": 360,
-      "height": 320,
-      "content": "mattstack window · native shell for deck apps\n\n· Lives in mattstack.app (rt-tray), not a new Tauri app: the bundle already owns mattstack:// and ships Sparkle updates\n· Rail is dynamic: deck /api/apps supplies name, url, icon. New apps appear without an app update\n· Active app: accent bar + full-opacity tile. Inactive tiles dimmed to 68%\n· ⌘1..⌘9 switch apps, tooltip shows name + shortcut on hover\n· Webviews: one WKWebView per visited app, all kept warm (v1). Evaluate memory later\n· mattstack://open/<app>/<path> deep-links into an app inside the window\n· Traffic lights inline in the rail: no title bar, content is full-bleed\n· deck tile bottom-left: utility slot, opens the deck board; green badge = deck daemon healthy"
+      "name": "polish spec · for approval",
+      "width": 400,
+      "height": 420,
+      "content": "APPROVED 2026-09-15: top tab bar (this artboard's sibling, CHOSEN) replaces the left rail.\n\nBar: 34pt, fill #0f0f15, 1px bottom border (soft). Lights at native position, 12pt gap, then tabs.\nTabs: uniform 110pt, full bar height, square (no radius), 1px separators (soft) incl. leading edge of first tab. Icon 18pt (corner 5) + lowercase label 12px, left-anchored, 10pt inset, 6pt gap. Active: fill #1c2136, label fg, full-color icon, 2pt accent underline. Inactive: fill #16161e, label muted, icon desaturated (.saturation(0)) at 75%.\nDeck mini: far right, 18pt glyph + 7pt ok-green dot top-right with 2pt bar-color ring. Opens deck in the window. Not part of cmd-1..9.\nContent: full-bleed below the bar, no other chrome. cmd-1..9 by tab order, cmd-R reload, tooltips + right-click reload on tabs.\nThe old left-rail artboard above is superseded, kept for history."
+    },
+    {
+      "type": "frame",
+      "id": "d0qZR",
+      "x": 100,
+      "y": 1080,
+      "name": "mattstack window · top tabs · CHOSEN",
+      "clip": true,
+      "width": 1360,
+      "height": 860,
+      "fill": "$bg",
+      "cornerRadius": 12,
+      "effect": {
+        "type": "shadow",
+        "shadowType": "outer",
+        "color": "#00000080",
+        "offset": {
+          "x": 0,
+          "y": 24
+        },
+        "blur": 70
+      },
+      "layout": "vertical",
+      "children": [
+        {
+          "type": "frame",
+          "id": "AH3Lq",
+          "name": "Top Strip",
+          "width": "fill_container",
+          "height": 34,
+          "fill": "#0f0f15",
+          "stroke": "$soft",
+          "strokeWidth": {
+            "bottom": 1
+          },
+          "strokeAlignment": "inner",
+          "padding": [
+            0,
+            14
+          ],
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "eFVsN",
+              "name": "lights",
+              "gap": 8,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "ellipse",
+                  "id": "HV9vX",
+                  "name": "light",
+                  "fill": "#ff5f57",
+                  "width": 12,
+                  "height": 12
+                },
+                {
+                  "type": "ellipse",
+                  "id": "B7Dh10",
+                  "name": "light",
+                  "fill": "#febc2e",
+                  "width": 12,
+                  "height": 12
+                },
+                {
+                  "type": "ellipse",
+                  "id": "fgX63",
+                  "name": "light",
+                  "fill": "#28c840",
+                  "width": 12,
+                  "height": 12
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "r3Zzh",
+              "name": "lights-gap",
+              "width": 12,
+              "height": 10
+            },
+            {
+              "type": "frame",
+              "id": "pFRgZ",
+              "name": "tab · board",
+              "width": 110,
+              "height": 34,
+              "fill": "#16161e",
+              "stroke": "$soft",
+              "strokeWidth": {
+                "right": 1,
+                "left": 1
+              },
+              "strokeAlignment": "inner",
+              "gap": 6,
+              "padding": [
+                0,
+                10
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "op2uY",
+                  "name": "g",
+                  "opacity": 0.75,
+                  "width": 18,
+                  "height": 18,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "icons/board.png",
+                    "mode": "fill"
+                  },
+                  "cornerRadius": 5,
+                  "children": [
+                    {
+                      "type": "rectangle",
+                      "cornerRadius": 5,
+                      "id": "K3VNPk",
+                      "name": "desat",
+                      "fill": {
+                        "type": "color",
+                        "color": "#808080",
+                        "enabled": true,
+                        "blendMode": "saturation"
+                      },
+                      "width": 18,
+                      "height": 18
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "g8XNMa",
+                  "name": "l",
+                  "fill": "$muted",
+                  "content": "board",
+                  "fontFamily": "$font",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "pMRxX",
+              "name": "tab · boxscore",
+              "width": 110,
+              "height": 34,
+              "fill": "#16161e",
+              "stroke": "$soft",
+              "strokeWidth": {
+                "right": 1
+              },
+              "strokeAlignment": "inner",
+              "gap": 6,
+              "padding": [
+                0,
+                10
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "ZaJ1z",
+                  "name": "g",
+                  "opacity": 0.75,
+                  "width": 18,
+                  "height": 18,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "icons/boxscore.png",
+                    "mode": "fill"
+                  },
+                  "cornerRadius": 5,
+                  "children": [
+                    {
+                      "type": "rectangle",
+                      "cornerRadius": 5,
+                      "id": "Hc8Rj",
+                      "name": "desat",
+                      "fill": {
+                        "type": "color",
+                        "color": "#808080",
+                        "enabled": true,
+                        "blendMode": "saturation"
+                      },
+                      "width": 18,
+                      "height": 18
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "D7Fgp7",
+                  "name": "l",
+                  "fill": "$muted",
+                  "content": "boxscore",
+                  "fontFamily": "$font",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "Od6OW",
+              "name": "tab · chat",
+              "width": 110,
+              "height": 34,
+              "fill": "#1c2136",
+              "stroke": "$soft",
+              "strokeWidth": {
+                "right": 1
+              },
+              "strokeAlignment": "inner",
+              "gap": 6,
+              "padding": [
+                0,
+                10
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "an74w",
+                  "name": "g",
+                  "width": 18,
+                  "height": 18,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "icons/chat.png",
+                    "mode": "fill"
+                  },
+                  "cornerRadius": 5
+                },
+                {
+                  "type": "text",
+                  "id": "Pg0TX",
+                  "name": "l",
+                  "fill": "$fg",
+                  "content": "chat",
+                  "fontFamily": "$font",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "fexoI",
+                  "layoutPosition": "absolute",
+                  "x": 0,
+                  "y": 32,
+                  "name": "underline",
+                  "fill": "$accent",
+                  "width": 110,
+                  "height": 2
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "z4Nkko",
+              "name": "tab · console",
+              "width": 110,
+              "height": 34,
+              "fill": "#16161e",
+              "stroke": "$soft",
+              "strokeWidth": {
+                "right": 1
+              },
+              "strokeAlignment": "inner",
+              "gap": 6,
+              "padding": [
+                0,
+                10
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "RBO7v",
+                  "name": "g",
+                  "opacity": 0.75,
+                  "width": 18,
+                  "height": 18,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "icons/console.png",
+                    "mode": "fill"
+                  },
+                  "cornerRadius": 5,
+                  "children": [
+                    {
+                      "type": "rectangle",
+                      "cornerRadius": 5,
+                      "id": "U268u",
+                      "name": "desat",
+                      "fill": {
+                        "type": "color",
+                        "color": "#808080",
+                        "enabled": true,
+                        "blendMode": "saturation"
+                      },
+                      "width": 18,
+                      "height": 18
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "C5crDK",
+                  "name": "l",
+                  "fill": "$muted",
+                  "content": "console",
+                  "fontFamily": "$font",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "YXWNp",
+              "name": "tab · gitq",
+              "width": 110,
+              "height": 34,
+              "fill": "#16161e",
+              "stroke": "$soft",
+              "strokeWidth": {
+                "right": 1
+              },
+              "strokeAlignment": "inner",
+              "gap": 6,
+              "padding": [
+                0,
+                10
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "PUsew",
+                  "name": "g",
+                  "opacity": 0.75,
+                  "width": 18,
+                  "height": 18,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "icons/gitq.png",
+                    "mode": "fill"
+                  },
+                  "cornerRadius": 5,
+                  "children": [
+                    {
+                      "type": "rectangle",
+                      "cornerRadius": 5,
+                      "id": "PUs4s",
+                      "name": "desat",
+                      "fill": {
+                        "type": "color",
+                        "color": "#808080",
+                        "enabled": true,
+                        "blendMode": "saturation"
+                      },
+                      "width": 18,
+                      "height": 18
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "MHvxs",
+                  "name": "l",
+                  "fill": "$muted",
+                  "content": "gitq",
+                  "fontFamily": "$font",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "JOJoT",
+              "name": "spacer",
+              "width": "fill_container",
+              "height": 10
+            },
+            {
+              "type": "frame",
+              "id": "GVX6B",
+              "name": "deck mini",
+              "width": 20,
+              "height": 20,
+              "layout": "none",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "h4Yca",
+                  "x": 0,
+                  "y": 2,
+                  "name": "deck glyph",
+                  "opacity": 0.9,
+                  "width": 18,
+                  "height": 18,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "icons/deck.png",
+                    "mode": "fill"
+                  },
+                  "cornerRadius": 5
+                },
+                {
+                  "type": "ellipse",
+                  "id": "iiUIc",
+                  "x": 13,
+                  "y": -1,
+                  "name": "ok",
+                  "fill": "$ok",
+                  "width": 7,
+                  "height": 7,
+                  "stroke": "#0f0f15",
+                  "strokeWidth": 2,
+                  "strokeAlignment": "outer"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "SK8Qa",
+          "name": "Content",
+          "clip": true,
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$bg",
+          "layout": "vertical",
+          "children": [
+            {
+              "type": "rectangle",
+              "id": "WccKC",
+              "layoutPosition": "absolute",
+              "x": 0,
+              "y": 0,
+              "name": "chat full-bleed",
+              "fill": {
+                "type": "image",
+                "enabled": true,
+                "url": "screenshot-chat.mattstack.png",
+                "mode": "fill"
+              },
+              "width": 1360,
+              "height": 2174
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "QK06q",
+      "x": 1550,
+      "y": 1080,
+      "name": "ALT B · no chrome, floating switcher",
+      "clip": true,
+      "width": 1360,
+      "height": 860,
+      "fill": "$bg",
+      "cornerRadius": 12,
+      "effect": {
+        "type": "shadow",
+        "shadowType": "outer",
+        "color": "#00000080",
+        "offset": {
+          "x": 0,
+          "y": 24
+        },
+        "blur": 70
+      },
+      "layout": "none",
+      "children": [
+        {
+          "type": "rectangle",
+          "id": "BwOjb",
+          "x": 0,
+          "y": 0,
+          "name": "chat full-bleed",
+          "fill": {
+            "type": "image",
+            "enabled": true,
+            "url": "screenshot-chat.mattstack.png",
+            "mode": "fill"
+          },
+          "width": 1360,
+          "height": 2174
+        },
+        {
+          "type": "frame",
+          "id": "kxxUy",
+          "x": 14,
+          "y": 14,
+          "name": "lights overlay",
+          "gap": 8,
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "ellipse",
+              "id": "U17k3Z",
+              "name": "light",
+              "fill": "#ff5f57",
+              "width": 12,
+              "height": 12
+            },
+            {
+              "type": "ellipse",
+              "id": "egJXI",
+              "name": "light",
+              "fill": "#febc2e",
+              "width": 12,
+              "height": 12
+            },
+            {
+              "type": "ellipse",
+              "id": "eC7UK",
+              "name": "light",
+              "fill": "#28c840",
+              "width": 12,
+              "height": 12
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "kd7nG",
+          "x": 16,
+          "y": 800,
+          "name": "floating switcher",
+          "width": 44,
+          "height": 44,
+          "fill": "#1c2136",
+          "cornerRadius": 12,
+          "stroke": "$border",
+          "strokeWidth": 1,
+          "effect": {
+            "type": "shadow",
+            "shadowType": "outer",
+            "color": "#00000099",
+            "offset": {
+              "x": 0,
+              "y": 6
+            },
+            "blur": 20
+          },
+          "layout": "none",
+          "children": [
+            {
+              "type": "icon",
+              "id": "OZSAv",
+              "x": 11,
+              "y": 11,
+              "name": "grid",
+              "width": 22,
+              "height": 22,
+              "icon": "layout-grid",
+              "library": "lucide",
+              "fill": "$accent"
+            },
+            {
+              "type": "ellipse",
+              "id": "Uxw7E",
+              "x": 34,
+              "y": -2,
+              "name": "ok",
+              "fill": "$ok",
+              "width": 9,
+              "height": 9,
+              "stroke": "#1c2136",
+              "strokeWidth": 2,
+              "strokeAlignment": "outer"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "jFsHQ",
+          "x": 16,
+          "y": 614,
+          "name": "switcher popover",
+          "fill": "#1c2136",
+          "cornerRadius": 12,
+          "stroke": "$border",
+          "strokeWidth": 1,
+          "effect": {
+            "type": "shadow",
+            "shadowType": "outer",
+            "color": "#00000099",
+            "offset": {
+              "x": 0,
+              "y": 10
+            },
+            "blur": 30
+          },
+          "layout": "vertical",
+          "gap": 6,
+          "padding": 10,
+          "children": [
+            {
+              "type": "frame",
+              "id": "cz28r",
+              "name": "row · board",
+              "fill": "#1c213600",
+              "cornerRadius": 8,
+              "gap": 8,
+              "padding": [
+                4,
+                8,
+                4,
+                4
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "A95HW",
+                  "name": "g",
+                  "width": 22,
+                  "height": 22,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "icons/board.png",
+                    "mode": "fill"
+                  },
+                  "cornerRadius": 6
+                },
+                {
+                  "type": "text",
+                  "id": "wwGwh",
+                  "name": "l",
+                  "fill": "$fg",
+                  "content": "Board",
+                  "fontFamily": "$font",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "noRrc",
+                  "name": "k",
+                  "fill": "$muted",
+                  "content": "⌘1",
+                  "fontFamily": "$mono",
+                  "fontSize": 10,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "a24QP",
+              "name": "row · boxscore",
+              "fill": "#1c213600",
+              "cornerRadius": 8,
+              "gap": 8,
+              "padding": [
+                4,
+                8,
+                4,
+                4
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "ehXmI",
+                  "name": "g",
+                  "width": 22,
+                  "height": 22,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "icons/boxscore.png",
+                    "mode": "fill"
+                  },
+                  "cornerRadius": 6
+                },
+                {
+                  "type": "text",
+                  "id": "DAOnm",
+                  "name": "l",
+                  "fill": "$fg",
+                  "content": "boxscore",
+                  "fontFamily": "$font",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "l0krMN",
+                  "name": "k",
+                  "fill": "$muted",
+                  "content": "⌘2",
+                  "fontFamily": "$mono",
+                  "fontSize": 10,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "aG1gp",
+              "name": "row · chat",
+              "fill": "#2c3352",
+              "cornerRadius": 8,
+              "gap": 8,
+              "padding": [
+                4,
+                8,
+                4,
+                4
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "R9xu9v",
+                  "name": "g",
+                  "width": 22,
+                  "height": 22,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "icons/chat.png",
+                    "mode": "fill"
+                  },
+                  "cornerRadius": 6
+                },
+                {
+                  "type": "text",
+                  "id": "bz4iQ",
+                  "name": "l",
+                  "fill": "$fg",
+                  "content": "Chat",
+                  "fontFamily": "$font",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "USnjB",
+                  "name": "k",
+                  "fill": "$muted",
+                  "content": "⌘3",
+                  "fontFamily": "$mono",
+                  "fontSize": 10,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "csk3H",
+              "name": "row · console",
+              "fill": "#1c213600",
+              "cornerRadius": 8,
+              "gap": 8,
+              "padding": [
+                4,
+                8,
+                4,
+                4
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "UHOj6",
+                  "name": "g",
+                  "width": 22,
+                  "height": 22,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "icons/console.png",
+                    "mode": "fill"
+                  },
+                  "cornerRadius": 6
+                },
+                {
+                  "type": "text",
+                  "id": "w5y3cX",
+                  "name": "l",
+                  "fill": "$fg",
+                  "content": "Console",
+                  "fontFamily": "$font",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "v08pDJ",
+                  "name": "k",
+                  "fill": "$muted",
+                  "content": "⌘4",
+                  "fontFamily": "$mono",
+                  "fontSize": 10,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "R9tW5",
+              "name": "row · gitq",
+              "fill": "#1c213600",
+              "cornerRadius": 8,
+              "gap": 8,
+              "padding": [
+                4,
+                8,
+                4,
+                4
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "jEeUG",
+                  "name": "g",
+                  "width": 22,
+                  "height": 22,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "icons/gitq.png",
+                    "mode": "fill"
+                  },
+                  "cornerRadius": 6
+                },
+                {
+                  "type": "text",
+                  "id": "pR2MR",
+                  "name": "l",
+                  "fill": "$fg",
+                  "content": "gitq",
+                  "fontFamily": "$font",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "BX08t",
+                  "name": "k",
+                  "fill": "$muted",
+                  "content": "⌘5",
+                  "fontFamily": "$mono",
+                  "fontSize": 10,
+                  "fontWeight": "normal"
+                }
+              ]
+            }
+          ]
+        }
+      ]
     }
   ],
   "variables": {
@@ -428,7 +1331,7 @@
     },
     "accent": {
       "type": "color",
-      "value": "#7aa2f7"
+      "value": "#7AA2F7"
     },
     "ok": {
       "type": "color",
@@ -441,6 +1344,142 @@
     "mono": {
       "type": "string",
       "value": "JetBrains Mono"
+    },
+    "b-window": {
+      "type": "color",
+      "value": "#1E1F28"
+    },
+    "b-rail": {
+      "type": "color",
+      "value": "#16171E"
+    },
+    "b-strip": {
+      "type": "color",
+      "value": "#1B1C24"
+    },
+    "b-sep": {
+      "type": "color",
+      "value": "#2A2C37"
+    },
+    "b-pill": {
+      "type": "color",
+      "value": "#2A2C37"
+    },
+    "b-pillBorder": {
+      "type": "color",
+      "value": "#3A3D4A"
+    },
+    "b-dim": {
+      "type": "color",
+      "value": "#9B9DA9"
+    },
+    "b-label": {
+      "type": "color",
+      "value": "#565F89"
+    },
+    "b-row": {
+      "type": "color",
+      "value": "#232636"
+    },
+    "a-window": {
+      "type": "color",
+      "value": "#1E1F28"
+    },
+    "a-rail": {
+      "type": "color",
+      "value": "#121319"
+    },
+    "a-strip": {
+      "type": "color",
+      "value": "#16171D"
+    },
+    "a-sep": {
+      "type": "color",
+      "value": "#454959"
+    },
+    "a-pill": {
+      "type": "color",
+      "value": "#283453"
+    },
+    "a-pillBorder": {
+      "type": "color",
+      "value": "#4E6496"
+    },
+    "a-dim": {
+      "type": "color",
+      "value": "#BABCC8"
+    },
+    "a-label": {
+      "type": "color",
+      "value": "#8C93B8"
+    },
+    "a-row": {
+      "type": "color",
+      "value": "#283453"
+    },
+    "strong": {
+      "type": "color",
+      "value": "#E6E7EB"
+    },
+    "ground": {
+      "type": "color",
+      "value": "#191A22"
+    },
+    "text": {
+      "type": "color",
+      "value": "#C0CAF5"
+    },
+    "green": {
+      "type": "color",
+      "value": "#9ECE6A"
+    },
+    "yellow": {
+      "type": "color",
+      "value": "#E0AF68"
+    },
+    "a-rule": {
+      "type": "color",
+      "value": "#2E303C"
+    },
+    "s-window": {
+      "type": "color",
+      "value": "#1E1F28"
+    },
+    "s-rail": {
+      "type": "color",
+      "value": "#0F1015"
+    },
+    "s-strip": {
+      "type": "color",
+      "value": "#14151B"
+    },
+    "s-sep": {
+      "type": "color",
+      "value": "#50556A"
+    },
+    "s-pill": {
+      "type": "color",
+      "value": "#2E3D66"
+    },
+    "s-pillBorder": {
+      "type": "color",
+      "value": "#6480C0"
+    },
+    "s-dim": {
+      "type": "color",
+      "value": "#D0D2DC"
+    },
+    "s-label": {
+      "type": "color",
+      "value": "#A3AACB"
+    },
+    "s-row": {
+      "type": "color",
+      "value": "#2E3D66"
+    },
+    "s-rule": {
+      "type": "color",
+      "value": "#363948"
     }
   },
   "fileToken": "f9200993-3c28-4d6a-9c63-d81891bc022a"
