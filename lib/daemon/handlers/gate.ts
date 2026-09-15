@@ -16,6 +16,8 @@ import { gateHints } from "../gate-push.ts";
 import type { Reconciler } from "../reconciler.ts";
 import type { AgentRecord } from "../../state/agents-store.ts";
 import type { PaneHints } from "../pane-resolve-live.ts";
+import { gatePresentation } from "../../../packages/rt-client/src/gate-presentation.ts";
+import { resolveGateSubject, type GateSubjectResult } from "../gate-subject.ts";
 
 /**
  * gate:answer's two structured rejections: a non-owner's answer and
@@ -54,7 +56,7 @@ const num = (v: unknown): number | undefined => {
   return Number.isFinite(n) ? n : undefined;
 };
 
-function isValidQuestion(q: unknown): q is GateQuestion {
+export function isValidQuestion(q: unknown): q is GateQuestion {
   const cand = q as Partial<GateQuestion> | null;
   return (
     typeof cand === "object" && cand !== null &&
@@ -306,6 +308,18 @@ async function dispatchGuarantee(row: GateRow, deps: GuaranteeDeps): Promise<voi
   else await runExecutorGuarantee(row, deps);
 }
 
+/** Annotates `handlers` below so its literal properties stay contextually typed (narrow return types like GateAnswerResult's `conflict?: true` survive). */
+type GateSiblingHandlers =
+  { "gate:open": (payload: unknown) => Promise<CommandResult<"gate:open">> }
+  & { "gate:answer": (payload: unknown) => Promise<GateAnswerResult> }
+  & { "gate:wait": (payload: unknown, signal?: AbortSignal) => Promise<CommandResult<"gate:wait">> }
+  & { "gate:list": (payload: unknown) => Promise<CommandResult<"gate:list">> }
+  & { "gate:park": (payload: unknown) => Promise<CommandResult<"gate:park">> }
+  & { "gate:close": (payload: unknown) => Promise<CommandResult<"gate:close">> }
+  & { "gate:subscribe": (payload: unknown) => Promise<CommandResult<"gate:subscribe">> }
+  & { "gate:unsubscribe": (payload: unknown) => Promise<CommandResult<"gate:unsubscribe">> }
+  & { "gate:subscriptions": (payload: unknown) => Promise<CommandResult<"gate:subscriptions">> };
+
 export function createGateHandlers(
   store: GatesStore,
   bus: EventsBus,
@@ -325,20 +339,21 @@ export function createGateHandlers(
     /** lib/state/agents-store.ts's getAgent, for the attention-gate
         "resume" route's expectation hints (see GuaranteeDeps). */
     getAgentRecord?: (agentId: string) => Pick<AgentRecord, "paneId" | "sessionId" | "cwd"> | undefined;
+    /** gate:ask's subject resolution, wired to the daemon's run/agent
+        lookups. Omitted -- most existing handler tests -- falls back to
+        explicit-subject-only resolution, since there is no session store to
+        check a run or agent against. */
+    resolveSubject?: (args: { subject?: string; sessionId?: string }) => GateSubjectResult;
   } = {},
-): { "gate:open": (payload: unknown) => Promise<CommandResult<"gate:open">> }
-  & { "gate:answer": (payload: unknown) => Promise<GateAnswerResult> }
-  & { "gate:wait": (payload: unknown, signal?: AbortSignal) => Promise<CommandResult<"gate:wait">> }
-  & { "gate:list": (payload: unknown) => Promise<CommandResult<"gate:list">> }
-  & { "gate:park": (payload: unknown) => Promise<CommandResult<"gate:park">> }
-  & { "gate:close": (payload: unknown) => Promise<CommandResult<"gate:close">> }
-  & { "gate:subscribe": (payload: unknown) => Promise<CommandResult<"gate:subscribe">> }
-  & { "gate:unsubscribe": (payload: unknown) => Promise<CommandResult<"gate:unsubscribe">> }
-  & { "gate:subscriptions": (payload: unknown) => Promise<CommandResult<"gate:subscriptions">> } {
+): GateSiblingHandlers & { "gate:ask": (payload: unknown) => Promise<CommandResult<"gate:ask">> } {
   const push = deps.push ?? noopPush;
   const log = deps.log;
   const runSpawnedBy = deps.runSpawnedBy;
   const herdShepherd = deps.herdShepherd;
+  // Explicit-subject-only fallback: the handler-only test harnesses that
+  // omit resolveSubject have no run/agent session store to check against.
+  const resolveSubject = deps.resolveSubject
+    ?? ((args: { subject?: string; sessionId?: string }) => resolveGateSubject({ runsBySession: () => [], agentBySession: () => undefined }, args));
   // Fire-and-forget: a push/fan-out failure must never fail the verb that
   // triggered it. The promise itself is not expected to reject (gate-push
   // catches and records delivery outcomes internally), but a logged catch
@@ -395,7 +410,7 @@ export function createGateHandlers(
       .catch((err) => log?.warn({ err, gateId: row.id, kind: row.kind }, "gate:answer: retry executor guarantee failed"));
   };
 
-  return {
+  const handlers: GateSiblingHandlers = {
     "gate:open": async (rawPayload: unknown) => {
       const payload = rawPayload as Commands["gate:open"]["payload"] | undefined;
       const subject = typeof payload?.subject === "string" ? payload.subject.trim() : "";
@@ -665,4 +680,52 @@ export function createGateHandlers(
       return { ok: true as const, data: { subscriptions } };
     },
   };
+
+  // Delegates to gate:open (called directly below) for validation,
+  // supersede, and push semantics rather than reimplementing any of them --
+  // this only computes what gate:open cannot derive on its own: subject,
+  // presentation, and nudge/origin.
+  const gateAsk = async (rawPayload: unknown): Promise<CommandResult<"gate:ask">> => {
+    const payload = rawPayload as Commands["gate:ask"]["payload"] | undefined;
+    const questions = payload?.questions;
+    if (!Array.isArray(questions) || questions.length === 0 || !questions.every(isValidQuestion)) {
+      return { ok: false as const, error: "invalid questions" };
+    }
+    const sessionId = typeof payload?.sessionId === "string" && payload.sessionId.trim() ? payload.sessionId.trim() : undefined;
+    const paneId = typeof payload?.paneId === "string" && payload.paneId.trim() ? payload.paneId.trim() : undefined;
+    const explicitSubject = typeof payload?.subject === "string" && payload.subject.trim() ? payload.subject.trim() : undefined;
+
+    const resolved = resolveSubject({ subject: explicitSubject, sessionId });
+    if (!resolved.ok) return { ok: false as const, error: resolved.error };
+
+    const presentation = gatePresentation({ paneId, sessionId, questions });
+
+    // Omitted rather than rejected: unlike gate:open's hard CONTEXT_CAP_BYTES
+    // reject, an oversized context here must not fail the whole ask, since
+    // the caller did not author the context string by hand.
+    let context = typeof payload?.context === "string" ? payload.context : undefined;
+    if (context !== undefined && Buffer.byteLength(context, "utf8") > CONTEXT_CAP_BYTES) context = undefined;
+
+    const origin: GateOrigin = { presentation };
+    if (paneId) origin.paneId = paneId;
+    if (resolved.subject.startsWith("run:")) origin.runId = resolved.subject.slice("run:".length);
+    if (resolved.runWorktree) origin.worktree = resolved.runWorktree;
+
+    const opened = await handlers["gate:open"]({
+      subject: resolved.subject,
+      kind: typeof payload?.kind === "string" && payload.kind.trim() ? payload.kind.trim() : "question",
+      questions,
+      ...(context !== undefined ? { context } : {}),
+      ...(paneId ? { pane: paneId } : {}),
+      ...(presentation === "form" && sessionId ? { nudge: { session: sessionId } } : {}),
+      origin,
+    });
+    if (!opened.ok) return opened;
+    return {
+      ok: true as const,
+      data: { id: opened.data.id, presentation, subject: resolved.subject, supersededId: opened.data.supersededId },
+    };
+  };
+
+  return { ...handlers, "gate:ask": gateAsk };
 }
