@@ -29,6 +29,11 @@ final class WindowNavigationDelegate: NSObject, WKNavigationDelegate, WKUIDelega
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         model?.loadFailures[appName] = true
+        // A dead app's failed load still counts as its "first navigation
+        // finishing" for the splash gate, or a dead app would hold the
+        // splash for the full 8s hard cap instead of dismissing at the
+        // normal minimum-visible time with the error overlay ready beneath.
+        model?.reportFirstNavigationFinish(appName: appName)
     }
 
     /// Clears the overlay as soon as a new attempt starts, not just on
@@ -64,18 +69,21 @@ final class WindowNavigationDelegate: NSObject, WKNavigationDelegate, WKUIDelega
     }
 
     /// target=_blank to a mattstack app route the same way as an in-page
-    /// link; target=_blank to anything else opens in the default browser.
-    /// Either way no new WKWebView is created (nil), so a "new window" link
-    /// never leaks a second webview outside the shell.
+    /// link; target=_blank to an http/https URL opens in the default
+    /// browser; anything else (about:blank, javascript:, an OAuth
+    /// window.open prelude) is dropped with no browser popup. Either way no
+    /// new WKWebView is created (nil), so a "new window" link never leaks a
+    /// second webview outside the shell.
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         guard let url = navigationAction.request.url else { return nil }
-        guard let request = OpenLink.request(fromHTTPS: url), let model = model,
-              model.app(named: request.app) != nil else {
-            NSWorkspace.shared.open(url)
+        if let request = OpenLink.request(fromHTTPS: url), let model = model, model.app(named: request.app) != nil {
+            Task { @MainActor in _ = await model.open(request) }
             return nil
         }
-        Task { @MainActor in _ = await model.open(request) }
+        if let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" {
+            NSWorkspace.shared.open(url)
+        }
         return nil
     }
 }

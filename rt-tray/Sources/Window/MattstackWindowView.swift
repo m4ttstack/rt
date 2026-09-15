@@ -63,21 +63,33 @@ private struct TopTabBar: View {
     var body: some View {
         HStack(spacing: 0) {
             Color.clear.frame(width: trafficLightZoneWidth + barLeadingGap)
-            TabSeparator()
-            ForEach(Array(model.apps.prefix(9).enumerated()), id: \.element.name) { index, app in
-                TabButton(model: model, app: app, shortcutIndex: index)
-                TabSeparator()
+            // Only the tab run scrolls -- the traffic-light spacer and deck
+            // mini stay pinned outside it -- so any number of apps degrades
+            // to a scrollable strip instead of overflowing past the window
+            // edge (rigid 110pt tabs past ~6 apps at the 900pt minimum width
+            // pushed deck mini off the trailing edge with no clipping).
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 0) {
+                    TabSeparator()
+                    ForEach(Array(model.apps.prefix(9).enumerated()), id: \.element.name) { index, app in
+                        TabButton(model: model, app: app, shortcutIndex: index)
+                        TabSeparator()
+                    }
+                    ForEach(model.apps.dropFirst(9), id: \.name) { app in
+                        TabButton(model: model, app: app, shortcutIndex: nil)
+                        TabSeparator()
+                    }
+                }
+                .frame(height: barHeight)
             }
-            ForEach(model.apps.dropFirst(9), id: \.name) { app in
-                TabButton(model: model, app: app, shortcutIndex: nil)
-                TabSeparator()
-            }
+            .frame(height: barHeight)
             Spacer(minLength: 0)
             DeckMini(model: model)
         }
         .frame(height: barHeight)
         .frame(maxWidth: .infinity)
         .background(barFill)
+        .clipped()
     }
 }
 
