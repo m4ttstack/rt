@@ -2,7 +2,7 @@
  * `settings.seed` — writes the handful of machine-scoped keys nothing else
  * seeds automatically: `mattstack.appPath` (from `ctx.appPath`, already
  * resolved through bundleRootFromExec/installedTrayAppPath by
- * createApplyContext — no path regex of our own here), and promotes a
+ * createApplyContext... no path regex of our own here), and promotes a
  * staged repo root into `rt.repoRoots`.
  *
  * The repo root is the user's own choice, made through the `repos.root`
