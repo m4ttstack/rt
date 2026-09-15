@@ -8,15 +8,12 @@ import { readProjectMRs } from "../packages/rt-client/src/index.ts";
 import { daemonQuery } from "../lib/daemon-client.ts";
 import { currentRepoIdentity, resolveRepoArg } from "../lib/repo-arg.ts";
 import { joinMrsToWorktrees } from "../lib/mr-map.ts";
+import { flagValue } from "../lib/cli-args.ts";
+import { explainError } from "./worktree.ts";
 
 interface TreeRow {
   path: string;
   branch: string | null;
-}
-
-function flagValue(args: string[], flag: string): string | undefined {
-  const i = args.indexOf(flag);
-  return i >= 0 ? args[i + 1] : undefined;
 }
 
 function fail(json: boolean, message: string): never {
@@ -34,13 +31,13 @@ export async function mrMap(args: string[]): Promise<void> {
   if (!repoName) fail(json, "no repo — pass --repo <name> or run from inside a registered repo");
 
   const [mrsRes, treesRes] = await Promise.all([
-    readProjectMRs(repoName),
+    readProjectMRs(repoName, 20_000),
     daemonQuery("worktree:list", { repoName }),
   ]);
 
   if (!mrsRes.ok || !mrsRes.data) fail(json, mrsRes.error ?? "failed to read MRs");
   if (treesRes === null) fail(json, "daemon unavailable — the rt daemon must be running to list worktrees");
-  if (!treesRes.ok) fail(json, treesRes.error ?? "failed to list worktrees");
+  if (!treesRes.ok) fail(json, explainError(treesRes.error ?? "failed to list worktrees"));
 
   const mrs = Object.values(mrsRes.data.mrs)
     .map((entry) => entry.pr)

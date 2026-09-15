@@ -1130,7 +1130,7 @@ export const TREE: Record<string, CommandNode> = {
     description: "Merge requests as rt sees them",
     subcommands: {
       map: {
-        description: "Your open MRs joined to the local worktrees holding their branches",
+        description: "Open MRs joined to the local worktrees holding their branches",
         module: "./commands/mr.ts",
         fn: "mrMap",
         omitBehavior: "list",

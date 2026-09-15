@@ -47,7 +47,7 @@ describe("joinMrsToWorktrees", () => {
     const result = joinMrsToWorktrees(mrs, trees);
 
     expect(result).toHaveLength(1);
-    expect(result[0].worktree).toBe(null);
+    expect(result[0]!.worktree).toBe(null);
   });
 
   test("one row per MR in input order", () => {
@@ -64,12 +64,12 @@ describe("joinMrsToWorktrees", () => {
     const result = joinMrsToWorktrees(mrs, trees);
 
     expect(result).toHaveLength(3);
-    expect(result[0].ref).toBe("!10");
-    expect(result[1].ref).toBe("!20");
-    expect(result[2].ref).toBe("!30");
-    expect(result[0].worktree).toBe("/path/a");
-    expect(result[1].worktree).toBe("/path/b");
-    expect(result[2].worktree).toBe(null);
+    expect(result[0]!.ref).toBe("!10");
+    expect(result[1]!.ref).toBe("!20");
+    expect(result[2]!.ref).toBe("!30");
+    expect(result[0]!.worktree).toBe("/path/a");
+    expect(result[1]!.worktree).toBe("/path/b");
+    expect(result[2]!.worktree).toBe(null);
   });
 
   test("tree with null branch never matches any MR", () => {
@@ -81,7 +81,7 @@ describe("joinMrsToWorktrees", () => {
     const result = joinMrsToWorktrees(mrs, trees);
 
     expect(result).toHaveLength(1);
-    expect(result[0].worktree).toBe(null);
+    expect(result[0]!.worktree).toBe(null);
   });
 
   test("multiple trees with same branch uses the last one", () => {
@@ -94,7 +94,7 @@ describe("joinMrsToWorktrees", () => {
     const result = joinMrsToWorktrees(mrs, trees);
 
     expect(result).toHaveLength(1);
-    expect(result[0].worktree).toBe("/second/shared");
+    expect(result[0]!.worktree).toBe("/second/shared");
   });
 
   test("empty MRs and trees", () => {
@@ -112,6 +112,6 @@ describe("joinMrsToWorktrees", () => {
     const mrs = [{ iid: 60, title: "No trees", sourceBranch: "orphan", state: "opened", pipelineStatus: null }];
     const result = joinMrsToWorktrees(mrs, []);
     expect(result).toHaveLength(1);
-    expect(result[0].worktree).toBe(null);
+    expect(result[0]!.worktree).toBe(null);
   });
 });

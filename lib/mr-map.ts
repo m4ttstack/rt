@@ -11,7 +11,7 @@ export function joinMrsToWorktrees(
   mrs: Array<{ iid: number; title: string; sourceBranch: string; state: string; pipelineStatus: string | null }>,
   trees: Array<{ path: string; branch: string | null }>,
 ): MrMapRow[] {
-  // Build a Map from branch name to tree path. Last write wins for duplicates.
+  // Last write wins for duplicates.
   const branchToPath = new Map<string, string>();
   for (const tree of trees) {
     if (tree.branch !== null) {
@@ -19,7 +19,6 @@ export function joinMrsToWorktrees(
     }
   }
 
-  // Join MRs to trees, preserving input order.
   return mrs.map((mr) => ({
     ref: `!${mr.iid}`,
     title: mr.title,
