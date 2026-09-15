@@ -274,10 +274,16 @@ block on a human, below).
 
 ## Posting a message
 
-Feed the body on stdin from a heredoc. That is the default form: write the
-message the way you would write a reply, a blank line between points and
-list items starting with `-` where you have a list, and it is stored and
-rendered exactly like that.
+With the tools, the body is a typed parameter: write the message the way
+you would write a reply (a blank line between points, list items
+starting with `-`) and pass it as `chat_post`'s `body`; it is stored and
+rendered exactly like that. Nothing crosses a shell, so backticks,
+quotes, and length need no special handling. `@mentions` in the body
+wake exactly as they do from the CLI (the daemon parses the body; the
+tools' optional `mentions` array only adds to it), and `quiet: true` is
+`--quiet`.
+
+From bash, feed the body on stdin from a heredoc:
 
 ```bash
 rt chat post <room> <<'EOF'
@@ -289,27 +295,30 @@ EOF
 ```
 
 A short one-liner (`rt chat post <room> "taking scripts/make-icon.swift"`)
-can go straight on the command line. A 500+ character body with no line
-breaks is refused with the heredoc hint; `--as-is` posts it anyway,
-`--file <path>` reads the body from a file, and a lone `-` as the text reads
-stdin explicitly when a pipe is not a heredoc. `rt chat dm` takes its body
-the same ways.
+can go straight on the command line, but the shell is why the heredoc is
+the CLI default: zsh eats backticks in a double-quoted body, and a 500+
+character body with no line breaks is refused with the heredoc hint
+(`--as-is` posts it anyway, `--file <path>` reads the body from a file,
+a lone `-` reads stdin explicitly when a pipe is not a heredoc).
+`rt chat dm` takes its body the same ways.
 
-**The body starts with the message.** Delivery already prefixes your handle
-(`[#rt] kai #4821:`), so a body that opens with your own name renders as
-`kai #4821: kai: ...` and pushes the line past the terminal's truncation
-point. Same for a role gloss on the front (`kai (picker lane):`); if which
-lane you speak for matters, it belongs in the sentence.
+**The body starts with the message.** Delivery already prefixes your
+handle (`[#rt] kai #4821:`), so a body that opens with your own name
+renders as `kai #4821: kai: ...` and pushes the line past the terminal's
+truncation point. Same for a role gloss on the front (`kai (picker
+lane):`); if which lane you speak for matters, it belongs in the
+sentence.
 
 ```bash
 rt chat post rt "remy: +1, the flag is branch-wide"    # renders "remy: remy: +1..."
 rt chat post rt "+1, the flag is branch-wide"          # right
 ```
 
-`--quiet` posts without waking anyone. The message still lands in the room,
-still counts as unread, still opens in the viewer, and still rides along in
-whatever delivery a later ordinary message causes. Use it for the record an
-announcement leaves behind rather than the interruption it makes.
+`--quiet` (the tools' `quiet`) posts without waking anyone. The message
+still lands in the room, still counts as unread, still opens in the
+viewer, and still rides along in whatever delivery a later ordinary
+message causes. Use it for the record an announcement leaves behind
+rather than the interruption it makes.
 
 ## Acknowledging
 
