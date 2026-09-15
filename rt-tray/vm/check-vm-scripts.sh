@@ -48,7 +48,7 @@ t "ax_shot skips instantly under --no-graphics"   env GUEST_RUN=/tmp/vmcheck-ax 
 # has whole-second resolution, so a 3s bound flipped pass/fail on which side
 # of the tick boundary the miss happened to land -- millisecond timing plus
 # 10s of headroom still catches a genuine hang without being a coin flip.
-t "ax_admin_auth_once returns fast with no SecurityAgent" env GUEST_RUN=/tmp/vmcheck-ax AX_APP=x bash -c 'source run/guest/ax.sh; s=$(date +%s%N); ax_admin_auth_once; rc=$?; ms=$(( ($(date +%s%N) - s) / 1000000 )); [ "$rc" -eq 1 ] && [ "$ms" -le 10000 ]'
+t "ax_admin_auth_once returns fast with no SecurityAgent" env GUEST_RUN=/tmp/vmcheck-ax AX_APP=x bash -c 'source run/guest/ax.sh; s=$SECONDS; ax_admin_auth_once; rc=$?; [ "$rc" -eq 1 ] && [ $((SECONDS-s)) -le 10 ]'
 t "ax_set_field escapes an embedded quote/backslash" env GUEST_RUN=/tmp/vmcheck-ax AX_APP=definitely-not-running bash -c 'source run/guest/ax.sh; ( ax_set_field setup.team.create.name "weird\"value\\here" ) 2>/dev/null; [ $? -eq 1 ] && ! grep -qi "script error\|Expected \|syntax error" "$AX_LOG"'
 t "ax finish-gate helpers source + fail clean against no app" env GUEST_RUN=/tmp/vmcheck-ax AX_APP=definitely-not-running bash -c 'source run/guest/ax.sh && declare -F ax_enabled ax_wait_enabled ax_wait_text ax_click_sheet_button >/dev/null && ! ax_enabled x >/dev/null 2>&1 && ! ax_wait_enabled x 1 && ! ax_wait_text "Skip the Fast Browser extension?" 1 && ! ax_click_sheet_button "Skip for now" && ! grep -qi "script error\|Expected \|syntax error" "$AX_LOG"'
 t "drive-setup.sh drives Skip for now by its wording"   bash -c 'grep -q "ax_click_sheet_button \"Skip for now\"" run/guest/drive-setup.sh && grep -q "Skip the Fast Browser extension?" run/guest/drive-setup.sh'
@@ -82,7 +82,7 @@ t "walkthrough --decline-trust refuses headless"  bash -c \
 # The declining branch must be as fast as the answering one: screen_install
 # polls this every couple of seconds for the whole install. Same host-vs-guest
 # timing note as the no-SecurityAgent check above applies here too.
-t "ax_admin_auth_once returns fast when declining" env GUEST_RUN=/tmp/vmcheck-ax AX_APP=x AX_TRUST_DECLINE=1 bash -c 'source run/guest/ax.sh; s=$(date +%s%N); ax_admin_auth_once; rc=$?; ms=$(( ($(date +%s%N) - s) / 1000000 )); [ "$rc" -eq 1 ] && [ "$ms" -le 10000 ]'
+t "ax_admin_auth_once returns fast when declining" env GUEST_RUN=/tmp/vmcheck-ax AX_APP=x AX_TRUST_DECLINE=1 bash -c 'source run/guest/ax.sh; s=$SECONDS; ax_admin_auth_once; rc=$?; [ "$rc" -eq 1 ] && [ $((SECONDS-s)) -le 10 ]'
 t "assert-installed.sh takes --expect-untrusted"  bash -c 'grep -q -- "--expect-untrusted" run/guest/assert-installed.sh'
 
 
