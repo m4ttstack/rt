@@ -37,17 +37,22 @@ final class FakeUpdater: UpdateChecking, @unchecked Sendable { var checks = 0; f
 struct FakeVersion: VersionProviding {
     func versionInfo() -> VersionInfo { VersionInfo(version: "2.8.0", build: 2008000, flavor: "dev", path: "/Applications/mattstack-dev.app") }
 }
+final class FakeWindowOpener: WindowOpening, @unchecked Sendable {
+    var handled = true
+    var seen: [String] = []
+    func open(url: String) async -> Bool { seen.append(url); return handled }
+}
 
-func makeRoutes() -> (TrayRoutes, FakePerms, FakeServices, FakePrivileged, FakeUpdater, NeedBroker) {
-    let p = FakePerms(), s = FakeServices(), pr = FakePrivileged(), u = FakeUpdater()
+func makeRoutes() -> (TrayRoutes, FakePerms, FakeServices, FakePrivileged, FakeUpdater, NeedBroker, FakeWindowOpener) {
+    let p = FakePerms(), s = FakeServices(), pr = FakePrivileged(), u = FakeUpdater(), window = FakeWindowOpener()
     let broker = NeedBroker(services: s, privileged: pr)
-    return (TrayRoutes(permissions: p, services: s, privileged: pr, needs: broker, updater: u, version: FakeVersion()), p, s, pr, u, broker)
+    return (TrayRoutes(permissions: p, services: s, privileged: pr, needs: broker, updater: u, version: FakeVersion(), window: window), p, s, pr, u, broker, window)
 }
 func json(_ body: String) -> [String: Any] { (try? JSONSerialization.jsonObject(with: Data(body.utf8))) as? [String: Any] ?? [:] }
 
 let trayRoutesChecks: [Check] = [
     Check("GET /permissions returns the contract body") { c in
-        let (r, _, _, _, _, _) = makeRoutes()
+        let (r, _, _, _, _, _, _) = makeRoutes()
         let resp = try c.requireSome(await r.handle(method: "GET", path: "/permissions", body: nil))
         c.expectEqual(resp.status, 200)
         let j = json(resp.body)
@@ -55,7 +60,7 @@ let trayRoutesChecks: [Check] = [
         c.expectEqual((j["loginItems"] as? [String: Any])?["status"] as? String, "enabled")
     },
     Check("POST /permissions/request {which} → {ok}") { c in
-        let (r, p, _, _, _, _) = makeRoutes()
+        let (r, p, _, _, _, _, _) = makeRoutes()
         let resp = try c.requireSome(await r.handle(method: "POST", path: "/permissions/request", body: Data("{\"which\":\"notifications\"}".utf8)))
         c.expectEqual(resp.status, 200)
         c.expectEqual(json(resp.body)["ok"] as? Bool, true)
@@ -64,7 +69,7 @@ let trayRoutesChecks: [Check] = [
         c.expectEqual(bad?.status, 400)
     },
     Check("GET /services, POST /services/register, POST /services/restart") { c in
-        let (r, _, s, _, _, _) = makeRoutes()
+        let (r, _, s, _, _, _, _) = makeRoutes()
         let list = try c.requireSome(await r.handle(method: "GET", path: "/services", body: nil))
         c.expect(list.body.contains("\"agents\""))
         let reg = try c.requireSome(await r.handle(method: "POST", path: "/services/register", body: Data("{\"plists\":[\"com.mattstack.daemon.plist\"]}".utf8)))
@@ -76,7 +81,7 @@ let trayRoutesChecks: [Check] = [
         c.expectEqual(s.restarted, ["com.mattstack.deck"])
     },
     Check("POST /privileged/proxy-install → NeedResult") { c in
-        let (r, _, _, pr, _, _) = makeRoutes()
+        let (r, _, _, pr, _, _, _) = makeRoutes()
         let resp = try c.requireSome(await r.handle(method: "POST", path: "/privileged/proxy-install", body: nil))
         c.expectEqual(resp.status, 200)
         c.expectEqual(json(resp.body)["ok"] as? Bool, true)
@@ -86,7 +91,7 @@ let trayRoutesChecks: [Check] = [
     // proxy-install on an installed machine is a no-op and would leave the row
     // with nothing to act on.
     Check("POST /privileged/proxy-trust → NeedResult, and the broker routes proxy-trust to it") { c in
-        let (r, _, _, pr, _, broker) = makeRoutes()
+        let (r, _, _, pr, _, broker, _) = makeRoutes()
         let resp = try c.requireSome(await r.handle(method: "POST", path: "/privileged/proxy-trust", body: nil))
         c.expectEqual(resp.status, 200)
         c.expectEqual(json(resp.body)["ok"] as? Bool, true)
@@ -113,7 +118,7 @@ let trayRoutesChecks: [Check] = [
         c.expect(!ProxyHelper.removePromptText.contains("certificate"), "got: \(ProxyHelper.removePromptText)")
     },
     Check("GET /setup/need/<id> serves the app-recorded outcome: pending → done/failed; never a POST") { c in
-        let (r, _, s, _, _, broker) = makeRoutes()
+        let (r, _, s, _, _, broker, _) = makeRoutes()
         let before = try c.requireSome(await r.handle(method: "GET", path: "/setup/need/services.register", body: nil))
         c.expectEqual(before.status, 200)
         c.expectEqual(json(before.body)["state"] as? String, "pending", "unknown/unstarted id is pending — rt keeps polling")
@@ -160,7 +165,7 @@ let trayRoutesChecks: [Check] = [
         c.expectEqual(pr.removes, 1)
     },
     Check("POST /update/check and GET /version") { c in
-        let (r, _, _, _, u, _) = makeRoutes()
+        let (r, _, _, _, u, _, _) = makeRoutes()
         let up = try c.requireSome(await r.handle(method: "POST", path: "/update/check", body: nil))
         c.expectEqual(json(up.body)["ok"] as? Bool, true)
         c.expectEqual(u.checks, 1)
@@ -172,10 +177,29 @@ let trayRoutesChecks: [Check] = [
         c.expectEqual(j["path"] as? String, "/Applications/mattstack-dev.app")
     },
     Check("unknown paths return nil so the legacy chain handles them") { c in
-        let (r, _, _, _, _, _) = makeRoutes()
+        let (r, _, _, _, _, _, _) = makeRoutes()
         let legacy = await r.handle(method: "GET", path: "/health", body: nil)
         c.expect(legacy == nil)
         let wrongMethod = await r.handle(method: "GET", path: "/update/check", body: nil)
         c.expectEqual(wrongMethod?.status, 405)
+    },
+    Check("POST /window/open forwards the url and reports handled") { c in
+        let (r, _, _, _, _, _, window) = makeRoutes()
+        window.handled = true
+        let body = Data(#"{"url":"https://board.mattstack/mr/1"}"#.utf8)
+        let res = await r.handle(method: "POST", path: "/window/open", body: body)
+        try c.requireEqual(res?.status, 200)
+        try c.requireEqual(res?.body, #"{"handled":true}"#)
+        try c.requireEqual(window.seen, ["https://board.mattstack/mr/1"])
+    },
+    Check("POST /window/open without url is a 400") { c in
+        let (r, _, _, _, _, _, _) = makeRoutes()
+        let res = await r.handle(method: "POST", path: "/window/open", body: Data("{}".utf8))
+        try c.requireEqual(res?.status, 400)
+    },
+    Check("GET /window/open is method-not-allowed") { c in
+        let (r, _, _, _, _, _, _) = makeRoutes()
+        let res = await r.handle(method: "GET", path: "/window/open", body: nil)
+        try c.requireEqual(res?.status, 405)
     },
 ]

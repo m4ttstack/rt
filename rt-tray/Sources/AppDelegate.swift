@@ -362,7 +362,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         // the listener, so no connection can arrive while `routes` is still
         // nil and fall through to the legacy 404 handler.
         TrayServer.shared.routes = TrayRoutes(permissions: permissionsService, services: servicesForNeeds, privileged: privilegedForNeeds,
-                                              needs: needBroker, updater: updater, version: self)
+                                              needs: needBroker, updater: updater, version: self, window: WindowOpeningUnavailable())
         rtClient = RtClientFactory.make()
         if let rt = rtClient {
             coordinator = SetupCoordinator(rt: rt, permissions: permissionsService, permissionProbe: permissionProbe, needs: needBroker, updater: updater)
@@ -1192,6 +1192,10 @@ private func bootVerdict(from info: SupervisionInfo, now: Date) -> (verdict: Str
         return ("boot-failed", info.lastExit?.reason ?? "unknown")
     }
     return nil
+}
+
+struct WindowOpeningUnavailable: WindowOpening {
+    func open(url: String) async -> Bool { false }
 }
 
 struct DaemonStatus {
