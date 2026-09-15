@@ -159,16 +159,21 @@ private struct DeckMini: View {
         Button {
             model.select(WindowModel.deckApp.name)
         } label: {
-            ZStack(alignment: .topTrailing) {
-                deckIcon
-                    .frame(width: deckIconSize, height: deckIconSize)
-                    .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
-                if model.catalogFresh {
-                    Circle()
-                        .fill(okGreen)
-                        .overlay(Circle().stroke(barFill, lineWidth: 2))
-                        .frame(width: 7, height: 7)
-                        .offset(x: 4, y: -4)
+            HStack(spacing: 6) {
+                Text("deck")
+                    .font(.system(size: 12))
+                    .foregroundColor(inactiveLabelColor)
+                ZStack(alignment: .topTrailing) {
+                    deckIcon
+                        .frame(width: deckIconSize, height: deckIconSize)
+                        .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                    if model.catalogFresh {
+                        Circle()
+                            .fill(okGreen)
+                            .overlay(Circle().stroke(barFill, lineWidth: 2))
+                            .frame(width: 7, height: 7)
+                            .offset(x: 4, y: -4)
+                    }
                 }
             }
         }

@@ -11,10 +11,13 @@ struct URLSessionAppListFetcher: AppListFetching {
 }
 
 /// Reports a webview's provisional-navigation failure back into the model
-/// keyed by app name. WKWebView.navigationDelegate is weak, so the model
+/// keyed by app name, and intercepts cross-app links (main-frame navigation
+/// or target=_blank) so a click inside one app's webview activates the
+/// shell's own tab for the target app instead of navigating in place.
+/// WKWebView.navigationDelegate/uiDelegate are both weak, so the model
 /// retains one of these per app for the life of the window.
 @MainActor
-final class WindowNavigationDelegate: NSObject, WKNavigationDelegate {
+final class WindowNavigationDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     private let appName: String
     private weak var model: WindowModel?
 
@@ -37,6 +40,42 @@ final class WindowNavigationDelegate: NSObject, WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         model?.loadFailures[appName] = false
         model?.reportFirstNavigationFinish(appName: appName)
+    }
+
+    /// A same-window link to a different mattstack app (e.g. deck's own app
+    /// listing) activates that app's tab in the shell instead of navigating
+    /// this webview to it. Subframe navigation, non-mattstack hosts, and
+    /// links back to this same app fall through to .allow untouched.
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
+                 decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        guard navigationAction.targetFrame?.isMainFrame == true,
+              let url = navigationAction.request.url,
+              let request = OpenLink.request(fromHTTPS: url),
+              request.app != appName,
+              let model = model,
+              model.app(named: request.app) != nil
+        else {
+            decisionHandler(.allow)
+            return
+        }
+        decisionHandler(.cancel)
+        Task { @MainActor in _ = await model.open(request) }
+    }
+
+    /// target=_blank to a mattstack app route the same way as an in-page
+    /// link; target=_blank to anything else opens in the default browser.
+    /// Either way no new WKWebView is created (nil), so a "new window" link
+    /// never leaks a second webview outside the shell.
+    func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
+                 for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+        guard let url = navigationAction.request.url else { return nil }
+        guard let request = OpenLink.request(fromHTTPS: url), let model = model,
+              model.app(named: request.app) != nil else {
+            NSWorkspace.shared.open(url)
+            return nil
+        }
+        Task { @MainActor in _ = await model.open(request) }
+        return nil
     }
 }
 
@@ -177,6 +216,7 @@ final class WindowModel: ObservableObject {
         let delegate = WindowNavigationDelegate(appName: appName, model: self)
         navigationDelegates[appName] = delegate
         view.navigationDelegate = delegate
+        view.uiDelegate = delegate
     }
 
     private func fetchIcon(url urlString: String?, into name: String) {
