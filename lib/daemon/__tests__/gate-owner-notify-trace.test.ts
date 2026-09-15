@@ -1,9 +1,6 @@
 /**
- * RT-166: characterizes the traced mechanism behind RT-162 finding 4
- * (does a worker-opened gate raise a desktop notification to the human?)
- * against TODAY's code. These pin the mechanism, not a fix; they must PASS
- * before and after any Task 2 change (Task 2 adds a THIRD case here for the
- * new skip, it does not flip these two).
+ * Pins today's owner derivation and notify-bridge filtering for a
+ * worker-opened gate (RT-162 finding 4: refuted).
  */
 import { describe, expect, test } from "bun:test";
 import { deriveOwner } from "../handlers/gate.ts";
