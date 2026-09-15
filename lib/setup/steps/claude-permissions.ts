@@ -26,7 +26,7 @@ export interface DirPermissionsOutcome {
 }
 
 /** One config dir's worth of read -> union -> write, exported so multi-dir behavior is testable without an ApplyContext. */
-export function applyBaselinePermissions(p: Pick<Probes, "readFile" | "exists" | "mkdirp" | "writeFile" | "rename" | "chmod" | "removeFile" | "fileMode">, dir: string): DirPermissionsOutcome {
+export function applyBaselinePermissions(p: Pick<Probes, "readFile" | "exists" | "mkdirp" | "writeFile" | "rename" | "chmod" | "removeFile" | "fileMode" | "readlink">, dir: string): DirPermissionsOutcome {
   const path = join(dir, "settings.json");
   const read = readClaudeSettings(p, path);
   if (!read.ok && read.reason === "unparsable") {
