@@ -18,6 +18,8 @@ export interface FakeProbesOpts {
   unreadable?: string[];
   /** Explicit fileSize() overrides, keyed by the queried path — for simulating a large binary without storing megabytes of fake content. */
   sizes?: Record<string, number>;
+  /** Starting fileMode() for a path seeded via `files`... a fixture that never goes through writeFile/chmod has no other way to carry a non-default mode into a test. */
+  modes?: Record<string, number>;
   exec?: ExecScript;
   fetch?: Probes["fetch"];
   tray?: TrayClient;
@@ -44,6 +46,11 @@ export function fakeProbes(opts: FakeProbesOpts = {}): Probes & {
   const dirs: Record<string, string[]> = { ...(opts.dirs ?? {}) };
   const links = { ...(opts.links ?? {}) };
   const unreadable = new Set(opts.unreadable ?? []);
+  // Current mode per path, separate from `calls.modes` (an audit trail of
+  // write/chmod calls a test asserts against): this tracks what fileMode()
+  // should answer right now, seeded for fixture files and carried across
+  // writeFile/chmod/rename/removeFile the way the real inode's mode would be.
+  const liveModes: Record<string, number> = { ...(opts.modes ?? {}) };
 
   const calls = {
     exec: [] as string[][],
@@ -89,9 +96,19 @@ export function fakeProbes(opts: FakeProbesOpts = {}): Probes & {
       return Buffer.byteLength(files[resolved] ?? "", "utf8");
     },
 
+    fileMode(path) {
+      const resolved = resolveThroughLinks(path);
+      if (resolved === null || resolved in dirs) return null;
+      return liveModes[resolved] ?? null;
+    },
+
     readFile(path) {
       if (unreadable.has(path)) return null;
-      return files[path] ?? null;
+      // Through `links`, like exists/fileSize/readFileBounded already do: real
+      // readFileSync follows symlinks, and a fake that does not makes a
+      // symlinked fixture read as unreadable rather than as its target.
+      const resolved = resolveThroughLinks(path);
+      return resolved === null ? null : files[resolved] ?? null;
     },
 
     // Mirrors the real bounded (4096-byte) prefix read, through `links`
@@ -123,7 +140,10 @@ export function fakeProbes(opts: FakeProbesOpts = {}): Probes & {
       const created = !(path in files);
       files[path] = content;
       calls.writes[path] = content;
-      if (mode !== undefined && created) calls.modes[path] = mode;
+      if (mode !== undefined && created) {
+        calls.modes[path] = mode;
+        liveModes[path] = mode;
+      }
       // Mirrors real writeFileSync: the new entry must show up in a
       // subsequent readDir(parent), same as mkdirp does for child dirs.
       const parent = dirname(path);
@@ -146,10 +166,15 @@ export function fakeProbes(opts: FakeProbesOpts = {}): Probes & {
         calls.modes[to] = calls.modes[from]!;
         delete calls.modes[from];
       }
+      if (liveModes[from] !== undefined) {
+        liveModes[to] = liveModes[from]!;
+        delete liveModes[from];
+      }
     },
 
     chmod(path, mode) {
       calls.modes[path] = mode;
+      liveModes[path] = mode;
     },
 
     removeFile(path) {
@@ -159,6 +184,7 @@ export function fakeProbes(opts: FakeProbesOpts = {}): Probes & {
       // assertion for the wrong reason.
       delete files[path];
       delete links[path];
+      delete liveModes[path];
       const parent = dirname(path);
       const parentList = dirs[parent];
       if (parentList) {

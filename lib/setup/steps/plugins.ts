@@ -9,7 +9,11 @@
  * of it.
  *
  * The installer only ever adds marketplaces/plugins here — it never touches
- * ~/.claude/settings.json, hooks, or ~/.claude.json.
+ * ~/.claude/settings.json, hooks, or ~/.claude.json. `claude.permissions`
+ * (`steps/claude-permissions.ts`) is the deliberate, scoped exception to the
+ * settings.json half of that rule, the same way `linear.mcp` is the scoped
+ * exception for ~/.claude.json: it touches only `permissions.allow`, and
+ * this step's own rule still holds for plugins.install itself.
  */
 
 import { join } from "path";
