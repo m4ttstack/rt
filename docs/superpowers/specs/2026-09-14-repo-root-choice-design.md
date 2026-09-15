@@ -128,9 +128,13 @@ whose only affordance is a GUI action would dead-end a CLI install. Two things
 prevent that:
 
 - The row's `detail` names the verb (`rt setup repo-root set`) as well as
-  describing the problem, so `missingRowLines` in `commands/setup.ts` prints
-  something a terminal user can act on rather than just a row title and a
-  button label they cannot click.
+  describing the problem. `rt setup status` prints row details, so that is
+  where a terminal user reads what to run. Note that `missingRowLines` (the
+  list `rt setup apply` prints when it refuses) shows only the row title and
+  the action's label, so a blocked CLI install says `- Repo folder (Choose
+  folder…)` and nothing more. That is pre-existing behavior for every required
+  row, not something this feature introduces, and widening it is a separate
+  change.
 - `rt setup repo-root set` accepts the path as an argument as well as on stdin.
   Reading stdin unconditionally would block on EOF at a real terminal, which is
   why `connectCredential` checks `isTTY()` before any stdin read. This verb
