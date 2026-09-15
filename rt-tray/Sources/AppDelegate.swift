@@ -447,6 +447,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         let model = WindowModel()
         windowModel = model
         mattstackWindow = MattstackWindowController(model: model)
+        // Warmed at launch, not at first show: a handoff POST that arrives
+        // before the window has ever opened would otherwise wait out this
+        // fetch and blow the caller's 300ms budget, which fails open and
+        // serves the page in the browser instead.
+        Task { await model.ensureCatalogLoaded() }
         let windowBridge = WindowOpenBridge()
         windowBridge.appDelegate = self
         notificationManager.appDelegate = self
