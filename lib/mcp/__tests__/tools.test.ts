@@ -28,6 +28,10 @@ describe("mcpTools", () => {
     expect(mcpTools().map((t) => t.name).sort()).toEqual([...NAMES].sort());
   });
 
+  test("roster has 15 tools", () => {
+    expect(mcpTools().length).toBe(15);
+  });
+
   test("every tool has a description and an object schema", () => {
     for (const t of mcpTools()) {
       expect(t.description.length).toBeGreaterThan(20);
