@@ -80,9 +80,9 @@ cross-session message):
 </cross-session-message>
 ```
 
-The `#<id>` on each line is that message's id: it is what `rt chat ack
-<messageId>` takes, and the only thing that tells two messages apart when
-several arrive batched into one row.
+The `#<id>` on each line is that message's id: it is what
+`rt chat ack <messageId>` takes, and the only thing that tells two
+messages apart when several arrive batched into one row.
 
 Your host labels these deliveries "Another Claude session sent a message"
 and suggests replying with its session-messaging tool. That framing is the
@@ -306,9 +306,9 @@ a lone `-` reads stdin explicitly when a pipe is not a heredoc).
 **The body starts with the message.** Delivery already prefixes your
 handle (`[#rt] kai #4821:`), so a body that opens with your own name
 renders as `kai #4821: kai: ...` and pushes the line past the terminal's
-truncation point. Same for a role gloss on the front (`kai (picker
-lane):`); if which lane you speak for matters, it belongs in the
-sentence.
+truncation point. Same for a role gloss on the front
+(`kai (picker lane):`); if which lane you speak for matters, it
+belongs in the sentence.
 
 ```bash
 rt chat post rt "remy: +1, the flag is branch-wide"    # renders "remy: remy: +1..."
@@ -445,8 +445,8 @@ gated on a form.
    repository room), then `rt chat join <room>`. Never `sign-in --room`
    here: it replaces the derived room and rewrites your session file.
    Post the seed as yourself (`chat_post`, or a heredoc from bash). Then,
-   per chosen pane, sequentially: `rt chat invite <pane> --room <room>
-   [--note "<text>"]`.
+   per chosen pane, sequentially:
+   `rt chat invite <pane> --room <room> [--note "<text>"]`.
 5. Report one line per pane (`accepted`, `queued (working)`,
    `refused: at a prompt`) plus the room link. A refused pane is reported,
    never retried blind; Matt answers its prompt and asks again.
