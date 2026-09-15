@@ -88,6 +88,12 @@ export interface GatesStore {
   /** Stamps escalatedAt once (CAS on IS NULL); a second call on an already-escalated row is a no-op. */
   markEscalated(id: string): void;
   deadPanePushes(): GateRow[];
+  /** Rows the re-delivery sweep should chase: answered, nudged, never
+      consumed, and delivered/confirmed/stuck (dead-pane stays with the
+      existing retry pass). Self-answered rows are excluded even though the
+      backfill and answer-time stamp already cover them -- belt and braces
+      per contract C14. */
+  unconsumedAnsweredPushes(): GateRow[];
   /** Deletes closed/answered rows past the retention window, floor respected.
       Returns the number of rows removed. */
   sweep(): number;
@@ -405,6 +411,9 @@ export function createGatesStore(opts: {
   const deadPaneStmt = db.prepare(
     "SELECT * FROM gates WHERE nudge IS NOT NULL AND released = 0 AND status = 'answered' AND delivery IS NOT NULL ORDER BY openedAt",
   );
+  const unconsumedAnsweredStmt = db.prepare(
+    "SELECT * FROM gates WHERE status = 'answered' AND nudge IS NOT NULL AND consumedAt IS NULL ORDER BY openedAt",
+  );
 
   const get = (id: string): GateRow | null => {
     const row = getStmt.get(id) as GateColumns | null;
@@ -698,6 +707,13 @@ export function createGatesStore(opts: {
 
     deadPanePushes() {
       return (deadPaneStmt.all() as GateColumns[]).map(rowToGate).filter((r) => r.delivery?.outcome === "dead-pane");
+    },
+
+    unconsumedAnsweredPushes() {
+      return (unconsumedAnsweredStmt.all() as GateColumns[])
+        .map(rowToGate)
+        .filter((r) => r.delivery != null && ["delivered", "confirmed", "stuck"].includes(r.delivery.outcome))
+        .filter((r) => !answeredByNudgedPane(r));
     },
 
     sweep() {

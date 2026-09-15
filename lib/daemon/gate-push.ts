@@ -108,8 +108,9 @@ export interface GatePush {
       gate:close). Same doorbell-then-Escape delivery as onAnswered -- a
       form-blocked pane otherwise never learns its gate ended. */
   onClosed(row: GateRow): Promise<void>;
-  /** Retry dead-pane nudges up to maxPaneRetries per gate. */
-  retryDeadPanes(): Promise<{ retried: number; delivered: number; gaveUp: number }>;
+  /** Retry dead-pane nudges up to maxPaneRetries per gate, plus the
+      answered-unconsumed re-delivery sweep (contract C14). */
+  retryDeadPanes(): Promise<{ retried: number; delivered: number; gaveUp: number; reNudged: number }>;
 }
 
 export function createGatePush(opts: {
@@ -138,6 +139,12 @@ export function createGatePush(opts: {
   // already give a reader.
   const consecutiveFailures = new Map<string, number>();
   const paneAttempts = new Map<string, number>();
+  // Re-delivery sweep state (contract C14), keyed by gate id, mirroring the
+  // paneAttempts idiom above: a daemon restart resets these, which just
+  // restarts a borderline row's cadence rather than losing correctness.
+  const consumeSweepCounter = new Map<string, number>();
+  const consumeAttempts = new Map<string, number>();
+  const consumeGivenUp = new Set<string>();
   let paneRetriesInFlight = false;
 
   async function safeDeliver(socketPath: string, body: string, context: Record<string, unknown>): Promise<boolean> {
@@ -150,17 +157,27 @@ export function createGatePush(opts: {
     }
   }
 
-  async function pushToPane(row: GateRow, phrase: string): Promise<void> {
+  /** The doorbell half of a pane push: resolves the nudge session, delivers
+      the wrapped phrase, and records the outcome exactly as pushToPane does.
+      No Escape injection -- the re-delivery sweep (contract C14) calls this
+      directly so a re-fired doorbell every 4th sweep never risks interrupting
+      the very consumption turn it is trying to trigger. */
+  async function pushDoorbell(row: GateRow, phrase: string): Promise<boolean> {
     const sessionId = row.nudge?.session;
-    if (!sessionId) return;
+    if (!sessionId) return false;
     const binding = resolveSession(sessionId);
     if (!binding) {
       store.markDelivery(row.id, "dead-pane");
-      return;
+      return false;
     }
     const body = wrapCrossSession("gate-facility", phrase);
     const ok = await safeDeliver(binding.socketPath, body, { gateId: row.id, sessionId });
     store.markDelivery(row.id, ok ? "delivered" : "dead-pane");
+    return ok;
+  }
+
+  async function pushToPane(row: GateRow, phrase: string): Promise<void> {
+    const ok = await pushDoorbell(row, phrase);
     // Escape only ever follows an ACCEPTED doorbell: the dismissed form's
     // next input must be the queued frame, and a dead pane has nothing
     // queued to find.
@@ -266,7 +283,7 @@ export function createGatePush(opts: {
       await pushToPane(row, GATE_CLOSED_PHRASE(row.id, row.closedReason));
     },
     async retryDeadPanes() {
-      if (paneRetriesInFlight) return { retried: 0, delivered: 0, gaveUp: 0 };
+      if (paneRetriesInFlight) return { retried: 0, delivered: 0, gaveUp: 0, reNudged: 0 };
       paneRetriesInFlight = true;
       try {
         let retried = 0, delivered = 0, gaveUp = 0;
@@ -283,7 +300,37 @@ export function createGatePush(opts: {
           else if (attempts + 1 >= maxPaneRetries) { gaveUp++; log.warn({ gateId: row.id, session: row.nudge?.session }, "gate-push: pane nudge gave up; worker was never woken"); }
         }
         for (const id of [...paneAttempts.keys()]) if (!live.has(id)) paneAttempts.delete(id);
-        return { retried, delivered, gaveUp };
+
+        // Re-delivery sweep (contract C14): doorbell-only, via pushDoorbell
+        // rather than pushToPane -- re-firing Escape on a cadence risks
+        // interrupting the very consumption turn this sweep is chasing.
+        let reNudged = 0;
+        const unconsumedLive = new Set<string>();
+        for (const row of store.unconsumedAnsweredPushes()) {
+          unconsumedLive.add(row.id);
+          const counter = (consumeSweepCounter.get(row.id) ?? 0) + 1;
+          consumeSweepCounter.set(row.id, counter);
+          if (counter % 4 !== 0) continue;
+          if (consumeGivenUp.has(row.id)) continue;
+          const consumeAttemptCount = consumeAttempts.get(row.id) ?? 0;
+          if (consumeAttemptCount < 5) {
+            consumeAttempts.set(row.id, consumeAttemptCount + 1);
+            await pushDoorbell(row, GATE_ANSWERED_PHRASE(row.id, row.answer?.by));
+            reNudged++;
+          } else {
+            consumeGivenUp.add(row.id);
+            log.warn({ gateId: row.id, session: row.nudge?.session }, "gate-push: answer never consumed; giving up");
+          }
+        }
+        for (const id of [...consumeSweepCounter.keys()]) {
+          if (!unconsumedLive.has(id)) {
+            consumeSweepCounter.delete(id);
+            consumeAttempts.delete(id);
+            consumeGivenUp.delete(id);
+          }
+        }
+
+        return { retried, delivered, gaveUp, reNudged };
       } finally {
         paneRetriesInFlight = false;
       }

@@ -517,3 +517,40 @@ test("deadPanePushes lists answered nudged rows whose last push was dead-pane an
   s.close(d, "abandoned"); s.markDelivery(d, "dead-pane");
   expect(s.deadPanePushes().map((r) => r.id)).toEqual([a]);
 });
+
+describe("unconsumedAnsweredPushes", () => {
+  test("includes delivered/confirmed/stuck answered-nudged rows with no consumedAt; excludes dead-pane, undelivered, and already-consumed rows", () => {
+    const s = store();
+    const delivered = s.open({ subject: "herd:h/j1", kind: "question", questions: qs(), nudge: { session: "w1" } }).row.id;
+    s.answer(delivered, { q: "a" }, "shepherd"); s.markDelivery(delivered, "delivered");
+
+    const confirmed = s.open({ subject: "herd:h/j2", kind: "question", questions: qs(), nudge: { session: "w2" } }).row.id;
+    s.answer(confirmed, { q: "a" }, "shepherd"); s.markDelivery(confirmed, "confirmed");
+
+    const stuck = s.open({ subject: "herd:h/j3", kind: "question", questions: qs(), nudge: { session: "w3" } }).row.id;
+    s.answer(stuck, { q: "a" }, "shepherd"); s.markDelivery(stuck, "stuck");
+
+    const deadPane = s.open({ subject: "herd:h/j4", kind: "question", questions: qs(), nudge: { session: "w4" } }).row.id;
+    s.answer(deadPane, { q: "a" }, "shepherd"); s.markDelivery(deadPane, "dead-pane");
+
+    const undelivered = s.open({ subject: "herd:h/j5", kind: "question", questions: qs(), nudge: { session: "w5" } }).row.id;
+    s.answer(undelivered, { q: "a" }, "shepherd");
+
+    const alreadyConsumed = s.open({ subject: "herd:h/j6", kind: "question", questions: qs(), nudge: { session: "w6" } }).row.id;
+    s.answer(alreadyConsumed, { q: "a" }, "shepherd"); s.markDelivery(alreadyConsumed, "delivered"); s.markConsumed(alreadyConsumed);
+
+    expect(s.unconsumedAnsweredPushes().map((r) => r.id).sort()).toEqual([confirmed, delivered, stuck].sort());
+  });
+
+  test("a self-answered row whose consumedAt is still null (forced) is excluded", () => {
+    const s = store();
+    const row = s.open({ subject: "run:r1", kind: "clarify", questions: qs(), nudge: { session: "s1" } }).row;
+    s.answer(row.id, { q: "a" }, GATE_BY_PANE, { session: "s1" });
+    s.markDelivery(row.id, "delivered");
+    // Belt-and-braces case: force consumedAt back to null as if the answer-time
+    // stamp and the backfill had both somehow missed this row.
+    s.__db!.run("UPDATE gates SET consumedAt = NULL WHERE id = ?", [row.id]);
+    expect(s.get(row.id)!.consumedAt).toBeNull();
+    expect(s.unconsumedAnsweredPushes().map((r) => r.id)).toEqual([]);
+  });
+});
