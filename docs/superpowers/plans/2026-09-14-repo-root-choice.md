@@ -35,6 +35,20 @@ Removes the behavior the whole feature exists to replace, first, so every later 
 - Consumes: nothing.
 - Produces: `detectRepoRoots(ctx: ApplyContext): string[]` stays exported-or-not exactly as it is today; Task 3 reads the same candidate list through a new pure helper rather than importing this one.
 
+**The other consumer, and why deleting this write is safe**
+
+`rt.repoRoots` has three readers besides `repos.clone`:
+
+- `lib/setup/steps/skills.ts:150` (`board.keys`, step 15) joins the root with the first tracked repo name to seed `board.cwds`
+- `lib/repo-index.ts:811` (the repo scanner)
+- `lib/setup/steps/repos.ts:88` (`repos.clone`, step 9)
+
+Today `settings.seed` at step 8 is what makes the root available to steps 9 and 15. Deleting that write without the rest of this plan would silently cost the user their `board.cwds`: `boardKeysRun` degrades honestly (`"board.cwds: no repo root or registered tracked repo yet ... left unset"`) rather than failing, so nothing goes red and the setting simply never appears.
+
+It is safe here because `repos.root` is `required`, so `canInstall` is false until the user answers it. The root is therefore set BEFORE step 1 of Install, not at step 8, and every reader sees it earlier than it does today.
+
+That makes the ordering a real dependency rather than a coincidence, so Step 5 below pins it with a test. Do not skip that step on the grounds that the other tests pass.
+
 - [ ] **Step 1: Write the two failing tests**
 
 Add to the `settings.seed` describe block. Use the fake `ApplyContext` the neighbouring tests already build; copy their construction rather than inventing one.
@@ -73,7 +87,38 @@ Update the file's header docblock: it currently says the step seeds "`rt.repoRoo
 Run: `bun test lib/setup/__tests__/steps-*.test.ts -t "settings.seed"`
 Expected: PASS. Then run the whole file: other `settings.seed` tests may assert the old behavior and must be deleted, not weakened. A test that asserted rt creates the directory is asserting the defect.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Pin the board.keys dependency**
+
+`board.keys` reads `rt.repoRoots` at step 15 and now depends on the user having
+answered `repos.root` before Install rather than on `settings.seed` writing it
+at step 8. Nothing in either file records that. Add a test to the `board.keys`
+describe block (find it with `grep -rln "board.keys" lib/setup/__tests__/`):
+
+```ts
+// board.cwds is derived from rt.repoRoots, which settings.seed used to write
+// at step 8. It is now the user's answer to the required repos.root row, set
+// before Install starts, so this step still finds it. A regression here is
+// silent: boardKeysRun logs and leaves the setting unset rather than failing.
+test("board.keys still seeds board.cwds from a root the user chose before Install", async () => {
+  setSetting("rt.repoRoots", ["/Users/t/dev"], "machine");
+  const ctx = makeCtx({ home: "/Users/t" });
+  ctx.snapshot = { ...ctx.snapshot, trackingIdentities: ["gitlab.com/acme/one"] };
+  await boardKeysStep.run(ctx);
+  expect(getSetting<Record<string, string>>("board.cwds").value?.review).toBe("/Users/t/dev/one");
+});
+```
+
+Use the real step export and the real `makeCtx` from the neighbouring tests;
+the names above follow the conventions in the other step tests but confirm
+them rather than assuming. `trackingRepoNames(ctx)` derives the repo name from
+the tracking identity, so `gitlab.com/acme/one` yields `one`.
+
+Run: `bun test lib/setup/__tests__/ -t "board.keys"`
+Expected: PASS. It passes against both the old and new code, which is correct:
+it is a characterization test guarding an ordering that this plan changes the
+reason for, not the result of.
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add lib/setup/steps/settings.ts lib/setup/__tests__/
@@ -111,35 +156,40 @@ In `lib/setup/contract.ts`, append to the `Action` union:
 
 - [ ] **Step 2: Write the failing Swift dispatcher test**
 
-In the dispatcher's test file, following the shape of the existing `connect` tests:
+**This target does NOT use XCTest.** `rt-tray/Tests/MattstackCoreChecks/RowActionChecks.swift` uses a custom harness: a top-level `let rowActionChecks: [Check]` array, each entry a `Check("name") { c in ... }` closure asserting through `c.expectEqual(...)`. Read that file before writing anything and match it exactly. XCTest syntax here compiles into nothing that runs.
+
+Append two entries to the existing `rowActionChecks` array:
 
 ```swift
-func testChooseFolderCollectsThenRuns() {
-    let action = RowAction(type: .chooseFolder, label: "Choose...", startAt: "/Users/t/code")
-
-    let first = RowActionDispatcher.dispatch(action, fieldValues: nil, alternative: nil)
-    XCTAssertEqual(first, .chooseFolder(startAt: "/Users/t/code"))
-
-    let second = RowActionDispatcher.dispatch(action, fieldValues: ["root": "/Users/t/dev"], alternative: nil)
-    guard case .rtVerb(let args, let stdin) = second else { return XCTFail("expected rtVerb") }
-    XCTAssertEqual(args, ["setup", "repo-root", "set", "--json"])
-    XCTAssertEqual(String(data: stdin!, encoding: .utf8), "{\"root\":\"\\/Users\\/t\\/dev\"}")
-}
-
-func testUnknownActionTypeStillDegradesToNone() {
-    let json = #"{"type":"some-future-action","label":"x"}"#.data(using: .utf8)!
-    let action = try! JSONDecoder().decode(RowAction.self, from: json)
-    XCTAssertEqual(action.type, .unknown)
-    XCTAssertEqual(RowActionDispatcher.dispatch(action, fieldValues: nil, alternative: nil), .none)
-}
+    Check("choose-folder: collect a directory first, then rt setup repo-root set with the path on stdin") { c in
+        let a = RowAction(type: .chooseFolder, label: "Choose folder…", startAt: "/Users/t/code")
+        c.expectEqual(RowActionDispatcher.dispatch(a, fieldValues: nil, alternative: nil), .chooseFolder(startAt: "/Users/t/code"))
+        c.expectEqual(
+            RowActionDispatcher.dispatch(a, fieldValues: ["root": "/Users/t/dev"], alternative: nil),
+            .rtVerb(args: ["setup", "repo-root", "set", "--json"], stdin: Data("{\"root\":\"\\/Users\\/t\\/dev\"}".utf8))
+        )
+    },
+    Check("an action type this build does not know still decodes to unknown and dispatches to none") { c in
+        let json = Data(#"{"type":"some-future-action","label":"x"}"#.utf8)
+        let a = try! JSONDecoder().decode(RowAction.self, from: json)
+        c.expectEqual(a.type, .unknown)
+        c.expectEqual(RowActionDispatcher.dispatch(a, fieldValues: nil, alternative: nil), .none)
+    },
 ```
 
-The second test pins forward compatibility: an older tray meeting a newer action must render a dead button, not fail the whole checklist decode. It should already pass; it is there so a later change cannot quietly remove that property.
+The escaped forward slashes in the expected stdin are not a typo: `JSONEncoder` escapes them, and the existing `connect` check in this same file asserts its payload the same way. Copy that convention rather than "fixing" it.
+
+The second check pins forward compatibility: an older tray meeting a newer action must render a dead button, not fail the whole checklist decode. It passes before the change too; it is there so a later edit cannot quietly remove the property.
 
 - [ ] **Step 3: Run and watch the first fail**
 
-Run: `cd rt-tray && swift test --filter RowActionDispatcher`
-Expected: `testChooseFolderCollectsThenRuns` FAILS to compile, because `.chooseFolder` does not exist. A compile failure is the correct RED here.
+Run: `cd rt-tray && swift run mattstack-checks choose-folder`
+
+`mattstack-checks` is an executable target (`Tests/mattstack-checks/main.swift`) that runs `allChecks` and takes an optional name filter as its first argument. It prints `checks: N passed, M failed` and exits non-zero on any failure. `swift test` is NOT the entry point for this suite.
+
+Expected: a COMPILE failure, because `.chooseFolder` does not exist on `ActionType` or `DispatchedAction` yet. A compile failure is the correct RED here.
+
+Note that `rowActionChecks` is composed into `allChecks` in `Tests/MattstackCoreChecks/AllChecks.swift`. It is already in that list, so appending to the existing array needs no registration. If you ever add a NEW `[Check]` array rather than appending, it must be added to that concatenation or it silently never runs.
 
 - [ ] **Step 4: Add the Swift types**
 
@@ -169,7 +219,7 @@ and to the `switch`, beside `case .connect`:
 
 - [ ] **Step 5: Run both and watch them pass**
 
-Run: `cd rt-tray && swift test --filter RowActionDispatcher`
+Run: `cd rt-tray && swift run mattstack-checks choose-folder`
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
@@ -626,7 +676,7 @@ Expected: 0 fail. An e2e test asserting the checklist's rows or `requiredMissing
 Run: `bun run picker:check`
 Expected: `0 violation(s)`.
 
-Run: `cd rt-tray && swift build && swift test`
+Run: `cd rt-tray && swift build && swift run mattstack-checks`
 Expected: clean.
 
 - [ ] **Step 3: No dashes**
