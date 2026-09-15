@@ -22,9 +22,14 @@ Push notifications stay with rt; the shell does nothing there.
 ## Repos touched
 
 - **repo-tools / rt-tray** (Swift, AppKit + SwiftUI): the window, rail,
-  webviews, URL scheme routes, hotkey, tray menu item, handoff receiver.
-- **mattstack-apps / apps/deck** (bun): the navigation handoff middleware
-  (section 7) and nothing else.
+  webviews, URL scheme routes, hotkey, tray menu item, handoff receiver
+  (a TrayServer route).
+- **mattstack-apps / packages/server + apps/board**: the navigation handoff
+  helper (section 7), auto-wired in `createApp` and called manually by
+  board's hand-rolled server.
+- **apps/deck: untouched.** Deck is not in the local request path (portless
+  proxies `<app>.mattstack` straight to each app's port; deck's gateway
+  only sees tunnel traffic), and the handoff needs nothing from it.
 
 ## 1. Shell
 
@@ -85,56 +90,76 @@ router, with no scheme in the link.
 
 ## 5. Resilience
 
-- The last good app list and icons are cached through the mattstack settings
-  resolver, so the rail renders when deck is down; rows for unreachable apps
-  still open and show the load error.
+- The last good app list is cached as a JSON file under `~/.mattstack/rt/`
+  (the `panel-columns.json` precedent: app-local state, not a resolver
+  setting), so the rail renders when deck is down; rows for unreachable
+  apps still open and show the load error.
 - A failed navigation shows a minimal native error state with a Retry button
   in the content area, not a blank webview.
-- Settings (resolver-registered at plan time): window frame, hotkey, cached
-  app list. Deck-side: the handoff toggle.
+- Window frame persists via `setFrameAutosaveName` (UserDefaults, app-local
+  UI state precedent). The handoff toggle is a tray Settings checkbox in
+  UserDefaults. The hotkey is fixed at ctrl-opt-cmd-M in v1;
+  configurability is deferred (a resolver key needs an rt-client registry
+  change + npm publish, not worth it yet).
 - No update mechanism of its own; the shell rides rt-tray's existing Sparkle
   releases, and the dynamic rail means app changes never require one.
 
 ## 6. Testing
 
-- rt-tray (existing Swift check style, `Tests/`): route parsing for
-  `mattstack://open` and https opens (host match, path join, unknown app),
-  app-list decode plus cache fallback, handoff open-request handling.
-- deck (bun tests, macOS CI job): handoff middleware matrix per section 7,
-  including fail-open when the tray is unreachable.
+- rt-tray (the MattstackCoreChecks harness, `swift test --package-path
+  rt-tray`): route parsing for `mattstack://open` and https opens (host
+  match, path join, unknown app), app-list decode plus cache fallback,
+  the `/window/open` TrayRoutes handler, rail model ordering.
+- packages/server (vitest, injectable tray-poster seam so tests stay
+  vitest-safe): the handoff matrix per section 7 including fail-open;
+  board's call site covered by its own suite.
 - Webview behavior (warm switching, shared cookies) is verified manually;
   the shell is deliberately too thin to warrant UI automation.
 
-## 7. Deck navigation handoff
+## 7. Navigation handoff (app-server middleware)
 
 Plain `https://<app>.mattstack/...` links clicked anywhere (Slack, terminal,
 editors) open in the window automatically, with no default-browser changes
-and no OS prompts. Deck terminates every `*.mattstack` request locally, so
-deck itself does the handoff.
+and no OS prompts.
 
-When deck receives a request that is ALL of:
+Reality check that reshaped this section: deck is NOT in the local request
+path. portless proxies `<app>.mattstack` straight to each app's own port;
+deck's gateway sees only tunnel traffic. Putting the gateway into the local
+path was rejected: it would make a dead deck daemon take down local access
+to every app. Instead the handoff lives in the apps themselves, where
+failing open is free.
+
+A `shellHandoff` helper ships in `@mattstack/app-server` (same à-la-carte
+shape as `canonicalHostRedirect`): `createApp` runs it as its first
+middleware (covers chat, console, boxscore automatically), and board calls
+it manually at the top of its hand-rolled fetch handler. When a request is
+ALL of:
 
 - method GET, top-level document navigation (`Sec-Fetch-Dest: document`,
   falling back to `Accept: text/html` when the header is absent),
-- for a registered app host on `.mattstack`, from localhost,
+- host (from `x-forwarded-host`, falling back to `host`; portless rewrites
+  `Host`) ending in `.mattstack`,
 - user agent lacking the ` mattstack-shell/` marker,
-- handoff enabled, no `deck_browser=1` cookie, no `?browser=1` param,
+- no `mattstack_browser=1` cookie, no `?browser=1` param,
 
-it does not serve the app. It POSTs `{app, path, query}` to the tray app's
-local server, and serves a tiny stub page: "opened in mattstack", with a
-"continue in browser" link that sets `deck_browser=1` and reloads. The tray
-receiver raises the window and routes exactly as `mattstack://open` would.
+the helper POSTs `{url}` to the tray's unix socket
+(`~/.mattstack/rt/tray.sock`, `POST /window/open`). If the tray answers 200
+`{"handled":true}` within 300ms, the app serves a tiny stub page ("opened
+in mattstack", with a "continue in browser" link that sets the cookie and
+reloads). Any other outcome (socket absent, timeout, non-200,
+`handled:false`) serves the app normally: fail open by construction.
 
 - Assets, XHR, and websockets never match the document check and pass
   through untouched.
-- If the tray does not answer within 300ms, deck serves the app normally
-  (fail open). Handoff is a deck setting, off by default, enabled when the
-  window ships.
-- `*.m4tthew.dev` and any non-localhost traffic are never touched, so public
-  visitors and phones are unaffected.
+- The on/off switch lives in the tray (Settings checkbox, default on): when
+  off, the tray answers `handled:false` and browsers behave as today.
+  Toggling needs no app restarts and no deck involvement.
+- `.mattstack` resolves only locally and the tray socket is per-machine, so
+  `*.m4tthew.dev` visitors and phones are structurally unaffected.
 - The `mattstack://` redirect approach was rejected: it prompts in Chrome
-  and strands a dead tab. Local IPC does neither. The exact tray endpoint
-  (TrayServer route) is fixed at plan time.
+  and strands a dead tab. Local IPC does neither.
+- gitq does not use app-server and is out of scope (gitq web may never
+  ship); its links keep opening in the browser.
 
 ## Decisions taken during brainstorming
 
@@ -143,12 +168,15 @@ receiver raises the window and routes exactly as `mattstack://open` would.
 - Rail is dynamic from deck's API; no hardcoded app list anywhere.
 - All visited webviews stay warm in v1; measure before optimizing.
 - Dock presence only while the window is open, plus a global hotkey.
-- Deck-side handoff supersedes link-router apps (Velja/Finicky) and the
+- App-server handoff supersedes link-router apps (Velja/Finicky) and the
   "mattstack.app as default browser" idea; both rejected as setup-heavy or
-  invasive.
+  invasive. Deck-gateway interception was rejected for the availability
+  regression (section 7).
 
 ## Non-goals
 
 - Notifications (rt owns them), multi-window or tabs, offline caching of app
   UIs, universal links (impossible for a local TLD), acting as default
-  browser, any in-shell rendering of app content beyond WKWebView.
+  browser, any in-shell rendering of app content beyond WKWebView, gitq
+  link interception (no app-server; gitq web may never ship), deck changes
+  of any kind.
