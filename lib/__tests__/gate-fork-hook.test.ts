@@ -36,6 +36,38 @@ function pathWithStubRt(body: string, exitCode: number): string {
   return `${dir}:${PATH_WITHOUT_RT}`;
 }
 
+/** Writes a stub `rt` executable that checks its full $* against each route's
+ *  match substring in order and prints the first hit's body (default exit 0);
+ *  no route hit prints {"ok":true,"gates":[],"cursor":0}. Returns a PATH
+ *  string with the stub ahead of the real system dirs. */
+function pathWithStubRtRouting(
+  routes: Array<{ match: string; body: string; exitCode?: number }>
+): string {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "gate-fork-hook-")));
+  let script = "#!/bin/sh\ncase \"$*\" in\n";
+
+  // route.match may contain spaces (e.g. "--subject-prefix herd:x"); quoting
+  // keeps it one case pattern word. Routes are checked in order, so list the
+  // most specific match before any broader prefix it overlaps with.
+  for (const route of routes) {
+    script += `  *"${route.match}"*)\n`;
+    script += `    cat <<'EOF'\n${route.body}\nEOF\n`;
+    script += `    exit ${route.exitCode ?? 0}\n`;
+    script += `    ;;\n`;
+  }
+
+  script += `  *)\n`;
+  script += `    cat <<'EOF'\n{"ok":true,"gates":[],"cursor":0}\nEOF\n`;
+  script += `    exit 0\n`;
+  script += `    ;;\n`;
+  script += `esac\n`;
+
+  const rtPath = join(dir, "rt");
+  writeFileSync(rtPath, script);
+  chmodSync(rtPath, 0o755);
+  return `${dir}:${PATH_WITHOUT_RT}`;
+}
+
 async function runHook(path: string, subject: string): Promise<{
   stdout: string; stderr: string; exitCode: number;
 }> {
@@ -132,5 +164,23 @@ describe("scripts/hooks/gate-fork.sh", () => {
     const { stdout, exitCode } = await runHook(path, SUBJECT);
     expect(exitCode).toBe(0);
     expect(JSON.parse(stdout.trim())).toEqual(ALLOW);
+  });
+
+  test("RT-162 finding 2: an open run-gate in this worktree currently still denies", async () => {
+    const herdSubject = "herd:hoki-x/cv-2492-attorney";
+    const runGate = JSON.stringify({
+      ok: true, cursor: 0,
+      gates: [gateRow("open", {
+        id: "g-run", subject: "run:r1", kind: "plan",
+        origin: { runId: "r1", worktree: process.cwd(), presentation: "form", paneId: "w1:p1" },
+        owner: "herd:hoki-x",
+      })],
+    });
+    const path = pathWithStubRtRouting([
+      { match: `--subject-prefix ${herdSubject}`, body: '{"ok":true,"gates":[],"cursor":0}' },
+      { match: "--subject-prefix run:", body: runGate },
+    ]);
+    const res = await runHook(path, herdSubject);
+    expect(res.stdout).toContain('"permissionDecision":"allow"');
   });
 });
