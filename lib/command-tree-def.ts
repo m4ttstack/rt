@@ -374,6 +374,22 @@ const herdSubcommands: Record<string, CommandNode> = {
       { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Emit the stop record as JSON" },
     ],
   },
+  brief: {
+    description: "Assemble a job brief from the shepherd skill's template + strategy body (paths passed explicitly)",
+    module: "./commands/herd.ts",
+    fn: "brief",
+    omitBehavior: { exempt: "agent-facing; the shepherd passes every path and fill explicitly" },
+    args: [
+      { name: "Job", flag: "--job", type: "text", placeholder: "acme-1483-facts", hint: "Job name; fills the template's job slot" },
+      { name: "Template", flag: "--template", type: "text", placeholder: "<skill-dir>/references/job-template.md", hint: "job-template.md path (from the shepherd skill's own directory)" },
+      { name: "Strategy", flag: "--strategy", type: "text", placeholder: "direct-tdd", hint: "Strategy body to copy in as ## Method (mutually exclusive with --method-file)" },
+      { name: "Strategies", flag: "--strategies", type: "text", placeholder: "<skill-dir>/parts/strategy/references/strategies.md", hint: "Strategy bodies file; required with --strategy" },
+      { name: "Method file", flag: "--method-file", type: "text", placeholder: "method.md", hint: "Domain-supplied Method block (mutually exclusive with --strategy)" },
+      { name: "Fill", flag: "--fill", type: "text", placeholder: "goal, one short paragraph=ship the widget", hint: "Fill one template slot; repeat per slot (the real template has no discrete --fence/--branch slots, see C8 note)" },
+      { name: "Out", flag: "--out", type: "text", placeholder: "brief.md", hint: "Write the brief here; omit to print it" },
+      { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Emit the brief as JSON instead of printing it plain" },
+    ],
+  },
 };
 
 const runsSubcommands: Record<string, CommandNode> = {

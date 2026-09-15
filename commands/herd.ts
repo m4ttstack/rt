@@ -16,8 +16,9 @@
  *   rt herd attend <job> --herd <id>
  *   rt herd wrap-up <id> [--close-panes] [--dispose <job>...] [--delete-job-dirs] [--archive-room]
  *   rt herd stop --hidden
+ *   rt herd brief --job <name> --template <path> [--strategy <name> --strategies <path>] [--method-file <path>] [--fill <name>=<value> ...] [--out <path>]
  */
-import { readFileSync } from "fs";
+import { readFileSync, writeFileSync } from "fs";
 import { resolve } from "path";
 import {
   herdStart, herdSpawn, herdAsk, herdMilestone, herdAnswer, herdReport, herdGates,
@@ -25,6 +26,7 @@ import {
 } from "../packages/rt-client/src/index.ts";
 import type { Commands, HerdListRow, HerdStatusData, RtResponse } from "../packages/rt-client/src/index.ts";
 import { resolveRepoArg, currentRepoIdentity } from "../lib/repo-arg.ts";
+import { assembleBrief, type BriefInputs } from "../lib/herd-brief.ts";
 
 function fail(msg: string): never {
   console.error(`rt herd: ${msg}`);
@@ -372,4 +374,61 @@ export async function stop(args: string[]): Promise<void> {
   if (!has(args, "--hidden")) fail("usage: rt herd stop --hidden");
   const data = unwrap(await herdStopHidden({}), "stop");
   emit(has(args, "--json"), data, "hidden herd session stopped");
+}
+
+const BRIEF_USAGE =
+  "usage: rt herd brief --job <name> --template <path> [--strategy <name> --strategies <path>] [--method-file <path>] [--fill <name>=<value> ...] [--out <path>]";
+
+export function buildBriefInputs(args: string[]): BriefInputs {
+  const job = flagValue(args, "--job");
+  const templatePath = flagValue(args, "--template");
+  if (!job || !templatePath) throw new Error(BRIEF_USAGE);
+
+  const strategyName = flagValue(args, "--strategy");
+  const strategiesPath = flagValue(args, "--strategies");
+  const methodFilePath = flagValue(args, "--method-file");
+  if (methodFilePath && (strategyName || strategiesPath)) {
+    throw new Error("--method-file is mutually exclusive with --strategy/--strategies");
+  }
+  if (!methodFilePath && !(strategyName && strategiesPath)) {
+    throw new Error("pass either --method-file <path>, or both --strategy <name> and --strategies <path>");
+  }
+
+  const template = readFileSync(templatePath, "utf8");
+  const method: BriefInputs["method"] = methodFilePath
+    ? { kind: "file", content: readFileSync(methodFilePath, "utf8") }
+    : { kind: "strategy", strategies: readFileSync(strategiesPath!, "utf8"), name: strategyName! };
+
+  const fills: Record<string, string> = {};
+  for (const raw of flagValues(args, "--fill")) {
+    const eq = raw.indexOf("=");
+    if (eq < 0) throw new Error(`--fill must be name=value, got: ${raw}`);
+    fills[raw.slice(0, eq)] = raw.slice(eq + 1);
+  }
+
+  return { template, job, fills, method };
+}
+
+export async function brief(args: string[]): Promise<void> {
+  const json = has(args, "--json");
+  let inputs: BriefInputs;
+  try {
+    inputs = buildBriefInputs(args);
+  } catch (e) {
+    fail((e as Error).message);
+  }
+
+  const result = assembleBrief(inputs);
+  if (!result.ok) {
+    fail(result.error);
+  }
+
+  const outPath = flagValue(args, "--out");
+  if (outPath) {
+    const resolved = resolve(outPath);
+    writeFileSync(resolved, result.brief);
+    emit(true, { ok: true, path: resolved }, "");
+    return;
+  }
+  emit(json, { ok: true, brief: result.brief }, result.brief);
 }
