@@ -7,6 +7,7 @@
  *   discussions:refresh  — force re-fetch from GitLab
  *   discussions:resolve  — toggle resolved state on a thread
  *   discussions:reply    — post a note into an existing thread
+ *   mr:comment-inline    - post a new positioned (line-anchored) discussion
  *
  * All handlers take `{ repoName, iid }` and look up the cache entry whose
  * `mr.iid` matches. Writes go through `refreshDiscussions` in
@@ -18,7 +19,7 @@
  * about its shape.
  */
 
-import { NoteMutator, type TextPosition } from "@mattstack/glance";
+import { NoteMutator, type TextPosition, type CreatedDiscussion } from "@mattstack/glance";
 import { decodeRepo } from "../identity-decoder.ts";
 import { getRepoContext, providerRequestHook } from "../freshness.ts";
 import { loadSecrets } from "../../linear.ts";
@@ -32,7 +33,7 @@ import type { Commands } from "../../../packages/rt-client/src/commands.ts";
 const log = lazyChildLogger("discussions");
 
 /** The subset of NoteMutator the inline-comment repair flow needs; test seam. */
-type CommentInlineMutator = Pick<NoteMutator, "fetchDiffRefs" | "createPositionedDiscussion" | "deleteNote">;
+export type CommentInlineMutator = Pick<NoteMutator, "fetchDiffRefs" | "createPositionedDiscussion" | "deleteNote">;
 
 /**
  * Injectable plumbing for `mr:comment-inline`. Every field defaults to the
@@ -286,6 +287,11 @@ export function createDiscussionHandlers(
           typeof line !== "number" || !Number.isInteger(line) || line <= 0) {
         return { ok: false, error: "missing repoName/iid/body/path/line" };
       }
+      const oldLineOk = p?.oldLine === undefined || (Number.isInteger(p.oldLine) && p.oldLine > 0);
+      const oldPathOk = p?.oldPath === undefined || (typeof p.oldPath === "string" && p.oldPath.length > 0);
+      if (!oldLineOk || !oldPathOk) {
+        return { ok: false, error: "invalid oldPath/oldLine" };
+      }
       const decoded = decodeRepo(payload);
       if (!decoded.ok) {
         return { ok: false, error: "repo must be a serialized identity" };
@@ -305,14 +311,22 @@ export function createDiscussionHandlers(
           return mutator.createPositionedDiscussion(repoCtx.projectId, iid, body, buildTextPosition(position, diffRefs));
         };
 
+        // Awaited (not fire-and-forget): a caller reading discussions right
+        // after this resolves must see its own just-posted comment. A refresh
+        // throw is swallowed here so it can never turn a verified post into
+        // ok:false, which would make a caller retry and duplicate the comment.
+        const succeed = async (discussionId: string, noteId: number): Promise<CommandResult<"mr:comment-inline">> => {
+          await refreshFn(repoName, iid).catch((err) =>
+            log.warn({ err, repoName, iid }, "mr:comment-inline: post-comment discussions refresh failed"));
+          return { ok: true, data: { discussionId, noteId, verified: true } };
+        };
+
         const first = await postOnce();
         const firstNote = first.notes[0];
         if (!firstNote) return { ok: false, error: "GitLab created a discussion with no notes" };
 
         if (firstNote.type === "DiffNote") {
-          void refreshFn(repoName, iid).catch((err) =>
-            log.warn({ err, repoName, iid }, "mr:comment-inline: post-comment discussions refresh failed"));
-          return { ok: true, data: { discussionId: first.id, noteId: firstNote.id, verified: true } };
+          return succeed(first.id, firstNote.id);
         }
 
         // The first note landed as a general note (GitLab silently dropped the
@@ -324,14 +338,21 @@ export function createDiscussionHandlers(
           return { ok: false, error: `could not delete stray note ${firstNote.id}: ${String(err)}` };
         }
 
-        const second = await postOnce();
+        let second: CreatedDiscussion;
+        try {
+          second = await postOnce();
+        } catch (err) {
+          return {
+            ok: false,
+            error: `first attempt degraded (note ${firstNote.id} type ${firstNote.type}, deleted); `
+              + `retry failed: ${String(err)}`,
+          };
+        }
         const secondNote = second.notes[0];
         if (!secondNote) return { ok: false, error: "GitLab created a retry discussion with no notes" };
 
         if (secondNote.type === "DiffNote") {
-          void refreshFn(repoName, iid).catch((err) =>
-            log.warn({ err, repoName, iid }, "mr:comment-inline: post-comment discussions refresh failed"));
-          return { ok: true, data: { discussionId: second.id, noteId: secondNote.id, verified: true } };
+          return succeed(second.id, secondNote.id);
         }
 
         try {
