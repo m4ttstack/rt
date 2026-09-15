@@ -47,7 +47,7 @@ async function expectExit(fn: () => Promise<void>): Promise<void> {
   }
 }
 
-describe("setupRepoRootSet — no home repo yet (stage only)", () => {
+describe("setupRepoRootSet: no home repo yet (stage only)", () => {
   test("a valid directory stages the expanded path and writes no setting", async () => {
     const dev = join(HOME, "dev");
     const probes = fakeProbes({ home: HOME, statPaths: { [dev]: DIR } });
@@ -122,7 +122,7 @@ describe("setupRepoRootSet — no home repo yet (stage only)", () => {
   });
 });
 
-describe("setupRepoRootSet — home repo already initialised (write directly)", () => {
+describe("setupRepoRootSet: home repo already initialised (write directly)", () => {
   test("the same call writes the store and stages nothing", async () => {
     const dev = join(HOME, "dev");
     const probes = fakeProbes({ home: HOME, statPaths: { [dev]: DIR }, dirs: { [GIT_DIR]: [] } });
@@ -152,7 +152,7 @@ describe("setupRepoRootSet — home repo already initialised (write directly)", 
   });
 });
 
-describe("setupRepoRootSet — no-prompt argument/TTY/stdin ordering", () => {
+describe("setupRepoRootSet: no-prompt argument/TTY/stdin ordering", () => {
   test("a TTY with no argument prints usage and does not read stdin", async () => {
     const deps = baseDeps({ isTTY: () => true, stdin: neverCalled("stdin") });
 
