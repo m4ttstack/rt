@@ -52,13 +52,37 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     private var needBroker: NeedBroker!
     private var coordinator: SetupCoordinator?
     private var rtClient: RtClient?
+    // `mattstackWindow` holds the controller strongly: `WindowModel.controller`
+    // is weak, so an unretained controller deallocates and every show()/open()
+    // silently no-ops.
+    // fileprivate, not private: `WindowOpenBridge` below reads it across the
+    // MainActor hop, and `private` would not reach a sibling top-level type.
+    fileprivate var windowModel: WindowModel?
+    private var mattstackWindow: MattstackWindowController?
+    private var hotkey: HotkeyManager?
     /// A `mattstack://join/<code>` event can arrive before `buildServices()`
     /// builds the coordinator (launch-by-link). Stashed here and drained at
     /// the end of `buildServices()`.
     private var pendingJoinCode: String?
+    /// A `mattstack://open/...` or https `*.mattstack` event can arrive
+    /// before `buildServices()` constructs `windowModel` (launch-by-link).
+    /// Stashed here and drained at the end of `buildServices()`.
+    private var pendingOpen: OpenRequest?
     /// The stand-down route is decided once, by whichever of the settings
     /// answer and its backstop gets there first.
     @MainActor private var standDownRouted = false
+    /// Set only by the tray menu's "Quit mattstack" action, immediately
+    /// before it calls `NSApp.terminate(nil)`. Every other path to
+    /// termination (Cmd-Q, Dock right-click Quit) is intercepted by
+    /// `applicationShouldTerminate` and turned into a window close instead.
+    private var quitConfirmed = false
+    /// Set by `NSWorkspace.willPowerOffNotification`, an independent signal
+    /// from the quit AppleEvent's `kAEQuitReason` parameter -- which is
+    /// documented as optional, so a genuine shutdown/restart/logout whose
+    /// event omits it would otherwise fall through to the window-close
+    /// path and visibly block the OS ("app is preventing logout/shutdown").
+    /// This backstop trusts the session itself, not just the reason code.
+    private var systemSessionEnding = false
 
     // MARK: - Lifecycle
 
@@ -91,6 +115,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     @MainActor
     private func startNormalOperation() {
         buildServices()
+        hotkey = HotkeyManager { [weak self] in Task { @MainActor in self?.windowModel?.toggleVisibility() } }
         installMainMenu()
         setupMenuBar()
         setupNotifications()
@@ -124,6 +149,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             self, selector: #selector(checkForUpdates), name: .rtCheckUpdates, object: nil)
         NotificationCenter.default.addObserver(
             self, selector: #selector(showKeyboardConflictWindow), name: .showKeyboardConflict, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(showMattstackWindow), name: .showMattstackWindow, object: nil)
+        // The process panel's own gear-menu "Quit mattstack" (distinct from
+        // the tray menu's, which calls quitFromTray() directly) posts this
+        // instead of calling NSApp.terminate itself, so it goes through the
+        // same quitConfirmed gate -- calling terminate without it would just
+        // be intercepted by applicationShouldTerminate and turned into a
+        // window close.
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(quitFromTray), name: .rtQuitMattstack, object: nil)
+
+        // Independent backstop for applicationShouldTerminate: the quit
+        // AppleEvent's kAEQuitReason is documented optional, so a real
+        // power-off/restart whose event omits it would otherwise fall
+        // through to the window-close path and visibly block the OS.
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self, selector: #selector(handleSystemSessionEnding), name: NSWorkspace.willPowerOffNotification, object: nil)
 
         // Setup / Settings surfaces, posted by the gear menu and the Done screen
         NotificationCenter.default.addObserver(self, selector: #selector(showSetupStatus), name: .rtShowSetupStatus, object: nil)
@@ -338,6 +380,51 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         }
     }
 
+    /// Dock icon click with the last window closed: AppKit sends this instead
+    /// of reopening anything on its own once the app has no windows. `flag`
+    /// is true when a window is already visible, in which case the default
+    /// system behavior (raise it) is left alone.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            Task { @MainActor in
+                // `windowModel.controller` is a weak back-reference; fall
+                // back to the strongly-held `mattstackWindow` ivar if it's
+                // ever nil so a Dock click can't silently no-op.
+                if let controller = self.windowModel?.controller {
+                    controller.show()
+                } else {
+                    self.mattstackWindow?.show()
+                }
+            }
+        }
+        return true
+    }
+
+    /// Dock-first quit interception (tray-and-quit spec, 2026-09-15): the
+    /// tray menu's "Quit mattstack" is the only real quit (`quitConfirmed`).
+    /// Every other path -- Cmd-Q with the window key, Dock right-click Quit
+    /// -- closes the window instead (dropping the app back to `.accessory`
+    /// via the existing `windowWillClose`) and cancels the termination, so
+    /// daemon supervision never dies just because the window did. System
+    /// shutdown/restart/logout are read from the quit AppleEvent's reason
+    /// and always honored: this interception must never block the OS.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if quitConfirmed || systemSessionEnding { return .terminateNow }
+        let reasonCode = NSAppleEventManager.shared().currentAppleEvent?
+            .paramDescriptor(forKeyword: AEKeyword(kAEQuitReason))?.typeCodeValue
+        if QuitReason.isSystemInitiated(reasonCode: reasonCode) {
+            return .terminateNow
+        }
+        Task { @MainActor in
+            if let controller = self.windowModel?.controller {
+                controller.close()
+            } else {
+                self.mattstackWindow?.close()
+            }
+        }
+        return .terminateCancel
+    }
+
     @MainActor
     private func buildServices() {
         permissionsService = PermissionsService(bundleId: Bundle.main.bundleIdentifier ?? "com.mattstack.app",
@@ -357,12 +444,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         let permissionProbe: PermissionProbing? = nil
         #endif
         needBroker = NeedBroker(services: servicesForNeeds, privileged: privilegedForNeeds)
+        let model = WindowModel()
+        windowModel = model
+        mattstackWindow = MattstackWindowController(model: model)
+        let windowBridge = WindowOpenBridge()
+        windowBridge.appDelegate = self
+        notificationManager.appDelegate = self
         // Assigned here, in buildServices(), and not in setupTrayServer():
         // applicationDidFinishLaunching runs buildServices() before it starts
         // the listener, so no connection can arrive while `routes` is still
         // nil and fall through to the legacy 404 handler.
         TrayServer.shared.routes = TrayRoutes(permissions: permissionsService, services: servicesForNeeds, privileged: privilegedForNeeds,
-                                              needs: needBroker, updater: updater, version: self)
+                                              needs: needBroker, updater: updater, version: self, window: windowBridge)
         rtClient = RtClientFactory.make()
         if let rt = rtClient {
             coordinator = SetupCoordinator(rt: rt, permissions: permissionsService, permissionProbe: permissionProbe, needs: needBroker, updater: updater)
@@ -373,6 +466,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         } else if pendingJoinCode != nil {
             pendingJoinCode = nil
             TrayLog.warn("mattstack://join link received but rt could not be resolved; dropping")
+        }
+        if let request = pendingOpen {
+            pendingOpen = nil
+            Task { @MainActor in
+                let opened = await model.open(request)
+                if !opened {
+                    model.controller?.show()
+                    TrayLog.warn("unknown app", ["app": request.app])
+                }
+            }
         }
         updaterObservation = updater.observe(\.canCheckForUpdates, options: [.initial, .new]) { u, _ in
             DispatchQueue.main.async { TrayState.shared.canCheckForUpdates = u.canCheckForUpdates }
@@ -427,25 +530,82 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     }
 
     @objc private func handleGetURL(_ event: NSAppleEventDescriptor, with reply: NSAppleEventDescriptor) {
-        guard let s = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue, let url = URL(string: s) else { return }
-        guard let code = JoinLink.code(from: url) else {
-            // Never the raw string: an unrecognized URL can carry a
-            // malformed invite code in its path.
-            TrayLog.warn("ignored URL", ["scheme": url.scheme ?? "", "host": url.host ?? ""])
+        guard let s = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
+              let url = URL(string: s) else { return }
+        if let code = JoinLink.code(from: url) {
+            Task { @MainActor in
+                guard let coordinator else {
+                    // Launch-by-link: the kAEGetURL event can arrive before
+                    // buildServices() constructs the coordinator. buildServices()
+                    // drains this once it exists.
+                    pendingJoinCode = code
+                    return
+                }
+                coordinator.handleJoin(code: code)
+            }
             return
         }
-        Task { @MainActor in
-            guard let coordinator else {
-                // Launch-by-link: the kAEGetURL event can arrive before
-                // buildServices() constructs the coordinator. buildServices()
-                // drains this once it exists.
-                pendingJoinCode = code
+        if let request = OpenLink.request(from: url) ?? OpenLink.request(fromHTTPS: url) {
+            Task { @MainActor in
+                guard let windowModel else { pendingOpen = request; return }
+                let opened = await windowModel.open(request)
+                if !opened {
+                    windowModel.controller?.show()
+                    TrayLog.warn("unknown app", ["app": request.app])
+                }
+            }
+            return
+        }
+        if url.scheme == "https" || url.scheme == "http" {
+            // Delivered an https URL we don't own (a router misfire): punt to
+            // the default browser rather than swallowing it. Loop invariant:
+            // never forward to whichever app macOS would hand this URL back
+            // to -- registering as an https/http handler means that app can
+            // be us (set as default browser, or an over-broad router rule),
+            // and forwarding to ourselves would re-enter this same handler.
+            if NSWorkspace.shared.urlForApplication(toOpen: url) == Bundle.main.bundleURL {
+                TrayLog.warn("dropped https URL that would route back to mattstack", ["scheme": url.scheme ?? "", "host": url.host ?? ""])
                 return
             }
-            coordinator.handleJoin(code: code)
+            NSWorkspace.shared.open(url)
+            return
+        }
+        // Never the raw string: an unrecognized URL can carry a malformed invite code in its path.
+        TrayLog.warn("ignored URL", ["scheme": url.scheme ?? "", "host": url.host ?? ""])
+    }
+
+    /// NotificationManager's click handler calls this for a URL that parsed
+    /// as a mattstack app link -- same routing as handleGetURL's open branch
+    /// above (the pendingOpen queue included, for the same launch-by-link
+    /// race, even though a notification click realistically can't arrive
+    /// before buildServices() since nothing can fire a notification before
+    /// setupNotifications() runs there too).
+    func routeNotificationOpen(_ request: OpenRequest) {
+        Task { @MainActor in
+            guard let windowModel else { pendingOpen = request; return }
+            let opened = await windowModel.open(request)
+            if !opened {
+                windowModel.controller?.show()
+                TrayLog.warn("unknown app", ["app": request.app])
+            }
         }
     }
 
+    /// The tray menu's and gear menu's "Open mattstack" both post
+    /// `.showMattstackWindow` and land here: always show(), never toggle --
+    /// toggling is reserved for the global hotkey alone, or "Open mattstack"
+    /// would sometimes close the window instead of raising it. Mirrors
+    /// applicationShouldHandleReopen's same weak-controller fallback.
+    @objc private func showMattstackWindow() {
+        Task { @MainActor in
+            if let controller = self.windowModel?.controller {
+                controller.show()
+            } else {
+                self.mattstackWindow?.show()
+            }
+        }
+    }
+    @objc private func handleSystemSessionEnding() { systemSessionEnding = true }
     @objc private func showSetupStatus() { Task { @MainActor in coordinator?.openSetupStatus() } }
     @objc private func showSettings() { Task { @MainActor in coordinator?.showSettings() } }
     @objc private func showUninstall() { Task { @MainActor in coordinator?.showSettings(pane: .uninstall) } }
@@ -497,14 +657,94 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         updateMenuBarTitle(status: .unknown)
 
-        // Single-view design: any click on the status item toggles the
-        // process popover. All former menu actions live in the panel's
-        // status strip / gear menu.
-        if let button = statusItem.button {
-            button.action = #selector(showProcessPanel)
-            button.target = self
-            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        // Dock-first tray (spec 2026-09-15): assigning `.menu` makes AppKit
+        // show it on any click, left or right, on its own -- no button
+        // action/target of our own needed, unlike the old popover-toggle.
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        menu.delegate = self
+        statusItem.menu = menu
+    }
+
+    /// Rebuilt from scratch on every `menuNeedsUpdate` (right before the
+    /// tray menu is shown) so the daemon-status line, the Start at Login
+    /// checkmark, and the Check for Updates title are never stale --
+    /// mirrors `ProcessPanelView.makeGearMenu()`'s same fresh-build-per-open
+    /// approach, which still owns the panel's own gear menu unchanged.
+    private func rebuildTrayMenu(_ menu: NSMenu) {
+        menu.removeAllItems()
+        // Key equivalent is display-only here (a status-item menu's items
+        // aren't live key equivalents unless the menu is open) -- it mirrors
+        // HotkeyManager's actual ctrl-opt-cmd-M registration so the label
+        // never drifts from the real hotkey.
+        menu.addItem(ActionMenuItem("Open mattstack", axid: AXID.trayOpen,
+                                    keyEquivalent: "m", keyEquivalentModifierMask: [.control, .option, .command]) {
+            NotificationCenter.default.post(name: .showMattstackWindow, object: nil)
+        })
+        menu.addItem(.separator())
+        let status = NSMenuItem(title: TrayState.shared.statusText, action: nil, keyEquivalent: "")
+        status.isEnabled = false
+        status.setAccessibilityIdentifier(AXID.trayStatus)
+        menu.addItem(status)
+        menu.addItem(.separator())
+        menu.addItem(ActionMenuItem("Processes…", axid: AXID.trayProcesses) { [weak self] in
+            self?.detachProcessPanel()
+        })
+        menu.addItem(.separator())
+        menu.addItem(ActionMenuItem("Restart Daemon", axid: AXID.trayRestartDaemon) {
+            NotificationCenter.default.post(name: .rtRestartDaemon, object: nil)
+        })
+        menu.addItem(ActionMenuItem("View Logs…", axid: AXID.trayViewLogs) {
+            NotificationCenter.default.post(name: .rtViewDaemonLogs, object: nil)
+        })
+        menu.addItem(ActionMenuItem("Settings…", axid: AXID.traySettings) {
+            NotificationCenter.default.post(name: .rtShowSettings, object: nil)
+        })
+        menu.addItem(.separator())
+        let startAtLogin = SMAppService.mainApp.status == .enabled
+        menu.addItem(ActionMenuItem("Start at Login", state: startAtLogin ? .on : .off, axid: AXID.trayStartAtLogin) { [weak self] in
+            self?.toggleTrayStartAtLogin()
+        })
+        let updateItem = ActionMenuItem(trayUpdateMenuTitle, axid: AXID.trayCheckForUpdates) {
+            NotificationCenter.default.post(name: .rtCheckUpdates, object: nil)
         }
+        updateItem.isEnabled = TrayState.shared.canCheckForUpdates || TrayState.shared.updateAvailable != nil
+        menu.addItem(updateItem)
+        menu.addItem(.separator())
+        menu.addItem(ActionMenuItem("Quit mattstack", axid: AXID.trayQuit) { [weak self] in
+            self?.quitFromTray()
+        })
+    }
+
+    private var trayUpdateMenuTitle: String {
+        if let tag = TrayState.shared.updateAvailable {
+            return "Update Available: \(tag)"
+        }
+        return "Check for Updates…"
+    }
+
+    /// Mirrors `ProcessPanelView.toggleStartAtLogin()`'s exact opt-out
+    /// bookkeeping (see that method's doc comment) for the tray-level copy
+    /// of the same control; the panel's own gear menu keeps its copy as-is.
+    private func toggleTrayStartAtLogin() {
+        do {
+            if SMAppService.mainApp.status == .enabled {
+                try SMAppService.mainApp.unregister()
+                LoginItemPreference.isOptedOut = true
+            } else {
+                try SMAppService.mainApp.register()
+                LoginItemPreference.isOptedOut = false
+            }
+        } catch {
+            TrayLog.error("login item toggle failed", ["err": String(describing: error)])
+        }
+    }
+
+    /// The only real quit (dock-first spec 2026-09-15): every other path to
+    /// termination is intercepted by `applicationShouldTerminate`.
+    @objc private func quitFromTray() {
+        quitConfirmed = true
+        NSApp.terminate(nil)
     }
 
     /// Update the menu bar button with "m" text + colored status dot.
@@ -1139,6 +1379,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     }
 }
 
+extension AppDelegate: NSMenuDelegate {
+    /// The documented hook for mutating a menu's contents right before
+    /// AppKit shows it -- rebuilds the tray menu fresh every open the same
+    /// way `menuWillOpen` would, just earlier in the show sequence.
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        rebuildTrayMenu(menu)
+    }
+}
+
 extension AppDelegate: VersionProviding {
     /// `build` is the numeric CFBundleVersion L4 writes — major*1e6 +
     /// minor*1e3 + patch (e.g. 2.8.0 → 2008000) — never a string; a
@@ -1192,6 +1441,19 @@ private func bootVerdict(from info: SupervisionInfo, now: Date) -> (verdict: Str
         return ("boot-failed", info.lastExit?.reason ?? "unknown")
     }
     return nil
+}
+
+final class WindowOpenBridge: WindowOpening, @unchecked Sendable {
+    weak var appDelegate: AppDelegate?
+    func open(url: String) async -> Bool {
+        let defaults = UserDefaults.standard
+        let enabled = defaults.object(forKey: "MSShellHandoff") == nil || defaults.bool(forKey: "MSShellHandoff")
+        guard enabled, let u = URL(string: url), let request = OpenLink.request(fromHTTPS: u) else { return false }
+        return await MainActor.run { [weak appDelegate] () -> Task<Bool, Never>? in
+            guard let model = appDelegate?.windowModel else { return nil }
+            return Task { await model.open(request) }
+        }?.value ?? false
+    }
 }
 
 struct DaemonStatus {

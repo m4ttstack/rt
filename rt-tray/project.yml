@@ -68,6 +68,8 @@ targetTemplates:
         CFBundleURLTypes:
           - CFBundleURLName: "$(PRODUCT_BUNDLE_IDENTIFIER).join"
             CFBundleURLSchemes: [mattstack]
+          - CFBundleURLName: "$(PRODUCT_BUNDLE_IDENTIFIER).web"
+            CFBundleURLSchemes: [https, http]
         SUFeedURL: https://github.com/m4ttstack/rt/releases/latest/download/appcast.xml
         SUPublicEDKey: REPLACE_WITH_RELEASE_PUBLIC_ED_KEY
         SUEnableAutomaticChecks: true
