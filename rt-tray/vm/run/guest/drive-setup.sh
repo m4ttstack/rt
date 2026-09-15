@@ -3,6 +3,7 @@
 # Usage: drive-setup.sh <create|join|restore> [--team-slug vmtest] [--pat-env MATTSTACK_VMTEST_PAT] [--invite-code-file <p>] [--team-remote <url>] [--forge github|gitlab]
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"; source "$HERE/ax.sh"
+export PATH="$HOME/.local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 SCENARIO="${1:-create}"; shift || true
 SLUG=vmtest; PAT_ENV=MATTSTACK_VMTEST_PAT; CODE_FILE=""; TEAM_REMOTE="${TEAM_REMOTE:-}"; FORGE="${FORGE:-}"
 while [ $# -gt 0 ]; do case "$1" in
@@ -142,6 +143,14 @@ screen_readiness() {
   # Every row's status, before Install: the one record that explains a
   # Continue that does not advance.
   ax_log "checklist rows: $(for id in $(ax_dump_ids | grep -o 'setup\.checklist\.row\.[A-Za-z0-9._-]*' | sed -E 's/\.(action|status|error)$//' | sed 's/^setup\.checklist\.row\.//' | sort -u); do printf '%s=%s ' "$id" "$(ax_status "$id" 2>/dev/null || echo '?')"; done)"
+  # repos.root is required and its only GUI affordance is a native folder panel,
+  # which an unattended run cannot answer. The harness is playing the user here,
+  # not working around a defect. The recheck is not optional: the app's plan is
+  # composed before this write, so Continue stays disabled without it.
+  mkdir -p "$HOME/code"
+  rt setup repo-root set "$HOME/code" --json
+  ax_click setup.checklist.recheck
+  ax_wait_status repos.root ready 30
   ax_find setup.checklist.continue >/dev/null || ax_fail "setup.checklist.continue axid missing"
   ax_click setup.checklist.continue
 }

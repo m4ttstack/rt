@@ -84,6 +84,9 @@ t "walkthrough --decline-trust refuses headless"  bash -c \
 # timing note as the no-SecurityAgent check above applies here too.
 t "ax_admin_auth_once returns fast when declining" env GUEST_RUN=/tmp/vmcheck-ax AX_APP=x AX_TRUST_DECLINE=1 bash -c 'source run/guest/ax.sh; s=$SECONDS; ax_admin_auth_once; rc=$?; [ "$rc" -eq 1 ] && [ $((SECONDS-s)) -le 10 ]'
 t "assert-installed.sh takes --expect-untrusted"  bash -c 'grep -q -- "--expect-untrusted" run/guest/assert-installed.sh'
+t "drive-setup.sh answers repos.root before Continue" bash -c 'grep -q "setup repo-root set" run/guest/drive-setup.sh'
+t "drive-setup.sh rechecks after setting the root"    bash -c 'grep -q "setup.checklist.recheck" run/guest/drive-setup.sh'
+t "assert-installed.sh handles repos.root absent"     bash -c 'grep -q "repos.root" run/guest/assert-installed.sh'
 
 
 rm -rf /tmp/vmcheck-tu
