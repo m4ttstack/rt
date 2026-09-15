@@ -1,4 +1,7 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test, beforeEach, afterEach } from "bun:test";
+import { mkdtempSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import { mcpTools } from "../tools.ts";
 
 const NAMES = ["gate_answer","gate_list","chat_post","chat_dm","chat_ack","chat_claim","chat_release","mr_reply_thread","herd_gates","herd_ask","herd_answer","herd_report"];
@@ -54,5 +57,29 @@ describe("mcpTools", () => {
     const tool = mcpTools().find((t) => t.name === "gate_list")!;
     expect(tool.description).not.toContain("defaulting to open");
     expect(tool.description).toContain("all statuses");
+  });
+
+  describe("herd_gates without a reachable daemon", () => {
+    let originalHome: string | undefined;
+    let originalSock: string | undefined;
+
+    beforeEach(() => {
+      originalHome = process.env.HOME;
+      originalSock = process.env.RT_DAEMON_SOCK;
+      process.env.HOME = mkdtempSync(join(tmpdir(), "rt-mcp-herd-test-"));
+      delete process.env.RT_DAEMON_SOCK;
+    });
+
+    afterEach(() => {
+      process.env.HOME = originalHome;
+      if (originalSock !== undefined) process.env.RT_DAEMON_SOCK = originalSock;
+    });
+
+    test("surfaces the daemon's own error instead of the ambiguous-herd message", async () => {
+      const tool = mcpTools().find((t) => t.name === "herd_gates")!;
+      const res = await tool.handler({}, {} as NodeJS.ProcessEnv);
+      expect(res.ok).toBe(false);
+      expect(res.error).toContain("rt daemon unreachable");
+    });
   });
 });

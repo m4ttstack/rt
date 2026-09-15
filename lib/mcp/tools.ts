@@ -75,10 +75,13 @@ function requireWorkerEnv(env: NodeJS.ProcessEnv): { herd: string; job: string; 
 }
 
 /** Mirrors herd.ts's soleHerdId without importing it (that module pulls in lib/repo-arg.ts). */
-async function resolveSoleHerd(): Promise<string | undefined> {
+async function resolveSoleHerd(): Promise<{ herd: string } | { error: string }> {
   const res = await herdList({});
-  if (!res.ok || !res.data) return undefined;
-  return res.data.herds.length === 1 ? res.data.herds[0]!.id : undefined;
+  if (!res.ok) return { error: res.error ?? "rt daemon unreachable" };
+  const herds = res.data?.herds ?? [];
+  if (herds.length === 0) return { error: "no herds are active (rt herd list shows the herds)" };
+  if (herds.length === 1) return { herd: herds[0]!.id };
+  return { error: "more than one herd is active (rt herd list shows the herds)" };
 }
 
 const ANSWER_VALUE_SCHEMA = {
@@ -304,9 +307,11 @@ export function mcpTools(): McpToolDef[] {
         additionalProperties: false,
       },
       async handler(input, env) {
-        const herd = (input.herd as string | undefined) ?? env.HERD_ID ?? (await resolveSoleHerd());
-        if (!herd) return err("no herd id given, HERD_ID is not set, and more than one herd is active (rt herd list shows the herds)");
-        return fromResponse(await herdGates({ herd }));
+        const explicit = (input.herd as string | undefined) ?? env.HERD_ID;
+        if (explicit) return fromResponse(await herdGates({ herd: explicit }));
+        const resolved = await resolveSoleHerd();
+        if ("error" in resolved) return err(resolved.error);
+        return fromResponse(await herdGates({ herd: resolved.herd }));
       },
     },
     {
