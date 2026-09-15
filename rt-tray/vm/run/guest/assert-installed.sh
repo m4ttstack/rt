@@ -15,6 +15,10 @@ fails=0
 ok()   { echo "ASSERT ok   $1"; }
 bad()  { echo "ASSERT FAIL $1"; fails=$((fails+1)); }
 SOCK="$HOME/.mattstack/rt/tray.sock"
+# jq is not on this PATH: only DEFAULT_EXPOSED (rt, deck, gitq, fast-browser)
+# is linked into ~/.local/bin, so the bundle's own copy is the one every
+# block below uses to read `rt setup status --json`.
+JQ=/Applications/mattstack.app/Contents/Helpers/jq
 
 # rt on PATH, symlink into the bundle
 if [ -L "$HOME/.local/bin/rt" ]; then
@@ -107,6 +111,58 @@ done
 [ -e "$HOME/.rt" ] && bad "~/.rt exists (legacy)" || ok "no ~/.rt"
 if [ -e /Applications/rt-tray.app ] || [ -e "$HOME/Applications/rt-tray.app" ]; then bad "rt-tray.app present (legacy)"; else ok "no rt-tray.app"; fi
 
+# ── Fast Browser: the tool.fast-browser row, and the doctor probe's own wall time ──
+# fastbrowser.setup already ran as part of Install; this reads back the row it
+# left behind and re-runs the same `doctor --json` probe tools.ts uses, timed.
+# A timed-out probe today surfaces as a bare exit 124 with no number anywhere,
+# so a probe that is slowly drifting toward that timeout is invisible right up
+# until the run crosses it. A logged elapsed time turns that into something an
+# operator can watch trend, not just a coin flip between two runs.
+rt setup status --json 2>/dev/null | tail -1 > "$LOGS/setup-status-fastbrowser.json"
+FB_ROW=$([ -x "$JQ" ] && "$JQ" -r '.groups[].rows[]|select(.id=="tool.fast-browser")|.status + ": " + (.detail // "")' < "$LOGS/setup-status-fastbrowser.json" 2>/dev/null)
+case "$FB_ROW" in
+  ready:*) ok "tool.fast-browser row ready";;
+  "")      bad "no tool.fast-browser row in rt setup status --json (see logs/setup-status-fastbrowser.json)";;
+  *)       bad "tool.fast-browser not ready: $FB_ROW";;
+esac
+FASTBROWSER_NODE=/Applications/mattstack.app/Contents/Helpers/node/bin/node
+FASTBROWSER_MJS=/Applications/mattstack.app/Contents/Helpers/fast-browser/bin/fast-browser.mjs
+if [ -x "$FASTBROWSER_NODE" ] && [ -f "$FASTBROWSER_MJS" ]; then
+  t0=$(date +%s)
+  "$FASTBROWSER_NODE" "$FASTBROWSER_MJS" doctor --json > "$LOGS/fastbrowser-doctor.json" 2>"$LOGS/fastbrowser-doctor.stderr"
+  elapsed=$(( $(date +%s) - t0 ))
+  # doctor commonly exits non-zero BECAUSE it found a problem while still
+  # printing its report (tools.ts's own probeFastBrowser trusts the JSON over
+  # the exit code for exactly this reason); a parseable "checks" array is
+  # the pass condition here too, not exit 0.
+  if [ -x "$JQ" ] && "$JQ" -e '.checks | type == "array"' < "$LOGS/fastbrowser-doctor.json" >/dev/null 2>&1; then
+    ok "fast-browser doctor --json ran in ${elapsed}s"
+  else
+    bad "fast-browser doctor --json produced no readable report in ${elapsed}s: $(tail -3 "$LOGS/fastbrowser-doctor.stderr" 2>/dev/null | tr '\n' ' ')"
+  fi
+else
+  bad "fast-browser not found in the bundle (node=$FASTBROWSER_NODE mjs=$FASTBROWSER_MJS)"
+fi
+
+# ── fresh db lands on the schema version this rt build expects ─────────────
+# rt exposes no CLI/daemon surface for SCHEMA_VERSION (lib/state/db.ts) today
+# -- checked commands/daemon.ts, commands/verify.ts, and every daemon status
+# handler -- so this cannot compare against the number the installed build
+# actually wants, only prove a migration ran at all. CLAUDE.md's SCHEMA_VERSION
+# note is why that gap matters: two concurrent lanes can each stamp a
+# different db with the same user_version and the loser's tables never
+# appear, silently, on every surface this harness has today.
+STATE_DB="$HOME/.mattstack/rt/state.db"
+if [ -f "$STATE_DB" ]; then
+  USER_VERSION=$(/usr/bin/sqlite3 "$STATE_DB" 'PRAGMA user_version;' 2>/dev/null)
+  case "$USER_VERSION" in
+    ''|0) bad "state.db user_version is ${USER_VERSION:-unreadable} (expected > 0 after migrations ran)";;
+    *)    ok "state.db user_version = $USER_VERSION";;
+  esac
+else
+  bad "no state.db at $STATE_DB"
+fi
+
 if [ "$HEADLESS" = 0 ]; then
   [ -d "$HOME/.mattstack/user/.git" ] && ok "~/.mattstack/user is the home repo" || bad "~/.mattstack/user is not a git repo (home-repo re-root ruling)"
 
@@ -135,14 +191,39 @@ if [ "$HEADLESS" = 0 ]; then
     *)                                        bad "filter.lfs.process does not name the bundled git-lfs: $LFS_FILTER";;
   esac
 
+  # ── the daemon's own state-backup sweep, under launchd's minimal PATH ──────
+  # `rt state backup init` above ran from an ssh login shell, which carries the
+  # operator's full PATH -- it cannot fail the way production fails, because
+  # findBackupTool (lib/state/backup-tools.ts) is bundle-first regardless of
+  # PATH, and a rich PATH would hide a bundle-resolution bug behind a brew
+  # fallback the daemon's own PATH doesn't have. No daemon verb exists yet to
+  # trigger the sweep on demand over the socket (RT-131 tracks bundling the
+  # three tools; there is nothing to call here), so this instead proves the
+  # premise the sweep depends on: the plist launchd actually loaded carries
+  # the minimal PATH LaunchAgent.plist declares, and the three tools the sweep
+  # shells out to (age, zstd, git-lfs) are the bundled copies that PATH alone,
+  # minimal or not, would never need to supply.
+  DAEMON_PLIST="/Applications/mattstack.app/Contents/Library/LaunchAgents/com.mattstack.daemon.plist"
+  DAEMON_PATH=$(/usr/libexec/PlistBuddy -c "Print :EnvironmentVariables:PATH" "$DAEMON_PLIST" 2>/dev/null)
+  case "$DAEMON_PATH" in
+    /usr/bin:/bin:/usr/sbin:/sbin) ok "daemon plist PATH is launchd's minimal PATH ($DAEMON_PATH)";;
+    "") bad "no EnvironmentVariables PATH in $DAEMON_PLIST";;
+    *)  bad "daemon plist PATH is not minimal, so a real PATH-fallback bug could hide behind it: $DAEMON_PATH";;
+  esac
+  for tool in age zstd git-lfs; do
+    tool_path="/Applications/mattstack.app/Contents/Helpers/$tool"
+    if [ -x "$tool_path" ]; then
+      ok "$tool resolves bundle-first under the daemon's own PATH ($tool_path)"
+    else
+      bad "$tool missing from the bundle, so the sweep has nothing to fall back to under the daemon's minimal PATH: $tool_path"
+    fi
+  done
+
   # ── the local HTTPS proxy ──────────────────────────────────────────────────
   # Headless has no app to answer proxy.install's need, so the whole block is
   # inside the same gate as the home repo rather than reporting a bare-machine
   # absence as a defect.
   #
-  # jq is not on this PATH: only DEFAULT_EXPOSED (rt, deck, gitq, fast-browser)
-  # is linked into ~/.local/bin, so the bundle's own copy is the one to use.
-  JQ=/Applications/mattstack.app/Contents/Helpers/jq
   # `setup status --json` is a Plan (groups/rows), not a step ledger: apply's
   # step states are streamed as NDJSON and never persisted. tool.proxy is the
   # row that reads back what proxy.install left behind: `ready` only when the
