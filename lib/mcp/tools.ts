@@ -6,12 +6,15 @@
  */
 import {
   chatAck, chatClaim, chatDm, chatPost, chatRelease,
-  gateAnswer, gateList,
+  gateAnswer, gateAsk, gateList,
   herdAnswer, herdAsk, herdGates, herdList, herdReport,
+  readProjectMRs,
   rtCommand,
 } from "../../packages/rt-client/src/index.ts";
 import type { Commands, GateQuestion, RtResponse } from "../../packages/rt-client/src/index.ts";
 import { readChatSession } from "../chat-session.ts";
+import { joinMrsToWorktrees } from "../mr-map.ts";
+import { repoLabel } from "../repo-label.ts";
 
 export interface McpToolDef {
   name: string;
@@ -62,8 +65,10 @@ const HERD_ENV_ERROR = "HERD_ID and HERD_JOB are not set; this verb runs inside 
 
 /** Matches lib/daemon-client.ts's DISCUSSIONS_TIMEOUT_MS: a GitLab post is
     slower than rtCommand's 15s default, and a client-side abort here would
-    still leave the daemon posting, so a retry would duplicate the comment. */
-const MR_REPLY_TIMEOUT_MS = 30_000;
+    still leave the daemon posting, so a retry would duplicate the comment.
+    Shared by both mr write tools (mr_reply_thread, mr_comment_inline) for
+    the same reason. */
+const MR_WRITE_TIMEOUT_MS = 30_000;
 
 function requireJobEnv(env: NodeJS.ProcessEnv): { herd: string; job: string } | { error: string } {
   const herd = env.HERD_ID, job = env.HERD_JOB;
@@ -77,6 +82,25 @@ function requireWorkerEnv(env: NodeJS.ProcessEnv): { herd: string; job: string; 
   const session = env.CLAUDE_CODE_SESSION_ID;
   if (!session) return { error: "CLAUDE_CODE_SESSION_ID is not set; this verb runs inside a Claude Code session" };
   return { ...j, session, ...(env.HERDR_PANE_ID && { pane: env.HERDR_PANE_ID }) };
+}
+
+/** Matches input.repo against the daemon's repo registry, either as the raw
+    serialized identity or its human-friendly label (repoLabel), and returns
+    the matched identity. Deliberately does not import lib/repo-arg.ts (that
+    module pulls in lib/state/index.ts, lib/settings/resolve.ts, and
+    lib/ui/protocol.ts): the "repos" verb plus repoLabel is the whole lookup. */
+async function resolveRepoIdentity(repo: string): Promise<{ identity: string } | { error: string }> {
+  const res = await rtCommand<Commands["repos"]["data"]>("repos", {});
+  if (!res.ok || !res.data) return { error: res.error ?? "failed to list repos" };
+  const identities = Object.keys(res.data.repos ?? {});
+  const matches = identities.filter((id) => id === repo || repoLabel(id) === repo);
+  if (matches.length > 1) return { error: `"${repo}" matches more than one repo: ${matches.join(", ")}; pass the full identity` };
+  const match = matches[0];
+  if (!match) {
+    const known = identities.map((id) => repoLabel(id)).sort().join(", ");
+    return { error: `no repo matching "${repo}"; known repos: ${known}` };
+  }
+  return { identity: match };
 }
 
 /** Mirrors herd.ts's soleHerdId without importing it (that module pulls in lib/repo-arg.ts). */
@@ -154,12 +178,22 @@ export function mcpTools(): McpToolDef[] {
           session: env.CLAUDE_CODE_SESSION_ID,
         };
         if (input.override !== undefined) payload.override = input.override as boolean;
-        return fromResponse(await gateAnswer(payload));
+        const res = await gateAnswer(payload);
+        if (!res.ok && res.error === "owned-by") {
+          const owner = (res as { owner?: string }).owner ?? "unknown";
+          return err(`gate ${input.id} is owned by ${owner}; pass override: true to answer anyway`);
+        }
+        if (!res.ok && res.error === "gate-closed") {
+          const reason = (res as { reason?: string }).reason ?? "closed";
+          const supersededBy = (res as { supersededBy?: string }).supersededBy;
+          return err(`gate ${input.id} is closed (${reason})${supersededBy ? `; superseded by ${supersededBy}` : ""}`);
+        }
+        return fromResponse(res);
       },
     },
     {
       name: "gate_list",
-      description: "List gates in all statuses unless open is true, optionally filtered by subject prefix or kind and capped by limit.",
+      description: "List gates in all statuses unless open is true, optionally filtered by subject prefix or kind and capped by limit. Pass the previous response's cursor to continue paging; an empty gates array means there is nothing more to page.",
       inputSchema: {
         type: "object",
         properties: {
@@ -167,6 +201,7 @@ export function mcpTools(): McpToolDef[] {
           subjectPrefix: { type: "string" },
           kind: { type: "string" },
           limit: { type: "number" },
+          cursor: { type: "number" },
         },
         additionalProperties: false,
       },
@@ -176,7 +211,40 @@ export function mcpTools(): McpToolDef[] {
         if (input.subjectPrefix !== undefined) payload.subjectPrefix = input.subjectPrefix as string;
         if (input.kind !== undefined) payload.kind = input.kind as string;
         if (input.limit !== undefined) payload.limit = input.limit as number;
+        if (input.cursor !== undefined) payload.cursor = input.cursor as number;
         return fromResponse(await gateList(payload));
+      },
+    },
+    {
+      name: "gate_ask",
+      description: "Open a decision gate with the daemon-side ceremony: subject resolves from this session (explicit subject wins, else its running run, else its agent record's own subject), presentation is computed, and the operator is nudged. Returns {id, presentation, subject, supersededId}; then run `rt gate wait <id>` as background bash and park. The wait itself is never a tool. Prefer {value, label} option objects; bare strings are accepted and stored normalized. Answers must be option VALUES verbatim.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          questions: { type: "array", items: GATE_QUESTION_SCHEMA },
+          context: { type: "string" },
+          kind: { type: "string" },
+          subject: { type: "string" },
+        },
+        required: ["questions"],
+        additionalProperties: false,
+      },
+      async handler(input, env) {
+        const bad = checkRequired(input, [{ name: "questions", type: "array" }]);
+        if (bad) return err(bad);
+        const payload: Commands["gate:ask"]["payload"] = {
+          questions: input.questions as GateQuestion[],
+        };
+        if (input.context !== undefined) payload.context = input.context as string;
+        if (input.kind !== undefined) payload.kind = input.kind as string;
+        // No RT_GATE_SUBJECT read (contract C13): the var carries an agent:<id>
+        // fallback on every rt-agent launch and would shadow the daemon
+        // ladder's run rung; absent an input subject, the daemon resolves
+        // session -> run -> the agent record's own subject.
+        if (input.subject !== undefined) payload.subject = input.subject as string;
+        if (env.CLAUDE_CODE_SESSION_ID) payload.sessionId = env.CLAUDE_CODE_SESSION_ID;
+        if (env.HERDR_PANE_ID) payload.paneId = env.HERDR_PANE_ID;
+        return fromResponse(await gateAsk(payload));
       },
     },
     {
@@ -299,8 +367,84 @@ export function mcpTools(): McpToolDef[] {
           iid: input.iid as number,
           discussionId: input.discussionId as string,
           body: input.body as string,
-        }, { timeoutMs: MR_REPLY_TIMEOUT_MS });
+        }, { timeoutMs: MR_WRITE_TIMEOUT_MS });
         return fromResponse(res);
+      },
+    },
+    {
+      name: "mr_comment_inline",
+      description: "GitLab only. Post a NEW positioned inline comment (DiffNote) on an MR diff line, with server-side verification: the daemon re-checks the created note's type and deletes-and-retries once when GitLab silently drops the position. The retry re-fetches diff_refs; it cannot repair a position GitLab rejects outright. Use mr_reply_thread to reply to an existing thread.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          repoName: { type: "string" },
+          iid: { type: "number" },
+          body: { type: "string" },
+          path: { type: "string" },
+          line: { type: "number" },
+          oldPath: { type: "string" },
+          oldLine: { type: "number" },
+        },
+        required: ["repoName", "iid", "body", "path", "line"],
+        additionalProperties: false,
+      },
+      async handler(input) {
+        const bad = checkRequired(input, [
+          { name: "repoName", type: "string" },
+          { name: "iid", type: "number" },
+          { name: "body", type: "string" },
+          { name: "path", type: "string" },
+          { name: "line", type: "number" },
+        ]);
+        if (bad) return err(bad);
+        const payload: Commands["mr:comment-inline"]["payload"] = {
+          repoName: input.repoName as string,
+          iid: input.iid as number,
+          body: input.body as string,
+          path: input.path as string,
+          line: input.line as number,
+        };
+        if (input.oldPath !== undefined) payload.oldPath = input.oldPath as string;
+        if (input.oldLine !== undefined) payload.oldLine = input.oldLine as number;
+        return fromResponse(await rtCommand<Commands["mr:comment-inline"]["data"]>("mr:comment-inline", payload, { timeoutMs: MR_WRITE_TIMEOUT_MS }));
+      },
+    },
+    {
+      name: "mr_map",
+      description: "Open MRs for a repo joined to the local worktrees holding their branches. Lists ALL open MRs for the repo (not only yours). repo is the registered repo name.",
+      inputSchema: {
+        type: "object",
+        properties: { repo: { type: "string" } },
+        required: ["repo"],
+        additionalProperties: false,
+      },
+      async handler(input) {
+        const bad = checkRequired(input, [{ name: "repo", type: "string" }]);
+        if (bad) return err(bad);
+        const resolved = await resolveRepoIdentity(input.repo as string);
+        if ("error" in resolved) return err(resolved.error);
+        const identity = resolved.identity;
+        const [mrsRes, treesRes] = await Promise.all([
+          readProjectMRs(identity, 20_000),
+          rtCommand<Commands["worktree:list"]["data"]>("worktree:list", { repoName: identity }),
+        ]);
+        if (!mrsRes.ok || !mrsRes.data) return err(mrsRes.error ?? "failed to read MRs");
+        if (!treesRes.ok || !treesRes.data) return err(treesRes.error ?? "failed to list worktrees");
+
+        const mrs = Object.values(mrsRes.data.mrs ?? {})
+          .map((entry) => entry.pr)
+          .filter((pr) => pr.state === "opened")
+          .map((pr) => ({
+            iid: pr.iid,
+            title: pr.title,
+            sourceBranch: pr.sourceBranch,
+            state: pr.state,
+            pipelineStatus: pr.pipeline?.status ?? null,
+          }));
+
+        const trees = (treesRes.data.trees ?? []).map((t) => ({ path: t.path, branch: t.branch }));
+
+        return ok({ rows: joinMrsToWorktrees(mrs, trees) });
       },
     },
     {
