@@ -13,7 +13,60 @@ const METHOD_HEADING_RE = /^## Method\r?\n/m;
 const NEXT_HEADING_RE = /^## /gm;
 const STRATEGY_RE = /^## ([^\n]+)\n+```\n([\s\S]*?)\n```/gm;
 const INDENTED_LINE_RE = /^ {4,}/;
-const MARKER_RE = /<([^<>\n]+)>/g;
+// No \n exclusion: word-wrapped prose (the real job-template.md) puts a
+// slot's < and > on different physical lines.
+const MARKER_RE = /<([^<>]+)>/g;
+const DECORATIVE_SPAN_RE = /`[^`]*`|"[^"]*"/g;
+
+function normalizeMarkerName(raw: string): string {
+  return raw.replace(/\s+/g, " ").trim();
+}
+
+interface LineInfo {
+  text: string;
+  start: number;
+  indented: boolean;
+}
+
+function indexLines(doc: string): LineInfo[] {
+  const lines: LineInfo[] = [];
+  let offset = 0;
+  for (const text of doc.split("\n")) {
+    lines.push({ text, start: offset, indented: INDENTED_LINE_RE.test(text) });
+    offset += text.length + 1; // +1 for the split "\n"
+  }
+  return lines;
+}
+
+function lineIndexForOffset(lines: LineInfo[], offset: number): number {
+  // Linear scan is fine: templates/strategy bodies are short documents.
+  let idx = 0;
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i]!.start <= offset) idx = i;
+    else break;
+  }
+  return idx;
+}
+
+function computeDecorativeSpans(doc: string): Array<[number, number]> {
+  const spans: Array<[number, number]> = [];
+  DECORATIVE_SPAN_RE.lastIndex = 0;
+  let span: RegExpExecArray | null;
+  while ((span = DECORATIVE_SPAN_RE.exec(doc))) {
+    spans.push([span.index, span.index + span[0].length]);
+  }
+  return spans;
+}
+
+/** A marker is decorative (illustrative example syntax for the eventual
+    worker to fill in later, not a slot for this assembler to fill now)
+    when its start line is an indented code example, or it sits fully
+    inside a backtick or double-quote span (which may itself cross a line
+    break, as the real template's own worked examples do). */
+function isDecorative(lines: LineInfo[], startLineIdx: number, matchStart: number, matchEnd: number, spans: Array<[number, number]>): boolean {
+  if (lines[startLineIdx]!.indented) return true;
+  return spans.some(([s, e]) => matchStart >= s && matchEnd <= e);
+}
 
 function parseStrategies(strategies: string): { name: string; body: string }[] {
   const found: { name: string; body: string }[] = [];
@@ -58,23 +111,45 @@ function spliceMethodBody(template: string, body: string): { ok: true; text: str
   return { ok: true, text: before + trimmedBody + separator + after };
 }
 
-function findLeftoverMarkers(doc: string): string[] {
+/** Single pass over the assembled document: real (non-decorative) markers
+    are replaced from `fills` when present, else recorded as leftover;
+    decorative markers (illustrative example syntax) are left untouched. */
+function substituteMarkers(doc: string, fills: Record<string, string>): { text: string; leftover: string[] } {
+  const lines = indexLines(doc);
+  const spans = computeDecorativeSpans(doc);
   const leftover: string[] = [];
-  const seen = new Set<string>();
-  for (const line of doc.split("\n")) {
-    if (INDENTED_LINE_RE.test(line)) continue;
-    MARKER_RE.lastIndex = 0;
-    let m: RegExpExecArray | null;
-    while ((m = MARKER_RE.exec(line))) {
-      const name = m[1];
-      if (name === undefined) continue; // regex guarantees this group when the overall match succeeds
-      if (!seen.has(name)) {
-        seen.add(name);
-        leftover.push(name);
+  const seenLeftover = new Set<string>();
+  let out = "";
+  let cursor = 0;
+  MARKER_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = MARKER_RE.exec(doc))) {
+    const raw = m[1];
+    if (raw === undefined) continue; // regex guarantees this group when the overall match succeeds
+    const matchStart = m.index;
+    const matchEnd = matchStart + m[0].length;
+    const startLineIdx = lineIndexForOffset(lines, matchStart);
+
+    out += doc.slice(cursor, matchStart);
+    if (isDecorative(lines, startLineIdx, matchStart, matchEnd, spans)) {
+      out += m[0];
+    } else {
+      const name = normalizeMarkerName(raw);
+      const value = fills[name];
+      if (value !== undefined) {
+        out += value;
+      } else {
+        out += m[0];
+        if (!seenLeftover.has(name)) {
+          seenLeftover.add(name);
+          leftover.push(name);
+        }
       }
     }
+    cursor = matchEnd;
   }
-  return leftover;
+  out += doc.slice(cursor);
+  return { text: out, leftover };
 }
 
 export function assembleBrief(inputs: BriefInputs): BriefResult {
@@ -88,13 +163,12 @@ export function assembleBrief(inputs: BriefInputs): BriefResult {
     return { ok: false, error: spliced.error };
   }
 
-  const merged: Record<string, string> = { name: inputs.job, ...inputs.fills };
-  let doc = spliced.text;
-  for (const [key, value] of Object.entries(merged)) {
-    doc = doc.split(`<${key}>`).join(value);
+  const merged: Record<string, string> = { name: inputs.job };
+  for (const [key, value] of Object.entries(inputs.fills)) {
+    merged[normalizeMarkerName(key)] = value;
   }
 
-  const leftover = findLeftoverMarkers(doc);
+  const { text: doc, leftover } = substituteMarkers(spliced.text, merged);
   if (leftover.length > 0) {
     return { ok: false, error: `unfilled markers: ${leftover.join(", ")}`, leftover };
   }
