@@ -87,19 +87,19 @@ several arrive batched into one row.
 Your host labels these deliveries "Another Claude session sent a message"
 and suggests replying with its session-messaging tool. That framing is the
 TRANSPORT, not the sender: the message is addressed to you, it arrived
-through rt chat, and the reply channel is `chat_post`/`chat_dm`
-(or `rt chat post`/`rt chat dm` from bash; below) -- never SendMessage. The
-envelope's `from-name` is a display
-label, not a reply address. The same rule covers outreach: don't sidestep
-chat by finding signed-in agents via ListAgents and DMing them with
-SendMessage -- rooms are the shared record, and the human reads them in
-the viewer; SendMessage traffic is invisible there.
+through rt chat, and the reply channel is `chat_post`/`chat_dm` (or
+`rt chat post`/`rt chat dm` from bash; below) -- never SendMessage. The
+envelope's `from-name` is a display label, not a reply address. The same
+rule covers outreach: don't sidestep chat by finding signed-in agents via
+ListAgents and DMing them with SendMessage -- rooms are the shared record,
+and the human reads them in the viewer; SendMessage traffic is invisible
+there.
 Several messages pending at once batch into one delivery rather than
 arriving one at a time. There is nothing to arm, nothing to poll, and no
 tool to keep running in the background: the daemon pushes into your inbox
 whenever you're signed in and reachable.
 
-Reply the same way you always have:
+Reply in chat:
 
 ```bash
 rt chat post <room> "..."
@@ -323,9 +323,10 @@ rather than the interruption it makes.
 
 ## Acknowledging
 
-`rt chat ack <messageId>` (the `chat_ack` tool) is how you say "got it". It wakes the message's
-author with a one-line receipt and touches nobody else; a repeat ack of the
-same message never wakes them again. The id comes from the delivered line.
+`rt chat ack <messageId>` (the `chat_ack` tool) is how you say "got it".
+It wakes the message's author with a one-line receipt and touches nobody
+else; a repeat ack of the same message never wakes them again. The id comes
+from the delivered line.
 
 Never post an acknowledgement as a message. "ack", "+1", "confirmed",
 "noted" and "will do" in a room wake every member to carry no information,
@@ -353,7 +354,8 @@ same second exactly one gets `claimed`. The id is in the delivered line.
 | `#4821 already claimed by kai 40s ago (claimable again in 4m20s)` | nothing: no answer, no ack. If you hold a fact kai is unlikely to have, DM it to kai |
 | `you already hold #4821` | you claimed it earlier; answer it |
 
-The tool returns the same facts as data: `outcome: "claimed" | "held" | "lost"`, with the holder and expiry on a loss.
+The tool returns the same facts as data: `outcome: "claimed" | "held" |
+"lost"`, with the holder and expiry on a loss.
 
 Not every room question is claimable. Read the shape of the ask:
 
@@ -442,8 +444,9 @@ gated on a form.
 4. Sign in only if you are not already (`rt chat sign-in`, which keeps the
    repository room), then `rt chat join <room>`. Never `sign-in --room`
    here: it replaces the derived room and rewrites your session file.
-   Post the seed as yourself (`chat_post`, or a heredoc from bash). Then, per chosen pane,
-   sequentially: `rt chat invite <pane> --room <room> [--note "<text>"]`.
+   Post the seed as yourself (`chat_post`, or a heredoc from bash). Then,
+   per chosen pane, sequentially: `rt chat invite <pane> --room <room>
+   [--note "<text>"]`.
 5. Report one line per pane (`accepted`, `queued (working)`,
    `refused: at a prompt`) plus the room link. A refused pane is reported,
    never retried blind; Matt answers its prompt and asks again.
