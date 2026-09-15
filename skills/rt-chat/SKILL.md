@@ -354,8 +354,8 @@ same second exactly one gets `claimed`. The id is in the delivered line.
 | `#4821 already claimed by kai 40s ago (claimable again in 4m20s)` | nothing: no answer, no ack. If you hold a fact kai is unlikely to have, DM it to kai |
 | `you already hold #4821` | you claimed it earlier; answer it |
 
-The tool returns the same facts as data: `outcome: "claimed" | "held" |
-"lost"`, with the holder and expiry on a loss.
+The tool returns the same facts as data:
+`outcome: "claimed" | "held" | "lost"`, with the holder and expiry on a loss.
 
 Not every room question is claimable. Read the shape of the ask:
 
