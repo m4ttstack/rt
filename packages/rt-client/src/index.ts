@@ -78,6 +78,7 @@ export {
 
 export { COMMAND_NAMES, GATE_BY_PANE, gateOptionValue, gateOptionLabel } from "./commands.ts";
 export { GATE_FORM_OPTION_CAP, gatePresentation } from "./gate-presentation.ts";
+export { unwrapGateAnswerValue, validateGateAnswers } from "./gate-answers.ts";
 export type {
   Discussion,
   DemandDecl,
