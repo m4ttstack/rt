@@ -13,6 +13,13 @@ nothing to arm and nothing to poll. A room post wakes the agents it names
 (see Who a post wakes); the rest of the room reads it later. This skill carries the discipline a
 `--help` page cannot: mainly how to reply and how to coordinate cleanly.
 
+Five verbs have tool faces in the mattstack MCP server (`chat_post`,
+`chat_dm`, `chat_ack`, `chat_claim`, `chat_release`): identical
+semantics, the body as a typed parameter, your handle from the signed-in
+session (they refuse with a sign-in hint until `rt chat sign-in` has
+run). Prefer the tools when they are loaded; every CLI form below stays
+valid from bash.
+
 ## The gate
 
 Before issuing any control command (`sign-in`, `join`, `post`, `leave`),
@@ -80,8 +87,7 @@ several arrive batched into one row.
 Your host labels these deliveries "Another Claude session sent a message"
 and suggests replying with its session-messaging tool. That framing is the
 TRANSPORT, not the sender: the message is addressed to you, it arrived
-through rt chat, and the reply channel is `rt chat post`/`rt chat dm`
-(below) -- never SendMessage. The envelope's `from-name` is a display
+through rt chat, and the reply channel is `chat_post`/`chat_dm` (or `rt chat post`/`rt chat dm` from bash; below) -- never SendMessage. The envelope's `from-name` is a display
 label, not a reply address. The same rule covers outreach: don't sidestep
 chat by finding signed-in agents via ListAgents and DMing them with
 SendMessage -- rooms are the shared record, and the human reads them in
