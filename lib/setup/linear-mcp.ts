@@ -123,6 +123,14 @@ export function withLinearEntry(config: ClaudeConfig, apiKey: string): ClaudeCon
  * explicit chmod because writeFile's mode only lands on a freshly created
  * inode: a temp file left behind by an earlier failed rename is reused at
  * whatever mode it already had.
+ *
+ * Atomic for readers, deliberately not crash-durable: no fsync of the temp
+ * file or its directory, so power loss in the instant around the rename can
+ * lose the new content. Every atomic writer in rt shares this contract, on
+ * purpose... each of these files is re-derivable by re-running an idempotent
+ * step or reconnecting an integration, and one writer carrying a stronger
+ * guarantee than its neighbours would be indistinguishable from an accident.
+ * Strengthen all of them together or none.
  */
 export function writeClaudeConfig(p: Pick<Probes, "mkdirp" | "writeFile" | "rename" | "chmod" | "removeFile">, path: string, config: ClaudeConfig): void {
   const tmp = `${path}.rt-tmp`;

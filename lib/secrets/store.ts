@@ -287,6 +287,14 @@ export async function listSecretNames(domain: string, seams: SecretsSeams): Prom
  * `location.filenameOverride` (not `location.filePath`) is what sops matches
  * against its `.sops.yaml` `path_regex`, cwd-relative — the real staged
  * input lives under `rt/tmp`, which would never match.
+ *
+ * Atomic for readers, deliberately not crash-durable: no fsync of the temp
+ * file or its directory, so power loss in the instant around the rename can
+ * lose the new content. Every atomic writer in rt shares this contract, on
+ * purpose... each of these files is re-derivable by re-running an idempotent
+ * step or reconnecting an integration, and one writer carrying a stronger
+ * guarantee than its neighbours would be indistinguishable from an accident.
+ * Strengthen all of them together or none.
  */
 export async function encryptAtLocation(
   location: SecretsLocation,
