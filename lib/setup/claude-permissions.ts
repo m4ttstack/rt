@@ -6,7 +6,7 @@
  * write it back atomically. Kept apart from the step so the read/union/write
  * logic can be exercised per config-dir without going through `ApplyContext`.
  */
-import { dirname } from "path";
+import { dirname, isAbsolute, join } from "path";
 import { BASE_PERMISSIONS } from "./base-permissions.ts";
 import type { Probes } from "./probes.ts";
 
@@ -43,6 +43,10 @@ export function readClaudeSettings(p: Pick<Probes, "readFile" | "exists">, path:
   }
   const allow = permissions?.allow;
   if (allow !== undefined && !Array.isArray(allow)) return { ok: false, reason: "unparsable" };
+  // Every entry must be a string, not just the array itself. Filtering a
+  // non-string out and writing the remainder back would drop a value rt
+  // cannot interpret but Claude Code may.
+  if (Array.isArray(allow) && allow.some((v) => typeof v !== "string")) return { ok: false, reason: "unparsable" };
   return { ok: true, settings: parsed as ClaudeSettings };
 }
 
@@ -86,10 +90,15 @@ export function withPermissions(settings: ClaudeSettings, toAdd: string[]): Clau
  * otherwise be reused at whatever mode it already had.
  */
 export function writeClaudeSettings(
-  p: Pick<Probes, "mkdirp" | "writeFile" | "rename" | "chmod" | "removeFile" | "fileMode">,
-  path: string,
+  p: Pick<Probes, "mkdirp" | "writeFile" | "rename" | "chmod" | "removeFile" | "fileMode" | "readlink">,
+  linkPath: string,
   settings: ClaudeSettings,
 ): void {
+  // rename() replaces a symlink's own directory entry rather than writing
+  // through it, so a settings.json managed out of a dotfiles repo would be
+  // detached from its source with the real file left untouched.
+  const link = p.readlink(linkPath);
+  const path = link === null ? linkPath : isAbsolute(link) ? link : join(dirname(linkPath), link);
   const tmp = `${path}.rt-tmp`;
   const mode = p.fileMode(path) ?? 0o600;
   p.mkdirp(dirname(path));

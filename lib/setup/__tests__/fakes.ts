@@ -104,7 +104,11 @@ export function fakeProbes(opts: FakeProbesOpts = {}): Probes & {
 
     readFile(path) {
       if (unreadable.has(path)) return null;
-      return files[path] ?? null;
+      // Through `links`, like exists/fileSize/readFileBounded already do: real
+      // readFileSync follows symlinks, and a fake that does not makes a
+      // symlinked fixture read as unreadable rather than as its target.
+      const resolved = resolveThroughLinks(path);
+      return resolved === null ? null : files[resolved] ?? null;
     },
 
     // Mirrors the real bounded (4096-byte) prefix read, through `links`

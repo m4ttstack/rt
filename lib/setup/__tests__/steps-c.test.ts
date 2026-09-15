@@ -1489,6 +1489,36 @@ describe("apply steps C: plugins, git.identity, fast-browser, herdr, extension, 
       ]);
     });
 
+    // Filtering a non-string out of `allow` and then writing the filtered array
+    // back is silent data loss. Refusing is the only safe answer: rt does not
+    // know what that entry meant, and Claude Code may.
+    test("an allow array holding a non-string is refused, not rewritten without it", async () => {
+      const raw = JSON.stringify({ permissions: { allow: ["WebFetch", 7] } });
+      const p = fakeProbes({ home, env: {}, files: { [settingsPath()]: raw } });
+      const { ctx } = makeCtx(p);
+      const outcome = await claudePermissionsStep.run(ctx);
+      expect(outcome.state).toBe("failed");
+      expect(p.readFile(settingsPath())).toBe(raw);
+    });
+
+    // A temp-file-plus-rename replaces the symlink's own directory entry, so a
+    // settings.json managed out of a dotfiles repo would be silently detached
+    // from its source and the real file left unchanged.
+    test("a settings.json symlink is written through, not replaced", async () => {
+      const target = `${home}/dotfiles/claude-settings.json`;
+      const p = fakeProbes({
+        home,
+        env: {},
+        files: { [target]: JSON.stringify({ permissions: { allow: ["WebFetch"] } }) },
+        links: { [settingsPath()]: target },
+      });
+      const { ctx } = makeCtx(p);
+      const outcome = await claudePermissionsStep.run(ctx);
+      expect(outcome.state).toBe("done");
+      expect(p.readlink(settingsPath())).toBe(target);
+      expect(JSON.parse(p.readFile(target)!).permissions.allow).toContain("EnterWorktree");
+    });
+
     test("existing allow keeps its entries and order, missing baseline entries are appended", async () => {
       const existingAllow = ["Bash(glab *)", "Bash(npm publish)", "WebFetch"];
       const p = fakeProbes({ home, env: {}, files: { [settingsPath()]: JSON.stringify({ permissions: { allow: existingAllow } }) } });
