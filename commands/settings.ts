@@ -512,7 +512,14 @@ export function renderDevModeWrapper(sourcePath: string, bunPath: string): strin
   return [
     `#!/bin/zsh`,
     `${DEV_MODE_TAG}`,
-    `export PATH="${bunDir}:/opt/homebrew/bin:/usr/local/bin:$PATH"`,
+    // Appended, not prepended: launchd's minimal PATH only needs these dirs
+    // PRESENT for logdy/lnav/bunx to resolve (bun itself execs by absolute
+    // path), while a prepend would shadow the caller's own order for every
+    // dev-mode invocation — pathRow's precedence read most visibly (RT-160).
+    // \${PATH:+...}: an empty inherited PATH must not leave a leading empty
+    // component, which zsh resolves as the current directory — and the next
+    // line cds into the source checkout.
+    `export PATH="\${PATH:+\$PATH:}${bunDir}:/opt/homebrew/bin:/usr/local/bin"`,
     `export RT_LAUNCH_CWD="$PWD"`,
     `cd "${sourcePath}" || { echo "rt: dev-mode source checkout missing: ${sourcePath}" >&2; exit 1; }`,
     `exec "${bunPath}" run --preload="${DEV_MODE_PRELOAD}" "${sourcePath}/cli.ts" "$@"`,
