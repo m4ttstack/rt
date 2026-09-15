@@ -595,7 +595,8 @@ export function herdAnswer(
   a: Commands["herd:answer"]["payload"],
   o: RtClientOptions = {},
 ): Promise<RtResponse<Commands["herd:answer"]["data"]>> {
-  return rtCommand<Commands["herd:answer"]["data"]>("herd:answer", { gate: a.gate }, { sockPath: o.sockPath, timeoutMs: o.timeoutMs ?? 10_000 });
+  const payload = { gate: a.gate, ...(a.sessionId !== undefined ? { sessionId: a.sessionId } : {}) };
+  return rtCommand<Commands["herd:answer"]["data"]>("herd:answer", payload, { sockPath: o.sockPath, timeoutMs: o.timeoutMs ?? 10_000 });
 }
 
 /** A disposable job's report also closes its pane, one herdr CLI call under the runner's own 15s budget. */

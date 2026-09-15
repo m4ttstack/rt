@@ -136,6 +136,15 @@ export interface GateRow {
   nudge: { session: string } | null;
   delivery: { outcome: "delivered" | "dead-pane" | "confirmed" | "stuck"; at: number } | null;
   released: boolean;
+  /** Set once the nudged pane has provably read the answer: either it
+      self-answered (stamped in the same transaction as the answer) or a
+      later `markConsumed` call recorded that it acted on a push. `null`
+      until then, so a sweep can tell an answered-but-unread row from a
+      settled one. Currently only stamped for herd-subject gates (the
+      self-answer path and `rt herd answer`'s nudged-session read); a
+      non-herd gate with a nudge stays `null` even after its pane
+      reconciles. */
+  consumedAt: number | null;
   owner: string | null;
   escalatedAt: number | null;
   /** Set by answer-time execution handling: an answered gate whose executor
@@ -160,10 +169,10 @@ export interface HerdInfo { id: string; repo: string; room: string; workspace: s
 /** A herd row as `herd:list` reports it: the registry row plus how many jobs hang off it. */
 export interface HerdListRow extends HerdInfo { jobs: number }
 export interface HerdJobInfo { herd: string; name: string; worktree: string; branch: string | null; tree: string | null; pane: string | null; agentSession: string | null; agentId: string | null; handle: string; status: "spawning" | "active" | "at-gate" | "at-milestone" | "done" | "closed" | "crashed"; disposable: boolean; lastGate: string | null; lastReport: number | null; createdAt: number; updatedAt: number }
-/** `lastGateStatus`/`lastGateDelivery` come from the job's `lastGate` row: an `answered` gate whose delivery is `dead-pane` is the "answered, worker not woken" case the shepherd must act on. */
+/** `lastGateStatus`/`lastGateDelivery` come from the job's `lastGate` row: an `answered` gate whose delivery is `dead-pane` is the "answered, worker not woken" case the shepherd must act on. `lastGateConsumed` is `null` when there is nothing to consume (no last gate, not answered, or not nudged), and otherwise reports whether the nudged pane has read its answer. */
 export interface HerdStatusData {
   herd: HerdInfo;
-  jobs: Array<HerdJobInfo & { openGate: string | null; paneStatus: string | null; lastGateStatus: GateStatus | null; lastGateDelivery: "delivered" | "dead-pane" | "confirmed" | "stuck" | null }>;
+  jobs: Array<HerdJobInfo & { openGate: string | null; paneStatus: string | null; lastGateStatus: GateStatus | null; lastGateDelivery: "delivered" | "dead-pane" | "confirmed" | "stuck" | null; lastGateConsumed: boolean | null }>;
   unread: number;
   lifecycleConnected: boolean;
   hiddenUp: boolean | null;
@@ -747,7 +756,7 @@ export interface Commands {
   "herd:gates":  { payload: { herd: string }; data: { gates: GateRow[] } };
   "herd:ask":       { payload: { herd: string; job: string; session: string; pane?: string; questions: GateQuestion[]; context?: string }; data: { gate: string } };
   "herd:milestone": { payload: { herd: string; job: string; session: string; pane?: string; artifact: string; summary?: string }; data: { gate: string; message: number } };
-  "herd:answer":    { payload: { gate: string }; data: { gate: string; status: GateStatus; answer: GateAnswer | null; closedReason: GateRow["closedReason"] } };
+  "herd:answer":    { payload: { gate: string; sessionId?: string }; data: { gate: string; status: GateStatus; answer: GateAnswer | null; closedReason: GateRow["closedReason"] } };
   "herd:report":    { payload: { herd: string; job: string; body: string }; data: { message: number } };
   /** `callerWorkspace` is the attending session's own HERDR_WORKSPACE_ID: the attached tab opens there, not in the herd's workspace. */
   "herd:attend":      { payload: { herd: string; job: string; callerWorkspace: string }; data: { tab: string; pane: string } };
