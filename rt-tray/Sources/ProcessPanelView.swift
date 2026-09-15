@@ -81,6 +81,10 @@ struct ProcessPanelView: View {
         if !bootDiagnosticsLines().isEmpty {
             menu.addItem(.separator())
         }
+        menu.addItem(ActionMenuItem("Open mattstack", axid: AXID.menuGearMattstackWindow) {
+            NotificationCenter.default.post(name: .showMattstackWindow, object: nil)
+        })
+        menu.addItem(.separator())
         menu.addItem(ActionMenuItem("Restart Daemon", axid: AXID.menuGearRestartDaemon) {
             NotificationCenter.default.post(name: .rtRestartDaemon, object: nil)
         })

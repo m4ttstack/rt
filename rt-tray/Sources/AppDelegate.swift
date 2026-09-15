@@ -52,10 +52,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     private var needBroker: NeedBroker!
     private var coordinator: SetupCoordinator?
     private var rtClient: RtClient?
+    // `mattstackWindow` holds the controller strongly: `WindowModel.controller`
+    // is weak, so an unretained controller deallocates and every show()/open()
+    // silently no-ops.
+    // fileprivate, not private: `WindowOpenBridge` below reads it across the
+    // MainActor hop, and `private` would not reach a sibling top-level type.
+    fileprivate var windowModel: WindowModel?
+    private var mattstackWindow: MattstackWindowController?
     /// A `mattstack://join/<code>` event can arrive before `buildServices()`
     /// builds the coordinator (launch-by-link). Stashed here and drained at
     /// the end of `buildServices()`.
     private var pendingJoinCode: String?
+    /// A `mattstack://open/...` or https `*.mattstack` event can arrive
+    /// before `buildServices()` constructs `windowModel` (launch-by-link).
+    /// Stashed here and drained at the end of `buildServices()`.
+    private var pendingOpen: OpenRequest?
     /// The stand-down route is decided once, by whichever of the settings
     /// answer and its backstop gets there first.
     @MainActor private var standDownRouted = false
@@ -124,6 +135,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             self, selector: #selector(checkForUpdates), name: .rtCheckUpdates, object: nil)
         NotificationCenter.default.addObserver(
             self, selector: #selector(showKeyboardConflictWindow), name: .showKeyboardConflict, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(showMattstackWindow), name: .showMattstackWindow, object: nil)
 
         // Setup / Settings surfaces, posted by the gear menu and the Done screen
         NotificationCenter.default.addObserver(self, selector: #selector(showSetupStatus), name: .rtShowSetupStatus, object: nil)
@@ -357,12 +370,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         let permissionProbe: PermissionProbing? = nil
         #endif
         needBroker = NeedBroker(services: servicesForNeeds, privileged: privilegedForNeeds)
+        let model = WindowModel()
+        windowModel = model
+        mattstackWindow = MattstackWindowController(model: model)
+        let windowBridge = WindowOpenBridge()
+        windowBridge.appDelegate = self
         // Assigned here, in buildServices(), and not in setupTrayServer():
         // applicationDidFinishLaunching runs buildServices() before it starts
         // the listener, so no connection can arrive while `routes` is still
         // nil and fall through to the legacy 404 handler.
         TrayServer.shared.routes = TrayRoutes(permissions: permissionsService, services: servicesForNeeds, privileged: privilegedForNeeds,
-                                              needs: needBroker, updater: updater, version: self, window: WindowOpeningUnavailable())
+                                              needs: needBroker, updater: updater, version: self, window: windowBridge)
         rtClient = RtClientFactory.make()
         if let rt = rtClient {
             coordinator = SetupCoordinator(rt: rt, permissions: permissionsService, permissionProbe: permissionProbe, needs: needBroker, updater: updater)
@@ -373,6 +391,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         } else if pendingJoinCode != nil {
             pendingJoinCode = nil
             TrayLog.warn("mattstack://join link received but rt could not be resolved; dropping")
+        }
+        if let request = pendingOpen {
+            pendingOpen = nil
+            Task { @MainActor in _ = await model.open(request) }
         }
         updaterObservation = updater.observe(\.canCheckForUpdates, options: [.initial, .new]) { u, _ in
             DispatchQueue.main.async { TrayState.shared.canCheckForUpdates = u.canCheckForUpdates }
@@ -427,25 +449,38 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     }
 
     @objc private func handleGetURL(_ event: NSAppleEventDescriptor, with reply: NSAppleEventDescriptor) {
-        guard let s = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue, let url = URL(string: s) else { return }
-        guard let code = JoinLink.code(from: url) else {
-            // Never the raw string: an unrecognized URL can carry a
-            // malformed invite code in its path.
-            TrayLog.warn("ignored URL", ["scheme": url.scheme ?? "", "host": url.host ?? ""])
+        guard let s = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
+              let url = URL(string: s) else { return }
+        if let code = JoinLink.code(from: url) {
+            Task { @MainActor in
+                guard let coordinator else {
+                    // Launch-by-link: the kAEGetURL event can arrive before
+                    // buildServices() constructs the coordinator. buildServices()
+                    // drains this once it exists.
+                    pendingJoinCode = code
+                    return
+                }
+                coordinator.handleJoin(code: code)
+            }
             return
         }
-        Task { @MainActor in
-            guard let coordinator else {
-                // Launch-by-link: the kAEGetURL event can arrive before
-                // buildServices() constructs the coordinator. buildServices()
-                // drains this once it exists.
-                pendingJoinCode = code
-                return
+        if let request = OpenLink.request(from: url) ?? OpenLink.request(fromHTTPS: url) {
+            Task { @MainActor in
+                guard let windowModel else { pendingOpen = request; return }
+                _ = await windowModel.open(request)
             }
-            coordinator.handleJoin(code: code)
+            return
         }
+        if url.scheme == "https" || url.scheme == "http" {
+            // Delivered an https URL we don't own (a router misfire): punt to
+            // the default browser rather than swallowing it.
+            NSWorkspace.shared.open(url)
+            return
+        }
+        TrayLog.warn("ignored URL", ["scheme": url.scheme ?? "", "host": url.host ?? ""])
     }
 
+    @objc private func showMattstackWindow() { Task { @MainActor in windowModel?.toggleVisibility() } }
     @objc private func showSetupStatus() { Task { @MainActor in coordinator?.openSetupStatus() } }
     @objc private func showSettings() { Task { @MainActor in coordinator?.showSettings() } }
     @objc private func showUninstall() { Task { @MainActor in coordinator?.showSettings(pane: .uninstall) } }
@@ -1194,8 +1229,17 @@ private func bootVerdict(from info: SupervisionInfo, now: Date) -> (verdict: Str
     return nil
 }
 
-struct WindowOpeningUnavailable: WindowOpening {
-    func open(url: String) async -> Bool { false }
+final class WindowOpenBridge: WindowOpening, @unchecked Sendable {
+    weak var appDelegate: AppDelegate?
+    func open(url: String) async -> Bool {
+        let defaults = UserDefaults.standard
+        let enabled = defaults.object(forKey: "MSShellHandoff") == nil || defaults.bool(forKey: "MSShellHandoff")
+        guard enabled, let u = URL(string: url), let request = OpenLink.request(fromHTTPS: u) else { return false }
+        return await MainActor.run { [weak appDelegate] () -> Task<Bool, Never>? in
+            guard let model = appDelegate?.windowModel else { return nil }
+            return Task { await model.open(request) }
+        }?.value ?? false
+    }
 }
 
 struct DaemonStatus {

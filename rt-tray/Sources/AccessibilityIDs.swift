@@ -110,6 +110,7 @@ enum AXID {
 
     // Menu (app menu + tray gear menu)
     static let menuAppSettings = "menu.app.settings"
+    static let menuGearMattstackWindow = "menu.gear.mattstackWindow"
     static let menuGearSetupStatus = "menu.gear.setupStatus"
     static let menuGearSettings = "menu.gear.settings"
     static let menuGearUninstall = "menu.gear.uninstall"
