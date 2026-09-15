@@ -6,7 +6,8 @@
 
 import type { Logger } from "pino";
 import type { Commands } from "../../../packages/rt-client/src/commands.ts";
-import { gateOptionValue, GATE_BY_PANE } from "../../../packages/rt-client/src/commands.ts";
+import { GATE_BY_PANE } from "../../../packages/rt-client/src/commands.ts";
+import { unwrapGateAnswerValue, validateGateAnswers } from "../../../packages/rt-client/src/gate-answers.ts";
 import type { CommandResult } from "./types.ts";
 import type { EventsBus } from "../events-bus.ts";
 import type { GatesStore, GateQuestion, GateAnswer, GateRow, GateOrigin } from "../gates-store.ts";
@@ -143,46 +144,6 @@ function sameOpenerPane(a: GateRow, b: GateRow): boolean {
   return false;
 }
 
-/** Both wire shapes carry the same value underneath: bare, or `{value, note?}`
-    when the panel attaches free text. Validation reads only the value. */
-function unwrapAnswerValue(raw: unknown): unknown {
-  if (raw && typeof raw === "object" && !Array.isArray(raw) && "value" in (raw as Record<string, unknown>)) {
-    return (raw as { value: unknown }).value;
-  }
-  return raw;
-}
-
-/**
- * Option membership is required whenever a question declares options,
- * checked against the unwrapped value (every element, for multi); an
- * empty options array stays free-form. Every question id must also appear
- * as an answers key -- an omitted question is not a legitimate decision
- * (an intentional empty multi-select `{tiers: []}` already satisfies this).
- * The sole validation point before an answer reaches storage.
- */
-function validateAnswers(questions: GateQuestion[], answers: Record<string, unknown>): string | null {
-  const byId = new Map(questions.map((q) => [q.id, q]));
-  for (const [qid, raw] of Object.entries(answers)) {
-    const question = byId.get(qid);
-    if (!question) return `unknown question id: ${qid}`;
-    const value = unwrapAnswerValue(raw);
-    const isArray = Array.isArray(value);
-    if (question.multi && !isArray) return `question ${qid} expects an array (multi)`;
-    if (!question.multi && isArray) return `question ${qid} expects a single value`;
-    const values = isArray ? (value as unknown[]) : [value];
-    if (!values.every((v) => typeof v === "string")) return `question ${qid} value must be a string`;
-    if (question.options.length > 0) {
-      const members = question.options.map(gateOptionValue);
-      for (const v of values as string[]) {
-        if (!members.includes(v)) return `answer for "${qid}" is not one of its options: "${v}"`;
-      }
-    }
-  }
-  const missing = questions.map((q) => q.id).filter((id) => !(id in answers));
-  if (missing.length > 0) return `missing answer(s) for: ${missing.join(", ")}`;
-  return null;
-}
-
 /** Herd-spawned runs own their gates; everything else (no origin, no runId,
     an unknown run, or a legacy spawner like "shepherdr") falls back to the
     human owner. */
@@ -303,7 +264,7 @@ async function runExecutorGuarantee(row: GateRow, deps: GuaranteeDeps): Promise<
  * closeAnswered's dedicated transition, not the open/parked-only close().
  */
 async function runAttentionRouting(row: GateRow, deps: GuaranteeDeps): Promise<void> {
-  const action = unwrapAnswerValue(row.answer?.answers?.["action"]);
+  const action = unwrapGateAnswerValue(row.answer?.answers?.["action"]);
 
   const agentId = typeof row.meta?.["agentId"] === "string" ? (row.meta["agentId"] as string) : undefined;
   if (action === "dismiss") {
@@ -564,7 +525,7 @@ export function createGateHandlers(
         if (!shepherd || session !== shepherd) return { ok: false as const, error: "owned-by", owner };
       }
 
-      const validationError = validateAnswers(gate.questions, answers as Record<string, unknown>);
+      const validationError = validateGateAnswers(gate.questions, answers as Record<string, unknown>);
       if (validationError) return { ok: false as const, error: validationError };
 
       // The writer's own session travels onto the answer row so gate-push
