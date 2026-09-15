@@ -75,20 +75,23 @@ clone zero repos: a regression caused by the fix.
 no live intent any more. A root that later went missing would then have no row
 to report it.
 
-Together they cover both: the intent carries the pre-Install case, the snapshot
-carries the post-Install case.
+Together they cover both: the join intent carries the pre-Install case, the
+snapshot carries the post-Install case.
 
 A genuinely team-less install (no intent, no cloned team) still never sees the
 row, which is the original ruling. A solo user who later joins a team meets the
 question at that point.
 
-Three states:
+The row has two possible sources, and **exactly one is live at a time**: before
+the home repo exists the answer is staged, and from the moment it exists the
+answer is in the store. See "Where the answer lives" below for why that
+invariant holds rather than being a precedence rule.
 
 | Condition | Status | Detail | Action |
 |---|---|---|---|
-| `rt.repoRoots[0]` set, exists, and is a usable directory | `ready` | names the path, plus the TCC note when it applies | none |
-| `rt.repoRoots` unset | `needs-you` | "choose where rt should clone your team's repos" | choose-folder |
-| set, but missing or unusable | `needs-you` | names the path and what is wrong with it | choose-folder |
+| a root resolves, exists, and is a usable directory | `ready` | names the path, plus the TCC note when it applies | none |
+| no root resolves from either source | `needs-you` | "choose where rt should clone your team's repos" | choose-folder |
+| a root resolves but is missing or unusable | `needs-you` | names the path and what is wrong with it | choose-folder |
 
 The row and the verb share one validator (`checkRepoRoot`), so "the row says
 ready" and "the verb would accept it" can never disagree. A path that exists
@@ -131,12 +134,23 @@ rt stops creating directories on anyone's machine. Detection survives only as
 the *starting directory* the folder panel opens at, which is a suggestion the
 user confirms rather than a decision rt makes.
 
-It gains one new job: promoting the staged answer. If `rt.repoRoots` is unset
-and a staged path exists, it writes that path at machine scope and removes the
-staging file. This is the same shape as `secrets.write` draining staged
-secrets, and it is the only write of `rt.repoRoots` rt performs. The value is
-still the user's; the step is only moving it from the holding pen into the
-store now that the store exists.
+It gains one new job: promoting the staged answer. **If a staged path exists,
+it wins**: `settings.seed` writes it at machine scope and removes the staging
+file, whether or not the key already holds something. A staged value is by
+construction a freshly validated answer the user gave on this machine, so it is
+never the stale one.
+
+The emptiness test is `!getSetting<string[]>("rt.repoRoots").value?.[0]`, NOT
+`unwritten()`. Those disagree for a key explicitly written as `[]` at machine
+scope, which is reachable by hand. Under `unwritten()` that state would leave
+the row reading `ready` off a staged value while `repos.clone` and `board.keys`
+both saw no root and silently did nothing. One predicate, used by the row and
+the step alike.
+
+Promotion is idempotent and also runs at the top of `repos.clone`, because
+`rt setup apply --only repos.clone` is a documented remedy channel that skips
+step 8; without that, a remedy run after a pre-Install answer would clone
+nothing.
 
 `repos.clone`'s existing `skipped` branch already covers "no root configured
 yet" and needs no change. It stays reachable: the GUI answers the row before
@@ -253,13 +267,36 @@ and that file is written by `home init` **after** the clone lands, where it may
 adopt a profile name from the cloned `user/local/`. A pre-Install write would
 land in a profile directory the resolver then never reads.
 
-**So the answer is staged, not written.** `rt setup repo-root set` writes the
-chosen path to `~/.mattstack/rt/` (the runtime directory, outside the home
-repo), following the precedent of `lib/setup/staging.ts`, which exists for
-exactly this reason: "a durable holding pen for values collected during `rt
-setup` before the [store] has a live target". That module is shaped for secrets
-(per-domain files at 0600); a repo root is not a secret, so this is a sibling
-file rather than a reuse of `stageSecret`.
+**So the answer is staged only while the store cannot hold it.** `rt setup
+repo-root set` branches on one condition:
+
+```
+p.exists(join(home, "user", ".git"))
+```
+
+- **false** (home repo not initialised yet): stage the path to
+  `~/.mattstack/rt/repo-root.json`, outside the home repo. This follows
+  `lib/setup/staging.ts`, which exists for exactly this reason: "a durable
+  holding pen for values collected during `rt setup` before the [store] has a
+  live target". That module is shaped for per-domain secrets, so this is a
+  sibling file, not a reuse of `stageSecret`.
+- **true**: write `rt.repoRoots` directly at machine scope. The dangerous
+  precondition is gone, and so is any reason to defer.
+
+**This branch is what keeps the two sources from ever both being live**, and
+that matters more than it looks. An earlier draft had the verb always stage and
+the row read store-then-staged. That produced an unclearable required row: once
+the store held a path, a user whose folder had since been deleted could pick a
+new one, the verb would stage it, the row would keep reading the dead stored
+path, and `settings.seed` would refuse to promote because the key was already
+written. `canInstall` false, permanently, with no way out. That is the same
+defect family this whole design was written to remove, re-introduced by the fix
+for the previous one.
+
+`home.restore` makes that reachable rather than theoretical: a restored home
+repo carries another Mac's machine store, and `rt home init` offers to adopt an
+existing profile from the cloned `user/local/`. Taking that offer inherits an
+`rt.repoRoots` naming a path that does not exist on the new machine.
 
 `settings.seed` (step 8, after `home.init` at step 1) promotes the staged value
 into `rt.repoRoots` at **machine** scope, matching the registry's
@@ -310,8 +347,11 @@ Confirm with that command rather than assuming either way.
   throw reaches `buildGroup`'s catch and collapses every tools row into one
   unclearable required error row.
 - No app (CLI or the VM harness): the row is `needs-you`, and its detail names
-  `rt setup repo-root set` so a terminal user has something to run. This is
-  why the harness must set `rt.repoRoots` before
+  `rt setup repo-root set` so a terminal user has something to run. The harness
+  answers it by running that verb, never by writing `rt.repoRoots` directly:
+  before Install the VM has no `~/.mattstack/user` either, so a direct write
+  would kill `home.init` inside the harness exactly as it would on a real Mac.
+  This is why the harness must answer the row before
   driving Install, and the harness change is part of the work, not a
   follow-up.
 
@@ -330,8 +370,8 @@ Confirm with that command rather than assuming either way.
   with `fieldValues["root"]` returns the `.rtVerb` with the path on stdin.
 - Decoding an unknown action type still yields `.unknown` and `.none`, so the
   forward-compat property is pinned rather than assumed.
-- The VM harness sets `rt.repoRoots` before Install and asserts the row reads
-  `ready`.
+- The VM harness answers the row with `rt setup repo-root set` before Install
+  and asserts the row reads `ready`. It must never write the setting directly.
 
 No test drives `NSOpenPanel`. The panel is three lines of configuration and a
 `runModal`; the logic worth testing is the dispatcher on either side of it.

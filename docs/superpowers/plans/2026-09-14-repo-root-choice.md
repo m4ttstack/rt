@@ -18,7 +18,8 @@
 - TDD throughout: write the failing test, run it, watch it fail for the stated reason, then implement. A test that passes before the change is not RED, it is a characterization test, and this plan says explicitly where one is intended.
 - `repos.root` must NOT be added to `INSTALL_SATISFIED_IDS` in `lib/setup/plan.ts`.
 - Only `settings.seed` ever writes `rt.repoRoots`, at **machine** scope (`scopes: ["machine"]` in `packages/rt-client/src/settings/registry-defs.ts`). The verb stages; it does not write the store.
-- `rt.repoRoots` has `default: []` in that registry. It is NEVER `undefined`. Assert `toEqual([])` or use `unwritten()` from `lib/setup/steps/step-utils.ts`; `toBeUndefined()` can never pass.
+- `rt.repoRoots` has `default: []` in that registry. It is NEVER `undefined`, so `toBeUndefined()` can never pass; assert `toEqual([])`.
+- The one "is a root configured" predicate, in the row and in every step, is `!getSetting<string[]>("rt.repoRoots").value?.[0]`. Do NOT use `unwritten()` for this key: it reports false for a value explicitly written as `[]`, a state every consumer reads as no root, and the two disagreeing is how the row goes green over an install that clones nothing.
 - rt must never create a repo-root directory on the user's behalf. `NSOpenPanel`'s own New Folder button is how a user makes one.
 - Never run a verb that writes real settings against your own HOME. Use `env -i HOME=$(mktemp -d) ...` for any smoke check, per this repo's operating rules.
 - Work on branch `repo-root-choice`, which carries the spec. Never push to `main`. Never leave the shared main checkout on a branch.
@@ -41,7 +42,16 @@ The machine store is `~/.mattstack/user/local/<machineKey()>/settings.local.json
 
 There is a second failure behind it: `machineKey()` falls back to the slugified hostname when `~/.mattstack/machine-key` is absent, and `home init` writes that file *after* the clone, possibly adopting a name from the cloned `user/local/`. A pre-Install write would land in a profile the resolver never reads.
 
-So `rt setup repo-root set` writes to `~/.mattstack/rt/` (runtime dir, outside the home repo), and `settings.seed` at step 8 promotes it into `rt.repoRoots` and deletes the staging file. `lib/setup/staging.ts` is the precedent and its docblock says why it exists; it is shaped for secrets, so this is a sibling file, not a reuse of `stageSecret`.
+So `rt setup repo-root set` branches on `p.exists(join(home, "user", ".git"))`:
+
+- **false** (home repo not initialised): stage to `~/.mattstack/rt/repo-root.json`, outside the home repo. `lib/setup/staging.ts` is the precedent; it is shaped for per-domain secrets, so this is a sibling file, not a reuse of `stageSecret`.
+- **true**: write `rt.repoRoots` directly at machine scope. The dangerous precondition is gone.
+
+`settings.seed` at step 8 promotes any staged value into the store and deletes the file. **Promotion always wins over whatever the key already holds**, and the emptiness test everywhere is `!getSetting<string[]>("rt.repoRoots").value?.[0]`, never `unwritten()`.
+
+**Why the branch, rather than always staging.** An earlier draft had the verb always stage and the row read store-then-staged. That re-introduced an unclearable required row: post-Install the store holds `/A`, `/A` is deleted, the user picks `/B`, the verb stages it, the row keeps reading the dead `/A`, and `settings.seed` refuses to promote because the key is written. `canInstall` false forever. `home.restore` makes that reachable, since `rt home init` offers to adopt a profile from the restored `user/local/`, inheriting an `rt.repoRoots` that names a path this machine does not have. The branch means the two sources are never both live, so the row's `store ?? staged` read cannot go stale.
+
+Promotion also runs at the top of `repos.clone`: `rt setup apply --only repos.clone` is a documented remedy channel that skips step 8, and without it a remedy run after a pre-Install answer would clone nothing.
 
 Read `lib/setup/staging.ts` before writing Task 1.
 
@@ -77,6 +87,8 @@ export function detectCandidate(p: Pick<Probes, "home" | "exists">): string | nu
 export function readStagedRepoRoot(p: Pick<Probes, "home" | "readFile">): string | null;
 export function stageRepoRoot(p: Probes, path: string): void;
 export function clearStagedRepoRoot(p: Probes): void;
+/** Drains staging into the store. Idempotent, called by settings.seed and repos.clone. */
+export function promoteStagedRepoRoot(p: Probes): boolean;
 ```
 
 `statPath` goes on `Probes` rather than being an injected default argument. `probes.ts`'s own docblock is the reason: the seam exists "so validators and steps stay pure functions over injected state and tests never touch the real machine". A row taking its candidate from a faked `p.exists` while stat-ing the real disk would be half fake and half real, and no `composePlan` test could control it. The real implementation is `statSync` plus `accessSync(path, W_OK)`, both caught; the fake is seeded from a map.
@@ -89,7 +101,7 @@ Create `lib/setup/__tests__/repo-root.test.ts`:
 
 ```ts
 import { describe, expect, test } from "bun:test";
-import { checkRepoRoot, detectCandidate, expandHome } from "../repo-root.ts";
+import { checkRepoRoot, detectCandidate, expandHome, type RootStat } from "../repo-root.ts";
 
 const HOME = "/Users/t";
 const DIR = { isDirectory: true, writable: true };
@@ -316,7 +328,9 @@ Expected: both FAIL. The first because `rt.repoRoots` is written (it reads `["<h
 
 - [ ] **Step 3: Add the promotion, test first**
 
-`settings.seed` gains one job: if `rt.repoRoots` is unwritten and a staged path exists, write it at machine scope and clear the staging file. This is the ONLY place rt writes that key.
+`settings.seed` gains one job: if a staged path exists, write it at machine scope and clear the staging file. **A staged value always wins**, whether or not the key already holds something: staging is only ever populated by the verb before the home repo existed, so it is by construction the freshest answer the user gave on this machine.
+
+Use `!getSetting<string[]>("rt.repoRoots").value?.[0]` anywhere you need "is a root configured", never `unwritten()`. They disagree for a key explicitly written as `[]` at machine scope, which is reachable by hand, and in that state `unwritten()` is false while every consumer sees no root: the row would read `ready` off staging while `repos.clone` and `board.keys` silently did nothing.
 
 Step 8 is the earliest safe moment. `home.init` is step 1, so by step 8 the home repo exists and the machine key is settled, and `setSetting` writes into a profile directory the resolver will actually read.
 
@@ -331,17 +345,27 @@ test("settings.seed promotes a staged repo root into the machine store and clear
   expect(readStagedRepoRoot(p)).toBeNull();
 });
 
-test("settings.seed leaves an already-written rt.repoRoots alone and still clears staging", async () => {
+test("a staged root overwrites an existing rt.repoRoots and clears staging", async () => {
   const p = fakeProbes({ home });
-  setSetting("rt.repoRoots", [join(home, "chosen")], "machine");
-  stageRepoRoot(p, join(home, "other"));
+  setSetting("rt.repoRoots", [join(home, "stale")], "machine");
+  stageRepoRoot(p, join(home, "fresh"));
   const { ctx } = makeCtx(p, { snapshot: snapshotWith(["gitlab.com/acme/one"]) });
   await settingsSeedStep.run(ctx);
-  expect(getSetting<string[]>("rt.repoRoots").value).toEqual([join(home, "chosen")]);
+  expect(getSetting<string[]>("rt.repoRoots").value).toEqual([join(home, "fresh")]);
+  expect(readStagedRepoRoot(p)).toBeNull();
+});
+
+test("an explicit empty array counts as no root, so a staged value still promotes", async () => {
+  const p = fakeProbes({ home });
+  setSetting("rt.repoRoots", [], "machine");
+  stageRepoRoot(p, join(home, "dev"));
+  const { ctx } = makeCtx(p, { snapshot: snapshotWith(["gitlab.com/acme/one"]) });
+  await settingsSeedStep.run(ctx);
+  expect(getSetting<string[]>("rt.repoRoots").value).toEqual([join(home, "dev")]);
 });
 ```
 
-The second test pins that a re-run never overwrites a value already in the store. Decide and state in the code whether staging is cleared in that case; the test above asserts the store is untouched and says nothing about the file, so make the assertion match whatever you implement rather than leaving it ambiguous.
+Both test names claim exactly what their bodies assert. The third is the `unwritten()` trap: under that predicate it would not promote.
 
 Run them, watch both fail (nothing promotes yet), then implement.
 
@@ -500,7 +524,8 @@ git commit -m "setup: add the choose-folder action type"
 
 Cover, following the existing connect-handler test conventions:
 
-- a valid directory STAGES the expanded path and writes NO setting (assert `getSetting("rt.repoRoots").value` is still `[]`)
+- with NO `~/.mattstack/user/.git`: a valid directory STAGES the expanded path and writes NO setting (assert `getSetting("rt.repoRoots").value` is still `[]`)
+- with `~/.mattstack/user/.git` present: the same call WRITES the store and stages nothing
 - a nonexistent path stages nothing and raises the user-actionable error
 - a file and an unwritable directory likewise
 - `~/dev` is staged expanded, not as `~/dev`
@@ -523,7 +548,17 @@ Two things to copy from it exactly:
    Order: a path argument if given; otherwise, at a TTY, print usage and exit; otherwise read stdin. **Do NOT prompt.** The only prompt on the deps object is `promptField`, wired to `promptSecret(field.label)` (`commands/setup.ts:617`), which sets raw mode and echoes nothing. Masking a folder path is wrong, and following `connectCredential` blindly lands you on exactly that.
 2. **Throw `UserActionableError`** on a validation failure rather than printing and exiting yourself. `exitWithUserError` (`commands/setup.ts:443`) prints the envelope and exits **2**, and `RtResult.userError` in the tray decodes the envelope only at exit 2. At any other code the app falls through to generic copy, and because `ChecklistScreen` sets `redactStderr = stdin != nil`, the user would see "details withheld because the command carried a secret" instead of "that folder is not writable".
 
-On success: `stageRepoRoot(deps.probes, check.path)`. **Do not call `setSetting`.** The machine store lives inside the home repo, which does not exist before Install; see "The answer is STAGED" above for the clone failure that causes. `settings.seed` promotes it at step 8.
+On success, branch on whether the home repo exists yet:
+
+```ts
+if (deps.probes.exists(join(deps.probes.home, "user", ".git"))) {
+  deps.writeSetting("rt.repoRoots", [check.path], "machine");
+} else {
+  stageRepoRoot(deps.probes, check.path);
+}
+```
+
+Never write the store on the false branch: it lives inside the home repo, and creating it before `home.init` clones makes the clone fail on a non-empty target. Never stage on the true branch either, or a post-Install answer would sit in a file nothing reads while the row keeps reporting the old stored path.
 
 Include `tccWarning` in the `--json` payload. The row computes its own warning in Task 5, so nothing depends on this payload reaching the app; it is there for CLI users and scripts.
 
@@ -583,6 +618,7 @@ Cover every branch:
 - nothing set and nothing staged: `needs-you`, `required: true`, action `choose-folder`, detail names `rt setup repo-root set` so a CLI user has something to run
 - **nothing set but a valid path STAGED: `ready`** (the user answered before Install; the store cannot hold it yet)
 - a staged path that no longer validates: `needs-you`, same as a bad stored one
+- **store and staging both hold values**: cannot happen by construction (the verb writes one or the other, never both), but assert the row still resolves deterministically to the stored one so a future change to the verb fails here rather than silently
 - unset with a detected candidate: `startAt` carries it, status still `needs-you`
 - set and usable: `ready`, detail names the path
 - set under `~/Documents`: `ready`, detail also carries the TCC warning
@@ -811,7 +847,11 @@ Revert Task 2's production change only, leaving its tests: the two `settings.see
 
 Revert Task 5's `team.mode !== "join" &&` guard so the row keys on tracking alone: the joiner test from Task 5 Step 1 must go red. Restore. That test is the whole reason this design was rewritten; a version of it that passes either way is worthless.
 
-Then revert Task 4's `stageRepoRoot` to a `setSetting` call and run the Task 4 smoke check: `test -e "$H/.mattstack/user"` must report the bug. Restore. That is the Install-step-1 regression, and nothing else in the suite catches it.
+Then revert Task 4's branch so the verb always stages, and run the Task 4 smoke check with `~/.mattstack/user/.git` present: the post-Install write test must go red. Restore. That branch is what stops the two sources being live at once.
+
+Then revert Task 4's false branch to a `setSetting` call and run the Task 4 smoke check on a fresh HOME: `test -e "$H/.mattstack/user"` must report the bug. Restore. That is the Install-step-1 regression, and nothing else in the suite catches it.
+
+Then swap Task 2's predicate to `unwritten()` and run its explicit-empty-array test: it must go red.
 
 - [ ] **Step 5: Leave it unpushed**
 
