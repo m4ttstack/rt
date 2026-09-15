@@ -37,6 +37,14 @@ A single titlebar-less `NSWindow` with the traffic lights inline in a thin
 top tab bar; content is full-bleed below the bar with no other chrome. One
 window only. Frame persists across launches.
 
+Splash: on the first window show per process, a full-window splash covers
+the content: dark ground, the mattstack wordmark, and the stack glyph's
+layers dropping into place beside the "m" with a tight spring (staggered,
+slight overshoot, settled well under a second). It dismisses with a short
+fade at whichever is later: 2 seconds elapsed, or the active app's first
+navigation finishing; a hard cap of 8 seconds keeps a dead app from holding
+it (the error overlay is behind it). Re-shows of the window skip the splash.
+
 Activation policy: the app is `LSUIElement` today. While the window is open
 it flips to `.regular` (Dock icon, Cmd-Tab entry); when the window closes it
 returns to `.accessory`. Entry points: an "Open mattstack" tray menu item, a
@@ -67,10 +75,18 @@ monogram.
   desaturated (SwiftUI `.saturation(0)`) at 75% opacity, label `#7e86ad`.
 - Cmd-1..Cmd-9 select by tab order; tooltips show displayName + shortcut;
   right-click on a tab: Reload. Cmd-R reloads the active app's webview.
-- Deck mini at the bar's far right: 18pt deck glyph with a 7pt ok-green dot
-  at its top-right corner (2pt ring in the bar color) while the deck daemon
-  is reachable. Opens the deck board in the window; outside the Cmd-N
-  ordering.
+- Deck mini at the bar's far right: a muted lowercase "deck" label, then an
+  18pt deck glyph with a 7pt ok-green dot at its top-right corner (2pt ring
+  in the bar color) while the deck daemon is reachable. Opens the deck
+  board in the window; outside the Cmd-N ordering.
+- In-shell dedupe: apps detect the shell via the ` mattstack-shell/` UA
+  marker and hide their own "switch app" launcher (app-kit's launcher for
+  chat/console/boxscore via a shared `isInsideMattstackShell()` helper;
+  board's own switcher with the same check). The shell's tabs are the one
+  app switcher. gitq stays out of scope.
+- Cross-app links inside a webview (e.g. deck's app listings) switch to
+  that app's tab instead of navigating the current webview; external hosts
+  and target=_blank to external hosts open in the default browser.
 
 ## 3. Webviews
 
