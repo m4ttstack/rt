@@ -1,19 +1,37 @@
 import MattstackCore
 import SwiftUI
 
-private let railWidth: CGFloat = 68
-private let railTopClearance: CGFloat = 40
-private let tileSize: CGFloat = 38
+private let barHeight: CGFloat = 34
+private let tabWidth: CGFloat = 110
+private let tabIconSize: CGFloat = 18
+private let deckIconSize: CGFloat = 18
+/// Not spec'd numerically: macOS lays out the traffic lights itself at
+/// their native position once titlebarAppearsTransparent is set, so this is
+/// just enough leading clearance for a hidden-title window's button cluster
+/// before the spec's explicit 12pt gap.
+private let trafficLightZoneWidth: CGFloat = 70
+private let barLeadingGap: CGFloat = 12
+
+private let barFill = Color(red: 0x0f / 255.0, green: 0x0f / 255.0, blue: 0x15 / 255.0)
+private let separatorColor = Color(red: 0x31 / 255.0, green: 0x38 / 255.0, blue: 0x53 / 255.0)
+private let activeFill = Color(red: 0x1c / 255.0, green: 0x21 / 255.0, blue: 0x36 / 255.0)
+private let inactiveFill = Color(red: 0x16 / 255.0, green: 0x16 / 255.0, blue: 0x1e / 255.0)
+private let activeLabelColor = Color(red: 0xe3 / 255.0, green: 0xe7 / 255.0, blue: 0xf6 / 255.0)
+private let inactiveLabelColor = Color(red: 0x7e / 255.0, green: 0x86 / 255.0, blue: 0xad / 255.0)
+private let tabAccentColor = Color(red: 0x7a / 255.0, green: 0xa2 / 255.0, blue: 0xf7 / 255.0)
+private let okGreen = Color(red: 0x3e / 255.0, green: 0xb9 / 255.0, blue: 0x53 / 255.0)
 
 struct MattstackWindowView: View {
     @ObservedObject var model: WindowModel
 
     var body: some View {
-        HStack(spacing: 0) {
-            RailView(model: model)
+        VStack(spacing: 0) {
+            TopTabBar(model: model)
+            Rectangle().fill(separatorColor).frame(height: 1)
             ContentArea(model: model)
         }
         .frame(minWidth: 900, minHeight: 600)
+        .ignoresSafeArea()
         .background(
             Button("") { model.store.reload(model.activeApp) }
                 .keyboardShortcut("r", modifiers: .command)
@@ -23,29 +41,37 @@ struct MattstackWindowView: View {
     }
 }
 
-private struct RailView: View {
+private struct TopTabBar: View {
     @ObservedObject var model: WindowModel
 
     var body: some View {
-        VStack(spacing: 8) {
-            Spacer().frame(height: railTopClearance)
+        HStack(spacing: 0) {
+            Color.clear.frame(width: trafficLightZoneWidth + barLeadingGap)
+            TabSeparator()
             ForEach(Array(model.apps.prefix(9).enumerated()), id: \.element.name) { index, app in
-                RailTile(model: model, app: app, shortcutIndex: index)
+                TabButton(model: model, app: app, shortcutIndex: index)
+                TabSeparator()
             }
             ForEach(model.apps.dropFirst(9), id: \.name) { app in
-                RailTile(model: model, app: app, shortcutIndex: nil)
+                TabButton(model: model, app: app, shortcutIndex: nil)
+                TabSeparator()
             }
-            Spacer()
-            RailTile(model: model, app: WindowModel.deckApp, shortcutIndex: nil, showsCatalogBadge: true)
-                .padding(.bottom, 12)
+            Spacer(minLength: 0)
+            DeckMini(model: model)
         }
-        .frame(width: railWidth)
-        .frame(maxHeight: .infinity)
-        .background(Color(red: 0.098, green: 0.102, blue: 0.122))
+        .frame(height: barHeight)
+        .frame(maxWidth: .infinity)
+        .background(barFill)
     }
 }
 
-private struct RailShortcut: ViewModifier {
+private struct TabSeparator: View {
+    var body: some View {
+        Rectangle().fill(separatorColor).frame(width: 1).frame(maxHeight: .infinity)
+    }
+}
+
+private struct TabShortcut: ViewModifier {
     let index: Int?
     func body(content: Content) -> some View {
         if let index {
@@ -56,11 +82,10 @@ private struct RailShortcut: ViewModifier {
     }
 }
 
-private struct RailTile: View {
+private struct TabButton: View {
     @ObservedObject var model: WindowModel
     let app: DiscoveryApp
     let shortcutIndex: Int?
-    var showsCatalogBadge = false
 
     private var isActive: Bool { model.activeApp == app.name }
 
@@ -68,46 +93,97 @@ private struct RailTile: View {
         Button {
             model.select(app.name)
         } label: {
-            ZStack {
-                tileImage
-                    .frame(width: tileSize, height: tileSize)
-                    .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-                    .opacity(isActive ? 1.0 : 0.68)
-                if isActive {
-                    RoundedRectangle(cornerRadius: 1.5)
-                        .fill(Color.accentColor)
-                        .frame(width: 3, height: tileSize)
-                        .offset(x: -(railWidth - tileSize) / 2 - 2)
+            ZStack(alignment: .bottom) {
+                HStack(spacing: 6) {
+                    tabIcon
+                        .frame(width: tabIconSize, height: tabIconSize)
+                        .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                        .saturation(isActive ? 1 : 0)
+                        .opacity(isActive ? 1 : 0.75)
+                    Text(app.displayName.lowercased())
+                        .font(.system(size: 12))
+                        .foregroundColor(isActive ? activeLabelColor : inactiveLabelColor)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
                 }
-                if showsCatalogBadge && model.catalogFresh {
-                    Circle()
-                        .fill(Color.green)
-                        .frame(width: 10, height: 10)
-                        .offset(x: tileSize / 2 - 2, y: -(tileSize / 2 - 2))
+                .padding(.leading, 10)
+                .frame(width: tabWidth, height: barHeight, alignment: .leading)
+
+                if isActive {
+                    Rectangle().fill(tabAccentColor).frame(width: tabWidth, height: 2)
                 }
             }
         }
         .buttonStyle(.plain)
+        .contentShape(Rectangle())
+        .frame(width: tabWidth, height: barHeight)
+        .background(isActive ? activeFill : inactiveFill)
         .help(shortcutIndex != nil ? "\(app.displayName) \u{2318}\(shortcutIndex! + 1)" : app.displayName)
-        .modifier(RailShortcut(index: shortcutIndex))
+        .modifier(TabShortcut(index: shortcutIndex))
         .contextMenu {
             Button("Reload") { model.store.reload(app.name) }
         }
     }
 
-    @ViewBuilder private var tileImage: some View {
+    @ViewBuilder private var tabIcon: some View {
         if let image = model.icons[app.name] {
             Image(nsImage: image)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
-                .padding(6)
         } else {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
                 .fill(Color.gray.opacity(0.35))
                 .overlay(
                     Text(String(app.displayName.prefix(1)))
+                        .font(.system(size: 10, weight: .semibold))
                         .foregroundColor(.white)
-                        .font(.system(size: 16, weight: .semibold))
+                )
+        }
+    }
+}
+
+private struct DeckMini: View {
+    @ObservedObject var model: WindowModel
+
+    var body: some View {
+        Button {
+            model.select(WindowModel.deckApp.name)
+        } label: {
+            ZStack(alignment: .topTrailing) {
+                deckIcon
+                    .frame(width: deckIconSize, height: deckIconSize)
+                    .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                if model.catalogFresh {
+                    Circle()
+                        .fill(okGreen)
+                        .overlay(Circle().stroke(barFill, lineWidth: 2))
+                        .frame(width: 7, height: 7)
+                        .offset(x: 4, y: -4)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .contentShape(Rectangle())
+        .padding(.horizontal, 16)
+        .frame(height: barHeight)
+        .help("Deck")
+        .contextMenu {
+            Button("Reload") { model.store.reload(WindowModel.deckApp.name) }
+        }
+    }
+
+    @ViewBuilder private var deckIcon: some View {
+        if let image = model.icons[WindowModel.deckApp.name] {
+            Image(nsImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+        } else {
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .fill(Color.gray.opacity(0.35))
+                .overlay(
+                    Text("d")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(.white)
                 )
         }
     }
