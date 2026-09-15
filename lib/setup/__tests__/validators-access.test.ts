@@ -261,10 +261,12 @@ describe("accessRows — access.forge", () => {
     expect(p.calls.fetch).toEqual([]);
   });
 
-  test("the confirmation steps name the declared forge's own connect verb", async () => {
-    const gh = baseTeam({ integrations: { forge: { host: "github.com", provider: "github" } } });
+  // Self-hosted only: github.com/gitlab.com bypass confirmation (RT-140,
+  // covered below), so this exercises the case that still needs it.
+  test("the confirmation steps name the declared forge's own connect verb (self-hosted)", async () => {
+    const gh = baseTeam({ integrations: { forge: { host: "github.example.com", provider: "github" } } });
     const r = await pickRow(accessRows(fakeProbes(), gh, null), "access.forge");
-    expect(JSON.stringify(r.action)).toContain("rt setup github connect --host github.com");
+    expect(JSON.stringify(r.action)).toContain("rt setup github connect --host github.example.com");
     const gl = baseTeam({ integrations: { forge: { host: "gitlab.example.com", provider: "gitlab" } } });
     const r2 = await pickRow(accessRows(fakeProbes(), gl, null), "access.forge");
     expect(JSON.stringify(r2.action)).toContain("rt setup gitlab connect --host gitlab.example.com");
@@ -298,6 +300,41 @@ describe("accessRows — access.forge", () => {
     const r = await pickRow(accessRows(p, team, null), "access.forge");
     expect(r.status).toBe("needs-you");
     expect(r.detail).toContain("unverified");
+    expect(p.calls.fetch).toEqual([]);
+  });
+
+  // RT-140: gitlab.com/github.com are the provider's own public hosts. The
+  // Accounts row (lib/setup/integrations.ts's gitlab validator) already
+  // dials gitlab.com unconditionally once a credential is connected, so
+  // refusing the same host here (a plain reachability HEAD) gains nothing
+  // and just leaves the user re-pasting a token they already have stored.
+  test("a gitlab team declaring gitlab.com, no override -> reaches the probe and reads ready (RT-140)", async () => {
+    const team = baseTeam({ integrations: { forge: { host: "gitlab.com", provider: "gitlab" } } });
+    const fetch = async () => ({ status: 200, body: "", headers: {} });
+    const p = fakeProbes({ fetch });
+    const r = await pickRow(accessRows(p, team, null), "access.forge");
+    expect(r.status).toBe("ready");
+    expect(p.calls.fetch.length).toBe(1);
+  });
+
+  test("a github team declaring github.com, no override -> reaches the probe and reads ready (RT-140)", async () => {
+    const team = baseTeam({ integrations: { forge: { host: "github.com", provider: "github" } } });
+    const fetch = async () => ({ status: 200, body: "", headers: {} });
+    const p = fakeProbes({ fetch });
+    const r = await pickRow(accessRows(p, team, null), "access.forge");
+    expect(r.status).toBe("ready");
+    expect(p.calls.fetch.length).toBe(1);
+  });
+
+  // A self-hosted forge is a genuine inviter-chosen host and must keep
+  // needing the user's own confirmation: the public-host exception must
+  // never widen past the two literal public hosts.
+  test("a gitlab team declaring a self-hosted host, no override -> stays needs-you, byte-for-byte the same detail as today (RT-140)", async () => {
+    const team = baseTeam({ integrations: { forge: { host: "gitlab.example.com", provider: "gitlab" } } });
+    const p = fakeProbes();
+    const r = await pickRow(accessRows(p, team, null), "access.forge");
+    expect(r.status).toBe("needs-you");
+    expect(r.detail).toBe(`your team declares forge host "gitlab.example.com" — unverified; confirm it yourself before rt reaches out to it`);
     expect(p.calls.fetch).toEqual([]);
   });
 });

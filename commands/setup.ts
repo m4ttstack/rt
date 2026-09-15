@@ -909,7 +909,13 @@ async function connectCredential(id: Integration, args: string[], deps: ConnectD
   let value: string;
   let sourceDetail: string | null = null;
 
-  if (id === "github" && args.includes("--use-gh")) {
+  // Credential-less (RT-141: switchboard): an empty `fields` means there is
+  // nothing for the user to type or pipe, so neither the TTY prompt nor the
+  // stdin read below ever runs; every other integration still has at least
+  // one field and keeps hitting the branches below exactly as before.
+  if (def.fields.length === 0) {
+    value = "";
+  } else if (id === "github" && args.includes("--use-gh")) {
     value = await ghAuthToken(deps.probes);
     sourceDetail = "via gh";
   } else if (deps.isTTY()) {

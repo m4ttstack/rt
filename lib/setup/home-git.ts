@@ -50,7 +50,11 @@ export async function hasCommits(exec: Probes["exec"], cwd: string): Promise<boo
   return result.code === 0;
 }
 
-export type OriginPushState = { kind: "no-ref" } | { kind: "ahead"; count: number } | { kind: "up-to-date"; committedAt: Date | null } | { kind: "unknown" };
+export type OriginPushState =
+  | { kind: "no-ref" }
+  | { kind: "ahead"; count: number; committedAt: Date | null }
+  | { kind: "up-to-date"; committedAt: Date | null }
+  | { kind: "unknown" };
 
 /**
  * Compares against `refs/remotes/origin/<branch>` directly — never `@{u}`.
@@ -83,7 +87,13 @@ export async function originPushState(exec: Probes["exec"], cwd: string): Promis
   if (ahead.code !== 0) return { kind: "unknown" };
   const count = Number(ahead.stdout.trim());
   if (!Number.isFinite(count)) return { kind: "unknown" };
-  if (count > 0) return { kind: "ahead", count };
+  if (count > 0) {
+    // HEAD's own date, not the ref's: the ref hasn't moved yet, which is the
+    // whole reason this branch is reached.
+    const aheadLog = await exec(["git", "log", "-1", "--format=%cI", "HEAD"], { cwd, timeoutMs: GIT_TIMEOUT_MS });
+    const aheadCommittedAt = aheadLog.code === 0 && aheadLog.stdout.trim() ? new Date(aheadLog.stdout.trim()) : null;
+    return { kind: "ahead", count, committedAt: aheadCommittedAt };
+  }
 
   const log = await exec(["git", "log", "-1", "--format=%cI", ref], { cwd, timeoutMs: GIT_TIMEOUT_MS });
   const committedAt = log.code === 0 && log.stdout.trim() ? new Date(log.stdout.trim()) : null;
