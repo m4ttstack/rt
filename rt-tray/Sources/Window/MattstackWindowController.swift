@@ -3,7 +3,6 @@ import SwiftUI
 
 final class MattstackWindowController: NSWindowController, NSWindowDelegate {
     let model: WindowModel
-    private var hasStartedCatalogLoad = false
 
     init(model: WindowModel) {
         self.model = model
@@ -23,10 +22,7 @@ final class MattstackWindowController: NSWindowController, NSWindowDelegate {
 
     func show() {
         NSApp.setActivationPolicy(.regular)
-        if !hasStartedCatalogLoad {
-            hasStartedCatalogLoad = true
-            Task { await model.ensureCatalogLoaded() }
-        }
+        Task { await model.ensureCatalogLoaded() }
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)

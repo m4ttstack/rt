@@ -43,7 +43,7 @@ final class WindowModel: ObservableObject {
     weak var controller: MattstackWindowController?
 
     private let catalog: AppCatalog
-    private var catalogLoadStarted = false
+    private var catalogLoadTask: Task<Void, Never>?
     private var navigationDelegates: [String: WindowNavigationDelegate] = [:]
 
     init(store: WebViewStore? = nil) {
@@ -58,21 +58,32 @@ final class WindowModel: ObservableObject {
         return apps.first { $0.name == name }
     }
 
-    /// Idempotent; a second call while loading, or after loading, is a no-op.
+    /// Shares one in-flight task across callers (show() and open() both call
+    /// this) so a concurrent first show plus a deep-link open never fetch
+    /// the catalog twice. Safe to call again after loading: the stored task
+    /// is already resolved, so the await returns immediately.
     func ensureCatalogLoaded() async {
-        guard !catalogLoadStarted else { return }
-        catalogLoadStarted = true
-        let loaded = await catalog.load()
-        apps = loaded
-        catalogFresh = !loaded.isEmpty
-        if activeApp.isEmpty, let first = loaded.first { activeApp = first.name }
-        for app in loaded { fetchIcon(url: app.icon, into: app.name) }
+        if let existing = catalogLoadTask {
+            await existing.value
+            return
+        }
+        let task = Task { [weak self] in
+            guard let self else { return }
+            let result = await self.catalog.load()
+            self.apps = result.apps
+            self.catalogFresh = result.fresh
+            if self.activeApp.isEmpty, let first = result.apps.first { self.activeApp = first.name }
+            for app in result.apps { self.fetchIcon(url: app.icon, into: app.name) }
+        }
+        catalogLoadTask = task
+        await task.value
     }
 
-    func open(_ request: OpenRequest) -> Bool {
-        if !catalogLoadStarted { Task { await ensureCatalogLoaded() } }
+    func open(_ request: OpenRequest) async -> Bool {
+        await ensureCatalogLoaded()
         guard let dest = WindowNavigation.destination(for: request, in: apps + [Self.deckApp]),
               let app = app(named: request.app) else { return false }
+        controller?.show()
         select(app.name)
         if !request.pathAndQuery.isEmpty {
             webView(for: app).load(URLRequest(url: dest))

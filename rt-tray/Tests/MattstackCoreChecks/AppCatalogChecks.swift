@@ -23,18 +23,21 @@ let appCatalogChecks: [Check] = [
     Check("load fetches, returns apps, and writes the cache") { c in
         let f = FakeFetcher(); f.result = .success(sampleJSON)
         let path = tmpCachePath()
-        let apps = await AppCatalog(fetcher: f, cachePath: path).load()
-        try c.requireEqual(apps.count, 2)
+        let result = await AppCatalog(fetcher: f, cachePath: path).load()
+        try c.requireEqual(result.apps.count, 2)
+        c.expect(result.fresh)
         c.expect(FileManager.default.fileExists(atPath: path))
     },
     Check("load falls back to the cache when fetch fails") { c in
         let path = tmpCachePath()
         try sampleJSON.write(to: URL(fileURLWithPath: path))
-        let apps = await AppCatalog(fetcher: FakeFetcher(), cachePath: path).load()
-        try c.requireEqual(apps.map(\.name), ["board", "chat"])
+        let result = await AppCatalog(fetcher: FakeFetcher(), cachePath: path).load()
+        try c.requireEqual(result.apps.map(\.name), ["board", "chat"])
+        c.expect(!result.fresh)
     },
     Check("load returns empty when fetch and cache both fail") { c in
-        let apps = await AppCatalog(fetcher: FakeFetcher(), cachePath: tmpCachePath()).load()
-        try c.requireEqual(apps, [])
+        let result = await AppCatalog(fetcher: FakeFetcher(), cachePath: tmpCachePath()).load()
+        try c.requireEqual(result.apps, [])
+        c.expect(!result.fresh)
     },
 ]
