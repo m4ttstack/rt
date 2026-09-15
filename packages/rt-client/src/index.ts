@@ -48,6 +48,7 @@ export {
   reconcilerStatus,
   reconcilerClear,
   gateOpen,
+  gateAsk,
   gateAnswer,
   gateWait,
   gateList,
