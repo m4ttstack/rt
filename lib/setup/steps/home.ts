@@ -15,7 +15,7 @@ import { toFailedOutcome } from "./step-utils.ts";
 /** `rt home init` itself, self-invoked as a subprocess, does a lot (clone, then its own materialize phase) — generous but bounded so a stalled clone/network call surfaces as a real failure instead of hanging the whole Install button. */
 const HOME_INIT_TIMEOUT_MS = 180_000;
 
-function homeGitDir(home: string): string {
+export function homeGitDir(home: string): string {
   return join(home, ".mattstack", "user", ".git");
 }
 
