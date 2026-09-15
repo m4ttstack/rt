@@ -493,7 +493,7 @@ function consumeHarness(opts: { deliverOk?: boolean } = {}) {
   return { push, store, events, warns };
 }
 
-describe("retryDeadPanes: answered-unconsumed re-delivery sweep (contract C14)", () => {
+describe("retryDeadPanes: answered-unconsumed re-delivery sweep", () => {
   test("(a) an unconsumed answered row is re-pushed on the 4th sweep call, not the 1st-3rd", async () => {
     const { push, store, events } = consumeHarness();
     const row = store.open({ subject: "run:r1", kind: "clarify", questions: qs(), nudge: { session: "sess-1" } }).row;

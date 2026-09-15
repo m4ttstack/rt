@@ -91,8 +91,7 @@ export interface GatesStore {
   /** Rows the re-delivery sweep should chase: answered, nudged, never
       consumed, and delivered/confirmed/stuck (dead-pane stays with the
       existing retry pass). Self-answered rows are excluded even though the
-      backfill and answer-time stamp already cover them -- belt and braces
-      per contract C14. */
+      backfill and answer-time stamp already cover them -- belt and braces. */
   unconsumedAnsweredPushes(): GateRow[];
   /** Deletes closed/answered rows past the retention window, floor respected.
       Returns the number of rows removed. */

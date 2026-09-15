@@ -109,7 +109,7 @@ export interface GatePush {
       form-blocked pane otherwise never learns its gate ended. */
   onClosed(row: GateRow): Promise<void>;
   /** Retry dead-pane nudges up to maxPaneRetries per gate, plus the
-      answered-unconsumed re-delivery sweep (contract C14). */
+      answered-unconsumed re-delivery sweep. */
   retryDeadPanes(): Promise<{ retried: number; delivered: number; gaveUp: number; reNudged: number }>;
 }
 
@@ -139,9 +139,9 @@ export function createGatePush(opts: {
   // already give a reader.
   const consecutiveFailures = new Map<string, number>();
   const paneAttempts = new Map<string, number>();
-  // Re-delivery sweep state (contract C14), keyed by gate id, mirroring the
-  // paneAttempts idiom above: a daemon restart resets these, which just
-  // restarts a borderline row's cadence rather than losing correctness.
+  // Re-delivery sweep state, keyed by gate id, mirroring the paneAttempts
+  // idiom above: a daemon restart resets these, which just restarts a
+  // borderline row's cadence rather than losing correctness.
   const consumeSweepCounter = new Map<string, number>();
   const consumeAttempts = new Map<string, number>();
   const consumeGivenUp = new Set<string>();
@@ -159,9 +159,9 @@ export function createGatePush(opts: {
 
   /** The doorbell half of a pane push: resolves the nudge session, delivers
       the wrapped phrase, and records the outcome exactly as pushToPane does.
-      No Escape injection -- the re-delivery sweep (contract C14) calls this
-      directly so a re-fired doorbell every 4th sweep never risks interrupting
-      the very consumption turn it is trying to trigger. */
+      No Escape injection -- the re-delivery sweep calls this directly so a
+      re-fired doorbell every 4th sweep never risks interrupting the very
+      consumption turn it is trying to trigger. */
   async function pushDoorbell(row: GateRow, phrase: string): Promise<boolean> {
     const sessionId = row.nudge?.session;
     if (!sessionId) return false;
@@ -301,9 +301,9 @@ export function createGatePush(opts: {
         }
         for (const id of [...paneAttempts.keys()]) if (!live.has(id)) paneAttempts.delete(id);
 
-        // Re-delivery sweep (contract C14): doorbell-only, via pushDoorbell
-        // rather than pushToPane -- re-firing Escape on a cadence risks
-        // interrupting the very consumption turn this sweep is chasing.
+        // Re-delivery sweep: doorbell-only, via pushDoorbell rather than
+        // pushToPane -- re-firing Escape on a cadence risks interrupting
+        // the very consumption turn this sweep is chasing.
         let reNudged = 0;
         const unconsumedLive = new Set<string>();
         for (const row of store.unconsumedAnsweredPushes()) {
