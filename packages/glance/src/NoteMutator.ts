@@ -9,9 +9,15 @@
  *   DELETE /api/v4/projects/:id/merge_requests/:mrIid/notes/:noteId
  *   POST   /api/v4/projects/:id/merge_requests/:mrIid/discussions
  *   POST   /api/v4/projects/:id/uploads
+ *   GET    /api/v4/projects/:id/merge_requests/:mrIid
  */
 
 import { type OnRequestHook, safeEmit } from './instrumentation.ts';
+
+/** GitLab omits `type` on a general note; every CreatedNote producer must still return `null`, not `undefined`. */
+function normalizeNoteType(note: CreatedNote): CreatedNote {
+  return { ...note, type: note.type ?? null };
+}
 
 export interface CreatedNote {
   id: number;
@@ -25,12 +31,30 @@ export interface CreatedNote {
   created_at: string;
   resolvable: boolean | null;
   resolved: boolean | null;
+  /** "DiffNote" for a positioned note; null for a general note (or absent from the response). */
+  type: string | null;
 }
 
 export interface CreatedDiscussion {
   id: string;
   notes: CreatedNote[];
 }
+
+export interface DiffRefs {
+  base_sha: string;
+  start_sha: string;
+  head_sha: string;
+}
+
+export type TextPosition = DiffRefs & {
+  position_type: "text";
+  new_path: string;
+  old_path: string;
+} & (
+    | { new_line: number; old_line?: never }
+    | { old_line: number; new_line?: never }
+    | { old_line: number; new_line: number }
+  );
 
 export interface UploadedFile {
   alt: string;
@@ -92,7 +116,7 @@ export class NoteMutator {
       );
     }
 
-    return (await res.json()) as CreatedNote;
+    return normalizeNoteType((await res.json()) as CreatedNote);
   }
 
   /**
@@ -134,7 +158,92 @@ export class NoteMutator {
         `createDiscussion failed: ${res.status} ${res.statusText}${text ? `: ${text}` : ""}`,
       );
     }
-    return (await res.json()) as CreatedDiscussion;
+    const discussion = (await res.json()) as CreatedDiscussion;
+    return { ...discussion, notes: discussion.notes.map(normalizeNoteType) };
+  }
+
+  /**
+   * Create a positioned (inline) discussion anchored to a line in the diff.
+   * `position` must be sent as a nested JSON object, not bracketed form
+   * fields: GitLab silently drops the position (and degrades to a general
+   * note) when the nesting isn't JSON.
+   */
+  async createPositionedDiscussion(
+    projectId: number,
+    mrIid: number,
+    body: string,
+    position: TextPosition,
+  ): Promise<CreatedDiscussion> {
+    const path = `/api/v4/projects/${projectId}/merge_requests/${mrIid}/discussions`;
+    const url = `${this.baseURL}${path}`;
+    const started = performance.now();
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "PRIVATE-TOKEN": this.token,
+      },
+      body: JSON.stringify({ body, position }),
+    });
+
+    safeEmit(this.onRequest, {
+      op: 'noteMutator.createPositionedDiscussion',
+      transport: 'rest',
+      method: 'POST',
+      path,
+      durationMs: performance.now() - started,
+      status: res.status,
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(
+        `createPositionedDiscussion failed: ${res.status} ${res.statusText}${text ? `: ${text}` : ""}`,
+      );
+    }
+    const discussion = (await res.json()) as CreatedDiscussion;
+    return { ...discussion, notes: discussion.notes.map(normalizeNoteType) };
+  }
+
+  /**
+   * Fetch the MR's current `diff_refs`, needed to anchor a positioned
+   * discussion (see `createPositionedDiscussion`). GitLab omits `diff_refs`
+   * until the MR has a diff to anchor against.
+   */
+  async fetchDiffRefs(projectId: number, mrIid: number): Promise<DiffRefs> {
+    const path = `/api/v4/projects/${projectId}/merge_requests/${mrIid}`;
+    const url = `${this.baseURL}${path}`;
+    const started = performance.now();
+
+    const res = await fetch(url, {
+      method: "GET",
+      headers: { "PRIVATE-TOKEN": this.token },
+    });
+
+    safeEmit(this.onRequest, {
+      op: 'noteMutator.fetchDiffRefs',
+      transport: 'rest',
+      method: 'GET',
+      path,
+      durationMs: performance.now() - started,
+      status: res.status,
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(
+        `fetchDiffRefs failed: ${res.status} ${res.statusText}${text ? `: ${text}` : ""}`,
+      );
+    }
+
+    const data = (await res.json()) as { diff_refs: DiffRefs | null };
+    if (!data.diff_refs) {
+      throw new Error(
+        `fetchDiffRefs: merge request !${mrIid} in project ${projectId} has no diff_refs yet`,
+      );
+    }
+    return data.diff_refs;
   }
 
   /** Edit the body of an existing note. */

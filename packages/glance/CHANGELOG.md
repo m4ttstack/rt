@@ -1,5 +1,27 @@
 # @mattstack/glance
 
+## 0.25.0
+
+### Minor Changes
+
+- `NoteMutator.fetchDiffRefs(projectId, mrIid)`: GETs a merge request and
+  returns its `diff_refs` (new `DiffRefs` type), needed to anchor a
+  positioned discussion. Throws a descriptive error when the MR has no
+  diff yet (`diff_refs` null or missing).
+- `NoteMutator.createPositionedDiscussion(projectId, mrIid, body, position)`:
+  POSTs an inline discussion anchored to a diff line (new `TextPosition`
+  type). The position is sent as a nested JSON object, not bracketed form
+  fields: GitLab silently drops the position, and degrades to a general
+  note, when the nesting isn't JSON.
+- `CreatedNote` gains a `type: string | null` field ("DiffNote" for a
+  positioned note, `null` for a general one). Every `NoteMutator` method that
+  returns a `CreatedNote` (`createNote`, `createDiscussion`,
+  `createPositionedDiscussion`) normalizes a missing `type` on the response
+  to `null` so callers never see `undefined`; this lets a caller verify a
+  positioned comment actually landed as a `DiffNote` rather than silently
+  degrading. `type` is required, not optional: code that builds a
+  `CreatedNote` literal (test fakes and fixtures included) must add it.
+
 ## 0.24.0
 
 ### Minor Changes
