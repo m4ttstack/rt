@@ -22,6 +22,7 @@ import type { ApplyContext, StepOutcome } from "../apply.ts";
 import { AUTH_FAILURE_PATTERN } from "../../team/publish.ts";
 import { intentPath, type SetupIntent } from "../intent.ts";
 import { stageSecret, stagingDir } from "../staging.ts";
+import { readStagedRepoRoot, stageRepoRoot } from "../repo-root.ts";
 import { fakeProbes } from "./fakes.ts";
 
 import { homeInitStep, homeRestoreStep } from "../steps/home.ts";
@@ -768,26 +769,24 @@ describe("path.link / settings.seed / repos.clone / intercepts.install (real HOM
     expect(p.exists(linkPath(home, "gitq"))).toBe(true);
   });
 
-  test("settings.seed: writes mattstack.appPath from ctx.appPath and detects a repo root that exists", async () => {
-    const githubRoot = join(home, "Documents", "GitHub");
-    const p = fakeProbes({ home, dirs: { [githubRoot]: [] } });
+  test("settings.seed: writes mattstack.appPath from ctx.appPath, never touches rt.repoRoots", async () => {
+    const p = fakeProbes({ home });
     const { ctx } = makeCtx(p, { appPath: appRoot });
 
     const outcome = await settingsSeedStep.run(ctx);
     expect(outcome.state).toBe("done");
     expect(getSetting<string>("mattstack.appPath").value).toBe(appRoot);
-    expect(getSetting<string[]>("rt.repoRoots").value).toEqual([githubRoot]);
+    expect(getSetting<string[]>("rt.repoRoots").value).toEqual([]);
   });
 
   test("settings.seed: idempotent re-run — an unchanged appPath is not rewritten a second time (F15)", async () => {
     // A path DIFFERENT from beforeEach's own seeded mattstack.appPath (appRoot)
     // so the first run's write is real, not a no-op from the fixture setup.
     const newAppPath = "/Applications/mattstack.app";
-    const githubRoot = join(home, "Documents", "GitHub");
-    const p = fakeProbes({ home, dirs: { [githubRoot]: [] } });
+    const p = fakeProbes({ home });
 
     const first = await settingsSeedStep.run(makeCtx(p, { appPath: newAppPath }).ctx);
-    expect(first).toEqual({ state: "done", detail: "wrote: mattstack.appPath, rt.repoRoots" });
+    expect(first).toEqual({ state: "done", detail: "wrote: mattstack.appPath" });
     expect(getSetting<string>("mattstack.appPath").value).toBe(newAppPath);
 
     const second = await settingsSeedStep.run(makeCtx(p, { appPath: newAppPath }).ctx);
@@ -807,21 +806,6 @@ describe("path.link / settings.seed / repos.clone / intercepts.install (real HOM
     expect(getSetting<string>("mattstack.appPath").value).toBe(before); // untouched
   });
 
-  test("settings.seed: no candidate directory exists, but the team has repos to track -> creates Documents/GitHub", async () => {
-    const p = fakeProbes({ home });
-    const { ctx } = makeCtx(p, {
-      appPath: null,
-      snapshot: { slug: "acme", integrations: {}, trackingIdentities: ["gitlab.com/acme/api"], marketplaces: [], plugins: [], remote: null },
-    });
-
-    const expectedRoot = join(home, "Documents", "GitHub");
-    expect(p.exists(expectedRoot)).toBe(false);
-    const outcome = await settingsSeedStep.run(ctx);
-    expect(outcome).toEqual({ state: "done", detail: "wrote: rt.repoRoots" });
-    expect(getSetting<string[]>("rt.repoRoots").value).toEqual([expectedRoot]);
-    expect(p.exists(expectedRoot)).toBe(true);
-  });
-
   test("settings.seed: no candidate directory and nothing to track -> nothing created, nothing written", async () => {
     const p = fakeProbes({ home });
     const { ctx } = makeCtx(p, { appPath: null });
@@ -832,14 +816,43 @@ describe("path.link / settings.seed / repos.clone / intercepts.install (real HOM
     expect(p.exists(join(home, "Documents", "GitHub"))).toBe(false);
   });
 
-  test("settings.seed: rt.repoRoots already set is left alone (existing wins over detected)", async () => {
-    setSetting("rt.repoRoots", ["/already/configured"], "machine");
-    const githubRoot = join(home, "Documents", "GitHub");
-    const p = fakeProbes({ home, dirs: { [githubRoot]: [] } });
-    const { ctx } = makeCtx(p, { appPath: null });
+  test("settings.seed never writes rt.repoRoots, even when a candidate directory exists", async () => {
+    const p = fakeProbes({ home, dirs: { [join(home, "Documents", "GitHub")]: [] } });
+    const { ctx } = makeCtx(p, { appPath: null, snapshot: { slug: "acme", integrations: {}, trackingIdentities: ["gitlab.com/acme/one"], marketplaces: [], plugins: [], remote: null } });
+
+    const outcome = await settingsSeedStep.run(ctx);
+    expect(outcome.state).toBe("done");
+    expect(getSetting<string[]>("rt.repoRoots").value).toEqual([]);
+  });
+
+  test("settings.seed creates no directory when nothing is detected", async () => {
+    const p = fakeProbes({ home, dirs: {} });
+    const { ctx } = makeCtx(p, { appPath: null, snapshot: { slug: "acme", integrations: {}, trackingIdentities: ["gitlab.com/acme/one"], marketplaces: [], plugins: [], remote: null } });
 
     await settingsSeedStep.run(ctx);
-    expect(getSetting<string[]>("rt.repoRoots").value).toEqual(["/already/configured"]);
+    expect(p.exists(join(home, "Documents", "GitHub"))).toBe(false);
+  });
+
+  test("settings.seed promotes a staged repo root into the machine store and clears the staging file", async () => {
+    const p = fakeProbes({ home, dirs: { [join(home, ".mattstack", "user")]: [".git"] }, files: { [join(home, ".mattstack", "user", ".git")]: "gitdir" } });
+    stageRepoRoot(p, join(home, "dev"));
+    const { ctx } = makeCtx(p, { appPath: null, snapshot: { slug: "acme", integrations: {}, trackingIdentities: ["gitlab.com/acme/one"], marketplaces: [], plugins: [], remote: null } });
+
+    const outcome = await settingsSeedStep.run(ctx);
+    expect(outcome.state).toBe("done");
+    expect(getSetting<string[]>("rt.repoRoots").value).toEqual([join(home, "dev")]);
+    expect(readStagedRepoRoot(p)).toBeNull();
+  });
+
+  test("a staged root overwrites an existing rt.repoRoots and clears staging", async () => {
+    setSetting("rt.repoRoots", [join(home, "stale")], "machine");
+    const p = fakeProbes({ home, dirs: { [join(home, ".mattstack", "user")]: [".git"] }, files: { [join(home, ".mattstack", "user", ".git")]: "gitdir" } });
+    stageRepoRoot(p, join(home, "fresh"));
+    const { ctx } = makeCtx(p, { appPath: null, snapshot: { slug: "acme", integrations: {}, trackingIdentities: ["gitlab.com/acme/one"], marketplaces: [], plugins: [], remote: null } });
+
+    await settingsSeedStep.run(ctx);
+    expect(getSetting<string[]>("rt.repoRoots").value).toEqual([join(home, "fresh")]);
+    expect(readStagedRepoRoot(p)).toBeNull();
   });
 
   test("repos.clone: clones a missing identity with the expected argv, skips an existing dir", async () => {
@@ -971,6 +984,17 @@ describe("path.link / settings.seed / repos.clone / intercepts.install (real HOM
     const { ctx } = makeCtx(p);
 
     expect(await reposCloneStep.run(ctx)).toEqual({ state: "skipped", detail: "no repos to clone" });
+  });
+
+  test("repos.clone: drains a staged repo root into the store even with zero identities", async () => {
+    const p = fakeProbes({ home, dirs: { [join(home, ".mattstack", "user")]: [".git"] }, files: { [join(home, ".mattstack", "user", ".git")]: "gitdir" } });
+    stageRepoRoot(p, join(home, "dev"));
+    const { ctx } = makeCtx(p);
+
+    const outcome = await reposCloneStep.run(ctx);
+    expect(outcome).toEqual({ state: "skipped", detail: "no repos to clone" });
+    expect(getSetting<string[]>("rt.repoRoots").value).toEqual([join(home, "dev")]);
+    expect(readStagedRepoRoot(p)).toBeNull();
   });
 
   test("repos.clone: identities to clone but no repo root configured -> skipped, never a dead-end failure", async () => {

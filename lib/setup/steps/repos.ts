@@ -14,6 +14,7 @@ import { gitWithToken } from "../../team/git-credential.ts";
 import { withoutUrls } from "../../team/redact.ts";
 import type { ApplyContext } from "../apply.ts";
 import type { StepDef, StepOutcome } from "../apply.ts";
+import { promoteStagedRepoRoot } from "../repo-root.ts";
 import { trustedForgeTokenFor } from "./forge-token.ts";
 import { toFailedOutcome } from "./step-utils.ts";
 
@@ -66,6 +67,12 @@ async function reposCloneRun(ctx: ApplyContext): Promise<StepOutcome> {
 
 async function reposCloneRunUnsafe(ctx: ApplyContext): Promise<StepOutcome> {
   const { p } = ctx;
+
+  // `rt setup apply --only repos.clone` is a documented remedy channel and
+  // skips settings.seed (step 8), so this step drains staging itself. Above
+  // the zero-identities return: a remedy run with nothing to clone must
+  // still promote a pre-Install answer, or it sits in the staging file forever.
+  promoteStagedRepoRoot(p);
 
   // Computed BEFORE the root check: zero identities means there is no work
   // regardless of whether a root is configured, and `skipped` — the
