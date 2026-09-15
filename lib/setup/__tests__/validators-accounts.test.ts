@@ -269,57 +269,52 @@ describe("accountRows — account.linear declared / not declared", () => {
   });
 });
 
+// RT-141: switchboard has no credential rt can hold (the deployed service's
+// /health gates on a per-board token no user input can satisfy). The row is
+// now a plain reachability probe against the public /healthz, gated only by
+// the same user-confirmed-host latch every self-hosted forge/switchboard
+// declaration uses. No secret is ever stored or read.
 describe("accountRows — account.switchboard", () => {
-  test("join intent + secret present, host NOT user-confirmed -> still re-validates (no free pass); a revoked/stale token never reads as ready on the strength of an intent file", async () => {
+  test("host NOT user-confirmed -> error, unverified, no network call, no action (nothing to connect)", async () => {
     const team = baseTeam({ integrations: { switchboard: { url: "https://sw.example.com" } } });
     const p = fakeProbes();
-    const r = await pickRow(accountRows(p, team, [], fakeSecrets({ "rt.switchboardToken": "tok" }), JOIN_INTENT), "account.switchboard");
+    const r = await pickRow(accountRows(p, team, [], fakeSecrets(), JOIN_INTENT), "account.switchboard");
     expect(r.status).toBe("error");
-    expect(p.calls.fetch).toEqual([]); // never sent the token to a team-declared, unconfirmed host
+    expect(r.detail).toContain("unverified");
+    expect(p.calls.fetch).toEqual([]);
+    expect(r.action).toBeNull();
   });
 
-  test("join intent + secret present + the user has confirmed this host -> ready, decorated as verified", async () => {
+  test("host user-confirmed, /healthz 200 -> ready, no intent-based decoration, no token involved", async () => {
     const team = baseTeam({ integrations: { switchboard: { url: "https://sw.example.com" } } });
-    const fetch = async (url: string) => (url.includes("/health") ? { status: 200, body: "", headers: {} } : { status: 0, body: "", headers: {} });
+    const fetch = async (url: string) => (url.endsWith("/healthz") ? { status: 200, body: "", headers: {} } : { status: 0, body: "", headers: {} });
     const r = await pickRow(
-      accountRows(fakeProbes({ fetch }), team, [], fakeSecrets({ "rt.switchboardToken": "tok" }), JOIN_INTENT, { switchboardUrl: "https://sw.example.com" }),
-      "account.switchboard",
-    );
-    expect(r.status).toBe("ready");
-    expect(r.detail).toBe("redeemed during Join, verified");
-  });
-
-  test("join intent + secret ABSENT -> still missing with a connect action", async () => {
-    const team = baseTeam({ integrations: { switchboard: { url: "https://sw.example.com" } } });
-    const r = await pickRow(accountRows(fakeProbes(), team, [], fakeSecrets(), JOIN_INTENT), "account.switchboard");
-    expect(r.status).toBe("missing");
-    expect(r.action?.type).toBe("connect");
-  });
-
-  test("create intent + secret present + confirmed host -> falls through to validate()'s own health probe", async () => {
-    const team = baseTeam({ integrations: { switchboard: { url: "https://sw.example.com" } } });
-    const fetch = async (url: string) => (url.includes("/health") ? { status: 200, body: "", headers: {} } : { status: 0, body: "", headers: {} });
-    const r = await pickRow(
-      accountRows(fakeProbes({ fetch }), team, [], fakeSecrets({ "rt.switchboardToken": "tok" }), null, { switchboardUrl: "https://sw.example.com" }),
+      accountRows(fakeProbes({ fetch }), team, [], fakeSecrets(), JOIN_INTENT, { switchboardUrl: "https://sw.example.com" }),
       "account.switchboard",
     );
     expect(r.status).toBe("ready");
     expect(r.detail).toBe("switchboard reachable");
   });
 
-  test("secret present, health probe unhealthy -> error, WITH a connect action (H2)", async () => {
+  test("host user-confirmed, /healthz unhealthy -> error, no action", async () => {
     const team = baseTeam({ integrations: { switchboard: { url: "https://sw.example.com" } } });
-    const fetch = async () => ({ status: 0, body: "", headers: {} });
-    const r = await pickRow(accountRows(fakeProbes({ fetch }), team, [], fakeSecrets({ "rt.switchboardToken": "tok" }), null), "account.switchboard");
+    const fetch = async () => ({ status: 401, body: "", headers: {} });
+    const r = await pickRow(
+      accountRows(fakeProbes({ fetch }), team, [], fakeSecrets(), null, { switchboardUrl: "https://sw.example.com" }),
+      "account.switchboard",
+    );
     expect(r.status).toBe("error");
-    expect(r.action?.type).toBe("connect");
+    expect(r.action).toBeNull();
   });
 
-  test("no secret -> missing with a connect action", async () => {
+  // A plain reachability probe, not a CLI-owned session the Tools group
+  // already tracks: required-ness must keep following the declaring
+  // source (R-T9-b), not fall into doppler/ldcli's required:false override.
+  test("required when the team declares it, unlike a CLI-owned session", async () => {
     const team = baseTeam({ integrations: { switchboard: { url: "https://sw.example.com" } } });
     const r = await pickRow(accountRows(fakeProbes(), team, [], fakeSecrets(), null), "account.switchboard");
-    expect(r.status).toBe("missing");
-    expect(r.action?.type).toBe("connect");
+    expect(r.required).toBe(true);
+    expect(r.optionalNote).toBeNull();
   });
 });
 

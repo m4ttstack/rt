@@ -549,10 +549,12 @@ describe("rtHealthRows — home.backup (real git)", () => {
     return repoDir;
   }
 
-  async function commit(repoDir: string, message: string): Promise<void> {
+  /** `committerDate` lets a test build a commit that is genuinely stale (outside the push window) without sleeping; set on both dates so `git log --format=%cI` and `%aI` agree. */
+  async function commit(repoDir: string, message: string, opts?: { committerDate?: string }): Promise<void> {
     writeFileSync(join(repoDir, `${message}.txt`), message);
     execFileSync("git", ["add", "-A"], { cwd: repoDir });
-    execFileSync("git", ["commit", "-q", "-m", message], { cwd: repoDir });
+    const env = opts?.committerDate ? { ...process.env, GIT_COMMITTER_DATE: opts.committerDate, GIT_AUTHOR_DATE: opts.committerDate } : process.env;
+    execFileSync("git", ["commit", "-q", "-m", message], { cwd: repoDir, env });
   }
 
   async function localOnlyRepo(): Promise<string> {
@@ -591,12 +593,70 @@ describe("rtHealthRows — home.backup (real git)", () => {
     expect(row.detail).toBe("remote configured, nothing pushed yet");
   });
 
-  test("commits ahead of the ref: needs-you", async () => {
+  // RT-139: the daemon commits and schedules a trailing push (pushDelaySec,
+  // default 60s). A fresh commit is genuinely queued, not a failure to push,
+  // and the row must not alarm with no remedy for the minute it takes.
+  test("commits ahead of the ref, freshly committed, no recorded failure: ready, queued for the daemon's own push delay, not a false alarm (RT-139)", async () => {
     const repo = await pushedRepo();
     await commit(repo, "later");
     const row = await homeBackupRow(repo, REAL_EXEC, NO_RECORD);
+    expect(row.status).toBe("ready");
+    expect(row.detail).toContain("1 commit(s)");
+    expect(row.detail).toContain("queued for backup");
+    expect(row.detail).not.toContain("backed up");
+    expect(row.action).toBeNull();
+  });
+
+  // A record with no failure (ok:true, or no record at all) reads the same:
+  // freshness is what decides "queued" vs "needs-you", not the record.
+  test("commits ahead of the ref, freshly committed, ok:true record: ready, the record isn't what makes this ready (RT-139)", async () => {
+    const repo = await pushedRepo();
+    await commit(repo, "later");
+    const row = await homeBackupRow(repo, REAL_EXEC, () => ({ at: Date.now(), ok: true }));
+    expect(row.status).toBe("ready");
+    expect(row.detail).toContain("queued for backup");
+  });
+
+  // A commit whose committer date is well outside the push window (here,
+  // decades old) is not "the daemon just hasn't gotten to it yet". The
+  // daemon is not doing what it said it would, so this stays an alarm.
+  test("commits ahead of the ref, stale (older than the push window), no recorded failure: needs-you (RT-139)", async () => {
+    const repo = await pushedRepo();
+    await commit(repo, "later", { committerDate: "2000-01-01T00:00:00Z" });
+    const row = await homeBackupRow(repo, REAL_EXEC, NO_RECORD);
     expect(row.status).toBe("needs-you");
-    expect(row.detail).toBe("1 commit(s) not pushed");
+    expect(row.detail).toContain("1 commit(s)");
+    expect(row.detail).not.toContain("queued for backup");
+  });
+
+  // A committer date is whatever clock wrote it, so it can land in the
+  // future (skew, or a hand-set GIT_COMMITTER_DATE). An upper bound alone
+  // reads that as freshly queued and keeps saying so until the future
+  // arrives, which is the one answer this row must never give about a
+  // backup that is not happening.
+  test("commits ahead of the ref, committer date in the future: needs-you, never queued (RT-139)", async () => {
+    const repo = await pushedRepo();
+    await commit(repo, "later", { committerDate: new Date(Date.now() + 365 * 24 * 60 * 60_000).toISOString() });
+    const row = await homeBackupRow(repo, REAL_EXEC, NO_RECORD);
+    expect(row.status).toBe("needs-you");
+    expect(row.detail).toContain("1 commit(s)");
+    expect(row.detail).not.toContain("queued for backup");
+  });
+
+  // RT-139: the window is read off rt.homeSnapshot.pushDelaySec, the same
+  // key the daemon's own schedulePush() reads, so a user who raises the
+  // delay does not recreate the false alarm this row exists to avoid.
+  test("commits ahead of the ref, stale under the default window but fresh under a raised pushDelaySec setting: ready (RT-139)", async () => {
+    const repo = await pushedRepo();
+    await commit(repo, "later", { committerDate: new Date(Date.now() - 5 * 60_000).toISOString() });
+    setSetting("rt.homeSnapshot", { enabled: true, debounceSec: 20, pushDelaySec: 1800, janitorThresholdHours: 6, janitorIntervalMin: 30 }, "machine");
+    try {
+      const row = await homeBackupRow(repo, REAL_EXEC, NO_RECORD);
+      expect(row.status).toBe("ready");
+      expect(row.detail).toContain("queued for backup");
+    } finally {
+      setSetting("rt.homeSnapshot", { enabled: true, debounceSec: 20, pushDelaySec: 60, janitorThresholdHours: 6, janitorIntervalMin: 30 }, "machine");
+    }
   });
 
   test("pushed and nothing ahead, no daemon record: ready, and names the COMMIT — the ref tip's committer date is not a push time", async () => {
@@ -613,12 +673,15 @@ describe("rtHealthRows — home.backup (real git)", () => {
     expect(row.detail).toBe("in sync — last pushed 5m ago");
   });
 
-  test("a record claiming a successful push never turns a needs-you row green — the tracking ref stays the only evidence", async () => {
+  // RT-139: freshness is not the only guard here. A stale, genuinely unpushed
+  // commit (outside the push window) must stay needs-you even when a record
+  // wrongly claims success; the tracking ref, not the record, is the evidence.
+  test("a record claiming a successful push never turns a stale needs-you row green: the tracking ref stays the only evidence", async () => {
     const repo = await pushedRepo();
-    await commit(repo, "later");
+    await commit(repo, "later", { committerDate: "2000-01-01T00:00:00Z" });
     const row = await homeBackupRow(repo, REAL_EXEC, () => ({ at: Date.now(), ok: true }));
     expect(row.status).toBe("needs-you");
-    expect(row.detail).toBe("1 commit(s) not pushed");
+    expect(row.detail).toContain("1 commit(s)");
   });
 
   test("commits ahead with a recorded push failure: names why, which nothing else on the machine surfaces", async () => {

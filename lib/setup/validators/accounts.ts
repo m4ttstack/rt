@@ -154,21 +154,15 @@ async function slackRow(p: Probes, base: Omit<Row, "status" | "detail" | "action
 }
 
 /**
- * join redeems the switchboard token as part of accepting the invite, but a
- * stored token is never proof it still works — revoked, expired, and
- * half-written all look identical to "a token is on disk", and the join
- * intent file stays behind on a FAILED join too (it only clears on full
- * success), which is exactly the run where this needs to be most skeptical.
- * Always re-validates; "redeemed during Join" only decorates a `ready` that
- * `def.validate()` actually earned.
+ * No credential to hold (RT-141): the deployed switchboard service gates
+ * /health behind a per-board token no user-supplied value can ever satisfy,
+ * so rt holds nothing here. This is a plain reachability probe against the
+ * public /healthz, same shape as access.ts's switchboardRow but required
+ * when the team declares switchboard (that row is always optional).
  */
-async function switchboardRow(p: Probes, base: Omit<Row, "status" | "detail" | "action" | "recheck">, def: IntegrationDef, secrets: SecretPresence, intent: SetupIntent | null, ctx: ValidateCtx): Promise<Row> {
-  const spec = secretSpec(def);
-  const stored = await secrets.has(spec.domain, spec.key);
-  if (stored === null) return row({ ...base, status: "missing", detail: "no Switchboard token configured", action: connectAction(def, true) });
-  const result = await def.validate(p, stored, ctx);
-  if (result.status === "ready") return row({ ...base, status: "ready", detail: intent?.mode === "join" ? "redeemed during Join, verified" : result.detail });
-  return row({ ...base, status: result.status, detail: result.detail, action: connectAction(def, true) });
+async function switchboardRow(p: Probes, base: Omit<Row, "status" | "detail" | "action" | "recheck">, def: IntegrationDef, ctx: ValidateCtx): Promise<Row> {
+  const result = await def.validate(p, "", ctx);
+  return row({ ...base, status: result.status, detail: result.detail });
 }
 
 async function genericRow(p: Probes, base: Omit<Row, "status" | "detail" | "action" | "recheck">, def: IntegrationDef, secrets: SecretPresence, ctx: ValidateCtx): Promise<Row> {
@@ -198,7 +192,11 @@ async function accountRowFor(p: Probes, entry: DeclaredEntry, team: TeamSnapshot
     return row({ id: `account.${id}`, kind: "account", title: id, why: "Declared by the team or a pack, but rt doesn't know this integration.", required: true, status: "error", detail: err instanceof Error ? err.message : String(err) });
   }
 
-  const cliOwned = !def.secret;
+  // Not `!def.secret`: switchboard also has no secret (RT-141) but is a plain
+  // reachability probe, not a CLI session the Tools group already tracks.
+  // It must keep entry.required, never fall into the CLI_SESSION_OPTIONAL_NOTE
+  // wording that names a tool row switchboard doesn't have.
+  const cliOwned = id === "doppler" || id === "ldcli";
   const base = {
     id: `account.${id}`,
     kind: "account" as const,
@@ -211,7 +209,7 @@ async function accountRowFor(p: Probes, entry: DeclaredEntry, team: TeamSnapshot
 
   if (id === "github") return githubRow(p, base, def, secrets, ctx);
   if (id === "slack") return slackRow(p, base, def, secrets, ctx, team);
-  if (id === "switchboard") return switchboardRow(p, base, def, secrets, intent, ctx);
+  if (id === "switchboard") return switchboardRow(p, base, def, ctx);
   return genericRow(p, base, def, secrets, ctx);
 }
 

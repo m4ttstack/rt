@@ -71,8 +71,21 @@ async function forgeRow(p: Probes, team: TeamSnapshot, intent: SetupIntent | nul
   // A team the user is creating declares only the host of the remote they
   // pasted themselves — nothing an inviter chose, nothing left to confirm.
   const ownRemoteHost = intent?.mode === "create" && intent.team?.remote ? forgeFromRemote(intent.team.remote)?.host ?? null : null;
+  // The provider's own public host needs no separate confirmation either: a
+  // self-hosted forge is a genuine inviter choice this machine has never
+  // talked to, but gitlab.com/github.com are hosts every team on that
+  // provider already shares, and lib/setup/integrations.ts's gitlab
+  // validator dials gitlab.com unconditionally the moment a credential is
+  // connected, so refusing the same host here gains nothing.
+  const publicHost = team.integrations.forge?.provider === "github" ? "github.com" : team.integrations.forge?.provider === "gitlab" ? "gitlab.com" : null;
   const confirmedHost =
-    overrides.forgeHost && isValidHostname(overrides.forgeHost) ? overrides.forgeHost : ownRemoteHost === declaredHost ? declaredHost : null;
+    overrides.forgeHost && isValidHostname(overrides.forgeHost)
+      ? overrides.forgeHost
+      : ownRemoteHost === declaredHost
+        ? declaredHost
+        : publicHost === declaredHost
+          ? declaredHost
+          : null;
   if (!confirmedHost) {
     const verb = team.integrations.forge?.provider === "github" ? "github" : "gitlab";
     return row({ ...base, status: "needs-you", detail: `your team declares forge host "${declaredHost}" — unverified; confirm it yourself before rt reaches out to it`, action: connectHostSteps(verb, declaredHost) });
