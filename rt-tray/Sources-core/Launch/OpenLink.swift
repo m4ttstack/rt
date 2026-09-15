@@ -24,25 +24,36 @@ public struct DiscoveryApp: Codable, Equatable, Sendable {
 
 public enum OpenLink {
     /// mattstack://open/<app>[/<path...>][?query][#fragment]
+    ///
+    /// Built on `URLComponents`' percent-encoded accessors, not `URL.path` /
+    /// `.pathComponents` (which decode each component and so collapse an
+    /// encoded `%2F` inside a segment into a literal `/`, corrupting the
+    /// segment split before `WindowNavigation.destination` ever re-parses
+    /// it). Only the isolated app-name segment gets decoded; the rest of the
+    /// path, the query, and the fragment stay percent-encoded end to end.
     public static func request(from url: URL) -> OpenRequest? {
         guard url.scheme?.lowercased() == "mattstack", url.host?.lowercased() == "open" else { return nil }
-        let parts = url.pathComponents.filter { $0 != "/" }
-        guard let app = parts.first, !app.isEmpty else { return nil }
-        var rest = parts.count > 1 ? "/" + parts.dropFirst().joined(separator: "/") : ""
-        if let q = url.query, !q.isEmpty { rest += "?" + q }
-        if let f = url.fragment, !f.isEmpty { rest += "#" + f }
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
+        let segments = components.percentEncodedPath.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+        guard let encodedApp = segments.first, let app = encodedApp.removingPercentEncoding, !app.isEmpty else { return nil }
+        var rest = segments.count > 1 ? "/" + segments.dropFirst().joined(separator: "/") : ""
+        if let q = components.percentEncodedQuery, !q.isEmpty { rest += "?" + q }
+        if let f = components.percentEncodedFragment, !f.isEmpty { rest += "#" + f }
         return OpenRequest(app: app.lowercased(), pathAndQuery: rest)
     }
 
     /// https://<app>.mattstack[/<path...>][?query][#fragment], single label only.
+    /// Same percent-encoding-preserving approach as `request(from:)` above.
     public static func request(fromHTTPS url: URL) -> OpenRequest? {
         guard let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http" else { return nil }
         guard let host = url.host?.lowercased(), host.hasSuffix(".mattstack") else { return nil }
         let app = String(host.dropLast(".mattstack".count))
         guard !app.isEmpty, !app.contains(".") else { return nil }
-        var rest = url.path == "/" || url.path.isEmpty ? "" : url.path
-        if let q = url.query, !q.isEmpty { rest += "?" + q }
-        if let f = url.fragment, !f.isEmpty { rest += "#" + f }
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
+        let encodedPath = components.percentEncodedPath
+        var rest = encodedPath.isEmpty || encodedPath == "/" ? "" : encodedPath
+        if let q = components.percentEncodedQuery, !q.isEmpty { rest += "?" + q }
+        if let f = components.percentEncodedFragment, !f.isEmpty { rest += "#" + f }
         return OpenRequest(app: app, pathAndQuery: rest)
     }
 }

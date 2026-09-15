@@ -34,7 +34,7 @@ public struct AppCatalog: Sendable {
 
     public func load() async -> CatalogLoad {
         if let data = try? await fetcher.fetchAppsJSON(), let apps = try? Self.decode(data) {
-            try? data.write(to: URL(fileURLWithPath: cachePath))
+            try? data.write(to: URL(fileURLWithPath: cachePath), options: .atomic)
             return CatalogLoad(apps: apps, fresh: true)
         }
         guard let cached = FileManager.default.contents(atPath: cachePath),

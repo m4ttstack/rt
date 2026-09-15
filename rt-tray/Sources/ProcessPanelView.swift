@@ -121,7 +121,10 @@ struct ProcessPanelView: View {
         })
         menu.addItem(.separator())
         menu.addItem(ActionMenuItem("Quit mattstack", axid: AXID.menuGearQuit) {
-            NSApplication.shared.terminate(nil)
+            // Not NSApplication.shared.terminate(nil) directly: without
+            // quitConfirmed set first, applicationShouldTerminate intercepts
+            // it and turns it into a window close instead of a real quit.
+            NotificationCenter.default.post(name: .rtQuitMattstack, object: nil)
         })
         return menu
     }

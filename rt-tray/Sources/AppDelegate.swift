@@ -151,6 +151,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             self, selector: #selector(showKeyboardConflictWindow), name: .showKeyboardConflict, object: nil)
         NotificationCenter.default.addObserver(
             self, selector: #selector(showMattstackWindow), name: .showMattstackWindow, object: nil)
+        // The process panel's own gear-menu "Quit mattstack" (distinct from
+        // the tray menu's, which calls quitFromTray() directly) posts this
+        // instead of calling NSApp.terminate itself, so it goes through the
+        // same quitConfirmed gate -- calling terminate without it would just
+        // be intercepted by applicationShouldTerminate and turned into a
+        // window close.
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(quitFromTray), name: .rtQuitMattstack, object: nil)
 
         // Independent backstop for applicationShouldTerminate: the quit
         // AppleEvent's kAEQuitReason is documented optional, so a real
@@ -583,7 +591,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         }
     }
 
-    @objc private func showMattstackWindow() { Task { @MainActor in windowModel?.toggleVisibility() } }
+    /// The tray menu's and gear menu's "Open mattstack" both post
+    /// `.showMattstackWindow` and land here: always show(), never toggle --
+    /// toggling is reserved for the global hotkey alone, or "Open mattstack"
+    /// would sometimes close the window instead of raising it. Mirrors
+    /// applicationShouldHandleReopen's same weak-controller fallback.
+    @objc private func showMattstackWindow() {
+        Task { @MainActor in
+            if let controller = self.windowModel?.controller {
+                controller.show()
+            } else {
+                self.mattstackWindow?.show()
+            }
+        }
+    }
     @objc private func handleSystemSessionEnding() { systemSessionEnding = true }
     @objc private func showSetupStatus() { Task { @MainActor in coordinator?.openSetupStatus() } }
     @objc private func showSettings() { Task { @MainActor in coordinator?.showSettings() } }

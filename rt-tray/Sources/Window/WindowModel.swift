@@ -143,7 +143,12 @@ final class WindowModel: ObservableObject {
             let result = await self.catalog.load()
             self.apps = result.apps
             self.catalogFresh = result.fresh
-            if self.activeApp.isEmpty, let first = result.apps.first { self.activeApp = first.name }
+            // An empty catalog (deck unreachable, no cache) still needs an
+            // active app or the content area shows nothing at all; the deck
+            // pseudo-app always resolves via app(named:), and its own
+            // navigation finishing still satisfies the splash gate instead
+            // of holding it for the full 8s cap.
+            if self.activeApp.isEmpty { self.activeApp = result.apps.first?.name ?? Self.deckApp.name }
             for app in result.apps { self.fetchIcon(url: app.icon, into: app.name) }
         }
         catalogLoadTask = task

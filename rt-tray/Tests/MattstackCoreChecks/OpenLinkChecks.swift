@@ -57,4 +57,24 @@ let openLinkChecks: [Check] = [
         let dest = WindowNavigation.destination(for: OpenRequest(app: "chat", pathAndQuery: "/r/general?tab=x#m-42"), in: apps)
         try c.requireEqual(dest, URL(string: "https://chat.mattstack/r/general?tab=x#m-42"))
     },
+    Check("mattstack:// keeps an encoded %2F in a path segment, not a literal slash") { c in
+        let r = OpenLink.request(from: URL(string: "mattstack://open/board/mr%2F123")!)
+        try c.requireEqual(r, OpenRequest(app: "board", pathAndQuery: "/mr%2F123"))
+    },
+    Check("mattstack:// keeps an encoded %3F in a path segment, not a query start") { c in
+        let r = OpenLink.request(from: URL(string: "mattstack://open/board/a%3Fb")!)
+        try c.requireEqual(r, OpenRequest(app: "board", pathAndQuery: "/a%3Fb"))
+    },
+    Check("https:// keeps an encoded %2F in a path segment, not a literal slash") { c in
+        let r = OpenLink.request(fromHTTPS: URL(string: "https://board.mattstack/mr%2F123")!)
+        try c.requireEqual(r, OpenRequest(app: "board", pathAndQuery: "/mr%2F123"))
+    },
+    Check("https:// keeps an encoded %3F in a path segment, not a query start") { c in
+        let r = OpenLink.request(fromHTTPS: URL(string: "https://board.mattstack/a%3Fb")!)
+        try c.requireEqual(r, OpenRequest(app: "board", pathAndQuery: "/a%3Fb"))
+    },
+    Check("encoded path stays ordered before query and fragment") { c in
+        let r = OpenLink.request(from: URL(string: "mattstack://open/chat/r%2Fgeneral?tab=x%2Fy#m-42")!)
+        try c.requireEqual(r, OpenRequest(app: "chat", pathAndQuery: "/r%2Fgeneral?tab=x%2Fy#m-42"))
+    },
 ]
