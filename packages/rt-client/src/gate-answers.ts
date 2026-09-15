@@ -12,6 +12,14 @@ export function unwrapGateAnswerValue(raw: unknown): unknown {
   return raw;
 }
 
+function wrapperNoteIsValid(raw: unknown): boolean {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw) || !("value" in (raw as Record<string, unknown>))) {
+    return true;
+  }
+  const note = (raw as Record<string, unknown>).note;
+  return note === undefined || typeof note === "string";
+}
+
 /** Option membership is required whenever a question declares options,
     checked against the unwrapped value (every element, for multi); an
     empty options array stays free-form. Every question id must appear as
@@ -24,6 +32,7 @@ export function validateGateAnswers(
   for (const [qid, raw] of Object.entries(answers)) {
     const question = byId.get(qid);
     if (!question) return `unknown question id: ${qid}`;
+    if (!wrapperNoteIsValid(raw)) return `question ${qid} note must be a string`;
     const value = unwrapGateAnswerValue(raw);
     const isArray = Array.isArray(value);
     if (question.multi && !isArray) return `question ${qid} expects an array (multi)`;
@@ -37,7 +46,9 @@ export function validateGateAnswers(
       }
     }
   }
-  const missing = questions.map((q) => q.id).filter((id) => !(id in answers));
+  const missing = questions
+    .map((q) => q.id)
+    .filter((id) => !Object.prototype.hasOwnProperty.call(answers, id));
   if (missing.length > 0) return `missing answer(s) for: ${missing.join(", ")}`;
   return null;
 }
