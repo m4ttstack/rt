@@ -166,10 +166,10 @@ export interface HerdInfo { id: string; repo: string; room: string; workspace: s
 /** A herd row as `herd:list` reports it: the registry row plus how many jobs hang off it. */
 export interface HerdListRow extends HerdInfo { jobs: number }
 export interface HerdJobInfo { herd: string; name: string; worktree: string; branch: string | null; tree: string | null; pane: string | null; agentSession: string | null; agentId: string | null; handle: string; status: "spawning" | "active" | "at-gate" | "at-milestone" | "done" | "closed" | "crashed"; disposable: boolean; lastGate: string | null; lastReport: number | null; createdAt: number; updatedAt: number }
-/** `lastGateStatus`/`lastGateDelivery` come from the job's `lastGate` row: an `answered` gate whose delivery is `dead-pane` is the "answered, worker not woken" case the shepherd must act on. */
+/** `lastGateStatus`/`lastGateDelivery` come from the job's `lastGate` row: an `answered` gate whose delivery is `dead-pane` is the "answered, worker not woken" case the shepherd must act on. `lastGateConsumed` is `null` when there is nothing to consume (no last gate, not answered, or not nudged), and otherwise reports whether the nudged pane has read its answer. */
 export interface HerdStatusData {
   herd: HerdInfo;
-  jobs: Array<HerdJobInfo & { openGate: string | null; paneStatus: string | null; lastGateStatus: GateStatus | null; lastGateDelivery: "delivered" | "dead-pane" | "confirmed" | "stuck" | null }>;
+  jobs: Array<HerdJobInfo & { openGate: string | null; paneStatus: string | null; lastGateStatus: GateStatus | null; lastGateDelivery: "delivered" | "dead-pane" | "confirmed" | "stuck" | null; lastGateConsumed: boolean | null }>;
   unread: number;
   lifecycleConnected: boolean;
   hiddenUp: boolean | null;

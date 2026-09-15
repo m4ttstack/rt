@@ -412,6 +412,37 @@ describe("herd:resume / status / close", () => {
     expect(res.data.jobs[0]).toMatchObject({ openGate: null, lastGateStatus: "answered", lastGateDelivery: "dead-pane" });
   });
 
+  test("status reports lastGateConsumed false for an answered, nudged gate no one has read yet", async () => {
+    const { h, store, gateStore, herd } = await started();
+    store.upsertJob({ herd, name: "job-a", worktree: "/w", handle: "job-a", status: "active", pane: "w9:p1" });
+    const g = gateStore.open({ subject: `herd:${herd}/job-a`, kind: "question", questions: [{ id: "q", label: "?", multi: false, options: ["a"] }], nudge: { session: "sess-w1" } }).row.id;
+    store.setJobStatus(herd, "job-a", "at-gate", { lastGate: g });
+    gateStore.answer(g, { q: "a" }, "shepherd");
+    const res = await h["herd:status"]({ herd });
+    if (!res.ok) throw new Error(res.error);
+    expect(res.data.jobs[0]).toMatchObject({ lastGateConsumed: false });
+  });
+
+  test("status reports lastGateConsumed true once the nudged gate is marked consumed", async () => {
+    const { h, store, gateStore, herd } = await started();
+    store.upsertJob({ herd, name: "job-a", worktree: "/w", handle: "job-a", status: "active", pane: "w9:p1" });
+    const g = gateStore.open({ subject: `herd:${herd}/job-a`, kind: "question", questions: [{ id: "q", label: "?", multi: false, options: ["a"] }], nudge: { session: "sess-w1" } }).row.id;
+    store.setJobStatus(herd, "job-a", "at-gate", { lastGate: g });
+    gateStore.answer(g, { q: "a" }, "shepherd");
+    gateStore.markConsumed(g);
+    const res = await h["herd:status"]({ herd });
+    if (!res.ok) throw new Error(res.error);
+    expect(res.data.jobs[0]).toMatchObject({ lastGateConsumed: true });
+  });
+
+  test("status reports lastGateConsumed null for a job with no gate", async () => {
+    const { h, store, herd } = await started();
+    store.upsertJob({ herd, name: "job-a", worktree: "/w", handle: "job-a", status: "active", pane: "w9:p1" });
+    const res = await h["herd:status"]({ herd });
+    if (!res.ok) throw new Error(res.error);
+    expect(res.data.jobs[0]).toMatchObject({ lastGateConsumed: null });
+  });
+
   test("close closes the pane on the herd's socket and marks the job closed", async () => {
     const { h, store, herd, herdrCalls } = await started();
     store.upsertJob({ herd, name: "job-a", worktree: "/w/job-a", handle: "job-a", status: "active", pane: "w9:p1" });

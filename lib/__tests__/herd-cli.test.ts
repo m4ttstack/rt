@@ -123,7 +123,7 @@ function job(over: Partial<HerdStatusData["jobs"][number]>): HerdStatusData["job
     herd: "hd-1", name: "job-a", worktree: "/tmp/job-a", branch: null, tree: null, pane: "w1:p1",
     agentSession: null, agentId: null, handle: "job-a", status: "active", disposable: false,
     lastGate: null, lastReport: null, createdAt: 0, updatedAt: 0,
-    openGate: null, paneStatus: "idle", lastGateStatus: null, lastGateDelivery: null,
+    openGate: null, paneStatus: "idle", lastGateStatus: null, lastGateDelivery: null, lastGateConsumed: null,
     ...over,
   };
 }
@@ -257,6 +257,28 @@ describe("renderStatus", () => {
   test("a delivered gate carries no not-woken warning", () => {
     const data = statusData({ jobs: [job({ lastGate: "gt-9", lastGateStatus: "answered", lastGateDelivery: "delivered" })] });
     expect(renderStatus(data)).not.toContain("worker not woken");
+  });
+
+  test("an answered, nudged gate no one has read yet prints UNCONSUMED", () => {
+    const data = statusData({ jobs: [job({ lastGate: "gt-9", lastGateStatus: "answered", lastGateDelivery: "delivered", lastGateConsumed: false })] });
+    expect(renderStatus(data)).toContain("gate gt-9 UNCONSUMED");
+  });
+
+  test("a consumed gate carries no UNCONSUMED marker", () => {
+    const data = statusData({ jobs: [job({ lastGate: "gt-9", lastGateStatus: "answered", lastGateDelivery: "delivered", lastGateConsumed: true })] });
+    expect(renderStatus(data)).not.toContain("UNCONSUMED");
+  });
+
+  test("nothing to consume (no last gate) carries no UNCONSUMED marker", () => {
+    const data = statusData({ jobs: [job({ lastGateConsumed: null })] });
+    expect(renderStatus(data)).not.toContain("UNCONSUMED");
+  });
+
+  test("a dead-pane row that is also unconsumed prints both suffixes", () => {
+    const data = statusData({ jobs: [job({ lastGate: "gt-9", lastGateStatus: "answered", lastGateDelivery: "dead-pane", lastGateConsumed: false, handle: "job-a" })] });
+    const out = renderStatus(data);
+    expect(out).toContain("worker not woken");
+    expect(out).toContain("gate gt-9 UNCONSUMED");
   });
 
   test("prints the push probe's reachability and delivery age instead of headlining dead", () => {
