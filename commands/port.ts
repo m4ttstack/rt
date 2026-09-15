@@ -15,6 +15,7 @@ import { bold, cyan, dim, green, yellow, red, reset } from "../lib/tui.ts";
 import { withInlineSpinner } from "../lib/tui/inline-spinner.ts";
 import { scanListeningPorts, type PortEntry } from "../lib/port-scanner.ts";
 import { repoLabel } from "../lib/repo-label.ts";
+import type { PickRow, PickSegment } from "../lib/ui/protocol.ts";
 
 // ─── Data fetching ───────────────────────────────────────────────────────────
 
@@ -146,17 +147,30 @@ function killByPort(port: number): void {
 async function showKillPicker(entries: PortEntry[]): Promise<void> {
   const { filterableMultiselect } = await import("../lib/pick-wrappers.ts");
 
-  const selectedPids = await filterableMultiselect({
-    message: "Select processes to kill (or esc to exit)",
-    options: entries.map((p) => {
-      const uptimeStr = formatUptime(p.uptime);
-      return {
-        value: String(p.pid),
-        label: `${yellow}:${p.port}${reset}  ${folderPath(p)}  ${dim}${p.command}${reset}`,
-        hint: `${p.repo ? repoLabel(p.repo) : ""}${p.branch ? ` \u00b7 ${p.branch}` : ""} \u00b7 ${uptimeStr}`,
-      };
-    }),
+  const rows: PickRow[] = entries.map((p) => {
+    const uptimeStr = formatUptime(p.uptime);
+    const left: PickSegment[] = [
+      { text: `:${p.port}`, tone: "peach", bold: true, column: true },
+      { text: `  ${folderPath(p)}` },
+      { text: `  ${p.command}`, tone: "dim" },
+    ];
+    const hintParts: string[] = [];
+    if (p.repo) hintParts.push(repoLabel(p.repo));
+    if (p.branch) hintParts.push(p.branch);
+    hintParts.push(uptimeStr);
+    const right: PickSegment[] = [{ text: hintParts.join(" \u00b7 "), tone: "dim" }];
+    return {
+      value: String(p.pid),
+      match: `:${p.port} ${folderPath(p)} ${p.command}`,
+      left,
+      right,
+    };
   });
+
+  const selectedPids = await filterableMultiselect(
+    { message: "Select processes to kill (or esc to exit)", options: [] },
+    { rows },
+  );
 
   if (!selectedPids || selectedPids.length === 0) {
     console.log(`\n  ${dim}nothing selected${reset}\n`);
