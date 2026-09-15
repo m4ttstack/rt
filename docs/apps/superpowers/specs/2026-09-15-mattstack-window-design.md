@@ -7,7 +7,7 @@ Mockup: `docs/design/mattstack-window/mattstack-window.pen` (render: `docs/desig
 ## What this is
 
 One native macOS window that hosts every deck-served mattstack app (board,
-boxscore, chat, console, gitq) behind a Slack-style icon rail, so the whole
+boxscore, chat, console, gitq) behind a thin top tab bar, so the whole
 estate lives in a single window that stays open all day. The window is a thin
 shell: navigation chrome outside the apps, WKWebViews inside, and no logic
 that would ever need updating when apps change.
@@ -21,7 +21,7 @@ Push notifications stay with rt; the shell does nothing there.
 
 ## Repos touched
 
-- **repo-tools / rt-tray** (Swift, AppKit + SwiftUI): the window, rail,
+- **repo-tools / rt-tray** (Swift, AppKit + SwiftUI): the window, tab bar,
   webviews, URL scheme routes, hotkey, tray menu item, handoff receiver
   (a TrayServer route).
 - **mattstack-apps / packages/server + apps/board**: the navigation handoff
@@ -38,12 +38,16 @@ top tab bar; content is full-bleed below the bar with no other chrome. One
 window only. Frame persists across launches.
 
 Splash: on the first window show per process, a full-window splash covers
-the content: dark ground, the mattstack wordmark, and the stack glyph's
-layers dropping into place beside the "m" with a tight spring (staggered,
-slight overshoot, settled well under a second). It dismisses with a short
-fade at whichever is later: 2 seconds elapsed, or the active app's first
-navigation finishing; a hard cap of 8 seconds keeps a dead app from holding
-it (the error overlay is behind it). Re-shows of the window skip the splash.
+the content: dark ground and the app icon's mark only (monospace "m" with
+the layers glyph to its right, drawn from make-icon.swift's shapes and
+per-flavor colors). The glyph's layers drop into place bottom-up with a
+tight spring settling around one second, then hold one more second before
+the splash fades out over the live content (content renders beneath
+throughout; clicks pass through the moment the fade starts). Dismissal
+happens at whichever is later: that minimum visible time, or the active
+app's first navigation finishing (success or failure); a hard cap of 8
+seconds keeps anything from holding it. Re-shows of the window skip the
+splash. All timings live in one tunables block.
 
 Activation policy: the app is `LSUIElement` today. While the window is open
 it flips to `.regular` (Dock icon, Cmd-Tab entry); when the window closes it
@@ -85,8 +89,11 @@ monogram.
   board's own switcher with the same check). The shell's tabs are the one
   app switcher. gitq stays out of scope.
 - Cross-app links inside a webview (e.g. deck's app listings) switch to
-  that app's tab instead of navigating the current webview; external hosts
-  and target=_blank to external hosts open in the default browser.
+  that app's tab instead of navigating the current webview. Main-frame
+  navigations to external hosts stay in the webview (auth and SSO redirect
+  chains depend on it); target=_blank to an external http(s) host opens
+  the default browser, and non-http(s) popup URLs (about:blank, the OAuth
+  window.open prelude) are simply declined.
 
 ## 3. Webviews
 
@@ -121,7 +128,7 @@ router, with no scheme in the link.
 
 - The last good app list is cached as a JSON file under `~/.mattstack/rt/`
   (the `panel-columns.json` precedent: app-local state, not a resolver
-  setting), so the rail renders when deck is down; rows for unreachable
+  setting), so the tabs render when deck is down; rows for unreachable
   apps still open and show the load error.
 - A failed navigation shows a minimal native error state with a Retry button
   in the content area, not a blank webview.
@@ -131,14 +138,14 @@ router, with no scheme in the link.
   configurability is deferred (a resolver key needs an rt-client registry
   change + npm publish, not worth it yet).
 - No update mechanism of its own; the shell rides rt-tray's existing Sparkle
-  releases, and the dynamic rail means app changes never require one.
+  releases, and the dynamic tab bar means app changes never require one.
 
 ## 6. Testing
 
 - rt-tray (the MattstackCoreChecks harness, `swift test --package-path
   rt-tray`): route parsing for `mattstack://open` and https opens (host
   match, path join, unknown app), app-list decode plus cache fallback,
-  the `/window/open` TrayRoutes handler, rail model ordering.
+  the `/window/open` TrayRoutes handler.
 - packages/server (vitest, injectable tray-poster seam so tests stay
   vitest-safe): the handoff matrix per section 7 including fail-open;
   board's call site covered by its own suite.
