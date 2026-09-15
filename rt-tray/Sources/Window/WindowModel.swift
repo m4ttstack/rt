@@ -132,8 +132,17 @@ final class WindowModel: ObservableObject {
     private func fetchIcon(url urlString: String?, into name: String) {
         guard icons[name] == nil, let urlString, let url = URL(string: urlString) else { return }
         Task { [weak self] in
-            guard let data = try? await URLSession.shared.data(from: url).0,
-                  let image = NSImage(data: data) else { return }
+            let data: Data
+            do {
+                data = try await URLSession.shared.data(from: url).0
+            } catch {
+                TrayLog.warn("window icon fetch failed", ["app": name, "url": urlString, "error": String(describing: error)])
+                return
+            }
+            guard let image = NSImage(data: data) else {
+                TrayLog.warn("window icon decode failed", ["app": name, "url": urlString, "bytes": data.count])
+                return
+            }
             self?.icons[name] = image
         }
     }

@@ -26,7 +26,14 @@ final class MattstackWindowController: NSWindowController, NSWindowDelegate {
         shouldCascadeWindows = false
         let restoredFrame = window.setFrameUsingName(frameAutosaveName)
         window.setFrameAutosaveName(frameAutosaveName)
-        if !restoredFrame { window.center() }
+        // NSHostingController sizes the window to its content's fitting size
+        // on assignment above, which collapses an unrestored window (no
+        // intrinsic width from the webview container) to a rail-width
+        // sliver, so a first launch needs its content size re-applied here.
+        if !restoredFrame {
+            window.setContentSize(NSSize(width: 1280, height: 820))
+            window.center()
+        }
     }
     required init?(coder: NSCoder) { fatalError("not supported") }
 

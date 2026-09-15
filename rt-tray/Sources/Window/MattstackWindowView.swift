@@ -13,6 +13,7 @@ struct MattstackWindowView: View {
             RailView(model: model)
             ContentArea(model: model)
         }
+        .frame(minWidth: 900, minHeight: 600)
         .background(
             Button("") { model.store.reload(model.activeApp) }
                 .keyboardShortcut("r", modifiers: .command)
