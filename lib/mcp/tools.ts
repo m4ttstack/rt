@@ -494,10 +494,10 @@ export function mcpTools(): McpToolDef[] {
         required: ["gate"],
         additionalProperties: false,
       },
-      async handler(input) {
+      async handler(input, env) {
         const bad = checkRequired(input, [{ name: "gate", type: "string" }]);
         if (bad) return err(bad);
-        return fromResponse(await herdAnswer({ gate: input.gate as string }));
+        return fromResponse(await herdAnswer({ gate: input.gate as string, ...(env.CLAUDE_CODE_SESSION_ID ? { sessionId: env.CLAUDE_CODE_SESSION_ID } : {}) }));
       },
     },
     {

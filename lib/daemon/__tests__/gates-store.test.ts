@@ -438,6 +438,80 @@ describe("gates store (ownership)", () => {
   });
 });
 
+describe("gates store (consumedAt)", () => {
+  test("markConsumed stamps once and is idempotent", () => {
+    const s = store();
+    const { row } = s.open({ subject: "run:r1", kind: "clarify", questions: qs(), nudge: { session: "s1" } });
+    expect(s.get(row.id)!.consumedAt).toBeNull();
+    expect(s.markConsumed(row.id, 1000)).toBe(true);
+    expect(s.get(row.id)!.consumedAt).toBe(1000);
+    s.markConsumed(row.id, 2000);
+    expect(s.get(row.id)!.consumedAt).toBe(1000);
+    expect(s.markConsumed("gt-missing")).toBe(false);
+  });
+
+  test("a self-answer by the nudged session is consumed at answer time", () => {
+    const s = store();
+    const { row } = s.open({ subject: "run:r2", kind: "clarify", questions: qs(), nudge: { session: "s1" } });
+    s.answer(row.id, { q: "a" }, GATE_BY_PANE, { session: "s1" });
+    expect(typeof s.get(row.id)!.consumedAt).toBe("number");
+  });
+
+  test("a remote answer does not consume", () => {
+    const s = store();
+    const { row } = s.open({ subject: "run:r3", kind: "clarify", questions: qs(), nudge: { session: "s1" } });
+    s.answer(row.id, { q: "a" }, "human", { session: "shepherd-sess" });
+    expect(s.get(row.id)!.consumedAt).toBeNull();
+  });
+
+  test("a self-answer with no nudge on the gate is not stamped consumed (consumption only applies to nudge-bearing gates)", () => {
+    const s = store();
+    const { row } = s.open({ subject: "run:r4", kind: "clarify", questions: qs(), pane: "pane-1" });
+    s.answer(row.id, { q: "a" }, GATE_BY_PANE);
+    expect(s.get(row.id)!.consumedAt).toBeNull();
+  });
+
+  test("a gates.db predating consumedAt backfills answered rows on open", () => {
+    const path = tmp("gates.db");
+    const raw = new Database(path, { create: true });
+    raw.exec(`
+      CREATE TABLE gates (
+        id            TEXT PRIMARY KEY,
+        subject       TEXT NOT NULL,
+        kind          TEXT NOT NULL,
+        questions     TEXT NOT NULL,
+        meta          TEXT,
+        status        TEXT NOT NULL,
+        answer        TEXT,
+        openedAt      INTEGER NOT NULL,
+        parkedAt      INTEGER,
+        closedAt      INTEGER,
+        closedReason  TEXT,
+        supersededBy  TEXT,
+        agent         TEXT,
+        pane          TEXT,
+        nudge         TEXT,
+        delivery      TEXT,
+        released      INTEGER NOT NULL DEFAULT 0,
+        context       TEXT,
+        origin        TEXT,
+        owner         TEXT,
+        escalatedAt   INTEGER,
+        execution     TEXT,
+        executor      TEXT
+      );
+    `);
+    raw.exec(`
+      INSERT INTO gates (id, subject, kind, questions, meta, status, answer, openedAt, released)
+      VALUES ('gt-1', 'run:r1', 'clarify', '[]', NULL, 'answered', '{"answers":{},"by":"shepherd","answeredAt":5000}', 1000, 0)
+    `);
+    raw.close();
+    const s = createGatesStore({ dbPath: path, log });
+    expect(s.get("gt-1")!.consumedAt).toBe(5000);
+    s.close_();
+  });
+});
+
 test("deadPanePushes lists answered nudged rows whose last push was dead-pane and are unreleased; never closed ones", () => {
   const s = store();
   const a = s.open({ subject: "herd:h/j1", kind: "question", questions: qs(), nudge: { session: "w1" } }).row.id;
@@ -449,4 +523,78 @@ test("deadPanePushes lists answered nudged rows whose last push was dead-pane an
   const d = s.open({ subject: "herd:h/j4", kind: "question", questions: qs(), nudge: { session: "w4" } }).row.id;
   s.close(d, "abandoned"); s.markDelivery(d, "dead-pane");
   expect(s.deadPanePushes().map((r) => r.id)).toEqual([a]);
+});
+
+describe("unconsumedAnsweredPushes", () => {
+  test("includes delivered/confirmed/stuck answered-nudged rows with no consumedAt; excludes dead-pane, undelivered, and already-consumed rows", () => {
+    const s = store();
+    const delivered = s.open({ subject: "herd:h/j1", kind: "question", questions: qs(), nudge: { session: "w1" } }).row.id;
+    s.answer(delivered, { q: "a" }, "shepherd"); s.markDelivery(delivered, "delivered");
+
+    const confirmed = s.open({ subject: "herd:h/j2", kind: "question", questions: qs(), nudge: { session: "w2" } }).row.id;
+    s.answer(confirmed, { q: "a" }, "shepherd"); s.markDelivery(confirmed, "confirmed");
+
+    const stuck = s.open({ subject: "herd:h/j3", kind: "question", questions: qs(), nudge: { session: "w3" } }).row.id;
+    s.answer(stuck, { q: "a" }, "shepherd"); s.markDelivery(stuck, "stuck");
+
+    const deadPane = s.open({ subject: "herd:h/j4", kind: "question", questions: qs(), nudge: { session: "w4" } }).row.id;
+    s.answer(deadPane, { q: "a" }, "shepherd"); s.markDelivery(deadPane, "dead-pane");
+
+    const undelivered = s.open({ subject: "herd:h/j5", kind: "question", questions: qs(), nudge: { session: "w5" } }).row.id;
+    s.answer(undelivered, { q: "a" }, "shepherd");
+
+    const alreadyConsumed = s.open({ subject: "herd:h/j6", kind: "question", questions: qs(), nudge: { session: "w6" } }).row.id;
+    s.answer(alreadyConsumed, { q: "a" }, "shepherd"); s.markDelivery(alreadyConsumed, "delivered"); s.markConsumed(alreadyConsumed);
+
+    expect(s.unconsumedAnsweredPushes().map((r) => r.id).sort()).toEqual([confirmed, delivered, stuck].sort());
+  });
+
+  test("a self-answered row whose consumedAt is still null (forced) is excluded", () => {
+    const s = store();
+    const row = s.open({ subject: "herd:h/j7", kind: "clarify", questions: qs(), nudge: { session: "s1" } }).row;
+    s.answer(row.id, { q: "a" }, GATE_BY_PANE, { session: "s1" });
+    s.markDelivery(row.id, "delivered");
+    // Belt-and-braces case: force consumedAt back to null as if the answer-time
+    // stamp and the backfill had both somehow missed this row.
+    s.__db!.run("UPDATE gates SET consumedAt = NULL WHERE id = ?", [row.id]);
+    expect(s.get(row.id)!.consumedAt).toBeNull();
+    expect(s.unconsumedAnsweredPushes().map((r) => r.id)).toEqual([]);
+  });
+
+  test("a nudged row on a non-herd subject is never returned, even answered/delivered/unconsumed", () => {
+    const s = store();
+    const row = s.open({ subject: "mr:https://x/1", kind: "review-post", questions: qs(), nudge: { session: "s1" } }).row;
+    s.answer(row.id, { q: "a" }, "console");
+    s.markDelivery(row.id, "delivered");
+    expect(s.unconsumedAnsweredPushes().map((r) => r.id)).toEqual([]);
+  });
+
+  test("a released row is excluded, matching the dead-pane statement's own precedent", () => {
+    const s = store();
+    const row = s.open({ subject: "herd:h/j1", kind: "question", questions: qs(), pane: "pane-1", nudge: { session: "s1" } }).row;
+    s.answer(row.id, { q: "a" }, "shepherd"); // wins; not a pane answer, so no release yet
+    s.answer(row.id, { q: "b" }, GATE_BY_PANE); // loses the CAS, but its own pane has now reconciled
+    s.markDelivery(row.id, "delivered");
+    expect(s.get(row.id)!.released).toBe(true);
+    expect(s.get(row.id)!.consumedAt).toBeNull();
+    expect(s.unconsumedAnsweredPushes().map((r) => r.id)).toEqual([]);
+  });
+
+  test("a row answered 10 minutes ago is still within the horizon and is returned", () => {
+    const s = store();
+    const row = s.open({ subject: "herd:h/j1", kind: "question", questions: qs(), nudge: { session: "s1" } }).row;
+    s.answer(row.id, { q: "a" }, "shepherd");
+    s.markDelivery(row.id, "delivered");
+    const tenMinutesLater = Date.now() + 10 * 60 * 1000;
+    expect(s.unconsumedAnsweredPushes(tenMinutesLater).map((r) => r.id)).toEqual([row.id]);
+  });
+
+  test("a row answered 2 hours ago is past the horizon and is not returned", () => {
+    const s = store();
+    const row = s.open({ subject: "herd:h/j1", kind: "question", questions: qs(), nudge: { session: "s1" } }).row;
+    s.answer(row.id, { q: "a" }, "shepherd");
+    s.markDelivery(row.id, "delivered");
+    const twoHoursLater = Date.now() + 2 * 60 * 60 * 1000;
+    expect(s.unconsumedAnsweredPushes(twoHoursLater).map((r) => r.id)).toEqual([]);
+  });
 });

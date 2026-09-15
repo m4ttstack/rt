@@ -225,7 +225,8 @@ export async function answer(args: string[]): Promise<void> {
   const json = has(args, "--json");
   const gate = positional(args);
   if (!gate) fail("usage: rt herd answer <gate>");
-  const data = unwrap(await herdAnswer({ gate }), "answer");
+  const sessionId = process.env.CLAUDE_CODE_SESSION_ID;
+  const data = unwrap(await herdAnswer({ gate, ...(sessionId ? { sessionId } : {}) }), "answer");
   emit(json, data, renderAnswer(gate, data));
 }
 
@@ -290,7 +291,10 @@ export function renderStatus(data: HerdStatusData): string {
   ];
   for (const j of data.jobs) {
     const notWoken = j.lastGateStatus === "answered" && j.lastGateDelivery === "dead-pane" ? `  gate ${j.lastGate} answered, worker not woken: rt chat dm ${j.handle}` : "";
-    lines.push(`  ${j.name.padEnd(24)} ${j.status.padEnd(13)} pane ${j.pane ?? "-"}  ${j.paneStatus ?? "-"}${j.openGate ? `  gate ${j.openGate}` : ""}${notWoken}`);
+    // Independent of notWoken: a delivered nudge can still sit UNCONSUMED
+    // (the pane never read it), and a dead-pane row can be both at once.
+    const unconsumed = j.lastGateConsumed === false ? `  gate ${j.lastGate} UNCONSUMED` : "";
+    lines.push(`  ${j.name.padEnd(24)} ${j.status.padEnd(13)} pane ${j.pane ?? "-"}  ${j.paneStatus ?? "-"}${j.openGate ? `  gate ${j.openGate}` : ""}${notWoken}${unconsumed}`);
   }
   return lines.join("\n");
 }

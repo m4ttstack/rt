@@ -70,6 +70,9 @@ export interface GatesStore {
       close(), never this). */
   closeAnswered(id: string, reason: "abandoned"): { ok: true } | { ok: false; reason: "not-found" | "not-answered" };
   markDelivery(id: string, outcome: "delivered" | "dead-pane" | "confirmed" | "stuck"): void;
+  /** CAS on IS NULL, so an already-consumed row keeps its first stamp.
+      Returns whether the row exists, not whether this call stamped it. */
+  markConsumed(id: string, at?: number): boolean;
   /** `null` clears the stamp (row goes back to no `execution` field on read). */
   markExecution(id: string, execution: "unassigned" | null): void;
   /** `null` clears the stamp (row goes back to no `executor` field on read). */
@@ -85,6 +88,16 @@ export interface GatesStore {
   /** Stamps escalatedAt once (CAS on IS NULL); a second call on an already-escalated row is a no-op. */
   markEscalated(id: string): void;
   deadPanePushes(): GateRow[];
+  /** Rows the re-delivery sweep should chase: answered, nudged, never
+      consumed, unreleased, delivered/confirmed/stuck (dead-pane stays with
+      the existing retry pass), on a herd: subject (the only subject family
+      whose consumption path can ever stamp consumedAt), and answered within
+      the last hour (older rows are presumed abandoned rather than chased
+      across every daemon restart). Self-answered rows are excluded even
+      though the backfill and answer-time stamp already cover them -- belt
+      and braces. `now` defaults to Date.now() and exists so a test can drive
+      the age bound. */
+  unconsumedAnsweredPushes(now?: number): GateRow[];
   /** Deletes closed/answered rows past the retention window, floor respected.
       Returns the number of rows removed. */
   sweep(): number;
@@ -121,6 +134,7 @@ interface GateColumns {
   escalatedAt: number | null;
   execution: string | null;
   executor: string | null;
+  consumedAt: number | null;
 }
 
 interface SubscriptionColumns {
@@ -170,9 +184,26 @@ function rowToGate(row: GateColumns): GateRow {
     origin: row.origin == null ? null : JSON.parse(row.origin),
     owner: row.owner ?? null,
     escalatedAt: row.escalatedAt ?? null,
+    consumedAt: row.consumedAt ?? null,
     ...(row.execution === "unassigned" ? { execution: row.execution } : {}),
     ...(row.executor != null ? { executor: row.executor as ExecutorState } : {}),
   };
+}
+
+/** Session precedence: an explicit answer.session decides on its own, so a
+    foreign surface that also stamps `by: "pane"` can never suppress the
+    nudged pane's own reconciliation. The `by === "pane"` fallback stands
+    only for a writer that supplied no session (the board status-bin case). */
+export function answeredBySession(row: Pick<GateRow, "answer">, session: string | undefined): boolean {
+  const answer = row.answer;
+  if (!answer || !session) return false;
+  return answer.session === session;
+}
+
+export function answeredByNudgedPane(row: Pick<GateRow, "answer" | "nudge">): boolean {
+  if (!row.answer) return false;
+  if (!row.answer.session) return row.answer.by === GATE_BY_PANE;
+  return answeredBySession(row, row.nudge?.session);
 }
 
 /** Same reasoning as events-bus.ts's quarantineEventsDb: a corrupt gates.db
@@ -205,6 +236,12 @@ function assertValidSubject(subject: string): void {
 }
 
 const DEAD_SUBSCRIPTION_RETENTION_MS = 24 * 60 * 60 * 1000;
+// Only a herd-answer session ever stamps consumedAt (handlers/herd.ts, on
+// the nudged pane's own read), so a row bounces around unconsumed forever if
+// its subject isn't herd:-owned; a restart also resets the in-memory give-up
+// counters in gate-push.ts, so this age bound is the only thing stopping a
+// week-old answered row from re-arming five more re-deliveries every restart.
+const UNCONSUMED_ANSWERED_HORIZON_MS = 60 * 60 * 1000;
 
 export function createGatesStore(opts: {
   dbPath: string;
@@ -259,7 +296,8 @@ export function createGatesStore(opts: {
       owner         TEXT,
       escalatedAt   INTEGER,
       execution     TEXT,
-      executor      TEXT
+      executor      TEXT,
+      consumedAt    INTEGER
     );
     CREATE INDEX IF NOT EXISTS idx_gates_subject_kind_status ON gates(subject, kind, status);
 
@@ -284,6 +322,21 @@ export function createGatesStore(opts: {
     if (!gateCols.has(col)) db.exec(`ALTER TABLE gates ADD COLUMN ${col} TEXT;`);
   }
   if (!gateCols.has("escalatedAt")) db.exec("ALTER TABLE gates ADD COLUMN escalatedAt INTEGER;");
+  if (!gateCols.has("consumedAt")) {
+    // One transaction: if the ALTER commits without the backfill (a crash
+    // between the two exec calls), the column-probe above never re-enters
+    // this branch on the next open, so the backfill would be skipped forever.
+    const addConsumedAtTxn = db.transaction(() => {
+      db.exec("ALTER TABLE gates ADD COLUMN consumedAt INTEGER;");
+      // Backfill: without this, every pre-existing answered row (self-answered
+      // included) reads as unconsumed at the first restart on this schema,
+      // making the re-push sweep chase dead sessions that already reconciled.
+      db.exec(
+        "UPDATE gates SET consumedAt = COALESCE(json_extract(answer,'$.answeredAt'), closedAt, openedAt) WHERE status = 'answered' AND consumedAt IS NULL;",
+      );
+    });
+    addConsumedAtTxn();
+  }
 
   const subCols = new Set(
     (db.query("PRAGMA table_info(gate_subscriptions)").all() as Array<{ name: string }>).map((c) => c.name),
@@ -336,6 +389,7 @@ export function createGatesStore(opts: {
   );
   const releaseStmt = db.prepare("UPDATE gates SET released = 1 WHERE id = ?");
   const markDeliveryStmt = db.prepare("UPDATE gates SET delivery = ? WHERE id = ?");
+  const markConsumedStmt = db.prepare("UPDATE gates SET consumedAt = ? WHERE id = ? AND consumedAt IS NULL");
   const markExecutionStmt = db.prepare("UPDATE gates SET execution = ? WHERE id = ?");
   const markExecutorStmt = db.prepare("UPDATE gates SET executor = ? WHERE id = ?");
   const markEscalatedStmt = db.prepare("UPDATE gates SET escalatedAt = ? WHERE id = ? AND escalatedAt IS NULL");
@@ -372,6 +426,13 @@ export function createGatesStore(opts: {
   );
   const deadPaneStmt = db.prepare(
     "SELECT * FROM gates WHERE nudge IS NOT NULL AND released = 0 AND status = 'answered' AND delivery IS NOT NULL ORDER BY openedAt",
+  );
+  // subject LIKE 'herd:%': only handlers/herd.ts's nudged-session read stamps
+  // consumedAt, so a nudge on any other subject (e.g. a board form gate) can
+  // never leave the unconsumed set -- scoping the sweep's own query is the
+  // only way to keep it from chasing rows nothing will ever consume.
+  const unconsumedAnsweredStmt = db.prepare(
+    "SELECT * FROM gates WHERE status = 'answered' AND nudge IS NOT NULL AND consumedAt IS NULL AND released = 0 AND subject LIKE 'herd:%' AND COALESCE(json_extract(answer,'$.answeredAt'), closedAt, openedAt) >= ? ORDER BY openedAt",
   );
 
   const get = (id: string): GateRow | null => {
@@ -417,11 +478,15 @@ export function createGatesStore(opts: {
   const answerWinTxn = db.transaction((answerJson: string, id: string, by: string): { changed: boolean; released: boolean } => {
     const result = answerStmt.run(answerJson, id);
     if (result.changes === 0) return { changed: false, released: false };
+    const row = getStmt.get(id) as GateColumns; // pane is immutable after insert
     let released = false;
-    if (by === GATE_BY_PANE) {
-      const row = getStmt.get(id) as GateColumns; // pane is immutable after insert
-      if (row.pane) { releaseStmt.run(id); released = true; }
-    }
+    if (by === GATE_BY_PANE && row.pane) { releaseStmt.run(id); released = true; }
+    // Self-answer by the nudged pane has already reconciled: stamp consumedAt
+    // here rather than waiting on a push the pane will never need. Gated on
+    // row.nudge because answeredByNudgedPane's by===GATE_BY_PANE fallback
+    // (answer.session absent) says nothing about whether this gate was ever
+    // nudged at all -- consumption is only a concept for nudge-bearing gates.
+    if (row.nudge && answeredByNudgedPane(rowToGate(row))) markConsumedStmt.run(Date.now(), id);
     return { changed: true, released };
   });
 
@@ -571,6 +636,11 @@ export function createGatesStore(opts: {
       markDeliveryStmt.run(JSON.stringify({ outcome, at: Date.now() }), id);
     },
 
+    markConsumed(id, at = Date.now()) {
+      markConsumedStmt.run(at, id);
+      return get(id) != null;
+    },
+
     markExecution(id, execution) {
       markExecutionStmt.run(execution, id);
     },
@@ -660,6 +730,13 @@ export function createGatesStore(opts: {
 
     deadPanePushes() {
       return (deadPaneStmt.all() as GateColumns[]).map(rowToGate).filter((r) => r.delivery?.outcome === "dead-pane");
+    },
+
+    unconsumedAnsweredPushes(now = Date.now()) {
+      return (unconsumedAnsweredStmt.all(now - UNCONSUMED_ANSWERED_HORIZON_MS) as GateColumns[])
+        .map(rowToGate)
+        .filter((r) => r.delivery != null && ["delivered", "confirmed", "stuck"].includes(r.delivery.outcome))
+        .filter((r) => !answeredByNudgedPane(r));
     },
 
     sweep() {
