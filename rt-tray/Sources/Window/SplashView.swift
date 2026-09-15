@@ -22,14 +22,21 @@ enum SplashTuning {
     static let springResponse: Double = 0.45
     static let springDamping: Double = 0.72
 
-    static let wordmarkFadeDelay: Double = 0.3
-    static let wordmarkFadeDuration: Double = 0.35
-
     static let dismissFadeDuration: Double = 0.25
+
+    // The minimum-display gate WindowModel waits on before it will consider
+    // dismissing the splash (the other half of the "later of" rule is the
+    // active app's first navigation finishing, still uncapped here at 8s).
+    // animationSettleDuration is a best-visual-estimate of when the drop-in
+    // finishes, not something derived from the spring math -- if a future
+    // eye-check says the animation actually settles earlier or later, this
+    // is the one number to move.
+    static let animationSettleDuration: Double = 1.0
+    static let postSettleHold: Double = 1.0
+    static var minimumVisibleDuration: Double { animationSettleDuration + postSettleHold }
 }
 
 private let splashBackground = Color(red: 0x16 / 255.0, green: 0x16 / 255.0, blue: 0x1e / 255.0)
-private let wordmarkColor = Color(red: 0xe3 / 255.0, green: 0xe7 / 255.0, blue: 0xf6 / 255.0)
 
 // make-icon.swift's own per-flavor accent (prodPalette.fg / devPalette.fg):
 // one color per flavor, used for both the "m" and the layers glyph there,
@@ -82,21 +89,14 @@ struct SplashView: View {
     var body: some View {
         ZStack {
             splashBackground.ignoresSafeArea()
-            VStack(spacing: 14) {
-                HStack(spacing: markGap) {
-                    // make-icon.swift draws "m" in a monospace font (SF
-                    // Mono / Menlo fallback), not the system UI font.
-                    Text("m")
-                        .font(.system(size: markFontSize, weight: .regular, design: .monospaced))
-                        .foregroundColor(markColor)
-                    layersGlyph
-                }
-                Text("mattstack")
-                    .font(.system(size: 28, weight: .semibold))
-                    .foregroundColor(wordmarkColor)
-                    .opacity(play ? 1 : 0)
-                    .animation(.easeInOut(duration: SplashTuning.wordmarkFadeDuration)
-                        .delay(SplashTuning.wordmarkFadeDelay), value: play)
+            // Just the mark (m + layers glyph), centered -- no wordmark.
+            HStack(spacing: markGap) {
+                // make-icon.swift draws "m" in a monospace font (SF
+                // Mono / Menlo fallback), not the system UI font.
+                Text("m")
+                    .font(.system(size: markFontSize, weight: .regular, design: .monospaced))
+                    .foregroundColor(markColor)
+                layersGlyph
             }
         }
         .onAppear { play = true }

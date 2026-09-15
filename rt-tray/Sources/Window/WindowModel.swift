@@ -2,6 +2,7 @@ import AppKit
 import Combine
 import Foundation
 import MattstackCore
+import SwiftUI
 import WebKit
 
 struct URLSessionAppListFetcher: AppListFetching {
@@ -90,6 +91,7 @@ final class WindowModel: ObservableObject {
     @Published var loadFailures: [String: Bool] = [:]
     @Published private(set) var icons: [String: NSImage] = [:]
     @Published private(set) var splashVisible = false
+    @Published private(set) var splashOpacity: Double = 1
 
     let store: WebViewStore
     weak var controller: MattstackWindowController?
@@ -157,14 +159,18 @@ final class WindowModel: ObservableObject {
     }
 
     /// No-op on every call after the first per process: `show()` calls this
-    /// unconditionally on every window show, including re-shows.
+    /// unconditionally on every window show, including re-shows. The
+    /// minimum-display gate is `SplashTuning.minimumVisibleDuration`
+    /// (animation settle + a post-settle hold), not a bare literal here, so
+    /// it stays in lockstep with the animation's own tunables.
     func presentSplashIfNeeded() {
         guard !Self.hasShownSplash else { return }
         Self.hasShownSplash = true
         splashVisible = true
 
+        let minimumVisibleNanoseconds = UInt64(SplashTuning.minimumVisibleDuration * 1_000_000_000)
         Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            try? await Task.sleep(nanoseconds: minimumVisibleNanoseconds)
             self?.splashMinDelayElapsed = true
             self?.dismissSplashIfReady()
         }
@@ -189,10 +195,26 @@ final class WindowModel: ObservableObject {
         dismissSplash()
     }
 
+    /// Deterministic fade, not a conditional-removal `.transition`: a plain
+    /// `if splashVisible` conditional pops the instant the flag flips
+    /// (that removal isn't guaranteed to pick up an ambient `.animation`),
+    /// so instead this animates the published `splashOpacity` to 0 first --
+    /// `splashOpacity` reaches its target value synchronously here even
+    /// though the on-screen pixels are still interpolating, which is also
+    /// what makes an `allowsHitTesting(splashOpacity > 0)` binding in the
+    /// view disable clicks on the splash the instant the fade starts, not
+    /// at the end of it -- and only removes the view (`splashVisible =
+    /// false`) once that fade duration has actually elapsed.
     private func dismissSplash() {
         guard !splashDismissed else { return }
         splashDismissed = true
-        splashVisible = false
+        withAnimation(.easeOut(duration: SplashTuning.dismissFadeDuration)) {
+            splashOpacity = 0
+        }
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(SplashTuning.dismissFadeDuration * 1_000_000_000))
+            self?.splashVisible = false
+        }
     }
 
     func toggleVisibility() {

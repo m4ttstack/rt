@@ -41,13 +41,19 @@ struct MattstackWindowView: View {
                     .opacity(0)
             )
 
+            // Opacity is driven explicitly from model.splashOpacity (animated
+            // there via withAnimation), not a conditional `.transition`: the
+            // view stays mounted for the fade's full duration and is only
+            // removed (model flips splashVisible) once it's actually done,
+            // so the fade is deterministic instead of racing a removal.
             if model.splashVisible {
-                SplashView().transition(.opacity)
+                SplashView()
+                    .opacity(model.splashOpacity)
+                    .allowsHitTesting(model.splashOpacity > 0)
             }
         }
         .frame(minWidth: 900, minHeight: 600)
         .ignoresSafeArea()
-        .animation(.easeOut(duration: SplashTuning.dismissFadeDuration), value: model.splashVisible)
     }
 }
 
