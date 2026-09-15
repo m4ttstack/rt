@@ -1126,6 +1126,22 @@ export const TREE: Record<string, CommandNode> = {
     },
   },
 
+  mr: {
+    description: "Merge requests as rt sees them",
+    subcommands: {
+      map: {
+        description: "Open MRs joined to the local worktrees holding their branches",
+        module: "./commands/mr.ts",
+        fn: "mrMap",
+        omitBehavior: "list",
+        args: [
+          { name: "Repo", flag: "--repo", type: "text", placeholder: "repo-tools", hint: "Registered repo name (defaults to the current repo)" },
+          { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable rows (default output is a table)" },
+        ],
+      },
+    },
+  },
+
   daemon: {
     description: "Manage the rt background daemon",
     subcommands: {
