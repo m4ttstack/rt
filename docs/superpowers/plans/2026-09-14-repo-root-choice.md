@@ -281,7 +281,7 @@ export function promoteStagedRepoRoot(p: Probes): boolean {
 }
 ```
 
-This needs three imports the module's earlier block does not show: `setSetting` from `lib/settings/write.ts`, `homeGitDir` exported from `lib/setup/steps/home.ts`, and `join` (already there). No write seam is injected: `bunfig`'s preload repoints HOME for tests, so `setSetting` already writes into a temp store rather than the developer's, and an injection parameter no caller passes is dead surface.
+This needs two imports the module's earlier block does not show: `setSetting` from `lib/settings/write.ts` and `homeGitDir`, exported from `lib/setup/steps/home.ts`. No write seam is injected: `bunfig`'s preload repoints HOME for tests, so `setSetting` already writes into a temp store rather than the developer's, and an injection parameter no caller passes is dead surface.
 
 The guard matters beyond tidiness: `rt setup apply --only repos.clone` is reachable on a machine that has never installed (`gateHardPreconditions` checks only `tool.macos` and `tool.clt`), and an unguarded write there would create `~/.mattstack/user` as a non-git directory and kill the *next* full install at step 1. Same regression, entered through the promotion path instead of the verb path.
 
@@ -878,7 +878,7 @@ Revert Task 5's `team.mode !== "join" &&` guard so the row keys on tracking alon
 
 Then revert Task 4's branch so the verb always stages, and run the Task 4 smoke check with `~/.mattstack/user/.git` present: the post-Install write test must go red. Restore. That branch is what stops the two sources being live at once.
 
-Then revert Task 4's false branch to a `setSetting` call and run the Task 4 smoke check on a fresh HOME: `test -e "$H/.mattstack/user"` must report the bug. Restore. That is the Install-step-1 regression, and nothing else in the suite catches it.
+Then revert Task 4's false branch to a `setSetting` call and run Task 4 Step 1's staging test (the case with no `~/.mattstack/user/.git`): it must go red, because the store gets written where nothing should be written yet. The Step 5 smoke script is the same check by hand, but it never creates `.git`, so use the test. That is the Install-step-1 regression, and nothing else in the suite catches it.
 
 Then mutate the ROW's source resolution, at the call site rather than inside `configuredRoot`, and run Task 5's explicit-empty-array case:
 
