@@ -2086,6 +2086,26 @@ export const TREE: Record<string, CommandNode> = {
           SETUP_JSON_ARG,
         ],
       },
+      "repo-root": {
+        description: "Where rt clones your team's repos",
+        subcommands: {
+          set: {
+            description: "Validate and record the repo folder (staged pre-Install, written directly once the home repo exists)",
+            module: "./commands/setup.ts",
+            fn: "setupRepoRootSet",
+            args: [
+              {
+                name: "Folder",
+                type: "text",
+                optional: true,
+                placeholder: "~/code",
+                hint: 'Path to the folder rt should clone repos into; omit to pipe {"root": "<path>"} on stdin',
+              },
+              SETUP_JSON_ARG,
+            ],
+          },
+        },
+      },
       github: integrationNode("github", "GitHub"),
       gitlab: integrationNode("gitlab", "GitLab"),
       linear: integrationNode("linear", "Linear"),

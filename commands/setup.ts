@@ -33,8 +33,10 @@ import { clearIntent, readIntent, teamRefFromIntent, writeIntent } from "../lib/
 import { NO_MANIFEST_DETAIL, setupPackFlow } from "../lib/setup/pack.ts";
 import { composePlan, enrichSnapshotForge, realSecretPresence } from "../lib/setup/plan.ts";
 import { createRealProbes, type Probes } from "../lib/setup/probes.ts";
+import { checkRepoRoot, stageRepoRoot } from "../lib/setup/repo-root.ts";
 import { DEFAULT_CALLBACK_PORT, DEFAULT_SCOPE_NEEDS, buildSlackManifest } from "../lib/setup/slack-app.ts";
 import { STEPS } from "../lib/setup/steps/index.ts";
+import { homeGitDir } from "../lib/setup/steps/home.ts";
 import { readStagedSecret, stageSecret } from "../lib/setup/staging.ts";
 import { readTeamSnapshot, readUserIntegrationOverrides, type TeamSnapshot, type UserIntegrationOverrides } from "../lib/setup/team-settings.ts";
 import type { Plan, Row, RowStatus } from "../lib/setup/contract.ts";
@@ -433,6 +435,84 @@ export async function setupIntent(args: string[], _ctx: CommandContext = {}, dep
       deps.print(json ? JSON.stringify(userErrorPayload(err, deps.probes.now())) : `rt setup intent: ${err.message}`);
       return deps.exit(2);
     }
+    throw err;
+  }
+}
+
+// ─── repo-root (`rt setup repo-root set`) ──────────────────────────────────
+
+export interface RepoRootDeps {
+  probes: Probes;
+  print: (s: string) => void;
+  exit: (code: number) => never;
+  isTTY: () => boolean;
+  /** Reads the full stdin body: valid JSON parses to its value; anything else comes back as the trimmed raw string; empty stdin is null. Never throws. */
+  stdin: () => Promise<unknown>;
+  writeSetting: typeof setSetting;
+}
+
+export function realRepoRootDeps(): RepoRootDeps {
+  return {
+    probes: createRealProbes(),
+    print: (s) => console.log(s),
+    exit: process.exit,
+    isTTY: () => process.stdin.isTTY === true,
+    stdin: readSmartStdin,
+    writeSetting: setSetting,
+  };
+}
+
+function extractRepoRootArg(input: unknown): string | null {
+  if (typeof input === "string" && input.trim() !== "") return input.trim();
+  if (isPlainObject(input)) {
+    const v = input.root;
+    if (typeof v === "string" && v.trim() !== "") return v.trim();
+  }
+  return null;
+}
+
+/**
+ * Validates through the same checkRepoRoot the repos.root row uses, so "the
+ * row says ready" and "this verb would accept it" can never disagree. Writes
+ * rt.repoRoots directly once the home repo exists; stages it otherwise,
+ * because the machine store lives inside the home repo and creating it
+ * before `home.init` clones would make that clone fail on a non-empty
+ * target. See lib/setup/repo-root.ts for the shared guard.
+ */
+export async function setupRepoRootSet(args: string[], _ctx: CommandContext = {}, deps: RepoRootDeps = realRepoRootDeps()): Promise<void> {
+  const json = args.includes("--json");
+  const verb = "setup repo-root set";
+  try {
+    let raw = args.find((a) => !a.startsWith("--"));
+    if (!raw) {
+      if (deps.isTTY()) {
+        // Checked BEFORE any stdin read: reading stdin first would block on
+        // EOF at a real terminal instead of showing usage. There is
+        // deliberately no prompt here, since the only prompt on this deps
+        // shape masks input, and a folder path is not a secret.
+        throw new UserActionableError("usage", "usage: rt setup repo-root set <folder> [--json]");
+      }
+      const input = await deps.stdin();
+      raw = extractRepoRootArg(input) ?? undefined;
+      if (!raw) throw new UserActionableError("bad-stdin", 'no root path provided; pipe {"root": "<path>"} on stdin instead');
+    }
+
+    const check = checkRepoRoot(deps.probes, raw);
+    if (!check.ok) throw new UserActionableError("bad-path", check.detail);
+
+    if (deps.probes.exists(homeGitDir(deps.probes.home))) {
+      deps.writeSetting("rt.repoRoots", [check.path], "machine");
+    } else {
+      stageRepoRoot(deps.probes, check.path);
+    }
+
+    deps.print(
+      json
+        ? JSON.stringify(envelope({ path: check.path, tccWarning: check.tccWarning }, deps.probes.now()))
+        : `setup repo-root set: ${check.path}${check.tccWarning ? ` (${check.tccWarning})` : ""}`,
+    );
+  } catch (err) {
+    if (err instanceof UserActionableError) return exitWithUserError(err, json, verb, deps);
     throw err;
   }
 }
