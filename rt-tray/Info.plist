@@ -43,6 +43,15 @@
                 <string>mattstack</string>
             </array>
         </dict>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>@@BUNDLE_ID@@.web</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>https</string>
+                <string>http</string>
+            </array>
+        </dict>
     </array>
     <key>SUFeedURL</key>
     <string>https://github.com/m4ttstack/rt/releases/latest/download/appcast.xml</string>

@@ -16,6 +16,15 @@ struct GeneralPane: View {
                     .onChange(of: startAtLogin) { _, on in toggleLogin(on) }
                     .accessibilityIdentifier(AXID.settingsGeneralStartAtLogin)
             }
+            Section("mattstack window") {
+                Toggle("Open .mattstack links in the mattstack window",
+                       isOn: Binding(
+                           get: { UserDefaults.standard.object(forKey: "MSShellHandoff") == nil
+                                  || UserDefaults.standard.bool(forKey: "MSShellHandoff") },
+                           set: { UserDefaults.standard.set($0, forKey: "MSShellHandoff") }))
+                    .toggleStyle(.switch).controlSize(.small)
+                    .accessibilityIdentifier(AXID.settingsGeneralShellHandoff)
+            }
             Section("Updates") {
                 Toggle("Check for updates automatically", isOn: $autoUpdates).toggleStyle(.switch).controlSize(.small)
                     .disabled(!env.updater.isEnabled)
