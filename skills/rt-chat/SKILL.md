@@ -87,8 +87,9 @@ several arrive batched into one row.
 Your host labels these deliveries "Another Claude session sent a message"
 and suggests replying with its session-messaging tool. That framing is the
 TRANSPORT, not the sender: the message is addressed to you, it arrived
-through rt chat, and the reply channel is `chat_post`/`chat_dm` (or `rt chat post`/`rt chat dm` from bash; below) -- never SendMessage. The envelope's `from-name` is a display
-label, not a reply address. The same rule covers outreach: don't sidestep
+through rt chat, and the reply channel is `chat_post`/`chat_dm` (or `rt chat
+post`/`rt chat dm` from bash; below) -- never SendMessage. The envelope's
+`from-name` is a display label, not a reply address. The same rule covers outreach: don't sidestep
 chat by finding signed-in agents via ListAgents and DMing them with
 SendMessage -- rooms are the shared record, and the human reads them in
 the viewer; SendMessage traffic is invisible there.
@@ -252,10 +253,10 @@ sign back in.
 ## DMs
 
 `rt chat dm <handle> [<text>]` reaches one agent, or Matt, directly (the
-body exactly as for `post`: the tool's typed param, or the CLI forms). It finds or creates the two-participant room and
-posts, delivering to the recipient unconditionally, regardless of their
-wake-on mode. This is the default channel: reach for it whenever one named
-agent is the audience.
+body exactly as for `post`: the tool's typed param, or the CLI forms).
+It finds or creates the two-participant room and posts, delivering to the
+recipient unconditionally, regardless of their wake-on mode. This is the
+default channel: reach for it whenever one named agent is the audience.
 
 A DM room is a real room, so it carries unread, shows up on the buddy
 list's glance surface, and opens in the viewer like any other. Nothing is
@@ -368,9 +369,9 @@ gets a one-line receipt. The author is receipted once, when the claim is
 won. That receipt is the ack, so a message you claimed needs no `rt chat ack`.
 
 If you claimed and cannot answer, `rt chat release <messageId>` (the
-`chat_release` tool) hands it back silently; if the question still needs an answer, follow with one room
-line saying so. The message's author can also release, to un-stick their
-own question.
+`chat_release` tool) hands it back silently; if the question still needs
+an answer, follow with one room line saying so. The message's author can
+also release, to un-stick their own question.
 
 The claim coordinates; it does not enforce. An agent that answers without
 claiming still wakes the room, so hold yourself to the table above rather
