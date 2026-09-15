@@ -71,6 +71,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     /// The stand-down route is decided once, by whichever of the settings
     /// answer and its backstop gets there first.
     @MainActor private var standDownRouted = false
+    /// Set only by the tray menu's "Quit mattstack" action, immediately
+    /// before it calls `NSApp.terminate(nil)`. Every other path to
+    /// termination (Cmd-Q, Dock right-click Quit) is intercepted by
+    /// `applicationShouldTerminate` and turned into a window close instead.
+    private var quitConfirmed = false
 
     // MARK: - Lifecycle
 
@@ -373,6 +378,31 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         return true
     }
 
+    /// Dock-first quit interception (tray-and-quit spec, 2026-09-15): the
+    /// tray menu's "Quit mattstack" is the only real quit (`quitConfirmed`).
+    /// Every other path -- Cmd-Q with the window key, Dock right-click Quit
+    /// -- closes the window instead (dropping the app back to `.accessory`
+    /// via the existing `windowWillClose`) and cancels the termination, so
+    /// daemon supervision never dies just because the window did. System
+    /// shutdown/restart/logout are read from the quit AppleEvent's reason
+    /// and always honored: this interception must never block the OS.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if quitConfirmed { return .terminateNow }
+        let reasonCode = NSAppleEventManager.shared().currentAppleEvent?
+            .paramDescriptor(forKeyword: AEKeyword(kAEQuitReason))?.typeCodeValue
+        if QuitReason.isSystemInitiated(reasonCode: reasonCode) {
+            return .terminateNow
+        }
+        Task { @MainActor in
+            if let controller = self.windowModel?.controller {
+                controller.close()
+            } else {
+                self.mattstackWindow?.close()
+            }
+        }
+        return .terminateCancel
+    }
+
     @MainActor
     private func buildServices() {
         permissionsService = PermissionsService(bundleId: Bundle.main.bundleIdentifier ?? "com.mattstack.app",
@@ -591,14 +621,97 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         updateMenuBarTitle(status: .unknown)
 
-        // Single-view design: any click on the status item toggles the
-        // process popover. All former menu actions live in the panel's
-        // status strip / gear menu.
-        if let button = statusItem.button {
-            button.action = #selector(showProcessPanel)
-            button.target = self
-            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        // Dock-first tray (spec 2026-09-15): assigning `.menu` makes AppKit
+        // show it on any click, left or right, on its own -- no button
+        // action/target of our own needed, unlike the old popover-toggle.
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        menu.delegate = self
+        statusItem.menu = menu
+    }
+
+    /// Rebuilt from scratch on every `menuNeedsUpdate` (right before the
+    /// tray menu is shown) so the daemon-status line, the Start at Login
+    /// checkmark, and the Check for Updates title are never stale --
+    /// mirrors `ProcessPanelView.makeGearMenu()`'s same fresh-build-per-open
+    /// approach, which still owns the panel's own gear menu unchanged.
+    private func rebuildTrayMenu(_ menu: NSMenu) {
+        menu.removeAllItems()
+        // Key equivalent is display-only here (a status-item menu's items
+        // aren't live key equivalents unless the menu is open) -- it mirrors
+        // HotkeyManager's actual ctrl-opt-cmd-M registration so the label
+        // never drifts from the real hotkey.
+        menu.addItem(ActionMenuItem("Open mattstack", axid: AXID.trayOpen,
+                                    keyEquivalent: "m", keyEquivalentModifierMask: [.control, .option, .command]) {
+            NotificationCenter.default.post(name: .showMattstackWindow, object: nil)
+        })
+        menu.addItem(.separator())
+        let status = NSMenuItem(title: TrayState.shared.statusText, action: nil, keyEquivalent: "")
+        status.isEnabled = false
+        status.setAccessibilityIdentifier(AXID.trayStatus)
+        menu.addItem(status)
+        menu.addItem(.separator())
+        menu.addItem(ActionMenuItem("Processes…", axid: AXID.trayProcesses) { [weak self] in
+            self?.detachProcessPanel()
+        })
+        menu.addItem(.separator())
+        menu.addItem(ActionMenuItem("Restart Daemon", axid: AXID.trayRestartDaemon) {
+            NotificationCenter.default.post(name: .rtRestartDaemon, object: nil)
+        })
+        menu.addItem(ActionMenuItem("View Logs…", axid: AXID.trayViewLogs) {
+            NotificationCenter.default.post(name: .rtViewDaemonLogs, object: nil)
+        })
+        menu.addItem(ActionMenuItem("Settings…", axid: AXID.traySettings) {
+            NotificationCenter.default.post(name: .rtShowSettings, object: nil)
+        })
+        menu.addItem(.separator())
+        let startAtLogin = SMAppService.mainApp.status == .enabled
+        menu.addItem(ActionMenuItem("Start at Login", state: startAtLogin ? .on : .off, axid: AXID.trayStartAtLogin) { [weak self] in
+            self?.toggleTrayStartAtLogin()
+        })
+        let updateItem = ActionMenuItem(trayUpdateMenuTitle, axid: AXID.trayCheckForUpdates) {
+            NotificationCenter.default.post(name: .rtCheckUpdates, object: nil)
         }
+        updateItem.isEnabled = TrayState.shared.canCheckForUpdates || TrayState.shared.updateAvailable != nil
+        menu.addItem(updateItem)
+        menu.addItem(ActionMenuItem("Uninstall mattstack…", axid: AXID.trayUninstall) {
+            NotificationCenter.default.post(name: .rtShowUninstall, object: nil)
+        })
+        menu.addItem(.separator())
+        menu.addItem(ActionMenuItem("Quit mattstack", axid: AXID.trayQuit) { [weak self] in
+            self?.quitFromTray()
+        })
+    }
+
+    private var trayUpdateMenuTitle: String {
+        if let tag = TrayState.shared.updateAvailable {
+            return "Update Available: \(tag)"
+        }
+        return "Check for Updates…"
+    }
+
+    /// Mirrors `ProcessPanelView.toggleStartAtLogin()`'s exact opt-out
+    /// bookkeeping (see that method's doc comment) for the tray-level copy
+    /// of the same control; the panel's own gear menu keeps its copy as-is.
+    private func toggleTrayStartAtLogin() {
+        do {
+            if SMAppService.mainApp.status == .enabled {
+                try SMAppService.mainApp.unregister()
+                LoginItemPreference.isOptedOut = true
+            } else {
+                try SMAppService.mainApp.register()
+                LoginItemPreference.isOptedOut = false
+            }
+        } catch {
+            TrayLog.error("login item toggle failed", ["err": String(describing: error)])
+        }
+    }
+
+    /// The only real quit (dock-first spec 2026-09-15): every other path to
+    /// termination is intercepted by `applicationShouldTerminate`.
+    @objc private func quitFromTray() {
+        quitConfirmed = true
+        NSApp.terminate(nil)
     }
 
     /// Update the menu bar button with "m" text + colored status dot.
@@ -1230,6 +1343,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         let hours = minutes / 60
         let remainingMinutes = minutes % 60
         return "\(hours)h \(remainingMinutes)m"
+    }
+}
+
+extension AppDelegate: NSMenuDelegate {
+    /// The documented hook for mutating a menu's contents right before
+    /// AppKit shows it -- rebuilds the tray menu fresh every open the same
+    /// way `menuWillOpen` would, just earlier in the show sequence.
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        rebuildTrayMenu(menu)
     }
 }
 

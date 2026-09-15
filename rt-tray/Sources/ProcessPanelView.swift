@@ -483,11 +483,14 @@ private struct MenuAnchor: NSViewRepresentable {
 final class ActionMenuItem: NSMenuItem {
     private let handler: () -> Void
 
-    init(_ title: String, state: NSControl.StateValue = .off, axid: String? = nil, handler: @escaping () -> Void) {
+    init(_ title: String, state: NSControl.StateValue = .off, axid: String? = nil,
+         keyEquivalent: String = "", keyEquivalentModifierMask: NSEvent.ModifierFlags? = nil,
+         handler: @escaping () -> Void) {
         self.handler = handler
-        super.init(title: title, action: #selector(invoke), keyEquivalent: "")
+        super.init(title: title, action: #selector(invoke), keyEquivalent: keyEquivalent)
         self.target = self
         self.state = state
+        if let keyEquivalentModifierMask { self.keyEquivalentModifierMask = keyEquivalentModifierMask }
         if let axid { setAccessibilityIdentifier(axid) }
     }
 

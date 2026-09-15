@@ -122,4 +122,18 @@ enum AXID {
     static let menuGearOpenCrashLog = "menu.gear.openCrashLog"
     static let menuGearStartAtLogin = "menu.gear.startAtLogin"
     static let menuGearQuit = "menu.gear.quit"
+
+    // Tray menu (the status item's own menu, dock-first spec 2026-09-15).
+    // Distinct AXIDs from the panel's gear menu above: same labels, two
+    // different NSMenuItem instances, so the walkthrough can address either.
+    static let trayOpen = "tray.open"
+    static let trayStatus = "tray.status"
+    static let trayProcesses = "tray.processes"
+    static let trayRestartDaemon = "tray.restartDaemon"
+    static let trayViewLogs = "tray.viewLogs"
+    static let traySettings = "tray.settings"
+    static let trayStartAtLogin = "tray.startAtLogin"
+    static let trayCheckForUpdates = "tray.checkForUpdates"
+    static let trayUninstall = "tray.uninstall"
+    static let trayQuit = "tray.quit"
 }
