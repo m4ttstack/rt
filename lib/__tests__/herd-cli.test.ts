@@ -1,6 +1,27 @@
-import { describe, test, expect } from "bun:test";
-import { buildAskPayload, buildSpawnPayload, buildWrapUpPayload, jobEnv, renderAnswer, renderHerdRow, renderStatus, soleHerdId, workerEnv } from "../../commands/herd.ts";
+import { describe, test, expect, spyOn } from "bun:test";
+import { mkdtempSync, writeFileSync, readFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
+import { buildAskPayload, buildBriefInputs, buildSpawnPayload, buildWrapUpPayload, brief, jobEnv, renderAnswer, renderHerdRow, renderStatus, soleHerdId, workerEnv } from "../../commands/herd.ts";
 import type { Commands, HerdListRow, HerdStatusData } from "../../packages/rt-client/src/index.ts";
+
+async function run(fn: (args: string[]) => Promise<void>, args: string[]) {
+  const out: string[] = [];
+  const err: string[] = [];
+  const logSpy = spyOn(console, "log").mockImplementation((...a: unknown[]) => { out.push(a.map(String).join(" ")); });
+  const errSpy = spyOn(console, "error").mockImplementation((...a: unknown[]) => { err.push(a.map(String).join(" ")); });
+  const exitSpy = spyOn(process, "exit").mockImplementation(() => { throw new Error("process.exit sentinel"); });
+  let code = 0;
+  try {
+    await fn(args);
+  } catch (e) {
+    if (e instanceof Error && e.message === "process.exit sentinel") code = (exitSpy.mock.calls.at(-1)?.[0] as number | undefined) ?? 1;
+    else throw e;
+  } finally {
+    logSpy.mockRestore(); errSpy.mockRestore(); exitSpy.mockRestore();
+  }
+  return { code, stdout: out.join("\n"), stderr: err.join("\n") };
+}
 
 describe("rt herd payload builders", () => {
   test("workerEnv reads HERD_ID, HERD_JOB, CLAUDE_CODE_SESSION_ID, HERDR_PANE_ID", () => {
@@ -106,6 +127,122 @@ function job(over: Partial<HerdStatusData["jobs"][number]>): HerdStatusData["job
     ...over,
   };
 }
+
+describe("rt herd brief", () => {
+  function tmpFile(name: string, content: string): string {
+    const dir = mkdtempSync(join(tmpdir(), "rt-herd-brief-cli-"));
+    const path = join(dir, name);
+    writeFileSync(path, content);
+    return path;
+  }
+
+  const TEMPLATE = [
+    "# Job: <name>",
+    "",
+    "Goal: <goal>",
+    "",
+    "## Method",
+    "",
+    "<REQUIRED: describe the approach here>",
+    "",
+  ].join("\n");
+
+  const STRATEGIES = ["## trivial", "", "```", "Do the trivial thing.", "```", ""].join("\n");
+
+  test("buildBriefInputs requires --job and --template", () => {
+    expect(() => buildBriefInputs([])).toThrow(/usage: rt herd brief/);
+    expect(() => buildBriefInputs(["--job", "x"])).toThrow(/usage: rt herd brief/);
+  });
+
+  test("buildBriefInputs enforces --method-file xor --strategy/--strategies", () => {
+    const template = tmpFile("t.md", TEMPLATE);
+    const methodFile = tmpFile("m.md", "Do the thing.");
+    const strategies = tmpFile("s.md", STRATEGIES);
+    expect(() => buildBriefInputs(["--job", "x", "--template", template])).toThrow(/pass either/);
+    expect(() =>
+      buildBriefInputs(["--job", "x", "--template", template, "--strategy", "trivial", "--method-file", methodFile]),
+    ).toThrow(/mutually exclusive/);
+    expect(() =>
+      buildBriefInputs(["--job", "x", "--template", template, "--strategy", "trivial"]),
+    ).toThrow(/pass either/); // --strategy without --strategies
+    const inputs = buildBriefInputs(["--job", "x", "--template", template, "--strategy", "trivial", "--strategies", strategies]);
+    expect(inputs.method).toEqual({ kind: "strategy", strategies: STRATEGIES, name: "trivial" });
+  });
+
+  test("buildBriefInputs collects repeated --fill, splitting on the first '=' only", () => {
+    const template = tmpFile("t.md", TEMPLATE);
+    const methodFile = tmpFile("m.md", "Do the thing.");
+    const inputs = buildBriefInputs([
+      "--job", "x", "--template", template, "--method-file", methodFile,
+      "--fill", "goal=ship a=b",
+      "--fill", "paths=/tmp/x",
+    ]);
+    expect(inputs.fills).toEqual({ goal: "ship a=b", paths: "/tmp/x" });
+  });
+
+  test("buildBriefInputs rejects a --fill with no '='", () => {
+    const template = tmpFile("t.md", TEMPLATE);
+    const methodFile = tmpFile("m.md", "Do the thing.");
+    expect(() =>
+      buildBriefInputs(["--job", "x", "--template", template, "--method-file", methodFile, "--fill", "no-equals-sign"]),
+    ).toThrow(/--fill must be name=value/);
+  });
+
+  test("brief prints the assembled text plain, or as JSON with --json", async () => {
+    const template = tmpFile("t.md", TEMPLATE);
+    const methodFile = tmpFile("m.md", "Do the thing.");
+    const args = ["--job", "widget", "--template", template, "--method-file", methodFile, "--fill", "goal=ship it"];
+
+    const plain = await run(brief, args);
+    expect(plain.code).toBe(0);
+    expect(plain.stdout).toContain("# Job: widget");
+    expect(plain.stdout).toContain("Do the thing.");
+
+    const json = await run(brief, [...args, "--json"]);
+    expect(json.code).toBe(0);
+    const parsed = JSON.parse(json.stdout);
+    expect(parsed.ok).toBe(true);
+    expect(parsed.brief).toContain("# Job: widget");
+  });
+
+  test("brief --out writes the file and always prints {ok:true,path}, --json or not", async () => {
+    const template = tmpFile("t.md", TEMPLATE);
+    const methodFile = tmpFile("m.md", "Do the thing.");
+    const outPath = join(mkdtempSync(join(tmpdir(), "rt-herd-brief-out-")), "brief.md");
+    const args = ["--job", "widget", "--template", template, "--method-file", methodFile, "--fill", "goal=ship it", "--out", outPath];
+
+    const r = await run(brief, args);
+    expect(r.code).toBe(0);
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed).toEqual({ ok: true, path: outPath });
+    expect(readFileSync(outPath, "utf8")).toContain("# Job: widget");
+  });
+
+  test("brief exits 1 with the leftover-markers error when a slot is unfilled", async () => {
+    const template = tmpFile("t.md", TEMPLATE);
+    const methodFile = tmpFile("m.md", "Do the thing.");
+    const r = await run(brief, ["--job", "widget", "--template", template, "--method-file", methodFile]); // goal unfilled
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain("unfilled markers: goal");
+  });
+
+  test("brief exits 1 naming available strategies on an unknown --strategy", async () => {
+    const template = tmpFile("t.md", TEMPLATE);
+    const strategies = tmpFile("s.md", STRATEGIES);
+    const r = await run(brief, ["--job", "widget", "--template", template, "--strategy", "nope", "--strategies", strategies, "--fill", "goal=x"]);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain("unknown strategy 'nope'; available: trivial");
+  });
+
+  test("brief exits 1 with a clear message when --out cannot be written", async () => {
+    const template = tmpFile("t.md", TEMPLATE);
+    const methodFile = tmpFile("m.md", "Do the thing.");
+    const badOut = join(mkdtempSync(join(tmpdir(), "rt-herd-brief-bad-")), "no-such-dir", "brief.md");
+    const r = await run(brief, ["--job", "widget", "--template", template, "--method-file", methodFile, "--fill", "goal=x", "--out", badOut]);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain("cannot write --out");
+  });
+});
 
 describe("renderStatus", () => {
   test("a missing subscription names its own remedy", () => {
