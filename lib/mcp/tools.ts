@@ -92,7 +92,7 @@ function requireWorkerEnv(env: NodeJS.ProcessEnv): { herd: string; job: string; 
 async function resolveRepoIdentity(repo: string): Promise<{ identity: string } | { error: string }> {
   const res = await rtCommand<Commands["repos"]["data"]>("repos", {});
   if (!res.ok || !res.data) return { error: res.error ?? "failed to list repos" };
-  const identities = Object.keys(res.data.repos);
+  const identities = Object.keys(res.data.repos ?? {});
   const matches = identities.filter((id) => id === repo || repoLabel(id) === repo);
   if (matches.length > 1) return { error: `"${repo}" matches more than one repo: ${matches.join(", ")}; pass the full identity` };
   const match = matches[0];
@@ -193,7 +193,7 @@ export function mcpTools(): McpToolDef[] {
     },
     {
       name: "gate_list",
-      description: "List gates in all statuses unless open is true, optionally filtered by subject prefix or kind and capped by limit. Pass the previous response's cursor to continue paging.",
+      description: "List gates in all statuses unless open is true, optionally filtered by subject prefix or kind and capped by limit. Pass the previous response's cursor to continue paging; an empty gates array means there is nothing more to page.",
       inputSchema: {
         type: "object",
         properties: {
@@ -373,7 +373,7 @@ export function mcpTools(): McpToolDef[] {
     },
     {
       name: "mr_comment_inline",
-      description: "Post a NEW positioned inline comment (DiffNote) on an MR diff line, with server-side verification: the daemon re-checks the created note's type and deletes-and-retries once when GitLab silently drops the position. The retry re-fetches diff_refs; it cannot repair a position GitLab rejects outright. Use mr_reply_thread to reply to an existing thread.",
+      description: "GitLab only. Post a NEW positioned inline comment (DiffNote) on an MR diff line, with server-side verification: the daemon re-checks the created note's type and deletes-and-retries once when GitLab silently drops the position. The retry re-fetches diff_refs; it cannot repair a position GitLab rejects outright. Use mr_reply_thread to reply to an existing thread.",
       inputSchema: {
         type: "object",
         properties: {
@@ -431,7 +431,7 @@ export function mcpTools(): McpToolDef[] {
         if (!mrsRes.ok || !mrsRes.data) return err(mrsRes.error ?? "failed to read MRs");
         if (!treesRes.ok || !treesRes.data) return err(treesRes.error ?? "failed to list worktrees");
 
-        const mrs = Object.values(mrsRes.data.mrs)
+        const mrs = Object.values(mrsRes.data.mrs ?? {})
           .map((entry) => entry.pr)
           .filter((pr) => pr.state === "opened")
           .map((pr) => ({
@@ -442,7 +442,7 @@ export function mcpTools(): McpToolDef[] {
             pipelineStatus: pr.pipeline?.status ?? null,
           }));
 
-        const trees = treesRes.data.trees.map((t) => ({ path: t.path, branch: t.branch }));
+        const trees = (treesRes.data.trees ?? []).map((t) => ({ path: t.path, branch: t.branch }));
 
         return ok({ rows: joinMrsToWorktrees(mrs, trees) });
       },

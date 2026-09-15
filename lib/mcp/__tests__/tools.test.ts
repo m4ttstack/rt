@@ -98,7 +98,7 @@ describe("mcpTools", () => {
         rtCommand: async (cmd: string, payload: Record<string, unknown>) => {
           if (cmd === "gate:ask") {
             capturedPayload = payload;
-            return { ok: true, data: { id: "g1", presentation: "inline", subject: "input-subject" } };
+            return { ok: true, data: { id: "g1", presentation: "form", subject: "input-subject" } };
           }
           throw new Error(`unexpected rtCommand("${cmd}")`);
         },
