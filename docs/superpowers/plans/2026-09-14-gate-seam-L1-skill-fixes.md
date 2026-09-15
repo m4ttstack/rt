@@ -6,7 +6,7 @@
 
 **Architecture:** Text-only edits in ~/Documents/GitHub/mattstack-skills, recompiled into both packs via rt skills sync. No code changes anywhere.
 
-**Tech Stack:** mattstack-skills checkout; `sh tests/certify.sh`; `rt skills sync --pack mattstack` and `--pack claimview`.
+**Tech Stack:** mattstack-skills checkout; `sh tests/certify.sh`; `rt skills sync --pack mattstack` and `--pack acme`.
 
 **Spec:** `docs/superpowers/specs/2026-09-14-gate-seam-mcp-epic-design.md` (Phase 0)
 
@@ -14,7 +14,7 @@
 
 - No em dashes or en dashes in any text written.
 - Facts only: the replacement sentences below are pre-verified against code (claude-swap session.py:84-92; repo-tools commands/runs.ts:164-178; commands/runs-write.ts:191-204; lib/runs/resolve-db.ts:66-77). Do not re-derive or embellish them.
-- Engine edits require the mattstack plugin version bump in the SAME commit (editing-skills pipeline), then `rt skills sync --pack mattstack` and `rt skills sync --pack claimview`, then reading the compiled outputs IN FULL.
+- Engine edits require the mattstack plugin version bump in the SAME commit (editing-skills pipeline), then `rt skills sync --pack mattstack` and `rt skills sync --pack acme`, then reading the compiled outputs IN FULL.
 - The mattstack-skills checkout must be clean and on main before sync.
 
 ---
@@ -81,6 +81,6 @@ and DELETE the later occurrences in the same file outright (the comment inside e
 
 - [ ] **Step 1:** Bump mattstack's `.claude-plugin/plugin.json` version (same-commit convention: amend into a final `chore: bump for phase-0 skill fixes` commit if the pipeline expects one commit; follow editing-skills).
 - [ ] **Step 2:** Push mattstack-skills main (the commit on main is what sync clones).
-- [ ] **Step 3:** `rt skills sync --pack mattstack`, then `rt skills sync --pack claimview` (canonical checkouts, clean, on main; sync handles patch-bump + recompile + cache update; act on `restartNeeded`).
-- [ ] **Step 4 (REQUIRED, editing-skills final validation):** read the compiled outputs IN FULL for: claimview `skills/work`, `skills/review`, `skills/ship`, `skills/watch-ci`, `attachments/sync-open-mrs`, `attachments/self-review`, `attachments/receive-review`, mattstack `skills/shepherdr` (accounts slot carries the cswap fix). Confirm the new sentences render, the old ones are gone everywhere, and no `{{` markers leaked.
+- [ ] **Step 3:** `rt skills sync --pack mattstack`, then `rt skills sync --pack acme` (canonical checkouts, clean, on main; sync handles patch-bump + recompile + cache update; act on `restartNeeded`).
+- [ ] **Step 4 (REQUIRED, editing-skills final validation):** read the compiled outputs IN FULL for: acme `skills/work`, `skills/review`, `skills/ship`, `skills/watch-ci`, `attachments/sync-open-mrs`, `attachments/self-review`, `attachments/receive-review`, mattstack `skills/shepherdr` (accounts slot carries the cswap fix). Confirm the new sentences render, the old ones are gone everywhere, and no `{{` markers leaked.
 - [ ] **Step 5:** Report per-file word deltas in the lane report (expected: roughly minus 100-150 words per engine copy).

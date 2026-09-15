@@ -10,7 +10,7 @@ citation behind the claims here)
 
 The estate's agent-facing invocation discipline is concentrated in one
 cluster and duplicated heavily: the gate protocol is inlined verbatim 13
-times in the claimview pack (~30% of the pack's words), the three board
+times in the acme pack (~30% of the pack's words), the three board
 wrapper skills restate ~3,200 words of near-identical gate mechanics, and
 the presentation rule (form vs wait) has three divergent implementations
 (gate-protocol prose, board `verbs.ts`, `herd:ask`). The answer-side
@@ -84,7 +84,7 @@ a synchronous tool call cannot express it.
   automatic session resolution; keep the export only for driving a
   different run.
 - Ships via the editing-skills pipeline: certify, bump, sync, recompile
-  claimview and mattstack packs.
+  acme and mattstack packs.
 
 ### Phase 1: the seam (repo-tools)
 
