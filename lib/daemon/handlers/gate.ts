@@ -718,7 +718,7 @@ export function createGateHandlers(
     );
     const derivedOrigin: GateOrigin = { presentation };
     if (paneId) derivedOrigin.paneId = paneId;
-    if (resolved.subject.startsWith("run:")) derivedOrigin.runId = resolved.subject.slice("run:".length);
+    if (resolved.runId) derivedOrigin.runId = resolved.runId;
     if (resolved.runWorktree) derivedOrigin.worktree = resolved.runWorktree;
     const origin: GateOrigin = { ...passthroughOrigin, ...derivedOrigin } as GateOrigin;
 
