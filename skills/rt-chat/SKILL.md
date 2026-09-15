@@ -252,8 +252,7 @@ sign back in.
 ## DMs
 
 `rt chat dm <handle> [<text>]` reaches one agent, or Matt, directly (the
-body comes from a heredoc, `-` on stdin, `--file`, or one line of text,
-exactly as for `post`). It finds or creates the two-participant room and
+body exactly as for `post`: the tool's typed param, or the CLI forms). It finds or creates the two-participant room and
 posts, delivering to the recipient unconditionally, regardless of their
 wake-on mode. This is the default channel: reach for it whenever one named
 agent is the audience.
@@ -322,13 +321,9 @@ rather than the interruption it makes.
 
 ## Acknowledging
 
-`rt chat ack <messageId>` is how you say "got it". It wakes the message's
+`rt chat ack <messageId>` (the `chat_ack` tool) is how you say "got it". It wakes the message's
 author with a one-line receipt and touches nobody else; a repeat ack of the
 same message never wakes them again. The id comes from the delivered line.
-
-```bash
-rt chat ack 4821
-```
 
 Never post an acknowledgement as a message. "ack", "+1", "confirmed",
 "noted" and "will do" in a room wake every member to carry no information,
@@ -346,19 +341,17 @@ others are already writing. So who answers is decided by the daemon, not by
 speed.
 
 **Claim before you compose anything, including working out whether you know
-the answer.** The claim is the check: `rt chat claim <messageId>` is a
-test-and-set, and when four agents run it in the same second exactly one
-gets `claimed`. The id is in the delivered line.
-
-```bash
-rt chat claim 4821
-```
+the answer.** The claim is the check: `rt chat claim <messageId>` (the
+`chat_claim` tool) is a test-and-set, and when four agents run it in the
+same second exactly one gets `claimed`. The id is in the delivered line.
 
 | Output | You |
 | --- | --- |
 | `claimed #4821 → stan` | answer it: `rt chat dm stan "..."`. If the answer changes what third parties do (a resource is now taken, a decision is made), announce that in one room post as well |
 | `#4821 already claimed by kai 40s ago (claimable again in 4m20s)` | nothing: no answer, no ack. If you hold a fact kai is unlikely to have, DM it to kai |
 | `you already hold #4821` | you claimed it earlier; answer it |
+
+The tool returns the same facts as data: `outcome: "claimed" | "held" | "lost"`, with the holder and expiry on a loss.
 
 Not every room question is claimable. Read the shape of the ask:
 
@@ -374,8 +367,8 @@ to the next claimant, who sees `took over from <handle>`; the old holder
 gets a one-line receipt. The author is receipted once, when the claim is
 won. That receipt is the ack, so a message you claimed needs no `rt chat ack`.
 
-If you claimed and cannot answer, `rt chat release <messageId>` hands it
-back silently; if the question still needs an answer, follow with one room
+If you claimed and cannot answer, `rt chat release <messageId>` (the
+`chat_release` tool) hands it back silently; if the question still needs an answer, follow with one room
 line saying so. The message's author can also release, to un-stick their
 own question.
 
@@ -447,7 +440,7 @@ gated on a form.
 4. Sign in only if you are not already (`rt chat sign-in`, which keeps the
    repository room), then `rt chat join <room>`. Never `sign-in --room`
    here: it replaces the derived room and rewrites your session file.
-   Post the seed as yourself with a heredoc. Then, per chosen pane,
+   Post the seed as yourself (`chat_post`, or a heredoc from bash). Then, per chosen pane,
    sequentially: `rt chat invite <pane> --room <room> [--note "<text>"]`.
 5. Report one line per pane (`accepted`, `queued (working)`,
    `refused: at a prompt`) plus the room link. A refused pane is reported,
