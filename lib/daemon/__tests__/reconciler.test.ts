@@ -69,10 +69,10 @@ describe("reconciler sweep: blocked", () => {
     expect(row!.owner).toBe("human");
     expect(row!.questions).toEqual([
       { id: "action", label: "Pane needs attention", multi: false, options: [
-        { value: "focus-pane", label: "focus-pane" },
-        { value: "resume", label: "resume" },
-        { value: "clear", label: "clear" },
-        { value: "dismiss", label: "dismiss" },
+        { value: "focus-pane", label: "Focus-pane" },
+        { value: "resume", label: "Resume" },
+        { value: "clear", label: "Clear" },
+        { value: "dismiss", label: "Dismiss" },
       ] },
     ]);
 

@@ -204,13 +204,13 @@ describe("gate:open", () => {
     if (!res.ok) throw new Error("open failed");
     const row = store.get(res.data.id)!;
     expect(row.questions[0]!.options).toEqual([
-      { value: "yes", label: "yes" },
-      { value: "no", label: "no" },
+      { value: "yes", label: "Yes" },
+      { value: "no", label: "No" },
     ]);
     const opened = emitted.find((e) => e.topic === `gate/opened/${res.data.id}`)!;
     expect((opened.payload as any).questions[0].options).toEqual([
-      { value: "yes", label: "yes" },
-      { value: "no", label: "no" },
+      { value: "yes", label: "Yes" },
+      { value: "no", label: "No" },
     ]);
   });
 

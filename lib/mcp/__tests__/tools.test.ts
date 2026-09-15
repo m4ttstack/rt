@@ -3,6 +3,8 @@ import { mkdtempSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { mcpTools } from "../tools.ts";
+import { normalizeGateQuestions } from "../../../packages/rt-client/src/gate-options.ts";
+import type { GateQuestion } from "../../../packages/rt-client/src/commands.ts";
 
 const NAMES = ["gate_answer","gate_ask","gate_list","chat_post","chat_dm","chat_ack","chat_claim","chat_release","mr_reply_thread","mr_comment_inline","mr_map","herd_gates","herd_ask","herd_answer","herd_report"];
 
@@ -141,6 +143,41 @@ describe("mcpTools", () => {
       );
       expect(res.ok).toBe(true);
       expect(capturedPayload?.subject).toBeUndefined();
+    });
+
+    test("schema permits a recommended flag on an option object, and it survives to the payload the daemon normalizes", async () => {
+      const optionSchema = (
+        (tool: ReturnType<typeof mcpTools>[number]) =>
+          (
+            (tool.inputSchema as { properties: { questions: { items: { properties: { options: { items: { oneOf: unknown[] } } } } } } })
+              .properties.questions.items.properties.options.items.oneOf[1] as { properties: { recommended?: unknown } }
+          ).properties
+      )(mcpTools().find((t) => t.name === "gate_ask")!);
+      expect(optionSchema.recommended).toBeDefined();
+
+      let capturedPayload: Record<string, unknown> | undefined;
+      mock.module("../../../packages/rt-client/src/transport.ts", () => ({
+        ...realTransport,
+        rtCommand: async (cmd: string, payload: Record<string, unknown>) => {
+          if (cmd === "gate:ask") {
+            capturedPayload = payload;
+            return { ok: true, data: { id: "g1", presentation: "form", subject: "input-subject" } };
+          }
+          throw new Error(`unexpected rtCommand("${cmd}")`);
+        },
+      }));
+      const tool = mcpTools().find((t) => t.name === "gate_ask")!;
+      const res = await tool.handler(
+        { questions: [{ id: "q1", label: "Proceed?", multi: false, options: [{ value: "yes", label: "yes", recommended: true }] }] },
+        {} as NodeJS.ProcessEnv,
+      );
+      expect(res.ok).toBe(true);
+      const questions = capturedPayload?.questions as unknown as GateQuestion[];
+      // Round-trip proof: the payload the tool actually sends, normalized by
+      // the same function GatesStore.open runs in the real daemon.
+      expect(normalizeGateQuestions(questions)).toEqual([
+        { id: "q1", label: "Proceed?", multi: false, options: [{ value: "yes", label: "Yes (Recommended)" }] },
+      ]);
     });
   });
 
