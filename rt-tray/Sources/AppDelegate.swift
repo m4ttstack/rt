@@ -397,6 +397,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         mattstackWindow = MattstackWindowController(model: model)
         let windowBridge = WindowOpenBridge()
         windowBridge.appDelegate = self
+        notificationManager.appDelegate = self
         // Assigned here, in buildServices(), and not in setupTrayServer():
         // applicationDidFinishLaunching runs buildServices() before it starts
         // the listener, so no connection can arrive while `routes` is still
@@ -519,6 +520,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         }
         // Never the raw string: an unrecognized URL can carry a malformed invite code in its path.
         TrayLog.warn("ignored URL", ["scheme": url.scheme ?? "", "host": url.host ?? ""])
+    }
+
+    /// NotificationManager's click handler calls this for a URL that parsed
+    /// as a mattstack app link -- same routing as handleGetURL's open branch
+    /// above (the pendingOpen queue included, for the same launch-by-link
+    /// race, even though a notification click realistically can't arrive
+    /// before buildServices() since nothing can fire a notification before
+    /// setupNotifications() runs there too).
+    func routeNotificationOpen(_ request: OpenRequest) {
+        Task { @MainActor in
+            guard let windowModel else { pendingOpen = request; return }
+            let opened = await windowModel.open(request)
+            if !opened {
+                windowModel.controller?.show()
+                TrayLog.warn("unknown app", ["app": request.app])
+            }
+        }
     }
 
     @objc private func showMattstackWindow() { Task { @MainActor in windowModel?.toggleVisibility() } }

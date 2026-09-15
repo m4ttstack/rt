@@ -35,4 +35,26 @@ let openLinkChecks: [Check] = [
         try c.requireEqual(dest, URL(string: "https://board.mattstack/mr/1"))
         c.expect(WindowNavigation.destination(for: OpenRequest(app: "nope", pathAndQuery: ""), in: apps) == nil)
     },
+    Check("mattstack://open/<app>/<path>#fragment keeps the fragment") { c in
+        let r = OpenLink.request(from: URL(string: "mattstack://open/chat/r/general#m-42")!)
+        try c.requireEqual(r, OpenRequest(app: "chat", pathAndQuery: "/r/general#m-42"))
+    },
+    Check("mattstack://open/<app>/<path>?q#fragment keeps query before fragment") { c in
+        let r = OpenLink.request(from: URL(string: "mattstack://open/chat/r/general?tab=x#m-42")!)
+        try c.requireEqual(r, OpenRequest(app: "chat", pathAndQuery: "/r/general?tab=x#m-42"))
+    },
+    Check("https://<app>.mattstack/<path>#fragment keeps the fragment") { c in
+        let r = OpenLink.request(fromHTTPS: URL(string: "https://chat.mattstack/r/general#m-42")!)
+        try c.requireEqual(r, OpenRequest(app: "chat", pathAndQuery: "/r/general#m-42"))
+    },
+    Check("https://<app>.mattstack/<path>?q#fragment keeps query before fragment") { c in
+        let r = OpenLink.request(fromHTTPS: URL(string: "https://chat.mattstack/r/general?tab=x#m-42")!)
+        try c.requireEqual(r, OpenRequest(app: "chat", pathAndQuery: "/r/general?tab=x#m-42"))
+    },
+    Check("destination round-trips a fragment") { c in
+        let apps = [DiscoveryApp(name: "chat", displayName: "Chat", description: nil,
+                                 url: "https://chat.mattstack", icon: nil)]
+        let dest = WindowNavigation.destination(for: OpenRequest(app: "chat", pathAndQuery: "/r/general?tab=x#m-42"), in: apps)
+        try c.requireEqual(dest, URL(string: "https://chat.mattstack/r/general?tab=x#m-42"))
+    },
 ]
