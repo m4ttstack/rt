@@ -353,6 +353,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         }
     }
 
+    /// Dock icon click with the last window closed: AppKit sends this instead
+    /// of reopening anything on its own once the app has no windows. `flag`
+    /// is true when a window is already visible, in which case the default
+    /// system behavior (raise it) is left alone.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            Task { @MainActor in
+                // `windowModel.controller` is a weak back-reference; fall
+                // back to the strongly-held `mattstackWindow` ivar if it's
+                // ever nil so a Dock click can't silently no-op.
+                if let controller = self.windowModel?.controller {
+                    controller.show()
+                } else {
+                    self.mattstackWindow?.show()
+                }
+            }
+        }
+        return true
+    }
+
     @MainActor
     private func buildServices() {
         permissionsService = PermissionsService(bundleId: Bundle.main.bundleIdentifier ?? "com.mattstack.app",
