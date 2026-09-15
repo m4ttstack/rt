@@ -99,4 +99,12 @@ describe("shell-integration — install/remove round trip", () => {
   test("removeZshenvPrecedence is a no-op when the file doesn't exist", () => {
     expect(removeZshenvPrecedence()).toEqual({ removed: false });
   });
+
+  test("the precedence block dedupes (RT-161): a PATH already carrying ~/.local/bin gains no second copy", () => {
+    installZshenvPrecedence();
+    const body = readFileSync(join(home, ".zshenv"), "utf8");
+    expect(body).toContain("typeset -U path");
+    expect(body).toContain('path=("$HOME/.local/bin" $path)');
+    expect(body).not.toContain('export PATH="$HOME/.local/bin:$PATH"');
+  });
 });
