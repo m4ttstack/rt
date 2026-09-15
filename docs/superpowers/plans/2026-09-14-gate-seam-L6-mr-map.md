@@ -50,7 +50,7 @@ export function joinMrsToWorktrees(
 ### Task 2: the verb
 
 **Files:**
-- Create: `commands/mr.ts` (fn `mrMap`: resolve repo (default: current repo, same helper `commands/worktree.ts` uses... read its repo-defaulting first and reuse it), call `projectMrsRead` and `worktreeList` via rt-client, map the wire shapes into Task 1's inputs, print `{"ok":true,"rows":[...]}`)
+- Create: `commands/mr.ts` (fn `mrMap`: resolve repo (default: current repo, same helper `commands/worktree.ts` uses... read its repo-defaulting first and reuse it), call `readProjectMRs` and worktree:list (generic typed transport) via rt-client, map the wire shapes into Task 1's inputs, print `{"ok":true,"rows":[...]}`)
 - Modify: `lib/command-tree-def.ts`:
 
 ```ts
