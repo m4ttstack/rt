@@ -421,6 +421,7 @@ export function createHerdHandlers(deps: HerdDeps) {
         repo: herd.repo, cwd: worktree, prompt: brief, surface: "herdr",
         ...(str(p?.model) && { model: p!.model }), ...(str(p?.effort) && { effort: p!.effort }), ...(str(p?.account) && { account: p!.account }),
         label: name, caller: `herd:${herdId}`, workspace: herd.workspace, tab: name, handle: name,
+        subject: herdSubject(herdId, name),
         env: { HERD_ID: herdId, HERD_JOB: name, HERD_ROOM: herd.room },
         ...(herd.herdrSocket && { herdrSocket: herd.herdrSocket }),
       });
