@@ -473,7 +473,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         }
         if url.scheme == "https" || url.scheme == "http" {
             // Delivered an https URL we don't own (a router misfire): punt to
-            // the default browser rather than swallowing it.
+            // the default browser rather than swallowing it. Loop invariant:
+            // never forward to whichever app macOS would hand this URL back
+            // to -- registering as an https/http handler means that app can
+            // be us (set as default browser, or an over-broad router rule),
+            // and forwarding to ourselves would re-enter this same handler.
+            if NSWorkspace.shared.urlForApplication(toOpen: url) == Bundle.main.bundleURL {
+                TrayLog.warn("dropped https URL that would route back to mattstack", ["scheme": url.scheme ?? "", "host": url.host ?? ""])
+                return
+            }
             NSWorkspace.shared.open(url)
             return
         }
