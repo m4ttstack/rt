@@ -677,6 +677,23 @@ export interface Commands {
 
   // ─── Gate facility (BOARD-20/21) ─────────────────────────────────────────
   "gate:open": { payload: { subject: string; kind: string; questions: GateQuestion[]; meta?: Record<string, unknown>; agent?: string; pane?: string; nudge?: { session: string }; context?: string; origin?: GateOrigin }; data: { id: string; supersededId: string | null } };
+  /** Ceremony layer over gate:open: resolves subject from the caller's
+      session (explicit subject wins; else its single running run as
+      `run:<id>`; else its agent record as `agent:<id>`), computes
+      presentation via gatePresentation, supplies nudge/origin, and omits an
+      oversized context instead of rejecting it. Delegates to gate:open for
+      everything else (validation, supersede, events, push). */
+  "gate:ask": {
+    payload: {
+      questions: GateQuestion[];
+      context?: string;
+      kind?: string;
+      subject?: string;
+      sessionId?: string;
+      paneId?: string;
+    };
+    data: { id: string; presentation: "form" | "wait"; subject: string; supersededId: string | null };
+  };
   /**
    * A CAS loss is a DEFINED OUTCOME, not an error: `ok:true` with
    * `conflict:true` and the WINNING row, so every consumer gets the winner
@@ -829,6 +846,7 @@ export const COMMAND_NAMES: readonly CommandName[] = [
   "reconciler:status",
   "reconciler:clear",
   "gate:open",
+  "gate:ask",
   "gate:answer",
   "gate:wait",
   "gate:list",
