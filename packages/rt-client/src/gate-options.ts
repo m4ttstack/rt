@@ -8,10 +8,26 @@ export interface GateOptionObject {
   label: string;
 }
 
-/** Bare string s becomes {value: s, label: s}; objects pass through
-    untouched. Pure and order-preserving. */
+/** Bare string s becomes {value: s, label: s}; a well-formed {value,label}
+    object passes through untouched. Total over whatever actually arrives
+    on the wire, not just the declared GateOption union: a partial object
+    fills the missing field from the one present, and anything else
+    (null, a number, an object with neither field) is coerced via String()
+    into both fields. Every returned entry is a full {value,label} pair --
+    callers may trust the return type without re-checking it. Pure and
+    order-preserving. */
 export function normalizeGateOptions(options: GateOption[]): GateOptionObject[] {
-  return options.map((o) => (typeof o === "string" ? { value: o, label: o } : o));
+  return options.map((o) => {
+    if (typeof o === "string") return { value: o, label: o };
+    if (o !== null && typeof o === "object") {
+      const value = typeof (o as { value?: unknown }).value === "string" ? (o as { value: string }).value : undefined;
+      const label = typeof (o as { label?: unknown }).label === "string" ? (o as { label: string }).label : undefined;
+      if (value !== undefined && label !== undefined) return { value, label };
+      if (value !== undefined) return { value, label: value };
+      if (label !== undefined) return { value: label, label };
+    }
+    return { value: String(o), label: String(o) };
+  });
 }
 
 export function normalizeGateQuestions(questions: GateQuestion[]): GateQuestion[] {

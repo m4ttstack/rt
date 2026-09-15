@@ -23,6 +23,32 @@ describe("normalizeGateOptions", () => {
   test("empty options stay empty (free-form question)", () => {
     expect(normalizeGateOptions([])).toEqual([]);
   });
+  test("a partial object with only value fills label from value", () => {
+    expect(normalizeGateOptions([{ value: "a" } as unknown as GateQuestion["options"][number]])).toEqual([
+      { value: "a", label: "a" },
+    ]);
+  });
+  test("a partial object with only label fills value from label", () => {
+    expect(normalizeGateOptions([{ label: "x" } as unknown as GateQuestion["options"][number]])).toEqual([
+      { value: "x", label: "x" },
+    ]);
+  });
+  test("wire garbage (null, a number, an object with neither field) is coerced via String() into both fields", () => {
+    expect(
+      normalizeGateOptions([null, 42, {}] as unknown as GateQuestion["options"]),
+    ).toEqual([
+      { value: "null", label: "null" },
+      { value: "42", label: "42" },
+      { value: "[object Object]", label: "[object Object]" },
+    ]);
+  });
+  test("the return type is honest: every entry is a full {value,label} pair, for any input shape", () => {
+    const wireGarbage = ["ok", { value: "a" }, { label: "x" }, null, 42, {}, undefined, [1, 2]] as unknown as GateQuestion["options"];
+    for (const entry of normalizeGateOptions(wireGarbage)) {
+      expect(typeof entry.value).toBe("string");
+      expect(typeof entry.label).toBe("string");
+    }
+  });
 });
 
 describe("normalizeGateQuestions", () => {
