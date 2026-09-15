@@ -134,6 +134,5 @@ enum AXID {
     static let traySettings = "tray.settings"
     static let trayStartAtLogin = "tray.startAtLogin"
     static let trayCheckForUpdates = "tray.checkForUpdates"
-    static let trayUninstall = "tray.uninstall"
     static let trayQuit = "tray.quit"
 }

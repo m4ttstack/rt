@@ -674,9 +674,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         }
         updateItem.isEnabled = TrayState.shared.canCheckForUpdates || TrayState.shared.updateAvailable != nil
         menu.addItem(updateItem)
-        menu.addItem(ActionMenuItem("Uninstall mattstack…", axid: AXID.trayUninstall) {
-            NotificationCenter.default.post(name: .rtShowUninstall, object: nil)
-        })
         menu.addItem(.separator())
         menu.addItem(ActionMenuItem("Quit mattstack", axid: AXID.trayQuit) { [weak self] in
             self?.quitFromTray()
