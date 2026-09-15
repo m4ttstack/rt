@@ -426,7 +426,11 @@ export async function brief(args: string[]): Promise<void> {
   const outPath = flagValue(args, "--out");
   if (outPath) {
     const resolved = resolve(outPath);
-    writeFileSync(resolved, result.brief);
+    try {
+      writeFileSync(resolved, result.brief);
+    } catch (e) {
+      fail(`cannot write --out ${resolved}: ${(e as Error).message}`);
+    }
     emit(true, { ok: true, path: resolved }, "");
     return;
   }

@@ -256,4 +256,38 @@ describe("assembleBrief", () => {
     if (!result.ok) return;
     expect(result.brief).toContain("`[gate] <id> answered\nby <surface>; re-read the registry and proceed.`");
   });
+
+  test("a stray unbalanced backtick in the method body cannot desync span detection in the surrounding template", () => {
+    // The method body is domain-supplied free text (--method-file, or a
+    // strategy author's prose) -- unlike the template's own fixed
+    // boilerplate, its backtick/quote balance is not something this
+    // assembler can assume. A stray backtick here must never cause a real
+    // slot elsewhere in the document to be swallowed into a bogus
+    // decorative span and shipped unfilled with no error.
+    const template = [
+      "# Job: <name>",
+      "",
+      "## Method",
+      "",
+      "<REQUIRED: describe the approach here>",
+      "",
+      "## Inputs",
+      "<paths>",
+      "",
+      "## Notes",
+      "Example: `sample`",
+      "",
+    ].join("\n");
+
+    const result = assembleBrief({
+      template,
+      job: "widget-job",
+      fills: {}, // <paths> deliberately left unfilled
+      method: { kind: "file", content: "Odd backtick ` here." },
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.leftover).toContain("paths");
+  });
 });

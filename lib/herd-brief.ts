@@ -94,7 +94,14 @@ function resolveMethodBody(method: BriefInputs["method"]): { ok: true; body: str
   return { ok: true, body: found.body };
 }
 
-function spliceMethodBody(template: string, body: string): { ok: true; text: string } | { ok: false; error: string } {
+/** Splits the template into the piece before the Method placeholder and the
+    piece after (the placeholder itself is discarded; the resolved method
+    body is substituted and spliced back in separately by the caller). Kept
+    apart -- rather than concatenated -- so a stray unbalanced backtick or
+    quote in the (untrusted, domain-supplied) method body can never desync
+    decorative-span pairing in the template's own (audited, fixed) prose,
+    or vice versa. See the "stray unbalanced backtick" test. */
+function splitAroundMethod(template: string): { ok: true; before: string; after: string; hasNext: boolean } | { ok: false; error: string } {
   const headingMatch = METHOD_HEADING_RE.exec(template);
   if (!headingMatch) {
     return { ok: false, error: "template has no '## Method' section" };
@@ -104,11 +111,12 @@ function spliceMethodBody(template: string, body: string): { ok: true; text: str
   const nextMatch = NEXT_HEADING_RE.exec(template);
   const nextHeadingStart = nextMatch ? nextMatch.index : template.length;
 
-  const before = template.slice(0, afterHeadingIdx);
-  const after = template.slice(nextHeadingStart);
-  const trimmedBody = body.replace(/\s+$/, "");
-  const separator = nextMatch ? "\n\n" : "\n";
-  return { ok: true, text: before + trimmedBody + separator + after };
+  return {
+    ok: true,
+    before: template.slice(0, afterHeadingIdx),
+    after: template.slice(nextHeadingStart),
+    hasNext: nextMatch !== null,
+  };
 }
 
 /** Single pass over the assembled document: real (non-decorative) markers
@@ -158,9 +166,9 @@ export function assembleBrief(inputs: BriefInputs): BriefResult {
     return { ok: false, error: methodBody.error };
   }
 
-  const spliced = spliceMethodBody(inputs.template, methodBody.body);
-  if (!spliced.ok) {
-    return { ok: false, error: spliced.error };
+  const split = splitAroundMethod(inputs.template);
+  if (!split.ok) {
+    return { ok: false, error: split.error };
   }
 
   const merged: Record<string, string> = { name: inputs.job };
@@ -168,10 +176,25 @@ export function assembleBrief(inputs: BriefInputs): BriefResult {
     merged[normalizeMarkerName(key)] = value;
   }
 
-  const { text: doc, leftover } = substituteMarkers(spliced.text, merged);
+  // Each region gets its own decorative-span pass: a stray backtick/quote in
+  // one can never desync marker detection in another.
+  const beforeResult = substituteMarkers(split.before, merged);
+  const methodResult = substituteMarkers(methodBody.body, merged);
+  const afterResult = substituteMarkers(split.after, merged);
+
+  const leftover: string[] = [];
+  const seenLeftover = new Set<string>();
+  for (const name of [...beforeResult.leftover, ...methodResult.leftover, ...afterResult.leftover]) {
+    if (!seenLeftover.has(name)) {
+      seenLeftover.add(name);
+      leftover.push(name);
+    }
+  }
   if (leftover.length > 0) {
     return { ok: false, error: `unfilled markers: ${leftover.join(", ")}`, leftover };
   }
 
-  return { ok: true, brief: doc };
+  const trimmedBody = methodResult.text.replace(/\s+$/, "");
+  const separator = split.hasNext ? "\n\n" : "\n";
+  return { ok: true, brief: beforeResult.text + trimmedBody + separator + afterResult.text };
 }
