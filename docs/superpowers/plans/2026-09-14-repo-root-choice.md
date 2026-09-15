@@ -4,7 +4,7 @@
 
 **Goal:** rt asks the user where their repos go instead of silently creating `~/Documents/GitHub` or adopting whatever candidate directory it happens to find.
 
-**Architecture:** A new required checklist row (`repos.root`) renders whenever the user is setting up a team or already has one with tracked repos. Its action is a new `choose-folder` contract type the Swift tray answers with `NSOpenPanel`, re-dispatching the chosen path through the existing `fieldValues` channel into a new validating rt verb. `settings.seed` stops writing `rt.repoRoots` and stops creating directories; the candidate list moves to a module the row and the verb share.
+**Architecture:** A new required checklist row (`repos.root`) renders when the user is joining a team, or when a team on this machine declares tracked repos. Its action is a new `choose-folder` contract type the Swift tray answers with `NSOpenPanel`, re-dispatching the chosen path through the existing `fieldValues` channel into a new validating rt verb. The chosen path is staged under the runtime directory and promoted into `rt.repoRoots` by `settings.seed`, because the machine store lives inside the home repo and cannot exist before `home.init` clones it.
 
 **Tech Stack:** Bun + TypeScript (rt CLI), Swift + SwiftUI (rt-tray), `bun test`, `swift run mattstack-checks`.
 
@@ -17,25 +17,33 @@
 - `bun run test` does NOT run e2e. Run `bun run test:all`, or at minimum the e2e file covering a surface you changed, before calling anything verified.
 - TDD throughout: write the failing test, run it, watch it fail for the stated reason, then implement. A test that passes before the change is not RED, it is a characterization test, and this plan says explicitly where one is intended.
 - `repos.root` must NOT be added to `INSTALL_SATISFIED_IDS` in `lib/setup/plan.ts`.
-- The verb writes `rt.repoRoots` at the **machine** scope (`scopes: ["machine"]` in `packages/rt-client/src/settings/registry-defs.ts`).
+- Only `settings.seed` ever writes `rt.repoRoots`, at **machine** scope (`scopes: ["machine"]` in `packages/rt-client/src/settings/registry-defs.ts`). The verb stages; it does not write the store.
 - `rt.repoRoots` has `default: []` in that registry. It is NEVER `undefined`. Assert `toEqual([])` or use `unwritten()` from `lib/setup/steps/step-utils.ts`; `toBeUndefined()` can never pass.
 - rt must never create a repo-root directory on the user's behalf. `NSOpenPanel`'s own New Folder button is how a user makes one.
 - Never run a verb that writes real settings against your own HOME. Use `env -i HOME=$(mktemp -d) ...` for any smoke check, per this repo's operating rules.
 - Work on branch `repo-root-choice`, which carries the spec. Never push to `main`. Never leave the shared main checkout on a branch.
 
-### The render gate, and why it is two conditions
+### Two facts that shape every task below
 
-The row renders when:
+**The render gate is two conditions.**
 
 ```ts
-team.mode !== "none" || snapshot.trackingIdentities.length > 0
+team.mode === "join" || snapshot.trackingIdentities.length > 0
 ```
 
-An earlier draft gated on `trackingIdentities` alone and was wrong in the one case that matters. `trackingIdentities` comes from `mattstack.tracking`, a team-scoped key read out of `~/.mattstack/teams/<slug>/mattstack/settings.team.jsonc`. On a joiner's fresh Mac that clone does not exist until `team.join`, which runs **inside** Install. `enrichSnapshotForge` back-fills only `integrations.forge`, never tracking. So a joiner's first checklist pass sees `[]`, the row would not render, `canInstall` would be true, and Install would run with no repo root: `repos.clone` skips, `board.keys` leaves `board.cwds` and `gitq.workSlots` unset, and the joiner clones zero repos.
+An earlier draft gated on `trackingIdentities` alone and was wrong in the one case that matters. It comes from `mattstack.tracking`, a team-scoped key in `~/.mattstack/teams/<slug>/mattstack/settings.team.jsonc`. On a joiner's fresh Mac that clone does not exist until `team.join`, **inside** Install; `enrichSnapshotForge` back-fills only `integrations.forge`. So a joiner's first pass sees `[]`, the row would not render, `canInstall` would be true, Install would run with no root, and the joiner would clone zero repos.
 
-`team.mode` alone fails the other way: `teamRefFromIntent` returns `"none"` once the teams are cloned and no intent remains, so a root that later went missing would have no row.
+`join` rather than `mode !== "none"`: join is the only pre-Install mode where someone else has already declared repos. A create install declares none, so asking would be the noise this design set out to remove. The snapshot half covers both once Install has run, including a created team that later tracks repos.
 
-Both conditions together cover pre-Install (intent) and post-Install (snapshot).
+**The answer is STAGED, never written before Install.**
+
+The machine store is `~/.mattstack/user/local/<machineKey()>/settings.local.jsonc`, and `~/.mattstack/user` **is** the home repo. `setSetting` does `mkdirSync(dirname(storePath), { recursive: true })` when the file is missing. Nothing creates `user/` before Install (the Team screen only dry-runs). So a pre-Install machine-scope write makes `user/` exist, non-empty, and non-git; `gatherHomeState` sets `userRepoPresent` false; `buildInitPlan` emits `cloneUserRepo`; and `git clone <url> user` into a non-empty directory is fatal. That dead-ends **Install step 1**.
+
+There is a second failure behind it: `machineKey()` falls back to the slugified hostname when `~/.mattstack/machine-key` is absent, and `home init` writes that file *after* the clone, possibly adopting a name from the cloned `user/local/`. A pre-Install write would land in a profile the resolver never reads.
+
+So `rt setup repo-root set` writes to `~/.mattstack/rt/` (runtime dir, outside the home repo), and `settings.seed` at step 8 promotes it into `rt.repoRoots` and deletes the staging file. `lib/setup/staging.ts` is the precedent and its docblock says why it exists; it is shaped for secrets, so this is a sibling file, not a reuse of `stageSecret`.
+
+Read `lib/setup/staging.ts` before writing Task 1.
 
 ---
 
@@ -47,21 +55,33 @@ Built first because both the row (Task 4) and the verb (Task 5) validate through
 - Create: `lib/setup/repo-root.ts`
 - Test: `lib/setup/__tests__/repo-root.test.ts`
 
+**Also modify:** `lib/setup/probes.ts` and `lib/setup/__tests__/fakes.ts`, to add one member.
+
 **Interfaces:**
-- Consumes: `Probes` (`home` only, plus an injected `stat`).
+- Consumes: `Probes`.
 - Produces:
 
 ```ts
+// on Probes, beside exists():
+statPath(path: string): { isDirectory: boolean; writable: boolean } | null;
+
+// lib/setup/repo-root.ts:
 export const CANDIDATE_ROOT_NAMES: string[];
 export type RootStat = { isDirectory: boolean; writable: boolean } | null;
 export function expandHome(p: Pick<Probes, "home">, path: string): string;
 export type RootCheck =
   | { ok: true; path: string; tccWarning: string | null }
   | { ok: false; detail: string };
-export function checkRepoRoot(p: Pick<Probes, "home">, raw: string, stat: (path: string) => RootStat): RootCheck;
+export function checkRepoRoot(p: Pick<Probes, "home" | "statPath">, raw: string): RootCheck;
 export function detectCandidate(p: Pick<Probes, "home" | "exists">): string | null;
-export function realRootStat(path: string): RootStat;
+export function readStagedRepoRoot(p: Pick<Probes, "home" | "readFile">): string | null;
+export function stageRepoRoot(p: Probes, path: string): void;
+export function clearStagedRepoRoot(p: Probes): void;
 ```
+
+`statPath` goes on `Probes` rather than being an injected default argument. `probes.ts`'s own docblock is the reason: the seam exists "so validators and steps stay pure functions over injected state and tests never touch the real machine". A row taking its candidate from a faked `p.exists` while stat-ing the real disk would be half fake and half real, and no `composePlan` test could control it. The real implementation is `statSync` plus `accessSync(path, W_OK)`, both caught; the fake is seeded from a map.
+
+The staging file is a single JSON object at `~/.mattstack/rt/repo-root.json`, mode 0600 to match the neighbouring staging files even though a path is not a secret. Read `lib/setup/staging.ts` for the read/write/remove conventions and follow them; do not reuse `stageSecret`, whose shape is per-domain secrets.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -72,38 +92,38 @@ import { describe, expect, test } from "bun:test";
 import { checkRepoRoot, detectCandidate, expandHome } from "../repo-root.ts";
 
 const HOME = "/Users/t";
-const p = (existing: string[] = []) => ({ home: HOME, exists: (x: string) => existing.includes(x) });
-const dir = () => ({ isDirectory: true, writable: true });
-const file = () => ({ isDirectory: false, writable: true });
-const readonlyDir = () => ({ isDirectory: true, writable: false });
-const gone = () => null;
+const DIR = { isDirectory: true, writable: true };
+const FILE = { isDirectory: false, writable: true };
+const RO = { isDirectory: true, writable: false };
+/** One fake per test: statPath answers for every path, exists answers the candidate scan. */
+const p = (stat: RootStat = DIR, existing: string[] = []) => ({ home: HOME, statPath: () => stat, exists: (x: string) => existing.includes(x) });
 
 describe("checkRepoRoot", () => {
   test("a writable directory is accepted and carries no warning", () => {
-    expect(checkRepoRoot(p(), "/Users/t/dev", dir)).toEqual({ ok: true, path: "/Users/t/dev", tccWarning: null });
+    expect(checkRepoRoot(p(DIR), "/Users/t/dev")).toEqual({ ok: true, path: "/Users/t/dev", tccWarning: null });
   });
 
   test.each([["~/dev"], ["${home}/dev"]])("expands %s before validating", (raw) => {
-    expect(checkRepoRoot(p(), raw, dir)).toEqual({ ok: true, path: "/Users/t/dev", tccWarning: null });
+    expect(checkRepoRoot(p(DIR), raw)).toEqual({ ok: true, path: "/Users/t/dev", tccWarning: null });
   });
 
   test("a path that does not exist is refused and says so", () => {
-    const r = checkRepoRoot(p(), "/Users/t/nope", gone);
+    const r = checkRepoRoot(p(null), "/Users/t/nope");
     expect(r).toEqual({ ok: false, detail: "/Users/t/nope does not exist" });
   });
 
   test("a file is refused as not a directory", () => {
-    const r = checkRepoRoot(p(), "/Users/t/notes.txt", file);
+    const r = checkRepoRoot(p(FILE), "/Users/t/notes.txt");
     expect(r).toEqual({ ok: false, detail: "/Users/t/notes.txt is not a directory" });
   });
 
   test("an unwritable directory is refused", () => {
-    const r = checkRepoRoot(p(), "/Users/t/locked", readonlyDir);
+    const r = checkRepoRoot(p(RO), "/Users/t/locked");
     expect(r).toEqual({ ok: false, detail: "/Users/t/locked is not writable" });
   });
 
   test("an empty path is refused rather than resolving to home", () => {
-    expect(checkRepoRoot(p(), "   ", dir)).toEqual({ ok: false, detail: "no path given" });
+    expect(checkRepoRoot(p(DIR), "   ")).toEqual({ ok: false, detail: "no path given" });
   });
 
   // Advisory on purpose. It is the user's machine, and ~/Documents/GitHub is a
@@ -114,28 +134,28 @@ describe("checkRepoRoot", () => {
     ["/Users/t/Desktop/code", "Desktop"],
     ["/Users/t/Downloads/code", "Downloads"],
   ])("%s is ACCEPTED with a warning naming %s", (path, dirName) => {
-    const r = checkRepoRoot(p(), path, dir);
+    const r = checkRepoRoot(p(DIR), path);
     expect(r.ok).toBe(true);
     expect((r as { tccWarning: string | null }).tccWarning).toContain(dirName);
   });
 
   test("a directory merely NAMED Documents outside home is not warned about", () => {
-    const r = checkRepoRoot(p(), "/srv/Documents/code", dir);
+    const r = checkRepoRoot(p(DIR), "/srv/Documents/code");
     expect((r as { tccWarning: string | null }).tccWarning).toBeNull();
   });
 });
 
 describe("detectCandidate", () => {
   test("returns the first candidate that exists", () => {
-    expect(detectCandidate(p(["/Users/t/code"]))).toBe("/Users/t/code");
+    expect(detectCandidate(p(DIR, ["/Users/t/code"]))).toBe("/Users/t/code");
   });
 
   test("follows list order when several exist", () => {
-    expect(detectCandidate(p(["/Users/t/code", "/Users/t/Documents/GitHub"]))).toBe("/Users/t/Documents/GitHub");
+    expect(detectCandidate(p(DIR, ["/Users/t/code", "/Users/t/Documents/GitHub"]))).toBe("/Users/t/Documents/GitHub");
   });
 
   test("returns null when none exist, so nothing is suggested", () => {
-    expect(detectCandidate(p())).toBeNull();
+    expect(detectCandidate(p(DIR, []))).toBeNull();
   });
 });
 
@@ -152,15 +172,21 @@ describe("expandHome", () => {
 Run: `bun test lib/setup/__tests__/repo-root.test.ts`
 Expected: FAIL, module not found.
 
-- [ ] **Step 3: Write `lib/setup/repo-root.ts`**
+- [ ] **Step 3: Add the probe, then write the module**
+
+First, `lib/setup/probes.ts`: add `statPath(path: string): RootStat` beside `exists`, implemented with `statSync` plus `accessSync(path, constants.W_OK)`, each in its own try/catch, returning null when the path cannot be stat'd at all. A path that cannot be stat'd is indistinguishable from one that is not there, and both mean "choose another". Seed the fake in `lib/setup/__tests__/fakes.ts` from a map the way the other fake members are seeded.
+
+Then `lib/setup/repo-root.ts`:
 
 ```ts
 /**
  * Where the user's repos go. rt validates a path the user picked; it never
- * picks one. `stat` is injected so the checks are testable without a
- * filesystem and so the one syscall lives at the caller.
+ * picks one.
+ *
+ * The chosen path is staged under the runtime dir rather than written to the
+ * machine store, because that store lives inside the home repo and creating it
+ * before `home.init` clones would make the clone fail on a non-empty target.
  */
-import { statSync, accessSync, constants } from "fs";
 import { join } from "path";
 import type { Probes } from "./probes.ts";
 
@@ -181,10 +207,10 @@ export type RootCheck =
   | { ok: true; path: string; tccWarning: string | null }
   | { ok: false; detail: string };
 
-export function checkRepoRoot(p: Pick<Probes, "home">, raw: string, stat: (path: string) => RootStat): RootCheck {
+export function checkRepoRoot(p: Pick<Probes, "home" | "statPath">, raw: string): RootCheck {
   const path = expandHome(p, raw.trim());
   if (path === "") return { ok: false, detail: "no path given" };
-  const s = stat(path);
+  const s = p.statPath(path);
   if (s === null) return { ok: false, detail: `${path} does not exist` };
   if (!s.isDirectory) return { ok: false, detail: `${path} is not a directory` };
   if (!s.writable) return { ok: false, detail: `${path} is not writable` };
@@ -206,23 +232,25 @@ export function detectCandidate(p: Pick<Probes, "home" | "exists">): string | nu
   return CANDIDATE_ROOT_NAMES.map((rel) => join(p.home, rel)).find((path) => p.exists(path)) ?? null;
 }
 
-/** Never throws: a path that cannot be stat'd is indistinguishable from one that is not there, and both are "choose another". */
-export function realRootStat(path: string): RootStat {
+function stagedPath(home: string): string {
+  return join(home, ".mattstack", "rt", "repo-root.json");
+}
+
+export function readStagedRepoRoot(p: Pick<Probes, "home" | "readFile">): string | null {
+  const raw = p.readFile(stagedPath(p.home));
+  if (raw === null) return null;
   try {
-    const s = statSync(path);
-    let writable = false;
-    try {
-      accessSync(path, constants.W_OK);
-      writable = true;
-    } catch {
-      writable = false;
-    }
-    return { isDirectory: s.isDirectory(), writable };
+    const parsed = JSON.parse(raw) as { root?: unknown };
+    return typeof parsed.root === "string" && parsed.root !== "" ? parsed.root : null;
   } catch {
     return null;
   }
 }
 ```
+
+`stageRepoRoot` and `clearStagedRepoRoot` write and remove that file. Copy the mkdir, mode and removal conventions from `lib/setup/staging.ts` rather than inventing them, and use the `Probes` filesystem members, not `fs` directly.
+
+Add tests for the three staging functions alongside the ones above: a staged value round-trips, a missing file reads null, a corrupt file reads null rather than throwing, and clearing removes it.
 
 - [ ] **Step 4: Run and watch them pass**
 
@@ -238,15 +266,15 @@ git commit -m "setup: add the shared repo-root validator"
 
 ---
 
-### Task 2: `settings.seed` stops deciding
+### Task 2: `settings.seed` stops deciding, and starts promoting
 
 **Files:**
-- Modify: `lib/setup/steps/settings.ts` (delete `detectOrCreateDefaultRoot`, `detectRepoRoots`, `CANDIDATE_ROOT_NAMES`, `DEFAULT_ROOT_NAME`, and the `rt.repoRoots` block in `settingsSeedRun`)
+- Modify: `lib/setup/steps/settings.ts` (delete `detectOrCreateDefaultRoot`, `detectRepoRoots`, `CANDIDATE_ROOT_NAMES`, `DEFAULT_ROOT_NAME` and the old `rt.repoRoots` block; add the staged-root promotion)
 - Test: `lib/setup/__tests__/steps-a.test.ts`
 
 **Interfaces:**
-- Consumes: nothing. The candidate list now lives in `lib/setup/repo-root.ts` (Task 1); do not import it here, `settings.ts` no longer needs it.
-- Produces: nothing.
+- Consumes: `readStagedRepoRoot`, `clearStagedRepoRoot` from `lib/setup/repo-root.ts` (Task 1). The candidate list also lives there now; `settings.ts` no longer needs it.
+- Produces: `rt.repoRoots` at machine scope, the only write of that key in the codebase.
 
 **Other readers of `rt.repoRoots`, and why deleting this write is safe**
 
@@ -264,35 +292,66 @@ It is safe only because `repos.root` is required and answered before Install sta
 
 ```ts
 test("settings.seed never writes rt.repoRoots, even when a candidate directory exists", async () => {
-  const p = fakeProbes({ home, dirs: [join(home, "Documents", "GitHub")] });
-  const { ctx } = makeCtx(p, { snapshot: { ...EMPTY_SNAPSHOT, trackingIdentities: ["gitlab.com/acme/one"] } });
+  const p = fakeProbes({ home, dirs: { [join(home, "Documents", "GitHub")]: [] } });
+  const { ctx } = makeCtx(p, { snapshot: snapshotWith(["gitlab.com/acme/one"]) });
   const outcome = await settingsSeedStep.run(ctx);
   expect(outcome.state).toBe("done");
   expect(getSetting<string[]>("rt.repoRoots").value).toEqual([]);
 });
 
 test("settings.seed creates no directory when nothing is detected", async () => {
-  const p = fakeProbes({ home, dirs: [] });
-  const { ctx } = makeCtx(p, { snapshot: { ...EMPTY_SNAPSHOT, trackingIdentities: ["gitlab.com/acme/one"] } });
+  const p = fakeProbes({ home, dirs: {} });
+  const { ctx } = makeCtx(p, { snapshot: snapshotWith(["gitlab.com/acme/one"]) });
   await settingsSeedStep.run(ctx);
   expect(p.exists(join(home, "Documents", "GitHub"))).toBe(false);
 });
 ```
 
-Use the real names for `fakeProbes`, `EMPTY_SNAPSHOT` and the step export as they appear in that file; the shapes above follow its conventions but confirm each one.
+Two fixture facts to get right, both of which will silently mislead you otherwise. `fakeProbes`'s `dirs` is a `Record<string, string[]>` (`fakes.ts:44`), not an array; the existing test writes `dirs: { [githubRoot]: [] }`. And `EMPTY_SNAPSHOT` is module-private in both `lib/setup/plan.ts` and `commands/setup.ts` and is NOT available in the test files: the existing tests spell the snapshot out inline, so do that.
 
 - [ ] **Step 2: Run them and watch both fail**
 
 Run: `bun test lib/setup/__tests__/steps-a.test.ts -t "settings.seed"`
 Expected: both FAIL. The first because `rt.repoRoots` is written (it reads `["<home>/Documents/GitHub"]`, not `[]`); the second because the directory was created. If either passes, the fake wiring is wrong: fix it before touching production code.
 
-- [ ] **Step 3: Delete the decision**
+- [ ] **Step 3: Add the promotion, test first**
+
+`settings.seed` gains one job: if `rt.repoRoots` is unwritten and a staged path exists, write it at machine scope and clear the staging file. This is the ONLY place rt writes that key.
+
+Step 8 is the earliest safe moment. `home.init` is step 1, so by step 8 the home repo exists and the machine key is settled, and `setSetting` writes into a profile directory the resolver will actually read.
+
+```ts
+test("settings.seed promotes a staged repo root into the machine store and clears the staging file", async () => {
+  const p = fakeProbes({ home });
+  stageRepoRoot(p, join(home, "dev"));
+  const { ctx } = makeCtx(p, { snapshot: snapshotWith(["gitlab.com/acme/one"]) });
+  const outcome = await settingsSeedStep.run(ctx);
+  expect(outcome.state).toBe("done");
+  expect(getSetting<string[]>("rt.repoRoots").value).toEqual([join(home, "dev")]);
+  expect(readStagedRepoRoot(p)).toBeNull();
+});
+
+test("settings.seed leaves an already-written rt.repoRoots alone and still clears staging", async () => {
+  const p = fakeProbes({ home });
+  setSetting("rt.repoRoots", [join(home, "chosen")], "machine");
+  stageRepoRoot(p, join(home, "other"));
+  const { ctx } = makeCtx(p, { snapshot: snapshotWith(["gitlab.com/acme/one"]) });
+  await settingsSeedStep.run(ctx);
+  expect(getSetting<string[]>("rt.repoRoots").value).toEqual([join(home, "chosen")]);
+});
+```
+
+The second test pins that a re-run never overwrites a value already in the store. Decide and state in the code whether staging is cleared in that case; the test above asserts the store is untouched and says nothing about the file, so make the assertion match whatever you implement rather than leaving it ambiguous.
+
+Run them, watch both fail (nothing promotes yet), then implement.
+
+- [ ] **Step 4: Delete the decision**
 
 In `lib/setup/steps/settings.ts` delete `detectOrCreateDefaultRoot`, `detectRepoRoots`, `CANDIDATE_ROOT_NAMES` and `DEFAULT_ROOT_NAME`, and remove the `if (unwritten("rt.repoRoots")) { ... }` block from `settingsSeedRun`. All four become dead once the block goes, and `noUnusedLocals` is off so nothing will tell you. The candidate list lives in `lib/setup/repo-root.ts` now; a second copy here is how the two drift.
 
 Update the file's header docblock: it says the step seeds "`rt.repoRoots` (detected candidate directories, only when nothing is set yet)". Replace that clause with one saying the repo root is the user's own choice, made through the `repos.root` row, and that this step no longer touches the key.
 
-- [ ] **Step 4: Run the whole file**
+- [ ] **Step 5: Run the whole file**
 
 Run: `bun test lib/setup/__tests__/steps-a.test.ts`
 Expected: PASS. Four existing tests reference the old behavior (around lines 771, 782, 812 and 835). Handle them individually rather than deleting on sight:
@@ -300,13 +359,13 @@ Expected: PASS. Four existing tests reference the old behavior (around lines 771
 - the one asserting rt creates `Documents/GitHub` is asserting the defect: delete it
 - the "idempotent re-run" test at ~782 asserts the string `"wrote: mattstack.appPath, rt.repoRoots"` but is really about `appPath` idempotency: update its expected string, do not delete it
 
-- [ ] **Step 5: Pin the board.keys dependency**
+- [ ] **Step 6: Pin the board.keys dependency**
 
 `board.keys` now depends on the user having answered `repos.root` before Install rather than on `settings.seed` writing the root at step 8. Nothing in either file records that.
 
 `trackingRepoNames` is NOT a basename derivation: `lib/setup/steps/skills.ts:93-98` intersects tracking basenames with `getKnownRepos().filter(r => r.registered !== false)`. With no repo in the index, `repoNames[0]` is undefined and `board.cwds` is never written. `steps-b.test.ts:872` has a `seedTrackedRepo()` helper that mkdtemps a directory and calls `updateRepoIndex`; use it, or this test fails for a reason that has nothing to do with repo roots.
 
-Add to the `board.keys` describe block in `steps-b.test.ts`:
+Add to the `board.keys` describe block in `steps-b.test.ts`. `snapshotWith(ids)` below stands for whatever inline snapshot literal the neighbouring tests already build; copy theirs rather than importing anything.
 
 ```ts
 // board.cwds is derived from rt.repoRoots, which settings.seed used to write at
@@ -316,7 +375,7 @@ Add to the `board.keys` describe block in `steps-b.test.ts`:
 test("board.keys still seeds board.cwds from a root the user chose before Install", async () => {
   const { repoName, repoDir } = seedTrackedRepo();
   setSetting("rt.repoRoots", [dirname(repoDir)], "machine");
-  const { ctx } = makeCtx(fakeProbes({ home }), { snapshot: { ...EMPTY_SNAPSHOT, trackingIdentities: [`gitlab.com/acme/${repoName}`] } });
+  const { ctx } = makeCtx(fakeProbes({ home }), { snapshot: snapshotWith([`gitlab.com/acme/${repoName}`]) });
   await boardKeysStep.run(ctx);
   expect(getSetting<Record<string, string>>("board.cwds").value?.review).toBe(join(dirname(repoDir), repoName));
 });
@@ -325,11 +384,11 @@ test("board.keys still seeds board.cwds from a root the user chose before Instal
 Run: `bun test lib/setup/__tests__/steps-b.test.ts -t "board.keys"`
 Expected: PASS. This is a characterization test: it passes before and after this task. That is intended and stated, because what changes is the reason the ordering holds, not the result.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add lib/setup/steps/settings.ts lib/setup/__tests__/
-git commit -m "setup: settings.seed stops choosing a repo root"
+git commit -m "setup: settings.seed promotes the staged repo root instead of choosing one"
 ```
 
 ---
@@ -382,7 +441,7 @@ Append two entries to the existing array:
 
 Decode the stdin rather than byte-comparing it. `JSONEncoder` escapes forward slashes, and no existing check in this file asserts a payload containing one, so there is no in-repo precedent to copy and a byte comparison would be guessing at Foundation's escaping. Decoding asserts the thing that matters.
 
-Use `try`, not `try!`: the closure is `throws` and the harness reports a thrown error as a failure, where `try!` traps the whole run. Check `Check`'s API for the exact failure helper (`c.fail` above is a guess); use whatever the file already uses.
+Use `try`, not `try!`: the closure is `throws` and the harness reports a thrown error as a failure, where `try!` traps the whole run. `c.fail(_ message:)` is real (`Harness.swift`), so use it as written.
 
 - [ ] **Step 3: Run and watch it fail to compile**
 
@@ -434,19 +493,20 @@ git commit -m "setup: add the choose-folder action type"
 - Test: `lib/setup/__tests__/` or `commands/__tests__/`, wherever the existing `setup ... connect` handler tests live (`grep -rln "connectCredential\|setup-connect" lib/ commands/`)
 
 **Interfaces:**
-- Consumes: `checkRepoRoot`, `realRootStat` from `lib/setup/repo-root.ts` (Task 1).
-- Produces: the verb `rt setup repo-root set`, exiting 2 with a JSON error envelope on a bad path.
+- Consumes: `checkRepoRoot`, `stageRepoRoot` from `lib/setup/repo-root.ts` (Task 1).
+- Produces: the verb `rt setup repo-root set <folder>`, staging the path and exiting 2 with a JSON error envelope on a bad one.
 
 - [ ] **Step 1: Write the failing tests**
 
 Cover, following the existing connect-handler test conventions:
 
-- a valid directory writes `rt.repoRoots` at machine scope as a one-element array of the EXPANDED path
-- a nonexistent path writes nothing and raises the user-actionable error
+- a valid directory STAGES the expanded path and writes NO setting (assert `getSetting("rt.repoRoots").value` is still `[]`)
+- a nonexistent path stages nothing and raises the user-actionable error
 - a file and an unwritable directory likewise
-- `~/dev` is stored expanded, not as `~/dev`
-- a TTY with no argument does NOT read stdin (the guard below)
+- `~/dev` is staged expanded, not as `~/dev`
+- a TTY with no argument prints usage and does NOT read stdin
 - a piped `{"root": "..."}` with no argument is accepted
+- staging twice replaces the first value rather than appending
 
 - [ ] **Step 2: Run and watch them fail**
 
@@ -458,14 +518,18 @@ Read `connectCredential` in `commands/setup.ts` first: it is the precedent for a
 
 Two things to copy from it exactly:
 
-1. **Check `deps.isTTY()` BEFORE any stdin read.** Its comment says why: "reading stdin first would block on EOF at a real terminal instead of prompting". A path argument, then a TTY prompt, then stdin. Reading stdin unconditionally hangs `rt setup repo-root set` at a terminal.
+1. **Check `deps.isTTY()` BEFORE any stdin read.** Its comment says why: "reading stdin first would block on EOF at a real terminal instead of prompting".
+
+   Order: a path argument if given; otherwise, at a TTY, print usage and exit; otherwise read stdin. **Do NOT prompt.** The only prompt on the deps object is `promptField`, wired to `promptSecret(field.label)` (`commands/setup.ts:617`), which sets raw mode and echoes nothing. Masking a folder path is wrong, and following `connectCredential` blindly lands you on exactly that.
 2. **Throw `UserActionableError`** on a validation failure rather than printing and exiting yourself. `exitWithUserError` (`commands/setup.ts:443`) prints the envelope and exits **2**, and `RtResult.userError` in the tray decodes the envelope only at exit 2. At any other code the app falls through to generic copy, and because `ChecklistScreen` sets `redactStderr = stdin != nil`, the user would see "details withheld because the command carried a secret" instead of "that folder is not writable".
 
-On success: `setSetting("rt.repoRoots", [check.path], "machine")`, and include `tccWarning` in the `--json` payload. The row computes its own warning in Task 5, so nothing depends on this payload reaching the app; it is there for CLI users and scripts.
+On success: `stageRepoRoot(deps.probes, check.path)`. **Do not call `setSetting`.** The machine store lives inside the home repo, which does not exist before Install; see "The answer is STAGED" above for the clone failure that causes. `settings.seed` promotes it at step 8.
+
+Include `tccWarning` in the `--json` payload. The row computes its own warning in Task 5, so nothing depends on this payload reaching the app; it is there for CLI users and scripts.
 
 - [ ] **Step 4: Register the command**
 
-In `lib/command-tree-def.ts`, add `repo-root` as a **branch** node under `setup`, with `set` as a leaf beneath it. Not a leaf with a `set` positional: that would be a required-positional leaf needing `omitBehavior`, and `picker:check` would fail. The `set` leaf's path argument is optional (TTY prompts, pipe reads stdin), so it needs no `omitBehavior` either.
+In `lib/command-tree-def.ts`, add `repo-root` as a **branch** node under `setup`, with `set` as a leaf beneath it. Not a leaf with a `set` positional: that would be a required-positional leaf needing `omitBehavior`, and `picker:check` would fail. The `set` leaf's path argument is `optional` (a pipe can supply it), which is what keeps it out of `picker:check`'s scope; confirm against `scripts/lib/picker-conformance.ts`'s own filter rather than assuming.
 
 - [ ] **Step 5: Verify**
 
@@ -477,17 +541,20 @@ Smoke check under an isolated HOME. **Never against your own**, which has a real
 ```bash
 H=$(mktemp -d); mkdir -p "$H/dev"
 env -i HOME="$H" PATH="$PATH" bun run cli.ts setup repo-root set "$H/dev" --json
-env -i HOME="$H" PATH="$PATH" bun run cli.ts settings get rt.repoRoots --json
+cat "$H/.mattstack/rt/repo-root.json"
+test -e "$H/.mattstack/user" && echo "BUG: the home repo dir was created" || echo "ok: no user/ created"
 env -i HOME="$H" PATH="$PATH" bun run cli.ts setup repo-root set "$H/nope" --json; echo "exit=$?"
 ```
 
-Expected: success envelope, then the path, then a JSON error envelope with `exit=2`.
+Expected: a success envelope, the staged JSON, `ok: no user/ created`, then a JSON error envelope with `exit=2`.
+
+That third line is the check that matters. It is the regression this design exists to avoid, and it is cheap to assert here.
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git add commands/setup.ts lib/command-tree-def.ts lib/setup/__tests__/ commands/__tests__/
-git commit -m "setup: add rt setup repo-root set"
+git commit -m "setup: add rt setup repo-root set, staging the chosen path"
 ```
 
 ---
@@ -500,24 +567,29 @@ git commit -m "setup: add rt setup repo-root set"
 - Test: `lib/setup/__tests__/validators-repo-root.test.ts`
 
 **Interfaces:**
-- Consumes: `checkRepoRoot`, `realRootStat`, `detectCandidate` from `lib/setup/repo-root.ts`; the `choose-folder` action from `contract.ts`; `row()`; `TeamSnapshot`; `TeamRef`.
-- Produces: `export function repoRootRow(p: Pick<Probes, "home" | "exists">, team: TeamRef, snapshot: TeamSnapshot, stat?: (path: string) => RootStat): Row | null`
+- Consumes: `checkRepoRoot`, `detectCandidate`, `readStagedRepoRoot` from `lib/setup/repo-root.ts`; the `choose-folder` action from `contract.ts`; `row()`; `TeamSnapshot`; `TeamRef`.
+- Produces: `export function repoRootRow(p: Pick<Probes, "home" | "exists" | "statPath" | "readFile">, team: TeamRef, snapshot: TeamSnapshot): Row | null`
+
+No `stat` parameter: the filesystem reaches this through `p.statPath` (Task 1), so `composePlan` needs no new plumbing and a test controls the whole row through one fake.
 
 - [ ] **Step 1: Write the failing tests**
 
 Cover every branch:
 
-- absent when `team.mode === "none"` AND `trackingIdentities` is empty
-- **present when `team.mode === "join"` and `trackingIdentities` is EMPTY** (the joiner's first pass; this is the case an earlier design missed and it is the most important test in this task)
+- absent when `team.mode` is `"none"` AND `trackingIdentities` is empty
+- absent when `team.mode` is `"create"` and `trackingIdentities` is empty (a new team declares no repos, so there is nothing to ask about yet)
+- **present when `team.mode === "join"` and `trackingIdentities` is EMPTY** (the joiner's first pass; the case an earlier design missed, and the most important test in this task)
 - present when mode is `"none"` but `trackingIdentities` is non-empty (post-install)
-- unset root: `needs-you`, `required: true`, action `choose-folder`, and the detail names `rt setup repo-root set` so a CLI user has something to run
+- nothing set and nothing staged: `needs-you`, `required: true`, action `choose-folder`, detail names `rt setup repo-root set` so a CLI user has something to run
+- **nothing set but a valid path STAGED: `ready`** (the user answered before Install; the store cannot hold it yet)
+- a staged path that no longer validates: `needs-you`, same as a bad stored one
 - unset with a detected candidate: `startAt` carries it, status still `needs-you`
 - set and usable: `ready`, detail names the path
 - set under `~/Documents`: `ready`, detail also carries the TCC warning
 - set but missing: `needs-you`, detail names the path
 - set but a file, and set but unwritable: `needs-you`, not `ready`
 - stored as `~/dev` with the directory present: `ready` (expansion, via `checkRepoRoot`)
-- **`getSetting` throws: `needs-you` with the picker, never an exception** (inject a throwing reader or stub `getSetting`)
+- **`getSetting` throws: `needs-you` with the picker, never an exception.** There is no reader seam on this function, so do not try to inject one. Author the value that really throws: `setSetting("rt.repoRoots", ["${repoRoot}"], "machine")` makes `expandString` hit `required(ctx.repoRoot, "repoRoot", "a repo path")` in the resolver and throw. That is the same value `lib/repo-index.ts` guards against, so the test exercises the real failure rather than a mocked one.
 
 - [ ] **Step 2: Run and watch them fail**
 
@@ -527,15 +599,15 @@ Expected: FAIL, module not found.
 
 ```ts
 /**
- * Where rt clones the team's repos. Two render conditions, not one: the
+ * Where rt clones the team's repos. Two render conditions, not one: the join
  * intent covers a joiner whose team clone (and so whose tracked-repo list)
  * does not exist until team.join runs inside Install, and the snapshot covers
- * a machine whose setup is already done and has no intent left.
+ * a machine whose setup is done and has no intent left.
  */
 import { getSetting } from "../../settings/resolve.ts";
 import { row, type Action, type Row, type TeamRef } from "../contract.ts";
 import type { Probes } from "../probes.ts";
-import { checkRepoRoot, detectCandidate, realRootStat, type RootStat } from "../repo-root.ts";
+import { checkRepoRoot, detectCandidate, readStagedRepoRoot } from "../repo-root.ts";
 import type { TeamSnapshot } from "../team-settings.ts";
 
 const CLI_HINT = "or run rt setup repo-root set <folder>";
@@ -554,12 +626,11 @@ function configuredRoot(): string | null {
 }
 
 export function repoRootRow(
-  p: Pick<Probes, "home" | "exists">,
+  p: Pick<Probes, "home" | "exists" | "statPath" | "readFile">,
   team: TeamRef,
   snapshot: TeamSnapshot,
-  stat: (path: string) => RootStat = realRootStat,
 ): Row | null {
-  if (team.mode === "none" && snapshot.trackingIdentities.length === 0) return null;
+  if (team.mode !== "join" && snapshot.trackingIdentities.length === 0) return null;
 
   const base = {
     id: "repos.root",
@@ -570,12 +641,15 @@ export function repoRootRow(
     recheck: "on-activate" as const,
   };
 
-  const configured = configuredRoot();
-  if (!configured) {
+  // The store cannot hold this before Install (its file lives inside the home
+  // repo), so a pre-Install answer lives in the staging file and the row must
+  // read both or it would report needs-you against a question already answered.
+  const chosen = configuredRoot() ?? readStagedRepoRoot(p);
+  if (!chosen) {
     return row({ ...base, status: "needs-you", detail: `choose where rt should clone your team's repos (${CLI_HINT})`, action: chooseAction(detectCandidate(p)) });
   }
 
-  const check = checkRepoRoot(p, configured, stat);
+  const check = checkRepoRoot(p, chosen);
   if (!check.ok) {
     return row({ ...base, status: "needs-you", detail: `${check.detail} (${CLI_HINT})`, action: chooseAction(detectCandidate(p)) });
   }
@@ -670,7 +744,7 @@ A required row whose GUI affordance is a native panel will stall an unattended r
 
 - [ ] **Step 1: Answer the row, then re-check, then Continue**
 
-`drive-setup.sh` has NO existing rt invocation and no `RT` variable; only `assert-team.sh:10` defines one. `assert-installed.sh` calls bare `rt` off PATH. Follow the latter, or define the variable locally and say why.
+`drive-setup.sh` has NO existing rt invocation, no `RT` variable, and no `export PATH="$HOME/.local/bin:..."` line (unlike `assert-installed.sh:13`). A bare `rt` there resolves to nothing. Add the same PATH export that `assert-installed.sh` uses, or call rt by absolute path.
 
 Setting the value out of band leaves the app's composed plan stale, so the row stays `needs-you` on screen and Continue stays disabled. The step must set the value, click `setup.checklist.recheck`, and wait for the row to read ready before clicking Continue. Put this in `screen_readiness` before the Continue click:
 
@@ -685,7 +759,7 @@ ax_click setup.checklist.recheck
 ax_wait_status repos.root ready 30
 ```
 
-Use the real helper names from `ax.sh`; `ax_wait_status` is a guess, so find the existing wait-for-a-row helper and use that.
+`ax_wait_status <rowId> <status> <timeout-s>` is real (`ax.sh:184`) and `drive-setup.sh` already uses it, as is the `setup.checklist.recheck` axid. Use both as written.
 
 - [ ] **Step 2: Assert it, conditionally**
 
@@ -735,7 +809,9 @@ Expected: no output.
 
 Revert Task 2's production change only, leaving its tests: the two `settings.seed` tests must go red. Restore.
 
-Revert Task 5's `team.mode === "none" &&` guard so the row keys on tracking alone: the joiner test from Task 5 Step 1 must go red. Restore. That test is the whole reason this design was rewritten; a version of it that passes either way is worthless.
+Revert Task 5's `team.mode !== "join" &&` guard so the row keys on tracking alone: the joiner test from Task 5 Step 1 must go red. Restore. That test is the whole reason this design was rewritten; a version of it that passes either way is worthless.
+
+Then revert Task 4's `stageRepoRoot` to a `setSetting` call and run the Task 4 smoke check: `test -e "$H/.mattstack/user"` must report the bug. Restore. That is the Install-step-1 regression, and nothing else in the suite catches it.
 
 - [ ] **Step 5: Leave it unpushed**
 
