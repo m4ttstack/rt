@@ -21,6 +21,7 @@ import {
   type GateSubscription,
   type ExecutorState,
 } from "../../packages/rt-client/src/commands.ts";
+import { normalizeGateQuestions } from "../../packages/rt-client/src/gate-options.ts";
 
 export type { GateStatus, GateQuestion, GateAnswer, GateRow, GateOrigin, GateSubscription, ExecutorState };
 export { GATE_BY_PANE };
@@ -463,11 +464,15 @@ export function createGatesStore(opts: {
       assertValidSubject(input.subject);
       const id = crypto.randomUUID();
       const openedAt = Date.now();
+      // The one producer seam (contract C11): every caller (handler, reconciler,
+      // subscribe-derived opens) routes through here, so normalizing elsewhere
+      // would miss whichever path bypasses the handler.
+      const questions = normalizeGateQuestions(input.questions);
       const supersededId = openTxn({
         id,
         subject: input.subject,
         kind: input.kind,
-        questions: JSON.stringify(input.questions),
+        questions: JSON.stringify(questions),
         meta: input.meta ? JSON.stringify(input.meta) : null,
         openedAt,
         agent: input.agent ?? null,

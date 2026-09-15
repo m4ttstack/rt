@@ -68,7 +68,12 @@ describe("reconciler sweep: blocked", () => {
     expect(row!.meta).toMatchObject({ agentId, paneRef: "w1:p1", reason: "blocked" });
     expect(row!.owner).toBe("human");
     expect(row!.questions).toEqual([
-      { id: "action", label: "Pane needs attention", multi: false, options: ["focus-pane", "resume", "clear", "dismiss"] },
+      { id: "action", label: "Pane needs attention", multi: false, options: [
+        { value: "focus-pane", label: "focus-pane" },
+        { value: "resume", label: "resume" },
+        { value: "clear", label: "clear" },
+        { value: "dismiss", label: "dismiss" },
+      ] },
     ]);
 
     await reconciler.sweep();

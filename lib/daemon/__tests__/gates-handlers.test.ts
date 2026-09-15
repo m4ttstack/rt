@@ -193,6 +193,40 @@ describe("gate:open", () => {
     expect((closedEvent.payload as any).supersededBy).toBe(second.data.id);
     expect(broadcasts.some((b) => (b.data as any)?.topic === `gate/closed/${first.id}`)).toBe(true);
   });
+
+  test("bare-string options are stored normalized, and the gate/opened event carries the normalized form", async () => {
+    const { handlers, store, emitted } = harness();
+    const res = await handlers["gate:open"]({
+      subject: "mr:x", kind: "question",
+      questions: [{ id: "q1", label: "go?", multi: false, options: ["yes", "no"] }],
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) throw new Error("open failed");
+    const row = store.get(res.data.id)!;
+    expect(row.questions[0]!.options).toEqual([
+      { value: "yes", label: "yes" },
+      { value: "no", label: "no" },
+    ]);
+    const opened = emitted.find((e) => e.topic === `gate/opened/${res.data.id}`)!;
+    expect((opened.payload as any).questions[0].options).toEqual([
+      { value: "yes", label: "yes" },
+      { value: "no", label: "no" },
+    ]);
+  });
+
+  test("object options pass through untouched, and answer membership validates against VALUES on the normalized row", async () => {
+    const { handlers } = harness();
+    const opened = await handlers["gate:open"]({
+      subject: "mr:y", kind: "question",
+      questions: [{ id: "q1", label: "go?", multi: false, options: [{ value: "a", label: "Option A" }] }],
+    });
+    expect(opened.ok).toBe(true);
+    if (!opened.ok) throw new Error("open failed");
+    const byLabel = await handlers["gate:answer"]({ id: opened.data.id, answers: { q1: "Option A" }, by: "console" });
+    expect(byLabel.ok).toBe(false);
+    const byValue = await handlers["gate:answer"]({ id: opened.data.id, answers: { q1: "a" }, by: "console" });
+    expect(byValue.ok).toBe(true);
+  });
 });
 
 describe("gate:answer", () => {

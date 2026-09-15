@@ -607,7 +607,11 @@ describe("worker verbs", () => {
     expect(post.payload.body).toContain("/w/job-a/spec.md");
     const g = gateStore.get(res.data.gate)!;
     expect(g.kind).toBe("milestone");
-    expect(g.questions).toEqual([{ id: "decision", label: "spec ready", multi: false, options: ["Approve", "Revise", "Spawn a reviewer"] }]);
+    expect(g.questions).toEqual([{ id: "decision", label: "spec ready", multi: false, options: [
+      { value: "Approve", label: "Approve" },
+      { value: "Revise", label: "Revise" },
+      { value: "Spawn a reviewer", label: "Spawn a reviewer" },
+    ] }]);
     expect(g.meta).toMatchObject({ herd, job: "job-a", artifact: "/w/job-a/spec.md" });
     expect(store.getJob(herd, "job-a")!.status).toBe("at-milestone");
   });
