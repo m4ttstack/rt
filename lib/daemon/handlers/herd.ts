@@ -29,7 +29,7 @@ const herdOwner = (herdId: string): string => `herd:${herdId}`;
 
 export interface HerdDeps {
   store: HerdStore;
-  gateStore: Pick<GatesStore, "get">;
+  gateStore: Pick<GatesStore, "get" | "markConsumed">;
   gate: Pick<ReturnType<typeof createGateHandlers>, "gate:open" | "gate:list" | "gate:close" | "gate:subscribe" | "gate:subscriptions" | "gate:unsubscribe">;
   chat: Pick<ReturnType<typeof createChatHandlers>, "chat:sign-in" | "chat:join" | "chat:post" | "chat:archive" | "chat:rooms">;
   agent: Pick<ReturnType<typeof createAgentHandlers>, "agent:start">;
@@ -198,6 +198,9 @@ export function createHerdHandlers(deps: HerdDeps) {
         paneStatus: j.pane ? (panes.get(parsePaneRef(j.pane).paneId) ?? null) : null,
         lastGateStatus: last?.status ?? null,
         lastGateDelivery: last?.delivery?.outcome ?? null,
+        // released means a lost answer CAS whose pane already reconciled the
+        // winning answer -- settled the same as a stamped consumedAt.
+        lastGateConsumed: last?.status === "answered" && last.nudge ? last.consumedAt !== null || last.released : null,
       };
     });
     // A dead row is the shepherd's cue to resume, so the live-only query would
@@ -503,10 +506,13 @@ export function createHerdHandlers(deps: HerdDeps) {
     },
 
     "herd:answer": async (raw: unknown): Promise<CommandResult<"herd:answer">> => {
-      const id = str((raw as { gate?: unknown } | undefined)?.gate);
+      const p = raw as Commands["herd:answer"]["payload"] | undefined;
+      const id = str(p?.gate);
       if (!id) return { ok: false, error: "gate is required" };
       const row = deps.gateStore.get(id);
       if (!row) return { ok: false, error: `gate not found: ${id}` };
+      const sessionId = p?.sessionId;
+      if (sessionId && row.status === "answered" && row.nudge?.session === sessionId) deps.gateStore.markConsumed(row.id);
       return { ok: true, data: { gate: row.id, status: row.status, answer: row.answer, closedReason: row.closedReason } };
     },
 

@@ -57,7 +57,7 @@ function buildHandlers(herdStore: ReturnType<typeof createHerdStore> = createHer
     },
     eventsBus: createEventsBus({ dbPath: ":memory:", log: pino({ level: "silent" }) }),
     gatesStore,
-    gatePush: { onAnswered: async () => {}, onOpened: async () => {}, onClosed: async () => {}, retryDeadPanes: async () => ({ retried: 0, delivered: 0, gaveUp: 0 }) } satisfies GatePush,
+    gatePush: { onAnswered: async () => {}, onOpened: async () => {}, onClosed: async () => {}, retryDeadPanes: async () => ({ retried: 0, delivered: 0, gaveUp: 0, reNudged: 0 }) } satisfies GatePush,
     herdStore,
     herdLifecycle: { connected: () => false, watch: () => {}, sweepClaims: async () => {} },
     herdJobsRoot: "/tmp/rt-herd-router-jobs",

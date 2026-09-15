@@ -157,7 +157,7 @@ function fakeRow(overrides: Partial<GateRow> = {}): GateRow {
     status: "answered", answer: null,
     openedAt: 0, parkedAt: null, closedAt: null, closedReason: null, supersededBy: null,
     agent: null, pane: null, nudge: null, delivery: null, released: false,
-    owner: null, escalatedAt: null,
+    owner: null, escalatedAt: null, consumedAt: null,
     ...overrides,
   };
 }

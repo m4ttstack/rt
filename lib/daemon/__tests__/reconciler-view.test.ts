@@ -19,7 +19,7 @@ const gateRow = (over: Partial<GateRow> = {}): GateRow => ({
   meta: null, status: "open", answer: null,
   openedAt: 1, parkedAt: null, closedAt: null, closedReason: null,
   supersededBy: null, agent: null, pane: null, nudge: null, delivery: null,
-  released: false, owner: null, escalatedAt: null,
+  released: false, owner: null, escalatedAt: null, consumedAt: null,
   ...over,
 });
 const base = { openGates: [] as GateRow[], clearedAgentIds: new Set<string>(), visibleWorkspaceIds: null };

@@ -432,9 +432,9 @@ describe("retryDeadPanes", () => {
     store.answer(row.id, { q: "a" }, "shepherd");
     await push.onAnswered(store.get(row.id)!);
     expect(store.get(row.id)!.delivery!.outcome).toBe("dead-pane");
-    expect(await push.retryDeadPanes()).toEqual({ retried: 1, delivered: 0, gaveUp: 0 });
+    expect(await push.retryDeadPanes()).toEqual({ retried: 1, delivered: 0, gaveUp: 0, reNudged: 0 });
     ok = true;
-    expect(await push.retryDeadPanes()).toEqual({ retried: 1, delivered: 1, gaveUp: 0 });
+    expect(await push.retryDeadPanes()).toEqual({ retried: 1, delivered: 1, gaveUp: 0, reNudged: 0 });
     expect(store.get(row.id)!.delivery!.outcome).toBe("delivered");
     expect(delivered.at(-1)).toBe(wrapCrossSession("gate-facility", GATE_ANSWERED_PHRASE(row.id, "shepherd")));
   });
@@ -445,9 +445,9 @@ describe("retryDeadPanes", () => {
     const row = store.open({ subject: "herd:h/j", kind: "question", questions: qs(), nudge: { session: "w" } }).row;
     store.answer(row.id, { q: "a" }, "shepherd");
     await push.onAnswered(store.get(row.id)!);
-    expect(await push.retryDeadPanes()).toEqual({ retried: 1, delivered: 0, gaveUp: 0 });
-    expect(await push.retryDeadPanes()).toEqual({ retried: 1, delivered: 0, gaveUp: 1 });
-    expect(await push.retryDeadPanes()).toEqual({ retried: 0, delivered: 0, gaveUp: 0 });
+    expect(await push.retryDeadPanes()).toEqual({ retried: 1, delivered: 0, gaveUp: 0, reNudged: 0 });
+    expect(await push.retryDeadPanes()).toEqual({ retried: 1, delivered: 0, gaveUp: 1, reNudged: 0 });
+    expect(await push.retryDeadPanes()).toEqual({ retried: 0, delivered: 0, gaveUp: 0, reNudged: 0 });
   });
 
   test("reentrancy guard returns zeros while a run is in flight", async () => {
@@ -468,9 +468,154 @@ describe("retryDeadPanes", () => {
     const first = push.retryDeadPanes();
     for (let i = 0; i < 100 && !deliverStarted; i++) await new Promise((resolve) => setTimeout(resolve, 10));
     const second = push.retryDeadPanes();
-    expect(await second).toEqual({ retried: 0, delivered: 0, gaveUp: 0 });
+    expect(await second).toEqual({ retried: 0, delivered: 0, gaveUp: 0, reNudged: 0 });
     deliverResolve();
-    expect(await first).toEqual({ retried: 1, delivered: 0, gaveUp: 0 });
+    expect(await first).toEqual({ retried: 1, delivered: 0, gaveUp: 0, reNudged: 0 });
+  });
+});
+
+/** Harness for the answered-unconsumed re-delivery sweep: a real pino
+    instance with `warn` swapped for a recording stub, since gate-push calls
+    `log.warn` by reference and the object passed in is the one that matters. */
+function consumeHarness(opts: { deliverOk?: boolean } = {}) {
+  const store = freshStore();
+  const events: string[] = [];
+  const warns: Array<{ ctx: Record<string, unknown>; msg: string }> = [];
+  const log = pino({ level: "silent" });
+  (log as unknown as { warn: (ctx: Record<string, unknown>, msg: string) => void }).warn = (ctx, msg) => {
+    warns.push({ ctx, msg });
+  };
+  const deliver = async (_socketPath: string, _body: string) => {
+    events.push("deliver");
+    return opts.deliverOk === false ? { ok: false as const, error: "boom" } : { ok: true as const };
+  };
+  const push = createGatePush({ store, deliver, resolveSession: (id) => ({ socketPath: id }), log });
+  return { push, store, events, warns };
+}
+
+describe("retryDeadPanes: answered-unconsumed re-delivery sweep", () => {
+  test("(a) an unconsumed answered row is re-pushed on the 4th sweep call, not the 1st-3rd", async () => {
+    const { push, store, events } = consumeHarness();
+    const row = store.open({ subject: "herd:h/j1", kind: "question", questions: qs(), nudge: { session: "sess-1" } }).row;
+    store.answer(row.id, { q: "a" }, "console");
+    await push.onAnswered(store.get(row.id)!);
+    events.length = 0;
+    for (let i = 0; i < 3; i++) {
+      expect((await push.retryDeadPanes()).reNudged).toBe(0);
+    }
+    expect(events).toEqual([]);
+    expect((await push.retryDeadPanes()).reNudged).toBe(1);
+    expect(events).toEqual(["deliver"]);
+  });
+
+  test("(b) a consumed row is never re-pushed", async () => {
+    const { push, store, events } = consumeHarness();
+    const row = store.open({ subject: "herd:h/j1", kind: "question", questions: qs(), nudge: { session: "sess-1" } }).row;
+    store.answer(row.id, { q: "a" }, "console");
+    await push.onAnswered(store.get(row.id)!);
+    store.markConsumed(row.id);
+    events.length = 0;
+    for (let i = 0; i < 8; i++) expect((await push.retryDeadPanes()).reNudged).toBe(0);
+    expect(events).toEqual([]);
+  });
+
+  test("(c) the 6th eligible re-push does not happen; warns exactly once and never again", async () => {
+    const { push, store, events, warns } = consumeHarness();
+    const row = store.open({ subject: "herd:h/j1", kind: "question", questions: qs(), nudge: { session: "sess-1" } }).row;
+    store.answer(row.id, { q: "a" }, "console");
+    await push.onAnswered(store.get(row.id)!);
+    events.length = 0;
+    for (let sweep = 1; sweep <= 28; sweep++) {
+      const res = await push.retryDeadPanes();
+      const expected = sweep % 4 === 0 && sweep <= 20 ? 1 : 0;
+      expect(res.reNudged).toBe(expected);
+    }
+    expect(events.length).toBe(5); // sweeps 4, 8, 12, 16, 20
+    expect(warns.length).toBe(1);
+    expect(warns[0]!.ctx).toMatchObject({ gateId: row.id, session: "sess-1" });
+    expect(warns[0]!.msg).toBe("gate-push: answer never consumed; giving up");
+  });
+
+  test("(d) a row consumed between sweeps drops out and stops being pushed", async () => {
+    const { push, store, events } = consumeHarness();
+    const row = store.open({ subject: "herd:h/j1", kind: "question", questions: qs(), nudge: { session: "sess-1" } }).row;
+    store.answer(row.id, { q: "a" }, "console");
+    await push.onAnswered(store.get(row.id)!);
+    events.length = 0;
+    await push.retryDeadPanes(); // counter 1
+    await push.retryDeadPanes(); // counter 2
+    store.markConsumed(row.id);
+    for (let i = 0; i < 4; i++) expect((await push.retryDeadPanes()).reNudged).toBe(0);
+    expect(events).toEqual([]);
+  });
+
+  test("(e) dead-pane retry behavior is unchanged alongside the second pass", async () => {
+    const { push, store, events } = consumeHarness({ deliverOk: false });
+    const row = store.open({ subject: "herd:h/j5", kind: "clarify", questions: qs(), nudge: { session: "sess-1" } }).row;
+    store.answer(row.id, { q: "a" }, "shepherd");
+    await push.onAnswered(store.get(row.id)!);
+    expect(store.get(row.id)!.delivery!.outcome).toBe("dead-pane");
+    events.length = 0;
+    const res = await push.retryDeadPanes();
+    expect(res.retried).toBe(1);
+    expect(res.reNudged).toBe(0); // dead-pane rows stay with the first pass, never the second
+    expect(events).toEqual(["deliver"]);
+  });
+
+  test("(f) a re-push on a form-presentation, non-self-answered row invokes no injectEscape", async () => {
+    const { push, store, events } = w4Harness();
+    // Herd subject: only a herd-answer session's own read stamps consumedAt,
+    // so only a herd: row can ever leave the unconsumed set the second pass chases.
+    const row = store.open({
+      subject: "herd:h/j1", kind: "question", questions: qs(),
+      nudge: { session: "sess-1" }, pane: "pane-7",
+      origin: { presentation: "form", paneId: "pane-7" },
+    }).row;
+    store.answer(row.id, { q: "a" }, "console");
+    await push.onAnswered(store.get(row.id)!);
+    events.length = 0;
+    let last: Awaited<ReturnType<typeof push.retryDeadPanes>> | undefined;
+    for (let i = 0; i < 4; i++) last = await push.retryDeadPanes();
+    expect(last!.reNudged).toBe(1);
+    expect(events).toEqual(["deliver"]);
+    expect(events.filter((e) => e.startsWith("inject"))).toEqual([]);
+  });
+
+  test("(h) a failed re-push leaves the row's delivery outcome unchanged and out of the dead-pane pass", async () => {
+    const store = freshStore();
+    let deliverOk = true;
+    const deliver = async () => (deliverOk ? { ok: true as const } : { ok: false as const, error: "boom" });
+    const push = createGatePush({ store, deliver, resolveSession: (id) => ({ socketPath: id }), log });
+    const row = store.open({ subject: "herd:h/j1", kind: "question", questions: qs(), nudge: { session: "sess-1" } }).row;
+    store.answer(row.id, { q: "a" }, "console");
+    await push.onAnswered(store.get(row.id)!);
+    expect(store.get(row.id)!.delivery!.outcome).toBe("delivered");
+    deliverOk = false;
+    for (let i = 0; i < 4; i++) await push.retryDeadPanes();
+    expect(store.get(row.id)!.delivery!.outcome).toBe("delivered"); // unchanged by the failed re-push
+    expect(store.deadPanePushes().map((r) => r.id)).not.toContain(row.id);
+  });
+
+  test("(i) a successful re-push leaves a confirmed row still reading confirmed", async () => {
+    const { push, store, events } = consumeHarness();
+    const row = store.open({ subject: "herd:h/j1", kind: "question", questions: qs(), nudge: { session: "sess-1" } }).row;
+    store.answer(row.id, { q: "a" }, "console");
+    store.markDelivery(row.id, "confirmed");
+    events.length = 0;
+    for (let i = 0; i < 4; i++) await push.retryDeadPanes();
+    expect(events).toEqual(["deliver"]);
+    expect(store.get(row.id)!.delivery!.outcome).toBe("confirmed"); // unchanged by the successful re-push
+  });
+
+  test("(g) a stuck-delivery row IS eligible for the second pass", async () => {
+    const { push, store, events } = consumeHarness();
+    const row = store.open({ subject: "herd:h/j1", kind: "question", questions: qs(), nudge: { session: "sess-1" } }).row;
+    store.answer(row.id, { q: "a" }, "console");
+    store.markDelivery(row.id, "stuck"); // reconciler's own leave-blocked exhaustion (reconciler.ts:292)
+    events.length = 0;
+    for (let i = 0; i < 3; i++) expect((await push.retryDeadPanes()).reNudged).toBe(0);
+    expect((await push.retryDeadPanes()).reNudged).toBe(1);
+    expect(events).toEqual(["deliver"]);
   });
 });
 

@@ -15,7 +15,7 @@ const row: GateRow = {
   meta: null, status: "open", answer: null,
   openedAt: 1, parkedAt: null, closedAt: null, closedReason: null, supersededBy: null,
   agent: null, pane: null, nudge: null, delivery: null, released: false,
-  owner: null, escalatedAt: null,
+  owner: null, escalatedAt: null, consumedAt: null,
 };
 
 describe("gateOpen", () => {

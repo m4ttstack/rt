@@ -4,7 +4,7 @@ import { join } from "path";
 import { tmpdir } from "os";
 import pino from "pino";
 import { createHerdStore, type HerdStore, herdSubject } from "../herd-store.ts";
-import { createGatesStore, type GatesStore } from "../gates-store.ts";
+import { createGatesStore, GATE_BY_PANE, type GatesStore } from "../gates-store.ts";
 import { createGateHandlers } from "../handlers/gate.ts";
 import { createEventsBus } from "../events-bus.ts";
 import { createHerdHandlers, type HerdDeps } from "../handlers/herd.ts";
@@ -412,6 +412,50 @@ describe("herd:resume / status / close", () => {
     expect(res.data.jobs[0]).toMatchObject({ openGate: null, lastGateStatus: "answered", lastGateDelivery: "dead-pane" });
   });
 
+  test("status reports lastGateConsumed false for an answered, nudged gate no one has read yet", async () => {
+    const { h, store, gateStore, herd } = await started();
+    store.upsertJob({ herd, name: "job-a", worktree: "/w", handle: "job-a", status: "active", pane: "w9:p1" });
+    const g = gateStore.open({ subject: `herd:${herd}/job-a`, kind: "question", questions: [{ id: "q", label: "?", multi: false, options: ["a"] }], nudge: { session: "sess-w1" } }).row.id;
+    store.setJobStatus(herd, "job-a", "at-gate", { lastGate: g });
+    gateStore.answer(g, { q: "a" }, "shepherd");
+    const res = await h["herd:status"]({ herd });
+    if (!res.ok) throw new Error(res.error);
+    expect(res.data.jobs[0]).toMatchObject({ lastGateConsumed: false });
+  });
+
+  test("status reports lastGateConsumed true once the nudged gate is marked consumed", async () => {
+    const { h, store, gateStore, herd } = await started();
+    store.upsertJob({ herd, name: "job-a", worktree: "/w", handle: "job-a", status: "active", pane: "w9:p1" });
+    const g = gateStore.open({ subject: `herd:${herd}/job-a`, kind: "question", questions: [{ id: "q", label: "?", multi: false, options: ["a"] }], nudge: { session: "sess-w1" } }).row.id;
+    store.setJobStatus(herd, "job-a", "at-gate", { lastGate: g });
+    gateStore.answer(g, { q: "a" }, "shepherd");
+    gateStore.markConsumed(g);
+    const res = await h["herd:status"]({ herd });
+    if (!res.ok) throw new Error(res.error);
+    expect(res.data.jobs[0]).toMatchObject({ lastGateConsumed: true });
+  });
+
+  test("status reports lastGateConsumed true for a released (losing pane) answer even though consumedAt stays null", async () => {
+    const { h, store, gateStore, herd } = await started();
+    store.upsertJob({ herd, name: "job-a", worktree: "/w", handle: "job-a", status: "active", pane: "w9:p1" });
+    const g = gateStore.open({ subject: `herd:${herd}/job-a`, kind: "question", questions: [{ id: "q", label: "?", multi: false, options: ["a"] }], pane: "w9:p1", nudge: { session: "sess-w1" } }).row.id;
+    store.setJobStatus(herd, "job-a", "at-gate", { lastGate: g });
+    gateStore.answer(g, { q: "a" }, "shepherd");
+    gateStore.answer(g, { q: "a" }, GATE_BY_PANE); // losing pane reconciles: released, not consumed
+    expect(gateStore.get(g)!.consumedAt).toBeNull();
+    const res = await h["herd:status"]({ herd });
+    if (!res.ok) throw new Error(res.error);
+    expect(res.data.jobs[0]).toMatchObject({ lastGateConsumed: true });
+  });
+
+  test("status reports lastGateConsumed null for a job with no gate", async () => {
+    const { h, store, herd } = await started();
+    store.upsertJob({ herd, name: "job-a", worktree: "/w", handle: "job-a", status: "active", pane: "w9:p1" });
+    const res = await h["herd:status"]({ herd });
+    if (!res.ok) throw new Error(res.error);
+    expect(res.data.jobs[0]).toMatchObject({ lastGateConsumed: null });
+  });
+
   test("close closes the pane on the herd's socket and marks the job closed", async () => {
     const { h, store, herd, herdrCalls } = await started();
     store.upsertJob({ herd, name: "job-a", worktree: "/w/job-a", handle: "job-a", status: "active", pane: "w9:p1" });
@@ -645,6 +689,44 @@ describe("worker verbs", () => {
     expect(done.data.status).toBe("answered");
     expect(done.data.answer!.by).toBe("shepherd");
     expect((await h["herd:answer"]({ gate: "gt-nope" })).ok).toBe(false);
+  });
+
+  test("herd:answer with the nudged session consumes", async () => {
+    const { h, gateStore, herd } = await withJob();
+    const asked = await h["herd:ask"]({ herd, job: "job-a", session: "sess-w1", questions: Q });
+    if (!asked.ok) throw new Error(asked.error);
+    gateStore.answer(asked.data.gate, { q1: { value: "b" } } as never, "shepherd");
+    const res = await h["herd:answer"]({ gate: asked.data.gate, sessionId: "sess-w1" });
+    expect(res.ok).toBe(true);
+    expect(gateStore.get(asked.data.gate)!.consumedAt).not.toBeNull();
+  });
+
+  test("herd:answer without a session, or with a foreign session, does not consume", async () => {
+    const { h, gateStore, herd } = await withJob();
+    const asked = await h["herd:ask"]({ herd, job: "job-a", session: "sess-w1", questions: Q });
+    if (!asked.ok) throw new Error(asked.error);
+    gateStore.answer(asked.data.gate, { q1: { value: "b" } } as never, "shepherd");
+    await h["herd:answer"]({ gate: asked.data.gate });
+    await h["herd:answer"]({ gate: asked.data.gate, sessionId: "someone-else" });
+    expect(gateStore.get(asked.data.gate)!.consumedAt).toBeNull();
+  });
+
+  test("herd:answer on a nudge-less gate does not consume when read with no session", async () => {
+    const { h, gateStore, herd } = await withJob();
+    const g = gateStore.open({ subject: `herd:${herd}/job-a`, kind: "question", questions: Q }).row.id;
+    gateStore.answer(g, { q1: { value: "b" } } as never, "shepherd");
+    await h["herd:answer"]({ gate: g });
+    expect(gateStore.get(g)!.consumedAt).toBeNull();
+  });
+
+  test("herd:answer with the nudged session reading an OPEN gate does not consume", async () => {
+    const { h, gateStore, herd } = await withJob();
+    const asked = await h["herd:ask"]({ herd, job: "job-a", session: "sess-w1", questions: Q });
+    if (!asked.ok) throw new Error(asked.error);
+    const res = await h["herd:answer"]({ gate: asked.data.gate, sessionId: "sess-w1" });
+    expect(res.ok).toBe(true);
+    expect((res as { ok: true; data: { status: string } }).data.status).toBe("open");
+    expect(gateStore.get(asked.data.gate)!.consumedAt).toBeNull();
   });
 
   test("report posts to the room mentioning the shepherd and marks the job done", async () => {

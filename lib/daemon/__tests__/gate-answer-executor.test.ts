@@ -38,7 +38,7 @@ function pushSpy(): { push: GatePush; onAnsweredCalls: GateRow[] } {
     onAnswered: async (row) => { onAnsweredCalls.push(row); },
     onOpened: async () => {},
     onClosed: async () => {},
-    retryDeadPanes: async () => ({ retried: 0, delivered: 0, gaveUp: 0 }),
+    retryDeadPanes: async () => ({ retried: 0, delivered: 0, gaveUp: 0, reNudged: 0 }),
   };
   return { push, onAnsweredCalls };
 }
@@ -523,7 +523,7 @@ describe("gate:answer: push and guarantee are decoupled", () => {
       onAnswered: async () => { throw new Error("push transport down"); },
       onOpened: async () => {},
       onClosed: async () => {},
-      retryDeadPanes: async () => ({ retried: 0, delivered: 0, gaveUp: 0 }),
+      retryDeadPanes: async () => ({ retried: 0, delivered: 0, gaveUp: 0, reNudged: 0 }),
     };
     const { reconciler, expectCalls } = reconcilerStub({ executorState: "live" });
     const { handlers, store } = harness({ push, reconciler });
@@ -541,7 +541,7 @@ describe("gate:answer: push and guarantee are decoupled", () => {
       onAnswered: async () => { throw new Error("push transport down"); },
       onOpened: async () => {},
       onClosed: async () => {},
-      retryDeadPanes: async () => ({ retried: 0, delivered: 0, gaveUp: 0 }),
+      retryDeadPanes: async () => ({ retried: 0, delivered: 0, gaveUp: 0, reNudged: 0 }),
     };
     const { reconciler } = reconcilerStub({ executorState: "gone", agentId: "agent-1" });
     const resumeCalls: string[] = [];

@@ -1,5 +1,5 @@
 import { describe, expect, test, afterEach, spyOn } from "bun:test";
-import { readProjectMRs, readDiscussions, readMrsByBranch, listRuns, abandonRun, readBranchCache, chatInvite, paneDirectories, paneList, panePeek, paneSpawn, chatArchive, chatDmOpen, chatRooms } from "../src/client.ts";
+import { readProjectMRs, readDiscussions, readMrsByBranch, listRuns, abandonRun, readBranchCache, chatInvite, paneDirectories, paneList, panePeek, paneSpawn, chatArchive, chatDmOpen, chatRooms, herdAnswer } from "../src/client.ts";
 import { fakeDaemon } from "./fake-daemon.ts";
 
 const stops: Array<() => void> = [];
@@ -193,6 +193,21 @@ describe("chat archive and dm-open", () => {
       { handle: "matt" },
       { handle: "matt" },
       { handle: "matt", includeArchived: true },
+    ]);
+  });
+});
+
+describe("herdAnswer", () => {
+  test("forwards sessionId when given, omits it when undefined", async () => {
+    const { sock, seen, stop } = fakeDaemon({
+      "herd:answer": { ok: true, data: { gate: "gt-1", status: "open", answer: null, closedReason: null } },
+    });
+    stops.push(stop);
+    await herdAnswer({ gate: "gt-1", sessionId: "sess-w1" }, { sockPath: sock });
+    await herdAnswer({ gate: "gt-1" }, { sockPath: sock });
+    expect(seen.map((s) => s.payload)).toEqual([
+      { gate: "gt-1", sessionId: "sess-w1" },
+      { gate: "gt-1" },
     ]);
   });
 });
