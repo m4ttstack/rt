@@ -51,9 +51,21 @@ splash. All timings live in one tunables block.
 
 Activation policy: the app is `LSUIElement` today. While the window is open
 it flips to `.regular` (Dock icon, Cmd-Tab entry); when the window closes it
-returns to `.accessory`. Entry points: an "Open mattstack" tray menu item, a
-global summon/toggle hotkey (default ctrl-opt-cmd-M, configurable), and URL
-opens (sections 4 and 7).
+returns to `.accessory`. Entry points: the pinned Dock icon (reopen shows
+the window), the tray menu, a global summon/toggle hotkey (default
+ctrl-opt-cmd-M), and URL opens (sections 4 and 7).
+
+Tray and quit (dock-first, 2026-09-15): the Dock icon is the primary entry;
+the tray becomes a minimal menu on any click (no popover): "Open mattstack"
+first, then a disabled daemon-status line, "Processes..." (the existing
+process panel, unchanged, one item away), the daemon/log/settings items the
+gear menu holds today, and an explicit "Quit mattstack" last. Quitting from
+the window side (Cmd-Q, Dock right-click Quit) never kills supervision: the
+app closes the window, drops to accessory, and cancels the termination; the
+tray menu's Quit is the only real quit. System shutdown, restart, and
+logout terminations are honored (checked via the quit AppleEvent's reason)
+so the interception never blocks the OS. The walkthrough-facing AXID
+contract moves with the menu items.
 
 ## 2. Top tab bar
 
