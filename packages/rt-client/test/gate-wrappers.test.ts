@@ -1,6 +1,6 @@
 import { describe, expect, test, afterEach } from "bun:test";
 import {
-  gateOpen, gateAnswer, gateWait, gateList, gatePark, gateClose, gateSubscribe, gateUnsubscribe,
+  gateOpen, gateAsk, gateAnswer, gateWait, gateList, gatePark, gateClose, gateSubscribe, gateUnsubscribe,
   gateSubscriptions,
 } from "../src/client.ts";
 import type { GateRow, GateSubscription } from "../src/commands.ts";
@@ -29,6 +29,24 @@ describe("gateOpen", () => {
     expect(res.ok).toBe(true);
     expect(res.data).toEqual({ id: "gt-1", supersededId: null });
     expect(seen).toEqual([{ cmd: "gate:open", payload }]);
+  });
+});
+
+describe("gateAsk", () => {
+  test("carries meta, agent, and origin through to the daemon payload", async () => {
+    const { sock, seen, stop } = fakeDaemon({
+      "gate:ask": { ok: true, data: { id: "gt-1", presentation: "form", subject: "run:1", supersededId: null } },
+    });
+    stops.push(stop);
+    const payload = {
+      questions: row.questions,
+      meta: { label: "review gate !7" },
+      agent: "worker-1",
+      origin: { surface: "board", tabId: "t9", worktree: "/tmp/wt" },
+    };
+    const res = await gateAsk(payload, { sockPath: sock });
+    expect(res.ok).toBe(true);
+    expect(seen).toEqual([{ cmd: "gate:ask", payload }]);
   });
 });
 

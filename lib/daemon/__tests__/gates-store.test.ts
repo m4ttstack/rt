@@ -101,6 +101,30 @@ describe("gates store", () => {
   });
 });
 
+describe("gates store — option normalization", () => {
+  test("open normalizes bare-string options to {value,label} in both the returned and persisted row", () => {
+    const s = store();
+    const { row } = s.open({
+      subject: "mr:x", kind: "question",
+      questions: [{ id: "q1", label: "go?", multi: false, options: ["yes", "no"] }],
+    });
+    expect(row.questions[0]!.options).toEqual([
+      { value: "yes", label: "yes" },
+      { value: "no", label: "no" },
+    ]);
+    expect(s.get(row.id)!.questions[0]!.options).toEqual(row.questions[0]!.options);
+  });
+
+  test("a reconciler-shaped open (ATTENTION_QUESTION strings) is normalized too", () => {
+    const s = store();
+    const { row } = s.open({
+      subject: "agent:a1", kind: "pane-attention",
+      questions: [{ id: "action", label: "Pane needs attention", multi: false, options: ["focus-pane", "resume", "clear", "dismiss"] }],
+    });
+    expect(row.questions[0]!.options.every((o) => typeof o === "object")).toBe(true);
+  });
+});
+
 describe("gates store — transitions", () => {
   test("answer wins once; the second answer is rejected WITH the winning answer", () => {
     const s = store(); const id = openGate(s, "run:r1");

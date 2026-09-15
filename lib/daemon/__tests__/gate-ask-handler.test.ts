@@ -25,7 +25,10 @@ function fiveOptionQuestion(): GateQuestion[] {
 /** Same shape as gates-handlers.test.ts's harness, plus an injectable
     resolveSubject -- gate:ask's own seam, tested independently of
     resolveGateSubject's own suite (gate-subject.test.ts). */
-function harness(opts: { resolveSubject?: (args: { subject?: string; sessionId?: string }) => GateSubjectResult } = {}) {
+function harness(opts: {
+  resolveSubject?: (args: { subject?: string; sessionId?: string }) => GateSubjectResult;
+  runSpawnedBy?: (runId: string) => string | null;
+} = {}) {
   const dir = mkdtempSync(join(tmpdir(), "rt-gate-ask-handler-"));
   dirs.push(dir);
   const store: GatesStore = createGatesStore({ dbPath: join(dir, "gates.db"), log });
@@ -33,6 +36,7 @@ function harness(opts: { resolveSubject?: (args: { subject?: string; sessionId?:
   const bus = { emitAt: () => nextId++ } as unknown as EventsBus;
   const handlers = createGateHandlers(store, bus, () => {}, {
     resolveSubject: opts.resolveSubject,
+    runSpawnedBy: opts.runSpawnedBy,
   });
   return { handlers, store };
 }
@@ -74,7 +78,7 @@ describe("gate:ask", () => {
 
   test("(c) session resolving to a run -> subject run:<id>, origin carries runId + worktree", async () => {
     const { handlers, store } = harness({
-      resolveSubject: () => ({ ok: true, subject: "run:r1", runWorktree: "/wt/r1" }),
+      resolveSubject: () => ({ ok: true, subject: "run:r1", runId: "r1", runWorktree: "/wt/r1" }),
     });
     const res = await handlers["gate:ask"]({
       questions: twoOptionQuestion(), sessionId: "sess-1", paneId: "w1:p1",
@@ -179,5 +183,139 @@ describe("gate:ask", () => {
     if (!res.ok) return;
     const row = store.get(res.data.id)!;
     expect(row.context).toBe(context);
+  });
+
+  test("(l) meta/agent/origin passthrough ride into the row; ceremony-derived presentation and paneId still win", async () => {
+    const { handlers, store } = harness({
+      resolveSubject: () => ({ ok: true, subject: "mr:https://x/1" }),
+    });
+    const res = await handlers["gate:ask"]({
+      questions: twoOptionQuestion(),
+      subject: "mr:https://x/1", sessionId: "sess-1", paneId: "w1:p1",
+      meta: { label: "review gate !7" }, agent: "worker-1",
+      origin: { surface: "board", tabId: "t9", worktree: "/tmp/wt" },
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const row = store.get(res.data.id)!;
+    expect(row.meta).toEqual({ label: "review gate !7" });
+    expect(row.agent).toBe("worker-1");
+    expect(row.origin?.surface).toBe("board");
+    expect(row.origin?.tabId).toBe("t9");
+    expect(row.origin?.worktree).toBe("/tmp/wt");
+    expect(row.origin?.presentation).toBe("form");
+    expect(row.origin?.paneId).toBe("w1:p1");
+  });
+
+  test("(m) a run-derived worktree beats a passthrough worktree", async () => {
+    const { handlers, store } = harness({
+      resolveSubject: () => ({ ok: true, subject: "run:r1", runId: "r1", runWorktree: "/run/wt" }),
+    });
+    const res = await handlers["gate:ask"]({
+      questions: twoOptionQuestion(), sessionId: "sess-1",
+      origin: { worktree: "/caller/wt" },
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const row = store.get(res.data.id)!;
+    expect(row.origin?.worktree).toBe("/run/wt");
+  });
+
+  test("(n) a raw payload smuggling origin.presentation with no paneId still gets the ceremony's computed presentation", async () => {
+    const { handlers, store } = harness({
+      resolveSubject: () => ({ ok: true, subject: "mr:https://x/1" }),
+    });
+    const res = await handlers["gate:ask"]({
+      questions: twoOptionQuestion(), subject: "mr:https://x/1",
+      origin: { presentation: "form" } as unknown as { surface?: string },
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const row = store.get(res.data.id)!;
+    expect(row.origin?.presentation).toBe("wait");
+    expect(row.origin?.paneId).toBeUndefined();
+  });
+
+  test("(o) a raw payload smuggling origin.paneId/origin.runId is dropped when no top-level paneId and an explicit non-run subject", async () => {
+    const { handlers, store } = harness({
+      resolveSubject: () => ({ ok: true, subject: "mr:https://x/1" }),
+    });
+    const res = await handlers["gate:ask"]({
+      questions: twoOptionQuestion(), subject: "mr:https://x/1",
+      origin: { paneId: "smuggled", runId: "smuggled" } as unknown as { surface?: string },
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const row = store.get(res.data.id)!;
+    expect(row.origin?.paneId).toBeUndefined();
+    expect(row.origin?.runId).toBeUndefined();
+  });
+
+  test("(p) a raw payload with an unknown origin key is rejected by gate:open's validation", async () => {
+    const { handlers } = harness({
+      resolveSubject: () => ({ ok: true, subject: "mr:https://x/1" }),
+    });
+    const res = await handlers["gate:ask"]({
+      questions: twoOptionQuestion(), subject: "mr:https://x/1",
+      origin: { foo: "x" } as unknown as { surface?: string },
+    });
+    expect(res.ok).toBe(false);
+  });
+
+  test("(q) explicit non-run subject enriched with a run session's runId/worktree carries both into origin", async () => {
+    const { handlers, store } = harness({
+      resolveSubject: () => ({ ok: true, subject: "mr:x", runId: "r1", runWorktree: "/w" }),
+    });
+    const res = await handlers["gate:ask"]({
+      questions: twoOptionQuestion(), subject: "mr:x", sessionId: "sess-1",
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const row = store.get(res.data.id)!;
+    expect(row.origin?.runId).toBe("r1");
+    expect(row.origin?.worktree).toBe("/w");
+  });
+
+  test("(r) explicit run: subject keeps its own runId regardless of the session's runs", async () => {
+    const { handlers, store } = harness({
+      resolveSubject: () => ({ ok: true, subject: "run:rZ", runId: "rZ" }),
+    });
+    const res = await handlers["gate:ask"]({
+      questions: twoOptionQuestion(), subject: "run:rZ", sessionId: "sess-1",
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.subject).toBe("run:rZ");
+    const row = store.get(res.data.id)!;
+    expect(row.origin?.runId).toBe("rZ");
+  });
+
+  test("(s) owner derivation reads the runId gate:ask derives from resolved.runId, same as an explicit run: subject", async () => {
+    const { handlers, store } = harness({
+      resolveSubject: () => ({ ok: true, subject: "mr:x", runId: "r1" }),
+      runSpawnedBy: () => "herd:h-9",
+    });
+    const res = await handlers["gate:ask"]({
+      questions: twoOptionQuestion(), subject: "mr:x", sessionId: "sess-1",
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const row = store.get(res.data.id)!;
+    expect(row.owner).toBe("herd:h-9");
+  });
+
+  test("(t) explicit non-run subject + sessionId's run worktree + passthrough origin.worktree: the run-derived worktree wins", async () => {
+    const { handlers, store } = harness({
+      resolveSubject: () => ({ ok: true, subject: "mr:x", runId: "r1", runWorktree: "/run/wt" }),
+    });
+    const res = await handlers["gate:ask"]({
+      questions: twoOptionQuestion(), subject: "mr:x", sessionId: "sess-1",
+      origin: { worktree: "/caller/wt" },
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const row = store.get(res.data.id)!;
+    expect(row.origin?.worktree).toBe("/run/wt");
+    expect(row.origin?.runId).toBe("r1");
   });
 });
