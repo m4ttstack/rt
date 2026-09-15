@@ -32,6 +32,7 @@ let package = Package(
                 .linkedFramework("AppKit"),
                 .linkedFramework("UserNotifications"),
                 .linkedFramework("ServiceManagement"),
+                .linkedFramework("WebKit"),
                 .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"]),
                 .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker",
                               "@executable_path/../../../deps/tools/sparkle-xcframework/Sparkle.xcframework/macos-arm64_x86_64"],

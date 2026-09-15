@@ -15,16 +15,17 @@ public struct TrayRoutes: Sendable {
     private let needs: NeedBroker
     private let updater: UpdateChecking
     private let version: VersionProviding
+    private let window: WindowOpening
 
     public init(permissions: PermissionsProviding, services: ServicesProviding, privileged: PrivilegedInstalling,
-                needs: NeedBroker, updater: UpdateChecking, version: VersionProviding) {
+                needs: NeedBroker, updater: UpdateChecking, version: VersionProviding, window: WindowOpening) {
         self.permissions = permissions; self.services = services; self.privileged = privileged
-        self.needs = needs; self.updater = updater; self.version = version
+        self.needs = needs; self.updater = updater; self.version = version; self.window = window
     }
 
     public static let paths: Set<String> = ["/permissions", "/permissions/request", "/services", "/services/register",
                                             "/services/restart", "/privileged/proxy-install", "/privileged/proxy-trust",
-                                            "/update/check", "/version"]
+                                            "/update/check", "/version", "/window/open"]
 
     public func handle(method: String, path: String, body: Data?) async -> RouteResponse? {
         let isNeed = path.hasPrefix("/setup/need/")
@@ -58,6 +59,9 @@ public struct TrayRoutes: Sendable {
             return RouteResponse(status: 200, body: "{\"ok\":\(await updater.checkForUpdates())}")
         case ("GET", "/version"):
             return encode(version.versionInfo())
+        case ("POST", "/window/open"):
+            guard let url = field("url", in: body) else { return bad("url is required") }
+            return RouteResponse(status: 200, body: "{\"handled\":\(await window.open(url: url))}")
         default:
             return RouteResponse(status: 405, body: "{\"ok\":false,\"error\":\"method not allowed\"}")
         }
