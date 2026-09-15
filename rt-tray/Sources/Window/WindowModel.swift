@@ -36,6 +36,7 @@ final class WindowNavigationDelegate: NSObject, WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         model?.loadFailures[appName] = false
+        model?.reportFirstNavigationFinish(appName: appName)
     }
 }
 
@@ -49,6 +50,7 @@ final class WindowModel: ObservableObject {
     @Published var activeApp: String = ""
     @Published var loadFailures: [String: Bool] = [:]
     @Published private(set) var icons: [String: NSImage] = [:]
+    @Published private(set) var splashVisible = false
 
     let store: WebViewStore
     weak var controller: MattstackWindowController?
@@ -56,6 +58,15 @@ final class WindowModel: ObservableObject {
     private let catalog: AppCatalog
     private var catalogLoadTask: Task<Void, Never>?
     private var navigationDelegates: [String: WindowNavigationDelegate] = [:]
+
+    /// Process-lifetime, not instance-lifetime: only one `WindowModel` is
+    /// ever constructed per process in practice, but the gate is spelled at
+    /// the process level to say what it means -- re-shows of the window
+    /// never replay the splash.
+    private static var hasShownSplash = false
+    private var splashMinDelayElapsed = false
+    private var splashNavigationFinished = false
+    private var splashDismissed = false
 
     init(store: WebViewStore? = nil) {
         self.store = store ?? WebViewStore()
@@ -104,6 +115,45 @@ final class WindowModel: ObservableObject {
 
     func select(_ name: String) {
         activeApp = name
+    }
+
+    /// No-op on every call after the first per process: `show()` calls this
+    /// unconditionally on every window show, including re-shows.
+    func presentSplashIfNeeded() {
+        guard !Self.hasShownSplash else { return }
+        Self.hasShownSplash = true
+        splashVisible = true
+
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            self?.splashMinDelayElapsed = true
+            self?.dismissSplashIfReady()
+        }
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 8_000_000_000)
+            self?.dismissSplash()
+        }
+    }
+
+    /// The gate is "the active app's first navigation finishing", checked
+    /// live against `activeApp` rather than a name captured at splash-show
+    /// time, since the active app is often still unresolved (catalog not
+    /// loaded yet) at that moment.
+    func reportFirstNavigationFinish(appName: String) {
+        guard splashVisible, appName == activeApp else { return }
+        splashNavigationFinished = true
+        dismissSplashIfReady()
+    }
+
+    private func dismissSplashIfReady() {
+        guard splashMinDelayElapsed, splashNavigationFinished else { return }
+        dismissSplash()
+    }
+
+    private func dismissSplash() {
+        guard !splashDismissed else { return }
+        splashDismissed = true
+        splashVisible = false
     }
 
     func toggleVisibility() {

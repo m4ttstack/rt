@@ -39,6 +39,7 @@ final class MattstackWindowController: NSWindowController, NSWindowDelegate {
 
     func show() {
         NSApp.setActivationPolicy(.regular)
+        model.presentSplashIfNeeded()
         Task { await model.ensureCatalogLoaded() }
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)

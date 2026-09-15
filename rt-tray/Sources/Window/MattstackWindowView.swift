@@ -25,19 +25,29 @@ struct MattstackWindowView: View {
     @ObservedObject var model: WindowModel
 
     var body: some View {
-        VStack(spacing: 0) {
-            TopTabBar(model: model)
-            Rectangle().fill(separatorColor).frame(height: 1)
-            ContentArea(model: model)
+        ZStack {
+            // Tab bar and content mount and render here regardless of the
+            // splash: dismissal only fades the splash layer above, so the
+            // live app is already the thing being revealed, never remounted.
+            VStack(spacing: 0) {
+                TopTabBar(model: model)
+                Rectangle().fill(separatorColor).frame(height: 1)
+                ContentArea(model: model)
+            }
+            .background(
+                Button("") { model.store.reload(model.activeApp) }
+                    .keyboardShortcut("r", modifiers: .command)
+                    .frame(width: 0, height: 0)
+                    .opacity(0)
+            )
+
+            if model.splashVisible {
+                SplashView().transition(.opacity)
+            }
         }
         .frame(minWidth: 900, minHeight: 600)
         .ignoresSafeArea()
-        .background(
-            Button("") { model.store.reload(model.activeApp) }
-                .keyboardShortcut("r", modifiers: .command)
-                .frame(width: 0, height: 0)
-                .opacity(0)
-        )
+        .animation(.easeOut(duration: SplashTuning.dismissFadeDuration), value: model.splashVisible)
     }
 }
 
