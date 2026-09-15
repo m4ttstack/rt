@@ -64,8 +64,10 @@ Built first because both the row (Task 4) and the verb (Task 5) validate through
 **Files:**
 - Create: `lib/setup/repo-root.ts`
 - Test: `lib/setup/__tests__/repo-root.test.ts`
+- Modify: `lib/setup/probes.ts` and `lib/setup/__tests__/fakes.ts` (the `statPath` member)
+- Modify: `lib/setup/steps/home.ts` (export the existing module-private `homeGitDir`)
 
-**Also modify:** `lib/setup/probes.ts` and `lib/setup/__tests__/fakes.ts`, to add one member.
+All five are one commit: the module does not compile without the probe member and the `homeGitDir` export, so a commit of the two new files alone would not build.
 
 **Interfaces:**
 - Consumes: `Probes`.
@@ -297,7 +299,7 @@ Expected: PASS, all of them.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add lib/setup/repo-root.ts lib/setup/__tests__/repo-root.test.ts
+git add lib/setup/repo-root.ts lib/setup/__tests__/repo-root.test.ts lib/setup/probes.ts lib/setup/__tests__/fakes.ts lib/setup/steps/home.ts
 git commit -m "setup: add the shared repo-root validator"
 ```
 
