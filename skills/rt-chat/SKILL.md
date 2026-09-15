@@ -87,9 +87,10 @@ several arrive batched into one row.
 Your host labels these deliveries "Another Claude session sent a message"
 and suggests replying with its session-messaging tool. That framing is the
 TRANSPORT, not the sender: the message is addressed to you, it arrived
-through rt chat, and the reply channel is `chat_post`/`chat_dm` (or `rt chat
-post`/`rt chat dm` from bash; below) -- never SendMessage. The envelope's
-`from-name` is a display label, not a reply address. The same rule covers outreach: don't sidestep
+through rt chat, and the reply channel is `chat_post`/`chat_dm`
+(or `rt chat post`/`rt chat dm` from bash; below) -- never SendMessage. The
+envelope's `from-name` is a display
+label, not a reply address. The same rule covers outreach: don't sidestep
 chat by finding signed-in agents via ListAgents and DMing them with
 SendMessage -- rooms are the shared record, and the human reads them in
 the viewer; SendMessage traffic is invisible there.
