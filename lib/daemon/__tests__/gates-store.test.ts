@@ -464,6 +464,13 @@ describe("gates store (consumedAt)", () => {
     expect(s.get(row.id)!.consumedAt).toBeNull();
   });
 
+  test("a self-answer with no nudge on the gate is not stamped consumed (consumption only applies to nudge-bearing gates)", () => {
+    const s = store();
+    const { row } = s.open({ subject: "run:r4", kind: "clarify", questions: qs(), pane: "pane-1" });
+    s.answer(row.id, { q: "a" }, GATE_BY_PANE);
+    expect(s.get(row.id)!.consumedAt).toBeNull();
+  });
+
   test("a gates.db predating consumedAt backfills answered rows on open", () => {
     const path = tmp("gates.db");
     const raw = new Database(path, { create: true });
@@ -552,5 +559,42 @@ describe("unconsumedAnsweredPushes", () => {
     s.__db!.run("UPDATE gates SET consumedAt = NULL WHERE id = ?", [row.id]);
     expect(s.get(row.id)!.consumedAt).toBeNull();
     expect(s.unconsumedAnsweredPushes().map((r) => r.id)).toEqual([]);
+  });
+
+  test("a nudged row on a non-herd subject is never returned, even answered/delivered/unconsumed", () => {
+    const s = store();
+    const row = s.open({ subject: "mr:https://x/1", kind: "review-post", questions: qs(), nudge: { session: "s1" } }).row;
+    s.answer(row.id, { q: "a" }, "console");
+    s.markDelivery(row.id, "delivered");
+    expect(s.unconsumedAnsweredPushes().map((r) => r.id)).toEqual([]);
+  });
+
+  test("a released row is excluded, matching the dead-pane statement's own precedent", () => {
+    const s = store();
+    const row = s.open({ subject: "herd:h/j1", kind: "question", questions: qs(), pane: "pane-1", nudge: { session: "s1" } }).row;
+    s.answer(row.id, { q: "a" }, "shepherd"); // wins; not a pane answer, so no release yet
+    s.answer(row.id, { q: "b" }, GATE_BY_PANE); // loses the CAS, but its own pane has now reconciled
+    s.markDelivery(row.id, "delivered");
+    expect(s.get(row.id)!.released).toBe(true);
+    expect(s.get(row.id)!.consumedAt).toBeNull();
+    expect(s.unconsumedAnsweredPushes().map((r) => r.id)).toEqual([]);
+  });
+
+  test("a row answered 10 minutes ago is still within the horizon and is returned", () => {
+    const s = store();
+    const row = s.open({ subject: "herd:h/j1", kind: "question", questions: qs(), nudge: { session: "s1" } }).row;
+    s.answer(row.id, { q: "a" }, "shepherd");
+    s.markDelivery(row.id, "delivered");
+    const tenMinutesLater = Date.now() + 10 * 60 * 1000;
+    expect(s.unconsumedAnsweredPushes(tenMinutesLater).map((r) => r.id)).toEqual([row.id]);
+  });
+
+  test("a row answered 2 hours ago is past the horizon and is not returned", () => {
+    const s = store();
+    const row = s.open({ subject: "herd:h/j1", kind: "question", questions: qs(), nudge: { session: "s1" } }).row;
+    s.answer(row.id, { q: "a" }, "shepherd");
+    s.markDelivery(row.id, "delivered");
+    const twoHoursLater = Date.now() + 2 * 60 * 60 * 1000;
+    expect(s.unconsumedAnsweredPushes(twoHoursLater).map((r) => r.id)).toEqual([]);
   });
 });

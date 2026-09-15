@@ -496,7 +496,7 @@ function consumeHarness(opts: { deliverOk?: boolean } = {}) {
 describe("retryDeadPanes: answered-unconsumed re-delivery sweep", () => {
   test("(a) an unconsumed answered row is re-pushed on the 4th sweep call, not the 1st-3rd", async () => {
     const { push, store, events } = consumeHarness();
-    const row = store.open({ subject: "run:r1", kind: "clarify", questions: qs(), nudge: { session: "sess-1" } }).row;
+    const row = store.open({ subject: "herd:h/j1", kind: "question", questions: qs(), nudge: { session: "sess-1" } }).row;
     store.answer(row.id, { q: "a" }, "console");
     await push.onAnswered(store.get(row.id)!);
     events.length = 0;
@@ -510,7 +510,7 @@ describe("retryDeadPanes: answered-unconsumed re-delivery sweep", () => {
 
   test("(b) a consumed row is never re-pushed", async () => {
     const { push, store, events } = consumeHarness();
-    const row = store.open({ subject: "run:r1", kind: "clarify", questions: qs(), nudge: { session: "sess-1" } }).row;
+    const row = store.open({ subject: "herd:h/j1", kind: "question", questions: qs(), nudge: { session: "sess-1" } }).row;
     store.answer(row.id, { q: "a" }, "console");
     await push.onAnswered(store.get(row.id)!);
     store.markConsumed(row.id);
@@ -521,7 +521,7 @@ describe("retryDeadPanes: answered-unconsumed re-delivery sweep", () => {
 
   test("(c) the 6th eligible re-push does not happen; warns exactly once and never again", async () => {
     const { push, store, events, warns } = consumeHarness();
-    const row = store.open({ subject: "run:r1", kind: "clarify", questions: qs(), nudge: { session: "sess-1" } }).row;
+    const row = store.open({ subject: "herd:h/j1", kind: "question", questions: qs(), nudge: { session: "sess-1" } }).row;
     store.answer(row.id, { q: "a" }, "console");
     await push.onAnswered(store.get(row.id)!);
     events.length = 0;
@@ -538,7 +538,7 @@ describe("retryDeadPanes: answered-unconsumed re-delivery sweep", () => {
 
   test("(d) a row consumed between sweeps drops out and stops being pushed", async () => {
     const { push, store, events } = consumeHarness();
-    const row = store.open({ subject: "run:r1", kind: "clarify", questions: qs(), nudge: { session: "sess-1" } }).row;
+    const row = store.open({ subject: "herd:h/j1", kind: "question", questions: qs(), nudge: { session: "sess-1" } }).row;
     store.answer(row.id, { q: "a" }, "console");
     await push.onAnswered(store.get(row.id)!);
     events.length = 0;
@@ -564,8 +564,15 @@ describe("retryDeadPanes: answered-unconsumed re-delivery sweep", () => {
 
   test("(f) a re-push on a form-presentation, non-self-answered row invokes no injectEscape", async () => {
     const { push, store, events } = w4Harness();
-    const row = answeredFormGate(store, "console");
-    await push.onAnswered(row);
+    // Herd subject: only a herd-answer session's own read stamps consumedAt,
+    // so only a herd: row can ever leave the unconsumed set the second pass chases.
+    const row = store.open({
+      subject: "herd:h/j1", kind: "question", questions: qs(),
+      nudge: { session: "sess-1" }, pane: "pane-7",
+      origin: { presentation: "form", paneId: "pane-7" },
+    }).row;
+    store.answer(row.id, { q: "a" }, "console");
+    await push.onAnswered(store.get(row.id)!);
     events.length = 0;
     let last: Awaited<ReturnType<typeof push.retryDeadPanes>> | undefined;
     for (let i = 0; i < 4; i++) last = await push.retryDeadPanes();
@@ -574,9 +581,35 @@ describe("retryDeadPanes: answered-unconsumed re-delivery sweep", () => {
     expect(events.filter((e) => e.startsWith("inject"))).toEqual([]);
   });
 
+  test("(h) a failed re-push leaves the row's delivery outcome unchanged and out of the dead-pane pass", async () => {
+    const store = freshStore();
+    let deliverOk = true;
+    const deliver = async () => (deliverOk ? { ok: true as const } : { ok: false as const, error: "boom" });
+    const push = createGatePush({ store, deliver, resolveSession: (id) => ({ socketPath: id }), log });
+    const row = store.open({ subject: "herd:h/j1", kind: "question", questions: qs(), nudge: { session: "sess-1" } }).row;
+    store.answer(row.id, { q: "a" }, "console");
+    await push.onAnswered(store.get(row.id)!);
+    expect(store.get(row.id)!.delivery!.outcome).toBe("delivered");
+    deliverOk = false;
+    for (let i = 0; i < 4; i++) await push.retryDeadPanes();
+    expect(store.get(row.id)!.delivery!.outcome).toBe("delivered"); // unchanged by the failed re-push
+    expect(store.deadPanePushes().map((r) => r.id)).not.toContain(row.id);
+  });
+
+  test("(i) a successful re-push leaves a confirmed row still reading confirmed", async () => {
+    const { push, store, events } = consumeHarness();
+    const row = store.open({ subject: "herd:h/j1", kind: "question", questions: qs(), nudge: { session: "sess-1" } }).row;
+    store.answer(row.id, { q: "a" }, "console");
+    store.markDelivery(row.id, "confirmed");
+    events.length = 0;
+    for (let i = 0; i < 4; i++) await push.retryDeadPanes();
+    expect(events).toEqual(["deliver"]);
+    expect(store.get(row.id)!.delivery!.outcome).toBe("confirmed"); // unchanged by the successful re-push
+  });
+
   test("(g) a stuck-delivery row IS eligible for the second pass", async () => {
     const { push, store, events } = consumeHarness();
-    const row = store.open({ subject: "run:r1", kind: "clarify", questions: qs(), nudge: { session: "sess-1" } }).row;
+    const row = store.open({ subject: "herd:h/j1", kind: "question", questions: qs(), nudge: { session: "sess-1" } }).row;
     store.answer(row.id, { q: "a" }, "console");
     store.markDelivery(row.id, "stuck"); // reconciler's own leave-blocked exhaustion (reconciler.ts:292)
     events.length = 0;

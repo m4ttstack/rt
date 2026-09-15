@@ -71,9 +71,6 @@ export function safeSurface(by: string | undefined): string {
 export const GATE_ANSWERED_PHRASE = (id: string, by?: string) =>
   `[gate] ${id} answered by ${safeSurface(by)}; re-read the registry and proceed on the recorded answer.`;
 
-// answeredBySession / answeredByNudgedPane live in gates-store.ts (also used
-// by the store's own answer-time consumedAt stamp) and are imported above;
-// answeredBySession is re-exported here so existing importers keep working.
 export { answeredBySession };
 
 /** Sibling of GATE_ANSWERED_PHRASE for the supersede/close paths, which end
@@ -158,21 +155,29 @@ export function createGatePush(opts: {
   }
 
   /** The doorbell half of a pane push: resolves the nudge session, delivers
-      the wrapped phrase, and records the outcome exactly as pushToPane does.
-      No Escape injection -- the re-delivery sweep calls this directly so a
-      re-fired doorbell every 4th sweep never risks interrupting the very
-      consumption turn it is trying to trigger. */
-  async function pushDoorbell(row: GateRow, phrase: string): Promise<boolean> {
+      the wrapped phrase, and (unless `recordDelivery` is false) records the
+      outcome exactly as pushToPane does. No Escape injection -- the
+      re-delivery sweep calls this directly so a re-fired doorbell every 4th
+      sweep never risks interrupting the very consumption turn it is trying
+      to trigger.
+      `recordDelivery: false` is the re-delivery sweep's own mode: a
+      transient failure there must never demote a confirmed row into the
+      dead-pane retry pass (which injects Escape), and a transient success
+      must never overwrite a `confirmed` outcome herd status already reads.
+      The row keeps whatever delivery outcome it had before the sweep touched
+      it, either way. */
+  async function pushDoorbell(row: GateRow, phrase: string, opts: { recordDelivery?: boolean } = {}): Promise<boolean> {
+    const recordDelivery = opts.recordDelivery ?? true;
     const sessionId = row.nudge?.session;
     if (!sessionId) return false;
     const binding = resolveSession(sessionId);
     if (!binding) {
-      store.markDelivery(row.id, "dead-pane");
+      if (recordDelivery) store.markDelivery(row.id, "dead-pane");
       return false;
     }
     const body = wrapCrossSession("gate-facility", phrase);
     const ok = await safeDeliver(binding.socketPath, body, { gateId: row.id, sessionId });
-    store.markDelivery(row.id, ok ? "delivered" : "dead-pane");
+    if (recordDelivery) store.markDelivery(row.id, ok ? "delivered" : "dead-pane");
     return ok;
   }
 
@@ -315,7 +320,7 @@ export function createGatePush(opts: {
           const consumeAttemptCount = consumeAttempts.get(row.id) ?? 0;
           if (consumeAttemptCount < 5) {
             consumeAttempts.set(row.id, consumeAttemptCount + 1);
-            await pushDoorbell(row, GATE_ANSWERED_PHRASE(row.id, row.answer?.by));
+            await pushDoorbell(row, GATE_ANSWERED_PHRASE(row.id, row.answer?.by), { recordDelivery: false });
             reNudged++;
           } else {
             consumeGivenUp.add(row.id);
