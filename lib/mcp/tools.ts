@@ -8,10 +8,13 @@ import {
   chatAck, chatClaim, chatDm, chatPost, chatRelease,
   gateAnswer, gateAsk, gateList,
   herdAnswer, herdAsk, herdGates, herdList, herdReport,
+  readProjectMRs,
   rtCommand,
 } from "../../packages/rt-client/src/index.ts";
 import type { Commands, GateQuestion, RtResponse } from "../../packages/rt-client/src/index.ts";
 import { readChatSession } from "../chat-session.ts";
+import { joinMrsToWorktrees } from "../mr-map.ts";
+import { repoLabel } from "../repo-label.ts";
 
 export interface McpToolDef {
   name: string;
@@ -79,6 +82,23 @@ function requireWorkerEnv(env: NodeJS.ProcessEnv): { herd: string; job: string; 
   const session = env.CLAUDE_CODE_SESSION_ID;
   if (!session) return { error: "CLAUDE_CODE_SESSION_ID is not set; this verb runs inside a Claude Code session" };
   return { ...j, session, ...(env.HERDR_PANE_ID && { pane: env.HERDR_PANE_ID }) };
+}
+
+/** Matches input.repo against the daemon's repo registry, either as the raw
+    serialized identity or its human-friendly label (repoLabel), and returns
+    the matched identity. Deliberately does not import lib/repo-arg.ts (that
+    module pulls in lib/state/index.ts, lib/settings/resolve.ts, and
+    lib/ui/protocol.ts): the "repos" verb plus repoLabel is the whole lookup. */
+async function resolveRepoIdentity(repo: string): Promise<{ identity: string } | { error: string }> {
+  const res = await rtCommand<Commands["repos"]["data"]>("repos", {});
+  if (!res.ok || !res.data) return { error: res.error ?? "failed to list repos" };
+  const identities = Object.keys(res.data.repos);
+  const match = identities.find((id) => id === repo || repoLabel(id) === repo);
+  if (!match) {
+    const known = identities.map((id) => repoLabel(id)).sort().join(", ");
+    return { error: `no repo matching "${repo}"; known repos: ${known}` };
+  }
+  return { identity: match };
 }
 
 /** Mirrors herd.ts's soleHerdId without importing it (that module pulls in lib/repo-arg.ts). */
@@ -373,6 +393,44 @@ export function mcpTools(): McpToolDef[] {
         if (input.oldPath !== undefined) payload.oldPath = input.oldPath as string;
         if (input.oldLine !== undefined) payload.oldLine = input.oldLine as number;
         return fromResponse(await rtCommand<Commands["mr:comment-inline"]["data"]>("mr:comment-inline", payload, { timeoutMs: MR_WRITE_TIMEOUT_MS }));
+      },
+    },
+    {
+      name: "mr_map",
+      description: "Open MRs for a repo joined to the local worktrees holding their branches. Lists ALL open MRs for the repo (not only yours). repo is the registered repo name.",
+      inputSchema: {
+        type: "object",
+        properties: { repo: { type: "string" } },
+        required: ["repo"],
+        additionalProperties: false,
+      },
+      async handler(input) {
+        const bad = checkRequired(input, [{ name: "repo", type: "string" }]);
+        if (bad) return err(bad);
+        const resolved = await resolveRepoIdentity(input.repo as string);
+        if ("error" in resolved) return err(resolved.error);
+        const identity = resolved.identity;
+        const [mrsRes, treesRes] = await Promise.all([
+          readProjectMRs(identity, 20_000),
+          rtCommand<Commands["worktree:list"]["data"]>("worktree:list", { repoName: identity }),
+        ]);
+        if (!mrsRes.ok || !mrsRes.data) return err(mrsRes.error ?? "failed to read MRs");
+        if (!treesRes.ok || !treesRes.data) return err(treesRes.error ?? "failed to list worktrees");
+
+        const mrs = Object.values(mrsRes.data.mrs)
+          .map((entry) => entry.pr)
+          .filter((pr) => pr.state === "opened")
+          .map((pr) => ({
+            iid: pr.iid,
+            title: pr.title,
+            sourceBranch: pr.sourceBranch,
+            state: pr.state,
+            pipelineStatus: pr.pipeline?.status ?? null,
+          }));
+
+        const trees = treesRes.data.trees.map((t) => ({ path: t.path, branch: t.branch }));
+
+        return ok({ rows: joinMrsToWorktrees(mrs, trees) });
       },
     },
     {
