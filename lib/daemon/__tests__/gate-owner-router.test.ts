@@ -22,6 +22,8 @@ import type { HandlerContext } from "../handlers/types.ts";
 import { fakeStore } from "./fake-cache-store.ts";
 import { openStateDb } from "../../state/index.ts";
 import { runStart } from "../../runs/start.ts";
+import { insertAgent, newAgentId } from "../../state/agents-store.ts";
+import { Database } from "bun:sqlite";
 
 const stubCtx = {
   cache: fakeStore({}),
@@ -41,6 +43,7 @@ const stubCtx = {
 // `herdShepherd` wiring resolve against it, not a throwaway empty store.
 function buildHandlers(herdStore: ReturnType<typeof createHerdStore> = createHerdStore({ dbPath: ":memory:", log: pino({ level: "silent" }) })) {
   const gatesStore = createGatesStore({ dbPath: ":memory:", log: pino({ level: "silent" }) });
+  const stateDb = openStateDb(":memory:");
   const handlers = buildRoutedHandlers({
     ctx: stubCtx,
     broadcast: () => {},
@@ -70,9 +73,9 @@ function buildHandlers(herdStore: ReturnType<typeof createHerdStore> = createHer
     homeSnapshot: { stop: () => {}, runNow: async () => ({}) as any, pullNow: async () => ({}) as any, status: () => ({}) as any, ready: Promise.resolve() },
     teamSnapshots: { stop() {}, rescan: async () => {}, status: () => [], pullNow: async () => ({ outcome: "skipped", detail: null }), ready: Promise.resolve() },
     repos: { withReconcilerHeld: async (fn) => fn(), refreshWatchedRepos: () => {} },
-    stateDb: openStateDb(":memory:"),
+    stateDb,
   });
-  return { handlers, gatesStore, herdStore };
+  return { handlers, gatesStore, herdStore, stateDb };
 }
 
 let runsRoot: string | null = null;
@@ -185,5 +188,72 @@ describe("gate:answer owner enforcement through the real command-router + herd s
     const okNew = await handlers["gate:answer"]!({ id: gateId, by: "shep", session: "shep-session-new", answers: { q: "a" } });
     expect((okNew as any).ok).toBe(true);
     expect((okNew as any).data.row.answer.overridden).toBeUndefined();
+  });
+});
+
+// gate:ask's resolveSubject wiring (command-router.ts:156-162): every
+// gates-handlers.test.ts case injects a fake resolveSubject, so the real
+// findRunsBySession/findRun/getAgent mapping is otherwise untested.
+describe("gate:ask subject resolution through the real command-router wiring", () => {
+  const Q = [{ id: "q", label: "Pick", multi: false, options: ["a", "b"] }];
+
+  test("a running run recorded under the session resolves to subject run:<id>, with origin.runId and origin.worktree", async () => {
+    runsRoot = mkdtempSync(join(tmpdir(), "rt-gate-owner-router-"));
+    process.env.RT_RUNS_ROOT = runsRoot;
+    const started = runStart(runsRoot, {
+      repo: "widget-forge", workType: "feature", pipeline: "default",
+      env: { CLAUDE_CODE_SESSION_ID: "s1" },
+    });
+    if (!started.ok) throw new Error(started.error);
+    const runDb = new Database(started.runDb);
+    runDb.run(
+      "INSERT OR REPLACE INTO fields (run_id, key, value, produced_by, at) VALUES (?, 'worktree', ?, 'run', ?)",
+      [started.runId, "/wt/r1", Date.now()],
+    );
+    runDb.close();
+
+    const { handlers, gatesStore } = buildHandlers();
+    const res = await handlers["gate:ask"]!({ sessionId: "s1", questions: Q });
+    if (!(res as any).ok) throw new Error((res as any).error);
+    expect((res as any).data.subject).toBe(`run:${started.runId}`);
+    const row = gatesStore.get((res as any).data.id);
+    expect(row?.origin?.runId).toBe(started.runId);
+    expect(row?.origin?.worktree).toBe("/wt/r1");
+  });
+
+  test("a running run with no recorded worktree field resolves the subject with no origin.worktree", async () => {
+    runsRoot = mkdtempSync(join(tmpdir(), "rt-gate-owner-router-"));
+    process.env.RT_RUNS_ROOT = runsRoot;
+    const started = runStart(runsRoot, {
+      repo: "widget-forge", workType: "feature", pipeline: "default",
+      env: { CLAUDE_CODE_SESSION_ID: "s2" },
+    });
+    if (!started.ok) throw new Error(started.error);
+
+    const { handlers, gatesStore } = buildHandlers();
+    const res = await handlers["gate:ask"]!({ sessionId: "s2", questions: Q });
+    if (!(res as any).ok) throw new Error((res as any).error);
+    expect((res as any).data.subject).toBe(`run:${started.runId}`);
+    const row = gatesStore.get((res as any).data.id);
+    expect(row?.origin?.runId).toBe(started.runId);
+    expect(row?.origin?.worktree).toBeUndefined();
+  });
+
+  test("a session with no run but a recorded agent resolves to subject agent:<id>", async () => {
+    runsRoot = mkdtempSync(join(tmpdir(), "rt-gate-owner-router-"));
+    process.env.RT_RUNS_ROOT = runsRoot;
+
+    const { handlers, gatesStore, stateDb } = buildHandlers();
+    const agentId = newAgentId();
+    insertAgent({
+      id: agentId, repo: "widget-forge", cwd: "/wt/agent", provider: "claude",
+      surface: "headless", sessionId: "s3", createdAt: Date.now(),
+    }, stateDb);
+
+    const res = await handlers["gate:ask"]!({ sessionId: "s3", questions: Q });
+    if (!(res as any).ok) throw new Error((res as any).error);
+    expect((res as any).data.subject).toBe(`agent:${agentId}`);
+    const row = gatesStore.get((res as any).data.id);
+    expect(row?.origin?.runId).toBeUndefined();
   });
 });
