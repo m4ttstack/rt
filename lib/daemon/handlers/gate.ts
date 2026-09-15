@@ -6,7 +6,7 @@
 
 import type { Logger } from "pino";
 import type { Commands } from "../../../packages/rt-client/src/commands.ts";
-import { gateOptionValue, GATE_BY_PANE } from "../../../packages/rt-client/src/commands.ts";
+import { GATE_BY_PANE } from "../../../packages/rt-client/src/commands.ts";
 import { unwrapGateAnswerValue, validateGateAnswers } from "../../../packages/rt-client/src/gate-answers.ts";
 import type { CommandResult } from "./types.ts";
 import type { EventsBus } from "../events-bus.ts";

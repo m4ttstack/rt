@@ -1,5 +1,7 @@
-import type { GateQuestion } from "./commands.ts";
+import type { GateQuestion, GateAnswer } from "./commands.ts";
 import { gateOptionValue } from "./commands.ts";
+
+export type GateAnswerWire = GateAnswer["answers"][string];
 
 /** Both wire shapes carry the same value underneath: bare, or {value, note?}
     when a panel attaches free text. Validation reads only the value. */
@@ -13,7 +15,7 @@ export function unwrapGateAnswerValue(raw: unknown): unknown {
 /** Option membership is required whenever a question declares options,
     checked against the unwrapped value (every element, for multi); an
     empty options array stays free-form. Every question id must appear as
-    an answers key. Error strings are a wire contract: e2e asserts them. */
+    an answers key. Error strings are a wire contract; packages/rt-client/test/gate-answers.test.ts pins them verbatim. */
 export function validateGateAnswers(
   questions: GateQuestion[],
   answers: Record<string, unknown>,
