@@ -33,7 +33,7 @@ public enum OpenLink {
         return OpenRequest(app: app.lowercased(), pathAndQuery: rest)
     }
 
-    /// https://<app>.mattstack[/<path...>][?query] — single label only.
+    /// https://<app>.mattstack[/<path...>][?query], single label only.
     public static func request(fromHTTPS url: URL) -> OpenRequest? {
         guard let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http" else { return nil }
         guard let host = url.host?.lowercased(), host.hasSuffix(".mattstack") else { return nil }

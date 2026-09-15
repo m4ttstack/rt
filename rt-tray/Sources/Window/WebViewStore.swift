@@ -1,13 +1,13 @@
 import MattstackCore
 import WebKit
 
-/// One warm WKWebView per visited app, alive for the window's lifetime
-/// (spec section 3). All views share the default website data store so the
-/// estate behaves like one browser profile.
+/// One warm WKWebView per visited app, alive for the window's lifetime.
+/// All views share the default website data store so the estate behaves
+/// like one browser profile.
 @MainActor
 final class WebViewStore {
     /// Appended to the default UA by WebKit. The app-server handoff
-    /// middleware matches " mattstack-shell/" — compatibility contract.
+    /// middleware matches " mattstack-shell/" (compatibility contract).
     static var shellUserAgentSuffix: String {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
         return "mattstack-shell/\(version)"
