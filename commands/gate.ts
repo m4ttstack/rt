@@ -4,6 +4,7 @@
  * commands/events.ts's arg parsing / --json payload / exit code idiom.
  *
  *   rt gate open --subject <s> --kind <k> --questions <json> [--meta <json>] [--agent <id>] [--pane <id>] [--nudge <json>]
+ *   rt gate ask --questions <json> [--context <text>] [--kind <k>] [--subject <s>] [--json]
  *   rt gate answer <id> --answers <json> --by <surface> [--session <id>] [--override]
  *   rt gate wait <id> [--timeout <duration>]     # default: wait forever
  *   rt gate list [--open] [--subject-prefix <p>] [--kind <k>] [--limit <n>] [--cursor <n>]
@@ -17,6 +18,7 @@
 import {
   gateOpen as clientOpen,
   gateAnswer as clientAnswer,
+  gateAsk as clientAsk,
   gateWait as clientWait,
   gateList as clientList,
   gatePark as clientPark,
@@ -157,6 +159,52 @@ export async function gateAnswer(args: string[]): Promise<void> {
   // winning row, not an error — see packages/rt-client/src/commands.ts.
   if (data.conflict) console.error(`rt gate: answer lost: ${payload.id} was already answered; showing the winning row`);
   console.log(JSON.stringify({ ok: true, row: data.row, conflict: data.conflict ?? false }));
+}
+
+// ─── ask ─────────────────────────────────────────────────────────────────────
+
+const ASK_USAGE = "usage: rt gate ask --questions <json> [--context <text>] [--kind <k>] [--subject <s>] [--json]";
+
+/** Always-JSON failure: agents parse stdout on both
+    outcomes, so refusals never take fail()'s stderr-prose path. */
+function askFail(message: string): never {
+  console.log(JSON.stringify({ ok: false, error: message }));
+  process.exit(1);
+}
+
+export function buildGateAskPayload(args: string[], env: NodeJS.ProcessEnv): Commands["gate:ask"]["payload"] {
+  const raw = flagValue(args, "--questions");
+  if (raw === undefined) askFail(ASK_USAGE);
+  let questions: unknown;
+  try {
+    questions = JSON.parse(raw);
+  } catch {
+    askFail(`--questions is not valid JSON: ${raw}`);
+  }
+  const payload: Commands["gate:ask"]["payload"] = {
+    questions: questions as Commands["gate:ask"]["payload"]["questions"],
+  };
+  const context = flagValue(args, "--context");
+  if (context !== undefined) payload.context = context;
+  const kind = flagValue(args, "--kind");
+  if (kind !== undefined) payload.kind = kind;
+  // No RT_GATE_SUBJECT read: the var carries an agent:<id> fallback on
+  // every launch and would shadow the daemon ladder's run rung; absent
+  // --subject, the daemon resolves session -> run -> the agent record's
+  // own subject.
+  const subject = flagValue(args, "--subject");
+  if (subject !== undefined) payload.subject = subject;
+  if (env.CLAUDE_CODE_SESSION_ID) payload.sessionId = env.CLAUDE_CODE_SESSION_ID;
+  if (env.HERDR_PANE_ID) payload.paneId = env.HERDR_PANE_ID;
+  return payload;
+}
+
+export async function gateAsk(args: string[]): Promise<void> {
+  const payload = buildGateAskPayload(args, process.env);
+  const res = await clientAsk(payload);
+  if (!res.ok || res.data === undefined) askFail(res.error ?? "ask failed");
+  const data = res.data;
+  console.log(JSON.stringify({ ok: true, id: data.id, presentation: data.presentation, subject: data.subject, supersededId: data.supersededId }));
 }
 
 // ─── wait ────────────────────────────────────────────────────────────────────

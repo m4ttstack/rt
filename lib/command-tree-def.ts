@@ -70,6 +70,19 @@ const gateSubcommands: Record<string, CommandNode> = {
       { name: "Origin", flag: "--origin", type: "text", placeholder: "{\"paneId\":\"w7A:pY\",\"presentation\":\"form\"}", hint: "Optional JSON origin; presentation form|wait, and paneId names the pane the remote-answer Escape is injected into" },
     ],
   },
+  ask: {
+    description: "Open a gate with the daemon-side ceremony (subject resolution, presentation, nudge)",
+    module: "./commands/gate.ts",
+    fn: "gateAsk",
+    omitBehavior: { exempt: "agent-facing; questions are free-form JSON, identity comes from env" },
+    args: [
+      { name: "Questions", flag: "--questions", type: "text", placeholder: "[{\"id\":\"q1\",\"label\":\"...\",\"multi\":false,\"options\":[\"yes\",\"no\"]}]", hint: "JSON array of questions ({value,label} option objects preferred; bare strings accepted)" },
+      { name: "Context", flag: "--context", type: "text", placeholder: "the material the decision is about", hint: "Optional decision context; over 8KB it is omitted, never an error" },
+      { name: "Kind", flag: "--kind", type: "text", placeholder: "question", hint: "Gate kind (default question)" },
+      { name: "Subject", flag: "--subject", type: "text", placeholder: "run:abc123", hint: "Explicit subject; omitted, the daemon resolves this session's run, else its agent record's subject" },
+      { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Accepted for symmetry; output is always JSON" },
+    ],
+  },
   answer: {
     description: "Answer an open gate",
     module: "./commands/gate.ts",
