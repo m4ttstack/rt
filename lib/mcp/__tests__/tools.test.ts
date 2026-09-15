@@ -80,13 +80,46 @@ describe("mcpTools", () => {
     expect(tool.description).toContain("all statuses");
   });
 
-  test("gate_ask reads session and pane from env; subject comes from input only", async () => {
-    // Handler-shape test: stub the client call the way the suite stubs others
-    // (if the suite calls the real client, assert on the payload via a daemon
-    // fixture instead; match the file's existing approach).
-    const tool = mcpTools().find((t) => t.name === "gate_ask")!;
-    expect((tool.inputSchema as { required?: string[] }).required).toEqual(["questions"]);
-    expect(tool.description).toContain("rt gate wait");
+  describe("gate_ask", () => {
+    afterEach(() => {
+      mock.module("../../../packages/rt-client/src/transport.ts", () => ({ ...realTransport, rtCommand: realRtCommand }));
+    });
+
+    test("schema requires questions and description documents rt gate wait", () => {
+      const tool = mcpTools().find((t) => t.name === "gate_ask")!;
+      expect((tool.inputSchema as { required?: string[] }).required).toEqual(["questions"]);
+      expect(tool.description).toContain("rt gate wait");
+    });
+
+    test("sessionId and paneId come from env; subject comes from input only, never RT_GATE_SUBJECT", async () => {
+      let capturedPayload: Record<string, unknown> | undefined;
+      mock.module("../../../packages/rt-client/src/transport.ts", () => ({
+        ...realTransport,
+        rtCommand: async (cmd: string, payload: Record<string, unknown>) => {
+          if (cmd === "gate:ask") {
+            capturedPayload = payload;
+            return { ok: true, data: { id: "g1", presentation: "inline", subject: "input-subject" } };
+          }
+          throw new Error(`unexpected rtCommand("${cmd}")`);
+        },
+      }));
+      const tool = mcpTools().find((t) => t.name === "gate_ask")!;
+      const env = {
+        CLAUDE_CODE_SESSION_ID: "sess-1",
+        HERDR_PANE_ID: "pane-1",
+        RT_GATE_SUBJECT: "agent:should-be-ignored",
+      } as NodeJS.ProcessEnv;
+      const res = await tool.handler(
+        { questions: [{ id: "q1", label: "Proceed?", multi: false, options: ["yes", "no"] }], subject: "input-subject" },
+        env,
+      );
+      expect(res.ok).toBe(true);
+      expect(capturedPayload?.sessionId).toBe("sess-1");
+      expect(capturedPayload?.paneId).toBe("pane-1");
+      expect(capturedPayload?.subject).toBe("input-subject");
+      expect(Object.values(capturedPayload ?? {})).not.toContain("agent:should-be-ignored");
+      expect(JSON.stringify(capturedPayload)).not.toContain("RT_GATE_SUBJECT");
+    });
   });
 
   test("roster contains gate_ask", () => {
@@ -160,6 +193,34 @@ describe("mcpTools", () => {
       expect(res.ok).toBe(false);
       expect(res.error).toContain("glance");
       expect(res.error).toContain("rt");
+    });
+
+    test("ambiguous repo label names all matching identities instead of picking one", async () => {
+      const orgAId = serializeIdentity({ kind: "remote", id: "github.com/org-a/rt" });
+      const orgBId = serializeIdentity({ kind: "remote", id: "gitlab.com/org-b/rt" });
+      mock.module("../../../packages/rt-client/src/transport.ts", () => ({
+        ...realTransport,
+        rtCommand: async (cmd: string) => {
+          if (cmd === "repos") {
+            return {
+              ok: true,
+              data: {
+                repos: {
+                  [orgAId]: { path: "/a", worktrees: [] },
+                  [orgBId]: { path: "/b", worktrees: [] },
+                },
+                watched: [],
+              },
+            };
+          }
+          throw new Error(`unexpected rtCommand("${cmd}")`);
+        },
+      }));
+      const tool = mcpTools().find((t) => t.name === "mr_map")!;
+      const res = await tool.handler({ repo: "rt" }, {} as NodeJS.ProcessEnv);
+      expect(res.ok).toBe(false);
+      expect(res.error).toContain(orgAId);
+      expect(res.error).toContain(orgBId);
     });
 
     test("matches by registered name and joins open MRs to worktrees", async () => {
@@ -253,7 +314,7 @@ describe("mcpTools", () => {
         rtCommand: async (cmd: string, payload: Record<string, unknown>) => {
           if (cmd === "gate:list") {
             capturedPayload = payload;
-            return { ok: true, data: { gates: [], next: 42 } };
+            return { ok: true, data: { gates: [], cursor: 42 } };
           }
           throw new Error(`unexpected rtCommand("${cmd}")`);
         },

@@ -93,7 +93,9 @@ async function resolveRepoIdentity(repo: string): Promise<{ identity: string } |
   const res = await rtCommand<Commands["repos"]["data"]>("repos", {});
   if (!res.ok || !res.data) return { error: res.error ?? "failed to list repos" };
   const identities = Object.keys(res.data.repos);
-  const match = identities.find((id) => id === repo || repoLabel(id) === repo);
+  const matches = identities.filter((id) => id === repo || repoLabel(id) === repo);
+  if (matches.length > 1) return { error: `"${repo}" matches more than one repo: ${matches.join(", ")}; pass the full identity` };
+  const match = matches[0];
   if (!match) {
     const known = identities.map((id) => repoLabel(id)).sort().join(", ");
     return { error: `no repo matching "${repo}"; known repos: ${known}` };
