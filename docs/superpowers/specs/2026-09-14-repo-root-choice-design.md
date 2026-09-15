@@ -106,6 +106,13 @@ injected state and tests never touch the real machine". A row that took its
 candidate from a faked `p.exists` while stat-ing the developer's real disk
 would be half fake and half real, and no `composePlan` test could control it.
 
+**The emptiness test is `!getSetting<string[]>("rt.repoRoots").value?.[0]`, not
+`unwritten()`.** Those disagree for a key explicitly written as `[]` at machine
+scope, which is reachable by hand. Under `unwritten()` the row would read
+`ready` off a staged value while `repos.clone` and `board.keys` both saw no
+root and silently did nothing: green over an install that clones nothing. The
+same predicate is used by `repos.clone`'s own guard.
+
 The read of `rt.repoRoots` is wrapped in try/catch. `getSetting` on this key has
 a documented throw path for an authored `${repoRoot}` value, and `lib/repo-index.ts`
 already guards it for that reason. Unguarded here, a throw propagates to
@@ -140,12 +147,9 @@ file, whether or not the key already holds something. A staged value is by
 construction a freshly validated answer the user gave on this machine, so it is
 never the stale one.
 
-The emptiness test is `!getSetting<string[]>("rt.repoRoots").value?.[0]`, NOT
-`unwritten()`. Those disagree for a key explicitly written as `[]` at machine
-scope, which is reachable by hand. Under `unwritten()` that state would leave
-the row reading `ready` off a staged value while `repos.clone` and `board.keys`
-both saw no root and silently did nothing. One predicate, used by the row and
-the step alike.
+Promotion consults no emptiness predicate: a staged value wins outright, so
+there is nothing here for one to decide. The predicate question belongs to the
+row and to `repos.clone`'s own guard, and is settled in the row's section above.
 
 Promotion is idempotent and also runs at the top of `repos.clone`, because
 `rt setup apply --only repos.clone` is a documented remedy channel that skips
@@ -292,6 +296,17 @@ export it rather than re-spelling the path.
   sibling file, not a reuse of `stageSecret`.
 - **true**: write `rt.repoRoots` directly at machine scope. The dangerous
   precondition is gone, and so is any reason to defer.
+
+One window is soft and is accepted rather than gated: a **partially failed
+`home.init`** leaves `.git` present while `~/.mattstack/machine-key` is not yet
+written, since both are steps inside the one `rt home init` subprocess and the
+key follows the clone. The verb would take the true branch there. It is benign
+because on a fresh clone `user/local/` is empty, so `rt home init`'s
+profile-adoption prompt has nothing to offer and `machineKey()`'s hostname-slug
+fallback is the same key `home init` would go on to pick. Recorded because the
+reasoning is two inferences deep and lives in another file, so an auditor
+checking "true at every moment after `home.init`" will find this case and
+otherwise cannot tell whether it was considered.
 
 **This branch is what keeps the two sources from ever both being live**, and
 that matters more than it looks. An earlier draft had the verb always stage and

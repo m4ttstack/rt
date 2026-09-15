@@ -271,15 +271,17 @@ export function readStagedRepoRoot(p: Pick<Probes, "home" | "readFile">): string
  * writing it before the clone exists makes that clone fail on a non-empty
  * target. Every writer of rt.repoRoots goes through this guard or the verb's.
  */
-export function promoteStagedRepoRoot(p: Probes, write: typeof setSetting = setSetting): boolean {
+export function promoteStagedRepoRoot(p: Probes): boolean {
   const staged = readStagedRepoRoot(p);
   if (staged === null) return false;
   if (!p.exists(homeGitDir(p.home))) return false;
-  write("rt.repoRoots", [staged], "machine");
+  setSetting("rt.repoRoots", [staged], "machine");
   clearStagedRepoRoot(p);
   return true;
 }
 ```
+
+This needs three imports the module's earlier block does not show: `setSetting` from `lib/settings/write.ts`, `homeGitDir` exported from `lib/setup/steps/home.ts`, and `join` (already there). No write seam is injected: `bunfig`'s preload repoints HOME for tests, so `setSetting` already writes into a temp store rather than the developer's, and an injection parameter no caller passes is dead surface.
 
 The guard matters beyond tidiness: `rt setup apply --only repos.clone` is reachable on a machine that has never installed (`gateHardPreconditions` checks only `tool.macos` and `tool.clt`), and an unguarded write there would create `~/.mattstack/user` as a non-git directory and kill the *next* full install at step 1. Same regression, entered through the promotion path instead of the verb path.
 
@@ -310,7 +312,7 @@ git commit -m "setup: add the shared repo-root validator"
 
 **Interfaces:**
 - Consumes: `promoteStagedRepoRoot` from `lib/setup/repo-root.ts` (Task 1). The candidate list also lives there now; `settings.ts` no longer needs it.
-- Produces: `rt.repoRoots` at machine scope, the only write of that key in the codebase.
+- Produces: `rt.repoRoots` at machine scope. NOT the only writer: Task 4's verb writes it directly once the home repo exists. The two writers are named in Global Constraint 20, and both go through the same home-repo guard.
 
 **Other readers of `rt.repoRoots`, and why deleting this write is safe**
 
@@ -878,7 +880,15 @@ Then revert Task 4's branch so the verb always stages, and run the Task 4 smoke 
 
 Then revert Task 4's false branch to a `setSetting` call and run the Task 4 smoke check on a fresh HOME: `test -e "$H/.mattstack/user"` must report the bug. Restore. That is the Install-step-1 regression, and nothing else in the suite catches it.
 
-Then swap the ROW's predicate (Task 5's `configuredRoot`) to `unwritten()`-style emptiness and run its explicit-empty-array case: it must go red. Promotion itself consults no predicate, so there is nothing to swap in `settings.seed`; do not go looking for it there.
+Then mutate the ROW's source resolution, at the call site rather than inside `configuredRoot`, and run Task 5's explicit-empty-array case:
+
+```ts
+const chosen = unwritten("rt.repoRoots") ? readStagedRepoRoot(p) : (getSetting<string[]>("rt.repoRoots").value?.[0] ?? null);
+```
+
+With `[]` written at machine scope, `unwritten()` is false, the store branch yields null, `chosen` is null, and the row must read `needs-you`. It must go red.
+
+Rewriting `configuredRoot`'s own body will NOT go red: every `unwritten()`-flavoured version of it still returns null for `[]`, so the row still falls through to staging and still reads `ready`. Mutating the wrong line here produces a green that looks like a passing safety net and is not one. Promotion consults no predicate at all, so there is nothing to swap in `settings.seed`; do not go looking for it there.
 
 - [ ] **Step 5: Leave it unpushed**
 
