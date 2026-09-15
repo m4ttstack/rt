@@ -40,7 +40,10 @@ describe("renderDevModeWrapper", () => {
 
   test("appends the tool dirs to PATH rather than prepending (RT-160): launchd only needs them present, and a prepend shadows the caller's own order for every validator that reads PATH", () => {
     const pathLine = wrapper.split("\n").find((l) => l.startsWith("export PATH="));
-    expect(pathLine).toBe(`export PATH="$PATH:/Users/someone/.bun/bin:/opt/homebrew/bin:/usr/local/bin"`);
+    // ${PATH:+$PATH:} not a bare $PATH: — an empty inherited PATH would leave
+    // a leading empty component, which zsh resolves as the CURRENT directory,
+    // and the wrapper has just cd'd into the source checkout.
+    expect(pathLine).toBe(`export PATH="\${PATH:+\$PATH:}/Users/someone/.bun/bin:/opt/homebrew/bin:/usr/local/bin"`);
   });
 });
 
