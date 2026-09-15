@@ -1,6 +1,8 @@
 import AppKit
 import SwiftUI
 
+private let frameAutosaveName = "mattstack-window"
+
 final class MattstackWindowController: NSWindowController, NSWindowDelegate {
     let model: WindowModel
 
@@ -12,11 +14,19 @@ final class MattstackWindowController: NSWindowController, NSWindowDelegate {
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.isReleasedWhenClosed = false
-        window.setFrameAutosaveName("mattstack-window")
         super.init(window: window)
         window.delegate = self
         model.controller = self
         window.contentViewController = NSHostingController(rootView: MattstackWindowView(model: model))
+
+        // shouldCascadeWindows defaults to true on NSWindowController and
+        // overrides a frame set before super.init(window:) runs, so the
+        // autosave name has to be armed here, after super.init, with
+        // cascading off, or the saved frame never sticks.
+        shouldCascadeWindows = false
+        let restoredFrame = window.setFrameUsingName(frameAutosaveName)
+        window.setFrameAutosaveName(frameAutosaveName)
+        if !restoredFrame { window.center() }
     }
     required init?(coder: NSCoder) { fatalError("not supported") }
 

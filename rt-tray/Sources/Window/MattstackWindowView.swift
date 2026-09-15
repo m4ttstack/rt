@@ -1,6 +1,5 @@
 import MattstackCore
 import SwiftUI
-import WebKit
 
 private let railWidth: CGFloat = 68
 private let railTopClearance: CGFloat = 40
@@ -131,17 +130,26 @@ private struct ContentArea: View {
     }
 }
 
+/// A plain container, not the webview itself: `activeApp` changing only
+/// updates this representable's `app` property in place (same structural
+/// SwiftUI identity), so `updateNSView` is what has to swap the mounted
+/// child, never `makeNSView`.
 private struct WindowWebView: NSViewRepresentable {
     let model: WindowModel
     let app: DiscoveryApp
 
-    func makeNSView(context: Context) -> WKWebView {
-        let view = model.store.view(for: app)
-        model.trackFailures(for: view, appName: app.name)
-        return view
+    func makeNSView(context: Context) -> NSView {
+        NSView()
     }
 
-    func updateNSView(_ nsView: WKWebView, context: Context) {}
+    func updateNSView(_ container: NSView, context: Context) {
+        let webView = model.webView(for: app)
+        guard container.subviews.first !== webView else { return }
+        container.subviews.forEach { $0.removeFromSuperview() }
+        webView.frame = container.bounds
+        webView.autoresizingMask = [.width, .height]
+        container.addSubview(webView)
+    }
 }
 
 private struct FailureOverlay: View {
