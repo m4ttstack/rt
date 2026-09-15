@@ -88,7 +88,7 @@ const refPane = (bare: string | undefined, hidden: boolean): string | undefined 
     check runs right after and is what actually refuses them. */
 const herdOrigin = (paneRef: string | undefined, session: string, questions: GateQuestion[]): { paneId: string; presentation: "form" | "wait" } | undefined =>
   paneRef
-    ? { paneId: paneRef, presentation: questions.every(isValidQuestion) ? gatePresentation({ paneId: paneRef, sessionId: session, questions }) : "wait" }
+    ? { paneId: paneRef, presentation: Array.isArray(questions) && questions.every(isValidQuestion) ? gatePresentation({ paneId: paneRef, sessionId: session, questions }) : "wait" }
     : undefined;
 
 /** `shepherd-2` is a collision suffix chat mints, not a name to ask for again. */
