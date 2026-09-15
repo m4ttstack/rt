@@ -24,6 +24,8 @@ export interface Probes {
   exists(path: string): boolean;
   /** Byte size, following symlinks, only for a REGULAR file (a directory, a symlink to one, or anything missing/unreadable is null) — the cheap "is this actually a file worth reading" check callers need before decoding one. */
   fileSize(path: string): number | null;
+  /** The permission bits (masked to 0o777), following symlinks, only for a REGULAR file (null otherwise). Lets a rewrite carry a file's existing mode across a temp-file-plus-rename instead of the rename silently adopting the temp file's own mode. */
+  fileMode(path: string): number | null;
   readFile(path: string): string | null;
   /**
    * A bounded 4096-byte prefix of `path`, following symlinks -- never a
@@ -198,6 +200,15 @@ export function createRealProbes(): Probes {
       try {
         const stat = statSync(path); // follows symlinks, unlike lstatSync — a symlink to a regular file sizes as that file
         return stat.isFile() ? stat.size : null;
+      } catch {
+        return null;
+      }
+    },
+
+    fileMode(path) {
+      try {
+        const stat = statSync(path);
+        return stat.isFile() ? stat.mode & 0o777 : null;
       } catch {
         return null;
       }
