@@ -10,10 +10,9 @@
  * must be an absolute path per the Claude Code hook contract, and
  * gate-fork.sh is never installed onto PATH.
  *
- * NOTE for the bundle build: build.sh does not yet embed scripts/hooks/
- * gate-fork.sh under Contents/Helpers, so the bundle branch below is
- * currently always a miss on an installed app. Wiring that copy step is
- * tracked as follow-up, not part of this module.
+ * build.sh embeds scripts/hooks/gate-fork.sh under Contents/Helpers, so the
+ * bundle branch below resolves on any app built from a checkout that carries
+ * that copy step; an older build still misses it there.
  */
 import { existsSync, statSync } from "fs";
 import { join, resolve } from "path";

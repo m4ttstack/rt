@@ -368,7 +368,7 @@ check_helpers() { # app
     # mattstack-proxy-install).
     # The row loop above only proves declared things exist; a helper the
     # lock doesn't pin would otherwise ship unverified and unversioned.
-    local allowed=" rt-ui skills mattstack-proxy-install " seg entry stowaways=0
+    local allowed=" rt-ui skills mattstack-proxy-install gate-fork.sh " seg entry stowaways=0
     while IFS= read -r row; do
         [ -n "$row" ] || continue
         split_tsv "$row"
@@ -427,6 +427,13 @@ check_helpers() { # app
         pass "$exe Helpers/git-lfs answers version"
     else
         fail "$exe Helpers/git-lfs does not run from inside the bundle"
+    fi
+    # First-party script (build.sh embeds it unconditionally, both flavors).
+    local gfh="$app/Contents/Helpers/gate-fork.sh"
+    if [ -x "$gfh" ]; then
+        pass "$exe ships Helpers/gate-fork.sh (executable)"
+    else
+        fail "$exe missing Helpers/gate-fork.sh or it is not executable"
     fi
     # First-party helper (built from ui/, not a deps.lock row). The dev bundle
     # runs from source and resolves ui/dist/rt-ui directly, so it ships none.

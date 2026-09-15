@@ -11,6 +11,7 @@ import { bgSocketPath } from "../bg-service.ts";
 import { DAEMON_SOCK_PATH } from "../../daemon-config.ts";
 import type { HerdrRunner } from "../../agent-herdr.ts";
 import { repoLabel } from "../../repo-arg.ts";
+import { herdSubject } from "../herd-store.ts";
 
 let n = 0;
 const REPO = "remote:example.com%2Fa%2Fb";
@@ -389,7 +390,7 @@ test("agent:start passes env into the pane command", async () => {
 test("agent:start herdr stamps gate env and injects the gate-fork hook via --settings, merged with the reserved handle's inbound-accept settings", async () => {
   const calls: string[][] = [];
   const h = fresh({ runner: okRunner(calls) });
-  const subject = "mr:test/2";
+  const subject = herdSubject("h1", "job-a");
   const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr", subject });
   expect(res.ok).toBe(true);
   if (!res.ok) throw new Error("unreachable");
