@@ -34,7 +34,7 @@ export async function mcpServe(_args: string[]): Promise<void> {
 
       const res = await tool.handler((request.params.arguments ?? {}) as Record<string, unknown>, process.env);
       if (!res.ok) return { isError: true, content: [{ type: "text" as const, text: res.error ?? "failed" }] };
-      return { content: [{ type: "text" as const, text: JSON.stringify(res.body) }] };
+      return { content: [{ type: "text" as const, text: JSON.stringify(res.body ?? null) }] };
     })();
     pending.add(call);
     call.finally(() => pending.delete(call));

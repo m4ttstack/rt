@@ -59,12 +59,11 @@ function runRt(args: string[], home: string, extraEnv: Record<string, string> = 
 
 /**
  * Same spawn as runRt, but for a child whose stdin the test drives directly
- * (here, the mcp serve child). `stdin: "pipe"` is written as a literal in
- * this call, not threaded through as a runtime parameter: Bun.spawn's `const
- * In` type parameter only narrows `proc.stdin` to `FileSink` when it infers a
- * single literal, and a variable typed as a union of stdin modes (even a
- * two-member one) makes it infer the union instead, which is what silently
- * turned proc.stdin into `number | FileSink | undefined` before.
+ * (here, the mcp serve child). `stdin: "pipe"` must stay a literal in this
+ * call, not a variable: Bun.spawn's `const In` type parameter only narrows
+ * `proc.stdin` to `FileSink` when it infers a single literal, so a variable
+ * typed as a union of stdin modes makes it infer `number | FileSink |
+ * undefined` instead.
  */
 function runRtPiped(args: string[], home: string, extraEnv: Record<string, string> = {}) {
   const proc = Bun.spawn([RT_BINARY, ...args], {
@@ -240,9 +239,13 @@ describe("rt mcp serve e2e", () => {
         server.exited.then(() => true),
         Bun.sleep(3000).then(() => false),
       ]);
-      if (!exitedInTime) {
-        try { server.kill(); } catch { /* already gone */ }
-        await server.exited;
+      try {
+        expect(exitedInTime).toBe(true);
+      } finally {
+        if (!exitedInTime) {
+          try { server.kill(); } catch { /* already gone */ }
+          await server.exited;
+        }
       }
     }
   }, 30_000);

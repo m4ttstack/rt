@@ -1233,6 +1233,7 @@ export const TREE: Record<string, CommandNode> = {
 
   mcp: {
     description: "MCP servers rt hosts for agent runtimes",
+    hidden: true,
     subcommands: {
       serve: {
         description: "stdio MCP server over the rt daemon (spawned by the mattstack plugin; not for interactive use)",
