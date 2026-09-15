@@ -647,6 +647,44 @@ describe("worker verbs", () => {
     expect((await h["herd:answer"]({ gate: "gt-nope" })).ok).toBe(false);
   });
 
+  test("herd:answer with the nudged session consumes", async () => {
+    const { h, gateStore, herd } = await withJob();
+    const asked = await h["herd:ask"]({ herd, job: "job-a", session: "sess-w1", questions: Q });
+    if (!asked.ok) throw new Error(asked.error);
+    gateStore.answer(asked.data.gate, { q1: { value: "b" } } as never, "shepherd");
+    const res = await h["herd:answer"]({ gate: asked.data.gate, sessionId: "sess-w1" });
+    expect(res.ok).toBe(true);
+    expect(gateStore.get(asked.data.gate)!.consumedAt).not.toBeNull();
+  });
+
+  test("herd:answer without a session, or with a foreign session, does not consume", async () => {
+    const { h, gateStore, herd } = await withJob();
+    const asked = await h["herd:ask"]({ herd, job: "job-a", session: "sess-w1", questions: Q });
+    if (!asked.ok) throw new Error(asked.error);
+    gateStore.answer(asked.data.gate, { q1: { value: "b" } } as never, "shepherd");
+    await h["herd:answer"]({ gate: asked.data.gate });
+    await h["herd:answer"]({ gate: asked.data.gate, sessionId: "someone-else" });
+    expect(gateStore.get(asked.data.gate)!.consumedAt).toBeNull();
+  });
+
+  test("herd:answer on a nudge-less gate does not consume when read with no session", async () => {
+    const { h, gateStore, herd } = await withJob();
+    const g = gateStore.open({ subject: `herd:${herd}/job-a`, kind: "question", questions: Q }).row.id;
+    gateStore.answer(g, { q1: { value: "b" } } as never, "shepherd");
+    await h["herd:answer"]({ gate: g });
+    expect(gateStore.get(g)!.consumedAt).toBeNull();
+  });
+
+  test("herd:answer with the nudged session reading an OPEN gate does not consume", async () => {
+    const { h, gateStore, herd } = await withJob();
+    const asked = await h["herd:ask"]({ herd, job: "job-a", session: "sess-w1", questions: Q });
+    if (!asked.ok) throw new Error(asked.error);
+    const res = await h["herd:answer"]({ gate: asked.data.gate, sessionId: "sess-w1" });
+    expect(res.ok).toBe(true);
+    expect((res as { ok: true; data: { status: string } }).data.status).toBe("open");
+    expect(gateStore.get(asked.data.gate)!.consumedAt).toBeNull();
+  });
+
   test("report posts to the room mentioning the shepherd and marks the job done", async () => {
     const { h, store, chatCalls, herd, room } = await withJob();
     const res = await h["herd:report"]({ herd, job: "job-a", body: "done: A1 A2" });

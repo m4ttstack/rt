@@ -225,7 +225,8 @@ export async function answer(args: string[]): Promise<void> {
   const json = has(args, "--json");
   const gate = positional(args);
   if (!gate) fail("usage: rt herd answer <gate>");
-  const data = unwrap(await herdAnswer({ gate }), "answer");
+  const sessionId = process.env.CLAUDE_CODE_SESSION_ID;
+  const data = unwrap(await herdAnswer({ gate, ...(sessionId ? { sessionId } : {}) }), "answer");
   emit(json, data, renderAnswer(gate, data));
 }
 
