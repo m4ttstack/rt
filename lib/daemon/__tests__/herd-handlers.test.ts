@@ -573,6 +573,14 @@ describe("worker verbs", () => {
     expect((await h["herd:ask"]({ herd, job: "job-a", session: "s", questions: [] })).ok).toBe(false);
   });
 
+  test("ask refuses an options-less question cleanly (no throw), and opens no gate", async () => {
+    const { h, gateStore, herd } = await withJob();
+    const malformed = [{ id: "q1", label: "Which?", multi: false }] as unknown as typeof Q;
+    const res = await h["herd:ask"]({ herd, job: "job-a", session: "sess-w1", pane: "w9:p1", questions: malformed });
+    expect(res).toEqual({ ok: false, error: "invalid questions" });
+    expect(gateStore.list({ open: true }).gates).toEqual([]);
+  });
+
   test("ask refuses an orphan job (herd_jobs row whose parent herd was deleted)", async () => {
     const { h, store } = await withJob();
     // No FK from herd_jobs to herds: seed a job row under a herd id that was

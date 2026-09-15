@@ -14,6 +14,7 @@ import { herdPrefix, herdSubject, isValidJobName, mintHerdId } from "../herd-sto
 import type { GatesStore } from "../gates-store.ts";
 import type { RunningRunScan } from "../../runs/store.ts";
 import type { createGateHandlers } from "./gate.ts";
+import { isValidQuestion } from "./gate.ts";
 import type { createChatHandlers } from "./chat.ts";
 import type { createAgentHandlers } from "./agent.ts";
 import { waitTimeout, type herdrRequest } from "../../herdr/client.ts";
@@ -81,9 +82,14 @@ const refPane = (bare: string | undefined, hidden: boolean): string | undefined 
     before. Callers still nudge the worker's session regardless of
     presentation: gate-push delivers only to nudge.session, and that push is
     a herd worker's only wake after it ends its turn on `rt herd ask` --
-    herd workers never run `rt gate wait`. */
+    herd workers never run `rt gate wait`. Malformed questions skip
+    presentation (default "wait") rather than call gatePresentation, which
+    assumes shape gate:open has not yet validated; gate:open's own question
+    check runs right after and is what actually refuses them. */
 const herdOrigin = (paneRef: string | undefined, session: string, questions: GateQuestion[]): { paneId: string; presentation: "form" | "wait" } | undefined =>
-  paneRef ? { paneId: paneRef, presentation: gatePresentation({ paneId: paneRef, sessionId: session, questions }) } : undefined;
+  paneRef
+    ? { paneId: paneRef, presentation: questions.every(isValidQuestion) ? gatePresentation({ paneId: paneRef, sessionId: session, questions }) : "wait" }
+    : undefined;
 
 /** `shepherd-2` is a collision suffix chat mints, not a name to ask for again. */
 const baseHandleOf = (handle: string): string => handle.replace(/-\d+$/, "");

@@ -131,4 +131,53 @@ describe("gate:ask", () => {
     if (!res.ok) return;
     expect(res.data.subject).toBe("agent:ag-9");
   });
+
+  test("(h) an options-less question with pane + session refuses cleanly (no throw)", async () => {
+    const { handlers } = harness({
+      resolveSubject: () => ({ ok: true, subject: "mr:https://x/1" }),
+    });
+    const res = await handlers["gate:ask"]({
+      questions: [{ id: "q1", label: "go?", multi: false }],
+      subject: "mr:https://x/1", sessionId: "sess-1", paneId: "w1:p1",
+    });
+    expect(res).toEqual({ ok: false, error: "invalid questions" });
+  });
+
+  test("(i) a null question refuses cleanly (no throw)", async () => {
+    const { handlers } = harness({
+      resolveSubject: () => ({ ok: true, subject: "mr:https://x/1" }),
+    });
+    const res = await handlers["gate:ask"]({
+      questions: [null],
+      subject: "mr:https://x/1", sessionId: "sess-1", paneId: "w1:p1",
+    });
+    expect(res).toEqual({ ok: false, error: "invalid questions" });
+  });
+
+  test("(j) multibyte context just over the cap (4097 'é' chars, 8194 bytes) is omitted; the gate still opens", async () => {
+    const { handlers, store } = harness({
+      resolveSubject: () => ({ ok: true, subject: "mr:https://x/1" }),
+    });
+    const res = await handlers["gate:ask"]({
+      questions: twoOptionQuestion(), subject: "mr:https://x/1", context: "é".repeat(4097),
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const row = store.get(res.data.id)!;
+    expect(row.context).toBeNull();
+  });
+
+  test("(k) multibyte context just under the cap (4096 'é' chars, 8192 bytes) keeps its context", async () => {
+    const { handlers, store } = harness({
+      resolveSubject: () => ({ ok: true, subject: "mr:https://x/1" }),
+    });
+    const context = "é".repeat(4096);
+    const res = await handlers["gate:ask"]({
+      questions: twoOptionQuestion(), subject: "mr:https://x/1", context,
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const row = store.get(res.data.id)!;
+    expect(row.context).toBe(context);
+  });
 });

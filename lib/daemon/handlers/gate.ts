@@ -56,7 +56,7 @@ const num = (v: unknown): number | undefined => {
   return Number.isFinite(n) ? n : undefined;
 };
 
-function isValidQuestion(q: unknown): q is GateQuestion {
+export function isValidQuestion(q: unknown): q is GateQuestion {
   const cand = q as Partial<GateQuestion> | null;
   return (
     typeof cand === "object" && cand !== null &&
@@ -308,13 +308,7 @@ async function dispatchGuarantee(row: GateRow, deps: GuaranteeDeps): Promise<voi
   else await runExecutorGuarantee(row, deps);
 }
 
-/** Every gate:* handler but gate:ask, which is added afterward by spread
-    (it composes "gate:open" and needs that key to already exist as a
-    value, not just a declared type). Named so the local `handlers` object
-    below can be annotated against it directly -- an inline return-type
-    literal gives object-literal properties no contextual typing, which
-    silently widens narrow return types like GateAnswerResult's
-    `conflict?: true`. */
+/** Annotates `handlers` below so its literal properties stay contextually typed (narrow return types like GateAnswerResult's `conflict?: true` survive). */
 type GateSiblingHandlers =
   { "gate:open": (payload: unknown) => Promise<CommandResult<"gate:open">> }
   & { "gate:answer": (payload: unknown) => Promise<GateAnswerResult> }
@@ -694,7 +688,7 @@ export function createGateHandlers(
   const gateAsk = async (rawPayload: unknown): Promise<CommandResult<"gate:ask">> => {
     const payload = rawPayload as Commands["gate:ask"]["payload"] | undefined;
     const questions = payload?.questions;
-    if (!Array.isArray(questions) || questions.length === 0) {
+    if (!Array.isArray(questions) || questions.length === 0 || !questions.every(isValidQuestion)) {
       return { ok: false as const, error: "invalid questions" };
     }
     const sessionId = typeof payload?.sessionId === "string" && payload.sessionId.trim() ? payload.sessionId.trim() : undefined;
