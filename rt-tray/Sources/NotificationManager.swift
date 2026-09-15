@@ -9,10 +9,25 @@ import UserNotifications
 class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
 
     private let center = UNUserNotificationCenter.current()
+    /// Set by AppDelegate once it exists (mirrors WindowOpenBridge's own
+    /// back-reference), so a notification click can route a mattstack app
+    /// URL through the shell window instead of always shelling out.
+    weak var appDelegate: AppDelegate?
 
     override init() {
         super.init()
         center.delegate = self
+    }
+
+    /// A mattstack app URL activates that app's tab in the shell window
+    /// (same routing AppDelegate.handleGetURL's open branch uses); anything
+    /// else keeps today's behavior exactly.
+    private func openURL(_ url: URL) {
+        guard let request = OpenLink.request(fromHTTPS: url), let appDelegate else {
+            NSWorkspace.shared.open(url)
+            return
+        }
+        appDelegate.routeNotificationOpen(request)
     }
 
     // MARK: - Permission
@@ -381,12 +396,12 @@ class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
         switch response.actionIdentifier {
         case "OPEN_MR":
             if let urlStr = url, let urlObj = URL(string: urlStr) {
-                NSWorkspace.shared.open(urlObj)
+                openURL(urlObj)
             }
 
         case "OPEN_SURFACE":
             if let urlStr = url, let urlObj = URL(string: urlStr) {
-                NSWorkspace.shared.open(urlObj)
+                openURL(urlObj)
             } else if let paneId = userInfo["paneId"] as? String, !paneId.isEmpty {
                 _ = HerdrBridge.shared.focusPaneById(paneId)
             }
@@ -401,7 +416,7 @@ class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
                 // Focus is best-effort on click; the outcome isn't surfaced.
                 _ = HerdrBridge.shared.focusPaneById(paneId)
             } else if let urlStr = url, let urlObj = URL(string: urlStr) {
-                NSWorkspace.shared.open(urlObj)
+                openURL(urlObj)
             }
 
         case "COPY_APPROVE_COMMAND":
@@ -414,14 +429,14 @@ class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
             // fall back to the MR itself if the composed URL is invalid.
             if let urlStr = url, let urlObj = URL(string: urlStr) {
                 let pipelineURL = URL(string: urlStr + "/pipelines") ?? urlObj
-                NSWorkspace.shared.open(pipelineURL)
+                openURL(pipelineURL)
             }
 
         case "MERGE":
             // TODO: Send merge command to daemon via socket
             // For now, open the MR so user can merge from the UI
             if let urlStr = url, let urlObj = URL(string: urlStr) {
-                NSWorkspace.shared.open(urlObj)
+                openURL(urlObj)
             }
 
         case "SHOW_PROCESSES":
