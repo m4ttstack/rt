@@ -23,6 +23,7 @@ export const MODULE_REGISTRY: Record<string, () => Promise<any>> = {
   "./commands/herd.ts": () => import("../commands/herd.ts"),
   "./commands/home.ts": () => import("../commands/home.ts"),
   "./commands/hooks.ts": () => import("../commands/hooks.ts"),
+  "./commands/mr.ts": () => import("../commands/mr.ts"),
   "./commands/pane.ts": () => import("../commands/pane.ts"),
   "./commands/port.ts": () => import("../commands/port.ts"),
   "./commands/reconciler.ts": () => import("../commands/reconciler.ts"),
