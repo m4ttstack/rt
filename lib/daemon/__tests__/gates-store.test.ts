@@ -551,7 +551,7 @@ describe("unconsumedAnsweredPushes", () => {
 
   test("a self-answered row whose consumedAt is still null (forced) is excluded", () => {
     const s = store();
-    const row = s.open({ subject: "run:r1", kind: "clarify", questions: qs(), nudge: { session: "s1" } }).row;
+    const row = s.open({ subject: "herd:h/j7", kind: "clarify", questions: qs(), nudge: { session: "s1" } }).row;
     s.answer(row.id, { q: "a" }, GATE_BY_PANE, { session: "s1" });
     s.markDelivery(row.id, "delivered");
     // Belt-and-braces case: force consumedAt back to null as if the answer-time

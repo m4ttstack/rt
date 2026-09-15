@@ -551,7 +551,7 @@ describe("retryDeadPanes: answered-unconsumed re-delivery sweep", () => {
 
   test("(e) dead-pane retry behavior is unchanged alongside the second pass", async () => {
     const { push, store, events } = consumeHarness({ deliverOk: false });
-    const row = store.open({ subject: "run:r1", kind: "clarify", questions: qs(), nudge: { session: "sess-1" } }).row;
+    const row = store.open({ subject: "herd:h/j5", kind: "clarify", questions: qs(), nudge: { session: "sess-1" } }).row;
     store.answer(row.id, { q: "a" }, "shepherd");
     await push.onAnswered(store.get(row.id)!);
     expect(store.get(row.id)!.delivery!.outcome).toBe("dead-pane");

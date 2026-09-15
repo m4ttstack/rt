@@ -140,7 +140,10 @@ export interface GateRow {
       self-answered (stamped in the same transaction as the answer) or a
       later `markConsumed` call recorded that it acted on a push. `null`
       until then, so a sweep can tell an answered-but-unread row from a
-      settled one. */
+      settled one. Currently only stamped for herd-subject gates (the
+      self-answer path and `rt herd answer`'s nudged-session read); a
+      non-herd gate with a nudge stays `null` even after its pane
+      reconciles. */
   consumedAt: number | null;
   owner: string | null;
   escalatedAt: number | null;
