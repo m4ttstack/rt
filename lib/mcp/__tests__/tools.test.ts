@@ -4,7 +4,7 @@ import { mcpTools } from "../tools.ts";
 const NAMES = ["gate_answer","gate_list","chat_post","chat_dm","chat_ack","chat_claim","chat_release","mr_reply_thread","herd_gates","herd_ask","herd_answer","herd_report"];
 
 describe("mcpTools", () => {
-  test("roster matches contract C5", () => {
+  test("roster matches the published tool names", () => {
     expect(mcpTools().map((t) => t.name).sort()).toEqual([...NAMES].sort());
   });
 

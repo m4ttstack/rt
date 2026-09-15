@@ -1,8 +1,8 @@
 /**
- * The MCP tool roster (contract C5): one McpToolDef per tool, each a thin
- * wrapper over an existing daemon command. No MCP SDK import here (Task 3
- * owns the transport) and no import of commands/herd.ts or commands/chat.ts
- * (both pull in TUI-adjacent modules that lib/mcp must stay clear of).
+ * The MCP tool roster: one McpToolDef per tool, each a thin wrapper over an
+ * existing daemon command. No MCP SDK import here, and no import of
+ * commands/herd.ts or commands/chat.ts (both pull in TUI-adjacent modules
+ * that lib/mcp must stay clear of).
  */
 import {
   chatAck, chatClaim, chatDm, chatPost, chatRelease,
@@ -36,8 +36,8 @@ function fromResponse<T>(res: RtResponse<T>): ToolResult {
 
 type FieldType = "string" | "number" | "boolean" | "object" | "array";
 
-/** Light shape checks only. Task 3 may not validate input against inputSchema
-    before calling a handler, so a wrong-shaped required field must not throw. */
+/** The server does not validate input against inputSchema, so a wrong-shaped
+    required field must return an error rather than throw. */
 function checkRequired(input: Record<string, unknown>, fields: Array<{ name: string; type: FieldType }>): string | undefined {
   for (const f of fields) {
     const v = input[f.name];
@@ -51,7 +51,7 @@ function checkRequired(input: Record<string, unknown>, fields: Array<{ name: str
 
 const SIGN_IN_HINT = "no signed-in chat session for this pane; run `rt chat sign-in` in bash first";
 
-/** No derived-handle fallback (contract C5): a tool call with no session file is a hard error, unlike the CLI's resolveHandle. */
+/** No derived-handle fallback: a tool call with no session file is a hard error, unlike the CLI's resolveHandle. */
 function requireChatHandle(env: NodeJS.ProcessEnv): { handle: string } | { error: string } {
   const session = readChatSession(env.CLAUDE_CODE_SESSION_ID);
   if (!session) return { error: SIGN_IN_HINT };
