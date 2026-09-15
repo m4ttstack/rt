@@ -4,7 +4,7 @@ import { join } from "path";
 import { tmpdir } from "os";
 import pino from "pino";
 import { createHerdStore, type HerdStore, herdSubject } from "../herd-store.ts";
-import { createGatesStore, type GatesStore } from "../gates-store.ts";
+import { createGatesStore, GATE_BY_PANE, type GatesStore } from "../gates-store.ts";
 import { createGateHandlers } from "../handlers/gate.ts";
 import { createEventsBus } from "../events-bus.ts";
 import { createHerdHandlers, type HerdDeps } from "../handlers/herd.ts";
@@ -430,6 +430,19 @@ describe("herd:resume / status / close", () => {
     store.setJobStatus(herd, "job-a", "at-gate", { lastGate: g });
     gateStore.answer(g, { q: "a" }, "shepherd");
     gateStore.markConsumed(g);
+    const res = await h["herd:status"]({ herd });
+    if (!res.ok) throw new Error(res.error);
+    expect(res.data.jobs[0]).toMatchObject({ lastGateConsumed: true });
+  });
+
+  test("status reports lastGateConsumed true for a released (losing pane) answer even though consumedAt stays null", async () => {
+    const { h, store, gateStore, herd } = await started();
+    store.upsertJob({ herd, name: "job-a", worktree: "/w", handle: "job-a", status: "active", pane: "w9:p1" });
+    const g = gateStore.open({ subject: `herd:${herd}/job-a`, kind: "question", questions: [{ id: "q", label: "?", multi: false, options: ["a"] }], pane: "w9:p1", nudge: { session: "sess-w1" } }).row.id;
+    store.setJobStatus(herd, "job-a", "at-gate", { lastGate: g });
+    gateStore.answer(g, { q: "a" }, "shepherd");
+    gateStore.answer(g, { q: "a" }, GATE_BY_PANE); // losing pane reconciles: released, not consumed
+    expect(gateStore.get(g)!.consumedAt).toBeNull();
     const res = await h["herd:status"]({ herd });
     if (!res.ok) throw new Error(res.error);
     expect(res.data.jobs[0]).toMatchObject({ lastGateConsumed: true });

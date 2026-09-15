@@ -198,7 +198,9 @@ export function createHerdHandlers(deps: HerdDeps) {
         paneStatus: j.pane ? (panes.get(parsePaneRef(j.pane).paneId) ?? null) : null,
         lastGateStatus: last?.status ?? null,
         lastGateDelivery: last?.delivery?.outcome ?? null,
-        lastGateConsumed: last?.status === "answered" && last.nudge ? last.consumedAt !== null : null,
+        // released means a lost answer CAS whose pane already reconciled the
+        // winning answer -- settled the same as a stamped consumedAt.
+        lastGateConsumed: last?.status === "answered" && last.nudge ? last.consumedAt !== null || last.released : null,
       };
     });
     // A dead row is the shepherd's cue to resume, so the live-only query would
