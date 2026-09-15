@@ -64,6 +64,7 @@ async function finished(proc: ReturnType<typeof runRt>) {
 }
 
 const NO_SUBJECT_REFUSAL = "no subject: pass --subject, or run under a recorded run/agent session";
+const ASK_USAGE = "usage: rt gate ask --questions <json> [--context <text>] [--kind <k>] [--subject <s>] [--json]";
 
 describe("rt gate ask CLI e2e", () => {
   let home: string;
@@ -130,5 +131,25 @@ describe("rt gate ask CLI e2e", () => {
     ));
     expect(res.exitCode).toBe(1);
     expect(JSON.parse(res.stdout)).toEqual({ ok: false, error: NO_SUBJECT_REFUSAL });
+  }, 30_000);
+
+  test("malformed --questions JSON: ok:false refusal, exit 1, no daemon contact", async () => {
+    const res = await finished(runRt(
+      ["gate", "ask", "--questions", "not json"],
+      home,
+      { HERDR_PANE_ID: "pane-4", CLAUDE_CODE_SESSION_ID: "sess-4-malformed" },
+    ));
+    expect(res.exitCode).toBe(1);
+    expect(JSON.parse(res.stdout)).toEqual({ ok: false, error: "--questions is not valid JSON: not json" });
+  }, 30_000);
+
+  test("missing --questions: ok:false usage refusal, exit 1, no daemon contact", async () => {
+    const res = await finished(runRt(
+      ["gate", "ask"],
+      home,
+      { HERDR_PANE_ID: "pane-5", CLAUDE_CODE_SESSION_ID: "sess-5-missing-questions" },
+    ));
+    expect(res.exitCode).toBe(1);
+    expect(JSON.parse(res.stdout)).toEqual({ ok: false, error: ASK_USAGE });
   }, 30_000);
 });

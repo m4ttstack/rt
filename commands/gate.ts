@@ -4,6 +4,7 @@
  * commands/events.ts's arg parsing / --json payload / exit code idiom.
  *
  *   rt gate open --subject <s> --kind <k> --questions <json> [--meta <json>] [--agent <id>] [--pane <id>] [--nudge <json>]
+ *   rt gate ask --questions <json> [--context <text>] [--kind <k>] [--subject <s>] [--json]
  *   rt gate answer <id> --answers <json> --by <surface> [--session <id>] [--override]
  *   rt gate wait <id> [--timeout <duration>]     # default: wait forever
  *   rt gate list [--open] [--subject-prefix <p>] [--kind <k>] [--limit <n>] [--cursor <n>]
