@@ -44,12 +44,18 @@ A new checklist row, in the same group as the other tool rows.
 | `required` | `true` |
 | `recheck` | `on-activate` |
 
-It renders when **either** the user is setting up a team right now, **or** a
-team already on this machine declares tracked repos:
+It renders when **either** the user is joining a team right now, **or** a team
+already on this machine declares tracked repos:
 
 ```
-team.mode !== "none" || snapshot.trackingIdentities.length > 0
+team.mode === "join" || snapshot.trackingIdentities.length > 0
 ```
+
+`join` rather than `mode !== "none"`: join is the only pre-Install mode where
+somebody else has already declared repos to clone. A user creating a team
+declares none at that moment, so asking them would be the noise this design
+set out to avoid. If their new team later tracks repos, the second condition
+picks it up.
 
 Both halves are needed, and the reason is the whole reason an earlier draft of
 this design was wrong.
@@ -89,6 +95,14 @@ ready" and "the verb would accept it" can never disagree. A path that exists
 but is a file, or is not writable, reads `needs-you` rather than `ready`,
 because `repos.clone` would fail on it.
 
+`checkRepoRoot` needs more than `exists`: it needs is-a-directory and
+is-writable. Those go on `Probes` as one new `statPath` member beside `exists`,
+not as a default argument reaching `statSync` directly. `probes.ts` states the
+rule: the seam exists "so validators and steps stay pure functions over
+injected state and tests never touch the real machine". A row that took its
+candidate from a faked `p.exists` while stat-ing the developer's real disk
+would be half fake and half real, and no `composePlan` test could control it.
+
 The read of `rt.repoRoots` is wrapped in try/catch. `getSetting` on this key has
 a documented throw path for an authored `${repoRoot}` value, and `lib/repo-index.ts`
 already guards it for that reason. Unguarded here, a throw propagates to
@@ -112,10 +126,17 @@ Install, so it is not in that class and must NOT be added to
 new `lib/setup/repo-root.ts` and lives in exactly one place; leaving a second
 copy behind in `settings.ts` is how the two drift.
 
-`settings.seed` no longer writes `rt.repoRoots` and no longer calls `mkdirp`.
+`settings.seed` no longer *chooses* a repo root and no longer calls `mkdirp`.
 rt stops creating directories on anyone's machine. Detection survives only as
 the *starting directory* the folder panel opens at, which is a suggestion the
 user confirms rather than a decision rt makes.
+
+It gains one new job: promoting the staged answer. If `rt.repoRoots` is unset
+and a staged path exists, it writes that path at machine scope and removes the
+staging file. This is the same shape as `secrets.write` draining staged
+secrets, and it is the only write of `rt.repoRoots` rt performs. The value is
+still the user's; the step is only moving it from the holding pen into the
+store now that the store exists.
 
 `repos.clone`'s existing `skipped` branch already covers "no root configured
 yet" and needs no change. It stays reachable: the GUI answers the row before
@@ -135,10 +156,16 @@ prevent that:
   folder…)` and nothing more. That is pre-existing behavior for every required
   row, not something this feature introduces, and widening it is a separate
   change.
-- `rt setup repo-root set` accepts the path as an argument as well as on stdin.
-  Reading stdin unconditionally would block on EOF at a real terminal, which is
-  why `connectCredential` checks `isTTY()` before any stdin read. This verb
-  follows that precedent: a TTY with no argument prompts, a pipe reads stdin.
+- `rt setup repo-root set <folder>` takes the path as an optional argument. At
+  a TTY it must be supplied; omitting it prints usage rather than prompting.
+  There is deliberately no prompt: the only prompt on the setup deps object is
+  `promptField`, wired to `promptSecret`, which sets raw mode and echoes
+  nothing. Masking a folder path would be absurd, and a worker told to "follow
+  `connectCredential`" would land on exactly that.
+- Stdin is read only when there is no argument and stdin is not a TTY, so a
+  piped `{"root": "..."}` works and a bare terminal invocation cannot hang on
+  EOF. That ordering (check `isTTY()` before any stdin read) is
+  `connectCredential`'s own rule and its comment says why.
 
 ### The action
 
@@ -202,8 +229,49 @@ This verb validates through the same `checkRepoRoot` the row uses:
 - `~` and `${home}` are expanded before validation, matching what the
   `rt.repoRoots` registry entry documents
 
-On success it writes `rt.repoRoots` to the **machine** scope, matching the
-registry entry's `scopes: ["machine"]`.
+### Where the answer lives before Install
+
+The machine store is `~/.mattstack/user/local/<machineKey()>/settings.local.jsonc`,
+and `~/.mattstack/user` **is** the home repo. `setSetting` creates that tree
+with `mkdirSync(..., { recursive: true })` when the file is missing.
+
+On a fresh Mac nothing creates `user/` before Install. The Team screen only
+dry-runs (`rt team join --dry-run`, `rt home init --dry-run`); `restore` is the
+one mode that clones there for real. So a pre-Install write at machine scope
+would:
+
+1. create `~/.mattstack/user/local/<key>/settings.local.jsonc`, making `user/`
+   exist, non-empty, and not a git repo
+2. make `gatherHomeState`'s `userRepoPresent` false
+3. make `buildInitPlan` emit `cloneUserRepo`
+4. run `git clone <url> user` into a non-empty directory, which is fatal
+5. dead-end **Install step 1**, `home.init`, with a Retry that fails identically
+
+There is a second, quieter failure even if that clone succeeded: `machineKey()`
+falls back to the slugified hostname when `~/.mattstack/machine-key` is absent,
+and that file is written by `home init` **after** the clone lands, where it may
+adopt a profile name from the cloned `user/local/`. A pre-Install write would
+land in a profile directory the resolver then never reads.
+
+**So the answer is staged, not written.** `rt setup repo-root set` writes the
+chosen path to `~/.mattstack/rt/` (the runtime directory, outside the home
+repo), following the precedent of `lib/setup/staging.ts`, which exists for
+exactly this reason: "a durable holding pen for values collected during `rt
+setup` before the [store] has a live target". That module is shaped for secrets
+(per-domain files at 0600); a repo root is not a secret, so this is a sibling
+file rather than a reuse of `stageSecret`.
+
+`settings.seed` (step 8, after `home.init` at step 1) promotes the staged value
+into `rt.repoRoots` at **machine** scope, matching the registry's
+`scopes: ["machine"]`, and removes the staging file. By then the home repo
+exists and the machine key is settled, so the write lands where the resolver
+will read it.
+
+The row reads the staged value when the setting is unset, so it goes `ready` as
+soon as the user answers, before Install has run.
+
+This keeps the ordering the design promises ("choose, then clone") while moving
+the write to the only moment it is legal.
 
 **A validation failure exits 2, not 1.** `RtResult.userError` decodes the JSON
 error envelope only at exit 2; at any other non-zero code the app falls through
