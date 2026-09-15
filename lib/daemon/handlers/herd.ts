@@ -6,8 +6,8 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "fs";
 import { join } from "path";
 import type { Logger } from "pino";
-import type { Commands, GateRow, HerdStatusData } from "../../../packages/rt-client/src/commands.ts";
-import { formatPaneRef, parsePaneRef } from "../../../packages/rt-client/src/index.ts";
+import type { Commands, GateQuestion, GateRow, HerdStatusData } from "../../../packages/rt-client/src/commands.ts";
+import { formatPaneRef, gatePresentation, parsePaneRef } from "../../../packages/rt-client/src/index.ts";
 import type { CommandResult } from "./types.ts";
 import type { HerdStore, HerdJobRow } from "../herd-store.ts";
 import { herdPrefix, herdSubject, isValidJobName, mintHerdId } from "../herd-store.ts";
@@ -73,14 +73,17 @@ const str = (v: unknown): string | undefined => (typeof v === "string" && v.leng
     (display, focus/resume, and now `origin.paneId`). */
 const refPane = (bare: string | undefined, hidden: boolean): string | undefined => (bare ? formatPaneRef(bare, hidden ? "bg" : "visible") : undefined);
 
-/** herd:ask/milestone's origin: a resolvable pane means the worker's own
-    turn is blocked on this gate in that pane, so presentation "form" lets
-    gate-push's Escape seam dismiss it on answer/close -- the same seam any
-    other pane-origin form gate gets. No resolvable pane (no --pane, no
-    job.pane on record) means no origin at all, the pre-Task-7 shape, and
-    owner derivation falls back to human as before. */
-const paneOrigin = (paneRef: string | undefined): { paneId: string; presentation: "form" } | undefined =>
-  paneRef ? { paneId: paneRef, presentation: "form" } : undefined;
+/** herd:ask/milestone's origin: a resolvable pane names it, with the shared
+    presentation rule deciding whether the question fits the native form
+    (gate-push's Escape seam dismisses it there) or must wait for an answer
+    from elsewhere. No resolvable pane (no --pane, no job.pane on record)
+    means no origin at all, and owner derivation falls back to human as
+    before. Callers still nudge the worker's session regardless of
+    presentation: gate-push delivers only to nudge.session, and that push is
+    a herd worker's only wake after it ends its turn on `rt herd ask` --
+    herd workers never run `rt gate wait`. */
+const herdOrigin = (paneRef: string | undefined, session: string, questions: GateQuestion[]): { paneId: string; presentation: "form" | "wait" } | undefined =>
+  paneRef ? { paneId: paneRef, presentation: gatePresentation({ paneId: paneRef, sessionId: session, questions }) } : undefined;
 
 /** `shepherd-2` is a collision suffix chat mints, not a name to ask for again. */
 const baseHandleOf = (handle: string): string => handle.replace(/-\d+$/, "");
@@ -464,7 +467,7 @@ export function createHerdHandlers(deps: HerdDeps) {
       const opened = await deps.gate["gate:open"]({
         subject: herdSubject(herdId, name), kind: "question", questions: p!.questions,
         meta: { herd: herdId, job: name }, agent: name, pane: paneRef,
-        nudge: { session }, context: str(p?.context), origin: paneOrigin(paneRef),
+        nudge: { session }, context: str(p?.context), origin: herdOrigin(paneRef, session, p!.questions),
       });
       if (!opened.ok) return opened;
       store.setJobStatus(herdId, name, "at-gate", { lastGate: opened.data.id });
@@ -481,11 +484,12 @@ export function createHerdHandlers(deps: HerdDeps) {
       const posted = await deps.chat["chat:post"]({ room: herd.room, handle: job.handle, body: `${summary}\n\nartifact: ${artifact}`, quiet: true });
       if (!posted.ok) return posted;
       const milestonePaneRef = refPane(str(p?.pane) ?? job.pane ?? undefined, herd.hidden);
+      const milestoneQuestions: GateQuestion[] = [{ id: "decision", label: summary, multi: false, options: [...MILESTONE_OPTIONS] }];
       const opened = await deps.gate["gate:open"]({
         subject: herdSubject(herdId, name), kind: "milestone",
-        questions: [{ id: "decision", label: summary, multi: false, options: [...MILESTONE_OPTIONS] }],
+        questions: milestoneQuestions,
         meta: { herd: herdId, job: name, artifact, message: posted.data.id },
-        agent: name, pane: milestonePaneRef, nudge: { session }, origin: paneOrigin(milestonePaneRef),
+        agent: name, pane: milestonePaneRef, nudge: { session }, origin: herdOrigin(milestonePaneRef, session, milestoneQuestions),
       });
       if (!opened.ok) return opened;
       store.setJobStatus(herdId, name, "at-milestone", { lastGate: opened.data.id });

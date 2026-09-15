@@ -548,6 +548,25 @@ describe("worker verbs", () => {
     expect(gateStore.get(res.data.gate)!.pane).toBe("w9:p1");
   });
 
+  test("ask over the form option cap opens with a wait origin, still nudging the worker", async () => {
+    const { h, gateStore, herd } = await withJob();
+    const overCap = [{ id: "q1", label: "Which?", multi: false, options: ["a", "b", "c", "d", "e"] }];
+    const res = await h["herd:ask"]({ herd, job: "job-a", session: "sess-w1", pane: "w9:p1", questions: overCap });
+    if (!res.ok) throw new Error(res.error);
+    const g = gateStore.get(res.data.gate)!;
+    expect(g.origin).toMatchObject({ paneId: "w9:p1", presentation: "wait" });
+    expect(g.nudge).toEqual({ session: "sess-w1" });
+  });
+
+  test("ask at or under the form option cap keeps a form origin and the nudge", async () => {
+    const { h, gateStore, herd } = await withJob();
+    const res = await h["herd:ask"]({ herd, job: "job-a", session: "sess-w1", pane: "w9:p1", questions: Q });
+    if (!res.ok) throw new Error(res.error);
+    const g = gateStore.get(res.data.gate)!;
+    expect(g.origin).toMatchObject({ paneId: "w9:p1", presentation: "form" });
+    expect(g.nudge).toEqual({ session: "sess-w1" });
+  });
+
   test("ask refuses an unknown job and invalid questions", async () => {
     const { h, herd } = await withJob();
     expect((await h["herd:ask"]({ herd, job: "nope", session: "s", questions: Q })).ok).toBe(false);
@@ -575,6 +594,15 @@ describe("worker verbs", () => {
     expect(g.questions).toEqual([{ id: "decision", label: "spec ready", multi: false, options: ["Approve", "Revise", "Spawn a reviewer"] }]);
     expect(g.meta).toMatchObject({ herd, job: "job-a", artifact: "/w/job-a/spec.md" });
     expect(store.getJob(herd, "job-a")!.status).toBe("at-milestone");
+  });
+
+  test("milestone opens with a form origin (fixed 3-option questions fit the cap)", async () => {
+    const { h, gateStore, herd } = await withJob();
+    const res = await h["herd:milestone"]({ herd, job: "job-a", session: "sess-w1", pane: "w9:p1", artifact: "/w/job-a/spec.md" });
+    if (!res.ok) throw new Error(res.error);
+    const g = gateStore.get(res.data.gate)!;
+    expect(g.origin).toMatchObject({ paneId: "w9:p1", presentation: "form" });
+    expect(g.nudge).toEqual({ session: "sess-w1" });
   });
 
   test("milestone on a hidden herd stores the pane as a bg: ref", async () => {
