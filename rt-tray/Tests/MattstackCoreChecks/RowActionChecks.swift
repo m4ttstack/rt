@@ -60,4 +60,18 @@ let rowActionChecks: [Check] = [
         c.expect(RtResult(exitCode: 0, stdout: Data(), stderr: Data()).userError(redactStderr: true) == nil,
                  "exit 0 is never a user error")
     },
+    Check("choose-folder: collect a directory first, then rt setup repo-root set with the path on stdin") { c in
+        let a = RowAction(type: .chooseFolder, label: "Choose folder…", startAt: "/Users/t/code")
+        c.expectEqual(RowActionDispatcher.dispatch(a, fieldValues: nil, alternative: nil), .chooseFolder(startAt: "/Users/t/code"))
+
+        let d = RowActionDispatcher.dispatch(a, fieldValues: ["root": "/Users/t/dev"], alternative: nil)
+        guard case .rtVerb(let args, let stdin) = d else { return c.fail("expected rtVerb, got \(d)") }
+        c.expectEqual(args, ["setup", "repo-root", "set", "--json"])
+        let decoded = try JSONDecoder().decode([String: String].self, from: stdin ?? Data())
+        c.expectEqual(decoded, ["root": "/Users/t/dev"])
+    },
+    Check("choose-folder with no startAt still collects") { c in
+        let a = RowAction(type: .chooseFolder, label: "Choose folder…", startAt: nil)
+        c.expectEqual(RowActionDispatcher.dispatch(a, fieldValues: nil, alternative: nil), .chooseFolder(startAt: nil))
+    },
 ]
