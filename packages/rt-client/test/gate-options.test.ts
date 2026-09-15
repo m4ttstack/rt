@@ -71,6 +71,11 @@ describe("normalizeGateOptions", () => {
         normalizeGateOptions([{ value: "a", label: "Fix (recommended)", recommended: true }]),
       ).toEqual([{ value: "a", label: "Fix (recommended)" }]);
     });
+    test("an empty label with recommended: true stays empty, not just the suffix", () => {
+      expect(normalizeGateOptions([{ value: "a", label: "", recommended: true }])).toEqual([
+        { value: "a", label: "" },
+      ]);
+    });
   });
 
   describe("word-like label capitalization", () => {

@@ -8,8 +8,9 @@ export interface GateOptionObject {
   label: string;
 }
 
-/** Suffix gate-kit's stripRecommended (packages/gate-kit/src/options.ts)
-    parses off a label to render its own "recommended" badge. This is the
+/** Suffix gate-kit's stripRecommended (mattstack-apps repo,
+    packages/gate-kit/src/options.ts) parses off a label to render its own
+    "recommended" badge. This is the
     wire representation of `recommended: true` -- the flag itself never
     reaches the normalized output. */
 const RECOMMENDED_SUFFIX = " (Recommended)";
@@ -58,7 +59,10 @@ export function normalizeGateOptions(options: GateOption[]): GateOptionObject[] 
       label = String(o);
     }
     label = capitalize(label);
-    if (recommended && !HAS_RECOMMENDED_SUFFIX.test(label)) label += RECOMMENDED_SUFFIX;
+    // An empty label stays empty rather than becoming just the suffix: a
+    // downstream `label || value` fallback (gate-kit) must still see label
+    // as absent, not as a non-empty "(Recommended)" that hides the value.
+    if (recommended && label && !HAS_RECOMMENDED_SUFFIX.test(label)) label += RECOMMENDED_SUFFIX;
     return { value, label };
   });
 }
