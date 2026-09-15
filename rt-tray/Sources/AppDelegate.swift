@@ -396,7 +396,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         }
         if let request = pendingOpen {
             pendingOpen = nil
-            Task { @MainActor in _ = await model.open(request) }
+            Task { @MainActor in
+                let opened = await model.open(request)
+                if !opened {
+                    model.controller?.show()
+                    TrayLog.warn("unknown app", ["app": request.app])
+                }
+            }
         }
         updaterObservation = updater.observe(\.canCheckForUpdates, options: [.initial, .new]) { u, _ in
             DispatchQueue.main.async { TrayState.shared.canCheckForUpdates = u.canCheckForUpdates }
@@ -469,7 +475,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         if let request = OpenLink.request(from: url) ?? OpenLink.request(fromHTTPS: url) {
             Task { @MainActor in
                 guard let windowModel else { pendingOpen = request; return }
-                _ = await windowModel.open(request)
+                let opened = await windowModel.open(request)
+                if !opened {
+                    windowModel.controller?.show()
+                    TrayLog.warn("unknown app", ["app": request.app])
+                }
             }
             return
         }
@@ -487,6 +497,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             NSWorkspace.shared.open(url)
             return
         }
+        // Never the raw string: an unrecognized URL can carry a malformed invite code in its path.
         TrayLog.warn("ignored URL", ["scheme": url.scheme ?? "", "host": url.host ?? ""])
     }
 

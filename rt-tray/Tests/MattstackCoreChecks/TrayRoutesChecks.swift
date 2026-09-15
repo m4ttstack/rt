@@ -192,6 +192,14 @@ let trayRoutesChecks: [Check] = [
         try c.requireEqual(res?.body, #"{"handled":true}"#)
         try c.requireEqual(window.seen, ["https://board.mattstack/mr/1"])
     },
+    Check("POST /window/open reports the decline body when the opener declines") { c in
+        let (r, _, _, _, _, _, window) = makeRoutes()
+        window.handled = false
+        let body = Data(#"{"url":"https://unknown.mattstack/"}"#.utf8)
+        let res = await r.handle(method: "POST", path: "/window/open", body: body)
+        try c.requireEqual(res?.status, 200)
+        try c.requireEqual(res?.body, #"{"handled":false}"#)
+    },
     Check("POST /window/open without url is a 400") { c in
         let (r, _, _, _, _, _, _) = makeRoutes()
         let res = await r.handle(method: "POST", path: "/window/open", body: Data("{}".utf8))

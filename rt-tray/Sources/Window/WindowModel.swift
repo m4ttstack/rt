@@ -26,6 +26,17 @@ final class WindowNavigationDelegate: NSObject, WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         model?.loadFailures[appName] = true
     }
+
+    /// Clears the overlay as soon as a new attempt starts, not just on
+    /// success: a stuck-forever failure state otherwise survives right up
+    /// until the retry completes.
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        model?.loadFailures[appName] = false
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        model?.loadFailures[appName] = false
+    }
 }
 
 @MainActor
