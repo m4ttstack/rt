@@ -126,7 +126,7 @@ describe("staging", () => {
 });
 
 // promoteStagedRepoRoot writes through the real setSetting/getSetting seam,
-// which reads process.env.HOME at call time — so each test gets its own real
+// which reads process.env.HOME at call time... so each test gets its own real
 // HOME rather than sharing the settings store the rest of this file's fakes
 // never touch.
 describe("promoteStagedRepoRoot", () => {
