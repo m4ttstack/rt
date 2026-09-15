@@ -305,6 +305,20 @@ if [ "$IS_DEV" != true ]; then
     fi
 fi
 
+# ─── Embed the gate-fork hook script (Contents/Helpers/gate-fork.sh) ─────────
+# A static checked-in script, not a build product like rt-ui, so it embeds in
+# every bundle (dev and prod alike): resolveGateForkHookPath's bundle branch
+# (lib/agent-hooks.ts) is the only way a compiled binary finds it.
+GATE_FORK_SRC="$REPO_DIR/scripts/hooks/gate-fork.sh"
+if [ -f "$GATE_FORK_SRC" ]; then
+    cp "$GATE_FORK_SRC" "$CONTENTS/Helpers/gate-fork.sh"; chmod +x "$CONTENTS/Helpers/gate-fork.sh"
+    xattr -cr "$CONTENTS/Helpers/gate-fork.sh" 2>/dev/null || true
+    HELPER_ENTITLEMENTS+=("$CONTENTS/Helpers/gate-fork.sh	none")
+    echo "  ✓ Embedded gate-fork.sh"
+else
+    echo "  ✗ gate-fork.sh not found at $GATE_FORK_SRC"; exit 1
+fi
+
 # The privileged proxy helper would belong here, beside rt-ui. It is built
 # after the helper signing pass instead (see "Build + embed the privileged
 # proxy helper" below): its pins describe the payload it copies into a
