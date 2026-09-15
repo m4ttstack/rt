@@ -60,8 +60,8 @@ tool list (name-only until loaded), so resident context cost is one line
 per tool.
 
 Tool roster: gate_ask, gate_answer, gate_list; chat_post, chat_dm,
-chat_ack, chat_claim; mr_reply_thread, mr_comment_inline; herd_gates,
-herd_ask, herd_answer, herd_report; mr_map.
+chat_ack, chat_claim, chat_release; mr_reply_thread, mr_comment_inline;
+herd_gates, herd_ask, herd_answer, herd_report; mr_map.
 
 `gate wait` stays CLI in every context: the park-and-be-reinvoked contract
 (background bash task completion re-invokes the pane) is harness-level and
@@ -75,7 +75,8 @@ a synchronous tool call cannot express it.
   skills but not plugin caches") with the true fact: plugins ARE shared
   (claude-swap session.py SHARED_ITEMS); missing-plugin symptoms are real
   and worth chasing.
-- The six engines' resume recipe: replace the manual
+- The seven engines' resume recipe (work, ship, watch-ci, sync-open-mrs,
+  review, self-review, receive-review): replace the manual
   `~/.mattstack/runs/<repo>/` directory walk with
   `rt runs --repo <name> --json` plus a work_type/status filter sentence.
 - Collapse the sixteen "each tool call is a fresh shell: prefix every rt
@@ -103,8 +104,12 @@ a synchronous tool call cannot express it.
   per the startup bench gate), stdio MCP over the typed Commands map.
 - mattstack plugin declares the server (`command: rt`, `args: [mcp,
   serve]`).
-- gate-fork hook coverage extension: board- and shepherd-launched panes
-  also get RT_GATE_SUBJECT stamped and the hook injected.
+- gate-fork hook coverage extension. The shepherd half is repo-tools
+  (herd spawns route through the daemon's own agent:start). The BOARD
+  half is a mattstack-apps change: the board launches wrapper panes via
+  agent:start with NO subject (apps/board/src/agent-launch.ts:39-50),
+  and hook injection is gated on a caller-passed subject, so the board
+  must stamp its mr subject at launch. That half lands with L11.
 
 ### Phase 3: satellites
 
@@ -156,15 +161,17 @@ Wave 1, independent:
 | L5 | mr:comment-inline daemon command | repo-tools |
 | L6 | mr map verb | repo-tools |
 | L7 | rt herd brief | repo-tools + shepherdr engine |
-| L8 | gate-fork hook coverage extension | repo-tools |
+| L8 | gate-fork hook coverage extension (shepherd half; the board half is L11's) | repo-tools |
 
 Wave 2, after L2+L3 merge and a daemon restart: L9 `rt gate ask` CLI; L10
-gate_ask tool into the L4 server; L11 board convergence.
+gate_ask AND mr_comment_inline tools into the L4 server (the mr tool waits
+on L5); L11 board convergence, including the board-side subject stamping
+from L8's board half.
 
 Wave 3, as each mechanism goes live: L12 gate-protocol rewrite +
 recompiles (needs L9/L10); L13 rt-chat trim (needs L4 live); L14
-gitlab-mr-threads absorption (needs L5); L15 board wrapper skill text
-(needs L11).
+gitlab-mr-threads absorption (needs L5 AND its L10 tool); L15 board
+wrapper skill text (needs L11).
 
 Merge-collision surfaces, managed by sequencing: L2/L3 both touch
 rt-client and handlers/gate.ts (merge L3 first). commands.ts /
