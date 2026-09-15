@@ -90,9 +90,10 @@ left as-is or reduced to a pointer here.
    the only thing that finds them cheaply... a tag that fails halfway has already
    re-signed the app and cost the user their TCC grants.
 
-   Since RT-149, also check the rehearsal's built zip carries
-   `Contents/Helpers/gate-fork.sh` (executable). The copy step lives in
-   build.sh's Helpers pass and has no automated coverage of its own.
+   check-bundle.sh (run automatically by this workflow) asserts
+   `Contents/Helpers/gate-fork.sh` exists and is executable, so a missing or
+   non-executable copy already fails the rehearsal loudly; no separate manual
+   check is needed here.
 
    Then walk the rehearsal's own artifact through the local clean room. GitHub
    runners cannot nest virtualization, so this leg runs only on this machine:
