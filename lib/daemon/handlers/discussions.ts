@@ -18,15 +18,53 @@
  * about its shape.
  */
 
-import { NoteMutator } from "@mattstack/glance";
+import { NoteMutator, type TextPosition } from "@mattstack/glance";
 import { decodeRepo } from "../identity-decoder.ts";
 import { getRepoContext, providerRequestHook } from "../freshness.ts";
 import { loadSecrets } from "../../linear.ts";
 import { refreshDiscussions, type BroadcastFn } from "../discussions-store.ts";
 import { getDiscussionsFileStore } from "../discussions-file-store.ts";
 import { grants, loadRepoTracking } from "../../repo-tracking.ts";
+import { lazyChildLogger } from "../../daemon-logger.ts";
 import type { HandlerContext, HandlerMap, CommandResult } from "./types.ts";
 import type { Commands } from "../../../packages/rt-client/src/commands.ts";
+
+const log = lazyChildLogger("discussions");
+
+/** The subset of NoteMutator the inline-comment repair flow needs; test seam. */
+type CommentInlineMutator = Pick<NoteMutator, "fetchDiffRefs" | "createPositionedDiscussion" | "deleteNote">;
+
+/**
+ * Injectable plumbing for `mr:comment-inline`. Every field defaults to the
+ * real daemon plumbing (same as `discussions:reply` uses inline); tests
+ * override only what a case needs. Not used by any other handler in this
+ * file.
+ */
+export interface DiscussionHandlerSeams {
+  repoContext?: (repoName: string, repoPath?: string) => Promise<{ provider: { baseURL: string }; projectPath: string; projectId: number }>;
+  gitlabToken?: () => Promise<string | undefined>;
+  mutator?: (baseURL: string, token: string) => CommentInlineMutator;
+  refresh?: (repoName: string, iid: number) => Promise<unknown>;
+}
+
+function buildTextPosition(
+  payload: { path: string; line: number; oldPath?: string; oldLine?: number },
+  diffRefs: { base_sha: string; start_sha: string; head_sha: string },
+): TextPosition {
+  const position: TextPosition = {
+    ...diffRefs,
+    position_type: "text",
+    new_path: payload.path,
+    new_line: payload.line,
+  };
+  if (typeof payload.oldLine === "number") {
+    position.old_line = payload.oldLine;
+    position.old_path = payload.oldPath ?? payload.path;
+  } else if (typeof payload.oldPath === "string") {
+    position.old_path = payload.oldPath;
+  }
+  return position;
+}
 
 /** Discussions are stable per push; 2min TTL keeps reads fast without going stale. */
 const DISCUSSIONS_TTL_MS = 2 * 60 * 1000;
@@ -68,13 +106,19 @@ export async function fetchMrDiffs(
 export function createDiscussionHandlers(
   ctx: Pick<HandlerContext, "cache" | "repoIndex">,
   broadcast: BroadcastFn,
+  seams: DiscussionHandlerSeams = {},
 ): { "discussions:read": (payload: unknown) => Promise<{ ok: true; data: Commands["discussions:read"]["data"] } | { ok: false; error: string }> }
   & { "discussions:refresh": (payload: unknown, signal?: AbortSignal) => Promise<CommandResult<"discussions:refresh">> }
   & { "discussions:resolve": (payload: unknown, signal?: AbortSignal) => Promise<CommandResult<"discussions:resolve">> }
   & { "discussions:diffs": (payload: unknown, signal?: AbortSignal) => Promise<CommandResult<"discussions:diffs">> }
   & { "discussions:reply": (payload: unknown, signal?: AbortSignal) => Promise<CommandResult<"discussions:reply">> }
+  & { "mr:comment-inline": (payload: unknown, signal?: AbortSignal) => Promise<CommandResult<"mr:comment-inline">> }
   & HandlerMap {
   const deps = { ctx, broadcast };
+  const repoContextFn = seams.repoContext ?? getRepoContext;
+  const gitlabTokenFn = seams.gitlabToken ?? (async () => (await loadSecrets()).gitlabToken);
+  const mutatorFn = seams.mutator ?? ((baseURL: string, token: string) => new NoteMutator(baseURL, token, providerRequestHook()));
+  const refreshFn = seams.refresh ?? ((repoName: string, iid: number) => refreshDiscussions(deps, repoName, iid));
 
   return {
     // `force` is a legacy daemon-client-only escape hatch (lib/daemon-client.ts),
@@ -222,6 +266,85 @@ export function createDiscussionHandlers(
         await mutator.createNote(repoCtx.projectId, iid, body, discussionId);
         const res = await refreshDiscussions(deps, repoName, iid);
         return { ok: true, data: { discussions: res.discussions, fetchedAt: res.fetchedAt } };
+      } catch (err) {
+        return { ok: false, error: String(err) };
+      }
+    },
+
+    "mr:comment-inline": async (payload) => {
+      const p = payload as {
+        repoName?: string; iid?: number; body?: string; path?: string; line?: number;
+        oldPath?: string; oldLine?: number;
+      } | undefined;
+      const iid  = p?.iid;
+      const body = p?.body;
+      const path = p?.path;
+      const line = p?.line;
+
+      if (!p?.repoName || typeof iid !== "number" || typeof body !== "string" || !body.trim() ||
+          typeof path !== "string" || !path ||
+          typeof line !== "number" || !Number.isInteger(line) || line <= 0) {
+        return { ok: false, error: "missing repoName/iid/body/path/line" };
+      }
+      const decoded = decodeRepo(payload);
+      if (!decoded.ok) {
+        return { ok: false, error: "repo must be a serialized identity" };
+      }
+      const repoName = decoded.repo;
+      const position = { path, line, oldPath: p?.oldPath, oldLine: p?.oldLine };
+
+      const repoPath = ctx.repoIndex()[repoName];
+      try {
+        const repoCtx = await repoContextFn(repoName, repoPath);
+        const token = await gitlabTokenFn();
+        if (!token) return { ok: false, error: "no gitlabToken in secrets" };
+        const mutator = mutatorFn(repoCtx.provider.baseURL, token);
+
+        const postOnce = async () => {
+          const diffRefs = await mutator.fetchDiffRefs(repoCtx.projectId, iid);
+          return mutator.createPositionedDiscussion(repoCtx.projectId, iid, body, buildTextPosition(position, diffRefs));
+        };
+
+        const first = await postOnce();
+        const firstNote = first.notes[0];
+        if (!firstNote) return { ok: false, error: "GitLab created a discussion with no notes" };
+
+        if (firstNote.type === "DiffNote") {
+          void refreshFn(repoName, iid).catch((err) =>
+            log.warn({ err, repoName, iid }, "mr:comment-inline: post-comment discussions refresh failed"));
+          return { ok: true, data: { discussionId: first.id, noteId: firstNote.id, verified: true } };
+        }
+
+        // The first note landed as a general note (GitLab silently dropped the
+        // position). It must be deleted before the retry: leaving it would
+        // strand a duplicate, unpositioned copy of the comment on the MR.
+        try {
+          await mutator.deleteNote(repoCtx.projectId, iid, firstNote.id);
+        } catch (err) {
+          return { ok: false, error: `could not delete stray note ${firstNote.id}: ${String(err)}` };
+        }
+
+        const second = await postOnce();
+        const secondNote = second.notes[0];
+        if (!secondNote) return { ok: false, error: "GitLab created a retry discussion with no notes" };
+
+        if (secondNote.type === "DiffNote") {
+          void refreshFn(repoName, iid).catch((err) =>
+            log.warn({ err, repoName, iid }, "mr:comment-inline: post-comment discussions refresh failed"));
+          return { ok: true, data: { discussionId: second.id, noteId: secondNote.id, verified: true } };
+        }
+
+        try {
+          await mutator.deleteNote(repoCtx.projectId, iid, secondNote.id);
+        } catch (err) {
+          return { ok: false, error: `could not delete stray note ${secondNote.id}: ${String(err)}` };
+        }
+
+        return {
+          ok: false,
+          error: `GitLab dropped the position twice (note ${firstNote.id} type ${firstNote.type}, `
+            + `note ${secondNote.id} type ${secondNote.type}); both general notes were deleted`,
+        };
       } catch (err) {
         return { ok: false, error: String(err) };
       }
