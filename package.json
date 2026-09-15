@@ -32,6 +32,7 @@
   },
   "dependencies": {
     "@mattstack/glance": "^0.24.0",
+    "@modelcontextprotocol/sdk": "1.30.0",
     "cli-highlight": "^2.1.11",
     "jsonc-parser": "^3.3.1",
     "pino": "^10.3.1",
