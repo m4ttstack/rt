@@ -120,6 +120,28 @@ describe("mcpTools", () => {
       expect(Object.values(capturedPayload ?? {})).not.toContain("agent:should-be-ignored");
       expect(JSON.stringify(capturedPayload)).not.toContain("RT_GATE_SUBJECT");
     });
+
+    test("with no input subject, RT_GATE_SUBJECT is still never read (contract C13)", async () => {
+      let capturedPayload: Record<string, unknown> | undefined;
+      mock.module("../../../packages/rt-client/src/transport.ts", () => ({
+        ...realTransport,
+        rtCommand: async (cmd: string, payload: Record<string, unknown>) => {
+          if (cmd === "gate:ask") {
+            capturedPayload = payload;
+            return { ok: true, data: { id: "g1", presentation: "form", subject: "daemon-resolved" } };
+          }
+          throw new Error(`unexpected rtCommand("${cmd}")`);
+        },
+      }));
+      const tool = mcpTools().find((t) => t.name === "gate_ask")!;
+      const env = { RT_GATE_SUBJECT: "agent:should-be-ignored" } as NodeJS.ProcessEnv;
+      const res = await tool.handler(
+        { questions: [{ id: "q1", label: "Proceed?", multi: false, options: ["yes", "no"] }] },
+        env,
+      );
+      expect(res.ok).toBe(true);
+      expect(capturedPayload?.subject).toBeUndefined();
+    });
   });
 
   test("roster contains gate_ask", () => {
