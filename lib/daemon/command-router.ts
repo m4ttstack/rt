@@ -35,18 +35,19 @@ import { createReposHandlers } from "./handlers/repos.ts";
 import { reconcileFreshness, getFreshnessSnapshot } from "./freshness.ts";
 import { wrapWithDemand } from "./demand-tracker.ts";
 import type { SystemProcessScanner } from "./system-process-scanner.ts";
-import { findRun, findRunningRunByWorktree } from "../runs/store.ts";
+import { findRun, findRunningRunByWorktree, findRunsBySession } from "../runs/store.ts";
 import { presenceForSession } from "../state/presence-store.ts";
 import { resolveInbox } from "../claude-registry.ts";
 import { probeInboxReachability } from "./inbox.ts";
 import { herdrRequest } from "../herdr/client.ts";
 import { defaultHerdrRunner } from "../agent-herdr.ts";
+import { resolveGateSubject } from "./gate-subject.ts";
 import type { EventsBus } from "./events-bus.ts";
 import type { GatesStore } from "./gates-store.ts";
 import type { HerdStore } from "./herd-store.ts";
 import type { GatePush } from "./gate-push.ts";
 import type { Reconciler } from "./reconciler.ts";
-import type { AgentRecord } from "../state/agents-store.ts";
+import { getAgent, type AgentRecord } from "../state/agents-store.ts";
 import type { HomeSnapshotHandle } from "./home-snapshot.ts";
 import type { TeamSnapshotsHandle } from "./team-snapshots.ts";
 import type { BgService } from "./bg-service.ts";
@@ -152,6 +153,14 @@ export function buildRoutedHandlers(opts: {
     reconciler: opts.reconciler,
     resumeAgent: opts.resumeAgent,
     getAgentRecord: opts.getAgentRecord,
+    resolveSubject: (args) => resolveGateSubject({
+      runsBySession: (sid) => findRunsBySession(sid).map((m) => ({
+        runId: m.summary.id,
+        status: m.summary.status,
+        worktree: m.summary.status === "running" ? (findRun(m.summary.id)?.fields.find((f) => f.key === "worktree")?.value ?? null) : null,
+      })),
+      agentBySession: (sid) => getAgent(sid, opts.stateDb),
+    }, args),
   });
   const herdHandlers = createHerdHandlers({
     store: opts.herdStore,
