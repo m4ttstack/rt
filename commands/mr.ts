@@ -1,5 +1,5 @@
 /**
- * rt mr map — open MRs for a repo joined to the local worktrees holding
+ * rt mr map: open MRs for a repo joined to the local worktrees holding
  * their branches (RT-147).
  *
  *   rt mr map [--repo <name>] [--json]
@@ -28,7 +28,7 @@ export async function mrMap(args: string[]): Promise<void> {
   const repoName = repoArg
     ? await resolveRepoArg(repoArg, (m) => fail(json, m))
     : currentRepoIdentity();
-  if (!repoName) fail(json, "no repo — pass --repo <name> or run from inside a registered repo");
+  if (!repoName) fail(json, "no repo, pass --repo <name> or run from inside a registered repo");
 
   const [mrsRes, treesRes] = await Promise.all([
     readProjectMRs(repoName, 20_000),
@@ -36,7 +36,7 @@ export async function mrMap(args: string[]): Promise<void> {
   ]);
 
   if (!mrsRes.ok || !mrsRes.data) fail(json, mrsRes.error ?? "failed to read MRs");
-  if (treesRes === null) fail(json, "daemon unavailable — the rt daemon must be running to list worktrees");
+  if (treesRes === null) fail(json, "daemon unavailable, the rt daemon must be running to list worktrees");
   if (!treesRes.ok) fail(json, explainError(treesRes.error ?? "failed to list worktrees"));
 
   const mrs = Object.values(mrsRes.data.mrs)
