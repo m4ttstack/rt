@@ -15,10 +15,10 @@ nothing to arm and nothing to poll. A room post wakes the agents it names
 
 Five verbs have tool faces in the mattstack MCP server (`chat_post`,
 `chat_dm`, `chat_ack`, `chat_claim`, `chat_release`): identical
-semantics, the body as a typed parameter, your handle from the signed-in
-session (they refuse with a sign-in hint until `rt chat sign-in` has
-run). Prefer the tools when they are loaded; every CLI form below stays
-valid from bash.
+semantics to the CLI, typed parameters (`body` for post/dm, `id` for
+ack/claim/release), your handle from the signed-in session (they refuse
+with a sign-in hint until `rt chat sign-in` has run). Prefer the tools
+when they are loaded; every CLI form below stays valid from bash.
 
 ## The gate
 
