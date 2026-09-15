@@ -92,6 +92,12 @@ function oversizedLabel(questions: GateQuestion[]): string | null {
 }
 
 const ORIGIN_STRING_KEYS: ReadonlySet<string> = new Set(["paneId", "tabId", "runId", "worktree", "surface"]);
+
+/** gate:ask's own derived fields; a caller-supplied origin passthrough must
+    never override them (would let a raw payload impersonate a pane or run
+    the ceremony didn't actually resolve). `worktree` is deliberately absent:
+    a passthrough worktree survives when subject resolution produced none. */
+const CEREMONY_ORIGIN_KEYS: ReadonlySet<string> = new Set(["presentation", "paneId", "runId"]);
 const ORIGIN_FIELD_CAP_BYTES = 1024;
 
 /** Returns an error message on an invalid origin, null when it validates.
@@ -706,15 +712,22 @@ export function createGateHandlers(
     let context = typeof payload?.context === "string" ? payload.context : undefined;
     if (context !== undefined && Buffer.byteLength(context, "utf8") > CONTEXT_CAP_BYTES) context = undefined;
 
-    const origin: GateOrigin = { presentation };
-    if (paneId) origin.paneId = paneId;
-    if (resolved.subject.startsWith("run:")) origin.runId = resolved.subject.slice("run:".length);
-    if (resolved.runWorktree) origin.worktree = resolved.runWorktree;
+    const rawOrigin = isPlainObject(payload?.origin) ? (payload!.origin as Record<string, unknown>) : {};
+    const passthroughOrigin = Object.fromEntries(
+      Object.entries(rawOrigin).filter(([key]) => !CEREMONY_ORIGIN_KEYS.has(key)),
+    );
+    const derivedOrigin: GateOrigin = { presentation };
+    if (paneId) derivedOrigin.paneId = paneId;
+    if (resolved.subject.startsWith("run:")) derivedOrigin.runId = resolved.subject.slice("run:".length);
+    if (resolved.runWorktree) derivedOrigin.worktree = resolved.runWorktree;
+    const origin: GateOrigin = { ...passthroughOrigin, ...derivedOrigin } as GateOrigin;
 
     const opened = await handlers["gate:open"]({
       subject: resolved.subject,
       kind: typeof payload?.kind === "string" && payload.kind.trim() ? payload.kind.trim() : "question",
       questions,
+      ...(isPlainObject(payload?.meta) ? { meta: payload!.meta } : {}),
+      ...(typeof payload?.agent === "string" && payload.agent.trim() ? { agent: payload.agent.trim() } : {}),
       ...(context !== undefined ? { context } : {}),
       ...(paneId ? { pane: paneId } : {}),
       ...(presentation === "form" && sessionId ? { nudge: { session: sessionId } } : {}),
