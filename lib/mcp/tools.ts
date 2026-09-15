@@ -60,6 +60,11 @@ function requireChatHandle(env: NodeJS.ProcessEnv): { handle: string } | { error
 
 const HERD_ENV_ERROR = "HERD_ID and HERD_JOB are not set; this verb runs inside a herd worker pane";
 
+/** Matches lib/daemon-client.ts's DISCUSSIONS_TIMEOUT_MS: a GitLab post is
+    slower than rtCommand's 15s default, and a client-side abort here would
+    still leave the daemon posting, so a retry would duplicate the comment. */
+const MR_REPLY_TIMEOUT_MS = 30_000;
+
 function requireJobEnv(env: NodeJS.ProcessEnv): { herd: string; job: string } | { error: string } {
   const herd = env.HERD_ID, job = env.HERD_JOB;
   if (!herd || !job) return { error: HERD_ENV_ERROR };
@@ -294,7 +299,7 @@ export function mcpTools(): McpToolDef[] {
           iid: input.iid as number,
           discussionId: input.discussionId as string,
           body: input.body as string,
-        });
+        }, { timeoutMs: MR_REPLY_TIMEOUT_MS });
         return fromResponse(res);
       },
     },
