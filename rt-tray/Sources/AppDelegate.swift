@@ -76,6 +76,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     /// termination (Cmd-Q, Dock right-click Quit) is intercepted by
     /// `applicationShouldTerminate` and turned into a window close instead.
     private var quitConfirmed = false
+    /// Set by `NSWorkspace.willPowerOffNotification`, an independent signal
+    /// from the quit AppleEvent's `kAEQuitReason` parameter -- which is
+    /// documented as optional, so a genuine shutdown/restart/logout whose
+    /// event omits it would otherwise fall through to the window-close
+    /// path and visibly block the OS ("app is preventing logout/shutdown").
+    /// This backstop trusts the session itself, not just the reason code.
+    private var systemSessionEnding = false
 
     // MARK: - Lifecycle
 
@@ -144,6 +151,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             self, selector: #selector(showKeyboardConflictWindow), name: .showKeyboardConflict, object: nil)
         NotificationCenter.default.addObserver(
             self, selector: #selector(showMattstackWindow), name: .showMattstackWindow, object: nil)
+
+        // Independent backstop for applicationShouldTerminate: the quit
+        // AppleEvent's kAEQuitReason is documented optional, so a real
+        // power-off/restart whose event omits it would otherwise fall
+        // through to the window-close path and visibly block the OS.
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self, selector: #selector(handleSystemSessionEnding), name: NSWorkspace.willPowerOffNotification, object: nil)
 
         // Setup / Settings surfaces, posted by the gear menu and the Done screen
         NotificationCenter.default.addObserver(self, selector: #selector(showSetupStatus), name: .rtShowSetupStatus, object: nil)
@@ -387,7 +401,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     /// shutdown/restart/logout are read from the quit AppleEvent's reason
     /// and always honored: this interception must never block the OS.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        if quitConfirmed { return .terminateNow }
+        if quitConfirmed || systemSessionEnding { return .terminateNow }
         let reasonCode = NSAppleEventManager.shared().currentAppleEvent?
             .paramDescriptor(forKeyword: AEKeyword(kAEQuitReason))?.typeCodeValue
         if QuitReason.isSystemInitiated(reasonCode: reasonCode) {
@@ -570,6 +584,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     }
 
     @objc private func showMattstackWindow() { Task { @MainActor in windowModel?.toggleVisibility() } }
+    @objc private func handleSystemSessionEnding() { systemSessionEnding = true }
     @objc private func showSetupStatus() { Task { @MainActor in coordinator?.openSetupStatus() } }
     @objc private func showSettings() { Task { @MainActor in coordinator?.showSettings() } }
     @objc private func showUninstall() { Task { @MainActor in coordinator?.showSettings(pane: .uninstall) } }
