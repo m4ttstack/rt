@@ -136,6 +136,12 @@ export interface GateRow {
   nudge: { session: string } | null;
   delivery: { outcome: "delivered" | "dead-pane" | "confirmed" | "stuck"; at: number } | null;
   released: boolean;
+  /** Set once the nudged pane has provably read the answer: either it
+      self-answered (stamped in the same transaction as the answer) or a
+      later `markConsumed` call recorded that it acted on a push. `null`
+      until then, so a sweep can tell an answered-but-unread row from a
+      settled one. */
+  consumedAt: number | null;
   owner: string | null;
   escalatedAt: number | null;
   /** Set by answer-time execution handling: an answered gate whose executor

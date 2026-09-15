@@ -438,6 +438,73 @@ describe("gates store (ownership)", () => {
   });
 });
 
+describe("gates store (consumedAt)", () => {
+  test("markConsumed stamps once and is idempotent", () => {
+    const s = store();
+    const { row } = s.open({ subject: "run:r1", kind: "clarify", questions: qs(), nudge: { session: "s1" } });
+    expect(s.get(row.id)!.consumedAt).toBeNull();
+    expect(s.markConsumed(row.id, 1000)).toBe(true);
+    expect(s.get(row.id)!.consumedAt).toBe(1000);
+    s.markConsumed(row.id, 2000);
+    expect(s.get(row.id)!.consumedAt).toBe(1000);
+    expect(s.markConsumed("gt-missing")).toBe(false);
+  });
+
+  test("a self-answer by the nudged session is consumed at answer time", () => {
+    const s = store();
+    const { row } = s.open({ subject: "run:r2", kind: "clarify", questions: qs(), nudge: { session: "s1" } });
+    s.answer(row.id, { q: "a" }, GATE_BY_PANE, { session: "s1" });
+    expect(typeof s.get(row.id)!.consumedAt).toBe("number");
+  });
+
+  test("a remote answer does not consume", () => {
+    const s = store();
+    const { row } = s.open({ subject: "run:r3", kind: "clarify", questions: qs(), nudge: { session: "s1" } });
+    s.answer(row.id, { q: "a" }, "human", { session: "shepherd-sess" });
+    expect(s.get(row.id)!.consumedAt).toBeNull();
+  });
+
+  test("a gates.db predating consumedAt backfills answered rows on open", () => {
+    const path = tmp("gates.db");
+    const raw = new Database(path, { create: true });
+    raw.exec(`
+      CREATE TABLE gates (
+        id            TEXT PRIMARY KEY,
+        subject       TEXT NOT NULL,
+        kind          TEXT NOT NULL,
+        questions     TEXT NOT NULL,
+        meta          TEXT,
+        status        TEXT NOT NULL,
+        answer        TEXT,
+        openedAt      INTEGER NOT NULL,
+        parkedAt      INTEGER,
+        closedAt      INTEGER,
+        closedReason  TEXT,
+        supersededBy  TEXT,
+        agent         TEXT,
+        pane          TEXT,
+        nudge         TEXT,
+        delivery      TEXT,
+        released      INTEGER NOT NULL DEFAULT 0,
+        context       TEXT,
+        origin        TEXT,
+        owner         TEXT,
+        escalatedAt   INTEGER,
+        execution     TEXT,
+        executor      TEXT
+      );
+    `);
+    raw.exec(`
+      INSERT INTO gates (id, subject, kind, questions, meta, status, answer, openedAt, released)
+      VALUES ('gt-1', 'run:r1', 'clarify', '[]', NULL, 'answered', '{"answers":{},"by":"shepherd","answeredAt":5000}', 1000, 0)
+    `);
+    raw.close();
+    const s = createGatesStore({ dbPath: path, log });
+    expect(s.get("gt-1")!.consumedAt).toBe(5000);
+    s.close_();
+  });
+});
+
 test("deadPanePushes lists answered nudged rows whose last push was dead-pane and are unreleased; never closed ones", () => {
   const s = store();
   const a = s.open({ subject: "herd:h/j1", kind: "question", questions: qs(), nudge: { session: "w1" } }).row.id;

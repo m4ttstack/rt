@@ -70,6 +70,9 @@ export interface GatesStore {
       close(), never this). */
   closeAnswered(id: string, reason: "abandoned"): { ok: true } | { ok: false; reason: "not-found" | "not-answered" };
   markDelivery(id: string, outcome: "delivered" | "dead-pane" | "confirmed" | "stuck"): void;
+  /** CAS on IS NULL, so an already-consumed row keeps its first stamp.
+      Returns whether the row exists, not whether this call stamped it. */
+  markConsumed(id: string, at?: number): boolean;
   /** `null` clears the stamp (row goes back to no `execution` field on read). */
   markExecution(id: string, execution: "unassigned" | null): void;
   /** `null` clears the stamp (row goes back to no `executor` field on read). */
@@ -121,6 +124,7 @@ interface GateColumns {
   escalatedAt: number | null;
   execution: string | null;
   executor: string | null;
+  consumedAt: number | null;
 }
 
 interface SubscriptionColumns {
@@ -170,9 +174,26 @@ function rowToGate(row: GateColumns): GateRow {
     origin: row.origin == null ? null : JSON.parse(row.origin),
     owner: row.owner ?? null,
     escalatedAt: row.escalatedAt ?? null,
+    consumedAt: row.consumedAt ?? null,
     ...(row.execution === "unassigned" ? { execution: row.execution } : {}),
     ...(row.executor != null ? { executor: row.executor as ExecutorState } : {}),
   };
+}
+
+/** Session precedence: an explicit answer.session decides on its own, so a
+    foreign surface that also stamps `by: "pane"` can never suppress the
+    nudged pane's own reconciliation. The `by === "pane"` fallback stands
+    only for a writer that supplied no session (the board status-bin case). */
+export function answeredBySession(row: Pick<GateRow, "answer">, session: string | undefined): boolean {
+  const answer = row.answer;
+  if (!answer || !session) return false;
+  return answer.session === session;
+}
+
+export function answeredByNudgedPane(row: Pick<GateRow, "answer" | "nudge">): boolean {
+  if (!row.answer) return false;
+  if (!row.answer.session) return row.answer.by === GATE_BY_PANE;
+  return answeredBySession(row, row.nudge?.session);
 }
 
 /** Same reasoning as events-bus.ts's quarantineEventsDb: a corrupt gates.db
@@ -259,7 +280,8 @@ export function createGatesStore(opts: {
       owner         TEXT,
       escalatedAt   INTEGER,
       execution     TEXT,
-      executor      TEXT
+      executor      TEXT,
+      consumedAt    INTEGER
     );
     CREATE INDEX IF NOT EXISTS idx_gates_subject_kind_status ON gates(subject, kind, status);
 
@@ -284,6 +306,15 @@ export function createGatesStore(opts: {
     if (!gateCols.has(col)) db.exec(`ALTER TABLE gates ADD COLUMN ${col} TEXT;`);
   }
   if (!gateCols.has("escalatedAt")) db.exec("ALTER TABLE gates ADD COLUMN escalatedAt INTEGER;");
+  if (!gateCols.has("consumedAt")) {
+    db.exec("ALTER TABLE gates ADD COLUMN consumedAt INTEGER;");
+    // Backfill: without this, every pre-existing answered row (self-answered
+    // included) reads as unconsumed at the first restart on this schema,
+    // making the re-push sweep chase dead sessions that already reconciled.
+    db.exec(
+      "UPDATE gates SET consumedAt = COALESCE(json_extract(answer,'$.answeredAt'), closedAt, openedAt) WHERE status = 'answered' AND consumedAt IS NULL;",
+    );
+  }
 
   const subCols = new Set(
     (db.query("PRAGMA table_info(gate_subscriptions)").all() as Array<{ name: string }>).map((c) => c.name),
@@ -336,6 +367,7 @@ export function createGatesStore(opts: {
   );
   const releaseStmt = db.prepare("UPDATE gates SET released = 1 WHERE id = ?");
   const markDeliveryStmt = db.prepare("UPDATE gates SET delivery = ? WHERE id = ?");
+  const markConsumedStmt = db.prepare("UPDATE gates SET consumedAt = ? WHERE id = ? AND consumedAt IS NULL");
   const markExecutionStmt = db.prepare("UPDATE gates SET execution = ? WHERE id = ?");
   const markExecutorStmt = db.prepare("UPDATE gates SET executor = ? WHERE id = ?");
   const markEscalatedStmt = db.prepare("UPDATE gates SET escalatedAt = ? WHERE id = ? AND escalatedAt IS NULL");
@@ -417,11 +449,12 @@ export function createGatesStore(opts: {
   const answerWinTxn = db.transaction((answerJson: string, id: string, by: string): { changed: boolean; released: boolean } => {
     const result = answerStmt.run(answerJson, id);
     if (result.changes === 0) return { changed: false, released: false };
+    const row = getStmt.get(id) as GateColumns; // pane is immutable after insert
     let released = false;
-    if (by === GATE_BY_PANE) {
-      const row = getStmt.get(id) as GateColumns; // pane is immutable after insert
-      if (row.pane) { releaseStmt.run(id); released = true; }
-    }
+    if (by === GATE_BY_PANE && row.pane) { releaseStmt.run(id); released = true; }
+    // Self-answer by the nudged pane has already reconciled: stamp consumedAt
+    // here rather than waiting on a push the pane will never need.
+    if (answeredByNudgedPane(rowToGate(row))) markConsumedStmt.run(Date.now(), id);
     return { changed: true, released };
   });
 
@@ -569,6 +602,11 @@ export function createGatesStore(opts: {
 
     markDelivery(id, outcome) {
       markDeliveryStmt.run(JSON.stringify({ outcome, at: Date.now() }), id);
+    },
+
+    markConsumed(id, at = Date.now()) {
+      markConsumedStmt.run(at, id);
+      return get(id) != null;
     },
 
     markExecution(id, execution) {

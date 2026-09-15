@@ -27,7 +27,7 @@
 import type { Logger } from "pino";
 import { deliverToInbox, wrapCrossSession } from "./inbox.ts";
 import type { GateRow, GateSubscription, GatesStore } from "./gates-store.ts";
-import { GATE_BY_PANE } from "./gates-store.ts";
+import { GATE_BY_PANE, answeredBySession, answeredByNudgedPane } from "./gates-store.ts";
 import type { EscapeInjector } from "./gate-escape.ts";
 import type { PaneHints } from "./pane-resolve-live.ts";
 
@@ -71,25 +71,10 @@ export function safeSurface(by: string | undefined): string {
 export const GATE_ANSWERED_PHRASE = (id: string, by?: string) =>
   `[gate] ${id} answered by ${safeSurface(by)}; re-read the registry and proceed on the recorded answer.`;
 
-/** True when `session` is the surface that recorded this answer: a direct
-    answer.session comparison. Callers layer the `by === "pane"` fallback on
-    top for writers that supply no session (see answeredByNudgedPane). */
-export function answeredBySession(row: Pick<GateRow, "answer">, session: string | undefined): boolean {
-  const answer = row.answer;
-  if (!answer || !session) return false;
-  return answer.session === session;
-}
-
-function answeredByNudgedPane(row: Pick<GateRow, "answer" | "nudge">): boolean {
-  if (!row.answer) return false;
-  // Session precedence: an explicit answer.session decides on its own, so a
-  // foreign surface that also stamps `by: "pane"` can never suppress the
-  // nudged pane's doorbell (or, for a form, its Escape). The `by === "pane"`
-  // fallback stands only for a writer that supplied no session (the board
-  // status-bin case).
-  if (!row.answer.session) return row.answer.by === GATE_BY_PANE;
-  return answeredBySession(row, row.nudge?.session);
-}
+// answeredBySession / answeredByNudgedPane live in gates-store.ts (also used
+// by the store's own answer-time consumedAt stamp) and are imported above;
+// answeredBySession is re-exported here so existing importers keep working.
+export { answeredBySession };
 
 /** Sibling of GATE_ANSWERED_PHRASE for the supersede/close paths, which end
     a gate with no answer ever coming -- a form pane waiting on it needs the
