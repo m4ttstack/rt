@@ -203,6 +203,29 @@ describe("mr:comment-inline", () => {
     expect(called).toBe(false);
   });
 
+  test("neither oldPath nor oldLine defaults old_path to the new path", async () => {
+    let captured: TextPosition | undefined;
+    const seams = makeSeams(() => ({
+      fetchDiffRefs: async () => DIFF_REFS,
+      createPositionedDiscussion: async (_pid, _mrIid, _body, position) => {
+        captured = position;
+        return fakeDiscussion("d1", 101, "DiffNote");
+      },
+      deleteNote: async () => { throw new Error("should not be called"); },
+    }));
+    const h = createDiscussionHandlers(fakeCtx, () => {}, seams);
+
+    await h["mr:comment-inline"]!(basePayload());
+
+    expect(captured).toEqual({
+      ...DIFF_REFS,
+      position_type: "text",
+      new_path: "src/foo.ts",
+      new_line: 42,
+      old_path: "src/foo.ts",
+    });
+  });
+
   test("oldLine alone sets old_line and defaults old_path to the new path", async () => {
     let captured: TextPosition | undefined;
     const seams = makeSeams(() => ({

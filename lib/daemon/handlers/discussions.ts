@@ -52,19 +52,24 @@ function buildTextPosition(
   payload: { path: string; line: number; oldPath?: string; oldLine?: number },
   diffRefs: { base_sha: string; start_sha: string; head_sha: string },
 ): TextPosition {
-  const position: TextPosition = {
+  const old_path = payload.oldPath ?? payload.path;
+  if (typeof payload.oldLine === "number") {
+    return {
+      ...diffRefs,
+      position_type: "text",
+      new_path: payload.path,
+      new_line: payload.line,
+      old_path,
+      old_line: payload.oldLine,
+    };
+  }
+  return {
     ...diffRefs,
     position_type: "text",
     new_path: payload.path,
     new_line: payload.line,
+    old_path,
   };
-  if (typeof payload.oldLine === "number") {
-    position.old_line = payload.oldLine;
-    position.old_path = payload.oldPath ?? payload.path;
-  } else if (typeof payload.oldPath === "string") {
-    position.old_path = payload.oldPath;
-  }
-  return position;
 }
 
 /** Discussions are stable per push; 2min TTL keeps reads fast without going stale. */
