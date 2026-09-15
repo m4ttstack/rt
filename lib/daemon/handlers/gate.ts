@@ -308,6 +308,24 @@ async function dispatchGuarantee(row: GateRow, deps: GuaranteeDeps): Promise<voi
   else await runExecutorGuarantee(row, deps);
 }
 
+/** Every gate:* handler but gate:ask, which is added afterward by spread
+    (it composes "gate:open" and needs that key to already exist as a
+    value, not just a declared type). Named so the local `handlers` object
+    below can be annotated against it directly -- an inline return-type
+    literal gives object-literal properties no contextual typing, which
+    silently widens narrow return types like GateAnswerResult's
+    `conflict?: true`. */
+type GateSiblingHandlers =
+  { "gate:open": (payload: unknown) => Promise<CommandResult<"gate:open">> }
+  & { "gate:answer": (payload: unknown) => Promise<GateAnswerResult> }
+  & { "gate:wait": (payload: unknown, signal?: AbortSignal) => Promise<CommandResult<"gate:wait">> }
+  & { "gate:list": (payload: unknown) => Promise<CommandResult<"gate:list">> }
+  & { "gate:park": (payload: unknown) => Promise<CommandResult<"gate:park">> }
+  & { "gate:close": (payload: unknown) => Promise<CommandResult<"gate:close">> }
+  & { "gate:subscribe": (payload: unknown) => Promise<CommandResult<"gate:subscribe">> }
+  & { "gate:unsubscribe": (payload: unknown) => Promise<CommandResult<"gate:unsubscribe">> }
+  & { "gate:subscriptions": (payload: unknown) => Promise<CommandResult<"gate:subscriptions">> };
+
 export function createGateHandlers(
   store: GatesStore,
   bus: EventsBus,
@@ -327,22 +345,13 @@ export function createGateHandlers(
     /** lib/state/agents-store.ts's getAgent, for the attention-gate
         "resume" route's expectation hints (see GuaranteeDeps). */
     getAgentRecord?: (agentId: string) => Pick<AgentRecord, "paneId" | "sessionId" | "cwd"> | undefined;
-    /** gate:ask's subject resolution (Task 2's resolveGateSubject, wired to
-        the daemon's run/agent lookups). Omitted -- most existing handler
-        tests -- falls back to explicit-subject-only resolution, since there
-        is no session store to check a run or agent against. */
+    /** gate:ask's subject resolution, wired to the daemon's run/agent
+        lookups. Omitted -- most existing handler tests -- falls back to
+        explicit-subject-only resolution, since there is no session store to
+        check a run or agent against. */
     resolveSubject?: (args: { subject?: string; sessionId?: string }) => GateSubjectResult;
   } = {},
-): { "gate:open": (payload: unknown) => Promise<CommandResult<"gate:open">> }
-  & { "gate:ask": (payload: unknown) => Promise<CommandResult<"gate:ask">> }
-  & { "gate:answer": (payload: unknown) => Promise<GateAnswerResult> }
-  & { "gate:wait": (payload: unknown, signal?: AbortSignal) => Promise<CommandResult<"gate:wait">> }
-  & { "gate:list": (payload: unknown) => Promise<CommandResult<"gate:list">> }
-  & { "gate:park": (payload: unknown) => Promise<CommandResult<"gate:park">> }
-  & { "gate:close": (payload: unknown) => Promise<CommandResult<"gate:close">> }
-  & { "gate:subscribe": (payload: unknown) => Promise<CommandResult<"gate:subscribe">> }
-  & { "gate:unsubscribe": (payload: unknown) => Promise<CommandResult<"gate:unsubscribe">> }
-  & { "gate:subscriptions": (payload: unknown) => Promise<CommandResult<"gate:subscriptions">> } {
+): GateSiblingHandlers & { "gate:ask": (payload: unknown) => Promise<CommandResult<"gate:ask">> } {
   const push = deps.push ?? noopPush;
   const log = deps.log;
   const runSpawnedBy = deps.runSpawnedBy;
@@ -407,7 +416,7 @@ export function createGateHandlers(
       .catch((err) => log?.warn({ err, gateId: row.id, kind: row.kind }, "gate:answer: retry executor guarantee failed"));
   };
 
-  const handlers = {
+  const handlers: GateSiblingHandlers = {
     "gate:open": async (rawPayload: unknown) => {
       const payload = rawPayload as Commands["gate:open"]["payload"] | undefined;
       const subject = typeof payload?.subject === "string" ? payload.subject.trim() : "";
@@ -678,10 +687,10 @@ export function createGateHandlers(
     },
   };
 
-  // Ceremony layer over gate:open (contract C3): resolves the subject,
-  // computes presentation, and supplies nudge/origin so callers never
-  // reimplement gate:open's own validation, supersede, or push semantics --
-  // it just builds the payload gate:open already accepts and calls it.
+  // Delegates to gate:open (called directly below) for validation,
+  // supersede, and push semantics rather than reimplementing any of them --
+  // this only computes what gate:open cannot derive on its own: subject,
+  // presentation, and nudge/origin.
   const gateAsk = async (rawPayload: unknown): Promise<CommandResult<"gate:ask">> => {
     const payload = rawPayload as Commands["gate:ask"]["payload"] | undefined;
     const questions = payload?.questions;
@@ -697,9 +706,9 @@ export function createGateHandlers(
 
     const presentation = gatePresentation({ paneId, sessionId, questions });
 
-    // Omitted rather than rejected (contract C3): unlike gate:open's hard
-    // CONTEXT_CAP_BYTES reject, an oversized context here must not fail the
-    // whole ask, since the caller did not author the context string by hand.
+    // Omitted rather than rejected: unlike gate:open's hard CONTEXT_CAP_BYTES
+    // reject, an oversized context here must not fail the whole ask, since
+    // the caller did not author the context string by hand.
     let context = typeof payload?.context === "string" ? payload.context : undefined;
     if (context !== undefined && Buffer.byteLength(context, "utf8") > CONTEXT_CAP_BYTES) context = undefined;
 
