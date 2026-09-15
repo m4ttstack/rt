@@ -59,6 +59,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     // MainActor hop, and `private` would not reach a sibling top-level type.
     fileprivate var windowModel: WindowModel?
     private var mattstackWindow: MattstackWindowController?
+    private var hotkey: HotkeyManager?
     /// A `mattstack://join/<code>` event can arrive before `buildServices()`
     /// builds the coordinator (launch-by-link). Stashed here and drained at
     /// the end of `buildServices()`.
@@ -102,6 +103,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     @MainActor
     private func startNormalOperation() {
         buildServices()
+        hotkey = HotkeyManager { [weak self] in Task { @MainActor in self?.windowModel?.toggleVisibility() } }
         installMainMenu()
         setupMenuBar()
         setupNotifications()
