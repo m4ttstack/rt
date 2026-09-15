@@ -112,9 +112,16 @@ recreate on return, keeping the active app and chat pinned warm.
 
 ## 4. URL scheme
 
-`mattstack://open/<app>[/<path>][?<query>]` opens or raises the window,
-selects `<app>`, and navigates its webview to the app's URL joined with
-`<path>`. Unknown apps raise the window and log; unknown verbs log and drop.
+`mattstack://open/<app>[/<path>][?<query>][#<fragment>]` opens or raises
+the window, selects `<app>`, and navigates its webview to the app's URL
+joined with the full path, query, and fragment (chat's `/r/<room>#m-<id>`
+links depend on the fragment surviving). Unknown apps raise the window and
+log; unknown verbs log and drop.
+
+Tray notification clicks route the same way: a notification carrying a
+`.mattstack` URL opens directly in the window (no browser bounce); any
+other URL keeps its existing default-browser behavior. Notification
+delivery itself stays rt's job.
 The existing `mattstack://join/<code>` flow is untouched; both routes live in
 the same kAEGetURL handler in `AppDelegate`.
 
