@@ -33,20 +33,43 @@ function freePort(): number {
 let apiPort = 0;
 const children: Array<ReturnType<typeof Bun.spawn>> = [];
 
-function runRt(args: string[], home: string, extraEnv: Record<string, string> = {}, stdin: "pipe" | "ignore" = "ignore") {
+function rtEnv(home: string, extraEnv: Record<string, string>): Record<string, string> {
   const bunDir = join(process.execPath, "..");
+  return {
+    HOME: home,
+    PATH: `${join(RT_BINARY, "..")}:${bunDir}:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin`,
+    TERM: "xterm-256color",
+    RT_SKIP_SETUP: "1",
+    CI: "true",
+    RT_API_PORT: String(apiPort),
+    RT_RUN_EMIT: "0", // no need for run-start to round-trip through the daemon here
+    ...extraEnv,
+  };
+}
+
+function runRt(args: string[], home: string, extraEnv: Record<string, string> = {}) {
   const proc = Bun.spawn([RT_BINARY, ...args], {
-    env: {
-      HOME: home,
-      PATH: `${join(RT_BINARY, "..")}:${bunDir}:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin`,
-      TERM: "xterm-256color",
-      RT_SKIP_SETUP: "1",
-      CI: "true",
-      RT_API_PORT: String(apiPort),
-      RT_RUN_EMIT: "0", // no need for run-start to round-trip through the daemon here
-      ...extraEnv,
-    },
-    stdin,
+    env: rtEnv(home, extraEnv),
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  children.push(proc);
+  return proc;
+}
+
+/**
+ * Same spawn as runRt, but for a child whose stdin the test drives directly
+ * (here, the mcp serve child). `stdin: "pipe"` is written as a literal in
+ * this call, not threaded through as a runtime parameter: Bun.spawn's `const
+ * In` type parameter only narrows `proc.stdin` to `FileSink` when it infers a
+ * single literal, and a variable typed as a union of stdin modes (even a
+ * two-member one) makes it infer the union instead, which is what silently
+ * turned proc.stdin into `number | FileSink | undefined` before.
+ */
+function runRtPiped(args: string[], home: string, extraEnv: Record<string, string> = {}) {
+  const proc = Bun.spawn([RT_BINARY, ...args], {
+    env: rtEnv(home, extraEnv),
+    stdin: "pipe",
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -90,7 +113,7 @@ class McpClient {
   readonly rawLines: string[] = [];
   private stderrChunks: string[] = [];
 
-  constructor(private proc: ReturnType<typeof Bun.spawn>) {
+  constructor(private proc: ReturnType<typeof runRtPiped>) {
     void (async () => {
       for await (const line of lines(proc.stdout as unknown as ReadableStream<Uint8Array>)) {
         if (line.length === 0) continue;
@@ -148,7 +171,7 @@ const EXPECTED_TOOL_NAMES = [
   "gate_answer", "gate_list",
   "herd_answer", "herd_ask", "herd_gates", "herd_report",
   "mr_reply_thread",
-].sort();
+];
 
 describe("rt mcp serve e2e", () => {
   let home: string;
@@ -174,7 +197,7 @@ describe("rt mcp serve e2e", () => {
   });
 
   test("initialize -> tools/list -> tools/call gate_list", async () => {
-    const server = runRt(["mcp", "serve"], home, {}, "pipe");
+    const server = runRtPiped(["mcp", "serve"], home);
     const client = new McpClient(server);
 
     try {
@@ -193,7 +216,7 @@ describe("rt mcp serve e2e", () => {
       expect(list.error).toBeUndefined();
       const listResult = list.result as { tools: Array<{ name: string }> };
       const names = listResult.tools.map((t) => t.name).sort();
-      expect(names).toEqual(EXPECTED_TOOL_NAMES);
+      expect(names).toEqual([...EXPECTED_TOOL_NAMES].sort());
 
       const call = await client.request("tools/call", { name: "gate_list", arguments: {} });
       expect(call.error).toBeUndefined();
