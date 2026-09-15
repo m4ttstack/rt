@@ -4,7 +4,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { mcpTools } from "../tools.ts";
 
-const NAMES = ["gate_answer","gate_list","chat_post","chat_dm","chat_ack","chat_claim","chat_release","mr_reply_thread","herd_gates","herd_ask","herd_answer","herd_report"];
+const NAMES = ["gate_answer","gate_ask","gate_list","chat_post","chat_dm","chat_ack","chat_claim","chat_release","mr_reply_thread","mr_comment_inline","mr_map","herd_gates","herd_ask","herd_answer","herd_report"];
 
 // Captured before any mock.module call, per the repo's convention (see
 // lib/__tests__/repo-locate-dispatch.test.ts): mock.module mutates the live
@@ -222,6 +222,132 @@ describe("mcpTools", () => {
       const res = await tool.handler({}, {} as NodeJS.ProcessEnv);
       expect(res.ok).toBe(false);
       expect(res.error).toContain("rt daemon unreachable");
+    });
+  });
+
+  describe("gate_list", () => {
+    afterEach(() => {
+      mock.module("../../../packages/rt-client/src/transport.ts", () => ({ ...realTransport, rtCommand: realRtCommand }));
+    });
+
+    test("schema includes cursor property for pagination", () => {
+      const tool = mcpTools().find((t) => t.name === "gate_list")!;
+      const schema = tool.inputSchema as { properties?: Record<string, unknown> };
+      expect(schema.properties?.cursor).toEqual({ type: "number" });
+    });
+
+    test("description mentions continuation contract", () => {
+      const tool = mcpTools().find((t) => t.name === "gate_list")!;
+      const hasReference = tool.description.includes("cursor") || tool.description.includes("paging") || tool.description.includes("continuation");
+      expect(hasReference).toBe(true);
+    });
+
+    test("forwards cursor to the payload", async () => {
+      let capturedPayload: Record<string, unknown> | undefined;
+      mock.module("../../../packages/rt-client/src/transport.ts", () => ({
+        ...realTransport,
+        rtCommand: async (cmd: string, payload: Record<string, unknown>) => {
+          if (cmd === "gate:list") {
+            capturedPayload = payload;
+            return { ok: true, data: { gates: [], next: 42 } };
+          }
+          throw new Error(`unexpected rtCommand("${cmd}")`);
+        },
+      }));
+      const tool = mcpTools().find((t) => t.name === "gate_list")!;
+      const res = await tool.handler({ cursor: 10, limit: 5 }, {} as NodeJS.ProcessEnv);
+      expect(res.ok).toBe(true);
+      expect(capturedPayload?.cursor).toBe(10);
+      expect(capturedPayload?.limit).toBe(5);
+    });
+  });
+
+  describe("gate_answer rejection sentences", () => {
+    afterEach(() => {
+      mock.module("../../../packages/rt-client/src/transport.ts", () => ({ ...realTransport, rtCommand: realRtCommand }));
+    });
+
+    test("owned-by rejection maps to ownership sentence", async () => {
+      mock.module("../../../packages/rt-client/src/transport.ts", () => ({
+        ...realTransport,
+        rtCommand: async (cmd: string) => {
+          if (cmd === "gate:answer") {
+            return { ok: false, error: "owned-by", owner: "alice" };
+          }
+          throw new Error(`unexpected rtCommand("${cmd}")`);
+        },
+      }));
+      const tool = mcpTools().find((t) => t.name === "gate_answer")!;
+      const res = await tool.handler({ id: "g1", answers: { q1: "yes" } }, { CLAUDE_CODE_SESSION_ID: "sess-1" } as NodeJS.ProcessEnv);
+      expect(res.ok).toBe(false);
+      expect(res.error).toContain("gate g1 is owned by alice");
+      expect(res.error).toContain("override: true");
+    });
+
+    test("owned-by rejection without owner defaults to unknown", async () => {
+      mock.module("../../../packages/rt-client/src/transport.ts", () => ({
+        ...realTransport,
+        rtCommand: async (cmd: string) => {
+          if (cmd === "gate:answer") {
+            return { ok: false, error: "owned-by" };
+          }
+          throw new Error(`unexpected rtCommand("${cmd}")`);
+        },
+      }));
+      const tool = mcpTools().find((t) => t.name === "gate_answer")!;
+      const res = await tool.handler({ id: "g1", answers: { q1: "yes" } }, { CLAUDE_CODE_SESSION_ID: "sess-1" } as NodeJS.ProcessEnv);
+      expect(res.ok).toBe(false);
+      expect(res.error).toContain("owned by unknown");
+    });
+
+    test("gate-closed rejection with reason and supersededBy", async () => {
+      mock.module("../../../packages/rt-client/src/transport.ts", () => ({
+        ...realTransport,
+        rtCommand: async (cmd: string) => {
+          if (cmd === "gate:answer") {
+            return { ok: false, error: "gate-closed", reason: "already answered", supersededBy: "g2" };
+          }
+          throw new Error(`unexpected rtCommand("${cmd}")`);
+        },
+      }));
+      const tool = mcpTools().find((t) => t.name === "gate_answer")!;
+      const res = await tool.handler({ id: "g1", answers: { q1: "yes" } }, { CLAUDE_CODE_SESSION_ID: "sess-1" } as NodeJS.ProcessEnv);
+      expect(res.ok).toBe(false);
+      expect(res.error).toContain("gate g1 is closed (already answered)");
+      expect(res.error).toContain("superseded by g2");
+    });
+
+    test("gate-closed rejection without supersededBy", async () => {
+      mock.module("../../../packages/rt-client/src/transport.ts", () => ({
+        ...realTransport,
+        rtCommand: async (cmd: string) => {
+          if (cmd === "gate:answer") {
+            return { ok: false, error: "gate-closed", reason: "expired" };
+          }
+          throw new Error(`unexpected rtCommand("${cmd}")`);
+        },
+      }));
+      const tool = mcpTools().find((t) => t.name === "gate_answer")!;
+      const res = await tool.handler({ id: "g1", answers: { q1: "yes" } }, { CLAUDE_CODE_SESSION_ID: "sess-1" } as NodeJS.ProcessEnv);
+      expect(res.ok).toBe(false);
+      expect(res.error).toContain("gate g1 is closed (expired)");
+      expect(res.error).not.toContain("superseded");
+    });
+
+    test("gate-closed rejection without reason defaults to closed", async () => {
+      mock.module("../../../packages/rt-client/src/transport.ts", () => ({
+        ...realTransport,
+        rtCommand: async (cmd: string) => {
+          if (cmd === "gate:answer") {
+            return { ok: false, error: "gate-closed" };
+          }
+          throw new Error(`unexpected rtCommand("${cmd}")`);
+        },
+      }));
+      const tool = mcpTools().find((t) => t.name === "gate_answer")!;
+      const res = await tool.handler({ id: "g1", answers: { q1: "yes" } }, { CLAUDE_CODE_SESSION_ID: "sess-1" } as NodeJS.ProcessEnv);
+      expect(res.ok).toBe(false);
+      expect(res.error).toContain("gate g1 is closed (closed)");
     });
   });
 });

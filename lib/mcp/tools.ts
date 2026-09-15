@@ -176,12 +176,22 @@ export function mcpTools(): McpToolDef[] {
           session: env.CLAUDE_CODE_SESSION_ID,
         };
         if (input.override !== undefined) payload.override = input.override as boolean;
-        return fromResponse(await gateAnswer(payload));
+        const res = await gateAnswer(payload);
+        if (!res.ok && res.error === "owned-by") {
+          const owner = (res as { owner?: string }).owner ?? "unknown";
+          return err(`gate ${input.id} is owned by ${owner}; pass override: true to answer anyway`);
+        }
+        if (!res.ok && res.error === "gate-closed") {
+          const reason = (res as { reason?: string }).reason ?? "closed";
+          const supersededBy = (res as { supersededBy?: string }).supersededBy;
+          return err(`gate ${input.id} is closed (${reason})${supersededBy ? `; superseded by ${supersededBy}` : ""}`);
+        }
+        return fromResponse(res);
       },
     },
     {
       name: "gate_list",
-      description: "List gates in all statuses unless open is true, optionally filtered by subject prefix or kind and capped by limit.",
+      description: "List gates in all statuses unless open is true, optionally filtered by subject prefix or kind and capped by limit. Pass the previous response's cursor to continue paging.",
       inputSchema: {
         type: "object",
         properties: {
@@ -189,6 +199,7 @@ export function mcpTools(): McpToolDef[] {
           subjectPrefix: { type: "string" },
           kind: { type: "string" },
           limit: { type: "number" },
+          cursor: { type: "number" },
         },
         additionalProperties: false,
       },
@@ -198,6 +209,7 @@ export function mcpTools(): McpToolDef[] {
         if (input.subjectPrefix !== undefined) payload.subjectPrefix = input.subjectPrefix as string;
         if (input.kind !== undefined) payload.kind = input.kind as string;
         if (input.limit !== undefined) payload.limit = input.limit as number;
+        if (input.cursor !== undefined) payload.cursor = input.cursor as number;
         return fromResponse(await gateList(payload));
       },
     },
