@@ -72,6 +72,23 @@ describe("mcpTools", () => {
     expect(mcpTools().map((t) => t.name)).toContain("gate_ask");
   });
 
+  test("mr_comment_inline validates required fields", async () => {
+    const tool = mcpTools().find((t) => t.name === "mr_comment_inline")!;
+    const res = await tool.handler({ repoName: "rt", iid: 1, body: "x", path: "a.ts" }, {} as NodeJS.ProcessEnv);
+    expect(res.ok).toBe(false);
+    expect(res.error).toBe('"line" is required');
+  });
+
+  test("mr_comment_inline schema requires the position fields and forbids extras", () => {
+    const tool = mcpTools().find((t) => t.name === "mr_comment_inline")!;
+    const schema = tool.inputSchema as { required?: string[]; additionalProperties?: boolean; properties?: Record<string, unknown> };
+    expect(schema.required).toEqual(["repoName", "iid", "body", "path", "line"]);
+    expect(schema.additionalProperties).toBe(false);
+    expect(Object.keys(schema.properties ?? {}).sort()).toEqual(
+      ["repoName", "iid", "body", "path", "line", "oldPath", "oldLine"].sort(),
+    );
+  });
+
   describe("herd_gates without a reachable daemon", () => {
     let originalHome: string | undefined;
     let originalSock: string | undefined;

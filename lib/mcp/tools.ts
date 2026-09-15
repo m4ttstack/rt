@@ -62,8 +62,10 @@ const HERD_ENV_ERROR = "HERD_ID and HERD_JOB are not set; this verb runs inside 
 
 /** Matches lib/daemon-client.ts's DISCUSSIONS_TIMEOUT_MS: a GitLab post is
     slower than rtCommand's 15s default, and a client-side abort here would
-    still leave the daemon posting, so a retry would duplicate the comment. */
-const MR_REPLY_TIMEOUT_MS = 30_000;
+    still leave the daemon posting, so a retry would duplicate the comment.
+    Shared by both mr write tools (mr_reply_thread, mr_comment_inline) for
+    the same reason. */
+const MR_WRITE_TIMEOUT_MS = 30_000;
 
 function requireJobEnv(env: NodeJS.ProcessEnv): { herd: string; job: string } | { error: string } {
   const herd = env.HERD_ID, job = env.HERD_JOB;
@@ -331,8 +333,46 @@ export function mcpTools(): McpToolDef[] {
           iid: input.iid as number,
           discussionId: input.discussionId as string,
           body: input.body as string,
-        }, { timeoutMs: MR_REPLY_TIMEOUT_MS });
+        }, { timeoutMs: MR_WRITE_TIMEOUT_MS });
         return fromResponse(res);
+      },
+    },
+    {
+      name: "mr_comment_inline",
+      description: "Post a NEW positioned inline comment (DiffNote) on an MR diff line, with server-side verification: the daemon re-checks the created note's type and deletes-and-retries once when GitLab silently drops the position. The retry re-fetches diff_refs; it cannot repair a position GitLab rejects outright. Use mr_reply_thread to reply to an existing thread.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          repoName: { type: "string" },
+          iid: { type: "number" },
+          body: { type: "string" },
+          path: { type: "string" },
+          line: { type: "number" },
+          oldPath: { type: "string" },
+          oldLine: { type: "number" },
+        },
+        required: ["repoName", "iid", "body", "path", "line"],
+        additionalProperties: false,
+      },
+      async handler(input) {
+        const bad = checkRequired(input, [
+          { name: "repoName", type: "string" },
+          { name: "iid", type: "number" },
+          { name: "body", type: "string" },
+          { name: "path", type: "string" },
+          { name: "line", type: "number" },
+        ]);
+        if (bad) return err(bad);
+        const payload: Commands["mr:comment-inline"]["payload"] = {
+          repoName: input.repoName as string,
+          iid: input.iid as number,
+          body: input.body as string,
+          path: input.path as string,
+          line: input.line as number,
+        };
+        if (input.oldPath !== undefined) payload.oldPath = input.oldPath as string;
+        if (input.oldLine !== undefined) payload.oldLine = input.oldLine as number;
+        return fromResponse(await rtCommand<Commands["mr:comment-inline"]["data"]>("mr:comment-inline", payload, { timeoutMs: MR_WRITE_TIMEOUT_MS }));
       },
     },
     {
