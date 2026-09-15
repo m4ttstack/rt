@@ -409,10 +409,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     /// shutdown/restart/logout are read from the quit AppleEvent's reason
     /// and always honored: this interception must never block the OS.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        if quitConfirmed || systemSessionEnding { return .terminateNow }
         let reasonCode = NSAppleEventManager.shared().currentAppleEvent?
             .paramDescriptor(forKeyword: AEKeyword(kAEQuitReason))?.typeCodeValue
-        if QuitReason.isSystemInitiated(reasonCode: reasonCode) {
+        let window = mattstackWindow?.window
+        let windowOnScreen = (window?.isVisible ?? false) || (window?.isMiniaturized ?? false)
+        if QuitReason.shouldTerminate(quitConfirmed: quitConfirmed, sessionEnding: systemSessionEnding,
+                                      reasonCode: reasonCode, windowOnScreen: windowOnScreen) {
             return .terminateNow
         }
         Task { @MainActor in
