@@ -100,6 +100,17 @@ struct ChecklistScreen: View {
                 }
                 await model.afterAction(rowId: row.id)
             }
+        case .chooseFolder(let startAt):
+            guard let action = row.action else { return }
+            let panel = NSOpenPanel()
+            panel.canChooseDirectories = true
+            panel.canChooseFiles = false
+            panel.canCreateDirectories = true
+            panel.allowsMultipleSelection = false
+            panel.prompt = "Use this folder"
+            if let s = startAt { panel.directoryURL = URL(fileURLWithPath: s) }
+            guard panel.runModal() == .OK, let url = panel.url else { return }
+            run(RowActionDispatcher.dispatch(action, fieldValues: ["root": url.path], alternative: nil), for: row)
         case .openURL(let url):
             NSWorkspace.shared.open(url)
         case .showSteps(let list):
