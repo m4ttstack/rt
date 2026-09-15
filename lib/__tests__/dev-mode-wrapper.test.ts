@@ -37,6 +37,11 @@ describe("renderDevModeWrapper", () => {
   test("fails loudly when the source checkout is gone instead of exec'ing from the wrong cwd", () => {
     expect(wrapper).toMatch(/cd "[^"]+" \|\| \{/);
   });
+
+  test("appends the tool dirs to PATH rather than prepending (RT-160): launchd only needs them present, and a prepend shadows the caller's own order for every validator that reads PATH", () => {
+    const pathLine = wrapper.split("\n").find((l) => l.startsWith("export PATH="));
+    expect(pathLine).toBe(`export PATH="$PATH:/Users/someone/.bun/bin:/opt/homebrew/bin:/usr/local/bin"`);
+  });
 });
 
 describe("renderDevModePreload", () => {

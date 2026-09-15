@@ -101,7 +101,10 @@ function zshenvPath(): string {
 }
 
 function zshenvBlock(): string {
-  return ["", ZSHENV_MARKER, 'export PATH="$HOME/.local/bin:$PATH"', END_MARKER, ""].join("\n");
+  // `typeset -U` so a PATH that already carries ~/.local/bin (an inherited
+  // env, another tool's block) gains no second copy — zsh-only syntax, which
+  // is fine in a file only zsh reads.
+  return ["", ZSHENV_MARKER, "typeset -U path", 'path=("$HOME/.local/bin" $path)', "export PATH", END_MARKER, ""].join("\n");
 }
 
 // ─── History hook blocks (also callable standalone for existing installs) ──────
