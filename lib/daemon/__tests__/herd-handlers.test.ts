@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, mkdirSync, existsSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import pino from "pino";
-import { createHerdStore, type HerdStore } from "../herd-store.ts";
+import { createHerdStore, type HerdStore, herdSubject } from "../herd-store.ts";
 import { createGatesStore, type GatesStore } from "../gates-store.ts";
 import { createGateHandlers } from "../handlers/gate.ts";
 import { createEventsBus } from "../events-bus.ts";
@@ -635,6 +635,7 @@ describe("herd:spawn", () => {
     expect(agentCalls[0]).toMatchObject({
       repo: "gh:m4ttstack/rt", cwd: "/w/job-a", surface: "herdr", model: "opus", account: "2",
       workspace: `herd: ${herd}`, tab: "job-a", label: "job-a", caller: `herd:${herd}`, handle: "job-a",
+      subject: herdSubject(herd, "job-a"),
       env: { HERD_ID: herd, HERD_JOB: "job-a", HERD_ROOM: room },
     });
     expect(agentCalls[0].prompt).toContain("do the thing");
