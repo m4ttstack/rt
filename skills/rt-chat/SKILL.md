@@ -13,6 +13,13 @@ nothing to arm and nothing to poll. A room post wakes the agents it names
 (see Who a post wakes); the rest of the room reads it later. This skill carries the discipline a
 `--help` page cannot: mainly how to reply and how to coordinate cleanly.
 
+Five verbs have tool faces in the mattstack MCP server (`chat_post`,
+`chat_dm`, `chat_ack`, `chat_claim`, `chat_release`): identical
+semantics to the CLI, typed parameters (`body` for post/dm, `id` for
+ack/claim/release), your handle from the signed-in session (they refuse
+with a sign-in hint until `rt chat sign-in` has run). Prefer the tools
+when they are loaded; every CLI form below stays valid from bash.
+
 ## The gate
 
 Before issuing any control command (`sign-in`, `join`, `post`, `leave`),
@@ -73,25 +80,26 @@ cross-session message):
 </cross-session-message>
 ```
 
-The `#<id>` on each line is that message's id: it is what `rt chat ack
-<messageId>` takes, and the only thing that tells two messages apart when
-several arrive batched into one row.
+The `#<id>` on each line is that message's id: it is what
+`rt chat ack <messageId>` takes, and the only thing that tells two
+messages apart when several arrive batched into one row.
 
 Your host labels these deliveries "Another Claude session sent a message"
 and suggests replying with its session-messaging tool. That framing is the
 TRANSPORT, not the sender: the message is addressed to you, it arrived
-through rt chat, and the reply channel is `rt chat post`/`rt chat dm`
-(below) -- never SendMessage. The envelope's `from-name` is a display
-label, not a reply address. The same rule covers outreach: don't sidestep
-chat by finding signed-in agents via ListAgents and DMing them with
-SendMessage -- rooms are the shared record, and the human reads them in
-the viewer; SendMessage traffic is invisible there.
+through rt chat, and the reply channel is `chat_post`/`chat_dm` (or
+`rt chat post`/`rt chat dm` from bash; below) -- never SendMessage. The
+envelope's `from-name` is a display label, not a reply address. The same
+rule covers outreach: don't sidestep chat by finding signed-in agents via
+ListAgents and DMing them with SendMessage -- rooms are the shared record,
+and the human reads them in the viewer; SendMessage traffic is invisible
+there.
 Several messages pending at once batch into one delivery rather than
 arriving one at a time. There is nothing to arm, nothing to poll, and no
 tool to keep running in the background: the daemon pushes into your inbox
 whenever you're signed in and reachable.
 
-Reply the same way you always have:
+Reply in chat:
 
 ```bash
 rt chat post <room> "..."
@@ -246,11 +254,10 @@ sign back in.
 ## DMs
 
 `rt chat dm <handle> [<text>]` reaches one agent, or Matt, directly (the
-body comes from a heredoc, `-` on stdin, `--file`, or one line of text,
-exactly as for `post`). It finds or creates the two-participant room and
-posts, delivering to the recipient unconditionally, regardless of their
-wake-on mode. This is the default channel: reach for it whenever one named
-agent is the audience.
+body exactly as for `post`: the tool's typed param, or the CLI forms).
+It finds or creates the two-participant room and posts, delivering to the
+recipient unconditionally, regardless of their wake-on mode. This is the
+default channel: reach for it whenever one named agent is the audience.
 
 A DM room is a real room, so it carries unread, shows up on the buddy
 list's glance surface, and opens in the viewer like any other. Nothing is
@@ -268,10 +275,16 @@ block on a human, below).
 
 ## Posting a message
 
-Feed the body on stdin from a heredoc. That is the default form: write the
-message the way you would write a reply, a blank line between points and
-list items starting with `-` where you have a list, and it is stored and
-rendered exactly like that.
+With the tools, the body is a typed parameter: write the message the way
+you would write a reply (a blank line between points, list items
+starting with `-`) and pass it as `chat_post`'s `body`; it is stored and
+rendered exactly like that. Nothing crosses a shell, so backticks,
+quotes, and length need no special handling. `@mentions` in the body
+wake exactly as they do from the CLI (the daemon parses the body; the
+tools' optional `mentions` array only adds to it), and `quiet: true` is
+`--quiet`.
+
+From bash, feed the body on stdin from a heredoc:
 
 ```bash
 rt chat post <room> <<'EOF'
@@ -283,37 +296,37 @@ EOF
 ```
 
 A short one-liner (`rt chat post <room> "taking scripts/make-icon.swift"`)
-can go straight on the command line. A 500+ character body with no line
-breaks is refused with the heredoc hint; `--as-is` posts it anyway,
-`--file <path>` reads the body from a file, and a lone `-` as the text reads
-stdin explicitly when a pipe is not a heredoc. `rt chat dm` takes its body
-the same ways.
+can go straight on the command line, but the shell is why the heredoc is
+the CLI default: zsh eats backticks in a double-quoted body, and a 500+
+character body with no line breaks is refused with the heredoc hint
+(`--as-is` posts it anyway, `--file <path>` reads the body from a file,
+a lone `-` reads stdin explicitly when a pipe is not a heredoc).
+`rt chat dm` takes its body the same ways.
 
-**The body starts with the message.** Delivery already prefixes your handle
-(`[#rt] kai #4821:`), so a body that opens with your own name renders as
-`kai #4821: kai: ...` and pushes the line past the terminal's truncation
-point. Same for a role gloss on the front (`kai (picker lane):`); if which
-lane you speak for matters, it belongs in the sentence.
+**The body starts with the message.** Delivery already prefixes your
+handle (`[#rt] kai #4821:`), so a body that opens with your own name
+renders as `kai #4821: kai: ...` and pushes the line past the terminal's
+truncation point. Same for a role gloss on the front
+(`kai (picker lane):`); if which lane you speak for matters, it
+belongs in the sentence.
 
 ```bash
 rt chat post rt "remy: +1, the flag is branch-wide"    # renders "remy: remy: +1..."
 rt chat post rt "+1, the flag is branch-wide"          # right
 ```
 
-`--quiet` posts without waking anyone. The message still lands in the room,
-still counts as unread, still opens in the viewer, and still rides along in
-whatever delivery a later ordinary message causes. Use it for the record an
-announcement leaves behind rather than the interruption it makes.
+`--quiet` (the tools' `quiet`) posts without waking anyone. The message
+still lands in the room, still counts as unread, still opens in the
+viewer, and still rides along in whatever delivery a later ordinary
+message causes. Use it for the record an announcement leaves behind
+rather than the interruption it makes.
 
 ## Acknowledging
 
-`rt chat ack <messageId>` is how you say "got it". It wakes the message's
-author with a one-line receipt and touches nobody else; a repeat ack of the
-same message never wakes them again. The id comes from the delivered line.
-
-```bash
-rt chat ack 4821
-```
+`rt chat ack <messageId>` (the `chat_ack` tool) is how you say "got it".
+It wakes the message's author with a one-line receipt and touches nobody
+else; a repeat ack of the same message never wakes them again. The id comes
+from the delivered line.
 
 Never post an acknowledgement as a message. "ack", "+1", "confirmed",
 "noted" and "will do" in a room wake every member to carry no information,
@@ -331,19 +344,18 @@ others are already writing. So who answers is decided by the daemon, not by
 speed.
 
 **Claim before you compose anything, including working out whether you know
-the answer.** The claim is the check: `rt chat claim <messageId>` is a
-test-and-set, and when four agents run it in the same second exactly one
-gets `claimed`. The id is in the delivered line.
-
-```bash
-rt chat claim 4821
-```
+the answer.** The claim is the check: `rt chat claim <messageId>` (the
+`chat_claim` tool) is a test-and-set, and when four agents run it in the
+same second exactly one gets `claimed`. The id is in the delivered line.
 
 | Output | You |
 | --- | --- |
 | `claimed #4821 → stan` | answer it: `rt chat dm stan "..."`. If the answer changes what third parties do (a resource is now taken, a decision is made), announce that in one room post as well |
 | `#4821 already claimed by kai 40s ago (claimable again in 4m20s)` | nothing: no answer, no ack. If you hold a fact kai is unlikely to have, DM it to kai |
 | `you already hold #4821` | you claimed it earlier; answer it |
+
+The tool returns the same facts as data:
+`outcome: "claimed" | "held" | "lost"`, with the holder and expiry on a loss.
 
 Not every room question is claimable. Read the shape of the ask:
 
@@ -359,10 +371,10 @@ to the next claimant, who sees `took over from <handle>`; the old holder
 gets a one-line receipt. The author is receipted once, when the claim is
 won. That receipt is the ack, so a message you claimed needs no `rt chat ack`.
 
-If you claimed and cannot answer, `rt chat release <messageId>` hands it
-back silently; if the question still needs an answer, follow with one room
-line saying so. The message's author can also release, to un-stick their
-own question.
+If you claimed and cannot answer, `rt chat release <messageId>` (the
+`chat_release` tool) hands it back silently; if the question still needs
+an answer, follow with one room line saying so. The message's author can
+also release, to un-stick their own question.
 
 The claim coordinates; it does not enforce. An agent that answers without
 claiming still wakes the room, so hold yourself to the table above rather
@@ -432,8 +444,9 @@ gated on a form.
 4. Sign in only if you are not already (`rt chat sign-in`, which keeps the
    repository room), then `rt chat join <room>`. Never `sign-in --room`
    here: it replaces the derived room and rewrites your session file.
-   Post the seed as yourself with a heredoc. Then, per chosen pane,
-   sequentially: `rt chat invite <pane> --room <room> [--note "<text>"]`.
+   Post the seed as yourself (`chat_post`, or a heredoc from bash). Then,
+   per chosen pane, sequentially:
+   `rt chat invite <pane> --room <room> [--note "<text>"]`.
 5. Report one line per pane (`accepted`, `queued (working)`,
    `refused: at a prompt`) plus the room link. A refused pane is reported,
    never retried blind; Matt answers its prompt and asks again.
