@@ -23,6 +23,7 @@ import { forgeFromRemote, readTeamSnapshot, readUserIntegrationOverrides, type T
 import { accessRows } from "./validators/access.ts";
 import { accountRows, type SecretPresence } from "./validators/accounts.ts";
 import { macRows } from "./validators/mac.ts";
+import { repoRootRow } from "./validators/repo-root.ts";
 import { rtHealthRows } from "./validators/rt-health.ts";
 import { INSTALLED_BY_INSTALL_NOTE, toolRows } from "./validators/tools.ts";
 
@@ -166,7 +167,8 @@ export async function composePlan(i: PlanInputs): Promise<Plan> {
     buildGroup("tools", async () => {
       const [hasBrew, healthRows] = await Promise.all([detectHasBrew(i.p), rtHealthRows(i.p, { ci: i.ci })]);
       const tools = await toolRows(i.p, reqs, { hasBrew, secrets: i.secrets, teamSlug: team.slug });
-      return [...tools, ...healthRows];
+      const repoRoot = repoRootRow(i.p, team, snapshot);
+      return [...tools, ...(repoRoot ? [repoRoot] : []), ...healthRows];
     }),
   ]);
 
