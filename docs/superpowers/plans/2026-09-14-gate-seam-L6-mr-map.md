@@ -4,7 +4,7 @@
 
 **Goal:** One verb joining the user's open MRs to the local worktrees holding their branches, replacing the map-open-mrs skill's manual join.
 
-**Architecture:** Pure client composition: `projectMrsRead` + `worktreeList` from rt-client, joined by exact branch equality in a new `lib/mr-map.ts`, surfaced by a new `commands/mr.ts` tree branch. No daemon changes.
+**Architecture:** Pure client composition: rt-client's `readProjectMRs` wrapper plus worktree:list via the client's generic typed command transport (no dedicated wrapper exists), joined by exact branch equality in a new `lib/mr-map.ts`, surfaced by a new `commands/mr.ts` tree branch. No daemon changes.
 
 **Tech Stack:** Bun, TypeScript, bun test.
 
@@ -74,7 +74,7 @@ mr: {
 - Modify: `lib/module-registry.ts` (thunk for `./commands/mr.ts`)
 
 **Interfaces:**
-- Consumes: Task 1's join; rt-client `projectMrsRead({repoName, ...})` and `worktreeList({repoName})` (exact wrapper names from `packages/rt-client/src/index.ts`; if projectMrsRead's demand/authors semantics need a demand declaration, mirror how the mr-board's data layer calls it... read `~/Documents/GitHub/mattstack-apps/apps/board/src/data.ts` for the working call shape).
+- Consumes: Task 1's join; rt-client `readProjectMRs({repoName, ...})` and worktree:list through the client's generic typed command transport (no dedicated wrapper; follow how other verb modules issue raw commands). For readProjectMRs's demand/authors semantics, mirror how the mr-board's data layer calls it... read `~/Documents/GitHub/mattstack-apps/apps/board/src/data.ts` for the working call shape.
 - Produces: C7's output. Non-JSON output: an aligned table (ref, branch, worktree-or-NONE), no UI framework.
 
 - [ ] **Step 1:** implement; **Step 2:** run against the live daemon read-only: `bun run cli.ts mr map --repo repo-tools --json` (read-only verbs are safe from source against the real daemon; no isolated HOME needed for reads, but never run write verbs this way).

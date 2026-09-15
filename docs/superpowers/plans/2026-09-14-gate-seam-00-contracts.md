@@ -177,10 +177,10 @@ Daemon command:
 
 Handler (new section in lib/daemon/handlers/discussions.ts, same provider
 plumbing as discussions:reply): fetch diff_refs, createPositionedDiscussion,
-verify the created note's type by re-reading the discussion (type must be
-DiffNote); on a silent general-note degrade, deleteNote and retry ONCE with
-corrected position; second failure returns `{ok:false, error}` naming what
-GitLab returned. `verified: true` in data is the contract that the check ran.
+verify the created note's type FROM THE CREATION RESPONSE (its first note's
+`type` must be "DiffNote"; no re-read round trip); on a silent general-note
+degrade, deleteNote and retry ONCE with corrected position; second failure
+returns `{ok:false, error}` naming what GitLab returned. `verified: true` in data is the contract that the check ran.
 
 ## C7. mr map (lane L6)
 

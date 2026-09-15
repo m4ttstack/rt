@@ -26,7 +26,7 @@
 - Test: extend the existing herd spawn handler test to assert the agent:start payload received `subject: "herd:<id>/<job>"` (the same string `herdSubject(herdId, name)` builds for herd:ask; import and reuse that builder, never a second template string)
 
 **Interfaces:**
-- Consumes: the existing `herdSubject(herdId: string, job: string): string` helper in handlers/herd.ts (the one herd:ask uses at herd.ts:464).
+- Consumes: the existing `herdSubject(herdId: string, job: string): string` helper (defined in lib/daemon/herd-store.ts, already imported at handlers/herd.ts:13; the one herd:ask uses at herd.ts:464).
 - Produces: every herd-spawned agent record carries `subject`, which agent:start already persists and stamps as RT_GATE_SUBJECT at launch (commands.ts:349-354 documents that contract; no agent.ts change needed).
 
 - [ ] **Step 1:** failing test on the spawn handler's agent:start payload.
