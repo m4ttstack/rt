@@ -727,7 +727,7 @@ export function createGateHandlers(
       kind: typeof payload?.kind === "string" && payload.kind.trim() ? payload.kind.trim() : "question",
       questions,
       ...(isPlainObject(payload?.meta) ? { meta: payload!.meta } : {}),
-      ...(typeof payload?.agent === "string" && payload.agent.trim() ? { agent: payload.agent.trim() } : {}),
+      ...(typeof payload?.agent === "string" && payload.agent.trim() ? { agent: payload.agent } : {}),
       ...(context !== undefined ? { context } : {}),
       ...(paneId ? { pane: paneId } : {}),
       ...(presentation === "form" && sessionId ? { nudge: { session: sessionId } } : {}),

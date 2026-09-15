@@ -303,4 +303,19 @@ describe("gate:ask", () => {
     const row = store.get(res.data.id)!;
     expect(row.owner).toBe("herd:h-9");
   });
+
+  test("(t) explicit non-run subject + sessionId's run worktree + passthrough origin.worktree: the run-derived worktree wins", async () => {
+    const { handlers, store } = harness({
+      resolveSubject: () => ({ ok: true, subject: "mr:x", runId: "r1", runWorktree: "/run/wt" }),
+    });
+    const res = await handlers["gate:ask"]({
+      questions: twoOptionQuestion(), subject: "mr:x", sessionId: "sess-1",
+      origin: { worktree: "/caller/wt" },
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const row = store.get(res.data.id)!;
+    expect(row.origin?.worktree).toBe("/run/wt");
+    expect(row.origin?.runId).toBe("r1");
+  });
 });

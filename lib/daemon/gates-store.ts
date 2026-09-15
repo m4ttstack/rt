@@ -464,10 +464,11 @@ export function createGatesStore(opts: {
       assertValidSubject(input.subject);
       const id = crypto.randomUUID();
       const openedAt = Date.now();
-      // The one producer seam (contract C11): every caller (the gate:open
-      // handler, the reconciler's direct attention-gate opens) routes
-      // through here, so normalizing in the handler instead would miss
-      // callers that bypass it.
+      // Both openers (the gate:open handler and the reconciler's direct
+      // attention-gate opens) call this store method directly, and the
+      // reconciler's attention gates never go through the gate:open handler
+      // at all -- normalizing at the handler level instead would leave every
+      // attention row in the pre-normalized string shape.
       const questions = normalizeGateQuestions(input.questions);
       const supersededId = openTxn({
         id,

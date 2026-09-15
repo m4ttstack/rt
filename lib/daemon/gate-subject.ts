@@ -42,7 +42,7 @@ export function resolveGateSubject(
       return { ok: false, error: `multiple running runs for this session; pass --subject (candidates: ${running.map((r) => r.runId).join(", ")})` };
     }
     const agent = deps.agentBySession(args.sessionId);
-    if (agent) return { ok: true, subject: agent.subject && agent.subject.trim() ? agent.subject : `agent:${agent.id}` };
+    if (agent) return { ok: true, subject: agent.subject && agent.subject.trim() ? agent.subject.trim() : `agent:${agent.id}` };
   }
   return { ok: false, error: "no subject: pass --subject, or run under a recorded run/agent session" };
 }

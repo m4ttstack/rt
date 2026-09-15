@@ -19,6 +19,10 @@ describe("resolveGateSubject", () => {
     expect(resolveGateSubject(none, { subject: "mr:x" })).toEqual({ ok: true, subject: "mr:x" });
   });
 
+  test("explicit non-run subject with a real sessionId whose runsBySession returns zero running runs skips enrichment silently", () => {
+    expect(resolveGateSubject(none, { subject: "mr:x", sessionId: "s" })).toEqual({ ok: true, subject: "mr:x" });
+  });
+
   test("explicit run: subject takes runId from the SUBJECT, even with no sessionId", () => {
     expect(resolveGateSubject(none, { subject: "run:rZ" }))
       .toEqual({ ok: true, subject: "run:rZ", runId: "rZ" });
