@@ -21,6 +21,13 @@
   ],
   "board.title": "vmtest kitchen sink",
   "mattstack.integrations": {
-    "linear": {}
+    "linear": {},
+    "slack": {
+      "appId": "A0VMTESTFAKE",
+      "clientId": "000000000000.00000000000"
+    },
+    "switchboard": {
+      "url": "https://vmtest-switchboard.example.invalid"
+    }
   }
 }
