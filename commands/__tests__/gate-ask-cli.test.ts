@@ -16,7 +16,7 @@ describe("buildGateAskPayload", () => {
   test("explicit --subject passes through", () => {
     expect(buildGateAskPayload(["--questions", Q, "--subject", "mr:x"], noEnv).subject).toBe("mr:x");
   });
-  test("RT_GATE_SUBJECT is deliberately NOT read (contract C4: the daemon ladder decides)", () => {
+  test("RT_GATE_SUBJECT is deliberately NOT read (the daemon ladder decides)", () => {
     const env = { RT_GATE_SUBJECT: "agent:ag-1" } as NodeJS.ProcessEnv;
     expect(buildGateAskPayload(["--questions", Q], env).subject).toBeUndefined();
   });

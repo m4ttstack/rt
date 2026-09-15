@@ -5,8 +5,8 @@
  * compiled binary's tree dispatch, so only it can catch these strings
  * drifting (`bun run test` skips e2e entirely).
  *
- * Case 3 proves contract C4: the CLI never reads RT_GATE_SUBJECT out of its
- * own process env, only --subject.
+ * Case 3 proves the CLI never reads RT_GATE_SUBJECT out of its own process
+ * env, only --subject.
  */
 
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";

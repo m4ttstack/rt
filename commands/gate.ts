@@ -165,7 +165,7 @@ export async function gateAnswer(args: string[]): Promise<void> {
 
 const ASK_USAGE = "usage: rt gate ask --questions <json> [--context <text>] [--kind <k>] [--subject <s>] [--json]";
 
-/** Always-JSON failure (contract C4): agents parse stdout on both
+/** Always-JSON failure: agents parse stdout on both
     outcomes, so refusals never take fail()'s stderr-prose path. */
 function askFail(message: string): never {
   console.log(JSON.stringify({ ok: false, error: message }));
@@ -188,10 +188,10 @@ export function buildGateAskPayload(args: string[], env: NodeJS.ProcessEnv): Com
   if (context !== undefined) payload.context = context;
   const kind = flagValue(args, "--kind");
   if (kind !== undefined) payload.kind = kind;
-  // No RT_GATE_SUBJECT read (contract C4): the var carries an agent:<id>
-  // fallback on every launch and would shadow the daemon ladder's run
-  // rung; absent --subject, the daemon resolves session -> run -> the
-  // agent record's own subject.
+  // No RT_GATE_SUBJECT read: the var carries an agent:<id> fallback on
+  // every launch and would shadow the daemon ladder's run rung; absent
+  // --subject, the daemon resolves session -> run -> the agent record's
+  // own subject.
   const subject = flagValue(args, "--subject");
   if (subject !== undefined) payload.subject = subject;
   if (env.CLAUDE_CODE_SESSION_ID) payload.sessionId = env.CLAUDE_CODE_SESSION_ID;
