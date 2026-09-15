@@ -183,4 +183,32 @@ describe("scripts/hooks/gate-fork.sh", () => {
     const res = await runHook(path, herdSubject);
     expect(res.stdout).toContain('"permissionDecision":"allow"');
   });
+
+  test("an open run-gate in a DIFFERENT worktree still denies", async () => {
+    const herdSubject = "herd:hoki-x/cv-2492-attorney";
+    const runGate = JSON.stringify({
+      ok: true, cursor: 0,
+      gates: [gateRow("open", {
+        id: "g-run", subject: "run:r1", kind: "plan",
+        origin: { runId: "r1", worktree: `${process.cwd()}-other`, presentation: "form", paneId: "w1:p1" },
+        owner: "herd:hoki-x",
+      })],
+    });
+    const path = pathWithStubRtRouting([
+      { match: `--subject-prefix ${herdSubject}`, body: '{"ok":true,"gates":[],"cursor":0}' },
+      { match: "--subject-prefix run:", body: runGate },
+    ]);
+    const res = await runHook(path, herdSubject);
+    expect(res.stdout).toContain('"permissionDecision":"deny"');
+  });
+
+  test("the run-gate list call failing (exitCode 1) still allows: degraded mode stays legal", async () => {
+    const herdSubject = "herd:hoki-x/cv-2492-attorney";
+    const path = pathWithStubRtRouting([
+      { match: `--subject-prefix ${herdSubject}`, body: '{"ok":true,"gates":[],"cursor":0}' },
+      { match: "--subject-prefix run:", body: '{"ok":false,"error":"rt daemon unreachable"}', exitCode: 1 },
+    ]);
+    const res = await runHook(path, herdSubject);
+    expect(res.stdout).toContain('"permissionDecision":"allow"');
+  });
 });
