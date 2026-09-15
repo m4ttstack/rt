@@ -151,7 +151,7 @@ export function mcpTools(): McpToolDef[] {
     },
     {
       name: "gate_list",
-      description: "List gates, defaulting to open ones, optionally filtered by subject prefix or kind and capped by limit.",
+      description: "List gates in all statuses unless open is true, optionally filtered by subject prefix or kind and capped by limit.",
       inputSchema: {
         type: "object",
         properties: {

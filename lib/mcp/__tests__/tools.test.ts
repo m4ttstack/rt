@@ -49,4 +49,10 @@ describe("mcpTools", () => {
     expect(res.ok).toBe(false);
     expect(res.error).toContain("rt chat sign-in");
   });
+
+  test("gate_list description does not claim an open default", () => {
+    const tool = mcpTools().find((t) => t.name === "gate_list")!;
+    expect(tool.description).not.toContain("defaulting to open");
+    expect(tool.description).toContain("all statuses");
+  });
 });
