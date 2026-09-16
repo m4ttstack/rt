@@ -346,7 +346,7 @@ export function mcpTools(): McpToolDef[] {
     },
     {
       name: "mr_reply_thread",
-      description: "Reply to an existing merge or pull request discussion thread on the given repo and IID.",
+      description: "Reply to an existing merge or pull request discussion thread on the given repo and IID. repoName must be the repo's serialized identity (e.g. remote:gitlab.com%2Facme%2Facme-dev), not a bare host/path or display name.",
       inputSchema: {
         type: "object",
         properties: {
@@ -377,7 +377,7 @@ export function mcpTools(): McpToolDef[] {
     },
     {
       name: "mr_comment_inline",
-      description: "GitLab only. Post a NEW positioned inline comment (DiffNote) on an MR diff line, with server-side verification: the daemon re-checks the created note's type and deletes-and-retries once when GitLab silently drops the position. The retry re-fetches diff_refs; it cannot repair a position GitLab rejects outright. Use mr_reply_thread to reply to an existing thread.",
+      description: "GitLab only. Post a NEW positioned inline comment (DiffNote) on an MR diff line, with server-side verification: the daemon re-checks the created note's type and deletes-and-retries once when GitLab silently drops the position. The retry re-fetches diff_refs; it cannot repair a position GitLab rejects outright. Use mr_reply_thread to reply to an existing thread. repoName must be the repo's serialized identity (e.g. remote:gitlab.com%2Facme%2Facme-dev), not a bare host/path or display name.",
       inputSchema: {
         type: "object",
         properties: {
@@ -415,7 +415,7 @@ export function mcpTools(): McpToolDef[] {
     },
     {
       name: "mr_map",
-      description: "Open MRs for a repo joined to the local worktrees holding their branches. Lists ALL open MRs for the repo (not only yours). repo is the registered repo name.",
+      description: "Open MRs for a repo joined to the local worktrees holding their branches. Lists ALL open MRs for the repo (not only yours). repo is the repo's registered name: either its serialized identity (e.g. remote:gitlab.com%2Facme%2Facme-dev) or its short repo-label alias.",
       inputSchema: {
         type: "object",
         properties: { repo: { type: "string" } },
