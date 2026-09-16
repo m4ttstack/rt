@@ -1,7 +1,7 @@
 # rt agent: codex provider, --yolo, and console-editable defaults
 
 Status: approved for planning
-Repos touched: repo-tools (this repo), packages/settings-kit (this repo), mattstack-apps/apps/console
+Repos touched: repo-tools (this repo), mattstack-apps/apps/console
 
 ## Motivation
 
@@ -188,42 +188,39 @@ agent.codex.yolo        boolean
 - `lib/state/agents-store.ts`: add `yolo` column + field; add
   `updateAgentSessionId(id, sessionId, db)`.
 
-## Shared settings-shape extraction (packages/settings-kit)
-
-`mattstack-apps/apps/board/src/client/board/ConfigModal.tsx` is already a
-generic, registry-driven, prefix-scoped settings editor
-(`useSettingsScope('board.')` from `@mattstack/settings-kit/react`, which is
-pure `fetch`-based and has zero UI-framework dependency). Its logic layer,
-`config-shapes.ts`, is also UI-agnostic (only imports
-`SettingDefWire` and one board-specific constant) — `filterDefs`,
-`groupByScope`, `rowKind`, `matchesShape`, `parseScalar`, `formatValue`,
-`isSet`, `getLeaf`/`setLeaf`, `scopeLabel` have no tui-kit dependency at all.
-
-Extract those generic pieces into `packages/settings-kit/src/shapes.ts`
-(new subpath export, e.g. `@mattstack/settings-kit/shapes`, mirroring the
-existing `/react` and `/server` exports). Board's `config-shapes.ts` keeps
-its board-only extras (`COMPOSITE_SHAPES`, `ROW_HINTS`, `rosterSummary`,
-`slugTabId`, `addToList`) and imports the generic ones from settings-kit
-instead of defining them locally. This is the only way console avoids
-reimplementing logic that already exists and works.
-
 ## Console: Agent Defaults settings page
 
-Console currently has no general settings-editor surface. The only
-per-key view (`src/app/config/ExplainKeyPage.tsx`) is explicitly commented
-as "a lens, not a surface — no rail entry points here" (palette-only,
-read-heavy). This is a new, real page:
+Console has its **own** independent settings API
+(`src/server/settings.ts`, a Hono router hand-written against
+`@mattstack/rt-client` directly) — it does not depend on
+`@mattstack/settings-kit` at all, unlike board. Board's
+`ConfigModal`/`config-shapes.ts` (registry-driven, prefix-scoped, with
+composite/leaves/roster/tabs control types) is real prior art but is not a
+dependency console should take on here: every `agent.*` key is a plain
+scalar (string or boolean) — none need board's composite-shape machinery —
+and pulling in `@mattstack/settings-kit` as a new console dependency just
+for a handful of pure functions would add a cross-repo dependency (and its
+own `dist/` staleness footgun) for no real reuse. So this page builds
+directly on console's existing settings API, extended minimally:
 
-- New rail entry ("Settings", gear icon) in `src/app/App.tsx` /
-  `src/app/routes.ts`.
-- New page, e.g. `src/app/settings/AgentDefaultsPage.tsx`, built on
-  `useSettingsScope('agent.')` (from `@mattstack/settings-kit/react`) and the
-  extracted shape helpers, rendered with Mantine components (per
-  `building-with-mantine-kit`) instead of tui-kit's raw `<input>`/`<select>` —
-  same data layer as board's `ConfigModal`, different render layer.
-- Console's existing generic `/api/settings/*` routes (already exercised by
-  `useSettings.ts`'s `defs`/`explain`/`set`) cover read/write for all the new
-  `agent.*` keys with no server change.
+- `src/server/settings.ts`: `GET /api/settings/defs` gains an optional
+  `?prefix=` query param (`allDefs().filter(d => d.key.startsWith(prefix))`),
+  mirroring the filtering settings-kit's own server already does for board.
+- `src/app/config/useSettings.ts`: new `useSettingsPrefix(prefix: string)`
+  hook, same shape as the existing `useSettingsDefs`/`useExplainKey`, calling
+  `client.api.settings.defs.$get({ query: { prefix } })`.
+- Console currently has no general settings-editor surface — the only
+  per-key view (`ExplainKeyPage.tsx`) is explicitly commented as "a lens, not
+  a surface — no rail entry points here" (palette-only, read-heavy). This is
+  a new, real page:
+  - New rail entry ("Settings", gear icon) in `src/app/App.tsx` /
+    `src/app/routes.ts`.
+  - New page, `src/app/settings/AgentDefaultsPage.tsx`, using
+    `useSettingsPrefix('agent.')` and `useSetSetting`, rendered with Mantine
+    components (per `building-with-mantine-kit`): a `Select` for
+    `agent.provider` (claude/codex), and per-provider sections with a
+    `TextInput` for model (datalist-style suggestions, see below), effort,
+    account (claude only), extraArgs, and a `Switch` for yolo.
 
 ### Model suggestions
 
@@ -262,10 +259,9 @@ text still works for a model the list doesn't know about yet.
   `--yolo`).
 - Registry: existing settings tests should cover the renamed/added rows
   automatically (type/scope validation is generic).
-- Console: a component test for the new settings page against a mocked
-  `/api/settings` + `/api/agent/models`, plus the existing
-  `dist-freshness`-style discipline if rt-client's `agent-models.ts` ships
-  from there.
+- Console: a server test for the new `?prefix=` filter and the
+  `/api/agent/models` route; a component test for the new settings page
+  against a mocked settings API.
 
 ## Open items to resolve during implementation (not blocking this design)
 
