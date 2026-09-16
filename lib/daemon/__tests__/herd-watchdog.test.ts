@@ -206,6 +206,13 @@ describe("evaluateShepherd", () => {
     expect(evaluateShepherd(herd(), s, cfg)).toEqual({ kind: "healthy" });
   });
 
+  test("a done job whose pane is gone or absent never trips the shepherd backstop: nothing is left to close", () => {
+    const gone = sensors({ paneState: (p) => (p === "w1:p0" ? "idle" : "gone"), jobs: () => [job({ status: "done", lastReport: NOW - 40 * MIN })] });
+    expect(evaluateShepherd(herd(), gone, cfg)).toEqual({ kind: "healthy" });
+    const absent = sensors({ ...shepherdIdle, jobs: () => [job({ status: "done", lastReport: NOW - 40 * MIN, pane: null })] });
+    expect(evaluateShepherd(herd(), absent, cfg)).toEqual({ kind: "healthy" });
+  });
+
   test("a done job with no report never trips the shepherd backstop", () => {
     const s = sensors({ ...shepherdIdle, jobs: () => [job({ status: "done", lastReport: null })] });
     expect(evaluateShepherd(herd(), s, cfg)).toEqual({ kind: "healthy" });

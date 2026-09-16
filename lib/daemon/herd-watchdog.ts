@@ -46,19 +46,20 @@ const ms = (mins: number) => mins * 60_000;
 const plural = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
 const oldest = (gates: { id: string; ageMs: number }[]) => gates.reduce<{ id: string; ageMs: number } | null>((a, g) => (a && a.ageMs >= g.ageMs ? a : g), null);
 
-/** The published report is the clock for both the nag and the shepherd backstop. */
-function reportAgeMs(job: HerdJobRow, now: number): number | null {
-  if (job.status !== "done" || job.lastReport === null) return null;
+/** The published report is the clock for both the nag and the shepherd
+    backstop, and only while the pane is still open: a done job whose pane is
+    gone has been closed (or its close was missed), and nobody can act on it. */
+function openReportAgeMs(job: HerdJobRow, s: WatchdogSensors, now: number): number | null {
+  if (job.status !== "done" || job.lastReport === null || job.pane === null) return null;
+  if (s.paneState(job.pane) === "gone") return null;
   return now - job.lastReport;
 }
 
 type Lingering = Extract<WedgeVerdict, { kind: "finished-lingering" }>;
 
-/** A done job whose pane is already gone has been closed, so it never nags. */
 function finishedLingering(job: HerdJobRow, s: WatchdogSensors, cfg: WatchdogConfig, now: number): Lingering | null {
-  const age = reportAgeMs(job, now);
-  if (age === null || job.pane === null || age < ms(cfg.nagMins)) return null;
-  if (s.paneState(job.pane) === "gone") return null;
+  const age = openReportAgeMs(job, s, now);
+  if (age === null || age < ms(cfg.nagMins)) return null;
   return { kind: "finished-lingering", evidence: `${job.name} done with report ${minutes(age)}m ago, pane still open` };
 }
 
@@ -109,7 +110,7 @@ export function evaluateShepherd(herd: HerdRow, s: WatchdogSensors, cfg: Watchdo
     if (lingering) return { kind: "wedged", path: "fast", evidence: lingering.evidence };
   }
   for (const job of jobs) {
-    const age = reportAgeMs(job, now);
+    const age = openReportAgeMs(job, s, now);
     if (age !== null && age >= ms(cfg.backstopMins)) {
       return { kind: "wedged", path: "backstop", evidence: `${job.name} done with report ${minutes(age)}m ago, not yet closed` };
     }
