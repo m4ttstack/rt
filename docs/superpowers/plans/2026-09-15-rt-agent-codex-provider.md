@@ -817,6 +817,13 @@ bun run build
 cd ../..
 ```
 
+Commit the version bump in repo-tools itself before moving on — otherwise `main` is left dirty after publish, with `packages/rt-client/package.json`'s version behind what npm actually has, which is a trap for whoever publishes next:
+
+```bash
+git add packages/rt-client/package.json
+git commit -m "rt-client: bump to <the-agreed-next-version>"
+```
+
 After it's live on npm:
 
 ```bash
