@@ -57,7 +57,9 @@ final class WindowNavigationDelegate: NSObject, WKNavigationDelegate, WKUIDelega
     /// .allow untouched.
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        if let url = navigationAction.request.url, WindowNavigation.opensExternally(url) {
+        if navigationAction.targetFrame?.isMainFrame == true,
+           let url = navigationAction.request.url,
+           WindowNavigation.opensExternally(url) {
             decisionHandler(.cancel)
             NSWorkspace.shared.open(url)
             return
