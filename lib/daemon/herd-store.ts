@@ -14,7 +14,7 @@ export type HerdJobStatus = "spawning" | "active" | "at-gate" | "at-milestone" |
 
 export interface HerdRow {
   id: string; repo: string; room: string; workspace: string;
-  shepherdSession: string; shepherdHandle: string;
+  shepherdSession: string; shepherdHandle: string; shepherdPane: string | null;
   herdrSocket: string | null; hidden: boolean;
   status: HerdStatus; createdAt: number; wrappedAt: number | null;
 }
@@ -30,10 +30,11 @@ export interface HerdJobRow {
 }
 
 export interface HerdStore {
-  create(input: Omit<HerdRow, "status" | "createdAt" | "wrappedAt">): HerdRow;
+  create(input: Omit<HerdRow, "status" | "createdAt" | "wrappedAt" | "shepherdPane">): HerdRow;
   get(id: string): HerdRow | null;
   list(filter?: { status?: HerdStatus }): HerdRow[];
-  setShepherd(id: string, s: { session: string; handle: string }): void;
+  /** An omitted or null `pane` clears the stored shepherd pane to NULL. */
+  setShepherd(id: string, s: { session: string; handle: string; pane?: string | null }): void;
   setHerdStatus(id: string, status: HerdStatus): void;
   upsertJob(input: { herd: string; name: string; worktree: string; branch?: string | null; tree?: string | null; pane?: string | null; agentSession?: string | null; agentId?: string | null; handle: string; status: HerdJobStatus; disposable?: boolean }): HerdJobRow;
   getJob(herd: string, name: string): HerdJobRow | null;
@@ -64,7 +65,7 @@ export function mintHerdId(name: string, now: Date = new Date()): string {
   return `${name}-${stamp}`;
 }
 
-interface HerdColumns { id: string; repo: string; room: string; workspace: string; shepherdSession: string; shepherdHandle: string; herdrSocket: string | null; hidden: number; status: HerdStatus; createdAt: number; wrappedAt: number | null }
+interface HerdColumns { id: string; repo: string; room: string; workspace: string; shepherdSession: string; shepherdHandle: string; shepherdPane: string | null; herdrSocket: string | null; hidden: number; status: HerdStatus; createdAt: number; wrappedAt: number | null }
 interface JobColumns { herd: string; name: string; worktree: string; branch: string | null; tree: string | null; pane: string | null; agentSession: string | null; agentId: string | null; handle: string; status: HerdJobStatus; disposable: number; lastGate: string | null; lastReport: number | null; createdAt: number; updatedAt: number }
 
 const toHerd = (r: HerdColumns): HerdRow => ({ ...r, hidden: r.hidden === 1 });
@@ -107,6 +108,7 @@ export function createHerdStore(opts: { dbPath: string; log: Logger }): HerdStor
       workspace       TEXT NOT NULL,
       shepherdSession TEXT NOT NULL,
       shepherdHandle  TEXT NOT NULL,
+      shepherdPane    TEXT,
       herdrSocket     TEXT,
       hidden          INTEGER NOT NULL DEFAULT 0,
       status          TEXT NOT NULL,
@@ -134,6 +136,13 @@ export function createHerdStore(opts: { dbPath: string; log: Logger }): HerdStor
     CREATE INDEX IF NOT EXISTS idx_herd_jobs_pane ON herd_jobs(pane);
   `);
 
+  // Idempotent migration for a herds.db predating shepherdPane:
+  // CREATE TABLE IF NOT EXISTS above never adds columns to an existing table.
+  const herdCols = new Set(
+    (db.query("PRAGMA table_info(herds)").all() as Array<{ name: string }>).map((c) => c.name),
+  );
+  if (!herdCols.has("shepherdPane")) db.exec("ALTER TABLE herds ADD COLUMN shepherdPane TEXT;");
+
   const getHerd = db.prepare("SELECT * FROM herds WHERE id = ?");
   const insertHerd = db.prepare("INSERT INTO herds (id, repo, room, workspace, shepherdSession, shepherdHandle, herdrSocket, hidden, status, createdAt, wrappedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, NULL)");
   const getJobStmt = db.prepare("SELECT * FROM herd_jobs WHERE herd = ? AND name = ?");
@@ -158,7 +167,7 @@ export function createHerdStore(opts: { dbPath: string; log: Logger }): HerdStor
       return (rows as HerdColumns[]).map(toHerd);
     },
     setShepherd(id, s) {
-      db.run("UPDATE herds SET shepherdSession = ?, shepherdHandle = ? WHERE id = ?", [s.session, s.handle, id]);
+      db.run("UPDATE herds SET shepherdSession = ?, shepherdHandle = ?, shepherdPane = ? WHERE id = ?", [s.session, s.handle, s.pane ?? null, id]);
     },
     setHerdStatus(id, status) {
       db.run("UPDATE herds SET status = ?, wrappedAt = ? WHERE id = ?", [status, status === "wrapped" ? Date.now() : null, id]);

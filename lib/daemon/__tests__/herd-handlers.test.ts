@@ -245,6 +245,17 @@ describe("herd:start", () => {
     expect(store.list()).toEqual([]);
     expect(claims.list()).toEqual([]);
   });
+
+  test("callerPane is recorded as shepherdPane; omitting it leaves the column null", async () => {
+    const { h, store } = harness();
+    const withPane = await h["herd:start"]({ ...START, callerPane: "wX:p1" });
+    if (!withPane.ok) throw new Error(withPane.error);
+    expect(store.get(withPane.data.herd)!.shepherdPane).toBe("wX:p1");
+
+    const withoutPane = await h["herd:start"]({ ...START, name: "demo2" });
+    if (!withoutPane.ok) throw new Error(withoutPane.error);
+    expect(store.get(withoutPane.data.herd)!.shepherdPane).toBeNull();
+  });
 });
 
 describe("herd:resume / status / close", () => {
@@ -268,6 +279,17 @@ describe("herd:resume / status / close", () => {
     expect(res.data.gates).toHaveLength(1);
     expect(res.data.unread).toBe(3);
     expect(res.data.status.jobs[0]).toMatchObject({ name: "job-a", openGate: res.data.gates[0]!.id, paneStatus: "working" });
+  });
+
+  test("resume with callerPane stores shepherdPane; a resume without it clears a stale one", async () => {
+    const { h, store, herd } = await started();
+    const withPane = await h["herd:resume"]({ herd, session: "sess-shep-2", callerPane: "wX:p1" });
+    if (!withPane.ok) throw new Error(withPane.error);
+    expect(store.get(herd)!.shepherdPane).toBe("wX:p1");
+
+    const withoutPane = await h["herd:resume"]({ herd, session: "sess-shep-3" });
+    if (!withoutPane.ok) throw new Error(withoutPane.error);
+    expect(store.get(herd)!.shepherdPane).toBeNull();
   });
 
   test("a live pane with no claude behind it reads sessionDead, not working", async () => {

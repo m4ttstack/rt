@@ -163,7 +163,7 @@ export async function start(args: string[]): Promise<void> {
   if (!name) fail("usage: rt herd start --name <n> [--repo <path>] [--hidden]");
   const session = flagValue(args, "--session") ?? process.env.CLAUDE_CODE_SESSION_ID;
   if (!session) fail("run inside a Claude Code session (or pass --session <id>)");
-  const data = unwrap(await herdStart({ name, repo: await repoFor(args), session, hidden: has(args, "--hidden") }), "start");
+  const data = unwrap(await herdStart({ name, repo: await repoFor(args), session, hidden: has(args, "--hidden"), callerPane: process.env.HERDR_PANE_ID ?? undefined }), "start");
   emit(json, data, `herd ${data.herd}\nroom ${data.room}\nworkspace ${data.workspace}\nsubscription ${data.subscription}${data.hidden ? "\nhidden: yes" : ""}`);
 }
 
@@ -338,7 +338,7 @@ export async function resume(args: string[]): Promise<void> {
   const herd = positional(args) ?? await soleHerd("usage: rt herd resume <id>");
   const session = flagValue(args, "--session") ?? process.env.CLAUDE_CODE_SESSION_ID;
   if (!session) fail("run inside a Claude Code session (or pass --session <id>)");
-  const data = unwrap(await herdResume({ herd, session }), "resume");
+  const data = unwrap(await herdResume({ herd, session, callerPane: process.env.HERDR_PANE_ID ?? undefined }), "resume");
   if (json) {
     emit(true, data, "");
     return;

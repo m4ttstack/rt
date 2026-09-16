@@ -751,8 +751,8 @@ export interface Commands {
   "gate:subscriptions": { payload: { session?: string; live?: boolean }; data: { subscriptions: GateSubscription[] } };
 
   // ─── Herd (shepherd run registry) ────────────────────────────────────────
-  "herd:start":  { payload: { name: string; repo: string; session: string; hidden?: boolean }; data: { herd: string; room: string; workspace: string; subscription: string; handle: string; hidden: boolean } };
-  "herd:resume": { payload: { herd: string; session: string }; data: { subscription: string; gates: GateRow[]; unread: number; status: HerdStatusData; handle: string } };
+  "herd:start":  { payload: { name: string; repo: string; session: string; hidden?: boolean; callerPane?: string }; data: { herd: string; room: string; workspace: string; subscription: string; handle: string; hidden: boolean } };
+  "herd:resume": { payload: { herd: string; session: string; callerPane?: string }; data: { subscription: string; gates: GateRow[]; unread: number; status: HerdStatusData; handle: string } };
   "herd:status": { payload: { herd: string }; data: HerdStatusData };
   /** Active herds only unless `all`, so a shepherd's "which herd am I on" question has one answer. */
   "herd:list":   { payload: { all?: boolean }; data: { herds: HerdListRow[] } };

@@ -403,6 +403,7 @@ export function createHerdHandlers(deps: HerdDeps) {
       const sub = await subscribeShepherd(id, session);
       if (!sub.ok) return sub;
       store.create({ id, repo, room, workspace: workspaceLabel(id), shepherdSession: session, shepherdHandle: handle, herdrSocket, hidden });
+      store.setShepherd(id, { session, handle, pane: p?.callerPane ?? null });
       // The claim is only worth registering once the herd row it belongs to
       // actually exists: any earlier failure returns before this line, so
       // there is no half-created herd to leave an orphaned claim behind for.
@@ -430,7 +431,7 @@ export function createHerdHandlers(deps: HerdDeps) {
       }
       const join = await deps.chat["chat:join"]({ room: herd.room, handle });
       if (!join.ok) return join;
-      store.setShepherd(herdId, { session, handle });
+      store.setShepherd(herdId, { session, handle, pane: p?.callerPane ?? null });
       const status = (await statusData(herdId))!;
       const gates = [...(await openHerdGates(herdId)), ...(await listHerdRunGates(herdId))];
       return { ok: true, data: { subscription: sub.data.id, gates, unread: status.unread, status, handle } };

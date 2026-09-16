@@ -561,6 +561,7 @@ export function herdStart(
 ): Promise<RtResponse<Commands["herd:start"]["data"]>> {
   const payload: Record<string, unknown> = { name: a.name, repo: a.repo, session: a.session };
   if (a.hidden !== undefined) payload.hidden = a.hidden;
+  if (a.callerPane !== undefined) payload.callerPane = a.callerPane;
   return rtCommand<Commands["herd:start"]["data"]>("herd:start", payload, { sockPath: o.sockPath, timeoutMs: o.timeoutMs ?? 60_000 });
 }
 
@@ -635,7 +636,9 @@ export function herdResume(
   a: Commands["herd:resume"]["payload"],
   o: RtClientOptions = {},
 ): Promise<RtResponse<Commands["herd:resume"]["data"]>> {
-  return rtCommand<Commands["herd:resume"]["data"]>("herd:resume", { herd: a.herd, session: a.session }, { sockPath: o.sockPath, timeoutMs: o.timeoutMs ?? 10_000 });
+  const payload: Record<string, unknown> = { herd: a.herd, session: a.session };
+  if (a.callerPane !== undefined) payload.callerPane = a.callerPane;
+  return rtCommand<Commands["herd:resume"]["data"]>("herd:resume", payload, { sockPath: o.sockPath, timeoutMs: o.timeoutMs ?? 10_000 });
 }
 
 /** Closes a herdr pane, one CLI call under the runner's own 15s budget. */
