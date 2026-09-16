@@ -295,7 +295,13 @@ export function createAgentHandlers(opts: {
       if (rec.provider === "codex") {
         void herdrAgentSessionId(out.paneId, 15_000).then((sid) => {
           if (sid) updateAgentSessionId(rec.id, sid, db);
-          else log.warn({ id: rec.id }, "agent: codex herdr launch never reported a session id (is `herdr integration install codex` set up?)");
+          // Two real causes, not one: `herdr integration install codex` is
+          // missing/misconfigured, OR (equally likely -- herdr's
+          // agent_session only populates once codex completes a turn, per
+          // Step 0) this launch carried no prompt and the pane never ran
+          // one. Naming only the integration cause here would send someone
+          // chasing a nonexistent setup problem on a plain promptless launch.
+          else log.warn({ id: rec.id }, "agent: codex herdr launch never reported a session id (either `herdr integration install codex` isn't set up, or the pane never completed a turn -- e.g. this launch had no prompt)");
         });
       }
       return { ok: true, data: rec };
