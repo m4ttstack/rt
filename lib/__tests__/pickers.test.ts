@@ -283,7 +283,7 @@ describe("pickWorktreeWithSwitch: incremental enrichment", () => {
     const call = fake.calls[0]!;
     expect(call.request.rows).toHaveLength(2);
     const cheap = call.request.rows.find((r) => r.value === "/a/wt1")!;
-    expect(cheap.left.map((s) => s.text).join("")).toBe("eng-123-fix-thing · wt1");
+    expect(cheap.left.map((s) => s.text).join("")).toBe("wt1  eng-123-fix-thing");
     expect(call.updates).toHaveLength(0);
 
     const enriched: EnrichedBranch[] = [

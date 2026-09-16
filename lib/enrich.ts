@@ -256,19 +256,6 @@ const MR_STATE_GLYPHS: Record<string, { glyph: string; tone: string }> = {
   closed: { glyph: "○", tone: "coral" },
 };
 
-/**
- * The picker clips overflowing rows at the left/right seam, so an untruncated
- * ticket title eats the whole row and takes the [state] tag with it.
- */
-const MAX_TICKET_TITLE = 64;
-
-function clipTitle(title: string): string {
-  // Code points, not UTF-16 units: a unit-indexed slice can cut a surrogate
-  // pair in half and hand the picker an unpaired surrogate.
-  const codePoints = Array.from(title);
-  if (codePoints.length <= MAX_TICKET_TITLE) return title;
-  return codePoints.slice(0, MAX_TICKET_TITLE - 1).join("").trimEnd() + "…";
-}
 
 /**
  * Segment-form sibling of `formatBranchLabelParts` for the rt-ui picker's row
@@ -314,33 +301,33 @@ export function formatBranchSegments(eb: EnrichedBranch): { left: PickSegment[];
 
   if (isTicketBranch) {
     const left: PickSegment[] = [
-      { text: clipTitle(eb.ticket!.title), tone: "text", bold: true },
+      { text: eb.dirName, bold: true, column: true },
     ];
     if (stateTag) {
       left.push(
         eb.ticket!.stateColor
-          ? { text: ` ${stateTag}`, hex: eb.ticket!.stateColor }
-          : { text: ` ${stateTag}`, tone: "dim" },
+          ? { text: `  ${stateTag}`, hex: eb.ticket!.stateColor }
+          : { text: `  ${stateTag}`, tone: "dim" },
       );
     }
-    left.push({ text: " · ", tone: "faint" }, { text: eb.dirName, tone: "dim" });
+    left.push({ text: "  " }, { text: eb.ticket!.title, tone: "dim" });
     if (right.length > 0) right.push({ text: " " });
     right.push({ text: eb.linearId!, tone: "dimmer" });
     return { left, right, match };
   }
 
   const left: PickSegment[] = !eb.branch
-    ? [{ text: eb.dirName, tone: "text", bold: true }]
+    ? [{ text: eb.dirName, bold: true, column: true }]
     : isDefault
       ? [
-          { text: eb.dirName, tone: "text", bold: true },
-          { text: " · ", tone: "faint" },
+          { text: eb.dirName, bold: true, column: true },
+          { text: "  ", tone: "faint" },
           { text: eb.branch, tone: "dim" },
         ]
       : [
-          { text: eb.branch, tone: "text", bold: true },
-          { text: " · ", tone: "faint" },
-          { text: eb.dirName, tone: "dim" },
+          { text: eb.dirName, bold: true, column: true },
+          { text: "  ", tone: "faint" },
+          { text: eb.branch, tone: "dim" },
         ];
 
   if (right.length === 0) {
