@@ -134,14 +134,13 @@ export interface GateRow {
   nudge: { session: string } | null;
   delivery: { outcome: "delivered" | "dead-pane" | "confirmed" | "stuck"; at: number } | null;
   released: boolean;
-  /** Set once the nudged pane has provably read the answer: either it
-      self-answered (stamped in the same transaction as the answer) or a
-      later `markConsumed` call recorded that it acted on a push. `null`
-      until then, so a sweep can tell an answered-but-unread row from a
-      settled one. Currently only stamped for herd-subject gates (the
-      self-answer path and `rt herd answer`'s nudged-session read); a
-      non-herd gate with a nudge stays `null` even after its pane
-      reconciles. */
+  /** Set once the nudged pane has provably read the answer: it self-answered
+      or lost the CAS to one (both stamped in the answer's own transaction),
+      or a later `markConsumed` call recorded that it acted on a push
+      (`rt herd answer` and `rt gate wait`, each on the nudged session's own
+      read). `null` until then, so a sweep can tell an answered-but-unread row
+      from a settled one. Every nudge-bearing subject has a stamping read;
+      a gate with no nudge never carries one, having no pane to read it. */
   consumedAt: number | null;
   owner: string | null;
   escalatedAt: number | null;
@@ -167,7 +166,7 @@ export interface HerdInfo { id: string; repo: string; room: string; workspace: s
 /** A herd row as `herd:list` reports it: the registry row plus how many jobs hang off it. */
 export interface HerdListRow extends HerdInfo { jobs: number }
 export interface HerdJobInfo { herd: string; name: string; worktree: string; branch: string | null; tree: string | null; pane: string | null; agentSession: string | null; agentId: string | null; handle: string; status: "spawning" | "active" | "at-gate" | "at-milestone" | "done" | "closed" | "crashed" | "stuck-at-modal"; disposable: boolean; lastGate: string | null; lastReport: number | null; createdAt: number; updatedAt: number }
-/** `lastGateStatus`/`lastGateDelivery` come from the job's `lastGate` row: an `answered` gate whose delivery is `dead-pane` is the "answered, worker not woken" case the shepherd must act on. `lastGateConsumed` is `null` when there is nothing to consume (no last gate, not answered, or not nudged), and otherwise reports whether the nudged pane has read its answer. */
+/** `lastGateStatus`/`lastGateDelivery` come from the job's `lastGate` row: a TERMINAL gate (answered or closed) whose delivery is `dead-pane` is the "worker not woken" case the shepherd must act on. `lastGateConsumed` is `null` when there is nothing to consume (no last gate, not answered, or not nudged), and otherwise reports whether the nudged pane has read its answer. */
 export interface HerdStatusData {
   herd: HerdInfo;
   jobs: Array<HerdJobInfo & { openGate: string | null; paneStatus: string | null; /** The worker session behind this job's pane is gone while the job still reads in-flight: herdr lists the pane but no claude is on it. Null when herdr does not list the pane at all (it closed, or herdr is unreachable), which proves nothing either way. */ sessionDead: boolean | null; lastGateStatus: GateStatus | null; lastGateDelivery: "delivered" | "dead-pane" | "confirmed" | "stuck" | null; lastGateConsumed: boolean | null }>;
@@ -733,7 +732,10 @@ export interface Commands {
   "gate:answer": { payload: { id: string; answers: GateAnswer["answers"]; by: string; session?: string; override?: boolean }; data: { row: GateRow; conflict?: true } };
   /** `ok:false "not-found"` on an unknown id is terminal; the CLI loop must not re-enter on it.
    *  `timeout` carries no row (nothing settled); `answered`/`closed` always carry the settled row. */
-  "gate:wait": { payload: { id: string; waitMs?: number }; data: { status: "timeout" } | { status: "answered" | "closed"; row: GateRow } };
+  /** `sessionId` is the caller's own session: an answered result returned to
+   *  the gate's nudged session is a recorded read and stamps `consumedAt`.
+   *  Omitting it reads without consuming. */
+  "gate:wait": { payload: { id: string; waitMs?: number; sessionId?: string }; data: { status: "timeout" } | { status: "answered" | "closed"; row: GateRow } };
   /** Paged like events:list: an omitted `limit` clamps daemon-side rather than
    *  forcing a full-table read; `cursor` is the paging rowid to resume from. */
   "gate:list": { payload: { open?: boolean; subjectPrefix?: string; kind?: string; limit?: number; cursor?: number }; data: { gates: GateRow[]; cursor: number } };

@@ -281,6 +281,11 @@ describe("renderStatus", () => {
     expect(renderStatus(data)).toContain("answered, worker not woken: rt chat dm job-a");
   });
 
+  test("a CLOSED gate whose doorbell died is just as unwoken and says so", () => {
+    const data = statusData({ jobs: [job({ lastGate: "gt-9", lastGateStatus: "closed", lastGateDelivery: "dead-pane", handle: "job-a" })] });
+    expect(renderStatus(data)).toContain("gate gt-9 closed, worker not woken: rt chat dm job-a");
+  });
+
   test("a delivered gate carries no not-woken warning", () => {
     const data = statusData({ jobs: [job({ lastGate: "gt-9", lastGateStatus: "answered", lastGateDelivery: "delivered" })] });
     expect(renderStatus(data)).not.toContain("worker not woken");

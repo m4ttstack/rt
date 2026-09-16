@@ -499,6 +499,7 @@ export function gateWait(
 ): Promise<RtResponse<Commands["gate:wait"]["data"]>> {
   const payload: Record<string, unknown> = { id: a.id };
   if (a.waitMs !== undefined) payload.waitMs = a.waitMs;
+  if (a.sessionId !== undefined) payload.sessionId = a.sessionId;
   return rtCommand<Commands["gate:wait"]["data"]>("gate:wait", payload, { sockPath: o.sockPath, timeoutMs: o.timeoutMs ?? 250_000 });
 }
 
