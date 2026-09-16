@@ -1,0 +1,69 @@
+---
+sidebar_position: 15
+title: MCP server
+---
+
+# MCP server
+
+rt ships a plugin MCP server that gives coding agents (Claude Code, and anything else that speaks MCP) access to rt's daemon over structured tool calls instead of shell commands.
+
+## How it works
+
+`rt mcp serve` starts a stdio MCP server named "mattstack." Claude Code reaches it through the mattstack plugin, and its tools appear under the namespace `mcp__plugin_mattstack_mattstack__*`. You never run `rt mcp serve` yourself; the plugin spawns it automatically.
+
+## Setup
+
+Install seeds the MCP server's namespace (`mcp__plugin_mattstack_mattstack`) into Claude Code's `permissions.allow` list, so tool calls don't trigger per-call permission prompts. If you ran `rt setup` after installing the plugin, this is already in place.
+
+## Tools
+
+The server exposes tools in four groups:
+
+### Gates
+
+| Tool | What it does |
+| --- | --- |
+| `gate_ask` | Open a decision gate with daemon-side ceremony (subject resolution, presentation, nudge). Returns the gate id and presentation. |
+| `gate_answer` | Answer an open gate's questions. Values must match option values verbatim; nuance goes in a `note` field. |
+| `gate_list` | List gates, optionally filtered by status, subject prefix, or kind. Supports cursor-based paging. |
+
+### Chat
+
+| Tool | What it does |
+| --- | --- |
+| `chat_post` | Post a message to an rt chat room. |
+| `chat_dm` | Send a direct message to another handle. |
+| `chat_ack` | Acknowledge a message by id. |
+| `chat_claim` | Claim a message so other agents skip answering it. |
+| `chat_release` | Release a previously claimed message. |
+
+Chat tools require `rt chat sign-in` first. If no signed-in session exists, the tool fails before reaching the daemon.
+
+### MR
+
+| Tool | What it does |
+| --- | --- |
+| `mr_reply_thread` | Reply to an existing MR/PR discussion thread. |
+| `mr_comment_inline` | Post a new positioned inline comment on an MR diff line (GitLab only). |
+| `mr_map` | List open MRs joined to the local worktrees holding their branches. |
+
+`mr_reply_thread` and `mr_comment_inline` require the repo's serialized identity (e.g. `remote:gitlab.com%2Facme%2Facme-dev`), not a bare host/path. `mr_map` also accepts the short repo-label alias.
+
+### Herd
+
+| Tool | What it does |
+| --- | --- |
+| `herd_gates` | List a herd's open gates. |
+| `herd_ask` | Open a gate asking the herd operator questions, using this worker's identity. |
+| `herd_answer` | Read the answer to a gate previously opened with `herd_ask`. |
+| `herd_report` | Post a status report to this worker's herd room. |
+
+## When the daemon is down
+
+Every tool connects to the daemon over its Unix socket. When the daemon is not running, tools return an error with a human-readable explanation. Chat tools also fail early if no signed-in session exists.
+
+## See also
+
+- [Gates guide](/guides/gates) for the gate lifecycle
+- [Chat guide](/guides/chat) for chat basics
+- [Plugins guide](/guides/plugins) for rt's plugin system
