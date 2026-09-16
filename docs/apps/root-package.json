@@ -109,7 +109,7 @@
     "wouter": "catalog:",
     "zod": "catalog:",
     "hono": "catalog:",
-    "@mattstack/rt-client": "catalog:",
+    "@mattstack/rt-client": "0.27.0",
     "@mattstack/glance": "catalog:"
   }
 }
