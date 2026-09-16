@@ -235,6 +235,7 @@ describe("rt mcp serve e2e", () => {
         arguments: {
           questions: [{ id: "q1", label: "Proceed?", multi: false, options: ["yes", "no"] }],
           subject: "test:mcp-e2e",
+          context: "e2e round trip",
         },
       });
       expect(askCall.error).toBeUndefined();
