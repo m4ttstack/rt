@@ -1,11 +1,13 @@
-import { expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { tmpdir } from "os";
 import { join } from "path";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "fs";
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "fs";
 import pino from "pino";
 import { AGENT_NAMES } from "../../chat-names.ts";
-import { openStateDb, signIn } from "../../state/index.ts";
-import { createAgentHandlers, type HeadlessChild } from "../handlers/agent.ts";
+import { rtDir } from "../../rt-paths.ts";
+import { setSetting } from "../../settings/write.ts";
+import { getAgent, openStateDb, signIn } from "../../state/index.ts";
+import { createAgentHandlers, extractSessionId, type HeadlessChild } from "../handlers/agent.ts";
 import { createBgClaimsStore, type BgClaimsStore } from "../bg-claims-store.ts";
 import { bgSocketPath } from "../bg-service.ts";
 import { DAEMON_SOCK_PATH } from "../../daemon-config.ts";
@@ -23,6 +25,20 @@ function okRunner(calls: string[][]): HerdrRunner {
     if (args[0] === "workspace" && args[1] === "create")
       return { stdout: JSON.stringify({ result: { root_pane: { pane_id: "w1:p1", tab_id: "w1:t1", workspace_id: "w1" } } }), exitCode: 0 };
     return { stdout: "{}", exitCode: 0 };
+  };
+}
+
+/** okRunner plus an `agent get` that already carries a session id, so a codex
+    launch's capture poll resolves on its first call instead of spinning for
+    its whole budget past the end of the test. */
+function codexRunner(calls: string[][], sessionId = "s_codex_poll"): HerdrRunner {
+  const base = okRunner(calls);
+  return async (args) => {
+    if (args[0] === "agent" && args[1] === "get") {
+      calls.push(args);
+      return { stdout: JSON.stringify({ result: { agent: { agent_session: { value: sessionId } } } }), exitCode: 0 };
+    }
+    return base(args);
   };
 }
 
@@ -175,7 +191,7 @@ test("agent:start refuses to launch when the insert did not persist", async () =
     runner: okRunner(calls),
     spawn: () => {
       spawnCalled = true;
-      return { exited: Promise.resolve(0), stdout: async () => "{}" };
+      return { exited: Promise.resolve(0), stdout: async () => "{}", sessionId: () => Promise.resolve(undefined) };
     },
     insertAgentFn: () => {},
   });
@@ -200,7 +216,7 @@ test("agent:start headless refuses a missing prompt", async () => {
 // applied; refuse instead of spawning without it.
 test("agent:start headless with env is refused and spawns nothing", async () => {
   let spawnCalled = false;
-  const h = fresh({ spawn: () => { spawnCalled = true; return { exited: Promise.resolve(0), stdout: async () => "{}" }; } });
+  const h = fresh({ spawn: () => { spawnCalled = true; return { exited: Promise.resolve(0), stdout: async () => "{}", sessionId: () => Promise.resolve(undefined) }; } });
   const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", surface: "headless", prompt: "go", env: { HERD_ID: "demo-1" } });
   expect(res.ok).toBe(false);
   if (res.ok) throw new Error("unreachable");
@@ -233,6 +249,7 @@ test("agent:start headless finishes the record and emits agent/done", async () =
   const child: HeadlessChild = {
     exited: new Promise<number>((r) => (resolveExit = r)),
     stdout: async () => JSON.stringify({ result: "ok" }),
+    sessionId: () => Promise.resolve(undefined),
   };
   const h = fresh({ spawn: () => child, emit: (t) => emitted.push(t) });
   const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", surface: "headless", prompt: "go" });
@@ -255,6 +272,7 @@ test("agent:start headless whose exit resolves immediately still finds its own r
   const child: HeadlessChild = {
     exited: Promise.resolve(0),
     stdout: async () => JSON.stringify({ result: "ok" }),
+    sessionId: () => Promise.resolve(undefined),
   };
   const h = fresh({ spawn: () => child });
   const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", surface: "headless", prompt: "go" });
@@ -348,7 +366,7 @@ test("agent:start headless never reserves a handle or passes --name/inline --set
   const h = fresh({
     spawn: (a) => {
       argv = a;
-      return { exited: Promise.resolve(0), stdout: async () => "{}" };
+      return { exited: Promise.resolve(0), stdout: async () => "{}", sessionId: () => Promise.resolve(undefined) };
     },
   });
   const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", surface: "headless", prompt: "go" });
@@ -417,7 +435,7 @@ test("agent:start headless argv carries --settings for the gate-fork hook; spawn
     spawn: (a: string[], _cwd: string, env: Record<string, string>) => {
       argv = a;
       spawnEnv = env ?? {};
-      return { exited: Promise.resolve(0), stdout: async () => "{}" };
+      return { exited: Promise.resolve(0), stdout: async () => "{}", sessionId: () => Promise.resolve(undefined) };
     },
   });
   const subject = "mr:test/3";
@@ -457,7 +475,7 @@ test("agent:start headless with no explicit subject skips gate-fork hook injecti
   const h = fresh({
     spawn: (a: string[]) => {
       argv = a;
-      return { exited: Promise.resolve(0), stdout: async () => "{}" };
+      return { exited: Promise.resolve(0), stdout: async () => "{}", sessionId: () => Promise.resolve(undefined) };
     },
   });
   const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", surface: "headless", prompt: "go" });
@@ -606,6 +624,141 @@ test("agent:start with handle uses it as --name and reserves no pool handle", as
   expect(res.data.handle).toBe("job-a");
   const paneRun = calls.find((c) => c[0] === "pane" && c[1] === "run");
   expect(paneRun?.[3]).toContain("'--name' 'job-a'");
+});
+
+// The session-id poll must ride the SAME socket-scoped runner the launch did.
+// Falling back to defaultHerdrRunner() would query the ambient visible herdr
+// server about a pane that only exists on the bg/herd one -- a full timeout of
+// dead polling, then a record stuck on rt's placeholder uuid forever.
+test("codex herdr capture polls through the socket-scoped runner the launch used, not the ambient default", async () => {
+  const agentGetSockets: string[] = [];
+  const runnerFactory = (socket: string): HerdrRunner => async (args) => {
+    if (args[0] === "agent" && args[1] === "get") {
+      agentGetSockets.push(socket);
+      return { stdout: JSON.stringify({ result: { agent: { agent_session: { value: "s_scoped_789" } } } }), exitCode: 0 };
+    }
+    if (args[0] === "workspace" && args[1] === "list") return { stdout: JSON.stringify({ result: { workspaces: [] } }), exitCode: 0 };
+    if (args[0] === "workspace" && args[1] === "create") {
+      return { stdout: JSON.stringify({ result: { root_pane: { pane_id: "w1:p1", tab_id: "w1:t1", workspace_id: "w1" } } }), exitCode: 0 };
+    }
+    return { stdout: "{}", exitCode: 0 };
+  };
+  const h = fresh({ runnerFactory });
+  const res = await h["agent:start"]({
+    repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr",
+    provider: "codex", herdrSocket: "/tmp/hidden.sock",
+  });
+  if (!res.ok) throw new Error(res.error);
+  const deadline = Date.now() + 2000;
+  while (agentGetSockets.length === 0 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10));
+  expect(agentGetSockets[0]).toBe("/tmp/hidden.sock");
+  let updated = getAgent(res.data.id, h.db);
+  while (updated?.sessionId !== "s_scoped_789" && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 10));
+    updated = getAgent(res.data.id, h.db);
+  }
+  expect(updated?.sessionId).toBe("s_scoped_789");
+});
+
+// The injected runner is also what a test-only double relies on: an
+// unscoped launch must poll through opts.herdrRunner, never spawn herdr.
+test("codex herdr capture polls through the injected herdrRunner on an unscoped launch", async () => {
+  const calls: string[][] = [];
+  const runner: HerdrRunner = async (args) => {
+    calls.push(args);
+    if (args[0] === "agent" && args[1] === "get") {
+      return { stdout: JSON.stringify({ result: { agent: { agent_session: { value: "s_injected_111" } } } }), exitCode: 0 };
+    }
+    if (args[0] === "workspace" && args[1] === "list") return { stdout: JSON.stringify({ result: { workspaces: [] } }), exitCode: 0 };
+    if (args[0] === "workspace" && args[1] === "create") {
+      return { stdout: JSON.stringify({ result: { root_pane: { pane_id: "w1:p1", tab_id: "w1:t1", workspace_id: "w1" } } }), exitCode: 0 };
+    }
+    return { stdout: "{}", exitCode: 0 };
+  };
+  const h = fresh({ runner });
+  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr", provider: "codex" });
+  if (!res.ok) throw new Error(res.error);
+  const deadline = Date.now() + 2000;
+  let updated = getAgent(res.data.id, h.db);
+  while (updated?.sessionId !== "s_injected_111" && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 10));
+    updated = getAgent(res.data.id, h.db);
+  }
+  expect(updated?.sessionId).toBe("s_injected_111");
+  expect(calls.some((c) => c[0] === "agent" && c[1] === "get")).toBe(true);
+});
+
+// codex has no --name / chat-handle mechanism and never reads --settings
+// (both spec Non-goals), so a codex launch must burn neither an LRU pool
+// handle nor a gate-fork hook file.
+test("agent:start codex herdr reserves no handle and writes no gate-fork settings file", async () => {
+  const calls: string[][] = [];
+  // codexRunner, not okRunner: a plain okRunner answers `agent get` without an
+  // agent_session, so the capture poll would keep running for its full
+  // ten-minute budget after this test finished.
+  const h = fresh({ runner: codexRunner(calls) });
+  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr", provider: "codex", subject: "mr:test/9" });
+  if (!res.ok) throw new Error(res.error);
+  expect(res.data.handle).toBeUndefined();
+  const cmd = calls.find((c) => c[0] === "pane" && c[1] === "run")?.[3] ?? "";
+  expect(cmd).not.toContain("agent-hooks");
+  expect(cmd).not.toContain("--settings");
+  expect(existsSync(join(rtDir(), "agent-hooks", `${res.data.id}.json`))).toBe(false);
+});
+
+// The claude path must be untouched by the provider gate above.
+test("agent:start claude herdr still reserves a handle and writes the gate-fork settings file", async () => {
+  const calls: string[][] = [];
+  const h = fresh({ runner: okRunner(calls) });
+  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr", provider: "claude", subject: "mr:test/10" });
+  if (!res.ok) throw new Error(res.error);
+  expect(res.data.handle).toBeTruthy();
+  const cmd = calls.find((c) => c[0] === "pane" && c[1] === "run")?.[3] ?? "";
+  expect(cmd).toContain("agent-hooks");
+});
+
+test("agent:start headless codex names codex in the missing-prompt error, not claude", async () => {
+  const h = fresh();
+  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", surface: "headless", provider: "codex" });
+  expect(res.ok).toBe(false);
+  if (res.ok) throw new Error("unreachable");
+  expect(res.error).toContain("codex exec");
+  expect(res.error).not.toContain("claude -p");
+});
+
+test("agent:start defaults provider to claude when unset", async () => {
+  const h = fresh({ spawn: () => ({ exited: Promise.resolve(0), stdout: async () => "{}", sessionId: () => Promise.resolve(undefined) }) });
+  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", surface: "headless", prompt: "go" });
+  expect(res.ok).toBe(true);
+  if (res.ok) expect(res.data.provider).toBe("claude");
+});
+
+test("agent:start honors an explicit provider", async () => {
+  const h = fresh({ spawn: () => ({ exited: Promise.resolve(0), stdout: async () => "{}", sessionId: () => Promise.resolve(undefined) }) });
+  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", surface: "headless", prompt: "go", provider: "codex" });
+  expect(res.ok).toBe(true);
+  if (res.ok) expect(res.data.provider).toBe("codex");
+});
+
+test("agent:start rejects an unknown provider", async () => {
+  const h = fresh();
+  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", surface: "headless", prompt: "go", provider: "cursor" });
+  expect(res.ok).toBe(false);
+  if (!res.ok) expect(res.error).toMatch(/provider/);
+});
+
+test("agent:start rejects account with codex", async () => {
+  const h = fresh();
+  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", surface: "headless", prompt: "go", provider: "codex", account: "a@b.c" });
+  expect(res.ok).toBe(false);
+  if (!res.ok) expect(res.error).toMatch(/account/);
+});
+
+test("agent:start threads yolo into the recorded agent", async () => {
+  const h = fresh({ spawn: () => ({ exited: Promise.resolve(0), stdout: async () => "{}", sessionId: () => Promise.resolve(undefined) }) });
+  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", surface: "headless", prompt: "go", yolo: true });
+  expect(res.ok).toBe(true);
+  if (res.ok) expect(res.data.yolo).toBe(true);
 });
 
 test("agent:list filters by repo", async () => {
@@ -765,4 +918,159 @@ test("agent:resume of a visible record never touches bg: no ensure, no claim/rel
   expect(bgClaims.claims).toEqual([]);
   expect(bgClaims.released).toEqual([]);
   expect(lifecycle.watched).toEqual([]);
+});
+
+// Nothing else in this suite exercises the settings side of the resolution:
+// every other test hands the value in on the payload, so a broken
+// `agent.<provider>.*` read would look green everywhere. HOME is repointed
+// per-test (test-setup.ts already makes it throwaway process-wide) so the rows
+// written here never leak into the tests around them.
+describe("agent:start resolves unset payload fields from settings", () => {
+  const origHome = process.env.HOME;
+  let home: string;
+
+  beforeEach(() => {
+    home = realpathSync(mkdtempSync(join(tmpdir(), "rt-agent-settings-")));
+    process.env.HOME = home;
+  });
+
+  afterEach(() => {
+    process.env.HOME = origHome;
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  test("provider, model, effort, extraArgs and yolo all come from agent.<provider>.* when the payload omits them", async () => {
+    setSetting("agent.provider", "codex", "user");
+    setSetting("agent.codex.model", "gpt-6-astra", "user");
+    setSetting("agent.codex.effort", "high", "user");
+    setSetting("agent.codex.extraArgs", "--search", "user");
+    setSetting("agent.codex.yolo", true, "user");
+
+    let argv: string[] = [];
+    const h = fresh({
+      spawn: (a: string[]) => {
+        argv = a;
+        return { exited: Promise.resolve(0), stdout: async () => "{}", sessionId: () => Promise.resolve(undefined) };
+      },
+    });
+    const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", surface: "headless", prompt: "go" });
+    if (!res.ok) throw new Error(res.error);
+    expect(res.data).toMatchObject({ provider: "codex", model: "gpt-6-astra", effort: "high", extraArgs: "--search", yolo: true });
+    expect(argv).toContain("-m");
+    expect(argv).toContain("gpt-6-astra");
+    expect(argv).toContain("-c");
+    expect(argv).toContain("model_reasoning_effort=high");
+    expect(argv).toContain("--dangerously-bypass-approvals-and-sandbox");
+    expect(argv).toContain("--search");
+  });
+
+  // The per-provider keys must not cross over: a codex default has to be
+  // invisible to a claude launch and vice versa.
+  test("a claude launch reads agent.claude.*, never the codex rows", async () => {
+    setSetting("agent.claude.model", "opus", "user");
+    setSetting("agent.claude.account", "me@example.com", "user");
+    setSetting("agent.codex.model", "gpt-6-astra", "user");
+
+    const h = fresh({ spawn: () => ({ exited: Promise.resolve(0), stdout: async () => "{}", sessionId: () => Promise.resolve(undefined) }) });
+    const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", surface: "headless", prompt: "go" });
+    if (!res.ok) throw new Error(res.error);
+    expect(res.data).toMatchObject({ provider: "claude", model: "opus", account: "me@example.com" });
+  });
+
+  // The setting is a default, not a floor: --no-yolo sends yolo: false on the
+  // payload, and the daemon must persist that rather than fall through to it.
+  test("an explicit payload yolo:false overrides a true agent.<provider>.yolo setting", async () => {
+    setSetting("agent.claude.yolo", true, "user");
+
+    let argv: string[] = [];
+    const h = fresh({
+      spawn: (a: string[]) => {
+        argv = a;
+        return { exited: Promise.resolve(0), stdout: async () => "{}", sessionId: () => Promise.resolve(undefined) };
+      },
+    });
+    const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", surface: "headless", prompt: "go", yolo: false });
+    if (!res.ok) throw new Error(res.error);
+    expect(res.data.yolo).toBe(false);
+    expect(getAgent(res.data.id, h.db)?.yolo).toBe(false);
+    expect(argv).not.toContain("--dangerously-skip-permissions");
+  });
+
+  // An explicit payload provider must beat the global default outright --
+  // that is what herd:spawn relies on to stay claude-only.
+  test("an explicit payload provider overrides agent.provider", async () => {
+    setSetting("agent.provider", "codex", "user");
+    const h = fresh({ spawn: () => ({ exited: Promise.resolve(0), stdout: async () => "{}", sessionId: () => Promise.resolve(undefined) }) });
+    const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", surface: "headless", prompt: "go", provider: "claude" });
+    if (!res.ok) throw new Error(res.error);
+    expect(res.data.provider).toBe("claude");
+  });
+});
+
+function streamOf(...lines: string[]): ReadableStream<Uint8Array> {
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const line of lines) controller.enqueue(new TextEncoder().encode(line + "\n"));
+      controller.close();
+    },
+  });
+}
+
+describe("extractSessionId", () => {
+  // Real codex exec --json line, observed 2026-09-15: {"type":"thread.started","thread_id":"01a0a82a-ebd6-7732-aaa8-ea6c6b450ed7"}
+  test("finds thread_id on the thread.started line, ignoring earlier non-matching JSON", async () => {
+    const sid = await extractSessionId(streamOf('{"type":"turn.started"}', '{"type":"thread.started","thread_id":"01a0a82a-ebd6-7732-aaa8-ea6c6b450ed7"}'));
+    expect(sid).toBe("01a0a82a-ebd6-7732-aaa8-ea6c6b450ed7");
+  });
+
+  test("ignores non-JSON lines and keeps scanning", async () => {
+    const sid = await extractSessionId(streamOf("not json at all", '{"type":"thread.started","thread_id":"s_real_456"}'));
+    expect(sid).toBe("s_real_456");
+  });
+
+  test("resolves undefined when the stream ends without one", async () => {
+    const sid = await extractSessionId(streamOf('{"type":"turn.completed"}'));
+    expect(sid).toBeUndefined();
+  });
+});
+
+test("headless codex launch captures the real session id from the --json stream", async () => {
+  const fakeStdout = streamOf('{"type":"turn.started"}', '{"type":"thread.started","thread_id":"s_real_123"}');
+  const spawnHeadless = (_argv: string[], _cwd: string, _env: Record<string, string>, opts?: { captureSessionId?: boolean }) => {
+    const [forText, forId] = fakeStdout.tee();
+    return {
+      exited: Promise.resolve(0),
+      stdout: () => new Response(forText).text(),
+      sessionId: opts?.captureSessionId ? () => extractSessionId(forId) : () => Promise.resolve(undefined),
+    };
+  };
+  const h = fresh({ spawn: spawnHeadless });
+  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", surface: "headless", prompt: "go", provider: "codex" });
+  expect(res.ok).toBe(true);
+  if (!res.ok) return;
+  // Session-id capture runs on a detached promise chain (`void
+  // child.sessionId().then(...)`), so poll briefly rather than assuming one
+  // tick is enough -- a single setImmediate is a plausible source of
+  // flakiness here.
+  const deadline = Date.now() + 2000;
+  let updated = getAgent(res.data.id, h.db);
+  while (updated?.sessionId !== "s_real_123" && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 10));
+    updated = getAgent(res.data.id, h.db);
+  }
+  expect(updated?.sessionId).toBe("s_real_123");
+});
+
+// Claude never mints a session id it did not choose, so its headless launch
+// must never be asked to capture one from the stream.
+test("headless claude launch never requests session-id capture", async () => {
+  let capturedOpts: { captureSessionId?: boolean } | undefined;
+  const spawnHeadless = (_argv: string[], _cwd: string, _env: Record<string, string>, opts?: { captureSessionId?: boolean }) => {
+    capturedOpts = opts;
+    return { exited: Promise.resolve(0), stdout: async () => "{}", sessionId: () => Promise.resolve(undefined) };
+  };
+  const h = fresh({ spawn: spawnHeadless });
+  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", surface: "headless", prompt: "go" });
+  expect(res.ok).toBe(true);
+  expect(capturedOpts?.captureSessionId).toBeFalsy();
 });

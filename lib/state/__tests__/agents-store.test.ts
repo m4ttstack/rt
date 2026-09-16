@@ -4,7 +4,7 @@ import { join } from "path";
 import { openStateDb } from "../db.ts";
 import {
   finishAgent, getAgent, insertAgent, listAgents, markAgentResumed,
-  newAgentId, updateAgentPane, type AgentRecord,
+  newAgentId, updateAgentPane, updateAgentSessionId, type AgentRecord,
 } from "../agents-store.ts";
 
 let n = 0;
@@ -58,4 +58,29 @@ test("duplicate session uuid is refused", () => {
   const r = rec();
   insertAgent(r, db);
   expect(() => insertAgent(rec({ sessionId: r.sessionId }), db)).toThrow();
+});
+
+test("updateAgentSessionId overwrites the stored session id", () => {
+  const db = freshDb();
+  const r = rec({ sessionId: "placeholder-uuid" });
+  insertAgent(r, db);
+  updateAgentSessionId(r.id, "s_2026-09-15-real", db);
+  expect(getAgent(r.id, db)?.sessionId).toBe("s_2026-09-15-real");
+});
+
+test("agents.yolo round-trips true and false", () => {
+  const db = freshDb();
+  const a = rec({ yolo: true });
+  const b = rec({ yolo: false });
+  insertAgent(a, db);
+  insertAgent(b, db);
+  expect(getAgent(a.id, db)?.yolo).toBe(true);
+  expect(getAgent(b.id, db)?.yolo).toBe(false);
+});
+
+test("agents.yolo left unset reads back undefined", () => {
+  const db = freshDb();
+  const r = rec();
+  insertAgent(r, db);
+  expect(getAgent(r.id, db)?.yolo).toBeUndefined();
 });

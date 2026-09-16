@@ -359,7 +359,7 @@ export interface AgentRecord {
       PreToolUse hook gets injected at all. */
   subject?: string;
   paneId?: string; tabId?: string; workspaceId?: string;
-  extraArgs?: string; exitCode?: number; resultPath?: string;
+  extraArgs?: string; exitCode?: number; resultPath?: string; yolo?: boolean;
   createdAt: number; lastResumedAt?: number; finishedAt?: number;
 }
 
@@ -616,7 +616,7 @@ export interface Commands {
   "chat:dm-open": { payload: { from: string; to: string; sessionId?: string }; data: { room: string; created: boolean } };
 
   // ─── Agent handoff (rt agent) ────────────────────────────────────────────
-  "agent:start": { payload: { repo: string; cwd: string; prompt?: string; surface?: AgentSurface; model?: string; effort?: string; account?: string; label?: string; caller?: string; workspace?: string; tab?: string; extraArgs?: string; env?: Record<string, string>; herdrSocket?: string; handle?: string; bg?: boolean; subject?: string }; data: AgentRecord };
+  "agent:start": { payload: { repo: string; cwd: string; prompt?: string; surface?: AgentSurface; provider?: string; model?: string; effort?: string; account?: string; label?: string; caller?: string; workspace?: string; tab?: string; extraArgs?: string; env?: Record<string, string>; herdrSocket?: string; handle?: string; bg?: boolean; subject?: string; yolo?: boolean }; data: AgentRecord };
   "agent:resume": { payload: { id: string; prompt?: string; surface?: AgentSurface; workspace?: string; tab?: string }; data: AgentRecord };
   "agent:get": { payload: { id: string }; data: AgentRecord };
   "agent:list": { payload: { repo?: string }; data: { agents: AgentRecord[] } };
