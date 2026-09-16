@@ -1,6 +1,7 @@
 import { describe, test, expect } from "bun:test";
+import type { Logger } from "pino";
 import type { HerdJobRow, HerdRow } from "../herd-store.ts";
-import { evaluateJob, evaluateShepherd, type WatchdogConfig, type WatchdogSensors } from "../herd-watchdog.ts";
+import { evaluateJob, evaluateShepherd, HerdWatchdog, type WatchdogActuators, type WatchdogConfig, type WatchdogSensors } from "../herd-watchdog.ts";
 
 const NOW = 10_000_000;
 const MIN = 60_000;
@@ -254,5 +255,258 @@ describe("evaluateShepherd", () => {
   test("a wrapped herd is healthy: there is no shepherd left to poke", () => {
     const s = sensors({ ...shepherdIdle, openHumanGates: () => [{ id: "g-9", ageMs: 60 * MIN }], unreadDmMentionsFor: () => 5 });
     expect(evaluateShepherd(herd({ status: "wrapped" }), s, cfg)).toEqual({ kind: "healthy" });
+  });
+});
+
+describe("HerdWatchdog ladder", () => {
+  type Level = "info" | "warn" | "debug" | "error";
+
+  function rig(opts: { sensors?: Partial<WatchdogSensors>; cfg?: Partial<WatchdogConfig>; herd?: HerdRow; jobs?: HerdJobRow[] } = {}) {
+    const clock = { now: NOW };
+    const pokes: { pane: string; text: string }[] = [];
+    const parks: { herd: string; job: string }[] = [];
+    const notes: string[] = [];
+    const delivery = { ok: true };
+    const lines: { level: Level; msg: string }[] = [];
+    const at = (level: Level) => (_ctx: unknown, msg: string) => { lines.push({ level, msg }); };
+    const log = { info: at("info"), warn: at("warn"), debug: at("debug"), error: at("error") } as unknown as Logger;
+    const act: WatchdogActuators = {
+      poke: async (pane, text) => { pokes.push({ pane, text }); return delivery.ok; },
+      parkStuckAtModal: (h, j) => { parks.push({ herd: h, job: j }); },
+      notifyHuman: (summary) => { notes.push(summary); },
+    };
+    const h = opts.herd ?? herd();
+    const jobs = opts.jobs ?? [job()];
+    const s = sensors({ now: () => clock.now, herds: () => [h], jobs: (id) => (id === h.id ? jobs : []), ...opts.sensors });
+    const c: WatchdogConfig = { ...cfg, ...opts.cfg };
+    const wd = new HerdWatchdog({ sensors: s, act, cfg: () => c, log });
+    const tick = async (mins = 0) => { clock.now += mins * MIN; await wd.sweep(); };
+    const shepherdPokes = () => pokes.filter((p) => p.pane === "w1:p0");
+    const workerPokes = () => pokes.filter((p) => p.pane === "w1:p1");
+    return { wd, tick, clock, pokes, parks, notes, lines, delivery, shepherdPokes, workerPokes };
+  }
+
+  const workerWedged = (): Partial<WatchdogSensors> => ({ ...idleFor(3), unreadDmMentionsFor: (h) => (h === "job-a" ? 1 : 0) });
+  const shepherdWedged = (): Partial<WatchdogSensors> => ({ paneState: () => "idle", openHumanGates: () => [{ id: "g-9", ageMs: 6 * MIN }] });
+
+  test("(a) a wedged worker gets one poke naming its evidence; a sweep inside retryMins adds nothing", async () => {
+    const r = rig({ sensors: workerWedged() });
+    await r.tick();
+    expect(r.pokes).toEqual([{ pane: "w1:p1", text: "watchdog: idle 3m with 1 unread DM/mention. Consume it or post status." }]);
+    await r.tick(1);
+    expect(r.pokes).toHaveLength(1);
+    expect(r.wd.annotations("demo-1", "job-a")).toEqual({ strikes: 1, lastPokeAt: NOW });
+  });
+
+  test("(b) activity after the poke clears strikes; a later wedge restarts at strike 1", async () => {
+    const state = { pane: "idle" as ReturnType<WatchdogSensors["paneState"]> };
+    const r = rig({ sensors: { ...workerWedged(), paneState: () => state.pane } });
+    await r.tick();
+    expect(r.wd.annotations("demo-1", "job-a")).toEqual({ strikes: 1, lastPokeAt: NOW });
+    state.pane = "working";
+    await r.tick(1);
+    expect(r.wd.annotations("demo-1", "job-a")).toBeNull();
+    state.pane = "idle";
+    await r.tick(1);
+    expect(r.workerPokes()).toHaveLength(2);
+    expect(r.wd.annotations("demo-1", "job-a")).toEqual({ strikes: 1, lastPokeAt: NOW + 2 * MIN });
+  });
+
+  test("(c) still wedged after retryMins = a second poke with fresh evidence", async () => {
+    const r = rig({ sensors: workerWedged() });
+    await r.tick();
+    await r.tick(4);
+    expect(r.pokes).toHaveLength(1);
+    await r.tick(1);
+    expect(r.pokes).toHaveLength(2);
+    expect(r.pokes[1]).toEqual({ pane: "w1:p1", text: "watchdog: idle 8m with 1 unread DM/mention. Consume it or post status." });
+    expect(r.wd.annotations("demo-1", "job-a")).toEqual({ strikes: 2, lastPokeAt: NOW + 5 * MIN });
+  });
+
+  test("(d) third and fourth trips poke the shepherd with a one-line summary; the worker is not poked again; fifth notifies the human", async () => {
+    const r = rig({ sensors: workerWedged() });
+    await r.tick();
+    await r.tick(5);
+    await r.tick(5);
+    expect(r.workerPokes()).toHaveLength(2);
+    expect(r.shepherdPokes()).toEqual([{ pane: "w1:p0", text: "watchdog: demo-1/job-a: idle 13m with 1 unread DM/mention; strike 3, flagged 10m ago. Check on it." }]);
+    expect(r.wd.annotations("demo-1", "job-a")).toEqual({ strikes: 3, lastPokeAt: NOW + 10 * MIN });
+    await r.tick(5);
+    expect(r.shepherdPokes()).toHaveLength(2);
+    expect(r.shepherdPokes()[1]?.text).toContain("strike 4");
+    expect(r.notes).toHaveLength(0);
+    await r.tick(5);
+    expect(r.workerPokes()).toHaveLength(2);
+    expect(r.shepherdPokes()).toHaveLength(2);
+    expect(r.notes).toEqual(["watchdog: demo-1/job-a: idle 23m with 1 unread DM/mention; strike 5, flagged 20m ago. Check on it."]);
+  });
+
+  test("the worker ladder caps at strike 5: later trips re-notify only past the quiet period, never advance", async () => {
+    const r = rig({ sensors: workerWedged() });
+    for (let i = 0; i < 5; i++) await r.tick(i === 0 ? 0 : 5);
+    expect(r.notes).toHaveLength(1);
+    await r.tick(5);
+    expect(r.wd.annotations("demo-1", "job-a")).toEqual({ strikes: 5, lastPokeAt: NOW + 25 * MIN });
+    expect(r.notes).toHaveLength(1);
+    await r.tick(25);
+    expect(r.notes).toHaveLength(2);
+    expect(r.wd.annotations("demo-1", "job-a")?.strikes).toBe(5);
+    expect(r.pokes).toHaveLength(4);
+  });
+
+  test("(e) a wedged shepherd with no recorded pane is unpokeable: notifyHuman on the first wedged sweep", async () => {
+    const r = rig({ herd: herd({ shepherdPane: null }), jobs: [], sensors: { openHumanGates: () => [{ id: "g-9", ageMs: 6 * MIN }] } });
+    await r.tick();
+    expect(r.pokes).toHaveLength(0);
+    expect(r.notes).toEqual(["watchdog: demo-1/@shepherd: human gate g-9 open 6m unanswered; strike 1, flagged 0m ago. Check on it."]);
+  });
+
+  test("(f) a shepherd poked twice without effect = notifyHuman", async () => {
+    const r = rig({ jobs: [], sensors: shepherdWedged() });
+    await r.tick();
+    expect(r.pokes).toEqual([{ pane: "w1:p0", text: "watchdog: human gate g-9 open 6m unanswered. Consume it or post status." }]);
+    await r.tick(5);
+    expect(r.pokes).toHaveLength(2);
+    expect(r.notes).toHaveLength(0);
+    await r.tick(5);
+    expect(r.pokes).toHaveLength(2);
+    expect(r.notes).toEqual(["watchdog: demo-1/@shepherd: human gate g-9 open 6m unanswered; strike 3, flagged 10m ago. Check on it."]);
+  });
+
+  test("(g) a second notifyHuman inside notifyQuietMins is suppressed (logged at debug), and fires again once the period passes", async () => {
+    const r = rig({ jobs: [], sensors: shepherdWedged() });
+    await r.tick();
+    await r.tick(5);
+    await r.tick(5);
+    expect(r.notes).toHaveLength(1);
+    await r.tick(5);
+    expect(r.notes).toHaveLength(1);
+    expect(r.lines.filter((l) => l.level === "debug" && /quiet/.test(l.msg))).toHaveLength(1);
+    await r.tick(15);
+    expect(r.notes).toHaveLength(1);
+    await r.tick(10);
+    expect(r.notes).toHaveLength(2);
+  });
+
+  test("the quiet period is per herd: a second herd's first notification is not suppressed by the first herd's", async () => {
+    const a = herd({ id: "a", shepherdPane: null, shepherdHandle: "shep-a" });
+    const b = herd({ id: "b", shepherdPane: null, shepherdHandle: "shep-b" });
+    const r = rig({ jobs: [], sensors: { herds: () => [a, b], openHumanGates: () => [{ id: "g-9", ageMs: 6 * MIN }] } });
+    await r.tick();
+    expect(r.notes).toHaveLength(2);
+    expect(r.notes[0]).toContain("a/@shepherd");
+    expect(r.notes[1]).toContain("b/@shepherd");
+  });
+
+  test("(h) a dead worker is never injected: the shepherd summary goes out once, then climbs at retryMins", async () => {
+    const r = rig({ sensors: { paneState: (p) => (p === "w1:p1" ? "dead" : "idle"), idleSinceMs: () => NOW - 40 * MIN } });
+    await r.tick();
+    expect(r.workerPokes()).toHaveLength(0);
+    expect(r.shepherdPokes()).toEqual([{ pane: "w1:p0", text: "watchdog: demo-1/job-a: pane open but the agent is gone; strike 3, flagged 0m ago. Check on it." }]);
+    expect(r.wd.annotations("demo-1", "job-a")).toEqual({ strikes: 3, lastPokeAt: NOW });
+    await r.tick(1);
+    expect(r.shepherdPokes()).toHaveLength(1);
+    await r.tick(4);
+    expect(r.shepherdPokes()).toHaveLength(2);
+    expect(r.shepherdPokes()[1]?.text).toContain("strike 4");
+    await r.tick(5);
+    expect(r.workerPokes()).toHaveLength(0);
+    expect(r.shepherdPokes()).toHaveLength(2);
+    expect(r.notes).toHaveLength(1);
+    expect(r.notes[0]).toContain("strike 5");
+  });
+
+  test("(h) a modal worker is parked once and the shepherd gets the summary; never an injection into the worker", async () => {
+    const r = rig({ sensors: { paneState: (p) => (p === "w1:p1" ? "modal" : "idle"), idleSinceMs: () => NOW - 40 * MIN } });
+    await r.tick();
+    expect(r.parks).toEqual([{ herd: "demo-1", job: "job-a" }]);
+    expect(r.workerPokes()).toHaveLength(0);
+    expect(r.shepherdPokes()).toEqual([{ pane: "w1:p0", text: "watchdog: demo-1/job-a: blocked at a modal prompt, parked stuck-at-modal; strike 3, flagged 0m ago. Check on it." }]);
+    await r.tick(1);
+    await r.tick(5);
+    expect(r.parks).toHaveLength(1);
+    expect(r.workerPokes()).toHaveLength(0);
+    expect(r.shepherdPokes()).toHaveLength(2);
+  });
+
+  test("a parked job the store has moved to stuck-at-modal drops out of the ladder on the next sweep", async () => {
+    const row = job();
+    const r = rig({ jobs: [row], sensors: { paneState: (p) => (p === "w1:p1" ? "modal" : "idle") } });
+    await r.tick();
+    expect(r.parks).toHaveLength(1);
+    row.status = "stuck-at-modal";
+    await r.tick(1);
+    expect(r.wd.annotations("demo-1", "job-a")).toBeNull();
+    expect(r.parks).toHaveLength(1);
+  });
+
+  test("(i) enabled: false = sweep reads nothing beyond the config", async () => {
+    const boom = () => { throw new Error("must not be called"); };
+    const r = rig({ cfg: { enabled: false }, sensors: { now: boom, herds: boom, jobs: boom, paneState: boom } });
+    await r.tick();
+    expect(r.pokes).toHaveLength(0);
+    expect(r.notes).toHaveLength(0);
+  });
+
+  test("a wrapped herd is skipped: its jobs are never read", async () => {
+    const r = rig({ herd: herd({ status: "wrapped" }), sensors: { ...workerWedged(), jobs: () => { throw new Error("must not be called"); } } });
+    await r.tick();
+    expect(r.pokes).toHaveLength(0);
+  });
+
+  test("worker escalation with no shepherd pane skips straight to notifyHuman", async () => {
+    const r = rig({ herd: herd({ shepherdPane: null }), sensors: workerWedged() });
+    await r.tick();
+    await r.tick(5);
+    expect(r.notes).toHaveLength(0);
+    await r.tick(5);
+    expect(r.pokes).toHaveLength(2);
+    expect(r.notes).toEqual(["watchdog: demo-1/job-a: idle 13m with 1 unread DM/mention; strike 3, flagged 10m ago. Check on it."]);
+  });
+
+  test("notifyHuman: false never calls the actuator; the rung is logged instead", async () => {
+    const r = rig({ herd: herd({ shepherdPane: null }), jobs: [], cfg: { notifyHuman: false }, sensors: { openHumanGates: () => [{ id: "g-9", ageMs: 6 * MIN }] } });
+    await r.tick();
+    expect(r.notes).toHaveLength(0);
+    expect(r.lines.some((l) => /disabled/.test(l.msg))).toBe(true);
+    expect(r.wd.annotations("demo-1", "@shepherd")).toEqual({ strikes: 1, lastPokeAt: NOW });
+  });
+
+  test("a poke the injector did not deliver still counts as the strike and is logged", async () => {
+    const r = rig({ sensors: workerWedged() });
+    r.delivery.ok = false;
+    await r.tick();
+    expect(r.pokes).toHaveLength(1);
+    expect(r.wd.annotations("demo-1", "job-a")).toEqual({ strikes: 1, lastPokeAt: NOW });
+    expect(r.lines.filter((l) => l.level === "warn")).toHaveLength(1);
+    await r.tick(5);
+    expect(r.wd.annotations("demo-1", "job-a")?.strikes).toBe(2);
+  });
+
+  test("a finished-lingering worker is never poked itself: the nag reaches the shepherd through its own ladder", async () => {
+    const r = rig({ jobs: [job({ status: "done", lastReport: NOW - 35 * MIN })], sensors: { paneState: () => "idle" } });
+    await r.tick();
+    expect(r.workerPokes()).toHaveLength(0);
+    expect(r.shepherdPokes()).toEqual([{ pane: "w1:p0", text: "watchdog: job-a done with report 35m ago, pane still open. Consume it or post status." }]);
+    expect(r.wd.annotations("demo-1", "job-a")).toBeNull();
+    expect(r.wd.annotations("demo-1", "@shepherd")).toEqual({ strikes: 1, lastPokeAt: NOW });
+  });
+
+  test("annotations: null for an untracked job; a dead job that only triggered the shepherd summary still carries lastPokeAt", async () => {
+    const r = rig({ sensors: { paneState: (p) => (p === "w1:p1" ? "dead" : "idle") } });
+    expect(r.wd.annotations("demo-1", "job-a")).toBeNull();
+    expect(r.wd.annotations("nope", "job-a")).toBeNull();
+    await r.tick();
+    expect(r.wd.annotations("demo-1", "job-a")).toEqual({ strikes: 3, lastPokeAt: NOW });
+    expect(r.wd.annotations("demo-1", "job-b")).toBeNull();
+  });
+
+  test("every ladder action logs one domain event", async () => {
+    const r = rig({ sensors: workerWedged() });
+    await r.tick();
+    expect(r.lines.map((l) => l.msg)).toEqual(["poked worker"]);
+    await r.tick(5);
+    await r.tick(5);
+    expect(r.lines.map((l) => l.msg)).toEqual(["poked worker", "poked worker", "escalated to shepherd"]);
   });
 });

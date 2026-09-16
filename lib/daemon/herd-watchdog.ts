@@ -1,8 +1,11 @@
 /**
  * Wedge detection for herd participants (workers and the shepherd), read
- * through sensors over the daemon's own stores. The evaluators here are pure:
- * one verdict per participant per reading, no timers, no I/O.
+ * through sensors over the daemon's own stores, and the escalation ladder that
+ * acts on the verdicts through injected actuators. The evaluators are pure:
+ * one verdict per participant per reading, no timers, no I/O. The ladder keeps
+ * only in-memory strike state and runs when the caller sweeps; it owns no timer.
  */
+import type { Logger } from "pino";
 import { herdPrefix, type HerdJobRow, type HerdRow } from "./herd-store.ts";
 
 export interface WatchdogSensors {
@@ -116,4 +119,144 @@ export function evaluateShepherd(herd: HerdRow, s: WatchdogSensors, cfg: Watchdo
     }
   }
   return HEALTHY;
+}
+
+export interface WatchdogActuators {
+  /** The adapter resolves the herdr socket (job panes ride HerdRow.herdrSocket,
+      the shepherd pane sits on the default socket). False means the text was
+      not delivered: the injector refuses blocked agents and queues on working. */
+  poke(pane: string, text: string): Promise<boolean>;
+  parkStuckAtModal(herd: string, job: string): void;
+  notifyHuman(summary: string): void;
+}
+
+interface Ladder { strikes: number; lastPokeAt: number | null; since: number; parked: boolean }
+
+const SHEPHERD = "@shepherd";
+const WORKER_CAP = 5;
+const SHEPHERD_CAP = 3;
+const DEAD_EVIDENCE = "pane open but the agent is gone";
+const MODAL_EVIDENCE = "blocked at a modal prompt, parked stuck-at-modal";
+
+const pokeText = (evidence: string) => `watchdog: ${evidence}. Consume it or post status.`;
+const summaryText = (party: string, evidence: string, ladder: Ladder, now: number) =>
+  `watchdog: ${party}: ${evidence}; strike ${ladder.strikes}, flagged ${minutes(now - ladder.since)}m ago. Check on it.`;
+
+/**
+ * Escalation ladder over the evaluators. Worker strikes 1-2 poke the worker,
+ * 3-4 poke the shepherd with a one-line summary, 5 notifies the human; dead and
+ * modal verdicts enter at strike 3 (never injected), modal is parked once.
+ * Shepherd strikes 1-2 poke its pane, 3 notifies the human. A herd with no
+ * recorded shepherd pane routes every shepherd rung to the human. A strike is
+ * earned only while still wedged and retryMins after the previous action;
+ * a healthy verdict clears the ladder.
+ */
+export class HerdWatchdog {
+  /** In memory by design: a daemon restart resets every ladder to strike 1 and
+      reopens every herd's notification quiet period. */
+  private readonly ladders = new Map<string, Ladder>();
+  private readonly notifiedAt = new Map<string, number>();
+  private readonly sensors: WatchdogSensors;
+  private readonly act: WatchdogActuators;
+  private readonly cfg: () => WatchdogConfig;
+  private readonly log: Logger;
+
+  constructor(deps: { sensors: WatchdogSensors; act: WatchdogActuators; cfg(): WatchdogConfig; log: Logger }) {
+    this.sensors = deps.sensors;
+    this.act = deps.act;
+    this.cfg = deps.cfg;
+    this.log = deps.log;
+  }
+
+  async sweep(): Promise<void> {
+    const cfg = this.cfg();
+    if (!cfg.enabled) return;
+    const now = this.sensors.now();
+    for (const herd of this.sensors.herds()) {
+      if (herd.status !== "active") continue;
+      for (const job of this.sensors.jobs(herd.id)) await this.walkWorker(herd, job, cfg, now);
+      await this.walkShepherd(herd, cfg, now);
+    }
+  }
+
+  annotations(herd: string, job: string): { strikes: number; lastPokeAt: number | null } | null {
+    const ladder = this.ladders.get(`${herd}/${job}`);
+    return ladder ? { strikes: ladder.strikes, lastPokeAt: ladder.lastPokeAt } : null;
+  }
+
+  private async walkWorker(herd: HerdRow, job: HerdJobRow, cfg: WatchdogConfig, now: number): Promise<void> {
+    const key = `${herd.id}/${job.name}`;
+    const verdict = evaluateJob(job, this.sensors, cfg);
+    if (verdict.kind === "healthy" || verdict.kind === "finished-lingering" || job.pane === null) {
+      this.ladders.delete(key);
+      return;
+    }
+    const ladder = this.track(key, now);
+    if (verdict.kind === "modal" && !ladder.parked) {
+      ladder.parked = true;
+      this.act.parkStuckAtModal(herd.id, job.name);
+      this.log.info({ herd: herd.id, job: job.name }, "parked job stuck at modal");
+    }
+    if (!this.advance(ladder, now, cfg, verdict.kind === "wedged" ? 1 : 3, WORKER_CAP)) return;
+    const evidence = verdict.kind === "wedged" ? verdict.evidence : verdict.kind === "dead" ? DEAD_EVIDENCE : MODAL_EVIDENCE;
+    const ctx = { herd: herd.id, job: job.name, verdict: verdict.kind, strike: ladder.strikes };
+    if (ladder.strikes <= 2) {
+      await this.poke(job.pane, pokeText(evidence), ctx, "poked worker");
+      return;
+    }
+    const summary = summaryText(key, evidence, ladder, now);
+    if (ladder.strikes >= WORKER_CAP || herd.shepherdPane === null) this.notify(herd.id, summary, cfg, now, ctx);
+    else await this.poke(herd.shepherdPane, summary, ctx, "escalated to shepherd");
+  }
+
+  private async walkShepherd(herd: HerdRow, cfg: WatchdogConfig, now: number): Promise<void> {
+    const key = `${herd.id}/${SHEPHERD}`;
+    const verdict = evaluateShepherd(herd, this.sensors, cfg);
+    if (verdict.kind !== "wedged") {
+      this.ladders.delete(key);
+      return;
+    }
+    const ladder = this.track(key, now);
+    if (!this.advance(ladder, now, cfg, 1, SHEPHERD_CAP)) return;
+    const ctx = { herd: herd.id, job: SHEPHERD, path: verdict.path, strike: ladder.strikes };
+    if (ladder.strikes >= SHEPHERD_CAP || herd.shepherdPane === null) this.notify(herd.id, summaryText(key, verdict.evidence, ladder, now), cfg, now, ctx);
+    else await this.poke(herd.shepherdPane, pokeText(verdict.evidence), ctx, "poked shepherd");
+  }
+
+  private track(key: string, now: number): Ladder {
+    let ladder = this.ladders.get(key);
+    if (!ladder) {
+      ladder = { strikes: 0, lastPokeAt: null, since: now, parked: false };
+      this.ladders.set(key, ladder);
+    }
+    return ladder;
+  }
+
+  private advance(ladder: Ladder, now: number, cfg: WatchdogConfig, floor: number, cap: number): boolean {
+    if (ladder.lastPokeAt !== null && now - ladder.lastPokeAt < ms(cfg.retryMins)) return false;
+    ladder.strikes = Math.min(Math.max(ladder.strikes + 1, floor), cap);
+    ladder.lastPokeAt = now;
+    return true;
+  }
+
+  private async poke(pane: string, text: string, ctx: object, event: string): Promise<void> {
+    const delivered = await this.act.poke(pane, text);
+    if (delivered) this.log.info({ ...ctx, pane }, event);
+    else this.log.warn({ ...ctx, pane }, `${event} (not delivered)`);
+  }
+
+  private notify(herd: string, summary: string, cfg: WatchdogConfig, now: number, ctx: object): void {
+    if (!cfg.notifyHuman) {
+      this.log.info({ ...ctx, summary }, "human notification disabled");
+      return;
+    }
+    const last = this.notifiedAt.get(herd);
+    if (last !== undefined && now - last < ms(cfg.notifyQuietMins)) {
+      this.log.debug({ ...ctx, summary }, "human notification suppressed by quiet period");
+      return;
+    }
+    this.notifiedAt.set(herd, now);
+    this.act.notifyHuman(summary);
+    this.log.info({ ...ctx, summary }, "notified human");
+  }
 }
