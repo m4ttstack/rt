@@ -304,13 +304,14 @@ export function formatBranchSegments(eb: EnrichedBranch): { left: PickSegment[];
       { text: eb.dirName, bold: true, column: true },
     ];
     if (stateTag) {
+      const padded = stateTag.padEnd(15);
       left.push(
         eb.ticket!.stateColor
-          ? { text: `  ${stateTag}`, hex: eb.ticket!.stateColor }
-          : { text: `  ${stateTag}`, tone: "dim" },
+          ? { text: `  ${padded}`, hex: eb.ticket!.stateColor }
+          : { text: `  ${padded}`, tone: "dim" },
       );
     }
-    left.push({ text: "  " }, { text: eb.ticket!.title, tone: "dim" });
+    left.push({ text: " " }, { text: eb.ticket!.title, tone: "dim" });
     if (right.length > 0) right.push({ text: " " });
     right.push({ text: eb.linearId!, tone: "dimmer" });
     return { left, right, match };

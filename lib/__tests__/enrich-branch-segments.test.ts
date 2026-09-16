@@ -68,8 +68,8 @@ describe("formatBranchSegments", () => {
 
     expect(left).toEqual([
       { text: "neville", bold: true, column: true },
-      { text: "  [Done]", hex: "#4CB782" },
-      { text: "  " },
+      { text: "  [Done]         ", hex: "#4CB782" },
+      { text: " " },
       { text: "Claim chat sidebar", tone: "dim" },
     ]);
   });
@@ -80,7 +80,7 @@ describe("formatBranchSegments", () => {
       ticket: mkTicket({ stateName: "Backlog", stateColor: null }),
     });
     const { left } = formatBranchSegments(eb);
-    expect(left[1]).toEqual({ text: "  [Backlog]", tone: "dim" });
+    expect(left[1]).toEqual({ text: "  [Backlog]      ", tone: "dim" });
   });
 
   test("non-ticket branch with no MR/ticket/linearId is [Local Only], dimmer", () => {
@@ -222,7 +222,7 @@ describe("formatBranchSegments", () => {
     const titleSeg = left.find(s => s.text === longTitle);
     expect(titleSeg).toBeDefined();
     expect(titleSeg!.tone).toBe("dim");
-    expect(left[1]).toEqual({ text: "  [Code Review]", tone: "dim" });
+    expect(left[1]).toEqual({ text: "  [Code Review]  ", tone: "dim" });
   });
 
   test("ticket-row match text carries branch, full title, and linearId for filtering", () => {
