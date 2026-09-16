@@ -92,7 +92,7 @@ describe("rt gate ask CLI e2e", () => {
   test("explicit subject + pane + session, 2-option question: ok:true form envelope", async () => {
     const questions = JSON.stringify([{ id: "q", label: "Pick", multi: false, options: ["a", "b"] }]);
     const res = await finished(runRt(
-      ["gate", "ask", "--questions", questions, "--subject", "mr:e2e-1"],
+      ["gate", "ask", "--questions", questions, "--subject", "mr:e2e-1", "--context", "the diff under decision, quoted"],
       home,
       { HERDR_PANE_ID: "pane-1", CLAUDE_CODE_SESSION_ID: "sess-1" },
     ));
@@ -141,6 +141,39 @@ describe("rt gate ask CLI e2e", () => {
     ));
     expect(res.exitCode).toBe(1);
     expect(JSON.parse(res.stdout)).toEqual({ ok: false, error: "--questions is not valid JSON: not json" });
+  }, 30_000);
+
+  // RT-177: a human-owned gate with no context is what put a bare decision
+  // form in front of Matt with nothing to decide from.
+  test("no --context on a human-owned gate: ok:false refusal naming what to pass, exit 1", async () => {
+    const questions = JSON.stringify([{ id: "q", label: "Pick", multi: false, options: ["a", "b"] }]);
+    const res = await finished(runRt(
+      ["gate", "ask", "--questions", questions, "--subject", "mr:e2e-bare"],
+      home,
+      { HERDR_PANE_ID: "pane-6", CLAUDE_CODE_SESSION_ID: "sess-6-bare" },
+    ));
+    expect(res.exitCode).toBe(1);
+    const parsed = JSON.parse(res.stdout) as { ok: boolean; error: string };
+    expect(parsed.ok).toBe(false);
+    expect(parsed.error).toContain("decide from alone");
+  }, 30_000);
+
+  test("an oversized --context still opens the gate, and the envelope says contextOmitted", async () => {
+    const questions = JSON.stringify([{ id: "q", label: "Pick", multi: false, options: ["a", "b"] }]);
+    const res = await finished(runRt(
+      ["gate", "ask", "--questions", questions, "--subject", "mr:e2e-big", "--context", "x".repeat(9000)],
+      home,
+      { HERDR_PANE_ID: "pane-7", CLAUDE_CODE_SESSION_ID: "sess-7-big" },
+    ));
+    expect(res.exitCode).toBe(0);
+    expect(JSON.parse(res.stdout)).toEqual({
+      ok: true,
+      id: expect.any(String),
+      presentation: "form",
+      subject: "mr:e2e-big",
+      supersededId: null,
+      contextOmitted: true,
+    });
   }, 30_000);
 
   test("missing --questions: ok:false usage refusal, exit 1, no daemon contact", async () => {

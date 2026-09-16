@@ -57,6 +57,14 @@ export interface RunLiveness {
   worktreeActiveAt(worktree: string): number | null;
 }
 
+/** The one "this run is not being driven" verdict every consumer reads, so a
+    resolution ladder cannot disagree with the console about what is dead.
+    Takes a summary that was built WITH liveness evidence; built without, a
+    long quiet stage reads stale here even while its agent works. */
+export function isStaleRun(run: Pick<RunSummary, "status" | "attention">): boolean {
+  return run.status === "running" && run.attention.reason === "stale";
+}
+
 export function computeAttention(
   run: RunSummary,
   stages: RunStageRow[],

@@ -42,6 +42,8 @@ import { probeInboxReachability } from "./inbox.ts";
 import { herdrRequest } from "../herdr/client.ts";
 import { defaultHerdrRunner } from "../agent-herdr.ts";
 import { resolveGateSubject } from "./gate-subject.ts";
+import { isStaleRun, type RunLiveness } from "../runs/attention.ts";
+import { getRunLiveness } from "../runs/liveness.ts";
 import type { EventsBus } from "./events-bus.ts";
 import type { GatesStore } from "./gates-store.ts";
 import type { HerdStore } from "./herd-store.ts";
@@ -120,6 +122,10 @@ export function buildRoutedHandlers(opts: {
    * own private map.
    */
   chatDeliveryChains?: Map<string, Promise<void>>;
+  /** Liveness evidence for the gate:ask subject ladder (a stale run must not
+      capture resolution). Defaults to the daemon-wide cached herdr probe;
+      tests inject a hermetic one rather than shelling out to herdr. */
+  runLiveness?: () => Promise<RunLiveness>;
   /** Runs one credential-health sweep cycle on demand (RT-132), the same closure the daemon's periodic accounts-sweep timer calls, so `rt accounts --recheck` sees an up-to-date credential_health table immediately. Omitted only by tests that don't exercise accounts-recheck. */
   accountsSweep?: () => Promise<void>;
 }): Record<string, Handler> {
@@ -145,6 +151,8 @@ export function buildRoutedHandlers(opts: {
     bg: opts.bgService, bgClaims: opts.bgClaims, lifecycle: opts.herdLifecycle,
   });
   const worktreeHandlers = createWorktreeHandlers({ repoIndex: ctx.repoIndex, cache: ctx.cache, log: ctx.log }, opts.worktree);
+  const runWorktree = (runId: string): string | null =>
+    findRun(runId)?.fields.find((f) => f.key === "worktree")?.value ?? null;
   const gateHandlers = createGateHandlers(opts.gatesStore, opts.eventsBus, broadcast, {
     push: opts.gatePush,
     log: ctx.log,
@@ -153,17 +161,22 @@ export function buildRoutedHandlers(opts: {
     reconciler: opts.reconciler,
     resumeAgent: opts.resumeAgent,
     getAgentRecord: opts.getAgentRecord,
-    resolveSubject: (args) => resolveGateSubject({
-      runsBySession: (sid) => findRunsBySession(sid).map((m) => ({
-        runId: m.summary.id,
-        status: m.summary.status,
-        worktree: m.summary.status === "running" ? (findRun(m.summary.id)?.fields.find((f) => f.key === "worktree")?.value ?? null) : null,
-      })),
-      agentBySession: (sid) => {
-        const rec = getAgent(sid, opts.stateDb);
-        return rec?.sessionId === sid ? { id: rec.id, subject: rec.subject ?? null } : undefined;
-      },
-    }, args),
+    runWorktree,
+    resolveSubject: async (args) => {
+      const liveness = await (opts.runLiveness ?? getRunLiveness)();
+      return resolveGateSubject({
+        runsBySession: (sid) => findRunsBySession(sid, liveness).map((m) => ({
+          runId: m.summary.id,
+          status: m.summary.status,
+          stale: isStaleRun(m.summary),
+          worktree: m.summary.status === "running" ? runWorktree(m.summary.id) : null,
+        })),
+        agentBySession: (sid) => {
+          const rec = getAgent(sid, opts.stateDb);
+          return rec?.sessionId === sid ? { id: rec.id, subject: rec.subject ?? null } : undefined;
+        },
+      }, args);
+    },
   });
   const herdHandlers = createHerdHandlers({
     store: opts.herdStore,
@@ -172,7 +185,7 @@ export function buildRoutedHandlers(opts: {
     chat: chatHandlers,
     agent: agentHandlers,
     worktree: worktreeHandlers,
-    runWorktree: (runId) => findRun(runId)?.fields.find((f) => f.key === "worktree")?.value ?? null,
+    runWorktree,
     findRunningRunByWorktree,
     presenceHandleForSession: (session) => presenceForSession(session, opts.stateDb)?.handle ?? null,
     probeInbox: async (session) => {

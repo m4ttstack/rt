@@ -221,7 +221,7 @@ export function mcpTools(): McpToolDef[] {
     },
     {
       name: "gate_ask",
-      description: "Open a decision gate with the daemon-side ceremony: subject resolves from this session (explicit subject wins, else its running run, else its agent record's own subject), presentation is computed, and the operator is nudged. Returns {id, presentation, subject, supersededId}; then run `rt gate wait <id>` as background bash and park. The wait itself is never a tool. Prefer {value, label} option objects; bare strings are accepted and stored normalized. Answers must be option VALUES verbatim.",
+      description: "Open a decision gate with the daemon-side ceremony: subject resolves from this session (explicit subject wins, else its running run, else its agent record's own subject), presentation is computed, and the operator is nudged. Always pass context, quoted from the material the reader decides on, and never trim or skip it for size: an oversized context is dropped server-side and reported back as contextOmitted: true. A human-owned gate with no context is refused. Returns {id, presentation, subject, supersededId}; then run `rt gate wait <id>` as background bash and park. The wait itself is never a tool. Prefer {value, label} option objects; bare strings are accepted and stored normalized. Answers must be option VALUES verbatim.",
       inputSchema: {
         type: "object",
         properties: {

@@ -20,11 +20,49 @@ allow() {
   exit 0
 }
 
+# One JSON string escaper for both consumers: the deny payload (where a raw
+# control byte is invalid JSON) and the grep -F patterns, which compare
+# against rows `commands/gate.ts` printed with JSON.stringify -- so the
+# spelling here has to be JSON.stringify's own, byte for byte: \b \f \n \r \t
+# and \u00XX for every other C0 control.
+#
+# awk, not sed: BSD sed reads `\t` in a pattern as a literal `t`. LC_ALL=C
+# makes length/substr walk BYTES, so a multi-byte UTF-8 character passes
+# through a byte at a time and comes out unchanged, exactly as JSON.stringify
+# leaves it. The appended "." is a sentinel: awk's records drop a FINAL
+# newline in the value (there is no record after it to join), and the
+# sentinel turns that newline into an interior one; escaping never rewrites
+# a plain ".", so stripping the last byte restores the value.
+json_escape() {
+  escaped=$(printf '%s.' "$1" | LC_ALL=C awk '
+    BEGIN {
+      spelled[8] = "\\b"; spelled[9] = "\\t"; spelled[12] = "\\f"; spelled[13] = "\\r"
+      for (i = 1; i <= 31; i++) {
+        c = sprintf("%c", i)
+        esc[c] = (i in spelled) ? spelled[i] : sprintf("\\u%04x", i)
+      }
+    }
+    {
+      if (NR > 1) printf "\\n"
+      n = length($0)
+      for (i = 1; i <= n; i++) {
+        c = substr($0, i, 1)
+        if (c == "\\") printf "\\\\"
+        else if (c == "\"") printf "\\\""
+        else if (c in esc) printf "%s", esc[c]
+        else printf "%s", c
+      }
+    }
+  ')
+  printf '%s' "${escaped%.}"
+}
+
 deny() {
   # The two backslash-quote pairs put a literal `"` around the subject in
   # the decoded JSON string; RT_GATE_SUBJECT itself is escaped first so an
-  # embedded quote or backslash can never break out of the JSON string.
-  esc_subject=$(printf '%s' "$RT_GATE_SUBJECT" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
+  # embedded quote, backslash, or control character can never break out of
+  # the JSON string.
+  esc_subject=$(json_escape "$RT_GATE_SUBJECT")
   # shellcheck disable=SC2016 # %s is a printf format spec, not a shell expansion
   printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Blocking forks go through the gate protocol: run `rt gate ask --questions <json>` (the daemon resolves this pane'\''s subject on its own; this pane'\''s recorded subject is \\"%s\\"; add --context for the decision material), then background `rt gate wait <id>` per the gate protocol skill, instead of AskUserQuestion."}}\n' "$esc_subject"
   exit 0
@@ -61,7 +99,7 @@ fi
 # too), so splitting there would land a row's subject and status on
 # different lines and misread every multi-question gate as unanswerable.
 gate_lines=$(printf '%s' "$gates_json" | awk '{gsub(/\{"id":"[^"]*","subject":/, "\n&"); print}')
-subject_lines=$(printf '%s\n' "$gate_lines" | grep -F "\"subject\":\"$RT_GATE_SUBJECT\"")
+subject_lines=$(printf '%s\n' "$gate_lines" | grep -F "\"subject\":\"$(json_escape "$RT_GATE_SUBJECT")\"")
 
 printf '%s\n' "$subject_lines" | grep -Eq '"status":"(open|parked)"' && allow
 
@@ -70,6 +108,12 @@ printf '%s\n' "$subject_lines" | grep -Eq '"status":"(open|parked)"' && allow
 # finding 2). Same row-split discipline as above; worktree matching is
 # exact-string on the JSON-escaped cwd, checked for both $PWD and the
 # physical pwd so a symlinked worktree path still matches.
+#
+# The match is per-worktree, not per-caller, on purpose: any pane in a tree
+# with an open run gate inherits this allow. Narrowing it to the gate's own
+# origin.paneId would deny a relaunched pane whose gate still carries the
+# pane id it had before the relaunch, and this hook degrades to allow
+# everywhere else it cannot verify something.
 if [ -n "$TIMEOUT_BIN" ]; then
   run_json=$("$TIMEOUT_BIN" 5 rt gate list --subject-prefix "run:" --open 2>/dev/null) || allow
 else
@@ -90,7 +134,7 @@ fi
 # cap and silently stop seeing the newest (live) row.
 run_lines=$(printf '%s' "$run_json" | awk '{gsub(/\{"id":"[^"]*","subject":/, "\n&"); print}')
 for dir in "$PWD" "$(pwd -P)"; do
-  esc_dir=$(printf '%s' "$dir" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
+  esc_dir=$(json_escape "$dir")
   printf '%s\n' "$run_lines" | grep -F "\"worktree\":\"$esc_dir\"" | grep -Eq '"status":"open"' && allow
 done
 
