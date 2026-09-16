@@ -138,19 +138,20 @@ executable choices, open a facility gate instead of emitting `error`. Stay at
   The `--context` text is the situation line the escalation already
   composes; if it would exceed 8192 UTF-8 bytes, omit `--context` entirely
   rather than trimming it.
-- **presentation "form":** present the SAME question as the native
-  structured-question form. Render each option's `label` when it has one and
-  submit the chosen option's `value`
-  verbatim; never an index, never a paraphrase. Submit exactly one
-  `<status-bin> gate answer <state> --answers <json> --by pane` after the
-  form. A printed conflict answer means another surface won: say so in one
-  line and proceed on the printed winning answer. If the form is dismissed
-  under you and a message arrives saying the gate was answered by another
-  surface (it names which one), that message is a verify-only signal and
-  never carries the answer: run `<status-bin> gate wait <state> --max-ms
-  1000`, read the recorded answer, and proceed on it. This pane is never
-  notified of an answer it recorded itself; only another surface's answer
-  reaches it this way.
+- **presentation "form":** follow `mattstack:gate-protocol`'s "Acting on
+  the response" (form branch) and "CAS and the doorbell" sections
+  (stable source checkout, machine-local by design: `cat
+  ~/Documents/GitHub/mattstack-skills/attachments/gate-protocol/SKILL.md`)
+  for the mechanical rendering rule (this gate's one question, its
+  label verbatim, the chosen option's value submitted verbatim, never
+  an index or a paraphrase) and the conflict rule (a printed conflict
+  answer, or a doorbell message while a form still sits open, means
+  another surface won: proceed on the winning answer, never the one
+  you were about to submit; the doorbell is verify-only, run
+  `<status-bin> gate wait <state> --max-ms 1000` to read the recorded
+  answer). Its `rt gate
+  answer <id> --answers ... --by pane` is this CLI's `<status-bin> gate
+  answer <state> --answers <json> --by pane`, unchanged.
 - **presentation "wait":** do NOT present a form. Launch ONE background
   shell command (the shell tool's run-in-background mode) that loops
   `<status-bin> gate wait <state> --max-ms 90000`, re-running while it

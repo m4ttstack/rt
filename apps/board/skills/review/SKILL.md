@@ -180,30 +180,31 @@ remembered in the conversation.
      The context text is assembled from strings you already hold (see the fill
      rules above); if it would exceed 8192 UTF-8 bytes, omit `--context`
      entirely rather than trimming it.
-   - **presentation "form":** present the SAME questions as the native
-     structured-question form, as a mechanical rendering of the gate JSON:
-     one form question per gate question in gate order (tiers before
-     outcome: the human weighs the findings before choosing a verdict),
-     question text the gate label verbatim, one form option per gate option
-     in gate order with labels verbatim. A label's " (recommended)" suffix
-     becomes the form's own (Recommended) affordance instead of staying in
-     the text. Your framing and reasoning go in the pane prose before the
-     form or in option descriptions, never into rewritten question or
-     option text, and never as an option that folds another question's
-     answer in (no "skip and approve clean" combo option): "post nothing"
-     is the tiers question answered as an explicit empty array, which the
-     daemon records. Render each option's `label` when it has one
-     and submit the chosen option's `value` verbatim; never an index, never a
-     paraphrase. Submit exactly one
-     `<status-bin> gate answer <state> --answers <json> --by pane` after the
-     form. A printed conflict answer means another surface won: say so in one
-     line and proceed on the printed winning answer. If the form is dismissed
-     under you and a message arrives saying the gate was answered by another
-     surface (it names which one), that message is a verify-only signal and
-     never carries the answer: run `<status-bin> gate wait <state> --max-ms
-     1000`, read the recorded answer, and proceed on it. This pane is never
-     notified of an answer it recorded itself; only another surface's answer
-     reaches it this way.
+   - **presentation "form":** follow `mattstack:gate-protocol`'s "Acting
+     on the response" (form branch) and "CAS and the doorbell" sections
+     (stable source checkout, machine-local by design: `cat
+     ~/Documents/GitHub/mattstack-skills/attachments/gate-protocol/SKILL.md`)
+     for the mechanical rendering rule (one form question per gate
+     question in gate order, labels and values verbatim) and the
+     conflict rule (a printed conflict answer, or a doorbell message
+     while a form still sits open, means another surface won: proceed
+     on the winning answer, never the one you were about to submit;
+     the doorbell is verify-only, run `<status-bin> gate wait <state>
+     --max-ms 1000` to read the recorded answer). Its `rt gate answer
+     <id> --answers ... --by pane` is this CLI's `<status-bin> gate
+     answer <state> --answers <json> --by pane`, unchanged. Four
+     things stay specific to THIS gate, not covered there (gate-protocol
+     never mentions a "(recommended)" suffix, framing placement, or
+     folding one question's answer into another option, at all): a
+     label's " (recommended)" suffix becomes the form's own
+     (Recommended) affordance; your framing and reasoning go in the
+     pane prose or option descriptions, never into rewritten question
+     or option text; the question order is fixed (tiers before
+     outcome: the human weighs the findings before choosing a
+     verdict); and never as an option that folds another question's
+     answer in -- there is never a "skip and approve clean" combo
+     option, since "post nothing" is the `tiers` question answered as
+     an explicit empty array, which the daemon records.
    - **presentation "wait":** do NOT present a form. Launch ONE background
      shell command (the shell tool's run-in-background mode) that loops
      `<status-bin> gate wait <state> --max-ms 90000`, re-running while it

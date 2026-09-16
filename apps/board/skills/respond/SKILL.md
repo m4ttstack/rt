@@ -207,32 +207,30 @@ conversation.
      reply or fix summary for each thread, within the 8192 UTF-8 byte cap; if
      it would exceed the cap, omit `--context` entirely rather than trimming
      it.
-   - **presentation "form":** present the SAME questions as the native
-     structured-question form, as a mechanical rendering of the gate JSON:
-     one form question per gate question in gate order, question text the
-     gate label verbatim, one form option per gate option in gate order
-     with labels verbatim. Your framing and reasoning go in the pane prose
-     before the form or in option descriptions, never into rewritten
-     question or option text, and never as an option that folds another
-     question's answer in. The form tool takes at most four questions
-     per call, so chunk: the thread questions in order, up to four per
-     call, until every thread is asked; then, if any thread's answer is a
-     `fix:` value, ask `code-changes` in one more call, otherwise fill
-     `code-changes: "skip"` without asking (the same hide rule the board
-     and console cards apply). Render each option's `label` and submit the
-     chosen option's `value` verbatim; never an index, never a paraphrase.
-     Submit exactly one
-     `<status-bin> gate answer <state> --answers <json> --by pane` after
-     the LAST call, carrying every thread question's answer plus
-     `code-changes`; never one per chunk. A printed conflict answer means
-     another surface won: say so in one line and proceed on the printed
-     winning answer. If the form is dismissed
-     under you and a message arrives saying the gate was answered by another
-     surface (it names which one), that message is a verify-only signal and
-     never carries the answer: run `<status-bin> gate wait <state> --max-ms
-     1000`, read the recorded answer, and proceed on it. This pane is never
-     notified of an answer it recorded itself; only another surface's answer
-     reaches it this way.
+   - **presentation "form":** follow `mattstack:gate-protocol`'s "Acting
+     on the response" (form branch) and "CAS and the doorbell" sections
+     (stable source checkout, machine-local by design: `cat
+     ~/Documents/GitHub/mattstack-skills/attachments/gate-protocol/SKILL.md`)
+     for the mechanical rendering rule and the conflict rule (a printed
+     conflict answer, or a doorbell message while a form still sits
+     open, means another surface won: proceed on the winning answer,
+     never the one you were about to submit; the doorbell is
+     verify-only, run `<status-bin> gate wait <state> --max-ms 1000` to
+     read the recorded answer). Three things stay local, not covered there
+     (gate-protocol never mentions framing placement or folding one
+     question's answer into another option, at all): your framing and
+     reasoning go in the pane prose or option descriptions, never into
+     rewritten question or option text; never as an option that folds
+     another question's answer in; and Gate 1's own wrinkle -- the form
+     tool takes at most four questions per call, so chunk: the thread
+     questions in order, up to four per call, until every thread is
+     asked; then, if any thread's answer is a `fix:` value, ask
+     `code-changes` in one more call, otherwise fill `code-changes:
+     "skip"` without asking (the same hide rule the board and console
+     cards apply). Submit exactly one `<status-bin> gate answer
+     <state> --answers <json> --by pane` after the LAST call, carrying
+     every thread question's answer plus `code-changes`; never one per
+     chunk.
    - **presentation "wait":** do NOT present a form. Launch ONE background
      shell command (the shell tool's run-in-background mode) that loops
      `<status-bin> gate wait <state> --max-ms 90000`, re-running while it
@@ -286,27 +284,25 @@ conversation.
      reply or fix summary for each thread, within the 8192 UTF-8 byte cap; if
      it would exceed the cap, omit `--context` entirely rather than trimming
      it.
-   - **presentation "form":** present the SAME questions as the native
-     structured-question form, as a mechanical rendering of the gate JSON:
-     one form question per gate question in gate order, question text the
-     gate label verbatim, one form option per gate option in gate order
-     with labels verbatim. Your framing and reasoning go in the pane prose
-     before the form or in option descriptions, never into rewritten
-     question or option text, and never as an option that folds another
-     question's answer in: "post no replies" is the `replies` question
-     answered as an explicit empty array, which the daemon records.
-     Render each option's `label` when it has one
-     and submit the chosen option's `value` verbatim; never an index, never a
-     paraphrase. Submit exactly one
-     `<status-bin> gate answer <state> --answers <json> --by pane` after the
-     form. A printed conflict answer means another surface won: say so in one
-     line and proceed on the printed winning answer. If the form is dismissed
-     under you and a message arrives saying the gate was answered by another
-     surface (it names which one), that message is a verify-only signal and
-     never carries the answer: run `<status-bin> gate wait <state> --max-ms
-     1000`, read the recorded answer, and proceed on it. This pane is never
-     notified of an answer it recorded itself; only another surface's answer
-     reaches it this way.
+   - **presentation "form":** follow `mattstack:gate-protocol`'s "Acting
+     on the response" (form branch) and "CAS and the doorbell" sections
+     (stable source checkout, machine-local by design: `cat
+     ~/Documents/GitHub/mattstack-skills/attachments/gate-protocol/SKILL.md`)
+     for the mechanical rendering rule and the conflict rule (a printed
+     conflict answer, or a doorbell message while a form still sits
+     open, means another surface won: proceed on the winning answer,
+     never the one you were about to submit; the doorbell is
+     verify-only, run `<status-bin> gate wait <state> --max-ms 1000` to
+     read the recorded answer). Its `rt gate answer <id> --answers ...
+     --by pane` is this CLI's `<status-bin> gate answer <state>
+     --answers <json> --by pane`, unchanged. Three things stay local,
+     not covered there (gate-protocol never mentions framing placement
+     or folding one question's answer into another option, at all):
+     your framing and reasoning go in the pane prose or option
+     descriptions, never into rewritten question or option text; never
+     as an option that folds another question's answer in; and "post
+     no replies" is the `replies` question answered as an explicit
+     empty array, which the daemon records -- Gate 2's own reminder.
    - **presentation "wait":** do NOT present a form. Launch ONE background
      shell command (the shell tool's run-in-background mode) that loops
      `<status-bin> gate wait <state> --max-ms 90000`, re-running while it
