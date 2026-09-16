@@ -29,6 +29,7 @@ function row(overrides: Partial<FacilityGateRow> = {}): FacilityGateRow {
     supersededBy: null,
     owner: null,
     escalatedAt: null,
+    consumedAt: null,
     ...overrides,
   };
 }
@@ -685,6 +686,7 @@ describe('attachGates', () => {
       supersededBy: null,
       owner: null,
       escalatedAt: null,
+      consumedAt: null,
       context: 'ctx',
       origin: { worktree: '/tmp/wt' },
     });

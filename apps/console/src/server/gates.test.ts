@@ -38,6 +38,7 @@ function row(overrides: Partial<GateRow> = {}): GateRow {
     supersededBy: null,
     owner: null,
     escalatedAt: null,
+    consumedAt: null,
     ...overrides,
   };
 }

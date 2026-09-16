@@ -2,16 +2,20 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import type { Database } from 'bun:sqlite';
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 
-import type { Commands, GateRow, RtResponse } from '@mattstack/rt-client';
+import {
+  gatePresentation,
+  type Commands,
+  type GateRow,
+  type RtResponse,
+} from '@mattstack/rt-client';
 import type { DoctorState } from '../doctor-state.ts';
 import {
   gateAnswer,
   gateOpen,
   gateWait,
   parseWaitMaxMs,
-  presentationFor,
   type GateVerbIo,
 } from '../gates/verbs.ts';
 import { statusBinPath } from '../herdr.ts';
@@ -66,37 +70,43 @@ function gateRow(overrides: Partial<GateRow> & { id: string }): GateRow {
     supersededBy: null,
     owner: null,
     escalatedAt: null,
+    consumedAt: null,
     ...overrides,
   };
 }
 
 interface FakeIoCalls {
-  gateOpen: Array<Commands['gate:open']['payload']>;
+  gateAsk: Array<Commands['gate:ask']['payload']>;
   gateWait: Array<Commands['gate:wait']['payload']>;
   gateAnswer: Array<Commands['gate:answer']['payload']>;
 }
 
 function fakeIo(
   overrides: {
-    openResult?: RtResponse<Commands['gate:open']['data']>;
+    openResult?: RtResponse<Commands['gate:ask']['data']>;
     waitResults?: Array<RtResponse<Commands['gate:wait']['data']>>;
     answerResult?: RtResponse<Commands['gate:answer']['data']>;
     /** Advances the fake clock by this much per gateWait call (0 = frozen). */
     msPerWait?: number;
   } = {}
 ): { io: GateVerbIo; calls: FakeIoCalls } {
-  const calls: FakeIoCalls = { gateOpen: [], gateWait: [], gateAnswer: [] };
+  const calls: FakeIoCalls = { gateAsk: [], gateWait: [], gateAnswer: [] };
   const waitResults = overrides.waitResults ?? [];
   let waitIdx = 0;
   let clock = 0;
   const io: GateVerbIo = {
     now: () => clock,
-    gateOpen: async payload => {
-      calls.gateOpen.push(payload);
+    gateAsk: async payload => {
+      calls.gateAsk.push(payload);
       return (
         overrides.openResult ?? {
           ok: true,
-          data: { id: 'gate-1', supersededId: null },
+          data: {
+            id: 'gate-1',
+            presentation: 'form',
+            subject: `mr:${MR_URL}`,
+            supersededId: null,
+          },
         }
       );
     },
@@ -166,7 +176,7 @@ afterEach(() => {
 });
 
 describe('gateOpen', () => {
-  test('calls the facility with subject mr:<url>, kind review-post, no nudge, and an !<iid> label', async () => {
+  test('calls the facility with subject mr:<url>, kind review-post, and an !<iid> label', async () => {
     const { io, calls } = fakeIo();
 
     const gateId = (
@@ -174,22 +184,29 @@ describe('gateOpen', () => {
     ).gateId;
 
     expect(gateId).toBe('gate-1');
-    expect(calls.gateOpen.length).toBe(1);
-    const payload = calls.gateOpen[0]!;
-    expect(payload.subject).toBe(`mr:${MR_URL}`);
-    expect(payload.kind).toBe('review-post');
-    expect(payload.questions).toEqual(QUESTIONS);
-    expect(payload.meta).toEqual({ label: `review gate !${IID}` });
-    expect(payload.nudge).toBeUndefined();
-    expect(payload.agent).toBeUndefined();
-    // No extras passed: no sessionId means no nudge even though the fixture's
-    // paneId still stamps origin/pane (pane is keyed off state, not extras).
-    expect(payload.pane).toBe('pane-1');
+    expect(calls.gateAsk.length).toBe(1);
+    const payload = calls.gateAsk[0]!;
+    expect(payload).toEqual({
+      subject: `mr:${MR_URL}`,
+      kind: 'review-post',
+      questions: QUESTIONS,
+      paneId: 'pane-1',
+      meta: { label: `review gate !${IID}` },
+      origin: { surface: 'board', tabId: 'tab-1' },
+    });
   });
 
   test('persists the returned gateId and gateKind onto review state, leaving other fields untouched', async () => {
     const { io } = fakeIo({
-      openResult: { ok: true, data: { id: 'gate-xyz', supersededId: null } },
+      openResult: {
+        ok: true,
+        data: {
+          id: 'gate-xyz',
+          presentation: 'form',
+          subject: `mr:${MR_URL}`,
+          supersededId: null,
+        },
+      },
     });
 
     await gateOpen(statePath, 'review-post', JSON.stringify(QUESTIONS), io);
@@ -209,7 +226,7 @@ describe('gateOpen', () => {
       gateOpen(statePath, 'review-post', '{ not valid json', io)
     ).rejects.toThrow();
 
-    expect(calls.gateOpen.length).toBe(0);
+    expect(calls.gateAsk.length).toBe(0);
   });
 
   test('an unrecognized kind throws rather than calling the facility', async () => {
@@ -219,7 +236,7 @@ describe('gateOpen', () => {
       gateOpen(statePath, 'mystery-kind', JSON.stringify(QUESTIONS), io)
     ).rejects.toThrow(/unrecognized kind/);
 
-    expect(calls.gateOpen.length).toBe(0);
+    expect(calls.gateAsk.length).toBe(0);
   });
 
   test('a facility failure throws loudly instead of writing a gateId', async () => {
@@ -237,7 +254,12 @@ describe('gateOpen', () => {
     const { io } = fakeIo({
       openResult: {
         ok: true,
-        data: { id: 'gate-survives', supersededId: null },
+        data: {
+          id: 'gate-survives',
+          presentation: 'form',
+          subject: `mr:${MR_URL}`,
+          supersededId: null,
+        },
       },
     });
     const { writeReviewState } = await import('../review-state.ts');
@@ -342,7 +364,12 @@ describe("gateOpen: label and writer by kind's domain", () => {
     const { io, calls } = fakeIo({
       openResult: {
         ok: true,
-        data: { id: 'gate-respond', supersededId: null },
+        data: {
+          id: 'gate-respond',
+          presentation: 'form',
+          subject: `mr:${MR_URL}`,
+          supersededId: null,
+        },
       },
     });
 
@@ -351,7 +378,7 @@ describe("gateOpen: label and writer by kind's domain", () => {
     ).gateId;
 
     expect(gateId).toBe('gate-respond');
-    expect(calls.gateOpen[0]!.meta).toEqual({ label: `respond gate !${IID}` });
+    expect(calls.gateAsk[0]!.meta).toEqual({ label: `respond gate !${IID}` });
     const respondState = readByHandle(respondPath, db) as RespondState;
     expect(respondState.gateId).toBe('gate-respond');
     expect(respondState.gateKind).toBe('respond-plan');
@@ -380,7 +407,15 @@ describe("gateOpen: label and writer by kind's domain", () => {
       db
     );
     const { io, calls } = fakeIo({
-      openResult: { ok: true, data: { id: 'gate-doctor', supersededId: null } },
+      openResult: {
+        ok: true,
+        data: {
+          id: 'gate-doctor',
+          presentation: 'form',
+          subject: `mr:${MR_URL}`,
+          supersededId: null,
+        },
+      },
     });
 
     const gateId = (
@@ -393,7 +428,7 @@ describe("gateOpen: label and writer by kind's domain", () => {
     ).gateId;
 
     expect(gateId).toBe('gate-doctor');
-    expect(calls.gateOpen[0]!.meta).toEqual({ label: `doctor gate !${IID}` });
+    expect(calls.gateAsk[0]!.meta).toEqual({ label: `doctor gate !${IID}` });
     const doctorState = readByHandle(doctorPath, db) as DoctorState;
     expect(doctorState.gateId).toBe('gate-doctor');
     expect(doctorState.gateKind).toBe('doctor-escalation');
@@ -714,11 +749,19 @@ describe('gateOpen W4 (origin, nudge, presentation, context)', () => {
     return statePath;
   }
 
-  test('form presentation: origin stamped, pane set, nudge carries the session id', async () => {
+  test("form presentation: origin, paneId, sessionId, and context reach the payload; result.presentation is the facility's", async () => {
     const dir = mkdtempSync(join(tmpdir(), 'gate-verbs-w4-'));
     const db = openStateDb(dbPathForRoot(dir), 'cli');
     const { io, calls } = fakeIo({
-      openResult: { ok: true, data: { id: 'g1', supersededId: null } },
+      openResult: {
+        ok: true,
+        data: {
+          id: 'g1',
+          presentation: 'form',
+          subject: `mr:${MR_URL}`,
+          supersededId: null,
+        },
+      },
     });
     const result = await gateOpen(
       stateWithPane(dir, db),
@@ -732,25 +775,31 @@ describe('gateOpen W4 (origin, nudge, presentation, context)', () => {
       }
     );
     expect(result).toEqual({ gateId: 'g1', presentation: 'form' });
-    const payload = calls.gateOpen[0]!;
+    const payload = calls.gateAsk[0]!;
     expect(payload.origin).toEqual({
-      presentation: 'form',
       surface: 'board',
-      paneId: 'pane-3',
       tabId: 'tab-3',
       worktree: '/tmp/wt',
     });
-    expect(payload.pane).toBe('pane-3');
-    expect(payload.nudge).toEqual({ session: 'sess-9' });
+    expect(payload.paneId).toBe('pane-3');
+    expect(payload.sessionId).toBe('sess-9');
     expect(payload.context).toBe('tier counts');
     rmSync(dir, { recursive: true, force: true });
   });
 
-  test('over the option cap: presentation wait and NO nudge', async () => {
+  test('over the option cap: the result presentation is whatever the facility returns, not locally computed', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'gate-verbs-w4-'));
     const db = openStateDb(dbPathForRoot(dir), 'cli');
-    const { io, calls } = fakeIo({
-      openResult: { ok: true, data: { id: 'g2', supersededId: null } },
+    const { io } = fakeIo({
+      openResult: {
+        ok: true,
+        data: {
+          id: 'g2',
+          presentation: 'wait',
+          subject: `mr:${MR_URL}`,
+          supersededId: null,
+        },
+      },
     });
     const result = await gateOpen(
       stateWithPane(dir, db),
@@ -763,33 +812,29 @@ describe('gateOpen W4 (origin, nudge, presentation, context)', () => {
       }
     );
     expect(result.presentation).toBe('wait');
-    expect(calls.gateOpen[0]!.nudge).toBeUndefined();
-    expect(calls.gateOpen[0]!.origin!.presentation).toBe('wait');
     rmSync(dir, { recursive: true, force: true });
   });
 
-  test('oversize context is dropped, not truncated, and the open still succeeds', async () => {
+  test('oversize context is sent verbatim, not dropped, and the open still succeeds', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'gate-verbs-w4-'));
     const db = openStateDb(dbPathForRoot(dir), 'cli');
+    const oversized = 'x'.repeat(8193);
     const { io, calls } = fakeIo({
-      openResult: { ok: true, data: { id: 'g3', supersededId: null } },
+      openResult: {
+        ok: true,
+        data: {
+          id: 'g3',
+          presentation: 'form',
+          subject: `mr:${MR_URL}`,
+          supersededId: null,
+        },
+      },
     });
     await gateOpen(stateWithPane(dir, db), 'review-post', FORM_QUESTIONS, io, {
-      context: 'x'.repeat(8193),
+      context: oversized,
     });
-    expect(calls.gateOpen[0]!.context).toBeUndefined();
+    expect(calls.gateAsk[0]!.context).toBe(oversized);
     rmSync(dir, { recursive: true, force: true });
-  });
-
-  test('presentationFor: 4 options is a form, 5 is a wait', () => {
-    const q4 = [
-      { id: 'q', label: 'q', multi: false, options: ['a', 'b', 'c', 'd'] },
-    ];
-    const q5 = [
-      { id: 'q', label: 'q', multi: false, options: ['a', 'b', 'c', 'd', 'e'] },
-    ];
-    expect(presentationFor(q4)).toBe('form');
-    expect(presentationFor(q5)).toBe('wait');
   });
 });
 
@@ -833,5 +878,197 @@ describe('bin/gate.ts missing --kind', () => {
     const stderr = await new Response(proc.stderr).text();
     expect(stderr).toContain('usage: gate open');
     expect(stderr).toContain('--kind');
+  });
+});
+
+describe('presentation parity (BOARD-31)', () => {
+  // The CLI's gate open command prints exactly `JSON.stringify` of gateOpen's
+  // return value; the two spawn suites above only cover failure paths, and a
+  // success-path spawn would hit the real live rt daemon on this machine, so
+  // these assert JSON.stringify(result) directly instead.
+
+  // Computes the returned presentation from the SAME rt-client rule the real
+  // daemon runs, over the paneId/sessionId/questions the payload actually
+  // carries -- a hard-coded 'form'/'wait' literal here would make the option
+  // counts inert, since gateOpen only relays whatever `io.gateAsk` returns.
+  function fakeIoWithRealPresentation(id: string): {
+    io: GateVerbIo;
+    calls: FakeIoCalls;
+  } {
+    const calls: FakeIoCalls = { gateAsk: [], gateWait: [], gateAnswer: [] };
+    const io: GateVerbIo = {
+      now: () => 0,
+      gateAsk: async payload => {
+        calls.gateAsk.push(payload);
+        return {
+          ok: true,
+          data: {
+            id,
+            presentation: gatePresentation({
+              paneId: payload.paneId,
+              sessionId: payload.sessionId,
+              questions: payload.questions,
+            }),
+            subject: `mr:${MR_URL}`,
+            supersededId: null,
+          },
+        };
+      },
+      gateWait: async () => {
+        throw new Error('not used in presentation parity tests');
+      },
+      gateAnswer: async () => {
+        throw new Error('not used in presentation parity tests');
+      },
+    };
+    return { io, calls };
+  }
+
+  test('unchanged: a question set with every option count at or under 4 yields form', async () => {
+    const { io } = fakeIoWithRealPresentation('gate-1');
+
+    const result = await gateOpen(
+      statePath,
+      'review-post',
+      JSON.stringify(QUESTIONS),
+      io,
+      { sessionId: 'session-1' }
+    );
+
+    expect(JSON.stringify(result)).toBe(
+      '{"gateId":"gate-1","presentation":"form"}'
+    );
+  });
+
+  test('unchanged: a question with 5 options yields wait', async () => {
+    const fiveOptionQuestions = JSON.stringify([
+      {
+        id: 'threads',
+        label: 'Threads',
+        multi: true,
+        options: ['a', 'b', 'c', 'd', 'e'],
+      },
+    ]);
+    const { io } = fakeIoWithRealPresentation('gate-2');
+
+    const result = await gateOpen(
+      statePath,
+      'review-post',
+      fiveOptionQuestions,
+      io,
+      { sessionId: 'session-1' }
+    );
+
+    expect(JSON.stringify(result)).toBe(
+      '{"gateId":"gate-2","presentation":"wait"}'
+    );
+  });
+
+  test('delta 1: missing paneId and sessionId now opens as wait instead of the old form-guard refusal', async () => {
+    const noPaneDir = mkdtempSync(join(tmpdir(), 'gate-verbs-parity-'));
+    const noPaneDb = openStateDb(dbPathForRoot(noPaneDir), 'cli');
+    const noPaneState = mintHandle('review', MR_URL, noPaneDir);
+    insertAgentState(
+      'review',
+      MR_URL,
+      IID,
+      {
+        mrUrl: MR_URL,
+        iid: IID,
+        status: 'reviewing',
+        startedAt: 1,
+        updatedAt: 1,
+      },
+      noPaneState,
+      noPaneDb
+    );
+    const { io, calls } = fakeIoWithRealPresentation('gate-wait-only');
+
+    const result = await gateOpen(
+      noPaneState,
+      'review-post',
+      JSON.stringify(QUESTIONS),
+      io
+    );
+
+    expect(calls.gateAsk[0]!.paneId).toBeUndefined();
+    expect(calls.gateAsk[0]!.sessionId).toBeUndefined();
+    expect(JSON.stringify(result)).toBe(
+      '{"gateId":"gate-wait-only","presentation":"wait"}'
+    );
+
+    rmSync(noPaneDir, { recursive: true, force: true });
+  });
+
+  test('delta 3: paneId set but no sessionId still opens as wait, the realistic case where CLAUDE_CODE_SESSION_ID is unset', async () => {
+    const panedDir = mkdtempSync(join(tmpdir(), 'gate-verbs-parity-'));
+    const panedDb = openStateDb(dbPathForRoot(panedDir), 'cli');
+    const panedState = mintHandle('review', MR_URL, panedDir);
+    insertAgentState(
+      'review',
+      MR_URL,
+      IID,
+      {
+        mrUrl: MR_URL,
+        iid: IID,
+        status: 'reviewing',
+        startedAt: 1,
+        updatedAt: 1,
+        paneId: 'pane-1',
+      },
+      panedState,
+      panedDb
+    );
+    const { io, calls } = fakeIoWithRealPresentation('gate-paned-no-session');
+
+    const result = await gateOpen(
+      panedState,
+      'review-post',
+      JSON.stringify(QUESTIONS),
+      io
+    );
+
+    expect(calls.gateAsk[0]!.paneId).toBe('pane-1');
+    expect(calls.gateAsk[0]!.sessionId).toBeUndefined();
+    expect(JSON.stringify(result)).toBe(
+      '{"gateId":"gate-paned-no-session","presentation":"wait"}'
+    );
+
+    rmSync(panedDir, { recursive: true, force: true });
+  });
+
+  test('delta 2: oversized context is sent verbatim, the gate still opens, and the byte-cap warning still fires', async () => {
+    const oversized = 'x'.repeat(8193);
+    const { io, calls } = fakeIo({
+      openResult: {
+        ok: true,
+        data: {
+          id: 'gate-oversized',
+          presentation: 'form',
+          subject: `mr:${MR_URL}`,
+          supersededId: null,
+        },
+      },
+    });
+    const errorSpy = spyOn(console, 'error').mockImplementation(() => {});
+
+    try {
+      const result = await gateOpen(
+        statePath,
+        'review-post',
+        JSON.stringify(QUESTIONS),
+        io,
+        { sessionId: 'session-1', context: oversized }
+      );
+
+      expect(calls.gateAsk[0]!.context).toBe(oversized);
+      expect(JSON.stringify(result)).toBe(
+        '{"gateId":"gate-oversized","presentation":"form"}'
+      );
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+      expect(errorSpy.mock.calls[0]![0]).toContain('8192');
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 });

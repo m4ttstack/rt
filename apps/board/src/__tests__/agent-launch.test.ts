@@ -38,6 +38,7 @@ describe('agent launch adapter', () => {
           prompt: 'test prompt',
           workspaceLabel: 'test-workspace',
           tabLabel: 'test-tab',
+          subject: 'mr:https://x/mr/1',
         },
         fakeIo
       );
@@ -85,6 +86,7 @@ describe('agent launch adapter', () => {
           prompt: 'my prompt',
           workspaceLabel: 'my-workspace',
           tabLabel: 'my-tab',
+          subject: 'mr:https://x/mr/1',
         },
         fakeIo
       );
@@ -95,6 +97,47 @@ describe('agent launch adapter', () => {
       expect(capturedPayload.prompt).toBe('my prompt');
       expect(capturedPayload.repo).toBe('board');
       expect(capturedPayload.cwd).toBe('/repo');
+    });
+
+    test('passes subject through unconditionally', async () => {
+      let capturedPayload: any;
+      const fakeIo: AgentIo = {
+        agentStart: async payload => {
+          capturedPayload = payload;
+          return {
+            ok: true,
+            data: {
+              id: 'a',
+              repo: 'b',
+              cwd: 'c',
+              provider: 'd',
+              surface: 'herdr' as const,
+              sessionId: 's',
+              paneId: 'p',
+              tabId: 't',
+              workspaceId: 'w',
+              createdAt: Date.now(),
+            },
+          };
+        },
+        agentResume: async () => {
+          throw new Error('not used');
+        },
+      };
+
+      await startAgentPane(
+        {
+          repo: 'board',
+          cwd: '/repo',
+          prompt: 'test',
+          workspaceLabel: 'ws',
+          tabLabel: 'tab',
+          subject: 'mr:https://x/mr/1',
+        },
+        fakeIo
+      );
+
+      expect(capturedPayload.subject).toBe('mr:https://x/mr/1');
     });
 
     test('passes account, model, effort verbatim when present', async () => {
@@ -130,6 +173,7 @@ describe('agent launch adapter', () => {
           prompt: 'test',
           workspaceLabel: 'ws',
           tabLabel: 'tab',
+          subject: 'mr:https://x/mr/1',
           account: 'test-account',
           model: 'opus',
           effort: 'high',
@@ -175,6 +219,7 @@ describe('agent launch adapter', () => {
           prompt: 'test',
           workspaceLabel: 'ws',
           tabLabel: 'tab',
+          subject: 'mr:https://x/mr/1',
           account: undefined,
           model: undefined,
           effort: undefined,
@@ -205,6 +250,7 @@ describe('agent launch adapter', () => {
           prompt: 'test',
           workspaceLabel: 'ws',
           tabLabel: 'tab',
+          subject: 'mr:https://x/mr/1',
         },
         fakeIo
       );
@@ -238,6 +284,7 @@ describe('agent launch adapter', () => {
             prompt: 'test',
             workspaceLabel: 'ws',
             tabLabel: 'tab',
+            subject: 'mr:https://x/mr/1',
           },
           fakeIo
         )

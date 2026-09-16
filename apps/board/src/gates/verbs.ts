@@ -24,12 +24,12 @@ export interface GateQuestion {
 }
 
 /** Thin seam over the three rt-client gate facility wrappers this CLI drives.
-    A real `io` wires the actual `gateOpen`/`gateWait`/`gateAnswer` exports;
+    A real `io` wires the actual `gateAsk`/`gateWait`/`gateAnswer` exports;
     tests inject fakes shaped the same way. */
 export interface GateVerbIo {
-  gateOpen(
-    payload: Commands['gate:open']['payload']
-  ): Promise<RtResponse<Commands['gate:open']['data']>>;
+  gateAsk(
+    payload: Commands['gate:ask']['payload']
+  ): Promise<RtResponse<Commands['gate:ask']['data']>>;
   gateWait(
     payload: Commands['gate:wait']['payload']
   ): Promise<RtResponse<Commands['gate:wait']['data']>>;
@@ -98,21 +98,11 @@ function readGateVerbState(statePath: string, db: Database): GateVerbState {
   return row;
 }
 
-export const FORM_OPTION_CAP = 4;
 const CONTEXT_CAP_BYTES = 8192;
 export type GatePresentation = 'form' | 'wait';
 export interface GateOpenResult {
   gateId: string;
   presentation: GatePresentation;
-}
-
-/** The opener picks presentation: the native form tool caps options per
-    question, so any question over the cap cannot render as a form and the
-    gate takes the idle-wait path instead. */
-export function presentationFor(questions: GateQuestion[]): GatePresentation {
-  return questions.some(q => q.options.length > FORM_OPTION_CAP)
-    ? 'wait'
-    : 'form';
 }
 
 /** Opens the facility gate for one wrapper round and persists the returned
@@ -123,9 +113,8 @@ export function presentationFor(questions: GateQuestion[]): GatePresentation {
     domain's typed writer merges the patch back in, via the same kind→domain
     map sweep.ts uses -- an unrecognized kind fails loudly rather than
     guessing a writer that would silently drop that domain's own fields on
-    merge. The nudge only fires for a form presentation with a session id:
-    a wait-presented gate has no attended pane to ping, and an unattended
-    pane (no session id) has nowhere for the nudge to land. */
+    merge. The daemon's `gate:ask` picks form-vs-wait and any nudge; this CLI
+    only relays what it returns. */
 export async function gateOpen(
   statePath: string,
   kind: string,
@@ -143,41 +132,36 @@ export async function gateOpen(
   const domain = domainForKind(kind);
   if (!domain) throw new Error(`gate open: unrecognized kind "${kind}"`);
 
-  let context = extras.context;
+  const context = extras.context;
   if (
     context !== undefined &&
     Buffer.byteLength(context, 'utf8') > CONTEXT_CAP_BYTES
   ) {
     console.error(
-      `gate open: context exceeds ${CONTEXT_CAP_BYTES} bytes; opening without context`
+      `gate open: context exceeds ${CONTEXT_CAP_BYTES} bytes; the daemon will drop it`
     );
-    context = undefined;
   }
 
-  const presentation = presentationFor(questions);
-  const origin: NonNullable<Commands['gate:open']['payload']['origin']> = {
-    presentation,
+  const origin: NonNullable<Commands['gate:ask']['payload']['origin']> = {
     surface: 'board',
   };
-  if (state.paneId) origin.paneId = state.paneId;
   if (state.tabId) origin.tabId = state.tabId;
   if (extras.worktree) origin.worktree = extras.worktree;
 
-  const payload: Commands['gate:open']['payload'] = {
+  const payload: Commands['gate:ask']['payload'] = {
     subject: `mr:${state.mrUrl}`,
     kind,
     questions,
     meta: { label: `${domain} gate !${state.iid}` },
     origin,
   };
-  if (state.paneId) payload.pane = state.paneId;
+  if (state.paneId) payload.paneId = state.paneId;
+  if (extras.sessionId) payload.sessionId = extras.sessionId;
   if (context !== undefined) payload.context = context;
-  if (presentation === 'form' && extras.sessionId)
-    payload.nudge = { session: extras.sessionId };
 
-  const res = await io.gateOpen(payload);
+  const res = await io.gateAsk(payload);
   if (!res.ok || !res.data)
-    throw new Error(`gate:open failed: ${res.error ?? 'unknown error'}`);
+    throw new Error(`gate:ask failed: ${res.error ?? 'unknown error'}`);
 
   if (domain === 'review') {
     writeReviewState(
@@ -214,7 +198,7 @@ export async function gateOpen(
     );
   }
 
-  return { gateId: res.data.id, presentation };
+  return { gateId: res.data.id, presentation: res.data.presentation };
 }
 
 export type GateWaitResult =

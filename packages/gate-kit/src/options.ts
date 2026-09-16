@@ -1,4 +1,8 @@
-import type { GateOption } from '@mattstack/rt-client';
+import {
+  gateOptionLabel,
+  gateOptionValue,
+  type GateOption,
+} from '@mattstack/rt-client/gate';
 
 export interface GateOptionDisplay {
   /** What to render. */
@@ -30,13 +34,8 @@ export function stripRecommended(text: string): {
   return { text: stripped.trimEnd(), recommended: true };
 }
 
-export function optionValue(o: GateOption): string {
-  return typeof o === 'string' ? o : o.value;
-}
-
-export function optionLabel(o: GateOption): string {
-  return typeof o === 'string' ? o : o.label || o.value;
-}
+export const optionValue = gateOptionValue;
+export const optionLabel = gateOptionLabel;
 
 /**
  * Display-only transform for one gate option string. This NEVER changes what

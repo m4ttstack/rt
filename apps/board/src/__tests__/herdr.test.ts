@@ -323,6 +323,7 @@ describe('launchReview / launchRespond / launchDoctor (rt agent)', () => {
       workspace: 'reviews',
       tab: '!4821',
       surface: 'herdr',
+      subject: 'mr:https://x/mr/1',
     });
     expect(startCalls[0]!.prompt).toContain('/board:review https://x/mr/1');
     expect(startCalls[0]!.prompt).toContain('--state /s/1.json');
@@ -424,6 +425,7 @@ describe('launchReview / launchRespond / launchDoctor (rt agent)', () => {
     expect(startCalls[0]).toMatchObject({
       workspace: 'responds',
       tab: '!4821',
+      subject: 'mr:https://x/mr/1',
     });
   });
 
@@ -443,6 +445,9 @@ describe('launchReview / launchRespond / launchDoctor (rt agent)', () => {
     );
     expect(startCalls[0]!.prompt).toContain('/board:doctor https://x/mr/1');
     expect(startCalls[0]!.prompt).toContain('--tier api');
+    expect(startCalls[0]).toMatchObject({
+      subject: 'mr:https://x/mr/1',
+    });
   });
 
   test('threads the operator note into the launched prompt', async () => {

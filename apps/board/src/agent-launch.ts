@@ -25,6 +25,7 @@ export async function startAgentPane(
     prompt: string;
     workspaceLabel: string;
     tabLabel: string;
+    subject: string;
     account?: string;
     model?: string;
     effort?: string;
@@ -43,6 +44,7 @@ export async function startAgentPane(
     surface: 'herdr',
     workspace: opts.workspaceLabel,
     tab: opts.tabLabel,
+    subject: opts.subject,
     ...(opts.account !== undefined ? { account: opts.account } : {}),
     ...(opts.model !== undefined ? { model: opts.model } : {}),
     ...(opts.effort !== undefined ? { effort: opts.effort } : {}),

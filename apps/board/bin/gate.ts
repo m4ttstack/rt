@@ -1,6 +1,6 @@
 import {
   gateAnswer as facilityGateAnswer,
-  gateOpen as facilityGateOpen,
+  gateAsk as facilityGateAsk,
   gateWait as facilityGateWait,
 } from '@mattstack/rt-client';
 import {
@@ -12,7 +12,7 @@ import {
 } from '../src/gates/verbs.ts';
 
 const io: GateVerbIo = {
-  gateOpen: facilityGateOpen,
+  gateAsk: facilityGateAsk,
   gateWait: facilityGateWait,
   gateAnswer: facilityGateAnswer,
   now: () => Date.now(),

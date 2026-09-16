@@ -107,6 +107,7 @@ function fakeRow(id: string): FacilityGateRow {
     supersededBy: null,
     owner: null,
     escalatedAt: null,
+    consumedAt: null,
   };
 }
 

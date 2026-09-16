@@ -357,6 +357,7 @@ function facilityRow(
     supersededBy: null,
     owner: null,
     escalatedAt: null,
+    consumedAt: null,
     ...overrides,
   };
 }

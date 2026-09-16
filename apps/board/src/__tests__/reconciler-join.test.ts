@@ -38,6 +38,7 @@ function fakeRow(overrides: Partial<FacilityGateRow> = {}): FacilityGateRow {
     released: false,
     owner: 'human',
     escalatedAt: null,
+    consumedAt: null,
     ...overrides,
   };
 }
