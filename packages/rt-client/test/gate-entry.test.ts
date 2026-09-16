@@ -1,10 +1,11 @@
 /**
  * BOARD-31: the board's gate-kit needs the gate helpers (gate-answers.ts,
- * gate-options.ts, gate-presentation.ts) without dragging in commands.ts's
- * Node-only neighbors that the root "." export pulls into a browser bundle.
- * This pins the "./gate" subpath: it must build to a browser-safe bundle
- * (no `process.` reference, no `node:` import) that still exports the
- * trio's real functions, and package.json must advertise it.
+ * gate-options.ts, gate-presentation.ts) without dragging in the Node-only
+ * code (transport/client/settings) that the root "." export pulls in via
+ * index.ts. This pins the "./gate" subpath: it must build to a fully
+ * inlined, browser-safe bundle that references no Node or Bun runtime
+ * surface, still exports the trio's real functions, and package.json must
+ * advertise it.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -28,11 +29,18 @@ describe("./gate subpath export", () => {
     expect(() => readFileSync(distGate, "utf8")).not.toThrow();
   });
 
-  test("dist/gate.js's built text contains no process. reference and no node: import specifier", () => {
+  test("dist/gate.js is fully inlined and references no Node or Bun runtime surface", () => {
     const text = readFileSync(distGate, "utf8");
-    expect(text).not.toContain("process.");
-    expect(text).not.toMatch(/from\s+["']node:/);
-    expect(text).not.toMatch(/require\(["']node:/);
+    expect(text).not.toMatch(/^\s*import\s/m);
+    expect(text).not.toMatch(/\brequire\(/);
+    expect(text).not.toMatch(/\bprocess\b/);
+    expect(text).not.toMatch(/\bBun\b/);
+    expect(text).not.toMatch(/import\.meta/);
+    // bun --target browser never emits `from "node:..."`: it stubs a builtin
+    // to `(() => ({}))` (fs, child_process) or inlines a polyfill under a
+    // `// node:<name>` header (path, os, crypto). Pin both shapes.
+    expect(text).not.toContain("(() => ({}))");
+    expect(text).not.toMatch(/^\/\/ (node|bun):/m);
   });
 
   test("dist/gate.js exports the trio's functions and they run browser-side", async () => {
