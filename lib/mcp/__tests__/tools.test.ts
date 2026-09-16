@@ -93,6 +93,35 @@ describe("mcpTools", () => {
       expect(tool.description).toContain("rt gate wait");
     });
 
+    // RT-177: the description is where a caller learns not to self-censor the
+    // context, which is what produced the bare form in the board.
+    test("description tells callers to always pass context and that oversize is reported back", () => {
+      const tool = mcpTools().find((t) => t.name === "gate_ask")!;
+      expect(tool.description).toContain("contextOmitted");
+      expect(tool.description.toLowerCase()).toContain("always");
+    });
+
+    // Contract pin: the daemon's field must not be filtered out of the body
+    // on its way to the caller, which is the only place it can act on it.
+    test("contextOmitted rides the tool result so the caller learns immediately", async () => {
+      mock.module("../../../packages/rt-client/src/transport.ts", () => ({
+        ...realTransport,
+        rtCommand: async (cmd: string) => {
+          if (cmd === "gate:ask") {
+            return { ok: true, data: { id: "g1", presentation: "form", subject: "mr:x", supersededId: null, contextOmitted: true } };
+          }
+          throw new Error(`unexpected rtCommand("${cmd}")`);
+        },
+      }));
+      const tool = mcpTools().find((t) => t.name === "gate_ask")!;
+      const res = await tool.handler(
+        { questions: [{ id: "q1", label: "Proceed?", multi: false, options: ["yes", "no"] }], subject: "mr:x", context: "x" },
+        {} as NodeJS.ProcessEnv,
+      );
+      expect(res.ok).toBe(true);
+      expect((res.body as { contextOmitted?: boolean }).contextOmitted).toBe(true);
+    });
+
     test("sessionId and paneId come from env; subject comes from input only, never RT_GATE_SUBJECT", async () => {
       let capturedPayload: Record<string, unknown> | undefined;
       mock.module("../../../packages/rt-client/src/transport.ts", () => ({

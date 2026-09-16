@@ -712,7 +712,10 @@ export interface Commands {
       agent?: string;
       origin?: { surface?: string; tabId?: string; worktree?: string };
     };
-    data: { id: string; presentation: "form" | "wait"; subject: string; supersededId: string | null };
+    /** `contextOmitted` appears only when the caller's context exceeded the
+        8192-byte cap and was dropped: the gate still opened, but with none of
+        the material the reader needs. */
+    data: { id: string; presentation: "form" | "wait"; subject: string; supersededId: string | null; contextOmitted?: true };
   };
   /**
    * A CAS loss is a DEFINED OUTCOME, not an error: `ok:true` with

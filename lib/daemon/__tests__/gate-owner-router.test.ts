@@ -217,7 +217,7 @@ describe("gate:ask subject resolution through the real command-router wiring", (
     runDb.close();
 
     const { handlers, gatesStore } = buildHandlers();
-    const res = await handlers["gate:ask"]!({ sessionId: "s1", questions: Q });
+    const res = await handlers["gate:ask"]!({ sessionId: "s1", questions: Q, context: "why this decision" });
     if (!(res as any).ok) throw new Error((res as any).error);
     expect((res as any).data.subject).toBe(`run:${started.runId}`);
     const row = gatesStore.get((res as any).data.id);
@@ -235,7 +235,7 @@ describe("gate:ask subject resolution through the real command-router wiring", (
     if (!started.ok) throw new Error(started.error);
 
     const { handlers, gatesStore } = buildHandlers();
-    const res = await handlers["gate:ask"]!({ sessionId: "s2", questions: Q });
+    const res = await handlers["gate:ask"]!({ sessionId: "s2", questions: Q, context: "why this decision" });
     if (!(res as any).ok) throw new Error((res as any).error);
     expect((res as any).data.subject).toBe(`run:${started.runId}`);
     const row = gatesStore.get((res as any).data.id);
@@ -254,7 +254,7 @@ describe("gate:ask subject resolution through the real command-router wiring", (
       surface: "headless", sessionId: "s3", createdAt: Date.now(),
     }, stateDb);
 
-    const res = await handlers["gate:ask"]!({ sessionId: "s3", questions: Q });
+    const res = await handlers["gate:ask"]!({ sessionId: "s3", questions: Q, context: "why this decision" });
     if (!(res as any).ok) throw new Error((res as any).error);
     expect((res as any).data.subject).toBe(`agent:${agentId}`);
     const row = gatesStore.get((res as any).data.id);
@@ -276,7 +276,7 @@ describe("gate:ask subject resolution through the real command-router wiring", (
     // `id = otherAgentId` alone; agentBySession must refuse it since its
     // sessionId is "s-real-owner", not the id string itself, so resolution
     // falls through to a refusal rather than silently naming the wrong agent.
-    const res = await handlers["gate:ask"]!({ sessionId: otherAgentId, questions: Q });
+    const res = await handlers["gate:ask"]!({ sessionId: otherAgentId, questions: Q, context: "why this decision" });
     expect((res as any).ok).toBe(false);
   });
 });
@@ -311,7 +311,7 @@ describe("gate:ask subject resolution skips runs the liveness ladder calls stale
       surface: "headless", sessionId: "s-stale", createdAt: Date.now(),
     }, stateDb);
 
-    const res = await handlers["gate:ask"]!({ sessionId: "s-stale", questions: Q });
+    const res = await handlers["gate:ask"]!({ sessionId: "s-stale", questions: Q, context: "why this decision" });
     if (!(res as any).ok) throw new Error((res as any).error);
     expect((res as any).data.subject).toBe(`agent:${agentId}`);
   });
@@ -332,7 +332,7 @@ describe("gate:ask subject resolution skips runs the liveness ladder calls stale
       surface: "headless", sessionId: "s-fresh", createdAt: Date.now(),
     }, stateDb);
 
-    const res = await handlers["gate:ask"]!({ sessionId: "s-fresh", questions: Q });
+    const res = await handlers["gate:ask"]!({ sessionId: "s-fresh", questions: Q, context: "why this decision" });
     if (!(res as any).ok) throw new Error((res as any).error);
     expect((res as any).data.subject).toBe(`run:${started.runId}`);
   });
@@ -353,7 +353,7 @@ describe("gate:ask subject resolution skips runs the liveness ladder calls stale
     if (!live.ok) throw new Error(live.error);
 
     const { handlers } = buildHandlers();
-    const res = await handlers["gate:ask"]!({ sessionId: "s-both", questions: Q });
+    const res = await handlers["gate:ask"]!({ sessionId: "s-both", questions: Q, context: "why this decision" });
     if (!(res as any).ok) throw new Error((res as any).error);
     expect((res as any).data.subject).toBe(`run:${live.runId}`);
   });
@@ -386,7 +386,7 @@ describe("gate:ask stamps origin.worktree through the real command-router wiring
       surface: "headless", sessionId: "s-asker", createdAt: Date.now(),
     }, stateDb);
 
-    const res = await handlers["gate:ask"]!({ sessionId: "s-asker", subject: `run:${started.runId}`, questions: Q });
+    const res = await handlers["gate:ask"]!({ sessionId: "s-asker", subject: `run:${started.runId}`, questions: Q, context: "why this decision" });
     if (!(res as any).ok) throw new Error((res as any).error);
     const row = gatesStore.get((res as any).data.id);
     expect(row?.origin?.runId).toBe(started.runId);

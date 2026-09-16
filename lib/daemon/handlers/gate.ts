@@ -93,6 +93,18 @@ function oversizedLabel(questions: GateQuestion[]): string | null {
 
 const ORIGIN_STRING_KEYS: ReadonlySet<string> = new Set(["paneId", "tabId", "runId", "worktree", "surface"]);
 
+/** Kinds whose gates legitimately carry no context: a milestone's artifact IS
+    the material, and the reconciler's wait-path gate asks about a pane, not
+    about anything a reader could be handed. Every other kind asks a human to
+    decide something, and a decision with no material is the bare form RT-177
+    was opened for. */
+const EXEMPT_CONTEXT_KINDS: ReadonlySet<string> = new Set(["milestone", "pane-attention"]);
+
+const MISSING_CONTEXT_ERROR =
+  "context is required for a human-owned gate: pass --context with the material the reader can decide from alone " +
+  "(the plan section under decision, the failing output, the brief's own words), quoted rather than summarized. " +
+  "Never skip it for size: an oversized context is dropped server-side and reported back as contextOmitted.";
+
 /** gate:ask's own derived fields; a caller-supplied origin passthrough must
     never override them (would let a raw payload impersonate a pane or run
     the ceremony didn't actually resolve). `worktree` is deliberately absent:
@@ -713,9 +725,18 @@ export function createGateHandlers(
 
     // Omitted rather than rejected: unlike gate:open's hard CONTEXT_CAP_BYTES
     // reject, an oversized context here must not fail the whole ask, since
-    // the caller did not author the context string by hand.
+    // the caller did not author the context string by hand. The omission is
+    // reported back, though -- the silent drop is what taught callers that
+    // big context was risky and bare forms were safe.
     let context = typeof payload?.context === "string" ? payload.context : undefined;
-    if (context !== undefined && Buffer.byteLength(context, "utf8") > CONTEXT_CAP_BYTES) context = undefined;
+    const contextOmitted = context !== undefined && Buffer.byteLength(context, "utf8") > CONTEXT_CAP_BYTES;
+    if (contextOmitted) context = undefined;
+
+    const kind = typeof payload?.kind === "string" && payload.kind.trim() ? payload.kind.trim() : "question";
+    const ownerIsHuman = deriveOwner(resolved.runId ? { runId: resolved.runId } : undefined, runSpawnedBy) === "human";
+    if (ownerIsHuman && !EXEMPT_CONTEXT_KINDS.has(kind) && !contextOmitted && !context?.trim()) {
+      return { ok: false as const, error: MISSING_CONTEXT_ERROR };
+    }
 
     const rawOrigin = isPlainObject(payload?.origin) ? (payload!.origin as Record<string, unknown>) : {};
     const passthroughOrigin = Object.fromEntries(
@@ -730,7 +751,7 @@ export function createGateHandlers(
 
     const opened = await handlers["gate:open"]({
       subject: resolved.subject,
-      kind: typeof payload?.kind === "string" && payload.kind.trim() ? payload.kind.trim() : "question",
+      kind,
       questions,
       ...(isPlainObject(payload?.meta) ? { meta: payload!.meta } : {}),
       ...(typeof payload?.agent === "string" && payload.agent.trim() ? { agent: payload.agent } : {}),
@@ -742,7 +763,10 @@ export function createGateHandlers(
     if (!opened.ok) return opened;
     return {
       ok: true as const,
-      data: { id: opened.data.id, presentation, subject: resolved.subject, supersededId: opened.data.supersededId },
+      data: {
+        id: opened.data.id, presentation, subject: resolved.subject, supersededId: opened.data.supersededId,
+        ...(contextOmitted ? { contextOmitted: true as const } : {}),
+      },
     };
   };
 

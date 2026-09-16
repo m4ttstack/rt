@@ -51,6 +51,7 @@ describe("gate:ask", () => {
     const res = await handlers["gate:ask"]({
       questions: twoOptionQuestion(),
       subject: "mr:https://x/1", sessionId: "sess-1", paneId: "w1:p1",
+      context: "why this decision",
     });
     expect(res.ok).toBe(true);
     if (!res.ok) return;
@@ -69,6 +70,7 @@ describe("gate:ask", () => {
     const res = await handlers["gate:ask"]({
       questions: fiveOptionQuestion(),
       subject: "mr:https://x/1", sessionId: "sess-1", paneId: "w1:p1",
+      context: "why this decision",
     });
     expect(res.ok).toBe(true);
     if (!res.ok) return;
@@ -84,6 +86,7 @@ describe("gate:ask", () => {
     });
     const res = await handlers["gate:ask"]({
       questions: twoOptionQuestion(), sessionId: "sess-1", paneId: "w1:p1",
+      context: "why this decision",
     });
     expect(res.ok).toBe(true);
     if (!res.ok) return;
@@ -97,7 +100,7 @@ describe("gate:ask", () => {
     const { handlers } = harness({
       resolveSubject: () => ({ ok: false, error: "no subject: pass --subject, or run under a recorded run/agent session" }),
     });
-    const res = await handlers["gate:ask"]({ questions: twoOptionQuestion() });
+    const res = await handlers["gate:ask"]({ questions: twoOptionQuestion(), context: "why this decision" });
     expect(res.ok).toBe(false);
     if (res.ok) return;
     expect(res.error).toBe("no subject: pass --subject, or run under a recorded run/agent session");
@@ -121,7 +124,7 @@ describe("gate:ask", () => {
     const { handlers } = harness({
       resolveSubject: () => ({ ok: true, subject: "mr:https://x/1" }),
     });
-    const res = await handlers["gate:ask"]({ questions: twoOptionQuestion(), subject: "mr:https://x/1" });
+    const res = await handlers["gate:ask"]({ questions: twoOptionQuestion(), subject: "mr:https://x/1", context: "why this decision" });
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     expect(Object.keys(res.data).sort()).toEqual(["id", "presentation", "subject", "supersededId"]);
@@ -132,7 +135,7 @@ describe("gate:ask", () => {
     const { handlers } = harness({
       resolveSubject: () => ({ ok: true, subject: "agent:ag-9" }),
     });
-    const res = await handlers["gate:ask"]({ questions: twoOptionQuestion(), sessionId: "sess-1" });
+    const res = await handlers["gate:ask"]({ questions: twoOptionQuestion(), sessionId: "sess-1", context: "why this decision" });
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     expect(res.data.subject).toBe("agent:ag-9");
@@ -145,6 +148,7 @@ describe("gate:ask", () => {
     const res = await handlers["gate:ask"]({
       questions: [{ id: "q1", label: "go?", multi: false }],
       subject: "mr:https://x/1", sessionId: "sess-1", paneId: "w1:p1",
+      context: "why this decision",
     });
     expect(res).toEqual({ ok: false, error: "invalid questions" });
   });
@@ -156,6 +160,7 @@ describe("gate:ask", () => {
     const res = await handlers["gate:ask"]({
       questions: [null],
       subject: "mr:https://x/1", sessionId: "sess-1", paneId: "w1:p1",
+      context: "why this decision",
     });
     expect(res).toEqual({ ok: false, error: "invalid questions" });
   });
@@ -196,6 +201,7 @@ describe("gate:ask", () => {
       subject: "mr:https://x/1", sessionId: "sess-1", paneId: "w1:p1",
       meta: { label: "review gate !7" }, agent: "worker-1",
       origin: { surface: "board", tabId: "t9", worktree: "/tmp/wt" },
+      context: "why this decision",
     });
     expect(res.ok).toBe(true);
     if (!res.ok) return;
@@ -216,6 +222,7 @@ describe("gate:ask", () => {
     const res = await handlers["gate:ask"]({
       questions: twoOptionQuestion(), sessionId: "sess-1",
       origin: { worktree: "/caller/wt" },
+      context: "why this decision",
     });
     expect(res.ok).toBe(true);
     if (!res.ok) return;
@@ -230,6 +237,7 @@ describe("gate:ask", () => {
     const res = await handlers["gate:ask"]({
       questions: twoOptionQuestion(), subject: "mr:https://x/1",
       origin: { presentation: "form" } as unknown as { surface?: string },
+      context: "why this decision",
     });
     expect(res.ok).toBe(true);
     if (!res.ok) return;
@@ -245,6 +253,7 @@ describe("gate:ask", () => {
     const res = await handlers["gate:ask"]({
       questions: twoOptionQuestion(), subject: "mr:https://x/1",
       origin: { paneId: "smuggled", runId: "smuggled" } as unknown as { surface?: string },
+      context: "why this decision",
     });
     expect(res.ok).toBe(true);
     if (!res.ok) return;
@@ -260,6 +269,7 @@ describe("gate:ask", () => {
     const res = await handlers["gate:ask"]({
       questions: twoOptionQuestion(), subject: "mr:https://x/1",
       origin: { foo: "x" } as unknown as { surface?: string },
+      context: "why this decision",
     });
     expect(res.ok).toBe(false);
   });
@@ -270,6 +280,7 @@ describe("gate:ask", () => {
     });
     const res = await handlers["gate:ask"]({
       questions: twoOptionQuestion(), subject: "mr:x", sessionId: "sess-1",
+      context: "why this decision",
     });
     expect(res.ok).toBe(true);
     if (!res.ok) return;
@@ -284,6 +295,7 @@ describe("gate:ask", () => {
     });
     const res = await handlers["gate:ask"]({
       questions: twoOptionQuestion(), subject: "run:rZ", sessionId: "sess-1",
+      context: "why this decision",
     });
     expect(res.ok).toBe(true);
     if (!res.ok) return;
@@ -299,6 +311,7 @@ describe("gate:ask", () => {
     });
     const res = await handlers["gate:ask"]({
       questions: twoOptionQuestion(), subject: "mr:x", sessionId: "sess-1",
+      context: "why this decision",
     });
     expect(res.ok).toBe(true);
     if (!res.ok) return;
@@ -313,6 +326,7 @@ describe("gate:ask", () => {
     const res = await handlers["gate:ask"]({
       questions: twoOptionQuestion(), subject: "mr:x", sessionId: "sess-1",
       origin: { worktree: "/caller/wt" },
+      context: "why this decision",
     });
     expect(res.ok).toBe(true);
     if (!res.ok) return;
@@ -331,7 +345,7 @@ describe("gate:ask stamps origin.worktree whenever the runId is known", () => {
       resolveSubject: () => ({ ok: true, subject: "run:r9", runId: "r9" }),
       runWorktree: (runId) => (runId === "r9" ? "/wt/r9" : null),
     });
-    const res = await handlers["gate:ask"]({ questions: twoOptionQuestion(), subject: "run:r9" });
+    const res = await handlers["gate:ask"]({ questions: twoOptionQuestion(), subject: "run:r9", context: "why this decision" });
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     const row = store.get(res.data.id)!;
@@ -344,7 +358,7 @@ describe("gate:ask stamps origin.worktree whenever the runId is known", () => {
       resolveSubject: () => ({ ok: true, subject: "run:r1", runId: "r1", runWorktree: "/run/wt" }),
       runWorktree: () => "/stale/wt",
     });
-    const res = await handlers["gate:ask"]({ questions: twoOptionQuestion(), sessionId: "sess-1" });
+    const res = await handlers["gate:ask"]({ questions: twoOptionQuestion(), sessionId: "sess-1", context: "why this decision" });
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     expect(store.get(res.data.id)!.origin?.worktree).toBe("/run/wt");
@@ -357,6 +371,7 @@ describe("gate:ask stamps origin.worktree whenever the runId is known", () => {
     });
     const res = await handlers["gate:ask"]({
       questions: twoOptionQuestion(), subject: "run:r2", origin: { worktree: "/caller/wt" },
+      context: "why this decision",
     });
     expect(res.ok).toBe(true);
     if (!res.ok) return;
@@ -369,10 +384,72 @@ describe("gate:ask stamps origin.worktree whenever the runId is known", () => {
       resolveSubject: () => ({ ok: true, subject: "mr:x" }),
       runWorktree: () => { calls++; return "/never"; },
     });
-    const res = await handlers["gate:ask"]({ questions: twoOptionQuestion(), subject: "mr:x" });
+    const res = await handlers["gate:ask"]({ questions: twoOptionQuestion(), subject: "mr:x", context: "why this decision" });
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     expect(calls).toBe(0);
     expect(store.get(res.data.id)!.origin?.worktree).toBeUndefined();
+  });
+});
+
+// RT-177: an agent opened a human decision gate with no context because it
+// feared the size cap, and Matt hit a bare decision form in the board.
+describe("gate:ask context enforcement", () => {
+  const CTX = "the plan section under decision, quoted verbatim";
+
+  test("a human-owned gate with no context is refused, naming what to pass", async () => {
+    const { handlers } = harness({ resolveSubject: () => ({ ok: true, subject: "mr:x" }) });
+    const res = await handlers["gate:ask"]({ questions: twoOptionQuestion(), subject: "mr:x" });
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error).toContain("context");
+    expect(res.error).toContain("decide from alone");
+  });
+
+  test("whitespace-only context counts as none", async () => {
+    const { handlers } = harness({ resolveSubject: () => ({ ok: true, subject: "mr:x" }) });
+    const res = await handlers["gate:ask"]({ questions: twoOptionQuestion(), subject: "mr:x", context: "   \n\t " });
+    expect(res.ok).toBe(false);
+  });
+
+  test("a human-owned gate WITH context opens as before", async () => {
+    const { handlers, store } = harness({ resolveSubject: () => ({ ok: true, subject: "mr:x" }) });
+    const res = await handlers["gate:ask"]({ questions: twoOptionQuestion(), subject: "mr:x", context: CTX });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(store.get(res.data.id)!.context).toBe(CTX);
+    expect(res.data.contextOmitted).toBeUndefined();
+  });
+
+  test("a herd-owned run gate is not refused: the shepherd reads the registry, not a bare form", async () => {
+    const { handlers } = harness({
+      resolveSubject: () => ({ ok: true, subject: "run:r1", runId: "r1" }),
+      runSpawnedBy: () => "herd:h-9",
+    });
+    const res = await handlers["gate:ask"]({ questions: twoOptionQuestion(), sessionId: "sess-1" });
+    expect(res.ok).toBe(true);
+  });
+
+  test("the milestone kind is exempt: its artifact carries the material", async () => {
+    const { handlers } = harness({ resolveSubject: () => ({ ok: true, subject: "mr:x" }) });
+    const res = await handlers["gate:ask"]({ questions: twoOptionQuestion(), subject: "mr:x", kind: "milestone" });
+    expect(res.ok).toBe(true);
+  });
+
+  test("the pane-attention kind is exempt: an internal wait-path gate carries none", async () => {
+    const { handlers } = harness({ resolveSubject: () => ({ ok: true, subject: "mr:x" }) });
+    const res = await handlers["gate:ask"]({ questions: twoOptionQuestion(), subject: "mr:x", kind: "pane-attention" });
+    expect(res.ok).toBe(true);
+  });
+
+  test("an oversized context is still dropped, but the response says so", async () => {
+    const { handlers, store } = harness({ resolveSubject: () => ({ ok: true, subject: "mr:x" }) });
+    const res = await handlers["gate:ask"]({
+      questions: twoOptionQuestion(), subject: "mr:x", context: "x".repeat(9000),
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.contextOmitted).toBe(true);
+    expect(store.get(res.data.id)!.context).toBeNull();
   });
 });
