@@ -15,6 +15,9 @@ import type { Commands, GateQuestion, RtResponse } from "../../packages/rt-clien
 import { readChatSession } from "../chat-session.ts";
 import { joinMrsToWorktrees } from "../mr-map.ts";
 import { repoLabel } from "../repo-label.ts";
+import { reverseLookupByName } from "../repo-name-lookup.ts";
+import { parseIdentity } from "../settings/identity.ts";
+import { explainError } from "../explain-error.ts";
 
 export interface McpToolDef {
   name: string;
@@ -33,8 +36,12 @@ function err(message: string): ToolResult {
   return { ok: false, body: undefined, error: message };
 }
 
+/** Runs a daemon error through explainError before returning it, so every
+    tool in the roster gets the same CLI-shaped prose instead of a bare code
+    (RT-172), not just the mr tools that happen to hit worktree verbs. An
+    error explainError does not recognize passes through unchanged. */
 function fromResponse<T>(res: RtResponse<T>): ToolResult {
-  return res.ok ? ok(res.data) : err(res.error ?? "request failed");
+  return res.ok ? ok(res.data) : err(explainError(res.error ?? "request failed"));
 }
 
 type FieldType = "string" | "number" | "boolean" | "object" | "array";
@@ -86,21 +93,31 @@ function requireWorkerEnv(env: NodeJS.ProcessEnv): { herd: string; job: string; 
 
 /** Matches input.repo against the daemon's repo registry, either as the raw
     serialized identity or its human-friendly label (repoLabel), and returns
-    the matched identity. Deliberately does not import lib/repo-arg.ts (that
-    module pulls in lib/state/index.ts, lib/settings/resolve.ts, and
-    lib/ui/protocol.ts): the "repos" verb plus repoLabel is the whole lookup. */
+    the matched identity. Shares reverseLookupByName (lib/repo-name-lookup.ts)
+    with the CLI's tryResolveRepoArg so a legacy-name/identity heal pair
+    collapses to one match here too, instead of reading ambiguous. Deliberately
+    does not import lib/repo-arg.ts itself (that module pulls in
+    lib/state/index.ts and lib/settings/resolve.ts on top of the daemon round
+    trip this tool already does): reverseLookupByName is pure over the id-path
+    map the "repos" verb already returns. */
 async function resolveRepoIdentity(repo: string): Promise<{ identity: string } | { error: string }> {
   const res = await rtCommand<Commands["repos"]["data"]>("repos", {});
   if (!res.ok || !res.data) return { error: res.error ?? "failed to list repos" };
-  const identities = Object.keys(res.data.repos ?? {});
-  const matches = identities.filter((id) => id === repo || repoLabel(id) === repo);
-  if (matches.length > 1) return { error: `"${repo}" matches more than one repo: ${matches.join(", ")}; pass the full identity` };
+  const repos = res.data.repos ?? {};
+  const identities = Object.keys(repos);
+  if (parseIdentity(repo) && identities.includes(repo)) return { identity: repo };
+  const index: Record<string, string> = {};
+  for (const [id, entry] of Object.entries(repos)) index[id] = entry.path;
+  const matches = reverseLookupByName(repo, index);
+  if (matches.length > 1) {
+    return { error: `"${repo}" matches more than one repo: ${matches.map(([id]) => id).join(", ")}; pass the full identity` };
+  }
   const match = matches[0];
   if (!match) {
     const known = identities.map((id) => repoLabel(id)).sort().join(", ");
     return { error: `no repo matching "${repo}"; known repos: ${known}` };
   }
-  return { identity: match };
+  return { identity: match[0] };
 }
 
 /** Mirrors herd.ts's soleHerdId without importing it (that module pulls in lib/repo-arg.ts). */
@@ -432,8 +449,8 @@ export function mcpTools(): McpToolDef[] {
           readProjectMRs(identity, 20_000),
           rtCommand<Commands["worktree:list"]["data"]>("worktree:list", { repoName: identity }),
         ]);
-        if (!mrsRes.ok || !mrsRes.data) return err(mrsRes.error ?? "failed to read MRs");
-        if (!treesRes.ok || !treesRes.data) return err(treesRes.error ?? "failed to list worktrees");
+        if (!mrsRes.ok || !mrsRes.data) return err(explainError(mrsRes.error ?? "failed to read MRs"));
+        if (!treesRes.ok || !treesRes.data) return err(explainError(treesRes.error ?? "failed to list worktrees"));
 
         const mrs = Object.values(mrsRes.data.mrs ?? {})
           .map((entry) => entry.pr)
