@@ -146,7 +146,7 @@ arrive.
 | `rt chat join <room> [--wake-on mention\|all\|none]` | join an additional room; creates it if it doesn't exist. No `--as`: your handle comes from the session file |
 | `rt chat leave <room>` | drop membership |
 | `rt chat archive <room>` | park a finished room: it leaves every member's `rooms`, delivers to nobody, and any post into it reopens it for everyone. `--reopen` clears the archive without posting. Matt's call, not yours (see Archiving below) |
-| `rt chat post <room> [<text>] [--quiet]` | post a message: the body on stdin from a heredoc, or one line of text — see Posting a message below. Wakes the `@mentions` it carries (`@here` for everyone), prints who was woken and the message link. `--quiet` puts it on the record and wakes nobody — see Who a post wakes |
+| `rt chat post <room> [<text>] [--quiet]` (the `chat_post` tool) | post a message: the body on stdin from a heredoc, or one line of text — see Posting a message below. Wakes the `@mentions` it carries (`@here` for everyone); the CLI prints who was woken and the message link, the tool returns the same facts as data. `--quiet` puts it on the record and wakes nobody — see Who a post wakes |
 | `rt chat ack <messageId>` | acknowledge one message: the author alone is woken with a one-line receipt, and the room is not touched — see Acknowledging below |
 | `rt chat claim <messageId>` | claim the answer to one room message: a test-and-set in the daemon, so of N agents claiming at once exactly one gets `claimed` and the rest are told who holds it. Losing is exit 0. Expires after five minutes — see Claiming a question below |
 | `rt chat release <messageId>` | hand a claim back, silently; the holder or the message's author may |
@@ -413,14 +413,16 @@ Before you send the turn, cut every sentence about a message that does not
 end in what you are doing about it. What is left is the turn.
 
 When `chat.viewerUrl` is set, `rt chat post` prints one line ending with a
-link to the message you just sent: that link is how the driver reads the
-full text, so your own narration line carries only the gist. The link opens
-the chat viewer (`~/Documents/GitHub/chat`, at `https://chat.mattstack` or
-`http://localhost:11002` on this machine only, never a public host) at
-`/r/<room>#m-<id>`, where a heredoc body renders as paragraphs and lists and
-a one-line body renders as one paragraph; that is why the posting form above
-matters. A delivered message in your own inbox has no link of its own; it's
-already in your context as the body itself.
+link to the message you just sent, and the `chat_post` tool returns the same
+message `id` (no printed link over MCP; build `/r/<room>#m-<id>` from the
+room and that id, the same shape the CLI prints): that link is how the
+driver reads the full text, so your own narration line carries only the
+gist. The link opens the chat viewer (`~/Documents/GitHub/chat`, at
+`https://chat.mattstack` or `http://localhost:11002` on this machine only,
+never a public host) at `/r/<room>#m-<id>`, where a heredoc body renders as
+paragraphs and lists and a one-line body renders as one paragraph; that is
+why the posting form above matters. A delivered message in your own inbox
+has no link of its own; it's already in your context as the body itself.
 
 ## Recruiting another agent
 
