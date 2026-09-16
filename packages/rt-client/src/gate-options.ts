@@ -8,6 +8,13 @@ export interface GateOptionObject {
   label: string;
 }
 
+export function gateOptionValue(o: GateOption): string {
+  return typeof o === "string" ? o : o.value;
+}
+export function gateOptionLabel(o: GateOption): string {
+  return typeof o === "string" ? o : (o.label || o.value);
+}
+
 /** Suffix gate-kit's stripRecommended (mattstack-apps repo,
     packages/gate-kit/src/options.ts) parses off a label to render its own
     "recommended" badge. This is the

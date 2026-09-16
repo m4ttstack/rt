@@ -118,6 +118,10 @@ private struct TabButton: View {
     private var isActive: Bool { model.activeApp == app.name }
 
     var body: some View {
+        // Size, fill, and hit shape live on the label, inside the Button,
+        // not chained after it: chained after, the Button's own hit region
+        // is only its content's natural size (label text/icon), leaving the
+        // rest of the 110pt cell unclickable.
         Button {
             model.select(app.name)
         } label: {
@@ -141,11 +145,11 @@ private struct TabButton: View {
                     Rectangle().fill(tabAccentColor).frame(width: tabWidth, height: 2)
                 }
             }
+            .frame(width: tabWidth, height: barHeight)
+            .background(isActive ? activeFill : inactiveFill)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .contentShape(Rectangle())
-        .frame(width: tabWidth, height: barHeight)
-        .background(isActive ? activeFill : inactiveFill)
         .help(shortcutIndex != nil ? "\(app.displayName) \u{2318}\(shortcutIndex! + 1)" : app.displayName)
         .modifier(TabShortcut(index: shortcutIndex))
         .contextMenu {
@@ -174,6 +178,11 @@ private struct DeckMini: View {
     @ObservedObject var model: WindowModel
 
     var body: some View {
+        // Size and hit shape live on the label, inside the Button, not
+        // chained after it, for the same reason as TabButton: chained
+        // after, only the label's own content is clickable, not the full
+        // cell. DeckMini has no separate fill to move (it always showed the
+        // bar's own background through), so only frame + contentShape move.
         Button {
             model.select(WindowModel.deckApp.name)
         } label: {
@@ -194,11 +203,11 @@ private struct DeckMini: View {
                     }
                 }
             }
+            .padding(.horizontal, 16)
+            .frame(height: barHeight)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .contentShape(Rectangle())
-        .padding(.horizontal, 16)
-        .frame(height: barHeight)
         .help("Deck")
         .contextMenu {
             Button("Reload") { model.store.reload(WindowModel.deckApp.name) }
