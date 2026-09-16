@@ -194,6 +194,14 @@ export function createHerdLifecycle(opts: {
       return;
     }
     if (ev.type === "pane.agent_status_changed") {
+      // herdr detects the agent before a spawn can park a failed trust accept,
+      // so accepting the dialog by hand produces no second agent_detected --
+      // a status change is the only event left that can retire the parked row,
+      // and without this one the job stays parked while its worker runs.
+      // `blocked` is excluded: that is what the modal itself looks like.
+      if (job.status === "stuck-at-modal" && (ev.agent_status === "working" || ev.agent_status === "idle")) {
+        store.setJobStatus(job.herd, job.name, "active");
+      }
       if (ev.agent_status === "blocked") {
         idleTimers.get(key)?.clear();
         idleTimers.delete(key);
