@@ -1,0 +1,9 @@
+Shows every open MR for a repo alongside the local worktree that holds its branch. The join uses exact branch-name matching, so an MR whose branch was pushed from a worktree appears in the same row.
+
+```bash
+rt mr map                     # current repo
+rt mr map --repo my-app       # a specific registered repo
+rt mr map --json              # machine-readable output
+```
+
+The `--repo` flag accepts either the serialized repo identity or the short repo-label alias.

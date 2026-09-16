@@ -25,6 +25,8 @@ Each row has left-aligned segments (the primary content, clipped only at real ov
 
 Data that arrives incrementally (like `rt cd`'s worktree enrichment from Linear and the forge) updates rows in place: the picker opens instantly with whatever is ready, and rows upgrade as enrichment completes. The cursor and filter survive the update.
 
+In worktree pickers, the directory name leads as an aligned column, the status tag is padded to a minimum width for consistent alignment, and the title trails. This puts the most scannable identifier (the directory) first.
+
 ## Keybar and modifiers
 
 At rest, the keybar shows only the keys that work as-is. Keys are grouped and styled: a label for the group, then key-action pairs, with quit pinned to the right edge.
