@@ -408,6 +408,50 @@ describe("gate:wait", () => {
   });
 });
 
+/** The generic half of C14's consumption stamp: `rt gate wait <id>` is what
+    gate-protocol tells a doorbelled run:/mr: pane to re-read the registry
+    with, so it is the non-herd analogue of `rt herd answer`. */
+describe("gate:wait consumption stamp", () => {
+  async function nudged(handlers: ReturnType<typeof harness>["handlers"], session: string) {
+    const r = await handlers["gate:open"]({ ...openPayload(), nudge: { session } });
+    if (!r.ok) throw new Error("open failed");
+    return r.data.id;
+  }
+
+  test("a wait by the nudged session on an answered gate stamps consumedAt", async () => {
+    const { handlers, store } = harness();
+    const id = await nudged(handlers, "sess-1");
+    await handlers["gate:answer"]({ id, answers: validAnswers(), by: "console" });
+    expect(store.get(id)!.consumedAt).toBeNull();
+    await handlers["gate:wait"]({ id, sessionId: "sess-1" });
+    expect(store.get(id)!.consumedAt).not.toBeNull();
+  });
+
+  test("a wait by any other session reads without consuming", async () => {
+    const { handlers, store } = harness();
+    const id = await nudged(handlers, "sess-1");
+    await handlers["gate:answer"]({ id, answers: validAnswers(), by: "console" });
+    await handlers["gate:wait"]({ id, sessionId: "sess-other" });
+    expect(store.get(id)!.consumedAt).toBeNull();
+  });
+
+  test("an absent sessionId reads without consuming (wire stays backward compatible)", async () => {
+    const { handlers, store } = harness();
+    const id = await nudged(handlers, "sess-1");
+    await handlers["gate:answer"]({ id, answers: validAnswers(), by: "console" });
+    await handlers["gate:wait"]({ id });
+    expect(store.get(id)!.consumedAt).toBeNull();
+  });
+
+  test("a closed gate is not a consumed answer", async () => {
+    const { handlers, store } = harness();
+    const id = await nudged(handlers, "sess-1");
+    await handlers["gate:close"]({ id, reason: "abandoned" });
+    await handlers["gate:wait"]({ id, sessionId: "sess-1" });
+    expect(store.get(id)!.consumedAt).toBeNull();
+  });
+});
+
 describe("gate:list / gate:park / gate:close", () => {
   test("list filters by open/subjectPrefix/kind", async () => {
     const { handlers } = harness();

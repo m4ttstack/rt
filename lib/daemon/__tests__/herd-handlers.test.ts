@@ -507,14 +507,15 @@ describe("herd:resume / status / close", () => {
     expect(res.data.jobs[0]).toMatchObject({ lastGateConsumed: true });
   });
 
-  test("status reports lastGateConsumed true for a released (losing pane) answer even though consumedAt stays null", async () => {
+  test("status reports lastGateConsumed true for a released (losing pane) answer, which now stamps consumedAt too", async () => {
     const { h, store, gateStore, herd } = await started();
     store.upsertJob({ herd, name: "job-a", worktree: "/w", handle: "job-a", status: "active", pane: "w9:p1" });
     const g = gateStore.open({ subject: `herd:${herd}/job-a`, kind: "question", questions: [{ id: "q", label: "?", multi: false, options: ["a"] }], pane: "w9:p1", nudge: { session: "sess-w1" } }).row.id;
     store.setJobStatus(herd, "job-a", "at-gate", { lastGate: g });
     gateStore.answer(g, { q: "a" }, "shepherd");
-    gateStore.answer(g, { q: "a" }, GATE_BY_PANE); // losing pane reconciles: released, not consumed
-    expect(gateStore.get(g)!.consumedAt).toBeNull();
+    gateStore.answer(g, { q: "a" }, GATE_BY_PANE); // the losing pane reconciles: released AND consumed
+    expect(gateStore.get(g)!.released).toBe(true);
+    expect(gateStore.get(g)!.consumedAt).not.toBeNull();
     const res = await h["herd:status"]({ herd });
     if (!res.ok) throw new Error(res.error);
     expect(res.data.jobs[0]).toMatchObject({ lastGateConsumed: true });
@@ -1005,6 +1006,20 @@ describe("herd:spawn", () => {
     const res = await hx.h["herd:spawn"]({ herd: s.data.herd, job: "job-a", brief: "b", dir: "/t" });
     expect(res.ok).toBe(true);
     expect(hx.store.getJob(s.data.herd, "job-a")!.pane).toBe("w9:p1");
+  });
+
+  // Herd workers depend on claude-only machinery (the reserved chat handle
+  // chat:sign-in binds presence to, and the gate-fork --settings hook), so the
+  // payload must pin the provider rather than inherit the agent.provider
+  // default -- a global `agent.provider = codex` would otherwise degrade every
+  // herd silently.
+  test("herd:spawn pins provider claude on the agent:start payload", async () => {
+    const hx = harness();
+    const s = await hx.h["herd:start"](START);
+    if (!s.ok) throw new Error(s.error);
+    const res = await hx.h["herd:spawn"]({ herd: s.data.herd, job: "job-a", brief: "b", dir: "/t" });
+    expect(res.ok).toBe(true);
+    expect(hx.agentCalls[0].provider).toBe("claude");
   });
 
   test("a hidden herd passes its socket to agent:start", async () => {

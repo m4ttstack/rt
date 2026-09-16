@@ -87,16 +87,18 @@ export interface GatesStore {
   markSubscriptionDead(id: string): void;
   /** Stamps escalatedAt once (CAS on IS NULL); a second call on an already-escalated row is a no-op. */
   markEscalated(id: string): void;
+  /** Nudge-bearing, unreleased rows whose last push was dead-pane, in either
+      terminal state: an answered gate's answer and a closed gate's ending are
+      the same unwoken pane. */
   deadPanePushes(): GateRow[];
   /** Rows the re-delivery sweep should chase: answered, nudged, never
       consumed, unreleased, delivered/confirmed/stuck (dead-pane stays with
-      the existing retry pass), on a herd: subject (the only subject family
-      whose consumption path can ever stamp consumedAt), and answered within
-      the last hour (older rows are presumed abandoned rather than chased
-      across every daemon restart). Self-answered rows are excluded even
-      though the backfill and answer-time stamp already cover them -- belt
-      and braces. `now` defaults to Date.now() and exists so a test can drive
-      the age bound. */
+      the existing retry pass), on any subject, and answered within the last
+      hour (older rows are presumed abandoned rather than chased across every
+      daemon restart). Self-answered rows are excluded even though the
+      backfill and answer-time stamp already cover them -- belt and braces.
+      `now` defaults to Date.now() and exists so a test can drive the age
+      bound. */
   unconsumedAnsweredPushes(now?: number): GateRow[];
   /** Deletes closed/answered rows past the retention window, floor respected.
       Returns the number of rows removed. */
@@ -206,6 +208,15 @@ export function answeredByNudgedPane(row: Pick<GateRow, "answer" | "nudge">): bo
   return answeredBySession(row, row.nudge?.session);
 }
 
+/** answeredByNudgedPane's mirror for an answer ATTEMPT that was never
+    recorded: a CAS loser is judged on what it sent, since the row carries the
+    winner's answer, not its own. Same precedence -- a session decides when
+    there is one, and `by` is only the fallback for callers that send none. */
+function attemptByNudgedPane(by: string, session: string | undefined, nudgeSession: string): boolean {
+  if (!session) return by === GATE_BY_PANE;
+  return session === nudgeSession;
+}
+
 /** Same reasoning as events-bus.ts's quarantineEventsDb: a corrupt gates.db
     is recreated empty rather than repaired. Renames the main file plus its
     WAL sidecars (best-effort, since they're meaningless without it). */
@@ -236,11 +247,10 @@ function assertValidSubject(subject: string): void {
 }
 
 const DEAD_SUBSCRIPTION_RETENTION_MS = 24 * 60 * 60 * 1000;
-// Only a herd-answer session ever stamps consumedAt (handlers/herd.ts, on
-// the nudged pane's own read), so a row bounces around unconsumed forever if
-// its subject isn't herd:-owned; a restart also resets the in-memory give-up
-// counters in gate-push.ts, so this age bound is the only thing stopping a
-// week-old answered row from re-arming five more re-deliveries every restart.
+// A restart resets the in-memory give-up counters in gate-push.ts, so this
+// age bound is the only thing stopping a week-old answered row from re-arming
+// five more re-deliveries on every restart. It bounds a row whose pane never
+// reads its answer through any stamping verb, too.
 const UNCONSUMED_ANSWERED_HORIZON_MS = 60 * 60 * 1000;
 
 export function createGatesStore(opts: {
@@ -424,15 +434,25 @@ export function createGatesStore(opts: {
   const pruneDeadSubStmt = db.prepare(
     "DELETE FROM gate_subscriptions WHERE dead = 1 AND (lastDelivery IS NULL OR json_extract(lastDelivery, '$.at') <= ?)",
   );
+  // Closed rows belong here as much as answered ones: a form-blocked pane
+  // whose gate was superseded or abandoned gets the same doorbell-then-Escape
+  // wake (gate-push's onClosed), and this pass is the only thing that retries
+  // it. `delivery IS NOT NULL` keeps rows that never had a push attempted out.
+  // An answered row with `consumedAt` already stamped is excluded: the
+  // nudged pane already read the answer, so a retry would inject a stray
+  // doorbell/Escape into whatever the pane moved on to. Closed rows carry
+  // no such signal, so they stay eligible regardless.
   const deadPaneStmt = db.prepare(
-    "SELECT * FROM gates WHERE nudge IS NOT NULL AND released = 0 AND status = 'answered' AND delivery IS NOT NULL ORDER BY openedAt",
+    "SELECT * FROM gates WHERE nudge IS NOT NULL AND released = 0 AND delivery IS NOT NULL AND (status = 'closed' OR (status = 'answered' AND consumedAt IS NULL)) ORDER BY openedAt",
   );
-  // subject LIKE 'herd:%': only handlers/herd.ts's nudged-session read stamps
-  // consumedAt, so a nudge on any other subject (e.g. a board form gate) can
-  // never leave the unconsumed set -- scoping the sweep's own query is the
-  // only way to keep it from chasing rows nothing will ever consume.
+  // Subject-blind on purpose: every nudge-bearing subject family has a read
+  // that stamps consumedAt (herd:answer for herd workers, gate:wait for the
+  // run:/mr:/agent: panes gate:ask nudges), so scoping this query by prefix
+  // would only re-open the interrupt-loss class for the families left out.
+  // `nudge IS NOT NULL` is the real bound: a gate with no nudge has no pane
+  // to re-push and never enters this set.
   const unconsumedAnsweredStmt = db.prepare(
-    "SELECT * FROM gates WHERE status = 'answered' AND nudge IS NOT NULL AND consumedAt IS NULL AND released = 0 AND subject LIKE 'herd:%' AND COALESCE(json_extract(answer,'$.answeredAt'), closedAt, openedAt) >= ? ORDER BY openedAt",
+    "SELECT * FROM gates WHERE status = 'answered' AND nudge IS NOT NULL AND consumedAt IS NULL AND released = 0 AND COALESCE(json_extract(answer,'$.answeredAt'), closedAt, openedAt) >= ? ORDER BY openedAt",
   );
 
   const get = (id: string): GateRow | null => {
@@ -603,6 +623,15 @@ export function createGatesStore(opts: {
         releaseStmt.run(id);
         row = get(id)!;
         released = true;
+      }
+      // The same reconciliation, recorded for the gates `released` cannot
+      // speak for: release needs a `pane` column, consumption needs only a
+      // nudge, so a pane-less gate's losing pane read was invisible to the
+      // re-delivery sweep and to herd status while it chased an answer that
+      // had already landed.
+      if (row.nudge && attemptByNudgedPane(by, opts?.session, row.nudge.session)) {
+        markConsumedStmt.run(Date.now(), id);
+        row = get(id)!;
       }
       if (row.status === "closed") return { ok: false, reason: "closed", row, released };
       return { ok: false, reason: "already-answered", row, released };

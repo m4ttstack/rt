@@ -1,7 +1,8 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdtempSync, rmSync } from "fs";
+import { mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
+import { resolveAllLiveInboxes, resolveInbox, resolveLiveInbox } from "../../claude-registry.ts";
 import pino from "pino";
 import { createGatesStore, GATE_BY_PANE, type GatesStore, type GateQuestion } from "../gates-store.ts";
 import { createGatePush, GATE_ANSWERED_PHRASE, GATE_CLOSED_PHRASE, GATE_SUBSCRIPTION_PHRASE, safeSurface } from "../gate-push.ts";
@@ -450,6 +451,26 @@ describe("retryDeadPanes", () => {
     expect(await push.retryDeadPanes()).toEqual({ retried: 0, delivered: 0, gaveUp: 0, reNudged: 0 });
   });
 
+  test("a closed gate's failed doorbell is retried with the CLOSED phrase, never the answered one", async () => {
+    const store = freshStore();
+    let ok = false;
+    const delivered: string[] = [];
+    const push = createGatePush({
+      store,
+      deliver: async (_s, body) => { delivered.push(body); return ok ? { ok: true } : { ok: false, error: "dead" }; },
+      resolveSession: (id) => ({ socketPath: id }),
+      log,
+      maxPaneRetries: 2,
+    });
+    const row = store.open({ subject: "herd:h/j", kind: "question", questions: qs(), nudge: { session: "w" } }).row;
+    store.close(row.id, "superseded");
+    await push.onClosed(store.get(row.id)!);
+    expect(store.get(row.id)!.delivery!.outcome).toBe("dead-pane");
+    ok = true;
+    expect(await push.retryDeadPanes()).toEqual({ retried: 1, delivered: 1, gaveUp: 0, reNudged: 0 });
+    expect(delivered.at(-1)).toBe(wrapCrossSession("gate-facility", GATE_CLOSED_PHRASE(row.id, "superseded")));
+  });
+
   test("reentrancy guard returns zeros while a run is in flight", async () => {
     const store = freshStore();
     let deliverStarted = false;
@@ -564,8 +585,6 @@ describe("retryDeadPanes: answered-unconsumed re-delivery sweep", () => {
 
   test("(f) a re-push on a form-presentation, non-self-answered row invokes no injectEscape", async () => {
     const { push, store, events } = w4Harness();
-    // Herd subject: only a herd-answer session's own read stamps consumedAt,
-    // so only a herd: row can ever leave the unconsumed set the second pass chases.
     const row = store.open({
       subject: "herd:h/j1", kind: "question", questions: qs(),
       nudge: { session: "sess-1" }, pane: "pane-7",
@@ -605,6 +624,100 @@ describe("retryDeadPanes: answered-unconsumed re-delivery sweep", () => {
     for (let i = 0; i < 4; i++) await push.retryDeadPanes();
     expect(events).toEqual(["deliver"]);
     expect(store.get(row.id)!.delivery!.outcome).toBe("confirmed"); // unchanged by the successful re-push
+  });
+
+  /** Same recording-warn idiom as consumeHarness, plus a session that can be
+      killed between sweeps -- the case the second pass could not see. */
+  function dyingPaneHarness() {
+    const store = freshStore();
+    let alive = true;
+    const warns: Array<{ ctx: Record<string, unknown>; msg: string }> = [];
+    const log = pino({ level: "silent" });
+    (log as unknown as { warn: (ctx: Record<string, unknown>, msg: string) => void }).warn = (ctx, msg) => { warns.push({ ctx, msg }); };
+    const push = createGatePush({
+      store,
+      deliver: async () => ({ ok: true as const }),
+      resolveSession: (id) => (alive ? { socketPath: id } : null),
+      log,
+    });
+    return { store, push, warns, kill: () => { alive = false; }, revive: () => { alive = true; } };
+  }
+
+  async function answeredUnconsumed(h: ReturnType<typeof dyingPaneHarness>) {
+    const row = h.store.open({ subject: "run:r1", kind: "clarify", questions: qs(), nudge: { session: "sess-1" } }).row;
+    h.store.answer(row.id, { q: "a" }, "console");
+    await h.push.onAnswered(h.store.get(row.id)!);
+    expect(h.store.get(row.id)!.delivery!.outcome).toBe("delivered");
+    return row.id;
+  }
+
+  test("(j) a pane that dies between sweeps is recorded dead-pane and migrates to the first pass", async () => {
+    const h = dyingPaneHarness();
+    const id = await answeredUnconsumed(h);
+    h.kill();
+    for (let i = 0; i < 4; i++) await h.push.retryDeadPanes();
+    expect(h.store.get(id)!.delivery!.outcome).toBe("dead-pane");
+    expect(h.store.deadPanePushes().map((r) => r.id)).toContain(id);
+    expect(h.warns.map((w) => w.msg)).toContain("gate-push: re-delivery found a dead pane; handing to the dead-pane retry");
+  });
+
+  test("(k) discovering a dead pane costs no re-nudge attempt: the full budget survives the revival", async () => {
+    const h = dyingPaneHarness();
+    const id = await answeredUnconsumed(h);
+    h.kill();
+    for (let i = 0; i < 4; i++) await h.push.retryDeadPanes();
+    expect(h.store.get(id)!.delivery!.outcome).toBe("dead-pane");
+    h.revive();
+    let reNudged = 0;
+    for (let i = 0; i < 40; i++) reNudged += (await h.push.retryDeadPanes()).reNudged;
+    expect(reNudged).toBe(5); // 4 would mean the dead discovery ate one
+  });
+
+  /** The shape the registry lookup alone cannot see: a pane that crashes
+      AFTER its doorbell landed leaves its registry file behind, so the row
+      still resolves and only its pid/socket say it is gone. Wired here the
+      way the daemon wires it, through the liveness-checked resolver. */
+  test("(l) a pane that crashed leaving its registry row is found dead, and its budget is not burned", async () => {
+    const root = mkdtempSync(join(tmpdir(), "rt-gate-push-registry-"));
+    dirs.push(root);
+    const sockDir = mkdtempSync(join(tmpdir(), "rt-gate-push-sock-"));
+    dirs.push(sockDir);
+    const sock = join(sockDir, "live.sock");
+    writeFileSync(sock, "");
+    const session = "aaaaaaaa-0000-0000-0000-0000000000ff";
+    writeFileSync(join(root, "4242.json"), JSON.stringify({ pid: process.pid, sessionId: session, messagingSocketPath: sock, status: "idle" }));
+
+    const store = freshStore();
+    const warns: Array<{ ctx: Record<string, unknown>; msg: string }> = [];
+    const pushLog = pino({ level: "silent" });
+    (pushLog as unknown as { warn: (ctx: Record<string, unknown>, msg: string) => void }).warn = (ctx, msg) => { warns.push({ ctx, msg }); };
+    const push = createGatePush({
+      store,
+      deliver: async () => ({ ok: true as const }),
+      resolveSession: (id) => resolveLiveInbox(id, { roots: [root] }),
+      resolveAll: () => resolveAllLiveInboxes({ roots: [root] }),
+      log: pushLog,
+    });
+
+    const row = store.open({ subject: "run:r1", kind: "clarify", questions: qs(), nudge: { session } }).row;
+    store.answer(row.id, { q: "a" }, "console");
+    await push.onAnswered(store.get(row.id)!);
+    expect(store.get(row.id)!.delivery!.outcome).toBe("delivered");
+
+    // The pane dies. Its registry row survives it, so the raw lookup still
+    // hits and only the liveness check can tell the difference.
+    unlinkSync(sock);
+    expect(resolveInbox(session, { roots: [root] })).not.toBeNull();
+
+    for (let i = 0; i < 4; i++) await push.retryDeadPanes();
+    expect(store.get(row.id)!.delivery!.outcome).toBe("dead-pane");
+    expect(store.deadPanePushes().map((r) => r.id)).toContain(row.id);
+    expect(warns.map((w) => w.msg)).toContain("gate-push: re-delivery found a dead pane; handing to the dead-pane retry");
+
+    writeFileSync(sock, "");
+    let reNudged = 0;
+    for (let i = 0; i < 40; i++) reNudged += (await push.retryDeadPanes()).reNudged;
+    expect(reNudged).toBe(5);
   });
 
   test("(g) a stuck-delivery row IS eligible for the second pass", async () => {
@@ -708,4 +821,15 @@ describe("safeSurface (answering-surface allowlist, prompt-injection hardening)"
     expect(safeSurface("console\n")).toBe("console");
     expect(safeSurface(" board ")).toBe("board");
   });
+});
+
+/** The behavior above is only real if the daemon resolves through the
+    liveness-checked pair: wired to the raw registry read, a crashed pane's
+    lingering row reads alive and the dead-pane pass never sees it. */
+test("the daemon wires gate-push to the liveness-checked resolvers", () => {
+  const src = readFileSync(join(import.meta.dir, "..", "..", "daemon.ts"), "utf8");
+  const block = src.slice(src.indexOf("createGatePush({"));
+  const wiring = block.slice(0, block.indexOf("});"));
+  expect(wiring).toContain("resolveSession: resolveLiveInbox");
+  expect(wiring).toContain("resolveAll: resolveAllLiveInboxes");
 });

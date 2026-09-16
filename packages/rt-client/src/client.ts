@@ -356,7 +356,7 @@ export function agentStart(
   a: Commands["agent:start"]["payload"], o: RtClientOptions = {},
 ): Promise<RtResponse<AgentRecord>> {
   const payload: Record<string, unknown> = { repo: a.repo, cwd: a.cwd };
-  for (const k of ["prompt", "surface", "model", "effort", "account", "label", "caller", "workspace", "tab", "extraArgs", "env", "herdrSocket", "handle", "bg", "subject"] as const) {
+  for (const k of ["prompt", "surface", "provider", "model", "effort", "account", "label", "caller", "workspace", "tab", "extraArgs", "env", "herdrSocket", "handle", "bg", "subject", "yolo"] as const) {
     if (a[k] !== undefined) payload[k] = a[k];
   }
   return rtCommand<AgentRecord>("agent:start", payload, { sockPath: o.sockPath, timeoutMs: o.timeoutMs ?? 30_000 });
@@ -499,6 +499,7 @@ export function gateWait(
 ): Promise<RtResponse<Commands["gate:wait"]["data"]>> {
   const payload: Record<string, unknown> = { id: a.id };
   if (a.waitMs !== undefined) payload.waitMs = a.waitMs;
+  if (a.sessionId !== undefined) payload.sessionId = a.sessionId;
   return rtCommand<Commands["gate:wait"]["data"]>("gate:wait", payload, { sockPath: o.sockPath, timeoutMs: o.timeoutMs ?? 250_000 });
 }
 

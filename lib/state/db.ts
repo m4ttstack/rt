@@ -381,6 +381,16 @@ function addSubjectColumnIfMissing(db: Database): void {
   db.exec("ALTER TABLE agents ADD COLUMN subject TEXT;");
 }
 
+/** agents.yolo: whether this launch bypassed permission prompts
+    (--dangerously-skip-permissions / --dangerously-bypass-approvals-and-sandbox).
+    Same conditional-exec rule as `sections`, `archived_at`, `handle`, `quiet`
+    and `subject` above. */
+function addYoloColumnIfMissing(db: Database): void {
+  const columns = db.query("PRAGMA table_info(agents);").all() as { name: string }[];
+  if (columns.some((c) => c.name === "yolo")) return;
+  db.exec("ALTER TABLE agents ADD COLUMN yolo INTEGER;");
+}
+
 /**
  * endpoint_claims.start_time (S068): the claiming pid's start-time, so a
  * recycled pid across a reboot reads as dead rather than pinning a port
@@ -573,6 +583,7 @@ function runMigrations(db: Database, dir: string): void {
     addHandleColumnIfMissing(db);
     addQuietColumnIfMissing(db);
     addSubjectColumnIfMissing(db);
+    addYoloColumnIfMissing(db);
     // Legacy-JSON import is single-shot and only correct from a true
     // v0 (never-migrated) database: branch-cache's UPSERT would silently
     // overwrite current rows with stale ones, and project-mrs-store's

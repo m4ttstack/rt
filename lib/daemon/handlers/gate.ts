@@ -617,9 +617,19 @@ export function createGateHandlers(
       const payload = rawPayload as Commands["gate:wait"]["payload"] | undefined;
       const id = typeof payload?.id === "string" ? payload.id.trim() : "";
       if (!id) return { ok: false as const, error: "missing id" };
+      const sessionId = typeof payload?.sessionId === "string" ? payload.sessionId.trim() : "";
       const result = await store.wait(id, { waitMs: num(payload?.waitMs), signal });
       if (result.status === "not-found") return { ok: false as const, error: "not-found" };
       if (result.status === "timeout") return { ok: true as const, data: { status: "timeout" as const } };
+      // The non-herd half of the consumption stamp: gate-protocol sends a
+      // doorbelled pane back here to re-read the registry, so a wait that
+      // returns an ANSWER to the nudged session is that pane's recorded read.
+      // Any other reader (shepherd, board, a watcher) does not consume, and a
+      // close is not an answer to consume. The row is returned pre-stamp,
+      // matching herd:answer's own ordering.
+      if (result.status === "answered" && sessionId && result.row.nudge?.session === sessionId) {
+        store.markConsumed(result.row.id);
+      }
       return { ok: true as const, data: { status: result.status, row: result.row } };
     },
 
