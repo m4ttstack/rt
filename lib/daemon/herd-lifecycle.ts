@@ -21,6 +21,10 @@ export interface HerdLifecycle {
   connected(socket: string | null): boolean;
   handleEvent(socket: string | null, ev: HerdrEvent): Promise<void>;
   reconcilePanes(): void;
+  /** Epoch ms of the pane's last `agent_status_changed`, keyed by the ref the
+      job row stores (`bg:` for a hidden herd). In-memory only: a daemon
+      restart forgets every pane, and null means "no data", never "idle". */
+  lastStatusChangeMs(pane: string): number | null;
   /** Reconciles the bg claims registry against reality: a claimed `bg:` pane
       missing from a live snapshot releases (crashed/closed pane the event
       stream missed), a `runner:<pid>` claim whose process is gone releases
@@ -63,11 +67,13 @@ export function createHerdLifecycle(opts: {
   blockedDebounceMs?: number;
   idleDebounceMs?: number;
   setTimer?: (fn: () => void, ms: number) => { clear(): void };
+  now?: () => number;
   log: Logger;
 }): HerdLifecycle {
   const { store, log } = opts;
   const subscribe = opts.subscribe ?? defaultSubscribe;
   const herdr = opts.herdr ?? defaultHerdrRequest;
+  const now = opts.now ?? Date.now;
   const debounceMs = opts.blockedDebounceMs ?? 30_000;
   const idleDebounceMs = opts.idleDebounceMs ?? 180_000;
   // A reconcile tick reads sqlite and opens subscriptions; a synchronous
@@ -85,6 +91,8 @@ export function createHerdLifecycle(opts: {
   // immediately before posting.
   const idleGen = new Map<string, number>();
   const bumpIdleGen = (key: string) => idleGen.set(key, (idleGen.get(key) ?? 0) + 1);
+  // Events carry no timestamp, so the change time is this clock at receipt.
+  const lastStatusChange = new Map<string, number>();
   let unhookBus: (() => void) | undefined;
   let reconcileTimer: { clear(): void } | undefined;
 
@@ -194,6 +202,7 @@ export function createHerdLifecycle(opts: {
       return;
     }
     if (ev.type === "pane.agent_status_changed") {
+      lastStatusChange.set(ref, now());
       // herdr detects the agent before a spawn can park a failed trust accept,
       // so accepting the dialog by hand produces no second agent_detected --
       // a status change is the only event left that can retire the parked row,
@@ -242,6 +251,7 @@ export function createHerdLifecycle(opts: {
       idleTimers.get(key)?.clear();
       idleTimers.delete(key);
       bumpIdleGen(key);
+      lastStatusChange.delete(ref);
       unwatchPane(socket, pane);
       if (WATCHED.has(job.status)) {
         store.setJobStatus(job.herd, job.name, "crashed");
@@ -387,11 +397,13 @@ export function createHerdLifecycle(opts: {
       for (const t of idleTimers.values()) t.clear();
       idleTimers.clear();
       for (const k of idleGen.keys()) bumpIdleGen(k);
+      lastStatusChange.clear();
     },
     watch,
     connected: (socket) => subs.get(socketKey(socket))?.connected() ?? false,
     handleEvent,
     reconcilePanes,
+    lastStatusChangeMs: (pane) => lastStatusChange.get(pane) ?? null,
     sweepClaims,
   };
 }
