@@ -208,6 +208,15 @@ export function answeredByNudgedPane(row: Pick<GateRow, "answer" | "nudge">): bo
   return answeredBySession(row, row.nudge?.session);
 }
 
+/** answeredByNudgedPane's mirror for an answer ATTEMPT that was never
+    recorded: a CAS loser is judged on what it sent, since the row carries the
+    winner's answer, not its own. Same precedence -- a session decides when
+    there is one, and `by` is only the fallback for callers that send none. */
+function attemptByNudgedPane(by: string, session: string | undefined, nudgeSession: string): boolean {
+  if (!session) return by === GATE_BY_PANE;
+  return session === nudgeSession;
+}
+
 /** Same reasoning as events-bus.ts's quarantineEventsDb: a corrupt gates.db
     is recreated empty rather than repaired. Renames the main file plus its
     WAL sidecars (best-effort, since they're meaningless without it). */
@@ -610,6 +619,15 @@ export function createGatesStore(opts: {
         releaseStmt.run(id);
         row = get(id)!;
         released = true;
+      }
+      // The same reconciliation, recorded for the gates `released` cannot
+      // speak for: release needs a `pane` column, consumption needs only a
+      // nudge, so a pane-less gate's losing pane read was invisible to the
+      // re-delivery sweep and to herd status while it chased an answer that
+      // had already landed.
+      if (row.nudge && attemptByNudgedPane(by, opts?.session, row.nudge.session)) {
+        markConsumedStmt.run(Date.now(), id);
+        row = get(id)!;
       }
       if (row.status === "closed") return { ok: false, reason: "closed", row, released };
       return { ok: false, reason: "already-answered", row, released };
