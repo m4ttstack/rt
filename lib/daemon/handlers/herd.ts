@@ -223,7 +223,7 @@ export function createHerdHandlers(deps: HerdDeps) {
         openGate: gates.find((g) => g.subject === herdSubject(herdId, j.name))?.id ?? null,
         paneStatus: paneRow?.status ?? null,
         // A jetsam sweep kills claude and leaves its pane shell running, so
-        // the job goes on reading active with nothing behind it (RT-158).
+        // the job goes on reading active with nothing behind it.
         // Only statuses claude itself reached count: `spawning` and
         // `stuck-at-modal` legitimately have no agent yet, and a finished job
         // is expected to have none.
@@ -280,8 +280,8 @@ export function createHerdHandlers(deps: HerdDeps) {
    * Drive the pre-claude folder-trust modal off `paneRef`, and say honestly
    * what happened.
    *
-   * Two things the first cut got wrong, both from RT-156. A pane sitting on
-   * the dialog is precisely a pane on which herdr never registers an agent,
+   * Two things the first cut got wrong. A pane sitting on the dialog is
+   * precisely a pane on which herdr never registers an agent,
    * so giving up when the register poll expires skipped the check in the one
    * case that needed it; the screen is now read either way. And the elevated
    * variant (a repo whose settings pre-approve tool permissions) defaults to
@@ -340,7 +340,7 @@ export function createHerdHandlers(deps: HerdDeps) {
           // something else entirely (a mid-run permission prompt), which is
           // not this function's business. An unregistered one never got
           // claude up for a reason the screen does not name, and calling that
-          // "none" would be the silent pass RT-156 is about.
+          // "none" would be a silent pass on a pane that never started.
           if (attempt > 0) return "accepted";
           return registered ? "none" : "unchecked";
         }

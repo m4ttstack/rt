@@ -15,7 +15,7 @@ const PLAIN = [
   "╰──────────────────────────────────────────────╯",
 ].join("\n");
 
-/** The elevated variant (RT-156 comment): the cursor defaults to "No, exit". */
+/** The elevated variant: the cursor defaults to "No, exit". */
 const ELEVATED = [
   "╭──────────────────────────────────────────────────────────────╮",
   "│ Do you trust the files in this folder?                       │",

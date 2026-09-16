@@ -149,7 +149,7 @@ const PLAIN_TRUST = [
   "│   2. No, exit                           │",
 ].join("\n");
 
-/** The elevated variant (RT-156 comment): the cursor defaults to "No, exit". */
+/** The elevated variant: the cursor defaults to "No, exit". */
 const ELEVATED_TRUST = [
   "│ Do you trust the files in this folder?                     │",
   "│ This folder pre-approves 12 tool permissions in            │",

@@ -301,7 +301,7 @@ test("pane:spawn quotes a cwd with a space", async () => {
 
 /** The plain first-run dialog: the cursor starts on "Yes, proceed". */
 const PLAIN_TRUST = "Do you trust the files in this folder?\n❯ 1. Yes, proceed\n  2. No, exit\n";
-/** The elevated variant (RT-156): the cursor defaults to "No, exit". */
+/** The elevated variant: the cursor defaults to "No, exit". */
 const ELEVATED_TRUST = "Do you trust the files in this folder?\nThis folder pre-approves 12 tool permissions in .claude/settings.local.json.\n  1. Yes, proceed\n❯ 2. No, exit\n";
 
 test("pane:spawn answers the trust dialog once, then sends the opening prompt", async () => {
