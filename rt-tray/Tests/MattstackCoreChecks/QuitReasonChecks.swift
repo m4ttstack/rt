@@ -9,6 +9,22 @@ let quitReasonChecks: [Check] = [
         c.expect(QuitReason.isSystemInitiated(reasonCode: UInt32(kAEReallyLogOut)))
         c.expect(QuitReason.isSystemInitiated(reasonCode: UInt32(kAEQuitAll)))
     },
+    Check("a quit with no window on screen is a real quit") { c in
+        c.expect(QuitReason.shouldTerminate(quitConfirmed: false, sessionEnding: false,
+                                            reasonCode: nil, windowOnScreen: false))
+    },
+    Check("a quit with the window on screen closes the window instead") { c in
+        c.expect(!QuitReason.shouldTerminate(quitConfirmed: false, sessionEnding: false,
+                                             reasonCode: nil, windowOnScreen: true))
+    },
+    Check("tray quit, session end, and system reasons terminate even with the window open") { c in
+        c.expect(QuitReason.shouldTerminate(quitConfirmed: true, sessionEnding: false,
+                                            reasonCode: nil, windowOnScreen: true))
+        c.expect(QuitReason.shouldTerminate(quitConfirmed: false, sessionEnding: true,
+                                            reasonCode: nil, windowOnScreen: true))
+        c.expect(QuitReason.shouldTerminate(quitConfirmed: false, sessionEnding: false,
+                                            reasonCode: UInt32(kAEShutDown), windowOnScreen: true))
+    },
     Check("no reason, an unrecognized code, or plain kAELogOut defer to the window-close interception") { c in
         c.expect(!QuitReason.isSystemInitiated(reasonCode: nil))
         c.expect(!QuitReason.isSystemInitiated(reasonCode: 0))
