@@ -49,22 +49,30 @@ app's first navigation finishing (success or failure); a hard cap of 8
 seconds keeps anything from holding it. Re-shows of the window skip the
 splash. All timings live in one tunables block.
 
-Activation policy: the app is `LSUIElement` today. While the window is open
-it flips to `.regular` (Dock icon, Cmd-Tab entry); when the window closes it
-returns to `.accessory`. Entry points: the pinned Dock icon (reopen shows
-the window), the tray menu, a global summon/toggle hotkey (default
+Activation policy: the bundle keeps `LSUIElement`, but the app overrides it
+at launch and stays a regular Dock app for its whole run, so a pinned icon
+always carries its running dot and a click reopens the window. Entry points:
+the Dock icon, the tray menu, a global summon/toggle hotkey (default
 ctrl-opt-cmd-M), and URL opens (sections 4 and 7).
+
+Menu bar: mattstack, Edit, and Window (Close Cmd-W, Minimize Cmd-M). AppKit
+routes a key equivalent only when a menu item claims it, so the window's own
+shortcuts have to live here; there is no File menu because the app has no
+documents.
 
 Tray and quit (dock-first, 2026-09-15): the Dock icon is the primary entry;
 the tray becomes a minimal menu on any click (no popover): "Open mattstack"
 first, then a disabled daemon-status line, "Processes..." (the existing
 process panel, unchanged, one item away), the daemon/log/settings items the
 gear menu holds today, and an explicit "Quit mattstack" last. Quitting from
-the window side (Cmd-Q, Dock right-click Quit) never kills supervision: the
-app closes the window, drops to accessory, and cancels the termination; the
-tray menu's Quit is the only real quit. System shutdown, restart, and
-logout terminations are honored (checked via the quit AppleEvent's reason)
-so the interception never blocks the OS. The walkthrough-facing AXID
+the window side (Cmd-Q, Dock right-click Quit) while the window is on screen
+never kills supervision: the app closes the window and cancels the
+termination. A quit that arrives with no window on screen has nothing to
+close, so it is honored and scripts, the Dock, and Activity Monitor can
+still stop the app; the tray menu's Quit always terminates. System shutdown,
+restart, and logout terminations are honored (the quit AppleEvent's reason,
+plus an `NSWorkspace.willPowerOff` backstop for events that omit it) so the
+interception never blocks the OS. The walkthrough-facing AXID
 contract moves with the menu items.
 
 ## 2. Top tab bar
