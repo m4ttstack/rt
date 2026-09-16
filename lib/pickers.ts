@@ -9,7 +9,7 @@ import { execSync } from "child_process";
 import { readFileSync } from "fs";
 import { join } from "path";
 import { pickWorktreeFromRepo, getWorkspacePackages, repoOptions, repoFromOptionValue, missingRepoRefusal, pickerWorktrees, type KnownRepo } from "./repo.ts";
-import { enrichBranches, formatBranchSegments, isDefaultBranch, type EnrichedBranch } from "./enrich.ts";
+import { enrichBranches, formatBranchSegments, type EnrichedBranch } from "./enrich.ts";
 import { repoLabel } from "./repo-label.ts";
 import type { PickHandle } from "./ui/pick.ts";
 import type { PickAction, PickRow, PickSegment } from "./ui/protocol.ts";
@@ -47,18 +47,12 @@ function annotateCurrent(right: PickSegment[], isCurrent: boolean): PickSegment[
 function cheapWorktreeRow(wt: { path: string; branch: string }, currentPath: string): PickRow {
   const dirName = dirNameOf(wt.path);
   const left: PickSegment[] = !wt.branch
-    ? [{ text: dirName, tone: "text", bold: true }]
-    : isDefaultBranch(wt.branch)
-      ? [
-          { text: dirName, tone: "text", bold: true },
-          { text: " · ", tone: "faint" },
-          { text: wt.branch, tone: "dim" },
-        ]
-      : [
-          { text: wt.branch, tone: "text", bold: true },
-          { text: " · ", tone: "faint" },
-          { text: dirName, tone: "dim" },
-        ];
+    ? [{ text: dirName, bold: true, column: true }]
+    : [
+        { text: dirName, bold: true, column: true },
+        { text: "  ", tone: "faint" },
+        { text: wt.branch, tone: "dim" },
+      ];
   return { value: wt.path, left, right: annotateCurrent([], wt.path === currentPath) };
 }
 
