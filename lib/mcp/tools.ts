@@ -155,6 +155,7 @@ const GATE_OPTION_SCHEMA = {
         value: { type: "string" },
         label: { type: "string" },
         recommended: { type: "boolean", description: "Marks this option as the recommended choice; lifts into a '(Recommended)' label suffix." },
+        description: { type: "string", description: "One or two sentences on what choosing this option means; shown under the option's label on every surface, stored verbatim. At most 1024 bytes." },
       },
       required: ["value", "label"],
       additionalProperties: false,
@@ -169,6 +170,7 @@ const GATE_QUESTION_SCHEMA = {
     label: { type: "string" },
     multi: { type: "boolean" },
     options: { type: "array", items: GATE_OPTION_SCHEMA },
+    context: { type: "string", description: "Material specific to this one question (what its choice turns on), shown with it; the top-level context stays the whole ask's. Shares the 8192-byte context budget with the top-level context." },
   },
   required: ["id", "label", "multi", "options"],
   additionalProperties: false,
@@ -239,7 +241,7 @@ export function mcpTools(): McpToolDef[] {
     },
     {
       name: "gate_ask",
-      description: "Open a decision gate with the daemon-side ceremony: subject resolves from this session (explicit subject wins, else its running run, else its agent record's own subject), presentation is computed, and the operator is nudged. Always pass context, quoted from the material the reader decides on, and never trim or skip it for size: an oversized context is dropped server-side and reported back as contextOmitted: true. A human-owned gate with no context is refused. Returns {id, presentation, subject, supersededId}; then run `rt gate wait <id>` as background bash and park. The wait itself is never a tool. Prefer {value, label} option objects; bare strings are accepted and stored normalized. Answers must be option VALUES verbatim.",
+      description: "Open a decision gate with the daemon-side ceremony: subject resolves from this session (explicit subject wins, else its running run, else its agent record's own subject), presentation is computed, and the operator is nudged. Always pass context, quoted from the material the reader decides on, and never trim or skip it for size: over the shared 8192-byte budget (top-level context plus every question's context), question contexts are dropped server-side first, then the top-level context if it is over on its own, and the drop is reported back as contextOmitted: true. A human-owned gate with no context is refused. Returns {id, presentation, subject, supersededId}; then run `rt gate wait <id>` as background bash and park. The wait itself is never a tool. Prefer {value, label} option objects; bare strings are accepted and stored normalized. Answers must be option VALUES verbatim.",
       inputSchema: {
         type: "object",
         properties: {

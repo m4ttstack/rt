@@ -78,6 +78,31 @@ describe("normalizeGateOptions", () => {
     });
   });
 
+  describe("option description", () => {
+    test("an object option's description is preserved verbatim", () => {
+      expect(normalizeGateOptions([{ value: "a", label: "fix", description: "patch the null check" }])).toEqual([
+        { value: "a", label: "Fix", description: "patch the null check" },
+      ]);
+    });
+    test("a description is never capitalized or suffixed, even with recommended: true", () => {
+      expect(normalizeGateOptions([{ value: "a", label: "fix", recommended: true, description: "lowercase stays. no suffix" }])).toEqual([
+        { value: "a", label: "Fix (Recommended)", description: "lowercase stays. no suffix" },
+      ]);
+    });
+    test("an option without a description has no description key", () => {
+      const [bare, obj] = normalizeGateOptions(["yes", { value: "a", label: "A" }]);
+      expect(Object.keys(bare!)).toEqual(["value", "label"]);
+      expect(Object.keys(obj!)).toEqual(["value", "label"]);
+    });
+    test("a non-string description is dropped rather than coerced", () => {
+      const [out] = normalizeGateOptions([{ value: "a", label: "A", description: 42 } as unknown as GateQuestion["options"][number]]);
+      expect(out).toEqual({ value: "a", label: "A" });
+    });
+    test("an empty description is dropped", () => {
+      expect(normalizeGateOptions([{ value: "a", label: "A", description: "" }])).toEqual([{ value: "a", label: "A" }]);
+    });
+  });
+
   describe("word-like label capitalization", () => {
     test("an all-lowercase single word is capitalized", () => {
       expect(normalizeGateOptions(["main"])).toEqual([{ value: "main", label: "Main" }]);
@@ -118,5 +143,24 @@ describe("normalizeGateQuestions", () => {
     const qs: GateQuestion[] = [{ id: "q1", label: "p", multi: false, options: ["x"] }];
     normalizeGateQuestions(qs);
     expect(qs[0]!.options).toEqual(["x"]);
+  });
+
+  describe("per-question context", () => {
+    test("a non-empty context is kept verbatim", () => {
+      const qs: GateQuestion[] = [{ id: "q1", label: "p", multi: false, options: ["x"], context: "  why this matters  " }];
+      expect(normalizeGateQuestions(qs)[0]!.context).toBe("  why this matters  ");
+    });
+    test("a trim-empty context is absent from the output", () => {
+      const qs: GateQuestion[] = [{ id: "q1", label: "p", multi: false, options: ["x"], context: "   " }];
+      expect(Object.keys(normalizeGateQuestions(qs)[0]!)).not.toContain("context");
+    });
+    test("a non-string context is absent from the output", () => {
+      const qs = [{ id: "q1", label: "p", multi: false, options: ["x"], context: 7 }] as unknown as GateQuestion[];
+      expect(Object.keys(normalizeGateQuestions(qs)[0]!)).not.toContain("context");
+    });
+    test("a question without context gains no context key", () => {
+      const qs: GateQuestion[] = [{ id: "q1", label: "p", multi: false, options: ["x"] }];
+      expect(Object.keys(normalizeGateQuestions(qs)[0]!)).toEqual(["id", "label", "multi", "options"]);
+    });
   });
 });

@@ -97,7 +97,7 @@ export const GATE_BY_PANE = "pane";
 export type GateStatus = "open" | "answered" | "parked" | "closed";
 /** Reconciler's view of an agent's liveness; also the value `GateRow.executor` is stamped with. */
 export type ExecutorState = "live" | "blocked" | "hidden" | "gone" | "cleared" | "unknown";
-export type GateOption = string | { value: string; label: string; recommended?: boolean };
+export type GateOption = string | { value: string; label: string; recommended?: boolean; description?: string };
 export interface GateOrigin {
   paneId?: string;
   tabId?: string;
@@ -106,7 +106,9 @@ export interface GateOrigin {
   surface?: string;
   presentation?: "form" | "wait";
 }
-export interface GateQuestion { id: string; label: string; multi: boolean; options: GateOption[] }
+/** `context` is per-question material (what this one choice turns on);
+    the gate-level `context` on the open/ask payload is the whole ask's. */
+export interface GateQuestion { id: string; label: string; multi: boolean; options: GateOption[]; context?: string }
 /** Implementations live in gate-options.ts (the browser-safe ./gate
     subpath); re-exported here so existing commands.ts/index.ts consumers
     are unaffected. */
@@ -711,9 +713,10 @@ export interface Commands {
       agent?: string;
       origin?: { surface?: string; tabId?: string; worktree?: string };
     };
-    /** `contextOmitted` appears only when the caller's context exceeded the
-        8192-byte cap and was dropped: the gate still opened, but with none of
-        the material the reader needs. */
+    /** `contextOmitted` appears only when the gate context plus every
+        question's `context` exceeded their shared 8192-byte budget: the
+        gate still opened, but question contexts were dropped, and the gate
+        context too when it was over the budget on its own. */
     data: { id: string; presentation: "form" | "wait"; subject: string; supersededId: string | null; contextOmitted?: true };
   };
   /**
