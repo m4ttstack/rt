@@ -9,6 +9,7 @@
  */
 import { homedir } from "os";
 import { join } from "path";
+import { parseForbidSocks } from "./test-isolation.ts";
 
 export interface RtResponse<T = unknown> {
   ok: boolean;
@@ -56,12 +57,31 @@ function defaultSock(): string {
  */
 export const DEFAULT_SOCK = defaultSock();
 
+/**
+ * The one exception to the never-throws contract below: when a test preload
+ * has armed RT_TEST_FORBID_SOCKS (see test-isolation.ts), dispatching at a
+ * listed socket throws instead of degrading. A degrade envelope could be
+ * tolerated by the calling test; escaping isolation must fail the run loudly.
+ * A malformed list throws too rather than silently disarming the guard.
+ */
+function assertSockNotForbidden(cmd: string, sockPath: string): void {
+  const raw = process.env.RT_TEST_FORBID_SOCKS;
+  if (!raw) return;
+  const forbidden = parseForbidSocks(raw);
+  if (forbidden.includes(sockPath)) {
+    throw new Error(
+      `rt-client: refusing "${cmd}" at forbidden socket ${sockPath}: RT_TEST_FORBID_SOCKS marks it as a live daemon socket, so this dispatch would have escaped test isolation`,
+    );
+  }
+}
+
 export async function rtCommand<T = unknown>(
   cmd: string,
   payload: Record<string, unknown>,
   opts: { sockPath?: string; timeoutMs?: number } = {},
 ): Promise<RtResponse<T>> {
   const sockPath = opts.sockPath ?? defaultSock();
+  assertSockNotForbidden(cmd, sockPath);
   try {
     const res = await fetch(`http://localhost/${cmd}`, {
       unix: sockPath,

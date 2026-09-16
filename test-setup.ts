@@ -11,5 +11,12 @@
 import { mkdtempSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
+import { guardTestDaemonEnv } from "./packages/rt-client/src/test-isolation.ts";
+
+// Before the HOME repoint, while HOME still names the real home: strips
+// ambient live-daemon pointers (RT_DAEMON_SOCK is set in herdr panes and
+// wins over HOME inside rtCommand) and forbids the real rt.sock for the
+// whole run, including children spawned with a process.env spread.
+guardTestDaemonEnv();
 
 process.env.HOME = mkdtempSync(join(tmpdir(), "rt-test-home-"));

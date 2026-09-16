@@ -71,3 +71,47 @@ describe("rtCommand", () => {
     }
   });
 });
+
+describe("RT_TEST_FORBID_SOCKS guard", () => {
+  const origForbid = process.env.RT_TEST_FORBID_SOCKS;
+  const origSock = process.env.RT_DAEMON_SOCK;
+  afterEach(() => {
+    if (origForbid === undefined) delete process.env.RT_TEST_FORBID_SOCKS;
+    else process.env.RT_TEST_FORBID_SOCKS = origForbid;
+    if (origSock === undefined) delete process.env.RT_DAEMON_SOCK;
+    else process.env.RT_DAEMON_SOCK = origSock;
+  });
+
+  test("an explicit sockPath on the forbidden list throws instead of degrading", async () => {
+    const forbidden = join(tmpdir(), `rt-client-forbidden-${process.pid}.sock`);
+    process.env.RT_TEST_FORBID_SOCKS = JSON.stringify([forbidden]);
+    await expect(rtCommand("chat:post", {}, { sockPath: forbidden })).rejects.toThrow(/forbidden/);
+  });
+
+  test("a forbidden socket reached via RT_DAEMON_SOCK resolution throws too", async () => {
+    const forbidden = join(tmpdir(), `rt-client-forbidden-env-${process.pid}.sock`);
+    process.env.RT_TEST_FORBID_SOCKS = JSON.stringify([forbidden]);
+    process.env.RT_DAEMON_SOCK = forbidden;
+    await expect(rtCommand("chat:post", {}, {})).rejects.toThrow(/forbidden/);
+  });
+
+  test("a socket not on the list keeps the degrade-to-envelope contract", async () => {
+    process.env.RT_TEST_FORBID_SOCKS = JSON.stringify(["/somewhere/else.sock"]);
+    const sockPath = join(tmpdir(), "definitely-missing.sock");
+    const res = await rtCommand("chat:post", {}, { sockPath });
+    expect(res.ok).toBe(false);
+    expect(res.error).toContain("unreachable");
+  });
+
+  test("a malformed forbidden list throws rather than silently disarming the guard", async () => {
+    process.env.RT_TEST_FORBID_SOCKS = "not json";
+    const sockPath = join(tmpdir(), "definitely-missing.sock");
+    await expect(rtCommand("chat:post", {}, { sockPath })).rejects.toThrow();
+  });
+
+  test("valid JSON that is not a string array throws too: a JSON string has .includes()", async () => {
+    process.env.RT_TEST_FORBID_SOCKS = JSON.stringify("/somewhere/else.sock");
+    const sockPath = join(tmpdir(), "definitely-missing.sock");
+    await expect(rtCommand("chat:post", {}, { sockPath })).rejects.toThrow(/string array/);
+  });
+});
