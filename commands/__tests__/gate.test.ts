@@ -134,6 +134,14 @@ describe("withGateTokens", () => {
     expect(a).toMatchObject({ presentation: "form", owner: "herd:h-1" });
     expect(b).toMatchObject({ presentation: "wait", owner: "human" });
   });
+  test("questions echo verbatim: option descriptions and per-question context survive into list --json", () => {
+    const questions = [{
+      id: "q1", label: "go?", multi: false, context: "why this one",
+      options: [{ value: "yes", label: "Yes", description: "ship it" }, { value: "no", label: "No" }],
+    }];
+    const [row] = withGateTokens([fakeRow({ questions })]);
+    expect(row!.questions).toEqual(questions);
+  });
 });
 
 // ─── subscriptions ───────────────────────────────────────────────────────────

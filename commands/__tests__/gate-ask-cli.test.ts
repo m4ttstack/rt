@@ -28,6 +28,16 @@ describe("buildGateAskPayload", () => {
     expect(p.context).toBe("why");
     expect(p.kind).toBe("plan");
   });
+  test("option descriptions and per-question context ride --questions through untouched", () => {
+    const q = JSON.stringify([{
+      id: "q1", label: "go?", multi: false, context: "why this one",
+      options: [{ value: "yes", label: "yes", description: "ship it", recommended: true }, "no"],
+    }]);
+    expect(buildGateAskPayload(["--questions", q], noEnv).questions).toEqual([{
+      id: "q1", label: "go?", multi: false, context: "why this one",
+      options: [{ value: "yes", label: "yes", description: "ship it", recommended: true }, "no"],
+    }]);
+  });
   test("empty env vars are treated as unset", () => {
     const env = { CLAUDE_CODE_SESSION_ID: "", HERDR_PANE_ID: "" } as NodeJS.ProcessEnv;
     const p = buildGateAskPayload(["--questions", Q], env);

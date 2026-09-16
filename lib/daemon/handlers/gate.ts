@@ -63,6 +63,7 @@ export function isValidQuestion(q: unknown): q is GateQuestion {
     typeof cand.id === "string" && cand.id.length > 0 &&
     typeof cand.label === "string" &&
     typeof cand.multi === "boolean" &&
+    (cand.context === undefined || typeof cand.context === "string") &&
     Array.isArray(cand.options) && cand.options.every(isValidOption)
   );
 }
@@ -72,24 +73,40 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
 }
 
 const LABEL_CAP_BYTES = 200;
+const DESCRIPTION_CAP_BYTES = 1024;
+/** One budget for the gate-level context plus every question's own
+    context: a row grows by at most this much prose however many questions
+    it carries. Labels and descriptions are capped per field instead, since
+    they are structural and the caller authors them by hand. */
 const CONTEXT_CAP_BYTES = 8192;
 
 function isValidOption(o: unknown): boolean {
   if (typeof o === "string") return true;
   if (!isPlainObject(o)) return false;
-  return typeof o.value === "string" && o.value.length > 0 && typeof o.label === "string";
+  return typeof o.value === "string" && o.value.length > 0 && typeof o.label === "string" &&
+    (o.description === undefined || typeof o.description === "string");
 }
 
-function oversizedLabel(questions: GateQuestion[]): string | null {
+function oversizedOptionText(questions: GateQuestion[]): string | null {
   for (const q of questions) {
     for (const o of q.options) {
-      if (typeof o !== "string" && Buffer.byteLength(o.label, "utf8") > LABEL_CAP_BYTES) {
+      if (typeof o === "string") continue;
+      if (Buffer.byteLength(o.label, "utf8") > LABEL_CAP_BYTES) {
         return `option label exceeds ${LABEL_CAP_BYTES} bytes (question "${q.id}")`;
+      }
+      if (o.description !== undefined && Buffer.byteLength(o.description, "utf8") > DESCRIPTION_CAP_BYTES) {
+        return `option description exceeds ${DESCRIPTION_CAP_BYTES} bytes (question "${q.id}")`;
       }
     }
   }
   return null;
 }
+
+const questionContextBytes = (questions: GateQuestion[]): number =>
+  questions.reduce((n, q) => n + (typeof q.context === "string" ? Buffer.byteLength(q.context, "utf8") : 0), 0);
+
+const withoutQuestionContexts = (questions: GateQuestion[]): GateQuestion[] =>
+  questions.map(({ context: _dropped, ...q }) => q);
 
 const ORIGIN_STRING_KEYS: ReadonlySet<string> = new Set(["paneId", "tabId", "runId", "worktree", "surface"]);
 
@@ -459,13 +476,14 @@ export function createGateHandlers(
       if (payload?.nudge !== undefined && !isValidNudge(payload.nudge)) {
         return { ok: false as const, error: "nudge must be an object with a string session" };
       }
-      const labelError = oversizedLabel(questions);
-      if (labelError) return { ok: false as const, error: labelError };
-      if (payload?.context !== undefined) {
-        if (typeof payload.context !== "string") return { ok: false as const, error: "context must be a string" };
-        if (Buffer.byteLength(payload.context, "utf8") > CONTEXT_CAP_BYTES) {
-          return { ok: false as const, error: `context exceeds ${CONTEXT_CAP_BYTES} bytes` };
-        }
+      const optionTextError = oversizedOptionText(questions);
+      if (optionTextError) return { ok: false as const, error: optionTextError };
+      if (payload?.context !== undefined && typeof payload.context !== "string") {
+        return { ok: false as const, error: "context must be a string" };
+      }
+      const gateContextBytes = payload?.context === undefined ? 0 : Buffer.byteLength(payload.context, "utf8");
+      if (gateContextBytes + questionContextBytes(questions) > CONTEXT_CAP_BYTES) {
+        return { ok: false as const, error: `context exceeds ${CONTEXT_CAP_BYTES} bytes (gate context plus question contexts share the budget)` };
       }
       if (payload?.origin !== undefined) {
         const originError = invalidOrigin(payload.origin);
@@ -737,14 +755,27 @@ export function createGateHandlers(
     // reject, an oversized context here must not fail the whole ask, since
     // the caller did not author the context string by hand. The omission is
     // reported back, though -- the silent drop is what taught callers that
-    // big context was risky and bare forms were safe.
+    // big context was risky and bare forms were safe. Question contexts go
+    // first (they are supplementary), the gate context only if it is over
+    // the budget by itself; contextOmitted covers either drop.
     let context = typeof payload?.context === "string" ? payload.context : undefined;
-    const contextOmitted = context !== undefined && Buffer.byteLength(context, "utf8") > CONTEXT_CAP_BYTES;
-    if (contextOmitted) context = undefined;
+    let storedQuestions = questions;
+    const gateContextBytes = context === undefined ? 0 : Buffer.byteLength(context, "utf8");
+    const contextOmitted = gateContextBytes + questionContextBytes(questions) > CONTEXT_CAP_BYTES;
+    if (contextOmitted) {
+      storedQuestions = withoutQuestionContexts(questions);
+      if (gateContextBytes > CONTEXT_CAP_BYTES) context = undefined;
+    }
 
     const kind = typeof payload?.kind === "string" && payload.kind.trim() ? payload.kind.trim() : "question";
     const ownerIsHuman = deriveOwner(resolved.runId ? { runId: resolved.runId } : undefined, runSpawnedBy) === "human";
-    if (ownerIsHuman && !EXEMPT_CONTEXT_KINDS.has(kind) && !contextOmitted && !context?.trim()) {
+    // Only a dropped GATE context exempts the guard: that drop is the size
+    // cap eating the one thing a human-owned gate needs. A drop of question
+    // contexts alone (contextOmitted true, gate context absent because the
+    // caller never sent one) must not read as "context omitted for size" --
+    // it is just no context, same as never having one.
+    const gateContextOmitted = gateContextBytes > CONTEXT_CAP_BYTES;
+    if (ownerIsHuman && !EXEMPT_CONTEXT_KINDS.has(kind) && !gateContextOmitted && !context?.trim()) {
       return { ok: false as const, error: MISSING_CONTEXT_ERROR };
     }
 
@@ -762,7 +793,7 @@ export function createGateHandlers(
     const opened = await handlers["gate:open"]({
       subject: resolved.subject,
       kind,
-      questions,
+      questions: storedQuestions,
       ...(isPlainObject(payload?.meta) ? { meta: payload!.meta } : {}),
       ...(typeof payload?.agent === "string" && payload.agent.trim() ? { agent: payload.agent } : {}),
       ...(context !== undefined ? { context } : {}),

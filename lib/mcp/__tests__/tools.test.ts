@@ -208,6 +208,44 @@ describe("mcpTools", () => {
         { id: "q1", label: "Proceed?", multi: false, options: [{ value: "yes", label: "Yes (Recommended)" }] },
       ]);
     });
+
+    test("schema documents description on an option object and context on a question, and both survive normalization", async () => {
+      const questionSchema = (
+        mcpTools().find((t) => t.name === "gate_ask")!.inputSchema as {
+          properties: { questions: { items: { properties: Record<string, { description?: string }> & { options: { items: { oneOf: unknown[] } } } } } };
+        }
+      ).properties.questions.items;
+      expect(questionSchema.properties.context?.description).toMatch(/question/i);
+      const optionObject = questionSchema.properties.options.items.oneOf[1] as { properties: Record<string, { description?: string }> };
+      expect(optionObject.properties.description?.description).toMatch(/option/i);
+
+      let capturedPayload: Record<string, unknown> | undefined;
+      mock.module("../../../packages/rt-client/src/transport.ts", () => ({
+        ...realTransport,
+        rtCommand: async (cmd: string, payload: Record<string, unknown>) => {
+          if (cmd === "gate:ask") {
+            capturedPayload = payload;
+            return { ok: true, data: { id: "g1", presentation: "form", subject: "input-subject" } };
+          }
+          throw new Error(`unexpected rtCommand("${cmd}")`);
+        },
+      }));
+      const tool = mcpTools().find((t) => t.name === "gate_ask")!;
+      const res = await tool.handler(
+        {
+          questions: [{
+            id: "q1", label: "Proceed?", multi: false, context: "what this one turns on",
+            options: [{ value: "yes", label: "yes", description: "ship it" }],
+          }],
+        },
+        {} as NodeJS.ProcessEnv,
+      );
+      expect(res.ok).toBe(true);
+      const questions = capturedPayload?.questions as unknown as GateQuestion[];
+      expect(normalizeGateQuestions(questions)).toEqual([
+        { id: "q1", label: "Proceed?", multi: false, context: "what this one turns on", options: [{ value: "yes", label: "Yes", description: "ship it" }] },
+      ]);
+    });
   });
 
   test("roster contains gate_ask", () => {

@@ -219,7 +219,7 @@ export async function gateAsk(args: string[]): Promise<void> {
   if (!res.ok || res.data === undefined) askFail(res.error ?? "ask failed");
   const data = res.data;
   if (data.contextOmitted) {
-    console.error(`rt gate: context omitted: it exceeded the ${CONTEXT_CAP_BYTES}-byte cap, so this gate carries none; shorten it and re-ask`);
+    console.error(`rt gate: context omitted: gate context plus question contexts exceeded the shared ${CONTEXT_CAP_BYTES}-byte budget; question contexts were dropped, and the gate context too if it was over on its own; shorten and re-ask`);
   }
   console.log(JSON.stringify(gateAskOutput(data)));
 }
