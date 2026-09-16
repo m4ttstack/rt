@@ -56,6 +56,14 @@ function buildIntoTempDir(): string {
   );
   if (codec.exitCode !== 0) throw new Error(`bun build (identity codec) failed:\n${codec.stderr.toString()}`);
 
+  // Mirrors the package build's third entry: the browser-safe gate barrel
+  // (target browser) for the ./gate subpath.
+  const gate = Bun.spawnSync(
+    ["bun", "build", "src/gate.ts", "--outfile", join(outDir, "gate.js"), "--target", "browser", "--format", "esm"],
+    { cwd: pkgDir, stdout: "pipe", stderr: "pipe" },
+  );
+  if (gate.exitCode !== 0) throw new Error(`bun build (gate) failed:\n${gate.stderr.toString()}`);
+
   const types = Bun.spawnSync(
     ["bunx", "tsc", "-p", "tsconfig.json", "--outDir", outDir],
     { cwd: pkgDir, stdout: "pipe", stderr: "pipe" },
