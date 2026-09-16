@@ -142,7 +142,20 @@ export function createGatePush(opts: {
   const consumeSweepCounter = new Map<string, number>();
   const consumeAttempts = new Map<string, number>();
   const consumeGivenUp = new Set<string>();
+  const forgetConsumeState = (id: string): void => {
+    consumeSweepCounter.delete(id);
+    consumeAttempts.delete(id);
+    consumeGivenUp.delete(id);
+  };
   let paneRetriesInFlight = false;
+
+  /** The dead-pane pass carries both terminal states, so the phrase follows
+      the row's own status: telling a pane its closed gate was "answered"
+      would send it to read an answer that does not exist. */
+  const retryPhrase = (row: GateRow): string =>
+    row.status === "closed"
+      ? GATE_CLOSED_PHRASE(row.id, row.closedReason)
+      : GATE_ANSWERED_PHRASE(row.id, row.answer?.by);
 
   async function safeDeliver(socketPath: string, body: string, context: Record<string, unknown>): Promise<boolean> {
     try {
@@ -165,24 +178,31 @@ export function createGatePush(opts: {
       dead-pane retry pass (which injects Escape), and a transient success
       must never overwrite a `confirmed` outcome herd status already reads.
       The row keeps whatever delivery outcome it had before the sweep touched
-      it, either way. */
-  async function pushDoorbell(row: GateRow, phrase: string, opts: { recordDelivery?: boolean } = {}): Promise<boolean> {
+      it, either way.
+      `dead` separates the two failures that mode collapses: an unresolvable
+      session is a pane that no longer exists, not a transport blip, and the
+      sweep acts on it rather than re-pushing at a session nothing can reach. */
+  async function pushDoorbell(
+    row: GateRow,
+    phrase: string,
+    opts: { recordDelivery?: boolean } = {},
+  ): Promise<{ ok: boolean; dead: boolean }> {
     const recordDelivery = opts.recordDelivery ?? true;
     const sessionId = row.nudge?.session;
-    if (!sessionId) return false;
+    if (!sessionId) return { ok: false, dead: false };
     const binding = resolveSession(sessionId);
     if (!binding) {
       if (recordDelivery) store.markDelivery(row.id, "dead-pane");
-      return false;
+      return { ok: false, dead: true };
     }
     const body = wrapCrossSession("gate-facility", phrase);
     const ok = await safeDeliver(binding.socketPath, body, { gateId: row.id, sessionId });
     if (recordDelivery) store.markDelivery(row.id, ok ? "delivered" : "dead-pane");
-    return ok;
+    return { ok, dead: false };
   }
 
   async function pushToPane(row: GateRow, phrase: string): Promise<void> {
-    const ok = await pushDoorbell(row, phrase);
+    const { ok } = await pushDoorbell(row, phrase);
     // Escape only ever follows an ACCEPTED doorbell: the dismissed form's
     // next input must be the queued frame, and a dead pane has nothing
     // queued to find.
@@ -299,7 +319,7 @@ export function createGatePush(opts: {
           if (attempts >= maxPaneRetries) continue;
           retried++;
           paneAttempts.set(row.id, attempts + 1);
-          await pushToPane(row, GATE_ANSWERED_PHRASE(row.id, row.answer?.by));
+          await pushToPane(row, retryPhrase(row));
           const after = store.get(row.id);
           if (after?.delivery?.outcome === "delivered") { delivered++; paneAttempts.delete(row.id); }
           else if (attempts + 1 >= maxPaneRetries) { gaveUp++; log.warn({ gateId: row.id, session: row.nudge?.session }, "gate-push: pane nudge gave up; worker was never woken"); }
@@ -319,8 +339,22 @@ export function createGatePush(opts: {
           if (consumeGivenUp.has(row.id)) continue;
           const consumeAttemptCount = consumeAttempts.get(row.id) ?? 0;
           if (consumeAttemptCount < 5) {
+            const res = await pushDoorbell(row, GATE_ANSWERED_PHRASE(row.id, row.answer?.by), { recordDelivery: false });
+            // A session that no longer resolves is not a re-delivery failure
+            // to retry on this cadence: recording it hands the row to the
+            // first pass (which injects Escape) and puts herd status's
+            // "worker not woken" line up. Its budget is released rather than
+            // spent, so a pane that comes back gets its full run of nudges.
+            if (res.dead) {
+              store.markDelivery(row.id, "dead-pane");
+              forgetConsumeState(row.id);
+              log.warn(
+                { gateId: row.id, session: row.nudge?.session },
+                "gate-push: re-delivery found a dead pane; handing to the dead-pane retry",
+              );
+              continue;
+            }
             consumeAttempts.set(row.id, consumeAttemptCount + 1);
-            await pushDoorbell(row, GATE_ANSWERED_PHRASE(row.id, row.answer?.by), { recordDelivery: false });
             reNudged++;
           } else {
             consumeGivenUp.add(row.id);
@@ -328,11 +362,7 @@ export function createGatePush(opts: {
           }
         }
         for (const id of [...consumeSweepCounter.keys()]) {
-          if (!unconsumedLive.has(id)) {
-            consumeSweepCounter.delete(id);
-            consumeAttempts.delete(id);
-            consumeGivenUp.delete(id);
-          }
+          if (!unconsumedLive.has(id)) forgetConsumeState(id);
         }
 
         return { retried, delivered, gaveUp, reNudged };

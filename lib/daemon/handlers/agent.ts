@@ -2,9 +2,11 @@
  * agent:* ... daemon handlers for `rt agent` (launch + record + resume; no
  * liveness by design - spec 2026-08-25).
  *
- * Session uuids are minted here and validated in lib/agent-argv.ts before
+ * Session uuids are minted here and validated in lib/agent-argv/ before
  * any spawn; resume always runs under the RECORDED account because claude
- * transcripts are per-cswap-profile.
+ * transcripts are per-cswap-profile. codex mints its own id instead, so a
+ * codex record's sessionId starts as rt's placeholder uuid and is replaced
+ * by updateAgentSessionId once the real one is captured.
  *
  * Every launch (start and resume, herdr and headless) stamps the
  * gate-protocol env (RT_AGENT_ID, RT_GATE_SUBJECT, RT_DAEMON_SOCK)
@@ -23,11 +25,11 @@ import type { Database } from "bun:sqlite";
 import type { Logger } from "pino";
 import {
   deleteAgent, finishAgent, getAgent, insertAgent, isValidChatName, listAgents, markAgentResumed,
-  newAgentId, reserveAgentHandle, updateAgentPane, type AgentRecord, type AgentSurface,
+  newAgentId, reserveAgentHandle, updateAgentPane, updateAgentSessionId, type AgentRecord, type AgentSurface,
 } from "../../state/index.ts";
-import { buildClaudeArgv, buildPaneCommand, CROSS_SESSION_INBOUND_SETTINGS, type ClaudeInvocation } from "../../agent-argv.ts";
+import { buildAgentArgv, buildAgentPaneCommand, CROSS_SESSION_INBOUND_SETTINGS, type AgentInvocation, type AgentProvider } from "../../agent-argv/index.ts";
 import { mergeGateForkHookSettings, resolveGateForkHookPath } from "../../agent-hooks.ts";
-import { defaultHerdrRunner, launchInWorkspace, type HerdrRunner } from "../../agent-herdr.ts";
+import { defaultHerdrRunner, herdrAgentSessionId, launchInWorkspace, type HerdrRunner } from "../../agent-herdr.ts";
 import { repoLabel } from "../../repo-label.ts";
 import { getSetting } from "../../settings/resolve.ts";
 import { rtDir } from "../../rt-paths.ts";
@@ -43,9 +45,72 @@ import type { CommandResult } from "./types.ts";
 export interface HeadlessChild {
   exited: Promise<number>;
   stdout: () => Promise<string>;
+  /** Resolves with the provider-minted session id once seen in the stream,
+      or undefined if the stream ended without one. Only populated when
+      captureSessionId was requested at spawn time (claude never needs this
+      -- it mints nothing, rt already chose the id). */
+  sessionId: () => Promise<string | undefined>;
 }
 
-function defaultSpawnHeadless(argv: string[], cwd: string, env: Record<string, string> = {}): HeadlessChild {
+/** Scans a codex `--json` event stream for the first `thread_id` any event
+    line carries, without buffering the whole stream (that's `stdout()`'s job,
+    on the other half of the tee below). In practice that is the
+    `thread.started` event -- confirmed against a real `codex exec --json` run
+    2026-09-15, the line is `{"type":"thread.started","thread_id":"<uuid>"}`;
+    codex calls this a "thread" in the stream but it is the same id `codex
+    exec resume <SESSION_ID>` accepts. The match is deliberately on the field
+    rather than on `type === "thread.started"`: every thread_id in one exec's
+    stream is that same session's, so keying on the field survives codex
+    renaming or reordering the event that first carries it. Exported so it can
+    be unit-tested directly against a fake stream, rather than only
+    indirectly through a test double that reimplements the parsing. */
+export function extractSessionId(stream: ReadableStream<Uint8Array>): Promise<string | undefined> {
+  return (async () => {
+    // bun-types' ReadableStream<Uint8Array> and TextDecoderStream's
+    // WritableStream<BufferSource> disagree just enough (BufferSource vs
+    // Uint8Array) that pipeThrough's own generic can't unify them; the cast
+    // is a type-level workaround for that mismatch, not a runtime one --
+    // TextDecoderStream really does accept a Uint8Array chunk.
+    const reader = (stream.pipeThrough(new TextDecoderStream() as unknown as ReadableWritablePair<string, Uint8Array>)).getReader();
+    let buffer = "";
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += value;
+        let newlineAt: number;
+        while ((newlineAt = buffer.indexOf("\n")) !== -1) {
+          const line = buffer.slice(0, newlineAt);
+          buffer = buffer.slice(newlineAt + 1);
+          if (!line.trim()) continue;
+          try {
+            const event = JSON.parse(line) as { thread_id?: unknown };
+            if (typeof event.thread_id === "string" && event.thread_id) return event.thread_id;
+          } catch {
+            // Not every line is JSON we care about; keep scanning.
+          }
+        }
+      }
+    } finally {
+      // Cancelled, not merely released: this reader drains one branch of a
+      // tee, and the tee queues every chunk an undrained branch has not taken
+      // yet -- so returning early on the id without cancelling would hold a
+      // long codex run's whole output twice.
+      try {
+        await reader.cancel();
+      } catch {
+        // Already closed or errored; nothing left to cancel.
+      }
+      reader.releaseLock();
+    }
+    return undefined;
+  })();
+}
+
+function defaultSpawnHeadless(
+  argv: string[], cwd: string, env: Record<string, string> = {},
+  opts: { captureSessionId?: boolean } = {},
+): HeadlessChild {
   const proc = Bun.spawn(argv as [string, ...string[]], {
     cwd,
     env: { ...process.env, ...env },
@@ -53,23 +118,37 @@ function defaultSpawnHeadless(argv: string[], cwd: string, env: Record<string, s
     stdout: "pipe",
     stderr: "ignore",
   });
+  if (!opts.captureSessionId || !proc.stdout) {
+    return {
+      exited: proc.exited,
+      stdout: () => new Response(proc.stdout).text(),
+      sessionId: () => Promise.resolve(undefined),
+    };
+  }
+  const [forText, forId] = proc.stdout.tee();
+  const sessionIdPromise = extractSessionId(forId);
   return {
     exited: proc.exited,
-    stdout: () => new Response(proc.stdout).text(),
+    stdout: () => new Response(forText).text(),
+    sessionId: () => sessionIdPromise,
   };
 }
 
 /** A declared+unset key resolves undefined without throwing, so a caught error here is already the unexpected case. */
-function fromSetting(key: string, log: Logger): string | undefined {
+function fromSetting<T = string>(key: string, log: Logger): T | undefined {
   try {
-    return getSetting<string>(key).value ?? undefined;
+    return getSetting<T>(key).value ?? undefined;
   } catch (err) {
     log.warn({ err, key }, "agent: settings read failed");
     return undefined;
   }
 }
 
-/** Deterministic from the id alone, so it can be known and stored before the headless process is even spawned. */
+/** Deterministic from the id alone, so it can be known and stored before the
+    headless process is even spawned. The body written there is
+    provider-dependent: claude's `--output-format json` produces one JSON
+    object, codex's `--json` produces a JSONL event stream. Nothing in-repo
+    parses it today; whoever adds a consumer must branch on rec.provider. */
 function agentResultPath(id: string): string {
   return join(rtDir(), "agents", `${id}.json`);
 }
@@ -88,8 +167,10 @@ function extraArgsHasSettingsFlag(extraArgs: string | undefined): boolean {
 /**
  * Absolute path to a freshly written per-agent settings file carrying the
  * AskUserQuestion PreToolUse hook (Task 9), or undefined when injection is
- * skipped. Three skip cases, all non-fatal to the launch: the launch
- * carries no explicit subject (with no
+ * skipped. Four skip cases, all non-fatal to the launch: the provider is not
+ * claude (only claude reads `--settings`; codex's builders ignore
+ * inv.settingsPath outright, so writing the file would leave a dead one in the
+ * agent-hooks directory per launch), the launch carries no explicit subject (with no
  * subject there is no gate for the hook to check, so it would only ever
  * degrade to allow; skip writing it rather than ship a no-op hook file),
  * extraArgs already sets --settings (merge is not attempted -- the user's
@@ -101,13 +182,17 @@ function extraArgsHasSettingsFlag(extraArgs: string | undefined): boolean {
  * the --name-triggered inline CROSS_SESSION_INBOUND_SETTINGS JSON (a
  * reserved handle, non-headless -- claudeArgs' own condition), that object
  * is folded into this SAME file via mergeGateForkHookSettings instead of
- * being emitted as a second flag. lib/agent-argv.ts's claudeArgs skips its
+ * being emitted as a second flag. lib/agent-argv/claude.ts's claudeArgs skips its
  * inline JSON whenever settingsPath is set, so the fold here is the only
  * place that JSON survives for such a launch. A subjectless launch skips
  * this file entirely, so that inline JSON reverts to riding its own
  * --settings flag exactly as it did before the gate-fork hook existed.
  */
 function resolveHookSettingsPath(rec: AgentRecord, log: Logger): string | undefined {
+  if (rec.provider !== "claude") {
+    log.debug({ id: rec.id, provider: rec.provider }, "agent: provider does not read --settings; gate-fork hook injection skipped");
+    return undefined;
+  }
   if (rec.subject === undefined) {
     log.debug({ id: rec.id }, "agent: no explicit subject; gate-fork hook injection skipped");
     return undefined;
@@ -145,6 +230,22 @@ const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 const agentOwner = (id: string): string => `agent:${id}`;
 
+/** Names the real flag the caller will be looking for; codex.ts's own
+    equivalent throw already spells the codex form, and a claude-worded
+    message on a codex launch sends the reader to the wrong CLI's docs. */
+function headlessStdinBlurb(provider: AgentProvider): string {
+  return provider === "codex"
+    ? "codex exec with no prompt blocks on stdin"
+    : "claude -p with no prompt blocks on stdin";
+}
+
+/** herdr only learns codex's session id after the pane finishes its first
+    turn (see herdrAgentSessionId), and a real codex turn routinely runs for
+    many minutes, so a short budget would give up before the id ever exists.
+    Matches AGENT_WAIT_TIMEOUT_MS in lib/rebase-escalation.ts, this repo's
+    existing precedent for waiting on a herdr pane to finish work. */
+const CODEX_HERDR_SESSION_ID_TIMEOUT_MS = 10 * 60_000;
+
 /** herdr invoked against a freshly-spawned bg server can fail before any pane
     ever runs: the bg env's PATH may not carry herdr's own binary yet
     (`bin not found at ...`) or herdr's own process exits 127 resolving it.
@@ -161,13 +262,21 @@ export function createAgentHandlers(opts: {
   log?: Logger;
   herdrRunner?: HerdrRunner;
   herdrRunnerForSocket?: (socket: string) => HerdrRunner;
-  spawnHeadless?: (argv: string[], cwd: string, env: Record<string, string>) => HeadlessChild;
+  spawnHeadless?: (argv: string[], cwd: string, env: Record<string, string>, opts?: { captureSessionId?: boolean }) => HeadlessChild;
   insertAgentFn?: typeof insertAgent;
   /** The daemon-owned background herdr server `--bg` launches onto (spec "The bg service"). Omitted, `bg: true` is refused. */
   bg?: Pick<BgService, "ensure" | "reprobe">;
   bgClaims?: Pick<BgClaimsStore, "claim" | "releaseByPane">;
   /** herd-lifecycle.ts's watch is idempotent by socket, so an already-watched bg socket is a no-op here. */
   lifecycle?: { watch(socket: string): void };
+  /** Suppresses codex's post-launch session-id capture on the herdr path. Set
+      only by the in-process CLI fallback (commands/agent-fallback.ts), which
+      returns and exits: a detached poll there would either hold the process
+      open for the whole timeout or be killed mid-flight. The daemon is
+      long-lived, so it leaves this false and always captures. Headless needs
+      no equivalent gate: that fallback refuses the headless surface outright,
+      before any handler is constructed. */
+  skipSessionCapture?: boolean;
 }):
   // Direct `unknown`-payload members, not `Pick<TypedHandlers, ...>`: a wider
   // `unknown` param still satisfies TypedHandlers' narrower one at the
@@ -180,10 +289,11 @@ export function createAgentHandlers(opts: {
   const log = opts.log ?? lazyChildLogger("agent");
   const spawnHeadless = opts.spawnHeadless ?? defaultSpawnHeadless;
   const insertAgentFn = opts.insertAgentFn ?? insertAgent;
+  const skipSessionCapture = opts.skipSessionCapture ?? false;
 
   async function launch(
     rec: AgentRecord,
-    session: ClaudeInvocation["session"],
+    session: AgentInvocation["session"],
     prompt: string | undefined,
     tabLabel: string,
     workspaceLabel: string,
@@ -196,7 +306,7 @@ export function createAgentHandlers(opts: {
     };
     const settingsPath = resolveHookSettingsPath(rec, log);
 
-    const inv: ClaudeInvocation = {
+    const inv: AgentInvocation = {
       session,
       headless: rec.surface === "headless",
       ...(rec.account !== undefined && { account: rec.account }),
@@ -204,6 +314,7 @@ export function createAgentHandlers(opts: {
       ...(rec.effort !== undefined && { effort: rec.effort }),
       ...(rec.handle !== undefined && { name: rec.handle }),
       ...(rec.extraArgs !== undefined && { extraArgs: rec.extraArgs }),
+      ...(rec.yolo !== undefined && { yolo: rec.yolo }),
       ...(prompt !== undefined && { prompt }),
       // Headless has no pane shell line for buildPaneCommand to interpolate
       // env into (see the payload.env rejection above); its gate env instead
@@ -217,7 +328,7 @@ export function createAgentHandlers(opts: {
         ? (opts.herdrRunnerForSocket ?? ((socket: string) => defaultHerdrRunner({ ...process.env, HERDR_SOCKET_PATH: socket })))(extra.herdrSocket)
         : (opts.herdrRunner ?? defaultHerdrRunner());
       const out = await launchInWorkspace(
-        { workspaceLabel, tabLabel, paneCommand: buildPaneCommand(rec.cwd, inv) },
+        { workspaceLabel, tabLabel, paneCommand: buildAgentPaneCommand(rec.provider as AgentProvider, rec.cwd, inv) },
         runner,
       );
       if (out.focusedExisting) {
@@ -231,17 +342,57 @@ export function createAgentHandlers(opts: {
       rec.paneId = out.paneId;
       rec.tabId = out.tabId;
       rec.workspaceId = out.workspaceId;
+      if (rec.provider === "codex" && !skipSessionCapture) {
+        // `runner`, not the default: a --bg or herd launch put this pane on a
+        // socket-scoped herdr server, and defaultHerdrRunner() would poll the
+        // ambient visible one, which has never heard of the pane -- the whole
+        // budget spent on a server that can only answer "no such pane", and
+        // the record left stuck on rt's placeholder uuid forever.
+        //
+        // rec.sessionId returned to the caller by the handler below is
+        // therefore PROVISIONAL for codex: it is rt's placeholder, and this
+        // chain replaces the stored value once the real id lands. A response
+        // already in flight keeps the old value, so `rt agent resume <that
+        // uuid>` stops matching (getAgent keys on id OR session_id) -- the
+        // record id stays stable and is the safe handle.
+        void herdrAgentSessionId(out.paneId, CODEX_HERDR_SESSION_ID_TIMEOUT_MS, runner).then((sid) => {
+          if (sid) updateAgentSessionId(rec.id, sid, db);
+          // Two real causes, not one: `herdr integration install codex` is
+          // missing/misconfigured, OR (equally likely -- herdr's
+          // agent_session only populates once codex completes a turn, per
+          // Step 0) this launch carried no prompt and the pane never ran
+          // one. Naming only the integration cause here would send someone
+          // chasing a nonexistent setup problem on a plain promptless launch.
+          else log.warn({ id: rec.id }, "agent: codex herdr launch never reported a session id (either `herdr integration install codex` isn't set up, or the pane never completed a turn -- e.g. this launch had no prompt)");
+        }).catch((err) => {
+          // The poll has no try/catch around the runner call, so a herdr
+          // binary that cannot be resolved rejects the whole chain; detached,
+          // that would surface as an unhandled rejection.
+          log.warn({ err, id: rec.id }, "agent: codex herdr session-id capture failed");
+        });
+      }
       return { ok: true, data: rec };
     }
 
-    const argv = buildClaudeArgv(inv);
+    const argv = buildAgentArgv(rec.provider as AgentProvider, inv);
     const resultPath = agentResultPath(rec.id);
     rec.resultPath = resultPath;
     mkdirSync(dirname(resultPath), { recursive: true });
     // The caller inserts rec before invoking launch() for every headless
     // path (start and resume alike), so the row already exists here --
     // finishAgent below can never race an insert that hasn't happened yet.
-    const child = spawnHeadless(argv, rec.cwd, gateEnv);
+    const child = spawnHeadless(argv, rec.cwd, gateEnv, { captureSessionId: rec.provider === "codex" });
+    if (rec.provider === "codex") {
+      // Same provisional-sessionId caveat as the herdr branch above: the
+      // record this handler returns still carries rt's placeholder uuid, and
+      // this chain replaces the stored value when the real id arrives.
+      void child.sessionId().then((sid) => {
+        if (sid) updateAgentSessionId(rec.id, sid, db);
+        else log.warn({ id: rec.id }, "agent: codex headless launch never reported a session id");
+      }).catch((err) => {
+        log.warn({ err, id: rec.id }, "agent: codex headless session-id capture failed");
+      });
+    }
     void child.exited.then(async (exitCode) => {
       try {
         writeFileSync(resultPath, await child.stdout());
@@ -264,6 +415,14 @@ export function createAgentHandlers(opts: {
         return { ok: false, error: `invalid surface "${payload.surface}"; must be one of herdr, headless` };
       }
       const surface: AgentSurface = payload.surface ?? "herdr";
+      const providerRaw = payload.provider ?? fromSetting("agent.provider", log) ?? "claude";
+      if (providerRaw !== "claude" && providerRaw !== "codex") {
+        return { ok: false, error: `invalid provider "${providerRaw}"; must be one of claude, codex` };
+      }
+      const provider: AgentProvider = providerRaw;
+      if (payload.account !== undefined && provider === "codex") {
+        return { ok: false, error: "codex does not support --account in this version (see spec's Non-goals)" };
+      }
       if (payload.bg && surface === "headless") {
         return { ok: false, error: "--bg is a herdr-surface option" };
       }
@@ -272,7 +431,7 @@ export function createAgentHandlers(opts: {
       }
       const prompt = payload.prompt;
       if (surface === "headless" && !prompt) {
-        return { ok: false, error: "headless launch requires a prompt (claude -p with no prompt blocks on stdin)" };
+        return { ok: false, error: `headless launch requires a prompt (${headlessStdinBlurb(provider)})` };
       }
       if (payload.env !== undefined && !isStringRecord(payload.env)) {
         return { ok: false, error: "env must be an object of strings" };
@@ -294,7 +453,7 @@ export function createAgentHandlers(opts: {
       }
       const rec: AgentRecord = {
         id: newAgentId(),
-        repo, cwd, provider: "claude", surface,
+        repo, cwd, provider, surface,
         sessionId: crypto.randomUUID(),
         createdAt: Date.now(),
       };
@@ -306,23 +465,33 @@ export function createAgentHandlers(opts: {
       // this field is whether resolveHookSettingsPath sees an explicit
       // subject to gate hook injection on.
       if (payload.subject !== undefined) rec.subject = payload.subject;
-      const model = payload.model ?? fromSetting("agent.model", log);
-      const effort = payload.effort ?? fromSetting("agent.effort", log);
-      const account = payload.account ?? fromSetting("agent.account", log);
-      const extraArgs = payload.extraArgs ?? fromSetting("agent.extraArgs", log);
+      const model = payload.model ?? fromSetting(`agent.${provider}.model`, log);
+      const effort = payload.effort ?? fromSetting(`agent.${provider}.effort`, log);
+      const extraArgs = payload.extraArgs ?? fromSetting(`agent.${provider}.extraArgs`, log);
+      const yolo = payload.yolo ?? fromSetting<boolean>(`agent.${provider}.yolo`, log) ?? false;
       if (model !== undefined) rec.model = model;
       if (effort !== undefined) rec.effort = effort;
-      if (account !== undefined) rec.account = account;
       if (extraArgs !== undefined) rec.extraArgs = extraArgs;
+      // Stored unconditionally, including false: an explicit `--no-yolo`
+      // against a true `agent.<provider>.yolo` setting has to survive into the
+      // record, or resume would silently re-derive nothing and leave it unset.
+      rec.yolo = yolo;
+      if (provider === "claude") {
+        const account = payload.account ?? fromSetting("agent.claude.account", log);
+        if (account !== undefined) rec.account = account;
+      }
       if (payload.label !== undefined) rec.label = payload.label;
       if (payload.caller !== undefined) rec.caller = payload.caller;
       if (surface === "headless") {
         rec.resultPath = agentResultPath(rec.id);
       } else if (payload.handle) {
         rec.handle = payload.handle;
-      } else {
+      } else if (provider === "claude") {
         // Headless never signs into chat (see claudeArgs), so reserving a
-        // handle for it would only burn an LRU pool slot no one adopts.
+        // handle for it would only burn an LRU pool slot no one adopts. Nor
+        // does codex at any surface: its builders have no --name / chat-handle
+        // mechanism (a spec Non-goal), so a reserved handle would be a pool
+        // slot spent on a record signed into nothing.
         rec.handle = reserveAgentHandle(db);
       }
 
@@ -410,7 +579,7 @@ export function createAgentHandlers(opts: {
       }
       const surface: AgentSurface = payload.surface ?? rec.surface;
       if (surface === "headless" && !payload.prompt) {
-        return { ok: false, error: "headless resume requires a prompt (claude -p with no prompt blocks on stdin)" };
+        return { ok: false, error: `headless resume requires a prompt (${headlessStdinBlurb(rec.provider as AgentProvider)})` };
       }
       // ↺ prefix: resume tabs must never dedup against the still-open launch
       // tab; repeated resumes share the label and dedup against each other.

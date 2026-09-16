@@ -34,7 +34,7 @@ test("refuses headless start before spawning", async () => {
   const spy = { called: false };
   const res = await runAgentFallback("agent:start",
     { repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "headless" },
-    { db, spawnHeadless: () => { spy.called = true; return { exited: Promise.resolve(0), stdout: async () => "" }; } });
+    { db, spawnHeadless: () => { spy.called = true; return { exited: Promise.resolve(0), stdout: async () => "", sessionId: () => Promise.resolve(undefined) }; } });
   expect(res.ok).toBe(false);
   if (res.ok) throw new Error("unreachable");
   expect(res.error).toBe(HEADLESS_NEEDS_DAEMON);
@@ -61,6 +61,21 @@ test("refuses bg start before spawning: bg needs the daemon-owned server this fa
   if (res.ok) throw new Error("unreachable");
   expect(res.error).toBe(BG_NEEDS_DAEMON);
   expect(spy.called).toBe(false);
+});
+
+// The fallback is a short-lived CLI process: codex's session-id capture is a
+// detached poll with a ten-minute budget, so scheduling it here would hang the
+// process (or be killed mid-flight) and capture nothing either way.
+test("a codex herdr start schedules no session-id poll: the CLI would exit before it resolved", async () => {
+  const db = openStateDb(tmp());
+  const calls: string[][] = [];
+  const res = await runAgentFallback("agent:start",
+    { repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr", provider: "codex" },
+    { db, herdrRunner: okRunner(calls) });
+  expect(res.ok).toBe(true);
+  // Give a mis-scheduled poll a chance to make its first call before asserting.
+  await new Promise((r) => setTimeout(r, 50));
+  expect(calls.some((c) => c[0] === "agent" && c[1] === "get")).toBe(false);
 });
 
 test("list returns records", async () => {

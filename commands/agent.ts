@@ -2,7 +2,8 @@
  * rt agent: hand a prompt to a Claude Code agent and keep the receipt.
  *
  *   rt agent start  [--repo <path>] [--prompt <text> | --prompt-file <path>]
- *                   [--surface herdr|headless] [--model M] [--effort E]
+ *                   [--surface herdr|headless] [--provider claude|codex]
+ *                   [--model M] [--effort E] [--yolo | --no-yolo]
  *                   [--account A] [--label L] [--caller C]
  *                   [--workspace W] [--tab T] [--extra-args "<tail>"]
  *                   [--bg] [--json]
@@ -28,7 +29,7 @@ import type { RtResponse } from "../packages/rt-client/src/index.ts";
 
 const FLAGS_WITH_VALUES = new Set([
   "--repo", "--prompt", "--prompt-file", "--surface", "--model", "--effort",
-  "--account", "--label", "--caller", "--workspace", "--tab", "--extra-args",
+  "--account", "--label", "--caller", "--workspace", "--tab", "--extra-args", "--provider",
 ]);
 
 function fail(msg: string): never {
@@ -92,7 +93,7 @@ function parseSurface(s: string | undefined): AgentSurface | undefined {
 interface StartArgs {
   prompt?: string; surface?: AgentSurface; model?: string; effort?: string;
   account?: string; label?: string; caller?: string; workspace?: string;
-  tab?: string; extraArgs?: string; bg?: boolean;
+  tab?: string; extraArgs?: string; bg?: boolean; provider?: "claude" | "codex"; yolo?: boolean;
 }
 
 function parseStartArgs(args: string[]): StartArgs {
@@ -104,6 +105,11 @@ function parseStartArgs(args: string[]): StartArgs {
   if (resolved !== undefined) out.prompt = resolved;
   const surface = parseSurface(flagValue(args, "--surface"));
   if (surface !== undefined) out.surface = surface;
+  const provider = flagValue(args, "--provider");
+  if (provider !== undefined) {
+    if (provider !== "claude" && provider !== "codex") throw new Error(`invalid provider "${provider}": expected claude or codex`);
+    out.provider = provider;
+  }
   for (const [flag, key] of [
     ["--model", "model"], ["--effort", "effort"], ["--account", "account"],
     ["--label", "label"], ["--caller", "caller"], ["--workspace", "workspace"],
@@ -116,6 +122,13 @@ function parseStartArgs(args: string[]): StartArgs {
     if (surface === "headless") throw new Error("--bg is a herdr-surface option");
     out.bg = true;
   }
+  // Three states, not two: --yolo forces on, --no-yolo forces off, and
+  // omitting both leaves yolo undefined so agent.<provider>.yolo decides.
+  const yes = hasFlag(args, "--yolo");
+  const no = hasFlag(args, "--no-yolo");
+  if (yes && no) throw new Error("pass one of --yolo / --no-yolo, not both");
+  if (yes) out.yolo = true;
+  else if (no) out.yolo = false;
   return out;
 }
 
@@ -155,10 +168,12 @@ async function repoAndCwd(args: string[]): Promise<{ repo: string; cwd: string }
 function renderRecord(r: AgentRecord): string {
   const bits = [
     `${r.id}  ${repoLabel(r.repo)}  ${r.surface}`,
+    `provider ${r.provider}`,
     `session ${r.sessionId}`,
     r.handle && `handle ${r.handle}`,
     r.model && `model ${r.model}`,
     r.account && `account ${r.account}`,
+    r.yolo && "yolo",
     r.paneId && `pane ${r.paneId}`,
     r.finishedAt !== undefined && `exit ${r.exitCode}`,
     r.lastResumedAt !== undefined && "resumed",
@@ -177,10 +192,15 @@ async function runStart(args: string[]): Promise<void> {
   const payload = { repo, cwd, ...parsed };
   const data = unwrap(await dispatch("agent:start", payload, () => agentStart(payload)), "start");
   if (args.includes("--json")) {
+    // Deliberately unannotated: a machine consumer needs the raw record, and
+    // the session id it carries for codex is provisional (see the note below).
     console.log(JSON.stringify({ ok: true, agent: data }));
     return;
   }
   console.log(renderRecord(data));
+  if (data.provider === "codex") {
+    console.log(`note: codex mints its own session id; the one above is provisional. Capturing the real one needs the rt daemon running (start it with \`rt daemon start\` if it isn't) -- once it is, \`rt agent show ${data.id}\` confirms the real id before resuming.`);
+  }
 }
 
 async function runResume(args: string[]): Promise<void> {

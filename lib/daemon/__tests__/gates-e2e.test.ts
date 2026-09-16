@@ -12,6 +12,7 @@ import { tmpdir } from "os";
 import pino from "pino";
 import { createGatesStore, type GatesStore, type GateQuestion } from "../gates-store.ts";
 import { createGateHandlers } from "../handlers/gate.ts";
+import { createGatePush } from "../gate-push.ts";
 import type { EventsBus } from "../events-bus.ts";
 
 const log = pino({ level: "silent" });
@@ -80,5 +81,54 @@ describe("gate facility e2e", () => {
     s2.answer(id, { q: "a" }, "pane");
     expect((await w).status).toBe("answered");
     s2.close_();
+  });
+});
+
+/** The re-delivery sweep and the consumption stamp are two halves of one
+    loop that no unit file spans: the sweep lives in gate-push, the stamp in
+    the gate:wait handler, and the proof that a run: pane is woken once and
+    only once needs both wired to the same store. */
+describe("re-delivery meets consumption (run: subjects)", () => {
+  function sweepHarness() {
+    const store: GatesStore = createGatesStore({ dbPath: tmp("gates.db"), log });
+    const bus = { emitAt: () => 1 } as unknown as EventsBus;
+    const handlers = createGateHandlers(store, bus, () => {});
+    const doorbells: string[] = [];
+    const push = createGatePush({
+      store,
+      deliver: async (socketPath) => { doorbells.push(socketPath); return { ok: true as const }; },
+      resolveSession: (id) => ({ socketPath: id }),
+      log,
+    });
+    return { store, handlers, push, doorbells };
+  }
+
+  async function answeredRunGate(h: ReturnType<typeof sweepHarness>) {
+    const opened = await h.handlers["gate:open"]({
+      subject: "run:r1", kind: "clarify", questions: qs(),
+      pane: "w1:p1", nudge: { session: "sess-1" },
+      origin: { presentation: "form", paneId: "w1:p1" },
+    });
+    if (!opened.ok) throw new Error("open failed");
+    await h.handlers["gate:answer"]({ id: opened.data.id, answers: { q: "a" }, by: "console" });
+    await h.push.onAnswered(h.store.get(opened.data.id)!);
+    h.doorbells.length = 0;
+    return opened.data.id;
+  }
+
+  test("a run: pane that never read its answer is re-pushed on the 4th sweep", async () => {
+    const h = sweepHarness();
+    await answeredRunGate(h);
+    for (let i = 0; i < 3; i++) expect((await h.push.retryDeadPanes()).reNudged).toBe(0);
+    expect((await h.push.retryDeadPanes()).reNudged).toBe(1);
+    expect(h.doorbells).toEqual(["sess-1"]);
+  });
+
+  test("a run: pane that read its answer through gate:wait is never re-pushed again", async () => {
+    const h = sweepHarness();
+    const id = await answeredRunGate(h);
+    await h.handlers["gate:wait"]({ id, sessionId: "sess-1" });
+    for (let i = 0; i < 12; i++) expect((await h.push.retryDeadPanes()).reNudged).toBe(0);
+    expect(h.doorbells).toEqual([]);
   });
 });

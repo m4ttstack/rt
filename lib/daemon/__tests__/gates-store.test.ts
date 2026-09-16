@@ -512,7 +512,7 @@ describe("gates store (consumedAt)", () => {
   });
 });
 
-test("deadPanePushes lists answered nudged rows whose last push was dead-pane and are unreleased; never closed ones", () => {
+test("deadPanePushes lists nudged unreleased rows whose last push was dead-pane, answered or closed", () => {
   const s = store();
   const a = s.open({ subject: "herd:h/j1", kind: "question", questions: qs(), nudge: { session: "w1" } }).row.id;
   const b = s.open({ subject: "herd:h/j2", kind: "question", questions: qs(), nudge: { session: "w2" } }).row.id;
@@ -520,9 +520,69 @@ test("deadPanePushes lists answered nudged rows whose last push was dead-pane an
   s.answer(a, { q: "a" }, "shepherd"); s.markDelivery(a, "dead-pane");
   s.answer(b, { q: "a" }, "shepherd"); s.markDelivery(b, "delivered");
   s.answer(c, { q: "a" }, "shepherd"); s.markDelivery(c, "dead-pane");
+  // A closed gate's doorbell is the same wake as an answered one: the pane
+  // is blocked on a form whose gate ended, and only this pass retries it.
   const d = s.open({ subject: "herd:h/j4", kind: "question", questions: qs(), nudge: { session: "w4" } }).row.id;
   s.close(d, "abandoned"); s.markDelivery(d, "dead-pane");
-  expect(s.deadPanePushes().map((r) => r.id)).toEqual([a]);
+  expect(s.deadPanePushes().map((r) => r.id).sort()).toEqual([a, d].sort());
+});
+
+test("deadPanePushes skips an open row and a closed row whose doorbell was never attempted", () => {
+  const s = store();
+  const stillOpen = s.open({ subject: "herd:h/j1", kind: "question", questions: qs(), nudge: { session: "w1" } }).row.id;
+  s.markDelivery(stillOpen, "dead-pane");
+  const closedNoPush = s.open({ subject: "herd:h/j2", kind: "question", questions: qs(), nudge: { session: "w2" } }).row.id;
+  s.close(closedNoPush, "superseded");
+  expect(s.deadPanePushes().map((r) => r.id)).toEqual([]);
+});
+
+describe("the losing answer path", () => {
+  test("a pane-less gate's losing pane answer stamps consumedAt: it read the winner to get here", () => {
+    const s = store();
+    const row = s.open({ subject: "herd:h/j1", kind: "question", questions: qs(), nudge: { session: "s1" } }).row;
+    s.answer(row.id, { q: "a" }, "shepherd"); // the winner, from another surface
+    const loser = s.answer(row.id, { q: "b" }, GATE_BY_PANE, { session: "s1" });
+    expect(loser.ok).toBe(false);
+    expect(s.get(row.id)!.released).toBe(false); // no pane column, so release cannot stand in
+    expect(s.get(row.id)!.consumedAt).not.toBeNull();
+  });
+
+  test("a losing answer from a pane that is NOT the nudged one consumes nothing", () => {
+    const s = store();
+    const row = s.open({ subject: "herd:h/j1", kind: "question", questions: qs(), nudge: { session: "s1" } }).row;
+    s.answer(row.id, { q: "a" }, "shepherd");
+    s.answer(row.id, { q: "b" }, GATE_BY_PANE, { session: "s2" });
+    expect(s.get(row.id)!.consumedAt).toBeNull();
+  });
+
+  test("the nudged SESSION consumes whatever surface label its losing answer carried", () => {
+    const s = store();
+    const row = s.open({ subject: "herd:h/j1", kind: "question", questions: qs(), nudge: { session: "s1" } }).row;
+    s.answer(row.id, { q: "a" }, "shepherd");
+    // Session wins over `by` here exactly as it does on the winner path
+    // (answeredByNudgedPane): `by` is a free-text label, the session is not.
+    s.answer(row.id, { q: "b" }, "board", { session: "s1" });
+    expect(s.get(row.id)!.consumedAt).not.toBeNull();
+  });
+
+  test("an un-nudged gate's losing pane answer stamps nothing: consumption is a nudge concept", () => {
+    const s = store();
+    const row = s.open({ subject: "herd:h/j1", kind: "question", questions: qs(), pane: "pane-1" }).row;
+    s.answer(row.id, { q: "a" }, "shepherd");
+    s.answer(row.id, { q: "b" }, GATE_BY_PANE);
+    expect(s.get(row.id)!.released).toBe(true);
+    expect(s.get(row.id)!.consumedAt).toBeNull();
+  });
+
+  test("the losing pane's stamp is the first one: a later read never moves it", () => {
+    const s = store();
+    const row = s.open({ subject: "herd:h/j1", kind: "question", questions: qs(), nudge: { session: "s1" } }).row;
+    s.answer(row.id, { q: "a" }, "shepherd");
+    s.answer(row.id, { q: "b" }, GATE_BY_PANE, { session: "s1" });
+    const first = s.get(row.id)!.consumedAt;
+    s.markConsumed(row.id, (first ?? 0) + 5000);
+    expect(s.get(row.id)!.consumedAt).toBe(first);
+  });
 });
 
 describe("unconsumedAnsweredPushes", () => {
@@ -561,9 +621,23 @@ describe("unconsumedAnsweredPushes", () => {
     expect(s.unconsumedAnsweredPushes().map((r) => r.id)).toEqual([]);
   });
 
-  test("a nudged row on a non-herd subject is never returned, even answered/delivered/unconsumed", () => {
+  test("nudged rows on run: and mr: subjects are returned alongside herd: ones", () => {
     const s = store();
-    const row = s.open({ subject: "mr:https://x/1", kind: "review-post", questions: qs(), nudge: { session: "s1" } }).row;
+    const run = s.open({ subject: "run:r1", kind: "clarify", questions: qs(), nudge: { session: "s1" } }).row;
+    s.answer(run.id, { q: "a" }, "console");
+    s.markDelivery(run.id, "delivered");
+    const mr = s.open({ subject: "mr:https://x/1", kind: "review-post", questions: qs(), nudge: { session: "s2" } }).row;
+    s.answer(mr.id, { q: "a" }, "console");
+    s.markDelivery(mr.id, "delivered");
+    const herd = s.open({ subject: "herd:h/j1", kind: "question", questions: qs(), nudge: { session: "s3" } }).row;
+    s.answer(herd.id, { q: "a" }, "shepherd");
+    s.markDelivery(herd.id, "delivered");
+    expect(s.unconsumedAnsweredPushes().map((r) => r.id).sort()).toEqual([herd.id, mr.id, run.id].sort());
+  });
+
+  test("an un-nudged row is still never returned: there is no pane to re-push", () => {
+    const s = store();
+    const row = s.open({ subject: "run:r1", kind: "clarify", questions: qs() }).row;
     s.answer(row.id, { q: "a" }, "console");
     s.markDelivery(row.id, "delivered");
     expect(s.unconsumedAnsweredPushes().map((r) => r.id)).toEqual([]);
@@ -576,7 +650,6 @@ describe("unconsumedAnsweredPushes", () => {
     s.answer(row.id, { q: "b" }, GATE_BY_PANE); // loses the CAS, but its own pane has now reconciled
     s.markDelivery(row.id, "delivered");
     expect(s.get(row.id)!.released).toBe(true);
-    expect(s.get(row.id)!.consumedAt).toBeNull();
     expect(s.unconsumedAnsweredPushes().map((r) => r.id)).toEqual([]);
   });
 

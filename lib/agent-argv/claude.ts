@@ -1,5 +1,5 @@
 /**
- * lib/agent-argv.ts ... pure claude/cswap invocation building for `rt agent`.
+ * lib/agent-argv/claude.ts ... pure claude/cswap invocation building for `rt agent`.
  *
  * Session uuids are validated here because the claude CLI fails soft:
  * `--session-id ""` is silently ignored (random id minted) and
@@ -14,6 +14,7 @@
 
 import { homedir } from "os";
 import { join } from "path";
+import type { AgentInvocation } from "./types.ts";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -25,28 +26,7 @@ export function shellSingleQuote(s: string): string {
   return `'${s.replaceAll("'", `'\\''`)}'`;
 }
 
-export interface ClaudeInvocation {
-  account?: string;
-  model?: string;
-  effort?: string;
-  /** Chat handle reserved for this agent (lib/chat-names.ts pool); interactive only, see claudeArgs. */
-  name?: string;
-  extraArgs?: string;
-  session: { kind: "start"; sessionId: string } | { kind: "resume"; sessionId: string };
-  headless: boolean;
-  prompt?: string;
-  /** Extra environment for the pane shell, exported before the claude head. Values are single-quoted verbatim. */
-  env?: Record<string, string>;
-  /**
-   * Absolute path to a settings JSON file. A launch never emits two
-   * `--settings` flags (repeated-flag semantics are unverified against the
-   * real CLI): when set, this REPLACES the `--name`-triggered inline
-   * CROSS_SESSION_INBOUND_SETTINGS JSON below -- the caller (lib/agent-hooks.ts's
-   * mergeGateForkHookSettings, via lib/daemon/handlers/agent.ts) is
-   * responsible for folding that same object into the file's content first.
-   */
-  settingsPath?: string;
-}
+export type ClaudeInvocation = AgentInvocation;
 
 /** The inline `--settings` JSON a reserved chat handle triggers on its own (no settingsPath). Exported so a settingsPath caller can merge it into the SAME file instead of the flag being emitted twice. */
 export const CROSS_SESSION_INBOUND_SETTINGS = { crossSessionInbound: "accept" } as const;
@@ -59,7 +39,7 @@ export function resolveCswapBin(): string {
   return Bun.which("cswap") ?? join(process.env.HOME ?? homedir(), ".local", "bin", "cswap");
 }
 
-function claudeArgs(inv: ClaudeInvocation): string[] {
+function claudeArgs(inv: AgentInvocation): string[] {
   if (!isValidSessionUuid(inv.session.sessionId)) {
     throw new Error(`invalid session uuid "${inv.session.sessionId}" ... refusing to spawn`);
   }
@@ -68,6 +48,7 @@ function claudeArgs(inv: ClaudeInvocation): string[] {
   }
   const args: string[] = [];
   if (inv.headless) args.push("-p", "--output-format", "json");
+  if (inv.yolo) args.push("--dangerously-skip-permissions");
   if (inv.model) args.push("--model", inv.model);
   if (inv.effort) args.push("--effort", inv.effort);
   // Headless (-p) never signs into chat, so a reserved handle is not passed
@@ -86,7 +67,7 @@ function claudeArgs(inv: ClaudeInvocation): string[] {
   return args;
 }
 
-export function buildClaudeArgv(inv: ClaudeInvocation, bins?: { claude?: string; cswap?: string }): string[] {
+export function buildClaudeArgv(inv: AgentInvocation, bins?: { claude?: string; cswap?: string }): string[] {
   const args = claudeArgs(inv);
   // claude args live only after "--"; the literal word "claude" is never
   // among them since cswap runs claude itself.
@@ -94,7 +75,7 @@ export function buildClaudeArgv(inv: ClaudeInvocation, bins?: { claude?: string;
   return [bins?.claude ?? resolveClaudeBin(), ...args];
 }
 
-export function buildPaneCommand(cwd: string, inv: ClaudeInvocation): string {
+export function buildPaneCommand(cwd: string, inv: AgentInvocation): string {
   // Every token is single-quoted, including flag names (no allowlist), so a
   // prompt equal to a flag like "-p" is still treated as data.
   const quoted = claudeArgs(inv).map(shellSingleQuote);

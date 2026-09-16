@@ -291,7 +291,11 @@ export function renderStatus(data: HerdStatusData): string {
     `${data.herd.id}  room ${data.herd.room}  unread ${data.unread}  lifecycle ${data.lifecycleConnected ? "connected" : "OFF"}${data.hiddenUp === null ? "" : `  hidden ${data.hiddenUp ? "up" : "DOWN"}`}  ${push}  ${sub}`,
   ];
   for (const j of data.jobs) {
-    const notWoken = j.lastGateStatus === "answered" && j.lastGateDelivery === "dead-pane" ? `  gate ${j.lastGate} answered, worker not woken: rt chat dm ${j.handle}` : "";
+    // Both terminal states, because both are a wake the pane never got: a
+    // closed gate leaves a form-blocked worker just as stuck as an unread
+    // answer does, and the dead-pane retry is what it is waiting on.
+    const terminal = j.lastGateStatus === "answered" || j.lastGateStatus === "closed";
+    const notWoken = terminal && j.lastGateDelivery === "dead-pane" ? `  gate ${j.lastGate} ${j.lastGateStatus}, worker not woken: rt chat dm ${j.handle}` : "";
     // Independent of notWoken: a delivered nudge can still sit UNCONSUMED
     // (the pane never read it), and a dead-pane row can be both at once.
     const unconsumed = j.lastGateConsumed === false ? `  gate ${j.lastGate} UNCONSUMED` : "";
