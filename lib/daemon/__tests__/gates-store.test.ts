@@ -512,7 +512,7 @@ describe("gates store (consumedAt)", () => {
   });
 });
 
-test("deadPanePushes lists answered nudged rows whose last push was dead-pane and are unreleased; never closed ones", () => {
+test("deadPanePushes lists nudged unreleased rows whose last push was dead-pane, answered or closed", () => {
   const s = store();
   const a = s.open({ subject: "herd:h/j1", kind: "question", questions: qs(), nudge: { session: "w1" } }).row.id;
   const b = s.open({ subject: "herd:h/j2", kind: "question", questions: qs(), nudge: { session: "w2" } }).row.id;
@@ -520,9 +520,20 @@ test("deadPanePushes lists answered nudged rows whose last push was dead-pane an
   s.answer(a, { q: "a" }, "shepherd"); s.markDelivery(a, "dead-pane");
   s.answer(b, { q: "a" }, "shepherd"); s.markDelivery(b, "delivered");
   s.answer(c, { q: "a" }, "shepherd"); s.markDelivery(c, "dead-pane");
+  // A closed gate's doorbell is the same wake as an answered one: the pane
+  // is blocked on a form whose gate ended, and only this pass retries it.
   const d = s.open({ subject: "herd:h/j4", kind: "question", questions: qs(), nudge: { session: "w4" } }).row.id;
   s.close(d, "abandoned"); s.markDelivery(d, "dead-pane");
-  expect(s.deadPanePushes().map((r) => r.id)).toEqual([a]);
+  expect(s.deadPanePushes().map((r) => r.id).sort()).toEqual([a, d].sort());
+});
+
+test("deadPanePushes skips an open row and a closed row whose doorbell was never attempted", () => {
+  const s = store();
+  const stillOpen = s.open({ subject: "herd:h/j1", kind: "question", questions: qs(), nudge: { session: "w1" } }).row.id;
+  s.markDelivery(stillOpen, "dead-pane");
+  const closedNoPush = s.open({ subject: "herd:h/j2", kind: "question", questions: qs(), nudge: { session: "w2" } }).row.id;
+  s.close(closedNoPush, "superseded");
+  expect(s.deadPanePushes().map((r) => r.id)).toEqual([]);
 });
 
 describe("unconsumedAnsweredPushes", () => {

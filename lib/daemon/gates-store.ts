@@ -87,6 +87,9 @@ export interface GatesStore {
   markSubscriptionDead(id: string): void;
   /** Stamps escalatedAt once (CAS on IS NULL); a second call on an already-escalated row is a no-op. */
   markEscalated(id: string): void;
+  /** Nudge-bearing, unreleased rows whose last push was dead-pane, in either
+      terminal state: an answered gate's answer and a closed gate's ending are
+      the same unwoken pane. */
   deadPanePushes(): GateRow[];
   /** Rows the re-delivery sweep should chase: answered, nudged, never
       consumed, unreleased, delivered/confirmed/stuck (dead-pane stays with
@@ -422,8 +425,12 @@ export function createGatesStore(opts: {
   const pruneDeadSubStmt = db.prepare(
     "DELETE FROM gate_subscriptions WHERE dead = 1 AND (lastDelivery IS NULL OR json_extract(lastDelivery, '$.at') <= ?)",
   );
+  // Closed rows belong here as much as answered ones: a form-blocked pane
+  // whose gate was superseded or abandoned gets the same doorbell-then-Escape
+  // wake (gate-push's onClosed), and this pass is the only thing that retries
+  // it. `delivery IS NOT NULL` keeps rows that never had a push attempted out.
   const deadPaneStmt = db.prepare(
-    "SELECT * FROM gates WHERE nudge IS NOT NULL AND released = 0 AND status = 'answered' AND delivery IS NOT NULL ORDER BY openedAt",
+    "SELECT * FROM gates WHERE nudge IS NOT NULL AND released = 0 AND status IN ('answered', 'closed') AND delivery IS NOT NULL ORDER BY openedAt",
   );
   // Subject-blind on purpose: every nudge-bearing subject family has a read
   // that stamps consumedAt (herd:answer for herd workers, gate:wait for the
