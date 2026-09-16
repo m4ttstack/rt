@@ -5,7 +5,7 @@ import { dirname, join } from "path";
 import { machineSettingsPath } from "../../lib/rt-paths.ts";
 import { getSetting } from "../../lib/settings/resolve.ts";
 import { setSetting } from "../../lib/settings/write.ts";
-import { __test__ } from "../code.ts";
+import { __test__, resolveEditorSync } from "../code.ts";
 
 describe("workspace prefs through the settings resolver", () => {
   const origHome = process.env.HOME;
@@ -51,6 +51,37 @@ describe("workspace prefs through the settings resolver", () => {
 
     expect(() => __test__.loadPrefs()).not.toThrow();
     expect(__test__.loadPrefs()).toEqual({ editors: {}, workspaces: {} });
+  });
+
+  test("defaultEditor round-trips through loadPrefs and savePrefs", () => {
+    setSetting(
+      "rt.workspacePrefs",
+      { editors: { myrepo: "code" }, defaultEditor: "zed" },
+      "machine"
+    );
+
+    const prefs = __test__.loadPrefs();
+    expect(prefs.defaultEditor).toBe("zed");
+
+    prefs.editors.other = "cursor";
+    __test__.savePrefs(prefs);
+    const stored = getSetting<{ defaultEditor?: string }>("rt.workspacePrefs").value;
+    expect(stored.defaultEditor).toBe("zed");
+  });
+
+  test("a saved per-repo editor outranks defaultEditor", () => {
+    const prefs = { editors: { myrepo: "sh" }, workspaces: {}, defaultEditor: "true" };
+    expect(resolveEditorSync(prefs, "myrepo")).toBe("sh");
+  });
+
+  test("defaultEditor resolves when the repo has no saved editor", () => {
+    const prefs = { editors: {}, workspaces: {}, defaultEditor: "sh" };
+    expect(resolveEditorSync(prefs, "myrepo")).toBe("sh");
+  });
+
+  test("an unavailable defaultEditor is never returned", () => {
+    const prefs = { editors: {}, workspaces: {}, defaultEditor: "no-such-editor-xyz" };
+    expect(resolveEditorSync(prefs, "myrepo")).not.toBe("no-such-editor-xyz");
   });
 
   test("savePrefs warns and does not throw when the machine store is malformed (duplicate key anywhere in the document)", () => {

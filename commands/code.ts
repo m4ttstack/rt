@@ -31,6 +31,10 @@ import { pickWorktreeWithSwitch, pickFromAllRepos, isSwitchRepo } from "../lib/p
 interface Prefs {
   editors: Record<string, string>;
   workspaces: Record<string, string>;
+  /** Suite-wide editor id (a KNOWN_EDITORS command, e.g. "zed") or a full
+      launch command. Also read by the console's open-in-editor links, so a
+      loadPrefs/savePrefs cycle must round-trip it. */
+  defaultEditor?: string;
 }
 
 /** A resolver throw (unexpandable ${...} variable) degrades to the same
@@ -41,6 +45,7 @@ function loadPrefs(): Prefs {
     return {
       editors: (raw?.editors as Record<string, string>) || {},
       workspaces: (raw?.workspaces as Record<string, string>) || (raw?.entries as Record<string, string>) || {},
+      defaultEditor: raw?.defaultEditor as string | undefined,
     };
   } catch {
     return { editors: {}, workspaces: {} };
@@ -162,13 +167,31 @@ function savedEditor(prefs: Prefs, repoKey: string, legacyKeys: string[]): strin
 }
 
 /**
+ * Resolves prefs.defaultEditor to a launchable command: the value itself
+ * when it already launches (a CLI on PATH or a full `open -a` command),
+ * otherwise the app-bundle form of the same editor (an id like "zed" is
+ * stored even where only Zed.app exists, no CLI shim).
+ */
+export function resolveDefaultEditor(prefs: Prefs): string | undefined {
+  const id = prefs.defaultEditor;
+  if (!id) return undefined;
+  if (isEditorCommandAvailable(id)) return id;
+  const label = KNOWN_EDITORS.find(e => e.command === id)?.label;
+  const app = label && KNOWN_APPS.find(a => a.label === label);
+  if (app && isEditorCommandAvailable(app.command)) return app.command;
+  return undefined;
+}
+
+/**
  * Returns the editor command if it can be determined without an interactive
- * picker (saved pref or exactly one editor installed). Returns null if a
- * picker is required.
+ * picker (saved pref, the suite-wide default, or exactly one editor
+ * installed). Returns null if a picker is required.
  */
 export function resolveEditorSync(prefs: Prefs, repoKey: string, legacyKeys: string[] = []): string | null {
   const saved = savedEditor(prefs, repoKey, legacyKeys);
   if (saved && isEditorCommandAvailable(saved)) return saved;
+  const fallback = resolveDefaultEditor(prefs);
+  if (fallback) return fallback;
   const installed = detectInstalledEditors();
   if (installed.length === 1) return installed[0]!.command;
   return null; // 0 = will error, 2+ = picker needed
@@ -201,8 +224,10 @@ async function ensureEditor(prefs: Prefs, repoKey: string, legacyKeys: string[] 
   // Fast path: sync resolver covers the common case
   const fast = resolveEditorSync(prefs, repoKey, legacyKeys);
   if (fast) {
-    // Auto-save if it was detected, or adopted off a legacy key
-    if (!prefs.editors[repoKey]) {
+    // Auto-save if it was detected, or adopted off a legacy key. A
+    // defaultEditor resolution is NOT pinned per-repo: changing the default
+    // later must flow through to repos that never made an explicit choice.
+    if (!prefs.editors[repoKey] && fast !== resolveDefaultEditor(prefs)) {
       prefs.editors[repoKey] = fast;
       savePrefs(prefs);
     }
