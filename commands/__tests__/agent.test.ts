@@ -71,6 +71,16 @@ describe("parseStartArgs", () => {
     const parsed = __test__.parseStartArgs(["--prompt", "go"]);
     expect(parsed.yolo).toBeUndefined();
   });
+
+  // false, not undefined: the daemon reads `payload.yolo ?? the setting`, so
+  // only an explicit false can override a true agent.<provider>.yolo.
+  test("parseStartArgs: --no-yolo sets yolo false, distinct from omitting it", () => {
+    expect(__test__.parseStartArgs(["--no-yolo", "--prompt", "go"]).yolo).toBe(false);
+  });
+
+  test("parseStartArgs: --yolo and --no-yolo together throw", () => {
+    expect(() => __test__.parseStartArgs(["--yolo", "--no-yolo"])).toThrow(/not both/);
+  });
 });
 
 describe("parseResumeArgs", () => {

@@ -3,7 +3,7 @@
  *
  *   rt agent start  [--repo <path>] [--prompt <text> | --prompt-file <path>]
  *                   [--surface herdr|headless] [--provider claude|codex]
- *                   [--model M] [--effort E] [--yolo]
+ *                   [--model M] [--effort E] [--yolo | --no-yolo]
  *                   [--account A] [--label L] [--caller C]
  *                   [--workspace W] [--tab T] [--extra-args "<tail>"]
  *                   [--bg] [--json]
@@ -122,7 +122,13 @@ function parseStartArgs(args: string[]): StartArgs {
     if (surface === "headless") throw new Error("--bg is a herdr-surface option");
     out.bg = true;
   }
-  if (hasFlag(args, "--yolo")) out.yolo = true;
+  // Three states, not two: --yolo forces on, --no-yolo forces off, and
+  // omitting both leaves yolo undefined so agent.<provider>.yolo decides.
+  const yes = hasFlag(args, "--yolo");
+  const no = hasFlag(args, "--no-yolo");
+  if (yes && no) throw new Error("pass one of --yolo / --no-yolo, not both");
+  if (yes) out.yolo = true;
+  else if (no) out.yolo = false;
   return out;
 }
 
@@ -162,10 +168,12 @@ async function repoAndCwd(args: string[]): Promise<{ repo: string; cwd: string }
 function renderRecord(r: AgentRecord): string {
   const bits = [
     `${r.id}  ${repoLabel(r.repo)}  ${r.surface}`,
+    `provider ${r.provider}`,
     `session ${r.sessionId}`,
     r.handle && `handle ${r.handle}`,
     r.model && `model ${r.model}`,
     r.account && `account ${r.account}`,
+    r.yolo && "yolo",
     r.paneId && `pane ${r.paneId}`,
     r.finishedAt !== undefined && `exit ${r.exitCode}`,
     r.lastResumedAt !== undefined && "resumed",
@@ -184,10 +192,15 @@ async function runStart(args: string[]): Promise<void> {
   const payload = { repo, cwd, ...parsed };
   const data = unwrap(await dispatch("agent:start", payload, () => agentStart(payload)), "start");
   if (args.includes("--json")) {
+    // Deliberately unannotated: a machine consumer needs the raw record, and
+    // the session id it carries for codex is provisional (see the note below).
     console.log(JSON.stringify({ ok: true, agent: data }));
     return;
   }
   console.log(renderRecord(data));
+  if (data.provider === "codex") {
+    console.log(`note: codex mints its own session id; the one above is provisional until the daemon captures the real one. Run \`rt agent show ${data.id}\` to confirm it before resuming.`);
+  }
 }
 
 async function runResume(args: string[]): Promise<void> {

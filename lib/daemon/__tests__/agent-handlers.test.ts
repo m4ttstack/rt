@@ -1,9 +1,10 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { tmpdir } from "os";
 import { join } from "path";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "fs";
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "fs";
 import pino from "pino";
 import { AGENT_NAMES } from "../../chat-names.ts";
+import { setSetting } from "../../settings/write.ts";
 import { getAgent, openStateDb, signIn } from "../../state/index.ts";
 import { createAgentHandlers, extractSessionId, type HeadlessChild } from "../handlers/agent.ts";
 import { createBgClaimsStore, type BgClaimsStore } from "../bg-claims-store.ts";
@@ -610,6 +611,103 @@ test("agent:start with handle uses it as --name and reserves no pool handle", as
   expect(paneRun?.[3]).toContain("'--name' 'job-a'");
 });
 
+// The session-id poll must ride the SAME socket-scoped runner the launch did.
+// Falling back to defaultHerdrRunner() would query the ambient visible herdr
+// server about a pane that only exists on the bg/herd one -- a full timeout of
+// dead polling, then a record stuck on rt's placeholder uuid forever.
+test("codex herdr capture polls through the socket-scoped runner the launch used, not the ambient default", async () => {
+  const agentGetSockets: string[] = [];
+  const runnerFactory = (socket: string): HerdrRunner => async (args) => {
+    if (args[0] === "agent" && args[1] === "get") {
+      agentGetSockets.push(socket);
+      return { stdout: JSON.stringify({ result: { agent: { agent_session: { value: "s_scoped_789" } } } }), exitCode: 0 };
+    }
+    if (args[0] === "workspace" && args[1] === "list") return { stdout: JSON.stringify({ result: { workspaces: [] } }), exitCode: 0 };
+    if (args[0] === "workspace" && args[1] === "create") {
+      return { stdout: JSON.stringify({ result: { root_pane: { pane_id: "w1:p1", tab_id: "w1:t1", workspace_id: "w1" } } }), exitCode: 0 };
+    }
+    return { stdout: "{}", exitCode: 0 };
+  };
+  const h = fresh({ runnerFactory });
+  const res = await h["agent:start"]({
+    repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr",
+    provider: "codex", herdrSocket: "/tmp/hidden.sock",
+  });
+  if (!res.ok) throw new Error(res.error);
+  const deadline = Date.now() + 2000;
+  while (agentGetSockets.length === 0 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10));
+  expect(agentGetSockets[0]).toBe("/tmp/hidden.sock");
+  let updated = getAgent(res.data.id, h.db);
+  while (updated?.sessionId !== "s_scoped_789" && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 10));
+    updated = getAgent(res.data.id, h.db);
+  }
+  expect(updated?.sessionId).toBe("s_scoped_789");
+});
+
+// The injected runner is also what a test-only double relies on: an
+// unscoped launch must poll through opts.herdrRunner, never spawn herdr.
+test("codex herdr capture polls through the injected herdrRunner on an unscoped launch", async () => {
+  const calls: string[][] = [];
+  const runner: HerdrRunner = async (args) => {
+    calls.push(args);
+    if (args[0] === "agent" && args[1] === "get") {
+      return { stdout: JSON.stringify({ result: { agent: { agent_session: { value: "s_injected_111" } } } }), exitCode: 0 };
+    }
+    if (args[0] === "workspace" && args[1] === "list") return { stdout: JSON.stringify({ result: { workspaces: [] } }), exitCode: 0 };
+    if (args[0] === "workspace" && args[1] === "create") {
+      return { stdout: JSON.stringify({ result: { root_pane: { pane_id: "w1:p1", tab_id: "w1:t1", workspace_id: "w1" } } }), exitCode: 0 };
+    }
+    return { stdout: "{}", exitCode: 0 };
+  };
+  const h = fresh({ runner });
+  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr", provider: "codex" });
+  if (!res.ok) throw new Error(res.error);
+  const deadline = Date.now() + 2000;
+  let updated = getAgent(res.data.id, h.db);
+  while (updated?.sessionId !== "s_injected_111" && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 10));
+    updated = getAgent(res.data.id, h.db);
+  }
+  expect(updated?.sessionId).toBe("s_injected_111");
+  expect(calls.some((c) => c[0] === "agent" && c[1] === "get")).toBe(true);
+});
+
+// codex has no --name / chat-handle mechanism and never reads --settings
+// (both spec Non-goals), so a codex launch must burn neither an LRU pool
+// handle nor a gate-fork hook file.
+test("agent:start codex herdr reserves no handle and writes no gate-fork settings file", async () => {
+  const calls: string[][] = [];
+  const h = fresh({ runner: okRunner(calls) });
+  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr", provider: "codex", subject: "mr:test/9" });
+  if (!res.ok) throw new Error(res.error);
+  expect(res.data.handle).toBeUndefined();
+  const cmd = calls.find((c) => c[0] === "pane" && c[1] === "run")?.[3] ?? "";
+  expect(cmd).not.toContain("agent-hooks");
+  expect(cmd).not.toContain("--settings");
+  expect(existsSync(join(process.env.HOME ?? "/nonexistent", ".rt", "agent-hooks", `${res.data.id}.json`))).toBe(false);
+});
+
+// The claude path must be untouched by the provider gate above.
+test("agent:start claude herdr still reserves a handle and writes the gate-fork settings file", async () => {
+  const calls: string[][] = [];
+  const h = fresh({ runner: okRunner(calls) });
+  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr", provider: "claude", subject: "mr:test/10" });
+  if (!res.ok) throw new Error(res.error);
+  expect(res.data.handle).toBeTruthy();
+  const cmd = calls.find((c) => c[0] === "pane" && c[1] === "run")?.[3] ?? "";
+  expect(cmd).toContain("agent-hooks");
+});
+
+test("agent:start headless codex names codex in the missing-prompt error, not claude", async () => {
+  const h = fresh();
+  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", surface: "headless", provider: "codex" });
+  expect(res.ok).toBe(false);
+  if (res.ok) throw new Error("unreachable");
+  expect(res.error).toContain("codex exec");
+  expect(res.error).not.toContain("claude -p");
+});
+
 test("agent:start defaults provider to claude when unset", async () => {
   const h = fresh({ spawn: () => ({ exited: Promise.resolve(0), stdout: async () => "{}", sessionId: () => Promise.resolve(undefined) }) });
   const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", surface: "headless", prompt: "go" });
@@ -802,6 +900,93 @@ test("agent:resume of a visible record never touches bg: no ensure, no claim/rel
   expect(bgClaims.claims).toEqual([]);
   expect(bgClaims.released).toEqual([]);
   expect(lifecycle.watched).toEqual([]);
+});
+
+// Nothing else in this suite exercises the settings side of the resolution:
+// every other test hands the value in on the payload, so a broken
+// `agent.<provider>.*` read would look green everywhere. HOME is repointed
+// per-test (test-setup.ts already makes it throwaway process-wide) so the rows
+// written here never leak into the tests around them.
+describe("agent:start resolves unset payload fields from settings", () => {
+  const origHome = process.env.HOME;
+  let home: string;
+
+  beforeEach(() => {
+    home = realpathSync(mkdtempSync(join(tmpdir(), "rt-agent-settings-")));
+    process.env.HOME = home;
+  });
+
+  afterEach(() => {
+    process.env.HOME = origHome;
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  test("provider, model, effort, extraArgs and yolo all come from agent.<provider>.* when the payload omits them", async () => {
+    setSetting("agent.provider", "codex", "user");
+    setSetting("agent.codex.model", "gpt-6-astra", "user");
+    setSetting("agent.codex.effort", "high", "user");
+    setSetting("agent.codex.extraArgs", "--search", "user");
+    setSetting("agent.codex.yolo", true, "user");
+
+    let argv: string[] = [];
+    const h = fresh({
+      spawn: (a: string[]) => {
+        argv = a;
+        return { exited: Promise.resolve(0), stdout: async () => "{}", sessionId: () => Promise.resolve(undefined) };
+      },
+    });
+    const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", surface: "headless", prompt: "go" });
+    if (!res.ok) throw new Error(res.error);
+    expect(res.data).toMatchObject({ provider: "codex", model: "gpt-6-astra", effort: "high", extraArgs: "--search", yolo: true });
+    expect(argv).toContain("-m");
+    expect(argv).toContain("gpt-6-astra");
+    expect(argv).toContain("-c");
+    expect(argv).toContain("model_reasoning_effort=high");
+    expect(argv).toContain("--dangerously-bypass-approvals-and-sandbox");
+    expect(argv).toContain("--search");
+  });
+
+  // The per-provider keys must not cross over: a codex default has to be
+  // invisible to a claude launch and vice versa.
+  test("a claude launch reads agent.claude.*, never the codex rows", async () => {
+    setSetting("agent.claude.model", "opus", "user");
+    setSetting("agent.claude.account", "me@example.com", "user");
+    setSetting("agent.codex.model", "gpt-6-astra", "user");
+
+    const h = fresh({ spawn: () => ({ exited: Promise.resolve(0), stdout: async () => "{}", sessionId: () => Promise.resolve(undefined) }) });
+    const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", surface: "headless", prompt: "go" });
+    if (!res.ok) throw new Error(res.error);
+    expect(res.data).toMatchObject({ provider: "claude", model: "opus", account: "me@example.com" });
+  });
+
+  // The setting is a default, not a floor: --no-yolo sends yolo: false on the
+  // payload, and the daemon must persist that rather than fall through to it.
+  test("an explicit payload yolo:false overrides a true agent.<provider>.yolo setting", async () => {
+    setSetting("agent.claude.yolo", true, "user");
+
+    let argv: string[] = [];
+    const h = fresh({
+      spawn: (a: string[]) => {
+        argv = a;
+        return { exited: Promise.resolve(0), stdout: async () => "{}", sessionId: () => Promise.resolve(undefined) };
+      },
+    });
+    const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", surface: "headless", prompt: "go", yolo: false });
+    if (!res.ok) throw new Error(res.error);
+    expect(res.data.yolo).toBe(false);
+    expect(getAgent(res.data.id, h.db)?.yolo).toBe(false);
+    expect(argv).not.toContain("--dangerously-skip-permissions");
+  });
+
+  // An explicit payload provider must beat the global default outright --
+  // that is what herd:spawn relies on to stay claude-only.
+  test("an explicit payload provider overrides agent.provider", async () => {
+    setSetting("agent.provider", "codex", "user");
+    const h = fresh({ spawn: () => ({ exited: Promise.resolve(0), stdout: async () => "{}", sessionId: () => Promise.resolve(undefined) }) });
+    const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", surface: "headless", prompt: "go", provider: "claude" });
+    if (!res.ok) throw new Error(res.error);
+    expect(res.data.provider).toBe("claude");
+  });
 });
 
 function streamOf(...lines: string[]): ReadableStream<Uint8Array> {

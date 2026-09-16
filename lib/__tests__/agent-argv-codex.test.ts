@@ -34,7 +34,10 @@ describe("buildCodexArgv", () => {
     expect(argv).toEqual(["/abs/codex", "exec", "resume", UUID]);
   });
 
-  test("herdr start has no --json", () => {
+  // Pins the --json gate, not a production shape: a herdr launch goes through
+  // buildCodexPaneCommand, so nothing in production calls this with
+  // headless: false on a start.
+  test("start with headless: false omits --json", () => {
     const argv = buildCodexArgv({ session: { kind: "start", sessionId: UUID }, headless: false }, bins);
     expect(argv).not.toContain("--json");
     expect(argv).toEqual(["/abs/codex", "exec"]);

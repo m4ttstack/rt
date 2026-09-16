@@ -44,6 +44,11 @@ export async function runAgentFallback<T>(
   const handlers = createAgentHandlers({
     db,
     emitEvent: () => 0,
+    // Same reason headless is refused above: this process exits as soon as the
+    // verb returns, and codex's session-id capture is a detached poll that can
+    // outlive it by minutes. Either it holds the CLI open for the whole
+    // timeout or it dies mid-flight; neither is a capture.
+    skipSessionCapture: true,
     ...(deps.herdrRunner !== undefined && { herdrRunner: deps.herdrRunner }),
     ...(deps.spawnHeadless !== undefined && { spawnHeadless: deps.spawnHeadless }),
   });
