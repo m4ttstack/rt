@@ -438,8 +438,12 @@ export function createGatesStore(opts: {
   // whose gate was superseded or abandoned gets the same doorbell-then-Escape
   // wake (gate-push's onClosed), and this pass is the only thing that retries
   // it. `delivery IS NOT NULL` keeps rows that never had a push attempted out.
+  // An answered row with `consumedAt` already stamped is excluded: the
+  // nudged pane already read the answer, so a retry would inject a stray
+  // doorbell/Escape into whatever the pane moved on to. Closed rows carry
+  // no such signal, so they stay eligible regardless.
   const deadPaneStmt = db.prepare(
-    "SELECT * FROM gates WHERE nudge IS NOT NULL AND released = 0 AND status IN ('answered', 'closed') AND delivery IS NOT NULL ORDER BY openedAt",
+    "SELECT * FROM gates WHERE nudge IS NOT NULL AND released = 0 AND delivery IS NOT NULL AND (status = 'closed' OR (status = 'answered' AND consumedAt IS NULL)) ORDER BY openedAt",
   );
   // Subject-blind on purpose: every nudge-bearing subject family has a read
   // that stamps consumedAt (herd:answer for herd workers, gate:wait for the
