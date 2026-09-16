@@ -411,7 +411,12 @@ export function laneDismissed(
   return lane?.dismissedAt !== undefined;
 }
 
-function doctorLine(mr: BoardMRWithReview): Candidate | null {
+/** How long a finished doctor run keeps the status line. Long enough to read
+    what the run did on the next glance at the board, short enough that
+    yesterday's run is not still standing in front of what the MR needs. */
+const DOCTOR_DONE_TTL = 2 * 3600_000;
+
+function doctorLine(mr: BoardMRWithReview, now: number): Candidate | null {
   const d = mr.doctor;
   if (!d || laneDismissed(d)) return null;
   switch (d.status) {
@@ -428,13 +433,20 @@ function doctorLine(mr: BoardMRWithReview): Candidate | null {
         detail: d.origin === 'auto' ? 'auto' : d.message || undefined,
         verbs: [{ kind: 'focus', label: 'focus', domain: 'doctor' }],
       };
-    case 'done':
+    case 'done': {
+      // A finished doctor is a note, not an achievement: quiet, not go, and
+      // it stops speaking once it is stale so the row goes back to saying
+      // what the MR needs. An unstamped row (nothing writes one today) is
+      // shown rather than guessed at.
+      if (d.updatedAt !== undefined && now - d.updatedAt > DOCTOR_DONE_TTL)
+        return null;
       return {
-        tone: 'go',
+        tone: 'quiet',
         word: DOCTOR_LABEL[d.status],
         detail: d.message || undefined,
-        verbs: [],
+        verbs: [{ kind: 'dismiss', label: 'dismiss', domain: 'doctor' }],
       };
+    }
     case 'error':
       return {
         tone: 'bad',
@@ -688,7 +700,7 @@ export function candidateLines(
     orphanLine(mr, now, interrupted),
     reviewLine(mr, now, interrupted, self),
     respondLine(mr, interrupted),
-    doctorLine(mr),
+    doctorLine(mr, now),
     ...draftLines(mr, draftResolved),
     ...peerLines(mr, now),
   ].filter((l): l is Candidate => l !== null);

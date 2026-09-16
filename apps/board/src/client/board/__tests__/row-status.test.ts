@@ -824,18 +824,41 @@ describe('rowStatus: doctor lane', () => {
     });
   });
 
-  test('done is a go line naming the diagnosis, with the message as detail', () => {
+  test('a fresh done run is a quiet note with the message and a dismiss', () => {
     const [line] = candidateLines(
-      mr({ doctor: { status: 'done', message: 'rebased on target' } }),
+      mr({
+        doctor: {
+          status: 'done',
+          message: 'rebased on target',
+          updatedAt: NOW - 20 * 60_000,
+        },
+      }),
       NOW,
       NONE,
       ME
     );
     expect(line).toMatchObject({
-      tone: 'go',
+      tone: 'quiet',
       word: 'diagnosed',
       detail: 'rebased on target',
     });
+    expect(line!.verbs.map(v => v.kind)).toEqual(['dismiss']);
+  });
+
+  // Yesterday's run was standing in front of what the MR needs: a finished
+  // doctor stops being a candidate once it is stale.
+  test('a stale done run stops speaking and the standing state takes the line', () => {
+    const stale = mr({
+      doctor: {
+        status: 'done',
+        message: 'rebased on target',
+        updatedAt: NOW - 25 * 3600_000,
+      },
+    } as never);
+    expect(
+      candidateLines(stale, NOW, NONE, ME).some(l => l.word === 'diagnosed')
+    ).toBe(false);
+    expect(rowStatus(stale, NOW, NONE, ME).line.tone).toBe('quiet');
   });
 });
 
