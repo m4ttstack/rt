@@ -4,6 +4,7 @@ import { join } from "path";
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "fs";
 import pino from "pino";
 import { AGENT_NAMES } from "../../chat-names.ts";
+import { rtDir } from "../../rt-paths.ts";
 import { setSetting } from "../../settings/write.ts";
 import { getAgent, openStateDb, signIn } from "../../state/index.ts";
 import { createAgentHandlers, extractSessionId, type HeadlessChild } from "../handlers/agent.ts";
@@ -702,7 +703,7 @@ test("agent:start codex herdr reserves no handle and writes no gate-fork setting
   const cmd = calls.find((c) => c[0] === "pane" && c[1] === "run")?.[3] ?? "";
   expect(cmd).not.toContain("agent-hooks");
   expect(cmd).not.toContain("--settings");
-  expect(existsSync(join(process.env.HOME ?? "/nonexistent", ".rt", "agent-hooks", `${res.data.id}.json`))).toBe(false);
+  expect(existsSync(join(rtDir(), "agent-hooks", `${res.data.id}.json`))).toBe(false);
 });
 
 // The claude path must be untouched by the provider gate above.

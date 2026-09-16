@@ -169,8 +169,8 @@ function extraArgsHasSettingsFlag(extraArgs: string | undefined): boolean {
  * AskUserQuestion PreToolUse hook (Task 9), or undefined when injection is
  * skipped. Four skip cases, all non-fatal to the launch: the provider is not
  * claude (only claude reads `--settings`; codex's builders ignore
- * inv.settingsPath outright, so writing the file would leave a dead one in
- * ~/.rt/agent-hooks per launch), the launch carries no explicit subject (with no
+ * inv.settingsPath outright, so writing the file would leave a dead one in the
+ * agent-hooks directory per launch), the launch carries no explicit subject (with no
  * subject there is no gate for the hook to check, so it would only ever
  * degrade to allow; skip writing it rather than ship a no-op hook file),
  * extraArgs already sets --settings (merge is not attempted -- the user's
