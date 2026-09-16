@@ -23,6 +23,7 @@ import { slugifyChatName } from "../../chat-room-name.ts";
 import { attendPane } from "../attend.ts";
 import { readTrustPrompt } from "../trust-dialog.ts";
 import { BG_SESSION } from "../bg-service.ts";
+import { paneStatuses } from "../pane-statuses.ts";
 import type { BgService } from "../bg-service.ts";
 import type { BgClaimsStore } from "../bg-claims-store.ts";
 
@@ -60,6 +61,9 @@ export interface HerdDeps {
       to verify the modal cleared; overridable for the same reason. */
   trustSettleMs?: number;
   jobsRoot: string;
+  /** The daemon's herd watchdog, read for herd:status's per-job ladder; absent
+      when no watchdog is wired (tests, a daemon booting without one). */
+  watchdog?: { annotations(herd: string, job: string): { strikes: number; lastPokeAt: number | null } | null };
   log: Logger;
 }
 
@@ -160,23 +164,6 @@ export function createHerdHandlers(deps: HerdDeps) {
     return prefixSub;
   }
 
-  /** Keyed on the bare pane id. A pane herdr does not list is simply absent
-      from the map, which is what separates "this pane is gone (or herdr is)"
-      from "this pane is up with no claude on it" -- the second is a dead
-      worker behind a surviving shell, and the first is not evidence of
-      anything. */
-  async function paneStatuses(socket: string | null): Promise<Map<string, { agent: string | null; status: string | null }>> {
-    const out = new Map<string, { agent: string | null; status: string | null }>();
-    const snap = await deps.herdr<{ snapshot?: { panes?: Array<{ pane_id: string; agent?: string; agent_status?: string }> } }>("session.snapshot", {}, socket ? { sockPath: socket } : {});
-    if (!snap.ok) return out;
-    // An ok reply's shape is still herdr's to get wrong: a malformed body
-    // here must degrade to an empty map, never throw through herd:status.
-    const panes = snap.result?.snapshot?.panes;
-    if (!Array.isArray(panes)) return out;
-    for (const p of panes) if (p?.pane_id) out.set(p.pane_id, { agent: p.agent ?? null, status: p.agent_status ?? null });
-    return out;
-  }
-
   async function unreadFor(handle: string, room: string): Promise<number> {
     const res = await deps.chat["chat:rooms"]({ handle });
     if (!res.ok) return 0;
@@ -206,7 +193,7 @@ export function createHerdHandlers(deps: HerdDeps) {
     const herd = store.get(herdId);
     if (!herd) return null;
     const [panes, gates, unread, subs, pushState] = await Promise.all([
-      paneStatuses(herd.herdrSocket), openHerdGates(herdId), unreadFor(herd.shepherdHandle, herd.room),
+      paneStatuses(deps.herdr, herd.herdrSocket), openHerdGates(herdId), unreadFor(herd.shepherdHandle, herd.room),
       deps.gate["gate:subscriptions"]({ session: herd.shepherdSession }),
       deps.probeInbox(herd.shepherdSession),
     ]);
@@ -233,6 +220,7 @@ export function createHerdHandlers(deps: HerdDeps) {
         // released means a lost answer CAS whose pane already reconciled the
         // winning answer -- settled the same as a stamped consumedAt.
         lastGateConsumed: last?.status === "answered" && last.nudge ? last.consumedAt !== null || last.released : null,
+        watchdog: deps.watchdog?.annotations(herdId, j.name) ?? null,
       };
     });
     // A dead row is the shepherd's cue to resume, so the live-only query would

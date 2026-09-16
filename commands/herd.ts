@@ -270,17 +270,18 @@ export async function gates(args: string[]): Promise<void> {
   for (const g of data.gates) console.log(`${g.id}  ${g.kind}  ${g.subject}  ${g.questions.map((q) => q.label).join(" | ")}`);
 }
 
-/** Wall-clock, not an injected `now()`: this formats a push timestamp for a
+/** Wall-clock, not an injected `now()`: this formats a timestamp for a
     one-shot CLI render, and there is no seam worth threading for it. */
-function pushAge(lastDelivery: HerdStatusData["push"]["lastDelivery"]): string {
-  if (!lastDelivery) return "never";
-  const mins = Math.floor((Date.now() - lastDelivery.at) / 60_000);
+function ago(at: number): string {
+  const mins = Math.floor((Date.now() - at) / 60_000);
   if (mins < 1) return "just now";
   if (mins < 60) return `${mins}m ago`;
   const hrs = Math.floor(mins / 60);
   if (hrs < 24) return `${hrs}h ago`;
   return `${Math.floor(hrs / 24)}d ago`;
 }
+
+const pushAge = (lastDelivery: HerdStatusData["push"]["lastDelivery"]): string => (lastDelivery ? ago(lastDelivery.at) : "never");
 
 /** A missing subscription and an answered-but-undelivered gate are the two
     states the shepherd must act on, so both name their own remedy inline. */
@@ -305,7 +306,8 @@ export function renderStatus(data: HerdStatusData): string {
     // The shell outlives a killed claude, so the row's own status is the last
     // thing the worker managed to record and says nothing about right now.
     const dead = j.sessionDead ? `  SESSION DEAD (pane alive, no claude): rt herd spawn --herd ${j.herd} --job ${j.name}` : "";
-    lines.push(`  ${j.name.padEnd(24)} ${j.status.padEnd(14)} pane ${j.pane ?? "-"}  ${j.paneStatus ?? "-"}${j.openGate ? `  gate ${j.openGate}` : ""}${notWoken}${unconsumed}${atModal}${dead}`);
+    const poked = j.watchdog && j.watchdog.strikes > 0 ? `  poked ${j.watchdog.strikes}x${j.watchdog.lastPokeAt === null ? "" : ` ${ago(j.watchdog.lastPokeAt)}`}` : "";
+    lines.push(`  ${j.name.padEnd(24)} ${j.status.padEnd(14)} pane ${j.pane ?? "-"}  ${j.paneStatus ?? "-"}${j.openGate ? `  gate ${j.openGate}` : ""}${notWoken}${unconsumed}${atModal}${dead}${poked}`);
   }
   return lines.join("\n");
 }

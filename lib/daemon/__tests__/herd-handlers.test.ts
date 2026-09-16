@@ -337,6 +337,30 @@ describe("herd:resume / status / close", () => {
     expect(res.data.jobs[0]!.sessionDead).toBeNull();
   });
 
+  test("status carries the watchdog's ladder per job, null where the watchdog holds none", async () => {
+    const asked: Array<[string, string]> = [];
+    const watchdog: NonNullable<HerdDeps["watchdog"]> = {
+      annotations: (hd, job) => { asked.push([hd, job]); return job === "job-a" ? { strikes: 2, lastPokeAt: 1_234 } : null; },
+    };
+    const { h, store, herd } = await started({ watchdog });
+    store.upsertJob({ herd, name: "job-a", worktree: "/w/job-a", handle: "job-a", status: "active", pane: "w9:p1" });
+    store.upsertJob({ herd, name: "job-b", worktree: "/w/job-b", handle: "job-b", status: "active", pane: "w9:p2" });
+    const res = await h["herd:status"]({ herd });
+    if (!res.ok) throw new Error(res.error);
+    expect(res.data.jobs.find((j) => j.name === "job-a")!.watchdog).toEqual({ strikes: 2, lastPokeAt: 1_234 });
+    expect(res.data.jobs.find((j) => j.name === "job-b")!.watchdog).toBeNull();
+    expect(asked).toEqual([[herd, "job-a"], [herd, "job-b"]]);
+  });
+
+  test("status without a watchdog wired reads null on every job", async () => {
+    const { h, store, herd } = await started();
+    store.upsertJob({ herd, name: "job-a", worktree: "/w/job-a", handle: "job-a", status: "active", pane: "w9:p1" });
+    const res = await h["herd:status"]({ herd });
+    if (!res.ok) throw new Error(res.error);
+    expect(res.data.jobs[0]!.watchdog).toBeNull();
+    expect("watchdog" in res.data.jobs[0]!).toBe(true);
+  });
+
   test("resume drops only the prior shepherd's subscriptions for this herd; an unrelated session's herd-prefix subscription survives", async () => {
     const { h, gateStore, herd } = await started();
     const before = gateStore.subscriptions({ live: true });

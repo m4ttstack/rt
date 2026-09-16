@@ -100,6 +100,8 @@ import { createEventsBus, type EventsBus } from "./daemon/events-bus.ts";
 import { createGatesStore, type GatesStore } from "./daemon/gates-store.ts";
 import { createHerdStore, type HerdStore } from "./daemon/herd-store.ts";
 import { createHerdLifecycle, type HerdLifecycle } from "./daemon/herd-lifecycle.ts";
+import { HerdWatchdog } from "./daemon/herd-watchdog.ts";
+import { createWatchdogActuators, createWatchdogSensors, readWatchdogConfig } from "./daemon/herd-watchdog-adapters.ts";
 import { createBgService, type BgService } from "./daemon/bg-service.ts";
 import { createBgClaimsStore, type BgClaimsStore } from "./daemon/bg-claims-store.ts";
 import { createGatePush, type GatePush } from "./daemon/gate-push.ts";
@@ -322,6 +324,7 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
   let gatesStore: GatesStore;
   let herdStore: HerdStore;
   let herdLifecycle: HerdLifecycle | undefined;
+  let herdWatchdog: HerdWatchdog | undefined;
   let bgClaims: BgClaimsStore;
   let gatePush: GatePush;
   let gateEscalation: GateEscalation;
@@ -538,6 +541,14 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
       return 10;
     }
   };
+
+  const watchdogConfig = () => readWatchdogConfig(getSetting);
+  // RT_HERD_WATCHDOG_SWEEP_MS replaces both the boot delay and the interval,
+  // so a test daemon can be swept in well under the production minute.
+  const watchdogSweepMs = (() => {
+    const n = Number(process.env.RT_HERD_WATCHDOG_SWEEP_MS);
+    return Number.isInteger(n) && n > 0 ? n : 60_000;
+  })();
 
   // ─── The ordered unit list ─────────────────────────────────────────────────
 
@@ -1098,6 +1109,7 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
             watch: (socket) => herdLifecycle?.watch(socket),
             sweepClaims: () => herdLifecycle?.sweepClaims() ?? Promise.resolve(),
           },
+          herdWatchdog: { annotations: (herd, job) => herdWatchdog?.annotations(herd, job) ?? null },
           herdJobsRoot: join(RT_DIR, "herds"),
           bgService,
           bgClaims,
@@ -1123,6 +1135,28 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
           log,
         });
         herdLifecycle.start();
+        const watchdogLog = loggerHandle.childLogger("herd-watchdog");
+        const watchdogSensors = createWatchdogSensors({
+          herdStore, gatesStore, lifecycle: herdLifecycle, herdr: herdrRequest,
+          defaultSocket: herdrSocketPath(), db: getStateDb("daemon"),
+        });
+        const watchdog = new HerdWatchdog({
+          sensors: watchdogSensors,
+          act: createWatchdogActuators({ herdStore, db: getStateDb("daemon"), socketFor: watchdogSensors.socketFor, log: watchdogLog }),
+          cfg: watchdogConfig,
+          log: watchdogLog,
+        });
+        herdWatchdog = watchdog;
+        sweepHandles.push(scheduleSweep(
+          "herd-watchdog",
+          async () => {
+            if (!watchdogConfig().enabled) return;
+            await watchdogSensors.refresh();
+            await watchdog.sweep();
+          },
+          { bootDelayMs: watchdogSweepMs, intervalMs: watchdogSweepMs },
+          log,
+        ));
       },
       stop() {
         herdLifecycle?.stop();
