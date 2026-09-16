@@ -116,6 +116,39 @@ export async function launchInWorkspace(
   return { workspaceId: wsId, tabId: root.tab_id, paneId: root.pane_id, focusedExisting: false };
 }
 
+/**
+ * Polls herdr's own agent-session report until it surfaces codex's real
+ * session id, or the timeout elapses. herdr's per-CLI SessionStart hook
+ * (installed by `herdr integration install codex`) reports the id to herdr
+ * over its socket once codex processes its first turn; this reads it back
+ * via `herdr agent get`. Confirmed against a real herdr pane 2026-09-15: the
+ * id lands at `result.agent.agent_session.value` (present only after the
+ * pane's first prompt completes -- a freshly launched, not-yet-prompted pane
+ * has no `agent_session` key at all), not the guessed `result.agentSessionId`
+ * / `agentSessionId`.
+ */
+export async function herdrAgentSessionId(
+  paneId: string,
+  timeoutMs: number,
+  runner: HerdrRunner = defaultHerdrRunner(),
+): Promise<string | undefined> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const r = await runner(["agent", "get", paneId]);
+    if (r.exitCode === 0) {
+      try {
+        const parsed = JSON.parse(r.stdout);
+        const sid = parsed?.result?.agent?.agent_session?.value;
+        if (typeof sid === "string" && sid) return sid;
+      } catch {
+        // keep polling -- a transient non-JSON response is not fatal
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  return undefined;
+}
+
 export async function herdrAgentWait(
   paneId: string,
   until: string[],

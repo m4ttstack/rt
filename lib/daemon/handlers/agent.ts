@@ -23,11 +23,11 @@ import type { Database } from "bun:sqlite";
 import type { Logger } from "pino";
 import {
   deleteAgent, finishAgent, getAgent, insertAgent, isValidChatName, listAgents, markAgentResumed,
-  newAgentId, reserveAgentHandle, updateAgentPane, type AgentRecord, type AgentSurface,
+  newAgentId, reserveAgentHandle, updateAgentPane, updateAgentSessionId, type AgentRecord, type AgentSurface,
 } from "../../state/index.ts";
 import { buildAgentArgv, buildAgentPaneCommand, CROSS_SESSION_INBOUND_SETTINGS, type AgentInvocation, type AgentProvider } from "../../agent-argv/index.ts";
 import { mergeGateForkHookSettings, resolveGateForkHookPath } from "../../agent-hooks.ts";
-import { defaultHerdrRunner, launchInWorkspace, type HerdrRunner } from "../../agent-herdr.ts";
+import { defaultHerdrRunner, herdrAgentSessionId, launchInWorkspace, type HerdrRunner } from "../../agent-herdr.ts";
 import { repoLabel } from "../../repo-label.ts";
 import { getSetting } from "../../settings/resolve.ts";
 import { rtDir } from "../../rt-paths.ts";
@@ -43,9 +43,59 @@ import type { CommandResult } from "./types.ts";
 export interface HeadlessChild {
   exited: Promise<number>;
   stdout: () => Promise<string>;
+  /** Resolves with the provider-minted session id once seen in the stream,
+      or undefined if the stream ended without one. Only populated when
+      captureSessionId was requested at spawn time (claude never needs this
+      -- it mints nothing, rt already chose the id). */
+  sessionId: () => Promise<string | undefined>;
 }
 
-function defaultSpawnHeadless(argv: string[], cwd: string, env: Record<string, string> = {}): HeadlessChild {
+/** Scans a codex `--json` event stream for its `thread.started` event's
+    thread_id (confirmed against a real `codex exec --json` run 2026-09-15 --
+    the line is `{"type":"thread.started","thread_id":"<uuid>"}`; codex calls
+    this a "thread" in the stream but it is the same id `codex exec resume
+    <SESSION_ID>` accepts), without buffering the whole stream (that's
+    `stdout()`'s job, on the other half of the tee below). Exported so it can
+    be unit-tested directly against a fake stream, rather than only
+    indirectly through a test double that reimplements the parsing. */
+export function extractSessionId(stream: ReadableStream<Uint8Array>): Promise<string | undefined> {
+  return (async () => {
+    // bun-types' ReadableStream<Uint8Array> and TextDecoderStream's
+    // WritableStream<BufferSource> disagree just enough (BufferSource vs
+    // Uint8Array) that pipeThrough's own generic can't unify them; the cast
+    // is a type-level workaround for that mismatch, not a runtime one --
+    // TextDecoderStream really does accept a Uint8Array chunk.
+    const reader = (stream.pipeThrough(new TextDecoderStream() as unknown as ReadableWritablePair<string, Uint8Array>)).getReader();
+    let buffer = "";
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += value;
+        let newlineAt: number;
+        while ((newlineAt = buffer.indexOf("\n")) !== -1) {
+          const line = buffer.slice(0, newlineAt);
+          buffer = buffer.slice(newlineAt + 1);
+          if (!line.trim()) continue;
+          try {
+            const event = JSON.parse(line) as { thread_id?: unknown };
+            if (typeof event.thread_id === "string" && event.thread_id) return event.thread_id;
+          } catch {
+            // Not every line is JSON we care about; keep scanning.
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    return undefined;
+  })();
+}
+
+function defaultSpawnHeadless(
+  argv: string[], cwd: string, env: Record<string, string> = {},
+  opts: { captureSessionId?: boolean } = {},
+): HeadlessChild {
   const proc = Bun.spawn(argv as [string, ...string[]], {
     cwd,
     env: { ...process.env, ...env },
@@ -53,9 +103,19 @@ function defaultSpawnHeadless(argv: string[], cwd: string, env: Record<string, s
     stdout: "pipe",
     stderr: "ignore",
   });
+  if (!opts.captureSessionId || !proc.stdout) {
+    return {
+      exited: proc.exited,
+      stdout: () => new Response(proc.stdout).text(),
+      sessionId: () => Promise.resolve(undefined),
+    };
+  }
+  const [forText, forId] = proc.stdout.tee();
+  const sessionIdPromise = extractSessionId(forId);
   return {
     exited: proc.exited,
-    stdout: () => new Response(proc.stdout).text(),
+    stdout: () => new Response(forText).text(),
+    sessionId: () => sessionIdPromise,
   };
 }
 
@@ -161,7 +221,7 @@ export function createAgentHandlers(opts: {
   log?: Logger;
   herdrRunner?: HerdrRunner;
   herdrRunnerForSocket?: (socket: string) => HerdrRunner;
-  spawnHeadless?: (argv: string[], cwd: string, env: Record<string, string>) => HeadlessChild;
+  spawnHeadless?: (argv: string[], cwd: string, env: Record<string, string>, opts?: { captureSessionId?: boolean }) => HeadlessChild;
   insertAgentFn?: typeof insertAgent;
   /** The daemon-owned background herdr server `--bg` launches onto (spec "The bg service"). Omitted, `bg: true` is refused. */
   bg?: Pick<BgService, "ensure" | "reprobe">;
@@ -232,6 +292,12 @@ export function createAgentHandlers(opts: {
       rec.paneId = out.paneId;
       rec.tabId = out.tabId;
       rec.workspaceId = out.workspaceId;
+      if (rec.provider === "codex") {
+        void herdrAgentSessionId(out.paneId, 15_000).then((sid) => {
+          if (sid) updateAgentSessionId(rec.id, sid, db);
+          else log.warn({ id: rec.id }, "agent: codex herdr launch never reported a session id (is `herdr integration install codex` set up?)");
+        });
+      }
       return { ok: true, data: rec };
     }
 
@@ -242,7 +308,13 @@ export function createAgentHandlers(opts: {
     // The caller inserts rec before invoking launch() for every headless
     // path (start and resume alike), so the row already exists here --
     // finishAgent below can never race an insert that hasn't happened yet.
-    const child = spawnHeadless(argv, rec.cwd, gateEnv);
+    const child = spawnHeadless(argv, rec.cwd, gateEnv, { captureSessionId: rec.provider === "codex" });
+    if (rec.provider === "codex") {
+      void child.sessionId().then((sid) => {
+        if (sid) updateAgentSessionId(rec.id, sid, db);
+        else log.warn({ id: rec.id }, "agent: codex headless launch never reported a session id");
+      });
+    }
     void child.exited.then(async (exitCode) => {
       try {
         writeFileSync(resultPath, await child.stdout());

@@ -34,7 +34,7 @@ test("refuses headless start before spawning", async () => {
   const spy = { called: false };
   const res = await runAgentFallback("agent:start",
     { repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "headless" },
-    { db, spawnHeadless: () => { spy.called = true; return { exited: Promise.resolve(0), stdout: async () => "" }; } });
+    { db, spawnHeadless: () => { spy.called = true; return { exited: Promise.resolve(0), stdout: async () => "", sessionId: () => Promise.resolve(undefined) }; } });
   expect(res.ok).toBe(false);
   if (res.ok) throw new Error("unreachable");
   expect(res.error).toBe(HEADLESS_NEEDS_DAEMON);

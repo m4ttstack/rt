@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync, chmodSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { defaultHerdrRunner, herdrAgentWait, launchInWorkspace, resolveHerdrBin, type HerdrRunner } from "../agent-herdr.ts";
+import { defaultHerdrRunner, herdrAgentSessionId, herdrAgentWait, launchInWorkspace, resolveHerdrBin, type HerdrRunner } from "../agent-herdr.ts";
 
 function scripted(responses: Record<string, { stdout: string; exitCode?: number }>) {
   const calls: string[][] = [];
@@ -92,6 +92,32 @@ test("herdrAgentWait builds the current verb (agent wait --until)", async () => 
   const { calls, runner } = scripted({ "agent wait": { stdout: "" } });
   await herdrAgentWait("wA:p1", ["idle", "done"], 45000, runner);
   expect(calls[0]).toEqual(["agent", "wait", "wA:p1", "--until", "idle", "--until", "done", "--timeout", "45000"]);
+});
+
+// Real `herdr agent get` output, observed 2026-09-15, after codex's first
+// prompt completed: {"result":{"agent":{"agent_session":{"agent":"codex",
+// "kind":"id","source":"herdr:codex","value":"<uuid>"},...},"type":"agent_info"}}
+// A freshly launched, not-yet-prompted pane has no `agent_session` key at
+// all -- that shape is what the "still empty" call below models.
+test("herdrAgentSessionId returns the id once herdr reports it", async () => {
+  let call = 0;
+  const runner: HerdrRunner = async (args) => {
+    call += 1;
+    if (args[0] === "agent" && args[1] === "get") {
+      return call < 2
+        ? { stdout: JSON.stringify({ result: { agent: {} } }), exitCode: 0 }
+        : { stdout: JSON.stringify({ result: { agent: { agent_session: { value: "s_herdr_456" } } } }), exitCode: 0 };
+    }
+    throw new Error(`unexpected herdr call: ${args.join(" ")}`);
+  };
+  const sid = await herdrAgentSessionId("pane-1", 5000, runner);
+  expect(sid).toBe("s_herdr_456");
+});
+
+test("herdrAgentSessionId gives up at the timeout", async () => {
+  const runner: HerdrRunner = async () => ({ stdout: JSON.stringify({ result: { agent: {} } }), exitCode: 0 });
+  const sid = await herdrAgentSessionId("pane-1", 600, runner);
+  expect(sid).toBeUndefined();
 });
 
 test("resolveHerdrBin prefers HERDR_BIN over everything else", () => {
