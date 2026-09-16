@@ -262,9 +262,14 @@ export function buildCodexArgv(inv: AgentInvocation, bins?: { codex?: string }):
   }
   const bin = bins?.codex ?? resolveCodexBin();
   const flags = codexFlags(inv);
+  // --json is gated on inv.headless, mirroring claude.ts's claudeArgs gating
+  // "-p --output-format json" the same way -- this function is also exercised
+  // with headless: false in tests (matching buildClaudeArgv's own "plain
+  // start, pane surface" test), so --json must not be unconditional.
+  const jsonFlag = inv.headless ? ["--json"] : [];
   const args = inv.session.kind === "start"
-    ? [bin, "exec", "--json", ...flags]
-    : [bin, "exec", "resume", ...flags, inv.session.sessionId];
+    ? [bin, "exec", ...jsonFlag, ...flags]
+    : [bin, "exec", "resume", ...jsonFlag, ...flags, inv.session.sessionId];
   if (inv.prompt) args.push(inv.prompt);
   return args;
 }
@@ -309,9 +314,14 @@ describe("buildCodexArgv", () => {
     ]);
   });
 
-  test("headless resume: exec resume <flags> <id> <prompt>", () => {
+  test("headless resume: exec resume --json <flags> <id> <prompt>", () => {
     const argv = buildCodexArgv({ model: "gpt-6-astra", session: { kind: "resume", sessionId: UUID }, headless: true, prompt: "q" }, bins);
-    expect(argv).toEqual(["/abs/codex", "exec", "resume", "-m", "gpt-6-astra", UUID, "q"]);
+    expect(argv).toEqual(["/abs/codex", "exec", "resume", "--json", "-m", "gpt-6-astra", UUID, "q"]);
+  });
+
+  test("non-headless resume emits no --json", () => {
+    const argv = buildCodexArgv({ session: { kind: "resume", sessionId: UUID }, headless: false }, bins);
+    expect(argv).toEqual(["/abs/codex", "exec", "resume", UUID]);
   });
 
   test("herdr start has no --json", () => {
@@ -677,12 +687,14 @@ to:
 ```
 (`agentResume`'s allowlist is unchanged — provider/yolo are start-only, per Global Constraints.)
 
-- [ ] **Step 3: Rebuild rt-client**
+- [ ] **Step 3: Rebuild rt-client locally**
 
 ```bash
 cd packages/rt-client && bun run build && cd ../..
 ```
-Per this repo's documented footgun (`dist/` goes stale silently for `file:` consumers) — repo-tools' own CLI imports rt-client's `src/` directly so this isn't needed for THIS repo to work, but do it anyway so any other checked-out mattstack app picks up the type change on its next install.
+Per this repo's documented footgun (`dist/` goes stale silently for `file:` consumers) — repo-tools' own CLI imports rt-client's `src/` directly so this isn't needed for THIS repo to work, but do it anyway so any `file:`-based mattstack app checkout picks up the type change on its next install.
+
+**This does NOT reach console.** `mattstack-apps/apps/console` depends on `@mattstack/rt-client` via `"catalog:"`, and `mattstack-apps/package.json`'s catalog pins an exact **published npm version** (verified: `"@mattstack/rt-client": "0.21.0"`), not a `file:`/workspace link into this checkout. Task 3's registry change and this task's type changes are invisible to console until rt-client is published and that catalog pin is bumped — see Step 8 below. Skipping that step means Task 9's manual verify (settings page) fails with an empty `agent.` prefix result and `useSetSetting` calls 404/400 with "unknown setting", because console's `allDefs()` is still serving the OLD flat `agent.model`/`agent.effort`/etc. keys.
 
 - [ ] **Step 4: `commands/agent.ts` — add the flags**
 
@@ -784,11 +796,48 @@ bun test commands/__tests__/agent.test.ts
 ```
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 7: Commit the repo-tools side**
 
 ```bash
 git add commands/agent.ts commands/__tests__/agent.test.ts packages/rt-client/src/commands.ts packages/rt-client/src/client.ts packages/rt-client/dist
 git commit -m "rt agent: add --provider and --yolo flags"
+```
+
+- [ ] **Step 8: Publish `@mattstack/rt-client` and bump the mattstack-apps catalog pin**
+
+This step only matters for Task 9's console verify — repo-tools' own CLI never needs it (it imports rt-client's `src/` directly). It must happen after this commit is on `main` (publishing is release-class, from `main` only, per this repo's documented rule) and after Task 3's registry change is included.
+
+Use the `matt:npm-publish` skill for the OTP/Bitwarden flow. Before publishing: check the current published version (`npm view @mattstack/rt-client version`) against `packages/rt-client/package.json`'s version, bump it (this field is a shared resource across concurrent sessions the same way `SCHEMA_VERSION` is — announce the bump over rt chat before publishing, and renumber if someone else got there first), then:
+
+```bash
+cd packages/rt-client
+npm version <the-agreed-next-version> --no-git-tag-version
+bun run build
+# then follow matt:npm-publish for the actual `npm publish` + OTP step
+cd ../..
+```
+
+After it's live on npm:
+
+```bash
+cd /Users/matt/Documents/GitHub/mattstack-apps
+# bump the catalog pin in package.json:
+#   "@mattstack/rt-client": "<the-published-version>",
+bun install
+```
+
+Verify console actually picked it up before moving to Task 8/9:
+```bash
+cd apps/console && bun run rt-client-version-check 2>/dev/null || node -e "console.log(require('@mattstack/rt-client/package.json').version)"
+```
+(Use whatever this monorepo's real way of confirming an installed package's resolved version is — the `node -e` fallback works regardless.)
+
+- [ ] **Step 9: Commit the mattstack-apps side**
+
+```bash
+cd /Users/matt/Documents/GitHub/mattstack-apps
+git add package.json bun.lock
+git commit -m "deps: bump @mattstack/rt-client for the agent.claude.*/agent.codex.* settings keys"
 ```
 
 ---
@@ -1021,6 +1070,28 @@ git commit -m "daemon: resolve rt agent provider from payload/settings, dispatch
 
 Codex never accepts an externally chosen session id (Task 2's header comment). This task captures the real one it mints, so `rt agent resume` on a codex record targets the right session instead of rt's own placeholder UUID.
 
+- [ ] **Step 0: Verify the real field names BEFORE wiring the parser**
+
+Every field name used below (`session_id` in the `--json` stream, `result.agentSessionId` from `herdr agent get`) is inferred from `--help` text and third-party docs, not observed directly — the spec says so explicitly ("Open items to resolve during implementation"). Do this probe first; do not write Steps 1-5 against the guessed names without it.
+
+Headless stream, in a scratch directory (do not run this against a real repo you care about — it will actually invoke codex):
+```bash
+cd "$(mktemp -d)"
+codex exec --json "reply with the single word: ping" | tee /tmp/codex-json-probe.jsonl
+```
+Read `/tmp/codex-json-probe.jsonl` and find which event (by `"type"` or similar) carries the session/thread id, and its exact key name. If it is not `session_id` at the top level of some line, update Step 1's `extractSessionId` (and its Step 5 unit test) to match what you actually observed — do not proceed with the guessed name once you have the real one.
+
+herdr pane, in a herdr-managed workspace (needs `herdr integration install codex` already run on this machine — install it first if `herdr integration status` doesn't show it):
+```bash
+herdr workspace create --label codex-probe --no-focus  # note the printed root_pane's pane_id
+herdr pane run <pane_id> codex
+sleep 3
+herdr agent get <pane_id>
+```
+Find the session id in the printed JSON and its exact path (the plan guesses `result.agentSessionId` or `agentSessionId`). Update Step 3's `herdrAgentSessionId` (and its Step 5 unit test) to match. Clean up afterward: `herdr pane close <pane_id>` (or close the workspace).
+
+If either probe shows the guessed shape was right, say so in the commit message for this task rather than silently leaving the comment that says "confirmed against a real run" unconfirmed.
+
 - [ ] **Step 1: Extend `HeadlessChild` and `defaultSpawnHeadless` in `lib/daemon/handlers/agent.ts`**
 
 Change the interface (around line 43):
@@ -1049,8 +1120,10 @@ Add a helper above `defaultSpawnHeadless`:
 /** Scans a codex `--json` event stream for its first session_id, without
     buffering the whole stream (that's `stdout()`'s job, on the other half of
     the tee below). The exact event/field name is confirmed against a real
-    codex exec --json run before this ships -- see the spec's Open Items. */
-function extractSessionId(stream: ReadableStream<Uint8Array>): Promise<string | undefined> {
+    codex exec --json run before this ships -- see Step 0 above. Exported so
+    it can be unit-tested directly against a fake stream, rather than only
+    indirectly through a test double that reimplements the parsing. */
+export function extractSessionId(stream: ReadableStream<Uint8Array>): Promise<string | undefined> {
   return (async () => {
     const reader = stream.pipeThrough(new TextDecoderStream()).getReader();
     let buffer = "";
@@ -1214,52 +1287,65 @@ After the existing herdr success path (around line 231, right after `rec.workspa
 
 - [ ] **Step 5: Write failing tests**
 
-In the daemon handler test file:
+First, a direct unit test of `extractSessionId` itself (this is the actual parsing code that runs in production — the daemon-handler test below only checks that the handler *wires it up*, not that the parsing logic is correct, so both are needed):
 
 ```typescript
-test("headless codex launch captures the real session id from the --json stream", async () => {
-  const fakeStdout = new ReadableStream<Uint8Array>({
+import { extractSessionId } from "../../agent.ts"; // adjust to wherever Step 1 exports it from
+
+function streamOf(...lines: string[]): ReadableStream<Uint8Array> {
+  return new ReadableStream<Uint8Array>({
     start(controller) {
-      controller.enqueue(new TextEncoder().encode('{"type":"other"}\n'));
-      controller.enqueue(new TextEncoder().encode('{"session_id":"s_real_123"}\n'));
+      for (const line of lines) controller.enqueue(new TextEncoder().encode(line + "\n"));
       controller.close();
     },
   });
+}
+
+describe("extractSessionId", () => {
+  test("finds session_id on the first matching line, ignoring earlier non-matching JSON", async () => {
+    const sid = await extractSessionId(streamOf('{"type":"other"}', '{"session_id":"s_real_123"}'));
+    expect(sid).toBe("s_real_123");
+  });
+
+  test("ignores non-JSON lines and keeps scanning", async () => {
+    const sid = await extractSessionId(streamOf("not json at all", '{"session_id":"s_real_456"}'));
+    expect(sid).toBe("s_real_456");
+  });
+
+  test("resolves undefined when the stream ends without one", async () => {
+    const sid = await extractSessionId(streamOf('{"type":"other"}'));
+    expect(sid).toBeUndefined();
+  });
+});
+```
+
+Then the daemon-handler wiring test, reusing the same real `extractSessionId` (via the tee) rather than a hand-rolled reimplementation, so the fake can't drift from the real parser:
+
+```typescript
+test("headless codex launch captures the real session id from the --json stream", async () => {
+  const fakeStdout = streamOf('{"type":"other"}', '{"session_id":"s_real_123"}');
   const spawnHeadless = (_argv: string[], _cwd: string, _env: Record<string, string>, opts?: { captureSessionId?: boolean }) => {
     const [forText, forId] = fakeStdout.tee();
     return {
       exited: Promise.resolve(0),
       stdout: () => new Response(forText).text(),
-      sessionId: opts?.captureSessionId
-        ? () => (async () => {
-            const reader = forId.pipeThrough(new TextDecoderStream()).getReader();
-            let buf = "";
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-              buf += value;
-            }
-            for (const line of buf.split("\n")) {
-              try {
-                const e = JSON.parse(line) as { session_id?: string };
-                if (e.session_id) return e.session_id;
-              } catch { /* skip */ }
-            }
-            return undefined;
-          })()
-        : () => Promise.resolve(undefined),
+      sessionId: opts?.captureSessionId ? () => extractSessionId(forId) : () => Promise.resolve(undefined),
     };
   };
   const handlers = createAgentHandlers({ db, emitEvent: () => 0, spawnHeadless, /* ...other injected deps... */ });
   const res = await handlers["agent:start"]({ repo: "r", cwd: "/c", surface: "headless", prompt: "go", provider: "codex" });
   expect(res.ok).toBe(true);
+  if (!res.ok) return;
   // Session-id capture runs on a detached promise chain (`void child.sessionId().then(...)`),
-  // so give it a tick before asserting the DB row updated.
-  await new Promise((r) => setImmediate(r));
-  if (res.ok) {
-    const updated = getAgent(res.data.id, db);
-    expect(updated?.sessionId).toBe("s_real_123");
+  // so poll briefly rather than assuming one tick is enough -- a single
+  // setImmediate is a plausible source of flakiness here.
+  const deadline = Date.now() + 2000;
+  let updated = getAgent(res.data.id, db);
+  while (updated?.sessionId !== "s_real_123" && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 10));
+    updated = getAgent(res.data.id, db);
   }
+  expect(updated?.sessionId).toBe("s_real_123");
 });
 ```
 
@@ -1306,6 +1392,8 @@ git commit -m "agent: capture codex's real session id (headless --json stream, h
 ---
 
 ### Task 8: Console server — settings prefix filter + `/api/agent/models`
+
+**Prerequisite:** Task 5 Steps 8-9 (rt-client published, mattstack-apps' catalog pin bumped and installed). Without that, this task's `?prefix=agent.` filter has nothing new to filter — `allDefs()` still only knows the old flat keys — and this task's own tests may pass while the real end-to-end path (verified in Task 9) is broken.
 
 **Files:**
 - Modify: `mattstack-apps/apps/console/src/server/settings.ts`
@@ -1775,3 +1863,5 @@ git commit -m "console: add Agent Defaults settings page"
 **Placeholder scan:** the only bracketed placeholders left are `/* ...existing test's other injected deps... */` in Tasks 6-7, which is intentional — those tests must match whatever mock shape the *actual* neighboring tests in that file already use, and guessing that shape here would risk being wrong in a way that's worse than pointing at the real file.
 
 **Type consistency:** `AgentInvocation` (Task 1) is the one shared type threaded through `claude.ts`, `codex.ts` (Task 2), and the daemon handler (Task 6) — no renamed duplicate. `AgentProvider` likewise. `updateAgentSessionId`'s signature (Task 4) matches its two call sites in Task 7 exactly (`id, sid, db`).
+
+**Round 1 external review (jack, via rt chat):** found three real issues, now fixed — (1) console consumes `@mattstack/rt-client` from a published npm version via `mattstack-apps`' catalog, not a `file:`/workspace link, so Task 3's registry change never reaches console without a publish + catalog bump; added as Task 5 Steps 8-9 plus a prerequisite note on Task 8. (2) Task 2's `buildCodexArgv` emitted `--json` unconditionally while its own test asserted the opposite for `headless: false`; `--json` is now gated on `inv.headless`, matching `claude.ts`'s pattern, with tests updated. (3) Task 7 flagged its two unverified field-name assumptions in comments but never scheduled the verification; added Step 0 with concrete probe commands, to run before the parser is wired to the guessed names. Also applied: `extractSessionId` exported and directly unit-tested rather than only indirectly through a test double; the daemon-handler test's single `setImmediate` tick replaced with a short poll loop; the spec's codex-resume argument order corrected to match the plan's (flags before the positional id, per the CLI's own `--help` usage line).
