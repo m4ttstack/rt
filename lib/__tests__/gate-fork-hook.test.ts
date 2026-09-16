@@ -68,10 +68,11 @@ function pathWithStubRtRouting(
   return `${dir}:${PATH_WITHOUT_RT}`;
 }
 
-async function runHook(path: string, subject: string): Promise<{
+async function runHook(path: string, subject: string, cwd?: string): Promise<{
   stdout: string; stderr: string; exitCode: number;
 }> {
   const proc = Bun.spawn([HOOK_PATH], {
+    ...(cwd ? { cwd } : {}),
     env: {
       ...process.env,
       PATH: path,
@@ -262,6 +263,54 @@ describe("scripts/hooks/gate-fork.sh", () => {
       { match: "--subject-prefix run:", body: '{"ok":false,"error":"rt daemon unreachable"}', exitCode: 1 },
     ]);
     const { stdout, exitCode } = await runHook(path, herdSubject);
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(stdout.trim())).toEqual(ALLOW);
+  });
+});
+
+// RT-179: the subject and the cwd reach both a JSON string and a grep -F
+// pattern, and neither was escaped for control characters.
+describe("scripts/hooks/gate-fork.sh control characters", () => {
+  test("a tab in the subject still produces parseable deny JSON carrying that subject", async () => {
+    const subject = "mr:https://x/1\tannotated";
+    const path = pathWithStubRt(JSON.stringify({ ok: true, gates: [], cursor: 0 }), 0);
+    const { stdout, exitCode } = await runHook(path, subject);
+    expect(exitCode).toBe(0);
+    const parsed = JSON.parse(stdout.trim());
+    expect(parsed.hookSpecificOutput.permissionDecision).toBe("deny");
+    expect(parsed.hookSpecificOutput.permissionDecisionReason).toContain(subject);
+  });
+
+  test("a newline in the subject cannot split the pattern into a sibling subject's allow", async () => {
+    // grep -F reads a two-line pattern as two patterns, so the second line
+    // alone ("run:b\"") matched a DIFFERENT subject's open row.
+    const subject = 'run:a\nrun:b';
+    const body = JSON.stringify({
+      ok: true, cursor: 0,
+      gates: [gateRow("open", { id: "g-sibling", subject: "run:b" })],
+    });
+    const path = pathWithStubRt(body, 0);
+    const { stdout, exitCode } = await runHook(path, subject);
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(stdout.trim()).hookSpecificOutput.permissionDecision).toBe("deny");
+  });
+
+  test("a worktree path containing a tab still matches its own open run-gate", async () => {
+    const herdSubject = "herd:acme-x/acme-1234-attorney";
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "gate-fork-hook-tab\tdir-")));
+    const runGate = JSON.stringify({
+      ok: true, cursor: 0,
+      gates: [gateRow("open", {
+        id: "g-run", subject: "run:r1", kind: "plan",
+        origin: { runId: "r1", worktree: dir, presentation: "form", paneId: "w1:p1" },
+        owner: "herd:acme-x",
+      })],
+    });
+    const path = pathWithStubRtRouting([
+      { match: `--subject-prefix ${herdSubject}`, body: '{"ok":true,"gates":[],"cursor":0}' },
+      { match: "--subject-prefix run:", body: runGate },
+    ]);
+    const { stdout, exitCode } = await runHook(path, herdSubject, dir);
     expect(exitCode).toBe(0);
     expect(JSON.parse(stdout.trim())).toEqual(ALLOW);
   });

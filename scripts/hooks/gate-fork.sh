@@ -20,11 +20,26 @@ allow() {
   exit 0
 }
 
+# One JSON string escaper for both consumers: the deny payload (where a raw
+# control character is invalid JSON) and the grep -F patterns (where a raw
+# newline splits one pattern into two, so a sibling subject's row can answer
+# for this one, and where a raw tab can never match the payload's own `\t`).
+# awk, not sed: BSD sed reads `\t` in a pattern as a literal `t`.
+json_escape() {
+  printf '%s' "$1" | awk '
+    {
+      gsub(/\\/, "\\\\"); gsub(/"/, "\\\""); gsub(/\t/, "\\t"); gsub(/\r/, "\\r");
+      if (NR > 1) printf "\\n";
+      printf "%s", $0
+    }'
+}
+
 deny() {
   # The two backslash-quote pairs put a literal `"` around the subject in
   # the decoded JSON string; RT_GATE_SUBJECT itself is escaped first so an
-  # embedded quote or backslash can never break out of the JSON string.
-  esc_subject=$(printf '%s' "$RT_GATE_SUBJECT" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
+  # embedded quote, backslash, or control character can never break out of
+  # the JSON string.
+  esc_subject=$(json_escape "$RT_GATE_SUBJECT")
   # shellcheck disable=SC2016 # %s is a printf format spec, not a shell expansion
   printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Blocking forks go through the gate protocol: run `rt gate ask --questions <json>` (the daemon resolves this pane'\''s subject on its own; this pane'\''s recorded subject is \\"%s\\"; add --context for the decision material), then background `rt gate wait <id>` per the gate protocol skill, instead of AskUserQuestion."}}\n' "$esc_subject"
   exit 0
@@ -61,7 +76,7 @@ fi
 # too), so splitting there would land a row's subject and status on
 # different lines and misread every multi-question gate as unanswerable.
 gate_lines=$(printf '%s' "$gates_json" | awk '{gsub(/\{"id":"[^"]*","subject":/, "\n&"); print}')
-subject_lines=$(printf '%s\n' "$gate_lines" | grep -F "\"subject\":\"$RT_GATE_SUBJECT\"")
+subject_lines=$(printf '%s\n' "$gate_lines" | grep -F "\"subject\":\"$(json_escape "$RT_GATE_SUBJECT")\"")
 
 printf '%s\n' "$subject_lines" | grep -Eq '"status":"(open|parked)"' && allow
 
@@ -90,7 +105,7 @@ fi
 # cap and silently stop seeing the newest (live) row.
 run_lines=$(printf '%s' "$run_json" | awk '{gsub(/\{"id":"[^"]*","subject":/, "\n&"); print}')
 for dir in "$PWD" "$(pwd -P)"; do
-  esc_dir=$(printf '%s' "$dir" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
+  esc_dir=$(json_escape "$dir")
   printf '%s\n' "$run_lines" | grep -F "\"worktree\":\"$esc_dir\"" | grep -Eq '"status":"open"' && allow
 done
 
