@@ -52,6 +52,25 @@ describe("parseStartArgs", () => {
     expect(parseStartArgs(["--extra-args", "--bg"]).bg).toBeUndefined();
     expect(parseStartArgs(["--extra-args", "--bg"]).extraArgs).toBe("--bg");
   });
+
+  test("parseStartArgs: --provider codex", () => {
+    const parsed = __test__.parseStartArgs(["--provider", "codex", "--prompt", "go"]);
+    expect(parsed.provider).toBe("codex");
+  });
+
+  test("parseStartArgs: invalid --provider throws", () => {
+    expect(() => __test__.parseStartArgs(["--provider", "cursor"])).toThrow(/invalid provider/);
+  });
+
+  test("parseStartArgs: --yolo sets the flag", () => {
+    const parsed = __test__.parseStartArgs(["--yolo", "--prompt", "go"]);
+    expect(parsed.yolo).toBe(true);
+  });
+
+  test("parseStartArgs: no --yolo leaves it undefined", () => {
+    const parsed = __test__.parseStartArgs(["--prompt", "go"]);
+    expect(parsed.yolo).toBeUndefined();
+  });
 });
 
 describe("parseResumeArgs", () => {

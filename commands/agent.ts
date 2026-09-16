@@ -2,7 +2,8 @@
  * rt agent: hand a prompt to a Claude Code agent and keep the receipt.
  *
  *   rt agent start  [--repo <path>] [--prompt <text> | --prompt-file <path>]
- *                   [--surface herdr|headless] [--model M] [--effort E]
+ *                   [--surface herdr|headless] [--provider claude|codex]
+ *                   [--model M] [--effort E] [--yolo]
  *                   [--account A] [--label L] [--caller C]
  *                   [--workspace W] [--tab T] [--extra-args "<tail>"]
  *                   [--bg] [--json]
@@ -28,7 +29,7 @@ import type { RtResponse } from "../packages/rt-client/src/index.ts";
 
 const FLAGS_WITH_VALUES = new Set([
   "--repo", "--prompt", "--prompt-file", "--surface", "--model", "--effort",
-  "--account", "--label", "--caller", "--workspace", "--tab", "--extra-args",
+  "--account", "--label", "--caller", "--workspace", "--tab", "--extra-args", "--provider",
 ]);
 
 function fail(msg: string): never {
@@ -92,7 +93,7 @@ function parseSurface(s: string | undefined): AgentSurface | undefined {
 interface StartArgs {
   prompt?: string; surface?: AgentSurface; model?: string; effort?: string;
   account?: string; label?: string; caller?: string; workspace?: string;
-  tab?: string; extraArgs?: string; bg?: boolean;
+  tab?: string; extraArgs?: string; bg?: boolean; provider?: "claude" | "codex"; yolo?: boolean;
 }
 
 function parseStartArgs(args: string[]): StartArgs {
@@ -104,6 +105,11 @@ function parseStartArgs(args: string[]): StartArgs {
   if (resolved !== undefined) out.prompt = resolved;
   const surface = parseSurface(flagValue(args, "--surface"));
   if (surface !== undefined) out.surface = surface;
+  const provider = flagValue(args, "--provider");
+  if (provider !== undefined) {
+    if (provider !== "claude" && provider !== "codex") throw new Error(`invalid provider "${provider}": expected claude or codex`);
+    out.provider = provider;
+  }
   for (const [flag, key] of [
     ["--model", "model"], ["--effort", "effort"], ["--account", "account"],
     ["--label", "label"], ["--caller", "caller"], ["--workspace", "workspace"],
@@ -116,6 +122,7 @@ function parseStartArgs(args: string[]): StartArgs {
     if (surface === "headless") throw new Error("--bg is a herdr-surface option");
     out.bg = true;
   }
+  if (hasFlag(args, "--yolo")) out.yolo = true;
   return out;
 }
 
