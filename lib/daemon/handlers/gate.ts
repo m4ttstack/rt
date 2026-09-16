@@ -769,7 +769,13 @@ export function createGateHandlers(
 
     const kind = typeof payload?.kind === "string" && payload.kind.trim() ? payload.kind.trim() : "question";
     const ownerIsHuman = deriveOwner(resolved.runId ? { runId: resolved.runId } : undefined, runSpawnedBy) === "human";
-    if (ownerIsHuman && !EXEMPT_CONTEXT_KINDS.has(kind) && !contextOmitted && !context?.trim()) {
+    // Only a dropped GATE context exempts the guard: that drop is the size
+    // cap eating the one thing a human-owned gate needs. A drop of question
+    // contexts alone (contextOmitted true, gate context absent because the
+    // caller never sent one) must not read as "context omitted for size" --
+    // it is just no context, same as never having one.
+    const gateContextOmitted = gateContextBytes > CONTEXT_CAP_BYTES;
+    if (ownerIsHuman && !EXEMPT_CONTEXT_KINDS.has(kind) && !gateContextOmitted && !context?.trim()) {
       return { ok: false as const, error: MISSING_CONTEXT_ERROR };
     }
 

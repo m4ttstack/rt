@@ -526,6 +526,15 @@ describe("gate:ask structured question context (RT-184)", () => {
     expect(Object.keys(row.questions[0]!)).not.toContain("context");
   });
 
+  test("a human-owned, non-exempt gate with no gate context is still refused when only question contexts overflow the budget", async () => {
+    const { handlers } = harness({ resolveSubject: () => ({ ok: true, subject: "mr:x" }) });
+    const res = await handlers["gate:ask"]({ subject: "mr:x", questions: withContexts(4096, 4097) });
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error).toContain("context");
+    expect(res.error).toContain("decide from alone");
+  });
+
   test("an oversized option description is a hard reject, not a drop: the caller authored it", async () => {
     const { handlers } = harness({ resolveSubject: () => ({ ok: true, subject: "mr:x" }) });
     const res = await handlers["gate:ask"]({
