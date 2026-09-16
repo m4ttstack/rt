@@ -1,0 +1,7 @@
+The setup checklist asks where rt should clone your team's repos. You can also set this from the CLI:
+
+```bash
+rt setup repo-root set ~/code
+```
+
+Before Install (when the home repo doesn't exist yet), the folder choice is staged in a seed file. After Install, it writes directly to the settings store. Omit the folder argument to pipe `{"root": "<path>"}` on stdin for scripted installs.
