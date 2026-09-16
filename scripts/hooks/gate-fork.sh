@@ -26,7 +26,7 @@ deny() {
   # embedded quote or backslash can never break out of the JSON string.
   esc_subject=$(printf '%s' "$RT_GATE_SUBJECT" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
   # shellcheck disable=SC2016 # %s is a printf format spec, not a shell expansion
-  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Blocking forks go through the gate protocol: run `rt gate open --subject \\"%s\\" --kind <scope> --questions <json>` and wait per the gate protocol skill, instead of AskUserQuestion."}}\n' "$esc_subject"
+  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Blocking forks go through the gate protocol: run `rt gate ask --questions <json>` (the daemon resolves this pane'\''s subject on its own; this pane'\''s recorded subject is \\"%s\\"; add --context for the decision material), then background `rt gate wait <id>` per the gate protocol skill, instead of AskUserQuestion."}}\n' "$esc_subject"
   exit 0
 }
 

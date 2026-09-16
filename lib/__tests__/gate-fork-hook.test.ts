@@ -123,7 +123,7 @@ describe("scripts/hooks/gate-fork.sh", () => {
     expect(JSON.parse(stdout.trim())).toEqual(ALLOW);
   });
 
-  test("no open/parked gate for the subject: deny, naming rt gate open and the subject", async () => {
+  test("no open/parked gate for the subject: deny, naming rt gate ask and the subject", async () => {
     const path = pathWithStubRt(JSON.stringify({ ok: true, gates: [], cursor: 0 }), 0);
     const { stdout, exitCode } = await runHook(path, SUBJECT);
     expect(exitCode).toBe(0);
@@ -131,7 +131,7 @@ describe("scripts/hooks/gate-fork.sh", () => {
     expect(parsed.hookSpecificOutput.hookEventName).toBe("PreToolUse");
     expect(parsed.hookSpecificOutput.permissionDecision).toBe("deny");
     const reason: string = parsed.hookSpecificOutput.permissionDecisionReason;
-    expect(reason).toContain("rt gate open");
+    expect(reason).toContain("rt gate ask");
     expect(reason).toContain(SUBJECT);
   });
 
