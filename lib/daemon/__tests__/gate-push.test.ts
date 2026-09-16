@@ -1,7 +1,8 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdtempSync, rmSync } from "fs";
+import { mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
+import { resolveAllLiveInboxes, resolveInbox, resolveLiveInbox } from "../../claude-registry.ts";
 import pino from "pino";
 import { createGatesStore, GATE_BY_PANE, type GatesStore, type GateQuestion } from "../gates-store.ts";
 import { createGatePush, GATE_ANSWERED_PHRASE, GATE_CLOSED_PHRASE, GATE_SUBSCRIPTION_PHRASE, safeSurface } from "../gate-push.ts";
@@ -672,6 +673,53 @@ describe("retryDeadPanes: answered-unconsumed re-delivery sweep", () => {
     expect(reNudged).toBe(5); // 4 would mean the dead discovery ate one
   });
 
+  /** The shape the registry lookup alone cannot see: a pane that crashes
+      AFTER its doorbell landed leaves its registry file behind, so the row
+      still resolves and only its pid/socket say it is gone. Wired here the
+      way the daemon wires it, through the liveness-checked resolver. */
+  test("(l) a pane that crashed leaving its registry row is found dead, and its budget is not burned", async () => {
+    const root = mkdtempSync(join(tmpdir(), "rt-gate-push-registry-"));
+    dirs.push(root);
+    const sockDir = mkdtempSync(join(tmpdir(), "rt-gate-push-sock-"));
+    dirs.push(sockDir);
+    const sock = join(sockDir, "live.sock");
+    writeFileSync(sock, "");
+    const session = "aaaaaaaa-0000-0000-0000-0000000000ff";
+    writeFileSync(join(root, "4242.json"), JSON.stringify({ pid: process.pid, sessionId: session, messagingSocketPath: sock, status: "idle" }));
+
+    const store = freshStore();
+    const warns: Array<{ ctx: Record<string, unknown>; msg: string }> = [];
+    const pushLog = pino({ level: "silent" });
+    (pushLog as unknown as { warn: (ctx: Record<string, unknown>, msg: string) => void }).warn = (ctx, msg) => { warns.push({ ctx, msg }); };
+    const push = createGatePush({
+      store,
+      deliver: async () => ({ ok: true as const }),
+      resolveSession: (id) => resolveLiveInbox(id, { roots: [root] }),
+      resolveAll: () => resolveAllLiveInboxes({ roots: [root] }),
+      log: pushLog,
+    });
+
+    const row = store.open({ subject: "run:r1", kind: "clarify", questions: qs(), nudge: { session } }).row;
+    store.answer(row.id, { q: "a" }, "console");
+    await push.onAnswered(store.get(row.id)!);
+    expect(store.get(row.id)!.delivery!.outcome).toBe("delivered");
+
+    // The pane dies. Its registry row survives it, so the raw lookup still
+    // hits and only the liveness check can tell the difference.
+    unlinkSync(sock);
+    expect(resolveInbox(session, { roots: [root] })).not.toBeNull();
+
+    for (let i = 0; i < 4; i++) await push.retryDeadPanes();
+    expect(store.get(row.id)!.delivery!.outcome).toBe("dead-pane");
+    expect(store.deadPanePushes().map((r) => r.id)).toContain(row.id);
+    expect(warns.map((w) => w.msg)).toContain("gate-push: re-delivery found a dead pane; handing to the dead-pane retry");
+
+    writeFileSync(sock, "");
+    let reNudged = 0;
+    for (let i = 0; i < 40; i++) reNudged += (await push.retryDeadPanes()).reNudged;
+    expect(reNudged).toBe(5);
+  });
+
   test("(g) a stuck-delivery row IS eligible for the second pass", async () => {
     const { push, store, events } = consumeHarness();
     const row = store.open({ subject: "herd:h/j1", kind: "question", questions: qs(), nudge: { session: "sess-1" } }).row;
@@ -773,4 +821,15 @@ describe("safeSurface (answering-surface allowlist, prompt-injection hardening)"
     expect(safeSurface("console\n")).toBe("console");
     expect(safeSurface(" board ")).toBe("board");
   });
+});
+
+/** The behavior above is only real if the daemon resolves through the
+    liveness-checked pair: wired to the raw registry read, a crashed pane's
+    lingering row reads alive and the dead-pane pass never sees it. */
+test("the daemon wires gate-push to the liveness-checked resolvers", () => {
+  const src = readFileSync(join(import.meta.dir, "..", "..", "daemon.ts"), "utf8");
+  const block = src.slice(src.indexOf("createGatePush({"));
+  const wiring = block.slice(0, block.indexOf("});"));
+  expect(wiring).toContain("resolveSession: resolveLiveInbox");
+  expect(wiring).toContain("resolveAll: resolveAllLiveInboxes");
 });
