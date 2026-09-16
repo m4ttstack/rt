@@ -185,6 +185,32 @@ describe("scripts/hooks/gate-fork.sh", () => {
     expect(JSON.parse(stdout.trim())).toEqual(ALLOW);
   });
 
+  test("a parked run-gate in this worktree denies: --open excludes it server-side, deliberately", async () => {
+    const herdSubject = "herd:acme-x/acme-1234-attorney";
+    const parkedRunGate = JSON.stringify({
+      ok: true, cursor: 0,
+      gates: [gateRow("parked", {
+        id: "g-run", subject: "run:r1", kind: "plan",
+        origin: { runId: "r1", worktree: process.cwd(), presentation: "form", paneId: "w1:p1" },
+        owner: "herd:acme-x",
+      })],
+    });
+    const path = pathWithStubRtRouting([
+      { match: `--subject-prefix ${herdSubject}`, body: '{"ok":true,"gates":[],"cursor":0}' },
+      // Most specific first: a real daemon's --open never returns this
+      // parked row (not-live, same contract a form-presentation gate
+      // enforces), so the route matched only when --open is present answers
+      // empty. If the hook regressed and stopped sending --open, the call
+      // would instead fall through to the broader route below, which hands
+      // back the parked row and would flip this test to allow.
+      { match: "--subject-prefix run: --open", body: '{"ok":true,"gates":[],"cursor":0}' },
+      { match: "--subject-prefix run:", body: parkedRunGate },
+    ]);
+    const { stdout, exitCode } = await runHook(path, herdSubject);
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(stdout.trim()).hookSpecificOutput.permissionDecision).toBe("deny");
+  });
+
   test("an open run-gate in a DIFFERENT worktree still denies", async () => {
     const herdSubject = "herd:acme-x/acme-1234-attorney";
     const runGate = JSON.stringify({
