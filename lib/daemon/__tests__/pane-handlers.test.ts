@@ -299,14 +299,38 @@ test("pane:spawn quotes a cwd with a space", async () => {
   expect(seen.find((s) => s.method === "pane.send_input")!.params.text).toBe("cd '/repos/my repo' && claude");
 });
 
+/** The plain first-run dialog: the cursor starts on "Yes, proceed". */
+const PLAIN_TRUST = "Do you trust the files in this folder?\n❯ 1. Yes, proceed\n  2. No, exit\n";
+/** The elevated variant: the cursor defaults to "No, exit". */
+const ELEVATED_TRUST = "Do you trust the files in this folder?\nThis folder pre-approves 12 tool permissions in .claude/settings.local.json.\n  1. Yes, proceed\n❯ 2. No, exit\n";
+
 test("pane:spawn answers the trust dialog once, then sends the opening prompt", async () => {
-  const { handler, calls } = spawnFake({ statuses: ["blocked", "idle"], screen: "Do you trust the files in this folder?" });
+  const { handler, calls } = spawnFake({ statuses: ["blocked", "idle"], screen: PLAIN_TRUST });
   const { pane, seen } = harness(handler);
   const res = await pane["pane:spawn"]({ cwd: "/repos/chat", prompt: "read AGENTS.md" });
   if (!res.ok) throw new Error(res.error);
   expect(res.data.ready).toBe(true);
   expect(calls.filter((c) => c === "pane.send_keys")).toHaveLength(1);
+  expect(seen.find((s) => s.method === "pane.send_keys")!.params.keys).toEqual(["enter"]);
   expect(seen.find((s) => s.method === "agent.prompt")!.params).toMatchObject({ target: "w2:p7", text: "read AGENTS.md", wait: { until: ["working"], timeout_ms: 5000 } });
+});
+
+test("pane:spawn walks the elevated trust dialog up to Yes instead of entering on No", async () => {
+  const { handler } = spawnFake({ statuses: ["blocked", "idle"], screen: ELEVATED_TRUST });
+  const { pane, seen } = harness(handler);
+  const res = await pane["pane:spawn"]({ cwd: "/repos/chat" });
+  if (!res.ok) throw new Error(res.error);
+  expect(seen.find((s) => s.method === "pane.send_keys")!.params.keys).toEqual(["up", "enter"]);
+});
+
+test("pane:spawn sends no key to a trust dialog whose selection it cannot read, and reports not ready", async () => {
+  const { handler, calls } = spawnFake({ statuses: ["blocked", "idle"], screen: "Do you trust the files in this folder?\n  1. Yes, proceed\n  2. No, exit\n" });
+  const { pane } = harness(handler);
+  const res = await pane["pane:spawn"]({ cwd: "/repos/chat", prompt: "hi" });
+  if (!res.ok) throw new Error(res.error);
+  expect(calls).not.toContain("pane.send_keys");
+  expect(res.data.ready).toBe(false);
+  expect(calls).not.toContain("agent.prompt");
 });
 
 test("pane:spawn returns ready:false with the pane when idle never arrives, and does not send the prompt", async () => {

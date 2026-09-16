@@ -41,7 +41,10 @@ export const WILDCARD_SUBSCRIPTIONS = [
 ];
 export const paneStatusSubscription = (pane: string) => [{ type: "pane.agent_status_changed", pane_id: pane }];
 
-const WATCHED: ReadonlySet<string> = new Set(["spawning", "active", "at-gate", "at-milestone"]);
+// `stuck-at-modal` belongs here for the exit path above all: a worker parked on
+// the trust dialog whose pane is then closed has crashed like any other, and its
+// open gates must close with it.
+const WATCHED: ReadonlySet<string> = new Set(["spawning", "active", "at-gate", "at-milestone", "stuck-at-modal"]);
 const RECONCILE_MS = 30_000;
 const TIMER_LABEL = "herd-lifecycle-reconcile";
 
@@ -183,11 +186,22 @@ export function createHerdLifecycle(opts: {
     const ref = formatPaneRef(pane, hidden ? "bg" : "visible");
 
     if (ev.type === "pane.agent_detected") {
-      if (job.status === "spawning") store.setJobStatus(job.herd, job.name, "active");
+      // A detected agent is claude past the pre-claude modal, so this is also
+      // what retires a `stuck-at-modal` row: the shepherd (or anyone) accepting
+      // the dialog by hand clears the marker with no second command.
+      if (job.status === "spawning" || job.status === "stuck-at-modal") store.setJobStatus(job.herd, job.name, "active");
       watchPane(socket, pane);
       return;
     }
     if (ev.type === "pane.agent_status_changed") {
+      // herdr detects the agent before a spawn can park a failed trust accept,
+      // so accepting the dialog by hand produces no second agent_detected --
+      // a status change is the only event left that can retire the parked row,
+      // and without this one the job stays parked while its worker runs.
+      // `blocked` is excluded: that is what the modal itself looks like.
+      if (job.status === "stuck-at-modal" && (ev.agent_status === "working" || ev.agent_status === "idle")) {
+        store.setJobStatus(job.herd, job.name, "active");
+      }
       if (ev.agent_status === "blocked") {
         idleTimers.get(key)?.clear();
         idleTimers.delete(key);
