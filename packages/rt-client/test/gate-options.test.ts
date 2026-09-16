@@ -78,6 +78,31 @@ describe("normalizeGateOptions", () => {
     });
   });
 
+  describe("option description", () => {
+    test("an object option's description is preserved verbatim", () => {
+      expect(normalizeGateOptions([{ value: "a", label: "fix", description: "patch the null check" }])).toEqual([
+        { value: "a", label: "Fix", description: "patch the null check" },
+      ]);
+    });
+    test("a description is never capitalized or suffixed, even with recommended: true", () => {
+      expect(normalizeGateOptions([{ value: "a", label: "fix", recommended: true, description: "lowercase stays. no suffix" }])).toEqual([
+        { value: "a", label: "Fix (Recommended)", description: "lowercase stays. no suffix" },
+      ]);
+    });
+    test("an option without a description has no description key", () => {
+      const [bare, obj] = normalizeGateOptions(["yes", { value: "a", label: "A" }]);
+      expect(Object.keys(bare!)).toEqual(["value", "label"]);
+      expect(Object.keys(obj!)).toEqual(["value", "label"]);
+    });
+    test("a non-string description is dropped rather than coerced", () => {
+      const [out] = normalizeGateOptions([{ value: "a", label: "A", description: 42 } as unknown as GateQuestion["options"][number]]);
+      expect(out).toEqual({ value: "a", label: "A" });
+    });
+    test("an empty description is dropped", () => {
+      expect(normalizeGateOptions([{ value: "a", label: "A", description: "" }])).toEqual([{ value: "a", label: "A" }]);
+    });
+  });
+
   describe("word-like label capitalization", () => {
     test("an all-lowercase single word is capitalized", () => {
       expect(normalizeGateOptions(["main"])).toEqual([{ value: "main", label: "Main" }]);

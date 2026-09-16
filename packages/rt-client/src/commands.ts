@@ -97,7 +97,7 @@ export const GATE_BY_PANE = "pane";
 export type GateStatus = "open" | "answered" | "parked" | "closed";
 /** Reconciler's view of an agent's liveness; also the value `GateRow.executor` is stamped with. */
 export type ExecutorState = "live" | "blocked" | "hidden" | "gone" | "cleared" | "unknown";
-export type GateOption = string | { value: string; label: string; recommended?: boolean };
+export type GateOption = string | { value: string; label: string; recommended?: boolean; description?: string };
 export interface GateOrigin {
   paneId?: string;
   tabId?: string;

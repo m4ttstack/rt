@@ -6,6 +6,9 @@ import type { GateOption, GateQuestion } from "./commands.ts";
 export interface GateOptionObject {
   value: string;
   label: string;
+  /** Per-option explanation, carried verbatim: never capitalized, never
+      suffixed, never filled in from value/label. */
+  description?: string;
 }
 
 export function gateOptionValue(o: GateOption): string {
@@ -45,9 +48,11 @@ function capitalize(label: string): string {
     word-like (see isWordLikeLabel), and an object form's `recommended:
     true` lifts into a " (Recommended)" label suffix -- guarded against
     double-appending -- since `recommended` itself does not survive into
-    the returned object; the suffix IS its wire representation. Every
-    returned entry is a full {value,label} pair -- callers may trust the
-    return type without re-checking it. Pure and order-preserving. */
+    the returned object; the suffix IS its wire representation. An object
+    form's non-empty string `description` rides along untouched (no
+    capitalization, no suffix); any other description shape is dropped.
+    Every returned entry is a full {value,label} pair -- callers may trust
+    the return type without re-checking it. Pure and order-preserving. */
 export function normalizeGateOptions(options: GateOption[]): GateOptionObject[] {
   return options.map((o) => {
     const recommended = o !== null && typeof o === "object" && (o as { recommended?: unknown }).recommended === true;
@@ -70,7 +75,8 @@ export function normalizeGateOptions(options: GateOption[]): GateOptionObject[] 
     // downstream `label || value` fallback (gate-kit) must still see label
     // as absent, not as a non-empty "(Recommended)" that hides the value.
     if (recommended && label && !HAS_RECOMMENDED_SUFFIX.test(label)) label += RECOMMENDED_SUFFIX;
-    return { value, label };
+    const d = o !== null && typeof o === "object" ? (o as { description?: unknown }).description : undefined;
+    return typeof d === "string" && d ? { value, label, description: d } : { value, label };
   });
 }
 
