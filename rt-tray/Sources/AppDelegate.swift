@@ -1141,7 +1141,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
 
     private func setupAutoUpdate() {
         updater.onUpdateAvailable = { version in
-            Task { @MainActor in
+            // UpdaterController always dispatches this callback on the main
+            // queue, so bridge synchronously rather than hopping via Task.
+            MainActor.assumeIsolated {
                 TrayState.shared.updateAvailable = version.isEmpty ? nil : version
             }
         }
