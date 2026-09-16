@@ -26,7 +26,7 @@ deny() {
   # embedded quote or backslash can never break out of the JSON string.
   esc_subject=$(printf '%s' "$RT_GATE_SUBJECT" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
   # shellcheck disable=SC2016 # %s is a printf format spec, not a shell expansion
-  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Blocking forks go through the gate protocol: run `rt gate open --subject \\"%s\\" --kind <scope> --questions <json>` and wait per the gate protocol skill, instead of AskUserQuestion."}}\n' "$esc_subject"
+  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Blocking forks go through the gate protocol: run `rt gate ask --questions <json>` (the daemon resolves this pane'\''s subject on its own; this pane'\''s recorded subject is \\"%s\\"; add --context for the decision material), then background `rt gate wait <id>` per the gate protocol skill, instead of AskUserQuestion."}}\n' "$esc_subject"
   exit 0
 }
 
@@ -64,4 +64,34 @@ gate_lines=$(printf '%s' "$gates_json" | awk '{gsub(/\{"id":"[^"]*","subject":/,
 subject_lines=$(printf '%s\n' "$gate_lines" | grep -F "\"subject\":\"$RT_GATE_SUBJECT\"")
 
 printf '%s\n' "$subject_lines" | grep -Eq '"status":"(open|parked)"' && allow
+
+# A pipeline gate opened by a run in THIS worktree is this worker's own
+# gate under a run: subject the exact-subject check cannot see (RT-162
+# finding 2). Same row-split discipline as above; worktree matching is
+# exact-string on the JSON-escaped cwd, checked for both $PWD and the
+# physical pwd so a symlinked worktree path still matches.
+if [ -n "$TIMEOUT_BIN" ]; then
+  run_json=$("$TIMEOUT_BIN" 5 rt gate list --subject-prefix "run:" --open 2>/dev/null) || allow
+else
+  run_json=$(rt gate list --subject-prefix "run:" --open 2>/dev/null) || allow
+fi
+# Empty output is unverifiable, and unverifiable degrades to allow, the
+# same posture as the first list branch ([ -n "$gates_json" ] || allow).
+# A daemon that really has zero run gates prints a non-empty envelope
+# ({"ok":true,"gates":[],"cursor":0}), which correctly falls through.
+[ -n "$run_json" ] || allow
+# --open is a server-side status=open filter (not "unanswered, unparked" as
+# a whole -- parked rows are excluded), so a parked run gate never appears
+# here and cannot allow through this branch: it is deliberately not-live,
+# the same contract a form-presentation gate enforces. The owner resumes
+# the pane first. This also keeps the page under the daemon's un-flagged
+# list cap (500 rows, oldest first): --open bounds it to the live count
+# instead of the whole run: history, which would otherwise grow past the
+# cap and silently stop seeing the newest (live) row.
+run_lines=$(printf '%s' "$run_json" | awk '{gsub(/\{"id":"[^"]*","subject":/, "\n&"); print}')
+for dir in "$PWD" "$(pwd -P)"; do
+  esc_dir=$(printf '%s' "$dir" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
+  printf '%s\n' "$run_lines" | grep -F "\"worktree\":\"$esc_dir\"" | grep -Eq '"status":"open"' && allow
+done
+
 deny
