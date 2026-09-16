@@ -21,6 +21,14 @@ import { mkdtempSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
+import { guardTestDaemonEnv } from '@mattstack/rt-client';
+
+// Before the HOME repoint, while HOME still names the real home: an ambient
+// RT_DAEMON_SOCK (herdr panes) wins over HOME inside rtCommand, so without
+// this scrub the suite dispatches at the developer's LIVE rt daemon. Also
+// arms RT_TEST_FORBID_SOCKS, which makes rtCommand throw on a live socket.
+guardTestDaemonEnv();
+
 process.env.HOME = mkdtempSync(join(tmpdir(), 'mr-board-test-home-'));
 
 /**
