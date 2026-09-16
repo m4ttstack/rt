@@ -205,53 +205,39 @@ remembered in the conversation.
      answer in -- there is never a "skip and approve clean" combo
      option, since "post nothing" is the `tiers` question answered as
      an explicit empty array, which the daemon records.
-   - **presentation "wait":** do NOT present a form. Launch ONE background
-     shell command (the shell tool's run-in-background mode) that loops
-     `<status-bin> gate wait <state> --max-ms 90000`, re-running while it
-     prints `{"status":"pending"}`, and exits printing the answered JSON as
-     its last stdout. Then END YOUR TURN in one line: `holding at gate
-     <gateId>`. The pane is idle but armed: typed input lands instantly, and
-     the loop's completion re-invokes this pane with the answer as the tool
-     result. On re-invoke, proceed on the answer exactly as the form branch
-     does. A wait that fails with a closed or not-found message is terminal:
-     follow this wrapper's existing closed-gate rules.
-   - **Closed or missing gate.** If `gate wait` fails with `gate <id> closed (<reason>)`, the
-     decision site itself was abandoned — superseded by a re-review, abandoned, or pruned when
-     the MR left the board. A `not-found` error or `no gate open for <url>` mean the same thing
-     from a different angle: the gate this pane was tracking no longer exists to wait on. All
-     three are terminal, not transient — do not re-run any of them. End cleanly: say so in the
-     pane and stop. Do not invent an answer, do not mark `done`, and do not write `error` either
-     — when the reason is a re-review superseding this gate, a fresh pane already owns this MR's
-     board state, and a late write here would stomp it.
+   - **presentation "wait":** follow `board:gate-cli-recipes`'s "Wait
+     recipe" section (`cat ${CLAUDE_SKILL_DIR}/../gate-cli-recipes/SKILL.md`)
+     for the background-wait mechanics, unchanged; the gate to name in
+     `holding at gate <gateId>` is this one.
+   - **Closed or missing gate.** Follow `board:gate-cli-recipes`'s "Closed
+     or missing gate" section (same file) for the terminal handling,
+     unchanged.
    - **In-pane escape hatch.** If a human interrupts the wait and answers you
      conversationally in the pane instead of through the board, record it so
      any parked resume stays in sync:
      `<status-bin> gate answer <state> --answers <json> --by pane`.
-     - **Strict membership.** Each recorded answer value must be one of that
-       question's option strings, verbatim (e.g. `"comment"`,
-       `["critical","nit"]`) — the daemon rejects anything else. Carry the
-       human's phrasing, hedges, or nuance in the note form instead:
-       `{"outcome": {"value": "comment", "note": "approve once CI is green"}}`.
-       A multi question's explicit empty array (`{"tiers": []}`) is also
-       valid: it records the decision to post none of these findings.
-     - **CAS loss.** `gate answer` prints nothing and exits 0 when the
-       pane's answer was recorded and stands. If it instead prints one JSON
-       line, someone answered first through another surface — that printed
-       answer is the recorded one. Proceed on it, not on the conversational
-       answer given in the pane, and tell the human which answer won.
-     - **Reading answers back.** Whether from `gate wait` or a CAS-loss
-       line, a question's answer may be the bare option string/array or the
-       `{value, note}` object — read `value` in the object case.
+     - **Strict membership, CAS loss, reading answers back.** Follow
+       `mattstack:gate-protocol`'s "Answers are option values" and "CAS and
+       the doorbell" sections (stable source checkout, machine-local by
+       design: `cat
+       ~/Documents/GitHub/mattstack-skills/attachments/gate-protocol/SKILL.md`)
+       for the shared mechanics, unchanged, and `board:gate-cli-recipes`'s
+       "CAS loss and reading answers back" section (`cat
+       ${CLAUDE_SKILL_DIR}/../gate-cli-recipes/SKILL.md`) for this CLI's own
+       silent-success-versus-JSON-line contract. Specific to this gate: the note
+       form example is `{"outcome": {"value": "comment", "note": "approve
+       once CI is green"}}`, and a multi question's explicit empty array
+       (`{"tiers": []}`) is also valid, recording the decision to post none
+       of these findings.
    - **Degraded mode.** If `gate open` exits nonzero (the daemon was down at
      open time), fall back to ONE combined `AskUserQuestion` carrying the
      same questions the gate would have — both `tiers` and `outcome` when
      levels are present, `outcome` alone when they aren't — never the old
      two-gate pair, rendered by the same mechanical rules as presentation
-     "form" above, and proceed on its answers. A failing `gate wait` is not
-     itself degradation — per the presentation branches above, re-run it; only
-     if it keeps failing, and never with the closed message or the terminal
-     errors above (those end cleanly per "Closed or missing gate" instead),
-     fall back to the same combined `AskUserQuestion`, and tell the human why.
+     "form" above, and proceed on its answers. Follow
+     `board:gate-cli-recipes`'s "A failing wait is not degradation" section
+     for when to retry `gate wait` versus fall through to this same combined
+     `AskUserQuestion`.
    - **Act on the answer.** Hand `{tiers, outcome}` to the domain skill so it
      can execute the posting — `tiers` is empty when the gate carried
      `outcome` alone, since a clean review has no findings to post — or post

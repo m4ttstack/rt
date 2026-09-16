@@ -427,6 +427,7 @@ function DecisionQueueModal({
               form={form}
               onFocusPane={onFocusPane}
               showFocusAction={false}
+              showContextFallback={false}
             />
           );
         // The modal exists to give context room: unlike the row card's

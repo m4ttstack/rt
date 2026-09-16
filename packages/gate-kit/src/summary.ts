@@ -1,4 +1,8 @@
-import type { GATE_BY_PANE, GateQuestion } from '@mattstack/rt-client';
+// GATE_BY_PANE is not yet on /gate (RT-180); migrate this line once it
+// lands.
+// eslint-disable-next-line no-restricted-imports
+import type { GATE_BY_PANE } from '@mattstack/rt-client';
+import type { GateQuestion } from '@mattstack/rt-client/gate';
 import { domainForKind } from './kinds';
 import { displayForValue, type GateOptionDisplay } from './options';
 import { unwrapGateAnswer, type GateAnswers } from './payload';

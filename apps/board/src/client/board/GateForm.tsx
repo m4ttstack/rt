@@ -280,6 +280,7 @@ function GateForm({
   form,
   onFocusPane,
   showFocusAction = true,
+  showContextFallback = true,
 }: {
   gate: GateRow;
   /** Absent for a non-MR gate (queueExtras); the focus-pane-via-domain branch
@@ -288,6 +289,10 @@ function GateForm({
   form: GateFormState;
   onFocusPane: (mr: BoardMRWithReview, domain: GateDomain) => void;
   showFocusAction?: boolean;
+  /** DecisionQueueModal already renders an unsectioned context in its own
+      "Decision context" ScrollPane, above the form; a bare host with no such
+      pane wants this on so a prose context doesn't render as nothing. */
+  showContextFallback?: boolean;
 }) {
   const {
     selections,
@@ -325,6 +330,17 @@ function GateForm({
         : [],
     [context]
   );
+  // Mirrors DecisionQueueModal's own fallback: a context no question ends
+  // up sectioning (plain prose, or sections under keys/labels no question
+  // matches) still needs to reach the reader somewhere, raw.
+  const sectioned = useMemo(
+    () =>
+      context !== null &&
+      gate.questions.some(q =>
+        sectionFor(context, { id: q.id, label: q.label })
+      ),
+    [context, gate.questions]
+  );
   return (
     <Questionnaire.Root
       className="tui-gate-form"
@@ -342,6 +358,13 @@ function GateForm({
         );
       }}
     >
+      {showContextFallback && gate.context && !sectioned && (
+        <div className="tui-gate-context-raw">
+          <Markdown unstyled linkTargetBlank>
+            {gate.context}
+          </Markdown>
+        </div>
+      )}
       {display.map(q => {
         const current = selections[q.name];
         const picked = new Set(Array.isArray(current) ? current : []);

@@ -35,5 +35,22 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    files: ['packages/gate-kit/src/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: '@mattstack/rt-client',
+              message:
+                "Import from '@mattstack/rt-client/gate' instead. The bare entry pulls Node-side code into gate-kit's browser bundle.",
+            },
+          ],
+        },
+      ],
+    },
+  },
   ...storybook.configs['flat/recommended']
 );

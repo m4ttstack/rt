@@ -116,8 +116,12 @@ test('an adjudication a paragraph after the quote is still found; without the ma
   expect(bare.remainder).toBe('It holds.\n\nMore.');
 });
 
-test('a context with no markers parses to null, so the form renders as before', () => {
-  expect(parseGateContext('just a paragraph of context')).toBeNull();
+test('a context with no markers keeps its preamble instead of discarding it', () => {
+  const parsed = parseGateContext('just a paragraph of context');
+  expect(parsed).not.toBeNull();
+  expect(parsed?.preamble).toBe('just a paragraph of context');
+  expect(parsed?.sections.size).toBe(0);
+  expect(sectionFor(parsed, { id: 'thread-1' })).toBeUndefined();
   expect(parseGateContext('')).toBeNull();
   expect(sectionFor(null, { id: 'thread-1' })).toBeUndefined();
 });

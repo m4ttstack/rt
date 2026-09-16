@@ -1,5 +1,7 @@
 import { realpathSync } from 'node:fs';
 
+// GateOrigin is not yet on /gate (RT-180); migrate this line once it lands.
+// eslint-disable-next-line no-restricted-imports
 import type { GateOrigin } from '@mattstack/rt-client';
 
 export type FocusResolution =

@@ -1,6 +1,6 @@
 import type { QuestionnaireItemDefinition } from '@shadcn/react/questionnaire';
 
-import type { GateQuestion } from '@mattstack/rt-client';
+import type { GateQuestion } from '@mattstack/rt-client/gate';
 import {
   CODE_CHANGES_QUESTION_ID,
   codeChangesHidden,

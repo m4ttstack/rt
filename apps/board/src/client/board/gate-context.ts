@@ -170,8 +170,9 @@ export function parseGateContext(
     else preambleLines.push(line);
   }
   flush();
-  if (sections.size === 0) return null;
-  return { preamble: unwrap(preambleLines), sections };
+  const preamble = unwrap(preambleLines);
+  if (sections.size === 0 && !preamble) return null;
+  return { preamble, sections };
 }
 
 /** The section a question owns: by key (the question id the asker used for
