@@ -1132,6 +1132,7 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
           defaultSocket: herdrSocketPath(),
           bgSocket: bgService.socketPath(),
           bgClaims,
+          watchdogEnabled: () => watchdogConfig().enabled,
           log,
         });
         herdLifecycle.start();

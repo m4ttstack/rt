@@ -66,6 +66,10 @@ export function createHerdLifecycle(opts: {
   herdr?: typeof defaultHerdrRequest;
   blockedDebounceMs?: number;
   idleDebounceMs?: number;
+  /** The watchdog pokes an idle worker directly, so while it is on the idle
+      room notice would only echo every poke; the blocked notice stays. Read
+      when the debounce fires, never at construction. */
+  watchdogEnabled?: () => boolean;
   setTimer?: (fn: () => void, ms: number) => { clear(): void };
   now?: () => number;
   log: Logger;
@@ -76,6 +80,7 @@ export function createHerdLifecycle(opts: {
   const now = opts.now ?? Date.now;
   const debounceMs = opts.blockedDebounceMs ?? 30_000;
   const idleDebounceMs = opts.idleDebounceMs ?? 180_000;
+  const watchdogEnabled = opts.watchdogEnabled ?? (() => false);
   // A reconcile tick reads sqlite and opens subscriptions; a synchronous
   // throw in a bare setTimeout callback is an uncaughtException, which
   // installCrashHandlers exits the daemon on.
@@ -227,6 +232,7 @@ export function createHerdLifecycle(opts: {
         idleTimers.set(key, setTimer(() => {
           idleTimers.delete(key);
           fireAndForget((async () => {
+            if (watchdogEnabled()) return;
             const fresh = jobFor(socket, pane);
             if (!fresh || fresh.job.status === "done" || fresh.job.status === "closed") return;
             const subject = herdSubject(fresh.job.herd, fresh.job.name);
