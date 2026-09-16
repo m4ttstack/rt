@@ -453,3 +453,87 @@ describe("gate:ask context enforcement", () => {
     expect(store.get(res.data.id)!.context).toBeNull();
   });
 });
+
+describe("gate:ask structured question context (RT-184)", () => {
+  const CTX = "the plan section under decision, quoted verbatim";
+  const withContexts = (a: number, b: number): GateQuestion[] => [
+    { id: "q1", label: "go?", multi: false, options: ["yes", "no"], context: "x".repeat(a) },
+    { id: "q2", label: "how?", multi: false, options: ["fast", "slow"], context: "y".repeat(b) },
+  ];
+
+  test("option descriptions and per-question context reach the stored row", async () => {
+    const { handlers, store } = harness({ resolveSubject: () => ({ ok: true, subject: "mr:x" }) });
+    const res = await handlers["gate:ask"]({
+      subject: "mr:x", context: CTX,
+      questions: [{
+        id: "q1", label: "go?", multi: false, context: "per-question material",
+        options: [{ value: "yes", label: "yes", description: "ship it" }, "no"],
+      }],
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.contextOmitted).toBeUndefined();
+    const row = store.get(res.data.id)!;
+    expect(row.context).toBe(CTX);
+    expect(row.questions).toEqual([{
+      id: "q1", label: "go?", multi: false, context: "per-question material",
+      options: [{ value: "yes", label: "Yes", description: "ship it" }, { value: "no", label: "No" }],
+    }]);
+  });
+
+  test("under the shared 8192-byte budget nothing is dropped", async () => {
+    const { handlers, store } = harness({ resolveSubject: () => ({ ok: true, subject: "mr:x" }) });
+    const res = await handlers["gate:ask"]({ subject: "mr:x", context: "g".repeat(4096), questions: withContexts(2048, 2048) });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.contextOmitted).toBeUndefined();
+    const row = store.get(res.data.id)!;
+    expect(row.context).toBe("g".repeat(4096));
+    expect(row.questions[0]!.context).toBe("x".repeat(2048));
+    expect(row.questions[1]!.context).toBe("y".repeat(2048));
+  });
+
+  test("over the shared budget, question contexts are dropped first and the gate context kept, reported as contextOmitted", async () => {
+    const { handlers, store } = harness({ resolveSubject: () => ({ ok: true, subject: "mr:x" }) });
+    const res = await handlers["gate:ask"]({ subject: "mr:x", context: "g".repeat(4096), questions: withContexts(2048, 2049) });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.contextOmitted).toBe(true);
+    const row = store.get(res.data.id)!;
+    expect(row.context).toBe("g".repeat(4096));
+    expect(Object.keys(row.questions[0]!)).not.toContain("context");
+    expect(Object.keys(row.questions[1]!)).not.toContain("context");
+  });
+
+  test("a gate context that is over budget on its own drops question contexts too", async () => {
+    const { handlers, store } = harness({ resolveSubject: () => ({ ok: true, subject: "mr:x" }) });
+    const res = await handlers["gate:ask"]({ subject: "mr:x", context: "g".repeat(9000), questions: withContexts(10, 10) });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.contextOmitted).toBe(true);
+    const row = store.get(res.data.id)!;
+    expect(row.context).toBeNull();
+    expect(Object.keys(row.questions[0]!)).not.toContain("context");
+  });
+
+  test("question contexts alone over budget are dropped and reported, with no gate context to keep", async () => {
+    const { handlers, store } = harness({ resolveSubject: () => ({ ok: true, subject: "mr:x" }) });
+    const res = await handlers["gate:ask"]({ subject: "mr:x", kind: "milestone", questions: withContexts(4096, 4097) });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.contextOmitted).toBe(true);
+    const row = store.get(res.data.id)!;
+    expect(Object.keys(row.questions[0]!)).not.toContain("context");
+  });
+
+  test("an oversized option description is a hard reject, not a drop: the caller authored it", async () => {
+    const { handlers } = harness({ resolveSubject: () => ({ ok: true, subject: "mr:x" }) });
+    const res = await handlers["gate:ask"]({
+      subject: "mr:x", context: CTX,
+      questions: [{ id: "q1", label: "go?", multi: false, options: [{ value: "yes", label: "Yes", description: "d".repeat(1025) }, "no"] }],
+    });
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error).toContain("1024 bytes");
+  });
+});
