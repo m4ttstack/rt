@@ -683,6 +683,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     /// checkmark, and the Check for Updates title are never stale --
     /// mirrors `ProcessPanelView.makeGearMenu()`'s same fresh-build-per-open
     /// approach, which still owns the panel's own gear menu unchanged.
+    @MainActor
     private func rebuildTrayMenu(_ menu: NSMenu) {
         menu.removeAllItems()
         // Key equivalent is display-only here (a status-item menu's items
@@ -728,6 +729,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         })
     }
 
+    @MainActor
     private var trayUpdateMenuTitle: String {
         if let tag = TrayState.shared.updateAvailable {
             return "Update Available: \(tag)"
@@ -831,6 +833,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
 
     // MARK: - Health Management
 
+    @MainActor
     private func setHealth(_ health: DaemonHealth) {
         currentHealth = health
         updateMenuBarTitle(status: health)
@@ -1138,7 +1141,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
 
     private func setupAutoUpdate() {
         updater.onUpdateAvailable = { version in
-            TrayState.shared.updateAvailable = version.isEmpty ? nil : version
+            // UpdaterController always dispatches this callback on the main
+            // queue, so bridge synchronously rather than hopping via Task.
+            MainActor.assumeIsolated {
+                TrayState.shared.updateAvailable = version.isEmpty ? nil : version
+            }
         }
     }
 
@@ -1283,6 +1290,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     /// `ping` reply (see `DaemonClient.querySupervision`), not `tray:status`.
     /// Best-effort: a nil result just means the gear menu shows no boot info,
     /// same as before this feature existed.
+    ///
+    /// Main-actor because the `TrayState.shared` writes below publish into
+    /// SwiftUI: without the annotation this non-isolated async body runs on
+    /// the cooperative pool (SE-0338) even when called from a main-actor
+    /// caller, and the off-main `objectWillChange` drove `NSOutlineView
+    /// reloadData` on a pool thread — a recurring SIGABRT in AppKit's
+    /// layout engine.
+    @MainActor
     private func refreshBootDiagnostics() async {
         guard let supervision = await daemonClient.querySupervision() else { return }
         TrayState.shared.restartCount = supervision.bootAttempts
@@ -1396,7 +1411,8 @@ extension AppDelegate: NSMenuDelegate {
     /// AppKit shows it -- rebuilds the tray menu fresh every open the same
     /// way `menuWillOpen` would, just earlier in the show sequence.
     func menuNeedsUpdate(_ menu: NSMenu) {
-        rebuildTrayMenu(menu)
+        // AppKit delivers menu-delegate callbacks on the main thread.
+        MainActor.assumeIsolated { rebuildTrayMenu(menu) }
     }
 }
 
