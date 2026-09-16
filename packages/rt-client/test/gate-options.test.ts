@@ -144,4 +144,23 @@ describe("normalizeGateQuestions", () => {
     normalizeGateQuestions(qs);
     expect(qs[0]!.options).toEqual(["x"]);
   });
+
+  describe("per-question context", () => {
+    test("a non-empty context is kept verbatim", () => {
+      const qs: GateQuestion[] = [{ id: "q1", label: "p", multi: false, options: ["x"], context: "  why this matters  " }];
+      expect(normalizeGateQuestions(qs)[0]!.context).toBe("  why this matters  ");
+    });
+    test("a trim-empty context is absent from the output", () => {
+      const qs: GateQuestion[] = [{ id: "q1", label: "p", multi: false, options: ["x"], context: "   " }];
+      expect(Object.keys(normalizeGateQuestions(qs)[0]!)).not.toContain("context");
+    });
+    test("a non-string context is absent from the output", () => {
+      const qs = [{ id: "q1", label: "p", multi: false, options: ["x"], context: 7 }] as unknown as GateQuestion[];
+      expect(Object.keys(normalizeGateQuestions(qs)[0]!)).not.toContain("context");
+    });
+    test("a question without context gains no context key", () => {
+      const qs: GateQuestion[] = [{ id: "q1", label: "p", multi: false, options: ["x"] }];
+      expect(Object.keys(normalizeGateQuestions(qs)[0]!)).toEqual(["id", "label", "multi", "options"]);
+    });
+  });
 });

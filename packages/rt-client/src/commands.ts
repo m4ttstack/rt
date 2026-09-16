@@ -106,7 +106,9 @@ export interface GateOrigin {
   surface?: string;
   presentation?: "form" | "wait";
 }
-export interface GateQuestion { id: string; label: string; multi: boolean; options: GateOption[] }
+/** `context` is per-question material (what this one choice turns on);
+    the gate-level `context` on the open/ask payload is the whole ask's. */
+export interface GateQuestion { id: string; label: string; multi: boolean; options: GateOption[]; context?: string }
 /** Implementations live in gate-options.ts (the browser-safe ./gate
     subpath); re-exported here so existing commands.ts/index.ts consumers
     are unaffected. */

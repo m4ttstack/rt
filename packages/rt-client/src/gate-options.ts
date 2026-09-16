@@ -80,6 +80,14 @@ export function normalizeGateOptions(options: GateOption[]): GateOptionObject[] 
   });
 }
 
+/** Options normalize per normalizeGateOptions; a question's `context` is
+    kept verbatim when it is a non-blank string and dropped otherwise, so a
+    stored row never carries an empty or non-string context key. */
 export function normalizeGateQuestions(questions: GateQuestion[]): GateQuestion[] {
-  return questions.map((q) => ({ ...q, options: normalizeGateOptions(q.options) }));
+  return questions.map((q) => {
+    const { context, ...rest } = q;
+    const out: GateQuestion = { ...rest, options: normalizeGateOptions(q.options) };
+    if (typeof context === "string" && context.trim()) out.context = context;
+    return out;
+  });
 }
