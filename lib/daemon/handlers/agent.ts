@@ -25,7 +25,7 @@ import {
   deleteAgent, finishAgent, getAgent, insertAgent, isValidChatName, listAgents, markAgentResumed,
   newAgentId, reserveAgentHandle, updateAgentPane, type AgentRecord, type AgentSurface,
 } from "../../state/index.ts";
-import { buildClaudeArgv, buildPaneCommand, CROSS_SESSION_INBOUND_SETTINGS, type ClaudeInvocation } from "../../agent-argv.ts";
+import { buildClaudeArgv, buildPaneCommand, CROSS_SESSION_INBOUND_SETTINGS, type ClaudeInvocation } from "../../agent-argv/index.ts";
 import { mergeGateForkHookSettings, resolveGateForkHookPath } from "../../agent-hooks.ts";
 import { defaultHerdrRunner, launchInWorkspace, type HerdrRunner } from "../../agent-herdr.ts";
 import { repoLabel } from "../../repo-label.ts";

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildClaudeArgv, buildPaneCommand, isValidSessionUuid, shellSingleQuote } from "../agent-argv.ts";
+import { buildClaudeArgv, buildPaneCommand, isValidSessionUuid, shellSingleQuote } from "../agent-argv/index.ts";
 
 const UUID = "6e225e74-4cb7-4aea-8807-6aa9011d4112";
 
@@ -101,6 +101,16 @@ describe("buildClaudeArgv", () => {
     }, bins);
     expect(argv).toContain("--settings");
     expect(argv).toContain("/hooks/ag-2.json");
+  });
+
+  test("yolo maps to --dangerously-skip-permissions", () => {
+    const argv = buildClaudeArgv({ yolo: true, session: { kind: "start", sessionId: UUID }, headless: false }, bins);
+    expect(argv).toContain("--dangerously-skip-permissions");
+  });
+
+  test("no yolo emits no bypass flag", () => {
+    const argv = buildClaudeArgv({ session: { kind: "start", sessionId: UUID }, headless: false }, bins);
+    expect(argv).not.toContain("--dangerously-skip-permissions");
   });
 });
 
