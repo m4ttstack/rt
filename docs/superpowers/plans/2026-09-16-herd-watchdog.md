@@ -43,7 +43,7 @@
 **Interfaces:**
 - Produces: setting keys `herd.watchdog.enabled` (boolean, default true), `herd.watchdog.fastMins` (number, 2), `herd.watchdog.shepherdFastMins` (number, 5), `herd.watchdog.backstopMins` (number, 15), `herd.watchdog.retryMins` (number, 5), `herd.watchdog.notifyQuietMins` (number, 30), `herd.watchdog.nagMins` (number, 30), `herd.watchdog.notifyHuman` (boolean, true).
 
-- [ ] **Step 1:** Read the registry checklist section of `docs/settings-architecture.md` and the existing `herd.*` or daemon-scoped rows in `registry-defs.ts`; add the eight rows in the same shape and scope as the closest existing daemon-behavior key (machine scope).
+- [ ] **Step 1:** Read the registry checklist section of `docs/settings-architecture.md`. There are NO existing `herd.*` keys in `registry-defs.ts`; model the eight rows on the existing machine-scoped daemon-behavior keys there (same shape, machine scope).
 - [ ] **Step 2:** Run the rt-client test suite: `(cd packages/rt-client && bun run build && bun test)`. Expected: PASS (registry conformance tests pick the rows up; a shape mistake fails here).
 - [ ] **Step 3:** Run `bun run test` at the repo root. Expected: PASS (settings resolver tests see the new registry via the freshly built dist).
 - [ ] **Step 4:** Commit: `git add packages/rt-client && git commit -m "settings: herd.watchdog.* keys"`.
@@ -55,7 +55,7 @@
 - Test: `lib/daemon/__tests__/herd-handlers.test.ts` (extend), herd-store tests if present
 
 **Interfaces:**
-- Consumes: `HerdStore` as defined at `lib/daemon/herd-store.ts:22-46`.
+- Consumes: `HerdStore` as defined at `lib/daemon/herd-store.ts:32-46`.
 - Produces: `HerdRow.shepherdPane: string | null`; `HerdStore.setShepherd(id, { session, handle, pane })` (pane optional, null clears); `herd:start` and `herd:resume` payloads gain optional `callerPane?: string`.
 
 - [ ] **Step 1:** Write a failing test in `lib/daemon/__tests__/herd-handlers.test.ts`: `herd:resume` with `callerPane: "wX:p1"` stores it, a follow-up `herd:status` (or direct store read) shows `shepherdPane === "wX:p1"`, and a resume WITHOUT callerPane clears it to null (a shepherd that moved to an unpaned session must not keep a stale pane).
@@ -71,7 +71,7 @@
 - Create: `lib/daemon/__tests__/herd-watchdog.test.ts`
 
 **Interfaces:**
-- Consumes: `HerdStore.jobs/list/get` (Task 2's row shape), `GatesStore.unconsumedAnsweredPushes(now)` and open-gate listing (`lib/daemon/gates-store.ts`), `peekUnread` (`lib/state/chat-store.ts:~505`), pane agent state as `handlers/herd.ts:230` reads it (`paneRow.agent !== "claude"` = dead; also `working`/`idle`).
+- Consumes: `HerdStore.jobs/list/get` (Task 2's row shape), `GatesStore.unconsumedAnsweredPushes(now)` and open-gate listing (`lib/daemon/gates-store.ts`), `peekUnread` (`lib/state/chat-store.ts:504`) filtered to DMs + mentions via the wake-mode rules, pane agent state as `handlers/herd.ts:230` reads it (`paneRow.agent !== "claude"` = dead; `blocked` = modal), and the Step 0 lifecycle accessor below.
 - Produces:
 
 ```ts
@@ -80,8 +80,10 @@ export interface WatchdogSensors {
   herds(): HerdRow[];
   jobs(herd: string): HerdJobRow[];
   paneState(pane: string): "working" | "idle" | "modal" | "dead" | "gone";
+  /* "modal" = herdr agent_status "blocked"; "dead" = pane listed, agent !== "claude" */
   idleSinceMs(pane: string): number | null;
-  unreadFor(handle: string): number;
+  /* DMs + mentions only (the wake-mode filter); room chatter never counts */
+  unreadDmMentionsFor(handle: string): number;
   openHumanGates(herdPrefix: string): { id: string; ageMs: number }[];
   unconsumedAnswered(session: string): { id: string; ageMs: number }[];
 }
@@ -95,10 +97,11 @@ export function evaluateJob(job: HerdJobRow, s: WatchdogSensors, cfg: WatchdogCo
 export function evaluateShepherd(herd: HerdRow, s: WatchdogSensors, cfg: WatchdogConfig): WedgeVerdict;
 ```
 
+- [ ] **Step 0 (idleSince source):** herd-lifecycle already subscribes to `pane.agent_status_changed` but persists nothing, so nothing today can answer "idle since when". Failing test first in `lib/daemon/__tests__/herd-lifecycle.test.ts`: after a status-changed event, a new accessor `lastStatusChangeMs(pane)` returns the event time, and an unknown pane returns null. Implement as an in-memory map inside `lib/daemon/herd-lifecycle.ts` updated where the existing subscription handles the event (Modify: that file). Daemon restart resets it; the watchdog treats null as "not yet idle long enough" (never a poke on missing data). This map is the ONLY source for `idleSinceMs`.
 - [ ] **Step 1:** Write failing tests for `evaluateJob` with a stub `WatchdogSensors`: (a) idle 3 min + 1 unread DM = wedged/fast; (b) idle 3 min + an unconsumed answered gate = wedged/fast; (c) idle 20 min, job `active`, nothing pending = wedged/backstop; (d) idle 20 min but job `at-gate` = healthy; (e) idle 5 min, nothing pending = healthy; (f) status `done` + `lastReport` set + pane still open past `nagMins` = finished-lingering; (g) pane dead = dead; (h) pane modal = modal.
 - [ ] **Step 2:** Run: `bun test lib/daemon/__tests__/herd-watchdog.test.ts`. Expected: FAIL (module does not exist).
 - [ ] **Step 3:** Implement `evaluateJob` as a pure function of the sensor readings (no I/O), thresholds from `WatchdogConfig` (minutes, mirroring the Task 1 keys).
-- [ ] **Step 4:** Write failing tests for `evaluateShepherd`: (a) open human-owned gate aged past `shepherdFastMins` while shepherd pane idle = wedged/fast; (b) unread room messages past the same threshold = wedged/fast; (c) a job finished-lingering past `nagMins` = wedged/fast with that evidence; (d) shepherd pane `working` = healthy regardless.
+- [ ] **Step 4:** Write failing tests for `evaluateShepherd`: (a) open human-owned gate aged past `shepherdFastMins` while shepherd pane idle = wedged/fast; (b) unread DMs/mentions past the same threshold = wedged/fast; (c) a job finished-lingering past `nagMins` = wedged/fast with that evidence; (d) shepherd pane `working` = healthy regardless; (e) BACKSTOP: a job done with a published report, no shepherd activity for `backstopMins` = wedged/backstop. Also add to the `evaluateJob` set: status `done` with pane `gone` = healthy (already closed; the nag never fires).
 - [ ] **Step 5:** Run, watch them fail, implement, run to PASS.
 - [ ] **Step 6:** Commit: `git commit -m "daemon: herd-watchdog wedge tests (pure evaluators)"`.
 
@@ -114,8 +117,12 @@ export function evaluateShepherd(herd: HerdRow, s: WatchdogSensors, cfg: Watchdo
 
 ```ts
 export interface WatchdogActuators {
-  poke(pane: string, text: string): Promise<boolean>;   // injectIntoPane, true = delivered
-  notifyHuman(summary: string): void;                    // enqueueNotification
+  /* Adapter resolves the herdr socket itself: job panes ride HerdRow.herdrSocket,
+     the shepherd pane sits on the default socket. injectIntoPane refuses blocked
+     agents and queues on working; refused/queued both return false (not delivered). */
+  poke(pane: string, text: string): Promise<boolean>;
+  parkStuckAtModal(herd: string, job: string): void;     // setJobStatus("stuck-at-modal")
+  notifyHuman(summary: string): void;                    // builds the FULL NotificationEvent (id/title/message/category/timestamp, notifier-store.ts:36) and enqueueNotification
 }
 export class HerdWatchdog {
   constructor(deps: { sensors: WatchdogSensors; act: WatchdogActuators; cfg(): WatchdogConfig; log: Logger });
@@ -124,7 +131,7 @@ export class HerdWatchdog {
 }
 ```
 
-- [ ] **Step 1:** Write failing ladder tests driving `sweep()` with a fake clock: (a) wedged worker gets ONE poke with text naming its evidence; (b) activity after the poke clears strikes (sensor flips to working, next sweep, then wedged again later restarts at strike 1); (c) still wedged after `retryMins` = second poke; (d) third trip = shepherd poke with a one-line summary containing job name and strike count, worker NOT poked again; (e) shepherd itself wedged and `shepherdPane` null = `notifyHuman` immediately; (f) shepherd poked twice without effect = `notifyHuman`; (g) a second `notifyHuman` within `notifyQuietMins` is suppressed; (h) dead/modal verdicts skip injection and go straight to the shepherd summary; (i) `enabled: false` = sweep does nothing.
+- [ ] **Step 1:** Write failing ladder tests driving `sweep()` with a fake clock: (a) wedged worker gets ONE poke with text naming its evidence; (b) activity after the poke clears strikes (sensor flips to working, next sweep, then wedged again later restarts at strike 1); (c) still wedged after `retryMins` = second poke; (d) third trip = shepherd poke with a one-line summary containing job name and strike count, worker NOT poked again; (e) shepherd itself wedged and `shepherdPane` null = `notifyHuman` immediately; (f) shepherd poked twice without effect = `notifyHuman`; (g) a second `notifyHuman` within `notifyQuietMins` is suppressed; (h) a dead verdict skips injection and goes straight to the shepherd summary; a modal verdict calls `parkStuckAtModal` AND sends the shepherd summary, never an injection; (i) `enabled: false` = sweep does nothing.
 - [ ] **Step 2:** Run, expected FAIL per case.
 - [ ] **Step 3:** Implement: in-memory strike map keyed `herd/job` (daemon restart resets strikes deliberately; note that as a code comment constraint), ladder walk per verdict, quiet-period stamp per herd for `notifyHuman`. Poke text format: `watchdog: <evidence>. Consume it or post status.`
 - [ ] **Step 4:** Run to PASS, then the module's full file: `bun test lib/daemon/__tests__/herd-watchdog.test.ts`.
@@ -143,8 +150,18 @@ export class HerdWatchdog {
 - [ ] **Step 1:** Failing handler test: after a watchdog instance with recorded strikes is passed into `createHerdHandlers`, `herd:status` carries the annotation; null when the watchdog has none.
 - [ ] **Step 2:** Run, FAIL; implement: construct `HerdWatchdog` in `lib/daemon.ts` with real sensor/actuator adapters (sensors read herdStore, gatesStore, `peekUnread`, and the pane table the handlers already consult; actuators wrap `injectIntoPane` and `enqueueNotification`), register `scheduleSweep("herd-watchdog", () => watchdog.sweep(), { bootDelayMs: 60_000, intervalMs: 60_000 }, log)`, push the stop handle, and hand the instance to `createHerdHandlers`.
 - [ ] **Step 3:** Failing CLI test for the `poked 2x 3m ago` line; implement the render in `commands/herd.ts`; run to PASS.
+- [ ] **Step 3b (whisper retirement):** the herd-lifecycle idle whisper (`herd-lifecycle.ts:227`, "idle with no open gate and no report", 180s debounce) duplicates every watchdog poke with a room notice. Failing test: with `herd.watchdog.enabled` true the whisper does not post; with it false the whisper still posts. Implement by gating the whisper on the resolved setting.
 - [ ] **Step 4:** Rebuild rt-client (`bun run build` in the package) and run `bun run test:all` (env-stripped). Expected: PASS.
 - [ ] **Step 5:** Commit: `git commit -m "daemon: wire herd-watchdog sweep; status shows pokes"`.
+
+### Task 5b: e2e (exact-string surfaces)
+
+**Files:**
+- Create: `e2e/tests/herd-watchdog.test.ts` (model on `lib/daemon/__tests__/gates-e2e.test.ts` and the existing e2e harness in `e2e/`)
+
+- [ ] **Step 1:** Failing e2e: boot the test daemon with a compressed watchdog config (fastMins scaled down via the settings store the harness seeds), register a fake herd whose job pane is a scripted stub the harness controls, drive it idle with an unconsumed answered gate, and assert (a) the injected poke text verbatim (`watchdog: ...`) and (b) `rt herd status --json` carrying `watchdog: { strikes: 1, lastPokeAt: <number> }`. Exact strings, because this repo's CI-only failures live in verbatim surfaces.
+- [ ] **Step 2:** Run `bun test --preload ./e2e/setup.ts e2e/tests/herd-watchdog.test.ts`; FAIL, implement any missing seam (the sensor/actuator adapters must be injectable enough for the harness to reach), PASS.
+- [ ] **Step 3:** Commit: `git commit -m "e2e: herd-watchdog poke round trip"`.
 
 ### Task 6: `rt herd close` help text + shepherd lifecycle prose
 
