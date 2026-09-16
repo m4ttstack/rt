@@ -68,8 +68,11 @@ export function evaluateJob(job: HerdJobRow, s: WatchdogSensors, cfg: WatchdogCo
   if (!LIVE.has(job.status) || job.pane === null) return HEALTHY;
 
   const state = s.paneState(job.pane);
-  if (state === "dead") return { kind: "dead" };
-  if (state === "modal") return { kind: "modal" };
+  // The spawn path owns a spawning pane's trust prompt and missing agent.
+  if (job.status !== "spawning") {
+    if (state === "dead") return { kind: "dead" };
+    if (state === "modal") return { kind: "modal" };
+  }
   if (state !== "idle") return HEALTHY;
 
   const since = s.idleSinceMs(job.pane);

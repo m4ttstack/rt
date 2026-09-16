@@ -118,7 +118,20 @@ describe("evaluateJob", () => {
   test("(g) a dead pane is dead, before any idle arithmetic", () => {
     const s = sensors({ paneState: () => "dead", idleSinceMs: () => NOW - 40 * MIN, unreadDmMentionsFor: () => 1 });
     expect(evaluateJob(job(), s, cfg)).toEqual({ kind: "dead" });
-    expect(evaluateJob(job({ status: "spawning" }), s, cfg)).toEqual({ kind: "dead" });
+    expect(evaluateJob(job({ status: "at-milestone" }), s, cfg)).toEqual({ kind: "dead" });
+  });
+
+  test("a spawning job is exempt from the dead and modal verdicts: the spawn path owns that window", () => {
+    const dead = sensors({ paneState: () => "dead", idleSinceMs: () => NOW - 40 * MIN, unreadDmMentionsFor: () => 1 });
+    expect(evaluateJob(job({ status: "spawning" }), dead, cfg)).toEqual({ kind: "healthy" });
+    const modal = sensors({ paneState: () => "modal", idleSinceMs: () => NOW - 40 * MIN, unreadDmMentionsFor: () => 1 });
+    expect(evaluateJob(job({ status: "spawning" }), modal, cfg)).toEqual({ kind: "healthy" });
+  });
+
+  test("a spawning job still takes the idle wedge tests", () => {
+    const fast = sensors({ ...idleFor(3), unreadDmMentionsFor: () => 1 });
+    expect(evaluateJob(job({ status: "spawning" }), fast, cfg)).toEqual({ kind: "wedged", path: "fast", evidence: "idle 3m with 1 unread DM/mention" });
+    expect(evaluateJob(job({ status: "spawning" }), sensors(idleFor(20)), cfg)).toEqual({ kind: "wedged", path: "backstop", evidence: "idle 20m with no open gate" });
   });
 
   test("(h) a modal pane is modal, before any idle arithmetic", () => {
