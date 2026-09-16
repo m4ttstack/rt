@@ -342,7 +342,7 @@ const herdSubcommands: Record<string, CommandNode> = {
     ],
   },
   close: {
-    description: "Close a worker job (the pane stays; the row stops being live)",
+    description: "Close a worker job: retires the row and closes its pane",
     module: "./commands/herd.ts",
     fn: "close",
     omitBehavior: { exempt: "agent-facing; the shepherd names the job" },
