@@ -243,7 +243,7 @@ export function findRunningRunByWorktree(worktree: string): RunningRunScan {
   return incomplete ? { kind: "incomplete" } : { kind: "none" };
 }
 
-export function findRunsBySession(sessionId: string): RunSessionMatch[] {
+export function findRunsBySession(sessionId: string, liveness?: RunLiveness): RunSessionMatch[] {
   const out: RunSessionMatch[] = [];
   for (const repo of dirs(runsRoot())) {
     for (const id of dirs(join(runsRoot(), repo))) {
@@ -257,7 +257,7 @@ export function findRunsBySession(sessionId: string): RunSessionMatch[] {
         if (!hit || hit.value !== sessionId) continue;
         const row = runRow(opened.db);
         if (!row) continue;
-        out.push({ summary: withAttention(opened.db, row), runDb: join(runsRoot(), repo, id, "state.db") });
+        out.push({ summary: withAttention(opened.db, row, liveness), runDb: join(runsRoot(), repo, id, "state.db") });
       } catch {
         continue;
       } finally {

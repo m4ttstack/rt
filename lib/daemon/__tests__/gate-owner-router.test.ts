@@ -23,6 +23,7 @@ import { fakeStore } from "./fake-cache-store.ts";
 import { openStateDb } from "../../state/index.ts";
 import { runStart } from "../../runs/start.ts";
 import { insertAgent, newAgentId } from "../../state/agents-store.ts";
+import { livenessFrom } from "../../runs/liveness.ts";
 import { Database } from "bun:sqlite";
 
 const stubCtx = {
@@ -73,6 +74,9 @@ function buildHandlers(herdStore: ReturnType<typeof createHerdStore> = createHer
     homeSnapshot: { stop: () => {}, runNow: async () => ({}) as any, pullNow: async () => ({}) as any, status: () => ({}) as any, ready: Promise.resolve() },
     teamSnapshots: { stop() {}, rescan: async () => {}, status: () => [], pullNow: async () => ({ outcome: "skipped", detail: null }), ready: Promise.resolve() },
     repos: { withReconcilerHeld: async (fn) => fn(), refreshWatchedRepos: () => {} },
+    // Hermetic liveness: the real one shells out to `herdr agent list`, which
+    // would make every subject-resolution case read this machine's live panes.
+    runLiveness: async () => livenessFrom([]),
     stateDb,
   });
   return { handlers, gatesStore, herdStore, stateDb };
@@ -213,7 +217,7 @@ describe("gate:ask subject resolution through the real command-router wiring", (
     runDb.close();
 
     const { handlers, gatesStore } = buildHandlers();
-    const res = await handlers["gate:ask"]!({ sessionId: "s1", questions: Q });
+    const res = await handlers["gate:ask"]!({ sessionId: "s1", questions: Q, context: "why this decision" });
     if (!(res as any).ok) throw new Error((res as any).error);
     expect((res as any).data.subject).toBe(`run:${started.runId}`);
     const row = gatesStore.get((res as any).data.id);
@@ -231,7 +235,7 @@ describe("gate:ask subject resolution through the real command-router wiring", (
     if (!started.ok) throw new Error(started.error);
 
     const { handlers, gatesStore } = buildHandlers();
-    const res = await handlers["gate:ask"]!({ sessionId: "s2", questions: Q });
+    const res = await handlers["gate:ask"]!({ sessionId: "s2", questions: Q, context: "why this decision" });
     if (!(res as any).ok) throw new Error((res as any).error);
     expect((res as any).data.subject).toBe(`run:${started.runId}`);
     const row = gatesStore.get((res as any).data.id);
@@ -250,7 +254,7 @@ describe("gate:ask subject resolution through the real command-router wiring", (
       surface: "headless", sessionId: "s3", createdAt: Date.now(),
     }, stateDb);
 
-    const res = await handlers["gate:ask"]!({ sessionId: "s3", questions: Q });
+    const res = await handlers["gate:ask"]!({ sessionId: "s3", questions: Q, context: "why this decision" });
     if (!(res as any).ok) throw new Error((res as any).error);
     expect((res as any).data.subject).toBe(`agent:${agentId}`);
     const row = gatesStore.get((res as any).data.id);
@@ -272,7 +276,120 @@ describe("gate:ask subject resolution through the real command-router wiring", (
     // `id = otherAgentId` alone; agentBySession must refuse it since its
     // sessionId is "s-real-owner", not the id string itself, so resolution
     // falls through to a refusal rather than silently naming the wrong agent.
-    const res = await handlers["gate:ask"]!({ sessionId: otherAgentId, questions: Q });
+    const res = await handlers["gate:ask"]!({ sessionId: otherAgentId, questions: Q, context: "why this decision" });
     expect((res as any).ok).toBe(false);
+  });
+});
+
+// RT-157: a run left in status "running" by a dead pipeline stays running
+// forever, and the subject ladder trusted status alone.
+describe("gate:ask subject resolution skips runs the liveness ladder calls stale", () => {
+  const Q = [{ id: "q", label: "Pick", multi: false, options: ["a", "b"] }];
+
+  function backdate(runDb: string, at: number): void {
+    const db = new Database(runDb);
+    db.run("UPDATE runs SET started_at = ?", [at]);
+    db.run("UPDATE stages SET started_at = ?, ended_at = CASE WHEN ended_at IS NULL THEN NULL ELSE ? END", [at, at]);
+    db.run("UPDATE fields SET at = ?", [at]);
+    db.close();
+  }
+
+  test("a stale running run no longer captures the session; the agent record wins", async () => {
+    runsRoot = mkdtempSync(join(tmpdir(), "rt-gate-owner-router-"));
+    process.env.RT_RUNS_ROOT = runsRoot;
+    const started = runStart(runsRoot, {
+      repo: "widget-forge", workType: "feature", pipeline: "default",
+      env: { CLAUDE_CODE_SESSION_ID: "s-stale" },
+    });
+    if (!started.ok) throw new Error(started.error);
+    backdate(started.runDb, Date.now() - 2 * 60 * 60 * 1000);
+
+    const { handlers, stateDb } = buildHandlers();
+    const agentId = newAgentId();
+    insertAgent({
+      id: agentId, repo: "widget-forge", cwd: "/wt/agent", provider: "claude",
+      surface: "headless", sessionId: "s-stale", createdAt: Date.now(),
+    }, stateDb);
+
+    const res = await handlers["gate:ask"]!({ sessionId: "s-stale", questions: Q, context: "why this decision" });
+    if (!(res as any).ok) throw new Error((res as any).error);
+    expect((res as any).data.subject).toBe(`agent:${agentId}`);
+  });
+
+  test("a fresh running run still wins: staleness is the only thing that changed", async () => {
+    runsRoot = mkdtempSync(join(tmpdir(), "rt-gate-owner-router-"));
+    process.env.RT_RUNS_ROOT = runsRoot;
+    const started = runStart(runsRoot, {
+      repo: "widget-forge", workType: "feature", pipeline: "default",
+      env: { CLAUDE_CODE_SESSION_ID: "s-fresh" },
+    });
+    if (!started.ok) throw new Error(started.error);
+
+    const { handlers, stateDb } = buildHandlers();
+    const agentId = newAgentId();
+    insertAgent({
+      id: agentId, repo: "widget-forge", cwd: "/wt/agent", provider: "claude",
+      surface: "headless", sessionId: "s-fresh", createdAt: Date.now(),
+    }, stateDb);
+
+    const res = await handlers["gate:ask"]!({ sessionId: "s-fresh", questions: Q, context: "why this decision" });
+    if (!(res as any).ok) throw new Error((res as any).error);
+    expect((res as any).data.subject).toBe(`run:${started.runId}`);
+  });
+
+  test("a stale run and a live run under one session resolve to the live one instead of refusing", async () => {
+    runsRoot = mkdtempSync(join(tmpdir(), "rt-gate-owner-router-"));
+    process.env.RT_RUNS_ROOT = runsRoot;
+    const dead = runStart(runsRoot, {
+      repo: "widget-forge", workType: "feature", pipeline: "default",
+      env: { CLAUDE_CODE_SESSION_ID: "s-both" },
+    });
+    if (!dead.ok) throw new Error(dead.error);
+    backdate(dead.runDb, Date.now() - 2 * 60 * 60 * 1000);
+    const live = runStart(runsRoot, {
+      repo: "widget-forge", workType: "feature", pipeline: "default",
+      env: { CLAUDE_CODE_SESSION_ID: "s-both" },
+    });
+    if (!live.ok) throw new Error(live.error);
+
+    const { handlers } = buildHandlers();
+    const res = await handlers["gate:ask"]!({ sessionId: "s-both", questions: Q, context: "why this decision" });
+    if (!(res as any).ok) throw new Error((res as any).error);
+    expect((res as any).data.subject).toBe(`run:${live.runId}`);
+  });
+});
+
+// RT-179: ~27% of live run: gates carried no origin.worktree because only the
+// session-owns-the-run path stamped one.
+describe("gate:ask stamps origin.worktree through the real command-router wiring", () => {
+  const Q = [{ id: "q", label: "Pick", multi: false, options: ["a", "b"] }];
+
+  test("an explicit run: subject owned by another session still carries that run's worktree", async () => {
+    runsRoot = mkdtempSync(join(tmpdir(), "rt-gate-owner-router-"));
+    process.env.RT_RUNS_ROOT = runsRoot;
+    const started = runStart(runsRoot, {
+      repo: "widget-forge", workType: "feature", pipeline: "default",
+      env: { CLAUDE_CODE_SESSION_ID: "s-owner" },
+    });
+    if (!started.ok) throw new Error(started.error);
+    const runDb = new Database(started.runDb);
+    runDb.run(
+      "INSERT OR REPLACE INTO fields (run_id, key, value, produced_by, at) VALUES (?, 'worktree', ?, 'run', ?)",
+      [started.runId, "/wt/other-owner", Date.now()],
+    );
+    runDb.close();
+
+    const { handlers, gatesStore, stateDb } = buildHandlers();
+    const agentId = newAgentId();
+    insertAgent({
+      id: agentId, repo: "widget-forge", cwd: "/wt/asker", provider: "claude",
+      surface: "headless", sessionId: "s-asker", createdAt: Date.now(),
+    }, stateDb);
+
+    const res = await handlers["gate:ask"]!({ sessionId: "s-asker", subject: `run:${started.runId}`, questions: Q, context: "why this decision" });
+    if (!(res as any).ok) throw new Error((res as any).error);
+    const row = gatesStore.get((res as any).data.id);
+    expect(row?.origin?.runId).toBe(started.runId);
+    expect(row?.origin?.worktree).toBe("/wt/other-owner");
   });
 });

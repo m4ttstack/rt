@@ -1,11 +1,19 @@
 export interface GateSubjectDeps {
-  runsBySession(sessionId: string): Array<{ runId: string; status: string; worktree: string | null }>;
+  /** `stale` is the run-liveness verdict (attention reason "stale"), not a
+      status: a run left in status "running" by a dead pipeline stays running
+      forever, and trusting status alone let it own every later gate this
+      session opened. The ladder treats a stale run as absent. */
+  runsBySession(sessionId: string): Array<{ runId: string; status: string; worktree: string | null; stale?: boolean }>;
   agentBySession(sessionId: string): { id: string; subject?: string | null } | undefined;
 }
 
 export type GateSubjectResult =
   | { ok: true; subject: string; runId?: string; runWorktree?: string }
   | { ok: false; error: string };
+
+function liveRuns(deps: GateSubjectDeps, sessionId: string) {
+  return deps.runsBySession(sessionId).filter((r) => r.status === "running" && !r.stale);
+}
 
 /** An explicit run:<id> subject never contradicts itself: runId always comes
     from the subject text, and a session's own runs can only ever ADD a
@@ -16,7 +24,7 @@ export function resolveGateSubject(
 ): GateSubjectResult {
   if (args.subject) {
     const runMatch = args.subject.startsWith("run:") ? args.subject.slice("run:".length) : undefined;
-    const running = args.sessionId ? deps.runsBySession(args.sessionId).filter((r) => r.status === "running") : [];
+    const running = args.sessionId ? liveRuns(deps, args.sessionId) : [];
     if (runMatch !== undefined) {
       const match = running.find((r) => r.runId === runMatch);
       return {
@@ -33,7 +41,7 @@ export function resolveGateSubject(
     return { ok: true, subject: args.subject };
   }
   if (args.sessionId) {
-    const running = deps.runsBySession(args.sessionId).filter((r) => r.status === "running");
+    const running = liveRuns(deps, args.sessionId);
     if (running.length === 1) {
       const run = running[0]!;
       return { ok: true, subject: `run:${run.runId}`, runId: run.runId, ...(run.worktree ? { runWorktree: run.worktree } : {}) };
