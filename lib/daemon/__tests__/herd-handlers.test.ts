@@ -81,6 +81,10 @@ export function harness(over: Partial<HerdDeps> = {}) {
   // verifying re-read finds it gone. A test sets it false to model a modal
   // that survives the keys (the stuck case).
   const trust = { registerFailures: 0, waitOk: true, waitStatus: "blocked", clearOnAccept: true };
+  // Real herdr names the agent on every claude pane (pane:list filters on it),
+  // so the fake does too: a row without it is a live shell with no claude
+  // behind it, which is exactly the dead-worker case.
+  const snapshotPanes: { rows: Array<Record<string, unknown>> } = { rows: [{ pane_id: "w9:p1", agent: "claude", agent_status: "working" }] };
   const deps: HerdDeps = {
     store, gateStore, gate, chat, agent, worktree,
     runWorktree: () => null,
@@ -94,7 +98,7 @@ export function harness(over: Partial<HerdDeps> = {}) {
       // the parse-at-the-seam contract tested.
       const target = params?.target ?? params?.pane_id;
       if (typeof target === "string" && target.startsWith("bg:")) return { ok: false, code: "not_found", message: `unknown pane ${target}` };
-      if (method === "session.snapshot") return { ok: true, result: { snapshot: { panes: [{ pane_id: "w9:p1", agent_status: "working" }] } } };
+      if (method === "session.snapshot") return { ok: true, result: { snapshot: { panes: snapshotPanes.rows } } };
       if (method === "agent.get") {
         if (trust.registerFailures > 0) { trust.registerFailures -= 1; return { ok: false, code: "not_found", message: "no agent" }; }
         return { ok: true, result: { agent: { agent_status: "working" } } };
@@ -133,7 +137,7 @@ export function harness(over: Partial<HerdDeps> = {}) {
     ...over,
   };
   const h = createHerdHandlers(deps);
-  return { h, store, gateStore, gate, chatCalls, agentCalls, worktreeCalls, herdrCalls, socketCalls, order, screen, trust, dir, claims, bg, bgStopCalls: () => bgStopCalls };
+  return { h, store, gateStore, gate, chatCalls, agentCalls, worktreeCalls, herdrCalls, socketCalls, order, screen, trust, snapshotPanes, dir, claims, bg, bgStopCalls: () => bgStopCalls };
 }
 
 const START = { name: "demo", repo: "gh:m4ttstack/rt", session: "sess-shep" };
@@ -264,6 +268,51 @@ describe("herd:resume / status / close", () => {
     expect(res.data.gates).toHaveLength(1);
     expect(res.data.unread).toBe(3);
     expect(res.data.status.jobs[0]).toMatchObject({ name: "job-a", openGate: res.data.gates[0]!.id, paneStatus: "working" });
+  });
+
+  test("a live pane with no claude behind it reads sessionDead, not working", async () => {
+    const { h, store, snapshotPanes, herd } = await started();
+    store.upsertJob({ herd, name: "job-a", worktree: "/w/job-a", handle: "job-a", status: "active", pane: "w9:p1" });
+    // The shell survives a SIGKILLed claude, so the pane is still listed.
+    snapshotPanes.rows = [{ pane_id: "w9:p1" }];
+    const res = await h["herd:status"]({ herd });
+    if (!res.ok) throw new Error(res.error);
+    expect(res.data.jobs[0]).toMatchObject({ name: "job-a", sessionDead: true, paneStatus: null });
+  });
+
+  test("a job whose pane still runs claude is not dead", async () => {
+    const { h, store, herd } = await started();
+    store.upsertJob({ herd, name: "job-a", worktree: "/w/job-a", handle: "job-a", status: "active", pane: "w9:p1" });
+    const res = await h["herd:status"]({ herd });
+    if (!res.ok) throw new Error(res.error);
+    expect(res.data.jobs[0]!.sessionDead).toBe(false);
+  });
+
+  test("a finished job whose claude is gone is not flagged dead", async () => {
+    const { h, store, snapshotPanes, herd } = await started();
+    store.upsertJob({ herd, name: "job-a", worktree: "/w/job-a", handle: "job-a", status: "done", pane: "w9:p1" });
+    snapshotPanes.rows = [{ pane_id: "w9:p1" }];
+    const res = await h["herd:status"]({ herd });
+    if (!res.ok) throw new Error(res.error);
+    expect(res.data.jobs[0]!.sessionDead).toBe(false);
+  });
+
+  test("a spawning job whose claude has not started yet is not flagged dead", async () => {
+    const { h, store, snapshotPanes, herd } = await started();
+    store.upsertJob({ herd, name: "job-a", worktree: "/w/job-a", handle: "job-a", status: "spawning", pane: "w9:p1" });
+    snapshotPanes.rows = [{ pane_id: "w9:p1" }];
+    const res = await h["herd:status"]({ herd });
+    if (!res.ok) throw new Error(res.error);
+    expect(res.data.jobs[0]!.sessionDead).toBe(false);
+  });
+
+  test("a pane herdr no longer lists at all is unknown, never dead", async () => {
+    const { h, store, snapshotPanes, herd } = await started();
+    store.upsertJob({ herd, name: "job-a", worktree: "/w/job-a", handle: "job-a", status: "active", pane: "w9:p1" });
+    snapshotPanes.rows = [];
+    const res = await h["herd:status"]({ herd });
+    if (!res.ok) throw new Error(res.error);
+    expect(res.data.jobs[0]!.sessionDead).toBeNull();
   });
 
   test("resume drops only the prior shepherd's subscriptions for this herd; an unrelated session's herd-prefix subscription survives", async () => {

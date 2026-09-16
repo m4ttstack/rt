@@ -84,6 +84,10 @@ const TRUST_ATTEMPTS = 2;
 // line: an already-trusted directory can finish a whole turn before anything
 // else settles.
 const SETTLE_UNTIL = ["idle", "blocked", "done"];
+// The job statuses that only a running claude reaches, and therefore the only
+// ones whose missing agent proves the worker session died rather than never
+// having started.
+const LIVE_WORKER_STATUSES: ReadonlySet<string> = new Set(["active", "at-gate", "at-milestone"]);
 const str = (v: unknown): string | undefined => (typeof v === "string" && v.length > 0 ? v : undefined);
 /** A bare pane id headed into a gate's `pane` field: formatted per the herd's
     hidden-ness so the ref rides addressably wherever that field surfaces
@@ -156,15 +160,20 @@ export function createHerdHandlers(deps: HerdDeps) {
     return prefixSub;
   }
 
-  async function paneStatuses(socket: string | null): Promise<Map<string, string>> {
-    const out = new Map<string, string>();
-    const snap = await deps.herdr<{ snapshot?: { panes?: Array<{ pane_id: string; agent_status?: string }> } }>("session.snapshot", {}, socket ? { sockPath: socket } : {});
+  /** Keyed on the bare pane id. A pane herdr does not list is simply absent
+      from the map, which is what separates "this pane is gone (or herdr is)"
+      from "this pane is up with no claude on it" -- the second is a dead
+      worker behind a surviving shell, and the first is not evidence of
+      anything. */
+  async function paneStatuses(socket: string | null): Promise<Map<string, { agent: string | null; status: string | null }>> {
+    const out = new Map<string, { agent: string | null; status: string | null }>();
+    const snap = await deps.herdr<{ snapshot?: { panes?: Array<{ pane_id: string; agent?: string; agent_status?: string }> } }>("session.snapshot", {}, socket ? { sockPath: socket } : {});
     if (!snap.ok) return out;
     // An ok reply's shape is still herdr's to get wrong: a malformed body
     // here must degrade to an empty map, never throw through herd:status.
     const panes = snap.result?.snapshot?.panes;
     if (!Array.isArray(panes)) return out;
-    for (const p of panes) if (p?.agent_status) out.set(p.pane_id, p.agent_status);
+    for (const p of panes) if (p?.pane_id) out.set(p.pane_id, { agent: p.agent ?? null, status: p.agent_status ?? null });
     return out;
   }
 
@@ -203,6 +212,7 @@ export function createHerdHandlers(deps: HerdDeps) {
     ]);
     const jobs = store.jobs(herdId).map((j: HerdJobRow) => {
       const last = j.lastGate ? deps.gateStore.get(j.lastGate) : null;
+      const paneRow = j.pane ? (panes.get(parsePaneRef(j.pane).paneId) ?? null) : null;
       return {
         ...j,
         // Round-trip rule: the row stores the addressable ref (agent:start
@@ -211,7 +221,13 @@ export function createHerdHandlers(deps: HerdDeps) {
         // the bare id, so the lookup parses.
         pane: j.pane ? formatPaneRef(j.pane, herd.hidden ? "bg" : "visible") : j.pane,
         openGate: gates.find((g) => g.subject === herdSubject(herdId, j.name))?.id ?? null,
-        paneStatus: j.pane ? (panes.get(parsePaneRef(j.pane).paneId) ?? null) : null,
+        paneStatus: paneRow?.status ?? null,
+        // A jetsam sweep kills claude and leaves its pane shell running, so
+        // the job goes on reading active with nothing behind it (RT-158).
+        // Only statuses claude itself reached count: `spawning` and
+        // `stuck-at-modal` legitimately have no agent yet, and a finished job
+        // is expected to have none.
+        sessionDead: paneRow === null ? null : LIVE_WORKER_STATUSES.has(j.status) && paneRow.agent !== "claude",
         lastGateStatus: last?.status ?? null,
         lastGateDelivery: last?.delivery?.outcome ?? null,
         // released means a lost answer CAS whose pane already reconciled the

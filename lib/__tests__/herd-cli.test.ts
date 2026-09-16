@@ -123,7 +123,7 @@ function job(over: Partial<HerdStatusData["jobs"][number]>): HerdStatusData["job
     herd: "hd-1", name: "job-a", worktree: "/tmp/job-a", branch: null, tree: null, pane: "w1:p1",
     agentSession: null, agentId: null, handle: "job-a", status: "active", disposable: false,
     lastGate: null, lastReport: null, createdAt: 0, updatedAt: 0,
-    openGate: null, paneStatus: "idle", lastGateStatus: null, lastGateDelivery: null, lastGateConsumed: null,
+    openGate: null, paneStatus: "idle", sessionDead: false, lastGateStatus: null, lastGateDelivery: null, lastGateConsumed: null,
     ...over,
   };
 }
@@ -255,6 +255,21 @@ describe("renderStatus", () => {
 
   test("an ordinary job carries no modal marker", () => {
     expect(renderStatus(statusData({ jobs: [job({})] }))).not.toContain("STUCK AT TRUST MODAL");
+  });
+
+  test("a job whose worker session died says so and names the remedy", () => {
+    const data = statusData({ jobs: [job({ status: "active", paneStatus: null, sessionDead: true })] });
+    const out = renderStatus(data);
+    expect(out).toContain("SESSION DEAD");
+    expect(out).toContain("rt herd spawn");
+  });
+
+  test("a live worker carries no dead marker", () => {
+    expect(renderStatus(statusData({ jobs: [job({})] }))).not.toContain("SESSION DEAD");
+  });
+
+  test("a pane herdr cannot see is not reported dead", () => {
+    expect(renderStatus(statusData({ jobs: [job({ sessionDead: null, paneStatus: null })] }))).not.toContain("SESSION DEAD");
   });
 
   test("a missing subscription names its own remedy", () => {
