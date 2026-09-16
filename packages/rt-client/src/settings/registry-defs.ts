@@ -666,35 +666,80 @@ export const REGISTRY: readonly SettingDef[] = [
   },
 
   // --- agent (rt agent handoff) --------------------------------------------
-  // No defaults by design: an unset key means the flag is omitted from the
-  // claude invocation entirely (spec "Settings").
+  // No defaults on any per-provider row, by design: an unset key means the
+  // flag is omitted from the launch entirely (spec "Settings"). agent.provider
+  // is the one exception -- it needs a concrete fallback to preserve
+  // claude-only behavior with zero code changes for callers who never set it.
   {
-    key: "agent.model",
+    key: "agent.provider",
     type: "string",
     scopes: ["user", "machine"],
+    default: "claude",
     merge: "replace",
-    description: "Default --model for rt agent launches; unset omits the flag.",
+    description: "Which provider rt agent start uses when --provider is not given: \"claude\" or \"codex\".",
   },
   {
-    key: "agent.effort",
+    key: "agent.claude.model",
     type: "string",
     scopes: ["user", "machine"],
     merge: "replace",
-    description: "Default --effort for rt agent launches; unset omits the flag.",
+    description: "Default --model for claude rt agent launches; unset omits the flag.",
   },
   {
-    key: "agent.account",
+    key: "agent.claude.effort",
     type: "string",
     scopes: ["user", "machine"],
     merge: "replace",
-    description: "cswap account email rt agent launches under; unset uses the default claude profile.",
+    description: "Default --effort for claude rt agent launches; unset omits the flag.",
   },
   {
-    key: "agent.extraArgs",
+    key: "agent.claude.account",
     type: "string",
     scopes: ["user", "machine"],
     merge: "replace",
-    description: "Opaque extra claude arguments appended to every rt agent launch (escape hatch).",
+    description: "cswap account email claude rt agent launches under; unset uses the default claude profile.",
+  },
+  {
+    key: "agent.claude.extraArgs",
+    type: "string",
+    scopes: ["user", "machine"],
+    merge: "replace",
+    description: "Opaque extra claude arguments appended to every claude rt agent launch (escape hatch).",
+  },
+  {
+    key: "agent.claude.yolo",
+    type: "boolean",
+    scopes: ["user", "machine"],
+    merge: "replace",
+    description: "Default --yolo (--dangerously-skip-permissions) for claude rt agent launches; unset behaves as false.",
+  },
+  {
+    key: "agent.codex.model",
+    type: "string",
+    scopes: ["user", "machine"],
+    merge: "replace",
+    description: "Default -m/--model for codex rt agent launches; unset omits the flag.",
+  },
+  {
+    key: "agent.codex.effort",
+    type: "string",
+    scopes: ["user", "machine"],
+    merge: "replace",
+    description: "Default reasoning effort for codex rt agent launches, passed as -c model_reasoning_effort=<value>; unset omits the override.",
+  },
+  {
+    key: "agent.codex.extraArgs",
+    type: "string",
+    scopes: ["user", "machine"],
+    merge: "replace",
+    description: "Opaque extra codex arguments appended to every codex rt agent launch (escape hatch).",
+  },
+  {
+    key: "agent.codex.yolo",
+    type: "boolean",
+    scopes: ["user", "machine"],
+    merge: "replace",
+    description: "Default --yolo (--dangerously-bypass-approvals-and-sandbox) for codex rt agent launches; unset behaves as false. codex has no per-agent account setting (see spec's Non-goals).",
   },
 
   // --- gates (escalation) ----------------------------------------------------
