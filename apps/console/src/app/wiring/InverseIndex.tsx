@@ -12,6 +12,7 @@ import type { MantineColor } from '@mattstack/app-kit/core';
 import { useSchemeColors } from '@mattstack/app-kit/hooks';
 import { Icons } from '@mattstack/app-kit/icons';
 
+import { useEditorHref } from '../editorHref';
 import { CommandProvenance } from '../runs/CommandProvenance';
 import type { BindingSite, BindingSiteKind } from './outline';
 import { suffixOf } from './outline';
@@ -127,6 +128,7 @@ export function InverseIndex({
   onShowInMap,
 }: InverseIndexProps) {
   const { text } = useSchemeColors();
+  const editorHref = useEditorHref();
 
   if (fill === null) return null;
 
@@ -144,7 +146,7 @@ export function InverseIndex({
             <Tooltip label="Open source">
               <ActionIcon
                 component="a"
-                href={`vscode://file${sourcePath}`}
+                href={editorHref(sourcePath)}
                 variant="subtle"
                 color="gray"
                 size="sm"

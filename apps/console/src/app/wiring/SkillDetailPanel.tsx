@@ -16,6 +16,7 @@ import {
 import { useSchemeColors } from '@mattstack/app-kit/hooks';
 import { Icons } from '@mattstack/app-kit/icons';
 
+import { useEditorHref } from '../editorHref';
 import { CompiledView } from './CompiledView';
 import { HealthChip } from './HealthChip';
 import { IncludeRow } from './IncludeRow';
@@ -199,6 +200,7 @@ export function SkillDetailPanel({
   onShowInMap,
 }: SkillDetailPanelProps) {
   const { bg, text, border } = useSchemeColors();
+  const editorHref = useEditorHref();
   const { bind, surfaceApply } = useSkillsApply(pack);
   const [tab, setTab] = useState<string | null>('slots');
   const [activeRebind, setActiveRebind] = useState<string | null>(null);
@@ -308,7 +310,7 @@ export function SkillDetailPanel({
           {entry.sourcePath && (
             <Button
               component="a"
-              href={`vscode://file${entry.sourcePath}`}
+              href={editorHref(entry.sourcePath)}
               size="xs"
               variant="default"
               leftSection={<Icons.edit size={14} />}

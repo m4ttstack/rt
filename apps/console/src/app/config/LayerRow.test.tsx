@@ -4,7 +4,14 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, test, vi } from 'vitest';
 
 import type { ExplainRowWire, SettingDefWire } from '../../server/settings';
-import { LayerRow } from './LayerRow';
+
+/** The real hook needs a QueryClient; these tests are about the row, so it
+    is pinned to the vscode fallback the unfetched hook resolves to anyway. */
+vi.mock('../editorHref', () => ({
+  useEditorHref: () => (absPath: string) => `vscode://file${absPath}`,
+}));
+
+const { LayerRow } = await import('./LayerRow');
 
 const NUMBER_DEF: SettingDefWire = {
   key: 'rt.runsPruneDays',

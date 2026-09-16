@@ -23,6 +23,7 @@ import { Link, useSearch } from 'wouter';
 import { navigate } from 'wouter/use-browser-location';
 
 import { PAGE_ROW_HEIGHT } from '../chrome';
+import { useEditorHref } from '../editorHref';
 import { CommandProvenance } from '../runs/CommandProvenance';
 import { AttentionEmptyState } from './AttentionEmptyState';
 import {
@@ -435,6 +436,7 @@ class WiringErrorBoundary extends Component<
 
 export function WiringMap() {
   const { text } = useSchemeColors();
+  const editorHref = useEditorHref();
   const packsQuery = usePacks();
   const attentionOnly = isAttentionOnly(useSearch());
   const [explicitPack, setExplicitPack] = useState<string | null>(null);
@@ -542,7 +544,7 @@ export function WiringMap() {
                   size="xs"
                   variant="default"
                   component="a"
-                  href={`vscode://file${packDir}`}
+                  href={editorHref(packDir)}
                   leftSection={<Icons.package size={14} />}
                   data-testid="open-pack"
                 >
