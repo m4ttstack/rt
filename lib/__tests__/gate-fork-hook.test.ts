@@ -315,3 +315,52 @@ describe("scripts/hooks/gate-fork.sh control characters", () => {
     expect(JSON.parse(stdout.trim())).toEqual(ALLOW);
   });
 });
+
+// CodeRabbit on PR #295: the escaper covered only tab/CR, so a subject
+// carrying any other C0 control produced invalid deny JSON, and its
+// record-based join dropped a final newline, which then could not match the
+// gate-list payload commands/gate.ts serializes with JSON.stringify.
+describe("scripts/hooks/gate-fork.sh escaping is byte-identical to JSON.stringify", () => {
+  const body = (s: string) => JSON.stringify(s).slice(1, -1);
+
+  for (const [name, subject] of [
+    ["backspace", "mr:x\bback"],
+    ["form feed", "mr:x\fform"],
+    ["vertical tab", "mr:x\vvtab"],
+    ["escape", "mr:x\u001besc"],
+    ["null-adjacent control (0x01)", "mr:x\u0001one"],
+    ["a trailing newline", "mr:x\n"],
+  ] as const) {
+    test(`deny JSON stays parseable and carries the subject verbatim: ${name}`, async () => {
+      const path = pathWithStubRt(JSON.stringify({ ok: true, gates: [], cursor: 0 }), 0);
+      const { stdout, exitCode } = await runHook(path, subject);
+      expect(exitCode).toBe(0);
+      expect(stdout).toContain(body(subject));
+      const parsed = JSON.parse(stdout.trim());
+      expect(parsed.hookSpecificOutput.permissionDecision).toBe("deny");
+      expect(parsed.hookSpecificOutput.permissionDecisionReason).toContain(subject);
+    });
+  }
+
+  test("a subject with a trailing newline still matches its own open gate row", async () => {
+    const subject = "mr:trailing\n";
+    const path = pathWithStubRt(
+      JSON.stringify({ ok: true, cursor: 0, gates: [gateRow("open", { id: "g-nl", subject })] }),
+      0,
+    );
+    const { stdout, exitCode } = await runHook(path, subject);
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(stdout.trim())).toEqual(ALLOW);
+  });
+
+  test("a subject carrying an escape byte still matches its own open gate row", async () => {
+    const subject = "mr:esc\u001bx";
+    const path = pathWithStubRt(
+      JSON.stringify({ ok: true, cursor: 0, gates: [gateRow("open", { id: "g-esc", subject })] }),
+      0,
+    );
+    const { stdout, exitCode } = await runHook(path, subject);
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(stdout.trim())).toEqual(ALLOW);
+  });
+});

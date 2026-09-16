@@ -21,17 +21,40 @@ allow() {
 }
 
 # One JSON string escaper for both consumers: the deny payload (where a raw
-# control character is invalid JSON) and the grep -F patterns (where a raw
-# newline splits one pattern into two, so a sibling subject's row can answer
-# for this one, and where a raw tab can never match the payload's own `\t`).
-# awk, not sed: BSD sed reads `\t` in a pattern as a literal `t`.
+# control byte is invalid JSON) and the grep -F patterns, which compare
+# against rows `commands/gate.ts` printed with JSON.stringify -- so the
+# spelling here has to be JSON.stringify's own, byte for byte: \b \f \n \r \t
+# and \u00XX for every other C0 control.
+#
+# awk, not sed: BSD sed reads `\t` in a pattern as a literal `t`. LC_ALL=C
+# makes length/substr walk BYTES, so a multi-byte UTF-8 character passes
+# through a byte at a time and comes out unchanged, exactly as JSON.stringify
+# leaves it. The appended "." is a sentinel: awk's records drop a FINAL
+# newline in the value (there is no record after it to join), and the
+# sentinel turns that newline into an interior one; escaping never rewrites
+# a plain ".", so stripping the last byte restores the value.
 json_escape() {
-  printf '%s' "$1" | awk '
+  escaped=$(printf '%s.' "$1" | LC_ALL=C awk '
+    BEGIN {
+      spelled[8] = "\\b"; spelled[9] = "\\t"; spelled[12] = "\\f"; spelled[13] = "\\r"
+      for (i = 1; i <= 31; i++) {
+        c = sprintf("%c", i)
+        esc[c] = (i in spelled) ? spelled[i] : sprintf("\\u%04x", i)
+      }
+    }
     {
-      gsub(/\\/, "\\\\"); gsub(/"/, "\\\""); gsub(/\t/, "\\t"); gsub(/\r/, "\\r");
-      if (NR > 1) printf "\\n";
-      printf "%s", $0
-    }'
+      if (NR > 1) printf "\\n"
+      n = length($0)
+      for (i = 1; i <= n; i++) {
+        c = substr($0, i, 1)
+        if (c == "\\") printf "\\\\"
+        else if (c == "\"") printf "\\\""
+        else if (c in esc) printf "%s", esc[c]
+        else printf "%s", c
+      }
+    }
+  ')
+  printf '%s' "${escaped%.}"
 }
 
 deny() {
