@@ -358,3 +358,38 @@ describe("gate:ask subject resolution skips runs the liveness ladder calls stale
     expect((res as any).data.subject).toBe(`run:${live.runId}`);
   });
 });
+
+// RT-179: ~27% of live run: gates carried no origin.worktree because only the
+// session-owns-the-run path stamped one.
+describe("gate:ask stamps origin.worktree through the real command-router wiring", () => {
+  const Q = [{ id: "q", label: "Pick", multi: false, options: ["a", "b"] }];
+
+  test("an explicit run: subject owned by another session still carries that run's worktree", async () => {
+    runsRoot = mkdtempSync(join(tmpdir(), "rt-gate-owner-router-"));
+    process.env.RT_RUNS_ROOT = runsRoot;
+    const started = runStart(runsRoot, {
+      repo: "widget-forge", workType: "feature", pipeline: "default",
+      env: { CLAUDE_CODE_SESSION_ID: "s-owner" },
+    });
+    if (!started.ok) throw new Error(started.error);
+    const runDb = new Database(started.runDb);
+    runDb.run(
+      "INSERT OR REPLACE INTO fields (run_id, key, value, produced_by, at) VALUES (?, 'worktree', ?, 'run', ?)",
+      [started.runId, "/wt/other-owner", Date.now()],
+    );
+    runDb.close();
+
+    const { handlers, gatesStore, stateDb } = buildHandlers();
+    const agentId = newAgentId();
+    insertAgent({
+      id: agentId, repo: "widget-forge", cwd: "/wt/asker", provider: "claude",
+      surface: "headless", sessionId: "s-asker", createdAt: Date.now(),
+    }, stateDb);
+
+    const res = await handlers["gate:ask"]!({ sessionId: "s-asker", subject: `run:${started.runId}`, questions: Q });
+    if (!(res as any).ok) throw new Error((res as any).error);
+    const row = gatesStore.get((res as any).data.id);
+    expect(row?.origin?.runId).toBe(started.runId);
+    expect(row?.origin?.worktree).toBe("/wt/other-owner");
+  });
+});

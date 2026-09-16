@@ -350,6 +350,11 @@ export function createGateHandlers(
         explicit-subject-only resolution, since there is no session store to
         check a run or agent against. */
     resolveSubject?: (args: { subject?: string; sessionId?: string }) => GateSubjectResult | Promise<GateSubjectResult>;
+    /** The run's recorded worktree, by run id. Subject resolution only knows
+        the worktree of a run the ASKING session owns, which left every other
+        run: gate with no origin.worktree and invisible to the hook's
+        per-worktree match. */
+    runWorktree?: (runId: string) => string | null;
   } = {},
 ): GateSiblingHandlers & { "gate:ask": (payload: unknown) => Promise<CommandResult<"gate:ask">> } {
   const push = deps.push ?? noopPush;
@@ -719,7 +724,8 @@ export function createGateHandlers(
     const derivedOrigin: GateOrigin = { presentation };
     if (paneId) derivedOrigin.paneId = paneId;
     if (resolved.runId) derivedOrigin.runId = resolved.runId;
-    if (resolved.runWorktree) derivedOrigin.worktree = resolved.runWorktree;
+    const runWorktree = resolved.runWorktree ?? (resolved.runId ? deps.runWorktree?.(resolved.runId) ?? undefined : undefined);
+    if (runWorktree) derivedOrigin.worktree = runWorktree;
     const origin: GateOrigin = { ...passthroughOrigin, ...derivedOrigin } as GateOrigin;
 
     const opened = await handlers["gate:open"]({

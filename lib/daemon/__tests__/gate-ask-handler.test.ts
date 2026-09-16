@@ -28,6 +28,7 @@ function fiveOptionQuestion(): GateQuestion[] {
 function harness(opts: {
   resolveSubject?: (args: { subject?: string; sessionId?: string }) => GateSubjectResult;
   runSpawnedBy?: (runId: string) => string | null;
+  runWorktree?: (runId: string) => string | null;
 } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "rt-gate-ask-handler-"));
   dirs.push(dir);
@@ -37,6 +38,7 @@ function harness(opts: {
   const handlers = createGateHandlers(store, bus, () => {}, {
     resolveSubject: opts.resolveSubject,
     runSpawnedBy: opts.runSpawnedBy,
+    runWorktree: opts.runWorktree,
   });
   return { handlers, store };
 }
@@ -317,5 +319,60 @@ describe("gate:ask", () => {
     const row = store.get(res.data.id)!;
     expect(row.origin?.worktree).toBe("/run/wt");
     expect(row.origin?.runId).toBe("r1");
+  });
+});
+
+// RT-179: only the session-owns-the-run path stamped origin.worktree, so a
+// gate opened on any other run: subject was invisible to the hook's
+// per-worktree match.
+describe("gate:ask stamps origin.worktree whenever the runId is known", () => {
+  test("a run subject the session does not own gets its worktree from the runWorktree dep", async () => {
+    const { handlers, store } = harness({
+      resolveSubject: () => ({ ok: true, subject: "run:r9", runId: "r9" }),
+      runWorktree: (runId) => (runId === "r9" ? "/wt/r9" : null),
+    });
+    const res = await handlers["gate:ask"]({ questions: twoOptionQuestion(), subject: "run:r9" });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const row = store.get(res.data.id)!;
+    expect(row.origin?.runId).toBe("r9");
+    expect(row.origin?.worktree).toBe("/wt/r9");
+  });
+
+  test("the resolver's own worktree wins over the dep lookup", async () => {
+    const { handlers, store } = harness({
+      resolveSubject: () => ({ ok: true, subject: "run:r1", runId: "r1", runWorktree: "/run/wt" }),
+      runWorktree: () => "/stale/wt",
+    });
+    const res = await handlers["gate:ask"]({ questions: twoOptionQuestion(), sessionId: "sess-1" });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(store.get(res.data.id)!.origin?.worktree).toBe("/run/wt");
+  });
+
+  test("a run with no recorded worktree leaves a caller-supplied origin.worktree intact", async () => {
+    const { handlers, store } = harness({
+      resolveSubject: () => ({ ok: true, subject: "run:r2", runId: "r2" }),
+      runWorktree: () => null,
+    });
+    const res = await handlers["gate:ask"]({
+      questions: twoOptionQuestion(), subject: "run:r2", origin: { worktree: "/caller/wt" },
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(store.get(res.data.id)!.origin?.worktree).toBe("/caller/wt");
+  });
+
+  test("no runId at all: no lookup happens and the gate opens without a worktree", async () => {
+    let calls = 0;
+    const { handlers, store } = harness({
+      resolveSubject: () => ({ ok: true, subject: "mr:x" }),
+      runWorktree: () => { calls++; return "/never"; },
+    });
+    const res = await handlers["gate:ask"]({ questions: twoOptionQuestion(), subject: "mr:x" });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(calls).toBe(0);
+    expect(store.get(res.data.id)!.origin?.worktree).toBeUndefined();
   });
 });

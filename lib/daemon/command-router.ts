@@ -161,6 +161,7 @@ export function buildRoutedHandlers(opts: {
     reconciler: opts.reconciler,
     resumeAgent: opts.resumeAgent,
     getAgentRecord: opts.getAgentRecord,
+    runWorktree,
     resolveSubject: async (args) => {
       const liveness = await (opts.runLiveness ?? getRunLiveness)();
       return resolveGateSubject({
