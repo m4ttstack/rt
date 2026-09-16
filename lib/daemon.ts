@@ -109,7 +109,7 @@ import { createReconciler, type Reconciler } from "./daemon/reconciler.ts";
 import { snapshotPanes, type LivePane } from "./daemon/pane-resolve-live.ts";
 import type { CommandResult } from "./daemon/handlers/types.ts";
 import { deliverToInbox } from "./daemon/inbox.ts";
-import { resolveInbox, resolveAllInboxes } from "./claude-registry.ts";
+import { resolveLiveInbox, resolveAllLiveInboxes } from "./claude-registry.ts";
 import {
   writeBreadcrumb,
   recordBootAttempt,
@@ -639,8 +639,13 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
         gatePush = createGatePush({
           store: gatesStore,
           deliver: deliverToInbox,
-          resolveSession: resolveInbox,
-          resolveAll: resolveAllInboxes,
+          // Liveness-checked, as the chat delivery path is: a pane that
+          // crashed after its doorbell leaves its registry row behind, and
+          // resolving on the row alone reads that as a live session whose
+          // write merely failed, which is the one shape the dead-pane pass
+          // must not miss.
+          resolveSession: resolveLiveInbox,
+          resolveAll: resolveAllLiveInboxes,
           log,
           injectEscape: createEscapeInjector(),
         });

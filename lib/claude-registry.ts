@@ -71,3 +71,23 @@ export function inboxAlive(b: InboxBinding): boolean {
   try { process.kill(b.pid, 0); } catch { return false; }
   return existsSync(b.socketPath);
 }
+
+/** resolveInbox plus the liveness check, for callers that push AT a session
+    rather than describe it. A registry file outlives the process that wrote
+    it, so a crashed pane still resolves: the row is there, the socket write
+    then fails, and a caller reading only "did it resolve" cannot tell that
+    apart from a transport blip. These two are what such a caller resolves
+    through; `resolveInbox`/`resolveAllInboxes` stay the raw read for callers
+    that want the row whether or not it is live. */
+export function resolveLiveInbox(sessionId: string, opts?: { roots?: string[] }): InboxBinding | null {
+  const binding = resolveInbox(sessionId, opts);
+  return binding && inboxAlive(binding) ? binding : null;
+}
+
+export function resolveAllLiveInboxes(opts?: { roots?: string[] }): Map<string, InboxBinding> {
+  const live = new Map<string, InboxBinding>();
+  for (const [sessionId, binding] of resolveAllInboxes(opts)) {
+    if (inboxAlive(binding)) live.set(sessionId, binding);
+  }
+  return live;
+}

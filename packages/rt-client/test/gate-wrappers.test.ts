@@ -76,6 +76,16 @@ describe("gateWait", () => {
     expect(res.data).toEqual({ status: "answered", row });
     expect(seen).toEqual([{ cmd: "gate:wait", payload }]);
   });
+
+  test("forwards sessionId, the field the daemon's consumption stamp reads", async () => {
+    const { sock, seen, stop } = fakeDaemon({
+      "gate:wait": { ok: true, data: { status: "answered", row } },
+    });
+    stops.push(stop);
+    const payload = { id: "gt-1", sessionId: "sess-1" };
+    await gateWait(payload, { sockPath: sock });
+    expect(seen).toEqual([{ cmd: "gate:wait", payload }]);
+  });
 });
 
 describe("gateList", () => {

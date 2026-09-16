@@ -195,6 +195,22 @@ describe("waitForGate", () => {
     expect(outcome).toEqual({ terminal: "answered", row });
   });
 
+  test("the caller's session rides every wait call, so an answered read consumes", async () => {
+    const row = fakeRow({ status: "answered" });
+    const seen: Array<Commands["gate:wait"]["payload"]> = [];
+    const wait: WaitFn = async (a) => { seen.push(a); return { ok: true, data: { status: "answered", row } }; };
+    await waitForGate("gt-1a2b3c4d", null, wait, undefined, "sess-1");
+    expect(seen[0]!.sessionId).toBe("sess-1");
+  });
+
+  test("no session id means no sessionId key at all (an absent session reads without consuming)", async () => {
+    const row = fakeRow({ status: "answered" });
+    const seen: Array<Commands["gate:wait"]["payload"]> = [];
+    const wait: WaitFn = async (a) => { seen.push(a); return { ok: true, data: { status: "answered", row } }; };
+    await waitForGate("gt-1a2b3c4d", null, wait);
+    expect(seen[0]).not.toHaveProperty("sessionId");
+  });
+
   test("a timeout status re-enters the loop until the gate resolves", async () => {
     const row = fakeRow({ status: "answered" });
     let calls = 0;

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { resolveAllInboxes, resolveInbox } from "../claude-registry.ts";
+import { resolveAllInboxes, resolveAllLiveInboxes, resolveInbox, resolveLiveInbox } from "../claude-registry.ts";
 
 function fakeRoot(entries: Array<{ pid: number; sessionId: string; sock?: string; status?: string }>): string {
   const root = mkdtempSync(join(tmpdir(), "creg-"));
@@ -64,5 +64,49 @@ describe("resolveAllInboxes", () => {
     const b = fakeRoot([{ pid: 502, sessionId: "dup", status: "idle" }]);
     const map = resolveAllInboxes({ roots: [a, b] });
     expect(map.get("dup")?.pid).toBe(501);
+  });
+});
+
+/** A registry file outlives the process that wrote it, so a row on disk is
+    not a live pane. Every caller that pushes at a session has to make the
+    same pid-plus-socket check the chat delivery path makes. */
+describe("resolveLiveInbox", () => {
+  function liveSocket(): string {
+    const dir = mkdtempSync(join(tmpdir(), "creg-sock-"));
+    const path = join(dir, "live.sock");
+    writeFileSync(path, "");
+    return path;
+  }
+
+  test("returns the binding when the pid is alive and the socket is there", () => {
+    const sock = liveSocket();
+    const root = fakeRoot([{ pid: process.pid, sessionId: "aaaaaaaa-0000-0000-0000-00000000000a", sock }]);
+    expect(resolveLiveInbox("aaaaaaaa-0000-0000-0000-00000000000a", { roots: [root] })?.socketPath).toBe(sock);
+  });
+
+  test("returns null for a lingering row whose process is gone", () => {
+    const sock = liveSocket();
+    const root = fakeRoot([{ pid: 2147483647, sessionId: "bbbbbbbb-0000-0000-0000-00000000000b", sock }]);
+    expect(resolveInbox("bbbbbbbb-0000-0000-0000-00000000000b", { roots: [root] })).not.toBeNull();
+    expect(resolveLiveInbox("bbbbbbbb-0000-0000-0000-00000000000b", { roots: [root] })).toBeNull();
+  });
+
+  test("returns null when the pid is alive but the socket is gone (a crashed pane's leftovers)", () => {
+    const root = fakeRoot([{ pid: process.pid, sessionId: "cccccccc-0000-0000-0000-00000000000c", sock: "/tmp/cc-socks/definitely-not-here.sock" }]);
+    expect(resolveLiveInbox("cccccccc-0000-0000-0000-00000000000c", { roots: [root] })).toBeNull();
+  });
+});
+
+describe("resolveAllLiveInboxes", () => {
+  test("keeps the live rows and drops the lingering ones", () => {
+    const dir = mkdtempSync(join(tmpdir(), "creg-sock-"));
+    const sock = join(dir, "live.sock");
+    writeFileSync(sock, "");
+    const root = fakeRoot([
+      { pid: process.pid, sessionId: "dddddddd-0000-0000-0000-00000000000d", sock },
+      { pid: 2147483647, sessionId: "eeeeeeee-0000-0000-0000-00000000000e", sock },
+    ]);
+    expect(resolveAllInboxes({ roots: [root] }).size).toBe(2);
+    expect([...resolveAllLiveInboxes({ roots: [root] }).keys()]).toEqual(["dddddddd-0000-0000-0000-00000000000d"]);
   });
 });
