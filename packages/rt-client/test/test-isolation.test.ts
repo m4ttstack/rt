@@ -24,6 +24,26 @@ describe("guardTestDaemonEnv", () => {
     expect(forbidden).toContain(join("/real/home", ".mattstack", "rt", "rt.sock"));
   });
 
+  test("captures RT_APP_SOCKET's value on the forbidden list before deleting it", () => {
+    const env: NodeJS.ProcessEnv = {
+      HOME: "/real/home",
+      RT_APP_SOCKET: "/live/tray.sock",
+    };
+    guardTestDaemonEnv(env);
+    const forbidden = JSON.parse(env.RT_TEST_FORBID_SOCKS!) as string[];
+    expect(forbidden).toContain("/live/tray.sock");
+  });
+
+  test("an existing forbidden list that is not a string array throws instead of iterating characters", () => {
+    // JSON.stringify("/x.sock") parses to a STRING, which is iterable: without
+    // validation the guard would merge its characters as the forbidden list.
+    const env: NodeJS.ProcessEnv = {
+      HOME: "/real/home",
+      RT_TEST_FORBID_SOCKS: JSON.stringify("/live/rt.sock"),
+    };
+    expect(() => guardTestDaemonEnv(env)).toThrow(/string array/);
+  });
+
   test("merges with an existing forbidden list without duplicating entries", () => {
     const env: NodeJS.ProcessEnv = {
       HOME: "/real/home",

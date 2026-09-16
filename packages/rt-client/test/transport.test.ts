@@ -108,4 +108,10 @@ describe("RT_TEST_FORBID_SOCKS guard", () => {
     const sockPath = join(tmpdir(), "definitely-missing.sock");
     await expect(rtCommand("chat:post", {}, { sockPath })).rejects.toThrow();
   });
+
+  test("valid JSON that is not a string array throws too: a JSON string has .includes()", async () => {
+    process.env.RT_TEST_FORBID_SOCKS = JSON.stringify("/somewhere/else.sock");
+    const sockPath = join(tmpdir(), "definitely-missing.sock");
+    await expect(rtCommand("chat:post", {}, { sockPath })).rejects.toThrow(/string array/);
+  });
 });

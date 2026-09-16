@@ -9,6 +9,7 @@
  */
 import { homedir } from "os";
 import { join } from "path";
+import { parseForbidSocks } from "./test-isolation.ts";
 
 export interface RtResponse<T = unknown> {
   ok: boolean;
@@ -66,7 +67,7 @@ export const DEFAULT_SOCK = defaultSock();
 function assertSockNotForbidden(cmd: string, sockPath: string): void {
   const raw = process.env.RT_TEST_FORBID_SOCKS;
   if (!raw) return;
-  const forbidden = JSON.parse(raw) as string[];
+  const forbidden = parseForbidSocks(raw);
   if (forbidden.includes(sockPath)) {
     throw new Error(
       `rt-client: refusing "${cmd}" at forbidden socket ${sockPath}: RT_TEST_FORBID_SOCKS marks it as a live daemon socket, so this dispatch would have escaped test isolation`,
