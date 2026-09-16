@@ -608,6 +608,41 @@ test("agent:start with handle uses it as --name and reserves no pool handle", as
   expect(paneRun?.[3]).toContain("'--name' 'job-a'");
 });
 
+test("agent:start defaults provider to claude when unset", async () => {
+  const h = fresh({ spawn: () => ({ exited: Promise.resolve(0), stdout: async () => "{}" }) });
+  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", surface: "headless", prompt: "go" });
+  expect(res.ok).toBe(true);
+  if (res.ok) expect(res.data.provider).toBe("claude");
+});
+
+test("agent:start honors an explicit provider", async () => {
+  const h = fresh({ spawn: () => ({ exited: Promise.resolve(0), stdout: async () => "{}" }) });
+  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", surface: "headless", prompt: "go", provider: "codex" });
+  expect(res.ok).toBe(true);
+  if (res.ok) expect(res.data.provider).toBe("codex");
+});
+
+test("agent:start rejects an unknown provider", async () => {
+  const h = fresh();
+  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", surface: "headless", prompt: "go", provider: "cursor" });
+  expect(res.ok).toBe(false);
+  if (!res.ok) expect(res.error).toMatch(/provider/);
+});
+
+test("agent:start rejects account with codex", async () => {
+  const h = fresh();
+  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", surface: "headless", prompt: "go", provider: "codex", account: "a@b.c" });
+  expect(res.ok).toBe(false);
+  if (!res.ok) expect(res.error).toMatch(/account/);
+});
+
+test("agent:start threads yolo into the recorded agent", async () => {
+  const h = fresh({ spawn: () => ({ exited: Promise.resolve(0), stdout: async () => "{}" }) });
+  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", surface: "headless", prompt: "go", yolo: true });
+  expect(res.ok).toBe(true);
+  if (res.ok) expect(res.data.yolo).toBe(true);
+});
+
 test("agent:list filters by repo", async () => {
   const h = fresh({ runner: okRunner([]) });
   await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", prompt: "a", surface: "herdr" });

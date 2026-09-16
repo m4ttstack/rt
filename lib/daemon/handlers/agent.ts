@@ -25,7 +25,7 @@ import {
   deleteAgent, finishAgent, getAgent, insertAgent, isValidChatName, listAgents, markAgentResumed,
   newAgentId, reserveAgentHandle, updateAgentPane, type AgentRecord, type AgentSurface,
 } from "../../state/index.ts";
-import { buildClaudeArgv, buildPaneCommand, CROSS_SESSION_INBOUND_SETTINGS, type ClaudeInvocation } from "../../agent-argv/index.ts";
+import { buildAgentArgv, buildAgentPaneCommand, CROSS_SESSION_INBOUND_SETTINGS, type AgentInvocation, type AgentProvider } from "../../agent-argv/index.ts";
 import { mergeGateForkHookSettings, resolveGateForkHookPath } from "../../agent-hooks.ts";
 import { defaultHerdrRunner, launchInWorkspace, type HerdrRunner } from "../../agent-herdr.ts";
 import { repoLabel } from "../../repo-label.ts";
@@ -60,9 +60,9 @@ function defaultSpawnHeadless(argv: string[], cwd: string, env: Record<string, s
 }
 
 /** A declared+unset key resolves undefined without throwing, so a caught error here is already the unexpected case. */
-function fromSetting(key: string, log: Logger): string | undefined {
+function fromSetting<T = string>(key: string, log: Logger): T | undefined {
   try {
-    return getSetting<string>(key).value ?? undefined;
+    return getSetting<T>(key).value ?? undefined;
   } catch (err) {
     log.warn({ err, key }, "agent: settings read failed");
     return undefined;
@@ -183,7 +183,7 @@ export function createAgentHandlers(opts: {
 
   async function launch(
     rec: AgentRecord,
-    session: ClaudeInvocation["session"],
+    session: AgentInvocation["session"],
     prompt: string | undefined,
     tabLabel: string,
     workspaceLabel: string,
@@ -196,7 +196,7 @@ export function createAgentHandlers(opts: {
     };
     const settingsPath = resolveHookSettingsPath(rec, log);
 
-    const inv: ClaudeInvocation = {
+    const inv: AgentInvocation = {
       session,
       headless: rec.surface === "headless",
       ...(rec.account !== undefined && { account: rec.account }),
@@ -204,6 +204,7 @@ export function createAgentHandlers(opts: {
       ...(rec.effort !== undefined && { effort: rec.effort }),
       ...(rec.handle !== undefined && { name: rec.handle }),
       ...(rec.extraArgs !== undefined && { extraArgs: rec.extraArgs }),
+      ...(rec.yolo !== undefined && { yolo: rec.yolo }),
       ...(prompt !== undefined && { prompt }),
       // Headless has no pane shell line for buildPaneCommand to interpolate
       // env into (see the payload.env rejection above); its gate env instead
@@ -217,7 +218,7 @@ export function createAgentHandlers(opts: {
         ? (opts.herdrRunnerForSocket ?? ((socket: string) => defaultHerdrRunner({ ...process.env, HERDR_SOCKET_PATH: socket })))(extra.herdrSocket)
         : (opts.herdrRunner ?? defaultHerdrRunner());
       const out = await launchInWorkspace(
-        { workspaceLabel, tabLabel, paneCommand: buildPaneCommand(rec.cwd, inv) },
+        { workspaceLabel, tabLabel, paneCommand: buildAgentPaneCommand(rec.provider as AgentProvider, rec.cwd, inv) },
         runner,
       );
       if (out.focusedExisting) {
@@ -234,7 +235,7 @@ export function createAgentHandlers(opts: {
       return { ok: true, data: rec };
     }
 
-    const argv = buildClaudeArgv(inv);
+    const argv = buildAgentArgv(rec.provider as AgentProvider, inv);
     const resultPath = agentResultPath(rec.id);
     rec.resultPath = resultPath;
     mkdirSync(dirname(resultPath), { recursive: true });
@@ -264,6 +265,14 @@ export function createAgentHandlers(opts: {
         return { ok: false, error: `invalid surface "${payload.surface}"; must be one of herdr, headless` };
       }
       const surface: AgentSurface = payload.surface ?? "herdr";
+      const providerRaw = payload.provider ?? fromSetting("agent.provider", log) ?? "claude";
+      if (providerRaw !== "claude" && providerRaw !== "codex") {
+        return { ok: false, error: `invalid provider "${providerRaw}"; must be one of claude, codex` };
+      }
+      const provider: AgentProvider = providerRaw;
+      if (payload.account !== undefined && provider === "codex") {
+        return { ok: false, error: "codex does not support --account in this version (see spec's Non-goals)" };
+      }
       if (payload.bg && surface === "headless") {
         return { ok: false, error: "--bg is a herdr-surface option" };
       }
@@ -294,7 +303,7 @@ export function createAgentHandlers(opts: {
       }
       const rec: AgentRecord = {
         id: newAgentId(),
-        repo, cwd, provider: "claude", surface,
+        repo, cwd, provider, surface,
         sessionId: crypto.randomUUID(),
         createdAt: Date.now(),
       };
@@ -306,14 +315,18 @@ export function createAgentHandlers(opts: {
       // this field is whether resolveHookSettingsPath sees an explicit
       // subject to gate hook injection on.
       if (payload.subject !== undefined) rec.subject = payload.subject;
-      const model = payload.model ?? fromSetting("agent.model", log);
-      const effort = payload.effort ?? fromSetting("agent.effort", log);
-      const account = payload.account ?? fromSetting("agent.account", log);
-      const extraArgs = payload.extraArgs ?? fromSetting("agent.extraArgs", log);
+      const model = payload.model ?? fromSetting(`agent.${provider}.model`, log);
+      const effort = payload.effort ?? fromSetting(`agent.${provider}.effort`, log);
+      const extraArgs = payload.extraArgs ?? fromSetting(`agent.${provider}.extraArgs`, log);
+      const yolo = payload.yolo ?? fromSetting<boolean>(`agent.${provider}.yolo`, log) ?? false;
       if (model !== undefined) rec.model = model;
       if (effort !== undefined) rec.effort = effort;
-      if (account !== undefined) rec.account = account;
       if (extraArgs !== undefined) rec.extraArgs = extraArgs;
+      if (yolo) rec.yolo = true;
+      if (provider === "claude") {
+        const account = payload.account ?? fromSetting("agent.claude.account", log);
+        if (account !== undefined) rec.account = account;
+      }
       if (payload.label !== undefined) rec.label = payload.label;
       if (payload.caller !== undefined) rec.caller = payload.caller;
       if (surface === "headless") {
