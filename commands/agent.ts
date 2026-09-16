@@ -199,7 +199,7 @@ async function runStart(args: string[]): Promise<void> {
   }
   console.log(renderRecord(data));
   if (data.provider === "codex") {
-    console.log(`note: codex mints its own session id; the one above is provisional until the daemon captures the real one. Run \`rt agent show ${data.id}\` to confirm it before resuming.`);
+    console.log(`note: codex mints its own session id; the one above is provisional. Capturing the real one needs the rt daemon running (start it with \`rt daemon start\` if it isn't) -- once it is, \`rt agent show ${data.id}\` confirms the real id before resuming.`);
   }
 }
 

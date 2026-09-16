@@ -144,7 +144,10 @@ export async function herdrAgentSessionId(
         // keep polling -- a transient non-JSON response is not fatal
       }
     }
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    // 2s, not 500ms: the 10-minute budget above would otherwise spawn up to
+    // 1200 `herdr agent get` subprocesses waiting on a turn that typically
+    // takes well over a few seconds anyway.
+    await new Promise((resolve) => setTimeout(resolve, 2000));
   }
   return undefined;
 }

@@ -28,8 +28,8 @@ rt agent <verb> <id> [flags]
 | `--provider` | text |  | Which CLI to launch (override agent.provider, default claude) |
 | `--model` | text |  | Override agent.&lt;provider&gt;.model |
 | `--effort` | text |  | Override agent.&lt;provider&gt;.effort |
-| `--yolo` | boolean | `false` | Bypass permission prompts for this launch (override agent.&lt;provider&gt;.yolo) |
-| `--no-yolo` | boolean | `false` | Keep permission prompts for this launch even when agent.&lt;provider&gt;.yolo is true |
+| `--yolo` | boolean |  | Bypass permission prompts for this launch (override agent.&lt;provider&gt;.yolo; omitted falls back to the setting, not false) |
+| `--no-yolo` | boolean |  | Keep permission prompts for this launch even when agent.&lt;provider&gt;.yolo is true (omitted falls back to the setting, not false) |
 | `--account` | text |  | cswap account, claude only (override agent.claude.account) |
 | `--label` | text |  | Caller's display label; used as the herdr tab name |
 | `--caller` | text |  | Identifies what invoked this handoff |
