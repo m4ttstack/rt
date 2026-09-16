@@ -99,3 +99,29 @@ describe("resolveGateSubject", () => {
     expect(resolveGateSubject(none, {}).ok).toBe(false);
   });
 });
+
+// RT-157: a run stuck in status "running" that the liveness ladder would call
+// stale must not capture the session's subject resolution.
+describe("resolveGateSubject skips stale runs", () => {
+  test("a stale running run falls through to the agent record", () => {
+    const deps = {
+      runsBySession: () => [{ runId: "r1", status: "running", worktree: "/w", stale: true }],
+      agentBySession: () => ({ id: "ag-9", subject: "herd:h1/job" }),
+    };
+    expect(resolveGateSubject(deps, { sessionId: "s" })).toEqual({ ok: true, subject: "herd:h1/job" });
+  });
+
+  test("a stale run never counts toward the multiple-running-runs refusal", () => {
+    const deps = { ...none, runsBySession: () => [
+      { runId: "r1", status: "running", worktree: "/w", stale: true },
+      { runId: "r2", status: "running", worktree: "/w2", stale: false },
+    ] };
+    expect(resolveGateSubject(deps, { sessionId: "s" }))
+      .toEqual({ ok: true, subject: "run:r2", runId: "r2", runWorktree: "/w2" });
+  });
+
+  test("an explicit non-run subject never enriches from a stale run", () => {
+    const deps = { ...none, runsBySession: () => [{ runId: "r1", status: "running", worktree: "/w", stale: true }] };
+    expect(resolveGateSubject(deps, { subject: "mr:x", sessionId: "s" })).toEqual({ ok: true, subject: "mr:x" });
+  });
+});

@@ -349,7 +349,7 @@ export function createGateHandlers(
         lookups. Omitted -- most existing handler tests -- falls back to
         explicit-subject-only resolution, since there is no session store to
         check a run or agent against. */
-    resolveSubject?: (args: { subject?: string; sessionId?: string }) => GateSubjectResult;
+    resolveSubject?: (args: { subject?: string; sessionId?: string }) => GateSubjectResult | Promise<GateSubjectResult>;
   } = {},
 ): GateSiblingHandlers & { "gate:ask": (payload: unknown) => Promise<CommandResult<"gate:ask">> } {
   const push = deps.push ?? noopPush;
@@ -701,7 +701,7 @@ export function createGateHandlers(
     const paneId = typeof payload?.paneId === "string" && payload.paneId.trim() ? payload.paneId.trim() : undefined;
     const explicitSubject = typeof payload?.subject === "string" && payload.subject.trim() ? payload.subject.trim() : undefined;
 
-    const resolved = resolveSubject({ subject: explicitSubject, sessionId });
+    const resolved = await resolveSubject({ subject: explicitSubject, sessionId });
     if (!resolved.ok) return { ok: false as const, error: resolved.error };
 
     const presentation = gatePresentation({ paneId, sessionId, questions });

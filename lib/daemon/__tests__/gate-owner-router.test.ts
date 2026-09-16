@@ -23,6 +23,7 @@ import { fakeStore } from "./fake-cache-store.ts";
 import { openStateDb } from "../../state/index.ts";
 import { runStart } from "../../runs/start.ts";
 import { insertAgent, newAgentId } from "../../state/agents-store.ts";
+import { livenessFrom } from "../../runs/liveness.ts";
 import { Database } from "bun:sqlite";
 
 const stubCtx = {
@@ -73,6 +74,9 @@ function buildHandlers(herdStore: ReturnType<typeof createHerdStore> = createHer
     homeSnapshot: { stop: () => {}, runNow: async () => ({}) as any, pullNow: async () => ({}) as any, status: () => ({}) as any, ready: Promise.resolve() },
     teamSnapshots: { stop() {}, rescan: async () => {}, status: () => [], pullNow: async () => ({ outcome: "skipped", detail: null }), ready: Promise.resolve() },
     repos: { withReconcilerHeld: async (fn) => fn(), refreshWatchedRepos: () => {} },
+    // Hermetic liveness: the real one shells out to `herdr agent list`, which
+    // would make every subject-resolution case read this machine's live panes.
+    runLiveness: async () => livenessFrom([]),
     stateDb,
   });
   return { handlers, gatesStore, herdStore, stateDb };
@@ -274,5 +278,83 @@ describe("gate:ask subject resolution through the real command-router wiring", (
     // falls through to a refusal rather than silently naming the wrong agent.
     const res = await handlers["gate:ask"]!({ sessionId: otherAgentId, questions: Q });
     expect((res as any).ok).toBe(false);
+  });
+});
+
+// RT-157: a run left in status "running" by a dead pipeline stays running
+// forever, and the subject ladder trusted status alone.
+describe("gate:ask subject resolution skips runs the liveness ladder calls stale", () => {
+  const Q = [{ id: "q", label: "Pick", multi: false, options: ["a", "b"] }];
+
+  function backdate(runDb: string, at: number): void {
+    const db = new Database(runDb);
+    db.run("UPDATE runs SET started_at = ?", [at]);
+    db.run("UPDATE stages SET started_at = ?, ended_at = CASE WHEN ended_at IS NULL THEN NULL ELSE ? END", [at, at]);
+    db.run("UPDATE fields SET at = ?", [at]);
+    db.close();
+  }
+
+  test("a stale running run no longer captures the session; the agent record wins", async () => {
+    runsRoot = mkdtempSync(join(tmpdir(), "rt-gate-owner-router-"));
+    process.env.RT_RUNS_ROOT = runsRoot;
+    const started = runStart(runsRoot, {
+      repo: "widget-forge", workType: "feature", pipeline: "default",
+      env: { CLAUDE_CODE_SESSION_ID: "s-stale" },
+    });
+    if (!started.ok) throw new Error(started.error);
+    backdate(started.runDb, Date.now() - 2 * 60 * 60 * 1000);
+
+    const { handlers, stateDb } = buildHandlers();
+    const agentId = newAgentId();
+    insertAgent({
+      id: agentId, repo: "widget-forge", cwd: "/wt/agent", provider: "claude",
+      surface: "headless", sessionId: "s-stale", createdAt: Date.now(),
+    }, stateDb);
+
+    const res = await handlers["gate:ask"]!({ sessionId: "s-stale", questions: Q });
+    if (!(res as any).ok) throw new Error((res as any).error);
+    expect((res as any).data.subject).toBe(`agent:${agentId}`);
+  });
+
+  test("a fresh running run still wins: staleness is the only thing that changed", async () => {
+    runsRoot = mkdtempSync(join(tmpdir(), "rt-gate-owner-router-"));
+    process.env.RT_RUNS_ROOT = runsRoot;
+    const started = runStart(runsRoot, {
+      repo: "widget-forge", workType: "feature", pipeline: "default",
+      env: { CLAUDE_CODE_SESSION_ID: "s-fresh" },
+    });
+    if (!started.ok) throw new Error(started.error);
+
+    const { handlers, stateDb } = buildHandlers();
+    const agentId = newAgentId();
+    insertAgent({
+      id: agentId, repo: "widget-forge", cwd: "/wt/agent", provider: "claude",
+      surface: "headless", sessionId: "s-fresh", createdAt: Date.now(),
+    }, stateDb);
+
+    const res = await handlers["gate:ask"]!({ sessionId: "s-fresh", questions: Q });
+    if (!(res as any).ok) throw new Error((res as any).error);
+    expect((res as any).data.subject).toBe(`run:${started.runId}`);
+  });
+
+  test("a stale run and a live run under one session resolve to the live one instead of refusing", async () => {
+    runsRoot = mkdtempSync(join(tmpdir(), "rt-gate-owner-router-"));
+    process.env.RT_RUNS_ROOT = runsRoot;
+    const dead = runStart(runsRoot, {
+      repo: "widget-forge", workType: "feature", pipeline: "default",
+      env: { CLAUDE_CODE_SESSION_ID: "s-both" },
+    });
+    if (!dead.ok) throw new Error(dead.error);
+    backdate(dead.runDb, Date.now() - 2 * 60 * 60 * 1000);
+    const live = runStart(runsRoot, {
+      repo: "widget-forge", workType: "feature", pipeline: "default",
+      env: { CLAUDE_CODE_SESSION_ID: "s-both" },
+    });
+    if (!live.ok) throw new Error(live.error);
+
+    const { handlers } = buildHandlers();
+    const res = await handlers["gate:ask"]!({ sessionId: "s-both", questions: Q });
+    if (!(res as any).ok) throw new Error((res as any).error);
+    expect((res as any).data.subject).toBe(`run:${live.runId}`);
   });
 });
