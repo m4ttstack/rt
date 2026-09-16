@@ -1,8 +1,8 @@
 import {
   unwrapGateAnswerValue,
   type GateAnswer,
-  type GateQuestion,
 } from '@mattstack/rt-client/gate';
+import type { GateQuestion } from './types';
 
 export type GateAnswers = GateAnswer['answers'];
 

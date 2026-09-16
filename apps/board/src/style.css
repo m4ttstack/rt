@@ -2064,12 +2064,26 @@ body {
 }
 .tui-gate-choice-label {
   display: flex;
+  flex-direction: column;
   flex: 1;
   min-width: 0;
-  align-items: center;
-  gap: 6px;
+  gap: 2px;
   line-height: 1.35;
   overflow-wrap: anywhere;
+}
+.tui-gate-choice-label-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+/* BOARD-36: an option's own `description`, one muted line under its label
+   -- matching the pane's AskUserQuestion layout (label line, dim one-liner
+   beneath). Absent on options with no description, so the row above stays
+   the whole label exactly as before. */
+.tui-gate-choice-subtitle {
+  font-size: var(--gate-font-meta);
+  line-height: 1.4;
+  color: var(--gate-muted);
 }
 /* No `display` here on purpose: the primitive hides the hint with the
    `hidden` attribute when an option has no key. */
@@ -2224,6 +2238,21 @@ body {
   flex-direction: column;
   gap: var(--gate-gap-row);
   min-width: 0;
+}
+/* BOARD-36: a question's own `context` field, rendered with its card above
+   its choices -- structured-field twin of the gate-level blob's sectioned
+   `.tui-gate-context`/`.tui-gate-lead`, so it takes the same muted look. */
+.tui-gate-question-context {
+  font-size: var(--gate-font-meta);
+  line-height: 1.45;
+  color: var(--gate-muted);
+  overflow-wrap: anywhere;
+}
+.tui-gate-question-context [data-part='markdown'] > * {
+  margin: 0;
+}
+.tui-gate-question-context [data-part='markdown'] > * + * {
+  margin-top: 6px;
 }
 .tui-gate-quote {
   margin: 0;

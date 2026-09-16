@@ -415,6 +415,13 @@ function GateForm({
                 />
               )}
             </div>
+            {q.context && (
+              <div className="tui-gate-question-context">
+                <Markdown unstyled linkTargetBlank>
+                  {q.context}
+                </Markdown>
+              </div>
+            )}
             {section && <QuestionContext section={section} />}
             <Questionnaire.Choices className="tui-gate-choices">
               {q.choices.map(choice => {
@@ -449,17 +456,24 @@ function GateForm({
                       )}
                     />
                     <Questionnaire.ChoiceLabel className="tui-gate-choice-label">
-                      <span title={choice.description}>{choice.label}</span>
-                      {recommended && (
-                        <Chip
-                          intent="ok"
-                          variant="outline"
-                          uppercase
-                          data-gate="recommended"
-                          className="tui-gate-recommended"
-                        >
-                          recommended
-                        </Chip>
+                      <span className="tui-gate-choice-label-row">
+                        <span title={choice.description}>{choice.label}</span>
+                        {recommended && (
+                          <Chip
+                            intent="ok"
+                            variant="outline"
+                            uppercase
+                            data-gate="recommended"
+                            className="tui-gate-recommended"
+                          >
+                            recommended
+                          </Chip>
+                        )}
+                      </span>
+                      {choice.subtitle && (
+                        <span className="tui-gate-choice-subtitle">
+                          {choice.subtitle}
+                        </span>
                       )}
                     </Questionnaire.ChoiceLabel>
                     <Questionnaire.ChoiceShortcut className="tui-gate-key" />

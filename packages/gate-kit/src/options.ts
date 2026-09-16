@@ -1,8 +1,5 @@
-import {
-  gateOptionLabel,
-  gateOptionValue,
-  type GateOption,
-} from '@mattstack/rt-client/gate';
+import { gateOptionLabel, gateOptionValue } from '@mattstack/rt-client/gate';
+import type { GateOption } from './types';
 
 export interface GateOptionDisplay {
   /** What to render. */
@@ -84,4 +81,11 @@ export function displayForValue(
   return match !== undefined
     ? optionDisplayFor(match)
     : formatGateOption(value);
+}
+
+/** An object-form option's own `description` (BOARD-36) -- the asker's
+    secondary one-liner, unrelated to GateOptionDisplay's `title` (the raw
+    value shown as a hover tooltip). A bare string option never carries one. */
+export function optionDescription(o: GateOption): string | undefined {
+  return typeof o === 'string' ? undefined : o.description;
 }

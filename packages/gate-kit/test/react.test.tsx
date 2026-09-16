@@ -123,6 +123,45 @@ describe('gateItems', () => {
     ).toEqual(['threads-1', 'code-changes']);
   });
 
+  test('an option description and a question context (BOARD-36) carry through untouched', () => {
+    const gate: GateForItems = {
+      kind: 'self-review',
+      questions: [
+        {
+          id: 'outcome',
+          label: 'What happened?',
+          multi: false,
+          context: 'The reviewer flagged two threads as blocking.',
+          options: [
+            {
+              value: 'approve',
+              label: 'Approve',
+              description: 'Ship as-is, no changes requested.',
+            },
+            { value: 'comment', label: 'Comment' },
+          ],
+        },
+      ],
+    };
+    const { display } = gateItems(gate, {});
+    expect(display[0]!.context).toBe(
+      'The reviewer flagged two threads as blocking.'
+    );
+    expect(display[0]!.choices[0]).toEqual({
+      value: 'approve',
+      label: 'Approve',
+      description: 'approve',
+      subtitle: 'Ship as-is, no changes requested.',
+    });
+    expect(display[0]!.choices[1]).not.toHaveProperty('subtitle');
+  });
+
+  test('a gate with no description/context fields carries neither -- no regression', () => {
+    const { display } = gateItems(PLAIN_GATE, {});
+    expect(display[0]).not.toHaveProperty('context');
+    expect(display[0]!.choices[0]).not.toHaveProperty('subtitle');
+  });
+
   test('a labeled option carries the recommended flag through to its display choice', () => {
     const gate: GateForItems = {
       kind: 'self-review',

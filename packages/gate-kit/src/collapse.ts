@@ -1,6 +1,6 @@
-import type { GateQuestion } from '@mattstack/rt-client/gate';
 import { optionValue } from './options';
 import type { GateSelections } from './payload';
+import type { GateQuestion } from './types';
 
 export const RESPOND_PLAN_KIND = 'respond-plan';
 export const CODE_CHANGES_QUESTION_ID = 'code-changes';

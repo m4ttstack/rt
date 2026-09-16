@@ -1,17 +1,17 @@
 import type { QuestionnaireItemDefinition } from '@shadcn/react/questionnaire';
 
-import type { GateQuestion } from '@mattstack/rt-client/gate';
 import {
   CODE_CHANGES_QUESTION_ID,
   codeChangesHidden,
   effectiveSelections,
 } from '../collapse';
-import { optionDisplayFor, optionValue } from '../options';
+import { optionDescription, optionDisplayFor, optionValue } from '../options';
 import {
   gateAnswerPayload,
   type GateAnswers,
   type GateSelections,
 } from '../payload';
+import type { GateQuestion } from '../types';
 
 export { Questionnaire } from '@shadcn/react/questionnaire';
 export type { QuestionnaireItemDefinition } from '@shadcn/react/questionnaire';
@@ -33,6 +33,9 @@ export interface GateItemChoice {
   /** The full raw value when it differs from `label` -- title/tooltip
       material, mirroring GateOptionDisplay.title. */
   description?: string;
+  /** The option's own secondary one-liner (BOARD-36), rendered as a muted
+      line under the label -- distinct from `description` above. */
+  subtitle?: string;
   /** The agent's pick; render a badge. */
   recommended?: boolean;
 }
@@ -43,6 +46,9 @@ export interface GateItemDisplay {
   multiple: boolean;
   required: boolean;
   choices: GateItemChoice[];
+  /** The question's own context (BOARD-36), rendered with its card above
+      its options -- distinct from the gate-level context block. */
+  context?: string;
 }
 
 export interface GateItems {
@@ -80,13 +86,16 @@ export function gateItems(
     required: !q.multi,
     choices: q.options.map(opt => {
       const d = optionDisplayFor(opt);
+      const subtitle = optionDescription(opt);
       return {
         value: optionValue(opt),
         label: d.text,
         ...(d.title !== undefined ? { description: d.title } : {}),
+        ...(subtitle !== undefined ? { subtitle } : {}),
         ...(d.recommended ? { recommended: true } : {}),
       };
     }),
+    ...(q.context !== undefined ? { context: q.context } : {}),
   }));
   return {
     items: display.map(d => ({
