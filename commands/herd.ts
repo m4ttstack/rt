@@ -176,7 +176,8 @@ export async function spawn(args: string[]): Promise<void> {
     fail((e as Error).message);
   }
   const data = unwrap(await herdSpawn(payload), "spawn");
-  emit(json, data, `${data.job} pane ${data.pane} worktree ${data.worktree} session ${data.sessionId}${data.wasOnDeck === false ? " (cold provision)" : ""}`);
+  const trustNote = data.trust === "stuck" ? " (STUCK AT TRUST MODAL)" : data.trust === "accepted" ? " (trust dialog accepted)" : "";
+  emit(json, data, `${data.job} pane ${data.pane} worktree ${data.worktree} session ${data.sessionId}${data.wasOnDeck === false ? " (cold provision)" : ""}${trustNote}`);
 }
 
 export async function ask(args: string[]): Promise<void> {
@@ -294,7 +295,13 @@ export function renderStatus(data: HerdStatusData): string {
     // Independent of notWoken: a delivered nudge can still sit UNCONSUMED
     // (the pane never read it), and a dead-pane row can be both at once.
     const unconsumed = j.lastGateConsumed === false ? `  gate ${j.lastGate} UNCONSUMED` : "";
-    lines.push(`  ${j.name.padEnd(24)} ${j.status.padEnd(13)} pane ${j.pane ?? "-"}  ${j.paneStatus ?? "-"}${j.openGate ? `  gate ${j.openGate}` : ""}${notWoken}${unconsumed}`);
+    // The worker never read its brief, and nothing else on the row says so:
+    // the pane reads blocked exactly as a mid-run permission prompt does.
+    const atModal = j.status === "stuck-at-modal" ? `  STUCK AT TRUST MODAL: accept it in pane ${j.pane ?? "-"}, or rt herd spawn again` : "";
+    // The shell outlives a killed claude, so the row's own status is the last
+    // thing the worker managed to record and says nothing about right now.
+    const dead = j.sessionDead ? `  SESSION DEAD (pane alive, no claude): rt herd spawn --herd ${j.herd} --job ${j.name}` : "";
+    lines.push(`  ${j.name.padEnd(24)} ${j.status.padEnd(14)} pane ${j.pane ?? "-"}  ${j.paneStatus ?? "-"}${j.openGate ? `  gate ${j.openGate}` : ""}${notWoken}${unconsumed}${atModal}${dead}`);
   }
   return lines.join("\n");
 }
