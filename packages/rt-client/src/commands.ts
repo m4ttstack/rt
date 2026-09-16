@@ -107,12 +107,10 @@ export interface GateOrigin {
   presentation?: "form" | "wait";
 }
 export interface GateQuestion { id: string; label: string; multi: boolean; options: GateOption[] }
-export function gateOptionValue(o: GateOption): string {
-  return typeof o === "string" ? o : o.value;
-}
-export function gateOptionLabel(o: GateOption): string {
-  return typeof o === "string" ? o : (o.label || o.value);
-}
+/** Implementations live in gate-options.ts (the browser-safe ./gate
+    subpath); re-exported here so existing commands.ts/index.ts consumers
+    are unaffected. */
+export { gateOptionValue, gateOptionLabel } from "./gate-options.ts";
 /** `session` is the answering surface's own session id, recorded so the
     push facility can tell a self-answer from a remote one and skip the
     doorbell it would otherwise send back to the writer. Optional: a caller

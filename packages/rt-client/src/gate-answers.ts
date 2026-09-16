@@ -1,5 +1,5 @@
 import type { GateQuestion, GateAnswer } from "./commands.ts";
-import { gateOptionValue } from "./commands.ts";
+import { gateOptionValue } from "./gate-options.ts";
 
 export type GateAnswerWire = GateAnswer["answers"][string];
 
