@@ -1,3 +1,4 @@
+import type { Socket } from "bun";
 import { mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -7,12 +8,24 @@ export class HerdrFakeError {
   constructor(public code: string, public message: string) {}
 }
 
+/**
+ * A reply that leaves the connection open after the ack, as herdr does for
+ * `events.subscribe`: `frames` follow the reply at once, and the fake's
+ * `push` reaches the connection for as long as the client holds it.
+ */
+export class HerdrFakeStream {
+  constructor(public result: unknown, public frames: unknown[] = []) {}
+}
+
 export type FakeHerdrHandler = (method: string, params: Record<string, unknown>) => unknown | Promise<unknown>;
+
+export interface FakeHerdrRequest { method: string; params: Record<string, unknown> }
 
 /**
  * herdr's wire contract, for tests: newline-delimited JSON over a unix
- * socket, one request per connection, the server closes after replying.
- * The handler returns the `result` object (with its `type` field) or a
+ * socket, one request per connection, the server closes after replying
+ * unless the handler returned a HerdrFakeStream. The handler returns the
+ * `result` object (with its `type` field), a HerdrFakeStream, or a
  * HerdrFakeError; a thrown error becomes `internal_error`.
  *
  * The socket gets its own mkdtemp directory rather than a counter: eight
@@ -26,6 +39,8 @@ export function fakeHerdr(handler: FakeHerdrHandler) {
   const sock = join(dir, "s.sock");
   const seen: Array<{ id: string; method: string; params: Record<string, unknown> }> = [];
   const buffers = new Map<object, string>();
+  const streams = new Map<Socket<undefined>, FakeHerdrRequest>();
+  const line = (frame: unknown) => JSON.stringify(frame) + "\n";
   const server = Bun.listen({
     unix: sock,
     socket: {
@@ -37,28 +52,35 @@ export function fakeHerdr(handler: FakeHerdrHandler) {
           return;
         }
         buffers.delete(socket);
-        const line = buf.slice(0, nl);
+        const raw = buf.slice(0, nl);
         void (async () => {
-          let reply: string;
           let id = "";
+          let out: unknown;
           try {
-            const req = JSON.parse(line) as { id: string; method: string; params?: Record<string, unknown> };
+            const req = JSON.parse(raw) as { id: string; method: string; params?: Record<string, unknown> };
             id = req.id;
             const params = req.params ?? {};
             seen.push({ id, method: req.method, params });
-            const out = await handler(req.method, params);
-            reply = out instanceof HerdrFakeError
-              ? JSON.stringify({ id, error: { code: out.code, message: out.message } })
-              : JSON.stringify({ id, result: out });
+            out = await handler(req.method, params);
+            if (out instanceof HerdrFakeStream) streams.set(socket, { method: req.method, params });
           } catch (err) {
-            reply = JSON.stringify({ id, error: { code: "internal_error", message: err instanceof Error ? err.message : String(err) } });
+            out = new HerdrFakeError("internal_error", err instanceof Error ? err.message : String(err));
           }
-          socket.write(reply + "\n");
+          if (out instanceof HerdrFakeError) {
+            socket.write(line({ id, error: { code: out.code, message: out.message } }));
+          } else if (out instanceof HerdrFakeStream) {
+            socket.write(line({ id, result: out.result }));
+            for (const frame of out.frames) socket.write(line(frame));
+            return;
+          } else {
+            socket.write(line({ id, result: out }));
+          }
           socket.end();
         })();
       },
       close(socket) {
         buffers.delete(socket);
+        streams.delete(socket);
       },
       error() {},
     },
@@ -66,6 +88,17 @@ export function fakeHerdr(handler: FakeHerdrHandler) {
   return {
     sock,
     seen,
+    /** Writes one frame to every open stream whose request `match` accepts
+        (all of them by default); returns how many received it. */
+    push(frame: unknown, match: (req: FakeHerdrRequest) => boolean = () => true): number {
+      let delivered = 0;
+      for (const [socket, req] of streams) {
+        if (!match(req)) continue;
+        socket.write(line(frame));
+        delivered += 1;
+      }
+      return delivered;
+    },
     stop: () => {
       server.stop(true);
       rmSync(dir, { recursive: true, force: true });
