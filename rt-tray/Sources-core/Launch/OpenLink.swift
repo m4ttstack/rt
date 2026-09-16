@@ -63,4 +63,18 @@ public enum WindowNavigation {
         guard let app = apps.first(where: { $0.name == request.app }) else { return nil }
         return URL(string: app.url + request.pathAndQuery)
     }
+
+    /// Schemes WKWebView can load (or resolve in-page) itself. Anything else
+    /// (vscode://, zed://, mailto:, mattstack://, ...) must be handed to the
+    /// OS: allowing the navigation makes the webview fail it, and a failed
+    /// main-frame load paints the app's "Can't reach" overlay over a page
+    /// that is perfectly healthy.
+    private static let webviewNativeSchemes: Set<String> = [
+        "http", "https", "about", "blob", "data", "javascript", "file",
+    ]
+
+    public static func opensExternally(_ url: URL) -> Bool {
+        guard let scheme = url.scheme?.lowercased() else { return false }
+        return !webviewNativeSchemes.contains(scheme)
+    }
 }

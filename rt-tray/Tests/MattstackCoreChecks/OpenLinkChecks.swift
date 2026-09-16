@@ -77,4 +77,25 @@ let openLinkChecks: [Check] = [
         let r = OpenLink.request(from: URL(string: "mattstack://open/chat/r%2Fgeneral?tab=x%2Fy#m-42")!)
         try c.requireEqual(r, OpenRequest(app: "chat", pathAndQuery: "/r%2Fgeneral?tab=x%2Fy#m-42"))
     },
+    Check("vscode:// opens externally") { c in
+        c.expect(WindowNavigation.opensExternally(URL(string: "vscode://file/Users/x/pack")!))
+    },
+    Check("mailto: and other custom schemes open externally") { c in
+        c.expect(WindowNavigation.opensExternally(URL(string: "mailto:a@b.c")!))
+        c.expect(WindowNavigation.opensExternally(URL(string: "cursor://file/Users/x")!))
+        c.expect(WindowNavigation.opensExternally(URL(string: "mattstack://open/board")!))
+    },
+    Check("scheme match is case-insensitive") { c in
+        c.expect(WindowNavigation.opensExternally(URL(string: "VSCode://file/x")!))
+        c.expect(!WindowNavigation.opensExternally(URL(string: "HTTPS://example.com")!))
+    },
+    Check("web and webview-native schemes stay in the webview") { c in
+        c.expect(!WindowNavigation.opensExternally(URL(string: "https://console.mattstack/wiring")!))
+        c.expect(!WindowNavigation.opensExternally(URL(string: "http://example.com")!))
+        c.expect(!WindowNavigation.opensExternally(URL(string: "about:blank")!))
+        c.expect(!WindowNavigation.opensExternally(URL(string: "blob:https://console.mattstack/x")!))
+        c.expect(!WindowNavigation.opensExternally(URL(string: "data:text/plain,hi")!))
+        c.expect(!WindowNavigation.opensExternally(URL(string: "javascript:void(0)")!))
+        c.expect(!WindowNavigation.opensExternally(URL(string: "file:///tmp/x")!))
+    },
 ]

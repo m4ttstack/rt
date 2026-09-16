@@ -50,10 +50,20 @@ final class WindowNavigationDelegate: NSObject, WKNavigationDelegate, WKUIDelega
 
     /// A same-window link to a different mattstack app (e.g. deck's own app
     /// listing) activates that app's tab in the shell instead of navigating
-    /// this webview to it. Subframe navigation, non-mattstack hosts, and
-    /// links back to this same app fall through to .allow untouched.
+    /// this webview to it. A non-web scheme (vscode://, zed://, mailto:)
+    /// goes to the OS: the webview would fail the navigation and paint the
+    /// "Can't reach" overlay over a healthy page. Subframe navigation,
+    /// non-mattstack hosts, and links back to this same app fall through to
+    /// .allow untouched.
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        if navigationAction.targetFrame?.isMainFrame == true,
+           let url = navigationAction.request.url,
+           WindowNavigation.opensExternally(url) {
+            decisionHandler(.cancel)
+            NSWorkspace.shared.open(url)
+            return
+        }
         guard navigationAction.targetFrame?.isMainFrame == true,
               let url = navigationAction.request.url,
               let request = OpenLink.request(fromHTTPS: url),
@@ -70,9 +80,10 @@ final class WindowNavigationDelegate: NSObject, WKNavigationDelegate, WKUIDelega
 
     /// target=_blank to a mattstack app route the same way as an in-page
     /// link; target=_blank to an http/https URL opens in the default
-    /// browser; anything else (about:blank, javascript:, an OAuth
-    /// window.open prelude) is dropped with no browser popup. Either way no
-    /// new WKWebView is created (nil), so a "new window" link never leaks a
+    /// browser; a non-web scheme goes to the OS like an in-page one;
+    /// anything else (about:blank, javascript:, an OAuth window.open
+    /// prelude) is dropped with no browser popup. Either way no new
+    /// WKWebView is created (nil), so a "new window" link never leaks a
     /// second webview outside the shell.
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
@@ -81,7 +92,8 @@ final class WindowNavigationDelegate: NSObject, WKNavigationDelegate, WKUIDelega
             Task { @MainActor in _ = await model.open(request) }
             return nil
         }
-        if let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" {
+        let scheme = url.scheme?.lowercased()
+        if scheme == "http" || scheme == "https" || WindowNavigation.opensExternally(url) {
             NSWorkspace.shared.open(url)
         }
         return nil
