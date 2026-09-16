@@ -176,6 +176,54 @@ describe("rt gate ask CLI e2e", () => {
     });
   }, 30_000);
 
+  // RT-184: the per-option explanations and per-question context the pane's
+  // form shows must reach the gate row, or the board renders bare labels.
+  test("option descriptions and per-question context round-trip ask -> list --json, normalized like labels are", async () => {
+    const questions = JSON.stringify([{
+      id: "q", label: "Pick", multi: false, context: "what this one turns on",
+      options: [{ value: "a", label: "fix", description: "patch the null check", recommended: true }, "b"],
+    }]);
+    const asked = await finished(runRt(
+      ["gate", "ask", "--questions", questions, "--subject", "mr:e2e-structured", "--context", "the diff under decision, quoted"],
+      home,
+      { HERDR_PANE_ID: "pane-8", CLAUDE_CODE_SESSION_ID: "sess-8-structured" },
+    ));
+    expect(asked.exitCode).toBe(0);
+    const { id, contextOmitted } = JSON.parse(asked.stdout) as { id: string; contextOmitted?: true };
+    expect(contextOmitted).toBeUndefined();
+
+    const listed = await finished(runRt(["gate", "list", "--json", "--subject-prefix", "mr:e2e-structured"], home));
+    expect(listed.exitCode).toBe(0);
+    const { gates } = JSON.parse(listed.stdout) as { gates: Array<{ id: string; context: string | null; questions: unknown }> };
+    const row = gates.find((g) => g.id === id)!;
+    expect(row.context).toBe("the diff under decision, quoted");
+    expect(row.questions).toEqual([{
+      id: "q", label: "Pick", multi: false, context: "what this one turns on",
+      options: [{ value: "a", label: "Fix (Recommended)", description: "patch the null check" }, { value: "b", label: "B" }],
+    }]);
+  }, 30_000);
+
+  test("question contexts over the shared budget are dropped, the gate context kept, and the envelope says contextOmitted", async () => {
+    const questions = JSON.stringify([
+      { id: "q", label: "Pick", multi: false, options: ["a", "b"], context: "x".repeat(4096) },
+      { id: "m", label: "Pick many", multi: true, options: ["a", "b"], context: "y".repeat(4097) },
+    ]);
+    const asked = await finished(runRt(
+      ["gate", "ask", "--questions", questions, "--subject", "mr:e2e-budget", "--context", "kept"],
+      home,
+      { HERDR_PANE_ID: "pane-9", CLAUDE_CODE_SESSION_ID: "sess-9-budget" },
+    ));
+    expect(asked.exitCode).toBe(0);
+    const parsed = JSON.parse(asked.stdout) as { id: string; contextOmitted?: true };
+    expect(parsed.contextOmitted).toBe(true);
+
+    const listed = await finished(runRt(["gate", "list", "--json", "--subject-prefix", "mr:e2e-budget"], home));
+    const { gates } = JSON.parse(listed.stdout) as { gates: Array<{ id: string; context: string | null; questions: Array<Record<string, unknown>> }> };
+    const row = gates.find((g) => g.id === parsed.id)!;
+    expect(row.context).toBe("kept");
+    expect(row.questions.map((q) => "context" in q)).toEqual([false, false]);
+  }, 30_000);
+
   test("missing --questions: ok:false usage refusal, exit 1, no daemon contact", async () => {
     const res = await finished(runRt(
       ["gate", "ask"],
