@@ -27,6 +27,20 @@ function okRunner(calls: string[][]): HerdrRunner {
   };
 }
 
+/** okRunner plus an `agent get` that already carries a session id, so a codex
+    launch's capture poll resolves on its first call instead of spinning for
+    its whole budget past the end of the test. */
+function codexRunner(calls: string[][], sessionId = "s_codex_poll"): HerdrRunner {
+  const base = okRunner(calls);
+  return async (args) => {
+    if (args[0] === "agent" && args[1] === "get") {
+      calls.push(args);
+      return { stdout: JSON.stringify({ result: { agent: { agent_session: { value: sessionId } } } }), exitCode: 0 };
+    }
+    return base(args);
+  };
+}
+
 interface FakeBg {
   ensure: () => Promise<{ socket: string; started: boolean }>;
   reprobe: () => Promise<{ ok: boolean; drift: string[] }>;
@@ -678,7 +692,10 @@ test("codex herdr capture polls through the injected herdrRunner on an unscoped 
 // handle nor a gate-fork hook file.
 test("agent:start codex herdr reserves no handle and writes no gate-fork settings file", async () => {
   const calls: string[][] = [];
-  const h = fresh({ runner: okRunner(calls) });
+  // codexRunner, not okRunner: a plain okRunner answers `agent get` without an
+  // agent_session, so the capture poll would keep running for its full
+  // ten-minute budget after this test finished.
+  const h = fresh({ runner: codexRunner(calls) });
   const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr", provider: "codex", subject: "mr:test/9" });
   if (!res.ok) throw new Error(res.error);
   expect(res.data.handle).toBeUndefined();
