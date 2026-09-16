@@ -60,10 +60,12 @@ function openReportAgeMs(job: HerdJobRow, s: WatchdogSensors, now: number): numb
 
 type Lingering = Extract<WedgeVerdict, { kind: "finished-lingering" }>;
 
+const closeRemedy = (job: HerdJobRow) => `run rt herd close ${job.name} --herd ${job.herd}`;
+
 function finishedLingering(job: HerdJobRow, s: WatchdogSensors, cfg: WatchdogConfig, now: number): Lingering | null {
   const age = openReportAgeMs(job, s, now);
   if (age === null || age < ms(cfg.nagMins)) return null;
-  return { kind: "finished-lingering", evidence: `${job.name} done with report ${minutes(age)}m ago, pane still open` };
+  return { kind: "finished-lingering", evidence: `${job.name} done with report ${minutes(age)}m ago, pane still open; ${closeRemedy(job)}` };
 }
 
 export function evaluateJob(job: HerdJobRow, s: WatchdogSensors, cfg: WatchdogConfig): WedgeVerdict {
@@ -115,7 +117,7 @@ export function evaluateShepherd(herd: HerdRow, s: WatchdogSensors, cfg: Watchdo
   for (const job of jobs) {
     const age = openReportAgeMs(job, s, now);
     if (age !== null && age >= ms(cfg.backstopMins)) {
-      return { kind: "wedged", path: "backstop", evidence: `${job.name} done with report ${minutes(age)}m ago, not yet closed` };
+      return { kind: "wedged", path: "backstop", evidence: `${job.name} done with report ${minutes(age)}m ago, not yet closed; ${closeRemedy(job)}` };
     }
   }
   return HEALTHY;
@@ -239,10 +241,14 @@ export class HerdWatchdog {
     return true;
   }
 
+  /** The adapter's own poke already logs warn for a real failure (herdr
+      error, throw) and info for an expected refusal (queued, blocked at a
+      prompt); the ladder logs every non-delivery at info so a routine
+      refused-at-a-prompt every retryMins doesn't read as a warning here too. */
   private async poke(pane: string, text: string, ctx: object, event: string): Promise<void> {
     const delivered = await this.act.poke(pane, text);
     if (delivered) this.log.info({ ...ctx, pane }, event);
-    else this.log.warn({ ...ctx, pane }, `${event} (not delivered)`);
+    else this.log.info({ ...ctx, pane }, `${event} (not delivered)`);
   }
 
   private notify(herd: string, summary: string, cfg: WatchdogConfig, now: number, ctx: object): void {

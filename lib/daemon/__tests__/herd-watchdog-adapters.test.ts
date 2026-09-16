@@ -259,7 +259,16 @@ describe("readWatchdogConfig", () => {
     };
     expect(readWatchdogConfig(read)).toEqual({
       enabled: false, fastMins: 3, shepherdFastMins: 5, backstopMins: 15,
-      retryMins: 1, notifyQuietMins: 0, nagMins: 45, notifyHuman: true,
+      retryMins: 1, notifyQuietMins: 1, nagMins: 45, notifyHuman: true,
     });
+  });
+
+  test("retryMins and notifyQuietMins floor at 1 minute so a 0/0 config cannot notify every sweep; fastMins keeps 0 for the immediate-poke setting", () => {
+    const values: Record<string, unknown> = { "herd.watchdog.retryMins": 0, "herd.watchdog.notifyQuietMins": 0, "herd.watchdog.fastMins": 0 };
+    const read = <T,>(key: string): { value: T } => ({ value: values[key] as T });
+    const resolved = readWatchdogConfig(read);
+    expect(resolved.retryMins).toBe(1);
+    expect(resolved.notifyQuietMins).toBe(1);
+    expect(resolved.fastMins).toBe(0);
   });
 });

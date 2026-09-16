@@ -168,10 +168,16 @@ export function readWatchdogConfig(read: <T>(key: string) => { value: T }): Watc
       return CONFIG_DEFAULTS[name];
     }
   };
+  // retryMins and notifyQuietMins gate a repeat action (a poke, a
+  // notification); 0 on both turns the sweep interval into the repeat
+  // interval, so they floor at 1. The other minute keys stay at 0 because
+  // fastMins: 0 is a valid "poke immediately" setting the e2e relies on.
+  const FLOORED: ReadonlySet<string> = new Set(["retryMins", "notifyQuietMins"]);
   const mins = (name: "fastMins" | "shepherdFastMins" | "backstopMins" | "retryMins" | "notifyQuietMins" | "nagMins"): number => {
     try {
       const v = read<unknown>(`herd.watchdog.${name}`).value;
-      return typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : CONFIG_DEFAULTS[name];
+      if (typeof v !== "number" || !Number.isFinite(v) || v < 0) return CONFIG_DEFAULTS[name];
+      return FLOORED.has(name) ? Math.max(1, v) : v;
     } catch {
       return CONFIG_DEFAULTS[name];
     }

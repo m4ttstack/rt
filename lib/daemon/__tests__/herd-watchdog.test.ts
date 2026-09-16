@@ -96,7 +96,7 @@ describe("evaluateJob", () => {
 
   test("(f) done with a report older than nagMins and the pane still open is finished-lingering", () => {
     const s = sensors({ paneState: () => "idle" });
-    expect(evaluateJob(job({ status: "done", lastReport: NOW - 35 * MIN }), s, cfg)).toEqual({ kind: "finished-lingering", evidence: "job-a done with report 35m ago, pane still open" });
+    expect(evaluateJob(job({ status: "done", lastReport: NOW - 35 * MIN }), s, cfg)).toEqual({ kind: "finished-lingering", evidence: "job-a done with report 35m ago, pane still open; run rt herd close job-a --herd demo-1" });
   });
 
   test("done with a report younger than nagMins is healthy", () => {
@@ -184,7 +184,7 @@ describe("evaluateShepherd", () => {
 
   test("(c) a job finished-lingering past nagMins is wedged on the fast path with that evidence", () => {
     const s = sensors({ ...shepherdIdle, jobs: (h) => (h === "demo-1" ? [job({ status: "done", lastReport: NOW - 35 * MIN })] : []) });
-    expect(evaluateShepherd(herd(), s, cfg)).toEqual({ kind: "wedged", path: "fast", evidence: "job-a done with report 35m ago, pane still open" });
+    expect(evaluateShepherd(herd(), s, cfg)).toEqual({ kind: "wedged", path: "fast", evidence: "job-a done with report 35m ago, pane still open; run rt herd close job-a --herd demo-1" });
   });
 
   test("(d) a working shepherd pane is healthy regardless of evidence", () => {
@@ -199,7 +199,7 @@ describe("evaluateShepherd", () => {
 
   test("(e) BACKSTOP: a job done with a report older than backstopMins and the shepherd not working is wedged on the backstop", () => {
     const s = sensors({ ...shepherdIdle, jobs: () => [job({ status: "done", lastReport: NOW - 16 * MIN })] });
-    expect(evaluateShepherd(herd(), s, cfg)).toEqual({ kind: "wedged", path: "backstop", evidence: "job-a done with report 16m ago, not yet closed" });
+    expect(evaluateShepherd(herd(), s, cfg)).toEqual({ kind: "wedged", path: "backstop", evidence: "job-a done with report 16m ago, not yet closed; run rt herd close job-a --herd demo-1" });
   });
 
   test("a done job with a report younger than backstopMins is healthy", () => {
@@ -244,7 +244,7 @@ describe("evaluateShepherd", () => {
     const noGate = sensors({ ...shepherdIdle, unreadDmMentionsFor: () => 1, jobs: () => [job({ status: "done", lastReport: NOW - 35 * MIN })] });
     expect(evaluateShepherd(herd(), noGate, cfg)).toMatchObject({ evidence: "1 unread DM/mention waiting" });
     const lingering = sensors({ ...shepherdIdle, jobs: () => [job({ status: "done", lastReport: NOW - 35 * MIN })] });
-    expect(evaluateShepherd(herd(), lingering, cfg)).toMatchObject({ path: "fast", evidence: "job-a done with report 35m ago, pane still open" });
+    expect(evaluateShepherd(herd(), lingering, cfg)).toMatchObject({ path: "fast", evidence: "job-a done with report 35m ago, pane still open; run rt herd close job-a --herd demo-1" });
   });
 
   test("the shepherd never reads idleSinceMs", () => {
@@ -472,13 +472,14 @@ describe("HerdWatchdog ladder", () => {
     expect(r.wd.annotations("demo-1", "@shepherd")).toEqual({ strikes: 1, lastPokeAt: NOW });
   });
 
-  test("a poke the injector did not deliver still counts as the strike and is logged", async () => {
+  test("a poke the injector did not deliver still counts as the strike and is logged at info, not warn: the adapter already flags real failures", async () => {
     const r = rig({ sensors: workerWedged() });
     r.delivery.ok = false;
     await r.tick();
     expect(r.pokes).toHaveLength(1);
     expect(r.wd.annotations("demo-1", "job-a")).toEqual({ strikes: 1, lastPokeAt: NOW });
-    expect(r.lines.filter((l) => l.level === "warn")).toHaveLength(1);
+    expect(r.lines.filter((l) => l.level === "warn")).toHaveLength(0);
+    expect(r.lines.filter((l) => l.level === "info" && /not delivered/.test(l.msg))).toHaveLength(1);
     await r.tick(5);
     expect(r.wd.annotations("demo-1", "job-a")?.strikes).toBe(2);
   });
@@ -487,7 +488,7 @@ describe("HerdWatchdog ladder", () => {
     const r = rig({ jobs: [job({ status: "done", lastReport: NOW - 35 * MIN })], sensors: { paneState: () => "idle" } });
     await r.tick();
     expect(r.workerPokes()).toHaveLength(0);
-    expect(r.shepherdPokes()).toEqual([{ pane: "w1:p0", text: "watchdog: job-a done with report 35m ago, pane still open. Consume it or post status." }]);
+    expect(r.shepherdPokes()).toEqual([{ pane: "w1:p0", text: "watchdog: job-a done with report 35m ago, pane still open; run rt herd close job-a --herd demo-1. Consume it or post status." }]);
     expect(r.wd.annotations("demo-1", "job-a")).toBeNull();
     expect(r.wd.annotations("demo-1", "@shepherd")).toEqual({ strikes: 1, lastPokeAt: NOW });
   });

@@ -302,7 +302,7 @@ export function renderStatus(data: HerdStatusData): string {
     const unconsumed = j.lastGateConsumed === false ? `  gate ${j.lastGate} UNCONSUMED` : "";
     // The worker never read its brief, and nothing else on the row says so:
     // the pane reads blocked exactly as a mid-run permission prompt does.
-    const atModal = j.status === "stuck-at-modal" ? `  STUCK AT TRUST MODAL: accept it in pane ${j.pane ?? "-"}, or rt herd spawn again` : "";
+    const atModal = j.status === "stuck-at-modal" ? `  STUCK AT TRUST MODAL: accept it in pane ${j.pane ?? "-"}; the watchdog resumes watching once the agent is idle or working` : "";
     // The shell outlives a killed claude, so the row's own status is the last
     // thing the worker managed to record and says nothing about right now.
     const dead = j.sessionDead ? `  SESSION DEAD (pane alive, no claude): rt herd spawn --herd ${j.herd} --job ${j.name}` : "";
