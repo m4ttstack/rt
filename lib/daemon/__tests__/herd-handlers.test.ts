@@ -77,7 +77,10 @@ export function harness(over: Partial<HerdDeps> = {}) {
   // hands back.
   const socketCalls: Array<{ method: string; params: any; sock: any }> = [];
   const screen = { text: "$ claude\nworking...\n" };
-  const trust = { registerFailures: 0, waitOk: true, waitStatus: "blocked" };
+  // `clearOnAccept` models the real modal: the accept keys dismiss it, so the
+  // verifying re-read finds it gone. A test sets it false to model a modal
+  // that survives the keys (the stuck case).
+  const trust = { registerFailures: 0, waitOk: true, waitStatus: "blocked", clearOnAccept: true };
   const deps: HerdDeps = {
     store, gateStore, gate, chat, agent, worktree,
     runWorktree: () => null,
@@ -100,7 +103,10 @@ export function harness(over: Partial<HerdDeps> = {}) {
         return trust.waitOk ? { ok: true, result: { agent: { agent_status: trust.waitStatus } } } : { ok: false, code: "timeout", message: "still working" };
       }
       if (method === "pane.read") return { ok: true, result: { read: screen } };
-      if (method === "pane.send_keys") return { ok: true, result: {} };
+      if (method === "pane.send_keys") {
+        if (trust.clearOnAccept) screen.text = "$ claude\n> \n";
+        return { ok: true, result: {} };
+      }
       return { ok: false, code: "invalid_request", message: method };
     }) as unknown as HerdDeps["herdr"],
     herdrRunnerFor: (socket: string | null) => {
@@ -123,6 +129,7 @@ export function harness(over: Partial<HerdDeps> = {}) {
     jobsRoot: join(dir, "herds"),
     log,
     registerBudgetMs: 2000,
+    trustSettleMs: 5,
     ...over,
   };
   const h = createHerdHandlers(deps);
@@ -130,6 +137,22 @@ export function harness(over: Partial<HerdDeps> = {}) {
 }
 
 const START = { name: "demo", repo: "gh:m4ttstack/rt", session: "sess-shep" };
+
+/** The plain first-run dialog: the cursor starts on "Yes, proceed". */
+const PLAIN_TRUST = [
+  "│ Do you trust the files in this folder?  │",
+  "│ ❯ 1. Yes, proceed                       │",
+  "│   2. No, exit                           │",
+].join("\n");
+
+/** The elevated variant (RT-156 comment): the cursor defaults to "No, exit". */
+const ELEVATED_TRUST = [
+  "│ Do you trust the files in this folder?                     │",
+  "│ This folder pre-approves 12 tool permissions in            │",
+  "│ .claude/settings.local.json. Only proceed if you trust it.  │",
+  "│   1. Yes, proceed                                          │",
+  "│ ❯ 2. No, exit                                              │",
+].join("\n");
 
 describe("herd:start", () => {
   test("mints the id, records the room and workspace, signs in, joins, subscribes", async () => {
@@ -809,7 +832,7 @@ describe("herd:spawn", () => {
 
   test("the trust accept waits out herdr's registration lag, then accepts with enter", async () => {
     const { h, socketCalls, order, screen, trust, herd } = await started();
-    screen.text = "Do you trust the files in this folder?\n1. Yes, proceed\n";
+    screen.text = PLAIN_TRUST;
     trust.registerFailures = 2;
     // The shepherd's own sign-in is already in the log, so only the calls this
     // spawn adds can say anything about the worker's ordering.
@@ -819,6 +842,7 @@ describe("herd:spawn", () => {
     expect(socketCalls.filter((c) => c.method === "agent.get")).toHaveLength(3);
     expect(socketCalls.find((c) => c.method === "agent.wait")!.params).toMatchObject({ target: "w9:p1", until: ["idle", "blocked", "done"], timeout_ms: 15_000 });
     expect(socketCalls.find((c) => c.method === "pane.send_keys")!.params).toEqual({ pane_id: "w9:p1", keys: ["enter"] });
+    expect((res as any).data.trust).toBe("accepted");
     // The worker must be reachable in chat whatever the trust wait costs.
     const spawned = order.slice(mark);
     const signedIn = spawned.indexOf("chat:sign-in");
@@ -839,21 +863,68 @@ describe("herd:spawn", () => {
 
   test("a pane still working when the trust budget expires is sent nothing", async () => {
     const { h, socketCalls, screen, trust, herd } = await started();
-    screen.text = "Do you trust the files in this folder?";
+    screen.text = PLAIN_TRUST;
     trust.waitOk = false;
-    expect((await h["herd:spawn"]({ herd, job: "job-a", brief: "b", dir: "/t" })).ok).toBe(true);
+    const res = await h["herd:spawn"]({ herd, job: "job-a", brief: "b", dir: "/t" });
+    expect(res.ok).toBe(true);
     expect(socketCalls.some((c) => c.method === "pane.send_keys")).toBe(false);
+    expect((res as any).data.trust).toBe("none");
   });
 
-  test("an agent that never registers is given up on without a send", async () => {
+  test("a pane sitting on the modal before claude ever registers is still accepted", async () => {
+    // The pre-claude dialog is exactly why herdr never sees an agent, so
+    // giving up on the register poll used to skip the check that was needed.
     const hx = harness({ registerBudgetMs: 400 });
-    hx.screen.text = "Do you trust the files in this folder?";
+    hx.screen.text = PLAIN_TRUST;
     hx.trust.registerFailures = Number.MAX_SAFE_INTEGER;
     const s = await hx.h["herd:start"](START);
     if (!s.ok) throw new Error(s.error);
-    expect((await hx.h["herd:spawn"]({ herd: s.data.herd, job: "job-a", brief: "b", dir: "/t" })).ok).toBe(true);
-    expect(hx.socketCalls.some((c) => c.method === "agent.wait")).toBe(false);
+    const res = await hx.h["herd:spawn"]({ herd: s.data.herd, job: "job-a", brief: "b", dir: "/t" });
+    expect(res.ok).toBe(true);
+    expect(hx.socketCalls.find((c) => c.method === "pane.send_keys")!.params).toEqual({ pane_id: "w9:p1", keys: ["enter"] });
+    expect((res as any).data.trust).toBe("accepted");
+  });
+
+  test("an unregistered pane showing no modal is reported unchecked, not accepted", async () => {
+    const hx = harness({ registerBudgetMs: 400 });
+    hx.screen.text = "$ claude\nbash: claude: command not found\n";
+    hx.trust.registerFailures = Number.MAX_SAFE_INTEGER;
+    const s = await hx.h["herd:start"](START);
+    if (!s.ok) throw new Error(s.error);
+    const res = await hx.h["herd:spawn"]({ herd: s.data.herd, job: "job-a", brief: "b", dir: "/t" });
+    expect(res.ok).toBe(true);
     expect(hx.socketCalls.some((c) => c.method === "pane.send_keys")).toBe(false);
+    expect((res as any).data.trust).toBe("unchecked");
+  });
+
+  test("the elevated modal is walked up to Yes instead of entered on No", async () => {
+    const { h, socketCalls, screen, herd } = await started();
+    screen.text = ELEVATED_TRUST;
+    const res = await h["herd:spawn"]({ herd, job: "job-a", brief: "b", dir: "/t" });
+    expect(res.ok).toBe(true);
+    expect(socketCalls.find((c) => c.method === "pane.send_keys")!.params).toEqual({ pane_id: "w9:p1", keys: ["up", "enter"] });
+    expect((res as any).data.trust).toBe("accepted");
+  });
+
+  test("a modal whose cursor cannot be read is left alone and the job reads stuck-at-modal", async () => {
+    const { h, socketCalls, screen, store, herd } = await started();
+    screen.text = "Do you trust the files in this folder?\n  1. Yes, proceed\n  2. No, exit\n";
+    const res = await h["herd:spawn"]({ herd, job: "job-a", brief: "b", dir: "/t" });
+    expect(res.ok).toBe(true);
+    expect(socketCalls.some((c) => c.method === "pane.send_keys")).toBe(false);
+    expect((res as any).data.trust).toBe("stuck");
+    expect(store.getJob(herd, "job-a")!.status).toBe("stuck-at-modal");
+  });
+
+  test("a modal that survives the accept keys is retried once, then reported stuck", async () => {
+    const { h, socketCalls, screen, trust, store, herd } = await started();
+    screen.text = ELEVATED_TRUST;
+    trust.clearOnAccept = false;
+    const res = await h["herd:spawn"]({ herd, job: "job-a", brief: "b", dir: "/t" });
+    expect(res.ok).toBe(true);
+    expect(socketCalls.filter((c) => c.method === "pane.send_keys")).toHaveLength(2);
+    expect((res as any).data.trust).toBe("stuck");
+    expect(store.getJob(herd, "job-a")!.status).toBe("stuck-at-modal");
   });
 
   test("a pane showing ordinary output is left alone", async () => {
@@ -866,7 +937,7 @@ describe("herd:spawn", () => {
 
   test("a hidden herd runs the trust check on its own socket", async () => {
     const hx = harness();
-    hx.screen.text = "Do you trust the files in this folder?";
+    hx.screen.text = PLAIN_TRUST;
     const s = await hx.h["herd:start"]({ ...START, hidden: true });
     if (!s.ok) throw new Error(s.error);
     expect((await hx.h["herd:spawn"]({ herd: s.data.herd, job: "job-a", brief: "b", dir: "/t" })).ok).toBe(true);

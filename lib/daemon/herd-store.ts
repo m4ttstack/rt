@@ -10,7 +10,7 @@ import type { Logger } from "pino";
 import { isCorruptionError } from "../state/db.ts";
 
 export type HerdStatus = "active" | "wrapped";
-export type HerdJobStatus = "spawning" | "active" | "at-gate" | "at-milestone" | "done" | "closed" | "crashed";
+export type HerdJobStatus = "spawning" | "active" | "at-gate" | "at-milestone" | "done" | "closed" | "crashed" | "stuck-at-modal";
 
 export interface HerdRow {
   id: string; repo: string; room: string; workspace: string;

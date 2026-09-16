@@ -245,6 +245,18 @@ describe("rt herd brief", () => {
 });
 
 describe("renderStatus", () => {
+  test("a job parked at the trust modal says so and names the remedy", () => {
+    const data = statusData({ jobs: [job({ status: "stuck-at-modal", paneStatus: "blocked" })] });
+    const out = renderStatus(data);
+    expect(out).toContain("stuck-at-modal");
+    expect(out).toContain("STUCK AT TRUST MODAL");
+    expect(out).toContain("accept it in pane w1:p1");
+  });
+
+  test("an ordinary job carries no modal marker", () => {
+    expect(renderStatus(statusData({ jobs: [job({})] }))).not.toContain("STUCK AT TRUST MODAL");
+  });
+
   test("a missing subscription names its own remedy", () => {
     expect(renderStatus(statusData({ subscription: null }))).toContain("subscription MISSING (run rt herd resume)");
   });

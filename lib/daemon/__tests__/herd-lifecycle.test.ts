@@ -131,6 +131,28 @@ describe("herd-lifecycle", () => {
     expect(store.getJob(herd.id, "job-a")!.status).toBe("active");
   });
 
+  test("agent_detected clears stuck-at-modal, so a hand-accepted trust dialog needs no command", async () => {
+    const { store, lc, herd } = fx();
+    store.upsertJob({ herd: herd.id, name: "job-a", worktree: "/w", handle: "job-a", status: "stuck-at-modal", pane: "w1:p1" });
+    await lc.handleEvent(null, { type: "pane.agent_detected", pane_id: "w1:p1" });
+    expect(store.getJob(herd.id, "job-a")!.status).toBe("active");
+  });
+
+  test("a stuck-at-modal pane that is closed is recorded crashed, not left parked", async () => {
+    const { store, lc, herd, posts } = fx();
+    store.upsertJob({ herd: herd.id, name: "job-a", worktree: "/w", handle: "job-a", status: "stuck-at-modal", pane: "w1:p1" });
+    await lc.handleEvent(null, { type: "pane.closed", pane_id: "w1:p1" });
+    expect(store.getJob(herd.id, "job-a")!.status).toBe("crashed");
+    expect(posts.some((p: any) => String(p.body).includes("job-a exited"))).toBe(true);
+  });
+
+  test("agent_detected leaves a finished job alone", async () => {
+    const { store, lc, herd } = fx();
+    store.upsertJob({ herd: herd.id, name: "job-a", worktree: "/w", handle: "job-a", status: "done", pane: "w1:p1" });
+    await lc.handleEvent(null, { type: "pane.agent_detected", pane_id: "w1:p1" });
+    expect(store.getJob(herd.id, "job-a")!.status).toBe("done");
+  });
+
   test("blocked posts only after the debounce, mentioning the shepherd; a clear before it cancels", async () => {
     const { store, lc, herd, posts, timers } = fx();
     store.upsertJob({ herd: herd.id, name: "job-a", worktree: "/w", handle: "job-a", status: "active", pane: "w1:p1" });

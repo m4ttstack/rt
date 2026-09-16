@@ -294,7 +294,10 @@ export function renderStatus(data: HerdStatusData): string {
     // Independent of notWoken: a delivered nudge can still sit UNCONSUMED
     // (the pane never read it), and a dead-pane row can be both at once.
     const unconsumed = j.lastGateConsumed === false ? `  gate ${j.lastGate} UNCONSUMED` : "";
-    lines.push(`  ${j.name.padEnd(24)} ${j.status.padEnd(13)} pane ${j.pane ?? "-"}  ${j.paneStatus ?? "-"}${j.openGate ? `  gate ${j.openGate}` : ""}${notWoken}${unconsumed}`);
+    // The worker never read its brief, and nothing else on the row says so:
+    // the pane reads blocked exactly as a mid-run permission prompt does.
+    const atModal = j.status === "stuck-at-modal" ? `  STUCK AT TRUST MODAL: accept it in pane ${j.pane ?? "-"}, or rt herd spawn again` : "";
+    lines.push(`  ${j.name.padEnd(24)} ${j.status.padEnd(14)} pane ${j.pane ?? "-"}  ${j.paneStatus ?? "-"}${j.openGate ? `  gate ${j.openGate}` : ""}${notWoken}${unconsumed}${atModal}`);
   }
   return lines.join("\n");
 }

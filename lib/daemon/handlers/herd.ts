@@ -21,11 +21,18 @@ import { waitTimeout, type herdrRequest } from "../../herdr/client.ts";
 import type { HerdrRunner } from "../../agent-herdr.ts";
 import { slugifyChatName } from "../../chat-room-name.ts";
 import { attendPane } from "../attend.ts";
+import { readTrustPrompt } from "../trust-dialog.ts";
 import { BG_SESSION } from "../bg-service.ts";
 import type { BgService } from "../bg-service.ts";
 import type { BgClaimsStore } from "../bg-claims-store.ts";
 
 const herdOwner = (herdId: string): string => `herd:${herdId}`;
+
+/** What a spawn's trust check actually established, reported rather than
+    swallowed: no modal was in the way, one was accepted and verified gone,
+    one is still up (the job is parked at `stuck-at-modal`), or herdr could
+    not be read and the pane's state is genuinely unknown. */
+export type TrustOutcome = "none" | "accepted" | "stuck" | "unchecked";
 
 export interface HerdDeps {
   store: HerdStore;
@@ -49,6 +56,9 @@ export interface HerdDeps {
   /** How long a spawn waits for herdr to register the agent before giving up on
       the trust check; overridable so a test need not burn the real budget. */
   registerBudgetMs?: number;
+  /** How long the trust accept lets the TUI redraw before re-reading the screen
+      to verify the modal cleared; overridable for the same reason. */
+  trustSettleMs?: number;
   jobsRoot: string;
   log: Logger;
 }
@@ -64,6 +74,12 @@ const HERD_NAME_RE = /^[a-z][a-z0-9_-]{0,31}$/;
 const REGISTER_BUDGET_MS = 10_000;
 const REGISTER_POLL_MS = 250;
 const TRUST_BUDGET_MS = 15_000;
+// Long enough for the TUI to repaint after the accept keys, short enough that a
+// stuck spawn is reported while the shepherd is still watching it.
+const TRUST_SETTLE_MS = 1_500;
+// One retry only: a modal that ignores a correctly-aimed accept twice is not
+// going to yield to a third, and every extra round holds the spawn's caller.
+const TRUST_ATTEMPTS = 2;
 // `done` is in the list because agent:start puts the brief on claude's command
 // line: an already-trusted directory can finish a whole turn before anything
 // else settles.
@@ -244,11 +260,38 @@ export function createHerdHandlers(deps: HerdDeps) {
       worktree's first turn until it is dismissed, and `agent:start` stops at
       launching the pane. Best effort throughout: the pane and the job row are
       already real, so nothing here may fail the spawn. */
-  async function acceptTrustDialog(socket: string | null, paneRef: string, context: Record<string, unknown>): Promise<void> {
+  /**
+   * Drive the pre-claude folder-trust modal off `paneRef`, and say honestly
+   * what happened.
+   *
+   * Two things the first cut got wrong, both from RT-156. A pane sitting on
+   * the dialog is precisely a pane on which herdr never registers an agent,
+   * so giving up when the register poll expires skipped the check in the one
+   * case that needed it; the screen is now read either way. And the elevated
+   * variant (a repo whose settings pre-approve tool permissions) defaults to
+   * "No, exit", so the blind Enter that accepts the plain dialog kills that
+   * one -- readTrustPrompt aims the keys at the accept option instead.
+   *
+   * The accept is verified by re-reading the screen rather than assumed: a
+   * modal still up after the keys gets one retry, and then the spawn reports
+   * `stuck` so `rt herd status` can say so instead of showing the job as
+   * working behind a pane nobody is driving.
+   */
+  async function acceptTrustDialog(socket: string | null, paneRef: string, context: Record<string, unknown>): Promise<TrustOutcome> {
     const sock = socket ? { sockPath: socket } : {};
     // agent:start hands back the addressable ref; every herdr call below
     // targets the bare pane id on the herd's own socket.
     const pane = parsePaneRef(paneRef).paneId;
+    /** The modal currently on screen, or null when none is; `false` means the
+        screen could not be read at all, which is never evidence of either. */
+    const lookAtScreen = async (): Promise<ReturnType<typeof readTrustPrompt> | false> => {
+      const screen = await deps.herdr<{ read: { text: string } }>("pane.read", { pane_id: pane, source: "visible" }, sock);
+      if (!screen.ok) {
+        log.warn({ ...context, pane, err: screen.message }, "herd: pane read failed; trust dialog not checked");
+        return false;
+      }
+      return readTrustPrompt(screen.result.read.text);
+    };
     try {
       // herdr registers the agent a few hundred ms after the shell starts
       // claude, and `agent.wait` errors immediately on an unregistered target
@@ -259,31 +302,52 @@ export function createHerdHandlers(deps: HerdDeps) {
         if ((await deps.herdr("agent.get", { target: pane }, sock)).ok) { registered = true; break; }
         await Bun.sleep(REGISTER_POLL_MS);
       }
-      if (!registered) {
-        log.warn({ ...context, pane }, "herd: agent never registered; trust dialog not checked");
-        return;
+      if (registered) {
+        const settled = await deps.herdr<{ agent: { agent_status: string } }>("agent.wait", { target: pane, until: SETTLE_UNTIL, timeout_ms: TRUST_BUDGET_MS }, { ...sock, timeoutMs: waitTimeout(TRUST_BUDGET_MS) });
+        // A pane still working past the budget is a worker already past the
+        // dialog: the brief rides claude's command line, so there is nothing
+        // to dismiss and nothing to report.
+        if (!settled.ok) {
+          log.debug({ ...context, pane, reason: settled.message }, "herd: agent still working; no trust dialog");
+          return "none";
+        }
+        // Only a blocked agent can be sitting on the prompt. An idle one whose
+        // brief merely contains the word "trust" must never be sent a key.
+        if (settled.result.agent.agent_status !== "blocked") return "none";
       }
-      const settled = await deps.herdr<{ agent: { agent_status: string } }>("agent.wait", { target: pane, until: SETTLE_UNTIL, timeout_ms: TRUST_BUDGET_MS }, { ...sock, timeoutMs: waitTimeout(TRUST_BUDGET_MS) });
-      // A pane still working past the budget is a worker already past the
-      // dialog: the brief rides claude's command line, so there is nothing to
-      // dismiss and nothing to report.
-      if (!settled.ok) {
-        log.debug({ ...context, pane, reason: settled.message }, "herd: agent still working; no trust dialog");
-        return;
+
+      for (let attempt = 0; attempt < TRUST_ATTEMPTS; attempt++) {
+        const prompt = await lookAtScreen();
+        if (prompt === false) return "unchecked";
+        if (prompt === null) {
+          // Nothing to accept. A registered-and-blocked pane is blocked on
+          // something else entirely (a mid-run permission prompt), which is
+          // not this function's business. An unregistered one never got
+          // claude up for a reason the screen does not name, and calling that
+          // "none" would be the silent pass RT-156 is about.
+          if (attempt > 0) return "accepted";
+          return registered ? "none" : "unchecked";
+        }
+        if (prompt.kind === "undrivable") {
+          log.warn({ ...context, pane }, "herd: trust dialog present but its selection could not be read; not guessing a key");
+          return "stuck";
+        }
+        const sent = await deps.herdr("pane.send_keys", { pane_id: pane, keys: prompt.keys }, sock);
+        if (!sent.ok) {
+          log.warn({ ...context, pane, err: sent.message }, "herd: trust dialog accept failed");
+          return "stuck";
+        }
+        log.debug({ ...context, pane, variant: prompt.variant, keys: prompt.keys }, "herd: trust dialog accept sent");
+        await Bun.sleep(deps.trustSettleMs ?? TRUST_SETTLE_MS);
       }
-      // Only a blocked agent can be sitting on the prompt. An idle one whose
-      // brief merely contains the word "trust" must never be sent an Enter.
-      if (settled.result.agent.agent_status !== "blocked") return;
-      const screen = await deps.herdr<{ read: { text: string } }>("pane.read", { pane_id: pane, source: "visible" }, sock);
-      if (!screen.ok) {
-        log.warn({ ...context, pane, err: screen.message }, "herd: pane read failed; trust dialog not checked");
-        return;
-      }
-      if (!/trust/i.test(screen.result.read.text)) return;
-      const sent = await deps.herdr("pane.send_keys", { pane_id: pane, keys: ["enter"] }, sock);
-      if (!sent.ok) log.warn({ ...context, pane, err: sent.message }, "herd: trust dialog accept failed");
+      const after = await lookAtScreen();
+      if (after === false) return "unchecked";
+      if (after === null) return "accepted";
+      log.warn({ ...context, pane }, "herd: trust dialog still up after the accept keys; worker is stuck at the modal");
+      return "stuck";
     } catch (err) {
       log.warn({ err, ...context, pane }, "herd: trust dialog accept threw");
+      return "unchecked";
     }
   }
 
@@ -450,10 +514,15 @@ export function createHerdHandlers(deps: HerdDeps) {
       if (!joined.ok) log.warn({ herd: herdId, job: name, error: joined.error }, "herd: worker room join failed");
       if (handle !== name) store.upsertJob({ herd: herdId, name, worktree, branch, tree, handle, status: "spawning" });
 
-      if (rec.paneId) await acceptTrustDialog(herd.herdrSocket, rec.paneId, { herd: herdId, job: name });
+      const trust: TrustOutcome = rec.paneId ? await acceptTrustDialog(herd.herdrSocket, rec.paneId, { herd: herdId, job: name }) : "none";
+      // Parked, not just logged: a worker still on the modal has not read its
+      // brief, and `spawning` would read as a launch merely in progress.
+      // herd-lifecycle clears it back to active the moment herdr detects the
+      // agent, so a hand-accepted modal needs no second command.
+      if (trust === "stuck") store.setJobStatus(herdId, name, "stuck-at-modal");
 
       const paneRef = rec.paneId ? formatPaneRef(rec.paneId, herd.hidden ? "bg" : "visible") : "";
-      return { ok: true, data: { herd: herdId, job: name, pane: paneRef, worktree, branch, tree, wasOnDeck, agentId: rec.id, sessionId: rec.sessionId, handle } };
+      return { ok: true, data: { herd: herdId, job: name, pane: paneRef, worktree, branch, tree, wasOnDeck, agentId: rec.id, sessionId: rec.sessionId, handle, trust } };
     },
 
     "herd:gates": async (raw: unknown): Promise<CommandResult<"herd:gates">> => {
