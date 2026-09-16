@@ -14,7 +14,7 @@ import { mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 
 import type { RebaseResult } from "../commands/git/rebase.ts";
-import { buildPaneCommand } from "./agent-argv.ts";
+import { buildPaneCommand } from "./agent-argv/index.ts";
 import { defaultHerdrRunner, herdrAgentWait, launchInWorkspace, type HerdrRunner } from "./agent-herdr.ts";
 import { getCurrentBranch, hasUncommittedChanges } from "./git-ops.ts";
 import { syncLog } from "./sync-log.ts";

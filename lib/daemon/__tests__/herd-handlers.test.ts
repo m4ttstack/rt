@@ -1008,6 +1008,20 @@ describe("herd:spawn", () => {
     expect(hx.store.getJob(s.data.herd, "job-a")!.pane).toBe("w9:p1");
   });
 
+  // Herd workers depend on claude-only machinery (the reserved chat handle
+  // chat:sign-in binds presence to, and the gate-fork --settings hook), so the
+  // payload must pin the provider rather than inherit the agent.provider
+  // default -- a global `agent.provider = codex` would otherwise degrade every
+  // herd silently.
+  test("herd:spawn pins provider claude on the agent:start payload", async () => {
+    const hx = harness();
+    const s = await hx.h["herd:start"](START);
+    if (!s.ok) throw new Error(s.error);
+    const res = await hx.h["herd:spawn"]({ herd: s.data.herd, job: "job-a", brief: "b", dir: "/t" });
+    expect(res.ok).toBe(true);
+    expect(hx.agentCalls[0].provider).toBe("claude");
+  });
+
   test("a hidden herd passes its socket to agent:start", async () => {
     const hx = harness();
     const s = await hx.h["herd:start"]({ ...START, hidden: true });

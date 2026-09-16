@@ -510,6 +510,12 @@ export function createHerdHandlers(deps: HerdDeps) {
       // while agent:start decides whether there is a new one.
       store.upsertJob({ herd: herdId, name, worktree, branch, tree, handle: name, status: "spawning", disposable, pane: null, agentSession: null, agentId: null });
       const started = await deps.agent["agent:start"]({
+        // Pinned, never inherited from the agent.provider default: a worker
+        // depends on claude-only machinery (the reserved chat handle
+        // chat:sign-in binds presence to, and the gate-fork --settings hook),
+        // so a global codex default would silently degrade every herd. codex
+        // workers are a separate change.
+        provider: "claude",
         repo: herd.repo, cwd: worktree, prompt: brief, surface: "herdr",
         ...(str(p?.model) && { model: p!.model }), ...(str(p?.effort) && { effort: p!.effort }), ...(str(p?.account) && { account: p!.account }),
         label: name, caller: `herd:${herdId}`, workspace: herd.workspace, tab: name, handle: name,

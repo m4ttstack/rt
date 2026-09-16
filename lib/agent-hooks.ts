@@ -86,7 +86,7 @@ export function gateForkHookSettings(hookPath: string): GateForkHookSettings {
  * A launch never emits two `--settings` flags (repeated-flag semantics are
  * unverified against the real CLI, and a silent last-wins would drop
  * whichever settings lost), so a launch that already carries its own inline
- * settings object (today, only lib/agent-argv.ts's
+ * settings object (today, only lib/agent-argv/claude.ts's
  * CROSS_SESSION_INBOUND_SETTINGS) must fold the hook into that SAME object
  * instead of writing a second file. Additive only: every key of `base`
  * survives untouched, and the hook's PreToolUse entry is appended to
