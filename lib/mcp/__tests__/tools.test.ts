@@ -326,6 +326,64 @@ describe("mcpTools", () => {
       expect(res.error).toContain(orgBId);
     });
 
+    test("heal-pair rows (legacy name key + identity key at the same path) collapse instead of reading ambiguous", async () => {
+      const rtId = serializeIdentity({ kind: "remote", id: "github.com/m4ttstack/rt" });
+      mock.module("../../../packages/rt-client/src/transport.ts", () => ({
+        ...realTransport,
+        rtCommand: async (cmd: string, payload: Record<string, unknown>) => {
+          if (cmd === "repos") {
+            return {
+              ok: true,
+              data: {
+                repos: {
+                  rt: { path: "/same/path", worktrees: [] },
+                  [rtId]: { path: "/same/path", worktrees: [] },
+                },
+                watched: [],
+              },
+            };
+          }
+          if (cmd === "worktree:list") {
+            expect(payload.repoName).toBe(rtId);
+            return { ok: true, data: { trees: [] } };
+          }
+          if (cmd === "project-mrs:read") {
+            expect(payload.repoName).toBe(rtId);
+            return { ok: true, data: { mrs: {}, listSyncedAt: 0, source: "poll", syncedAt: 0 } };
+          }
+          throw new Error(`unexpected rtCommand("${cmd}")`);
+        },
+      }));
+      const tool = mcpTools().find((t) => t.name === "mr_map")!;
+      const res = await tool.handler({ repo: "rt" }, {} as NodeJS.ProcessEnv);
+      expect(res.ok).toBe(true);
+      expect(res.body).toEqual({ rows: [] });
+    });
+
+    test("a raw daemon error code from worktree:list is explained instead of returned bare", async () => {
+      const rtId = serializeIdentity({ kind: "remote", id: "github.com/m4ttstack/rt" });
+      mock.module("../../../packages/rt-client/src/transport.ts", () => ({
+        ...realTransport,
+        rtCommand: async (cmd: string) => {
+          if (cmd === "repos") {
+            return { ok: true, data: { repos: { [rtId]: { path: "/r", worktrees: [] } }, watched: [] } };
+          }
+          if (cmd === "worktree:list") {
+            return { ok: false, error: "repo-unknown" };
+          }
+          if (cmd === "project-mrs:read") {
+            return { ok: true, data: { mrs: {}, listSyncedAt: 0, source: "poll", syncedAt: 0 } };
+          }
+          throw new Error(`unexpected rtCommand("${cmd}")`);
+        },
+      }));
+      const tool = mcpTools().find((t) => t.name === "mr_map")!;
+      const res = await tool.handler({ repo: "rt" }, {} as NodeJS.ProcessEnv);
+      expect(res.ok).toBe(false);
+      expect(res.error).not.toBe("repo-unknown");
+      expect(res.error).toContain("unknown repo");
+    });
+
     test("matches by registered name and joins open MRs to worktrees", async () => {
       const rtId = serializeIdentity({ kind: "remote", id: "github.com/m4ttstack/rt" });
       mock.module("../../../packages/rt-client/src/transport.ts", () => ({

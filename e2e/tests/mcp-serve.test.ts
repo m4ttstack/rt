@@ -195,7 +195,7 @@ describe("rt mcp serve e2e", () => {
     cleanup();
   });
 
-  test("initialize -> tools/list -> tools/call gate_list", async () => {
+  test("initialize -> tools/list -> tools/call gate_list, gate_ask", async () => {
     const server = runRtPiped(["mcp", "serve"], home);
     const client = new McpClient(server);
 
@@ -225,6 +225,32 @@ describe("rt mcp serve e2e", () => {
       expect(Array.isArray(body.gates)).toBe(true);
       expect(body.gates).toEqual([]);
       expect(typeof body.cursor).toBe("number");
+
+      // The epic's centerpiece tool (wave-2 contract): round-trip gate_ask
+      // against the test daemon, not just gate_list, so the ceremony
+      // (subject resolution, presentation, gate:open) is exercised end to
+      // end over the real MCP transport, not only in mocked unit tests.
+      const askCall = await client.request("tools/call", {
+        name: "gate_ask",
+        arguments: {
+          questions: [{ id: "q1", label: "Proceed?", multi: false, options: ["yes", "no"] }],
+          subject: "test:mcp-e2e",
+          context: "e2e round trip",
+        },
+      });
+      expect(askCall.error).toBeUndefined();
+      const askResult = askCall.result as { isError?: boolean; content: Array<{ type: string; text: string }> };
+      expect(askResult.isError).toBeUndefined();
+      const askBody = JSON.parse(askResult.content[0]!.text) as { id: string; presentation: string; subject: string };
+      expect(typeof askBody.id).toBe("string");
+      expect(askBody.id.length).toBeGreaterThan(0);
+      expect(askBody.subject).toBe("test:mcp-e2e");
+
+      const listAfterAsk = await client.request("tools/call", { name: "gate_list", arguments: { open: true } });
+      expect(listAfterAsk.error).toBeUndefined();
+      const listAfterAskResult = listAfterAsk.result as { isError?: boolean; content: Array<{ type: string; text: string }> };
+      const bodyAfterAsk = JSON.parse(listAfterAskResult.content[0]!.text) as { gates: Array<{ id: string }> };
+      expect(bodyAfterAsk.gates.map((g) => g.id)).toContain(askBody.id);
 
       // stdout must carry only JSON-RPC: a stray log line on stdout would
       // corrupt every client sharing the pipe, so every line gets checked,
