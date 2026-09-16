@@ -85,6 +85,12 @@ printf '%s\n' "$subject_lines" | grep -Eq '"status":"(open|parked)"' && allow
 # finding 2). Same row-split discipline as above; worktree matching is
 # exact-string on the JSON-escaped cwd, checked for both $PWD and the
 # physical pwd so a symlinked worktree path still matches.
+#
+# The match is per-worktree, not per-caller, on purpose: any pane in a tree
+# with an open run gate inherits this allow. Narrowing it to the gate's own
+# origin.paneId would deny a relaunched pane whose gate still carries the
+# pane id it had before the relaunch, and this hook degrades to allow
+# everywhere else it cannot verify something.
 if [ -n "$TIMEOUT_BIN" ]; then
   run_json=$("$TIMEOUT_BIN" 5 rt gate list --subject-prefix "run:" --open 2>/dev/null) || allow
 else
