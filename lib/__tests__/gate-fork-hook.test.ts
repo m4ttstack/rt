@@ -167,13 +167,13 @@ describe("scripts/hooks/gate-fork.sh", () => {
   });
 
   test("RT-162 finding 2: an open run-gate in this worktree now allows", async () => {
-    const herdSubject = "herd:hoki-x/cv-2492-attorney";
+    const herdSubject = "herd:acme-x/acme-1234-attorney";
     const runGate = JSON.stringify({
       ok: true, cursor: 0,
       gates: [gateRow("open", {
         id: "g-run", subject: "run:r1", kind: "plan",
         origin: { runId: "r1", worktree: process.cwd(), presentation: "form", paneId: "w1:p1" },
-        owner: "herd:hoki-x",
+        owner: "herd:acme-x",
       })],
     });
     const path = pathWithStubRtRouting([
@@ -186,13 +186,13 @@ describe("scripts/hooks/gate-fork.sh", () => {
   });
 
   test("an open run-gate in a DIFFERENT worktree still denies", async () => {
-    const herdSubject = "herd:hoki-x/cv-2492-attorney";
+    const herdSubject = "herd:acme-x/acme-1234-attorney";
     const runGate = JSON.stringify({
       ok: true, cursor: 0,
       gates: [gateRow("open", {
         id: "g-run", subject: "run:r1", kind: "plan",
         origin: { runId: "r1", worktree: `${process.cwd()}-other`, presentation: "form", paneId: "w1:p1" },
-        owner: "herd:hoki-x",
+        owner: "herd:acme-x",
       })],
     });
     const path = pathWithStubRtRouting([
@@ -208,16 +208,16 @@ describe("scripts/hooks/gate-fork.sh", () => {
   // the awk row-split is load-bearing -- without it the unsplit blob still
   // contains both this worktree's string and an "open" status as substrings.
   test("a closed run-gate in this worktree plus an open one elsewhere never combine into a false allow", async () => {
-    const herdSubject = "herd:hoki-x/cv-2492-attorney";
+    const herdSubject = "herd:acme-x/acme-1234-attorney";
     const mine = gateRow("closed", {
       id: "g-run-mine", subject: "run:r1", kind: "plan",
       origin: { runId: "r1", worktree: process.cwd(), presentation: "form", paneId: "w1:p1" },
-      owner: "herd:hoki-x",
+      owner: "herd:acme-x",
     });
     const other = gateRow("open", {
       id: "g-run-other", subject: "run:r2", kind: "plan",
       origin: { runId: "r2", worktree: `${process.cwd()}-other`, presentation: "form", paneId: "w1:p2" },
-      owner: "herd:hoki-x",
+      owner: "herd:acme-x",
     });
     const runGate = JSON.stringify({ ok: true, cursor: 0, gates: [mine, other] });
     const path = pathWithStubRtRouting([
@@ -230,7 +230,7 @@ describe("scripts/hooks/gate-fork.sh", () => {
   });
 
   test("the run-gate list call failing (exitCode 1) still allows: degraded mode stays legal", async () => {
-    const herdSubject = "herd:hoki-x/cv-2492-attorney";
+    const herdSubject = "herd:acme-x/acme-1234-attorney";
     const path = pathWithStubRtRouting([
       { match: `--subject-prefix ${herdSubject}`, body: '{"ok":true,"gates":[],"cursor":0}' },
       { match: "--subject-prefix run:", body: '{"ok":false,"error":"rt daemon unreachable"}', exitCode: 1 },
