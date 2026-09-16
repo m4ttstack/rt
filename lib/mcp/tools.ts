@@ -209,6 +209,7 @@ export function mcpTools(): McpToolDef[] {
           const supersededBy = (res as { supersededBy?: string }).supersededBy;
           return err(`gate ${input.id} is closed (${reason})${supersededBy ? `; superseded by ${supersededBy}` : ""}`);
         }
+        if (!res.ok && res.error === "not-found") return err(`no gate ${input.id}`);
         return fromResponse(res);
       },
     },
