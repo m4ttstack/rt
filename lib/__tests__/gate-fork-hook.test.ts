@@ -36,6 +36,38 @@ function pathWithStubRt(body: string, exitCode: number): string {
   return `${dir}:${PATH_WITHOUT_RT}`;
 }
 
+/** Writes a stub `rt` executable that checks its full $* against each route's
+ *  match substring in order and prints the first hit's body (default exit 0);
+ *  no route hit prints {"ok":true,"gates":[],"cursor":0}. Returns a PATH
+ *  string with the stub ahead of the real system dirs. */
+function pathWithStubRtRouting(
+  routes: Array<{ match: string; body: string; exitCode?: number }>
+): string {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "gate-fork-hook-")));
+  let script = "#!/bin/sh\ncase \"$*\" in\n";
+
+  // route.match may contain spaces (e.g. "--subject-prefix herd:x"); quoting
+  // keeps it one case pattern word. Routes are checked in order, so list the
+  // most specific match before any broader prefix it overlaps with.
+  for (const route of routes) {
+    script += `  *"${route.match}"*)\n`;
+    script += `    cat <<'EOF'\n${route.body}\nEOF\n`;
+    script += `    exit ${route.exitCode ?? 0}\n`;
+    script += `    ;;\n`;
+  }
+
+  script += `  *)\n`;
+  script += `    cat <<'EOF'\n{"ok":true,"gates":[],"cursor":0}\nEOF\n`;
+  script += `    exit 0\n`;
+  script += `    ;;\n`;
+  script += `esac\n`;
+
+  const rtPath = join(dir, "rt");
+  writeFileSync(rtPath, script);
+  chmodSync(rtPath, 0o755);
+  return `${dir}:${PATH_WITHOUT_RT}`;
+}
+
 async function runHook(path: string, subject: string): Promise<{
   stdout: string; stderr: string; exitCode: number;
 }> {
@@ -91,7 +123,7 @@ describe("scripts/hooks/gate-fork.sh", () => {
     expect(JSON.parse(stdout.trim())).toEqual(ALLOW);
   });
 
-  test("no open/parked gate for the subject: deny, naming rt gate open and the subject", async () => {
+  test("no open/parked gate for the subject: deny, naming rt gate ask and the subject", async () => {
     const path = pathWithStubRt(JSON.stringify({ ok: true, gates: [], cursor: 0 }), 0);
     const { stdout, exitCode } = await runHook(path, SUBJECT);
     expect(exitCode).toBe(0);
@@ -99,7 +131,7 @@ describe("scripts/hooks/gate-fork.sh", () => {
     expect(parsed.hookSpecificOutput.hookEventName).toBe("PreToolUse");
     expect(parsed.hookSpecificOutput.permissionDecision).toBe("deny");
     const reason: string = parsed.hookSpecificOutput.permissionDecisionReason;
-    expect(reason).toContain("rt gate open");
+    expect(reason).toContain("rt gate ask");
     expect(reason).toContain(SUBJECT);
   });
 
@@ -130,6 +162,106 @@ describe("scripts/hooks/gate-fork.sh", () => {
     const mine = gateRow("open", { id: "g1", questions });
     const path = pathWithStubRt(JSON.stringify({ ok: true, gates: [mine], cursor: 0 }), 0);
     const { stdout, exitCode } = await runHook(path, SUBJECT);
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(stdout.trim())).toEqual(ALLOW);
+  });
+
+  test("RT-162 finding 2: an open run-gate in this worktree now allows", async () => {
+    const herdSubject = "herd:acme-x/acme-1234-attorney";
+    const runGate = JSON.stringify({
+      ok: true, cursor: 0,
+      gates: [gateRow("open", {
+        id: "g-run", subject: "run:r1", kind: "plan",
+        origin: { runId: "r1", worktree: process.cwd(), presentation: "form", paneId: "w1:p1" },
+        owner: "herd:acme-x",
+      })],
+    });
+    const path = pathWithStubRtRouting([
+      { match: `--subject-prefix ${herdSubject}`, body: '{"ok":true,"gates":[],"cursor":0}' },
+      { match: "--subject-prefix run:", body: runGate },
+    ]);
+    const { stdout, exitCode } = await runHook(path, herdSubject);
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(stdout.trim())).toEqual(ALLOW);
+  });
+
+  test("a parked run-gate in this worktree denies: --open excludes it server-side, deliberately", async () => {
+    const herdSubject = "herd:acme-x/acme-1234-attorney";
+    const parkedRunGate = JSON.stringify({
+      ok: true, cursor: 0,
+      gates: [gateRow("parked", {
+        id: "g-run", subject: "run:r1", kind: "plan",
+        origin: { runId: "r1", worktree: process.cwd(), presentation: "form", paneId: "w1:p1" },
+        owner: "herd:acme-x",
+      })],
+    });
+    const path = pathWithStubRtRouting([
+      { match: `--subject-prefix ${herdSubject}`, body: '{"ok":true,"gates":[],"cursor":0}' },
+      // Most specific first: a real daemon's --open never returns this
+      // parked row (not-live, same contract a form-presentation gate
+      // enforces), so the route matched only when --open is present answers
+      // empty. If the hook regressed and stopped sending --open, the call
+      // would instead fall through to the broader route below, which hands
+      // back the parked row and would flip this test to allow.
+      { match: "--subject-prefix run: --open", body: '{"ok":true,"gates":[],"cursor":0}' },
+      { match: "--subject-prefix run:", body: parkedRunGate },
+    ]);
+    const { stdout, exitCode } = await runHook(path, herdSubject);
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(stdout.trim()).hookSpecificOutput.permissionDecision).toBe("deny");
+  });
+
+  test("an open run-gate in a DIFFERENT worktree still denies", async () => {
+    const herdSubject = "herd:acme-x/acme-1234-attorney";
+    const runGate = JSON.stringify({
+      ok: true, cursor: 0,
+      gates: [gateRow("open", {
+        id: "g-run", subject: "run:r1", kind: "plan",
+        origin: { runId: "r1", worktree: `${process.cwd()}-other`, presentation: "form", paneId: "w1:p1" },
+        owner: "herd:acme-x",
+      })],
+    });
+    const path = pathWithStubRtRouting([
+      { match: `--subject-prefix ${herdSubject}`, body: '{"ok":true,"gates":[],"cursor":0}' },
+      { match: "--subject-prefix run:", body: runGate },
+    ]);
+    const { stdout, exitCode } = await runHook(path, herdSubject);
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(stdout.trim()).hookSpecificOutput.permissionDecision).toBe("deny");
+  });
+
+  // Two rows in one payload: this worktree closed, another worktree open. Proves
+  // the awk row-split is load-bearing -- without it the unsplit blob still
+  // contains both this worktree's string and an "open" status as substrings.
+  test("a closed run-gate in this worktree plus an open one elsewhere never combine into a false allow", async () => {
+    const herdSubject = "herd:acme-x/acme-1234-attorney";
+    const mine = gateRow("closed", {
+      id: "g-run-mine", subject: "run:r1", kind: "plan",
+      origin: { runId: "r1", worktree: process.cwd(), presentation: "form", paneId: "w1:p1" },
+      owner: "herd:acme-x",
+    });
+    const other = gateRow("open", {
+      id: "g-run-other", subject: "run:r2", kind: "plan",
+      origin: { runId: "r2", worktree: `${process.cwd()}-other`, presentation: "form", paneId: "w1:p2" },
+      owner: "herd:acme-x",
+    });
+    const runGate = JSON.stringify({ ok: true, cursor: 0, gates: [mine, other] });
+    const path = pathWithStubRtRouting([
+      { match: `--subject-prefix ${herdSubject}`, body: '{"ok":true,"gates":[],"cursor":0}' },
+      { match: "--subject-prefix run:", body: runGate },
+    ]);
+    const { stdout, exitCode } = await runHook(path, herdSubject);
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(stdout.trim()).hookSpecificOutput.permissionDecision).toBe("deny");
+  });
+
+  test("the run-gate list call failing (exitCode 1) still allows: degraded mode stays legal", async () => {
+    const herdSubject = "herd:acme-x/acme-1234-attorney";
+    const path = pathWithStubRtRouting([
+      { match: `--subject-prefix ${herdSubject}`, body: '{"ok":true,"gates":[],"cursor":0}' },
+      { match: "--subject-prefix run:", body: '{"ok":false,"error":"rt daemon unreachable"}', exitCode: 1 },
+    ]);
+    const { stdout, exitCode } = await runHook(path, herdSubject);
     expect(exitCode).toBe(0);
     expect(JSON.parse(stdout.trim())).toEqual(ALLOW);
   });
