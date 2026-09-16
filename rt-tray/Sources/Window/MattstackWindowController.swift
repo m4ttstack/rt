@@ -38,15 +38,10 @@ final class MattstackWindowController: NSWindowController, NSWindowDelegate {
     required init?(coder: NSCoder) { fatalError("not supported") }
 
     func show() {
-        NSApp.setActivationPolicy(.regular)
         model.presentSplashIfNeeded()
         Task { await model.ensureCatalogLoaded() }
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-    }
-
-    func windowWillClose(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory)
     }
 }

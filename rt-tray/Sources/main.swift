@@ -35,7 +35,10 @@ if case .standDown(let intended) = FlavorGateState.action {
 }
 
 let app = NSApplication.shared
-app.setActivationPolicy(.accessory)  // Hide from Dock — menu bar only
+// Regular from launch, overriding the bundle's LSUIElement: the Dock icon is
+// the way in now, and a pinned icon that never shows its running dot reads as
+// a dead shortcut. The tray menu stays the second door.
+app.setActivationPolicy(.regular)
 
 let delegate = AppDelegate()
 app.delegate = delegate
