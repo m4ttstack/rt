@@ -176,7 +176,8 @@ export async function spawn(args: string[]): Promise<void> {
     fail((e as Error).message);
   }
   const data = unwrap(await herdSpawn(payload), "spawn");
-  emit(json, data, `${data.job} pane ${data.pane} worktree ${data.worktree} session ${data.sessionId}${data.wasOnDeck === false ? " (cold provision)" : ""}`);
+  const trustNote = data.trust === "stuck" ? " (STUCK AT TRUST MODAL)" : data.trust === "accepted" ? " (trust dialog accepted)" : "";
+  emit(json, data, `${data.job} pane ${data.pane} worktree ${data.worktree} session ${data.sessionId}${data.wasOnDeck === false ? " (cold provision)" : ""}${trustNote}`);
 }
 
 export async function ask(args: string[]): Promise<void> {
