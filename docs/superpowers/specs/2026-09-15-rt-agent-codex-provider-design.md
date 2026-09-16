@@ -65,9 +65,9 @@ not from memory:
 | Concept | claude | codex |
 |---|---|---|
 | headless start | `claude -p --output-format json [flags] <prompt>` | `codex exec --json [flags] <prompt>` |
-| headless resume | `claude -p --output-format json [flags] --resume <id> <prompt>` | `codex exec resume <id> [flags] <prompt>` |
+| headless resume | `claude -p --output-format json [flags] --resume <id> <prompt>` | `codex exec resume [flags] <id> <prompt>` |
 | herdr start | `claude [flags] <prompt>` | `codex [flags] <prompt>` |
-| herdr resume | `claude [flags] --resume <id> <prompt>` | `codex resume <id> [flags] <prompt>` |
+| herdr resume | `claude [flags] --resume <id> <prompt>` | `codex resume [flags] <id> <prompt>` |
 | model | `--model <alias\|full-name>` | `-m <slug>` |
 | effort | `--effort <level>` | `-c model_reasoning_effort=<level>` (config override; no dedicated flag) |
 | yolo | `--dangerously-skip-permissions` | `--dangerously-bypass-approvals-and-sandbox` |
