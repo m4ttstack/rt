@@ -11,6 +11,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "fs";
 import { join } from "path";
+import type { GateOption, GateQuestion, GateAnswer } from "../src/gate.ts";
 
 const pkgDir = join(import.meta.dir, "..");
 const distGate = join(pkgDir, "dist", "gate.js");
@@ -57,5 +58,16 @@ describe("./gate subpath export", () => {
     expect(mod.gatePresentation({ questions: [] })).toBe("wait");
     expect(mod.gateOptionValue("a")).toBe("a");
     expect(mod.gateOptionLabel({ value: "a", label: "A" })).toBe("A");
+  });
+
+  test("./gate re-exports GateOption, GateQuestion, and GateAnswer as types (compile-time check)", () => {
+    // Type-only usages: if any of these three stopped being re-exported from
+    // gate.ts, this file would fail to typecheck (tsc --noEmit), even though
+    // nothing here runs at test time. Values erase, so dist/gate.js's inlined
+    // bundle is unaffected.
+    const option: GateOption = "a";
+    const question: GateQuestion = { id: "q1", label: "Proceed?", multi: false, options: [] };
+    const answer: GateAnswer = { answers: {}, by: "console", answeredAt: 0 };
+    expect([typeof option, typeof question, typeof answer]).toEqual(["string", "object", "object"]);
   });
 });
