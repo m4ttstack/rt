@@ -12,6 +12,7 @@ import { Icons } from '@mattstack/app-kit/icons';
 import { useQuery } from '@tanstack/react-query';
 
 import { client } from '../api';
+import { useEditorHref } from '../editorHref';
 
 const MAX_HEIGHT = 240;
 
@@ -37,6 +38,7 @@ export function FailureExcerpt({
   detailPath,
 }: FailureExcerptProps) {
   const { bg, border, text } = useSchemeColors();
+  const editorHref = useEditorHref();
 
   const query = useQuery({
     queryKey: ['artifact', repo, runId, detailPath],
@@ -52,10 +54,10 @@ export function FailureExcerpt({
   });
 
   // No extra slash: `detailPath` is already an absolute path (leading `/`),
-  // and vscode's URI form is `vscode://file` + that absolute path.
+  // and the editor URI form is `<scheme>://file` + that absolute path.
   const editorLink = (
     <Anchor
-      href={`vscode://file${detailPath}`}
+      href={editorHref(detailPath)}
       size="xs"
       c={text.muted}
       style={{

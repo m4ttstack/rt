@@ -18,6 +18,7 @@ import { useSchemeColors } from '@mattstack/app-kit/hooks';
 import { Icons } from '@mattstack/app-kit/icons';
 
 import type { ExplainRowWire, SettingDefWire } from '../../server/settings';
+import { useEditorHref } from '../editorHref';
 import { shortValue } from './chain';
 
 export type VerdictRole = 'winner' | 'overridden' | 'contributor' | 'inert';
@@ -85,6 +86,7 @@ export function LayerRow({
   onResetError,
 }: LayerRowProps) {
   const { text, border } = useSchemeColors();
+  const editorHref = useEditorHref();
   const rowId = `${row.scope}${row.file ? `:${row.file}` : ''}`;
   const composite = isComposite(def);
   const editable = isEditable(def, row);
@@ -196,7 +198,7 @@ export function LayerRow({
           </Text>
         ) : (
           <Anchor
-            href={`vscode://file${row.file}`}
+            href={editorHref(row.file)}
             size="xs"
             c={text.dimmed}
             ff="monospace"

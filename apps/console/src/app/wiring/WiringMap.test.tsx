@@ -12,6 +12,7 @@ const historyGet = vi.fn();
 const surfaceGet = vi.fn();
 const surfaceApplyPost = vi.fn();
 const bindPost = vi.fn();
+const defaultEditorGet = vi.fn();
 
 vi.mock('../api', () => ({
   client: {
@@ -29,6 +30,11 @@ vi.mock('../api', () => ({
         history: { $get: (...args: unknown[]) => historyGet(...args) },
         diff: {
           $get: () => Promise.resolve({ ok: true, json: async () => ({}) }),
+        },
+      },
+      settings: {
+        'default-editor': {
+          $get: (...args: unknown[]) => defaultEditorGet(...args),
         },
       },
     },
@@ -216,6 +222,7 @@ function mockHappyPath() {
   );
   compositionGet.mockResolvedValue(ok(COMPOSITION));
   checkGet.mockResolvedValue(ok(CHECK));
+  defaultEditorGet.mockResolvedValue(ok({ editor: null }));
 }
 
 /** Post-4a the per-skill actions (open source, preview compile, version
@@ -1051,6 +1058,15 @@ describe('WiringMap: the pack', () => {
 
     const open = await screen.findByTestId('open-pack');
     expect(open).toHaveAttribute('href', 'vscode://file/p');
+  });
+
+  it('builds the Open pack href from the default-editor preference', async () => {
+    mockHappyPath();
+    defaultEditorGet.mockResolvedValue(ok({ editor: 'zed' }));
+    renderWiring();
+
+    const open = await screen.findByTestId('open-pack');
+    await waitFor(() => expect(open).toHaveAttribute('href', 'zed://file/p'));
   });
 });
 

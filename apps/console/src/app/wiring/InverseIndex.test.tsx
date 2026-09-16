@@ -1,4 +1,5 @@
 import { renderWithProviders } from '@mattstack/app-kit/test-utils';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
@@ -40,19 +41,26 @@ function renderIndex(
     onShowInMap?: (site: BindingSite) => void;
   } = {}
 ) {
+  // useEditorHref needs a QueryClient; retry off so its (unmocked) fetch
+  // settles to the vscode fallback instead of retrying across assertions.
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   return renderWithProviders(
-    <InverseIndex
-      pack="demo"
-      fill={over.fill === undefined ? 'demo:review-criteria' : over.fill}
-      sites={over.sites ?? SITES}
-      sourcePath={
-        over.sourcePath === undefined
-          ? '/fills/review-criteria/SKILL.md'
-          : over.sourcePath
-      }
-      asOf={1_700_000_000_000}
-      onShowInMap={over.onShowInMap ?? (() => {})}
-    />
+    <QueryClientProvider client={queryClient}>
+      <InverseIndex
+        pack="demo"
+        fill={over.fill === undefined ? 'demo:review-criteria' : over.fill}
+        sites={over.sites ?? SITES}
+        sourcePath={
+          over.sourcePath === undefined
+            ? '/fills/review-criteria/SKILL.md'
+            : over.sourcePath
+        }
+        asOf={1_700_000_000_000}
+        onShowInMap={over.onShowInMap ?? (() => {})}
+      />
+    </QueryClientProvider>
   );
 }
 

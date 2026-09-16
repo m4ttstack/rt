@@ -19,6 +19,7 @@ import {
 import { useSchemeColors } from '@mattstack/app-kit/hooks';
 import { Icons } from '@mattstack/app-kit/icons';
 
+import { useEditorHref } from '../editorHref';
 import { suffixOf } from './outline';
 import type { SkillsSurfaceRow } from './useWiring';
 import {
@@ -218,6 +219,7 @@ function SurfaceGridRow({
   sourcePath,
 }: SurfaceGridRowProps) {
   const { bg, text, border } = useSchemeColors();
+  const editorHref = useEditorHref();
   const staged = next !== row.status;
   const badge = KIND_BADGE[row.kind];
 
@@ -272,7 +274,7 @@ function SurfaceGridRow({
         <Tooltip label="Open in editor" openDelay={300}>
           <ActionIcon
             component="a"
-            href={`vscode://file${sourcePath}`}
+            href={editorHref(sourcePath)}
             variant="subtle"
             color="gray"
             size="sm"

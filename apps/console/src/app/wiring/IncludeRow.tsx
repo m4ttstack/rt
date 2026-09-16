@@ -2,6 +2,7 @@ import { ActionIcon, Group, Text, Tooltip } from '@mattstack/app-kit/core';
 import { useSchemeColors } from '@mattstack/app-kit/hooks';
 import { Icons } from '@mattstack/app-kit/icons';
 
+import { useEditorHref } from '../editorHref';
 import type { IncludeOutlineNode } from './outline';
 import { QuietBadge } from './QuietBadge';
 
@@ -18,6 +19,7 @@ const NAME_WIDTH = 208;
  */
 export function IncludeRow({ include }: { include: IncludeOutlineNode }) {
   const { text } = useSchemeColors();
+  const editorHref = useEditorHref();
 
   return (
     <Group
@@ -40,7 +42,7 @@ export function IncludeRow({ include }: { include: IncludeOutlineNode }) {
         <Tooltip label="Open source">
           <ActionIcon
             component="a"
-            href={`vscode://file${include.sourcePath}`}
+            href={editorHref(include.sourcePath)}
             variant="subtle"
             color="gray"
             size="sm"
