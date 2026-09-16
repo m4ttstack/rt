@@ -503,9 +503,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         }
     }
 
-    /// The App menu carries the only global keyboard shortcut an LSUIElement
-    /// app can offer (there is no Window menu): ⌘, opens Settings whenever
-    /// any window is key, matching every other Mac app.
+    /// AppKit routes a key equivalent only when a menu item claims it, so an
+    /// LSUIElement app's menu has to carry them itself: ⌘, for Settings, and
+    /// ⌘W / ⌘M for the key window, which otherwise do nothing at all.
     private func installMainMenu() {
         let main = NSMenu()
         let appItem = NSMenuItem(); main.addItem(appItem)
@@ -522,6 +522,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
         edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         editItem.submenu = edit
+        let windowItem = NSMenuItem(); main.addItem(windowItem)
+        let windowMenu = NSMenu(title: "Window")
+        windowMenu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        windowItem.submenu = windowMenu
         NSApp.mainMenu = main
     }
 
