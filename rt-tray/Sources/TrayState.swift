@@ -5,6 +5,12 @@ import SwiftUI
 /// Daemon status shared between AppDelegate (which polls) and the process
 /// panel (which displays it in the status strip). A singleton because the
 /// popover and the detached window each host their own panel instance.
+///
+/// Main-actor: every `@Published` write lands in SwiftUI's observation
+/// synchronously on the writing thread, so an off-main mutation drives
+/// AppKit view updates off-main (a recurring reloadData SIGABRT). The
+/// annotation turns that whole bug class into a compile error.
+@MainActor
 class TrayState: ObservableObject {
     static let shared = TrayState()
 
