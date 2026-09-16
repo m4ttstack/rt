@@ -90,13 +90,12 @@ export interface GatesStore {
   deadPanePushes(): GateRow[];
   /** Rows the re-delivery sweep should chase: answered, nudged, never
       consumed, unreleased, delivered/confirmed/stuck (dead-pane stays with
-      the existing retry pass), on a herd: subject (the only subject family
-      whose consumption path can ever stamp consumedAt), and answered within
-      the last hour (older rows are presumed abandoned rather than chased
-      across every daemon restart). Self-answered rows are excluded even
-      though the backfill and answer-time stamp already cover them -- belt
-      and braces. `now` defaults to Date.now() and exists so a test can drive
-      the age bound. */
+      the existing retry pass), on any subject, and answered within the last
+      hour (older rows are presumed abandoned rather than chased across every
+      daemon restart). Self-answered rows are excluded even though the
+      backfill and answer-time stamp already cover them -- belt and braces.
+      `now` defaults to Date.now() and exists so a test can drive the age
+      bound. */
   unconsumedAnsweredPushes(now?: number): GateRow[];
   /** Deletes closed/answered rows past the retention window, floor respected.
       Returns the number of rows removed. */
@@ -236,11 +235,10 @@ function assertValidSubject(subject: string): void {
 }
 
 const DEAD_SUBSCRIPTION_RETENTION_MS = 24 * 60 * 60 * 1000;
-// Only a herd-answer session ever stamps consumedAt (handlers/herd.ts, on
-// the nudged pane's own read), so a row bounces around unconsumed forever if
-// its subject isn't herd:-owned; a restart also resets the in-memory give-up
-// counters in gate-push.ts, so this age bound is the only thing stopping a
-// week-old answered row from re-arming five more re-deliveries every restart.
+// A restart resets the in-memory give-up counters in gate-push.ts, so this
+// age bound is the only thing stopping a week-old answered row from re-arming
+// five more re-deliveries on every restart. It bounds a row whose pane never
+// reads its answer through any stamping verb, too.
 const UNCONSUMED_ANSWERED_HORIZON_MS = 60 * 60 * 1000;
 
 export function createGatesStore(opts: {
@@ -427,12 +425,14 @@ export function createGatesStore(opts: {
   const deadPaneStmt = db.prepare(
     "SELECT * FROM gates WHERE nudge IS NOT NULL AND released = 0 AND status = 'answered' AND delivery IS NOT NULL ORDER BY openedAt",
   );
-  // subject LIKE 'herd:%': only handlers/herd.ts's nudged-session read stamps
-  // consumedAt, so a nudge on any other subject (e.g. a board form gate) can
-  // never leave the unconsumed set -- scoping the sweep's own query is the
-  // only way to keep it from chasing rows nothing will ever consume.
+  // Subject-blind on purpose: every nudge-bearing subject family has a read
+  // that stamps consumedAt (herd:answer for herd workers, gate:wait for the
+  // run:/mr:/agent: panes gate:ask nudges), so scoping this query by prefix
+  // would only re-open the interrupt-loss class for the families left out.
+  // `nudge IS NOT NULL` is the real bound: a gate with no nudge has no pane
+  // to re-push and never enters this set.
   const unconsumedAnsweredStmt = db.prepare(
-    "SELECT * FROM gates WHERE status = 'answered' AND nudge IS NOT NULL AND consumedAt IS NULL AND released = 0 AND subject LIKE 'herd:%' AND COALESCE(json_extract(answer,'$.answeredAt'), closedAt, openedAt) >= ? ORDER BY openedAt",
+    "SELECT * FROM gates WHERE status = 'answered' AND nudge IS NOT NULL AND consumedAt IS NULL AND released = 0 AND COALESCE(json_extract(answer,'$.answeredAt'), closedAt, openedAt) >= ? ORDER BY openedAt",
   );
 
   const get = (id: string): GateRow | null => {

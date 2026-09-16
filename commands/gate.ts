@@ -249,19 +249,23 @@ const RETRY_BACKOFF_CAP_MS = 5_000;
  * Backs off 1s, doubling to a 5s cap, and logs once on the FIRST retry so
  * a genuinely-down daemon is still visible on stderr. `wait`/`sleep` are
  * injectable so the loop is testable without a daemon or real delays.
+ * `sessionId` rides every call, not just the last one: a daemon-side
+ * consumption stamp only fires on the call that returns the answer, and
+ * which call that is isn't knowable from here.
  */
 export async function waitForGate(
   id: string,
   deadline: number | null,
   wait: WaitFn = clientWait,
   sleep: (ms: number) => Promise<void> = (ms) => Bun.sleep(ms),
+  sessionId?: string,
 ): Promise<WaitOutcome> {
   let backoffMs = RETRY_BACKOFF_START_MS;
   let warned = false;
   while (true) {
     const waitMs = nextWaitMs(deadline, Date.now());
     if (waitMs === 0) return { terminal: "budget" };
-    const res = await wait({ id, waitMs });
+    const res = await wait({ id, waitMs, ...(sessionId ? { sessionId } : {}) });
     if (!res.ok) {
       if (res.error === "not-found") return { terminal: "not-found" };
       if (!warned) {
@@ -294,7 +298,7 @@ export async function gateWait(args: string[]): Promise<void> {
     deadline = Date.now() + ms;
   }
 
-  const outcome = await waitForGate(id, deadline);
+  const outcome = await waitForGate(id, deadline, clientWait, undefined, process.env.CLAUDE_CODE_SESSION_ID);
   if (outcome.terminal === "budget") {
     console.log(JSON.stringify({ ok: true, timedOut: true }));
     process.exit(124);

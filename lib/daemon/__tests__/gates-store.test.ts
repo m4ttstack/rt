@@ -561,9 +561,23 @@ describe("unconsumedAnsweredPushes", () => {
     expect(s.unconsumedAnsweredPushes().map((r) => r.id)).toEqual([]);
   });
 
-  test("a nudged row on a non-herd subject is never returned, even answered/delivered/unconsumed", () => {
+  test("nudged rows on run: and mr: subjects are returned alongside herd: ones", () => {
     const s = store();
-    const row = s.open({ subject: "mr:https://x/1", kind: "review-post", questions: qs(), nudge: { session: "s1" } }).row;
+    const run = s.open({ subject: "run:r1", kind: "clarify", questions: qs(), nudge: { session: "s1" } }).row;
+    s.answer(run.id, { q: "a" }, "console");
+    s.markDelivery(run.id, "delivered");
+    const mr = s.open({ subject: "mr:https://x/1", kind: "review-post", questions: qs(), nudge: { session: "s2" } }).row;
+    s.answer(mr.id, { q: "a" }, "console");
+    s.markDelivery(mr.id, "delivered");
+    const herd = s.open({ subject: "herd:h/j1", kind: "question", questions: qs(), nudge: { session: "s3" } }).row;
+    s.answer(herd.id, { q: "a" }, "shepherd");
+    s.markDelivery(herd.id, "delivered");
+    expect(s.unconsumedAnsweredPushes().map((r) => r.id).sort()).toEqual([herd.id, mr.id, run.id].sort());
+  });
+
+  test("an un-nudged row is still never returned: there is no pane to re-push", () => {
+    const s = store();
+    const row = s.open({ subject: "run:r1", kind: "clarify", questions: qs() }).row;
     s.answer(row.id, { q: "a" }, "console");
     s.markDelivery(row.id, "delivered");
     expect(s.unconsumedAnsweredPushes().map((r) => r.id)).toEqual([]);

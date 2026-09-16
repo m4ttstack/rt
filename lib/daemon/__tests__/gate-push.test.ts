@@ -564,8 +564,6 @@ describe("retryDeadPanes: answered-unconsumed re-delivery sweep", () => {
 
   test("(f) a re-push on a form-presentation, non-self-answered row invokes no injectEscape", async () => {
     const { push, store, events } = w4Harness();
-    // Herd subject: only a herd-answer session's own read stamps consumedAt,
-    // so only a herd: row can ever leave the unconsumed set the second pass chases.
     const row = store.open({
       subject: "herd:h/j1", kind: "question", questions: qs(),
       nudge: { session: "sess-1" }, pane: "pane-7",

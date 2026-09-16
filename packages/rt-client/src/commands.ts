@@ -733,7 +733,10 @@ export interface Commands {
   "gate:answer": { payload: { id: string; answers: GateAnswer["answers"]; by: string; session?: string; override?: boolean }; data: { row: GateRow; conflict?: true } };
   /** `ok:false "not-found"` on an unknown id is terminal; the CLI loop must not re-enter on it.
    *  `timeout` carries no row (nothing settled); `answered`/`closed` always carry the settled row. */
-  "gate:wait": { payload: { id: string; waitMs?: number }; data: { status: "timeout" } | { status: "answered" | "closed"; row: GateRow } };
+  /** `sessionId` is the caller's own session: an answered result returned to
+   *  the gate's nudged session is a recorded read and stamps `consumedAt`.
+   *  Omitting it reads without consuming. */
+  "gate:wait": { payload: { id: string; waitMs?: number; sessionId?: string }; data: { status: "timeout" } | { status: "answered" | "closed"; row: GateRow } };
   /** Paged like events:list: an omitted `limit` clamps daemon-side rather than
    *  forcing a full-table read; `cursor` is the paging rowid to resume from. */
   "gate:list": { payload: { open?: boolean; subjectPrefix?: string; kind?: string; limit?: number; cursor?: number }; data: { gates: GateRow[]; cursor: number } };
