@@ -109571,7 +109571,8 @@
                                   "fill": "$orange-text",
                                   "content": "call again",
                                   "fontFamily": "$font-sans",
-                                  "fontSize": 12
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
                                 }
                               ]
                             }
@@ -109677,7 +109678,8 @@
                                   "fill": "$accent-text",
                                   "content": "launch again",
                                   "fontFamily": "$font-sans",
-                                  "fontSize": 12
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
                                 }
                               ]
                             }
@@ -109783,7 +109785,8 @@
                                   "fill": "$green-text",
                                   "content": "restart response",
                                   "fontFamily": "$font-sans",
-                                  "fontSize": 12
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
                                 }
                               ]
                             }
@@ -109909,7 +109912,8 @@
                                   "fill": "$muted",
                                   "content": "dismiss",
                                   "fontFamily": "$font-sans",
-                                  "fontSize": 12
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
                                 }
                               ]
                             },
@@ -109930,7 +109934,8 @@
                                   "fill": "$orange-text",
                                   "content": "call again",
                                   "fontFamily": "$font-sans",
-                                  "fontSize": 12
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
                                 }
                               ]
                             }
@@ -110055,7 +110060,8 @@
                                   "fill": "$accent-text",
                                   "content": "review",
                                   "fontFamily": "$font-sans",
-                                  "fontSize": 12
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
                                 }
                               ]
                             }
@@ -110228,7 +110234,8 @@
                                   "fill": "$orange-text",
                                   "content": "call again",
                                   "fontFamily": "$font-sans",
-                                  "fontSize": 12
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
                                 }
                               ]
                             }
@@ -110334,7 +110341,8 @@
                                   "fill": "$accent-text",
                                   "content": "launch again",
                                   "fontFamily": "$font-sans",
-                                  "fontSize": 12
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
                                 }
                               ]
                             }
@@ -110440,7 +110448,8 @@
                                   "fill": "$green-text",
                                   "content": "restart response",
                                   "fontFamily": "$font-sans",
-                                  "fontSize": 12
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
                                 }
                               ]
                             }
@@ -110566,7 +110575,8 @@
                                   "fill": "$muted",
                                   "content": "dismiss",
                                   "fontFamily": "$font-sans",
-                                  "fontSize": 12
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
                                 }
                               ]
                             },
@@ -110587,7 +110597,8 @@
                                   "fill": "$orange-text",
                                   "content": "call again",
                                   "fontFamily": "$font-sans",
-                                  "fontSize": 12
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
                                 }
                               ]
                             }
@@ -110712,7 +110723,8 @@
                                   "fill": "$accent-text",
                                   "content": "review",
                                   "fontFamily": "$font-sans",
-                                  "fontSize": 12
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
                                 }
                               ]
                             }
