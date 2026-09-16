@@ -202,6 +202,21 @@ describe("mcpTools", () => {
     );
   });
 
+  test("every mr tool's repo-arg description names the serialized identity form", () => {
+    const repoArgTools: Array<{ name: string; field: string }> = [
+      { name: "mr_reply_thread", field: "repoName" },
+      { name: "mr_comment_inline", field: "repoName" },
+      { name: "mr_map", field: "repo" },
+    ];
+    for (const { name, field } of repoArgTools) {
+      const tool = mcpTools().find((t) => t.name === name)!;
+      const schema = tool.inputSchema as { properties?: Record<string, { description?: string }> };
+      const fieldDescription = schema.properties?.[field]?.description ?? "";
+      const text = `${tool.description} ${fieldDescription}`.toLowerCase();
+      expect(text).toContain("serialized identity");
+    }
+  });
+
   describe("mr_map", () => {
     afterEach(() => {
       mock.module("../../../packages/rt-client/src/transport.ts", () => ({ ...realTransport, rtCommand: realRtCommand }));
