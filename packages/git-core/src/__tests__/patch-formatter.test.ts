@@ -37,16 +37,12 @@ describe('patch-formatter', () => {
 
     const diff = parse(diffText)
     let selection = DiffSelection.fromInitialSelection(DiffSelectionType.None)
-    selection = selection.withLineSelection(4, true) // Select the added line
+    selection = selection.withLineSelection(4, true)
 
     const file = target('file.md', AppFileStatusKind.Modified, selection)
     const patch = formatPatch(file, diff)
 
-    expect(patch).toContain('--- a/file.md')
-    expect(patch).toContain('+++ b/file.md')
-    expect(patch).toContain(' deleted line 1')
-    expect(patch).toContain(' deleted line 2')
-    expect(patch).toContain('+added line')
+    expect(patch).toBe('--- a/file.md\n+++ b/file.md\n@@ -10,4 +10,5 @@\n context\n deleted line 1\n deleted line 2\n+added line\n context\n')
   })
 
   test("2. unselected added lines are dropped entirely", () => {
@@ -62,7 +58,7 @@ describe('patch-formatter', () => {
 
     const diff = parse(diffText)
     let selection = DiffSelection.fromInitialSelection(DiffSelectionType.None)
-    selection = selection.withLineSelection(3, true) // Select the second added line
+    selection = selection.withLineSelection(3, true)
 
     const file = target('file.md', AppFileStatusKind.Modified, selection)
     const patch = formatPatch(file, diff)
@@ -88,7 +84,7 @@ describe('patch-formatter', () => {
 
     const diff = parse(diffText)
     let selection = DiffSelection.fromInitialSelection(DiffSelectionType.None)
-    selection = selection.withLineSelection(2, true) // Select the second added line
+    selection = selection.withLineSelection(2, true)
 
     const file = target('file.md', AppFileStatusKind.New, selection)
     const patch = formatPatch(file, diff)
@@ -112,15 +108,12 @@ describe('patch-formatter', () => {
 
     const diff = parse(diffText)
     let selection = DiffSelection.fromInitialSelection(DiffSelectionType.None)
-    selection = selection.withLineSelection(2, true) // Select the added line
+    selection = selection.withLineSelection(2, true)
 
     const file = target('file.md', AppFileStatusKind.Modified, selection)
     const patch = formatPatch(file, diff)
 
-    expect(patch).toContain('--- a/file.md')
-    expect(patch).toContain('+++ b/file.md')
-    expect(patch).toContain('+added line 2')
-    expect(patch).toContain(' ')
+    expect(patch).toBe('--- a/file.md\n+++ b/file.md\n@@ -1 +1,2 @@\n \n+added line 2\n')
   })
 
   test('5. no-newline marker is re-emitted', () => {
@@ -140,13 +133,12 @@ describe('patch-formatter', () => {
 
     const diff = parse(diffText)
     let selection = DiffSelection.fromInitialSelection(DiffSelectionType.None)
-    selection = selection.withLineSelection(7, true) // Select the second added line
+    selection = selection.withLineSelection(7, true)
 
     const file = target('file.md', AppFileStatusKind.Modified, selection)
     const patch = formatPatch(file, diff)
 
-    expect(patch).toContain('\\ No newline at end of file')
-    expect(patch).toContain('+it could be,')
+    expect(patch).toBe('--- a/file.md\n+++ b/file.md\n@@ -23,5 +24,6 @@\n \n \n \n \n and fun stuff? I dnno\n\\ No newline at end of file\n+it could be,\n')
   })
 
   test('6. hunk 2 of 2 selected, header renumbered', () => {
@@ -156,23 +148,21 @@ describe('patch-formatter', () => {
       '@@ -1,2 +1,2 @@',
       ' a',
       ' b',
-      '@@ -5,2 +5,3 @@',
+      '@@ -5,1 +5,3 @@',
       ' x',
-      '-y',
       '+y2',
       '+z',
     ].join('\n')
 
     const diff = parse(diffText)
     let selection = DiffSelection.fromInitialSelection(DiffSelectionType.All)
-    // Deselect the first hunk, select all of the second hunk
-    selection = selection.withRangeSelection(0, 2, false) // Deselect first hunk
-    selection = selection.withRangeSelection(4, 1, true) // Select the addition
+    selection = selection.withRangeSelection(0, 2, false)
+    selection = selection.withLineSelection(3, true)
 
     const file = target('file.md', AppFileStatusKind.Modified, selection)
     const patch = formatPatch(file, diff)
 
-    expect(patch).toContain('+y2')
+    expect(patch).toBe('--- a/file.md\n+++ b/file.md\n@@ -5 +5,3 @@\n x\n+y2\n+z\n')
   })
 
   test('7. empty selection throws for formatPatch and returns null for discard', () => {
