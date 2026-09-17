@@ -63,6 +63,7 @@ const WAVE_3_COMMAND_NAMES = [
   "ports",
   "repos",
   "repos:locate",
+  "repos:status",
   "sdm:catalog",
   "sdm:recents",
   "sdm:reconnect",
