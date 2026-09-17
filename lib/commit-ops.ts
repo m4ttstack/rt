@@ -140,13 +140,32 @@ export function syncStagingArea(
   }
 }
 
+export interface CommitOptions {
+  amend?: boolean;
+  noVerify?: boolean;
+  allowEmpty?: boolean;
+  coAuthors?: string[];
+}
+
 /**
  * Commit the staged changes. The message is passed as an argv element (never
  * through a shell), so quotes, newlines, and `$(...)` are committed verbatim.
  * Returns git's summary line (e.g. "[main a1b2c3d] feat: ...").
  */
-export function commitStaged(cwd: string, message: string): string {
-  const out = git(cwd, ["commit", "-m", message]);
+export function commitStaged(
+  cwd: string,
+  message: string,
+  opts: CommitOptions = {},
+): string {
+  const trailers = (opts.coAuthors ?? [])
+    .map((a) => `Co-Authored-By: ${a}`)
+    .join("\n");
+  const fullMessage = trailers ? `${message}\n\n${trailers}` : message;
+  const args = ["commit", "-m", fullMessage];
+  if (opts.amend) args.push("--amend");
+  if (opts.noVerify) args.push("--no-verify");
+  if (opts.allowEmpty) args.push("--allow-empty");
+  const out = git(cwd, args);
   return out.split("\n")[0] ?? "";
 }
 
