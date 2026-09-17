@@ -1,4 +1,6 @@
 import { describe, expect, it } from "bun:test";
+import { rm } from "node:fs/promises";
+import { join } from "node:path";
 import { makeSandbox } from "../../test-support/sandbox.ts";
 import { createGitClient } from "../index.ts";
 
@@ -61,6 +63,35 @@ describe("snapshot", () => {
       const s = await createGitClient(sb.dir).snapshot();
       expect(s.files).toEqual([
         { path: "b.txt", kind: "renamed", staged: true, unstaged: false, originalPath: "a.txt" },
+      ]);
+    } finally {
+      await sb.cleanup();
+    }
+  });
+
+  it("renamed and further modified (RM)", async () => {
+    const sb = await seeded();
+    try {
+      await sb.git(["mv", "a.txt", "b.txt"]);
+      await sb.write("b.txt", "changed\n");
+      const s = await createGitClient(sb.dir).snapshot();
+      expect(s.files).toEqual([
+        { path: "b.txt", kind: "renamed", staged: true, unstaged: true, originalPath: "a.txt" },
+      ]);
+    } finally {
+      await sb.cleanup();
+    }
+  });
+
+  it("staged add then deleted from the working tree (AD)", async () => {
+    const sb = await seeded();
+    try {
+      await sb.write("new.txt", "x\n");
+      await sb.git(["add", "new.txt"]);
+      await rm(join(sb.dir, "new.txt"));
+      const s = await createGitClient(sb.dir).snapshot();
+      expect(s.files).toEqual([
+        { path: "new.txt", kind: "deleted", staged: true, unstaged: true },
       ]);
     } finally {
       await sb.cleanup();
