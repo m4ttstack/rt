@@ -79,9 +79,18 @@ enum FindBarSelfCheck {
 
         container.performTextFinderAction(item(.showFindInterface))
         container.layoutSubtreeIfNeeded()
-        note("web content shrank for the bar",
-             abs(webView.frame.height - (container.bounds.height - FindBar.height)) < 0.5,
-             "web \(webView.frame.height) of \(container.bounds.height)")
+        note("web content keeps the whole window", webView.frame == container.bounds,
+             "web \(webView.frame) of \(container.bounds)")
+        if let barFrame = mountedBarFrame() {
+            note("bar floats in the top-right corner",
+                 abs(barFrame.maxX - (container.bounds.width - FindBar.margin)) < 0.5
+                     && abs(barFrame.maxY - (container.bounds.height - FindBar.margin)) < 0.5,
+                 "\(barFrame) in \(container.bounds)")
+            note("bar is a panel, not a strip", barFrame.width < container.bounds.width / 2,
+                 "\(barFrame.width) wide")
+        } else {
+            note("bar is mounted", false)
+        }
         note("find next stays disabled until there is a query", !container.canPerform(.nextMatch))
 
         type("Lorem")
@@ -91,14 +100,15 @@ enum FindBarSelfCheck {
                 note("typing selects the first match", first == "p1:Lorem", "'\(first)'")
 
                 container.performTextFinderAction(item(.nextMatch))
-                after(0.6) {
+                after(1.0) {
                     selection { second in
                         note("find next steps forward", second == "p2:Lorem", "'\(second)'")
 
                         container.performTextFinderAction(item(.previousMatch))
-                        after(0.6) {
+                        after(1.0) {
                             selection { back in
-                                note("find previous steps back", back == "p1:Lorem", "'\(back)'")
+                                note("find previous steps back", back == "p1:Lorem",
+                                     "'\(back)' status '\(container.findStatus)'")
                                 closeAndFinish()
                             }
                         }
@@ -111,15 +121,17 @@ enum FindBarSelfCheck {
     private static func closeAndFinish() {
         container.performTextFinderAction(item(.hideFindInterface))
         container.layoutSubtreeIfNeeded()
-        after(0.6) {
+        after(1.0) {
             selection { cleared in
                 note("closing the bar clears the highlight", cleared.isEmpty, "'\(cleared)'")
-                note("web content restored to full height",
-                     abs(webView.frame.height - container.bounds.height) < 0.5,
-                     "web \(webView.frame.height) of \(container.bounds.height)")
+                note("closing the bar unmounts it", mountedBarFrame() == nil)
                 finish()
             }
         }
+    }
+
+    private static func mountedBarFrame() -> NSRect? {
+        container.subviews.first { $0 is FindBar }?.frame
     }
 
     // MARK: Plumbing

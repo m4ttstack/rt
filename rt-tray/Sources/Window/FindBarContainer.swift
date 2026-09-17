@@ -3,10 +3,10 @@ import WebKit
 
 /// One app tab's web content plus its find bar.
 ///
-/// The bar squeezes the web content rather than floating over it, so the last
-/// line of a page stays reachable while searching. One container per app,
-/// alive as long as its webview, so each tab keeps its own query and its own
-/// open/closed bar.
+/// The bar is a small panel floating in the top-right corner of the page, so
+/// opening it neither reflows the page nor steals a strip of the window. One
+/// container per app, alive as long as its webview, so each tab keeps its own
+/// query and its own open/closed bar.
 final class FindBarContainer: NSView {
     let webView: WKWebView
 
@@ -34,11 +34,13 @@ final class FindBarContainer: NSView {
 
     override func layout() {
         super.layout()
-        let barHeight = isBarVisible ? FindBar.height : 0
-        if isBarVisible {
-            bar.frame = NSRect(x: 0, y: bounds.height - barHeight, width: bounds.width, height: barHeight)
-        }
-        webView.frame = NSRect(x: 0, y: 0, width: bounds.width, height: max(0, bounds.height - barHeight))
+        webView.frame = bounds
+        guard isBarVisible else { return }
+        let size = bar.fittingSize
+        bar.frame = NSRect(x: max(0, bounds.width - size.width - FindBar.margin),
+                           y: max(0, bounds.height - size.height - FindBar.margin),
+                           width: min(size.width, bounds.width),
+                           height: size.height)
     }
 
     // MARK: Show and hide
@@ -128,6 +130,10 @@ final class FindBarContainer: NSView {
         default: break
         }
     }
+
+    /// What the bar is telling the person right now ("" when a search is
+    /// finding matches). Read by the self-check.
+    var findStatus: String { bar.statusText }
 
     func canPerform(_ action: NSTextFinder.Action) -> Bool {
         switch action {
