@@ -61,6 +61,25 @@ describe("acceptTrustOnPane", () => {
     expect(Date.now() - started).toBeLessThan(1_000);
   });
 
+  test("a single agent.get timeout is retried, not treated as unreachable: the register budget already bounds the loop", async () => {
+    const screens: Record<string, string> = { "w1:p1": dialog(1) };
+    let getCalls = 0;
+    const herdr = (async (method: string, params: any) => {
+      if (method === "agent.get") {
+        getCalls += 1;
+        if (getCalls === 1) return { ok: false, code: "timeout", message: "herdr agent.get timed out after 3000ms" };
+        return { ok: true, result: { agent: { agent_status: "blocked" } } };
+      }
+      if (method === "agent.wait") return { ok: true, result: { agent: { agent_status: "blocked" } } };
+      if (method === "pane.read") return { ok: true, result: { read: { text: screens[params.pane_id] ?? "" } } };
+      if (method === "pane.send_keys") { screens[params.pane_id] = CLEARED; return { ok: true, result: {} }; }
+      return { ok: false, code: "invalid_request", message: method };
+    }) as never;
+    const outcome = await acceptTrustOnPane({ herdr, sock: {}, pane: "w1:p1", log, context: {}, settleMs: 1, stepMs: 1, registerBudgetMs: 2_000 });
+    expect(outcome).toBe("accepted");
+    expect(getCalls).toBeGreaterThan(1);
+  });
+
   test("a pane herdr has no agent for yet is still read, and its dialog answered", async () => {
     const screens: Record<string, string> = { "w1:p1": dialog(1) };
     const herdr = (async (method: string, params: any) => {

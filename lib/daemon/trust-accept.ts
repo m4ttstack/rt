@@ -160,8 +160,12 @@ export async function acceptTrustOnPane(deps: TrustSpawnDeps): Promise<TrustOutc
       if (got.ok) { registered = true; break; }
       // "not registered yet" is what this poll is waiting out. A server that
       // cannot be reached at all is not, and polling it for the whole budget
-      // only holds the spawn's caller for ten seconds to learn nothing.
-      if (got.code === "unreachable" || got.code === "timeout") {
+      // only holds the spawn's caller for ten seconds to learn nothing. A
+      // single request that timed out is not the same claim: a herdr busy
+      // with a fan-out of other spawns can miss one request's own timeout
+      // and still answer the next, and the register budget above already
+      // bounds how long this loop may run either way.
+      if (got.code === "unreachable") {
         log?.warn({ ...context, pane, err: got.message }, "trust: herdr unreachable; dialog not checked");
         return "unchecked";
       }
