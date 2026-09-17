@@ -37,6 +37,16 @@ export async function stageSelection(
     throw new Error(`cannot line-stage ${diff.kind} file: ${diff.path}`);
   }
 
+  if (opts.originalPath !== undefined && diff.untracked) {
+    // An untracked diff was computed against /dev/null (all-additions,
+    // hunk position 0). Applying that shape on top of the rename recipe's
+    // pre-staged old-blob base would insert rather than replace, silently
+    // duplicating content -- refuse before any index mutation runs.
+    throw new Error(
+      `cannot stage rename for untracked target ${diff.path}: the diff was computed against /dev/null; provide a tracked target (git mv) first`,
+    );
+  }
+
   if (opts.originalPath !== undefined) {
     // Clears any index entry left at the old path -- `--ignore-unmatch`
     // makes this idempotent whether the rename is already staged (e.g. a

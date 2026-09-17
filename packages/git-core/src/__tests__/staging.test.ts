@@ -1,4 +1,5 @@
 import { describe, expect, it, test } from "bun:test";
+import { rename } from "node:fs/promises";
 import { makeSandbox } from "../../test-support/sandbox.ts";
 import { createGitClient } from "../index.ts";
 import { rawGit } from "../exec.ts";
@@ -141,6 +142,35 @@ describe("stagingDiff / stageSelection / discardSelection", () => {
       expect(nameStatus).toMatch(/^R\d*\told\.txt\tnew\.txt$/m);
       const cachedShow = await sb.git(["show", ":new.txt"]);
       expect(cachedShow).toBe("a\nB\nc\n");
+    } finally {
+      await sb.cleanup();
+    }
+  });
+
+  it("5b. refuses originalPath staging against an untracked (fs-renamed, not git-mv'd) diff", async () => {
+    const sb = await makeSandbox();
+    try {
+      await sb.write("old.txt", "a\nb\nc\n");
+      await sb.commitAll("base");
+      // Plain filesystem rename, not `git mv`: old.txt is a tracked
+      // deletion, new.txt is untracked, so getStagingDiff computes the
+      // new.txt diff against /dev/null rather than old.txt's content.
+      await rename(`${sb.dir}/old.txt`, `${sb.dir}/new.txt`);
+      await sb.write("new.txt", "a\nB\nc\n");
+      const client = createGitClient(sb.dir);
+
+      const diff = await client.stagingDiff("new.txt");
+      expect(diff.untracked).toBe(true);
+
+      const beforeCached = await sb.git(["diff", "--cached", "--name-status"]);
+      await expect(
+        client.stageSelection(diff, DiffSelection.fromInitialSelection(DiffSelectionType.All), {
+          originalPath: "old.txt",
+        }),
+      ).rejects.toThrow(/new\.txt/);
+
+      const afterCached = await sb.git(["diff", "--cached", "--name-status"]);
+      expect(afterCached).toBe(beforeCached);
     } finally {
       await sb.cleanup();
     }
