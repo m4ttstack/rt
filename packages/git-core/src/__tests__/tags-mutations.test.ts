@@ -56,6 +56,23 @@ describe("tag mutations", () => {
     }
   });
 
+  it("createTag with both a message and an explicit sha lands the annotated tag on that older commit (git tag -a name -m msg sha ordering)", async () => {
+    const sb = await seeded();
+    try {
+      const firstSha = (await sb.git(["rev-parse", "HEAD"])).trim();
+      await sb.write("a.txt", "two\n");
+      await sb.commitAll("second");
+      const client = createGitClient(sb.dir);
+      await client.createTag("annotated-old", { message: "release note", sha: firstSha });
+      const tags = await client.tags();
+      const tag = tags.find((t) => t.name === "annotated-old")!;
+      expect(tag.annotated).toBe(true);
+      expect(tag.targetSha).toBe(firstSha);
+    } finally {
+      await sb.cleanup();
+    }
+  });
+
   it("deleteTag removes the tag from tags()", async () => {
     const sb = await seeded();
     try {
