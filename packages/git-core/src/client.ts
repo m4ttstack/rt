@@ -7,6 +7,7 @@ import { getStashes, stashPush, stashApply, stashPop, stashDrop } from "./stash.
 import { getFetchState } from "./fetch-state.ts";
 import { getStagingDiff, stageSelection, discardSelection } from "./staging.ts";
 import { undoLastCommit, resetToCommit } from "./commits.ts";
+import { checkoutBranch, createBranch } from "./branch-ops.ts";
 import type { GitClient } from "./types.ts";
 
 export interface ClientContext {
@@ -34,5 +35,7 @@ export function createGitClient(dir: string): GitClient {
     discardSelection: (diff, selection) => discardSelection(ctx, diff, selection),
     undoLastCommit: () => undoLastCommit(ctx),
     resetToCommit: (sha, mode) => resetToCommit(ctx, sha, mode),
+    checkoutBranch: (name) => checkoutBranch(ctx, name),
+    createBranch: (name, opts) => createBranch(ctx, name, opts),
   };
 }

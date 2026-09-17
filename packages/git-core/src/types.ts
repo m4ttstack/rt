@@ -120,4 +120,6 @@ export interface GitClient {
   ): Promise<void>;
   undoLastCommit(): Promise<UndoResult>;
   resetToCommit(sha: string, mode: "soft" | "mixed" | "hard"): Promise<void>;
+  checkoutBranch(name: string): Promise<void>;
+  createBranch(name: string, opts?: { from?: string; checkout?: boolean }): Promise<void>;
 }
