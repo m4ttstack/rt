@@ -414,9 +414,48 @@ describe("HerdWatchdog ladder", () => {
     await r.tick(1);
     expect(r.wd.annotations("demo-1", "job-a")).toBeNull();
     state.pane = "idle";
-    await r.tick(1);
+    // Past retryMins from the first poke, so the rate limit is not what is
+    // being measured here: the strike count is.
+    await r.tick(5);
     expect(r.workerPokes()).toHaveLength(2);
-    expect(r.wd.annotations("demo-1", "job-a")).toEqual({ strikes: 1, lastPokeAt: NOW + 2 * MIN });
+    expect(r.wd.annotations("demo-1", "job-a")).toEqual({ strikes: 1, lastPokeAt: NOW + 6 * MIN });
+  });
+
+  // The live double-nag (22:48 and 22:51, both logged at strike 1): a poke
+  // wakes the party, it works for a moment, and it goes idle again with the
+  // same unresolved evidence. Clearing the ladder threw away the fact that it
+  // had just been poked, so retryMins never applied.
+  test("a party that flaps healthy and back is not poked again inside retryMins", async () => {
+    const state = { pane: "idle" as ReturnType<WatchdogSensors["paneState"]> };
+    const r = rig({ sensors: { ...workerWedged(), paneState: () => state.pane } });
+    await r.tick();
+    expect(r.workerPokes()).toHaveLength(1);
+
+    state.pane = "working";
+    await r.tick(1);
+    state.pane = "idle";
+    await r.tick(1);
+    expect(r.workerPokes()).toHaveLength(1);
+    // Flagged again, but not acted on: no strike is spent while the floor holds.
+    expect(r.wd.annotations("demo-1", "job-a")).toEqual({ strikes: 0, lastPokeAt: null });
+
+    // The floor is measured from the last poke, not from the re-flagging.
+    await r.tick(4);
+    expect(r.workerPokes()).toHaveLength(2);
+  });
+
+  test("the shepherd's rung honors the same floor across a flap", async () => {
+    const state = { pane: "idle" as ReturnType<WatchdogSensors["paneState"]> };
+    const r = rig({ jobs: [], sensors: { ...shepherdWedged(), paneState: () => state.pane } });
+    await r.tick();
+    expect(r.shepherdPokes()).toHaveLength(1);
+    state.pane = "working";
+    await r.tick(1);
+    state.pane = "idle";
+    await r.tick(2);
+    expect(r.shepherdPokes()).toHaveLength(1);
+    await r.tick(3);
+    expect(r.shepherdPokes()).toHaveLength(2);
   });
 
   test("(c) still wedged after retryMins = a second poke with fresh evidence", async () => {

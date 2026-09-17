@@ -175,6 +175,12 @@ export class HerdWatchdog {
       reopens every herd's notification quiet period. */
   private readonly ladders = new Map<string, Ladder>();
   private readonly notifiedAt = new Map<string, number>();
+  /** When each party was last acted on, kept ACROSS a ladder clear. A poke
+      wakes its party, so the next sweep reads it healthy and drops the ladder;
+      without this the party's next idle moment would start a fresh strike 1
+      with no memory of the poke, and retryMins would never apply (the live
+      double-nag three minutes apart, both logged at strike 1). */
+  private readonly lastActionAt = new Map<string, number>();
   /** A sweep pokes panes over the network, so it can outlive its interval.
       The next tick is dropped rather than queued: the ladder's retry clock
       already paces the actions, and two sweeps in flight would double-strike
@@ -207,6 +213,7 @@ export class HerdWatchdog {
       // a surviving quiet period would swallow the first notification after.
       this.ladders.clear();
       this.notifiedAt.clear();
+      this.lastActionAt.clear();
       return;
     }
     if (this.sweeping) {
@@ -259,7 +266,7 @@ export class HerdWatchdog {
       if (cfg.notifyHuman) this.act.notifyStuckAtModal(herd.id, job.name, job.pane);
       this.log.info({ herd: herd.id, job: job.name, pane: job.pane }, "parked job stuck at modal");
     }
-    if (!this.advance(ladder, now, cfg, verdict.kind === "wedged" ? 1 : 3, WORKER_CAP)) return;
+    if (!this.advance(key, ladder, now, cfg, verdict.kind === "wedged" ? 1 : 3, WORKER_CAP)) return;
     // Unread counts and gate rows are read live, not from the pane snapshot,
     // so a worker that woke while this sweep was poking other panes is already
     // healthy here. Re-read before injecting: a poke naming evidence the
@@ -288,7 +295,7 @@ export class HerdWatchdog {
       return;
     }
     const ladder = this.track(key, now);
-    if (!this.advance(ladder, now, cfg, 1, SHEPHERD_CAP)) return;
+    if (!this.advance(key, ladder, now, cfg, 1, SHEPHERD_CAP)) return;
     // Same re-read as the worker path, for the same reason.
     const fresh = evaluateShepherd(herd, this.sensors, cfg);
     if (fresh.kind !== "wedged") {
@@ -309,10 +316,12 @@ export class HerdWatchdog {
     return ladder;
   }
 
-  private advance(ladder: Ladder, now: number, cfg: WatchdogConfig, floor: number, cap: number): boolean {
-    if (ladder.lastPokeAt !== null && now - ladder.lastPokeAt < ms(cfg.retryMins)) return false;
+  private advance(key: string, ladder: Ladder, now: number, cfg: WatchdogConfig, floor: number, cap: number): boolean {
+    const last = ladder.lastPokeAt ?? this.lastActionAt.get(key) ?? null;
+    if (last !== null && now - last < ms(cfg.retryMins)) return false;
     ladder.strikes = Math.min(Math.max(ladder.strikes + 1, floor), cap);
     ladder.lastPokeAt = now;
+    this.lastActionAt.set(key, now);
     return true;
   }
 
