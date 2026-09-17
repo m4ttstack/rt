@@ -27,6 +27,8 @@ export interface WatchdogSensorDeps {
   defaultSocket: string;
   db: Database;
   now?: () => number;
+  /** Used only to report a herdr status this mapper does not name. */
+  log?: Logger;
 }
 
 export interface RefreshingSensors extends WatchdogSensors {
@@ -42,14 +44,25 @@ interface PaneReading { agent: string | null; status: string | null; socket: str
 
 const UNREAD_PEEK_LIMIT = 200;
 
-function readingState(row: PaneReading | undefined): ReturnType<WatchdogSensors["paneState"]> {
+/** The statuses this mapper names. Anything else a live claude reports still
+    maps, to idle: board-37 sat wedged for 31 minutes because "done" fell
+    through to working, and a working pane is never poked. A status nobody
+    mapped must never exempt a pane again, so the fall-through is idle and the
+    gap is logged rather than swallowed. */
+const NAMED_STATUSES: ReadonlySet<string> = new Set(["working", "idle", "blocked", "done"]);
+
+function readingState(row: PaneReading | undefined, unknown?: (status: string) => void): ReturnType<WatchdogSensors["paneState"]> {
   if (!row) return "gone";
   if (row.agent !== "claude") return "dead";
   if (row.status === "blocked") return "modal";
-  // "done" is herdr's after-turn state, idle in every way that matters
-  // here; a status herdr did not name is no evidence of a wedge.
-  if (row.status === "idle" || row.status === "done") return "idle";
-  return "working";
+  if (row.status === "working") return "working";
+  // No status at all is not an unnamed status: herdr has not classified the
+  // pane yet, which is evidence of nothing either way.
+  if (row.status === null) return "working";
+  // "done" is herdr's after-turn state: a finished turn sitting at the prompt
+  // is exactly the wedge posture the fast path is looking for.
+  if (!NAMED_STATUSES.has(row.status)) unknown?.(row.status);
+  return "idle";
 }
 
 export function createWatchdogSensors(deps: WatchdogSensorDeps): RefreshingSensors {
@@ -77,10 +90,14 @@ export function createWatchdogSensors(deps: WatchdogSensorDeps): RefreshingSenso
     }
     const t = now();
     for (const pane of firstSeenIdle.keys()) if (readingState(next.get(pane)) !== "idle") firstSeenIdle.delete(pane);
+    // One warn per unrecognized status per sweep, not per pane: a herdr that
+    // grew a new status would otherwise warn once for every worker it runs.
+    const unnamed = new Set<string>();
     for (const [pane, row] of next) {
-      if (readingState(row) !== "idle" || deps.lifecycle.lastStatusChangeMs(pane) !== null) continue;
+      if (readingState(row, (status) => unnamed.add(status)) !== "idle" || deps.lifecycle.lastStatusChangeMs(pane) !== null) continue;
       if (!firstSeenIdle.has(pane)) firstSeenIdle.set(pane, t);
     }
+    for (const status of unnamed) deps.log?.warn({ status }, "watchdog: unrecognized herdr agent status; treating the pane as idle");
     panes = next;
   }
 

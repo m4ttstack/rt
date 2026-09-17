@@ -59,6 +59,8 @@ function fx(over: { snapshots?: Snap; herds?: HerdRow[]; gates?: GateRow[]; answ
   const listCalls: unknown[] = [];
   const answeredCalls: unknown[] = [];
   const lastStatus = new Map<string, number>();
+  const warns: Array<{ ctx: any; msg: string }> = [];
+  const capture = { ...log, warn: (ctx: any, msg: string) => { warns.push({ ctx, msg }); } } as unknown as typeof log;
   const sensors = createWatchdogSensors({
     herdStore: { list: (f) => (over.herds ?? [herd()]).filter((h) => !f?.status || h.status === f.status), jobs: () => [] },
     gatesStore: {
@@ -70,8 +72,9 @@ function fx(over: { snapshots?: Snap; herds?: HerdRow[]; gates?: GateRow[]; answ
     defaultSocket: DEFAULT,
     db: over.db ?? freshDb(),
     now: () => clock.now,
+    log: capture,
   });
-  return { sensors, herdrCalls, listCalls, answeredCalls, lastStatus, clock };
+  return { sensors, herdrCalls, listCalls, answeredCalls, lastStatus, clock, warns };
 }
 
 describe("watchdog sensors: pane state", () => {
@@ -137,6 +140,28 @@ describe("watchdog sensors: pane state", () => {
     lastStatus.set("bg:w1:p1", 4_000);
     expect(sensors.idleSinceMs("bg:w1:p1")).toBe(4_000);
     expect(sensors.idleSinceMs("w1:p1")).toBeNull();
+  });
+
+  // board-37 sat wedged for 31 minutes with agent-status "done": a status the
+  // mapper did not name read as working, and a working pane is never poked.
+  test("every live-claude status the mapper does not name reads as idle, and is warned about once per sweep", async () => {
+    const snaps: Snap = { [DEFAULT]: [
+      { pane_id: "w1:p1", agent: "claude", agent_status: "done" },
+      { pane_id: "w1:p2", agent: "claude", agent_status: "compacting" },
+      { pane_id: "w1:p3", agent: "claude", agent_status: "compacting" },
+      { pane_id: "w1:p4", agent: "claude", agent_status: "working" },
+    ] };
+    const { sensors, warns } = fx({ snapshots: snaps });
+    await sensors.refresh();
+    expect(sensors.paneState("w1:p1")).toBe("idle");
+    expect(sensors.paneState("w1:p2")).toBe("idle");
+    expect(sensors.paneState("w1:p3")).toBe("idle");
+    expect(sensors.paneState("w1:p4")).toBe("working");
+
+    // One warn per unrecognized status per sweep, not one per pane.
+    const unknown = warns.filter((w) => /status/i.test(w.msg));
+    expect(unknown).toHaveLength(1);
+    expect(unknown[0]!.ctx).toMatchObject({ status: "compacting" });
   });
 
   test("a pane idle with no lifecycle entry is stamped on the first refresh that sees it, and keeps that stamp (RT-187)", async () => {
