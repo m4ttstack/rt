@@ -91,6 +91,8 @@ export function buildRoutedHandlers(opts: {
   herdStore: HerdStore;
   /** Herdr lifecycle-stream liveness the shepherd's status reads. */
   herdLifecycle: HerdDeps["lifecycle"];
+  /** The herd watchdog's per-job ladder herd:status annotates with; omitted when none is wired. */
+  herdWatchdog?: HerdDeps["watchdog"];
   /** The daemon-owned background herdr server bg:* drives (spec "The bg service"). */
   bgService: BgService;
   /** Who is holding the bg server up; gates bg:stop. */
@@ -198,6 +200,7 @@ export function buildRoutedHandlers(opts: {
     bg: opts.bgService,
     claims: opts.bgClaims,
     jobsRoot: opts.herdJobsRoot,
+    watchdog: opts.herdWatchdog,
     log: ctx.log,
   });
   const reconcilerHandlers = createReconcilerHandlers({ reconciler: opts.reconciler });

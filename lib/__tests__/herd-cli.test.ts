@@ -123,7 +123,7 @@ function job(over: Partial<HerdStatusData["jobs"][number]>): HerdStatusData["job
     herd: "hd-1", name: "job-a", worktree: "/tmp/job-a", branch: null, tree: null, pane: "w1:p1",
     agentSession: null, agentId: null, handle: "job-a", status: "active", disposable: false,
     lastGate: null, lastReport: null, createdAt: 0, updatedAt: 0,
-    openGate: null, paneStatus: "idle", sessionDead: false, lastGateStatus: null, lastGateDelivery: null, lastGateConsumed: null,
+    openGate: null, paneStatus: "idle", sessionDead: false, lastGateStatus: null, lastGateDelivery: null, lastGateConsumed: null, watchdog: null,
     ...over,
   };
 }
@@ -311,6 +311,18 @@ describe("renderStatus", () => {
     const out = renderStatus(data);
     expect(out).toContain("worker not woken");
     expect(out).toContain("gate gt-9 UNCONSUMED");
+  });
+
+  test("a job the watchdog has poked prints the strike count and how long ago", () => {
+    const out = renderStatus(statusData({ jobs: [job({ watchdog: { strikes: 2, lastPokeAt: Date.now() - 3 * 60_000 } })] }));
+    expect(out).toContain("poked 2x 3m ago");
+    const hours = renderStatus(statusData({ jobs: [job({ watchdog: { strikes: 1, lastPokeAt: Date.now() - 2 * 60 * 60_000 } })] }));
+    expect(hours).toContain("poked 1x 2h ago");
+  });
+
+  test("a job off the ladder, or on it with no strike yet, carries no poked marker", () => {
+    expect(renderStatus(statusData({ jobs: [job({ watchdog: null })] }))).not.toContain("poked");
+    expect(renderStatus(statusData({ jobs: [job({ watchdog: { strikes: 0, lastPokeAt: null } })] }))).not.toContain("poked");
   });
 
   test("prints the push probe's reachability and delivery age instead of headlining dead", () => {

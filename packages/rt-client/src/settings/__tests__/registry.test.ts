@@ -99,6 +99,24 @@ describe("settings/registry", () => {
       expect(def!.default).toBe(10);
     });
 
+    test.each([
+      ["herd.watchdog.enabled", "boolean", true],
+      ["herd.watchdog.fastMins", "number", 2],
+      ["herd.watchdog.shepherdFastMins", "number", 5],
+      ["herd.watchdog.backstopMins", "number", 15],
+      ["herd.watchdog.retryMins", "number", 5],
+      ["herd.watchdog.notifyQuietMins", "number", 30],
+      ["herd.watchdog.nagMins", "number", 30],
+      ["herd.watchdog.notifyHuman", "boolean", true],
+    ] as const)("%s is a machine-scoped %s key, default %p (a fresh key)", (key, type, def) => {
+      const setting = getDef(key);
+      expect(setting).toBeDefined();
+      expect(setting!.type).toBe(type);
+      expect(setting!.scopes).toEqual(["machine"]);
+      expect(setting!.merge).toBe("replace");
+      expect(setting!.default).toBe(def);
+    });
+
     test("rt.worktreeApp is a machine-only field-bag object with no default (ownership latch)", () => {
       const def = getDef("rt.worktreeApp");
 
@@ -314,8 +332,16 @@ describe("settings/registry", () => {
         "rt.daemonPath",
         "rt.notify.eventBridges",
         "rt.gates.escalationTtlMinutes",
+        "herd.watchdog.enabled",
+        "herd.watchdog.fastMins",
+        "herd.watchdog.shepherdFastMins",
+        "herd.watchdog.backstopMins",
+        "herd.watchdog.retryMins",
+        "herd.watchdog.notifyQuietMins",
+        "herd.watchdog.nagMins",
+        "herd.watchdog.notifyHuman",
       ];
-      expect(suiteKeys).toHaveLength(65);
+      expect(suiteKeys).toHaveLength(73);
 
       expect(allDefs().map((d) => d.key).sort()).toEqual(
         [...migratedFalseKeys, ...migratedTrueKeys, ...suiteKeys].sort(),
