@@ -1,4 +1,6 @@
-the agent-coordination release. rt grows a daemon gate facility that lets any surface ask a question and any surface answer it, a full herd orchestration layer for running fleets of Claude workers, an MCP server that exposes the estate's verbs as typed tools, and the finished Go picker that retires fzf outright. Underneath: encrypted off-machine state backup, a background pane server, and a VM harness that now proves team joins, updates, and the whole kitchen sink on clean guests.
+the agent-coordination release. rt grows a daemon gate facility that lets any surface ask a question and any surface answer it, a full herd orchestration layer for running fleets of Claude workers, an MCP server that exposes the estate's verbs as typed tools, and the finished Go picker that retires fzf outright. Underneath: encrypted off-machine state backup, a background pane server, mac app lifecycle fixes, a headless git core library, and a VM harness that now proves team joins, updates, and the whole kitchen sink on clean guests.
+
+**Upgrading from 2.8.0:** v2.8.0 does not install on a fresh Mac. Its first-run checklist had rows whose probes ran before Install created what they probe, so they could never clear. The setup path assumed tools and paths a clean machine does not have. This release fixes the fresh-Mac install path.
 
 ### Gates
 
@@ -10,6 +12,14 @@ the agent-coordination release. rt grows a daemon gate facility that lets any su
 - remotely answered form gates get doorbell-then-Escape injection, with pane refs resolved live by session and worktree rather than a stale paneId
 - the gate-fork PreToolUse hook denies improvised AskUserQuestion forks in subject-stamped panes; herd spawns stamp the subject, and the app bundle ships the hook script
 - notification bridge: settings-driven rules with subjectPrefix filters, pane-focus click routing, and a {question} template
+- `rt gate ask`: a CLI verb that opens a gate with the full gate:ask ceremony from the terminal (#276)
+- canonical option shape: options carry an id and a label, passthrough from gate:ask to the registry (#279)
+- options carry descriptions and per-question context, surfaced in notifications and form UIs (#299)
+- a recommended flag on options, with guarded label capitalization so the flag does not collide with the option text (#281)
+- answered-gate pushes are consumed on delivery and re-delivered on reconnect so a surface that missed the push still converges (#280)
+- gate:ask resolves a stale-run subject by walking a ladder (run, then agent record), carries origin.worktree, and refuses bare-context gates that would produce an unanswerable question (#295)
+- gate-fork hook allows the worktree's own open run-gate, so a worker's own pipeline questions are not denied (#290)
+- gate owner derivation characterized end to end; notify-bridge filtering scoped to the owner's subscriptions (#275)
 
 ### Herding
 
@@ -19,11 +29,18 @@ the agent-coordination release. rt grows a daemon gate facility that lets any su
 - `rt herd brief` assembles job briefs mechanically from the shepherd skill's template and strategy bodies, with leftover-marker detection
 - idle-stall notices, dead-pane nudge retries, respawn into the same tree with the stored brief, and disposal guarded by running-run checks
 - `rt accounts` lists credential health; a daemon sweep probes github/gitlab token expiry and notifies on transitions
+- a daemon-driven watchdog detects wedged workers (no progress, no open gate, no activity) and pokes them; the poke is a chat DM, not a kill (#301)
+- watchdog follow-up wave: trust unification across spawn and resume, 12-item sweep of lifecycle edge cases (#304)
+- watchdog open-gate exemption (a worker waiting on a gate is not wedged), and mid-run trust accept off by default so workers do not auto-accept trust dialogs the shepherd has not seen (#305)
+- spawn folder-trust robustness: the spawned pane's folder trust is verified before the brief is sent; dead worker sessions detected by session liveness, not pane existence (#296)
 
 ### MCP
 
 - `rt mcp serve`: a stdio MCP server (server name mattstack) exposing gates, chat, herd, and MR threads as typed tools over the daemon: gate_answer, gate_list, chat_post, chat_dm, chat_ack, chat_claim, chat_release, mr_reply_thread, herd_gates, herd_ask, herd_answer, herd_report
 - chat identity resolves from the caller's Claude session id; the server is lazy-loaded so rt startup stays flat
+- wave-2 tools: gate_ask, mr_comment_inline, mr_map, and cursor-based gate_list for paginated queries (#277)
+- heal-pair repo lookup resolves the caller's repo from its worktree so MCP clients do not need to pass it; daemon errors carry an explain field with remediation hints (#297)
+- the chat skill trims onto the MCP chat tools so agents using the MCP server get chat without the CLI (#278)
 
 ### MR plumbing
 
@@ -44,6 +61,15 @@ the agent-coordination release. rt grows a daemon gate facility that lets any su
 - `rt pane send`: inject a line into any pane, `self` targets the caller, and `--then` queues a continuation the daemon types after the target's turn ends
 - runner's herdr mode acquires the bg server through the daemon with a board claim; focus attends via pane:focus
 
+### The mac app
+
+- the tray app stays a Dock app for the whole run; the Dock icon is never hidden while the process is alive (#287)
+- a Window menu so cmd-W closes the window instead of doing nothing (#286)
+- a quit with no window on screen is a real quit, not a silent background linger (#283)
+- the app catalog is warmed at launch so the first menu open is instant (#282)
+- TrayState and its writers pinned to the main actor, fixing a launch crash from off-main-thread state access (#292)
+- terminal focus raise for daemon-hosted panes: when a pane needs attention, the terminal window comes forward (#238)
+
 ### Teams
 
 - invites deliver as one join link (code, deep link, and page url share an extractor); the app accepts a paste and preflights the joiner's forge auth
@@ -62,12 +88,17 @@ the agent-coordination release. rt grows a daemon gate facility that lets any su
 - a privileged proxy helper installs with pinned payloads, root-owned staging, CA trust it owns and can untrust, and complete rollback
 - Install seeds a baseline Claude Code permissions allow list, writes a Linear MCP entry when a key exists, and distinguishes unowned PATH precedence from missing
 - four checklist rows that cried wolf are fixed; credential expiry shows on the checklist
+- the user chooses where their repos go during setup; the repo root is stored and honored by every verb that creates or looks for repos (#265)
+- editor opening via OS handoff for non-web schemes (vscode://, cursor://) and a suite-wide default editor setting (#294)
+- the sdm probe trusts the status table rather than matching an email substring (#302)
+- the baseline allow list includes the mattstack MCP server under its registered namespace (#285)
 
 ### Daemon and runs
 
 - an executor reconciler relaunches gone executors on answered gates, verifies delivery, and raises attention gates instead of losing work
 - run DB write verbs resolve the caller's run automatically (env, session, worktree); dispose refuses on a running run
 - daemon lifecycle gates restart races and names who asked; the team supervisor degrades instead of taking the daemon down
+- a read-only git core library (`packages/git-core`): a typed facade exposing snapshot, diff, branch, tag, log, stash, and fetch-state queries (#303)
 
 ### Chat
 
