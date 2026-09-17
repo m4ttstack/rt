@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import type { Logger } from "pino";
 import type { HerdJobRow, HerdRow } from "../herd-store.ts";
-import { evaluateJob, evaluateShepherd, HerdWatchdog, type WatchdogActuators, type WatchdogConfig, type WatchdogSensors } from "../herd-watchdog.ts";
+import { evaluateJob, evaluateShepherd, HerdWatchdog, runWatchdogSweep, type WatchdogActuators, type WatchdogConfig, type WatchdogSensors } from "../herd-watchdog.ts";
 
 const NOW = 10_000_000;
 const MIN = 60_000;
@@ -96,12 +96,21 @@ describe("evaluateJob", () => {
 
   test("(f) done with a report older than nagMins and the pane still open is finished-lingering", () => {
     const s = sensors({ paneState: () => "idle" });
-    expect(evaluateJob(job({ status: "done", lastReport: NOW - 35 * MIN }), s, cfg)).toEqual({ kind: "finished-lingering", evidence: "job-a done with report 35m ago, pane still open; run rt herd close job-a --herd demo-1" });
+    expect(evaluateJob(job({ status: "done", lastReport: 2758, updatedAt: NOW - 35 * MIN }), s, cfg)).toEqual({ kind: "finished-lingering", evidence: "job-a done with report 35m ago, pane still open; run rt herd close job-a --herd demo-1" });
+  });
+
+  // lastReport is the report's chat message id (herd:report stores
+  // posted.data.id), never a clock: aging from it printed the epoch in
+  // minutes ("29826886m ago", RT-193). The report's own age is updatedAt,
+  // stamped when setJobStatus moved the job to done.
+  test("(f2) the nag ages the report from updatedAt, not from the message id in lastReport (RT-193)", () => {
+    const s = sensors({ paneState: () => "idle" });
+    expect(evaluateJob(job({ status: "done", lastReport: 2758, updatedAt: NOW - 47 * MIN }), s, cfg)).toEqual({ kind: "finished-lingering", evidence: "job-a done with report 47m ago, pane still open; run rt herd close job-a --herd demo-1" });
   });
 
   test("done with a report younger than nagMins is healthy", () => {
     const s = sensors({ paneState: () => "idle" });
-    expect(evaluateJob(job({ status: "done", lastReport: NOW - 10 * MIN }), s, cfg)).toEqual({ kind: "healthy" });
+    expect(evaluateJob(job({ status: "done", lastReport: 2758, updatedAt: NOW - 10 * MIN }), s, cfg)).toEqual({ kind: "healthy" });
   });
 
   test("done without a report is healthy: nothing to date the nag from", () => {
@@ -111,9 +120,9 @@ describe("evaluateJob", () => {
 
   test("done with the pane gone or absent is healthy: already closed, the nag never fires", () => {
     const gone = sensors({ paneState: () => "gone" });
-    expect(evaluateJob(job({ status: "done", lastReport: NOW - 35 * MIN }), gone, cfg)).toEqual({ kind: "healthy" });
+    expect(evaluateJob(job({ status: "done", lastReport: 2758, updatedAt: NOW - 35 * MIN }), gone, cfg)).toEqual({ kind: "healthy" });
     const s = sensors({ paneState: () => { throw new Error("must not be called"); } });
-    expect(evaluateJob(job({ status: "done", lastReport: NOW - 35 * MIN, pane: null }), s, cfg)).toEqual({ kind: "healthy" });
+    expect(evaluateJob(job({ status: "done", lastReport: 2758, updatedAt: NOW - 35 * MIN, pane: null }), s, cfg)).toEqual({ kind: "healthy" });
   });
 
   test("(g) a dead pane is dead, before any idle arithmetic", () => {
@@ -190,7 +199,7 @@ describe("evaluateShepherd", () => {
   });
 
   test("(c) a job finished-lingering past nagMins is wedged on the fast path with that evidence", () => {
-    const s = sensors({ ...shepherdIdle, jobs: (h) => (h === "demo-1" ? [job({ status: "done", lastReport: NOW - 35 * MIN })] : []) });
+    const s = sensors({ ...shepherdIdle, jobs: (h) => (h === "demo-1" ? [job({ status: "done", lastReport: 2758, updatedAt: NOW - 35 * MIN })] : []) });
     expect(evaluateShepherd(herd(), s, cfg)).toEqual({ kind: "wedged", path: "fast", evidence: "job-a done with report 35m ago, pane still open; run rt herd close job-a --herd demo-1" });
   });
 
@@ -199,25 +208,25 @@ describe("evaluateShepherd", () => {
       paneState: () => "working",
       openHumanGates: () => [{ id: "g-9", ageMs: 60 * MIN }],
       unreadDmMentionsFor: () => 5,
-      jobs: () => [job({ status: "done", lastReport: NOW - 90 * MIN })],
+      jobs: () => [job({ status: "done", lastReport: 2758, updatedAt: NOW - 90 * MIN })],
     });
     expect(evaluateShepherd(herd(), s, cfg)).toEqual({ kind: "healthy" });
   });
 
   test("(e) BACKSTOP: a job done with a report older than backstopMins and the shepherd not working is wedged on the backstop", () => {
-    const s = sensors({ ...shepherdIdle, jobs: () => [job({ status: "done", lastReport: NOW - 16 * MIN })] });
+    const s = sensors({ ...shepherdIdle, jobs: () => [job({ status: "done", lastReport: 2758, updatedAt: NOW - 16 * MIN })] });
     expect(evaluateShepherd(herd(), s, cfg)).toEqual({ kind: "wedged", path: "backstop", evidence: "job-a done with report 16m ago, not yet closed; run rt herd close job-a --herd demo-1" });
   });
 
   test("a done job with a report younger than backstopMins is healthy", () => {
-    const s = sensors({ ...shepherdIdle, jobs: () => [job({ status: "done", lastReport: NOW - 10 * MIN })] });
+    const s = sensors({ ...shepherdIdle, jobs: () => [job({ status: "done", lastReport: 2758, updatedAt: NOW - 10 * MIN })] });
     expect(evaluateShepherd(herd(), s, cfg)).toEqual({ kind: "healthy" });
   });
 
   test("a done job whose pane is gone or absent never trips the shepherd backstop: nothing is left to close", () => {
-    const gone = sensors({ paneState: (p) => (p === "w1:p0" ? "idle" : "gone"), jobs: () => [job({ status: "done", lastReport: NOW - 40 * MIN })] });
+    const gone = sensors({ paneState: (p) => (p === "w1:p0" ? "idle" : "gone"), jobs: () => [job({ status: "done", lastReport: 2758, updatedAt: NOW - 40 * MIN })] });
     expect(evaluateShepherd(herd(), gone, cfg)).toEqual({ kind: "healthy" });
-    const absent = sensors({ ...shepherdIdle, jobs: () => [job({ status: "done", lastReport: NOW - 40 * MIN, pane: null })] });
+    const absent = sensors({ ...shepherdIdle, jobs: () => [job({ status: "done", lastReport: 2758, updatedAt: NOW - 40 * MIN, pane: null })] });
     expect(evaluateShepherd(herd(), absent, cfg)).toEqual({ kind: "healthy" });
   });
 
@@ -245,12 +254,12 @@ describe("evaluateShepherd", () => {
       ...shepherdIdle,
       openHumanGates: () => [{ id: "g-9", ageMs: 6 * MIN }],
       unreadDmMentionsFor: () => 1,
-      jobs: () => [job({ status: "done", lastReport: NOW - 35 * MIN })],
+      jobs: () => [job({ status: "done", lastReport: 2758, updatedAt: NOW - 35 * MIN })],
     });
     expect(evaluateShepherd(herd(), all, cfg)).toMatchObject({ kind: "wedged", path: "fast", evidence: "human gate g-9 open 6m unanswered" });
-    const noGate = sensors({ ...shepherdIdle, unreadDmMentionsFor: () => 1, jobs: () => [job({ status: "done", lastReport: NOW - 35 * MIN })] });
+    const noGate = sensors({ ...shepherdIdle, unreadDmMentionsFor: () => 1, jobs: () => [job({ status: "done", lastReport: 2758, updatedAt: NOW - 35 * MIN })] });
     expect(evaluateShepherd(herd(), noGate, cfg)).toMatchObject({ evidence: "1 unread DM/mention waiting" });
-    const lingering = sensors({ ...shepherdIdle, jobs: () => [job({ status: "done", lastReport: NOW - 35 * MIN })] });
+    const lingering = sensors({ ...shepherdIdle, jobs: () => [job({ status: "done", lastReport: 2758, updatedAt: NOW - 35 * MIN })] });
     expect(evaluateShepherd(herd(), lingering, cfg)).toMatchObject({ path: "fast", evidence: "job-a done with report 35m ago, pane still open; run rt herd close job-a --herd demo-1" });
   });
 
@@ -272,15 +281,24 @@ describe("HerdWatchdog ladder", () => {
     const clock = { now: NOW };
     const pokes: { pane: string; text: string }[] = [];
     const parks: { herd: string; job: string }[] = [];
+    const modalNotes: { herd: string; job: string; pane: string }[] = [];
+    const trustCalls: { herd: string; job: string; pane: string }[] = [];
+    const trust = { accepts: false };
     const notes: string[] = [];
+    const noteEvents: { summary: string; pane: string | null }[] = [];
     const delivery = { ok: true };
     const lines: { level: Level; msg: string }[] = [];
     const at = (level: Level) => (_ctx: unknown, msg: string) => { lines.push({ level, msg }); };
     const log = { info: at("info"), warn: at("warn"), debug: at("debug"), error: at("error") } as unknown as Logger;
+    // Parks the NEXT poke (once) so a test can assert what a second sweep
+    // does while the first one is still inside an actuator.
+    const hold: { p: Promise<void> | null } = { p: null };
     const act: WatchdogActuators = {
-      poke: async (pane, text) => { pokes.push({ pane, text }); return delivery.ok; },
+      poke: async (pane, text) => { pokes.push({ pane, text }); const parked = hold.p; hold.p = null; if (parked) await parked; return delivery.ok; },
       parkStuckAtModal: (h, j) => { parks.push({ herd: h, job: j }); },
-      notifyHuman: (summary) => { notes.push(summary); },
+      notifyStuckAtModal: (h, j, pane) => { modalNotes.push({ herd: h, job: j, pane }); },
+      acceptTrustModal: async (h, j, pane) => { trustCalls.push({ herd: h, job: j, pane }); return trust.accepts; },
+      notifyHuman: (summary, pane) => { notes.push(summary); noteEvents.push({ summary, pane: pane ?? null }); },
     };
     const h = opts.herd ?? herd();
     const jobs = opts.jobs ?? [job()];
@@ -290,11 +308,116 @@ describe("HerdWatchdog ladder", () => {
     const tick = async (mins = 0) => { clock.now += mins * MIN; await wd.sweep(); };
     const shepherdPokes = () => pokes.filter((p) => p.pane === "w1:p0");
     const workerPokes = () => pokes.filter((p) => p.pane === "w1:p1");
-    return { wd, tick, clock, pokes, parks, notes, lines, delivery, shepherdPokes, workerPokes };
+    return { wd, tick, clock, pokes, parks, modalNotes, trustCalls, trust, notes, noteEvents, lines, delivery, hold, conf: c, shepherdPokes, workerPokes };
   }
 
   const workerWedged = (): Partial<WatchdogSensors> => ({ ...idleFor(3), unreadDmMentionsFor: (h) => (h === "job-a" ? 1 : 0) });
+
+  const settle = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
   const shepherdWedged = (): Partial<WatchdogSensors> => ({ paneState: () => "idle", openHumanGates: () => [{ id: "g-9", ageMs: 6 * MIN }] });
+
+  test("a verdict that goes healthy before the poke lands is not injected: the evidence is re-read at poke time", async () => {
+    // The unread count is read live, not from the pane snapshot, so a worker
+    // that consumed its DMs while the sweep was in flight reads healthy on the
+    // second look. The first look is the verdict that earned the strike.
+    let looks = 0;
+    const r = rig({ sensors: { ...idleFor(3), unreadDmMentionsFor: (h) => (h === "job-a" && looks++ === 0 ? 1 : 0) } });
+    await r.tick();
+    expect(r.pokes).toEqual([]);
+    expect(r.wd.annotations("demo-1", "job-a")).toBeNull();
+  });
+
+  test("clearing on re-read leaves no scar: a genuine wedge inside the very next retryMins still pokes", async () => {
+    // If the ladder stamped an action for a strike that turned out to have
+    // nothing to send, that stamp alone would refuse a real wedge that shows
+    // up a minute later, with retryMins (5m) nowhere close to elapsed.
+    let calls = 0;
+    const genuine = { on: false };
+    const r = rig({ sensors: { ...idleFor(3), unreadDmMentionsFor: (h) => (h !== "job-a" ? 0 : calls++ === 0 || genuine.on ? 1 : 0) } });
+    await r.tick();
+    expect(r.pokes).toEqual([]);
+    expect(r.wd.annotations("demo-1", "job-a")).toBeNull();
+    genuine.on = true;
+    await r.tick(1);
+    expect(r.workerPokes()).toHaveLength(1);
+  });
+
+  test("a stale dead/modal verdict that re-reads as wedged starts the ladder at strike 1, not 3: the fresh kind supplies the floor", async () => {
+    let calls = 0;
+    const r = rig({ sensors: { paneState: () => (calls++ === 0 ? "dead" : "idle"), idleSinceMs: () => NOW - 40 * MIN, unreadDmMentionsFor: (h) => (h === "job-a" ? 1 : 0) } });
+    await r.tick();
+    expect(r.wd.annotations("demo-1", "job-a")?.strikes).toBe(1);
+    expect(r.workerPokes()).toHaveLength(1);
+  });
+
+  test("the shepherd's verdict is re-read at poke time too", async () => {
+    let looks = 0;
+    const r = rig({ sensors: { paneState: () => "idle", openHumanGates: () => (looks++ === 0 ? [{ id: "g-9", ageMs: 6 * MIN }] : []) } });
+    await r.tick();
+    expect(r.shepherdPokes()).toEqual([]);
+    expect(r.notes).toEqual([]);
+  });
+
+  test("disabling the watchdog clears the ladders, so re-enabling starts from strike 1", async () => {
+    const r = rig({ sensors: workerWedged() });
+    await r.tick();
+    expect(r.wd.annotations("demo-1", "job-a")).toEqual({ strikes: 1, lastPokeAt: NOW });
+
+    r.conf.enabled = false;
+    await r.tick(10);
+    expect(r.pokes).toHaveLength(1);
+    expect(r.wd.annotations("demo-1", "job-a")).toBeNull();
+
+    r.conf.enabled = true;
+    await r.tick(10);
+    expect(r.workerPokes()).toHaveLength(2);
+    expect(r.wd.annotations("demo-1", "job-a")).toEqual({ strikes: 1, lastPokeAt: NOW + 20 * MIN });
+  });
+
+  test("disabling the watchdog also reopens the human notification quiet period", async () => {
+    const r = rig({ sensors: workerWedged(), cfg: { notifyQuietMins: 120 } });
+    await r.tick();
+    await r.tick(5);
+    await r.tick(5);
+    await r.tick(5);
+    await r.tick(5);
+    expect(r.notes).toHaveLength(1);
+
+    r.conf.enabled = false;
+    await r.tick(5);
+    r.conf.enabled = true;
+    // Strike 1 again after the reset, so walk it back up to the cap: inside
+    // the old quiet period, a surviving notifiedAt would swallow this one.
+    for (let i = 0; i < 5; i++) await r.tick(5);
+    expect(r.notes).toHaveLength(2);
+  });
+
+  test("a sweep still running when the next tick fires is skipped, not overlapped", async () => {
+    const r = rig({ sensors: workerWedged() });
+    let release = () => {};
+    r.hold.p = new Promise<void>((resolve) => { release = () => resolve(); });
+
+    const first = r.wd.sweep();
+    await settle();
+    expect(r.pokes).toHaveLength(1);
+    // The daemon reads this to skip the refresh that would otherwise swap the
+    // pane snapshot under the sweep still judging it.
+    expect(r.wd.busy).toBe(true);
+
+    // Past retryMins, so a sweep that ran here would earn a second strike.
+    r.clock.now += 10 * MIN;
+    await r.wd.sweep();
+    expect(r.pokes).toHaveLength(1);
+
+    release();
+    await first;
+    expect(r.pokes).toHaveLength(1);
+    expect(r.wd.busy).toBe(false);
+
+    // The guard lifts with the sweep that set it: the next tick acts again.
+    await r.tick(10);
+    expect(r.pokes).toHaveLength(2);
+  });
 
   test("(a) a wedged worker gets one poke naming its evidence; a sweep inside retryMins adds nothing", async () => {
     const r = rig({ sensors: workerWedged() });
@@ -314,9 +437,48 @@ describe("HerdWatchdog ladder", () => {
     await r.tick(1);
     expect(r.wd.annotations("demo-1", "job-a")).toBeNull();
     state.pane = "idle";
-    await r.tick(1);
+    // Past retryMins from the first poke, so the rate limit is not what is
+    // being measured here: the strike count is.
+    await r.tick(5);
     expect(r.workerPokes()).toHaveLength(2);
-    expect(r.wd.annotations("demo-1", "job-a")).toEqual({ strikes: 1, lastPokeAt: NOW + 2 * MIN });
+    expect(r.wd.annotations("demo-1", "job-a")).toEqual({ strikes: 1, lastPokeAt: NOW + 6 * MIN });
+  });
+
+  // The live double-nag (22:48 and 22:51, both logged at strike 1): a poke
+  // wakes the party, it works for a moment, and it goes idle again with the
+  // same unresolved evidence. Clearing the ladder threw away the fact that it
+  // had just been poked, so retryMins never applied.
+  test("a party that flaps healthy and back is not poked again inside retryMins", async () => {
+    const state = { pane: "idle" as ReturnType<WatchdogSensors["paneState"]> };
+    const r = rig({ sensors: { ...workerWedged(), paneState: () => state.pane } });
+    await r.tick();
+    expect(r.workerPokes()).toHaveLength(1);
+
+    state.pane = "working";
+    await r.tick(1);
+    state.pane = "idle";
+    await r.tick(1);
+    expect(r.workerPokes()).toHaveLength(1);
+    // Flagged again, but not acted on: no strike is spent while the floor holds.
+    expect(r.wd.annotations("demo-1", "job-a")).toEqual({ strikes: 0, lastPokeAt: null });
+
+    // The floor is measured from the last poke, not from the re-flagging.
+    await r.tick(4);
+    expect(r.workerPokes()).toHaveLength(2);
+  });
+
+  test("the shepherd's rung honors the same floor across a flap", async () => {
+    const state = { pane: "idle" as ReturnType<WatchdogSensors["paneState"]> };
+    const r = rig({ jobs: [], sensors: { ...shepherdWedged(), paneState: () => state.pane } });
+    await r.tick();
+    expect(r.shepherdPokes()).toHaveLength(1);
+    state.pane = "working";
+    await r.tick(1);
+    state.pane = "idle";
+    await r.tick(2);
+    expect(r.shepherdPokes()).toHaveLength(1);
+    await r.tick(3);
+    expect(r.shepherdPokes()).toHaveLength(2);
   });
 
   test("(c) still wedged after retryMins = a second poke with fresh evidence", async () => {
@@ -436,6 +598,83 @@ describe("HerdWatchdog ladder", () => {
     expect(r.shepherdPokes()).toHaveLength(2);
   });
 
+  test("every human notification carries its party's pane, so the tray click lands on it", async () => {
+    const r = rig({ sensors: workerWedged() });
+    for (let i = 0; i < 5; i++) await r.tick(i === 0 ? 0 : 5);
+    expect(r.noteEvents).toEqual([{ summary: r.notes[0]!, pane: "w1:p1" }]);
+
+    // The shepherd rung names the shepherd's own pane.
+    const shep = rig({ jobs: [], sensors: shepherdWedged() });
+    for (let i = 0; i < 3; i++) await shep.tick(i === 0 ? 0 : 5);
+    expect(shep.noteEvents).toEqual([{ summary: shep.notes[0]!, pane: "w1:p0" }]);
+  });
+
+  test("a herd with no shepherd pane notifies with no pane rather than a wrong one", async () => {
+    const r = rig({ jobs: [], herd: herd({ shepherdPane: null }), sensors: { paneState: () => "idle", openHumanGates: () => [{ id: "g-9", ageMs: 6 * MIN }] } });
+    await r.tick();
+    expect(r.noteEvents).toEqual([{ summary: r.notes[0]!, pane: null }]);
+  });
+
+  // EnterWorktree into a freshly provisioned tree re-prompts for folder trust
+  // mid-session, which is a dialog the daemon may answer for itself.
+  const modalOn = (over: Partial<WatchdogSensors> = {}): Partial<WatchdogSensors> => ({ paneState: (p) => (p === "w1:p1" ? "modal" : "idle"), idleSinceMs: () => NOW - 40 * MIN, ...over });
+  const provisioned = () => job({ tree: "on-deck-1" });
+
+  test("a blocked pane in a provisioned tree is offered the trust accept before anything parks", async () => {
+    const r = rig({ jobs: [provisioned()], sensors: modalOn() });
+    r.trust.accepts = true;
+    await r.tick();
+    expect(r.trustCalls).toEqual([{ herd: "demo-1", job: "job-a", pane: "w1:p1" }]);
+    expect(r.parks).toEqual([]);
+    expect(r.modalNotes).toEqual([]);
+    expect(r.shepherdPokes()).toEqual([]);
+    expect(r.wd.annotations("demo-1", "job-a")).toBeNull();
+  });
+
+  test("a blocked pane the accept cannot clear is parked and notified as before", async () => {
+    const r = rig({ jobs: [provisioned()], sensors: modalOn() });
+    r.trust.accepts = false;
+    await r.tick();
+    expect(r.trustCalls).toHaveLength(1);
+    expect(r.parks).toEqual([{ herd: "demo-1", job: "job-a" }]);
+    expect(r.modalNotes).toHaveLength(1);
+  });
+
+  test("a job in a tree the daemon did not provision is parked without an accept attempt", async () => {
+    const r = rig({ jobs: [job({ tree: null })], sensors: modalOn() });
+    r.trust.accepts = true;
+    await r.tick();
+    expect(r.trustCalls).toEqual([]);
+    expect(r.parks).toEqual([{ herd: "demo-1", job: "job-a" }]);
+  });
+
+  test("the accept is offered once: a pane still blocked on the next sweep parks", async () => {
+    const r = rig({ jobs: [provisioned()], sensors: modalOn() });
+    await r.tick();
+    expect(r.parks).toHaveLength(1);
+    await r.tick(5);
+    expect(r.trustCalls).toHaveLength(1);
+    expect(r.parks).toHaveLength(1);
+  });
+
+  test("a park also raises one click-to-focus notification naming the pane, outside the quiet period", async () => {
+    const r = rig({ sensors: { paneState: (p) => (p === "w1:p1" ? "modal" : "idle"), idleSinceMs: () => NOW - 40 * MIN } });
+    await r.tick();
+    expect(r.modalNotes).toEqual([{ herd: "demo-1", job: "job-a", pane: "w1:p1" }]);
+    // The park fires once, so the notification does too, however long the
+    // job stays stuck.
+    await r.tick(5);
+    await r.tick(5);
+    expect(r.modalNotes).toHaveLength(1);
+  });
+
+  test("notifyHuman: false silences the park notification", async () => {
+    const r = rig({ cfg: { notifyHuman: false }, sensors: { paneState: (p) => (p === "w1:p1" ? "modal" : "idle"), idleSinceMs: () => NOW - 40 * MIN } });
+    await r.tick();
+    expect(r.parks).toHaveLength(1);
+    expect(r.modalNotes).toEqual([]);
+  });
+
   test("a parked job the store has moved to stuck-at-modal drops out of the ladder on the next sweep", async () => {
     const row = job();
     const r = rig({ jobs: [row], sensors: { paneState: (p) => (p === "w1:p1" ? "modal" : "idle"), idleSinceMs: () => NOW - 40 * MIN } });
@@ -492,7 +731,7 @@ describe("HerdWatchdog ladder", () => {
   });
 
   test("a finished-lingering worker is never poked itself: the nag reaches the shepherd through its own ladder", async () => {
-    const r = rig({ jobs: [job({ status: "done", lastReport: NOW - 35 * MIN })], sensors: { paneState: () => "idle" } });
+    const r = rig({ jobs: [job({ status: "done", lastReport: 2758, updatedAt: NOW - 35 * MIN })], sensors: { paneState: () => "idle" } });
     await r.tick();
     expect(r.workerPokes()).toHaveLength(0);
     expect(r.shepherdPokes()).toEqual([{ pane: "w1:p0", text: "watchdog: job-a done with report 35m ago, pane still open; run rt herd close job-a --herd demo-1. Consume it or post status." }]);
@@ -516,5 +755,42 @@ describe("HerdWatchdog ladder", () => {
     await r.tick(5);
     await r.tick(5);
     expect(r.lines.map((l) => l.msg)).toEqual(["poked worker", "poked worker", "escalated to shepherd"]);
+  });
+});
+
+describe("runWatchdogSweep (the scheduleSweep wiring, not the ladder itself)", () => {
+  function deps(overrides: { busy?: boolean; enabled?: boolean } = {}) {
+    const sweepCalls: number[] = [];
+    const refreshCalls: number[] = [];
+    let n = 0;
+    const watchdog = {
+      get busy() { return overrides.busy ?? false; },
+      async sweep() { sweepCalls.push(++n); },
+    };
+    const sensors = { async refresh() { refreshCalls.push(++n); } };
+    const cfg = () => ({ ...cfg0, enabled: overrides.enabled ?? true });
+    return { watchdog, sensors, cfg, sweepCalls, refreshCalls };
+  }
+  const cfg0: WatchdogConfig = cfg;
+
+  test("disabled still calls sweep() so its own reset runs: a short-circuit here would make that reset unreachable", async () => {
+    const d = deps({ enabled: false });
+    await runWatchdogSweep(d);
+    expect(d.sweepCalls).toEqual([1]);
+    expect(d.refreshCalls).toEqual([]);
+  });
+
+  test("enabled refreshes before sweeping", async () => {
+    const d = deps({ enabled: true });
+    await runWatchdogSweep(d);
+    expect(d.refreshCalls).toEqual([1]);
+    expect(d.sweepCalls).toEqual([2]);
+  });
+
+  test("busy skips the tick entirely, refresh included", async () => {
+    const d = deps({ busy: true, enabled: true });
+    await runWatchdogSweep(d);
+    expect(d.sweepCalls).toEqual([]);
+    expect(d.refreshCalls).toEqual([]);
   });
 });

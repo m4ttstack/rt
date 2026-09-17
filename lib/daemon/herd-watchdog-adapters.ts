@@ -16,6 +16,7 @@ import type { HerdLifecycle } from "./herd-lifecycle.ts";
 import type { HerdStore } from "./herd-store.ts";
 import type { WatchdogActuators, WatchdogConfig, WatchdogSensors } from "./herd-watchdog.ts";
 import { injectIntoPane } from "./inject.ts";
+import { driveTrustAccept } from "./trust-accept.ts";
 import { paneStatuses } from "./pane-statuses.ts";
 
 export interface WatchdogSensorDeps {
@@ -26,6 +27,8 @@ export interface WatchdogSensorDeps {
   defaultSocket: string;
   db: Database;
   now?: () => number;
+  /** Used only to report a herdr status this mapper does not name. */
+  log?: Logger;
 }
 
 export interface RefreshingSensors extends WatchdogSensors {
@@ -41,11 +44,39 @@ interface PaneReading { agent: string | null; status: string | null; socket: str
 
 const UNREAD_PEEK_LIMIT = 200;
 
+/** The statuses this mapper names. Anything else a live claude reports still
+    maps, to idle: board-37 sat wedged for 31 minutes because "done" fell
+    through to working, and a working pane is never poked. A status nobody
+    mapped must never exempt a pane again, so the fall-through is idle and the
+    gap is logged rather than swallowed. */
+const NAMED_STATUSES: ReadonlySet<string> = new Set(["working", "idle", "blocked", "done"]);
+
+function readingState(row: PaneReading | undefined, unknown?: (status: string) => void): ReturnType<WatchdogSensors["paneState"]> {
+  if (!row) return "gone";
+  if (row.agent !== "claude") return "dead";
+  if (row.status === "blocked") return "modal";
+  if (row.status === "working") return "working";
+  // No status at all is not an unnamed status: herdr has not classified the
+  // pane yet, which is evidence of nothing either way.
+  if (row.status === null) return "working";
+  // "done" is herdr's after-turn state: a finished turn sitting at the prompt
+  // is exactly the wedge posture the fast path is looking for.
+  if (!NAMED_STATUSES.has(row.status)) unknown?.(row.status);
+  return "idle";
+}
+
 export function createWatchdogSensors(deps: WatchdogSensorDeps): RefreshingSensors {
   const now = deps.now ?? Date.now;
   // Keyed by the addressable ref the job row stores (bg: for a hidden herd),
   // not the bare id: two servers can both hold a w1:p1.
   let panes = new Map<string, PaneReading>();
+  // The lifecycle's status map is in memory, so after a daemon restart every
+  // worker that was already idle has no recorded transition and would read as
+  // "never idle" forever (RT-187). The first refresh that sees such a pane
+  // idle stamps it here, and that stamp stands in for the transition until the
+  // pane works again: an age measured from the restart, never from boot-time
+  // zero, so a worker idle across a restart still earns a verdict.
+  const firstSeenIdle = new Map<string, number>();
 
   async function refresh(): Promise<void> {
     const active = deps.herdStore.list({ status: "active" });
@@ -57,6 +88,16 @@ export function createWatchdogSensors(deps: WatchdogSensorDeps): RefreshingSenso
     for (const [socket, server] of servers) {
       for (const [id, row] of await paneStatuses(deps.herdr, socket)) next.set(formatPaneRef(id, server), { ...row, socket });
     }
+    const t = now();
+    for (const pane of firstSeenIdle.keys()) if (readingState(next.get(pane)) !== "idle") firstSeenIdle.delete(pane);
+    // One warn per unrecognized status per sweep, not per pane: a herdr that
+    // grew a new status would otherwise warn once for every worker it runs.
+    const unnamed = new Set<string>();
+    for (const [pane, row] of next) {
+      if (readingState(row, (status) => unnamed.add(status)) !== "idle" || deps.lifecycle.lastStatusChangeMs(pane) !== null) continue;
+      if (!firstSeenIdle.has(pane)) firstSeenIdle.set(pane, t);
+    }
+    for (const status of unnamed) deps.log?.warn({ status }, "watchdog: unrecognized herdr agent status; treating the pane as idle");
     panes = next;
   }
 
@@ -66,17 +107,8 @@ export function createWatchdogSensors(deps: WatchdogSensorDeps): RefreshingSenso
     now,
     herds: () => deps.herdStore.list({ status: "active" }),
     jobs: (herd) => deps.herdStore.jobs(herd),
-    paneState(pane) {
-      const row = panes.get(pane);
-      if (!row) return "gone";
-      if (row.agent !== "claude") return "dead";
-      if (row.status === "blocked") return "modal";
-      // "done" is herdr's after-turn state, idle in every way that matters
-      // here; a status herdr did not name is no evidence of a wedge.
-      if (row.status === "idle" || row.status === "done") return "idle";
-      return "working";
-    },
-    idleSinceMs: (pane) => deps.lifecycle.lastStatusChangeMs(pane),
+    paneState: (pane) => readingState(panes.get(pane)),
+    idleSinceMs: (pane) => deps.lifecycle.lastStatusChangeMs(pane) ?? firstSeenIdle.get(pane) ?? null,
     unreadDmMentionsFor(handle) {
       let count = 0;
       for (const { room, messages } of peekUnread({ handle, limit: UNREAD_PEEK_LIMIT }, deps.db)) {
@@ -104,9 +136,14 @@ export interface WatchdogActuatorDeps {
   herdStore: Pick<HerdStore, "setJobStatus">;
   db: Database;
   socketFor: (pane: string) => string;
+  /** Needed only by the mid-run trust accept; the other actuators go through
+      the injector. */
+  herdr?: typeof herdrRequest;
   inject?: typeof injectIntoPane;
   enqueue?: typeof enqueueNotification;
   log: Logger;
+  trustSettleMs?: number;
+  trustStepMs?: number;
 }
 
 /** None of these throw into the ladder: one party's failed side effect must
@@ -134,6 +171,23 @@ export function createWatchdogActuators(deps: WatchdogActuatorDeps): WatchdogAct
         return false;
       }
     },
+    async acceptTrustModal(herd, job, pane) {
+      if (!deps.herdr) return false;
+      const sockPath = deps.socketFor(pane);
+      try {
+        const outcome = await driveTrustAccept({
+          herdr: deps.herdr, sock: { sockPath }, pane: parsePaneRef(pane).paneId,
+          log, context: { herd, job },
+          ...(deps.trustSettleMs !== undefined && { settleMs: deps.trustSettleMs }),
+          ...(deps.trustStepMs !== undefined && { stepMs: deps.trustStepMs }),
+        });
+        if (outcome !== "accepted") log.info({ herd, job, pane, outcome }, "watchdog: mid-run trust accept did not clear the pane");
+        return outcome === "accepted";
+      } catch (err) {
+        log.warn({ err, herd, job, pane }, "watchdog: mid-run trust accept threw");
+        return false;
+      }
+    },
     parkStuckAtModal(herd, job) {
       try {
         deps.herdStore.setJobStatus(herd, job, "stuck-at-modal");
@@ -141,9 +195,27 @@ export function createWatchdogActuators(deps: WatchdogActuatorDeps): WatchdogAct
         log.warn({ err, herd, job }, "watchdog could not park the job");
       }
     },
-    notifyHuman(summary) {
+    notifyStuckAtModal(herd, job, pane) {
       try {
-        enqueue({ id: crypto.randomUUID(), title: "herd watchdog", message: summary, category: "herd-watchdog", timestamp: Date.now() }, deps.db);
+        enqueue({
+          id: crypto.randomUUID(),
+          title: `herd ${herd}: ${job} stuck at trust modal`,
+          message: `click to focus pane ${pane}, accept the dialog`,
+          category: "herd-watchdog",
+          timestamp: Date.now(),
+          paneId: pane,
+        }, deps.db);
+      } catch (err) {
+        log.warn({ err, herd, job, pane }, "watchdog could not enqueue the park notification");
+      }
+    },
+    notifyHuman(summary, pane) {
+      try {
+        enqueue({
+          id: crypto.randomUUID(), title: "herd watchdog", message: summary,
+          category: "herd-watchdog", timestamp: Date.now(),
+          ...(pane ? { paneId: pane } : {}),
+        }, deps.db);
       } catch (err) {
         log.warn({ err, summary }, "watchdog could not enqueue the notification");
       }
