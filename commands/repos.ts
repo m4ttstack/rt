@@ -408,7 +408,7 @@ function failPlain(json: boolean, verb: string, message: string): never {
 }
 
 /**
- * rt repos status — the mission-control rail feed over the daemon's git
+ * rt repos status: the mission-control rail feed over the daemon's git
  * badge cache. Uses the plain daemon-RPC envelope ({ ok, repos, sweptAt }),
  * not the setup contract the other verbs in this file use: it is a cache
  * read the mission-control TUI consumes directly, not a mutating action.
