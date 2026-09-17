@@ -270,21 +270,59 @@ final class WindowModel: ObservableObject {
         if view.isLoading { loadingApps.insert(appName) }
     }
 
+    /// Icons are fetched once per app at launch, which used to mean a single
+    /// bad moment cost the tab its icon for the life of the window: every app
+    /// came back with the same undecodable 150KB body one startup, and the
+    /// tabs wore letters until the next relaunch. So a failure is retried, and
+    /// what came back is logged well enough to name the culprit next time --
+    /// a byte count alone said only that it was not an image.
     private func fetchIcon(url urlString: String?, into name: String) {
         guard icons[name] == nil, let urlString, let url = URL(string: urlString) else { return }
         Task { [weak self] in
-            let data: Data
-            do {
-                data = try await URLSession.shared.data(from: url).0
-            } catch {
-                TrayLog.warn("window icon fetch failed", ["app": name, "url": urlString, "error": String(describing: error)])
-                return
+            for attempt in 1...Self.iconFetchAttempts {
+                if let image = await Self.loadIcon(url: url, app: name, attempt: attempt) {
+                    self?.icons[name] = image
+                    return
+                }
+                guard attempt < Self.iconFetchAttempts else { return }
+                try? await Task.sleep(nanoseconds: UInt64(Self.iconRetryDelay(attempt) * 1_000_000_000))
             }
-            guard let image = NSImage(data: data) else {
-                TrayLog.warn("window icon decode failed", ["app": name, "url": urlString, "bytes": data.count])
-                return
-            }
-            self?.icons[name] = image
         }
+    }
+
+    private static let iconFetchAttempts = 4
+
+    /// 1s, 3s, 9s: long enough in total (13s) to outlast a service that is
+    /// still coming up when the window opens, short enough that a tab does
+    /// not wear a letter for a noticeable part of a session.
+    private static func iconRetryDelay(_ attempt: Int) -> Double {
+        pow(3, Double(attempt - 1))
+    }
+
+    private static func loadIcon(url: URL, app: String, attempt: Int) async -> NSImage? {
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(from: url)
+        } catch {
+            TrayLog.warn("window icon fetch failed", [
+                "app": app, "url": url.absoluteString, "attempt": attempt,
+                "error": String(describing: error),
+            ])
+            return nil
+        }
+        if let image = NSImage(data: data) { return image }
+        let http = response as? HTTPURLResponse
+        TrayLog.warn("window icon decode failed", [
+            "app": app, "url": url.absoluteString, "attempt": attempt,
+            "bytes": data.count,
+            "status": http?.statusCode ?? -1,
+            "contentType": http?.value(forHTTPHeaderField: "Content-Type") ?? "(none)",
+            "finalUrl": http?.url?.absoluteString ?? "(none)",
+            // The first line of a served error page usually names its author.
+            "head": String(decoding: data.prefix(120), as: UTF8.self)
+                .replacingOccurrences(of: "\n", with: " "),
+        ])
+        return nil
     }
 }
