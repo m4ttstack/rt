@@ -17,6 +17,12 @@ rt <command> [subcommand] [args]
 - [`rt nav`](/reference/nav) ... filesystem navigator; `ctrl-o` opens the selected folder in your preferred editor.
 - `rtcd` ... a shell alias added by install that `cd`s into a picked worktree (wraps `rt cd`).
 
+## Editor
+
+- [`rt code`](/reference/code) ... open a worktree in your preferred editor. Detects installed editors and picks one; set a default with `rt settings set rt.workspacePrefs '{"defaultEditor":"zed"}' --scope machine`.
+
+Non-web links (e.g. `vscode://file/...`) opened from the console webview are handed off to the OS rather than loaded in the browser.
+
 ## Run
 
 - [`rt run`](/reference/run) ... interactive script runner that walks repo, then worktree, then package, then script.
