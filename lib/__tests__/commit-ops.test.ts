@@ -8,6 +8,7 @@ import {
   discardChanges,
   syncStagingArea,
   commitStaged,
+  amendStaged,
   numstatCounts,
 } from "../commit-ops.ts";
 
@@ -356,5 +357,39 @@ describe("numstatCounts", () => {
 
     expect(numstatCounts(dir)).toEqual(new Map());
     rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe("amendStaged", () => {
+  test("amend without a message keeps the original message", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "rt-commit-ops-amend-"));
+    execFileSync("git", ["init", "-q"], { cwd });
+    execFileSync("git", ["config", "user.email", "test@test"], { cwd });
+    execFileSync("git", ["config", "user.name", "test"], { cwd });
+    writeFileSync(join(cwd, "a.txt"), "one\n");
+    execFileSync("git", ["add", "."], { cwd });
+    commitStaged(cwd, "original message");
+    writeFileSync(join(cwd, "a.txt"), "two\n");
+    execFileSync("git", ["add", "."], { cwd });
+    amendStaged(cwd);
+    const msg = execFileSync("git", ["log", "-1", "--format=%s"], { cwd, encoding: "utf8" }).trim();
+    expect(msg).toBe("original message");
+    const count = execFileSync("git", ["rev-list", "--count", "HEAD"], { cwd, encoding: "utf8" }).trim();
+    expect(count).toBe("1");
+    rmSync(cwd, { recursive: true, force: true });
+  });
+
+  test("amend with a message replaces it", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "rt-commit-ops-amend-"));
+    execFileSync("git", ["init", "-q"], { cwd });
+    execFileSync("git", ["config", "user.email", "test@test"], { cwd });
+    execFileSync("git", ["config", "user.name", "test"], { cwd });
+    writeFileSync(join(cwd, "a.txt"), "one\n");
+    execFileSync("git", ["add", "."], { cwd });
+    commitStaged(cwd, "original message");
+    amendStaged(cwd, { message: "rewritten" });
+    const msg = execFileSync("git", ["log", "-1", "--format=%s"], { cwd, encoding: "utf8" }).trim();
+    expect(msg).toBe("rewritten");
+    rmSync(cwd, { recursive: true, force: true });
   });
 });

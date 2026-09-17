@@ -171,6 +171,22 @@ export function commitStaged(
   return out.split("\n")[0] ?? "";
 }
 
+/**
+ * Amend the last commit with whatever is staged. No message keeps the
+ * existing one (--no-edit); a message replaces it via argv, never a shell.
+ */
+export function amendStaged(
+  cwd: string,
+  opts: { message?: string; noVerify?: boolean } = {},
+): string {
+  const args = ["commit", "--amend"];
+  if (opts.message) args.push("-m", opts.message);
+  else args.push("--no-edit");
+  if (opts.noVerify) args.push("--no-verify");
+  const out = git(cwd, args);
+  return out.split("\n")[0] ?? "";
+}
+
 export interface NumstatCounts {
   adds: number;
   dels: number;
