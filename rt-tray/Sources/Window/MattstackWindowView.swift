@@ -261,13 +261,17 @@ private struct WindowWebView: NSViewRepresentable {
         NSView()
     }
 
-    func updateNSView(_ container: NSView, context: Context) {
-        let webView = model.webView(for: app)
-        guard container.subviews.first !== webView else { return }
-        container.subviews.forEach { $0.removeFromSuperview() }
-        webView.frame = container.bounds
-        webView.autoresizingMask = [.width, .height]
-        container.addSubview(webView)
+    /// The mounted child is the app's find bar container, not its webview
+    /// directly: the container owns the webview for the window's lifetime and
+    /// puts a responder between the web content and the window that can serve
+    /// ⌘F.
+    func updateNSView(_ host: NSView, context: Context) {
+        let container = model.findContainer(for: app)
+        guard host.subviews.first !== container else { return }
+        host.subviews.forEach { $0.removeFromSuperview() }
+        container.frame = host.bounds
+        container.autoresizingMask = [.width, .height]
+        host.addSubview(container)
     }
 }
 

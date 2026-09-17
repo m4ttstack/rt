@@ -14,6 +14,19 @@ final class WebViewStore {
     }
 
     private var views: [String: WKWebView] = [:]
+    private var containers: [String: FindBarContainer] = [:]
+
+    /// What the window actually mounts: the webview wrapped in its own find
+    /// bar container, so every tab carries its own ⌘F state for the window's
+    /// lifetime the same way it carries its own scroll position.
+    func container(for app: DiscoveryApp) -> FindBarContainer {
+        if let existing = containers[app.name] { return existing }
+        let container = FindBarContainer(webView: view(for: app))
+        containers[app.name] = container
+        return container
+    }
+
+    func existingContainer(for name: String) -> FindBarContainer? { containers[name] }
 
     func view(for app: DiscoveryApp) -> WKWebView {
         if let existing = views[app.name] { return existing }
