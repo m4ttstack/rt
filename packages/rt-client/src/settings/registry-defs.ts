@@ -817,4 +817,12 @@ export const REGISTRY: readonly SettingDef[] = [
     merge: "replace",
     description: "Whether the watchdog's top escalation rung sends a macOS notification to the human.",
   },
+  {
+    key: "herd.watchdog.midRunTrustAccept",
+    type: "boolean",
+    scopes: ["machine"],
+    default: false,
+    merge: "replace",
+    description: "Whether the watchdog may drive a mid-run folder-trust dialog on a daemon-provisioned tree itself, rather than only parking the job and notifying (RT-196). Off by default: the screen match cannot yet confirm the dialog's folder matches the job's worktree, so a working session showing an unrelated permission prompt with the same shape is a real risk.",
+  },
 ];

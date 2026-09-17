@@ -9,6 +9,7 @@ const MIN = 60_000;
 const cfg: WatchdogConfig = {
   enabled: true, fastMins: 2, shepherdFastMins: 5, backstopMins: 15,
   retryMins: 5, notifyQuietMins: 30, nagMins: 30, notifyHuman: true,
+  midRunTrustAccept: false,
 };
 
 function sensors(over: Partial<WatchdogSensors> = {}): WatchdogSensors {
@@ -144,10 +145,19 @@ describe("evaluateJob", () => {
     expect(evaluateJob(job({ status: "spawning" }), sensors(idleFor(20)), cfg)).toEqual({ kind: "wedged", path: "backstop", evidence: "idle 20m with no open gate" });
   });
 
-  test("(h) a modal pane is modal, before any idle arithmetic", () => {
+  test("(h) a modal pane is modal, before any idle arithmetic -- except a job already at a gate", () => {
     const s = sensors({ paneState: () => "modal", idleSinceMs: () => NOW - 40 * MIN, unreadDmMentionsFor: () => 1 });
     expect(evaluateJob(job(), s, cfg)).toEqual({ kind: "modal" });
-    expect(evaluateJob(job({ status: "at-gate" }), s, cfg)).toEqual({ kind: "modal" });
+    // A pane showing "blocked" while its job holds an open gate (form or
+    // milestone) is a human taking their time on that gate, not a trust
+    // modal: the same AWAITING_ANSWER exemption the backstop already uses.
+    expect(evaluateJob(job({ status: "at-gate" }), s, cfg)).toEqual({ kind: "healthy" });
+    expect(evaluateJob(job({ status: "at-milestone" }), s, cfg)).toEqual({ kind: "healthy" });
+  });
+
+  test("a human taking 3 minutes on a form gate reads healthy, not modal: the most common healthy wait state in a herd", () => {
+    const s = sensors({ paneState: () => "modal", idleSinceMs: () => NOW - 3 * MIN, unreadDmMentionsFor: () => 0 });
+    expect(evaluateJob(job({ status: "at-gate" }), s, cfg)).toEqual({ kind: "healthy" });
   });
 
   test("a pane blocked for less than fastMins reads healthy: the normal trust-dialog window, not a wedge", () => {
@@ -620,8 +630,8 @@ describe("HerdWatchdog ladder", () => {
   const modalOn = (over: Partial<WatchdogSensors> = {}): Partial<WatchdogSensors> => ({ paneState: (p) => (p === "w1:p1" ? "modal" : "idle"), idleSinceMs: () => NOW - 40 * MIN, ...over });
   const provisioned = () => job({ tree: "on-deck-1" });
 
-  test("a blocked pane in a provisioned tree is offered the trust accept before anything parks", async () => {
-    const r = rig({ jobs: [provisioned()], sensors: modalOn() });
+  test("a blocked pane in a provisioned tree is offered the trust accept before anything parks, when the flag is on", async () => {
+    const r = rig({ jobs: [provisioned()], sensors: modalOn(), cfg: { midRunTrustAccept: true } });
     r.trust.accepts = true;
     await r.tick();
     expect(r.trustCalls).toEqual([{ herd: "demo-1", job: "job-a", pane: "w1:p1" }]);
@@ -632,7 +642,7 @@ describe("HerdWatchdog ladder", () => {
   });
 
   test("a blocked pane the accept cannot clear is parked and notified as before", async () => {
-    const r = rig({ jobs: [provisioned()], sensors: modalOn() });
+    const r = rig({ jobs: [provisioned()], sensors: modalOn(), cfg: { midRunTrustAccept: true } });
     r.trust.accepts = false;
     await r.tick();
     expect(r.trustCalls).toHaveLength(1);
@@ -641,7 +651,7 @@ describe("HerdWatchdog ladder", () => {
   });
 
   test("a job in a tree the daemon did not provision is parked without an accept attempt", async () => {
-    const r = rig({ jobs: [job({ tree: null })], sensors: modalOn() });
+    const r = rig({ jobs: [job({ tree: null })], sensors: modalOn(), cfg: { midRunTrustAccept: true } });
     r.trust.accepts = true;
     await r.tick();
     expect(r.trustCalls).toEqual([]);
@@ -649,12 +659,26 @@ describe("HerdWatchdog ladder", () => {
   });
 
   test("the accept is offered once: a pane still blocked on the next sweep parks", async () => {
-    const r = rig({ jobs: [provisioned()], sensors: modalOn() });
+    const r = rig({ jobs: [provisioned()], sensors: modalOn(), cfg: { midRunTrustAccept: true } });
     await r.tick();
     expect(r.parks).toHaveLength(1);
     await r.tick(5);
     expect(r.trustCalls).toHaveLength(1);
     expect(r.parks).toHaveLength(1);
+  });
+
+  // RT-196: a working session can show a genuine, unrelated permission
+  // prompt with the same numbered-options shape as the trust dialog, and
+  // nothing here can yet confirm a dialog's folder matches the job's
+  // worktree. Off by default, so a provisioned tree still just parks --
+  // no key of any kind reaches the pane -- until that gap closes.
+  test("RT-196: mid-run trust accept is never attempted while midRunTrustAccept is off (default), even for a provisioned tree", async () => {
+    const r = rig({ jobs: [provisioned()], sensors: modalOn() });
+    r.trust.accepts = true;
+    await r.tick();
+    expect(r.trustCalls).toEqual([]);
+    expect(r.parks).toEqual([{ herd: "demo-1", job: "job-a" }]);
+    expect(r.modalNotes).toHaveLength(1);
   });
 
   test("a park also raises one click-to-focus notification naming the pane, outside the quiet period", async () => {
