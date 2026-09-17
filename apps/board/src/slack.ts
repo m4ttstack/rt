@@ -11,6 +11,11 @@ import {
 /** How far back the first index build reaches. Review requests older than the
     board's stale window are irrelevant, so we never page the whole channel. */
 const INITIAL_LOOKBACK_DAYS = 90;
+/** How far back every later sync re-reads messages it has already indexed.
+    A Slack edit keeps the message's ts, so an append-only index never sees it
+    -- and the edit that matters here is a review request amended to add a
+    stacked child MR's link, which would otherwise stay invisible forever. */
+const REFRESH_WINDOW_DAYS = 14;
 const MAX_PAGES = 25;
 
 export interface SlackMessage {
@@ -185,8 +190,10 @@ export function writeIndex(
 
 /**
  * Bring the local channel index up to date and return it. First run seeds from
- * the last INITIAL_LOOKBACK_DAYS; later runs fetch only messages after lastTs.
- * Message text/ts never change once posted, so the index only ever grows.
+ * the last INITIAL_LOOKBACK_DAYS; later runs re-read the last
+ * REFRESH_WINDOW_DAYS so edits to already-indexed messages land, falling back
+ * to lastTs when the index is staler than that window. Messages merge by ts,
+ * the freshly-read copy winning, so a re-read revises rather than duplicates.
  */
 export async function syncIndex(
   token: string,
@@ -198,10 +205,14 @@ export async function syncIndex(
   const channelId =
     existing?.channelId ?? (await resolveChannelId(token, channelName));
   const domain = existing?.teamDomain ?? (await teamDomain(token));
-  const oldest =
-    existing?.lastTs && existing.lastTs !== '0'
-      ? existing.lastTs
-      : String(Math.floor(now / 1000 - INITIAL_LOOKBACK_DAYS * 86400));
+  const seconds = Math.floor(now / 1000);
+  const refreshFloor = String(seconds - REFRESH_WINDOW_DAYS * 86400);
+  const seeded = existing?.lastTs && existing.lastTs !== '0';
+  const oldest = !seeded
+    ? String(seconds - INITIAL_LOOKBACK_DAYS * 86400)
+    : parseFloat(refreshFloor) < parseFloat(existing!.lastTs)
+      ? refreshFloor
+      : existing!.lastTs;
 
   const fresh: SlackMessage[] = [];
   let cursor = '';
@@ -225,7 +236,10 @@ export async function syncIndex(
     if (!cursor) break;
   }
 
-  const merged = [...(existing?.messages ?? []), ...fresh];
+  const byTs = new Map<string, SlackMessage>();
+  for (const m of existing?.messages ?? []) byTs.set(m.ts, m);
+  for (const m of fresh) byTs.set(m.ts, m);
+  const merged = [...byTs.values()];
   const lastTs = merged.reduce(
     (max, m) => (parseFloat(m.ts) > parseFloat(max) ? m.ts : max),
     existing?.lastTs ?? '0'

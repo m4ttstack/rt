@@ -15,6 +15,7 @@ import {
   slackIndexPath,
   slackSweepTargets,
   sweepSlackRefs,
+  syncIndex,
   writeIndex,
   writeSlackRef,
   type SlackIndex,
@@ -381,5 +382,92 @@ describe('sweepSlackRefs', () => {
     const result = await sweepSlackRefs('tok', targets, { gapMs: 0, db });
     expect(result.failed).toBe(1);
     expect(readSlackRefs(db).get(URL_B)?.status).toBe('notfound');
+  });
+});
+
+/** Stand-in for slack.com that honors `oldest` the way conversations.history
+    does (exclusive), so a test can assert which window a sync asked for. */
+function mockHistoryWindow(messages: SlackMessage[]): {
+  oldests: string[];
+  restore: () => void;
+} {
+  const real = globalThis.fetch;
+  const oldests: string[] = [];
+  const ok = (data: Record<string, unknown>) =>
+    new Response(JSON.stringify({ ok: true, ...data }));
+  globalThis.fetch = (async (input: Parameters<typeof fetch>[0]) => {
+    const url =
+      typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.href
+          : (input as Request).url;
+    const method = url.slice('https://slack.com/api/'.length).split('?')[0]!;
+    const params = Object.fromEntries(new URL(url).searchParams);
+    switch (method) {
+      case 'auth.test':
+        return ok({ url: 'https://mockteam.slack.com/' });
+      case 'conversations.history': {
+        oldests.push(params.oldest!);
+        const floor = parseFloat(params.oldest!);
+        return ok({
+          messages: messages.filter(m => parseFloat(m.ts) > floor),
+          has_more: false,
+        });
+      }
+      default:
+        return ok({});
+    }
+  }) as typeof fetch;
+  return {
+    oldests,
+    restore: () => {
+      globalThis.fetch = real;
+    },
+  };
+}
+
+describe('syncIndex re-reads edited messages', () => {
+  const NOW = 1_800_000_000_000;
+  const postedTs = String(Math.floor(NOW / 1000 - 3600));
+  let api: ReturnType<typeof mockHistoryWindow>;
+  afterEach(() => api.restore());
+
+  function seed(lastTs: string, ...messages: SlackMessage[]): void {
+    writeIndex(
+      'code-review',
+      {
+        channelId: 'C_REVIEW',
+        teamDomain: 'mockteam.slack.com',
+        lastTs,
+        messages,
+      },
+      db
+    );
+  }
+
+  test('a request edited to add a stacked child MR link becomes matchable', async () => {
+    seed(postedTs, msg(postedTs, `<@U1> for you:\n<${URL_A}|!4821>`));
+    api = mockHistoryWindow([
+      msg(postedTs, `<@U1> for you:\n<${URL_A}|!4821>\n<${URL_B}|!4822>`),
+    ]);
+    const index = await syncIndex('tok', 'code-review', NOW, db);
+    expect(matchReviewMessage(index.messages, URL_B)?.ts).toBe(postedTs);
+  });
+
+  test('a re-read message replaces its cached copy instead of duplicating it', async () => {
+    seed(postedTs, msg(postedTs, `review ${URL_A}`));
+    api = mockHistoryWindow([msg(postedTs, `review ${URL_A} and ${URL_B}`)]);
+    const index = await syncIndex('tok', 'code-review', NOW, db);
+    expect(index.messages.filter(m => m.ts === postedTs)).toHaveLength(1);
+    expect(index.lastTs).toBe(postedTs);
+  });
+
+  test('an index staler than the refresh window resumes from its own lastTs', async () => {
+    const ancient = String(Math.floor(NOW / 1000 - 60 * 86400));
+    seed(ancient, msg(ancient, `review ${URL_A}`));
+    api = mockHistoryWindow([]);
+    await syncIndex('tok', 'code-review', NOW, db);
+    expect(api.oldests).toEqual([ancient]);
   });
 });
