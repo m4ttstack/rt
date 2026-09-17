@@ -170,9 +170,11 @@ conversation.
    ```json
    [
      {"id": "thread-1", "label": "<file>:<line>", "multi": false,
+      "context": "<this thread's reviewer comment quoted verbatim, then the drafted reply or fix summary for it>",
       "options": [{"value": "reply:<threadId>", "label": "reply"}, {"value": "fix:<threadId>", "label": "fix"}, {"value": "skip:<threadId>", "label": "skip"}]},
      {"id": "thread-2", "label": "<file>:<line>", "multi": false,
-      "options": ["... the next thread's reply/fix/skip triple, its own id verbatim; one such question per thread"]},
+      "context": "<thread 2's own quote + draft>",
+      "options": ["... the next thread's reply/fix/skip triple, its own id and context verbatim; one such question per thread"]},
      {"id": "code-changes", "label": "Approve the proposed code changes?", "multi": false,
       "options": ["approve", "revise", "skip"]}
    ]
@@ -203,10 +205,13 @@ conversation.
    - **Open the gate:**
      `<status-bin> gate open <state> --kind respond-plan --questions <json> --context <context text>`
      The output is one JSON line: `{"gateId": "...", "presentation": "form"}` or `"wait"`.
-     The context text is the reviewer thread quoted verbatim plus the drafted
-     reply or fix summary for each thread, within the 8192 UTF-8 byte cap; if
-     it would exceed the cap, omit `--context` entirely rather than trimming
-     it.
+     Each thread's material rides its own question's `context` field (the
+     shape above), so every surface shows the quote and draft WITH the
+     question it belongs to. `--context` itself carries only what is shared
+     across threads (the MR and round, one or two lines); `--context` plus
+     every question `context` share one 8192 UTF-8 byte budget, and when the
+     total would exceed it, drop question `context` fields first, then
+     `--context`, never trimming any of them mid-text.
    - **presentation "form":** follow `mattstack:gate-protocol`'s "Acting
      on the response" (form branch) and "CAS and the doorbell" sections
      (stable source checkout, machine-local by design: `cat
@@ -266,18 +271,32 @@ conversation.
 
    ```json
    [
-     {"id": "replies", "label": "Post which replies?", "multi": true, "options": ["<threadId> per drafted reply"]},
+     {"id": "replies", "label": "Post which replies?", "multi": true,
+      "context": "<the finalized replies, one short block per thread: its file:line, then the reply text that will post>",
+      "options": [{"value": "<threadId>", "label": "<file>:<line>", "description": "<first line of that thread's finalized reply>"}]},
      {"id": "disposition", "label": "Disposition", "multi": false, "options": ["resolve-addressed", "leave-open"]}
    ]
    ```
 
+   A question holds at most 4 options: that is the native form's hard
+   per-question limit, and the daemon presents a gate as an in-pane form
+   only when EVERY question fits it — one 5-option question sends the whole
+   gate to the wait queue instead. With more than 4 finalized replies,
+   split the `replies` question into `replies-1`, `replies-2`, ... in
+   thread order, each `multi: true` with up to 4 options and the `context`
+   block for its own threads; `disposition` stays one question. Everything
+   below that reads "the `replies` answer" then means the union of every
+   `replies-*` answer.
+
    - **Open the gate:**
      `<status-bin> gate open <state> --kind respond-post --questions <json> --context <context text>`
      The output is one JSON line: `{"gateId": "...", "presentation": "form"}` or `"wait"`.
-     The context text is the reviewer thread quoted verbatim plus the drafted
-     reply or fix summary for each thread, within the 8192 UTF-8 byte cap; if
-     it would exceed the cap, omit `--context` entirely rather than trimming
-     it.
+     The finalized replies ride the `replies` question's `context` (and each
+     option's `description` carries its reply's first line), so the decision
+     material sits with the question. `--context` carries only the shared
+     frame (the MR and round); `--context` plus question `context` fields
+     share one 8192 UTF-8 byte budget, dropped question-contexts-first when
+     the total would exceed it, never trimmed mid-text.
    - **presentation "form":** follow `mattstack:gate-protocol`'s "Acting
      on the response" (form branch) and "CAS and the doorbell" sections
      (stable source checkout, machine-local by design: `cat
@@ -295,7 +314,7 @@ conversation.
      your framing and reasoning go in the pane prose or option
      descriptions, never into rewritten question or option text; never
      as an option that folds another question's answer in; and "post
-     no replies" is the `replies` question answered as an explicit
+     no replies" is every `replies-*` question answered as an explicit
      empty array, which the daemon records -- Gate 2's own reminder.
    - **presentation "wait":** follow `board:gate-cli-recipes`'s "Wait
      recipe" section (`cat ${CLAUDE_SKILL_DIR}/../gate-cli-recipes/SKILL.md`)
@@ -312,7 +331,7 @@ conversation.
    - `--threads` is the number of unresolved human threads the run set out to
      answer, i.e. the rows in the verdict table.
    - `--posted` is how many of those actually received a posted reply, per
-     Gate 2's `replies` answer.
+     Gate 2's replies selection (the union of every `replies-*` answer).
 
    The board derives the badge from this pair, so a wrong count is a wrong
    badge: `3/3` reads "replies posted", `2/3` reads "2 of 3 posted", `0/3`
@@ -329,9 +348,10 @@ closed-gate/escape-hatch/degraded-mode mechanics, self-contained here since
 each gate follows it independently. (The open/presentation/wait mechanics are
 inline at each gate above, since the questions and context differ per gate.)
 `gate wait`'s answered form is `{"answers": {...}, "by": "...", "answeredAt": ...}`,
-keyed by that gate's own question ids: `replies`/`disposition` for Gate 2,
-read as `answers.<id>`; for Gate 1, one `thread-<n>` id per unresolved
-thread plus `code-changes`. Read Gate 1's thread answers by iterating every
+keyed by that gate's own question ids: the `replies-*` chunks (or the single
+`replies`) plus `disposition` for Gate 2, read as `answers.<id>` with the
+replies selection being the union of every `replies-*` answer; for Gate 1,
+one `thread-<n>` id per unresolved thread plus `code-changes`. Read Gate 1's thread answers by iterating every
 key other than `code-changes`, unwrapping a `{value, note}` object to its
 `value`, and splitting at the first `:` into the verb and the thread id:
 the thread id is in the value, and the `thread-<n>` key is never a join key.

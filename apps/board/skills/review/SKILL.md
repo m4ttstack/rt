@@ -141,7 +141,9 @@ remembered in the conversation.
 
      ```json
      [
-       {"id": "tiers", "label": "Post which findings?", "multi": true, "options": [<levels present>]},
+       {"id": "tiers", "label": "Post which findings?", "multi": true,
+        "context": "<one line per finding title, verbatim from the report, grouped by tier>",
+        "options": [<levels present>]},
        {"id": "outcome", "label": "Verdict", "multi": false, "options": ["comment", "approve"]}
      ]
      ```
@@ -162,9 +164,11 @@ remembered in the conversation.
      `{"value": "<Tier>", "label": "<Tier> (<count>)"}` objects, the count being
      that tier's finding count from the report (e.g. value `Major`, label
      `Major (2)`); the `outcome` options stay bare strings unless marked as
-     recommended. The `--context`
-     text is the tier counts line followed by one line per finding title from
-     the report, verbatim from the report file, never re-summarized.
+     recommended. The finding
+     titles ride the `tiers` question's `context` (one line per finding,
+     verbatim from the report file, never re-summarized), so they render
+     with the question they answer; `--context` itself carries only the
+     tier counts line.
 
      Mark the outcome you would recommend by listing it FIRST and giving it
      a label ending in " (recommended)", e.g.
@@ -177,9 +181,11 @@ remembered in the conversation.
    - **Open the gate:**
      `<status-bin> gate open <state> --kind review-post --questions <json> --context <context text>`
      The output is one JSON line: `{"gateId": "...", "presentation": "form"}` or `"wait"`.
-     The context text is assembled from strings you already hold (see the fill
-     rules above); if it would exceed 8192 UTF-8 bytes, omit `--context`
-     entirely rather than trimming it.
+     Both context carriers are assembled from strings you already hold (see
+     the fill rules above); `--context` plus every question `context` share
+     one 8192 UTF-8 byte budget, and when the total would exceed it, drop
+     question `context` fields first, then `--context`, never trimming any
+     of them mid-text.
    - **presentation "form":** follow `mattstack:gate-protocol`'s "Acting
      on the response" (form branch) and "CAS and the doorbell" sections
      (stable source checkout, machine-local by design: `cat
