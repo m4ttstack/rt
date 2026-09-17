@@ -1143,7 +1143,7 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
         });
         const watchdog = new HerdWatchdog({
           sensors: watchdogSensors,
-          act: createWatchdogActuators({ herdStore, db: getStateDb("daemon"), socketFor: watchdogSensors.socketFor, log: watchdogLog }),
+          act: createWatchdogActuators({ herdStore, db: getStateDb("daemon"), socketFor: watchdogSensors.socketFor, herdr: herdrRequest, log: watchdogLog }),
           cfg: watchdogConfig,
           log: watchdogLog,
         });

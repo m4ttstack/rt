@@ -16,6 +16,7 @@ import type { HerdLifecycle } from "./herd-lifecycle.ts";
 import type { HerdStore } from "./herd-store.ts";
 import type { WatchdogActuators, WatchdogConfig, WatchdogSensors } from "./herd-watchdog.ts";
 import { injectIntoPane } from "./inject.ts";
+import { driveTrustAccept } from "./trust-accept.ts";
 import { paneStatuses } from "./pane-statuses.ts";
 
 export interface WatchdogSensorDeps {
@@ -118,9 +119,14 @@ export interface WatchdogActuatorDeps {
   herdStore: Pick<HerdStore, "setJobStatus">;
   db: Database;
   socketFor: (pane: string) => string;
+  /** Needed only by the mid-run trust accept; the other actuators go through
+      the injector. */
+  herdr?: typeof herdrRequest;
   inject?: typeof injectIntoPane;
   enqueue?: typeof enqueueNotification;
   log: Logger;
+  trustSettleMs?: number;
+  trustStepMs?: number;
 }
 
 /** None of these throw into the ladder: one party's failed side effect must
@@ -145,6 +151,23 @@ export function createWatchdogActuators(deps: WatchdogActuatorDeps): WatchdogAct
         return true;
       } catch (err) {
         log.warn({ err, pane, sockPath }, "watchdog poke threw");
+        return false;
+      }
+    },
+    async acceptTrustModal(herd, job, pane) {
+      if (!deps.herdr) return false;
+      const sockPath = deps.socketFor(pane);
+      try {
+        const outcome = await driveTrustAccept({
+          herdr: deps.herdr, sock: { sockPath }, pane: parsePaneRef(pane).paneId,
+          log, context: { herd, job },
+          ...(deps.trustSettleMs !== undefined && { settleMs: deps.trustSettleMs }),
+          ...(deps.trustStepMs !== undefined && { stepMs: deps.trustStepMs }),
+        });
+        if (outcome !== "accepted") log.info({ herd, job, pane, outcome }, "watchdog: mid-run trust accept did not clear the pane");
+        return outcome === "accepted";
+      } catch (err) {
+        log.warn({ err, herd, job, pane }, "watchdog: mid-run trust accept threw");
         return false;
       }
     },

@@ -282,6 +282,8 @@ describe("HerdWatchdog ladder", () => {
     const pokes: { pane: string; text: string }[] = [];
     const parks: { herd: string; job: string }[] = [];
     const modalNotes: { herd: string; job: string; pane: string }[] = [];
+    const trustCalls: { herd: string; job: string; pane: string }[] = [];
+    const trust = { accepts: false };
     const notes: string[] = [];
     const noteEvents: { summary: string; pane: string | null }[] = [];
     const delivery = { ok: true };
@@ -295,6 +297,7 @@ describe("HerdWatchdog ladder", () => {
       poke: async (pane, text) => { pokes.push({ pane, text }); const parked = hold.p; hold.p = null; if (parked) await parked; return delivery.ok; },
       parkStuckAtModal: (h, j) => { parks.push({ herd: h, job: j }); },
       notifyStuckAtModal: (h, j, pane) => { modalNotes.push({ herd: h, job: j, pane }); },
+      acceptTrustModal: async (h, j, pane) => { trustCalls.push({ herd: h, job: j, pane }); return trust.accepts; },
       notifyHuman: (summary, pane) => { notes.push(summary); noteEvents.push({ summary, pane: pane ?? null }); },
     };
     const h = opts.herd ?? herd();
@@ -305,7 +308,7 @@ describe("HerdWatchdog ladder", () => {
     const tick = async (mins = 0) => { clock.now += mins * MIN; await wd.sweep(); };
     const shepherdPokes = () => pokes.filter((p) => p.pane === "w1:p0");
     const workerPokes = () => pokes.filter((p) => p.pane === "w1:p1");
-    return { wd, tick, clock, pokes, parks, modalNotes, notes, noteEvents, lines, delivery, hold, conf: c, shepherdPokes, workerPokes };
+    return { wd, tick, clock, pokes, parks, modalNotes, trustCalls, trust, notes, noteEvents, lines, delivery, hold, conf: c, shepherdPokes, workerPokes };
   }
 
   const workerWedged = (): Partial<WatchdogSensors> => ({ ...idleFor(3), unreadDmMentionsFor: (h) => (h === "job-a" ? 1 : 0) });
@@ -548,6 +551,48 @@ describe("HerdWatchdog ladder", () => {
     const r = rig({ jobs: [], herd: herd({ shepherdPane: null }), sensors: { paneState: () => "idle", openHumanGates: () => [{ id: "g-9", ageMs: 6 * MIN }] } });
     await r.tick();
     expect(r.noteEvents).toEqual([{ summary: r.notes[0]!, pane: null }]);
+  });
+
+  // EnterWorktree into a freshly provisioned tree re-prompts for folder trust
+  // mid-session, which is a dialog the daemon may answer for itself.
+  const modalOn = (over: Partial<WatchdogSensors> = {}): Partial<WatchdogSensors> => ({ paneState: (p) => (p === "w1:p1" ? "modal" : "idle"), idleSinceMs: () => NOW - 40 * MIN, ...over });
+  const provisioned = () => job({ tree: "on-deck-1" });
+
+  test("a blocked pane in a provisioned tree is offered the trust accept before anything parks", async () => {
+    const r = rig({ jobs: [provisioned()], sensors: modalOn() });
+    r.trust.accepts = true;
+    await r.tick();
+    expect(r.trustCalls).toEqual([{ herd: "demo-1", job: "job-a", pane: "w1:p1" }]);
+    expect(r.parks).toEqual([]);
+    expect(r.modalNotes).toEqual([]);
+    expect(r.shepherdPokes()).toEqual([]);
+    expect(r.wd.annotations("demo-1", "job-a")).toBeNull();
+  });
+
+  test("a blocked pane the accept cannot clear is parked and notified as before", async () => {
+    const r = rig({ jobs: [provisioned()], sensors: modalOn() });
+    r.trust.accepts = false;
+    await r.tick();
+    expect(r.trustCalls).toHaveLength(1);
+    expect(r.parks).toEqual([{ herd: "demo-1", job: "job-a" }]);
+    expect(r.modalNotes).toHaveLength(1);
+  });
+
+  test("a job in a tree the daemon did not provision is parked without an accept attempt", async () => {
+    const r = rig({ jobs: [job({ tree: null })], sensors: modalOn() });
+    r.trust.accepts = true;
+    await r.tick();
+    expect(r.trustCalls).toEqual([]);
+    expect(r.parks).toEqual([{ herd: "demo-1", job: "job-a" }]);
+  });
+
+  test("the accept is offered once: a pane still blocked on the next sweep parks", async () => {
+    const r = rig({ jobs: [provisioned()], sensors: modalOn() });
+    await r.tick();
+    expect(r.parks).toHaveLength(1);
+    await r.tick(5);
+    expect(r.trustCalls).toHaveLength(1);
+    expect(r.parks).toHaveLength(1);
   });
 
   test("a park also raises one click-to-focus notification naming the pane, outside the quiet period", async () => {

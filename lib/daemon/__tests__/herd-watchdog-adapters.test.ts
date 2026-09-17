@@ -265,6 +265,49 @@ describe("watchdog actuators", () => {
     expect(await thrower.a.poke("w1:p1", "t")).toBe(false);
   });
 
+  test("acceptTrustModal drives the dialog on the pane's own socket and reports whether it cleared", async () => {
+    const screens: Record<string, string> = {
+      "w1:p1": ["Do you trust the files in this folder?", "❯ 1. Yes, proceed", "  2. No, exit"].join("\n"),
+      "w1:p2": "claude\nworking on the brief\n",
+    };
+    const seen: Array<{ method: string; pane: string; sock: string | undefined }> = [];
+    const herdr = (async (method: string, params: any, o: any) => {
+      const pane = params.pane_id;
+      seen.push({ method, pane, sock: o?.sockPath });
+      if (method === "pane.read") return { ok: true, result: { read: { text: screens[pane] ?? "" } } };
+      if (method === "pane.send_keys") { screens[pane] = "$ claude\n> \n"; return { ok: true, result: {} }; }
+      return { ok: false, code: "invalid_request", message: method };
+    }) as any;
+    const a = createWatchdogActuators({
+      herdStore: { setJobStatus: () => {} },
+      db: freshDb(),
+      socketFor: (pane) => (pane.startsWith("bg:") ? BG : DEFAULT),
+      herdr,
+      enqueue: () => {},
+      log,
+      trustSettleMs: 1,
+      trustStepMs: 1,
+    });
+    expect(await a.acceptTrustModal("demo-1", "job-a", "bg:w1:p1")).toBe(true);
+    // The bg: ref is parsed at the seam: herdr only ever sees the bare id.
+    expect(seen.every((c) => c.pane === "w1:p1")).toBe(true);
+    expect(seen.every((c) => c.sock === BG)).toBe(true);
+    // A blocked pane that is not the trust dialog is not this driver's to answer.
+    expect(await a.acceptTrustModal("demo-1", "job-b", "w1:p2")).toBe(false);
+  });
+
+  test("a trust accept that throws reports false instead of escaping", async () => {
+    const a = createWatchdogActuators({
+      herdStore: { setJobStatus: () => {} },
+      db: freshDb(),
+      socketFor: () => DEFAULT,
+      herdr: (async () => { throw new Error("socket exploded"); }) as any,
+      enqueue: () => {},
+      log,
+    });
+    expect(await a.acceptTrustModal("demo-1", "job-a", "w1:p1")).toBe(false);
+  });
+
   test("parkStuckAtModal marks the job row", () => {
     const { a, statuses } = act();
     a.parkStuckAtModal("demo-1", "job-a");

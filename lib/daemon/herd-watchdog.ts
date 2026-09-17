@@ -135,6 +135,10 @@ export interface WatchdogActuators {
       not delivered: the injector refuses blocked agents and queues on working. */
   poke(pane: string, text: string): Promise<boolean>;
   parkStuckAtModal(herd: string, job: string): void;
+  /** Try the folder-trust accept on a blocked pane, the same driver every
+      spawn path uses. True means the pane came back; false means it is a
+      dialog the daemon may not answer, or one the accept did not clear. */
+  acceptTrustModal(herd: string, job: string, pane: string): Promise<boolean>;
   /** The click-to-focus notification that rides with a park: the human is the
       only party who can accept a trust dialog, so it goes out on the park
       itself rather than waiting for the ladder's third rung, and it carries
@@ -236,6 +240,17 @@ export class HerdWatchdog {
     }
     const ladder = this.track(key, now);
     if (verdict.kind === "modal" && !ladder.parked) {
+      // Entering a freshly provisioned worktree re-prompts for folder trust
+      // mid-session (trust is per directory), and that one the daemon may
+      // answer for itself: it provisioned the tree. Anything else, and any
+      // accept that does not clear the pane, parks as before. Only a
+      // daemon-provisioned tree qualifies -- a job pointed at a directory
+      // someone passed in is not rt's to trust on the human's behalf.
+      if (job.tree !== null && await this.act.acceptTrustModal(herd.id, job.name, job.pane)) {
+        this.ladders.delete(key);
+        this.log.info({ herd: herd.id, job: job.name, pane: job.pane }, "accepted a mid-run trust dialog");
+        return;
+      }
       ladder.parked = true;
       this.act.parkStuckAtModal(herd.id, job.name);
       // Deliberately outside notify(): the park happens once, so this cannot
