@@ -7,7 +7,14 @@ export interface RawGitOpts {
 // (real exposure: a git hook sets GIT_DIR) redirect a git invocation at a
 // repository other than the one named by `dir`, silently. Every spawn in
 // this package goes through this scrubber first.
-const REPO_LOCATION_ENV_KEYS = ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"];
+const REPO_LOCATION_ENV_KEYS = [
+  "GIT_DIR",
+  "GIT_WORK_TREE",
+  "GIT_INDEX_FILE",
+  "GIT_COMMON_DIR",
+  "GIT_OBJECT_DIRECTORY",
+  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+];
 
 export function scrubGitEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...base };

@@ -6,6 +6,22 @@ import { rawGit } from "../exec.ts";
 import { DiffSelection, DiffSelectionType } from "../vendor/ghd/diff-selection.ts";
 import type { DiffHunk } from "../vendor/ghd/raw-diff.ts";
 
+// The sandbox's `git()` helper has no stdin, but simulating a concurrent
+// commit on `old.txt` needs `mktree`/`commit-tree`, which read the tree
+// entries / commit message from it.
+async function gitWithStdin(dir: string, args: string[], input: string): Promise<string> {
+  const proc = Bun.spawn(["git", ...args], { cwd: dir, stdin: "pipe", stdout: "pipe", stderr: "pipe" });
+  proc.stdin.write(input);
+  proc.stdin.end();
+  const [out, err, code] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+  if (code !== 0) throw new Error(`git ${args.join(" ")} exited ${code}: ${err || out}`);
+  return out;
+}
+
 function selectLine(hunks: ReadonlyArray<DiffHunk>, text: string, selection: DiffSelection): DiffSelection {
   for (const hunk of hunks) {
     const i = hunk.lines.findIndex((l) => l.text === text);
@@ -198,6 +214,49 @@ describe("stagingDiff / stageSelection / discardSelection", () => {
 
       const afterCached = await sb.git(["diff", "--cached", "--name-status"]);
       expect(afterCached).toBe(beforeCached);
+    } finally {
+      await sb.cleanup();
+    }
+  });
+
+  it("5d. rolls back the pre-staged rename atomically when the content patch is stale", async () => {
+    const sb = await makeSandbox();
+    try {
+      await sb.write("old.txt", "a\nb\nc\n");
+      await sb.commitAll("base");
+      await sb.git(["mv", "old.txt", "new.txt"]);
+      await sb.write("new.txt", "a\nB\nc\n");
+      const client = createGitClient(sb.dir);
+
+      const diff = await client.stagingDiff("new.txt");
+      expect(diff.untracked).toBe(false);
+
+      // Simulate old.txt's blob changing at HEAD concurrently (another
+      // process landing a commit) between the diff capture above and the
+      // stageSelection call below -- a `git apply --cached` failure can
+      // only happen here because a `--unidiff-zero` patch checks the exact
+      // deleted line, not the working tree, which stageSelection never
+      // reads. Rewriting the working tree copy of old.txt after capture
+      // (as opposed to its committed blob) would have no effect on the
+      // patch's base and could never make it stale.
+      await sb.write("old.txt", "a\nZ\nc\nextra\n");
+      const blobSha = (await sb.git(["hash-object", "-w", "old.txt"])).trim();
+      const newTree = (await gitWithStdin(sb.dir, ["mktree"], `100644 blob ${blobSha}\told.txt\n`)).trim();
+      const headSha = (await sb.git(["rev-parse", "HEAD"])).trim();
+      const newCommit = (
+        await gitWithStdin(sb.dir, ["commit-tree", newTree, "-p", headSha, "-m", "concurrent"], "")
+      ).trim();
+      await sb.git(["update-ref", "HEAD", newCommit]);
+
+      const beforeSnapshot = await sb.git(["ls-files", "-s", "--", "old.txt", "new.txt"]);
+      await expect(
+        client.stageSelection(diff, DiffSelection.fromInitialSelection(DiffSelectionType.All), {
+          originalPath: "old.txt",
+        }),
+      ).rejects.toThrow();
+
+      const afterSnapshot = await sb.git(["ls-files", "-s", "--", "old.txt", "new.txt"]);
+      expect(afterSnapshot).toBe(beforeSnapshot);
     } finally {
       await sb.cleanup();
     }

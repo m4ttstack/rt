@@ -17,6 +17,13 @@ export function assertSafeCommitish(value: string, label: string): void {
   rejectFlagLike(value, label);
 }
 
+/** A remote name is not a ref either, but the same leading-dash argv
+ *  confusion applies (e.g. pushTag(name, "-o") smuggling an option into
+ *  `git push`), so it gets the same flag-injection check. */
+export function assertSafeRemote(value: string): void {
+  rejectFlagLike(value, "remote");
+}
+
 // The full-refname form exits 0/1; --branch instead exits 128 on invalid
 // names, which rawGitOk treats as a throw and would bypass this message.
 export async function assertValidBranchName(dir: string, name: string): Promise<void> {

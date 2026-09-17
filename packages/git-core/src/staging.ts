@@ -57,18 +57,54 @@ export async function stageSelection(
       throw new Error(`rename source not in HEAD: ${opts.originalPath}`);
     }
     const [, mode, oid] = match;
-    // Clears any index entry left at the old path -- `--ignore-unmatch`
-    // makes this idempotent whether the rename is already staged (e.g. a
-    // prior `git mv`) or not (a same-content deleted+untracked pair) --
-    // then re-parents the original blob under the new path so `-M`
-    // detection still sees a rename once the content patch below lands.
-    await rawGit(ctx.dir, ["rm", "--cached", "--ignore-unmatch", "--", opts.originalPath]);
-    await rawGit(ctx.dir, ["update-index", "--add", "--cacheinfo", `${mode},${oid},${diff.path}`]);
+
+    // Snapshot both paths' index state before touching anything, so a
+    // failure below (the content patch is stale against the re-parented
+    // base) can be rolled back to exactly this instead of leaving the
+    // pre-stage rename applied with no content change.
+    const snapshot = await rawGit(ctx.dir, ["ls-files", "-s", "-z", "--", opts.originalPath, diff.path]);
+
+    try {
+      // Clears any index entry left at the old path -- `--ignore-unmatch`
+      // makes this idempotent whether the rename is already staged (e.g. a
+      // prior `git mv`) or not (a same-content deleted+untracked pair) --
+      // then re-parents the original blob under the new path so `-M`
+      // detection still sees a rename once the content patch below lands.
+      await rawGit(ctx.dir, ["rm", "--cached", "--ignore-unmatch", "--", opts.originalPath]);
+      await rawGit(ctx.dir, ["update-index", "--add", "--cacheinfo", `${mode},${oid},${diff.path}`]);
+      await applyStagePatch(ctx, diff, selection);
+    } catch (err) {
+      await restoreIndexSnapshot(ctx, snapshot, [opts.originalPath, diff.path]);
+      throw err;
+    }
+    return;
   }
 
+  await applyStagePatch(ctx, diff, selection);
+}
+
+// Callers must have already rejected diff.kind !== "text" -- this only
+// reads fields common to every StagingDiff, so no narrowed type is needed.
+async function applyStagePatch(ctx: ClientContext, diff: StagingDiff, selection: DiffSelection): Promise<void> {
   const kind = diff.untracked ? AppFileStatusKind.Untracked : AppFileStatusKind.Modified;
   const patch = formatPatch({ path: diff.path, status: { kind }, selection }, { hunks: diff.hunks });
   await rawGit(ctx.dir, ["apply", "--cached", ...APPLY_FLAGS], { stdin: patch });
+}
+
+// `snapshot` is `ls-files -s -z` output for exactly `paths`, captured before
+// any mutation. update-index accepts that same "mode SP sha SP stage TAB
+// path" line back via --index-info, so restoring is feeding it straight
+// through; a path absent from the snapshot (never staged to begin with)
+// needs an explicit all-zero removal line instead, or it would stay behind
+// at whatever the failed mutation left it at.
+async function restoreIndexSnapshot(ctx: ClientContext, snapshot: string, paths: string[]): Promise<void> {
+  const entries = snapshot.split("\0").filter((line) => line.length > 0);
+  const present = new Set(entries.map((line) => line.slice(line.indexOf("\t") + 1)));
+  const removals = paths
+    .filter((path) => !present.has(path))
+    .map((path) => `0 0000000000000000000000000000000000000000\t${path}`);
+  const payload = [...entries, ...removals].map((line) => `${line}\0`).join("");
+  await rawGit(ctx.dir, ["update-index", "-z", "--index-info"], { stdin: payload });
 }
 
 export async function discardSelection(

@@ -120,6 +120,35 @@ describe("tag mutations", () => {
     }
   });
 
+  it("pushTag rejects a flag-like remote instead of running it as an option to git push", async () => {
+    const sb = await seeded();
+    try {
+      await sb.addBareRemote();
+      const client = createGitClient(sb.dir);
+      await client.createTag("v1");
+      // If unguarded, args become ["push", "-o", "refs/tags/v1"] -- "-o"
+      // is a valid `git push` flag, so nothing about the tag name signals
+      // the mistake and the tag silently never reaches a remote.
+      await expect(client.pushTag("v1", "-o")).rejects.toThrow(/-o/);
+      const out = await sb.git(["ls-remote", "--tags", "origin"]);
+      expect(out).not.toContain("refs/tags/v1");
+    } finally {
+      await sb.cleanup();
+    }
+  });
+
+  it("createTag rejects an explicit empty sha instead of silently tagging HEAD", async () => {
+    const sb = await seeded();
+    try {
+      const client = createGitClient(sb.dir);
+      await expect(client.createTag("empty-sha", { sha: "" })).rejects.toThrow(/sha/);
+      const tags = await client.tags();
+      expect(tags.find((t) => t.name === "empty-sha")).toBeUndefined();
+    } finally {
+      await sb.cleanup();
+    }
+  });
+
   it("pushTag pushes the tag to the given remote", async () => {
     const sb = await seeded();
     try {
