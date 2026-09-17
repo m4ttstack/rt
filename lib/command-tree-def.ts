@@ -1854,6 +1854,15 @@ export const TREE: Record<string, CommandNode> = {
           SETUP_JSON_ARG,
         ],
       },
+      status: {
+        description: "All registered repos with git badges from the daemon sweep",
+        module: "./commands/repos.ts",
+        fn: "reposStatus",
+        args: [
+          { name: "Refresh", flag: "--refresh", type: "boolean", default: false, hint: "Run a sweep now instead of reading the cache" },
+          { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable rows (the mission-control rail feed)" },
+        ],
+      },
     },
   },
 
