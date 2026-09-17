@@ -28,15 +28,16 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     init(env: SettingsEnvironment) {
         self.env = env
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 440),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 680, height: 620),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "mattstack Settings"
+        window.toolbarStyle = .preference
         window.isReleasedWhenClosed = false
         super.init(window: window)
         window.delegate = self
         pane.current = SettingsPane(rawValue: UserDefaults.standard.string(forKey: Self.paneKey) ?? "") ?? .general
         window.contentViewController = NSHostingController(rootView: SettingsView(pane: pane, env: env))
-        window.setContentSize(NSSize(width: 560, height: 440))
+        window.setContentSize(NSSize(width: 680, height: 620))
         window.center()
         paneObserver = pane.$current.sink { [weak self] p in
             guard let self, self.windowIsVisible else { return }

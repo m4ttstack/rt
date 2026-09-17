@@ -8,6 +8,13 @@ struct GeneralPane: View {
     @State private var autoUpdates = false
     @State private var devModeBusy = false
     @State private var devModeError: String?
+    @State private var devModeOn: Bool
+    @State private var confirmingSwitch = false
+
+    init(env: SettingsEnvironment) {
+        self.env = env
+        _devModeOn = State(initialValue: env.isDevBuild)
+    }
 
     var body: some View {
         Form {
@@ -37,28 +44,18 @@ struct GeneralPane: View {
                 }
             }
             Section("Developer") {
-                LabeledContent("Flavor") { Text(env.isDevBuild ? "dev (mattstack-dev.app)" : "prod (mattstack.app)") }
-                Button(env.isDevBuild ? "Switch to the installed app (dev mode off)…" : "Switch to the dev app (dev mode on)…") {
-                    devModeBusy = true
-                    devModeError = nil
-                    Task {
-                        let verb = "settings dev-mode"
-                        do {
-                            let r = try await env.rt.run(["settings", "dev-mode", env.isDevBuild ? "prod" : "dev"], stdin: nil)
-                            if let e = r.userError { devModeError = e.message }
-                            else if r.exitCode != 0 { devModeError = r.failureCopy(verb: verb) }
-                        } catch {
-                            devModeError = (error as? RtClientError)?.copy ?? "rt \(verb) failed to start."
-                        }
-                        if let devModeError { TrayLog.warn("dev-mode handoff failed", ["err": devModeError]) }
-                        devModeBusy = false
+                Toggle("Dev mode", isOn: $devModeOn)
+                    .toggleStyle(.switch).controlSize(.small)
+                    .disabled(devModeBusy)
+                    .accessibilityIdentifier(AXID.settingsGeneralDevMode)
+                    .onChange(of: devModeOn) { _, on in
+                        // The snap-back write on Cancel re-enters here already matching the flavor.
+                        guard on != env.isDevBuild else { return }
+                        confirmingSwitch = true
                     }
-                }
-                .disabled(devModeBusy)
-                .accessibilityIdentifier(AXID.settingsGeneralDevMode)
-                Text("The handoff quits this app and launches the other flavor.").font(.caption).foregroundStyle(.secondary)
+                Text(env.isDevBuild ? "On: this is the dev app (mattstack-dev.app)." : "Off: this is the installed app (mattstack.app).")
+                    .font(.caption).foregroundStyle(.secondary)
                 if let devModeError { Text(devModeError).font(.caption).foregroundStyle(.red) }
-                // `rt settings dev-mode <dev|prod>` drops its TTY requirement when the target is given, so the app can spawn it.
             }
             Section { LabeledContent("Version") { Text(env.version) } }
         }
@@ -66,6 +63,32 @@ struct GeneralPane: View {
         .onAppear {
             autoUpdates = env.updater.automaticallyChecks
             startAtLogin = SMAppService.mainApp.status == .enabled
+        }
+        .alert(devModeOn ? "Switch to the dev app?" : "Switch to the installed app?", isPresented: $confirmingSwitch) {
+            Button("Switch") { performFlavorSwitch() }
+            Button("Cancel", role: .cancel) { devModeOn = env.isDevBuild }
+        } message: {
+            Text("This quits \(env.isDevBuild ? "mattstack-dev.app" : "mattstack.app") and launches the other flavor.")
+        }
+    }
+
+    private func performFlavorSwitch() {
+        devModeBusy = true
+        devModeError = nil
+        Task {
+            let verb = "settings dev-mode"
+            do {
+                // `rt settings dev-mode <dev|prod>` drops its TTY requirement when the target is given, so the app can spawn it.
+                let r = try await env.rt.run(["settings", "dev-mode", env.isDevBuild ? "prod" : "dev"], stdin: nil)
+                if let e = r.userError { devModeError = e.message }
+                else if r.exitCode != 0 { devModeError = r.failureCopy(verb: verb) }
+            } catch {
+                devModeError = (error as? RtClientError)?.copy ?? "rt \(verb) failed to start."
+            }
+            if let devModeError { TrayLog.warn("dev-mode handoff failed", ["err": devModeError]) }
+            devModeBusy = false
+            // A failed handoff leaves this app running; the switch shows the real flavor again.
+            if devModeError != nil { devModeOn = env.isDevBuild }
         }
     }
 

@@ -22,7 +22,7 @@ struct SettingsView: View {
                 .tabItem { Label("Uninstall", systemImage: "trash").accessibilityIdentifier(AXID.settingsTab(SettingsPane.uninstall.rawValue)) }
                 .tag(SettingsPane.uninstall)
         }
-        .frame(width: 560, height: 440)
+        .frame(width: 680, height: 620)
         .onChange(of: pane.current) { _, p in UserDefaults.standard.set(p.rawValue, forKey: SettingsWindowController.paneKey) }
     }
 }
