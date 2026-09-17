@@ -4,17 +4,12 @@ import { getFileDiff } from "./diff.ts";
 import { getBranches, getTags } from "./refs.ts";
 import { getLog } from "./log.ts";
 import { getStashes } from "./stash.ts";
+import { getFetchState } from "./fetch-state.ts";
 import type { GitClient } from "./types.ts";
 
 export interface ClientContext {
   dir: string;
   git: SimpleGit;
-}
-
-type Method<K extends keyof GitClient> = GitClient[K];
-
-function unimplemented(name: string): never {
-  throw new Error(`git-core: ${name} not implemented yet`);
 }
 
 export function createGitClient(dir: string): GitClient {
@@ -27,6 +22,6 @@ export function createGitClient(dir: string): GitClient {
     tags: () => getTags(ctx),
     log: (opts) => getLog(ctx, opts),
     stashes: () => getStashes(ctx),
-    fetchState: () => unimplemented("fetchState"),
+    fetchState: () => getFetchState(ctx),
   };
 }
