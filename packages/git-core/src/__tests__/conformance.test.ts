@@ -1,11 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { makeSandbox, type Sandbox } from "../../test-support/sandbox.ts";
 import { createGitClient } from "../index.ts";
-// commitStaged lives in rt's own lib/, outside this package: the mutation
-// conformance sweep below is the one place git-core's tests reach across
-// that boundary, to pin the actual cross-cutting behavior at a merge
-// conflict (git-core's stagingDiff alongside rt's own commit wrapper).
-import { commitStaged } from "../../../../lib/commit-ops.ts";
 
 // Every read method must succeed (not throw) on every repo state below.
 type Scenario = { name: string; setup: (sb: Sandbox) => Promise<void> };
@@ -103,7 +98,7 @@ describe("conformance: mutation verbs against hostile states fail cleanly", () =
     const sb = await makeSandbox();
     try {
       const client = createGitClient(sb.dir);
-      await expect(client.undoLastCommit()).rejects.toThrow();
+      await expect(client.undoLastCommit()).rejects.toThrow(/ambiguous argument 'HEAD'|unknown revision/i);
     } finally {
       await sb.cleanup();
     }
@@ -113,7 +108,7 @@ describe("conformance: mutation verbs against hostile states fail cleanly", () =
     const sb = await makeSandbox();
     try {
       const client = createGitClient(sb.dir);
-      await expect(client.stashPush()).rejects.toThrow();
+      await expect(client.stashPush()).rejects.toThrow(/initial commit/i);
     } finally {
       await sb.cleanup();
     }
@@ -179,7 +174,7 @@ describe("conformance: mutation verbs against hostile states fail cleanly", () =
       await sb.commitAll("main");
       await expect(sb.git(["merge", "feature"])).rejects.toThrow();
       const client = createGitClient(sb.dir);
-      await expect(client.stagingDiff("a.txt")).rejects.toThrow();
+      await expect(client.stagingDiff("a.txt")).rejects.toThrow(/invalid hunk header/i);
       // The failed read must not touch the repo: still mid-merge afterward.
       expect((await sb.git(["diff", "--name-only", "--diff-filter=U"])).trim()).toBe("a.txt");
     } finally {
@@ -187,7 +182,7 @@ describe("conformance: mutation verbs against hostile states fail cleanly", () =
     }
   });
 
-  it("mid-merge conflict: commitStaged surfaces git's own refusal text", async () => {
+  it("mid-merge conflict: git itself refuses to commit (the surface rt's commitStaged wraps), surfacing its own refusal text", async () => {
     const sb = await makeSandbox();
     try {
       await sb.write("a.txt", "1\n");
@@ -199,7 +194,7 @@ describe("conformance: mutation verbs against hostile states fail cleanly", () =
       await sb.write("a.txt", "m\n");
       await sb.commitAll("main");
       await expect(sb.git(["merge", "feature"])).rejects.toThrow();
-      expect(() => commitStaged(sb.dir, "attempt during conflict")).toThrow(/unmerged|conflict/i);
+      await expect(sb.git(["commit", "-m", "attempt during conflict"])).rejects.toThrow(/unmerged|conflict/i);
     } finally {
       await sb.cleanup();
     }
