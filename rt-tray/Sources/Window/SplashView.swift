@@ -24,9 +24,8 @@ enum SplashTuning {
 
     static let dismissFadeDuration: Double = 0.25
 
-    // The minimum-display gate WindowModel waits on before it will consider
-    // dismissing the splash (the other half of the "later of" rule is the
-    // active app's first navigation finishing, still uncapped here at 8s).
+    // How long the splash is on screen, full stop: WindowModel dismisses on
+    // this alone and waits on nothing else.
     // animationSettleDuration is a best-visual-estimate of when the drop-in
     // finishes, not something derived from the spring math -- if a future
     // eye-check says the animation actually settles earlier or later, this

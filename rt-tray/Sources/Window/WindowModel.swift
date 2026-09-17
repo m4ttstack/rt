@@ -29,11 +29,7 @@ final class WindowNavigationDelegate: NSObject, WKNavigationDelegate, WKUIDelega
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         model?.loadFailures[appName] = true
-        // A dead app's failed load still counts as its "first navigation
-        // finishing" for the splash gate, or a dead app would hold the
-        // splash for the full 8s hard cap instead of dismissing at the
-        // normal minimum-visible time with the error overlay ready beneath.
-        model?.reportFirstNavigationFinish(appName: appName)
+        model?.loadingApps.remove(appName)
     }
 
     /// Clears the overlay as soon as a new attempt starts, not just on
@@ -41,11 +37,12 @@ final class WindowNavigationDelegate: NSObject, WKNavigationDelegate, WKUIDelega
     /// until the retry completes.
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         model?.loadFailures[appName] = false
+        model?.loadingApps.insert(appName)
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         model?.loadFailures[appName] = false
-        model?.reportFirstNavigationFinish(appName: appName)
+        model?.loadingApps.remove(appName)
     }
 
     /// A same-window link to a different mattstack app (e.g. deck's own app
@@ -109,6 +106,9 @@ final class WindowModel: ObservableObject {
     @Published private(set) var catalogFresh = false
     @Published var activeApp: String = ""
     @Published var loadFailures: [String: Bool] = [:]
+    /// Apps whose webview has a navigation in flight, so the content area can
+    /// say "loading" instead of showing a blank page.
+    @Published var loadingApps: Set<String> = []
     @Published private(set) var icons: [String: NSImage] = [:]
     @Published private(set) var splashVisible = false
     @Published private(set) var splashOpacity: Double = 1
@@ -125,8 +125,6 @@ final class WindowModel: ObservableObject {
     /// the process level to say what it means -- re-shows of the window
     /// never replay the splash.
     private static var hasShownSplash = false
-    private var splashMinDelayElapsed = false
-    private var splashNavigationFinished = false
     private var splashDismissed = false
 
     init(store: WebViewStore? = nil) {
@@ -184,40 +182,26 @@ final class WindowModel: ObservableObject {
     }
 
     /// No-op on every call after the first per process: `show()` calls this
-    /// unconditionally on every window show, including re-shows. The
-    /// minimum-display gate is `SplashTuning.minimumVisibleDuration`
-    /// (animation settle + a post-settle hold), not a bare literal here, so
-    /// it stays in lockstep with the animation's own tunables.
+    /// unconditionally on every window show, including re-shows.
+    ///
+    /// The splash lives for exactly as long as its own animation takes
+    /// (`SplashTuning.minimumVisibleDuration`, kept there so it stays in
+    /// lockstep with the animation's tunables) and then goes, whatever the
+    /// network is doing. It used to also wait on the active app's first
+    /// navigation, which made an unremarkable catalog fetch or page load read
+    /// as a stuck splash -- and waited on the wrong thing anyway, since a
+    /// finished navigation is not a drawn page. Content that is not ready yet
+    /// says so itself, in the content area.
     func presentSplashIfNeeded() {
         guard !Self.hasShownSplash else { return }
         Self.hasShownSplash = true
         splashVisible = true
 
-        let minimumVisibleNanoseconds = UInt64(SplashTuning.minimumVisibleDuration * 1_000_000_000)
+        let visibleNanoseconds = UInt64(SplashTuning.minimumVisibleDuration * 1_000_000_000)
         Task { [weak self] in
-            try? await Task.sleep(nanoseconds: minimumVisibleNanoseconds)
-            self?.splashMinDelayElapsed = true
-            self?.dismissSplashIfReady()
-        }
-        Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 8_000_000_000)
+            try? await Task.sleep(nanoseconds: visibleNanoseconds)
             self?.dismissSplash()
         }
-    }
-
-    /// The gate is "the active app's first navigation finishing", checked
-    /// live against `activeApp` rather than a name captured at splash-show
-    /// time, since the active app is often still unresolved (catalog not
-    /// loaded yet) at that moment.
-    func reportFirstNavigationFinish(appName: String) {
-        guard splashVisible, appName == activeApp else { return }
-        splashNavigationFinished = true
-        dismissSplashIfReady()
-    }
-
-    private func dismissSplashIfReady() {
-        guard splashMinDelayElapsed, splashNavigationFinished else { return }
-        dismissSplash()
     }
 
     /// Deterministic fade, not a conditional-removal `.transition`: a plain
@@ -279,6 +263,11 @@ final class WindowModel: ObservableObject {
         navigationDelegates[appName] = delegate
         view.navigationDelegate = delegate
         view.uiDelegate = delegate
+        // The store starts a webview's first load when it builds it, which is
+        // a moment before this delegate exists. Seeding from the webview's own
+        // state, rather than assuming, keeps the indicator honest for a view
+        // that somehow arrives already idle.
+        if view.isLoading { loadingApps.insert(appName) }
     }
 
     private func fetchIcon(url urlString: String?, into name: String) {
