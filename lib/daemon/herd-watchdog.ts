@@ -164,6 +164,11 @@ export class HerdWatchdog {
       reopens every herd's notification quiet period. */
   private readonly ladders = new Map<string, Ladder>();
   private readonly notifiedAt = new Map<string, number>();
+  /** A sweep pokes panes over the network, so it can outlive its interval.
+      The next tick is dropped rather than queued: the ladder's retry clock
+      already paces the actions, and two sweeps in flight would double-strike
+      every party still wedged. */
+  private sweeping = false;
   private readonly sensors: WatchdogSensors;
   private readonly act: WatchdogActuators;
   private readonly cfg: () => WatchdogConfig;
@@ -176,14 +181,30 @@ export class HerdWatchdog {
     this.log = deps.log;
   }
 
+  /** True while a sweep is in flight, so the caller can skip the reading it
+      would otherwise take first: refreshing mid-sweep swaps the snapshot the
+      running sweep is still judging. */
+  get busy(): boolean {
+    return this.sweeping;
+  }
+
   async sweep(): Promise<void> {
     const cfg = this.cfg();
     if (!cfg.enabled) return;
-    const now = this.sensors.now();
-    for (const herd of this.sensors.herds()) {
-      if (herd.status !== "active") continue;
-      for (const job of this.sensors.jobs(herd.id)) await this.walkWorker(herd, job, cfg, now);
-      await this.walkShepherd(herd, cfg, now);
+    if (this.sweeping) {
+      this.log.debug({}, "watchdog sweep skipped: the previous one is still running");
+      return;
+    }
+    this.sweeping = true;
+    try {
+      const now = this.sensors.now();
+      for (const herd of this.sensors.herds()) {
+        if (herd.status !== "active") continue;
+        for (const job of this.sensors.jobs(herd.id)) await this.walkWorker(herd, job, cfg, now);
+        await this.walkShepherd(herd, cfg, now);
+      }
+    } finally {
+      this.sweeping = false;
     }
   }
 

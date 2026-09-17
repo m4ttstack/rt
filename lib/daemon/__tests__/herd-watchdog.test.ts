@@ -286,8 +286,11 @@ describe("HerdWatchdog ladder", () => {
     const lines: { level: Level; msg: string }[] = [];
     const at = (level: Level) => (_ctx: unknown, msg: string) => { lines.push({ level, msg }); };
     const log = { info: at("info"), warn: at("warn"), debug: at("debug"), error: at("error") } as unknown as Logger;
+    // Parks the NEXT poke (once) so a test can assert what a second sweep
+    // does while the first one is still inside an actuator.
+    const hold: { p: Promise<void> | null } = { p: null };
     const act: WatchdogActuators = {
-      poke: async (pane, text) => { pokes.push({ pane, text }); return delivery.ok; },
+      poke: async (pane, text) => { pokes.push({ pane, text }); const parked = hold.p; hold.p = null; if (parked) await parked; return delivery.ok; },
       parkStuckAtModal: (h, j) => { parks.push({ herd: h, job: j }); },
       notifyHuman: (summary) => { notes.push(summary); },
     };
@@ -299,11 +302,40 @@ describe("HerdWatchdog ladder", () => {
     const tick = async (mins = 0) => { clock.now += mins * MIN; await wd.sweep(); };
     const shepherdPokes = () => pokes.filter((p) => p.pane === "w1:p0");
     const workerPokes = () => pokes.filter((p) => p.pane === "w1:p1");
-    return { wd, tick, clock, pokes, parks, notes, lines, delivery, shepherdPokes, workerPokes };
+    return { wd, tick, clock, pokes, parks, notes, lines, delivery, hold, shepherdPokes, workerPokes };
   }
 
   const workerWedged = (): Partial<WatchdogSensors> => ({ ...idleFor(3), unreadDmMentionsFor: (h) => (h === "job-a" ? 1 : 0) });
+
+  const settle = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
   const shepherdWedged = (): Partial<WatchdogSensors> => ({ paneState: () => "idle", openHumanGates: () => [{ id: "g-9", ageMs: 6 * MIN }] });
+
+  test("a sweep still running when the next tick fires is skipped, not overlapped", async () => {
+    const r = rig({ sensors: workerWedged() });
+    let release = () => {};
+    r.hold.p = new Promise<void>((resolve) => { release = () => resolve(); });
+
+    const first = r.wd.sweep();
+    await settle();
+    expect(r.pokes).toHaveLength(1);
+    // The daemon reads this to skip the refresh that would otherwise swap the
+    // pane snapshot under the sweep still judging it.
+    expect(r.wd.busy).toBe(true);
+
+    // Past retryMins, so a sweep that ran here would earn a second strike.
+    r.clock.now += 10 * MIN;
+    await r.wd.sweep();
+    expect(r.pokes).toHaveLength(1);
+
+    release();
+    await first;
+    expect(r.pokes).toHaveLength(1);
+    expect(r.wd.busy).toBe(false);
+
+    // The guard lifts with the sweep that set it: the next tick acts again.
+    await r.tick(10);
+    expect(r.pokes).toHaveLength(2);
+  });
 
   test("(a) a wedged worker gets one poke naming its evidence; a sweep inside retryMins adds nothing", async () => {
     const r = rig({ sensors: workerWedged() });

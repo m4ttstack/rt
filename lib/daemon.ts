@@ -1151,7 +1151,7 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
         sweepHandles.push(scheduleSweep(
           "herd-watchdog",
           async () => {
-            if (!watchdogConfig().enabled) return;
+            if (!watchdogConfig().enabled || watchdog.busy) return;
             await watchdogSensors.refresh();
             await watchdog.sweep();
           },
