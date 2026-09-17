@@ -5,8 +5,9 @@
  */
 
 import { realpathSync } from "node:fs";
+import { sep } from "node:path";
 import { checkStackMembership, type StackGuardRunners } from "./stack-guard.ts";
-import { listWorktreesAsync } from "./worktree/git-async.ts";
+import { listWorktreesAsync, type WorktreeEntry } from "./worktree/git-async.ts";
 
 export type BranchGuardVerdict =
   | { verdict: "clear" }
@@ -26,8 +27,15 @@ export async function checkBranchGuard(opts: {
     return { verdict: "unverified", detail: "could not list worktrees, so branch ownership is unknown" };
   }
 
+  // The caller's cwd is often a subdirectory of its worktree root, not the
+  // root itself, so ownership must exclude the worktree that CONTAINS cwd,
+  // never just the entry whose path equals cwd exactly.
   const cwdReal = realpathSync(opts.cwd);
-  const owner = worktrees.find((w) => w.branch === opts.branch && realpathSync(w.path) !== cwdReal);
+  const containing = worktrees.find((w: WorktreeEntry) => {
+    const entryReal = realpathSync(w.path);
+    return cwdReal === entryReal || cwdReal.startsWith(entryReal + sep);
+  });
+  const owner = worktrees.find((w) => w !== containing && w.branch === opts.branch);
   if (owner) {
     return {
       verdict: "refuse",
