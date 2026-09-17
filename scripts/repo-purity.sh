@@ -52,4 +52,23 @@ if [ -n "$HITS" ]; then
   echo "rt is public. Use neutral placeholders (acme, ACME-1234, gitlab.example.com)."
   exit 1
 fi
+
+# File NAMES leak too: a clean-content file named after the employer passes a
+# content grep (24 such paths existed in pre-scrub history).
+NAME_HITS=$(cd "$ROOT" && git ls-files | grep -iE "$PATTERN" || true)
+if [ -n "$NAME_HITS" ]; then
+  echo "FAIL repo-purity (file names):"
+  printf '%s\n' "$NAME_HITS"
+  exit 1
+fi
+
+# Commit messages are not tracked files, so the tree grep never sees them; 41
+# leaked before the 2026-09-17 purge. The newest 30 cover any push or PR range
+# without needing CI-event plumbing.
+MSG_HITS=$(cd "$ROOT" && git log -30 --format='%h %s %b' 2>/dev/null | grep -iE "$PATTERN" || true)
+if [ -n "$MSG_HITS" ]; then
+  echo "FAIL repo-purity (commit message):"
+  printf '%s\n' "$MSG_HITS"
+  exit 1
+fi
 echo "ok   repo-purity"
