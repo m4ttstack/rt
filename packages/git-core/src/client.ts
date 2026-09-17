@@ -3,7 +3,7 @@ import { getSnapshot } from "./snapshot.ts";
 import { getFileDiff } from "./diff.ts";
 import { getBranches, getTags } from "./refs.ts";
 import { getLog } from "./log.ts";
-import { getStashes } from "./stash.ts";
+import { getStashes, stashPush, stashApply, stashPop, stashDrop } from "./stash.ts";
 import { getFetchState } from "./fetch-state.ts";
 import { getStagingDiff, stageSelection, discardSelection } from "./staging.ts";
 import { undoLastCommit, resetToCommit } from "./commits.ts";
@@ -24,6 +24,10 @@ export function createGitClient(dir: string): GitClient {
     tags: () => getTags(ctx),
     log: (opts) => getLog(ctx, opts),
     stashes: () => getStashes(ctx),
+    stashPush: (opts) => stashPush(ctx, opts),
+    stashApply: (index) => stashApply(ctx, index),
+    stashPop: (index) => stashPop(ctx, index),
+    stashDrop: (index) => stashDrop(ctx, index),
     fetchState: () => getFetchState(ctx),
     stagingDiff: (path) => getStagingDiff(ctx, path),
     stageSelection: (diff, selection, opts) => stageSelection(ctx, diff, selection, opts),

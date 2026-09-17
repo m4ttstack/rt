@@ -18,3 +18,30 @@ export async function getStashes(ctx: ClientContext): Promise<StashEntry[]> {
     };
   });
 }
+
+const NOTHING_TO_STASH = "No local changes to save";
+
+export async function stashPush(
+  ctx: ClientContext,
+  opts?: { message?: string; includeUntracked?: boolean },
+): Promise<{ created: boolean }> {
+  const args = [
+    "push",
+    ...(opts?.message ? ["-m", opts.message] : []),
+    ...(opts?.includeUntracked ? ["-u"] : []),
+  ];
+  const out = await ctx.git.stash(args);
+  return { created: !out.includes(NOTHING_TO_STASH) };
+}
+
+export async function stashApply(ctx: ClientContext, index: number): Promise<void> {
+  await ctx.git.stash(["apply", `stash@{${index}}`]);
+}
+
+export async function stashPop(ctx: ClientContext, index: number): Promise<void> {
+  await ctx.git.stash(["pop", `stash@{${index}}`]);
+}
+
+export async function stashDrop(ctx: ClientContext, index: number): Promise<void> {
+  await ctx.git.stash(["drop", `stash@{${index}}`]);
+}
