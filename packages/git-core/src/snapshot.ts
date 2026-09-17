@@ -8,9 +8,11 @@ import type { ChangedFile, FileStatusKind, RepoSnapshot } from "./types.ts";
 function kindOf(index: string, workingDir: string, conflicted: boolean): FileStatusKind {
   if (conflicted) return "conflicted";
   if (index === "?" || workingDir === "?") return "untracked";
+  // Working-tree deletion wins uniformly, regardless of index state
+  // (AD, MD, RD all read as "deleted"), so this check must precede R/A.
+  if (index === "D" || workingDir === "D") return "deleted";
   if (index === "R") return "renamed";
   if (index === "A") return "added";
-  if (index === "D" || workingDir === "D") return "deleted";
   return "modified";
 }
 
