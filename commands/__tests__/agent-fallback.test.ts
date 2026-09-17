@@ -9,6 +9,10 @@ let n = 0;
 const REPO = "remote:example.com%2Fa%2Fb";
 const tmp = () => join(tmpdir(), `agent-fb-${process.pid}-${n++}.db`);
 
+/** No pane behind this launch, so the folder-trust driver has nothing to read:
+    answer it honestly rather than letting it reach for a real herdr socket. */
+const noPane = (async () => ({ ok: false, code: "unreachable", message: "no server" })) as never;
+
 const okRunner = (calls: string[][]): HerdrRunner => async (args) => {
   calls.push(args);
   if (args[0] === "workspace" && args[1] === "list") return { stdout: JSON.stringify({ result: { workspaces: [] } }), exitCode: 0 };
@@ -21,7 +25,7 @@ test("herdr start records and journals herdr argv", async () => {
   const db = openStateDb(tmp());
   const calls: string[][] = [];
   const res = await runAgentFallback("agent:start",
-    { repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr" }, { db, herdrRunner: okRunner(calls) });
+    { repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr" }, { db, herdrRunner: okRunner(calls), herdr: noPane });
   expect(res.ok).toBe(true);
   expect(calls.some((c) => c[0] === "pane" && c[1] === "run")).toBe(true);
   if (!res.ok) throw new Error("unreachable");
@@ -71,7 +75,7 @@ test("a codex herdr start schedules no session-id poll: the CLI would exit befor
   const calls: string[][] = [];
   const res = await runAgentFallback("agent:start",
     { repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr", provider: "codex" },
-    { db, herdrRunner: okRunner(calls) });
+    { db, herdrRunner: okRunner(calls), herdr: noPane });
   expect(res.ok).toBe(true);
   // Give a mis-scheduled poll a chance to make its first call before asserting.
   await new Promise((r) => setTimeout(r, 50));
@@ -81,7 +85,7 @@ test("a codex herdr start schedules no session-id poll: the CLI would exit befor
 test("list returns records", async () => {
   const db = openStateDb(tmp());
   const calls: string[][] = [];
-  await runAgentFallback("agent:start", { repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr" }, { db, herdrRunner: okRunner(calls) });
+  await runAgentFallback("agent:start", { repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr" }, { db, herdrRunner: okRunner(calls), herdr: noPane });
   const res = await runAgentFallback("agent:list", { repo: REPO }, { db });
   expect(res.ok).toBe(true);
   if (!res.ok) throw new Error("unreachable");

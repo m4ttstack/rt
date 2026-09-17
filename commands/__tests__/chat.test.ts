@@ -457,15 +457,19 @@ describe("rt chat CLI — additional verb behavior", () => {
 // ─── sign-in / sign-out (presence) ──────────────────────────────────────────
 //
 // The flag-splice guard is exercised through `post`, not `dm`: post already
-// has a body-splice test above (for `--as`); this one covers the two flags
-// FLAGS_WITH_VALUES adds for presence (`--session`, `--status`).
+// has a body-splice test above (for `--as`); this one covers `--session`, the
+// presence flag post itself reads. `--status` belongs to away/sign-in, so post
+// now refuses it by name rather than quietly dropping its value into the body.
 
 describe("rt chat CLI — sign-in / sign-out (presence)", () => {
-  test("flag values never splice into a body: --session and --status are FLAGS_WITH_VALUES", async () => {
+  test("flag values never splice into a body: --session is FLAGS_WITH_VALUES", async () => {
     await runChat(["join", "r", "--as", "x"]);
-    await runChat(["post", "r", "hello there", "--session", "s1", "--status", "busy", "--as", "x"]);
+    await runChat(["post", "r", "hello there", "--session", "s1", "--as", "x"]);
     const read = JSON.parse(await runChat(["read", "r", "--as", "x", "--json"]));
     expect(read.rooms[0].messages[0].body).toBe("hello there");
+    const { code, stderr } = await runChatRaw(["post", "r", "hello there", "--status", "busy", "--as", "x"]);
+    expect(code).toBe(1);
+    expect(stderr).toContain("--status");
   });
 
   test("position 0: a signed-in session resolves the assigned handle for every verb", async () => {
@@ -895,6 +899,44 @@ describe("rt chat CLI — buddies, away, back, dm", () => {
     await signInInProcess({ as: "agent", session: "s1", noRoom: true });
     await runChat(["dm", "matt", "you", "there?", "--session", "s1"]);
     expect(peekNotifications()).toHaveLength(1);
+  });
+
+  test("dm with no text reads the body from piped stdin, as a bare heredoc does (RT-185)", async () => {
+    await signInInProcess({ as: "a", session: "s1", noRoom: true });
+    await signInInProcess({ as: "b", session: "s2", noRoom: true });
+    const cliPath = join(import.meta.dir, "..", "..", "cli.ts");
+    const proc = Bun.spawn(["bun", "run", cliPath, "chat", "dm", "b", "--session", "s1"], {
+      env: { HOME: home, PATH: process.env.PATH ?? "/usr/bin:/bin", RT_SKIP_SETUP: "1", CI: "true" },
+      stdin: Buffer.from("the lede\n\n- one point\n- another\n"),
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    children.push(proc);
+    const code = await proc.exited;
+    expect(code).toBe(0);
+    const out = JSON.parse(await runChat(["read", "--session", "s2", "--json"])) as {
+      rooms: { messages: { body: string }[] }[];
+    };
+    expect(out.rooms.flatMap((r) => r.messages.map((m) => m.body))).toContain("the lede\n\n- one point\n- another");
+  });
+
+  test("dm refuses an unknown flag by name instead of posting it as the body (RT-185)", async () => {
+    await signInInProcess({ as: "a", session: "s1", noRoom: true });
+    await signInInProcess({ as: "b", session: "s2", noRoom: true });
+    const { code, stderr } = await runChatRaw(["dm", "b", "--herd", "gate-cleanup-1", "--session", "s1"]);
+    expect(code).toBe(1);
+    expect(stderr).toContain("--herd");
+    const out = JSON.parse(await runChat(["read", "--session", "s2", "--json"])) as {
+      rooms: { messages: { body: string }[] }[];
+    };
+    expect(out.rooms.flatMap((r) => r.messages.map((m) => m.body))).not.toContain("gate-cleanup-1");
+  });
+
+  test("post refuses an unknown flag by name too", async () => {
+    await runChat(["join", "r", "--as", "a"]);
+    const { code, stderr } = await runChatRaw(["post", "r", "hello", "--herd", "gate-cleanup-1", "--as", "a"]);
+    expect(code).toBe(1);
+    expect(stderr).toContain("--herd");
   });
 
   test("dm prints `dm → <handle> #<id>` plus the default viewer link on success (plain), and --json reports the room/recipients", async () => {

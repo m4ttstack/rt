@@ -125,6 +125,23 @@ function positionals(args: string[]): string[] {
   return out;
 }
 
+/**
+ * Every flag `post` and `dm` accept. Anything else is refused by name rather
+ * than folded into the body: an unrecognized flag's VALUE reads as a
+ * positional, so `rt chat dm bob --herd h <<'EOF'` posted the literal "h" and
+ * never looked at the heredoc (RT-185).
+ */
+const POST_FLAGS: ReadonlySet<string> = new Set(["--as", "--session", "--sock", "--file", "--as-is", "--quiet", "--json"]);
+const DM_FLAGS: ReadonlySet<string> = new Set(["--as", "--session", "--sock", "--file", "--as-is", "--json"]);
+
+function refuseUnknownFlags(args: string[], allowed: ReadonlySet<string>, usage: string): void {
+  for (const a of args) {
+    if (!a.startsWith("--")) continue;
+    const name = a.split("=")[0]!;
+    if (!allowed.has(name)) fail(`unknown flag ${name}\n${usage}`);
+  }
+}
+
 function flagValue(args: string[], flag: string): string | undefined {
   const i = args.indexOf(flag);
   return i >= 0 ? args[i + 1] : undefined;
@@ -683,15 +700,18 @@ function requireReadable(body: string, args: string[]): void {
   }
 }
 
+const POST_USAGE = "usage: rt chat post <room> <text | <<'EOF'> [--file <path>] [--as-is] [--quiet]";
+
 async function runPost(args: string[]): Promise<void> {
   // Body is the positional tokens after the room, flag-aware: `--as <handle>`
   // (and every other recognized flag) is resolved separately by resolveHandle,
   // so a bare args.slice(1).join(" ") would splice the flag back into the post.
+  refuseUnknownFlags(args, POST_FLAGS, POST_USAGE);
   const rest = positionals(args);
   const room = rest[0];
-  if (!room) fail("usage: rt chat post <room> <text | <<'EOF'> [--file <path>] [--as-is] [--quiet]");
+  if (!room) fail(POST_USAGE);
   requireValidName("room", room);
-  const body = await resolveBody(rest.slice(1), args, "usage: rt chat post <room> <text | <<'EOF'> [--file <path>] [--as-is] [--quiet]");
+  const body = await resolveBody(rest.slice(1), args, POST_USAGE);
   requireReadable(body, args);
 
   const handle = resolveHandle(args);
@@ -945,18 +965,21 @@ async function runPrune(args: string[]): Promise<void> {
  * the transcript reads exactly as typed and the desk still notifies when the
  * recipient is the human.
  */
+const DM_USAGE = "usage: rt chat dm <handle> <text | <<'EOF'> [--file <path>] [--as-is]";
+
 async function runDm(args: string[]): Promise<void> {
+  refuseUnknownFlags(args, DM_FLAGS, DM_USAGE);
   const rest = positionals(args);
   const to = rest[0];
-  if (!to) fail("usage: rt chat dm <handle> <text | <<'EOF'> [--file <path>] [--as-is]");
+  if (!to) fail(DM_USAGE);
   requireValidName("handle", to);
-  const body = await resolveBody(rest.slice(1), args, "usage: rt chat dm <handle> <text | <<'EOF'> [--file <path>] [--as-is]");
+  const body = await resolveBody(rest.slice(1), args, DM_USAGE);
   requireReadable(body, args);
 
   const from = resolveHandle(args);
   requireValidName("handle", from);
 
-  const res = await chatDm({ from, to, body, sessionId: currentSessionId(args) });
+  const res = await chatDm({ from, to, body, sessionId: currentSessionId(args) }, sockOpts(args));
   const data = unwrap(res, "dm");
 
   if (args.includes("--json")) {

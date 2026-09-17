@@ -42,6 +42,13 @@ export interface HerdStore {
   jobsByPane(pane: string): HerdJobRow[];
   jobBySubject(subject: string): HerdJobRow | null;
   setJobStatus(herd: string, name: string, status: HerdJobStatus, extra?: { lastGate?: string | null; lastReport?: number | null }): void;
+  /** The last agent-status transition seen on a pane, keyed by the ref the job
+      row stores. Written through so the watchdog's idle clock survives a
+      daemon restart: restarts are routine, and a pane whose turn ended before
+      one emits no further event to rebuild an in-memory map from. */
+  recordPaneStatus(pane: string, status: string, changedAt: number): void;
+  paneStatusRows(): Array<{ pane: string; status: string; changedAt: number }>;
+  forgetPaneStatus(pane: string): void;
   close_(): void;
 }
 
@@ -134,6 +141,11 @@ export function createHerdStore(opts: { dbPath: string; log: Logger }): HerdStor
       PRIMARY KEY (herd, name)
     );
     CREATE INDEX IF NOT EXISTS idx_herd_jobs_pane ON herd_jobs(pane);
+    CREATE TABLE IF NOT EXISTS herd_pane_status (
+      pane      TEXT PRIMARY KEY,
+      status    TEXT NOT NULL,
+      changedAt INTEGER NOT NULL
+    );
   `);
 
   // Idempotent migration for a herds.db predating shepherdPane:
@@ -209,6 +221,16 @@ export function createHerdStore(opts: { dbPath: string; log: Logger }): HerdStor
       vals.push(herd, name);
       db.run(`UPDATE herd_jobs SET ${sets.join(", ")} WHERE herd = ? AND name = ?`, vals as never[]);
     },
+    recordPaneStatus(pane, status, changedAt) {
+      db.run(
+        "INSERT INTO herd_pane_status (pane, status, changedAt) VALUES (?, ?, ?) ON CONFLICT(pane) DO UPDATE SET status = excluded.status, changedAt = excluded.changedAt",
+        [pane, status, changedAt],
+      );
+    },
+    paneStatusRows() {
+      return db.query("SELECT pane, status, changedAt FROM herd_pane_status").all() as Array<{ pane: string; status: string; changedAt: number }>;
+    },
+    forgetPaneStatus(pane) { db.run("DELETE FROM herd_pane_status WHERE pane = ?", [pane]); },
     close_() { db.close(); },
   };
 }

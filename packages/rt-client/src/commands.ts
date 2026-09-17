@@ -171,7 +171,7 @@ export interface HerdJobInfo { herd: string; name: string; worktree: string; bra
 /** `lastGateStatus`/`lastGateDelivery` come from the job's `lastGate` row: a TERMINAL gate (answered or closed) whose delivery is `dead-pane` is the "worker not woken" case the shepherd must act on. `lastGateConsumed` is `null` when there is nothing to consume (no last gate, not answered, or not nudged), and otherwise reports whether the nudged pane has read its answer. */
 export interface HerdStatusData {
   herd: HerdInfo;
-  jobs: Array<HerdJobInfo & { openGate: string | null; paneStatus: string | null; /** The worker session behind this job's pane is gone while the job still reads in-flight: herdr lists the pane but no claude is on it. Null when herdr does not list the pane at all (it closed, or herdr is unreachable), which proves nothing either way. */ sessionDead: boolean | null; lastGateStatus: GateStatus | null; lastGateDelivery: "delivered" | "dead-pane" | "confirmed" | "stuck" | null; lastGateConsumed: boolean | null; /** The daemon watchdog's escalation ladder for this job: strikes so far and when it last acted. Null when the job is not on the ladder (healthy, or the daemon restarted since). */ watchdog: { strikes: number; lastPokeAt: number | null } | null }>;
+  jobs: Array<HerdJobInfo & { openGate: string | null; paneStatus: string | null; /** The worker session behind this job's pane is gone while the job still reads in-flight: herdr lists the pane but no claude is on it. Null when herdr does not list the pane at all (it closed, or herdr is unreachable), which proves nothing either way. */ sessionDead: boolean | null; lastGateStatus: GateStatus | null; lastGateDelivery: "delivered" | "dead-pane" | "confirmed" | "stuck" | null; lastGateConsumed: boolean | null; /** The daemon watchdog's escalation ladder for this job: strikes so far and when it last acted. Absent when the job is not on the ladder (healthy, no watchdog wired, or the daemon restarted since). */ watchdog?: { strikes: number; lastPokeAt: number | null } }>;
   unread: number;
   lifecycleConnected: boolean;
   hiddenUp: boolean | null;
@@ -348,6 +348,11 @@ export interface ReconcilerStatus {
   herdrReachable: boolean;
   executors: ExecutorView[];
 }
+
+/** What a claude spawn's folder-trust check established, when one ran:
+    `none` = no dialog was up, `accepted` = one was answered, `stuck` = one is
+    still up and needs a human, `unchecked` = nothing could be established. */
+export type TrustOutcome = "none" | "accepted" | "stuck" | "unchecked";
 
 export interface AgentRecord {
   id: string; repo: string; cwd: string; provider: string;
@@ -618,7 +623,7 @@ export interface Commands {
   "chat:dm-open": { payload: { from: string; to: string; sessionId?: string }; data: { room: string; created: boolean } };
 
   // ─── Agent handoff (rt agent) ────────────────────────────────────────────
-  "agent:start": { payload: { repo: string; cwd: string; prompt?: string; surface?: AgentSurface; provider?: string; model?: string; effort?: string; account?: string; label?: string; caller?: string; workspace?: string; tab?: string; extraArgs?: string; env?: Record<string, string>; herdrSocket?: string; handle?: string; bg?: boolean; subject?: string; yolo?: boolean }; data: AgentRecord };
+  "agent:start": { payload: { repo: string; cwd: string; prompt?: string; surface?: AgentSurface; provider?: string; model?: string; effort?: string; account?: string; label?: string; caller?: string; workspace?: string; tab?: string; extraArgs?: string; env?: Record<string, string>; herdrSocket?: string; handle?: string; bg?: boolean; subject?: string; yolo?: boolean; /** How long the folder-trust check lets the dialog paint before reading the screen; interactive launches keep the short default, herd:spawn passes its own longer budget. */ trustWaitMs?: number }; data: AgentRecord & { trust?: TrustOutcome } };
   "agent:resume": { payload: { id: string; prompt?: string; surface?: AgentSurface; workspace?: string; tab?: string }; data: AgentRecord };
   "agent:get": { payload: { id: string }; data: AgentRecord };
   "agent:list": { payload: { repo?: string }; data: { agents: AgentRecord[] } };

@@ -100,7 +100,7 @@ import { createEventsBus, type EventsBus } from "./daemon/events-bus.ts";
 import { createGatesStore, type GatesStore } from "./daemon/gates-store.ts";
 import { createHerdStore, type HerdStore } from "./daemon/herd-store.ts";
 import { createHerdLifecycle, type HerdLifecycle } from "./daemon/herd-lifecycle.ts";
-import { HerdWatchdog } from "./daemon/herd-watchdog.ts";
+import { HerdWatchdog, runWatchdogSweep } from "./daemon/herd-watchdog.ts";
 import { createWatchdogActuators, createWatchdogSensors, readWatchdogConfig } from "./daemon/herd-watchdog-adapters.ts";
 import { createBgService, type BgService } from "./daemon/bg-service.ts";
 import { createBgClaimsStore, type BgClaimsStore } from "./daemon/bg-claims-store.ts";
@@ -1139,22 +1139,18 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
         const watchdogLog = loggerHandle.childLogger("herd-watchdog");
         const watchdogSensors = createWatchdogSensors({
           herdStore, gatesStore, lifecycle: herdLifecycle, herdr: herdrRequest,
-          defaultSocket: herdrSocketPath(), db: getStateDb("daemon"),
+          defaultSocket: herdrSocketPath(), db: getStateDb("daemon"), log: watchdogLog,
         });
         const watchdog = new HerdWatchdog({
           sensors: watchdogSensors,
-          act: createWatchdogActuators({ herdStore, db: getStateDb("daemon"), socketFor: watchdogSensors.socketFor, log: watchdogLog }),
+          act: createWatchdogActuators({ herdStore, db: getStateDb("daemon"), socketFor: watchdogSensors.socketFor, herdr: herdrRequest, log: watchdogLog }),
           cfg: watchdogConfig,
           log: watchdogLog,
         });
         herdWatchdog = watchdog;
         sweepHandles.push(scheduleSweep(
           "herd-watchdog",
-          async () => {
-            if (!watchdogConfig().enabled) return;
-            await watchdogSensors.refresh();
-            await watchdog.sweep();
-          },
+          () => runWatchdogSweep({ watchdog, sensors: watchdogSensors, cfg: watchdogConfig }),
           { bootDelayMs: watchdogSweepMs, intervalMs: watchdogSweepMs },
           log,
         ));

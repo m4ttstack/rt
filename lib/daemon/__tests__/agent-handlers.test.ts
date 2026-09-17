@@ -96,6 +96,7 @@ function fakeLifecycle(): FakeLifecycle {
 }
 
 function fresh(over: {
+  herdr?: (method: string, params: any, opts?: any) => Promise<any>;
   runner?: HerdrRunner;
   runnerFactory?: (socket: string) => HerdrRunner;
   spawn?: (argv: string[], cwd: string, env: Record<string, string>) => HeadlessChild;
@@ -111,7 +112,9 @@ function fresh(over: {
   return Object.assign(createAgentHandlers({
     db,
     emitEvent: over.emit ?? (() => 0),
+    herdr: over.herdr as never,
     herdrRunner: over.runner,
+    trustBudgets: { registerBudgetMs: 20, waitBudgetMs: 20, settleMs: 1, stepMs: 1 },
     herdrRunnerForSocket: over.runnerFactory,
     spawnHeadless: over.spawn,
     insertAgentFn: over.insertAgentFn as typeof import("../../state/index.ts").insertAgent | undefined,
@@ -138,6 +141,65 @@ test("agent:start herdr records pane ids and a minted session uuid", async () =>
   const paneRun = calls.find((c) => c[0] === "pane" && c[1] === "run");
   expect(paneRun?.[3]).toContain(`'--session-id' '${res.data.sessionId}'`);
   expect(paneRun?.[3]).toContain("cd '/tmp/x'");
+});
+
+/**
+ * The `rt agent start --bg` miss (RT-156): a spawn into a fresh directory sat
+ * on the folder-trust dialog because this path never looked at the screen.
+ */
+function trustHerdr(screens: Record<string, string>, seen: Array<{ method: string; sock?: string }> = []) {
+  return async (method: string, params: any, opts?: any) => {
+    seen.push({ method, sock: opts?.sockPath });
+    const pane = params?.pane_id ?? params?.target;
+    if (method === "agent.get") return { ok: true, result: { agent: { agent_status: "blocked" } } };
+    if (method === "agent.wait") return { ok: true, result: { agent: { agent_status: "blocked" } } };
+    if (method === "pane.read") return { ok: true, result: { read: { text: screens[pane] ?? "" } } };
+    if (method === "pane.send_keys") { screens[pane] = "$ claude\n> \n"; return { ok: true, result: {} }; }
+    return { ok: false, code: "invalid_request", message: method };
+  };
+}
+
+const TRUST_SCREEN = "Do you trust the files in this folder?\n❯ 1. Yes, proceed\n  2. No, exit\n";
+
+test("agent:start answers the folder-trust dialog on the pane it just launched", async () => {
+  const seen: Array<{ method: string; sock?: string }> = [];
+  const h = fresh({ runner: okRunner([]), herdr: trustHerdr({ "w1:p1": TRUST_SCREEN }, seen) });
+  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/fresh-dir", prompt: "hi", surface: "herdr" });
+  expect(res.ok).toBe(true);
+  if (!res.ok) throw new Error("unreachable");
+  expect(seen.some((c) => c.method === "pane.send_keys")).toBe(true);
+  expect(res.data.trust).toBe("accepted");
+});
+
+test("a --bg launch drives the dialog on the bg socket, not the ambient one", async () => {
+  const seen: Array<{ method: string; sock?: string }> = [];
+  const h = fresh({ runnerFactory: () => okRunner([]), herdr: trustHerdr({ "w1:p1": TRUST_SCREEN }, seen) });
+  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/fresh-dir", prompt: "hi", surface: "herdr", herdrSocket: "/bg.sock" });
+  expect(res.ok).toBe(true);
+  if (!res.ok) throw new Error("unreachable");
+  expect(seen.length).toBeGreaterThan(0);
+  expect(seen.every((c) => c.sock === "/bg.sock")).toBe(true);
+  expect(res.data.trust).toBe("accepted");
+});
+
+test("a pane showing no dialog reports none, and is sent no key", async () => {
+  const seen: Array<{ method: string; sock?: string }> = [];
+  const h = fresh({ runner: okRunner([]), herdr: trustHerdr({ "w1:p1": "claude\nworking\n" }, seen) });
+  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "herdr" });
+  expect(res.ok).toBe(true);
+  if (!res.ok) throw new Error("unreachable");
+  expect(seen.some((c) => c.method === "pane.send_keys")).toBe(false);
+  expect(res.data.trust).toBe("none");
+});
+
+test("a headless launch never touches the trust driver", async () => {
+  const seen: Array<{ method: string; sock?: string }> = [];
+  const h = fresh({ spawn: () => ({ exited: Promise.resolve(0), stdout: async () => "{}", sessionId: () => Promise.resolve(undefined) }), herdr: trustHerdr({}, seen) });
+  const res = await h["agent:start"]({ repo: REPO, cwd: "/tmp/x", prompt: "hi", surface: "headless" });
+  expect(res.ok).toBe(true);
+  if (!res.ok) throw new Error("unreachable");
+  expect(seen).toEqual([]);
+  expect(res.data.trust).toBeUndefined();
 });
 
 // Pins the rollback: a launch failure must not leave a phantom record that
