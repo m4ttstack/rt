@@ -302,13 +302,47 @@ describe("HerdWatchdog ladder", () => {
     const tick = async (mins = 0) => { clock.now += mins * MIN; await wd.sweep(); };
     const shepherdPokes = () => pokes.filter((p) => p.pane === "w1:p0");
     const workerPokes = () => pokes.filter((p) => p.pane === "w1:p1");
-    return { wd, tick, clock, pokes, parks, notes, lines, delivery, hold, shepherdPokes, workerPokes };
+    return { wd, tick, clock, pokes, parks, notes, lines, delivery, hold, conf: c, shepherdPokes, workerPokes };
   }
 
   const workerWedged = (): Partial<WatchdogSensors> => ({ ...idleFor(3), unreadDmMentionsFor: (h) => (h === "job-a" ? 1 : 0) });
 
   const settle = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
   const shepherdWedged = (): Partial<WatchdogSensors> => ({ paneState: () => "idle", openHumanGates: () => [{ id: "g-9", ageMs: 6 * MIN }] });
+
+  test("disabling the watchdog clears the ladders, so re-enabling starts from strike 1", async () => {
+    const r = rig({ sensors: workerWedged() });
+    await r.tick();
+    expect(r.wd.annotations("demo-1", "job-a")).toEqual({ strikes: 1, lastPokeAt: NOW });
+
+    r.conf.enabled = false;
+    await r.tick(10);
+    expect(r.pokes).toHaveLength(1);
+    expect(r.wd.annotations("demo-1", "job-a")).toBeNull();
+
+    r.conf.enabled = true;
+    await r.tick(10);
+    expect(r.workerPokes()).toHaveLength(2);
+    expect(r.wd.annotations("demo-1", "job-a")).toEqual({ strikes: 1, lastPokeAt: NOW + 20 * MIN });
+  });
+
+  test("disabling the watchdog also reopens the human notification quiet period", async () => {
+    const r = rig({ sensors: workerWedged(), cfg: { notifyQuietMins: 120 } });
+    await r.tick();
+    await r.tick(5);
+    await r.tick(5);
+    await r.tick(5);
+    await r.tick(5);
+    expect(r.notes).toHaveLength(1);
+
+    r.conf.enabled = false;
+    await r.tick(5);
+    r.conf.enabled = true;
+    // Strike 1 again after the reset, so walk it back up to the cap: inside
+    // the old quiet period, a surviving notifiedAt would swallow this one.
+    for (let i = 0; i < 5; i++) await r.tick(5);
+    expect(r.notes).toHaveLength(2);
+  });
 
   test("a sweep still running when the next tick fires is skipped, not overlapped", async () => {
     const r = rig({ sensors: workerWedged() });

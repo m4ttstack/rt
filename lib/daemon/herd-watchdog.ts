@@ -190,7 +190,14 @@ export class HerdWatchdog {
 
   async sweep(): Promise<void> {
     const cfg = this.cfg();
-    if (!cfg.enabled) return;
+    if (!cfg.enabled) {
+      // Disabled is a reset, not a pause: a ladder that survived it would
+      // resume mid-escalation against evidence nobody watched in between, and
+      // a surviving quiet period would swallow the first notification after.
+      this.ladders.clear();
+      this.notifiedAt.clear();
+      return;
+    }
     if (this.sweeping) {
       this.log.debug({}, "watchdog sweep skipped: the previous one is still running");
       return;
