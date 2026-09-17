@@ -88,4 +88,10 @@ describe("rt git diff", () => {
       error: "usage: rt git diff <path> [--staged] [--json]",
     });
   });
+
+  test("flag before positional (--staged a.txt --json) works correctly", async () => {
+    const out = await rtJson(["git", "diff", "--staged", "a.txt", "--json"]);
+    expect(out.ok).toBe(true);
+    expect(out.diff.path).toBe("a.txt");
+  });
 });

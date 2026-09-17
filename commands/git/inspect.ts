@@ -83,7 +83,7 @@ export async function branchesCommand(args: string[]): Promise<void> {
 const DIFF_USAGE = "usage: rt git diff <path> [--staged] [--json]";
 
 function positional(args: string[]): string | undefined {
-  const flagsWithValue = new Set(["--max", "--file"]);
+  const flagsWithValue = new Set<string>();
   for (let i = 0; i < args.length; i++) {
     const a = args[i]!;
     if (flagsWithValue.has(a)) { i++; continue; }
