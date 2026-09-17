@@ -207,6 +207,26 @@ describe("diffFile", () => {
     }
   });
 
+  it("untracked hint on a TRACKED modified file is honored, not ignored: takes the --no-index branch and diffs against /dev/null", async () => {
+    const sb = await seeded("a\nb\nc\n");
+    try {
+      await sb.write("f.txt", "a\nB\nc\n");
+      const client = createGitClient(sb.dir);
+      const tracked = await client.diffFile("f.txt");
+      expect(tracked.hunks[0]!.lines.map((l) => l.type)).toEqual(["context", "del", "add", "context"]);
+
+      const hinted = await client.diffFile("f.txt", { untracked: true });
+      expect(hinted.kind).toBe("text");
+      expect(hinted.hunks[0]!.lines.map((l) => [l.type, l.content])).toEqual([
+        ["add", "a"],
+        ["add", "B"],
+        ["add", "c"],
+      ]);
+    } finally {
+      await sb.cleanup();
+    }
+  });
+
   it("binary file is classified, no hunks", async () => {
     const sb = await seeded("a\n");
     try {
