@@ -106,6 +106,87 @@ describe("reconciler sweep: blocked", () => {
     expect(row.closedReason).toBe("resolved");
   });
 
+  // RT-200: a blocked pane showing the EnterWorktree relocation prompt is
+  // the daemon's own mess to clear. Success is silent; a prompt it may not
+  // answer raises one click-to-focus notification and never a gate.
+  describe("relocation auto-accept", () => {
+    let relocOutcomes: Array<"accepted" | "failed" | "no-dialog">;
+    let relocCalls: string[];
+    let notices: Array<{ title: string; message: string; paneId: string }>;
+
+    const withReloc = () => createReconciler({
+      store,
+      listAgents: () => agentsList,
+      snapshot: async () => panesValue,
+      peek: async () => peekText,
+      emit: (topic, payload) => { emitted.push({ topic, payload }); },
+      injectEscape: async () => ({ ok: false, error: "not used in this task" }),
+      resumeAgent: async () => ({ ok: true }),
+      relocationAccept: async (pane) => { relocCalls.push(pane.paneRef); return relocOutcomes.shift() ?? "no-dialog"; },
+      notify: (n) => { notices.push(n); },
+      log,
+    });
+
+    beforeEach(() => {
+      relocOutcomes = [];
+      relocCalls = [];
+      notices = [];
+    });
+
+    test("an accepted prompt opens no gate and sends no notification", async () => {
+      const r = withReloc();
+      relocOutcomes = ["accepted"];
+      panesValue = [buildPane({ agentStatus: "blocked" })];
+      await r.sweep();
+      await r.sweep();
+      expect(relocCalls).toEqual(["w1:p1"]);
+      expect(attentionGates()).toHaveLength(0);
+      expect(notices).toHaveLength(0);
+    });
+
+    test("a prompt the daemon may not answer notifies once with the pane, and never opens a gate", async () => {
+      const r = withReloc();
+      relocOutcomes = ["failed"];
+      panesValue = [buildPane({ agentStatus: "blocked" })];
+      await r.sweep();
+      await r.sweep();
+      await r.sweep();
+      await r.sweep();
+      expect(relocCalls).toEqual(["w1:p1"]);
+      expect(attentionGates()).toHaveLength(0);
+      expect(notices).toHaveLength(1);
+      expect(notices[0]!.paneId).toBe("w1:p1");
+    });
+
+    test("a blocked pane with no relocation prompt gets its attention gate exactly as before", async () => {
+      const r = withReloc();
+      relocOutcomes = ["no-dialog"];
+      panesValue = [buildPane({ agentStatus: "blocked" })];
+      await r.sweep();
+      await r.sweep();
+      expect(relocCalls).toEqual(["w1:p1"]);
+      expect(attentionGates()).toHaveLength(1);
+      expect(notices).toHaveLength(0);
+    });
+
+    test("the attempt is per blocked episode: live in between re-arms it", async () => {
+      const r = withReloc();
+      relocOutcomes = ["failed", "accepted"];
+      panesValue = [buildPane({ agentStatus: "blocked" })];
+      await r.sweep();
+      await r.sweep();
+      expect(relocCalls).toHaveLength(1);
+
+      panesValue = [buildPane({ agentStatus: "idle" })];
+      await r.sweep();
+      panesValue = [buildPane({ agentStatus: "blocked" })];
+      await r.sweep();
+      await r.sweep();
+      expect(relocCalls).toHaveLength(2);
+      expect(attentionGates()).toHaveLength(0);
+    });
+  });
+
   test("context is truncated to 8192 bytes", async () => {
     peekText = "x".repeat(20_000);
     panesValue = [buildPane({ agentStatus: "blocked" })];

@@ -85,6 +85,13 @@ export interface ReconcilerDeps {
   /** Consecutive sweeps a blocked/gone reading must persist before the
       reconciler acts on it. Default 2 (spec "Reconciler sweep"). */
   debounceSweeps?: number;
+  /** RT-200: try the EnterWorktree relocation prompt on a blocked pane
+      before its attention gate. "accepted" cleared it (stay silent),
+      "failed" is a prompt on screen the daemon may not answer (notify,
+      no gate), "no-dialog" hands the pane to the normal gate path. */
+  relocationAccept?: (pane: LivePane) => Promise<"accepted" | "failed" | "no-dialog">;
+  /** Click-to-focus notification channel for the "failed" outcome. */
+  notify?: (n: { title: string; message: string; paneId: string }) => void;
 }
 
 const ATTENTION_QUESTION: GateQuestion = {
@@ -115,6 +122,10 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
   const previousStates = new Map<string, ExecutorState>();
   const pendingBlocked = new Map<string, number>();
   const pendingGone = new Map<string, number>();
+  // One relocation attempt per blocked episode: the stored outcome stands in
+  // for a re-drive until the pane leaves blocked, so a "failed" pane is
+  // notified once and then left to the human, never hammered every sweep.
+  const relocationTried = new Map<string, "failed" | "no-dialog">();
   const attentionGateByAgent = new Map<string, string>();
   // Agents whose attention gate the human dismissed while the reading that
   // raised it still holds. Without this the next sweep re-raises it (the
@@ -254,6 +265,35 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
     }
   }
 
+  /** One relocation attempt per blocked episode (RT-200). Memoized on the
+      agent so a prompt the daemon may not answer draws exactly one
+      click-to-focus notification, then waits for the human. Absent dep or
+      unresolvable pane reads as no-dialog: the normal gate path owns it. */
+  async function tryRelocationAccept(v: ExecutorView, panes: LivePane[] | null): Promise<"accepted" | "failed" | "no-dialog"> {
+    if (!deps.relocationAccept) return "no-dialog";
+    const memo = relocationTried.get(v.agentId);
+    if (memo !== undefined) return memo;
+    const pane = panes?.find((p) => p.paneRef === v.paneRef) ?? null;
+    if (pane === null) return "no-dialog";
+    let outcome: "accepted" | "failed" | "no-dialog";
+    try {
+      outcome = await deps.relocationAccept(pane);
+    } catch (err) {
+      log.warn({ err, agentId: v.agentId, pane: v.paneRef }, "relocation accept threw; treating the pane as having no dialog");
+      outcome = "no-dialog";
+    }
+    if (outcome === "accepted") return outcome;
+    relocationTried.set(v.agentId, outcome);
+    if (outcome === "failed") {
+      deps.notify?.({
+        title: "pane stuck at a worktree relocation prompt",
+        message: `pane ${pane.paneRef}: the daemon may not answer it (unrecognized path or cursor); click to focus and answer`,
+        paneId: pane.paneRef,
+      });
+    }
+    return outcome;
+  }
+
   /** Checks each pending expectation against `panes` and resolves, retries,
       or drops it. `panes === null` (herdr unreachable) is a no-op for the
       whole queue: an unknown read proves nothing about pane state, so a
@@ -358,11 +398,20 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
           // or an attention gate from an earlier pass) means skip.
           const occupied = openParkedGates.some((g) => g.subject === subject);
           if (count >= debounceSweeps && !occupied && !dismissed) {
-            const cwd = agents.find((a) => a.id === v.agentId)?.cwd;
-            await openAttentionGate(v, "blocked", panes, openParkedGates, cwd);
+            const outcome = await tryRelocationAccept(v, panes);
+            if (outcome === "accepted") {
+              pendingBlocked.delete(v.agentId);
+              log.info({ agentId: v.agentId, pane: v.paneRef }, "accepted a relocation prompt on a blocked pane");
+            } else if (outcome === "no-dialog") {
+              const cwd = agents.find((a) => a.id === v.agentId)?.cwd;
+              await openAttentionGate(v, "blocked", panes, openParkedGates, cwd);
+            }
+            // "failed" already notified inside tryRelocationAccept; the
+            // human clears the dialog, so no gate rides along (RT-200).
           }
         } else {
           pendingBlocked.delete(v.agentId);
+          relocationTried.delete(v.agentId);
         }
 
         if (v.state === "gone") {
