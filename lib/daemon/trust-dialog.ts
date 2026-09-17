@@ -46,11 +46,54 @@ function readOptions(screen: string): Option[] {
 export function readTrustPrompt(screen: string): TrustPrompt | null {
   if (!HEADER_RE.test(screen)) return null;
   const options = readOptions(screen);
+  return walkToAccept(options, (keys) => ({ kind: "accept", variant: ELEVATED_RE.test(screen) ? "elevated" : "plain", keys }));
+}
+
+function walkToAccept<T>(options: Option[], make: (keys: Array<"up" | "down" | "enter">) => T): T | { kind: "undrivable" } {
   const selected = options.findIndex((o) => o.cursor);
   const accept = options.findIndex((o) => ACCEPT_RE.test(o.label));
   if (selected < 0 || accept < 0) return { kind: "undrivable" };
   const distance = accept - selected;
   const step = distance < 0 ? "up" : "down";
-  const keys: Array<"up" | "down" | "enter"> = [...Array(Math.abs(distance)).fill(step), "enter"];
-  return { kind: "accept", variant: ELEVATED_RE.test(screen) ? "elevated" : "plain", keys };
+  return make([...Array(Math.abs(distance)).fill(step), "enter"]);
+}
+
+export type RelocationPrompt =
+  | { kind: "accept"; path: string; keys: Array<"up" | "down" | "enter"> }
+  | { kind: "undrivable" };
+
+// Both phrases are required before this counts as the dialog: the reason line
+// alone appears in transcripts (a session discussing the very prompt it hit),
+// and tool output quoting it must never draw a keypress. The reason line is
+// byte-faithful to Claude Code's own template, verified against the installed
+// binary: `permission-root relocation to "<path>" — a model-supplied
+// worktree outside .claude/worktrees/`.
+const RELOCATION_RE = /permission-root relocation to\s*"(?<path>[^"]+)"/i;
+const PROCEED_RE = /do you want to proceed/i;
+
+/** Screen text flattened for phrase matching across wrapped lines: borders
+    become spaces, lines join on a space, runs collapse. A wrapped PATH gains
+    a spurious space at each break this way; rt tree paths contain none, so
+    stripping all whitespace from the capture restores the original, and a
+    path this reassembly ever got wrong simply fails the caller's registry
+    lookup rather than accepting anything. */
+function flatten(screen: string): string {
+  return screen.replace(/[│┃╎┆|]/g, " ").replace(/\s+/g, " ");
+}
+
+/**
+ * The EnterWorktree permission-root relocation prompt on `screen`, with the
+ * worktree path the dialog itself names, or null when the screen is not
+ * showing one. The path is the caller's provenance input: accept only a path
+ * rt's own worktree registry knows.
+ */
+export function readRelocationPrompt(screen: string): RelocationPrompt | null {
+  const flat = flatten(screen);
+  if (!PROCEED_RE.test(flat)) return null;
+  const reason = RELOCATION_RE.exec(flat);
+  const anchored = /permission-root relocation to/i.test(flat);
+  if (!anchored) return null;
+  if (!reason?.groups?.path) return { kind: "undrivable" };
+  const path = reason.groups.path.replace(/\s+/g, "");
+  return walkToAccept(readOptions(screen), (keys) => ({ kind: "accept", path, keys }));
 }

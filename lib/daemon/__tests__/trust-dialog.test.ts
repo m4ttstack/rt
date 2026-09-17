@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { readTrustPrompt } from "../trust-dialog.ts";
+import { readRelocationPrompt, readTrustPrompt } from "../trust-dialog.ts";
 
 /** The plain first-run dialog: the cursor starts on "Yes, proceed". */
 const PLAIN = [
@@ -96,5 +96,88 @@ describe("readTrustPrompt", () => {
 
   test("the header is recognized even when the options have scrolled off", () => {
     expect(readTrustPrompt("│ Do you trust the files in this folder?  │\n")).toEqual({ kind: "undrivable" });
+  });
+});
+
+const TREE = "/Users/matt/.mattstack/rt/worktrees/gl-acme-acme-dev/sirius";
+
+/** The EnterWorktree permission prompt, path unwrapped. The reason line is
+    byte-faithful to Claude Code's own copy: `permission-root relocation to
+    "<path>" — a model-supplied worktree outside .claude/worktrees/`. */
+const RELOCATION = (cursor: 1 | 2) => [
+  "╭──────────────────────────────────────────────────────────────────────╮",
+  "│ EnterWorktree                                                        │",
+  "│                                                                      │",
+  `│ permission-root relocation to "${TREE}" — a`,
+  "│ model-supplied worktree outside .claude/worktrees/                   │",
+  "│                                                                      │",
+  "│ Do you want to proceed?                                              │",
+  `│ ${cursor === 1 ? "❯" : " "} 1. Yes                                   │`,
+  `│ ${cursor === 2 ? "❯" : " "} 2. No, and tell Claude what to do differently (esc) │`,
+  "╰──────────────────────────────────────────────────────────────────────╯",
+].join("\n");
+
+/** The live specimen shape: a long path wraps mid-segment with nothing
+    inserted at the break, so the two fragments must be rejoined byte for
+    byte before the registry can be consulted. */
+const RELOCATION_WRAPPED = [
+  "╭──────────────────────────────────────────────────────────╮",
+  "│ EnterWorktree                                            │",
+  "│                                                          │",
+  '│ permission-root relocation to "/Users/matt/.mattstack/rt │',
+  '│ /worktrees/gl-acme-acme-dev/sirius" — a model-supplied   │',
+  "│ worktree outside .claude/worktrees/                      │",
+  "│                                                          │",
+  "│ Do you want to proceed?                                  │",
+  "│ ❯ 1. Yes                                                 │",
+  "│   2. No, and tell Claude what to do differently (esc)    │",
+  "╰──────────────────────────────────────────────────────────╯",
+].join("\n");
+
+describe("readRelocationPrompt", () => {
+  test("a screen with no relocation prompt is not one", () => {
+    expect(readRelocationPrompt("$ claude\nworking on the brief...\n")).toBeNull();
+  });
+
+  test("a transcript merely quoting the reason line is not a prompt without the proceed question", () => {
+    const prose = `the dialog said permission-root relocation to "${TREE}" and I declined\n`;
+    expect(readRelocationPrompt(prose)).toBeNull();
+  });
+
+  test("the prompt with the cursor on Yes extracts the path and accepts with a bare enter", () => {
+    expect(readRelocationPrompt(RELOCATION(1))).toEqual({ kind: "accept", path: TREE, keys: ["enter"] });
+  });
+
+  test("a path wrapped across screen lines is reassembled byte for byte", () => {
+    expect(readRelocationPrompt(RELOCATION_WRAPPED)).toEqual({ kind: "accept", path: TREE, keys: ["enter"] });
+  });
+
+  test("the cursor on No walks up before entering", () => {
+    expect(readRelocationPrompt(RELOCATION(2))).toEqual({ kind: "accept", path: TREE, keys: ["up", "enter"] });
+  });
+
+  test("a prompt whose path cannot be read is undrivable, never a guessed accept", () => {
+    const screen = [
+      "│ permission-root relocation to somewhere — a model-supplied worktree │",
+      "│ Do you want to proceed?                                             │",
+      "│ ❯ 1. Yes                                                            │",
+      "│   2. No                                                             │",
+    ].join("\n");
+    expect(readRelocationPrompt(screen)).toEqual({ kind: "undrivable" });
+  });
+
+  test("a prompt whose cursor cannot be located is undrivable", () => {
+    const screen = [
+      `│ permission-root relocation to "${TREE}" — a model-supplied worktree │`,
+      "│ Do you want to proceed?                                             │",
+      "│   1. Yes                                                            │",
+      "│   2. No                                                             │",
+    ].join("\n");
+    expect(readRelocationPrompt(screen)).toEqual({ kind: "undrivable" });
+  });
+
+  test("the two dialogs never cross-parse", () => {
+    expect(readTrustPrompt(RELOCATION(1))).toBeNull();
+    expect(readRelocationPrompt(PLAIN)).toBeNull();
   });
 });
