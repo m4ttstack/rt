@@ -655,7 +655,7 @@ function integrationNode(id: string, title: string): CommandNode {
 
 export const TREE: Record<string, CommandNode> = {
   git: {
-    description: "Git operations (rebase, reset, commit, backup)",
+    description: "Git operations (status, diff, log, rebase, commit, stash, tags)",
     subcommands: {
       rebase: {
         description: "Smart rebase onto origin/master with auto-resolve",
@@ -772,6 +772,35 @@ export const TREE: Record<string, CommandNode> = {
         args: [
           { name: "Remote", flag: "--remote", type: "text", placeholder: "origin", hint: "Remote to set the upstream to" },
           { name: "Dry run", flag: "--dry-run", type: "boolean", default: false, hint: "Show what would change without applying it" },
+        ],
+      },
+      status: {
+        description: "Working tree status: branch, ahead/behind, changed files",
+        module: "./commands/git/inspect.ts",
+        fn: "statusCommand",
+        context: "worktree",
+        args: [
+          { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable snapshot" },
+        ],
+      },
+      log: {
+        description: "Recent commits on the current branch",
+        module: "./commands/git/inspect.ts",
+        fn: "logCommand",
+        context: "worktree",
+        args: [
+          { name: "Max", flag: "--max", type: "text", placeholder: "20", hint: "How many commits to list" },
+          { name: "File", flag: "--file", type: "text", placeholder: "src/app.ts", hint: "Only commits touching this path" },
+          { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable entries" },
+        ],
+      },
+      branches: {
+        description: "Local branches with upstream and ahead/behind state",
+        module: "./commands/git/inspect.ts",
+        fn: "branchesCommand",
+        context: "worktree",
+        args: [
+          { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable branch list" },
         ],
       },
     },

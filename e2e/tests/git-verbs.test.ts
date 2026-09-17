@@ -1,0 +1,70 @@
+import { beforeAll, afterAll, describe, expect, test } from "bun:test";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { execFileSync } from "node:child_process";
+import { createTestHome, rt } from "../harness.ts";
+
+let home: { path: string; cleanup: () => void };
+let repo: string;
+
+const IDENT = ["-c", "user.email=t@example.com", "-c", "user.name=T", "-c", "commit.gpgsign=false"];
+
+function g(args: string[]): string {
+  return execFileSync("git", [...IDENT, ...args], { cwd: repo, encoding: "utf8" });
+}
+
+beforeAll(() => {
+  home = createTestHome();
+  repo = join(home.path, "scratch-repo");
+  mkdirSync(repo, { recursive: true });
+  execFileSync("git", ["init", "-b", "main", repo], { encoding: "utf8" });
+  writeFileSync(join(repo, "a.txt"), "one\n");
+  g(["add", "."]);
+  g(["commit", "-m", "first commit"]);
+  writeFileSync(join(repo, "a.txt"), "two\n");
+  writeFileSync(join(repo, "new.txt"), "hello\n");
+});
+
+afterAll(() => home.cleanup());
+
+// e2e/harness.ts's rt() has no `cwd` option: `opts.home` doubles as both the
+// spawned process's cwd and its default HOME. Passing `home: repo` puts the
+// process in the scratch repo; `env.HOME` is layered back on top (the spread
+// in harness.ts's run() applies opts.env after its own HOME default) so rt
+// still sees the real test HOME with its .gitconfig/.zshrc.
+async function rtJson(args: string[]): Promise<any> {
+  const res = await rt(args, { home: repo, env: { HOME: home.path } });
+  expect(res.exitCode).toBe(0);
+  return JSON.parse(res.stdout);
+}
+
+describe("rt git read verbs", () => {
+  test("status --json carries the snapshot", async () => {
+    const out = await rtJson(["git", "status", "--json"]);
+    expect(out.ok).toBe(true);
+    expect(out.branch).toBe("main");
+    expect(out.detached).toBe(false);
+    expect(out.clean).toBe(false);
+    expect(out.files).toEqual([
+      { path: "a.txt", kind: "modified", staged: false, unstaged: true },
+      { path: "new.txt", kind: "untracked", staged: false, unstaged: true },
+    ]);
+  });
+
+  test("log --json lists entries newest first", async () => {
+    const out = await rtJson(["git", "log", "--json"]);
+    expect(out.ok).toBe(true);
+    expect(out.entries.length).toBe(1);
+    expect(out.entries[0].subject).toBe("first commit");
+    expect(out.entries[0].parents).toEqual([]);
+  });
+
+  test("branches --json lists main as current", async () => {
+    const out = await rtJson(["git", "branches", "--json"]);
+    expect(out.ok).toBe(true);
+    expect(out.branches.length).toBe(1);
+    expect(out.branches[0].name).toBe("main");
+    expect(out.branches[0].current).toBe(true);
+    expect(out.branches[0].upstream).toBeNull();
+  });
+});
