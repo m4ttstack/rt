@@ -46,8 +46,9 @@ function gate(over: Partial<GateRow> = {}): GateRow {
 
 type Snap = Record<string, Array<{ pane_id: string; agent?: string; agent_status?: string }>>;
 
-function fx(over: { snapshots?: Snap; herds?: HerdRow[]; gates?: GateRow[]; answered?: GateRow[]; db?: ReturnType<typeof freshDb> } = {}) {
+function fx(over: { snapshots?: Snap; herds?: HerdRow[]; gates?: GateRow[]; answered?: GateRow[]; db?: ReturnType<typeof freshDb>; clock?: { now: number } } = {}) {
   const snapshots: Snap = over.snapshots ?? {};
+  const clock = over.clock ?? { now: NOW };
   const herdrCalls: Array<{ method: string; sock: string | undefined }> = [];
   const herdr = (async (method: string, _params: unknown, opts?: { sockPath?: string }) => {
     herdrCalls.push({ method, sock: opts?.sockPath });
@@ -68,9 +69,9 @@ function fx(over: { snapshots?: Snap; herds?: HerdRow[]; gates?: GateRow[]; answ
     herdr,
     defaultSocket: DEFAULT,
     db: over.db ?? freshDb(),
-    now: () => NOW,
+    now: () => clock.now,
   });
-  return { sensors, herdrCalls, listCalls, answeredCalls, lastStatus };
+  return { sensors, herdrCalls, listCalls, answeredCalls, lastStatus, clock };
 }
 
 describe("watchdog sensors: pane state", () => {
@@ -135,6 +136,45 @@ describe("watchdog sensors: pane state", () => {
     const { sensors, lastStatus } = fx();
     lastStatus.set("bg:w1:p1", 4_000);
     expect(sensors.idleSinceMs("bg:w1:p1")).toBe(4_000);
+    expect(sensors.idleSinceMs("w1:p1")).toBeNull();
+  });
+
+  test("a pane idle with no lifecycle entry is stamped on the first refresh that sees it, and keeps that stamp (RT-187)", async () => {
+    const snaps: Snap = { [DEFAULT]: [{ pane_id: "w1:p1", agent: "claude", agent_status: "idle" }] };
+    const { sensors, clock, lastStatus } = fx({ snapshots: snaps });
+    expect(sensors.idleSinceMs("w1:p1")).toBeNull();
+
+    await sensors.refresh();
+    expect(sensors.idleSinceMs("w1:p1")).toBe(NOW);
+
+    clock.now = NOW + 5 * MIN;
+    await sensors.refresh();
+    expect(sensors.idleSinceMs("w1:p1")).toBe(NOW);
+
+    lastStatus.set("w1:p1", NOW + 4 * MIN);
+    expect(sensors.idleSinceMs("w1:p1")).toBe(NOW + 4 * MIN);
+    lastStatus.delete("w1:p1");
+  });
+
+  test("the seeded idle stamp clears when the pane works again or leaves the snapshot, and re-seeds on the next idle sighting", async () => {
+    const snaps: Snap = { [DEFAULT]: [{ pane_id: "w1:p1", agent: "claude", agent_status: "idle" }] };
+    const { sensors, clock } = fx({ snapshots: snaps });
+    await sensors.refresh();
+    expect(sensors.idleSinceMs("w1:p1")).toBe(NOW);
+
+    snaps[DEFAULT] = [{ pane_id: "w1:p1", agent: "claude", agent_status: "working" }];
+    clock.now = NOW + 6 * MIN;
+    await sensors.refresh();
+    expect(sensors.idleSinceMs("w1:p1")).toBeNull();
+
+    snaps[DEFAULT] = [{ pane_id: "w1:p1", agent: "claude", agent_status: "idle" }];
+    clock.now = NOW + 7 * MIN;
+    await sensors.refresh();
+    expect(sensors.idleSinceMs("w1:p1")).toBe(NOW + 7 * MIN);
+
+    snaps[DEFAULT] = [];
+    clock.now = NOW + 8 * MIN;
+    await sensors.refresh();
     expect(sensors.idleSinceMs("w1:p1")).toBeNull();
   });
 });

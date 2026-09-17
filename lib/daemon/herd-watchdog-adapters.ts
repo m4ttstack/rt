@@ -41,11 +41,28 @@ interface PaneReading { agent: string | null; status: string | null; socket: str
 
 const UNREAD_PEEK_LIMIT = 200;
 
+function readingState(row: PaneReading | undefined): ReturnType<WatchdogSensors["paneState"]> {
+  if (!row) return "gone";
+  if (row.agent !== "claude") return "dead";
+  if (row.status === "blocked") return "modal";
+  // "done" is herdr's after-turn state, idle in every way that matters
+  // here; a status herdr did not name is no evidence of a wedge.
+  if (row.status === "idle" || row.status === "done") return "idle";
+  return "working";
+}
+
 export function createWatchdogSensors(deps: WatchdogSensorDeps): RefreshingSensors {
   const now = deps.now ?? Date.now;
   // Keyed by the addressable ref the job row stores (bg: for a hidden herd),
   // not the bare id: two servers can both hold a w1:p1.
   let panes = new Map<string, PaneReading>();
+  // The lifecycle's status map is in memory, so after a daemon restart every
+  // worker that was already idle has no recorded transition and would read as
+  // "never idle" forever (RT-187). The first refresh that sees such a pane
+  // idle stamps it here, and that stamp stands in for the transition until the
+  // pane works again: an age measured from the restart, never from boot-time
+  // zero, so a worker idle across a restart still earns a verdict.
+  const firstSeenIdle = new Map<string, number>();
 
   async function refresh(): Promise<void> {
     const active = deps.herdStore.list({ status: "active" });
@@ -57,6 +74,12 @@ export function createWatchdogSensors(deps: WatchdogSensorDeps): RefreshingSenso
     for (const [socket, server] of servers) {
       for (const [id, row] of await paneStatuses(deps.herdr, socket)) next.set(formatPaneRef(id, server), { ...row, socket });
     }
+    const t = now();
+    for (const pane of firstSeenIdle.keys()) if (readingState(next.get(pane)) !== "idle") firstSeenIdle.delete(pane);
+    for (const [pane, row] of next) {
+      if (readingState(row) !== "idle" || deps.lifecycle.lastStatusChangeMs(pane) !== null) continue;
+      if (!firstSeenIdle.has(pane)) firstSeenIdle.set(pane, t);
+    }
     panes = next;
   }
 
@@ -66,17 +89,8 @@ export function createWatchdogSensors(deps: WatchdogSensorDeps): RefreshingSenso
     now,
     herds: () => deps.herdStore.list({ status: "active" }),
     jobs: (herd) => deps.herdStore.jobs(herd),
-    paneState(pane) {
-      const row = panes.get(pane);
-      if (!row) return "gone";
-      if (row.agent !== "claude") return "dead";
-      if (row.status === "blocked") return "modal";
-      // "done" is herdr's after-turn state, idle in every way that matters
-      // here; a status herdr did not name is no evidence of a wedge.
-      if (row.status === "idle" || row.status === "done") return "idle";
-      return "working";
-    },
-    idleSinceMs: (pane) => deps.lifecycle.lastStatusChangeMs(pane),
+    paneState: (pane) => readingState(panes.get(pane)),
+    idleSinceMs: (pane) => deps.lifecycle.lastStatusChangeMs(pane) ?? firstSeenIdle.get(pane) ?? null,
     unreadDmMentionsFor(handle) {
       let count = 0;
       for (const { room, messages } of peekUnread({ handle, limit: UNREAD_PEEK_LIMIT }, deps.db)) {
