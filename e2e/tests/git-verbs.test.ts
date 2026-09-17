@@ -89,8 +89,8 @@ describe("rt git diff", () => {
     });
   });
 
-  test("flag before positional (--staged a.txt --json) works correctly", async () => {
-    const out = await rtJson(["git", "diff", "--staged", "a.txt", "--json"]);
+  test("a value-flag lookalike does not swallow the positional", async () => {
+    const out = await rtJson(["git", "diff", "--file", "a.txt", "--json"]);
     expect(out.ok).toBe(true);
     expect(out.diff.path).toBe("a.txt");
   });
