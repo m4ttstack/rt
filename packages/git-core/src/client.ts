@@ -8,6 +8,7 @@ import { getFetchState } from "./fetch-state.ts";
 import { getStagingDiff, stageSelection, discardSelection } from "./staging.ts";
 import { undoLastCommit, resetToCommit } from "./commits.ts";
 import { checkoutBranch, createBranch } from "./branch-ops.ts";
+import { scrubGitEnv } from "./exec.ts";
 import type { GitClient } from "./types.ts";
 
 export interface ClientContext {
@@ -35,7 +36,7 @@ function pinnedEnv(): NodeJS.ProcessEnv {
   for (const [key, value] of Object.entries(process.env)) {
     if (!UNSAFE_ENV_KEYS.has(key.toLowerCase())) env[key] = value;
   }
-  return { ...env, LC_ALL: "C", LANG: "C" };
+  return scrubGitEnv(env);
 }
 
 export function createGitClient(dir: string): GitClient {

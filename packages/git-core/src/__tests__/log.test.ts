@@ -52,7 +52,7 @@ describe("log", () => {
     }
   });
 
-  it("a body containing simple-git's default record separator round-trips intact", async () => {
+  it("a body containing simple-git's old default record separator round-trips intact", async () => {
     const sb = await makeSandbox();
     try {
       await sb.write("a.txt", "1\n");
@@ -61,6 +61,44 @@ describe("log", () => {
       await sb.git(["commit", "-m", "subject", "-m", body]);
       const log = await createGitClient(sb.dir).log();
       expect(log[0]!.body).toBe(body);
+    } finally {
+      await sb.cleanup();
+    }
+  });
+
+  it("a subject and body containing the old \\x1e splitter round-trip intact", async () => {
+    const sb = await makeSandbox();
+    try {
+      await sb.write("a.txt", "1\n");
+      await sb.git(["add", "-A"]);
+      const subject = "subject \x1e with splitter";
+      const body = "body \x1e with splitter too";
+      await sb.git(["commit", "-m", subject, "-m", body]);
+      const log = await createGitClient(sb.dir).log();
+      expect(log[0]!.subject).toBe(subject);
+      expect(log[0]!.body).toBe(body);
+    } finally {
+      await sb.cleanup();
+    }
+  });
+
+  it("multiple commits: sha and parents are unpolluted by the previous record's separator newline", async () => {
+    const sb = await makeSandbox();
+    try {
+      await sb.write("a.txt", "1\n");
+      await sb.commitAll("first");
+      await sb.write("a.txt", "2\n");
+      await sb.commitAll("second");
+      await sb.write("a.txt", "3\n");
+      await sb.commitAll("third");
+      const log = await createGitClient(sb.dir).log();
+      expect(log.map((e) => e.subject)).toEqual(["third", "second", "first"]);
+      for (const entry of log) {
+        expect(entry.sha).toMatch(/^[0-9a-f]{40}$/);
+      }
+      expect(log[0]!.parents).toEqual([log[1]!.sha]);
+      expect(log[1]!.parents).toEqual([log[2]!.sha]);
+      expect(log[2]!.parents).toEqual([]);
     } finally {
       await sb.cleanup();
     }

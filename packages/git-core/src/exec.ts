@@ -3,6 +3,22 @@ export interface RawGitOpts {
   stdin?: string; // piped to the child and closed; e.g. `git apply -` patches
 }
 
+// GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE inherited from the parent process
+// (real exposure: a git hook sets GIT_DIR) redirect a git invocation at a
+// repository other than the one named by `dir`, silently. Every spawn in
+// this package goes through this scrubber first.
+const REPO_LOCATION_ENV_KEYS = ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"];
+
+export function scrubGitEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...base };
+  for (const key of REPO_LOCATION_ENV_KEYS) delete env[key];
+  // Pinned so English classification text (e.g. "Binary files ... differ")
+  // matches the C-locale guarantee the simple-git client also makes.
+  env.LC_ALL = "C";
+  env.LANG = "C";
+  return env;
+}
+
 // git diff --no-index exits 1 when files differ; simple-git treats that
 // as failure, so the one raw runner lives here.
 export async function rawGit(dir: string, args: string[], opts: RawGitOpts = {}): Promise<string> {
@@ -12,9 +28,7 @@ export async function rawGit(dir: string, args: string[], opts: RawGitOpts = {})
     stdin: "pipe",
     stdout: "pipe",
     stderr: "pipe",
-    // Pinned so English classification text (e.g. "Binary files ... differ")
-    // matches the C-locale guarantee the simple-git client also makes.
-    env: { ...process.env, LC_ALL: "C", LANG: "C" },
+    env: scrubGitEnv(),
   });
   // Always closed, even with no stdin data: git plumbing commands that never
   // read it ignore the EOF, but leaving it open (the default "inherit") would
@@ -40,7 +54,7 @@ export async function rawGitOk(dir: string, args: string[]): Promise<boolean> {
     cwd: dir,
     stdout: "pipe",
     stderr: "pipe",
-    env: { ...process.env, LC_ALL: "C", LANG: "C" },
+    env: scrubGitEnv(),
   });
   const [, err, code] = await Promise.all([
     new Response(proc.stdout).text(),
