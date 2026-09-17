@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import type { Logger } from "pino";
 import type { HerdJobRow, HerdRow } from "../herd-store.ts";
-import { evaluateJob, evaluateShepherd, HerdWatchdog, type WatchdogActuators, type WatchdogConfig, type WatchdogSensors } from "../herd-watchdog.ts";
+import { evaluateJob, evaluateShepherd, HerdWatchdog, runWatchdogSweep, type WatchdogActuators, type WatchdogConfig, type WatchdogSensors } from "../herd-watchdog.ts";
 
 const NOW = 10_000_000;
 const MIN = 60_000;
@@ -325,6 +325,29 @@ describe("HerdWatchdog ladder", () => {
     await r.tick();
     expect(r.pokes).toEqual([]);
     expect(r.wd.annotations("demo-1", "job-a")).toBeNull();
+  });
+
+  test("clearing on re-read leaves no scar: a genuine wedge inside the very next retryMins still pokes", async () => {
+    // If the ladder stamped an action for a strike that turned out to have
+    // nothing to send, that stamp alone would refuse a real wedge that shows
+    // up a minute later, with retryMins (5m) nowhere close to elapsed.
+    let calls = 0;
+    const genuine = { on: false };
+    const r = rig({ sensors: { ...idleFor(3), unreadDmMentionsFor: (h) => (h !== "job-a" ? 0 : calls++ === 0 || genuine.on ? 1 : 0) } });
+    await r.tick();
+    expect(r.pokes).toEqual([]);
+    expect(r.wd.annotations("demo-1", "job-a")).toBeNull();
+    genuine.on = true;
+    await r.tick(1);
+    expect(r.workerPokes()).toHaveLength(1);
+  });
+
+  test("a stale dead/modal verdict that re-reads as wedged starts the ladder at strike 1, not 3: the fresh kind supplies the floor", async () => {
+    let calls = 0;
+    const r = rig({ sensors: { paneState: () => (calls++ === 0 ? "dead" : "idle"), idleSinceMs: () => NOW - 40 * MIN, unreadDmMentionsFor: (h) => (h === "job-a" ? 1 : 0) } });
+    await r.tick();
+    expect(r.wd.annotations("demo-1", "job-a")?.strikes).toBe(1);
+    expect(r.workerPokes()).toHaveLength(1);
   });
 
   test("the shepherd's verdict is re-read at poke time too", async () => {
@@ -732,5 +755,42 @@ describe("HerdWatchdog ladder", () => {
     await r.tick(5);
     await r.tick(5);
     expect(r.lines.map((l) => l.msg)).toEqual(["poked worker", "poked worker", "escalated to shepherd"]);
+  });
+});
+
+describe("runWatchdogSweep (the scheduleSweep wiring, not the ladder itself)", () => {
+  function deps(overrides: { busy?: boolean; enabled?: boolean } = {}) {
+    const sweepCalls: number[] = [];
+    const refreshCalls: number[] = [];
+    let n = 0;
+    const watchdog = {
+      get busy() { return overrides.busy ?? false; },
+      async sweep() { sweepCalls.push(++n); },
+    };
+    const sensors = { async refresh() { refreshCalls.push(++n); } };
+    const cfg = () => ({ ...cfg0, enabled: overrides.enabled ?? true });
+    return { watchdog, sensors, cfg, sweepCalls, refreshCalls };
+  }
+  const cfg0: WatchdogConfig = cfg;
+
+  test("disabled still calls sweep() so its own reset runs: a short-circuit here would make that reset unreachable", async () => {
+    const d = deps({ enabled: false });
+    await runWatchdogSweep(d);
+    expect(d.sweepCalls).toEqual([1]);
+    expect(d.refreshCalls).toEqual([]);
+  });
+
+  test("enabled refreshes before sweeping", async () => {
+    const d = deps({ enabled: true });
+    await runWatchdogSweep(d);
+    expect(d.refreshCalls).toEqual([1]);
+    expect(d.sweepCalls).toEqual([2]);
+  });
+
+  test("busy skips the tick entirely, refresh included", async () => {
+    const d = deps({ busy: true, enabled: true });
+    await runWatchdogSweep(d);
+    expect(d.sweepCalls).toEqual([]);
+    expect(d.refreshCalls).toEqual([]);
   });
 });

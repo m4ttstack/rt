@@ -100,7 +100,7 @@ import { createEventsBus, type EventsBus } from "./daemon/events-bus.ts";
 import { createGatesStore, type GatesStore } from "./daemon/gates-store.ts";
 import { createHerdStore, type HerdStore } from "./daemon/herd-store.ts";
 import { createHerdLifecycle, type HerdLifecycle } from "./daemon/herd-lifecycle.ts";
-import { HerdWatchdog } from "./daemon/herd-watchdog.ts";
+import { HerdWatchdog, runWatchdogSweep } from "./daemon/herd-watchdog.ts";
 import { createWatchdogActuators, createWatchdogSensors, readWatchdogConfig } from "./daemon/herd-watchdog-adapters.ts";
 import { createBgService, type BgService } from "./daemon/bg-service.ts";
 import { createBgClaimsStore, type BgClaimsStore } from "./daemon/bg-claims-store.ts";
@@ -1150,11 +1150,7 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
         herdWatchdog = watchdog;
         sweepHandles.push(scheduleSweep(
           "herd-watchdog",
-          async () => {
-            if (!watchdogConfig().enabled || watchdog.busy) return;
-            await watchdogSensors.refresh();
-            await watchdog.sweep();
-          },
+          () => runWatchdogSweep({ watchdog, sensors: watchdogSensors, cfg: watchdogConfig }),
           { bootDelayMs: watchdogSweepMs, intervalMs: watchdogSweepMs },
           log,
         ));

@@ -266,16 +266,22 @@ export class HerdWatchdog {
       if (cfg.notifyHuman) this.act.notifyStuckAtModal(herd.id, job.name, job.pane);
       this.log.info({ herd: herd.id, job: job.name, pane: job.pane }, "parked job stuck at modal");
     }
-    if (!this.advance(key, ladder, now, cfg, verdict.kind === "wedged" ? 1 : 3, WORKER_CAP)) return;
+    if (!this.canAct(key, ladder, now, cfg)) return;
     // Unread counts and gate rows are read live, not from the pane snapshot,
     // so a worker that woke while this sweep was poking other panes is already
-    // healthy here. Re-read before injecting: a poke naming evidence the
-    // worker has since consumed is worse than no poke at all.
+    // healthy here. Re-read before committing: a poke naming evidence the
+    // worker has since consumed is worse than no poke at all, and stamping a
+    // strike for a verdict that turned out healthy would refuse a genuine
+    // wedge inside the very next retryMins with nothing having been sent.
+    // The fresh verdict supplies the floor too, not the stale one: a dead or
+    // modal reading that has since resolved to merely idle is a fresh wedge
+    // at strike 1, not a stale dead/modal jumping straight to strike 3.
     const fresh = evaluateJob(job, this.sensors, cfg);
     if (fresh.kind === "healthy" || fresh.kind === "finished-lingering") {
       this.ladders.delete(key);
       return;
     }
+    this.commit(key, ladder, now, fresh.kind === "wedged" ? 1 : 3, WORKER_CAP);
     const evidence = fresh.kind === "wedged" ? fresh.evidence : fresh.kind === "dead" ? DEAD_EVIDENCE : MODAL_EVIDENCE;
     const ctx = { herd: herd.id, job: job.name, verdict: fresh.kind, strike: ladder.strikes };
     if (ladder.strikes <= 2) {
@@ -295,13 +301,14 @@ export class HerdWatchdog {
       return;
     }
     const ladder = this.track(key, now);
-    if (!this.advance(key, ladder, now, cfg, 1, SHEPHERD_CAP)) return;
-    // Same re-read as the worker path, for the same reason.
+    if (!this.canAct(key, ladder, now, cfg)) return;
+    // Same re-read-before-commit as the worker path, for the same reason.
     const fresh = evaluateShepherd(herd, this.sensors, cfg);
     if (fresh.kind !== "wedged") {
       this.ladders.delete(key);
       return;
     }
+    this.commit(key, ladder, now, 1, SHEPHERD_CAP);
     const ctx = { herd: herd.id, job: SHEPHERD, path: fresh.path, strike: ladder.strikes };
     if (ladder.strikes >= SHEPHERD_CAP || herd.shepherdPane === null) this.notify(herd.id, summaryText(key, fresh.evidence, ladder, now), herd.shepherdPane, cfg, now, ctx);
     else await this.poke(herd.shepherdPane, pokeText(fresh.evidence), ctx, "poked shepherd");
@@ -316,13 +323,19 @@ export class HerdWatchdog {
     return ladder;
   }
 
-  private advance(key: string, ladder: Ladder, now: number, cfg: WatchdogConfig, floor: number, cap: number): boolean {
+  /** True once retryMins has elapsed since the last action, without
+      mutating anything: the caller re-reads the verdict before committing a
+      strike, so gating must not itself stamp a strike for a reading that
+      might turn out to have nothing to send. */
+  private canAct(key: string, ladder: Ladder, now: number, cfg: WatchdogConfig): boolean {
     const last = ladder.lastPokeAt ?? this.lastActionAt.get(key) ?? null;
-    if (last !== null && now - last < ms(cfg.retryMins)) return false;
+    return last === null || now - last >= ms(cfg.retryMins);
+  }
+
+  private commit(key: string, ladder: Ladder, now: number, floor: number, cap: number): void {
     ladder.strikes = Math.min(Math.max(ladder.strikes + 1, floor), cap);
     ladder.lastPokeAt = now;
     this.lastActionAt.set(key, now);
-    return true;
   }
 
   /** The adapter's own poke already logs warn for a real failure (herdr
@@ -349,4 +362,20 @@ export class HerdWatchdog {
     this.act.notifyHuman(summary, pane);
     this.log.info({ ...ctx, summary }, "notified human");
   }
+}
+
+/** The daemon's scheduleSweep tick, extracted so the wiring itself is
+    testable: `sweep()` owns what "disabled" means (a reset, not a pause),
+    so this must call it every tick regardless of enabled -- only the
+    refresh is conditional, since there is nothing to read a fresh snapshot
+    for if the sweep is about to reset and return. A short-circuit here
+    that skips `sweep()` on disabled would make the reset unreachable. */
+export async function runWatchdogSweep(deps: {
+  watchdog: { readonly busy: boolean; sweep(): Promise<void> };
+  sensors: { refresh(): Promise<void> };
+  cfg(): WatchdogConfig;
+}): Promise<void> {
+  if (deps.watchdog.busy) return;
+  if (deps.cfg().enabled) await deps.sensors.refresh();
+  await deps.watchdog.sweep();
 }
