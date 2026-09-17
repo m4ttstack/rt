@@ -29,6 +29,12 @@ From the tray menu you can:
 
 When `rt pane focus` targets a pane, the tray activates the terminal window hosting it. This works for both regular panes and daemon-hosted background panes.
 
+## Window behavior
+
+The app stays a regular Dock app for its entire run, so the Dock icon keeps its running indicator. Cmd-W closes the window (and cmd-M minimizes it). Quitting the app when no window is on screen is a real quit, whether from the Dock, Activity Monitor, or a script.
+
+The app catalog is fetched at launch rather than on first window open. This means the first handoff or browser click opens the window without a catalog-fetch delay.
+
 ## Updates
 
 The tray app never self-upgrades. When a newer release is available, it notifies you and prompts you to run `rt update` yourself; it does not download or install anything on your behalf.

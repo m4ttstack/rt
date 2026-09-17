@@ -1,0 +1,97 @@
+---
+sidebar_position: 14
+title: Gates
+---
+
+# Gates
+
+A gate is a daemon-persisted decision that pauses a subject until a human (or another surface) answers it. Gates survive daemon restarts, can be answered from any surface (the in-pane form, the board, the console, or the [MCP server](/guides/mcp)), and the first answer wins via compare-and-swap.
+
+Gates are primarily agent-facing: a herd worker opens one when it needs a decision, the shepherd or a human answers, and the worker resumes. But the CLI surface is how you see what is waiting and answer pending questions directly.
+
+## Lifecycle
+
+1. **Open.** `rt gate open` or `rt gate ask` mints a gate, stores it in the daemon, and emits `gate/opened`. If another open gate already exists on the same subject and kind, it is superseded (closed automatically).
+2. **Park** (optional). `rt gate park <id>` marks the gate paused without closing it. A parked gate can still be answered.
+3. **Answer.** `rt gate answer <id>` records the answer. The daemon pushes a notification to the gated pane so it can proceed. A second answer to the same gate is rejected cleanly, and the rejection carries the winning answer.
+4. **Close.** `rt gate close <id>` closes a gate without an answer. Waiters are released with a "closed" status.
+5. **Wait.** `rt gate wait <id>` blocks until the gate is answered or closed. Works across daemon restarts.
+
+## Asking a question with `rt gate ask`
+
+`rt gate ask` is the high-level interface. It resolves the subject automatically, determines the presentation mode (form for attended panes, wait for unattended), and nudges the operator.
+
+```bash
+rt gate ask \
+  --questions '[{"id":"q1","label":"Which approach?","multi":false,"options":["Refactor first","Ship as-is"]}]' \
+  --context "We found dead code in the auth path; removing it simplifies the fix but adds scope."
+```
+
+### Subject resolution
+
+If `--subject` is omitted, the daemon walks a resolution ladder: the session's running run (if exactly one), then the session's agent record's subject. If multiple runs exist, it errors with candidates. Pass `--subject` explicitly to skip the ladder.
+
+### Options
+
+Options can be bare strings or objects with richer metadata:
+
+```json
+[
+  { "value": "refactor", "label": "Refactor first", "recommended": true, "description": "Removes dead code before the fix" },
+  { "value": "ship", "label": "Ship as-is", "description": "Smallest diff, tech debt stays" }
+]
+```
+
+An option with `recommended: true` gets a "(Recommended)" suffix in the daemon's normalized label, which downstream UI renders as a badge.
+
+### Per-question context
+
+Each question can carry its own `context` field for material specific to that choice. The gate-level `--context` plus all per-question contexts share a single 8 KB budget. When the combined size exceeds the budget, question contexts are dropped first, then the gate context. The response reports `contextOmitted: true` when anything was dropped.
+
+```json
+[
+  {
+    "id": "q1",
+    "label": "Which migration strategy?",
+    "multi": false,
+    "options": ["Blue-green", "Rolling"],
+    "context": "The table has 50M rows; blue-green needs twice the disk during cutover."
+  }
+]
+```
+
+## Answering
+
+```bash
+rt gate list --open          # see what is waiting
+rt gate answer <id>          # answer one (picker when omitted)
+```
+
+Answer values must match an option's value verbatim. Free-text feedback rides a per-answer `note` field. For multi-select questions, the answer is an array of values.
+
+### Herd ownership
+
+When a gate was opened by a herd worker, only the owning shepherd's session can answer it. Pass `--override` to escalate as a human past the automated owner.
+
+## Delivery
+
+When a gate is answered, the daemon pushes a notification to the gated pane. The notification tells the pane to re-read the registry; it does not carry the answer itself. The pane then calls `rt gate wait` (or `rt herd answer`) to read the recorded answer.
+
+If the gated pane has exited, the daemon retries delivery with bounded retries (up to 20 attempts). Gates whose owner has exited are escalated automatically after their TTL expires.
+
+## Subscriptions
+
+`rt gate subscribe` registers a session for push notifications on gates matching a subject prefix. Subscriptions fire on both `gate/opened` and `gate/answered` events and persist across daemon restarts.
+
+```bash
+rt gate subscribe --subject-prefix "run:" --session <addr>
+rt gate unsubscribe <id>
+rt gate subscriptions         # list active subscriptions
+```
+
+## See also
+
+- [`rt gate`](/reference/gate) command reference
+- [`rt gate ask`](/reference/gate/ask), [`rt gate answer`](/reference/gate/answer), [`rt gate list`](/reference/gate/list)
+- [The daemon](/guides/daemon) for daemon basics
+- [MCP server](/guides/mcp) for answering gates through MCP tools

@@ -76,3 +76,25 @@ rt gate answer <id>       # answer one (first answer wins)
 ```
 
 `rt gate answer --override` lets a human answer a gate that belongs to a herd, escalating past the automated owner. Gates whose owner has exited are escalated automatically after their TTL expires.
+
+See the [gates guide](/guides/gates) for the full lifecycle, `rt gate ask`, option descriptions, and delivery mechanics.
+
+## Herds
+
+A herd is a group of workers (coding agents in herdr panes) coordinated by a shepherd. The daemon owns the herd registry, spawns workers, and routes their questions through gates.
+
+### `rt herd brief`
+
+Assembles a worker's job brief from a shepherd skill's template plus a strategy body. The shepherd passes every path explicitly; this is agent-facing and not something you run by hand.
+
+### Spawn and folder trust
+
+When a worker spawns, its pane may show Claude Code's folder-trust dialog. The spawn logic reads the dialog, computes the correct accept key, and verifies acceptance. If the dialog persists after a retry, the job is parked at `stuck-at-modal`, and `rt herd status` shows `STUCK AT TRUST MODAL` with remediation instructions.
+
+### Dead worker detection
+
+A memory-pressure SIGKILL can remove the Claude process while leaving the pane's shell alive. The herd detects this by checking whether the pane still has a running agent session. When it doesn't, `rt herd status` reports `SESSION DEAD` with the respawn command.
+
+### Gate-fork hook
+
+Herd spawns stamp the gate subject on the worker environment so each worker gets the gate-fork hook (a Claude Code hook that routes questions through the daemon's gate registry). A worker's own open run-gate is allowed through the hook so it doesn't block on its own question.

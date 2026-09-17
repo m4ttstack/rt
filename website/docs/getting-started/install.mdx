@@ -27,6 +27,24 @@ For detailed diagnostics at any time:
 rt verify
 ```
 
+## Repo folder
+
+The setup checklist asks where rt should clone your team's repos instead of assuming a default location. You can also set this from the CLI for scripted installs:
+
+```bash
+rt setup repo-root set ~/code     # set the repo folder
+```
+
+Before Install (when the home repo doesn't exist yet), the answer is staged. After Install, it writes directly to the settings store. The tray app shows an OS folder picker for this step.
+
+## Agent permissions
+
+Install seeds a baseline `permissions.allow` list into Claude Code's settings so agents don't stall on per-tool prompts for calls rt already trusts. The seeded entries cover `glab` commands, the Fast Browser plugin, `EnterWorktree`, the mattstack MCP server, and `rt skills sync`. Existing entries are preserved; only missing ones are appended.
+
+## Integration health
+
+`rt setup status` warns when an integration token is approaching expiry, so you can rotate it before it breaks.
+
 ## What Gets Installed
 
 | Component | Description |
@@ -37,6 +55,13 @@ rt verify
 | Background daemon | Caches MR/branch data, scans ports, guards git hooks |
 | Bundled helpers | `jq`, `gh`, `glab`, `bun`, `node`, `fast-browser` (pinned and shipped inside the app, not installed onto your system) |
 | Shell alias | `rtcd`... fast worktree directory switching |
+
+## PATH
+
+`rt setup status` checks that `~/.local/bin` is on your PATH and that rt's own entry is present. Two distinct states:
+
+- **missing**: `~/.local/bin` is not on PATH at all. Run setup to fix it.
+- **unowned**: `~/.local/bin` is on PATH but rt didn't put it there (no owner attribution). This is informational, not a failure.
 
 ## Finishing setup
 

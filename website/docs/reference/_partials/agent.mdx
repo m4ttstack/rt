@@ -1,0 +1,13 @@
+`rt agent` launches a coding agent session and keeps the receipt.
+
+### Providers
+
+`--provider` selects which CLI to launch. The default is `claude` (Claude Code). `codex` launches OpenAI Codex CLI instead. Each provider has its own settings namespace (`agent.claude.*`, `agent.codex.*`) for model, effort, yolo, account, and extra args.
+
+### Permission bypass
+
+`--yolo` bypasses permission prompts for the launched session. `--no-yolo` keeps them even when the setting enables yolo. Both override the provider-scoped setting `agent.<provider>.yolo`. When neither flag is passed, the setting decides.
+
+### Background mode
+
+`--bg` launches the agent onto the daemon-owned background herdr server instead of the visible one. This is useful for agents that don't need a visible terminal.
