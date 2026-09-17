@@ -184,6 +184,27 @@ describe('settings api', () => {
     expect(byKey.get('rt.legacyThing')?.writable).toBe(false);
   });
 
+  it('filters defs by prefix, and an empty prefix still returns everything', async () => {
+    const filtered = await settings.fetch(
+      new Request('http://localhost/api/settings/defs?prefix=rt.')
+    );
+    expect(filtered.status).toBe(200);
+    const { defs: rtDefs } = (await filtered.json()) as {
+      defs: { key: string }[];
+    };
+    expect(rtDefs.map(d => d.key).sort()).toEqual(
+      ['rt.legacyThing', 'rt.runsPruneDays', 'rt.worktrees'].sort()
+    );
+
+    const unfiltered = await settings.fetch(
+      new Request('http://localhost/api/settings/defs')
+    );
+    const { defs: allDefsWire } = (await unfiltered.json()) as {
+      defs: { key: string }[];
+    };
+    expect(allDefsWire).toHaveLength(DEFS.length);
+  });
+
   it('explains a key as its def plus the resolver rows', async () => {
     const res = await settings.fetch(
       new Request('http://localhost/api/settings/explain/rt.runsPruneDays')

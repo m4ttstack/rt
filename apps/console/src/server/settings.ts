@@ -121,9 +121,17 @@ export const settings = new Hono()
     );
     return c.json({ workspace: value?.linear?.workspace ?? null }, 200);
   })
-  .get('/api/settings/defs', c =>
-    c.json({ defs: allDefs().map(defToWire) }, 200)
-  )
+  .get('/api/settings/defs', c => {
+    const prefix = c.req.query('prefix') ?? '';
+    return c.json(
+      {
+        defs: allDefs()
+          .filter(d => d.key.startsWith(prefix))
+          .map(defToWire),
+      },
+      200
+    );
+  })
   .get('/api/settings/explain/:key', c => {
     const key = c.req.param('key');
     const def = getDef(key);

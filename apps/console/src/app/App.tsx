@@ -14,16 +14,18 @@ import { useAppRoute, type AppRoute } from './routes';
 import { RunBoard } from './runs/RunBoard';
 import { RunDetail } from './runs/RunDetail';
 import { RunSearch } from './runs/RunSearch';
+import { AgentDefaultsPage } from './settings/AgentDefaultsPage';
 import { WiringMap } from './wiring/WiringMap';
 import { WiringRailEntry } from './wiring/WiringRailEntry';
 
 const queryClient = new QueryClient();
 
-type ConsoleSection = 'runs' | 'search' | 'wiring';
+type ConsoleSection = 'runs' | 'search' | 'wiring' | 'settings';
 
 function chromeSection(route: AppRoute): ConsoleSection | null {
   if (route.name === 'search') return 'search';
   if (route.name === 'wiring') return 'wiring';
+  if (route.name === 'settings') return 'settings';
   if (route.name === 'not-found') return null;
   if (route.name === 'config') return null;
   return 'runs';
@@ -70,6 +72,8 @@ function RouteContent({ route }: { route: AppRoute }) {
       return <RunSearch />;
     case 'wiring':
       return <WiringMap />;
+    case 'settings':
+      return <AgentDefaultsPage />;
     case 'config':
       return <ExplainKeyPage settingKey={route.key} />;
     case 'not-found':
@@ -120,6 +124,12 @@ export function App() {
             active={section === 'search'}
           />
           <WiringRailEntry active={section === 'wiring'} />
+          <RailLink
+            icon="settings"
+            label="Settings"
+            href="/settings"
+            active={section === 'settings'}
+          />
         </MattstackShell.Rail>
         {/* Keyed on path: without a remount, an error caught on one route
             would keep showing the fallback after navigating to another. */}

@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 
+import { agentModels } from './agent-models';
 import { mountEffectiveInputs } from './effectiveInputs';
 import { enrich } from './enrich';
 import { gates } from './gates';
@@ -19,6 +20,7 @@ export const routes = new Hono()
   .route('/', panes)
   .route('/', gates)
   .route('/', settings)
+  .route('/', agentModels)
   .route('/', mountSkills(new Hono()))
   .route('/', mountEffectiveInputs(new Hono()));
 

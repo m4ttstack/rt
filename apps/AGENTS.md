@@ -673,7 +673,24 @@ way that does not announce itself as "the kit is wrong":
    Vite invocation (`vite`, `vite build`, `vitest`; see
    `apps/chat/package.json`'s `dev`/`build`/`test` scripts).
 
-4. **Depend on `workspace:*`, not a packed tarball or a bare `file:` path,
+4. **`bg.level2` can read as indistinguishable from a Mantine input's own
+   background in dark mode.** `level2` ("the default surface sitting on
+   the page") looks correctly distinct from `level1` in both schemes when
+   judged against the bare page -- but a re-themed dark palette can put an
+   input's own background close enough to `level2` that a card built from
+   `level2` and containing form inputs reads as one flat surface in dark
+   mode, even though light mode looks fine. Confirmed in `apps/console`:
+   an `AgentDefaultsPage.tsx` settings card on `bg.level2` was fine in
+   light, but its `TextInput`/`Select` fields were nearly invisible
+   against the card in dark. `bg.level4` (the deliberate contrast step --
+   lighter in dark, deeper in light) reliably reads as distinct from
+   default input backgrounds in both schemes; reach for it over `level2`
+   for any card/panel whose main job is to hold its own inputs. Verify
+   both schemes in a real browser before calling a surface choice done --
+   this is not visible from reading the token names or from light mode
+   alone.
+
+5. **Depend on `workspace:*`, not a packed tarball or a bare `file:` path,
    now that an app lives in this repo.** Every app under `apps/` declares
    `"@mattstack/app-kit": "workspace:*"` (and the same for `app-server`,
    `mantine-tokyo`) in its own `package.json`. `workspace:*` resolves
@@ -687,3 +704,14 @@ way that does not announce itself as "the kit is wrong":
    once through the symlinked package's own `node_modules`, once through
    the consumer's), which is exactly the failure mode `workspace:*` and
    the tarball path both avoid, each in their own scope.
+
+6. **A custom label/header over a kit input needs its own `aria-label`.**
+   Building a denser form row (a shared label + status badge above the
+   control, say) usually means dropping the input's own `label` prop so
+   it doesn't render twice. But `label` is also what gives the input its
+   accessible name -- drop it with nothing in its place and
+   `getByLabelText`/`getByRole(..., { name })` (Testing Library) and
+   screen readers alike lose the field's name. Pass `aria-label` matching
+   the visual label text to the underlying control instead; it satisfies
+   both without rendering a second visible label. `AgentDefaultsPage.tsx`
+   in `apps/console` does this for every field with a custom row header.

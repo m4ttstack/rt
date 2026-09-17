@@ -7,6 +7,7 @@ export type AppRoute =
   | { name: 'gate'; id: string }
   | { name: 'search' }
   | { name: 'wiring' }
+  | { name: 'settings' }
   | { name: 'config'; key: string }
   | { name: 'not-found' };
 
@@ -47,6 +48,7 @@ export function useAppRoute(): AppRoute {
   const [isBoard] = useRoute('/');
   const [isSearch] = useRoute('/search');
   const [isWiring] = useRoute('/wiring');
+  const [isSettings] = useRoute('/settings');
   const [isRun, runParams] = useRoute('/runs/:repo/:runId');
   const [isGate, gateParams] = useRoute('/gates/:id');
   const [isConfig, configParams] = useRoute('/config/:key');
@@ -54,6 +56,7 @@ export function useAppRoute(): AppRoute {
   if (isBoard) return { name: 'board' };
   if (isSearch) return { name: 'search' };
   if (isWiring) return { name: 'wiring' };
+  if (isSettings) return { name: 'settings' };
   if (isRun) {
     const repo = canonicalRepo(runParams.repo ?? '');
     const runId = decodeParam(runParams.runId ?? '');
