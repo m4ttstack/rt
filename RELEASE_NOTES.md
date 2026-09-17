@@ -20,7 +20,6 @@ the agent-coordination release. rt grows a daemon gate facility that lets any su
 - gate:ask resolves a stale-run subject by walking a ladder (run, then agent record), carries origin.worktree, and refuses bare-context human-owned gates that would produce an unanswerable question (milestone and pane-attention kinds exempt) (#295)
 - gate-fork hook allows the worktree's own open run-gate, so a worker's own pipeline questions are not denied (#290)
 
-
 ### Herding
 
 - `rt herd start|spawn|status|gates|ask|milestone|answer|report|close|wrap-up|resume|list`: one verb spawns the worktree, pane, brief, chat sign-in, and trust accept; the daemon records job state as a side effect of every verb
