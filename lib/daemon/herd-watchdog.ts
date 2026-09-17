@@ -61,25 +61,37 @@ const ms = (mins: number) => mins * 60_000;
 const plural = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
 const oldest = (gates: { id: string; ageMs: number }[]) => gates.reduce<{ id: string; ageMs: number } | null>((a, g) => (a && a.ageMs >= g.ageMs ? a : g), null);
 
-/** The published report is the clock for both the nag and the shepherd
-    backstop, and only while the pane is still open: a done job whose pane is
-    gone has been closed (or its close was missed), and nobody can act on it.
-    lastReport is the report's chat message id, not a time, so the age comes
-    from updatedAt, which setJobStatus stamps as the job goes done (RT-193). */
-function openReportAgeMs(job: HerdJobRow, s: WatchdogSensors, now: number): number | null {
+/** The clocks for the nag and the shepherd backstop, and only while the
+    pane is still open: a done job whose pane is gone has been closed (or
+    its close was missed), and nobody can act on it. lastReport is the
+    report's chat message id, not a time, so the report age comes from
+    updatedAt, which setJobStatus stamps as the job goes done (RT-193).
+    A done job is not necessarily finished (RT-205): a consumed report often
+    dispatches a follow-up round in the same pane, so a WORKING pane
+    suppresses both clocks entirely, and `quietMs` restarts from the pane's
+    last observed transition when that is newer than the report -- the nag
+    paces off silence since the LAST activity, never off a report a live
+    round has already superseded. */
+function openReportAges(job: HerdJobRow, s: WatchdogSensors, now: number): { reportMs: number; quietMs: number } | null {
   if (job.status !== "done" || job.lastReport === null || job.pane === null) return null;
-  if (s.paneState(job.pane) === "gone") return null;
-  return now - job.updatedAt;
+  const state = s.paneState(job.pane);
+  if (state === "gone" || state === "working") return null;
+  const idleSince = s.idleSinceMs(job.pane);
+  const lastActivity = idleSince !== null && idleSince > job.updatedAt ? idleSince : job.updatedAt;
+  return { reportMs: now - job.updatedAt, quietMs: now - lastActivity };
 }
 
 type Lingering = Extract<WedgeVerdict, { kind: "finished-lingering" }>;
 
-const closeRemedy = (job: HerdJobRow) => `run rt herd close ${job.name} --herd ${job.herd}`;
+// The remedy asks for a check first: the watchdog cannot see a consumed
+// report's follow-up round, and prescribing a bare close killed live jobs
+// twice before the wording changed (RT-205).
+const closeRemedy = (job: HerdJobRow) => `confirm no follow-up round is in flight, then run rt herd close ${job.name} --herd ${job.herd}`;
 
 function finishedLingering(job: HerdJobRow, s: WatchdogSensors, cfg: WatchdogConfig, now: number): Lingering | null {
-  const age = openReportAgeMs(job, s, now);
-  if (age === null || age < ms(cfg.nagMins)) return null;
-  return { kind: "finished-lingering", evidence: `${job.name} done with report ${minutes(age)}m ago, pane still open; ${closeRemedy(job)}` };
+  const ages = openReportAges(job, s, now);
+  if (ages === null || ages.quietMs < ms(cfg.nagMins)) return null;
+  return { kind: "finished-lingering", evidence: `${job.name} done with report ${minutes(ages.reportMs)}m ago, quiet ${minutes(ages.quietMs)}m; ${closeRemedy(job)}` };
 }
 
 export function evaluateJob(job: HerdJobRow, s: WatchdogSensors, cfg: WatchdogConfig): WedgeVerdict {
@@ -140,9 +152,9 @@ export function evaluateShepherd(herd: HerdRow, s: WatchdogSensors, cfg: Watchdo
     if (lingering) return { kind: "wedged", path: "fast", evidence: lingering.evidence };
   }
   for (const job of jobs) {
-    const age = openReportAgeMs(job, s, now);
-    if (age !== null && age >= ms(cfg.backstopMins)) {
-      return { kind: "wedged", path: "backstop", evidence: `${job.name} done with report ${minutes(age)}m ago, not yet closed; ${closeRemedy(job)}` };
+    const ages = openReportAges(job, s, now);
+    if (ages !== null && ages.quietMs >= ms(cfg.backstopMins)) {
+      return { kind: "wedged", path: "backstop", evidence: `${job.name} done with report ${minutes(ages.reportMs)}m ago, quiet ${minutes(ages.quietMs)}m, not yet closed; ${closeRemedy(job)}` };
     }
   }
   return HEALTHY;
