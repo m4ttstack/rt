@@ -454,6 +454,49 @@ describe("gate:ask context enforcement", () => {
   });
 });
 
+// RT-202: a caller whose question busts the form's option cap used to get a
+// bare "wait" with no reason, which is how option-folding survived across
+// every wrapper skill. The response now says why, once, at the seam.
+describe("gate:ask form-cap advisory (RT-202)", () => {
+  const CTX = "the plan section under decision, quoted verbatim";
+
+  test("an over-cap question on a formable pane reports which question and why", async () => {
+    const { handlers } = harness({ resolveSubject: () => ({ ok: true, subject: "mr:x" }) });
+    const res = await handlers["gate:ask"]({
+      questions: fiveOptionQuestion(), subject: "mr:x", context: CTX,
+      sessionId: "sess-1", paneId: "w1:p1",
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.presentation).toBe("wait");
+    expect(res.data.formCapExceeded).toEqual([{ question: "q1", options: 5 }]);
+    expect(res.data.formCapAdvisory).toContain("4 options");
+    expect(res.data.formCapAdvisory).toContain("next");
+  });
+
+  test("with no pane a form was never possible, so no advisory rides the wait", async () => {
+    const { handlers } = harness({ resolveSubject: () => ({ ok: true, subject: "mr:x" }) });
+    const res = await handlers["gate:ask"]({ questions: fiveOptionQuestion(), subject: "mr:x", context: CTX });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.presentation).toBe("wait");
+    expect(res.data.formCapExceeded).toBeUndefined();
+  });
+
+  test("questions inside the cap carry no advisory", async () => {
+    const { handlers } = harness({ resolveSubject: () => ({ ok: true, subject: "mr:x" }) });
+    const res = await handlers["gate:ask"]({
+      questions: twoOptionQuestion(), subject: "mr:x", context: CTX,
+      sessionId: "sess-1", paneId: "w1:p1",
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.presentation).toBe("form");
+    expect(res.data.formCapExceeded).toBeUndefined();
+    expect(res.data.formCapAdvisory).toBeUndefined();
+  });
+});
+
 describe("gate:ask structured question context (RT-184)", () => {
   const CTX = "the plan section under decision, quoted verbatim";
   const withContexts = (a: number, b: number): GateQuestion[] => [
