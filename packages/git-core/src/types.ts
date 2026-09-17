@@ -103,6 +103,10 @@ export interface GitClient {
   tags(): Promise<TagInfo[]>;
   log(opts?: { maxCount?: number; file?: string }): Promise<LogEntry[]>;
   stashes(): Promise<StashEntry[]>;
+  stashPush(opts?: { message?: string; includeUntracked?: boolean }): Promise<{ created: boolean }>;
+  stashApply(index: number): Promise<void>;
+  stashPop(index: number): Promise<void>;
+  stashDrop(index: number): Promise<void>;
   fetchState(): Promise<FetchState>;
   stagingDiff(path: string): Promise<StagingDiff>;
   stageSelection(
