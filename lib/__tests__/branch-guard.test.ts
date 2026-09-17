@@ -29,6 +29,15 @@ const unreachableRunners: StackGuardRunners = {
   },
 };
 
+const benignRunners: StackGuardRunners = {
+  async gitqStacks() {
+    return null;
+  },
+  async forgeOpenMrs() {
+    return { ok: true, mrs: [] };
+  },
+};
+
 describe("checkBranchGuard", () => {
   test("refuses a branch checked out in another worktree, naming its path", async () => {
     const parent = mkdtempSync(join(tmpdir(), "rt-branch-guard-parent-"));
@@ -130,5 +139,50 @@ describe("checkBranchGuard", () => {
 
     expect(verdict.verdict).toBe("unverified");
     rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("is clear from a subdirectory of the caller's own worktree on its own branch", async () => {
+    const dir = makeRepo();
+    const subDir = join(dir, "sub");
+    mkdirSync(subDir);
+
+    const verdict = await checkBranchGuard({
+      cwd: subDir,
+      branch: "main",
+      defaultBranch: "main",
+      runners: benignRunners,
+    });
+
+    expect(verdict).toEqual({ verdict: "clear" });
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("still refuses an other-worktree-owned branch when cwd is a nested subdirectory", async () => {
+    const parent = mkdtempSync(join(tmpdir(), "rt-branch-guard-parent-"));
+    const dir = join(parent, "main");
+    mkdirSync(dir);
+    git(dir, "init", "-q", "-b", "main");
+    git(dir, "config", "user.email", "test@test");
+    git(dir, "config", "user.name", "test");
+    git(dir, "commit", "-q", "--allow-empty", "-m", "init");
+    git(dir, "branch", "feature-x");
+    const wtPath = join(parent, "wt");
+    git(dir, "worktree", "add", wtPath, "feature-x");
+    const subDir = join(dir, "sub");
+    mkdirSync(subDir);
+
+    const verdict = await checkBranchGuard({
+      cwd: subDir,
+      branch: "feature-x",
+      defaultBranch: "main",
+      runners: unreachableRunners,
+    });
+
+    expect(verdict.verdict).toBe("refuse");
+    if (verdict.verdict === "refuse") {
+      expect(verdict.reason).toBe("worktree");
+      expect(verdict.detail).toContain(wtPath);
+    }
+    rmSync(parent, { recursive: true, force: true });
   });
 });
