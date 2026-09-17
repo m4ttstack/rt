@@ -22,5 +22,5 @@ License: MIT (see LICENSE)
 | `diff-selection.ts` | Import path changed from `../../lib/fatal-error` to `./fatal-error` | Consolidate vendored files into single directory |
 | `fatal-error.ts` | Trimmed to only assertNever export; Electron-specific fatalError machinery dropped | Only the assertion utility is needed for vendor scope |
 | `raw-diff.ts` | Line 56: added non-null assertion `other.lines[ix]!` | Repo enables noUncheckedIndexedAccess; upstream code indexes without length guard |
-| `diff-parser.ts` | Import paths: models from `./raw-diff` and `./diff-line`; helpers from `./support`; Line 336: added non-null assertion `lines[previousLineIndex]!` | Consolidate imports; noUncheckedIndexedAccess constraint |
-| `support.ts` | New file containing inlined pure helper functions | UI imports (`text-diff-expansion.ts`, `diff-helpers.tsx`) are TS/React-only and not vendored; only pure functions needed here |
+| `diff-parser.ts` | Imports: `IRawDiff` as type-only (line 1), models from `./raw-diff` and `./diff-line`, helpers from `./support`; Line 152: `this.text[p]!`; Lines 269-270: `c[0]!` (two places); Line 332: `lines[previousLineIndex]!` | Consolidate imports; verbatimModuleSyntax; noUncheckedIndexedAccess constraint |
+| `support.ts` | Parameters widened from `DiffHunk[]` to `ReadonlyArray<DiffHunk>` (line 47); Lines 58, 61: added non-null assertions `hunks[i]!` and `hunk.lines[j]!` | UI source used array; vendoring uses readonly; noUncheckedIndexedAccess constraint |

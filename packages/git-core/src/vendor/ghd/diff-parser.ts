@@ -25,7 +25,7 @@ const diffHeaderRe = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/
  * may be interpreted or compiled differently than what it appears. More info:
  * https://github.co/hiddenchars
  */
-export const HiddenBidiCharsRegex = /[‪-‮]|[⁦-⁩]/
+export const HiddenBidiCharsRegex = /[\u202A-\u202E]|[\u2066-\u2069]/
 
 const DiffPrefixAdd = '+' as const
 const DiffPrefixDelete = '-' as const
