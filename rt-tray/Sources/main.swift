@@ -9,6 +9,9 @@ import MattstackCore
 if CommandLine.arguments.contains("--find-bar-self-check") {
     FindBarSelfCheck.run()
 }
+if let flag = CommandLine.arguments.firstIndex(of: "--find-bar-preview") {
+    FindBarPreview.run(url: CommandLine.arguments.dropFirst(flag + 1).first)
+}
 #endif
 
 installTrayCrashHandlers()
