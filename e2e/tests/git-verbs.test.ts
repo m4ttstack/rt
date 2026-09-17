@@ -68,3 +68,24 @@ describe("rt git read verbs", () => {
     expect(out.branches[0].upstream).toBeNull();
   });
 });
+
+describe("rt git diff", () => {
+  test("diff --json returns hunks for a modified file", async () => {
+    const out = await rtJson(["git", "diff", "a.txt", "--json"]);
+    expect(out.ok).toBe(true);
+    expect(out.diff.path).toBe("a.txt");
+    expect(out.diff.kind).toBe("text");
+    expect(out.diff.hunks.length).toBe(1);
+    const lines = out.diff.hunks[0].lines.map((l: any) => [l.type, l.content]);
+    expect(lines).toEqual([["del", "one"], ["add", "two"]]);
+  });
+
+  test("omitted path in non-TTY json mode is a usage error", async () => {
+    const res = await rt(["git", "diff", "--json"], { home: repo, env: { HOME: home.path } });
+    expect(res.exitCode).toBe(1);
+    expect(JSON.parse(res.stdout)).toEqual({
+      ok: false,
+      error: "usage: rt git diff <path> [--staged] [--json]",
+    });
+  });
+});

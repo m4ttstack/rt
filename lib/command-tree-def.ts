@@ -783,6 +783,18 @@ export const TREE: Record<string, CommandNode> = {
           { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable snapshot" },
         ],
       },
+      diff: {
+        description: "One file's diff (hunks and lines) from git-core",
+        module: "./commands/git/inspect.ts",
+        fn: "diffCommand",
+        omitBehavior: "picker",
+        context: "worktree",
+        args: [
+          { name: "Path", type: "text", placeholder: "src/app.ts", hint: "File to diff (picker over changed files when omitted)" },
+          { name: "Staged", flag: "--staged", type: "boolean", default: false, hint: "Diff the index against HEAD instead of the working tree" },
+          { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable hunks" },
+        ],
+      },
       log: {
         description: "Recent commits on the current branch",
         module: "./commands/git/inspect.ts",

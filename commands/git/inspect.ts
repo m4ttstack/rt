@@ -79,3 +79,56 @@ export async function branchesCommand(args: string[]): Promise<void> {
     failPlain(json, "git branches", err instanceof Error ? err.message : String(err));
   }
 }
+
+const DIFF_USAGE = "usage: rt git diff <path> [--staged] [--json]";
+
+function positional(args: string[]): string | undefined {
+  const flagsWithValue = new Set(["--max", "--file"]);
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]!;
+    if (flagsWithValue.has(a)) { i++; continue; }
+    if (!a.startsWith("-")) return a;
+  }
+  return undefined;
+}
+
+export async function diffCommand(args: string[]): Promise<void> {
+  const json = args.includes("--json");
+  const staged = args.includes("--staged");
+  const client = repoClient();
+  let path = positional(args);
+  let untracked = false;
+  try {
+    if (!path && process.stdin.isTTY && !json && !process.env.RT_BATCH) {
+      const files = (await client.snapshot()).files;
+      if (files.length === 0) failPlain(json, "git diff", DIFF_USAGE);
+      const { filterableSelect } = await import("../../lib/pick-wrappers.ts");
+      const picked = await filterableSelect({
+        message: "Diff which file?",
+        options: files.map((f) => ({ label: f.path, value: f.path, hint: f.kind })),
+      });
+      if (picked === null) process.exit(0);
+      path = picked;
+      untracked = files.find((f) => f.path === picked)?.kind === "untracked";
+    }
+    if (!path) failPlain(json, "git diff", DIFF_USAGE);
+    const diff = await client.diffFile(path, { staged, ...(untracked ? { untracked: true } : {}) });
+    if (json) {
+      console.log(JSON.stringify({ ok: true, diff }));
+      return;
+    }
+    if (diff.kind !== "text") {
+      console.log(`${diff.path}: ${diff.kind} (no line diff)`);
+      return;
+    }
+    for (const hunk of diff.hunks) {
+      console.log(hunk.header);
+      for (const line of hunk.lines) {
+        const mark = line.type === "add" ? "+" : line.type === "del" ? "-" : " ";
+        console.log(`${mark}${line.content}`);
+      }
+    }
+  } catch (err) {
+    failPlain(json, "git diff", err instanceof Error ? err.message : String(err));
+  }
+}
