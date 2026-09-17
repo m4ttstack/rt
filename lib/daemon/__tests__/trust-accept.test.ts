@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import pino from "pino";
-import { driveTrustAccept, type TrustDriveOutcome } from "../trust-accept.ts";
+import { acceptTrustOnPane, driveTrustAccept, type TrustDriveOutcome } from "../trust-accept.ts";
 
 const log = pino({ level: "silent" });
 
@@ -49,6 +49,39 @@ function pane(opts: { screen: string; deaf?: boolean; readFails?: boolean; sendF
 
 const drive = (p: ReturnType<typeof pane>): Promise<TrustDriveOutcome> =>
   driveTrustAccept({ herdr: p.herdr, sock: {}, pane: "w1:p1", log, context: {}, settleMs: 1, stepMs: 1 });
+
+describe("acceptTrustOnPane", () => {
+  test("an unreachable herdr ends the check at once instead of polling out the register budget", async () => {
+    const calls: string[] = [];
+    const herdr = (async (method: string) => { calls.push(method); return { ok: false, code: "unreachable", message: "no server" }; }) as never;
+    const started = Date.now();
+    const outcome = await acceptTrustOnPane({ herdr, sock: {}, pane: "w1:p1", log, context: {}, settleMs: 1, stepMs: 1 });
+    expect(outcome).toBe("unchecked");
+    expect(calls).toEqual(["agent.get"]);
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+
+  test("a pane herdr has no agent for yet is still read, and its dialog answered", async () => {
+    const screens: Record<string, string> = { "w1:p1": dialog(1) };
+    const herdr = (async (method: string, params: any) => {
+      if (method === "agent.get") return { ok: false, code: "not_found", message: "no agent" };
+      if (method === "pane.read") return { ok: true, result: { read: { text: screens[params.pane_id] ?? "" } } };
+      if (method === "pane.send_keys") { screens[params.pane_id] = CLEARED; return { ok: true, result: {} }; }
+      return { ok: false, code: "invalid_request", message: method };
+    }) as never;
+    const outcome = await acceptTrustOnPane({ herdr, sock: {}, pane: "w1:p1", log, context: {}, settleMs: 1, stepMs: 1, registerBudgetMs: 5 });
+    expect(outcome).toBe("accepted");
+  });
+
+  test("no dialog on a pane that never registered reads unchecked, not none", async () => {
+    const herdr = (async (method: string) => {
+      if (method === "agent.get") return { ok: false, code: "not_found", message: "no agent" };
+      if (method === "pane.read") return { ok: true, result: { read: { text: "bash: claude: command not found" } } };
+      return { ok: false, code: "invalid_request", message: method };
+    }) as never;
+    expect(await acceptTrustOnPane({ herdr, sock: {}, pane: "w1:p1", log, context: {}, registerBudgetMs: 5 })).toBe("unchecked");
+  });
+});
 
 describe("driveTrustAccept", () => {
   test("the plain dialog is accepted with a lone enter", async () => {

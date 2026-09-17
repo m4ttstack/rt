@@ -156,7 +156,15 @@ export async function acceptTrustOnPane(deps: TrustSpawnDeps): Promise<TrustOutc
     const deadline = Date.now() + registerBudgetMs;
     let registered = false;
     while (Date.now() < deadline) {
-      if ((await herdr("agent.get", { target: pane }, sock)).ok) { registered = true; break; }
+      const got = await herdr("agent.get", { target: pane }, sock);
+      if (got.ok) { registered = true; break; }
+      // "not registered yet" is what this poll is waiting out. A server that
+      // cannot be reached at all is not, and polling it for the whole budget
+      // only holds the spawn's caller for ten seconds to learn nothing.
+      if (got.code === "unreachable" || got.code === "timeout") {
+        log?.warn({ ...context, pane, err: got.message }, "trust: herdr unreachable; dialog not checked");
+        return "unchecked";
+      }
       await Bun.sleep(REGISTER_POLL_MS);
     }
     if (registered) {

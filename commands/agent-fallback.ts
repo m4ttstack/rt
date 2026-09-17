@@ -9,6 +9,7 @@ import type { Database } from "bun:sqlite";
 import { createAgentHandlers, type HeadlessChild } from "../lib/daemon/handlers/agent.ts";
 import { openStateDbGuarded, getAgent, stateDbPath } from "../lib/state/index.ts";
 import type { HerdrRunner } from "../lib/agent-herdr.ts";
+import type { herdrRequest } from "../lib/herdr/client.ts";
 import type { AgentSurface, RtResponse } from "../packages/rt-client/src/index.ts";
 
 export const HEADLESS_NEEDS_DAEMON =
@@ -22,7 +23,7 @@ type FallbackCommand = "agent:start" | "agent:resume" | "agent:get" | "agent:lis
 export async function runAgentFallback<T>(
   command: FallbackCommand,
   payload: Record<string, unknown>,
-  deps: { db?: Database; herdrRunner?: HerdrRunner; spawnHeadless?: (argv: string[], cwd: string) => HeadlessChild } = {},
+  deps: { db?: Database; herdrRunner?: HerdrRunner; herdr?: typeof herdrRequest; spawnHeadless?: (argv: string[], cwd: string) => HeadlessChild } = {},
 ): Promise<RtResponse<T>> {
   const db = deps.db ?? openStateDbGuarded(stateDbPath());
 
@@ -50,6 +51,10 @@ export async function runAgentFallback<T>(
     // timeout or it dies mid-flight; neither is a capture.
     skipSessionCapture: true,
     ...(deps.herdrRunner !== undefined && { herdrRunner: deps.herdrRunner }),
+    // The folder-trust check runs here too: the daemon being down is no reason
+    // to leave a pane sitting on the dialog. The JSON caller is injectable for
+    // the same reason the runner is.
+    ...(deps.herdr !== undefined && { herdr: deps.herdr }),
     ...(deps.spawnHeadless !== undefined && { spawnHeadless: deps.spawnHeadless }),
   });
   const res = await (handlers[command] as (p: unknown) => Promise<RtResponse<T>>)(payload);
