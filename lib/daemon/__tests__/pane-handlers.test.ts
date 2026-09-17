@@ -228,6 +228,10 @@ function spawnFake(script: { statuses: string[]; screen?: string; agentGetFailur
   let getCalls = 0;
   let waitCalls = 0;
   const calls: string[] = [];
+  // The screen moves under the keys, the way the real modal does: an arrow
+  // moves the cursor, Enter accepts only what the cursor is on. A static
+  // screen would make every cursor verification read as "it did not move".
+  let screen = script.screen ?? "";
   const paneInfo = (status: string) => ({ pane_id: "w2:p7", terminal_id: "t7", workspace_id: "w2", tab_id: "w2:t3", focused: false, agent: "claude", agent_status: status, cwd: "/repos/acme-dev", terminal_title_stripped: "claude", revision: 3 });
   const handler: FakeHerdrHandler = (method, params) => {
     calls.push(method);
@@ -239,8 +243,13 @@ function spawnFake(script: { statuses: string[]; screen?: string; agentGetFailur
       case "tab.create":
         return { type: "tab_created", tab: { tab_id: "w2:t3", workspace_id: "w2", label: params.label }, root_pane: paneInfo("unknown") };
       case "pane.send_input":
-      case "pane.send_keys":
         return { type: "ok" };
+      case "pane.send_keys": {
+        const key = ((params as { keys?: string[] }).keys ?? [])[0];
+        if ((key === "up" || key === "down") && screen === ELEVATED_TRUST) screen = ELEVATED_TRUST_ON_YES;
+        else if (key === "enter" && screen !== ELEVATED_TRUST) screen = "";
+        return { type: "ok" };
+      }
       case "agent.get":
         if (getCalls++ < (script.agentGetFailures ?? 0)) return new HerdrFakeError("agent_not_found", "agent target w2:p7 not found");
         return { type: "agent_info", agent: paneInfo(script.statuses[Math.min(waitCalls, script.statuses.length - 1)]!) };
@@ -250,7 +259,7 @@ function spawnFake(script: { statuses: string[]; screen?: string; agentGetFailur
         return { type: "agent_info", agent: paneInfo(status) };
       }
       case "pane.read":
-        return { type: "pane_read", read: { pane_id: "w2:p7", workspace_id: "w2", tab_id: "w2:t3", source: "visible", format: "text", text: script.screen ?? "", revision: 0, truncated: false } };
+        return { type: "pane_read", read: { pane_id: "w2:p7", workspace_id: "w2", tab_id: "w2:t3", source: "visible", format: "text", text: screen, revision: 0, truncated: false } };
       case "agent.prompt":
         return { type: "agent_prompted", agent: paneInfo("working") };
       case "pane.get":
@@ -303,6 +312,8 @@ test("pane:spawn quotes a cwd with a space", async () => {
 const PLAIN_TRUST = "Do you trust the files in this folder?\n❯ 1. Yes, proceed\n  2. No, exit\n";
 /** The elevated variant: the cursor defaults to "No, exit". */
 const ELEVATED_TRUST = "Do you trust the files in this folder?\nThis folder pre-approves 12 tool permissions in .claude/settings.local.json.\n  1. Yes, proceed\n❯ 2. No, exit\n";
+/** The elevated variant after one step up. */
+const ELEVATED_TRUST_ON_YES = "Do you trust the files in this folder?\nThis folder pre-approves 12 tool permissions in .claude/settings.local.json.\n❯ 1. Yes, proceed\n  2. No, exit\n";
 
 test("pane:spawn answers the trust dialog once, then sends the opening prompt", async () => {
   const { handler, calls } = spawnFake({ statuses: ["blocked", "idle"], screen: PLAIN_TRUST });
@@ -315,12 +326,24 @@ test("pane:spawn answers the trust dialog once, then sends the opening prompt", 
   expect(seen.find((s) => s.method === "agent.prompt")!.params).toMatchObject({ target: "w2:p7", text: "read AGENTS.md", wait: { until: ["working"], timeout_ms: 5000 } });
 });
 
-test("pane:spawn walks the elevated trust dialog up to Yes instead of entering on No", async () => {
+test("pane:spawn walks the elevated trust dialog up to Yes one key per call, never a batch", async () => {
   const { handler } = spawnFake({ statuses: ["blocked", "idle"], screen: ELEVATED_TRUST });
   const { pane, seen } = harness(handler);
   const res = await pane["pane:spawn"]({ cwd: "/repos/chat" });
   if (!res.ok) throw new Error(res.error);
-  expect(seen.find((s) => s.method === "pane.send_keys")!.params.keys).toEqual(["up", "enter"]);
+  expect(seen.filter((s) => s.method === "pane.send_keys").map((s) => s.params.keys)).toEqual([["up"], ["enter"]]);
+});
+
+// The live miss (RT-156): herdr can call the agent idle while the modal is
+// still painted, and the status alone then decided whether anything looked.
+test("pane:spawn answers a trust dialog that is up while herdr calls the agent idle", async () => {
+  const { handler, calls } = spawnFake({ statuses: ["idle"], screen: PLAIN_TRUST });
+  const { pane, seen } = harness(handler);
+  const res = await pane["pane:spawn"]({ cwd: "/repos/chat" });
+  if (!res.ok) throw new Error(res.error);
+  expect(calls).toContain("pane.send_keys");
+  expect(seen.find((s) => s.method === "pane.send_keys")!.params.keys).toEqual(["enter"]);
+  expect(res.data.ready).toBe(true);
 });
 
 test("pane:spawn sends no key to a trust dialog whose selection it cannot read, and reports not ready", async () => {

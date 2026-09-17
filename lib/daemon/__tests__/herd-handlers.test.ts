@@ -108,7 +108,13 @@ export function harness(over: Partial<HerdDeps> = {}) {
       }
       if (method === "pane.read") return { ok: true, result: { read: screen } };
       if (method === "pane.send_keys") {
-        if (trust.clearOnAccept) screen.text = "$ claude\n> \n";
+        // Models the real modal rather than "any key clears it": an arrow
+        // moves the cursor, and Enter accepts only whatever the cursor is on.
+        // Only the first key of a batch registers, which is the live herdr
+        // behavior the driver exists to work around (RT-156).
+        const key = (params?.keys ?? [])[0];
+        if ((key === "up" || key === "down") && screen.text === ELEVATED_TRUST) screen.text = ELEVATED_TRUST_ON_YES;
+        else if (key === "enter" && trust.clearOnAccept && screen.text !== ELEVATED_TRUST) screen.text = "$ claude\n> \n";
         return { ok: true, result: {} };
       }
       return { ok: false, code: "invalid_request", message: method };
@@ -134,6 +140,7 @@ export function harness(over: Partial<HerdDeps> = {}) {
     log,
     registerBudgetMs: 2000,
     trustSettleMs: 5,
+    trustStepMs: 1,
     ...over,
   };
   const h = createHerdHandlers(deps);
@@ -147,6 +154,15 @@ const PLAIN_TRUST = [
   "│ Do you trust the files in this folder?  │",
   "│ ❯ 1. Yes, proceed                       │",
   "│   2. No, exit                           │",
+].join("\n");
+
+/** The elevated variant after one step up: the cursor sits on "Yes". */
+const ELEVATED_TRUST_ON_YES = [
+  "│ Do you trust the files in this folder?                     │",
+  "│ This folder pre-approves 12 tool permissions in            │",
+  "│ .claude/settings.local.json. Only proceed if you trust it.  │",
+  "│ ❯ 1. Yes, proceed                                          │",
+  "│   2. No, exit                                              │",
 ].join("\n");
 
 /** The elevated variant: the cursor defaults to "No, exit". */
@@ -953,19 +969,41 @@ describe("herd:spawn", () => {
     const { h, socketCalls, screen, trust, herd } = await started();
     screen.text = "reading the brief: trust the fixture owner\n";
     trust.waitStatus = "idle";
-    expect((await h["herd:spawn"]({ herd, job: "job-a", brief: "b", dir: "/t" })).ok).toBe(true);
-    expect(socketCalls.some((c) => c.method === "pane.read")).toBe(false);
+    const res = await h["herd:spawn"]({ herd, job: "job-a", brief: "b", dir: "/t" });
+    expect(res.ok).toBe(true);
     expect(socketCalls.some((c) => c.method === "pane.send_keys")).toBe(false);
+    expect((res as any).data.trust).toBe("none");
   });
 
-  test("a pane still working when the trust budget expires is sent nothing", async () => {
+  // The live miss (RT-156): board-37's spawn returned in 5s, far inside the
+  // register budget, because herdr had an agent and settled it non-blocked.
+  // The modal was up the whole time and nothing ever read the screen.
+  test("a modal still up while herdr calls the agent idle is accepted, not passed over", async () => {
     const { h, socketCalls, screen, trust, herd } = await started();
     screen.text = PLAIN_TRUST;
+    trust.waitStatus = "idle";
+    const res = await h["herd:spawn"]({ herd, job: "job-a", brief: "b", dir: "/t" });
+    expect(res.ok).toBe(true);
+    expect(socketCalls.find((c) => c.method === "pane.send_keys")!.params).toEqual({ pane_id: "w9:p1", keys: ["enter"] });
+    expect((res as any).data.trust).toBe("accepted");
+  });
+
+  test("a pane still working when the trust budget expires is read once and left alone when no modal is up", async () => {
+    const { h, socketCalls, screen, trust, herd } = await started();
+    screen.text = "$ claude\nworking...\n";
     trust.waitOk = false;
     const res = await h["herd:spawn"]({ herd, job: "job-a", brief: "b", dir: "/t" });
     expect(res.ok).toBe(true);
     expect(socketCalls.some((c) => c.method === "pane.send_keys")).toBe(false);
     expect((res as any).data.trust).toBe("none");
+  });
+
+  test("a modal up on a pane whose wait timed out is still accepted", async () => {
+    const { h, screen, trust, herd } = await started();
+    screen.text = PLAIN_TRUST;
+    trust.waitOk = false;
+    const res = await h["herd:spawn"]({ herd, job: "job-a", brief: "b", dir: "/t" });
+    expect((res as any).data.trust).toBe("accepted");
   });
 
   test("a pane sitting on the modal before claude ever registers is still accepted", async () => {
@@ -999,7 +1037,7 @@ describe("herd:spawn", () => {
     screen.text = ELEVATED_TRUST;
     const res = await h["herd:spawn"]({ herd, job: "job-a", brief: "b", dir: "/t" });
     expect(res.ok).toBe(true);
-    expect(socketCalls.find((c) => c.method === "pane.send_keys")!.params).toEqual({ pane_id: "w9:p1", keys: ["up", "enter"] });
+    expect(socketCalls.filter((c) => c.method === "pane.send_keys").map((c) => c.params.keys)).toEqual([["up"], ["enter"]]);
     expect((res as any).data.trust).toBe("accepted");
   });
 
@@ -1019,7 +1057,8 @@ describe("herd:spawn", () => {
     trust.clearOnAccept = false;
     const res = await h["herd:spawn"]({ herd, job: "job-a", brief: "b", dir: "/t" });
     expect(res.ok).toBe(true);
-    expect(socketCalls.filter((c) => c.method === "pane.send_keys")).toHaveLength(2);
+    // One step up, then an enter per attempt: every call carries a single key.
+    expect(socketCalls.filter((c) => c.method === "pane.send_keys").map((c) => c.params.keys)).toEqual([["up"], ["enter"], ["enter"]]);
     expect((res as any).data.trust).toBe("stuck");
     expect(store.getJob(herd, "job-a")!.status).toBe("stuck-at-modal");
   });

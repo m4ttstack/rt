@@ -13,7 +13,7 @@ import { trayRequest } from "../../daemon-client.ts";
 import { herdrError, injectAfterTurn, injectIntoPane } from "../inject.ts";
 import { resolvePaneRef } from "../pane-ref-socket.ts";
 import { attendPane } from "../attend.ts";
-import { readTrustPrompt } from "../trust-dialog.ts";
+import { driveTrustAccept } from "../trust-accept.ts";
 import { BG_SESSION, bgSocketPath, type BgService } from "../bg-service.ts";
 import type { HerdrRunner } from "../../agent-herdr.ts";
 import { shellQuote } from "../../herdr-launch.ts";
@@ -326,21 +326,18 @@ export function createPaneHandlers(opts: {
         const settled = await herdr<{ agent: HerdrAgent }>("agent.wait", { target: paneId, until: SETTLED, timeout_ms: IDLE_BUDGET_MS }, { timeoutMs: waitTimeout(IDLE_BUDGET_MS) });
         if (settled.ok) status = settled.result.agent.agent_status;
         if (signal?.aborted) return earlyReturn(status);
-        if (status === "blocked") {
-          const screen = await herdr<{ read: { text: string } }>("pane.read", { pane_id: paneId, source: "visible" });
-          // The elevated variant of the dialog defaults to "No, exit", so the
-          // accept keys come from the cursor's position rather than a blind
-          // Enter, and a dialog whose cursor cannot be read is left up for a
-          // human (`ready` stays false) instead of guessed at.
-          const prompt = screen.ok ? readTrustPrompt(screen.result.read.text) : null;
-          if (prompt?.kind === "accept") {
-            await herdr("pane.send_keys", { pane_id: paneId, keys: prompt.keys });
-            if (signal?.aborted) return earlyReturn(status);
-            const again = await herdr<{ agent: HerdrAgent }>("agent.wait", { target: paneId, until: SETTLED, timeout_ms: TRUST_BUDGET_MS }, { timeoutMs: waitTimeout(TRUST_BUDGET_MS) });
-            if (again.ok) status = again.result.agent.agent_status;
-          }
+        // The status does not decide whether to look: herdr can call the
+        // agent idle with the modal still painted, and a spawn that trusted
+        // the status left its pane on the dialog (RT-156). The screen decides,
+        // and a dialog whose cursor cannot be read is left up for a human
+        // (`ready` stays false) instead of guessed at.
+        const trust = await driveTrustAccept({ herdr, sock: {}, pane: paneId, log, context: { cwd } });
+        if (signal?.aborted) return earlyReturn(status);
+        if (trust === "accepted") {
+          const again = await herdr<{ agent: HerdrAgent }>("agent.wait", { target: paneId, until: SETTLED, timeout_ms: TRUST_BUDGET_MS }, { timeoutMs: waitTimeout(TRUST_BUDGET_MS) });
+          if (again.ok) status = again.result.agent.agent_status;
         }
-        ready = status === "idle" || status === "done";
+        ready = trust !== "stuck" && (status === "idle" || status === "done");
       }
       if (signal?.aborted) return earlyReturn(status);
 
