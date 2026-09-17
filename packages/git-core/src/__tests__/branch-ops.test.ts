@@ -68,6 +68,18 @@ describe("createBranch", () => {
     }
   });
 
+  it("rejects a dashless invalid branch name with the guard's own message", async () => {
+    const sb = await seeded();
+    try {
+      const client = createGitClient(sb.dir);
+      await expect(client.createBranch("bad name")).rejects.toThrow(/invalid branch name: bad name/);
+      const branches = await client.branches();
+      expect(branches.map((b) => b.name)).not.toContain("bad name");
+    } finally {
+      await sb.cleanup();
+    }
+  });
+
   it("with checkout: true against a dirty conflicting tree rejects and leaves no orphaned branch", async () => {
     const sb = await seeded();
     try {
