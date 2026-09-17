@@ -28,6 +28,15 @@ function makeRepo(): string {
   return dir;
 }
 
+/** Fresh unborn repo with no commits */
+function makeUnbornRepo(): string {
+  const dir = mkdtempSync(join(tmpdir(), "rt-commit-ops-unborn-"));
+  git(dir, "init", "-q");
+  git(dir, "config", "user.email", "test@test");
+  git(dir, "config", "user.name", "test");
+  return dir;
+}
+
 function porcelain(cwd: string): string {
   return git(cwd, "status", "--porcelain");
 }
@@ -178,14 +187,6 @@ describe("syncStagingArea", () => {
 });
 
 describe("fresh repo with no commits yet", () => {
-  function makeUnbornRepo(): string {
-    const dir = mkdtempSync(join(tmpdir(), "rt-commit-ops-unborn-"));
-    git(dir, "init", "-q");
-    git(dir, "config", "user.email", "test@test");
-    git(dir, "config", "user.name", "test");
-    return dir;
-  }
-
   test("syncStagingArea can unstage before the first commit", () => {
     const dir = makeUnbornRepo();
     writeFileSync(join(dir, "a.txt"), "a\n");
@@ -362,33 +363,27 @@ describe("numstatCounts", () => {
 
 describe("amendStaged", () => {
   test("amend without a message keeps the original message", () => {
-    const cwd = mkdtempSync(join(tmpdir(), "rt-commit-ops-amend-"));
-    execFileSync("git", ["init", "-q"], { cwd });
-    execFileSync("git", ["config", "user.email", "test@test"], { cwd });
-    execFileSync("git", ["config", "user.name", "test"], { cwd });
+    const cwd = makeUnbornRepo();
     writeFileSync(join(cwd, "a.txt"), "one\n");
-    execFileSync("git", ["add", "."], { cwd });
+    git(cwd, "add", ".");
     commitStaged(cwd, "original message");
     writeFileSync(join(cwd, "a.txt"), "two\n");
-    execFileSync("git", ["add", "."], { cwd });
+    git(cwd, "add", ".");
     amendStaged(cwd);
-    const msg = execFileSync("git", ["log", "-1", "--format=%s"], { cwd, encoding: "utf8" }).trim();
+    const msg = git(cwd, "log", "-1", "--format=%s").trim();
     expect(msg).toBe("original message");
-    const count = execFileSync("git", ["rev-list", "--count", "HEAD"], { cwd, encoding: "utf8" }).trim();
+    const count = git(cwd, "rev-list", "--count", "HEAD").trim();
     expect(count).toBe("1");
     rmSync(cwd, { recursive: true, force: true });
   });
 
   test("amend with a message replaces it", () => {
-    const cwd = mkdtempSync(join(tmpdir(), "rt-commit-ops-amend-"));
-    execFileSync("git", ["init", "-q"], { cwd });
-    execFileSync("git", ["config", "user.email", "test@test"], { cwd });
-    execFileSync("git", ["config", "user.name", "test"], { cwd });
+    const cwd = makeUnbornRepo();
     writeFileSync(join(cwd, "a.txt"), "one\n");
-    execFileSync("git", ["add", "."], { cwd });
+    git(cwd, "add", ".");
     commitStaged(cwd, "original message");
     amendStaged(cwd, { message: "rewritten" });
-    const msg = execFileSync("git", ["log", "-1", "--format=%s"], { cwd, encoding: "utf8" }).trim();
+    const msg = git(cwd, "log", "-1", "--format=%s").trim();
     expect(msg).toBe("rewritten");
     rmSync(cwd, { recursive: true, force: true });
   });
