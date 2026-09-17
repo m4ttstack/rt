@@ -1,7 +1,7 @@
 import type { ClientContext } from "./client.ts";
 import type { BranchInfo, TagInfo } from "./types.ts";
 import { rawGit } from "./exec.ts";
-import { assertSafeCommitish, assertValidTagName } from "./ref-guard.ts";
+import { assertSafeCommitish, assertSafeRemote, assertValidTagName } from "./ref-guard.ts";
 
 // "%00" in a for-each-ref format string is a directive git expands to a real
 // NUL byte in its output, not literal text -- so the field separator used to
@@ -77,6 +77,12 @@ export async function createTag(
   name: string,
   opts?: { message?: string; sha?: string },
 ): Promise<void> {
+  // An explicit empty sha is a caller bug, not "unset" -- letting it fall
+  // into the `opts?.sha ? [opts.sha] : []` spread below would silently tag
+  // HEAD instead of the (missing) commit the caller asked for.
+  if (opts?.sha !== undefined && opts.sha.trim() === "") {
+    throw new Error("createTag: sha must not be empty");
+  }
   await assertValidTagName(ctx.dir, name);
   if (opts?.sha !== undefined) assertSafeCommitish(opts.sha, "sha");
   const point = opts?.sha ? [opts.sha] : [];
@@ -91,6 +97,7 @@ export async function deleteTag(ctx: ClientContext, name: string): Promise<void>
 
 export async function pushTag(ctx: ClientContext, name: string, remote = "origin"): Promise<void> {
   await assertValidTagName(ctx.dir, name);
+  assertSafeRemote(remote);
   // rawGit, not ctx.git.push: push reads GIT_SSH_COMMAND/GIT_ASKPASS, which the
   // simple-git client's pinned env strips, and the full refspec disambiguates
   // a tag from a branch of the same name ("matches more than one").
