@@ -177,6 +177,27 @@ describe("checkBranchGuard", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
+  test("is unverified, not thrown, when cwd itself does not exist", async () => {
+    const parent = mkdtempSync(join(tmpdir(), "rt-branch-guard-parent-"));
+    const missing = join(parent, "does-not-exist");
+
+    // listWorktrees is stubbed to succeed so the run reaches realpathSync(cwd)
+    // instead of short-circuiting on the earlier "could not list" branch.
+    const verdict = await checkBranchGuard({
+      cwd: missing,
+      branch: "feature-x",
+      defaultBranch: "main",
+      runners: unreachableRunners,
+      listWorktrees: async () => [],
+    });
+
+    expect(verdict.verdict).toBe("unverified");
+    if (verdict.verdict === "unverified") {
+      expect(verdict.detail).toContain(missing);
+    }
+    rmSync(parent, { recursive: true, force: true });
+  });
+
   test("still refuses an other-worktree-owned branch when cwd is a nested subdirectory", async () => {
     const parent = mkdtempSync(join(tmpdir(), "rt-branch-guard-parent-"));
     const dir = join(parent, "main");

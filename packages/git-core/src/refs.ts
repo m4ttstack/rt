@@ -1,6 +1,7 @@
 import type { ClientContext } from "./client.ts";
 import type { BranchInfo, TagInfo } from "./types.ts";
 import { rawGit } from "./exec.ts";
+import { assertSafeCommitish, assertValidTagName } from "./ref-guard.ts";
 
 // "%00" in a for-each-ref format string is a directive git expands to a real
 // NUL byte in its output, not literal text -- so the field separator used to
@@ -76,16 +77,20 @@ export async function createTag(
   name: string,
   opts?: { message?: string; sha?: string },
 ): Promise<void> {
+  await assertValidTagName(ctx.dir, name);
+  if (opts?.sha !== undefined) assertSafeCommitish(opts.sha, "sha");
   const point = opts?.sha ? [opts.sha] : [];
   const args = opts?.message ? ["-a", name, "-m", opts.message, ...point] : [name, ...point];
   await ctx.git.tag(args);
 }
 
 export async function deleteTag(ctx: ClientContext, name: string): Promise<void> {
+  await assertValidTagName(ctx.dir, name);
   await ctx.git.tag(["-d", name]);
 }
 
 export async function pushTag(ctx: ClientContext, name: string, remote = "origin"): Promise<void> {
+  await assertValidTagName(ctx.dir, name);
   // rawGit, not ctx.git.push: push reads GIT_SSH_COMMAND/GIT_ASKPASS, which the
   // simple-git client's pinned env strips, and the full refspec disambiguates
   // a tag from a branch of the same name ("matches more than one").

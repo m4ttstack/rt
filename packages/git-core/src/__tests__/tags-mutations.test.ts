@@ -86,6 +86,40 @@ describe("tag mutations", () => {
     }
   });
 
+  it("createTag rejects a flag-like name instead of running it as an argument to git tag", async () => {
+    const sb = await seeded();
+    try {
+      await sb.git(["tag", "x"]);
+      const client = createGitClient(sb.dir);
+      // If unguarded, args become ["-d", "x"] -- git tag -d x deletes x.
+      await expect(client.createTag("-d", { sha: "x" })).rejects.toThrow(/-d/);
+      const tags = await client.tags();
+      expect(tags.map((t) => t.name)).toContain("x");
+    } finally {
+      await sb.cleanup();
+    }
+  });
+
+  it("deleteTag rejects a flag-like name", async () => {
+    const sb = await seeded();
+    try {
+      const client = createGitClient(sb.dir);
+      await expect(client.deleteTag("-d")).rejects.toThrow(/-d/);
+    } finally {
+      await sb.cleanup();
+    }
+  });
+
+  it("pushTag rejects a flag-like name", async () => {
+    const sb = await seeded();
+    try {
+      const client = createGitClient(sb.dir);
+      await expect(client.pushTag("--force")).rejects.toThrow(/--force/);
+    } finally {
+      await sb.cleanup();
+    }
+  });
+
   it("pushTag pushes the tag to the given remote", async () => {
     const sb = await seeded();
     try {

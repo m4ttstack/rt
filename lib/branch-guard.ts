@@ -30,7 +30,12 @@ export async function checkBranchGuard(opts: {
   // The caller's cwd is often a subdirectory of its worktree root, not the
   // root itself, so ownership must exclude the worktree that CONTAINS cwd,
   // never just the entry whose path equals cwd exactly.
-  const cwdReal = realpathSync(opts.cwd);
+  let cwdReal: string;
+  try {
+    cwdReal = realpathSync(opts.cwd);
+  } catch {
+    return { verdict: "unverified", detail: `could not resolve cwd ${opts.cwd}, so branch ownership is unknown` };
+  }
   let containing: WorktreeEntry | undefined;
   for (const w of worktrees) {
     // A listed path can vanish between the list call and here (another

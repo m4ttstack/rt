@@ -53,6 +53,37 @@ describe("createBranch", () => {
       await sb.cleanup();
     }
   });
+
+  it("rejects a flag-like name instead of running it as an argument to git branch", async () => {
+    const sb = await seeded();
+    try {
+      await sb.git(["branch", "x"]);
+      const client = createGitClient(sb.dir);
+      // If unguarded, args become ["-D", "x"] -- git branch -D x deletes x.
+      await expect(client.createBranch("-D", { from: "x" })).rejects.toThrow(/-D/);
+      const branches = await client.branches();
+      expect(branches.map((b) => b.name)).toContain("x");
+    } finally {
+      await sb.cleanup();
+    }
+  });
+
+  it("with checkout: true against a dirty conflicting tree rejects and leaves no orphaned branch", async () => {
+    const sb = await seeded();
+    try {
+      const firstSha = (await sb.git(["rev-parse", "HEAD"])).trim();
+      await sb.write("a.txt", "two\n");
+      await sb.commitAll("second");
+      await sb.write("a.txt", "dirty uncommitted change\n");
+
+      const client = createGitClient(sb.dir);
+      await expect(client.createBranch("feature", { from: firstSha, checkout: true })).rejects.toThrow();
+      const branchList = await sb.git(["branch", "--list"]);
+      expect(branchList).not.toContain("feature");
+    } finally {
+      await sb.cleanup();
+    }
+  });
 });
 
 describe("checkoutBranch", () => {
@@ -81,6 +112,16 @@ describe("checkoutBranch", () => {
 
       const client = createGitClient(sb.dir);
       await expect(client.checkoutBranch("feature")).rejects.toThrow(/checkout/i);
+    } finally {
+      await sb.cleanup();
+    }
+  });
+
+  it("rejects a flag-like name instead of running it as an argument to git checkout", async () => {
+    const sb = await seeded();
+    try {
+      const client = createGitClient(sb.dir);
+      await expect(client.checkoutBranch("--detach")).rejects.toThrow(/--detach/);
     } finally {
       await sb.cleanup();
     }
