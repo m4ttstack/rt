@@ -234,8 +234,17 @@ export class HerdWatchdog {
       this.log.info({ herd: herd.id, job: job.name }, "parked job stuck at modal");
     }
     if (!this.advance(ladder, now, cfg, verdict.kind === "wedged" ? 1 : 3, WORKER_CAP)) return;
-    const evidence = verdict.kind === "wedged" ? verdict.evidence : verdict.kind === "dead" ? DEAD_EVIDENCE : MODAL_EVIDENCE;
-    const ctx = { herd: herd.id, job: job.name, verdict: verdict.kind, strike: ladder.strikes };
+    // Unread counts and gate rows are read live, not from the pane snapshot,
+    // so a worker that woke while this sweep was poking other panes is already
+    // healthy here. Re-read before injecting: a poke naming evidence the
+    // worker has since consumed is worse than no poke at all.
+    const fresh = evaluateJob(job, this.sensors, cfg);
+    if (fresh.kind === "healthy" || fresh.kind === "finished-lingering") {
+      this.ladders.delete(key);
+      return;
+    }
+    const evidence = fresh.kind === "wedged" ? fresh.evidence : fresh.kind === "dead" ? DEAD_EVIDENCE : MODAL_EVIDENCE;
+    const ctx = { herd: herd.id, job: job.name, verdict: fresh.kind, strike: ladder.strikes };
     if (ladder.strikes <= 2) {
       await this.poke(job.pane, pokeText(evidence), ctx, "poked worker");
       return;
@@ -254,9 +263,15 @@ export class HerdWatchdog {
     }
     const ladder = this.track(key, now);
     if (!this.advance(ladder, now, cfg, 1, SHEPHERD_CAP)) return;
-    const ctx = { herd: herd.id, job: SHEPHERD, path: verdict.path, strike: ladder.strikes };
-    if (ladder.strikes >= SHEPHERD_CAP || herd.shepherdPane === null) this.notify(herd.id, summaryText(key, verdict.evidence, ladder, now), cfg, now, ctx);
-    else await this.poke(herd.shepherdPane, pokeText(verdict.evidence), ctx, "poked shepherd");
+    // Same re-read as the worker path, for the same reason.
+    const fresh = evaluateShepherd(herd, this.sensors, cfg);
+    if (fresh.kind !== "wedged") {
+      this.ladders.delete(key);
+      return;
+    }
+    const ctx = { herd: herd.id, job: SHEPHERD, path: fresh.path, strike: ladder.strikes };
+    if (ladder.strikes >= SHEPHERD_CAP || herd.shepherdPane === null) this.notify(herd.id, summaryText(key, fresh.evidence, ladder, now), cfg, now, ctx);
+    else await this.poke(herd.shepherdPane, pokeText(fresh.evidence), ctx, "poked shepherd");
   }
 
   private track(key: string, now: number): Ladder {

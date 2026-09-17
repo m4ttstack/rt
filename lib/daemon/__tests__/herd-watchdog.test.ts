@@ -310,6 +310,25 @@ describe("HerdWatchdog ladder", () => {
   const settle = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
   const shepherdWedged = (): Partial<WatchdogSensors> => ({ paneState: () => "idle", openHumanGates: () => [{ id: "g-9", ageMs: 6 * MIN }] });
 
+  test("a verdict that goes healthy before the poke lands is not injected: the evidence is re-read at poke time", async () => {
+    // The unread count is read live, not from the pane snapshot, so a worker
+    // that consumed its DMs while the sweep was in flight reads healthy on the
+    // second look. The first look is the verdict that earned the strike.
+    let looks = 0;
+    const r = rig({ sensors: { ...idleFor(3), unreadDmMentionsFor: (h) => (h === "job-a" && looks++ === 0 ? 1 : 0) } });
+    await r.tick();
+    expect(r.pokes).toEqual([]);
+    expect(r.wd.annotations("demo-1", "job-a")).toBeNull();
+  });
+
+  test("the shepherd's verdict is re-read at poke time too", async () => {
+    let looks = 0;
+    const r = rig({ sensors: { paneState: () => "idle", openHumanGates: () => (looks++ === 0 ? [{ id: "g-9", ageMs: 6 * MIN }] : []) } });
+    await r.tick();
+    expect(r.shepherdPokes()).toEqual([]);
+    expect(r.notes).toEqual([]);
+  });
+
   test("disabling the watchdog clears the ladders, so re-enabling starts from strike 1", async () => {
     const r = rig({ sensors: workerWedged() });
     await r.tick();
