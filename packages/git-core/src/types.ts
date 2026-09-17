@@ -60,6 +60,7 @@ export interface TagInfo {
   name: string;
   sha: string;
   annotated: boolean;
+  targetSha: string; // the commit the tag points at; equals sha for lightweight tags
 }
 
 export interface LogEntry {
@@ -122,4 +123,7 @@ export interface GitClient {
   resetToCommit(sha: string, mode: "soft" | "mixed" | "hard"): Promise<void>;
   checkoutBranch(name: string): Promise<void>;
   createBranch(name: string, opts?: { from?: string; checkout?: boolean }): Promise<void>;
+  createTag(name: string, opts?: { message?: string; sha?: string }): Promise<void>;
+  deleteTag(name: string): Promise<void>;
+  pushTag(name: string, remote?: string): Promise<void>;
 }
