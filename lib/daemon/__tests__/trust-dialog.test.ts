@@ -180,4 +180,126 @@ describe("readRelocationPrompt", () => {
     expect(readTrustPrompt(RELOCATION(1))).toBeNull();
     expect(readRelocationPrompt(PLAIN)).toBeNull();
   });
+
+  // Adversarial screens from the pre-merge review: everything the parser
+  // reads must come from the live prompt's own box, never from transcript
+  // text above it. Each of these accepted before the parse was anchored.
+  const EVIL = "/tmp/evil-unregistered-tree";
+
+  test("a transcript quote naming one path above a real dialog naming another extracts the DIALOG's path", () => {
+    const screen = [
+      `⏺ The dialog said: permission-root relocation to "${TREE}" so I declined and`,
+      "  will try a different location now.",
+      "",
+      "╭──────────────────────────────────────────────────────────╮",
+      "│ EnterWorktree                                            │",
+      `│ permission-root relocation to "${EVIL}" — a model-supplied │`,
+      "│ worktree outside .claude/worktrees/                      │",
+      "│ Do you want to proceed?                                  │",
+      "│ ❯ 1. Yes                                                 │",
+      "│   2. No, and tell Claude what to do differently (esc)    │",
+      "╰──────────────────────────────────────────────────────────╯",
+    ].join("\n");
+    expect(readRelocationPrompt(screen)).toEqual({ kind: "accept", path: EVIL, keys: ["enter"] });
+  });
+
+  test("a transcript quote above an ORDINARY permission prompt is not a relocation prompt", () => {
+    const screen = [
+      `⏺ I hit the relocation prompt: permission-root relocation to "${TREE}" — a`,
+      "  model-supplied worktree outside .claude/worktrees/ — and you told me no.",
+      "",
+      "╭──────────────────────────────────────────────────────────╮",
+      "│ Bash command                                             │",
+      "│   ./deploy.sh                                            │",
+      "│ Do you want to proceed?                                  │",
+      "│ ❯ 1. Yes                                                 │",
+      "│   2. No, and tell Claude what to do differently (esc)    │",
+      "╰──────────────────────────────────────────────────────────╯",
+    ].join("\n");
+    expect(readRelocationPrompt(screen)).toBeNull();
+  });
+
+  test("a real space inside the path survives: only line wraps are rejoined, never spaces", () => {
+    const screen = [
+      "╭──────────────────────────────────────────────────────────╮",
+      "│ EnterWorktree                                            │",
+      '│ permission-root relocation to "/Users/matt/.mattstack/rt │',
+      '│ /worktrees/gl-acme-acme-dev/fara mir" — a model-supplied │',
+      "│ worktree outside .claude/worktrees/                      │",
+      "│ Do you want to proceed?                                  │",
+      "│ ❯ 1. Yes                                                 │",
+      "│   2. No                                                  │",
+      "╰──────────────────────────────────────────────────────────╯",
+    ].join("\n");
+    const got = readRelocationPrompt(screen);
+    expect(got).toEqual({ kind: "accept", path: "/Users/matt/.mattstack/rt/worktrees/gl-acme-acme-dev/fara mir", keys: ["enter"] });
+  });
+
+  test("a numbered list in the transcript above the dialog does not shift the option walk", () => {
+    const screen = [
+      "⏺ Plan:",
+      "  1. Yes-flag the config",
+      "  2. Ship it",
+      "",
+      "╭──────────────────────────────────────────────────────────╮",
+      "│ EnterWorktree                                            │",
+      `│ permission-root relocation to "${TREE}" — a model-supplied │`,
+      "│ worktree outside .claude/worktrees/                      │",
+      "│ Do you want to proceed?                                  │",
+      "│ ❯ 1. Yes                                                 │",
+      "│   2. No, and tell Claude what to do differently (esc)    │",
+      "╰──────────────────────────────────────────────────────────╯",
+    ].join("\n");
+    expect(readRelocationPrompt(screen)).toEqual({ kind: "accept", path: TREE, keys: ["enter"] });
+  });
+
+  test("a later quoted string in the dialog body does not extend the path", () => {
+    const screen = [
+      "╭──────────────────────────────────────────────────────────╮",
+      "│ EnterWorktree                                            │",
+      `│ permission-root relocation to "${TREE}"`,
+      '│ — a model-supplied worktree outside ".claude/worktrees/" │',
+      "│ Do you want to proceed?                                  │",
+      "│ ❯ 1. Yes                                                 │",
+      "│   2. No                                                  │",
+      "╰──────────────────────────────────────────────────────────╯",
+    ].join("\n");
+    expect(readRelocationPrompt(screen)).toEqual({ kind: "accept", path: TREE, keys: ["enter"] });
+  });
+
+  test("the resolves-to variant carries the second path for the caller's registry check too", () => {
+    const screen = [
+      "╭──────────────────────────────────────────────────────────────────────╮",
+      "│ EnterWorktree                                                        │",
+      `│ permission-root relocation to "${TREE}" (resolves to "/private${TREE}") — a`,
+      "│ model-supplied worktree outside .claude/worktrees/                   │",
+      "│ Do you want to proceed?                                              │",
+      "│ ❯ 1. Yes                                                             │",
+      "│   2. No                                                              │",
+      "╰──────────────────────────────────────────────────────────────────────╯",
+    ].join("\n");
+    expect(readRelocationPrompt(screen)).toEqual({ kind: "accept", path: TREE, resolvesTo: `/private${TREE}`, keys: ["enter"] });
+  });
+
+  test("the sanitized-for-display suffix does not break the parse", () => {
+    const screen = [
+      "╭──────────────────────────────────────────────────────────────────────╮",
+      "│ EnterWorktree                                                        │",
+      `│ permission-root relocation to "${TREE}" (path sanitized for display) — a`,
+      "│ model-supplied worktree outside .claude/worktrees/                   │",
+      "│ Do you want to proceed?                                              │",
+      "│ ❯ 1. Yes                                                             │",
+      "│   2. No                                                              │",
+      "╰──────────────────────────────────────────────────────────────────────╯",
+    ].join("\n");
+    expect(readRelocationPrompt(screen)).toEqual({ kind: "accept", path: TREE, keys: ["enter"] });
+  });
+
+  test("a relocation dialog whose options have scrolled off is not drivable and draws no parse", () => {
+    const screen = [
+      `│ permission-root relocation to "${TREE}" — a model-supplied worktree │`,
+      "│ Do you want to proceed?                                             │",
+    ].join("\n");
+    expect(readRelocationPrompt(screen)).toBeNull();
+  });
 });

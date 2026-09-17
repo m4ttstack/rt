@@ -59,41 +59,74 @@ function walkToAccept<T>(options: Option[], make: (keys: Array<"up" | "down" | "
 }
 
 export type RelocationPrompt =
-  | { kind: "accept"; path: string; keys: Array<"up" | "down" | "enter"> }
+  | { kind: "accept"; path: string; resolvesTo?: string; keys: Array<"up" | "down" | "enter"> }
   | { kind: "undrivable" };
 
-// Both phrases are required before this counts as the dialog: the reason line
-// alone appears in transcripts (a session discussing the very prompt it hit),
-// and tool output quoting it must never draw a keypress. The reason line is
-// byte-faithful to Claude Code's own template, verified against the installed
-// binary: `permission-root relocation to "<path>" — a model-supplied
-// worktree outside .claude/worktrees/`.
-const RELOCATION_RE = /permission-root relocation to\s*"(?<path>[^"]+)"/i;
-const PROCEED_RE = /do you want to proceed/i;
+// Everything this parser reads comes from the LIVE prompt's own box: the
+// last contiguous numbered-options block on screen, plus the body lines
+// above it up to the box top. Transcript text above the box routinely quotes
+// the reason line and the proceed question (a session discussing the very
+// prompt it hit, or these tests on an editor screen), and an ordinary
+// tool-permission prompt asks the same proceed question, so a whole-screen
+// match would let transcript text steer a keypress at an unrelated dialog.
+// The reason template, from the installed binary: `permission-root
+// relocation to "<path>"[ (resolves to "<realpath>")][ (path sanitized for
+// display)] — a model-supplied worktree outside .claude/worktrees/`.
+// \s* between words because the box wrap can drop an inter-word space when
+// lines are rejoined.
+const REASON_RE = /permission-root\s*relocation\s*to\s*"(?<path>[^"]*)"/i;
+const RESOLVES_RE = /\(\s*resolves\s*to\s*"(?<real>[^"]*)"\s*\)/i;
+const PROCEED_RE = /do\s*you\s*want\s*to\s*proceed/i;
+const BOX_TOP_RE = /[╭┌]/;
+// The dialog body (reason + suffixes + question) fits well inside this many
+// lines above the options even with a long wrapped path; the cap only
+// matters for an unboxed screen, where it keeps transcript text out.
+const WINDOW_CAP = 16;
 
-/** Screen text flattened for phrase matching across wrapped lines: borders
-    become spaces, lines join on a space, runs collapse. A wrapped PATH gains
-    a spurious space at each break this way; rt tree paths contain none, so
-    stripping all whitespace from the capture restores the original, and a
-    path this reassembly ever got wrong simply fails the caller's registry
-    lookup rather than accepting anything. */
-function flatten(screen: string): string {
-  return screen.replace(/[│┃╎┆|]/g, " ").replace(/\s+/g, " ");
+/** Box lines rejoined so a wrapped path reads back byte for byte: borders
+    stripped, each line trimmed at its ends only, lines joined with NOTHING
+    between them. A wrap break contributes no character, and a REAL space
+    inside a value survives, so a path with a space can never collapse into
+    a different (registered) one. */
+function joinBoxLines(lines: string[]): string {
+  return lines.map((l) => l.replace(/[│┃╎┆|╭╮╰╯]/g, " ").replace(/^[\s─]+|[\s─]+$/g, "")).join("");
 }
 
 /**
  * The EnterWorktree permission-root relocation prompt on `screen`, with the
- * worktree path the dialog itself names, or null when the screen is not
- * showing one. The path is the caller's provenance input: accept only a path
- * rt's own worktree registry knows.
+ * worktree path (and resolved real path, when the dialog shows one) that the
+ * dialog itself names, or null when the live prompt is not one. Both paths
+ * are the caller's provenance input: accept only paths rt's own worktree
+ * registry knows.
  */
 export function readRelocationPrompt(screen: string): RelocationPrompt | null {
-  const flat = flatten(screen);
-  if (!PROCEED_RE.test(flat)) return null;
-  const reason = RELOCATION_RE.exec(flat);
-  const anchored = /permission-root relocation to/i.test(flat);
-  if (!anchored) return null;
-  if (!reason?.groups?.path) return { kind: "undrivable" };
-  const path = reason.groups.path.replace(/\s+/g, "");
-  return walkToAccept(readOptions(screen), (keys) => ({ kind: "accept", path, keys }));
+  const lines = screen.split("\n");
+  const optionIdx: number[] = [];
+  for (let i = 0; i < lines.length; i++) if (OPTION_RE.test(lines[i] as string)) optionIdx.push(i);
+  if (optionIdx.length === 0) return null;
+  // The live prompt paints at the bottom, so its options are the last
+  // contiguous numbered block; anything numbered higher up is transcript.
+  let start = optionIdx.length - 1;
+  while (start > 0 && optionIdx[start - 1] === (optionIdx[start] as number) - 1) start--;
+  const block = optionIdx.slice(start);
+  const first = block[0] as number;
+  const last = block[block.length - 1] as number;
+  let top = Math.max(0, first - WINDOW_CAP);
+  for (let i = first - 1; i >= top; i--) {
+    if (BOX_TOP_RE.test(lines[i] as string)) { top = i; break; }
+  }
+  const body = joinBoxLines(lines.slice(top, first));
+  if (!PROCEED_RE.test(body)) return null;
+  const reason = REASON_RE.exec(body);
+  if (!reason) {
+    // The reason phrase without a readable quoted path is still this
+    // dialog; a dialog whose path cannot be read is never guessed at.
+    return /permission-root\s*relocation\s*to/i.test(body) ? { kind: "undrivable" } : null;
+  }
+  const path = reason.groups?.path ?? "";
+  if (path.length === 0) return { kind: "undrivable" };
+  const resolvesTo = RESOLVES_RE.exec(body)?.groups?.real;
+  return walkToAccept(readOptions(lines.slice(first, last + 1).join("\n")), (keys) => ({
+    kind: "accept", path, ...(resolvesTo !== undefined && resolvesTo.length > 0 ? { resolvesTo } : {}), keys,
+  }));
 }

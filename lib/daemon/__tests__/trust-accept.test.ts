@@ -237,6 +237,43 @@ describe("driveRelocationAccept", () => {
     expect(p.calls.some((c) => c.method === "pane.send_keys")).toBe(false);
   });
 
+  test("a resolves-to path outside the registry refuses even when the display path is registered", async () => {
+    const screen = [
+      "╭──────────────────────────────────────────────────────────────────────╮",
+      "│ EnterWorktree                                                        │",
+      `│ permission-root relocation to "${TREE}" (resolves to "/tmp/elsewhere") — a`,
+      "│ model-supplied worktree outside .claude/worktrees/                   │",
+      "│ Do you want to proceed?                                              │",
+      "│ ❯ 1. Yes                                                             │",
+      "│   2. No                                                              │",
+      "╰──────────────────────────────────────────────────────────────────────╯",
+    ].join("\n");
+    const p = pane({ screen });
+    expect(await driveRelocation(p as never)).toBe("unregistered");
+    expect(p.calls.some((c) => c.method === "pane.send_keys")).toBe(false);
+  });
+
+  test("a resolves-to path the registry also knows is accepted", async () => {
+    const other = "/Users/matt/.mattstack/rt/worktrees/gh-m4ttstack-rt/merry";
+    const screen = [
+      "╭──────────────────────────────────────────────────────────────────────╮",
+      "│ EnterWorktree                                                        │",
+      `│ permission-root relocation to "${TREE}" (resolves to "${other}") — a`,
+      "│ model-supplied worktree outside .claude/worktrees/                   │",
+      "│ Do you want to proceed?                                              │",
+      "│ ❯ 1. Yes                                                             │",
+      "│   2. No                                                              │",
+      "╰──────────────────────────────────────────────────────────────────────╯",
+    ].join("\n");
+    const state = { cleared: false };
+    const herdr = (async (method: string, params: any) => {
+      if (method === "pane.read") return { ok: true, result: { read: { text: state.cleared ? CLEARED : screen } } };
+      if (method === "pane.send_keys") { if ((params.keys as string[]).includes("enter")) state.cleared = true; return { ok: true, result: {} }; }
+      return { ok: false, code: "invalid_request", message: method };
+    }) as never;
+    expect(await driveRelocation({ herdr }, [TREE, other])).toBe("accepted");
+  });
+
   test("a prompt whose path cannot be read is stuck, never guessed at", async () => {
     const screen = [
       "│ permission-root relocation to somewhere unquoted │",

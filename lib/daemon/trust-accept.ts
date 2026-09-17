@@ -149,17 +149,23 @@ export async function driveRelocationAccept(deps: RelocationDriveDeps): Promise<
     log?.warn({ ...context, pane }, "relocation: prompt present but its path or selection could not be read; not guessing a key");
     return "stuck";
   }
-  if (!deps.isRegisteredTree(prompt.path)) {
-    log?.info({ ...context, pane, path: prompt.path }, "relocation: the prompt names a path outside rt's worktree registry; leaving it for the human");
+  // The dialog shows a resolves-to suffix when the display path is not the
+  // real one (a symlink); the session lands on the REAL path, so both must
+  // be trees the registry knows before any key goes out.
+  const registered = (p: { path: string; resolvesTo?: string }): boolean =>
+    deps.isRegisteredTree(p.path) && (p.resolvesTo === undefined || deps.isRegisteredTree(p.resolvesTo));
+  if (!registered(prompt)) {
+    log?.info({ ...context, pane, path: prompt.path, resolvesTo: prompt.resolvesTo }, "relocation: the prompt names a path outside rt's worktree registry; leaving it for the human");
     return "unregistered";
   }
   const verified = prompt.path;
+  const verifiedReal = prompt.resolvesTo;
   return driveTrustAccept({
     ...deps,
     read: (screen) => {
       const p = readRelocationPrompt(screen);
       if (p === null) return null;
-      if (p.kind === "undrivable" || p.path !== verified) return { kind: "undrivable" };
+      if (p.kind === "undrivable" || p.path !== verified || p.resolvesTo !== verifiedReal) return { kind: "undrivable" };
       return { kind: "accept", variant: "relocation", keys: p.keys };
     },
   });
