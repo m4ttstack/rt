@@ -735,6 +735,43 @@ describe('groupMRs status', () => {
     expect(groups.map(g => g.label)).toEqual(['approved']);
   });
 
+  test('every assigned reviewer approved buckets approved even short of the rule count', () => {
+    const list = [
+      mr({
+        iid: 1,
+        reviewerComments: 0,
+        threadSummary: { awaiting: 0, replied: 0, resolved: 4 },
+        reviews: {
+          required: 2,
+          given: 1,
+          isApproved: false,
+          reviewers: [{ reviewState: 'APPROVED' }],
+        } as any,
+      }),
+    ];
+    const groups = groupMRs(list, 'status', [], NOW);
+    expect(groups.map(g => g.label)).toEqual(['approved']);
+  });
+
+  test('a reviewer still pending keeps a part-approved MR out of the approved bucket', () => {
+    const list = [
+      mr({
+        iid: 1,
+        reviews: {
+          required: 2,
+          given: 1,
+          isApproved: false,
+          reviewers: [
+            { reviewState: 'APPROVED' },
+            { reviewState: 'UNREVIEWED' },
+          ],
+        } as any,
+      }),
+    ];
+    const groups = groupMRs(list, 'status', [], NOW);
+    expect(groups.map(g => g.label)).toEqual(['needs review']);
+  });
+
   test('review-state order: changes requested, commented, needs review, comments resolved, approved', () => {
     const list = [
       mr({

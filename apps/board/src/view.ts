@@ -1,5 +1,6 @@
 import type { ReviewStatus } from './client/types.ts';
 import type { TabConfig } from './config.ts';
+import { getReviewDisplayState } from '@mattstack/glance';
 import type { BoardMR } from './data.ts';
 import { hasChangesRequested } from './data.ts';
 import { projectKeyOf } from './triage/stack.ts';
@@ -327,6 +328,20 @@ function ageBucket(
   return { label: 'Older', order: 9 };
 }
 
+/** The roster's verdict, not the approval rule's arithmetic: every assigned
+    reviewer has approved. An MR in this state reads approved even while a
+    project rule still wants more approvals -- the shortfall stays visible as
+    the awaiting-approvals blocker, not as the review state. */
+function allReviewersApproved(mr: BoardMR): boolean {
+  const reviewers = mr.reviews.reviewers ?? [];
+  return (
+    reviewers.length > 0 &&
+    reviewers.every(
+      r => getReviewDisplayState(r.reviewState ?? null) === 'approved'
+    )
+  );
+}
+
 /** Coarse review-readiness bucket, most-blocking first: GitLab's own review
     state, conversation states included. The row's pill says the same thing
     (see `statusPhrase`), so a row can never sit under a group header its own
@@ -336,7 +351,8 @@ export function statusBucket(mr: BoardMR): { label: string; order: number } {
   // not their own groups, so an MR with conflicts still shows under its review
   // state instead of being hidden in a "conflicts" bucket.
   if (hasChangesRequested(mr)) return { label: 'changes requested', order: 0 };
-  if (mr.reviews.isApproved) return { label: 'approved', order: 4 };
+  if (mr.reviews.isApproved || allReviewersApproved(mr))
+    return { label: 'approved', order: 4 };
   if (mr.reviewerComments > 0) return { label: 'commented', order: 1 };
   // Reviewed and all threads resolved, just not formally approved — further along
   // than an untouched MR, so it sits between "needs review" and "approved".
