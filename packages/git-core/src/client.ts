@@ -6,6 +6,7 @@ import { getLog } from "./log.ts";
 import { getStashes } from "./stash.ts";
 import { getFetchState } from "./fetch-state.ts";
 import { getStagingDiff, stageSelection, discardSelection } from "./staging.ts";
+import { undoLastCommit, resetToCommit } from "./commits.ts";
 import type { GitClient } from "./types.ts";
 
 export interface ClientContext {
@@ -27,5 +28,7 @@ export function createGitClient(dir: string): GitClient {
     stagingDiff: (path) => getStagingDiff(ctx, path),
     stageSelection: (diff, selection, opts) => stageSelection(ctx, diff, selection, opts),
     discardSelection: (diff, selection) => discardSelection(ctx, diff, selection),
+    undoLastCommit: () => undoLastCommit(ctx),
+    resetToCommit: (sha, mode) => resetToCommit(ctx, sha, mode),
   };
 }
