@@ -3,6 +3,7 @@ import { getSnapshot } from "./snapshot.ts";
 import { getFileDiff } from "./diff.ts";
 import { getBranches, getTags } from "./refs.ts";
 import { getLog } from "./log.ts";
+import { getStashes } from "./stash.ts";
 import type { GitClient } from "./types.ts";
 
 export interface ClientContext {
@@ -25,7 +26,7 @@ export function createGitClient(dir: string): GitClient {
     branches: () => getBranches(ctx),
     tags: () => getTags(ctx),
     log: (opts) => getLog(ctx, opts),
-    stashes: () => unimplemented("stashes"),
+    stashes: () => getStashes(ctx),
     fetchState: () => unimplemented("fetchState"),
   };
 }
