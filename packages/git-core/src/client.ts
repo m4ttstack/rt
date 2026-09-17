@@ -1,5 +1,6 @@
 import { simpleGit, type SimpleGit } from "simple-git";
 import { getSnapshot } from "./snapshot.ts";
+import { getFileDiff } from "./diff.ts";
 import type { GitClient } from "./types.ts";
 
 export interface ClientContext {
@@ -18,7 +19,7 @@ export function createGitClient(dir: string): GitClient {
   return {
     dir,
     snapshot: () => getSnapshot(ctx),
-    diffFile: () => unimplemented("diffFile"),
+    diffFile: (path, opts) => getFileDiff(ctx, path, opts),
     branches: () => unimplemented("branches"),
     tags: () => unimplemented("tags"),
     log: () => unimplemented("log"),
