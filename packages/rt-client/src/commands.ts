@@ -721,8 +721,17 @@ export interface Commands {
     /** `contextOmitted` appears only when the gate context plus every
         question's `context` exceeded their shared 8192-byte budget: the
         gate still opened, but question contexts were dropped, and the gate
-        context too when it was over the budget on its own. */
-    data: { id: string; presentation: "form" | "wait"; subject: string; supersededId: string | null; contextOmitted?: true };
+        context too when it was over the budget on its own.
+        `formCapExceeded`/`formCapAdvisory` appear only when the pane could
+        have presented an in-pane form and one or more questions exceeded
+        its 4-option cap, which is the one thing that forced this gate to
+        `wait`: the gate still opens, and the advisory names the structural
+        fix so the caller can re-author. */
+    data: {
+      id: string; presentation: "form" | "wait"; subject: string; supersededId: string | null; contextOmitted?: true;
+      formCapExceeded?: Array<{ question: string; options: number }>;
+      formCapAdvisory?: string;
+    };
   };
   /**
    * A CAS loss is a DEFINED OUTCOME, not an error: `ok:true` with

@@ -16,7 +16,9 @@ import { gateHints } from "../gate-push.ts";
 import type { Reconciler } from "../reconciler.ts";
 import type { AgentRecord } from "../../state/agents-store.ts";
 import type { PaneHints } from "../pane-resolve-live.ts";
-import { gatePresentation } from "../../../packages/rt-client/src/gate-presentation.ts";
+import { GATE_FORM_OPTION_CAP, gatePresentation } from "../../../packages/rt-client/src/gate-presentation.ts";
+
+const FORM_CAP_ADVISORY = `the in-pane form caps a question at ${GATE_FORM_OPTION_CAP} options, so this gate presents as wait; give navigation verbs (iterate, go back, hold) their own next question, and split an oversized selection into <id>-1, <id>-2, ... questions whose answers read as one union`;
 import { resolveGateSubject, type GateSubjectResult } from "../gate-subject.ts";
 
 /**
@@ -750,6 +752,14 @@ export function createGateHandlers(
     if (!resolved.ok) return { ok: false as const, error: resolved.error };
 
     const presentation = gatePresentation({ paneId, sessionId, questions });
+    // Only when a form was otherwise POSSIBLE: a pane-less ask waits for its
+    // own reason, and an advisory there would teach the wrong lesson. The
+    // gate still opens either way -- an over-cap wait gate is legitimate
+    // (remote cards render any option count) -- the caller just learns WHY
+    // the in-pane form never appeared, which no skill prose reached.
+    const overCap = paneId && sessionId
+      ? questions.filter((q) => q.options.length > GATE_FORM_OPTION_CAP)
+      : [];
 
     // Omitted rather than rejected: unlike gate:open's hard CONTEXT_CAP_BYTES
     // reject, an oversized context here must not fail the whole ask, since
@@ -807,6 +817,10 @@ export function createGateHandlers(
       data: {
         id: opened.data.id, presentation, subject: resolved.subject, supersededId: opened.data.supersededId,
         ...(contextOmitted ? { contextOmitted: true as const } : {}),
+        ...(overCap.length > 0 ? {
+          formCapExceeded: overCap.map((q) => ({ question: q.id, options: q.options.length })),
+          formCapAdvisory: FORM_CAP_ADVISORY,
+        } : {}),
       },
     };
   };

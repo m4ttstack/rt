@@ -210,6 +210,7 @@ export function gateAskOutput(data: Commands["gate:ask"]["data"]): Record<string
   return {
     ok: true, id: data.id, presentation: data.presentation, subject: data.subject, supersededId: data.supersededId,
     ...(data.contextOmitted ? { contextOmitted: true } : {}),
+    ...(data.formCapExceeded ? { formCapExceeded: data.formCapExceeded, formCapAdvisory: data.formCapAdvisory } : {}),
   };
 }
 
@@ -220,6 +221,9 @@ export async function gateAsk(args: string[]): Promise<void> {
   const data = res.data;
   if (data.contextOmitted) {
     console.error(`rt gate: context omitted: gate context plus question contexts exceeded the shared ${CONTEXT_CAP_BYTES}-byte budget; question contexts were dropped, and the gate context too if it was over on its own; shorten and re-ask`);
+  }
+  if (data.formCapExceeded) {
+    console.error(`rt gate: form cap exceeded (${data.formCapExceeded.map((q) => `${q.question}: ${q.options}`).join(", ")}): ${data.formCapAdvisory}`);
   }
   console.log(JSON.stringify(gateAskOutput(data)));
 }
