@@ -3,7 +3,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { openStateDb } from "../db.ts";
 import {
-  finishAgent, getAgent, insertAgent, listAgents, markAgentResumed,
+  finishAgent, getAgent, insertAgent, listAgents, markAgentGone, markAgentResumed,
   newAgentId, updateAgentPane, updateAgentSessionId, type AgentRecord,
 } from "../agents-store.ts";
 
@@ -51,6 +51,17 @@ test("pane update, resume stamp, finish", () => {
     paneId: "w1:p2", tabId: "w1:t2", workspaceId: "w1",
     lastResumedAt: 42, exitCode: 0, resultPath: "/tmp/r.json", finishedAt: 43,
   });
+});
+
+test("markAgentGone sets finished_at alone, leaving exit_code unset", () => {
+  const db = freshDb();
+  const r = rec();
+  insertAgent(r, db);
+  markAgentGone(r.id, 99, db);
+  const got = getAgent(r.id, db)!;
+  expect(got.finishedAt).toBe(99);
+  expect(got.exitCode).toBeUndefined();
+  expect(got.resultPath).toBeUndefined();
 });
 
 test("duplicate session uuid is refused", () => {

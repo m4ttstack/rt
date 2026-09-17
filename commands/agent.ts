@@ -175,7 +175,7 @@ function renderRecord(r: AgentRecord): string {
     r.account && `account ${r.account}`,
     r.yolo && "yolo",
     r.paneId && `pane ${r.paneId}`,
-    r.finishedAt !== undefined && `exit ${r.exitCode}`,
+    r.finishedAt !== undefined && (r.exitCode !== undefined ? `exit ${r.exitCode}` : "finished"),
     r.lastResumedAt !== undefined && "resumed",
   ].filter(Boolean);
   return bits.join("  |  ");
