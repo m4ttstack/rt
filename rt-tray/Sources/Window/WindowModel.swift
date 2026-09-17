@@ -258,6 +258,21 @@ final class WindowModel: ObservableObject {
         return view
     }
 
+    func findContainer(for app: DiscoveryApp) -> FindBarContainer {
+        let container = store.container(for: app)
+        trackFailures(for: container.webView, appName: app.name)
+        return container
+    }
+
+    /// The find bar belongs to whichever tab is showing, so a ⌘F that reaches
+    /// the window instead of the web content (nothing in the page focused
+    /// yet) still opens the right one. Nil only before the catalog resolves
+    /// an active app, when there is no page to search.
+    var activeFindContainer: FindBarContainer? {
+        guard let app = app(named: activeApp) else { return nil }
+        return findContainer(for: app)
+    }
+
     func trackFailures(for view: WKWebView, appName: String) {
         guard navigationDelegates[appName] == nil else { return }
         let delegate = WindowNavigationDelegate(appName: appName, model: self)

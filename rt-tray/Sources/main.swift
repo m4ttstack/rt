@@ -3,6 +3,17 @@ import MattstackCore
 
 // ─── Entry point ────────────────────────────────────────────────────────────
 
+#if DEBUG
+// Ahead of everything else on purpose: the self-check must not install crash
+// handlers, write a log under ~/.rt, or race another tray for tray.sock.
+if CommandLine.arguments.contains("--find-bar-self-check") {
+    FindBarSelfCheck.run()
+}
+if let flag = CommandLine.arguments.firstIndex(of: "--find-bar-preview") {
+    FindBarPreview.run(url: CommandLine.arguments.dropFirst(flag + 1).first)
+}
+#endif
+
 installTrayCrashHandlers()
 TrayLog.info("tray launched", [
     "version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev",
