@@ -80,7 +80,7 @@ export interface StashEntry {
 }
 
 export interface FetchState {
-  lastFetchedAt: Date | null; // null = never fetched
+  lastFetchedAt: string | null; // ISO 8601; null = never fetched
 }
 
 export interface StagingDiff {

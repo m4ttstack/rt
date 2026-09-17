@@ -15,8 +15,34 @@ export interface ClientContext {
   git: SimpleGit;
 }
 
+// simple-git's block-unsafe-operations plugin scans any env object passed to
+// .env() for names like EDITOR/PAGER/GIT_SSH_COMMAND and throws unless the
+// matching `unsafe.allow*` flag is set -- so `.env({ ...process.env })`
+// verbatim throws "not permitted without enabling allowUnsafeEditor" the
+// moment a developer's shell has an EDITOR or PAGER set, which is most
+// shells. None of them are read by the plumbing commands this client runs
+// (no tty, no pager, no editor invocation), so they are dropped rather than
+// worked around with the `unsafe` bypass flags.
+const UNSAFE_ENV_KEYS = new Set([
+  "editor", "pager", "prefix",
+  "git_askpass", "git_config", "git_config_count", "git_config_global", "git_config_system",
+  "git_editor", "git_exec_path", "git_external_diff", "git_pager", "git_proxy_command",
+  "git_sequence_editor", "git_ssh", "git_ssh_command", "git_template_dir", "ssh_askpass",
+]);
+
+function pinnedEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (!UNSAFE_ENV_KEYS.has(key.toLowerCase())) env[key] = value;
+  }
+  return { ...env, LC_ALL: "C", LANG: "C" };
+}
+
 export function createGitClient(dir: string): GitClient {
-  const ctx: ClientContext = { dir, git: simpleGit({ baseDir: dir }) };
+  // Pins the child process locale so git's own error/status text is always
+  // English, independent of the invoking user's shell environment.
+  const git = simpleGit({ baseDir: dir }).env(pinnedEnv());
+  const ctx: ClientContext = { dir, git };
   return {
     dir,
     snapshot: () => getSnapshot(ctx),
