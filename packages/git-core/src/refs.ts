@@ -86,5 +86,8 @@ export async function deleteTag(ctx: ClientContext, name: string): Promise<void>
 }
 
 export async function pushTag(ctx: ClientContext, name: string, remote = "origin"): Promise<void> {
-  await ctx.git.push(remote, name);
+  // rawGit, not ctx.git.push: push reads GIT_SSH_COMMAND/GIT_ASKPASS, which the
+  // simple-git client's pinned env strips, and the full refspec disambiguates
+  // a tag from a branch of the same name ("matches more than one").
+  await rawGit(ctx.dir, ["push", remote, `refs/tags/${name}`]);
 }

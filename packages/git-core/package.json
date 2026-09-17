@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Read-model git facade over simple-git and gitdiff-parser (RT-188)",
+  "description": "Headless git facade: read model plus mutations over simple-git, gitdiff-parser, and vendored GitHub Desktop patch code",
   "license": "MIT",
   "exports": {
     ".": "./src/index.ts"
