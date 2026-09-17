@@ -200,6 +200,7 @@ export function createHerdHandlers(deps: HerdDeps) {
     const jobs = store.jobs(herdId).map((j: HerdJobRow) => {
       const last = j.lastGate ? deps.gateStore.get(j.lastGate) : null;
       const paneRow = j.pane ? (panes.get(parsePaneRef(j.pane).paneId) ?? null) : null;
+      const ladder = deps.watchdog?.annotations(herdId, j.name) ?? null;
       return {
         ...j,
         // Round-trip rule: the row stores the addressable ref (agent:start
@@ -220,7 +221,10 @@ export function createHerdHandlers(deps: HerdDeps) {
         // released means a lost answer CAS whose pane already reconciled the
         // winning answer -- settled the same as a stamped consumedAt.
         lastGateConsumed: last?.status === "answered" && last.nudge ? last.consumedAt !== null || last.released : null,
-        watchdog: deps.watchdog?.annotations(herdId, j.name) ?? null,
+        // Off the wire entirely when the job holds no ladder: a null here
+        // would read as "the watchdog looked and found nothing", which is
+        // also what an unwired watchdog would send.
+        ...(ladder ? { watchdog: ladder } : {}),
       };
     });
     // A dead row is the shepherd's cue to resume, so the live-only query would

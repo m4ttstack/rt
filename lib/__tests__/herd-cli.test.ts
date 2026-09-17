@@ -123,7 +123,7 @@ function job(over: Partial<HerdStatusData["jobs"][number]>): HerdStatusData["job
     herd: "hd-1", name: "job-a", worktree: "/tmp/job-a", branch: null, tree: null, pane: "w1:p1",
     agentSession: null, agentId: null, handle: "job-a", status: "active", disposable: false,
     lastGate: null, lastReport: null, createdAt: 0, updatedAt: 0,
-    openGate: null, paneStatus: "idle", sessionDead: false, lastGateStatus: null, lastGateDelivery: null, lastGateConsumed: null, watchdog: null,
+    openGate: null, paneStatus: "idle", sessionDead: false, lastGateStatus: null, lastGateDelivery: null, lastGateConsumed: null,
     ...over,
   };
 }
@@ -321,7 +321,7 @@ describe("renderStatus", () => {
   });
 
   test("a job off the ladder, or on it with no strike yet, carries no poked marker", () => {
-    expect(renderStatus(statusData({ jobs: [job({ watchdog: null })] }))).not.toContain("poked");
+    expect(renderStatus(statusData({ jobs: [job({})] }))).not.toContain("poked");
     expect(renderStatus(statusData({ jobs: [job({ watchdog: { strikes: 0, lastPokeAt: null } })] }))).not.toContain("poked");
   });
 
