@@ -572,6 +572,60 @@ describe('gateWait', () => {
     expect(calls.gateWait[0]!.waitMs).toBe(25_000);
   });
 
+  test('sessionId flows into the gate:wait payload when the caller passes one', async () => {
+    writeState({ gateId: 'gate-with-session' });
+    const { io, calls } = fakeIo({
+      waitResults: [
+        {
+          ok: true,
+          data: {
+            status: 'answered',
+            row: gateRow({
+              id: 'gate-with-session',
+              status: 'answered',
+              answer: {
+                answers: { tiers: [], outcome: 'approve' },
+                by: 'board-ui',
+                answeredAt: 1000,
+              },
+            }),
+          },
+        },
+      ],
+    });
+
+    await gateWait(statePath, io, undefined, { sessionId: 'session-abc' });
+
+    expect(calls.gateWait[0]!.sessionId).toBe('session-abc');
+  });
+
+  test('sessionId is absent from the gate:wait payload when the caller passes none', async () => {
+    writeState({ gateId: 'gate-no-session' });
+    const { io, calls } = fakeIo({
+      waitResults: [
+        {
+          ok: true,
+          data: {
+            status: 'answered',
+            row: gateRow({
+              id: 'gate-no-session',
+              status: 'answered',
+              answer: {
+                answers: { tiers: [], outcome: 'approve' },
+                by: 'board-ui',
+                answeredAt: 1000,
+              },
+            }),
+          },
+        },
+      ],
+    });
+
+    await gateWait(statePath, io);
+
+    expect(calls.gateWait[0]!.sessionId).toBeUndefined();
+  });
+
   test('parseWaitMaxMs: absent defaults, valid parses, junk and bare flags reject', () => {
     expect(parseWaitMaxMs([])).toBeUndefined();
     expect(parseWaitMaxMs(['--max-ms', '30000'])).toBe(30_000);

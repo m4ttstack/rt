@@ -216,7 +216,8 @@ export type GateWaitResult =
 export async function gateWait(
   statePath: string,
   io: GateVerbIo,
-  maxMs: number = GATE_WAIT_MAX_MS
+  maxMs: number = GATE_WAIT_MAX_MS,
+  extras: { sessionId?: string } = {}
 ): Promise<GateWaitResult> {
   const state = readGateVerbState(statePath, openDbForHandle(statePath));
   if (!state.gateId) throw new Error(`no gate open for ${state.mrUrl}`);
@@ -228,7 +229,12 @@ export async function gateWait(
     // is enforced inside the poll, not just between polls.
     const remaining = deadline - io.now();
     if (remaining <= 0) return { status: 'pending' };
-    const res = await io.gateWait({ id: state.gateId, waitMs: remaining });
+    const payload: Commands['gate:wait']['payload'] = {
+      id: state.gateId,
+      waitMs: remaining,
+    };
+    if (extras.sessionId) payload.sessionId = extras.sessionId;
+    const res = await io.gateWait(payload);
     if (!res.ok || !res.data)
       throw new Error(`gate:wait failed: ${res.error ?? 'unknown error'}`);
 

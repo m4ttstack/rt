@@ -44,7 +44,9 @@ try {
     console.log(JSON.stringify(result));
   } else if (verb === 'wait') {
     if (!statePath) throw new Error('usage: gate wait <state> [--max-ms <n>]');
-    const result = await gateWait(statePath, io, parseWaitMaxMs(rest));
+    const result = await gateWait(statePath, io, parseWaitMaxMs(rest), {
+      sessionId: process.env.CLAUDE_CODE_SESSION_ID,
+    });
     // "pending" is its own line so the caller re-runs; an answered result
     // keeps the historical shape (no status field) the wrapper parses.
     if (result.status === 'pending') {
