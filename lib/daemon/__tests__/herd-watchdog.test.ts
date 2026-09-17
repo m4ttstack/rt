@@ -9,7 +9,7 @@ const MIN = 60_000;
 const cfg: WatchdogConfig = {
   enabled: true, fastMins: 2, shepherdFastMins: 5, backstopMins: 15,
   retryMins: 5, notifyQuietMins: 30, nagMins: 30, notifyHuman: true,
-  midRunTrustAccept: false,
+  midRunTrustAccept: false, relocationAutoAccept: true,
 };
 
 function sensors(over: Partial<WatchdogSensors> = {}): WatchdogSensors {
@@ -294,6 +294,8 @@ describe("HerdWatchdog ladder", () => {
     const modalNotes: { herd: string; job: string; pane: string }[] = [];
     const trustCalls: { herd: string; job: string; pane: string }[] = [];
     const trust = { accepts: false };
+    const relocCalls: { herd: string; job: string; pane: string }[] = [];
+    const reloc = { accepts: false };
     const notes: string[] = [];
     const noteEvents: { summary: string; pane: string | null }[] = [];
     const delivery = { ok: true };
@@ -308,6 +310,7 @@ describe("HerdWatchdog ladder", () => {
       parkStuckAtModal: (h, j) => { parks.push({ herd: h, job: j }); },
       notifyStuckAtModal: (h, j, pane) => { modalNotes.push({ herd: h, job: j, pane }); },
       acceptTrustModal: async (h, j, pane) => { trustCalls.push({ herd: h, job: j, pane }); return trust.accepts; },
+      acceptRelocationModal: async (h, j, pane) => { relocCalls.push({ herd: h, job: j, pane }); return reloc.accepts; },
       notifyHuman: (summary, pane) => { notes.push(summary); noteEvents.push({ summary, pane: pane ?? null }); },
     };
     const h = opts.herd ?? herd();
@@ -318,7 +321,7 @@ describe("HerdWatchdog ladder", () => {
     const tick = async (mins = 0) => { clock.now += mins * MIN; await wd.sweep(); };
     const shepherdPokes = () => pokes.filter((p) => p.pane === "w1:p0");
     const workerPokes = () => pokes.filter((p) => p.pane === "w1:p1");
-    return { wd, tick, clock, pokes, parks, modalNotes, trustCalls, trust, notes, noteEvents, lines, delivery, hold, conf: c, shepherdPokes, workerPokes };
+    return { wd, tick, clock, pokes, parks, modalNotes, trustCalls, trust, relocCalls, reloc, notes, noteEvents, lines, delivery, hold, conf: c, shepherdPokes, workerPokes };
   }
 
   const workerWedged = (): Partial<WatchdogSensors> => ({ ...idleFor(3), unreadDmMentionsFor: (h) => (h === "job-a" ? 1 : 0) });
@@ -679,6 +682,58 @@ describe("HerdWatchdog ladder", () => {
     expect(r.trustCalls).toEqual([]);
     expect(r.parks).toEqual([{ herd: "demo-1", job: "job-a" }]);
     expect(r.modalNotes).toHaveLength(1);
+  });
+
+  // RT-200: the EnterWorktree permission-root relocation prompt carries its
+  // own provenance (the path in the dialog, checked against the worktree
+  // registry by the actuator), so unlike the trust accept it needs neither
+  // job.tree nor the midRunTrustAccept flag.
+  test("RT-200: a modal pane is offered the relocation accept before the trust accept and before anything parks", async () => {
+    const r = rig({ jobs: [provisioned()], sensors: modalOn(), cfg: { midRunTrustAccept: true } });
+    r.reloc.accepts = true;
+    r.trust.accepts = true;
+    await r.tick();
+    expect(r.relocCalls).toEqual([{ herd: "demo-1", job: "job-a", pane: "w1:p1" }]);
+    expect(r.trustCalls).toEqual([]);
+    expect(r.parks).toEqual([]);
+    expect(r.modalNotes).toEqual([]);
+    expect(r.wd.annotations("demo-1", "job-a")).toBeNull();
+  });
+
+  test("RT-200: the relocation accept needs no provisioned tree: the dialog's own path is the provenance", async () => {
+    const r = rig({ jobs: [job({ tree: null })], sensors: modalOn() });
+    r.reloc.accepts = true;
+    await r.tick();
+    expect(r.relocCalls).toHaveLength(1);
+    expect(r.parks).toEqual([]);
+  });
+
+  test("RT-200: a relocation accept that does not clear the pane falls through to the park path", async () => {
+    const r = rig({ jobs: [job({ tree: null })], sensors: modalOn() });
+    r.reloc.accepts = false;
+    await r.tick();
+    expect(r.relocCalls).toHaveLength(1);
+    expect(r.trustCalls).toEqual([]);
+    expect(r.parks).toEqual([{ herd: "demo-1", job: "job-a" }]);
+    expect(r.modalNotes).toHaveLength(1);
+  });
+
+  test("RT-200: relocationAutoAccept off means no attempt, park as before", async () => {
+    const r = rig({ jobs: [job({ tree: null })], sensors: modalOn(), cfg: { relocationAutoAccept: false } });
+    r.reloc.accepts = true;
+    await r.tick();
+    expect(r.relocCalls).toEqual([]);
+    expect(r.parks).toHaveLength(1);
+  });
+
+  test("RT-200: the relocation accept is offered once per wedge: a pane still blocked next sweep stays parked", async () => {
+    const r = rig({ jobs: [job({ tree: null })], sensors: modalOn() });
+    await r.tick();
+    expect(r.relocCalls).toHaveLength(1);
+    expect(r.parks).toHaveLength(1);
+    await r.tick(5);
+    expect(r.relocCalls).toHaveLength(1);
+    expect(r.parks).toHaveLength(1);
   });
 
   test("a park also raises one click-to-focus notification naming the pane, outside the quiet period", async () => {

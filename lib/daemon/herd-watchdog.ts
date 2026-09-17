@@ -45,6 +45,11 @@ export interface WatchdogConfig {
       Off by default until that gap closes; the spawn-time accept (a fresh
       pane can only be showing the trust dialog) is unaffected either way. */
   midRunTrustAccept: boolean;
+  /** RT-200: EnterWorktree's permission-root relocation prompt names the
+      worktree path in its own body, and the actuator accepts only when that
+      path is in rt's worktree registry — provenance the trust dialog lacks,
+      so this one is on by default and needs no provisioned-tree check. */
+  relocationAutoAccept: boolean;
 }
 
 const HEALTHY: WedgeVerdict = { kind: "healthy" };
@@ -153,6 +158,10 @@ export interface WatchdogActuators {
       spawn path uses. True means the pane came back; false means it is a
       dialog the daemon may not answer, or one the accept did not clear. */
   acceptTrustModal(herd: string, job: string, pane: string): Promise<boolean>;
+  /** Try the relocation-prompt accept on a blocked pane. True means the pane
+      came back; false covers every refusal (no relocation prompt on screen,
+      a path the registry does not know, a cursor that would not drive). */
+  acceptRelocationModal(herd: string, job: string, pane: string): Promise<boolean>;
   /** The click-to-focus notification that rides with a park: the human is the
       only party who can accept a trust dialog, so it goes out on the park
       itself rather than waiting for the ladder's third rung, and it carries
@@ -271,6 +280,14 @@ export class HerdWatchdog {
       // session can show a genuine, unrelated permission prompt with the
       // same numbered-options shape, and this driver cannot yet confirm the
       // dialog's folder matches the job's worktree.
+      // The relocation prompt goes first and needs neither gate: its own
+      // body names the path, and the actuator accepts only a path rt's
+      // worktree registry holds (RT-200).
+      if (cfg.relocationAutoAccept && await this.act.acceptRelocationModal(herd.id, job.name, job.pane)) {
+        this.ladders.delete(key);
+        this.log.info({ herd: herd.id, job: job.name, pane: job.pane }, "accepted a mid-run relocation prompt");
+        return;
+      }
       if (job.tree !== null && cfg.midRunTrustAccept && await this.act.acceptTrustModal(herd.id, job.name, job.pane)) {
         this.ladders.delete(key);
         this.log.info({ herd: herd.id, job: job.name, pane: job.pane }, "accepted a mid-run trust dialog");
