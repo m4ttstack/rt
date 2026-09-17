@@ -125,4 +125,47 @@ describe("git status sweep", () => {
     await sweep.sweepNow();
     expect(events).toEqual([{ t: "git-status", d: { repos: ["gone"] } }]);
   });
+
+  test("tick's global gate blocks a sweep even with a zero cadence floor", async () => {
+    let passes = 0;
+    const sweep = sweepWith({
+      repoIndex: () => { passes++; return {}; },
+      readConfig: () => ({ sweep: false, sweepIntervalSec: 0 }),
+    });
+    await sweep.tick();
+    expect(passes).toBe(0);
+  });
+
+  test("two sweepNow calls issued without awaiting between them share one pass", async () => {
+    let calls = 0;
+    const sweep = sweepWith({
+      repoIndex: () => { calls++; return {}; },
+    });
+    const first = sweep.sweepNow();
+    const second = sweep.sweepNow();
+    await Promise.all([first, second]);
+    expect(calls).toBe(1);
+  });
+
+  test("a repo that fails then succeeds has its error entry cleared", async () => {
+    const store = freshStore();
+    let attempt = 0;
+    const sweep = sweepWith({
+      repoIndex: () => ({ repo: "/whatever" }),
+      store,
+      listWorktrees: async () => {
+        attempt++;
+        return attempt === 1 ? null : [{ path: "/whatever", branch: "main", headSha: null, isBare: false }];
+      },
+      makeClient: () => ({
+        dir: "/whatever",
+        snapshot: async () => ({ branch: "main", detached: false, upstream: null, ahead: null, behind: null, files: [], clean: true }),
+        fetchState: async () => ({ lastFetchedAt: null }),
+      }) as any,
+    });
+    await sweep.sweepNow();
+    expect(sweep.errors().get("repo")).toBeTruthy();
+    await sweep.sweepNow();
+    expect(sweep.errors().has("repo")).toBe(false);
+  });
 });
