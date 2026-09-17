@@ -14,7 +14,7 @@
  */
 
 export type TrustPrompt =
-  | { kind: "accept"; variant: "plain" | "elevated"; keys: Array<"up" | "down" | "enter"> }
+  | { kind: "accept"; variant: "plain" | "elevated" | "relocation"; keys: Array<"up" | "down" | "enter"> }
   | { kind: "undrivable" };
 
 const HEADER_RE = /do you trust the files in this folder/i;

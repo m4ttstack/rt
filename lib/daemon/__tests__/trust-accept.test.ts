@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import pino from "pino";
-import { acceptTrustOnPane, driveTrustAccept, type TrustDriveOutcome } from "../trust-accept.ts";
+import { acceptTrustOnPane, driveRelocationAccept, driveTrustAccept, type TrustDriveOutcome } from "../trust-accept.ts";
 
 const log = pino({ level: "silent" });
 
@@ -158,5 +158,93 @@ describe("driveTrustAccept", () => {
   test("an unreadable screen is unchecked, and a send that errors is stuck", async () => {
     expect(await drive(pane({ screen: dialog(1), readFails: true }))).toBe("unchecked");
     expect(await drive(pane({ screen: dialog(1), sendFails: true }))).toBe("stuck");
+  });
+});
+
+const TREE = "/Users/matt/.mattstack/rt/worktrees/gh-m4ttstack-rt/pippin";
+
+const relocation = (cursor: 1 | 2, path: string = TREE) => [
+  "│ EnterWorktree                                                        │",
+  `│ permission-root relocation to "${path}" — a model-supplied`,
+  "│ worktree outside .claude/worktrees/                                  │",
+  "│ Do you want to proceed?                                              │",
+  `│ ${cursor === 1 ? "❯" : " "} 1. Yes                                   │`,
+  `│ ${cursor === 2 ? "❯" : " "} 2. No, and tell Claude what to do differently (esc) │`,
+].join("\n");
+
+/** Same living pane as `pane()`, painting the relocation dialog instead. */
+function relocationPane(opts: { cursor?: 1 | 2; path?: string } = {}) {
+  const state = { cursor: opts.cursor ?? 1, cleared: false };
+  const path = opts.path ?? TREE;
+  const calls: Array<{ method: string; keys?: string[] }> = [];
+  const herdr = (async (method: string, params: any) => {
+    calls.push({ method, ...(params?.keys ? { keys: params.keys } : {}) });
+    if (method === "pane.read") {
+      return { ok: true, result: { read: { text: state.cleared ? CLEARED : relocation(state.cursor as 1 | 2, path) } } };
+    }
+    if (method === "pane.send_keys") {
+      for (const k of params.keys as string[]) {
+        if (k === "up") state.cursor = 1;
+        if (k === "down") state.cursor = 2;
+        if (k === "enter" && state.cursor === 1) state.cleared = true;
+      }
+      return { ok: true, result: {} };
+    }
+    return { ok: false, code: "invalid_request", message: method };
+  }) as never;
+  return { herdr, calls, state };
+}
+
+const driveRelocation = (p: { herdr: never }, registered: string[] = [TREE]) =>
+  driveRelocationAccept({
+    herdr: p.herdr, sock: {}, pane: "w1:p1", log, context: {}, settleMs: 1, stepMs: 1,
+    isRegisteredTree: (candidate: string) => registered.includes(candidate),
+  });
+
+describe("driveRelocationAccept", () => {
+  test("a registry-verified path is accepted with a bare enter", async () => {
+    const p = relocationPane();
+    expect(await driveRelocation(p)).toBe("accepted");
+    expect(p.calls.filter((c) => c.method === "pane.send_keys")).toEqual([{ method: "pane.send_keys", keys: ["enter"] }]);
+    expect(p.state.cleared).toBe(true);
+  });
+
+  test("the cursor on No is walked one key per call before entering", async () => {
+    const p = relocationPane({ cursor: 2 });
+    expect(await driveRelocation(p)).toBe("accepted");
+    const sends = p.calls.filter((c) => c.method === "pane.send_keys");
+    expect(sends).toEqual([
+      { method: "pane.send_keys", keys: ["up"] },
+      { method: "pane.send_keys", keys: ["enter"] },
+    ]);
+  });
+
+  test("a path the registry does not know is refused before any key is sent", async () => {
+    const p = relocationPane({ path: "/tmp/somewhere-else" });
+    expect(await driveRelocation(p)).toBe("unregistered");
+    expect(p.calls.some((c) => c.method === "pane.send_keys")).toBe(false);
+  });
+
+  test("no dialog on screen reports no-dialog without a key", async () => {
+    const p = pane({ screen: "reading the brief\n" });
+    expect(await driveRelocation(p as never)).toBe("no-dialog");
+    expect(p.calls.some((c) => c.method === "pane.send_keys")).toBe(false);
+  });
+
+  test("the folder-trust dialog is not this driver's to answer", async () => {
+    const p = pane({ screen: dialog(1) });
+    expect(await driveRelocation(p as never)).toBe("no-dialog");
+    expect(p.calls.some((c) => c.method === "pane.send_keys")).toBe(false);
+  });
+
+  test("a prompt whose path cannot be read is stuck, never guessed at", async () => {
+    const screen = [
+      "│ permission-root relocation to somewhere unquoted │",
+      "│ Do you want to proceed?                          │",
+      "│ ❯ 1. Yes                                         │",
+    ].join("\n");
+    const p = pane({ screen });
+    expect(await driveRelocation(p as never)).toBe("stuck");
+    expect(p.calls.some((c) => c.method === "pane.send_keys")).toBe(false);
   });
 });

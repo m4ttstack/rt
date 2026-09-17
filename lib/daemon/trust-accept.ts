@@ -13,7 +13,7 @@
  *   that will not move is reported instead of entered on.
  */
 import type { Logger } from "pino";
-import { readTrustPrompt, type TrustPrompt } from "./trust-dialog.ts";
+import { readRelocationPrompt, readTrustPrompt, type TrustPrompt } from "./trust-dialog.ts";
 
 /** `no-dialog` is "the screen showed no modal", which each caller reads in its
     own context: for a registered pane it means nothing to do, for one that
@@ -38,6 +38,10 @@ export interface TrustDriveDeps {
   /** Repaint budget after a single arrow, before re-reading the cursor. */
   stepMs?: number;
   attempts?: number;
+  /** The dialog reader the walk re-runs on every screen; the folder-trust
+      parser when omitted. driveRelocationAccept substitutes its own so the
+      same cursor-verified walk drives the relocation prompt. */
+  read?: (screen: string) => TrustPrompt | null;
 }
 
 const SETTLE_MS = 1_500;
@@ -63,7 +67,7 @@ export async function driveTrustAccept(deps: TrustDriveDeps): Promise<TrustDrive
       log?.warn({ ...context, pane, err: screen.message }, "trust: pane read failed; dialog not checked");
       return false;
     }
-    return readTrustPrompt(screen.result.read.text);
+    return (deps.read ?? readTrustPrompt)(screen.result.read.text);
   };
 
   const press = async (key: "up" | "down" | "enter"): Promise<boolean> => {
@@ -112,6 +116,53 @@ export async function driveTrustAccept(deps: TrustDriveDeps): Promise<TrustDrive
   if (after === null) return "accepted";
   log?.warn({ ...context, pane }, "trust: dialog still up after the accept keys; the pane is stuck at the modal");
   return "stuck";
+}
+
+/** `unregistered` is the refusal that makes this driver safe to leave on:
+    the dialog named a path rt's own worktree registry does not know, so no
+    key was sent at all. */
+export type RelocationDriveOutcome = TrustDriveOutcome | "unregistered";
+
+export interface RelocationDriveDeps extends TrustDriveDeps {
+  /** Provenance: true only for a path rt's worktree registry holds. Injected
+      so the walk never reads the registry itself and tests need no store. */
+  isRegisteredTree: (path: string) => boolean;
+}
+
+/**
+ * Drive the EnterWorktree permission-root relocation prompt on a pane. The
+ * dialog names the worktree path it wants to relocate to; that path is
+ * checked against rt's own registry BEFORE any key is sent, and re-checked on
+ * every re-read of the walk, so a screen that changes underneath the driver
+ * can only stop it, never steer it onto a different answer.
+ */
+export async function driveRelocationAccept(deps: RelocationDriveDeps): Promise<RelocationDriveOutcome> {
+  const { herdr, sock, pane, log, context } = deps;
+  const first = await herdr<{ read: { text: string } }>("pane.read", { pane_id: pane, source: "visible" }, sock);
+  if (!first.ok) {
+    log?.warn({ ...context, pane, err: first.message }, "relocation: pane read failed; dialog not checked");
+    return "unchecked";
+  }
+  const prompt = readRelocationPrompt(first.result.read.text);
+  if (prompt === null) return "no-dialog";
+  if (prompt.kind === "undrivable") {
+    log?.warn({ ...context, pane }, "relocation: prompt present but its path or selection could not be read; not guessing a key");
+    return "stuck";
+  }
+  if (!deps.isRegisteredTree(prompt.path)) {
+    log?.info({ ...context, pane, path: prompt.path }, "relocation: the prompt names a path outside rt's worktree registry; leaving it for the human");
+    return "unregistered";
+  }
+  const verified = prompt.path;
+  return driveTrustAccept({
+    ...deps,
+    read: (screen) => {
+      const p = readRelocationPrompt(screen);
+      if (p === null) return null;
+      if (p.kind === "undrivable" || p.path !== verified) return { kind: "undrivable" };
+      return { kind: "accept", variant: "relocation", keys: p.keys };
+    },
+  });
 }
 
 /** What a spawn path reports about the dialog: `none` is "no dialog, and the
