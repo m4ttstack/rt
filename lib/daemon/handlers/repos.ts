@@ -53,8 +53,8 @@ export function createReposHandlers(
         return { ok: true, data: result };
       });
     },
-    "repos:status": async (_payload): Promise<{ repos: RepoStatusRow[]; sweptAt: string | null }> => {
-      return { repos: [], sweptAt: null };
+    "repos:status": async (_payload) => {
+      return { ok: true as const, data: { repos: [], sweptAt: null } };
     },
   };
 }
