@@ -71,6 +71,8 @@ describe("tags", () => {
       expect(byName.get("light")!.annotated).toBe(false);
       expect(byName.get("heavy")!.annotated).toBe(true);
       expect(byName.get("light")!.sha).toMatch(/^[0-9a-f]{40}$/);
+      expect(byName.get("light")!.targetSha).toBe(byName.get("light")!.sha);
+      expect(byName.get("heavy")!.targetSha).not.toBe(byName.get("heavy")!.sha);
     } finally {
       await sb.cleanup();
     }
