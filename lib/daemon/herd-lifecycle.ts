@@ -21,6 +21,10 @@ export interface HerdLifecycle {
   connected(socket: string | null): boolean;
   handleEvent(socket: string | null, ev: HerdrEvent): Promise<void>;
   reconcilePanes(): void;
+  /** Epoch ms of the pane's last `agent_status_changed`, keyed by the ref the
+      job row stores (`bg:` for a hidden herd). In-memory only: a daemon
+      restart forgets every pane, and null means "no data", never "idle". */
+  lastStatusChangeMs(pane: string): number | null;
   /** Reconciles the bg claims registry against reality: a claimed `bg:` pane
       missing from a live snapshot releases (crashed/closed pane the event
       stream missed), a `runner:<pid>` claim whose process is gone releases
@@ -62,14 +66,21 @@ export function createHerdLifecycle(opts: {
   herdr?: typeof defaultHerdrRequest;
   blockedDebounceMs?: number;
   idleDebounceMs?: number;
+  /** The watchdog pokes an idle worker directly, so while it is on the idle
+      room notice would only echo every poke; the blocked notice stays. Read
+      when the debounce fires, never at construction. */
+  watchdogEnabled?: () => boolean;
   setTimer?: (fn: () => void, ms: number) => { clear(): void };
+  now?: () => number;
   log: Logger;
 }): HerdLifecycle {
   const { store, log } = opts;
   const subscribe = opts.subscribe ?? defaultSubscribe;
   const herdr = opts.herdr ?? defaultHerdrRequest;
+  const now = opts.now ?? Date.now;
   const debounceMs = opts.blockedDebounceMs ?? 30_000;
   const idleDebounceMs = opts.idleDebounceMs ?? 180_000;
+  const watchdogEnabled = opts.watchdogEnabled ?? (() => false);
   // A reconcile tick reads sqlite and opens subscriptions; a synchronous
   // throw in a bare setTimeout callback is an uncaughtException, which
   // installCrashHandlers exits the daemon on.
@@ -85,6 +96,8 @@ export function createHerdLifecycle(opts: {
   // immediately before posting.
   const idleGen = new Map<string, number>();
   const bumpIdleGen = (key: string) => idleGen.set(key, (idleGen.get(key) ?? 0) + 1);
+  // Events carry no timestamp, so the change time is this clock at receipt.
+  const lastStatusChange = new Map<string, number>();
   let unhookBus: (() => void) | undefined;
   let reconcileTimer: { clear(): void } | undefined;
 
@@ -194,6 +207,7 @@ export function createHerdLifecycle(opts: {
       return;
     }
     if (ev.type === "pane.agent_status_changed") {
+      lastStatusChange.set(ref, now());
       // herdr detects the agent before a spawn can park a failed trust accept,
       // so accepting the dialog by hand produces no second agent_detected --
       // a status change is the only event left that can retire the parked row,
@@ -218,6 +232,7 @@ export function createHerdLifecycle(opts: {
         idleTimers.set(key, setTimer(() => {
           idleTimers.delete(key);
           fireAndForget((async () => {
+            if (watchdogEnabled()) return;
             const fresh = jobFor(socket, pane);
             if (!fresh || fresh.job.status === "done" || fresh.job.status === "closed") return;
             const subject = herdSubject(fresh.job.herd, fresh.job.name);
@@ -242,6 +257,7 @@ export function createHerdLifecycle(opts: {
       idleTimers.get(key)?.clear();
       idleTimers.delete(key);
       bumpIdleGen(key);
+      lastStatusChange.delete(ref);
       unwatchPane(socket, pane);
       if (WATCHED.has(job.status)) {
         store.setJobStatus(job.herd, job.name, "crashed");
@@ -387,11 +403,13 @@ export function createHerdLifecycle(opts: {
       for (const t of idleTimers.values()) t.clear();
       idleTimers.clear();
       for (const k of idleGen.keys()) bumpIdleGen(k);
+      lastStatusChange.clear();
     },
     watch,
     connected: (socket) => subs.get(socketKey(socket))?.connected() ?? false,
     handleEvent,
     reconcilePanes,
+    lastStatusChangeMs: (pane) => lastStatusChange.get(pane) ?? null,
     sweepClaims,
   };
 }

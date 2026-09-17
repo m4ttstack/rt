@@ -23,6 +23,8 @@ function fx(over: {
   herdr?: (method: string, params: unknown, opts2?: { sockPath?: string }) => Promise<any>;
   /** Resolves when the idle callback's gate lookup should return, so a test can invalidate the idle state mid-await. */
   gateListGate?: Promise<void>;
+  now?: () => number;
+  watchdogEnabled?: () => boolean;
 } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "rt-herd-lc-"));
   dirs.push(dir);
@@ -82,6 +84,8 @@ function fx(over: {
     store, gate: gateDep, chat, bus, gateStore, defaultSocket: "/default.sock",
     ...(over.bgSocket !== undefined && { bgSocket: over.bgSocket, bgClaims }),
     subscribe, herdr, setTimer, log: lcLog,
+    ...(over.now && { now: over.now }),
+    ...(over.watchdogEnabled && { watchdogEnabled: over.watchdogEnabled }),
   });
   const herd = store.create({ id: "demo-1", repo: "r", room: "herd-demo-1", workspace: "herd: demo-1", shepherdSession: "s", shepherdHandle: "shepherd", herdrSocket: null, hidden: false });
   const wildcard = () => subs.filter((s) => !s.subscriptions.some((e) => "pane_id" in e));
@@ -205,6 +209,33 @@ describe("herd-lifecycle", () => {
     expect(posts).toEqual([]);
   });
 
+  test("lastStatusChangeMs records the clock at every status change and is null for a pane never seen", async () => {
+    let clock = 1_000;
+    const { store, lc, herd } = fx({ now: () => clock });
+    store.upsertJob({ herd: herd.id, name: "job-a", worktree: "/w", handle: "job-a", status: "active", pane: "w1:p1" });
+    expect(lc.lastStatusChangeMs("w1:p1")).toBeNull();
+    await lc.handleEvent(null, { type: "pane.agent_status_changed", pane_id: "w1:p1", agent_status: "idle" });
+    expect(lc.lastStatusChangeMs("w1:p1")).toBe(1_000);
+    clock = 5_000;
+    await lc.handleEvent(null, { type: "pane.agent_status_changed", pane_id: "w1:p1", agent_status: "working" });
+    expect(lc.lastStatusChangeMs("w1:p1")).toBe(5_000);
+    clock = 9_000;
+    await lc.handleEvent(null, { type: "pane.agent_status_changed", pane_id: "w1:p1", agent_status: "blocked" });
+    expect(lc.lastStatusChangeMs("w1:p1")).toBe(9_000);
+    expect(lc.lastStatusChangeMs("w1:p2")).toBeNull();
+  });
+
+  test("lastStatusChangeMs keys on the ref the job row stores (bg: for a hidden herd) and forgets a pane on exit", async () => {
+    const { store, lc } = fx({ bgSocket: "/bg.sock", now: () => 7_000 });
+    store.create({ id: "hid-1", repo: "r", room: "herd-hid-1", workspace: "w", shepherdSession: "s", shepherdHandle: "shepherd", herdrSocket: "/bg.sock", hidden: true });
+    store.upsertJob({ herd: "hid-1", name: "job-a", worktree: "/w", handle: "job-a", status: "active", pane: "bg:w1:p1" });
+    await lc.handleEvent("/bg.sock", { type: "pane.agent_status_changed", pane_id: "w1:p1", agent_status: "idle" });
+    expect(lc.lastStatusChangeMs("bg:w1:p1")).toBe(7_000);
+    expect(lc.lastStatusChangeMs("w1:p1")).toBeNull();
+    await lc.handleEvent("/bg.sock", { type: "pane.exited", pane_id: "w1:p1" });
+    expect(lc.lastStatusChangeMs("bg:w1:p1")).toBeNull();
+  });
+
   test("idle past the debounce with no open gate and no report posts exactly one notice", async () => {
     const { store, lc, herd, posts, timers } = fx();
     store.upsertJob({ herd: herd.id, name: "job-a", worktree: "/w", handle: "job-a", status: "active", pane: "w1:p1" });
@@ -217,6 +248,35 @@ describe("herd-lifecycle", () => {
     expect(posts).toHaveLength(1);
     expect(posts[0]).toMatchObject({ room: "herd-demo-1", handle: "herdr", mentions: ["shepherd"] });
     expect(posts[0].body).toContain("job-a idle with no open gate and no report");
+  });
+
+  test("with the watchdog enabled the idle notice is not posted; disabled, it still is", async () => {
+    const idleFire = async (enabled: boolean) => {
+      const { store, lc, herd, posts, timers } = fx({ watchdogEnabled: () => enabled });
+      store.upsertJob({ herd: herd.id, name: "job-a", worktree: "/w", handle: "job-a", status: "active", pane: "w1:p1" });
+      await lc.handleEvent(null, { type: "pane.agent_status_changed", pane_id: "w1:p1", agent_status: "idle" });
+      const idle = timers.filter((t) => t.ms === 180_000 && !t.cleared);
+      expect(idle).toHaveLength(1);
+      idle[0]!.fn();
+      await Bun.sleep(0);
+      return posts;
+    };
+    expect(await idleFire(true)).toHaveLength(0);
+    const posted = await idleFire(false);
+    expect(posted).toHaveLength(1);
+    expect(posted[0].body).toContain("job-a idle with no open gate and no report");
+  });
+
+  test("the blocked notice posts regardless of the watchdog", async () => {
+    const { store, lc, herd, posts, timers } = fx({ watchdogEnabled: () => true });
+    store.upsertJob({ herd: herd.id, name: "job-a", worktree: "/w", handle: "job-a", status: "active", pane: "w1:p1" });
+    await lc.handleEvent(null, { type: "pane.agent_status_changed", pane_id: "w1:p1", agent_status: "blocked" });
+    const blocked = timers.filter((t) => t.ms === 30_000 && !t.cleared);
+    expect(blocked).toHaveLength(1);
+    blocked[0]!.fn();
+    await Bun.sleep(0);
+    expect(posts).toHaveLength(1);
+    expect(posts[0].body).toContain("job-a blocked");
   });
 
   test("a pane that resumes while the gate lookup is in flight posts nothing", async () => {

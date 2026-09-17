@@ -171,7 +171,7 @@ export interface HerdJobInfo { herd: string; name: string; worktree: string; bra
 /** `lastGateStatus`/`lastGateDelivery` come from the job's `lastGate` row: a TERMINAL gate (answered or closed) whose delivery is `dead-pane` is the "worker not woken" case the shepherd must act on. `lastGateConsumed` is `null` when there is nothing to consume (no last gate, not answered, or not nudged), and otherwise reports whether the nudged pane has read its answer. */
 export interface HerdStatusData {
   herd: HerdInfo;
-  jobs: Array<HerdJobInfo & { openGate: string | null; paneStatus: string | null; /** The worker session behind this job's pane is gone while the job still reads in-flight: herdr lists the pane but no claude is on it. Null when herdr does not list the pane at all (it closed, or herdr is unreachable), which proves nothing either way. */ sessionDead: boolean | null; lastGateStatus: GateStatus | null; lastGateDelivery: "delivered" | "dead-pane" | "confirmed" | "stuck" | null; lastGateConsumed: boolean | null }>;
+  jobs: Array<HerdJobInfo & { openGate: string | null; paneStatus: string | null; /** The worker session behind this job's pane is gone while the job still reads in-flight: herdr lists the pane but no claude is on it. Null when herdr does not list the pane at all (it closed, or herdr is unreachable), which proves nothing either way. */ sessionDead: boolean | null; lastGateStatus: GateStatus | null; lastGateDelivery: "delivered" | "dead-pane" | "confirmed" | "stuck" | null; lastGateConsumed: boolean | null; /** The daemon watchdog's escalation ladder for this job: strikes so far and when it last acted. Null when the job is not on the ladder (healthy, or the daemon restarted since). */ watchdog: { strikes: number; lastPokeAt: number | null } | null }>;
   unread: number;
   lifecycleConnected: boolean;
   hiddenUp: boolean | null;
@@ -751,8 +751,8 @@ export interface Commands {
   "gate:subscriptions": { payload: { session?: string; live?: boolean }; data: { subscriptions: GateSubscription[] } };
 
   // ─── Herd (shepherd run registry) ────────────────────────────────────────
-  "herd:start":  { payload: { name: string; repo: string; session: string; hidden?: boolean }; data: { herd: string; room: string; workspace: string; subscription: string; handle: string; hidden: boolean } };
-  "herd:resume": { payload: { herd: string; session: string }; data: { subscription: string; gates: GateRow[]; unread: number; status: HerdStatusData; handle: string } };
+  "herd:start":  { payload: { name: string; repo: string; session: string; hidden?: boolean; callerPane?: string }; data: { herd: string; room: string; workspace: string; subscription: string; handle: string; hidden: boolean } };
+  "herd:resume": { payload: { herd: string; session: string; callerPane?: string }; data: { subscription: string; gates: GateRow[]; unread: number; status: HerdStatusData; handle: string } };
   "herd:status": { payload: { herd: string }; data: HerdStatusData };
   /** Active herds only unless `all`, so a shepherd's "which herd am I on" question has one answer. */
   "herd:list":   { payload: { all?: boolean }; data: { herds: HerdListRow[] } };
