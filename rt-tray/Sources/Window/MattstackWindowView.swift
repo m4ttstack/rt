@@ -240,9 +240,14 @@ private struct ContentArea: View {
                 WindowWebView(model: model, app: app)
                 if model.loadFailures[app.name] == true {
                     FailureOverlay(model: model, app: app)
+                } else if model.loadingApps.contains(app.name) {
+                    LoadingOverlay()
                 }
             } else {
-                Color(NSColor.windowBackgroundColor)
+                // Before the catalog resolves there is no app to mount, and
+                // the splash may already have gone, so this is what the
+                // window shows in the meantime.
+                LoadingOverlay()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -272,6 +277,21 @@ private struct WindowWebView: NSViewRepresentable {
         container.frame = host.bounds
         container.autoresizingMask = [.width, .height]
         host.addSubview(container)
+    }
+}
+
+/// Opaque, not a floating spinner over a half-drawn page: until the page has
+/// something to show, the shell's own background is the better thing to look
+/// at, and it is the same color the webview shows through.
+private struct LoadingOverlay: View {
+    var body: some View {
+        ZStack {
+            barFill
+            ProgressView()
+                .progressViewStyle(.circular)
+                .controlSize(.small)
+                .colorScheme(.dark)
+        }
     }
 }
 
