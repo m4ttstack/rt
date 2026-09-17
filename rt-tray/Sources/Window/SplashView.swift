@@ -32,7 +32,9 @@ enum SplashTuning {
     // eye-check says the animation actually settles earlier or later, this
     // is the one number to move.
     static let animationSettleDuration: Double = 1.0
-    static let postSettleHold: Double = 1.0
+    // Long enough that the settled mark registers as a finished thing rather
+    // than something cut off mid-drop; a full second of it read as a stall.
+    static let postSettleHold: Double = 0.3
     static var minimumVisibleDuration: Double { animationSettleDuration + postSettleHold }
 }
 
