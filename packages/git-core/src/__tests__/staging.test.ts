@@ -176,6 +176,33 @@ describe("stagingDiff / stageSelection / discardSelection", () => {
     }
   });
 
+  it("5c. refuses a rename whose source was only ever staged, never committed, without touching the index", async () => {
+    const sb = await makeSandbox();
+    try {
+      await sb.write("base.txt", "base\n");
+      await sb.commitAll("base");
+      await sb.write("old.txt", "a\nb\nc\n");
+      await sb.git(["add", "old.txt"]);
+      await sb.git(["mv", "old.txt", "new.txt"]);
+      const client = createGitClient(sb.dir);
+
+      const diff = await client.stagingDiff("new.txt");
+      expect(diff.untracked).toBe(false);
+
+      const beforeCached = await sb.git(["diff", "--cached", "--name-status"]);
+      await expect(
+        client.stageSelection(diff, DiffSelection.fromInitialSelection(DiffSelectionType.All), {
+          originalPath: "old.txt",
+        }),
+      ).rejects.toThrow(/rename source not in HEAD/);
+
+      const afterCached = await sb.git(["diff", "--cached", "--name-status"]);
+      expect(afterCached).toBe(beforeCached);
+    } finally {
+      await sb.cleanup();
+    }
+  });
+
   it("6. refuses to line-stage a binary file", async () => {
     const sb = await makeSandbox();
     try {

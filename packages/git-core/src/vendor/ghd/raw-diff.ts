@@ -82,7 +82,7 @@ export class DiffHunkHeader {
       this.oldStartLine === other.oldStartLine &&
       this.oldLineCount === other.oldLineCount &&
       this.newStartLine === other.newStartLine &&
-      this.oldStartLine === other.oldStartLine
+      this.newLineCount === other.newLineCount
     )
   }
 }

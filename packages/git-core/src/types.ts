@@ -60,7 +60,7 @@ export interface TagInfo {
   name: string;
   sha: string;
   annotated: boolean;
-  targetSha: string; // the commit the tag points at; equals sha for lightweight tags
+  targetSha: string; // peeled target object sha (equals sha for lightweight tags)
 }
 
 export interface LogEntry {

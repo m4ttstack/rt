@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { DiffParser } from "../vendor/ghd/diff-parser.ts";
 import { DiffLineType } from "../vendor/ghd/diff-line.ts";
+import { DiffHunkHeader } from "../vendor/ghd/raw-diff.ts";
 
 const BASIC = [
   "--- a/f.txt",
@@ -121,5 +122,19 @@ describe("vendored DiffParser", () => {
     expect(h.lines[1]!.text).toBe(" one");
     expect(h.lines[2]!.text).toBe("-two");
     expect(h.lines[3]!.text).toBe("+deux");
+  });
+});
+
+describe("vendored DiffHunkHeader.equals", () => {
+  test("two headers differing only in newLineCount are not equal", () => {
+    const a = new DiffHunkHeader(1, 3, 1, 3);
+    const b = new DiffHunkHeader(1, 3, 1, 4);
+    expect(a.equals(b)).toBe(false);
+  });
+
+  test("identical headers are equal", () => {
+    const a = new DiffHunkHeader(1, 3, 1, 3);
+    const b = new DiffHunkHeader(1, 3, 1, 3);
+    expect(a.equals(b)).toBe(true);
   });
 });

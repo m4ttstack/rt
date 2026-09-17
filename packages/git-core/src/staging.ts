@@ -47,18 +47,22 @@ export async function stageSelection(
   }
 
   if (opts.originalPath !== undefined) {
+    // Resolved and validated before any index mutation: rm --cached first
+    // would leave a rename source that was staged but never committed
+    // stranded neither at the old path nor re-parented, once this lookup
+    // then came back empty.
+    const lsTree = await rawGit(ctx.dir, ["ls-tree", "HEAD", "--", opts.originalPath]);
+    const match = /^(\S+) blob (\S+)\t/.exec(lsTree);
+    if (!match) {
+      throw new Error(`rename source not in HEAD: ${opts.originalPath}`);
+    }
+    const [, mode, oid] = match;
     // Clears any index entry left at the old path -- `--ignore-unmatch`
     // makes this idempotent whether the rename is already staged (e.g. a
     // prior `git mv`) or not (a same-content deleted+untracked pair) --
     // then re-parents the original blob under the new path so `-M`
     // detection still sees a rename once the content patch below lands.
     await rawGit(ctx.dir, ["rm", "--cached", "--ignore-unmatch", "--", opts.originalPath]);
-    const lsTree = await rawGit(ctx.dir, ["ls-tree", "HEAD", "--", opts.originalPath]);
-    const match = /^(\S+) blob (\S+)\t/.exec(lsTree);
-    if (!match) {
-      throw new Error(`could not resolve HEAD blob for rename source: ${opts.originalPath}`);
-    }
-    const [, mode, oid] = match;
     await rawGit(ctx.dir, ["update-index", "--add", "--cacheinfo", `${mode},${oid},${diff.path}`]);
   }
 
