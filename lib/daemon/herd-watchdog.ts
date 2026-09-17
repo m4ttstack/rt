@@ -140,7 +140,9 @@ export interface WatchdogActuators {
       itself rather than waiting for the ladder's third rung, and it carries
       the pane so the tray click lands on the stuck pane. */
   notifyStuckAtModal(herd: string, job: string, pane: string): void;
-  notifyHuman(summary: string): void;
+  /** `pane` is the wedged party's own pane when there is one, so the tray
+      click focuses it; null when the party has no pane to focus. */
+  notifyHuman(summary: string, pane: string | null): void;
 }
 
 interface Ladder { strikes: number; lastPokeAt: number | null; since: number; parked: boolean }
@@ -259,7 +261,7 @@ export class HerdWatchdog {
       return;
     }
     const summary = summaryText(key, evidence, ladder, now);
-    if (ladder.strikes >= WORKER_CAP || herd.shepherdPane === null) this.notify(herd.id, summary, cfg, now, ctx);
+    if (ladder.strikes >= WORKER_CAP || herd.shepherdPane === null) this.notify(herd.id, summary, job.pane, cfg, now, ctx);
     else await this.poke(herd.shepherdPane, summary, ctx, "escalated to shepherd");
   }
 
@@ -279,7 +281,7 @@ export class HerdWatchdog {
       return;
     }
     const ctx = { herd: herd.id, job: SHEPHERD, path: fresh.path, strike: ladder.strikes };
-    if (ladder.strikes >= SHEPHERD_CAP || herd.shepherdPane === null) this.notify(herd.id, summaryText(key, fresh.evidence, ladder, now), cfg, now, ctx);
+    if (ladder.strikes >= SHEPHERD_CAP || herd.shepherdPane === null) this.notify(herd.id, summaryText(key, fresh.evidence, ladder, now), herd.shepherdPane, cfg, now, ctx);
     else await this.poke(herd.shepherdPane, pokeText(fresh.evidence), ctx, "poked shepherd");
   }
 
@@ -309,7 +311,7 @@ export class HerdWatchdog {
     else this.log.info({ ...ctx, pane }, `${event} (not delivered)`);
   }
 
-  private notify(herd: string, summary: string, cfg: WatchdogConfig, now: number, ctx: object): void {
+  private notify(herd: string, summary: string, pane: string | null, cfg: WatchdogConfig, now: number, ctx: object): void {
     if (!cfg.notifyHuman) {
       this.log.info({ ...ctx, summary }, "human notification disabled");
       return;
@@ -320,7 +322,7 @@ export class HerdWatchdog {
       return;
     }
     this.notifiedAt.set(herd, now);
-    this.act.notifyHuman(summary);
+    this.act.notifyHuman(summary, pane);
     this.log.info({ ...ctx, summary }, "notified human");
   }
 }

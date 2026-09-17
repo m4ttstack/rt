@@ -283,6 +283,7 @@ describe("HerdWatchdog ladder", () => {
     const parks: { herd: string; job: string }[] = [];
     const modalNotes: { herd: string; job: string; pane: string }[] = [];
     const notes: string[] = [];
+    const noteEvents: { summary: string; pane: string | null }[] = [];
     const delivery = { ok: true };
     const lines: { level: Level; msg: string }[] = [];
     const at = (level: Level) => (_ctx: unknown, msg: string) => { lines.push({ level, msg }); };
@@ -294,7 +295,7 @@ describe("HerdWatchdog ladder", () => {
       poke: async (pane, text) => { pokes.push({ pane, text }); const parked = hold.p; hold.p = null; if (parked) await parked; return delivery.ok; },
       parkStuckAtModal: (h, j) => { parks.push({ herd: h, job: j }); },
       notifyStuckAtModal: (h, j, pane) => { modalNotes.push({ herd: h, job: j, pane }); },
-      notifyHuman: (summary) => { notes.push(summary); },
+      notifyHuman: (summary, pane) => { notes.push(summary); noteEvents.push({ summary, pane: pane ?? null }); },
     };
     const h = opts.herd ?? herd();
     const jobs = opts.jobs ?? [job()];
@@ -304,7 +305,7 @@ describe("HerdWatchdog ladder", () => {
     const tick = async (mins = 0) => { clock.now += mins * MIN; await wd.sweep(); };
     const shepherdPokes = () => pokes.filter((p) => p.pane === "w1:p0");
     const workerPokes = () => pokes.filter((p) => p.pane === "w1:p1");
-    return { wd, tick, clock, pokes, parks, modalNotes, notes, lines, delivery, hold, conf: c, shepherdPokes, workerPokes };
+    return { wd, tick, clock, pokes, parks, modalNotes, notes, noteEvents, lines, delivery, hold, conf: c, shepherdPokes, workerPokes };
   }
 
   const workerWedged = (): Partial<WatchdogSensors> => ({ ...idleFor(3), unreadDmMentionsFor: (h) => (h === "job-a" ? 1 : 0) });
@@ -530,6 +531,23 @@ describe("HerdWatchdog ladder", () => {
     expect(r.parks).toHaveLength(1);
     expect(r.workerPokes()).toHaveLength(0);
     expect(r.shepherdPokes()).toHaveLength(2);
+  });
+
+  test("every human notification carries its party's pane, so the tray click lands on it", async () => {
+    const r = rig({ sensors: workerWedged() });
+    for (let i = 0; i < 5; i++) await r.tick(i === 0 ? 0 : 5);
+    expect(r.noteEvents).toEqual([{ summary: r.notes[0]!, pane: "w1:p1" }]);
+
+    // The shepherd rung names the shepherd's own pane.
+    const shep = rig({ jobs: [], sensors: shepherdWedged() });
+    for (let i = 0; i < 3; i++) await shep.tick(i === 0 ? 0 : 5);
+    expect(shep.noteEvents).toEqual([{ summary: shep.notes[0]!, pane: "w1:p0" }]);
+  });
+
+  test("a herd with no shepherd pane notifies with no pane rather than a wrong one", async () => {
+    const r = rig({ jobs: [], herd: herd({ shepherdPane: null }), sensors: { paneState: () => "idle", openHumanGates: () => [{ id: "g-9", ageMs: 6 * MIN }] } });
+    await r.tick();
+    expect(r.noteEvents).toEqual([{ summary: r.notes[0]!, pane: null }]);
   });
 
   test("a park also raises one click-to-focus notification naming the pane, outside the quiet period", async () => {

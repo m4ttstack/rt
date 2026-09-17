@@ -169,9 +169,13 @@ export function createWatchdogActuators(deps: WatchdogActuatorDeps): WatchdogAct
         log.warn({ err, herd, job, pane }, "watchdog could not enqueue the park notification");
       }
     },
-    notifyHuman(summary) {
+    notifyHuman(summary, pane) {
       try {
-        enqueue({ id: crypto.randomUUID(), title: "herd watchdog", message: summary, category: "herd-watchdog", timestamp: Date.now() }, deps.db);
+        enqueue({
+          id: crypto.randomUUID(), title: "herd watchdog", message: summary,
+          category: "herd-watchdog", timestamp: Date.now(),
+          ...(pane ? { paneId: pane } : {}),
+        }, deps.db);
       } catch (err) {
         log.warn({ err, summary }, "watchdog could not enqueue the notification");
       }

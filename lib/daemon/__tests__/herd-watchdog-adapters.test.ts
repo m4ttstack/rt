@@ -296,11 +296,13 @@ describe("watchdog actuators", () => {
     expect(() => a.notifyStuckAtModal("demo-1", "job-a", "w1:p1")).not.toThrow();
   });
 
-  test("notifyHuman enqueues a herd-watchdog notification carrying the summary", () => {
+  test("notifyHuman enqueues a herd-watchdog notification carrying the summary and the party's pane", () => {
     const { a, notified } = act();
-    a.notifyHuman("watchdog: demo-1/job-a: idle 20m; strike 5");
+    a.notifyHuman("watchdog: demo-1/job-a: idle 20m; strike 5", "bg:w1:p1");
     expect(notified).toHaveLength(1);
-    expect(notified[0]).toMatchObject({ title: "herd watchdog", message: "watchdog: demo-1/job-a: idle 20m; strike 5", category: "herd-watchdog" });
+    expect(notified[0]).toMatchObject({ title: "herd watchdog", message: "watchdog: demo-1/job-a: idle 20m; strike 5", category: "herd-watchdog", paneId: "bg:w1:p1" });
+    a.notifyHuman("watchdog: demo-1/@shepherd: unreachable", null);
+    expect("paneId" in notified[1]).toBe(false);
     expect(typeof notified[0].id).toBe("string");
     expect(notified[0].id.length).toBeGreaterThan(0);
     expect(typeof notified[0].timestamp).toBe("number");
