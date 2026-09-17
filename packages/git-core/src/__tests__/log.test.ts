@@ -51,4 +51,18 @@ describe("log", () => {
       await sb.cleanup();
     }
   });
+
+  it("a body containing simple-git's default record separator round-trips intact", async () => {
+    const sb = await makeSandbox();
+    try {
+      await sb.write("a.txt", "1\n");
+      await sb.git(["add", "-A"]);
+      const body = `line one \xF2 line two`;
+      await sb.git(["commit", "-m", "subject", "-m", body]);
+      const log = await createGitClient(sb.dir).log();
+      expect(log[0]!.body).toBe(body);
+    } finally {
+      await sb.cleanup();
+    }
+  });
 });
