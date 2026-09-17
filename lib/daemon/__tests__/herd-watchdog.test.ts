@@ -281,6 +281,7 @@ describe("HerdWatchdog ladder", () => {
     const clock = { now: NOW };
     const pokes: { pane: string; text: string }[] = [];
     const parks: { herd: string; job: string }[] = [];
+    const modalNotes: { herd: string; job: string; pane: string }[] = [];
     const notes: string[] = [];
     const delivery = { ok: true };
     const lines: { level: Level; msg: string }[] = [];
@@ -292,6 +293,7 @@ describe("HerdWatchdog ladder", () => {
     const act: WatchdogActuators = {
       poke: async (pane, text) => { pokes.push({ pane, text }); const parked = hold.p; hold.p = null; if (parked) await parked; return delivery.ok; },
       parkStuckAtModal: (h, j) => { parks.push({ herd: h, job: j }); },
+      notifyStuckAtModal: (h, j, pane) => { modalNotes.push({ herd: h, job: j, pane }); },
       notifyHuman: (summary) => { notes.push(summary); },
     };
     const h = opts.herd ?? herd();
@@ -302,7 +304,7 @@ describe("HerdWatchdog ladder", () => {
     const tick = async (mins = 0) => { clock.now += mins * MIN; await wd.sweep(); };
     const shepherdPokes = () => pokes.filter((p) => p.pane === "w1:p0");
     const workerPokes = () => pokes.filter((p) => p.pane === "w1:p1");
-    return { wd, tick, clock, pokes, parks, notes, lines, delivery, hold, conf: c, shepherdPokes, workerPokes };
+    return { wd, tick, clock, pokes, parks, modalNotes, notes, lines, delivery, hold, conf: c, shepherdPokes, workerPokes };
   }
 
   const workerWedged = (): Partial<WatchdogSensors> => ({ ...idleFor(3), unreadDmMentionsFor: (h) => (h === "job-a" ? 1 : 0) });
@@ -528,6 +530,24 @@ describe("HerdWatchdog ladder", () => {
     expect(r.parks).toHaveLength(1);
     expect(r.workerPokes()).toHaveLength(0);
     expect(r.shepherdPokes()).toHaveLength(2);
+  });
+
+  test("a park also raises one click-to-focus notification naming the pane, outside the quiet period", async () => {
+    const r = rig({ sensors: { paneState: (p) => (p === "w1:p1" ? "modal" : "idle"), idleSinceMs: () => NOW - 40 * MIN } });
+    await r.tick();
+    expect(r.modalNotes).toEqual([{ herd: "demo-1", job: "job-a", pane: "w1:p1" }]);
+    // The park fires once, so the notification does too, however long the
+    // job stays stuck.
+    await r.tick(5);
+    await r.tick(5);
+    expect(r.modalNotes).toHaveLength(1);
+  });
+
+  test("notifyHuman: false silences the park notification", async () => {
+    const r = rig({ cfg: { notifyHuman: false }, sensors: { paneState: (p) => (p === "w1:p1" ? "modal" : "idle"), idleSinceMs: () => NOW - 40 * MIN } });
+    await r.tick();
+    expect(r.parks).toHaveLength(1);
+    expect(r.modalNotes).toEqual([]);
   });
 
   test("a parked job the store has moved to stuck-at-modal drops out of the ladder on the next sweep", async () => {

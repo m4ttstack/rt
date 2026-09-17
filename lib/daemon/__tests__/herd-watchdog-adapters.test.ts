@@ -271,6 +271,31 @@ describe("watchdog actuators", () => {
     expect(statuses).toEqual([["demo-1", "job-a", "stuck-at-modal"]]);
   });
 
+  test("notifyStuckAtModal enqueues a click-to-focus notification carrying the pane id", () => {
+    const { a, notified } = act();
+    a.notifyStuckAtModal("demo-1", "job-a", "bg:w1:p1");
+    expect(notified).toHaveLength(1);
+    expect(notified[0]).toMatchObject({
+      title: "herd demo-1: job-a stuck at trust modal",
+      message: "click to focus pane bg:w1:p1, accept the dialog",
+      category: "herd-watchdog",
+      paneId: "bg:w1:p1",
+    });
+    expect(typeof notified[0].id).toBe("string");
+    expect(typeof notified[0].timestamp).toBe("number");
+  });
+
+  test("a failed park notification never escapes the actuator", () => {
+    const a = createWatchdogActuators({
+      herdStore: { setJobStatus: () => {} },
+      db: freshDb(),
+      socketFor: () => DEFAULT,
+      enqueue: () => { throw new Error("queue full"); },
+      log,
+    });
+    expect(() => a.notifyStuckAtModal("demo-1", "job-a", "w1:p1")).not.toThrow();
+  });
+
   test("notifyHuman enqueues a herd-watchdog notification carrying the summary", () => {
     const { a, notified } = act();
     a.notifyHuman("watchdog: demo-1/job-a: idle 20m; strike 5");

@@ -155,6 +155,20 @@ export function createWatchdogActuators(deps: WatchdogActuatorDeps): WatchdogAct
         log.warn({ err, herd, job }, "watchdog could not park the job");
       }
     },
+    notifyStuckAtModal(herd, job, pane) {
+      try {
+        enqueue({
+          id: crypto.randomUUID(),
+          title: `herd ${herd}: ${job} stuck at trust modal`,
+          message: `click to focus pane ${pane}, accept the dialog`,
+          category: "herd-watchdog",
+          timestamp: Date.now(),
+          paneId: pane,
+        }, deps.db);
+      } catch (err) {
+        log.warn({ err, herd, job, pane }, "watchdog could not enqueue the park notification");
+      }
+    },
     notifyHuman(summary) {
       try {
         enqueue({ id: crypto.randomUUID(), title: "herd watchdog", message: summary, category: "herd-watchdog", timestamp: Date.now() }, deps.db);

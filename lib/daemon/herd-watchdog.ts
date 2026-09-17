@@ -135,6 +135,11 @@ export interface WatchdogActuators {
       not delivered: the injector refuses blocked agents and queues on working. */
   poke(pane: string, text: string): Promise<boolean>;
   parkStuckAtModal(herd: string, job: string): void;
+  /** The click-to-focus notification that rides with a park: the human is the
+      only party who can accept a trust dialog, so it goes out on the park
+      itself rather than waiting for the ladder's third rung, and it carries
+      the pane so the tray click lands on the stuck pane. */
+  notifyStuckAtModal(herd: string, job: string, pane: string): void;
   notifyHuman(summary: string): void;
 }
 
@@ -231,7 +236,11 @@ export class HerdWatchdog {
     if (verdict.kind === "modal" && !ladder.parked) {
       ladder.parked = true;
       this.act.parkStuckAtModal(herd.id, job.name);
-      this.log.info({ herd: herd.id, job: job.name }, "parked job stuck at modal");
+      // Deliberately outside notify(): the park happens once, so this cannot
+      // repeat, and the quiet period that paces repeated rung-3 summaries
+      // would only drop the one notification that names a pane to click.
+      if (cfg.notifyHuman) this.act.notifyStuckAtModal(herd.id, job.name, job.pane);
+      this.log.info({ herd: herd.id, job: job.name, pane: job.pane }, "parked job stuck at modal");
     }
     if (!this.advance(ladder, now, cfg, verdict.kind === "wedged" ? 1 : 3, WORKER_CAP)) return;
     // Unread counts and gate rows are read live, not from the pane snapshot,
