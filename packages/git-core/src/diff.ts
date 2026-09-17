@@ -2,6 +2,7 @@ import parser from "gitdiff-parser";
 import type { ClientContext } from "./client.ts";
 import type { DiffHunk, DiffLine, FileDiff } from "./types.ts";
 import { rawGit } from "./exec.ts";
+import { classifyDiffText } from "./diff-classify.ts";
 
 type ParsedFile = ReturnType<typeof parser.parse>[number];
 
@@ -36,10 +37,15 @@ function mapHunks(file: ParsedFile): DiffHunk[] {
 export async function getFileDiff(
   ctx: ClientContext,
   path: string,
-  opts: { staged?: boolean } = {},
+  opts: { staged?: boolean; untracked?: boolean } = {},
 ): Promise<FileDiff> {
-  const status = await ctx.git.status();
-  const untracked = !opts.staged && status.not_added.includes(path);
+  // opts.untracked, when passed, is trusted outright so callers that already
+  // hold a status snapshot (e.g. a fan-out over many files) skip a redundant
+  // git status per file.
+  const untracked =
+    opts.untracked !== undefined
+      ? opts.untracked
+      : !opts.staged && (await ctx.git.status()).not_added.includes(path);
 
   let text: string;
   if (untracked) {
@@ -50,12 +56,8 @@ export async function getFileDiff(
   }
 
   if (text.trim() === "") return { path, kind: "text", hunks: [] };
-  if (/^Binary files .* differ$/m.test(text) || text.includes("GIT binary patch")) {
-    return { path, kind: "binary", hunks: [] };
-  }
-  if (/^[+-]Subproject commit /m.test(text)) {
-    return { path, kind: "submodule", hunks: [] };
-  }
+  const kind = classifyDiffText(text);
+  if (kind !== "text") return { path, kind, hunks: [] };
 
   const files = parser.parse(text);
   const hunks = files.length > 0 ? mapHunks(files[0]!) : [];

@@ -99,7 +99,7 @@ export type UndoResult =
 export interface GitClient {
   readonly dir: string;
   snapshot(): Promise<RepoSnapshot>;
-  diffFile(path: string, opts?: { staged?: boolean }): Promise<FileDiff>;
+  diffFile(path: string, opts?: { staged?: boolean; untracked?: boolean }): Promise<FileDiff>;
   branches(): Promise<BranchInfo[]>;
   tags(): Promise<TagInfo[]>;
   log(opts?: { maxCount?: number; file?: string }): Promise<LogEntry[]>;

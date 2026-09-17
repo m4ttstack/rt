@@ -1,5 +1,6 @@
 import type { ClientContext } from "./client.ts";
 import { rawGit } from "./exec.ts";
+import { classifyDiffText } from "./diff-classify.ts";
 import { DiffParser } from "./vendor/ghd/diff-parser.ts";
 import type { DiffSelection } from "./vendor/ghd/diff-selection.ts";
 import { AppFileStatusKind } from "./vendor/ghd/types.ts";
@@ -15,11 +16,9 @@ export async function getStagingDiff(ctx: ClientContext, path: string): Promise<
     ? await rawGit(ctx.dir, ["diff", "--no-index", "--", "/dev/null", path], { okCodes: [1] })
     : await ctx.git.diff(["--", path]);
 
-  if (/^Binary files .* differ$/m.test(text)) {
-    return { path, kind: "binary", untracked, hunks: [] };
-  }
-  if (/^(old|new) mode 160000$/m.test(text) || /^index [0-9a-f.]+ 160000$/m.test(text)) {
-    return { path, kind: "submodule", untracked, hunks: [] };
+  const kind = classifyDiffText(text);
+  if (kind !== "text") {
+    return { path, kind, untracked, hunks: [] };
   }
   // DiffParser tolerates (and ignores) the `diff --git` / `index` preamble,
   // so the raw command output goes straight in.
