@@ -31,4 +31,20 @@ describe("stashes", () => {
       await sb.cleanup();
     }
   });
+
+  it("detached HEAD stash has null branch, message preserved", async () => {
+    const sb = await makeSandbox();
+    try {
+      await sb.write("a.txt", "1\n");
+      await sb.commitAll("first");
+      const sha = (await sb.git(["rev-parse", "HEAD"])).trim();
+      await sb.git(["checkout", "--detach", sha]);
+      await sb.write("a.txt", "2\n");
+      await sb.git(["stash", "push", "-m", "detached work"]);
+      const stashes = await createGitClient(sb.dir).stashes();
+      expect(stashes).toEqual([{ index: 0, branch: null, message: "detached work" }]);
+    } finally {
+      await sb.cleanup();
+    }
+  });
 });

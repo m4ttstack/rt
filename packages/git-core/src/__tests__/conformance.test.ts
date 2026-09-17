@@ -34,7 +34,8 @@ const SCENARIOS: Scenario[] = [
       await sb.git(["checkout", "main"]);
       await sb.write("a.txt", "m\n");
       await sb.commitAll("main");
-      await sb.git(["merge", "feature"]).catch(() => {});
+      await expect(sb.git(["merge", "feature"])).rejects.toThrow();
+      expect((await sb.git(["diff", "--name-only", "--diff-filter=U"])).trim()).toBe("a.txt");
     },
   },
   {
@@ -49,7 +50,8 @@ const SCENARIOS: Scenario[] = [
       await sb.write("a.txt", "m\n");
       await sb.commitAll("main");
       await sb.git(["checkout", "feature"]);
-      await sb.git(["rebase", "main"]).catch(() => {});
+      await expect(sb.git(["rebase", "main"])).rejects.toThrow();
+      expect((await sb.git(["diff", "--name-only", "--diff-filter=U"])).trim()).toBe("a.txt");
     },
   },
   {
