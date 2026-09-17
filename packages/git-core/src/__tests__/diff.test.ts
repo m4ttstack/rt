@@ -1,6 +1,25 @@
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { describe, expect, it } from "bun:test";
 import { makeSandbox } from "../../test-support/sandbox.ts";
 import { createGitClient } from "../index.ts";
+
+const SUBMODULE_IDENTITY = [
+  "-c", "user.email=test@example.com",
+  "-c", "user.name=Test",
+  "-c", "commit.gpgsign=false",
+];
+
+async function runGit(cwd: string, args: string[]): Promise<string> {
+  const proc = Bun.spawn(["git", ...SUBMODULE_IDENTITY, ...args], { cwd, stdout: "pipe", stderr: "pipe" });
+  const [out, err, code] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+  if (code !== 0) throw new Error(`git ${args.join(" ")} exited ${code}: ${err || out}`);
+  return out;
+}
 
 async function seeded(content: string) {
   const sb = await makeSandbox();
@@ -122,6 +141,87 @@ describe("diffFile", () => {
       const d = await createGitClient(sb.dir).diffFile("new.txt", { staged: true });
       expect(d.kind).toBe("text");
       expect(d.hunks).toEqual([]);
+    } finally {
+      await sb.cleanup();
+    }
+  });
+
+  it("content line literally reading 'GIT binary patch' does not misclassify as binary", async () => {
+    const sb = await seeded("a\n");
+    try {
+      await sb.write("f.txt", "GIT binary patch\n");
+      const d = await createGitClient(sb.dir).diffFile("f.txt");
+      expect(d.kind).toBe("text");
+    } finally {
+      await sb.cleanup();
+    }
+  });
+
+  it("content line quoting 'Subproject commit' does not misclassify as submodule", async () => {
+    const sb = await seeded("a\n");
+    try {
+      await sb.write("f.txt", "Subproject commit abc123\n");
+      const d = await createGitClient(sb.dir).diffFile("f.txt");
+      expect(d.kind).toBe("text");
+    } finally {
+      await sb.cleanup();
+    }
+  });
+
+  it("real submodule change classifies as submodule", async () => {
+    const sb = await seeded("a\n");
+    try {
+      const innerDir = join(sb.dir, "inner");
+      await runGit(sb.dir, ["init", "-b", "main", innerDir]);
+      await writeFile(join(innerDir, "f.txt"), "one\n");
+      await runGit(innerDir, ["add", "-A"]);
+      await runGit(innerDir, ["commit", "-m", "inner base"]);
+
+      await sb.git(["-c", "protocol.file.allow=always", "submodule", "add", "./inner", "sub"]);
+      await sb.commitAll("add submodule");
+
+      // Advance the submodule's own checkout past the SHA recorded in the
+      // outer index, so the outer diff carries a real 160000 gitlink change.
+      await writeFile(join(sb.dir, "sub", "f.txt"), "two\n");
+      await runGit(join(sb.dir, "sub"), ["add", "-A"]);
+      await runGit(join(sb.dir, "sub"), ["commit", "-m", "advance"]);
+
+      const d = await createGitClient(sb.dir).diffFile("sub");
+      expect(d.kind).toBe("submodule");
+      expect(d.hunks).toEqual([]);
+    } finally {
+      await sb.cleanup();
+    }
+  });
+
+  it("untracked hint skips the status probe and matches unhinted output", async () => {
+    const sb = await seeded("a\n");
+    try {
+      await sb.write("new.txt", "one\ntwo\n");
+      const client = createGitClient(sb.dir);
+      const hinted = await client.diffFile("new.txt", { untracked: true });
+      const unhinted = await client.diffFile("new.txt");
+      expect(hinted).toEqual(unhinted);
+    } finally {
+      await sb.cleanup();
+    }
+  });
+
+  it("untracked hint on a TRACKED modified file is honored, not ignored: takes the --no-index branch and diffs against /dev/null", async () => {
+    const sb = await seeded("a\nb\nc\n");
+    try {
+      await sb.write("f.txt", "a\nB\nc\n");
+      const client = createGitClient(sb.dir);
+      const tracked = await client.diffFile("f.txt");
+      expect(tracked.hunks[0]!.lines.map((l) => l.type)).toEqual(["context", "del", "add", "context"]);
+
+      const hinted = await client.diffFile("f.txt", { untracked: true });
+      expect(hinted.kind).toBe("text");
+      expect(hinted.hunks[0]!.lines.map((l) => [l.type, l.content])).toEqual([
+        ["add", "a"],
+        ["add", "B"],
+        ["add", "c"],
+      ]);
     } finally {
       await sb.cleanup();
     }

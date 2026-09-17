@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, existsSync, rmSync } from "node:fs";
+import { chmodSync, mkdtempSync, writeFileSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -231,6 +231,83 @@ describe("commitStaged", () => {
   test("throws with git's stderr when there is nothing to commit", () => {
     const dir = makeRepo();
     expect(() => commitStaged(dir, "empty")).toThrow();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("multi-line message with blank line commits verbatim", () => {
+    const dir = makeRepo();
+    writeFileSync(join(dir, "tracked.txt"), "changed\n");
+    git(dir, "add", "tracked.txt");
+
+    const message = "fix: multi-line\n\nbody paragraph";
+    commitStaged(dir, message);
+
+    expect(git(dir, "log", "-1", "--format=%B").trim()).toBe(message);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("coAuthors option produces trailers separated by blank line", () => {
+    const dir = makeRepo();
+    writeFileSync(join(dir, "tracked.txt"), "changed\n");
+    git(dir, "add", "tracked.txt");
+
+    const message = "feat: new feature";
+    const coAuthors = ["Alice Smith <alice@example.com>", "Bob Jones <bob@example.com>"];
+    commitStaged(dir, message, { coAuthors });
+
+    const fullLog = git(dir, "log", "-1", "--format=%B");
+    expect(fullLog).toContain("feat: new feature");
+    expect(fullLog).toContain("Co-Authored-By: Alice Smith <alice@example.com>");
+    expect(fullLog).toContain("Co-Authored-By: Bob Jones <bob@example.com>");
+    expect(fullLog).toMatch(/feat: new feature\n\nCo-Authored-By:/);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("amend option replaces previous commit without changing log count", () => {
+    const dir = makeRepo();
+    writeFileSync(join(dir, "tracked.txt"), "changed1\n");
+    git(dir, "add", "tracked.txt");
+    commitStaged(dir, "first commit");
+
+    writeFileSync(join(dir, "tracked.txt"), "changed2\n");
+    git(dir, "add", "tracked.txt");
+    commitStaged(dir, "amended commit", { amend: true });
+
+    const logCount = git(dir, "log", "--oneline").trim().split("\n").length;
+    expect(logCount).toBe(2);
+    expect(git(dir, "log", "-1", "--format=%B").trim()).toBe("amended commit");
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("allowEmpty option commits with clean index", () => {
+    const dir = makeRepo();
+
+    const message = "chore: empty commit";
+    commitStaged(dir, message, { allowEmpty: true });
+
+    expect(git(dir, "log", "-1", "--format=%B").trim()).toBe("chore: empty commit");
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("noVerify option commits despite pre-commit hook that exits 1", () => {
+    const dir = makeRepo();
+    writeFileSync(join(dir, "tracked.txt"), "changed\n");
+    git(dir, "add", "tracked.txt");
+
+    const hooksDir = join(dir, ".git", "hooks");
+    const preCommitHook = join(hooksDir, "pre-commit");
+    writeFileSync(preCommitHook, "#!/bin/sh\nexit 1\n");
+    chmodSync(preCommitHook, 0o755);
+
+    const message = "feat: with no-verify";
+
+    // Assert that commit without noVerify throws
+    expect(() => commitStaged(dir, message)).toThrow();
+
+    // Assert that commit with noVerify succeeds
+    const summary = commitStaged(dir, message, { noVerify: true });
+    expect(summary).toContain("feat: with no-verify");
+    expect(git(dir, "log", "-1", "--format=%B").trim()).toBe("feat: with no-verify");
     rmSync(dir, { recursive: true, force: true });
   });
 });

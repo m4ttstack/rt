@@ -15,7 +15,7 @@ describe("fetchState", () => {
     }
   });
 
-  it("a recent Date after fetching from a bare remote", async () => {
+  it("a recent ISO 8601 string after fetching from a bare remote", async () => {
     const sb = await makeSandbox();
     try {
       await sb.write("a.txt", "1\n");
@@ -25,7 +25,8 @@ describe("fetchState", () => {
       await sb.git(["fetch", "origin"]);
       const state = await createGitClient(sb.dir).fetchState();
       expect(state.lastFetchedAt).not.toBeNull();
-      expect(Date.now() - state.lastFetchedAt!.getTime()).toBeLessThan(60_000);
+      expect(state.lastFetchedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+      expect(Date.now() - new Date(state.lastFetchedAt!).getTime()).toBeLessThan(60_000);
     } finally {
       await sb.cleanup();
     }

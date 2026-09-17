@@ -10,7 +10,7 @@ export async function getFetchState(ctx: ClientContext): Promise<FetchState> {
   const commonDir = isAbsolute(commonDirRaw) ? commonDirRaw : join(ctx.dir, commonDirRaw);
   try {
     const s = await stat(join(commonDir, "FETCH_HEAD"));
-    return { lastFetchedAt: s.mtime };
+    return { lastFetchedAt: s.mtime.toISOString() };
   } catch {
     return { lastFetchedAt: null };
   }

@@ -60,6 +60,7 @@ export interface TagInfo {
   name: string;
   sha: string;
   annotated: boolean;
+  targetSha: string; // peeled target object sha (equals sha for lightweight tags)
 }
 
 export interface LogEntry {
@@ -79,16 +80,50 @@ export interface StashEntry {
 }
 
 export interface FetchState {
-  lastFetchedAt: Date | null; // null = never fetched
+  lastFetchedAt: string | null; // ISO 8601; null = never fetched
 }
+
+export interface StagingDiff {
+  path: string;
+  kind: "text" | "binary" | "submodule";
+  untracked: boolean;
+  hunks: ReadonlyArray<import("./vendor/ghd/raw-diff.ts").DiffHunk>;
+}
+
+export type UndoRefusal = "pushed" | "initial" | "merge";
+
+export type UndoResult =
+  | { ok: true; undoneSha: string }
+  | { ok: false; reason: UndoRefusal };
 
 export interface GitClient {
   readonly dir: string;
   snapshot(): Promise<RepoSnapshot>;
-  diffFile(path: string, opts?: { staged?: boolean }): Promise<FileDiff>;
+  diffFile(path: string, opts?: { staged?: boolean; untracked?: boolean }): Promise<FileDiff>;
   branches(): Promise<BranchInfo[]>;
   tags(): Promise<TagInfo[]>;
   log(opts?: { maxCount?: number; file?: string }): Promise<LogEntry[]>;
   stashes(): Promise<StashEntry[]>;
+  stashPush(opts?: { message?: string; includeUntracked?: boolean }): Promise<{ created: boolean }>;
+  stashApply(index: number): Promise<void>;
+  stashPop(index: number): Promise<void>;
+  stashDrop(index: number): Promise<void>;
   fetchState(): Promise<FetchState>;
+  stagingDiff(path: string): Promise<StagingDiff>;
+  stageSelection(
+    diff: StagingDiff,
+    selection: import("./vendor/ghd/diff-selection.ts").DiffSelection,
+    opts?: { originalPath?: string },
+  ): Promise<void>;
+  discardSelection(
+    diff: StagingDiff,
+    selection: import("./vendor/ghd/diff-selection.ts").DiffSelection,
+  ): Promise<void>;
+  undoLastCommit(): Promise<UndoResult>;
+  resetToCommit(sha: string, mode: "soft" | "mixed" | "hard"): Promise<void>;
+  checkoutBranch(name: string): Promise<void>;
+  createBranch(name: string, opts?: { from?: string; checkout?: boolean }): Promise<void>;
+  createTag(name: string, opts?: { message?: string; sha?: string }): Promise<void>;
+  deleteTag(name: string): Promise<void>;
+  pushTag(name: string, remote?: string): Promise<void>;
 }
