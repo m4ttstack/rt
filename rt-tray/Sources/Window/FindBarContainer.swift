@@ -1,76 +1,112 @@
 import AppKit
 import WebKit
 
-/// One app tab's web content plus the find bar AppKit builds for it.
+/// One app tab's web content plus its find bar.
 ///
-/// `NSScrollView` conforms to `NSTextFinderBarContainer` for free, which is
-/// why a plain text view gets ⌘F with no code at all. A `WKWebView`'s scroll
-/// view belongs to WebKit and is not reachable, so the shell supplies the
-/// container itself: the bar is AppKit's own (match counter, Done button,
-/// wrap and case options), and all this type owes it is a place to sit and a
-/// re-tile when its height changes.
-///
-/// One container per app, alive as long as its webview, so each tab keeps its
-/// own query and its own open/closed bar.
+/// The bar squeezes the web content rather than floating over it, so the last
+/// line of a page stays reachable while searching. One container per app,
+/// alive as long as its webview, so each tab keeps its own query and its own
+/// open/closed bar.
 final class FindBarContainer: NSView {
     let webView: WKWebView
-    let finder = NSTextFinder()
+
+    private lazy var bar: FindBar = {
+        let bar = FindBar()
+        bar.delegate = self
+        return bar
+    }()
+    private var isBarVisible = false
+    /// Every search is two async hops (clear the selection, then find), so
+    /// two keystrokes can interleave as clear, clear, find, find -- and the
+    /// second find resumes from the first one's match instead of from the
+    /// top, landing a match too far along. Only the newest search may act.
+    private var searchGeneration = 0
 
     init(webView: WKWebView) {
         self.webView = webView
         super.init(frame: .zero)
         addSubview(webView)
-        finder.client = webView
-        finder.findBarContainer = self
-        finder.isIncrementalSearchingEnabled = true
     }
 
     required init?(coder: NSCoder) { fatalError("not supported") }
 
-    // MARK: NSTextFinderBarContainer
-
-    /// Assigned by NSTextFinder, never by us. It arrives before the bar is
-    /// first shown, so mounting is gated on `isFindBarVisible` here as well as
-    /// in the setter below.
-    var findBarView: NSView? {
-        didSet {
-            guard findBarView !== oldValue else { return }
-            oldValue?.removeFromSuperview()
-            if isFindBarVisible, let findBarView { addSubview(findBarView) }
-            needsLayout = true
-        }
-    }
-
-    var isFindBarVisible: Bool = false {
-        didSet {
-            guard isFindBarVisible != oldValue else { return }
-            if isFindBarVisible {
-                if let findBarView { addSubview(findBarView) }
-            } else {
-                findBarView?.removeFromSuperview()
-            }
-            needsLayout = true
-        }
-    }
-
-    func findBarViewDidChangeHeight() { needsLayout = true }
-
-    func contentView() -> NSView? { webView }
-
     // MARK: Layout
 
-    /// The bar squeezes the web content rather than floating over it, which
-    /// is what every other macOS find bar does and what keeps the last line
-    /// of a page reachable while searching.
     override func layout() {
         super.layout()
-        let barHeight = isFindBarVisible ? (findBarView?.frame.height ?? 0) : 0
-        if isFindBarVisible, let findBarView {
-            findBarView.frame = NSRect(x: 0, y: bounds.height - barHeight,
-                                       width: bounds.width, height: barHeight)
+        let barHeight = isBarVisible ? FindBar.height : 0
+        if isBarVisible {
+            bar.frame = NSRect(x: 0, y: bounds.height - barHeight, width: bounds.width, height: barHeight)
         }
-        webView.frame = NSRect(x: 0, y: 0, width: bounds.width,
-                               height: max(0, bounds.height - barHeight))
+        webView.frame = NSRect(x: 0, y: 0, width: bounds.width, height: max(0, bounds.height - barHeight))
+    }
+
+    // MARK: Show and hide
+
+    func showFindBar() {
+        if !isBarVisible {
+            isBarVisible = true
+            addSubview(bar)
+            needsLayout = true
+        }
+        bar.takeFocus(in: window)
+    }
+
+    func hideFindBar() {
+        guard isBarVisible else { return }
+        isBarVisible = false
+        bar.removeFromSuperview()
+        needsLayout = true
+        clearHighlight()
+        // The web content is what the person was reading; handing focus back
+        // means their next keystroke scrolls the page, not a dismissed field.
+        window?.makeFirstResponder(webView)
+    }
+
+    // MARK: Searching
+
+    /// WebKit's own find engine. `WKFindResult` reports only whether anything
+    /// matched, so the bar shows a no-results state rather than a running
+    /// count -- no public API on WKWebView returns the number of matches.
+    private func search(backwards: Bool, restarting: Bool) {
+        searchGeneration += 1
+        let generation = searchGeneration
+
+        let query = bar.query
+        guard !query.isEmpty else {
+            bar.showStatus("")
+            clearHighlight()
+            return
+        }
+
+        let configuration = WKFindConfiguration()
+        configuration.backwards = backwards
+        configuration.caseSensitive = false
+        configuration.wraps = true
+
+        let run = { [weak self] in
+            guard let self, generation == self.searchGeneration else { return }
+            self.webView.find(query, configuration: configuration) { [weak self] result in
+                guard let self, generation == self.searchGeneration else { return }
+                self.bar.showStatus(result.matchFound ? "" : "No results")
+            }
+        }
+
+        // A find always resumes from the current selection, so typing another
+        // character would otherwise skip to the match after the one being
+        // typed. Dropping the selection first restarts from the top.
+        if restarting {
+            webView.evaluateJavaScript("window.getSelection().removeAllRanges()") { [weak self] _, _ in
+                guard let self, generation == self.searchGeneration else { return }
+                run()
+            }
+        } else {
+            run()
+        }
+    }
+
+    private func clearHighlight() {
+        webView.evaluateJavaScript("window.getSelection().removeAllRanges()")
     }
 
     // MARK: Menu routing
@@ -78,20 +114,53 @@ final class FindBarContainer: NSView {
     /// ⌘F lands on whatever has focus inside the web content and walks up the
     /// responder chain. `NSResponder` declares this action but WKWebView does
     /// not answer to it (verified against its runtime method list), so this
-    /// container is the first responder in the chain that can serve it.
+    /// container is the first responder in the chain that can serve it. The
+    /// tags are AppKit's standard find-action tags even though the search
+    /// itself is ours, which keeps the menu items ordinary.
     override func performTextFinderAction(_ sender: Any?) {
         guard let tag = (sender as? NSValidatedUserInterfaceItem)?.tag,
               let action = NSTextFinder.Action(rawValue: tag) else { return }
-        finder.performAction(action)
+        switch action {
+        case .showFindInterface: showFindBar()
+        case .hideFindInterface: hideFindBar()
+        case .nextMatch: search(backwards: false, restarting: false)
+        case .previousMatch: search(backwards: true, restarting: false)
+        default: break
+        }
+    }
+
+    func canPerform(_ action: NSTextFinder.Action) -> Bool {
+        switch action {
+        case .showFindInterface: return true
+        case .hideFindInterface: return isBarVisible
+        case .nextMatch, .previousMatch: return isBarVisible && !bar.query.isEmpty
+        default: return false
+        }
     }
 }
-
-extension FindBarContainer: NSTextFinderBarContainer {}
 
 extension FindBarContainer: NSUserInterfaceValidations {
     func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
         guard item.action == #selector(performTextFinderAction(_:)) else { return true }
         guard let action = NSTextFinder.Action(rawValue: item.tag) else { return false }
-        return finder.validateAction(action)
+        return canPerform(action)
+    }
+}
+
+extension FindBarContainer: FindBarDelegate {
+    func findBar(_ bar: FindBar, queryChangedTo query: String) {
+        search(backwards: false, restarting: true)
+    }
+
+    func findBarWantsNextMatch(_ bar: FindBar) {
+        search(backwards: false, restarting: false)
+    }
+
+    func findBarWantsPreviousMatch(_ bar: FindBar) {
+        search(backwards: true, restarting: false)
+    }
+
+    func findBarWantsDismissal(_ bar: FindBar) {
+        hideFindBar()
     }
 }

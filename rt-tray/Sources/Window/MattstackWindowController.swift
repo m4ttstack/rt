@@ -42,10 +42,7 @@ final class MattstackWindowController: NSWindowController, NSWindowDelegate {
     /// controller catches it at the end of the chain and hands it to whatever
     /// tab is showing.
     override func performTextFinderAction(_ sender: Any?) {
-        guard let tag = (sender as? NSValidatedUserInterfaceItem)?.tag,
-              let action = NSTextFinder.Action(rawValue: tag),
-              let container = model.activeFindContainer else { return }
-        container.finder.performAction(action)
+        model.activeFindContainer?.performTextFinderAction(sender)
     }
 
     func show() {
@@ -64,6 +61,6 @@ extension MattstackWindowController: NSUserInterfaceValidations {
         guard item.action == #selector(performTextFinderAction(_:)) else { return true }
         guard let action = NSTextFinder.Action(rawValue: item.tag),
               let container = model.activeFindContainer else { return false }
-        return container.finder.validateAction(action)
+        return container.canPerform(action)
     }
 }
