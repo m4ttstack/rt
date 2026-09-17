@@ -930,6 +930,23 @@ describe("apply steps C: plugins, git.identity, fast-browser, herdr, extension, 
       expect(detailOf(outcome)).toContain("no Claude Code or Codex host detected");
     });
 
+    // fast-browser 0.1.1 reworded the refusal when a specific --host is asked
+    // for but absent; the skip must survive both spellings.
+    const NO_REQUESTED_HOST = "fast-browser: Requested claude host was not detected.";
+
+    test("requested-host-absent wording + non-interactive -> skipped too", async () => {
+      const p = fakeProbes({
+        home,
+        env: { PATH: "/usr/local/bin" },
+        files: { "/usr/local/bin/fast-browser": "bin" },
+        exec: async () => ({ code: 2, stdout: "", stderr: NO_REQUESTED_HOST }),
+      });
+      const { ctx } = makeCtx(p, { nonInteractive: true });
+      const outcome = await fastbrowserSetupStep.run(ctx);
+      expect(outcome.state).toBe("skipped");
+      expect(detailOf(outcome)).toContain("no Claude Code or Codex host detected");
+    });
+
     // A human IS watching, so the failure stays loud — same split plugins.install makes.
     test("no host + interactive -> still fails", async () => {
       const p = fakeProbes({
