@@ -59,6 +59,10 @@ final class FindBarContainer: NSView {
         isBarVisible = false
         bar.removeFromSuperview()
         needsLayout = true
+        // Retires any search still mid-flight, so one that has dropped the
+        // selection but not yet issued its find cannot go on to highlight a
+        // match on a page whose find bar is gone.
+        searchGeneration += 1
         clearHighlight()
         // The web content is what the person was reading; handing focus back
         // means their next keystroke scrolls the page, not a dismissed field.
@@ -89,7 +93,14 @@ final class FindBarContainer: NSView {
         let run = { [weak self] in
             guard let self, generation == self.searchGeneration else { return }
             self.webView.find(query, configuration: configuration) { [weak self] result in
-                guard let self, generation == self.searchGeneration else { return }
+                guard let self else { return }
+                // A find handed to WebKit cannot be recalled: it selects and
+                // scrolls whenever it finishes. If that lands after the bar
+                // closed, the search undoes its own highlight. A search that
+                // is merely superseded leaves the page alone, since the newer
+                // one owns the selection by then.
+                guard self.isBarVisible else { return self.clearHighlight() }
+                guard generation == self.searchGeneration else { return }
                 self.bar.showStatus(result.matchFound ? "" : "No results")
             }
         }
@@ -131,8 +142,9 @@ final class FindBarContainer: NSView {
         }
     }
 
-    /// What the bar is telling the person right now ("" when a search is
-    /// finding matches). Read by the self-check.
+    /// What the bar holds and what it is telling the person right now ("" when
+    /// a search is finding matches). Read by the self-check.
+    var findQuery: String { bar.query }
     var findStatus: String { bar.statusText }
 
     func canPerform(_ action: NSTextFinder.Action) -> Bool {

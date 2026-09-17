@@ -94,8 +94,13 @@ enum FindBarSelfCheck {
         note("find next stays disabled until there is a query", !container.canPerform(.nextMatch))
 
         type("Lorem")
-        after(1.5) {
-            note("typing reached the field", container.canPerform(.nextMatch))
+        after(2.0) {
+            // The query is reported because posted key events are the one
+            // part of this check the run loop can drop or double: a later
+            // step failing with a query of "Lorem" is a real defect, with
+            // anything else it is the keystrokes that went wrong.
+            note("typing reached the field as \"Lorem\"", container.findQuery == "Lorem",
+                 "'\(container.findQuery)'")
             selection { first in
                 note("typing selects the first match", first == "p1:Lorem", "'\(first)'")
 
@@ -125,6 +130,32 @@ enum FindBarSelfCheck {
             selection { cleared in
                 note("closing the bar clears the highlight", cleared.isEmpty, "'\(cleared)'")
                 note("closing the bar unmounts it", mountedBarFrame() == nil)
+                checkSearchInFlightWhenClosed()
+            }
+        }
+    }
+
+    /// A find handed to WebKit cannot be called back: it selects and scrolls
+    /// whenever it finishes. The exposed case is the search a keystroke
+    /// starts, which drops the page selection first and only issues the find
+    /// once that returns -- so closing the bar in between leaves a highlight
+    /// on a page with no find bar to clear it.
+    ///
+    /// The keystroke path is driven directly rather than by typing: a posted
+    /// key event is delivered on a later turn, which would close the bar
+    /// before the search ever started and prove nothing.
+    private static func checkSearchInFlightWhenClosed() {
+        container.performTextFinderAction(item(.showFindInterface))
+        guard let bar = container.subviews.compactMap({ $0 as? FindBar }).first else {
+            note("bar available for the in-flight case", false)
+            finish()
+        }
+        container.findBar(bar, queryChangedTo: bar.query)
+        container.performTextFinderAction(item(.hideFindInterface))
+        after(1.5) {
+            selection { leftover in
+                note("a search in flight when the bar closes leaves no highlight",
+                     leftover.isEmpty, "'\(leftover)'")
                 finish()
             }
         }
