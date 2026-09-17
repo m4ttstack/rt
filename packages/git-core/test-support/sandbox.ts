@@ -53,7 +53,10 @@ export async function makeSandbox(): Promise<Sandbox> {
     },
     addBareRemote: async (name = "origin") => {
       const remoteDir = join(root, `${name}.git`);
-      await runGit(root, ["init", "--bare", remoteDir]);
+      // A bare repo's HEAD symref still defaults to a real branch name (e.g. "main"),
+      // which makes denyDeleteCurrent block deleting that branch once pushed. Point
+      // it at a branch no test pushes, so any pushed branch is deletable.
+      await runGit(root, ["init", "--bare", "-b", "__unused__", remoteDir]);
       await runGit(dir, ["remote", "add", name, remoteDir]);
       return remoteDir;
     },
