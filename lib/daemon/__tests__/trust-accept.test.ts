@@ -164,6 +164,7 @@ describe("driveTrustAccept", () => {
 const TREE = "/Users/matt/.mattstack/rt/worktrees/gh-m4ttstack-rt/pippin";
 
 const relocation = (cursor: 1 | 2, path: string = TREE) => [
+  "╭──────────────────────────────────────────────────────────────────────╮",
   "│ EnterWorktree                                                        │",
   `│ permission-root relocation to "${path}" — a model-supplied`,
   "│ worktree outside .claude/worktrees/                                  │",
@@ -276,6 +277,7 @@ describe("driveRelocationAccept", () => {
 
   test("a prompt whose path cannot be read is stuck, never guessed at", async () => {
     const screen = [
+      "╭──────────────────────────────────────────────────╮",
       "│ permission-root relocation to somewhere unquoted │",
       "│ Do you want to proceed?                          │",
       "│ ❯ 1. Yes                                         │",

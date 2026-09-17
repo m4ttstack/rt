@@ -158,6 +158,7 @@ describe("readRelocationPrompt", () => {
 
   test("a prompt whose path cannot be read is undrivable, never a guessed accept", () => {
     const screen = [
+      "╭─────────────────────────────────────────────────────────────────────╮",
       "│ permission-root relocation to somewhere — a model-supplied worktree │",
       "│ Do you want to proceed?                                             │",
       "│ ❯ 1. Yes                                                            │",
@@ -168,12 +169,37 @@ describe("readRelocationPrompt", () => {
 
   test("a prompt whose cursor cannot be located is undrivable", () => {
     const screen = [
+      "╭─────────────────────────────────────────────────────────────────────╮",
       `│ permission-root relocation to "${TREE}" — a model-supplied worktree │`,
       "│ Do you want to proceed?                                             │",
       "│   1. Yes                                                            │",
       "│   2. No                                                             │",
     ].join("\n");
     expect(readRelocationPrompt(screen)).toEqual({ kind: "undrivable" });
+  });
+
+  test("a capture with no box top fails closed: an unbounded body could take its path from transcript text", () => {
+    const screen = [
+      `⏺ earlier I saw: permission-root relocation to "${TREE}" and declined`,
+      `│ permission-root relocation to "${EVIL}" — a model-supplied worktree │`,
+      "│ Do you want to proceed?                                             │",
+      "│ ❯ 1. Yes                                                            │",
+      "│   2. No                                                             │",
+    ].join("\n");
+    expect(readRelocationPrompt(screen)).toBeNull();
+  });
+
+  test("inside the box, the reason line nearest the options wins over an earlier quoted one", () => {
+    const screen = [
+      "╭─────────────────────────────────────────────────────────────────────╮",
+      `│ quoting the last attempt: permission-root relocation to "${TREE}"   │`,
+      `│ permission-root relocation to "${EVIL}" — a model-supplied worktree │`,
+      "│ Do you want to proceed?                                             │",
+      "│ ❯ 1. Yes                                                            │",
+      "│   2. No                                                             │",
+      "╰─────────────────────────────────────────────────────────────────────╯",
+    ].join("\n");
+    expect(readRelocationPrompt(screen)).toEqual({ kind: "accept", path: EVIL, keys: ["enter"] });
   });
 
   test("the two dialogs never cross-parse", () => {

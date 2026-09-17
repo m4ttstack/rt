@@ -111,13 +111,21 @@ export function readRelocationPrompt(screen: string): RelocationPrompt | null {
   const block = optionIdx.slice(start);
   const first = block[0] as number;
   const last = block[block.length - 1] as number;
-  let top = Math.max(0, first - WINDOW_CAP);
-  for (let i = first - 1; i >= top; i--) {
+  // No box top within reach means the body cannot be bounded, and an
+  // unbounded body lets transcript text supply the path (a partial capture
+  // with the ╭ scrolled off reproduced exactly that), so this fails closed:
+  // the real dialog always paints boxed.
+  let top = -1;
+  for (let i = first - 1; i >= Math.max(0, first - WINDOW_CAP); i--) {
     if (BOX_TOP_RE.test(lines[i] as string)) { top = i; break; }
   }
+  if (top < 0) return null;
   const body = joinBoxLines(lines.slice(top, first));
   if (!PROCEED_RE.test(body)) return null;
-  const reason = REASON_RE.exec(body);
+  // The LAST reason match: the live dialog's reason sits nearest its own
+  // options, so anything earlier in the body is quoted text, never the
+  // dialog speaking.
+  const reason = [...body.matchAll(new RegExp(REASON_RE, "gi"))].at(-1);
   if (!reason) {
     // The reason phrase without a readable quoted path is still this
     // dialog; a dialog whose path cannot be read is never guessed at.
@@ -125,7 +133,7 @@ export function readRelocationPrompt(screen: string): RelocationPrompt | null {
   }
   const path = reason.groups?.path ?? "";
   if (path.length === 0) return { kind: "undrivable" };
-  const resolvesTo = RESOLVES_RE.exec(body)?.groups?.real;
+  const resolvesTo = RESOLVES_RE.exec(body.slice(reason.index))?.groups?.real;
   return walkToAccept(readOptions(lines.slice(first, last + 1).join("\n")), (keys) => ({
     kind: "accept", path, ...(resolvesTo !== undefined && resolvesTo.length > 0 ? { resolvesTo } : {}), keys,
   }));
