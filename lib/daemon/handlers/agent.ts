@@ -268,7 +268,8 @@ export function createAgentHandlers(opts: {
   herdrRunner?: HerdrRunner;
   herdrRunnerForSocket?: (socket: string) => HerdrRunner;
   /** The JSON herdr caller the folder-trust driver uses; defaults to the real
-      one. A launch whose handlers are built without it skips the check. */
+      one (`opts.herdr ?? herdrRequest`), never skipped -- a launch whose
+      handlers are built without it still checks, against the real socket. */
   herdr?: typeof herdrRequest;
   /** Shortened budgets for tests; the driver's own defaults otherwise. */
   trustBudgets?: { registerBudgetMs?: number; waitBudgetMs?: number; settleMs?: number; stepMs?: number };
@@ -307,7 +308,7 @@ export function createAgentHandlers(opts: {
     prompt: string | undefined,
     tabLabel: string,
     workspaceLabel: string,
-    extra: { env?: Record<string, string>; herdrSocket?: string } = {},
+    extra: { env?: Record<string, string>; herdrSocket?: string; trustWaitMs?: number } = {},
   ): Promise<CommandResult<"agent:start">> {
     const gateEnv: Record<string, string> = {
       RT_AGENT_ID: rec.id,
@@ -362,12 +363,14 @@ export function createAgentHandlers(opts: {
           herdr: opts.herdr ?? herdrRequest,
           sock: extra.herdrSocket ? { sockPath: extra.herdrSocket } : {},
           pane: out.paneId, log, context: { agent: rec.id, cwd: rec.cwd },
-          // A short settle budget, unlike the herd path's: a launch that
-          // carries a prompt starts working and never settles, and this one
-          // holds an interactive `rt agent start` open while it waits. The
-          // budget is only there to let the dialog paint, which takes about a
-          // second, and the screen is read either way afterwards.
-          waitBudgetMs: TRUST_PAINT_MS,
+          // A short settle budget by default: a launch that carries a prompt
+          // starts working and never settles, and an interactive `rt agent
+          // start` holds its caller open while it waits. The budget is only
+          // there to let the dialog paint, which takes about a second, and
+          // the screen is read either way afterwards. A caller that already
+          // knows its pane needs longer (herd:spawn's own worktree-provision
+          // window) passes its own trustWaitMs.
+          waitBudgetMs: extra.trustWaitMs ?? TRUST_PAINT_MS,
           ...opts.trustBudgets,
         })
         : undefined;
@@ -484,6 +487,9 @@ export function createAgentHandlers(opts: {
       if (payload.subject !== undefined && (typeof payload.subject !== "string" || payload.subject.length === 0)) {
         return { ok: false, error: "subject must be a non-empty string" };
       }
+      if (payload.trustWaitMs !== undefined && (typeof payload.trustWaitMs !== "number" || payload.trustWaitMs <= 0)) {
+        return { ok: false, error: "trustWaitMs must be a positive number" };
+      }
       const rec: AgentRecord = {
         id: newAgentId(),
         repo, cwd, provider, surface,
@@ -557,6 +563,7 @@ export function createAgentHandlers(opts: {
         const res = await launch(rec, { kind: "start", sessionId: rec.sessionId }, prompt, tabLabel, workspaceLabel, {
           ...(payload.env !== undefined && { env: payload.env }),
           ...(effectiveSocket !== undefined && { herdrSocket: effectiveSocket }),
+          ...(payload.trustWaitMs !== undefined && { trustWaitMs: payload.trustWaitMs }),
         });
         if (!res.ok) {
           deleteAgent(rec.id, db);

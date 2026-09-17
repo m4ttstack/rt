@@ -17,11 +17,11 @@ import type { createGateHandlers } from "./gate.ts";
 import { isValidQuestion } from "./gate.ts";
 import type { createChatHandlers } from "./chat.ts";
 import type { createAgentHandlers } from "./agent.ts";
-import { waitTimeout, type herdrRequest } from "../../herdr/client.ts";
+import type { herdrRequest } from "../../herdr/client.ts";
 import type { HerdrRunner } from "../../agent-herdr.ts";
 import { slugifyChatName } from "../../chat-room-name.ts";
 import { attendPane } from "../attend.ts";
-import { acceptTrustOnPane, type TrustOutcome } from "../trust-accept.ts";
+import type { TrustOutcome } from "../trust-accept.ts";
 import { BG_SESSION } from "../bg-service.ts";
 import { paneStatuses } from "../pane-statuses.ts";
 import type { BgService } from "../bg-service.ts";
@@ -54,15 +54,6 @@ export interface HerdDeps {
   lifecycle: { connected(socket: string | null): boolean; watch(socket: string): void; sweepClaims(): Promise<void> };
   bg: BgService;
   claims: BgClaimsStore;
-  /** How long a spawn waits for herdr to register the agent before giving up on
-      the trust check; overridable so a test need not burn the real budget. */
-  registerBudgetMs?: number;
-  /** How long the trust accept lets the TUI redraw before re-reading the screen
-      to verify the modal cleared; overridable for the same reason. */
-  trustSettleMs?: number;
-  /** How long it lets the TUI redraw after a single arrow key, before
-      re-reading the cursor; overridable for the same reason. */
-  trustStepMs?: number;
   jobsRoot: string;
   /** The daemon's herd watchdog, read for herd:status's per-job ladder; absent
       when no watchdog is wired (tests, a daemon booting without one). */
@@ -75,17 +66,9 @@ export const SYSTEM_HANDLE = "herdr";
 export const MILESTONE_OPTIONS = ["Approve", "Revise", "Spawn a reviewer"] as const;
 
 const HERD_NAME_RE = /^[a-z][a-z0-9_-]{0,31}$/;
-// pane:spawn's own registration and trust budgets (lib/daemon/handlers/pane.ts).
-// Duplicated rather than imported: importing the handler for two numbers would
-// pull its whole dependency graph into the herd module.
-const REGISTER_BUDGET_MS = 10_000;
+// The old in-spawn retry's budget, now passed to agent:start's own trust
+// driver (RT-156) as trustWaitMs instead of running a second driver here.
 const TRUST_BUDGET_MS = 15_000;
-// Long enough for the TUI to repaint after the accept keys, short enough that a
-// stuck spawn is reported while the shepherd is still watching it.
-const TRUST_SETTLE_MS = 1_500;
-// One retry only: a modal that ignores a correctly-aimed accept twice is not
-// going to yield to a third, and every extra round holds the spawn's caller.
-const TRUST_ATTEMPTS = 2;
 // The job statuses that only a running claude reaches, and therefore the only
 // ones whose missing agent proves the worker session died rather than never
 // having started.
@@ -262,29 +245,6 @@ export function createHerdHandlers(deps: HerdDeps) {
     return false;
   }
 
-  /** claude's "do you trust the files in this folder?" prompt blocks a fresh
-      worktree's first turn until it is dismissed, and `agent:start` stops at
-      launching the pane. Best effort throughout: the pane and the job row are
-      already real, so nothing here may fail the spawn. */
-  /** The post-spawn folder-trust sequence on `paneRef`, on the herd's own
-      socket. The mechanics (and the reasons behind them) live in
-      lib/daemon/trust-accept.ts; this only supplies the budgets. */
-  function acceptTrustDialog(socket: string | null, paneRef: string, context: Record<string, unknown>): Promise<TrustOutcome> {
-    return acceptTrustOnPane({
-      herdr: deps.herdr,
-      sock: socket ? { sockPath: socket } : {},
-      // agent:start hands back the addressable ref; herdr only ever takes the
-      // bare pane id.
-      pane: parsePaneRef(paneRef).paneId,
-      log, context, waitTimeout,
-      registerBudgetMs: deps.registerBudgetMs ?? REGISTER_BUDGET_MS,
-      waitBudgetMs: TRUST_BUDGET_MS,
-      settleMs: deps.trustSettleMs ?? TRUST_SETTLE_MS,
-      ...(deps.trustStepMs !== undefined && { stepMs: deps.trustStepMs }),
-      attempts: TRUST_ATTEMPTS,
-    });
-  }
-
   function uniqueHerdId(name: string): string {
     const base = mintHerdId(name);
     if (!store.get(base)) return base;
@@ -441,6 +401,10 @@ export function createHerdHandlers(deps: HerdDeps) {
         subject: herdSubject(herdId, name),
         env: { HERD_ID: herdId, HERD_JOB: name, HERD_ROOM: herd.room },
         ...(herd.herdrSocket && { herdrSocket: herd.herdrSocket }),
+        // Longer than agent:start's own interactive default: a herd worker's
+        // pane is mid worktree-provision when the dialog paints, and the old
+        // in-spawn retry gave it 15s before parking stuck-at-modal.
+        trustWaitMs: TRUST_BUDGET_MS,
       });
       if (!started.ok) return started;
       const rec = started.data;
@@ -455,11 +419,9 @@ export function createHerdHandlers(deps: HerdDeps) {
       if (!joined.ok) log.warn({ herd: herdId, job: name, error: joined.error }, "herd: worker room join failed");
       if (handle !== name) store.upsertJob({ herd: herdId, name, worktree, branch, tree, handle, status: "spawning" });
 
-      // agent:start drives the dialog for every claude pane it launches, so a
-      // record that already carries an outcome is not driven twice; the
-      // fallback covers a record from a path that does not (a fake in a test,
-      // a provider with no modal).
-      const trust: TrustOutcome = rec.trust ?? (rec.paneId ? await acceptTrustDialog(herd.herdrSocket, rec.paneId, { herd: herdId, job: name }) : "none");
+      // agent:start drives the dialog for every claude pane it launches
+      // (RT-156); a non-claude provider's record carries no outcome at all.
+      const trust: TrustOutcome = rec.trust ?? "none";
       // Parked, not just logged: a worker still on the modal has not read its
       // brief, and `spawning` would read as a launch merely in progress.
       // herd-lifecycle clears it back to active the moment herdr detects the

@@ -13,13 +13,14 @@ import { bgSocketPath, type BgService } from "../bg-service.ts";
 import { createBgHandlers } from "../handlers/bg.ts";
 import { createEscapeInjector } from "../gate-escape.ts";
 import type { herdrRequest } from "../../herdr/client.ts";
+import { acceptTrustOnPane } from "../trust-accept.ts";
 
 const log = pino({ level: "silent" });
 let dirs: string[] = [];
 beforeEach(() => { dirs = []; });
 afterEach(() => { for (const d of dirs) rmSync(d, { recursive: true, force: true }); });
 
-export function harness(over: Partial<HerdDeps> = {}) {
+export function harness(over: Partial<HerdDeps> = {}, trustTestBudgets: { registerBudgetMs?: number; settleMs?: number; stepMs?: number } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "rt-herd-h-"));
   dirs.push(dir);
   const store = createHerdStore({ dbPath: join(dir, "herds.db"), log });
@@ -58,18 +59,6 @@ export function harness(over: Partial<HerdDeps> = {}) {
     },
   } as unknown as HerdDeps["chat"];
   const agentCalls: any[] = [];
-  // Contract parity with the real agent:start (handlers/agent.ts): a spawn
-  // that lands on the bg socket reports paneId as a bg: REF, never the bare
-  // id -- that is what the pane column stores. The bare-id fake hid the
-  // double-prefix family for a full release.
-  const agent = {
-    "agent:start": async (p: any) => { agentCalls.push(p); const paneId = p.herdrSocket === "/tmp/hidden.sock" ? "bg:w9:p1" : "w9:p1"; return { ok: true as const, data: { id: "ag-1", sessionId: "sess-w1", paneId, tabId: "w9:t1", workspaceId: "w9", repo: p.repo, cwd: p.cwd, surface: "herdr", provider: "claude" } }; },
-  } as unknown as HerdDeps["agent"];
-  const worktreeCalls: any[] = [];
-  const worktree = {
-    "worktree:provision": async (p: any) => { worktreeCalls.push({ verb: "provision", p }); return { ok: true, data: { tree: p.branch, path: `/w/${p.branch}`, branch: p.branch, wasOnDeck: false, readyAt: null, branchState: "new" } }; },
-    "worktree:dispose": async (p: any) => { worktreeCalls.push({ verb: "dispose", p }); return { ok: true, data: { disposed: [p.tree], refused: [], recoverable: [] } }; },
-  };
   const herdrCalls: string[][] = [];
   // Socket-side herdr: `session.snapshot` for status, plus the trust-dialog
   // sequence. `trust` is the knob set: how many `agent.get` calls fail before
@@ -85,40 +74,76 @@ export function harness(over: Partial<HerdDeps> = {}) {
   // so the fake does too: a row without it is a live shell with no claude
   // behind it, which is exactly the dead-worker case.
   const snapshotPanes: { rows: Array<Record<string, unknown>> } = { rows: [{ pane_id: "w9:p1", agent: "claude", agent_status: "working" }] };
+  // Resolved before `agent`, so agent:start's own trust check (below) and
+  // HerdDeps.herdr share the exact same fake: a test's `over.herdr` override
+  // must reach both, the way one real herdr socket serves both real callers.
+  const herdrFn = (over.herdr ?? (async (method: string, params: any, o: any) => {
+    socketCalls.push({ method, params, sock: o?.sockPath ?? null });
+    order.push(`herdr:${method}`);
+    // Real herdr knows nothing of the bg: ref scheme -- a prefixed id is an
+    // unknown target on every socket. Honest rejection here is what keeps
+    // the parse-at-the-seam contract tested.
+    const target = params?.target ?? params?.pane_id;
+    if (typeof target === "string" && target.startsWith("bg:")) return { ok: false, code: "not_found", message: `unknown pane ${target}` };
+    if (method === "session.snapshot") return { ok: true, result: { snapshot: { panes: snapshotPanes.rows } } };
+    if (method === "agent.get") {
+      if (trust.registerFailures > 0) { trust.registerFailures -= 1; return { ok: false, code: "not_found", message: "no agent" }; }
+      return { ok: true, result: { agent: { agent_status: "working" } } };
+    }
+    if (method === "agent.wait") {
+      return trust.waitOk ? { ok: true, result: { agent: { agent_status: trust.waitStatus } } } : { ok: false, code: "timeout", message: "still working" };
+    }
+    if (method === "pane.read") return { ok: true, result: { read: screen } };
+    if (method === "pane.send_keys") {
+      // Models the real modal rather than "any key clears it": an arrow
+      // moves the cursor, and Enter accepts only whatever the cursor is on.
+      // Only the first key of a batch registers, which is the live herdr
+      // behavior the driver exists to work around (RT-156).
+      const key = (params?.keys ?? [])[0];
+      if ((key === "up" || key === "down") && screen.text === ELEVATED_TRUST) screen.text = ELEVATED_TRUST_ON_YES;
+      else if (key === "enter" && trust.clearOnAccept && screen.text !== ELEVATED_TRUST) screen.text = "$ claude\n> \n";
+      return { ok: true, result: {} };
+    }
+    return { ok: false, code: "invalid_request", message: method };
+  })) as unknown as HerdDeps["herdr"];
+  // Contract parity with the real agent:start (handlers/agent.ts): a spawn
+  // that lands on the bg socket reports paneId as a bg: REF, never the bare
+  // id -- that is what the pane column stores. The bare-id fake hid the
+  // double-prefix family for a full release. RT-156 unified the trust check
+  // into agent:start itself, so the fake drives it here too, against the
+  // same fake herdr the socket-side assertions above already read from --
+  // repointing THIS call is what keeps the trust tests exercising the real
+  // path instead of a fallback herd.ts no longer has.
+  const agent = {
+    "agent:start": async (p: any) => {
+      agentCalls.push(p);
+      const barePane = "w9:p1";
+      const paneId = p.herdrSocket === "/tmp/hidden.sock" ? `bg:${barePane}` : barePane;
+      const trustOutcome = p.provider === "claude"
+        ? await acceptTrustOnPane({
+          herdr: herdrFn,
+          sock: p.herdrSocket ? { sockPath: p.herdrSocket } : {},
+          pane: barePane, log, context: {},
+          waitBudgetMs: p.trustWaitMs ?? 3_000,
+          registerBudgetMs: trustTestBudgets.registerBudgetMs ?? 2_000,
+          settleMs: trustTestBudgets.settleMs ?? 5,
+          stepMs: trustTestBudgets.stepMs ?? 1,
+        })
+        : undefined;
+      return { ok: true as const, data: { id: "ag-1", sessionId: "sess-w1", paneId, tabId: "w9:t1", workspaceId: "w9", repo: p.repo, cwd: p.cwd, surface: "herdr", provider: p.provider ?? "claude", ...(trustOutcome !== undefined && { trust: trustOutcome }) } };
+    },
+  } as unknown as HerdDeps["agent"];
+  const worktreeCalls: any[] = [];
+  const worktree = {
+    "worktree:provision": async (p: any) => { worktreeCalls.push({ verb: "provision", p }); return { ok: true, data: { tree: p.branch, path: `/w/${p.branch}`, branch: p.branch, wasOnDeck: false, readyAt: null, branchState: "new" } }; },
+    "worktree:dispose": async (p: any) => { worktreeCalls.push({ verb: "dispose", p }); return { ok: true, data: { disposed: [p.tree], refused: [], recoverable: [] } }; },
+  };
   const deps: HerdDeps = {
     store, gateStore, gate, chat, agent, worktree,
     runWorktree: () => null,
     findRunningRunByWorktree: () => ({ kind: "none" }),
     presenceHandleForSession: () => null,
-    herdr: (async (method: string, params: any, o: any) => {
-      socketCalls.push({ method, params, sock: o?.sockPath ?? null });
-      order.push(`herdr:${method}`);
-      // Real herdr knows nothing of the bg: ref scheme -- a prefixed id is an
-      // unknown target on every socket. Honest rejection here is what keeps
-      // the parse-at-the-seam contract tested.
-      const target = params?.target ?? params?.pane_id;
-      if (typeof target === "string" && target.startsWith("bg:")) return { ok: false, code: "not_found", message: `unknown pane ${target}` };
-      if (method === "session.snapshot") return { ok: true, result: { snapshot: { panes: snapshotPanes.rows } } };
-      if (method === "agent.get") {
-        if (trust.registerFailures > 0) { trust.registerFailures -= 1; return { ok: false, code: "not_found", message: "no agent" }; }
-        return { ok: true, result: { agent: { agent_status: "working" } } };
-      }
-      if (method === "agent.wait") {
-        return trust.waitOk ? { ok: true, result: { agent: { agent_status: trust.waitStatus } } } : { ok: false, code: "timeout", message: "still working" };
-      }
-      if (method === "pane.read") return { ok: true, result: { read: screen } };
-      if (method === "pane.send_keys") {
-        // Models the real modal rather than "any key clears it": an arrow
-        // moves the cursor, and Enter accepts only whatever the cursor is on.
-        // Only the first key of a batch registers, which is the live herdr
-        // behavior the driver exists to work around (RT-156).
-        const key = (params?.keys ?? [])[0];
-        if ((key === "up" || key === "down") && screen.text === ELEVATED_TRUST) screen.text = ELEVATED_TRUST_ON_YES;
-        else if (key === "enter" && trust.clearOnAccept && screen.text !== ELEVATED_TRUST) screen.text = "$ claude\n> \n";
-        return { ok: true, result: {} };
-      }
-      return { ok: false, code: "invalid_request", message: method };
-    }) as unknown as HerdDeps["herdr"],
+    herdr: herdrFn,
     herdrRunnerFor: (socket: string | null) => {
       const allHerds = store.list();
       return async (args: string[]) => {
@@ -138,9 +163,6 @@ export function harness(over: Partial<HerdDeps> = {}) {
     bg, claims,
     jobsRoot: join(dir, "herds"),
     log,
-    registerBudgetMs: 2000,
-    trustSettleMs: 5,
-    trustStepMs: 1,
     ...over,
   };
   const h = createHerdHandlers(deps);
@@ -956,13 +978,17 @@ describe("herd:spawn", () => {
     expect(socketCalls.find((c) => c.method === "agent.wait")!.params).toMatchObject({ target: "w9:p1", until: ["idle", "blocked", "done"], timeout_ms: 15_000 });
     expect(socketCalls.find((c) => c.method === "pane.send_keys")!.params).toEqual({ pane_id: "w9:p1", keys: ["enter"] });
     expect((res as any).data.trust).toBe("accepted");
-    // The worker must be reachable in chat whatever the trust wait costs.
+    // RT-156 unified the trust check into agent:start itself, so it runs
+    // (and blocks) before agent:start returns -- chat sign-in, which only
+    // starts once herd:spawn has the record back, comes after the wait, not
+    // before it. Reversed from when herd.ts ran a second, later trust check
+    // of its own; that fallback is gone.
     const spawned = order.slice(mark);
     const signedIn = spawned.indexOf("chat:sign-in");
     const firstGet = spawned.indexOf("herdr:agent.get");
     expect(signedIn).toBeGreaterThanOrEqual(0);
     expect(firstGet).toBeGreaterThanOrEqual(0);
-    expect(signedIn).toBeLessThan(firstGet);
+    expect(firstGet).toBeLessThan(signedIn);
   });
 
   test("an idle agent whose brief merely says trust is sent nothing", async () => {
@@ -1009,7 +1035,7 @@ describe("herd:spawn", () => {
   test("a pane sitting on the modal before claude ever registers is still accepted", async () => {
     // The pre-claude dialog is exactly why herdr never sees an agent, so
     // giving up on the register poll used to skip the check that was needed.
-    const hx = harness({ registerBudgetMs: 400 });
+    const hx = harness({}, { registerBudgetMs: 400 });
     hx.screen.text = PLAIN_TRUST;
     hx.trust.registerFailures = Number.MAX_SAFE_INTEGER;
     const s = await hx.h["herd:start"](START);
@@ -1021,7 +1047,7 @@ describe("herd:spawn", () => {
   });
 
   test("an unregistered pane showing no modal is reported unchecked, not accepted", async () => {
-    const hx = harness({ registerBudgetMs: 400 });
+    const hx = harness({}, { registerBudgetMs: 400 });
     hx.screen.text = "$ claude\nbash: claude: command not found\n";
     hx.trust.registerFailures = Number.MAX_SAFE_INTEGER;
     const s = await hx.h["herd:start"](START);

@@ -623,7 +623,7 @@ export interface Commands {
   "chat:dm-open": { payload: { from: string; to: string; sessionId?: string }; data: { room: string; created: boolean } };
 
   // ─── Agent handoff (rt agent) ────────────────────────────────────────────
-  "agent:start": { payload: { repo: string; cwd: string; prompt?: string; surface?: AgentSurface; provider?: string; model?: string; effort?: string; account?: string; label?: string; caller?: string; workspace?: string; tab?: string; extraArgs?: string; env?: Record<string, string>; herdrSocket?: string; handle?: string; bg?: boolean; subject?: string; yolo?: boolean }; data: AgentRecord & { trust?: TrustOutcome } };
+  "agent:start": { payload: { repo: string; cwd: string; prompt?: string; surface?: AgentSurface; provider?: string; model?: string; effort?: string; account?: string; label?: string; caller?: string; workspace?: string; tab?: string; extraArgs?: string; env?: Record<string, string>; herdrSocket?: string; handle?: string; bg?: boolean; subject?: string; yolo?: boolean; /** How long the folder-trust check lets the dialog paint before reading the screen; interactive launches keep the short default, herd:spawn passes its own longer budget. */ trustWaitMs?: number }; data: AgentRecord & { trust?: TrustOutcome } };
   "agent:resume": { payload: { id: string; prompt?: string; surface?: AgentSurface; workspace?: string; tab?: string }; data: AgentRecord };
   "agent:get": { payload: { id: string }; data: AgentRecord };
   "agent:list": { payload: { repo?: string }; data: { agents: AgentRecord[] } };
