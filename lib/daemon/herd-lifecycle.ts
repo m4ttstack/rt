@@ -103,8 +103,15 @@ export function createHerdLifecycle(opts: {
   // Hydrated from the store at construction: the map is memory, but daemon
   // restarts are routine, and a pane whose turn ended before one emits no
   // further event to refill it (board-37 sat wedged across two boots).
+  // Only an idle/done row rehydrates: a pane can flip while the daemon is
+  // down with no event to record the real transition time, and hydrating a
+  // stale working/blocked stamp would over-age the pane once it is next
+  // read idle. A row that does not rehydrate falls back to the watchdog
+  // sensor's own firstSeenIdle seed instead (RT-187), stamped fresh from a
+  // live reading rather than a persisted one that might already be wrong.
+  const REHYDRATABLE_STATUSES: ReadonlySet<string> = new Set(["idle", "done"]);
   const lastStatusChange = new Map<string, number>(
-    store.paneStatusRows().map((r) => [r.pane, r.changedAt] as const),
+    store.paneStatusRows().filter((r) => REHYDRATABLE_STATUSES.has(r.status)).map((r) => [r.pane, r.changedAt] as const),
   );
   let unhookBus: (() => void) | undefined;
   let reconcileTimer: { clear(): void } | undefined;

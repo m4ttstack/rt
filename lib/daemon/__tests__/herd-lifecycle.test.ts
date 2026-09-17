@@ -253,6 +253,19 @@ describe("herd-lifecycle", () => {
     expect(f.reboot(() => clock).lastStatusChangeMs("w1:p1")).toBe(1_000);
   });
 
+  test("a pane's last WORKING stamp does not survive a restart: only an idle/done row rehydrates", async () => {
+    // A pane can flip from working to idle while the daemon is down, with no
+    // event to record the real transition time. Hydrating the working
+    // timestamp anyway would over-age the pane once the daemon reads it idle
+    // again -- the watchdog would measure idle time from the stale working
+    // stamp, not from whenever the flip actually happened.
+    const f = fx({ now: () => 1_000 });
+    f.store.upsertJob({ herd: f.herd.id, name: "job-a", worktree: "/w", handle: "job-a", status: "active", pane: "w1:p1" });
+    await f.lc.handleEvent(null, { type: "pane.agent_status_changed", pane_id: "w1:p1", agent_status: "working" });
+    expect(f.lc.lastStatusChangeMs("w1:p1")).toBe(1_000);
+    expect(f.reboot(() => 60_000).lastStatusChangeMs("w1:p1")).toBeNull();
+  });
+
   test("a pane that exits stops being remembered across a restart too", async () => {
     const f = fx({ now: () => 7_000 });
     f.store.upsertJob({ herd: f.herd.id, name: "job-a", worktree: "/w", handle: "job-a", status: "active", pane: "w1:p1" });
