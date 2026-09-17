@@ -229,7 +229,7 @@ bundle_helpers() {
         while IFS= read -r -d '' prune; do
             rm -rf "$prune"
             echo "  · pruned $name/${prune#"$dest"/}"
-        done < <(find "$dest" -depth -type d \( -name '.claude-plugin' -o -name '.codex-plugin' \) -print0)
+        done < <(find "$dest" -depth -type d \( -name '.claude-plugin' -o -name '.codex-plugin' -o -name '*.iconset' \) -print0)
         # Agent skills ride beside the binary in CI tarballs; land them at the
         # stable path rt skills link consumes. A "." in a directory name would
         # make codesign treat it as a nested bundle, so reject it here rather
