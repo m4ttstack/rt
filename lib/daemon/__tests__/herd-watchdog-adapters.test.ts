@@ -397,6 +397,7 @@ describe("readWatchdogConfig", () => {
     expect(readWatchdogConfig(read)).toEqual({
       enabled: false, fastMins: 3, shepherdFastMins: 5, backstopMins: 15,
       retryMins: 1, notifyQuietMins: 1, nagMins: 45, notifyHuman: true,
+      midRunTrustAccept: false,
     });
   });
 
@@ -428,6 +429,7 @@ describe("the board-37 specimen: a turn that ended before a daemon restart", () 
   const cfg: WatchdogConfig = {
     enabled: true, fastMins: 2, shepherdFastMins: 5, backstopMins: 15,
     retryMins: 5, notifyQuietMins: 30, nagMins: 30, notifyHuman: true,
+    midRunTrustAccept: false,
   };
 
   function job(over: Partial<HerdJobRow> = {}): HerdJobRow {

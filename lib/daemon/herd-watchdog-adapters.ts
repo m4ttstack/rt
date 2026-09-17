@@ -226,13 +226,14 @@ export function createWatchdogActuators(deps: WatchdogActuatorDeps): WatchdogAct
 const CONFIG_DEFAULTS: WatchdogConfig = {
   enabled: true, fastMins: 2, shepherdFastMins: 5, backstopMins: 15,
   retryMins: 5, notifyQuietMins: 30, nagMins: 30, notifyHuman: true,
+  midRunTrustAccept: false,
 };
 
-/** Resolves the eight `herd.watchdog.*` keys through `read` (the settings
+/** Resolves the nine `herd.watchdog.*` keys through `read` (the settings
     resolver's getSetting), one at a time so a single unreadable or mistyped
     key falls back alone. Meant to run on every sweep, never cached. */
 export function readWatchdogConfig(read: <T>(key: string) => { value: T }): WatchdogConfig {
-  const bool = (name: "enabled" | "notifyHuman"): boolean => {
+  const bool = (name: "enabled" | "notifyHuman" | "midRunTrustAccept"): boolean => {
     try {
       const v = read<unknown>(`herd.watchdog.${name}`).value;
       return typeof v === "boolean" ? v : CONFIG_DEFAULTS[name];
@@ -263,5 +264,6 @@ export function readWatchdogConfig(read: <T>(key: string) => { value: T }): Watc
     notifyQuietMins: mins("notifyQuietMins"),
     nagMins: mins("nagMins"),
     notifyHuman: bool("notifyHuman"),
+    midRunTrustAccept: bool("midRunTrustAccept"),
   };
 }
