@@ -33,6 +33,11 @@ enum FindBarPreview {
                           backing: .buffered, defer: false)
         window.title = "find bar preview"
         window.contentViewController = NSHostingController(rootView: PreviewContent())
+        // NSHostingController sizes the window to its content's fitting size
+        // on assignment, and a bare webview host has no intrinsic size, so
+        // the window collapses to nothing unless the size is re-applied here
+        // -- the same trap MattstackWindowController documents.
+        window.setContentSize(NSSize(width: 1000, height: 700))
         window.center()
 
         if let url, let parsed = URL(string: url) {
@@ -43,7 +48,12 @@ enum FindBarPreview {
 
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
+        print("window \(Int(window.frame.width))x\(Int(window.frame.height)) at "
+              + "\(Int(window.frame.minX)),\(Int(window.frame.minY))")
         print("⌘F to find, ⌘G / ⇧⌘G to step, Escape to close the bar. ⌘Q to quit.")
+        // The run loop never returns, so a piped stdout would otherwise hold
+        // both lines in the buffer until the process is killed.
+        fflush(stdout)
         app.run()
         exit(0)
     }
