@@ -102,6 +102,8 @@ import { createHerdStore, type HerdStore } from "./daemon/herd-store.ts";
 import { createHerdLifecycle, type HerdLifecycle } from "./daemon/herd-lifecycle.ts";
 import { HerdWatchdog, runWatchdogSweep } from "./daemon/herd-watchdog.ts";
 import { createWatchdogActuators, createWatchdogSensors, readWatchdogConfig } from "./daemon/herd-watchdog-adapters.ts";
+import { driveRelocationAccept } from "./daemon/trust-accept.ts";
+import { findTreeByPath } from "./worktree/registry.ts";
 import { createBgService, type BgService } from "./daemon/bg-service.ts";
 import { createBgClaimsStore, type BgClaimsStore } from "./daemon/bg-claims-store.ts";
 import { createGatePush, type GatePush } from "./daemon/gate-push.ts";
@@ -688,6 +690,32 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
           },
           injectEscape: createEscapeInjector(),
           resumeAgent,
+          // RT-200: the same key the watchdog reads, resolved per attempt so
+          // a settings flip needs no restart. Off maps to "no-dialog": the
+          // normal attention-gate path takes the pane.
+          relocationAccept: async (pane: LivePane) => {
+            let enabled = true;
+            try {
+              const v = getSetting<unknown>("panes.relocationAutoAccept").value;
+              if (typeof v === "boolean") enabled = v;
+            } catch { /* unreadable key keeps the default */ }
+            if (!enabled) return "no-dialog";
+            const paneId = pane.paneRef.startsWith("bg:") ? pane.paneRef.slice("bg:".length) : pane.paneRef;
+            const outcome = await driveRelocationAccept({
+              herdr: herdrRequest, sock: { sockPath: pane.sockPath }, pane: paneId,
+              log, context: { paneRef: pane.paneRef },
+              isRegisteredTree: (path) => findTreeByPath(path) !== null,
+            });
+            if (outcome === "accepted") return "accepted";
+            if (outcome === "no-dialog") return "no-dialog";
+            return "failed";
+          },
+          notify: (n) => {
+            enqueueNotification({
+              id: crypto.randomUUID(), title: n.title, message: n.message,
+              category: "reconciler", timestamp: Date.now(), paneId: n.paneId,
+            }, getStateDb("daemon"));
+          },
           log,
         });
         setPhase("events-db");
