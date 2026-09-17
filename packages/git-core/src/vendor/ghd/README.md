@@ -14,6 +14,8 @@ License: MIT (see LICENSE)
 | `fatal-error.ts` | `app/src/lib/fatal-error.ts` (trimmed) |
 | `diff-parser.ts` | `app/src/lib/diff-parser.ts` |
 | `support.ts` | `app/src/ui/diff/text-diff-expansion.ts` + `app/src/ui/diff/diff-helpers.tsx` (inlined pure helpers) |
+| `types.ts` | N/A (custom) |
+| `patch-formatter.ts` | `app/src/lib/patch-formatter.ts` |
 
 ## Edits Made to Vendored Files
 
@@ -24,3 +26,5 @@ License: MIT (see LICENSE)
 | `raw-diff.ts` | Line 56: added non-null assertion `other.lines[ix]!` | Repo enables noUncheckedIndexedAccess; upstream code indexes without length guard |
 | `diff-parser.ts` | Imports: `IRawDiff` as type-only (line 1), models from `./raw-diff` and `./diff-line`, helpers from `./support`; Line 152: `this.text[p]!`; Lines 269-270: `c[0]!` (two places); Line 332: `lines[previousLineIndex]!` | Consolidate imports; verbatimModuleSyntax; noUncheckedIndexedAccess constraint |
 | `support.ts` | Parameters widened from `DiffHunk[]` to `ReadonlyArray<DiffHunk>` (line 47); Lines 58, 61: added non-null assertions `hunks[i]!` and `hunk.lines[j]!` | UI source used array; vendoring uses readonly; noUncheckedIndexedAccess constraint |
+| `types.ts` | N/A | Custom narrowed types file; AppFileStatusKind enum copied verbatim from upstream; PatchTarget and TextDiffLike interfaces defined for formatter |
+| `patch-formatter.ts` | Line 2: split imports (AppFileStatusKind value import, PatchTarget/TextDiffLike type-only imports) for verbatimModuleSyntax; Line 67: `assertNever(file.status.kind, ...)` instead of `assertNever(file.status, ...)` for type safety; Deleted line 225 log.debug call | Imports: consolidate paths to ./types, ./diff-line, ./diff-selection, ./fatal-error; Signature narrowing: WorkingDirectoryFileChange -> PatchTarget, ITextDiff | ILargeTextDiff -> TextDiffLike; Type narrowing in assertNever call |
