@@ -82,6 +82,13 @@ export interface FetchState {
   lastFetchedAt: Date | null; // null = never fetched
 }
 
+export interface StagingDiff {
+  path: string;
+  kind: "text" | "binary" | "submodule";
+  untracked: boolean;
+  hunks: ReadonlyArray<import("./vendor/ghd/raw-diff.ts").DiffHunk>;
+}
+
 export interface GitClient {
   readonly dir: string;
   snapshot(): Promise<RepoSnapshot>;
@@ -91,4 +98,14 @@ export interface GitClient {
   log(opts?: { maxCount?: number; file?: string }): Promise<LogEntry[]>;
   stashes(): Promise<StashEntry[]>;
   fetchState(): Promise<FetchState>;
+  stagingDiff(path: string): Promise<StagingDiff>;
+  stageSelection(
+    diff: StagingDiff,
+    selection: import("./vendor/ghd/diff-selection.ts").DiffSelection,
+    opts?: { originalPath?: string },
+  ): Promise<void>;
+  discardSelection(
+    diff: StagingDiff,
+    selection: import("./vendor/ghd/diff-selection.ts").DiffSelection,
+  ): Promise<void>;
 }
