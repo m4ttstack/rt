@@ -775,7 +775,7 @@ export const REGISTRY: readonly SettingDef[] = [
     scopes: ["machine"],
     default: 5,
     merge: "replace",
-    description: "Idle minutes before the shepherd is poked when it has a pending DM, mention, or answered gate.",
+    description: "Minutes an open human-owned gate in the herd may stay unanswered before the shepherd is poked. Unread DMs and mentions for the shepherd wedge immediately and are not delayed by this key.",
   },
   {
     key: "herd.watchdog.backstopMins",
