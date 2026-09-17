@@ -403,6 +403,39 @@ describe('joinExecutorOrphans', () => {
     expect(orphans).toEqual([]);
   });
 
+  test('two gone executors on one subject: the one owning the in-flight lane attaches', () => {
+    // The !45053 case: an earlier pane died, then a restarted respond pane
+    // died too. Last-write-wins on the subject key attached the stale
+    // executor, whose sessionId matched no lane, so the row never read
+    // "response interrupted" and kept spinning on triaging.
+    const stale = executorView({
+      agentId: 'ag-old',
+      state: 'gone',
+      subject: 'mr:https://gitlab.com/acme/webapp/-/merge_requests/6',
+      sessionId: 'sess-other',
+      since: 2000,
+    });
+    const laneOwner = executorView({
+      agentId: 'ag-new',
+      state: 'gone',
+      subject: 'mr:https://gitlab.com/acme/webapp/-/merge_requests/6',
+      sessionId: 'sess-respond-6',
+      since: 1000,
+    });
+    const mrs = [
+      {
+        webUrl: 'https://gitlab.com/acme/webapp/-/merge_requests/6',
+        respond: { status: 'triaging', sessionId: 'sess-respond-6' },
+      },
+    ];
+    const { mrs: joined, orphans } = joinExecutorOrphans(mrs, [
+      laneOwner,
+      stale,
+    ]);
+    expect(joined[0]?.orphan).toEqual(laneOwner);
+    expect(orphans).toEqual([stale]);
+  });
+
   test('subject match wins over a sessionId match on a different row', () => {
     const executor = executorView({
       state: 'gone',

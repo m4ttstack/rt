@@ -489,21 +489,36 @@ export function joinExecutorOrphans<T extends OrphanJoinRow>(
   mrs: T[],
   executors: ExecutorView[]
 ): { mrs: Array<T & { orphan?: ExecutorView }>; orphans: ExecutorView[] } {
-  const bySubject = new Map<string, ExecutorView>();
+  const bySubject = new Map<string, ExecutorView[]>();
   const bySessionId = new Map<string, ExecutorView>();
   for (const executor of executors) {
     if (executor.state !== 'gone' && executor.state !== 'hidden') continue;
-    if (executor.subject) bySubject.set(executor.subject, executor);
+    if (executor.subject) {
+      const list = bySubject.get(executor.subject);
+      if (list) list.push(executor);
+      else bySubject.set(executor.subject, [executor]);
+    }
     if (executor.sessionId) bySessionId.set(executor.sessionId, executor);
   }
   const matched = new Set<ExecutorView>();
   const joinedMrs = mrs.map((mr): T & { orphan?: ExecutorView } => {
-    const subjectMatch = mr.webUrl
-      ? bySubject.get(`mr:${mr.webUrl}`)
-      : undefined;
+    const candidates = mr.webUrl
+      ? (bySubject.get(`mr:${mr.webUrl}`) ?? [])
+      : [];
     const sessionId = activeLaneSessionId(mr);
+    // Several dead panes can share one MR's subject (a relaunch after an
+    // earlier death). Only the one owning the row's in-flight lane lets the
+    // client read the lane as interrupted, so the session match outranks
+    // subject recency; without one, the most recently gone speaks.
     const match =
-      subjectMatch ?? (sessionId ? bySessionId.get(sessionId) : undefined);
+      (sessionId
+        ? (candidates.find(e => e.sessionId === sessionId) ??
+          bySessionId.get(sessionId))
+        : undefined) ??
+      candidates.reduce<ExecutorView | undefined>(
+        (best, e) => (!best || e.since > best.since ? e : best),
+        undefined
+      );
     if (!match || matched.has(match)) return mr;
     matched.add(match);
     return { ...mr, orphan: match };
