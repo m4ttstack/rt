@@ -693,6 +693,51 @@ describe('rowStatus: respond lane', () => {
     expect(line!.verbs[0]).toEqual({ kind: 'read-respond', label: 'read ↗' });
   });
 
+  test('posted but the reviewer came back: warn with respond again leading', () => {
+    const [line] = candidateLines(
+      mr({
+        respond: { status: 'done', posted: 3, threads: 3, reportReady: true },
+        threadSummary: { awaiting: 2, replied: 1, resolved: 0 },
+      } as never),
+      NOW,
+      NONE,
+      ME
+    );
+    expect(line).toMatchObject({
+      tone: 'warn',
+      word: 'replies posted',
+      detail: 'reviewer came back',
+    });
+    expect(line!.verbs).toEqual([
+      { kind: 'restart-respond', label: 'respond again' },
+      { kind: 'read-respond', label: 'read ↗' },
+    ]);
+  });
+
+  test('the changes-requested badge alone does not reopen a posted line', () => {
+    const [line] = candidateLines(
+      mr({
+        respond: { status: 'done', posted: 3, threads: 3, reportReady: true },
+        threadSummary: { awaiting: 0, replied: 3, resolved: 0 },
+        reviews: {
+          isApproved: false,
+          required: 1,
+          given: 0,
+          reviewers: [{ username: 'pat', reviewState: 'REQUESTED_CHANGES' }],
+        },
+      } as never),
+      NOW,
+      NONE,
+      ME
+    );
+    expect(line).toMatchObject({
+      tone: 'go',
+      word: 'replies posted',
+      detail: '3 of 3',
+    });
+    expect(line!.verbs).toEqual([{ kind: 'read-respond', label: 'read ↗' }]);
+  });
+
   test('partially posted is warn with the resume verb', () => {
     const [line] = candidateLines(
       mr({

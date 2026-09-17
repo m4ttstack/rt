@@ -333,14 +333,33 @@ function respondDoneLine(mr: BoardMRWithReview): Candidate {
   const r = mr.respond!;
   const threads = r.threads ?? 0;
   const posted = Math.min(r.posted ?? 0, threads);
+  const read: Verb[] = r.reportReady
+    ? [{ kind: 'read-respond', label: 'read ↗' }]
+    : [];
   switch (respondOutcome(r.posted, r.threads)) {
-    case 'posted':
+    case 'posted': {
+      // awaiting, not the changes-requested badge: the badge outlives the
+      // posted replies until the reviewer re-reviews, but a thread only
+      // re-awaits the author when the reviewer's note is last again.
+      const cameBack = (mr.threadSummary?.awaiting ?? 0) > 0;
+      if (cameBack) {
+        return {
+          tone: 'warn',
+          word: 'replies posted',
+          detail: 'reviewer came back',
+          verbs: [
+            { kind: 'restart-respond', label: 'respond again' },
+            ...read,
+          ],
+        };
+      }
       return {
         tone: 'go',
         word: 'replies posted',
         detail: `${threads} of ${threads}`,
-        verbs: r.reportReady ? [{ kind: 'read-respond', label: 'read ↗' }] : [],
+        verbs: read,
       };
+    }
     case 'partial':
       return {
         tone: 'warn',
