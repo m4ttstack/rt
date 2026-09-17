@@ -115,6 +115,18 @@ describe("diffFile", () => {
     }
   });
 
+  it("untracked file staged diff is empty (index has nothing for it)", async () => {
+    const sb = await seeded("a\n");
+    try {
+      await sb.write("new.txt", "one\ntwo\n");
+      const d = await createGitClient(sb.dir).diffFile("new.txt", { staged: true });
+      expect(d.kind).toBe("text");
+      expect(d.hunks).toEqual([]);
+    } finally {
+      await sb.cleanup();
+    }
+  });
+
   it("binary file is classified, no hunks", async () => {
     const sb = await seeded("a\n");
     try {

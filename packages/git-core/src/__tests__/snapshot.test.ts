@@ -107,7 +107,8 @@ describe("snapshot", () => {
       await sb.git(["checkout", "main"]);
       await sb.write("a.txt", "main\n");
       await sb.commitAll("main change");
-      await sb.git(["merge", "feature"]).catch(() => {});
+      await expect(sb.git(["merge", "feature"])).rejects.toThrow();
+      expect((await sb.git(["diff", "--name-only", "--diff-filter=U"])).trim()).toBe("a.txt");
       const s = await createGitClient(sb.dir).snapshot();
       expect(s.files).toEqual([
         { path: "a.txt", kind: "conflicted", staged: false, unstaged: true },

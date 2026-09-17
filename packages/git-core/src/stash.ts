@@ -13,7 +13,7 @@ export async function getStashes(ctx: ClientContext): Promise<StashEntry[]> {
     const m = ON_BRANCH.exec(message);
     return {
       index,
-      branch: m ? m[1]! : null,
+      branch: m && m[1] !== "(no branch)" ? m[1]! : null,
       message: m ? m[2]! : message,
     };
   });

@@ -39,7 +39,7 @@ export async function getFileDiff(
   opts: { staged?: boolean } = {},
 ): Promise<FileDiff> {
   const status = await ctx.git.status();
-  const untracked = status.not_added.includes(path);
+  const untracked = !opts.staged && status.not_added.includes(path);
 
   let text: string;
   if (untracked) {
