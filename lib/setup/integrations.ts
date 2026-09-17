@@ -18,6 +18,7 @@ import type { ConnectField, Integration } from "./contract.ts";
 import { UserActionableError } from "./errors.ts";
 import { isValidHttpsUrl } from "./host-validate.ts";
 import type { Probes } from "./probes.ts";
+import { interpretSdmStatus } from "../sdm/core.ts";
 
 export interface ValidateResult {
   status: "ready" | "invalid" | "error";
@@ -313,8 +314,15 @@ export const INTEGRATIONS: Record<Integration, IntegrationDef> = {
       const res = await p.exec(["sdm", "status"]);
       if (res.code === 127) return { status: "invalid", detail: "sdm not installed", scopesSeen: [] };
       if (res.code === 124) return { status: "error", detail: "sdm status timed out", scopesSeen: [] };
-      if (res.code === 0 && res.stdout.includes(email)) return { status: "ready", detail: `sdm session active for ${email}`, scopesSeen: [] };
-      return { status: "invalid", detail: "sdm status did not show an active session for this email", scopesSeen: [] };
+      // `sdm status` never prints the account email, so the email is config
+      // for the login flow, not the liveness signal; interpretSdmStatus's
+      // table-header check is what distinguishes a live session.
+      const health = interpretSdmStatus(null, res.code, `${res.stdout}\n${res.stderr}`);
+      if (health.status === "ok") return { status: "ready", detail: "sdm session active", scopesSeen: [] };
+      if (health.status === "not-authenticated") {
+        return { status: "invalid", detail: "sdm is not authenticated (run `sdm login`)", scopesSeen: [] };
+      }
+      return { status: "error", detail: health.message ?? "sdm status failed", scopesSeen: [] };
     },
   },
 

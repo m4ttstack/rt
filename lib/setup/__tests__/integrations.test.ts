@@ -212,10 +212,39 @@ describe("network-free integrations only ever call through probes", () => {
     expect(result).toEqual({ status: "invalid", detail: "sdm not installed", scopesSeen: [] });
   });
 
-  test("sdm status 0 with the email in stdout → ready", async () => {
-    const p = fakeProbes({ exec: async () => ({ code: 0, stdout: "logged in as me@example.com", stderr: "" }) });
+  // `sdm status` never prints the account email; a real resource table is the
+  // authenticated signal (matches lib/sdm/core.ts interpretSdmStatus).
+  const sdmStatusTable = [
+    "     DATASOURCE                    STATUS               ADDRESS             TYPE",
+    "     acme-dev                      not connected        127.0.0.1:10130     aurora-postgres",
+    "",
+    "     WEBSITE                       STATUS               ADDRESS             TYPE",
+    "     Status Page                   connected (auto)     127.0.0.1:10116     httpNoAuth",
+  ].join("\n");
+
+  test("sdm status 0 with a resource table but no email in stdout → ready", async () => {
+    const p = fakeProbes({ exec: async () => ({ code: 0, stdout: sdmStatusTable, stderr: "" }) });
     const result = await INTEGRATIONS.sdm.validate(p, "me@example.com", noHost);
     expect(result.status).toBe("ready");
+  });
+
+  test("sdm status 0 with a logged-out banner and no table → invalid", async () => {
+    const p = fakeProbes({ exec: async () => ({ code: 0, stdout: "You are not authenticated. Please login.", stderr: "" }) });
+    const result = await INTEGRATIONS.sdm.validate(p, "me@example.com", noHost);
+    expect(result.status).toBe("invalid");
+    expect(result.detail.toLowerCase()).toContain("not authenticated");
+  });
+
+  test("sdm status non-zero asking to log in → invalid", async () => {
+    const p = fakeProbes({ exec: async () => ({ code: 1, stdout: "", stderr: "please log in with `sdm login`" }) });
+    const result = await INTEGRATIONS.sdm.validate(p, "me@example.com", noHost);
+    expect(result.status).toBe("invalid");
+  });
+
+  test("sdm status non-zero with an unrecognized error → error, never invalid", async () => {
+    const p = fakeProbes({ exec: async () => ({ code: 1, stdout: "", stderr: "dial tcp: i/o timeout" }) });
+    const result = await INTEGRATIONS.sdm.validate(p, "me@example.com", noHost);
+    expect(result.status).toBe("error");
   });
 
   test("sdm called with an empty email is never vacuously ready", async () => {
