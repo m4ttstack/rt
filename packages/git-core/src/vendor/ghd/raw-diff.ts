@@ -53,7 +53,7 @@ export class DiffHunk {
       this.unifiedDiffEnd === other.unifiedDiffEnd &&
       this.expansionType === other.expansionType &&
       this.lines.length === other.lines.length &&
-      this.lines.every((xLine, ix) => xLine.equals(other.lines[ix]))
+      this.lines.every((xLine, ix) => xLine.equals(other.lines[ix]!))
     )
   }
 }
