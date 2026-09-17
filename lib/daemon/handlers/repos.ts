@@ -10,7 +10,6 @@
 import { decodeRepo } from "../identity-decoder.ts";
 import { applyLocate, isRefusal, planLocate } from "../../repo-locate.ts";
 import type { HandlerMap } from "./types.ts";
-import type { RepoStatusRow } from "../../../packages/rt-client/src/commands.ts";
 
 export interface ReposHandlerOpts {
   /** Excludes reconciler passes — not other registry writers — for the duration of `fn`. */
@@ -26,7 +25,7 @@ export interface ReposHandlerOpts {
 // resolve to `Handler | undefined` for every caller, tests included.
 export function createReposHandlers(
   opts: ReposHandlerOpts,
-): Record<"repos:locate" | "repos:status", (payload: any) => Promise<any>> & HandlerMap {
+): Record<"repos:locate", (payload: any) => Promise<any>> & HandlerMap {
   return {
     "repos:locate": async (payload) => {
       const newPath = payload?.newPath;
@@ -52,9 +51,6 @@ export function createReposHandlers(
         opts.emitEvent("repo:moved", { identity: result.identity, from: result.from, to: result.to });
         return { ok: true, data: result };
       });
-    },
-    "repos:status": async (_payload) => {
-      return { ok: true as const, data: { repos: [], sweptAt: null } };
     },
   };
 }

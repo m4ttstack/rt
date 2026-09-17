@@ -32,6 +32,9 @@ import { createSettingsHandlers } from "./handlers/settings.ts";
 import { createHomeHandlers } from "./handlers/home.ts";
 import { createTeamSnapshotHandlers } from "./handlers/team-snapshot.ts";
 import { createReposHandlers } from "./handlers/repos.ts";
+import { createGitStatusHandlers } from "./handlers/git-status.ts";
+import type { GitBadgesStore } from "./git-badges-store.ts";
+import type { GitStatusSweep } from "./git-status-sweep.ts";
 import { reconcileFreshness, getFreshnessSnapshot } from "./freshness.ts";
 import { wrapWithDemand } from "./demand-tracker.ts";
 import type { SystemProcessScanner } from "./system-process-scanner.ts";
@@ -108,6 +111,9 @@ export function buildRoutedHandlers(opts: {
     withReconcilerHeld: <T>(fn: () => Promise<T>) => Promise<T>;
     refreshWatchedRepos: () => void;
   };
+  /** Backing store and sweep for repos:status (Task 2/3). */
+  gitBadges: GitBadgesStore;
+  gitStatusSweep: GitStatusSweep;
   /**
    * state.db, for chat:* and agent:* handlers. Passed in already-open
    * rather than resolved here with getStateDb(): this function is called at
@@ -242,6 +248,7 @@ export function buildRoutedHandlers(opts: {
     ...createHomeHandlers(opts.homeSnapshot),
     ...createTeamSnapshotHandlers(opts.teamSnapshots),
     ...createReposHandlers({ ...opts.repos, emitEvent }),
+    ...createGitStatusHandlers({ store: opts.gitBadges, sweep: opts.gitStatusSweep }),
 
     // Applies repo-tracking edits immediately (rt daemon track <repo>
     // live|poll|off) instead of waiting for the next refresh-tail reconcile.

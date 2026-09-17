@@ -118,6 +118,8 @@ describe("rt-client command coverage", () => {
       homeSnapshot: { stop: () => {}, runNow: async () => ({}) as any, pullNow: async () => ({}) as any, status: () => ({}) as any, ready: Promise.resolve() },
       teamSnapshots: { stop() {}, rescan: async () => {}, status: () => [], pullNow: async () => ({ outcome: "skipped", detail: null }), ready: Promise.resolve() },
       repos: { withReconcilerHeld: async (fn) => fn(), refreshWatchedRepos: () => {} },
+      gitBadges: { readAll: () => new Map(), replaceRepo: () => ({ changed: false }), dropRepos: () => [] },
+      gitStatusSweep: { tick: async () => {}, sweepNow: async () => ({ changed: [] }), lastSweepAt: () => null, errors: () => new Map() },
       stateDb: openStateDb(":memory:"),
     });
     for (const name of COMMAND_NAMES) {
