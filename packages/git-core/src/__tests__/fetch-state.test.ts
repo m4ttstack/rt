@@ -1,0 +1,33 @@
+import { describe, expect, it } from "bun:test";
+import { makeSandbox } from "../../test-support/sandbox.ts";
+import { createGitClient } from "../index.ts";
+
+describe("fetchState", () => {
+  it("null before any fetch", async () => {
+    const sb = await makeSandbox();
+    try {
+      await sb.write("a.txt", "1\n");
+      await sb.commitAll("first");
+      const state = await createGitClient(sb.dir).fetchState();
+      expect(state.lastFetchedAt).toBeNull();
+    } finally {
+      await sb.cleanup();
+    }
+  });
+
+  it("a recent Date after fetching from a bare remote", async () => {
+    const sb = await makeSandbox();
+    try {
+      await sb.write("a.txt", "1\n");
+      await sb.commitAll("first");
+      await sb.addBareRemote();
+      await sb.git(["push", "-u", "origin", "main"]);
+      await sb.git(["fetch", "origin"]);
+      const state = await createGitClient(sb.dir).fetchState();
+      expect(state.lastFetchedAt).not.toBeNull();
+      expect(Date.now() - state.lastFetchedAt!.getTime()).toBeLessThan(60_000);
+    } finally {
+      await sb.cleanup();
+    }
+  });
+});
