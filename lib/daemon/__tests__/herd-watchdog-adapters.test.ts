@@ -8,7 +8,9 @@ import { dmRoomFor } from "../../state/dm-store.ts";
 import { joinRoom, postMessage } from "../../state/chat-store.ts";
 import type { GateRow } from "../../../packages/rt-client/src/commands.ts";
 import type { HerdRow } from "../herd-store.ts";
+import type { HerdJobRow } from "../herd-store.ts";
 import { createWatchdogActuators, createWatchdogSensors, readWatchdogConfig } from "../herd-watchdog-adapters.ts";
+import { HerdWatchdog, type WatchdogConfig } from "../herd-watchdog.ts";
 
 const log = pino({ level: "silent" });
 const NOW = 10_000_000;
@@ -405,5 +407,101 @@ describe("readWatchdogConfig", () => {
     expect(resolved.retryMins).toBe(1);
     expect(resolved.notifyQuietMins).toBe(1);
     expect(resolved.fastMins).toBe(0);
+  });
+});
+
+/**
+ * board-37, 2026-09-16. Reconstructed from the daemon logs: the job was parked
+ * at a modal at 22:02, the daemon took a SIGTERM at 22:11:10 (the same minute
+ * the worker's turn ended), a new daemon came up at 22:26:30, and the job sat
+ * wedged until a human poked it by hand at 22:42. Nothing swept it in between.
+ *
+ * The condition that blocked the backstop is the restart, not the status: the
+ * lifecycle's status map is in memory, so the new daemon had no transition for
+ * that pane, and a pane whose turn ended BEFORE the restart emits no further
+ * status event to fill it in. `idleSinceMs` returned null, and a null idle
+ * clock is never a wedge. The pane's own status ("done") is the other half:
+ * anything the mapper does not name reads as working, and a working pane is
+ * never poked.
+ */
+describe("the board-37 specimen: a turn that ended before a daemon restart", () => {
+  const cfg: WatchdogConfig = {
+    enabled: true, fastMins: 2, shepherdFastMins: 5, backstopMins: 15,
+    retryMins: 5, notifyQuietMins: 30, nagMins: 30, notifyHuman: true,
+  };
+
+  function job(over: Partial<HerdJobRow> = {}): HerdJobRow {
+    return {
+      herd: "demo-1", name: "board-37", worktree: "/w", branch: null, tree: null,
+      pane: "w1:p1", agentSession: "sess-a", agentId: null, handle: "board-37",
+      status: "active", disposable: false, lastGate: null, lastReport: null,
+      createdAt: NOW - 120 * MIN, updatedAt: NOW - 120 * MIN,
+      ...over,
+    };
+  }
+
+  async function rig(agentStatus: string) {
+    const clock = { now: NOW };
+    const pokes: Array<{ pane: string; text: string }> = [];
+    const panes = [{ pane_id: "w1:p1", agent: "claude", agent_status: agentStatus }];
+    const herdr = (async (_m: string, _p: unknown, o?: { sockPath?: string }) => (
+      o?.sockPath === DEFAULT ? { ok: true, result: { snapshot: { panes } } } : { ok: false, code: "unreachable", message: "no server" }
+    )) as any;
+    const sensors = createWatchdogSensors({
+      // The shepherd pane is absent from the snapshot, so its own rung never
+      // fires and the only poke that can land is the worker's.
+      herdStore: { list: () => [herd({ shepherdPane: null })], jobs: () => [job()] },
+      gatesStore: { list: () => ({ gates: [], cursor: 0 }), unconsumedAnsweredPushes: () => [] },
+      // The restart's empty map: no transition was ever recorded for this pane.
+      lifecycle: { lastStatusChangeMs: () => null },
+      herdr, defaultSocket: DEFAULT, db: freshDb(), now: () => clock.now, log,
+    });
+    const wd = new HerdWatchdog({
+      sensors,
+      act: {
+        poke: async (pane, text) => { pokes.push({ pane, text }); return true; },
+        parkStuckAtModal: () => {},
+        notifyStuckAtModal: () => {},
+        acceptTrustModal: async () => false,
+        notifyHuman: () => {},
+      },
+      cfg: () => cfg,
+      log,
+    });
+    const sweep = async (advanceMins = 0) => {
+      clock.now += advanceMins * MIN;
+      await sensors.refresh();
+      await wd.sweep();
+    };
+    return { sweep, pokes };
+  }
+
+  test("the first sweep after the restart dates the idleness, and the backstop fires once it elapses", async () => {
+    const r = await rig("done");
+    await r.sweep();
+    expect(r.pokes).toEqual([]);
+
+    // 14 minutes on from the restart: still inside the backstop.
+    await r.sweep(14);
+    expect(r.pokes).toEqual([]);
+
+    // 16 minutes on: the worker has been idle since the restart, with no gate
+    // open and nothing unread. This is the poke that never came.
+    await r.sweep(2);
+    expect(r.pokes).toEqual([{ pane: "w1:p1", text: "watchdog: idle 16m with no open gate. Consume it or post status." }]);
+  });
+
+  test("a status the mapper does not name wedges exactly the same way", async () => {
+    const r = await rig("compacting");
+    await r.sweep();
+    await r.sweep(16);
+    expect(r.pokes).toHaveLength(1);
+  });
+
+  test("a pane still working is left alone through the same window", async () => {
+    const r = await rig("working");
+    await r.sweep();
+    await r.sweep(16);
+    expect(r.pokes).toEqual([]);
   });
 });
