@@ -80,6 +80,14 @@ function fx(over: {
   const gateDep = over.gateListGate
     ? { ...gate, "gate:list": async (p: any) => { await over.gateListGate; return gate["gate:list"](p); } }
     : gate;
+  /** A second lifecycle over the SAME store: what a daemon restart looks like
+      from the watchdog's side, with every in-memory map empty again. */
+  const reboot = (clock?: () => number) => createHerdLifecycle({
+    store, gate: gateDep, chat, bus, gateStore, defaultSocket: "/default.sock",
+    ...(over.bgSocket !== undefined && { bgSocket: over.bgSocket, bgClaims }),
+    subscribe, herdr, setTimer, log: lcLog,
+    ...((clock ?? over.now) && { now: (clock ?? over.now)! }),
+  });
   const lc = createHerdLifecycle({
     store, gate: gateDep, chat, bus, gateStore, defaultSocket: "/default.sock",
     ...(over.bgSocket !== undefined && { bgSocket: over.bgSocket, bgClaims }),
@@ -90,7 +98,7 @@ function fx(over: {
   const herd = store.create({ id: "demo-1", repo: "r", room: "herd-demo-1", workspace: "herd: demo-1", shepherdSession: "s", shepherdHandle: "shepherd", herdrSocket: null, hidden: false });
   const wildcard = () => subs.filter((s) => !s.subscriptions.some((e) => "pane_id" in e));
   const paneSubs = () => subs.filter((s) => !s.stopped && s.subscriptions.some((e) => "pane_id" in e));
-  return { store, gateStore, gate, bus, posts, warns, timers, subs, lc, herd, wildcard, paneSubs, bgReleases, bgClaims, herdrCalls };
+  return { store, gateStore, gate, bus, posts, warns, timers, subs, lc, reboot, herd, wildcard, paneSubs, bgReleases, bgClaims, herdrCalls };
 }
 
 describe("herd-lifecycle", () => {
@@ -223,6 +231,34 @@ describe("herd-lifecycle", () => {
     await lc.handleEvent(null, { type: "pane.agent_status_changed", pane_id: "w1:p1", agent_status: "blocked" });
     expect(lc.lastStatusChangeMs("w1:p1")).toBe(9_000);
     expect(lc.lastStatusChangeMs("w1:p2")).toBeNull();
+  });
+
+  // Daemon restarts are routine (two tonight, fifteen minutes apart), and each
+  // one used to reset the watchdog's idle clock to "never seen".
+  test("the idle clock survives a restart: a pane idle since before two boots keeps its original transition time", async () => {
+    let clock = 1_000;
+    const f = fx({ now: () => clock });
+    f.store.upsertJob({ herd: f.herd.id, name: "job-a", worktree: "/w", handle: "job-a", status: "active", pane: "w1:p1" });
+    await f.lc.handleEvent(null, { type: "pane.agent_status_changed", pane_id: "w1:p1", agent_status: "idle" });
+    expect(f.lc.lastStatusChangeMs("w1:p1")).toBe(1_000);
+
+    // First boot: the pane emits nothing further, so only what was written
+    // through can answer.
+    clock = 60_000;
+    const afterOne = f.reboot(() => clock);
+    expect(afterOne.lastStatusChangeMs("w1:p1")).toBe(1_000);
+
+    // Second boot, same story.
+    clock = 120_000;
+    expect(f.reboot(() => clock).lastStatusChangeMs("w1:p1")).toBe(1_000);
+  });
+
+  test("a pane that exits stops being remembered across a restart too", async () => {
+    const f = fx({ now: () => 7_000 });
+    f.store.upsertJob({ herd: f.herd.id, name: "job-a", worktree: "/w", handle: "job-a", status: "active", pane: "w1:p1" });
+    await f.lc.handleEvent(null, { type: "pane.agent_status_changed", pane_id: "w1:p1", agent_status: "idle" });
+    await f.lc.handleEvent(null, { type: "pane.exited", pane_id: "w1:p1" });
+    expect(f.reboot().lastStatusChangeMs("w1:p1")).toBeNull();
   });
 
   test("lastStatusChangeMs keys on the ref the job row stores (bg: for a hidden herd) and forgets a pane on exit", async () => {

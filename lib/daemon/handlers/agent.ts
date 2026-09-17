@@ -257,6 +257,9 @@ function isCommandNotFoundShape(message: string): boolean {
   return /\(127\)/.test(message) || /not found at/i.test(message);
 }
 
+/** Paint budget for the folder-trust check on a freshly launched pane. */
+const TRUST_PAINT_MS = 3_000;
+
 export function createAgentHandlers(opts: {
   db: Database;
   emitEvent: (topic: string, payload?: unknown) => unknown;
@@ -359,6 +362,12 @@ export function createAgentHandlers(opts: {
           herdr: opts.herdr ?? herdrRequest,
           sock: extra.herdrSocket ? { sockPath: extra.herdrSocket } : {},
           pane: out.paneId, log, context: { agent: rec.id, cwd: rec.cwd },
+          // A short settle budget, unlike the herd path's: a launch that
+          // carries a prompt starts working and never settles, and this one
+          // holds an interactive `rt agent start` open while it waits. The
+          // budget is only there to let the dialog paint, which takes about a
+          // second, and the screen is read either way afterwards.
+          waitBudgetMs: TRUST_PAINT_MS,
           ...opts.trustBudgets,
         })
         : undefined;

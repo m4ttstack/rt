@@ -22,8 +22,11 @@ export interface HerdLifecycle {
   handleEvent(socket: string | null, ev: HerdrEvent): Promise<void>;
   reconcilePanes(): void;
   /** Epoch ms of the pane's last `agent_status_changed`, keyed by the ref the
-      job row stores (`bg:` for a hidden herd). In-memory only: a daemon
-      restart forgets every pane, and null means "no data", never "idle". */
+      job row stores (`bg:` for a hidden herd). Written through to herds.db and
+      reloaded at construction, so a daemon restart keeps the clock; null means
+      "no data" (a pane that predates the table, or one that has exited), never
+      "idle". The watchdog's own first-sighting stamp is the fallback for
+      those. */
   lastStatusChangeMs(pane: string): number | null;
   /** Reconciles the bg claims registry against reality: a claimed `bg:` pane
       missing from a live snapshot releases (crashed/closed pane the event
@@ -97,7 +100,12 @@ export function createHerdLifecycle(opts: {
   const idleGen = new Map<string, number>();
   const bumpIdleGen = (key: string) => idleGen.set(key, (idleGen.get(key) ?? 0) + 1);
   // Events carry no timestamp, so the change time is this clock at receipt.
-  const lastStatusChange = new Map<string, number>();
+  // Hydrated from the store at construction: the map is memory, but daemon
+  // restarts are routine, and a pane whose turn ended before one emits no
+  // further event to refill it (board-37 sat wedged across two boots).
+  const lastStatusChange = new Map<string, number>(
+    store.paneStatusRows().map((r) => [r.pane, r.changedAt] as const),
+  );
   let unhookBus: (() => void) | undefined;
   let reconcileTimer: { clear(): void } | undefined;
 
@@ -207,7 +215,9 @@ export function createHerdLifecycle(opts: {
       return;
     }
     if (ev.type === "pane.agent_status_changed") {
-      lastStatusChange.set(ref, now());
+      const changedAt = now();
+      lastStatusChange.set(ref, changedAt);
+      store.recordPaneStatus(ref, typeof ev.agent_status === "string" ? ev.agent_status : "unknown", changedAt);
       // herdr detects the agent before a spawn can park a failed trust accept,
       // so accepting the dialog by hand produces no second agent_detected --
       // a status change is the only event left that can retire the parked row,
@@ -258,6 +268,7 @@ export function createHerdLifecycle(opts: {
       idleTimers.delete(key);
       bumpIdleGen(key);
       lastStatusChange.delete(ref);
+      store.forgetPaneStatus(ref);
       unwatchPane(socket, pane);
       if (WATCHED.has(job.status)) {
         store.setJobStatus(job.herd, job.name, "crashed");

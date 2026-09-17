@@ -440,7 +440,7 @@ describe("the board-37 specimen: a turn that ended before a daemon restart", () 
     };
   }
 
-  async function rig(agentStatus: string) {
+  async function rig(agentStatus: string, idleSince?: number) {
     const clock = { now: NOW };
     const pokes: Array<{ pane: string; text: string }> = [];
     const panes = [{ pane_id: "w1:p1", agent: "claude", agent_status: agentStatus }];
@@ -452,8 +452,9 @@ describe("the board-37 specimen: a turn that ended before a daemon restart", () 
       // fires and the only poke that can land is the worker's.
       herdStore: { list: () => [herd({ shepherdPane: null })], jobs: () => [job()] },
       gatesStore: { list: () => ({ gates: [], cursor: 0 }), unconsumedAnsweredPushes: () => [] },
-      // The restart's empty map: no transition was ever recorded for this pane.
-      lifecycle: { lastStatusChangeMs: () => null },
+      // The restart's map: empty when nothing was persisted for this pane,
+      // or carrying the transition time the store handed back at boot.
+      lifecycle: { lastStatusChangeMs: () => idleSince ?? null },
       herdr, defaultSocket: DEFAULT, db: freshDb(), now: () => clock.now, log,
     });
     const wd = new HerdWatchdog({
@@ -496,6 +497,18 @@ describe("the board-37 specimen: a turn that ended before a daemon restart", () 
     await r.sweep();
     await r.sweep(16);
     expect(r.pokes).toHaveLength(1);
+  });
+
+  // Two restarts fifteen minutes apart pushed the fire past the hand-poke: the
+  // boot-time stamp is only a fallback, and the clock itself has to persist.
+  test("an idle clock reloaded at boot fires the backstop on the ORIGINAL idle time, not the boot", async () => {
+    const r = await rig("done", NOW - 14 * MIN);
+    await r.sweep();
+    expect(r.pokes).toEqual([]);
+
+    // Two minutes into this boot, but sixteen into the idleness.
+    await r.sweep(2);
+    expect(r.pokes).toEqual([{ pane: "w1:p1", text: "watchdog: idle 16m with no open gate. Consume it or post status." }]);
   });
 
   test("a pane still working is left alone through the same window", async () => {
