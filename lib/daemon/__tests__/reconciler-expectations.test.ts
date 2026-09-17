@@ -42,6 +42,7 @@ beforeEach(() => {
     emit: (topic, payload) => { emitted.push({ topic, payload }); },
     injectEscape: async (hints) => { injectCalls.push(hints); return injectResult; },
     resumeAgent: async () => ({ ok: true }),
+    markAgentGone: () => {},
     log,
   });
 });

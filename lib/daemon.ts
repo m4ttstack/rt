@@ -59,7 +59,7 @@ import { unknownCommandReply } from "./daemon/unknown-command.ts";
 // ./state/db.ts directly: importing the barrel is what guarantees every
 // store module has registered its legacy-JSON importer before the one-shot
 // v0->v1 migration runs (see lib/state/index.ts).
-import { getBranchCacheStore, getStateDb, closeStateDb, persistOrWarn, prunePresence, pruneMessages, pruneAgents, snapshotRegistryDeps, quickCheck, backupTo, stampedBackupPath, pruneStateBackups, setBusyLogSink, enqueueNotification, listAgents, getAgent, type BranchCacheStore } from "./state/index.ts";
+import { getBranchCacheStore, getStateDb, closeStateDb, persistOrWarn, prunePresence, pruneMessages, pruneAgents, markAgentGone, snapshotRegistryDeps, quickCheck, backupTo, stampedBackupPath, pruneStateBackups, setBusyLogSink, enqueueNotification, listAgents, getAgent, type BranchCacheStore } from "./state/index.ts";
 import { createCacheRefresher } from "./daemon/cache-refresh.ts";
 import { createWorktreeReconciler } from "./daemon/worktree-reconciler.ts";
 import { loadRepoIndex } from "./daemon/repo-index.ts";
@@ -690,6 +690,7 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
           },
           injectEscape: createEscapeInjector(),
           resumeAgent,
+          markAgentGone: (agentId, at) => markAgentGone(agentId, at, getStateDb("daemon")),
           // RT-200: the same key the watchdog reads, resolved per attempt so
           // a settings flip needs no restart. Off maps to "no-dialog": the
           // normal attention-gate path takes the pane.

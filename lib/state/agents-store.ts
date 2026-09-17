@@ -41,6 +41,7 @@ const UPDATE_PANE_SQL = `UPDATE agents SET pane_id = ?, tab_id = ?, workspace_id
 const UPDATE_RESUMED_SQL = `UPDATE agents SET last_resumed_at = ? WHERE id = ?;`;
 const UPDATE_SESSION_SQL = `UPDATE agents SET session_id = ? WHERE id = ?;`;
 const UPDATE_FINISH_SQL = `UPDATE agents SET exit_code = ?, result_path = ?, finished_at = ? WHERE id = ?;`;
+const UPDATE_GONE_SQL = `UPDATE agents SET finished_at = ? WHERE id = ?;`;
 const DELETE_SQL = `DELETE FROM agents WHERE id = ?;`;
 
 /** How long a finished agent record survives before it's eligible for pruning (R054). */
@@ -140,6 +141,13 @@ export function finishAgent(
   db: Database = getStateDb(),
 ): void {
   runCriticalWrite("finishAgent", () => db.query(UPDATE_FINISH_SQL).run(args.exitCode, args.resultPath, args.finishedAt, id), { id });
+}
+
+/** Retire a roster row whose pane is long gone (reconciler expiry): sets
+    finished_at only, leaving exit_code NULL -- no process exited, the pane
+    just never came back. The row stays resumable until pruneAgents takes it. */
+export function markAgentGone(id: string, at: number, db: Database = getStateDb()): void {
+  runCriticalWrite("markAgentGone", () => db.query(UPDATE_GONE_SQL).run(at, id), { id });
 }
 
 export function deleteAgent(id: string, db: Database = getStateDb()): void {
