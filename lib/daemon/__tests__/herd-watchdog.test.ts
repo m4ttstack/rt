@@ -141,6 +141,13 @@ describe("evaluateJob", () => {
     expect(evaluateJob(job({ status: "at-gate" }), s, cfg)).toEqual({ kind: "modal" });
   });
 
+  test("a pane blocked for less than fastMins reads healthy: the normal trust-dialog window, not a wedge", () => {
+    const justBlocked = sensors({ paneState: () => "modal", idleSinceMs: () => NOW - 10_000, unreadDmMentionsFor: () => 1 });
+    expect(evaluateJob(job(), justBlocked, cfg)).toEqual({ kind: "healthy" });
+    const neverRecorded = sensors({ paneState: () => "modal", idleSinceMs: () => null, unreadDmMentionsFor: () => 1 });
+    expect(evaluateJob(job(), neverRecorded, cfg)).toEqual({ kind: "healthy" });
+  });
+
   test("closed, crashed and stuck-at-modal are healthy from the watchdog's view", () => {
     const s = sensors({ ...idleFor(40), unreadDmMentionsFor: () => 3 });
     for (const status of ["closed", "crashed", "stuck-at-modal"] as const) {
@@ -431,7 +438,7 @@ describe("HerdWatchdog ladder", () => {
 
   test("a parked job the store has moved to stuck-at-modal drops out of the ladder on the next sweep", async () => {
     const row = job();
-    const r = rig({ jobs: [row], sensors: { paneState: (p) => (p === "w1:p1" ? "modal" : "idle") } });
+    const r = rig({ jobs: [row], sensors: { paneState: (p) => (p === "w1:p1" ? "modal" : "idle"), idleSinceMs: () => NOW - 40 * MIN } });
     await r.tick();
     expect(r.parks).toHaveLength(1);
     row.status = "stuck-at-modal";

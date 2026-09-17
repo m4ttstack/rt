@@ -74,14 +74,18 @@ export function evaluateJob(job: HerdJobRow, s: WatchdogSensors, cfg: WatchdogCo
   if (!LIVE.has(job.status) || job.pane === null) return HEALTHY;
 
   const state = s.paneState(job.pane);
+  const since = s.idleSinceMs(job.pane);
   // The spawn path owns a spawning pane's trust prompt and missing agent.
   if (job.status !== "spawning") {
     if (state === "dead") return { kind: "dead" };
-    if (state === "modal") return { kind: "modal" };
+    // A registered agent's own trust dialog shows blocked for a few seconds
+    // before the spawn path parks it (herdr detects the agent first), so a
+    // fresh blocked reading is that race, not a wedge: require the same idle
+    // threshold as the fast path before calling it a real modal wedge.
+    if (state === "modal" && since !== null && now - since >= ms(cfg.fastMins)) return { kind: "modal" };
   }
   if (state !== "idle") return HEALTHY;
 
-  const since = s.idleSinceMs(job.pane);
   if (since === null) return HEALTHY;
   const idleMs = now - since;
   if (idleMs < ms(cfg.fastMins)) return HEALTHY;
