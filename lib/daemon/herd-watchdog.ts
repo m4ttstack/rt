@@ -38,6 +38,13 @@ export interface WatchdogConfig {
   notifyQuietMins: number;
   nagMins: number;
   notifyHuman: boolean;
+  /** RT-196: the mid-run driver reuses the spawn path's screen-scraping
+      accept, but a working session can show a genuine, unrelated
+      permission prompt with the same numbered-options shape, and nothing
+      here can yet confirm the dialog's folder matches the job's worktree.
+      Off by default until that gap closes; the spawn-time accept (a fresh
+      pane can only be showing the trust dialog) is unaffected either way. */
+  midRunTrustAccept: boolean;
 }
 
 const HEALTHY: WedgeVerdict = { kind: "healthy" };
@@ -80,11 +87,18 @@ export function evaluateJob(job: HerdJobRow, s: WatchdogSensors, cfg: WatchdogCo
   // The spawn path owns a spawning pane's trust prompt and missing agent.
   if (job.status !== "spawning") {
     if (state === "dead") return { kind: "dead" };
-    // A registered agent's own trust dialog shows blocked for a few seconds
-    // before the spawn path parks it (herdr detects the agent first), so a
-    // fresh blocked reading is that race, not a wedge: require the same idle
-    // threshold as the fast path before calling it a real modal wedge.
-    if (state === "modal" && since !== null && now - since >= ms(cfg.fastMins)) return { kind: "modal" };
+    // A job already at a gate reads "blocked" on the pane for the whole
+    // time a human takes on its form or milestone -- the single most common
+    // healthy wait state in a herd, not a trust modal. Same AWAITING_ANSWER
+    // exemption the backstop below already relies on.
+    if (state === "modal" && !AWAITING_ANSWER.has(job.status)) {
+      // A registered agent's own trust dialog shows blocked for a few
+      // seconds before the spawn path parks it (herdr detects the agent
+      // first), so a fresh blocked reading is that race, not a wedge:
+      // require the same idle threshold as the fast path before calling it
+      // a real modal wedge.
+      if (since !== null && now - since >= ms(cfg.fastMins)) return { kind: "modal" };
+    }
   }
   if (state !== "idle") return HEALTHY;
 
@@ -252,8 +266,12 @@ export class HerdWatchdog {
       // answer for itself: it provisioned the tree. Anything else, and any
       // accept that does not clear the pane, parks as before. Only a
       // daemon-provisioned tree qualifies -- a job pointed at a directory
-      // someone passed in is not rt's to trust on the human's behalf.
-      if (job.tree !== null && await this.act.acceptTrustModal(herd.id, job.name, job.pane)) {
+      // someone passed in is not rt's to trust on the human's behalf. Also
+      // gated on midRunTrustAccept (RT-196, off by default): a working
+      // session can show a genuine, unrelated permission prompt with the
+      // same numbered-options shape, and this driver cannot yet confirm the
+      // dialog's folder matches the job's worktree.
+      if (job.tree !== null && cfg.midRunTrustAccept && await this.act.acceptTrustModal(herd.id, job.name, job.pane)) {
         this.ladders.delete(key);
         this.log.info({ herd: herd.id, job: job.name, pane: job.pane }, "accepted a mid-run trust dialog");
         return;
