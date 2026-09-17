@@ -30,7 +30,7 @@ function realSleep(ms: number): Promise<void> {
  * rather than parsed: it is a message, not a contract, so a wording change
  * degrades this to the loud failure it replaced rather than to a silent pass.
  */
-const NO_HOST_STDERR = /Detected hosts: none/i;
+const NO_HOST_STDERR = /Detected hosts: none|Requested \S+ host was not detected/i;
 
 async function fastbrowserSetupRun(ctx: ApplyContext): Promise<StepOutcome> {
   const resolved = resolveTool(ctx.p, "fast-browser");
