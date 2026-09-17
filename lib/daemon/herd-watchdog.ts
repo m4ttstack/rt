@@ -51,11 +51,13 @@ const oldest = (gates: { id: string; ageMs: number }[]) => gates.reduce<{ id: st
 
 /** The published report is the clock for both the nag and the shepherd
     backstop, and only while the pane is still open: a done job whose pane is
-    gone has been closed (or its close was missed), and nobody can act on it. */
+    gone has been closed (or its close was missed), and nobody can act on it.
+    lastReport is the report's chat message id, not a time, so the age comes
+    from updatedAt, which setJobStatus stamps as the job goes done (RT-193). */
 function openReportAgeMs(job: HerdJobRow, s: WatchdogSensors, now: number): number | null {
   if (job.status !== "done" || job.lastReport === null || job.pane === null) return null;
   if (s.paneState(job.pane) === "gone") return null;
-  return now - job.lastReport;
+  return now - job.updatedAt;
 }
 
 type Lingering = Extract<WedgeVerdict, { kind: "finished-lingering" }>;

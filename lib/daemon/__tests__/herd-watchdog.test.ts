@@ -96,12 +96,21 @@ describe("evaluateJob", () => {
 
   test("(f) done with a report older than nagMins and the pane still open is finished-lingering", () => {
     const s = sensors({ paneState: () => "idle" });
-    expect(evaluateJob(job({ status: "done", lastReport: NOW - 35 * MIN }), s, cfg)).toEqual({ kind: "finished-lingering", evidence: "job-a done with report 35m ago, pane still open; run rt herd close job-a --herd demo-1" });
+    expect(evaluateJob(job({ status: "done", lastReport: 2758, updatedAt: NOW - 35 * MIN }), s, cfg)).toEqual({ kind: "finished-lingering", evidence: "job-a done with report 35m ago, pane still open; run rt herd close job-a --herd demo-1" });
+  });
+
+  // lastReport is the report's chat message id (herd:report stores
+  // posted.data.id), never a clock: aging from it printed the epoch in
+  // minutes ("29826886m ago", RT-193). The report's own age is updatedAt,
+  // stamped when setJobStatus moved the job to done.
+  test("(f2) the nag ages the report from updatedAt, not from the message id in lastReport (RT-193)", () => {
+    const s = sensors({ paneState: () => "idle" });
+    expect(evaluateJob(job({ status: "done", lastReport: 2758, updatedAt: NOW - 47 * MIN }), s, cfg)).toEqual({ kind: "finished-lingering", evidence: "job-a done with report 47m ago, pane still open; run rt herd close job-a --herd demo-1" });
   });
 
   test("done with a report younger than nagMins is healthy", () => {
     const s = sensors({ paneState: () => "idle" });
-    expect(evaluateJob(job({ status: "done", lastReport: NOW - 10 * MIN }), s, cfg)).toEqual({ kind: "healthy" });
+    expect(evaluateJob(job({ status: "done", lastReport: 2758, updatedAt: NOW - 10 * MIN }), s, cfg)).toEqual({ kind: "healthy" });
   });
 
   test("done without a report is healthy: nothing to date the nag from", () => {
@@ -111,9 +120,9 @@ describe("evaluateJob", () => {
 
   test("done with the pane gone or absent is healthy: already closed, the nag never fires", () => {
     const gone = sensors({ paneState: () => "gone" });
-    expect(evaluateJob(job({ status: "done", lastReport: NOW - 35 * MIN }), gone, cfg)).toEqual({ kind: "healthy" });
+    expect(evaluateJob(job({ status: "done", lastReport: 2758, updatedAt: NOW - 35 * MIN }), gone, cfg)).toEqual({ kind: "healthy" });
     const s = sensors({ paneState: () => { throw new Error("must not be called"); } });
-    expect(evaluateJob(job({ status: "done", lastReport: NOW - 35 * MIN, pane: null }), s, cfg)).toEqual({ kind: "healthy" });
+    expect(evaluateJob(job({ status: "done", lastReport: 2758, updatedAt: NOW - 35 * MIN, pane: null }), s, cfg)).toEqual({ kind: "healthy" });
   });
 
   test("(g) a dead pane is dead, before any idle arithmetic", () => {
@@ -190,7 +199,7 @@ describe("evaluateShepherd", () => {
   });
 
   test("(c) a job finished-lingering past nagMins is wedged on the fast path with that evidence", () => {
-    const s = sensors({ ...shepherdIdle, jobs: (h) => (h === "demo-1" ? [job({ status: "done", lastReport: NOW - 35 * MIN })] : []) });
+    const s = sensors({ ...shepherdIdle, jobs: (h) => (h === "demo-1" ? [job({ status: "done", lastReport: 2758, updatedAt: NOW - 35 * MIN })] : []) });
     expect(evaluateShepherd(herd(), s, cfg)).toEqual({ kind: "wedged", path: "fast", evidence: "job-a done with report 35m ago, pane still open; run rt herd close job-a --herd demo-1" });
   });
 
@@ -199,25 +208,25 @@ describe("evaluateShepherd", () => {
       paneState: () => "working",
       openHumanGates: () => [{ id: "g-9", ageMs: 60 * MIN }],
       unreadDmMentionsFor: () => 5,
-      jobs: () => [job({ status: "done", lastReport: NOW - 90 * MIN })],
+      jobs: () => [job({ status: "done", lastReport: 2758, updatedAt: NOW - 90 * MIN })],
     });
     expect(evaluateShepherd(herd(), s, cfg)).toEqual({ kind: "healthy" });
   });
 
   test("(e) BACKSTOP: a job done with a report older than backstopMins and the shepherd not working is wedged on the backstop", () => {
-    const s = sensors({ ...shepherdIdle, jobs: () => [job({ status: "done", lastReport: NOW - 16 * MIN })] });
+    const s = sensors({ ...shepherdIdle, jobs: () => [job({ status: "done", lastReport: 2758, updatedAt: NOW - 16 * MIN })] });
     expect(evaluateShepherd(herd(), s, cfg)).toEqual({ kind: "wedged", path: "backstop", evidence: "job-a done with report 16m ago, not yet closed; run rt herd close job-a --herd demo-1" });
   });
 
   test("a done job with a report younger than backstopMins is healthy", () => {
-    const s = sensors({ ...shepherdIdle, jobs: () => [job({ status: "done", lastReport: NOW - 10 * MIN })] });
+    const s = sensors({ ...shepherdIdle, jobs: () => [job({ status: "done", lastReport: 2758, updatedAt: NOW - 10 * MIN })] });
     expect(evaluateShepherd(herd(), s, cfg)).toEqual({ kind: "healthy" });
   });
 
   test("a done job whose pane is gone or absent never trips the shepherd backstop: nothing is left to close", () => {
-    const gone = sensors({ paneState: (p) => (p === "w1:p0" ? "idle" : "gone"), jobs: () => [job({ status: "done", lastReport: NOW - 40 * MIN })] });
+    const gone = sensors({ paneState: (p) => (p === "w1:p0" ? "idle" : "gone"), jobs: () => [job({ status: "done", lastReport: 2758, updatedAt: NOW - 40 * MIN })] });
     expect(evaluateShepherd(herd(), gone, cfg)).toEqual({ kind: "healthy" });
-    const absent = sensors({ ...shepherdIdle, jobs: () => [job({ status: "done", lastReport: NOW - 40 * MIN, pane: null })] });
+    const absent = sensors({ ...shepherdIdle, jobs: () => [job({ status: "done", lastReport: 2758, updatedAt: NOW - 40 * MIN, pane: null })] });
     expect(evaluateShepherd(herd(), absent, cfg)).toEqual({ kind: "healthy" });
   });
 
@@ -245,12 +254,12 @@ describe("evaluateShepherd", () => {
       ...shepherdIdle,
       openHumanGates: () => [{ id: "g-9", ageMs: 6 * MIN }],
       unreadDmMentionsFor: () => 1,
-      jobs: () => [job({ status: "done", lastReport: NOW - 35 * MIN })],
+      jobs: () => [job({ status: "done", lastReport: 2758, updatedAt: NOW - 35 * MIN })],
     });
     expect(evaluateShepherd(herd(), all, cfg)).toMatchObject({ kind: "wedged", path: "fast", evidence: "human gate g-9 open 6m unanswered" });
-    const noGate = sensors({ ...shepherdIdle, unreadDmMentionsFor: () => 1, jobs: () => [job({ status: "done", lastReport: NOW - 35 * MIN })] });
+    const noGate = sensors({ ...shepherdIdle, unreadDmMentionsFor: () => 1, jobs: () => [job({ status: "done", lastReport: 2758, updatedAt: NOW - 35 * MIN })] });
     expect(evaluateShepherd(herd(), noGate, cfg)).toMatchObject({ evidence: "1 unread DM/mention waiting" });
-    const lingering = sensors({ ...shepherdIdle, jobs: () => [job({ status: "done", lastReport: NOW - 35 * MIN })] });
+    const lingering = sensors({ ...shepherdIdle, jobs: () => [job({ status: "done", lastReport: 2758, updatedAt: NOW - 35 * MIN })] });
     expect(evaluateShepherd(herd(), lingering, cfg)).toMatchObject({ path: "fast", evidence: "job-a done with report 35m ago, pane still open; run rt herd close job-a --herd demo-1" });
   });
 
@@ -492,7 +501,7 @@ describe("HerdWatchdog ladder", () => {
   });
 
   test("a finished-lingering worker is never poked itself: the nag reaches the shepherd through its own ladder", async () => {
-    const r = rig({ jobs: [job({ status: "done", lastReport: NOW - 35 * MIN })], sensors: { paneState: () => "idle" } });
+    const r = rig({ jobs: [job({ status: "done", lastReport: 2758, updatedAt: NOW - 35 * MIN })], sensors: { paneState: () => "idle" } });
     await r.tick();
     expect(r.workerPokes()).toHaveLength(0);
     expect(r.shepherdPokes()).toEqual([{ pane: "w1:p0", text: "watchdog: job-a done with report 35m ago, pane still open; run rt herd close job-a --herd demo-1. Consume it or post status." }]);
