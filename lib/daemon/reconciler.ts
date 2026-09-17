@@ -480,6 +480,7 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
 
   function clear(agentId: string): void {
     setKvValue(CLEARED_NS, agentId, { clearedAt: Date.now() });
+    relocationTried.delete(agentId);
 
     const agents = deps.listAgents();
     const gatesSnapshot = fetchOpenAndParkedGates();

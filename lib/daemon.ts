@@ -700,6 +700,17 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
               if (typeof v === "boolean") enabled = v;
             } catch { /* unreadable key keeps the default */ }
             if (!enabled) return "no-dialog";
+            // A herd worker's pane belongs to the watchdog's modal ladder:
+            // two seams driving one dialog can race the loser's Enter onto
+            // whatever paints after it clears, so the reconciler stands
+            // down for panes an active herd job owns.
+            try {
+              for (const herd of herdStore.list({ status: "active" })) {
+                if (herdStore.jobs(herd.id).some((j) => j.pane === pane.paneRef)) return "no-dialog";
+              }
+            } catch {
+              return "no-dialog";
+            }
             const paneId = pane.paneRef.startsWith("bg:") ? pane.paneRef.slice("bg:".length) : pane.paneRef;
             const outcome = await driveRelocationAccept({
               herdr: herdrRequest, sock: { sockPath: pane.sockPath }, pane: paneId,
@@ -707,7 +718,10 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
               isRegisteredTree: (path) => findTreeByPath(path) !== null,
             });
             if (outcome === "accepted") return "accepted";
-            if (outcome === "no-dialog") return "no-dialog";
+            // "unchecked" is a screen nobody could read: evidence of
+            // nothing, so it keeps the normal attention-gate path rather
+            // than claiming a prompt nobody saw.
+            if (outcome === "no-dialog" || outcome === "unchecked") return "no-dialog";
             return "failed";
           },
           notify: (n) => {
