@@ -30,6 +30,8 @@ import {
 import { buildAgentArgv, buildAgentPaneCommand, CROSS_SESSION_INBOUND_SETTINGS, type AgentInvocation, type AgentProvider } from "../../agent-argv/index.ts";
 import { mergeGateForkHookSettings, resolveGateForkHookPath } from "../../agent-hooks.ts";
 import { defaultHerdrRunner, herdrAgentSessionId, launchInWorkspace, type HerdrRunner } from "../../agent-herdr.ts";
+import { herdrRequest } from "../../herdr/client.ts";
+import { acceptTrustOnPane, type TrustOutcome } from "../trust-accept.ts";
 import { repoLabel } from "../../repo-label.ts";
 import { getSetting } from "../../settings/resolve.ts";
 import { rtDir } from "../../rt-paths.ts";
@@ -262,6 +264,11 @@ export function createAgentHandlers(opts: {
   log?: Logger;
   herdrRunner?: HerdrRunner;
   herdrRunnerForSocket?: (socket: string) => HerdrRunner;
+  /** The JSON herdr caller the folder-trust driver uses; defaults to the real
+      one. A launch whose handlers are built without it skips the check. */
+  herdr?: typeof herdrRequest;
+  /** Shortened budgets for tests; the driver's own defaults otherwise. */
+  trustBudgets?: { registerBudgetMs?: number; waitBudgetMs?: number; settleMs?: number; stepMs?: number };
   spawnHeadless?: (argv: string[], cwd: string, env: Record<string, string>, opts?: { captureSessionId?: boolean }) => HeadlessChild;
   insertAgentFn?: typeof insertAgent;
   /** The daemon-owned background herdr server `--bg` launches onto (spec "The bg service"). Omitted, `bg: true` is refused. */
@@ -342,6 +349,19 @@ export function createAgentHandlers(opts: {
       rec.paneId = out.paneId;
       rec.tabId = out.tabId;
       rec.workspaceId = out.workspaceId;
+      // Every claude pane the daemon opens gets the folder-trust check, not
+      // just the ones herd:spawn opens: a plain `rt agent start` into a fresh
+      // directory sat on the dialog until a human cleared it (RT-156). The
+      // pane lives on whichever server this launch used, so the driver rides
+      // the same socket.
+      const trust = rec.provider === "claude"
+        ? await acceptTrustOnPane({
+          herdr: opts.herdr ?? herdrRequest,
+          sock: extra.herdrSocket ? { sockPath: extra.herdrSocket } : {},
+          pane: out.paneId, log, context: { agent: rec.id, cwd: rec.cwd },
+          ...opts.trustBudgets,
+        })
+        : undefined;
       if (rec.provider === "codex" && !skipSessionCapture) {
         // `runner`, not the default: a --bg or herd launch put this pane on a
         // socket-scoped herdr server, and defaultHerdrRunner() would poll the
@@ -371,6 +391,10 @@ export function createAgentHandlers(opts: {
           log.warn({ err, id: rec.id }, "agent: codex herdr session-id capture failed");
         });
       }
+      // Mutated onto the record rather than spread into a copy: the bg branch
+      // in agent:start rewrites rec.paneId into a bg: ref after this returns,
+      // and a copy would not carry that rewrite back to the caller.
+      if (trust !== undefined) (rec as AgentRecord & { trust?: TrustOutcome }).trust = trust;
       return { ok: true, data: rec };
     }
 

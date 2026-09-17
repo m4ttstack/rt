@@ -113,3 +113,65 @@ export async function driveTrustAccept(deps: TrustDriveDeps): Promise<TrustDrive
   log?.warn({ ...context, pane }, "trust: dialog still up after the accept keys; the pane is stuck at the modal");
   return "stuck";
 }
+
+/** What a spawn path reports about the dialog: `none` is "no dialog, and the
+    pane is otherwise fine", `unchecked` is "nothing could be established". */
+export type TrustOutcome = "none" | "accepted" | "stuck" | "unchecked";
+
+// herdr registers the agent a few hundred ms after the shell starts claude,
+// and `agent.wait` errors immediately on an unregistered target rather than
+// waiting for one, so the wait has to be polled up to.
+const REGISTER_BUDGET_MS = 10_000;
+const REGISTER_POLL_MS = 250;
+const WAIT_BUDGET_MS = 15_000;
+// `done` is in the list because a spawn puts the brief on claude's command
+// line: an already-trusted directory can finish a whole turn before anything
+// else settles.
+const SETTLE_UNTIL = ["idle", "blocked", "done"];
+
+export interface TrustSpawnDeps extends TrustDriveDeps {
+  registerBudgetMs?: number;
+  waitBudgetMs?: number;
+  /** herdr's own wait needs a client timeout longer than the wait it asks
+      for; each caller passes its own conversion. */
+  waitTimeout?: (budgetMs: number) => number;
+}
+
+/**
+ * The whole post-spawn sequence: wait for claude to come up and paint, then
+ * drive whatever modal the screen actually shows.
+ *
+ * The settle wait is a paint budget, never a gate. A pane sitting on the
+ * dialog is precisely a pane herdr may not have registered an agent on, and
+ * one it HAS registered can still be showing the modal while herdr calls it
+ * idle. So the screen is read either way, and only the screen decides whether
+ * a key is sent.
+ */
+export async function acceptTrustOnPane(deps: TrustSpawnDeps): Promise<TrustOutcome> {
+  const { herdr, sock, pane, log, context } = deps;
+  const registerBudgetMs = deps.registerBudgetMs ?? REGISTER_BUDGET_MS;
+  const waitBudgetMs = deps.waitBudgetMs ?? WAIT_BUDGET_MS;
+  const waitTimeout = deps.waitTimeout ?? ((ms: number) => ms + 5_000);
+  try {
+    const deadline = Date.now() + registerBudgetMs;
+    let registered = false;
+    while (Date.now() < deadline) {
+      if ((await herdr("agent.get", { target: pane }, sock)).ok) { registered = true; break; }
+      await Bun.sleep(REGISTER_POLL_MS);
+    }
+    if (registered) {
+      const settled = await herdr<{ agent: { agent_status: string } }>("agent.wait", { target: pane, until: SETTLE_UNTIL, timeout_ms: waitBudgetMs }, { ...sock, timeoutMs: waitTimeout(waitBudgetMs) });
+      if (!settled.ok) log?.debug({ ...context, pane, reason: settled.message }, "trust: agent did not settle inside the budget; reading the screen anyway");
+    }
+    const outcome = await driveTrustAccept(deps);
+    // Nothing on screen. For a registered pane that is simply a worker past
+    // the dialog; for one that never registered it is a pane that never got
+    // claude up for a reason the screen does not name, and calling that
+    // "none" would be a silent pass on a spawn that failed.
+    if (outcome === "no-dialog") return registered ? "none" : "unchecked";
+    return outcome;
+  } catch (err) {
+    log?.warn({ err, ...context, pane }, "trust: dialog accept threw");
+    return "unchecked";
+  }
+}
