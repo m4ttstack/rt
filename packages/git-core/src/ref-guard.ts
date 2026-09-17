@@ -17,9 +17,11 @@ export function assertSafeCommitish(value: string, label: string): void {
   rejectFlagLike(value, label);
 }
 
+// The full-refname form exits 0/1; --branch instead exits 128 on invalid
+// names, which rawGitOk treats as a throw and would bypass this message.
 export async function assertValidBranchName(dir: string, name: string): Promise<void> {
   rejectFlagLike(name, "branch name");
-  if (!(await rawGitOk(dir, ["check-ref-format", "--branch", name]))) {
+  if (!(await rawGitOk(dir, ["check-ref-format", `refs/heads/${name}`]))) {
     throw new Error(`invalid branch name: ${name}`);
   }
 }
