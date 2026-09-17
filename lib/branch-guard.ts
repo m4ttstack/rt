@@ -31,10 +31,22 @@ export async function checkBranchGuard(opts: {
   // root itself, so ownership must exclude the worktree that CONTAINS cwd,
   // never just the entry whose path equals cwd exactly.
   const cwdReal = realpathSync(opts.cwd);
-  const containing = worktrees.find((w: WorktreeEntry) => {
-    const entryReal = realpathSync(w.path);
-    return cwdReal === entryReal || cwdReal.startsWith(entryReal + sep);
-  });
+  let containing: WorktreeEntry | undefined;
+  for (const w of worktrees) {
+    // A listed path can vanish between the list call and here (another
+    // process disposing the worktree); that race must fall through to
+    // "unverified", never throw out of a guard that other code treats as total.
+    let entryReal: string;
+    try {
+      entryReal = realpathSync(w.path);
+    } catch {
+      return { verdict: "unverified", detail: `could not resolve worktree path ${w.path}, so branch ownership is unknown` };
+    }
+    if (cwdReal === entryReal || cwdReal.startsWith(entryReal + sep)) {
+      containing = w;
+      break;
+    }
+  }
   const owner = worktrees.find((w) => w !== containing && w.branch === opts.branch);
   if (owner) {
     return {

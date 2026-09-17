@@ -7,7 +7,15 @@ export interface RawGitOpts {
 // as failure, so the one raw runner lives here.
 export async function rawGit(dir: string, args: string[], opts: RawGitOpts = {}): Promise<string> {
   const ok = new Set([0, ...(opts.okCodes ?? [])]);
-  const proc = Bun.spawn(["git", ...args], { cwd: dir, stdin: "pipe", stdout: "pipe", stderr: "pipe" });
+  const proc = Bun.spawn(["git", ...args], {
+    cwd: dir,
+    stdin: "pipe",
+    stdout: "pipe",
+    stderr: "pipe",
+    // Pinned so English classification text (e.g. "Binary files ... differ")
+    // matches the C-locale guarantee the simple-git client also makes.
+    env: { ...process.env, LC_ALL: "C", LANG: "C" },
+  });
   // Always closed, even with no stdin data: git plumbing commands that never
   // read it ignore the EOF, but leaving it open (the default "inherit") would
   // let a child block on the parent's real stdin.
@@ -28,7 +36,12 @@ export async function rawGit(dir: string, args: string[], opts: RawGitOpts = {})
 // (e.g. diff --quiet, merge-base --is-ancestor): 0/1 are both success states,
 // anything else is a real failure.
 export async function rawGitOk(dir: string, args: string[]): Promise<boolean> {
-  const proc = Bun.spawn(["git", ...args], { cwd: dir, stdout: "pipe", stderr: "pipe" });
+  const proc = Bun.spawn(["git", ...args], {
+    cwd: dir,
+    stdout: "pipe",
+    stderr: "pipe",
+    env: { ...process.env, LC_ALL: "C", LANG: "C" },
+  });
   const [, err, code] = await Promise.all([
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),

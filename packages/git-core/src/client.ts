@@ -20,9 +20,9 @@ export interface ClientContext {
 // matching `unsafe.allow*` flag is set -- so `.env({ ...process.env })`
 // verbatim throws "not permitted without enabling allowUnsafeEditor" the
 // moment a developer's shell has an EDITOR or PAGER set, which is most
-// shells. None of them are read by the plumbing commands this client runs
-// (no tty, no pager, no editor invocation), so they are dropped rather than
-// worked around with the `unsafe` bypass flags.
+// shells. Push-like commands DO read the SSH/askpass vars, so they are
+// dropped here rather than worked around with the `unsafe` bypass flags;
+// pushTag routes through rawGit instead, which keeps the full env.
 const UNSAFE_ENV_KEYS = new Set([
   "editor", "pager", "prefix",
   "git_askpass", "git_config", "git_config_count", "git_config_global", "git_config_system",

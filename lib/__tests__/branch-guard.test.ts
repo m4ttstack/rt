@@ -157,6 +157,26 @@ describe("checkBranchGuard", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
+  test("is unverified, not thrown, when a listed worktree path no longer exists", async () => {
+    const dir = makeRepo();
+
+    const verdict = await checkBranchGuard({
+      cwd: dir,
+      branch: "feature-x",
+      defaultBranch: "main",
+      runners: unreachableRunners,
+      listWorktrees: async () => [
+        { path: join(dir, "gone"), branch: "feature-x", headSha: "abc123", isBare: false },
+      ],
+    });
+
+    expect(verdict.verdict).toBe("unverified");
+    if (verdict.verdict === "unverified") {
+      expect(verdict.detail).toContain(join(dir, "gone"));
+    }
+    rmSync(dir, { recursive: true, force: true });
+  });
+
   test("still refuses an other-worktree-owned branch when cwd is a nested subdirectory", async () => {
     const parent = mkdtempSync(join(tmpdir(), "rt-branch-guard-parent-"));
     const dir = join(parent, "main");
