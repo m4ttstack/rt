@@ -1,0 +1,21 @@
+{
+  "name": "@mattstack/git-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Read-model git facade over simple-git and gitdiff-parser (RT-188)",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit -p tsconfig.json"
+  },
+  "engines": {
+    "bun": ">=1.0.0"
+  },
+  "dependencies": {
+    "gitdiff-parser": "^0.3.1",
+    "simple-git": "^3.36.0"
+  }
+}
