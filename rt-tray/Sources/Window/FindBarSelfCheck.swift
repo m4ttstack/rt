@@ -1,0 +1,172 @@
+#if DEBUG
+import AppKit
+import WebKit
+
+/// End-to-end check for the find bar, run as `rt-tray --find-bar-self-check`.
+///
+/// It lives in the app rather than in a test target because the bar is only
+/// itself in a real, key window: the search field needs a field editor and
+/// real keystrokes, and `WKWebView.find` needs a live web process. It has
+/// already earned that: it caught a search field firing its own action while
+/// typing (every burst landed a match too far) and a restart race.
+///
+/// Not part of any automated suite -- it takes over the screen for a few
+/// seconds -- so run it by hand after touching FindBar or FindBarContainer:
+///
+///     swift build --product rt-tray
+///     .build/debug/rt-tray --find-bar-self-check
+enum FindBarSelfCheck {
+    private static let page = """
+    <html><body style="font:16px -apple-system;padding:24px">
+    <h1>find bar self-check</h1>
+    <p id="p1">Lorem ipsum dolor sit amet</p>
+    <p id="p2">consectetur Lorem adipiscing elit</p>
+    <p id="p3">sed do eiusmod tempor Lorem incididunt</p>
+    </body></html>
+    """
+
+    /// The paragraph id plus the selected text, so stepping between matches
+    /// is observable from outside the page.
+    private static let selectionScript = """
+    (function () {
+      var s = window.getSelection();
+      if (!s || s.rangeCount === 0 || s.toString() === '') return '';
+      var n = s.anchorNode; while (n && !n.id) n = n.parentElement;
+      return (n ? n.id : '?') + ':' + s.toString();
+    })()
+    """
+
+    private static var results: [String] = []
+    private static var webView: WKWebView!
+    private static var container: FindBarContainer!
+    private static var window: NSWindow!
+    private static var delegate: LoadWatcher!
+
+    static func run() -> Never {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.regular)
+
+        webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 700, height: 460))
+        container = FindBarContainer(webView: webView)
+        container.frame = NSRect(x: 0, y: 0, width: 700, height: 460)
+        container.autoresizingMask = [.width, .height]
+
+        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 700, height: 460),
+                          styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+        window.title = "find bar self-check (closes itself)"
+        window.contentView?.addSubview(container)
+        window.center()
+
+        delegate = LoadWatcher()
+        webView.navigationDelegate = delegate
+        webView.loadHTMLString(page, baseURL: nil)
+
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+
+        after(30) {
+            note("finished before the timeout", false)
+            finish()
+        }
+        app.run()
+        exit(0)
+    }
+
+    // MARK: The checks
+
+    fileprivate static func start() {
+        note("window is key", window.isKeyWindow)
+
+        container.performTextFinderAction(item(.showFindInterface))
+        container.layoutSubtreeIfNeeded()
+        note("web content shrank for the bar",
+             abs(webView.frame.height - (container.bounds.height - FindBar.height)) < 0.5,
+             "web \(webView.frame.height) of \(container.bounds.height)")
+        note("find next stays disabled until there is a query", !container.canPerform(.nextMatch))
+
+        type("Lorem")
+        after(1.5) {
+            note("typing reached the field", container.canPerform(.nextMatch))
+            selection { first in
+                note("typing selects the first match", first == "p1:Lorem", "'\(first)'")
+
+                container.performTextFinderAction(item(.nextMatch))
+                after(0.6) {
+                    selection { second in
+                        note("find next steps forward", second == "p2:Lorem", "'\(second)'")
+
+                        container.performTextFinderAction(item(.previousMatch))
+                        after(0.6) {
+                            selection { back in
+                                note("find previous steps back", back == "p1:Lorem", "'\(back)'")
+                                closeAndFinish()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private static func closeAndFinish() {
+        container.performTextFinderAction(item(.hideFindInterface))
+        container.layoutSubtreeIfNeeded()
+        after(0.6) {
+            selection { cleared in
+                note("closing the bar clears the highlight", cleared.isEmpty, "'\(cleared)'")
+                note("web content restored to full height",
+                     abs(webView.frame.height - container.bounds.height) < 0.5,
+                     "web \(webView.frame.height) of \(container.bounds.height)")
+                finish()
+            }
+        }
+    }
+
+    // MARK: Plumbing
+
+    private static func item(_ action: NSTextFinder.Action) -> NSMenuItem {
+        let item = NSMenuItem(title: "", action: #selector(NSResponder.performTextFinderAction(_:)),
+                              keyEquivalent: "")
+        item.tag = action.rawValue
+        return item
+    }
+
+    /// Real keystrokes through the field editor, because the double-stepping
+    /// bug this check exists for only appears on the typing path.
+    private static func type(_ text: String) {
+        for character in text {
+            guard let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
+                                               timestamp: ProcessInfo.processInfo.systemUptime,
+                                               windowNumber: window.windowNumber, context: nil,
+                                               characters: String(character),
+                                               charactersIgnoringModifiers: String(character),
+                                               isARepeat: false, keyCode: 0) else { continue }
+            NSApp.postEvent(event, atStart: false)
+        }
+    }
+
+    private static func selection(_ then: @escaping (String) -> Void) {
+        webView.evaluateJavaScript(selectionScript) { value, _ in then(value as? String ?? "") }
+    }
+
+    private static func after(_ seconds: Double, _ work: @escaping () -> Void) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: work)
+    }
+
+    private static func note(_ label: String, _ ok: Bool, _ detail: String = "") {
+        results.append("\(ok ? "PASS" : "FAIL") \(label)\(detail.isEmpty ? "" : " -> \(detail)")")
+    }
+
+    private static func finish() -> Never {
+        for line in results { print(line) }
+        window.orderOut(nil)
+        exit(results.contains { $0.hasPrefix("FAIL") } ? 1 : 0)
+    }
+
+    private final class LoadWatcher: NSObject, WKNavigationDelegate {
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            FindBarSelfCheck.start()
+        }
+    }
+}
+#endif
