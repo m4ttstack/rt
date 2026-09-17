@@ -89,6 +89,12 @@ export interface StagingDiff {
   hunks: ReadonlyArray<import("./vendor/ghd/raw-diff.ts").DiffHunk>;
 }
 
+export type UndoRefusal = "pushed" | "initial" | "merge";
+
+export type UndoResult =
+  | { ok: true; undoneSha: string }
+  | { ok: false; reason: UndoRefusal };
+
 export interface GitClient {
   readonly dir: string;
   snapshot(): Promise<RepoSnapshot>;
@@ -108,4 +114,6 @@ export interface GitClient {
     diff: StagingDiff,
     selection: import("./vendor/ghd/diff-selection.ts").DiffSelection,
   ): Promise<void>;
+  undoLastCommit(): Promise<UndoResult>;
+  resetToCommit(sha: string, mode: "soft" | "mixed" | "hard"): Promise<void>;
 }
