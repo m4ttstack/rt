@@ -274,7 +274,7 @@ describe("commitStaged", () => {
     commitStaged(dir, "amended commit", { amend: true });
 
     const logCount = git(dir, "log", "--oneline").trim().split("\n").length;
-    expect(logCount).toBe(2); // init + amended
+    expect(logCount).toBe(2);
     expect(git(dir, "log", "-1", "--format=%B").trim()).toBe("amended commit");
     rmSync(dir, { recursive: true, force: true });
   });

@@ -150,6 +150,8 @@ export interface CommitOptions {
 /**
  * Commit the staged changes. The message is passed as an argv element (never
  * through a shell), so quotes, newlines, and `$(...)` are committed verbatim.
+ * Options map to git flags (--amend, --no-verify, --allow-empty); coAuthors
+ * become Co-Authored-By trailers appended after a blank line.
  * Returns git's summary line (e.g. "[main a1b2c3d] feat: ...").
  */
 export function commitStaged(
