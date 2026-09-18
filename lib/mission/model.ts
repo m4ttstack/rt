@@ -39,7 +39,7 @@ export type {
   MissionWorktreeRow,
 };
 
-/** protocol.ts owns the wire shape; this is the brief's own name for it. */
+/** Alias kept for callers expecting the wire-model builder's own return-type name. */
 export type MissionWireModel = MissionModel;
 
 export interface MissionState {
