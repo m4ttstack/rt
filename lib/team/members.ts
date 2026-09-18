@@ -353,17 +353,22 @@ export async function membersRemove(
 
   const boardRoster = readRoster(seams, slug, "board.members");
   const crossAppRoster = readRoster(seams, slug, "mattstack.roster");
-  // The key can live on either roster (dual-write is best-effort): prefer an
-  // entry that actually carries one over a bare row on the newer key.
-  const bothRosters = [...crossAppRoster, ...boardRoster];
-  const existingEntry =
-    bothRosters.find((m) => m.username === handle && typeof m.agePublicKey === "string") ??
-    bothRosters.find((m) => m.username === handle);
-  const keyToRemove = agePublicKey ?? (typeof existingEntry?.agePublicKey === "string" ? existingEntry.agePublicKey : undefined);
+  // The two rosters can diverge (dual-write is best-effort), so EVERY key
+  // recorded for the handle on either one is revoked: leaving any behind
+  // keeps the removed member able to decrypt team secrets.
+  const recordedKeys = [
+    ...new Set(
+      [...crossAppRoster, ...boardRoster]
+        .filter((m) => m.username === handle)
+        .map((m) => m.agePublicKey)
+        .filter((k): k is string => typeof k === "string"),
+    ),
+  ];
+  const keysToRemove = agePublicKey ? [agePublicKey] : recordedKeys;
 
-  if (keyToRemove) {
+  if (keysToRemove.length > 0) {
     const ownerPublicKey = await readOwnPublicKeyIfPresent(secrets);
-    if (ownerPublicKey !== null && keyToRemove === ownerPublicKey) {
+    if (ownerPublicKey !== null && keysToRemove.includes(ownerPublicKey)) {
       throw new UserActionableError(
         "own-key-removal-refused",
         `refusing to remove "${handle}" — the key on record for them is this machine's OWN age key, so removing it would lock this operator out of every team secret. ` +
@@ -416,9 +421,9 @@ export async function membersRemove(
   const rosterRemoved = boardHad || crossAppHad;
 
   let reencrypted: string[] = [];
-  if (keyToRemove) {
-    const result = await removeTeamRecipient(slug, keyToRemove, secrets);
-    reencrypted = result.reencrypted;
+  for (const key of keysToRemove) {
+    const result = await removeTeamRecipient(slug, key, secrets);
+    reencrypted = [...new Set([...reencrypted, ...result.reencrypted])];
   }
 
   return {

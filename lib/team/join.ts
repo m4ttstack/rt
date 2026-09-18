@@ -450,46 +450,57 @@ export async function joinRedeem(
   }
 
   let peering: JoinResult["peering"] = "idle";
-  const switchboardUrl = snapshot.integrations.switchboard?.url ?? pointer.switchboard?.url;
+  // Only the team's OWN declared switchboard is ever trusted: the pointer is
+  // invite-supplied, so its url must never receive the admin token (SSRF) and
+  // its token must never be stored against a different switchboard than the
+  // one the board will actually call.
+  const declaredUrl = snapshot.integrations.switchboard?.url;
   if (pointer.switchboard?.token) {
     // The owner pre-minted this board's token at invite time (a fresh joiner
     // cannot decrypt team secrets yet, so the sealed pointer is the only
     // channel that works on a first join). Storing it is all peering needs.
     peering = "unavailable";
-    try {
-      await seams.writeLocalSecret("switchboardToken", pointer.switchboard.token);
-      peering = "applied";
-    } catch (err) {
-      seams.warn(`board peering: could not store the switchboard token (${err instanceof Error ? err.message : String(err)})`);
+    if (declaredUrl && pointer.switchboard.url === declaredUrl) {
+      try {
+        await seams.writeLocalSecret("switchboardToken", pointer.switchboard.token);
+        peering = "applied";
+      } catch (err) {
+        seams.warn(`board peering: could not store the switchboard token (${err instanceof Error ? err.message : String(err)})`);
+      }
+    } else {
+      seams.warn("board peering: the invite's switchboard does not match the team's declared one; refusing its token");
     }
-  } else if (switchboardUrl) {
+  } else if (declaredUrl) {
+    // Fallback for re-joins by members whose age key is already a team-secrets
+    // recipient; a first join cannot decrypt the admin token and lands on
+    // unavailable. Every failure stays inside peering: the join itself is done.
     peering = "unavailable";
-    const adminToken = await seams.readTeamSecret(pointer.team, "rt", "switchboardAdminToken", secrets(pointer.team));
-    if (adminToken) {
-      // The switchboard's admin register route: an upsert that mints (or
-      // rotates) this member's board token. Peering only counts as applied
-      // once that token is stored where the board's secrets read finds it.
-      const res = await p.fetch(`${switchboardUrl}/boards`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
-        body: JSON.stringify({ username: handle }),
-      });
-      if (res.status >= 200 && res.status < 300) {
-        let token: unknown;
-        try {
-          token = (JSON.parse(res.body) as { token?: unknown })?.token;
-        } catch {
-          /* an unparsable register reply reads as no token */
-        }
-        if (typeof token === "string" && token) {
+    try {
+      const adminToken = await seams.readTeamSecret(pointer.team, "rt", "switchboardAdminToken", secrets(pointer.team));
+      if (adminToken) {
+        // The switchboard's admin register route: an upsert that mints (or
+        // rotates) this member's board token. Peering only counts as applied
+        // once that token is stored where the board's secrets read finds it.
+        const res = await p.fetch(`${declaredUrl}/boards`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
+          body: JSON.stringify({ username: handle }),
+        });
+        if (res.status >= 200 && res.status < 300) {
+          let token: unknown;
           try {
+            token = (JSON.parse(res.body) as { token?: unknown })?.token;
+          } catch {
+            /* an unparsable register reply reads as no token */
+          }
+          if (typeof token === "string" && token) {
             await seams.writeLocalSecret("switchboardToken", token);
             peering = "applied";
-          } catch (err) {
-            seams.warn(`board peering: could not store the switchboard token (${err instanceof Error ? err.message : String(err)})`);
           }
         }
       }
+    } catch (err) {
+      seams.warn(`board peering: could not register this board (${err instanceof Error ? err.message : String(err)})`);
     }
   }
 

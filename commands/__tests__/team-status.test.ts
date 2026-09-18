@@ -82,6 +82,22 @@ describe("teamStatus", () => {
     });
   });
 
+  test("a non-array mattstack.roster value falls back to board.members, matching preferredRoster's rule", async () => {
+    const deps = clonedDeps({
+      exec: async () => ({ code: 0, stdout: "2026-08-21T10:00:00+00:00\n", stderr: "" }),
+      read: {
+        "board.title": "Acme Team",
+        "board.members": [{ username: "matt" }],
+        "mattstack.roster": "corrupted-not-an-array",
+      },
+    });
+
+    await teamStatus(["--team", SLUG, "--json"], {}, deps);
+
+    const body = JSON.parse(deps.lines[0]!);
+    expect(body.members).toEqual([{ username: "matt" }]);
+  });
+
   test("members come from mattstack.roster when present; board.members is only the legacy fallback", async () => {
     const deps = clonedDeps({
       exec: async () => ({ code: 0, stdout: "2026-08-21T10:00:00+00:00\n", stderr: "" }),

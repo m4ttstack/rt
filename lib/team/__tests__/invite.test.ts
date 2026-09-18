@@ -381,6 +381,27 @@ describe("mintInvite", () => {
     expect(warnings.some((w) => w.includes("board peering"))).toBe(true);
   });
 
+  test("a throwing readLocalSecret stays inside optional peering: the mint still succeeds, warned", async () => {
+    const p = probesWithRemote(REMOTE);
+    const { seams, warnings } = baseSeams({
+      read: fakeRead({
+        "mattstack.integrations": { forge: { host: "github.com", provider: "github" }, switchboard: { url: "https://sb.test" } },
+      }),
+      readLocalSecret: async () => {
+        throw new Error("keychain sulking");
+      },
+    });
+    const relay = fakeRelayClient();
+
+    const result = await mintInvite(p, relay.client, { slug: SLUG, handle: "zaphod", now: NOW }, seams);
+
+    expect(result.code).toBeTruthy();
+    const { idHex, key } = decodeCode(result.code);
+    const pointer = await open(relay.createCalls[0]!.ciphertext, key, idHex);
+    expect(pointer.switchboard).toBeUndefined();
+    expect(warnings.some((w) => w.includes("board peering"))).toBe(true);
+  });
+
   test("a failing switchboard register: the mint still succeeds without a sealed token, warned", async () => {
     const p = fakeProbes({
       home: HOME,

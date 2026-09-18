@@ -240,30 +240,34 @@ export async function mintInvite(p: Probes, relay: RelayClient, opts: MintInvite
   const switchboardUrl = snapshot.integrations.switchboard?.url;
   if (switchboardUrl) {
     let embedFailure: string | null = null;
-    const adminToken = await seams.readLocalSecret("switchboardAdminToken");
-    if (!adminToken) {
-      embedFailure = "no readable switchboardAdminToken secret in the local rt domain";
-    } else {
-      const res = await p.fetch(`${switchboardUrl}/boards`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
-        body: JSON.stringify({ username: opts.handle }),
-      });
-      if (res.status < 200 || res.status >= 300) {
-        embedFailure = `the switchboard register answered ${res.status}`;
+    try {
+      const adminToken = await seams.readLocalSecret("switchboardAdminToken");
+      if (!adminToken) {
+        embedFailure = "no readable switchboardAdminToken secret in the local rt domain";
       } else {
-        let boardToken: unknown;
-        try {
-          boardToken = (JSON.parse(res.body) as { token?: unknown })?.token;
-        } catch {
-          /* an unparsable register reply reads as no token */
-        }
-        if (typeof boardToken === "string" && boardToken) {
-          pointer.switchboard = { url: switchboardUrl, token: boardToken };
+        const res = await p.fetch(`${switchboardUrl}/boards`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
+          body: JSON.stringify({ username: opts.handle }),
+        });
+        if (res.status < 200 || res.status >= 300) {
+          embedFailure = `the switchboard register answered ${res.status}`;
         } else {
-          embedFailure = "the switchboard register returned no token";
+          let boardToken: unknown;
+          try {
+            boardToken = (JSON.parse(res.body) as { token?: unknown })?.token;
+          } catch {
+            /* an unparsable register reply reads as no token */
+          }
+          if (typeof boardToken === "string" && boardToken) {
+            pointer.switchboard = { url: switchboardUrl, token: boardToken };
+          } else {
+            embedFailure = "the switchboard register returned no token";
+          }
         }
       }
+    } catch (err) {
+      embedFailure = err instanceof Error ? err.message : String(err);
     }
     if (embedFailure) {
       seams.warn(`board peering was not embedded in this invite (${embedFailure}); after they join, re-invite their board from the board's members panel`);

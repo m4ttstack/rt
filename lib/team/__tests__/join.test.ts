@@ -703,6 +703,50 @@ describe("joinRedeem", () => {
     expect(secretReads).toEqual([]);
   });
 
+  test("an embedded token whose url differs from the team-declared switchboard is refused: unavailable, nothing stored", async () => {
+    const p = redeemProbes();
+    const embedded = { ...POINTER, switchboard: { url: "https://evil.test", token: "tok-x" } };
+    const relay = fakeRelay({ fetch: relayServing(embedded) });
+    const { seams, calls } = baseJoinRedeemSeams({
+      read: fakeRead({ "mattstack.integrations": { switchboard: { url: "https://sb.test" } } }),
+      readTeamSecret: async () => null,
+    });
+
+    const result = await joinRedeem(p, relay.client, () => NO_SECRETS, { code: CODE }, seams);
+
+    expect(result.peering).toBe("unavailable");
+    expect(calls.secretWrites).toEqual([]);
+  });
+
+  test("an embedded token with no team-declared switchboard url is refused: nothing to aim it at, nothing stored", async () => {
+    const p = redeemProbes();
+    const embedded = { ...POINTER, switchboard: { url: "https://sb.test", token: "tok-x" } };
+    const relay = fakeRelay({ fetch: relayServing(embedded) });
+    const { seams, calls } = baseJoinRedeemSeams();
+
+    const result = await joinRedeem(p, relay.client, () => NO_SECRETS, { code: CODE }, seams);
+
+    expect(result.peering).toBe("unavailable");
+    expect(calls.secretWrites).toEqual([]);
+    expect(p.calls.fetch).toHaveLength(0);
+  });
+
+  test("a throwing readTeamSecret stays inside peering: unavailable, join still ok", async () => {
+    const p = redeemProbes();
+    const relay = fakeRelay();
+    const { seams } = baseJoinRedeemSeams({
+      read: fakeRead({ "mattstack.integrations": { switchboard: { url: "https://sb.test" } } }),
+      readTeamSecret: async () => {
+        throw new Error("keychain sulking");
+      },
+    });
+
+    const result = await joinRedeem(p, relay.client, () => NO_SECRETS, { code: CODE }, seams);
+
+    expect(result.access).toBe("ok");
+    expect(result.peering).toBe("unavailable");
+  });
+
   test("a 2xx register with no parsable token → peering:unavailable, nothing written, and the message names the board-panel re-invite repair", async () => {
     const p = redeemProbes({ fetch: async () => ({ status: 201, body: "not json", headers: {} }) });
     const relay = fakeRelay();

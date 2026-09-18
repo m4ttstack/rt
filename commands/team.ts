@@ -524,7 +524,8 @@ export async function teamStatus(args: string[], _ctx: CommandContext = {}, deps
     const snapshot = readTeamSnapshot(deps.probes, slug, { read, warn: () => {} });
     const title = read<string>("board.title");
     const name = title && title.length > 0 ? title : slug;
-    const members = toRosterMembers(read<unknown>("mattstack.roster") ?? read<unknown>("board.members"), (msg) => console.error(msg));
+    const preferredMembers = read<unknown>("mattstack.roster");
+    const members = toRosterMembers(Array.isArray(preferredMembers) ? preferredMembers : read<unknown>("board.members"), (msg) => console.error(msg));
 
     const log = await deps.probes.exec(["git", "-C", dir, "log", "-1", "--format=%cI", "origin/main"]);
     const lastPush = log.code === 0 ? log.stdout.trim() || null : null;

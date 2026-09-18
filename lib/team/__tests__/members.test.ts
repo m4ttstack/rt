@@ -596,6 +596,24 @@ describe("membersRemove", () => {
     expect(result.manualSteps.join(" ")).toContain("still has access");
   });
 
+  test("divergent keys across the two rosters are BOTH revoked: no stale recipient survives the removal", async () => {
+    const DIVERGENT_KEY = "age12tszxzvjgdsw9hge35352mesauj93umyvqee5dzuza72lp7qty0q50tcaj";
+    const p = fakeProbes({ home: HOME });
+    const { secrets } = seamsWithClone();
+    writeTeamRecipients(SLUG, [OWNER_PUBLIC_KEY, ALICE_PUBLIC_KEY, DIVERGENT_KEY], secrets);
+    const { seams } = fakeMembersSeams({
+      readTeamStore: () => ({
+        "board.members": [{ username: "matt" }, { username: "alice", agePublicKey: ALICE_PUBLIC_KEY }],
+        "mattstack.roster": [{ username: "matt" }, { username: "alice", agePublicKey: DIVERGENT_KEY }],
+      }),
+    });
+
+    const result = await membersRemove(p, secrets, SLUG, "alice", undefined, seams);
+
+    expect(result.rosterRemoved).toBe(true);
+    expect(readTeamRecipients(SLUG, secrets)).toEqual([OWNER_PUBLIC_KEY]);
+  });
+
   test("an entry that lives only on mattstack.roster is still found: its key is revoked and the row removed, with no board.members needed", async () => {
     const remote = "git@github.com:acme/widgets.git";
     const p = fakeProbes({ home: HOME, files: { [join(HOME, ".mattstack", "teams", SLUG, ".git", "config")]: gitConfigWithRemote(remote) } });
