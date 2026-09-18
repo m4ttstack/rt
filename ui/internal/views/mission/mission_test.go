@@ -280,14 +280,135 @@ func TestActionKeyEmitsActionIntent(t *testing.T) {
 	s.Wait()
 }
 
-func TestBranchWorktreeRepoKeysEmitNothingThisTask(t *testing.T) {
+// TestRepoModalEnterEmitsRepoIntentWithRowID drives the default cursor (the
+// fixture's first repo row, repo-tools) straight to enter.
+func TestRepoModalEnterEmitsRepoIntentWithRowID(t *testing.T) {
 	s := s5open(t)
-	for _, k := range []string{"b", "w", "r"} {
-		s.Type(k)
-		if l, ok := s.ReadLine(150 * time.Millisecond); ok {
-			t.Fatalf("%s must not emit yet: %q", k, l)
-		}
+	s.Type("r")
+	s.WaitForPaint("chat")
+	s.Type(keyEnter)
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:repo"`) || !strings.Contains(l, `"repo":"repo-tools"`) {
+		t.Fatalf("repo intent: %q", l)
 	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+// TestBranchModalCheckoutEmitsIntentWithBranchName moves one row down from
+// the current branch (recent) to "main" (other): the guarded row sits past
+// it and is never reached here.
+func TestBranchModalCheckoutEmitsIntentWithBranchName(t *testing.T) {
+	s := s5open(t)
+	s.Type("b")
+	s.WaitForPaint("main")
+	s.Type("\x1b[B")
+	s.Type(keyEnter)
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:checkout"`) || !strings.Contains(l, `"branch":"main"`) {
+		t.Fatalf("checkout intent: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+// TestGuardedBranchRowFilteredAloneEmitsNothingOnEnter types a query that
+// isolates the guarded row as the only match: the cursor has nowhere
+// selectable to land, and enter must still refuse it.
+func TestGuardedBranchRowFilteredAloneEmitsNothingOnEnter(t *testing.T) {
+	s := s5open(t)
+	s.Type("b")
+	s.Type("picker-polish")
+	s.WaitForPaint("picker-polish")
+	s.Type(keyEnter)
+	if l, ok := s.ReadLine(300 * time.Millisecond); ok {
+		t.Fatalf("guarded row must not emit on enter: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+// TestWorktreeModalEmitsIntentWithPath moves from the current worktree
+// (gandalf) down to the on-deck one (frodo).
+func TestWorktreeModalEmitsIntentWithPath(t *testing.T) {
+	s := s5open(t)
+	s.Type("w")
+	s.WaitForPaint("frodo")
+	s.Type("\x1b[B")
+	s.Type(keyEnter)
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:worktree"`) ||
+		!strings.Contains(l, `"path":"/Users/matt/.mattstack/rt/worktrees/gh-m4ttstack-rt/frodo"`) {
+		t.Fatalf("worktree intent: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+func TestModalEscClosesWithoutEmittingAndReturnsFocusToList(t *testing.T) {
+	s := s5open(t)
+	s.Type("r")
+	s.WaitForPaint("chat")
+	s.Type(keyEsc)
+	if l, ok := s.ReadLine(200 * time.Millisecond); ok {
+		t.Fatalf("esc must not emit: %q", l)
+	}
+	s.Type(" ")
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:stage"`) {
+		t.Fatalf("space after esc should still stage, proving focus returned to the list: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+// TestBranchActionRowEmitsCheckoutNewFromCurrent walks past the recent and
+// other rows (the guarded row auto-skips) to land on the action slot.
+func TestBranchActionRowEmitsCheckoutNewFromCurrent(t *testing.T) {
+	s := s5open(t)
+	s.Type("b")
+	s.WaitForPaint("New branch from")
+	s.Type("\x1b[B", "\x1b[B")
+	s.Type(keyEnter)
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:checkout"`) || !strings.Contains(l, `"new":true`) ||
+		!strings.Contains(l, `"from":"rt-191-mission-tui"`) {
+		t.Fatalf("branch action intent: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+func TestWorktreeActionRowEmitsWorktreeNew(t *testing.T) {
+	s := s5open(t)
+	s.Type("w")
+	s.WaitForPaint("Provision new worktree")
+	s.Type("\x1b[B", "\x1b[B")
+	s.Type(keyEnter)
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:worktree"`) || !strings.Contains(l, `"new":true`) {
+		t.Fatalf("worktree action intent: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+const detachedModel = `{"current":{"repo":"repo-tools","branch":"a1b2c3d","detached":true},` +
+	`"branches":[{"name":"main","current":false,"ahead":0,"behind":0,"guardedBy":"","group":"other"}],` +
+	`"changes":[],"changedTotal":0,"stagedTotal":0,"filter":"",` +
+	`"commit":{"summary":"","description":"","placeholder":"Summary (required)","amending":false,"buttonLabel":"Commit","canCommit":false,"lastCommit":null},` +
+	`"stashCount":0,"notice":""}`
+
+// TestDetachedHeadRefusesBranchModalWithNotice presses b on a detached
+// checkout: no modal opens (no filter box paints) and nothing emits, only a
+// local refusal notice.
+func TestDetachedHeadRefusesBranchModalWithNotice(t *testing.T) {
+	s := openMission(t, detachedModel, "Detached HEAD")
+	s.Type("b")
+	if l, ok := s.ReadLine(200 * time.Millisecond); ok {
+		t.Fatalf("detached HEAD must not emit anything on b: %q", l)
+	}
+	s.WaitForPaint("check out a branch")
 	s.Send(`{"t":"close"}`)
 	s.Wait()
 }

@@ -26,6 +26,7 @@ const (
 	focusDiff
 	focusSummary
 	focusDescription
+	focusModal
 )
 
 type Mission struct {
@@ -55,6 +56,17 @@ type Mission struct {
 	diffCursor int
 	diffTop    int
 	diffPath   string
+
+	// modal is the open repo/branch/worktree foldout, nil when none is open.
+	modal *modalState
+	// localNotice and bell are a client-only refusal cue (the detached-HEAD
+	// branch guard): distinct from the wire model's own Notice field, which
+	// a later task wires to the driver's guard refusals. Both are cleared at
+	// the top of every KeyPressMsg and re-armed only by the key that
+	// triggers a fresh refusal, so the bell embedded in View's output rings
+	// for exactly the one frame right after that key.
+	localNotice string
+	bell        bool
 }
 
 func New(em *session.Emitter) *Mission {
@@ -174,10 +186,14 @@ func (m *Mission) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.reason = session.ReasonClosed
 		return m, tea.Quit
 	case tea.KeyPressMsg:
+		m.bell = false
+		m.localNotice = ""
 		if v.String() == "ctrl+c" {
 			return m.quit()
 		}
 		switch m.focus {
+		case focusModal:
+			return m.modalKey(v)
 		case focusFilter:
 			return m.filterKey(v)
 		case focusSummary, focusDescription:
@@ -216,9 +232,12 @@ func (m *Mission) listKey(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "/":
 		m.focus = focusFilter
 		m.filterText = m.model.Filter
-	case "b", "w", "r":
-		// The branch/worktree/repo modals land in a later task; the key is
-		// reserved but does nothing yet.
+	case "b":
+		return m.openBranchModal()
+	case "w":
+		return m.openWorktreeModal()
+	case "r":
+		return m.openRepoModal()
 	case "q":
 		return m.quit()
 	}
@@ -351,7 +370,7 @@ func (m *Mission) renderSidebar(width int) string {
 }
 
 func (m *Mission) View() tea.View {
-	top := renderTopBar(m.model, m.width, zoneNone, zoneNone)
+	top := renderTopBar(m.model, m.width, zoneNone, m.openZone())
 	sidebar := m.renderSidebar(sidebarWidth)
 	diffW := m.width - sidebarWidth - 1
 	if diffW < 0 {
@@ -359,7 +378,15 @@ func (m *Mission) View() tea.View {
 	}
 	keybar := renderKeybar(m.width)
 
-	bodyHeight := m.height - lipgloss.Height(top) - lipgloss.Height(keybar)
+	// The notice strip's row is reserved out of bodyHeight up front, not
+	// appended after the fact: appending it below an already
+	// screen-height frame pushes the total past the alt-screen viewport,
+	// scrolling the notice (or the keybar) out of what actually paints.
+	noticeHeight := 0
+	if m.localNotice != "" {
+		noticeHeight = 1
+	}
+	bodyHeight := m.height - lipgloss.Height(top) - lipgloss.Height(keybar) - noticeHeight
 	if bodyHeight < lipgloss.Height(sidebar) {
 		bodyHeight = lipgloss.Height(sidebar)
 	}
@@ -375,6 +402,16 @@ func (m *Mission) View() tea.View {
 
 	body := lipgloss.JoinHorizontal(lipgloss.Top, sidebarPadded, divider, diffPadded)
 	out := lipgloss.JoinVertical(lipgloss.Left, top, body, keybar)
+
+	if m.localNotice != "" {
+		out = lipgloss.JoinVertical(lipgloss.Left, out, renderNoticeStrip(m.localNotice, m.width))
+	}
+	if m.modal != nil {
+		out = renderMissionModal(out, m.modal, m.width, lipgloss.Height(top))
+	}
+	if m.bell {
+		out += "\a"
+	}
 
 	v := tea.NewView(out)
 	v.AltScreen = true

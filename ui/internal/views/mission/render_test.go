@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
@@ -228,6 +229,154 @@ func TestRenderDiffPaneNoneShowsSelectAFile(t *testing.T) {
 	out := ansi.Strip(m.renderDiffPane(60, 10))
 	if !strings.Contains(out, "select a file") {
 		t.Fatalf("empty diff missing the select-a-file hint:\n%s", out)
+	}
+}
+
+// modalFixtureModel mirrors ui/fixtures/session-model-mission.json's repo/
+// branch/worktree rows (kept in sync by hand: model_test.go pins the same
+// fixture's field values) without paying JSON decode cost per test.
+func modalFixtureModel() Model {
+	return Model{
+		Current: Current{Repo: "repo-tools", RepoLabel: "repo-tools", Branch: "rt-191-mission-tui"},
+		Repos: []RepoRow{
+			{ID: "repo-tools", Label: "repo-tools", Group: "recent", Current: true,
+				Badge: Badge{Staged: 1, Unstaged: 2, Untracked: 1, Ahead: 3, Behind: 2}},
+			{ID: "chat", Label: "chat", Group: "recent", Badge: Badge{Clean: true}},
+		},
+		Branches: []BranchRow{
+			{Name: "rt-191-mission-tui", Current: true, Ahead: 3, Behind: 2, Group: "recent"},
+			{Name: "main", Ahead: 0, Behind: 5, Group: "other"},
+			{Name: "rt-190-picker-polish", GuardedBy: "checked out in worktree frodo", Group: "guarded"},
+		},
+		Worktrees: []WorktreeRow{
+			{Path: "/w/gandalf", Name: "gandalf", Branch: "rt-191-mission-tui", Current: true},
+			{Path: "/w/frodo", Name: "frodo", Branch: "rt-190-picker-polish", OnDeck: true},
+		},
+	}
+}
+
+func newTestMission() *Mission {
+	m := New(nil)
+	m.width, m.height = 100, 30
+	m.model = modalFixtureModel()
+	return m
+}
+
+func TestModalOpenDimsParentAndEscRestoresUndimmed(t *testing.T) {
+	m := newTestMission()
+	before := m.View().Content
+	m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
+	opened := m.View().Content
+	if opened == before {
+		t.Fatalf("opening the repo modal left the frame unchanged")
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	after := m.View().Content
+	if after != before {
+		t.Fatalf("esc did not restore the undimmed parent:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
+
+func TestModalFilterNarrowsViaMatchRank(t *testing.T) {
+	m := newTestMission()
+	m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
+	m.Update(tea.KeyPressMsg{Code: 'c', Text: "c"})
+	m.Update(tea.KeyPressMsg{Code: 'h', Text: "h"})
+	out := m.View().Content
+	if !strings.Contains(out, "chat") {
+		t.Fatalf("filtered modal missing the matching row:\n%s", out)
+	}
+	// The dimmed parent's own top bar keeps showing "repo-tools" as the
+	// current-repo label regardless of the modal's filter, so the ranked
+	// match set -- not a screen-wide substring check -- is the only reliable
+	// way to assert the non-matching row actually dropped out of the list.
+	if len(m.modal.matches) != 1 || m.modal.rows[m.modal.matches[0].Index].value != "chat" {
+		t.Fatalf("match.Rank should leave exactly the \"chat\" row: %+v", m.modal.matches)
+	}
+}
+
+func TestModalGuardedBranchRowSkippedByCursorMovement(t *testing.T) {
+	m := newTestMission()
+	m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
+	if row, ok := m.modal.selectedRow(); !ok || row.value != "rt-191-mission-tui" {
+		t.Fatalf("initial cursor: %+v ok=%v", row, ok)
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	if row, ok := m.modal.selectedRow(); !ok || row.value != "main" {
+		t.Fatalf("after one down: %+v ok=%v", row, ok)
+	}
+	// The guarded row sits right after "main"; a second down must skip it
+	// straight to the action slot rather than landing on it.
+	m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	if !m.modal.onActionSlot() {
+		t.Fatalf("expected the action slot after skipping the guarded row, cursor=%d", m.modal.cursor)
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	if !m.modal.onActionSlot() {
+		t.Fatalf("cursor moved past the last slot")
+	}
+}
+
+func TestModalGuardedBranchRowIsDimmerWithLockGlyph(t *testing.T) {
+	m := newTestMission()
+	m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
+	out := m.View().Content
+	if !strings.Contains(out, fgSGR(theme.Dimmer)+"m"+glyphLock) {
+		t.Fatalf("guarded row should show the lock glyph in Dimmer:\n%s", out)
+	}
+}
+
+func TestModalRepoRowsShowDirtyAheadBehindBadges(t *testing.T) {
+	m := newTestMission()
+	m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
+	out := m.View().Content
+	for _, want := range []string{fgSGR(theme.Peach) + "m●4", fgSGR(theme.Mint) + "m2↓", fgSGR(theme.Cyan) + "m3↑"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in repo modal:\n%s", want, out)
+		}
+	}
+}
+
+func TestModalRepoCleanRowShowsMintCheck(t *testing.T) {
+	m := newTestMission()
+	m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
+	out := m.View().Content
+	if !strings.Contains(out, fgSGR(theme.Mint)+"m"+theme.GlyphDone) {
+		t.Fatalf("clean repo row missing the Mint check:\n%s", out)
+	}
+}
+
+func TestModalWorktreeCurrentGlyphMintAndOnDeckReady(t *testing.T) {
+	m := newTestMission()
+	m.Update(tea.KeyPressMsg{Code: 'w', Text: "w"})
+	out := m.View().Content
+	if !strings.Contains(out, fgSGR(theme.Mint)+"m"+theme.GlyphOn) {
+		t.Fatalf("current worktree row missing Mint %s:\n%s", theme.GlyphOn, out)
+	}
+	if !strings.Contains(out, "ready") {
+		t.Fatalf("on-deck worktree row missing its ready label:\n%s", out)
+	}
+}
+
+func TestModalBranchActionRowWearsLavAndActionHighlight(t *testing.T) {
+	m := newTestMission()
+	m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	if !m.modal.onActionSlot() {
+		t.Fatalf("setup: expected the action slot, cursor=%d", m.modal.cursor)
+	}
+	out := m.View().Content
+	if !strings.Contains(out, "New branch from rt-191-mission-tui") {
+		t.Fatalf("missing the action row label:\n%s", out)
+	}
+	// The row's foreground and background combine into one SGR escape, so
+	// the "m" terminator sits after both parameter runs, not right after fg.
+	if !strings.Contains(out, fgSGR(theme.Lav)) {
+		t.Fatalf("action row should wear Lav:\n%s", out)
+	}
+	if !strings.Contains(out, bgSGR(theme.ActionHighlight(theme.Lav))) {
+		t.Fatalf("cursor on the action row should wear ActionHighlight bg:\n%s", out)
 	}
 }
 
