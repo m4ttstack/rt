@@ -835,6 +835,62 @@ export const TREE: Record<string, CommandNode> = {
           { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable result" },
         ],
       },
+      stash: {
+        description: "Stash the working tree and manage stashes",
+        subcommands: {
+          push: {
+            description: "Stash tracked changes (optionally untracked too)",
+            module: "./commands/git/mutate.ts",
+            fn: "stashPushCommand",
+            context: "worktree",
+            args: [
+              { name: "Message", flag: "--message", type: "text", placeholder: "wip", hint: "Stash message" },
+              { name: "Include untracked", flag: "--include-untracked", type: "boolean", default: false, hint: "Also stash untracked files" },
+              { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable result" },
+            ],
+          },
+          list: {
+            description: "List stashes",
+            module: "./commands/git/mutate.ts",
+            fn: "stashListCommand",
+            context: "worktree",
+            args: [
+              { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable stashes" },
+            ],
+          },
+          pop: {
+            description: "Apply a stash and drop it (default stash@{0})",
+            module: "./commands/git/mutate.ts",
+            fn: "stashPopCommand",
+            context: "worktree",
+            args: [
+              { name: "Index", type: "text", optional: true, placeholder: "0", hint: "Stash index (default 0)" },
+              { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable result" },
+            ],
+          },
+          apply: {
+            description: "Apply a stash, keeping it (default stash@{0})",
+            module: "./commands/git/mutate.ts",
+            fn: "stashApplyCommand",
+            context: "worktree",
+            args: [
+              { name: "Index", type: "text", optional: true, placeholder: "0", hint: "Stash index (default 0)" },
+              { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable result" },
+            ],
+          },
+          drop: {
+            description: "Delete a stash",
+            module: "./commands/git/mutate.ts",
+            fn: "stashDropCommand",
+            omitBehavior: "picker",
+            context: "worktree",
+            args: [
+              { name: "Index", type: "text", placeholder: "0", hint: "Stash index (picker when omitted)" },
+              { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable result" },
+            ],
+          },
+        },
+      },
     },
   },
 

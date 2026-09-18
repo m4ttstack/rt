@@ -138,3 +138,29 @@ describe("rt git amend and undo", () => {
     expect(out.error.length).toBeGreaterThan(0);
   });
 });
+
+describe("rt git stash", () => {
+  test("push, list, pop round-trip", async () => {
+    writeFileSync(join(repo, "a.txt"), "stashme\n");
+    const pushed = await rtJson(["git", "stash", "push", "--message", "wip test", "--json"]);
+    expect(pushed).toEqual({ ok: true, created: true });
+    const listed = await rtJson(["git", "stash", "list", "--json"]);
+    expect(listed.ok).toBe(true);
+    expect(listed.stashes.length).toBe(1);
+    expect(listed.stashes[0].message).toContain("wip test");
+    expect(listed.stashes[0].index).toBe(0);
+    const popped = await rtJson(["git", "stash", "pop", "--json"]);
+    expect(popped).toEqual({ ok: true, index: 0 });
+    const after = await rtJson(["git", "stash", "list", "--json"]);
+    expect(after.stashes).toEqual([]);
+  });
+
+  test("drop without an index in non-TTY json mode is a usage error", async () => {
+    const res = await rt(["git", "stash", "drop", "--json"], { home: repo, env: { HOME: home.path } });
+    expect(res.exitCode).toBe(1);
+    expect(JSON.parse(res.stdout)).toEqual({
+      ok: false,
+      error: "usage: rt git stash drop <index> [--json]",
+    });
+  });
+});
