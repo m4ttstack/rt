@@ -162,11 +162,16 @@ left as-is or reduced to a pointer here.
 
    **Pin-only fast path** (user-ratified 2026-09-18): when `git diff
    --stat <last-tag>..HEAD` touches ONLY `rt-tray/deps.lock` (plus
-   `RELEASE_NOTES.md` and `website/`), skip the local walkthrough and tag
-   on the rehearsal alone: the rehearsal still builds, notarizes, and
-   clean-room installs in CI, and a pin bump cannot reach the onboarding
-   flows the walkthrough exercises. Any other changed file means the full
-   gate.
+   `RELEASE_NOTES.md` and `website/`) AND every changed row is an app deck
+   merely serves (board, chat, console, gitq, boxscore), skip the local
+   walkthrough and tag on the rehearsal alone: CI still builds, notarizes,
+   and clean-room installs, and those apps play no part in the setup flow
+   the walkthrough exercises. Rows that DO participate in onboarding keep
+   the full gate no matter how small the diff: deck (the deck.managed
+   adopt is walkthrough territory, and a deck pin is exactly what the
+   walkthrough gated on 2026-09-18), fast-browser (fastbrowser.setup ran
+   a real setup regression to ground in v2.9.0), and every tool row (bun,
+   sparkle, age, zstd, git-lfs, and the rest all run during install). Any changed file outside that list also means the full gate.
 
    When a walkthrough fails on `deck.managed`, read
    `~/.mattstack/deck/logs/agent.log` from the guest-home tarball FIRST;
