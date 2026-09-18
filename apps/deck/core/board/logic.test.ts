@@ -62,6 +62,7 @@ function makeData(overrides: Partial<StatusData> = {}): StatusData {
     suffix: 'localhost',
     canRestart: true,
     canManage: true,
+    devMode: false,
     up: 2,
     total: 3,
     apps: [],

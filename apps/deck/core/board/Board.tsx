@@ -151,7 +151,16 @@ export function Board() {
         <>
           {sections.map((section, i) => (
             <section key={section.key} className={i === 0 ? undefined : 'mt-6'}>
-              {section.title && <h2>{section.title}</h2>}
+              {section.title && (
+                <h2 className="section-title">
+                  {section.title}
+                  {section.key === 'mattstack' && data.devMode && (
+                    <Tooltip tip="rt settings dev-mode is on: these apps serve from their linked source, not their bundled binary">
+                      <Badge intent="warn">dev mode</Badge>
+                    </Tooltip>
+                  )}
+                </h2>
+              )}
               <AppsTable
                 section={section}
                 showHead={i === 0}

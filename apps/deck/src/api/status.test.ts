@@ -267,3 +267,9 @@ test('a slim row with a broken link gets devLink broken', async () => {
   expect(row.devLink).toBe('broken');
   expect(row.commands).toBeUndefined();
 });
+
+test('the top-level devMode flag mirrors opts.devMode, for the board to show', async () => {
+  expect((await buildStatus({ ...opts, devMode: true })).devMode).toBe(true);
+  expect((await buildStatus({ ...opts, devMode: false })).devMode).toBe(false);
+  expect((await buildStatus(opts)).devMode).toBe(false);
+});

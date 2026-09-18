@@ -118,6 +118,10 @@ export interface Status {
   suffix: string;
   canRestart: boolean;
   canManage: boolean;
+  /** Machine-wide `rt settings dev-mode`: mattstack-managed apps (not "your
+      apps") serve from their linked source instead of their bundled binary
+      while this is on. Mirrors `opts.devMode` so the board can show it. */
+  devMode: boolean;
   up: number;
   total: number;
   apps: StatusRow[];
@@ -293,6 +297,7 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
     // Restart is a local-only control: never expose it through a public tunnel.
     canRestart: publicDomain === null,
     canManage: publicDomain === null,
+    devMode: !!opts.devMode,
     up: healths.filter(h => h.ok).length,
     total: apps.length,
     apps: appRows,

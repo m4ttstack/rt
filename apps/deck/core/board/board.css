@@ -57,6 +57,14 @@ body {
   margin-top: 1.5rem;
 }
 
+/* Section heading + its dev-mode badge (mattstack section only) on one
+   baseline, not the badge's own inline flow beside the text. */
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
 /* The app icon (mattstack mark) leads a managed row's identity, ahead of the
    health dot; unmanaged rows carry none and start at the dot. */
 .app-icon {
