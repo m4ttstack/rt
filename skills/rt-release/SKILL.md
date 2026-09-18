@@ -84,6 +84,34 @@ left as-is or reduced to a pointer here.
    notes record, never a silent default. Version numbers stay per-app;
    rt's own tag plus the committed deps.lock is the compatibility record.
 
+2c. **The other vendored layers: plugins, standalone apps, tools, the
+   extension.** Step 2b covers only the four apps-monorepo rows; v2.10.1
+   shipped a marketplace catalog whose mattstack plugin pin was 263
+   commits stale because nothing checked the rest. Walk these four:
+
+   - **Plugin catalog**: `bash scripts/release/marketplace.sh --refresh
+     --dry-run` names every url-source pin that drifted from its ref;
+     rerun without `--dry-run`, review the diff, and land it before the
+     notes commit so the tag publishes current pins. The in-tree `chat`
+     plugin has no upstream and never drifts.
+   - **Standalone app rows** (gitq, fast-browser): compare each
+     deps.lock version against the app repo's newest release
+     (`gh api repos/m4ttstack/<repo>/releases --jq '.[0].tag_name'`).
+     Same lockstep policy as 2b; a stale hold is the user's recorded
+     decision.
+   - **Tool rows** (bun, sparkle, age, zstd, git-lfs, gh, glab, jq,
+     node, sops, cloudflared, portless): hand-pinned; no per-release
+     sweep required, but a bump PR pending on main at release time rides
+     or holds by the user's call, never silently.
+   - **Chrome extension**: the published extension is pinned by
+     `runtime-lock.json` in m4ttstack/fast-browser (extension id,
+     version, and the fork release it was built from). It is current
+     when the fork's newest `fast-browser-v*` release equals the pinned
+     one (`gh api repos/m4ttheweric/playwright/releases` filtered by
+     that prefix). A newer fork release means a runtime-lock bump and a
+     Web Store submit, which only the user can do and store review
+     delays; surface it at step 2 time, never at the tag.
+
 3. **Push main.** If `main` is ahead of `origin/main`, push it. This is an
    outward action: unless the user pre-authorized the release, say what you are
    about to push and wait for confirmation.
