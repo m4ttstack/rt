@@ -15,7 +15,7 @@
         "source": "url",
         "url": "https://github.com/m4ttstack/fast-browser.git",
         "ref": "main",
-        "sha": "53e905ff7d05c7c25065834d7615db6884fb520b"
+        "sha": "d386ae9ac38a6ebed4ae6312eed89c84a3ec3911"
       },
       "description": "macOS and Chrome alpha browser automation for Claude Code and Codex"
     },
@@ -25,7 +25,7 @@
         "source": "url",
         "url": "https://github.com/m4ttstack/skills.git",
         "ref": "main",
-        "sha": "762d0a002e4bf8d4b20a9584dd4ab5c9f6b678e1"
+        "sha": "7441e7303d60622e2951f71affb8033f7229528c"
       },
       "description": "The mattstack skills pack: the work orchestrator and pipeline stages, orchestration skills, the review cluster, the GitLab CI forge adapter, and the parameterized-skill primitive with its authoring skill."
     }
