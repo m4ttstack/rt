@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { makeSandbox } from "../../test-support/sandbox.ts";
 import { rawGit } from "../exec.ts";
 
@@ -18,7 +21,7 @@ async function findChildPid(match: RegExp, timeoutMs = 2000): Promise<number> {
       const command = fields.slice(2).join(" ");
       if (ppid === process.pid && pid > 0 && match.test(command)) return pid;
     }
-    await new Promise((r) => setTimeout(r, 20));
+    await new Promise((r) => setTimeout(r, 10));
   }
   throw new Error(`no child of ${process.pid} matching ${match} appeared within ${timeoutMs}ms`);
 }
@@ -32,41 +35,43 @@ function isRunning(pid: number): boolean {
   }
 }
 
-async function waitUntilExited(pid: number, timeoutMs = 2000): Promise<void> {
+async function waitUntilExited(pid: number, timeoutMs = 4000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (!isRunning(pid)) return;
-    await new Promise((r) => setTimeout(r, 20));
+    await new Promise((r) => setTimeout(r, 10));
   }
   throw new Error(`pid ${pid} still running after ${timeoutMs}ms`);
 }
 
 describe("rawGit abort", () => {
+  // A FIFO with no writer blocks a reader's open() call indefinitely by
+  // construction (POSIX open-open rendezvous), so this hangs the same way
+  // on every machine -- no network, no timing, no fixture size to tune.
   test("aborting mid-run rejects promptly and leaves no lingering child", async () => {
     const sb = await makeSandbox();
-    const server = Bun.serve({
-      port: 0,
-      // Never resolves: the fetch's HTTP request hangs, holding the spawned
-      // git process open until something kills it.
-      fetch: () => new Promise<Response>(() => {}),
-    });
+    const fifoDir = await mkdtemp(join(tmpdir(), "git-core-fifo-"));
+    const fifoPath = join(fifoDir, "input");
     try {
-      await sb.git(["remote", "add", "origin", `http://127.0.0.1:${server.port}/x.git`]);
+      Bun.spawnSync(["mkfifo", fifoPath]);
       const controller = new AbortController();
-      const promise = rawGit(sb.dir, ["fetch", "origin"], { signal: controller.signal });
-      const childPid = await findChildPid(/git fetch origin/);
+      // `git apply <file>` opens the file argument directly; with no writer
+      // on the other end of the fifo, that open() never returns on its own.
+      const promise = rawGit(sb.dir, ["apply", fifoPath], { signal: controller.signal });
+      const childPid = await findChildPid(/git apply/);
+      expect(isRunning(childPid)).toBe(true);
 
       const start = Date.now();
       controller.abort();
       await expect(promise).rejects.toThrow();
-      expect(Date.now() - start).toBeLessThan(5000);
+      expect(Date.now() - start).toBeLessThan(500);
 
       await waitUntilExited(childPid);
     } finally {
-      server.stop(true);
       await sb.cleanup();
+      await rm(fifoDir, { recursive: true, force: true });
     }
-  });
+  }, 8000);
 
   test("an already-aborted signal rejects without spawning", async () => {
     const sb = await makeSandbox();

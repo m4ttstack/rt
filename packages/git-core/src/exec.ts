@@ -27,6 +27,12 @@ export function scrubGitEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.Proce
   return env;
 }
 
+// A killed process is not guaranteed to unblock immediately: SIGTERM
+// delivery can be deferred behind a syscall the child is stuck in (a stalled
+// connect(), for instance), so a grace period backstops it with SIGKILL,
+// which the kernel cannot defer.
+const ABORT_KILL_GRACE_MS = 2000;
+
 // git diff --no-index exits 1 when files differ; simple-git treats that
 // as failure, so the one raw runner lives here.
 export async function rawGit(dir: string, args: string[], opts: RawGitOpts = {}): Promise<string> {
@@ -48,28 +54,56 @@ export async function rawGit(dir: string, args: string[], opts: RawGitOpts = {})
   // let a child block on the parent's real stdin.
   if (opts.stdin !== undefined) proc.stdin.write(opts.stdin);
   proc.stdin.end();
-  let aborted = false;
-  const onAbort = () => {
-    aborted = true;
-    proc.kill();
-  };
-  opts.signal?.addEventListener("abort", onAbort, { once: true });
-  try {
+
+  const collected = (async (): Promise<string> => {
     const [out, err, code] = await Promise.all([
       new Response(proc.stdout).text(),
       new Response(proc.stderr).text(),
       proc.exited,
     ]);
-    if (aborted) {
-      throw new Error(`git ${args.join(" ")} aborted`);
-    }
     if (!ok.has(code)) {
       throw new Error(`git ${args.join(" ")} exited ${code}: ${err || out}`);
     }
     return out;
-  } finally {
-    opts.signal?.removeEventListener("abort", onAbort);
-  }
+  })();
+
+  const signal = opts.signal;
+  if (!signal) return collected;
+
+  // A killed child's stdout/stderr streams (or the exit wait itself, if the
+  // signal is slow to land) can stay pending well past the kill call, so an
+  // abort settles this promise itself rather than waiting on `collected`.
+  return new Promise<string>((resolve, reject) => {
+    let settled = false;
+    const finish = (run: () => void) => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener("abort", onAbort);
+      run();
+    };
+    const onAbort = () => {
+      finish(() => reject(new Error(`git ${args.join(" ")} aborted`)));
+      try {
+        proc.kill();
+      } catch {
+        // Already exited between the abort firing and this call.
+      }
+      const killTimer = setTimeout(() => {
+        try {
+          proc.kill("SIGKILL");
+        } catch {
+          // Already exited before the grace period ran out.
+        }
+      }, ABORT_KILL_GRACE_MS);
+      killTimer.unref?.();
+      proc.exited.finally(() => clearTimeout(killTimer));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    collected.then(
+      (out) => finish(() => resolve(out)),
+      (err) => finish(() => reject(err)),
+    );
+  });
 }
 
 // Reuses the same spawn path for git plumbing whose exit code IS the answer
