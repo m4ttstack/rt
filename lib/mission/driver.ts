@@ -5,7 +5,6 @@
  * pixels only; every decision (guard checks, selection math, confirm
  * timers) lives here.
  */
-import { basename } from "node:path";
 import { createStackGuardRunners } from "../stack-guard.ts";
 import {
   DiffSelection,
@@ -16,7 +15,7 @@ import {
   type StagingDiff,
 } from "../../packages/git-core/src/index.ts";
 import { DiffLineType } from "../../packages/git-core/src/vendor/ghd/diff-line.ts";
-import type { GitWorktreeBadge, RepoStatusRow } from "../../packages/rt-client/src/commands.ts";
+import type { GitWorktreeBadge, RepoStatusRow, WorktreeTreeRow } from "../../packages/rt-client/src/commands.ts";
 import type { BranchGuardVerdict, checkBranchGuard } from "../branch-guard.ts";
 import type { DaemonEvent, DaemonSubscription, daemonQuery } from "../daemon-client.ts";
 import { getRemoteDefaultBranch } from "../git-ops.ts";
@@ -24,7 +23,7 @@ import { createRealProbes } from "../setup/probes.ts";
 import type { SessionIntent } from "../ui/protocol.ts";
 import type { SessionHandle } from "../ui/spawn.ts";
 import { deriveAction, type ActionKind, type ActionState } from "./git-actions.ts";
-import { buildModel, type MissionLastCommit, type MissionModel, type MissionState, type WorktreeRow } from "./model.ts";
+import { buildModel, joinWorktreeRows, EMPTY_GIT_BADGE, type MissionLastCommit, type MissionModel, type MissionState, type WorktreeRow } from "./model.ts";
 import { SessionDied } from "../runner/runner.ts";
 
 // The alias types below exist only so MissionDeps can spell `typeof <fn>`
@@ -98,22 +97,6 @@ interface DriverState extends MissionState {
 /** Second `mission:discard` for the same target must land within this window to execute; a late or mismatched one just re-arms. */
 const DISCARD_CONFIRM_WINDOW_MS = 5000;
 
-const EMPTY_BADGE: GitWorktreeBadge = {
-  worktree: "",
-  branch: null,
-  detached: false,
-  staged: 0,
-  unstaged: 0,
-  untracked: 0,
-  conflicted: 0,
-  clean: true,
-  ahead: 0,
-  behind: 0,
-  upstream: null,
-  lastFetchedAt: null,
-  updatedAt: "",
-};
-
 const EMPTY_SNAPSHOT: RepoSnapshot = {
   branch: null,
   detached: false,
@@ -161,6 +144,7 @@ export class MissionDriver {
   private readonly state: DriverState;
   private session: SessionHandle | null = null;
   private rows: RepoStatusRow[] = [];
+  private trees: WorktreeTreeRow[] = [];
   private snapshot: RepoSnapshot = EMPTY_SNAPSHOT;
   private branches: BranchInfo[] = [];
   private stashCount = 0;
@@ -248,20 +232,16 @@ export class MissionDriver {
   }
 
   private worktreeRows(): WorktreeRow[] {
-    return [
-      {
-        path: this.state.currentWorktree,
-        name: basename(this.state.currentWorktree),
-        branch: this.snapshot.branch ?? "",
-        onDeck: false,
-        badge: this.currentBadge(),
-      },
-    ];
+    return joinWorktreeRows(this.trees, this.currentRepoBadges());
+  }
+
+  private currentRepoBadges(): GitWorktreeBadge[] {
+    return this.rows.find((r) => r.repo === this.state.currentRepo)?.worktrees ?? [];
   }
 
   private currentBadge(): GitWorktreeBadge {
-    const row = this.rows.find((r) => r.repo === this.state.currentRepo);
-    return row?.worktrees.find((w) => w.worktree === this.state.currentWorktree) ?? row?.worktrees[0] ?? EMPTY_BADGE;
+    const badges = this.currentRepoBadges();
+    return badges.find((w) => w.worktree === this.state.currentWorktree) ?? badges[0] ?? EMPTY_GIT_BADGE;
   }
 
   private async guardBranch(branch: string): Promise<BranchGuardVerdict> {
@@ -277,14 +257,16 @@ export class MissionDriver {
   /** Repos, snapshot, branches, stashes, and last commit -- everything but the diff for the current pane. */
   private async refresh(): Promise<void> {
     const client = this.deps.client(this.state.currentWorktree);
-    const [statusRes, snapshot, branches, stashes, log] = await Promise.all([
+    const [statusRes, treesRes, snapshot, branches, stashes, log] = await Promise.all([
       this.deps.daemonQuery("repos:status", {}),
+      this.deps.daemonQuery("worktree:list", { repoName: this.state.currentRepo }),
       client.snapshot(),
       client.branches(),
       client.stashes(),
       client.log({ maxCount: 1 }),
     ]);
     if (statusRes?.ok) this.rows = (statusRes.data?.repos as RepoStatusRow[] | undefined) ?? [];
+    if (treesRes?.ok) this.trees = (treesRes.data?.trees as WorktreeTreeRow[] | undefined) ?? [];
     this.snapshot = snapshot;
     this.branches = branches;
     this.stashCount = stashes.length;
@@ -321,7 +303,11 @@ export class MissionDriver {
     });
   }
 
+  // Cleared unconditionally so a stale notice (an old refusal, an armed
+  // discard prompt) never survives an unrelated intent; a handler that needs
+  // it to persist (a refusal, a re-arm) sets it again below, after this.
   private async handle(intent: SessionIntent): Promise<void> {
+    this.state.notice = "";
     switch (intent.name) {
       case "mission:action":
         await this.handleAction();

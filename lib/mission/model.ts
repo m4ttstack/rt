@@ -7,7 +7,7 @@ import {
   type StagingDiff,
 } from "../../packages/git-core/src/index.ts";
 import { DiffLineType } from "../../packages/git-core/src/vendor/ghd/diff-line.ts";
-import type { GitWorktreeBadge, RepoStatusRow } from "../../packages/rt-client/src/commands.ts";
+import type { GitWorktreeBadge, RepoStatusRow, WorktreeTreeRow } from "../../packages/rt-client/src/commands.ts";
 import type { ActionState } from "./git-actions.ts";
 import type {
   MissionActionModel,
@@ -67,6 +67,23 @@ export interface WorktreeRow {
 }
 
 const OVERSIZED_LINE_CUTOFF = 3000;
+
+/** No `worktree:list` row is dirty yet at the moment a fresh tree is discovered -- the badge join falls back to this until a `repos:status` sweep covers its path. */
+export const EMPTY_GIT_BADGE: GitWorktreeBadge = {
+  worktree: "",
+  branch: null,
+  detached: false,
+  staged: 0,
+  unstaged: 0,
+  untracked: 0,
+  conflicted: 0,
+  clean: true,
+  ahead: 0,
+  behind: 0,
+  upstream: null,
+  lastFetchedAt: null,
+  updatedAt: "",
+};
 
 const EMPTY_BADGE: MissionBadge = {
   ahead: 0,
@@ -128,6 +145,17 @@ function toMissionBadge(badge: GitWorktreeBadge): MissionBadge {
     clean: badge.clean,
     lastFetchedAt: badge.lastFetchedAt ?? "",
   };
+}
+
+/** Joins `worktree:list` trees to `repos:status` badges by path -- no wire shape carries both. */
+export function joinWorktreeRows(trees: WorktreeTreeRow[], badges: GitWorktreeBadge[]): WorktreeRow[] {
+  return trees.map((tree) => ({
+    path: tree.path,
+    name: tree.name,
+    branch: tree.branch ?? "",
+    onDeck: tree.state === "on-deck",
+    badge: badges.find((b) => b.worktree === tree.path) ?? EMPTY_GIT_BADGE,
+  }));
 }
 
 function buildBranchRow(branch: BranchInfo, guards: Map<string, string>): MissionBranchRow {

@@ -4,9 +4,9 @@ import { join, resolve } from "node:path";
 import { DiffSelection, DiffSelectionType, type BranchInfo, type ChangedFile, type RepoSnapshot, type StagingDiff } from "../../../packages/git-core/src/index.ts";
 import { DiffLine, DiffLineType } from "../../../packages/git-core/src/vendor/ghd/diff-line.ts";
 import { DiffHunk, DiffHunkExpansionType, DiffHunkHeader } from "../../../packages/git-core/src/vendor/ghd/raw-diff.ts";
-import type { GitWorktreeBadge, RepoStatusRow } from "../../../packages/rt-client/src/commands.ts";
+import type { GitWorktreeBadge, RepoStatusRow, WorktreeTreeRow } from "../../../packages/rt-client/src/commands.ts";
 import type { ActionState } from "../git-actions.ts";
-import { buildModel, type MissionModel, type MissionState, type WorktreeRow } from "../model.ts";
+import { buildModel, joinWorktreeRows, type MissionModel, type MissionState, type WorktreeRow } from "../model.ts";
 
 const FIXTURES = resolve(import.meta.dir, "..", "..", "..", "ui", "fixtures");
 
@@ -29,6 +29,19 @@ function badge(overrides: Partial<GitWorktreeBadge> = {}): GitWorktreeBadge {
     upstream: "origin/main",
     lastFetchedAt: null,
     updatedAt: "2026-09-18T12:00:00Z",
+    ...overrides,
+  };
+}
+
+function treeRow(overrides: Partial<WorktreeTreeRow> = {}): WorktreeTreeRow {
+  return {
+    name: "gandalf",
+    kind: "main",
+    state: "claimed",
+    path: "/repo",
+    branch: "main",
+    repoName: "repo-tools",
+    mr: null,
     ...overrides,
   };
 }
@@ -245,6 +258,46 @@ describe("buildModel golden fixture handshake", () => {
     });
 
     expect(JSON.parse(JSON.stringify(model))).toEqual(fixture.model);
+  });
+});
+
+describe("joinWorktreeRows", () => {
+  test("joins each tree to its badge by path, not by list position", () => {
+    const trees: WorktreeTreeRow[] = [
+      treeRow({ path: "/a", name: "gandalf", branch: "main", state: "claimed" }),
+      treeRow({ path: "/b", name: "frodo", branch: "feature", state: "on-deck" }),
+    ];
+    // Badges deliberately out of tree order -- a positional zip would cross-wire them.
+    const badges = [badge({ worktree: "/b", ahead: 2 }), badge({ worktree: "/a", ahead: 5 })];
+
+    const rows = joinWorktreeRows(trees, badges);
+
+    expect(rows).toEqual([
+      { path: "/a", name: "gandalf", branch: "main", onDeck: false, badge: badges[1]! },
+      { path: "/b", name: "frodo", branch: "feature", onDeck: true, badge: badges[0]! },
+    ]);
+  });
+
+  test("a tree with no matching badge yet (fresh from worktree:list, no repos:status sweep) falls back to an empty badge", () => {
+    const trees: WorktreeTreeRow[] = [treeRow({ path: "/c", name: "new-tree", branch: null, state: "claimed" })];
+
+    const rows = joinWorktreeRows(trees, []);
+
+    expect(rows[0]!.branch).toBe("");
+    expect(rows[0]!.badge.worktree).toBe("");
+    expect(rows[0]!.badge.clean).toBe(true);
+  });
+
+  test("onDeck is true only for the worktree:list 'on-deck' state", () => {
+    const trees: WorktreeTreeRow[] = [
+      treeRow({ path: "/a", state: "claimed" }),
+      treeRow({ path: "/b", state: "on-deck" }),
+      treeRow({ path: "/c", state: "disposable" }),
+    ];
+
+    const rows = joinWorktreeRows(trees, []);
+
+    expect(rows.map((r) => r.onDeck)).toEqual([false, true, false]);
   });
 });
 

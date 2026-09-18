@@ -233,6 +233,11 @@ function badge(overrides: Partial<GitWorktreeBadge> = {}): GitWorktreeBadge {
   };
 }
 
+/** Default `worktree:list` response: one tree, matching START's `/repo` so existing tests joining against `badge()` (also `worktree: "/repo"`) keep resolving to a real badge. */
+function defaultTrees(): Array<{ path: string; name: string; branch: string | null; state: string }> {
+  return [{ path: "/repo", name: "repo", branch: "main", state: "claimed" }];
+}
+
 function baseDeps(over: {
   session: SessionHandle;
   client?: GitClient;
@@ -248,7 +253,12 @@ function baseDeps(over: {
   return {
     openSession: async () => over.session,
     client: () => client,
-    daemonQuery: over.daemonQuery ?? (async () => ({ ok: true, data: { repos: [{ repo: "repo-tools", error: null, worktrees: [badge()] }] } })),
+    daemonQuery:
+      over.daemonQuery ??
+      (async (cmd: string) =>
+        cmd === "worktree:list"
+          ? { ok: true, data: { trees: defaultTrees() } }
+          : { ok: true, data: { repos: [{ repo: "repo-tools", error: null, worktrees: [badge()] }] } }),
     subscribe: over.subscribe ?? ((): DaemonSubscription => ({ close: () => {} })),
     runAction: over.runAction ?? (async () => ({ ok: true, detail: "" })),
     commit: over.commit ?? (() => "[main abc] msg"),
@@ -451,6 +461,50 @@ describe("MissionDriver: worktree", () => {
     expect(last.notice).toBe("use rt worktree provision");
     expect(last.current.worktree).toBe(START.worktree); // never switched
   });
+
+  test("switching worktree re-seeds worktree:list and pushes a model whose Current joins the new path's real name and badge", async () => {
+    const session = new FakeSession([
+      { t: "intent", name: "mission:worktree", payload: { path: "/repo2" } },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({
+      session,
+      daemonQuery: async (cmd: string) =>
+        cmd === "worktree:list"
+          ? {
+              ok: true,
+              data: {
+                trees: [
+                  { path: "/repo", name: "gandalf", branch: "main", state: "claimed" },
+                  { path: "/repo2", name: "frodo", branch: "feature", state: "on-deck" },
+                ],
+              },
+            }
+          : {
+              ok: true,
+              data: {
+                repos: [
+                  {
+                    repo: "repo-tools",
+                    error: null,
+                    worktrees: [badge({ worktree: "/repo" }), badge({ worktree: "/repo2", branch: "feature", ahead: 4 })],
+                  },
+                ],
+              },
+            },
+    });
+
+    await new MissionDriver(deps, START).run();
+
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.current.worktree).toBe("/repo2");
+    // The real `name` from worktree:list, not basename("/repo2") -- proves the join, not a hardcoded row.
+    expect(last.current.worktreeName).toBe("frodo");
+    const row = last.worktrees.find((w) => w.path === "/repo2");
+    expect(row?.name).toBe("frodo");
+    expect(row?.onDeck).toBe(true);
+    expect(row?.badge.ahead).toBe(4);
+  });
 });
 
 describe("MissionDriver: undo", () => {
@@ -584,5 +638,67 @@ describe("MissionDriver: session death", () => {
     const deps = baseDeps({ session });
 
     await expect(new MissionDriver(deps, START).run()).rejects.toThrow(SessionDied);
+  });
+});
+
+describe("MissionDriver: notice lifecycle", () => {
+  test("a stale Notice from a prior refusal clears on the next successful intent", async () => {
+    const client = makeFakeClient();
+    let guardCalls = 0;
+    const session = new FakeSession([
+      // Refused: guard fires only on the first checkout attempt below.
+      { t: "intent", name: "mission:checkout", payload: { branch: "guarded-branch" } },
+      // Unrelated, guard-free intent that must land as a clean success.
+      { t: "intent", name: "mission:select", payload: { filter: "xyz" } },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({
+      session,
+      client,
+      guard: async () => {
+        guardCalls++;
+        return { verdict: "refuse", reason: "worktree", detail: "guarded-branch is checked out elsewhere" };
+      },
+    });
+
+    await new MissionDriver(deps, START).run();
+
+    expect(guardCalls).toBe(1);
+    expect((session.pushed[0] as MissionModel).notice).toBe("guarded-branch is checked out elsewhere");
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.filter).toBe("xyz");
+    expect(last.notice).toBe("");
+  });
+
+  test("a worktree switch clears a lingering Notice instead of carrying it across", async () => {
+    const session = new FakeSession([
+      { t: "intent", name: "mission:discard", payload: { path: "a.txt", mode: "toggle-file" } }, // arms, sets Notice
+      { t: "intent", name: "mission:worktree", payload: { path: "/repo" } }, // same path, but a real switch attempt
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({ session });
+
+    await new MissionDriver(deps, START).run();
+
+    expect((session.pushed[0] as MissionModel).notice).toBe("press d again to discard");
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.notice).toBe("");
+  });
+});
+
+describe("MissionDriver: seed", () => {
+  test("the initial seed builds and hands off exactly one model -- no push before the first intent is handled", async () => {
+    let openSessionCalls = 0;
+    const session = new FakeSession([{ t: "intent", name: "quit" }]);
+    const deps = baseDeps({ session });
+    deps.openSession = async (view, model) => {
+      openSessionCalls++;
+      return session;
+    };
+
+    await new MissionDriver(deps, START).run();
+
+    expect(openSessionCalls).toBe(1);
+    expect(session.pushed).toHaveLength(0);
   });
 });
