@@ -104,8 +104,8 @@ export async function pushTag(ctx: ClientContext, name: string, remote = "origin
   await rawGit(ctx.dir, ["push", remote, `refs/tags/${name}`]);
 }
 
-export async function fetchRemote(ctx: ClientContext, remote = "origin"): Promise<void> {
+export async function fetchRemote(ctx: ClientContext, remote = "origin", signal?: AbortSignal): Promise<void> {
   assertSafeRemote(remote);
   // rawGit, not ctx.git.fetch: fetch reads GIT_SSH_COMMAND/GIT_ASKPASS same as push.
-  await rawGit(ctx.dir, ["fetch", "--quiet", remote]);
+  await rawGit(ctx.dir, ["fetch", "--quiet", remote], { signal });
 }

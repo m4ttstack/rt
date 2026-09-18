@@ -1,6 +1,7 @@
 export interface RawGitOpts {
   okCodes?: number[]; // exit codes besides 0 that still return stdout
   stdin?: string; // piped to the child and closed; e.g. `git apply -` patches
+  signal?: AbortSignal; // kills the child and rejects promptly on abort
 }
 
 // GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE inherited from the parent process
@@ -30,6 +31,11 @@ export function scrubGitEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.Proce
 // as failure, so the one raw runner lives here.
 export async function rawGit(dir: string, args: string[], opts: RawGitOpts = {}): Promise<string> {
   const ok = new Set([0, ...(opts.okCodes ?? [])]);
+  // A signal that is already aborted must never spawn: callers that raced an
+  // abort against a queued call expect no child at all, not one killed at birth.
+  if (opts.signal?.aborted) {
+    throw new Error(`git ${args.join(" ")} aborted before starting`);
+  }
   const proc = Bun.spawn(["git", ...args], {
     cwd: dir,
     stdin: "pipe",
@@ -42,15 +48,28 @@ export async function rawGit(dir: string, args: string[], opts: RawGitOpts = {})
   // let a child block on the parent's real stdin.
   if (opts.stdin !== undefined) proc.stdin.write(opts.stdin);
   proc.stdin.end();
-  const [out, err, code] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
-  if (!ok.has(code)) {
-    throw new Error(`git ${args.join(" ")} exited ${code}: ${err || out}`);
+  let aborted = false;
+  const onAbort = () => {
+    aborted = true;
+    proc.kill();
+  };
+  opts.signal?.addEventListener("abort", onAbort, { once: true });
+  try {
+    const [out, err, code] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+    if (aborted) {
+      throw new Error(`git ${args.join(" ")} aborted`);
+    }
+    if (!ok.has(code)) {
+      throw new Error(`git ${args.join(" ")} exited ${code}: ${err || out}`);
+    }
+    return out;
+  } finally {
+    opts.signal?.removeEventListener("abort", onAbort);
   }
-  return out;
 }
 
 // Reuses the same spawn path for git plumbing whose exit code IS the answer
