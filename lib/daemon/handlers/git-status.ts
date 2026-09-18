@@ -9,7 +9,7 @@ export function createGitStatusHandlers(
   return {
     "repos:status": async (rawPayload: unknown) => {
       const payload = rawPayload as Commands["repos:status"]["payload"] | undefined;
-      if (payload?.refresh) await deps.sweep.sweepNow();
+      if (payload?.refresh) await deps.sweep.sweepNow({ skipFetch: true });
       const badges = deps.store.readAll();
       const errors = deps.sweep.errors();
       const names = new Set([...badges.keys(), ...errors.keys()]);

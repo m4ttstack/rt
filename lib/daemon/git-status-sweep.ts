@@ -25,9 +25,14 @@ export interface GitStatusSweepDeps {
   now?: () => Date;
 }
 
+export interface SweepOptions {
+  /** Skips the fetch gate entirely for this pass; badges still recompute from local refs. */
+  skipFetch?: boolean;
+}
+
 export interface GitStatusSweep {
   tick(): Promise<void>;
-  sweepNow(): Promise<{ changed: string[] }>;
+  sweepNow(opts?: SweepOptions): Promise<{ changed: string[] }>;
   lastSweepAt(): string | null;
   errors(): Map<string, string>;
 }
@@ -62,10 +67,12 @@ export function createGitStatusSweep(deps: GitStatusSweepDeps): GitStatusSweep {
   const now = deps.now ?? (() => new Date());
   const repoErrors = new Map<string, string>();
   const fetchTimes = new Map<string, number>();
+  const fetchesInFlight = new Set<string>();
   let inFlight: Promise<{ changed: string[] }> | null = null;
   let lastCompletedAt: number | null = null;
 
-  async function pass(): Promise<{ changed: string[] }> {
+  async function pass(opts?: SweepOptions): Promise<{ changed: string[] }> {
+    const skipFetch = opts?.skipFetch ?? false;
     const index = deps.repoIndex();
     const live = new Set(Object.keys(index));
     const changed: string[] = [];
@@ -75,19 +82,35 @@ export function createGitStatusSweep(deps: GitStatusSweepDeps): GitStatusSweep {
       if (!cfg.sweep) continue;
       try {
         const lastFetch = fetchTimes.get(repo) ?? 0;
-        if (cfg.fetchIntervalSec > 0 && now().getTime() - lastFetch >= cfg.fetchIntervalSec * 1000) {
+        if (
+          !skipFetch &&
+          !fetchesInFlight.has(repo) &&
+          cfg.fetchIntervalSec > 0 &&
+          now().getTime() - lastFetch >= cfg.fetchIntervalSec * 1000
+        ) {
           // Stamped before the attempt: a hanging remote must not re-hang every pass.
           fetchTimes.set(repo, now().getTime());
+          fetchesInFlight.add(repo);
+          const fetchPromise = makeClient(mainPath).fetch();
+          // Settle-driven cleanup, not the race: a timed-out fetch keeps running
+          // in the background, and only ITS OWN settlement may clear the guard.
+          fetchPromise.then(
+            () => { fetchesInFlight.delete(repo); },
+            () => { fetchesInFlight.delete(repo); },
+          );
+          let raceTimer: ReturnType<typeof setTimeout> | undefined;
           try {
             await Promise.race([
-              makeClient(mainPath).fetch(),
+              fetchPromise,
               new Promise((_resolve, reject) => {
-                const timer = setTimeout(() => reject(new Error("fetch timed out")), 60_000);
-                timer.unref?.();
+                raceTimer = setTimeout(() => reject(new Error("fetch timed out")), 60_000);
+                raceTimer.unref?.();
               }),
             ]);
           } catch (err) {
             deps.log.warn({ err, repo }, "background fetch failed; snapshotting with stale remote refs");
+          } finally {
+            clearTimeout(raceTimer);
           }
         }
         const trees = await listWorktrees(mainPath);
@@ -116,9 +139,9 @@ export function createGitStatusSweep(deps: GitStatusSweepDeps): GitStatusSweep {
     return { changed };
   }
 
-  function sweepNow(): Promise<{ changed: string[] }> {
+  function sweepNow(opts?: SweepOptions): Promise<{ changed: string[] }> {
     if (inFlight) return inFlight;
-    inFlight = pass().finally(() => { inFlight = null; });
+    inFlight = pass(opts).finally(() => { inFlight = null; });
     return inFlight;
   }
 

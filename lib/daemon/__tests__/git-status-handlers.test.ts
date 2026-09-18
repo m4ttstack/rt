@@ -11,11 +11,13 @@ const badge: GitWorktreeBadge = {
 
 function fakes(overrides: { refreshCalls?: string[] } = {}) {
   const refreshCalls = overrides.refreshCalls ?? [];
+  const sweepNowOpts: unknown[] = [];
   return {
     refreshCalls,
+    sweepNowOpts,
     store: { readAll: () => new Map([["repoB", [badge]], ["repoA", [badge]]]) } as any,
     sweep: {
-      sweepNow: async () => { refreshCalls.push("sweep"); return { changed: [] }; },
+      sweepNow: async (opts?: unknown) => { refreshCalls.push("sweep"); sweepNowOpts.push(opts); return { changed: [] }; },
       lastSweepAt: () => "2026-09-17T00:01:00.000Z",
       errors: () => new Map([["repoC", "git worktree list failed"]]),
       tick: async () => {},
@@ -42,5 +44,12 @@ describe("repos:status handler", () => {
     const handlers = createGitStatusHandlers({ store: f.store, sweep: f.sweep });
     await handlers["repos:status"]({ refresh: true });
     expect(f.refreshCalls).toEqual(["sweep"]);
+  });
+
+  test("refresh: true requests a snapshot-only pass (skipFetch)", async () => {
+    const f = fakes();
+    const handlers = createGitStatusHandlers({ store: f.store, sweep: f.sweep });
+    await handlers["repos:status"]({ refresh: true });
+    expect(f.sweepNowOpts).toEqual([{ skipFetch: true }]);
   });
 });
