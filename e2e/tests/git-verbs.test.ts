@@ -59,6 +59,15 @@ describe("rt git read verbs", () => {
     expect(out.entries[0].parents).toEqual([]);
   });
 
+  test("log --max with no value surfaces a JSON usage error, not a raw throw", async () => {
+    const res = await rt(["git", "log", "--max", "--json"], { home: repo, env: { HOME: home.path } });
+    expect(res.exitCode).toBe(1);
+    const out = JSON.parse(res.stdout);
+    expect(out.ok).toBe(false);
+    expect(typeof out.error).toBe("string");
+    expect(out.error.length).toBeGreaterThan(0);
+  });
+
   test("branches --json lists main as current", async () => {
     const out = await rtJson(["git", "branches", "--json"]);
     expect(out.ok).toBe(true);

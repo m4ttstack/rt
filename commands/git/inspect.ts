@@ -40,9 +40,9 @@ export async function statusCommand(args: string[]): Promise<void> {
 
 export async function logCommand(args: string[]): Promise<void> {
   const json = args.includes("--json");
-  const max = Number(flagValue(args, "--max") ?? 20);
-  const file = flagValue(args, "--file") ?? undefined;
   try {
+    const max = Number(flagValue(args, "--max") ?? 20);
+    const file = flagValue(args, "--file") ?? undefined;
     const entries = await repoClient().log({
       maxCount: Number.isFinite(max) && max > 0 ? max : 20,
       ...(file ? { file } : {}),

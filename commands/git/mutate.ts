@@ -73,10 +73,10 @@ export async function undoCommand(args: string[]): Promise<void> {
 
 export async function stashPushCommand(args: string[]): Promise<void> {
   const json = args.includes("--json");
-  const message = flagValue(args, "--message") ?? undefined;
   const includeUntracked = args.includes("--include-untracked");
   let created: boolean;
   try {
+    const message = flagValue(args, "--message") ?? undefined;
     ({ created } = await createGitClient(process.cwd()).stashPush({
       ...(message ? { message } : {}),
       ...(includeUntracked ? { includeUntracked: true } : {}),
@@ -194,13 +194,13 @@ const TAG_CREATE_USAGE = "usage: rt git tag create <name> [--message <m>] [--at 
 
 export async function tagCreateCommand(args: string[]): Promise<void> {
   const json = args.includes("--json");
-  const message = flagValue(args, "--message") ?? undefined;
-  const at = flagValue(args, "--at") ?? undefined;
   const push = args.includes("--push");
   const name = firstPositional(args, new Set(["--message", "--at"]));
   if (!name) failPlain(json, "git tag create", TAG_CREATE_USAGE);
   let pushed: boolean;
   try {
+    const message = flagValue(args, "--message") ?? undefined;
+    const at = flagValue(args, "--at") ?? undefined;
     const client = createGitClient(process.cwd());
     await client.createTag(name, { ...(message ? { message } : {}), ...(at ? { sha: at } : {}) });
     if (push) await client.pushTag(name);
@@ -252,13 +252,14 @@ const TAG_PUSH_USAGE = "usage: rt git tag push <name> [--remote <remote>] [--jso
 
 export async function tagPushCommand(args: string[]): Promise<void> {
   const json = args.includes("--json");
-  const remote = flagValue(args, "--remote") ?? "origin";
   let name = firstPositional(args, new Set(["--remote"]));
   if (name === undefined && process.stdin.isTTY && !json && !process.env.RT_BATCH) {
     name = await pickTagName(json, TAG_PUSH_USAGE, "git tag push");
   }
   if (!name) failPlain(json, "git tag push", TAG_PUSH_USAGE);
+  let remote: string;
   try {
+    remote = flagValue(args, "--remote") ?? "origin";
     await createGitClient(process.cwd()).pushTag(name, remote);
   } catch (err) {
     failPlain(json, "git tag push", err instanceof Error ? err.message : String(err));
