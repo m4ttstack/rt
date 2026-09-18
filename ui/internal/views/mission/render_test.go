@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"rt-ui/internal/theme"
 )
@@ -122,5 +123,83 @@ func TestRenderTopBarAssemblesAllFourSegments(t *testing.T) {
 func TestRenderTopBarZeroWidthIsEmpty(t *testing.T) {
 	if out := renderTopBar(pullModel(), 0, zoneNone, zoneNone); out != "" {
 		t.Fatalf("zero width top bar = %q, want empty", out)
+	}
+}
+
+// bgSGR is fgSGR's background counterpart, mirroring the picker view's
+// helper of the same name (picker_test.go).
+func bgSGR(c color.Color) string {
+	r, g, b, _ := c.RGBA()
+	return fmt.Sprintf("48;2;%d;%d;%d", r>>8, g>>8, b>>8)
+}
+
+func TestRenderChangeRowPartialShowsMixedGlyphAndMeta(t *testing.T) {
+	out := renderChangeRow(ChangeRow{Path: "lib/ui/pick.ts", Status: "modified", Include: "partial"}, sidebarWidth, false)
+	if !strings.Contains(out, "◪") {
+		t.Fatalf("partial row missing the mixed glyph:\n%s", out)
+	}
+	if !strings.Contains(out, "partial") {
+		t.Fatalf("partial row missing its \"partial\" meta:\n%s", out)
+	}
+}
+
+func TestRenderChangeRowAllAndNoneGlyphs(t *testing.T) {
+	all := renderChangeRow(ChangeRow{Path: "a.go", Status: "new", Include: "all"}, sidebarWidth, false)
+	if !strings.Contains(all, theme.GlyphOn) {
+		t.Fatalf("all-included row missing %q:\n%s", theme.GlyphOn, all)
+	}
+	if strings.Contains(all, "partial") {
+		t.Fatalf("all-included row must not show partial meta:\n%s", all)
+	}
+	none := renderChangeRow(ChangeRow{Path: "b.go", Status: "deleted", Include: "none"}, sidebarWidth, false)
+	if !strings.Contains(none, theme.GlyphStopped) {
+		t.Fatalf("none-included row missing %q:\n%s", theme.GlyphStopped, none)
+	}
+}
+
+func TestRenderCommitButtonDisabledWearsPanelBg(t *testing.T) {
+	out := renderCommitButton(40, "Commit 2 files to main", false)
+	if !strings.Contains(out, bgSGR(theme.Panel)) {
+		t.Fatalf("disabled button should wear Panel bg: %q", out)
+	}
+	enabled := renderCommitButton(40, "Commit 2 files to main", true)
+	if !strings.Contains(enabled, bgSGR(theme.Pink)) {
+		t.Fatalf("enabled button should wear Pink bg: %q", enabled)
+	}
+}
+
+func TestRenderUndoStripAppearsWithFixtureModel(t *testing.T) {
+	out := renderUndoStrip(LastCommit{Summary: "fix parser", When: "2 minutes ago", Undoable: true}, sidebarWidth)
+	for _, want := range []string{"Committed 2 minutes ago", "fix parser", "Undo"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("undo strip missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestRenderKeybarContainsSpaceStage(t *testing.T) {
+	out := ansi.Strip(renderKeybar(100))
+	if !strings.Contains(out, "space stage") {
+		t.Fatalf("keybar missing \"space stage\":\n%s", out)
+	}
+	if !strings.Contains(out, "q quit") {
+		t.Fatalf("keybar missing \"q quit\":\n%s", out)
+	}
+}
+
+func TestMiddleTruncateKeepsHeadAndTail(t *testing.T) {
+	long := "ui/internal/views/mission/some/very/deep/nested/file.go"
+	out := middleTruncate(long, 20)
+	if lipgloss.Width(out) != 20 {
+		t.Fatalf("middleTruncate width = %d, want 20: %q", lipgloss.Width(out), out)
+	}
+	if !strings.HasPrefix(out, "ui/in") {
+		t.Fatalf("middleTruncate dropped the head: %q", out)
+	}
+	if !strings.HasSuffix(out, "file.go") {
+		t.Fatalf("middleTruncate dropped the tail (the filename): %q", out)
+	}
+	if !strings.Contains(out, "…") {
+		t.Fatalf("middleTruncate missing the ellipsis: %q", out)
 	}
 }

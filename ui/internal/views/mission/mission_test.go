@@ -25,6 +25,28 @@ func fixtureLine(t *testing.T, name string) string {
 	return buf.String()
 }
 
+// fixtureModelJSON pulls the "model" field's raw value out of a
+// session-model-*.json fixture (an envelope of {t, model}), compacted to
+// the one-line form openMission needs to splice into its own open envelope.
+func fixtureModelJSON(t *testing.T, name string) string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join("..", "..", "..", "fixtures", name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var envelope struct {
+		Model json.RawMessage `json:"model"`
+	}
+	if err := json.Unmarshal(b, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := json.Compact(&buf, envelope.Model); err != nil {
+		t.Fatal(err)
+	}
+	return buf.String()
+}
+
 // TestOpenDecodesCurrentAndQuitEmitsClosedQuit mirrors the board's
 // TestQuitConfirmsWhenRunningAndEmitsQuitOnY harness shape, minus the
 // confirm layer this skeleton has no reason to gate behind yet.
@@ -50,4 +72,149 @@ func TestOpenDecodesCurrentAndQuitEmitsClosedQuit(t *testing.T) {
 	if exit := s.Wait(); exit != 0 {
 		t.Fatalf("exit %d", exit)
 	}
+}
+
+const (
+	keyEnter     = "\r"
+	keyEsc       = "\x1b"
+	keyCtrlEnter = "\x1b[13;5u" // Kitty CSI-u: codepoint 13 (Enter) with modifier 5 (1 + ctrl's bit 4)
+)
+
+// openMission starts a mission session and opens it against model, a
+// pretty- or compact-printed JSON object (the "model" field's value, not a
+// full open envelope), waiting for wantPaint to appear before returning.
+func openMission(t *testing.T, model, wantPaint string) *testutil.Session {
+	t.Helper()
+	s := testutil.StartSession(t, []string{testutil.Binary(t), "session", "--view", "mission"}, nil)
+	s.ReadLine(2 * time.Second)
+	s.Send(`{"t":"open","view":"mission","model":` + model + `}`)
+	s.WaitForPaint(wantPaint)
+	return s
+}
+
+const canCommitModel = `{"current":{"repo":"repo-tools","branch":"main"},` +
+	`"changes":[{"path":"a.go","origPath":"","status":"modified","include":"all"}],` +
+	`"changedTotal":1,"stagedTotal":1,"filter":"",` +
+	`"commit":{"summary":"","description":"","placeholder":"Summary (required)","amending":false,"buttonLabel":"Commit 1 file to main","canCommit":true,"lastCommit":null},` +
+	`"stashCount":0,"notice":""}`
+
+func TestSpaceOnCursorRowEmitsStageWithPath(t *testing.T) {
+	s := s5open(t)
+	s.Type(" ")
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:stage"`) || !strings.Contains(l, `"path":"ui/internal/views/mission/model.go"`) || !strings.Contains(l, `"mode":"toggle-file"`) {
+		t.Fatalf("stage intent: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+func TestCommitFocusTypeCtrlEnterEmitsCommitWithTypedSummary(t *testing.T) {
+	s := openMission(t, canCommitModel, "Commit 1 file to main")
+	s.Type("c")
+	s.Type("h", "i")
+	s.Type(keyCtrlEnter)
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:commit"`) || !strings.Contains(l, `"summary":"hi"`) {
+		t.Fatalf("commit intent: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+func TestCtrlEnterDoesNotEmitWhenCanCommitFalse(t *testing.T) {
+	s := s5open(t)
+	s.Type("c")
+	s.Type(keyCtrlEnter)
+	if l, ok := s.ReadLine(200 * time.Millisecond); ok {
+		t.Fatalf("ctrl-enter with canCommit false must not emit: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+func TestFilterFocusTypeEnterEmitsSelectWithFilter(t *testing.T) {
+	s := s5open(t)
+	s.Type("/")
+	s.Type("x", "y")
+	s.Type(keyEnter)
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:select"`) || !strings.Contains(l, `"filter":"xy"`) {
+		t.Fatalf("select intent: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+func TestEscFromFilterCancelsWithoutEmitting(t *testing.T) {
+	s := s5open(t)
+	s.Type("/")
+	s.Type("z")
+	s.Type(keyEsc)
+	if l, ok := s.ReadLine(200 * time.Millisecond); ok {
+		t.Fatalf("esc must not emit a select intent: %q", l)
+	}
+	// Back in list focus, space still moves the cursor row's stage intent,
+	// proving esc actually returned focus rather than leaving filter typing
+	// dead-ended.
+	s.Type(" ")
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:stage"`) {
+		t.Fatalf("space after esc should still stage: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+func TestUndoKeyEmitsUndoIntent(t *testing.T) {
+	s := s5open(t)
+	s.Type("u")
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:undo"`) {
+		t.Fatalf("undo intent: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+func TestActionKeyEmitsActionIntent(t *testing.T) {
+	s := s5open(t)
+	s.Type("f")
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:action"`) {
+		t.Fatalf("action intent: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+func TestBranchWorktreeRepoKeysEmitNothingThisTask(t *testing.T) {
+	s := s5open(t)
+	for _, k := range []string{"b", "w", "r"} {
+		s.Type(k)
+		if l, ok := s.ReadLine(150 * time.Millisecond); ok {
+			t.Fatalf("%s must not emit yet: %q", k, l)
+		}
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+func TestAmendToggleFromListShowsBanner(t *testing.T) {
+	s := s5open(t)
+	s.Type("a")
+	s.WaitForPaint("Amending last commit")
+	s.Type("a")
+	s.WaitForGone("Amending last commit")
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+// s5open opens the mission view against the shared model fixture (three
+// Changes rows, canCommit false) and waits for its first row to paint. Named
+// for the task that introduced the changes pane, to keep it distinct from
+// openMission's bespoke per-scenario models.
+func s5open(t *testing.T) *testutil.Session {
+	t.Helper()
+	return openMission(t, fixtureModelJSON(t, "session-model-mission.json"), "model.go")
 }
