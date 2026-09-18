@@ -4,6 +4,7 @@ import {
   createInvite,
   joinSwitchboard,
   listPeerBoards,
+  removePeerBoard,
 } from '../peer/onboard.ts';
 
 const fakeFetch = (
@@ -172,5 +173,42 @@ describe('listPeerBoards', () => {
     });
     expect(r.status).toBe(200);
     expect(JSON.parse(r.body).boards.length).toBe(1);
+  });
+});
+
+describe('removePeerBoard', () => {
+  test('proxies DELETE /boards/<username> with the admin bearer', async () => {
+    const f = fakeFetch((url, init) => {
+      expect(url).toBe('https://x/boards/grace');
+      expect(init?.method).toBe('DELETE');
+      expect(init?.headers).toMatchObject({ authorization: 'Bearer t' });
+      return Response.json({ ok: true });
+    });
+    const r = await removePeerBoard(
+      { url: 'https://x', adminToken: 't', fetchFn: f },
+      'grace'
+    );
+    expect(r.status).toBe(200);
+  });
+
+  test('an unreachable relay answers 502, and a relay refusal passes through', async () => {
+    const dead = await removePeerBoard(
+      {
+        url: 'https://x',
+        adminToken: 't',
+        fetchFn: (async () => {
+          throw new Error('down');
+        }) as unknown as typeof fetch,
+      },
+      'grace'
+    );
+    expect(dead.status).toBe(502);
+    const f = fakeFetch(() => new Response('no such board', { status: 404 }));
+    const missing = await removePeerBoard(
+      { url: 'https://x', adminToken: 't', fetchFn: f },
+      'ghost'
+    );
+    expect(missing.status).toBe(404);
+    expect(missing.body).toBe('no such board');
   });
 });

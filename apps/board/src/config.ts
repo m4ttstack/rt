@@ -467,7 +467,28 @@ function parseSwitchboard(
   if (s.url !== undefined && typeof s.url !== 'string') {
     throw new Error(`${source} "switchboard.url" must be a string`);
   }
-  return { url: stripTrailingSlash(s.url ?? '') };
+  const url = stripTrailingSlash(s.url ?? '');
+  // Every relay call carries a bearer token, so a deployed relay must be
+  // https; plain http stays legal only for a loopback relay in development.
+  if (url.startsWith('http://')) {
+    let host = '';
+    try {
+      host = new URL(url).hostname;
+    } catch {
+      // fall through: an unparseable http url is rejected below
+    }
+    const local =
+      host === 'localhost' ||
+      host === '127.0.0.1' ||
+      host === '[::1]' ||
+      host === '::1';
+    if (!local) {
+      throw new Error(
+        `${source} "switchboard.url" must be https (tokens travel on every call); http is allowed only for localhost`
+      );
+    }
+  }
+  return { url };
 }
 
 function parseSlack(raw: unknown, source: string): SlackConfig {

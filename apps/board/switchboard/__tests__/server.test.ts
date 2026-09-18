@@ -81,6 +81,61 @@ describe('switchboard http', () => {
     expect(JSON.stringify(body)).not.toContain(ada);
   });
 
+  test('board delete: admin-only, revokes the token, drops peers row and pending envelopes', async () => {
+    const { call } = setup();
+    const ada = (
+      (await (
+        await call('/boards', { token: ADMIN, body: { username: 'ada' } })
+      ).json()) as { token: string }
+    ).token;
+    const grace = (
+      (await (
+        await call('/boards', { token: ADMIN, body: { username: 'grace' } })
+      ).json()) as { token: string }
+    ).token;
+    await call('/envelopes', { token: ada, body: draft('e1', 'grace') });
+
+    expect((await call('/boards/grace', { method: 'DELETE' })).status).toBe(
+      401
+    );
+    expect(
+      (await call('/boards/grace', { method: 'DELETE', token: 'nope' })).status
+    ).toBe(401);
+    expect(
+      (await call('/boards/nobody', { method: 'DELETE', token: ADMIN })).status
+    ).toBe(404);
+
+    const res = await call('/boards/grace', { method: 'DELETE', token: ADMIN });
+    expect(res.status).toBe(200);
+    // Token dead immediately.
+    expect((await call('/inbox', { token: grace })).status).toBe(401);
+    // Gone from the enrollment listing.
+    const peers = (await (await call('/peers', { token: ada })).json()) as {
+      peers: string[];
+    };
+    expect(peers.peers).toEqual(['ada']);
+    // Pending envelopes for the deleted board are dropped: re-register and
+    // the inbox starts empty.
+    const grace2 = (
+      (await (
+        await call('/boards', { token: ADMIN, body: { username: 'grace' } })
+      ).json()) as { token: string }
+    ).token;
+    const inbox = (await (await call('/inbox', { token: grace2 })).json()) as {
+      envelopes: unknown[];
+    };
+    expect(inbox.envelopes).toEqual([]);
+  });
+
+  test('board delete with malformed percent-encoding answers 400, not a crash', async () => {
+    const { call } = setup();
+    const res = await call('/boards/%E0%A4', {
+      method: 'DELETE',
+      token: ADMIN,
+    });
+    expect(res.status).toBe(400);
+  });
+
   test('publish → inbox → ack round trip', async () => {
     const { call } = setup();
     const ada = (

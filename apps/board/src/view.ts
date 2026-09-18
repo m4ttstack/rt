@@ -563,6 +563,33 @@ export function memberPeerState(
     : 'invitable';
 }
 
+/** Drop one handle from the peered list by canonical comparison, mirroring
+    the relay's own canonicalization, so a case difference between roster and
+    relay never strands a removed row until reload. */
+export function dropPeer(
+  peered: string[] | null,
+  username: string
+): string[] | null {
+  if (peered === null) return null;
+  const canonical = username.trim().toLowerCase();
+  return peered.filter(p => p.trim().toLowerCase() !== canonical);
+}
+
+/** Peered handles with no roster row: test boards, departed teammates, or a
+    handle invited free-text and later dropped from the roster. These are the
+    registrations only the remove action can reach, so the settings modal
+    lists them separately. Canonical comparison, same as memberPeerState. */
+export function offRosterPeers(
+  peered: string[] | null,
+  members: ReadonlyArray<{ username: string }>,
+  defaultMember: string
+): string[] {
+  if (peered === null) return [];
+  const roster = new Set(members.map(m => m.username.trim().toLowerCase()));
+  roster.add(defaultMember.trim().toLowerCase());
+  return peered.filter(p => !roster.has(p.trim().toLowerCase()));
+}
+
 /** What the settings modal's join row should say and whether it starts folded.
     `switchboardConfigured` is the client's read of `data.peering !== null`; a
     configured board whose token is missing also reports null peering, and gets

@@ -3,7 +3,12 @@ import { Invadr } from 'invadrs/react';
 
 import { CopyButton, Modal } from '@mattstack/tui-kit';
 import { useRevealOnChange } from '@mattstack/tui-kit/hooks';
-import { joinRowState, memberPeerState } from '../../view.ts';
+import {
+  dropPeer,
+  joinRowState,
+  memberPeerState,
+  offRosterPeers,
+} from '../../view.ts';
 import type { BoardData, ConfigMember } from '../types.ts';
 
 /** Check members in/out, and (on a board that can hand out invites) put each
@@ -48,6 +53,9 @@ function SettingsModal({
   // arms the button into "confirm re-invite", the second sends. Keyed on
   // username (not a bare flag) since the roster repeats this button per row.
   const [armedReinvite, setArmedReinvite] = useState<string | null>(null);
+  // Remove is the same two-click shape, but unlike re-invite it cuts the
+  // board off the moment it lands, so the armed label says that.
+  const [armedRemove, setArmedRemove] = useState<string | null>(null);
 
   useEffect(() => {
     if (!canInvite) return;
@@ -107,6 +115,39 @@ function SettingsModal({
     },
     [pending]
   );
+
+  const remove = useCallback(
+    (username: string) => {
+      const name = username.trim();
+      if (!name || pending) return;
+      setArmedRemove(null);
+      setArmedReinvite(null);
+      setPending(name);
+      setInviteError(null);
+      fetch('/peer/remove', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ username: name }),
+      })
+        .then(async r => {
+          const text = await r.text();
+          if (!r.ok) {
+            setInviteError(text.trim() || `remove failed (${r.status})`);
+            return;
+          }
+          // The relay said gone: drop it from the local peered list so the
+          // row flips to invitable (or vanishes, off-roster) immediately.
+          setPeered(p => dropPeer(p, name));
+        })
+        .catch(() => setInviteError('could not reach the board'))
+        .finally(() => setPending(null));
+    },
+    [pending]
+  );
+
+  const strays = canInvite
+    ? offRosterPeers(peered, members, defaultMember)
+    : [];
 
   const join = joinRowState(peering !== null, peering);
   const [joinOpen, setJoinOpen] = useState(false);
@@ -226,6 +267,25 @@ function SettingsModal({
                         ? 'confirm re-invite'
                         : 're-invite'}
                     </button>
+                    <button
+                      className={
+                        armedRemove === m.username
+                          ? 'tui-invite-btn copied'
+                          : 'tui-invite-btn'
+                      }
+                      disabled={pending !== null}
+                      title={
+                        armedRemove === m.username
+                          ? 'their board is cut off the moment this lands... click again to confirm'
+                          : 'remove their board from the switchboard'
+                      }
+                      onClick={() => {
+                        if (armedRemove === m.username) remove(m.username);
+                        else setArmedRemove(m.username);
+                      }}
+                    >
+                      {armedRemove === m.username ? 'confirm remove' : 'remove'}
+                    </button>
                   </>
                 )}
                 {peerState === 'invitable' && (
@@ -252,6 +312,46 @@ function SettingsModal({
           );
         })}
       </ul>
+
+      {strays.length > 0 && (
+        <>
+          <p className="tui-modal-sub"># peered boards with no roster row</p>
+          <ul className="tui-modal-list">
+            {strays.map(u => (
+              <li key={u} className="tui-modal-row">
+                <span className="tui-modal-name">
+                  <Invadr id={u} palette="css-vars" className="tui-avatar" />{' '}
+                  {u}
+                </span>
+                <span className="tui-modal-right">
+                  <span className="tui-peered" title="on peer boards">
+                    peered
+                  </span>
+                  <button
+                    className={
+                      armedRemove === u
+                        ? 'tui-invite-btn copied'
+                        : 'tui-invite-btn'
+                    }
+                    disabled={pending !== null}
+                    title={
+                      armedRemove === u
+                        ? 'their board is cut off the moment this lands... click again to confirm'
+                        : 'remove their board from the switchboard'
+                    }
+                    onClick={() => {
+                      if (armedRemove === u) remove(u);
+                      else setArmedRemove(u);
+                    }}
+                  >
+                    {armedRemove === u ? 'confirm remove' : 'remove'}
+                  </button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
 
       {canInvite && (
         <div className="tui-invite-new">

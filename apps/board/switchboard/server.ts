@@ -53,6 +53,22 @@ export function makeFetchHandler(
       return json(201, store.registerBoard(username));
     }
 
+    if (pathname.startsWith('/boards/') && req.method === 'DELETE') {
+      if (bearer(req) !== adminToken)
+        return new Response('unauthorized', { status: 401 });
+      let username: string;
+      try {
+        username = decodeURIComponent(pathname.slice('/boards/'.length));
+      } catch {
+        return new Response('expected /boards/<username>', { status: 400 });
+      }
+      if (!username.trim())
+        return new Response('expected /boards/<username>', { status: 400 });
+      if (!store.deleteBoard(username))
+        return new Response('no such board', { status: 404 });
+      return json(200, { ok: true });
+    }
+
     if (pathname === '/invites') {
       if (req.method !== 'POST')
         return new Response('method not allowed', { status: 405 });

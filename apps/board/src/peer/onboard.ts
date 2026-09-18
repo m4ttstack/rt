@@ -60,6 +60,27 @@ export async function listPeerBoards(
   }
 }
 
+/** Operator removal: proxy the relay's board delete. The relay's own answer
+    (404 unknown, 401 bad admin token) passes through untouched. */
+export async function removePeerBoard(
+  ctx: InviteCtx,
+  username: string
+): Promise<{ status: number; body: string }> {
+  const fetchFn = ctx.fetchFn ?? fetch;
+  try {
+    const res = await fetchFn(
+      `${ctx.url}/boards/${encodeURIComponent(username)}`,
+      {
+        method: 'DELETE',
+        headers: { authorization: `Bearer ${ctx.adminToken}` },
+      }
+    );
+    return { status: res.ok ? 200 : res.status, body: await res.text() };
+  } catch {
+    return { status: 502, body: 'could not reach the switchboard' };
+  }
+}
+
 export interface JoinCtx {
   defaultMember: string;
   persist(url: string, token: string): void;

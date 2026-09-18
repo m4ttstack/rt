@@ -6,6 +6,7 @@ import {
   behindToken,
   dataAgeLabel,
   DEFAULT_VIEW,
+  dropPeer,
   filterByMember,
   filterBySlack,
   filterByTab,
@@ -14,6 +15,7 @@ import {
   memberPeerState,
   NEEDS_ME_TAB,
   nestStacks,
+  offRosterPeers,
   parseViewState,
   rosterUsernamesFor,
   serializeViewState,
@@ -997,5 +999,23 @@ describe('joinRowState', () => {
     const s = joinRowState(true, 'unauthorized');
     expect(s.collapsed).toBe(false);
     expect(s.warning).toContain('re-join');
+  });
+});
+
+describe('dropPeer', () => {
+  test('drops by canonical comparison, so relay case never strands a row', () => {
+    expect(dropPeer(['Grace', 'ada'], 'grace')).toEqual(['ada']);
+    expect(dropPeer(['grace'], ' GRACE ')).toEqual([]);
+    expect(dropPeer(null, 'grace')).toBeNull();
+  });
+});
+
+describe('offRosterPeers', () => {
+  test('peered handles not on the roster and not the operator, in listing order', () => {
+    const members = [{ username: 'grace' }, { username: 'ada' }] as never;
+    expect(
+      offRosterPeers(['ada', 'smoketest', 'me', 'grace'], members, 'me')
+    ).toEqual(['smoketest']);
+    expect(offRosterPeers(null, members, 'me')).toEqual([]);
   });
 });

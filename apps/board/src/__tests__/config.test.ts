@@ -323,6 +323,28 @@ describe('switchboard config', () => {
     );
     expect(cfg.switchboard.url).toBe('https://sb.example.dev');
   });
+  test('rejects a plain-http url for a non-local relay: the bearer would travel cleartext', () => {
+    expect(() =>
+      parseConfig(
+        JSON.stringify({
+          ...base,
+          switchboard: { url: 'http://sb.example.dev' },
+        })
+      )
+    ).toThrow(/https/);
+  });
+  test('allows plain http for a local relay (dev loopback)', () => {
+    for (const url of [
+      'http://localhost:7940',
+      'http://127.0.0.1:7940',
+      'http://[::1]:7940',
+    ]) {
+      const cfg = parseConfig(
+        JSON.stringify({ ...base, switchboard: { url } })
+      );
+      expect(cfg.switchboard.url).toBe(url);
+    }
+  });
   test('rejects a non-object block', () => {
     expect(() =>
       parseConfig(JSON.stringify({ ...base, switchboard: 'x' }))

@@ -99,8 +99,12 @@ to that teammate.
 Re-invite is the rotation story, with one caveat: minting the new invite
 changes nothing by itself. Their current board keeps working, and their access
 ends only when the new invite is actually redeemed and the token behind it
-rotates. A true revoke, cutting a board off without waiting on them, is not in
-v1. For that, re-mint or delete the board on the relay directly.
+rotates. A true revoke is **remove**: each peered row (and each peered handle
+with no roster row, listed below the roster) carries a remove button that
+deletes the board's registration on the relay outright. Their token stops
+working immediately, pending envelopes for them are dropped, and the handle
+leaves every board's enrolled list on its next refresh. Scripted, it is
+`DELETE $URL/boards/<username>` with the admin bearer.
 
 The invite code travels in the URL path, so it shows up in the relay host's
 access logs (the platform's edge logs) even though the relay itself never logs

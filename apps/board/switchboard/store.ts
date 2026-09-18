@@ -130,6 +130,22 @@ export class SwitchboardStore {
     return { ok: true, ...board };
   }
 
+  /** Remove a board outright: its registration (killing the token), its
+      pending envelopes, and any outstanding invite for the handle. Returns
+      false when no such board exists. */
+  deleteBoard(username: string): boolean {
+    const canonical = canonicalUsername(username);
+    return this.db.transaction(() => {
+      const gone = this.db.run(`DELETE FROM boards WHERE username = ?`, [
+        canonical,
+      ]).changes;
+      if (gone === 0) return false;
+      this.db.run(`DELETE FROM envelopes WHERE recipient = ?`, [canonical]);
+      this.db.run(`DELETE FROM invites WHERE username = ?`, [canonical]);
+      return true;
+    })();
+  }
+
   listBoards(): Array<{ username: string; createdAt: number }> {
     return this.db
       .query<{ username: string; created_at: number }, []>(
