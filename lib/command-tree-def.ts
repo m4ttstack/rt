@@ -891,6 +891,57 @@ export const TREE: Record<string, CommandNode> = {
           },
         },
       },
+      tag: {
+        description: "Create, list, delete, and push tags",
+        subcommands: {
+          list: {
+            description: "List tags with their target commits",
+            module: "./commands/git/mutate.ts",
+            fn: "tagListCommand",
+            context: "worktree",
+            args: [
+              { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable tags" },
+            ],
+          },
+          create: {
+            description: "Create a tag (annotated when --message is given)",
+            module: "./commands/git/mutate.ts",
+            fn: "tagCreateCommand",
+            omitBehavior: { exempt: "a new tag name is free text; nothing to enumerate" },
+            context: "worktree",
+            args: [
+              { name: "Name", type: "text", placeholder: "v1.2.3", hint: "Tag name" },
+              { name: "Message", flag: "--message", type: "text", placeholder: "release notes", hint: "Annotation message (makes the tag annotated)" },
+              { name: "At", flag: "--at", type: "text", placeholder: "abc1234", hint: "Commit to tag (default HEAD)" },
+              { name: "Push", flag: "--push", type: "boolean", default: false, hint: "Push the tag to origin after creating" },
+              { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable result" },
+            ],
+          },
+          delete: {
+            description: "Delete a local tag",
+            module: "./commands/git/mutate.ts",
+            fn: "tagDeleteCommand",
+            omitBehavior: "picker",
+            context: "worktree",
+            args: [
+              { name: "Name", type: "text", placeholder: "v1.2.3", hint: "Tag to delete (picker when omitted)" },
+              { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable result" },
+            ],
+          },
+          push: {
+            description: "Push one tag to a remote",
+            module: "./commands/git/mutate.ts",
+            fn: "tagPushCommand",
+            omitBehavior: "picker",
+            context: "worktree",
+            args: [
+              { name: "Name", type: "text", placeholder: "v1.2.3", hint: "Tag to push (picker when omitted)" },
+              { name: "Remote", flag: "--remote", type: "text", placeholder: "origin", hint: "Remote to push to" },
+              { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable result" },
+            ],
+          },
+        },
+      },
     },
   },
 

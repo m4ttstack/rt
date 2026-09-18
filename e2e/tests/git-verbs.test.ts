@@ -164,3 +164,27 @@ describe("rt git stash", () => {
     });
   });
 });
+
+describe("rt git tag", () => {
+  test("create, list, delete round-trip", async () => {
+    const created = await rtJson(["git", "tag", "create", "v0.0.1-test", "--message", "test tag", "--json"]);
+    expect(created).toEqual({ ok: true, name: "v0.0.1-test", pushed: false });
+    const listed = await rtJson(["git", "tag", "list", "--json"]);
+    expect(listed.ok).toBe(true);
+    const tag = listed.tags.find((t: any) => t.name === "v0.0.1-test");
+    expect(tag.annotated).toBe(true);
+    expect(tag.targetSha).toBe(g(["rev-parse", "HEAD"]).trim());
+    const deleted = await rtJson(["git", "tag", "delete", "v0.0.1-test", "--json"]);
+    expect(deleted).toEqual({ ok: true, name: "v0.0.1-test" });
+    const after = await rtJson(["git", "tag", "list", "--json"]);
+    expect(after.tags.find((t: any) => t.name === "v0.0.1-test")).toBeUndefined();
+  });
+
+  test("create with a flag-like name is rejected by git-core's ref guard", async () => {
+    const res = await rt(["git", "tag", "create", "-D", "--json"], { home: repo, env: { HOME: home.path } });
+    expect(res.exitCode).toBe(1);
+    const out = JSON.parse(res.stdout);
+    expect(out.ok).toBe(false);
+    expect(out.error.length).toBeGreaterThan(0);
+  });
+});

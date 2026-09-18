@@ -166,3 +166,90 @@ export async function stashDropCommand(args: string[]): Promise<void> {
   if (json) console.log(JSON.stringify({ ok: true, index }));
   else console.log(`dropped stash@{${index}}`);
 }
+
+export async function tagListCommand(args: string[]): Promise<void> {
+  const json = args.includes("--json");
+  try {
+    const tags = await createGitClient(process.cwd()).tags();
+    if (json) console.log(JSON.stringify({ ok: true, tags }));
+    else if (tags.length === 0) console.log("no tags");
+    else for (const t of tags) console.log(`${t.name}  ${t.targetSha.slice(0, 8)}${t.annotated ? "  (annotated)" : ""}`);
+  } catch (err) {
+    failPlain(json, "git tag list", err instanceof Error ? err.message : String(err));
+  }
+}
+
+const TAG_CREATE_USAGE = "usage: rt git tag create <name> [--message <m>] [--at <sha>] [--push] [--json]";
+
+export async function tagCreateCommand(args: string[]): Promise<void> {
+  const json = args.includes("--json");
+  const message = flagValue(args, "--message") ?? undefined;
+  const at = flagValue(args, "--at") ?? undefined;
+  const push = args.includes("--push");
+  const name = args.filter((a) => a !== "--").find((a) => !a.startsWith("-") && a !== message && a !== at);
+  if (!name) failPlain(json, "git tag create", TAG_CREATE_USAGE);
+  try {
+    const client = createGitClient(process.cwd());
+    await client.createTag(name, { ...(message ? { message } : {}), ...(at ? { sha: at } : {}) });
+    if (push) await client.pushTag(name);
+    if (json) console.log(JSON.stringify({ ok: true, name, pushed: push }));
+    else console.log(`created tag ${name}${push ? " and pushed to origin" : ""}`);
+  } catch (err) {
+    failPlain(json, "git tag create", err instanceof Error ? err.message : String(err));
+  }
+}
+
+async function pickTagName(json: boolean, usage: string, verb: string): Promise<string> {
+  const client = createGitClient(process.cwd());
+  let tags: any[];
+  try {
+    tags = await client.tags();
+  } catch (err) {
+    failPlain(json, verb, err instanceof Error ? err.message : String(err));
+  }
+  if (tags.length === 0) failPlain(json, verb, usage);
+  const { filterableSelect } = await import("../../lib/pick-wrappers.ts");
+  const picked = await filterableSelect({
+    message: `${verb.replace("git tag ", "").replace(/^./, (c) => c.toUpperCase())} which tag?`,
+    options: tags.map((t) => ({ label: t.name, value: t.name, hint: t.targetSha.slice(0, 8) })),
+  });
+  if (picked === null) process.exit(0);
+  return picked;
+}
+
+const TAG_DELETE_USAGE = "usage: rt git tag delete <name> [--json]";
+
+export async function tagDeleteCommand(args: string[]): Promise<void> {
+  const json = args.includes("--json");
+  let name = args.find((a) => !a.startsWith("-"));
+  if (name === undefined && process.stdin.isTTY && !json && !process.env.RT_BATCH) {
+    name = await pickTagName(json, TAG_DELETE_USAGE, "git tag delete");
+  }
+  if (!name) failPlain(json, "git tag delete", TAG_DELETE_USAGE);
+  try {
+    await createGitClient(process.cwd()).deleteTag(name);
+  } catch (err) {
+    failPlain(json, "git tag delete", err instanceof Error ? err.message : String(err));
+  }
+  if (json) console.log(JSON.stringify({ ok: true, name }));
+  else console.log(`deleted tag ${name} (local only)`);
+}
+
+const TAG_PUSH_USAGE = "usage: rt git tag push <name> [--remote <remote>] [--json]";
+
+export async function tagPushCommand(args: string[]): Promise<void> {
+  const json = args.includes("--json");
+  const remote = flagValue(args, "--remote") ?? "origin";
+  let name = args.find((a) => !a.startsWith("-") && a !== remote);
+  if (name === undefined && process.stdin.isTTY && !json && !process.env.RT_BATCH) {
+    name = await pickTagName(json, TAG_PUSH_USAGE, "git tag push");
+  }
+  if (!name) failPlain(json, "git tag push", TAG_PUSH_USAGE);
+  try {
+    await createGitClient(process.cwd()).pushTag(name, remote);
+  } catch (err) {
+    failPlain(json, "git tag push", err instanceof Error ? err.message : String(err));
+  }
+  if (json) console.log(JSON.stringify({ ok: true, name, remote }));
+  else console.log(`pushed tag ${name} to ${remote}`);
+}
