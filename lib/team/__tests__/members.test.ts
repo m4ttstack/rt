@@ -596,6 +596,29 @@ describe("membersRemove", () => {
     expect(result.manualSteps.join(" ")).toContain("still has access");
   });
 
+  test("an entry that lives only on mattstack.roster is still found: its key is revoked and the row removed, with no board.members needed", async () => {
+    const remote = "git@github.com:acme/widgets.git";
+    const p = fakeProbes({ home: HOME, files: { [join(HOME, ".mattstack", "teams", SLUG, ".git", "config")]: gitConfigWithRemote(remote) } });
+    const { execSeam, secrets } = seamsWithClone();
+    writeTeamRecipients(SLUG, [OWNER_PUBLIC_KEY, ALICE_PUBLIC_KEY], secrets);
+    execSeam.writeFile(teamSecretsFile(SLUG, "board"), JSON.stringify({ data: "opaque", sops: {} }));
+
+    const written: { key: string; value: unknown }[] = [];
+    const { seams } = fakeMembersSeams({
+      readTeamStore: () => ({ "mattstack.roster": [{ username: "matt" }, { username: "alice", agePublicKey: ALICE_PUBLIC_KEY }] }),
+      readTeamLocal: () => ({ createdByRt: false, joinedByRt: false, rtMayManageMembership: false }),
+      writeSetting: ((key: string, value: unknown) => {
+        written.push({ key, value });
+      }) as MembersSeams["writeSetting"],
+    });
+
+    const result = await membersRemove(p, secrets, SLUG, "alice", undefined, seams);
+
+    expect(result.rosterRemoved).toBe(true);
+    expect(readTeamRecipients(SLUG, secrets)).toEqual([OWNER_PUBLIC_KEY]);
+    expect(written.some((w) => w.key === "mattstack.roster" && JSON.stringify(w.value) === JSON.stringify([{ username: "matt" }]))).toBe(true);
+  });
+
   test("revokes forge access, writes the roster without the handle, re-encrypts, and returns a non-empty residue note", async () => {
     const remote = "git@github.com:acme/widgets.git";
     const p = fakeProbes({ home: HOME, files: { [join(HOME, ".mattstack", "teams", SLUG, ".git", "config")]: gitConfigWithRemote(remote) } });

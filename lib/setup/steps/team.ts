@@ -8,6 +8,7 @@
 import { createTeam, type CreateTeamOpts } from "../../team/create.ts";
 import { forgeLogin } from "../../team/forge.ts";
 import { JoinKeyExchangeError, joinRedeem, realJoinRedeemSeams } from "../../team/join.ts";
+import { writeSecret } from "../../secrets/store.ts";
 import { publishTeam } from "../../team/publish.ts";
 import { forgeTokenFor } from "./forge-token.ts";
 import type { ApplyContext } from "../apply.ts";
@@ -88,7 +89,12 @@ async function teamJoinRun(ctx: ApplyContext): Promise<StepOutcome> {
   // fake) — so join's own key exchange never reaches for a second,
   // independently-real keychain seam. ctx.teamSecrets is the same discipline
   // for the team-secret (switchboard token) read.
-  const seams = { ...realJoinRedeemSeams(), ageKeySeam: ctx.secrets.ageKeySeam, forgeToken: (_p: unknown, remote: string) => forgeTokenFor(ctx, remote) };
+  const seams = {
+    ...realJoinRedeemSeams(),
+    ageKeySeam: ctx.secrets.ageKeySeam,
+    forgeToken: (_p: unknown, remote: string) => forgeTokenFor(ctx, remote),
+    writeLocalSecret: (key: string, value: string) => writeSecret("rt", key, value, ctx.secrets),
+  };
 
   try {
     const result = await joinRedeem(ctx.p, ctx.relay, ctx.teamSecrets, {}, seams);

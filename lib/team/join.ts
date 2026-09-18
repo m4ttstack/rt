@@ -21,7 +21,7 @@
 
 import { join } from "path";
 import { type AgeKeySeam, createRealAgeKeySeam, ensureAgeKey } from "../home/age-key.ts";
-import { validateSlug } from "../secrets/store.ts";
+import { createRealSecretsExecSeam, validateSlug, writeSecret } from "../secrets/store.ts";
 import type { SecretsSeams } from "../secrets/store.ts";
 import { readTeamSecret } from "../secrets/team-store.ts";
 import { UserActionableError } from "../setup/errors.ts";
@@ -250,6 +250,8 @@ export interface JoinRedeemSeams {
   forgeLogin: typeof forgeLogin;
   /** The forge token rt holds for `remote`'s host, or null: a fresh machine's git and gh/glab have nothing of their own to offer a private team repo. */
   forgeToken: (p: Probes, remote: string) => Promise<string | null>;
+  /** Stores a per-member secret in the LOCAL rt domain (never the team store): the switchboard board token belongs to this machine's member alone. */
+  writeLocalSecret: (key: string, value: string) => Promise<void>;
   warn: (message: string) => void;
 }
 
@@ -269,7 +271,16 @@ function defaultWarn(message: string): void {
 }
 
 export function realJoinRedeemSeams(): JoinRedeemSeams {
-  return { ageKeySeam: createRealAgeKeySeam(), read: defaultRead(), readTeamSecret, forgeLogin, forgeToken: storedForgeToken, warn: defaultWarn };
+  const ageKeySeam = createRealAgeKeySeam();
+  return {
+    ageKeySeam,
+    read: defaultRead(),
+    readTeamSecret,
+    forgeLogin,
+    forgeToken: storedForgeToken,
+    writeLocalSecret: (key, value) => writeSecret("rt", key, value, { ageKeySeam, execSeam: createRealSecretsExecSeam() }),
+    warn: defaultWarn,
+  };
 }
 
 interface JoinSource {
@@ -439,18 +450,46 @@ export async function joinRedeem(
   }
 
   let peering: JoinResult["peering"] = "idle";
-  const switchboardUrl = snapshot.integrations.switchboard?.url;
-  if (switchboardUrl) {
+  const switchboardUrl = snapshot.integrations.switchboard?.url ?? pointer.switchboard?.url;
+  if (pointer.switchboard?.token) {
+    // The owner pre-minted this board's token at invite time (a fresh joiner
+    // cannot decrypt team secrets yet, so the sealed pointer is the only
+    // channel that works on a first join). Storing it is all peering needs.
+    peering = "unavailable";
+    try {
+      await seams.writeLocalSecret("switchboardToken", pointer.switchboard.token);
+      peering = "applied";
+    } catch (err) {
+      seams.warn(`board peering: could not store the switchboard token (${err instanceof Error ? err.message : String(err)})`);
+    }
+  } else if (switchboardUrl) {
+    peering = "unavailable";
     const adminToken = await seams.readTeamSecret(pointer.team, "rt", "switchboardAdminToken", secrets(pointer.team));
     if (adminToken) {
-      const res = await p.fetch(`${switchboardUrl}/peer/join`, {
+      // The switchboard's admin register route: an upsert that mints (or
+      // rotates) this member's board token. Peering only counts as applied
+      // once that token is stored where the board's secrets read finds it.
+      const res = await p.fetch(`${switchboardUrl}/boards`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
-        body: JSON.stringify({ member: handle }),
+        body: JSON.stringify({ username: handle }),
       });
-      peering = res.status >= 200 && res.status < 300 ? "applied" : "unavailable";
-    } else {
-      peering = "unavailable";
+      if (res.status >= 200 && res.status < 300) {
+        let token: unknown;
+        try {
+          token = (JSON.parse(res.body) as { token?: unknown })?.token;
+        } catch {
+          /* an unparsable register reply reads as no token */
+        }
+        if (typeof token === "string" && token) {
+          try {
+            await seams.writeLocalSecret("switchboardToken", token);
+            peering = "applied";
+          } catch (err) {
+            seams.warn(`board peering: could not store the switchboard token (${err instanceof Error ? err.message : String(err)})`);
+          }
+        }
+      }
     }
   }
 
@@ -480,5 +519,9 @@ export async function joinRedeem(
   }
 
   clearIntent(p);
-  return { team: teamRefFrom(pointer), access: "ok", peering, message: `Joined ${pointer.name} (owner ${pointer.owner})`, intent: "written" };
+  const peeringHint =
+    peering === "unavailable"
+      ? "; board peering could not be set up automatically... ask the owner to re-invite your board from the board's members panel"
+      : "";
+  return { team: teamRefFrom(pointer), access: "ok", peering, message: `Joined ${pointer.name} (owner ${pointer.owner})${peeringHint}`, intent: "written" };
 }

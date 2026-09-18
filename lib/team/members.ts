@@ -139,6 +139,14 @@ function readRoster(seams: MembersSeams, slug: string, key: RosterKey = "board.m
   return Array.isArray(store[key]) ? (store[key] as RosterMember[]) : [];
 }
 
+/** The read-side roster: mattstack.roster is the cross-app key the suite apps read; board.members remains only as the fallback for stores minted before the successor key existed. Writers keep dual-writing both. */
+export function preferredRoster(store: Record<string, unknown>): RosterMember[] {
+  const next = store["mattstack.roster"];
+  if (Array.isArray(next)) return next as RosterMember[];
+  const legacy = store["board.members"];
+  return Array.isArray(legacy) ? (legacy as RosterMember[]) : [];
+}
+
 /** Sets (or overwrites) one roster entry's `agePublicKey` on both roster keys: the sync-time record of which sops recipient a handle maps to, so `membersRemove` can find it later without a `--key` argument. Each key is read and written on its own contents, matching `addToRoster` in invite.ts. */
 function recordRosterKey(seams: MembersSeams, slug: string, handle: string, agePublicKey: string): void {
   for (const key of ROSTER_KEYS) {
@@ -343,8 +351,14 @@ export async function membersRemove(
     );
   }
 
-  const existing = readRoster(seams, slug);
-  const existingEntry = existing.find((m) => m.username === handle);
+  const boardRoster = readRoster(seams, slug, "board.members");
+  const crossAppRoster = readRoster(seams, slug, "mattstack.roster");
+  // The key can live on either roster (dual-write is best-effort): prefer an
+  // entry that actually carries one over a bare row on the newer key.
+  const bothRosters = [...crossAppRoster, ...boardRoster];
+  const existingEntry =
+    bothRosters.find((m) => m.username === handle && typeof m.agePublicKey === "string") ??
+    bothRosters.find((m) => m.username === handle);
   const keyToRemove = agePublicKey ?? (typeof existingEntry?.agePublicKey === "string" ? existingEntry.agePublicKey : undefined);
 
   if (keyToRemove) {
@@ -377,20 +391,21 @@ export async function membersRemove(
               : [`"${handle}" still has access to ${remote} — remove them there too; mattstack does not manage membership on this repo`],
         };
 
-  const rosterRemoved = existingEntry !== undefined;
-  if (rosterRemoved) {
+  // Each key is removed on its own contents (a store can carry either roster
+  // alone), never by writing one key's rows onto the other; removal from
+  // either counts as a roster removal.
+  const boardHad = boardRoster.some((m) => m.username === handle);
+  if (boardHad) {
     seams.writeSetting(
       "board.members",
-      existing.filter((m) => m.username !== handle),
+      boardRoster.filter((m) => m.username !== handle),
       "team",
       { team: slug },
     );
   }
 
-  // mattstack.roster is judged on its own contents, independent of
-  // board.members: a store can carry one roster without the other.
-  const crossAppRoster = readRoster(seams, slug, "mattstack.roster");
-  if (crossAppRoster.some((m) => m.username === handle)) {
+  const crossAppHad = crossAppRoster.some((m) => m.username === handle);
+  if (crossAppHad) {
     seams.writeSetting(
       "mattstack.roster",
       crossAppRoster.filter((m) => m.username !== handle),
@@ -398,6 +413,7 @@ export async function membersRemove(
       { team: slug },
     );
   }
+  const rosterRemoved = boardHad || crossAppHad;
 
   let reencrypted: string[] = [];
   if (keyToRemove) {

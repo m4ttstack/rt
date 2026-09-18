@@ -82,6 +82,22 @@ describe("teamStatus", () => {
     });
   });
 
+  test("members come from mattstack.roster when present; board.members is only the legacy fallback", async () => {
+    const deps = clonedDeps({
+      exec: async () => ({ code: 0, stdout: "2026-08-21T10:00:00+00:00\n", stderr: "" }),
+      read: {
+        "board.title": "Acme Team",
+        "board.members": [{ username: "legacy-only" }],
+        "mattstack.roster": [{ username: "matt" }, { username: "leath1" }],
+      },
+    });
+
+    await teamStatus(["--team", SLUG, "--json"], {}, deps);
+
+    const body = JSON.parse(deps.lines[0]!);
+    expect(body.members).toEqual([{ username: "matt" }, { username: "leath1" }]);
+  });
+
   test("--json carries pullOnly through from the daemon's snapshot-status entry, so a member can see why nothing pushes", async () => {
     const deps = clonedDeps({
       exec: async () => ({ code: 0, stdout: "2026-08-21T10:00:00+00:00\n", stderr: "" }),

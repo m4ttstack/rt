@@ -120,8 +120,8 @@ function fakeAgeKeySeamLocked(): AgeKeySeam {
   };
 }
 
-function baseJoinRedeemSeams(overrides: Partial<JoinRedeemSeams> = {}): { seams: JoinRedeemSeams; calls: { readTeamSecret: unknown[][]; forgeLogin: unknown[][] } } {
-  const calls = { readTeamSecret: [] as unknown[][], forgeLogin: [] as unknown[][] };
+function baseJoinRedeemSeams(overrides: Partial<JoinRedeemSeams> = {}): { seams: JoinRedeemSeams; calls: { readTeamSecret: unknown[][]; forgeLogin: unknown[][]; secretWrites: { key: string; value: string }[] } } {
+  const calls = { readTeamSecret: [] as unknown[][], forgeLogin: [] as unknown[][], secretWrites: [] as { key: string; value: string }[] };
   const seams: JoinRedeemSeams = {
     ageKeySeam: fakeAgeKeySeam(),
     read: fakeRead(),
@@ -134,6 +134,9 @@ function baseJoinRedeemSeams(overrides: Partial<JoinRedeemSeams> = {}): { seams:
       return "zaphod";
     }) as JoinRedeemSeams["forgeLogin"],
     forgeToken: async () => null,
+    writeLocalSecret: async (key, value) => {
+      calls.secretWrites.push({ key, value });
+    },
     warn: () => {},
     ...overrides,
   };
@@ -654,16 +657,16 @@ describe("joinRedeem", () => {
     expect(readTeamLocal(p, POINTER.team).joinedByRt).toBe(true);
   });
 
-  test("switchboard url + a readable admin token → peering applied, POSTs /peer/join with the joiner's forge login", async () => {
+  test("switchboard url + a readable admin token → peering applied: POSTs /boards, stores the returned board token as the local switchboardToken secret", async () => {
     const fetchCalls: { url: string; init?: Parameters<Probes["fetch"]>[1] }[] = [];
     const p = redeemProbes({
       fetch: async (url, init) => {
         fetchCalls.push({ url, init });
-        return { status: 200, body: "", headers: {} };
+        return { status: 201, body: JSON.stringify({ username: "zaphod", token: "tok-1" }), headers: {} };
       },
     });
     const relay = fakeRelay();
-    const { seams } = baseJoinRedeemSeams({
+    const { seams, calls } = baseJoinRedeemSeams({
       read: fakeRead({ "mattstack.integrations": { switchboard: { url: "https://sb.test" } } }),
       readTeamSecret: async () => "admin-token-xyz",
     });
@@ -672,10 +675,67 @@ describe("joinRedeem", () => {
 
     expect(result.peering).toBe("applied");
     expect(fetchCalls).toHaveLength(1);
-    expect(fetchCalls[0]!.url).toBe("https://sb.test/peer/join");
+    expect(fetchCalls[0]!.url).toBe("https://sb.test/boards");
     expect(fetchCalls[0]!.init?.method).toBe("POST");
     expect(fetchCalls[0]!.init?.headers?.Authorization).toBe("Bearer admin-token-xyz");
-    expect(JSON.parse(fetchCalls[0]!.init?.body ?? "{}")).toEqual({ member: "zaphod" });
+    expect(JSON.parse(fetchCalls[0]!.init?.body ?? "{}")).toEqual({ username: "zaphod" });
+    expect(calls.secretWrites).toEqual([{ key: "switchboardToken", value: "tok-1" }]);
+  });
+
+  test("a pointer carrying an embedded switchboard token: stored directly, peering applied, no switchboard call and no team-secret read", async () => {
+    const p = redeemProbes();
+    const embedded = { ...POINTER, switchboard: { url: "https://sb.test", token: "tok-emb" } };
+    const relay = fakeRelay({ fetch: relayServing(embedded) });
+    const secretReads: unknown[] = [];
+    const { seams, calls } = baseJoinRedeemSeams({
+      read: fakeRead({ "mattstack.integrations": { switchboard: { url: "https://sb.test" } } }),
+      readTeamSecret: (async (...args: unknown[]) => {
+        secretReads.push(args);
+        return null;
+      }) as JoinRedeemSeams["readTeamSecret"],
+    });
+
+    const result = await joinRedeem(p, relay.client, () => NO_SECRETS, { code: CODE }, seams);
+
+    expect(result.peering).toBe("applied");
+    expect(calls.secretWrites).toEqual([{ key: "switchboardToken", value: "tok-emb" }]);
+    expect(p.calls.fetch).toHaveLength(0);
+    expect(secretReads).toEqual([]);
+  });
+
+  test("a 2xx register with no parsable token → peering:unavailable, nothing written, and the message names the board-panel re-invite repair", async () => {
+    const p = redeemProbes({ fetch: async () => ({ status: 201, body: "not json", headers: {} }) });
+    const relay = fakeRelay();
+    const { seams, calls } = baseJoinRedeemSeams({
+      read: fakeRead({ "mattstack.integrations": { switchboard: { url: "https://sb.test" } } }),
+      readTeamSecret: async () => "admin-token",
+    });
+
+    const result = await joinRedeem(p, relay.client, () => NO_SECRETS, { code: CODE }, seams);
+
+    expect(result.peering).toBe("unavailable");
+    expect(result.access).toBe("ok");
+    expect(calls.secretWrites).toEqual([]);
+    expect(result.message).toContain("re-invite");
+  });
+
+  test("a failing switchboardToken write → peering:unavailable without failing the join", async () => {
+    const p = redeemProbes({
+      fetch: async () => ({ status: 201, body: JSON.stringify({ username: "zaphod", token: "tok-1" }), headers: {} }),
+    });
+    const relay = fakeRelay();
+    const { seams } = baseJoinRedeemSeams({
+      read: fakeRead({ "mattstack.integrations": { switchboard: { url: "https://sb.test" } } }),
+      readTeamSecret: async () => "admin-token",
+      writeLocalSecret: async () => {
+        throw new Error("keychain locked");
+      },
+    });
+
+    const result = await joinRedeem(p, relay.client, () => NO_SECRETS, { code: CODE }, seams);
+
+    expect(result.peering).toBe("unavailable");
+    expect(result.access).toBe("ok");
   });
 
   test("no switchboard url → peering idle, no peer/join request", async () => {
