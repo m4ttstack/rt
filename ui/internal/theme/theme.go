@@ -67,6 +67,7 @@ const (
 	GlyphAction  = "▸" // an action row's fallback icon when the caller sets none
 	GlyphChevron = "❯"
 	GlyphOn      = "◉"
+	GlyphMixed   = "◪"
 	GlyphDone    = "✓"
 	GlyphWarn    = "⚠"
 	GlyphBack    = "↩"

@@ -70,7 +70,7 @@ func renderMasterRow(changedTotal, stagedTotal, width int) string {
 	case changedTotal > 0 && stagedTotal == changedTotal:
 		glyph = theme.GlyphOn
 	case stagedTotal > 0:
-		glyph = "◪"
+		glyph = theme.GlyphMixed
 	}
 	text := fmt.Sprintf("%d changed files · %d staged", changedTotal, stagedTotal)
 	return lipgloss.NewStyle().Width(width).Render(fg(theme.Dim).Render(glyph + "  " + text))
@@ -84,7 +84,7 @@ func changeGlyph(include string) (string, color.Color) {
 	case "all":
 		return theme.GlyphOn, theme.PinkSoft
 	case "partial":
-		return "◪", theme.PinkSoft
+		return theme.GlyphMixed, theme.PinkSoft
 	default:
 		return theme.GlyphStopped, theme.Faint
 	}
@@ -146,7 +146,7 @@ func renderChangeRow(c ChangeRow, width int, cursor bool) string {
 }
 
 // renderStashStrip is the "Stashed changes · N ❯" row: a notice strip, not
-// yet a foldout (Task 7 wires the click).
+// yet a foldout (a later interaction pass wires the click).
 func renderStashStrip(count, width int) string {
 	on := lipgloss.NewStyle().Background(theme.BgSubtle)
 	left := on.Foreground(theme.Dim).Render(fmt.Sprintf("Stashed changes · %d", count))
@@ -159,7 +159,7 @@ func renderStashStrip(count, width int) string {
 func renderCommitBox(width int, summaryView, descView string, amending bool, buttonLabel string, canCommit bool) string {
 	var lines []string
 	if amending {
-		lines = append(lines, fg(theme.Peach).Render("Amending last commit · esc stops"))
+		lines = append(lines, fg(theme.Peach).Render("Amending last commit · a stops"))
 	}
 	lines = append(lines, boxLine(width, summaryView))
 	lines = append(lines, boxBlock(width, []string{descView, ""}))
