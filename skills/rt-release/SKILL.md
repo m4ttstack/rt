@@ -62,13 +62,27 @@ left as-is or reduced to a pointer here.
 
    The policy is content lockstep, independent numbering: an app whose
    subdir moved since its pin gets a release cut from the same main this
-   tag builds against (app-prefixed tag on the monorepo; the bundle-apps
-   workflow builds the artifact), then its deps.lock row bumps with the
-   new tarball's sha256. An unchanged app keeps its pin — no empty
-   releases. Holding a stale pin anyway is allowed but is a decision the
-   user makes and the release notes record, never a silent default.
-   Version numbers stay per-app; rt's own tag plus the committed deps.lock
-   is the compatibility record.
+   tag builds against. Nothing in that pipeline is tag-triggered, so
+   never hand-push an app tag; a hand-pushed tag builds nothing. The
+   pipeline: bump `apps/<app>/package.json` on apps main via PR, then
+
+   ```
+   gh workflow run bundle-apps.yml --repo m4ttstack/rt -f apps=<comma-list>
+   ```
+
+   (`bundle-apps.yml` lives in rt, not the apps repo). The workflow reads
+   each app's package.json version, mints the app-prefixed tag itself,
+   creates the apps release with the tarball, and opens ONE combined
+   deps.lock PR on rt covering every app it was dispatched for; verify
+   each changed row's sha256 against the published asset before merging.
+   Merge-on-green, here and for any release-day PR, means zero pending
+   checks AND at least one pass; any fail blocks. A failed check in a
+   suite the diff cannot touch (a deps.lock pin failing a UI test) is
+   rerun-first: `gh run rerun <run-id> --failed`, then re-gate. An
+   unchanged app keeps its pin, no empty releases. Holding a stale pin
+   anyway is allowed but is a decision the user makes and the release
+   notes record, never a silent default. Version numbers stay per-app;
+   rt's own tag plus the committed deps.lock is the compatibility record.
 
 3. **Push main.** If `main` is ahead of `origin/main`, push it. This is an
    outward action: unless the user pre-authorized the release, say what you are
@@ -140,6 +154,12 @@ left as-is or reduced to a pointer here.
    dmg version stamp is `<latest-patch-bump>-ci<run>`, not `v0.0.0` — read
    the artifact's actual filename rather than assuming.
 
+   Before launching the walkthrough, run `tart list` and stop or delete
+   any running guests: macOS virtualization caps concurrent VMs at two,
+   so a leftover guest makes the new one fail boot as "ssh as tester
+   never came up". A closed job's pane may never have run its cleanup;
+   verify, don't assume.
+
 9. **Tag and push.**
    ```
    git tag -a <tag> -m "<tag>"
@@ -175,6 +195,41 @@ left as-is or reduced to a pointer here.
    `CLOUDFLARE_API_TOKEN`) and the Pages project pointed at rt.cool's DNS, both
    one-time setup in the script header. If that setup is missing, tell the user
    the steps and stop rather than failing partway.
+
+12. **Update this machine.** The release is not done while the dev's own
+   machine still runs the previous one; v2.10.0 ended with a 2.7.0 prod
+   app, a day-old dev bundle, and served apps up to three days stale
+   until the user asked. In order:
+
+   - **Prod app**: download the released dmg, verify it against
+     SHA256SUMS, and replace `/Applications/mattstack.app` with the
+     mounted copy (`ditto`). Never launch an old prod copy to
+     Sparkle-update it: pre-2.8 updaters gate on `~/.local/bin/rt`
+     existing, and a launched prod app's daemon seizes `rt.sock` from
+     the dev daemon. Do not launch the new copy either; it sits ready
+     for the next flavor flip.
+   - **Dev bundle**: in a scratch clone or worktree at the released
+     commit, `scripts/fetch-deps.sh arm64`, then `rt-tray/build.sh dev`
+     (never rebuild the blessed bundle in place). With the user's
+     approval, swap `/Applications/mattstack-dev.app`: kill the running
+     dev app by pid (a polite quit fails silently), `ditto` the new
+     bundle over, `open` it, and verify a fresh pid and launch time.
+   - **Daemon**: announce in #rt first (the dev daemon serves other
+     sessions), then `rt daemon restart` and confirm `rt daemon status`
+     reports the released commit.
+   - **Deck and the served suite**: the bundle swap ships the new
+     Helpers, but the live agent binary is `~/.local/bin/deck`; confirm
+     `deck --version` matches the deps.lock pin. The rt-managed served
+     apps (board, chat, console, boxscore, gitq) run from the
+     `~/Documents/GitHub/mattstack-apps` checkout, so pull it to main
+     (branch-check first, it is shared) and `deck restart --managed`.
+     Then verify each managed app's pid actually cycled via `launchctl
+     print gui/501/com.mattstack.deck.<app>`: a socket blip can end the
+     restart loop partway, so restart stragglers by name. Rows deck
+     lists as user-managed are the user's own; leave them.
+   - **Verify**: prod Info.plist version equals the tag, dev app process
+     is fresh, daemon reports the released commit, `deck --version` is
+     current, and every managed app's start time postdates the restart.
 
 ## Guardrails
 
