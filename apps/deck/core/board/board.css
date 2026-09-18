@@ -12,6 +12,17 @@ body {
   margin: 0;
   background: var(--card);
 }
+/* Because the ground is --card, the page-wide inks take the kit's on-card
+   roles: the canvas-tuned --muted/--border/--border-soft sit below AA
+   contrast on the card surface in both schemes, and the tokens package
+   pins the on-card roles at or above it (packages/tokens
+   invariants test). Unlayered on purpose, so the remap beats the kit's
+   `@layer soribashi.tokens` definitions for every recipe on the page. */
+:root {
+  --muted: var(--text-muted-on-card);
+  --border: var(--border-on-card);
+  --border-soft: var(--border-soft-on-card);
+}
 .board-header {
   display: flex;
   justify-content: space-between;
@@ -31,14 +42,13 @@ body {
 }
 
 /* Subline reads as one quiet caption: the health count carries its tone, the
-   supporting counts trail dimmed with a gap rather than another dotted run. */
+   supporting counts trail after a gap rather than another dotted run. */
 .board-subline {
   color: var(--muted);
   margin: var(--spacing-lg) 0 var(--spacing-rem150);
 }
 .subline-rest {
   margin-left: var(--spacing-xl);
-  opacity: 0.72;
 }
 
 .header-actions {
@@ -88,11 +98,6 @@ body {
 }
 .muted {
   color: var(--muted);
-  text-decoration: none;
-}
-.muted-more {
-  color: var(--muted);
-  opacity: 0.6;
   text-decoration: none;
 }
 /* Bad-tone plain text -- for a value that reads as dim by default (the
