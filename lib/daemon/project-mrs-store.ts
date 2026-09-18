@@ -265,8 +265,9 @@ export function createProjectMRs(db: Database = getStateDb("daemon")): ProjectMR
       // (b) absent from the sync result but written AFTER the sync started:
       // an event created it mid-sync — keep it.
       if (store.mrs[iid]!.fetchedAt > syncStartedAt) continue;
-      delete store.mrs[iid];
-      changed.push(iid);
+      // Delete-shaped: recorded here, but NOT removed from store.mrs yet.
+      // See the persistOrWarn call below, which only drops it in memory
+      // once the row delete actually lands.
       toDelete.push(iid);
     }
 
@@ -279,7 +280,7 @@ export function createProjectMRs(db: Database = getStateDb("daemon")): ProjectMR
     // prunes) plus the meta row commit atomically (spec "Store-by-store"
     // item 2). The reconcile ABOVE already decided what "touched" means —
     // this only persists that decision.
-    persistOrWarn("project-mrs", () => {
+    const persisted = persistOrWarn("project-mrs", () => {
       const run = db.transaction(() => {
         for (const w of toWrite) upsertMrStmt.run(repoName, w.iid, JSON.stringify(w.pr), w.fetchedAt);
         for (const iid of toDelete) {
@@ -290,6 +291,16 @@ export function createProjectMRs(db: Database = getStateDb("daemon")): ProjectMR
       });
       run();
     }, { repo: repoName, op: "fullSync" });
+
+    // A BUSY-deferred prune must keep the row in store.mrs so the next
+    // fullSync pass sees it as still-absent and retries the delete, rather
+    // than losing it from memory while the stale DB row survives.
+    if (persisted) {
+      for (const iid of toDelete) {
+        delete store.mrs[iid];
+        changed.push(iid);
+      }
+    }
 
     return changed;
   }
@@ -391,15 +402,20 @@ export function createProjectMRs(db: Database = getStateDb("daemon")): ProjectMR
     if (!demands) return [];
     const cutoff = Date.now() - maxIdleMs;
     const dropped = Object.keys(demands).filter((c) => demands[c]!.lastSeenAt < cutoff);
+    if (!dropped.length) return [];
+
+    // Delete-shaped: the client is only removed from memory once its row
+    // delete lands, so a BUSY-deferred expiry keeps it for the next pass
+    // to retry instead of losing it while the stale row survives.
+    const persisted = persistOrWarn("project-mrs", () => {
+      const run = db.transaction(() => {
+        for (const c of dropped) deleteDemandStmt.run(repoName, c);
+      });
+      run();
+    }, { repo: repoName, op: "expireDemands" });
+    if (!persisted) return [];
+
     for (const c of dropped) delete demands[c];
-    if (dropped.length) {
-      persistOrWarn("project-mrs", () => {
-        const run = db.transaction(() => {
-          for (const c of dropped) deleteDemandStmt.run(repoName, c);
-        });
-        run();
-      }, { repo: repoName, op: "expireDemands" });
-    }
     return dropped;
   }
 
@@ -422,17 +438,32 @@ export function createProjectMRs(db: Database = getStateDb("daemon")): ProjectMR
   function setSectionTags(repoName: string, tags: Record<number, string[]>, opts?: { replaceAll?: boolean }): void {
     const store = data[repoName];
     if (!store) return;
+
+    // Clearing a tag is delete-shaped: it only leaves store.mrs once the row
+    // delete lands, so a BUSY-deferred clear keeps it for the next pass to
+    // retry instead of losing it while the stale project_mr_sections row
+    // survives. Setting a new non-empty tag is a plain write and keeps the
+    // existing unconditional, converges-next-cycle behavior.
+    const toClear = new Set<number>();
     if (opts?.replaceAll) {
-      for (const entry of Object.values(store.mrs)) delete entry.codeownerSections;
+      for (const iidStr of Object.keys(store.mrs)) {
+        const iid = Number(iidStr);
+        if (store.mrs[iid]!.codeownerSections) toClear.add(iid);
+      }
     }
     for (const [iidStr, sections] of Object.entries(tags)) {
-      const entry = store.mrs[Number(iidStr)];
+      const iid = Number(iidStr);
+      const entry = store.mrs[iid];
       if (!entry) continue;
-      if (sections.length > 0) entry.codeownerSections = [...sections];
-      else delete entry.codeownerSections;
+      if (sections.length > 0) {
+        entry.codeownerSections = [...sections];
+        toClear.delete(iid);
+      } else if (entry.codeownerSections) {
+        toClear.add(iid);
+      }
     }
 
-    persistOrWarn("project-mrs", () => {
+    const persisted = persistOrWarn("project-mrs", () => {
       const run = db.transaction(() => {
         if (opts?.replaceAll) deleteAllSectionsStmt.run(repoName);
         for (const [iidStr, sections] of Object.entries(tags)) {
@@ -444,6 +475,13 @@ export function createProjectMRs(db: Database = getStateDb("daemon")): ProjectMR
       });
       run();
     }, { repo: repoName, op: "setSectionTags" });
+
+    if (persisted) {
+      for (const iid of toClear) {
+        const entry = store.mrs[iid];
+        if (entry) delete entry.codeownerSections;
+      }
+    }
   }
 
   return {

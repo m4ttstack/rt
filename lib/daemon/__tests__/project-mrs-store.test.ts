@@ -465,6 +465,102 @@ describe("daemon-flavor busy handling", () => {
 
     db.close();
   }, 10_000);
+
+  // Mirrors git-badges-store.test.ts's "a BUSY-deferred delete keeps the
+  // entry so the next pass retries": a second connection holds the write
+  // lock past the daemon flavor's busy_timeout, so the store's own DELETE
+  // throws SQLITE_BUSY for real. Delete-shaped writes must not drop their
+  // in-memory row until the delete actually lands, or the row is lost from
+  // memory while the stale DB row survives and resurfaces on restart.
+  test("a BUSY-deferred fullSync prune keeps the row so a later pass retries and removes it", () => {
+    const dir = mkdtempSync(join(tmpdir(), "rt-pmrs-busy-prune-"));
+    const dbPath = join(dir, "state.db");
+    const db = openStateDb(dbPath, "daemon");
+    const s = createProjectMRs(db);
+    const t0 = Date.now() - 10_000;
+    s.fullSync("repo", "g/p", [pr(1), pr(2)], t0);
+
+    const blocker = new Database(dbPath);
+    blocker.exec("PRAGMA busy_timeout = 0;");
+    blocker.exec("BEGIN IMMEDIATE;");
+    try {
+      const changed = s.fullSync("repo", "g/p", [pr(1)], Date.now());
+      expect(changed).not.toContain(2);
+      expect(s.read("repo")!.mrs[2]).toBeDefined();
+    } finally {
+      blocker.exec("ROLLBACK;");
+      blocker.close();
+    }
+
+    // Lock released: the next pass's prune lands and iid 2 is reported gone.
+    const changed2 = s.fullSync("repo", "g/p", [pr(1)], Date.now());
+    expect(changed2).toContain(2);
+    expect(s.read("repo")!.mrs[2]).toBeUndefined();
+
+    const rows = db.query("SELECT iid FROM project_mrs WHERE repo = ?;").all("repo") as { iid: number }[];
+    expect(rows.map((r) => r.iid)).toEqual([1]);
+
+    db.close();
+  }, 10_000);
+
+  test("a BUSY-deferred expireDemands keeps the client so a later pass retries and drops it", () => {
+    const dir = mkdtempSync(join(tmpdir(), "rt-pmrs-busy-demand-"));
+    const dbPath = join(dir, "state.db");
+    const db = openStateDb(dbPath, "daemon");
+    const s = createProjectMRs(db);
+    s.registerDemand("repo", "dead-client", ["alice"], 1);
+    // Force it idle: registerDemand always stamps lastSeenAt to now.
+    s.read("repo")!.demands!["dead-client"]!.lastSeenAt = 1;
+
+    const blocker = new Database(dbPath);
+    blocker.exec("PRAGMA busy_timeout = 0;");
+    blocker.exec("BEGIN IMMEDIATE;");
+    try {
+      expect(s.expireDemands("repo", 1000)).toEqual([]);
+      expect(s.read("repo")!.demands!["dead-client"]).toBeDefined();
+    } finally {
+      blocker.exec("ROLLBACK;");
+      blocker.close();
+    }
+
+    // Lock released: the next pass's delete lands and the client is reported gone.
+    expect(s.expireDemands("repo", 1000)).toEqual(["dead-client"]);
+    expect(s.read("repo")!.demands!["dead-client"]).toBeUndefined();
+
+    const rows = db.query("SELECT client FROM project_mr_demands WHERE repo = ?;").all("repo") as { client: string }[];
+    expect(rows).toHaveLength(0);
+
+    db.close();
+  }, 10_000);
+
+  test("a BUSY-deferred setSectionTags clear keeps the tag so a later pass retries and drops it", () => {
+    const dir = mkdtempSync(join(tmpdir(), "rt-pmrs-busy-section-"));
+    const dbPath = join(dir, "state.db");
+    const db = openStateDb(dbPath, "daemon");
+    const s = createProjectMRs(db);
+    s.fullSync("repo", "g/p", [pr(1)], Date.now());
+    s.setSectionTags("repo", { 1: ["Acme"] });
+
+    const blocker = new Database(dbPath);
+    blocker.exec("PRAGMA busy_timeout = 0;");
+    blocker.exec("BEGIN IMMEDIATE;");
+    try {
+      s.setSectionTags("repo", { 1: [] });
+      expect(s.read("repo")!.mrs[1]!.codeownerSections).toEqual(["Acme"]);
+    } finally {
+      blocker.exec("ROLLBACK;");
+      blocker.close();
+    }
+
+    // Lock released: the next pass's clear lands.
+    s.setSectionTags("repo", { 1: [] });
+    expect(s.read("repo")!.mrs[1]!.codeownerSections).toBeUndefined();
+
+    const rows = db.query("SELECT iid FROM project_mr_sections WHERE repo = ?;").all("repo") as { iid: number }[];
+    expect(rows).toHaveLength(0);
+
+    db.close();
+  }, 10_000);
 });
 
 describe("legacy import (project-mrs.json)", () => {
