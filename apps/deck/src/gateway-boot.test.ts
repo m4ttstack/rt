@@ -22,6 +22,7 @@ afterAll(() => holder.stop(true));
 test('exits 1 when the gateway port is already held, instead of running without a public edge', () => {
   const exits: number[] = [];
   const errs: unknown[][] = [];
+  const probed: number[] = [];
 
   const server = bindGatewayOrExit({
     start: () => startGateway(holder.port),
@@ -31,11 +32,16 @@ test('exits 1 when the gateway port is already held, instead of running without 
     err: (...args) => {
       errs.push(args);
     },
+    holder: port => {
+      probed.push(port);
+    },
   });
 
   expect(server).toBeNull();
   expect(exits).toEqual([1]);
   expect(String(errs[0]?.[0])).toContain('gateway failed to start');
+  // The dying process names the port it lost so the log can convict the holder.
+  expect(probed.length).toBe(1);
 });
 
 test('returns the bound server and never exits when the port is free', () => {
@@ -47,6 +53,7 @@ test('returns the bound server and never exits when the port is free', () => {
       exits.push(code);
     },
     err: () => {},
+    holder: () => {},
   });
 
   expect(server).not.toBeNull();
