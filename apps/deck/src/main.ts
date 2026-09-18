@@ -10,7 +10,7 @@ import {
 } from '../core/canary.ts';
 import { isAuthorized, startRestartDetached } from '../core/proxy-restart.ts';
 import { reconcileOnce } from '../core/reconcile.ts';
-import { redirectAgentOutput } from './agent-log.ts';
+import { logPortHolder, redirectAgentOutput } from './agent-log.ts';
 import { startApi } from './api/server.ts';
 import { writeApiInfo } from './api/state.ts';
 import { reconcileMattstackTld } from './api/tld-reconcile.ts';
@@ -99,16 +99,26 @@ export function serve(): void {
     console.error('registry dev-shape migration failed:', err);
   }
 
-  const apiServer = startApi({
-    manager: new LaunchdManager(),
-    edge: new PortlessCli(),
-    port: PORT,
-    canaryPort: CANARY_PORT,
-    freshness: () => proxyFreshness,
-    autoHeal: () => autoHeal,
-    onRouteWrite: () => setTimeout(runCanaryCheck, 500),
-    tunnel: new CloudflaredCli(),
-  });
+  // Same contract as the gateway bind below: a held API port exits for
+  // launchd's retry, naming the holder on the way out, instead of the
+  // uncaught EADDRINUSE crash loop a held port otherwise produces.
+  let apiServer: ReturnType<typeof startApi>;
+  try {
+    apiServer = startApi({
+      manager: new LaunchdManager(),
+      edge: new PortlessCli(),
+      port: PORT,
+      canaryPort: CANARY_PORT,
+      freshness: () => proxyFreshness,
+      autoHeal: () => autoHeal,
+      onRouteWrite: () => setTimeout(runCanaryCheck, 500),
+      tunnel: new CloudflaredCli(),
+    });
+  } catch (err) {
+    console.error('api failed to start, exiting so launchd retries:', err);
+    logPortHolder(PORT);
+    process.exit(1);
+  }
   writeApiInfo(PORT);
   console.log(`Deck serving on http://localhost:${PORT}`);
 

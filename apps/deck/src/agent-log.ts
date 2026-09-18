@@ -44,3 +44,22 @@ export function redirectAgentOutput(): void {
     // Non-fatal: output stays wherever the launcher pointed it.
   }
 }
+
+/**
+ * A failed bind is only diagnosable at the moment it happens: by the next
+ * look the holder may be gone (or be our own respawn). Name it in the log
+ * as this process dies, so an intermittent wedge convicts its actor.
+ */
+export function logPortHolder(port: number): void {
+  try {
+    const out = Bun.spawnSync(
+      ['lsof', '-nP', `-iTCP:${port}`, '-sTCP:LISTEN'],
+      { stdout: 'pipe', stderr: 'ignore' }
+    ).stdout.toString();
+    console.error(
+      `[agent-log] port ${port} holder at ${new Date().toISOString()}:\n${out.trim() || '(lsof saw no listener; holder gone or lsof unavailable)'}`
+    );
+  } catch (err) {
+    console.error(`[agent-log] lsof probe failed for port ${port}:`, err);
+  }
+}
