@@ -1,7 +1,7 @@
 {
   "name": "chat",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "chat, scaffolded with create-mantine-kit.",
   "license": "MIT",
   "type": "module",
