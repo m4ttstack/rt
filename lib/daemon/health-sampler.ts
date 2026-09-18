@@ -6,14 +6,18 @@ import { statfsSync } from "fs";
 import type { Logger } from "pino";
 import { HEALTH_THRESHOLDS } from "./health.ts";
 
+/** The published rss is the max seen across the window, never the roll-time
+ *  point sample: a memory-pressure reclaim right at the roll would otherwise
+ *  become the baseline and make plain re-inflation read as growth (RT-208). */
 export function rollRssBaseline(
-  prev: { rss: number; at: number } | null,
+  prev: { rss: number; at: number; windowMax?: number } | null,
   now: { rss: number; at: number },
   windowMs: number,
-): { rss: number; at: number } {
-  if (!prev) return now;
-  if (now.at - prev.at >= windowMs) return now;
-  return prev;
+): { rss: number; at: number; windowMax: number } {
+  if (!prev) return { rss: now.rss, at: now.at, windowMax: now.rss };
+  const windowMax = Math.max(prev.windowMax ?? prev.rss, now.rss);
+  if (now.at - prev.at >= windowMs) return { rss: windowMax, at: now.at, windowMax: now.rss };
+  return { rss: prev.rss, at: prev.at, windowMax };
 }
 
 export interface HealthSampler {
@@ -29,7 +33,7 @@ export function createHealthSampler(opts: {
   watchers: () => number;
   startedAt: number;
 }): HealthSampler {
-  let baseline: { rss: number; at: number } | null = null;
+  let baseline: { rss: number; at: number; windowMax: number } | null = null;
   let free: number | null = null;
 
   function statfsFree(dir: string): number | null {
