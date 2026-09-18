@@ -1120,6 +1120,9 @@ const httpServer = Bun.serve({
             mrs: mrsWithOrphans,
             queueExtras,
             orphans,
+            // Enrolled peer usernames from the relay, when peering knows them.
+            // Absent means unknown, and the pickers fall back to the roster.
+            peers: peering.current()?.peers() ?? undefined,
             local: isLocalRequest(req),
             canInvite:
               isLocalRequest(req) &&

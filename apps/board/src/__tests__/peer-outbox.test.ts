@@ -147,3 +147,37 @@ describe('makeSwitchboardClient', () => {
     ).toBe('unauthorized');
   });
 });
+
+describe('makeSwitchboardClient.peers', () => {
+  const clientWith = (respond: () => Response) =>
+    makeSwitchboardClient('https://relay.example', 'tok-1', (async (
+      url: string | URL | Request
+    ) => {
+      if (!String(url).endsWith('/peers')) throw new Error('wrong path');
+      return respond();
+    }) as typeof fetch);
+
+  test('returns the usernames on 200', async () => {
+    const c = clientWith(
+      () => new Response(JSON.stringify({ peers: ['ada', 'grace'] }))
+    );
+    expect(await c.peers()).toEqual(['ada', 'grace']);
+  });
+
+  test('returns null on a 404 (older relay), a bad body, or a network error', async () => {
+    expect(
+      await clientWith(() => new Response('nope', { status: 404 })).peers()
+    ).toBeNull();
+    expect(
+      await clientWith(() => new Response(JSON.stringify({}))).peers()
+    ).toBeNull();
+    const dead = makeSwitchboardClient(
+      'https://relay.example',
+      'tok-1',
+      (async () => {
+        throw new Error('down');
+      }) as unknown as typeof fetch
+    );
+    expect(await dead.peers()).toBeNull();
+  });
+});

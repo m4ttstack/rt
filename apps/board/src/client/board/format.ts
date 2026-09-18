@@ -125,21 +125,29 @@ function nudgeTargets(mrx: BoardMRWithReview): PeerReviewInfo[] {
     whatever its kind, mirroring the sent-nudge store. */
 function firstReviewTargets(
   mrx: BoardMRWithReview,
-  roster: readonly string[]
+  roster: readonly string[],
+  peers?: readonly string[]
 ): string[] {
   if (mrx.sentNudge && !NUDGE_RETRYABLE.has(mrx.sentNudge.display)) return [];
   const engaged = new Set((mrx.peerReviews ?? []).map(p => p.reviewer));
   engaged.add(mrx.author.username);
-  return roster.filter(u => !engaged.has(u));
+  // When the relay has said who is enrolled, only they can receive an ask;
+  // unknown enrollment (older relay, no answer yet) falls back to the roster.
+  const enrolled = peers ? new Set(peers) : null;
+  return roster.filter(u => !engaged.has(u) && (!enrolled || enrolled.has(u)));
 }
 
 /** Whom a respond ask can go to: the MR's author, once my own review lane
     finished with comments (so there is feedback to answer) and while no ask
     of mine is outstanding on this MR. */
-function respondAskTarget(mrx: BoardMRWithReview): string | null {
+function respondAskTarget(
+  mrx: BoardMRWithReview,
+  peers?: readonly string[]
+): string | null {
   if (mrx.sentNudge && !NUDGE_RETRYABLE.has(mrx.sentNudge.display)) return null;
   const r = mrx.review;
   if (!r || r.status !== 'done' || r.outcome !== 'comment') return null;
+  if (peers && !peers.includes(mrx.author.username)) return null;
   return mrx.author.username;
 }
 

@@ -19,6 +19,11 @@ What it adds:
   teammate's MR finishes with comments, "ask `<author>`'s agent to respond"
   asks the author's board to answer the feedback. Their board reports the
   respond lifecycle back so your chip confirms and clears.
+- **Enrollment-aware pickers.** The relay tells each peered board who is
+  enrolled (usernames only, refreshed on the board's peer tick), and the ask
+  actions offer only those teammates. Against an older relay without the
+  listing, the pickers fall back to the whole roster and an ask to an
+  unenrolled member surfaces the relay's refusal as before.
 - **Author-driven re-review.** Independent of the switchboard: the MR author can
   ask by resolving the latch thread on the MR itself, with no peer board
   involved. See [agent actions](agent-actions.md#reviewer-side-automation).

@@ -64,6 +64,23 @@ describe('switchboard http', () => {
     expect(username).toBe('ada');
     expect(token.length).toBeGreaterThan(20);
   });
+  test('peers listing: any board token, usernames only, no tokens leaked', async () => {
+    const { call } = setup();
+    const ada = (
+      (await (
+        await call('/boards', { token: ADMIN, body: { username: 'ada' } })
+      ).json()) as { token: string }
+    ).token;
+    await call('/boards', { token: ADMIN, body: { username: 'grace' } });
+    expect((await call('/peers')).status).toBe(401);
+    expect((await call('/peers', { token: 'nope' })).status).toBe(401);
+    const res = await call('/peers', { token: ada });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { peers: string[] };
+    expect(body.peers.sort()).toEqual(['ada', 'grace']);
+    expect(JSON.stringify(body)).not.toContain(ada);
+  });
+
   test('publish → inbox → ack round trip', async () => {
     const { call } = setup();
     const ada = (

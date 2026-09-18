@@ -72,7 +72,11 @@ const noop = () => {};
 async function render(
   mr: BoardMRWithReview,
   roster: string[],
-  opts: { canNudge?: boolean; canAskRespond?: boolean } = {}
+  opts: {
+    canNudge?: boolean;
+    canAskRespond?: boolean;
+    peers?: string[];
+  } = {}
 ) {
   container = document.createElement('div');
   document.body.appendChild(container);
@@ -105,6 +109,7 @@ async function render(
           asked.push({ iid: mr2.iid, reviewer })
         }
         canAskRespond={opts.canAskRespond ?? false}
+        peers={opts.peers}
         onAskRespond={(mr2, reviewer) =>
           respondAsks.push({ iid: mr2.iid, reviewer })
         }
@@ -198,4 +203,14 @@ test('no respond ask without a commented review of mine', async () => {
     el => el.textContent
   );
   expect(items.some(t => t?.includes('agent to respond'))).toBe(false);
+});
+
+test('a known enrollment list narrows the picker to enrolled members', async () => {
+  await render(mrx(), ['pat', 'kim', 'jo'], { peers: ['kim'] });
+  await React.act(async () => itemByText('request review from…').click());
+  const items = [...document.querySelectorAll('[role="menuitem"]')].map(
+    el => el.textContent
+  );
+  expect(items.some(t => t?.includes('kim'))).toBe(true);
+  expect(items.some(t => t?.includes('jo'))).toBe(false);
 });

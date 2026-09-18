@@ -95,6 +95,7 @@ function RowMenu({
   onRequestReview,
   canAskRespond,
   onAskRespond,
+  peers: enrolledPeers,
 }: {
   menu: RowMenuState;
   ctx: RowContext;
@@ -125,6 +126,8 @@ function RowMenu({
   onRequestReview: (mr: BoardMR, reviewer: string) => void;
   canAskRespond: boolean;
   onAskRespond: (mr: BoardMR, reviewer: string) => void;
+  /** Enrolled peer usernames when the relay has said; undefined = unknown. */
+  peers?: string[];
 }) {
   // Local reaction state so the open menu updates immediately after a mark,
   // and per-emoji pending so the clicked item shows a spinner + disables.
@@ -166,9 +169,9 @@ function RowMenu({
   const showSlack = ctx.local && ctx.slackEnabled;
   const peers = ctx.local && canNudge ? nudgeTargets(mrx) : [];
   const askTargets =
-    ctx.local && canNudge ? firstReviewTargets(mrx, roster) : [];
+    ctx.local && canNudge ? firstReviewTargets(mrx, roster, enrolledPeers) : [];
   const respondTarget =
-    ctx.local && canAskRespond ? respondAskTarget(mrx) : null;
+    ctx.local && canAskRespond ? respondAskTarget(mrx, enrolledPeers) : null;
   const gitlabItems = gitlabMenuItems(mr);
   const canRebaseLocal =
     mr.blockers?.hasConflicts ||

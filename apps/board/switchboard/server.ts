@@ -129,6 +129,16 @@ export function makeFetchHandler(
     const username = token ? store.authBoard(token) : null;
     if (!username) return new Response('unauthorized', { status: 401 });
 
+    if (pathname === '/peers') {
+      // Who is enrolled, for any peered board's ask pickers. Usernames only:
+      // the tokens stay between the relay and each board.
+      if (req.method !== 'GET')
+        return new Response('method not allowed', { status: 405 });
+      return json(200, {
+        peers: store.listBoards().map(b => b.username),
+      });
+    }
+
     if (pathname === '/envelopes') {
       if (req.method !== 'POST')
         return new Response('method not allowed', { status: 405 });

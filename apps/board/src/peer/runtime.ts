@@ -10,6 +10,10 @@ const UNAUTHORIZED_AFTER = 3;
 export interface PeerRuntime {
   client: SwitchboardClient;
   health(): 'ok' | 'unauthorized';
+  /** Enrolled usernames from the last successful relay fetch, or null before
+      one lands (or against a relay without /peers). A failed refresh keeps
+      the last good list rather than blanking the pickers. */
+  peers(): string[] | null;
 }
 
 export interface PeeringHost {
@@ -32,6 +36,7 @@ export function makePeering(host: PeeringHost) {
   let runtime: PeerRuntime | null = null;
   let timer: ReturnType<typeof setInterval> | null = null;
   let strikes = 0;
+  let peers: string[] | null = null;
   const deps: MaterializeDeps = {
     ...host.deps,
     reportAuth: state => {
@@ -44,7 +49,10 @@ export function makePeering(host: PeeringHost) {
 
   function runTick(): Promise<void> {
     running = (async () => {
-      if (runtime) await runPeerTick(runtime.client, deps, host.outboxDb);
+      if (!runtime) return;
+      await runPeerTick(runtime.client, deps, host.outboxDb);
+      const fetched = await runtime.client.peers();
+      if (fetched) peers = fetched;
     })().finally(() => {
       running = null;
     });
@@ -76,6 +84,7 @@ export function makePeering(host: PeeringHost) {
     runtime = {
       client,
       health: () => (strikes >= UNAUTHORIZED_AFTER ? 'unauthorized' : 'ok'),
+      peers: () => peers,
     };
     // Once now so a restart (or a fresh join) picks up whatever queued while
     // this board was not listening, then on a slow tick -- peer state is

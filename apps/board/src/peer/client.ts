@@ -13,6 +13,10 @@ export interface SwitchboardClient {
       token was revoked or never valid, and the UI says so. */
   inbox(): Promise<Envelope[] | null | 'unauthorized'>;
   ack(ids: string[]): Promise<boolean>;
+  /** Enrolled usernames, or null when the relay can't say (older relay
+      without /peers, a bad body, or a network failure) -- callers treat
+      null as "don't filter". */
+  peers(): Promise<string[] | null>;
 }
 
 export function makeSwitchboardClient(
@@ -48,6 +52,21 @@ export function makeSwitchboardClient(
         return body.envelopes
           .map(parseEnvelope)
           .filter((e): e is Envelope => e !== null);
+      } catch {
+        return null;
+      }
+    },
+    async peers() {
+      try {
+        const res = await fetchFn(`${base}/peers`, { headers });
+        if (!res.ok) return null;
+        const body = (await res.json()) as { peers?: unknown };
+        if (
+          !Array.isArray(body.peers) ||
+          body.peers.some(p => typeof p !== 'string')
+        )
+          return null;
+        return body.peers as string[];
       } catch {
         return null;
       }

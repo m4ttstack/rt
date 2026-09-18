@@ -1342,6 +1342,7 @@ export function Board() {
             rowMenu.mr.author.username !== data.defaultMember
           }
           onAskRespond={(mr2, reviewer) => handleAsk(mr2, reviewer, 'respond')}
+          peers={data.peers}
         />
       )}
 

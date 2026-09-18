@@ -29,6 +29,7 @@ function fakeClient(
     publish: async () => 201,
     inbox: async () => inboxResult(),
     ack: async () => true,
+    peers: async () => null,
   };
 }
 const noDeps = {
@@ -63,6 +64,7 @@ describe('makePeering', () => {
     const client: SwitchboardClient = {
       publish: async () => 201,
       ack: async () => true,
+      peers: async () => null,
       inbox: async () => {
         inFlight++;
         peak = Math.max(peak, inFlight);
@@ -112,6 +114,44 @@ describe('makePeering', () => {
     result = [];
     await peering.tickNow();
     expect(rt.health()).toBe('ok');
+    peering.stop();
+  });
+});
+
+describe('makePeering: enrolled peers cache', () => {
+  test('a tick caches the relay peers list; a null fetch keeps the last good one', async () => {
+    let answer: string[] | null = ['ada', 'grace'];
+    const client: SwitchboardClient = {
+      publish: async () => 201,
+      inbox: async () => [],
+      ack: async () => true,
+      peers: async () => answer,
+    };
+    const peering = makePeering({
+      makeClient: () => client,
+      deps: noDeps,
+      tickMs: 999_999,
+      outboxDb: freshDb(),
+    });
+    const rt = peering.start('https://sb', 'tok');
+    await peering.tickNow();
+    expect(rt.peers()).toEqual(['ada', 'grace']);
+    answer = null;
+    await peering.tickNow();
+    expect(rt.peers()).toEqual(['ada', 'grace']);
+    peering.stop();
+  });
+
+  test('peers() is null before any successful fetch', async () => {
+    const peering = makePeering({
+      makeClient: () => fakeClient(() => []),
+      deps: noDeps,
+      tickMs: 999_999,
+      outboxDb: freshDb(),
+    });
+    const rt = peering.start('https://sb', 'tok');
+    await peering.tickNow();
+    expect(rt.peers()).toBeNull();
     peering.stop();
   });
 });

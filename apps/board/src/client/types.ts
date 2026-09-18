@@ -161,6 +161,10 @@ export interface BoardData {
   members: RosterMember[];
   allMembers: ConfigMember[];
   mrs: BoardMRWithReview[];
+  /** Enrolled peer-board usernames from the relay; absent when peering is off
+      or the relay hasn't answered yet, and the ask pickers then fall back to
+      the whole roster. */
+  peers?: string[];
   fetchedAt: number;
   fetchError: string | null;
   local: boolean;

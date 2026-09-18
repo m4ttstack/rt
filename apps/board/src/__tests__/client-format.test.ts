@@ -295,3 +295,26 @@ test('respondAskTarget: the author, only after my commented review, gated by an 
   } as never;
   expect(respondAskTarget(retryable)).toBe('pat');
 });
+
+test('enrollment filters the pickers when known, and stays out of the way when not', () => {
+  const mrx = { author: { username: 'ada' } } as never;
+  const roster = ['ada', 'grace', 'linus', 'kim'];
+  expect(firstReviewTargets(mrx, roster, ['grace', 'kim'])).toEqual([
+    'grace',
+    'kim',
+  ]);
+  expect(firstReviewTargets(mrx, roster, undefined)).toEqual([
+    'grace',
+    'linus',
+    'kim',
+  ]);
+  expect(firstReviewTargets(mrx, roster, [])).toEqual([]);
+
+  const reviewed = {
+    author: { username: 'pat' },
+    review: { status: 'done', outcome: 'comment' },
+  } as never;
+  expect(respondAskTarget(reviewed, ['pat'])).toBe('pat');
+  expect(respondAskTarget(reviewed, ['kim'])).toBeNull();
+  expect(respondAskTarget(reviewed, undefined)).toBe('pat');
+});
