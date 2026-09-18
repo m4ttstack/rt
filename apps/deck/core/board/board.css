@@ -65,6 +65,16 @@ body {
   gap: var(--spacing-sm);
 }
 
+/* The Tooltip wrapper is a bare span with no font-size of its own, so it
+   inherits the heading's 24px and gets a same-size invisible line-height
+   strut around its small badge child -- tall enough that align-items:center
+   above centers the strut, not the badge, leaving it sitting near the
+   bottom. Zeroing the wrapper's own line-height removes the strut so the
+   badge's real (small) height is what gets centered. */
+.section-title [data-part='tooltip'] {
+  line-height: 0;
+}
+
 /* The app icon (mattstack mark) leads a managed row's identity, ahead of the
    health dot; unmanaged rows carry none and start at the dot. */
 .app-icon {
