@@ -1015,6 +1015,16 @@ export const TREE: Record<string, CommandNode> = {
     args: [],
   },
 
+  mission: {
+    description: "Mission control: repos, changes, diff, and commit in one board",
+    module: "./commands/mission.ts",
+    fn: "missionCommand",
+    context: "repo",
+    requiresTTY: true,
+    fullscreen: true,
+    args: [],
+  },
+
   commit: commitNode,
 
   port: {
