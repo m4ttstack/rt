@@ -23,10 +23,6 @@ import (
 	"rt-ui/internal/views/picker"
 )
 
-// glyphLock marks a guarded branch row: never a valid checkout target, so it
-// reads as locked rather than merely dim.
-const glyphLock = "⚿"
-
 // modalRow is one entry in a foldout: selectable unless it is a guarded
 // branch, which renders but can never take the cursor.
 type modalRow struct {
@@ -281,13 +277,12 @@ func (ms *modalState) selectedRow() (modalRow, bool) {
 	return row, true
 }
 
-// openBranchModal opens the branch foldout, or refuses with a one-shot bell
-// and a local notice while HEAD is detached: there is no current branch to
-// fold out from, and no checkout to land the new one against.
+// openBranchModal opens the branch foldout, or refuses with a local notice
+// while HEAD is detached: there is no current branch to fold out from, and
+// no checkout to land the new one against.
 func (m *Mission) openBranchModal() (tea.Model, tea.Cmd) {
 	if m.model.Current.Detached {
 		m.localNotice = "Detached HEAD: check out a branch first"
-		m.bell = true
 		return m, nil
 	}
 	m.modal = newBranchModal(m.model)
@@ -449,7 +444,7 @@ func modalRowLine(r modalRow, width int, cursor bool) string {
 	status, statusColor := " ", theme.Text
 	switch {
 	case r.guarded:
-		status, statusColor = glyphLock, theme.Dimmer
+		status, statusColor = theme.GlyphLock, theme.Dimmer
 	case r.current:
 		status, statusColor = theme.GlyphOn, theme.Mint
 	}
@@ -587,9 +582,9 @@ func renderMissionModal(parent string, ms *modalState, width, topBarHeight int) 
 	return lipgloss.NewCompositor(parentLayer, modalLayer).Render()
 }
 
-// renderNoticeStrip is the client-local refusal banner paired with View's
-// one-shot bell. It is distinct from the wire Model's own Notice field
-// (model.go), which a later task wires to the driver's own guard refusals.
+// renderNoticeStrip is the client-local refusal banner: distinct from the
+// wire Model's own Notice field (model.go), which carries the driver's own
+// guard refusals rather than a refusal the view decided on its own.
 func renderNoticeStrip(text string, width int) string {
 	on := lipgloss.NewStyle().Background(theme.WarnBg)
 	left := on.Foreground(theme.Peach).Render(theme.GlyphWarn + " " + text)

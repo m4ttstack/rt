@@ -59,14 +59,13 @@ type Mission struct {
 
 	// modal is the open repo/branch/worktree foldout, nil when none is open.
 	modal *modalState
-	// localNotice and bell are a client-only refusal cue (the detached-HEAD
-	// branch guard): distinct from the wire model's own Notice field, which
-	// a later task wires to the driver's guard refusals. Both are cleared at
-	// the top of every KeyPressMsg and re-armed only by the key that
-	// triggers a fresh refusal, so the bell embedded in View's output rings
-	// for exactly the one frame right after that key.
+	// localNotice is a client-only refusal cue (the detached-HEAD branch
+	// guard), kept separate from the wire model's own Notice field: that one
+	// carries the driver's own guard refusals, this one covers a refusal the
+	// view decides on its own before any intent reaches the driver. It is
+	// cleared at the top of every KeyPressMsg and re-armed only by the key
+	// that triggers a fresh refusal, so it shows for exactly one render.
 	localNotice string
-	bell        bool
 }
 
 func New(em *session.Emitter) *Mission {
@@ -186,7 +185,6 @@ func (m *Mission) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.reason = session.ReasonClosed
 		return m, tea.Quit
 	case tea.KeyPressMsg:
-		m.bell = false
 		m.localNotice = ""
 		if v.String() == "ctrl+c" {
 			return m.quit()
@@ -408,9 +406,6 @@ func (m *Mission) View() tea.View {
 	}
 	if m.modal != nil {
 		out = renderMissionModal(out, m.modal, m.width, lipgloss.Height(top))
-	}
-	if m.bell {
-		out += "\a"
 	}
 
 	v := tea.NewView(out)

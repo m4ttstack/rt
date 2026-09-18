@@ -71,6 +71,7 @@ const (
 	GlyphDone    = "✓"
 	GlyphWarn    = "⚠"
 	GlyphBack    = "↩"
+	GlyphLock    = "⚿"
 )
 
 var SpinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠣", "⠏"}

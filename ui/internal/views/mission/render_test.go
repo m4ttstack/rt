@@ -321,7 +321,7 @@ func TestModalGuardedBranchRowIsDimmerWithLockGlyph(t *testing.T) {
 	m := newTestMission()
 	m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
 	out := m.View().Content
-	if !strings.Contains(out, fgSGR(theme.Dimmer)+"m"+glyphLock) {
+	if !strings.Contains(out, fgSGR(theme.Dimmer)+"m"+theme.GlyphLock) {
 		t.Fatalf("guarded row should show the lock glyph in Dimmer:\n%s", out)
 	}
 }
