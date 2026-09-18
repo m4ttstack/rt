@@ -10,6 +10,7 @@ import type { GitBadgesStore } from "./git-badges-store.ts";
 export interface GitStatusConfig {
   sweep: boolean;
   sweepIntervalSec: number;
+  fetchIntervalSec: number;
 }
 
 export interface GitStatusSweepDeps {
@@ -60,6 +61,7 @@ export function createGitStatusSweep(deps: GitStatusSweepDeps): GitStatusSweep {
   const makeClient = deps.makeClient ?? createGitClient;
   const now = deps.now ?? (() => new Date());
   const repoErrors = new Map<string, string>();
+  const fetchTimes = new Map<string, number>();
   let inFlight: Promise<{ changed: string[] }> | null = null;
   let lastCompletedAt: number | null = null;
 
@@ -69,8 +71,25 @@ export function createGitStatusSweep(deps: GitStatusSweepDeps): GitStatusSweep {
     const changed: string[] = [];
     for (const [repo, mainPath] of Object.entries(index)) {
       const raw = parseIdentity(repo)?.id ?? null;
-      if (!deps.readConfig(raw).sweep) continue;
+      const cfg = deps.readConfig(raw);
+      if (!cfg.sweep) continue;
       try {
+        const lastFetch = fetchTimes.get(repo) ?? 0;
+        if (cfg.fetchIntervalSec > 0 && now().getTime() - lastFetch >= cfg.fetchIntervalSec * 1000) {
+          // Stamped before the attempt: a hanging remote must not re-hang every pass.
+          fetchTimes.set(repo, now().getTime());
+          try {
+            await Promise.race([
+              makeClient(mainPath).fetch(),
+              new Promise((_resolve, reject) => {
+                const timer = setTimeout(() => reject(new Error("fetch timed out")), 60_000);
+                timer.unref?.();
+              }),
+            ]);
+          } catch (err) {
+            deps.log.warn({ err, repo }, "background fetch failed; snapshotting with stale remote refs");
+          }
+        }
         const trees = await listWorktrees(mainPath);
         if (trees === null) {
           repoErrors.set(repo, "git worktree list failed");

@@ -553,12 +553,14 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
         repoIdentity ? { repoIdentity } : undefined,
       ).value ?? {};
       const interval = Number((v as any).sweepIntervalSec);
+      const f = Number((v as any).fetchIntervalSec);
       return {
         sweep: (v as any).sweep !== false,
         sweepIntervalSec: Number.isFinite(interval) && interval > 0 ? interval : 300,
+        fetchIntervalSec: Number.isFinite(f) && f >= 0 ? f : 900,
       };
     } catch {
-      return { sweep: true, sweepIntervalSec: 300 };
+      return { sweep: true, sweepIntervalSec: 300, fetchIntervalSec: 900 };
     }
   };
 

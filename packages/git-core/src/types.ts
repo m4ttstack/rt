@@ -109,6 +109,7 @@ export interface GitClient {
   stashPop(index: number): Promise<void>;
   stashDrop(index: number): Promise<void>;
   fetchState(): Promise<FetchState>;
+  fetch(remote?: string): Promise<void>;
   stagingDiff(path: string): Promise<StagingDiff>;
   stageSelection(
     diff: StagingDiff,

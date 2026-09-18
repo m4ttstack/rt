@@ -20,7 +20,7 @@ function sweepWith(overrides: Partial<Parameters<typeof createGitStatusSweep>[0]
     store: freshStore(),
     log: silentLog,
     emit: () => {},
-    readConfig: () => ({ sweep: true, sweepIntervalSec: 300 }),
+    readConfig: () => ({ sweep: true, sweepIntervalSec: 300, fetchIntervalSec: 0 }),
     ...overrides,
   });
 }
@@ -81,8 +81,8 @@ describe("git status sweep", () => {
       store,
       readConfig: (repoIdentity) =>
         repoIdentity === "example.com/a/b"
-          ? { sweep: false, sweepIntervalSec: 300 }
-          : { sweep: true, sweepIntervalSec: 300 },
+          ? { sweep: false, sweepIntervalSec: 300, fetchIntervalSec: 0 }
+          : { sweep: true, sweepIntervalSec: 300, fetchIntervalSec: 0 },
       listWorktrees: async () => { listed++; return []; },
     });
     await sweep.sweepNow();
@@ -104,7 +104,7 @@ describe("git status sweep", () => {
 
   test("tick respects the cadence floor and the global gate", async () => {
     let passes = 0;
-    const config = { sweep: true, sweepIntervalSec: 3600 };
+    const config = { sweep: true, sweepIntervalSec: 3600, fetchIntervalSec: 0 };
     const sweep = sweepWith({
       repoIndex: () => { passes++; return {}; },
       readConfig: () => config,
@@ -130,7 +130,7 @@ describe("git status sweep", () => {
     let passes = 0;
     const sweep = sweepWith({
       repoIndex: () => { passes++; return {}; },
-      readConfig: () => ({ sweep: false, sweepIntervalSec: 0 }),
+      readConfig: () => ({ sweep: false, sweepIntervalSec: 0, fetchIntervalSec: 0 }),
     });
     await sweep.tick();
     expect(passes).toBe(0);
@@ -167,5 +167,42 @@ describe("git status sweep", () => {
     expect(sweep.errors().get("repo")).toBeTruthy();
     await sweep.sweepNow();
     expect(sweep.errors().has("repo")).toBe(false);
+  });
+
+  test("fetch runs once per cadence on the main worktree only", async () => {
+    const fetched: string[] = [];
+    const fakeClient = (dir: string) => ({
+      snapshot: async () => ({ branch: "main", detached: false, upstream: null, ahead: null, behind: null, files: [], clean: true }),
+      fetchState: async () => ({ lastFetchedAt: null }),
+      fetch: async () => { fetched.push(dir); },
+    }) as any;
+    const sweep = sweepWith({
+      repoIndex: () => ({ r: "/main" }),
+      readConfig: () => ({ sweep: true, sweepIntervalSec: 300, fetchIntervalSec: 900 }),
+      makeClient: fakeClient,
+      listWorktrees: async () => [
+        { path: "/main", branch: "main", headSha: null, isBare: false },
+        { path: "/wt2", branch: "b", headSha: null, isBare: false },
+      ],
+    });
+    await sweep.sweepNow();
+    await sweep.sweepNow();
+    expect(fetched).toEqual(["/main"]);
+  });
+
+  test("a fetch failure does not stop the snapshot", async () => {
+    const sweep = sweepWith({
+      repoIndex: () => ({ r: "/main" }),
+      readConfig: () => ({ sweep: true, sweepIntervalSec: 300, fetchIntervalSec: 900 }),
+      makeClient: ((dir: string) => ({
+        snapshot: async () => ({ branch: "main", detached: false, upstream: null, ahead: null, behind: null, files: [], clean: true }),
+        fetchState: async () => ({ lastFetchedAt: null }),
+        fetch: async () => { throw new Error("network down"); },
+      })) as any,
+      listWorktrees: async () => [{ path: "/main", branch: "main", headSha: null, isBare: false }],
+    });
+    const { changed } = await sweep.sweepNow();
+    expect(changed).toEqual(["r"]);
+    expect(sweep.errors().get("r")).toBeUndefined();
   });
 });

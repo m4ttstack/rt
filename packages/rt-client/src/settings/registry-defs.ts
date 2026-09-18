@@ -226,11 +226,11 @@ export const REGISTRY: readonly SettingDef[] = [
     key: "rt.gitStatus",
     type: "object",
     scopes: ALL_SCOPES,
-    default: { sweep: true, sweepIntervalSec: 300 },
+    default: { sweep: true, sweepIntervalSec: 300, fetchIntervalSec: 900 },
     merge: "deep",
     repoScoped: true,
     migrated: true,
-    description: "Mission-control git badge sweep. sweep gates the daemon sweep (a per-repo override of { sweep: false } opts that repo out); sweepIntervalSec is the minimum seconds between sweeps, read fresh each tick.",
+    description: "Mission-control git badge sweep. sweep gates the daemon sweep (a per-repo override of { sweep: false } opts that repo out); sweepIntervalSec is the minimum seconds between sweeps, read fresh each tick. fetchIntervalSec is the per-repo background fetch cadence (0 disables fetching).",
   },
   {
     key: "rt.logLevel",
