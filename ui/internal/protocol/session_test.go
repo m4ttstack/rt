@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -92,6 +93,19 @@ func TestIntentPayloadRoundTripsAgainstFixture(t *testing.T) {
 	}
 	if payload.Summary != "fix parser" || payload.Description != "" || payload.Amend != false {
 		t.Fatalf("payload: %+v", payload)
+	}
+
+	// A probe decode keeps the fixture's literal payload bytes (key order
+	// intact), so this catches a Payload that has been routed through
+	// map[string]interface{} somewhere and would otherwise re-sort silently.
+	var probe struct {
+		Payload json.RawMessage `json:"payload"`
+	}
+	if err := json.Unmarshal(want, &probe); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(decoded.Payload, probe.Payload) {
+		t.Fatalf("payload bytes: got %s want %s", decoded.Payload, probe.Payload)
 	}
 
 	got := EncodeIntent(Intent{Name: decoded.Name, Payload: decoded.Payload})
