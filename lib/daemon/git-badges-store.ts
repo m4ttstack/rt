@@ -57,10 +57,16 @@ export function createGitBadges(db: Database): GitBadgesStore {
     },
 
     dropRepos(live) {
-      const gone = [...data.keys()].filter((repo) => !live.has(repo));
-      for (const repo of gone) {
+      const candidates = [...data.keys()].filter((repo) => !live.has(repo));
+      const gone: string[] = [];
+      for (const repo of candidates) {
+        // Delete before dropping the in-memory entry: a BUSY-deferred delete
+        // must keep the repo in `data` so the next pass retries it, rather
+        // than losing the row while reporting it as already gone.
+        const persisted = persistOrWarn("git-badges", () => { deleteRepo.run(repo); }, { repo, op: "drop" });
+        if (!persisted) continue;
         data.delete(repo);
-        persistOrWarn("git-badges", () => { deleteRepo.run(repo); }, { repo, op: "drop" });
+        gone.push(repo);
       }
       return gone;
     },

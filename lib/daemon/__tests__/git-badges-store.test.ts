@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { Database } from "bun:sqlite";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -59,5 +60,31 @@ describe("git badges store", () => {
     store.replaceRepo("gone", [badge()]);
     expect(store.dropRepos(new Set(["keep"]))).toEqual(["gone"]);
     expect([...store.readAll().keys()]).toEqual(["keep"]);
+  });
+
+  // Mirrors lib/state/__tests__/busy.test.ts's real-conflict setup: a second
+  // connection holds the write lock past the daemon flavor's 250ms
+  // busy_timeout, so the store's own DELETE throws SQLITE_BUSY for real
+  // rather than through a stub.
+  test("a BUSY-deferred delete keeps the entry so the next pass retries", () => {
+    const path = join(mkdtempSync(join(tmpdir(), "badges-busy-")), "state.db");
+    const db = openStateDb(path, "daemon");
+    const store = createGitBadges(db);
+    store.replaceRepo("gone", [badge()]);
+
+    const blocker = new Database(path);
+    blocker.exec("PRAGMA busy_timeout = 0;");
+    blocker.exec("BEGIN IMMEDIATE;");
+    try {
+      expect(store.dropRepos(new Set())).toEqual([]);
+      expect([...store.readAll().keys()]).toEqual(["gone"]);
+    } finally {
+      blocker.exec("ROLLBACK;");
+      blocker.close();
+    }
+
+    // Lock released: the next pass's delete lands and the repo is reported gone.
+    expect(store.dropRepos(new Set())).toEqual(["gone"]);
+    expect([...store.readAll().keys()]).toEqual([]);
   });
 });
