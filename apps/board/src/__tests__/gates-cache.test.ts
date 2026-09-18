@@ -37,8 +37,22 @@ function row(overrides: Partial<FacilityGateRow> = {}): FacilityGateRow {
 describe('GateCache.applyRow / reconcile', () => {
   test('applyRow sets a row, retrievable by subject+kind', () => {
     const cache = new GateCache();
-    cache.applyRow(row());
-    expect(cache.get(SUBJECT_A, 'review-post')?.id).toBe('gate-1');
+    cache.applyRow(
+      row({
+        questions: [
+          {
+            id: 'q1',
+            label: 'Ship it?',
+            multi: false,
+            options: ['yes', 'no'],
+            context: 'the reviewer found nothing',
+          },
+        ],
+      })
+    );
+    const cached = cache.get(SUBJECT_A, 'review-post');
+    expect(cached?.id).toBe('gate-1');
+    expect(cached?.questions[0]?.context).toBe('the reviewer found nothing');
   });
 
   test('reconcile replaces matching subjects and leaves others alone', () => {
@@ -180,7 +194,7 @@ describe('GateCache.applyEvent', () => {
       console.error = origError;
     }
     const cached = cache.get(SUBJECT_A, 'review-post');
-    expect(cached?.questions).toEqual([
+    expect(cached?.questions).toStrictEqual([
       { id: 'q1', label: 'Ship it?', multi: false, options: ['yes', 'no'] },
       {
         id: 'q2',
@@ -190,6 +204,46 @@ describe('GateCache.applyEvent', () => {
       },
     ]);
     expect(errors.length).toBe(4);
+  });
+
+  test("opened frame keeps a question's context (and still passes an option's description through)", () => {
+    const cache = new GateCache();
+    cache.applyEvent({
+      topic: 'gate/opened/gate-9',
+      payload: {
+        id: 'gate-9',
+        subject: SUBJECT_A,
+        kind: 'review-post',
+        questions: [
+          {
+            id: 'tiers',
+            label: 'Post which findings?',
+            multi: true,
+            options: [
+              {
+                value: 'Minor',
+                label: 'Minor (2)',
+                description: 'polish only',
+              },
+            ],
+            context: 'Minor:\n- nitpick: em dash\n- thought: untested state',
+          },
+        ],
+        meta: null,
+      },
+    });
+    const cached = cache.get(SUBJECT_A, 'review-post');
+    expect(cached?.questions).toStrictEqual([
+      {
+        id: 'tiers',
+        label: 'Post which findings?',
+        multi: true,
+        options: [
+          { value: 'Minor', label: 'Minor (2)', description: 'polish only' },
+        ],
+        context: 'Minor:\n- nitpick: em dash\n- thought: untested state',
+      },
+    ]);
   });
 
   test('opened frame for an already-cached subject+kind replaces it wholesale (re-review)', () => {

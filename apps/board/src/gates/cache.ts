@@ -45,6 +45,7 @@ function sanitizeQuestions(
         label: q.label,
         multi: Boolean(q.multi),
         options: q.options as GateOption[],
+        ...(typeof q.context === 'string' ? { context: q.context } : {}),
       });
     } else {
       console.error(
