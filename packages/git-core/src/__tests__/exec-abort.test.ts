@@ -52,13 +52,14 @@ describe("rawGit abort", () => {
     const sb = await makeSandbox();
     const fifoDir = await mkdtemp(join(tmpdir(), "git-core-fifo-"));
     const fifoPath = join(fifoDir, "input");
+    const controller = new AbortController();
+    let childPid: number | undefined;
     try {
       Bun.spawnSync(["mkfifo", fifoPath]);
-      const controller = new AbortController();
       // `git apply <file>` opens the file argument directly; with no writer
       // on the other end of the fifo, that open() never returns on its own.
       const promise = rawGit(sb.dir, ["apply", fifoPath], { signal: controller.signal });
-      const childPid = await findChildPid(/git apply/);
+      childPid = await findChildPid(/git apply/);
       expect(isRunning(childPid)).toBe(true);
 
       const start = Date.now();
@@ -68,6 +69,17 @@ describe("rawGit abort", () => {
 
       await waitUntilExited(childPid);
     } finally {
+      // Unconditional: a failure anywhere above (findChildPid timing out,
+      // an assertion throwing) must not leave the child parked in open()
+      // forever once the fifo's directory is removed out from under it.
+      controller.abort();
+      if (childPid !== undefined) {
+        try {
+          process.kill(childPid, "SIGKILL");
+        } catch {
+          // Already exited.
+        }
+      }
       await sb.cleanup();
       await rm(fifoDir, { recursive: true, force: true });
     }

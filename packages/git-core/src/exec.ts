@@ -96,7 +96,10 @@ export async function rawGit(dir: string, args: string[], opts: RawGitOpts = {})
         }
       }, ABORT_KILL_GRACE_MS);
       killTimer.unref?.();
-      proc.exited.finally(() => clearTimeout(killTimer));
+      // .catch, not just .finally: proc.exited settling on its own path here
+      // must never surface as an unhandled rejection, since nothing else
+      // observes this particular chain.
+      proc.exited.finally(() => clearTimeout(killTimer)).catch(() => {});
     };
     signal.addEventListener("abort", onAbort, { once: true });
     collected.then(
