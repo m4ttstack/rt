@@ -27,7 +27,7 @@ jobs:
           persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.3.13
+          bun-version: 1.4.2
       # plan-matrix reaches the settings resolver, which imports jsonc-parser.
       # Without an install Bun fetches it from npm at run time, outside bun.lock.
       - run: bun install --frozen-lockfile
@@ -56,7 +56,7 @@ jobs:
           persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.3.13
+          bun-version: 1.4.2
       - name: Clone app repo at main
         env:
           GH_TOKEN: ${{ secrets.MATTSTACK_RELEASE_TOKEN }}
@@ -264,7 +264,7 @@ jobs:
           token: ${{ secrets.MATTSTACK_RELEASE_TOKEN }}
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.3.13
+          bun-version: 1.4.2
       - run: bun install --frozen-lockfile
       # pinned-results, not the raw bundle artifacts: the release job rebuilt
       # each pin from the plan's trusted repo mapping, so the URL written into
