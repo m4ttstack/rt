@@ -1,6 +1,12 @@
 // src/main.ts
 import './boot-env.ts';
 
+import { redirectAgentOutput } from './agent-log.ts';
+
+// Before anything else module-level (listRecords below reads the registry at
+// import time): a serve process must never crash somewhere unobservable.
+if (process.argv.includes('serve')) redirectAgentOutput();
+
 import { shouldAutoHeal } from '../core/auto-heal.ts';
 import {
   CANARY_PATH,
