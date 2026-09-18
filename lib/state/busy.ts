@@ -85,15 +85,18 @@ function warnBusy(module: string, context: Record<string, unknown>): void {
 /**
  * Runs `fn` (a db.transaction()-wrapped write, or a single prepared-statement
  * .run()); a thrown SQLITE_BUSY is caught, warned (under a `module`-named
- * child logger), and swallowed. Any other error is not swallowed.
+ * child logger), and swallowed. Any other error is not swallowed. Returns
+ * whether the write landed, for a caller whose in-memory state must not
+ * move until the row actually persists.
  */
-export function persistOrWarn(module: string, fn: () => void, context: Record<string, unknown>): void {
+export function persistOrWarn(module: string, fn: () => void, context: Record<string, unknown>): boolean {
   try {
     fn();
+    return true;
   } catch (err) {
     if (isBusyError(err)) {
       warnBusy(module, context);
-      return;
+      return false;
     }
     throw err;
   }

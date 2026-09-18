@@ -655,7 +655,7 @@ function integrationNode(id: string, title: string): CommandNode {
 
 export const TREE: Record<string, CommandNode> = {
   git: {
-    description: "Git operations (rebase, reset, commit, backup)",
+    description: "Git operations (status, diff, log, rebase, commit, stash, tags)",
     subcommands: {
       rebase: {
         description: "Smart rebase onto origin/master with auto-resolve",
@@ -773,6 +773,174 @@ export const TREE: Record<string, CommandNode> = {
           { name: "Remote", flag: "--remote", type: "text", placeholder: "origin", hint: "Remote to set the upstream to" },
           { name: "Dry run", flag: "--dry-run", type: "boolean", default: false, hint: "Show what would change without applying it" },
         ],
+      },
+      status: {
+        description: "Working tree status: branch, ahead/behind, changed files",
+        module: "./commands/git/inspect.ts",
+        fn: "statusCommand",
+        context: "worktree",
+        args: [
+          { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable snapshot" },
+        ],
+      },
+      diff: {
+        description: "One file's diff (hunks and lines) from git-core",
+        module: "./commands/git/inspect.ts",
+        fn: "diffCommand",
+        omitBehavior: "picker",
+        context: "worktree",
+        args: [
+          { name: "Path", type: "text", placeholder: "src/app.ts", hint: "File to diff (picker over changed files when omitted)" },
+          { name: "Staged", flag: "--staged", type: "boolean", default: false, hint: "Diff the index against HEAD instead of the working tree" },
+          { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable hunks" },
+        ],
+      },
+      log: {
+        description: "Recent commits on the current branch",
+        module: "./commands/git/inspect.ts",
+        fn: "logCommand",
+        context: "worktree",
+        args: [
+          { name: "Max", flag: "--max", type: "text", placeholder: "20", hint: "How many commits to list" },
+          { name: "File", flag: "--file", type: "text", placeholder: "src/app.ts", hint: "Only commits touching this path" },
+          { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable entries" },
+        ],
+      },
+      branches: {
+        description: "Local branches with upstream and ahead/behind state",
+        module: "./commands/git/inspect.ts",
+        fn: "branchesCommand",
+        context: "worktree",
+        args: [
+          { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable branch list" },
+        ],
+      },
+      amend: {
+        description: "Amend the last commit with what is staged (message optional)",
+        module: "./commands/git/mutate.ts",
+        fn: "amendCommand",
+        context: "worktree",
+        args: [
+          { name: "Message", type: "text", optional: true, placeholder: "fix: adjust copy", hint: "New commit message; omitted keeps the current one" },
+          { name: "No verify", flag: "--no-verify", type: "boolean", default: false, hint: "Skip commit hooks" },
+          { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable result" },
+        ],
+      },
+      undo: {
+        description: "Undo the last commit, keeping its changes in the working tree",
+        module: "./commands/git/mutate.ts",
+        fn: "undoCommand",
+        context: "worktree",
+        args: [
+          { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable result" },
+        ],
+      },
+      stash: {
+        description: "Stash the working tree and manage stashes",
+        subcommands: {
+          push: {
+            description: "Stash tracked changes (optionally untracked too)",
+            module: "./commands/git/mutate.ts",
+            fn: "stashPushCommand",
+            context: "worktree",
+            args: [
+              { name: "Message", flag: "--message", type: "text", placeholder: "wip", hint: "Stash message" },
+              { name: "Include untracked", flag: "--include-untracked", type: "boolean", default: false, hint: "Also stash untracked files" },
+              { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable result" },
+            ],
+          },
+          list: {
+            description: "List stashes",
+            module: "./commands/git/mutate.ts",
+            fn: "stashListCommand",
+            context: "worktree",
+            args: [
+              { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable stashes" },
+            ],
+          },
+          pop: {
+            description: "Apply a stash and drop it (default stash@{0})",
+            module: "./commands/git/mutate.ts",
+            fn: "stashPopCommand",
+            context: "worktree",
+            args: [
+              { name: "Index", type: "text", optional: true, placeholder: "0", hint: "Stash index (default 0)" },
+              { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable result" },
+            ],
+          },
+          apply: {
+            description: "Apply a stash, keeping it (default stash@{0})",
+            module: "./commands/git/mutate.ts",
+            fn: "stashApplyCommand",
+            context: "worktree",
+            args: [
+              { name: "Index", type: "text", optional: true, placeholder: "0", hint: "Stash index (default 0)" },
+              { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable result" },
+            ],
+          },
+          drop: {
+            description: "Delete a stash",
+            module: "./commands/git/mutate.ts",
+            fn: "stashDropCommand",
+            omitBehavior: "picker",
+            context: "worktree",
+            args: [
+              { name: "Index", type: "text", placeholder: "0", hint: "Stash index (picker when omitted)" },
+              { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable result" },
+            ],
+          },
+        },
+      },
+      tag: {
+        description: "Create, list, delete, and push tags",
+        subcommands: {
+          list: {
+            description: "List tags with their target commits",
+            module: "./commands/git/mutate.ts",
+            fn: "tagListCommand",
+            context: "worktree",
+            args: [
+              { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable tags" },
+            ],
+          },
+          create: {
+            description: "Create a tag (annotated when --message is given)",
+            module: "./commands/git/mutate.ts",
+            fn: "tagCreateCommand",
+            omitBehavior: { exempt: "a new tag name is free text; nothing to enumerate" },
+            context: "worktree",
+            args: [
+              { name: "Name", type: "text", placeholder: "v1.2.3", hint: "Tag name" },
+              { name: "Message", flag: "--message", type: "text", placeholder: "release notes", hint: "Annotation message (makes the tag annotated)" },
+              { name: "At", flag: "--at", type: "text", placeholder: "abc1234", hint: "Commit to tag (default HEAD)" },
+              { name: "Push", flag: "--push", type: "boolean", default: false, hint: "Push the tag to origin after creating" },
+              { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable result" },
+            ],
+          },
+          delete: {
+            description: "Delete a local tag",
+            module: "./commands/git/mutate.ts",
+            fn: "tagDeleteCommand",
+            omitBehavior: "picker",
+            context: "worktree",
+            args: [
+              { name: "Name", type: "text", placeholder: "v1.2.3", hint: "Tag to delete (picker when omitted)" },
+              { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable result" },
+            ],
+          },
+          push: {
+            description: "Push one tag to a remote",
+            module: "./commands/git/mutate.ts",
+            fn: "tagPushCommand",
+            omitBehavior: "picker",
+            context: "worktree",
+            args: [
+              { name: "Name", type: "text", placeholder: "v1.2.3", hint: "Tag to push (picker when omitted)" },
+              { name: "Remote", flag: "--remote", type: "text", placeholder: "origin", hint: "Remote to push to" },
+              { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable result" },
+            ],
+          },
+        },
       },
     },
   },
@@ -1852,6 +2020,15 @@ export const TREE: Record<string, CommandNode> = {
           { name: "Repo", flag: "--repo", type: "text", placeholder: "repo-tools", hint: "Which indexed repo moved (identity, path, or name); omit to match by the new path's own identity" },
           { name: "Dry run", flag: "--dry-run", type: "boolean", default: false, hint: "Print what would be re-pointed without writing" },
           SETUP_JSON_ARG,
+        ],
+      },
+      status: {
+        description: "All registered repos with git badges from the daemon sweep",
+        module: "./commands/repos.ts",
+        fn: "reposStatus",
+        args: [
+          { name: "Refresh", flag: "--refresh", type: "boolean", default: false, hint: "Run a sweep now instead of reading the cache" },
+          { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable rows (the mission-control rail feed)" },
         ],
       },
     },

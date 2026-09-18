@@ -98,6 +98,8 @@ import { createDiscussionsPoller } from "./daemon/discussions-poller.ts";
 import { installSignalHandlers, removeRuntimeFiles } from "./daemon/shutdown.ts";
 import { createEventsBus, type EventsBus } from "./daemon/events-bus.ts";
 import { createGatesStore, type GatesStore } from "./daemon/gates-store.ts";
+import { createGitBadges, type GitBadgesStore } from "./daemon/git-badges-store.ts";
+import { createGitStatusSweep, type GitStatusSweep, type GitStatusConfig } from "./daemon/git-status-sweep.ts";
 import { createHerdStore, type HerdStore } from "./daemon/herd-store.ts";
 import { createHerdLifecycle, type HerdLifecycle } from "./daemon/herd-lifecycle.ts";
 import { HerdWatchdog, runWatchdogSweep } from "./daemon/herd-watchdog.ts";
@@ -331,6 +333,8 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
   let gatePush: GatePush;
   let gateEscalation: GateEscalation;
   let reconciler: Reconciler;
+  let gitBadges: GitBadgesStore;
+  let gitStatusSweep: GitStatusSweep;
   let identity: {
     flavor: "dev" | "prod";
     version: string;
@@ -541,6 +545,24 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
       return typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : 10;
     } catch {
       return 10;
+    }
+  };
+
+  const gitStatusConfig = (repoIdentity: string | null): GitStatusConfig => {
+    try {
+      const v = getSetting<Record<string, unknown>>(
+        "rt.gitStatus",
+        repoIdentity ? { repoIdentity } : undefined,
+      ).value ?? {};
+      const interval = Number((v as any).sweepIntervalSec);
+      const f = Number((v as any).fetchIntervalSec);
+      return {
+        sweep: (v as any).sweep !== false,
+        sweepIntervalSec: Number.isFinite(interval) && interval > 0 ? interval : 300,
+        fetchIntervalSec: Number.isFinite(f) && f >= 0 ? f : 900,
+      };
+    } catch {
+      return { sweep: true, sweepIntervalSec: 300, fetchIntervalSec: 900 };
     }
   };
 
@@ -797,6 +819,15 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
 
         hooksGuard = createHooksGuard(log);
 
+        gitBadges = createGitBadges(getStateDb("daemon"));
+        gitStatusSweep = createGitStatusSweep({
+          repoIndex: () => loadRepoIndex(),
+          store: gitBadges,
+          log,
+          emit,
+          readConfig: gitStatusConfig,
+        });
+
         // Periodic sweeps (events retention, run prune, log prune): each gets a
         // boot-time fire plus its recurring interval via scheduleSweep, and its
         // stop handle joins the reverse-stop below.
@@ -910,6 +941,14 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
             }
           },
           { bootDelayMs: 60_000, intervalMs: 4 * 60 * 60 * 1000 },
+          log,
+        ));
+        // Cadence lives in rt.gitStatus (read fresh each tick inside the sweep), so the
+        // timer interval here is only the polling floor, not the sweep rate.
+        sweepHandles.push(scheduleSweep(
+          "git-status-sweep",
+          async () => { await gitStatusSweep.tick(); },
+          { bootDelayMs: 45_000, intervalMs: 60_000 },
           log,
         ));
         // Periodically re-validates every stored integration credential
@@ -1162,6 +1201,8 @@ export function buildUnits(ctx: BootContext): DaemonUnit[] {
             withReconcilerHeld: worktreeReconciler.withReconcilerHeld,
             refreshWatchedRepos: hooksGuard.refreshWatchedRepos,
           },
+          gitBadges,
+          gitStatusSweep,
           stateDb: getStateDb("daemon"),
           chatDeliveryChains,
           accountsSweep: accountsSweepFn,

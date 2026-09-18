@@ -223,6 +223,16 @@ export const REGISTRY: readonly SettingDef[] = [
     description: "Age floor in days for the log janitor pruning every surface's rotated log files under ~/.mattstack/rt/logs (default 14). A fresh key, not an ownership-latch port, so a default is fine here.",
   },
   {
+    key: "rt.gitStatus",
+    type: "object",
+    scopes: ALL_SCOPES,
+    default: { sweep: true, sweepIntervalSec: 300, fetchIntervalSec: 900 },
+    merge: "deep",
+    repoScoped: true,
+    migrated: true,
+    description: "Mission-control git badge sweep. sweep gates the daemon sweep and fetchIntervalSec (the background fetch cadence, 0 disables fetching) are both read per repo, so a per-repo override of either takes effect (a repo override of { sweep: false } opts that repo out). sweepIntervalSec, the minimum seconds between sweeps, is read only from the global config by the sweep tick; a per-repo override of sweepIntervalSec has no effect.",
+  },
+  {
     key: "rt.logLevel",
     type: "string",
     scopes: ["machine", "user"],

@@ -74,6 +74,8 @@ function buildHandlers(herdStore: ReturnType<typeof createHerdStore> = createHer
     homeSnapshot: { stop: () => {}, runNow: async () => ({}) as any, pullNow: async () => ({}) as any, status: () => ({}) as any, ready: Promise.resolve() },
     teamSnapshots: { stop() {}, rescan: async () => {}, status: () => [], pullNow: async () => ({ outcome: "skipped", detail: null }), ready: Promise.resolve() },
     repos: { withReconcilerHeld: async (fn) => fn(), refreshWatchedRepos: () => {} },
+    gitBadges: { readAll: () => new Map(), replaceRepo: () => ({ changed: false }), dropRepos: () => [] },
+    gitStatusSweep: { tick: async () => {}, sweepNow: async () => ({ changed: [] }), lastSweepAt: () => null, errors: () => new Map() },
     // Hermetic liveness: the real one shells out to `herdr agent list`, which
     // would make every subject-resolution case read this machine's live panes.
     runLiveness: async () => livenessFrom([]),

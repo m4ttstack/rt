@@ -505,6 +505,30 @@ export type MRActionName =
   | "retryJob" | "retryPipeline"
   | "toggleDraft" | "requestReReview";
 
+/** One worktree's git badge as the daemon sweep computed it. All timestamps ISO 8601. */
+export interface GitWorktreeBadge {
+  worktree: string;
+  branch: string | null;
+  detached: boolean;
+  staged: number;
+  unstaged: number;
+  untracked: number;
+  conflicted: number;
+  clean: boolean;
+  ahead: number | null;
+  behind: number | null;
+  upstream: string | null;
+  lastFetchedAt: string | null;
+  updatedAt: string;
+}
+
+/** repo is the serialized identity (the repo-index key). error is set when the last sweep could not read the repo; stale worktrees may accompany it. */
+export interface RepoStatusRow {
+  repo: string;
+  worktrees: GitWorktreeBadge[];
+  error: string | null;
+}
+
 export interface Commands {
   "project-mrs:read": { payload: { repoName: string; maxAgeMs?: number; demand?: DemandDecl }; data: ProjectMRsData };
   "discussions:read": { payload: { repoName: string; iid: number }; data: DiscussionsData };
@@ -684,6 +708,7 @@ export interface Commands {
   "endpoint:status": { payload: { repo?: string }; data: EndpointStatusData };
 
   "repos:locate": { payload: { newPath: string; repo?: string; dryRun?: boolean }; data: unknown };
+  "repos:status": { payload: { refresh?: boolean }; data: { repos: RepoStatusRow[]; sweptAt: string | null } };
   "freshness:reconcile": { payload: Record<string, never>; data: unknown };
 
   // ─── Reconciler (executor state; lib/daemon/reconciler.ts) ───────────────
@@ -884,6 +909,7 @@ export const COMMAND_NAMES: readonly CommandName[] = [
   "endpoint:release",
   "endpoint:status",
   "repos:locate",
+  "repos:status",
   "freshness:reconcile",
   "reconciler:status",
   "reconciler:clear",

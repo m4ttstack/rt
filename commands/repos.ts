@@ -25,7 +25,9 @@ import { UserActionableError, exitUserError } from "../lib/setup/errors.ts";
 import { findLocateCandidates } from "../lib/repo-locate.ts";
 import { locateMovedRepo } from "../lib/repo-locate-dispatch.ts";
 import { resolveRepoArg } from "../lib/repo-arg.ts";
-import { repoLabel } from "../lib/repo-label.ts";
+import { repoLabel, repoLabelQualified } from "../lib/repo-label.ts";
+import { daemonQuery } from "../lib/daemon-client.ts";
+import type { RepoStatusRow } from "../packages/rt-client/src/commands.ts";
 
 export interface RegisterDeps {
   print: (s: string) => void;
@@ -395,4 +397,60 @@ async function pickLocateTarget(json: boolean, deps: RegisterDeps): Promise<stri
   });
   if (!picked) process.exit(0);
   return picked;
+}
+
+// ─── status ──────────────────────────────────────────────────────────────────
+
+function failPlain(json: boolean, verb: string, message: string): never {
+  if (json) console.log(JSON.stringify({ ok: false, error: message }));
+  else console.error(`rt ${verb}: ${message}`);
+  process.exit(1);
+}
+
+/**
+ * rt repos status: the mission-control rail feed over the daemon's git
+ * badge cache. Uses the plain daemon-RPC envelope ({ ok, repos, sweptAt }),
+ * not the setup contract the other verbs in this file use: it is a cache
+ * read the mission-control TUI consumes directly, not a mutating action.
+ */
+export async function reposStatus(
+  args: string[],
+  deps: { query?: typeof daemonQuery } = {},
+): Promise<void> {
+  const json = args.includes("--json");
+  const refresh = args.includes("--refresh");
+  const query = deps.query ?? daemonQuery;
+  const res = refresh
+    ? await query("repos:status", { refresh: true }, 120_000)
+    : await query("repos:status", {});
+  if (res === null) failPlain(json, "repos status", "daemon unavailable, the rt daemon must be running for repo status");
+  if (!res.ok) failPlain(json, "repos status", res.error ?? "repos:status failed");
+  const data = res.data as { repos: RepoStatusRow[]; sweptAt: string | null };
+  if (json) {
+    console.log(JSON.stringify({ ok: true, repos: data.repos, sweptAt: data.sweptAt }));
+    return;
+  }
+  if (data.repos.length === 0) {
+    console.log("no repo badges yet (the sweep runs shortly after daemon boot; try --refresh)");
+    return;
+  }
+  for (const row of data.repos) {
+    console.log(repoLabelQualified(row.repo));
+    if (row.error) console.log(`  sweep error: ${row.error}`);
+    for (const w of row.worktrees) {
+      const dirt = w.clean
+        ? "clean"
+        : [
+            w.staged ? `${w.staged} staged` : "",
+            w.unstaged ? `${w.unstaged} unstaged` : "",
+            w.untracked ? `${w.untracked} untracked` : "",
+            w.conflicted ? `${w.conflicted} conflicted` : "",
+          ].filter(Boolean).join(", ");
+      const pos = [
+        w.ahead ? `ahead ${w.ahead}` : "",
+        w.behind ? `behind ${w.behind}` : "",
+      ].filter(Boolean).join(", ");
+      console.log(`  ${w.branch ?? "(detached)"}  ${dirt}${pos ? `  [${pos}]` : ""}  ${w.worktree}`);
+    }
+  }
 }
