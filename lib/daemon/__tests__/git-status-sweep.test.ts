@@ -174,7 +174,10 @@ describe("git status sweep", () => {
     const fakeClient = (dir: string) => ({
       snapshot: async () => ({ branch: "main", detached: false, upstream: null, ahead: null, behind: null, files: [], clean: true }),
       fetchState: async () => ({ lastFetchedAt: null }),
-      fetch: async () => { fetched.push(dir); },
+      fetch: async (_remote: string | undefined, signal: AbortSignal) => {
+        expect(signal).toBeInstanceOf(AbortSignal);
+        fetched.push(dir);
+      },
     }) as any;
     const sweep = sweepWith({
       repoIndex: () => ({ r: "/main" }),
@@ -207,7 +210,7 @@ describe("git status sweep", () => {
     expect(fetched).toEqual([]);
   });
 
-  test("a fetch that never resolves does not spawn a second fetch for the same repo on the next skip-cadence-eligible pass", async () => {
+  test("a fetch that never resolves and ignores its signal does not spawn a second fetch for the same repo on the next skip-cadence-eligible pass", async () => {
     const fetched: string[] = [];
     const originalSetTimeout = globalThis.setTimeout;
     // Shrinks only the sweep's own 60s race timer so the test does not
@@ -218,6 +221,9 @@ describe("git status sweep", () => {
       const fakeClient = (dir: string) => ({
         snapshot: async () => ({ branch: "main", detached: false, upstream: null, ahead: null, behind: null, files: [], clean: true }),
         fetchState: async () => ({ lastFetchedAt: null }),
+        // A client whose fetch does not honor the abort signal at all: the
+        // in-flight guard can only clear once this promise itself settles,
+        // and it never does.
         fetch: () => { fetched.push(dir); return new Promise(() => {}); },
       }) as any;
       const sweep = sweepWith({
@@ -229,6 +235,38 @@ describe("git status sweep", () => {
       await sweep.sweepNow();
       await sweep.sweepNow();
       expect(fetched).toEqual(["/main"]);
+    } finally {
+      globalThis.setTimeout = originalSetTimeout;
+    }
+  });
+
+  test("a fetch that honors its signal clears the in-flight guard promptly on timeout, allowing a later pass to retry", async () => {
+    const fetched: string[] = [];
+    const originalSetTimeout = globalThis.setTimeout;
+    (globalThis as any).setTimeout = ((fn: (...a: unknown[]) => void, ms?: number, ...rest: unknown[]) =>
+      originalSetTimeout(fn, ms === 60_000 ? 10 : ms, ...rest)) as typeof setTimeout;
+    try {
+      const fakeClient = (dir: string) => ({
+        snapshot: async () => ({ branch: "main", detached: false, upstream: null, ahead: null, behind: null, files: [], clean: true }),
+        fetchState: async () => ({ lastFetchedAt: null }),
+        // Mirrors rawGit: an aborted signal rejects the fetch promptly, which
+        // is what lets fetchesInFlight clear before the next pass runs.
+        fetch: (_remote: string | undefined, signal: AbortSignal) => {
+          fetched.push(dir);
+          return new Promise<void>((_resolve, reject) => {
+            signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+          });
+        },
+      }) as any;
+      const sweep = sweepWith({
+        repoIndex: () => ({ r: "/main" }),
+        readConfig: () => ({ sweep: true, sweepIntervalSec: 0, fetchIntervalSec: 0.001 }),
+        makeClient: fakeClient,
+        listWorktrees: async () => [{ path: "/main", branch: "main", headSha: null, isBare: false }],
+      });
+      await sweep.sweepNow();
+      await sweep.sweepNow();
+      expect(fetched).toEqual(["/main", "/main"]);
     } finally {
       globalThis.setTimeout = originalSetTimeout;
     }

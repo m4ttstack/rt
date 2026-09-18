@@ -91,9 +91,11 @@ export function createGitStatusSweep(deps: GitStatusSweepDeps): GitStatusSweep {
           // Stamped before the attempt: a hanging remote must not re-hang every pass.
           fetchTimes.set(repo, now().getTime());
           fetchesInFlight.add(repo);
-          const fetchPromise = makeClient(mainPath).fetch();
-          // Settle-driven cleanup, not the race: a timed-out fetch keeps running
-          // in the background, and only ITS OWN settlement may clear the guard.
+          const controller = new AbortController();
+          const fetchPromise = makeClient(mainPath).fetch(undefined, controller.signal);
+          // Settle-driven cleanup: the abort below makes a timed-out fetch's
+          // own child process die promptly, so this now fires close behind it
+          // rather than whenever some unrelated future settlement occurs.
           fetchPromise.then(
             () => { fetchesInFlight.delete(repo); },
             () => { fetchesInFlight.delete(repo); },
@@ -103,7 +105,10 @@ export function createGitStatusSweep(deps: GitStatusSweepDeps): GitStatusSweep {
             await Promise.race([
               fetchPromise,
               new Promise((_resolve, reject) => {
-                raceTimer = setTimeout(() => reject(new Error("fetch timed out")), 60_000);
+                raceTimer = setTimeout(() => {
+                  controller.abort();
+                  reject(new Error("fetch timed out"));
+                }, 60_000);
                 raceTimer.unref?.();
               }),
             ]);
