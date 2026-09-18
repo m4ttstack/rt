@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { expect, test } from 'bun:test';
 
 // The redirect's whole point is that output written after it lands in the
-// agent log file, uncaught-crash output included — so the assertion runs in
+// agent log file, uncaught-crash output included... so the assertion runs in
 // a subprocess whose HOME is a scratch dir, not in this test's process.
 test('redirectAgentOutput sends stdout, stderr, and crashes to agent.log', async () => {
   const home = mkdtempSync(join(tmpdir(), 'agent-log-'));
