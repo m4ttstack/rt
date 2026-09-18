@@ -1,19 +1,15 @@
-the one-invite release. Joining a team now takes exactly one invite: the code your inviter sends is the whole thing, board peering included.
+the fresh-pins release. Deck learns to update itself, and every plugin a fresh install receives is finally current.
 
-### Team invites
+### Bundled apps
 
-- the invite carries board peering: `rt team invite` registers the invitee's board on the switchboard and seals the board token into the encrypted invite pointer, and the join stores it where the board already reads it. The hand-delivered second board invite is gone (#339)
-- only the team's declared switchboard is trusted: an invite can never point the join (or the admin token) anywhere else, and every peering failure degrades to a completed join that names the board-panel re-invite as the repair (#339)
-- removing a member revokes every age key recorded for them across both roster keys, and roster reads prefer `mattstack.roster` everywhere, matching the apps (#339)
+- deck 1.0.5: `deck update` now resolves releases from the apps monorepo by tag prefix, so a small deck fix can ship to a machine in minutes without a full mattstack release; it had silently pointed at the retired standalone repo. Plus a dev-mode badge alignment fix (#341)
 
-### Gates and daemon
+### Plugin marketplace
 
-- a dead pane's gate-push retry delivers doorbell-only, never injecting Escape into a live session (#328)
-- background fetches abort their child process instead of leaving it running, and the fetch gate's 60s race aborts with it (#337)
-- BUSY-deferred deletes in the project-MRs store are retried instead of lost (#336)
+- refreshed the catalog's plugin pins: the mattstack skills plugin was 263 commits stale and the fast-browser plugin 30, so fresh installs were getting a months-old plugin layer (#342)
 
-### Toolchain
+### Release process
 
-- the bundled and CI-pinned bun moves to 1.4.2 (#334)
+- the release skill now audits every vendored layer (bundled apps, plugin catalog, standalone apps, tool pins, the Chrome extension) instead of only the app rows, and gains a pin-only fast path for serve-only apps (#340, #343)
 
-**Full Changelog**: https://github.com/m4ttstack/rt/compare/v2.10.0...v2.10.1
+**Full Changelog**: https://github.com/m4ttstack/rt/compare/v2.10.1...v2.10.2
