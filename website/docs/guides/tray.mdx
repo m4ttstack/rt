@@ -33,7 +33,11 @@ When `rt pane focus` targets a pane, the tray activates the terminal window host
 
 The app stays a regular Dock app for its entire run, so the Dock icon keeps its running indicator. Cmd-W closes the window (and cmd-M minimizes it). Quitting the app when no window is on screen is a real quit, whether from the Dock, Activity Monitor, or a script.
 
-The app catalog is fetched at launch rather than on first window open. This means the first handoff or browser click opens the window without a catalog-fetch delay.
+The app catalog is fetched at launch rather than on first window open. This means the first handoff or browser click opens the window without a catalog-fetch delay. Startup shows a fixed-life splash with a loading indicator while the window settles.
+
+Cmd-F opens find in page inside the mattstack window.
+
+Settings opens as a native tabbed window (General, Permissions, Fast Browser, Team, Uninstall); the titlebar names the active pane. The General tab's Dev mode switch swaps between the installed app and the dev flavor after a confirmation, quitting the current app and launching the other.
 
 ## Updates
 
