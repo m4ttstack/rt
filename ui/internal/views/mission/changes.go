@@ -246,8 +246,20 @@ func renderKeybar(width int) string {
 // justify lays left flush and right flush across width on style on,
 // matching board.go's justify but parameterized on the caller's background
 // style so a strip painted on WarnBg/BgSubtle fills correctly rather than
-// leaving a transparent gap around the right-hand text.
+// leaving a transparent gap around the right-hand text. A left string wider
+// than width-3 (an oversized last-commit summary) would otherwise push the
+// composed line past width, dragging the whole sidebar block wider with it,
+// so left is clipped to leave room for right before the two are joined --
+// right (a short chip like "Undo" or the keybar's "q quit") always survives
+// intact rather than being cut off the end of an already-overflowing line.
 func justify(on lipgloss.Style, width int, left, right string) string {
+	maxLeft := width - 3 - lipgloss.Width(right)
+	if maxLeft < 0 {
+		maxLeft = 0
+	}
+	if lipgloss.Width(left) > maxLeft {
+		left = clip(left, maxLeft)
+	}
 	avail := width - 3 - lipgloss.Width(left)
 	if avail < 0 {
 		avail = 0

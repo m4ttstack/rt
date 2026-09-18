@@ -931,7 +931,11 @@ func (m *Mission) mouseMotion(msg tea.MouseMotionMsg) (tea.Model, tea.Cmd) {
 // cursor (skipping a guarded row, like its keyboard up/down), the diff
 // pane's line cursor, or the base list's row cursor -- there being no
 // scroll offset independent of the cursor in any of the three today, a
-// wheel tick moves the same cursor the arrow keys do.
+// wheel tick moves the same cursor the arrow keys do. A modal claims every
+// row like hitTest's own first check; otherwise the tick must land inside
+// the body's Y range (between the topbar and the keybar/notice strip) --
+// mirroring hitTest's bodyY bound -- or a tick over the keybar/notice row
+// would otherwise nudge a cursor nothing under the pointer owns.
 func (m *Mission) mouseWheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
 	mouse := msg.Mouse()
 	var delta int
@@ -943,16 +947,22 @@ func (m *Mission) mouseWheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
 	default:
 		return m, nil
 	}
-	switch {
-	case m.modal != nil:
+	if m.modal != nil {
 		step := 1
 		if delta < 0 {
 			step = -1
 		}
 		m.modal.moveCursor(step)
-	case mouse.X >= sidebarWidth:
+		return m, nil
+	}
+	l := m.layout()
+	bodyY := mouse.Y - l.topH
+	if bodyY < 0 || bodyY >= l.bodyH {
+		return m, nil
+	}
+	if mouse.X >= sidebarWidth {
 		m.moveDiffCursor(delta)
-	default:
+	} else {
 		m.moveCursor(delta)
 	}
 	return m, nil

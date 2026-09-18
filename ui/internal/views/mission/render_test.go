@@ -196,6 +196,20 @@ func TestRenderUndoStripAppearsWithFixtureModel(t *testing.T) {
 	}
 }
 
+// TestRenderUndoStripClipsLongSummaryToSidebarWidth pins the fix for the
+// overflow mouseFixtureModel's own comment routes around: a last-commit
+// summary wider than the strip's available space must not push the composed
+// line past sidebarWidth, or it drags the whole sidebar block wider with it.
+func TestRenderUndoStripClipsLongSummaryToSidebarWidth(t *testing.T) {
+	longSummary := strings.Repeat("a very long commit summary that keeps going ", 5)
+	out := renderUndoStrip(LastCommit{Summary: longSummary, When: "2 minutes ago", Undoable: true}, sidebarWidth)
+	for _, line := range strings.Split(out, "\n") {
+		if w := lipgloss.Width(line); w != sidebarWidth {
+			t.Fatalf("undo strip row width = %d, want sidebarWidth %d:\n%s", w, sidebarWidth, out)
+		}
+	}
+}
+
 func TestRenderKeybarContainsSpaceStage(t *testing.T) {
 	out := ansi.Strip(renderKeybar(100))
 	if !strings.Contains(out, "space stage") {
@@ -441,9 +455,8 @@ func TestModalRowHoverPaintsHoverBgUnlessCursor(t *testing.T) {
 // tests below: three Changes rows and a short diff, laid out identically to
 // s5open's subprocess fixture (mission_test.go) -- tabs(2)+filter(3)+
 // master(1) body rows ahead of the list, no stash/amend/undo strip -- so the
-// same row-index-to-y arithmetic applies without a long last-commit summary
-// dragging the sidebar block wider than sidebarWidth (a separate, unrelated
-// rendering issue this task's coordinates route around rather than fix).
+// row-index-to-y arithmetic below stays this short and fixed rather than
+// depending on whichever commit summary a lastCommit fixture happens to carry.
 func mouseFixtureModel() Model {
 	return Model{
 		Current: Current{Repo: "repo-tools", Branch: "main"},

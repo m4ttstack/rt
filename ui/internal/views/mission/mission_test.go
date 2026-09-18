@@ -572,6 +572,30 @@ func TestMouseRightClickFileRowShowsNotice(t *testing.T) {
 	s.Wait()
 }
 
+// TestMouseWheelOverKeybarRowDoesNotMoveCursor pins mouseWheel's Y bound: a
+// wheel tick at y=29 (row 30 of the 30-row pty, the keybar's own row, past
+// the body -- TestMouseClickOutsideModalClosesIt's "far outside" corner) must
+// be a no-op rather than nudging the Changes-list cursor, even though its x=5
+// falls in the same column range a real body row would resolve against. The
+// fixture's cursor starts on row 0 (model.go, absolute y=8 per
+// TestMouseRightClickFileRowShowsNotice); an unbounded wheel-down would walk
+// it wheelStep(3) rows to row 2 (mission.go, y=10), visibly moving the "▌"
+// cursor bar, so a before/after screen comparison catches the regression
+// without reaching into Mission's unexported fields.
+func TestMouseWheelOverKeybarRowDoesNotMoveCursor(t *testing.T) {
+	s := s5open(t)
+	before := s.Screen()
+	s.Type(sgrClick(sgrWheelDown, 5, 29))
+	if l, ok := s.ReadLine(200 * time.Millisecond); ok {
+		t.Fatalf("wheel over the keybar row must not emit anything: %q", l)
+	}
+	if after := s.Screen(); before != after {
+		t.Fatalf("wheel over the keybar row moved the cursor:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
 // sidebarWidthConst mirrors topbar.go's sidebarWidth for this file's own
 // coordinate comments; a package-external test cannot reference the
 // unexported constant directly.
