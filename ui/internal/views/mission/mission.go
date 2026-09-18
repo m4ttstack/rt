@@ -16,10 +16,15 @@ import (
 type Mission struct {
 	em     *session.Emitter
 	model  Model
-	raw    json.RawMessage
 	width  int
 	height int
 	reason session.Reason
+
+	// selected is the Changes row cursor, held by path across model swaps
+	// (board.go's selected-by-id precedent) since the wholesale Model
+	// replacement in SetModel carries no index that would survive a
+	// reordered or filtered list.
+	selected string
 }
 
 func New(em *session.Emitter) *Mission {
@@ -32,8 +37,24 @@ func (m *Mission) SetModel(raw json.RawMessage) error {
 		return err
 	}
 	m.model = decoded
-	m.raw = raw
+	m.clampSelection()
 	return nil
+}
+
+// clampSelection keeps the cursor on the same path across a model swap when
+// it still exists, falls back to the first row when it does not, and clears
+// it when the list is empty.
+func (m *Mission) clampSelection() {
+	if len(m.model.Changes) == 0 {
+		m.selected = ""
+		return
+	}
+	for _, c := range m.model.Changes {
+		if c.Path == m.selected {
+			return
+		}
+	}
+	m.selected = m.model.Changes[0].Path
 }
 
 func (m *Mission) Reason() session.Reason { return m.reason }

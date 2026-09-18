@@ -19,9 +19,10 @@ func sessionFixture(t *testing.T, name string) []byte {
 
 func TestDecodeSessionLineKinds(t *testing.T) {
 	cases := map[string]string{
-		"session-open-board.json":  "open",
-		"session-model-board.json": "model",
-		"session-close.json":       "close",
+		"session-open-board.json":    "open",
+		"session-model-board.json":   "model",
+		"session-model-mission.json": "model",
+		"session-close.json":         "close",
 	}
 	for name, want := range cases {
 		kind, raw, err := DecodeSessionLine(sessionFixture(t, name))
@@ -42,6 +43,32 @@ func TestOpenAndModelDecodeToRawModel(t *testing.T) {
 	var m ModelMsg
 	if err := json.Unmarshal(sessionFixture(t, "session-model-board.json"), &m); err != nil || len(m.Model) == 0 {
 		t.Fatalf("model: err=%v", err)
+	}
+
+	var mission ModelMsg
+	if err := json.Unmarshal(sessionFixture(t, "session-model-mission.json"), &mission); err != nil || len(mission.Model) == 0 {
+		t.Fatalf("mission model: err=%v", err)
+	}
+	// Round-trip: the raw model bytes re-encode to the same JSON value the
+	// fixture carries, so ModelMsg never loses or reorders mission fields.
+	var roundTripped any
+	if err := json.Unmarshal(mission.Model, &roundTripped); err != nil {
+		t.Fatalf("mission model round-trip decode: %v", err)
+	}
+	reencoded, err := json.Marshal(roundTripped)
+	if err != nil {
+		t.Fatalf("mission model round-trip encode: %v", err)
+	}
+	canon := func(b []byte) string {
+		var v any
+		if err := json.Unmarshal(b, &v); err != nil {
+			t.Fatal(err)
+		}
+		out, _ := json.Marshal(v)
+		return string(out)
+	}
+	if canon(reencoded) != canon(mission.Model) {
+		t.Fatalf("mission model round-trip mismatch: %s", reencoded)
 	}
 }
 

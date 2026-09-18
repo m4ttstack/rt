@@ -1,0 +1,73 @@
+{ "t": "model", "model": {
+  "current": {
+    "repo": "repo-tools",
+    "repoLabel": "repo-tools",
+    "worktree": "/Users/matt/.mattstack/rt/worktrees/gh-m4ttstack-rt/gandalf",
+    "worktreeName": "gandalf",
+    "branch": "rt-191-mission-tui",
+    "detached": false
+  },
+  "action": {
+    "kind": "pull",
+    "title": "Pull origin",
+    "meta": "3 commits behind",
+    "ahead": 3,
+    "behind": 2,
+    "busy": false
+  },
+  "repos": [
+    { "id": "repo-tools", "label": "repo-tools", "group": "recent",
+      "badge": { "ahead": 3, "behind": 2, "staged": 1, "unstaged": 2, "untracked": 1, "conflicted": 0, "clean": false, "lastFetchedAt": "2026-09-18T12:00:00Z" },
+      "current": true },
+    { "id": "chat", "label": "chat", "group": "recent",
+      "badge": { "ahead": 0, "behind": 0, "staged": 0, "unstaged": 0, "untracked": 0, "conflicted": 0, "clean": true, "lastFetchedAt": "2026-09-18T11:30:00Z" },
+      "current": false }
+  ],
+  "worktrees": [
+    { "path": "/Users/matt/.mattstack/rt/worktrees/gh-m4ttstack-rt/gandalf", "name": "gandalf", "branch": "rt-191-mission-tui",
+      "badge": { "ahead": 3, "behind": 2, "staged": 1, "unstaged": 2, "untracked": 1, "conflicted": 0, "clean": false, "lastFetchedAt": "2026-09-18T12:00:00Z" },
+      "current": true, "onDeck": false },
+    { "path": "/Users/matt/.mattstack/rt/worktrees/gh-m4ttstack-rt/frodo", "name": "frodo", "branch": "rt-190-picker-polish",
+      "badge": { "ahead": 0, "behind": 1, "staged": 0, "unstaged": 0, "untracked": 0, "conflicted": 0, "clean": true, "lastFetchedAt": "" },
+      "current": false, "onDeck": true }
+  ],
+  "branches": [
+    { "name": "rt-191-mission-tui", "current": true, "ahead": 3, "behind": 2, "guardedBy": "", "group": "recent" },
+    { "name": "main", "current": false, "ahead": 0, "behind": 5, "guardedBy": "", "group": "other" },
+    { "name": "rt-190-picker-polish", "current": false, "ahead": 0, "behind": 0, "guardedBy": "checked out in worktree frodo", "group": "guarded" }
+  ],
+  "changes": [
+    { "path": "ui/internal/views/mission/model.go", "origPath": "", "status": "modified", "include": "all" },
+    { "path": "ui/internal/views/mission/topbar.go", "origPath": "", "status": "new", "include": "none" },
+    { "path": "ui/internal/views/mission/mission.go", "origPath": "", "status": "modified", "include": "partial" }
+  ],
+  "changedTotal": 3,
+  "stagedTotal": 2,
+  "filter": "",
+  "diff": {
+    "path": "ui/internal/views/mission/mission.go",
+    "status": "modified",
+    "kind": "text",
+    "stats": "+2 -1",
+    "lang": "go",
+    "lines": [
+      { "oldNo": 0, "newNo": 0, "kind": "hunk", "text": "@@ -1,3 +1,4 @@", "selected": false, "selIdx": -1 },
+      { "oldNo": 1, "newNo": 1, "kind": "context", "text": "package mission", "selected": false, "selIdx": -1 },
+      { "oldNo": 0, "newNo": 2, "kind": "add", "text": "import \"encoding/json\"", "selected": true, "selIdx": 0 },
+      { "oldNo": 0, "newNo": 3, "kind": "add", "text": "", "selected": true, "selIdx": 1 },
+      { "oldNo": 2, "newNo": 4, "kind": "context", "text": "type Badge struct {", "selected": false, "selIdx": -1 },
+      { "oldNo": 3, "newNo": 0, "kind": "del", "text": "type OldBadge struct {", "selected": false, "selIdx": 2 }
+    ]
+  },
+  "commit": {
+    "summary": "",
+    "description": "",
+    "placeholder": "Summary (required)",
+    "amending": false,
+    "buttonLabel": "Commit 2 files to rt-191-mission-tui",
+    "canCommit": false,
+    "lastCommit": { "summary": "rt-ui: mission view skeleton behind an opt-in mouse session option", "when": "2 minutes ago", "undoable": true }
+  },
+  "stashCount": 1,
+  "notice": ""
+} }
