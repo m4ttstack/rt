@@ -95,3 +95,34 @@ describe("rt git diff", () => {
     expect(out.diff.path).toBe("a.txt");
   });
 });
+
+describe("rt git amend and undo", () => {
+  test("amend --json amends staged content and keeps the message", async () => {
+    writeFileSync(join(repo, "amended.txt"), "x\n");
+    g(["add", "amended.txt"]);
+    const before = g(["rev-list", "--count", "HEAD"]).trim();
+    const out = await rtJson(["git", "amend", "--json"]);
+    expect(out.ok).toBe(true);
+    expect(typeof out.summary).toBe("string");
+    expect(g(["rev-list", "--count", "HEAD"]).trim()).toBe(before);
+    expect(g(["log", "-1", "--format=%s"]).trim()).toBe("first commit");
+  });
+
+  test("undo --json on a single-commit repo refuses with initial", async () => {
+    const res = await rt(["git", "undo", "--json"], { home: repo, env: { HOME: home.path } });
+    expect(res.exitCode).toBe(1);
+    expect(JSON.parse(res.stdout)).toEqual({ ok: false, error: "refused: initial" });
+  });
+
+  test("undo --json removes the last commit and keeps its changes", async () => {
+    writeFileSync(join(repo, "second.txt"), "y\n");
+    g(["add", "second.txt"]);
+    g(["commit", "-m", "second commit"]);
+    const sha = g(["rev-parse", "HEAD"]).trim();
+    const out = await rtJson(["git", "undo", "--json"]);
+    expect(out.ok).toBe(true);
+    expect(out.undoneSha).toBe(sha);
+    expect(g(["rev-list", "--count", "HEAD"]).trim()).toBe("1");
+    expect(g(["status", "--porcelain"])).toContain("second.txt");
+  });
+});

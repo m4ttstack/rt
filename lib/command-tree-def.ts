@@ -815,6 +815,26 @@ export const TREE: Record<string, CommandNode> = {
           { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable branch list" },
         ],
       },
+      amend: {
+        description: "Amend the last commit with what is staged (message optional)",
+        module: "./commands/git/mutate.ts",
+        fn: "amendCommand",
+        context: "worktree",
+        args: [
+          { name: "Message", type: "text", optional: true, placeholder: "fix: adjust copy", hint: "New commit message; omitted keeps the current one" },
+          { name: "No verify", flag: "--no-verify", type: "boolean", default: false, hint: "Skip commit hooks" },
+          { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable result" },
+        ],
+      },
+      undo: {
+        description: "Undo the last commit, keeping its changes in the working tree",
+        module: "./commands/git/mutate.ts",
+        fn: "undoCommand",
+        context: "worktree",
+        args: [
+          { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Machine-readable result" },
+        ],
+      },
     },
   },
 
