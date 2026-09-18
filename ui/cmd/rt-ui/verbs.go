@@ -17,6 +17,7 @@ import (
 	"rt-ui/internal/steps"
 	"rt-ui/internal/tty"
 	"rt-ui/internal/views/board"
+	"rt-ui/internal/views/mission"
 	"rt-ui/internal/views/picker"
 )
 
@@ -212,7 +213,7 @@ func runSession(args []string) int {
 		cancel()
 	}()
 
-	reason, _, err := session.Run(ctx, viewName, advertisedViews(), viewFor(viewName), os.Stdin, os.Stdout, term, version)
+	reason, _, err := session.Run(ctx, viewName, advertisedViews(), viewFor(viewName), os.Stdin, os.Stdout, term, version, session.Options{Mouse: viewName == "mission"})
 	code := session.ExitCode(reason, err)
 	if code == ExitBadSpec || code == ExitInternal {
 		if err != nil {
@@ -225,7 +226,7 @@ func runSession(args []string) int {
 // advertisedViews is what the hello line offers; the echo view is a test
 // fixture and only appears when the env asks for it.
 func advertisedViews() []string {
-	views := []string{"board"}
+	views := []string{"board", "mission"}
 	if os.Getenv("RT_UI_TEST_VIEWS") == "1" {
 		views = append(views, "echo")
 	}
@@ -238,6 +239,8 @@ func viewFor(name string) func(*session.Emitter) session.View {
 	switch name {
 	case "board":
 		return func(em *session.Emitter) session.View { return board.New(em) }
+	case "mission":
+		return func(em *session.Emitter) session.View { return mission.New(em) }
 	case "echo":
 		if os.Getenv("RT_UI_TEST_VIEWS") != "1" {
 			return func(*session.Emitter) session.View { return nil }

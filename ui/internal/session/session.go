@@ -68,11 +68,66 @@ func (e *Emitter) Emit(in protocol.Intent) tea.Cmd {
 // ErrBadOpen is a protocol error before any view ran: exit 2.
 var ErrBadOpen = errors.New("bad open")
 
+// Options carries per-view program settings that Run cannot infer from the
+// protocol alone.
+type Options struct {
+	Mouse bool
+}
+
+// programOptions builds the tea.NewProgram option list every view gets.
+// Bubble Tea v2 dropped the v1 WithMouseCellMotion ProgramOption: mouse
+// reporting is now gated per frame by the tea.View.MouseMode the model's
+// View() returns, not by anything settable on the program at construction
+// time, so Options.Mouse cannot live here -- see wireMouse below.
+func programOptions(ctx context.Context, term *os.File) []tea.ProgramOption {
+	return []tea.ProgramOption{
+		tea.WithInput(term),
+		tea.WithOutput(term),
+		tea.WithContext(ctx),
+		tea.WithColorProfile(colorprofile.TrueColor),
+		tea.WithoutSignalHandler(),
+	}
+}
+
+// mouseView decorates a View so every frame it paints reports
+// MouseModeCellMotion, without requiring board- or echo-style views to know
+// anything about mouse mode themselves.
+type mouseView struct{ view View }
+
+func (m mouseView) Init() tea.Cmd { return m.view.Init() }
+
+func (m mouseView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	updated, cmd := m.view.Update(msg)
+	if v, ok := updated.(View); ok {
+		m.view = v
+	}
+	return m, cmd
+}
+
+func (m mouseView) SetModel(raw json.RawMessage) error { return m.view.SetModel(raw) }
+func (m mouseView) Reason() Reason                     { return m.view.Reason() }
+
+func (m mouseView) View() tea.View {
+	v := m.view.View()
+	v.MouseMode = tea.MouseModeCellMotion
+	return v
+}
+
+// wireMouse is where Options.Mouse actually takes effect: it costs every
+// view that doesn't opt in a stolen text-selection drag, so it wraps only
+// when asked.
+func wireMouse(view View, opts Options) tea.Model {
+	if !opts.Mouse {
+		return view
+	}
+	return mouseView{view: view}
+}
+
 // Run speaks the session protocol on in/out and paints the view on term.
 // views is the list the hello advertises; viewName is the one this process
 // was started for. The returned reason is what the closed line carried;
 // stdinEOF says whether the loop ended because the parent went away.
-func Run(ctx context.Context, viewName string, views []string, mk func(*Emitter) View, in io.Reader, out io.Writer, term *os.File, version string) (reason Reason, stdinEOF bool, err error) {
+func Run(ctx context.Context, viewName string, views []string, mk func(*Emitter) View, in io.Reader, out io.Writer, term *os.File, version string, opts Options) (reason Reason, stdinEOF bool, err error) {
 	em := &Emitter{w: out}
 	closed := func(r Reason, msg string) {
 		em.mu.Lock()
@@ -140,13 +195,7 @@ func Run(ctx context.Context, viewName string, views []string, mk func(*Emitter)
 
 	// Signals are ours (see WithoutSignalHandler): the parent's cancel and an
 	// external kill both end the program through ctx, which restores termios.
-	p := tea.NewProgram(view,
-		tea.WithInput(term),
-		tea.WithOutput(term),
-		tea.WithContext(ctx),
-		tea.WithColorProfile(colorprofile.TrueColor),
-		tea.WithoutSignalHandler(),
-	)
+	p := tea.NewProgram(wireMouse(view, opts), programOptions(ctx, term)...)
 
 	// A close line ends the reader: the parent may end stdin right after it,
 	// and that EOF must never be mistaken for a dead parent.
