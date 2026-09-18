@@ -4,24 +4,21 @@
   font-family: var(--font-sans);
   color: var(--fg);
 }
-/* Body sits on --card, not --bg: nothing wraps the apps table in a card of
-   its own, so the page IS the content surface and takes the content token
-   directly. Deck also skips the kit's canvas.css, so there is no graph-paper
-   ground here for --bg to paint. */
+/* The page ground is --bg with the kit's graph-paper grid (board's own
+   canvas, replicated by hand rather than importing canvas.css -- that file
+   also resets `* { box-sizing: border-box }`, which this app's drawer rows
+   are deliberately written without, see .drawer-toggle-row below).
+   Page-level ink (headings, the subline) stays the canvas-tuned
+   --muted/--border, already AA on --bg. Each apps table sits on a raised
+   --card panel below -- see .apps-grid -- which is where the on-card ink
+   roles apply instead. */
 body {
   margin: 0;
-  background: var(--card);
-}
-/* Because the ground is --card, the page-wide inks take the kit's on-card
-   roles: the canvas-tuned --muted/--border/--border-soft sit below AA
-   contrast on the card surface in both schemes, and the tokens package
-   pins the on-card roles at or above it (packages/tokens
-   invariants test). Unlayered on purpose, so the remap beats the kit's
-   `@layer soribashi.tokens` definitions for every recipe on the page. */
-:root {
-  --muted: var(--text-muted-on-card);
-  --border: var(--border-on-card);
-  --border-soft: var(--border-soft-on-card);
+  background: var(--bg);
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 28px 28px;
 }
 .board-header {
   display: flex;
@@ -253,6 +250,23 @@ body {
    sizing to its own content. */
 .apps-grid [data-part='table'] {
   table-layout: fixed;
+}
+
+/* Each section's table is a raised panel on the canvas ground (--bg, set by
+   canvas.css), the same relationship board's own Panel wrapper gives its row
+   groups. Inks inside it (suffixes, pids, hairlines) take the kit's on-card
+   roles rather than the canvas-tuned --muted/--border those default to --
+   the tokens package pins the on-card roles at or above AA against --card
+   (packages/tokens invariants test), where the plain roles are tuned for
+   --bg and fall short on the lighter card surface. */
+.apps-grid {
+  background: var(--card);
+  border: 1px solid var(--border-on-card);
+  border-radius: var(--radius-lg);
+  padding: 2px var(--spacing-lg) var(--spacing-sm);
+  --muted: var(--text-muted-on-card);
+  --border: var(--border-on-card);
+  --border-soft: var(--border-soft-on-card);
 }
 
 /* Railway origin marker in the site cell: present when a row is pushed to
