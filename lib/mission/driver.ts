@@ -167,6 +167,7 @@ export class MissionDriver {
   private lastCommit: MissionLastCommit | null = null;
   private stagingDiff: StagingDiff | null = null;
   private action: ActionState = { kind: "fetch", title: "Fetch origin", meta: "Never fetched", ahead: 0, behind: 0 };
+  private refreshingBadges = false;
 
   constructor(private readonly deps: MissionDeps, start: { repo: string; worktree: string }) {
     this.state = {
@@ -197,7 +198,14 @@ export class MissionDriver {
     try {
       for await (const intent of session.intents) {
         if (intent.name === "quit") break;
-        await this.handle(intent);
+        try {
+          await this.handle(intent);
+        } catch (err) {
+          // A stale selIdx or a transient git failure must not tear down the
+          // session -- report it as a notice and keep looping.
+          this.state.notice = `error: ${err instanceof Error ? err.message : String(err)}`;
+          this.push();
+        }
       }
     } finally {
       sub.close();
@@ -206,9 +214,18 @@ export class MissionDriver {
     }
   }
 
+  // Mirrors lib/runner/runner.ts's guarded(): skips a git-status frame that
+  // arrives while the previous one's refresh is still in flight, rather than
+  // letting a burst interleave overlapping model pushes.
   private async onGitStatus(): Promise<void> {
-    await this.refreshBadges();
-    this.push();
+    if (this.refreshingBadges) return;
+    this.refreshingBadges = true;
+    try {
+      await this.refreshBadges();
+      this.push();
+    } finally {
+      this.refreshingBadges = false;
+    }
   }
 
   private push(): void {
@@ -466,7 +483,14 @@ export class MissionDriver {
   }
 
   private async handleCheckout(payload: CheckoutPayload | undefined): Promise<void> {
-    if (!payload || typeof payload.branch !== "string") return;
+    if (!payload) return;
+    if (typeof payload.branch !== "string") {
+      // The "new branch from…" action row (new:true/from) has no creation
+      // flow wired yet -- v1 answers it with a notice, not silence.
+      this.state.notice = "use rt worktree provision";
+      this.push();
+      return;
+    }
     const verdict = await this.guardBranch(payload.branch);
     if (verdict.verdict === "refuse") {
       this.state.notice = verdict.detail;
@@ -483,7 +507,14 @@ export class MissionDriver {
   }
 
   private async handleWorktree(payload: WorktreePayload | undefined): Promise<void> {
-    if (!payload || typeof payload.path !== "string") return;
+    if (!payload) return;
+    if (typeof payload.path !== "string") {
+      // The "provision new worktree…" action row (new:true) has no
+      // provisioning flow wired yet -- v1 answers it with a notice.
+      this.state.notice = "use rt worktree provision";
+      this.push();
+      return;
+    }
     this.state.currentWorktree = payload.path;
     this.state.selectedPath = null;
     this.state.selections = new Map();

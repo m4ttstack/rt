@@ -420,6 +420,37 @@ describe("MissionDriver: checkout guard", () => {
     const last = session.pushed.at(-1) as MissionModel;
     expect(last.notice).toBe("guarded-branch is checked out elsewhere");
   });
+
+  test("the 'new branch from…' action row (new:true/from) answers with a Notice instead of a silent no-op", async () => {
+    const client = makeFakeClient();
+    const session = new FakeSession([
+      { t: "intent", name: "mission:checkout", payload: { new: true, from: "main" } },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({ session, client });
+
+    await new MissionDriver(deps, START).run();
+
+    expect(client.calls.checkoutBranch).toHaveLength(0);
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.notice).toBe("use rt worktree provision");
+  });
+});
+
+describe("MissionDriver: worktree", () => {
+  test("the 'provision new worktree…' action row (new:true) answers with a Notice instead of a silent no-op", async () => {
+    const session = new FakeSession([
+      { t: "intent", name: "mission:worktree", payload: { new: true } },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({ session });
+
+    await new MissionDriver(deps, START).run();
+
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.notice).toBe("use rt worktree provision");
+    expect(last.current.worktree).toBe(START.worktree); // never switched
+  });
 });
 
 describe("MissionDriver: undo", () => {
@@ -489,6 +520,61 @@ describe("MissionDriver: git-status subscription", () => {
 
     session.send({ t: "intent", name: "quit" });
     await runPromise;
+  });
+
+  test("a burst of synchronously-delivered git-status events collapses into a single in-flight refresh", async () => {
+    const session = new QueueSession();
+    let captured: ((ev: DaemonEvent) => void) | null = null;
+    let daemonQueryCalls = 0;
+    const deps = baseDeps({
+      session,
+      subscribe: (onEvent) => {
+        captured = onEvent;
+        return { close: () => {} };
+      },
+      daemonQuery: async () => {
+        daemonQueryCalls++;
+        return { ok: true, data: { repos: [] } };
+      },
+    });
+
+    const runPromise = new MissionDriver(deps, START).run();
+    await flushMicrotasks();
+    const callsAfterSeed = daemonQueryCalls;
+
+    // Both fire in the same synchronous tick, before the first refresh's
+    // awaits have had a chance to run -- the second must be a no-op.
+    captured!({ type: "git-status", data: {} });
+    captured!({ type: "git-status", data: {} });
+    await flushMicrotasks();
+
+    expect(daemonQueryCalls).toBe(callsAfterSeed + 1);
+
+    session.send({ t: "intent", name: "quit" });
+    await runPromise;
+  });
+});
+
+describe("MissionDriver: error boundary", () => {
+  test("a handler throw lands as an error Notice and the session keeps processing later intents", async () => {
+    const session = new FakeSession([
+      // selIdx 99 doesn't exist in oneHunkDiff's single hunk, so
+      // resolveCompactedSelIdx throws inside handleStage.
+      { t: "intent", name: "mission:stage", payload: { path: "a.txt", mode: "line", selIdx: 99 } },
+      { t: "intent", name: "mission:select", payload: { filter: "xyz" } },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({ session });
+
+    await new MissionDriver(deps, START).run();
+
+    const errorPush = session.pushed.find((m) => m.notice.startsWith("error: "));
+    expect(errorPush).toBeDefined();
+    expect(errorPush!.notice).toContain("selIdx 99 out of range");
+
+    // The session survived the throw: the next intent still landed.
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.filter).toBe("xyz");
   });
 });
 
