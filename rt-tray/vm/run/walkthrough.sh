@@ -57,6 +57,11 @@ cleanup() {
 trap cleanup EXIT
 
 collect_logs() {
+  # Live-state snapshots first: an intermittent wedge (a held port, a zombie
+  # process) is only attributable while the guest still runs; files survive,
+  # process tables do not.
+  vm_ssh_try "$VM_TESTER_USER" "$RUN_VM" 'lsof -nP -iTCP -sTCP:LISTEN 2>/dev/null' > "$VM_RUN_DIR/logs/guest-listeners.txt" 2>/dev/null || true
+  vm_ssh_try "$VM_TESTER_USER" "$RUN_VM" 'ps auxww 2>/dev/null' > "$VM_RUN_DIR/logs/guest-ps.txt" 2>/dev/null || true
   vm_ssh_try "$VM_TESTER_USER" "$RUN_VM" 'tar -C "$HOME" -czf - .mattstack/rt/logs .mattstack/deck/logs Library/Logs/mattstack 2>/dev/null' > "$VM_RUN_DIR/logs/guest-home-logs.tgz" 2>/dev/null || true
   vm_ssh_try "$VM_TESTER_USER" "$RUN_VM" 'log show --last 45m --predicate '"'"'process == "mattstack" OR process == "rt" OR subsystem CONTAINS "com.mattstack" OR process == "smd" OR process == "backgroundtaskmanagementd"'"'"' --style compact 2>/dev/null | tail -5000' > "$VM_RUN_DIR/logs/guest-unified.log" 2>/dev/null || true
   vm_ssh_try "$VM_TESTER_USER" "$RUN_VM" 'launchctl print gui/$(id -u) 2>/dev/null | grep -iE "mattstack|com\.rt\." ' > "$VM_RUN_DIR/logs/guest-launchctl-grep.txt" 2>/dev/null || true
