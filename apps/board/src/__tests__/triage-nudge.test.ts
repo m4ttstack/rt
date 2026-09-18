@@ -125,6 +125,57 @@ describe('decideNudge', () => {
       reason: 'nudge',
     });
   });
+
+  describe('kind: review (first look)', () => {
+    const firstLook: NudgeState = { ...nudge, kind: 'review' };
+
+    test('no own review at all dispatches', () => {
+      expect(decideNudge(firstLook, undefined, m, cfg, NOW)).toEqual({
+        action: 'dispatch',
+        reason: 'nudge',
+      });
+    });
+
+    test('a done own review rejects already-reviewed, whatever the outcome', () => {
+      expect(decideNudge(firstLook, commentedReview, m, cfg, NOW)).toEqual({
+        action: 'reject',
+        reason: 'already-reviewed',
+      });
+      const approved: ReviewState = { ...commentedReview, outcome: 'approve' };
+      expect(decideNudge(firstLook, approved, m, cfg, NOW)).toEqual({
+        action: 'reject',
+        reason: 'already-reviewed',
+      });
+    });
+
+    test('in-flight own review still rejects', () => {
+      const inFlight: ReviewState = {
+        ...commentedReview,
+        status: 'reviewing',
+        outcome: undefined,
+      };
+      expect(decideNudge(firstLook, inFlight, m, cfg, NOW)).toEqual({
+        action: 'reject',
+        reason: 'review-in-flight',
+      });
+    });
+
+    test('budget and cooldown gates still apply', () => {
+      const exhausted: MrMemory = {
+        ...m,
+        attemptsToday: cfg.dailyAttemptBudget,
+      };
+      expect(decideNudge(firstLook, undefined, exhausted, cfg, NOW)).toEqual({
+        action: 'reject',
+        reason: 'budget-exhausted',
+      });
+      const cooling: MrMemory = { ...m, lastDispatchAt: NOW - 10 * 60_000 };
+      expect(decideNudge(firstLook, undefined, cooling, cfg, NOW)).toEqual({
+        action: 'reject',
+        reason: 'cooldown',
+      });
+    });
+  });
 });
 
 function deps(over: Partial<NudgePassDeps> = {}) {
@@ -139,7 +190,7 @@ function deps(over: Partial<NudgePassDeps> = {}) {
     markNudgeHandled: (id, result, reason) =>
       handled.push({ id, result, reason }),
     readReviewStates: () => new Map([[nudge.mrUrl, commentedReview]]),
-    launchReReview: async (): Promise<ReReviewLaunch> => ({ kind: 'launched' }),
+    launchAsk: async (): Promise<ReReviewLaunch> => ({ kind: 'launched' }),
     publishOutcome: (to, payload) => published.push({ to, payload }),
     memory,
     cfg,
@@ -189,6 +240,36 @@ describe('runNudgePass', () => {
     expect(d.notifies).toHaveLength(1);
   });
 
+  test('a kind:review nudge launches a first look, and the audit says so', async () => {
+    const launches: Array<{ mrUrl: string; iid: number; kind?: string }> = [];
+    const firstLook: NudgeState = { ...nudge, kind: 'review' };
+    const d = deps({
+      readNudges: () => [firstLook],
+      readReviewStates: () => new Map(),
+      launchAsk: async (mrUrl, iid, kind): Promise<ReReviewLaunch> => {
+        launches.push({ mrUrl, iid, kind });
+        return { kind: 'launched' };
+      },
+    });
+    const result = await runNudgePass(d);
+    expect(result.dispatched).toBe(1);
+    expect(launches).toEqual([{ mrUrl: nudge.mrUrl, iid: 1, kind: 'review' }]);
+    expect(d.audit.some(e => e.action === 'review-launched')).toBe(true);
+    expect(d.audit.some(e => e.action === 're-review-launched')).toBe(false);
+  });
+
+  test('the default nudge launches a re-review', async () => {
+    const launches: Array<{ kind?: string }> = [];
+    const d = deps({
+      launchAsk: async (_mrUrl, _iid, kind): Promise<ReReviewLaunch> => {
+        launches.push({ kind });
+        return { kind: 'launched' };
+      },
+    });
+    await runNudgePass(d);
+    expect(launches).toEqual([{ kind: 're-review' }]);
+  });
+
   test('reject path marks handled with reason, publishes, notifies, audits, and does not touch memory counters', async () => {
     const notCommented: ReviewState = {
       ...commentedReview,
@@ -235,7 +316,7 @@ describe('runNudgePass', () => {
 
   test('a launch error publishes rejected launch-failed and does not mark attempts', async () => {
     const d = deps({
-      launchReReview: async (): Promise<ReReviewLaunch> => ({
+      launchAsk: async (): Promise<ReReviewLaunch> => ({
         kind: 'error',
         message: 'boom',
       }),

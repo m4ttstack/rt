@@ -119,6 +119,20 @@ function nudgeTargets(mrx: BoardMRWithReview): PeerReviewInfo[] {
   );
 }
 
+/** Roster members an author can ask for a first look: not the author, not a
+    peer already engaged with this MR (any reported state counts as engaged),
+    and nobody while an ask of ours is still outstanding -- one ask per MR,
+    whatever its kind, mirroring the sent-nudge store. */
+function firstReviewTargets(
+  mrx: BoardMRWithReview,
+  roster: readonly string[]
+): string[] {
+  if (mrx.sentNudge && !NUDGE_RETRYABLE.has(mrx.sentNudge.display)) return [];
+  const engaged = new Set((mrx.peerReviews ?? []).map(p => p.reviewer));
+  engaged.add(mrx.author.username);
+  return roster.filter(u => !engaged.has(u));
+}
+
 /** Key for the App-level map of optimistically resolved drafts. Resolution
     lives above the badge because the acting happens in DraftModal; the next
     /data.json pull drops the draft and the stale entry is harmless. */
@@ -364,6 +378,7 @@ export {
   laneInterrupted,
   type SlackMark,
   nudgeTargets,
+  firstReviewTargets,
   draftKey,
   getSlackMarks,
   setSlackMarks,

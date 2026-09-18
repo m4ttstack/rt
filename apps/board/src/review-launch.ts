@@ -44,6 +44,9 @@ export interface ReReviewCtx {
   claudeCommand?: string;
   /** Operator note from the human who launched the re-review (see operatorNoteParagraph). */
   note?: string;
+  /** false launches a plain first review instead of the re-review framing
+      (a peer's first-look ask). Absent means re-review. */
+  reReview?: boolean;
 }
 
 /** Seams for the herdr launchers and the review state store, so tests can drive
@@ -100,7 +103,7 @@ export async function launchReReview(
       statusBin: statusBinPath(),
       reportPath: reviewReportPath(statePath),
       skill: ctx.skill,
-      reReview: true,
+      reReview: ctx.reReview ?? true,
       note: ctx.note,
     },
     resolvePath
@@ -180,7 +183,7 @@ export async function launchReReview(
       workspaceLabel: ctx.workspaceLabel,
       statePath,
       skill: ctx.skill,
-      reReview: true,
+      reReview: ctx.reReview ?? true,
       author: ctx.author,
       account: ctx.account,
       model: ctx.model,

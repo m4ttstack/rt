@@ -57,12 +57,10 @@ export function materializeEnvelope(
     }
     return;
   }
-  if (e.type === 're-review-request') {
+  if (e.type === 're-review-request' || e.type === 'review-request') {
     const p = parseReReviewRequestPayload(e.payload);
     if (!p)
-      return deps.log(
-        `peer: malformed re-review-request from ${e.from} (${e.id})`
-      );
+      return deps.log(`peer: malformed ${e.type} from ${e.from} (${e.id})`);
     deps.writeNudge({
       id: e.id,
       mrUrl: p.mrUrl,
@@ -70,6 +68,9 @@ export function materializeEnvelope(
       from: e.from,
       note: p.note,
       receivedAt: e.receivedAt,
+      // Only the first-look ask is marked; absence means re-review, so rows
+      // written before this kind existed keep their meaning.
+      ...(e.type === 'review-request' ? { kind: 'review' as const } : {}),
     });
     return;
   }

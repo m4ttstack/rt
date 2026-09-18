@@ -497,30 +497,30 @@ export function Board() {
   // behind this brings back the real state one poll sooner than guessing would.
   // Bespoke (not useLaunchAction): the failure toast prefers the server's own
   // refusal text over a generic status message.
-  const handleNudge = useCallback(
-    (mr: BoardMR, reviewer: string) => {
+  const handleAsk = useCallback(
+    (mr: BoardMR, reviewer: string, kind: 'review' | 're-review') => {
       if (!mr.webUrl) return;
-      addToast(`requesting re-review of !${mr.iid} from ${reviewer}…`);
-      postAction('/nudge', { mrUrl: mr.webUrl, iid: mr.iid, reviewer }).then(
-        result => {
-          if (!result.ok) {
-            // A permanent refusal (409) answers in plain text with the reason
-            // the relay gave -- e.g. the reviewer has no board on the
-            // switchboard. That's the whole point of the failure, so show it.
-            const why = result.text.trim();
-            addToast(
-              why ||
-                `couldn't request re-review for !${mr.iid} (${result.status})`
-            );
-            return;
-          }
-          if (result.body?.queued)
-            addToast(
-              `switchboard unreachable... queued the ask to ${reviewer}`
-            );
-          load();
+      addToast(`requesting ${kind} of !${mr.iid} from ${reviewer}…`);
+      postAction('/nudge', {
+        mrUrl: mr.webUrl,
+        iid: mr.iid,
+        reviewer,
+        kind,
+      }).then(result => {
+        if (!result.ok) {
+          // A permanent refusal (409) answers in plain text with the reason
+          // the relay gave -- e.g. the reviewer has no board on the
+          // switchboard. That's the whole point of the failure, so show it.
+          const why = result.text.trim();
+          addToast(
+            why || `couldn't request ${kind} for !${mr.iid} (${result.status})`
+          );
+          return;
         }
-      );
+        if (result.body?.queued)
+          addToast(`switchboard unreachable... queued the ask to ${reviewer}`);
+        load();
+      });
     },
     [addToast, load]
   );
@@ -1321,11 +1321,15 @@ export function Board() {
           canDraftState={rowMenu.mr.author.username === data.defaultMember}
           onMrAction={handleMrAction}
           onRebaseLocal={handleRebaseLocal}
-          onNudge={handleNudge}
+          onNudge={(mr2, reviewer) => handleAsk(mr2, reviewer, 're-review')}
           // Your own MRs only: a nudge asks a peer to re-review YOUR work, and
           // the server enforces the same gate (403 "not your MR").
           canNudge={rowMenu.mr.author.username === data.defaultMember}
           onResumeReview={handleResumeReview}
+          roster={data.members.map(m => m.username)}
+          onRequestReview={(mr2, reviewer) =>
+            handleAsk(mr2, reviewer, 'review')
+          }
         />
       )}
 

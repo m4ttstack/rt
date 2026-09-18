@@ -64,8 +64,8 @@ see the layout yourself without wiring up a real GitLab project, copy
   red CI and merge conflicts.
 - **Tabs.** Beyond the author roster, a tab can source the approval queue for a
   named codeowners section.
-- **Peer boards.** Optionally, teammates' boards can nudge each other about
-  re-reviews through a small relay.
+- **Peer boards.** Optionally, teammates' boards can ask each other for
+  reviews and re-reviews through a small relay.
 
 ## Requirements
 
@@ -230,9 +230,10 @@ guardrail.
 ## Peer boards
 
 When teammates each run their own board, a small relay called the switchboard
-lets those boards nudge each other about re-reviews without either board
-talking to the other directly. It adds live peer badges, a "request re-review"
-row action, and optional guarded auto re-review on the reviewer's side.
+lets those boards nudge each other about reviews and re-reviews without either
+board talking to the other directly. It adds live peer badges, "request
+review" and "request re-review" row actions, and optional guarded auto
+dispatch on the reviewer's side.
 
 It is entirely optional. Skip it and the board works exactly as described
 above.

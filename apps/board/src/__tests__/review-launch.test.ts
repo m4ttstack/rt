@@ -317,6 +317,18 @@ describe('launchReReview: nothing on file (arm iii -- fresh launchReview)', () =
     });
   });
 
+  test('ctx.reReview false launches a plain first review', async () => {
+    const res = await launchReReview(
+      URL_A,
+      IID,
+      { ...CTX, reReview: false },
+      makeIo(),
+      noSkillPath
+    );
+    expect(res).toEqual({ kind: 'launched' });
+    expect(reviewCalls[0]).toMatchObject({ reReview: false });
+  });
+
   test('threads the operator note through to the fresh launch', async () => {
     await launchReReview(
       URL_A,

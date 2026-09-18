@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  buildAskDraft,
   canonicalUsername,
   makeEnvelope,
   parseDraftEnvelope,
@@ -60,6 +61,32 @@ describe('parseEnvelope', () => {
     expect(parseEnvelope({ ...draft, from: 'ada', receivedAt: 2 })?.from).toBe(
       'ada'
     );
+  });
+});
+
+describe('buildAskDraft', () => {
+  test("kind 're-review' drafts a re-review-request to the reviewer", () => {
+    const d = buildAskDraft('Grace', 're-review', {
+      mrUrl: 'https://x/1',
+      iid: 1,
+    });
+    expect(d.type).toBe('re-review-request');
+    expect(d.to).toBe('grace');
+    expect(d.payload).toEqual({ mrUrl: 'https://x/1', iid: 1 });
+  });
+
+  test("kind 'review' drafts a review-request, note carried through", () => {
+    const d = buildAskDraft('ada', 'review', {
+      mrUrl: 'https://x/1',
+      iid: 1,
+      note: 'fresh eyes',
+    });
+    expect(d.type).toBe('review-request');
+    expect(d.payload).toEqual({
+      mrUrl: 'https://x/1',
+      iid: 1,
+      note: 'fresh eyes',
+    });
   });
 });
 

@@ -165,8 +165,10 @@ import {
   type SwitchboardClient,
 } from './peer/client.ts';
 import {
+  buildAskDraft,
   canonicalUsername,
   makeEnvelope,
+  type AskKind,
   type ReReviewRequestPayload,
   type ReviewStatePayload,
 } from './peer/envelope.ts';
@@ -427,8 +429,13 @@ function kickOutbox(client: SwitchboardClient): void {
     unhandled nudges peers sent here. */
 interface PeerAttachments {
   peerReviews?: PeerReviewState[];
-  sentNudge?: { display: SentNudgeDisplay; reviewer: string; reason?: string };
-  nudges?: Array<{ from: string; receivedAt: number }>;
+  sentNudge?: {
+    display: SentNudgeDisplay;
+    reviewer: string;
+    reason?: string;
+    kind?: AskKind;
+  };
+  nudges?: Array<{ from: string; receivedAt: number; kind?: AskKind }>;
 }
 
 /** Fold every peer field onto the MRs, non-mutating. Read from disk per call
@@ -441,13 +448,13 @@ function attachPeerState<T extends { webUrl?: string | null }>(
   const sent = readSentNudges();
   const inbound = new Map<
     string,
-    Array<{ from: string; receivedAt: number }>
+    Array<{ from: string; receivedAt: number; kind?: AskKind }>
   >();
   for (const n of readNudges()) {
     // Handled nudges stay on disk for the outcome trail; only the ones still
     // awaiting a decision belong on the board.
     if (n.handled) continue;
-    const entry = { from: n.from, receivedAt: n.receivedAt };
+    const entry = { from: n.from, receivedAt: n.receivedAt, kind: n.kind };
     const list = inbound.get(n.mrUrl);
     if (list) list.push(entry);
     else inbound.set(n.mrUrl, [entry]);
@@ -465,6 +472,7 @@ function attachPeerState<T extends { webUrl?: string | null }>(
               display: sentNudgeDisplay(s, now),
               reviewer: s.reviewer,
               reason: s.resolution?.reason,
+              kind: s.kind,
             },
           }
         : {}),
@@ -2313,19 +2321,28 @@ const httpServer = Bun.serve({
         }
         const parsed = parseReviewRequestBody(body);
         const reviewer = (body as { reviewer?: unknown })?.reviewer;
-        if (!parsed || typeof reviewer !== 'string' || !reviewer.trim()) {
+        const rawKind = (body as { kind?: unknown })?.kind;
+        if (
+          !parsed ||
+          typeof reviewer !== 'string' ||
+          !reviewer.trim() ||
+          (rawKind !== undefined &&
+            rawKind !== 'review' &&
+            rawKind !== 're-review')
+        ) {
           return new Response(
-            'expected { mrUrl: string, iid: number, reviewer: string }',
+            'expected { mrUrl: string, iid: number, reviewer: string, kind?: "review" | "re-review" }',
             { status: 400 }
           );
         }
+        const kind: AskKind = rawKind === 'review' ? 'review' : 're-review';
         const snapshot = await cache.get();
         const mr = snapshot.mrs.find(m => m.webUrl === parsed.mrUrl);
         if (!mr)
           return new Response(`unknown MR "${parsed.mrUrl}"`, { status: 400 });
         if (mr.author.username !== config.defaultMember)
           return new Response('not your MR', { status: 403 });
-        const draft = makeEnvelope(reviewer, 're-review-request', {
+        const draft = buildAskDraft(reviewer, kind, {
           mrUrl: parsed.mrUrl,
           iid: parsed.iid,
         } satisfies ReReviewRequestPayload);
@@ -2355,6 +2372,7 @@ const httpServer = Bun.serve({
           iid: parsed.iid,
           reviewer: canonicalUsername(reviewer),
           sentAt: Date.now(),
+          kind,
         });
         return new Response(
           JSON.stringify(

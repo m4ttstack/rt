@@ -1,8 +1,8 @@
 # Peer boards and the switchboard
 
 When your teammates each run their own board, a small relay called the
-switchboard lets those boards nudge each other about re-reviews without either
-board talking to the other directly. It is entirely optional: skip it and the
+switchboard lets those boards ask each other for reviews and re-reviews
+without either board talking to the other directly. It is entirely optional: skip it and the
 board works exactly as it does without it.
 
 What it adds:
@@ -11,6 +11,10 @@ What it adds:
   of flight on one of your MRs, your row picks up the badge.
 - **Request re-review.** A row action on your own MR ("request re-review from
   `<reviewer>`") asks that reviewer's board directly.
+- **Request review.** "request review from…" on your own MR picks any roster
+  member not already engaged with it and asks their board for a first look.
+  A peer board running a version without this ask drops it silently; the chip
+  self-expires to "no-response" after 48 hours.
 - **Author-driven re-review.** Independent of the switchboard: the MR author can
   ask by resolving the latch thread on the MR itself, with no peer board
   involved. See [agent actions](agent-actions.md#reviewer-side-automation).

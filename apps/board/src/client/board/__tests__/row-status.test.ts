@@ -923,6 +923,79 @@ describe('rowStatus: social lanes', () => {
     expect(line!.verbs[0]).toEqual({ kind: 're-review', label: 're-review' });
   });
 
+  test('an inbound first-look ask words a review and verbs a plain launch', () => {
+    const [line] = candidateLines(
+      mr({
+        nudges: [{ from: 'jo', receivedAt: NOW - 30 * 60_000, kind: 'review' }],
+      }),
+      NOW,
+      NONE,
+      ME
+    );
+    expect(line).toMatchObject({
+      tone: 'warn',
+      word: 'jo asked for a review',
+      detail: '30m ago',
+    });
+    expect(line!.verbs[0]).toEqual({ kind: 'launch-review', label: 'review' });
+  });
+
+  test('a sent first-look ask words review in every phase', () => {
+    const [asked] = candidateLines(
+      mr({
+        sentNudge: {
+          display: 'requested',
+          reviewer: 'jo',
+          sentAt: NOW - 30 * 60_000,
+          kind: 'review',
+        } as never,
+      }),
+      NOW,
+      NONE,
+      ME
+    );
+    expect(asked).toMatchObject({
+      tone: 'quiet',
+      word: 'asked jo for a review',
+      detail: 'no answer yet, 30m ago',
+    });
+    const [retry] = candidateLines(
+      mr({
+        sentNudge: {
+          display: 'expired',
+          reviewer: 'jo',
+          sentAt: NOW,
+          kind: 'review',
+        } as never,
+      }),
+      NOW,
+      NONE,
+      ME
+    );
+    expect(retry).toMatchObject({
+      tone: 'quiet',
+      word: 'review ask to jo went unanswered',
+      detail: 'right-click to ask again',
+    });
+    const [working] = candidateLines(
+      mr({
+        sentNudge: {
+          display: 'confirmed',
+          reviewer: 'jo',
+          kind: 'review',
+        } as never,
+      }),
+      NOW,
+      NONE,
+      ME
+    );
+    expect(working).toMatchObject({
+      tone: 'work',
+      word: 'jo reviewing…',
+      spin: true,
+    });
+  });
+
   test('the longest-waiting inbound nudge wins the line', () => {
     const s = rowStatus(
       mr({
@@ -1040,9 +1113,47 @@ describe('rowStatus: social lanes', () => {
     );
     expect(retry).toMatchObject({
       tone: 'quiet',
-      word: 'nudge to jo went unanswered',
-      detail: 'right-click to ask again',
+      word: 'jo declined the nudge',
+      detail: 'busy',
       verbs: [],
+    });
+  });
+
+  test('a declined ask names the reviewer and shows their reason; without one it points at the menu', () => {
+    const [reasoned] = candidateLines(
+      mr({
+        sentNudge: {
+          display: 'rejected',
+          reviewer: 'jo',
+          reason: 'review-in-flight',
+          sentAt: NOW,
+          kind: 'review',
+        } as never,
+      }),
+      NOW,
+      NONE,
+      ME
+    );
+    expect(reasoned).toMatchObject({
+      tone: 'quiet',
+      word: 'jo declined the review ask',
+      detail: 'review-in-flight',
+    });
+    const [bare] = candidateLines(
+      mr({
+        sentNudge: {
+          display: 'rejected',
+          reviewer: 'jo',
+          sentAt: NOW,
+        } as never,
+      }),
+      NOW,
+      NONE,
+      ME
+    );
+    expect(bare).toMatchObject({
+      word: 'jo declined the nudge',
+      detail: 'right-click to ask again',
     });
   });
 

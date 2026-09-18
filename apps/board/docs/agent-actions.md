@@ -147,10 +147,12 @@ The two branch-writing classes (`mechanicalLint`, `codeFix`) are additionally
 gated to the board identity's own MRs at dispatch time, whatever their toggles
 say.
 
-**Nudge handling.** An incoming re-review nudge from a peer board is picked up
-and re-dispatched automatically, if every guardrail clears:
+**Nudge handling.** An incoming review or re-review ask from a peer board is
+picked up and dispatched automatically, if every guardrail clears:
 
-- The reviewer's prior review on that MR is `done` with a `comment` outcome.
+- For a re-review ask: the reviewer's prior review on that MR is `done` with a
+  `comment` outcome. For a first-look ask ("request review from"): the
+  opposite -- there is no finished review to repeat.
 - No review is already in flight for that MR.
 - The nudge is fresh, judged on the relay's `receivedAt` and never the sender's
   clock, and expires after 48 hours.
@@ -158,7 +160,8 @@ and re-dispatched automatically, if every guardrail clears:
   (`dailyAttemptBudget`, default 3) cap how often triage acts.
 
 A nudge that clears the guardrails launches through the same resume-or-fresh
-path as the manual re-review button. Every disposal (launched, rejected, or
+path as the manual re-review button; a first-look ask launches a plain review
+instead of the re-review framing. Every disposal (launched, rejected, or
 expired) publishes an outcome back to the asker's board so their chip resolves.
 Launches, guardrail rejections, and expiries also raise a desktop notification;
 a rejection caused by a failed launch attempt is still audited and published,

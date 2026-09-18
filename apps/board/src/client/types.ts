@@ -124,11 +124,15 @@ export interface SentNudgeInfo {
   reviewer: string;
   reason?: string;
   sentAt?: number;
+  /** Absent means re-review (older boards never send 'review'). */
+  kind?: 'review' | 're-review';
 }
 /** A peer waiting on us: an inbound re-review request we haven't handled yet. */
 export interface InboundNudgeInfo {
   from: string;
   receivedAt: number;
+  /** Absent means re-review. */
+  kind?: 'review' | 're-review';
 }
 export type BoardMRWithReview = BoardMR & {
   review?: ReviewInfo;

@@ -1,6 +1,6 @@
+import { getReviewDisplayState } from '@mattstack/glance';
 import type { ReviewStatus } from './client/types.ts';
 import type { TabConfig } from './config.ts';
-import { getReviewDisplayState } from '@mattstack/glance';
 import type { BoardMR } from './data.ts';
 import { hasChangesRequested } from './data.ts';
 import { projectKeyOf } from './triage/stack.ts';

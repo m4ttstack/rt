@@ -4,6 +4,11 @@
 
 export type NudgeResult = 'launched' | 'rejected' | 'expired';
 
+/** The two ask flavors a board can send about its own MR. `review-request`
+    (first look) and `re-review-request` share one payload shape; older boards
+    drop the unknown first-look type, and the sender's chip self-expires. */
+export type AskKind = 'review' | 're-review';
+
 /** What a sender builds. The relay stamps `from` (from the auth token) and
     `receivedAt` (its own clock -- the only clock freshness may be judged on). */
 export interface DraftEnvelope {
@@ -60,6 +65,18 @@ export function makeEnvelope(
     sentAt: now,
     payload,
   };
+}
+
+/** Draft the ask envelope for one of this board's own MRs. The wire type is
+    the only thing kind changes; both asks share ReReviewRequestPayload. */
+export function buildAskDraft(
+  reviewer: string,
+  kind: AskKind,
+  payload: ReReviewRequestPayload,
+  now: number = Date.now()
+): DraftEnvelope {
+  const type = kind === 'review' ? 'review-request' : 're-review-request';
+  return makeEnvelope(reviewer, type, payload, now);
 }
 
 export function parseDraftEnvelope(body: unknown): DraftEnvelope | null {

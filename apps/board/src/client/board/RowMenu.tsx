@@ -7,6 +7,7 @@ import type { MrAction } from '../../mr-action.ts';
 import type { BoardMRWithReview, RowContext, RowMenuState } from '../types.ts';
 import {
   doctorItemLabel,
+  firstReviewTargets,
   getSlackMarks,
   gitlabMenuItems,
   laneInterrupted,
@@ -89,6 +90,8 @@ function RowMenu({
   onNudge,
   canNudge,
   onResumeReview,
+  roster,
+  onRequestReview,
 }: {
   menu: RowMenuState;
   ctx: RowContext;
@@ -114,6 +117,9 @@ function RowMenu({
   onNudge: (mr: BoardMR, reviewer: string) => void;
   canNudge: boolean;
   onResumeReview: (mr: BoardMR, note?: string) => void;
+  /** Team roster usernames, the first-look ask's candidate pool. */
+  roster: string[];
+  onRequestReview: (mr: BoardMR, reviewer: string) => void;
 }) {
   // Local reaction state so the open menu updates immediately after a mark,
   // and per-emoji pending so the clicked item shows a spinner + disables.
@@ -131,6 +137,8 @@ function RowMenu({
     label: string;
     fire: (note?: string) => void;
   } | null>(null);
+  // Second menu stage: picking whom to ask for a first look.
+  const [pickingReviewer, setPickingReviewer] = useState(false);
   const [noteText, setNoteText] = useState('');
   // Same auto-grow mechanism as the selection bar's header textarea.
   const noteRef = useAutoGrowTextarea([noteFor, noteText]);
@@ -152,6 +160,8 @@ function RowMenu({
   const found = slack?.status === 'found';
   const showSlack = ctx.local && ctx.slackEnabled;
   const peers = ctx.local && canNudge ? nudgeTargets(mrx) : [];
+  const askTargets =
+    ctx.local && canNudge ? firstReviewTargets(mrx, roster) : [];
   const gitlabItems = gitlabMenuItems(mr);
   const canRebaseLocal =
     mr.blockers?.hasConflicts ||
@@ -187,6 +197,29 @@ function RowMenu({
       setPending(p => p.filter(e => e !== emoji));
     });
   };
+
+  if (pickingReviewer) {
+    return (
+      // Same keyed-remount trick as the note stage below: a distinct key makes
+      // the recipe re-run its viewport clamp against this stage's own size.
+      <ContextMenu
+        key="asking"
+        x={menu.x}
+        y={menu.y}
+        ariaLabel={`request review for !${mr.iid}`}
+        onClose={onClose}
+      >
+        <ContextMenu.Label>request review from</ContextMenu.Label>
+        {askTargets.map(u => (
+          <ContextMenu.Item
+            key={`ask-${u}`}
+            label={iconLabel(<PeopleGlyph />, u)}
+            onClick={run(() => onRequestReview(mr, u))}
+          />
+        ))}
+      </ContextMenu>
+    );
+  }
 
   if (noteFor) {
     return (
@@ -387,6 +420,16 @@ function RowMenu({
           `ask ${peer.reviewer}'s agent to re-review`
         )}
         onClick={run(() => onNudge(mr, peer.reviewer))}
+      />
+    );
+  // Ask a free peer for a first look. Swaps to the picker stage rather than
+  // closing, so the click that chooses the reviewer is the one that fires.
+  if (askTargets.length)
+    agentItems.push(
+      <ContextMenu.Item
+        key="ask-review"
+        label={iconLabel(<PeopleGlyph />, 'request review from…')}
+        onClick={() => setPickingReviewer(true)}
       />
     );
 

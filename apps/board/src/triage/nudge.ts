@@ -1,4 +1,8 @@
-import type { NudgeOutcomePayload, NudgeResult } from '../peer/envelope.ts';
+import type {
+  AskKind,
+  NudgeOutcomePayload,
+  NudgeResult,
+} from '../peer/envelope.ts';
 import type { NudgeState } from '../peer/nudges.ts';
 import type { ReReviewLaunch } from '../review-launch.ts';
 import type { ReviewState } from '../review-state.ts';
@@ -29,6 +33,9 @@ export interface ReReviewRequest {
   source: ReReviewSource;
   receivedAt: number | null;
   handled: boolean;
+  /** Absent means re-review; 'review' is a first-look ask (peer nudges only,
+      a latch is re-review by construction). */
+  kind?: AskKind;
 }
 
 /** The whole re-review guardrail, one pure function, shared by both sources.
@@ -54,7 +61,13 @@ export function decideRequest(
   ) {
     return { action: 'reject', reason: 'review-in-flight' };
   }
-  if (
+  // The review-state gate inverts with the ask's kind: a re-review needs a
+  // commented review to revisit, a first look must not repeat a finished one.
+  if (req.kind === 'review') {
+    if (ownReview && ownReview.status === 'done') {
+      return { action: 'reject', reason: 'already-reviewed' };
+    }
+  } else if (
     !ownReview ||
     ownReview.status !== 'done' ||
     ownReview.outcome !== 'comment'
@@ -88,6 +101,7 @@ export function decideNudge(
       source: 'nudge',
       receivedAt: nudge.receivedAt,
       handled: !!nudge.handled,
+      kind: nudge.kind,
     },
     ownReview,
     m,
@@ -100,7 +114,7 @@ export interface NudgePassDeps {
   readNudges(): NudgeState[];
   markNudgeHandled(id: string, result: NudgeResult, reason?: string): void;
   readReviewStates(): Map<string, ReviewState>;
-  launchReReview(mrUrl: string, iid: number): Promise<ReReviewLaunch>;
+  launchAsk(mrUrl: string, iid: number, kind: AskKind): Promise<ReReviewLaunch>;
   publishOutcome(to: string, payload: NudgeOutcomePayload): void;
   memory: DispatchMemory;
   cfg: TriageConfig;
@@ -161,13 +175,14 @@ export async function runNudgePass(deps: NudgePassDeps): Promise<{
         reason: decision.reason,
       });
       await deps.notify(
-        `re-review nudge ${outcome} on !${nudge.iid}`,
+        `${nudge.kind ?? 're-review'} nudge ${outcome} on !${nudge.iid}`,
         `${nudge.from} asked; ${decision.reason}`
       );
       result[outcome === 'expired' ? 'expired' : 'rejected']++;
       continue;
     }
-    const launch = await deps.launchReReview(nudge.mrUrl, nudge.iid);
+    const kind: AskKind = nudge.kind ?? 're-review';
+    const launch = await deps.launchAsk(nudge.mrUrl, nudge.iid, kind);
     if (launch.kind === 'error') {
       deps.markNudgeHandled(nudge.id, 'rejected', 'launch-failed');
       deps.publishOutcome(nudge.from, {
@@ -202,11 +217,11 @@ export async function runNudgePass(deps: NudgePassDeps): Promise<{
       mrUrl: nudge.mrUrl,
       iid: nudge.iid,
       event: 'nudge',
-      action: 're-review-launched',
+      action: `${kind}-launched`,
       attempt: m.attemptsToday,
     });
     await deps.notify(
-      `re-review launched on !${nudge.iid}`,
+      `${kind} launched on !${nudge.iid}`,
       `requested by ${nudge.from}`
     );
     result.dispatched++;

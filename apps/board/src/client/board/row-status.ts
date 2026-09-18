@@ -347,10 +347,7 @@ function respondDoneLine(mr: BoardMRWithReview): Candidate {
           tone: 'warn',
           word: 'replies posted',
           detail: 'reviewer came back',
-          verbs: [
-            { kind: 'restart-respond', label: 'respond again' },
-            ...read,
-          ],
+          verbs: [{ kind: 'restart-respond', label: 'respond again' }, ...read],
         };
       }
       return {
@@ -502,34 +499,57 @@ function peerLines(mr: BoardMRWithReview, now: number): Candidate[] {
     (a, b) => a.receivedAt - b.receivedAt
   );
   for (const n of nudges) {
+    const first = n.kind === 'review';
     out.push({
       tone: 'warn',
-      word: `${n.from} asked for a re-review`,
+      word: `${n.from} asked for a ${first ? 'review' : 're-review'}`,
       detail: agoMs(n.receivedAt, now),
-      verbs: [{ kind: 're-review', label: 're-review' }],
+      verbs: [
+        first
+          ? { kind: 'launch-review', label: 'review' }
+          : { kind: 're-review', label: 're-review' },
+      ],
     });
   }
   const sent = mr.sentNudge;
   if (sent) {
+    const first = sent.kind === 'review';
     if (NUDGE_RETRYABLE.has(sent.display)) {
-      out.push({
-        tone: 'quiet',
-        word: `nudge to ${sent.reviewer} went unanswered`,
-        detail: 'right-click to ask again',
-        verbs: [],
-      });
+      // The ask word: "the nudge" for a re-review, "the <kind> ask" otherwise.
+      const askWord = first ? 'review ask' : 'nudge';
+      // A rejection carries the peer's own reason; surface it instead of
+      // pretending nobody answered. Expiry and silence stay "unanswered".
+      out.push(
+        sent.display === 'rejected'
+          ? {
+              tone: 'quiet',
+              word: `${sent.reviewer} declined the ${askWord}`,
+              detail: sent.reason || 'right-click to ask again',
+              verbs: [],
+            }
+          : {
+              tone: 'quiet',
+              word: first
+                ? `review ask to ${sent.reviewer} went unanswered`
+                : `nudge to ${sent.reviewer} went unanswered`,
+              detail: 'right-click to ask again',
+              verbs: [],
+            }
+      );
     } else if (sent.display === 'requested') {
       const since = agoMs(sent.sentAt, now);
       out.push({
         tone: 'quiet',
-        word: `nudged ${sent.reviewer}`,
+        word: first
+          ? `asked ${sent.reviewer} for a review`
+          : `nudged ${sent.reviewer}`,
         detail: since ? `no answer yet, ${since}` : 'no answer yet',
         verbs: [],
       });
     } else {
       out.push({
         tone: 'work',
-        word: `${sent.reviewer} re-reviewing…`,
+        word: `${sent.reviewer} ${first ? '' : 're-'}reviewing…`,
         spin: true,
         verbs: [],
       });

@@ -235,8 +235,9 @@ try {
       readNudges,
       markNudgeHandled: (id, r, reason) => markNudgeHandled(id, r, reason),
       readReviewStates,
-      launchReReview: (mrUrl, iid) =>
+      launchAsk: (mrUrl, iid, kind) =>
         launchReReview(mrUrl, iid, {
+          reReview: kind !== 'review',
           cwd: boardConfig.reviewCwd,
           repo: repoForMrUrl(mrUrl),
           workspaceLabel: boardConfig.reviewsWorkspace,

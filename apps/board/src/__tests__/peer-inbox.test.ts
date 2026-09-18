@@ -210,6 +210,45 @@ describe('materializeEnvelope', () => {
     });
   });
 
+  describe('review-request', () => {
+    test('writes a kind:"review" nudge from envelope and payload fields', () => {
+      const deps = fakeDeps();
+      const e = envelope({
+        id: 'env-77',
+        type: 'review-request',
+        from: 'ada',
+        receivedAt: 888,
+        payload: { mrUrl: URL_A, iid: 4821, note: 'fresh eyes please' },
+      });
+      materializeEnvelope(e, deps, 1000);
+      expect(deps.nudges).toEqual([
+        {
+          id: 'env-77',
+          mrUrl: URL_A,
+          iid: 4821,
+          from: 'ada',
+          note: 'fresh eyes please',
+          receivedAt: 888,
+          kind: 'review',
+        },
+      ]);
+      expect(deps.resolutions).toEqual([]);
+      expect(deps.peerReviews).toEqual([]);
+    });
+
+    test('malformed review-request payload only logs', () => {
+      const deps = fakeDeps();
+      const e = envelope({
+        type: 'review-request',
+        from: 'ada',
+        payload: { iid: 4821 },
+      });
+      materializeEnvelope(e, deps, 1000);
+      expect(deps.nudges).toEqual([]);
+      expect(deps.logs.length).toBe(1);
+    });
+  });
+
   describe('nudge-outcome', () => {
     test('resolves the sent nudge with result/reason/at', () => {
       const deps = fakeDeps();

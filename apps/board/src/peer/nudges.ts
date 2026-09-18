@@ -1,9 +1,11 @@
 import { Database } from 'bun:sqlite';
 
 import { getStateDb, persistOrWarn, runCriticalWrite } from '../state/index.ts';
-import type { NudgeResult } from './envelope.ts';
+import type { AskKind, NudgeResult } from './envelope.ts';
 
-/** An inbound re-review request, materialized from a peer's envelope. */
+/** An inbound review ask, materialized from a peer's envelope. `kind` is
+    absent on re-review asks (and on rows written before first-look asks
+    existed); only first-look asks carry 'review'. */
 export interface NudgeState {
   id: string;
   mrUrl: string;
@@ -11,6 +13,7 @@ export interface NudgeState {
   from: string;
   note?: string;
   receivedAt: number;
+  kind?: AskKind;
   handled?: { at: number; result: NudgeResult; reason?: string };
 }
 
@@ -99,6 +102,8 @@ export interface SentNudge {
   iid: number;
   reviewer: string;
   sentAt: number;
+  /** Absent means re-review (also on rows from before first-look asks). */
+  kind?: AskKind;
   resolution?: {
     result: NudgeResult | 'confirmed';
     reason?: string;
