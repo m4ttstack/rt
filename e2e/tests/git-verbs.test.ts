@@ -180,11 +180,24 @@ describe("rt git tag", () => {
     expect(after.tags.find((t: any) => t.name === "v0.0.1-test")).toBeUndefined();
   });
 
-  test("create with a flag-like name is rejected by git-core's ref guard", async () => {
+  test("a flag-like token is never accepted as a tag name", async () => {
     const res = await rt(["git", "tag", "create", "-D", "--json"], { home: repo, env: { HOME: home.path } });
     expect(res.exitCode).toBe(1);
-    const out = JSON.parse(res.stdout);
-    expect(out.ok).toBe(false);
-    expect(out.error.length).toBeGreaterThan(0);
+    expect(JSON.parse(res.stdout)).toEqual({
+      ok: false,
+      error: "usage: rt git tag create <name> [--message <m>] [--at <sha>] [--push] [--json]",
+    });
+  });
+
+  test("create with positional extracted correctly when matching flag value", async () => {
+    const created = await rtJson(["git", "tag", "create", "vpin-a", "--message", "vpin-a", "--json"]);
+    expect(created).toEqual({ ok: true, name: "vpin-a", pushed: false });
+    await rtJson(["git", "tag", "delete", "vpin-a", "--json"]);
+  });
+
+  test("create with positional extracted correctly after flag value", async () => {
+    const created = await rtJson(["git", "tag", "create", "--message", "hello", "vpin-b", "--json"]);
+    expect(created).toEqual({ ok: true, name: "vpin-b", pushed: false });
+    await rtJson(["git", "tag", "delete", "vpin-b", "--json"]);
   });
 });
