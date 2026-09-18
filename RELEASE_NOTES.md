@@ -10,7 +10,8 @@ the polish release. Everything v2.9.0 shipped, plus the app-layer refresh it sho
 ### Bundled apps, refreshed
 
 - board 0.1.4: the board side of the gate seam ships (gates converge on daemon gate:ask, GateForm renders option descriptions and question context) plus peer-board asks over the switchboard (#324)
-- chat 0.1.1, console 0.1.1, deck 1.0.2: current app-layer builds; the bundle no longer pins the September 7 fold-in era
+- chat 0.1.1, console 0.1.1, deck 1.0.3: current app-layer builds; the bundle no longer pins the September 7 fold-in era
+- deck logs its own serve output to `~/.mattstack/deck/logs/agent.log`, so a boot failure finally leaves evidence (deck-v1.0.3)
 - fast-browser 0.1.3: reads Claude plugin state via `claude plugin list --json` (the old text parser broke on the new synced-plugins section) and knows the current extension id (#313)
 
 ### Gates and daemon
