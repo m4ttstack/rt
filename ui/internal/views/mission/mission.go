@@ -694,8 +694,11 @@ func (m *Mission) diffHit(diffX, y int) hit {
 
 // modalHitTest walks modalBoxLines' own line sequence (modal.go) in
 // lockstep -- filter line, top rule, each match row (with its own leading
-// group-boundary rule), the action row's rule and line -- to map a frame
+// group header when the zone labels groups), the action row's rule and
+// line, the closing rule and this foldout's own keybar -- to map a frame
 // coordinate to a match index without modal.go itself ever recording a zone.
+// The trailing rule and keybar carry no click target, so nothing past the
+// action row needs its own cursor bookkeeping: nothing left can match li.
 func (m *Mission) modalHitTest(x, y int) hit {
 	ms := m.modal
 	inner := modalWidth(ms)
@@ -731,7 +734,7 @@ func (m *Mission) modalHitTest(x, y int) hit {
 		return hit{} // "no matches" line
 	}
 	for i := range ms.matches {
-		if modalGroupBoundary(ms, i) {
+		if text := modalHeaderBefore(ms, i); text != "" {
 			if li == cursor {
 				return hit{}
 			}

@@ -51,6 +51,7 @@ type modalActionRow struct {
 type modalState struct {
 	zone         zoneID
 	intent       string
+	placeholder  string
 	buildPayload func(value string) json.RawMessage
 	rows         []modalRow
 	action       *modalActionRow
@@ -66,8 +67,8 @@ type modalState struct {
 	hoverAction bool
 }
 
-func newModal(zone zoneID, intent string, buildPayload func(string) json.RawMessage, rows []modalRow, action *modalActionRow) *modalState {
-	ms := &modalState{zone: zone, intent: intent, buildPayload: buildPayload, rows: rows, action: action, hoverRow: -1}
+func newModal(zone zoneID, intent, placeholder string, buildPayload func(string) json.RawMessage, rows []modalRow, action *modalActionRow) *modalState {
+	ms := &modalState{zone: zone, intent: intent, placeholder: placeholder, buildPayload: buildPayload, rows: rows, action: action, hoverRow: -1}
 	ms.refilter()
 	return ms
 }
@@ -107,7 +108,7 @@ func newRepoModal(m Model) *modalState {
 			group: r.Group, current: r.Current, selectable: true, value: r.ID,
 		}
 	}
-	return newModal(zoneRepo, "mission:repo", func(v string) json.RawMessage {
+	return newModal(zoneRepo, "mission:repo", "filter repos", func(v string) json.RawMessage {
 		return mustPayload(repoPayload{Repo: v})
 	}, rows, nil)
 }
@@ -115,14 +116,19 @@ func newRepoModal(m Model) *modalState {
 // newBranchModal lists every branch, grouped recent/other/guarded. A branch
 // is guarded exactly when GuardedBy is non-empty (the Group label is a
 // display hint the driver derives from the same fact, not the source of
-// truth for it).
+// truth for it). A guarded row's own GuardedBy detail never renders on the
+// row itself: the group header carries the reason instead (modalGroupHeaderText),
+// so the row shows only its name and, on the right, the lock (modalRowLine).
 func newBranchModal(m Model) *modalState {
 	rows := make([]modalRow, len(m.Branches))
 	for i, b := range m.Branches {
 		guarded := b.GuardedBy != ""
-		meta := b.GuardedBy
+		badge := ""
+		if !guarded {
+			badge = renderAheadBehind(b.Ahead, b.Behind)
+		}
 		rows[i] = modalRow{
-			text: b.Name, label: b.Name, meta: meta, badge: renderAheadBehind(b.Ahead, b.Behind),
+			text: b.Name, label: b.Name, badge: badge,
 			group: b.Group, current: b.Current, selectable: !guarded, guarded: guarded, value: b.Name,
 		}
 	}
@@ -130,13 +136,15 @@ func newBranchModal(m Model) *modalState {
 		label:   "New branch from " + m.Current.Branch + "…",
 		payload: mustPayload(checkoutNewPayload{New: true, From: m.Current.Branch}),
 	}
-	return newModal(zoneBranch, "mission:checkout", func(v string) json.RawMessage {
+	return newModal(zoneBranch, "mission:checkout", "filter branches", func(v string) json.RawMessage {
 		return mustPayload(checkoutPayload{Branch: v})
 	}, rows, action)
 }
 
 // newWorktreeModal lists every worktree; on-deck ones (provisioned but not
-// checked out) carry a "ready" meta alongside their branch.
+// checked out) carry a "ready" meta alongside their branch. Its filter
+// placeholder names the current repo, since a worktree only ever belongs to
+// one -- mirroring its board.
 func newWorktreeModal(m Model) *modalState {
 	rows := make([]modalRow, len(m.Worktrees))
 	for i, w := range m.Worktrees {
@@ -157,7 +165,11 @@ func newWorktreeModal(m Model) *modalState {
 		label:   "Provision new worktree…",
 		payload: mustPayload(worktreeNewPayload{New: true}),
 	}
-	return newModal(zoneWorktree, "mission:worktree", func(v string) json.RawMessage {
+	repoLabel := m.Current.RepoLabel
+	if repoLabel == "" {
+		repoLabel = m.Current.Repo
+	}
+	return newModal(zoneWorktree, "mission:worktree", "filter worktrees · "+repoLabel, func(v string) json.RawMessage {
 		return mustPayload(worktreePayload{Path: v})
 	}, rows, action)
 }
@@ -336,6 +348,8 @@ func (m *Mission) modalKey(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "down":
 		ms.moveCursor(1)
 		return m, nil
+	case "ctrl+n":
+		return m.selectModalAction()
 	case "enter":
 		return m.selectModalRow()
 	case "backspace":
@@ -355,15 +369,27 @@ func (m *Mission) modalKey(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 func (m *Mission) selectModalRow() (tea.Model, tea.Cmd) {
 	ms := m.modal
 	if ms.onActionSlot() {
-		intent, payload := ms.intent, ms.action.payload
-		m.closeModal()
-		return m, m.em.Emit(protocol.Intent{Name: intent, Payload: payload})
+		return m.selectModalAction()
 	}
 	row, ok := ms.selectedRow()
 	if !ok {
 		return m, nil
 	}
 	intent, payload := ms.intent, ms.buildPayload(row.value)
+	m.closeModal()
+	return m, m.em.Emit(protocol.Intent{Name: intent, Payload: payload})
+}
+
+// selectModalAction fires the trailing action row's fixed payload
+// regardless of where the cursor sits -- ctrl-n's own path, and the one
+// enter takes when the cursor already sits on the action slot. A repo
+// modal has no action row, so ctrl-n there is simply a no-op.
+func (m *Mission) selectModalAction() (tea.Model, tea.Cmd) {
+	ms := m.modal
+	if ms.action == nil {
+		return m, nil
+	}
+	intent, payload := ms.intent, ms.action.payload
 	m.closeModal()
 	return m, m.em.Emit(protocol.Intent{Name: intent, Payload: payload})
 }
@@ -393,23 +419,30 @@ func modalWidth(ms *modalState) int {
 		if r.meta != "" {
 			w += 1 + lipgloss.Width(r.meta)
 		}
-		if b := lipgloss.Width(r.badge); b > 0 {
-			w += 1 + b
+		// A guarded row's real right-edge content is the lock glyph, not its
+		// (empty) badge field -- see modalRowLine's own guarded override.
+		badgeW := lipgloss.Width(r.badge)
+		if r.guarded {
+			badgeW = lipgloss.Width(theme.GlyphLock)
+		}
+		if badgeW > 0 {
+			w += 1 + badgeW
 		}
 		consider(w)
 	}
 	if ms.action != nil {
 		consider(2 + lipgloss.Width(ms.action.label)) // bar + gap
 	}
+	consider(1 + lipgloss.Width(modalKeybarPlainText(ms.zone)))
 	if need > modalContentMax {
 		need = modalContentMax
 	}
 	return need
 }
 
-func modalFilterLine(query string, width int) string {
+func modalFilterLine(query, placeholder string, width int) string {
 	bg := lipgloss.NewStyle().Background(theme.Surface)
-	text := bg.Foreground(theme.Faint).Render("filter…")
+	text := bg.Foreground(theme.Faint).Render(placeholder)
 	if query != "" {
 		text = bg.Foreground(theme.Text).Render(query)
 	}
@@ -437,11 +470,12 @@ func modalJustify(bg lipgloss.Style, width int, left, right string) string {
 	return left + bg.Render(strings.Repeat(" ", avail)) + right
 }
 
-// modalRowLine paints one row: a cursor bar, a status glyph (current dot,
-// guard lock, or blank), the label and meta, and the badge pinned right.
-// hover paints HoverBg, but only when cursor is false -- the keyboard
-// cursor's SelBg always wins, mirroring the base list's own row/cursor
-// split (changes.go's renderChangeRow).
+// modalRowLine paints one row: a cursor bar, a status glyph (current dot or
+// blank), the label and meta, and the badge pinned right -- a guarded row's
+// badge slot is the lock instead of any ahead/behind summary, Dimmer like
+// the rest of its (name-only) content. hover paints HoverBg, but only when
+// cursor is false -- the keyboard cursor's SelBg always wins, mirroring the
+// base list's own row/cursor split (changes.go's renderChangeRow).
 func modalRowLine(r modalRow, width int, cursor, hover bool) string {
 	bg := lipgloss.NewStyle().Background(theme.Surface)
 	switch {
@@ -455,10 +489,7 @@ func modalRowLine(r modalRow, width int, cursor, hover bool) string {
 		bar, barColor = theme.GlyphBar, theme.Pink
 	}
 	status, statusColor := " ", theme.Text
-	switch {
-	case r.guarded:
-		status, statusColor = theme.GlyphLock, theme.Dimmer
-	case r.current:
+	if r.current {
 		status, statusColor = theme.GlyphOn, theme.Mint
 	}
 	textColor := theme.Text
@@ -471,6 +502,9 @@ func modalRowLine(r modalRow, width int, cursor, hover bool) string {
 		meta = bg.Foreground(theme.Dimmer).Render(" " + r.meta)
 	}
 	badge := bg.Render(r.badge)
+	if r.guarded {
+		badge = bg.Foreground(theme.Dimmer).Render(theme.GlyphLock)
+	}
 
 	fixed := 1 + 1 + 1 + lipgloss.Width(meta) + lipgloss.Width(badge)
 	if lipgloss.Width(badge) > 0 {
@@ -516,21 +550,109 @@ func modalGroupBoundary(ms *modalState, i int) bool {
 	return cur != prev
 }
 
+// modalGroupHeaderText resolves a group's header label for the repo and
+// branch modals (the worktree modal never groups -- see modalHeaderBefore).
+// A branch's guarded group always renders the fixed reason banner: each
+// row's own GuardedBy detail is dropped entirely (newBranchModal never
+// copies it onto the row), not merely hidden behind this label. Every other
+// group -- "recent", "other", a repo's own Group value -- renders as-is.
+func modalGroupHeaderText(zone zoneID, group string) string {
+	if zone == zoneBranch && group == "guarded" {
+		return "guarded · checked out in another worktree"
+	}
+	return group
+}
+
+// modalHeaderBefore reports the header text that belongs immediately before
+// match i, or "" for none. The repo and branch modals label every group,
+// including the first (GroupContiguous orders "recent" first in practice,
+// and it still needs its own header); the worktree modal carries no Group
+// data and never renders one.
+func modalHeaderBefore(ms *modalState, i int) string {
+	if ms.zone != zoneRepo && ms.zone != zoneBranch {
+		return ""
+	}
+	if i != 0 && !modalGroupBoundary(ms, i) {
+		return ""
+	}
+	return modalGroupHeaderText(ms.zone, ms.rows[ms.matches[i].Index].group)
+}
+
+// modalGroupHeaderLine paints a group boundary's label: Dimmer text on the
+// box's own Surface background, replacing the plain rule a boundary used to
+// draw -- the boards' own group-label convention.
+func modalGroupHeaderLine(text string, width int) string {
+	bg := lipgloss.NewStyle().Background(theme.Surface)
+	return bg.Width(width).Render(bg.Foreground(theme.Dimmer).Render(" " + text))
+}
+
+// modalKeybarPairs lists a zone's wired key/label pairs, in display order:
+// only what this modal actually dispatches, never the boards' unwired
+// ctrl-f/ctrl-w/ctrl-d.
+func modalKeybarPairs(zone zoneID) [][2]string {
+	switch zone {
+	case zoneRepo:
+		return [][2]string{{"enter", "open"}, {"esc", "close"}}
+	case zoneBranch:
+		return [][2]string{{"enter", "checkout"}, {"ctrl-n", "new branch"}, {"esc", "close"}}
+	case zoneWorktree:
+		return [][2]string{{"enter", "switch"}, {"ctrl-n", "provision"}, {"esc", "close"}}
+	default:
+		return nil
+	}
+}
+
+func modalKeybarPlainText(zone zoneID) string {
+	pairs := modalKeybarPairs(zone)
+	parts := make([]string, len(pairs))
+	for i, p := range pairs {
+		parts[i] = p[0] + " " + p[1]
+	}
+	return strings.Join(parts, " · ")
+}
+
+// modalKeybarLine is the foldout's own keybar, inside the border: the same
+// key/label/dot grammar the main keybar uses (changes.go's renderKeybar),
+// painted on the box's own Surface background.
+func modalKeybarLine(zone zoneID, width int) string {
+	bg := lipgloss.NewStyle().Background(theme.Surface)
+	dot := bg.Foreground(theme.Dim).Render(" · ")
+	key := func(k, label string) string {
+		return bg.Foreground(theme.KeybarKey).Bold(true).Render(k) + bg.Foreground(theme.KeybarLabel).Render(" "+label)
+	}
+	pairs := modalKeybarPairs(zone)
+	parts := make([]string, len(pairs))
+	for i, p := range pairs {
+		parts[i] = key(p[0], p[1])
+	}
+	left := bg.Render(" ") + clip(strings.Join(parts, dot), width-1)
+	return bg.Width(width).Render(left)
+}
+
+// modalBoxLines lays out the foldout's full content: the filter line, the
+// ranked rows (each labeled group's header in place of the rule a boundary
+// used to draw), the action row when the kind has one, and -- always, even
+// with nothing above it to show -- the closing rule and this foldout's own
+// keybar.
 func modalBoxLines(ms *modalState, width int) []string {
-	lines := []string{modalFilterLine(ms.query, width), modalRuleLine(width)}
-	if len(ms.matches) == 0 && ms.action == nil {
-		return append(lines, modalNoMatchLine(width))
-	}
-	for i := range ms.matches {
-		if modalGroupBoundary(ms, i) {
-			lines = append(lines, modalRuleLine(width))
+	lines := []string{modalFilterLine(ms.query, ms.placeholder, width), modalRuleLine(width)}
+	switch {
+	case len(ms.matches) == 0 && ms.action == nil:
+		lines = append(lines, modalNoMatchLine(width))
+	default:
+		for i := range ms.matches {
+			if text := modalHeaderBefore(ms, i); text != "" {
+				lines = append(lines, modalGroupHeaderLine(text, width))
+			}
+			lines = append(lines, modalRowLine(ms.rows[ms.matches[i].Index], width, i == ms.cursor, i == ms.hoverRow))
 		}
-		lines = append(lines, modalRowLine(ms.rows[ms.matches[i].Index], width, i == ms.cursor, i == ms.hoverRow))
+		if ms.action != nil {
+			lines = append(lines, modalRuleLine(width))
+			lines = append(lines, modalActionLine(ms.action, width, ms.onActionSlot(), ms.hoverAction))
+		}
 	}
-	if ms.action != nil {
-		lines = append(lines, modalRuleLine(width))
-		lines = append(lines, modalActionLine(ms.action, width, ms.onActionSlot(), ms.hoverAction))
-	}
+	lines = append(lines, modalRuleLine(width))
+	lines = append(lines, modalKeybarLine(ms.zone, width))
 	return lines
 }
 

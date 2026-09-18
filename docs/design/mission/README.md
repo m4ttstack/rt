@@ -63,3 +63,28 @@ No drop shadows (modal lift = Surface token + Panel border + parent dim),
 rounded corners only as box-drawing glyphs, 1-cell scrollbar thumb, fixed
 cell line-height. Everything else on the boards is the contract: exact
 tokens, glyphs, spacing rhythm, keybar grammar, and every interaction state.
+
+## Ratified at the build's visual pass (2026-09-18)
+
+Deviations the terminal build keeps deliberately; the boards show the
+pre-ratification drawing:
+
+- Top-bar segment icons sit on the value row (a glyph cell before the
+  value) instead of the boards' icon centered across both rows; the state
+  glyph family is the circle set (◉ current, ○ unchecked, ◪ mixed) rather
+  than the boards' squares, matching rt's picker language. The master row
+  uses the same ◪ for its mixed state.
+- The undo strip is one line ("Committed <when> · <summary>" clipped to the
+  sidebar, Undo chip right) instead of the boards' two-line strip.
+- The main keybar lists the built action set (adds "enter diff" and
+  "u undo", names the adaptive segment key "f action", omits "? help").
+- The commit button renders the disabled treatment whenever the wire says
+  it cannot commit (empty summary); the boards draw the enabled pink for
+  visual reference.
+- The diff gutter's hover-preview bar is the exact 0.5 Pink-to-Bg blend
+  (#8A3E60) via theme.GutterHoverBar; the boards' #8A4560 was hand-picked.
+- Modal keybars list only wired keys: the boards' "ctrl-f fetch all"
+  (repo), "ctrl-w worktrees" (repo), and "ctrl-d dispose" (worktree) stay
+  off until those actions exist.
+- A diverged current branch shows both count pills in the branch modal;
+  the board drew only the ahead pill for the current row.

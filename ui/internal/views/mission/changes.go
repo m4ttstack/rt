@@ -171,10 +171,14 @@ func renderStashStrip(count, width int) string {
 
 // renderCommitBox paints the amending banner (when locally toggled on), the
 // summary box, the description box, and the commit button, top to bottom.
+// Amending overrides the button's own label to "Amend last commit" -- a
+// display-only substitution; canCommit still gates it exactly as the wire
+// model says, amending or not.
 func renderCommitBox(width int, summaryView, descriptionView string, amending bool, buttonLabel string, canCommit bool) string {
 	var lines []string
 	if amending {
 		lines = append(lines, fg(theme.Peach).Render("Amending last commit · a stops"))
+		buttonLabel = "Amend last commit"
 	}
 	lines = append(lines, boxLine(width, summaryView))
 	lines = append(lines, boxBlock(width, []string{descriptionView, ""}))

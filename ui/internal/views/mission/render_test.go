@@ -187,6 +187,33 @@ func TestRenderCommitButtonDisabledWearsPanelBg(t *testing.T) {
 	}
 }
 
+// TestRenderCommitBoxAmendingOverridesButtonLabel pins item 5: amending
+// swaps the button's own text for "Amend last commit" (a display-only
+// override -- CanCommit still gates enablement exactly as the wire model
+// says, amending or not), while a non-amending box keeps the wire label.
+func TestRenderCommitBoxAmendingOverridesButtonLabel(t *testing.T) {
+	const wireLabel = "Commit 2 files to main"
+	amending := renderCommitBox(sidebarWidth, "", "", true, wireLabel, false)
+	amendingPlain := ansi.Strip(amending)
+	if !strings.Contains(amendingPlain, "Amend last commit") {
+		t.Fatalf("amending commit box should show \"Amend last commit\":\n%s", amendingPlain)
+	}
+	if strings.Contains(amendingPlain, wireLabel) {
+		t.Fatalf("amending commit box must not still show the wire label:\n%s", amendingPlain)
+	}
+	if !strings.Contains(amending, bgSGR(theme.Panel)) {
+		t.Fatalf("amending with CanCommit false should still wear Panel (disabled): %q", amending)
+	}
+
+	notAmending := ansi.Strip(renderCommitBox(sidebarWidth, "", "", false, wireLabel, true))
+	if !strings.Contains(notAmending, wireLabel) {
+		t.Fatalf("non-amending commit box should keep the wire label:\n%s", notAmending)
+	}
+	if strings.Contains(notAmending, "Amend last commit") {
+		t.Fatalf("non-amending commit box must not show the amend override:\n%s", notAmending)
+	}
+}
+
 func TestRenderUndoStripAppearsWithFixtureModel(t *testing.T) {
 	out := renderUndoStrip(LastCommit{Summary: "fix parser", When: "2 minutes ago", Undoable: true}, sidebarWidth)
 	for _, want := range []string{"Committed 2 minutes ago", "fix parser", "Undo"} {
@@ -380,6 +407,168 @@ func TestModalGuardedBranchRowIsDimmerWithLockGlyph(t *testing.T) {
 	out := m.View().Content
 	if !strings.Contains(out, fgSGR(theme.Dimmer)+"m"+theme.GlyphLock) {
 		t.Fatalf("guarded row should show the lock glyph in Dimmer:\n%s", out)
+	}
+}
+
+// TestModalGuardedBranchRowNameOnlyReasonMovedToHeader pins the item-3
+// reshuffle: the row itself drops its own inline GuardedBy text (that detail
+// now lives only in the group header, item 1), and its rendered line has the
+// lock glyph positioned after the label rather than in the leading status
+// column a current-row dot would occupy.
+func TestModalGuardedBranchRowNameOnlyReasonMovedToHeader(t *testing.T) {
+	m := newTestMission()
+	m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
+	out := ansi.Strip(m.View().Content)
+	if strings.Contains(out, "checked out in worktree frodo") {
+		t.Fatalf("the row-level guard reason should have moved to the group header, not stayed inline:\n%s", out)
+	}
+	nameLine := ""
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, "rt-190-picker-polish") {
+			nameLine = line
+			break
+		}
+	}
+	if nameLine == "" {
+		t.Fatalf("guarded row name missing from the modal:\n%s", out)
+	}
+	nameIdx := strings.Index(nameLine, "rt-190-picker-polish")
+	lockIdx := strings.Index(nameLine, theme.GlyphLock)
+	if lockIdx == -1 || lockIdx < nameIdx {
+		t.Fatalf("lock glyph should trail the branch name (right edge, badge slot): %q", nameLine)
+	}
+}
+
+// TestModalGroupHeadersLabelEveryGroupInBranchAndRepoModals pins item 1: a
+// Dimmer header line names each group -- "recent" (present even though it is
+// the first group GroupContiguous orders), the fixed guarded-reason banner
+// (never a row's own specific GuardedBy text), and a repo's own Group value.
+func TestModalGroupHeadersLabelEveryGroupInBranchAndRepoModals(t *testing.T) {
+	m := newTestMission()
+	m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
+	branchOut := m.View().Content
+	for _, want := range []string{"recent", "other", "guarded · checked out in another worktree"} {
+		if !strings.Contains(ansi.Strip(branchOut), want) {
+			t.Fatalf("branch modal missing group header %q:\n%s", want, branchOut)
+		}
+	}
+	// "recent" is the first group GroupContiguous orders (it holds the
+	// current branch); pinning its own header line's color -- not just
+	// Dimmer's presence anywhere in the frame -- confirms the FIRST group
+	// gets a header too, not only later boundaries. The composited frame
+	// carries the sidebar's own content to the left of the modal on this
+	// same row, so the header is found by its "│ recent" border-plus-text
+	// shape (modalGroupHeaderLine's own leading space, right after the
+	// box's left border), not by the whole line's trimmed text.
+	found := false
+	for _, line := range strings.Split(branchOut, "\n") {
+		plain := ansi.Strip(line)
+		if !strings.Contains(plain, "│ recent") {
+			continue
+		}
+		found = true
+		if !strings.Contains(line, fgSGR(theme.Dimmer)) {
+			t.Fatalf("the recent group's own header should wear Dimmer: %q", line)
+		}
+	}
+	if !found {
+		t.Fatalf("recent group header line not found:\n%s", branchOut)
+	}
+
+	m2 := newTestMission()
+	m2.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
+	repoOut := ansi.Strip(m2.View().Content)
+	if !strings.Contains(repoOut, "recent") {
+		t.Fatalf("repo modal missing its own Group value as a header:\n%s", repoOut)
+	}
+}
+
+// TestModalWorktreeStaysFlatWithNoGroupHeaders pins item 1's other half: the
+// worktree modal never groups, so it must show neither a group header nor
+// the fixed guarded-reason banner text.
+func TestModalWorktreeStaysFlatWithNoGroupHeaders(t *testing.T) {
+	m := newTestMission()
+	m.Update(tea.KeyPressMsg{Code: 'w', Text: "w"})
+	out := ansi.Strip(m.View().Content)
+	if strings.Contains(out, "guarded · checked out") {
+		t.Fatalf("worktree modal must never show a group header:\n%s", out)
+	}
+}
+
+// TestModalFilterPlaceholdersPerModal pins item 4: each foldout's empty-query
+// placeholder names itself, and the worktree one appends the current repo.
+func TestModalFilterPlaceholdersPerModal(t *testing.T) {
+	cases := []struct {
+		key  rune
+		want string
+	}{
+		{'r', "filter repos"},
+		{'b', "filter branches"},
+		{'w', "filter worktrees · repo-tools"},
+	}
+	for _, c := range cases {
+		m := newTestMission()
+		m.Update(tea.KeyPressMsg{Code: c.key, Text: string(c.key)})
+		out := ansi.Strip(m.View().Content)
+		if !strings.Contains(out, c.want) {
+			t.Fatalf("%c modal missing placeholder %q:\n%s", c.key, c.want, out)
+		}
+	}
+}
+
+// TestModalKeybarListsOnlyWiredKeysPerModal pins item 2: each foldout's own
+// keybar row, inside the border, names exactly its wired keys and never the
+// boards' unwired ctrl-f/ctrl-w/ctrl-d.
+func TestModalKeybarListsOnlyWiredKeysPerModal(t *testing.T) {
+	cases := []struct {
+		key  rune
+		want string
+	}{
+		{'r', "enter open · esc close"},
+		{'b', "enter checkout · ctrl-n new branch · esc close"},
+		{'w', "enter switch · ctrl-n provision · esc close"},
+	}
+	for _, c := range cases {
+		m := newTestMission()
+		m.Update(tea.KeyPressMsg{Code: c.key, Text: string(c.key)})
+		out := ansi.Strip(m.View().Content)
+		if !strings.Contains(out, c.want) {
+			t.Fatalf("%c modal keybar: want %q in:\n%s", c.key, c.want, out)
+		}
+		for _, banned := range []string{"ctrl-f", "ctrl-w", "ctrl-d"} {
+			if strings.Contains(out, banned) {
+				t.Fatalf("%c modal keybar must never show the unwired %q:\n%s", c.key, banned, out)
+			}
+		}
+	}
+}
+
+// TestModalKeybarWearsMainKeybarGrammar pins the color half of item 2: the
+// key glyph wears KeybarKey, bold, the label KeybarLabel -- the same tokens
+// renderKeybar (changes.go) uses for the main bar. Bold combines into one
+// SGR run alongside the foreground and (here, unlike the main bar) an
+// explicit Surface background, so this checks for bold's "1" parameter and
+// the KeybarKey color as two members of that run rather than assuming which
+// order lipgloss lists them in.
+func TestModalKeybarWearsMainKeybarGrammar(t *testing.T) {
+	m := newTestMission()
+	m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
+	out := m.View().Content
+	keybarLine := ""
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(ansi.Strip(line), "enter open") {
+			keybarLine = line
+			break
+		}
+	}
+	if keybarLine == "" {
+		t.Fatalf("modal keybar line not found:\n%s", out)
+	}
+	if !strings.Contains(keybarLine, fgSGR(theme.KeybarKey)) || !strings.Contains(keybarLine, ";1m") {
+		t.Fatalf("modal keybar key should wear bold KeybarKey: %q", keybarLine)
+	}
+	if !strings.Contains(keybarLine, fgSGR(theme.KeybarLabel)) {
+		t.Fatalf("modal keybar label should wear KeybarLabel: %q", keybarLine)
 	}
 }
 

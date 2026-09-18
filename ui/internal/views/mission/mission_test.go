@@ -79,6 +79,7 @@ const (
 	keyEnter     = "\r"
 	keyEsc       = "\x1b"
 	keyCtrlEnter = "\x1b[13;5u" // Kitty CSI-u: codepoint 13 (Enter) with modifier 5 (1 + ctrl's bit 4)
+	keyCtrlN     = "\x1b[110;5u" // Kitty CSI-u: codepoint 110 ('n') with modifier 5 (1 + ctrl's bit 4)
 )
 
 // openMission starts a mission session and opens it against model, a
@@ -394,6 +395,53 @@ func TestWorktreeActionRowEmitsWorktreeNew(t *testing.T) {
 	s.Wait()
 }
 
+// TestBranchModalCtrlNEmitsCheckoutNewFromCurrent fires the action row's
+// payload straight from ctrl-n, without navigating the cursor there first --
+// the keyboard shortcut item 2 wires alongside the action row itself.
+func TestBranchModalCtrlNEmitsCheckoutNewFromCurrent(t *testing.T) {
+	s := s5open(t)
+	s.Type("b")
+	s.WaitForPaint("New branch from")
+	s.Type(keyCtrlN)
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:checkout"`) || !strings.Contains(l, `"new":true`) ||
+		!strings.Contains(l, `"from":"rt-191-mission-tui"`) {
+		t.Fatalf("branch ctrl-n intent: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+// TestWorktreeModalCtrlNEmitsWorktreeNew mirrors the branch modal's ctrl-n
+// case for "Provision new worktree…".
+func TestWorktreeModalCtrlNEmitsWorktreeNew(t *testing.T) {
+	s := s5open(t)
+	s.Type("w")
+	s.WaitForPaint("Provision new worktree")
+	s.Type(keyCtrlN)
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:worktree"`) || !strings.Contains(l, `"new":true`) {
+		t.Fatalf("worktree ctrl-n intent: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+// TestRepoModalCtrlNDoesNothing pins the repo modal's own exclusion: it has
+// no action row (a new repo comes from cloning, not from this foldout), so
+// ctrl-n there must not emit.
+func TestRepoModalCtrlNDoesNothing(t *testing.T) {
+	s := s5open(t)
+	s.Type("r")
+	s.WaitForPaint("chat")
+	s.Type(keyCtrlN)
+	if l, ok := s.ReadLine(300 * time.Millisecond); ok {
+		t.Fatalf("repo modal ctrl-n must not emit: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
 const detachedModel = `{"current":{"repo":"repo-tools","branch":"a1b2c3d","detached":true},` +
 	`"branches":[{"name":"main","current":false,"ahead":0,"behind":0,"guardedBy":"","group":"other"}],` +
 	`"changes":[],"changedTotal":0,"stagedTotal":0,"filter":"",` +
@@ -523,9 +571,10 @@ func TestMouseClickRepoSegmentOpensModalThenRowClickEmitsRepoIntent(t *testing.T
 	s := s5open(t)
 	s.Type(sgrClick(0, 5, 0))
 	s.WaitForPaint("chat")
-	// The repo modal is anchored at x=0 (segmentOrigin's zoneRepo case);
-	// its first content row sits after the filter line and the top rule.
-	s.Type(sgrClick(0, 5, 5))
+	// The repo modal is anchored at x=0 (segmentOrigin's zoneRepo case); its
+	// first content row sits after the filter line, the top rule, and the
+	// fixture's own "recent" group header (both repo rows share that group).
+	s.Type(sgrClick(0, 5, 6))
 	l, ok := s.ReadLine(2 * time.Second)
 	if !ok || !strings.Contains(l, `"name":"mission:repo"`) || !strings.Contains(l, `"repo":"repo-tools"`) {
 		t.Fatalf("repo modal row click intent: %q", l)
