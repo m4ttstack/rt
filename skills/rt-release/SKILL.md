@@ -100,9 +100,28 @@ left as-is or reduced to a pointer here.
      Same lockstep policy as 2b; a stale hold is the user's recorded
      decision.
    - **Tool rows** (bun, sparkle, age, zstd, git-lfs, gh, glab, jq,
-     node, sops, cloudflared, portless): hand-pinned; no per-release
-     sweep required, but a bump PR pending on main at release time rides
-     or holds by the user's call, never silently.
+     node, sops, cloudflared, portless): hand-pinned; Renovate does NOT
+     watch deps.lock, so drift is invisible until someone sweeps. The
+     sweep (first run 2026-09-18): each row's `url` names its upstream,
+     so compare pin against latest per source: GitHub-released tools via
+     `gh api repos/<owner>/<repo>/releases/latest --jq .tag_name`
+     (jqlang/jq, FiloSottile/age, facebook/zstd, git-lfs/git-lfs,
+     getsops/sops, cli/cli, oven-sh/bun, cloudflare/cloudflared,
+     sparkle-project/Sparkle); glab via the gitlab-org/cli releases API;
+     node against the newest LTS in nodejs.org/dist/index.json; portless
+     via `npm view portless version`. A bump PR pending on main at
+     release time rides or holds by the user's call, never silently, and
+     a sparkle bump never rides another release's tag: it changes the
+     updater itself and gets its own tested release.
+   - **rt-client**: `npm view @mattstack/rt-client version` must equal
+     `packages/rt-client/package.json`; an unpublished source bump means
+     consumers install stale (publish is release-class, from main only).
+   - **NOT vendored, never stale here**: herdr and claude install via
+     their own live installers (the `VENDOR_INSTALLERS` allowlist in
+     `lib/setup/tools-install.ts`: herdr.dev/install.sh,
+     claude.ai/install.sh), so they are current at install time by
+     construction and update through their own channels; mattstack.dev
+     reads releases/latest live and needs nothing per release.
    - **Chrome extension**: the published extension is pinned by
      `runtime-lock.json` in m4ttstack/fast-browser (extension id,
      version, and the fork release it was built from). It is current
