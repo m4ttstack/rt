@@ -171,13 +171,13 @@ func renderStashStrip(count, width int) string {
 
 // renderCommitBox paints the amending banner (when locally toggled on), the
 // summary box, the description box, and the commit button, top to bottom.
-func renderCommitBox(width int, summaryView, descView string, amending bool, buttonLabel string, canCommit bool) string {
+func renderCommitBox(width int, summaryView, descriptionView string, amending bool, buttonLabel string, canCommit bool) string {
 	var lines []string
 	if amending {
 		lines = append(lines, fg(theme.Peach).Render("Amending last commit · a stops"))
 	}
 	lines = append(lines, boxLine(width, summaryView))
-	lines = append(lines, boxBlock(width, []string{descView, ""}))
+	lines = append(lines, boxBlock(width, []string{descriptionView, ""}))
 	lines = append(lines, renderCommitButton(width, buttonLabel, canCommit))
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }

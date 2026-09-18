@@ -3054,7 +3054,7 @@
             {
               "type": "frame",
               "id": "CmbfI",
-              "name": "R claimview-tools",
+              "name": "R acme-tools",
               "width": "fill_container",
               "height": 26,
               "gap": 8,
@@ -3079,7 +3079,7 @@
                   "id": "eBspX",
                   "name": "Name",
                   "fill": "$text-soft",
-                  "content": "claimview-tools",
+                  "content": "acme-tools",
                   "fontFamily": "$mono",
                   "fontSize": 12,
                   "fontWeight": "normal"

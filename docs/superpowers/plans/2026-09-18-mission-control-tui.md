@@ -280,7 +280,7 @@ type Model struct {
 - One modal engine, three configs. Composition: parent view dims (re-render body through a dim filter: replace fg colors with Dim/Dimmer via lipgloss style, the picker's parent-dim convention), modal Surface + Panel border anchored under its segment (x from segment origin, clamped).
 - Rows ranked by `ui/internal/views/picker`'s `match.Rank` (import the package; it is the sanctioned headless matcher), grouped contiguously (`GroupContiguous`): repos by Group; branches recent/other/guarded (guarded rows Dimmer + lock glyph + never selectable as checkout targets); worktrees with current ◉ Mint, on-deck rows `ready` Dimmer.
 - Badges per boards (●n Peach, n↓ Mint, n↑ Cyan, ✓ Mint clean).
-- Action rows (Lav, ActionHighlight bg): branch `New branch from <current>…` emits `mission:checkout {new:true, from}` (driver v1: Notice "use rt worktree provision"; creation lands v2 — parity note stays on the board); worktree `Provision new worktree…` same pattern; repo modal has no action row.
+- Action rows (Lav, ActionHighlight bg): branch `New branch from <current>…` emits `mission:checkout {new:true, from}` (driver v1: Notice "use rt worktree provision"; creation lands v2; parity note stays on the board); worktree `Provision new worktree…` same pattern; repo modal has no action row.
 - Keys: type-to-filter, up/down, enter emits (`mission:repo {repo}` / `mission:checkout {branch}` / `mission:worktree {path}`), esc closes; modal keybar per boards.
 - Detached HEAD: branch segment cannot open (bell Notice).
 
