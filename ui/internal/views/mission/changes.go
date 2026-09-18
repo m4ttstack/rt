@@ -76,6 +76,16 @@ func renderMasterRow(changedTotal, stagedTotal, width int) string {
 	return lipgloss.NewStyle().Width(width).Render(fg(theme.Dim).Render(glyph + "  " + text))
 }
 
+// changeRowCheckboxSpan is the column range renderChangeRow's checkbox glyph
+// occupies, in lockstep with its own prefix+glyph layout: mission.go's click
+// routing hit-tests against this instead of re-deriving the row's own
+// column math a second time.
+func changeRowCheckboxSpan(c ChangeRow) (start, end int) {
+	glyph, _ := changeGlyph(c.Include)
+	start = lipgloss.Width("  ")
+	return start, start + lipgloss.Width(glyph)
+}
+
 // changeGlyph maps a row's Include to its checkbox glyph and color: all and
 // partial both read as "something is staged here" (PinkSoft), none fades to
 // Faint so an untouched row recedes behind the ones that matter.
@@ -114,13 +124,18 @@ func statusGlyph(status string) (string, color.Color) {
 // renderChangeRow paints one Changes row: the cursor bar, the tri-state
 // checkbox, the middle-truncated path (a path's filename -- the tail -- is
 // what a user actually needs to see, which an end-truncated path would
-// hide), the partial meta, and the status letter.
-func renderChangeRow(c ChangeRow, width int, cursor bool) string {
+// hide), the partial meta, and the status letter. hover paints HoverBg but
+// only when cursor is false: the keyboard cursor's SelBg always wins, so
+// moving the mouse across the list can never displace it.
+func renderChangeRow(c ChangeRow, width int, cursor, hover bool) string {
 	on := lipgloss.NewStyle()
 	prefix := "  "
-	if cursor {
+	switch {
+	case cursor:
 		on = on.Background(theme.SelBg)
 		prefix = "▌ "
+	case hover:
+		on = on.Background(theme.HoverBg)
 	}
 	glyph, glyphColor := changeGlyph(c.Include)
 	checkbox := on.Foreground(glyphColor).Render(glyph)

@@ -5,6 +5,7 @@ import (
 	"image/color"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -135,7 +136,7 @@ func bgSGR(c color.Color) string {
 }
 
 func TestRenderChangeRowPartialShowsMixedGlyphAndMeta(t *testing.T) {
-	out := renderChangeRow(ChangeRow{Path: "lib/ui/pick.ts", Status: "modified", Include: "partial"}, sidebarWidth, false)
+	out := renderChangeRow(ChangeRow{Path: "lib/ui/pick.ts", Status: "modified", Include: "partial"}, sidebarWidth, false, false)
 	if !strings.Contains(out, "◪") {
 		t.Fatalf("partial row missing the mixed glyph:\n%s", out)
 	}
@@ -145,16 +146,33 @@ func TestRenderChangeRowPartialShowsMixedGlyphAndMeta(t *testing.T) {
 }
 
 func TestRenderChangeRowAllAndNoneGlyphs(t *testing.T) {
-	all := renderChangeRow(ChangeRow{Path: "a.go", Status: "new", Include: "all"}, sidebarWidth, false)
+	all := renderChangeRow(ChangeRow{Path: "a.go", Status: "new", Include: "all"}, sidebarWidth, false, false)
 	if !strings.Contains(all, theme.GlyphOn) {
 		t.Fatalf("all-included row missing %q:\n%s", theme.GlyphOn, all)
 	}
 	if strings.Contains(all, "partial") {
 		t.Fatalf("all-included row must not show partial meta:\n%s", all)
 	}
-	none := renderChangeRow(ChangeRow{Path: "b.go", Status: "deleted", Include: "none"}, sidebarWidth, false)
+	none := renderChangeRow(ChangeRow{Path: "b.go", Status: "deleted", Include: "none"}, sidebarWidth, false, false)
 	if !strings.Contains(none, theme.GlyphStopped) {
 		t.Fatalf("none-included row missing %q:\n%s", theme.GlyphStopped, none)
+	}
+}
+
+// TestRenderChangeRowHoverPaintsHoverBgUnlessCursor pins the mouse board's
+// row/cursor split: a hovered row not under the cursor wears HoverBg, but
+// hover on the cursor row must never displace its own SelBg.
+func TestRenderChangeRowHoverPaintsHoverBgUnlessCursor(t *testing.T) {
+	hovered := renderChangeRow(ChangeRow{Path: "a.go", Status: "modified", Include: "none"}, sidebarWidth, false, true)
+	if !strings.Contains(hovered, bgSGR(theme.HoverBg)) {
+		t.Fatalf("hovered non-cursor row should wear HoverBg:\n%s", hovered)
+	}
+	cursorHovered := renderChangeRow(ChangeRow{Path: "a.go", Status: "modified", Include: "none"}, sidebarWidth, true, true)
+	if strings.Contains(cursorHovered, bgSGR(theme.HoverBg)) {
+		t.Fatalf("hover must never override the cursor row's SelBg:\n%s", cursorHovered)
+	}
+	if !strings.Contains(cursorHovered, bgSGR(theme.SelBg)) {
+		t.Fatalf("cursor row should keep SelBg while hovered:\n%s", cursorHovered)
 	}
 }
 
@@ -189,7 +207,7 @@ func TestRenderKeybarContainsSpaceStage(t *testing.T) {
 }
 
 func TestRenderDiffLineHunkPaintsSurfaceAndLav(t *testing.T) {
-	out := renderDiffLine(DiffModel{}, DiffLine{Kind: "hunk", Text: "@@ -1,3 +1,4 @@"}, 40)
+	out := renderDiffLine(DiffModel{}, DiffLine{Kind: "hunk", Text: "@@ -1,3 +1,4 @@"}, 40, false, false)
 	if !strings.Contains(out, bgSGR(theme.Surface)) {
 		t.Fatalf("hunk line should wear Surface bg: %q", out)
 	}
@@ -202,16 +220,41 @@ func TestRenderDiffLineHunkPaintsSurfaceAndLav(t *testing.T) {
 }
 
 func TestRenderDiffLineSelectedAddShowsPinkBar(t *testing.T) {
-	out := renderDiffLine(DiffModel{}, DiffLine{Kind: "add", Text: "import x", Selected: true, SelIdx: 0}, 40)
+	out := renderDiffLine(DiffModel{}, DiffLine{Kind: "add", Text: "import x", Selected: true, SelIdx: 0}, 40, false, false)
 	if !strings.Contains(out, fgSGR(theme.Pink)+"m"+theme.GlyphBar) {
 		t.Fatalf("selected add line should show a Pink stage bar: %q", out)
 	}
 }
 
 func TestRenderDiffLineUnselectedShowsNoBar(t *testing.T) {
-	out := ansi.Strip(renderDiffLine(DiffModel{}, DiffLine{Kind: "context", Text: "unchanged"}, 40))
+	out := ansi.Strip(renderDiffLine(DiffModel{}, DiffLine{Kind: "context", Text: "unchanged"}, 40, false, false))
 	if strings.Contains(out, theme.GlyphBar) {
 		t.Fatalf("unselected line must not show the stage bar glyph: %q", out)
+	}
+}
+
+// TestRenderDiffLineHoverPaintsRowHoverBg pins the diff pane's own row-hover
+// paint, independent of the gutter-specific bar preview.
+func TestRenderDiffLineHoverPaintsRowHoverBg(t *testing.T) {
+	out := renderDiffLine(DiffModel{}, DiffLine{Kind: "context", Text: "unchanged"}, 40, true, false)
+	if !strings.Contains(out, bgSGR(theme.HoverBg)) {
+		t.Fatalf("hovered diff line should wear HoverBg: %q", out)
+	}
+}
+
+// TestRenderDiffLineGutterHoverPreviewsBarInGutterHoverColor pins the
+// gutter-specific hover cue: an unselected add/del line's stage bar previews
+// in GutterHoverBar, distinct from the solid Pink a selected line wears.
+func TestRenderDiffLineGutterHoverPreviewsBarInGutterHoverColor(t *testing.T) {
+	out := renderDiffLine(DiffModel{}, DiffLine{Kind: "add", Text: "import x", SelIdx: 0}, 40, true, true)
+	// The bar's foreground and the row's HoverBg background combine into one
+	// SGR escape (the "m" terminator sits after both parameter runs), so this
+	// checks the color and the glyph separately rather than one joined run.
+	if !strings.Contains(out, fgSGR(theme.GutterHoverBar)) {
+		t.Fatalf("gutter-hovered unselected line should preview the bar in GutterHoverBar: %q", out)
+	}
+	if !strings.Contains(ansi.Strip(out), theme.GlyphBar) {
+		t.Fatalf("gutter-hovered unselected line should show the stage bar glyph: %q", out)
 	}
 }
 
@@ -377,6 +420,181 @@ func TestModalBranchActionRowWearsLavAndActionHighlight(t *testing.T) {
 	}
 	if !strings.Contains(out, bgSGR(theme.ActionHighlight(theme.Lav))) {
 		t.Fatalf("cursor on the action row should wear ActionHighlight bg:\n%s", out)
+	}
+}
+
+// TestModalRowHoverPaintsHoverBgUnlessCursor mirrors the changes row's own
+// hover/cursor split inside the modal overlay.
+func TestModalRowHoverPaintsHoverBgUnlessCursor(t *testing.T) {
+	m := newTestMission()
+	m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
+	m.modal.hoverRow = 1
+	out := m.View().Content
+	if !strings.Contains(out, bgSGR(theme.HoverBg)) {
+		t.Fatalf("hovered modal row should wear HoverBg:\n%s", out)
+	}
+}
+
+// ─── mouse routing ──────────────────────────────────────────────────────
+
+// mouseFixtureModel is a small, self-contained model for the mouse-routing
+// tests below: three Changes rows and a short diff, laid out identically to
+// s5open's subprocess fixture (mission_test.go) -- tabs(2)+filter(3)+
+// master(1) body rows ahead of the list, no stash/amend/undo strip -- so the
+// same row-index-to-y arithmetic applies without a long last-commit summary
+// dragging the sidebar block wider than sidebarWidth (a separate, unrelated
+// rendering issue this task's coordinates route around rather than fix).
+func mouseFixtureModel() Model {
+	return Model{
+		Current: Current{Repo: "repo-tools", Branch: "main"},
+		Changes: []ChangeRow{
+			{Path: "a.go", Status: "modified", Include: "none"},
+			{Path: "b.go", Status: "modified", Include: "none"},
+			{Path: "c.go", Status: "modified", Include: "none"},
+		},
+		ChangedTotal: 3,
+		Diff: DiffModel{
+			Path: "a.go", Kind: "text",
+			Lines: []DiffLine{
+				{Kind: "context", Text: "one"},
+				{Kind: "context", Text: "two"},
+				{Kind: "context", Text: "three"},
+				{Kind: "context", Text: "four"},
+				{Kind: "context", Text: "five"},
+			},
+		},
+		Commit: CommitModel{ButtonLabel: "Commit 3 files to main"},
+	}
+}
+
+func newMouseTestMission() *Mission {
+	m := New(nil)
+	m.width, m.height = 100, 30
+	m.model = mouseFixtureModel()
+	m.selected = "a.go"
+	return m
+}
+
+// TestMouseMotionOverFileRowSetsHoverNotCursor pins the mouse board's
+// central invariant inside mission's own Update wiring (render_test.go
+// already pins the row-paint half via renderChangeRow directly): motion
+// over a non-cursor row sets the render hint, never the cursor.
+func TestMouseMotionOverFileRowSetsHoverNotCursor(t *testing.T) {
+	m := newMouseTestMission()
+	next, _ := m.Update(tea.MouseMotionMsg{X: 10, Y: 9}) // row index 1 ("b.go")
+	m = next.(*Mission)
+	if m.hoverFile != 1 {
+		t.Fatalf("hovering row 1 should set hoverFile=1, got %d", m.hoverFile)
+	}
+	if m.selected != "a.go" {
+		t.Fatalf("hover must never move the cursor, got selected=%q", m.selected)
+	}
+	lines := strings.Split(m.View().Content, "\n")
+	if !strings.Contains(lines[9], bgSGR(theme.HoverBg)) {
+		t.Fatalf("hovered row should paint HoverBg:\n%s", lines[9])
+	}
+	if !strings.Contains(lines[8], bgSGR(theme.SelBg)) || strings.Contains(lines[8], bgSGR(theme.HoverBg)) {
+		t.Fatalf("cursor row must keep SelBg, never HoverBg:\n%s", lines[8])
+	}
+}
+
+// TestMouseWheelOverDiffScrollsIt is the brief's own Step 1 example: a wheel
+// tick with the pointer over the diff pane moves the diff line cursor
+// (there being no scroll offset independent of the cursor -- see
+// mouseWheel's own comment), which is what actually slides the window.
+func TestMouseWheelOverDiffScrollsIt(t *testing.T) {
+	m := newMouseTestMission()
+	next, _ := m.Update(tea.MouseWheelMsg{X: 60, Y: 5, Button: tea.MouseWheelDown})
+	m = next.(*Mission)
+	if m.diffCursor != wheelStep {
+		t.Fatalf("wheel down over the diff pane should move diffCursor by wheelStep, got %d", m.diffCursor)
+	}
+	next, _ = m.Update(tea.MouseWheelMsg{X: 60, Y: 5, Button: tea.MouseWheelUp})
+	m = next.(*Mission)
+	if m.diffCursor != 0 {
+		t.Fatalf("wheel up should move diffCursor back down, got %d", m.diffCursor)
+	}
+}
+
+// TestMouseWheelOverListMovesListCursor covers the base list's own half of
+// the same contract, clamped to the last row once wheelStep overruns it.
+func TestMouseWheelOverListMovesListCursor(t *testing.T) {
+	m := newMouseTestMission()
+	next, _ := m.Update(tea.MouseWheelMsg{X: 10, Y: 9, Button: tea.MouseWheelDown})
+	m = next.(*Mission)
+	if m.selected != "c.go" {
+		t.Fatalf("wheel down over the list should move the cursor to the last row, got %q", m.selected)
+	}
+}
+
+// TestMouseWheelOverModalMovesCursorSkippingGuardedRow covers the third
+// pane: the overlay's own cursor, via its existing moveCursor (which already
+// skips a guarded row for the keyboard).
+func TestMouseWheelOverModalMovesCursorSkippingGuardedRow(t *testing.T) {
+	m := newTestMission()
+	m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
+	next, _ := m.Update(tea.MouseWheelMsg{Button: tea.MouseWheelDown})
+	m = next.(*Mission)
+	if row, ok := m.modal.selectedRow(); !ok || row.value != "main" {
+		t.Fatalf("wheel down in the branch modal should move to \"main\", got %+v ok=%v", row, ok)
+	}
+}
+
+// TestMouseDoubleClickFileRowFocusesDiff pins the double-click half of the
+// file-row click contract; a lone click only moves the cursor (covered by
+// TestMouseClickFileRowMovesCursorWithoutEmitting below).
+func TestMouseDoubleClickFileRowFocusesDiff(t *testing.T) {
+	m := newMouseTestMission()
+	now := time.Now()
+	m.nowFn = func() time.Time { return now }
+	m.Update(tea.MouseClickMsg{X: 20, Y: 9, Button: tea.MouseLeft})
+	now = now.Add(100 * time.Millisecond)
+	next, _ := m.Update(tea.MouseClickMsg{X: 20, Y: 9, Button: tea.MouseLeft})
+	m = next.(*Mission)
+	if m.focus != focusDiff {
+		t.Fatalf("a second click within the window should focus the diff, got focus=%v", m.focus)
+	}
+	if m.selected != "b.go" {
+		t.Fatalf("double click should have selected row 1's path, got %q", m.selected)
+	}
+}
+
+// TestMouseClickFileRowMovesCursorWithoutEmitting pins the single-click
+// half: it moves the cursor into list focus, and produces no intent.
+func TestMouseClickFileRowMovesCursorWithoutEmitting(t *testing.T) {
+	m := newMouseTestMission()
+	next, cmd := m.Update(tea.MouseClickMsg{X: 20, Y: 10, Button: tea.MouseLeft})
+	m = next.(*Mission)
+	if m.selected != "c.go" {
+		t.Fatalf("click should move the cursor to row 2, got %q", m.selected)
+	}
+	if m.focus != focusList {
+		t.Fatalf("a file-row click should land in list focus, got %v", m.focus)
+	}
+	if cmd != nil {
+		t.Fatal("a single click on a file row must not emit")
+	}
+}
+
+// TestMouseClickFilterRowFocusesFilter pins the filter zone (absolute y in
+// [2,5): tabs takes y 0-1, the filter box the next three).
+func TestMouseClickFilterRowFocusesFilter(t *testing.T) {
+	m := newMouseTestMission()
+	next, _ := m.Update(tea.MouseClickMsg{X: 5, Y: 4, Button: tea.MouseLeft})
+	m = next.(*Mission)
+	if m.focus != focusFilter {
+		t.Fatalf("clicking the filter row should focus the filter, got %v", m.focus)
+	}
+}
+
+// TestMouseClickCommitButtonGuardsOnCanCommit mirrors the keyboard's own
+// ctrl-enter guard (mission_test.go's TestCtrlEnterDoesNotEmitWhenCanCommitFalse):
+// a commit-button click with CanCommit false must not emit.
+func TestMouseClickCommitButtonGuardsOnCanCommit(t *testing.T) {
+	m := newMouseTestMission() // ButtonLabel set, CanCommit left false
+	_, cmd := m.Update(tea.MouseClickMsg{X: 20, Y: 19, Button: tea.MouseLeft})
+	if cmd != nil {
+		t.Fatal("a commit-button click with CanCommit false must not emit")
 	}
 }
 

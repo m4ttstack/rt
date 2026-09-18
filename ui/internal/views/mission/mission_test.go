@@ -3,6 +3,7 @@ package mission_test
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -422,6 +423,159 @@ func TestAmendToggleFromListShowsBanner(t *testing.T) {
 	s.Send(`{"t":"close"}`)
 	s.Wait()
 }
+
+// sgrClick/sgrMotion/sgrWheel encode the SGR mouse escape sequences
+// (ultraviolet's decoder.go parseSGRMouseEvent) the pty carries a real
+// terminal's mouse reports over: "\x1b[<Cb;Cx;CyM", 1-indexed coordinates,
+// M for a press (never a release, which mission's Update never routes on).
+// button is the X11 code (0 left, 2 right, 32|button for plain motion, 64/65
+// for wheel up/down).
+func sgrClick(button, x, y int) string {
+	return fmt.Sprintf("\x1b[<%d;%d;%dM", button, x+1, y+1)
+}
+
+func sgrMotion(x, y int) string { return sgrClick(32, x, y) }
+
+const (
+	sgrWheelUp   = 64
+	sgrWheelDown = 65
+)
+
+// TestMouseClickCheckboxCellEmitsToggleFileWithPath drives a left click at
+// the checkbox column of the fixture's second Changes row (topbar.go):
+// tabs(2)+filter(3)+master(1)=6 body rows ahead of the list, +1 for row
+// index 1 = bodyY 7; topH(2)+bodyY(7) = frame y 9 (the debug screen dump
+// pins this: row 9 is "  ○ .../topbar.go"), checkbox at x=2 (the "  "
+// prefix's own width).
+func TestMouseClickCheckboxCellEmitsToggleFileWithPath(t *testing.T) {
+	s := s5open(t)
+	s.Type(sgrClick(0, 2, 9))
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:stage"`) || !strings.Contains(l, `"path":"ui/internal/views/mission/topbar.go"`) || !strings.Contains(l, `"mode":"toggle-file"`) {
+		t.Fatalf("checkbox click stage intent: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+// TestMouseClickDiffGutterOnAddLineEmitsLineStage clicks the gutter column
+// (x=0 relative to the diff pane, absolute sidebarWidth+1) of the fixture's
+// third diff line (index 2, the first add line, selIdx 0): header@2, then
+// one line per index (idx0 hunk@3, idx1 context@4, idx2 add@5).
+func TestMouseClickDiffGutterOnAddLineEmitsLineStage(t *testing.T) {
+	s := s5open(t)
+	s.Type(sgrClick(0, sidebarWidthConst+1, 5))
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:stage"`) || !strings.Contains(l, `"path":"ui/internal/views/mission/mission.go"`) ||
+		!strings.Contains(l, `"mode":"line"`) || !strings.Contains(l, `"selIdx":0`) {
+		t.Fatalf("gutter click stage intent: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+// TestMouseClickHunkRowEmitsHunkStage clicks anywhere across the fixture's
+// hunk header (index 0, absolute y=3): the whole row is the toggle, so any
+// x within the diff pane's content resolves the same as a gutter click.
+func TestMouseClickHunkRowEmitsHunkStage(t *testing.T) {
+	s := s5open(t)
+	s.Type(sgrClick(0, sidebarWidthConst+4, 3))
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:stage"`) || !strings.Contains(l, `"mode":"hunk"`) || !strings.Contains(l, `"selIdx":0`) {
+		t.Fatalf("hunk row click stage intent: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+// TestMouseClickUndoChipEmitsUndoIntent clicks the undo strip row (absolute
+// y=21: tabs(2)+filter(3)+master(1)+changes(3)+stash(1)+rule(1)+summary(3)+
+// description(4)+button(1)=19 body rows, topH(2)+19=21).
+func TestMouseClickUndoChipEmitsUndoIntent(t *testing.T) {
+	s := s5open(t)
+	s.Type(sgrClick(0, 5, 21))
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:undo"`) {
+		t.Fatalf("undo chip click intent: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+// TestMouseClickActionSegmentEmitsActionIntent clicks the top bar's action
+// segment: width 100, sidebarWidth 46, 3 dividers, remaining 51 split
+// 17/17/17 -- action starts at column 46+1+17+1+17+1 = 83.
+func TestMouseClickActionSegmentEmitsActionIntent(t *testing.T) {
+	s := s5open(t)
+	s.Type(sgrClick(0, 90, 0))
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:action"`) {
+		t.Fatalf("action segment click intent: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+// TestMouseClickRepoSegmentOpensModalThenRowClickEmitsRepoIntent mirrors
+// TestRepoModalEnterEmitsRepoIntentWithRowID with the mouse doing both the
+// open (a click on the repo segment, column 0) and the row selection.
+func TestMouseClickRepoSegmentOpensModalThenRowClickEmitsRepoIntent(t *testing.T) {
+	s := s5open(t)
+	s.Type(sgrClick(0, 5, 0))
+	s.WaitForPaint("chat")
+	// The repo modal is anchored at x=0 (segmentOrigin's zoneRepo case);
+	// its first content row sits after the filter line and the top rule.
+	s.Type(sgrClick(0, 5, 5))
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:repo"`) || !strings.Contains(l, `"repo":"repo-tools"`) {
+		t.Fatalf("repo modal row click intent: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+// TestMouseClickOutsideModalClosesIt opens the repo modal, then clicks far
+// outside its box (bottom-right corner): the overlay should close without
+// emitting, restoring the undimmed frame (WaitForGone on "chat", the second
+// repo row only the modal ever paints).
+func TestMouseClickOutsideModalClosesIt(t *testing.T) {
+	s := s5open(t)
+	s.Type(sgrClick(0, 5, 0))
+	s.WaitForPaint("chat")
+	s.Type(sgrClick(0, 99, 29))
+	s.WaitForGone("chat")
+	if l, ok := s.ReadLine(200 * time.Millisecond); ok {
+		t.Fatalf("outside-modal click must not emit: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+// TestMouseClickHistoryTabShowsNotice clicks past the "Changes 3" tab text
+// on the tabs row (absolute y=2): the gap is 4 cells wide, so a click at
+// column 14 (changesW=9 for "Changes 3") lands past it, on History.
+func TestMouseClickHistoryTabShowsNotice(t *testing.T) {
+	s := s5open(t)
+	s.Type(sgrClick(0, 20, 2))
+	s.WaitForPaint("History lands in v2")
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+// TestMouseRightClickFileRowShowsNotice right-clicks the fixture's first
+// Changes row (absolute y=8).
+func TestMouseRightClickFileRowShowsNotice(t *testing.T) {
+	s := s5open(t)
+	s.Type(sgrClick(2, 10, 8))
+	s.WaitForPaint("menu lands with polish")
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+// sidebarWidthConst mirrors topbar.go's sidebarWidth for this file's own
+// coordinate comments; a package-external test cannot reference the
+// unexported constant directly.
+const sidebarWidthConst = 46
 
 // s5open opens the mission view against the shared model fixture (three
 // Changes rows, canCommit false) and waits for its first row to paint. Named

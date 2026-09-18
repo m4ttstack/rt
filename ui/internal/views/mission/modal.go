@@ -57,10 +57,17 @@ type modalState struct {
 	query        string
 	matches      []picker.Match
 	cursor       int
+
+	// hoverRow/hoverAction are the mouse's own position, independent of
+	// cursor exactly as the base list's hover is independent of its
+	// keyboard cursor -- see mission.go's mouseMotion. hoverRow indexes
+	// matches; -1 means no row is hovered.
+	hoverRow    int
+	hoverAction bool
 }
 
 func newModal(zone zoneID, intent string, buildPayload func(string) json.RawMessage, rows []modalRow, action *modalActionRow) *modalState {
-	ms := &modalState{zone: zone, intent: intent, buildPayload: buildPayload, rows: rows, action: action}
+	ms := &modalState{zone: zone, intent: intent, buildPayload: buildPayload, rows: rows, action: action, hoverRow: -1}
 	ms.refilter()
 	return ms
 }
@@ -432,10 +439,16 @@ func modalJustify(bg lipgloss.Style, width int, left, right string) string {
 
 // modalRowLine paints one row: a cursor bar, a status glyph (current dot,
 // guard lock, or blank), the label and meta, and the badge pinned right.
-func modalRowLine(r modalRow, width int, cursor bool) string {
+// hover paints HoverBg, but only when cursor is false -- the keyboard
+// cursor's SelBg always wins, mirroring the base list's own row/cursor
+// split (changes.go's renderChangeRow).
+func modalRowLine(r modalRow, width int, cursor, hover bool) string {
 	bg := lipgloss.NewStyle().Background(theme.Surface)
-	if cursor {
+	switch {
+	case cursor:
 		bg = bg.Background(theme.SelBg)
+	case hover:
+		bg = bg.Background(theme.HoverBg)
 	}
 	bar, barColor := " ", theme.Text
 	if cursor {
@@ -475,12 +488,15 @@ func modalRowLine(r modalRow, width int, cursor bool) string {
 
 // modalActionLine paints the trailing action row: always Lav (an action row
 // reads as chrome, not as one more entry -- theme.go's own comment on
-// ActionFg/ActionSelBg), its background lifting to ActionHighlight only
-// while it holds the cursor.
-func modalActionLine(a *modalActionRow, width int, cursor bool) string {
+// ActionFg/ActionSelBg), its background lifting to ActionHighlight while it
+// holds the cursor, or plain HoverBg while only hovered.
+func modalActionLine(a *modalActionRow, width int, cursor, hover bool) string {
 	bgColor := theme.Surface
-	if cursor {
+	switch {
+	case cursor:
 		bgColor = theme.ActionHighlight(theme.Lav)
+	case hover:
+		bgColor = theme.HoverBg
 	}
 	bg := lipgloss.NewStyle().Background(bgColor)
 	bar := " "
@@ -509,11 +525,11 @@ func modalBoxLines(ms *modalState, width int) []string {
 		if modalGroupBoundary(ms, i) {
 			lines = append(lines, modalRuleLine(width))
 		}
-		lines = append(lines, modalRowLine(ms.rows[ms.matches[i].Index], width, i == ms.cursor))
+		lines = append(lines, modalRowLine(ms.rows[ms.matches[i].Index], width, i == ms.cursor, i == ms.hoverRow))
 	}
 	if ms.action != nil {
 		lines = append(lines, modalRuleLine(width))
-		lines = append(lines, modalActionLine(ms.action, width, ms.onActionSlot()))
+		lines = append(lines, modalActionLine(ms.action, width, ms.onActionSlot(), ms.hoverAction))
 	}
 	return lines
 }
