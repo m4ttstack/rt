@@ -21,7 +21,7 @@
 
 import { join } from "path";
 import { type AgeKeySeam, createRealAgeKeySeam, ensureAgeKey } from "../home/age-key.ts";
-import { validateSlug } from "../secrets/store.ts";
+import { createRealSecretsExecSeam, validateSlug, writeSecret } from "../secrets/store.ts";
 import type { SecretsSeams } from "../secrets/store.ts";
 import { readTeamSecret } from "../secrets/team-store.ts";
 import { UserActionableError } from "../setup/errors.ts";
@@ -250,6 +250,8 @@ export interface JoinRedeemSeams {
   forgeLogin: typeof forgeLogin;
   /** The forge token rt holds for `remote`'s host, or null: a fresh machine's git and gh/glab have nothing of their own to offer a private team repo. */
   forgeToken: (p: Probes, remote: string) => Promise<string | null>;
+  /** Stores a per-member secret in the LOCAL rt domain (never the team store): the switchboard board token belongs to this machine's member alone. */
+  writeLocalSecret: (key: string, value: string) => Promise<void>;
   warn: (message: string) => void;
 }
 
@@ -269,7 +271,16 @@ function defaultWarn(message: string): void {
 }
 
 export function realJoinRedeemSeams(): JoinRedeemSeams {
-  return { ageKeySeam: createRealAgeKeySeam(), read: defaultRead(), readTeamSecret, forgeLogin, forgeToken: storedForgeToken, warn: defaultWarn };
+  const ageKeySeam = createRealAgeKeySeam();
+  return {
+    ageKeySeam,
+    read: defaultRead(),
+    readTeamSecret,
+    forgeLogin,
+    forgeToken: storedForgeToken,
+    writeLocalSecret: (key, value) => writeSecret("rt", key, value, { ageKeySeam, execSeam: createRealSecretsExecSeam() }),
+    warn: defaultWarn,
+  };
 }
 
 interface JoinSource {
@@ -439,18 +450,57 @@ export async function joinRedeem(
   }
 
   let peering: JoinResult["peering"] = "idle";
-  const switchboardUrl = snapshot.integrations.switchboard?.url;
-  if (switchboardUrl) {
-    const adminToken = await seams.readTeamSecret(pointer.team, "rt", "switchboardAdminToken", secrets(pointer.team));
-    if (adminToken) {
-      const res = await p.fetch(`${switchboardUrl}/peer/join`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
-        body: JSON.stringify({ member: handle }),
-      });
-      peering = res.status >= 200 && res.status < 300 ? "applied" : "unavailable";
+  // Only the team's OWN declared switchboard is ever trusted: the pointer is
+  // invite-supplied, so its url must never receive the admin token (SSRF) and
+  // its token must never be stored against a different switchboard than the
+  // one the board will actually call.
+  const declaredUrl = snapshot.integrations.switchboard?.url;
+  if (pointer.switchboard?.token) {
+    // The owner pre-minted this board's token at invite time (a fresh joiner
+    // cannot decrypt team secrets yet, so the sealed pointer is the only
+    // channel that works on a first join). Storing it is all peering needs.
+    peering = "unavailable";
+    if (declaredUrl && pointer.switchboard.url === declaredUrl) {
+      try {
+        await seams.writeLocalSecret("switchboardToken", pointer.switchboard.token);
+        peering = "applied";
+      } catch (err) {
+        seams.warn(`board peering: could not store the switchboard token (${err instanceof Error ? err.message : String(err)})`);
+      }
     } else {
-      peering = "unavailable";
+      seams.warn("board peering: the invite's switchboard does not match the team's declared one; refusing its token");
+    }
+  } else if (declaredUrl) {
+    // Fallback for re-joins by members whose age key is already a team-secrets
+    // recipient; a first join cannot decrypt the admin token and lands on
+    // unavailable. Every failure stays inside peering: the join itself is done.
+    peering = "unavailable";
+    try {
+      const adminToken = await seams.readTeamSecret(pointer.team, "rt", "switchboardAdminToken", secrets(pointer.team));
+      if (adminToken) {
+        // The switchboard's admin register route: an upsert that mints (or
+        // rotates) this member's board token. Peering only counts as applied
+        // once that token is stored where the board's secrets read finds it.
+        const res = await p.fetch(`${declaredUrl}/boards`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
+          body: JSON.stringify({ username: handle }),
+        });
+        if (res.status >= 200 && res.status < 300) {
+          let token: unknown;
+          try {
+            token = (JSON.parse(res.body) as { token?: unknown })?.token;
+          } catch {
+            /* an unparsable register reply reads as no token */
+          }
+          if (typeof token === "string" && token) {
+            await seams.writeLocalSecret("switchboardToken", token);
+            peering = "applied";
+          }
+        }
+      }
+    } catch (err) {
+      seams.warn(`board peering: could not register this board (${err instanceof Error ? err.message : String(err)})`);
     }
   }
 
@@ -480,5 +530,9 @@ export async function joinRedeem(
   }
 
   clearIntent(p);
-  return { team: teamRefFrom(pointer), access: "ok", peering, message: `Joined ${pointer.name} (owner ${pointer.owner})`, intent: "written" };
+  const peeringHint =
+    peering === "unavailable"
+      ? "; board peering could not be set up automatically... ask the owner to re-invite your board from the board's members panel"
+      : "";
+  return { team: teamRefFrom(pointer), access: "ok", peering, message: `Joined ${pointer.name} (owner ${pointer.owner})${peeringHint}`, intent: "written" };
 }

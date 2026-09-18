@@ -60,6 +60,7 @@ function fakeJoinRedeemSeams(overrides: Partial<JoinRedeemSeams> = {}): JoinRede
     readTeamSecret: async () => null,
     forgeLogin: async () => "zaphod",
     forgeToken: async () => null,
+    writeLocalSecret: async () => {},
     warn: () => {},
     ...overrides,
   };
@@ -250,16 +251,20 @@ describe("teamJoin", () => {
       home: HOME,
       fetch: async (url, init) => {
         fetchCalls.push(url);
-        if (url.endsWith("/peer/join")) return { status: 200, body: "", headers: {} };
+        if (url.endsWith("/boards")) return { status: 201, body: JSON.stringify({ username: "zaphod", token: "tok-1" }), headers: {} };
         return relayFetch()(url, init);
       },
       exec: () => ({ code: 0, stdout: "", stderr: "" }),
     });
+    const secretWrites: { key: string; value: string }[] = [];
     const deps = baseDeps({
       probes,
       joinRedeemSeams: fakeJoinRedeemSeams({
         read: fakeRead({ "mattstack.integrations": { switchboard: { url: "https://sb.test" } } }),
         readTeamSecret: async () => "admin-token",
+        writeLocalSecret: async (key, value) => {
+          secretWrites.push({ key, value });
+        },
       }),
     });
 
@@ -267,7 +272,8 @@ describe("teamJoin", () => {
 
     const body = JSON.parse(deps.lines[0]!);
     expect(body.peering).toBe("applied");
-    expect(fetchCalls).toContain("https://sb.test/peer/join");
+    expect(fetchCalls).toContain("https://sb.test/boards");
+    expect(secretWrites).toEqual([{ key: "switchboardToken", value: "tok-1" }]);
   });
 
   test("redeem success clears the saved setup intent", async () => {

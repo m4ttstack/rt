@@ -111,6 +111,7 @@ function baseSeams(overrides: Partial<MintInviteSeams> = {}): { seams: MintInvit
     readTeamLocal: () => ({ createdByRt: true, joinedByRt: false, rtMayManageMembership: true }),
     forgeLogin: async () => "octocat",
     forgeToken: async () => null,
+    readLocalSecret: async () => null,
     warn: (m) => warnings.push(m),
     ...overrides,
   };
@@ -328,6 +329,100 @@ describe("mintInvite", () => {
     const { idHex, key } = decodeCode(result.code);
     const pointer = await open(relay.createCalls[0]!.ciphertext, key, idHex);
     expect(pointer.name).toBe(SLUG);
+  });
+
+  test("a team with a switchboard: mint registers the member's board and seals url+token into the pointer", async () => {
+    const fetchCalls: { url: string; init?: { method?: string; headers?: Record<string, string>; body?: string } }[] = [];
+    const p = fakeProbes({
+      home: HOME,
+      files: { [GIT_CONFIG_PATH]: gitConfigWithRemote(REMOTE) },
+      fetch: async (url, init) => {
+        fetchCalls.push({ url, init });
+        return { status: 201, body: JSON.stringify({ username: "zaphod", token: "tok-9" }), headers: {} };
+      },
+    });
+    const { seams } = baseSeams({
+      read: fakeRead({
+        "mattstack.integrations": { forge: { host: "github.com", provider: "github" }, switchboard: { url: "https://sb.test" } },
+        "board.title": "Acme Team",
+      }),
+      readLocalSecret: async () => "admin-1",
+    });
+    const relay = fakeRelayClient();
+
+    const result = await mintInvite(p, relay.client, { slug: SLUG, handle: "zaphod", now: NOW }, seams);
+
+    expect(fetchCalls).toHaveLength(1);
+    expect(fetchCalls[0]!.url).toBe("https://sb.test/boards");
+    expect(fetchCalls[0]!.init?.headers?.Authorization).toBe("Bearer admin-1");
+    expect(JSON.parse(fetchCalls[0]!.init?.body ?? "{}")).toEqual({ username: "zaphod" });
+    const { idHex, key } = decodeCode(result.code);
+    const pointer = await open(relay.createCalls[0]!.ciphertext, key, idHex);
+    expect(pointer.switchboard).toEqual({ url: "https://sb.test", token: "tok-9" });
+  });
+
+  test("no readable admin token: the mint still succeeds, the pointer carries no switchboard, and the warn names board peering", async () => {
+    const p = probesWithRemote(REMOTE);
+    const { seams, warnings } = baseSeams({
+      read: fakeRead({
+        "mattstack.integrations": { forge: { host: "github.com", provider: "github" }, switchboard: { url: "https://sb.test" } },
+      }),
+      readLocalSecret: async () => null,
+    });
+    const relay = fakeRelayClient();
+
+    const result = await mintInvite(p, relay.client, { slug: SLUG, handle: "zaphod", now: NOW }, seams);
+
+    expect(result.code).toBeTruthy();
+    expect(p.calls.fetch).toHaveLength(0);
+    const { idHex, key } = decodeCode(result.code);
+    const pointer = await open(relay.createCalls[0]!.ciphertext, key, idHex);
+    expect(pointer.switchboard).toBeUndefined();
+    expect(warnings.some((w) => w.includes("board peering"))).toBe(true);
+  });
+
+  test("a throwing readLocalSecret stays inside optional peering: the mint still succeeds, warned", async () => {
+    const p = probesWithRemote(REMOTE);
+    const { seams, warnings } = baseSeams({
+      read: fakeRead({
+        "mattstack.integrations": { forge: { host: "github.com", provider: "github" }, switchboard: { url: "https://sb.test" } },
+      }),
+      readLocalSecret: async () => {
+        throw new Error("keychain sulking");
+      },
+    });
+    const relay = fakeRelayClient();
+
+    const result = await mintInvite(p, relay.client, { slug: SLUG, handle: "zaphod", now: NOW }, seams);
+
+    expect(result.code).toBeTruthy();
+    const { idHex, key } = decodeCode(result.code);
+    const pointer = await open(relay.createCalls[0]!.ciphertext, key, idHex);
+    expect(pointer.switchboard).toBeUndefined();
+    expect(warnings.some((w) => w.includes("board peering"))).toBe(true);
+  });
+
+  test("a failing switchboard register: the mint still succeeds without a sealed token, warned", async () => {
+    const p = fakeProbes({
+      home: HOME,
+      files: { [GIT_CONFIG_PATH]: gitConfigWithRemote(REMOTE) },
+      fetch: async () => ({ status: 500, body: "", headers: {} }),
+    });
+    const { seams, warnings } = baseSeams({
+      read: fakeRead({
+        "mattstack.integrations": { forge: { host: "github.com", provider: "github" }, switchboard: { url: "https://sb.test" } },
+      }),
+      readLocalSecret: async () => "admin-1",
+    });
+    const relay = fakeRelayClient();
+
+    const result = await mintInvite(p, relay.client, { slug: SLUG, handle: "zaphod", now: NOW }, seams);
+
+    expect(result.code).toBeTruthy();
+    const { idHex, key } = decodeCode(result.code);
+    const pointer = await open(relay.createCalls[0]!.ciphertext, key, idHex);
+    expect(pointer.switchboard).toBeUndefined();
+    expect(warnings.some((w) => w.includes("board peering"))).toBe(true);
   });
 
   test("derives forge host/provider from the remote when mattstack.integrations is unset", async () => {

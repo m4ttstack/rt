@@ -16,6 +16,12 @@ export interface InvitePointer {
   owner: string;
   forge: string;
   createdAt: string;
+  /** Board peering, pre-minted at invite time: the owner's machine registers
+      the invitee's board on the switchboard and seals the per-board token
+      here, because at join time the invitee cannot yet decrypt team secrets
+      (their age key becomes a recipient only after the owner's members sync).
+      Absent when the team has no switchboard or the register failed at mint. */
+  switchboard?: { url: string; token: string };
 }
 
 export interface SetupIntent {

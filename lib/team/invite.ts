@@ -10,7 +10,9 @@
  * this team, which defaults to off.
  */
 
+import { createRealAgeKeySeam } from "../home/age-key.ts";
 import { teamSettingsPath } from "../rt-paths.ts";
+import { createRealSecretsExecSeam, readSecret } from "../secrets/store.ts";
 import { readStore } from "../settings/stores.ts";
 import { UserActionableError } from "../setup/errors.ts";
 import type { InvitePointer } from "../setup/intent.ts";
@@ -106,6 +108,8 @@ export interface MintInviteSeams {
   forgeLogin: typeof forgeLogin;
   /** The forge token rt holds for the team remote's host, or null. */
   forgeToken: typeof storedForgeToken;
+  /** A secret from the operator's LOCAL rt domain (the switchboard admin token lives there, not in team secrets a not-yet-synced invitee could never read anyway). */
+  readLocalSecret: (key: string) => Promise<string | null>;
   warn: (message: string) => void;
 }
 
@@ -130,7 +134,17 @@ function defaultWarn(message: string): void {
 }
 
 export function realMintInviteSeams(): MintInviteSeams {
-  return { read: defaultRead(), readTeamStore: defaultReadTeamStore, writeSetting: setSetting, grantRead, readTeamLocal, forgeLogin, forgeToken: storedForgeToken, warn: defaultWarn };
+  return {
+    read: defaultRead(),
+    readTeamStore: defaultReadTeamStore,
+    writeSetting: setSetting,
+    grantRead,
+    readTeamLocal,
+    forgeLogin,
+    forgeToken: storedForgeToken,
+    readLocalSecret: (key) => readSecret("rt", key, { ageKeySeam: createRealAgeKeySeam(), execSeam: createRealSecretsExecSeam() }),
+    warn: defaultWarn,
+  };
 }
 
 interface BoardMember {
@@ -217,6 +231,48 @@ export async function mintInvite(p: Probes, relay: RelayClient, opts: MintInvite
     forge: forge?.host ?? "",
     createdAt: opts.now.toISOString(),
   };
+
+  // Board peering rides the invite: the invitee cannot decrypt team secrets
+  // at join time (their age key is not yet a recipient), so the per-board
+  // token must be minted HERE, where the admin token is readable, and sealed
+  // into the pointer. Every failure degrades to an invite without peering
+  // plus a warning; the board panel's re-invite remains the repair.
+  const switchboardUrl = snapshot.integrations.switchboard?.url;
+  if (switchboardUrl) {
+    let embedFailure: string | null = null;
+    try {
+      const adminToken = await seams.readLocalSecret("switchboardAdminToken");
+      if (!adminToken) {
+        embedFailure = "no readable switchboardAdminToken secret in the local rt domain";
+      } else {
+        const res = await p.fetch(`${switchboardUrl}/boards`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
+          body: JSON.stringify({ username: opts.handle }),
+        });
+        if (res.status < 200 || res.status >= 300) {
+          embedFailure = `the switchboard register answered ${res.status}`;
+        } else {
+          let boardToken: unknown;
+          try {
+            boardToken = (JSON.parse(res.body) as { token?: unknown })?.token;
+          } catch {
+            /* an unparsable register reply reads as no token */
+          }
+          if (typeof boardToken === "string" && boardToken) {
+            pointer.switchboard = { url: switchboardUrl, token: boardToken };
+          } else {
+            embedFailure = "the switchboard register returned no token";
+          }
+        }
+      }
+    } catch (err) {
+      embedFailure = err instanceof Error ? err.message : String(err);
+    }
+    if (embedFailure) {
+      seams.warn(`board peering was not embedded in this invite (${embedFailure}); after they join, re-invite their board from the board's members panel`);
+    }
+  }
 
   // Captured before this handle's new record is minted — replace-on-mint's revoke of THIS value runs last, after the new invite is safely live (finding: create-before-destroy).
   const priorRecord = readInviteRecords(p, opts.slug)[opts.handle];

@@ -35,7 +35,7 @@ import { extractInviteCode } from "../lib/team/invite-crypto.ts";
 import { mintInvite } from "../lib/team/invite.ts";
 import { readTeamLocal, updateTeamLocal } from "../lib/team/team-local.ts";
 import { JoinKeyExchangeError, joinDryRun, joinRedeem, realJoinRedeemSeams, type JoinRedeemSeams, type JoinResult } from "../lib/team/join.ts";
-import { membersRemove, membersSync, teamRemote } from "../lib/team/members.ts";
+import { membersRemove, membersSync, preferredRoster, teamRemote } from "../lib/team/members.ts";
 import { publishTeam } from "../lib/team/publish.ts";
 import { storedForgeToken } from "../lib/team/stored-forge-token.ts";
 import { createRelayClient, inviteRelayUrl } from "../lib/team/relay-client.ts";
@@ -387,10 +387,10 @@ export async function teamMembersSync(args: string[], _ctx: CommandContext = {},
   }
 }
 
-/** Removable roster handles for the resolved team, from the same `board.members` source `membersRemove` reads. Empty on an unresolved or ambiguous team or any read failure, so the picker falls through to the usage error an omitted handle always got. */
+/** Removable roster handles for the resolved team, from the same preferred-roster source `membersRemove` reads. Empty on an unresolved or ambiguous team or any read failure, so the picker falls through to the usage error an omitted handle always got. */
 function rosterHandles(args: string[]): string[] {
   try {
-    const members = readStore(teamSettingsPath(resolveTeamSlug(args))).global["board.members"];
+    const members = preferredRoster(readStore(teamSettingsPath(resolveTeamSlug(args))).global);
     if (!Array.isArray(members)) return [];
     return members
       .filter((m): m is { username: string } => m !== null && typeof m === "object" && typeof (m as { username?: unknown }).username === "string")
@@ -524,7 +524,8 @@ export async function teamStatus(args: string[], _ctx: CommandContext = {}, deps
     const snapshot = readTeamSnapshot(deps.probes, slug, { read, warn: () => {} });
     const title = read<string>("board.title");
     const name = title && title.length > 0 ? title : slug;
-    const members = toRosterMembers(read<unknown>("board.members"), (msg) => console.error(msg));
+    const preferredMembers = read<unknown>("mattstack.roster");
+    const members = toRosterMembers(Array.isArray(preferredMembers) ? preferredMembers : read<unknown>("board.members"), (msg) => console.error(msg));
 
     const log = await deps.probes.exec(["git", "-C", dir, "log", "-1", "--format=%cI", "origin/main"]);
     const lastPush = log.code === 0 ? log.stdout.trim() || null : null;

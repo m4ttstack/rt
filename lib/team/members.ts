@@ -139,6 +139,14 @@ function readRoster(seams: MembersSeams, slug: string, key: RosterKey = "board.m
   return Array.isArray(store[key]) ? (store[key] as RosterMember[]) : [];
 }
 
+/** The read-side roster: mattstack.roster is the cross-app key the suite apps read; board.members remains only as the fallback for stores minted before the successor key existed. Writers keep dual-writing both. */
+export function preferredRoster(store: Record<string, unknown>): RosterMember[] {
+  const next = store["mattstack.roster"];
+  if (Array.isArray(next)) return next as RosterMember[];
+  const legacy = store["board.members"];
+  return Array.isArray(legacy) ? (legacy as RosterMember[]) : [];
+}
+
 /** Sets (or overwrites) one roster entry's `agePublicKey` on both roster keys: the sync-time record of which sops recipient a handle maps to, so `membersRemove` can find it later without a `--key` argument. Each key is read and written on its own contents, matching `addToRoster` in invite.ts. */
 function recordRosterKey(seams: MembersSeams, slug: string, handle: string, agePublicKey: string): void {
   for (const key of ROSTER_KEYS) {
@@ -343,13 +351,24 @@ export async function membersRemove(
     );
   }
 
-  const existing = readRoster(seams, slug);
-  const existingEntry = existing.find((m) => m.username === handle);
-  const keyToRemove = agePublicKey ?? (typeof existingEntry?.agePublicKey === "string" ? existingEntry.agePublicKey : undefined);
+  const boardRoster = readRoster(seams, slug, "board.members");
+  const crossAppRoster = readRoster(seams, slug, "mattstack.roster");
+  // The two rosters can diverge (dual-write is best-effort), so EVERY key
+  // recorded for the handle on either one is revoked: leaving any behind
+  // keeps the removed member able to decrypt team secrets.
+  const recordedKeys = [
+    ...new Set(
+      [...crossAppRoster, ...boardRoster]
+        .filter((m) => m.username === handle)
+        .map((m) => m.agePublicKey)
+        .filter((k): k is string => typeof k === "string"),
+    ),
+  ];
+  const keysToRemove = agePublicKey ? [agePublicKey] : recordedKeys;
 
-  if (keyToRemove) {
+  if (keysToRemove.length > 0) {
     const ownerPublicKey = await readOwnPublicKeyIfPresent(secrets);
-    if (ownerPublicKey !== null && keyToRemove === ownerPublicKey) {
+    if (ownerPublicKey !== null && keysToRemove.includes(ownerPublicKey)) {
       throw new UserActionableError(
         "own-key-removal-refused",
         `refusing to remove "${handle}" — the key on record for them is this machine's OWN age key, so removing it would lock this operator out of every team secret. ` +
@@ -377,20 +396,21 @@ export async function membersRemove(
               : [`"${handle}" still has access to ${remote} — remove them there too; mattstack does not manage membership on this repo`],
         };
 
-  const rosterRemoved = existingEntry !== undefined;
-  if (rosterRemoved) {
+  // Each key is removed on its own contents (a store can carry either roster
+  // alone), never by writing one key's rows onto the other; removal from
+  // either counts as a roster removal.
+  const boardHad = boardRoster.some((m) => m.username === handle);
+  if (boardHad) {
     seams.writeSetting(
       "board.members",
-      existing.filter((m) => m.username !== handle),
+      boardRoster.filter((m) => m.username !== handle),
       "team",
       { team: slug },
     );
   }
 
-  // mattstack.roster is judged on its own contents, independent of
-  // board.members: a store can carry one roster without the other.
-  const crossAppRoster = readRoster(seams, slug, "mattstack.roster");
-  if (crossAppRoster.some((m) => m.username === handle)) {
+  const crossAppHad = crossAppRoster.some((m) => m.username === handle);
+  if (crossAppHad) {
     seams.writeSetting(
       "mattstack.roster",
       crossAppRoster.filter((m) => m.username !== handle),
@@ -398,11 +418,12 @@ export async function membersRemove(
       { team: slug },
     );
   }
+  const rosterRemoved = boardHad || crossAppHad;
 
   let reencrypted: string[] = [];
-  if (keyToRemove) {
-    const result = await removeTeamRecipient(slug, keyToRemove, secrets);
-    reencrypted = result.reencrypted;
+  for (const key of keysToRemove) {
+    const result = await removeTeamRecipient(slug, key, secrets);
+    reencrypted = [...new Set([...reencrypted, ...result.reencrypted])];
   }
 
   return {
