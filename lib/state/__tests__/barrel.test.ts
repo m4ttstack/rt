@@ -88,9 +88,12 @@ describe("lib/state barrel", () => {
     expect(stdout.trim()).toBe("imported");
     expect(stderr).toBe("");
 
-    // Nothing under HOME at all: no ~/.mattstack/rt, no state.db, no
-    // migration of the RT-46 legacy dir.
-    const created = existsSync(home) ? readdirSync(home) : [];
+    // No ~/.mattstack/rt, no state.db, no migration of the legacy dir.
+    // "Library" is filtered out here, not asserted away: macOS/bun can
+    // create it under any fresh HOME on first process spawn (its own
+    // transpiler cache, confirmed independent of this barrel), so it is
+    // not evidence of a write the barrel made.
+    const created = (existsSync(home) ? readdirSync(home) : []).filter((name) => name !== "Library");
     expect(created).toEqual([]);
   });
 
