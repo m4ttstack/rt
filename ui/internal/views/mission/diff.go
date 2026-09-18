@@ -31,11 +31,11 @@ func (m *Mission) diffKey(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "down":
 		m.moveDiffCursor(1)
 	case "space":
-		return m, m.diffIntent("mission:stage", "line")
+		return m, m.diffStageOrDiscardIntent("mission:stage")
 	case "s":
-		return m, m.diffIntent("mission:stage", "hunk")
+		return m, m.diffHunkIntent()
 	case "d":
-		return m, m.diffIntent("mission:discard", "line")
+		return m, m.diffStageOrDiscardIntent("mission:discard")
 	case "enter":
 		if m.model.Diff.Kind == "oversized" {
 			return m, m.em.Emit(protocol.Intent{Name: "mission:select", Payload: mustPayload(diffSelectPayload{ShowOversized: true})})
@@ -78,13 +78,6 @@ func (m *Mission) moveDiffCursor(delta int) {
 	}
 }
 
-func (m *Mission) currentDiffLine() (DiffLine, bool) {
-	if m.diffCursor < 0 || m.diffCursor >= len(m.model.Diff.Lines) {
-		return DiffLine{}, false
-	}
-	return m.model.Diff.Lines[m.diffCursor], true
-}
-
 type diffStagePayload struct {
 	Path   string `json:"path"`
 	Mode   string `json:"mode"`
@@ -95,13 +88,105 @@ type diffSelectPayload struct {
 	ShowOversized bool `json:"showOversized"`
 }
 
-func (m *Mission) diffIntent(name, mode string) tea.Cmd {
-	line, ok := m.currentDiffLine()
+// hunkBounds returns the line-index span of the hunk containing idx: start
+// is the hunk-header index at or before idx (0 when idx sits before any
+// header), end is the next hunk-header index after idx, or len(lines) when
+// idx's hunk is the last one. Both space/d's header resolution and s's
+// same-hunk scan need this same span, so it is not specific to either.
+func hunkBounds(lines []DiffLine, idx int) (start, end int) {
+	start = 0
+	for i := idx; i >= 0; i-- {
+		if lines[i].Kind == "hunk" {
+			start = i
+			break
+		}
+	}
+	end = len(lines)
+	for i := idx + 1; i < len(lines); i++ {
+		if lines[i].Kind == "hunk" {
+			end = i
+			break
+		}
+	}
+	return start, end
+}
+
+// firstSelectable scans [from, end) forward for the first line carrying a
+// real SelIdx (context and hunk lines are -1 and never match).
+func firstSelectable(lines []DiffLine, from, end int) (int, bool) {
+	for i := from; i < end && i < len(lines); i++ {
+		if lines[i].SelIdx >= 0 {
+			return lines[i].SelIdx, true
+		}
+	}
+	return 0, false
+}
+
+// resolveStageTarget picks the mode+selIdx a space/d press at cursor should
+// carry. An add/del line stages or discards itself in line mode. The hunk
+// header IS the toggle for its whole hunk, so it resolves to hunk mode and
+// the first selectable line after it. A context line has nothing to select
+// (SelIdx -1, and it is not a toggle either), so ok is false and the
+// caller must no-op rather than emit a negative selIdx -- the bug this
+// resolver exists to close.
+func resolveStageTarget(lines []DiffLine, cursor int) (mode string, selIdx int, ok bool) {
+	if cursor < 0 || cursor >= len(lines) {
+		return "", 0, false
+	}
+	line := lines[cursor]
+	if line.SelIdx >= 0 {
+		return "line", line.SelIdx, true
+	}
+	if line.Kind != "hunk" {
+		return "", 0, false
+	}
+	_, end := hunkBounds(lines, cursor)
+	if sel, ok := firstSelectable(lines, cursor+1, end); ok {
+		return "hunk", sel, true
+	}
+	return "", 0, false
+}
+
+// resolveHunkTarget picks the selIdx an s press at cursor should carry: the
+// cursor's own line when it is already selectable, else the nearest
+// selectable line in the same hunk -- forward first, then backward, per the
+// ruling -- else no target at all (ok false), an empty hunk with no add/del
+// lines.
+func resolveHunkTarget(lines []DiffLine, cursor int) (selIdx int, ok bool) {
+	if cursor < 0 || cursor >= len(lines) {
+		return 0, false
+	}
+	if lines[cursor].SelIdx >= 0 {
+		return lines[cursor].SelIdx, true
+	}
+	start, end := hunkBounds(lines, cursor)
+	if sel, ok := firstSelectable(lines, cursor+1, end); ok {
+		return sel, true
+	}
+	for i := cursor - 1; i >= start; i-- {
+		if lines[i].SelIdx >= 0 {
+			return lines[i].SelIdx, true
+		}
+	}
+	return 0, false
+}
+
+func (m *Mission) diffStageOrDiscardIntent(name string) tea.Cmd {
+	mode, selIdx, ok := resolveStageTarget(m.model.Diff.Lines, m.diffCursor)
 	if !ok {
 		return nil
 	}
-	payload := diffStagePayload{Path: m.model.Diff.Path, Mode: mode, SelIdx: line.SelIdx}
+	payload := diffStagePayload{Path: m.model.Diff.Path, Mode: mode, SelIdx: selIdx}
 	return m.em.Emit(protocol.Intent{Name: name, Payload: mustPayload(payload)})
+}
+
+func (m *Mission) diffHunkIntent() tea.Cmd {
+	selIdx, ok := resolveHunkTarget(m.model.Diff.Lines, m.diffCursor)
+	if !ok {
+		return nil
+	}
+	payload := diffStagePayload{Path: m.model.Diff.Path, Mode: "hunk", SelIdx: selIdx}
+	return m.em.Emit(protocol.Intent{Name: "mission:stage", Payload: mustPayload(payload)})
 }
 
 // renderDiffPane paints the diff header and body for whatever Kind the

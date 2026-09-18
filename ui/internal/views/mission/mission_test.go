@@ -184,25 +184,75 @@ func TestDiffSpaceOnAddLineEmitsStageWithSelIdx(t *testing.T) {
 	s.Wait()
 }
 
+// TestDiffSpaceOnHunkHeaderEmitsHunkModeWithSelIdx presses space at the
+// diff pane's default cursor position (the fixture's line 0, a hunk header
+// with SelIdx -1). The header IS the hunk toggle, so this must resolve to
+// hunk mode and the first selectable line after it (index 2, selIdx 0),
+// never the header's own -1.
+func TestDiffSpaceOnHunkHeaderEmitsHunkModeWithSelIdx(t *testing.T) {
+	s := s5open(t)
+	s.Type(keyEnter)
+	s.Type(" ")
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:stage"`) || !strings.Contains(l, `"path":"ui/internal/views/mission/mission.go"`) ||
+		!strings.Contains(l, `"mode":"hunk"`) || !strings.Contains(l, `"selIdx":0`) {
+		t.Fatalf("space on hunk header: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+// TestDiffSKeyEmitsHunkMode mirrors the space-on-header case for s: same
+// default cursor, same resolved selIdx.
 func TestDiffSKeyEmitsHunkMode(t *testing.T) {
 	s := s5open(t)
 	s.Type(keyEnter)
 	s.Type("s")
 	l, ok := s.ReadLine(2 * time.Second)
-	if !ok || !strings.Contains(l, `"name":"mission:stage"`) || !strings.Contains(l, `"mode":"hunk"`) {
+	if !ok || !strings.Contains(l, `"name":"mission:stage"`) || !strings.Contains(l, `"mode":"hunk"`) || !strings.Contains(l, `"selIdx":0`) {
 		t.Fatalf("diff hunk-stage intent: %q", l)
 	}
 	s.Send(`{"t":"close"}`)
 	s.Wait()
 }
 
+// TestDiffDKeyEmitsDiscard presses d at the default cursor (the hunk
+// header): same resolution as space, mission:discard instead of stage.
 func TestDiffDKeyEmitsDiscard(t *testing.T) {
 	s := s5open(t)
 	s.Type(keyEnter)
 	s.Type("d")
 	l, ok := s.ReadLine(2 * time.Second)
-	if !ok || !strings.Contains(l, `"name":"mission:discard"`) {
+	if !ok || !strings.Contains(l, `"name":"mission:discard"`) || !strings.Contains(l, `"mode":"hunk"`) || !strings.Contains(l, `"selIdx":0`) {
 		t.Fatalf("diff discard intent: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+// TestDiffSpaceOnContextRowEmitsNothing: a context line has nothing to
+// select (SelIdx -1, not a hunk toggle), so space must no-op rather than
+// emit a negative selIdx.
+func TestDiffSpaceOnContextRowEmitsNothing(t *testing.T) {
+	s := s5open(t)
+	s.Type(keyEnter)
+	s.Type("\x1b[B") // down to line 1, the fixture's context row
+	s.Type(" ")
+	if l, ok := s.ReadLine(200 * time.Millisecond); ok {
+		t.Fatalf("space on a context row must not emit: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+// TestDiffDOnContextRowEmitsNothing mirrors the context-row case for d.
+func TestDiffDOnContextRowEmitsNothing(t *testing.T) {
+	s := s5open(t)
+	s.Type(keyEnter)
+	s.Type("\x1b[B")
+	s.Type("d")
+	if l, ok := s.ReadLine(200 * time.Millisecond); ok {
+		t.Fatalf("d on a context row must not emit: %q", l)
 	}
 	s.Send(`{"t":"close"}`)
 	s.Wait()
