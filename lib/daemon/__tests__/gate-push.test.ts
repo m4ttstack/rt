@@ -471,6 +471,38 @@ describe("retryDeadPanes", () => {
     expect(delivered.at(-1)).toBe(wrapCrossSession("gate-facility", GATE_CLOSED_PHRASE(row.id, "superseded")));
   });
 
+  test("dead-pane retry on a form gate delivers the doorbell WITHOUT Escape injection (RT-207)", async () => {
+    // A dead-pane row whose session resolves again is a resumed pane, not a
+    // live pane blocked on a form: the board's parked-gate resume already
+    // typed and submitted the re-entry prompt, and an Escape there lands
+    // mid-request and strands that prompt in the input box.
+    const store = freshStore();
+    let ok = false;
+    const events: string[] = [];
+    const push = createGatePush({
+      store,
+      deliver: async () => { events.push("deliver"); return ok ? { ok: true } : { ok: false, error: "dead" }; },
+      resolveSession: (id) => ({ socketPath: id }),
+      injectEscape: async (hints) => { events.push(`inject:${hints.paneId ?? "none"}`); return { ok: true, paneRef: "x" }; },
+      log,
+      maxPaneRetries: 2,
+    });
+    const row = store.open({
+      subject: "mr:https://gitlab.example.com/x/1", kind: "respond-post", questions: qs(),
+      nudge: { session: "sess-1" }, pane: "pane-7",
+      origin: { presentation: "form", paneId: "pane-7" },
+    }).row;
+    store.answer(row.id, { q: "a" }, "board");
+    await push.onAnswered(store.get(row.id)!);
+    expect(store.get(row.id)!.delivery!.outcome).toBe("dead-pane");
+    expect(events).toEqual(["deliver"]);
+    ok = true;
+    events.length = 0;
+    expect(await push.retryDeadPanes()).toEqual({ retried: 1, delivered: 1, gaveUp: 0, reNudged: 0 });
+    expect(store.get(row.id)!.delivery!.outcome).toBe("delivered");
+    expect(events).toEqual(["deliver"]);
+  });
+
   test("reentrancy guard returns zeros while a run is in flight", async () => {
     const store = freshStore();
     let deliverStarted = false;
