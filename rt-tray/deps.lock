@@ -61,7 +61,7 @@
     { "name": "deck", "version": "1.0.1", "license": "MIT", "repo": "m4ttstack/apps", "subdir": "apps/deck", "url": "https://github.com/m4ttstack/apps/releases/download/deck-v1.0.1/deck-darwin-arm64.tgz", "sha256": "4445a76b61400c0c3c6c07216bc38817730bbf65ce5b186a6f953fba8a36db5a",
       "archive": "tar.gz", "extract": "deck", "bundlePath": "Contents/Helpers/deck", "exec": ["Contents/Helpers/deck"],
       "exposeByDefault": true, "entitlements": "jit", "status": "bundled", "kind": "helper" },
-    { "name": "board", "version": "0.1.3", "license": "MIT", "repo": "m4ttstack/apps", "subdir": "apps/board", "url": "https://github.com/m4ttstack/apps/releases/download/board-v0.1.3/board-darwin-arm64.tgz", "sha256": "59aa71a1a23ff20e148ef2037890db9acf5ef047ceeda29a4b63f188ef026754",
+    { "name": "board", "version": "0.1.4", "license": "MIT", "repo": "m4ttstack/apps", "subdir": "apps/board", "url": "https://github.com/m4ttstack/apps/releases/download/board-v0.1.4/board-darwin-arm64.tgz", "sha256": "6f7f072176e7a6153a52324905ee62b2f8a4b4b9c14d624fece2d1b0644b3b2d",
       "archive": "tar.gz", "extract": "board", "bundlePath": "Contents/Helpers/board", "exec": ["Contents/Helpers/board"],
       "exposeByDefault": false, "entitlements": "jit", "status": "bundled", "kind": "helper" },
     { "name": "gitq", "version": "0.2.1", "license": "MIT", "repo": "m4ttstack/gitq",
