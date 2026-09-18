@@ -125,4 +125,16 @@ describe("rt git amend and undo", () => {
     expect(g(["rev-list", "--count", "HEAD"]).trim()).toBe("1");
     expect(g(["status", "--porcelain"])).toContain("second.txt");
   });
+
+  test("amend --json on a zero-commit repo surfaces git's own error, not a guard crash", async () => {
+    const unbornRepo = join(home.path, "unborn-repo");
+    mkdirSync(unbornRepo, { recursive: true });
+    execFileSync("git", ["init", "-b", "main", unbornRepo], { encoding: "utf8" });
+    const res = await rt(["git", "amend", "--json"], { home: unbornRepo, env: { HOME: home.path } });
+    expect(res.exitCode).toBe(1);
+    const out = JSON.parse(res.stdout);
+    expect(out.ok).toBe(false);
+    expect(typeof out.error).toBe("string");
+    expect(out.error.length).toBeGreaterThan(0);
+  });
 });
