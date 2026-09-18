@@ -169,10 +169,12 @@ export function createGatePush(opts: {
 
   /** The doorbell half of a pane push: resolves the nudge session, delivers
       the wrapped phrase, and (unless `recordDelivery` is false) records the
-      outcome exactly as pushToPane does. No Escape injection -- the
-      re-delivery sweep calls this directly so a re-fired doorbell every 4th
-      sweep never risks interrupting the very consumption turn it is trying
-      to trigger.
+      outcome exactly as pushToPane does. No Escape injection -- both
+      retryDeadPanes passes call this directly: the re-delivery sweep so a
+      re-fired doorbell every 4th sweep never risks interrupting the very
+      consumption turn it is trying to trigger, and the dead-pane pass
+      because a returned session is a resumed pane with no form to dismiss
+      (RT-207).
       `recordDelivery: false` is the re-delivery sweep's own mode: a
       transient failure there must never demote a confirmed row into the
       dead-pane retry pass (which injects Escape), and a transient success
@@ -319,7 +321,15 @@ export function createGatePush(opts: {
           if (attempts >= maxPaneRetries) continue;
           retried++;
           paneAttempts.set(row.id, attempts + 1);
-          await pushToPane(row, retryPhrase(row));
+          // Doorbell-only, never pushToPane: a dead-pane row's session that
+          // resolves again is a RESUMED pane (the board's parked-gate resume,
+          // or a human reopening it), not a live pane blocked on a form. The
+          // form died with the original pane, so Escape has nothing to
+          // dismiss and instead lands mid-request in the fresh instance,
+          // stranding its just-submitted re-entry prompt in the input box
+          // (RT-207). onAnswered keeps the immediate Escape: there the pane
+          // and its form are still up.
+          await pushDoorbell(row, retryPhrase(row));
           const after = store.get(row.id);
           if (after?.delivery?.outcome === "delivered") { delivered++; paneAttempts.delete(row.id); }
           else if (attempts + 1 >= maxPaneRetries) { gaveUp++; log.warn({ gateId: row.id, session: row.nudge?.session }, "gate-push: pane nudge gave up; worker was never woken"); }
