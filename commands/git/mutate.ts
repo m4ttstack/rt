@@ -75,28 +75,30 @@ export async function stashPushCommand(args: string[]): Promise<void> {
   const json = args.includes("--json");
   const message = flagValue(args, "--message") ?? undefined;
   const includeUntracked = args.includes("--include-untracked");
+  let created: boolean;
   try {
-    const { created } = await createGitClient(process.cwd()).stashPush({
+    ({ created } = await createGitClient(process.cwd()).stashPush({
       ...(message ? { message } : {}),
       ...(includeUntracked ? { includeUntracked: true } : {}),
-    });
-    if (json) console.log(JSON.stringify({ ok: true, created }));
-    else console.log(created ? "stashed" : "nothing to stash");
+    }));
   } catch (err) {
     failPlain(json, "git stash push", err instanceof Error ? err.message : String(err));
   }
+  if (json) console.log(JSON.stringify({ ok: true, created }));
+  else console.log(created ? "stashed" : "nothing to stash");
 }
 
 export async function stashListCommand(args: string[]): Promise<void> {
   const json = args.includes("--json");
+  let stashes: any[];
   try {
-    const stashes = await createGitClient(process.cwd()).stashes();
-    if (json) console.log(JSON.stringify({ ok: true, stashes }));
-    else if (stashes.length === 0) console.log("no stashes");
-    else for (const s of stashes) console.log(`stash@{${s.index}}  ${s.branch ?? "(detached)"}  ${s.message}`);
+    stashes = await createGitClient(process.cwd()).stashes();
   } catch (err) {
     failPlain(json, "git stash list", err instanceof Error ? err.message : String(err));
   }
+  if (json) console.log(JSON.stringify({ ok: true, stashes }));
+  else if (stashes.length === 0) console.log("no stashes");
+  else for (const s of stashes) console.log(`stash@{${s.index}}  ${s.branch ?? "(detached)"}  ${s.message}`);
 }
 
 function stashIndexArg(args: string[], json: boolean, usage: string): number {
@@ -112,11 +114,11 @@ export async function stashPopCommand(args: string[]): Promise<void> {
   const index = stashIndexArg(args, json, "usage: rt git stash pop [<index>] [--json]");
   try {
     await createGitClient(process.cwd()).stashPop(index);
-    if (json) console.log(JSON.stringify({ ok: true, index }));
-    else console.log(`popped stash@{${index}}`);
   } catch (err) {
     failPlain(json, "git stash pop", err instanceof Error ? err.message : String(err));
   }
+  if (json) console.log(JSON.stringify({ ok: true, index }));
+  else console.log(`popped stash@{${index}}`);
 }
 
 export async function stashApplyCommand(args: string[]): Promise<void> {
@@ -124,11 +126,11 @@ export async function stashApplyCommand(args: string[]): Promise<void> {
   const index = stashIndexArg(args, json, "usage: rt git stash apply [<index>] [--json]");
   try {
     await createGitClient(process.cwd()).stashApply(index);
-    if (json) console.log(JSON.stringify({ ok: true, index }));
-    else console.log(`applied stash@{${index}}`);
   } catch (err) {
     failPlain(json, "git stash apply", err instanceof Error ? err.message : String(err));
   }
+  if (json) console.log(JSON.stringify({ ok: true, index }));
+  else console.log(`applied stash@{${index}}`);
 }
 
 const STASH_DROP_USAGE = "usage: rt git stash drop <index> [--json]";
@@ -137,25 +139,30 @@ export async function stashDropCommand(args: string[]): Promise<void> {
   const json = args.includes("--json");
   const client = createGitClient(process.cwd());
   let raw = args.find((a) => !a.startsWith("-"));
-  try {
-    if (raw === undefined && process.stdin.isTTY && !json && !process.env.RT_BATCH) {
-      const stashes = await client.stashes();
-      if (stashes.length === 0) failPlain(json, "git stash drop", STASH_DROP_USAGE);
-      const { filterableSelect } = await import("../../lib/pick-wrappers.ts");
-      const picked = await filterableSelect({
-        message: "Drop which stash?",
-        options: stashes.map((s) => ({ label: `stash@{${s.index}}: ${s.message}`, value: String(s.index) })),
-      });
-      if (picked === null) process.exit(0);
-      raw = picked;
+  if (raw === undefined && process.stdin.isTTY && !json && !process.env.RT_BATCH) {
+    let stashes: any[];
+    try {
+      stashes = await client.stashes();
+    } catch (err) {
+      failPlain(json, "git stash drop", err instanceof Error ? err.message : String(err));
     }
-    if (raw === undefined) failPlain(json, "git stash drop", STASH_DROP_USAGE);
-    const index = Number(raw);
-    if (!Number.isInteger(index) || index < 0) failPlain(json, "git stash drop", STASH_DROP_USAGE);
+    if (stashes.length === 0) failPlain(json, "git stash drop", STASH_DROP_USAGE);
+    const { filterableSelect } = await import("../../lib/pick-wrappers.ts");
+    const picked = await filterableSelect({
+      message: "Drop which stash?",
+      options: stashes.map((s) => ({ label: `stash@{${s.index}}: ${s.message}`, value: String(s.index) })),
+    });
+    if (picked === null) process.exit(0);
+    raw = picked;
+  }
+  if (raw === undefined) failPlain(json, "git stash drop", STASH_DROP_USAGE);
+  const index = Number(raw);
+  if (!Number.isInteger(index) || index < 0) failPlain(json, "git stash drop", STASH_DROP_USAGE);
+  try {
     await client.stashDrop(index);
-    if (json) console.log(JSON.stringify({ ok: true, index }));
-    else console.log(`dropped stash@{${index}}`);
   } catch (err) {
     failPlain(json, "git stash drop", err instanceof Error ? err.message : String(err));
   }
+  if (json) console.log(JSON.stringify({ ok: true, index }));
+  else console.log(`dropped stash@{${index}}`);
 }
