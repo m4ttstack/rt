@@ -196,6 +196,41 @@ left as-is or reduced to a pointer here.
    one-time setup in the script header. If that setup is missing, tell the user
    the steps and stop rather than failing partway.
 
+12. **Update this machine.** The release is not done while the dev's own
+   machine still runs the previous one; v2.10.0 ended with a 2.7.0 prod
+   app, a day-old dev bundle, and served apps up to three days stale
+   until the user asked. In order:
+
+   - **Prod app**: download the released dmg, verify it against
+     SHA256SUMS, and replace `/Applications/mattstack.app` with the
+     mounted copy (`ditto`). Never launch an old prod copy to
+     Sparkle-update it: pre-2.8 updaters gate on `~/.local/bin/rt`
+     existing, and a launched prod app's daemon seizes `rt.sock` from
+     the dev daemon. Do not launch the new copy either; it sits ready
+     for the next flavor flip.
+   - **Dev bundle**: in a scratch clone or worktree at the released
+     commit, `scripts/fetch-deps.sh arm64`, then `rt-tray/build.sh dev`
+     (never rebuild the blessed bundle in place). With the user's
+     approval, swap `/Applications/mattstack-dev.app`: kill the running
+     dev app by pid (a polite quit fails silently), `ditto` the new
+     bundle over, `open` it, and verify a fresh pid and launch time.
+   - **Daemon**: announce in #rt first (the dev daemon serves other
+     sessions), then `rt daemon restart` and confirm `rt daemon status`
+     reports the released commit.
+   - **Deck and the served suite**: the bundle swap ships the new
+     Helpers, but the live agent binary is `~/.local/bin/deck`; confirm
+     `deck --version` matches the deps.lock pin. The rt-managed served
+     apps (board, chat, console, boxscore, gitq) run from the
+     `~/Documents/GitHub/mattstack-apps` checkout, so pull it to main
+     (branch-check first, it is shared) and `deck restart --managed`.
+     Then verify each managed app's pid actually cycled via `launchctl
+     print gui/501/com.mattstack.deck.<app>`: a socket blip can end the
+     restart loop partway, so restart stragglers by name. Rows deck
+     lists as user-managed are the user's own; leave them.
+   - **Verify**: prod Info.plist version equals the tag, dev app process
+     is fresh, daemon reports the released commit, `deck --version` is
+     current, and every managed app's start time postdates the restart.
+
 ## Guardrails
 
 - Never run `gh release create` or `gh release edit --notes` yourself. CI owns the
