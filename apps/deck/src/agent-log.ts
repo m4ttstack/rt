@@ -1,7 +1,13 @@
-import { closeSync, existsSync, mkdirSync, openSync, renameSync, statSync } from 'node:fs';
+import {
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  renameSync,
+  statSync,
+} from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-
 import { dlopen, FFIType, suffix } from 'bun:ffi';
 
 /**
@@ -31,7 +37,9 @@ export function redirectAgentOutput(): void {
     libc.symbols.dup2(fd, 2);
     closeSync(fd);
     libc.close();
-    console.log(`[agent-log] ${new Date().toISOString()} pid ${process.pid} serving`);
+    console.log(
+      `[agent-log] ${new Date().toISOString()} pid ${process.pid} serving`
+    );
   } catch {
     // Non-fatal: output stays wherever the launcher pointed it.
   }

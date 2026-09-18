@@ -1,12 +1,6 @@
 // src/main.ts
 import './boot-env.ts';
 
-import { redirectAgentOutput } from './agent-log.ts';
-
-// Before anything else module-level (listRecords below reads the registry at
-// import time): a serve process must never crash somewhere unobservable.
-if (process.argv.includes('serve')) redirectAgentOutput();
-
 import { shouldAutoHeal } from '../core/auto-heal.ts';
 import {
   CANARY_PATH,
@@ -16,6 +10,7 @@ import {
 } from '../core/canary.ts';
 import { isAuthorized, startRestartDetached } from '../core/proxy-restart.ts';
 import { reconcileOnce } from '../core/reconcile.ts';
+import { redirectAgentOutput } from './agent-log.ts';
 import { startApi } from './api/server.ts';
 import { writeApiInfo } from './api/state.ts';
 import { reconcileMattstackTld } from './api/tld-reconcile.ts';
@@ -27,6 +22,10 @@ import { migrateManagedDevShape } from './registry/migrate-dev-shape.ts';
 import { listRecords } from './registry/records.ts';
 import { LaunchdManager } from './services/launchd.ts';
 import { isPlatformManagedBy } from './services/manager.ts';
+
+// Before anything else module-level (listRecords below reads the registry at
+// import time): a serve process must never crash somewhere unobservable.
+if (process.argv.includes('serve')) redirectAgentOutput();
 
 const PORT = Number(process.env.PORT ?? 7940);
 const CANARY_PORT = Number(process.env.LOCAL_APPS_CANARY_PORT ?? 7942);
