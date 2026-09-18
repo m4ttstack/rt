@@ -47,6 +47,29 @@ left as-is or reduced to a pointer here.
    any `feat(` or a new module/file is a minor bump; only `fix(` / `chore(` /
    `docs(` / `ci(` / `test(` is a patch bump; if ambiguous, ask.
 
+2b. **Pin freshness: the bundled apps ship at their deps.lock pins, not at
+   apps main.** v2.9.0 shipped a ten-day-stale app layer this way (every
+   app pinned at the Sep 7 fold-in while board's half of the gate-seam epic
+   sat merged and unreleased), and nothing in the process said so. For each
+   app row in `rt-tray/deps.lock` (board, chat, console, deck; gitq and
+   fast-browser live in their own repos), compare the pinned release tag's
+   date against the subdir's latest commit on `m4ttstack/apps` main:
+
+   ```
+   gh api repos/m4ttstack/apps/releases/tags/<tag> --jq '.published_at[:10]'
+   gh api "repos/m4ttstack/apps/commits?path=apps/<app>&per_page=1" --jq '.[0].commit.committer.date[:10]'
+   ```
+
+   The policy is content lockstep, independent numbering: an app whose
+   subdir moved since its pin gets a release cut from the same main this
+   tag builds against (app-prefixed tag on the monorepo; the bundle-apps
+   workflow builds the artifact), then its deps.lock row bumps with the
+   new tarball's sha256. An unchanged app keeps its pin — no empty
+   releases. Holding a stale pin anyway is allowed but is a decision the
+   user makes and the release notes record, never a silent default.
+   Version numbers stay per-app; rt's own tag plus the committed deps.lock
+   is the compatibility record.
+
 3. **Push main.** If `main` is ahead of `origin/main`, push it. This is an
    outward action: unless the user pre-authorized the release, say what you are
    about to push and wait for confirmation.
@@ -106,6 +129,16 @@ left as-is or reduced to a pointer here.
    It needs the `mattstack-golden-26` image and takes about 25 minutes. The gate
    is the report's `screens` and `assert` phases both `pass` — a `skip` is not
    green. Tag only when the dispatch run and this walkthrough are both green.
+
+   Environment the walkthrough actually needs (the v2.9.0 run hit all
+   three): `MATTSTACK_VMTEST_PAT` set (`gh auth token` works for GitHub;
+   `--forge gitlab` needs a GitLab PAT, since the harness exports it as
+   `GITLAB_TOKEN`), and the real vmtest org is `matts-hasura-demo` — the
+   README's default `mattstack-vmtest` does not exist — so export
+   `MATTSTACK_VMTEST_ORG=matts-hasura-demo` and
+   `MATTSTACK_VMTEST_ORG_CONFIRM=matts-hasura-demo`. Also: the rehearsal's
+   dmg version stamp is `<latest-patch-bump>-ci<run>`, not `v0.0.0` — read
+   the artifact's actual filename rather than assuming.
 
 9. **Tag and push.**
    ```
