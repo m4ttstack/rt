@@ -15,6 +15,10 @@ What it adds:
   member not already engaged with it and asks their board for a first look.
   A peer board running a version without this ask drops it silently; the chip
   self-expires to "no-response" after 48 hours.
+- **Request response.** The reverse direction: once your review of a
+  teammate's MR finishes with comments, "ask `<author>`'s agent to respond"
+  asks the author's board to answer the feedback. Their board reports the
+  respond lifecycle back so your chip confirms and clears.
 - **Author-driven re-review.** Independent of the switchboard: the MR author can
   ask by resolving the latch thread on the MR itself, with no peer board
   involved. See [agent actions](agent-actions.md#reviewer-side-automation).

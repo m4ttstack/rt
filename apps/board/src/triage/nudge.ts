@@ -48,31 +48,44 @@ export function decideRequest(
   ownReview: ReviewState | undefined,
   m: MrMemory,
   cfg: TriageConfig,
-  now: number
+  now: number,
+  ownRespond?: { status: string }
 ): NudgeDecision {
   if (req.handled) return { action: 'skip', reason: 'already-handled' };
   if (!cfg.enabled) return { action: 'skip', reason: 'disabled' };
   if (req.receivedAt !== null && now - req.receivedAt > NUDGE_FRESH_MS) {
     return { action: 'expire', reason: 'stale' };
   }
-  if (
-    ownReview &&
-    (ownReview.status === 'queued' || ownReview.status === 'reviewing')
-  ) {
-    return { action: 'reject', reason: 'review-in-flight' };
-  }
-  // The review-state gate inverts with the ask's kind: a re-review needs a
-  // commented review to revisit, a first look must not repeat a finished one.
-  if (req.kind === 'review') {
-    if (ownReview && ownReview.status === 'done') {
-      return { action: 'reject', reason: 'already-reviewed' };
+  if (req.kind === 'respond') {
+    // A respond ask runs on the author's own MR, so the review lane says
+    // nothing here; the only lane that can collide is respond itself.
+    if (
+      ownRespond &&
+      ownRespond.status !== 'done' &&
+      ownRespond.status !== 'error'
+    ) {
+      return { action: 'reject', reason: 'respond-in-flight' };
     }
-  } else if (
-    !ownReview ||
-    ownReview.status !== 'done' ||
-    ownReview.outcome !== 'comment'
-  ) {
-    return { action: 'reject', reason: 'no-commented-review' };
+  } else {
+    if (
+      ownReview &&
+      (ownReview.status === 'queued' || ownReview.status === 'reviewing')
+    ) {
+      return { action: 'reject', reason: 'review-in-flight' };
+    }
+    // The review-state gate inverts with the ask's kind: a re-review needs a
+    // commented review to revisit, a first look must not repeat a finished one.
+    if (req.kind === 'review') {
+      if (ownReview && ownReview.status === 'done') {
+        return { action: 'reject', reason: 'already-reviewed' };
+      }
+    } else if (
+      !ownReview ||
+      ownReview.status !== 'done' ||
+      ownReview.outcome !== 'comment'
+    ) {
+      return { action: 'reject', reason: 'no-commented-review' };
+    }
   }
   if (m.attemptsToday >= cfg.dailyAttemptBudget)
     return { action: 'reject', reason: 'budget-exhausted' };
@@ -92,7 +105,8 @@ export function decideNudge(
   ownReview: ReviewState | undefined,
   m: MrMemory,
   cfg: TriageConfig,
-  now: number
+  now: number,
+  ownRespond?: { status: string }
 ): NudgeDecision {
   return decideRequest(
     {
@@ -106,7 +120,8 @@ export function decideNudge(
     ownReview,
     m,
     cfg,
-    now
+    now,
+    ownRespond
   );
 }
 
@@ -114,6 +129,8 @@ export interface NudgePassDeps {
   readNudges(): NudgeState[];
   markNudgeHandled(id: string, result: NudgeResult, reason?: string): void;
   readReviewStates(): Map<string, ReviewState>;
+  /** The respond lane per MR, the one lane a respond ask can collide with. */
+  readRespondStates(): Map<string, { status: string }>;
   launchAsk(mrUrl: string, iid: number, kind: AskKind): Promise<ReReviewLaunch>;
   publishOutcome(to: string, payload: NudgeOutcomePayload): void;
   memory: DispatchMemory;
@@ -131,6 +148,7 @@ export async function runNudgePass(deps: NudgePassDeps): Promise<{
 }> {
   const result = { dispatched: 0, rejected: 0, expired: 0, skipped: 0 };
   const reviews = deps.readReviewStates();
+  const responds = deps.readRespondStates();
   const now = deps.now();
   const dayStamp = new Date(now).toISOString().slice(0, 10);
 
@@ -145,7 +163,8 @@ export async function runNudgePass(deps: NudgePassDeps): Promise<{
       reviews.get(nudge.mrUrl),
       m,
       deps.cfg,
-      now
+      now,
+      responds.get(nudge.mrUrl)
     );
     // Skips come first and audit nothing: a handled nudge is re-read on every
     // cron run, and auditing it would grow the log forever with a line that

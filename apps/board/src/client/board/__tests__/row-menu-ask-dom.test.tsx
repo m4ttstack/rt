@@ -65,10 +65,15 @@ const ctx = {
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
 let asked: Array<{ iid: number; reviewer: string }>;
+let respondAsks: Array<{ iid: number; reviewer: string }>;
 
 const noop = () => {};
 
-async function render(mr: BoardMRWithReview, roster: string[]) {
+async function render(
+  mr: BoardMRWithReview,
+  roster: string[],
+  opts: { canNudge?: boolean; canAskRespond?: boolean } = {}
+) {
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -93,11 +98,15 @@ async function render(mr: BoardMRWithReview, roster: string[]) {
         onMrAction={noop}
         onRebaseLocal={noop}
         onNudge={noop}
-        canNudge={true}
+        canNudge={opts.canNudge ?? true}
         onResumeReview={noop}
         roster={roster}
         onRequestReview={(mr2, reviewer) =>
           asked.push({ iid: mr2.iid, reviewer })
+        }
+        canAskRespond={opts.canAskRespond ?? false}
+        onAskRespond={(mr2, reviewer) =>
+          respondAsks.push({ iid: mr2.iid, reviewer })
         }
       />
     );
@@ -106,6 +115,7 @@ async function render(mr: BoardMRWithReview, roster: string[]) {
 
 beforeEach(() => {
   asked = [];
+  respondAsks = [];
 });
 afterEach(async () => {
   await React.act(async () => root.unmount());
@@ -163,4 +173,29 @@ test('engaged peers and an outstanding ask hide the item', async () => {
     el => el.textContent
   );
   expect(items.some(t => t?.includes('request review from'))).toBe(false);
+});
+
+test("a commented review on a teammate's MR offers the respond ask", async () => {
+  await render(
+    mrx({
+      author: { username: 'kim', name: 'Kim' },
+      review: { status: 'done', outcome: 'comment' },
+    } as never),
+    ['pat', 'kim'],
+    { canNudge: false, canAskRespond: true }
+  );
+  await React.act(async () => itemByText("ask kim's agent to respond").click());
+  expect(respondAsks).toEqual([{ iid: 1418, reviewer: 'kim' }]);
+});
+
+test('no respond ask without a commented review of mine', async () => {
+  await render(
+    mrx({ author: { username: 'kim', name: 'Kim' } } as never),
+    ['pat', 'kim'],
+    { canNudge: false, canAskRespond: true }
+  );
+  const items = [...document.querySelectorAll('[role="menuitem"]')].map(
+    el => el.textContent
+  );
+  expect(items.some(t => t?.includes('agent to respond'))).toBe(false);
 });

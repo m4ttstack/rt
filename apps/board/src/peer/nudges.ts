@@ -181,22 +181,29 @@ export function resolveSentNudge(
   });
 }
 
-/** Retire a sent nudge once the re-review it asked for has finished: delete
-    the row so the chip clears and "request re-review" comes back on the menu.
-    The `ifSentBefore` guard keeps the ask alive when the finishing report is
+/** Retire a sent nudge once the ask it carried has finished: delete the row
+    so the chip clears and the ask comes back on the menu. Correlation, in
+    preference order: a `nudgeId` pins the finishing report to one exact ask
+    (retire on match, keep on mismatch, no clocks involved); without one, the
+    `ifSentBefore` guard keeps the ask alive when the finishing report is
     older than the nudge -- at-least-once delivery means a peer's pre-nudge
     "done" can arrive after a fresh ask went out, and that redelivery must not
-    retire it. */
+    retire it. The timestamp fallback compares two different boards' clocks,
+    so skew can hold a finished ask until it self-expires; peers that echo the
+    id back never hit that. */
 export function retireSentNudge(
   mrUrl: string,
   ifSentBefore: number,
-  db: Database = getStateDb()
+  db: Database = getStateDb(),
+  nudgeId?: string
 ): void {
   persistOrWarn('sent nudge retire', () => {
     const tx = db.transaction(() => {
       const prev = readSentNudgeRow(mrUrl, db);
       if (!prev) return;
-      if (prev.sentAt >= ifSentBefore) return;
+      if (nudgeId !== undefined) {
+        if (prev.nudgeId !== nudgeId) return;
+      } else if (prev.sentAt >= ifSentBefore) return;
       db.query('DELETE FROM nudges_sent WHERE mr_url = ?').run(mrUrl);
     });
     tx();

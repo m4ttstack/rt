@@ -498,7 +498,11 @@ export function Board() {
   // Bespoke (not useLaunchAction): the failure toast prefers the server's own
   // refusal text over a generic status message.
   const handleAsk = useCallback(
-    (mr: BoardMR, reviewer: string, kind: 'review' | 're-review') => {
+    (
+      mr: BoardMR,
+      reviewer: string,
+      kind: 'review' | 're-review' | 'respond'
+    ) => {
       if (!mr.webUrl) return;
       addToast(`requesting ${kind} of !${mr.iid} from ${reviewer}…`);
       postAction('/nudge', {
@@ -1330,6 +1334,14 @@ export function Board() {
           onRequestReview={(mr2, reviewer) =>
             handleAsk(mr2, reviewer, 'review')
           }
+          // The reverse ask: only on a teammate's MR, and only when this
+          // board has an identity to ask as.
+          canAskRespond={
+            !!data.defaultMember &&
+            data.defaultMember !== 'all' &&
+            rowMenu.mr.author.username !== data.defaultMember
+          }
+          onAskRespond={(mr2, reviewer) => handleAsk(mr2, reviewer, 'respond')}
         />
       )}
 

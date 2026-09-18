@@ -4,10 +4,12 @@
 
 export type NudgeResult = 'launched' | 'rejected' | 'expired';
 
-/** The two ask flavors a board can send about its own MR. `review-request`
-    (first look) and `re-review-request` share one payload shape; older boards
-    drop the unknown first-look type, and the sender's chip self-expires. */
-export type AskKind = 'review' | 're-review';
+/** The ask flavors boards send each other. `review-request` (first look) and
+    `re-review-request` go author -> reviewer about the author's MR;
+    `respond-request` goes reviewer -> author asking them to answer review
+    feedback. All three share one payload shape; older boards drop the types
+    they don't know, and the sender's chip self-expires. */
+export type AskKind = 'review' | 're-review' | 'respond';
 
 /** What a sender builds. The relay stamps `from` (from the auth token) and
     `receivedAt` (its own clock -- the only clock freshness may be judged on). */
@@ -30,6 +32,9 @@ export interface ReviewStatePayload {
   status: string;
   outcome?: string;
   updatedAt: number;
+  /** On a respond-state: the inbound ask this report answers, echoed back so
+      the asker retires by identity instead of comparing two boards' clocks. */
+  nudgeId?: string;
 }
 
 export interface ReReviewRequestPayload {
@@ -75,7 +80,12 @@ export function buildAskDraft(
   payload: ReReviewRequestPayload,
   now: number = Date.now()
 ): DraftEnvelope {
-  const type = kind === 'review' ? 'review-request' : 're-review-request';
+  const type =
+    kind === 'review'
+      ? 'review-request'
+      : kind === 'respond'
+        ? 'respond-request'
+        : 're-review-request';
   return makeEnvelope(reviewer, type, payload, now);
 }
 
@@ -117,11 +127,18 @@ function mrBase(p: unknown): { mrUrl: string; iid: number } | null {
 export function parseReviewStatePayload(p: unknown): ReviewStatePayload | null {
   const base = mrBase(p);
   if (!base) return null;
-  const { status, outcome, updatedAt } = p as Record<string, unknown>;
+  const { status, outcome, updatedAt, nudgeId } = p as Record<string, unknown>;
   if (typeof status !== 'string' || !status) return null;
   if (outcome !== undefined && typeof outcome !== 'string') return null;
   if (typeof updatedAt !== 'number' || !Number.isFinite(updatedAt)) return null;
-  return { ...base, status, outcome: outcome as string | undefined, updatedAt };
+  if (nudgeId !== undefined && typeof nudgeId !== 'string') return null;
+  return {
+    ...base,
+    status,
+    outcome: outcome as string | undefined,
+    updatedAt,
+    nudgeId: nudgeId as string | undefined,
+  };
 }
 
 export function parseReReviewRequestPayload(

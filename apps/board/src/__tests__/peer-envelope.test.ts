@@ -75,6 +75,11 @@ describe('buildAskDraft', () => {
     expect(d.payload).toEqual({ mrUrl: 'https://x/1', iid: 1 });
   });
 
+  test("kind 'respond' drafts a respond-request", () => {
+    const d = buildAskDraft('pat', 'respond', { mrUrl: 'https://x/1', iid: 1 });
+    expect(d.type).toBe('respond-request');
+  });
+
   test("kind 'review' drafts a review-request, note carried through", () => {
     const d = buildAskDraft('ada', 'review', {
       mrUrl: 'https://x/1',

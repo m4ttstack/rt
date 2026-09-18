@@ -133,6 +133,16 @@ function firstReviewTargets(
   return roster.filter(u => !engaged.has(u));
 }
 
+/** Whom a respond ask can go to: the MR's author, once my own review lane
+    finished with comments (so there is feedback to answer) and while no ask
+    of mine is outstanding on this MR. */
+function respondAskTarget(mrx: BoardMRWithReview): string | null {
+  if (mrx.sentNudge && !NUDGE_RETRYABLE.has(mrx.sentNudge.display)) return null;
+  const r = mrx.review;
+  if (!r || r.status !== 'done' || r.outcome !== 'comment') return null;
+  return mrx.author.username;
+}
+
 /** Key for the App-level map of optimistically resolved drafts. Resolution
     lives above the badge because the acting happens in DraftModal; the next
     /data.json pull drops the draft and the stale entry is harmless. */
@@ -379,6 +389,7 @@ export {
   type SlackMark,
   nudgeTargets,
   firstReviewTargets,
+  respondAskTarget,
   draftKey,
   getSlackMarks,
   setSlackMarks,

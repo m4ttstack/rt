@@ -364,6 +364,26 @@ describe('retireSentNudge', () => {
     expect(readSentNudges(db).has(URL_A)).toBe(true);
   });
 
+  test('a matching nudge id retires regardless of clock skew between boards', () => {
+    writeSentNudge(
+      { nudgeId: 'n1', mrUrl: URL_A, iid: 4821, reviewer: 'grace', sentAt: 20 },
+      db
+    );
+    // ifSentBefore says "keep" (author clock behind asker clock), but the id
+    // pins the done to this exact ask.
+    retireSentNudge(URL_A, 10, db, 'n1');
+    expect(readSentNudges(db).has(URL_A)).toBe(false);
+  });
+
+  test('a mismatched nudge id never retires, even when the timestamp allows', () => {
+    writeSentNudge(
+      { nudgeId: 'n2', mrUrl: URL_A, iid: 4821, reviewer: 'grace', sentAt: 1 },
+      db
+    );
+    retireSentNudge(URL_A, 10, db, 'n1');
+    expect(readSentNudges(db).has(URL_A)).toBe(true);
+  });
+
   test('only retires the named MR', () => {
     writeSentNudge(
       { nudgeId: 'n1', mrUrl: URL_A, iid: 4821, reviewer: 'grace', sentAt: 1 },

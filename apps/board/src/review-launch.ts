@@ -2,11 +2,13 @@ import { resumeAgentPane } from './agent-launch.ts';
 import {
   dispatchPrompt,
   launchLegacyResume,
+  launchRespond,
   launchReview,
   mrTabLabel,
   statusBinPath,
   type SkillPathResolver,
 } from './herdr.ts';
+import { respondFilePath, writeRespondState } from './respond-state.ts';
 import {
   readReviewStates,
   reviewFilePath,
@@ -206,6 +208,72 @@ export async function launchReReview(
     io.writeReviewState(statePath, {
       status: 'error',
       message: 'failed to launch re-review pane',
+    });
+    return { kind: 'error', message };
+  }
+}
+
+/** Seams for the respond-ask launcher, mirroring ReReviewIo. */
+export interface RespondAskIo {
+  launchRespond: typeof launchRespond;
+  respondFilePath: typeof respondFilePath;
+  writeRespondState: typeof writeRespondState;
+}
+
+export const defaultRespondAskIo: RespondAskIo = {
+  launchRespond,
+  respondFilePath,
+  writeRespondState,
+};
+
+/** Start a respond pane for a peer's respond-request, awaited so triage can
+    learn whether it came up. Fresh launch only: the guardrail already rejects
+    while a respond is in flight, and a done/errored lane wants the wrapper's
+    own fresh triage, not a resumed session. */
+export async function launchRespondAsk(
+  mrUrl: string,
+  iid: number,
+  ctx: ReReviewCtx,
+  io: RespondAskIo = defaultRespondAskIo,
+  resolvePath: SkillPathResolver = resolveSkillPath
+): Promise<ReReviewLaunch> {
+  const statePath = io.respondFilePath(mrUrl);
+  io.writeRespondState(statePath, { mrUrl, iid, status: 'queued' });
+  try {
+    const result = await io.launchRespond(
+      {
+        mrUrl,
+        iid,
+        cwd: ctx.cwd,
+        repo: ctx.repo,
+        workspaceLabel: ctx.workspaceLabel,
+        statePath,
+        skill: ctx.skill,
+        author: ctx.author,
+        account: ctx.account,
+        model: ctx.model,
+        effort: ctx.effort,
+        note: ctx.note,
+      },
+      undefined,
+      resolvePath
+    );
+    if (!result.focusedExisting) {
+      io.writeRespondState(statePath, {
+        status: 'queued',
+        tabId: result.tabId,
+        workspaceId: result.workspaceId,
+        agentId: result.agentId,
+        paneId: result.paneId,
+      });
+    }
+    return { kind: 'launched' };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`respond ask launch failed: ${message}`);
+    io.writeRespondState(statePath, {
+      status: 'error',
+      message: 'failed to launch respond pane',
     });
     return { kind: 'error', message };
   }

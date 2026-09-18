@@ -996,6 +996,81 @@ describe('rowStatus: social lanes', () => {
     });
   });
 
+  test('an inbound respond ask words a response and verbs a respond launch', () => {
+    const [line] = candidateLines(
+      mr({
+        nudges: [
+          { from: 'jo', receivedAt: NOW - 10 * 60_000, kind: 'respond' },
+        ],
+      }),
+      NOW,
+      NONE,
+      ME
+    );
+    expect(line).toMatchObject({
+      tone: 'warn',
+      word: 'jo asked for a response',
+      detail: '10m ago',
+    });
+    expect(line!.verbs[0]).toEqual({
+      kind: 'launch-respond',
+      label: 'respond',
+    });
+  });
+
+  test('a sent respond ask words respond in every phase', () => {
+    const [asked] = candidateLines(
+      mr({
+        sentNudge: {
+          display: 'requested',
+          reviewer: 'pat',
+          sentAt: NOW - 30 * 60_000,
+          kind: 'respond',
+        } as never,
+      }),
+      NOW,
+      NONE,
+      ME
+    );
+    expect(asked).toMatchObject({
+      tone: 'quiet',
+      word: 'asked pat to respond',
+    });
+    const [retry] = candidateLines(
+      mr({
+        sentNudge: {
+          display: 'no-response',
+          reviewer: 'pat',
+          sentAt: NOW,
+          kind: 'respond',
+        } as never,
+      }),
+      NOW,
+      NONE,
+      ME
+    );
+    expect(retry).toMatchObject({
+      word: 'respond ask to pat went unanswered',
+    });
+    const [working] = candidateLines(
+      mr({
+        sentNudge: {
+          display: 'launched',
+          reviewer: 'pat',
+          kind: 'respond',
+        } as never,
+      }),
+      NOW,
+      NONE,
+      ME
+    );
+    expect(working).toMatchObject({
+      tone: 'work',
+      word: 'pat responding…',
+      spin: true,
+    });
+  });
+
   test('the longest-waiting inbound nudge wins the line', () => {
     const s = rowStatus(
       mr({

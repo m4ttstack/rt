@@ -12,6 +12,7 @@ import {
   gitlabMenuItems,
   laneInterrupted,
   nudgeTargets,
+  respondAskTarget,
   respondItemLabel,
   reviewLogged,
   reviewMenuItems,
@@ -92,6 +93,8 @@ function RowMenu({
   onResumeReview,
   roster,
   onRequestReview,
+  canAskRespond,
+  onAskRespond,
 }: {
   menu: RowMenuState;
   ctx: RowContext;
@@ -120,6 +123,8 @@ function RowMenu({
   /** Team roster usernames, the first-look ask's candidate pool. */
   roster: string[];
   onRequestReview: (mr: BoardMR, reviewer: string) => void;
+  canAskRespond: boolean;
+  onAskRespond: (mr: BoardMR, reviewer: string) => void;
 }) {
   // Local reaction state so the open menu updates immediately after a mark,
   // and per-emoji pending so the clicked item shows a spinner + disables.
@@ -162,6 +167,8 @@ function RowMenu({
   const peers = ctx.local && canNudge ? nudgeTargets(mrx) : [];
   const askTargets =
     ctx.local && canNudge ? firstReviewTargets(mrx, roster) : [];
+  const respondTarget =
+    ctx.local && canAskRespond ? respondAskTarget(mrx) : null;
   const gitlabItems = gitlabMenuItems(mr);
   const canRebaseLocal =
     mr.blockers?.hasConflicts ||
@@ -420,6 +427,18 @@ function RowMenu({
           `ask ${peer.reviewer}'s agent to re-review`
         )}
         onClick={run(() => onNudge(mr, peer.reviewer))}
+      />
+    );
+  // Ask the author's agent to answer my review's feedback.
+  if (respondTarget)
+    agentItems.push(
+      <ContextMenu.Item
+        key="ask-respond"
+        label={iconLabel(
+          <PeopleGlyph />,
+          `ask ${respondTarget}'s agent to respond`
+        )}
+        onClick={run(() => onAskRespond(mr, respondTarget))}
       />
     );
   // Ask a free peer for a first look. Swaps to the picker stage rather than

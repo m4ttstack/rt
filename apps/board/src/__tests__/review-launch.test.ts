@@ -4,10 +4,13 @@ import { join } from 'path';
 import type { Database } from 'bun:sqlite';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
+import { respondFilePath, writeRespondState } from '../respond-state.ts';
 import {
   launchReReview,
+  launchRespondAsk,
   type ReReviewCtx,
   type ReReviewIo,
+  type RespondAskIo,
 } from '../review-launch.ts';
 import {
   readReviewStates,
@@ -424,5 +427,62 @@ describe('launchReReview: nothing on file (arm iii -- fresh launchReview)', () =
     const state = readReviewStates(db).get(URL_A);
     expect(state?.status).toBe('error');
     expect(state?.message).toBe('failed to launch re-review pane');
+  });
+});
+
+describe('launchRespondAsk (fresh respond for a peer ask)', () => {
+  let respondCalls: Array<Record<string, unknown>>;
+  function makeRespondIo(over: Partial<RespondAskIo> = {}): RespondAskIo {
+    respondCalls = [];
+    return {
+      launchRespond: async opts => {
+        respondCalls.push(opts as unknown as Record<string, unknown>);
+        return {
+          agentId: 'agent-r',
+          sessionId: 'sess-r',
+          paneId: 'w1:p3',
+          tabId: 'w1:t3',
+          workspaceId: 'w1',
+          focusedExisting: false,
+        };
+      },
+      respondFilePath: mrUrl => respondFilePath(mrUrl),
+      writeRespondState: (path, patch, now) =>
+        writeRespondState(path, patch, now, db),
+      ...over,
+    };
+  }
+
+  test('launches a fresh respond, settles state queued with the pane ids', async () => {
+    const res = await launchRespondAsk(
+      URL_A,
+      IID,
+      CTX,
+      makeRespondIo(),
+      noSkillPath
+    );
+    expect(res).toEqual({ kind: 'launched' });
+    expect(respondCalls).toHaveLength(1);
+    expect(respondCalls[0]).toMatchObject({
+      mrUrl: URL_A,
+      iid: IID,
+      cwd: CTX.cwd,
+      skill: CTX.skill,
+    });
+  });
+
+  test('a throwing launcher settles an error state and reports it', async () => {
+    const res = await launchRespondAsk(
+      URL_A,
+      IID,
+      CTX,
+      makeRespondIo({
+        launchRespond: async () => {
+          throw new Error('no herdr');
+        },
+      }),
+      noSkillPath
+    );
+    expect(res).toEqual({ kind: 'error', message: 'no herdr' });
   });
 });

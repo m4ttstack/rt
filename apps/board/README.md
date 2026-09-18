@@ -231,9 +231,9 @@ guardrail.
 
 When teammates each run their own board, a small relay called the switchboard
 lets those boards nudge each other about reviews and re-reviews without either
-board talking to the other directly. It adds live peer badges, "request
-review" and "request re-review" row actions, and optional guarded auto
-dispatch on the reviewer's side.
+board talking to the other directly. It adds live peer badges, row actions to
+request a review, a re-review, or a response from a teammate's agent, and
+optional guarded auto dispatch on the receiving side.
 
 It is entirely optional. Skip it and the board works exactly as described
 above.

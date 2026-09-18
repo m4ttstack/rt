@@ -190,6 +190,7 @@ function deps(over: Partial<NudgePassDeps> = {}) {
     markNudgeHandled: (id, result, reason) =>
       handled.push({ id, result, reason }),
     readReviewStates: () => new Map([[nudge.mrUrl, commentedReview]]),
+    readRespondStates: () => new Map(),
     launchAsk: async (): Promise<ReReviewLaunch> => ({ kind: 'launched' }),
     publishOutcome: (to, payload) => published.push({ to, payload }),
     memory,
@@ -208,6 +209,43 @@ function deps(over: Partial<NudgePassDeps> = {}) {
     memory,
   });
 }
+
+describe('decideNudge kind: respond', () => {
+  const respondAsk: NudgeState = { ...nudge, kind: 'respond' };
+
+  test('dispatches with no respond lane on file, whatever the review lane says', () => {
+    expect(decideNudge(respondAsk, undefined, m, cfg, NOW, undefined)).toEqual({
+      action: 'dispatch',
+      reason: 'nudge',
+    });
+    expect(
+      decideNudge(respondAsk, commentedReview, m, cfg, NOW, undefined)
+    ).toEqual({ action: 'dispatch', reason: 'nudge' });
+  });
+
+  test('an in-flight respond lane rejects respond-in-flight', () => {
+    expect(
+      decideNudge(respondAsk, undefined, m, cfg, NOW, { status: 'drafting' })
+    ).toEqual({ action: 'reject', reason: 'respond-in-flight' });
+  });
+
+  test('a done or errored respond lane does not block a fresh ask', () => {
+    expect(
+      decideNudge(respondAsk, undefined, m, cfg, NOW, { status: 'done' }).action
+    ).toBe('dispatch');
+    expect(
+      decideNudge(respondAsk, undefined, m, cfg, NOW, { status: 'error' })
+        .action
+    ).toBe('dispatch');
+  });
+
+  test('budget and cooldown still gate respond asks', () => {
+    const exhausted: MrMemory = { ...m, attemptsToday: cfg.dailyAttemptBudget };
+    expect(
+      decideNudge(respondAsk, undefined, exhausted, cfg, NOW, undefined)
+    ).toEqual({ action: 'reject', reason: 'budget-exhausted' });
+  });
+});
 
 describe('runNudgePass', () => {
   test('dispatch path launches, marks handled launched, publishes, bumps memory, audits, notifies', async () => {
@@ -256,6 +294,36 @@ describe('runNudgePass', () => {
     expect(launches).toEqual([{ mrUrl: nudge.mrUrl, iid: 1, kind: 'review' }]);
     expect(d.audit.some(e => e.action === 'review-launched')).toBe(true);
     expect(d.audit.some(e => e.action === 're-review-launched')).toBe(false);
+  });
+
+  test('a kind:respond nudge dispatches when its respond lane is idle', async () => {
+    const launches: Array<{ kind?: string }> = [];
+    const respondAsk: NudgeState = { ...nudge, kind: 'respond' };
+    const d = deps({
+      readNudges: () => [respondAsk],
+      readRespondStates: () =>
+        new Map([[nudge.mrUrl, { status: 'done' } as never]]),
+      launchAsk: async (_mrUrl, _iid, kind): Promise<ReReviewLaunch> => {
+        launches.push({ kind });
+        return { kind: 'launched' };
+      },
+    });
+    const result = await runNudgePass(d);
+    expect(result.dispatched).toBe(1);
+    expect(launches).toEqual([{ kind: 'respond' }]);
+    expect(d.audit.some(e => e.action === 'respond-launched')).toBe(true);
+  });
+
+  test('a kind:respond nudge rejects while its respond lane is in flight', async () => {
+    const respondAsk: NudgeState = { ...nudge, kind: 'respond' };
+    const d = deps({
+      readNudges: () => [respondAsk],
+      readRespondStates: () =>
+        new Map([[nudge.mrUrl, { status: 'implementing' } as never]]),
+    });
+    const result = await runNudgePass(d);
+    expect(result.rejected).toBe(1);
+    expect(d.published[0]?.payload.reason).toBe('respond-in-flight');
   });
 
   test('the default nudge launches a re-review', async () => {

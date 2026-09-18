@@ -499,24 +499,26 @@ function peerLines(mr: BoardMRWithReview, now: number): Candidate[] {
     (a, b) => a.receivedAt - b.receivedAt
   );
   for (const n of nudges) {
-    const first = n.kind === 'review';
+    const kind = n.kind ?? 're-review';
     out.push({
       tone: 'warn',
-      word: `${n.from} asked for a ${first ? 'review' : 're-review'}`,
+      word: `${n.from} asked for a ${kind === 'respond' ? 'response' : kind}`,
       detail: agoMs(n.receivedAt, now),
       verbs: [
-        first
+        kind === 'review'
           ? { kind: 'launch-review', label: 'review' }
-          : { kind: 're-review', label: 're-review' },
+          : kind === 'respond'
+            ? { kind: 'launch-respond', label: 'respond' }
+            : { kind: 're-review', label: 're-review' },
       ],
     });
   }
   const sent = mr.sentNudge;
   if (sent) {
-    const first = sent.kind === 'review';
+    const kind = sent.kind ?? 're-review';
     if (NUDGE_RETRYABLE.has(sent.display)) {
       // The ask word: "the nudge" for a re-review, "the <kind> ask" otherwise.
-      const askWord = first ? 'review ask' : 'nudge';
+      const askWord = kind === 're-review' ? 'nudge' : `${kind} ask`;
       // A rejection carries the peer's own reason; surface it instead of
       // pretending nobody answered. Expiry and silence stay "unanswered".
       out.push(
@@ -529,9 +531,10 @@ function peerLines(mr: BoardMRWithReview, now: number): Candidate[] {
             }
           : {
               tone: 'quiet',
-              word: first
-                ? `review ask to ${sent.reviewer} went unanswered`
-                : `nudge to ${sent.reviewer} went unanswered`,
+              word:
+                kind === 're-review'
+                  ? `nudge to ${sent.reviewer} went unanswered`
+                  : `${kind} ask to ${sent.reviewer} went unanswered`,
               detail: 'right-click to ask again',
               verbs: [],
             }
@@ -540,16 +543,22 @@ function peerLines(mr: BoardMRWithReview, now: number): Candidate[] {
       const since = agoMs(sent.sentAt, now);
       out.push({
         tone: 'quiet',
-        word: first
-          ? `asked ${sent.reviewer} for a review`
-          : `nudged ${sent.reviewer}`,
+        word:
+          kind === 'review'
+            ? `asked ${sent.reviewer} for a review`
+            : kind === 'respond'
+              ? `asked ${sent.reviewer} to respond`
+              : `nudged ${sent.reviewer}`,
         detail: since ? `no answer yet, ${since}` : 'no answer yet',
         verbs: [],
       });
     } else {
       out.push({
         tone: 'work',
-        word: `${sent.reviewer} ${first ? '' : 're-'}reviewing…`,
+        word:
+          kind === 'respond'
+            ? `${sent.reviewer} responding…`
+            : `${sent.reviewer} ${kind === 'review' ? '' : 're-'}reviewing…`,
         spin: true,
         verbs: [],
       });

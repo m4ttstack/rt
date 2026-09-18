@@ -153,7 +153,11 @@ picked up and dispatched automatically, if every guardrail clears:
 - For a re-review ask: the reviewer's prior review on that MR is `done` with a
   `comment` outcome. For a first-look ask ("request review from"): the
   opposite -- there is no finished review to repeat.
-- No review is already in flight for that MR.
+- No review is already in flight for that MR. A respond ask (a reviewer asking
+  this board's author to answer feedback) checks the respond lane instead.
+- A respond ask that dispatches launches the respond wrapper on the author's
+  own MR, and the board publishes the respond lifecycle back to the asker so
+  their chip resolves.
 - The nudge is fresh, judged on the relay's `receivedAt` and never the sender's
   clock, and expires after 48 hours.
 - A per-MR cooldown (`cooldownMinutes`, default 30) and a daily dispatch budget

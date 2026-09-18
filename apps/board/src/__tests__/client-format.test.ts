@@ -7,6 +7,7 @@ import {
   firstReviewTargets,
   gitlabMenuItems,
   laneInterrupted,
+  respondAskTarget,
   respondItemLabel,
   reviewLogged,
   reviewMenuItems,
@@ -256,4 +257,41 @@ test('firstReviewTargets: roster minus author, engaged peers, and gated by an ou
     sentNudge: { display: 'no-response', reviewer: 'kim' },
   } as never;
   expect(firstReviewTargets(retryable, roster)).toEqual(['kim']);
+});
+
+test('respondAskTarget: the author, only after my commented review, gated by an outstanding ask', () => {
+  const base = {
+    author: { username: 'pat' },
+    review: { status: 'done', outcome: 'comment' },
+  } as never;
+  expect(respondAskTarget(base)).toBe('pat');
+
+  const approved = {
+    author: { username: 'pat' },
+    review: { status: 'done', outcome: 'approve' },
+  } as never;
+  expect(respondAskTarget(approved)).toBeNull();
+
+  const inFlight = {
+    author: { username: 'pat' },
+    review: { status: 'reviewing' },
+  } as never;
+  expect(respondAskTarget(inFlight)).toBeNull();
+
+  const noReview = { author: { username: 'pat' } } as never;
+  expect(respondAskTarget(noReview)).toBeNull();
+
+  const outstanding = {
+    author: { username: 'pat' },
+    review: { status: 'done', outcome: 'comment' },
+    sentNudge: { display: 'requested', reviewer: 'pat' },
+  } as never;
+  expect(respondAskTarget(outstanding)).toBeNull();
+
+  const retryable = {
+    author: { username: 'pat' },
+    review: { status: 'done', outcome: 'comment' },
+    sentNudge: { display: 'expired', reviewer: 'pat' },
+  } as never;
+  expect(respondAskTarget(retryable)).toBe('pat');
 });

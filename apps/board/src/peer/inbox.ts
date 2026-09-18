@@ -23,7 +23,7 @@ export interface MaterializeDeps {
       at: number;
     }
   ): void;
-  retireSentNudge(mrUrl: string, ifSentBefore: number): void;
+  retireSentNudge(mrUrl: string, ifSentBefore: number, nudgeId?: string): void;
   log(line: string): void;
   /** Called once per tick that reached the relay: "unauthorized" on a 401
       inbox, "ok" on a fetch that came back. Lets the runtime track token
@@ -57,7 +57,27 @@ export function materializeEnvelope(
     }
     return;
   }
-  if (e.type === 're-review-request' || e.type === 'review-request') {
+  if (e.type === 'respond-state') {
+    // The author's board telling the asker how the respond it asked for is
+    // going. Mirrors review-state's chip mechanics exactly: any non-terminal
+    // status confirms the ask, done retires it, error changes nothing (the
+    // launched chip keeps standing, same as an errored re-review).
+    const p = parseReviewStatePayload(e.payload);
+    if (!p)
+      return deps.log(`peer: malformed respond-state from ${e.from} (${e.id})`);
+    if (p.status !== 'done' && p.status !== 'error') {
+      deps.resolveSentNudge(p.mrUrl, { result: 'confirmed', at: now });
+    }
+    if (p.status === 'done') {
+      deps.retireSentNudge(p.mrUrl, p.updatedAt, p.nudgeId);
+    }
+    return;
+  }
+  if (
+    e.type === 're-review-request' ||
+    e.type === 'review-request' ||
+    e.type === 'respond-request'
+  ) {
     const p = parseReReviewRequestPayload(e.payload);
     if (!p)
       return deps.log(`peer: malformed ${e.type} from ${e.from} (${e.id})`);
@@ -68,9 +88,13 @@ export function materializeEnvelope(
       from: e.from,
       note: p.note,
       receivedAt: e.receivedAt,
-      // Only the first-look ask is marked; absence means re-review, so rows
-      // written before this kind existed keep their meaning.
-      ...(e.type === 'review-request' ? { kind: 'review' as const } : {}),
+      // Absence means re-review, so rows written before kinds existed keep
+      // their meaning; only the newer ask flavors are marked.
+      ...(e.type === 'review-request'
+        ? { kind: 'review' as const }
+        : e.type === 'respond-request'
+          ? { kind: 'respond' as const }
+          : {}),
     });
     return;
   }
