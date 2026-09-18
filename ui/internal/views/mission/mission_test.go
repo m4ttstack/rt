@@ -166,6 +166,48 @@ func TestEscFromFilterCancelsWithoutEmitting(t *testing.T) {
 	s.Wait()
 }
 
+// TestDiffSpaceOnAddLineEmitsStageWithSelIdx drives the cursor down to the
+// fixture's first add line (index 2 of session-model-mission.json's Diff.Lines,
+// selIdx 0) and checks space stages that line, not the hunk header it starts
+// on.
+func TestDiffSpaceOnAddLineEmitsStageWithSelIdx(t *testing.T) {
+	s := s5open(t)
+	s.Type(keyEnter)
+	s.Type("\x1b[B", "\x1b[B")
+	s.Type(" ")
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:stage"`) || !strings.Contains(l, `"path":"ui/internal/views/mission/mission.go"`) ||
+		!strings.Contains(l, `"mode":"line"`) || !strings.Contains(l, `"selIdx":0`) {
+		t.Fatalf("diff stage intent: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+func TestDiffSKeyEmitsHunkMode(t *testing.T) {
+	s := s5open(t)
+	s.Type(keyEnter)
+	s.Type("s")
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:stage"`) || !strings.Contains(l, `"mode":"hunk"`) {
+		t.Fatalf("diff hunk-stage intent: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+func TestDiffDKeyEmitsDiscard(t *testing.T) {
+	s := s5open(t)
+	s.Type(keyEnter)
+	s.Type("d")
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:discard"`) {
+		t.Fatalf("diff discard intent: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
 func TestUndoKeyEmitsUndoIntent(t *testing.T) {
 	s := s5open(t)
 	s.Type("u")

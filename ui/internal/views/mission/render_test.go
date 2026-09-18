@@ -187,6 +187,50 @@ func TestRenderKeybarContainsSpaceStage(t *testing.T) {
 	}
 }
 
+func TestRenderDiffLineHunkPaintsSurfaceAndLav(t *testing.T) {
+	out := renderDiffLine(DiffModel{}, DiffLine{Kind: "hunk", Text: "@@ -1,3 +1,4 @@"}, 40)
+	if !strings.Contains(out, bgSGR(theme.Surface)) {
+		t.Fatalf("hunk line should wear Surface bg: %q", out)
+	}
+	if !strings.Contains(out, fgSGR(theme.Lav)) {
+		t.Fatalf("hunk line should wear Lav text: %q", out)
+	}
+	if !strings.Contains(out, "@@ -1,3 +1,4 @@") {
+		t.Fatalf("hunk line missing its text: %q", out)
+	}
+}
+
+func TestRenderDiffLineSelectedAddShowsPinkBar(t *testing.T) {
+	out := renderDiffLine(DiffModel{}, DiffLine{Kind: "add", Text: "import x", Selected: true, SelIdx: 0}, 40)
+	if !strings.Contains(out, fgSGR(theme.Pink)+"m"+theme.GlyphBar) {
+		t.Fatalf("selected add line should show a Pink stage bar: %q", out)
+	}
+}
+
+func TestRenderDiffLineUnselectedShowsNoBar(t *testing.T) {
+	out := ansi.Strip(renderDiffLine(DiffModel{}, DiffLine{Kind: "context", Text: "unchanged"}, 40))
+	if strings.Contains(out, theme.GlyphBar) {
+		t.Fatalf("unselected line must not show the stage bar glyph: %q", out)
+	}
+}
+
+func TestRenderDiffPaneBinaryShowsExactMessage(t *testing.T) {
+	m := &Mission{}
+	m.model.Diff = DiffModel{Kind: "binary", Path: "logo.png"}
+	out := ansi.Strip(m.renderDiffPane(60, 10))
+	if !strings.Contains(out, "This binary file has changed.") {
+		t.Fatalf("binary diff missing its exact message:\n%s", out)
+	}
+}
+
+func TestRenderDiffPaneNoneShowsSelectAFile(t *testing.T) {
+	m := &Mission{}
+	out := ansi.Strip(m.renderDiffPane(60, 10))
+	if !strings.Contains(out, "select a file") {
+		t.Fatalf("empty diff missing the select-a-file hint:\n%s", out)
+	}
+}
+
 func TestMiddleTruncateKeepsHeadAndTail(t *testing.T) {
 	long := "ui/internal/views/mission/some/very/deep/nested/file.go"
 	out := middleTruncate(long, 20)

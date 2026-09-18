@@ -1,6 +1,6 @@
 // Package mission is the mission-control view: the top bar, the Changes
-// sidebar, the commit box, and the keybar, driven off the Current checkout
-// wire model. The diff pane itself is a placeholder until a later task.
+// sidebar, the commit box, the keybar, and the diff pane, driven off the
+// Current checkout wire model.
 package mission
 
 import (
@@ -46,6 +46,15 @@ type Mission struct {
 	amendLocal       bool
 	summaryInput     textinput.Model
 	descriptionInput textinput.Model
+
+	// diffCursor is the line cursor into model.Diff.Lines; diffTop is the
+	// scroll window's top line. diffPath is the Diff.Path last seen, so a
+	// model swap that keeps the same file (a stage refreshing the hunk)
+	// preserves the cursor while one that shows a different file resets it
+	// (diff.go's clampDiffCursor).
+	diffCursor int
+	diffTop    int
+	diffPath   string
 }
 
 func New(em *session.Emitter) *Mission {
@@ -90,6 +99,7 @@ func (m *Mission) SetModel(raw json.RawMessage) error {
 	}
 	m.model = decoded
 	m.clampSelection()
+	m.clampDiffCursor()
 	if m.focus != focusSummary {
 		m.summaryInput.SetValue(m.model.Commit.Summary)
 		m.summaryInput.Placeholder = m.model.Commit.Placeholder
@@ -209,16 +219,6 @@ func (m *Mission) listKey(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "b", "w", "r":
 		// The branch/worktree/repo modals land in a later task; the key is
 		// reserved but does nothing yet.
-	case "q":
-		return m.quit()
-	}
-	return m, nil
-}
-
-func (m *Mission) diffKey(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	switch v.String() {
-	case "esc":
-		m.focus = focusList
 	case "q":
 		return m.quit()
 	}
@@ -350,15 +350,6 @@ func (m *Mission) renderSidebar(width int) string {
 	return lipgloss.JoinVertical(lipgloss.Left, rows...)
 }
 
-// renderDiffPlaceholder stands in for the diff pane until it lands: a
-// centered Faint hint that a file needs picking.
-func renderDiffPlaceholder(width int) string {
-	if width < 1 {
-		return ""
-	}
-	return lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Foreground(theme.Faint).Render("select a file")
-}
-
 func (m *Mission) View() tea.View {
 	top := renderTopBar(m.model, m.width, zoneNone, zoneNone)
 	sidebar := m.renderSidebar(sidebarWidth)
@@ -373,7 +364,7 @@ func (m *Mission) View() tea.View {
 		bodyHeight = lipgloss.Height(sidebar)
 	}
 	sidebarPadded := lipgloss.NewStyle().Height(bodyHeight).Render(sidebar)
-	diffPadded := lipgloss.NewStyle().Height(bodyHeight).Render(renderDiffPlaceholder(diffW))
+	diffPadded := lipgloss.NewStyle().Height(bodyHeight).Render(m.renderDiffPane(diffW, bodyHeight))
 
 	dividerLine := fg(theme.Rule).Render("│")
 	dividerLines := make([]string, bodyHeight)
