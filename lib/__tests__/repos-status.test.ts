@@ -39,13 +39,19 @@ describe("rt repos status", () => {
     expect(JSON.parse(logs[0]!)).toEqual({ ok: true, repos: [row], sweptAt: "2026-09-17T00:01:00.000Z" });
   });
 
-  test("--refresh forwards refresh: true", async () => {
+  test("--refresh forwards refresh: true with a generous timeout", async () => {
     capture();
     let sent: any = null;
+    let timeout: any = null;
     await reposStatus(["--json", "--refresh"], {
-      query: async (_cmd, payload) => { sent = payload; return { ok: true, data: { repos: [], sweptAt: null } } as any; },
+      query: async (_cmd, payload, timeoutMs) => {
+        sent = payload;
+        timeout = timeoutMs;
+        return { ok: true, data: { repos: [], sweptAt: null } } as any;
+      },
     });
     expect(sent).toEqual({ refresh: true });
+    expect(timeout).toBe(120_000);
   });
 
   test("daemon down fails with the plain JSON error and exit 1", async () => {

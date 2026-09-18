@@ -420,7 +420,9 @@ export async function reposStatus(
   const json = args.includes("--json");
   const refresh = args.includes("--refresh");
   const query = deps.query ?? daemonQuery;
-  const res = await query("repos:status", refresh ? { refresh: true } : {});
+  const res = refresh
+    ? await query("repos:status", { refresh: true }, 120_000)
+    : await query("repos:status", {});
   if (res === null) failPlain(json, "repos status", "daemon unavailable, the rt daemon must be running for repo status");
   if (!res.ok) failPlain(json, "repos status", res.error ?? "repos:status failed");
   const data = res.data as { repos: RepoStatusRow[]; sweptAt: string | null };

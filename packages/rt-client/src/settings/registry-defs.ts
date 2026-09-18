@@ -230,7 +230,7 @@ export const REGISTRY: readonly SettingDef[] = [
     merge: "deep",
     repoScoped: true,
     migrated: true,
-    description: "Mission-control git badge sweep. sweep gates the daemon sweep (a per-repo override of { sweep: false } opts that repo out); sweepIntervalSec is the minimum seconds between sweeps, read fresh each tick. fetchIntervalSec is the per-repo background fetch cadence (0 disables fetching).",
+    description: "Mission-control git badge sweep. sweep gates the daemon sweep and fetchIntervalSec (the background fetch cadence, 0 disables fetching) are both read per repo, so a per-repo override of either takes effect (a repo override of { sweep: false } opts that repo out). sweepIntervalSec, the minimum seconds between sweeps, is read only from the global config by the sweep tick; a per-repo override of sweepIntervalSec has no effect.",
   },
   {
     key: "rt.logLevel",

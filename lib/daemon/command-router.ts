@@ -111,7 +111,7 @@ export function buildRoutedHandlers(opts: {
     withReconcilerHeld: <T>(fn: () => Promise<T>) => Promise<T>;
     refreshWatchedRepos: () => void;
   };
-  /** Backing store and sweep for repos:status (Task 2/3). */
+  /** Backing store and sweep for repos:status. */
   gitBadges: GitBadgesStore;
   gitStatusSweep: GitStatusSweep;
   /**

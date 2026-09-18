@@ -98,37 +98,43 @@ export async function diffCommand(args: string[]): Promise<void> {
   const client = repoClient();
   let path = positional(args);
   let untracked = false;
+  if (!path && process.stdin.isTTY && !json && !process.env.RT_BATCH) {
+    let files: Awaited<ReturnType<typeof client.snapshot>>["files"];
+    try {
+      files = (await client.snapshot()).files;
+    } catch (err) {
+      failPlain(json, "git diff", err instanceof Error ? err.message : String(err));
+    }
+    if (files.length === 0) failPlain(json, "git diff", DIFF_USAGE);
+    const { filterableSelect } = await import("../../lib/pick-wrappers.ts");
+    const picked = await filterableSelect({
+      message: "Diff which file?",
+      options: files.map((f) => ({ label: f.path, value: f.path, hint: f.kind })),
+    });
+    if (picked === null) process.exit(0);
+    path = picked;
+    untracked = files.find((f) => f.path === picked)?.kind === "untracked";
+  }
+  if (!path) failPlain(json, "git diff", DIFF_USAGE);
+  let diff: Awaited<ReturnType<typeof client.diffFile>>;
   try {
-    if (!path && process.stdin.isTTY && !json && !process.env.RT_BATCH) {
-      const files = (await client.snapshot()).files;
-      if (files.length === 0) failPlain(json, "git diff", DIFF_USAGE);
-      const { filterableSelect } = await import("../../lib/pick-wrappers.ts");
-      const picked = await filterableSelect({
-        message: "Diff which file?",
-        options: files.map((f) => ({ label: f.path, value: f.path, hint: f.kind })),
-      });
-      if (picked === null) process.exit(0);
-      path = picked;
-      untracked = files.find((f) => f.path === picked)?.kind === "untracked";
-    }
-    if (!path) failPlain(json, "git diff", DIFF_USAGE);
-    const diff = await client.diffFile(path, { staged, ...(untracked ? { untracked: true } : {}) });
-    if (json) {
-      console.log(JSON.stringify({ ok: true, diff }));
-      return;
-    }
-    if (diff.kind !== "text") {
-      console.log(`${diff.path}: ${diff.kind} (no line diff)`);
-      return;
-    }
-    for (const hunk of diff.hunks) {
-      console.log(hunk.header);
-      for (const line of hunk.lines) {
-        const mark = line.type === "add" ? "+" : line.type === "del" ? "-" : " ";
-        console.log(`${mark}${line.content}`);
-      }
-    }
+    diff = await client.diffFile(path, { staged, ...(untracked ? { untracked: true } : {}) });
   } catch (err) {
     failPlain(json, "git diff", err instanceof Error ? err.message : String(err));
+  }
+  if (json) {
+    console.log(JSON.stringify({ ok: true, diff }));
+    return;
+  }
+  if (diff.kind !== "text") {
+    console.log(`${diff.path}: ${diff.kind} (no line diff)`);
+    return;
+  }
+  for (const hunk of diff.hunks) {
+    console.log(hunk.header);
+    for (const line of hunk.lines) {
+      const mark = line.type === "add" ? "+" : line.type === "del" ? "-" : " ";
+      console.log(`${mark}${line.content}`);
+    }
   }
 }
