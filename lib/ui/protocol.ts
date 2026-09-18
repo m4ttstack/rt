@@ -122,7 +122,26 @@ export interface SessionHello {
   views: string[];
 }
 
-const SESSION_INTENT_NAMES = ["add", "restart", "stop", "focus", "tail", "quit", "open", "edit"] as const;
+const SESSION_INTENT_NAMES = [
+  "add",
+  "restart",
+  "stop",
+  "focus",
+  "tail",
+  "quit",
+  "open",
+  "edit",
+  "mission:action",
+  "mission:stage",
+  "mission:discard",
+  "mission:commit",
+  "mission:undo",
+  "mission:checkout",
+  "mission:worktree",
+  "mission:repo",
+  "mission:select",
+  "mission:refresh",
+] as const;
 
 export interface SessionIntent {
   t: "intent";
@@ -130,6 +149,8 @@ export interface SessionIntent {
   entryId?: string;
   open?: boolean;
   command?: string;
+  /** Mission intents carry their own shape here; this package never learns it. */
+  payload?: unknown;
 }
 
 const SESSION_CLOSED_REASONS = ["quit", "cancel", "closed", "error"] as const;
@@ -280,6 +301,7 @@ export function parseSessionLine(line: string): SessionInbound {
         ...(typeof m.entryId === "string" ? { entryId: m.entryId } : {}),
         ...(typeof m.open === "boolean" ? { open: m.open } : {}),
         ...(typeof m.command === "string" ? { command: m.command } : {}),
+        ...("payload" in m ? { payload: m.payload } : {}),
       };
     case "closed":
       if (typeof m.reason !== "string" || !SESSION_CLOSED_REASONS.includes(m.reason as SessionClosed["reason"])) break;

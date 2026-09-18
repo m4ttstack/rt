@@ -72,3 +72,38 @@ func TestEncodersMatchFixtures(t *testing.T) {
 		}
 	}
 }
+
+func TestIntentPayloadRoundTripsAgainstFixture(t *testing.T) {
+	want := sessionFixture(t, "session-intent-mission-commit.json")
+	var decoded Intent
+	if err := json.Unmarshal(want, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Name != "mission:commit" {
+		t.Fatalf("name: got %q", decoded.Name)
+	}
+	var payload struct {
+		Summary     string `json:"summary"`
+		Description string `json:"description"`
+		Amend       bool   `json:"amend"`
+	}
+	if err := json.Unmarshal(decoded.Payload, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Summary != "fix parser" || payload.Description != "" || payload.Amend != false {
+		t.Fatalf("payload: %+v", payload)
+	}
+
+	got := EncodeIntent(Intent{Name: decoded.Name, Payload: decoded.Payload})
+	canon := func(b []byte) string {
+		var v any
+		if err := json.Unmarshal(b, &v); err != nil {
+			t.Fatal(err)
+		}
+		out, _ := json.Marshal(v)
+		return string(out)
+	}
+	if canon(got) != canon(want) {
+		t.Fatalf("intent mission:commit: %s", got)
+	}
+}

@@ -80,6 +80,20 @@ test("parseSessionLine rejects an intent name outside the declared union", () =>
   expect(() => parseSessionLine(JSON.stringify({ t: "intent", name: "explode" }))).toThrow(/rt-ui session/);
 });
 
+test("a mission intent fixture parses with its payload passed through untouched", () => {
+  expect(parseSessionLine(readFileSync(join(FIXTURES, "session-intent-mission-commit.json"), "utf8"))).toEqual({
+    t: "intent",
+    name: "mission:commit",
+    payload: { summary: "fix parser", description: "", amend: false },
+  });
+});
+
+test("the mission open fixture matches its view", () => {
+  const open = fixture("session-open-mission.json") as { t: string; view: string };
+  expect(open.t).toBe("open");
+  expect(open.view).toBe("mission");
+});
+
 test("parseSessionLine rejects a close reason outside the declared union", () => {
   expect(() => parseSessionLine(JSON.stringify({ t: "closed", reason: "unknown" }))).toThrow(/rt-ui session/);
 });
