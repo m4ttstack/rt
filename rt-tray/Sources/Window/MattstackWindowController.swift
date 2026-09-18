@@ -37,11 +37,30 @@ final class MattstackWindowController: NSWindowController, NSWindowDelegate {
     }
     required init?(coder: NSCoder) { fatalError("not supported") }
 
+    /// A ⌘F pressed with focus anywhere but the web content (a tab button,
+    /// bare window chrome) never reaches the tab's FindBarContainer, so the
+    /// controller catches it at the end of the chain and hands it to whatever
+    /// tab is showing.
+    override func performTextFinderAction(_ sender: Any?) {
+        model.activeFindContainer?.performTextFinderAction(sender)
+    }
+
     func show() {
         model.presentSplashIfNeeded()
         Task { await model.ensureCatalogLoaded() }
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+}
+
+extension MattstackWindowController: NSUserInterfaceValidations {
+    /// Find Next and Find Previous stay greyed out until a search string
+    /// exists, the same as any other macOS find bar.
+    func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+        guard item.action == #selector(performTextFinderAction(_:)) else { return true }
+        guard let action = NSTextFinder.Action(rawValue: item.tag),
+              let container = model.activeFindContainer else { return false }
+        return container.canPerform(action)
     }
 }

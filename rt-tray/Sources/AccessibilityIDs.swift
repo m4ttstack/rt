@@ -111,6 +111,14 @@ enum AXID {
 
     // Menu (app menu + tray gear menu)
     static let menuAppSettings = "menu.app.settings"
+    static let menuEditFind = "menu.edit.find"
+    static let menuEditFindNext = "menu.edit.findNext"
+    static let menuEditFindPrevious = "menu.edit.findPrevious"
+    static let findBarField = "findBar.field"
+    static let findBarPrevious = "findBar.previous"
+    static let findBarNext = "findBar.next"
+    static let findBarStatus = "findBar.status"
+    static let findBarDone = "findBar.done"
     static let menuGearMattstackWindow = "menu.gear.mattstackWindow"
     static let menuGearSetupStatus = "menu.gear.setupStatus"
     static let menuGearSettings = "menu.gear.settings"

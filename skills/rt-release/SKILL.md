@@ -126,6 +126,17 @@ left as-is or reduced to a pointer here.
    shipping a partial release. If CI failed or the body is wrong, report it
    rather than papering over it.
 
+   Assets and body are not the whole verification: the release action creates
+   the release as a DRAFT and flips it public last, so a run that dies
+   mid-upload leaves a draft that `gh release view` renders exactly like a
+   published release while the public API and the mattstack.dev download
+   button keep serving the previous tag. Confirm
+   `gh release view <tag> --json isDraft,isPrerelease` shows both false, and
+   that `https://api.github.com/repos/m4ttstack/rt/releases/latest` resolves
+   to the new tag with all four assets (give the endpoint a minute; it
+   caches). Completing a failed run's assets by hand does not publish the
+   draft: `gh release edit <tag> --draft=false` is the missing flip.
+
 11. **Deploy rt.cool.** Run `bash scripts/deploy-docs.sh` (builds the site, deploys
    to Cloudflare Pages via wrangler). Needs wrangler auth (`wrangler login` or
    `CLOUDFLARE_API_TOKEN`) and the Pages project pointed at rt.cool's DNS, both

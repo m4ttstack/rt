@@ -45,6 +45,11 @@ export interface WatchdogConfig {
       Off by default until that gap closes; the spawn-time accept (a fresh
       pane can only be showing the trust dialog) is unaffected either way. */
   midRunTrustAccept: boolean;
+  /** RT-200: EnterWorktree's permission-root relocation prompt names the
+      worktree path in its own body, and the actuator accepts only when that
+      path is in rt's worktree registry — provenance the trust dialog lacks,
+      so this one is on by default and needs no provisioned-tree check. */
+  relocationAutoAccept: boolean;
 }
 
 const HEALTHY: WedgeVerdict = { kind: "healthy" };
@@ -56,25 +61,37 @@ const ms = (mins: number) => mins * 60_000;
 const plural = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
 const oldest = (gates: { id: string; ageMs: number }[]) => gates.reduce<{ id: string; ageMs: number } | null>((a, g) => (a && a.ageMs >= g.ageMs ? a : g), null);
 
-/** The published report is the clock for both the nag and the shepherd
-    backstop, and only while the pane is still open: a done job whose pane is
-    gone has been closed (or its close was missed), and nobody can act on it.
-    lastReport is the report's chat message id, not a time, so the age comes
-    from updatedAt, which setJobStatus stamps as the job goes done (RT-193). */
-function openReportAgeMs(job: HerdJobRow, s: WatchdogSensors, now: number): number | null {
+/** The clocks for the nag and the shepherd backstop, and only while the
+    pane is still open: a done job whose pane is gone has been closed (or
+    its close was missed), and nobody can act on it. lastReport is the
+    report's chat message id, not a time, so the report age comes from
+    updatedAt, which setJobStatus stamps as the job goes done (RT-193).
+    A done job is not necessarily finished (RT-205): a consumed report often
+    dispatches a follow-up round in the same pane, so a WORKING pane
+    suppresses both clocks entirely, and `quietMs` restarts from the pane's
+    last observed transition when that is newer than the report -- the nag
+    paces off silence since the LAST activity, never off a report a live
+    round has already superseded. */
+function openReportAges(job: HerdJobRow, s: WatchdogSensors, now: number): { reportMs: number; quietMs: number } | null {
   if (job.status !== "done" || job.lastReport === null || job.pane === null) return null;
-  if (s.paneState(job.pane) === "gone") return null;
-  return now - job.updatedAt;
+  const state = s.paneState(job.pane);
+  if (state === "gone" || state === "working") return null;
+  const idleSince = s.idleSinceMs(job.pane);
+  const lastActivity = idleSince !== null && idleSince > job.updatedAt ? idleSince : job.updatedAt;
+  return { reportMs: now - job.updatedAt, quietMs: now - lastActivity };
 }
 
 type Lingering = Extract<WedgeVerdict, { kind: "finished-lingering" }>;
 
-const closeRemedy = (job: HerdJobRow) => `run rt herd close ${job.name} --herd ${job.herd}`;
+// The remedy asks for a check first: the watchdog cannot see a consumed
+// report's follow-up round, and prescribing a bare close killed live jobs
+// twice before the wording changed (RT-205).
+const closeRemedy = (job: HerdJobRow) => `confirm no follow-up round is in flight, then run rt herd close ${job.name} --herd ${job.herd}`;
 
 function finishedLingering(job: HerdJobRow, s: WatchdogSensors, cfg: WatchdogConfig, now: number): Lingering | null {
-  const age = openReportAgeMs(job, s, now);
-  if (age === null || age < ms(cfg.nagMins)) return null;
-  return { kind: "finished-lingering", evidence: `${job.name} done with report ${minutes(age)}m ago, pane still open; ${closeRemedy(job)}` };
+  const ages = openReportAges(job, s, now);
+  if (ages === null || ages.quietMs < ms(cfg.nagMins)) return null;
+  return { kind: "finished-lingering", evidence: `${job.name} done with report ${minutes(ages.reportMs)}m ago, quiet ${minutes(ages.quietMs)}m; ${closeRemedy(job)}` };
 }
 
 export function evaluateJob(job: HerdJobRow, s: WatchdogSensors, cfg: WatchdogConfig): WedgeVerdict {
@@ -135,9 +152,9 @@ export function evaluateShepherd(herd: HerdRow, s: WatchdogSensors, cfg: Watchdo
     if (lingering) return { kind: "wedged", path: "fast", evidence: lingering.evidence };
   }
   for (const job of jobs) {
-    const age = openReportAgeMs(job, s, now);
-    if (age !== null && age >= ms(cfg.backstopMins)) {
-      return { kind: "wedged", path: "backstop", evidence: `${job.name} done with report ${minutes(age)}m ago, not yet closed; ${closeRemedy(job)}` };
+    const ages = openReportAges(job, s, now);
+    if (ages !== null && ages.quietMs >= ms(cfg.backstopMins)) {
+      return { kind: "wedged", path: "backstop", evidence: `${job.name} done with report ${minutes(ages.reportMs)}m ago, quiet ${minutes(ages.quietMs)}m, not yet closed; ${closeRemedy(job)}` };
     }
   }
   return HEALTHY;
@@ -153,6 +170,10 @@ export interface WatchdogActuators {
       spawn path uses. True means the pane came back; false means it is a
       dialog the daemon may not answer, or one the accept did not clear. */
   acceptTrustModal(herd: string, job: string, pane: string): Promise<boolean>;
+  /** Try the relocation-prompt accept on a blocked pane. True means the pane
+      came back; false covers every refusal (no relocation prompt on screen,
+      a path the registry does not know, a cursor that would not drive). */
+  acceptRelocationModal(herd: string, job: string, pane: string): Promise<boolean>;
   /** The click-to-focus notification that rides with a park: the human is the
       only party who can accept a trust dialog, so it goes out on the park
       itself rather than waiting for the ladder's third rung, and it carries
@@ -271,6 +292,14 @@ export class HerdWatchdog {
       // session can show a genuine, unrelated permission prompt with the
       // same numbered-options shape, and this driver cannot yet confirm the
       // dialog's folder matches the job's worktree.
+      // The relocation prompt goes first and needs neither gate: its own
+      // body names the path, and the actuator accepts only a path rt's
+      // worktree registry holds (RT-200).
+      if (cfg.relocationAutoAccept && await this.act.acceptRelocationModal(herd.id, job.name, job.pane)) {
+        this.ladders.delete(key);
+        this.log.info({ herd: herd.id, job: job.name, pane: job.pane }, "accepted a mid-run relocation prompt");
+        return;
+      }
       if (job.tree !== null && cfg.midRunTrustAccept && await this.act.acceptTrustModal(herd.id, job.name, job.pane)) {
         this.ladders.delete(key);
         this.log.info({ herd: herd.id, job: job.name, pane: job.pane }, "accepted a mid-run trust dialog");

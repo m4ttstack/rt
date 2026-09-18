@@ -835,4 +835,12 @@ export const REGISTRY: readonly SettingDef[] = [
     merge: "replace",
     description: "Whether the watchdog may drive a mid-run folder-trust dialog on a daemon-provisioned tree itself, rather than only parking the job and notifying (RT-196). Off by default: the screen match cannot yet confirm the dialog's folder matches the job's worktree, so a working session showing an unrelated permission prompt with the same shape is a real risk.",
   },
+  {
+    key: "panes.relocationAutoAccept",
+    type: "boolean",
+    scopes: ["machine"],
+    default: true,
+    merge: "replace",
+    description: "Whether the daemon may answer Claude Code's EnterWorktree permission-root relocation prompt on a blocked pane by itself (RT-200). Unlike the trust dialog, the prompt names the worktree path in its own body, and the daemon accepts only when that exact path is in rt's worktree registry, so this is on by default. Read by both the herd watchdog and the executor reconciler.",
+  },
 ];

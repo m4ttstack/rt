@@ -12,14 +12,14 @@ private let deckIconSize: CGFloat = 18
 private let trafficLightZoneWidth: CGFloat = 70
 private let barLeadingGap: CGFloat = 12
 
-private let barFill = Color(red: 0x0f / 255.0, green: 0x0f / 255.0, blue: 0x15 / 255.0)
-private let separatorColor = Color(red: 0x31 / 255.0, green: 0x38 / 255.0, blue: 0x53 / 255.0)
-private let activeFill = Color(red: 0x1c / 255.0, green: 0x21 / 255.0, blue: 0x36 / 255.0)
-private let inactiveFill = Color(red: 0x16 / 255.0, green: 0x16 / 255.0, blue: 0x1e / 255.0)
-private let activeLabelColor = Color(red: 0xe3 / 255.0, green: 0xe7 / 255.0, blue: 0xf6 / 255.0)
-private let inactiveLabelColor = Color(red: 0x7e / 255.0, green: 0x86 / 255.0, blue: 0xad / 255.0)
-private let tabAccentColor = Color(red: 0x7a / 255.0, green: 0xa2 / 255.0, blue: 0xf7 / 255.0)
-private let okGreen = Color(red: 0x3e / 255.0, green: 0xb9 / 255.0, blue: 0x53 / 255.0)
+private let barFill = ShellChrome.bar.color
+private let separatorColor = ShellChrome.separator.color
+private let activeFill = ShellChrome.activeTab.color
+private let inactiveFill = ShellChrome.inactiveTab.color
+private let activeLabelColor = ShellChrome.activeLabel.color
+private let inactiveLabelColor = ShellChrome.inactiveLabel.color
+private let tabAccentColor = ShellChrome.accent.color
+private let okGreen = ShellChrome.ok.color
 
 struct MattstackWindowView: View {
     @ObservedObject var model: WindowModel
@@ -240,9 +240,14 @@ private struct ContentArea: View {
                 WindowWebView(model: model, app: app)
                 if model.loadFailures[app.name] == true {
                     FailureOverlay(model: model, app: app)
+                } else if model.loadingApps.contains(app.name) {
+                    LoadingOverlay()
                 }
             } else {
-                Color(NSColor.windowBackgroundColor)
+                // Before the catalog resolves there is no app to mount, and
+                // the splash may already have gone, so this is what the
+                // window shows in the meantime.
+                LoadingOverlay()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -261,13 +266,32 @@ private struct WindowWebView: NSViewRepresentable {
         NSView()
     }
 
-    func updateNSView(_ container: NSView, context: Context) {
-        let webView = model.webView(for: app)
-        guard container.subviews.first !== webView else { return }
-        container.subviews.forEach { $0.removeFromSuperview() }
-        webView.frame = container.bounds
-        webView.autoresizingMask = [.width, .height]
-        container.addSubview(webView)
+    /// The mounted child is the app's find bar container, not its webview
+    /// directly: the container owns the webview for the window's lifetime and
+    /// puts a responder between the web content and the window that can serve
+    /// ⌘F.
+    func updateNSView(_ host: NSView, context: Context) {
+        let container = model.findContainer(for: app)
+        guard host.subviews.first !== container else { return }
+        host.subviews.forEach { $0.removeFromSuperview() }
+        container.frame = host.bounds
+        container.autoresizingMask = [.width, .height]
+        host.addSubview(container)
+    }
+}
+
+/// Opaque, not a floating spinner over a half-drawn page: until the page has
+/// something to show, the shell's own background is the better thing to look
+/// at, and it is the same color the webview shows through.
+private struct LoadingOverlay: View {
+    var body: some View {
+        ZStack {
+            barFill
+            ProgressView()
+                .progressViewStyle(.circular)
+                .controlSize(.small)
+                .colorScheme(.dark)
+        }
     }
 }
 

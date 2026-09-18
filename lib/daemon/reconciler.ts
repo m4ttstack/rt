@@ -25,9 +25,17 @@ import type {
 import { resolveLivePane, type LivePane, type PaneHints } from "./pane-resolve-live.ts";
 import type { EscapeInjector } from "./gate-escape.ts";
 import { computeView, gateAgentId } from "./reconciler-view.ts";
-import { listKvValues, setKvValue } from "../state/kv-blob.ts";
+import { deleteKvValue, listKvValues, setKvValue } from "../state/kv-blob.ts";
 
 const CLEARED_NS = "reconciler.cleared";
+// Durable first-gone stamp per agent: ExecutorView.since is in-memory and
+// resets on every daemon restart, so it can never clock an expiry.
+const GONE_SINCE_NS = "reconciler.goneSince";
+/** How long a gone (or cleared) executor with no open gates stays in the
+    roster before its agents row is retired. Long enough for the board to
+    surface the death and settle its lanes; gates.db's own 7-day retention
+    keeps the has-open-gates guard meaningful under any TTL below it. */
+const GONE_EXPIRY_MS = 24 * 60 * 60 * 1000;
 // Mirrors gate-escalation.ts's own page ceiling: one page covers every
 // practical gates.db size, and paging still guards against exceeding it.
 const PAGE_SIZE = 1000;
@@ -81,10 +89,23 @@ export interface ReconcilerDeps {
   emit: (topic: string, payload: Record<string, unknown>) => void;
   injectEscape: EscapeInjector;
   resumeAgent: (agentId: string) => Promise<{ ok: boolean; error?: string }>;
+  /** Retires an expired executor's agents row (finished_at only) so the
+      roster filter drops it and the daily prune eventually deletes it. */
+  markAgentGone: (agentId: string, at: number) => void;
   log: Logger;
+  /** Age at which a gone/cleared executor with no open gates is retired
+      from the roster. Default GONE_EXPIRY_MS (24h). */
+  goneExpiryMs?: number;
   /** Consecutive sweeps a blocked/gone reading must persist before the
       reconciler acts on it. Default 2 (spec "Reconciler sweep"). */
   debounceSweeps?: number;
+  /** RT-200: try the EnterWorktree relocation prompt on a blocked pane
+      before its attention gate. "accepted" cleared it (stay silent),
+      "failed" is a prompt on screen the daemon may not answer (notify,
+      no gate), "no-dialog" hands the pane to the normal gate path. */
+  relocationAccept?: (pane: LivePane) => Promise<"accepted" | "failed" | "no-dialog">;
+  /** Click-to-focus notification channel for the "failed" outcome. */
+  notify?: (n: { title: string; message: string; paneId: string }) => void;
 }
 
 const ATTENTION_QUESTION: GateQuestion = {
@@ -103,6 +124,7 @@ function truncateToBytes(s: string, maxBytes: number): string {
 
 export function createReconciler(deps: ReconcilerDeps): Reconciler {
   const debounceSweeps = deps.debounceSweeps ?? 2;
+  const goneExpiryMs = deps.goneExpiryMs ?? GONE_EXPIRY_MS;
   const log = deps.log.child({ module: "reconciler" });
 
   // In-memory only, by design (spec "Reconciler sweep"): a daemon restart
@@ -115,6 +137,10 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
   const previousStates = new Map<string, ExecutorState>();
   const pendingBlocked = new Map<string, number>();
   const pendingGone = new Map<string, number>();
+  // One relocation attempt per blocked episode: the stored outcome stands in
+  // for a re-drive until the pane leaves blocked, so a "failed" pane is
+  // notified once and then left to the human, never hammered every sweep.
+  const relocationTried = new Map<string, "failed" | "no-dialog">();
   const attentionGateByAgent = new Map<string, string>();
   // Agents whose attention gate the human dismissed while the reading that
   // raised it still holds. Without this the next sweep re-raises it (the
@@ -254,6 +280,35 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
     }
   }
 
+  /** One relocation attempt per blocked episode (RT-200). Memoized on the
+      agent so a prompt the daemon may not answer draws exactly one
+      click-to-focus notification, then waits for the human. Absent dep or
+      unresolvable pane reads as no-dialog: the normal gate path owns it. */
+  async function tryRelocationAccept(v: ExecutorView, panes: LivePane[] | null): Promise<"accepted" | "failed" | "no-dialog"> {
+    if (!deps.relocationAccept) return "no-dialog";
+    const memo = relocationTried.get(v.agentId);
+    if (memo !== undefined) return memo;
+    const pane = panes?.find((p) => p.paneRef === v.paneRef) ?? null;
+    if (pane === null) return "no-dialog";
+    let outcome: "accepted" | "failed" | "no-dialog";
+    try {
+      outcome = await deps.relocationAccept(pane);
+    } catch (err) {
+      log.warn({ err, agentId: v.agentId, pane: v.paneRef }, "relocation accept threw; treating the pane as having no dialog");
+      outcome = "no-dialog";
+    }
+    if (outcome === "accepted") return outcome;
+    relocationTried.set(v.agentId, outcome);
+    if (outcome === "failed") {
+      deps.notify?.({
+        title: "pane stuck at a worktree relocation prompt",
+        message: `pane ${pane.paneRef}: the daemon may not answer it (unrecognized path or cursor); click to focus and answer`,
+        paneId: pane.paneRef,
+      });
+    }
+    return outcome;
+  }
+
   /** Checks each pending expectation against `panes` and resolves, retries,
       or drops it. `panes === null` (herdr unreachable) is a no-op for the
       whole queue: an unknown read proves nothing about pane state, so a
@@ -322,6 +377,7 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
     const agents = deps.listAgents().filter((a) => a.finishedAt == null);
     const clearedMap = listKvValues<{ clearedAt: number }>(CLEARED_NS);
     const clearedAgentIds = new Set(Object.keys(clearedMap));
+    const goneSinceMap = listKvValues<{ goneAt: number }>(GONE_SINCE_NS);
     const openParkedGates = fetchOpenAndParkedGates();
 
     const view = computeView(
@@ -358,11 +414,20 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
           // or an attention gate from an earlier pass) means skip.
           const occupied = openParkedGates.some((g) => g.subject === subject);
           if (count >= debounceSweeps && !occupied && !dismissed) {
-            const cwd = agents.find((a) => a.id === v.agentId)?.cwd;
-            await openAttentionGate(v, "blocked", panes, openParkedGates, cwd);
+            const outcome = await tryRelocationAccept(v, panes);
+            if (outcome === "accepted") {
+              pendingBlocked.delete(v.agentId);
+              log.info({ agentId: v.agentId, pane: v.paneRef }, "accepted a relocation prompt on a blocked pane");
+            } else if (outcome === "no-dialog") {
+              const cwd = agents.find((a) => a.id === v.agentId)?.cwd;
+              await openAttentionGate(v, "blocked", panes, openParkedGates, cwd);
+            }
+            // "failed" already notified inside tryRelocationAccept; the
+            // human clears the dialog, so no gate rides along (RT-200).
           }
         } else {
           pendingBlocked.delete(v.agentId);
+          relocationTried.delete(v.agentId);
         }
 
         if (v.state === "gone") {
@@ -388,8 +453,29 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
               await openAttentionGate(v, "gone", panes, openParkedGates, cwd);
             }
           }
+          // Roster expiry: only a debounced gone reading with NO joined
+          // gates qualifies -- an open gate still needs the tombstone (the
+          // attention flow and the answer-time executor guarantee both hang
+          // off it), and a parked gate's recorded answer is what revives
+          // its pane. The clock is a durable kv stamp, never `since`, which
+          // is in-memory and restarts with the daemon.
+          if (count >= debounceSweeps && v.openGateIds.length === 0) {
+            const stamp = goneSinceMap[v.agentId];
+            if (!stamp) {
+              setKvValue(GONE_SINCE_NS, v.agentId, { goneAt: now });
+            } else if (now - stamp.goneAt >= goneExpiryMs) {
+              expireAgent(v.agentId, now);
+            }
+          }
         } else {
           pendingGone.delete(v.agentId);
+          if (goneSinceMap[v.agentId]) deleteKvValue(GONE_SINCE_NS, v.agentId);
+          if (v.state === "cleared") {
+            const clearedAt = clearedMap[v.agentId]?.clearedAt;
+            if (clearedAt !== undefined && now - clearedAt >= goneExpiryMs) {
+              expireAgent(v.agentId, now);
+            }
+          }
         }
 
         // Recovery close and stale-stamp clearing run on every "live"
@@ -429,8 +515,26 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
     lastStatus = { sweptAt: now, herdrReachable, executors: view };
   }
 
+  /** Retire an expired executor: the agents row gets finished_at (dropping
+      it from the next sweep's roster; the daily prune deletes it later),
+      and both kv tombstones go with it so the namespaces stay bounded. */
+  function expireAgent(agentId: string, at: number): void {
+    deps.markAgentGone(agentId, at);
+    deleteKvValue(GONE_SINCE_NS, agentId);
+    deleteKvValue(CLEARED_NS, agentId);
+    pendingGone.delete(agentId);
+    pendingBlocked.delete(agentId);
+    previousStates.delete(agentId);
+    dismissedWhile.delete(agentId);
+    relocationTried.delete(agentId);
+    attentionGateByAgent.delete(agentId);
+    sinceByAgent.delete(agentId);
+    log.info({ agentId }, "expired a gone executor from the roster");
+  }
+
   function clear(agentId: string): void {
     setKvValue(CLEARED_NS, agentId, { clearedAt: Date.now() });
+    relocationTried.delete(agentId);
 
     const agents = deps.listAgents();
     const gatesSnapshot = fetchOpenAndParkedGates();

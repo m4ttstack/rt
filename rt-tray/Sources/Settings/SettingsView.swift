@@ -1,28 +1,21 @@
 import SwiftUI
 import MattstackCore
 
-struct SettingsView: View {
-    @ObservedObject var pane: SettingsWindowController.PaneSelection
-    let env: SettingsEnvironment
-    var body: some View {
-        TabView(selection: $pane.current) {
-            GeneralPane(env: env)
-                .tabItem { Label("General", systemImage: "gearshape").accessibilityIdentifier(AXID.settingsTab(SettingsPane.general.rawValue)) }
-                .tag(SettingsPane.general)
-            PermissionsPane(env: env)
-                .tabItem { Label("Permissions", systemImage: "lock.shield").accessibilityIdentifier(AXID.settingsTab(SettingsPane.permissions.rawValue)) }
-                .tag(SettingsPane.permissions)
-            FastBrowserPane(env: env)
-                .tabItem { Label("Fast Browser", systemImage: "globe").accessibilityIdentifier(AXID.settingsTab(SettingsPane.fastBrowser.rawValue)) }
-                .tag(SettingsPane.fastBrowser)
-            TeamPane(env: env)
-                .tabItem { Label("Team", systemImage: "person.3").accessibilityIdentifier(AXID.settingsTab(SettingsPane.team.rawValue)) }
-                .tag(SettingsPane.team)
-            UninstallPane(env: env)
-                .tabItem { Label("Uninstall", systemImage: "trash").accessibilityIdentifier(AXID.settingsTab(SettingsPane.uninstall.rawValue)) }
-                .tag(SettingsPane.uninstall)
+/// One pane's SwiftUI content, sized for the settings window. The tab strip
+/// itself is AppKit (NSTabViewController toolbar tabs) in
+/// SettingsWindowController; SwiftUI TabView's titlebar rendering on
+/// macOS 26 produced an oversized floating pill that no modifier tames.
+enum SettingsPaneContent {
+    @ViewBuilder static func view(for pane: SettingsPane, env: SettingsEnvironment) -> some View {
+        Group {
+            switch pane {
+            case .general: GeneralPane(env: env)
+            case .permissions: PermissionsPane(env: env)
+            case .fastBrowser: FastBrowserPane(env: env)
+            case .team: TeamPane(env: env)
+            case .uninstall: UninstallPane(env: env)
+            }
         }
-        .frame(width: 560, height: 440)
-        .onChange(of: pane.current) { _, p in UserDefaults.standard.set(p.rawValue, forKey: SettingsWindowController.paneKey) }
+        .frame(width: 680, height: 620)
     }
 }

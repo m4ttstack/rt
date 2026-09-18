@@ -109,6 +109,7 @@ describe("settings/registry", () => {
       ["herd.watchdog.nagMins", "number", 30],
       ["herd.watchdog.notifyHuman", "boolean", true],
       ["herd.watchdog.midRunTrustAccept", "boolean", false],
+      ["panes.relocationAutoAccept", "boolean", true],
     ] as const)("%s is a machine-scoped %s key, default %p (a fresh key)", (key, type, def) => {
       const setting = getDef(key);
       expect(setting).toBeDefined();
@@ -342,8 +343,9 @@ describe("settings/registry", () => {
         "herd.watchdog.nagMins",
         "herd.watchdog.notifyHuman",
         "herd.watchdog.midRunTrustAccept",
+        "panes.relocationAutoAccept",
       ];
-      expect(suiteKeys).toHaveLength(74);
+      expect(suiteKeys).toHaveLength(75);
 
       expect(allDefs().map((d) => d.key).sort()).toEqual(
         [...migratedFalseKeys, ...migratedTrueKeys, ...suiteKeys].sort(),

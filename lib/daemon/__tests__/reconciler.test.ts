@@ -4,6 +4,7 @@ import { createGatesStore, type GateQuestion, type GatesStore } from "../gates-s
 import { createReconciler, type Reconciler } from "../reconciler.ts";
 import type { AgentRecord } from "../../state/agents-store.ts";
 import type { LivePane } from "../pane-resolve-live.ts";
+import { getKvValue } from "../../state/kv-blob.ts";
 
 const log = pino({ level: "silent" });
 
@@ -52,6 +53,7 @@ beforeEach(() => {
     emit: (topic, payload) => { emitted.push({ topic, payload }); },
     injectEscape: async () => ({ ok: false, error: "not used in this task" }),
     resumeAgent: async () => ({ ok: true }),
+    markAgentGone: () => {},
     log,
   });
 });
@@ -104,6 +106,88 @@ describe("reconciler sweep: blocked", () => {
     // "resolved", not "abandoned": the pane came back on its own.
     // clear() (below) is the one that uses "abandoned".
     expect(row.closedReason).toBe("resolved");
+  });
+
+  // RT-200: a blocked pane showing the EnterWorktree relocation prompt is
+  // the daemon's own mess to clear. Success is silent; a prompt it may not
+  // answer raises one click-to-focus notification and never a gate.
+  describe("relocation auto-accept", () => {
+    let relocOutcomes: Array<"accepted" | "failed" | "no-dialog">;
+    let relocCalls: string[];
+    let notices: Array<{ title: string; message: string; paneId: string }>;
+
+    const withReloc = () => createReconciler({
+      store,
+      listAgents: () => agentsList,
+      snapshot: async () => panesValue,
+      peek: async () => peekText,
+      emit: (topic, payload) => { emitted.push({ topic, payload }); },
+      injectEscape: async () => ({ ok: false, error: "not used in this task" }),
+      resumeAgent: async () => ({ ok: true }),
+      markAgentGone: () => {},
+      relocationAccept: async (pane) => { relocCalls.push(pane.paneRef); return relocOutcomes.shift() ?? "no-dialog"; },
+      notify: (n) => { notices.push(n); },
+      log,
+    });
+
+    beforeEach(() => {
+      relocOutcomes = [];
+      relocCalls = [];
+      notices = [];
+    });
+
+    test("an accepted prompt opens no gate and sends no notification", async () => {
+      const r = withReloc();
+      relocOutcomes = ["accepted"];
+      panesValue = [buildPane({ agentStatus: "blocked" })];
+      await r.sweep();
+      await r.sweep();
+      expect(relocCalls).toEqual(["w1:p1"]);
+      expect(attentionGates()).toHaveLength(0);
+      expect(notices).toHaveLength(0);
+    });
+
+    test("a prompt the daemon may not answer notifies once with the pane, and never opens a gate", async () => {
+      const r = withReloc();
+      relocOutcomes = ["failed"];
+      panesValue = [buildPane({ agentStatus: "blocked" })];
+      await r.sweep();
+      await r.sweep();
+      await r.sweep();
+      await r.sweep();
+      expect(relocCalls).toEqual(["w1:p1"]);
+      expect(attentionGates()).toHaveLength(0);
+      expect(notices).toHaveLength(1);
+      expect(notices[0]!.paneId).toBe("w1:p1");
+    });
+
+    test("a blocked pane with no relocation prompt gets its attention gate exactly as before", async () => {
+      const r = withReloc();
+      relocOutcomes = ["no-dialog"];
+      panesValue = [buildPane({ agentStatus: "blocked" })];
+      await r.sweep();
+      await r.sweep();
+      expect(relocCalls).toEqual(["w1:p1"]);
+      expect(attentionGates()).toHaveLength(1);
+      expect(notices).toHaveLength(0);
+    });
+
+    test("the attempt is per blocked episode: live in between re-arms it", async () => {
+      const r = withReloc();
+      relocOutcomes = ["failed", "accepted"];
+      panesValue = [buildPane({ agentStatus: "blocked" })];
+      await r.sweep();
+      await r.sweep();
+      expect(relocCalls).toHaveLength(1);
+
+      panesValue = [buildPane({ agentStatus: "idle" })];
+      await r.sweep();
+      panesValue = [buildPane({ agentStatus: "blocked" })];
+      await r.sweep();
+      await r.sweep();
+      expect(relocCalls).toHaveLength(2);
+      expect(attentionGates()).toHaveLength(0);
+    });
   });
 
   test("context is truncated to 8192 bytes", async () => {
@@ -195,6 +279,82 @@ describe("reconciler sweep: gone", () => {
     await reconciler.sweep();
     expect(store.get(attn.id)!.status).toBe("closed");
     expect(store.get(attn.id)!.closedReason).toBe("resolved");
+  });
+});
+
+describe("reconciler sweep: gone-executor expiry", () => {
+  const GONE_NS = "reconciler.goneSince";
+  const CLEARED_NS = "reconciler.cleared";
+  let finishedAgents: Array<{ id: string; at: number }>;
+
+  const withExpiry = (goneExpiryMs?: number) => {
+    finishedAgents = [];
+    return createReconciler({
+      store,
+      listAgents: () => agentsList,
+      snapshot: async () => panesValue,
+      peek: async () => peekText,
+      emit: (topic, payload) => { emitted.push({ topic, payload }); },
+      injectEscape: async () => ({ ok: false, error: "not used in this task" }),
+      resumeAgent: async () => ({ ok: true }),
+      markAgentGone: (id, at) => { finishedAgents.push({ id, at }); },
+      goneExpiryMs,
+      log,
+    });
+  };
+
+  test("a debounced gone reading with no joined gates writes a durable goneSince stamp", async () => {
+    const r = withExpiry();
+    panesValue = [];
+    await r.sweep();
+    expect(getKvValue<{ goneAt: number } | null>(GONE_NS, agentId, null)).toBeNull();
+    await r.sweep();
+    const stamp = getKvValue<{ goneAt: number } | null>(GONE_NS, agentId, null);
+    expect(stamp?.goneAt).toBeGreaterThan(0);
+    expect(finishedAgents).toEqual([]);
+  });
+
+  test("a gone agent past the TTL is marked finished and its stamp dropped", async () => {
+    const r = withExpiry(0);
+    panesValue = [];
+    await r.sweep();
+    await r.sweep();
+    await r.sweep();
+    expect(finishedAgents).toEqual([{ id: agentId, at: expect.any(Number) }]);
+    expect(getKvValue<{ goneAt: number } | null>(GONE_NS, agentId, null)).toBeNull();
+  });
+
+  test("a pane back alive drops the goneSince stamp without finishing the agent", async () => {
+    const r = withExpiry();
+    panesValue = [];
+    await r.sweep();
+    await r.sweep();
+    expect(getKvValue<{ goneAt: number } | null>(GONE_NS, agentId, null)).not.toBeNull();
+    panesValue = [buildPane()];
+    await r.sweep();
+    expect(getKvValue<{ goneAt: number } | null>(GONE_NS, agentId, null)).toBeNull();
+    expect(finishedAgents).toEqual([]);
+  });
+
+  test("a gone agent with an open joined gate never stamps or expires", async () => {
+    const r = withExpiry(0);
+    store.open({ subject: "run:keep", kind: "clarify", questions: qs(), nudge: { session: "s-1" } });
+    panesValue = [];
+    await r.sweep();
+    await r.sweep();
+    await r.sweep();
+    expect(getKvValue<{ goneAt: number } | null>(GONE_NS, agentId, null)).toBeNull();
+    expect(finishedAgents).toEqual([]);
+  });
+
+  test("a cleared executor past the TTL is finished and its cleared tombstone dropped", async () => {
+    const r = withExpiry(0);
+    panesValue = [];
+    r.clear(agentId);
+    expect(getKvValue<{ clearedAt: number } | null>(CLEARED_NS, agentId, null)).not.toBeNull();
+    await r.sweep();
+    expect(finishedAgents).toEqual([{ id: agentId, at: expect.any(Number) }]);
+    expect(getKvValue<{ clearedAt: number } | null>(CLEARED_NS, agentId, null)).toBeNull();
   });
 });
 
@@ -316,7 +476,7 @@ describe("reconciler recovery close survives a restart", () => {
     const restarted = createReconciler({
       store, listAgents: () => agentsList, snapshot: async () => panesValue,
       peek: async () => peekText, emit: () => {}, injectEscape: async () => ({ ok: false, error: "n/a" }),
-      resumeAgent: async () => ({ ok: true }), log,
+      resumeAgent: async () => ({ ok: true }), markAgentGone: () => {}, log,
     });
     panesValue = [buildPane({ agentStatus: "idle" })];
     await restarted.sweep();
@@ -412,7 +572,7 @@ describe("reconciler.executorFor", () => {
     const fresh = createReconciler({
       store, listAgents: () => agentsList, snapshot: async () => panesValue,
       peek: async () => peekText, emit: () => {}, injectEscape: async () => ({ ok: false, error: "n/a" }),
-      resumeAgent: async () => ({ ok: true }), log,
+      resumeAgent: async () => ({ ok: true }), markAgentGone: () => {}, log,
     });
     expect(fresh.executorFor({ sessionId: "s-1" })).toEqual({ state: "unknown", pane: null });
   });

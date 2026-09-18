@@ -29,11 +29,7 @@ final class WindowNavigationDelegate: NSObject, WKNavigationDelegate, WKUIDelega
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         model?.loadFailures[appName] = true
-        // A dead app's failed load still counts as its "first navigation
-        // finishing" for the splash gate, or a dead app would hold the
-        // splash for the full 8s hard cap instead of dismissing at the
-        // normal minimum-visible time with the error overlay ready beneath.
-        model?.reportFirstNavigationFinish(appName: appName)
+        model?.loadingApps.remove(appName)
     }
 
     /// Clears the overlay as soon as a new attempt starts, not just on
@@ -41,11 +37,12 @@ final class WindowNavigationDelegate: NSObject, WKNavigationDelegate, WKUIDelega
     /// until the retry completes.
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         model?.loadFailures[appName] = false
+        model?.loadingApps.insert(appName)
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         model?.loadFailures[appName] = false
-        model?.reportFirstNavigationFinish(appName: appName)
+        model?.loadingApps.remove(appName)
     }
 
     /// A same-window link to a different mattstack app (e.g. deck's own app
@@ -109,6 +106,9 @@ final class WindowModel: ObservableObject {
     @Published private(set) var catalogFresh = false
     @Published var activeApp: String = ""
     @Published var loadFailures: [String: Bool] = [:]
+    /// Apps whose webview has a navigation in flight, so the content area can
+    /// say "loading" instead of showing a blank page.
+    @Published var loadingApps: Set<String> = []
     @Published private(set) var icons: [String: NSImage] = [:]
     @Published private(set) var splashVisible = false
     @Published private(set) var splashOpacity: Double = 1
@@ -125,8 +125,6 @@ final class WindowModel: ObservableObject {
     /// the process level to say what it means -- re-shows of the window
     /// never replay the splash.
     private static var hasShownSplash = false
-    private var splashMinDelayElapsed = false
-    private var splashNavigationFinished = false
     private var splashDismissed = false
 
     init(store: WebViewStore? = nil) {
@@ -184,40 +182,26 @@ final class WindowModel: ObservableObject {
     }
 
     /// No-op on every call after the first per process: `show()` calls this
-    /// unconditionally on every window show, including re-shows. The
-    /// minimum-display gate is `SplashTuning.minimumVisibleDuration`
-    /// (animation settle + a post-settle hold), not a bare literal here, so
-    /// it stays in lockstep with the animation's own tunables.
+    /// unconditionally on every window show, including re-shows.
+    ///
+    /// The splash lives for exactly as long as its own animation takes
+    /// (`SplashTuning.minimumVisibleDuration`, kept there so it stays in
+    /// lockstep with the animation's tunables) and then goes, whatever the
+    /// network is doing. It used to also wait on the active app's first
+    /// navigation, which made an unremarkable catalog fetch or page load read
+    /// as a stuck splash -- and waited on the wrong thing anyway, since a
+    /// finished navigation is not a drawn page. Content that is not ready yet
+    /// says so itself, in the content area.
     func presentSplashIfNeeded() {
         guard !Self.hasShownSplash else { return }
         Self.hasShownSplash = true
         splashVisible = true
 
-        let minimumVisibleNanoseconds = UInt64(SplashTuning.minimumVisibleDuration * 1_000_000_000)
+        let visibleNanoseconds = UInt64(SplashTuning.minimumVisibleDuration * 1_000_000_000)
         Task { [weak self] in
-            try? await Task.sleep(nanoseconds: minimumVisibleNanoseconds)
-            self?.splashMinDelayElapsed = true
-            self?.dismissSplashIfReady()
-        }
-        Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 8_000_000_000)
+            try? await Task.sleep(nanoseconds: visibleNanoseconds)
             self?.dismissSplash()
         }
-    }
-
-    /// The gate is "the active app's first navigation finishing", checked
-    /// live against `activeApp` rather than a name captured at splash-show
-    /// time, since the active app is often still unresolved (catalog not
-    /// loaded yet) at that moment.
-    func reportFirstNavigationFinish(appName: String) {
-        guard splashVisible, appName == activeApp else { return }
-        splashNavigationFinished = true
-        dismissSplashIfReady()
-    }
-
-    private func dismissSplashIfReady() {
-        guard splashMinDelayElapsed, splashNavigationFinished else { return }
-        dismissSplash()
     }
 
     /// Deterministic fade, not a conditional-removal `.transition`: a plain
@@ -258,29 +242,87 @@ final class WindowModel: ObservableObject {
         return view
     }
 
+    func findContainer(for app: DiscoveryApp) -> FindBarContainer {
+        let container = store.container(for: app)
+        trackFailures(for: container.webView, appName: app.name)
+        return container
+    }
+
+    /// The find bar belongs to whichever tab is showing, so a ⌘F that reaches
+    /// the window instead of the web content (nothing in the page focused
+    /// yet) still opens the right one. Nil only before the catalog resolves
+    /// an active app, when there is no page to search.
+    var activeFindContainer: FindBarContainer? {
+        guard let app = app(named: activeApp) else { return nil }
+        return findContainer(for: app)
+    }
+
     func trackFailures(for view: WKWebView, appName: String) {
         guard navigationDelegates[appName] == nil else { return }
         let delegate = WindowNavigationDelegate(appName: appName, model: self)
         navigationDelegates[appName] = delegate
         view.navigationDelegate = delegate
         view.uiDelegate = delegate
+        // The store starts a webview's first load when it builds it, which is
+        // a moment before this delegate exists. Seeding from the webview's own
+        // state, rather than assuming, keeps the indicator honest for a view
+        // that somehow arrives already idle.
+        if view.isLoading { loadingApps.insert(appName) }
     }
 
+    /// Icons are fetched once per app at launch, which used to mean a single
+    /// bad moment cost the tab its icon for the life of the window: every app
+    /// came back with the same undecodable 150KB body one startup, and the
+    /// tabs wore letters until the next relaunch. So a failure is retried, and
+    /// what came back is logged well enough to name the culprit next time --
+    /// a byte count alone said only that it was not an image.
     private func fetchIcon(url urlString: String?, into name: String) {
         guard icons[name] == nil, let urlString, let url = URL(string: urlString) else { return }
         Task { [weak self] in
-            let data: Data
-            do {
-                data = try await URLSession.shared.data(from: url).0
-            } catch {
-                TrayLog.warn("window icon fetch failed", ["app": name, "url": urlString, "error": String(describing: error)])
-                return
+            for attempt in 1...Self.iconFetchAttempts {
+                if let image = await Self.loadIcon(url: url, app: name, attempt: attempt) {
+                    self?.icons[name] = image
+                    return
+                }
+                guard attempt < Self.iconFetchAttempts else { return }
+                try? await Task.sleep(nanoseconds: UInt64(Self.iconRetryDelay(attempt) * 1_000_000_000))
             }
-            guard let image = NSImage(data: data) else {
-                TrayLog.warn("window icon decode failed", ["app": name, "url": urlString, "bytes": data.count])
-                return
-            }
-            self?.icons[name] = image
         }
+    }
+
+    private static let iconFetchAttempts = 4
+
+    /// 1s, 3s, 9s: long enough in total (13s) to outlast a service that is
+    /// still coming up when the window opens, short enough that a tab does
+    /// not wear a letter for a noticeable part of a session.
+    private static func iconRetryDelay(_ attempt: Int) -> Double {
+        pow(3, Double(attempt - 1))
+    }
+
+    private static func loadIcon(url: URL, app: String, attempt: Int) async -> NSImage? {
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(from: url)
+        } catch {
+            TrayLog.warn("window icon fetch failed", [
+                "app": app, "url": url.absoluteString, "attempt": attempt,
+                "error": String(describing: error),
+            ])
+            return nil
+        }
+        if let image = NSImage(data: data) { return image }
+        let http = response as? HTTPURLResponse
+        TrayLog.warn("window icon decode failed", [
+            "app": app, "url": url.absoluteString, "attempt": attempt,
+            "bytes": data.count,
+            "status": http?.statusCode ?? -1,
+            "contentType": http?.value(forHTTPHeaderField: "Content-Type") ?? "(none)",
+            "finalUrl": http?.url?.absoluteString ?? "(none)",
+            // The first line of a served error page usually names its author.
+            "head": String(decoding: data.prefix(120), as: UTF8.self)
+                .replacingOccurrences(of: "\n", with: " "),
+        ])
+        return nil
     }
 }

@@ -16,8 +16,9 @@ import type { HerdLifecycle } from "./herd-lifecycle.ts";
 import type { HerdStore } from "./herd-store.ts";
 import type { WatchdogActuators, WatchdogConfig, WatchdogSensors } from "./herd-watchdog.ts";
 import { injectIntoPane } from "./inject.ts";
-import { driveTrustAccept } from "./trust-accept.ts";
+import { driveRelocationAccept, driveTrustAccept } from "./trust-accept.ts";
 import { paneStatuses } from "./pane-statuses.ts";
+import { findTreeByPath } from "../worktree/registry.ts";
 
 export interface WatchdogSensorDeps {
   herdStore: Pick<HerdStore, "list" | "jobs">;
@@ -188,6 +189,24 @@ export function createWatchdogActuators(deps: WatchdogActuatorDeps): WatchdogAct
         return false;
       }
     },
+    async acceptRelocationModal(herd, job, pane) {
+      if (!deps.herdr) return false;
+      const sockPath = deps.socketFor(pane);
+      try {
+        const outcome = await driveRelocationAccept({
+          herdr: deps.herdr, sock: { sockPath }, pane: parsePaneRef(pane).paneId,
+          log, context: { herd, job },
+          isRegisteredTree: (path) => findTreeByPath(path) !== null,
+          ...(deps.trustSettleMs !== undefined && { settleMs: deps.trustSettleMs }),
+          ...(deps.trustStepMs !== undefined && { stepMs: deps.trustStepMs }),
+        });
+        if (outcome !== "accepted" && outcome !== "no-dialog") log.info({ herd, job, pane, outcome }, "watchdog: relocation accept did not clear the pane");
+        return outcome === "accepted";
+      } catch (err) {
+        log.warn({ err, herd, job, pane }, "watchdog: relocation accept threw");
+        return false;
+      }
+    },
     parkStuckAtModal(herd, job) {
       try {
         deps.herdStore.setJobStatus(herd, job, "stuck-at-modal");
@@ -226,7 +245,7 @@ export function createWatchdogActuators(deps: WatchdogActuatorDeps): WatchdogAct
 const CONFIG_DEFAULTS: WatchdogConfig = {
   enabled: true, fastMins: 2, shepherdFastMins: 5, backstopMins: 15,
   retryMins: 5, notifyQuietMins: 30, nagMins: 30, notifyHuman: true,
-  midRunTrustAccept: false,
+  midRunTrustAccept: false, relocationAutoAccept: true,
 };
 
 /** Resolves the nine `herd.watchdog.*` keys through `read` (the settings
@@ -255,6 +274,16 @@ export function readWatchdogConfig(read: <T>(key: string) => { value: T }): Watc
       return CONFIG_DEFAULTS[name];
     }
   };
+  // Not a herd.watchdog.* key: the reconciler's blocked-pane path reads the
+  // same switch, so it lives in the pane family and both seams resolve it.
+  const relocationAutoAccept = (() => {
+    try {
+      const v = read<unknown>("panes.relocationAutoAccept").value;
+      return typeof v === "boolean" ? v : CONFIG_DEFAULTS.relocationAutoAccept;
+    } catch {
+      return CONFIG_DEFAULTS.relocationAutoAccept;
+    }
+  })();
   return {
     enabled: bool("enabled"),
     fastMins: mins("fastMins"),
@@ -265,5 +294,6 @@ export function readWatchdogConfig(read: <T>(key: string) => { value: T }): Watc
     nagMins: mins("nagMins"),
     notifyHuman: bool("notifyHuman"),
     midRunTrustAccept: bool("midRunTrustAccept"),
+    relocationAutoAccept,
   };
 }

@@ -364,6 +364,7 @@ describe("gate:answer attention-gate routing (kind pane-attention)", () => {
       emit: (topic, payload) => { reconcilerEmitted.push({ topic, payload }); },
       injectEscape: async () => ({ ok: true, paneRef: "resolved" }),
       resumeAgent: async () => ({ ok: true }),
+      markAgentGone: () => {},
       log,
     });
     const resumeAgent = async () => ({ ok: true });
