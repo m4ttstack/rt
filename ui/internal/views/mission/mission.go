@@ -5,7 +5,6 @@ package mission
 
 import (
 	"encoding/json"
-	"fmt"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -87,7 +86,7 @@ func (m *Mission) quit() (tea.Model, tea.Cmd) {
 }
 
 func (m *Mission) View() tea.View {
-	v := tea.NewView(fmt.Sprintf("mission · %s @ %s", m.model.Current.Repo, m.model.Current.Branch))
+	v := tea.NewView(renderTopBar(m.model, m.width, zoneNone, zoneNone))
 	v.AltScreen = true
 	return v
 }
