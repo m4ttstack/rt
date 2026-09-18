@@ -80,7 +80,7 @@ export const GENERATED_DARK_COLORS = {
   "surface": {
     "bg": "#16161e",
     "panel": "#232a47",
-    "card": "#2c3352",
+    "card": "#292f4d",
     "chrome": "#232a47",
     "inset": "#1c2136",
     "overlay": "#1c2136"

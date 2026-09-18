@@ -117,7 +117,7 @@ export const TOKENS: Tokens = {
       chrome: '#232a47',
       bg: '#16161e',
       panel: '#232a47',
-      card: '#2c3352',
+      card: '#292f4d',
       inset: '#1c2136',
       overlay: '#1c2136',
     },
