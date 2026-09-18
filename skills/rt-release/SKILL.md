@@ -160,6 +160,23 @@ left as-is or reduced to a pointer here.
    never came up". A closed job's pane may never have run its cleanup;
    verify, don't assume.
 
+   **Pin-only fast path** (user-ratified 2026-09-18): when `git diff
+   --stat <last-tag>..HEAD` touches ONLY `rt-tray/deps.lock` (plus
+   `RELEASE_NOTES.md` and `website/`), skip the local walkthrough and tag
+   on the rehearsal alone: the rehearsal still builds, notarizes, and
+   clean-room installs in CI, and a pin bump cannot reach the onboarding
+   flows the walkthrough exercises. Any other changed file means the full
+   gate.
+
+   When a walkthrough fails on `deck.managed`, read
+   `~/.mattstack/deck/logs/agent.log` from the guest-home tarball FIRST;
+   its shape names the failure: no entries at all is the silent no-spawn
+   window (launchd never ran the registered agent, often right after the
+   FDA relaunch); failed-bind holder lines are the port wedge; a fresh
+   "serving" line seconds before the step failed means adopt raced deck's
+   registry bootstrap. All three are rerun-first during a release, and the
+   evidence goes to the deck boot ticket, not into ad-hoc guest debugging.
+
 9. **Tag and push.**
    ```
    git tag -a <tag> -m "<tag>"
