@@ -62,13 +62,27 @@ left as-is or reduced to a pointer here.
 
    The policy is content lockstep, independent numbering: an app whose
    subdir moved since its pin gets a release cut from the same main this
-   tag builds against (app-prefixed tag on the monorepo; the bundle-apps
-   workflow builds the artifact), then its deps.lock row bumps with the
-   new tarball's sha256. An unchanged app keeps its pin — no empty
-   releases. Holding a stale pin anyway is allowed but is a decision the
-   user makes and the release notes record, never a silent default.
-   Version numbers stay per-app; rt's own tag plus the committed deps.lock
-   is the compatibility record.
+   tag builds against. Nothing in that pipeline is tag-triggered, so
+   never hand-push an app tag; a hand-pushed tag builds nothing. The
+   pipeline: bump `apps/<app>/package.json` on apps main via PR, then
+
+   ```
+   gh workflow run bundle-apps.yml --repo m4ttstack/rt -f apps=<comma-list>
+   ```
+
+   (`bundle-apps.yml` lives in rt, not the apps repo). The workflow reads
+   each app's package.json version, mints the app-prefixed tag itself,
+   creates the apps release with the tarball, and opens ONE combined
+   deps.lock PR on rt covering every app it was dispatched for; verify
+   each changed row's sha256 against the published asset before merging.
+   Merge-on-green, here and for any release-day PR, means zero pending
+   checks AND at least one pass; any fail blocks. A failed check in a
+   suite the diff cannot touch (a deps.lock pin failing a UI test) is
+   rerun-first: `gh run rerun <run-id> --failed`, then re-gate. An
+   unchanged app keeps its pin, no empty releases. Holding a stale pin
+   anyway is allowed but is a decision the user makes and the release
+   notes record, never a silent default. Version numbers stay per-app;
+   rt's own tag plus the committed deps.lock is the compatibility record.
 
 3. **Push main.** If `main` is ahead of `origin/main`, push it. This is an
    outward action: unless the user pre-authorized the release, say what you are
@@ -139,6 +153,12 @@ left as-is or reduced to a pointer here.
    `MATTSTACK_VMTEST_ORG_CONFIRM=matts-hasura-demo`. Also: the rehearsal's
    dmg version stamp is `<latest-patch-bump>-ci<run>`, not `v0.0.0` — read
    the artifact's actual filename rather than assuming.
+
+   Before launching the walkthrough, run `tart list` and stop or delete
+   any running guests: macOS virtualization caps concurrent VMs at two,
+   so a leftover guest makes the new one fail boot as "ssh as tester
+   never came up". A closed job's pane may never have run its cleanup;
+   verify, don't assume.
 
 9. **Tag and push.**
    ```
