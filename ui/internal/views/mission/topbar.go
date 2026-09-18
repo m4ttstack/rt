@@ -112,7 +112,7 @@ func renderWorktreeSegment(m Model, width int, hovered, isOpen bool) string {
 
 // renderBranchSegment renders the normal (a branch name with a foldout
 // chevron) and detached (an "On <sha>" value in Peach, no foldout) states.
-// The checking-out spinner state lands with Task 8's polish pass.
+// The checking-out spinner state lands with the interaction wiring pass.
 func renderBranchSegment(m Model, width int, hovered, isOpen bool) string {
 	if m.Current.Detached {
 		return renderSegment(width, segmentSpec{

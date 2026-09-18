@@ -1,6 +1,8 @@
 package mission
 
 import (
+	"fmt"
+	"image/color"
 	"strings"
 	"testing"
 
@@ -8,6 +10,16 @@ import (
 
 	"rt-ui/internal/theme"
 )
+
+// fgSGR is the truecolor foreground SGR fragment lipgloss emits for c,
+// mirroring the picker view's helper of the same name (picker_test.go):
+// what these pin is which theme role a glyph wears, not a literal byte
+// value, so a token change re-pins them rather than silently passing a
+// swapped accent.
+func fgSGR(c color.Color) string {
+	r, g, b, _ := c.RGBA()
+	return fmt.Sprintf("38;2;%d;%d;%d", r>>8, g>>8, b>>8)
+}
 
 func pullModel() Model {
 	return Model{
@@ -32,6 +44,37 @@ func TestRenderActionSegmentPillsOnlyWhenNonzero(t *testing.T) {
 	}
 	if strings.Contains(out, "↓") {
 		t.Fatalf("unexpected behind pill in a zero-behind push segment:\n%s", out)
+	}
+}
+
+// TestActionGlyphColorsPerKind pins each Kind to its own accent so a
+// swapped color (Coral vs Lav, PinkSoft vs Mint) fails a test instead of
+// passing every existing substring/width check.
+func TestActionGlyphColorsPerKind(t *testing.T) {
+	cases := []struct {
+		kind  string
+		glyph string
+		color color.Color
+	}{
+		{"pull", "↓", theme.Mint},
+		{"push", "↑", theme.Cyan},
+		{"force-push", "⇈", theme.Coral},
+		{"publish-branch", "↑", theme.Lav},
+		{"fetch", "⟳", theme.PinkSoft},
+	}
+	for _, c := range cases {
+		out := renderActionSegment(ActionModel{Kind: c.kind, Title: "x"}, 60, false, false)
+		want := fgSGR(c.color) + "m" + c.glyph
+		if !strings.Contains(out, want) {
+			t.Fatalf("%s glyph should wear its accent color: want %q in\n%s", c.kind, want, out)
+		}
+	}
+}
+
+func TestRenderBranchSegmentDetachedValueWearsPeach(t *testing.T) {
+	out := renderBranchSegment(Model{Current: Current{Detached: true, Branch: "a1b2c3d"}}, 40, false, false)
+	if !strings.Contains(out, "1;"+fgSGR(theme.Peach)+"m") {
+		t.Fatalf("detached value should wear bold Peach: %q", out)
 	}
 }
 
