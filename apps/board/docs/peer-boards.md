@@ -65,14 +65,16 @@ The switchboard is a separate deployable in `switchboard/`: a store-and-forward
 relay, one process, one SQLite file. To deploy it to
 [Railway](https://railway.app):
 
-- **Service root**: the repo root, not `switchboard/`. The relay imports shared
-  types from `src/peer/`, so a service rooted at `switchboard/` cannot resolve
-  them.
-- **Builder**: Dockerfile, path `switchboard/Dockerfile`. It copies only the
-  relay's files and runs no `bun install`, because the board's `package.json`
-  has a `file:` dependency that only resolves on a dev machine.
-- **Watch paths**: `switchboard/**` and `src/peer/envelope.ts`, so board-only
-  pushes do not trigger a redeploy of the relay.
+- **Service root**: the apps repo root, not `apps/board/switchboard/`. The
+  relay imports shared types from the board's `src/peer/`, so a service rooted
+  at the switchboard folder cannot resolve them.
+- **Builder**: Dockerfile, path `apps/board/switchboard/Dockerfile` (the
+  `RAILWAY_DOCKERFILE_PATH` variable). It copies only the relay's files and
+  runs no `bun install`, because the board's `package.json` has workspace
+  dependencies that only resolve in the workspace.
+- **Watch paths**: `apps/board/switchboard/**` and
+  `apps/board/src/peer/envelope.ts`, so pushes elsewhere in the workspace do
+  not trigger a redeploy of the relay.
 - **Volume**: attach one and point `SWITCHBOARD_DB` at a path on it. Otherwise
   the database lives on ephemeral disk and every redeploy loses all board
   registrations.
