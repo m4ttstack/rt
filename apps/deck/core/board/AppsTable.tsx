@@ -84,24 +84,29 @@ export function AppsTable({
           <col key={i} style={{ width: w }} />
         ))}
       </colgroup>
-      {showHead && (
-        <Table.Head>
-          <Table.HeadCell>site</Table.HeadCell>
-          <Table.HeadCell>port</Table.HeadCell>
-          <Table.HeadCell>health</Table.HeadCell>
-          <Table.HeadCell>service</Table.HeadCell>
-          {/* border-left gap, not margin: a margin on a <th> collapses in
-              table layout, per board-composite.html's own gap treatment. */}
-          <Table.HeadCell className="col-gap">public</Table.HeadCell>
-          <Table.HeadCell />
-          <Table.HeadCell />
-          {/* Its own blank header cell, distinct from the manifest commands
-              column just before it -- a remote push is never a manifest
-              action-command, so it never shares that cell. */}
-          <Table.HeadCell />
-          <Table.HeadCell />
-        </Table.Head>
-      )}
+      {/* Rendered on every section, not just the first: a headerless table
+          still carries the shared colgroup, but some engines size a fixed
+          table's columns off the first row rather than the colgroup alone
+          when there is no header row to anchor it, drifting the later
+          sections out of alignment with the first. Rendering it always and
+          hiding the duplicates with `head-hidden` (zeroed box, not
+          display:none) keeps every table's column-sizing input identical. */}
+      <Table.Head className={showHead ? undefined : 'head-hidden'}>
+        <Table.HeadCell>site</Table.HeadCell>
+        <Table.HeadCell>port</Table.HeadCell>
+        <Table.HeadCell>health</Table.HeadCell>
+        <Table.HeadCell>service</Table.HeadCell>
+        {/* border-left gap, not margin: a margin on a <th> collapses in
+            table layout, per board-composite.html's own gap treatment. */}
+        <Table.HeadCell className="col-gap">public</Table.HeadCell>
+        <Table.HeadCell />
+        <Table.HeadCell />
+        {/* Its own blank header cell, distinct from the manifest commands
+            column just before it -- a remote push is never a manifest
+            action-command, so it never shares that cell. */}
+        <Table.HeadCell />
+        <Table.HeadCell />
+      </Table.Head>
       <Table.Body>
         {section.rows.map(row => {
           const restarting = isRestarting(row);

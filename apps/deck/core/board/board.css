@@ -269,6 +269,27 @@ body {
   --border-soft: var(--border-soft-on-card);
 }
 
+/* Last row's cells drop the kit's per-cell hairline -- otherwise it doubles
+   up against the panel's own bottom border, right above the padding gap. */
+.apps-grid [data-part='table-row']:last-child [data-part='table-cell'] {
+  border-bottom: none;
+}
+
+/* Every section table renders a real header row for column-width
+   consistency (AppsTable.tsx) -- `display: none`/`visibility: collapse`
+   would pull it back out of the sizing a fixed table derives from a
+   headerless row on some engines, so it stays in normal flow and is
+   zeroed to invisible instead. */
+.apps-grid thead.head-hidden th {
+  height: 0;
+  padding: 0;
+  border: 0;
+  font-size: 0;
+  line-height: 0;
+  color: transparent;
+  overflow: hidden;
+}
+
 /* Railway origin marker in the site cell: present when a row is pushed to
    Railway, tinted by deploy state so "live on Railway" reads at a glance. */
 .railway-globe {

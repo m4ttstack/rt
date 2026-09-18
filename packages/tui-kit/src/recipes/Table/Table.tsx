@@ -82,10 +82,22 @@ const TableRoot = defineComponent<
 
 /** Hand-rolled: a header row is always exactly one `<tr>` of `<Table.HeadCell>`s,
     so nothing here needs its own Styles-API slot — see this file's header
-    comment. */
-function Head({ children }: { children?: ReactNode }) {
+    comment. `className` merges onto the recipe's own class (same
+    non-overridable-tail reasoning as Row/Cell) so a consumer can render a
+    header on every table for column-width consistency while visually
+    suppressing the duplicates. */
+function Head({
+  children,
+  className,
+}: {
+  children?: ReactNode;
+  className?: string;
+}) {
   return (
-    <thead className={classes.head} data-part={TABLE_PARTS.head}>
+    <thead
+      className={className ? `${classes.head} ${className}` : classes.head}
+      data-part={TABLE_PARTS.head}
+    >
       <tr>{children}</tr>
     </thead>
   );
