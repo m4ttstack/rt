@@ -769,6 +769,29 @@ describe("MissionDriver: action", () => {
     const last = session.pushed.at(-1)!;
     expect(last.action.busy).toBe(false);
   });
+
+  test("a rejected runAction still clears busyAction via the finally cleanup", async () => {
+    const session = new FakeSession([
+      { t: "intent", name: "mission:action" },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({
+      session,
+      runAction: async () => {
+        throw new Error("network exploded");
+      },
+    });
+
+    await new MissionDriver(deps, START).run();
+
+    // The finally-block push (busy cleared, no notice yet) must land before
+    // the outer per-intent catch reports the error Notice.
+    const cleanedUp = session.pushed.findIndex((m) => m.action.busy === false && m.notice === "");
+    expect(cleanedUp).toBeGreaterThan(-1);
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.action.busy).toBe(false);
+    expect(last.notice).toBe("error: network exploded");
+  });
 });
 
 describe("MissionDriver: git-status subscription", () => {
@@ -824,6 +847,165 @@ describe("MissionDriver: git-status subscription", () => {
     await flushMicrotasks();
 
     expect(daemonQueryCalls).toBe(callsAfterSeed + 1);
+
+    session.send({ t: "intent", name: "quit" });
+    await runPromise;
+  });
+
+  test("a rejected badge refresh lands as an error Notice instead of an unhandled rejection", async () => {
+    const session = new QueueSession();
+    let captured: ((ev: DaemonEvent) => void) | null = null;
+    let snapshotCalls = 0;
+    const client = makeFakeClient({
+      snapshot: async () => {
+        snapshotCalls++;
+        if (snapshotCalls === 1) return baseSnapshot();
+        // The git-status-triggered refresh's own call.
+        throw new Error("boom");
+      },
+    });
+    const deps = baseDeps({
+      session,
+      client,
+      subscribe: (onEvent) => {
+        captured = onEvent;
+        return { close: () => {} };
+      },
+    });
+
+    const runPromise = new MissionDriver(deps, START).run();
+    await flushMicrotasks();
+
+    captured!({ type: "git-status", data: {} });
+    await flushMicrotasks();
+
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.notice).toBe("error: boom");
+
+    session.send({ t: "intent", name: "quit" });
+    await runPromise;
+  });
+});
+
+describe("MissionDriver: git-status refresh race", () => {
+  test("a badge refresh in flight for the old worktree discards its result after a switch away", async () => {
+    const session = new QueueSession();
+    let captured: ((ev: DaemonEvent) => void) | null = null;
+    let releaseStale: (() => void) | null = null;
+    let snapshotCallsA = 0;
+    const clientA = makeFakeClient({
+      snapshot: async () => {
+        snapshotCallsA++;
+        if (snapshotCallsA === 1) return baseSnapshot({ branch: "initial-a" });
+        // The git-status-triggered refresh's own call: blocks until released,
+        // simulating a worktree switch landing while this fetch is in flight.
+        return new Promise((resolve) => {
+          releaseStale = () => resolve(baseSnapshot({ branch: "stale-a" }));
+        });
+      },
+    });
+    const clientB = makeFakeClient({ snapshot: async () => baseSnapshot({ branch: "fresh-b" }) });
+    const deps = baseDeps({
+      session,
+      client: clientA,
+      subscribe: (onEvent) => {
+        captured = onEvent;
+        return { close: () => {} };
+      },
+      daemonQuery: async (cmd: string) =>
+        cmd === "worktree:list"
+          ? {
+              ok: true,
+              data: {
+                trees: [
+                  { path: "/repo", name: "gandalf", branch: "main", state: "claimed" },
+                  { path: "/repo2", name: "frodo", branch: "feature", state: "on-deck" },
+                ],
+              },
+            }
+          : {
+              ok: true,
+              data: { repos: [{ repo: "repo-tools", error: null, worktrees: [badge({ worktree: "/repo" }), badge({ worktree: "/repo2" })] }] },
+            },
+    });
+    deps.client = (dir: string) => (dir === "/repo2" ? clientB : clientA);
+
+    const runPromise = new MissionDriver(deps, START).run();
+    await flushMicrotasks();
+
+    // Fires the badge refresh, which captures worktree "/repo" and then
+    // blocks on clientA's second snapshot() call.
+    captured!({ type: "git-status", data: {} });
+    await flushMicrotasks();
+    expect(releaseStale).not.toBeNull();
+
+    // A real switch lands while that refresh is still in flight.
+    session.send({ t: "intent", name: "mission:worktree", payload: { path: "/repo2" } });
+    await flushMicrotasks();
+    const afterSwitch = session.pushed.at(-1) as MissionModel;
+    expect(afterSwitch.current.worktree).toBe("/repo2");
+    expect(afterSwitch.current.branch).toBe("fresh-b");
+
+    // The stale refresh finally resolves -- it must not clobber the switch.
+    releaseStale!();
+    await flushMicrotasks();
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.current.worktree).toBe("/repo2");
+    expect(last.current.branch).toBe("fresh-b");
+
+    session.send({ t: "intent", name: "quit" });
+    await runPromise;
+  });
+
+  test("a badge refresh in flight for the old selected path discards its diff after the selection changes", async () => {
+    const session = new QueueSession();
+    let captured: ((ev: DaemonEvent) => void) | null = null;
+    let releaseStale: (() => void) | null = null;
+    let staleDiffCalls = 0;
+    const client = makeFakeClient({
+      snapshot: async () =>
+        baseSnapshot({
+          clean: false,
+          files: [
+            { path: "a.txt", kind: "modified", staged: false, unstaged: true },
+            { path: "b.txt", kind: "modified", staged: false, unstaged: true },
+          ],
+        }),
+      stagingDiff: async (path: string) => {
+        if (path !== "a.txt") return oneHunkDiff(path);
+        staleDiffCalls++;
+        if (staleDiffCalls === 1) return oneHunkDiff("a.txt"); // the initial seed's own fetch
+        // The git-status-triggered refresh's own re-fetch: blocks until released.
+        return new Promise((resolve) => {
+          releaseStale = () => resolve(oneHunkDiff("a.txt"));
+        });
+      },
+    });
+    const deps = baseDeps({
+      session,
+      client,
+      subscribe: (onEvent) => {
+        captured = onEvent;
+        return { close: () => {} };
+      },
+    });
+
+    const runPromise = new MissionDriver(deps, START).run();
+    await flushMicrotasks(); // seeds selectedPath to "a.txt" (the first change)
+
+    captured!({ type: "git-status", data: {} }); // captures selectedPath "a.txt", blocks on its stagingDiff re-fetch
+    await flushMicrotasks();
+    expect(releaseStale).not.toBeNull();
+
+    session.send({ t: "intent", name: "mission:select", payload: { path: "b.txt" } });
+    await flushMicrotasks();
+    const afterSelect = session.pushed.at(-1) as MissionModel;
+    expect(afterSelect.diff.path).toBe("b.txt");
+
+    releaseStale!();
+    await flushMicrotasks();
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.diff.path).toBe("b.txt"); // the stale a.txt re-fetch must not clobber the new selection
 
     session.send({ t: "intent", name: "quit" });
     await runPromise;

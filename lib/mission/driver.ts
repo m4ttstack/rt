@@ -186,7 +186,10 @@ export class MissionDriver {
     this.session = session;
     const sub = this.deps.subscribe((ev) => {
       if (ev.type !== "git-status") return;
-      void this.onGitStatus();
+      void this.onGitStatus().catch((err) => {
+        this.state.notice = `error: ${err instanceof Error ? err.message : String(err)}`;
+        this.push();
+      });
     });
     try {
       for await (const intent of session.intents) {
@@ -293,12 +296,28 @@ export class MissionDriver {
     this.recomputeAction();
   }
 
-  /** Just the badges/snapshot a repos:status sweep changed -- the git-status subscription's own refresh, cheaper than a full seed. */
+  /**
+   * Just the badges/snapshot/diff a repos:status sweep changed -- the
+   * git-status subscription's own refresh, cheaper than a full seed.
+   * The worktree and selected path are captured before the await and
+   * re-checked after: a switch mid-flight (worktree, repo, or selection)
+   * must discard this pass's result rather than publish it onto whatever
+   * is current by the time it lands, and the diff is refetched alongside
+   * the snapshot so the two never publish out of step with each other.
+   */
   private async refreshBadges(): Promise<void> {
-    const client = this.deps.client(this.state.currentWorktree);
-    const [statusRes, snapshot] = await Promise.all([this.deps.daemonQuery("repos:status", {}), client.snapshot()]);
+    const worktree = this.state.currentWorktree;
+    const selectedPath = this.state.selectedPath;
+    const client = this.deps.client(worktree);
+    const [statusRes, snapshot, stagingDiff] = await Promise.all([
+      this.deps.daemonQuery("repos:status", {}),
+      client.snapshot(),
+      selectedPath ? client.stagingDiff(selectedPath) : Promise.resolve(null),
+    ]);
+    if (this.state.currentWorktree !== worktree || this.state.selectedPath !== selectedPath) return;
     if (statusRes?.ok) this.rows = (statusRes.data?.repos as RepoStatusRow[] | undefined) ?? [];
     this.snapshot = snapshot;
+    this.stagingDiff = stagingDiff;
     this.recomputeAction();
   }
 
@@ -365,17 +384,23 @@ export class MissionDriver {
     this.recomputeAction();
     this.push();
 
-    const result = await this.deps.runAction(this.state.currentWorktree, kind, { branch: this.snapshot.branch });
-    this.state.busyAction = false;
-    if (!result.ok) {
-      this.state.notice = result.detail;
-    } else {
-      this.state.notice = "";
-      if (kind === "push" || kind === "force-push") this.state.forcePushRecommended = false;
-      await this.refresh();
+    try {
+      const result = await this.deps.runAction(this.state.currentWorktree, kind, { branch: this.snapshot.branch });
+      if (!result.ok) {
+        this.state.notice = result.detail;
+      } else {
+        this.state.notice = "";
+        if (kind === "push" || kind === "force-push") this.state.forcePushRecommended = false;
+        await this.refresh();
+      }
+    } finally {
+      // Reached on a runAction rejection too, so a stalled/failed action
+      // never leaves the model stuck busy for the caller's error boundary
+      // to clean up.
+      this.state.busyAction = false;
+      this.recomputeAction();
+      this.push();
     }
-    this.recomputeAction();
-    this.push();
   }
 
   /**
