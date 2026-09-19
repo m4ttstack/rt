@@ -78,7 +78,13 @@ left as-is or reduced to a pointer here.
    Merge-on-green, here and for any release-day PR, means zero pending
    checks AND at least one pass; any fail blocks. A failed check in a
    suite the diff cannot touch (a deps.lock pin failing a UI test) is
-   rerun-first: `gh run rerun <run-id> --failed`, then re-gate. An
+   rerun-first: `gh run rerun <run-id> --failed`, then re-gate. A green
+   CodeRabbit row is only a review if it actually reviewed: the org is
+   rate-capped, and a rate-limited pass reports success having read
+   nothing (check for a real review body or inline comments). For
+   release-bound code changes, a rate-limited CodeRabbit means a
+   strong-model subagent reviews the diff instead; docs-only diffs may
+   merge on CI alone when the user has said so. An
    unchanged app keeps its pin, no empty releases. Holding a stale pin
    anyway is allowed but is a decision the user makes and the release
    notes record, never a silent default. Version numbers stay per-app;
@@ -161,7 +167,10 @@ left as-is or reduced to a pointer here.
 
 4. **Update docs.** Run `bun scripts/update-docs.ts --no-agent`: it regenerates
    the command reference, runs the drift/coverage check, and scaffolds
-   `RELEASE_NOTES.md` for `<last-tag>..HEAD`. Then, following
+   `RELEASE_NOTES.md` for `<last-tag>..HEAD`. It scaffolds UNCONDITIONALLY:
+   any curated notes already in the file are overwritten, so if curation
+   exists (a re-run mid-release, or notes written early), copy
+   `RELEASE_NOTES.md` aside first and restore after. Then, following
    `skills/rt-docs/SKILL.md`, update whichever guides, getting-started pages, or
    `_partials` the range's behavior changes require. Do the judgment yourself in
    this session; do not shell out to a nested headless Claude.
@@ -180,7 +189,10 @@ left as-is or reduced to a pointer here.
 
 7. **Commit and push the notes, without tagging.** `RELEASE_NOTES.md` must be
    committed at the commit the tag will point to, because CI reads it as the
-   release body. Scoped add only, never `git add -A`:
+   release body. Every release-day PR this release depends on (deps.lock
+   pins, a catalog refresh, anything the notes describe) must be MERGED
+   before this commit: the notes commit is the tag target, and whatever
+   lands after it misses the tag. Scoped add only, never `git add -A`:
    ```
    git add website RELEASE_NOTES.md
    git commit -m "chore(release): docs and notes for <tag>"
@@ -253,9 +265,12 @@ left as-is or reduced to a pointer here.
    registry bootstrap. All three are rerun-first during a release, and the
    evidence goes to the deck boot ticket, not into ad-hoc guest debugging.
 
-9. **Tag and push.**
+9. **Tag and push.** Tag the EXERCISED sha explicitly, never bare HEAD:
+   the shared checkout moves under a release (other sessions merge to
+   main mid-pipeline, twice on 2026-09-18 alone), and the tag must point
+   at the commit the rehearsal and walkthrough actually ran.
    ```
-   git tag -a <tag> -m "<tag>"
+   git tag -a <tag> <exercised-sha> -m "<tag>"
    git push origin <tag>
    ```
    Do NOT run `gh release create`. The tag push triggers `release.yml`, which
@@ -264,13 +279,22 @@ left as-is or reduced to a pointer here.
    the zip in a clean room.
 
 10. **Verify the publish.** Find the run (`gh run list --workflow=release.yml`)
-   and watch it to completion (`gh run watch <run-id> --exit-status`), then confirm with
-   `gh release view <tag>`: the body is your `RELEASE_NOTES.md` (not GitHub's
-   auto-generated notes), and `mattstack-<ver>.dmg`, `mattstack-<ver>.zip`,
-   `appcast.xml`, and `SHA256SUMS` are all attached. The workflow asserts those
-   four itself before publishing, so a missing one fails the run rather than
-   shipping a partial release. If CI failed or the body is wrong, report it
-   rather than papering over it.
+   and watch it to completion. Do not trust a bare `gh run watch
+   --exit-status`: it exits nonzero on transient API errors while the run
+   is still in_progress (a false FAILED, seen live on v2.10.0). Poll
+   `gh run view <run-id> --json status,conclusion` in a loop that
+   tolerates a failed poll and acts only on `completed/<conclusion>`.
+   Then confirm with `gh release view <tag>`: the body is your
+   `RELEASE_NOTES.md` (not GitHub's auto-generated notes), and
+   `mattstack-<ver>.dmg`, `mattstack-<ver>.zip`, `appcast.xml`, and
+   `SHA256SUMS` are all attached. The workflow asserts those four itself
+   before publishing, so a missing one fails the run rather than shipping
+   a partial release. If the run genuinely failed, the known flake is
+   asset-upload 500s on the large files: first recovery is `gh release
+   delete <tag>` (the git tag survives) plus `gh run rerun --failed`; the
+   hand-completion recipe (zip re-derive, appcast re-sign, draft flip)
+   lives in `~/.claude/skills/mattstack-release/SKILL.md`. Anything else,
+   report rather than papering over.
 
    Assets and body are not the whole verification: the release action creates
    the release as a DRAFT and flips it public last, so a run that dies
@@ -279,9 +303,11 @@ left as-is or reduced to a pointer here.
    button keep serving the previous tag. Confirm
    `gh release view <tag> --json isDraft,isPrerelease` shows both false, and
    that `https://api.github.com/repos/m4ttstack/rt/releases/latest` resolves
-   to the new tag with all four assets (give the endpoint a minute; it
-   caches). Completing a failed run's assets by hand does not publish the
-   draft: `gh release edit <tag> --draft=false` is the missing flip.
+   to the new tag with all four assets. That endpoint caches and can lag
+   up to ~20 minutes behind the flip: poll it, and never declare the
+   publish failed inside that window. Completing a failed run's assets by
+   hand does not publish the draft: `gh release edit <tag> --draft=false`
+   is the missing flip.
 
 11. **Deploy rt.cool.** Run `bash scripts/deploy-docs.sh` (builds the site, deploys
    to Cloudflare Pages via wrangler). Needs wrangler auth (`wrangler login` or
