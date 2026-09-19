@@ -5,7 +5,7 @@ import { releaseUpdateMachine } from "../release.ts";
 const ok = (stdout = "") => Promise.resolve({ stdout, stderr: "", exitCode: 0 });
 const SHA = "1234567890abcdef1234567890abcdef12345678";
 
-/** The real `hdiutil attach ... -plist` shape (see lib/release/__tests__/update-machine.test.ts for how this was captured against a real dmg). */
+/** The real `hdiutil attach ... -plist` shape: one system-entities dict per partition, mount-point only on the mountable one. */
 const ATTACH_PLIST =
   `<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0">\n<dict>\n\t<key>system-entities</key>\n\t<array>\n` +
   `\t\t<dict>\n\t\t\t<key>dev-entry</key>\n\t\t\t<string>/dev/disk14s1</string>\n\t\t\t<key>mount-point</key>\n\t\t\t<string>/Volumes/mattstack</string>\n\t\t</dict>\n` +

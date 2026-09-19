@@ -159,21 +159,26 @@ export async function releaseUpdateMachine(args: string[], _ctx: CommandContext 
   };
 
   const realSeams = seams ? null : await createRealUpdateMachineSeams(options);
+  const cleanupWorkDir = () => {
+    if (!realSeams?.workDir) return;
+    try {
+      rmSync(realSeams.workDir, { recursive: true, force: true });
+    } catch {
+      // best effort; a leftover scratch dir under tmpdir() is not worth failing the verb over
+    }
+  };
+
+  // exitUserError calls the real process.exit, which never runs a pending finally,
+  // so cleanup happens explicitly on this path before that call, not after it.
   let report;
   try {
     report = await runUpdateMachine(seams ?? realSeams!, options);
   } catch (err) {
+    cleanupWorkDir();
     if (err instanceof UserActionableError) exitUserError(err, json, "release update-machine");
     throw err;
-  } finally {
-    if (realSeams?.workDir) {
-      try {
-        rmSync(realSeams.workDir, { recursive: true, force: true });
-      } catch {
-        // best effort; a leftover scratch dir under tmpdir() is not worth failing the verb over
-      }
-    }
   }
+  cleanupWorkDir();
 
   const failed = report.legs.some((l) => l.status === "aborted" || l.status === "error");
 
