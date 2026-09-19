@@ -134,11 +134,13 @@ function parseShaSums(content: string, filename: string): string | null {
 }
 
 /** hdiutil attach -plist emits an XML plist, not JSON; -quiet (dropped here) closes
- *  stdout entirely, so this is the only way to learn the real mount point. The
- *  mount point belongs to the mountable partition's own entity; the whole-disk
- *  identifier used as a detach fallback is a DIFFERENT, non-mountable entity
- *  (content-hint GUID_partition_scheme) that a real attach lists last, after
- *  every partition entity, so the last dev-entry in the plist is it. */
+ *  stdout entirely, so this is the only way to learn the real mount point.
+ *  system-entities' order is filesystem-dependent (HFS+ lists the whole-disk
+ *  GUID_partition_scheme entity last; APFS, what the real release dmg uses,
+ *  lists it first), so the detach fallback just takes the last dev-entry in
+ *  the plist: hdiutil detach accepts any dev-entry belonging to the
+ *  attachment as a target for detaching the whole thing, so which one this
+ *  picks doesn't matter. */
 function parseAttachPlist(xml: string): { mountPoint: string | null; device: string | null } {
   const mountPoint = xml.match(/<key>mount-point<\/key>\s*<string>([^<]+)<\/string>/)?.[1] ?? null;
   const devEntries = [...xml.matchAll(/<key>dev-entry<\/key>\s*<string>([^<]+)<\/string>/g)].map((m) => m[1]!);

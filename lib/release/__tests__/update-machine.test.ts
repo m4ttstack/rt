@@ -48,16 +48,31 @@ interface Options {
 }
 
 /** Real `launchctl print` has no start-time field: top-level state/pid, tab-indented, nested sub-sections repeat their own "state = active" lines. */
-// Bare `ps -o lstart=` output carries no zone, so new Date(str) parses it in the
-// runner's local timezone. Deriving these from START (rather than hand-writing a
-// date string) keeps "before"/"after" the marker true in every timezone.
-const OLD_PS_TIME = new Date(START.getTime() - 24 * 60 * 60 * 1000).toString();
-const NEW_PS_TIME = new Date(START.getTime() + 24 * 60 * 60 * 1000).toString();
+
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+// The real `ps -o lstart=` shape ("Thu Sep 18 09:00:00 2026") carries no zone, so
+// parsePsStartTime's new Date(str) parses it in whatever timezone the runner is
+// in. Building this string from START's UTC components (rather than a
+// hand-written date, and rather than Date#toString's zone-bearing format) keeps
+// the numbers deterministic; the full day of separation from START absorbs any
+// zone the runner's parser applies, so "before"/"after" the marker stays true
+// everywhere real timezones exist.
+function lstartStyle(d: Date): string {
+  const two = (n: number) => String(n).padStart(2, "0");
+  return `${WEEKDAYS[d.getUTCDay()]} ${MONTHS[d.getUTCMonth()]} ${two(d.getUTCDate())} ${two(d.getUTCHours())}:${two(d.getUTCMinutes())}:${two(d.getUTCSeconds())} ${d.getUTCFullYear()}`;
+}
+const OLD_PS_TIME = lstartStyle(new Date(START.getTime() - 24 * 60 * 60 * 1000));
+const NEW_PS_TIME = lstartStyle(new Date(START.getTime() + 24 * 60 * 60 * 1000));
 
 /** The real hdiutil attach -plist shape, captured against a throwaway dmg
- *  (never a mattstack artifact): the mountable partition entity (its own
- *  dev-entry, and a mount-point only when actually mounted) listed before the
- *  whole-disk GUID_partition_scheme entity (never mountable, no mount-point). */
+ *  (never a mattstack artifact): one entity per partition, each with its own
+ *  dev-entry, and a mount-point only on the one actually mounted. Real entity
+ *  order is filesystem-dependent (this fixture's HFS+ order happens to list
+ *  the whole-disk GUID_partition_scheme entity last; APFS lists it first) --
+ *  parseAttachPlist doesn't depend on the order, since any dev-entry in the
+ *  attachment is a valid detach target for the whole thing. */
 function attachPlistXml(mountPoint: string | null): string {
   const mountKey = mountPoint ? `\t\t\t<key>mount-point</key>\n\t\t\t<string>${mountPoint}</string>\n` : "";
   return (
