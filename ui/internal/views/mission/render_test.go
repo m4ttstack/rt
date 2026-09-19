@@ -348,12 +348,90 @@ func TestRenderDiffPaneBinaryShowsExactMessage(t *testing.T) {
 	}
 }
 
-func TestRenderDiffPaneNoneShowsSelectAFile(t *testing.T) {
+// TestRenderDiffPaneNoneWithChangesShowsSelectAFile pins the pre-seed state
+// (docs/design/mission/EmptyState.png only replaces the truly clean case):
+// changes exist but the driver's own selection hasn't landed yet, so the
+// pane still shows the plain hint rather than the empty-state card.
+func TestRenderDiffPaneNoneWithChangesShowsSelectAFile(t *testing.T) {
 	m := &Mission{}
+	m.model.Changes = []ChangeRow{{Path: "a.go", Status: "modified", Include: "none"}}
 	out := ansi.Strip(m.renderDiffPane(60, 10))
 	if !strings.Contains(out, "select a file") {
-		t.Fatalf("empty diff missing the select-a-file hint:\n%s", out)
+		t.Fatalf("empty diff with changes missing the select-a-file hint:\n%s", out)
 	}
+	if strings.Contains(out, "No local changes") {
+		t.Fatalf("empty diff with changes must not show the clean-worktree card:\n%s", out)
+	}
+}
+
+// ─── empty state (docs/design/mission/EmptyState.png) ──────────────────
+
+// TestRenderDiffPaneEmptyStateShowsTitleAndAllFourHints pins the
+// clean-worktree card's content: zero changes and no diff shows the title,
+// subline, and all four key hints, replacing the lone "select a file" line.
+func TestRenderDiffPaneEmptyStateShowsTitleAndAllFourHints(t *testing.T) {
+	m := &Mission{}
+	out := ansi.Strip(m.renderDiffPane(60, 20))
+	for _, want := range []string{
+		"No local changes",
+		"the working tree is clean",
+		"f  run the fetch/pull/push action",
+		"b  switch branch",
+		"w  switch worktree",
+		"r  switch repository",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("empty state missing %q:\n%s", want, out)
+		}
+	}
+}
+
+// TestRenderDiffPaneEmptyStateCentersWithinPaneWidth pins the layout half:
+// the title and every hint line sit centered within the diff pane's own
+// width, not flush left.
+func TestRenderDiffPaneEmptyStateCentersWithinPaneWidth(t *testing.T) {
+	m := &Mission{}
+	const width = 60
+	out := ansi.Strip(m.renderDiffPane(width, 20))
+	for _, want := range []string{"No local changes", "the working tree is clean", "run the fetch/pull/push action"} {
+		line := lineContaining(t, out, want)
+		if lipgloss.Width(line) != width {
+			t.Fatalf("line %q should pad to the pane width %d, got %d", line, width, lipgloss.Width(line))
+		}
+		leading := len(line) - len(strings.TrimLeft(line, " "))
+		trailing := len(line) - len(strings.TrimRight(line, " "))
+		if leading < 2 || trailing < 2 {
+			t.Fatalf("line should carry roughly equal padding on both sides to read as centered: %q (leading=%d trailing=%d)", line, leading, trailing)
+		}
+	}
+}
+
+// TestRenderDiffPaneEmptyStateColorsTitleKeysAndLabels pins the token
+// contract: the title is bold Text, a hint's key is bold Pink, its label
+// Dimmer.
+func TestRenderDiffPaneEmptyStateColorsTitleKeysAndLabels(t *testing.T) {
+	m := &Mission{}
+	out := m.renderDiffPane(60, 20)
+	if !strings.Contains(out, "1;"+fgSGR(theme.Text)) {
+		t.Fatalf("title should wear bold Text: %q", out)
+	}
+	if !strings.Contains(out, "1;"+fgSGR(theme.Pink)) {
+		t.Fatalf("a hint key should wear bold Pink: %q", out)
+	}
+	if !strings.Contains(out, fgSGR(theme.Dimmer)) {
+		t.Fatalf("a hint label should wear Dimmer: %q", out)
+	}
+}
+
+func lineContaining(t *testing.T, out, want string) string {
+	t.Helper()
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, want) {
+			return line
+		}
+	}
+	t.Fatalf("no line contains %q:\n%s", want, out)
+	return ""
 }
 
 // modalFixtureModel mirrors ui/fixtures/session-model-mission.json's repo/

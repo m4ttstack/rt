@@ -203,6 +203,9 @@ func (m *Mission) renderDiffPane(width, height int) string {
 		return ""
 	}
 	if d.Kind == "" || d.Kind == "none" {
+		if len(m.model.Changes) == 0 {
+			return renderEmptyStateCard(width, height)
+		}
 		return centeredMessage(width, height, theme.Faint, "select a file")
 	}
 	header := renderDiffHeader(d, width)
@@ -236,6 +239,29 @@ func renderDiffHeader(d DiffModel, width int) string {
 
 func centeredMessage(width, height int, col color.Color, text string) string {
 	return lipgloss.NewStyle().Width(width).Height(height).Background(theme.Bg).Align(lipgloss.Center, lipgloss.Center).Foreground(col).Render(text)
+}
+
+// renderEmptyStateCard is the clean-worktree diff pane (docs/design/mission/
+// EmptyState.png): no GitHub Desktop card clone, just a centered title,
+// subline, and the four keys that get a repo out of that state.
+func renderEmptyStateCard(width, height int) string {
+	on := lipgloss.NewStyle().Background(theme.Bg)
+	title := on.Foreground(theme.Text).Bold(true).Render("No local changes")
+	subline := on.Foreground(theme.Dim).Render("the working tree is clean")
+	hint := func(key, label string) string {
+		return on.Foreground(theme.Pink).Bold(true).Render(key) + on.Foreground(theme.Dimmer).Render("  "+label)
+	}
+	lines := []string{
+		title,
+		subline,
+		"",
+		hint("f", "run the fetch/pull/push action"),
+		hint("b", "switch branch"),
+		hint("w", "switch worktree"),
+		hint("r", "switch repository"),
+	}
+	block := lipgloss.JoinVertical(lipgloss.Center, lines...)
+	return on.Width(width).Height(height).Align(lipgloss.Center, lipgloss.Center).Render(block)
 }
 
 func renderOversizedBody(width, height int) string {
