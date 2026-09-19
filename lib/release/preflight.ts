@@ -220,12 +220,24 @@ export async function checkStandaloneRows(seams: PreflightSeams, rows: DepsRow[]
       const label = `standalone ${row.name}`;
       try {
         const repo = row.repo ?? STANDALONE_REPOS[row.name]!;
-        const latest = normalizeVersion(await ghApi(seams, `repos/${repo}/releases/latest`, ".tag_name"));
+        let latest: string;
+        let source: string;
+        try {
+          latest = normalizeVersion(await ghApi(seams, `repos/${repo}/releases/latest`, ".tag_name"));
+          source = "latest release";
+        } catch {
+          // A repo that publishes to npm instead of GitHub releases (fast-browser)
+          // has no releases/latest; its main's package.json is the currency signal
+          // and also catches a merged-but-unpublished bump.
+          const b64 = await ghApi(seams, `repos/${repo}/contents/package.json`, ".content");
+          latest = normalizeVersion((JSON.parse(Buffer.from(b64, "base64").toString("utf8")) as { version: string }).version);
+          source = "main package.json";
+        }
         const pinned = normalizeVersion(row.version);
         return {
           id, label, pinned, current: latest,
           status: latest === pinned ? "ok" : "stale",
-          detail: latest === pinned ? `pin ${pinned} is ${repo}'s latest release` : `pin ${pinned}, ${repo} latest is ${latest}`,
+          detail: latest === pinned ? `pin ${pinned} matches ${repo}'s ${source}` : `pin ${pinned}, ${repo} ${source} is ${latest}`,
         };
       } catch (err) {
         return { id, label, status: "error", pinned: row.version, detail: String((err as Error).message ?? err) };

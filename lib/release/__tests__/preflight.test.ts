@@ -215,6 +215,20 @@ describe("checkAppPins", () => {
 });
 
 describe("checkStandaloneRows", () => {
+  test("falls back to the repo's package.json when it has no releases", async () => {
+    const s = seams({
+      exec: (argv) => {
+        const cmd = argv.join(" ");
+        if (cmd.includes("releases/latest")) return failExec();
+        if (cmd.includes("contents/package.json")) return ok(Buffer.from(JSON.stringify({ version: "0.1.3" })).toString("base64"));
+        return failExec();
+      },
+    });
+    const rows = await checkStandaloneRows(s, [FB_ROW]);
+    expect(rows[0]!.status).toBe("ok");
+    expect(rows[0]!.detail).toContain("package.json");
+  });
+
   test("compares each row against its repo's latest release", async () => {
     const s = seams({
       exec: (argv) => {

@@ -1594,6 +1594,20 @@ export const TREE: Record<string, CommandNode> = {
     },
   },
 
+  release: {
+    description: "Release-cycle checks for the rt repo itself",
+    subcommands: {
+      preflight: {
+        description: "Read-only report of every vendored layer's pin freshness, git/tag state, and the gate the pending diff implies",
+        module: "./commands/release.ts",
+        fn: "releasePreflight",
+        args: [
+          { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Emit the full report as JSON" },
+        ],
+      },
+    },
+  },
+
   state: {
     description: "rt's own state.db: backup, restore, and integrity",
     subcommands: {
