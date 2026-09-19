@@ -36,6 +36,8 @@ type RunActionFn = (cwd: string, kind: ActionKind, opts: { remote?: string; bran
 type CommitStagedFn = (cwd: string, message: string, opts?: { amend?: boolean; noVerify?: boolean; allowEmpty?: boolean; coAuthors?: string[] }) => string;
 type AmendStagedFn = (cwd: string, opts?: { message?: string; noVerify?: boolean }) => string;
 type GuardFn = typeof checkBranchGuard;
+type StageFileFn = (cwd: string, path: string) => void;
+type UnstageFileFn = (cwd: string, path: string, origPath?: string) => void;
 
 export interface MissionDeps {
   openSession: OpenSessionFn;
@@ -48,6 +50,10 @@ export interface MissionDeps {
   amend: AmendStagedFn;
   guard: GuardFn;
   now: () => Date;
+  /** Whole-file `git add` (commit-ops' stagePath): covers untracked and binary files the patch pipeline cannot. */
+  stageFile: StageFileFn;
+  /** Whole-file `git reset -q HEAD` (commit-ops' unstagePath): the only unstage git-core's forward-only patches allow. */
+  unstageFile: UnstageFileFn;
 }
 
 interface StagePayload {
@@ -363,24 +369,69 @@ export class MissionDriver {
     this.push();
   }
 
+  /**
+   * The file's persisted DiffSelection, or a seed derived from its current
+   * staged state: a fully staged file reads all-selected (so toggle-file
+   * unstages it), anything with unstaged or untracked content reads
+   * none-selected, because its staging diff's lines are by definition not in
+   * the index yet. Seeds are not stored; the map holds only genuinely
+   * divergent selections, and a stage/discard drops the entry so the next
+   * touch re-seeds from the refreshed snapshot.
+   */
+  private currentSelection(path: string): DiffSelection {
+    const existing = this.state.selections.get(path);
+    if (existing) return existing;
+    const file = this.snapshot.files.find((f) => f.path === path);
+    const fullyStaged = file !== undefined && file.staged && !file.unstaged;
+    return DiffSelection.fromInitialSelection(fullyStaged ? DiffSelectionType.All : DiffSelectionType.None);
+  }
+
   private async handleStage(payload: StagePayload | undefined): Promise<void> {
     if (!payload || typeof payload.path !== "string") return;
-    const client = this.deps.client(this.state.currentWorktree);
-    const diff = await client.stagingDiff(payload.path);
-    const current = this.state.selections.get(payload.path) ?? DiffSelection.fromInitialSelection(DiffSelectionType.All);
+    const cwd = this.state.currentWorktree;
+    const client = this.deps.client(cwd);
+    const current = this.currentSelection(payload.path);
 
-    let next: DiffSelection | null = null;
     if (payload.mode === "toggle-file") {
-      next = current.getSelectionType() === DiffSelectionType.None ? current.withSelectAll() : current.withSelectNone();
-    } else if (payload.mode === "line" && typeof payload.selIdx === "number") {
+      // Whole-file staging bypasses the line-patch pipeline: git add/reset
+      // also cover binary and untracked files, and an unstage cannot be
+      // expressed as a forward cached patch at all.
+      if (current.getSelectionType() === DiffSelectionType.All) {
+        const file = this.snapshot.files.find((f) => f.path === payload.path);
+        this.deps.unstageFile(cwd, payload.path, file?.originalPath);
+      } else {
+        this.deps.stageFile(cwd, payload.path);
+      }
+      this.state.selections.delete(payload.path);
+      await this.refreshSnapshotAndDiff(client);
+      this.push();
+      return;
+    }
+
+    const diff = await client.stagingDiff(payload.path);
+    let next: DiffSelection | null = null;
+    if (payload.mode === "line" && typeof payload.selIdx === "number") {
       const target = resolveCompactedSelIdx(diff, payload.selIdx);
       next = current.withToggleLineSelection(target.absoluteIndex);
+      if (!next.isSelected(target.absoluteIndex)) {
+        // The toggle deselected the pressed line: an unstage, which the
+        // forward-only cached patch cannot express at line granularity.
+        this.state.notice = "unstaging a single line is not supported yet";
+        this.push();
+        return;
+      }
     } else if (payload.mode === "hunk" && typeof payload.selIdx === "number") {
       const target = resolveCompactedSelIdx(diff, payload.selIdx);
-      const selecting = current.isRangeSelected(target.hunkStart, target.hunkLength) !== DiffSelectionType.All;
-      next = current.withRangeSelection(target.hunkStart, target.hunkLength, selecting);
+      if (current.isRangeSelected(target.hunkStart, target.hunkLength) === DiffSelectionType.All) {
+        this.state.notice = "unstaging a hunk is not supported yet";
+        this.push();
+        return;
+      }
+      next = current.withRangeSelection(target.hunkStart, target.hunkLength, true);
     }
-    if (!next) return;
+    // formatPatch throws on an empty selection, so an all-None result never
+    // reaches stageSelection.
+    if (!next || next.getSelectionType() === DiffSelectionType.None) return;
 
     await client.stageSelection(diff, next);
     this.state.selections.delete(payload.path);
@@ -411,9 +462,7 @@ export class MissionDriver {
     const diff = await client.stagingDiff(payload.path);
 
     let discardSelection: DiffSelection | null = null;
-    if (payload.mode === "toggle-file") {
-      discardSelection = DiffSelection.fromInitialSelection(DiffSelectionType.All);
-    } else if (payload.mode === "line" && typeof payload.selIdx === "number") {
+    if (payload.mode === "line" && typeof payload.selIdx === "number") {
       const target = resolveCompactedSelIdx(diff, payload.selIdx);
       discardSelection = DiffSelection.fromInitialSelection(DiffSelectionType.None).withLineSelection(target.absoluteIndex, true);
     } else if (payload.mode === "hunk" && typeof payload.selIdx === "number") {

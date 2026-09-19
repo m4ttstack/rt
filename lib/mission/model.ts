@@ -232,29 +232,38 @@ function buildDiffModel(input: {
     return { path, status, kind: "binary", stats: "", lang: "", lines: [] };
   }
 
-  const allLines = stagingDiff.hunks.flatMap((hunk) => hunk.lines);
-  if (allLines.length > OVERSIZED_LINE_CUTOFF && !oversizedOverride) {
+  const totalLines = stagingDiff.hunks.reduce((n, hunk) => n + hunk.lines.length, 0);
+  if (totalLines > OVERSIZED_LINE_CUTOFF && !oversizedOverride) {
     return { path, status, kind: "oversized", stats: "", lang: "", lines: [] };
   }
 
   let addCount = 0;
   let delCount = 0;
   let nextSelIdx = 0;
-  const lines: MissionDiffLine[] = allLines.map((line) => {
-    const oldNo = line.oldLineNumber ?? 0;
-    const newNo = line.newLineNumber ?? 0;
-    if (line.type === DiffLineType.Hunk) {
-      return { oldNo, newNo, kind: "hunk", text: line.text, selected: false, selIdx: -1 };
-    }
-    if (line.type === DiffLineType.Context) {
-      return { oldNo, newNo, kind: "context", text: line.content, selected: false, selIdx: -1 };
-    }
-    const selIdx = nextSelIdx++;
-    const kind = line.type === DiffLineType.Add ? "add" : "del";
-    if (kind === "add") addCount++;
-    else delCount++;
-    return { oldNo, newNo, kind, text: line.content, selected: selection.isSelected(selIdx), selIdx };
-  });
+  const lines: MissionDiffLine[] = [];
+  for (const hunk of stagingDiff.hunks) {
+    hunk.lines.forEach((line, i) => {
+      const oldNo = line.oldLineNumber ?? 0;
+      const newNo = line.newLineNumber ?? 0;
+      if (line.type === DiffLineType.Hunk) {
+        lines.push({ oldNo, newNo, kind: "hunk", text: line.text, selected: false, selIdx: -1 });
+        return;
+      }
+      if (line.type === DiffLineType.Context) {
+        lines.push({ oldNo, newNo, kind: "context", text: line.content, selected: false, selIdx: -1 });
+        return;
+      }
+      const selIdx = nextSelIdx++;
+      const kind = line.type === DiffLineType.Add ? "add" : "del";
+      if (kind === "add") addCount++;
+      else delCount++;
+      // The wire selIdx stays the compacted ordinal the view echoes back;
+      // DiffSelection speaks git-core's absolute numbering
+      // (hunk.unifiedDiffStart + in-hunk position), so Selected must be
+      // answered in that scheme, never with the compacted ordinal.
+      lines.push({ oldNo, newNo, kind, text: line.content, selected: selection.isSelected(hunk.unifiedDiffStart + i), selIdx });
+    });
+  }
 
   return {
     path,
@@ -310,9 +319,14 @@ export function buildModel(input: {
   const stagedTotal = changes.filter((change) => change.include !== "none").length;
 
   const selectedChange = state.selectedPath ? (changes.find((change) => change.path === state.selectedPath) ?? null) : null;
+  // Fallback seed mirrors the driver's currentSelection: only a fully staged
+  // file reads all-selected; a file with unstaged content has, by
+  // definition, none of its staging-diff lines in the index yet.
+  const selectedFile = state.selectedPath ? snapshot.files.find((file) => file.path === state.selectedPath) : undefined;
+  const fullyStaged = selectedFile !== undefined && selectedFile.staged && !selectedFile.unstaged;
   const diffSelection =
     (state.selectedPath ? state.selections.get(state.selectedPath) : undefined) ??
-    DiffSelection.fromInitialSelection(DiffSelectionType.All);
+    DiffSelection.fromInitialSelection(fullyStaged ? DiffSelectionType.All : DiffSelectionType.None);
 
   const diff = buildDiffModel({
     path: state.selectedPath,

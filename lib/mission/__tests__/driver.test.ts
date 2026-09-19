@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
   DiffSelection,
-  DiffSelectionType,
   type BranchInfo,
   type GitClient,
   type RepoSnapshot,
@@ -248,6 +247,8 @@ function baseDeps(over: {
   amend?: MissionDeps["amend"];
   guard?: MissionDeps["guard"];
   now?: MissionDeps["now"];
+  stageFile?: MissionDeps["stageFile"];
+  unstageFile?: MissionDeps["unstageFile"];
 }): MissionDeps {
   const client = over.client ?? makeFakeClient();
   return {
@@ -265,6 +266,8 @@ function baseDeps(over: {
     amend: over.amend ?? (() => "[main abc] msg"),
     guard: over.guard ?? (async () => ({ verdict: "clear" }) as BranchGuardVerdict),
     now: over.now ?? (() => new Date("2026-09-18T00:00:00Z")),
+    stageFile: over.stageFile ?? (() => {}),
+    unstageFile: over.unstageFile ?? (() => {}),
   };
 }
 
@@ -273,8 +276,10 @@ const START = { repo: "repo-tools", worktree: "/repo" };
 // ─── driver behavior ─────────────────────────────────────────────────────────
 
 describe("MissionDriver: staging", () => {
-  test("line toggle round-trips into stageSelection with the correctly translated DiffSelection", async () => {
-    const client = makeFakeClient();
+  test("a line press stages exactly the pressed line: seeded None, translated to the absolute index", async () => {
+    const client = makeFakeClient({
+      snapshot: async () => baseSnapshot({ clean: false, files: [{ path: "a.txt", kind: "modified", staged: false, unstaged: true }] }),
+    });
     const session = new FakeSession([
       { t: "intent", name: "mission:stage", payload: { path: "a.txt", mode: "line", selIdx: 1 } },
       { t: "intent", name: "quit" },
@@ -286,13 +291,15 @@ describe("MissionDriver: staging", () => {
     expect(client.calls.stageSelection).toHaveLength(1);
     const { selection } = client.calls.stageSelection[0]!;
     // compacted selIdx 1 in oneHunkDiff is the second Add line, absolute index 3.
-    expect(selection.isSelected(3)).toBe(false); // toggled off from the "select all" default
-    expect(selection.isSelected(2)).toBe(true); // untouched sibling add line
-    expect(selection.isSelected(5)).toBe(true); // untouched delete line
+    expect(selection.isSelected(3)).toBe(true); // the pressed line, and nothing else
+    expect(selection.isSelected(2)).toBe(false);
+    expect(selection.isSelected(5)).toBe(false);
   });
 
-  test("hunk mode expands selIdx to the owning hunk's absolute range before staging", async () => {
-    const client = makeFakeClient();
+  test("hunk mode stages the whole owning hunk's selectable lines from a None seed", async () => {
+    const client = makeFakeClient({
+      snapshot: async () => baseSnapshot({ clean: false, files: [{ path: "a.txt", kind: "modified", staged: false, unstaged: true }] }),
+    });
     const session = new FakeSession([
       { t: "intent", name: "mission:stage", payload: { path: "a.txt", mode: "hunk", selIdx: 0 } },
       { t: "intent", name: "quit" },
@@ -303,25 +310,97 @@ describe("MissionDriver: staging", () => {
 
     expect(client.calls.stageSelection).toHaveLength(1);
     const { selection } = client.calls.stageSelection[0]!;
-    // The whole hunk (positions 0..5) was fully selected by default, so a hunk
-    // toggle deselects every selectable line in it.
-    expect(selection.isSelected(2)).toBe(false);
-    expect(selection.isSelected(3)).toBe(false);
-    expect(selection.isSelected(5)).toBe(false);
+    expect(selection.isSelected(2)).toBe(true);
+    expect(selection.isSelected(3)).toBe(true);
+    expect(selection.isSelected(5)).toBe(true);
   });
 
-  test("toggle-file flips the whole file's selection via withSelectAll/withSelectNone", async () => {
-    const client = makeFakeClient();
+  test("a line press whose target is already selected refuses with a notice instead of staging the complement", async () => {
+    // A fully staged file seeds All; git-core has no reverse cached apply,
+    // so a line toggle that would DEselect must refuse, not invert.
+    const client = makeFakeClient({
+      snapshot: async () => baseSnapshot({ clean: false, files: [{ path: "a.txt", kind: "modified", staged: true, unstaged: false }] }),
+    });
     const session = new FakeSession([
-      { t: "intent", name: "mission:stage", payload: { path: "a.txt", mode: "toggle-file" } },
+      { t: "intent", name: "mission:stage", payload: { path: "a.txt", mode: "line", selIdx: 0 } },
       { t: "intent", name: "quit" },
     ]);
     const deps = baseDeps({ session, client });
 
     await new MissionDriver(deps, START).run();
 
-    expect(client.calls.stageSelection).toHaveLength(1);
-    expect(client.calls.stageSelection[0]!.selection.getSelectionType()).toBe(DiffSelectionType.None);
+    expect(client.calls.stageSelection).toHaveLength(0);
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.notice).toBe("unstaging a single line is not supported yet");
+  });
+
+  test("toggle-file on an unstaged file stages the whole file via the add path, never the patch pipeline", async () => {
+    const stageFileCalls: [string, string][] = [];
+    const client = makeFakeClient({
+      snapshot: async () => baseSnapshot({ clean: false, files: [{ path: "a.txt", kind: "modified", staged: false, unstaged: true }] }),
+    });
+    const session = new FakeSession([
+      { t: "intent", name: "mission:stage", payload: { path: "a.txt", mode: "toggle-file" } },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({
+      session,
+      client,
+      stageFile: (cwd, path) => {
+        stageFileCalls.push([cwd, path]);
+      },
+    });
+
+    await new MissionDriver(deps, START).run();
+
+    expect(stageFileCalls).toEqual([[START.worktree, "a.txt"]]);
+    expect(client.calls.stageSelection).toHaveLength(0);
+  });
+
+  test("toggle-file on a partially staged file also stages the remainder", async () => {
+    const stageFileCalls: string[] = [];
+    const client = makeFakeClient({
+      snapshot: async () => baseSnapshot({ clean: false, files: [{ path: "a.txt", kind: "modified", staged: true, unstaged: true }] }),
+    });
+    const session = new FakeSession([
+      { t: "intent", name: "mission:stage", payload: { path: "a.txt", mode: "toggle-file" } },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({
+      session,
+      client,
+      stageFile: (_cwd, path) => {
+        stageFileCalls.push(path);
+      },
+    });
+
+    await new MissionDriver(deps, START).run();
+
+    expect(stageFileCalls).toEqual(["a.txt"]);
+  });
+
+  test("toggle-file on a fully staged file unstages the whole file via the reset path", async () => {
+    const unstageFileCalls: [string, string, string | undefined][] = [];
+    const client = makeFakeClient({
+      snapshot: async () => baseSnapshot({ clean: false, files: [{ path: "a.txt", kind: "modified", staged: true, unstaged: false }] }),
+    });
+    const session = new FakeSession([
+      { t: "intent", name: "mission:stage", payload: { path: "a.txt", mode: "toggle-file" } },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({
+      session,
+      client,
+      unstageFile: (cwd, path, origPath) => {
+        unstageFileCalls.push([cwd, path, origPath]);
+      },
+    });
+
+    await new MissionDriver(deps, START).run();
+
+    expect(unstageFileCalls).toEqual([[START.worktree, "a.txt", undefined]]);
+    expect(client.calls.stageSelection).toHaveLength(0);
+    expect(client.calls.discardSelection).toHaveLength(0);
   });
 });
 

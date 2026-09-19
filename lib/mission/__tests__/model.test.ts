@@ -135,10 +135,11 @@ function baseInput(overrides: {
 }
 
 // The mission.go diff hunk from ui/fixtures/session-model-mission.json,
-// hand-built rather than parsed: the fixture's SelIdx values (0,1,2) are
-// the ordinal count of selectable (add/del) lines, not git-core's own
-// hunk.unifiedDiffStart + array-position scheme (which patch-formatter.ts
-// uses and which would number them 2,3,5 for this exact line layout).
+// hand-built rather than parsed. The fixture's SelIdx values (0,1,2) are
+// the ordinal count of selectable (add/del) lines; the DiffSelection below
+// speaks git-core's own hunk.unifiedDiffStart + array-position scheme
+// (2,3,5 for this exact line layout), and buildDiffModel translates
+// between the two when deriving each line's Selected flag.
 function missionGoStagingDiff(): StagingDiff {
   const lines = [
     new DiffLine("@@ -1,3 +1,4 @@", DiffLineType.Hunk, 1, null, null),
@@ -154,7 +155,8 @@ function missionGoStagingDiff(): StagingDiff {
 }
 
 function missionGoSelection(): DiffSelection {
-  return DiffSelection.fromInitialSelection(DiffSelectionType.None).withLineSelection(0, true).withLineSelection(1, true);
+  // Absolute indices 2 and 3 are the two Add lines (wire selIdx 0 and 1).
+  return DiffSelection.fromInitialSelection(DiffSelectionType.None).withLineSelection(2, true).withLineSelection(3, true);
 }
 
 describe("buildModel golden fixture handshake", () => {
@@ -395,6 +397,64 @@ describe("commit placeholder", () => {
   ] as const)("%s", (_label, files, expected) => {
     const model = buildModel(baseInput({ snapshot: { files: [...files] } }));
     expect(model.commit.placeholder).toBe(expected);
+  });
+});
+
+describe("diff Selected flags", () => {
+  // Two hunks with interleaved context and a non-zero second
+  // unifiedDiffStart: compacted selIdx 2 (hunk B's delete) sits at absolute
+  // index 7, so a selection keyed on absolute indices only lights the right
+  // wire line if buildDiffModel translates per line.
+  function twoHunkDiff(): StagingDiff {
+    const hunkALines = [
+      new DiffLine("@@ -1,2 +1,2 @@", DiffLineType.Hunk, 1, null, null),
+      new DiffLine(" context one", DiffLineType.Context, 2, 1, 1),
+      new DiffLine("+added one", DiffLineType.Add, 3, null, 2),
+      new DiffLine(" context two", DiffLineType.Context, 4, 2, 3),
+      new DiffLine("-deleted one", DiffLineType.Delete, 5, 3, null),
+    ];
+    const hunkA = new DiffHunk(new DiffHunkHeader(1, 3, 1, 3), hunkALines, 0, hunkALines.length - 1, DiffHunkExpansionType.None);
+    const hunkBLines = [
+      new DiffLine("@@ -10,2 +10,2 @@", DiffLineType.Hunk, 6, null, null),
+      new DiffLine(" context three", DiffLineType.Context, 7, 10, 10),
+      new DiffLine("-deleted two", DiffLineType.Delete, 8, 11, null),
+      new DiffLine("+added two", DiffLineType.Add, 9, null, 11),
+    ];
+    const hunkB = new DiffHunk(new DiffHunkHeader(10, 2, 10, 2), hunkBLines, 5, 5 + hunkBLines.length - 1, DiffHunkExpansionType.None);
+    return { path: "two-hunk.txt", kind: "text", untracked: false, hunks: [hunkA, hunkB] };
+  }
+
+  test("reads the persisted selection through the compacted-to-absolute translation", () => {
+    const selection = DiffSelection.fromInitialSelection(DiffSelectionType.None).withLineSelection(7, true);
+    const model = buildModel(
+      baseInput({
+        state: { selectedPath: "two-hunk.txt", selections: new Map([["two-hunk.txt", selection]]) },
+        snapshot: { files: [changedFile({ path: "two-hunk.txt", staged: true, unstaged: true })] },
+        stagingDiff: twoHunkDiff(),
+      }),
+    );
+
+    const selectable = model.diff.lines.filter((line) => line.selIdx >= 0);
+    expect(selectable.map((line) => [line.selIdx, line.selected])).toEqual([
+      [0, false],
+      [1, false],
+      [2, true],
+      [3, false],
+    ]);
+  });
+
+  test("with no persisted selection the flags seed from the file's staged state, not select-all", () => {
+    const model = buildModel(
+      baseInput({
+        state: { selectedPath: "two-hunk.txt" },
+        snapshot: { files: [changedFile({ path: "two-hunk.txt", staged: false, unstaged: true })] },
+        stagingDiff: twoHunkDiff(),
+      }),
+    );
+
+    for (const line of model.diff.lines) {
+      expect(line.selected).toBe(false);
+    }
   });
 });
 
