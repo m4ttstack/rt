@@ -330,40 +330,61 @@ left as-is or reduced to a pointer here.
    One command runs every leg below in order, each behind its own
    confirmation prompt: `--yes` skips every prompt, `--plan` prints the
    resolved legs and exits without touching anything, `--verify-only`
-   runs just the last leg standalone (exit-coded), and on a
-   non-interactive terminal without `--yes` it refuses outright rather
-   than guess at consent.
+   runs just the last leg standalone (exit-coded, and refused together
+   with `--plan`), and on a non-interactive terminal without `--yes` it
+   refuses outright rather than guess at consent.
+
+   A leg that ends aborted or error halts every later state-changing
+   leg (the read-only verify sweep still runs and reports, and the
+   summary names the leg that halted the run); declining a leg's
+   confirmation prompt only skips that one leg and moves on. A sha256
+   mismatch on the prod dmg is exactly this kind of abort: it stops the
+   dev bundle, daemon, and served-suite legs from running unprompted
+   even under `--yes`.
 
    - **Prod app**: resolves the released tag (default latest),
-     downloads the dmg, verifies it against SHA256SUMS, mounts it, and
-     `ditto`s the mounted copy over `/Applications/mattstack.app`. A
-     sha256 mismatch aborts before mounting or ditto-ing. Never
-     launches either copy: pre-2.8 updaters gate on `~/.local/bin/rt`
-     existing, and a launched prod app's daemon seizes `rt.sock` from
-     the dev daemon.
+     downloads the dmg, verifies it against SHA256SUMS, mounts it
+     (`hdiutil attach -plist`, never `-quiet`, which closes stdout
+     entirely and leaves nothing to parse), and replaces
+     `/Applications/mattstack.app`: moves the current app aside, ditto
+     the new one into place, and only removes the aside copy once that
+     succeeds (`ditto` onto an existing `.app` merges rather than
+     replacing, so a plain ditto-over leaves stale files and can break
+     the code-signature seal; a failed ditto restores the aside copy).
+     A sha256 mismatch aborts before mounting or replacing anything.
+     Never launches either copy: pre-2.8 updaters gate on
+     `~/.local/bin/rt` existing, and a launched prod app's daemon
+     seizes `rt.sock` from the dev daemon.
    - **Dev bundle**: in a scratch tree at the released commit,
      `scripts/fetch-deps.sh arm64` then `rt-tray/build.sh dev` (never
-     rebuilds the blessed bundle in place), kills the running dev app
-     by pid, `ditto`s the new bundle over
-     `/Applications/mattstack-dev.app`, opens it, and verifies a fresh
-     pid.
+     rebuilds the blessed bundle in place), kills every process
+     matching the running dev app and waits for them to actually exit,
+     replaces `/Applications/mattstack-dev.app` the same move-aside way
+     as the prod app, opens it, and polls briefly for a fresh pid
+     (`open` hands off to LaunchServices and returns before the app is
+     actually up).
    - **Daemon**: announces in #rt first (the dev daemon serves other
      sessions) and refuses to restart at all if the announce failed,
-     then `rt daemon restart` and confirms `rt daemon status` reports
-     the released commit.
+     then `rt daemon restart` and confirms `rt daemon status`'s
+     `data.identity.sourceRev` prefix-matches the released commit
+     (either can be the shorter abbreviation, so the match works in
+     both directions; a prod daemon's null sourceRev is reported as a
+     mismatch, never a silent pass).
    - **Served suite**: the `~/Documents/GitHub/mattstack-apps` checkout
      is shared, so this leg checks `git branch --show-current` first
      and aborts, touching nothing, if it is off main. On main: pull,
-     then `deck restart --managed`, then verify each managed app's pid
-     actually cycled via `launchctl print
-     gui/501/com.mattstack.deck.<app>` (a socket blip can end the
-     restart loop partway); stragglers are restarted by name and
-     re-verified. Rows deck lists as user-managed are the user's own;
-     this leg leaves them alone.
+     then `deck restart --managed`, then poll each managed app's pid
+     for a bit (a `deck restart` is a kickstart, not a readiness
+     guarantee) via `launchctl print
+     gui/<uid>/com.mattstack.deck.<app>` and, if the pid didn't change,
+     its process start time from `ps` against the moment the restart
+     began; stragglers are restarted by name and re-verified the same
+     way. Rows deck lists as user-managed are the user's own; this leg
+     leaves them alone.
    - **Verify**: prod Info.plist version equals the tag, dev app pid is
-     fresh, daemon reports the released commit, `deck --version`
-     matches the deps.lock pin, and every managed app's start time
-     postdates the restart.
+     fresh, daemon's sourceRev prefix-matches the released commit,
+     `deck --version` matches the deps.lock pin, and every managed
+     app's start time postdates the restart.
 
 ## Guardrails
 
