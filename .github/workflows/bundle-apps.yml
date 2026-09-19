@@ -8,7 +8,7 @@ on:
         required: true
         default: all
       dry_run:
-        description: Build and hash only; skip release and PR
+        description: Build, sign and hash only; skip release and PR
         type: boolean
         default: false
 
@@ -57,6 +57,52 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.2
+
+      # ── Developer ID (required on a real publish; ad-hoc on a dry run) ───────
+      # Mirrors release.yml's signing setup: same secrets, same import shape.
+      # Every published binary needs a stable code identity so macOS TCC
+      # (Documents access etc.) does not re-prompt the user on each new build.
+      - name: Check signing secrets
+        id: signing
+        shell: bash
+        env:
+          CERT_B64: ${{ secrets.APPLE_CERT_P12_BASE64 }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          if [ -n "$CERT_B64" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          elif [ "$DRY_RUN" = "true" ]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Developer ID secrets not configured (dry run will be ad-hoc signed)"
+          else
+            echo "::error::Developer ID secrets missing; a published app build must be signed with a stable identity"
+            exit 1
+          fi
+
+      - name: Import Developer ID certificate
+        if: steps.signing.outputs.available == 'true'
+        shell: bash
+        env:
+          APPLE_CERT_P12_BASE64: ${{ secrets.APPLE_CERT_P12_BASE64 }}
+          APPLE_CERT_P12_PASSWORD: ${{ secrets.APPLE_CERT_P12_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/bundle-signing.keychain-db"
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 24)
+          CERT_PATH="$RUNNER_TEMP/cert.p12"
+          trap 'rm -f "$CERT_PATH"' EXIT
+          echo "$APPLE_CERT_P12_BASE64" | base64 --decode > "$CERT_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -P "$APPLE_CERT_P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          # shellcheck disable=SC2046 # each existing keychain path is its own arg
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+          SIGNING_IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep "Developer ID Application" | head -1 | awk -F'"' '{print $2}')
+          [ -n "$SIGNING_IDENTITY" ] || { echo "::error::Developer ID Application certificate not found"; exit 1; }
+          echo "SIGNING_IDENTITY=$SIGNING_IDENTITY" >> "$GITHUB_ENV"
+          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+
       - name: Clone app repo at main
         env:
           GH_TOKEN: ${{ secrets.MATTSTACK_RELEASE_TOKEN }}
@@ -138,6 +184,27 @@ jobs:
           (cd "$APP_DIR" && bash -c "$BUILD_CMD")
           test -x "$APP_DIR/$ARTIFACT" || { echo "::error::bundle.artifact $APP_DIR/$ARTIFACT missing or not executable"; exit 1; }
           "$APP_DIR/$ARTIFACT" --version
+          # Sign before packaging: the sha256 below, and the one deps.lock
+          # ends up pinned to, must describe the signed bytes. The identifier
+          # is stable across rebuilds so macOS TCC (Documents access etc.)
+          # treats every version of one app as the same grantee. Hardened
+          # runtime plus the allow-jit/allow-unsigned-executable-memory
+          # entitlements (scripts/entitlements.plist) is the same combination
+          # rt-tray/build.sh already uses when it re-signs these same
+          # bun-compiled binaries into the app bundle; that path already
+          # proves a long-running bun binary survives the hardened runtime.
+          if [ -n "${SIGNING_IDENTITY:-}" ]; then
+            codesign --force --sign "$SIGNING_IDENTITY" --timestamp --options runtime \
+              --entitlements scripts/entitlements.plist -i "com.mattstack.$APP_NAME" \
+              "$APP_DIR/$ARTIFACT"
+            "$APP_DIR/$ARTIFACT" --version
+            SIGNOUT=$(codesign -dvv "$APP_DIR/$ARTIFACT" 2>&1)
+            echo "$SIGNOUT"
+            grep -q "^Identifier=com.mattstack.$APP_NAME\$" <<< "$SIGNOUT" || { echo "::error::$APP_NAME codesign identifier is wrong"; exit 1; }
+            grep -q "^Authority=Developer ID Application" <<< "$SIGNOUT" || { echo "::error::$APP_NAME is not signed by a Developer ID Application authority"; exit 1; }
+          else
+            echo "::notice::no Developer ID available; $APP_NAME ships ad-hoc signed (dry run only)"
+          fi
           # Catch a dotted skill dir here, while the release is still
           # preventable: codesign reads one as a nested bundle, and the .app
           # build would only reject it after this artifact is immutable.
@@ -180,6 +247,10 @@ jobs:
           path: |
             result-${{ matrix.name }}.json
             ${{ matrix.name }}-darwin-arm64.tgz
+
+      - name: Cleanup keychain
+        if: always() && env.KEYCHAIN_PATH != ''
+        run: security delete-keychain "$KEYCHAIN_PATH" || true
 
   release:
     needs: [plan, build]
