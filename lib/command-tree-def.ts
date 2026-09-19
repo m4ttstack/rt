@@ -1605,6 +1605,16 @@ export const TREE: Record<string, CommandNode> = {
           { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Emit the full report as JSON" },
         ],
       },
+      verify: {
+        description: "Read-only confirmation that a tagged release actually published: the workflow run, notes, assets, draft state, and releases/latest",
+        module: "./commands/release.ts",
+        fn: "releaseVerify",
+        args: [
+          { name: "Tag", type: "text", optional: true, placeholder: "v2.10.2", hint: "Tag to verify; omit for the repo's latest v* tag" },
+          { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Emit the full report as JSON" },
+          { name: "No wait", flag: "--no-wait", type: "boolean", default: false, hint: "Snapshot the workflow run once instead of watching it for up to about an hour" },
+        ],
+      },
     },
   },
 
