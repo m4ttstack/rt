@@ -20,7 +20,7 @@
  * update-machine runs the skill's step 12: bring this machine's prod app,
  * dev bundle, daemon, and served suite up to a released tag.
  */
-import { readFileSync, mkdtempSync } from "fs";
+import { readFileSync, mkdtempSync, rmSync } from "fs";
 import { tmpdir, homedir } from "os";
 import { join } from "path";
 import type { CommandContext } from "../lib/command-tree.ts";
@@ -29,11 +29,12 @@ import { UserActionableError, exitUserError } from "../lib/setup/errors.ts";
 import { runCapture } from "../lib/subprocess.ts";
 import { runPreflight, type CheckRow, type PreflightSeams } from "../lib/release/preflight.ts";
 import { runVerify, type VerifyRow, type VerifySeams } from "../lib/release/verify.ts";
-import { runUpdateMachine, type LegResult, type UpdateMachineSeams } from "../lib/release/update-machine.ts";
+import { runUpdateMachine, CHAT_ROOM, type LegResult, type UpdateMachineOptions, type UpdateMachineSeams } from "../lib/release/update-machine.ts";
 import { conformanceViolations } from "../scripts/lib/picker-conformance.ts";
 import { TREE } from "../lib/command-tree-def.ts";
 import { flagValue } from "../lib/cli-args.ts";
 import { confirm } from "../lib/ui/prompts.ts";
+import { interactive } from "../lib/ui/gate.ts";
 
 async function fetchJson(url: string): Promise<unknown> {
   const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
@@ -116,20 +117,21 @@ export async function releaseVerify(args: string[], _ctx: CommandContext = {}, s
   if (!report.clean) process.exitCode = 1;
 }
 
-const CHAT_ROOM = "rt";
-
-async function createRealUpdateMachineSeams(): Promise<UpdateMachineSeams> {
+/** Only created for a run that can actually mutate anything -- --plan and --verify-only never touch it. */
+async function createRealUpdateMachineSeams(options: UpdateMachineOptions): Promise<UpdateMachineSeams> {
   const top = await runCapture(["git", "rev-parse", "--show-toplevel"]);
+  const needsWorkDir = !options.plan && !options.verifyOnly;
   return {
     repoRoot: top.exitCode === 0 ? top.stdout.trim() : process.cwd(),
     appsCheckoutPath: join(homedir(), "Documents", "GitHub", "mattstack-apps"),
-    workDir: mkdtempSync(join(tmpdir(), "rt-update-machine-")),
-    isTTY: process.stdin.isTTY === true,
+    workDir: needsWorkDir ? mkdtempSync(join(tmpdir(), "rt-update-machine-")) : "",
+    uid: process.getuid ? process.getuid() : 501,
+    isTTY: interactive(),
     exec: (argv, opts) => runCapture(argv, { stderr: "pipe", timeoutMs: 600_000, ...opts }),
     download: async (url, destPath) => {
-      const res = await fetch(url);
+      const res = await fetch(url, { signal: AbortSignal.timeout(300_000) });
       if (!res.ok) throw new Error(`${url} answered ${res.status}`);
-      await Bun.write(destPath, await res.arrayBuffer());
+      await Bun.write(destPath, res);
     },
     readFile: (path) => {
       try {
@@ -141,6 +143,7 @@ async function createRealUpdateMachineSeams(): Promise<UpdateMachineSeams> {
     confirm: (message) => confirm({ message }),
     announce: async (message) => (await runCapture(["rt", "chat", "post", CHAT_ROOM, message], { timeoutMs: 30_000 })).exitCode === 0,
     clock: () => new Date(),
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   };
 }
 
@@ -148,19 +151,28 @@ const LEG_MARK: Record<LegResult["status"], string> = { ok: "✓", skipped: "-",
 
 export async function releaseUpdateMachine(args: string[], _ctx: CommandContext = {}, seams?: UpdateMachineSeams): Promise<void> {
   const json = args.includes("--json");
-  const options = {
+  const options: UpdateMachineOptions = {
     tag: flagValue(args, "--tag"),
     plan: args.includes("--plan"),
     verifyOnly: args.includes("--verify-only"),
     yes: args.includes("--yes"),
   };
 
+  const realSeams = seams ? null : await createRealUpdateMachineSeams(options);
   let report;
   try {
-    report = await runUpdateMachine(seams ?? (await createRealUpdateMachineSeams()), options);
+    report = await runUpdateMachine(seams ?? realSeams!, options);
   } catch (err) {
     if (err instanceof UserActionableError) exitUserError(err, json, "release update-machine");
     throw err;
+  } finally {
+    if (realSeams?.workDir) {
+      try {
+        rmSync(realSeams.workDir, { recursive: true, force: true });
+      } catch {
+        // best effort; a leftover scratch dir under tmpdir() is not worth failing the verb over
+      }
+    }
   }
 
   const failed = report.legs.some((l) => l.status === "aborted" || l.status === "error");
@@ -174,6 +186,7 @@ export async function releaseUpdateMachine(args: string[], _ctx: CommandContext 
   for (const leg of report.legs) {
     console.log(`${LEG_MARK[leg.status]} ${leg.label}: ${leg.detail}`);
   }
-  console.log(`tag ${report.tag}: ${report.ok ? "clean" : "problems above"}`);
+  const summary = report.ok ? "clean" : report.haltedAfter ? `halted after ${report.haltedAfter} failed` : "problems above";
+  console.log(`tag ${report.tag}: ${summary}`);
   if (failed) process.exitCode = 1;
 }

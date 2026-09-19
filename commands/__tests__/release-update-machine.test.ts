@@ -5,29 +5,42 @@ import { releaseUpdateMachine } from "../release.ts";
 const ok = (stdout = "") => Promise.resolve({ stdout, stderr: "", exitCode: 0 });
 const SHA = "1234567890abcdef1234567890abcdef12345678";
 
+/** The real `hdiutil attach ... -plist` shape (see lib/release/__tests__/update-machine.test.ts for how this was captured against a real dmg). */
+const ATTACH_PLIST =
+  `<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0">\n<dict>\n\t<key>system-entities</key>\n\t<array>\n` +
+  `\t\t<dict>\n\t\t\t<key>dev-entry</key>\n\t\t\t<string>/dev/disk14s1</string>\n\t\t\t<key>mount-point</key>\n\t\t\t<string>/Volumes/mattstack</string>\n\t\t</dict>\n` +
+  `\t</array>\n</dict>\n</plist>\n`;
+
 function fakeSeams(overrides: Partial<UpdateMachineSeams> = {}): UpdateMachineSeams {
   let devPid = "111";
   return {
     repoRoot: "/repo",
     appsCheckoutPath: "/apps",
     workDir: "/work",
+    uid: 501,
     isTTY: true,
     exec: (argv) => {
       const cmd = argv.join(" ");
       if (cmd.includes("releases/latest")) return ok("v2.11.0\n");
       if (cmd.includes("commits/")) return ok(`${SHA}\n`);
       if (cmd.startsWith("shasum")) return ok("cafefeed  /work/mattstack-2.11.0.dmg\n");
-      if (cmd.startsWith("hdiutil attach")) return ok("/dev/disk4  Apple_HFS  /Volumes/mattstack\n");
+      if (cmd.startsWith("hdiutil attach")) return ok(ATTACH_PLIST);
       if (cmd.includes("Info.plist")) return ok("2.11.0\n");
-      if (cmd === "rt daemon status --json") return ok(JSON.stringify({ commit: SHA }));
+      if (cmd === "rt daemon status --json") {
+        return ok(JSON.stringify({ ok: true, state: "running", data: { identity: { flavor: "dev", version: "2.11.0", sourceRev: SHA.slice(0, 9) } } }));
+      }
       if (cmd === "git branch --show-current") return ok("main\n");
       if (cmd === "deck list --json") return ok("[]");
       if (cmd === "deck --version") return ok("3.4.0\n");
+      if (cmd.startsWith("kill")) {
+        devPid = "";
+        return ok("");
+      }
       if (cmd.startsWith("open")) {
         devPid = "222";
         return ok("");
       }
-      if (cmd.startsWith("pgrep")) return ok(`${devPid}\n`);
+      if (cmd.startsWith("pgrep")) return ok(devPid ? `${devPid}\n` : "");
       return ok("");
     },
     download: async () => {},
@@ -35,6 +48,7 @@ function fakeSeams(overrides: Partial<UpdateMachineSeams> = {}): UpdateMachineSe
     confirm: async () => true,
     announce: async () => true,
     clock: () => new Date("2026-09-18T12:00:00.000Z"),
+    sleep: async () => {},
     ...overrides,
   };
 }
@@ -144,10 +158,25 @@ describe("rt release update-machine", () => {
     expect(exitCode).toBe(0);
   });
 
+  test("--plan and --verify-only together are refused via the real process.exit(2), not a silent pick-one", async () => {
+    const seams = fakeSeams();
+    const { code, logs } = await runExpectingProcessExit(() => releaseUpdateMachine(["--plan", "--verify-only", "--json"], {}, seams));
+    expect(code).toBe(2);
+    const body = JSON.parse(logs[0]!);
+    expect(body.error.code).toBe("update-machine-plan-verify-only");
+  });
+
   test("--tag overrides the latest-release resolution", async () => {
     const seams = fakeSeams();
     const { logs } = await run(["--plan", "--tag", "v9.9.9", "--json"], seams);
     const body = JSON.parse(logs[0]!);
     expect(body.tag).toBe("v9.9.9");
+  });
+
+  test("a halted run's human summary names the leg that halted it", async () => {
+    const seams = fakeSeams({ exec: (argv) => (argv.join(" ").startsWith("shasum") ? ok("deadbeef  nope\n") : fakeSeams().exec(argv)) });
+    const { logs } = await run(["--yes"], seams);
+    const out = logs.join("\n");
+    expect(out).toContain("halted after prod app update failed");
   });
 });
