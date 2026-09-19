@@ -8,7 +8,7 @@ on:
         required: true
         default: all
       dry_run:
-        description: Build and hash only; skip release and PR
+        description: Build, sign and hash only; skip release and PR
         type: boolean
         default: false
 
@@ -50,7 +50,10 @@ jobs:
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     steps:
       # The Build step runs the app repo's own recipe, so this checkout must
-      # not leave a usable credential in .git/config beside it.
+      # not leave a usable credential in .git/config beside it. This job also
+      # never imports the Developer ID certificate: it is the one job that
+      # runs app-controlled code (the recipe's BUILD_CMD), so the signing key
+      # must not exist on this runner at all.
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
@@ -126,11 +129,14 @@ jobs:
             echo "::error::tag $TAG already exists on $APP_REPO; bump the version"
             exit 1
           fi
-      # Build and packaging share ONE step deliberately. A recipe can append to
+      # Build and staging share ONE step deliberately. A recipe can append to
       # GITHUB_ENV, but those writes only reach LATER steps, so resolving the
-      # version, artifact path and source sha here means packaging uses the
-      # same values the tag guard checked rather than ones the recipe supplied.
-      - name: Build, smoke and package
+      # version, artifact path and source sha here means staging uses the
+      # same values the tag guard checked rather than ones the recipe
+      # supplied. facts.json is written from those same already-resolved
+      # shell variables, not re-read from GITHUB_ENV, so nothing BUILD_CMD
+      # wrote there can reach the facts this job hands downstream.
+      - name: Build, smoke and stage
         env:
           APP_NAME: ${{ matrix.name }}
           APP_REPO: ${{ matrix.repo }}
@@ -154,10 +160,186 @@ jobs:
           mkdir stage
           cp "$APP_DIR/$ARTIFACT" "stage/$APP_NAME"
           if [ -d "$APP_DIR/skills" ]; then cp -R "$APP_DIR/skills" stage/skills; fi
+          printf '{"name":"%s","version":"%s","tag":"%s","repo":"%s","sourceSha":"%s"}\n' \
+            "$APP_NAME" "$VERSION" "$TAG" "$APP_REPO" "$SOURCE_SHA" > stage/facts.json
+          cat stage/facts.json
+          # upload-artifact strips executable bits, drops dotfiles by
+          # default, and dereferences symlinks -- tar the handoff so the
+          # binary sign-and-package receives still runs.
+          tar czf handoff.tgz -C stage .
+      # The unsigned binary, plus workflow-written facts (never anything
+      # BUILD_CMD produced directly) hand off to sign-and-package, the one
+      # job that imports the Developer ID key. That job runs no app code at
+      # all, so the key is never on the same runner as the recipe.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: built-${{ matrix.name }}
+          path: handoff.tgz
+
+  sign-and-package:
+    needs: [plan, build]
+    # An implicit success() on a needs-dependent job would mean one failed
+    # build leg (fail-fast is false) skips signing for every app while
+    # release still runs and reports green having published nothing. With
+    # !cancelled(), each leg's own `download-artifact: built-<app>` step is
+    # what fails -- only for the app whose build died -- which is what keeps
+    # legs independent, same as the pr job's comment already documents.
+    if: ${{ !cancelled() }}
+    runs-on: macos-15
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      # Only for scripts/entitlements.plist. No app repo is ever cloned here
+      # and no app dependency is ever installed here.
+      #
+      # Accepted, not fixed: the post-sign `--version` smoke below still runs
+      # the app-produced binary on the same runner as the unlocked keychain.
+      # That is a large reduction from the pre-split design (the app's own
+      # BUILD_CMD no longer executes anywhere near the key), and the same
+      # tier release.yml already accepts for its own sha-pinned helper smokes.
+      #
+      # Also accepted: nothing at release time re-verifies signedness: a
+      # scraped runner token could still poison the tarball between here and
+      # `gh release create`. That class of attack is pre-existing and is
+      # bounded the same way it already was -- the release job takes repo,
+      # tag and URL only from the plan job's trusted matrix, and recomputes
+      # the sha256 from the asset it actually uploads.
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: built-${{ matrix.name }}
+          path: built
+
+      - name: Extract build handoff
+        run: |
+          tar xzf built/handoff.tgz -C built
+          rm -f built/handoff.tgz
+
+      - name: Load build facts
+        id: facts
+        env:
+          APP_NAME: ${{ matrix.name }}
+        run: |
+          VERSION=$(jq -r '.version' built/facts.json)
+          TAG=$(jq -r '.tag' built/facts.json)
+          REPO=$(jq -r '.repo' built/facts.json)
+          SOURCE_SHA=$(jq -r '.sourceSha' built/facts.json)
+          # Shape-check on the way back out of the artifact, same as the
+          # release job already does for the results it reads: an artifact
+          # crossing a job boundary is worth re-validating, not just trusting.
+          [ "$(jq -r '.name' built/facts.json)" = "$APP_NAME" ] || { echo "::error::facts.json name does not match this matrix leg"; exit 1; }
+          case "$VERSION" in ""|*[!A-Za-z0-9._+-]*) echo "::error::facts.json has an unusable version"; exit 1 ;; esac
+          case "$SOURCE_SHA" in *[!0-9a-f]*|"") echo "::error::facts.json has an unusable sourceSha"; exit 1 ;; esac
+          git check-ref-format "refs/tags/$TAG" || { echo "::error::facts.json has an unusable tag: $TAG"; exit 1; }
+          {
+            echo "VERSION=$VERSION"
+            echo "TAG=$TAG"
+            echo "REPO=$REPO"
+            echo "SOURCE_SHA=$SOURCE_SHA"
+          } >> "$GITHUB_ENV"
+          # Control-plane data, not part of the shipped artifact: dropped
+          # before the tarball below is built from the rest of built/.
+          rm -f built/facts.json
+
+      # ── Developer ID (required on a real publish; ad-hoc on a dry run) ───────
+      # Mirrors release.yml's signing setup: same secrets, same import shape.
+      # Every published binary needs a stable code identity so macOS TCC
+      # (Documents access etc.) does not re-prompt the user on each new
+      # build. The sign/skip decision below is driven only by this step's
+      # own output and by inputs.dry_run, both expression-context values a
+      # later step cannot rewrite, never by a shell variable a prior step set.
+      - name: Check signing secrets
+        id: signing
+        shell: bash
+        env:
+          CERT_B64: ${{ secrets.APPLE_CERT_P12_BASE64 }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          if [ -n "$CERT_B64" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          elif [ "$DRY_RUN" = "true" ]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Developer ID secrets not configured (dry run will be ad-hoc signed)"
+          else
+            echo "::error::Developer ID secrets missing; a published app build must be signed with a stable identity"
+            exit 1
+          fi
+
+      - name: Import Developer ID certificate
+        if: steps.signing.outputs.available == 'true'
+        shell: bash
+        env:
+          APPLE_CERT_P12_BASE64: ${{ secrets.APPLE_CERT_P12_BASE64 }}
+          APPLE_CERT_P12_PASSWORD: ${{ secrets.APPLE_CERT_P12_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/bundle-signing.keychain-db"
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 24)
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          # Written right after the keychain exists, not at the end of this
+          # step: cleanup must still find and delete it if import fails partway.
+          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+          CERT_PATH="$RUNNER_TEMP/cert.p12"
+          trap 'rm -f "$CERT_PATH"' EXIT
+          echo "$APPLE_CERT_P12_BASE64" | base64 --decode > "$CERT_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -P "$APPLE_CERT_P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          # shellcheck disable=SC2046 # each existing keychain path is its own arg
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+          SIGNING_IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep "Developer ID Application" | head -1 | awk -F'"' '{print $2}')
+          [ -n "$SIGNING_IDENTITY" ] || { echo "::error::Developer ID Application certificate not found"; exit 1; }
+          echo "SIGNING_IDENTITY=$SIGNING_IDENTITY" >> "$GITHUB_ENV"
+
+      # com.mattstack.helper.<app>, matching rt-tray/build.sh's
+      # sign_helper_tree (which re-signs bundle helpers as
+      # com.mattstack.helper.$(basename)): the raw-artifact channel
+      # (~/.local/bin/deck, `deck update`) runs these CI bytes directly,
+      # without passing through build.sh's re-sign, so using the same
+      # identifier here gives both distribution channels one stable TCC
+      # identity instead of two.
+      - name: Sign with Developer ID
+        if: steps.signing.outputs.available == 'true'
+        env:
+          APP_NAME: ${{ matrix.name }}
+        run: |
+          [ -n "${SIGNING_IDENTITY:-}" ] || { echo "::error::signing marked available but no identity was imported"; exit 1; }
+          codesign --force --sign "$SIGNING_IDENTITY" --timestamp --options runtime \
+            --entitlements scripts/entitlements.plist -i "com.mattstack.helper.$APP_NAME" \
+            "built/$APP_NAME"
+          "built/$APP_NAME" --version
+          SIGNOUT=$(codesign -dvv "built/$APP_NAME" 2>&1)
+          echo "$SIGNOUT"
+          grep -q "^Identifier=com.mattstack.helper.$APP_NAME\$" <<< "$SIGNOUT" || { echo "::error::$APP_NAME codesign identifier is wrong"; exit 1; }
+          grep -q "^Authority=Developer ID Application" <<< "$SIGNOUT" || { echo "::error::$APP_NAME is not signed by a Developer ID Application authority"; exit 1; }
+
+      - name: Skip signing (dry run only)
+        if: steps.signing.outputs.available != 'true'
+        env:
+          APP_NAME: ${{ matrix.name }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          # Check signing secrets already refused a non-dry-run without a
+          # Developer ID cert, so this branch should be unreachable outside
+          # dry_run; re-assert rather than trust that earlier gate alone.
+          [ "$DRY_RUN" = "true" ] || { echo "::error::reached the no-signing fallback on a real publish; refusing"; exit 1; }
+          echo "::notice::no Developer ID available; $APP_NAME ships without a Developer ID signature (dry run only)"
+
+      # Signing happens above, packaging here: the sha256 below, and the one
+      # deps.lock ends up pinned to, must describe the signed bytes.
+      - name: Package
+        env:
+          APP_NAME: ${{ matrix.name }}
+        run: |
           TGZ="$APP_NAME-darwin-arm64.tgz"
-          tar czf "$TGZ" -C stage .
+          tar czf "$TGZ" -C built .
           SHA=$(shasum -a 256 "$TGZ" | cut -d' ' -f1)
-          URL="https://github.com/$APP_REPO/releases/download/$TAG/$TGZ"
+          URL="https://github.com/$REPO/releases/download/$TAG/$TGZ"
           printf '{"name":"%s","version":"%s","url":"%s","sha256":"%s","sourceSha":"%s"}\n' \
             "$APP_NAME" "$VERSION" "$URL" "$SHA" "$SOURCE_SHA" > "result-$APP_NAME.json"
           cat "result-$APP_NAME.json"
@@ -170,10 +352,7 @@ jobs:
             echo "- url: $URL"
             echo "- sha256: \`$SHA\`"
           } >> "$GITHUB_STEP_SUMMARY"
-      # No step after Build may hold a release credential: Build runs the app
-      # repo's own recipe, which can write GITHUB_ENV and GITHUB_PATH, so a
-      # poisoned PATH could hand a later `gh` call the token. Publishing
-      # happens in the release job, which runs no app code.
+
       - uses: actions/upload-artifact@v4
         with:
           name: bundle-${{ matrix.name }}
@@ -181,8 +360,12 @@ jobs:
             result-${{ matrix.name }}.json
             ${{ matrix.name }}-darwin-arm64.tgz
 
+      - name: Cleanup keychain
+        if: always() && env.KEYCHAIN_PATH != ''
+        run: security delete-keychain "$KEYCHAIN_PATH" || true
+
   release:
-    needs: [plan, build]
+    needs: [plan, sign-and-package]
     if: ${{ !cancelled() && !inputs.dry_run }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -192,11 +375,11 @@ jobs:
           pattern: bundle-*
           merge-multiple: true
       # Every value that decides WHERE something is published comes from the
-      # plan job's matrix, never from the downloaded artifact: the build job
-      # ran app-controlled code before writing that file, so a recipe could
-      # otherwise name another repo and have this step publish there with the
-      # release token. Values read from the artifact are shape-checked and
-      # used only as data.
+      # plan job's matrix, never from the downloaded artifact: build (which
+      # ran app-controlled code) is two jobs upstream of this one, so a
+      # recipe could otherwise name another repo and have this step publish
+      # there with the release token. Values read from the artifact are
+      # shape-checked and used only as data.
       - name: Publish releases
         env:
           GH_TOKEN: ${{ secrets.MATTSTACK_RELEASE_TOKEN }}
@@ -245,13 +428,13 @@ jobs:
           path: pinned-*.json
 
   pr:
-    needs: [build, release]
+    needs: [sign-and-package, release]
     # A bare `if` on a needs-dependent job carries an implicit success(), which
-    # would skip the PR whenever ANY build leg failed. With fail-fast disabled
-    # the other legs have already published releases by then, and the tag guard
-    # refuses a re-dispatch, so those releases could never be pinned. Release
-    # itself must still have succeeded though: deps.lock may only be pinned to
-    # URLs whose assets actually published.
+    # would skip the PR whenever ANY sign-and-package leg failed. With
+    # fail-fast disabled the other legs have already published releases by
+    # then, and the tag guard refuses a re-dispatch, so those releases could
+    # never be pinned. Release itself must still have succeeded though:
+    # deps.lock may only be pinned to URLs whose assets actually published.
     if: ${{ !cancelled() && !inputs.dry_run && needs.release.result == 'success' }}
     permissions:
       contents: write
