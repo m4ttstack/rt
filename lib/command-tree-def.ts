@@ -1615,6 +1615,18 @@ export const TREE: Record<string, CommandNode> = {
           { name: "No wait", flag: "--no-wait", type: "boolean", default: false, hint: "Snapshot the workflow run once instead of watching it for up to about an hour" },
         ],
       },
+      "update-machine": {
+        description: "Bring this machine's prod app, dev bundle, daemon, and served suite up to a released tag",
+        module: "./commands/release.ts",
+        fn: "releaseUpdateMachine",
+        args: [
+          { name: "Tag", flag: "--tag", type: "text", placeholder: "v2.11.0", hint: "Released tag to update to; omit for the latest release" },
+          { name: "Plan", flag: "--plan", type: "boolean", default: false, hint: "Print the resolved legs and exit without changing anything" },
+          { name: "Verify only", flag: "--verify-only", type: "boolean", default: false, hint: "Run only the final verification sweep" },
+          { name: "Yes", flag: "--yes", type: "boolean", default: false, hint: "Skip every confirmation prompt" },
+          { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Emit the leg report as JSON" },
+        ],
+      },
     },
   },
 
