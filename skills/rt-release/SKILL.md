@@ -84,6 +84,22 @@ left as-is or reduced to a pointer here.
    notes record, never a silent default. Version numbers stay per-app;
    rt's own tag plus the committed deps.lock is the compatibility record.
 
+   Since 2026-09-18 (rt#347) bundle-apps signs every artifact with the
+   Developer ID cert under the stable identifier
+   `com.mattstack.helper.<app>`, so deployed binaries keep their macOS
+   TCC grants across updates on BOTH channels (the bundle's embedded
+   helpers, which build.sh re-signs with the same identifier convention,
+   and the raw-artifact channel: fetch-deps copies and each app's
+   self-update). Two consequences: an app pin minted before that date
+   points at ad-hoc-signed bytes, and re-cutting it through the signing
+   workflow is a REAL release even with no source change (the artifact
+   changes; note it as "signed build" in the app release); and a user's
+   first deploy of a signed build prompts for TCC once more (the
+   identity switches from ad-hoc to stable), then never again. Verify a
+   signed artifact with `codesign -dvv` (Identifier plus a Developer ID
+   Application authority); the workflow's dry_run input proves the
+   signing path with no publish side effects.
+
 2c. **The other vendored layers: plugins, standalone apps, tools, the
    extension.** Step 2b covers only the four apps-monorepo rows; v2.10.1
    shipped a marketplace catalog whose mattstack plugin pin was 263
