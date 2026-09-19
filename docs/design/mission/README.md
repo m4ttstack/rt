@@ -91,6 +91,45 @@ skipping straight to row content and token colors):
    and captured, including states the boards do NOT draw; an unboarded
    state (like empty) is a gap to board first, not to improvise.
 
+## Terminal geometry (ratified 2026-09-19)
+
+The board's cell unit is **26px per terminal row**. Quantizing a board
+height by a plain px÷26 division silently drops anything under half a
+cell — that dropped sub-cell padding is exactly what the 2026-09-19
+vertical-rhythm pass found missing: a cramped top bar with no bottom
+breathing, no gap between the tabs and the filter box, and a commit
+button collapsed to one thin row. This table is the binding row spec —
+the geometry class item 2 of the parity checklist calls for, the same
+kind of written contract theme.go is for tokens — measured board
+geometry on the left, the terminal row count the build renders on the
+right, with the quantization ruling for anything that isn't a clean
+division.
+
+| Board element | px (pen doc) | ÷26 cells | Terminal rows | Ruling |
+|---|---|---|---|---|
+| TopBar | 56 | 2.15 | 3 | label row + value row + one blank BgSubtle band row (the board's own bottom breathing; its text block ends at 44px into the 56px band). Segment hover/open fills cover all 3 rows. |
+| BarRule | 1 | 0.04 | 0 | sub-cell, absorbed — no separate row. |
+| Tabs + TabsRule | 36 + 1 | 1.42 | 2 + 1 blank | the existing tabs row + underline row, then one blank Bg row before the filter box (the rule+gap reads as breathing in the terminal). |
+| FilterRow | 34 | 1.31 | 3 | border / text / border — already correct: a bordered box is 3 physical rows regardless of its own px height. |
+| SummaryRow (master) | 24 | 0.92 | 1 | "N changed files · M staged". |
+| ChangesList row | 26 | 1.00 | 1 each | exact unit match. |
+| StashStrip | 26 | 1.00 | 1 | |
+| CommitRule | 1 | 0.04 | 1 | kept as its own row — a rendered "─" separator, not sub-cell padding. |
+| CommitBox top pad | 12 | 0.46 | 1 blank | one blank Bg row between the rule (or the amend banner, when present) and the summary box. |
+| SummaryInput | 32 (bordered) | 1.23 | 3 | border / text / border. |
+| CommitBox gap | 8 | 0.31 | 0 | absorbed — the summary and description boxes stay flush, their borders touching. |
+| DescriptionInput | 64 (bordered) | 2.46 | 4 | border / text / text / border. |
+| CommitButton | 32 | 1.23 | 3 | fill row + centered label row + fill row, all three the full sidebar width, Pink (enabled) or Panel (disabled) — never a single thin row. |
+| UndoStrip | 30 | 1.15 | 1 | |
+| Keybar | 28 | 1.08 | 1 | |
+| DiffHeader | 34 | 1.31 | 1 | |
+
+Net effect on `sidebarBlocks` (mission.go): the top block gains 1 row (the
+tabs-gap blank) and the docked block gains 3 (the commit-box top-pad blank,
+plus the button's 2 extra rows). `layout()`'s own filler arithmetic absorbs
+all of it unchanged — `sidebarFillerH` shrinks by the same amount and
+floors at 0 once the fixed chrome alone already meets or exceeds the pane.
+
 ## Ratified at the build's visual pass (2026-09-18)
 
 Deviations the terminal build keeps deliberately; the boards show the
