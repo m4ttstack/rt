@@ -1,5 +1,5 @@
 /**
- * rt release update-machine — the rt:release skill's step 12 as one verb:
+ * rt release update-machine... the rt:release skill's step 12 as one verb:
  * bring this developer's own machine (prod app, dev bundle, daemon, and the
  * served suite) up to a released tag, in that order, with a verification
  * sweep at the end.

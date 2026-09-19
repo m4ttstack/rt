@@ -57,7 +57,7 @@ async function run(args: string[], seams: UpdateMachineSeams): Promise<{ logs: s
   }
 }
 
-/** exitUserError always calls the real process.exit, never a seam — spy on it to catch the code without killing the test process. */
+/** exitUserError always calls the real process.exit, never a seam... spy on it to catch the code without killing the test process. */
 async function runExpectingProcessExit(fn: () => Promise<void>): Promise<{ code: number | undefined; logs: string[] }> {
   const logs: string[] = [];
   const logSpy = spyOn(console, "log").mockImplementation((...a: unknown[]) => {
