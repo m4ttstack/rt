@@ -268,6 +268,9 @@ export class MissionDriver {
     if (statusRes?.ok) this.rows = (statusRes.data?.repos as RepoStatusRow[] | undefined) ?? [];
     if (treesRes?.ok) this.trees = (treesRes.data?.trees as WorktreeTreeRow[] | undefined) ?? [];
     this.snapshot = snapshot;
+    // Seed the diff pane on open (and after a checkout/worktree/repo switch
+    // cleared it): the first change is what the view's cursor starts on.
+    if (this.state.selectedPath === null) this.state.selectedPath = snapshot.files[0]?.path ?? null;
     this.branches = branches;
     this.stashCount = stashes.length;
     const entry = log[0];
@@ -428,6 +431,13 @@ export class MissionDriver {
 
   private async handleCommit(payload: CommitPayload | undefined): Promise<void> {
     if (!payload || typeof payload.summary !== "string") return;
+    // The view already gates on a non-empty summary; this re-check covers
+    // any other emitter so git never sees an empty -m.
+    if (payload.summary.trim() === "") {
+      this.state.notice = "a summary is required to commit";
+      this.push();
+      return;
+    }
     if (payload.amend && this.snapshot.branch) {
       const verdict = await this.guardBranch(this.snapshot.branch);
       if (verdict.verdict === "refuse") {

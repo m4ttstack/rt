@@ -124,12 +124,102 @@ func TestCommitFocusTypeCtrlEnterEmitsCommitWithTypedSummary(t *testing.T) {
 	s.Wait()
 }
 
-func TestCtrlEnterDoesNotEmitWhenCanCommitFalse(t *testing.T) {
+// TestCtrlEnterDoesNotEmitWithEmptySummary: the fixture's canCommit is true
+// (staged files exist), but the local summary is still empty, so the commit
+// gate stays closed.
+func TestCtrlEnterDoesNotEmitWithEmptySummary(t *testing.T) {
 	s := s5open(t)
 	s.Type("c")
 	s.Type(keyCtrlEnter)
 	if l, ok := s.ReadLine(200 * time.Millisecond); ok {
-		t.Fatalf("ctrl-enter with canCommit false must not emit: %q", l)
+		t.Fatalf("ctrl-enter with an empty summary must not emit: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+// TestCtrlEnterEmitsCommitFromFixtureWithTypedSummary drives the shared
+// fixture (canCommit true: two staged files) through the full type-and-send
+// path.
+func TestCtrlEnterEmitsCommitFromFixtureWithTypedSummary(t *testing.T) {
+	s := s5open(t)
+	s.Type("c")
+	s.Type("o", "k")
+	s.Type(keyCtrlEnter)
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:commit"`) || !strings.Contains(l, `"summary":"ok"`) {
+		t.Fatalf("commit intent from the fixture: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+const noStagedModel = `{"current":{"repo":"repo-tools","branch":"main"},` +
+	`"changes":[{"path":"a.go","origPath":"","status":"modified","include":"none"}],` +
+	`"changedTotal":1,"stagedTotal":0,"filter":"",` +
+	`"commit":{"summary":"","description":"","placeholder":"Summary (required)","amending":false,"buttonLabel":"Commit 0 files to main","canCommit":false,"lastCommit":null},` +
+	`"stashCount":0,"notice":""}`
+
+// TestAmendToggleEnablesCommitDespiteWireCanCommitFalse: with nothing staged
+// (canCommit false), toggling amend locally plus a typed summary must still
+// open the commit path -- amending re-uses the last commit's own changes, so
+// an empty index is not a blocker.
+func TestAmendToggleEnablesCommitDespiteWireCanCommitFalse(t *testing.T) {
+	s := openMission(t, noStagedModel, "Commit 0 files to main")
+	s.Type("a")
+	s.WaitForPaint("Amending last commit")
+	s.Type("c")
+	s.Type("f", "x")
+	s.Type(keyCtrlEnter)
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:commit"`) || !strings.Contains(l, `"summary":"fx"`) || !strings.Contains(l, `"amend":true`) {
+		t.Fatalf("amend commit intent: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+// TestListCursorMoveEmitsSelectWithRowPath: moving the Changes cursor loads
+// that row's diff, so down and back up each emit mission:select with the row
+// the cursor landed on.
+func TestListCursorMoveEmitsSelectWithRowPath(t *testing.T) {
+	s := s5open(t)
+	s.Type("\x1b[B")
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:select"`) || !strings.Contains(l, `"path":"ui/internal/views/mission/topbar.go"`) {
+		t.Fatalf("select intent after down: %q", l)
+	}
+	s.Type("\x1b[A")
+	l, ok = s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:select"`) || !strings.Contains(l, `"path":"ui/internal/views/mission/model.go"`) {
+		t.Fatalf("select intent after up: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+// TestListCursorAtTopUpDoesNotEmit: the cursor clamps on the first row, so
+// up at the top lands on the same row and must not emit a redundant select.
+func TestListCursorAtTopUpDoesNotEmit(t *testing.T) {
+	s := s5open(t)
+	s.Type("\x1b[A")
+	if l, ok := s.ReadLine(200 * time.Millisecond); ok {
+		t.Fatalf("up on the clamped first row must not emit: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+// TestMouseClickFileRowEmitsSelectWithPath clicks the third Changes row
+// (mission.go, absolute y=10 per the coordinate walk on
+// TestMouseClickCheckboxCellEmitsToggleFileWithPath) while the cursor sits
+// on the first: the click moves the cursor and emits that row's select.
+func TestMouseClickFileRowEmitsSelectWithPath(t *testing.T) {
+	s := s5open(t)
+	s.Type(sgrClick(0, 20, 10))
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:select"`) || !strings.Contains(l, `"path":"ui/internal/views/mission/mission.go"`) {
+		t.Fatalf("file-row click select intent: %q", l)
 	}
 	s.Send(`{"t":"close"}`)
 	s.Wait()

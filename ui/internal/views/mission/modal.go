@@ -720,9 +720,9 @@ func renderMissionModal(parent string, ms *modalState, width, topBarHeight int) 
 	return lipgloss.NewCompositor(parentLayer, modalLayer).Render()
 }
 
-// renderNoticeStrip is the client-local refusal banner: distinct from the
-// wire Model's own Notice field (model.go), which carries the driver's own
-// guard refusals rather than a refusal the view decided on its own.
+// renderNoticeStrip is the one-line refusal banner at the frame's bottom.
+// It paints whichever notice noticeText (mission.go) resolved: the wire
+// Model's own Notice (a driver refusal) or the view-local one.
 func renderNoticeStrip(text string, width int) string {
 	on := lipgloss.NewStyle().Background(theme.WarnBg)
 	left := on.Foreground(theme.Peach).Render(theme.GlyphWarn + " " + text)

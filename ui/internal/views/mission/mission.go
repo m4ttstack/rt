@@ -67,6 +67,7 @@ type Mission struct {
 	// view decides on its own before any intent reaches the driver. It is
 	// cleared at the top of every KeyPressMsg and re-armed only by the key
 	// that triggers a fresh refusal, so it shows for exactly one render.
+	// Both share the one notice strip; noticeText picks the winner.
 	localNotice string
 
 	// hoverZone is the top-bar segment under the pointer, zoneNone when it
@@ -129,13 +130,26 @@ func newCommitInput(placeholder string) textinput.Model {
 	return ti
 }
 
-// editingCommit reports whether the user is actively composing a commit:
-// SetModel leaves the summary/description/amend fields alone while this is
-// true so a background model refresh cannot clobber an unsent draft.
-func (m *Mission) editingCommit() bool {
-	return m.focus == focusSummary || m.focus == focusDescription
+// noticeText is what the single notice strip shows: the wire model's own
+// Notice (a driver refusal) outranks a view-local one when both are pending.
+func (m *Mission) noticeText() string {
+	if m.model.Notice != "" {
+		return m.model.Notice
+	}
+	return m.localNotice
 }
 
+// commitEnabled is the view-side commit gate: the wire CanCommit (something
+// is staged) or a local amend toggle (amending re-uses the last commit's own
+// changes) opens the path, but only once a summary has actually been typed.
+// The driver re-checks the summary on mission:commit as well.
+func (m *Mission) commitEnabled() bool {
+	return (m.model.Commit.CanCommit || m.amendLocal) && strings.TrimSpace(m.summaryInput.Value()) != ""
+}
+
+// SetModel treats the local summary/description drafts and the amend toggle
+// as authoritative: a push never overwrites a non-empty draft (whatever the
+// focus) and never touches amendLocal; wire values only seed empty fields.
 func (m *Mission) SetModel(raw json.RawMessage) error {
 	decoded, err := decode(raw)
 	if err != nil {
@@ -144,15 +158,12 @@ func (m *Mission) SetModel(raw json.RawMessage) error {
 	m.model = decoded
 	m.clampSelection()
 	m.clampDiffCursor()
-	if m.focus != focusSummary {
+	if m.summaryInput.Value() == "" {
 		m.summaryInput.SetValue(m.model.Commit.Summary)
-		m.summaryInput.Placeholder = m.model.Commit.Placeholder
 	}
-	if m.focus != focusDescription {
+	m.summaryInput.Placeholder = m.model.Commit.Placeholder
+	if m.descriptionInput.Value() == "" {
 		m.descriptionInput.SetValue(m.model.Commit.Description)
-	}
-	if !m.editingCommit() {
-		m.amendLocal = m.model.Commit.Amending
 	}
 	// A background refresh must not stomp filter text the user is still
 	// typing; the wire value only lands once they commit it via enter.
@@ -247,9 +258,9 @@ func (m *Mission) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Mission) listKey(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch v.String() {
 	case "up":
-		m.moveCursor(-1)
+		return m, m.cursorSelectCmd(-1)
 	case "down":
-		m.moveCursor(1)
+		return m, m.cursorSelectCmd(1)
 	case "space":
 		if m.selected == "" {
 			return m, nil
@@ -317,15 +328,7 @@ func (m *Mission) commitKey(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.focus = focusSummary
 		return m, m.summaryInput.Focus()
 	case "ctrl+enter":
-		if !m.model.Commit.CanCommit {
-			return m, nil
-		}
-		payload := commitPayload{
-			Summary:     m.summaryInput.Value(),
-			Description: m.descriptionInput.Value(),
-			Amend:       m.amendLocal,
-		}
-		return m, m.em.Emit(protocol.Intent{Name: "mission:commit", Payload: mustPayload(payload)})
+		return m.emitCommit()
 	case "ctrl+a":
 		m.amendLocal = !m.amendLocal
 		return m, nil
@@ -343,6 +346,39 @@ func (m *Mission) commitKey(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 func (m *Mission) blurCommitInputs() {
 	m.summaryInput.Blur()
 	m.descriptionInput.Blur()
+}
+
+// emitCommit sends mission:commit when commitEnabled and clears the local
+// drafts in the same step: drafts outrank pushes (SetModel), so the emit is
+// the only moment the box can empty itself after a commit.
+func (m *Mission) emitCommit() (tea.Model, tea.Cmd) {
+	if !m.commitEnabled() {
+		return m, nil
+	}
+	payload := commitPayload{
+		Summary:     m.summaryInput.Value(),
+		Description: m.descriptionInput.Value(),
+		Amend:       m.amendLocal,
+	}
+	m.summaryInput.SetValue("")
+	m.descriptionInput.SetValue("")
+	m.amendLocal = false
+	return m, m.em.Emit(protocol.Intent{Name: "mission:commit", Payload: mustPayload(payload)})
+}
+
+// cursorSelectCmd moves the Changes cursor by delta; landing on a different
+// row emits that row's mission:select so the driver loads its diff.
+func (m *Mission) cursorSelectCmd(delta int) tea.Cmd {
+	prev := m.selected
+	m.moveCursor(delta)
+	return m.selectPathCmd(prev)
+}
+
+func (m *Mission) selectPathCmd(prev string) tea.Cmd {
+	if m.selected == prev || m.selected == "" {
+		return nil
+	}
+	return m.em.Emit(protocol.Intent{Name: "mission:select", Payload: mustPayload(pathSelectPayload{Path: m.selected})})
 }
 
 func (m *Mission) stageIntent(path, mode string) tea.Cmd {
@@ -367,6 +403,13 @@ type commitPayload struct {
 
 type selectPayload struct {
 	Filter string `json:"filter"`
+}
+
+// pathSelectPayload deliberately omits the filter key: the driver treats any
+// present "filter" string as a filter update, so a row-selection emit must
+// not carry one or it would clear a filter mid-flight.
+type pathSelectPayload struct {
+	Path string `json:"path"`
 }
 
 // mustPayload marshals a payload struct built entirely from strings/bools,
@@ -399,7 +442,7 @@ func (m *Mission) renderSidebar(width int) string {
 		rows = append(rows, renderStashStrip(m.model.StashCount, width))
 	}
 	rows = append(rows, fg(theme.Rule).Render(strings.Repeat("─", width)))
-	rows = append(rows, renderCommitBox(width, m.summaryInput.View(), m.descriptionInput.View(), m.amendLocal, m.model.Commit.ButtonLabel, m.model.Commit.CanCommit))
+	rows = append(rows, renderCommitBox(width, m.summaryInput.View(), m.descriptionInput.View(), m.amendLocal, m.model.Commit.ButtonLabel, m.commitEnabled()))
 	if lc := m.model.Commit.LastCommit; lc != nil && lc.Undoable {
 		rows = append(rows, renderUndoStrip(*lc, width))
 	}
@@ -429,7 +472,7 @@ func (m *Mission) layout() frameLayout {
 		topH:    lipgloss.Height(renderTopBar(m.model, m.width, m.hoverZone, m.openZone())),
 		keybarH: lipgloss.Height(renderKeybar(m.width)),
 	}
-	if m.localNotice != "" {
+	if m.noticeText() != "" {
 		l.noticeH = 1
 	}
 	sidebar := m.renderSidebar(sidebarWidth)
@@ -461,8 +504,8 @@ func (m *Mission) View() tea.View {
 	body := lipgloss.JoinHorizontal(lipgloss.Top, sidebarPadded, divider, diffPadded)
 	out := lipgloss.JoinVertical(lipgloss.Left, top, body, keybar)
 
-	if m.localNotice != "" {
-		out = lipgloss.JoinVertical(lipgloss.Left, out, renderNoticeStrip(m.localNotice, m.width))
+	if notice := m.noticeText(); notice != "" {
+		out = lipgloss.JoinVertical(lipgloss.Left, out, renderNoticeStrip(notice, m.width))
 	}
 	if m.modal != nil {
 		out = renderMissionModal(out, m.modal, m.width, lipgloss.Height(top))
@@ -838,17 +881,18 @@ func (m *Mission) clickFileRow(idx int) (tea.Model, tea.Cmd) {
 	now := m.now()
 	isDouble := path == m.lastClickPath && !m.lastClickAt.IsZero() && now.Sub(m.lastClickAt) <= doubleClickWindow
 
+	prev := m.selected
 	m.selected = path
 	m.focus = focusList
 	if isDouble {
 		m.lastClickPath = ""
 		m.lastClickAt = time.Time{}
 		m.focus = focusDiff
-		return m, nil
+		return m, m.selectPathCmd(prev)
 	}
 	m.lastClickPath = path
 	m.lastClickAt = now
-	return m, nil
+	return m, m.selectPathCmd(prev)
 }
 
 func (m *Mission) clickCheckbox(idx int) (tea.Model, tea.Cmd) {
@@ -862,11 +906,7 @@ func (m *Mission) clickCheckbox(idx int) (tea.Model, tea.Cmd) {
 }
 
 func (m *Mission) clickCommitButton() (tea.Model, tea.Cmd) {
-	if !m.model.Commit.CanCommit {
-		return m, nil
-	}
-	payload := commitPayload{Summary: m.summaryInput.Value(), Description: m.descriptionInput.Value(), Amend: m.amendLocal}
-	return m, m.em.Emit(protocol.Intent{Name: "mission:commit", Payload: mustPayload(payload)})
+	return m.emitCommit()
 }
 
 // diffClickIntent resolves idx through the exact same resolver space/enter
@@ -965,8 +1005,7 @@ func (m *Mission) mouseWheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
 	}
 	if mouse.X >= sidebarWidth {
 		m.moveDiffCursor(delta)
-	} else {
-		m.moveCursor(delta)
+		return m, nil
 	}
-	return m, nil
+	return m, m.cursorSelectCmd(delta)
 }

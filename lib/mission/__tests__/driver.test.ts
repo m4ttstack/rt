@@ -388,6 +388,27 @@ describe("MissionDriver: commit", () => {
     expect(last.commit.amending).toBe(false);
   });
 
+  test("an empty summary refuses with a notice and never commits", async () => {
+    let commitCalled = false;
+    const session = new FakeSession([
+      { t: "intent", name: "mission:commit", payload: { summary: "   ", amend: false } },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({
+      session,
+      commit: () => {
+        commitCalled = true;
+        return "[main abc] never";
+      },
+    });
+
+    await new MissionDriver(deps, START).run();
+
+    expect(commitCalled).toBe(false);
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.notice).toBe("a summary is required to commit");
+  });
+
   test("guards the branch before an amend, and a refusal lands in Notice without amending", async () => {
     let amendCalled = false;
     const session = new FakeSession([
@@ -700,5 +721,25 @@ describe("MissionDriver: seed", () => {
 
     expect(openSessionCalls).toBe(1);
     expect(session.pushed).toHaveLength(0);
+  });
+
+  test("seeds selectedPath to the first change so the diff pane opens populated", async () => {
+    const client = makeFakeClient({
+      snapshot: async () => baseSnapshot({ clean: false, files: [{ path: "a.txt", kind: "modified", staged: false, unstaged: true }] }),
+    });
+    const session = new FakeSession([{ t: "intent", name: "quit" }]);
+    let opened: MissionModel | null = null;
+    const deps = baseDeps({ session, client });
+    deps.openSession = async (view, model) => {
+      opened = model as MissionModel;
+      return session;
+    };
+
+    await new MissionDriver(deps, START).run();
+
+    expect(opened).not.toBeNull();
+    expect(opened!.diff.path).toBe("a.txt");
+    expect(opened!.diff.kind).toBe("text");
+    expect(opened!.diff.lines.length).toBeGreaterThan(0);
   });
 });

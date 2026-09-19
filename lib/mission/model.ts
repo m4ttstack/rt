@@ -348,7 +348,10 @@ export function buildModel(input: {
     placeholder: commitPlaceholder(changes),
     amending: state.amending,
     buttonLabel: commitButtonLabel(state.amending, stagedTotal, current.branch),
-    canCommit: stagedTotal > 0 && state.summary.trim().length > 0,
+    // The summary lives in the view (drafts never round-trip through the
+    // driver), so the wire gate only says whether anything is staged; the
+    // view combines it with its own summary/amend state.
+    canCommit: stagedTotal > 0,
     lastCommit,
   };
 

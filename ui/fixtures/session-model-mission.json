@@ -65,7 +65,7 @@
     "placeholder": "Summary (required)",
     "amending": false,
     "buttonLabel": "Commit 2 files to rt-191-mission-tui",
-    "canCommit": false,
+    "canCommit": true,
     "lastCommit": { "summary": "rt-ui: mission view skeleton behind an opt-in mouse session option", "when": "2 minutes ago", "undoable": true }
   },
   "stashCount": 1,

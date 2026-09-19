@@ -172,9 +172,9 @@ func renderStashStrip(count, width int) string {
 // renderCommitBox paints the amending banner (when locally toggled on), the
 // summary box, the description box, and the commit button, top to bottom.
 // Amending overrides the button's own label to "Amend last commit" -- a
-// display-only substitution; canCommit still gates it exactly as the wire
-// model says, amending or not.
-func renderCommitBox(width int, summaryView, descriptionView string, amending bool, buttonLabel string, canCommit bool) string {
+// display-only substitution; enabled (the caller's commitEnabled result)
+// still gates the button's treatment, amending or not.
+func renderCommitBox(width int, summaryView, descriptionView string, amending bool, buttonLabel string, enabled bool) string {
 	var lines []string
 	if amending {
 		lines = append(lines, fg(theme.Peach).Render("Amending last commit · a stops"))
@@ -182,7 +182,7 @@ func renderCommitBox(width int, summaryView, descriptionView string, amending bo
 	}
 	lines = append(lines, boxLine(width, summaryView))
 	lines = append(lines, boxBlock(width, []string{descriptionView, ""}))
-	lines = append(lines, renderCommitButton(width, buttonLabel, canCommit))
+	lines = append(lines, renderCommitButton(width, buttonLabel, enabled))
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }
 

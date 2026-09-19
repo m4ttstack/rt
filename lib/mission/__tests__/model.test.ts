@@ -363,6 +363,28 @@ describe("commit button label", () => {
   });
 });
 
+describe("canCommit", () => {
+  test("true whenever anything is staged, regardless of the driver-side summary", () => {
+    const model = buildModel(
+      baseInput({
+        state: { summary: "" },
+        snapshot: { files: [changedFile({ path: "a.txt", staged: true, unstaged: false })] },
+      }),
+    );
+    expect(model.commit.canCommit).toBe(true);
+  });
+
+  test("false with nothing staged even when a summary is present", () => {
+    const model = buildModel(
+      baseInput({
+        state: { summary: "a summary" },
+        snapshot: { files: [changedFile({ path: "a.txt", staged: false, unstaged: true })] },
+      }),
+    );
+    expect(model.commit.canCommit).toBe(false);
+  });
+});
+
 describe("commit placeholder", () => {
   test.each([
     ["no included files", [], "Summary (required)"],

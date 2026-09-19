@@ -1,6 +1,7 @@
 package mission
 
 import (
+	"encoding/json"
 	"fmt"
 	"image/color"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"rt-ui/internal/session"
 	"rt-ui/internal/theme"
 )
 
@@ -189,8 +191,8 @@ func TestRenderCommitButtonDisabledWearsPanelBg(t *testing.T) {
 
 // TestRenderCommitBoxAmendingOverridesButtonLabel pins item 5: amending
 // swaps the button's own text for "Amend last commit" (a display-only
-// override -- CanCommit still gates enablement exactly as the wire model
-// says, amending or not), while a non-amending box keeps the wire label.
+// override -- the enabled flag the caller computed still gates the button's
+// treatment, amending or not), while a non-amending box keeps the wire label.
 func TestRenderCommitBoxAmendingOverridesButtonLabel(t *testing.T) {
 	const wireLabel = "Commit 2 files to main"
 	amending := renderCommitBox(sidebarWidth, "", "", true, wireLabel, false)
@@ -638,6 +640,111 @@ func TestModalRowHoverPaintsHoverBgUnlessCursor(t *testing.T) {
 	}
 }
 
+// ─── notice strip ───────────────────────────────────────────────────────
+
+// TestModelPushWithWireNoticePaintsIt: the driver's own refusals arrive in
+// the wire model's Notice field and must reach the notice strip, exactly
+// like a view-local refusal does.
+func TestModelPushWithWireNoticePaintsIt(t *testing.T) {
+	m := newTestMission()
+	mod := modalFixtureModel()
+	mod.Notice = "amend refused: stack root"
+	raw, err := json.Marshal(mod)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, _ := m.Update(session.ModelUpdate{Raw: raw})
+	m = next.(*Mission)
+	if out := ansi.Strip(m.View().Content); !strings.Contains(out, "amend refused: stack root") {
+		t.Fatalf("wire Notice never painted:\n%s", out)
+	}
+}
+
+// TestWireNoticeWinsOverLocalNotice: when both the wire Notice and a
+// view-local refusal are pending, the driver's own wins the single strip.
+func TestWireNoticeWinsOverLocalNotice(t *testing.T) {
+	m := newTestMission()
+	m.model.Notice = "wire refusal"
+	m.localNotice = "local refusal"
+	out := ansi.Strip(m.View().Content)
+	if !strings.Contains(out, "wire refusal") {
+		t.Fatalf("wire notice should paint:\n%s", out)
+	}
+	if strings.Contains(out, "local refusal") {
+		t.Fatalf("local notice must yield to the wire one:\n%s", out)
+	}
+}
+
+// ─── commit drafts vs pushes ────────────────────────────────────────────
+
+// TestPushNeverClobbersDraftsOrAmendToggle: local drafts are authoritative.
+// A model push while a draft sits in a NON-focused field (focus is the list
+// here) must keep the draft, and must never reset a locally toggled amend.
+func TestPushNeverClobbersDraftsOrAmendToggle(t *testing.T) {
+	m := newTestMission()
+	m.summaryInput.SetValue("draft summary")
+	m.descriptionInput.SetValue("draft description")
+	m.amendLocal = true
+
+	raw, err := json.Marshal(modalFixtureModel())
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, _ := m.Update(session.ModelUpdate{Raw: raw})
+	m = next.(*Mission)
+
+	if got := m.summaryInput.Value(); got != "draft summary" {
+		t.Fatalf("push clobbered the summary draft: %q", got)
+	}
+	if got := m.descriptionInput.Value(); got != "draft description" {
+		t.Fatalf("push clobbered the description draft: %q", got)
+	}
+	if !m.amendLocal {
+		t.Fatal("push reset the local amend toggle")
+	}
+}
+
+// TestPushSeedsEmptyCommitFields: wire values still land, but only into
+// fields that hold no draft.
+func TestPushSeedsEmptyCommitFields(t *testing.T) {
+	m := newTestMission()
+	mod := modalFixtureModel()
+	mod.Commit.Summary = "wire summary"
+	mod.Commit.Description = "wire description"
+	raw, err := json.Marshal(mod)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, _ := m.Update(session.ModelUpdate{Raw: raw})
+	m = next.(*Mission)
+
+	if got := m.summaryInput.Value(); got != "wire summary" {
+		t.Fatalf("empty summary field should seed from the wire: %q", got)
+	}
+	if got := m.descriptionInput.Value(); got != "wire description" {
+		t.Fatalf("empty description field should seed from the wire: %q", got)
+	}
+}
+
+// TestCommitEmitClearsLocalDrafts: sending the commit is what clears the
+// box -- the wire can no longer do it, since drafts outrank pushes.
+func TestCommitEmitClearsLocalDrafts(t *testing.T) {
+	m := newTestMission()
+	m.model.Commit.CanCommit = true
+	m.focus = focusSummary
+	m.summaryInput.SetValue("msg")
+	m.descriptionInput.SetValue("body")
+	m.amendLocal = true
+	_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModCtrl})
+	if cmd == nil {
+		t.Fatal("ctrl+enter with the gate open must emit")
+	}
+	if m.summaryInput.Value() != "" || m.descriptionInput.Value() != "" || m.amendLocal {
+		t.Fatalf("emitting the commit should clear the local drafts: %q %q amend=%v",
+			m.summaryInput.Value(), m.descriptionInput.Value(), m.amendLocal)
+	}
+}
+
 // ─── mouse routing ──────────────────────────────────────────────────────
 
 // mouseFixtureModel is a small, self-contained model for the mouse-routing
@@ -743,8 +850,8 @@ func TestMouseWheelOverModalMovesCursorSkippingGuardedRow(t *testing.T) {
 }
 
 // TestMouseDoubleClickFileRowFocusesDiff pins the double-click half of the
-// file-row click contract; a lone click only moves the cursor (covered by
-// TestMouseClickFileRowMovesCursorWithoutEmitting below).
+// file-row click contract; a lone click moves the cursor and emits that
+// row's select (covered by TestMouseClickFileRowEmitsOnlyOnRowChange below).
 func TestMouseDoubleClickFileRowFocusesDiff(t *testing.T) {
 	m := newMouseTestMission()
 	now := time.Now()
@@ -761,11 +868,18 @@ func TestMouseDoubleClickFileRowFocusesDiff(t *testing.T) {
 	}
 }
 
-// TestMouseClickFileRowMovesCursorWithoutEmitting pins the single-click
-// half: it moves the cursor into list focus, and produces no intent.
-func TestMouseClickFileRowMovesCursorWithoutEmitting(t *testing.T) {
+// TestMouseClickFileRowEmitsOnlyOnRowChange pins the single-click half: a
+// click on the row already under the cursor is inert, while a click that
+// moves the cursor to a different row emits that row's mission:select so
+// the driver loads its diff.
+func TestMouseClickFileRowEmitsOnlyOnRowChange(t *testing.T) {
 	m := newMouseTestMission()
-	next, cmd := m.Update(tea.MouseClickMsg{X: 20, Y: 10, Button: tea.MouseLeft})
+	next, cmd := m.Update(tea.MouseClickMsg{X: 20, Y: 8, Button: tea.MouseLeft})
+	m = next.(*Mission)
+	if cmd != nil {
+		t.Fatal("a click on the row already under the cursor must not emit")
+	}
+	next, cmd = m.Update(tea.MouseClickMsg{X: 20, Y: 10, Button: tea.MouseLeft})
 	m = next.(*Mission)
 	if m.selected != "c.go" {
 		t.Fatalf("click should move the cursor to row 2, got %q", m.selected)
@@ -773,8 +887,8 @@ func TestMouseClickFileRowMovesCursorWithoutEmitting(t *testing.T) {
 	if m.focus != focusList {
 		t.Fatalf("a file-row click should land in list focus, got %v", m.focus)
 	}
-	if cmd != nil {
-		t.Fatal("a single click on a file row must not emit")
+	if cmd == nil {
+		t.Fatal("a click that changed the cursor row must emit mission:select")
 	}
 }
 
@@ -790,13 +904,55 @@ func TestMouseClickFilterRowFocusesFilter(t *testing.T) {
 }
 
 // TestMouseClickCommitButtonGuardsOnCanCommit mirrors the keyboard's own
-// ctrl-enter guard (mission_test.go's TestCtrlEnterDoesNotEmitWhenCanCommitFalse):
-// a commit-button click with CanCommit false must not emit.
+// ctrl-enter guard (mission_test.go's TestCtrlEnterDoesNotEmitWithEmptySummary):
+// with CanCommit false, no local amend, and no summary, a button click must
+// not emit.
 func TestMouseClickCommitButtonGuardsOnCanCommit(t *testing.T) {
 	m := newMouseTestMission() // ButtonLabel set, CanCommit left false
 	_, cmd := m.Update(tea.MouseClickMsg{X: 20, Y: 19, Button: tea.MouseLeft})
 	if cmd != nil {
-		t.Fatal("a commit-button click with CanCommit false must not emit")
+		t.Fatal("a commit-button click with the gate closed must not emit")
+	}
+}
+
+// TestMouseClickCommitButtonEmitsWhenEnabled: CanCommit true plus a typed
+// summary opens the click path.
+func TestMouseClickCommitButtonEmitsWhenEnabled(t *testing.T) {
+	m := newMouseTestMission()
+	m.model.Commit.CanCommit = true
+	m.summaryInput.SetValue("msg")
+	_, cmd := m.Update(tea.MouseClickMsg{X: 20, Y: 19, Button: tea.MouseLeft})
+	if cmd == nil {
+		t.Fatal("a commit-button click with the gate open must emit")
+	}
+}
+
+// TestMouseClickCommitButtonEnabledByLocalAmend: a local amend toggle opens
+// the same click path even while the wire CanCommit is false (nothing
+// staged), since amending re-uses the last commit's own changes. The amend
+// banner adds a sidebar row, so the button sits one row lower.
+func TestMouseClickCommitButtonEnabledByLocalAmend(t *testing.T) {
+	m := newMouseTestMission()
+	m.amendLocal = true
+	m.summaryInput.SetValue("msg")
+	_, cmd := m.Update(tea.MouseClickMsg{X: 20, Y: 20, Button: tea.MouseLeft})
+	if cmd == nil {
+		t.Fatal("a commit-button click while locally amending must emit")
+	}
+}
+
+// TestCommitButtonRendersDisabledUntilSummaryTyped pins the render half of
+// the commit gate: the Pink (enabled) button treatment appears only once a
+// summary exists, even with the wire CanCommit true.
+func TestCommitButtonRendersDisabledUntilSummaryTyped(t *testing.T) {
+	m := newMouseTestMission()
+	m.model.Commit.CanCommit = true
+	if strings.Contains(m.View().Content, bgSGR(theme.Pink)) {
+		t.Fatalf("empty-summary frame must not paint the enabled Pink button")
+	}
+	m.summaryInput.SetValue("msg")
+	if !strings.Contains(m.View().Content, bgSGR(theme.Pink)) {
+		t.Fatalf("typed-summary frame should paint the enabled Pink button")
 	}
 }
 
