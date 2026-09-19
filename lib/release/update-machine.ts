@@ -24,6 +24,8 @@ export interface LegResult {
 export interface UpdateMachineReport {
   tag: string;
   legs: LegResult[];
+  /** The label of the first leg that ended aborted/error, halting every later state-changing leg; null when nothing halted. */
+  haltedAfter: string | null;
   ok: boolean;
 }
 
@@ -39,8 +41,11 @@ export interface UpdateMachineSeams {
   repoRoot: string;
   /** The shared ~/Documents/GitHub/mattstack-apps checkout the served suite runs from. */
   appsCheckoutPath: string;
-  /** A scratch directory for the downloaded dmg and the dev-bundle clone. */
+  /** A scratch directory for the downloaded dmg and the dev-bundle clone; empty when no mutating leg will run. */
   workDir: string;
+  /** Numeric uid for the launchd gui/<uid>/... domain (process.getuid() in the real seam). */
+  uid: number;
+  /** True only when a human can answer a confirm prompt right now (a real TTY, RT_BATCH unset). */
   isTTY: boolean;
   exec(argv: [string, ...string[]], opts?: { cwd?: string; timeoutMs?: number }): Promise<RunResult>;
   download(url: string, destPath: string): Promise<void>;
@@ -49,12 +54,16 @@ export interface UpdateMachineSeams {
   /** Posts to the #rt chat room; returns whether the post succeeded. */
   announce(message: string): Promise<boolean>;
   clock(): Date;
+  sleep(ms: number): Promise<void>;
 }
 
-const RELEASE_REPO = "m4ttstack/rt";
-const CHAT_ROOM = "rt";
+export const RELEASE_REPO = "m4ttstack/rt";
+export const CHAT_ROOM = "rt";
 const PROD_APP_PATH = "/Applications/mattstack.app";
 const DEV_APP_PATH = "/Applications/mattstack-dev.app";
+/** Anchored to the executable inside the bundle so pgrep never catches an unrelated
+ *  process that merely mentions the bundle path (a `tail -f` on its log, an editor). */
+const DEV_APP_ANCHOR = `${DEV_APP_PATH}/Contents/MacOS/`;
 
 const PROD_APP_LABEL = "prod app update";
 const DEV_BUNDLE_LABEL = "dev bundle rebuild";
@@ -68,22 +77,51 @@ interface ReleaseContext {
   sha: string;
 }
 
+function errorLeg(id: LegId, label: string, detail: string): LegResult {
+  return { id, label, status: "error", detail };
+}
+function okLeg(id: LegId, label: string, detail: string): LegResult {
+  return { id, label, status: "ok", detail };
+}
+function abortedLeg(id: LegId, label: string, detail: string): LegResult {
+  return { id, label, status: "aborted", detail };
+}
+function skippedLeg(id: LegId, label: string, detail: string): LegResult {
+  return { id, label, status: "skipped", detail };
+}
+
+/** The tail of a failed command's output, for an error leg's detail. */
+function execTail(r: RunResult): string {
+  return (r.stderr || r.stdout).trim() || "no output";
+}
+
 function versionFromTag(tag: string): string {
   return tag.replace(/^v/, "");
 }
 
 async function resolveTag(seams: UpdateMachineSeams, explicit?: string): Promise<string> {
-  if (explicit) return explicit;
+  if (explicit) {
+    if (!/^v\d/.test(explicit)) {
+      throw new UserActionableError("update-machine-bad-tag", `--tag must look like a released tag (v<major>...), got "${explicit}"`);
+    }
+    return explicit;
+  }
   const r = await seams.exec(["gh", "api", `repos/${RELEASE_REPO}/releases/latest`, "--jq", ".tag_name"]);
+  if (r.exitCode !== 0) {
+    throw new UserActionableError("update-machine-resolve-tag-failed", `could not resolve the latest released tag: ${execTail(r)}`);
+  }
   const tag = r.stdout.trim();
-  if (!tag) throw new Error("could not resolve the latest released tag");
+  if (!tag) throw new UserActionableError("update-machine-resolve-tag-failed", "gh api returned no tag_name for the latest release");
   return tag;
 }
 
 async function resolveCommit(seams: UpdateMachineSeams, tag: string): Promise<string> {
   const r = await seams.exec(["gh", "api", `repos/${RELEASE_REPO}/commits/${tag}`, "--jq", ".sha"]);
+  if (r.exitCode !== 0) {
+    throw new UserActionableError("update-machine-resolve-commit-failed", `could not resolve the commit for ${tag}: ${execTail(r)}`);
+  }
   const sha = r.stdout.trim();
-  if (!sha) throw new Error(`could not resolve the commit for ${tag}`);
+  if (!sha) throw new UserActionableError("update-machine-resolve-commit-failed", `gh api returned no sha for ${tag}`);
   return sha;
 }
 
@@ -95,21 +133,31 @@ function parseShaSums(content: string, filename: string): string | null {
   return null;
 }
 
-function parseMountPoint(stdout: string): string | null {
-  const lines = stdout.trim().split("\n").filter(Boolean);
-  const last = lines[lines.length - 1];
-  if (!last) return null;
-  const cols = last.trim().split(/\s+/);
-  const mount = cols[cols.length - 1];
-  return mount && mount.startsWith("/") ? mount : null;
+/** hdiutil attach -plist emits an XML plist, not JSON; -quiet (dropped here) closes
+ *  stdout entirely, so this is the only way to learn the real mount point. The
+ *  mountable entity's dict carries dev-entry immediately before mount-point, so
+ *  the first match of each is the same entity (a non-mountable partition-scheme
+ *  sibling has no mount-point key at all). */
+function parseAttachPlist(xml: string): { mountPoint: string | null; device: string | null } {
+  const mountPoint = xml.match(/<key>mount-point<\/key>\s*<string>([^<]+)<\/string>/)?.[1] ?? null;
+  const device = xml.match(/<key>dev-entry<\/key>\s*<string>([^<]+)<\/string>/)?.[1] ?? null;
+  return { mountPoint, device };
 }
 
-function parseDaemonCommit(stdout: string): string | null {
+function parseDaemonSourceRev(stdout: string): string | null {
   try {
-    return (JSON.parse(stdout) as { commit?: string }).commit ?? null;
+    const data = (JSON.parse(stdout) as { data?: { identity?: { sourceRev?: string | null } } }).data;
+    return data?.identity?.sourceRev ?? null;
   } catch {
     return null;
   }
+}
+
+/** The daemon's sourceRev and the target sha can be abbreviated to different
+ *  lengths (git rev-parse --short vs a full sha), so neither side is assumed
+ *  longer: a match is either prefixing the other. */
+function revMatches(sourceRev: string, target: string): boolean {
+  return sourceRev.startsWith(target) || target.startsWith(sourceRev);
 }
 
 function deckPinFromDepsLock(raw: string | null): string | null {
@@ -140,18 +188,69 @@ function parsePsStartTime(stdout: string): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-async function managedAppNames(seams: UpdateMachineSeams): Promise<string[]> {
+async function pgrepPids(seams: UpdateMachineSeams, pattern: string): Promise<number[]> {
+  const r = await seams.exec(["pgrep", "-f", pattern]);
+  return r.stdout
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map(Number)
+    .filter((n) => !Number.isNaN(n));
+}
+
+/** open(1) hands off to LaunchServices and returns before the app is actually up, so a single immediate pgrep cannot tell "still launching" from "never launched". */
+async function pollForPids(seams: UpdateMachineSeams, pattern: string, attempts: number, delayMs: number): Promise<number[]> {
+  for (let i = 0; i < attempts; i++) {
+    const pids = await pgrepPids(seams, pattern);
+    if (pids.length > 0) return pids;
+    if (i < attempts - 1) await seams.sleep(delayMs);
+  }
+  return [];
+}
+
+async function waitForNoPids(seams: UpdateMachineSeams, pattern: string, attempts: number, delayMs: number): Promise<boolean> {
+  for (let i = 0; i < attempts; i++) {
+    if ((await pgrepPids(seams, pattern)).length === 0) return true;
+    if (i < attempts - 1) await seams.sleep(delayMs);
+  }
+  return (await pgrepPids(seams, pattern)).length === 0;
+}
+
+/**
+ * `ditto` onto an existing .app MERGES rather than replaces: stale files linger
+ * and extras can break the code-signature seal. Move the current bundle aside,
+ * ditto the new one into its place, and only delete the aside copy once that
+ * succeeds; a failed ditto restores it so the machine is never left without
+ * a working app. Returns null on success, or an error detail on failure.
+ */
+async function replaceApp(seams: UpdateMachineSeams, sourcePath: string, destPath: string): Promise<string | null> {
+  const asidePath = `${destPath}.update-machine-old`;
+  const mv = await seams.exec(["mv", destPath, asidePath]);
+  if (mv.exitCode !== 0) return `could not move the current app aside: ${execTail(mv)}`;
+
+  const ditto = await seams.exec(["ditto", sourcePath, destPath]);
+  if (ditto.exitCode !== 0) {
+    await seams.exec(["mv", asidePath, destPath]);
+    return `ditto failed, restored the previous app: ${execTail(ditto)}`;
+  }
+
+  await seams.exec(["rm", "-rf", asidePath]);
+  return null;
+}
+
+async function managedAppNames(seams: UpdateMachineSeams): Promise<{ apps: string[] } | { error: string }> {
   const r = await seams.exec(["deck", "list", "--json"]);
+  if (r.exitCode !== 0) return { error: `deck list --json failed: ${execTail(r)}` };
   try {
     const rows = JSON.parse(r.stdout) as { name: string; managed: boolean }[];
-    return rows.filter((row) => row.managed).map((row) => row.name);
-  } catch {
-    return [];
+    return { apps: rows.filter((row) => row.managed).map((row) => row.name) };
+  } catch (err) {
+    return { error: `deck list --json returned unparseable output: ${String((err as Error).message ?? err)}` };
   }
 }
 
 async function managedAppPid(seams: UpdateMachineSeams, app: string): Promise<number | null> {
-  const r = await seams.exec(["launchctl", "print", `gui/501/com.mattstack.deck.${app}`]);
+  const r = await seams.exec(["launchctl", "print", `gui/${seams.uid}/com.mattstack.deck.${app}`]);
   return parseLaunchctlPid(r.stdout);
 }
 
@@ -191,184 +290,209 @@ async function runProdAppLeg(seams: UpdateMachineSeams, ctx: ReleaseContext): Pr
   const dmgPath = `${seams.workDir}/${dmgName}`;
   const sumsPath = `${seams.workDir}/SHA256SUMS`;
 
-  await seams.download(`https://github.com/${RELEASE_REPO}/releases/download/${ctx.tag}/${dmgName}`, dmgPath);
-  await seams.download(`https://github.com/${RELEASE_REPO}/releases/download/${ctx.tag}/SHA256SUMS`, sumsPath);
+  try {
+    await seams.download(`https://github.com/${RELEASE_REPO}/releases/download/${ctx.tag}/${dmgName}`, dmgPath);
+    await seams.download(`https://github.com/${RELEASE_REPO}/releases/download/${ctx.tag}/SHA256SUMS`, sumsPath);
+  } catch (err) {
+    return errorLeg("prod-app", PROD_APP_LABEL, `download failed: ${String((err as Error).message ?? err)}`);
+  }
 
   const sums = seams.readFile(sumsPath);
   const expected = sums ? parseShaSums(sums, dmgName) : null;
-  if (!expected) {
-    return { id: "prod-app", label: PROD_APP_LABEL, status: "error", detail: `${dmgName} not listed in SHA256SUMS` };
-  }
+  if (!expected) return errorLeg("prod-app", PROD_APP_LABEL, `${dmgName} not listed in SHA256SUMS`);
 
   const shaResult = await seams.exec(["shasum", "-a", "256", dmgPath]);
   const actual = shaResult.stdout.trim().split(/\s+/)[0] ?? "";
   if (actual !== expected) {
-    return {
-      id: "prod-app",
-      label: PROD_APP_LABEL,
-      status: "aborted",
-      detail: `sha256 mismatch for ${dmgName}: expected ${expected}, got ${actual || "nothing"}`,
-    };
-  }
-
-  const attach = await seams.exec(["hdiutil", "attach", dmgPath, "-nobrowse", "-quiet"]);
-  const mountPoint = parseMountPoint(attach.stdout);
-  if (!mountPoint) {
-    return { id: "prod-app", label: PROD_APP_LABEL, status: "error", detail: "hdiutil attach did not report a mount point" };
+    return abortedLeg("prod-app", PROD_APP_LABEL, `sha256 mismatch for ${dmgName}: expected ${expected}, got ${actual || "nothing"}`);
   }
 
   // Never launches either copy: pre-2.8 updaters gate on ~/.local/bin/rt, and a
   // launched prod app's daemon seizes rt.sock from the dev daemon.
-  await seams.exec(["ditto", `${mountPoint}/mattstack.app`, PROD_APP_PATH]);
-  await seams.exec(["hdiutil", "detach", mountPoint, "-quiet"]);
+  const attach = await seams.exec(["hdiutil", "attach", dmgPath, "-nobrowse", "-plist"]);
+  if (attach.exitCode !== 0) return errorLeg("prod-app", PROD_APP_LABEL, `hdiutil attach failed: ${execTail(attach)}`);
 
-  return { id: "prod-app", label: PROD_APP_LABEL, status: "ok", detail: `${PROD_APP_PATH} replaced with ${ctx.tag} (sha256 verified)` };
+  const { mountPoint, device } = parseAttachPlist(attach.stdout);
+  const detachTarget = mountPoint ?? device;
+
+  try {
+    if (!mountPoint) return errorLeg("prod-app", PROD_APP_LABEL, "hdiutil attach succeeded but its plist named no mount point");
+
+    const replaceErr = await replaceApp(seams, `${mountPoint}/mattstack.app`, PROD_APP_PATH);
+    if (replaceErr) return errorLeg("prod-app", PROD_APP_LABEL, replaceErr);
+
+    return okLeg("prod-app", PROD_APP_LABEL, `${PROD_APP_PATH} replaced with ${ctx.tag} (sha256 verified)`);
+  } finally {
+    if (detachTarget) await seams.exec(["hdiutil", "detach", detachTarget, "-quiet"]);
+  }
 }
 
 async function runDevBundleLeg(seams: UpdateMachineSeams, ctx: ReleaseContext): Promise<LegResult> {
   const bundleDir = `${seams.workDir}/rt-dev-bundle`;
-  await seams.exec(["git", "clone", `https://github.com/${RELEASE_REPO}.git`, bundleDir]);
-  await seams.exec(["git", "checkout", ctx.sha], { cwd: bundleDir });
+
+  const clone = await seams.exec(["git", "clone", `https://github.com/${RELEASE_REPO}.git`, bundleDir]);
+  if (clone.exitCode !== 0) return errorLeg("dev-bundle", DEV_BUNDLE_LABEL, `git clone failed: ${execTail(clone)}`);
+
+  const checkout = await seams.exec(["git", "checkout", ctx.sha], { cwd: bundleDir });
+  if (checkout.exitCode !== 0) {
+    return errorLeg("dev-bundle", DEV_BUNDLE_LABEL, `git checkout ${ctx.sha.slice(0, 12)} failed: ${execTail(checkout)}`);
+  }
 
   const fetchDeps = await seams.exec(["scripts/fetch-deps.sh", "arm64"], { cwd: bundleDir });
   if (fetchDeps.exitCode !== 0) {
-    return { id: "dev-bundle", label: DEV_BUNDLE_LABEL, status: "error", detail: `fetch-deps.sh failed: ${(fetchDeps.stderr || fetchDeps.stdout).trim() || "no output"}` };
+    return errorLeg("dev-bundle", DEV_BUNDLE_LABEL, `fetch-deps.sh failed: ${execTail(fetchDeps)}`);
   }
   const build = await seams.exec(["rt-tray/build.sh", "dev"], { cwd: bundleDir });
-  if (build.exitCode !== 0) {
-    return { id: "dev-bundle", label: DEV_BUNDLE_LABEL, status: "error", detail: `build.sh dev failed: ${(build.stderr || build.stdout).trim() || "no output"}` };
+  if (build.exitCode !== 0) return errorLeg("dev-bundle", DEV_BUNDLE_LABEL, `build.sh dev failed: ${execTail(build)}`);
+
+  for (const pid of await pgrepPids(seams, DEV_APP_ANCHOR)) {
+    const kill = await seams.exec(["kill", String(pid)]);
+    if (kill.exitCode !== 0) return errorLeg("dev-bundle", DEV_BUNDLE_LABEL, `kill ${pid} failed: ${execTail(kill)}`);
+  }
+  if (!(await waitForNoPids(seams, DEV_APP_ANCHOR, 5, 500))) {
+    return errorLeg("dev-bundle", DEV_BUNDLE_LABEL, "the running dev app did not exit after kill");
   }
 
-  const before = await seams.exec(["pgrep", "-f", DEV_APP_PATH]);
-  const oldPid = before.stdout.trim().split("\n")[0] || null;
-  if (oldPid) await seams.exec(["kill", oldPid]);
+  // Never rebuilds the blessed bundle in place; replaceApp swaps it wholesale.
+  const replaceErr = await replaceApp(seams, `${bundleDir}/dist/mattstack-dev.app`, DEV_APP_PATH);
+  if (replaceErr) return errorLeg("dev-bundle", DEV_BUNDLE_LABEL, replaceErr);
 
-  // Never rebuilds the blessed bundle in place; this ditto replaces it wholesale.
-  await seams.exec(["ditto", `${bundleDir}/dist/mattstack-dev.app`, DEV_APP_PATH]);
-  await seams.exec(["open", DEV_APP_PATH]);
+  const open = await seams.exec(["open", DEV_APP_PATH]);
+  if (open.exitCode !== 0) return errorLeg("dev-bundle", DEV_BUNDLE_LABEL, `open failed: ${execTail(open)}`);
 
-  const after = await seams.exec(["pgrep", "-f", DEV_APP_PATH]);
-  const newPid = after.stdout.trim().split("\n")[0] || null;
-  if (!newPid || newPid === oldPid) {
-    return { id: "dev-bundle", label: DEV_BUNDLE_LABEL, status: "error", detail: "dev app did not relaunch with a fresh pid" };
-  }
-  return {
-    id: "dev-bundle",
-    label: DEV_BUNDLE_LABEL,
-    status: "ok",
-    detail: `${DEV_APP_PATH} rebuilt at ${ctx.sha.slice(0, 12)} and relaunched (pid ${newPid})`,
-  };
+  const pids = await pollForPids(seams, DEV_APP_ANCHOR, 5, 500);
+  if (pids.length === 0) return errorLeg("dev-bundle", DEV_BUNDLE_LABEL, "dev app did not relaunch with a fresh pid");
+
+  return okLeg(
+    "dev-bundle",
+    DEV_BUNDLE_LABEL,
+    `${DEV_APP_PATH} rebuilt at ${ctx.sha.slice(0, 12)} and relaunched (pid ${pids[0]})`,
+  );
 }
 
 async function runDaemonLeg(seams: UpdateMachineSeams, ctx: ReleaseContext): Promise<LegResult> {
   // The dev daemon serves other sessions; the announce must land before it restarts
   // out from under them, and a failed announce refuses the restart outright.
   const announced = await seams.announce(`update-machine: restarting the rt daemon for ${ctx.tag} (${ctx.sha.slice(0, 12)})`);
-  if (!announced) {
-    return { id: "daemon", label: DAEMON_LABEL, status: "aborted", detail: "chat announce failed; refusing to restart the daemon" };
-  }
+  if (!announced) return abortedLeg("daemon", DAEMON_LABEL, "chat announce failed; refusing to restart the daemon");
 
-  await seams.exec(["rt", "daemon", "restart"]);
+  const restart = await seams.exec(["rt", "daemon", "restart"]);
+  if (restart.exitCode !== 0) return errorLeg("daemon", DAEMON_LABEL, `rt daemon restart failed: ${execTail(restart)}`);
+
   const status = await seams.exec(["rt", "daemon", "status", "--json"]);
-  const commit = parseDaemonCommit(status.stdout);
-  const short = ctx.sha.slice(0, 12);
-  if (commit !== ctx.sha && commit !== short) {
-    return { id: "daemon", label: DAEMON_LABEL, status: "error", detail: `daemon reports commit ${commit ?? "unknown"}, expected ${short}` };
+  const sourceRev = parseDaemonSourceRev(status.stdout);
+  if (!sourceRev) return errorLeg("daemon", DAEMON_LABEL, "daemon reports no source rev (prod daemon?)");
+  if (!revMatches(sourceRev, ctx.sha)) {
+    return errorLeg("daemon", DAEMON_LABEL, `daemon reports source rev ${sourceRev}, expected it to prefix-match ${ctx.sha.slice(0, 12)}`);
   }
-  return { id: "daemon", label: DAEMON_LABEL, status: "ok", detail: `daemon restarted and reports ${ctx.tag} (${short})` };
+  return okLeg("daemon", DAEMON_LABEL, `daemon restarted and reports ${ctx.tag} (${sourceRev})`);
 }
 
 async function runServedSuiteLeg(seams: UpdateMachineSeams): Promise<{ result: LegResult; witness: RestartWitness | null }> {
   const branch = (await seams.exec(["git", "branch", "--show-current"], { cwd: seams.appsCheckoutPath })).stdout.trim();
   if (branch !== "main") {
     return {
-      result: {
-        id: "served-suite",
-        label: SERVED_SUITE_LABEL,
-        status: "aborted",
-        detail: `${seams.appsCheckoutPath} is on branch "${branch}", not main; refusing to touch a shared checkout`,
-      },
+      result: abortedLeg(
+        "served-suite",
+        SERVED_SUITE_LABEL,
+        `${seams.appsCheckoutPath} is on branch "${branch}", not main; refusing to touch a shared checkout`,
+      ),
       witness: null,
     };
   }
 
-  await seams.exec(["git", "pull"], { cwd: seams.appsCheckoutPath });
+  const pull = await seams.exec(["git", "pull"], { cwd: seams.appsCheckoutPath });
+  if (pull.exitCode !== 0) return { result: errorLeg("served-suite", SERVED_SUITE_LABEL, `git pull failed: ${execTail(pull)}`), witness: null };
 
-  const apps = await managedAppNames(seams);
+  const namesResult = await managedAppNames(seams);
+  if ("error" in namesResult) return { result: errorLeg("served-suite", SERVED_SUITE_LABEL, namesResult.error), witness: null };
+  const apps = namesResult.apps;
+
   const baselinePids = await snapshotPids(seams, apps);
   const witness: RestartWitness = { marker: seams.clock(), baselinePids };
-  await seams.exec(["deck", "restart", "--managed"]);
+
+  const restartAll = await seams.exec(["deck", "restart", "--managed"]);
+  if (restartAll.exitCode !== 0) {
+    return { result: errorLeg("served-suite", SERVED_SUITE_LABEL, `deck restart --managed failed: ${execTail(restartAll)}`), witness };
+  }
 
   let stragglers = await staleManagedApps(seams, apps, witness);
   if (stragglers.length > 0) {
-    for (const app of stragglers) await seams.exec(["deck", "restart", app]);
+    for (const app of stragglers) {
+      const r = await seams.exec(["deck", "restart", app]);
+      if (r.exitCode !== 0) {
+        return { result: errorLeg("served-suite", SERVED_SUITE_LABEL, `deck restart ${app} failed: ${execTail(r)}`), witness };
+      }
+    }
     stragglers = await staleManagedApps(seams, apps, witness);
     if (stragglers.length > 0) {
       return {
-        result: { id: "served-suite", label: SERVED_SUITE_LABEL, status: "error", detail: `pid did not cycle for: ${stragglers.join(", ")}` },
+        result: errorLeg("served-suite", SERVED_SUITE_LABEL, `pid did not cycle for: ${stragglers.join(", ")}`),
         witness,
       };
     }
   }
 
-  return { result: { id: "served-suite", label: SERVED_SUITE_LABEL, status: "ok", detail: "managed apps restarted and every pid cycled" }, witness };
+  return { result: okLeg("served-suite", SERVED_SUITE_LABEL, "managed apps restarted and every pid cycled"), witness };
 }
 
 async function runVerifyLeg(seams: UpdateMachineSeams, ctx: ReleaseContext, witness: RestartWitness | null): Promise<LegResult> {
   const problems: string[] = [];
-  const short = ctx.sha.slice(0, 12);
 
   const plist = await seams.exec(["defaults", "read", `${PROD_APP_PATH}/Contents/Info.plist`, "CFBundleShortVersionString"]);
   const prodVersion = plist.stdout.trim();
-  if (prodVersion !== ctx.ver) problems.push(`prod app is ${prodVersion || "unknown"}, expected ${ctx.ver}`);
+  if (plist.exitCode !== 0 || prodVersion !== ctx.ver) problems.push(`prod app is ${prodVersion || "unknown"}, expected ${ctx.ver}`);
 
-  const devPid = (await seams.exec(["pgrep", "-f", DEV_APP_PATH])).stdout.trim();
+  const devPid = (await pgrepPids(seams, DEV_APP_ANCHOR))[0];
   if (!devPid) problems.push("dev app has no running pid");
 
   const daemonStatus = await seams.exec(["rt", "daemon", "status", "--json"]);
-  const commit = parseDaemonCommit(daemonStatus.stdout);
-  if (commit !== ctx.sha && commit !== short) problems.push(`daemon reports commit ${commit ?? "unknown"}, expected ${short}`);
+  const sourceRev = parseDaemonSourceRev(daemonStatus.stdout);
+  if (!sourceRev) problems.push("daemon reports no source rev (prod daemon?)");
+  else if (!revMatches(sourceRev, ctx.sha)) problems.push(`daemon reports source rev ${sourceRev}, expected it to prefix-match ${ctx.sha.slice(0, 12)}`);
 
   const deckVersion = (await seams.exec(["deck", "--version"])).stdout.trim();
-  const pin = deckPinFromDepsLock(seams.readFile(`${seams.repoRoot}/rt-tray/deps.lock`));
-  if (pin && deckVersion !== pin) problems.push(`deck --version is ${deckVersion || "unknown"}, deps.lock pins ${pin}`);
+  const depsLockRaw = seams.readFile(`${seams.repoRoot}/rt-tray/deps.lock`);
+  const pin = deckPinFromDepsLock(depsLockRaw);
+  if (!pin) {
+    problems.push(depsLockRaw ? "rt-tray/deps.lock has no readable deck pin" : "rt-tray/deps.lock not readable (run from the rt checkout, or deps.lock unreadable)");
+  } else if (deckVersion !== pin) {
+    problems.push(`deck --version is ${deckVersion || "unknown"}, deps.lock pins ${pin}`);
+  }
 
   let staleNote = "";
   if (witness) {
-    const apps = await managedAppNames(seams);
-    const stale = await staleManagedApps(seams, apps, witness);
-    if (stale.length > 0) problems.push(`managed app pid predates the restart: ${stale.join(", ")}`);
+    const namesResult = await managedAppNames(seams);
+    if ("error" in namesResult) {
+      problems.push(namesResult.error);
+    } else {
+      const stale = await staleManagedApps(seams, namesResult.apps, witness);
+      if (stale.length > 0) problems.push(`managed app pid predates the restart: ${stale.join(", ")}`);
+    }
   } else {
     staleNote = " (no restart marker this run; managed-app freshness not checked)";
   }
 
-  if (problems.length > 0) {
-    return { id: "verify", label: VERIFY_LABEL, status: "error", detail: problems.join("; ") };
-  }
-  return {
-    id: "verify",
-    label: VERIFY_LABEL,
-    status: "ok",
-    detail: `prod ${ctx.ver}, dev pid ${devPid}, daemon ${short}, deck ${deckVersion} all current${staleNote}`,
-  };
-}
-
-function skipped(id: LegId, label: string): LegResult {
-  return { id, label, status: "skipped", detail: "declined at the confirmation prompt" };
+  if (problems.length > 0) return errorLeg("verify", VERIFY_LABEL, problems.join("; "));
+  return okLeg(
+    "verify",
+    VERIFY_LABEL,
+    `prod ${ctx.ver}, dev pid ${devPid}, daemon ${sourceRev}, deck ${deckVersion} all current${staleNote}`,
+  );
 }
 
 function describePlannedLeg(id: LegId, tag: string): string {
   switch (id) {
     case "prod-app":
-      return `download and sha256-verify the ${tag} dmg, then ditto it over ${PROD_APP_PATH} (never launched)`;
+      return `download and sha256-verify the ${tag} dmg, then move-aside-replace ${PROD_APP_PATH} (never launched)`;
     case "dev-bundle":
-      return `build the dev bundle at ${tag} in a scratch tree, ditto it over ${DEV_APP_PATH}, and relaunch it`;
+      return `build the dev bundle at ${tag} in a scratch tree, kill and wait out the running copy, move-aside-replace ${DEV_APP_PATH}, and relaunch it`;
     case "daemon":
-      return `announce in #${CHAT_ROOM}, then restart the rt daemon and confirm it reports ${tag}`;
+      return `announce in #${CHAT_ROOM}, then restart the rt daemon and confirm its source rev matches ${tag}`;
     case "served-suite":
       return "pull mattstack-apps (main only) and deck restart --managed, restarting stragglers by name";
     case "verify":
-      return "confirm prod version, dev pid, daemon commit, deck version, and every managed app's freshness";
+      return "confirm prod version, dev pid, daemon source rev, deck version, and every managed app's freshness";
   }
 }
 
@@ -378,13 +502,17 @@ async function gateLeg(seams: UpdateMachineSeams, yes: boolean | undefined, labe
 }
 
 export async function runUpdateMachine(seams: UpdateMachineSeams, options: UpdateMachineOptions = {}): Promise<UpdateMachineReport> {
+  if (options.plan && options.verifyOnly) {
+    throw new UserActionableError("update-machine-plan-verify-only", "--plan and --verify-only are mutually exclusive; pick one");
+  }
+
   const tag = await resolveTag(seams, options.tag);
   const ver = versionFromTag(tag);
 
   if (options.verifyOnly) {
     const sha = await resolveCommit(seams, tag);
     const result = await runVerifyLeg(seams, { tag, ver, sha }, null);
-    return { tag, legs: [result], ok: result.status === "ok" };
+    return { tag, legs: [result], haltedAfter: null, ok: result.status === "ok" };
   }
 
   if (options.plan) {
@@ -394,7 +522,7 @@ export async function runUpdateMachine(seams: UpdateMachineSeams, options: Updat
       status: "planned",
       detail: describePlannedLeg(id, tag),
     }));
-    return { tag, legs, ok: true };
+    return { tag, legs, haltedAfter: null, ok: true };
   }
 
   if (!options.yes && !seams.isTTY) {
@@ -407,27 +535,36 @@ export async function runUpdateMachine(seams: UpdateMachineSeams, options: Updat
   const sha = await resolveCommit(seams, tag);
   const ctx: ReleaseContext = { tag, ver, sha };
   const legs: LegResult[] = [];
+  let haltedAfter: string | null = null;
 
-  if (await gateLeg(seams, options.yes, PROD_APP_LABEL)) legs.push(await runProdAppLeg(seams, ctx));
-  else legs.push(skipped("prod-app", PROD_APP_LABEL));
-
-  if (await gateLeg(seams, options.yes, DEV_BUNDLE_LABEL)) legs.push(await runDevBundleLeg(seams, ctx));
-  else legs.push(skipped("dev-bundle", DEV_BUNDLE_LABEL));
-
-  if (await gateLeg(seams, options.yes, DAEMON_LABEL)) legs.push(await runDaemonLeg(seams, ctx));
-  else legs.push(skipped("daemon", DAEMON_LABEL));
-
-  let witness: RestartWitness | null = null;
-  if (await gateLeg(seams, options.yes, SERVED_SUITE_LABEL)) {
-    const { result, witness: w } = await runServedSuiteLeg(seams);
+  async function runGatedLeg(id: LegId, label: string, run: () => Promise<LegResult>): Promise<void> {
+    if (haltedAfter) {
+      legs.push(skippedLeg(id, label, `not run: halted after ${haltedAfter} failed`));
+      return;
+    }
+    if (!(await gateLeg(seams, options.yes, label))) {
+      legs.push(skippedLeg(id, label, "declined at the confirmation prompt"));
+      return;
+    }
+    const result = await run();
     legs.push(result);
-    witness = w;
-  } else {
-    legs.push(skipped("served-suite", SERVED_SUITE_LABEL));
+    if (result.status === "aborted" || result.status === "error") haltedAfter = label;
   }
 
+  await runGatedLeg("prod-app", PROD_APP_LABEL, () => runProdAppLeg(seams, ctx));
+  await runGatedLeg("dev-bundle", DEV_BUNDLE_LABEL, () => runDevBundleLeg(seams, ctx));
+  await runGatedLeg("daemon", DAEMON_LABEL, () => runDaemonLeg(seams, ctx));
+
+  let witness: RestartWitness | null = null;
+  await runGatedLeg("served-suite", SERVED_SUITE_LABEL, async () => {
+    const { result, witness: w } = await runServedSuiteLeg(seams);
+    witness = w;
+    return result;
+  });
+
+  // Read-only: always runs and reports, halt or no halt.
   legs.push(await runVerifyLeg(seams, ctx, witness));
 
   const ok = legs.every((l) => l.status === "ok" || l.status === "skipped");
-  return { tag, legs, ok };
+  return { tag, legs, haltedAfter, ok };
 }
