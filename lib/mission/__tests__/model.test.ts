@@ -257,7 +257,7 @@ describe("buildModel golden fixture handshake", () => {
         when: "2 minutes ago",
         undoable: true,
       },
-      action: baseAction({ kind: "pull", title: "Pull origin", meta: "3 commits behind", ahead: 3, behind: 2 }),
+      action: baseAction({ kind: "pull", title: "Pull origin", meta: "2 commits behind", ahead: 3, behind: 2 }),
     });
 
     expect(JSON.parse(JSON.stringify(model))).toEqual(fixture.model);
