@@ -19,6 +19,7 @@ import type { GitWorktreeBadge, RepoStatusRow, WorktreeTreeRow } from "../../pac
 import type { BranchGuardVerdict, checkBranchGuard } from "../branch-guard.ts";
 import type { DaemonEvent, DaemonSubscription, daemonQuery } from "../daemon-client.ts";
 import { getRemoteDefaultBranch } from "../git-ops.ts";
+import { repoLabel } from "../repo-label.ts";
 import { createRealProbes } from "../setup/probes.ts";
 import type { SessionIntent } from "../ui/protocol.ts";
 import type { SessionHandle } from "../ui/spawn.ts";
@@ -158,6 +159,8 @@ export class MissionDriver {
   private stagingDiff: StagingDiff | null = null;
   private action: ActionState = { kind: "fetch", title: "Fetch origin", meta: "Never fetched", ahead: 0, behind: 0 };
   private refreshingBadges = false;
+  /** Short sha of HEAD's tip, shown as current.branch on a detached checkout. */
+  private headShortSha = "";
 
   constructor(private readonly deps: MissionDeps, start: { repo: string; worktree: string }) {
     this.state = {
@@ -234,6 +237,7 @@ export class MissionDriver {
       stashes: this.stashCount,
       lastCommit: this.lastCommit,
       action: this.action,
+      headShortSha: this.headShortSha,
     });
   }
 
@@ -246,8 +250,9 @@ export class MissionDriver {
   }
 
   private currentBadge(): GitWorktreeBadge {
-    const badges = this.currentRepoBadges();
-    return badges.find((w) => w.worktree === this.state.currentWorktree) ?? badges[0] ?? EMPTY_GIT_BADGE;
+    // Never another worktree's badge: a wrong ahead/behind would derive a
+    // wrong action, so an unswept tree reads as empty until its sweep lands.
+    return this.currentRepoBadges().find((w) => w.worktree === this.state.currentWorktree) ?? EMPTY_GIT_BADGE;
   }
 
   private async guardBranch(branch: string): Promise<BranchGuardVerdict> {
@@ -280,6 +285,7 @@ export class MissionDriver {
     this.branches = branches;
     this.stashCount = stashes.length;
     const entry = log[0];
+    this.headShortSha = entry ? entry.sha.slice(0, 7) : "";
     this.lastCommit = entry
       ? { summary: entry.subject, when: entry.authorDate, undoable: (snapshot.ahead ?? 0) > 0 }
       : null;
@@ -317,6 +323,9 @@ export class MissionDriver {
   // it to persist (a refusal, a re-arm) sets it again below, after this.
   private async handle(intent: SessionIntent): Promise<void> {
     this.state.notice = "";
+    // An armed discard only survives an uninterrupted second d; anything
+    // else in between means the user moved on, so the next d re-arms.
+    if (intent.name !== "mission:discard") this.state.confirmDiscard = null;
     switch (intent.name) {
       case "mission:action":
         await this.handleAction();
@@ -569,9 +578,16 @@ export class MissionDriver {
 
   private async handleRepo(payload: RepoPayload | undefined): Promise<void> {
     if (!payload || typeof payload.repo !== "string") return;
+    const target = this.rows.find((r) => r.repo === payload.repo)?.worktrees[0];
+    if (!target) {
+      // Refuse rather than half-switch: a repo without a known worktree has
+      // no directory to point the git client at.
+      this.state.notice = `no known worktree for ${repoLabel(payload.repo)}`;
+      this.push();
+      return;
+    }
     this.state.currentRepo = payload.repo;
-    const row = this.rows.find((r) => r.repo === payload.repo);
-    if (row?.worktrees[0]) this.state.currentWorktree = row.worktrees[0].worktree;
+    this.state.currentWorktree = target.worktree;
     this.state.selectedPath = null;
     this.state.selections = new Map();
     await this.refresh();

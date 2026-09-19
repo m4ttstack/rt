@@ -108,6 +108,7 @@ function makeFakeClient(overrides: {
   stagingDiff?: (path: string) => Promise<StagingDiff>;
   undoLastCommit?: GitClient["undoLastCommit"];
   branches?: () => Promise<BranchInfo[]>;
+  log?: GitClient["log"];
 } = {}): GitClient & { calls: FakeClientCalls } {
   const calls: FakeClientCalls = { stagingDiff: [], stageSelection: [], discardSelection: [], checkoutBranch: [] };
   const client: GitClient = {
@@ -116,7 +117,7 @@ function makeFakeClient(overrides: {
     diffFile: async () => ({ path: "", kind: "text", hunks: [] }),
     branches: overrides.branches ?? (async () => []),
     tags: async () => [],
-    log: async () => [],
+    log: overrides.log ?? (async () => []),
     stashes: async () => [],
     stashPush: async () => ({ created: false }),
     stashApply: async () => {},
@@ -440,6 +441,126 @@ describe("MissionDriver: discard two-step confirm", () => {
 
     expect(client.calls.discardSelection).toHaveLength(0);
     expect((session.pushed.at(-1) as MissionModel).notice).toBe("press d again to discard");
+  });
+});
+
+describe("MissionDriver: discard disarm", () => {
+  test("any non-discard intent disarms an armed discard, so the next d re-arms instead of executing", async () => {
+    const client = makeFakeClient();
+    const times = [1_000, 2_000]; // both discards inside the 5s window
+    let call = 0;
+    const session = new FakeSession([
+      { t: "intent", name: "mission:discard", payload: { path: "a.txt", mode: "line", selIdx: 1 } },
+      { t: "intent", name: "mission:select", payload: { filter: "" } },
+      { t: "intent", name: "mission:discard", payload: { path: "a.txt", mode: "line", selIdx: 1 } },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({ session, client, now: () => new Date(times[call++]!) });
+
+    await new MissionDriver(deps, START).run();
+
+    expect(client.calls.discardSelection).toHaveLength(0);
+    expect((session.pushed.at(-1) as MissionModel).notice).toBe("press d again to discard");
+  });
+});
+
+describe("MissionDriver: badge resolution", () => {
+  test("a missing badge for the current worktree falls back to empty, never another worktree's badge", async () => {
+    const session = new FakeSession([{ t: "intent", name: "quit" }]);
+    let opened: MissionModel | null = null;
+    const deps = baseDeps({
+      session,
+      daemonQuery: async (cmd: string) =>
+        cmd === "worktree:list"
+          ? { ok: true, data: { trees: defaultTrees() } }
+          : { ok: true, data: { repos: [{ repo: "repo-tools", error: null, worktrees: [badge({ worktree: "/elsewhere", ahead: 9 })] }] } },
+    });
+    deps.openSession = async (view, model) => {
+      opened = model as MissionModel;
+      return session;
+    };
+
+    await new MissionDriver(deps, START).run();
+
+    // The empty badge has no upstream, so the action derives publish-branch;
+    // borrowing /elsewhere's badge (ahead 9, upstream set) would say push.
+    expect(opened!.action.kind).toBe("publish-branch");
+  });
+});
+
+describe("MissionDriver: detached HEAD", () => {
+  test("sends the short head sha as current.branch when the snapshot has no branch", async () => {
+    const client = makeFakeClient({
+      snapshot: async () => baseSnapshot({ branch: null, detached: true, upstream: null, ahead: null, behind: null }),
+      log: async () => [
+        {
+          sha: "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+          parents: [],
+          authorName: "Test",
+          authorEmail: "test@example.com",
+          authorDate: "2026-09-18T00:00:00Z",
+          subject: "detached tip",
+          body: "",
+        },
+      ],
+    });
+    const session = new FakeSession([{ t: "intent", name: "quit" }]);
+    let opened: MissionModel | null = null;
+    const deps = baseDeps({ session, client });
+    deps.openSession = async (view, model) => {
+      opened = model as MissionModel;
+      return session;
+    };
+
+    await new MissionDriver(deps, START).run();
+
+    expect(opened!.current.detached).toBe(true);
+    expect(opened!.current.branch).toBe("a1b2c3d");
+  });
+});
+
+describe("MissionDriver: repo switch", () => {
+  const twoRepoQuery = async (cmd: string) =>
+    cmd === "worktree:list"
+      ? { ok: true, data: { trees: defaultTrees() } }
+      : {
+          ok: true,
+          data: {
+            repos: [
+              { repo: "repo-tools", error: null, worktrees: [badge()] },
+              { repo: "other-repo", error: null, worktrees: [badge({ worktree: "/other/tree", branch: "dev" })] },
+              { repo: "bare-repo", error: null, worktrees: [] },
+            ],
+          },
+        };
+
+  test("switches to the target repo's first known worktree", async () => {
+    const session = new FakeSession([
+      { t: "intent", name: "mission:repo", payload: { repo: "other-repo" } },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({ session, daemonQuery: twoRepoQuery });
+
+    await new MissionDriver(deps, START).run();
+
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.current.repo).toBe("other-repo");
+    expect(last.current.worktree).toBe("/other/tree");
+  });
+
+  test("refuses a repo with no known worktree and does not half-switch", async () => {
+    const session = new FakeSession([
+      { t: "intent", name: "mission:repo", payload: { repo: "bare-repo" } },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({ session, daemonQuery: twoRepoQuery });
+
+    await new MissionDriver(deps, START).run();
+
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.notice).toBe("no known worktree for bare-repo");
+    expect(last.current.repo).toBe(START.repo);
+    expect(last.current.worktree).toBe(START.worktree);
   });
 });
 

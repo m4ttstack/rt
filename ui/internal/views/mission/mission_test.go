@@ -740,10 +740,10 @@ func TestMouseWheelOverKeybarRowDoesNotMoveCursor(t *testing.T) {
 // unexported constant directly.
 const sidebarWidthConst = 46
 
-// s5open opens the mission view against the shared model fixture (three
-// Changes rows, canCommit false) and waits for its first row to paint. Named
-// for the task that introduced the changes pane, to keep it distinct from
-// openMission's bespoke per-scenario models.
+// s5open opens the mission view against the shared session-model-mission
+// fixture (three Changes rows, one staged, canCommit true, a six-line diff)
+// and waits for its first row to paint; bespoke per-scenario models go
+// through openMission directly.
 func s5open(t *testing.T) *testutil.Session {
 	t.Helper()
 	return openMission(t, fixtureModelJSON(t, "session-model-mission.json"), "model.go")

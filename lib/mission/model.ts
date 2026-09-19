@@ -286,8 +286,10 @@ export function buildModel(input: {
   stashes: number;
   lastCommit: MissionLastCommit | null;
   action: ActionState;
+  /** HEAD's short sha; stands in for current.branch on a detached checkout. */
+  headShortSha?: string;
 }): MissionModel {
-  const { state, rows, snapshot, branches, guards, worktrees, stagingDiff, stashes, lastCommit, action } = input;
+  const { state, rows, snapshot, branches, guards, worktrees, stagingDiff, stashes, lastCommit, action, headShortSha } = input;
 
   const repos: MissionRepoRow[] = rows.map((row) => ({
     id: row.repo,
@@ -308,17 +310,22 @@ export function buildModel(input: {
 
   const branchRows: MissionBranchRow[] = branches.map((branch) => buildBranchRow(branch, guards));
 
-  const changes: MissionChangeRow[] = snapshot.files.map((file) => ({
+  const allChanges: MissionChangeRow[] = snapshot.files.map((file) => ({
     path: file.path,
     origPath: file.originalPath ?? "",
     status: toChangeStatus(file.kind),
     include: deriveInclude(file, state.selections.get(file.path)),
   }));
 
-  const changedTotal = changes.length;
-  const stagedTotal = changes.filter((change) => change.include !== "none").length;
+  // The filter narrows only the visible list; totals and the commit gate
+  // keep counting every change, or filtering would silently disable commit.
+  const filterText = state.filter.trim().toLowerCase();
+  const changes = filterText === "" ? allChanges : allChanges.filter((change) => change.path.toLowerCase().includes(filterText));
 
-  const selectedChange = state.selectedPath ? (changes.find((change) => change.path === state.selectedPath) ?? null) : null;
+  const changedTotal = allChanges.length;
+  const stagedTotal = allChanges.filter((change) => change.include !== "none").length;
+
+  const selectedChange = state.selectedPath ? (allChanges.find((change) => change.path === state.selectedPath) ?? null) : null;
   // Fallback seed mirrors the driver's currentSelection: only a fully staged
   // file reads all-selected; a file with unstaged content has, by
   // definition, none of its staging-diff lines in the index yet.
@@ -343,7 +350,7 @@ export function buildModel(input: {
     repoLabel: repoLabel(state.currentRepo),
     worktree: state.currentWorktree,
     worktreeName,
-    branch: snapshot.branch ?? "",
+    branch: snapshot.branch ?? (snapshot.detached ? (headShortSha ?? "") : ""),
     detached: snapshot.detached,
   };
 
@@ -359,7 +366,7 @@ export function buildModel(input: {
   const commit: MissionCommitModel = {
     summary: state.summary,
     description: state.description,
-    placeholder: commitPlaceholder(changes),
+    placeholder: commitPlaceholder(allChanges),
     amending: state.amending,
     buttonLabel: commitButtonLabel(state.amending, stagedTotal, current.branch),
     // The summary lives in the view (drafts never round-trip through the

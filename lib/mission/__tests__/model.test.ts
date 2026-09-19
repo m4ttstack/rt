@@ -365,6 +365,31 @@ describe("commit button label", () => {
   });
 });
 
+describe("changes filter", () => {
+  const files = [
+    changedFile({ path: "lib/mission/driver.ts", staged: true, unstaged: false }),
+    changedFile({ path: "ui/internal/views/mission/mission.go", staged: false, unstaged: true }),
+    changedFile({ path: "README.md", staged: false, unstaged: true }),
+  ];
+
+  test("narrows changes by case-insensitive substring of the path", () => {
+    const model = buildModel(baseInput({ state: { filter: "MISSION" }, snapshot: { files: [...files] } }));
+    expect(model.changes.map((change) => change.path)).toEqual([
+      "lib/mission/driver.ts",
+      "ui/internal/views/mission/mission.go",
+    ]);
+    expect(model.filter).toBe("MISSION");
+  });
+
+  test("a filter that matches nothing empties the list but keeps totals and the commit gate", () => {
+    const model = buildModel(baseInput({ state: { filter: "zzz" }, snapshot: { files: [...files] } }));
+    expect(model.changes).toEqual([]);
+    expect(model.changedTotal).toBe(3);
+    expect(model.stagedTotal).toBe(1);
+    expect(model.commit.canCommit).toBe(true);
+  });
+});
+
 describe("canCommit", () => {
   test("true whenever anything is staged, regardless of the driver-side summary", () => {
     const model = buildModel(
