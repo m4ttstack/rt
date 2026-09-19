@@ -53,7 +53,6 @@ export interface ReleaseData {
 
 const GH_REPO = "m4ttstack/rt";
 const RELEASE_WORKFLOW = "release.yml";
-const RUN_LIST_LIMIT = 50;
 const RUN_POLL_MAX_ATTEMPTS = 20;
 const RUN_POLL_INTERVAL_MS = 15_000;
 const LATEST_PROPAGATION_WINDOW_MS = 20 * 60 * 1000;
@@ -70,25 +69,30 @@ async function ghApi(seams: VerifySeams, path: string, jq?: string): Promise<str
   return r.stdout.trim();
 }
 
+/**
+ * `git describe --tags --abbrev=0` finds the nearest ancestor tag by commit
+ * graph, not the highest version, and does not filter by prefix; a nearer
+ * non-v tag would win over an older-but-real v* release. Listing and
+ * version-sorting the local v* tags directly answers "latest v* tag" instead
+ * of "nearest tag to HEAD".
+ */
 export async function resolveTag(seams: VerifySeams): Promise<{ tag: string | null; row: VerifyRow | null }> {
   try {
-    const r = await seams.exec(["git", "describe", "--tags", "--abbrev=0"], { cwd: seams.repoRoot });
+    const r = await seams.exec(["git", "tag", "--list", "v*", "--sort=-version:refname"], { cwd: seams.repoRoot });
     if (r.exitCode === 0) {
-      const tag = r.stdout.trim();
-      if (tag.startsWith("v")) {
-        return { tag, row: { id: "tag", label: "tag", status: "ok", detail: `resolved ${tag} via git describe --tags --abbrev=0` } };
-      }
+      const tag = r.stdout.split("\n").map((l) => l.trim()).find((l) => l.length > 0);
+      if (tag) return { tag, row: { id: "tag", label: "tag", status: "ok", detail: `resolved ${tag} as the latest local v* tag` } };
     }
   } catch {
     // fall through to the GitHub API
   }
   try {
     const tag = await ghApi(seams, `repos/${GH_REPO}/releases/latest`, ".tag_name");
-    if (tag) return { tag, row: { id: "tag", label: "tag", status: "ok", detail: `resolved ${tag} via the newest GitHub release (git describe unavailable)` } };
+    if (tag) return { tag, row: { id: "tag", label: "tag", status: "ok", detail: `resolved ${tag} via the newest GitHub release (no local v* tag found)` } };
   } catch (err) {
     return { tag: null, row: { id: "tag", label: "tag", status: "error", detail: `could not resolve a default tag: ${String((err as Error).message ?? err)}` } };
   }
-  return { tag: null, row: { id: "tag", label: "tag", status: "error", detail: "could not resolve a default tag: git describe and the GitHub API both found nothing" } };
+  return { tag: null, row: { id: "tag", label: "tag", status: "error", detail: "could not resolve a default tag: no local v* tag and the GitHub API found nothing" } };
 }
 
 interface FoundRun {
@@ -96,15 +100,18 @@ interface FoundRun {
   url: string;
 }
 
+/**
+ * Filters server-side by event and branch (the tag-push run's headBranch
+ * equals the tag) so an old release is found in one call instead of paging
+ * through `gh run list`'s recency-ordered results looking for it.
+ */
 async function findRun(seams: VerifySeams, tag: string): Promise<FoundRun | null> {
-  const r = await seams.exec(
-    ["gh", "run", "list", "--repo", GH_REPO, "--workflow", RELEASE_WORKFLOW, "--json", "databaseId,event,headBranch,url", "--limit", String(RUN_LIST_LIMIT)],
-    { timeoutMs: 30_000 },
-  );
-  if (r.exitCode !== 0) throw new Error(`gh run list failed: ${(r.stderr || r.stdout).trim()}`);
-  const runs = JSON.parse(r.stdout) as { databaseId: number; event: string; headBranch: string; url: string }[];
-  const match = runs.find((run) => run.event === "push" && run.headBranch === tag);
-  return match ? { id: match.databaseId, url: match.url } : null;
+  const path = `repos/${GH_REPO}/actions/workflows/${RELEASE_WORKFLOW}/runs?event=push&branch=${encodeURIComponent(tag)}&per_page=5`;
+  const r = await seams.exec(["gh", "api", path], { timeoutMs: 30_000 });
+  if (r.exitCode !== 0) throw new Error(`gh api ${path} failed: ${(r.stderr || r.stdout).trim()}`);
+  const parsed = JSON.parse(r.stdout) as { workflow_runs: { id: number; html_url: string }[] };
+  const run = parsed.workflow_runs[0];
+  return run ? { id: run.id, url: run.html_url } : null;
 }
 
 interface PollResult {
@@ -150,6 +157,11 @@ function runRowFromPoll(runId: number, url: string, poll: PollResult): VerifyRow
       id, label, status: "stale",
       detail: `run ${runId} completed with conclusion "${poll.conclusion}"; recovery: gh release delete <tag> (the git tag survives) then gh run rerun ${runId} --failed`,
     };
+  }
+  // Every attempt errored and none ever returned a real status: this is not
+  // "still running", it is "gh was unreachable the whole time".
+  if (poll.status === "unknown" && poll.pollErrors === poll.attempts) {
+    return { id, label, status: "error", detail: `could not reach gh to check run ${runId} in ${poll.attempts} attempt(s); rerun rt release verify to recheck` };
   }
   const errNote = poll.pollErrors > 0 ? ` (${poll.pollErrors} transient poll error(s) tolerated)` : "";
   return {
@@ -228,8 +240,17 @@ export async function checkLatest(seams: VerifySeams, tag: string, releaseData: 
   const required = requiredAssetNames(tag);
   const present = new Set((latest.assets ?? []).map((a) => a.name));
   const missing = required.filter((n) => !present.has(n));
-  if (latest.tag_name === tag && missing.length === 0) {
-    return { id, label, status: "ok", pinned: tag, current: latest.tag_name, detail: "resolves to the verified tag with all four assets" };
+
+  // The endpoint already resolves to the right tag: any remaining gap is a
+  // real missing-asset problem, never propagation lag, whatever the clock says.
+  if (latest.tag_name === tag) {
+    if (missing.length === 0) {
+      return { id, label, status: "ok", pinned: tag, current: latest.tag_name, detail: "resolves to the verified tag with all four assets" };
+    }
+    return {
+      id, label, status: "stale", pinned: tag, current: latest.tag_name,
+      detail: `resolves to the tag but is missing ${missing.join(", ")}`,
+    };
   }
 
   if (releaseData?.isDraft) {
@@ -248,10 +269,9 @@ export async function checkLatest(seams: VerifySeams, tag: string, releaseData: 
     };
   }
 
-  const missingNote = missing.length ? `; also missing ${missing.join(", ")}` : "";
   return {
     id, label, status: "stale", pinned: tag, current: latest.tag_name,
-    detail: `resolves to ${latest.tag_name}, not ${tag}, and the ~20m propagation window has passed${missingNote}`,
+    detail: `resolves to ${latest.tag_name}, not ${tag}, and the ~20m propagation window has passed`,
   };
 }
 

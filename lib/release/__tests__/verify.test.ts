@@ -52,19 +52,27 @@ describe("requiredAssetNames", () => {
 });
 
 describe("resolveTag", () => {
-  test("resolves via git describe when it finds a v* tag", async () => {
-    const s = seams({ exec: (argv) => (argv.join(" ").includes("describe") ? ok("v2.10.2\n") : fail("unexpected")) });
+  test("resolves via the latest local v* tag, version-sorted", async () => {
+    const s = seams({ exec: (argv) => (argv.join(" ").includes("tag --list") ? ok("v2.10.2\nv2.10.1\nv2.9.0\n") : fail("unexpected")) });
     const r = await resolveTag(s);
     expect(r.tag).toBe("v2.10.2");
     expect(r.row?.status).toBe("ok");
-    expect(r.row?.detail).toContain("git describe");
+    expect(r.row?.detail).toContain("local v* tag");
   });
 
-  test("falls back to the newest GitHub release when git describe fails", async () => {
+  test("prefers the local v* tag over anything git describe would report as nearest", async () => {
+    // git describe --tags --abbrev=0 would happily return a nearer non-v tag;
+    // resolveTag never calls it, so that ambiguity cannot leak in.
+    const s = seams({ exec: (argv) => (argv.join(" ").includes("tag --list") ? ok("v2.10.2\n") : fail("unexpected")) });
+    const r = await resolveTag(s);
+    expect(r.tag).toBe("v2.10.2");
+  });
+
+  test("falls back to the newest GitHub release when no local v* tag exists", async () => {
     const s = seams({
       exec: (argv) => {
         const cmd = argv.join(" ");
-        if (cmd.includes("describe")) return fail("no tags");
+        if (cmd.includes("tag --list")) return ok("");
         if (cmd.includes("releases/latest")) return ok("v2.10.2\n");
         return fail("unexpected");
       },
@@ -74,11 +82,11 @@ describe("resolveTag", () => {
     expect(r.row?.detail).toContain("newest GitHub release");
   });
 
-  test("falls back when git describe finds a non-v tag", async () => {
+  test("falls back when listing local tags itself fails", async () => {
     const s = seams({
       exec: (argv) => {
         const cmd = argv.join(" ");
-        if (cmd.includes("describe")) return ok("not-a-version\n");
+        if (cmd.includes("tag --list")) return fail("not a git repo");
         if (cmd.includes("releases/latest")) return ok("v2.10.2\n");
         return fail("unexpected");
       },
@@ -87,7 +95,7 @@ describe("resolveTag", () => {
     expect(r.tag).toBe("v2.10.2");
   });
 
-  test("errors when both git describe and the GitHub API fail", async () => {
+  test("errors when both local tag listing and the GitHub API fail", async () => {
     const s = seams({ exec: () => fail("nope") });
     const r = await resolveTag(s);
     expect(r.tag).toBeNull();
@@ -96,16 +104,17 @@ describe("resolveTag", () => {
 });
 
 describe("checkRun", () => {
-  const RUNS = JSON.stringify([
-    { databaseId: 111, event: "push", headBranch: "v2.10.2", url: "https://github.com/m4ttstack/rt/actions/runs/111" },
-    { databaseId: 222, event: "workflow_dispatch", headBranch: "main", url: "https://x/222" },
-  ]);
+  // findRun filters server-side (event=push&branch=<tag>) so it finds any
+  // tag's run in one call, not just one among the newest N.
+  const runsFor = (id: number, url: string) => JSON.stringify({ workflow_runs: [{ id, html_url: url }] });
+  const NO_RUNS = JSON.stringify({ workflow_runs: [] });
+  const FOUND = runsFor(111, "https://github.com/m4ttstack/rt/actions/runs/111");
 
   test("ok when the tag's run is completed and successful", async () => {
     const s = seams({
       exec: (argv) => {
         const cmd = argv.join(" ");
-        if (cmd.includes("run list")) return ok(RUNS);
+        if (cmd.includes("actions/workflows")) return ok(FOUND);
         if (cmd.includes("run view")) return ok(JSON.stringify({ status: "completed", conclusion: "success" }));
         return fail("unexpected");
       },
@@ -115,11 +124,29 @@ describe("checkRun", () => {
     expect(row.detail).toContain("111");
   });
 
+  test("filters the run lookup by the exact tag, not just the newest runs", async () => {
+    const s = seams({
+      exec: (argv) => {
+        const cmd = argv.join(" ");
+        if (cmd.includes("actions/workflows")) {
+          expect(cmd).toContain("event=push");
+          expect(cmd).toContain("branch=v0.1.0");
+          return ok(runsFor(999, "https://x/999"));
+        }
+        if (cmd.includes("run view")) return ok(JSON.stringify({ status: "completed", conclusion: "success" }));
+        return fail("unexpected");
+      },
+    });
+    const row = await checkRun(s, "v0.1.0", false);
+    expect(row.status).toBe("ok");
+    expect(row.detail).toContain("999");
+  });
+
   test("stale with a recovery hint when the run completed but failed", async () => {
     const s = seams({
       exec: (argv) => {
         const cmd = argv.join(" ");
-        if (cmd.includes("run list")) return ok(RUNS);
+        if (cmd.includes("actions/workflows")) return ok(FOUND);
         if (cmd.includes("run view")) return ok(JSON.stringify({ status: "completed", conclusion: "failure" }));
         return fail("unexpected");
       },
@@ -131,13 +158,13 @@ describe("checkRun", () => {
   });
 
   test("error when no push run matches the tag", async () => {
-    const s = seams({ exec: (argv) => (argv.join(" ").includes("run list") ? ok(RUNS) : fail("unexpected")) });
+    const s = seams({ exec: (argv) => (argv.join(" ").includes("actions/workflows") ? ok(NO_RUNS) : fail("unexpected")) });
     const row = await checkRun(s, "v9.9.9", false);
     expect(row.status).toBe("error");
     expect(row.detail).toContain("v9.9.9");
   });
 
-  test("error when gh run list itself fails", async () => {
+  test("error when the run lookup itself fails", async () => {
     const s = seams({ exec: () => fail("rate limited") });
     const row = await checkRun(s, "v2.10.2", false);
     expect(row.status).toBe("error");
@@ -148,7 +175,7 @@ describe("checkRun", () => {
     const s = seams({
       exec: (argv) => {
         const cmd = argv.join(" ");
-        if (cmd.includes("run list")) return ok(RUNS);
+        if (cmd.includes("actions/workflows")) return ok(FOUND);
         if (cmd.includes("run view")) {
           viewCalls++;
           if (viewCalls < 3) return fail("transient api error");
@@ -168,7 +195,7 @@ describe("checkRun", () => {
       sleep: async (ms) => { sleeps.push(ms); },
       exec: (argv) => {
         const cmd = argv.join(" ");
-        if (cmd.includes("run list")) return ok(RUNS);
+        if (cmd.includes("actions/workflows")) return ok(FOUND);
         if (cmd.includes("run view")) return ok(JSON.stringify({ status: "in_progress", conclusion: null }));
         return fail("unexpected");
       },
@@ -178,6 +205,21 @@ describe("checkRun", () => {
     expect(sleeps.length).toBeGreaterThan(0);
   });
 
+  test("error (not pending) when every poll attempt fails to reach gh", async () => {
+    const s = seams({
+      sleep: async () => {},
+      exec: (argv) => {
+        const cmd = argv.join(" ");
+        if (cmd.includes("actions/workflows")) return ok(FOUND);
+        if (cmd.includes("run view")) return fail("connection reset");
+        return fail("unexpected");
+      },
+    });
+    const row = await checkRun(s, "v2.10.2", false);
+    expect(row.status).toBe("error");
+    expect(row.detail).toContain("111");
+  });
+
   test("--no-wait takes a single snapshot with no sleeping", async () => {
     const sleeps: number[] = [];
     let viewCalls = 0;
@@ -185,7 +227,7 @@ describe("checkRun", () => {
       sleep: async (ms) => { sleeps.push(ms); },
       exec: (argv) => {
         const cmd = argv.join(" ");
-        if (cmd.includes("run list")) return ok(RUNS);
+        if (cmd.includes("actions/workflows")) return ok(FOUND);
         if (cmd.includes("run view")) { viewCalls++; return ok(JSON.stringify({ status: "in_progress", conclusion: null })); }
         return fail("unexpected");
       },
@@ -285,6 +327,18 @@ describe("checkLatest", () => {
     expect(row.detail).toContain("draft");
   });
 
+  test("stale with a missing-assets message when the tag already matches but an asset is still missing, even past the window", async () => {
+    const s = seams({
+      now: () => new Date("2026-09-18T22:00:00Z").getTime(),
+      fetchJson: () => Promise.resolve({ tag_name: "v2.10.2", assets: [{ name: "appcast.xml" }] }),
+    });
+    const row = await checkLatest(s, "v2.10.2", RELEASE);
+    expect(row.status).toBe("stale");
+    expect(row.detail).not.toContain("not v2.10.2");
+    expect(row.detail).toContain("missing");
+    expect(row.detail).toContain("mattstack-2.10.2.dmg");
+  });
+
   test("error when the endpoint fetch throws", async () => {
     const s = seams({ fetchJson: () => Promise.reject(new Error("network down")) });
     const row = await checkLatest(s, "v2.10.2", RELEASE);
@@ -293,16 +347,14 @@ describe("checkLatest", () => {
 });
 
 describe("runVerify", () => {
-  const RUNS = JSON.stringify([
-    { databaseId: 111, event: "push", headBranch: "v2.10.2", url: "https://github.com/m4ttstack/rt/actions/runs/111" },
-  ]);
+  const RUNS = JSON.stringify({ workflow_runs: [{ id: 111, html_url: "https://github.com/m4ttstack/rt/actions/runs/111" }] });
 
   function happyPathSeams(): VerifySeams {
     return seams({
       now: () => new Date("2026-09-18T21:08:00Z").getTime(),
       exec: (argv) => {
         const cmd = argv.join(" ");
-        if (cmd.includes("run list")) return ok(RUNS);
+        if (cmd.includes("actions/workflows")) return ok(RUNS);
         if (cmd.includes("run view")) return ok(JSON.stringify({ status: "completed", conclusion: "success" }));
         if (cmd.includes("git show")) return ok(RELEASE.body);
         if (cmd.includes("release view")) return ok(JSON.stringify(RELEASE));
@@ -328,11 +380,11 @@ describe("runVerify", () => {
 
   test("resolves the tag itself and adds a tag row when none is given", async () => {
     const s = happyPathSeams();
-    const withDescribe: VerifySeams = {
+    const withTagList: VerifySeams = {
       ...s,
-      exec: (argv, opts) => (argv.join(" ").includes("describe") ? ok("v2.10.2\n") : s.exec(argv, opts)),
+      exec: (argv, opts) => (argv.join(" ").includes("tag --list") ? ok("v2.10.2\n") : s.exec(argv, opts)),
     };
-    const report = await runVerify(withDescribe, {});
+    const report = await runVerify(withTagList, {});
     expect(report.tag).toBe("v2.10.2");
     expect(report.rows.find((r) => r.id === "tag")?.status).toBe("ok");
   });

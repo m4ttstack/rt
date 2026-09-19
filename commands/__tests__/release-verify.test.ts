@@ -18,9 +18,7 @@ const RELEASE = {
   publishedAt: "2026-09-18T21:07:55Z",
 };
 
-const RUNS = JSON.stringify([
-  { databaseId: 111, event: "push", headBranch: "v2.10.2", url: "https://github.com/m4ttstack/rt/actions/runs/111" },
-]);
+const RUNS = JSON.stringify({ workflow_runs: [{ id: 111, html_url: "https://github.com/m4ttstack/rt/actions/runs/111" }] });
 
 /** A seam set whose every layer verifies clean for v2.10.2. */
 function fakeSeams(overrides: Partial<VerifySeams> = {}): VerifySeams {
@@ -28,8 +26,8 @@ function fakeSeams(overrides: Partial<VerifySeams> = {}): VerifySeams {
     repoRoot: "/repo",
     exec: (argv) => {
       const cmd = argv.join(" ");
-      if (cmd.includes("describe")) return ok("v2.10.2\n");
-      if (cmd.includes("run list")) return ok(RUNS);
+      if (cmd.includes("tag --list")) return ok("v2.10.2\n");
+      if (cmd.includes("actions/workflows")) return ok(RUNS);
       if (cmd.includes("run view")) return ok(JSON.stringify({ status: "completed", conclusion: "success" }));
       if (cmd.includes("git show")) return ok(RELEASE.body);
       if (cmd.includes("release view")) return ok(JSON.stringify(RELEASE));
@@ -93,20 +91,20 @@ describe("rt release verify", () => {
     expect(exitCode).toBe(1);
   });
 
-  test("an explicit positional tag skips tag resolution (no git describe call)", async () => {
-    let describeCalled = false;
+  test("an explicit positional tag skips tag resolution (no local tag listing)", async () => {
+    let tagListCalled = false;
     const seams = fakeSeams({
       exec: (argv) => {
         const cmd = argv.join(" ");
-        if (cmd.includes("describe")) describeCalled = true;
+        if (cmd.includes("tag --list")) tagListCalled = true;
         return fakeSeams().exec(argv);
       },
     });
     await run(["v2.10.2", "--json"], seams);
-    expect(describeCalled).toBe(false);
+    expect(tagListCalled).toBe(false);
   });
 
-  test("omitting the tag resolves it via git describe", async () => {
+  test("omitting the tag resolves it via the latest local v* tag", async () => {
     const { logs } = await run(["--json"], fakeSeams());
     const body = JSON.parse(logs[0]!);
     expect(body.tag).toBe("v2.10.2");
