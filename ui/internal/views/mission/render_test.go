@@ -1098,6 +1098,58 @@ func TestRenderChangeRowRestPaintsBgBandFullWidth(t *testing.T) {
 	}
 }
 
+// ─── Nerd Font segment icons ───────────────────────────────────────────
+
+// TestTopBarSegmentsWearNerdFontOcticons pins the repo/worktree/branch
+// segments to their ratified octicons (docs/design/mission/README.md),
+// replacing the old checkbox-state glyphs; the checkbox family itself
+// (renderChangeRow, renderMasterRow) is untouched, so this only checks the
+// top bar.
+func TestTopBarSegmentsWearNerdFontOcticons(t *testing.T) {
+	m := pullModel()
+	repo := renderRepoSegment(m, sidebarWidth, false, false)
+	if !strings.Contains(ansi.Strip(repo), theme.GlyphRepo) {
+		t.Fatalf("repo segment missing its Nerd Font icon: %q", repo)
+	}
+	worktree := renderWorktreeSegment(m, 40, false, false)
+	if !strings.Contains(ansi.Strip(worktree), theme.GlyphWorktree) {
+		t.Fatalf("worktree segment missing its Nerd Font icon: %q", worktree)
+	}
+	branch := renderBranchSegment(Model{Current: Current{Branch: "main"}}, 40, false, false)
+	if !strings.Contains(ansi.Strip(branch), theme.GlyphBranch) {
+		t.Fatalf("branch segment missing its Nerd Font icon: %q", branch)
+	}
+}
+
+// TestRenderBranchSegmentDetachedUsesBranchGlyphNotCircle pins the
+// detached state's own half: it keeps its Peach treatment and "On <sha>"
+// value, but drops the old ○/● circle swap in favor of the same branch
+// octicon the normal state wears.
+func TestRenderBranchSegmentDetachedUsesBranchGlyphNotCircle(t *testing.T) {
+	out := renderBranchSegment(Model{Current: Current{Detached: true, Branch: "a1b2c3d"}}, 40, false, false)
+	stripped := ansi.Strip(out)
+	if !strings.Contains(stripped, theme.GlyphBranch) {
+		t.Fatalf("detached segment should still wear the branch octicon: %q", out)
+	}
+	if strings.Contains(stripped, "○") || strings.Contains(stripped, "●") {
+		t.Fatalf("detached segment must drop the old circle-glyph swap: %q", out)
+	}
+	if !strings.Contains(out, fgSGR(theme.Peach)) {
+		t.Fatalf("detached segment's icon should still wear Peach: %q", out)
+	}
+}
+
+// TestNerdFontIconsMeasureAsOneCell pins the PUA-codepoint width footgun:
+// go-runewidth must measure these as single cells or renderSegment's own
+// prefix-width padding math (topbar.go) silently drifts by one.
+func TestNerdFontIconsMeasureAsOneCell(t *testing.T) {
+	for _, g := range []string{theme.GlyphRepo, theme.GlyphWorktree, theme.GlyphBranch} {
+		if w := lipgloss.Width(g); w != 1 {
+			t.Fatalf("glyph %q should measure as 1 cell, got %d", g, w)
+		}
+	}
+}
+
 // TestRenderKeybarRestPaintsBgSubtleBandFullWidth pins the keybar band: its
 // own trailing pad (after "q quit," the last thing justify places) still
 // wears BgSubtle, not just the text ahead of it.

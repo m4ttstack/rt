@@ -83,7 +83,7 @@ func renderRepoSegment(m Model, width int, hovered, isOpen bool) string {
 		label = m.Current.Repo
 	}
 	return renderSegment(width, segmentSpec{
-		icon:        "◪",
+		icon:        theme.GlyphRepo,
 		iconColor:   theme.Dimmer,
 		top:         "Current Repository",
 		topColor:    theme.Dimmer,
@@ -100,7 +100,7 @@ func renderWorktreeSegment(m Model, width int, hovered, isOpen bool) string {
 		name = m.Current.Worktree
 	}
 	return renderSegment(width, segmentSpec{
-		icon:        "◉",
+		icon:        theme.GlyphWorktree,
 		iconColor:   theme.Dimmer,
 		top:         "Current Worktree",
 		topColor:    theme.Dimmer,
@@ -117,7 +117,7 @@ func renderWorktreeSegment(m Model, width int, hovered, isOpen bool) string {
 func renderBranchSegment(m Model, width int, hovered, isOpen bool) string {
 	if m.Current.Detached {
 		return renderSegment(width, segmentSpec{
-			icon:        "○",
+			icon:        theme.GlyphBranch,
 			iconColor:   theme.Peach,
 			top:         "Detached HEAD",
 			topColor:    theme.Dimmer,
@@ -127,7 +127,7 @@ func renderBranchSegment(m Model, width int, hovered, isOpen bool) string {
 		}, hovered, isOpen)
 	}
 	return renderSegment(width, segmentSpec{
-		icon:        "●",
+		icon:        theme.GlyphBranch,
 		iconColor:   theme.Dimmer,
 		top:         "Current Branch",
 		topColor:    theme.Dimmer,
