@@ -626,12 +626,18 @@ func TestMouseClickHunkRowEmitsHunkStage(t *testing.T) {
 	s.Wait()
 }
 
-// TestMouseClickUndoChipEmitsUndoIntent clicks the undo strip row (absolute
-// y=21: tabs(2)+filter(3)+master(1)+changes(3)+stash(1)+rule(1)+summary(3)+
-// description(4)+button(1)=19 body rows, topH(2)+19=21).
+// TestMouseClickUndoChipEmitsUndoIntent clicks the undo strip row. The
+// stash/rule/commit-box/undo block now docks to the sidebar's bottom edge
+// (mission.go's sidebarBlocks/renderSidebar), so its row depends on the
+// pane height, not just the row count above it: PTY is 30x100, topbar
+// height 2, keybar 1, no notice, so bodyH=27; the top section (tabs 2 +
+// filter 3 + master 1 + 3 changes rows = 9) and the docked block (stash 1 +
+// rule 1 + summary 3 + description 4 + button 1 + undo 1 = 11) leave a
+// 7-row filler gap between them; undo sits at bodyY 9+7+1+1+3+4+1=26, frame
+// y = topH(2)+26 = 28.
 func TestMouseClickUndoChipEmitsUndoIntent(t *testing.T) {
 	s := s5open(t)
-	s.Type(sgrClick(0, 5, 21))
+	s.Type(sgrClick(0, 5, 28))
 	l, ok := s.ReadLine(2 * time.Second)
 	if !ok || !strings.Contains(l, `"name":"mission:undo"`) {
 		t.Fatalf("undo chip click intent: %q", l)

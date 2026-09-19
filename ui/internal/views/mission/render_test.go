@@ -941,13 +941,28 @@ func TestMouseClickFilterRowFocusesFilter(t *testing.T) {
 	}
 }
 
+// commitButtonY returns the commit button's absolute frame row via the SAME
+// layout() arithmetic View paints with (mission.go's sidebarBlocks/
+// sidebarHit split), so a click test never hardcodes a y that drifts when
+// the sidebar's bottom-dock gap resizes.
+func commitButtonY(m *Mission) int {
+	l := m.layout()
+	off := 1 // the rule above the commit box
+	if m.amendLocal {
+		off++
+	}
+	off += 3 // summary box
+	off += 4 // description box
+	return l.topH + l.sidebarTopH + l.sidebarFillerH + off
+}
+
 // TestMouseClickCommitButtonGuardsOnCanCommit mirrors the keyboard's own
 // ctrl-enter guard (mission_test.go's TestCtrlEnterDoesNotEmitWithEmptySummary):
 // with CanCommit false, no local amend, and no summary, a button click must
 // not emit.
 func TestMouseClickCommitButtonGuardsOnCanCommit(t *testing.T) {
 	m := newMouseTestMission() // ButtonLabel set, CanCommit left false
-	_, cmd := m.Update(tea.MouseClickMsg{X: 20, Y: 19, Button: tea.MouseLeft})
+	_, cmd := m.Update(tea.MouseClickMsg{X: 20, Y: commitButtonY(m), Button: tea.MouseLeft})
 	if cmd != nil {
 		t.Fatal("a commit-button click with the gate closed must not emit")
 	}
@@ -959,7 +974,7 @@ func TestMouseClickCommitButtonEmitsWhenEnabled(t *testing.T) {
 	m := newMouseTestMission()
 	m.model.Commit.CanCommit = true
 	m.summaryInput.SetValue("msg")
-	_, cmd := m.Update(tea.MouseClickMsg{X: 20, Y: 19, Button: tea.MouseLeft})
+	_, cmd := m.Update(tea.MouseClickMsg{X: 20, Y: commitButtonY(m), Button: tea.MouseLeft})
 	if cmd == nil {
 		t.Fatal("a commit-button click with the gate open must emit")
 	}
@@ -967,13 +982,12 @@ func TestMouseClickCommitButtonEmitsWhenEnabled(t *testing.T) {
 
 // TestMouseClickCommitButtonEnabledByLocalAmend: a local amend toggle opens
 // the same click path even while the wire CanCommit is false (nothing
-// staged), since amending re-uses the last commit's own changes. The amend
-// banner adds a sidebar row, so the button sits one row lower.
+// staged), since amending re-uses the last commit's own changes.
 func TestMouseClickCommitButtonEnabledByLocalAmend(t *testing.T) {
 	m := newMouseTestMission()
 	m.amendLocal = true
 	m.summaryInput.SetValue("msg")
-	_, cmd := m.Update(tea.MouseClickMsg{X: 20, Y: 20, Button: tea.MouseLeft})
+	_, cmd := m.Update(tea.MouseClickMsg{X: 20, Y: commitButtonY(m), Button: tea.MouseLeft})
 	if cmd == nil {
 		t.Fatal("a commit-button click while locally amending must emit")
 	}
@@ -991,6 +1005,86 @@ func TestCommitButtonRendersDisabledUntilSummaryTyped(t *testing.T) {
 	m.summaryInput.SetValue("msg")
 	if !strings.Contains(m.View().Content, bgSGR(theme.Pink)) {
 		t.Fatalf("typed-summary frame should paint the enabled Pink button")
+	}
+}
+
+// ─── sidebar bottom-dock ────────────────────────────────────────────────
+
+// TestCommitButtonDocksToSidebarBottomWithShortList pins the Main.png/
+// EmptyState.png contract: with a short Changes list, the stash/rule/
+// commit-box/undo block sits at the BOTTOM of the sidebar column, not
+// floating directly under the list, so the commit button's row is derived
+// from the pane height (layout()'s own sidebarFillerH) rather than the row
+// count.
+func TestCommitButtonDocksToSidebarBottomWithShortList(t *testing.T) {
+	m := New(nil)
+	m.width, m.height = 100, 30
+	m.model = mouseFixtureModel() // 3 changes rows, no stash, no undo
+	m.summaryInput.SetValue("msg")
+
+	l := m.layout()
+	if l.sidebarFillerH == 0 {
+		t.Fatalf("setup: expected a nonzero filler gap for a 3-row list at height 30, got layout=%+v", l)
+	}
+	wantY := l.topH + l.sidebarTopH + l.sidebarFillerH + 1 /*rule*/ + 3 /*summary box*/ + 4 /*description box*/
+
+	lines := strings.Split(ansi.Strip(m.View().Content), "\n")
+	if wantY >= len(lines) || !strings.Contains(lines[wantY], "Commit 3 files to main") {
+		got := ""
+		if wantY < len(lines) {
+			got = lines[wantY]
+		}
+		t.Fatalf("commit button should dock at layout-derived row %d, got %q", wantY, got)
+	}
+}
+
+// TestSidebarFillerRowsAreBgFilledAndBlank pins the gap itself: every row
+// between the changes list and the docked block is blank (no stray content)
+// and still wears the Bg fill Change 1 established, not a bare terminal
+// default.
+func TestSidebarFillerRowsAreBgFilledAndBlank(t *testing.T) {
+	m := New(nil)
+	m.width, m.height = 100, 30
+	m.model = mouseFixtureModel()
+
+	l := m.layout()
+	rawLines := strings.Split(m.View().Content, "\n")
+	plainLines := strings.Split(ansi.Strip(m.View().Content), "\n")
+	for y := l.topH + l.sidebarTopH; y < l.topH+l.sidebarTopH+l.sidebarFillerH; y++ {
+		sidebarPlain := plainLines[y][:min(len(plainLines[y]), sidebarWidth)]
+		if strings.TrimSpace(sidebarPlain) != "" {
+			t.Fatalf("filler row %d should be blank in the sidebar column, got %q", y, sidebarPlain)
+		}
+		if !strings.Contains(rawLines[y], bgSGR(theme.Bg)) {
+			t.Fatalf("filler row %d should still wear the Bg fill: %q", y, rawLines[y])
+		}
+	}
+}
+
+// TestCommitButtonDocksToSidebarBottomWithZeroChanges covers
+// EmptyState.png: with no changes at all the docked block still sits at
+// the pane's bottom, not immediately under the (empty) list.
+func TestCommitButtonDocksToSidebarBottomWithZeroChanges(t *testing.T) {
+	m := New(nil)
+	m.width, m.height = 100, 30
+	m.model = Model{
+		Current: Current{Repo: "repo-tools", Branch: "main"},
+		Commit:  CommitModel{ButtonLabel: "Commit 0 files to main"},
+	}
+
+	l := m.layout()
+	if l.sidebarFillerH == 0 {
+		t.Fatalf("setup: expected a nonzero filler gap with zero changes, got layout=%+v", l)
+	}
+	wantY := l.topH + l.sidebarTopH + l.sidebarFillerH + 1 + 3 + 4
+
+	lines := strings.Split(ansi.Strip(m.View().Content), "\n")
+	if wantY >= len(lines) || !strings.Contains(lines[wantY], "Commit 0 files to main") {
+		got := ""
+		if wantY < len(lines) {
+			got = lines[wantY]
+		}
+		t.Fatalf("commit button should dock at layout-derived row %d, got %q", wantY, got)
 	}
 }
 
