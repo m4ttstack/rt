@@ -42,6 +42,9 @@ shadows, no radii).
 - `Mouse.png`: every mouse affordance by zone; hover always previews.
 - `DiffStates.png`: expand up / down / all handles, binary and oversized
   messages.
+- `EmptyState.png`: the clean-worktree state (no GitHub Desktop card
+  clone): zeroed sidebar, disabled commit button, and a centered
+  "No local changes" card in the diff pane with key hints.
 
 ## Ratified deviations from GitHub Desktop
 
@@ -70,10 +73,14 @@ Deviations the terminal build keeps deliberately; the boards show the
 pre-ratification drawing:
 
 - Top-bar segment icons sit on the value row (a glyph cell before the
-  value) instead of the boards' icon centered across both rows; the state
-  glyph family is the circle set (◉ current, ○ unchecked, ◪ mixed) rather
-  than the boards' squares, matching rt's picker language. The master row
-  uses the same ◪ for its mixed state.
+  value) instead of the boards' icon centered across both rows. The
+  checkbox state family is the circle set (◉ current, ○ unchecked, ◪
+  mixed) rather than the boards' squares, matching rt's picker language;
+  the master row uses the same ◪ for its mixed state.
+- Segment icons are Nerd Font glyphs (repository U+F401, worktree
+  U+F402, branch U+F418), ratified 2026-09-18: rt runs on the owner's
+  patched-font terminals, and the octicon set matches GitHub Desktop's
+  iconography. An unpatched font shows fallback boxes there; accepted.
 - The undo strip is one line ("Committed <when> · <summary>" clipped to the
   sidebar, Undo chip right) instead of the boards' two-line strip.
 - The main keybar lists the built action set (adds "enter diff" and
