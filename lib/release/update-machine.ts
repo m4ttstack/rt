@@ -101,8 +101,8 @@ function versionFromTag(tag: string): string {
 
 async function resolveTag(seams: UpdateMachineSeams, explicit?: string): Promise<string> {
   if (explicit) {
-    if (!/^v\d/.test(explicit)) {
-      throw new UserActionableError("update-machine-bad-tag", `--tag must look like a released tag (v<major>...), got "${explicit}"`);
+    if (!/^v\d+\.\d+\.\d+(-[A-Za-z0-9.]+)?$/.test(explicit)) {
+      throw new UserActionableError("update-machine-bad-tag", `--tag must look like a released tag (v<major>.<minor>.<patch>), got "${explicit}"`);
     }
     return explicit;
   }
@@ -135,12 +135,14 @@ function parseShaSums(content: string, filename: string): string | null {
 
 /** hdiutil attach -plist emits an XML plist, not JSON; -quiet (dropped here) closes
  *  stdout entirely, so this is the only way to learn the real mount point. The
- *  mountable entity's dict carries dev-entry immediately before mount-point, so
- *  the first match of each is the same entity (a non-mountable partition-scheme
- *  sibling has no mount-point key at all). */
+ *  mount point belongs to the mountable partition's own entity; the whole-disk
+ *  identifier used as a detach fallback is a DIFFERENT, non-mountable entity
+ *  (content-hint GUID_partition_scheme) that a real attach lists last, after
+ *  every partition entity, so the last dev-entry in the plist is it. */
 function parseAttachPlist(xml: string): { mountPoint: string | null; device: string | null } {
   const mountPoint = xml.match(/<key>mount-point<\/key>\s*<string>([^<]+)<\/string>/)?.[1] ?? null;
-  const device = xml.match(/<key>dev-entry<\/key>\s*<string>([^<]+)<\/string>/)?.[1] ?? null;
+  const devEntries = [...xml.matchAll(/<key>dev-entry<\/key>\s*<string>([^<]+)<\/string>/g)].map((m) => m[1]!);
+  const device = devEntries.at(-1) ?? null;
   return { mountPoint, device };
 }
 
@@ -221,20 +223,39 @@ async function waitForNoPids(seams: UpdateMachineSeams, pattern: string, attempt
  * and extras can break the code-signature seal. Move the current bundle aside,
  * ditto the new one into its place, and only delete the aside copy once that
  * succeeds; a failed ditto restores it so the machine is never left without
- * a working app. Returns null on success, or an error detail on failure.
+ * a working app.
+ *
+ * POSIX `mv src dst` moves src INSIDE dst instead of renaming it when dst
+ * already exists as a directory, so every mv here is preceded by a checked
+ * `rm -rf` of its own destination: a stale aside from a prior failed run
+ * would otherwise break the first move, and a partially-ditto'd destPath
+ * would break the rollback move the same way. Returns null on success, or
+ * an error detail on failure.
  */
 async function replaceApp(seams: UpdateMachineSeams, sourcePath: string, destPath: string): Promise<string | null> {
   const asidePath = `${destPath}.update-machine-old`;
+
+  const clearAside = await seams.exec(["rm", "-rf", asidePath]);
+  if (clearAside.exitCode !== 0) return `could not clear a stale aside copy at ${asidePath}: ${execTail(clearAside)}`;
+
   const mv = await seams.exec(["mv", destPath, asidePath]);
   if (mv.exitCode !== 0) return `could not move the current app aside: ${execTail(mv)}`;
 
   const ditto = await seams.exec(["ditto", sourcePath, destPath]);
   if (ditto.exitCode !== 0) {
-    await seams.exec(["mv", asidePath, destPath]);
+    const clearDest = await seams.exec(["rm", "-rf", destPath]);
+    if (clearDest.exitCode !== 0) {
+      return `ditto failed and the broken app at ${destPath} could not be cleared to roll back (the previous app is at ${asidePath}): ${execTail(clearDest)}`;
+    }
+    const rollback = await seams.exec(["mv", asidePath, destPath]);
+    if (rollback.exitCode !== 0) {
+      return `ditto failed and rollback failed (the previous app is at ${asidePath}): ${execTail(rollback)}`;
+    }
     return `ditto failed, restored the previous app: ${execTail(ditto)}`;
   }
 
-  await seams.exec(["rm", "-rf", asidePath]);
+  const cleanup = await seams.exec(["rm", "-rf", asidePath]);
+  if (cleanup.exitCode !== 0) return `replaced ${destPath}, but could not remove the aside copy at ${asidePath}: ${execTail(cleanup)}`;
   return null;
 }
 
@@ -281,6 +302,18 @@ async function staleManagedApps(seams: UpdateMachineSeams, apps: string[], witne
   const stale: string[] = [];
   for (const app of apps) {
     if (!(await appIsFresh(seams, app, witness))) stale.push(app);
+  }
+  return stale;
+}
+
+/** `deck restart` kicks a relaunch off; it is not a readiness guarantee. A single
+ *  immediate check catches an app still mid-relaunch as stale, so this polls
+ *  briefly before giving up on it. */
+async function waitForFreshApps(seams: UpdateMachineSeams, apps: string[], witness: RestartWitness, attempts: number, delayMs: number): Promise<string[]> {
+  let stale = await staleManagedApps(seams, apps, witness);
+  for (let i = 1; i < attempts && stale.length > 0; i++) {
+    await seams.sleep(delayMs);
+    stale = await staleManagedApps(seams, apps, witness);
   }
   return stale;
 }
@@ -347,7 +380,11 @@ async function runDevBundleLeg(seams: UpdateMachineSeams, ctx: ReleaseContext): 
 
   for (const pid of await pgrepPids(seams, DEV_APP_ANCHOR)) {
     const kill = await seams.exec(["kill", String(pid)]);
-    if (kill.exitCode !== 0) return errorLeg("dev-bundle", DEV_BUNDLE_LABEL, `kill ${pid} failed: ${execTail(kill)}`);
+    if (kill.exitCode !== 0) {
+      // A process that already exited between pgrep and kill (ESRCH) is not a failure.
+      const stillRunning = (await pgrepPids(seams, DEV_APP_ANCHOR)).includes(pid);
+      if (stillRunning) return errorLeg("dev-bundle", DEV_BUNDLE_LABEL, `kill ${pid} failed: ${execTail(kill)}`);
+    }
   }
   if (!(await waitForNoPids(seams, DEV_APP_ANCHOR, 5, 500))) {
     return errorLeg("dev-bundle", DEV_BUNDLE_LABEL, "the running dev app did not exit after kill");
@@ -416,7 +453,7 @@ async function runServedSuiteLeg(seams: UpdateMachineSeams): Promise<{ result: L
     return { result: errorLeg("served-suite", SERVED_SUITE_LABEL, `deck restart --managed failed: ${execTail(restartAll)}`), witness };
   }
 
-  let stragglers = await staleManagedApps(seams, apps, witness);
+  let stragglers = await waitForFreshApps(seams, apps, witness, 5, 500);
   if (stragglers.length > 0) {
     for (const app of stragglers) {
       const r = await seams.exec(["deck", "restart", app]);
@@ -424,7 +461,7 @@ async function runServedSuiteLeg(seams: UpdateMachineSeams): Promise<{ result: L
         return { result: errorLeg("served-suite", SERVED_SUITE_LABEL, `deck restart ${app} failed: ${execTail(r)}`), witness };
       }
     }
-    stragglers = await staleManagedApps(seams, apps, witness);
+    stragglers = await waitForFreshApps(seams, apps, witness, 5, 500);
     if (stragglers.length > 0) {
       return {
         result: errorLeg("served-suite", SERVED_SUITE_LABEL, `pid did not cycle for: ${stragglers.join(", ")}`),

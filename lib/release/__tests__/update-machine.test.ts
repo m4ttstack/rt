@@ -18,6 +18,8 @@ interface Options {
   fetchDepsExit?: number;
   buildExit?: number;
   killExit?: number;
+  /** kill exits nonzero AND the pid is already gone (a genuine race with the process's own exit), not a real failure. */
+  killRaceExit?: number;
   openExit?: number;
   shaMismatch?: boolean;
   attachExit?: number;
@@ -33,26 +35,36 @@ interface Options {
   depsLockMissing?: boolean;
   downloadThrows?: boolean;
   /** `fresh`: pid actually cycles on the broad `deck restart --managed`. `recovers` (default true): a targeted `deck restart <name>` retry cycles the pid when the broad restart didn't. */
-  managed?: { name: string; fresh: boolean; recovers?: boolean; psUnparseable?: boolean; psTime?: "before" | "after" }[];
+  managed?: { name: string; fresh: boolean; recovers?: boolean; psUnparseable?: boolean; psTime?: "before" | "after"; settleAfterChecks?: number }[];
   daemonSourceRev?: string | null;
   deckVersion?: string;
   prodVersion?: string;
   devPidsBefore?: number[];
   devPidsAfter?: number[];
+  /** Fails one exact command string. `failExactOccurrence` (1-indexed) targets a repeat of the same command; omit to fail every occurrence. */
+  failExactCmd?: string;
+  failExactCode?: number;
+  failExactOccurrence?: number;
 }
 
 /** Real `launchctl print` has no start-time field: top-level state/pid, tab-indented, nested sub-sections repeat their own "state = active" lines. */
-const OLD_PS_TIME = "Thu Sep 18 09:00:00 2026";
-const NEW_PS_TIME = "Fri Sep 18 13:00:00 2026";
+// Bare `ps -o lstart=` output carries no zone, so new Date(str) parses it in the
+// runner's local timezone. Deriving these from START (rather than hand-writing a
+// date string) keeps "before"/"after" the marker true in every timezone.
+const OLD_PS_TIME = new Date(START.getTime() - 24 * 60 * 60 * 1000).toString();
+const NEW_PS_TIME = new Date(START.getTime() + 24 * 60 * 60 * 1000).toString();
 
-/** The real `hdiutil attach ... -plist` shape (captured against a real dmg this session created with `hdiutil create`, per the danger rules -- never against a mattstack dmg). `-quiet` closes stdout entirely; only `-plist` gives a parseable mount point. */
+/** The real hdiutil attach -plist shape, captured against a throwaway dmg
+ *  (never a mattstack artifact): the mountable partition entity (its own
+ *  dev-entry, and a mount-point only when actually mounted) listed before the
+ *  whole-disk GUID_partition_scheme entity (never mountable, no mount-point). */
 function attachPlistXml(mountPoint: string | null): string {
-  const mountEntry = mountPoint
-    ? `\t\t<dict>\n\t\t\t<key>content-hint</key>\n\t\t\t<string>Apple_HFS</string>\n\t\t\t<key>dev-entry</key>\n\t\t\t<string>/dev/disk14s1</string>\n\t\t\t<key>mount-point</key>\n\t\t\t<string>${mountPoint}</string>\n\t\t</dict>\n`
-    : "";
+  const mountKey = mountPoint ? `\t\t\t<key>mount-point</key>\n\t\t\t<string>${mountPoint}</string>\n` : "";
   return (
     `<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0">\n<dict>\n\t<key>system-entities</key>\n\t<array>\n` +
-    mountEntry +
+    `\t\t<dict>\n\t\t\t<key>content-hint</key>\n\t\t\t<string>Apple_HFS</string>\n\t\t\t<key>dev-entry</key>\n\t\t\t<string>/dev/disk14s1</string>\n` +
+    mountKey +
+    `\t\t</dict>\n` +
     `\t\t<dict>\n\t\t\t<key>content-hint</key>\n\t\t\t<string>GUID_partition_scheme</string>\n\t\t\t<key>dev-entry</key>\n\t\t\t<string>/dev/disk14</string>\n\t\t\t<key>potentially-mountable</key>\n\t\t\t<false/>\n\t\t</dict>\n\t</array>\n</dict>\n</plist>\n`
   );
 }
@@ -69,6 +81,8 @@ function fakeSeams(opts: Options = {}): { seams: UpdateMachineSeams; calls: stri
   const pids = new Map(managed.map((m, i) => [m.name, 1000 + i]));
   let devPids = opts.devPidsBefore ?? [111];
   const devPidsAfter = opts.devPidsAfter ?? [222];
+  let failExactSeen = 0;
+  const psChecks = new Map<string, number>();
 
   const seams: UpdateMachineSeams = {
     repoRoot: "/repo",
@@ -79,6 +93,10 @@ function fakeSeams(opts: Options = {}): { seams: UpdateMachineSeams; calls: stri
     exec: (argv) => {
       const cmd = argv.join(" ");
       calls.push(cmd);
+      if (opts.failExactCmd && cmd === opts.failExactCmd) {
+        failExactSeen++;
+        if (!opts.failExactOccurrence || failExactSeen === opts.failExactOccurrence) return fail("injected failure", opts.failExactCode ?? 1);
+      }
       if (cmd.startsWith("gh api repos/m4ttstack/rt/releases/latest")) return ok(`${TAG}\n`);
       if (cmd.startsWith("gh api repos/m4ttstack/rt/commits/")) return ok(`${RELEASED_SHA}\n`);
       if (cmd.startsWith("shasum")) return ok(`${opts.shaMismatch ? "deadbeef" : "cafefeed"}  /work/mattstack-2.11.0.dmg\n`);
@@ -103,8 +121,12 @@ function fakeSeams(opts: Options = {}): { seams: UpdateMachineSeams; calls: stri
       if (cmd.startsWith("rt-tray/build.sh")) return ok("", opts.buildExit ?? 0);
       if (cmd.startsWith("pgrep")) return ok(devPids.length ? `${devPids.join("\n")}\n` : "");
       if (cmd.startsWith("kill")) {
-        if (opts.killExit) return fail("kill failed", opts.killExit);
         const pid = Number(argv[1]);
+        if (opts.killExit) return fail("kill failed", opts.killExit);
+        if (opts.killRaceExit) {
+          devPids = devPids.filter((p) => p !== pid);
+          return fail("No such process", opts.killRaceExit);
+        }
         devPids = devPids.filter((p) => p !== pid);
         return ok("");
       }
@@ -142,6 +164,11 @@ function fakeSeams(opts: Options = {}): { seams: UpdateMachineSeams; calls: stri
         const name = managed.find((m) => pids.get(m.name) === Number(argv[2]))?.name;
         const row = managed.find((m) => m.name === name);
         if (row?.psUnparseable) return ok("garbage\n");
+        if (row?.settleAfterChecks) {
+          const seen = (psChecks.get(name!) ?? 0) + 1;
+          psChecks.set(name!, seen);
+          return ok(`${seen >= row.settleAfterChecks ? NEW_PS_TIME : OLD_PS_TIME}\n`);
+        }
         return ok(`${row?.psTime === "after" ? NEW_PS_TIME : OLD_PS_TIME}\n`);
       }
       if (cmd === "deck --version") return ok(`${opts.deckVersion ?? "3.4.0"}\n`);
@@ -255,7 +282,7 @@ describe("rt release update-machine", () => {
     expect(report.legs[0]!.status).toBe("ok");
   });
 
-  describe("pinned decision A: halt-on-failure", () => {
+  describe("halt-on-failure", () => {
     test("a sha256 mismatch (aborted) halts every later state-changing leg, but the verify sweep still runs and the report names the halt", async () => {
       const { seams, calls } = fakeSeams({ shaMismatch: true });
       const report = await runUpdateMachine(seams, { yes: true });
@@ -280,7 +307,7 @@ describe("rt release update-machine", () => {
     });
   });
 
-  describe("blocker 1: hdiutil attach", () => {
+  describe("hdiutil attach", () => {
     test("prod app: parses the real -plist output (no -quiet) and detaches the mount point after a successful replace", async () => {
       const { seams, calls } = fakeSeams();
       const report = await runUpdateMachine(seams, { yes: true });
@@ -312,7 +339,47 @@ describe("rt release update-machine", () => {
     });
   });
 
-  describe("finding 7: replace semantics (move-aside + ditto + rollback)", () => {
+  describe("replace semantics (move-aside + ditto + rollback)", () => {
+    test("prod app: a stale aside from a prior failed run is cleared before the initial move, not merged into", async () => {
+      const { seams, calls } = fakeSeams();
+      await runUpdateMachine(seams, { yes: true });
+      const clearIdx = calls.indexOf("rm -rf /Applications/mattstack.app.update-machine-old");
+      const mvIdx = calls.indexOf("mv /Applications/mattstack.app /Applications/mattstack.app.update-machine-old");
+      expect(clearIdx).toBeGreaterThanOrEqual(0);
+      expect(mvIdx).toBeGreaterThan(clearIdx);
+    });
+
+    test("prod app: a failed clear of a stale aside fails the leg before ever moving the current app", async () => {
+      const { seams, calls } = fakeSeams({ failExactCmd: "rm -rf /Applications/mattstack.app.update-machine-old" });
+      const report = await runUpdateMachine(seams, { yes: true });
+      const leg = report.legs.find((l) => l.id === "prod-app")!;
+      expect(leg.status).toBe("error");
+      expect(leg.detail).toContain("stale aside");
+      expect(calls.some((c) => c.startsWith("mv"))).toBe(false);
+    });
+
+    test("prod app: a ditto failure clears the broken destination before rolling back, instead of nesting into it", async () => {
+      const { seams, calls } = fakeSeams({ prodDittoExit: 1 });
+      await runUpdateMachine(seams, { yes: true });
+      const dittoIdx = calls.findIndex((c) => c.startsWith("ditto") && c.includes("mattstack.app"));
+      const clearDestIdx = calls.indexOf("rm -rf /Applications/mattstack.app");
+      const rollbackIdx = calls.indexOf("mv /Applications/mattstack.app.update-machine-old /Applications/mattstack.app");
+      expect(dittoIdx).toBeGreaterThanOrEqual(0);
+      expect(clearDestIdx).toBeGreaterThan(dittoIdx);
+      expect(rollbackIdx).toBeGreaterThan(clearDestIdx);
+    });
+
+    test("prod app: a failed cleanup of the aside copy after a successful replace still fails the leg", async () => {
+      const { seams } = fakeSeams({
+        failExactCmd: "rm -rf /Applications/mattstack.app.update-machine-old",
+        failExactOccurrence: 2,
+      });
+      const report = await runUpdateMachine(seams, { yes: true });
+      const leg = report.legs.find((l) => l.id === "prod-app")!;
+      expect(leg.status).toBe("error");
+      expect(leg.detail).toContain("aside copy");
+    });
+
     test("prod app: a failed mv-aside fails the leg without ever ditto-ing, and still detaches", async () => {
       const { seams, calls } = fakeSeams({ prodMvExit: 1 });
       const report = await runUpdateMachine(seams, { yes: true });
@@ -342,7 +409,7 @@ describe("rt release update-machine", () => {
     });
   });
 
-  test("finding 10: a thrown download (transient 404, no timeout) is caught into an error leg, not an uncaught crash", async () => {
+  test("a thrown download (transient 404, no timeout) is caught into an error leg, not an uncaught crash", async () => {
     const { seams } = fakeSeams({ downloadThrows: true });
     const report = await runUpdateMachine(seams, { yes: true });
     const leg = report.legs.find((l) => l.id === "prod-app")!;
@@ -356,7 +423,7 @@ describe("rt release update-machine", () => {
     expect(calls.some((c) => c.startsWith("open") && c.includes("mattstack.app") && !c.includes("mattstack-dev.app"))).toBe(false);
   });
 
-  describe("finding 4: dev app process handling", () => {
+  describe("dev app process handling", () => {
     test("kills every matching pid, waits for exit, and relaunches with a fresh pid", async () => {
       const { seams, calls } = fakeSeams({ devPidsBefore: [111, 222], devPidsAfter: [333] });
       const report = await runUpdateMachine(seams, { yes: true });
@@ -375,6 +442,13 @@ describe("rt release update-machine", () => {
       expect(leg.detail).toContain("kill");
       expect(calls.some((c) => c.startsWith("ditto") && c.includes("mattstack-dev.app"))).toBe(false);
     });
+
+    test("a kill that races the process's own exit (ESRCH) is tolerated, not an error", async () => {
+      const { seams } = fakeSeams({ killRaceExit: 1 });
+      const report = await runUpdateMachine(seams, { yes: true });
+      const leg = report.legs.find((l) => l.id === "dev-bundle")!;
+      expect(leg.status).toBe("ok");
+    });
   });
 
   test("dev bundle: build failure surfaces as an error leg without opening the app", async () => {
@@ -385,7 +459,7 @@ describe("rt release update-machine", () => {
     expect(calls.some((c) => c.startsWith("open") && c.includes("mattstack-dev.app"))).toBe(false);
   });
 
-  describe("blocker 3: mutating exec exit codes", () => {
+  describe("mutating exec exit codes", () => {
     const cases: { label: string; opt: keyof Options; legId: string }[] = [
       { label: "dev git clone", opt: "cloneExit", legId: "dev-bundle" },
       { label: "dev git checkout", opt: "checkoutExit", legId: "dev-bundle" },
@@ -412,7 +486,7 @@ describe("rt release update-machine", () => {
     });
   });
 
-  describe("blocker 2: daemon source rev", () => {
+  describe("daemon source rev", () => {
     test("reads data.identity.sourceRev, not a fictional top-level .commit field", async () => {
       const { seams } = fakeSeams({ daemonSourceRev: RELEASED_SHORT });
       const report = await runUpdateMachine(seams, { yes: true });
@@ -429,7 +503,7 @@ describe("rt release update-machine", () => {
       expect(leg.detail).toContain("no source rev");
     });
 
-    test("pinned decision D: mutual-prefix compare matches either abbreviation direction", async () => {
+    test("mutual-prefix compare matches either abbreviation direction", async () => {
       // Direction A: sourceRev (git rev-parse --short) is a prefix of the full target sha.
       const short = fakeSeams({ daemonSourceRev: RELEASED_SHA.slice(0, 8) }).seams;
       expect((await runUpdateMachine(short, { yes: true })).legs.find((l) => l.id === "daemon")!.status).toBe("ok");
@@ -471,6 +545,17 @@ describe("rt release update-machine", () => {
     expect(calls).not.toContain("deck restart board");
   });
 
+  test("served suite: polls for freshness instead of failing an app that is still mid-relaunch", async () => {
+    const { seams, calls } = fakeSeams({
+      managed: [{ name: "chat", fresh: false, recovers: false, settleAfterChecks: 3 }],
+    });
+    const report = await runUpdateMachine(seams, { yes: true });
+    const leg = report.legs.find((l) => l.id === "served-suite")!;
+    expect(leg.status).toBe("ok");
+    // It only needed time to come up, never a targeted restart.
+    expect(calls.some((c) => c.startsWith("deck restart ") && c !== "deck restart --managed")).toBe(false);
+  });
+
   test("served suite: still-stale stragglers after a retry fail the leg", async () => {
     const { seams } = fakeSeams({
       managed: [{ name: "console", fresh: false, recovers: false }],
@@ -481,7 +566,7 @@ describe("rt release update-machine", () => {
     expect(leg.detail).toContain("console");
   });
 
-  describe("finding 9: ps-lstart freshness, both directions", () => {
+  describe("ps-lstart freshness, both directions", () => {
     test("an unparseable ps start time counts as stale, never a silent pass", async () => {
       const { seams } = fakeSeams({
         managed: [{ name: "console", fresh: false, recovers: false, psUnparseable: true }],
@@ -492,7 +577,7 @@ describe("rt release update-machine", () => {
       expect(leg.detail).toContain("console");
     });
 
-    test("a same pid whose start time postdates the marker reads FRESH (mutating parsePsStartTime to null must fail this)", async () => {
+    test("a same pid whose start time postdates the marker reads fresh", async () => {
       const { seams } = fakeSeams({
         managed: [{ name: "chat", fresh: false, recovers: false, psTime: "after" }],
       });
@@ -512,7 +597,7 @@ describe("rt release update-machine", () => {
     expect(leg.status).toBe("ok");
   });
 
-  describe("finding 5: deck list --json fails closed", () => {
+  describe("deck list --json fails closed", () => {
     test("served suite: a nonzero deck list --json exit fails the leg instead of reporting every pid cycled", async () => {
       const { seams } = fakeSeams({ deckListExit: 1 });
       const report = await runUpdateMachine(seams, { yes: true });
@@ -540,7 +625,7 @@ describe("rt release update-machine", () => {
     });
   });
 
-  describe("finding 6: deps.lock missing is an error, never a silent skip", () => {
+  describe("a missing deps.lock is an error, never a silent skip", () => {
     test("verify leg: an unreadable deps.lock is reported, not skipped", async () => {
       const { seams } = fakeSeams({ depsLockMissing: true });
       const report = await runUpdateMachine(seams, { verifyOnly: true });
@@ -568,13 +653,19 @@ describe("rt release update-machine", () => {
     expect(calls.some((c) => c.includes("releases/latest"))).toBe(false);
   });
 
-  test("nit 17: a malformed --tag is refused before it ever reaches a URL or path", async () => {
+  test("a malformed --tag is refused before it ever reaches a URL or path", async () => {
     const { seams, calls } = fakeSeams();
     await expect(runUpdateMachine(seams, { yes: true, tag: "latest" })).rejects.toThrow(UserActionableError);
     expect(calls.some((c) => c.includes("latest"))).toBe(false);
   });
 
-  describe("nit 18: resolveTag/resolveCommit exit codes", () => {
+  test("a --tag shape that could break out of a URL or path segment is refused", async () => {
+    const { seams, calls } = fakeSeams();
+    await expect(runUpdateMachine(seams, { yes: true, tag: "v1.0.0/../../etc" })).rejects.toThrow(UserActionableError);
+    expect(calls.some((c) => c.includes("etc"))).toBe(false);
+  });
+
+  describe("resolveTag and resolveCommit exit codes", () => {
     test("a failed gh api releases/latest call raises a UserActionableError, not a bare crash", async () => {
       const { seams } = fakeSeams();
       seams.exec = wrapExecFailing(seams.exec, "releases/latest");
