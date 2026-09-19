@@ -282,36 +282,37 @@ left as-is or reduced to a pointer here.
    release from `RELEASE_NOTES.md`, attaches the artifacts, and installs from
    the zip in a clean room.
 
-10. **Verify the publish.** Find the run (`gh run list --workflow=release.yml`)
-   and watch it to completion. Do not trust a bare `gh run watch
-   --exit-status`: it exits nonzero on transient API errors while the run
-   is still in_progress (a false FAILED, seen live on v2.10.0). Poll
-   `gh run view <run-id> --json status,conclusion` in a loop that
-   tolerates a failed poll and acts only on `completed/<conclusion>`.
-   Then confirm with `gh release view <tag>`: the body is your
-   `RELEASE_NOTES.md` (not GitHub's auto-generated notes), and
-   `mattstack-<ver>.dmg`, `mattstack-<ver>.zip`, `appcast.xml`, and
-   `SHA256SUMS` are all attached. The workflow asserts those four itself
-   before publishing, so a missing one fails the run rather than shipping
-   a partial release. If the run genuinely failed, the known flake is
-   asset-upload 500s on the large files: first recovery is `gh release
-   delete <tag>` (the git tag survives) plus `gh run rerun --failed`; the
-   hand-completion recipe (zip re-derive, appcast re-sign, draft flip)
-   lives in `~/.claude/skills/mattstack-release/SKILL.md`. Anything else,
-   report rather than papering over.
+10. **Verify the publish: run `rt release verify <tag>`.** One read-only
+   command (`--json` for the agent envelope) performs every check this step
+   used to run by hand: it finds the `release.yml` run for the tag and polls
+   it to completion tolerating transient API errors (never a bare `gh run
+   watch --exit-status`, which exits nonzero on a false FAILED while the run
+   is still in_progress, seen live on v2.10.0), confirms the published body
+   equals the committed `RELEASE_NOTES.md`, confirms all four assets
+   (`mattstack-<ver>.dmg`, `mattstack-<ver>.zip`, `appcast.xml`,
+   `SHA256SUMS`) are attached, confirms the release is neither a draft nor a
+   prerelease, and confirms `https://api.github.com/repos/m4ttstack/rt/releases/latest`
+   resolves to the tag with the same four assets. Exit 0 means the release
+   is genuinely live; it prints "still propagating" rather than failing when
+   a row is only waiting on that endpoint's cache. It never runs a recovery
+   itself, only names one:
 
-   Assets and body are not the whole verification: the release action creates
-   the release as a DRAFT and flips it public last, so a run that dies
-   mid-upload leaves a draft that `gh release view` renders exactly like a
-   published release while the public API and the mattstack.dev download
-   button keep serving the previous tag. Confirm
-   `gh release view <tag> --json isDraft,isPrerelease` shows both false, and
-   that `https://api.github.com/repos/m4ttstack/rt/releases/latest` resolves
-   to the new tag with all four assets. That endpoint caches and can lag
-   up to ~20 minutes behind the flip: poll it, and never declare the
-   publish failed inside that window. Completing a failed run's assets by
-   hand does not publish the draft: `gh release edit <tag> --draft=false`
-   is the missing flip.
+   - **Failed run** (the known flake is asset-upload 500s on the large
+     files): `gh release delete <tag>` (the git tag survives) plus
+     `gh run rerun <run-id> --failed`.
+   - **Draft left behind** (the release action creates the release as a
+     DRAFT and flips it public last, so a run that dies mid-upload leaves a
+     draft that `gh release view` renders exactly like a published release
+     while the public API and the mattstack.dev download button keep
+     serving the previous tag): `gh release edit <tag> --draft=false`.
+     Completing a failed run's assets by hand does not publish the draft;
+     that flip is the missing step.
+   - **Missing assets**: the hand-completion recipe (zip re-derive, appcast
+     re-sign, draft flip) lives in `~/.claude/skills/mattstack-release/SKILL.md`.
+
+   `releases/latest` caches and can lag up to ~20 minutes behind the flip;
+   re-run the verb rather than declaring the publish failed inside that
+   window. Anything else, report rather than papering over.
 
 11. **Deploy rt.cool.** Run `bash scripts/deploy-docs.sh` (builds the site, deploys
    to Cloudflare Pages via wrangler). Needs wrangler auth (`wrangler login` or
