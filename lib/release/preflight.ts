@@ -1,0 +1,425 @@
+/**
+ * rt release preflight — the release's mechanical checks (rt:release skill
+ * steps 1-2c) as one read-only report: git/tag state, picker conformance,
+ * per-layer pin freshness across every vendored surface, catalog pin drift,
+ * extension currency, rt-client npm-vs-source parity, and the gate (fast vs
+ * full) the pending diff implies.
+ *
+ * Read-only by contract: the catalog check re-resolves refs with
+ * `git ls-remote` itself because `marketplace.sh --refresh` rewrites
+ * marketplace.json in place (its --dry-run flag gates only the publish path).
+ */
+import { join } from "path";
+import type { RunResult } from "../subprocess.ts";
+
+export interface DepsRow {
+  name: string;
+  version: string;
+  url: string;
+  repo?: string;
+  subdir?: string;
+}
+
+export type RowStatus = "ok" | "stale" | "error";
+
+export interface CheckRow {
+  id: string;
+  label: string;
+  status: RowStatus;
+  pinned?: string;
+  current?: string;
+  detail?: string;
+}
+
+export interface GateImplication {
+  path: "fast" | "full";
+  reason: string;
+}
+
+export interface PreflightReport {
+  tag: string | null;
+  commitsSinceTag: number | null;
+  gate: GateImplication | null;
+  rows: CheckRow[];
+  staleCount: number;
+  errorCount: number;
+  clean: boolean;
+}
+
+export interface PreflightSeams {
+  repoRoot: string;
+  exec(argv: [string, ...string[]], opts?: { cwd?: string; timeoutMs?: number }): Promise<RunResult>;
+  fetchJson(url: string): Promise<unknown>;
+  readFile(path: string): string | null;
+  violations(): { path: string }[];
+}
+
+/** Rows deck merely serves; a pin-only diff limited to these keeps the fast path (user-ratified 2026-09-18). */
+const SERVE_ONLY_ROWS = new Set(["board", "chat", "console", "gitq"]);
+
+/** Standalone app rows live in their own repos; fast-browser's deps.lock url is npm, so its repo is declared here. */
+const STANDALONE_REPOS: Record<string, string> = {
+  gitq: "m4ttstack/gitq",
+  "fast-browser": "m4ttstack/fast-browser",
+};
+
+const EXTENSION_LOCK_REPO = "m4ttstack/fast-browser";
+const EXTENSION_FORK_REPO = "m4ttheweric/playwright";
+const EXTENSION_TAG_PREFIX = "fast-browser-v";
+
+export function normalizeVersion(tag: string): string {
+  return tag.trim().replace(/^.*?v?(\d+\.\d+)/, "$1").replace(/^v/, "") || tag.trim();
+}
+
+export function pinnedTagFromUrl(url: string): string | null {
+  const m = url.match(/\/releases\/download\/([^/]+)\//);
+  return m ? m[1]! : null;
+}
+
+export function classifyRows(rows: DepsRow[]): { apps: DepsRow[]; standalone: DepsRow[]; tools: DepsRow[] } {
+  const apps: DepsRow[] = [];
+  const standalone: DepsRow[] = [];
+  const tools: DepsRow[] = [];
+  for (const r of rows) {
+    if (r.repo === "m4ttstack/apps" && r.subdir) apps.push(r);
+    else if (r.name in STANDALONE_REPOS) standalone.push(r);
+    else tools.push(r);
+  }
+  return { apps, standalone, tools };
+}
+
+export type ToolUpstream =
+  | { kind: "github"; repo: string }
+  | { kind: "node-lts" }
+  | { kind: "npm"; pkg: string }
+  | { kind: "gitlab"; project: string };
+
+export function upstreamForToolRow(row: DepsRow): ToolUpstream | null {
+  const gh = row.url.match(/^https:\/\/github\.com\/([^/]+\/[^/]+)\/releases\/download\//);
+  if (gh) return { kind: "github", repo: gh[1]! };
+  if (row.url.startsWith("https://nodejs.org/dist/")) return { kind: "node-lts" };
+  const npm = row.url.match(/^https:\/\/registry\.npmjs\.org\/(.+?)\/-\//);
+  if (npm) return { kind: "npm", pkg: npm[1]! };
+  const gl = row.url.match(/^https:\/\/gitlab\.com\/api\/v4\/projects\/([^/]+)\//);
+  if (gl) return { kind: "gitlab", project: gl[1]! };
+  return null;
+}
+
+function readDepsRows(seams: PreflightSeams): DepsRow[] {
+  const raw = seams.readFile(join(seams.repoRoot, "rt-tray", "deps.lock"));
+  if (!raw) throw new Error("rt-tray/deps.lock not readable — is this an rt checkout?");
+  return (JSON.parse(raw) as { tools: DepsRow[] }).tools;
+}
+
+async function git(seams: PreflightSeams, args: string[]): Promise<string> {
+  const r = await seams.exec(["git", ...args] as [string, ...string[]], { cwd: seams.repoRoot });
+  if (r.exitCode !== 0) throw new Error(`git ${args[0]} failed: ${(r.stderr || r.stdout).trim()}`);
+  return r.stdout;
+}
+
+async function ghApi(seams: PreflightSeams, path: string, jq?: string): Promise<string> {
+  const argv: [string, ...string[]] = jq ? ["gh", "api", path, "--jq", jq] : ["gh", "api", path];
+  const r = await seams.exec(argv, { timeoutMs: 30_000 });
+  if (r.exitCode !== 0) throw new Error(`gh api ${path} failed: ${(r.stderr || r.stdout).trim()}`);
+  return r.stdout.trim();
+}
+
+export async function checkGitState(
+  seams: PreflightSeams,
+): Promise<{ row: CheckRow; tag: string | null; commitsSinceTag: number | null }> {
+  try {
+    const branch = (await git(seams, ["branch", "--show-current"])).trim();
+    const porcelain = (await git(seams, ["status", "--porcelain"])).trim();
+    const tag = (await git(seams, ["describe", "--tags", "--abbrev=0"])).trim();
+    const count = Number((await git(seams, ["rev-list", `${tag}..HEAD`, "--count"])).trim());
+
+    const problems: string[] = [];
+    if (branch !== "main") problems.push(`on branch ${branch}, not main`);
+    if (porcelain.length > 0) problems.push("working tree dirty");
+
+    const row: CheckRow = {
+      id: "git",
+      label: "git state",
+      status: problems.length ? "stale" : "ok",
+      detail: problems.length ? problems.join("; ") : `${count} commit(s) since ${tag}`,
+    };
+    return { row, tag, commitsSinceTag: count };
+  } catch (err) {
+    return {
+      row: { id: "git", label: "git state", status: "error", detail: String((err as Error).message ?? err) },
+      tag: null,
+      commitsSinceTag: null,
+    };
+  }
+}
+
+export function checkPicker(seams: PreflightSeams): CheckRow {
+  try {
+    const v = seams.violations();
+    if (v.length === 0) return { id: "picker", label: "picker:check", status: "ok", detail: "every required-positional leaf declares omitBehavior" };
+    return { id: "picker", label: "picker:check", status: "stale", detail: `undeclared omitBehavior: ${v.map((x) => x.path).join(", ")}` };
+  } catch (err) {
+    return { id: "picker", label: "picker:check", status: "error", detail: String((err as Error).message ?? err) };
+  }
+}
+
+/** The paths a pin-only release may touch besides the pins themselves. */
+const FAST_PATH_FILES = new Set(["rt-tray/deps.lock", "RELEASE_NOTES.md"]);
+
+export async function checkGate(seams: PreflightSeams, tag: string): Promise<GateImplication> {
+  try {
+    const files = (await git(seams, ["diff", "--name-only", `${tag}..HEAD`])).split("\n").map((f) => f.trim()).filter(Boolean);
+    if (files.length === 0) return { path: "full", reason: "no changes since the tag" };
+
+    const outside = files.filter((f) => !FAST_PATH_FILES.has(f) && !f.startsWith("website/"));
+    if (outside.length > 0) return { path: "full", reason: `changes outside the pin allowlist: ${outside.slice(0, 5).join(", ")}` };
+    if (!files.includes("rt-tray/deps.lock")) return { path: "full", reason: "no deps.lock change to fast-path" };
+
+    const oldRaw = await git(seams, ["show", `${tag}:rt-tray/deps.lock`]);
+    const oldVers = new Map((JSON.parse(oldRaw) as { tools: DepsRow[] }).tools.map((r) => [r.name, r.version]));
+    const changed = readDepsRows(seams).filter((r) => oldVers.get(r.name) !== r.version).map((r) => r.name);
+    const gated = changed.filter((name) => !SERVE_ONLY_ROWS.has(name));
+    if (gated.length > 0) return { path: "full", reason: `full-gate row(s) changed: ${gated.join(", ")}` };
+    if (changed.length === 0) return { path: "full", reason: "deps.lock changed but no row version moved" };
+    return { path: "fast", reason: `serve-only rows changed: ${changed.join(", ")}` };
+  } catch (err) {
+    return { path: "full", reason: `could not classify the diff (${String((err as Error).message ?? err)}); assume full` };
+  }
+}
+
+export async function checkAppPins(seams: PreflightSeams, apps: DepsRow[]): Promise<CheckRow[]> {
+  return Promise.all(
+    apps.map(async (app): Promise<CheckRow> => {
+      const id = `app:${app.name}`;
+      const label = `app ${app.name}`;
+      try {
+        const tag = pinnedTagFromUrl(app.url);
+        if (!tag) throw new Error("no release tag in the pinned url");
+        const published = await ghApi(seams, `repos/${app.repo}/releases/tags/${tag}`, ".published_at");
+        const lastCommit = await ghApi(seams, `repos/${app.repo}/commits?path=${app.subdir}&per_page=1`, ".[0].commit.committer.date");
+        const stale = new Date(lastCommit).getTime() > new Date(published).getTime();
+        return {
+          id, label,
+          status: stale ? "stale" : "ok",
+          pinned: app.version,
+          detail: stale
+            ? `pin published ${published.slice(0, 10)}, ${app.subdir} moved ${lastCommit.slice(0, 10)}`
+            : `pin ${app.version} covers ${app.subdir} through ${lastCommit.slice(0, 10)}`,
+        };
+      } catch (err) {
+        return { id, label, status: "error", pinned: app.version, detail: String((err as Error).message ?? err) };
+      }
+    }),
+  );
+}
+
+export async function checkStandaloneRows(seams: PreflightSeams, rows: DepsRow[]): Promise<CheckRow[]> {
+  return Promise.all(
+    rows.map(async (row): Promise<CheckRow> => {
+      const id = `standalone:${row.name}`;
+      const label = `standalone ${row.name}`;
+      try {
+        const repo = row.repo ?? STANDALONE_REPOS[row.name]!;
+        const latest = normalizeVersion(await ghApi(seams, `repos/${repo}/releases/latest`, ".tag_name"));
+        const pinned = normalizeVersion(row.version);
+        return {
+          id, label, pinned, current: latest,
+          status: latest === pinned ? "ok" : "stale",
+          detail: latest === pinned ? `pin ${pinned} is ${repo}'s latest release` : `pin ${pinned}, ${repo} latest is ${latest}`,
+        };
+      } catch (err) {
+        return { id, label, status: "error", pinned: row.version, detail: String((err as Error).message ?? err) };
+      }
+    }),
+  );
+}
+
+async function latestForUpstream(seams: PreflightSeams, up: ToolUpstream): Promise<string> {
+  switch (up.kind) {
+    case "github":
+      return normalizeVersion(await ghApi(seams, `repos/${up.repo}/releases/latest`, ".tag_name"));
+    case "node-lts": {
+      const index = (await seams.fetchJson("https://nodejs.org/dist/index.json")) as { version: string; lts: unknown }[];
+      const lts = index.find((e) => !!e.lts);
+      if (!lts) throw new Error("no LTS entry in nodejs.org/dist/index.json");
+      return normalizeVersion(lts.version);
+    }
+    case "npm": {
+      const meta = (await seams.fetchJson(`https://registry.npmjs.org/${up.pkg}/latest`)) as { version: string };
+      return normalizeVersion(meta.version);
+    }
+    case "gitlab": {
+      const releases = (await seams.fetchJson(`https://gitlab.com/api/v4/projects/${up.project}/releases?per_page=1`)) as { tag_name: string }[];
+      if (!releases[0]) throw new Error("no releases on the GitLab project");
+      return normalizeVersion(releases[0].tag_name);
+    }
+  }
+}
+
+export async function checkToolRows(seams: PreflightSeams, rows: DepsRow[]): Promise<CheckRow[]> {
+  // age/age-keygen and the sparkle pair share upstreams; resolve each once.
+  const cache = new Map<string, Promise<string>>();
+  const latest = (up: ToolUpstream): Promise<string> => {
+    const key = JSON.stringify(up);
+    let p = cache.get(key);
+    if (!p) { p = latestForUpstream(seams, up); cache.set(key, p); }
+    return p;
+  };
+
+  return Promise.all(
+    rows.map(async (row): Promise<CheckRow> => {
+      const id = `tool:${row.name}`;
+      const label = `tool ${row.name}`;
+      try {
+        const up = upstreamForToolRow(row);
+        if (!up) throw new Error(`no upstream derivable from ${row.url}`);
+        const current = await latest(up);
+        const pinned = normalizeVersion(row.version);
+        const note = row.name.startsWith("sparkle") ? "; a sparkle bump gets its own tested release, never rides" : "";
+        return {
+          id, label, pinned, current,
+          status: current === pinned ? "ok" : "stale",
+          detail: current === pinned ? `pin ${pinned} is current` : `pin ${pinned}, upstream latest is ${current}${note}`,
+        };
+      } catch (err) {
+        return { id, label, status: "error", pinned: row.version, detail: String((err as Error).message ?? err) };
+      }
+    }),
+  );
+}
+
+interface CatalogPlugin {
+  name: string;
+  source: string | { source: string; url?: string; ref?: string; sha?: string };
+}
+
+export async function checkCatalog(seams: PreflightSeams): Promise<CheckRow[]> {
+  const raw = seams.readFile(join(seams.repoRoot, "marketplace", "marketplace.json"));
+  if (!raw) return [{ id: "catalog", label: "plugin catalog", status: "error", detail: "marketplace/marketplace.json not readable" }];
+  let plugins: CatalogPlugin[];
+  try {
+    plugins = (JSON.parse(raw) as { plugins: CatalogPlugin[] }).plugins ?? [];
+  } catch (err) {
+    return [{ id: "catalog", label: "plugin catalog", status: "error", detail: `marketplace.json unparseable: ${String((err as Error).message ?? err)}` }];
+  }
+
+  return Promise.all(
+    plugins.map(async (plugin): Promise<CheckRow> => {
+      const id = `catalog:${plugin.name}`;
+      const label = `catalog ${plugin.name}`;
+      const src = plugin.source;
+      if (typeof src === "string") return { id, label, status: "ok", detail: "in-tree plugin, nothing to drift" };
+      if (src.source !== "url" || !src.url) return { id, label, status: "error", detail: "unsupported source shape" };
+      if (!src.ref) return { id, label, status: "ok", detail: "deliberate pin with no ref; --refresh never moves it" };
+      try {
+        const r = await seams.exec(["git", "ls-remote", src.url, src.ref], { timeoutMs: 30_000 });
+        if (r.exitCode !== 0) throw new Error(`ls-remote failed: ${(r.stderr || r.stdout).trim()}`);
+        const head = r.stdout.split(/\s+/)[0] ?? "";
+        if (!head) throw new Error(`${src.ref} not found in ${src.url}`);
+        const pinned = src.sha ?? "";
+        return {
+          id, label,
+          pinned: pinned.slice(0, 12), current: head.slice(0, 12),
+          status: head === pinned ? "ok" : "stale",
+          detail: head === pinned ? `pin matches ${src.ref}` : `pin ${pinned.slice(0, 12)} behind ${src.ref} head ${head.slice(0, 12)}`,
+        };
+      } catch (err) {
+        return { id, label, status: "error", detail: String((err as Error).message ?? err) };
+      }
+    }),
+  );
+}
+
+export async function checkExtension(seams: PreflightSeams): Promise<CheckRow> {
+  const id = "extension";
+  const label = "chrome extension";
+  try {
+    const b64 = await ghApi(seams, `repos/${EXTENSION_LOCK_REPO}/contents/runtime-lock.json`, ".content");
+    const lock = JSON.parse(Buffer.from(b64, "base64").toString("utf8")) as {
+      runtime?: { url?: string };
+      extension?: { version?: string };
+    };
+    const pinnedTag = pinnedTagFromUrl(lock.runtime?.url ?? "");
+    if (!pinnedTag) throw new Error("runtime-lock.json has no fork release url");
+    const releasesRaw = await ghApi(seams, `repos/${EXTENSION_FORK_REPO}/releases?per_page=30`);
+    const tags = (JSON.parse(releasesRaw) as { tag_name: string }[]).map((r) => r.tag_name);
+    const newest = tags.find((t) => t.startsWith(EXTENSION_TAG_PREFIX));
+    if (!newest) throw new Error(`no ${EXTENSION_TAG_PREFIX}* releases on ${EXTENSION_FORK_REPO}`);
+    const pinned = normalizeVersion(pinnedTag);
+    const current = normalizeVersion(newest);
+    const published = lock.extension?.version ? ` (store version ${lock.extension.version})` : "";
+    return {
+      id, label, pinned, current,
+      status: current === pinned ? "ok" : "stale",
+      detail: current === pinned
+        ? `runtime-lock pins the newest fork release ${pinnedTag}${published}`
+        : `runtime-lock pins ${pinnedTag}, fork newest is ${newest}; needs pin-runtime + a Web Store submit`,
+    };
+  } catch (err) {
+    return { id, label, status: "error", detail: String((err as Error).message ?? err) };
+  }
+}
+
+export async function checkRtClient(seams: PreflightSeams): Promise<CheckRow> {
+  const id = "rt-client";
+  const label = "rt-client parity";
+  try {
+    const raw = seams.readFile(join(seams.repoRoot, "packages", "rt-client", "package.json"));
+    if (!raw) throw new Error("packages/rt-client/package.json not readable");
+    const source = (JSON.parse(raw) as { version: string }).version;
+    const npm = ((await seams.fetchJson("https://registry.npmjs.org/@mattstack/rt-client/latest")) as { version: string }).version;
+    if (source === npm) return { id, label, status: "ok", pinned: npm, current: source, detail: `npm and source agree at ${source}` };
+    const which = source > npm ? `unpublished source bump (source ${source}, npm ${npm})` : `npm ahead of source (npm ${npm}, source ${source})`;
+    return { id, label, status: "stale", pinned: npm, current: source, detail: which };
+  } catch (err) {
+    return { id, label, status: "error", detail: String((err as Error).message ?? err) };
+  }
+}
+
+export async function runPreflight(seams: PreflightSeams): Promise<PreflightReport> {
+  const gitState = await checkGitState(seams);
+
+  let apps: DepsRow[] = [];
+  let standalone: DepsRow[] = [];
+  let tools: DepsRow[] = [];
+  let lockError: CheckRow | null = null;
+  try {
+    ({ apps, standalone, tools } = classifyRows(readDepsRows(seams)));
+  } catch (err) {
+    lockError = { id: "deps-lock", label: "deps.lock", status: "error", detail: String((err as Error).message ?? err) };
+  }
+
+  const [gate, appRows, standaloneRows, toolRows, catalogRows, extensionRow, rtClientRow] = await Promise.all([
+    gitState.tag ? checkGate(seams, gitState.tag) : Promise.resolve(null),
+    checkAppPins(seams, apps),
+    checkStandaloneRows(seams, standalone),
+    checkToolRows(seams, tools),
+    checkCatalog(seams),
+    checkExtension(seams),
+    checkRtClient(seams),
+  ]);
+
+  const rows: CheckRow[] = [
+    gitState.row,
+    checkPicker(seams),
+    ...(lockError ? [lockError] : []),
+    ...appRows,
+    ...standaloneRows,
+    ...toolRows,
+    ...catalogRows,
+    extensionRow,
+    rtClientRow,
+  ];
+
+  const staleCount = rows.filter((r) => r.status === "stale").length;
+  const errorCount = rows.filter((r) => r.status === "error").length;
+  return {
+    tag: gitState.tag,
+    commitsSinceTag: gitState.commitsSinceTag,
+    gate,
+    rows,
+    staleCount,
+    errorCount,
+    clean: staleCount === 0 && errorCount === 0,
+  };
+}
