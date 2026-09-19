@@ -185,6 +185,30 @@ describe("checkGate", () => {
     expect(g.path).toBe("full");
     expect(g.reason).toContain("lib/team/invite.ts");
   });
+
+  test("a boxscore row change stays on the fast path (ratified serve-only set)", async () => {
+    const withBoxscore = (v: string) => JSON.stringify({
+      schema: 1, arch: "arm64", tools: [
+        { name: "boxscore", version: v, repo: "m4ttstack/apps", subdir: "apps/boxscore", url: `https://github.com/m4ttstack/apps/releases/download/boxscore-v${v}/boxscore-darwin-arm64.tgz` },
+      ],
+    });
+    const s = seams({ exec: gateExec(["rt-tray/deps.lock"], withBoxscore("0.1.0")), readFile: () => withBoxscore("0.1.1") });
+    const g = await checkGate(s, "v2.10.2");
+    expect(g.path).toBe("fast");
+  });
+
+  test("a row absent from the old lock forces the full gate even when serve-only", async () => {
+    const oldLock = lockAt("0.1.4", "1.0.5");
+    const newLock = JSON.stringify({
+      schema: 1, arch: "arm64",
+      tools: [...(JSON.parse(lockAt("0.1.4", "1.0.5")) as { tools: DepsRow[] }).tools,
+        { name: "boxscore", version: "0.1.0", repo: "m4ttstack/apps", subdir: "apps/boxscore", url: "https://github.com/m4ttstack/apps/releases/download/boxscore-v0.1.0/boxscore-darwin-arm64.tgz" }],
+    });
+    const s = seams({ exec: gateExec(["rt-tray/deps.lock"], oldLock), readFile: () => newLock });
+    const g = await checkGate(s, "v2.10.2");
+    expect(g.path).toBe("full");
+    expect(g.reason).toContain("new row");
+  });
 });
 
 describe("checkAppPins", () => {
@@ -212,14 +236,22 @@ describe("checkAppPins", () => {
     const rows = await checkAppPins(seams(), [APP_ROW]);
     expect(rows[0]!.status).toBe("error");
   });
+
+  test("error, never ok, when a date comes back as the literal null (draft release, empty commits)", async () => {
+    const rows = await checkAppPins(seams({ exec: appExec("null", "2026-09-19T02:00:00Z") }), [APP_ROW]);
+    expect(rows[0]!.status).toBe("error");
+    const rows2 = await checkAppPins(seams({ exec: appExec("2026-09-18T20:00:00Z", "null") }), [APP_ROW]);
+    expect(rows2[0]!.status).toBe("error");
+  });
 });
 
 describe("checkStandaloneRows", () => {
-  test("falls back to the repo's package.json when it has no releases", async () => {
+  test("falls back to the repo's package.json only on a 404 (no releases)", async () => {
+    const notFound = () => Promise.resolve({ stdout: "", stderr: "gh: Not Found (HTTP 404)", exitCode: 1 });
     const s = seams({
       exec: (argv) => {
         const cmd = argv.join(" ");
-        if (cmd.includes("releases/latest")) return failExec();
+        if (cmd.includes("releases/latest")) return notFound();
         if (cmd.includes("contents/package.json")) return ok(Buffer.from(JSON.stringify({ version: "0.1.3" })).toString("base64"));
         return failExec();
       },
@@ -227,6 +259,18 @@ describe("checkStandaloneRows", () => {
     const rows = await checkStandaloneRows(s, [FB_ROW]);
     expect(rows[0]!.status).toBe("ok");
     expect(rows[0]!.detail).toContain("package.json");
+  });
+
+  test("a transient releases/latest failure is an error row, never a silent fallback", async () => {
+    const s = seams({
+      exec: (argv) => {
+        const cmd = argv.join(" ");
+        if (cmd.includes("contents/package.json")) return ok(Buffer.from(JSON.stringify({ version: "0.1.3" })).toString("base64"));
+        return failExec();
+      },
+    });
+    const rows = await checkStandaloneRows(s, [FB_ROW]);
+    expect(rows[0]!.status).toBe("error");
   });
 
   test("compares each row against its repo's latest release", async () => {
@@ -288,6 +332,14 @@ describe("checkCatalog", () => {
     ],
   });
 
+  test("a plugin entry with no source is an error row, not a crash", async () => {
+    const broken = JSON.stringify({ name: "m", plugins: [{ name: "broken" }] });
+    const s = seams({ readFile: (p) => (p.endsWith("marketplace.json") ? broken : null) });
+    const rows = await checkCatalog(s);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.status).toBe("error");
+  });
+
   test("drift when a pinned ref's head moved", async () => {
     const s = seams({
       readFile: (p) => (p.endsWith("marketplace.json") ? catalog : null),
@@ -335,6 +387,12 @@ describe("checkExtension", () => {
     expect(r.status).toBe("stale");
     expect(r.current).toBe("0.1.2");
   });
+
+  test("picks the highest fork version even when the list is not newest-first", async () => {
+    const r = await checkExtension(seams({ exec: extExec(["fast-browser-v0.1.1", "fast-browser-v0.1.10", "fast-browser-v0.1.2"]) }));
+    expect(r.status).toBe("stale");
+    expect(r.current).toBe("0.1.10");
+  });
 });
 
 describe("checkRtClient", () => {
@@ -354,6 +412,16 @@ describe("checkRtClient", () => {
     const r = await checkRtClient(s);
     expect(r.status).toBe("stale");
     expect(r.detail).toContain("unpublished");
+  });
+
+  test("direction compares semver numerically, not lexicographically", async () => {
+    const s = seams({
+      readFile: (p) => (p.endsWith("packages/rt-client/package.json") ? JSON.stringify({ version: "0.9.0" }) : null),
+      fetchJson: () => Promise.resolve({ version: "0.28.0" }),
+    });
+    const r = await checkRtClient(s);
+    expect(r.status).toBe("stale");
+    expect(r.detail).toContain("npm ahead");
   });
 });
 

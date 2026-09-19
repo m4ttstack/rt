@@ -55,7 +55,22 @@ export interface PreflightSeams {
 }
 
 /** Rows deck merely serves; a pin-only diff limited to these keeps the fast path (user-ratified 2026-09-18). */
-const SERVE_ONLY_ROWS = new Set(["board", "chat", "console", "gitq"]);
+const SERVE_ONLY_ROWS = new Set(["board", "chat", "console", "gitq", "boxscore"]);
+
+/** Numeric per-segment semver compare; non-numeric segments fall back to string order. */
+export function compareVersions(a: string, b: string): number {
+  const as = a.split(".");
+  const bs = b.split(".");
+  for (let i = 0; i < Math.max(as.length, bs.length); i++) {
+    const x = as[i] ?? "0";
+    const y = bs[i] ?? "0";
+    const xn = Number(x);
+    const yn = Number(y);
+    const cmp = Number.isNaN(xn) || Number.isNaN(yn) ? x.localeCompare(y) : xn - yn;
+    if (cmp !== 0) return cmp;
+  }
+  return 0;
+}
 
 /** Standalone app rows live in their own repos; fast-browser's deps.lock url is npm, so its repo is declared here. */
 const STANDALONE_REPOS: Record<string, string> = {
@@ -178,6 +193,10 @@ export async function checkGate(seams: PreflightSeams, tag: string): Promise<Gat
     const oldRaw = await git(seams, ["show", `${tag}:rt-tray/deps.lock`]);
     const oldVers = new Map((JSON.parse(oldRaw) as { tools: DepsRow[] }).tools.map((r) => [r.name, r.version]));
     const changed = readDepsRows(seams).filter((r) => oldVers.get(r.name) !== r.version).map((r) => r.name);
+    // A row absent from the old lock is a first-ever ship of that app, which is
+    // beyond "pin-only" no matter how the row is served.
+    const added = changed.filter((name) => !oldVers.has(name));
+    if (added.length > 0) return { path: "full", reason: `new row(s) in deps.lock: ${added.join(", ")}` };
     const gated = changed.filter((name) => !SERVE_ONLY_ROWS.has(name));
     if (gated.length > 0) return { path: "full", reason: `full-gate row(s) changed: ${gated.join(", ")}` };
     if (changed.length === 0) return { path: "full", reason: "deps.lock changed but no row version moved" };
@@ -197,7 +216,15 @@ export async function checkAppPins(seams: PreflightSeams, apps: DepsRow[]): Prom
         if (!tag) throw new Error("no release tag in the pinned url");
         const published = await ghApi(seams, `repos/${app.repo}/releases/tags/${tag}`, ".published_at");
         const lastCommit = await ghApi(seams, `repos/${app.repo}/commits?path=${app.subdir}&per_page=1`, ".[0].commit.committer.date");
-        const stale = new Date(lastCommit).getTime() > new Date(published).getTime();
+        const publishedAt = new Date(published).getTime();
+        const lastCommitAt = new Date(lastCommit).getTime();
+        // jq prints the literal text "null" for a draft release's published_at
+        // or an empty commit list; NaN would compare as fresh, the exact
+        // silent pass this check exists to kill.
+        if (Number.isNaN(publishedAt) || Number.isNaN(lastCommitAt)) {
+          throw new Error(`unparseable dates (published ${published || "?"}, last commit ${lastCommit || "?"})`);
+        }
+        const stale = lastCommitAt > publishedAt;
         return {
           id, label,
           status: stale ? "stale" : "ok",
@@ -225,10 +252,12 @@ export async function checkStandaloneRows(seams: PreflightSeams, rows: DepsRow[]
         try {
           latest = normalizeVersion(await ghApi(seams, `repos/${repo}/releases/latest`, ".tag_name"));
           source = "latest release";
-        } catch {
-          // A repo that publishes to npm instead of GitHub releases (fast-browser)
-          // has no releases/latest; its main's package.json is the currency signal
-          // and also catches a merged-but-unpublished bump.
+        } catch (err) {
+          // Only a 404 means "this repo publishes to npm and has no GitHub
+          // releases" (fast-browser); then main's package.json is the currency
+          // signal and also catches a merged-but-unpublished bump. Any other
+          // failure must stay an error row, not silently switch signals.
+          if (!/HTTP 404|Not Found/i.test(String((err as Error).message ?? err))) throw err;
           const b64 = await ghApi(seams, `repos/${repo}/contents/package.json`, ".content");
           latest = normalizeVersion((JSON.parse(Buffer.from(b64, "base64").toString("utf8")) as { version: string }).version);
           source = "main package.json";
@@ -321,7 +350,9 @@ export async function checkCatalog(seams: PreflightSeams): Promise<CheckRow[]> {
       const label = `catalog ${plugin.name}`;
       const src = plugin.source;
       if (typeof src === "string") return { id, label, status: "ok", detail: "in-tree plugin, nothing to drift" };
-      if (src.source !== "url" || !src.url) return { id, label, status: "error", detail: "unsupported source shape" };
+      if (!src || typeof src !== "object" || src.source !== "url" || !src.url) {
+        return { id, label, status: "error", detail: "unsupported source shape" };
+      }
       if (!src.ref) return { id, label, status: "ok", detail: "deliberate pin with no ref; --refresh never moves it" };
       try {
         const r = await seams.exec(["git", "ls-remote", src.url, src.ref], { timeoutMs: 30_000 });
@@ -355,7 +386,9 @@ export async function checkExtension(seams: PreflightSeams): Promise<CheckRow> {
     if (!pinnedTag) throw new Error("runtime-lock.json has no fork release url");
     const releasesRaw = await ghApi(seams, `repos/${EXTENSION_FORK_REPO}/releases?per_page=30`);
     const tags = (JSON.parse(releasesRaw) as { tag_name: string }[]).map((r) => r.tag_name);
-    const newest = tags.find((t) => t.startsWith(EXTENSION_TAG_PREFIX));
+    const newest = tags
+      .filter((t) => t.startsWith(EXTENSION_TAG_PREFIX))
+      .sort((a, b) => compareVersions(normalizeVersion(b), normalizeVersion(a)))[0];
     if (!newest) throw new Error(`no ${EXTENSION_TAG_PREFIX}* releases on ${EXTENSION_FORK_REPO}`);
     const pinned = normalizeVersion(pinnedTag);
     const current = normalizeVersion(newest);
@@ -381,7 +414,7 @@ export async function checkRtClient(seams: PreflightSeams): Promise<CheckRow> {
     const source = (JSON.parse(raw) as { version: string }).version;
     const npm = ((await seams.fetchJson("https://registry.npmjs.org/@mattstack/rt-client/latest")) as { version: string }).version;
     if (source === npm) return { id, label, status: "ok", pinned: npm, current: source, detail: `npm and source agree at ${source}` };
-    const which = source > npm ? `unpublished source bump (source ${source}, npm ${npm})` : `npm ahead of source (npm ${npm}, source ${source})`;
+    const which = compareVersions(source, npm) > 0 ? `unpublished source bump (source ${source}, npm ${npm})` : `npm ahead of source (npm ${npm}, source ${source})`;
     return { id, label, status: "stale", pinned: npm, current: source, detail: which };
   } catch (err) {
     return { id, label, status: "error", detail: String((err as Error).message ?? err) };
