@@ -235,14 +235,15 @@ func renderDiffHeader(d DiffModel, width int) string {
 }
 
 func centeredMessage(width, height int, col color.Color, text string) string {
-	return lipgloss.NewStyle().Width(width).Height(height).Align(lipgloss.Center, lipgloss.Center).Foreground(col).Render(text)
+	return lipgloss.NewStyle().Width(width).Height(height).Background(theme.Bg).Align(lipgloss.Center, lipgloss.Center).Foreground(col).Render(text)
 }
 
 func renderOversizedBody(width, height int) string {
-	msg := fg(theme.Faint).Render("Diff too large to display by default")
-	hint := fg(theme.Dimmer).Render("enter shows it anyway")
+	on := lipgloss.NewStyle().Background(theme.Bg)
+	msg := on.Foreground(theme.Faint).Render("Diff too large to display by default")
+	hint := on.Foreground(theme.Dimmer).Render("enter shows it anyway")
 	block := lipgloss.JoinVertical(lipgloss.Center, msg, hint)
-	return lipgloss.NewStyle().Width(width).Height(height).Align(lipgloss.Center, lipgloss.Center).Render(block)
+	return on.Width(width).Height(height).Align(lipgloss.Center, lipgloss.Center).Render(block)
 }
 
 // renderDiffLines paints the visible line window -- a stage-bar/number
@@ -262,7 +263,7 @@ func (m *Mission) renderDiffLines(width, height int) string {
 	rows := make([]string, height)
 	for i := 0; i < height; i++ {
 		idx := top + i
-		line := lipgloss.NewStyle().Width(contentW).Render("")
+		line := lipgloss.NewStyle().Width(contentW).Background(theme.Bg).Render("")
 		if idx < len(lines) {
 			hover := idx == m.hoverDiffLine
 			line = renderDiffLine(m.model.Diff, lines[idx], contentW, hover, hover && m.hoverGutter)
@@ -335,7 +336,7 @@ func diffThumbCell(row, thumbTop, thumbH int) string {
 	if row >= thumbTop && row < thumbTop+thumbH {
 		return lipgloss.NewStyle().Background(theme.Panel).Render(" ")
 	}
-	return " "
+	return lipgloss.NewStyle().Background(theme.Bg).Render(" ")
 }
 
 // renderDiffLine paints one line's gutter (stage bar + right-aligned
@@ -351,7 +352,7 @@ func renderDiffLine(d DiffModel, line DiffLine, width int, hover, gutterHover bo
 	if width < 1 {
 		return ""
 	}
-	rowBg := lipgloss.NewStyle()
+	rowBg := lipgloss.NewStyle().Background(theme.Bg)
 	if hover {
 		rowBg = rowBg.Background(theme.HoverBg)
 	}

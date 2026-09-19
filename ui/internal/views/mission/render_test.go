@@ -69,16 +69,24 @@ func TestActionGlyphColorsPerKind(t *testing.T) {
 	}
 	for _, c := range cases {
 		out := renderActionSegment(ActionModel{Kind: c.kind, Title: "x"}, 60, false, false)
-		want := fgSGR(c.color) + "m" + c.glyph
-		if !strings.Contains(out, want) {
-			t.Fatalf("%s glyph should wear its accent color: want %q in\n%s", c.kind, want, out)
+		// The segment's rest-state BgSubtle band now combines into the same
+		// SGR run as the icon's own foreground, so the color and the glyph
+		// are checked separately rather than as one adjoining "fgm+glyph" run.
+		if !strings.Contains(out, fgSGR(c.color)) {
+			t.Fatalf("%s glyph should wear its accent color %q in\n%s", c.kind, fgSGR(c.color), out)
+		}
+		if !strings.Contains(ansi.Strip(out), c.glyph) {
+			t.Fatalf("%s glyph %q missing from\n%s", c.kind, c.glyph, out)
 		}
 	}
 }
 
 func TestRenderBranchSegmentDetachedValueWearsPeach(t *testing.T) {
 	out := renderBranchSegment(Model{Current: Current{Detached: true, Branch: "a1b2c3d"}}, 40, false, false)
-	if !strings.Contains(out, "1;"+fgSGR(theme.Peach)+"m") {
+	// The rest-state BgSubtle band combines into the same SGR run as the
+	// value's own foreground, so the bold+fg run is checked without
+	// requiring it to be immediately followed by "m".
+	if !strings.Contains(out, "1;"+fgSGR(theme.Peach)) {
 		t.Fatalf("detached value should wear bold Peach: %q", out)
 	}
 }
@@ -289,8 +297,13 @@ func TestRenderDiffLineHunkHeaderStaysOneRow(t *testing.T) {
 
 func TestRenderDiffLineSelectedAddShowsPinkBar(t *testing.T) {
 	out := renderDiffLine(DiffModel{}, DiffLine{Kind: "add", Text: "import x", Selected: true, SelIdx: 0}, 40, false, false)
-	if !strings.Contains(out, fgSGR(theme.Pink)+"m"+theme.GlyphBar) {
+	// The row's own Bg fill combines into the same SGR run as the bar's
+	// foreground, so the color and the glyph are checked separately.
+	if !strings.Contains(out, fgSGR(theme.Pink)) {
 		t.Fatalf("selected add line should show a Pink stage bar: %q", out)
+	}
+	if !strings.Contains(ansi.Strip(out), theme.GlyphBar) {
+		t.Fatalf("selected add line missing the stage bar glyph: %q", out)
 	}
 }
 
@@ -1021,5 +1034,79 @@ func TestRenderChangeRowWideRuneFilenameStaysAtWidth(t *testing.T) {
 	}
 	if lipgloss.Width(out) != 40 {
 		t.Fatalf("change row must render at exactly width 40, got %d: %q", lipgloss.Width(out), out)
+	}
+}
+
+// ─── surface fills (docs/design/mission/Main.png: filled top and keybar
+// bands, no terminal-default bleed-through anywhere in the frame) ─────────
+
+// TestTopBarSegmentRestPaintsBgSubtleBandFullWidth pins the top-bar band: at
+// rest (no hover, no open foldout) both the label and value rows wear
+// BgSubtle from the very first cell through the trailing pad, not just
+// behind the text itself.
+func TestTopBarSegmentRestPaintsBgSubtleBandFullWidth(t *testing.T) {
+	out := renderRepoSegment(pullModel(), sidebarWidth, false, false)
+	lines := strings.Split(out, "\n")
+	if len(lines) != 2 {
+		t.Fatalf("segment should render exactly 2 rows, got %d:\n%s", len(lines), out)
+	}
+	labelRow, valueRow := lines[0], lines[1]
+	if !strings.Contains(labelRow, bgSGR(theme.BgSubtle)) {
+		t.Fatalf("label row should wear the BgSubtle band: %q", labelRow)
+	}
+	if idx := strings.LastIndex(labelRow, bgSGR(theme.BgSubtle)); idx <= strings.Index(labelRow, "Current Repository") {
+		t.Fatalf("BgSubtle should still be painting the trailing pad after the label text: %q", labelRow)
+	}
+	if !strings.Contains(valueRow, bgSGR(theme.BgSubtle)) {
+		t.Fatalf("value row should wear the BgSubtle band: %q", valueRow)
+	}
+	if idx := strings.LastIndex(valueRow, bgSGR(theme.BgSubtle)); idx <= strings.Index(valueRow, "repo-tools") {
+		t.Fatalf("BgSubtle should still be painting the trailing pad after the value text: %q", valueRow)
+	}
+}
+
+// TestTopBarSegmentHoverAndOpenStillWinOverBgSubtleBand guards the
+// composition-order caution: hover's HoverBg and an open foldout's Surface
+// must still replace the rest-state BgSubtle band, never sit beside it.
+func TestTopBarSegmentHoverAndOpenStillWinOverBgSubtleBand(t *testing.T) {
+	hovered := renderRepoSegment(pullModel(), sidebarWidth, true, false)
+	if strings.Contains(hovered, bgSGR(theme.BgSubtle)) {
+		t.Fatalf("hovered segment must not still carry the rest BgSubtle band: %q", hovered)
+	}
+	if !strings.Contains(hovered, bgSGR(theme.HoverBg)) {
+		t.Fatalf("hovered segment should wear HoverBg: %q", hovered)
+	}
+	open := renderRepoSegment(pullModel(), sidebarWidth, false, true)
+	if strings.Contains(open, bgSGR(theme.BgSubtle)) {
+		t.Fatalf("open segment must not still carry the rest BgSubtle band: %q", open)
+	}
+	if !strings.Contains(open, bgSGR(theme.Surface)) {
+		t.Fatalf("open segment should wear Surface: %q", open)
+	}
+}
+
+// TestRenderChangeRowRestPaintsBgBandFullWidth pins the body-row half of the
+// same contract: a Changes row at rest (no cursor, no hover) wears Bg from
+// the leading cursor gutter through the trailing pad past the path text.
+func TestRenderChangeRowRestPaintsBgBandFullWidth(t *testing.T) {
+	out := renderChangeRow(ChangeRow{Path: "a.go", Status: "modified", Include: "none"}, sidebarWidth, false, false)
+	if !strings.Contains(out, bgSGR(theme.Bg)) {
+		t.Fatalf("row at rest should wear the Bg band: %q", out)
+	}
+	if idx := strings.LastIndex(out, bgSGR(theme.Bg)); idx <= strings.Index(out, "a.go") {
+		t.Fatalf("Bg should still be painting the trailing pad after the path text: %q", out)
+	}
+}
+
+// TestRenderKeybarRestPaintsBgSubtleBandFullWidth pins the keybar band: its
+// own trailing pad (after "q quit," the last thing justify places) still
+// wears BgSubtle, not just the text ahead of it.
+func TestRenderKeybarRestPaintsBgSubtleBandFullWidth(t *testing.T) {
+	out := renderKeybar(120)
+	if !strings.Contains(out, bgSGR(theme.BgSubtle)) {
+		t.Fatalf("keybar should wear the BgSubtle band: %q", out)
+	}
+	if idx := strings.LastIndex(out, bgSGR(theme.BgSubtle)); idx <= strings.LastIndex(out, "quit") {
+		t.Fatalf("BgSubtle should still be painting after the trailing \"quit\" label: %q", out)
 	}
 }

@@ -121,10 +121,10 @@ func newCommitInput(placeholder string) textinput.Model {
 	ti.Placeholder = placeholder
 	ti.SetWidth(commitBoxInner)
 	styles := ti.Styles()
-	styles.Focused.Text = lipgloss.NewStyle().Foreground(theme.Text)
-	styles.Focused.Placeholder = lipgloss.NewStyle().Foreground(theme.Faint)
-	styles.Blurred.Text = lipgloss.NewStyle().Foreground(theme.Text)
-	styles.Blurred.Placeholder = lipgloss.NewStyle().Foreground(theme.Faint)
+	styles.Focused.Text = lipgloss.NewStyle().Background(theme.Bg).Foreground(theme.Text)
+	styles.Focused.Placeholder = lipgloss.NewStyle().Background(theme.Bg).Foreground(theme.Faint)
+	styles.Blurred.Text = lipgloss.NewStyle().Background(theme.Bg).Foreground(theme.Text)
+	styles.Blurred.Placeholder = lipgloss.NewStyle().Background(theme.Bg).Foreground(theme.Faint)
 	styles.Cursor.Color = theme.Pink
 	ti.SetStyles(styles)
 	return ti
@@ -441,7 +441,7 @@ func (m *Mission) renderSidebar(width int) string {
 	if m.model.StashCount > 0 {
 		rows = append(rows, renderStashStrip(m.model.StashCount, width))
 	}
-	rows = append(rows, fg(theme.Rule).Render(strings.Repeat("─", width)))
+	rows = append(rows, lipgloss.NewStyle().Background(theme.Bg).Foreground(theme.Rule).Render(strings.Repeat("─", width)))
 	rows = append(rows, renderCommitBox(width, m.summaryInput.View(), m.descriptionInput.View(), m.amendLocal, m.model.Commit.ButtonLabel, m.commitEnabled()))
 	if lc := m.model.Commit.LastCommit; lc != nil && lc.Undoable {
 		rows = append(rows, renderUndoStrip(*lc, width))
@@ -491,10 +491,10 @@ func (m *Mission) View() tea.View {
 	l := m.layout()
 	bodyHeight := l.bodyH
 
-	sidebarPadded := lipgloss.NewStyle().Height(bodyHeight).Render(sidebar)
-	diffPadded := lipgloss.NewStyle().Height(bodyHeight).Render(m.renderDiffPane(diffW, bodyHeight))
+	sidebarPadded := lipgloss.NewStyle().Width(sidebarWidth).Height(bodyHeight).Background(theme.Bg).Render(sidebar)
+	diffPadded := lipgloss.NewStyle().Width(diffW).Height(bodyHeight).Background(theme.Bg).Render(m.renderDiffPane(diffW, bodyHeight))
 
-	dividerLine := fg(theme.Rule).Render("│")
+	dividerLine := lipgloss.NewStyle().Background(theme.Bg).Foreground(theme.Rule).Render("│")
 	dividerLines := make([]string, bodyHeight)
 	for i := range dividerLines {
 		dividerLines[i] = dividerLine

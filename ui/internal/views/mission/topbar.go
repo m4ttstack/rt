@@ -56,7 +56,8 @@ func renderTopBar(m Model, width int, hover, open zoneID) string {
 	branch := renderBranchSegment(m, segW, hover == zoneBranch, open == zoneBranch)
 	action := renderActionSegment(m.Action, lastW, hover == zoneAction, open == zoneAction)
 
-	div := fg(theme.Rule).Render("│") + "\n" + fg(theme.Rule).Render("│")
+	divCell := lipgloss.NewStyle().Background(theme.BgSubtle).Foreground(theme.Rule).Render("│")
+	div := divCell + "\n" + divCell
 	return lipgloss.JoinHorizontal(lipgloss.Top, repo, div, worktree, div, branch, div, action)
 }
 
@@ -199,7 +200,7 @@ func renderSegment(width int, spec segmentSpec, hovered, isOpen bool) string {
 	if width < 0 {
 		width = 0
 	}
-	base := lipgloss.NewStyle()
+	base := lipgloss.NewStyle().Background(theme.BgSubtle)
 	switch {
 	case isOpen:
 		base = base.Background(theme.Surface)
