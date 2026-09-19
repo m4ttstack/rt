@@ -1,5 +1,5 @@
 /**
- * rt release verify — read-only confirmation that a tagged release actually
+ * rt release verify... read-only confirmation that a tagged release actually
  * published (rt:release skill step 10): the release.yml run for the tag
  * completed successfully, the published body matches the committed
  * RELEASE_NOTES.md, the four build assets are attached, the release is
