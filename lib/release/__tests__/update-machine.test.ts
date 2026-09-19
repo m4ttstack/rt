@@ -15,13 +15,17 @@ interface Options {
   fetchDepsExit?: number;
   buildExit?: number;
   shaMismatch?: boolean;
-  managed?: { name: string; fresh: boolean; recovers?: boolean }[];
+  /** `fresh`: pid actually cycles on the broad `deck restart --managed`. `recovers` (default true): a targeted `deck restart <name>` retry cycles the pid when the broad restart didn't. */
+  managed?: { name: string; fresh: boolean; recovers?: boolean; psUnparseable?: boolean }[];
   daemonCommit?: string;
   deckVersion?: string;
   prodVersion?: string;
   devPidBefore?: string;
   devPidAfter?: string;
 }
+
+/** Real `launchctl print` has no start-time field: top-level state/pid, tab-indented, nested sub-sections repeat their own "state = active" lines. */
+const OLD_PS_TIME = "Thu Sep 18 09:00:00 2026";
 
 /** A seam set representing a fully healthy machine: every leg succeeds cleanly. */
 function fakeSeams(opts: Options = {}): { seams: UpdateMachineSeams; calls: string[] } {
@@ -30,7 +34,7 @@ function fakeSeams(opts: Options = {}): { seams: UpdateMachineSeams; calls: stri
   const devPidBefore = opts.devPidBefore ?? "111";
   const devPidAfter = opts.devPidAfter ?? "222";
   let devPid = devPidBefore;
-  let restarted = new Set<string>();
+  const pids = new Map(managed.map((m, i) => [m.name, 1000 + i]));
 
   const seams: UpdateMachineSeams = {
     repoRoot: "/repo",
@@ -60,9 +64,14 @@ function fakeSeams(opts: Options = {}): { seams: UpdateMachineSeams; calls: stri
       if (cmd === "rt daemon status --json") return ok(JSON.stringify({ commit: opts.daemonCommit ?? RELEASED_SHA }));
       if (cmd === "git branch --show-current") return ok(`${opts.branch ?? "main"}\n`);
       if (cmd === "git pull") return ok("");
-      if (cmd === "deck restart --managed") return ok("");
+      if (cmd === "deck restart --managed") {
+        for (const m of managed) if (m.fresh) pids.set(m.name, pids.get(m.name)! + 1);
+        return ok("");
+      }
       if (cmd.startsWith("deck restart ")) {
-        restarted.add(argv[2]!);
+        const name = argv[2]!;
+        const row = managed.find((m) => m.name === name);
+        if (row?.recovers !== false) pids.set(name, pids.get(name)! + 1);
         return ok("");
       }
       if (cmd === "deck list --json") {
@@ -70,10 +79,13 @@ function fakeSeams(opts: Options = {}): { seams: UpdateMachineSeams; calls: stri
       }
       if (cmd.startsWith("launchctl print")) {
         const name = cmd.split(".").pop()!;
+        const pid = pids.get(name);
+        return ok(pid !== undefined ? `\tstate = running\n\tpid = ${pid}\n\tsomething = { state = active\n\tpid = 99999\n\t}\n` : "\tstate = not running\n");
+      }
+      if (cmd.startsWith("ps -p")) {
+        const name = managed.find((m) => pids.get(m.name) === Number(argv[2]))?.name;
         const row = managed.find((m) => m.name === name);
-        const isFresh = row?.fresh || (restarted.has(name) && row?.recovers !== false);
-        const stamp = isFresh ? "2026-09-18T12:05:00.000Z" : "2026-09-18T09:00:00.000Z";
-        return ok(`start time = ${stamp}\n`);
+        return ok(row?.psUnparseable ? "garbage\n" : `${OLD_PS_TIME}\n`);
       }
       if (cmd === "deck --version") return ok(`${opts.deckVersion ?? "3.4.0"}\n`);
       if (cmd.includes("Info.plist")) return ok(`${opts.prodVersion ?? "2.11.0"}\n`);
@@ -241,6 +253,26 @@ describe("rt release update-machine", () => {
     const leg = report.legs.find((l) => l.id === "served-suite")!;
     expect(leg.status).toBe("error");
     expect(leg.detail).toContain("console");
+  });
+
+  test("served suite: an unparseable ps start time counts as stale, never a silent pass", async () => {
+    const { seams } = fakeSeams({
+      managed: [{ name: "console", fresh: false, recovers: false, psUnparseable: true }],
+    });
+    const report = await runUpdateMachine(seams, { yes: true });
+    const leg = report.legs.find((l) => l.id === "served-suite")!;
+    expect(leg.status).toBe("error");
+    expect(leg.detail).toContain("console");
+  });
+
+  test("served suite: freshness reads the top-level pid, not a nested sub-section's", async () => {
+    // The fake's launchctl print output always includes a nested "pid = 99999"
+    // line inside a sub-section; a naive last-match parse would read that
+    // instead of the real top-level pid and never see it change.
+    const { seams } = fakeSeams();
+    const report = await runUpdateMachine(seams, { yes: true });
+    const leg = report.legs.find((l) => l.id === "served-suite")!;
+    expect(leg.status).toBe("ok");
   });
 
   test("verify leg reports every mismatch it finds", async () => {

@@ -122,10 +122,21 @@ function deckPinFromDepsLock(raw: string | null): string | null {
   }
 }
 
-function parseLaunchctlStartTime(stdout: string): Date | null {
-  const m = stdout.match(/start time = (.+)/);
-  if (!m) return null;
-  const d = new Date(m[1]!.trim());
+/**
+ * launchctl print has no start-time field. Nested sub-sections repeat their own
+ * "state = active" lines, so only the FIRST (top-level) state/pid pair counts.
+ */
+function parseLaunchctlPid(stdout: string): number | null {
+  const state = stdout.match(/^\s*state = (\S+)/m)?.[1];
+  if (state !== "running") return null;
+  const pid = stdout.match(/^\s*pid = (\d+)/m)?.[1];
+  return pid ? Number(pid) : null;
+}
+
+function parsePsStartTime(stdout: string): Date | null {
+  const trimmed = stdout.trim();
+  if (!trimmed) return null;
+  const d = new Date(trimmed);
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
@@ -139,14 +150,38 @@ async function managedAppNames(seams: UpdateMachineSeams): Promise<string[]> {
   }
 }
 
-/** Apps whose launchd start time does not postdate `since` -- i.e. never actually cycled. */
-async function staleManagedApps(seams: UpdateMachineSeams, since: Date): Promise<string[]> {
-  const apps = await managedAppNames(seams);
+async function managedAppPid(seams: UpdateMachineSeams, app: string): Promise<number | null> {
+  const r = await seams.exec(["launchctl", "print", `gui/501/com.mattstack.deck.${app}`]);
+  return parseLaunchctlPid(r.stdout);
+}
+
+/** launchd carries no start-time field, so freshness after a restart is: pid changed, or (same pid) its process start time (from `ps`) postdates the marker. */
+interface RestartWitness {
+  marker: Date;
+  baselinePids: Map<string, number | null>;
+}
+
+async function snapshotPids(seams: UpdateMachineSeams, apps: string[]): Promise<Map<string, number | null>> {
+  const map = new Map<string, number | null>();
+  for (const app of apps) map.set(app, await managedAppPid(seams, app));
+  return map;
+}
+
+/** A NaN or unparseable ps timestamp fails the check rather than passing it, same as every other silent-fault path here. */
+async function appIsFresh(seams: UpdateMachineSeams, app: string, witness: RestartWitness): Promise<boolean> {
+  const pid = await managedAppPid(seams, app);
+  if (pid === null) return false;
+  if (pid !== witness.baselinePids.get(app)) return true;
+
+  const ps = await seams.exec(["ps", "-p", String(pid), "-o", "lstart="]);
+  const started = parsePsStartTime(ps.stdout);
+  return started !== null && started.getTime() > witness.marker.getTime();
+}
+
+async function staleManagedApps(seams: UpdateMachineSeams, apps: string[], witness: RestartWitness): Promise<string[]> {
   const stale: string[] = [];
   for (const app of apps) {
-    const r = await seams.exec(["launchctl", "print", `gui/501/com.mattstack.deck.${app}`]);
-    const started = parseLaunchctlStartTime(r.stdout);
-    if (!started || started.getTime() < since.getTime()) stale.push(app);
+    if (!(await appIsFresh(seams, app, witness))) stale.push(app);
   }
   return stale;
 }
@@ -243,7 +278,7 @@ async function runDaemonLeg(seams: UpdateMachineSeams, ctx: ReleaseContext): Pro
   return { id: "daemon", label: DAEMON_LABEL, status: "ok", detail: `daemon restarted and reports ${ctx.tag} (${short})` };
 }
 
-async function runServedSuiteLeg(seams: UpdateMachineSeams): Promise<{ result: LegResult; marker: Date | null }> {
+async function runServedSuiteLeg(seams: UpdateMachineSeams): Promise<{ result: LegResult; witness: RestartWitness | null }> {
   const branch = (await seams.exec(["git", "branch", "--show-current"], { cwd: seams.appsCheckoutPath })).stdout.trim();
   if (branch !== "main") {
     return {
@@ -253,31 +288,33 @@ async function runServedSuiteLeg(seams: UpdateMachineSeams): Promise<{ result: L
         status: "aborted",
         detail: `${seams.appsCheckoutPath} is on branch "${branch}", not main; refusing to touch a shared checkout`,
       },
-      marker: null,
+      witness: null,
     };
   }
 
   await seams.exec(["git", "pull"], { cwd: seams.appsCheckoutPath });
 
-  const marker = seams.clock();
+  const apps = await managedAppNames(seams);
+  const baselinePids = await snapshotPids(seams, apps);
+  const witness: RestartWitness = { marker: seams.clock(), baselinePids };
   await seams.exec(["deck", "restart", "--managed"]);
 
-  let stragglers = await staleManagedApps(seams, marker);
+  let stragglers = await staleManagedApps(seams, apps, witness);
   if (stragglers.length > 0) {
     for (const app of stragglers) await seams.exec(["deck", "restart", app]);
-    stragglers = await staleManagedApps(seams, marker);
+    stragglers = await staleManagedApps(seams, apps, witness);
     if (stragglers.length > 0) {
       return {
         result: { id: "served-suite", label: SERVED_SUITE_LABEL, status: "error", detail: `pid did not cycle for: ${stragglers.join(", ")}` },
-        marker,
+        witness,
       };
     }
   }
 
-  return { result: { id: "served-suite", label: SERVED_SUITE_LABEL, status: "ok", detail: "managed apps restarted and every pid cycled" }, marker };
+  return { result: { id: "served-suite", label: SERVED_SUITE_LABEL, status: "ok", detail: "managed apps restarted and every pid cycled" }, witness };
 }
 
-async function runVerifyLeg(seams: UpdateMachineSeams, ctx: ReleaseContext, marker: Date | null): Promise<LegResult> {
+async function runVerifyLeg(seams: UpdateMachineSeams, ctx: ReleaseContext, witness: RestartWitness | null): Promise<LegResult> {
   const problems: string[] = [];
   const short = ctx.sha.slice(0, 12);
 
@@ -297,8 +334,9 @@ async function runVerifyLeg(seams: UpdateMachineSeams, ctx: ReleaseContext, mark
   if (pin && deckVersion !== pin) problems.push(`deck --version is ${deckVersion || "unknown"}, deps.lock pins ${pin}`);
 
   let staleNote = "";
-  if (marker) {
-    const stale = await staleManagedApps(seams, marker);
+  if (witness) {
+    const apps = await managedAppNames(seams);
+    const stale = await staleManagedApps(seams, apps, witness);
     if (stale.length > 0) problems.push(`managed app pid predates the restart: ${stale.join(", ")}`);
   } else {
     staleNote = " (no restart marker this run; managed-app freshness not checked)";
@@ -379,16 +417,16 @@ export async function runUpdateMachine(seams: UpdateMachineSeams, options: Updat
   if (await gateLeg(seams, options.yes, DAEMON_LABEL)) legs.push(await runDaemonLeg(seams, ctx));
   else legs.push(skipped("daemon", DAEMON_LABEL));
 
-  let marker: Date | null = null;
+  let witness: RestartWitness | null = null;
   if (await gateLeg(seams, options.yes, SERVED_SUITE_LABEL)) {
-    const { result, marker: m } = await runServedSuiteLeg(seams);
+    const { result, witness: w } = await runServedSuiteLeg(seams);
     legs.push(result);
-    marker = m;
+    witness = w;
   } else {
     legs.push(skipped("served-suite", SERVED_SUITE_LABEL));
   }
 
-  legs.push(await runVerifyLeg(seams, ctx, marker));
+  legs.push(await runVerifyLeg(seams, ctx, witness));
 
   const ok = legs.every((l) => l.status === "ok" || l.status === "skipped");
   return { tag, legs, ok };
