@@ -284,11 +284,14 @@ left as-is or reduced to a pointer here.
 
 10. **Verify the publish: run `rt release verify <tag>`.** One read-only
    command (`--json` for the agent envelope) performs every check this step
-   used to run by hand: it finds the `release.yml` run for the tag and polls
-   it to completion tolerating transient API errors (never a bare `gh run
-   watch --exit-status`, which exits nonzero on a false FAILED while the run
-   is still in_progress, seen live on v2.10.0), confirms the published body
-   equals the committed `RELEASE_NOTES.md`, confirms all four assets
+   used to run by hand: it finds the `release.yml` run for the tag and
+   watches it for up to about an hour (a real run, macOS build plus
+   notarize plus clean room, takes 25-50 minutes; `--no-wait` takes a single
+   snapshot instead and stays pending until you re-run), tolerating
+   transient API errors along the way (never a bare `gh run watch
+   --exit-status`, which exits nonzero on a false FAILED while the run is
+   still in_progress, seen live on v2.10.0). It also confirms the published
+   body equals the committed `RELEASE_NOTES.md`, confirms all four assets
    (`mattstack-<ver>.dmg`, `mattstack-<ver>.zip`, `appcast.xml`,
    `SHA256SUMS`) are attached, confirms the release is neither a draft nor a
    prerelease, and confirms `https://api.github.com/repos/m4ttstack/rt/releases/latest`

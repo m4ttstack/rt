@@ -21,7 +21,7 @@ rt release verify [<tag>] [flags]
 | --- | --- | --- | --- |
 | `<tag>` | text |  | Tag to verify; omit for the repo's latest v* tag |
 | [`--json`](/guides/common-flags) | boolean | `false` | Emit the full report as JSON |
-| `--no-wait` | boolean | `false` | Snapshot the workflow run once instead of polling it to completion |
+| `--no-wait` | boolean | `false` | Snapshot the workflow run once instead of watching it for up to about an hour |
 
 _See code: [commands/release.ts › releaseVerify](https://github.com/m4ttstack/rt/blob/main/commands/release.ts)_
 

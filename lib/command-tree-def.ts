@@ -1612,7 +1612,7 @@ export const TREE: Record<string, CommandNode> = {
         args: [
           { name: "Tag", type: "text", optional: true, placeholder: "v2.10.2", hint: "Tag to verify; omit for the repo's latest v* tag" },
           { name: "JSON", flag: "--json", type: "boolean", default: false, hint: "Emit the full report as JSON" },
-          { name: "No wait", flag: "--no-wait", type: "boolean", default: false, hint: "Snapshot the workflow run once instead of polling it to completion" },
+          { name: "No wait", flag: "--no-wait", type: "boolean", default: false, hint: "Snapshot the workflow run once instead of watching it for up to about an hour" },
         ],
       },
     },

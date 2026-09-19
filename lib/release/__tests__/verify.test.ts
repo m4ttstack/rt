@@ -246,10 +246,13 @@ describe("checkReleaseBody", () => {
     expect(row.status).toBe("ok");
   });
 
-  test("stale when the release body differs", async () => {
+  test("stale when the release body differs, naming a recovery that is never gh release edit", async () => {
     const s = seams({ exec: () => ok("different notes\n") });
     const row = await checkReleaseBody(s, "v2.10.2", RELEASE);
     expect(row.status).toBe("stale");
+    expect(row.detail).toContain("RELEASE_NOTES.md");
+    expect(row.detail).toContain("new tag");
+    expect(row.detail).toContain("never gh release edit");
   });
 
   test("error when git show fails", async () => {
@@ -306,6 +309,22 @@ describe("checkLatest", () => {
     });
     const row = await checkLatest(s, "v2.10.2", RELEASE);
     expect(row.status).toBe("pending");
+  });
+
+  test("pending, not stale, when the local clock is slightly behind GitHub's (negative elapsed)", async () => {
+    const s = seams({
+      now: () => new Date("2026-09-18T21:07:50Z").getTime(), // 5s before RELEASE.publishedAt
+      fetchJson: () => Promise.resolve({ tag_name: "v2.10.1", assets: [] }),
+    });
+    const row = await checkLatest(s, "v2.10.2", RELEASE);
+    expect(row.status).toBe("pending");
+  });
+
+  test("stale with an unknown-publish-time message when releaseData is null", async () => {
+    const s = seams({ fetchJson: () => Promise.resolve({ tag_name: "v2.10.1", assets: [] }) });
+    const row = await checkLatest(s, "v2.10.2", null);
+    expect(row.status).toBe("stale");
+    expect(row.detail).toContain("publish time is unknown");
   });
 
   test("stale once the propagation window has passed", async () => {
@@ -406,5 +425,19 @@ describe("runVerify", () => {
     const report = await runVerify(withBadAssets, { tag: "v2.10.2" });
     expect(report.clean).toBe(false);
     expect(report.staleCount).toBeGreaterThan(0);
+  });
+
+  test("not clean when every other layer verifies but the run is still pending", async () => {
+    const s = happyPathSeams();
+    const stillRunning: VerifySeams = {
+      ...s,
+      sleep: async () => {},
+      exec: (argv, opts) => (argv.join(" ").includes("run view") ? ok(JSON.stringify({ status: "in_progress", conclusion: null })) : s.exec(argv, opts)),
+    };
+    const report = await runVerify(stillRunning, { tag: "v2.10.2", noWait: true });
+    expect(report.staleCount).toBe(0);
+    expect(report.errorCount).toBe(0);
+    expect(report.pendingCount).toBeGreaterThan(0);
+    expect(report.clean).toBe(false);
   });
 });

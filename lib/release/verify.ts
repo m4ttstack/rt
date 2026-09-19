@@ -53,7 +53,10 @@ export interface ReleaseData {
 
 const GH_REPO = "m4ttstack/rt";
 const RELEASE_WORKFLOW = "release.yml";
-const RUN_POLL_MAX_ATTEMPTS = 20;
+// A real release.yml run (macOS build, notarize, clean room) takes 25-50
+// minutes; a budget shorter than that would report "pending" on nearly
+// every run watched right after the tag push.
+const RUN_POLL_MAX_ATTEMPTS = 240;
 const RUN_POLL_INTERVAL_MS = 15_000;
 const LATEST_PROPAGATION_WINDOW_MS = 20 * 60 * 1000;
 
@@ -201,7 +204,10 @@ export async function checkReleaseBody(seams: VerifySeams, tag: string, data: Re
     const r = await seams.exec(["git", "show", `${tag}:RELEASE_NOTES.md`], { cwd: seams.repoRoot });
     if (r.exitCode !== 0) throw new Error(`git show ${tag}:RELEASE_NOTES.md failed: ${(r.stderr || r.stdout).trim()}`);
     if (r.stdout === data.body) return { id, label, status: "ok", detail: "release body matches the committed RELEASE_NOTES.md" };
-    return { id, label, status: "stale", detail: `release body does not match the committed RELEASE_NOTES.md at ${tag}` };
+    return {
+      id, label, status: "stale",
+      detail: `release body does not match the committed RELEASE_NOTES.md at ${tag}; recompare git show ${tag}:RELEASE_NOTES.md against gh release view ${tag} --json body. If the notes commit was wrong, the fix is a new tag; never gh release edit.`,
+    };
   } catch (err) {
     return { id, label, status: "error", detail: String((err as Error).message ?? err) };
   }
@@ -262,16 +268,20 @@ export async function checkLatest(seams: VerifySeams, tag: string, releaseData: 
 
   const publishedAt = releaseData?.publishedAt ? new Date(releaseData.publishedAt).getTime() : null;
   const elapsed = publishedAt !== null && !Number.isNaN(publishedAt) ? seams.now() - publishedAt : null;
-  if (elapsed !== null && elapsed >= 0 && elapsed < LATEST_PROPAGATION_WINDOW_MS) {
+  // No >= 0 guard: a local clock running slightly behind GitHub's reports a
+  // small negative elapsed right after publish, and that is still well
+  // inside the propagation window, not proof the window has passed.
+  if (elapsed !== null && elapsed < LATEST_PROPAGATION_WINDOW_MS) {
     return {
       id, label, status: "pending", pinned: tag, current: latest.tag_name,
       detail: `still propagating (published ${Math.round(elapsed / 60_000)}m ago; the endpoint can lag up to ~20m behind the flip)`,
     };
   }
 
+  const windowNote = elapsed === null ? "the publish time is unknown" : "the ~20m propagation window has passed";
   return {
     id, label, status: "stale", pinned: tag, current: latest.tag_name,
-    detail: `resolves to ${latest.tag_name}, not ${tag}, and the ~20m propagation window has passed`,
+    detail: `resolves to ${latest.tag_name}, not ${tag}, and ${windowNote}`,
   };
 }
 

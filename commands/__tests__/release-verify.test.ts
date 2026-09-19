@@ -130,9 +130,11 @@ describe("rt release verify", () => {
         return fakeSeams().exec(argv);
       },
     });
-    const { logs } = await run(["v2.10.2", "--no-wait", "--json"], seams);
+    const { logs, exitCode } = await run(["v2.10.2", "--no-wait", "--json"], seams);
     const body = JSON.parse(logs[0]!);
     expect(viewCalls).toBe(1);
     expect(body.pendingCount).toBeGreaterThan(0);
+    expect(body.clean).toBe(false);
+    expect(exitCode).toBe(1);
   });
 });
