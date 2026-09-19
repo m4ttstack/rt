@@ -163,6 +163,10 @@ jobs:
           printf '{"name":"%s","version":"%s","tag":"%s","repo":"%s","sourceSha":"%s"}\n' \
             "$APP_NAME" "$VERSION" "$TAG" "$APP_REPO" "$SOURCE_SHA" > stage/facts.json
           cat stage/facts.json
+          # upload-artifact strips executable bits, drops dotfiles by
+          # default, and dereferences symlinks -- tar the handoff so the
+          # binary sign-and-package receives still runs.
+          tar czf handoff.tgz -C stage .
       # The unsigned binary, plus workflow-written facts (never anything
       # BUILD_CMD produced directly) hand off to sign-and-package, the one
       # job that imports the Developer ID key. That job runs no app code at
@@ -170,10 +174,17 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: built-${{ matrix.name }}
-          path: stage/
+          path: handoff.tgz
 
   sign-and-package:
     needs: [plan, build]
+    # An implicit success() on a needs-dependent job would mean one failed
+    # build leg (fail-fast is false) skips signing for every app while
+    # release still runs and reports green having published nothing. With
+    # !cancelled(), each leg's own `download-artifact: built-<app>` step is
+    # what fails -- only for the app whose build died -- which is what keeps
+    # legs independent, same as the pr job's comment already documents.
+    if: ${{ !cancelled() }}
     runs-on: macos-15
     timeout-minutes: 15
     strategy:
@@ -182,6 +193,19 @@ jobs:
     steps:
       # Only for scripts/entitlements.plist. No app repo is ever cloned here
       # and no app dependency is ever installed here.
+      #
+      # Accepted, not fixed: the post-sign `--version` smoke below still runs
+      # the app-produced binary on the same runner as the unlocked keychain.
+      # That is a large reduction from the pre-split design (the app's own
+      # BUILD_CMD no longer executes anywhere near the key), and the same
+      # tier release.yml already accepts for its own sha-pinned helper smokes.
+      #
+      # Also accepted: nothing at release time re-verifies signedness: a
+      # scraped runner token could still poison the tarball between here and
+      # `gh release create`. That class of attack is pre-existing and is
+      # bounded the same way it already was -- the release job takes repo,
+      # tag and URL only from the plan job's trusted matrix, and recomputes
+      # the sha256 from the asset it actually uploads.
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
@@ -190,6 +214,11 @@ jobs:
         with:
           name: built-${{ matrix.name }}
           path: built
+
+      - name: Extract build handoff
+        run: |
+          tar xzf built/handoff.tgz -C built
+          rm -f built/handoff.tgz
 
       - name: Load build facts
         id: facts
@@ -206,6 +235,7 @@ jobs:
           [ "$(jq -r '.name' built/facts.json)" = "$APP_NAME" ] || { echo "::error::facts.json name does not match this matrix leg"; exit 1; }
           case "$VERSION" in ""|*[!A-Za-z0-9._+-]*) echo "::error::facts.json has an unusable version"; exit 1 ;; esac
           case "$SOURCE_SHA" in *[!0-9a-f]*|"") echo "::error::facts.json has an unusable sourceSha"; exit 1 ;; esac
+          git check-ref-format "refs/tags/$TAG" || { echo "::error::facts.json has an unusable tag: $TAG"; exit 1; }
           {
             echo "VERSION=$VERSION"
             echo "TAG=$TAG"
