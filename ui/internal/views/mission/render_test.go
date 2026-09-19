@@ -358,12 +358,32 @@ func TestRenderDiffPaneBinaryShowsExactMessage(t *testing.T) {
 func TestRenderDiffPaneNoneWithChangesShowsSelectAFile(t *testing.T) {
 	m := &Mission{}
 	m.model.Changes = []ChangeRow{{Path: "a.go", Status: "modified", Include: "none"}}
+	m.model.ChangedTotal = 1
 	out := ansi.Strip(m.renderDiffPane(60, 10))
 	if !strings.Contains(out, "select a file") {
 		t.Fatalf("empty diff with changes missing the select-a-file hint:\n%s", out)
 	}
 	if strings.Contains(out, "No local changes") {
 		t.Fatalf("empty diff with changes must not show the clean-worktree card:\n%s", out)
+	}
+}
+
+// TestRenderDiffPaneFilteredToEmptyWithNonzeroTotalShowsSelectAFile pins a
+// CodeRabbit finding on PR rt#353: the wire's Changes field is the FILTERED
+// list (lib/mission/model.ts computes changedTotal from allChanges, before
+// the filter narrows changes), so a filter that matches nothing on a dirty
+// worktree must not read as "the worktree is clean" -- ChangedTotal, not
+// len(Changes), is the empty-state gate.
+func TestRenderDiffPaneFilteredToEmptyWithNonzeroTotalShowsSelectAFile(t *testing.T) {
+	m := &Mission{}
+	m.model.Changes = nil // the typed filter matched none of the real changes
+	m.model.ChangedTotal = 3
+	out := ansi.Strip(m.renderDiffPane(60, 10))
+	if !strings.Contains(out, "select a file") {
+		t.Fatalf("filtered-to-empty diff with a nonzero total missing the select-a-file hint:\n%s", out)
+	}
+	if strings.Contains(out, "No local changes") {
+		t.Fatalf("filtered-to-empty diff with a nonzero total must not show the clean-worktree card:\n%s", out)
 	}
 }
 
@@ -423,6 +443,28 @@ func TestRenderDiffPaneEmptyStateColorsTitleKeysAndLabels(t *testing.T) {
 	}
 	if !strings.Contains(out, fgSGR(theme.Dimmer)) {
 		t.Fatalf("a hint label should wear Dimmer: %q", out)
+	}
+}
+
+// TestRenderEmptyStateCardNarrowWidthDoesNotWrapOrGrow pins a CodeRabbit
+// finding on PR rt#353: renderEmptyStateCard pre-padded every line to its
+// own natural widest line BEFORE applying the pane's own width, so a pane
+// narrower than the longest hint ("f  run the fetch/pull/push action")
+// left lipgloss to WRAP that overflowing line rather than truncate it,
+// growing the block past height and pushing whatever follows it down a
+// row. The card must still come back at exactly height rows, each exactly
+// width cells, however narrow the pane is.
+func TestRenderEmptyStateCardNarrowWidthDoesNotWrapOrGrow(t *testing.T) {
+	const width, height = 20, 10
+	out := renderEmptyStateCard(width, height)
+	lines := strings.Split(out, "\n")
+	if len(lines) != height {
+		t.Fatalf("narrow card should render exactly %d rows, got %d:\n%s", height, len(lines), ansi.Strip(out))
+	}
+	for i, line := range lines {
+		if w := lipgloss.Width(line); w != width {
+			t.Fatalf("row %d should be exactly width %d, got %d: %q", i, width, w, line)
+		}
 	}
 }
 
@@ -1309,9 +1351,32 @@ func TestRenderBranchSegmentDetachedUsesBranchGlyphNotCircle(t *testing.T) {
 	if strings.Contains(stripped, "○") || strings.Contains(stripped, "●") {
 		t.Fatalf("detached segment must drop the old circle-glyph swap: %q", out)
 	}
-	if !strings.Contains(out, fgSGR(theme.Peach)) {
-		t.Fatalf("detached segment's icon should still wear Peach: %q", out)
+	// The detached VALUE text ("On a1b2c3d") also wears Peach, so a bare
+	// Contains(out, fgSGR(Peach)) would still pass even if the icon itself
+	// lost its own Peach foreground; sgrImmediatelyBefore anchors the check
+	// to the glyph's own adjacent SGR run instead.
+	glyphIdx := strings.Index(out, theme.GlyphBranch)
+	if glyphIdx == -1 {
+		t.Fatalf("branch octicon not found in detached segment: %q", out)
 	}
+	if sgr := sgrImmediatelyBefore(out, glyphIdx); !strings.Contains(sgr, fgSGR(theme.Peach)) {
+		t.Fatalf("detached segment's icon should wear Peach at the glyph itself, got SGR %q in: %q", sgr, out)
+	}
+}
+
+// sgrImmediatelyBefore returns the raw SGR escape sequence
+// ("\x1b[...m") sitting immediately before idx in s, or "" if idx isn't
+// immediately preceded by one -- used to pin a color to the exact glyph it
+// paints rather than to "appears somewhere in this render."
+func sgrImmediatelyBefore(s string, idx int) string {
+	if idx < 2 || s[idx-1] != 'm' {
+		return ""
+	}
+	start := strings.LastIndex(s[:idx-1], "\x1b[")
+	if start == -1 {
+		return ""
+	}
+	return s[start:idx]
 }
 
 // TestNerdFontIconsMeasureAsOneCell pins the PUA-codepoint width footgun:

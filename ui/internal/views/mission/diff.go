@@ -203,7 +203,11 @@ func (m *Mission) renderDiffPane(width, height int) string {
 		return ""
 	}
 	if d.Kind == "" || d.Kind == "none" {
-		if len(m.model.Changes) == 0 {
+		// ChangedTotal, not len(Changes): Changes is the FILTERED list
+		// (lib/mission/model.ts computes changedTotal from allChanges before
+		// the filter narrows it), so a filter matching nothing on a dirty
+		// worktree must not read as a clean one.
+		if m.model.ChangedTotal == 0 {
 			return renderEmptyStateCard(width, height)
 		}
 		return centeredMessage(width, height, theme.Faint, "select a file")
@@ -271,9 +275,16 @@ func renderEmptyStateCard(width, height int) string {
 			maxW = w
 		}
 	}
+	// diffWidth has no positive minimum, so a narrow but reachable pane can
+	// be narrower than the longest hint line; clip every line to the pane's
+	// own width before padding, or lipgloss wraps the overflowing one
+	// instead of truncating it, growing the block past height.
+	if maxW > width {
+		maxW = width
+	}
 	padded := make([]string, len(lines))
 	for i, l := range lines {
-		padded[i] = on.Width(maxW).Align(lipgloss.Center).Render(l)
+		padded[i] = on.Width(maxW).Align(lipgloss.Center).Render(clipOn(l, maxW, on))
 	}
 	block := lipgloss.JoinVertical(lipgloss.Left, padded...)
 	return on.Width(width).Height(height).Align(lipgloss.Center, lipgloss.Center).Render(block)
