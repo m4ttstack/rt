@@ -67,6 +67,30 @@ rounded corners only as box-drawing glyphs, 1-cell scrollbar thumb, fixed
 cell line-height. Everything else on the boards is the contract: exact
 tokens, glyphs, spacing rhythm, keybar grammar, and every interaction state.
 
+## The parity checklist
+
+A visual pass is a per-board FEATURE walk, not an impression. For each
+board, before comparing anything else, extract and verify every item in
+these classes (the 2026-09-18 pass missed composition-level features by
+skipping straight to row content and token colors):
+
+1. Surfaces: which regions are filled bands (top bar, keybar, strips,
+   headers) and what token fills each; the frame's own canvas background
+   (the view sets the terminal background to Bg; erased and never-drawn
+   cells must resolve to it, verified through a real-renderer replay, not
+   a byte scan of composed output).
+2. Composition: what docks where (the commit block pins to the sidebar
+   bottom with flexible fill above), what stretches, what stays fixed
+   (sidebar width), where rules run unbroken.
+3. Iconography: every icon on the board and the exact glyph the build
+   uses for it; a substitution is a finding to fix or explicitly ratify
+   here, never a silent approximation.
+4. Tokens: exact SGR triplet checks against theme.go for every accent,
+   band, and state fill on the board.
+5. States: every board state (rest/hover/cursor/disabled/empty) rendered
+   and captured, including states the boards do NOT draw; an unboarded
+   state (like empty) is a gap to board first, not to improvise.
+
 ## Ratified at the build's visual pass (2026-09-18)
 
 Deviations the terminal build keeps deliberately; the boards show the
