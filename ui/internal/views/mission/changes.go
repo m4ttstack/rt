@@ -59,7 +59,7 @@ func renderFilterRow(text string, focused bool, width int) string {
 	if focused {
 		border = theme.Pink
 	}
-	return lipgloss.NewStyle().Background(theme.Bg).Border(lipgloss.RoundedBorder()).BorderForeground(border).Padding(0, 1).
+	return lipgloss.NewStyle().Background(theme.Bg).Border(lipgloss.RoundedBorder()).BorderForeground(border).BorderBackground(theme.Bg).Padding(0, 1).
 		Render(on.Width(inner).Render(line))
 }
 
@@ -204,7 +204,7 @@ func boxBlock(width int, contentLines []string) string {
 	for i, l := range contentLines {
 		padded[i] = on.Width(inner).Render(l)
 	}
-	return lipgloss.NewStyle().Background(theme.Bg).Border(lipgloss.RoundedBorder()).BorderForeground(theme.Panel).Padding(0, 1).
+	return lipgloss.NewStyle().Background(theme.Bg).Border(lipgloss.RoundedBorder()).BorderForeground(theme.Panel).BorderBackground(theme.Bg).Padding(0, 1).
 		Render(strings.Join(padded, "\n"))
 }
 
@@ -267,7 +267,9 @@ func justify(on lipgloss.Style, width int, left, right string) string {
 		maxLeft = 0
 	}
 	if lipgloss.Width(left) > maxLeft {
-		left = clip(left, maxLeft)
+		// left already carries its own fg+bg per fragment (justify's
+		// callers), so its ellipsis must too -- clipOn, not clip.
+		left = clipOn(left, maxLeft, on)
 	}
 	avail := width - 3 - lipgloss.Width(left)
 	if avail < 0 {

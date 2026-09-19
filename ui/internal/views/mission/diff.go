@@ -260,7 +260,22 @@ func renderEmptyStateCard(width, height int) string {
 		hint("w", "switch worktree"),
 		hint("r", "switch repository"),
 	}
-	block := lipgloss.JoinVertical(lipgloss.Center, lines...)
+	// JoinVertical centers shorter lines by padding them with bare,
+	// unstyled spaces (it has no whitespace-style option, unlike
+	// PlaceHorizontal), so each line is pre-padded to the widest one
+	// through on itself first -- JoinVertical then has no padding left to
+	// add of its own.
+	maxW := 0
+	for _, l := range lines {
+		if w := lipgloss.Width(l); w > maxW {
+			maxW = w
+		}
+	}
+	padded := make([]string, len(lines))
+	for i, l := range lines {
+		padded[i] = on.Width(maxW).Align(lipgloss.Center).Render(l)
+	}
+	block := lipgloss.JoinVertical(lipgloss.Left, padded...)
 	return on.Width(width).Height(height).Align(lipgloss.Center, lipgloss.Center).Render(block)
 }
 
@@ -415,7 +430,7 @@ func renderDiffLine(d DiffModel, line DiffLine, width int, hover, gutterHover bo
 
 	rendered := rowBg.Foreground(base).Render(text)
 	if line.Kind != "del" && d.Lang != "" && !hover {
-		rendered = highlightLine(d.Lang, text, base)
+		rendered = highlightLine(d.Lang, text, base, theme.Bg)
 	}
 	return rowBg.Width(width).Render(gutter + rowBg.Foreground(base).Render(mark) + rendered)
 }

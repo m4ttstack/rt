@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"image/color"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -1333,4 +1336,123 @@ func TestRenderKeybarRestPaintsBgSubtleBandFullWidth(t *testing.T) {
 	if idx := strings.LastIndex(out, bgSGR(theme.BgSubtle)); idx <= strings.LastIndex(out, "quit") {
 		t.Fatalf("BgSubtle should still be painting after the trailing \"quit\" label: %q", out)
 	}
+}
+
+// ─── full-frame background fill (every cell, not just spot rows) ────────
+
+// sgrParamsRe matches one SGR escape's parameter list.
+var sgrParamsRe = regexp.MustCompile("\x1b\\[([0-9;]*)m")
+
+// bgCoverage walks a single already-rendered frame line the way a real
+// terminal applies SGR state while printing, and returns, per visible
+// column, whether that cell carries an explicit background (48;2;.../
+// 48;5;...) rather than falling through to the terminal's own default. A
+// spot-row "Contains(bgSGR(...))" check only proves a color appears
+// somewhere in the line; this is what actually proves the WHOLE row is
+// covered, which is what caught the holes a spot check missed (a bare
+// clip() ellipsis, an unstyled pill separator, an unstyled border cell).
+func bgCoverage(line string) []bool {
+	cover := make([]bool, 0, len(line))
+	hasBg := false
+	i := 0
+	for i < len(line) {
+		if loc := sgrParamsRe.FindStringIndex(line[i:]); loc != nil && loc[0] == 0 {
+			params := strings.Split(sgrParamsRe.FindStringSubmatch(line[i:])[1], ";")
+			for pi := 0; pi < len(params); pi++ {
+				switch params[pi] {
+				case "", "0", "49":
+					hasBg = false
+				case "38":
+					if pi+1 < len(params) {
+						if params[pi+1] == "2" {
+							pi += 4
+						} else if params[pi+1] == "5" {
+							pi += 2
+						}
+					}
+				case "48":
+					hasBg = true
+					if pi+1 < len(params) {
+						if params[pi+1] == "2" {
+							pi += 4
+						} else if params[pi+1] == "5" {
+							pi += 2
+						}
+					}
+				}
+			}
+			i += loc[1]
+			continue
+		}
+		r := []rune(line[i:])[0]
+		cover = append(cover, hasBg)
+		i += len(string(r))
+	}
+	return cover
+}
+
+// assertFullyBgFilled fails with the first uncovered cell it finds in any
+// row of content, naming the row/column/line so a regression is easy to
+// place back in the source.
+func assertFullyBgFilled(t *testing.T, label, content string, width int) {
+	t.Helper()
+	for y, line := range strings.Split(content, "\n") {
+		cov := bgCoverage(line)
+		if len(cov) != width {
+			t.Fatalf("%s row %d: rendered width %d, want %d: %q", label, y, len(cov), width, line)
+		}
+		for x, has := range cov {
+			if !has {
+				t.Fatalf("%s row %d col %d has no background fill (terminal default would bleed through): %q", label, y, x, line)
+			}
+		}
+	}
+}
+
+// TestFullFramePopulatedEveryRowFullyPaintsBackground pins the whole-frame
+// contract at cell granularity against the shared fixture (repo/worktree/
+// branch segments, a 3-row Changes list with a partial row, a stash strip,
+// an undo strip with a summary long enough to clip, and a real diff): every
+// column of every row -- both panes and the divider -- carries an explicit
+// background.
+func TestFullFramePopulatedEveryRowFullyPaintsBackground(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("..", "..", "..", "fixtures", "session-model-mission.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var envelope struct {
+		Model json.RawMessage `json:"model"`
+	}
+	if err := json.Unmarshal(b, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	m := New(nil)
+	m.width, m.height = 130, 38
+	if err := m.SetModel(envelope.Model); err != nil {
+		t.Fatal(err)
+	}
+	assertFullyBgFilled(t, "populated", m.View().Content, m.width)
+}
+
+// TestFullFrameEmptyStateEveryRowFullyPaintsBackground is the same contract
+// against docs/design/mission/EmptyState.png's scenario: zero changes, the
+// sidebar's bottom-dock filler in play, and the diff pane's centered card.
+// Goes through SetModel (a real wire push), not a direct m.model assignment:
+// leaving Commit.Placeholder unseeded routes the summary/description
+// textinputs through a different internal render branch than production
+// ever takes, and is its own false hole.
+func TestFullFrameEmptyStateEveryRowFullyPaintsBackground(t *testing.T) {
+	m := New(nil)
+	m.width, m.height = 100, 30
+	raw, err := json.Marshal(Model{
+		Current: Current{Repo: "repo-tools", Branch: "main"},
+		Commit:  CommitModel{ButtonLabel: "Commit 0 files to main", Placeholder: "Summary (required)"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SetModel(raw); err != nil {
+		t.Fatal(err)
+	}
+	assertFullyBgFilled(t, "empty-state", m.View().Content, m.width)
 }
