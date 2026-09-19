@@ -573,7 +573,7 @@ func TestMouseClickRepoSegmentOpensModalThenRowClickEmitsRepoIntent(t *testing.T
 	s.WaitForPaint("chat")
 	// The repo modal is anchored at x=0 (segmentOrigin's zoneRepo case); its
 	// first content row sits after the filter line, the top rule, and the
-	// fixture's own "recent" group header (both repo rows share that group).
+	// fixture's own "local" group header (both repo rows share that group).
 	s.Type(sgrClick(0, 5, 6))
 	l, ok := s.ReadLine(2 * time.Second)
 	if !ok || !strings.Contains(l, `"name":"mission:repo"`) || !strings.Contains(l, `"repo":"repo-tools"`) {

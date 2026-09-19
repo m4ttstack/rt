@@ -5,6 +5,7 @@ import { DiffSelection, DiffSelectionType, type BranchInfo, type ChangedFile, ty
 import { DiffLine, DiffLineType } from "../../../packages/git-core/src/vendor/ghd/diff-line.ts";
 import { DiffHunk, DiffHunkExpansionType, DiffHunkHeader } from "../../../packages/git-core/src/vendor/ghd/raw-diff.ts";
 import type { GitWorktreeBadge, RepoStatusRow, WorktreeTreeRow } from "../../../packages/rt-client/src/commands.ts";
+import { serializeIdentity } from "../../settings/identity.ts";
 import type { ActionState } from "../git-actions.ts";
 import { buildModel, joinWorktreeRows, type MissionModel, type MissionState, type WorktreeRow } from "../model.ts";
 
@@ -298,6 +299,18 @@ describe("joinWorktreeRows", () => {
     const rows = joinWorktreeRows(trees, []);
 
     expect(rows.map((r) => r.onDeck)).toEqual([false, true, false]);
+  });
+});
+
+describe("repo modal group derivation", () => {
+  test.each([
+    ["github remote", serializeIdentity({ kind: "remote", id: "github.com/m4ttstack/repo-tools" }), "github.com/m4ttstack"],
+    ["gitlab remote with owner", serializeIdentity({ kind: "remote", id: "gitlab.com/acme/acme-dev" }), "gitlab.com/acme"],
+    ["path-kind identity", serializeIdentity({ kind: "path", id: "/Users/dev/scratch" }), "local"],
+    ["bare/legacy id (no colon, unparseable as a wire)", "repo-tools", "local"],
+  ] as const)("%s -> %s", (_label, repoId, expected) => {
+    const model = buildModel(baseInput({ rows: [{ repo: repoId, error: null, worktrees: [badge()] }] }));
+    expect(model.repos[0]!.group).toBe(expected);
   });
 });
 

@@ -16,10 +16,10 @@
     "busy": false
   },
   "repos": [
-    { "id": "repo-tools", "label": "repo-tools", "group": "recent",
+    { "id": "repo-tools", "label": "repo-tools", "group": "local",
       "badge": { "ahead": 3, "behind": 2, "staged": 1, "unstaged": 2, "untracked": 1, "conflicted": 0, "clean": false, "lastFetchedAt": "2026-09-18T12:00:00Z" },
       "current": true },
-    { "id": "chat", "label": "chat", "group": "recent",
+    { "id": "chat", "label": "chat", "group": "local",
       "badge": { "ahead": 0, "behind": 0, "staged": 0, "unstaged": 0, "untracked": 0, "conflicted": 0, "clean": true, "lastFetchedAt": "2026-09-18T11:30:00Z" },
       "current": false }
   ],

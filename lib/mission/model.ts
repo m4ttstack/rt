@@ -8,6 +8,8 @@ import {
 } from "../../packages/git-core/src/index.ts";
 import { DiffLineType } from "../../packages/git-core/src/vendor/ghd/diff-line.ts";
 import type { GitWorktreeBadge, RepoStatusRow, WorktreeTreeRow } from "../../packages/rt-client/src/commands.ts";
+import { repoLabel } from "../repo-label.ts";
+import { parseIdentity } from "../settings/identity.ts";
 import type { ActionState } from "./git-actions.ts";
 import type {
   MissionActionModel,
@@ -129,9 +131,12 @@ function langFor(path: string): string {
   return LANG_BY_EXT[path.slice(dot + 1).toLowerCase()] ?? "";
 }
 
-function repoLabel(id: string): string {
-  const parts = id.split("/");
-  return parts[parts.length - 1] || id;
+/** The repo modal groups by host/owner ("github.com/m4ttstack"); a path-kind or unparseable (legacy name-keyed) identity has neither, so it groups under "local". */
+function repoGroup(serialized: string): string {
+  const identity = parseIdentity(serialized);
+  if (!identity || identity.kind === "path") return "local";
+  const [host, owner] = identity.id.split("/");
+  return host && owner ? `${host}/${owner}` : "local";
 }
 
 function toMissionBadge(badge: GitWorktreeBadge): MissionBadge {
@@ -278,7 +283,7 @@ export function buildModel(input: {
   const repos: MissionRepoRow[] = rows.map((row) => ({
     id: row.repo,
     label: repoLabel(row.repo),
-    group: "recent",
+    group: repoGroup(row.repo),
     badge: row.worktrees[0] ? toMissionBadge(row.worktrees[0]) : EMPTY_BADGE,
     current: row.repo === state.currentRepo,
   }));
