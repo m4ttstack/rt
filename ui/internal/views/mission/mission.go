@@ -562,6 +562,15 @@ func (m *Mission) View() tea.View {
 
 	v := tea.NewView(out)
 	v.AltScreen = true
+	// bubbletea's renderer optimizes trailing styled blanks by erasing to
+	// end-of-line rather than emitting every styled space, and an erased
+	// cell paints the TERMINAL's own default background, not whatever SGR
+	// the erased content carried. Per-row Bg/BgSubtle fills alone can't
+	// survive that erase, so the frame's own terminal background is set
+	// here too: with it in place, anything the renderer erases or never
+	// touches still resolves to theme.Bg instead of the terminal's own
+	// default.
+	v.BackgroundColor = theme.Bg
 	return v
 }
 
