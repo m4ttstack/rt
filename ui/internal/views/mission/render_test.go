@@ -945,13 +945,29 @@ func newMouseTestMission() *Mission {
 	return m
 }
 
+// changesRowY returns the absolute frame row of mouseFixtureModel's Changes
+// list row idx, derived from m.layout()'s own topH (not hardcoded) plus the
+// sidebar's fixed pre-list structure: tabs(2) + the tabs-gap blank band
+// row(1) + the filter box(3) + the master row(1).
+func changesRowY(m *Mission, idx int) int {
+	return m.layout().topH + 2 + 1 + 3 + 1 + idx
+}
+
+// filterRowY returns the absolute frame row of the filter box's own first
+// row (any of its three rows resolves to hitFilterRow), derived from
+// m.layout()'s own topH plus the fixed tabs(2) + tabs-gap(1) prefix.
+func filterRowY(m *Mission) int {
+	return m.layout().topH + 2 + 1
+}
+
 // TestMouseMotionOverFileRowSetsHoverNotCursor pins the mouse board's
 // central invariant inside mission's own Update wiring (render_test.go
 // already pins the row-paint half via renderChangeRow directly): motion
 // over a non-cursor row sets the render hint, never the cursor.
 func TestMouseMotionOverFileRowSetsHoverNotCursor(t *testing.T) {
 	m := newMouseTestMission()
-	next, _ := m.Update(tea.MouseMotionMsg{X: 10, Y: 9}) // row index 1 ("b.go")
+	cursorY, hoverY := changesRowY(m, 0), changesRowY(m, 1)
+	next, _ := m.Update(tea.MouseMotionMsg{X: 10, Y: hoverY}) // row index 1 ("b.go")
 	m = next.(*Mission)
 	if m.hoverFile != 1 {
 		t.Fatalf("hovering row 1 should set hoverFile=1, got %d", m.hoverFile)
@@ -960,11 +976,11 @@ func TestMouseMotionOverFileRowSetsHoverNotCursor(t *testing.T) {
 		t.Fatalf("hover must never move the cursor, got selected=%q", m.selected)
 	}
 	lines := strings.Split(m.View().Content, "\n")
-	if !strings.Contains(lines[9], bgSGR(theme.HoverBg)) {
-		t.Fatalf("hovered row should paint HoverBg:\n%s", lines[9])
+	if !strings.Contains(lines[hoverY], bgSGR(theme.HoverBg)) {
+		t.Fatalf("hovered row should paint HoverBg:\n%s", lines[hoverY])
 	}
-	if !strings.Contains(lines[8], bgSGR(theme.SelBg)) || strings.Contains(lines[8], bgSGR(theme.HoverBg)) {
-		t.Fatalf("cursor row must keep SelBg, never HoverBg:\n%s", lines[8])
+	if !strings.Contains(lines[cursorY], bgSGR(theme.SelBg)) || strings.Contains(lines[cursorY], bgSGR(theme.HoverBg)) {
+		t.Fatalf("cursor row must keep SelBg, never HoverBg:\n%s", lines[cursorY])
 	}
 }
 
@@ -1015,11 +1031,12 @@ func TestMouseWheelOverModalMovesCursorSkippingGuardedRow(t *testing.T) {
 // row's select (covered by TestMouseClickFileRowEmitsOnlyOnRowChange below).
 func TestMouseDoubleClickFileRowFocusesDiff(t *testing.T) {
 	m := newMouseTestMission()
+	rowY := changesRowY(m, 1)
 	now := time.Now()
 	m.nowFn = func() time.Time { return now }
-	m.Update(tea.MouseClickMsg{X: 20, Y: 9, Button: tea.MouseLeft})
+	m.Update(tea.MouseClickMsg{X: 20, Y: rowY, Button: tea.MouseLeft})
 	now = now.Add(100 * time.Millisecond)
-	next, _ := m.Update(tea.MouseClickMsg{X: 20, Y: 9, Button: tea.MouseLeft})
+	next, _ := m.Update(tea.MouseClickMsg{X: 20, Y: rowY, Button: tea.MouseLeft})
 	m = next.(*Mission)
 	if m.focus != focusDiff {
 		t.Fatalf("a second click within the window should focus the diff, got focus=%v", m.focus)
@@ -1035,12 +1052,12 @@ func TestMouseDoubleClickFileRowFocusesDiff(t *testing.T) {
 // the driver loads its diff.
 func TestMouseClickFileRowEmitsOnlyOnRowChange(t *testing.T) {
 	m := newMouseTestMission()
-	next, cmd := m.Update(tea.MouseClickMsg{X: 20, Y: 8, Button: tea.MouseLeft})
+	next, cmd := m.Update(tea.MouseClickMsg{X: 20, Y: changesRowY(m, 0), Button: tea.MouseLeft})
 	m = next.(*Mission)
 	if cmd != nil {
 		t.Fatal("a click on the row already under the cursor must not emit")
 	}
-	next, cmd = m.Update(tea.MouseClickMsg{X: 20, Y: 10, Button: tea.MouseLeft})
+	next, cmd = m.Update(tea.MouseClickMsg{X: 20, Y: changesRowY(m, 2), Button: tea.MouseLeft})
 	m = next.(*Mission)
 	if m.selected != "c.go" {
 		t.Fatalf("click should move the cursor to row 2, got %q", m.selected)
@@ -1053,27 +1070,28 @@ func TestMouseClickFileRowEmitsOnlyOnRowChange(t *testing.T) {
 	}
 }
 
-// TestMouseClickFilterRowFocusesFilter pins the filter zone (absolute y in
-// [2,5): tabs takes y 0-1, the filter box the next three).
+// TestMouseClickFilterRowFocusesFilter pins the filter zone.
 func TestMouseClickFilterRowFocusesFilter(t *testing.T) {
 	m := newMouseTestMission()
-	next, _ := m.Update(tea.MouseClickMsg{X: 5, Y: 4, Button: tea.MouseLeft})
+	next, _ := m.Update(tea.MouseClickMsg{X: 5, Y: filterRowY(m), Button: tea.MouseLeft})
 	m = next.(*Mission)
 	if m.focus != focusFilter {
 		t.Fatalf("clicking the filter row should focus the filter, got %v", m.focus)
 	}
 }
 
-// commitButtonY returns the commit button's absolute frame row via the SAME
-// layout() arithmetic View paints with (mission.go's sidebarBlocks/
-// sidebarHit split), so a click test never hardcodes a y that drifts when
-// the sidebar's bottom-dock gap resizes.
+// commitButtonY returns the commit button's own first row (of its three:
+// fill, centered label, fill -- any of the three resolves to
+// hitCommitButton) via the SAME layout() arithmetic View paints with
+// (mission.go's sidebarBlocks/sidebarHit split), so a click test never
+// hardcodes a y that drifts when the sidebar's bottom-dock gap resizes.
 func commitButtonY(m *Mission) int {
 	l := m.layout()
 	off := 1 // the rule above the commit box
 	if m.amendLocal {
 		off++
 	}
+	off++    // the commit box's own top-padding blank band row
 	off += 3 // summary box
 	off += 4 // description box
 	return l.topH + l.sidebarTopH + l.sidebarFillerH + off
@@ -1149,7 +1167,9 @@ func TestCommitButtonDocksToSidebarBottomWithShortList(t *testing.T) {
 	if l.sidebarFillerH == 0 {
 		t.Fatalf("setup: expected a nonzero filler gap for a 3-row list at height 30, got layout=%+v", l)
 	}
-	wantY := l.topH + l.sidebarTopH + l.sidebarFillerH + 1 /*rule*/ + 3 /*summary box*/ + 4 /*description box*/
+	// The button's own middle row is where its label renders (the first and
+	// third rows are its Pink/Panel fill only).
+	wantY := commitButtonY(m) + 1
 
 	lines := strings.Split(ansi.Strip(m.View().Content), "\n")
 	if wantY >= len(lines) || !strings.Contains(lines[wantY], "Commit 3 files to main") {
@@ -1199,7 +1219,7 @@ func TestCommitButtonDocksToSidebarBottomWithZeroChanges(t *testing.T) {
 	if l.sidebarFillerH == 0 {
 		t.Fatalf("setup: expected a nonzero filler gap with zero changes, got layout=%+v", l)
 	}
-	wantY := l.topH + l.sidebarTopH + l.sidebarFillerH + 1 + 3 + 4
+	wantY := commitButtonY(m) + 1
 
 	lines := strings.Split(ansi.Strip(m.View().Content), "\n")
 	if wantY >= len(lines) || !strings.Contains(lines[wantY], "Commit 0 files to main") {
@@ -1208,6 +1228,190 @@ func TestCommitButtonDocksToSidebarBottomWithZeroChanges(t *testing.T) {
 			got = lines[wantY]
 		}
 		t.Fatalf("commit button should dock at layout-derived row %d, got %q", wantY, got)
+	}
+}
+
+// ─── vertical rhythm (docs/design/mission/README.md's Terminal geometry
+// table): quantization ruling ratified 2026-09-19 ────────────────────────
+
+// TestTopBarIsThreeRowsWithBlankBreathingBand pins item 1: the top bar
+// renders exactly 3 rows -- label, value, and a blank BgSubtle-banded row
+// beneath them (the board's own bottom breathing) -- across the whole bar,
+// not just one segment.
+func TestTopBarIsThreeRowsWithBlankBreathingBand(t *testing.T) {
+	out := renderTopBar(pullModel(), 140, zoneNone, zoneNone)
+	lines := strings.Split(out, "\n")
+	if len(lines) != 3 {
+		t.Fatalf("top bar should render exactly 3 rows, got %d:\n%s", len(lines), out)
+	}
+	blank := lines[2]
+	// The composed bar's own divider glyphs ("│" between segments) legitimately
+	// still appear on this row; only the segments' own content must be blank.
+	textOnly := strings.ReplaceAll(strings.TrimSpace(ansi.Strip(blank)), "│", "")
+	if strings.TrimSpace(textOnly) != "" {
+		t.Fatalf("the top bar's third row should carry no segment content, only dividers: %q", blank)
+	}
+	if !strings.Contains(blank, bgSGR(theme.BgSubtle)) {
+		t.Fatalf("the top bar's blank row should still wear the BgSubtle band: %q", blank)
+	}
+}
+
+// TestTopBarHoverCoversAllThreeRowsOfItsSegment pins item 1's hover half:
+// a hovered segment's HoverBg fill spans its full 3-row span, including the
+// blank breathing row, not just the label/value rows.
+func TestTopBarHoverCoversAllThreeRowsOfItsSegment(t *testing.T) {
+	out := renderTopBar(pullModel(), 140, zoneRepo, zoneNone)
+	lines := strings.Split(out, "\n")
+	for i, line := range lines {
+		if !strings.Contains(line, bgSGR(theme.HoverBg)) {
+			t.Fatalf("hovered repo segment's row %d should wear HoverBg across its full span: %q", i, line)
+		}
+	}
+}
+
+// TestSidebarTopHasBlankBandAfterTabsBeforeFilter pins item 2: the tabs
+// row + underline row are followed by one blank Bg row (the board's own
+// rule+gap) before the filter box's own top border.
+func TestSidebarTopHasBlankBandAfterTabsBeforeFilter(t *testing.T) {
+	m := &Mission{}
+	b := m.sidebarBlocks(sidebarWidth)
+	lines := strings.Split(b.top, "\n")
+	if len(lines) < 4 {
+		t.Fatalf("sidebar top block too short to hold tabs+blank+filter: %d rows:\n%s", len(lines), b.top)
+	}
+	blank := lines[2]
+	if strings.TrimSpace(ansi.Strip(blank)) != "" {
+		t.Fatalf("row 2 (after the tabs underline) should be blank: %q", blank)
+	}
+	if !strings.Contains(blank, bgSGR(theme.Bg)) {
+		t.Fatalf("the tabs-gap blank row should still wear the Bg fill: %q", blank)
+	}
+	if !strings.Contains(ansi.Strip(lines[3]), "╭") {
+		t.Fatalf("row 3 should be the filter box's own top border: %q", lines[3])
+	}
+}
+
+// TestRenderCommitButtonThreeRowsFillLabelFill pins item 3: the commit
+// button is 3 rows -- fill, centered label, fill -- all three the same
+// full-width Pink (enabled) or Panel (disabled) fill, never a single thin
+// row.
+func TestRenderCommitButtonThreeRowsFillLabelFill(t *testing.T) {
+	const width = 40
+	const label = "Commit 2 files to main"
+	enabled := renderCommitButton(width, label, true)
+	lines := strings.Split(enabled, "\n")
+	if len(lines) != 3 {
+		t.Fatalf("commit button should render exactly 3 rows, got %d:\n%s", len(lines), enabled)
+	}
+	for i, wantLabel := range []bool{false, true, false} {
+		plain := ansi.Strip(lines[i])
+		if hasLabel := strings.Contains(plain, label); hasLabel != wantLabel {
+			t.Fatalf("row %d label presence = %v, want %v: %q", i, hasLabel, wantLabel, lines[i])
+		}
+		if !strings.Contains(lines[i], bgSGR(theme.Pink)) {
+			t.Fatalf("enabled row %d should wear the Pink fill: %q", i, lines[i])
+		}
+		if lipgloss.Width(plain) != width {
+			t.Fatalf("row %d should be full width %d, got %d: %q", i, width, lipgloss.Width(plain), lines[i])
+		}
+	}
+	disabled := renderCommitButton(width, label, false)
+	for i, line := range strings.Split(disabled, "\n") {
+		if !strings.Contains(line, bgSGR(theme.Panel)) {
+			t.Fatalf("disabled row %d should wear the Panel fill: %q", i, line)
+		}
+	}
+}
+
+// TestRenderCommitBoxHasBlankBandBeforeSummaryBox pins item 4: the commit
+// box's own top padding (board pad=12) is one blank Bg row immediately
+// before the summary box's own top border.
+func TestRenderCommitBoxHasBlankBandBeforeSummaryBox(t *testing.T) {
+	out := renderCommitBox(sidebarWidth, "", "", false, "Commit 2 files to main", false)
+	lines := strings.Split(out, "\n")
+	if strings.TrimSpace(ansi.Strip(lines[0])) != "" {
+		t.Fatalf("the commit box's own top-padding row should be blank: %q", lines[0])
+	}
+	if !strings.Contains(lines[0], bgSGR(theme.Bg)) {
+		t.Fatalf("the commit box's top-padding row should wear the Bg fill: %q", lines[0])
+	}
+	if !strings.Contains(ansi.Strip(lines[1]), "╭") {
+		t.Fatalf("row 1 should be the summary box's own top border: %q", lines[1])
+	}
+}
+
+// TestRenderCommitBoxAmendingBannerThenBlankThenSummaryBox covers the same
+// contract with the (build-only, un-boarded) amend banner present: the
+// banner still leads, but the blank pad row -- and everything after it --
+// keeps its own fixed position relative to the summary box.
+func TestRenderCommitBoxAmendingBannerThenBlankThenSummaryBox(t *testing.T) {
+	out := ansi.Strip(renderCommitBox(sidebarWidth, "", "", true, "Commit 2 files to main", false))
+	lines := strings.Split(out, "\n")
+	if !strings.Contains(lines[0], "Amending last commit") {
+		t.Fatalf("row 0 should be the amend banner: %q", lines[0])
+	}
+	if strings.TrimSpace(lines[1]) != "" {
+		t.Fatalf("row 1 should be the blank pad row after the banner: %q", lines[1])
+	}
+	if !strings.Contains(lines[2], "╭") {
+		t.Fatalf("row 2 should be the summary box's own top border: %q", lines[2])
+	}
+}
+
+// TestFrameCommitButtonThreeRowsFullWidthFillLabelCentered pins the same
+// ruling at the FULL FRAME level, located via commitButtonY's layout()
+// arithmetic rather than a hardcoded row: all three button rows carry the
+// enabled Pink fill, and the label renders on the middle row only.
+func TestFrameCommitButtonThreeRowsFullWidthFillLabelCentered(t *testing.T) {
+	m := newMouseTestMission()
+	m.model.Commit.CanCommit = true
+	m.summaryInput.SetValue("msg")
+
+	startY := commitButtonY(m)
+	lines := strings.Split(m.View().Content, "\n")
+	for i := 0; i < 3; i++ {
+		row := lines[startY+i]
+		if !strings.Contains(row, bgSGR(theme.Pink)) {
+			t.Fatalf("button row %d should wear the enabled Pink fill: %q", i, row)
+		}
+		wantLabel := i == 1
+		if hasLabel := strings.Contains(ansi.Strip(row), "Commit 3 files to main"); hasLabel != wantLabel {
+			t.Fatalf("button row %d label presence = %v, want %v (only the middle row): %q", i, hasLabel, wantLabel, row)
+		}
+	}
+}
+
+// TestFrameBlankBandAboveSummaryBox re-checks item 4 at the full frame
+// level: the row right after the rule (and any amend banner) is blank in
+// the sidebar column, and the row after THAT is the summary box's own top
+// border.
+func TestFrameBlankBandAboveSummaryBox(t *testing.T) {
+	m := newMouseTestMission() // no stash, no amend
+	l := m.layout()
+	blankY := l.topH + l.sidebarTopH + l.sidebarFillerH + 1 // +1 skips the rule line
+	lines := strings.Split(m.View().Content, "\n")
+	blankSidebarCol := ansi.Strip(lines[blankY])[:sidebarWidth]
+	if strings.TrimSpace(blankSidebarCol) != "" {
+		t.Fatalf("row above the summary box should be blank in the sidebar column: %q", blankSidebarCol)
+	}
+	if !strings.Contains(ansi.Strip(lines[blankY+1])[:sidebarWidth], "╭") {
+		t.Fatalf("the row after the blank pad should be the summary box's own top border: %q", ansi.Strip(lines[blankY+1]))
+	}
+}
+
+// TestFrameTabsGapBlankRowBeforeFilterBox re-checks item 2 at the full
+// frame level: the row after the tabs underline is blank in the sidebar
+// column, and the row after that is the filter box's own top border.
+func TestFrameTabsGapBlankRowBeforeFilterBox(t *testing.T) {
+	m := newMouseTestMission()
+	blankY := m.layout().topH + 2 // topbar + the tabs row's own 2 lines
+	lines := strings.Split(m.View().Content, "\n")
+	blankSidebarCol := ansi.Strip(lines[blankY])[:sidebarWidth]
+	if strings.TrimSpace(blankSidebarCol) != "" {
+		t.Fatalf("row after the tabs underline should be blank in the sidebar column: %q", blankSidebarCol)
+	}
+	if !strings.Contains(ansi.Strip(lines[blankY+1])[:sidebarWidth], "╭") {
+		t.Fatalf("the row after the tabs-gap blank should be the filter box's own top border: %q", ansi.Strip(lines[blankY+1]))
 	}
 }
 
@@ -1264,10 +1468,10 @@ func TestRenderChangeRowWideRuneFilenameStaysAtWidth(t *testing.T) {
 func TestTopBarSegmentRestPaintsBgSubtleBandFullWidth(t *testing.T) {
 	out := renderRepoSegment(pullModel(), sidebarWidth, false, false)
 	lines := strings.Split(out, "\n")
-	if len(lines) != 2 {
-		t.Fatalf("segment should render exactly 2 rows, got %d:\n%s", len(lines), out)
+	if len(lines) != 3 {
+		t.Fatalf("segment should render exactly 3 rows (label, value, blank breathing band), got %d:\n%s", len(lines), out)
 	}
-	labelRow, valueRow := lines[0], lines[1]
+	labelRow, valueRow, blankRow := lines[0], lines[1], lines[2]
 	if !strings.Contains(labelRow, bgSGR(theme.BgSubtle)) {
 		t.Fatalf("label row should wear the BgSubtle band: %q", labelRow)
 	}
@@ -1279,6 +1483,12 @@ func TestTopBarSegmentRestPaintsBgSubtleBandFullWidth(t *testing.T) {
 	}
 	if idx := strings.LastIndex(valueRow, bgSGR(theme.BgSubtle)); idx <= strings.Index(valueRow, "repo-tools") {
 		t.Fatalf("BgSubtle should still be painting the trailing pad after the value text: %q", valueRow)
+	}
+	if !strings.Contains(blankRow, bgSGR(theme.BgSubtle)) {
+		t.Fatalf("the third, blank breathing row should still wear the BgSubtle band: %q", blankRow)
+	}
+	if strings.TrimSpace(ansi.Strip(blankRow)) != "" {
+		t.Fatalf("the third row should be blank: %q", blankRow)
 	}
 }
 

@@ -212,12 +212,12 @@ func TestListCursorAtTopUpDoesNotEmit(t *testing.T) {
 }
 
 // TestMouseClickFileRowEmitsSelectWithPath clicks the third Changes row
-// (mission.go, absolute y=10 per the coordinate walk on
+// (mission.go, absolute y=12 per the coordinate walk on
 // TestMouseClickCheckboxCellEmitsToggleFileWithPath) while the cursor sits
 // on the first: the click moves the cursor and emits that row's select.
 func TestMouseClickFileRowEmitsSelectWithPath(t *testing.T) {
 	s := s5open(t)
-	s.Type(sgrClick(0, 20, 10))
+	s.Type(sgrClick(0, 20, 12))
 	l, ok := s.ReadLine(2 * time.Second)
 	if !ok || !strings.Contains(l, `"name":"mission:select"`) || !strings.Contains(l, `"path":"ui/internal/views/mission/mission.go"`) {
 		t.Fatalf("file-row click select intent: %q", l)
@@ -582,13 +582,13 @@ const (
 
 // TestMouseClickCheckboxCellEmitsToggleFileWithPath drives a left click at
 // the checkbox column of the fixture's second Changes row (topbar.go):
-// tabs(2)+filter(3)+master(1)=6 body rows ahead of the list, +1 for row
-// index 1 = bodyY 7; topH(2)+bodyY(7) = frame y 9 (the debug screen dump
-// pins this: row 9 is "  ○ .../topbar.go"), checkbox at x=2 (the "  "
-// prefix's own width).
+// tabs(2)+tabs-gap(1)+filter(3)+master(1)=7 body rows ahead of the list
+// (docs/design/mission/README.md's Terminal geometry table: the tabs-gap
+// blank band row), +1 for row index 1 = bodyY 8; topH(3)+bodyY(8) = frame
+// y 11, checkbox at x=2 (the "  " prefix's own width).
 func TestMouseClickCheckboxCellEmitsToggleFileWithPath(t *testing.T) {
 	s := s5open(t)
-	s.Type(sgrClick(0, 2, 9))
+	s.Type(sgrClick(0, 2, 11))
 	l, ok := s.ReadLine(2 * time.Second)
 	if !ok || !strings.Contains(l, `"name":"mission:stage"`) || !strings.Contains(l, `"path":"ui/internal/views/mission/topbar.go"`) || !strings.Contains(l, `"mode":"toggle-file"`) {
 		t.Fatalf("checkbox click stage intent: %q", l)
@@ -599,11 +599,12 @@ func TestMouseClickCheckboxCellEmitsToggleFileWithPath(t *testing.T) {
 
 // TestMouseClickDiffGutterOnAddLineEmitsLineStage clicks the gutter column
 // (x=0 relative to the diff pane, absolute sidebarWidth+1) of the fixture's
-// third diff line (index 2, the first add line, selIdx 0): header@2, then
-// one line per index (idx0 hunk@3, idx1 context@4, idx2 add@5).
+// third diff line (index 2, the first add line, selIdx 0): the diff pane
+// starts at topH(3), header@3, then one line per index (idx0 hunk@4, idx1
+// context@5, idx2 add@6).
 func TestMouseClickDiffGutterOnAddLineEmitsLineStage(t *testing.T) {
 	s := s5open(t)
-	s.Type(sgrClick(0, sidebarWidthConst+1, 5))
+	s.Type(sgrClick(0, sidebarWidthConst+1, 6))
 	l, ok := s.ReadLine(2 * time.Second)
 	if !ok || !strings.Contains(l, `"name":"mission:stage"`) || !strings.Contains(l, `"path":"ui/internal/views/mission/mission.go"`) ||
 		!strings.Contains(l, `"mode":"line"`) || !strings.Contains(l, `"selIdx":0`) {
@@ -614,11 +615,12 @@ func TestMouseClickDiffGutterOnAddLineEmitsLineStage(t *testing.T) {
 }
 
 // TestMouseClickHunkRowEmitsHunkStage clicks anywhere across the fixture's
-// hunk header (index 0, absolute y=3): the whole row is the toggle, so any
-// x within the diff pane's content resolves the same as a gutter click.
+// hunk header (index 0, absolute y=4: the diff pane's header sits at
+// topH(3), the hunk line right after it): the whole row is the toggle, so
+// any x within the diff pane's content resolves the same as a gutter click.
 func TestMouseClickHunkRowEmitsHunkStage(t *testing.T) {
 	s := s5open(t)
-	s.Type(sgrClick(0, sidebarWidthConst+4, 3))
+	s.Type(sgrClick(0, sidebarWidthConst+4, 4))
 	l, ok := s.ReadLine(2 * time.Second)
 	if !ok || !strings.Contains(l, `"name":"mission:stage"`) || !strings.Contains(l, `"mode":"hunk"`) || !strings.Contains(l, `"selIdx":0`) {
 		t.Fatalf("hunk row click stage intent: %q", l)
@@ -628,14 +630,15 @@ func TestMouseClickHunkRowEmitsHunkStage(t *testing.T) {
 }
 
 // TestMouseClickUndoChipEmitsUndoIntent clicks the undo strip row. The
-// stash/rule/commit-box/undo block now docks to the sidebar's bottom edge
+// stash/rule/commit-box/undo block docks to the sidebar's bottom edge
 // (mission.go's sidebarBlocks/renderSidebar), so its row depends on the
 // pane height, not just the row count above it: PTY is 30x100, topbar
-// height 2, keybar 1, no notice, so bodyH=27; the top section (tabs 2 +
-// filter 3 + master 1 + 3 changes rows = 9) and the docked block (stash 1 +
-// rule 1 + summary 3 + description 4 + button 1 + undo 1 = 11) leave a
-// 7-row filler gap between them; undo sits at bodyY 9+7+1+1+3+4+1=26, frame
-// y = topH(2)+26 = 28.
+// height 3 (docs/design/mission/README.md's Terminal geometry table), keybar
+// 1, no notice, so bodyH=26; the top section (tabs 2 + tabs-gap 1 + filter 3
+// + master 1 + 3 changes rows = 10) and the docked block (stash 1 + rule 1 +
+// commit-box top pad 1 + summary 3 + description 4 + button 3 + undo 1 =
+// 14) leave a 2-row filler gap between them; undo sits at bodyY
+// 10+2+1+1+1+3+4+3=25, frame y = topH(3)+25 = 28.
 func TestMouseClickUndoChipEmitsUndoIntent(t *testing.T) {
 	s := s5open(t)
 	s.Type(sgrClick(0, 5, 28))
@@ -668,10 +671,12 @@ func TestMouseClickRepoSegmentOpensModalThenRowClickEmitsRepoIntent(t *testing.T
 	s := s5open(t)
 	s.Type(sgrClick(0, 5, 0))
 	s.WaitForPaint("chat")
-	// The repo modal is anchored at x=0 (segmentOrigin's zoneRepo case); its
-	// first content row sits after the filter line, the top rule, and the
-	// fixture's own "local" group header (both repo rows share that group).
-	s.Type(sgrClick(0, 5, 6))
+	// The repo modal is anchored at x=0 (segmentOrigin's zoneRepo case) and
+	// its own y at topH(3); its first content row sits after the filter
+	// line, the top rule, and the fixture's own "local" group header (both
+	// repo rows share that group) -- li=3 within the box, frame y = topH(3)
+	// + li(3) + 1 (the box's own top border) = 7.
+	s.Type(sgrClick(0, 5, 7))
 	l, ok := s.ReadLine(2 * time.Second)
 	if !ok || !strings.Contains(l, `"name":"mission:repo"`) || !strings.Contains(l, `"repo":"repo-tools"`) {
 		t.Fatalf("repo modal row click intent: %q", l)
@@ -698,21 +703,23 @@ func TestMouseClickOutsideModalClosesIt(t *testing.T) {
 }
 
 // TestMouseClickHistoryTabShowsNotice clicks past the "Changes 3" tab text
-// on the tabs row (absolute y=2): the gap is 4 cells wide, so a click at
-// column 14 (changesW=9 for "Changes 3") lands past it, on History.
+// on the tabs row (absolute y=3, the first sidebar row after topH(3)): the
+// gap is 4 cells wide, so a click at column 14 (changesW=9 for "Changes 3")
+// lands past it, on History.
 func TestMouseClickHistoryTabShowsNotice(t *testing.T) {
 	s := s5open(t)
-	s.Type(sgrClick(0, 20, 2))
+	s.Type(sgrClick(0, 20, 3))
 	s.WaitForPaint("History lands in v2")
 	s.Send(`{"t":"close"}`)
 	s.Wait()
 }
 
 // TestMouseRightClickFileRowShowsNotice right-clicks the fixture's first
-// Changes row (absolute y=8).
+// Changes row (absolute y=10: topH(3) + the 7-row tabs/tabs-gap/filter/
+// master prefix).
 func TestMouseRightClickFileRowShowsNotice(t *testing.T) {
 	s := s5open(t)
-	s.Type(sgrClick(2, 10, 8))
+	s.Type(sgrClick(2, 10, 10))
 	s.WaitForPaint("menu lands with polish")
 	s.Send(`{"t":"close"}`)
 	s.Wait()
@@ -723,11 +730,12 @@ func TestMouseRightClickFileRowShowsNotice(t *testing.T) {
 // the body -- TestMouseClickOutsideModalClosesIt's "far outside" corner) must
 // be a no-op rather than nudging the Changes-list cursor, even though its x=5
 // falls in the same column range a real body row would resolve against. The
-// fixture's cursor starts on row 0 (model.go, absolute y=8 per
+// fixture's cursor starts on row 0 (model.go, absolute y=10 per
 // TestMouseRightClickFileRowShowsNotice); an unbounded wheel-down would walk
-// it wheelStep(3) rows to row 2 (mission.go, y=10), visibly moving the "▌"
-// cursor bar, so a before/after screen comparison catches the regression
-// without reaching into Mission's unexported fields.
+// it wheelStep(3) rows to row 2 (mission.go, y=12 per
+// TestMouseClickFileRowEmitsSelectWithPath), visibly moving the "▌" cursor
+// bar, so a before/after screen comparison catches the regression without
+// reaching into Mission's unexported fields.
 func TestMouseWheelOverKeybarRowDoesNotMoveCursor(t *testing.T) {
 	s := s5open(t)
 	before := s.Screen()

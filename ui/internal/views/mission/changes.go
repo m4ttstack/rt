@@ -184,6 +184,10 @@ func renderCommitBox(width int, summaryView, descriptionView string, amending bo
 		lines = append(lines, on.Width(width).Render(on.Foreground(theme.Peach).Render("Amending last commit · a stops")))
 		buttonLabel = "Amend last commit"
 	}
+	// The board's own CommitBox top padding (12px) reads as one blank band
+	// row in the terminal (docs/design/mission/README.md's Terminal
+	// geometry table).
+	lines = append(lines, blankRows(width, 1))
 	lines = append(lines, boxLine(width, summaryView))
 	lines = append(lines, boxBlock(width, []string{descriptionView, ""}))
 	lines = append(lines, renderCommitButton(width, buttonLabel, enabled))
@@ -211,7 +215,11 @@ func boxBlock(width int, contentLines []string) string {
 // renderCommitButton is the full-width commit button: Pink with Bg-dark
 // (i.e. theme.Bg foreground) text at rest, Panel background with Dimmer
 // text once !canCommit -- the same rest/disabled pair InteractionStates.png
-// pins for it.
+// pins for it. The board's own CommitButton is 32px (1.2 cells) tall against
+// a 26px row unit; the terminal quantizes that to a fill row, a centered
+// label row, and a second fill row, all three the same full-width
+// Pink/Panel fill (docs/design/mission/README.md's Terminal geometry
+// table) -- never a single thin row.
 func renderCommitButton(width int, label string, canCommit bool) string {
 	style := lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Bold(true)
 	if canCommit {
@@ -219,7 +227,8 @@ func renderCommitButton(width int, label string, canCommit bool) string {
 	} else {
 		style = style.Background(theme.Panel).Foreground(theme.Dimmer)
 	}
-	return style.Render(label)
+	fill := style.Render("")
+	return fill + "\n" + style.Render(label) + "\n" + fill
 }
 
 // renderUndoStrip is the WarnBg strip a successful, still-undoable commit

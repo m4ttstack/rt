@@ -441,6 +441,9 @@ type sidebarBlocks struct {
 func (m *Mission) sidebarBlocks(width int) sidebarBlocks {
 	top := []string{
 		renderTabsRow(m.model.ChangedTotal, width),
+		// The board's tabs-rule-plus-gap reads as one blank band row in the
+		// terminal (docs/design/mission/README.md's Terminal geometry table).
+		blankRows(width, 1),
 		renderFilterRow(m.filterDisplayText(), m.focus == focusFilter, width),
 		renderMasterRow(m.model.ChangedTotal, m.model.StagedTotal, width),
 	}
@@ -698,6 +701,10 @@ func (m *Mission) sidebarHit(x, y, fillerH int) hit {
 		return tabsHit(m.model.ChangedTotal, x)
 	}
 	row += 2
+	if y == row {
+		return hit{} // the tabs-gap blank band row: no click target
+	}
+	row++
 	if y < row+3 {
 		return hit{kind: hitFilterRow}
 	}
@@ -725,6 +732,7 @@ func (m *Mission) sidebarHit(x, y, fillerH int) hit {
 		}
 		row++
 	}
+	row++ // the commit box's own top-padding blank band row: no click target
 	if y >= row && y < row+3 {
 		return hit{kind: hitCommitSummary}
 	}
@@ -733,10 +741,10 @@ func (m *Mission) sidebarHit(x, y, fillerH int) hit {
 		return hit{kind: hitCommitDescription}
 	}
 	row += 4
-	if y == row {
+	if y >= row && y < row+3 {
 		return hit{kind: hitCommitButton}
 	}
-	row++
+	row += 3
 	if lc := m.model.Commit.LastCommit; lc != nil && lc.Undoable && y == row {
 		return hit{kind: hitUndoChip}
 	}

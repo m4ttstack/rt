@@ -57,7 +57,7 @@ func renderTopBar(m Model, width int, hover, open zoneID) string {
 	action := renderActionSegment(m.Action, lastW, hover == zoneAction, open == zoneAction)
 
 	divCell := lipgloss.NewStyle().Background(theme.BgSubtle).Foreground(theme.Rule).Render("│")
-	div := divCell + "\n" + divCell
+	div := divCell + "\n" + divCell + "\n" + divCell
 	return lipgloss.JoinHorizontal(lipgloss.Top, repo, div, worktree, div, branch, div, action)
 }
 
@@ -211,11 +211,15 @@ func segmentBase(hovered, isOpen bool) lipgloss.Style {
 	return base
 }
 
-// renderSegment lays spec out as a fixed-width, two-row block: the icon
-// leads the bottom row with the top row indented to match, and an optional
-// trailing accessory (chevron or pills) sits flush right on the bottom row.
-// Both rows are painted with the segment's own background (segmentBase) so
-// the fill reads as one segment rather than text floating on the bar.
+// renderSegment lays spec out as a fixed-width, three-row block: the icon
+// leads the bottom row with the top row indented to match, an optional
+// trailing accessory (chevron or pills) sits flush right on the bottom row,
+// and a third, blank row carries the board's own bottom breathing beneath
+// the value (docs/design/mission/README.md's Terminal geometry table: the
+// board's text block ends at 44px into a 56px/2.15-cell band). All three
+// rows are painted with the segment's own background (segmentBase) so the
+// fill reads as one segment rather than text floating on the bar, and
+// hover/open covers the full three-row span a click can land on.
 func renderSegment(width int, spec segmentSpec, hovered, isOpen bool) string {
 	if width < 0 {
 		width = 0
@@ -253,7 +257,9 @@ func renderSegment(width int, spec segmentSpec, hovered, isOpen bool) string {
 	}
 	row2 = base.Width(width).Render(row2)
 
-	return row1 + "\n" + row2
+	row3 := base.Width(width).Render("")
+
+	return row1 + "\n" + row2 + "\n" + row3
 }
 
 // clip truncates already-rendered (possibly ANSI-colored) text to w cells,
