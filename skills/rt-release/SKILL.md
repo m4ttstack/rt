@@ -36,12 +36,20 @@ left as-is or reduced to a pointer here.
 
 ## Process
 
-1. **Verify state.** On `main`, working tree clean (`git status --short` empty),
-   and commits since the last tag (`git describe --tags --abbrev=0`, then
-   `<last-tag>..HEAD` non-empty). Then the command-tree gate: `bun run
-   picker:check` green (every leaf that requires a positional declares an
-   `omitBehavior` — the "omit args → picker" convention; a new command that just
-   errors on a missing arg fails here). Abort on any of these.
+1. **Verify state: run `rt release preflight`.** One read-only command
+   (from source: `bun run cli.ts release preflight`; `--json` for the
+   agent envelope) performs every mechanical check in steps 1-2c at once:
+   git/tag state (on `main`, tree clean, commits since the last tag), the
+   picker conformance gate, per-app pin freshness, the standalone
+   gitq/fast-browser rows, tool-row drift against upstreams, plugin
+   catalog pin drift, Chrome extension currency, rt-client npm-vs-source
+   parity, and the gate (fast path vs full) the pending diff implies.
+   Exit 0 means every layer verified current. A stale row prints pinned
+   vs current; an unverifiable row (`!`) is not a pass — rerun or check
+   that layer by hand before proceeding. Abort on a stale `git state`
+   row (off main, dirty tree). Every other stale row is handled by the
+   policy in steps 2b-2c: cut the layer's release, or the user ratifies
+   holding the pin and the release notes record it.
 
 2. **Determine version bump.** From `git log --pretty=%s <last-tag>..HEAD`:
    any `feat(` or a new module/file is a minor bump; only `fix(` / `chore(` /
@@ -50,15 +58,11 @@ left as-is or reduced to a pointer here.
 2b. **Pin freshness: the bundled apps ship at their deps.lock pins, not at
    apps main.** v2.9.0 shipped a ten-day-stale app layer this way (every
    app pinned at the Sep 7 fold-in while board's half of the gate-seam epic
-   sat merged and unreleased), and nothing in the process said so. For each
-   app row in `rt-tray/deps.lock` (board, chat, console, deck; gitq and
-   fast-browser live in their own repos), compare the pinned release tag's
-   date against the subdir's latest commit on `m4ttstack/apps` main:
-
-   ```
-   gh api repos/m4ttstack/apps/releases/tags/<tag> --jq '.published_at[:10]'
-   gh api "repos/m4ttstack/apps/commits?path=apps/<app>&per_page=1" --jq '.[0].commit.committer.date[:10]'
-   ```
+   sat merged and unreleased), and nothing in the process said so.
+   Preflight's `app` rows do the compare for each apps-monorepo row in
+   `rt-tray/deps.lock` (board, chat, console, deck): the pinned release's
+   published date against the subdir's latest commit on `m4ttstack/apps`
+   main; a stale row means the subdir moved since the pin.
 
    The policy is content lockstep, independent numbering: an app whose
    subdir moved since its pin gets a release cut from the same main this
@@ -109,33 +113,33 @@ left as-is or reduced to a pointer here.
 2c. **The other vendored layers: plugins, standalone apps, tools, the
    extension.** Step 2b covers only the four apps-monorepo rows; v2.10.1
    shipped a marketplace catalog whose mattstack plugin pin was 263
-   commits stale because nothing checked the rest. Walk these four:
+   commits stale because nothing checked the rest. Preflight reports all
+   of them; this step is what a stale row means and what to do about it:
 
-   - **Plugin catalog**: `bash scripts/release/marketplace.sh --refresh
-     --dry-run` names every url-source pin that drifted from its ref;
-     rerun without `--dry-run`, review the diff, and land it before the
-     notes commit so the tag publishes current pins. The in-tree `chat`
-     plugin has no upstream and never drifts.
-   - **Standalone app rows** (gitq, fast-browser): compare each
-     deps.lock version against the app repo's newest release
-     (`gh api repos/m4ttstack/<repo>/releases --jq '.[0].tag_name'`).
-     Same lockstep policy as 2b; a stale hold is the user's recorded
-     decision.
-   - **Tool rows** (bun, sparkle, age, zstd, git-lfs, gh, glab, jq,
-     node, sops, cloudflared, portless): hand-pinned; Renovate does NOT
-     watch deps.lock, so drift is invisible until someone sweeps. The
-     sweep (first run 2026-09-18): each row's `url` names its upstream,
-     so compare pin against latest per source: GitHub-released tools via
-     `gh api repos/<owner>/<repo>/releases/latest --jq .tag_name`
-     (jqlang/jq, FiloSottile/age, facebook/zstd, git-lfs/git-lfs,
-     getsops/sops, cli/cli, oven-sh/bun, cloudflare/cloudflared,
-     sparkle-project/Sparkle); glab via the gitlab-org/cli releases API;
-     node against the newest LTS in nodejs.org/dist/index.json; portless
-     via `npm view portless version`. A bump PR pending on main at
-     release time rides or holds by the user's call, never silently, and
-     a sparkle bump never rides another release's tag: it changes the
-     updater itself and gets its own tested release.
-   - **rt-client**: `npm view @mattstack/rt-client version` must equal
+   - **Plugin catalog** (`catalog` rows): preflight re-resolves each
+     url-source pin's ref with `git ls-remote`, read-only. To land a
+     bump: `bash scripts/release/marketplace.sh --refresh` rewrites
+     `marketplace/marketplace.json` in place (`--refresh` ignores
+     `--dry-run`, so there is no read-only refresh; that is why
+     preflight does its own compare), then review the diff and land it
+     before the notes commit so the tag publishes current pins. The
+     in-tree `chat` plugin has no upstream and never drifts.
+   - **Standalone app rows** (`standalone` rows: gitq, fast-browser):
+     gitq compares against its repo's latest GitHub release;
+     fast-browser against `m4ttstack/fast-browser`'s main
+     `package.json`, because that repo publishes to npm and has no
+     GitHub releases. Same lockstep policy as 2b; a stale hold is the
+     user's recorded decision.
+   - **Tool rows** (`tool` rows: bun, sparkle, age, zstd, git-lfs, gh,
+     glab, jq, node, sops, cloudflared, portless): hand-pinned; Renovate
+     does NOT watch deps.lock, so preflight's sweep is the only drift
+     signal. It derives each row's upstream from its `url` (GitHub
+     releases, the nodejs.org LTS index, the npm registry, the GitLab
+     releases API). A bump PR pending on main at release time rides or
+     holds by the user's call, never silently, and a sparkle bump never
+     rides another release's tag: it changes the updater itself and gets
+     its own tested release.
+   - **rt-client** (`rt-client parity` row): npm must equal
      `packages/rt-client/package.json`; an unpublished source bump means
      consumers install stale (publish is release-class, from main only).
    - **NOT vendored, never stale here**: herdr and claude install via
@@ -144,12 +148,11 @@ left as-is or reduced to a pointer here.
      claude.ai/install.sh), so they are current at install time by
      construction and update through their own channels; mattstack.dev
      reads releases/latest live and needs nothing per release.
-   - **Chrome extension**: the published extension is pinned by
-     `runtime-lock.json` in m4ttstack/fast-browser (extension id,
-     version, and the fork release it was built from). It is current
-     when the fork's newest `fast-browser-v*` release equals the pinned
-     one (`gh api repos/m4ttheweric/playwright/releases` filtered by
-     that prefix). A newer fork release means a runtime-lock bump
+   - **Chrome extension** (`chrome extension` row): the published
+     extension is pinned by `runtime-lock.json` in m4ttstack/fast-browser
+     (extension id, version, and the fork release it was built from);
+     preflight compares that pin against the fork's newest
+     `fast-browser-v*` release. A newer fork release means a runtime-lock bump
      (pin-runtime) and a Web Store submit, scripted in
      m4ttstack/fast-browser: `npm run publish-extension <store-zip>`
      (dry-run flag available) uploads and publishes via the items API
@@ -243,7 +246,8 @@ left as-is or reduced to a pointer here.
    never came up". A closed job's pane may never have run its cleanup;
    verify, don't assume.
 
-   **Pin-only fast path** (user-ratified 2026-09-18): when `git diff
+   **Pin-only fast path** (user-ratified 2026-09-18; preflight's
+   `gate:` line computes this call): when `git diff
    --stat <last-tag>..HEAD` touches ONLY `rt-tray/deps.lock` (plus
    `RELEASE_NOTES.md` and `website/`) AND every changed row is an app deck
    merely serves (board, chat, console, gitq, boxscore), skip the local

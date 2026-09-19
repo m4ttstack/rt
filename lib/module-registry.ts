@@ -64,6 +64,7 @@ export const MODULE_REGISTRY: Record<string, () => Promise<any>> = {
   "./commands/intercept.ts": () => import("../commands/intercept.ts"),
   "./commands/endpoint.ts": () => import("../commands/endpoint.ts"),
   "./commands/deps.ts": () => import("../commands/deps.ts"),
+  "./commands/release.ts": () => import("../commands/release.ts"),
   "./commands/repos.ts": () => import("../commands/repos.ts"),
   "./commands/setup.ts": () => import("../commands/setup.ts"),
   "./commands/team.ts": () => import("../commands/team.ts"),
