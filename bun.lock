@@ -46,7 +46,7 @@
         "typescript": "^5.9.2",
       },
       "peerDependencies": {
-        "@mattstack/glance": ">=0.24.0",
+        "@mattstack/glance": ">=0.25.0",
       },
     },
     "packages/settings-kit": {
