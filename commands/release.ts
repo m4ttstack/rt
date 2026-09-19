@@ -3,6 +3,7 @@
  *
  *   rt release preflight [--json]
  *   rt release verify [tag] [--json] [--no-wait]
+ *   rt release update-machine [--tag <tag>] [--plan] [--verify-only] [--yes] [--json]
  *
  * Read-only report of the release's mechanical checks (the rt:release skill's
  * steps 1-2c): git/tag state, picker conformance, pin freshness for every
@@ -15,15 +16,25 @@
  * the four build assets, draft/prerelease state, and releases/latest
  * propagation. Exit 0 only when every check verifies; stale, unverifiable,
  * or still-propagating rows exit 1.
+ *
+ * update-machine runs the skill's step 12: bring this machine's prod app,
+ * dev bundle, daemon, and served suite up to a released tag.
  */
-import { readFileSync } from "fs";
+import { readFileSync, mkdtempSync, rmSync } from "fs";
+import { tmpdir, homedir } from "os";
+import { join } from "path";
 import type { CommandContext } from "../lib/command-tree.ts";
 import { envelope } from "../lib/setup/contract.ts";
+import { UserActionableError, exitUserError } from "../lib/setup/errors.ts";
 import { runCapture } from "../lib/subprocess.ts";
 import { runPreflight, type CheckRow, type PreflightSeams } from "../lib/release/preflight.ts";
 import { runVerify, type VerifyRow, type VerifySeams } from "../lib/release/verify.ts";
+import { runUpdateMachine, CHAT_ROOM, type LegResult, type UpdateMachineOptions, type UpdateMachineSeams } from "../lib/release/update-machine.ts";
 import { conformanceViolations } from "../scripts/lib/picker-conformance.ts";
 import { TREE } from "../lib/command-tree-def.ts";
+import { flagValue } from "../lib/cli-args.ts";
+import { confirm } from "../lib/ui/prompts.ts";
+import { interactive } from "../lib/ui/gate.ts";
 
 async function fetchJson(url: string): Promise<unknown> {
   const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
@@ -104,4 +115,83 @@ export async function releaseVerify(args: string[], _ctx: CommandContext = {}, s
   const okCount = report.rows.length - report.staleCount - report.errorCount - report.pendingCount;
   console.log(`${report.rows.length} checks: ${okCount} ok, ${report.staleCount} stale, ${report.pendingCount} pending, ${report.errorCount} unverifiable`);
   if (!report.clean) process.exitCode = 1;
+}
+
+/** Only created for a run that can actually mutate anything -- --plan and --verify-only never touch it. */
+async function createRealUpdateMachineSeams(options: UpdateMachineOptions): Promise<UpdateMachineSeams> {
+  const top = await runCapture(["git", "rev-parse", "--show-toplevel"]);
+  const needsWorkDir = !options.plan && !options.verifyOnly;
+  return {
+    repoRoot: top.exitCode === 0 ? top.stdout.trim() : process.cwd(),
+    appsCheckoutPath: join(homedir(), "Documents", "GitHub", "mattstack-apps"),
+    workDir: needsWorkDir ? mkdtempSync(join(tmpdir(), "rt-update-machine-")) : "",
+    uid: process.getuid ? process.getuid() : 501,
+    isTTY: interactive(),
+    exec: (argv, opts) => runCapture(argv, { stderr: "pipe", timeoutMs: 600_000, ...opts }),
+    download: async (url, destPath) => {
+      const res = await fetch(url, { signal: AbortSignal.timeout(300_000) });
+      if (!res.ok) throw new Error(`${url} answered ${res.status}`);
+      await Bun.write(destPath, res);
+    },
+    readFile: (path) => {
+      try {
+        return readFileSync(path, "utf8");
+      } catch {
+        return null;
+      }
+    },
+    confirm: (message) => confirm({ message }),
+    announce: async (message) => (await runCapture(["rt", "chat", "post", CHAT_ROOM, message], { timeoutMs: 30_000 })).exitCode === 0,
+    clock: () => new Date(),
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  };
+}
+
+const LEG_MARK: Record<LegResult["status"], string> = { ok: "✓", skipped: "-", aborted: "!", error: "✗", planned: "•" };
+
+export async function releaseUpdateMachine(args: string[], _ctx: CommandContext = {}, seams?: UpdateMachineSeams): Promise<void> {
+  const json = args.includes("--json");
+  const options: UpdateMachineOptions = {
+    tag: flagValue(args, "--tag"),
+    plan: args.includes("--plan"),
+    verifyOnly: args.includes("--verify-only"),
+    yes: args.includes("--yes"),
+  };
+
+  const realSeams = seams ? null : await createRealUpdateMachineSeams(options);
+  const cleanupWorkDir = () => {
+    if (!realSeams?.workDir) return;
+    try {
+      rmSync(realSeams.workDir, { recursive: true, force: true });
+    } catch {
+      // best effort; a leftover scratch dir under tmpdir() is not worth failing the verb over
+    }
+  };
+
+  // exitUserError calls the real process.exit, which never runs a pending finally,
+  // so cleanup happens explicitly on this path before that call, not after it.
+  let report;
+  try {
+    report = await runUpdateMachine(seams ?? realSeams!, options);
+  } catch (err) {
+    cleanupWorkDir();
+    if (err instanceof UserActionableError) exitUserError(err, json, "release update-machine");
+    throw err;
+  }
+  cleanupWorkDir();
+
+  const failed = report.legs.some((l) => l.status === "aborted" || l.status === "error");
+
+  if (json) {
+    console.log(JSON.stringify(envelope(report)));
+    if (failed) process.exitCode = 1;
+    return;
+  }
+
+  for (const leg of report.legs) {
+    console.log(`${LEG_MARK[leg.status]} ${leg.label}: ${leg.detail}`);
+  }
+  const summary = report.ok ? "clean" : report.haltedAfter ? `halted after ${report.haltedAfter} failed` : "problems above";
+  console.log(`tag ${report.tag}: ${summary}`);
+  if (failed) process.exitCode = 1;
 }
