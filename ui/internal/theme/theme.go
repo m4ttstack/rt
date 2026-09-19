@@ -67,9 +67,11 @@ const (
 	GlyphAction  = "▸" // an action row's fallback icon when the caller sets none
 	GlyphChevron = "❯"
 	GlyphOn      = "◉"
+	GlyphMixed   = "◪"
 	GlyphDone    = "✓"
 	GlyphWarn    = "⚠"
 	GlyphBack    = "↩"
+	GlyphLock    = "⚿"
 )
 
 var SpinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠣", "⠏"}
@@ -85,16 +87,31 @@ const CardWidth = 88
 // under the accent's own bold text, light enough to still carry its hue.
 const actionHighlightBlend = 0.82
 
+// blendToward mixes c toward target by t in [0,1]: t=0 keeps c, t=1 lands on
+// target.
+func blendToward(c, target color.Color, t float64) color.Color {
+	r, g, b, _ := c.RGBA()
+	tr, tg, tb, _ := target.RGBA()
+	mix := func(v, tv uint32) uint8 {
+		return uint8(float64(v>>8) + (float64(tv>>8)-float64(v>>8))*t)
+	}
+	return color.RGBA{R: mix(r, tr), G: mix(g, tg), B: mix(b, tb), A: 0xFF}
+}
+
 // ActionHighlight is the cursor-row background for an action row whose
 // accent is c: c blended toward Bg by actionHighlightBlend.
 func ActionHighlight(c color.Color) color.Color {
-	r, g, b, _ := c.RGBA()
-	br, bg, bb, _ := Bg.RGBA()
-	mix := func(v, t uint32) uint8 {
-		return uint8(float64(v>>8) + (float64(t>>8)-float64(v>>8))*actionHighlightBlend)
-	}
-	return color.RGBA{R: mix(r, br), G: mix(g, bg), B: mix(b, bb), A: 0xFF}
+	return blendToward(c, Bg, actionHighlightBlend)
 }
+
+// gutterHoverBlend sinks Pink only half-way toward Bg (not
+// actionHighlightBlend's near-black 0.82): a hover preview has to still read
+// as "about to be pink," not fade into the row background it sits on.
+const gutterHoverBlend = 0.5
+
+// GutterHoverBar is the diff gutter's hover-preview stage-bar color: Pink
+// blended half-way toward Bg, the boards' faint-pink preview swatch.
+var GutterHoverBar = blendToward(Pink, Bg, gutterHoverBlend)
 
 func Hex(c color.Color) string {
 	r, g, b, _ := c.RGBA()

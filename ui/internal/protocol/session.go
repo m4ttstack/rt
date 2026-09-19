@@ -27,11 +27,12 @@ type ModelMsg struct {
 }
 
 type Intent struct {
-	T       string `json:"t"`
-	Name    string `json:"name"`
-	EntryID string `json:"entryId,omitempty"`
-	Open    *bool  `json:"open,omitempty"`
-	Command string `json:"command,omitempty"`
+	T       string          `json:"t"`
+	Name    string          `json:"name"`
+	EntryID string          `json:"entryId,omitempty"`
+	Open    *bool           `json:"open,omitempty"`
+	Command string          `json:"command,omitempty"`
+	Payload json.RawMessage `json:"payload,omitempty"`
 }
 
 type Closed struct {

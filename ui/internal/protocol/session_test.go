@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -18,9 +19,10 @@ func sessionFixture(t *testing.T, name string) []byte {
 
 func TestDecodeSessionLineKinds(t *testing.T) {
 	cases := map[string]string{
-		"session-open-board.json":  "open",
-		"session-model-board.json": "model",
-		"session-close.json":       "close",
+		"session-open-board.json":    "open",
+		"session-model-board.json":   "model",
+		"session-model-mission.json": "model",
+		"session-close.json":         "close",
 	}
 	for name, want := range cases {
 		kind, raw, err := DecodeSessionLine(sessionFixture(t, name))
@@ -41,6 +43,32 @@ func TestOpenAndModelDecodeToRawModel(t *testing.T) {
 	var m ModelMsg
 	if err := json.Unmarshal(sessionFixture(t, "session-model-board.json"), &m); err != nil || len(m.Model) == 0 {
 		t.Fatalf("model: err=%v", err)
+	}
+
+	var mission ModelMsg
+	if err := json.Unmarshal(sessionFixture(t, "session-model-mission.json"), &mission); err != nil || len(mission.Model) == 0 {
+		t.Fatalf("mission model: err=%v", err)
+	}
+	// Round-trip: the raw model bytes re-encode to the same JSON value the
+	// fixture carries, so ModelMsg never loses or reorders mission fields.
+	var roundTripped any
+	if err := json.Unmarshal(mission.Model, &roundTripped); err != nil {
+		t.Fatalf("mission model round-trip decode: %v", err)
+	}
+	reencoded, err := json.Marshal(roundTripped)
+	if err != nil {
+		t.Fatalf("mission model round-trip encode: %v", err)
+	}
+	canon := func(b []byte) string {
+		var v any
+		if err := json.Unmarshal(b, &v); err != nil {
+			t.Fatal(err)
+		}
+		out, _ := json.Marshal(v)
+		return string(out)
+	}
+	if canon(reencoded) != canon(mission.Model) {
+		t.Fatalf("mission model round-trip mismatch: %s", reencoded)
 	}
 }
 
@@ -70,5 +98,53 @@ func TestEncodersMatchFixtures(t *testing.T) {
 		if b[len(b)-1] != '\n' {
 			t.Fatalf("encoder output must end with a newline: %q", b)
 		}
+	}
+}
+
+func TestIntentPayloadRoundTripsAgainstFixture(t *testing.T) {
+	want := sessionFixture(t, "session-intent-mission-commit.json")
+	var decoded Intent
+	if err := json.Unmarshal(want, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Name != "mission:commit" {
+		t.Fatalf("name: got %q", decoded.Name)
+	}
+	var payload struct {
+		Summary     string `json:"summary"`
+		Description string `json:"description"`
+		Amend       bool   `json:"amend"`
+	}
+	if err := json.Unmarshal(decoded.Payload, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Summary != "fix parser" || payload.Description != "" || payload.Amend != false {
+		t.Fatalf("payload: %+v", payload)
+	}
+
+	// A probe decode keeps the fixture's literal payload bytes (key order
+	// intact), so this catches a Payload that has been routed through
+	// map[string]interface{} somewhere and would otherwise re-sort silently.
+	var probe struct {
+		Payload json.RawMessage `json:"payload"`
+	}
+	if err := json.Unmarshal(want, &probe); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(decoded.Payload, probe.Payload) {
+		t.Fatalf("payload bytes: got %s want %s", decoded.Payload, probe.Payload)
+	}
+
+	got := EncodeIntent(Intent{Name: decoded.Name, Payload: decoded.Payload})
+	canon := func(b []byte) string {
+		var v any
+		if err := json.Unmarshal(b, &v); err != nil {
+			t.Fatal(err)
+		}
+		out, _ := json.Marshal(v)
+		return string(out)
+	}
+	if canon(got) != canon(want) {
+		t.Fatalf("intent mission:commit: %s", got)
 	}
 }

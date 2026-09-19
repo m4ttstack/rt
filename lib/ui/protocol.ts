@@ -115,6 +115,128 @@ export interface BoardModel {
   entries: BoardEntry[];
 }
 
+// ─── mission ─────────────────────────────────────────────────────────────────
+
+export interface MissionBadge {
+  ahead: number;
+  behind: number;
+  staged: number;
+  unstaged: number;
+  untracked: number;
+  conflicted: number;
+  clean: boolean;
+  lastFetchedAt: string;
+}
+
+export interface MissionRepoRow {
+  id: string;
+  label: string;
+  group: string;
+  badge: MissionBadge;
+  current: boolean;
+}
+
+export interface MissionWorktreeRow {
+  path: string;
+  name: string;
+  branch: string;
+  badge: MissionBadge;
+  current: boolean;
+  onDeck: boolean;
+}
+
+export interface MissionBranchRow {
+  name: string;
+  current: boolean;
+  ahead: number;
+  behind: number;
+  /** "" = free; else the refusal detail. */
+  guardedBy: string;
+  group: "recent" | "other" | "guarded";
+}
+
+export interface MissionChangeRow {
+  path: string;
+  origPath: string;
+  status: "new" | "modified" | "deleted" | "renamed" | "copied" | "conflicted";
+  include: "all" | "none" | "partial";
+}
+
+export interface MissionDiffLine {
+  /** 0 = absent. */
+  oldNo: number;
+  /** 0 = absent. */
+  newNo: number;
+  kind: "context" | "add" | "del" | "hunk";
+  text: string;
+  /** Staging selection state for add/del lines. */
+  selected: boolean;
+  /** git-core DiffSelection line index; -1 for context/hunk. */
+  selIdx: number;
+}
+
+export interface MissionDiffModel {
+  path: string;
+  status: string;
+  kind: "text" | "binary" | "oversized" | "none";
+  stats: string;
+  /** Chroma lexer hint, e.g. "typescript"; "" = plain. */
+  lang: string;
+  lines: MissionDiffLine[];
+}
+
+export interface MissionActionModel {
+  kind: "fetch" | "pull" | "pull-rebase" | "push" | "force-push" | "publish-branch" | "publish-repo" | "busy" | "detached";
+  title: string;
+  meta: string;
+  ahead: number;
+  behind: number;
+  busy: boolean;
+}
+
+export interface MissionLastCommit {
+  summary: string;
+  when: string;
+  undoable: boolean;
+}
+
+export interface MissionCommitModel {
+  summary: string;
+  description: string;
+  placeholder: string;
+  amending: boolean;
+  /** Driver-computed, e.g. "Commit 3 files to main". */
+  buttonLabel: string;
+  canCommit: boolean;
+  lastCommit: MissionLastCommit | null;
+}
+
+export interface MissionCurrent {
+  repo: string;
+  repoLabel: string;
+  worktree: string;
+  worktreeName: string;
+  branch: string;
+  detached: boolean;
+}
+
+export interface MissionModel {
+  current: MissionCurrent;
+  action: MissionActionModel;
+  repos: MissionRepoRow[];
+  worktrees: MissionWorktreeRow[];
+  branches: MissionBranchRow[];
+  changes: MissionChangeRow[];
+  changedTotal: number;
+  stagedTotal: number;
+  filter: string;
+  diff: MissionDiffModel;
+  commit: MissionCommitModel;
+  stashCount: number;
+  /** One-line transient notice (guard refusals, not-yet-wired). */
+  notice: string;
+}
+
 export interface SessionHello {
   t: "hello";
   protocol: number;
@@ -122,7 +244,26 @@ export interface SessionHello {
   views: string[];
 }
 
-const SESSION_INTENT_NAMES = ["add", "restart", "stop", "focus", "tail", "quit", "open", "edit"] as const;
+const SESSION_INTENT_NAMES = [
+  "add",
+  "restart",
+  "stop",
+  "focus",
+  "tail",
+  "quit",
+  "open",
+  "edit",
+  "mission:action",
+  "mission:stage",
+  "mission:discard",
+  "mission:commit",
+  "mission:undo",
+  "mission:checkout",
+  "mission:worktree",
+  "mission:repo",
+  "mission:select",
+  "mission:refresh",
+] as const;
 
 export interface SessionIntent {
   t: "intent";
@@ -130,6 +271,8 @@ export interface SessionIntent {
   entryId?: string;
   open?: boolean;
   command?: string;
+  /** Mission intents carry their own shape here; this package never learns it. */
+  payload?: unknown;
 }
 
 const SESSION_CLOSED_REASONS = ["quit", "cancel", "closed", "error"] as const;
@@ -280,6 +423,7 @@ export function parseSessionLine(line: string): SessionInbound {
         ...(typeof m.entryId === "string" ? { entryId: m.entryId } : {}),
         ...(typeof m.open === "boolean" ? { open: m.open } : {}),
         ...(typeof m.command === "string" ? { command: m.command } : {}),
+        ...("payload" in m ? { payload: m.payload } : {}),
       };
     case "closed":
       if (typeof m.reason !== "string" || !SESSION_CLOSED_REASONS.includes(m.reason as SessionClosed["reason"])) break;

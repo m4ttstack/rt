@@ -140,6 +140,22 @@ export function syncStagingArea(
   }
 }
 
+/**
+ * Stage one file's full current content (`git add`). Handles untracked and
+ * binary files alike, which the line-patch staging pipeline cannot.
+ */
+export function stagePath(cwd: string, path: string): void {
+  git(cwd, ["add", "--", path]);
+}
+
+/**
+ * Unstage one file entirely (`git reset -q HEAD`), including both sides of
+ * a rename when origPath is given, mirroring syncStagingArea's unstage arm.
+ */
+export function unstagePath(cwd: string, path: string, origPath?: string): void {
+  git(cwd, ["reset", "-q", "HEAD", "--", path, ...(origPath ? [origPath] : [])]);
+}
+
 export interface CommitOptions {
   amend?: boolean;
   noVerify?: boolean;

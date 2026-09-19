@@ -9,6 +9,7 @@ import {
   type PromptSpec,
   type StepEvent,
   type BoardModel,
+  type MissionModel,
   type PickRequest,
   type PickAction,
   type PickUpdate,
@@ -80,6 +81,20 @@ test("parseSessionLine rejects an intent name outside the declared union", () =>
   expect(() => parseSessionLine(JSON.stringify({ t: "intent", name: "explode" }))).toThrow(/rt-ui session/);
 });
 
+test("a mission intent fixture parses with its payload passed through untouched", () => {
+  expect(parseSessionLine(readFileSync(join(FIXTURES, "session-intent-mission-commit.json"), "utf8"))).toEqual({
+    t: "intent",
+    name: "mission:commit",
+    payload: { summary: "fix parser", description: "", amend: false },
+  });
+});
+
+test("the mission open fixture matches its view", () => {
+  const open = fixture("session-open-mission.json") as { t: string; view: string };
+  expect(open.t).toBe("open");
+  expect(open.view).toBe("mission");
+});
+
 test("parseSessionLine rejects a close reason outside the declared union", () => {
   expect(() => parseSessionLine(JSON.stringify({ t: "closed", reason: "unknown" }))).toThrow(/rt-ui session/);
 });
@@ -90,6 +105,31 @@ test("the board model fixture matches the BoardModel type shape", () => {
   expect(open.model.entries[0]!.state).toBe("running");
   expect(open.model.entries[1]!.exitCode).toBe(1);
   expect(open.model.entries[1]!.tail).toBeNull();
+});
+
+test("the mission model fixture parses as a model line and matches the MissionModel type shape", () => {
+  const line = fixture("session-model-mission.json") as { t: string; model: MissionModel };
+  expect(line.t).toBe("model");
+  const model = line.model;
+  expect(model.current.repo).toBe("repo-tools");
+  expect(model.action.kind).toBe("pull");
+  expect(model.action.ahead).toBe(3);
+  expect(model.action.behind).toBe(2);
+  expect(model.repos).toHaveLength(2);
+  expect(model.worktrees).toHaveLength(2);
+  expect(model.worktrees[1]!.onDeck).toBe(true);
+  expect(model.branches).toHaveLength(3);
+  expect(model.branches[2]!.guardedBy).not.toBe("");
+  expect(model.changes.map((c) => c.include)).toEqual(["all", "none", "partial"]);
+  expect(model.changedTotal).toBe(3);
+  expect(model.stagedTotal).toBe(2);
+  expect(model.diff.lines).toHaveLength(6);
+  expect(model.diff.lines[0]!.kind).toBe("hunk");
+  expect(model.diff.lines[2]!.selected).toBe(true);
+  expect(model.diff.lines[2]!.selIdx).toBe(0);
+  expect(model.commit.lastCommit?.undoable).toBe(true);
+  expect(model.stashCount).toBe(1);
+  expect(model.notice).toBe("");
 });
 
 // open and close are TS-to-Go messages, not parseSessionLine input; these

@@ -1,0 +1,1 @@
+{ "t": "open", "view": "mission", "model": { "current": { "repo": "remote:github.com%2Fm4ttstack%2Frt", "worktree": "/w/gandalf", "branch": "main" }, "repos": [], "changes": [], "action": { "kind": "fetch", "title": "Fetch origin", "meta": "Never fetched", "busy": false, "ahead": 0, "behind": 0 } } }
