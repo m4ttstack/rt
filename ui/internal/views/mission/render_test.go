@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"image/color"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -69,16 +72,24 @@ func TestActionGlyphColorsPerKind(t *testing.T) {
 	}
 	for _, c := range cases {
 		out := renderActionSegment(ActionModel{Kind: c.kind, Title: "x"}, 60, false, false)
-		want := fgSGR(c.color) + "m" + c.glyph
-		if !strings.Contains(out, want) {
-			t.Fatalf("%s glyph should wear its accent color: want %q in\n%s", c.kind, want, out)
+		// The segment's rest-state BgSubtle band now combines into the same
+		// SGR run as the icon's own foreground, so the color and the glyph
+		// are checked separately rather than as one adjoining "fgm+glyph" run.
+		if !strings.Contains(out, fgSGR(c.color)) {
+			t.Fatalf("%s glyph should wear its accent color %q in\n%s", c.kind, fgSGR(c.color), out)
+		}
+		if !strings.Contains(ansi.Strip(out), c.glyph) {
+			t.Fatalf("%s glyph %q missing from\n%s", c.kind, c.glyph, out)
 		}
 	}
 }
 
 func TestRenderBranchSegmentDetachedValueWearsPeach(t *testing.T) {
 	out := renderBranchSegment(Model{Current: Current{Detached: true, Branch: "a1b2c3d"}}, 40, false, false)
-	if !strings.Contains(out, "1;"+fgSGR(theme.Peach)+"m") {
+	// The rest-state BgSubtle band combines into the same SGR run as the
+	// value's own foreground, so the bold+fg run is checked without
+	// requiring it to be immediately followed by "m".
+	if !strings.Contains(out, "1;"+fgSGR(theme.Peach)) {
 		t.Fatalf("detached value should wear bold Peach: %q", out)
 	}
 }
@@ -289,8 +300,13 @@ func TestRenderDiffLineHunkHeaderStaysOneRow(t *testing.T) {
 
 func TestRenderDiffLineSelectedAddShowsPinkBar(t *testing.T) {
 	out := renderDiffLine(DiffModel{}, DiffLine{Kind: "add", Text: "import x", Selected: true, SelIdx: 0}, 40, false, false)
-	if !strings.Contains(out, fgSGR(theme.Pink)+"m"+theme.GlyphBar) {
+	// The row's own Bg fill combines into the same SGR run as the bar's
+	// foreground, so the color and the glyph are checked separately.
+	if !strings.Contains(out, fgSGR(theme.Pink)) {
 		t.Fatalf("selected add line should show a Pink stage bar: %q", out)
+	}
+	if !strings.Contains(ansi.Strip(out), theme.GlyphBar) {
+		t.Fatalf("selected add line missing the stage bar glyph: %q", out)
 	}
 }
 
@@ -335,12 +351,132 @@ func TestRenderDiffPaneBinaryShowsExactMessage(t *testing.T) {
 	}
 }
 
-func TestRenderDiffPaneNoneShowsSelectAFile(t *testing.T) {
+// TestRenderDiffPaneNoneWithChangesShowsSelectAFile pins the pre-seed state
+// (docs/design/mission/EmptyState.png only replaces the truly clean case):
+// changes exist but the driver's own selection hasn't landed yet, so the
+// pane still shows the plain hint rather than the empty-state card.
+func TestRenderDiffPaneNoneWithChangesShowsSelectAFile(t *testing.T) {
 	m := &Mission{}
+	m.model.Changes = []ChangeRow{{Path: "a.go", Status: "modified", Include: "none"}}
+	m.model.ChangedTotal = 1
 	out := ansi.Strip(m.renderDiffPane(60, 10))
 	if !strings.Contains(out, "select a file") {
-		t.Fatalf("empty diff missing the select-a-file hint:\n%s", out)
+		t.Fatalf("empty diff with changes missing the select-a-file hint:\n%s", out)
 	}
+	if strings.Contains(out, "No local changes") {
+		t.Fatalf("empty diff with changes must not show the clean-worktree card:\n%s", out)
+	}
+}
+
+// TestRenderDiffPaneFilteredToEmptyWithNonzeroTotalShowsSelectAFile pins a
+// CodeRabbit finding on PR rt#353: the wire's Changes field is the FILTERED
+// list (lib/mission/model.ts computes changedTotal from allChanges, before
+// the filter narrows changes), so a filter that matches nothing on a dirty
+// worktree must not read as "the worktree is clean" -- ChangedTotal, not
+// len(Changes), is the empty-state gate.
+func TestRenderDiffPaneFilteredToEmptyWithNonzeroTotalShowsSelectAFile(t *testing.T) {
+	m := &Mission{}
+	m.model.Changes = nil // the typed filter matched none of the real changes
+	m.model.ChangedTotal = 3
+	out := ansi.Strip(m.renderDiffPane(60, 10))
+	if !strings.Contains(out, "select a file") {
+		t.Fatalf("filtered-to-empty diff with a nonzero total missing the select-a-file hint:\n%s", out)
+	}
+	if strings.Contains(out, "No local changes") {
+		t.Fatalf("filtered-to-empty diff with a nonzero total must not show the clean-worktree card:\n%s", out)
+	}
+}
+
+// ─── empty state (docs/design/mission/EmptyState.png) ──────────────────
+
+// TestRenderDiffPaneEmptyStateShowsTitleAndAllFourHints pins the
+// clean-worktree card's content: zero changes and no diff shows the title,
+// subline, and all four key hints, replacing the lone "select a file" line.
+func TestRenderDiffPaneEmptyStateShowsTitleAndAllFourHints(t *testing.T) {
+	m := &Mission{}
+	out := ansi.Strip(m.renderDiffPane(60, 20))
+	for _, want := range []string{
+		"No local changes",
+		"the working tree is clean",
+		"f  run the fetch/pull/push action",
+		"b  switch branch",
+		"w  switch worktree",
+		"r  switch repository",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("empty state missing %q:\n%s", want, out)
+		}
+	}
+}
+
+// TestRenderDiffPaneEmptyStateCentersWithinPaneWidth pins the layout half:
+// the title and every hint line sit centered within the diff pane's own
+// width, not flush left.
+func TestRenderDiffPaneEmptyStateCentersWithinPaneWidth(t *testing.T) {
+	m := &Mission{}
+	const width = 60
+	out := ansi.Strip(m.renderDiffPane(width, 20))
+	for _, want := range []string{"No local changes", "the working tree is clean", "run the fetch/pull/push action"} {
+		line := lineContaining(t, out, want)
+		if lipgloss.Width(line) != width {
+			t.Fatalf("line %q should pad to the pane width %d, got %d", line, width, lipgloss.Width(line))
+		}
+		leading := len(line) - len(strings.TrimLeft(line, " "))
+		trailing := len(line) - len(strings.TrimRight(line, " "))
+		if leading < 2 || trailing < 2 {
+			t.Fatalf("line should carry roughly equal padding on both sides to read as centered: %q (leading=%d trailing=%d)", line, leading, trailing)
+		}
+	}
+}
+
+// TestRenderDiffPaneEmptyStateColorsTitleKeysAndLabels pins the token
+// contract: the title is bold Text, a hint's key is bold Pink, its label
+// Dimmer.
+func TestRenderDiffPaneEmptyStateColorsTitleKeysAndLabels(t *testing.T) {
+	m := &Mission{}
+	out := m.renderDiffPane(60, 20)
+	if !strings.Contains(out, "1;"+fgSGR(theme.Text)) {
+		t.Fatalf("title should wear bold Text: %q", out)
+	}
+	if !strings.Contains(out, "1;"+fgSGR(theme.Pink)) {
+		t.Fatalf("a hint key should wear bold Pink: %q", out)
+	}
+	if !strings.Contains(out, fgSGR(theme.Dimmer)) {
+		t.Fatalf("a hint label should wear Dimmer: %q", out)
+	}
+}
+
+// TestRenderEmptyStateCardNarrowWidthDoesNotWrapOrGrow pins a CodeRabbit
+// finding on PR rt#353: renderEmptyStateCard pre-padded every line to its
+// own natural widest line BEFORE applying the pane's own width, so a pane
+// narrower than the longest hint ("f  run the fetch/pull/push action")
+// left lipgloss to WRAP that overflowing line rather than truncate it,
+// growing the block past height and pushing whatever follows it down a
+// row. The card must still come back at exactly height rows, each exactly
+// width cells, however narrow the pane is.
+func TestRenderEmptyStateCardNarrowWidthDoesNotWrapOrGrow(t *testing.T) {
+	const width, height = 20, 10
+	out := renderEmptyStateCard(width, height)
+	lines := strings.Split(out, "\n")
+	if len(lines) != height {
+		t.Fatalf("narrow card should render exactly %d rows, got %d:\n%s", height, len(lines), ansi.Strip(out))
+	}
+	for i, line := range lines {
+		if w := lipgloss.Width(line); w != width {
+			t.Fatalf("row %d should be exactly width %d, got %d: %q", i, width, w, line)
+		}
+	}
+}
+
+func lineContaining(t *testing.T, out, want string) string {
+	t.Helper()
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, want) {
+			return line
+		}
+	}
+	t.Fatalf("no line contains %q:\n%s", want, out)
+	return ""
 }
 
 // modalFixtureModel mirrors ui/fixtures/session-model-mission.json's repo/
@@ -928,13 +1064,28 @@ func TestMouseClickFilterRowFocusesFilter(t *testing.T) {
 	}
 }
 
+// commitButtonY returns the commit button's absolute frame row via the SAME
+// layout() arithmetic View paints with (mission.go's sidebarBlocks/
+// sidebarHit split), so a click test never hardcodes a y that drifts when
+// the sidebar's bottom-dock gap resizes.
+func commitButtonY(m *Mission) int {
+	l := m.layout()
+	off := 1 // the rule above the commit box
+	if m.amendLocal {
+		off++
+	}
+	off += 3 // summary box
+	off += 4 // description box
+	return l.topH + l.sidebarTopH + l.sidebarFillerH + off
+}
+
 // TestMouseClickCommitButtonGuardsOnCanCommit mirrors the keyboard's own
 // ctrl-enter guard (mission_test.go's TestCtrlEnterDoesNotEmitWithEmptySummary):
 // with CanCommit false, no local amend, and no summary, a button click must
 // not emit.
 func TestMouseClickCommitButtonGuardsOnCanCommit(t *testing.T) {
 	m := newMouseTestMission() // ButtonLabel set, CanCommit left false
-	_, cmd := m.Update(tea.MouseClickMsg{X: 20, Y: 19, Button: tea.MouseLeft})
+	_, cmd := m.Update(tea.MouseClickMsg{X: 20, Y: commitButtonY(m), Button: tea.MouseLeft})
 	if cmd != nil {
 		t.Fatal("a commit-button click with the gate closed must not emit")
 	}
@@ -946,7 +1097,7 @@ func TestMouseClickCommitButtonEmitsWhenEnabled(t *testing.T) {
 	m := newMouseTestMission()
 	m.model.Commit.CanCommit = true
 	m.summaryInput.SetValue("msg")
-	_, cmd := m.Update(tea.MouseClickMsg{X: 20, Y: 19, Button: tea.MouseLeft})
+	_, cmd := m.Update(tea.MouseClickMsg{X: 20, Y: commitButtonY(m), Button: tea.MouseLeft})
 	if cmd == nil {
 		t.Fatal("a commit-button click with the gate open must emit")
 	}
@@ -954,13 +1105,12 @@ func TestMouseClickCommitButtonEmitsWhenEnabled(t *testing.T) {
 
 // TestMouseClickCommitButtonEnabledByLocalAmend: a local amend toggle opens
 // the same click path even while the wire CanCommit is false (nothing
-// staged), since amending re-uses the last commit's own changes. The amend
-// banner adds a sidebar row, so the button sits one row lower.
+// staged), since amending re-uses the last commit's own changes.
 func TestMouseClickCommitButtonEnabledByLocalAmend(t *testing.T) {
 	m := newMouseTestMission()
 	m.amendLocal = true
 	m.summaryInput.SetValue("msg")
-	_, cmd := m.Update(tea.MouseClickMsg{X: 20, Y: 20, Button: tea.MouseLeft})
+	_, cmd := m.Update(tea.MouseClickMsg{X: 20, Y: commitButtonY(m), Button: tea.MouseLeft})
 	if cmd == nil {
 		t.Fatal("a commit-button click while locally amending must emit")
 	}
@@ -978,6 +1128,86 @@ func TestCommitButtonRendersDisabledUntilSummaryTyped(t *testing.T) {
 	m.summaryInput.SetValue("msg")
 	if !strings.Contains(m.View().Content, bgSGR(theme.Pink)) {
 		t.Fatalf("typed-summary frame should paint the enabled Pink button")
+	}
+}
+
+// ─── sidebar bottom-dock ────────────────────────────────────────────────
+
+// TestCommitButtonDocksToSidebarBottomWithShortList pins the Main.png/
+// EmptyState.png contract: with a short Changes list, the stash/rule/
+// commit-box/undo block sits at the BOTTOM of the sidebar column, not
+// floating directly under the list, so the commit button's row is derived
+// from the pane height (layout()'s own sidebarFillerH) rather than the row
+// count.
+func TestCommitButtonDocksToSidebarBottomWithShortList(t *testing.T) {
+	m := New(nil)
+	m.width, m.height = 100, 30
+	m.model = mouseFixtureModel() // 3 changes rows, no stash, no undo
+	m.summaryInput.SetValue("msg")
+
+	l := m.layout()
+	if l.sidebarFillerH == 0 {
+		t.Fatalf("setup: expected a nonzero filler gap for a 3-row list at height 30, got layout=%+v", l)
+	}
+	wantY := l.topH + l.sidebarTopH + l.sidebarFillerH + 1 /*rule*/ + 3 /*summary box*/ + 4 /*description box*/
+
+	lines := strings.Split(ansi.Strip(m.View().Content), "\n")
+	if wantY >= len(lines) || !strings.Contains(lines[wantY], "Commit 3 files to main") {
+		got := ""
+		if wantY < len(lines) {
+			got = lines[wantY]
+		}
+		t.Fatalf("commit button should dock at layout-derived row %d, got %q", wantY, got)
+	}
+}
+
+// TestSidebarFillerRowsAreBgFilledAndBlank pins the gap itself: every row
+// between the changes list and the docked block is blank (no stray content)
+// and still wears the Bg fill Change 1 established, not a bare terminal
+// default.
+func TestSidebarFillerRowsAreBgFilledAndBlank(t *testing.T) {
+	m := New(nil)
+	m.width, m.height = 100, 30
+	m.model = mouseFixtureModel()
+
+	l := m.layout()
+	rawLines := strings.Split(m.View().Content, "\n")
+	plainLines := strings.Split(ansi.Strip(m.View().Content), "\n")
+	for y := l.topH + l.sidebarTopH; y < l.topH+l.sidebarTopH+l.sidebarFillerH; y++ {
+		sidebarPlain := plainLines[y][:min(len(plainLines[y]), sidebarWidth)]
+		if strings.TrimSpace(sidebarPlain) != "" {
+			t.Fatalf("filler row %d should be blank in the sidebar column, got %q", y, sidebarPlain)
+		}
+		if !strings.Contains(rawLines[y], bgSGR(theme.Bg)) {
+			t.Fatalf("filler row %d should still wear the Bg fill: %q", y, rawLines[y])
+		}
+	}
+}
+
+// TestCommitButtonDocksToSidebarBottomWithZeroChanges covers
+// EmptyState.png: with no changes at all the docked block still sits at
+// the pane's bottom, not immediately under the (empty) list.
+func TestCommitButtonDocksToSidebarBottomWithZeroChanges(t *testing.T) {
+	m := New(nil)
+	m.width, m.height = 100, 30
+	m.model = Model{
+		Current: Current{Repo: "repo-tools", Branch: "main"},
+		Commit:  CommitModel{ButtonLabel: "Commit 0 files to main"},
+	}
+
+	l := m.layout()
+	if l.sidebarFillerH == 0 {
+		t.Fatalf("setup: expected a nonzero filler gap with zero changes, got layout=%+v", l)
+	}
+	wantY := l.topH + l.sidebarTopH + l.sidebarFillerH + 1 + 3 + 4
+
+	lines := strings.Split(ansi.Strip(m.View().Content), "\n")
+	if wantY >= len(lines) || !strings.Contains(lines[wantY], "Commit 0 files to main") {
+		got := ""
+		if wantY < len(lines) {
+			got = lines[wantY]
+		}
+		t.Fatalf("commit button should dock at layout-derived row %d, got %q", wantY, got)
 	}
 }
 
@@ -1022,4 +1252,272 @@ func TestRenderChangeRowWideRuneFilenameStaysAtWidth(t *testing.T) {
 	if lipgloss.Width(out) != 40 {
 		t.Fatalf("change row must render at exactly width 40, got %d: %q", lipgloss.Width(out), out)
 	}
+}
+
+// ─── surface fills (docs/design/mission/Main.png: filled top and keybar
+// bands, no terminal-default bleed-through anywhere in the frame) ─────────
+
+// TestTopBarSegmentRestPaintsBgSubtleBandFullWidth pins the top-bar band: at
+// rest (no hover, no open foldout) both the label and value rows wear
+// BgSubtle from the very first cell through the trailing pad, not just
+// behind the text itself.
+func TestTopBarSegmentRestPaintsBgSubtleBandFullWidth(t *testing.T) {
+	out := renderRepoSegment(pullModel(), sidebarWidth, false, false)
+	lines := strings.Split(out, "\n")
+	if len(lines) != 2 {
+		t.Fatalf("segment should render exactly 2 rows, got %d:\n%s", len(lines), out)
+	}
+	labelRow, valueRow := lines[0], lines[1]
+	if !strings.Contains(labelRow, bgSGR(theme.BgSubtle)) {
+		t.Fatalf("label row should wear the BgSubtle band: %q", labelRow)
+	}
+	if idx := strings.LastIndex(labelRow, bgSGR(theme.BgSubtle)); idx <= strings.Index(labelRow, "Current Repository") {
+		t.Fatalf("BgSubtle should still be painting the trailing pad after the label text: %q", labelRow)
+	}
+	if !strings.Contains(valueRow, bgSGR(theme.BgSubtle)) {
+		t.Fatalf("value row should wear the BgSubtle band: %q", valueRow)
+	}
+	if idx := strings.LastIndex(valueRow, bgSGR(theme.BgSubtle)); idx <= strings.Index(valueRow, "repo-tools") {
+		t.Fatalf("BgSubtle should still be painting the trailing pad after the value text: %q", valueRow)
+	}
+}
+
+// TestTopBarSegmentHoverAndOpenStillWinOverBgSubtleBand guards the
+// composition-order caution: hover's HoverBg and an open foldout's Surface
+// must still replace the rest-state BgSubtle band, never sit beside it.
+func TestTopBarSegmentHoverAndOpenStillWinOverBgSubtleBand(t *testing.T) {
+	hovered := renderRepoSegment(pullModel(), sidebarWidth, true, false)
+	if strings.Contains(hovered, bgSGR(theme.BgSubtle)) {
+		t.Fatalf("hovered segment must not still carry the rest BgSubtle band: %q", hovered)
+	}
+	if !strings.Contains(hovered, bgSGR(theme.HoverBg)) {
+		t.Fatalf("hovered segment should wear HoverBg: %q", hovered)
+	}
+	open := renderRepoSegment(pullModel(), sidebarWidth, false, true)
+	if strings.Contains(open, bgSGR(theme.BgSubtle)) {
+		t.Fatalf("open segment must not still carry the rest BgSubtle band: %q", open)
+	}
+	if !strings.Contains(open, bgSGR(theme.Surface)) {
+		t.Fatalf("open segment should wear Surface: %q", open)
+	}
+}
+
+// TestRenderChangeRowRestPaintsBgBandFullWidth pins the body-row half of the
+// same contract: a Changes row at rest (no cursor, no hover) wears Bg from
+// the leading cursor gutter through the trailing pad past the path text.
+func TestRenderChangeRowRestPaintsBgBandFullWidth(t *testing.T) {
+	out := renderChangeRow(ChangeRow{Path: "a.go", Status: "modified", Include: "none"}, sidebarWidth, false, false)
+	if !strings.Contains(out, bgSGR(theme.Bg)) {
+		t.Fatalf("row at rest should wear the Bg band: %q", out)
+	}
+	if idx := strings.LastIndex(out, bgSGR(theme.Bg)); idx <= strings.Index(out, "a.go") {
+		t.Fatalf("Bg should still be painting the trailing pad after the path text: %q", out)
+	}
+}
+
+// ─── Nerd Font segment icons ───────────────────────────────────────────
+
+// TestTopBarSegmentsWearNerdFontOcticons pins the repo/worktree/branch
+// segments to their ratified octicons (docs/design/mission/README.md),
+// replacing the old checkbox-state glyphs; the checkbox family itself
+// (renderChangeRow, renderMasterRow) is untouched, so this only checks the
+// top bar.
+func TestTopBarSegmentsWearNerdFontOcticons(t *testing.T) {
+	m := pullModel()
+	repo := renderRepoSegment(m, sidebarWidth, false, false)
+	if !strings.Contains(ansi.Strip(repo), theme.GlyphRepo) {
+		t.Fatalf("repo segment missing its Nerd Font icon: %q", repo)
+	}
+	worktree := renderWorktreeSegment(m, 40, false, false)
+	if !strings.Contains(ansi.Strip(worktree), theme.GlyphWorktree) {
+		t.Fatalf("worktree segment missing its Nerd Font icon: %q", worktree)
+	}
+	branch := renderBranchSegment(Model{Current: Current{Branch: "main"}}, 40, false, false)
+	if !strings.Contains(ansi.Strip(branch), theme.GlyphBranch) {
+		t.Fatalf("branch segment missing its Nerd Font icon: %q", branch)
+	}
+}
+
+// TestRenderBranchSegmentDetachedUsesBranchGlyphNotCircle pins the
+// detached state's own half: it keeps its Peach treatment and "On <sha>"
+// value, but drops the old ○/● circle swap in favor of the same branch
+// octicon the normal state wears.
+func TestRenderBranchSegmentDetachedUsesBranchGlyphNotCircle(t *testing.T) {
+	out := renderBranchSegment(Model{Current: Current{Detached: true, Branch: "a1b2c3d"}}, 40, false, false)
+	stripped := ansi.Strip(out)
+	if !strings.Contains(stripped, theme.GlyphBranch) {
+		t.Fatalf("detached segment should still wear the branch octicon: %q", out)
+	}
+	if strings.Contains(stripped, "○") || strings.Contains(stripped, "●") {
+		t.Fatalf("detached segment must drop the old circle-glyph swap: %q", out)
+	}
+	// The detached VALUE text ("On a1b2c3d") also wears Peach, so a bare
+	// Contains(out, fgSGR(Peach)) would still pass even if the icon itself
+	// lost its own Peach foreground; sgrImmediatelyBefore anchors the check
+	// to the glyph's own adjacent SGR run instead.
+	glyphIdx := strings.Index(out, theme.GlyphBranch)
+	if glyphIdx == -1 {
+		t.Fatalf("branch octicon not found in detached segment: %q", out)
+	}
+	if sgr := sgrImmediatelyBefore(out, glyphIdx); !strings.Contains(sgr, fgSGR(theme.Peach)) {
+		t.Fatalf("detached segment's icon should wear Peach at the glyph itself, got SGR %q in: %q", sgr, out)
+	}
+}
+
+// sgrImmediatelyBefore returns the raw SGR escape sequence
+// ("\x1b[...m") sitting immediately before idx in s, or "" if idx isn't
+// immediately preceded by one -- used to pin a color to the exact glyph it
+// paints rather than to "appears somewhere in this render."
+func sgrImmediatelyBefore(s string, idx int) string {
+	if idx < 2 || s[idx-1] != 'm' {
+		return ""
+	}
+	start := strings.LastIndex(s[:idx-1], "\x1b[")
+	if start == -1 {
+		return ""
+	}
+	return s[start:idx]
+}
+
+// TestNerdFontIconsMeasureAsOneCell pins the PUA-codepoint width footgun:
+// go-runewidth must measure these as single cells or renderSegment's own
+// prefix-width padding math (topbar.go) silently drifts by one.
+func TestNerdFontIconsMeasureAsOneCell(t *testing.T) {
+	for _, g := range []string{theme.GlyphRepo, theme.GlyphWorktree, theme.GlyphBranch} {
+		if w := lipgloss.Width(g); w != 1 {
+			t.Fatalf("glyph %q should measure as 1 cell, got %d", g, w)
+		}
+	}
+}
+
+// TestRenderKeybarRestPaintsBgSubtleBandFullWidth pins the keybar band: its
+// own trailing pad (after "q quit," the last thing justify places) still
+// wears BgSubtle, not just the text ahead of it.
+func TestRenderKeybarRestPaintsBgSubtleBandFullWidth(t *testing.T) {
+	out := renderKeybar(120)
+	if !strings.Contains(out, bgSGR(theme.BgSubtle)) {
+		t.Fatalf("keybar should wear the BgSubtle band: %q", out)
+	}
+	if idx := strings.LastIndex(out, bgSGR(theme.BgSubtle)); idx <= strings.LastIndex(out, "quit") {
+		t.Fatalf("BgSubtle should still be painting after the trailing \"quit\" label: %q", out)
+	}
+}
+
+// ─── full-frame background fill (every cell, not just spot rows) ────────
+
+// sgrParamsRe matches one SGR escape's parameter list.
+var sgrParamsRe = regexp.MustCompile("\x1b\\[([0-9;]*)m")
+
+// bgCoverage walks a single already-rendered frame line the way a real
+// terminal applies SGR state while printing, and returns, per visible
+// column, whether that cell carries an explicit background (48;2;.../
+// 48;5;...) rather than falling through to the terminal's own default. A
+// spot-row "Contains(bgSGR(...))" check only proves a color appears
+// somewhere in the line; this is what actually proves the WHOLE row is
+// covered, which is what caught the holes a spot check missed (a bare
+// clip() ellipsis, an unstyled pill separator, an unstyled border cell).
+func bgCoverage(line string) []bool {
+	cover := make([]bool, 0, len(line))
+	hasBg := false
+	i := 0
+	for i < len(line) {
+		if loc := sgrParamsRe.FindStringIndex(line[i:]); loc != nil && loc[0] == 0 {
+			params := strings.Split(sgrParamsRe.FindStringSubmatch(line[i:])[1], ";")
+			for pi := 0; pi < len(params); pi++ {
+				switch params[pi] {
+				case "", "0", "49":
+					hasBg = false
+				case "38":
+					if pi+1 < len(params) {
+						if params[pi+1] == "2" {
+							pi += 4
+						} else if params[pi+1] == "5" {
+							pi += 2
+						}
+					}
+				case "48":
+					hasBg = true
+					if pi+1 < len(params) {
+						if params[pi+1] == "2" {
+							pi += 4
+						} else if params[pi+1] == "5" {
+							pi += 2
+						}
+					}
+				}
+			}
+			i += loc[1]
+			continue
+		}
+		r := []rune(line[i:])[0]
+		cover = append(cover, hasBg)
+		i += len(string(r))
+	}
+	return cover
+}
+
+// assertFullyBgFilled fails with the first uncovered cell it finds in any
+// row of content, naming the row/column/line so a regression is easy to
+// place back in the source.
+func assertFullyBgFilled(t *testing.T, label, content string, width int) {
+	t.Helper()
+	for y, line := range strings.Split(content, "\n") {
+		cov := bgCoverage(line)
+		if len(cov) != width {
+			t.Fatalf("%s row %d: rendered width %d, want %d: %q", label, y, len(cov), width, line)
+		}
+		for x, has := range cov {
+			if !has {
+				t.Fatalf("%s row %d col %d has no background fill (terminal default would bleed through): %q", label, y, x, line)
+			}
+		}
+	}
+}
+
+// TestFullFramePopulatedEveryRowFullyPaintsBackground pins the whole-frame
+// contract at cell granularity against the shared fixture (repo/worktree/
+// branch segments, a 3-row Changes list with a partial row, a stash strip,
+// an undo strip with a summary long enough to clip, and a real diff): every
+// column of every row -- both panes and the divider -- carries an explicit
+// background.
+func TestFullFramePopulatedEveryRowFullyPaintsBackground(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("..", "..", "..", "fixtures", "session-model-mission.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var envelope struct {
+		Model json.RawMessage `json:"model"`
+	}
+	if err := json.Unmarshal(b, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	m := New(nil)
+	m.width, m.height = 130, 38
+	if err := m.SetModel(envelope.Model); err != nil {
+		t.Fatal(err)
+	}
+	assertFullyBgFilled(t, "populated", m.View().Content, m.width)
+}
+
+// TestFullFrameEmptyStateEveryRowFullyPaintsBackground is the same contract
+// against docs/design/mission/EmptyState.png's scenario: zero changes, the
+// sidebar's bottom-dock filler in play, and the diff pane's centered card.
+// Goes through SetModel (a real wire push), not a direct m.model assignment:
+// leaving Commit.Placeholder unseeded routes the summary/description
+// textinputs through a different internal render branch than production
+// ever takes, and is its own false hole.
+func TestFullFrameEmptyStateEveryRowFullyPaintsBackground(t *testing.T) {
+	m := New(nil)
+	m.width, m.height = 100, 30
+	raw, err := json.Marshal(Model{
+		Current: Current{Repo: "repo-tools", Branch: "main"},
+		Commit:  CommitModel{ButtonLabel: "Commit 0 files to main", Placeholder: "Summary (required)"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SetModel(raw); err != nil {
+		t.Fatal(err)
+	}
+	assertFullyBgFilled(t, "empty-state", m.View().Content, m.width)
 }

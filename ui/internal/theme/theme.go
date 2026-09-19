@@ -72,6 +72,13 @@ const (
 	GlyphWarn    = "⚠"
 	GlyphBack    = "↩"
 	GlyphLock    = "⚿"
+
+	// Nerd Font octicons for the top bar's repo/worktree/branch segments,
+	// ratified 2026-09-18 (docs/design/mission/README.md): a font without
+	// these glyphs patched in shows a fallback box, which is accepted.
+	GlyphRepo     = ""
+	GlyphWorktree = ""
+	GlyphBranch   = ""
 )
 
 var SpinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠣", "⠏"}

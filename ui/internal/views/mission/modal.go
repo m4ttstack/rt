@@ -625,7 +625,7 @@ func modalKeybarLine(zone zoneID, width int) string {
 	for i, p := range pairs {
 		parts[i] = key(p[0], p[1])
 	}
-	left := bg.Render(" ") + clip(strings.Join(parts, dot), width-1)
+	left := bg.Render(" ") + clipOn(strings.Join(parts, dot), width-1, bg)
 	return bg.Width(width).Render(left)
 }
 

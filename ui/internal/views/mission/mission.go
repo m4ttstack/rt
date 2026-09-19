@@ -121,10 +121,10 @@ func newCommitInput(placeholder string) textinput.Model {
 	ti.Placeholder = placeholder
 	ti.SetWidth(commitBoxInner)
 	styles := ti.Styles()
-	styles.Focused.Text = lipgloss.NewStyle().Foreground(theme.Text)
-	styles.Focused.Placeholder = lipgloss.NewStyle().Foreground(theme.Faint)
-	styles.Blurred.Text = lipgloss.NewStyle().Foreground(theme.Text)
-	styles.Blurred.Placeholder = lipgloss.NewStyle().Foreground(theme.Faint)
+	styles.Focused.Text = lipgloss.NewStyle().Background(theme.Bg).Foreground(theme.Text)
+	styles.Focused.Placeholder = lipgloss.NewStyle().Background(theme.Bg).Foreground(theme.Faint)
+	styles.Blurred.Text = lipgloss.NewStyle().Background(theme.Bg).Foreground(theme.Text)
+	styles.Blurred.Placeholder = lipgloss.NewStyle().Background(theme.Bg).Foreground(theme.Faint)
 	styles.Cursor.Color = theme.Pink
 	ti.SetStyles(styles)
 	return ti
@@ -429,24 +429,66 @@ func (m *Mission) filterDisplayText() string {
 	return m.model.Filter
 }
 
-func (m *Mission) renderSidebar(width int) string {
-	rows := []string{
+// sidebarBlocks is renderSidebar's own row grouping, factored out so both
+// renderSidebar and sidebarHit -- and layout(), which needs their heights to
+// size the gap between them -- work from the same top/docked split rather
+// than three drifting copies of it.
+type sidebarBlocks struct {
+	top    string // tabs, filter, master row, changes list
+	docked string // stash strip, rule, commit box, undo strip: pinned to the sidebar's bottom edge
+}
+
+func (m *Mission) sidebarBlocks(width int) sidebarBlocks {
+	top := []string{
 		renderTabsRow(m.model.ChangedTotal, width),
 		renderFilterRow(m.filterDisplayText(), m.focus == focusFilter, width),
 		renderMasterRow(m.model.ChangedTotal, m.model.StagedTotal, width),
 	}
 	for i, c := range m.model.Changes {
-		rows = append(rows, renderChangeRow(c, width, c.Path == m.selected, i == m.hoverFile))
+		top = append(top, renderChangeRow(c, width, c.Path == m.selected, i == m.hoverFile))
 	}
+	var docked []string
 	if m.model.StashCount > 0 {
-		rows = append(rows, renderStashStrip(m.model.StashCount, width))
+		docked = append(docked, renderStashStrip(m.model.StashCount, width))
 	}
-	rows = append(rows, fg(theme.Rule).Render(strings.Repeat("─", width)))
-	rows = append(rows, renderCommitBox(width, m.summaryInput.View(), m.descriptionInput.View(), m.amendLocal, m.model.Commit.ButtonLabel, m.commitEnabled()))
+	docked = append(docked, lipgloss.NewStyle().Background(theme.Bg).Foreground(theme.Rule).Render(strings.Repeat("─", width)))
+	docked = append(docked, renderCommitBox(width, m.summaryInput.View(), m.descriptionInput.View(), m.amendLocal, m.model.Commit.ButtonLabel, m.commitEnabled()))
 	if lc := m.model.Commit.LastCommit; lc != nil && lc.Undoable {
-		rows = append(rows, renderUndoStrip(*lc, width))
+		docked = append(docked, renderUndoStrip(*lc, width))
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, rows...)
+	return sidebarBlocks{
+		top:    lipgloss.JoinVertical(lipgloss.Left, top...),
+		docked: lipgloss.JoinVertical(lipgloss.Left, docked...),
+	}
+}
+
+// renderSidebar composes the top section, a Bg-filled gap, and the bottom-
+// docked stash/commit/undo block sized to height (docs/design/mission/
+// Main.png, EmptyState.png): the gap absorbs whatever room the two blocks
+// don't need on their own, or shrinks to zero -- the docked block still
+// renders in full, pushing past height -- once their combined natural
+// height already meets or exceeds it.
+func (m *Mission) renderSidebar(width, height int) string {
+	b := m.sidebarBlocks(width)
+	fillerH := height - lipgloss.Height(b.top) - lipgloss.Height(b.docked)
+	if fillerH < 0 {
+		fillerH = 0
+	}
+	parts := []string{b.top}
+	if fillerH > 0 {
+		parts = append(parts, blankRows(width, fillerH))
+	}
+	parts = append(parts, b.docked)
+	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+}
+
+func blankRows(width, n int) string {
+	row := lipgloss.NewStyle().Width(width).Background(theme.Bg).Render("")
+	rows := make([]string, n)
+	for i := range rows {
+		rows[i] = row
+	}
+	return strings.Join(rows, "\n")
 }
 
 // diffWidth is the diff pane's content width: the frame width less the
@@ -462,9 +504,13 @@ func (m *Mission) diffWidth() int {
 
 // frameLayout is View's own line-count arithmetic, factored out so hitTest
 // resolves a click against the exact geometry the last frame painted rather
-// than a second, potentially drifting copy of it.
+// than a second, potentially drifting copy of it. The sidebar fields mirror
+// renderSidebar's own top/gap/docked split: sidebarFillerH is what
+// sidebarHit adds before the docked block's own row offsets to land on the
+// stash/commit/undo rows regardless of pane height.
 type frameLayout struct {
-	topH, bodyH, keybarH, noticeH int
+	topH, bodyH, keybarH, noticeH               int
+	sidebarTopH, sidebarDockedH, sidebarFillerH int
 }
 
 func (m *Mission) layout() frameLayout {
@@ -475,26 +521,29 @@ func (m *Mission) layout() frameLayout {
 	if m.noticeText() != "" {
 		l.noticeH = 1
 	}
-	sidebar := m.renderSidebar(sidebarWidth)
+	b := m.sidebarBlocks(sidebarWidth)
+	l.sidebarTopH = lipgloss.Height(b.top)
+	l.sidebarDockedH = lipgloss.Height(b.docked)
+	natural := l.sidebarTopH + l.sidebarDockedH
 	l.bodyH = m.height - l.topH - l.keybarH - l.noticeH
-	if l.bodyH < lipgloss.Height(sidebar) {
-		l.bodyH = lipgloss.Height(sidebar)
+	if l.bodyH < natural {
+		l.bodyH = natural
 	}
+	l.sidebarFillerH = l.bodyH - natural
 	return l
 }
 
 func (m *Mission) View() tea.View {
 	top := renderTopBar(m.model, m.width, m.hoverZone, m.openZone())
-	sidebar := m.renderSidebar(sidebarWidth)
 	diffW := m.diffWidth()
 	keybar := renderKeybar(m.width)
 	l := m.layout()
 	bodyHeight := l.bodyH
 
-	sidebarPadded := lipgloss.NewStyle().Height(bodyHeight).Render(sidebar)
-	diffPadded := lipgloss.NewStyle().Height(bodyHeight).Render(m.renderDiffPane(diffW, bodyHeight))
+	sidebarPadded := m.renderSidebar(sidebarWidth, bodyHeight)
+	diffPadded := lipgloss.NewStyle().Width(diffW).Height(bodyHeight).Background(theme.Bg).Render(m.renderDiffPane(diffW, bodyHeight))
 
-	dividerLine := fg(theme.Rule).Render("│")
+	dividerLine := lipgloss.NewStyle().Background(theme.Bg).Foreground(theme.Rule).Render("│")
 	dividerLines := make([]string, bodyHeight)
 	for i := range dividerLines {
 		dividerLines[i] = dividerLine
@@ -513,6 +562,15 @@ func (m *Mission) View() tea.View {
 
 	v := tea.NewView(out)
 	v.AltScreen = true
+	// bubbletea's renderer optimizes trailing styled blanks by erasing to
+	// end-of-line rather than emitting every styled space, and an erased
+	// cell paints the TERMINAL's own default background, not whatever SGR
+	// the erased content carried. Per-row Bg/BgSubtle fills alone can't
+	// survive that erase, so the frame's own terminal background is set
+	// here too: with it in place, anything the renderer erases or never
+	// touches still resolves to theme.Bg instead of the terminal's own
+	// default.
+	v.BackgroundColor = theme.Bg
 	return v
 }
 
@@ -582,7 +640,7 @@ func (m *Mission) hitTest(x, y int) hit {
 	}
 	switch {
 	case x < sidebarWidth:
-		return m.sidebarHit(x, bodyY)
+		return m.sidebarHit(x, bodyY, l.sidebarFillerH)
 	case x == sidebarWidth:
 		return hit{}
 	default:
@@ -631,8 +689,10 @@ func topbarHit(width, x int) zoneID {
 // to map a body-relative (x, y) to whichever row painted there -- the same
 // "recompute the pure layout a second time" approach hitTest takes for the
 // top bar and the diff pane, rather than recording zones as a render side
-// effect.
-func (m *Mission) sidebarHit(x, y int) hit {
+// effect. fillerH is layout()'s own sidebarFillerH: the docked block (stash
+// strip onward) starts fillerH rows after the changes list rather than
+// immediately under it, so every row from there on is offset by it.
+func (m *Mission) sidebarHit(x, y, fillerH int) hit {
 	row := 0
 	if y < row+2 {
 		return tabsHit(m.model.ChangedTotal, x)
@@ -651,6 +711,7 @@ func (m *Mission) sidebarHit(x, y int) hit {
 		return fileRowHit(m.model.Changes[y-row], y-row, x)
 	}
 	row += n
+	row += fillerH // the Bg-filled gap above the bottom-docked block: no hit target
 	if m.model.StashCount > 0 {
 		if y == row {
 			return hit{kind: hitStash}

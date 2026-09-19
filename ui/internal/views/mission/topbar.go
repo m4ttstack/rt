@@ -56,7 +56,8 @@ func renderTopBar(m Model, width int, hover, open zoneID) string {
 	branch := renderBranchSegment(m, segW, hover == zoneBranch, open == zoneBranch)
 	action := renderActionSegment(m.Action, lastW, hover == zoneAction, open == zoneAction)
 
-	div := fg(theme.Rule).Render("│") + "\n" + fg(theme.Rule).Render("│")
+	divCell := lipgloss.NewStyle().Background(theme.BgSubtle).Foreground(theme.Rule).Render("│")
+	div := divCell + "\n" + divCell
 	return lipgloss.JoinHorizontal(lipgloss.Top, repo, div, worktree, div, branch, div, action)
 }
 
@@ -82,14 +83,14 @@ func renderRepoSegment(m Model, width int, hovered, isOpen bool) string {
 		label = m.Current.Repo
 	}
 	return renderSegment(width, segmentSpec{
-		icon:        "◪",
+		icon:        theme.GlyphRepo,
 		iconColor:   theme.Dimmer,
 		top:         "Current Repository",
 		topColor:    theme.Dimmer,
 		bottom:      label,
 		bottomColor: theme.Text,
 		bottomBold:  true,
-		trailing:    fg(theme.Dimmer).Render(theme.GlyphChevron),
+		trailing:    segmentBase(hovered, isOpen).Foreground(theme.Dimmer).Render(theme.GlyphChevron),
 	}, hovered, isOpen)
 }
 
@@ -99,14 +100,14 @@ func renderWorktreeSegment(m Model, width int, hovered, isOpen bool) string {
 		name = m.Current.Worktree
 	}
 	return renderSegment(width, segmentSpec{
-		icon:        "◉",
+		icon:        theme.GlyphWorktree,
 		iconColor:   theme.Dimmer,
 		top:         "Current Worktree",
 		topColor:    theme.Dimmer,
 		bottom:      name,
 		bottomColor: theme.Text,
 		bottomBold:  true,
-		trailing:    fg(theme.Dimmer).Render(theme.GlyphChevron),
+		trailing:    segmentBase(hovered, isOpen).Foreground(theme.Dimmer).Render(theme.GlyphChevron),
 	}, hovered, isOpen)
 }
 
@@ -116,7 +117,7 @@ func renderWorktreeSegment(m Model, width int, hovered, isOpen bool) string {
 func renderBranchSegment(m Model, width int, hovered, isOpen bool) string {
 	if m.Current.Detached {
 		return renderSegment(width, segmentSpec{
-			icon:        "○",
+			icon:        theme.GlyphBranch,
 			iconColor:   theme.Peach,
 			top:         "Detached HEAD",
 			topColor:    theme.Dimmer,
@@ -126,14 +127,14 @@ func renderBranchSegment(m Model, width int, hovered, isOpen bool) string {
 		}, hovered, isOpen)
 	}
 	return renderSegment(width, segmentSpec{
-		icon:        "●",
+		icon:        theme.GlyphBranch,
 		iconColor:   theme.Dimmer,
 		top:         "Current Branch",
 		topColor:    theme.Dimmer,
 		bottom:      m.Current.Branch,
 		bottomColor: theme.Text,
 		bottomBold:  true,
-		trailing:    fg(theme.Dimmer).Render(theme.GlyphChevron),
+		trailing:    segmentBase(hovered, isOpen).Foreground(theme.Dimmer).Render(theme.GlyphChevron),
 	}, hovered, isOpen)
 }
 
@@ -159,7 +160,10 @@ func renderActionSegment(a ActionModel, width int, hovered, isOpen bool) string 
 		topBold:     true,
 		bottom:      a.Meta,
 		bottomColor: theme.Dimmer,
-		trailing:    strings.Join(pills, " "),
+		// Each pill carries its own Panel background (pill()); only the
+		// separator between them needs the segment's own band so it doesn't
+		// leave a bare, unstyled gap.
+		trailing: strings.Join(pills, segmentBase(hovered, isOpen).Render(" ")),
 	}, hovered, isOpen)
 }
 
@@ -189,23 +193,34 @@ func pill(text string, col color.Color) string {
 	return lipgloss.NewStyle().Foreground(col).Background(theme.Panel).Padding(0, 1).Render(text)
 }
 
+// segmentBase is the background every fragment of a top-bar segment
+// paints: BgSubtle at rest, Surface once open, HoverBg while hovered.
+// renderSegment uses it for its own two rows, and each segment function
+// uses the SAME call (same hovered/isOpen) to color its pre-rendered
+// trailing accessory (a chevron, or the separator between pills) before
+// handing it to renderSegment -- otherwise that accessory renders through
+// the bare fg() helper and carries no background of its own.
+func segmentBase(hovered, isOpen bool) lipgloss.Style {
+	base := lipgloss.NewStyle().Background(theme.BgSubtle)
+	switch {
+	case isOpen:
+		return base.Background(theme.Surface)
+	case hovered:
+		return base.Background(theme.HoverBg)
+	}
+	return base
+}
+
 // renderSegment lays spec out as a fixed-width, two-row block: the icon
 // leads the bottom row with the top row indented to match, and an optional
 // trailing accessory (chevron or pills) sits flush right on the bottom row.
-// Both rows are padded with the segment's background (Surface when open,
-// HoverBg when hovered, transparent at rest) so the fill reads as one
-// segment rather than text floating on the bar's own background.
+// Both rows are painted with the segment's own background (segmentBase) so
+// the fill reads as one segment rather than text floating on the bar.
 func renderSegment(width int, spec segmentSpec, hovered, isOpen bool) string {
 	if width < 0 {
 		width = 0
 	}
-	base := lipgloss.NewStyle()
-	switch {
-	case isOpen:
-		base = base.Background(theme.Surface)
-	case hovered:
-		base = base.Background(theme.HoverBg)
-	}
+	base := segmentBase(hovered, isOpen)
 
 	iconW := lipgloss.Width(spec.icon)
 	prefixW := 1 + iconW + 2 // leading space + icon column + gap
@@ -257,6 +272,26 @@ func clip(s string, w int) string {
 			return "…"
 		}
 		return lipgloss.NewStyle().Inline(true).MaxWidth(w-1).Render(s) + "…"
+	}
+	return lipgloss.NewStyle().Inline(true).MaxWidth(w).Render(s)
+}
+
+// clipOn mirrors clip but paints its ellipsis with on rather than leaving it
+// bare. clip's other callers feed it plain text that a further Render call
+// colors afterward, so a bare "…" there ends up styled anyway; a caller
+// that instead feeds clip an already-styled ANSI string (composing several
+// pre-colored fragments, then clipping the result) gets a truncation that
+// lipgloss ends on a reset, and a bare "…" after that reset falls through
+// to the terminal's own default instead of the row's own fill.
+func clipOn(s string, w int, on lipgloss.Style) string {
+	if w <= 0 {
+		return ""
+	}
+	if lipgloss.Width(s) > w {
+		if w == 1 {
+			return on.Render("…")
+		}
+		return lipgloss.NewStyle().Inline(true).MaxWidth(w-1).Render(s) + on.Render("…")
 	}
 	return lipgloss.NewStyle().Inline(true).MaxWidth(w).Render(s)
 }

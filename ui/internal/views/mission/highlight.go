@@ -46,13 +46,17 @@ func buildChromaStyle() *chroma.Style {
 }
 
 // highlightLine tokenizes text under lang, rendering each token in its
-// chromaStyleTable color or base for one the table has no entry for. An
-// empty lang (no Lang hint from the driver) or an unrecognized lexer name
-// both skip tokenization and paint text flat in base -- the diff pane's own
-// fallback for a language chroma cannot help with.
-func highlightLine(lang, text string, base color.Color) string {
+// chromaStyleTable color or base for one the table has no entry for, over
+// bg -- every token needs the row's own background, not just its
+// foreground, or the diff pane's Bg fill (mission.go) shows holes wherever
+// chroma actually painted a token. An empty lang (no Lang hint from the
+// driver) or an unrecognized lexer name both skip tokenization and paint
+// text flat in base -- the diff pane's own fallback for a language chroma
+// cannot help with.
+func highlightLine(lang, text string, base, bg color.Color) string {
+	on := lipgloss.NewStyle().Background(bg)
 	if lang == "" {
-		return fg(base).Render(text)
+		return on.Foreground(base).Render(text)
 	}
 	lx := lexers.Get(lang)
 	if lx == nil {
@@ -60,7 +64,7 @@ func highlightLine(lang, text string, base color.Color) string {
 	}
 	it, err := lx.Tokenise(nil, text)
 	if err != nil {
-		return fg(base).Render(text)
+		return on.Foreground(base).Render(text)
 	}
 	var out string
 	for tok := it(); tok != chroma.EOF; tok = it() {
@@ -68,7 +72,7 @@ func highlightLine(lang, text string, base color.Color) string {
 		if entry := chromaStyle.Get(tok.Type); entry.Colour.IsSet() {
 			col = lipgloss.Color(entry.Colour.String())
 		}
-		out += fg(col).Render(tok.Value)
+		out += on.Foreground(col).Render(tok.Value)
 	}
 	return out
 }

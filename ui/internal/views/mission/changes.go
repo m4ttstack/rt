@@ -24,13 +24,14 @@ const commitBoxInner = sidebarWidth - 4
 // the width of "Changes N", and its count in PinkSoft) beside History
 // (Dimmer, with the "v2" meta the design boards use to mark it deferred).
 func renderTabsRow(changedTotal, width int) string {
-	changes := fg(theme.Text).Bold(true).Render("Changes")
-	count := fg(theme.PinkSoft).Render(fmt.Sprintf(" %d", changedTotal))
-	gap := "    "
-	history := fg(theme.Dimmer).Render("History") + fg(theme.Faint).Render(" v2")
+	on := lipgloss.NewStyle().Background(theme.Bg)
+	changes := on.Foreground(theme.Text).Bold(true).Render("Changes")
+	count := on.Foreground(theme.PinkSoft).Render(fmt.Sprintf(" %d", changedTotal))
+	gap := on.Render("    ")
+	history := on.Foreground(theme.Dimmer).Render("History") + on.Foreground(theme.Faint).Render(" v2")
 	top := changes + count + gap + history
-	underline := fg(theme.Pink).Render(strings.Repeat("─", lipgloss.Width(changes+count)))
-	return lipgloss.NewStyle().Width(width).Render(top) + "\n" + lipgloss.NewStyle().Width(width).Render(underline)
+	underline := on.Foreground(theme.Pink).Render(strings.Repeat("─", lipgloss.Width(changes+count)))
+	return on.Width(width).Render(top) + "\n" + on.Width(width).Render(underline)
 }
 
 // renderFilterRow paints the "❯ filter" box: the typed filter text, or the
@@ -46,19 +47,20 @@ func renderFilterRow(text string, focused bool, width int) string {
 	if textW < 0 {
 		textW = 0
 	}
+	on := lipgloss.NewStyle().Background(theme.Bg)
 	body := text
-	bodyStyle := fg(theme.Text)
+	bodyStyle := on.Foreground(theme.Text)
 	if body == "" {
 		body = "Filter changes"
-		bodyStyle = fg(theme.Faint)
+		bodyStyle = on.Foreground(theme.Faint)
 	}
-	line := fg(theme.Dimmer).Render(theme.GlyphChevron+" ") + bodyStyle.Render(clip(body, textW))
+	line := on.Foreground(theme.Dimmer).Render(theme.GlyphChevron+" ") + bodyStyle.Render(clip(body, textW))
 	border := theme.Panel
 	if focused {
 		border = theme.Pink
 	}
-	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(border).Padding(0, 1).
-		Render(lipgloss.NewStyle().Width(inner).Render(line))
+	return lipgloss.NewStyle().Background(theme.Bg).Border(lipgloss.RoundedBorder()).BorderForeground(border).BorderBackground(theme.Bg).Padding(0, 1).
+		Render(on.Width(inner).Render(line))
 }
 
 // renderMasterRow is the "N changed files · M staged" line, its glyph the
@@ -73,7 +75,8 @@ func renderMasterRow(changedTotal, stagedTotal, width int) string {
 		glyph = theme.GlyphMixed
 	}
 	text := fmt.Sprintf("%d changed files · %d staged", changedTotal, stagedTotal)
-	return lipgloss.NewStyle().Width(width).Render(fg(theme.Dim).Render(glyph + "  " + text))
+	on := lipgloss.NewStyle().Background(theme.Bg)
+	return on.Width(width).Render(on.Foreground(theme.Dim).Render(glyph + "  " + text))
 }
 
 // changeRowCheckboxSpan is the column range renderChangeRow's checkbox glyph
@@ -128,7 +131,7 @@ func statusGlyph(status string) (string, color.Color) {
 // only when cursor is false: the keyboard cursor's SelBg always wins, so
 // moving the mouse across the list can never displace it.
 func renderChangeRow(c ChangeRow, width int, cursor, hover bool) string {
-	on := lipgloss.NewStyle()
+	on := lipgloss.NewStyle().Background(theme.Bg)
 	prefix := "  "
 	switch {
 	case cursor:
@@ -177,7 +180,8 @@ func renderStashStrip(count, width int) string {
 func renderCommitBox(width int, summaryView, descriptionView string, amending bool, buttonLabel string, enabled bool) string {
 	var lines []string
 	if amending {
-		lines = append(lines, fg(theme.Peach).Render("Amending last commit · a stops"))
+		on := lipgloss.NewStyle().Background(theme.Bg)
+		lines = append(lines, on.Width(width).Render(on.Foreground(theme.Peach).Render("Amending last commit · a stops")))
 		buttonLabel = "Amend last commit"
 	}
 	lines = append(lines, boxLine(width, summaryView))
@@ -195,11 +199,12 @@ func boxBlock(width int, contentLines []string) string {
 	if inner < 1 {
 		inner = 1
 	}
+	on := lipgloss.NewStyle().Background(theme.Bg)
 	padded := make([]string, len(contentLines))
 	for i, l := range contentLines {
-		padded[i] = lipgloss.NewStyle().Width(inner).Render(l)
+		padded[i] = on.Width(inner).Render(l)
 	}
-	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(theme.Panel).Padding(0, 1).
+	return lipgloss.NewStyle().Background(theme.Bg).Border(lipgloss.RoundedBorder()).BorderForeground(theme.Panel).BorderBackground(theme.Bg).Padding(0, 1).
 		Render(strings.Join(padded, "\n"))
 }
 
@@ -230,10 +235,10 @@ func renderUndoStrip(lc LastCommit, width int) string {
 // (bold) and their labels in KeybarLabel, separated by a Dim middle dot --
 // the same grammar the picker and board keybars use.
 func renderKeybar(width int) string {
-	on := lipgloss.NewStyle()
-	dot := fg(theme.Dim).Render(" · ")
+	on := lipgloss.NewStyle().Background(theme.BgSubtle)
+	dot := on.Foreground(theme.Dim).Render(" · ")
 	key := func(k, label string) string {
-		return fg(theme.KeybarKey).Bold(true).Render(k) + fg(theme.KeybarLabel).Render(" "+label)
+		return on.Foreground(theme.KeybarKey).Bold(true).Render(k) + on.Foreground(theme.KeybarLabel).Render(" "+label)
 	}
 	pairs := [][2]string{
 		{"space", "stage"}, {"enter", "diff"}, {"c", "commit"}, {"f", "action"},
@@ -262,7 +267,9 @@ func justify(on lipgloss.Style, width int, left, right string) string {
 		maxLeft = 0
 	}
 	if lipgloss.Width(left) > maxLeft {
-		left = clip(left, maxLeft)
+		// left already carries its own fg+bg per fragment (justify's
+		// callers), so its ellipsis must too -- clipOn, not clip.
+		left = clipOn(left, maxLeft, on)
 	}
 	avail := width - 3 - lipgloss.Width(left)
 	if avail < 0 {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"image/color"
 	"os"
 	"path/filepath"
 	"strings"
@@ -626,12 +627,18 @@ func TestMouseClickHunkRowEmitsHunkStage(t *testing.T) {
 	s.Wait()
 }
 
-// TestMouseClickUndoChipEmitsUndoIntent clicks the undo strip row (absolute
-// y=21: tabs(2)+filter(3)+master(1)+changes(3)+stash(1)+rule(1)+summary(3)+
-// description(4)+button(1)=19 body rows, topH(2)+19=21).
+// TestMouseClickUndoChipEmitsUndoIntent clicks the undo strip row. The
+// stash/rule/commit-box/undo block now docks to the sidebar's bottom edge
+// (mission.go's sidebarBlocks/renderSidebar), so its row depends on the
+// pane height, not just the row count above it: PTY is 30x100, topbar
+// height 2, keybar 1, no notice, so bodyH=27; the top section (tabs 2 +
+// filter 3 + master 1 + 3 changes rows = 9) and the docked block (stash 1 +
+// rule 1 + summary 3 + description 4 + button 1 + undo 1 = 11) leave a
+// 7-row filler gap between them; undo sits at bodyY 9+7+1+1+3+4+1=26, frame
+// y = topH(2)+26 = 28.
 func TestMouseClickUndoChipEmitsUndoIntent(t *testing.T) {
 	s := s5open(t)
-	s.Type(sgrClick(0, 5, 21))
+	s.Type(sgrClick(0, 5, 28))
 	l, ok := s.ReadLine(2 * time.Second)
 	if !ok || !strings.Contains(l, `"name":"mission:undo"`) {
 		t.Fatalf("undo chip click intent: %q", l)
@@ -733,6 +740,87 @@ func TestMouseWheelOverKeybarRowDoesNotMoveCursor(t *testing.T) {
 	}
 	s.Send(`{"t":"close"}`)
 	s.Wait()
+}
+
+// ─── terminal background (real renderer, real pty) ─────────────────────
+
+// TestLiveFrameSetsTerminalBackgroundToThemeBg pins the fix for a defect
+// no in-process render test can see: bubbletea's real renderer is free to
+// erase a run of styled trailing blanks down to a bare erase-to-end-of-line
+// control code, which paints with the TERMINAL's own default background,
+// not whatever SGR the erased content carried -- so mission.go's View()
+// sets tea.View.BackgroundColor (an OSC 11 sequence) to theme.Bg every
+// frame. Verified through the real compiled binary over a real pty
+// (testutil.Session), replayed through a real terminal emulator
+// (testutil.TerminalBackground/CellBackground), not by inspecting
+// Mission.View().Content directly -- that string never carries evidence of
+// what the renderer does to it on the way to a real terminal.
+func TestLiveFrameSetsTerminalBackgroundToThemeBg(t *testing.T) {
+	s := s5open(t)
+	tty := s.TTY()
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+
+	themeBg := color.RGBA{R: 0x16, G: 0x12, B: 0x24, A: 0xff}
+	if got := testutil.TerminalBackground(tty); !sameRGB(got, themeBg) {
+		t.Fatalf("terminal's own default background should be theme.Bg, got %#v", got)
+	}
+}
+
+// TestLiveFrameCellBeyondPTYResolvesToThemeBg is the case cell-level content
+// fills can never cover: a region the app never drew a single byte into (an
+// oversized real terminal pane around a smaller frame, or scrollback above
+// the alt-screen). Replaying the same session bytes into an emulator taller
+// than the pty's own 30 rows puts row 35 entirely outside anything rt-ui
+// composed; with the terminal-level background set, Emulator.Draw still
+// resolves it to theme.Bg instead of the emulator's unset default.
+func TestLiveFrameCellBeyondPTYResolvesToThemeBg(t *testing.T) {
+	s := s5open(t)
+	tty := s.TTY()
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+
+	themeBg := color.RGBA{R: 0x16, G: 0x12, B: 0x24, A: 0xff}
+	if got := testutil.CellBackgroundBeyondPTY(tty, 50, 35); !sameRGB(got, themeBg) {
+		t.Fatalf("a cell beyond the pty's own rows should still resolve to theme.Bg via the terminal-level background, got %#v", got)
+	}
+}
+
+// TestLiveFrameFillerAndDiffBlankCellsResolveToThemeBg re-checks the two
+// regions the coordinator's live capture named (the sidebar's bottom-dock
+// filler gap and the diff pane's blank region past its content) through the
+// real renderer, not just the composed-string tests in render_test.go.
+func TestLiveFrameFillerAndDiffBlankCellsResolveToThemeBg(t *testing.T) {
+	s := s5open(t)
+	tty := s.TTY()
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+
+	themeBg := color.RGBA{R: 0x16, G: 0x12, B: 0x24, A: 0xff}
+	cases := []struct {
+		name string
+		x, y int
+	}{
+		{"sidebar filler gap", 20, 14},
+		{"diff pane blank region", 70, 25},
+	}
+	for _, c := range cases {
+		if got := testutil.CellBackground(tty, c.x, c.y); !sameRGB(got, themeBg) {
+			t.Fatalf("%s cell (%d,%d) should resolve to theme.Bg, got %#v", c.name, c.x, c.y, got)
+		}
+	}
+}
+
+// sameRGB compares two colors by their 8-bit RGB channels, ignoring
+// whichever concrete color.Color type each side happens to be (the
+// emulator hands back a colorful.Color; the constants here are color.RGBA).
+func sameRGB(a, b color.Color) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	ar, ag, ab, _ := a.RGBA()
+	br, bg, bb, _ := b.RGBA()
+	return ar>>8 == br>>8 && ag>>8 == bg>>8 && ab>>8 == bb>>8
 }
 
 // sidebarWidthConst mirrors topbar.go's sidebarWidth for this file's own
