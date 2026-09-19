@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { scrubGitEnv } from "../../../packages/git-core/src/exec.ts";
 import type { GitWorktreeBadge } from "../../../packages/rt-client/src/commands.ts";
 import { deriveAction, runAction } from "../git-actions.ts";
 
@@ -20,8 +21,10 @@ interface Sandbox {
 
 const IDENTITY = ["-c", "user.email=test@example.com", "-c", "user.name=Test", "-c", "commit.gpgsign=false"];
 
+// Scrubbed so a GIT_DIR/GIT_WORK_TREE inherited from the outer test runner
+// cannot redirect one of these sandbox commands at a repo outside cwd.
 async function runGit(cwd: string, args: string[]): Promise<string> {
-  const proc = Bun.spawn(["git", ...IDENTITY, ...args], { cwd, stdout: "pipe", stderr: "pipe" });
+  const proc = Bun.spawn(["git", ...IDENTITY, ...args], { cwd, env: scrubGitEnv(), stdout: "pipe", stderr: "pipe" });
   const [out, err, code] = await Promise.all([
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),
@@ -174,6 +177,53 @@ describe("runAction: fetch stamps FETCH_HEAD", () => {
     } finally {
       await a.cleanup();
       if (b) await b.cleanup();
+    }
+  });
+});
+
+describe("runAction: env scrubbing", () => {
+  // Bun.spawn's default (no explicit `env`) inherit path reads a snapshot
+  // taken at process start, not the live `process.env` object, so mutating
+  // GIT_DIR mid-test and asserting on git's on-disk behavior can't observe
+  // this leak either way. Spying on Bun.spawn's own call args pins the real
+  // contract instead: spawnGit must pass an explicit env with the
+  // repo-location vars removed, regardless of how Bun's default inherit
+  // happens to behave.
+  test("fetch spawns git with GIT_DIR/GIT_WORK_TREE/etc scrubbed from its env", async () => {
+    const a = await makeSandbox();
+    const originalSpawn = Bun.spawn;
+    let capturedEnv: Record<string, string | undefined> | undefined;
+    try {
+      await a.write("a.txt", "one\n");
+      await a.commitAll("init");
+      await a.addBareRemote();
+
+      // @ts-expect-error -- test-only spy on the Bun global to observe spawnGit's call.
+      Bun.spawn = (cmd: unknown, opts: { env?: Record<string, string | undefined> }) => {
+        capturedEnv = opts?.env;
+        return originalSpawn(cmd as Parameters<typeof Bun.spawn>[0], opts as Parameters<typeof Bun.spawn>[1]);
+      };
+
+      const previousGitDir = process.env.GIT_DIR;
+      process.env.GIT_DIR = "/somewhere/unrelated/.git";
+      let result: { ok: boolean; detail: string };
+      try {
+        result = await runAction(a.dir, "publish-branch", { remote: "origin", branch: "main" });
+      } finally {
+        Bun.spawn = originalSpawn;
+        if (previousGitDir === undefined) delete process.env.GIT_DIR;
+        else process.env.GIT_DIR = previousGitDir;
+      }
+
+      expect(result.ok).toBe(true);
+      expect(capturedEnv).toBeDefined();
+      expect(capturedEnv!.GIT_DIR).toBeUndefined();
+      expect(capturedEnv!.GIT_WORK_TREE).toBeUndefined();
+      expect(capturedEnv!.GIT_INDEX_FILE).toBeUndefined();
+      expect(capturedEnv!.GIT_OBJECT_DIRECTORY).toBeUndefined();
+    } finally {
+      Bun.spawn = originalSpawn;
+      await a.cleanup();
     }
   });
 });

@@ -1,3 +1,4 @@
+import { scrubGitEnv } from "../../packages/git-core/src/exec.ts";
 import type { GitWorktreeBadge } from "../../packages/rt-client/src/commands.ts";
 
 export type ActionKind =
@@ -78,7 +79,9 @@ function lastStderrLine(stderr: string): string {
 }
 
 async function spawnGit(cwd: string, args: string[]): Promise<ActionResult> {
-  const proc = Bun.spawn(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
+  // Scrubbed so an inherited GIT_DIR/GIT_WORK_TREE (e.g. from a git hook)
+  // cannot redirect this action at a repo other than the one named by cwd.
+  const proc = Bun.spawn(["git", ...args], { cwd, env: scrubGitEnv(), stdout: "pipe", stderr: "pipe" });
   const [, err, code] = await Promise.all([
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),
