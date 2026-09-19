@@ -288,8 +288,16 @@ func middleTruncate(s string, w int) string {
 	keep := w - 1
 	head := keep / 2
 	tail := keep - head
+	// The guard above is rune-counted but w is a cell budget: a run of
+	// double-width (e.g. CJK) runes can pass it while still overflowing w
+	// cells, so the composed result is re-checked by display width and
+	// clipped rather than trusted on rune count alone.
 	if head+tail >= len(r) {
-		return s
+		return clip(s, w)
 	}
-	return string(r[:head]) + "…" + string(r[len(r)-tail:])
+	out := string(r[:head]) + "…" + string(r[len(r)-tail:])
+	if lipgloss.Width(out) > w {
+		return clip(out, w)
+	}
+	return out
 }

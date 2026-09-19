@@ -29,7 +29,7 @@ func fgSGR(c color.Color) string {
 func pullModel() Model {
 	return Model{
 		Current: Current{Repo: "repo-tools", RepoLabel: "repo-tools", WorktreeName: "gandalf", Branch: "rt-191-mission-tui"},
-		Action:  ActionModel{Kind: "pull", Title: "Pull origin", Meta: "3 commits behind", Ahead: 3, Behind: 2},
+		Action:  ActionModel{Kind: "pull", Title: "Pull origin", Meta: "2 commits behind", Ahead: 3, Behind: 2},
 	}
 }
 
@@ -127,6 +127,19 @@ func TestRenderTopBarAssemblesAllFourSegments(t *testing.T) {
 func TestRenderTopBarZeroWidthIsEmpty(t *testing.T) {
 	if out := renderTopBar(pullModel(), 0, zoneNone, zoneNone); out != "" {
 		t.Fatalf("zero width top bar = %q, want empty", out)
+	}
+}
+
+// TestClipNonPositiveWidthReturnsEmpty pins the guard clip needs because
+// lipgloss v2.0.6's MaxWidth does not truncate on a zero or negative budget:
+// without the early return, clip(s, 0) would fall through to Render(s) and
+// hand back the full, unclipped string.
+func TestClipNonPositiveWidthReturnsEmpty(t *testing.T) {
+	if out := clip("hello", 0); out != "" {
+		t.Fatalf("clip(_, 0) = %q, want empty", out)
+	}
+	if out := clip("hello", -3); out != "" {
+		t.Fatalf("clip(_, -3) = %q, want empty", out)
 	}
 }
 
@@ -259,6 +272,18 @@ func TestRenderDiffLineHunkPaintsSurfaceAndLav(t *testing.T) {
 	}
 	if !strings.Contains(out, "@@ -1,3 +1,4 @@") {
 		t.Fatalf("hunk line missing its text: %q", out)
+	}
+}
+
+// TestRenderDiffLineHunkHeaderStaysOneRow pins the one-row invariant diffHit
+// relies on: lipgloss wraps (rather than truncates) non-inline content at a
+// fixed Width, so an unclipped function-context suffix would otherwise spill
+// onto a second row and desync gutter-click targeting.
+func TestRenderDiffLineHunkHeaderStaysOneRow(t *testing.T) {
+	longHeader := "@@ -120,7 +120,9 @@ func someVeryLongFunctionNameThatWouldWrapWithoutClipping(argOne, argTwo, argThree int) error {"
+	out := renderDiffLine(DiffModel{}, DiffLine{Kind: "hunk", Text: longHeader}, 40, false, false)
+	if strings.Contains(out, "\n") {
+		t.Fatalf("hunk header must render as exactly one row: %q", out)
 	}
 }
 
@@ -970,5 +995,31 @@ func TestMiddleTruncateKeepsHeadAndTail(t *testing.T) {
 	}
 	if !strings.Contains(out, "…") {
 		t.Fatalf("middleTruncate missing the ellipsis: %q", out)
+	}
+}
+
+// TestMiddleTruncateClipsWideRunesToDisplayWidth pins the CJK-path fix: the
+// old rune-count guard let a run of double-width runes through unclipped
+// because their rune count fit even though their cell width did not.
+func TestMiddleTruncateClipsWideRunesToDisplayWidth(t *testing.T) {
+	wide := strings.Repeat("文", 15) + ".go"
+	out := middleTruncate(wide, 20)
+	if lipgloss.Width(out) > 20 {
+		t.Fatalf("middleTruncate must not exceed its display-width budget: width=%d w=20 %q", lipgloss.Width(out), out)
+	}
+}
+
+// TestRenderChangeRowWideRuneFilenameStaysAtWidth exercises the same defect
+// through the real caller: an unclipped CJK path wraps lipgloss's
+// non-inline Width() block onto extra rows (Width pads/wraps but never
+// truncates), so the row must still come back as exactly one line.
+func TestRenderChangeRowWideRuneFilenameStaysAtWidth(t *testing.T) {
+	row := ChangeRow{Path: strings.Repeat("文件", 20) + "/main.go", Status: "modified", Include: "none"}
+	out := renderChangeRow(row, 40, false, false)
+	if strings.Contains(out, "\n") {
+		t.Fatalf("change row must render as exactly one row: %q", out)
+	}
+	if lipgloss.Width(out) != 40 {
+		t.Fatalf("change row must render at exactly width 40, got %d: %q", lipgloss.Width(out), out)
 	}
 }

@@ -360,7 +360,11 @@ func renderDiffLine(d DiffModel, line DiffLine, width int, hover, gutterHover bo
 		if hover {
 			bg = theme.HoverBg
 		}
-		return lipgloss.NewStyle().Width(width).Background(bg).Foreground(theme.Lav).Render(" " + line.Text)
+		// Width() pads but never truncates, and lipgloss wraps rather than
+		// clipping non-inline content, so an unclipped header (a long
+		// function-context suffix) can wrap onto a second row and desync
+		// diffHit's row-to-Diff.Lines mapping. Clipped to one row first.
+		return lipgloss.NewStyle().Width(width).Background(bg).Foreground(theme.Lav).Render(clip(" "+line.Text, width))
 	}
 
 	bar := " "

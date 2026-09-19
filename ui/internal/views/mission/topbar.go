@@ -246,7 +246,13 @@ func renderSegment(width int, spec segmentSpec, hovered, isOpen bool) string {
 // view's clip (render.go): a one-cell window has no room beside the marker,
 // so it is the whole cell.
 func clip(s string, w int) string {
-	if w >= 1 && lipgloss.Width(s) > w {
+	// MaxWidth(0) does not truncate in lipgloss v2.0.6 (it no-ops on a
+	// non-positive budget), so a zero/negative w must short-circuit here
+	// rather than fall through to Render(s) below.
+	if w <= 0 {
+		return ""
+	}
+	if lipgloss.Width(s) > w {
 		if w == 1 {
 			return "…"
 		}
