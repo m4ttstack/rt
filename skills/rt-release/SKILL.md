@@ -127,9 +127,17 @@ left as-is or reduced to a pointer here.
      version, and the fork release it was built from). It is current
      when the fork's newest `fast-browser-v*` release equals the pinned
      one (`gh api repos/m4ttheweric/playwright/releases` filtered by
-     that prefix). A newer fork release means a runtime-lock bump and a
-     Web Store submit, which only the user can do and store review
-     delays; surface it at step 2 time, never at the tag.
+     that prefix). A newer fork release means a runtime-lock bump
+     (pin-runtime) and a Web Store submit, scripted in
+     m4ttstack/fast-browser: `npm run publish-extension <store-zip>`
+     (dry-run flag available) uploads and publishes via the items API
+     with keychain credentials, refusing any zip whose manifest version
+     differs from the runtime-lock pin. Store review delay is Google's,
+     so surface a needed submit at step 2 time, never at the tag.
+     Credentials are three keychain items minted once by
+     `npm run cws-mint-token` (GCP OAuth desktop client, Chrome Web
+     Store API enabled, publisher account on the consent app's test
+     users).
 
 3. **Push main.** If `main` is ahead of `origin/main`, push it. This is an
    outward action: unless the user pre-authorized the release, say what you are
