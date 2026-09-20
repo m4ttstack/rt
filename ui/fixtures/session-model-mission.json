@@ -32,9 +32,15 @@
       "current": false, "onDeck": true }
   ],
   "branches": [
-    { "name": "rt-191-mission-tui", "current": true, "ahead": 3, "behind": 2, "guardedBy": "", "group": "other", "default": false, "when": "" },
     { "name": "main", "current": false, "ahead": 0, "behind": 5, "guardedBy": "", "group": "default branch", "default": true, "when": "2 days ago" },
-    { "name": "rt-190-picker-polish", "current": false, "ahead": 0, "behind": 0, "guardedBy": "checked out in worktree frodo", "group": "guarded", "default": false, "when": "3 days ago" }
+    { "name": "rt-191-mission-tui", "current": true, "ahead": 3, "behind": 2, "guardedBy": "", "group": "recent", "default": false, "when": "" },
+    { "name": "rt-189-recent-a", "current": false, "ahead": 0, "behind": 0, "guardedBy": "", "group": "recent", "default": false, "when": "yesterday" },
+    { "name": "rt-188-recent-b", "current": false, "ahead": 0, "behind": 0, "guardedBy": "", "group": "recent", "default": false, "when": "3 days ago" },
+    { "name": "rt-187-recent-c", "current": false, "ahead": 0, "behind": 0, "guardedBy": "", "group": "recent", "default": false, "when": "4 days ago" },
+    { "name": "rt-186-recent-d", "current": false, "ahead": 0, "behind": 0, "guardedBy": "", "group": "recent", "default": false, "when": "5 days ago" },
+    { "name": "rt-185-recent-e", "current": false, "ahead": 0, "behind": 0, "guardedBy": "", "group": "recent", "default": false, "when": "6 days ago" },
+    { "name": "rt-190-picker-polish", "current": false, "ahead": 0, "behind": 0, "guardedBy": "checked out in worktree frodo", "group": "guarded", "default": false, "when": "3 days ago" },
+    { "name": "rt-100-ancient-other", "current": false, "ahead": 0, "behind": 0, "guardedBy": "", "group": "other", "default": false, "when": "last month" }
   ],
   "changes": [
     { "path": "ui/internal/views/mission/model.go", "origPath": "", "status": "modified", "include": "all" },

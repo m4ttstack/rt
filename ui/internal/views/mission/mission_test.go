@@ -391,11 +391,15 @@ func TestRepoModalEnterEmitsRepoIntentWithRowID(t *testing.T) {
 // TestBranchModalCheckoutEmitsIntentWithBranchName moves one row down from
 // the current branch (recent) to "main" (other): the guarded row sits past
 // it and is never reached here.
+// TestBranchModalCheckoutEmitsIntentWithBranchName pins the cursor's initial
+// landing spot too: "main" is the fixture's default branch, and default
+// branch is the first GHD section (mission: branch rows sort into the
+// desktop's section order, 2026-09-20), so the cursor opens directly on it
+// with no navigation needed.
 func TestBranchModalCheckoutEmitsIntentWithBranchName(t *testing.T) {
 	s := s5open(t)
 	s.Type("b")
 	s.WaitForPaint("main")
-	s.Type("\x1b[B")
 	s.Type(keyEnter)
 	l, ok := s.ReadLine(2 * time.Second)
 	if !ok || !strings.Contains(l, `"name":"mission:checkout"`) || !strings.Contains(l, `"branch":"main"`) {
@@ -457,11 +461,19 @@ func TestModalEscClosesWithoutEmittingAndReturnsFocusToList(t *testing.T) {
 
 // TestBranchActionRowEmitsCheckoutNewFromCurrent walks past the recent and
 // other rows (the guarded row auto-skips) to land on the action slot.
+// TestBranchActionRowEmitsCheckoutNewFromCurrent reaches the pinned action
+// row through a query with no matches rather than a fixed number of
+// down-presses: firstSelectableMatch's own doc comment establishes that an
+// empty match list defaults the cursor straight to the action slot, and
+// that holds regardless of how many branch rows the fixture carries (9,
+// after mission: branch rows sort into the desktop's section order,
+// 2026-09-20, added the "recent" and "other" rows a fixed down-count used
+// to rely on).
 func TestBranchActionRowEmitsCheckoutNewFromCurrent(t *testing.T) {
 	s := s5open(t)
 	s.Type("b")
 	s.WaitForPaint("New branch from")
-	s.Type("\x1b[B", "\x1b[B")
+	s.Type("zzz-no-match")
 	s.Type(keyEnter)
 	l, ok := s.ReadLine(2 * time.Second)
 	if !ok || !strings.Contains(l, `"name":"mission:checkout"`) || !strings.Contains(l, `"new":true`) ||

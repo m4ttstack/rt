@@ -217,15 +217,23 @@ describe("buildModel golden fixture handshake", () => {
       },
     ];
 
-    // now is fixed at 2026-09-18T15:00:00Z below; main's/rt-190-picker-polish's
-    // committedAt are 2/3 days before it so formatRelativeTime reproduces the
-    // fixture's own "2 days ago"/"3 days ago" deterministically -- the
-    // current row's own committedAt is irrelevant since its `when` is always
-    // "" (its ahead/behind pills render in that slot instead).
+    // now is fixed at 2026-09-18T15:00:00Z below. The branch list exercises
+    // every section of the GHD taxonomy end to end -- default, recent
+    // (current row plus 5 more, exactly filling RECENT_BRANCH_COUNT),
+    // guarded, and a genuine "other" row (needs a 6th non-current/default/
+    // guarded candidate to spill past the recent-5 budget) -- and the JSON
+    // fixture's own branches array is the SORTED OUTPUT order buildBranchRows
+    // produces from this input, not this input's own (irrelevant) order.
     const branches: BranchInfo[] = [
       branchInfo({ name: "rt-191-mission-tui", current: true, ahead: 3, behind: 2 }),
-      branchInfo({ name: "main", ahead: 0, behind: 5, committedAt: "2026-09-16T15:00:00Z" }),
-      branchInfo({ name: "rt-190-picker-polish", ahead: 0, behind: 0, committedAt: "2026-09-15T15:00:00Z" }),
+      branchInfo({ name: "main", ahead: 0, behind: 5, committedAt: "2026-09-16T15:00:00Z" }), // 2 days ago
+      branchInfo({ name: "rt-190-picker-polish", ahead: 0, behind: 0, committedAt: "2026-09-15T15:00:00Z" }), // guarded; date irrelevant to its group
+      branchInfo({ name: "rt-189-recent-a", committedAt: "2026-09-17T15:00:00Z" }), // yesterday -- newest of the 5 budgeted recent rows
+      branchInfo({ name: "rt-188-recent-b", committedAt: "2026-09-15T15:00:00Z" }),
+      branchInfo({ name: "rt-187-recent-c", committedAt: "2026-09-14T15:00:00Z" }),
+      branchInfo({ name: "rt-186-recent-d", committedAt: "2026-09-13T15:00:00Z" }),
+      branchInfo({ name: "rt-185-recent-e", committedAt: "2026-09-12T15:00:00Z" }), // 6 days ago -- 5th and last budgeted recent row
+      branchInfo({ name: "rt-100-ancient-other", committedAt: "2026-08-09T15:00:00Z" }), // last month -- 6th candidate, spills to "other"
     ];
     const guards = new Map([["rt-190-picker-polish", "checked out in worktree frodo"]]);
 
@@ -369,19 +377,84 @@ describe("buildBranchRows sections (GitHub-Desktop-style, ratified 2026-09-19)",
     expect(rows.find((r) => r.name === "feature-other")!.when).toBe("2 days ago");
   });
 
-  test("the current branch never counts toward the recent-5, even when freshest", () => {
+  test("the current branch never counts toward the recent-5 budget for OTHER rows, even when freshest", () => {
     const branches = [
       branchInfo({ name: "current", current: true, committedAt: daysAgo(0) }),
       ...Array.from({ length: 5 }, (_, i) => branchInfo({ name: `b${i}`, committedAt: daysAgo(i + 1) })),
     ];
     const rows = buildBranchRows(branches, new Map(), null, NOW);
-    expect(rows.find((r) => r.name === "current")!.group).toBe("other");
-    expect(rows.filter((r) => r.group === "recent")).toHaveLength(5);
+    // The current branch (non-default) is itself "recent" -- see the
+    // GHD-parity correction below -- but its own freshness never displaces
+    // one of the 5 budgeted non-current recent rows.
+    expect(rows.find((r) => r.name === "current")!.group).toBe("recent");
+    expect(rows.filter((r) => r.group === "recent" && r.name !== "current")).toHaveLength(5);
   });
 
   test("a default branch ref with no slash (already bare) still matches", () => {
     const rows = buildBranchRows([branchInfo({ name: "main" })], new Map(), "main", NOW);
     expect(rows[0]!.default).toBe(true);
+  });
+
+  test("a non-default current branch sits in \"recent\", not \"other\" (GHD shows the checked-out branch inside its own section)", () => {
+    const branches = [
+      branchInfo({ name: "feature-current", current: true, committedAt: daysAgo(10) }), // older than the other recent branches below
+      branchInfo({ name: "feature-fresh", committedAt: daysAgo(0) }),
+    ];
+    const rows = buildBranchRows(branches, new Map(), null, NOW);
+    expect(rows.find((r) => r.name === "feature-current")!.group).toBe("recent");
+    // Still keeps its pills, not a date, regardless of group.
+    expect(rows.find((r) => r.name === "feature-current")!.when).toBe("");
+  });
+
+  test("a current branch that IS the default lands in \"default branch\", not \"recent\"", () => {
+    const rows = buildBranchRows([branchInfo({ name: "main", current: true })], new Map(), "origin/main", NOW);
+    expect(rows[0]!.group).toBe("default branch");
+  });
+});
+
+describe("buildBranchRows section order (GHD parity, ratified 2026-09-19)", () => {
+  const NOW = new Date("2026-09-18T15:00:00Z");
+  const daysAgo = (n: number) => new Date(NOW.getTime() - n * 24 * 60 * 60 * 1000).toISOString();
+
+  test("emits default branch, then recent (current first, newest-committed next), then guarded, then other -- alphabetical within guarded/other -- regardless of the input's own listing order", () => {
+    // Deliberately scrambled: git's own listing order must never leak
+    // through as the emitted order (this is exactly the bug the sort fixes:
+    // branches.map used to preserve git's order and GroupContiguous then
+    // rendered groups in first-appearance order instead of the ratified one).
+    // Both "other" names and "guarded" names are picked so alphabetical
+    // order DISAGREES with commit-date order -- a date-based sort passing
+    // by coincidence is ruled out.
+    const branches = [
+      branchInfo({ name: "other-zz", committedAt: daysAgo(60) }), // newer than other-aa
+      branchInfo({ name: "guarded-b", committedAt: daysAgo(3) }), // newer than guarded-a
+      branchInfo({ name: "recent-newest", committedAt: daysAgo(1) }),
+      branchInfo({ name: "other-aa", committedAt: daysAgo(70) }),
+      branchInfo({ name: "current-branch", current: true, committedAt: daysAgo(20) }),
+      branchInfo({ name: "guarded-a", committedAt: daysAgo(4) }),
+      branchInfo({ name: "main", committedAt: daysAgo(400) }),
+      branchInfo({ name: "recent-2", committedAt: daysAgo(2) }),
+      branchInfo({ name: "recent-3", committedAt: daysAgo(3) }),
+      branchInfo({ name: "recent-4", committedAt: daysAgo(4) }),
+      branchInfo({ name: "recent-5", committedAt: daysAgo(5) }), // 5th and last budgeted recent slot
+    ];
+    const guards = new Map([
+      ["guarded-b", "checked out in worktree frodo"],
+      ["guarded-a", "checked out in worktree bilbo"],
+    ]);
+    const rows = buildBranchRows(branches, guards, "origin/main", NOW);
+    expect(rows.map((r) => r.name)).toEqual([
+      "main", // default branch
+      "current-branch", // recent: current always first
+      "recent-newest", // recent: then newest-committed first
+      "recent-2",
+      "recent-3",
+      "recent-4",
+      "recent-5",
+      "guarded-a", // guarded: alphabetical, not date order (guarded-b is newer)
+      "guarded-b",
+      "other-aa", // other: alphabetical, not date order (other-zz is newer)
+      "other-zz",
+    ]);
   });
 });
 

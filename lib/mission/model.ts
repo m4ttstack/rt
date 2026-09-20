@@ -174,20 +174,33 @@ function stripRemotePrefix(ref: string | null): string | null {
   return slash === -1 ? ref : ref.slice(slash + 1);
 }
 
+/** Section order the rows must EMIT in, not just group into -- GroupContiguous on the Go side otherwise renders groups in git's own first-appearance listing order. */
+const GROUP_RANK: Record<MissionBranchRow["group"], number> = {
+  "default branch": 0,
+  recent: 1,
+  guarded: 2,
+  other: 3,
+};
+
 /**
- * Sections, in order: the repo's default branch; the RECENT_BRANCH_COUNT
- * most recently committed branches excluding the default and the current
- * branch (so neither displaces a genuinely different recent branch);
- * guarded (rt-specific, unchanged); everything else, alphabetical (the
- * caller's own row order is preserved within a group -- newBranchModal's
- * GroupContiguous handles the actual bucketing/sort on the Go side).
+ * Sections, in order: the repo's default branch; recent (the current
+ * branch first, when it is not itself the default -- GitHub Desktop shows
+ * the checked-out branch inside its own section, never dumped into a
+ * generic "other" wall -- followed by the RECENT_BRANCH_COUNT most
+ * recently committed branches excluding the default and the current
+ * branch, so neither displaces a genuinely different recent branch, nor
+ * does the current branch's own freshness ever count against that
+ * budget); guarded (rt-specific, unchanged), alphabetical; everything
+ * else, alphabetical.
  *
- * Each non-current row gets a driver-computed relative date (formatRelativeTime);
- * the current row's `when` stays "" since its own ahead/behind pills render
- * in that slot instead (modal.go's modalRowLine).
+ * Each non-current row gets a driver-computed relative date
+ * (formatRelativeTime); the current row's `when` stays "" since its own
+ * ahead/behind pills render in that slot instead (modal.go's
+ * modalRowLine), regardless of which group it lands in.
  */
 export function buildBranchRows(branches: BranchInfo[], guards: Map<string, string>, defaultBranchRef: string | null, now: Date): MissionBranchRow[] {
   const defaultBranch = stripRemotePrefix(defaultBranchRef);
+  const committedAtByName = new Map(branches.map((b) => [b.name, b.committedAt]));
 
   const recentCandidates = branches
     .filter((b) => !b.current && b.name !== defaultBranch && (guards.get(b.name) ?? "") === "")
@@ -195,12 +208,13 @@ export function buildBranchRows(branches: BranchInfo[], guards: Map<string, stri
     .sort((a, b) => b.committedAt.localeCompare(a.committedAt));
   const recentNames = new Set(recentCandidates.slice(0, RECENT_BRANCH_COUNT).map((b) => b.name));
 
-  return branches.map((branch) => {
+  const rows = branches.map((branch) => {
     const guardedBy = guards.get(branch.name) ?? "";
     const isDefault = defaultBranch !== null && branch.name === defaultBranch;
     let group: MissionBranchRow["group"];
     if (guardedBy !== "") group = "guarded";
     else if (isDefault) group = "default branch";
+    else if (branch.current) group = "recent";
     else if (recentNames.has(branch.name)) group = "recent";
     else group = "other";
 
@@ -214,6 +228,18 @@ export function buildBranchRows(branches: BranchInfo[], guards: Map<string, stri
       default: isDefault,
       when: branch.current ? "" : formatRelativeTime(branch.committedAt, now),
     };
+  });
+
+  return rows.slice().sort((a, b) => {
+    const rankDiff = GROUP_RANK[a.group] - GROUP_RANK[b.group];
+    if (rankDiff !== 0) return rankDiff;
+    if (a.group === "recent") {
+      if (a.current !== b.current) return a.current ? -1 : 1;
+      const aAt = committedAtByName.get(a.name) ?? "";
+      const bAt = committedAtByName.get(b.name) ?? "";
+      return bAt.localeCompare(aAt);
+    }
+    return a.name.localeCompare(b.name);
   });
 }
 
