@@ -14,6 +14,7 @@ import { createGitClient } from "../../../packages/git-core/src/index.ts";
 import type { BranchGuardVerdict } from "../../branch-guard.ts";
 import type { DaemonSubscription } from "../../daemon-client.ts";
 import { amendStaged, commitStaged, stagePath, unstagePath } from "../../commit-ops.ts";
+import { getRemoteDefaultBranch } from "../../git-ops.ts";
 import type { SessionIntent } from "../../ui/protocol.ts";
 import type { SessionEnd, SessionHandle } from "../../ui/spawn.ts";
 import { MissionDriver, type MissionDeps } from "../driver.ts";
@@ -150,6 +151,7 @@ function realDeps(sandbox: Sandbox, session: LiveSession, opened: (model: Missio
     now: () => new Date(),
     stageFile: stagePath,
     unstageFile: unstagePath,
+    resolveDefaultBranch: getRemoteDefaultBranch,
   };
 }
 

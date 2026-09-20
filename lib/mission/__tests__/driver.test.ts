@@ -250,6 +250,7 @@ function baseDeps(over: {
   now?: MissionDeps["now"];
   stageFile?: MissionDeps["stageFile"];
   unstageFile?: MissionDeps["unstageFile"];
+  resolveDefaultBranch?: MissionDeps["resolveDefaultBranch"];
 }): MissionDeps {
   const client = over.client ?? makeFakeClient();
   return {
@@ -269,6 +270,12 @@ function baseDeps(over: {
     now: over.now ?? (() => new Date("2026-09-18T00:00:00Z")),
     stageFile: over.stageFile ?? (() => {}),
     unstageFile: over.unstageFile ?? (() => {}),
+    // START's worktree ("/repo") is never a real git checkout in this
+    // file's tests, so the real getRemoteDefaultBranch would just fail and
+    // return null anyway; stubbing it directly skips a real subprocess spawn
+    // per test and makes the resolver itself spy-able (see the caching test
+    // below).
+    resolveDefaultBranch: over.resolveDefaultBranch ?? (() => null),
   };
 }
 
@@ -561,6 +568,72 @@ describe("MissionDriver: repo switch", () => {
     expect(last.notice).toBe("no known worktree for bare-repo");
     expect(last.current.repo).toBe(START.repo);
     expect(last.current.worktree).toBe(START.worktree);
+  });
+});
+
+// CodeRabbit finding on PR #353: getRemoteDefaultBranch runs up to two
+// synchronous git subprocesses, and it was called directly from model(),
+// which every push() invokes -- so typing in the filter, moving the
+// selection, or any notice replayed those subprocesses on every keystroke.
+// It is now resolved once in refresh() and cached on MissionDriver;
+// model()/guardBranch() read the cache.
+describe("MissionDriver: default branch resolution is cached, not per-push", () => {
+  test("a scripted sequence of several pushes with no refresh in between calls the resolver exactly once", async () => {
+    let calls = 0;
+    const session = new FakeSession([
+      { t: "intent", name: "mission:select", payload: { filter: "a" } },
+      { t: "intent", name: "mission:select", payload: { filter: "ab" } },
+      { t: "intent", name: "mission:select", payload: { filter: "abc" } },
+      { t: "intent", name: "mission:select", payload: { filter: "" } },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({
+      session,
+      resolveDefaultBranch: () => {
+        calls++;
+        return "origin/main";
+      },
+    });
+
+    await new MissionDriver(deps, START).run();
+
+    // run()'s own initial refresh() is the one call the whole scripted
+    // sequence of filter-only pushes above must not add to.
+    expect(calls).toBe(1);
+    expect(session.pushed.length).toBeGreaterThan(1); // several real pushes did happen, each reading the cache
+    expect((session.pushed.at(-1) as MissionModel).filter).toBe("");
+  });
+
+  test("a worktree switch re-resolves (the cache tracks the worktree it describes, not a one-time value)", async () => {
+    const twoRepoQuery = async (cmd: string) =>
+      cmd === "worktree:list"
+        ? { ok: true, data: { trees: defaultTrees() } }
+        : {
+            ok: true,
+            data: {
+              repos: [
+                { repo: "repo-tools", error: null, worktrees: [badge()] },
+                { repo: "other-repo", error: null, worktrees: [badge({ worktree: "/other/tree", branch: "dev" })] },
+              ],
+            },
+          };
+    const seen: string[] = [];
+    const session = new FakeSession([
+      { t: "intent", name: "mission:repo", payload: { repo: "other-repo" } },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({
+      session,
+      daemonQuery: twoRepoQuery,
+      resolveDefaultBranch: (cwd: string) => {
+        seen.push(cwd);
+        return "origin/main";
+      },
+    });
+
+    await new MissionDriver(deps, START).run();
+
+    expect(seen).toEqual([START.worktree, "/other/tree"]); // initial refresh, then the repo-switch refresh
   });
 });
 

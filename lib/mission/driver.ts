@@ -18,7 +18,7 @@ import { DiffLineType } from "../../packages/git-core/src/vendor/ghd/diff-line.t
 import type { GitWorktreeBadge, RepoStatusRow, WorktreeTreeRow } from "../../packages/rt-client/src/commands.ts";
 import type { BranchGuardVerdict, checkBranchGuard } from "../branch-guard.ts";
 import type { DaemonEvent, DaemonSubscription, daemonQuery } from "../daemon-client.ts";
-import { getRemoteDefaultBranch } from "../git-ops.ts";
+import type { getRemoteDefaultBranch } from "../git-ops.ts";
 import { repoLabel } from "../repo-label.ts";
 import { createRealProbes } from "../setup/probes.ts";
 import type { SessionIntent } from "../ui/protocol.ts";
@@ -39,6 +39,7 @@ type AmendStagedFn = (cwd: string, opts?: { message?: string; noVerify?: boolean
 type GuardFn = typeof checkBranchGuard;
 type StageFileFn = (cwd: string, path: string) => void;
 type UnstageFileFn = (cwd: string, path: string, origPath?: string) => void;
+type ResolveDefaultBranchFn = typeof getRemoteDefaultBranch;
 
 export interface MissionDeps {
   openSession: OpenSessionFn;
@@ -55,6 +56,15 @@ export interface MissionDeps {
   stageFile: StageFileFn;
   /** Whole-file `git reset -q HEAD` (commit-ops' unstagePath): the only unstage git-core's forward-only patches allow. */
   unstageFile: UnstageFileFn;
+  /**
+   * Resolves the current worktree's remote default branch (e.g.
+   * "origin/main"), or null when none resolves. Synchronous (two blocking
+   * git subprocesses in the worst case), so the driver calls it only from
+   * refresh() and caches the result -- CodeRabbit's PR #353 finding was
+   * model() calling this directly, which every push() invokes, blocking the
+   * UI thread on every filter keystroke and selection change.
+   */
+  resolveDefaultBranch: ResolveDefaultBranchFn;
 }
 
 interface StagePayload {
@@ -161,6 +171,10 @@ export class MissionDriver {
   private refreshingBadges = false;
   /** Short sha of HEAD's tip, shown as current.branch on a detached checkout. */
   private headShortSha = "";
+  /** Cached by refresh() (initial load, and every repo/worktree/checkout
+   *  transition, all of which call it) so model()/push() and guardBranch()
+   *  never run resolveDefaultBranch's blocking git subprocesses themselves. */
+  private defaultBranch: string | null = null;
 
   constructor(private readonly deps: MissionDeps, start: { repo: string; worktree: string }) {
     this.state = {
@@ -241,7 +255,7 @@ export class MissionDriver {
       lastCommit: this.lastCommit,
       action: this.action,
       headShortSha: this.headShortSha,
-      defaultBranch: getRemoteDefaultBranch(this.state.currentWorktree),
+      defaultBranch: this.defaultBranch,
     });
   }
 
@@ -264,7 +278,11 @@ export class MissionDriver {
     return this.deps.guard({
       cwd,
       branch,
-      defaultBranch: getRemoteDefaultBranch(cwd),
+      // The cache is always fresh here: cwd is this.state.currentWorktree,
+      // and every path that changes it (handleCheckout/Worktree/Repo) awaits
+      // refresh() -- which repopulates the cache -- before a guard check can
+      // run against the new worktree.
+      defaultBranch: this.defaultBranch,
       runners: createStackGuardRunners(createRealProbes()),
     });
   }
@@ -272,6 +290,12 @@ export class MissionDriver {
   /** Repos, snapshot, branches, stashes, and last commit -- everything but the diff for the current pane. */
   private async refresh(): Promise<void> {
     const client = this.deps.client(this.state.currentWorktree);
+    // Every call site that changes currentWorktree (handleCheckout/Worktree/
+    // Repo) awaits refresh() before its own push(), so re-resolving here
+    // keeps the cache in step with the worktree it describes -- see
+    // model()/guardBranch()'s own comments on why they read the cache
+    // instead of calling this themselves.
+    this.defaultBranch = this.deps.resolveDefaultBranch(this.state.currentWorktree);
     const [statusRes, treesRes, snapshot, branches, stashes, log] = await Promise.all([
       this.deps.daemonQuery("repos:status", {}),
       this.deps.daemonQuery("worktree:list", { repoName: this.state.currentRepo }),
