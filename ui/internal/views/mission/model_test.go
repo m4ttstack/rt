@@ -45,6 +45,15 @@ func TestSetModelDecodesEveryTopField(t *testing.T) {
 	if len(m.model.Branches) != 3 || m.model.Branches[2].GuardedBy == "" {
 		t.Fatalf("Branches[2].GuardedBy not populated: %+v", m.model.Branches)
 	}
+	if !m.model.Branches[1].Default || m.model.Branches[1].Group != "default branch" {
+		t.Fatalf("Branches[1] (main) should decode as the default branch: %+v", m.model.Branches[1])
+	}
+	if m.model.Branches[1].When != "2 days ago" {
+		t.Fatalf("Branches[1].When not populated: %+v", m.model.Branches[1])
+	}
+	if m.model.Branches[0].Current && m.model.Branches[0].When != "" {
+		t.Fatalf("the current row's When should be empty (it shows pills instead): %+v", m.model.Branches[0])
+	}
 	if len(m.model.Changes) != 3 || m.model.Changes[0].Include != "all" || m.model.Changes[1].Include != "none" || m.model.Changes[2].Include != "partial" {
 		t.Fatalf("Changes: %+v", m.model.Changes)
 	}

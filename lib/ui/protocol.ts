@@ -152,7 +152,11 @@ export interface MissionBranchRow {
   behind: number;
   /** "" = free; else the refusal detail. */
   guardedBy: string;
-  group: "recent" | "other" | "guarded";
+  group: "default branch" | "recent" | "other" | "guarded";
+  /** True for the repo's remote default branch (origin/main or origin/master), stripped of the "origin/" prefix to compare against local branch names. */
+  default: boolean;
+  /** Driver-computed relative date, GHD-style ("2 days ago", "last month"); "" for the current row, which shows its ahead/behind pills instead. */
+  when: string;
 }
 
 export interface MissionChangeRow {

@@ -38,7 +38,9 @@ type BranchRow struct {
 	Ahead     int    `json:"ahead"`
 	Behind    int    `json:"behind"`
 	GuardedBy string `json:"guardedBy"` // "" = free; else the refusal detail
-	Group     string `json:"group"`     // "recent" | "other" | "guarded"
+	Group     string `json:"group"`     // "default branch" | "recent" | "other" | "guarded"
+	Default   bool   `json:"default"`   // the repo's remote default branch (origin/main or origin/master)
+	When      string `json:"when"`      // driver-computed relative date, GHD-style ("2 days ago"); "" for the current row
 }
 
 type ChangeRow struct {

@@ -241,6 +241,7 @@ export class MissionDriver {
       lastCommit: this.lastCommit,
       action: this.action,
       headShortSha: this.headShortSha,
+      defaultBranch: getRemoteDefaultBranch(this.state.currentWorktree),
     });
   }
 

@@ -32,9 +32,9 @@
       "current": false, "onDeck": true }
   ],
   "branches": [
-    { "name": "rt-191-mission-tui", "current": true, "ahead": 3, "behind": 2, "guardedBy": "", "group": "recent" },
-    { "name": "main", "current": false, "ahead": 0, "behind": 5, "guardedBy": "", "group": "other" },
-    { "name": "rt-190-picker-polish", "current": false, "ahead": 0, "behind": 0, "guardedBy": "checked out in worktree frodo", "group": "guarded" }
+    { "name": "rt-191-mission-tui", "current": true, "ahead": 3, "behind": 2, "guardedBy": "", "group": "other", "default": false, "when": "" },
+    { "name": "main", "current": false, "ahead": 0, "behind": 5, "guardedBy": "", "group": "default branch", "default": true, "when": "2 days ago" },
+    { "name": "rt-190-picker-polish", "current": false, "ahead": 0, "behind": 0, "guardedBy": "checked out in worktree frodo", "group": "guarded", "default": false, "when": "3 days ago" }
   ],
   "changes": [
     { "path": "ui/internal/views/mission/model.go", "origPath": "", "status": "modified", "include": "all" },

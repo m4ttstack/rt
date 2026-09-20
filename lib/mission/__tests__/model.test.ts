@@ -7,7 +7,7 @@ import { DiffHunk, DiffHunkExpansionType, DiffHunkHeader } from "../../../packag
 import type { GitWorktreeBadge, RepoStatusRow, WorktreeTreeRow } from "../../../packages/rt-client/src/commands.ts";
 import { serializeIdentity } from "../../settings/identity.ts";
 import type { ActionState } from "../git-actions.ts";
-import { buildModel, joinWorktreeRows, type MissionModel, type MissionState, type WorktreeRow } from "../model.ts";
+import { buildBranchRows, buildModel, joinWorktreeRows, type MissionModel, type MissionState, type WorktreeRow } from "../model.ts";
 
 const FIXTURES = resolve(import.meta.dir, "..", "..", "..", "ui", "fixtures");
 
@@ -119,6 +119,8 @@ function baseInput(overrides: {
   stashes?: number;
   lastCommit?: MissionModel["commit"]["lastCommit"];
   action?: Partial<ActionState>;
+  defaultBranch?: string | null;
+  now?: Date;
 } = {}) {
   return {
     state: baseState(overrides.state),
@@ -131,6 +133,8 @@ function baseInput(overrides: {
     stashes: overrides.stashes ?? 0,
     lastCommit: overrides.lastCommit ?? null,
     action: baseAction(overrides.action),
+    defaultBranch: overrides.defaultBranch ?? null,
+    now: overrides.now ?? new Date("2026-09-18T15:00:00Z"),
   };
 }
 
@@ -213,10 +217,15 @@ describe("buildModel golden fixture handshake", () => {
       },
     ];
 
+    // now is fixed at 2026-09-18T15:00:00Z below; main's/rt-190-picker-polish's
+    // committedAt are 2/3 days before it so formatRelativeTime reproduces the
+    // fixture's own "2 days ago"/"3 days ago" deterministically -- the
+    // current row's own committedAt is irrelevant since its `when` is always
+    // "" (its ahead/behind pills render in that slot instead).
     const branches: BranchInfo[] = [
       branchInfo({ name: "rt-191-mission-tui", current: true, ahead: 3, behind: 2 }),
-      branchInfo({ name: "main", ahead: 0, behind: 5 }),
-      branchInfo({ name: "rt-190-picker-polish", ahead: 0, behind: 0 }),
+      branchInfo({ name: "main", ahead: 0, behind: 5, committedAt: "2026-09-16T15:00:00Z" }),
+      branchInfo({ name: "rt-190-picker-polish", ahead: 0, behind: 0, committedAt: "2026-09-15T15:00:00Z" }),
     ];
     const guards = new Map([["rt-190-picker-polish", "checked out in worktree frodo"]]);
 
@@ -258,6 +267,8 @@ describe("buildModel golden fixture handshake", () => {
         undoable: true,
       },
       action: baseAction({ kind: "pull", title: "Pull origin", meta: "2 commits behind", ahead: 3, behind: 2 }),
+      defaultBranch: "origin/main",
+      now: new Date("2026-09-18T15:00:00Z"),
     });
 
     expect(JSON.parse(JSON.stringify(model))).toEqual(fixture.model);
@@ -313,6 +324,64 @@ describe("repo modal group derivation", () => {
   ] as const)("%s -> %s", (_label, repoId, expected) => {
     const model = buildModel(baseInput({ rows: [{ repo: repoId, error: null, worktrees: [badge()] }] }));
     expect(model.repos[0]!.group).toBe(expected);
+  });
+});
+
+describe("buildBranchRows sections (GitHub-Desktop-style, ratified 2026-09-19)", () => {
+  const NOW = new Date("2026-09-18T15:00:00Z");
+  const daysAgo = (n: number) => new Date(NOW.getTime() - n * 24 * 60 * 60 * 1000).toISOString();
+
+  test("the default branch gets its own group and default:true, regardless of recency", () => {
+    const branches = [
+      branchInfo({ name: "main", committedAt: daysAgo(400) }), // older than every other branch below
+      branchInfo({ name: "feature-a", committedAt: daysAgo(1) }),
+    ];
+    const rows = buildBranchRows(branches, new Map(), "origin/main", NOW);
+    const main = rows.find((r) => r.name === "main")!;
+    expect(main.group).toBe("default branch");
+    expect(main.default).toBe(true);
+    expect(rows.find((r) => r.name === "feature-a")!.default).toBe(false);
+  });
+
+  test("only the RECENT_BRANCH_COUNT freshest non-default, non-current branches get \"recent\"; the rest fall to \"other\"", () => {
+    const branches = Array.from({ length: 8 }, (_, i) => branchInfo({ name: `b${i}`, committedAt: daysAgo(i) }));
+    const rows = buildBranchRows(branches, new Map(), null, NOW);
+    const recent = rows.filter((r) => r.group === "recent").map((r) => r.name).sort();
+    const other = rows.filter((r) => r.group === "other").map((r) => r.name).sort();
+    expect(recent).toEqual(["b0", "b1", "b2", "b3", "b4"]); // the 5 newest (smallest daysAgo)
+    expect(other).toEqual(["b5", "b6", "b7"]);
+  });
+
+  test("a guarded branch stays \"guarded\" even if it would otherwise be the default or the freshest", () => {
+    const branches = [branchInfo({ name: "main", committedAt: daysAgo(0) })];
+    const guards = new Map([["main", "checked out in worktree frodo"]]);
+    const rows = buildBranchRows(branches, guards, "origin/main", NOW);
+    expect(rows[0]!.group).toBe("guarded");
+  });
+
+  test("the current branch's own committedAt never produces a `when`; a non-current branch always does", () => {
+    const branches = [
+      branchInfo({ name: "feature-current", current: true, committedAt: daysAgo(0) }),
+      branchInfo({ name: "feature-other", committedAt: daysAgo(2) }),
+    ];
+    const rows = buildBranchRows(branches, new Map(), null, NOW);
+    expect(rows.find((r) => r.name === "feature-current")!.when).toBe("");
+    expect(rows.find((r) => r.name === "feature-other")!.when).toBe("2 days ago");
+  });
+
+  test("the current branch never counts toward the recent-5, even when freshest", () => {
+    const branches = [
+      branchInfo({ name: "current", current: true, committedAt: daysAgo(0) }),
+      ...Array.from({ length: 5 }, (_, i) => branchInfo({ name: `b${i}`, committedAt: daysAgo(i + 1) })),
+    ];
+    const rows = buildBranchRows(branches, new Map(), null, NOW);
+    expect(rows.find((r) => r.name === "current")!.group).toBe("other");
+    expect(rows.filter((r) => r.group === "recent")).toHaveLength(5);
+  });
+
+  test("a default branch ref with no slash (already bare) still matches", () => {
+    const rows = buildBranchRows([branchInfo({ name: "main" })], new Map(), "main", NOW);
+    expect(rows[0]!.default).toBe(true);
   });
 });
 

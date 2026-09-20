@@ -8,6 +8,7 @@ import {
 } from "../../packages/git-core/src/index.ts";
 import { DiffLineType } from "../../packages/git-core/src/vendor/ghd/diff-line.ts";
 import type { GitWorktreeBadge, RepoStatusRow, WorktreeTreeRow } from "../../packages/rt-client/src/commands.ts";
+import { formatRelativeTime } from "../relative-time.ts";
 import { repoLabel } from "../repo-label.ts";
 import { parseIdentity } from "../settings/identity.ts";
 import type { ActionState } from "./git-actions.ts";
@@ -163,17 +164,57 @@ export function joinWorktreeRows(trees: WorktreeTreeRow[], badges: GitWorktreeBa
   }));
 }
 
-function buildBranchRow(branch: BranchInfo, guards: Map<string, string>): MissionBranchRow {
-  const guardedBy = guards.get(branch.name) ?? "";
-  const group: MissionBranchRow["group"] = guardedBy !== "" ? "guarded" : branch.current ? "recent" : "other";
-  return {
-    name: branch.name,
-    current: branch.current,
-    ahead: branch.ahead ?? 0,
-    behind: branch.behind ?? 0,
-    guardedBy,
-    group,
-  };
+/** How many of the freshest (non-default, non-current) branches by commit date get the "recent" group, GitHub-Desktop-style. */
+const RECENT_BRANCH_COUNT = 5;
+
+/** getRemoteDefaultBranch returns e.g. "origin/main"; local branch names carry no remote prefix. */
+function stripRemotePrefix(ref: string | null): string | null {
+  if (ref === null) return null;
+  const slash = ref.indexOf("/");
+  return slash === -1 ? ref : ref.slice(slash + 1);
+}
+
+/**
+ * Sections, in order: the repo's default branch; the RECENT_BRANCH_COUNT
+ * most recently committed branches excluding the default and the current
+ * branch (so neither displaces a genuinely different recent branch);
+ * guarded (rt-specific, unchanged); everything else, alphabetical (the
+ * caller's own row order is preserved within a group -- newBranchModal's
+ * GroupContiguous handles the actual bucketing/sort on the Go side).
+ *
+ * Each non-current row gets a driver-computed relative date (formatRelativeTime);
+ * the current row's `when` stays "" since its own ahead/behind pills render
+ * in that slot instead (modal.go's modalRowLine).
+ */
+export function buildBranchRows(branches: BranchInfo[], guards: Map<string, string>, defaultBranchRef: string | null, now: Date): MissionBranchRow[] {
+  const defaultBranch = stripRemotePrefix(defaultBranchRef);
+
+  const recentCandidates = branches
+    .filter((b) => !b.current && b.name !== defaultBranch && (guards.get(b.name) ?? "") === "")
+    .slice()
+    .sort((a, b) => b.committedAt.localeCompare(a.committedAt));
+  const recentNames = new Set(recentCandidates.slice(0, RECENT_BRANCH_COUNT).map((b) => b.name));
+
+  return branches.map((branch) => {
+    const guardedBy = guards.get(branch.name) ?? "";
+    const isDefault = defaultBranch !== null && branch.name === defaultBranch;
+    let group: MissionBranchRow["group"];
+    if (guardedBy !== "") group = "guarded";
+    else if (isDefault) group = "default branch";
+    else if (recentNames.has(branch.name)) group = "recent";
+    else group = "other";
+
+    return {
+      name: branch.name,
+      current: branch.current,
+      ahead: branch.ahead ?? 0,
+      behind: branch.behind ?? 0,
+      guardedBy,
+      group,
+      default: isDefault,
+      when: branch.current ? "" : formatRelativeTime(branch.committedAt, now),
+    };
+  });
 }
 
 function toChangeStatus(kind: ChangedFile["kind"]): MissionChangeRow["status"] {
@@ -288,8 +329,12 @@ export function buildModel(input: {
   action: ActionState;
   /** HEAD's short sha; stands in for current.branch on a detached checkout. */
   headShortSha?: string;
+  /** e.g. "origin/main"; null when no remote default branch was found. */
+  defaultBranch: string | null;
+  /** Injected for deterministic branch-date formatting in tests; defaults to the real clock. */
+  now?: Date;
 }): MissionModel {
-  const { state, rows, snapshot, branches, guards, worktrees, stagingDiff, stashes, lastCommit, action, headShortSha } = input;
+  const { state, rows, snapshot, branches, guards, worktrees, stagingDiff, stashes, lastCommit, action, headShortSha, defaultBranch, now = new Date() } = input;
 
   const repos: MissionRepoRow[] = rows.map((row) => ({
     id: row.repo,
@@ -308,7 +353,7 @@ export function buildModel(input: {
     onDeck: worktree.onDeck,
   }));
 
-  const branchRows: MissionBranchRow[] = branches.map((branch) => buildBranchRow(branch, guards));
+  const branchRows: MissionBranchRow[] = buildBranchRows(branches, guards, defaultBranch, now);
 
   const allChanges: MissionChangeRow[] = snapshot.files.map((file) => ({
     path: file.path,

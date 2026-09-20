@@ -120,6 +120,11 @@ test("the mission model fixture parses as a model line and matches the MissionMo
   expect(model.worktrees[1]!.onDeck).toBe(true);
   expect(model.branches).toHaveLength(3);
   expect(model.branches[2]!.guardedBy).not.toBe("");
+  expect(model.branches[1]!.default).toBe(true);
+  expect(model.branches[1]!.group).toBe("default branch");
+  expect(model.branches[1]!.when).toBe("2 days ago");
+  expect(model.branches[0]!.current).toBe(true);
+  expect(model.branches[0]!.when).toBe("");
   expect(model.changes.map((c) => c.include)).toEqual(["all", "none", "partial"]);
   expect(model.changedTotal).toBe(3);
   expect(model.stagedTotal).toBe(2);
