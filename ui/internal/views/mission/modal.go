@@ -494,13 +494,23 @@ func modalWidth(ms *modalState, frameWidth int) int {
 	return need
 }
 
+// modalFilterLine is the foldout's own fixed-height filter row
+// (modalFixedRows reserves exactly 1 row for it above the scrollable
+// region): query is user-typed and unbounded, so -- the same class of bug
+// as the commit button (CodeRabbit, PR #353) -- it is clipped before
+// Width() rather than left to wrap, mirroring changes.go's renderFilterRow.
 func modalFilterLine(query, placeholder string, width int) string {
 	bg := lipgloss.NewStyle().Background(theme.Surface)
-	text := bg.Foreground(theme.Faint).Render(placeholder)
-	if query != "" {
-		text = bg.Foreground(theme.Text).Render(query)
+	prefixW := lipgloss.Width(theme.GlyphChevron) + 1
+	textW := width - prefixW
+	if textW < 0 {
+		textW = 0
 	}
-	left := bg.Foreground(theme.Pink).Render(theme.GlyphChevron+" ") + text
+	body, style := placeholder, bg.Foreground(theme.Faint)
+	if query != "" {
+		body, style = query, bg.Foreground(theme.Text)
+	}
+	left := bg.Foreground(theme.Pink).Render(theme.GlyphChevron+" ") + style.Render(clip(body, textW))
 	return bg.Width(width).Render(left)
 }
 
@@ -637,10 +647,24 @@ func modalHeaderBefore(ms *modalState, i int) string {
 
 // modalGroupHeaderLine paints a group boundary's label: Dimmer text on the
 // box's own Surface background, replacing the plain rule a boundary used to
-// draw -- the boards' own group-label convention.
+// draw -- the boards' own group-label convention. A repo's own Group value
+// (repoGroup's "host/owner") is driver-supplied and unbounded, and
+// modalWidth never accounts for header text when it sizes the box, so text
+// is clipped before Width() -- the same class of bug as the commit button
+// (CodeRabbit, PR #353): a wrapped header would occupy 2 physical rows
+// where modalDisplayLines' scroll-viewport math assumes exactly 1.
 func modalGroupHeaderLine(text string, width int) string {
 	bg := lipgloss.NewStyle().Background(theme.Surface)
-	return bg.Width(width).Render(bg.Foreground(theme.Dimmer).Render(" " + text))
+	textW := width - 1
+	if textW < 0 {
+		textW = 0
+	}
+	// clip, not clipOn: text carries no color of its own yet, and clipOn's
+	// non-truncating path renders its input through a colorless style
+	// (safe only when the input already carries its own embedded fg+bg per
+	// fragment) -- passing plain text through it left a real background
+	// hole here (caught by the bg-coverage frame tests).
+	return bg.Width(width).Render(bg.Foreground(theme.Dimmer).Render(" " + clip(text, textW)))
 }
 
 // modalKeybarPairs lists a zone's wired key/label pairs, in display order:
@@ -886,10 +910,20 @@ func renderMissionModal(parent string, ms *modalState, width, height, topBarHeig
 
 // renderNoticeStrip is the one-line refusal banner at the frame's bottom.
 // It paints whichever notice noticeText (mission.go) resolved: the wire
-// Model's own Notice (a driver refusal) or the view-local one.
+// Model's own Notice (a driver refusal) or the view-local one -- both
+// free-form and unbounded. The strip is a fixed single row the frame's own
+// layout budgets exactly 1 row for (layout's noticeH), so text is clipped
+// before Width() -- the same class of bug as the commit button (CodeRabbit,
+// PR #353): an unclipped long notice would wrap and desync every row below it.
 func renderNoticeStrip(text string, width int) string {
 	on := lipgloss.NewStyle().Background(theme.WarnBg)
-	left := on.Foreground(theme.Peach).Render(theme.GlyphWarn + " " + text)
+	fg := on.Foreground(theme.Peach)
+	prefixW := 1 + lipgloss.Width(theme.GlyphWarn) + 1 // leading space + glyph + gap
+	textW := width - prefixW
+	if textW < 0 {
+		textW = 0
+	}
+	left := fg.Render(theme.GlyphWarn + " " + clip(text, textW))
 	return on.Width(width).Render(" " + left)
 }
 

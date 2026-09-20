@@ -73,7 +73,10 @@ func renderFilterRow(text string, focused bool, width int) string {
 
 // renderMasterRow is the "N changed files · M staged" line, its glyph the
 // same tri-state read as a row's own checkbox: all staged reads ◉, none ○,
-// otherwise the mixed ◪.
+// otherwise the mixed ◪. changedTotal/stagedTotal are driver-supplied ints
+// with no practical upper bound, so the text is clipped before it reaches
+// Width() -- CodeRabbit's PR #353 finding on the neighboring commit button
+// was this same class of bug (Width() wraps instead of truncating).
 func renderMasterRow(changedTotal, stagedTotal, width int) string {
 	glyph := theme.GlyphStopped
 	switch {
@@ -84,7 +87,17 @@ func renderMasterRow(changedTotal, stagedTotal, width int) string {
 	}
 	text := fmt.Sprintf("%d changed files · %d staged", changedTotal, stagedTotal)
 	on := lipgloss.NewStyle().Background(theme.Bg)
-	return on.Width(width).Render(on.Foreground(theme.Dim).Render(glyph + "  " + text))
+	prefix := glyph + "  "
+	textW := width - lipgloss.Width(prefix)
+	if textW < 0 {
+		textW = 0
+	}
+	// clip, not clipOn: text carries no color of its own yet, and clipOn's
+	// non-truncating path renders its input through a colorless style
+	// (safe only when the input already carries its own embedded fg+bg per
+	// fragment, e.g. justify's left) -- passing plain text through it left
+	// a real background hole here (caught by the bg-coverage frame tests).
+	return on.Width(width).Render(on.Foreground(theme.Dim).Render(prefix + clip(text, textW)))
 }
 
 // changeRowCheckboxSpan is the column range renderChangeRow's checkbox glyph
@@ -231,7 +244,13 @@ func boxBlock(width int, contentLines []string) string {
 // pins for it. One filled, centered-label row at board scale (32px against
 // the 26px row unit quantizes to 1 row, not the 3 an earlier pass drew);
 // renderCommitBox supplies the blank gap row above it that separates it
-// from the description box.
+// from the description box. It is a fixed ONE-row block in the sidebar's
+// own layout (sidebarHit maps every row below it by fixed offset), so label
+// must be clipped before it reaches Width(): lipgloss wraps a too-long
+// string there instead of truncating it, and a long current.branch in
+// "Commit N files to <branch>" would otherwise spill the button onto a
+// second row and shift every hit-tested row below it (CodeRabbit finding on
+// PR #353).
 func renderCommitButton(width int, label string, canCommit bool) string {
 	style := lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Bold(true)
 	if canCommit {
@@ -239,7 +258,7 @@ func renderCommitButton(width int, label string, canCommit bool) string {
 	} else {
 		style = style.Background(theme.Panel).Foreground(theme.Dimmer)
 	}
-	return style.Render(label)
+	return style.Render(clip(label, width))
 }
 
 // renderUndoStrip is the WarnBg strip a successful, still-undoable commit

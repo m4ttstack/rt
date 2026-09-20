@@ -264,6 +264,20 @@ func TestRenderUndoStripClipsLongSummaryToSidebarWidth(t *testing.T) {
 	}
 }
 
+// TestRenderMasterRowClipsLongCountsToOneRow sweeps the same CodeRabbit
+// finding class (PR #353, 2026-09-19) into the master row: changedTotal/
+// stagedTotal are driver ints with no practical upper bound, and the row
+// used to reach Width() unclipped.
+func TestRenderMasterRowClipsLongCountsToOneRow(t *testing.T) {
+	out := renderMasterRow(999999999999, 999999999999, sidebarWidth)
+	if strings.Contains(out, "\n") {
+		t.Fatalf("master row should render exactly 1 row even with huge counts: %q", out)
+	}
+	if got := lipgloss.Width(ansi.Strip(out)); got != sidebarWidth {
+		t.Fatalf("master row should stay exactly sidebarWidth %d, got %d: %q", sidebarWidth, got, out)
+	}
+}
+
 func TestRenderKeybarContainsSpaceStage(t *testing.T) {
 	out := ansi.Strip(renderKeybar(100))
 	if !strings.Contains(out, "space stage") {
@@ -765,6 +779,25 @@ func TestBranchModalGuardedRowKeepsLockEvenWithADate(t *testing.T) {
 	}
 }
 
+// TestModalGroupHeaderLineClipsLongTextToOneRow sweeps the same CodeRabbit
+// finding class (PR #353, 2026-09-19) into the modal group header: a repo's
+// own Group value (repoGroup's "host/owner") is driver-supplied and
+// unbounded, modalWidth never accounts for header text when sizing the box,
+// and the header row used to reach Width() unclipped -- a wrap there would
+// occupy 2 physical rows where modalDisplayLines' scroll-viewport math
+// assumes exactly 1.
+func TestModalGroupHeaderLineClipsLongTextToOneRow(t *testing.T) {
+	const width = 30
+	long := "github.com/a-very-long-organization-name-that-would-otherwise-wrap"
+	out := modalGroupHeaderLine(long, width)
+	if strings.Contains(out, "\n") {
+		t.Fatalf("group header should render exactly 1 row even with a long group value: %q", out)
+	}
+	if got := lipgloss.Width(ansi.Strip(out)); got != width {
+		t.Fatalf("group header should stay exactly %d wide, got %d: %q", width, got, out)
+	}
+}
+
 // TestModalFilterPlaceholdersPerModal pins item 4: each foldout's empty-query
 // placeholder names itself, and the worktree one appends the current repo.
 func TestModalFilterPlaceholdersPerModal(t *testing.T) {
@@ -783,6 +816,22 @@ func TestModalFilterPlaceholdersPerModal(t *testing.T) {
 		if !strings.Contains(out, c.want) {
 			t.Fatalf("%c modal missing placeholder %q:\n%s", c.key, c.want, out)
 		}
+	}
+}
+
+// TestModalFilterLineClipsLongQueryToOneRow sweeps the same CodeRabbit
+// finding class (PR #353, 2026-09-19) into the modal's own filter row: the
+// query is user-typed and unbounded, and modalFixedRows reserves exactly 1
+// fixed row for it above the scrollable region.
+func TestModalFilterLineClipsLongQueryToOneRow(t *testing.T) {
+	const width = 30
+	long := strings.Repeat("a very long typed filter query ", 3)
+	out := modalFilterLine(long, "filter branches", width)
+	if strings.Contains(out, "\n") {
+		t.Fatalf("filter row should render exactly 1 row even with a long query: %q", out)
+	}
+	if got := lipgloss.Width(ansi.Strip(out)); got != width {
+		t.Fatalf("filter row should stay exactly %d wide, got %d: %q", width, got, out)
 	}
 }
 
@@ -1087,6 +1136,21 @@ func TestModelPushWithWireNoticePaintsIt(t *testing.T) {
 	m = next.(*Mission)
 	if out := ansi.Strip(m.View().Content); !strings.Contains(out, "amend refused: stack root") {
 		t.Fatalf("wire Notice never painted:\n%s", out)
+	}
+}
+
+// TestRenderNoticeStripClipsLongTextToOneRow sweeps the same CodeRabbit
+// finding class (PR #353, 2026-09-19) into the notice strip: a driver
+// refusal or view-local notice is free-form and unbounded, and the frame's
+// own layout budgets exactly 1 row for it (layout's noticeH).
+func TestRenderNoticeStripClipsLongTextToOneRow(t *testing.T) {
+	long := strings.Repeat("a very long refusal message that keeps going ", 5)
+	out := renderNoticeStrip(long, 100)
+	if strings.Contains(out, "\n") {
+		t.Fatalf("notice strip should render exactly 1 row even with a long message: %q", out)
+	}
+	if got := lipgloss.Width(ansi.Strip(out)); got != 100 {
+		t.Fatalf("notice strip should stay exactly 100 wide, got %d: %q", got, out)
 	}
 }
 
@@ -1655,6 +1719,76 @@ func TestRenderCommitButtonOneRowAtBoardScale(t *testing.T) {
 	disabled := renderCommitButton(width, label, false)
 	if !strings.Contains(disabled, bgSGR(theme.Panel)) {
 		t.Fatalf("disabled button should wear the Panel fill: %q", disabled)
+	}
+}
+
+// TestRenderCommitButtonClipsLongLabelToOneRow pins a CodeRabbit finding on
+// PR #353 (2026-09-19, changes.go): Width() wraps a too-long string instead
+// of truncating it (the same trap hunk headers and the empty-state card hit
+// earlier), so a long current.branch in "Commit N files to <branch>" could
+// spill the fixed-height button onto a second row.
+func TestRenderCommitButtonClipsLongLabelToOneRow(t *testing.T) {
+	const width = 40
+	long := "Commit 3 files to a-very-long-feature-branch-name-that-would-otherwise-wrap"
+	out := renderCommitButton(width, long, true)
+	if strings.Contains(out, "\n") {
+		t.Fatalf("commit button must render exactly 1 row even with a long label: %q", out)
+	}
+	if got := lipgloss.Width(ansi.Strip(out)); got != width {
+		t.Fatalf("button should stay exactly %d wide, got %d: %q", width, got, out)
+	}
+}
+
+// TestCommitButtonNeverWrapsKeepsUndoChipRowAligned is the layout-level half
+// of the same CodeRabbit finding: sidebarHit maps every row below the
+// button by a hardcoded fixed offset (mission.go), so a button that wrapped
+// to 2 rows would leave a real click on the undo chip landing one row
+// short of it. Proven against the actual rendered frame + hitTest, not
+// hand-derived offsets, so it fails the same way a real click would have.
+func TestCommitButtonNeverWrapsKeepsUndoChipRowAligned(t *testing.T) {
+	m := New(nil)
+	m.width, m.height = 100, 30
+	longBranch := "a-very-long-feature-branch-name-that-would-wrap-the-commit-button-row"
+	raw, err := json.Marshal(Model{
+		Current:      Current{Repo: "repo-tools", Branch: longBranch},
+		Changes:      []ChangeRow{{Path: "a.go", Status: "modified", Include: "all"}},
+		ChangedTotal: 1,
+		StagedTotal:  1,
+		Commit: CommitModel{
+			Placeholder: "Summary (required)",
+			ButtonLabel: "Commit 1 file to " + longBranch,
+			CanCommit:   true,
+			LastCommit:  &LastCommit{Summary: "fix parser", When: "2 minutes ago", Undoable: true},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SetModel(raw); err != nil {
+		t.Fatal(err)
+	}
+
+	lines := strings.Split(ansi.Strip(m.View().Content), "\n")
+	buttonRow, undoRow := -1, -1
+	for i, line := range lines {
+		if strings.Contains(line, "Commit 1 file") {
+			buttonRow = i
+		}
+		if strings.Contains(line, "Undo") {
+			undoRow = i
+		}
+	}
+	if buttonRow == -1 {
+		t.Fatalf("commit button label not found in the rendered frame:\n%s", strings.Join(lines, "\n"))
+	}
+	if undoRow == -1 {
+		t.Fatalf("undo chip not found in the rendered frame:\n%s", strings.Join(lines, "\n"))
+	}
+	if undoRow != buttonRow+1 {
+		t.Fatalf("undo chip should sit exactly one row below the button (no wrap from the long label): button row %d, undo row %d", buttonRow, undoRow)
+	}
+	if got := m.hitTest(0, undoRow); got.kind != hitUndoChip {
+		t.Fatalf("a click on the undo chip's own frame row should resolve to hitUndoChip, got %+v", got)
 	}
 }
 
