@@ -10,31 +10,40 @@ import type { MantineColorsTuple } from '@mantine/core';
  * same colour, which is why a `variant="light"` Badge rendered as a solid
  * pill with invisible text until these existed.
  *
- * PROVENANCE, and the one thing to preserve when regenerating: each ramp is
- * `@mantine/colors-generator`'s output for tui-kit's canonical hex (verified
- * byte-identical to mantine.dev/colors-generator), RESAMPLED so that hex
- * lands on the shade Mantine actually reads as primary. The generator places
- * its seed wherever the seed's own lightness falls -- 5..9 across Tokyo Day,
- * 2..4 across Tokyo Night -- and Mantine reads ONE primary shade for every
- * hue, so unresampled output would leave `filled`, `outline` and `text` on a
- * colour tui-kit never specified.
+ * PROVENANCE, and the procedure to repeat when regenerating: run
+ * `@mantine/colors-generator`'s `generateColorsMap(seed)` for tui-kit's
+ * canonical hex to get its raw 10-shade ramp and `baseColorIndex` -- the
+ * generator places the seed wherever the seed's own lightness falls, which
+ * is rarely the shade Mantine actually reads as primary (`primaryShade` in
+ * `theme.ts`: shade 6 in light/Day, shade 4 in dark/Night). Convert the raw
+ * ramp's 10 stops to OKLab, then re-anchor: piecewise-linearly warp the
+ * stop positions so stop 0 stays at index 0, `baseColorIndex` moves to the
+ * target index (6 or 4), and stop 9 stays at index 9, and resample the
+ * OKLab curve (linear interpolation between the two nearest raw stops) at
+ * the 10 new integer positions. The target index gets the seed's exact hex
+ * (no round-trip error); indices 0 and 9 are copied from the raw ramp's own
+ * endpoints unchanged. This keeps the ramp perceptually smooth and
+ * monotonic in lightness while landing the canonical hex exactly on the
+ * primary shade -- unresampled output would leave `filled`, `outline` and
+ * `text` on a colour tui-kit never specified. No script in this repo
+ * automates the procedure; it was run by hand against the installed
+ * `@mantine/colors-generator` package.
  *
- * The anchors are `primaryShade` in `theme.ts` and must move together:
- * shade 6 in light, shade 4 in dark. The consuming app's `tokyo-ramps.test.ts`
- * pins that each canonical hex is exactly there.
+ * The consuming app's `ramp-anchors.test.ts` (packages/tokens/test) pins
+ * that each canonical hex is exactly at its target index.
  */
 export const tokyoRamps = {
   accentDay: [
-    '#e5f4ff',
-    '#c7e1fd',
-    '#a9cefa',
-    '#8cbaf7',
-    '#6ea6f3',
-    '#5092ee',
-    '#2e7de9',
-    '#206cd2',
-    '#115cbc',
-    '#004ca6',
+    '#e8ecff',
+    '#d7dcff',
+    '#bcc5ff',
+    '#9ba5ff',
+    '#7585ff',
+    '#5a6bff',
+    '#4658ff',
+    '#0b26ff',
+    '#0014dd',
+    '#000cb5',
   ],
   accentNight: [
     '#e7f2ff',
@@ -49,16 +58,16 @@ export const tokyoRamps = {
     '#003aab',
   ],
   okDay: [
-    '#f5f8f1',
-    '#d9e1d1',
-    '#becbb2',
-    '#a3b593',
-    '#899f75',
-    '#708a57',
-    '#587539',
-    '#466227',
-    '#344f14',
-    '#233d00',
+    '#e5fff8',
+    '#c1ffec',
+    '#80fed6',
+    '#48fec3',
+    '#31feb9',
+    '#20eba7',
+    '#00c287',
+    '#00bb82',
+    '#00b57c',
+    '#00ae77',
   ],
   okNight: [
     '#f2fce7',
@@ -73,16 +82,16 @@ export const tokyoRamps = {
     '#53841f',
   ],
   warnDay: [
-    '#fcf5eb',
-    '#e9ddcd',
-    '#d6c6b0',
-    '#c3af93',
-    '#b09876',
-    '#9e825a',
-    '#8c6c3e',
-    '#77582b',
-    '#634517',
-    '#4f3200',
+    '#fff5e1',
+    '#ffe9cc',
+    '#ffd19a',
+    '#ffb864',
+    '#fea337',
+    '#ff951b',
+    '#ff8a00',
+    '#e37b00',
+    '#cb6c00',
+    '#b15c00',
   ],
   warnNight: [
     '#fff5e3',
@@ -97,16 +106,16 @@ export const tokyoRamps = {
     '#93600e',
   ],
   badDay: [
-    '#ffe8f2',
-    '#ffced9',
-    '#ffb3c1',
-    '#ff97aa',
-    '#ff7992',
-    '#fb587c',
-    '#f52a65',
-    '#dc1e54',
-    '#c41143',
-    '#ac0033',
+    '#ffe7f3',
+    '#ffd6e7',
+    '#ffbdd6',
+    '#ff9abf',
+    '#ff77a7',
+    '#ff5892',
+    '#ff3d81',
+    '#ff0b62',
+    '#dd004c',
+    '#b4003b',
   ],
   badNight: [
     '#ffe8ee',
@@ -121,16 +130,16 @@ export const tokyoRamps = {
     '#a90023',
   ],
   purpleDay: [
-    '#f6eeff',
-    '#dfd2f5',
-    '#c9b7eb',
-    '#b49ce1',
-    '#9f80d5',
-    '#8b64c9',
-    '#7847bd',
-    '#6a3daa',
-    '#5d3498',
-    '#502b86',
+    '#f7e9ff',
+    '#ecd8ff',
+    '#ddbeff',
+    '#ca9bff',
+    '#b678ff',
+    '#a65bff',
+    '#9b45ff',
+    '#7e0eff',
+    '#6500dd',
+    '#4f00b5',
   ],
   purpleNight: [
     '#f4ebff',
@@ -145,16 +154,16 @@ export const tokyoRamps = {
     '#4006a6',
   ],
   cyanDay: [
-    '#ebfaff',
-    '#c9e2ee',
-    '#a7cbdc',
-    '#85b4cb',
-    '#629eba',
-    '#3d87a8',
-    '#007197',
-    '#005e83',
-    '#004b6f',
-    '#00395c',
+    '#e0feff',
+    '#c4f8ff',
+    '#8cedff',
+    '#57e4fe',
+    '#36ddfd',
+    '#21d9fe',
+    '#00b8d9',
+    '#00afd0',
+    '#00a4c3',
+    '#0095b3',
   ],
   cyanNight: [
     '#e1f9ff',

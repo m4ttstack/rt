@@ -39,8 +39,9 @@ function pick(path: string, value: string): string {
 /**
  * Maps a TOKENS color scheme onto tui-kit's `tuiTheme.tokens.colors` /
  * `TUI_DARK_COLORS` shape. tui-kit has one canonical shade per hue (`"500"`)
- * where TOKENS has a bare hex, and collapses `text` to the six leaves
- * (`fg`, `muted`, `mutedText`, `accentText`, `redText`, `mutedOnCard`) it
+ * where TOKENS has a bare hex, and collapses `text` to the nine leaves
+ * (`fg`, `muted`, `mutedText`, `accentText`, `okText`, `warnText`,
+ * `badgeText`, `redText`, `mutedOnCard`) it
  * consumes -- `wash` is a percentage, not a color, and stays out of this map.
  */
 function buildTuiKitColors(scheme: 'light' | 'dark') {
@@ -58,6 +59,9 @@ function buildTuiKitColors(scheme: 'light' | 'dark') {
       muted: at('text.muted', t.text.muted),
       mutedText: at('text.mutedText', t.text.mutedText),
       accentText: at('text.accentText', t.text.accentText),
+      okText: at('text.okText', t.text.okText),
+      warnText: at('text.warnText', t.text.warnText),
+      badgeText: at('text.badgeText', t.text.badgeText),
       redText: at('text.redText', t.text.redText),
       mutedOnCard: at('text.mutedOnCard', t.text.mutedOnCard),
     },
@@ -167,10 +171,13 @@ function buildTokyoDeclarations(scheme: 'light' | 'dark') {
     softOnCard: at('line.softOnCard', t.line.softOnCard),
     accent: at('hue.accent', t.hue.accent),
     accentText: at('text.accentText', t.text.accentText),
+    okText: at('text.okText', t.text.okText),
+    badgeText: at('text.badgeText', t.text.badgeText),
     green: at('hue.ok', t.hue.ok),
     red: at('hue.bad', t.hue.bad),
     redText: at('text.redText', t.text.redText),
     amber: at('hue.warn', t.hue.warn),
+    amberText: at('text.warnText', t.text.warnText),
     purple: at('hue.purple', t.hue.purple),
     cyan: at('hue.cyan', t.hue.cyan),
     gridLine: at('line.grid', t.line.grid),
@@ -218,11 +225,14 @@ function renderTokyoSchemeBlock(scheme: 'light' | 'dark'): string {
     `  --tk-accent: ${d.accent};`,
     accentTextComment,
     `  --tk-accent-text: ${d.accentText};`,
+    `  --tk-badge-text: ${d.badgeText};`,
     redTextComment,
     `  --tk-red-text: ${d.redText};`,
     `  --tk-green: ${d.green};`,
+    `  --tk-green-text: ${d.okText};`,
     `  --tk-red: ${d.red};`,
     `  --tk-amber: ${d.amber};`,
+    `  --tk-amber-text: ${d.amberText};`,
     `  --tk-purple: ${d.purple};`,
     `  --tk-cyan: ${d.cyan};`,
     `  --tk-grid-line: ${d.gridLine};`,

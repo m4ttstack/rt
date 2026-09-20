@@ -36,7 +36,7 @@ function Sidebar({
           type="button"
           className="tui-dq-open"
           variant="filled"
-          intent="warn"
+          intent="accent"
           onClick={queue.open}
         >
           decision queue · {queue.count}

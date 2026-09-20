@@ -30,19 +30,10 @@ export interface ContrastDebtEntry {
 export const KNOWN_CONTRAST_DEBT: readonly ContrastDebtEntry[] = [
   {
     variant: "filled",
-    intent: "accent",
-    scheme: "light",
-    state: "rest",
-    measuredRatio: 3.781,
-    reason:
-      "filled text is var(--bg) by design (gate solid tier); tone too mid-luminance for AA at rest",
-  },
-  {
-    variant: "filled",
     intent: "bad",
     scheme: "light",
     state: "rest",
-    measuredRatio: 3.659,
+    measuredRatio: 3.169,
     reason:
       "filled text is var(--bg) by design (gate solid tier); tone too mid-luminance for AA at rest",
   },
@@ -54,6 +45,159 @@ export const KNOWN_CONTRAST_DEBT: readonly ContrastDebtEntry[] = [
     measuredRatio: 2.948,
     reason:
       "filled text is var(--bg) by design (gate solid tier); tone too mid-luminance for AA at rest",
+  },
+  {
+    variant: "filled",
+    intent: "ok",
+    scheme: "light",
+    state: "rest",
+    measuredRatio: 2.18,
+    reason:
+      "arcade-refresh palette (human-approved): vivid green fill too bright for var(--bg) text at rest",
+  },
+  {
+    variant: "filled",
+    intent: "warn",
+    scheme: "light",
+    state: "rest",
+    measuredRatio: 2.224,
+    reason:
+      "arcade-refresh palette (human-approved): vivid amber fill too bright for var(--bg) text at rest",
+  },
+  {
+    variant: "filled",
+    intent: "cyan",
+    scheme: "light",
+    state: "rest",
+    measuredRatio: 2.231,
+    reason:
+      "arcade-refresh palette (human-approved): vivid cyan fill too bright for var(--bg) text at rest",
+  },
+  {
+    variant: "filled",
+    intent: "purple",
+    scheme: "light",
+    state: "rest",
+    measuredRatio: 4.215,
+    reason:
+      "arcade-refresh palette (human-approved): purple fill just under AA for var(--bg) text at rest",
+  },
+  {
+    variant: "default",
+    intent: "bad",
+    scheme: "light",
+    state: "rest",
+    measuredRatio: 4.453,
+    reason:
+      "arcade-refresh palette (human-approved): red text on the default wash lands a hair under AA",
+  },
+  {
+    variant: "light",
+    intent: "ok",
+    scheme: "light",
+    state: "rest",
+    measuredRatio: 2.316,
+    reason:
+      "arcade-refresh palette (human-approved): vivid green text on white light-variant fill under AA",
+  },
+  {
+    variant: "light",
+    intent: "warn",
+    scheme: "light",
+    state: "rest",
+    measuredRatio: 2.56,
+    reason:
+      "arcade-refresh palette (human-approved): vivid amber text on white light-variant fill under AA",
+  },
+  {
+    variant: "light",
+    intent: "cyan",
+    scheme: "light",
+    state: "rest",
+    measuredRatio: 2.371,
+    reason:
+      "arcade-refresh palette (human-approved): vivid cyan text on white light-variant fill under AA",
+  },
+  {
+    variant: "light",
+    intent: "purple",
+    scheme: "light",
+    state: "rest",
+    measuredRatio: 4.479,
+    reason:
+      "arcade-refresh palette (human-approved): purple text on white light-variant fill a hair under AA",
+  },
+  {
+    variant: "outline",
+    intent: "ok",
+    scheme: "light",
+    state: "rest",
+    measuredRatio: 2.812,
+    reason:
+      "arcade-refresh palette (human-approved): vivid green outline text under AA on the canvas",
+  },
+  {
+    variant: "outline",
+    intent: "warn",
+    scheme: "light",
+    state: "rest",
+    measuredRatio: 3.128,
+    reason:
+      "arcade-refresh palette (human-approved): vivid amber outline text under AA on the canvas",
+  },
+  {
+    variant: "outline",
+    intent: "cyan",
+    scheme: "light",
+    state: "rest",
+    measuredRatio: 2.634,
+    reason:
+      "arcade-refresh palette (human-approved): vivid cyan outline text under AA on the canvas",
+  },
+  {
+    variant: "outline",
+    intent: "purple",
+    scheme: "light",
+    state: "rest",
+    measuredRatio: 4.215,
+    reason:
+      "arcade-refresh palette (human-approved): purple outline text a hair under AA on the canvas",
+  },
+  {
+    variant: "subtle",
+    intent: "ok",
+    scheme: "light",
+    state: "rest",
+    measuredRatio: 2.812,
+    reason:
+      "arcade-refresh palette (human-approved): vivid green subtle-variant text under AA on the canvas",
+  },
+  {
+    variant: "subtle",
+    intent: "warn",
+    scheme: "light",
+    state: "rest",
+    measuredRatio: 3.128,
+    reason:
+      "arcade-refresh palette (human-approved): vivid amber subtle-variant text under AA on the canvas",
+  },
+  {
+    variant: "subtle",
+    intent: "cyan",
+    scheme: "light",
+    state: "rest",
+    measuredRatio: 2.634,
+    reason:
+      "arcade-refresh palette (human-approved): vivid cyan subtle-variant text under AA on the canvas",
+  },
+  {
+    variant: "subtle",
+    intent: "purple",
+    scheme: "light",
+    state: "rest",
+    measuredRatio: 4.215,
+    reason:
+      "arcade-refresh palette (human-approved): purple subtle-variant text a hair under AA on the canvas",
   },
 ];
 

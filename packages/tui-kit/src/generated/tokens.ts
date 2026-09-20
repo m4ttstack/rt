@@ -2,28 +2,31 @@
 
 export const GENERATED_LIGHT_COLORS = {
   "blue": {
-    "500": "#2e7de9"
+    "500": "#4658ff"
   },
   "green": {
-    "500": "#587539"
+    "500": "#00c287"
   },
   "red": {
-    "500": "#f52a65"
+    "500": "#ff3d81"
   },
   "amber": {
-    "500": "#8c6c3e"
+    "500": "#ff8a00"
   },
   "purple": {
-    "500": "#7847bd"
+    "500": "#9b45ff"
   },
   "cyan": {
-    "500": "#007197"
+    "500": "#00b8d9"
   },
   "gray": {
     "fg": "#222",
     "muted": "#8990b3",
     "mutedText": "#565d80",
-    "accentText": "#1c5fbf",
+    "accentText": "#3a3fe8",
+    "okText": "#008559",
+    "warnText": "#b36000",
+    "badgeText": "#454b66",
     "redText": "#c8214f",
     "mutedOnCard": "#565d80"
   },
@@ -74,6 +77,9 @@ export const GENERATED_DARK_COLORS = {
     "muted": "#7e86ad",
     "mutedText": "#969ec2",
     "accentText": "#7aa2f7",
+    "okText": "#9ece6a",
+    "warnText": "#e0af68",
+    "badgeText": "#aab3d8",
     "redText": "#f7768e",
     "mutedOnCard": "#aab3d8"
   },

@@ -73,7 +73,11 @@ const BOARD_DATA = {
         {
           gateId: 'g1',
           subject: 'mr:gitlab.example.com/g/p/-/merge_requests/1',
-          kind: 'review-post',
+          // Not 'review-post': that kind now opens the sheet (Task 7) for a
+          // gate shaped like this one (a single non-multi question), which
+          // would break every generic-queue assertion below that isn't
+          // about the review-post-specific sheet.
+          kind: 'respond-plan',
           label: 'review',
           status: 'open',
           openedAt: 1,

@@ -314,9 +314,9 @@ test("muted FILL (--muted) stays the raw census hex; muted TEXT (--muted-text) r
 });
 
 test("accentText and badText resolve to their AA-compliant literals in both schemes", () => {
-  expect(tuiTheme.tokens.colors.gray!.accentText).toBe("#1c5fbf");
+  expect(tuiTheme.tokens.colors.gray!.accentText).toBe("#3a3fe8");
   expect(tuiTheme.dark!.colors!.gray!.accentText).toBe("#7aa2f7");
-  expect(resolve("--accent-text", "light")).toBe("#1c5fbf");
+  expect(resolve("--accent-text", "light")).toBe("#3a3fe8");
   expect(resolve("--accent-text", "dark")).toBe("#7aa2f7");
 
   expect(tuiTheme.tokens.colors.gray!.redText).toBe("#c8214f");
@@ -346,7 +346,7 @@ test("generated css exposes the alias contract with verbatim values reachable", 
   for (const alias of ["--bg:", "--panel:", "--card:", "--chrome:", "--fg:", "--muted:", "--muted-text:", "--accent-text:", "--red-text:", "--border:", "--border-soft:", "--accent:", "--green:", "--red:", "--amber:", "--purple:", "--cyan:", "--grid-line:", "--dot-ok:", "--dot-warn:", "--dot-bad:", "--font-mono:", "--font-sans:", "--font-numeric:"]) {
     expect(css).toContain(alias);
   }
-  expect(css).toContain("#2e7de9"); // light accent, verbatim
+  expect(css).toContain("#4658ff"); // light accent, verbatim
   expect(css).toContain("#7aa2f7"); // dark accent, verbatim
   expect(css).toContain("#232a47"); // dark panel (the 2026-08-19 tuning), verbatim
   expect(css).toContain(".dark");   // darkMode selector

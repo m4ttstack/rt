@@ -12,6 +12,9 @@ export interface ColorScheme {
     muted: string;
     mutedText: string;
     accentText: string;
+    okText: string;
+    warnText: string;
+    badgeText: string;
     redText: string;
     mutedOnCard: string;
   };
@@ -56,12 +59,12 @@ export interface Tokens {
 export const TOKENS: Tokens = {
   light: {
     hue: {
-      accent: '#2e7de9',
-      ok: '#587539',
-      bad: '#f52a65',
-      warn: '#8c6c3e',
-      purple: '#7847bd',
-      cyan: '#007197',
+      accent: '#4658ff',
+      ok: '#00c287',
+      bad: '#ff3d81',
+      warn: '#ff8a00',
+      purple: '#9b45ff',
+      cyan: '#00b8d9',
     },
     text: {
       // Canonical 6-digit spelling; CSS_TEXT below overrides the shipped
@@ -69,7 +72,10 @@ export const TOKENS: Tokens = {
       fg: '#222222',
       muted: '#8990b3',
       mutedText: '#565d80',
-      accentText: '#1c5fbf',
+      accentText: '#3a3fe8',
+      okText: '#008559',
+      warnText: '#b36000',
+      badgeText: '#454b66',
       redText: '#c8214f',
       mutedOnCard: '#565d80',
     },
@@ -110,6 +116,9 @@ export const TOKENS: Tokens = {
       muted: '#7e86ad',
       mutedText: '#969ec2',
       accentText: '#7aa2f7',
+      okText: '#9ece6a',
+      warnText: '#e0af68',
+      badgeText: '#aab3d8',
       redText: '#f7768e',
       mutedOnCard: '#aab3d8',
     },

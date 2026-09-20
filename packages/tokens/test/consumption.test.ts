@@ -33,6 +33,12 @@ const WAIVED_TUI: Record<string, string> = {
     "new text-role alias mirroring tokyo's --tk-muted-text naming; existing recipes still read --muted (unaffected, same value) -- Phase 3 apps are the intended consumer of the explicit name.",
   '--red-text':
     "new text-role alias mirroring tokyo's --tk-red-text naming; no recipe paints error/bad text through it yet -- Phase 3 apps are the intended consumer.",
+  '--color-gray-okText':
+    'AA-compliant ok text companion to --color-gray-accentText, added for the review-gate redesign; apps/board is the intended consumer once its gate chips wire it up.',
+  '--color-gray-warnText':
+    'AA-compliant warn text companion to --color-gray-accentText, added for the review-gate redesign; apps/board is the intended consumer once its gate chips wire it up.',
+  '--color-gray-badgeText':
+    'darkened small-badge text companion, added for the review-gate redesign; apps/board is the intended consumer once its gate chips wire it up.',
   '--chrome':
     "public alias contract (soribashi.config.ts's cssVariablesResolver + docs/css-contract.md); guaranteed for consumer apps regardless of this repo's own recipe usage.",
   '--dot-ok':
@@ -142,6 +148,12 @@ const WAIVED_TOKYO: Record<string, string> = {
     'on-card contrast role for tui-kit text["muted-on-card"]; no packages/ui component reads it yet.',
   '--tk-inset':
     'on-card contrast role for tui-kit surface.inset; no packages/ui component reads it yet.',
+  '--tk-green-text':
+    'AA-compliant ok text companion to --tk-accent-text, added for the review-gate redesign; no packages/ui component wires it yet.',
+  '--tk-amber-text':
+    'AA-compliant warn text companion to --tk-accent-text, added for the review-gate redesign; no packages/ui component wires it yet.',
+  '--tk-badge-text':
+    'darkened small-badge text companion, added for the review-gate redesign; no packages/ui component wires it yet.',
 };
 
 const REPO_ROOT = join(import.meta.dirname, '..', '..', '..');

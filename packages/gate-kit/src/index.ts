@@ -9,6 +9,7 @@ export type { GateOption, GateQuestion } from './types';
 export {
   displayForValue,
   formatGateOption,
+  optionDescription,
   optionDisplayFor,
   optionLabel,
   optionValue,
@@ -39,3 +40,4 @@ export type {
   GateSummaryDetailRow,
   GateSummaryInput,
 } from './summary';
+export { chunkGroupKey, collapseChunks, splitChunkSelections } from './chunks';

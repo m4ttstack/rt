@@ -5,27 +5,30 @@
 @layer soribashi.tokens {
   :root {
     color-scheme: light;
-    --color-amber-500: light-dark(#8c6c3e, #e0af68);
-    --color-blue-500: light-dark(#2e7de9, #7aa2f7);
-    --color-cyan-500: light-dark(#007197, #7dcfff);
+    --color-amber-500: light-dark(#ff8a00, #e0af68);
+    --color-blue-500: light-dark(#4658ff, #7aa2f7);
+    --color-cyan-500: light-dark(#00b8d9, #7dcfff);
     --color-dot-bad: light-dark(#e5153f, #ff5c72);
     --color-dot-ok: light-dark(#1f9d3a, #4ade5b);
     --color-dot-warn: light-dark(#e08a00, #ffbb3d);
-    --color-gray-accentText: light-dark(#1c5fbf, #7aa2f7);
+    --color-gray-accentText: light-dark(#3a3fe8, #7aa2f7);
+    --color-gray-badgeText: light-dark(#454b66, #aab3d8);
     --color-gray-fg: light-dark(#222, #e3e7f6);
     --color-gray-muted: light-dark(#8990b3, #7e86ad);
     --color-gray-mutedOnCard: light-dark(#565d80, #aab3d8);
     --color-gray-mutedText: light-dark(#565d80, #969ec2);
+    --color-gray-okText: light-dark(#008559, #9ece6a);
     --color-gray-redText: light-dark(#c8214f, #f7768e);
-    --color-green-500: light-dark(#587539, #9ece6a);
+    --color-gray-warnText: light-dark(#b36000, #e0af68);
+    --color-green-500: light-dark(#00c287, #9ece6a);
     --color-line-border: light-dark(#c8cad6, #3b4261);
     --color-line-controlEdgeOnCard: light-dark(#c8cad6, #6b7499);
     --color-line-edgeOnCard: light-dark(#c8cad6, #505879);
     --color-line-grid: light-dark(rgba(52, 59, 88, 0.05), rgba(122, 162, 247, 0.06));
     --color-line-soft: light-dark(#d5d7e2, #313853);
     --color-line-softOnCard: light-dark(#d5d7e2, #404866);
-    --color-purple-500: light-dark(#7847bd, #bb9af7);
-    --color-red-500: light-dark(#f52a65, #f7768e);
+    --color-purple-500: light-dark(#9b45ff, #bb9af7);
+    --color-red-500: light-dark(#ff3d81, #f7768e);
     --color-surface-bg: light-dark(#f7f8fa, #16161e);
     --color-surface-card: light-dark(#ffffff, #292f4d);
     --color-surface-chrome: light-dark(#f3f4f7, #232a47);

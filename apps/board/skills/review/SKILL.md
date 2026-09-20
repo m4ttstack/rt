@@ -85,8 +85,10 @@ Instead:
 - `<status-bin> gate wait <state>` — the verb is registry-status-first, so on
   an already-answered gate it returns the recorded answer at once instead of
   blocking.
-- Act on the answer (hand `{tiers, outcome}` to the domain skill, or post
-  directly on the generic no-domain-skill path).
+- Act on the answer (hand `{findings: [ids], outcome}` to the domain skill
+  on the per-finding path, or `{tiers, outcome}` on the tier-fallback path
+  described in step 4 below, or post directly on the generic
+  no-domain-skill path).
 - `<status-bin> review-status <state> done "<one-line summary>" --outcome <comment|approve>`
 
 Every other step below (delegating to the domain skill, writing the report,
@@ -106,8 +108,9 @@ remembered in the conversation.
      producing the draft, and writing the report — then reports back to you
      the severity levels present in its findings. It never presents posting
      gates or decides disposition; this wrapper owns the single event gate
-     (step 4, "Gate protocol") and hands the domain skill `{tiers, outcome}`
-     to execute the posting once the human has answered. Under `--re-review`,
+     (step 4, "Gate protocol") and hands the domain skill `{findings, outcome}`
+     (or the tier-fallback `{tiers, outcome}` shape; see step 4) to execute
+     the posting once the human has answered. Under `--re-review`,
      also pass it the re-review framing (prior review + "check what the
      author addressed, else fall back").
    - **If no domain skill resolved:** review the MR yourself. Fetch the diff, read it
@@ -121,8 +124,9 @@ remembered in the conversation.
 
    The outcome is NOT yours to decide, and do not mark `done` autonomously.
    This wrapper presents exactly **one** event gate — carrying `outcome` and,
-   when findings have severity levels, `tiers` alongside it — never a
-   "disposition gate" and a "severity gate" as two separate gates.
+   when the report has findings, one option per finding chunked into
+   `findings-1..N` -- never a "disposition gate" and a "severity gate" as
+   two separate gates.
    Never map a "clean review" to Approve on your own — a clean review just
    means Approve is the sensible pick to *offer*. This is the gate contract
    for this invocation; it supersedes any two-gate or per-skill posting-gate
@@ -133,11 +137,106 @@ remembered in the conversation.
    describes. When the daemon is down the hook allows the native form
    (degraded mode is unchanged).
 
-   - **Build the questions.** Always one `outcome` question (single-select,
-     comment/approve). Add a `tiers` question (multi-select over the
-     severity levels the domain skill reported present, or your own
-     findings' levels on the generic no-domain-skill path) only when at
-     least one level is present:
+   - **Build the questions.** Read the json sibling of `--report`: swap the
+     trailing `.md` for `.json`, or append `.json` when `--report`'s path
+     doesn't end in `.md` -- a stem swap, never an append onto the md path.
+     That's the same derivation the board's own `readReviewReportJson`
+     uses server-side; the wrapper just reads the file itself.
+
+     **When the json exists,** build one multi-select option per finding
+     from its `findings` array, plus always one `outcome` question:
+
+     ```json
+     [
+       {"id": "findings-1", "label": "Post which findings to !<iid>?", "multi": true,
+        "options": [
+          {"value": "f1", "label": "[Critical] Example finding title",
+           "description": "path/to/file.ts:12 · one-line fix gist"},
+          {"value": "f2", "label": "[Minor] Another example finding",
+           "description": "path/to/other.ts · one-line fix gist · kind:nitpick"},
+          {"value": "f3", "label": "[Minor] Non-anchorable example finding",
+           "description": "not inline-anchorable · one-line fix gist"}
+        ]},
+       {"id": "outcome", "label": "Verdict on !<iid>: <readiness clause>", "multi": false,
+        "options": [
+          {"value": "approve", "label": "approve (recommended)",
+           "description": "no blocking issues; ready to merge"},
+          {"value": "comment", "label": "comment",
+           "description": "post the picked findings, no merge decision yet"}
+        ]}
+     ]
+     ```
+
+     `f1`/`f2`/`f3` and every string above are invented placeholders --
+     substitute the report's real `id`/`tier`/`title`/`file`/`line`/`fix`/
+     `kind` values. Don't copy the example verbatim.
+
+     - **Ordering and chunking.** Order the whole `findings` array by tier
+       first (`Critical`, then `Important`, then `Minor` -- the report's
+       fixed tier vocabulary), keeping each tier's own report order within
+       it. Chunk that ordered list into 4-option questions `findings-1`,
+       `findings-2`, ... `findings-N`, running straight across tier
+       boundaries (a chunk mixes tiers when a tier's count isn't a
+       multiple of 4). Answers read back as one union, the gate protocol's
+       existing chunk convention (see "Act on the answer" below).
+     - **Option shape.** `value` is the finding's `id` verbatim (never
+       re-derive or renumber it). `label` is `[Tier] title`; if that would
+       exceed the option label's 200 UTF-8 byte cap, middle-truncate the
+       title only, keeping the `[Tier] ` prefix and the value untouched --
+       an oversized label rejects the `gate open` outright, so size it
+       before calling out. `description` is the anchor plus the fix gist,
+       joined by " · ": the anchor is `file:line` when both are present,
+       `file` alone when there's no `line`, or the json's `fileLabel`
+       verbatim when the finding has neither (a finding with no anchor at
+       all posts to the review's summary comment downstream, not an
+       inline thread). When the finding carries a `kind`, append
+       " · kind:<word>" to the very end of the description, `<word>` being
+       the report's `kind` value verbatim. `<word>` must be lowercase and
+       hyphens only -- `finding-option.ts`'s `KIND_RE` is the parser's whole
+       vocabulary for it, so normalize anything else (case, spaces,
+       underscores) to that shape before it rides the description.
+       Descriptions cap at 1024 UTF-8
+       bytes; if one would run over, shorten the fix gist, never the
+       anchor and never the trailing kind suffix -- `finding-option.ts`'s
+       parser reads the kind suffix off the literal end of the string.
+     - **Verdict label.** Compose `<readiness clause>` from the json's
+       `summary.readiness` and `summary.reasoning`, not a copy of either
+       field verbatim: readiness `yes` reads as "ready to merge";
+       `with-fixes` or `no` reads as "not ready" or "ready once <the gist
+       of the reasoning>", tuned to what the reasoning actually says. For
+       example, readiness `with-fixes` with reasoning "One example
+       concern remains; the rest looks solid." becomes the clause "ready
+       once the example concern is addressed". Keep the whole label tight:
+       shorten the clause first, never the `!<iid>` prefix.
+     - **Outcome options.** Still the same two values, `approve` and
+       `comment` -- the only values `review-status --outcome` accepts
+       (see the flag table); this redesign doesn't add a third. Each
+       option now carries a `description`: a short one-liner of what
+       picking it *does* for this review, not a restatement of the label.
+       See "Mark the recommended outcome" below the fallback branch for
+       the recommended-suffix rule -- it's unconditional, not specific to
+       this branch.
+     - **Clean review** (`findings` is present and a valid empty array):
+       omit every `findings-N` question and open the gate with `outcome`
+       alone, so a clean review is approvable in one click -- unchanged
+       from before. Only the empty array means clean: a report whose
+       `findings` field is missing, not an array, or full of entries that
+       don't fit the schema is a malformed report, not a clean one --
+       treating it as clean would let an approve go out with the omitted
+       findings unseen. Take the fallback branch below for it.
+
+     **When the json is absent or malformed** (an older report with no
+     sibling `.json`, unparseable json, or a parsed report whose
+     `findings` is missing or not an array), fall back to tier-level
+     options exactly as before, and print one line in the pane naming
+     which case it was (e.g. "report.json not found; falling back to
+     tier-level options", or "report.json has no findings array; falling
+     back to tier-level options") so a human watching knows posting will
+     be tier-grained instead of per-finding. Posting still
+     accepts this legacy `{tiers, outcome}` shape. Add a `tiers` question
+     (multi-select over the severity levels the domain skill reported
+     present, or your own findings' levels on the generic no-domain-skill
+     path) only when at least one level is present:
 
      ```json
      [
@@ -150,42 +249,43 @@ remembered in the conversation.
 
      `<levels present>` is a placeholder: substitute the actual tier
      objects, e.g. `[{"value":"critical","label":"critical (1)"},
-     {"value":"nit","label":"nit (2)"}]`. Don't copy it verbatim.
+     {"value":"nit","label":"nit (2)"}]`. Don't copy it verbatim. The
+     finding titles ride this `tiers` question's own `context` (one line
+     per finding, verbatim from the report file, never re-summarized).
 
-     When no levels are present (a clean review with no findings), omit the
-     `tiers` question entirely and open the gate with `outcome` alone, so a
-     clean review is approvable in one click:
+     When no levels are present here either (a clean review with no
+     findings, and no json to confirm it), omit the `tiers` question the
+     same way as the per-finding path and open the gate with `outcome`
+     alone, so a clean review is approvable in one click on this branch
+     too:
 
      ```json
      [{"id": "outcome", "label": "Verdict", "multi": false, "options": ["comment", "approve"]}]
      ```
 
-     Options carry display labels: the `tiers` question's options are
-     `{"value": "<Tier>", "label": "<Tier> (<count>)"}` objects, the count being
-     that tier's finding count from the report (e.g. value `Major`, label
-     `Major (2)`); the `outcome` options stay bare strings unless marked as
-     recommended. The finding
-     titles ride the `tiers` question's `context` (one line per finding,
-     verbatim from the report file, never re-summarized), so they render
-     with the question they answer; `--context` itself carries only the
-     tier counts line.
-
-     Mark the outcome you would recommend by listing it FIRST and giving it
-     a label ending in " (recommended)", e.g.
-     `[{"value": "approve", "label": "approve (recommended)"}, "comment"]`.
-     The board lifts the suffix into a badge and the native form renders it
-     as its own (Recommended) affordance, so every surface shows the one
-     recommendation decided here. Mark at most one outcome option and never
-     a tiers option; recommending is offering, and the human still decides.
+     **Mark the recommended outcome on every branch above**,
+     unconditionally, the same convention as before: list it FIRST and
+     give it a label ending in " (recommended)", e.g. `[{"value":
+     "approve", "label": "approve (recommended)"}, "comment"]` -- the
+     other option can stay a bare string. The outcome question's shape
+     doesn't change between branches; only whether a `findings-N` or
+     `tiers` question sits alongside it does.
 
    - **Open the gate:**
      `<status-bin> gate open <state> --kind review-post --questions <json> --context <context text>`
      The output is one JSON line: `{"gateId": "...", "presentation": "form"}` or `"wait"`.
-     Both context carriers are assembled from strings you already hold (see
-     the fill rules above); `--context` plus every question `context` share
-     one 8192 UTF-8 byte budget, and when the total would exceed it, drop
-     question `context` fields first, then `--context`, never trimming any
-     of them mid-text.
+     On the per-finding path, `--context` carries the readiness line
+     (`summary.readiness` plus `summary.reasoning`, verbatim) and a
+     tier-counts line (e.g. "Critical (1), Important (3), Minor (2)");
+     it's the only context carrier this gate uses, since finding titles
+     ride the `findings-N` options instead of question `context`. On the
+     tier-fallback path there's no `summary` to read a readiness line
+     from, so `--context` carries only the tier-counts line, same as
+     before the redesign -- the `tiers` question still carries the
+     finding titles in its own `context`, unchanged. Either way,
+     `--context` fits inside the gate's 8192 UTF-8 byte budget; an
+     oversized one is dropped loudly by the daemon, not by you -- never
+     pre-trim it yourself.
    - **presentation "form":** follow `mattstack:gate-protocol`'s "Acting
      on the response" (form branch) and "CAS and the doorbell" sections
      (stable source checkout, machine-local by design: `cat
@@ -205,12 +305,12 @@ remembered in the conversation.
      label's " (recommended)" suffix becomes the form's own
      (Recommended) affordance; your framing and reasoning go in the
      pane prose or option descriptions, never into rewritten question
-     or option text; the question order is fixed (tiers before
+     or option text; the question order is fixed (findings before
      outcome: the human weighs the findings before choosing a
      verdict); and never as an option that folds another question's
      answer in -- there is never a "skip and approve clean" combo
-     option, since "post nothing" is the `tiers` question answered as
-     an explicit empty array, which the daemon records.
+     option, since "post nothing" is every `findings-N` question
+     answered as an explicit empty array, which the daemon records.
    - **presentation "wait":** follow `board:gate-cli-recipes`'s "Wait
      recipe" section (`cat ${CLAUDE_SKILL_DIR}/../gate-cli-recipes/SKILL.md`)
      for the background-wait mechanics, unchanged; the gate to name in
@@ -232,22 +332,29 @@ remembered in the conversation.
        ${CLAUDE_SKILL_DIR}/../gate-cli-recipes/SKILL.md`) for this CLI's own
        silent-success-versus-JSON-line contract. Specific to this gate: the note
        form example is `{"outcome": {"value": "comment", "note": "approve
-       once CI is green"}}`, and a multi question's explicit empty array
-       (`{"tiers": []}`) is also valid, recording the decision to post none
-       of these findings.
+       once CI is green"}}`, and a `findings-N` question's explicit empty
+       array (`{"findings-1": []}`) is also valid, recording the decision
+       to post none of that chunk's findings -- one chunk empty and
+       another chunk picked is a normal partial post. On the tier-fallback
+       path this is `{"tiers": []}` instead, unchanged from before.
    - **Degraded mode.** If `gate open` exits nonzero (the daemon was down at
      open time), fall back to ONE combined `AskUserQuestion` carrying the
-     same questions the gate would have — both `tiers` and `outcome` when
-     levels are present, `outcome` alone when they aren't — never the old
-     two-gate pair, rendered by the same mechanical rules as presentation
-     "form" above, and proceed on its answers. Follow
-     `board:gate-cli-recipes`'s "A failing wait is not degradation" section
-     for when to retry `gate wait` versus fall through to this same combined
-     `AskUserQuestion`.
-   - **Act on the answer.** Hand `{tiers, outcome}` to the domain skill so it
-     can execute the posting — `tiers` is empty when the gate carried
-     `outcome` alone, since a clean review has no findings to post — or post
-     the selected findings yourself on the generic no-domain-skill path.
+     same questions the gate would have -- every `findings-N` chunk plus
+     `outcome` when the json has findings (or the tier fallback's `tiers`
+     plus `outcome` on the json-absent path), `outcome` alone on a clean
+     review -- never the old two-gate pair, rendered by the same mechanical
+     rules as presentation "form" above, and proceed on its answers.
+     Follow `board:gate-cli-recipes`'s "A failing wait is not degradation"
+     section for when to retry `gate wait` versus fall through to this
+     same combined `AskUserQuestion`.
+   - **Act on the answer.** On the per-finding path, hand
+     `{findings: [ids], outcome}` to the domain skill so it can execute
+     the posting -- `ids` is the union of every `findings-N` question's
+     answer array, empty when the gate carried `outcome` alone since a
+     clean review has no findings to post. On the tier-fallback path, hand
+     the legacy `{tiers, outcome}` shape instead. On the generic
+     no-domain-skill path, post the selected findings (or tiers) yourself
+     instead of handing off.
 
    Only after posting, mark done with the chosen outcome:
    `<status-bin> review-status <state> done "<one-line summary>" --outcome <comment|approve>`

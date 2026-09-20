@@ -169,3 +169,65 @@ export function AgentGlyph() {
     </svg>
   );
 }
+
+/** The review sheet's record-cluster row icons (DEPTH/EVIDENCE/NOTES):
+    lucide-react 1.34.0 path data (ISC licensed, https://lucide.dev), drawn
+    inline rather than adding lucide as a dependency. */
+const RECORD_ICON = {
+  width: 14,
+  height: 14,
+  viewBox: '0 0 24 24',
+  fill: 'none',
+  stroke: 'currentColor',
+  strokeWidth: 2,
+  strokeLinecap: 'round',
+  strokeLinejoin: 'round',
+  'aria-hidden': true,
+  style: { flexShrink: 0 } as const,
+} as const;
+
+/** Strengths' mark: circle-check with the disc filled in currentColor and
+    the check knocked out, matching the mock's solid green badge. */
+export function CircleCheckFilledIcon() {
+  return (
+    <svg {...RECORD_ICON} stroke="none">
+      <circle cx="12" cy="12" r="10" fill="currentColor" />
+      <path
+        d="m9 12 2 2 4-4"
+        stroke="#fff"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+export function SearchCheckIcon() {
+  return (
+    <svg {...RECORD_ICON}>
+      <path d="m8 11 2 2 4-4" />
+      <circle cx="11" cy="11" r="8" />
+      <path d="m21 21-4.3-4.3" />
+    </svg>
+  );
+}
+
+export function CameraIcon() {
+  return (
+    <svg {...RECORD_ICON}>
+      <path d="M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z" />
+      <circle cx="12" cy="13" r="3" />
+    </svg>
+  );
+}
+
+export function PencilLineIcon() {
+  return (
+    <svg {...RECORD_ICON}>
+      <path d="M13 21h8" />
+      <path d="m15 5 4 4" />
+      <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />
+    </svg>
+  );
+}

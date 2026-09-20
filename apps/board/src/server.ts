@@ -219,6 +219,7 @@ import {
   parseReviewRequestBody,
   pruneReviewStates,
   readReviewReport,
+  readReviewReportJson,
   readReviewStates,
   reviewFilePath,
   reviewReportPath,
@@ -2588,6 +2589,18 @@ const httpServer = Bun.serve({
           return new Response('no review yet', { status: 404 });
         return new Response(report, {
           headers: { 'content-type': 'text/markdown; charset=utf-8' },
+        });
+      }
+      case '/review/report.json': {
+        // The agent's structured review JSON for one MR, same read-only,
+        // tunnel-available shape as /review/report above.
+        const mrUrl = new URL(req.url).searchParams.get('mr');
+        if (!mrUrl) return new Response('expected ?mr=<url>', { status: 400 });
+        const report = readReviewReportJson(mrUrl);
+        if (report === null)
+          return new Response('no structured review yet', { status: 404 });
+        return new Response(report, {
+          headers: { 'content-type': 'application/json; charset=utf-8' },
         });
       }
       case '/respond/report': {

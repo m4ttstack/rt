@@ -16,7 +16,7 @@ jobs:
       # committed files.
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: '1.3.13'
+          bun-version: '1.4.2'
       - run: bun install --frozen-lockfile
       # Regenerating must reproduce what's checked in byte-for-byte: a diff
       # here means the emitter drifted, a generated file was hand-edited, or
@@ -132,7 +132,7 @@ jobs:
       # gates), kept in sync with it.
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: '1.3.13'
+          bun-version: '1.4.2'
       - run: bun install --frozen-lockfile
       - run: bun run tui-kit:build
       - run: bun run deck:test
