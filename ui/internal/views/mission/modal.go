@@ -29,7 +29,7 @@ type modalRow struct {
 	text       string // matched against the typed query
 	label      string // rendered primary text
 	meta       string // rendered secondary text (a guard reason, a branch name, "ready")
-	badge      string // pre-rendered, pre-colored ahead/behind/dirty summary
+	badgeData  Badge  // ahead/behind/dirty summary; rendered at PAINT time (modalRowLine), not here, since its background must match the row's own dynamic cursor/hover fill
 	group      string
 	current    bool
 	selectable bool
@@ -65,6 +65,12 @@ type modalState struct {
 	// matches; -1 means no row is hovered.
 	hoverRow    int
 	hoverAction bool
+
+	// scrollTop is the row region's own scroll window top (an index into
+	// modalDisplayLines), the same role Mission.diffTop/changesTop play for
+	// their own scrolling regions -- persisted across renders so a click
+	// resolves against the exact window the last render painted.
+	scrollTop int
 }
 
 func newModal(zone zoneID, intent, placeholder string, buildPayload func(string) json.RawMessage, rows []modalRow, action *modalActionRow) *modalState {
@@ -104,7 +110,7 @@ func newRepoModal(m Model) *modalState {
 			label = r.ID
 		}
 		rows[i] = modalRow{
-			text: label, label: label, badge: renderBadge(r.Badge),
+			text: label, label: label, badgeData: r.Badge,
 			group: r.Group, current: r.Current, selectable: true, value: r.ID,
 		}
 	}
@@ -123,12 +129,12 @@ func newBranchModal(m Model) *modalState {
 	rows := make([]modalRow, len(m.Branches))
 	for i, b := range m.Branches {
 		guarded := b.GuardedBy != ""
-		badge := ""
+		var badgeData Badge
 		if !guarded {
-			badge = renderAheadBehind(b.Ahead, b.Behind)
+			badgeData = Badge{Ahead: b.Ahead, Behind: b.Behind}
 		}
 		rows[i] = modalRow{
-			text: b.Name, label: b.Name, badge: badge,
+			text: b.Name, label: b.Name, badgeData: badgeData,
 			group: b.Group, current: b.Current, selectable: !guarded, guarded: guarded, value: b.Name,
 		}
 	}
@@ -157,7 +163,7 @@ func newWorktreeModal(m Model) *modalState {
 			meta = strings.TrimSpace(meta + "  ready")
 		}
 		rows[i] = modalRow{
-			text: label, label: label, meta: meta, badge: renderBadge(w.Badge),
+			text: label, label: label, meta: meta, badgeData: w.Badge,
 			current: w.Current, selectable: true, value: w.Path,
 		}
 	}
@@ -175,34 +181,40 @@ func newWorktreeModal(m Model) *modalState {
 }
 
 // renderAheadBehind is the same n↓/n↑ grammar the top bar's action pills use
-// (topbar.go): Mint behind, Cyan ahead, either omitted at zero.
-func renderAheadBehind(ahead, behind int) string {
+// (topbar.go): Mint behind, Cyan ahead, either omitted at zero. It and
+// renderBadge take the row's own bg (its cursor/hover fill, whichever is
+// active) rather than a bare fg(): a badge renders at PAINT time now
+// (modalRowLine), not at modal-construction time, precisely so its
+// background always matches whatever the row is actually painted with --
+// baking in a fixed background at construction would mismatch a cursor or
+// hovered row's own SelBg/HoverBg fill.
+func renderAheadBehind(bg lipgloss.Style, ahead, behind int) string {
 	var parts []string
 	if behind > 0 {
-		parts = append(parts, fg(theme.Mint).Render(fmt.Sprintf("%d↓", behind)))
+		parts = append(parts, bg.Foreground(theme.Mint).Render(fmt.Sprintf("%d↓", behind)))
 	}
 	if ahead > 0 {
-		parts = append(parts, fg(theme.Cyan).Render(fmt.Sprintf("%d↑", ahead)))
+		parts = append(parts, bg.Foreground(theme.Cyan).Render(fmt.Sprintf("%d↑", ahead)))
 	}
-	return strings.Join(parts, " ")
+	return strings.Join(parts, bg.Render(" "))
 }
 
 // renderBadge is a repo/worktree row's summary: a Peach dirty-file dot, the
 // same ahead/behind pair renderAheadBehind renders for a branch, and a Mint
 // check standing alone when there is nothing else to show and the row is
 // actually clean.
-func renderBadge(b Badge) string {
+func renderBadge(bg lipgloss.Style, b Badge) string {
 	var parts []string
 	if dirty := b.Staged + b.Unstaged + b.Untracked + b.Conflicted; dirty > 0 {
-		parts = append(parts, fg(theme.Peach).Render(fmt.Sprintf("●%d", dirty)))
+		parts = append(parts, bg.Foreground(theme.Peach).Render(fmt.Sprintf("●%d", dirty)))
 	}
-	if ab := renderAheadBehind(b.Ahead, b.Behind); ab != "" {
+	if ab := renderAheadBehind(bg, b.Ahead, b.Behind); ab != "" {
 		parts = append(parts, ab)
 	}
 	if len(parts) == 0 && b.Clean {
-		parts = append(parts, fg(theme.Mint).Render(theme.GlyphDone))
+		parts = append(parts, bg.Foreground(theme.Mint).Render(theme.GlyphDone))
 	}
-	return strings.Join(parts, " ")
+	return strings.Join(parts, bg.Render(" "))
 }
 
 func (ms *modalState) slotCount() int {
@@ -448,7 +460,10 @@ func modalWidth(ms *modalState, frameWidth int) int {
 		}
 		// A guarded row's real right-edge content is the lock glyph, not its
 		// (empty) badge field -- see modalRowLine's own guarded override.
-		badgeW := lipgloss.Width(r.badge)
+		// Colorless here: lipgloss.Width ignores SGR either way, and the
+		// badge's actual color depends on a row background this measuring
+		// pass has no cursor/hover state to pick.
+		badgeW := lipgloss.Width(renderBadge(lipgloss.NewStyle(), r.badgeData))
 		if r.guarded {
 			badgeW = lipgloss.Width(theme.GlyphLock)
 		}
@@ -531,7 +546,7 @@ func modalRowLine(r modalRow, width int, cursor, hover bool) string {
 	if r.meta != "" {
 		meta = bg.Foreground(theme.Dimmer).Render(" " + r.meta)
 	}
-	badge := bg.Render(r.badge)
+	badge := renderBadge(bg, r.badgeData)
 	if r.guarded {
 		badge = bg.Foreground(theme.Dimmer).Render(theme.GlyphLock)
 	}
@@ -659,27 +674,125 @@ func modalKeybarLine(zone zoneID, width int) string {
 	return bg.Width(width).Render(left)
 }
 
-// modalBoxLines lays out the foldout's full content: the filter line, the
-// ranked rows (each labeled group's header in place of the rule a boundary
-// used to draw), the action row when the kind has one, and -- always, even
-// with nothing above it to show -- the closing rule and this foldout's own
-// keybar.
-func modalBoxLines(ms *modalState, width int) []string {
+// modalFixedRows is the row count around the scrollable row region: the
+// filter line and its rule above; the closing rule, keybar, and (when the
+// kind has one) the action row and its own rule below.
+func modalFixedRows(ms *modalState) (above, below int) {
+	above = 2
+	below = 2
+	if ms.action != nil {
+		below += 2
+	}
+	return above, below
+}
+
+// modalDisplayLine is one line of the scrollable row region: either a group
+// header (display-only, never a cursor target) or a match row.
+type modalDisplayLine struct {
+	header   string
+	matchIdx int
+}
+
+// modalDisplayLines flattens matches and their group headers into the
+// sequence the row region actually paints, so the scroll viewport windows
+// over real display lines (headers included) rather than re-deriving where
+// headers fall inside whatever slice happens to be visible.
+func modalDisplayLines(ms *modalState) []modalDisplayLine {
+	if len(ms.matches) == 0 {
+		return nil
+	}
+	lines := make([]modalDisplayLine, 0, len(ms.matches))
+	for i := range ms.matches {
+		if text := modalHeaderBefore(ms, i); text != "" {
+			lines = append(lines, modalDisplayLine{header: text})
+		}
+		lines = append(lines, modalDisplayLine{matchIdx: i})
+	}
+	return lines
+}
+
+// modalRowViewport resolves the row region's [top, top+h) window with the
+// shared picker.Viewport primitive -- the same one the diff pane and
+// Changes list use -- keeping the cursor's own display line visible.
+func modalRowViewport(ms *modalState, lines []modalDisplayLine, rowRegionH, prevTop int) (top, h int) {
+	cursorLine := 0
+	for i, l := range lines {
+		if l.header == "" && l.matchIdx == ms.cursor {
+			cursorLine = i
+			break
+		}
+	}
+	return picker.Viewport(cursorLine, prevTop, len(lines), rowRegionH, rowRegionH, 0)
+}
+
+func modalSurfaceFillRows(width, n int) []string {
+	if n <= 0 {
+		return nil
+	}
+	row := lipgloss.NewStyle().Width(width).Background(theme.Surface).Render("")
+	rows := make([]string, n)
+	for i := range rows {
+		rows[i] = row
+	}
+	return rows
+}
+
+func modalThumbCell(rowInWindow, thumbTop, thumbH int) string {
+	return picker.ThumbCell(rowInWindow, thumbTop, thumbH,
+		lipgloss.NewStyle().Background(theme.Panel), lipgloss.NewStyle().Background(theme.Surface))
+}
+
+// modalBoxLines lays out the foldout's full content at a FIXED height
+// (boxInnerHeight): the filter line and its rule, the scrollable row
+// region -- always exactly rowRegionH rows, a short list top-aligned with
+// Surface filler below it, a long list scrolling with the cursor and a
+// Panel thumb -- then the pinned bottom block (the action row when the
+// kind has one, the closing rule, and this foldout's own keybar).
+// GitHub Desktop's own dropdowns run to the window bottom and own that
+// space; docs/design/mission/README.md's ratified-deviations entry records
+// this superseding the boards' content-height drawing.
+func modalBoxLines(ms *modalState, width, boxInnerHeight int) []string {
+	above, below := modalFixedRows(ms)
+	rowRegionH := boxInnerHeight - above - below
+	if rowRegionH < 0 {
+		rowRegionH = 0
+	}
+
 	lines := []string{modalFilterLine(ms.query, ms.placeholder, width), modalRuleLine(width)}
+
+	displayLines := modalDisplayLines(ms)
 	switch {
-	case len(ms.matches) == 0 && ms.action == nil:
+	case len(displayLines) == 0:
 		lines = append(lines, modalNoMatchLine(width))
+		lines = append(lines, modalSurfaceFillRows(width, rowRegionH-1)...)
 	default:
-		for i := range ms.matches {
-			if text := modalHeaderBefore(ms, i); text != "" {
-				lines = append(lines, modalGroupHeaderLine(text, width))
+		top, h := modalRowViewport(ms, displayLines, rowRegionH, ms.scrollTop)
+		ms.scrollTop = top
+		scrolling := len(displayLines) > h
+		rowWidth := width
+		if scrolling {
+			rowWidth--
+		}
+		thumbTop, thumbH := picker.ThumbSpan(top, h, len(displayLines))
+		for i := top; i < top+h; i++ {
+			dl := displayLines[i]
+			var row string
+			if dl.header != "" {
+				row = modalGroupHeaderLine(dl.header, rowWidth)
+			} else {
+				row = modalRowLine(ms.rows[ms.matches[dl.matchIdx].Index], rowWidth, dl.matchIdx == ms.cursor, dl.matchIdx == ms.hoverRow)
 			}
-			lines = append(lines, modalRowLine(ms.rows[ms.matches[i].Index], width, i == ms.cursor, i == ms.hoverRow))
+			if scrolling {
+				row += modalThumbCell(i-top, thumbTop, thumbH)
+			}
+			lines = append(lines, row)
 		}
-		if ms.action != nil {
-			lines = append(lines, modalRuleLine(width))
-			lines = append(lines, modalActionLine(ms.action, width, ms.onActionSlot(), ms.hoverAction))
-		}
+		lines = append(lines, modalSurfaceFillRows(width, rowRegionH-h)...)
+	}
+
+	if ms.action != nil {
+		lines = append(lines, modalRuleLine(width))
+		lines = append(lines, modalActionLine(ms.action, width, ms.onActionSlot(), ms.hoverAction))
 	}
 	lines = append(lines, modalRuleLine(width))
 	lines = append(lines, modalKeybarLine(ms.zone, width))
@@ -731,7 +844,12 @@ func clampX(x, boxW, parentW int) int {
 // segment, clamped so it never runs past the pane -- the picker's own
 // overlay idiom (ui/internal/views/picker/modal.go's renderModal),
 // mirrored locally since dimForeground and its ramp are unexported there.
-func renderMissionModal(parent string, ms *modalState, width, topBarHeight int) string {
+// renderMissionModal composites ms's box at FULL frame height: its top edge
+// sits on the anchor row below the top bar (as before), its bottom edge is
+// the frame's own last row -- GitHub Desktop's dropdowns run to the window
+// bottom and own that space, covering whatever sits below them (the main
+// keybar) for as long as they're open. That is intended, not a bug.
+func renderMissionModal(parent string, ms *modalState, width, height, topBarHeight int) string {
 	dimmed := dimForeground(parent)
 	inner := modalWidth(ms, width)
 	if inner > width-2 {
@@ -740,7 +858,11 @@ func renderMissionModal(parent string, ms *modalState, width, topBarHeight int) 
 	if inner < 1 {
 		inner = 1
 	}
-	box := modalBoxFrame(modalBoxLines(ms, inner))
+	boxInnerHeight := height - topBarHeight - 2 // -2 for the box's own top/bottom border
+	if boxInnerHeight < 1 {
+		boxInnerHeight = 1
+	}
+	box := modalBoxFrame(modalBoxLines(ms, inner, boxInnerHeight))
 
 	x := clampX(segmentOrigin(ms.zone, width), lipgloss.Width(box), width)
 	y := topBarHeight

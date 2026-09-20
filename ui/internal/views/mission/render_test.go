@@ -857,6 +857,168 @@ func TestModalRowHoverPaintsHoverBgUnlessCursor(t *testing.T) {
 	}
 }
 
+// ─── modal full-height + scrolling (Addendum C, ratified 2026-09-19): every
+// foldout spans the full frame height, GHD-style, with a scrollable row
+// region and a pinned bottom block ──────────────────────────────────────
+
+// longBranchModalFixture returns a Mission with 220 branches -- far more
+// than any plausible pane's row region -- opened on the branch modal, so
+// the scrolling contract can be pinned against a list that must scroll
+// regardless of frame size.
+func longBranchModalFixture(t *testing.T) *Mission {
+	t.Helper()
+	branches := make([]BranchRow, 220)
+	for i := range branches {
+		branches[i] = BranchRow{Name: fmt.Sprintf("branch-%03d", i), Group: "other"}
+	}
+	m := New(nil)
+	m.width, m.height = 100, 30
+	// SetModel, not a direct m.model assignment: it seeds Commit.Placeholder
+	// onto the summary textinput, which a bare assignment skips. Without it,
+	// bubbles' textinput takes a different internal render branch (a
+	// virtual-cursor cell in Reverse(true) with no background) that this
+	// test's own bg-coverage assertions would otherwise misread as a real
+	// production hole.
+	raw, err := json.Marshal(Model{
+		Current:  Current{Repo: "repo-tools", Branch: "branch-000"},
+		Branches: branches,
+		Commit:   CommitModel{Placeholder: "Summary (required)"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SetModel(raw); err != nil {
+		t.Fatal(err)
+	}
+	m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
+	return m
+}
+
+// modalBoxBottomRow finds the modal's own bottom border row by scanning
+// from the BOTTOM of the frame upward: the dimmed sidebar underneath still
+// carries its own bordered boxes (the filter row, in particular), which
+// also paint "╰" -- scanning top-down would find one of those instead of
+// the modal's own border whenever the modal's own anchor column doesn't
+// happen to overlap the sidebar. The modal is always the tallest bordered
+// box in the frame once open, so its own border is the last "╰" found.
+func modalBoxBottomRow(t *testing.T, m *Mission) int {
+	t.Helper()
+	lines := strings.Split(ansi.Strip(m.View().Content), "\n")
+	for y := len(lines) - 1; y >= 0; y-- {
+		if strings.Contains(lines[y], "╰") {
+			return y
+		}
+	}
+	return -1
+}
+
+// TestModalSpansFullFrameHeightForShortAndLongLists pins the core of
+// Addendum C: a foldout's bottom edge is always the frame's own last row,
+// regardless of match count -- both a short (fixture) list and a 220-row
+// list, across all three foldout kinds.
+func TestModalSpansFullFrameHeightForShortAndLongLists(t *testing.T) {
+	cases := []struct {
+		name string
+		key  rune
+	}{
+		{"repo", 'r'},
+		{"branch", 'b'},
+		{"worktree", 'w'},
+	}
+	for _, c := range cases {
+		m := newTestMission()
+		m.Update(tea.KeyPressMsg{Code: c.key, Text: string(c.key)})
+		if got := modalBoxBottomRow(t, m); got != m.height-1 {
+			t.Fatalf("%s modal (short list): bottom border row = %d, want %d (the frame's last row)", c.name, got, m.height-1)
+		}
+	}
+
+	long := longBranchModalFixture(t)
+	if got := modalBoxBottomRow(t, long); got != long.height-1 {
+		t.Fatalf("branch modal (220-row list): bottom border row = %d, want %d", got, long.height-1)
+	}
+}
+
+// TestModalPinnedKeybarIsSecondToLastRow pins the pinned-bottom-block half
+// of the ruling: the in-modal keybar is always the row immediately above
+// the closing border, whether the row region is mostly empty (short list)
+// or scrolling (long list).
+func TestModalPinnedKeybarIsSecondToLastRow(t *testing.T) {
+	m := newTestMission()
+	m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
+	lines := strings.Split(ansi.Strip(m.View().Content), "\n")
+	bottom := modalBoxBottomRow(t, m)
+	if !strings.Contains(lines[bottom-1], "enter open") {
+		t.Fatalf("row above the closing border should be the keybar, got %q", lines[bottom-1])
+	}
+
+	long := longBranchModalFixture(t)
+	longLines := strings.Split(ansi.Strip(long.View().Content), "\n")
+	longBottom := modalBoxBottomRow(t, long)
+	if !strings.Contains(longLines[longBottom-1], "enter checkout") {
+		t.Fatalf("long-list branch modal: row above the closing border should be the keybar, got %q", longLines[longBottom-1])
+	}
+}
+
+// TestModalLongListScrollsWithCursorAndThumb pins the hard scrolling
+// requirement: moving the cursor to the LAST of 220 branches must keep it
+// visible in the row region, and the thumb must reach the rail's bottom.
+func TestModalLongListScrollsWithCursorAndThumb(t *testing.T) {
+	m := longBranchModalFixture(t)
+	ms := m.modal
+	for i := 0; i < len(ms.matches)-1; i++ {
+		m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	}
+	if row, ok := ms.selectedRow(); !ok || row.value != "branch-219" {
+		t.Fatalf("setup: expected the cursor on the last branch, got %+v ok=%v", row, ok)
+	}
+	out := ansi.Strip(m.View().Content)
+	if !strings.Contains(out, "branch-219") {
+		t.Fatalf("the last branch should be visible after scrolling to it:\n%s", out)
+	}
+	displayLines := modalDisplayLines(ms)
+	above, below := modalFixedRows(ms)
+	boxInnerHeight := m.height - m.layout().topH - 2
+	rowRegionH := boxInnerHeight - above - below
+	thumbTop, thumbH := picker.ThumbSpan(ms.scrollTop, rowRegionH, len(displayLines))
+	if thumbTop+thumbH != rowRegionH {
+		t.Fatalf("thumb should reach the row region's own bottom once scrolled to the end: top=%d h=%d regionH=%d", thumbTop, thumbH, rowRegionH)
+	}
+}
+
+// TestModalShortListFillerIsSurface pins the short-list half: the leftover
+// row-region space below a short list (never the dimmed parent, never bare
+// cells) is filled with the modal's own Surface background.
+func TestModalShortListFillerIsSurface(t *testing.T) {
+	m := newTestMission()
+	m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"}) // 2 repo rows, well short of a 30-row frame
+	out := m.View().Content
+	lines := strings.Split(out, "\n")
+	bottom := modalBoxBottomRow(t, m)
+	// A row well below the 2 real repo rows but still above the pinned
+	// keybar/rule block should be Surface-filled filler.
+	fillerY := bottom - 3
+	if !strings.Contains(lines[fillerY], bgSGR(theme.Surface)) {
+		t.Fatalf("filler row %d below a short list should wear Surface: %q", fillerY, lines[fillerY])
+	}
+}
+
+// TestFullFrameWithShortModalOpenEveryRowFullyPaintsBackground and its
+// long-list sibling re-assert the whole-frame bg-coverage loop test with a
+// modal open, per Addendum C: dimForeground only touches foreground SGR, so
+// every background underneath the dim -- and the modal's own Surface fill,
+// including its filler and thumb column -- must still resolve.
+func TestFullFrameWithShortModalOpenEveryRowFullyPaintsBackground(t *testing.T) {
+	m := newTestMission()
+	m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
+	assertFullyBgFilled(t, "short-modal-open", m.View().Content, m.width)
+}
+
+func TestFullFrameWithLongModalOpenEveryRowFullyPaintsBackground(t *testing.T) {
+	m := longBranchModalFixture(t)
+	assertFullyBgFilled(t, "long-modal-open", m.View().Content, m.width)
+}
+
 // ─── notice strip ───────────────────────────────────────────────────────
 
 // TestModelPushWithWireNoticePaintsIt: the driver's own refusals arrive in

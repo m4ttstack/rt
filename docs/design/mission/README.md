@@ -160,3 +160,15 @@ pre-ratification drawing:
   off until those actions exist.
 - A diverged current branch shows both count pills in the branch modal;
   the board drew only the ahead pill for the current row.
+- Every foldout (repo, branch, worktree) spans the FULL frame height, per
+  GitHub Desktop's own real behavior, ratified 2026-09-19: its top edge
+  sits on the anchor row below the top bar, its bottom edge is the
+  frame's own last row, and it stays that height regardless of match
+  count -- covering the main keybar for as long as it is open, which GHD
+  also does and which is intended here, not a bug. A short list top-aligns
+  with Surface filler below it; a long list scrolls (cursor-follow, a
+  Panel thumb) in a fixed-height row region above a pinned action/keybar
+  block. This supersedes the content-height foldouts drawn on
+  RepoPicker.png, BranchModal.png, and WorktreeModal.png; those boards
+  will be re-exported separately, and this line is the behavior contract
+  until they are.

@@ -609,7 +609,7 @@ func (m *Mission) View() tea.View {
 		out = lipgloss.JoinVertical(lipgloss.Left, out, renderNoticeStrip(notice, m.width))
 	}
 	if m.modal != nil {
-		out = renderMissionModal(out, m.modal, m.width, lipgloss.Height(top))
+		out = renderMissionModal(out, m.modal, m.width, m.height, lipgloss.Height(top))
 	}
 
 	v := tea.NewView(out)
@@ -860,6 +860,11 @@ func (m *Mission) diffHit(diffX, y int) hit {
 // coordinate to a match index without modal.go itself ever recording a zone.
 // The trailing rule and keybar carry no click target, so nothing past the
 // action row needs its own cursor bookkeeping: nothing left can match li.
+// modalHitTest maps a frame coordinate against the SAME fixed-height,
+// scroll-windowed geometry modalBoxLines paints (modal.go): the box now
+// always spans from its anchor row to the frame's own last row, so a click
+// past the row region's own displayLines resolves to the pinned bottom
+// block (action/keybar) rather than there being nothing left to hit.
 func (m *Mission) modalHitTest(x, y int) hit {
 	ms := m.modal
 	inner := modalWidth(ms, m.width)
@@ -872,50 +877,52 @@ func (m *Mission) modalHitTest(x, y int) hit {
 	boxW := inner + 2
 	bx := clampX(segmentOrigin(ms.zone, m.width), boxW, m.width)
 	by := m.layout().topH
-	lines := modalBoxLines(ms, inner)
-	boxH := len(lines) + 2
+	boxH := m.height - by
 	if x < bx || x >= bx+boxW || y < by || y >= by+boxH {
 		return hit{kind: hitModalOutside}
 	}
 	li := y - by - 1 // -1 for the box's own top border
-	if li < 0 || li >= len(lines) {
+	boxInnerHeight := boxH - 2
+	if li < 0 || li >= boxInnerHeight {
 		return hit{}
 	}
 
-	cursor := 0
-	if li == cursor { // filter line
+	switch li {
+	case 0: // filter line
+		return hit{}
+	case 1: // top rule
 		return hit{}
 	}
-	cursor++
-	if li == cursor { // top rule
-		return hit{}
+
+	above, below := modalFixedRows(ms)
+	rowRegionH := boxInnerHeight - above - below
+	if rowRegionH < 0 {
+		rowRegionH = 0
 	}
-	cursor++
-	if len(ms.matches) == 0 && ms.action == nil {
-		return hit{} // "no matches" line
-	}
-	for i := range ms.matches {
-		if text := modalHeaderBefore(ms, i); text != "" {
-			if li == cursor {
-				return hit{}
-			}
-			cursor++
+	rowLocal := li - above
+	if rowLocal >= 0 && rowLocal < rowRegionH {
+		displayLines := modalDisplayLines(ms)
+		idx := ms.scrollTop + rowLocal
+		if idx < len(displayLines) && displayLines[idx].header == "" {
+			return hit{kind: hitModalRow, idx: displayLines[idx].matchIdx}
 		}
-		if li == cursor {
-			return hit{kind: hitModalRow, idx: i}
-		}
-		cursor++
+		return hit{} // a header row or filler past the list: no click target
 	}
+
+	afterRegion := li - above - rowRegionH
 	if ms.action != nil {
-		if li == cursor { // the rule above the action row
+		switch afterRegion {
+		case 0: // the rule above the action row
 			return hit{}
-		}
-		cursor++
-		if li == cursor {
+		case 1:
 			return hit{kind: hitModalAction}
 		}
+		afterRegion -= 2
 	}
-	return hit{}
+	if afterRegion == 0 { // the closing rule
+		return hit{}
+	}
+	return hit{} // the keybar: no click target
 }
 
 // mouseClick dispatches a button press against whatever hitTest resolves it
