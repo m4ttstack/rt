@@ -1154,6 +1154,37 @@ func TestRenderNoticeStripClipsLongTextToOneRow(t *testing.T) {
 	}
 }
 
+// TestRenderNoticeStripClipsAtNarrowWidths pins a CodeRabbit finding on PR
+// #353 (2026-09-19): the original fix clipped only text, not the leading
+// space + warn glyph + gap around it, so at width 1-2 textW clamped to 0
+// but the fixed chrome alone (3 cells) still exceeded width and could wrap.
+// The whole composed payload must clip to width now, at every width down to
+// (and including) the pathological 1-cell case.
+func TestRenderNoticeStripClipsAtNarrowWidths(t *testing.T) {
+	for _, width := range []int{1, 2, 3} {
+		out := renderNoticeStrip("a refusal message", width)
+		if strings.Contains(out, "\n") {
+			t.Fatalf("width %d: notice strip should render exactly 1 row: %q", width, out)
+		}
+		if got := lipgloss.Width(ansi.Strip(out)); got != width {
+			t.Fatalf("width %d: notice strip should stay exactly that wide, got %d: %q", width, got, out)
+		}
+	}
+}
+
+// TestRenderNoticeStripNonPositiveWidthReturnsEmpty pins the guard: a
+// non-positive width has no cell to paint into, so the strip renders
+// nothing rather than the fixed chrome (glyph + spaces) Width() would
+// otherwise still emit unclamped.
+func TestRenderNoticeStripNonPositiveWidthReturnsEmpty(t *testing.T) {
+	if out := renderNoticeStrip("a refusal message", 0); out != "" {
+		t.Fatalf("width 0 should return empty, got %q", out)
+	}
+	if out := renderNoticeStrip("a refusal message", -1); out != "" {
+		t.Fatalf("negative width should return empty, got %q", out)
+	}
+}
+
 // TestWireNoticeWinsOverLocalNotice: when both the wire Notice and a
 // view-local refusal are pending, the driver's own wins the single strip.
 func TestWireNoticeWinsOverLocalNotice(t *testing.T) {

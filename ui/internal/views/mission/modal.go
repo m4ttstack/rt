@@ -916,14 +916,16 @@ func renderMissionModal(parent string, ms *modalState, width, height, topBarHeig
 // before Width() -- the same class of bug as the commit button (CodeRabbit,
 // PR #353): an unclipped long notice would wrap and desync every row below it.
 func renderNoticeStrip(text string, width int) string {
+	if width <= 0 {
+		return ""
+	}
 	on := lipgloss.NewStyle().Background(theme.WarnBg)
 	fg := on.Foreground(theme.Peach)
-	prefixW := 1 + lipgloss.Width(theme.GlyphWarn) + 1 // leading space + glyph + gap
-	textW := width - prefixW
-	if textW < 0 {
-		textW = 0
-	}
-	left := fg.Render(theme.GlyphWarn + " " + clip(text, textW))
+	// Clip the WHOLE payload (glyph + gap + text), not just text: clipping
+	// only text left the fixed chrome around it (leading space + glyph +
+	// gap, 3 cells) unaccounted for, so at width 1-2 it alone still
+	// exceeded width and could wrap (CodeRabbit, PR #353).
+	left := fg.Render(clip(theme.GlyphWarn+" "+text, width-1))
 	return on.Width(width).Render(" " + left)
 }
 
