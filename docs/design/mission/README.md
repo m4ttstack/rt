@@ -120,17 +120,22 @@ division.
 | CommitBox gap (summary→description) | 8 | 0.31 | 0 | absorbed — the two bordered boxes stay flush, their borders touching. |
 | DescriptionInput | 64 (bordered) | 2.46 | 4 | border / text / text / border. |
 | CommitBox gap (description→button) | 8 | 0.31 | 1 blank | one blank Bg row separates the button from the description box — unlike the summary/description seam, this gap is NOT flush (owner's round-2 ruling, 2026-09-19). |
-| CommitButton | 32 | 1.23 | 1 | one filled, centered-label row, full sidebar width, Pink (enabled) or Panel (disabled). Board scale corrects an earlier pass that drew a 3-row fill/label/fill block. |
+| CommitButton | 32 | 1.23 | 3 (outer 2 half-height) | 1.23 cells is a genuine sub-cell height, not a clean 1 or a clean 3 -- one 1-row rendering read thin against the bordered boxes above it, three full rows read too big. Ratified 2026-09-20 ("mission commit button gains its half-cell padding"): a half-block glyph, full sidebar width, as a row's own FOREGROUND on a theme.Bg background paints only that row's half, so three physical rows carry it -- `▄` (lower half block) with the button color as foreground / theme.Bg as background, then the full solid centered-label row exactly as before, then `▀` (upper half block) with the same fg/bg rule. Half-blocks are the sanctioned way to hit a sub-cell height in this build; a hairline seam some fonts render between a half-block row and its solid neighbor is accepted, not chased. |
 | UndoStrip | 30 | 1.15 | 1 | |
 | Keybar | 28 | 1.08 | 1 | |
 | DiffHeader | 34 | 1.31 | 1 | |
 
 Net effect on `sidebarBlocks` (mission.go): the top block gains 1 row (the
-tabs-gap blank) and the docked block gains 2 (the commit-box top-pad blank,
-plus the new description→button gap blank; the button itself is back to its
-original 1-row footprint). `layout()`'s own filler arithmetic absorbs all
-of it unchanged — `sidebarFillerH` shrinks by the same amount and
-floors at 0 once the fixed chrome alone already meets or exceeds the pane.
+tabs-gap blank) and the docked block gains 4 (the commit-box top-pad blank,
+the new description→button gap blank, plus 2 for the button's own half-block
+caps above and below its solid label row). `layout()`'s own filler
+arithmetic absorbs all of it unchanged — `sidebarDockedH` is measured by
+actually rendering `sidebarDocked` (`lipgloss.Height`), not a hardcoded sum,
+so `sidebarFillerH` shrinks by the same amount and floors at 0 once the
+fixed chrome alone already meets or exceeds the pane. `sidebarHit`'s own
+fixed-offset math is hand-maintained, not derived, so it was updated
+separately: all three of the button's rows now resolve to the same
+`hitCommitButton` target.
 
 ## Ratified at the build's visual pass (2026-09-18)
 

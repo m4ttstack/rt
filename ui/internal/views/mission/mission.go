@@ -795,10 +795,13 @@ func (m *Mission) sidebarHit(x, y, listRegionH int) hit {
 	}
 	row += 4
 	row++ // the gap row between the description box and the button: no click target
-	if y == row {
+	// The button is a fixed THREE-row unit now (a half-block cap row above
+	// and below the solid label row, ratified 2026-09-20's sub-cell-height
+	// treatment): all three resolve to the same hit target.
+	if y >= row && y < row+3 {
 		return hit{kind: hitCommitButton}
 	}
-	row++
+	row += 3
 	if lc := m.model.Commit.LastCommit; lc != nil && lc.Undoable && y == row {
 		return hit{kind: hitUndoChip}
 	}

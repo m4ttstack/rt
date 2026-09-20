@@ -241,24 +241,33 @@ func boxBlock(width int, contentLines []string) string {
 // renderCommitButton is the full-width commit button: Pink with Bg-dark
 // (i.e. theme.Bg foreground) text at rest, Panel background with Dimmer
 // text once !canCommit -- the same rest/disabled pair InteractionStates.png
-// pins for it. One filled, centered-label row at board scale (32px against
-// the 26px row unit quantizes to 1 row, not the 3 an earlier pass drew);
-// renderCommitBox supplies the blank gap row above it that separates it
-// from the description box. It is a fixed ONE-row block in the sidebar's
-// own layout (sidebarHit maps every row below it by fixed offset), so label
-// must be clipped before it reaches Width(): lipgloss wraps a too-long
-// string there instead of truncating it, and a long current.branch in
-// "Commit N files to <branch>" would otherwise spill the button onto a
-// second row and shift every hit-tested row below it (CodeRabbit finding on
-// PR #353).
+// pins for it. renderCommitBox supplies the blank gap row above it that
+// separates it from the description box.
+//
+// Board scale is 32px against a 26px row unit, i.e. 1.23 cells -- no single
+// terminal row can express that, so three physical rows carry it (ratified
+// 2026-09-20, "mission commit button gains its half-cell padding",
+// superseding the single solid row an earlier pass drew): a half-block
+// "cap" row above and below the full solid label row. GlyphHalfBlockLower
+// (▄) as that row's own FOREGROUND on a theme.Bg background paints only the
+// row's bottom half in the button color, leaving the top half as canvas;
+// GlyphHalfBlockUpper (▀) mirrors that for the bottom cap's top half. The
+// middle row is the button exactly as it always rendered -- full solid fill,
+// centered label, clipped before Width() (lipgloss wraps a too-long string
+// there instead of truncating it, and a long current.branch in "Commit N
+// files to <branch>" would otherwise spill it onto a second row -- CodeRabbit
+// finding on PR #353). The block is a fixed THREE-row unit in the sidebar's
+// own layout now; sidebarHit maps all three rows to the same hit target.
 func renderCommitButton(width int, label string, canCommit bool) string {
-	style := lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Bold(true)
-	if canCommit {
-		style = style.Background(theme.Pink).Foreground(theme.Bg)
-	} else {
-		style = style.Background(theme.Panel).Foreground(theme.Dimmer)
+	buttonColor, textColor := theme.Pink, theme.Bg
+	if !canCommit {
+		buttonColor, textColor = theme.Panel, theme.Dimmer
 	}
-	return style.Render(clip(label, width))
+	capStyle := lipgloss.NewStyle().Width(width).Background(theme.Bg).Foreground(buttonColor)
+	labelStyle := lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Bold(true).Background(buttonColor).Foreground(textColor)
+	top := capStyle.Render(strings.Repeat(theme.GlyphHalfBlockLower, width))
+	bottom := capStyle.Render(strings.Repeat(theme.GlyphHalfBlockUpper, width))
+	return lipgloss.JoinVertical(lipgloss.Left, top, labelStyle.Render(clip(label, width)), bottom)
 }
 
 // renderUndoStrip is the WarnBg strip a successful, still-undoable commit

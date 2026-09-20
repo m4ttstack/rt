@@ -646,11 +646,13 @@ func TestMouseClickHunkRowEmitsHunkStage(t *testing.T) {
 // (mission.go's sidebarBlocks/renderSidebar), so its row depends on the
 // pane height, not just the row count above it: PTY is 30x100, topbar
 // height 3 (docs/design/mission/README.md's Terminal geometry table), keybar
-// 1, no notice, so bodyH=26; the top section (tabs 2 + tabs-gap 1 + filter 3
-// + master 1 + 3 changes rows = 10) and the docked block (stash 1 + rule 1 +
-// commit-box top pad 1 + summary 3 + description 4 + button 3 + undo 1 =
-// 14) leave a 2-row filler gap between them; undo sits at bodyY
-// 10+2+1+1+1+3+4+3=25, frame y = topH(3)+25 = 28.
+// 1, no notice, so bodyH=26; the fixed top rows (tabs 2 + tabs-gap 1 +
+// filter 3 + master 1 = 7) plus a 4-row list region (3 changes rows + 1
+// filler) plus the docked block (stash 1 + rule 1 + commit-box top pad 1 +
+// summary 3 + description 4 + gap 1 + button 3 (top half-block cap, label,
+// bottom half-block cap -- ratified 2026-09-20's sub-cell-height treatment)
+// + undo 1 = 15) exactly fill the 26-row body; undo sits at bodyY
+// 7+4+1+1+1+3+4+1+3=25, frame y = topH(3)+25 = 28.
 func TestMouseClickUndoChipEmitsUndoIntent(t *testing.T) {
 	s := s5open(t)
 	s.Type(sgrClick(0, 5, 28))
@@ -820,7 +822,11 @@ func TestLiveFrameFillerAndDiffBlankCellsResolveToThemeBg(t *testing.T) {
 		name string
 		x, y int
 	}{
-		{"sidebar filler gap", 20, 14},
+		// The filler gap shrank from 3 rows to 1 when the commit button
+		// grew from 1 row to 3 (ratified 2026-09-20's sub-cell-height
+		// treatment: a half-block cap above and below the label row), so
+		// row 14 -- filler before that change -- is now the stash strip.
+		{"sidebar filler gap", 20, 13},
 		{"diff pane blank region", 70, 25},
 	}
 	for _, c := range cases {

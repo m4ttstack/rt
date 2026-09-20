@@ -1444,11 +1444,14 @@ func TestMouseClickFilterRowFocusesFilter(t *testing.T) {
 	}
 }
 
-// commitButtonY returns the commit button's own first row (of its three:
-// fill, centered label, fill -- any of the three resolves to
-// hitCommitButton) via the SAME layout() arithmetic View paints with
+// commitButtonY returns the commit button's own MIDDLE row -- the solid
+// label row, of its three (half-block cap, label, half-block cap; any of
+// the three resolves to hitCommitButton, ratified 2026-09-20's sub-cell-
+// height treatment) -- via the SAME layout() arithmetic View paints with
 // (mission.go's sidebarBlocks/sidebarHit split), so a click test never
 // hardcodes a y that drifts when the sidebar's bottom-dock gap resizes.
+// commitButtonY(m)-1 and commitButtonY(m)+1 are the top and bottom
+// half-block cap rows respectively.
 func commitButtonY(m *Mission) int {
 	l := m.layout()
 	off := 1 // the rule above the commit box
@@ -1459,6 +1462,7 @@ func commitButtonY(m *Mission) int {
 	off += 3 // summary box
 	off += 4 // description box
 	off++    // the gap row between the description box and the button
+	off++    // the button's own top half-block cap row
 	return l.topH + l.sidebarTopH + l.listRegionH + off
 }
 
@@ -1483,6 +1487,30 @@ func TestMouseClickCommitButtonEmitsWhenEnabled(t *testing.T) {
 	_, cmd := m.Update(tea.MouseClickMsg{X: 20, Y: commitButtonY(m), Button: tea.MouseLeft})
 	if cmd == nil {
 		t.Fatal("a commit-button click with the gate open must emit")
+	}
+}
+
+// TestMouseClickCommitButtonAllThreeRowsResolveToTheButton pins the ratified
+// 2026-09-20 sub-cell-height treatment's hit-testing half: the button is
+// three physical rows now (top half-block cap, label, bottom half-block
+// cap), and a click on ANY of them must resolve to hitCommitButton -- a
+// user cannot tell from the half-block glyphs alone that a row is "just"
+// padding, so it has to behave like part of the button, not dead space.
+func TestMouseClickCommitButtonAllThreeRowsResolveToTheButton(t *testing.T) {
+	m := newMouseTestMission()
+	m.model.Commit.CanCommit = true
+	m.summaryInput.SetValue("msg")
+	buttonY := commitButtonY(m)
+
+	for _, y := range []int{buttonY - 1, buttonY, buttonY + 1} {
+		if got := m.hitTest(20, y); got.kind != hitCommitButton {
+			t.Fatalf("row %d (offset %+d from the label row) should hit the commit button, got %+v", y, y-buttonY, got)
+		}
+	}
+	// One row past the bottom cap must NOT still read as the button (the
+	// span is exactly 3 rows, not open-ended).
+	if got := m.hitTest(20, buttonY+2); got.kind == hitCommitButton {
+		t.Fatalf("the row after the button's bottom cap should not still hit the commit button: %+v", got)
 	}
 }
 
@@ -1726,30 +1754,68 @@ func TestSidebarTopHasBlankBandAfterTabsBeforeFilter(t *testing.T) {
 	}
 }
 
-// TestRenderCommitButtonOneRowAtBoardScale pins the board-scale ruling: the
-// commit button is a single filled, centered-label row -- board h=32px
-// against the 26px row unit quantizes to 1 row, not the 3 an earlier pass
-// drew -- Pink (enabled) or Panel (disabled), full width.
-func TestRenderCommitButtonOneRowAtBoardScale(t *testing.T) {
+// TestRenderCommitButtonThreeRowsHalfBlockCaps pins the owner's ratified
+// sub-cell-height treatment (2026-09-20, "mission commit button gains its
+// half-cell padding"): board h=32px against the 26px row unit is 1.23
+// cells, which no single terminal row can express, so the button is three
+// rows -- a half-block cap above and below the solid centered-label row,
+// same as it always rendered -- Pink (enabled) or Panel (disabled), full
+// width throughout (every row, not just the label row: the bg-coverage
+// loop tests need the caps to paint their full width too, even with no
+// text of their own to clip).
+func TestRenderCommitButtonThreeRowsHalfBlockCaps(t *testing.T) {
 	const width = 40
 	const label = "Commit 2 files to main"
-	enabled := renderCommitButton(width, label, true)
-	if strings.Contains(enabled, "\n") {
-		t.Fatalf("commit button should render exactly 1 row: %q", enabled)
+
+	cases := []struct {
+		name        string
+		canCommit   bool
+		buttonColor color.Color
+		textColor   color.Color
+	}{
+		{"enabled", true, theme.Pink, theme.Bg},
+		{"disabled", false, theme.Panel, theme.Dimmer},
 	}
-	plain := ansi.Strip(enabled)
-	if !strings.Contains(plain, label) {
-		t.Fatalf("the single row should carry the label: %q", enabled)
-	}
-	if !strings.Contains(enabled, bgSGR(theme.Pink)) {
-		t.Fatalf("enabled button should wear the Pink fill: %q", enabled)
-	}
-	if lipgloss.Width(plain) != width {
-		t.Fatalf("button should be full width %d, got %d: %q", width, lipgloss.Width(plain), enabled)
-	}
-	disabled := renderCommitButton(width, label, false)
-	if !strings.Contains(disabled, bgSGR(theme.Panel)) {
-		t.Fatalf("disabled button should wear the Panel fill: %q", disabled)
+	for _, tc := range cases {
+		out := renderCommitButton(width, label, tc.canCommit)
+		lines := strings.Split(out, "\n")
+		if len(lines) != 3 {
+			t.Fatalf("%s: button should render exactly 3 rows, got %d:\n%s", tc.name, len(lines), out)
+		}
+		top, mid, bottom := lines[0], lines[1], lines[2]
+
+		if plain := ansi.Strip(top); plain != strings.Repeat(theme.GlyphHalfBlockLower, width) {
+			t.Fatalf("%s: top cap should be %d lower half blocks, got %q", tc.name, width, plain)
+		}
+		if !strings.Contains(top, fgSGR(tc.buttonColor)) {
+			t.Fatalf("%s: top cap should carry the button color as its FOREGROUND: %q", tc.name, top)
+		}
+		if !strings.Contains(top, bgSGR(theme.Bg)) {
+			t.Fatalf("%s: top cap should carry theme.Bg as its background: %q", tc.name, top)
+		}
+
+		if !strings.Contains(ansi.Strip(mid), label) {
+			t.Fatalf("%s: label row should carry the label: %q", tc.name, mid)
+		}
+		if !strings.Contains(mid, bgSGR(tc.buttonColor)) {
+			t.Fatalf("%s: label row should wear the button color as its solid fill: %q", tc.name, mid)
+		}
+
+		if plain := ansi.Strip(bottom); plain != strings.Repeat(theme.GlyphHalfBlockUpper, width) {
+			t.Fatalf("%s: bottom cap should be %d upper half blocks, got %q", tc.name, width, plain)
+		}
+		if !strings.Contains(bottom, fgSGR(tc.buttonColor)) {
+			t.Fatalf("%s: bottom cap should carry the button color as its FOREGROUND: %q", tc.name, bottom)
+		}
+		if !strings.Contains(bottom, bgSGR(theme.Bg)) {
+			t.Fatalf("%s: bottom cap should carry theme.Bg as its background: %q", tc.name, bottom)
+		}
+
+		for i, line := range lines {
+			if w := lipgloss.Width(ansi.Strip(line)); w != width {
+				t.Fatalf("%s: row %d should be exactly width %d, got %d: %q", tc.name, i, width, w, line)
+			}
+		}
 	}
 }
 
@@ -1757,24 +1823,29 @@ func TestRenderCommitButtonOneRowAtBoardScale(t *testing.T) {
 // PR #353 (2026-09-19, changes.go): Width() wraps a too-long string instead
 // of truncating it (the same trap hunk headers and the empty-state card hit
 // earlier), so a long current.branch in "Commit N files to <branch>" could
-// spill the fixed-height button onto a second row.
+// spill the fixed-height LABEL row onto a second row (the two half-block
+// caps carry no text, so they cannot wrap from label length at all).
 func TestRenderCommitButtonClipsLongLabelToOneRow(t *testing.T) {
 	const width = 40
 	long := "Commit 3 files to a-very-long-feature-branch-name-that-would-otherwise-wrap"
 	out := renderCommitButton(width, long, true)
-	if strings.Contains(out, "\n") {
-		t.Fatalf("commit button must render exactly 1 row even with a long label: %q", out)
+	lines := strings.Split(out, "\n")
+	if len(lines) != 3 {
+		t.Fatalf("commit button must render exactly 3 rows even with a long label, got %d:\n%s", len(lines), out)
 	}
-	if got := lipgloss.Width(ansi.Strip(out)); got != width {
-		t.Fatalf("button should stay exactly %d wide, got %d: %q", width, got, out)
+	if got := lipgloss.Width(ansi.Strip(lines[1])); got != width {
+		t.Fatalf("label row should stay exactly %d wide, got %d: %q", width, got, lines[1])
 	}
 }
 
 // TestCommitButtonNeverWrapsKeepsUndoChipRowAligned is the layout-level half
 // of the same CodeRabbit finding: sidebarHit maps every row below the
-// button by a hardcoded fixed offset (mission.go), so a button that wrapped
-// to 2 rows would leave a real click on the undo chip landing one row
-// short of it. Proven against the actual rendered frame + hitTest, not
+// button by a hardcoded fixed offset (mission.go), so a button whose LABEL
+// row wrapped to 2 rows would leave a real click on the undo chip landing
+// one row short of it. The button's own label row is found by content
+// search, and the undo chip sits 2 rows below it now (the bottom half-block
+// cap row, then undo) -- ratified 2026-09-20's three-row sub-cell-height
+// treatment. Proven against the actual rendered frame + hitTest, not
 // hand-derived offsets, so it fails the same way a real click would have.
 func TestCommitButtonNeverWrapsKeepsUndoChipRowAligned(t *testing.T) {
 	m := New(nil)
@@ -1815,8 +1886,8 @@ func TestCommitButtonNeverWrapsKeepsUndoChipRowAligned(t *testing.T) {
 	if undoRow == -1 {
 		t.Fatalf("undo chip not found in the rendered frame:\n%s", strings.Join(lines, "\n"))
 	}
-	if undoRow != buttonRow+1 {
-		t.Fatalf("undo chip should sit exactly one row below the button (no wrap from the long label): button row %d, undo row %d", buttonRow, undoRow)
+	if undoRow != buttonRow+2 {
+		t.Fatalf("undo chip should sit exactly 2 rows below the button's label row (its own bottom half-block cap, then undo; no wrap from the long label): button row %d, undo row %d", buttonRow, undoRow)
 	}
 	if got := m.hitTest(0, undoRow); got.kind != hitUndoChip {
 		t.Fatalf("a click on the undo chip's own frame row should resolve to hitUndoChip, got %+v", got)
@@ -1830,15 +1901,23 @@ func TestRenderCommitBoxHasGapBeforeButton(t *testing.T) {
 	out := ansi.Strip(renderCommitBox(sidebarWidth, "", "", false, "Commit 2 files to main", false))
 	lines := strings.Split(out, "\n")
 	// row0 = box top pad, row1-3 = summary box, row4-7 = description box,
-	// row8 = the new gap, row9 = the button.
+	// row8 = the new gap, row9-11 = the button's own 3 rows (top half-block
+	// cap, label, bottom half-block cap -- ratified 2026-09-20's sub-cell-
+	// height treatment).
 	if strings.TrimSpace(lines[8]) != "" {
 		t.Fatalf("row 8 should be the blank gap before the button: %q", lines[8])
 	}
-	if !strings.Contains(lines[9], "Commit 2 files to main") {
-		t.Fatalf("row 9 should be the button's own label row: %q", lines[9])
+	if lines[9] != strings.Repeat(theme.GlyphHalfBlockLower, sidebarWidth) {
+		t.Fatalf("row 9 should be the button's own top half-block cap: %q", lines[9])
 	}
-	if len(lines) != 10 {
-		t.Fatalf("commit box should be exactly 10 rows (1 pad + 3 summary + 4 description + 1 gap + 1 button), got %d:\n%s", len(lines), out)
+	if !strings.Contains(lines[10], "Commit 2 files to main") {
+		t.Fatalf("row 10 should be the button's own label row: %q", lines[10])
+	}
+	if lines[11] != strings.Repeat(theme.GlyphHalfBlockUpper, sidebarWidth) {
+		t.Fatalf("row 11 should be the button's own bottom half-block cap: %q", lines[11])
+	}
+	if len(lines) != 12 {
+		t.Fatalf("commit box should be exactly 12 rows (1 pad + 3 summary + 4 description + 1 gap + 3 button), got %d:\n%s", len(lines), out)
 	}
 }
 
@@ -1877,12 +1956,13 @@ func TestRenderCommitBoxAmendingBannerThenBlankThenSummaryBox(t *testing.T) {
 	}
 }
 
-// TestFrameCommitButtonOneRowFullWidthFillLabelCentered pins the board-scale
-// ruling at the FULL FRAME level, located via commitButtonY's layout()
-// arithmetic rather than a hardcoded row: the button's one row carries the
-// enabled Pink fill and the centered label, and the row right above it
-// (the gap) is blank.
-func TestFrameCommitButtonOneRowFullWidthFillLabelCentered(t *testing.T) {
+// TestFrameCommitButtonThreeRowsFullWidthFillLabelCentered pins the ratified
+// sub-cell-height ruling (2026-09-20) at the FULL FRAME level, located via
+// commitButtonY's layout() arithmetic rather than a hardcoded row: the
+// label row carries the enabled Pink fill and the centered label, its own
+// top and bottom half-block caps carry Pink as their FOREGROUND on a
+// theme.Bg background, and the row above the top cap (the gap) is blank.
+func TestFrameCommitButtonThreeRowsFullWidthFillLabelCentered(t *testing.T) {
 	m := newMouseTestMission()
 	m.model.Commit.CanCommit = true
 	m.summaryInput.SetValue("msg")
@@ -1891,14 +1971,31 @@ func TestFrameCommitButtonOneRowFullWidthFillLabelCentered(t *testing.T) {
 	lines := strings.Split(m.View().Content, "\n")
 	row := lines[buttonY]
 	if !strings.Contains(row, bgSGR(theme.Pink)) {
-		t.Fatalf("button row should wear the enabled Pink fill: %q", row)
+		t.Fatalf("label row should wear the enabled Pink fill: %q", row)
 	}
 	if !strings.Contains(ansi.Strip(row), "Commit 3 files to main") {
-		t.Fatalf("button row should carry the label: %q", row)
+		t.Fatalf("label row should carry the label: %q", row)
 	}
-	gapPlain := ansi.Strip(lines[buttonY-1])[:sidebarWidth]
+
+	topCap, bottomCap := lines[buttonY-1], lines[buttonY+1]
+	for _, capRow := range []string{topCap, bottomCap} {
+		if !strings.Contains(capRow, fgSGR(theme.Pink)) {
+			t.Fatalf("half-block cap should carry Pink as its FOREGROUND: %q", capRow)
+		}
+		if !strings.Contains(capRow, bgSGR(theme.Bg)) {
+			t.Fatalf("half-block cap should carry theme.Bg as its background: %q", capRow)
+		}
+	}
+	if plain := string([]rune(ansi.Strip(topCap))[:sidebarWidth]); plain != strings.Repeat(theme.GlyphHalfBlockLower, sidebarWidth) {
+		t.Fatalf("top cap's sidebar span should be all lower half blocks: %q", plain)
+	}
+	if plain := string([]rune(ansi.Strip(bottomCap))[:sidebarWidth]); plain != strings.Repeat(theme.GlyphHalfBlockUpper, sidebarWidth) {
+		t.Fatalf("bottom cap's sidebar span should be all upper half blocks: %q", plain)
+	}
+
+	gapPlain := ansi.Strip(lines[buttonY-2])[:sidebarWidth]
 	if strings.TrimSpace(gapPlain) != "" {
-		t.Fatalf("row above the button (the gap) should be blank: %q", gapPlain)
+		t.Fatalf("row above the top cap (the gap) should be blank: %q", gapPlain)
 	}
 }
 
@@ -2221,6 +2318,19 @@ func sgrImmediatelyBefore(s string, idx int) string {
 // prefix-width padding math (topbar.go) silently drifts by one.
 func TestNerdFontIconsMeasureAsOneCell(t *testing.T) {
 	for _, g := range []string{theme.GlyphRepo, theme.GlyphWorktree, theme.GlyphBranch} {
+		if w := lipgloss.Width(g); w != 1 {
+			t.Fatalf("glyph %q should measure as 1 cell, got %d", g, w)
+		}
+	}
+}
+
+// TestHalfBlockGlyphsMeasureAsOneCell pins the same width footgun for the
+// commit button's sub-cell caps: ▄/▀ sit in Unicode's East Asian Ambiguous
+// range in some width tables, which some terminfo/locale combinations widen
+// to 2 cells -- renderCommitButton's strings.Repeat(glyph, width) padding
+// would silently drift if go-runewidth measured them as anything but 1.
+func TestHalfBlockGlyphsMeasureAsOneCell(t *testing.T) {
+	for _, g := range []string{theme.GlyphHalfBlockLower, theme.GlyphHalfBlockUpper} {
 		if w := lipgloss.Width(g); w != 1 {
 			t.Fatalf("glyph %q should measure as 1 cell, got %d", g, w)
 		}
