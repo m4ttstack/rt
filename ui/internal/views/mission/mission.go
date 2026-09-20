@@ -15,6 +15,7 @@ import (
 	"rt-ui/internal/protocol"
 	"rt-ui/internal/session"
 	"rt-ui/internal/theme"
+	"rt-ui/internal/views/picker"
 )
 
 // focusKind is which part of the view keys route to. focusList is the zero
@@ -40,8 +41,11 @@ type Mission struct {
 	// selected is the Changes row cursor, held by path across model swaps
 	// (board.go's selected-by-id precedent) since the wholesale Model
 	// replacement in SetModel carries no index that would survive a
-	// reordered or filtered list.
-	selected string
+	// reordered or filtered list. changesTop is the Changes list's own
+	// scroll window top (picker.Viewport), the same role diffTop plays for
+	// the diff pane.
+	selected   string
+	changesTop int
 
 	focus            focusKind
 	filterText       string
@@ -428,27 +432,26 @@ func (m *Mission) filterDisplayText() string {
 	return m.model.Filter
 }
 
-// sidebarBlocks is renderSidebar's own row grouping, factored out so both
-// renderSidebar and sidebarHit -- and layout(), which needs their heights to
-// size the gap between them -- work from the same top/docked split rather
-// than three drifting copies of it.
-type sidebarBlocks struct {
-	top    string // tabs, filter, master row, changes list
-	docked string // stash strip, rule, commit box, undo strip: pinned to the sidebar's bottom edge
-}
+// sidebarFixedTopRows is the constant row count above the (scrollable)
+// Changes list: tabs(2) + the tabs-gap blank band row(1) + the filter
+// box(3) + the master row(1) (docs/design/mission/README.md's Terminal
+// geometry table). Unlike the old content-driven top block, this never
+// varies with the Changes count -- the list itself is now a fixed-height
+// scrolling region, not a block that grows the whole sidebar.
+const sidebarFixedTopRows = 7
 
-func (m *Mission) sidebarBlocks(width int) sidebarBlocks {
-	top := []string{
+func (m *Mission) sidebarFixedTop(width int) string {
+	return lipgloss.JoinVertical(lipgloss.Left,
 		renderTabsRow(m.model.ChangedTotal, width),
-		// The board's tabs-rule-plus-gap reads as one blank band row in the
-		// terminal (docs/design/mission/README.md's Terminal geometry table).
 		blankRows(width, 1),
 		renderFilterRow(m.filterDisplayText(), m.focus == focusFilter, width),
 		renderMasterRow(m.model.ChangedTotal, m.model.StagedTotal, width),
-	}
-	for i, c := range m.model.Changes {
-		top = append(top, renderChangeRow(c, width, c.Path == m.selected, i == m.hoverFile))
-	}
+	)
+}
+
+// sidebarDocked is the bottom-pinned block: stash strip, rule, commit box,
+// undo strip.
+func (m *Mission) sidebarDocked(width int) string {
 	var docked []string
 	if m.model.StashCount > 0 {
 		docked = append(docked, renderStashStrip(m.model.StashCount, width))
@@ -458,30 +461,72 @@ func (m *Mission) sidebarBlocks(width int) sidebarBlocks {
 	if lc := m.model.Commit.LastCommit; lc != nil && lc.Undoable {
 		docked = append(docked, renderUndoStrip(*lc, width))
 	}
-	return sidebarBlocks{
-		top:    lipgloss.JoinVertical(lipgloss.Left, top...),
-		docked: lipgloss.JoinVertical(lipgloss.Left, docked...),
-	}
+	return lipgloss.JoinVertical(lipgloss.Left, docked...)
 }
 
-// renderSidebar composes the top section, a Bg-filled gap, and the bottom-
-// docked stash/commit/undo block sized to height (docs/design/mission/
-// Main.png, EmptyState.png): the gap absorbs whatever room the two blocks
-// don't need on their own, or shrinks to zero -- the docked block still
-// renders in full, pushing past height -- once their combined natural
-// height already meets or exceeds it.
+// listRegionHeight is the fixed height the Changes list renders into, given
+// the sidebar's overall height: whatever height isn't claimed by the fixed
+// top rows or the docked block. Shared by layout() (for hit-testing) and
+// renderSidebar/renderChangesList (for painting) so both agree on exactly
+// how tall the scrolling region is.
+func (m *Mission) listRegionHeight(width, height int) int {
+	h := height - sidebarFixedTopRows - lipgloss.Height(m.sidebarDocked(width))
+	if h < 0 {
+		h = 0
+	}
+	return h
+}
+
+// renderChangesList windows the Changes rows into exactly listRegionH rows:
+// a short list top-aligns with Bg filler below it, a long list scrolls with
+// the cursor via picker.Viewport -- the same primitive the diff pane uses,
+// so both scrolling regions in the TUI share one offset/scrolloff formula.
+// One column is always reserved for a Panel scroll thumb, whether or not
+// the list is actually scrolling, mirroring the diff pane's own
+// always-reserved thumb column.
+func (m *Mission) renderChangesList(width, listRegionH int) string {
+	changes := m.model.Changes
+	n := len(changes)
+	rowWidth := width - 1
+	if rowWidth < 0 {
+		rowWidth = 0
+	}
+	cursorIdx := m.index()
+	if cursorIdx < 0 {
+		cursorIdx = 0
+	}
+	top, h := picker.Viewport(cursorIdx, m.changesTop, n, listRegionH, listRegionH, 0)
+	m.changesTop = top
+	thumbTop, thumbH := picker.ThumbSpan(top, h, n)
+	thumbOn := lipgloss.NewStyle().Background(theme.Panel)
+	restOn := lipgloss.NewStyle().Background(theme.Bg)
+
+	rows := make([]string, listRegionH)
+	for i := 0; i < listRegionH; i++ {
+		idx := top + i
+		row := lipgloss.NewStyle().Width(rowWidth).Background(theme.Bg).Render("")
+		if i < h && idx < n {
+			c := changes[idx]
+			row = renderChangeRow(c, rowWidth, c.Path == m.selected, idx == m.hoverFile)
+		}
+		rows[i] = row + picker.ThumbCell(i, thumbTop, thumbH, thumbOn, restOn)
+	}
+	return strings.Join(rows, "\n")
+}
+
+// renderSidebar composes the fixed top rows, the (now fixed-height,
+// scrollable) Changes list, and the bottom-docked stash/commit/undo block
+// (docs/design/mission/Main.png, EmptyState.png): the list's own height is
+// whatever the top rows and docked block don't claim, so the docked block
+// never gets pushed off screen by a long list -- the list scrolls within
+// what remains instead.
 func (m *Mission) renderSidebar(width, height int) string {
-	b := m.sidebarBlocks(width)
-	fillerH := height - lipgloss.Height(b.top) - lipgloss.Height(b.docked)
-	if fillerH < 0 {
-		fillerH = 0
-	}
-	parts := []string{b.top}
-	if fillerH > 0 {
-		parts = append(parts, blankRows(width, fillerH))
-	}
-	parts = append(parts, b.docked)
-	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+	listRegionH := m.listRegionHeight(width, height)
+	return lipgloss.JoinVertical(lipgloss.Left,
+		m.sidebarFixedTop(width),
+		m.renderChangesList(width, listRegionH),
+		m.sidebarDocked(width),
+	)
 }
 
 func blankRows(width, n int) string {
@@ -506,13 +551,15 @@ func (m *Mission) diffWidth() int {
 
 // frameLayout is View's own line-count arithmetic, factored out so hitTest
 // resolves a click against the exact geometry the last frame painted rather
-// than a second, potentially drifting copy of it. The sidebar fields mirror
-// renderSidebar's own top/gap/docked split: sidebarFillerH is what
-// sidebarHit adds before the docked block's own row offsets to land on the
-// stash/commit/undo rows regardless of pane height.
+// than a second, potentially drifting copy of it. sidebarTopH is the
+// constant sidebarFixedTopRows; listRegionH is the Changes list's own fixed
+// height (however many of its rows are actually filled, versus left as
+// Bg-filler or scrolled past); sidebarFillerH is how many of those rows are
+// filler (0 once the list is long enough to scroll).
 type frameLayout struct {
 	topH, bodyH, keybarH, noticeH               int
 	sidebarTopH, sidebarDockedH, sidebarFillerH int
+	listRegionH                                 int
 }
 
 func (m *Mission) layout() frameLayout {
@@ -523,15 +570,18 @@ func (m *Mission) layout() frameLayout {
 	if m.noticeText() != "" {
 		l.noticeH = 1
 	}
-	b := m.sidebarBlocks(sidebarWidth)
-	l.sidebarTopH = lipgloss.Height(b.top)
-	l.sidebarDockedH = lipgloss.Height(b.docked)
+	l.sidebarTopH = sidebarFixedTopRows
+	l.sidebarDockedH = lipgloss.Height(m.sidebarDocked(sidebarWidth))
 	natural := l.sidebarTopH + l.sidebarDockedH
 	l.bodyH = m.height - l.topH - l.keybarH - l.noticeH
 	if l.bodyH < natural {
 		l.bodyH = natural
 	}
-	l.sidebarFillerH = l.bodyH - natural
+	l.listRegionH = l.bodyH - natural
+	l.sidebarFillerH = l.listRegionH - len(m.model.Changes)
+	if l.sidebarFillerH < 0 {
+		l.sidebarFillerH = 0
+	}
 	return l
 }
 
@@ -642,7 +692,7 @@ func (m *Mission) hitTest(x, y int) hit {
 	}
 	switch {
 	case x < sidebarWidth:
-		return m.sidebarHit(x, bodyY, l.sidebarFillerH)
+		return m.sidebarHit(x, bodyY, l.listRegionH)
 	case x == sidebarWidth:
 		return hit{}
 	default:
@@ -691,10 +741,12 @@ func topbarHit(width, x int) zoneID {
 // to map a body-relative (x, y) to whichever row painted there -- the same
 // "recompute the pure layout a second time" approach hitTest takes for the
 // top bar and the diff pane, rather than recording zones as a render side
-// effect. fillerH is layout()'s own sidebarFillerH: the docked block (stash
-// strip onward) starts fillerH rows after the changes list rather than
-// immediately under it, so every row from there on is offset by it.
-func (m *Mission) sidebarHit(x, y, fillerH int) hit {
+// effect. listRegionH is layout()'s own listRegionH: the Changes list is a
+// fixed-height scrolling region (renderChangesList/m.changesTop), so a click
+// inside it maps through the same scroll offset the last render left there,
+// and the docked block always starts exactly listRegionH rows after the
+// list begins, scrolled or not.
+func (m *Mission) sidebarHit(x, y, listRegionH int) hit {
 	row := 0
 	if y < row+2 {
 		return tabsHit(sidebarWidth, x)
@@ -712,12 +764,14 @@ func (m *Mission) sidebarHit(x, y, fillerH int) hit {
 		return hit{} // master row: no wire affordance to toggle select-all yet
 	}
 	row++
-	n := len(m.model.Changes)
-	if y < row+n {
-		return fileRowHit(m.model.Changes[y-row], y-row, x)
+	if y < row+listRegionH {
+		idx := m.changesTop + (y - row)
+		if idx < len(m.model.Changes) {
+			return fileRowHit(m.model.Changes[idx], idx, x)
+		}
+		return hit{} // filler row below the last visible change: no click target
 	}
-	row += n
-	row += fillerH // the Bg-filled gap above the bottom-docked block: no hit target
+	row += listRegionH
 	if m.model.StashCount > 0 {
 		if y == row {
 			return hit{kind: hitStash}

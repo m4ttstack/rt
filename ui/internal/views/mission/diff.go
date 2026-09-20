@@ -14,6 +14,7 @@ import (
 
 	"rt-ui/internal/protocol"
 	"rt-ui/internal/theme"
+	"rt-ui/internal/views/picker"
 )
 
 // diffNumWidth is the fixed cell width of the old/new line-number gutter
@@ -303,14 +304,21 @@ func renderOversizedBody(width, height int) string {
 // Panel scroll thumb along the right edge.
 func (m *Mission) renderDiffLines(width, height int) string {
 	lines := m.model.Diff.Lines
-	top, h := diffViewport(m.diffCursor, m.diffTop, len(lines), height)
+	// picker.Viewport is the one scroll-offset primitive shared by every
+	// scrolling region in the TUI (the picker's own list, this pane, the
+	// mission foldouts): cap_=height and chromeRows=0 reproduce the diff
+	// pane's own "no cap, fill the pane" contract while gaining picker's
+	// vim-style scrolloff margin for free.
+	top, h := picker.Viewport(m.diffCursor, m.diffTop, len(lines), height, height, 0)
 	m.diffTop = top
 
 	contentW := width - 1 // 1 cell reserved for the scroll thumb
 	if contentW < 0 {
 		contentW = 0
 	}
-	thumbTop, thumbH := diffThumbSpan(top, h, len(lines))
+	thumbTop, thumbH := picker.ThumbSpan(top, h, len(lines))
+	thumbOn := lipgloss.NewStyle().Background(theme.Panel)
+	restOn := lipgloss.NewStyle().Background(theme.Bg)
 
 	rows := make([]string, height)
 	for i := 0; i < height; i++ {
@@ -320,75 +328,9 @@ func (m *Mission) renderDiffLines(width, height int) string {
 			hover := idx == m.hoverDiffLine
 			line = renderDiffLine(m.model.Diff, lines[idx], contentW, hover, hover && m.hoverGutter)
 		}
-		rows[i] = line + diffThumbCell(i, thumbTop, thumbH)
+		rows[i] = line + picker.ThumbCell(i, thumbTop, thumbH, thumbOn, restOn)
 	}
 	return strings.Join(rows, "\n")
-}
-
-// diffViewport keeps the cursor inside [top, top+h), sliding the window the
-// minimum amount needed rather than recentering -- the board tail pane's
-// precedent for a scroll window driven off a moving point of interest.
-func diffViewport(cursor, top, n, paneRows int) (newTop, h int) {
-	h = paneRows
-	if h > n {
-		h = n
-	}
-	if h < 0 {
-		h = 0
-	}
-	if h == 0 {
-		return 0, 0
-	}
-	maxTop := n - h
-	if maxTop < 0 {
-		maxTop = 0
-	}
-	if top > maxTop {
-		top = maxTop
-	}
-	if top < 0 {
-		top = 0
-	}
-	if cursor < top {
-		top = cursor
-	}
-	if cursor >= top+h {
-		top = cursor - h + 1
-	}
-	return top, h
-}
-
-// diffThumbSpan mirrors the picker rail's sizing (h*h/n, floored, minimum
-// one row, in lockstep with the scroll offset) so the two scrollbars in the
-// same TUI read the same way.
-func diffThumbSpan(top, h, n int) (thumbTop, thumbH int) {
-	if n <= 0 || h <= 0 {
-		return 0, 0
-	}
-	thumbH = h * h / n
-	if thumbH < 1 {
-		thumbH = 1
-	}
-	if thumbH > h {
-		thumbH = h
-	}
-	maxTop := n - h
-	if maxTop <= 0 {
-		return 0, thumbH
-	}
-	avail := h - thumbH
-	if avail < 0 {
-		avail = 0
-	}
-	thumbTop = top * avail / maxTop
-	return thumbTop, thumbH
-}
-
-func diffThumbCell(row, thumbTop, thumbH int) string {
-	if row >= thumbTop && row < thumbTop+thumbH {
-		return lipgloss.NewStyle().Background(theme.Panel).Render(" ")
-	}
-	return lipgloss.NewStyle().Background(theme.Bg).Render(" ")
 }
 
 // renderDiffLine paints one line's gutter (stage bar + right-aligned

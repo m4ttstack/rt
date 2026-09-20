@@ -17,6 +17,7 @@ import (
 
 	"rt-ui/internal/session"
 	"rt-ui/internal/theme"
+	"rt-ui/internal/views/picker"
 )
 
 // fgSGR is the truecolor foreground SGR fragment lipgloss emits for c,
@@ -1150,7 +1151,7 @@ func commitButtonY(m *Mission) int {
 	off += 3 // summary box
 	off += 4 // description box
 	off++    // the gap row between the description box and the button
-	return l.topH + l.sidebarTopH + l.sidebarFillerH + off
+	return l.topH + l.sidebarTopH + l.listRegionH + off
 }
 
 // TestMouseClickCommitButtonGuardsOnCanCommit mirrors the keyboard's own
@@ -1247,7 +1248,9 @@ func TestSidebarFillerRowsAreBgFilledAndBlank(t *testing.T) {
 	l := m.layout()
 	rawLines := strings.Split(m.View().Content, "\n")
 	plainLines := strings.Split(ansi.Strip(m.View().Content), "\n")
-	for y := l.topH + l.sidebarTopH; y < l.topH+l.sidebarTopH+l.sidebarFillerH; y++ {
+	fillerStart := l.topH + l.sidebarTopH + len(m.model.Changes)
+	fillerEnd := l.topH + l.sidebarTopH + l.listRegionH
+	for y := fillerStart; y < fillerEnd; y++ {
 		sidebarPlain := plainLines[y][:min(len(plainLines[y]), sidebarWidth)]
 		if strings.TrimSpace(sidebarPlain) != "" {
 			t.Fatalf("filler row %d should be blank in the sidebar column, got %q", y, sidebarPlain)
@@ -1398,10 +1401,10 @@ func TestTopBarHoverCoversAllThreeRowsOfItsSegment(t *testing.T) {
 // rule+gap) before the filter box's own top border.
 func TestSidebarTopHasBlankBandAfterTabsBeforeFilter(t *testing.T) {
 	m := &Mission{}
-	b := m.sidebarBlocks(sidebarWidth)
-	lines := strings.Split(b.top, "\n")
+	top := m.sidebarFixedTop(sidebarWidth)
+	lines := strings.Split(top, "\n")
 	if len(lines) < 4 {
-		t.Fatalf("sidebar top block too short to hold tabs+blank+filter: %d rows:\n%s", len(lines), b.top)
+		t.Fatalf("sidebar top block too short to hold tabs+blank+filter: %d rows:\n%s", len(lines), top)
 	}
 	blank := lines[2]
 	if strings.TrimSpace(ansi.Strip(blank)) != "" {
@@ -1528,7 +1531,7 @@ func TestFrameCommitButtonOneRowFullWidthFillLabelCentered(t *testing.T) {
 func TestFrameBlankBandAboveSummaryBox(t *testing.T) {
 	m := newMouseTestMission() // no stash, no amend
 	l := m.layout()
-	blankY := l.topH + l.sidebarTopH + l.sidebarFillerH + 1 // +1 skips the rule line
+	blankY := l.topH + l.sidebarTopH + l.listRegionH + 1 // +1 skips the rule line
 	lines := strings.Split(m.View().Content, "\n")
 	blankSidebarCol := ansi.Strip(lines[blankY])[:sidebarWidth]
 	if strings.TrimSpace(blankSidebarCol) != "" {
@@ -1595,6 +1598,112 @@ func TestRenderChangeRowWideRuneFilenameStaysAtWidth(t *testing.T) {
 	}
 	if lipgloss.Width(out) != 40 {
 		t.Fatalf("change row must render at exactly width 40, got %d: %q", lipgloss.Width(out), out)
+	}
+}
+
+// ─── long-content scrolling (owner's reinforcement, 2026-09-19): the diff
+// pane, the changes list, and every modal foldout must keep the cursor in
+// view and track a thumb over content far longer than any plausible pane ──
+
+// TestDiffPaneLongContentKeepsCursorVisibleAndThumbTracks pins the diff
+// pane's own scroll contract after migrating to the shared picker.Viewport/
+// ThumbSpan primitives: moving the cursor to the last of 250 lines must
+// keep it inside [diffTop, diffTop+h), and the thumb must sit at the
+// bottom of the rail once scrolled all the way down.
+func TestDiffPaneLongContentKeepsCursorVisibleAndThumbTracks(t *testing.T) {
+	const total = 250
+	lines := make([]DiffLine, total)
+	for i := range lines {
+		lines[i] = DiffLine{Kind: "context", Text: fmt.Sprintf("line %d", i), SelIdx: -1}
+	}
+	m := &Mission{}
+	m.model.Diff = DiffModel{Path: "big.go", Kind: "text", Lines: lines}
+	m.moveDiffCursor(total) // clamps to the last line
+
+	const width, height = 60, 20
+	out := ansi.Strip(m.renderDiffLines(width, height))
+	if m.diffCursor < m.diffTop || m.diffCursor >= m.diffTop+height {
+		t.Fatalf("cursor %d should stay inside the viewport [%d,%d)", m.diffCursor, m.diffTop, m.diffTop+height)
+	}
+	if !strings.Contains(out, fmt.Sprintf("line %d", total-1)) {
+		t.Fatalf("the last line should be visible after scrolling to it:\n%s", out)
+	}
+	// Scrolled all the way to the bottom: the thumb's own bottom edge should
+	// sit at the rail's last row.
+	thumbTop, thumbH := picker.ThumbSpan(m.diffTop, height, total)
+	if thumbTop+thumbH != height {
+		t.Fatalf("thumb should reach the rail's bottom once scrolled to the end: top=%d h=%d paneH=%d", thumbTop, thumbH, height)
+	}
+}
+
+// TestChangesListLongContentKeepsCursorVisibleAndThumbTracks is the same
+// contract for the sidebar's own Changes list: with 150 files (far more
+// than any plausible pane's list region), moving the cursor to the last
+// one must keep it inside the rendered window, and the thumb must reach
+// the rail's bottom.
+func TestChangesListLongContentKeepsCursorVisibleAndThumbTracks(t *testing.T) {
+	const total = 150
+	changes := make([]ChangeRow, total)
+	for i := range changes {
+		changes[i] = ChangeRow{Path: fmt.Sprintf("file%03d.go", i), Status: "modified", Include: "none"}
+	}
+	m := New(nil)
+	m.width, m.height = 100, 30
+	m.model = Model{
+		Current:      Current{Repo: "repo-tools", Branch: "main"},
+		Changes:      changes,
+		ChangedTotal: total,
+		Commit:       CommitModel{ButtonLabel: fmt.Sprintf("Commit %d files to main", total)},
+	}
+	m.selected = changes[total-1].Path
+
+	l := m.layout()
+	if l.listRegionH >= total {
+		t.Fatalf("setup: expected the list region to be shorter than %d rows, got %d", total, l.listRegionH)
+	}
+	out := ansi.Strip(m.View().Content)
+	if !strings.Contains(out, changes[total-1].Path) {
+		t.Fatalf("the last file should be visible after scrolling to it:\n%s", out)
+	}
+	if m.changesTop < total-l.listRegionH {
+		t.Fatalf("scroll should have reached the bottom: changesTop=%d, listRegionH=%d, total=%d", m.changesTop, l.listRegionH, total)
+	}
+	thumbTop, thumbH := picker.ThumbSpan(m.changesTop, l.listRegionH, total)
+	if thumbTop+thumbH != l.listRegionH {
+		t.Fatalf("thumb should reach the list's own bottom once scrolled to the end: top=%d h=%d regionH=%d", thumbTop, thumbH, l.listRegionH)
+	}
+}
+
+// TestMouseClickFileRowWhileScrolledMapsToAbsoluteIndex pins sidebarHit's
+// own scroll-aware row mapping: once the list has scrolled, a click at a
+// given screen row must resolve through m.changesTop to the ABSOLUTE
+// Changes index under it, not the row's position within the window.
+func TestMouseClickFileRowWhileScrolledMapsToAbsoluteIndex(t *testing.T) {
+	const total = 150
+	changes := make([]ChangeRow, total)
+	for i := range changes {
+		changes[i] = ChangeRow{Path: fmt.Sprintf("file%03d.go", i), Status: "modified", Include: "none"}
+	}
+	m := New(nil)
+	m.width, m.height = 100, 30
+	m.model = Model{
+		Current:      Current{Repo: "repo-tools", Branch: "main"},
+		Changes:      changes,
+		ChangedTotal: total,
+		Commit:       CommitModel{ButtonLabel: fmt.Sprintf("Commit %d files to main", total)},
+	}
+	m.selected = changes[total-1].Path
+	m.View() // force a render so changesTop reflects the scrolled-to-bottom state
+
+	l := m.layout()
+	listStartY := l.topH + l.sidebarTopH
+	// Click the first visible row of the (scrolled) list region.
+	h := m.hitTest(20, listStartY)
+	if h.kind != hitFileRow && h.kind != hitFileCheckbox {
+		t.Fatalf("expected a file-row hit at the top of the scrolled window, got %+v", h)
+	}
+	if h.idx != m.changesTop {
+		t.Fatalf("hit index should be the absolute Changes index %d, got %d", m.changesTop, h.idx)
 	}
 }
 
