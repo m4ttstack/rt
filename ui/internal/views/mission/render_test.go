@@ -509,6 +509,61 @@ func newTestMission() *Mission {
 	return m
 }
 
+// ─── modal width rule (owner's round-2 ruling, 2026-09-19): a foldout's
+// width is max(its anchor segment's width, its content's natural width) ──
+
+// TestRepoModalWidthMatchesSidebarWidth pins the owner's explicit ask: the
+// repo segment spans the whole sidebar, so its modal renders exactly
+// sidebarWidth wide -- the same width as the repo button.
+func TestRepoModalWidthMatchesSidebarWidth(t *testing.T) {
+	m := newTestMission()
+	m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
+	if inner := modalWidth(m.modal, m.width); inner != sidebarWidth-2 {
+		t.Fatalf("repo modal inner width should be sidebarWidth-2=%d, got %d", sidebarWidth-2, inner)
+	}
+}
+
+// TestBranchModalWidthGrowsForContentWhenWiderThanItsSegment pins the other
+// half at a normal frame width: the branch segment is much narrower than
+// sidebarWidth, so its modal keeps sizing off its own content rather than
+// shrinking to the segment's own span.
+func TestBranchModalWidthGrowsForContentWhenWiderThanItsSegment(t *testing.T) {
+	m := newTestMission() // width=100: segW is well under modalContentMin
+	m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
+	if inner := modalWidth(m.modal, m.width); inner < modalContentMin {
+		t.Fatalf("branch modal should still use its own content-driven width, got %d", inner)
+	}
+}
+
+// TestBranchModalWidthFloorsAtSegmentWidthOnAWideFrame pins the floor half
+// of the ruling at a frame wide enough that the branch segment's own span
+// exceeds even modalContentMax: the modal must still grow to match it
+// rather than clamping to the content cap.
+func TestBranchModalWidthFloorsAtSegmentWidthOnAWideFrame(t *testing.T) {
+	m := newTestMission()
+	m.width = 300
+	m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
+	wantFloor := segmentWidth(zoneBranch, m.width) - 2
+	if wantFloor <= modalContentMax {
+		t.Fatalf("setup: expected the branch segment's floor to exceed modalContentMax at width 300, got floor=%d max=%d", wantFloor, modalContentMax)
+	}
+	if inner := modalWidth(m.modal, m.width); inner < wantFloor {
+		t.Fatalf("branch modal should floor at its segment width %d, got %d", wantFloor, inner)
+	}
+}
+
+// TestWorktreeModalWidthFloorsAtSegmentWidthOnAWideFrame mirrors the branch
+// case for the worktree segment.
+func TestWorktreeModalWidthFloorsAtSegmentWidthOnAWideFrame(t *testing.T) {
+	m := newTestMission()
+	m.width = 300
+	m.Update(tea.KeyPressMsg{Code: 'w', Text: "w"})
+	wantFloor := segmentWidth(zoneWorktree, m.width) - 2
+	if inner := modalWidth(m.modal, m.width); inner < wantFloor {
+		t.Fatalf("worktree modal should floor at its segment width %d, got %d", wantFloor, inner)
+	}
+}
+
 func TestModalOpenDimsParentAndEscRestoresUndimmed(t *testing.T) {
 	m := newTestMission()
 	before := m.View().Content

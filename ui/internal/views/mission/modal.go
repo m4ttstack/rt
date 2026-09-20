@@ -402,11 +402,38 @@ const (
 	modalContentMax = 60
 )
 
+// segmentWidth mirrors renderTopBar's own column math (topbar.go): the
+// column span the zone's own segment occupies in the bar, used as a floor
+// for its modal's width so a foldout never renders narrower than the
+// button that opened it (the owner's explicit ask for the repo modal: the
+// same width as the repo button).
+func segmentWidth(zone zoneID, width int) int {
+	const dividers = 3
+	remaining := width - sidebarWidth - dividers
+	if remaining < 0 {
+		remaining = 0
+	}
+	segW := remaining / 3
+	lastW := remaining - segW*2
+	switch zone {
+	case zoneWorktree, zoneBranch:
+		return segW
+	case zoneAction:
+		return lastW
+	default:
+		return sidebarWidth
+	}
+}
+
 // modalWidth mirrors modalRowLine/modalActionLine's own fixed-column
 // formulas exactly (bar + status + gap before the label, a space-led meta,
 // a gap-led badge) so a row's label gets its full width rather than losing
-// cells to a looser estimate here that undercounts those fixed columns.
-func modalWidth(ms *modalState) int {
+// cells to a looser estimate here that undercounts those fixed columns. Its
+// own content-driven sizing (modalContentMin..modalContentMax) is then
+// floored by its anchor segment's width -- max(segment, content), per the
+// width rule -- so the repo modal, whose segment spans the whole sidebar,
+// renders exactly sidebarWidth wide.
+func modalWidth(ms *modalState, frameWidth int) int {
 	need := modalContentMin
 	consider := func(w int) {
 		if w > need {
@@ -436,6 +463,9 @@ func modalWidth(ms *modalState) int {
 	consider(1 + lipgloss.Width(modalKeybarPlainText(ms.zone)))
 	if need > modalContentMax {
 		need = modalContentMax
+	}
+	if floor := segmentWidth(ms.zone, frameWidth) - 2; floor > need {
+		need = floor
 	}
 	return need
 }
@@ -703,7 +733,7 @@ func clampX(x, boxW, parentW int) int {
 // mirrored locally since dimForeground and its ramp are unexported there.
 func renderMissionModal(parent string, ms *modalState, width, topBarHeight int) string {
 	dimmed := dimForeground(parent)
-	inner := modalWidth(ms)
+	inner := modalWidth(ms, width)
 	if inner > width-2 {
 		inner = width - 2
 	}

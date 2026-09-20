@@ -808,7 +808,7 @@ func (m *Mission) diffHit(diffX, y int) hit {
 // action row needs its own cursor bookkeeping: nothing left can match li.
 func (m *Mission) modalHitTest(x, y int) hit {
 	ms := m.modal
-	inner := modalWidth(ms)
+	inner := modalWidth(ms, m.width)
 	if maxInner := m.width - 2; inner > maxInner {
 		inner = maxInner
 	}
