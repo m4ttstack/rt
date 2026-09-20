@@ -117,17 +117,19 @@ division.
 | CommitRule | 1 | 0.04 | 1 | kept as its own row — a rendered "─" separator, not sub-cell padding. |
 | CommitBox top pad | 12 | 0.46 | 1 blank | one blank Bg row between the rule (or the amend banner, when present) and the summary box. |
 | SummaryInput | 32 (bordered) | 1.23 | 3 | border / text / border. |
-| CommitBox gap | 8 | 0.31 | 0 | absorbed — the summary and description boxes stay flush, their borders touching. |
+| CommitBox gap (summary→description) | 8 | 0.31 | 0 | absorbed — the two bordered boxes stay flush, their borders touching. |
 | DescriptionInput | 64 (bordered) | 2.46 | 4 | border / text / text / border. |
-| CommitButton | 32 | 1.23 | 3 | fill row + centered label row + fill row, all three the full sidebar width, Pink (enabled) or Panel (disabled) — never a single thin row. |
+| CommitBox gap (description→button) | 8 | 0.31 | 1 blank | one blank Bg row separates the button from the description box — unlike the summary/description seam, this gap is NOT flush (owner's round-2 ruling, 2026-09-19). |
+| CommitButton | 32 | 1.23 | 1 | one filled, centered-label row, full sidebar width, Pink (enabled) or Panel (disabled). Board scale corrects an earlier pass that drew a 3-row fill/label/fill block. |
 | UndoStrip | 30 | 1.15 | 1 | |
 | Keybar | 28 | 1.08 | 1 | |
 | DiffHeader | 34 | 1.31 | 1 | |
 
 Net effect on `sidebarBlocks` (mission.go): the top block gains 1 row (the
-tabs-gap blank) and the docked block gains 3 (the commit-box top-pad blank,
-plus the button's 2 extra rows). `layout()`'s own filler arithmetic absorbs
-all of it unchanged — `sidebarFillerH` shrinks by the same amount and
+tabs-gap blank) and the docked block gains 2 (the commit-box top-pad blank,
+plus the new description→button gap blank; the button itself is back to its
+original 1-row footprint). `layout()`'s own filler arithmetic absorbs all
+of it unchanged — `sidebarFillerH` shrinks by the same amount and
 floors at 0 once the fixed chrome alone already meets or exceeds the pane.
 
 ## Ratified at the build's visual pass (2026-09-18)

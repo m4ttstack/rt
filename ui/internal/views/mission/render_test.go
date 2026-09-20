@@ -1094,6 +1094,7 @@ func commitButtonY(m *Mission) int {
 	off++    // the commit box's own top-padding blank band row
 	off += 3 // summary box
 	off += 4 // description box
+	off++    // the gap row between the description box and the button
 	return l.topH + l.sidebarTopH + l.sidebarFillerH + off
 }
 
@@ -1167,9 +1168,7 @@ func TestCommitButtonDocksToSidebarBottomWithShortList(t *testing.T) {
 	if l.sidebarFillerH == 0 {
 		t.Fatalf("setup: expected a nonzero filler gap for a 3-row list at height 30, got layout=%+v", l)
 	}
-	// The button's own middle row is where its label renders (the first and
-	// third rows are its Pink/Panel fill only).
-	wantY := commitButtonY(m) + 1
+	wantY := commitButtonY(m)
 
 	lines := strings.Split(ansi.Strip(m.View().Content), "\n")
 	if wantY >= len(lines) || !strings.Contains(lines[wantY], "Commit 3 files to main") {
@@ -1219,7 +1218,7 @@ func TestCommitButtonDocksToSidebarBottomWithZeroChanges(t *testing.T) {
 	if l.sidebarFillerH == 0 {
 		t.Fatalf("setup: expected a nonzero filler gap with zero changes, got layout=%+v", l)
 	}
-	wantY := commitButtonY(m) + 1
+	wantY := commitButtonY(m)
 
 	lines := strings.Split(ansi.Strip(m.View().Content), "\n")
 	if wantY >= len(lines) || !strings.Contains(lines[wantY], "Commit 0 files to main") {
@@ -1361,35 +1360,49 @@ func TestSidebarTopHasBlankBandAfterTabsBeforeFilter(t *testing.T) {
 	}
 }
 
-// TestRenderCommitButtonThreeRowsFillLabelFill pins item 3: the commit
-// button is 3 rows -- fill, centered label, fill -- all three the same
-// full-width Pink (enabled) or Panel (disabled) fill, never a single thin
-// row.
-func TestRenderCommitButtonThreeRowsFillLabelFill(t *testing.T) {
+// TestRenderCommitButtonOneRowAtBoardScale pins the board-scale ruling: the
+// commit button is a single filled, centered-label row -- board h=32px
+// against the 26px row unit quantizes to 1 row, not the 3 an earlier pass
+// drew -- Pink (enabled) or Panel (disabled), full width.
+func TestRenderCommitButtonOneRowAtBoardScale(t *testing.T) {
 	const width = 40
 	const label = "Commit 2 files to main"
 	enabled := renderCommitButton(width, label, true)
-	lines := strings.Split(enabled, "\n")
-	if len(lines) != 3 {
-		t.Fatalf("commit button should render exactly 3 rows, got %d:\n%s", len(lines), enabled)
+	if strings.Contains(enabled, "\n") {
+		t.Fatalf("commit button should render exactly 1 row: %q", enabled)
 	}
-	for i, wantLabel := range []bool{false, true, false} {
-		plain := ansi.Strip(lines[i])
-		if hasLabel := strings.Contains(plain, label); hasLabel != wantLabel {
-			t.Fatalf("row %d label presence = %v, want %v: %q", i, hasLabel, wantLabel, lines[i])
-		}
-		if !strings.Contains(lines[i], bgSGR(theme.Pink)) {
-			t.Fatalf("enabled row %d should wear the Pink fill: %q", i, lines[i])
-		}
-		if lipgloss.Width(plain) != width {
-			t.Fatalf("row %d should be full width %d, got %d: %q", i, width, lipgloss.Width(plain), lines[i])
-		}
+	plain := ansi.Strip(enabled)
+	if !strings.Contains(plain, label) {
+		t.Fatalf("the single row should carry the label: %q", enabled)
+	}
+	if !strings.Contains(enabled, bgSGR(theme.Pink)) {
+		t.Fatalf("enabled button should wear the Pink fill: %q", enabled)
+	}
+	if lipgloss.Width(plain) != width {
+		t.Fatalf("button should be full width %d, got %d: %q", width, lipgloss.Width(plain), enabled)
 	}
 	disabled := renderCommitButton(width, label, false)
-	for i, line := range strings.Split(disabled, "\n") {
-		if !strings.Contains(line, bgSGR(theme.Panel)) {
-			t.Fatalf("disabled row %d should wear the Panel fill: %q", i, line)
-		}
+	if !strings.Contains(disabled, bgSGR(theme.Panel)) {
+		t.Fatalf("disabled button should wear the Panel fill: %q", disabled)
+	}
+}
+
+// TestRenderCommitBoxHasGapBeforeButton pins the owner's round-2 ruling: one
+// blank Bg row separates the description box from the button (the board's
+// 8px gap), unlike the flush summary/description seam.
+func TestRenderCommitBoxHasGapBeforeButton(t *testing.T) {
+	out := ansi.Strip(renderCommitBox(sidebarWidth, "", "", false, "Commit 2 files to main", false))
+	lines := strings.Split(out, "\n")
+	// row0 = box top pad, row1-3 = summary box, row4-7 = description box,
+	// row8 = the new gap, row9 = the button.
+	if strings.TrimSpace(lines[8]) != "" {
+		t.Fatalf("row 8 should be the blank gap before the button: %q", lines[8])
+	}
+	if !strings.Contains(lines[9], "Commit 2 files to main") {
+		t.Fatalf("row 9 should be the button's own label row: %q", lines[9])
+	}
+	if len(lines) != 10 {
+		t.Fatalf("commit box should be exactly 10 rows (1 pad + 3 summary + 4 description + 1 gap + 1 button), got %d:\n%s", len(lines), out)
 	}
 }
 
@@ -1428,26 +1441,28 @@ func TestRenderCommitBoxAmendingBannerThenBlankThenSummaryBox(t *testing.T) {
 	}
 }
 
-// TestFrameCommitButtonThreeRowsFullWidthFillLabelCentered pins the same
+// TestFrameCommitButtonOneRowFullWidthFillLabelCentered pins the board-scale
 // ruling at the FULL FRAME level, located via commitButtonY's layout()
-// arithmetic rather than a hardcoded row: all three button rows carry the
-// enabled Pink fill, and the label renders on the middle row only.
-func TestFrameCommitButtonThreeRowsFullWidthFillLabelCentered(t *testing.T) {
+// arithmetic rather than a hardcoded row: the button's one row carries the
+// enabled Pink fill and the centered label, and the row right above it
+// (the gap) is blank.
+func TestFrameCommitButtonOneRowFullWidthFillLabelCentered(t *testing.T) {
 	m := newMouseTestMission()
 	m.model.Commit.CanCommit = true
 	m.summaryInput.SetValue("msg")
 
-	startY := commitButtonY(m)
+	buttonY := commitButtonY(m)
 	lines := strings.Split(m.View().Content, "\n")
-	for i := 0; i < 3; i++ {
-		row := lines[startY+i]
-		if !strings.Contains(row, bgSGR(theme.Pink)) {
-			t.Fatalf("button row %d should wear the enabled Pink fill: %q", i, row)
-		}
-		wantLabel := i == 1
-		if hasLabel := strings.Contains(ansi.Strip(row), "Commit 3 files to main"); hasLabel != wantLabel {
-			t.Fatalf("button row %d label presence = %v, want %v (only the middle row): %q", i, hasLabel, wantLabel, row)
-		}
+	row := lines[buttonY]
+	if !strings.Contains(row, bgSGR(theme.Pink)) {
+		t.Fatalf("button row should wear the enabled Pink fill: %q", row)
+	}
+	if !strings.Contains(ansi.Strip(row), "Commit 3 files to main") {
+		t.Fatalf("button row should carry the label: %q", row)
+	}
+	gapPlain := ansi.Strip(lines[buttonY-1])[:sidebarWidth]
+	if strings.TrimSpace(gapPlain) != "" {
+		t.Fatalf("row above the button (the gap) should be blank: %q", gapPlain)
 	}
 }
 

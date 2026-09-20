@@ -198,6 +198,11 @@ func renderCommitBox(width int, summaryView, descriptionView string, amending bo
 	lines = append(lines, blankRows(width, 1))
 	lines = append(lines, boxLine(width, summaryView))
 	lines = append(lines, boxBlock(width, []string{descriptionView, ""}))
+	// The board's own gap between the description box and the button (8px)
+	// reads as one blank band row -- unlike the summary/description seam,
+	// which stays flush (docs/design/mission/README.md's Terminal geometry
+	// table).
+	lines = append(lines, blankRows(width, 1))
 	lines = append(lines, renderCommitButton(width, buttonLabel, enabled))
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }
@@ -223,11 +228,10 @@ func boxBlock(width int, contentLines []string) string {
 // renderCommitButton is the full-width commit button: Pink with Bg-dark
 // (i.e. theme.Bg foreground) text at rest, Panel background with Dimmer
 // text once !canCommit -- the same rest/disabled pair InteractionStates.png
-// pins for it. The board's own CommitButton is 32px (1.2 cells) tall against
-// a 26px row unit; the terminal quantizes that to a fill row, a centered
-// label row, and a second fill row, all three the same full-width
-// Pink/Panel fill (docs/design/mission/README.md's Terminal geometry
-// table) -- never a single thin row.
+// pins for it. One filled, centered-label row at board scale (32px against
+// the 26px row unit quantizes to 1 row, not the 3 an earlier pass drew);
+// renderCommitBox supplies the blank gap row above it that separates it
+// from the description box.
 func renderCommitButton(width int, label string, canCommit bool) string {
 	style := lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Bold(true)
 	if canCommit {
@@ -235,8 +239,7 @@ func renderCommitButton(width int, label string, canCommit bool) string {
 	} else {
 		style = style.Background(theme.Panel).Foreground(theme.Dimmer)
 	}
-	fill := style.Render("")
-	return fill + "\n" + style.Render(label) + "\n" + fill
+	return style.Render(label)
 }
 
 // renderUndoStrip is the WarnBg strip a successful, still-undoable commit

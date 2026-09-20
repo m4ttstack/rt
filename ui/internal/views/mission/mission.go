@@ -740,10 +740,11 @@ func (m *Mission) sidebarHit(x, y, fillerH int) hit {
 		return hit{kind: hitCommitDescription}
 	}
 	row += 4
-	if y >= row && y < row+3 {
+	row++ // the gap row between the description box and the button: no click target
+	if y == row {
 		return hit{kind: hitCommitButton}
 	}
-	row += 3
+	row++
 	if lc := m.model.Commit.LastCommit; lc != nil && lc.Undoable && y == row {
 		return hit{kind: hitUndoChip}
 	}
