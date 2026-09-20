@@ -492,9 +492,9 @@ func modalFixtureModel() Model {
 			{ID: "chat", Label: "chat", Group: "recent", Badge: Badge{Clean: true}},
 		},
 		Branches: []BranchRow{
-			{Name: "rt-191-mission-tui", Current: true, Ahead: 3, Behind: 2, Group: "recent"},
-			{Name: "main", Ahead: 0, Behind: 5, Group: "other"},
-			{Name: "rt-190-picker-polish", GuardedBy: "checked out in worktree frodo", Group: "guarded"},
+			{Name: "rt-191-mission-tui", Current: true, Ahead: 3, Behind: 2, Group: "other"},
+			{Name: "main", Ahead: 0, Behind: 5, Group: "default branch", Default: true, When: "2 days ago"},
+			{Name: "rt-190-picker-polish", GuardedBy: "checked out in worktree frodo", Group: "guarded", When: "3 days ago"},
 		},
 		Worktrees: []WorktreeRow{
 			{Path: "/w/gandalf", Name: "gandalf", Branch: "rt-191-mission-tui", Current: true},
@@ -658,40 +658,42 @@ func TestModalGuardedBranchRowNameOnlyReasonMovedToHeader(t *testing.T) {
 	}
 }
 
-// TestModalGroupHeadersLabelEveryGroupInBranchAndRepoModals pins item 1: a
-// Dimmer header line names each group -- "recent" (present even though it is
-// the first group GroupContiguous orders), the fixed guarded-reason banner
-// (never a row's own specific GuardedBy text), and a repo's own Group value.
+// TestModalGroupHeadersLabelEveryGroupInBranchAndRepoModals pins item 1 (and
+// its item-4 taxonomy update): a Dimmer header line names each group --
+// "other" (present even though it is the first group GroupContiguous
+// orders, holding the current branch), "default branch", the fixed
+// guarded-reason banner (never a row's own specific GuardedBy text), and a
+// repo's own Group value.
 func TestModalGroupHeadersLabelEveryGroupInBranchAndRepoModals(t *testing.T) {
 	m := newTestMission()
 	m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
 	branchOut := m.View().Content
-	for _, want := range []string{"recent", "other", "guarded · checked out in another worktree"} {
+	for _, want := range []string{"other", "default branch", "guarded · checked out in another worktree"} {
 		if !strings.Contains(ansi.Strip(branchOut), want) {
 			t.Fatalf("branch modal missing group header %q:\n%s", want, branchOut)
 		}
 	}
-	// "recent" is the first group GroupContiguous orders (it holds the
+	// "other" is the first group GroupContiguous orders (it holds the
 	// current branch); pinning its own header line's color -- not just
 	// Dimmer's presence anywhere in the frame -- confirms the FIRST group
 	// gets a header too, not only later boundaries. The composited frame
 	// carries the sidebar's own content to the left of the modal on this
-	// same row, so the header is found by its "│ recent" border-plus-text
+	// same row, so the header is found by its "│ other" border-plus-text
 	// shape (modalGroupHeaderLine's own leading space, right after the
 	// box's left border), not by the whole line's trimmed text.
 	found := false
 	for _, line := range strings.Split(branchOut, "\n") {
 		plain := ansi.Strip(line)
-		if !strings.Contains(plain, "│ recent") {
+		if !strings.Contains(plain, "│ other") {
 			continue
 		}
 		found = true
 		if !strings.Contains(line, fgSGR(theme.Dimmer)) {
-			t.Fatalf("the recent group's own header should wear Dimmer: %q", line)
+			t.Fatalf("the other group's own header should wear Dimmer: %q", line)
 		}
 	}
 	if !found {
-		t.Fatalf("recent group header line not found:\n%s", branchOut)
+		t.Fatalf("other group header line not found:\n%s", branchOut)
 	}
 
 	m2 := newTestMission()
@@ -711,6 +713,55 @@ func TestModalWorktreeStaysFlatWithNoGroupHeaders(t *testing.T) {
 	out := ansi.Strip(m.View().Content)
 	if strings.Contains(out, "guarded · checked out") {
 		t.Fatalf("worktree modal must never show a group header:\n%s", out)
+	}
+}
+
+// TestBranchModalNonCurrentRowShowsRelativeDateInsteadOfPills pins item 4
+// (GitHub-Desktop parity): a non-current row's badge slot carries its own
+// relative date, Dimmer, rather than ahead/behind pills -- even though the
+// wire still carries Ahead/Behind on every row, only the current row's
+// badgeData is ever populated (newBranchModal), so a non-current row's pills
+// would render empty regardless; this pins that the date fills the slot
+// instead of leaving it blank.
+func TestBranchModalNonCurrentRowShowsRelativeDateInsteadOfPills(t *testing.T) {
+	m := newTestMission()
+	m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
+	out := ansi.Strip(m.View().Content)
+	line := lineContaining(t, out, "main")
+	if !strings.Contains(line, "2 days ago") {
+		t.Fatalf("default-branch row should show its relative date: %q", line)
+	}
+	if strings.Contains(line, "↓") || strings.Contains(line, "↑") {
+		t.Fatalf("non-current row must not show ahead/behind pills: %q", line)
+	}
+}
+
+// TestBranchModalCurrentRowKeepsPillsNotDate pins the other half: the
+// current row still shows ahead/behind pills (When is always "" for it, by
+// the driver's own contract), never a date in that slot.
+func TestBranchModalCurrentRowKeepsPillsNotDate(t *testing.T) {
+	m := newTestMission()
+	m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
+	out := ansi.Strip(m.View().Content)
+	line := lineContaining(t, out, "rt-191-mission-tui")
+	if !strings.Contains(line, "↓") || !strings.Contains(line, "↑") {
+		t.Fatalf("current row should keep its ahead/behind pills: %q", line)
+	}
+}
+
+// TestBranchModalGuardedRowKeepsLockEvenWithADate pins the priority order in
+// modalRowLine: guarded outranks When, so a guarded row with a relative date
+// on the wire still shows only the lock glyph in that slot.
+func TestBranchModalGuardedRowKeepsLockEvenWithADate(t *testing.T) {
+	m := newTestMission()
+	m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
+	out := m.View().Content
+	line := lineContaining(t, ansi.Strip(out), "rt-190-picker-polish")
+	if strings.Contains(line, "3 days ago") {
+		t.Fatalf("guarded row should show the lock glyph, not its date: %q", line)
+	}
+	if !strings.Contains(line, theme.GlyphLock) {
+		t.Fatalf("guarded row missing its lock glyph: %q", line)
 	}
 }
 

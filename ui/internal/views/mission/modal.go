@@ -30,6 +30,7 @@ type modalRow struct {
 	label      string // rendered primary text
 	meta       string // rendered secondary text (a guard reason, a branch name, "ready")
 	badgeData  Badge  // ahead/behind/dirty summary; rendered at PAINT time (modalRowLine), not here, since its background must match the row's own dynamic cursor/hover fill
+	when       string // branch modal only: a non-current row's relative date, right-aligned in the badge's own slot instead of ahead/behind pills
 	group      string
 	current    bool
 	selectable bool
@@ -119,22 +120,27 @@ func newRepoModal(m Model) *modalState {
 	}, rows, nil)
 }
 
-// newBranchModal lists every branch, grouped recent/other/guarded. A branch
-// is guarded exactly when GuardedBy is non-empty (the Group label is a
-// display hint the driver derives from the same fact, not the source of
-// truth for it). A guarded row's own GuardedBy detail never renders on the
-// row itself: the group header carries the reason instead (modalGroupHeaderText),
-// so the row shows only its name and, on the right, the lock (modalRowLine).
+// newBranchModal lists every branch, grouped default branch/recent/other/
+// guarded (docs/design/mission/README.md's ratified GitHub-Desktop-parity
+// sections, 2026-09-19; the driver computes the sections and dates,
+// lib/mission/model.ts's buildBranchRows). A branch is guarded exactly when
+// GuardedBy is non-empty (the Group label is a display hint the driver
+// derives from the same fact, not the source of truth for it). A guarded
+// row's own GuardedBy detail never renders on the row itself: the group
+// header carries the reason instead (modalGroupHeaderText), so the row
+// shows only its name and, on the right, the lock (modalRowLine). The
+// current row keeps its ahead/behind pills (badgeData); every other row
+// shows its own relative date (when) in that same slot instead.
 func newBranchModal(m Model) *modalState {
 	rows := make([]modalRow, len(m.Branches))
 	for i, b := range m.Branches {
 		guarded := b.GuardedBy != ""
 		var badgeData Badge
-		if !guarded {
+		if !guarded && b.Current {
 			badgeData = Badge{Ahead: b.Ahead, Behind: b.Behind}
 		}
 		rows[i] = modalRow{
-			text: b.Name, label: b.Name, badgeData: badgeData,
+			text: b.Name, label: b.Name, badgeData: badgeData, when: b.When,
 			group: b.Group, current: b.Current, selectable: !guarded, guarded: guarded, value: b.Name,
 		}
 	}
@@ -464,6 +470,9 @@ func modalWidth(ms *modalState, frameWidth int) int {
 		// badge's actual color depends on a row background this measuring
 		// pass has no cursor/hover state to pick.
 		badgeW := lipgloss.Width(renderBadge(lipgloss.NewStyle(), r.badgeData))
+		if r.when != "" {
+			badgeW = lipgloss.Width(r.when)
+		}
 		if r.guarded {
 			badgeW = lipgloss.Width(theme.GlyphLock)
 		}
@@ -547,6 +556,9 @@ func modalRowLine(r modalRow, width int, cursor, hover bool) string {
 		meta = bg.Foreground(theme.Dimmer).Render(" " + r.meta)
 	}
 	badge := renderBadge(bg, r.badgeData)
+	if r.when != "" {
+		badge = bg.Foreground(theme.Dimmer).Render(r.when)
+	}
 	if r.guarded {
 		badge = bg.Foreground(theme.Dimmer).Render(theme.GlyphLock)
 	}
