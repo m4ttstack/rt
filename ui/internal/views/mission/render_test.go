@@ -1231,6 +1231,76 @@ func TestCommitButtonDocksToSidebarBottomWithZeroChanges(t *testing.T) {
 	}
 }
 
+// ─── tab strip (Main.png/EmptyState.png: half-width tabs, full-width
+// underline) ratified 2026-09-19 ──────────────────────────────────────────
+
+// TestRenderTabsRowUnderlineHalfPinkHalfRule pins the underline row: Pink
+// under the active (Changes) half, theme.Rule under the inactive (History)
+// half, spanning the full width between them.
+func TestRenderTabsRowUnderlineHalfPinkHalfRule(t *testing.T) {
+	const width = 46
+	out := renderTabsRow(3, width)
+	lines := strings.Split(out, "\n")
+	if len(lines) != 2 {
+		t.Fatalf("tabs row should render exactly 2 rows, got %d:\n%s", len(lines), out)
+	}
+	underline := lines[1]
+	half := width / 2
+	pinkRun := strings.Repeat("─", half)
+	ruleRun := strings.Repeat("─", width-half)
+	// The rest-state Bg band (Change 1) combines into the same SGR run as
+	// each half's own foreground, so the color and the dash run are checked
+	// separately rather than as one adjoining "fg+m+run" string.
+	if !strings.Contains(underline, fgSGR(theme.Pink)) || !strings.Contains(ansi.Strip(underline), pinkRun) {
+		t.Fatalf("underline should run Pink for exactly the left half (%d cells): %q", half, underline)
+	}
+	if !strings.Contains(underline, fgSGR(theme.Rule)) || !strings.Contains(ansi.Strip(underline), ruleRun) {
+		t.Fatalf("underline should run Rule for exactly the right half (%d cells): %q", width-half, underline)
+	}
+	if strings.Index(underline, fgSGR(theme.Pink)) >= strings.Index(underline, fgSGR(theme.Rule)) {
+		t.Fatalf("Pink run should precede the Rule run (active tab first): %q", underline)
+	}
+	if lipgloss.Width(ansi.Strip(underline)) != width {
+		t.Fatalf("underline should span the full width %d, got %d", width, lipgloss.Width(ansi.Strip(underline)))
+	}
+}
+
+// TestRenderTabsRowLabelsCenteredInHalves pins the label half of the same
+// ruling: "Changes N" centers within the left half, "History" within the
+// right half.
+func TestRenderTabsRowLabelsCenteredInHalves(t *testing.T) {
+	const width = 46
+	out := renderTabsRow(3, width)
+	top := ansi.Strip(strings.Split(out, "\n")[0])
+	half := width / 2
+	left, right := top[:half], top[half:]
+	if !strings.Contains(left, "Changes 3") {
+		t.Fatalf("left half should contain the Changes label: %q", left)
+	}
+	leadPad := len(left) - len(strings.TrimLeft(left, " "))
+	trailPad := len(left) - len(strings.TrimRight(left, " "))
+	if leadPad == 0 || trailPad == 0 {
+		t.Fatalf("Changes label should be centered (padding on both sides) within its half: %q", left)
+	}
+	if !strings.Contains(right, "History") {
+		t.Fatalf("right half should contain the History label: %q", right)
+	}
+}
+
+// TestTabsHitZonesAreHalfWidth pins the click-zone half of the ruling: the
+// left half is inert (Changes is already active), the right half resolves
+// to History, with the boundary landing exactly at width/2.
+func TestTabsHitZonesAreHalfWidth(t *testing.T) {
+	const width = 46
+	half := width / 2
+	if got := tabsHit(width, half-1); got.kind != hitNone {
+		t.Fatalf("x=%d (last cell of the left half) should be inert, got %+v", half-1, got)
+	}
+	if got := tabsHit(width, half); got.kind != hitTabHistory {
+		t.Fatalf("x=%d (first cell of the right half) should hit History, got %+v", half, got)
+	}
+}
+
 // ─── vertical rhythm (docs/design/mission/README.md's Terminal geometry
 // table): quantization ruling ratified 2026-09-19 ────────────────────────
 

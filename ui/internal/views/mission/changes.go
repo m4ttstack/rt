@@ -20,18 +20,26 @@ import (
 // terminal is (topbar.go's own comment on the repo segment).
 const commitBoxInner = sidebarWidth - 4
 
-// renderTabsRow paints the two-tab header: Changes (bold, an underline bar
-// the width of "Changes N", and its count in PinkSoft) beside History
-// (Dimmer, with the "v2" meta the design boards use to mark it deferred).
+// renderTabsRow paints the two-tab header per Main.png/EmptyState.png: Changes
+// and History each occupy HALF the sidebar width with centered labels, and
+// the underline runs the full width -- Pink under the active tab's half,
+// Rule under the inactive half (the board's own bottom border). Changes is
+// always the active tab; History has no wire state to select it yet
+// (renderKeybar's own "History lands in v2" notice covers a click on it).
 func renderTabsRow(changedTotal, width int) string {
 	on := lipgloss.NewStyle().Background(theme.Bg)
-	changes := on.Foreground(theme.Text).Bold(true).Render("Changes")
-	count := on.Foreground(theme.PinkSoft).Render(fmt.Sprintf(" %d", changedTotal))
-	gap := on.Render("    ")
-	history := on.Foreground(theme.Dimmer).Render("History") + on.Foreground(theme.Faint).Render(" v2")
-	top := changes + count + gap + history
-	underline := on.Foreground(theme.Pink).Render(strings.Repeat("─", lipgloss.Width(changes+count)))
-	return on.Width(width).Render(top) + "\n" + on.Width(width).Render(underline)
+	half := width / 2
+	otherHalf := width - half
+
+	changesLabel := on.Foreground(theme.Text).Bold(true).Render("Changes") +
+		on.Foreground(theme.PinkSoft).Render(fmt.Sprintf(" %d", changedTotal))
+	historyLabel := on.Foreground(theme.Dimmer).Render("History") + on.Foreground(theme.Faint).Render(" v2")
+
+	top := on.Width(half).Align(lipgloss.Center).Render(changesLabel) +
+		on.Width(otherHalf).Align(lipgloss.Center).Render(historyLabel)
+	underline := on.Foreground(theme.Pink).Render(strings.Repeat("─", half)) +
+		on.Foreground(theme.Rule).Render(strings.Repeat("─", otherHalf))
+	return top + "\n" + underline
 }
 
 // renderFilterRow paints the "❯ filter" box: the typed filter text, or the

@@ -702,13 +702,12 @@ func TestMouseClickOutsideModalClosesIt(t *testing.T) {
 	s.Wait()
 }
 
-// TestMouseClickHistoryTabShowsNotice clicks past the "Changes 3" tab text
-// on the tabs row (absolute y=3, the first sidebar row after topH(3)): the
-// gap is 4 cells wide, so a click at column 14 (changesW=9 for "Changes 3")
-// lands past it, on History.
+// TestMouseClickHistoryTabShowsNotice clicks the tabs row's right half
+// (absolute y=3, the first sidebar row after topH(3)): Changes and History
+// each occupy half of sidebarWidth(46), so any x >= 23 resolves to History.
 func TestMouseClickHistoryTabShowsNotice(t *testing.T) {
 	s := s5open(t)
-	s.Type(sgrClick(0, 20, 3))
+	s.Type(sgrClick(0, 30, 3))
 	s.WaitForPaint("History lands in v2")
 	s.Send(`{"t":"close"}`)
 	s.Wait()

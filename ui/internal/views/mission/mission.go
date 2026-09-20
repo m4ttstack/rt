@@ -5,7 +5,6 @@ package mission
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 	"time"
 
@@ -698,7 +697,7 @@ func topbarHit(width, x int) zoneID {
 func (m *Mission) sidebarHit(x, y, fillerH int) hit {
 	row := 0
 	if y < row+2 {
-		return tabsHit(m.model.ChangedTotal, x)
+		return tabsHit(sidebarWidth, x)
 	}
 	row += 2
 	if y == row {
@@ -751,20 +750,15 @@ func (m *Mission) sidebarHit(x, y, fillerH int) hit {
 	return hit{}
 }
 
-// tabsHit mirrors renderTabsRow's own "Changes N" + gap + "History" layout
-// (changes.go) to tell which tab a click on either of its two lines landed
-// on; a click in the gap between them is inert.
-func tabsHit(changedTotal, x int) hit {
-	changesW := lipgloss.Width(fmt.Sprintf("Changes %d", changedTotal))
-	const gapW = 4 // renderTabsRow's own gap := "    "
-	switch {
-	case x < changesW:
+// tabsHit mirrors renderTabsRow's own half-width Changes/History split
+// (changes.go): a click anywhere in the left half is inert (Changes is
+// already the active tab), a click anywhere in the right half resolves to
+// History.
+func tabsHit(width, x int) hit {
+	if x < width/2 {
 		return hit{}
-	case x < changesW+gapW:
-		return hit{}
-	default:
-		return hit{kind: hitTabHistory}
 	}
+	return hit{kind: hitTabHistory}
 }
 
 // fileRowHit mirrors renderChangeRow's own checkbox column span
