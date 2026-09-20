@@ -1,7 +1,7 @@
 /**
- * rt mission: repos, changes, diff, and commit in one board. The command is the
- * gate and the wiring; the loop and state machine live in lib/mission/driver.ts
- * and the view paints in the bundled Go rt-ui helper.
+ * rt glitter: repos, changes, diff, and commit in one board. The command is
+ * the gate and the wiring; the loop and state machine live in
+ * lib/mission/driver.ts and the view paints in the bundled Go rt-ui helper.
  */
 import type { CommandContext } from "../lib/command-tree.ts";
 import { MissionDriver, type MissionDeps } from "../lib/mission/driver.ts";
@@ -14,9 +14,9 @@ import { daemonQuery, subscribeToDaemon } from "../lib/daemon-client.ts";
 import { checkBranchGuard } from "../lib/branch-guard.ts";
 import { commitStaged, amendStaged, stagePath, unstagePath } from "../lib/commit-ops.ts";
 
-export async function missionCommand(_args: string[], ctx: CommandContext): Promise<void> {
+export async function glitterCommand(_args: string[], ctx: CommandContext): Promise<void> {
   if (!interactive()) {
-    process.stderr.write("rt mission needs an interactive terminal (it drives a live board from the one you are in)\n");
+    process.stderr.write("rt glitter needs an interactive terminal (it drives a live board from the one you are in)\n");
     return exit(1);
   }
 
