@@ -60,12 +60,15 @@ const ctx = {
   draftResolved: new Map(),
   onDismissLane: () => {},
   onEditNote: () => {},
+  onStandDown: (mr2: BoardMR, on: boolean) =>
+    standDownCalls.push({ iid: mr2.iid, on }),
 } as unknown as RowContext;
 
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
 let asked: Array<{ iid: number; reviewer: string }>;
 let respondAsks: Array<{ iid: number; reviewer: string }>;
+let standDownCalls: Array<{ iid: number; on: boolean }>;
 
 const noop = () => {};
 
@@ -76,6 +79,7 @@ async function render(
     canNudge?: boolean;
     canAskRespond?: boolean;
     peers?: string[];
+    canStandDown?: boolean;
   } = {}
 ) {
   container = document.createElement('div');
@@ -97,6 +101,7 @@ async function render(
         canRespond={true}
         onDoctor={noop}
         canDoctor={false}
+        canStandDown={opts.canStandDown ?? false}
         onDraftState={noop}
         canDraftState={true}
         onMrAction={noop}
@@ -121,6 +126,7 @@ async function render(
 beforeEach(() => {
   asked = [];
   respondAsks = [];
+  standDownCalls = [];
 });
 afterEach(async () => {
   await React.act(async () => root.unmount());
@@ -213,4 +219,26 @@ test('a known enrollment list narrows the picker to enrolled members', async () 
   );
   expect(items.some(t => t?.includes('kim'))).toBe(true);
   expect(items.some(t => t?.includes('jo'))).toBe(false);
+});
+
+test('the stand-down item is hidden on someone else\'s MR (canStandDown false)', async () => {
+  await render(mrx(), ['pat'], { canStandDown: false });
+  const items = [...document.querySelectorAll('[role="menuitem"]')].map(
+    el => el.textContent
+  );
+  expect(items.some(t => t?.includes('auto-doctor'))).toBe(false);
+});
+
+test('offers "never diagnose this stack" and fires on: true', async () => {
+  await render(mrx(), ['pat'], { canStandDown: true });
+  const item = itemByText('auto-doctor: never diagnose this stack');
+  await React.act(async () => item.click());
+  expect(standDownCalls).toEqual([{ iid: 1418, on: true }]);
+});
+
+test('once stood down, the item flips to re-enable and fires on: false', async () => {
+  await render(mrx({ standDown: true }), ['pat'], { canStandDown: true });
+  const item = itemByText('re-enable auto-doctor');
+  await React.act(async () => item.click());
+  expect(standDownCalls).toEqual([{ iid: 1418, on: false }]);
 });

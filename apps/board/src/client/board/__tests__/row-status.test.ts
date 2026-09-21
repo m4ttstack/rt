@@ -825,6 +825,25 @@ describe('rowStatus: doctor lane', () => {
     ]);
   });
 
+  test('stood down outranks a stuck doctor and never expires like a finished run does', () => {
+    const [line] = candidateLines(
+      mr({
+        standDown: true,
+        doctor: { status: 'error', message: 'registry push flake' },
+      }),
+      NOW,
+      NONE,
+      ME
+    );
+    expect(line).toMatchObject({ tone: 'quiet', word: 'auto-doctor off' });
+    expect(line!.verbs).toEqual([]);
+  });
+
+  test('stood down with no doctor row at all still shows the mute', () => {
+    const [line] = candidateLines(mr({ standDown: true }), NOW, NONE, ME);
+    expect(line).toMatchObject({ tone: 'quiet', word: 'auto-doctor off' });
+  });
+
   test('a dismissed lane says nothing: the row falls through to its next line', () => {
     const [line] = candidateLines(
       mr({ doctor: { status: 'error', dismissedAt: 100 } }),

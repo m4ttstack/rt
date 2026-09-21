@@ -260,6 +260,10 @@ export interface RowContext {
   onClearOrphan: (agentId: string) => void;
   /** Stop showing a failed lane's line on the row; nothing is deleted. */
   onDismissLane: (mr: BoardMR, lane: 'review' | 'respond' | 'doctor') => void;
+  /** Row menu's "never diagnose this stack" toggle: mutes auto-doctor for
+      this MR and every descendant (server-enforced), and on -> true clears
+      whatever's currently on this row -- see POST /triage/stand-down. */
+  onStandDown: (mr: BoardMR, on: boolean) => void;
   /** The MR whose note is open for editing, by webUrl: one row at a time,
       and the row menu's item opens the same editor the note tool does. */
   noteEditing: string | null;

@@ -561,6 +561,30 @@ export function Board() {
     [addToast, load]
   );
 
+  // Row menu's "never diagnose this stack" toggle. Turning it on mutes
+  // auto-doctor for this MR and every descendant (server-enforced) and
+  // clears whatever's currently on this row; turning it off just clears the
+  // flag, it never re-launches anything.
+  const handleStandDown = useCallback(
+    (mr: BoardMR, on: boolean) => {
+      if (!mr.webUrl) return;
+      postAction('/triage/stand-down', {
+        mrUrl: mr.webUrl,
+        iid: mr.iid,
+        on,
+      }).then(result => {
+        if (!result.ok) {
+          addToast(
+            `could not ${on ? 'stand down' : 're-enable'} auto-doctor (${result.status})`
+          );
+          return;
+        }
+        load();
+      });
+    },
+    [addToast, load]
+  );
+
   // The row's own note (B10). One row's editor is open at a time; saving
   // writes through and reloads, so the band renders from the stored note
   // rather than from what was typed.
@@ -1012,6 +1036,7 @@ export function Board() {
     onToggleSelect: toggleSelect,
     onClearOrphan: handleClearOrphan,
     onDismissLane: handleDismissLane,
+    onStandDown: handleStandDown,
     noteEditing,
     onEditNote: setNoteEditing,
     onSaveNote: handleSaveNote,
@@ -1318,6 +1343,9 @@ export function Board() {
               rowMenu.mr.blockers?.hasConflicts
             )
           }
+          // Own MRs only, same gate as canDraftState/canNudge below --
+          // auto-doctor (fetchOwnMrs) never touches anyone else's MR.
+          canStandDown={rowMenu.mr.author.username === data.defaultMember}
           onDraftState={handleDraftState}
           // Your own MRs only, both directions. buildBoard already hides other
           // people's drafts, but their ready MRs are on the board, so this gate

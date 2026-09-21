@@ -84,6 +84,7 @@ function RowMenu({
   canRespond,
   onDoctor,
   canDoctor,
+  canStandDown,
   onDraftState,
   canDraftState,
   onMrAction,
@@ -114,6 +115,8 @@ function RowMenu({
   canRespond: boolean;
   onDoctor: (mr: BoardMR, note?: string, intent?: 'launch' | 'focus') => void;
   canDoctor: boolean;
+  /** Own MRs only -- auto-doctor never acts on anyone else's (fetchOwnMrs). */
+  canStandDown: boolean;
   onDraftState: (mr: BoardMR, draft: boolean) => void;
   canDraftState: boolean;
   onMrAction: (mr: BoardMR, action: MrAction) => void;
@@ -419,6 +422,22 @@ function RowMenu({
       />
     );
   }
+  // "never diagnose this stack": mutes auto-doctor for this MR and every
+  // descendant (server-enforced -- see triage/run.ts's isStoodDown). On ->
+  // true also clears whatever's currently on this row.
+  if (canStandDown)
+    agentItems.push(
+      <ContextMenu.Item
+        key="stand-down"
+        label={iconLabel(
+          <DismissGlyph />,
+          mrx.standDown
+            ? 're-enable auto-doctor'
+            : 'auto-doctor: never diagnose this stack'
+        )}
+        onClick={run(() => ctx.onStandDown(mr, !mrx.standDown))}
+      />
+    );
   // Ask a peer whose review left comments to look again. Only ever offered
   // for your own MR, and only while no ask of yours is still outstanding.
   for (const peer of peers)

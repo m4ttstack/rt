@@ -433,6 +433,12 @@ export function laneDismissed(
 const DOCTOR_DONE_TTL = 2 * 3600_000;
 
 function doctorLine(mr: BoardMRWithReview, now: number): Candidate | null {
+  // Stood down (row menu's "never diagnose this stack"): this outranks
+  // whatever the doctor's own status says and never expires the way a
+  // finished run does (DOCTOR_DONE_TTL), since the mute stays in force
+  // until the operator flips it back -- see triage/run.ts's isStoodDown
+  // and POST /triage/stand-down.
+  if (mr.standDown) return { tone: 'quiet', word: 'auto-doctor off', verbs: [] };
   const d = mr.doctor;
   if (!d || laneDismissed(d)) return null;
   switch (d.status) {
