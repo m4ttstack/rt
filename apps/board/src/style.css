@@ -2788,10 +2788,9 @@ body {
 .tui-triage-modal [data-part='scrollpane-body'] img {
   max-width: 100%;
 }
-/* The header's posted-to-slack filter glyph (Controls.tsx's SlackPostedMark);
-   rows carry their own `.tui-mark` marks instead. */
+/* The header's slack filter glyph (Controls.tsx's SlackPostedMark); rows
+   carry their own `.tui-mark` marks instead. */
 .tui-slack-posted {
-  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2801,23 +2800,6 @@ body {
 }
 .tui-slack-posted svg {
   display: block;
-}
-.tui-slack-posted-check {
-  position: absolute;
-  right: -4px;
-  bottom: -4px;
-  background: var(--fill-ok);
-  color: #1c2024;
-  font-size: 0.5625rem;
-  line-height: 1;
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  border: 1.5px solid var(--panel);
 }
 /* held-draft drawer: the verbatim note text plus the post/dismiss gate */
 .tui-draft-modal {

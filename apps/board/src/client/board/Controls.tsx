@@ -101,7 +101,7 @@ function Controls({
             aria-pressed={slackFilter.active}
             onClick={slackFilter.toggle}
           >
-            <SlackPostedMark mono badge={slackFilter.active} />{' '}
+            <SlackPostedMark mono />{' '}
             {slackFilter.active
               ? 'showing only posted in slack'
               : 'only posted in slack'}
@@ -158,7 +158,7 @@ function Controls({
           title={slackFilterLabel}
           onClick={slackFilter.toggle}
         >
-          <SlackPostedMark mono badge={slackFilter.active} />
+          <SlackPostedMark mono />
         </button>
       )}
       {group}
