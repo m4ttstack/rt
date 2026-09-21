@@ -15,12 +15,11 @@ import {
   DOT_COLOR,
   headTruncatePath,
   MUTED_XS,
-  MUTED_XS_DIM,
   STATUS_TEXT_COLOR,
   Tag,
 } from './presence-bits';
 import type { RosterBuddy } from './roster-types';
-import { HANDLE_PALETTE } from './speaker-hue';
+import { HANDLE_PALETTE, type SpeakerHue } from './speaker-hue';
 import { STATUS_WORD, statusDetail } from './statusDetail';
 
 export type AgentNameVariant = 'row' | 'inline' | 'name';
@@ -81,9 +80,14 @@ function HandleAvatar({
   );
 }
 
-/** Carries the per-speaker hue into `.hueChip`'s CSS as a custom property,
-    since the color itself is only known at render time. */
-type HueStyle = React.CSSProperties & { '--speaker-hue': string };
+/** Carries the per-speaker hue into `.hueChip`'s CSS as two custom
+    properties (text and fill are different role tokens now, so one
+    variable can no longer serve both `color` and the background wash),
+    since the colors themselves are only known at render time. */
+type HueStyle = React.CSSProperties & {
+  '--speaker-hue': string;
+  '--speaker-hue-fill': string;
+};
 
 export interface AgentNameProps {
   handle: string;
@@ -102,7 +106,7 @@ export interface AgentNameProps {
   withAvatar?: boolean;
   /** `inline` only: renders the handle as a chip in this hue (color and
       wash background). Unset keeps today's plain-name rendering. */
-  hue?: string;
+  hue?: SpeakerHue;
   /** `inline` only: the handle's type size and its sprite's, for a caller
       whose row is not the message header's. Unset keeps the header's own. */
   size?: AgentNameSize;
@@ -126,7 +130,7 @@ const LABEL = {
   fontWeight: 700,
   letterSpacing: '0.06em',
   textTransform: 'uppercase',
-  color: 'var(--tk-muted-text)',
+  color: 'var(--tk-text-4)',
 } as const;
 
 const RULE = { height: 1, background: 'var(--tk-border-soft)' } as const;
@@ -186,7 +190,7 @@ function TaskLine({
       truncate
       data-testid={`doing-${handle}`}
       style={{
-        ...(task.kind === 'path' ? MUTED_XS_DIM : MUTED_XS),
+        ...MUTED_XS,
         ...(metaFontSize ? { fontSize: metaFontSize } : {}),
         marginLeft: 'var(--mantine-spacing-sm)',
         minWidth: 0,
@@ -285,7 +289,7 @@ export function AgentCard({
             color:
               reachable && status !== 'offline'
                 ? STATUS_TEXT_COLOR[status]
-                : 'var(--tk-muted-text)',
+                : 'var(--tk-text-4)',
           }}
         >
           {reachable ? STATUS_WORD[buddy.status] : '—'}
@@ -461,7 +465,11 @@ export function AgentName({
           data-testid={hue ? 'speaker-chip' : undefined}
           style={
             hue
-              ? ({ flex: 'none', '--speaker-hue': hue } as HueStyle)
+              ? ({
+                  flex: 'none',
+                  '--speaker-hue': hue.text,
+                  '--speaker-hue-fill': hue.fill,
+                } as HueStyle)
               : { flex: 'none' }
           }
         >

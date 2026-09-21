@@ -2,19 +2,17 @@
   width: min(100% - 2rem, 96rem);
   margin-inline: auto;
   font-family: var(--font-sans);
-  color: var(--fg);
+  color: var(--text-1);
 }
-/* The page ground is --bg with the kit's graph-paper grid (board's own
+/* The page ground is --page with the kit's graph-paper grid (board's own
    canvas, replicated by hand rather than importing canvas.css -- that file
    also resets `* { box-sizing: border-box }`, which this app's drawer rows
    are deliberately written without, see .drawer-toggle-row below).
-   Page-level ink (headings, the subline) stays the canvas-tuned
-   --muted/--border, already AA on --bg. Each apps table sits on a raised
-   --card panel below -- see .apps-grid -- which is where the on-card ink
-   roles apply instead. */
+   Each apps table sits on a raised --card panel below -- see .apps-grid --
+   which is where the on-card ink roles apply. */
 body {
   margin: 0;
-  background: var(--bg);
+  background: var(--page);
   background-image:
     linear-gradient(var(--grid-line) 1px, transparent 1px),
     linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
@@ -41,7 +39,7 @@ body {
 /* Subline reads as one quiet caption: the health count carries its tone, the
    supporting counts trail after a gap rather than another dotted run. */
 .board-subline {
-  color: var(--muted);
+  color: var(--text-2);
   margin: var(--spacing-lg) 0 var(--spacing-rem150);
 }
 .subline-rest {
@@ -97,14 +95,14 @@ body {
   border: none;
   background: none;
   font: inherit;
-  color: var(--muted);
+  color: var(--text-2);
   cursor: pointer;
 }
 .tunnel-label {
   font-size: var(--font-size-sm);
 }
 .tunnel-badge:hover .tunnel-label {
-  color: var(--fg);
+  color: var(--text-1);
 }
 
 .unstyled {
@@ -112,17 +110,20 @@ body {
   text-decoration: none;
 }
 .muted {
-  color: var(--muted);
+  color: var(--text-4);
   text-decoration: none;
+}
+.modal-form .muted {
+  color: var(--text-2);
 }
 /* Bad-tone plain text -- for a value that reads as dim by default (the
    service cell's exit status) and only needs the bad hue, not a pill:
    Badge is reserved for the health column. */
 .t-bad {
-  color: var(--red);
+  color: var(--text-bad-vivid);
 }
 .t-ok {
-  color: var(--green);
+  color: var(--text-ok-vivid);
 }
 
 /* hstack is a block-level flex container, so a chip after the name would be
@@ -154,7 +155,7 @@ body {
 }
 .site-name a.unstyled:hover,
 .site-name a.unstyled:focus-visible {
-  color: var(--accent);
+  color: var(--text-accent-small);
 }
 /* Mantine light-variant ActionIcon look: accent-tinted wash, accent glyph,
    margin keeping it clearly apart from the site link it sits beside. */
@@ -166,16 +167,16 @@ body {
   height: 24px;
   margin-left: var(--spacing-sm);
   border-radius: var(--radius-sm);
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--text-accent-small);
+  background: color-mix(in srgb, var(--fill-accent) 12%, transparent);
   transition:
     color 0.12s ease,
     background 0.12s ease;
 }
 .public-link:hover,
 .public-link:focus-visible {
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  color: var(--text-accent-small);
+  background: color-mix(in srgb, var(--fill-accent) 20%, transparent);
 }
 
 /* td is nowrap for port numbers; a config line has to be free to wrap. */
@@ -243,7 +244,7 @@ body {
 .row-chevron {
   all: unset;
   cursor: pointer;
-  color: var(--muted);
+  color: var(--text-4);
   padding-inline: var(--spacing-xs);
 }
 
@@ -270,13 +271,13 @@ body {
   table-layout: fixed;
 }
 
-/* Each section's table is a raised panel on the canvas ground (--bg, set by
-   canvas.css), the same relationship board's own Panel wrapper gives its row
-   groups. Inks inside it (suffixes, pids, hairlines) take the kit's on-card
-   roles rather than the canvas-tuned --muted/--border those default to --
-   the tokens package pins the on-card roles at or above AA against --card
-   (packages/tokens invariants test), where the plain roles are tuned for
-   --bg and fall short on the lighter card surface. */
+/* Each section's table is a raised panel on the canvas ground (--page), the
+   same relationship board's own Panel wrapper gives its row groups. Inks
+   inside it (suffixes, pids, hairlines) take the kit's on-card roles rather
+   than the plain text and border roles kit components default to -- the
+   tokens package pins the on-card roles at or above AA against --card
+   (packages/tokens invariants test), where the plain roles are tuned for the
+   page ground and fall short on the lighter card surface. */
 .apps-grid {
   background: var(--card);
   border: 1px solid var(--border-on-card);
@@ -316,14 +317,14 @@ body {
   margin-left: var(--spacing-xs);
 }
 .railway-globe.railway-live {
-  color: var(--accent);
+  color: var(--text-accent-small);
 }
 .railway-globe.railway-deploying,
 .railway-globe.railway-verifying {
-  color: var(--amber);
+  color: var(--text-warn-small);
 }
 .railway-globe.railway-error {
-  color: var(--red);
+  color: var(--text-bad-small);
 }
 
 .row-selected {
@@ -348,13 +349,13 @@ body {
   align-items: center;
   gap: var(--spacing-xs);
   margin: 0;
-  color: var(--muted);
+  color: var(--text-4);
   font-size: var(--font-size-sm);
   font-variant-numeric: var(--font-numeric);
 }
 .drawer-status-link {
   margin-left: auto;
-  color: var(--accent);
+  color: var(--text-accent-small);
   text-decoration: none;
   white-space: nowrap;
 }
@@ -368,7 +369,7 @@ body {
   margin-top: var(--spacing-xs);
 }
 .drawer-accent-label {
-  color: var(--accent);
+  color: var(--text-accent-small);
 }
 
 /* The remote toggle row: same shell ListGroup.Toggle renders (label +
@@ -416,7 +417,7 @@ body {
   border-bottom: none;
 }
 .drawer-mode-check {
-  color: var(--accent);
+  color: var(--text-accent-small);
 }
 
 /* Access "who" allowlist rows: entry text + a remove affordance, the whole
@@ -443,22 +444,22 @@ body {
 }
 .drawer-mode-row:focus-visible,
 .drawer-entry-row:focus-visible {
-  outline: 1px solid var(--accent);
+  outline: 1px solid var(--fill-accent);
   outline-offset: 1px;
 }
 .drawer-entry-remove {
-  color: var(--red);
+  color: var(--text-bad-small);
   flex-shrink: 0;
 }
 
 /* Logs: a genuinely dark surface regardless of page scheme. The kit's
-   `light-dark()`-defined tokens (--bg/--fg/--border) collapse to one branch
-   once at `:root` -- a descendant's own `color-scheme` cannot re-resolve a
-   `var()` that has already been substituted upstream, so there is no token
-   chain that pins a leaf element dark in day scheme. `--terminal-bg`/
-   `--terminal-fg`/`--terminal-border` are the kit's scheme-invariant answer:
-   plain hex aliased off the night palette, not `light-dark()`, so they stay
-   dark no matter what scheme the page is in. */
+   `light-dark()`-defined tokens (--page/--text-1/--border) collapse to one
+   branch once at `:root` -- a descendant's own `color-scheme` cannot
+   re-resolve a `var()` that has already been substituted upstream, so there
+   is no token chain that pins a leaf element dark in day scheme.
+   `--terminal-bg`/`--terminal-fg`/`--terminal-border` are the kit's
+   scheme-invariant answer: plain hex aliased off the night palette, not
+   `light-dark()`, so they stay dark no matter what scheme the page is in. */
 .drawer-logbox {
   margin: 0;
   background: var(--terminal-bg);

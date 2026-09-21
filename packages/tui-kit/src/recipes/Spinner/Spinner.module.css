@@ -7,7 +7,7 @@
     height: var(--sb-spinner-size);
     flex-shrink: 0;
     border: 2px solid var(--border);
-    border-top-color: var(--accent);
+    border-top-color: var(--fill-accent);
     border-radius: var(--radius-round);
     vertical-align: middle;
   }

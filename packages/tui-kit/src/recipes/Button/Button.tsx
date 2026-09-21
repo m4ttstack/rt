@@ -35,7 +35,10 @@ const PINNED_CELLS: Record<string, { bg?: string; color: string; hover: string; 
   },
   "light|accent": {
     bg: "color-mix(in srgb, var(--accent) 14%, transparent)",
-    color: "var(--accent-text)",
+    // The tint is translucent, so its painted ground is the page: on the
+    // stretched light ramp the body token measures 4.40 there. The small
+    // token is what the resolver gives every other tinted cell.
+    color: "var(--text-accent-small)",
     hover: "color-mix(in srgb, var(--accent) 22%, transparent)",
     border: "transparent",
   },
@@ -74,19 +77,15 @@ export const Button = defineComponent<
   // are all set — see Chip.tsx. `vars` calls autoVars itself (rather than
   // omitting the key, which is what let the builder do that automatically —
   // define-component.tsx) so it can layer in ONE extra static var: the
-  // contrast-retuned `default`/`bad` text colour (Button.module.css's parity
-  // anchor). The mix is built here rather than as a literal in that CSS
-  // rule because the no-hardcoded-values gate flags a literal color-mix()
-  // percentage even inside var()'s own expression tree — same escape hatch
-  // Badge.tsx's --sb-badge-bg and Switch.tsx's --sb-switch-bg-* use.
+  // `default`/`bad` text colour (Button.module.css's parity anchor), the same
+  // hue text token the resolver's outline and subtle variants read.
   vars: (theme, props) => {
     const base = autoVars(theme, "Button", props as Record<string, unknown>, true);
     const pinned = PINNED_CELLS[`${props.variant}|${props.intent}`];
     return {
       root: {
         ...base.root,
-        // Keep in sync with LIGHT_VARIANT_TONE_WEIGHT.bad in intent-resolver.ts.
-        "--sb-button-bad-color": "color-mix(in srgb, var(--red) 80%, var(--fg))",
+        "--sb-button-bad-color": "var(--text-bad)",
         ...(pinned && {
           "--button-bg": pinned.bg ?? base.root?.["--button-bg"],
           "--button-color": pinned.color,

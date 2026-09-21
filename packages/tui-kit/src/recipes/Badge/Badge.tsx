@@ -45,11 +45,8 @@ export const Badge = defineComponent<
   vars: (_theme, props) => {
     const intent = (props as BadgeOwnProps).intent ?? "muted";
     const tone = BADGE_TONES[intent];
-    // Fill/text split (fills raw, text darkened): muted's wash and border
-    // stay on the raw --muted fill tone, but its text reads --text-muted so
-    // the label itself clears AA. The other three intents have no such
-    // split -- their fill tone already carries their text.
-    const textTone = intent === "muted" ? "var(--text-muted)" : tone;
+    // Wash and border stay on the raw fill tone; the label reads the -small text ramp.
+    const textTone = intent === "muted" ? "var(--text-muted)" : `var(--text-${intent}-small)`;
     return {
       root: {
         "--sb-badge-color": textTone,

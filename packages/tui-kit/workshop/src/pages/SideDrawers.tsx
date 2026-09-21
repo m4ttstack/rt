@@ -128,7 +128,7 @@ export function SideDrawers() {
       {open === "left" && (
         <SideDrawer side="left" ariaLabel="menu" onClose={() => setOpen(null)}>
           <div style={headRow}>
-            <span style={{ fontWeight: 700, color: "var(--accent)" }}>❯ menu</span>
+            <span style={{ fontWeight: 700, color: "var(--text-accent)" }}>❯ menu</span>
             <button type="button" onClick={() => setOpen(null)} aria-label="close menu">
               ✕
             </button>

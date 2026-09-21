@@ -1,11 +1,23 @@
 import '@mattstack/app-kit/styles.css';
+import '@mattstack/tui-kit/theme.css';
 
+import { useEffect } from 'react';
 import { MantineProvider } from '@mantine/core';
 import { ModalsProvider } from '@mantine/modals';
 import { Notifications } from '@mantine/notifications';
 import type { Preview } from '@storybook/react-vite';
 
 import { theme } from '@mattstack/app-kit/design-system';
+import { TuiKitProvider } from '@mattstack/tui-kit/provider';
+
+// tui-kit's tokens are light-dark() declarations flipped by `.dark` on the
+// root; Mantine reads forceColorScheme. One toolbar drives both.
+function SchemeSync({ scheme }: { scheme: 'light' | 'dark' }) {
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', scheme === 'dark');
+  }, [scheme]);
+  return null;
+}
 
 const preview: Preview = {
   globalTypes: {
@@ -37,17 +49,20 @@ const preview: Preview = {
   },
 
   decorators: [
-    (Story, context) => (
-      <MantineProvider
-        theme={theme}
-        forceColorScheme={context.globals.scheme === 'dark' ? 'dark' : 'light'}
-      >
-        <ModalsProvider>
-          <Story />
-          <Notifications />
-        </ModalsProvider>
-      </MantineProvider>
-    ),
+    (Story, context) => {
+      const scheme = context.globals.scheme === 'dark' ? 'dark' : 'light';
+      return (
+        <MantineProvider theme={theme} forceColorScheme={scheme}>
+          <TuiKitProvider>
+            <SchemeSync scheme={scheme} />
+            <ModalsProvider>
+              <Story />
+              <Notifications />
+            </ModalsProvider>
+          </TuiKitProvider>
+        </MantineProvider>
+      );
+    },
   ],
 };
 

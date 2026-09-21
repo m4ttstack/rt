@@ -13,7 +13,10 @@ import { Icon } from '@mattstack/app-kit/icons';
 import { DOT_COLOR, headTruncatePath } from '../presence-bits';
 import type { AgentStatus, ChatPane } from './types';
 
-const MUTED = 'var(--tk-muted-text)';
+/** Both mounts (`PanePickerModal`, `NewRoomModal`) sit outside
+    `ThemeOverrideWrapper theme={chatFontTheme}`, so every `size="xs"`/`"sm"`
+    here is small band under the base tokyo theme. */
+const MUTED = 'var(--tk-text-4)';
 const BORDER = 'var(--tk-border)';
 const BORDER_SOFT = 'var(--tk-border-soft)';
 const ACCENT_TEXT = 'var(--mantine-color-accent-text)';
@@ -151,7 +154,7 @@ export function PaneRow({
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
-            border: `1px solid ${disabled ? MUTED : selected ? ACCENT_DEEP : BORDER}`,
+            border: `1px solid ${disabled ? BORDER_SOFT : selected ? ACCENT_DEEP : BORDER}`,
             background: disabled
               ? 'var(--ui-bg-4)'
               : selected

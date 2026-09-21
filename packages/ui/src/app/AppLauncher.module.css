@@ -30,25 +30,25 @@
   padding: 11px 6px;
   border-radius: 10px;
   text-decoration: none;
-  color: var(--tk-fg);
+  color: var(--tk-text-1);
   transition:
     background-color 120ms ease,
     box-shadow 120ms ease;
 }
 
 .tile:hover {
-  background: color-mix(in srgb, var(--tk-accent) 12%, transparent);
+  background: color-mix(in srgb, var(--tk-fill-accent-hover) 12%, transparent);
 }
 
 .tile:active {
-  background: color-mix(in srgb, var(--tk-accent) 20%, transparent);
+  background: color-mix(in srgb, var(--tk-fill-accent) 20%, transparent);
 }
 
 /* Current app: a persistent highlight + inset ring. The "you are here"
  * treatment lives on the tile background, never in flow, so no tile's label
  * shifts relative to its neighbours. */
 .tile[data-current='true'] {
-  background: color-mix(in srgb, var(--tk-accent) 15%, transparent);
+  background: color-mix(in srgb, var(--tk-fill-accent) 15%, transparent);
   box-shadow: inset 0 0 0 1px
     color-mix(in srgb, var(--tk-accent) 38%, transparent);
 }
@@ -68,7 +68,7 @@
   width: 17px;
   height: 17px;
   border-radius: 50%;
-  background: var(--tk-accent);
+  background: var(--tk-fill-accent);
   color: #fff;
   display: flex;
   align-items: center;
@@ -82,7 +82,10 @@
   text-align: center;
 }
 
+/* The small-band accent token is step 12, which stops reading as accent
+ * next to the other tile labels; the vivid step-11 token keeps the hue.
+ * The tokyo vars are redefined per scheme, so one rule covers both. */
 .label[data-current='true'] {
-  color: var(--tk-accent-text);
+  color: var(--tk-text-accent-vivid);
   font-weight: 600;
 }

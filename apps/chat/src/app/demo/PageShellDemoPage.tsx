@@ -125,7 +125,7 @@ function CategoryNav({
 
   return (
     <Stack gap={2} p="md" component="nav" aria-label="Gear categories">
-      <Text size="xs" fw={700} c="dimmed" tt="uppercase" px="sm" pb={4}>
+      <Text size="sm" fw={700} c="dimmed" tt="uppercase" px="sm" pb={4}>
         Categories
       </Text>
       {entries.map(({ label, value }) => (

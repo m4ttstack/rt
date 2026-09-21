@@ -294,7 +294,7 @@ export function Rebind({
       {confirmed && (
         <Stack gap="md" data-testid="rebind-confirm">
           <BlastRadius
-            dotColor="var(--mantine-color-warn-6, orange)"
+            dotColor="var(--tk-fill-warn, orange)"
             headline={`Unbinding ${currentBinding ?? 'nothing'}`}
             note={`It stays bound everywhere below. This change touches only ${verb}'s slot.`}
             sites={outgoingSites}
@@ -303,7 +303,7 @@ export function Rebind({
 
           {target && (
             <BlastRadius
-              dotColor="var(--mantine-color-ok-6, green)"
+              dotColor="var(--tk-fill-ok, green)"
               headline={`Binding ${target}`}
               sites={incomingSites}
               emptyText={`Nothing else binds this fill yet — ${verb} would be its first site.`}

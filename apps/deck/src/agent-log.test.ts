@@ -31,4 +31,7 @@ throw new Error('CRASH-MARKER');
   expect(log).toContain('OUT-MARKER');
   expect(log).toContain('ERR-MARKER');
   expect(log).toContain('CRASH-MARKER');
-});
+  // 15s, not the 5s default: the probe spawns a cold `bun` child, which
+  // takes well over 5s when the rest of the suite is saturating the machine
+  // (solo it runs in under a second).
+}, 15000);

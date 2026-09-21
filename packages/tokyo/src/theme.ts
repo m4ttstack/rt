@@ -16,17 +16,16 @@ import { ramp } from './ramps';
  * entries have to be registered as colors in their own right -- `virtualColor`
  * takes color NAMES, not tuples, and resolves them out of this same map.
  *
- * `primaryShade` is not free: it is the index the ramps were anchored on, so
- * `filled`/`outline`/`text` land on tui-kit's canonical hex exactly. Moving
- * either number without regenerating `ramps.ts` silently re-points every
- * primary surface at a shade tui-kit never specified.
+ * `primaryShade` is where the generated picks put Radix step 9 (index 6 in
+ * Day, index 3 in Night); moving either number without regenerating
+ * `ramps.ts` re-points every primary surface.
  */
 const virtual = (name: string, hue: string) =>
   virtualColor({ name, light: `${hue}Day`, dark: `${hue}Night` });
 
 export const tokyoTheme = /* @__PURE__ */ createTheme({
   primaryColor: 'accent',
-  primaryShade: { light: 6, dark: 4 },
+  primaryShade: { light: 6, dark: 3 },
   colors: {
     accentDay: ramp('accentDay'),
     accentNight: ramp('accentNight'),
@@ -47,6 +46,10 @@ export const tokyoTheme = /* @__PURE__ */ createTheme({
     bad: virtual('bad', 'bad'),
     purple: virtual('purple', 'purple'),
     cyan: virtual('cyan', 'cyan'),
+    // Mantine reads `gray` only in light and `dark` only in dark, so neither
+    // needs a virtual pair.
+    gray: ramp('grayDay'),
+    dark: ramp('darkNight'),
     // Mantine built-ins re-pointed, so stray stock-colour usage inside the
     // kit's own components still lands in palette.
     blue: virtual('blue', 'accent'),

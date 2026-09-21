@@ -83,9 +83,10 @@ function Tile({ app }: { app: DiscoveryApp }) {
         textDecoration: 'none',
         ...(current
           ? {
-              background: 'color-mix(in srgb, var(--accent) 15%, transparent)',
+              background:
+                'color-mix(in srgb, var(--fill-accent) 15%, transparent)',
               boxShadow:
-                'inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent)',
+                'inset 0 0 0 1px color-mix(in srgb, var(--fill-accent) 40%, transparent)',
             }
           : {}),
       }}
@@ -128,7 +129,7 @@ function Tile({ app }: { app: DiscoveryApp }) {
               width: 16,
               height: 16,
               borderRadius: '50%',
-              background: 'var(--accent)',
+              background: 'var(--fill-accent)',
               border: '2px solid var(--panel)',
               display: 'flex',
               alignItems: 'center',
@@ -153,7 +154,7 @@ function Tile({ app }: { app: DiscoveryApp }) {
       <span
         style={{
           fontSize: '0.72rem',
-          color: current ? 'var(--accent)' : 'var(--fg)',
+          color: current ? 'var(--text-accent-small)' : 'var(--text-1)',
           fontWeight: current ? 600 : 400,
         }}
       >
@@ -222,7 +223,7 @@ export function AppLauncher() {
           justifyContent: 'center',
           cursor: 'pointer',
           background: open
-            ? 'color-mix(in srgb, var(--accent) 12%, transparent)'
+            ? 'color-mix(in srgb, var(--fill-accent) 12%, transparent)'
             : 'transparent',
         }}
       >
@@ -264,7 +265,7 @@ export function AppLauncher() {
               fontSize: '0.6rem',
               letterSpacing: '0.14em',
               textTransform: 'uppercase',
-              color: 'var(--muted)',
+              color: 'var(--text-4)',
               padding: '1px 4px 9px',
             }}
           >

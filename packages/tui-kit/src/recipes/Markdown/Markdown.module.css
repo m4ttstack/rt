@@ -14,7 +14,7 @@
     font-family: var(--font-sans);
     font-size: var(--font-size-rem95);
     line-height: 1.6;
-    color: var(--fg);
+    color: var(--text-1);
     overflow-wrap: anywhere;
   }
 
@@ -22,7 +22,7 @@
   .root h2,
   .root h3,
   .root h4 {
-    font-weight: 600;
+    font-weight: 700;
     line-height: 1.25;
     margin: var(--sb-markdown-heading-margin-top) 0 var(--sb-markdown-heading-margin-bottom);
   }
@@ -69,7 +69,7 @@
   }
 
   .root a {
-    color: var(--accent);
+    color: var(--text-accent);
   }
 
   .root code {
@@ -97,7 +97,7 @@
   .root blockquote {
     margin: var(--sb-markdown-blockquote-margin) 0;
     padding: var(--sb-markdown-blockquote-pad-block) var(--sb-markdown-blockquote-pad-inline);
-    color: var(--muted);
+    color: var(--text-2);
     border-left: var(--sb-markdown-blockquote-border-w) solid var(--border);
   }
 

@@ -205,7 +205,12 @@ export function GateQuestionnaire({
             <Questionnaire.Error
               render={(props, state) =>
                 state.invalid ? (
-                  <Text {...props} c="bad" fz={12} data-testid="gate-error" />
+                  <Text
+                    {...props}
+                    fz={12}
+                    data-testid="gate-error"
+                    style={{ color: 'var(--tk-text-bad-small)' }}
+                  />
                 ) : null
               }
             />

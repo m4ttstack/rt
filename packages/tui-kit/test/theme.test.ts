@@ -14,6 +14,7 @@ import {
   defineGenericComponent,
   definePolymorphicComponent,
 } from "../src/builders.ts";
+import { TOKENS } from "@mattstack/tokens";
 import { tuiTheme } from "../src/theme.ts";
 import { tuiIntentResolver } from "../src/intent-resolver.ts";
 
@@ -180,61 +181,10 @@ test("the census tables are the shape this suite expects", () => {
   }
 });
 
-// Font rows are excluded from the census-parity sweep below: both font slots
-// are a deliberate, one-directional departure from the census (the kit leads
-// its consumers on font, not the reverse). See the "fonts" block further down
-// for their own coverage.
-//
-// `--bg`/`--panel`/`--card` are excluded from the LIGHT sweep for the same
-// reason: the split-chrome ruling retuned the light surface ramp away from
-// mr-board's census snapshot. Dark is untouched by the ruling, so the DARK
-// sweep below still holds these three to census parity. See the "surface
-// ramp" block further down for their own coverage.
-const SURFACE_RAMP_RULING = new Set(["--bg", "--panel", "--card"]);
-// `--fg`/`--muted` are excluded from BOTH sweeps: the value-conformance
-// ruling (SORI-36) retunes `fg` to #222 in light and repoints the
-// `muted` TEXT role onto the AA-compliant mutedText value, so neither still
-// carries its census literal through `resolve()`. See the "text conformance"
-// block further down for their own coverage.
-const TEXT_CONFORMANCE_RULING = new Set(["--fg", "--muted"]);
-// `--panel`/`--card` are excluded from the DARK sweep: the dark-surface
-// retune darkened the dark ramp so cards read as surfaces on the page
-// rather than glowing above it. Light is untouched. See the "dark surface
-// retune" block further down for their own coverage.
-const DARK_SURFACE_RETUNE = new Set(["--panel", "--card"]);
-const LIGHT_COLORS = [...LIGHT].filter(
-  ([name]) =>
-    SLOT[name]!.kind === "color" &&
-    !SURFACE_RAMP_RULING.has(name) &&
-    !TEXT_CONFORMANCE_RULING.has(name),
-);
-const DARK_COLORS = [...DARK].filter(
-  ([name]) =>
-    !TEXT_CONFORMANCE_RULING.has(name) && !DARK_SURFACE_RETUNE.has(name),
-);
-
-test.each(LIGHT_COLORS)(
-  "light %s carries the census value verbatim, in the theme and through the generated CSS",
-  (name: string, value: string) => {
-    const slot = SLOT[name]! as { kind: "color"; family: string; shade: string };
-    const themeValue = tuiTheme.tokens.colors[slot.family]![slot.shade];
-    expect(themeValue).toBe(value);
-    // …and the board's short name still reaches that exact literal after
-    // codegen, through the alias → semantic → token → light-dark() chain.
-    expect(resolve(name, "light")).toBe(value);
-  },
-);
-
-test.each(DARK_COLORS)(
-  "dark %s carries the census value verbatim, in the theme and through the generated CSS",
-  (name: string, value: string) => {
-    const slot = SLOT[name]!;
-    if (slot.kind !== "color") throw new Error(`dark ${name} should be a colour`);
-    expect(tuiTheme.dark!.colors![slot.family]![slot.shade]).toBe(value);
-    expect(resolve(name, "dark")).toBe(value);
-  },
-);
-
+// The palette moved wholesale to Radix Colors (packages/tokens/src/radix.ts),
+// so no colour still carries its mr-board census literal; both colour sweeps
+// are empty and the "ramps" block further down covers every colour against
+// the tokens package instead. Fonts keep their own block below.
 test("light and dark differ everywhere the census says they differ", () => {
   // Without this, a theme that lost its whole `dark` block would still satisfy
   // the two tables above if resolution silently fell back to the light value.
@@ -244,8 +194,7 @@ test("light and dark differ everywhere the census says they differ", () => {
 });
 
 // ── fonts ───────────────────────────────────────────────────────────────
-// A deliberate departure from census parity (see the LIGHT_COLORS filter
-// above): `mono` ships vendored JetBrains Mono; `sans` carries UI/body text in
+// A deliberate departure from census parity: `mono` ships vendored JetBrains Mono; `sans` carries UI/body text in
 // the system sans stack (an all-monospace body was fatiguing for long prose).
 
 const JETBRAINS_STACK = '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
@@ -274,80 +223,67 @@ test("--font-numeric aliases to tabular-nums", () => {
 });
 
 // ── surface ramp ────────────────────────────────────────────────────────
-// A departure from census parity (see the LIGHT_COLORS filter above): the
-// split-chrome ruling retuned the light bg/panel/card ramp to conform to
-// app-kit's, and added `chrome` as a wholly new surface slot the census
-// (mr-board's stylesheet at generation time) never had.
+// Every surface is a slate step from packages/tokens (light's card is the
+// one pure-white literal that package allows). `chrome` is a surface slot
+// the census (mr-board's stylesheet at generation time) never had.
 
-test("the light surface ramp carries the split-chrome ruling's values, ordered bg < panel < card", () => {
-  expect(tuiTheme.tokens.colors.surface!.bg).toBe("#f7f8fa");
-  expect(tuiTheme.tokens.colors.surface!.panel).toBe("#fbfbfc");
-  expect(tuiTheme.tokens.colors.surface!.card).toBe("#ffffff");
-  expect(resolve("--bg", "light")).toBe("#f7f8fa");
-  expect(resolve("--panel", "light")).toBe("#fbfbfc");
-  expect(resolve("--card", "light")).toBe("#ffffff");
+test("the surface roles resolve to the tokens package's values in both schemes", () => {
+  for (const scheme of ["light", "dark"] as const) {
+    const colors = scheme === "light" ? tuiTheme.tokens.colors : tuiTheme.dark!.colors!;
+    expect(colors.surface!.bg).toBe(TOKENS[scheme].surface.bg);
+    expect(colors.surface!.panel).toBe(TOKENS[scheme].surface.panel);
+    expect(colors.surface!.chrome).toBe(TOKENS[scheme].surface.chrome);
+    expect(resolve("--bg", scheme)).toBe(TOKENS[scheme].surface.bg);
+    expect(resolve("--panel", scheme)).toBe(TOKENS[scheme].surface.panel);
+    expect(resolve("--chrome", scheme)).toBe(TOKENS[scheme].surface.chrome);
+  }
 });
 
-test("chrome carries the ruling's value in both schemes", () => {
-  expect(tuiTheme.tokens.colors.surface!.chrome).toBe("#f3f4f7");
-  expect(tuiTheme.dark!.colors!.surface!.chrome).toBe("#1a1c28");
-  expect(resolve("--chrome", "light")).toBe("#f3f4f7");
-  expect(resolve("--chrome", "dark")).toBe("#1a1c28");
-});
-
-// ── dark surface retune ──────────────────────────────────────────────────
-// A departure from census parity (see the DARK_SURFACE_RETUNE filter
-// above). The census ramp lifted dark panel/card well above the page
-// (#232a47/#292f4d against a #16161e bg), which read as glowing slabs
-// rather than surfaces. These values keep the census ordering
-// bg < inset/overlay < panel < card at a tighter range; the ordering
-// itself is enforced by the tokens package's own luminance invariants.
-
-test("the dark surface ramp carries the retune's values, ordered bg < panel < card", () => {
-  expect(tuiTheme.dark!.colors!.surface!.bg).toBe("#16161e");
-  expect(tuiTheme.dark!.colors!.surface!.panel).toBe("#1a1c28");
-  expect(tuiTheme.dark!.colors!.surface!.card).toBe("#1e2030");
-  expect(resolve("--bg", "dark")).toBe("#16161e");
-  expect(resolve("--panel", "dark")).toBe("#1a1c28");
-  expect(resolve("--card", "dark")).toBe("#1e2030");
+test("the surface ramps carry the Radix steps, ordered page < panel < card", () => {
+  expect(tuiTheme.dark!.colors!.surface!.bg).toBe(TOKENS.dark.surface.bg);
+  expect(resolve("--bg", "dark")).toBe("#111113");
+  expect(resolve("--panel", "dark")).toBe("#18191b");
+  expect(resolve("--card", "dark")).toBe("#212225");
+  expect(resolve("--bg", "light")).toBe(TOKENS.light.surface.bg);
+  expect(resolve("--panel", "light")).toBe(TOKENS.light.surface.panel);
+  expect(resolve("--card", "light")).toBe(TOKENS.light.surface.card);
 });
 
 // ── text conformance ─────────────────────────────────────────────────────
-// A departure from census parity (see the TEXT_CONFORMANCE_RULING filter
-// above): SORI-36 retunes `fg` to #222 in light and adds `mutedText` as the
-// AA-compliant TEXT role. The fill/text-split ruling keeps the public
-// `--muted` alias on the raw census hex (fills, dots, washes, the Switch
-// thumb, Badge's muted wash/border); only the explicit `--muted-text` alias
-// carries the AA-compliant value, for text-role `color:` declarations.
+// `fg` is slate 12 and `mutedText` slate 11 in both schemes. The fill/text
+// split keeps the public `--muted` alias on the raw slate 9 (fills, dots,
+// washes, the Switch thumb, Badge's muted wash/border); only the explicit
+// `--muted-text` alias carries the AA-compliant value, for text-role
+// `color:` declarations.
 
-test("fg carries the value-conformance ruling's #222 in light, unchanged in dark", () => {
-  expect(tuiTheme.tokens.colors.gray!.fg).toBe("#222");
-  expect(tuiTheme.dark!.colors!.gray!.fg).toBe("#e3e7f6");
-  expect(resolve("--fg", "light")).toBe("#222");
-  expect(resolve("--fg", "dark")).toBe("#e3e7f6");
+test("fg carries slate 12 in both schemes", () => {
+  expect(tuiTheme.tokens.colors.gray!.fg).toBe("#1c2024");
+  expect(tuiTheme.dark!.colors!.gray!.fg).toBe("#edeef0");
+  expect(resolve("--fg", "light")).toBe("#1c2024");
+  expect(resolve("--fg", "dark")).toBe("#edeef0");
 });
 
-test("muted FILL (--muted) stays the raw census hex; muted TEXT (--muted-text) reads the AA-compliant mutedText value", () => {
-  expect(tuiTheme.tokens.colors.gray!.mutedText).toBe("#565d80");
-  expect(tuiTheme.dark!.colors!.gray!.mutedText).toBe("#969ec2");
-  expect(resolve("--muted-text", "light")).toBe("#565d80");
-  expect(resolve("--muted-text", "dark")).toBe("#969ec2");
-  expect(tuiTheme.tokens.colors.gray!.muted).toBe("#8990b3");
-  expect(tuiTheme.dark!.colors!.gray!.muted).toBe("#7e86ad");
-  expect(resolve("--muted", "light")).toBe("#8990b3");
-  expect(resolve("--muted", "dark")).toBe("#7e86ad");
+test("muted FILL (--muted) stays the raw slate 9; muted TEXT (--muted-text) reads the AA-compliant mutedText value", () => {
+  expect(tuiTheme.tokens.colors.gray!.mutedText).toBe("#60646c");
+  expect(tuiTheme.dark!.colors!.gray!.mutedText).toBe("#b0b4ba");
+  expect(resolve("--muted-text", "light")).toBe("#60646c");
+  expect(resolve("--muted-text", "dark")).toBe("#b0b4ba");
+  expect(tuiTheme.tokens.colors.gray!.muted).toBe("#8b8d98");
+  expect(tuiTheme.dark!.colors!.gray!.muted).toBe("#696e77");
+  expect(resolve("--muted", "light")).toBe("#8b8d98");
+  expect(resolve("--muted", "dark")).toBe("#696e77");
 });
 
 test("accentText and badText resolve to their AA-compliant literals in both schemes", () => {
-  expect(tuiTheme.tokens.colors.gray!.accentText).toBe("#3a3fe8");
-  expect(tuiTheme.dark!.colors!.gray!.accentText).toBe("#7aa2f7");
-  expect(resolve("--accent-text", "light")).toBe("#3a3fe8");
-  expect(resolve("--accent-text", "dark")).toBe("#7aa2f7");
+  expect(tuiTheme.tokens.colors.gray!.accentText).toBe("#3a5bc7");
+  expect(tuiTheme.dark!.colors!.gray!.accentText).toBe("#9eb1ff");
+  expect(resolve("--accent-text", "light")).toBe("#3a5bc7");
+  expect(resolve("--accent-text", "dark")).toBe("#9eb1ff");
 
-  expect(tuiTheme.tokens.colors.gray!.redText).toBe("#c8214f");
-  expect(tuiTheme.dark!.colors!.gray!.redText).toBe("#f7768e");
-  expect(resolve("--red-text", "light")).toBe("#c8214f");
-  expect(resolve("--red-text", "dark")).toBe("#f7768e");
+  expect(tuiTheme.tokens.colors.gray!.redText).toBe(TOKENS.light.text.redText);
+  expect(tuiTheme.dark!.colors!.gray!.redText).toBe("#ff92ad");
+  expect(resolve("--red-text", "light")).toBe(TOKENS.light.text.redText);
+  expect(resolve("--red-text", "dark")).toBe("#ff92ad");
 });
 
 // Bun's CSS bundler inlines a `url()`-referenced asset under this file's
@@ -371,9 +307,9 @@ test("generated css exposes the alias contract with verbatim values reachable", 
   for (const alias of ["--bg:", "--panel:", "--card:", "--chrome:", "--fg:", "--muted:", "--muted-text:", "--accent-text:", "--red-text:", "--border:", "--border-soft:", "--accent:", "--green:", "--red:", "--amber:", "--purple:", "--cyan:", "--grid-line:", "--dot-ok:", "--dot-warn:", "--dot-bad:", "--font-mono:", "--font-sans:", "--font-numeric:"]) {
     expect(css).toContain(alias);
   }
-  expect(css).toContain("#4658ff"); // light accent, verbatim
-  expect(css).toContain("#7aa2f7"); // dark accent, verbatim
-  expect(css).toContain("#1a1c28"); // dark panel (the dark-surface retune), verbatim
+  expect(css).toContain(TOKENS.light.hue.accent);
+  expect(css).toContain(TOKENS.dark.hue.accent);
+  expect(css).toContain(TOKENS.dark.surface.chrome);
   expect(css).toContain(".dark");   // darkMode selector
 });
 
@@ -393,14 +329,14 @@ test("every var() reference in the generated css resolves to a declared property
 });
 
 test("intent resolver maps intent words onto the single-shade families", () => {
-  expect(tuiIntentResolver({ intent: "ok", variant: "outline", theme: tuiTheme }).color).toContain(
-    "--color-green-500",
+  expect(tuiIntentResolver({ intent: "ok", variant: "outline", theme: tuiTheme }).color).toBe(
+    "var(--text-ok)",
   );
-  expect(tuiIntentResolver({ intent: "muted", variant: "subtle", theme: tuiTheme }).color).toContain(
-    "--color-gray-muted",
+  expect(tuiIntentResolver({ intent: "muted", variant: "subtle", theme: tuiTheme }).color).toBe(
+    "var(--text-2)",
   );
-  // `light`'s hover mixes the tone over `--surface-card` — singleShadeVariantColors'
-  // own formula (Button.parity.test.tsx is the oracle that pins this exactly).
+  // `light`'s hover mixes the tone over `--surface-card`, which is
+  // singleShadeVariantColors' own formula rather than anything this kit sets.
   expect(tuiIntentResolver({ intent: "accent", variant: "light", theme: tuiTheme }).hover).toBe(
     "color-mix(in srgb, var(--color-blue-500) 12%, var(--surface-card))",
   );
@@ -501,4 +437,48 @@ test("canvas.css's 13.5px base and 28px grid are census-pinned canvas-identity c
   expect(canvas).toContain("13.5px");
   expect(canvas).toContain("28px 28px");
   expect(canvas.toLowerCase()).toContain("canvas-identity");
+});
+
+// ── ramps ────────────────────────────────────────────────────────────────
+
+test("the public ramp names resolve to the tokens package's ramp values", () => {
+  for (const scheme of ["light", "dark"] as const) {
+    const t = TOKENS[scheme];
+    t.surfaceRamp.forEach((v, i) => expect(resolve(`--surface-${i + 1}`, scheme)).toBe(v));
+    t.textRamp.forEach((v, i) => expect(resolve(`--text-${i + 1}`, scheme)).toBe(v));
+    t.lineRamp.forEach((v, i) => expect(resolve(`--line-${i + 1}`, scheme)).toBe(v));
+    expect(resolve("--page", scheme)).toBe(t.surface.bg);
+    expect(resolve("--raised", scheme)).toBe(t.surface.raised);
+    for (const hue of ["accent", "ok", "bad", "warn", "purple", "cyan"] as const) {
+      expect(resolve(`--fill-${hue}`, scheme)).toBe(t.hue[hue]);
+      expect(resolve(`--fill-${hue}-hover`, scheme)).toBe(t.hueHover[hue]);
+      expect(resolve(`--text-${hue}`, scheme)).toBe(t.hueText[hue]);
+      expect(resolve(`--text-${hue}-small`, scheme)).toBe(t.hueTextSmall[hue]);
+    }
+  }
+});
+
+test("every surface role is a ramp step in both schemes", () => {
+  for (const scheme of ["light", "dark"] as const) {
+    const ramp = [1, 2, 3, 4].map((i) => resolve(`--surface-${i}`, scheme));
+    for (const role of ["--card", "--panel", "--page", "--chrome", "--surface-inset", "--surface-overlay", "--raised"]) {
+      expect(ramp, `${scheme} ${role}`).toContain(resolve(role, scheme));
+    }
+  }
+});
+
+test("card-scope line aliases carry the per-scheme mapping", () => {
+  expect(resolve("--border-on-card", "light")).toBe(resolve("--line-2", "light"));
+  expect(resolve("--border-on-card", "dark")).toBe(resolve("--line-1", "dark"));
+  expect(resolve("--border-soft-on-card", "light")).toBe(resolve("--line-3", "light"));
+  expect(resolve("--border-soft-on-card", "dark")).toBe(resolve("--line-2", "dark"));
+  expect(resolve("--border-control", "dark")).toBe("#696e77");
+});
+
+test("dots are fills", () => {
+  for (const scheme of ["light", "dark"] as const) {
+    expect(resolve("--dot-ok", scheme)).toBe(resolve("--fill-ok", scheme));
+    expect(resolve("--dot-warn", scheme)).toBe(resolve("--fill-warn", scheme));
+    expect(resolve("--dot-bad", scheme)).toBe(resolve("--fill-bad", scheme));
+  }
 });

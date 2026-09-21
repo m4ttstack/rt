@@ -231,8 +231,13 @@ function AppShell() {
                     {Object.keys(data.metricNotes).length > 0 && (
                       <Stack gap={2}>
                         {Object.entries(data.metricNotes).map(([k, v]) => (
-                          <Text key={k} size="xs" c="dimmed">
-                            <Text component="span" fw={500} c="dimmed">
+                          <Text key={k} size="sm" c="dimmed">
+                            <Text
+                              component="span"
+                              size="sm"
+                              fw={500}
+                              c="dimmed"
+                            >
                               {k}:
                             </Text>{' '}
                             {v}

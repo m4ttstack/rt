@@ -87,7 +87,24 @@ describe("Segmented (browser)", () => {
     const activeStyle = getComputedStyle(buttons[1] as HTMLElement);
     const inactiveStyle = getComputedStyle(buttons[0] as HTMLElement);
     expect(activeStyle.backgroundColor).not.toBe(inactiveStyle.backgroundColor);
-    expect(activeStyle.fontWeight).toBe("700");
+    // Weight carries the selection alongside the fill, so the control still
+    // reads when the fill is the one difference an eye cannot separate.
+    expect(activeStyle.fontWeight).toBe("500");
+    expect(inactiveStyle.fontWeight).toBe("400");
+  });
+
+  it("labels the active option white on the accent fill, in both schemes", async () => {
+    for (const dark of [false, true]) {
+      const container = document.createElement("div");
+      if (dark) container.classList.add("dark");
+      document.body.appendChild(container);
+      const screen = await renderWithTheme(
+        <Segmented options={TAB_OPTIONS} value="grid" onChange={() => {}} label="view" />,
+        { container },
+      );
+      const active = options(screen.container)[1] as HTMLElement;
+      expect(getComputedStyle(active).color).toBe("rgb(255, 255, 255)");
+    }
   });
 
   it("is a real accessibility group, labelled from the `label` prop", async () => {
@@ -206,6 +223,20 @@ describe("LabeledSeg (browser)", () => {
     const group = screen.getByRole("group", { name: "view mode" });
     await expect.element(group).toBeVisible();
     expect(segmentedRootOf(screen.container).hasAttribute("data-text")).toBe(true);
+  });
+
+  it("labels the active text option white on the accent fill", async () => {
+    const screen = await renderWithTheme(
+      <LabeledSeg
+        legend="view mode"
+        options={TAB_OPTIONS}
+        labels={TAB_LABELS}
+        value="grid"
+        onChange={() => {}}
+      />,
+    );
+    const active = options(screen.container)[1] as HTMLElement;
+    expect(getComputedStyle(active).color).toBe("rgb(255, 255, 255)");
   });
 
   it("renders at the board's smaller relative text size, distinct from Segmented's icon buttons", async () => {

@@ -39,7 +39,7 @@ const cellLabel = { fontSize: "var(--font-size-sm)" } as const;
 
 const stateNote = { color: "var(--muted)", fontSize: "var(--font-size-xs)" } as const;
 
-const ratio = { color: "var(--red)", fontWeight: 600 } as const;
+const ratio = { color: "var(--text-bad)", fontWeight: 600 } as const;
 
 const failingOutline = { outline: "2px solid var(--red)", outlineOffset: "2px" } as const;
 

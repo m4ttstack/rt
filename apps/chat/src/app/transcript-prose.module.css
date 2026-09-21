@@ -138,7 +138,7 @@
 }
 
 .prose del {
-  color: var(--tk-muted-text);
+  color: var(--tk-text-2);
 }
 
 .tbl {
@@ -167,7 +167,7 @@
 .prose blockquote {
   padding-left: var(--mantine-spacing-lg);
   border-left: 2px solid var(--tk-border);
-  color: var(--tk-muted-text);
+  color: var(--tk-text-2);
 }
 
 .prose hr {

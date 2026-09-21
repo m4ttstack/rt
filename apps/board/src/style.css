@@ -5,13 +5,16 @@
    is served from `@mattstack/tui-kit/theme.css` + `/canvas.css`, imported by
    `src/client/main.tsx` and linked as `/app.css` ahead of this file.
 
-   The 20 alias names every rule below still writes -- `--bg`, `--panel`,
-   `--card`, `--chrome`, `--fg`, `--muted`, `--border`, `--border-soft`, `--accent`,
-   `--green`, `--red`, `--amber`, `--purple`, `--cyan`, `--grid-line`,
-   `--dot-ok`, `--dot-warn`, `--dot-bad`, `--font-mono`, `--font-sans` -- are
-   the kit's alias contract, with byte-identical values. Dark still flips on
-   the `dark` class the shell's inline script toggles on <html>; the kit does
-   it with `color-scheme` + `light-dark()` instead of redeclaring the block.
+   The 17 alias names every rule below still writes -- `--bg`, `--panel`,
+   `--card`, `--chrome`, `--fg`, `--muted`, `--muted-text`, `--border`,
+   `--border-soft`, `--border-on-card`, `--border-soft-on-card`,
+   `--border-control`, `--border-control-on-card`, `--page`, `--cyan`,
+   `--font-mono`, `--font-sans` -- are the kit's alias contract. The Radix
+   repaint moved every one of their values, so treat the names as the
+   contract, not the values behind them.
+   Dark still flips on the `dark` class the shell's inline script toggles on
+   <html>; the kit does it with `color-scheme` + `light-dark()` instead of
+   redeclaring the block.
 
    This file stays unlayered, so it outranks the kit's `@layer soribashi.*`
    rules on any conflict -- nothing here needs `!important` to win.
@@ -25,10 +28,10 @@
    here in rem (13.5/16) so body text rides the same knob. */
 html {
   font-size: 17px;
-  /* Tokyo Night's orange, absent from the kit palette: the conflicts flag
-     and the doctor lane, on the row and in its menu (which portals outside
-     the row list). */
-  --orange: light-dark(#b15c00, #ff9e64);
+  /* Radix amber, held under the --orange name: the conflicts flag and the
+     doctor lane (row and menu) read amber, distinct from ci-running and
+     decide, which read the warn hue via --text-warn-vivid. */
+  --orange: light-dark(#ab6400, #ffca16);
 }
 body {
   font-size: 0.84375rem;
@@ -84,13 +87,13 @@ body {
   margin: 0;
 }
 .tui-prompt {
-  color: var(--accent-text);
+  color: var(--text-accent-small);
 }
 .tui-sub {
   margin: 0.15rem 0 0;
 }
 .tui-comment {
-  color: var(--muted-text);
+  color: var(--text-3);
   font-size: 0.78rem;
   opacity: 0.9;
 }
@@ -114,7 +117,7 @@ body {
   height: 100%;
 }
 .tui-author {
-  color: var(--purple);
+  color: var(--text-purple);
   white-space: nowrap;
 }
 .tui-avatar {
@@ -135,30 +138,33 @@ body {
   border-radius: 6px;
   background: var(--panel);
   border: 1px solid var(--border);
-  color: var(--muted-text);
+  color: var(--text-3);
 }
 .tui-copy:hover {
-  color: var(--fg);
-  border-color: var(--accent);
+  color: var(--text-1);
+  border-color: var(--fill-accent);
 }
 .tui-refresh:disabled {
   cursor: default;
-  color: var(--accent-text);
-  border-color: var(--accent);
+  color: var(--text-accent-small);
+  border-color: var(--fill-accent);
 }
 /* Posted-to-slack filter: off is a muted mono glyph like its neighbours; on
-   is the segmented control's active state (accent fill, glyph in page
-   colour, the chip's ✓ badge kept). The hover rule below outranks
-   `.tui-copy:hover`, which would otherwise flip the glyph to --fg on accent. */
+   is the segmented control's active state (accent fill, white glyph, the
+   chip's checkmark badge kept). A label on a saturated fill takes white
+   for accent and purple, the dark neutral #1c2024 for ok, warn, cyan and
+   bad; the pick holds in both schemes since a saturated fill does not
+   lighten in light mode. The hover rule below outranks `.tui-copy:hover`,
+   which would otherwise flip the glyph to --text-1 on accent. */
 .tui-slack-filter[data-active],
 .tui-drawer-action[data-active] {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--bg);
+  background: var(--fill-accent);
+  border-color: var(--fill-accent);
+  color: #ffffff;
 }
 .tui-slack-filter[data-active]:hover,
 .tui-drawer-action[data-active]:hover {
-  color: var(--bg);
+  color: #ffffff;
 }
 .tui-refresh.spinning svg {
   animation: tui-spin 0.8s linear infinite;
@@ -180,7 +186,7 @@ body {
   gap: 0.6rem;
   padding: 0.6rem 0.75rem;
   margin-bottom: 1rem;
-  border: 1px solid var(--accent);
+  border: 1px solid var(--fill-accent);
   border-radius: 8px;
   background: color-mix(in srgb, var(--chrome) 94%, transparent);
   backdrop-filter: blur(6px);
@@ -191,12 +197,12 @@ body {
   gap: 0.4rem;
 }
 .tui-selbar-count {
-  color: var(--accent-text);
+  color: var(--text-accent);
   font-weight: 700;
   white-space: nowrap;
 }
 .tui-selbar-note {
-  color: var(--muted-text);
+  color: var(--text-3);
   font-size: 0.78rem;
 }
 /* A textarea, not an input: the header is multi-line, and it wraps into view
@@ -209,7 +215,7 @@ body {
   min-width: 0;
   padding: 0.35rem 0.55rem;
   font: inherit;
-  color: var(--fg);
+  color: var(--text-1);
   line-height: 1.45;
   background: var(--card);
   border: 1px solid var(--border);
@@ -220,7 +226,7 @@ body {
 }
 .tui-selbar-input:focus {
   outline: none;
-  border-color: var(--accent);
+  border-color: var(--fill-accent);
 }
 .tui-selbar-actions {
   display: flex;
@@ -253,7 +259,7 @@ body {
 .tui-modal-x:focus-visible,
 .tui-join-toggle:focus-visible,
 .tui-drawer-action:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--fill-accent);
   outline-offset: 2px;
 }
 /* ── the row ─────────────────────────────────────────────────────────
@@ -300,12 +306,12 @@ body {
   border-top: 1px solid var(--border-soft);
 }
 .tui-row:hover {
-  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  background: color-mix(in srgb, var(--fill-accent-hover) 6%, transparent);
 }
 /* `?gate=<id>` deep link: the row a notification click resolves to gets a
    brief outline ring, same accent as the keyboard focus rings above. */
 .tui-row-flash {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--fill-accent);
   outline-offset: -2px;
 }
 .tui-row-bar {
@@ -317,10 +323,10 @@ body {
   border-radius: 0 2px 2px 0;
 }
 .tui-row-bar[data-tone='warn'] {
-  background: var(--amber);
+  background: var(--fill-warn);
 }
 .tui-row-bar[data-tone='bad'] {
-  background: var(--red);
+  background: var(--fill-bad);
 }
 /* Gutter: the dot at rest, the checkbox under the pointer or while a
    selection exists. Both stay in the flow (opacity, not display) so the
@@ -421,22 +427,22 @@ body {
   color: var(--flag);
 }
 .tui-flag[data-flag='draft'] {
-  --flag: color-mix(in srgb, var(--muted-text) 75%, transparent);
+  --flag: color-mix(in srgb, var(--text-4) 75%, transparent);
 }
 .tui-flag[data-flag='auto-merge'] {
-  --flag: var(--green);
+  --flag: var(--text-ok-vivid);
 }
 .tui-flag[data-flag='conflicts'] {
   --flag: var(--orange);
 }
 .tui-flag[data-flag='ci-failing'] {
-  --flag: var(--red-text);
+  --flag: var(--text-bad);
 }
 .tui-flag[data-flag='ci-running'] {
-  --flag: var(--amber);
+  --flag: var(--text-warn-vivid);
 }
 .tui-flag[data-flag='stacked'] {
-  --flag: var(--cyan);
+  --flag: var(--text-cyan-vivid);
 }
 .tui-behind {
   display: inline-flex;
@@ -444,10 +450,10 @@ body {
   gap: 3px;
   flex-shrink: 0;
   font-weight: 500;
-  color: var(--muted-text);
+  color: var(--text-4);
 }
 .tui-behind svg {
-  color: color-mix(in srgb, var(--muted-text) 75%, transparent);
+  color: color-mix(in srgb, var(--text-4) 75%, transparent);
 }
 /* The header line's identity slot: the author in the mixed view, the
    ticket when the author is the group header. Muted, not purple: the line's
@@ -458,7 +464,7 @@ body {
   align-items: center;
   gap: 5px;
   flex-shrink: 0;
-  color: var(--muted-text);
+  color: var(--text-3);
   white-space: nowrap;
   text-decoration: none;
 }
@@ -466,10 +472,10 @@ body {
   font-weight: 500;
 }
 .tui-ticket-tag svg {
-  color: color-mix(in srgb, var(--muted-text) 75%, transparent);
+  color: color-mix(in srgb, var(--text-3) 75%, transparent);
 }
 .tui-ticket-tag:hover {
-  color: var(--fg);
+  color: var(--text-1);
   text-decoration: underline;
 }
 .tui-author-tag .tui-avatar {
@@ -504,26 +510,32 @@ body {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--pill);
+  color: var(--pill-text);
   background: color-mix(in srgb, var(--pill) 17%, transparent);
 }
 .tui-phrase[data-hue='amber'] {
-  --pill: var(--color-gray-warnText);
+  --pill: var(--fill-warn);
+  --pill-text: var(--text-warn-small);
 }
 .tui-phrase[data-hue='cyan'] {
-  --pill: var(--cyan);
+  --pill: var(--fill-cyan);
+  --pill-text: var(--text-cyan-small);
 }
 .tui-phrase[data-hue='green'] {
-  --pill: var(--green);
+  --pill: var(--fill-ok);
+  --pill-text: var(--text-ok-small);
 }
 .tui-phrase[data-hue='red'] {
-  --pill: var(--red-text);
+  --pill: var(--fill-bad);
+  --pill-text: var(--text-bad-small);
 }
 .tui-phrase[data-hue='accent'] {
-  --pill: var(--accent-text);
+  --pill: var(--fill-accent);
+  --pill-text: var(--text-accent-small);
 }
 .tui-phrase[data-hue='purple'] {
-  --pill: var(--purple);
+  --pill: var(--fill-purple);
+  --pill-text: var(--text-purple-small);
 }
 
 /* Line 1: the title, alone. */
@@ -550,14 +562,14 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
-  color: var(--muted-text);
+  color: var(--text-3);
   font-size: 0.76rem;
   line-height: 16px;
   margin-top: 4px;
   min-width: 0;
 }
 .tui-mr-iid {
-  color: color-mix(in srgb, var(--fg) 70%, var(--muted-text));
+  color: color-mix(in srgb, var(--text-1) 70%, var(--text-3));
   font-weight: 500;
   flex-shrink: 0;
 }
@@ -574,10 +586,10 @@ body {
   font-variant-numeric: tabular-nums;
 }
 .tui-adds {
-  color: color-mix(in srgb, var(--green) 70%, var(--muted-text));
+  color: color-mix(in srgb, var(--text-ok-vivid) 70%, var(--text-3));
 }
 .tui-dels {
-  color: color-mix(in srgb, var(--red) 70%, var(--muted-text));
+  color: color-mix(in srgb, var(--text-bad-vivid) 70%, var(--text-3));
 }
 .tui-rail {
   margin-left: auto;
@@ -601,17 +613,17 @@ body {
   align-items: center;
   gap: 5px;
   font-weight: 500;
-  color: var(--fg);
+  color: var(--text-1);
 }
 .tui-threads svg {
-  color: var(--muted-text);
+  color: var(--text-3);
 }
 .tui-threads[data-new] {
-  color: var(--accent-text);
+  color: var(--text-accent-small);
   font-weight: 700;
 }
 .tui-threads[data-new] svg {
-  color: var(--accent-text);
+  color: var(--text-accent-small);
 }
 .tui-threads[data-new] .tui-threads-count::after,
 .tui-threads[data-new] .tui-threads-await::after,
@@ -622,15 +634,15 @@ body {
   height: 6px;
   margin-left: 5px;
   border-radius: 50%;
-  background: var(--accent);
+  background: var(--fill-accent);
   vertical-align: middle;
 }
 .tui-threads-await {
-  color: var(--amber);
+  color: var(--text-warn-vivid);
   font-weight: 600;
 }
 .tui-threads-replied {
-  color: var(--accent-text);
+  color: var(--text-accent-small);
   font-weight: 600;
 }
 .tui-threads:hover .tui-threads-count,
@@ -640,7 +652,7 @@ body {
 }
 .tui-age {
   font-size: 0.7rem;
-  color: color-mix(in srgb, var(--muted-text) 75%, transparent);
+  color: color-mix(in srgb, var(--text-4) 75%, transparent);
 }
 
 /* Line 3: the status line. */
@@ -651,7 +663,7 @@ body {
   margin-top: 8px;
   font-size: 0.76rem;
   line-height: 20px;
-  color: var(--muted-text);
+  color: var(--text-3);
   min-width: 0;
 }
 .tui-status-word {
@@ -662,24 +674,24 @@ body {
   gap: 6px;
 }
 .tui-status[data-tone='bad'] .tui-status-word {
-  color: var(--red-text);
+  color: var(--text-bad);
 }
 .tui-status[data-tone='warn'] .tui-status-word {
-  color: var(--amber);
+  color: var(--text-warn-vivid);
 }
 .tui-status[data-tone='work'] .tui-status-word,
 .tui-status[data-tone='work'] .tui-status-ring {
-  color: var(--purple);
+  color: var(--text-purple);
 }
 .tui-status[data-tone='go'] .tui-status-word {
-  color: var(--green);
+  color: var(--text-ok-vivid);
 }
 .tui-status[data-tone='quiet'] .tui-status-word {
   font-weight: 500;
 }
 .tui-status[data-tone='clear'] .tui-status-word {
   font-weight: 500;
-  color: color-mix(in srgb, var(--green) 40%, var(--muted-text));
+  color: color-mix(in srgb, var(--text-ok-vivid) 40%, var(--text-3));
 }
 /* Muted on every tone: the word carries the temperature, the detail never
    competes with it. */
@@ -710,7 +722,7 @@ body {
   margin-left: 8px;
   flex-shrink: 0;
   font-size: 0.7rem;
-  color: color-mix(in srgb, var(--muted-text) 70%, transparent);
+  color: color-mix(in srgb, var(--text-4) 70%, transparent);
 }
 /* Centered like the tools, not baseline-aligned: the line's baseline would
    otherwise follow whichever verb is first, and a secondary appearing left
@@ -727,8 +739,8 @@ body {
 /* Verbs are subtle buttons: nothing at rest but the word, a tint under the
    pointer. An agent verb wears its lane's color and the bot mark, so the
    reader knows which agent a click starts before reading the word; a decide
-   verb is amber; a secondary verb (hover only) is muted; navigation (open,
-   read, view) stays quiet text. */
+   verb reads the warn hue; a secondary verb (hover only) is muted; navigation
+   (open, read, view) stays quiet text. */
 .tui-status-verb {
   margin: 0;
   padding: 1px 6px;
@@ -739,7 +751,7 @@ body {
   font-size: 0.72rem;
   font-weight: 500;
   line-height: 16px;
-  color: var(--muted-text);
+  color: var(--text-4);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -748,7 +760,7 @@ body {
 .tui-status-verb:hover {
   background: color-mix(
     in srgb,
-    var(--verb, var(--muted-text)) 12%,
+    var(--verb-wash, var(--muted)) 12%,
     transparent
   );
 }
@@ -759,24 +771,29 @@ body {
   font-weight: 600;
 }
 .tui-status-verb[data-lane='review'] {
-  --verb: var(--accent-text);
+  --verb: var(--text-accent);
+  --verb-wash: var(--fill-accent);
 }
 .tui-status-verb[data-lane='respond'] {
-  --verb: var(--green);
+  --verb: var(--text-ok-vivid);
+  --verb-wash: var(--fill-ok);
 }
 .tui-status-verb[data-lane='doctor'] {
   --verb: var(--orange);
+  --verb-wash: var(--fill-warn);
 }
 .tui-status-verb[data-decide] {
-  --verb: var(--amber);
+  --verb: var(--text-warn-vivid);
+  --verb-wash: var(--fill-warn);
 }
 .tui-status-verb[data-secondary] {
-  --verb: var(--muted-text);
+  --verb: var(--text-4);
+  --verb-wash: var(--muted);
 }
 .tui-status-sun {
   display: inline-flex;
   margin-left: 10px;
-  color: var(--amber);
+  color: var(--text-warn-small);
   /* Sits on the text baseline the way the inline icon did (its -2.5px
      vertical-align), which a flex item cannot express directly. */
   transform: translateY(2.5px);
@@ -806,7 +823,7 @@ body {
   align-self: center;
   background: none;
   border: none;
-  color: var(--muted-text);
+  color: var(--text-3);
   opacity: 0.8;
   transition:
     opacity 0.1s ease,
@@ -814,12 +831,12 @@ body {
 }
 .tui-copy-inline:hover {
   opacity: 1;
-  color: var(--fg);
+  color: var(--text-1);
   background: color-mix(in srgb, var(--muted-text) 12%, transparent);
 }
 .tui-copy-inline[data-copied] {
   opacity: 1;
-  color: var(--green);
+  color: var(--text-ok-small);
 }
 /* ── the row's note (B10) ─────────────────────────────────────────────
    The seat's own line, under everything the row already says. A band, not
@@ -837,8 +854,8 @@ body {
      translucent band would take the row's hover tint and the ground's grid
      with it, so the same note would read a different color under the
      pointer than at rest. */
-  background: color-mix(in srgb, var(--cyan) 16%, var(--panel));
-  color: var(--fg);
+  background: color-mix(in srgb, var(--fill-cyan) 16%, var(--panel));
+  color: var(--text-1);
   font-size: 0.72rem;
   line-height: 1.35;
   cursor: text;
@@ -846,7 +863,7 @@ body {
 }
 .tui-row-note > svg {
   flex: 0 0 auto;
-  color: var(--cyan);
+  color: var(--text-cyan-small);
 }
 .tui-row-note-text {
   flex: 1 1 auto;
@@ -873,7 +890,7 @@ body {
   backdrop-filter: blur(2px);
   box-shadow: 0 1px 5px rgb(0 0 0 / 16%);
   font: 600 0.72rem / 16px var(--font-sans);
-  color: var(--muted-text);
+  color: var(--text-4);
   cursor: pointer;
   display: none;
   transition:
@@ -892,14 +909,14 @@ body {
 .tui-row-note:is(:hover, :focus-within) .tui-row-note-dismiss:hover {
   opacity: 1;
   background: color-mix(in srgb, var(--panel) 92%, transparent);
-  color: var(--fg);
+  color: var(--text-1);
 }
 /* Editing: the band keeps its place and its color; the text becomes the
    same auto-growing textarea the selection bar and the launch note use. */
 .tui-row-note[data-editing] {
   display: block;
   cursor: default;
-  outline: 1px solid var(--accent);
+  outline: 1px solid var(--fill-accent);
 }
 .tui-row-note-lead {
   display: flex;
@@ -909,7 +926,7 @@ body {
 .tui-row-note-lead > svg {
   flex: 0 0 auto;
   margin-top: 2px;
-  color: var(--cyan);
+  color: var(--text-cyan-small);
 }
 .tui-row-note-input {
   flex: 1 1 auto;
@@ -919,7 +936,7 @@ body {
   padding: 0;
   background: none;
   font: inherit;
-  color: var(--fg);
+  color: var(--text-1);
   resize: none;
   overflow: hidden;
 }
@@ -929,7 +946,7 @@ body {
 .tui-row-note-hint {
   margin-top: 2px;
   font-size: 0.66rem;
-  color: var(--muted-text);
+  color: var(--text-4);
 }
 /* In-flow tools take the auto margin and the verbs give theirs up, so the
    verb keeps its corner and the tools stack to its left. Coarse pointers
@@ -1013,7 +1030,7 @@ body {
 /* General MR-comments section in the drawer (notes that aren't resolvable threads). */
 .tui-cd-comments-head {
   font-size: 0.72rem;
-  color: var(--muted-text);
+  color: var(--text-4);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   margin: 0.7rem 0 0.4rem;
@@ -1031,20 +1048,19 @@ body {
   border-top-color: var(--border);
 }
 .tui-comments-empty {
-  color: var(--muted-text);
+  color: var(--text-3);
 }
 .tui-comment-icon {
   flex-shrink: 0;
 }
 .tui-cd-thread.resolved .tui-comment-icon {
-  color: var(--dot-ok);
+  color: var(--text-ok-small);
 }
 .tui-cd-thread.replied .tui-comment-icon {
-  /* Status-dot family, not text: siblings use --dot-ok/--dot-warn; this state has no dedicated dot token yet. */
-  color: var(--accent);
+  color: var(--text-accent-small);
 }
 .tui-cd-thread.awaiting .tui-comment-icon {
-  color: var(--dot-warn);
+  color: var(--text-warn-small);
 }
 
 .tui-cd-head {
@@ -1065,12 +1081,12 @@ body {
   min-width: 0;
 }
 .tui-cd-iid {
-  color: var(--muted-text);
+  color: var(--text-2);
   font-family: var(--font-sans);
   font-weight: 400;
 }
 .tui-cd-open {
-  color: var(--accent-text);
+  color: var(--text-accent-small);
   font-size: 0.76rem;
   text-decoration: none;
   padding: 0 1rem 0.7rem;
@@ -1096,13 +1112,13 @@ body {
   border-bottom-left-radius: 0;
 }
 .tui-cd-thread.resolved {
-  border-left-color: var(--dot-ok);
+  border-left-color: var(--fill-ok);
 }
 .tui-cd-thread.replied {
-  border-left-color: var(--accent);
+  border-left-color: var(--fill-accent);
 }
 .tui-cd-thread.awaiting {
-  border-left-color: var(--dot-warn);
+  border-left-color: var(--fill-warn);
 }
 .tui-cd-thread-status {
   display: flex;
@@ -1117,7 +1133,7 @@ body {
   border-bottom: 1px solid var(--border-soft);
 }
 .tui-cd-thread-open {
-  color: var(--accent-text);
+  color: var(--text-accent-small);
   font-weight: 400;
   font-size: 0.68rem;
   text-decoration: none;
@@ -1145,23 +1161,23 @@ body {
 }
 /* MR author (responding to feedback) vs reviewers/commenters (giving it). */
 .tui-cd-note-author.author {
-  color: var(--accent-text);
+  color: var(--text-accent-small);
 }
 .tui-cd-note-author.commenter {
-  color: var(--purple);
+  color: var(--text-purple-small);
 }
 .tui-cd-note-time {
-  color: var(--muted-text);
+  color: var(--text-4);
   font-size: 0.66rem;
   flex-shrink: 0;
   text-decoration: none;
 }
 .tui-cd-note-time:hover {
-  color: var(--accent-text);
+  color: var(--text-accent-small);
 }
 .tui-cd-note-body {
   font: 400 0.74rem/1.5 var(--font-sans);
-  color: var(--fg);
+  color: var(--text-1);
   overflow-wrap: anywhere;
 }
 /* Rendered markdown inside a note. */
@@ -1182,7 +1198,7 @@ body {
   margin: 0 0 0.5rem;
 }
 .tui-cd-note-body a {
-  color: var(--accent-text);
+  color: var(--text-accent-small);
 }
 .tui-cd-note-body code {
   font-family: var(--font-mono);
@@ -1215,7 +1231,7 @@ body {
   margin: 0 0 0.5rem;
   padding-left: 0.6rem;
   border-left: 2px solid var(--border);
-  color: var(--muted-text);
+  color: var(--text-3);
 }
 .tui-cd-note-body h1,
 .tui-cd-note-body h2,
@@ -1243,7 +1259,7 @@ body {
 
 /* ── ticket link ──────────────────────────────────────────────────── */
 .tui-ticket {
-  color: var(--purple);
+  color: var(--text-purple-small);
   opacity: 0.75;
   flex-shrink: 0;
   align-self: center;
@@ -1256,18 +1272,18 @@ body {
 
 /* ── chrome ───────────────────────────────────────────────────────── */
 .tui-banner {
-  color: var(--amber);
-  border: 1px solid color-mix(in srgb, var(--amber) 45%, transparent);
+  color: var(--text-warn-small);
+  border: 1px solid color-mix(in srgb, var(--fill-warn) 45%, transparent);
   border-radius: 6px;
   padding: 0.45rem 0.8rem;
   font: 500 0.82rem/1.5 var(--font-sans);
   margin-bottom: 1rem;
-  background: color-mix(in srgb, var(--amber) 7%, transparent);
+  background: color-mix(in srgb, var(--fill-warn) 7%, transparent);
 }
 .tui-banner[data-intent='bad'] {
-  color: var(--red-text);
-  border-color: color-mix(in srgb, var(--red) 45%, transparent);
-  background: color-mix(in srgb, var(--red) 7%, transparent);
+  color: var(--text-bad-small);
+  border-color: color-mix(in srgb, var(--fill-bad) 45%, transparent);
+  background: color-mix(in srgb, var(--fill-bad) 7%, transparent);
 }
 .tui-banner-btn {
   margin-left: 0.6rem;
@@ -1283,27 +1299,27 @@ body {
   background: color-mix(in srgb, currentColor 12%, transparent);
 }
 .tui-empty {
-  color: var(--muted-text);
+  color: var(--text-2);
   font: 500 0.9rem/1.5 var(--font-sans);
   text-align: center;
   margin-top: 3.5rem;
 }
 .tui-loading {
-  color: var(--muted-text);
+  color: var(--text-2);
   text-align: center;
   margin-top: 4rem;
 }
 .tui-footer {
-  color: var(--muted-text);
+  color: var(--text-3);
   font: 500 0.76rem/1.5 var(--font-sans);
   text-align: center;
   margin-top: 2.2rem;
   opacity: 0.8;
 }
-/* Daemon data older than 10 minutes (or unknown) -- same amber the fetchError
-   banner uses, so "trust this less" reads the same way everywhere. */
+/* Daemon data older than 10 minutes (or unknown) -- the warn hue, so "trust
+   this less" reads the same way everywhere the hue appears. */
 .tui-footer-stale {
-  color: var(--amber);
+  color: var(--text-warn-vivid);
   opacity: 1;
 }
 
@@ -1333,7 +1349,7 @@ body {
 .tui-side-note {
   margin: 0 0 4px;
   padding: 0 4px;
-  color: var(--muted-text);
+  color: var(--text-4);
   font-size: 0.6875rem;
   font-family: var(--font-sans);
 }
@@ -1354,16 +1370,16 @@ body {
   border-radius: 8px;
   background: var(--chrome);
 }
-/* Pending-decision callout above the roster: amber, not the accent blue the
-   rest of the chrome speaks, because this is the one control that means "you
-   owe an action". Sized/weighted up from the kit's md button so it reads as a
+/* Pending-decision callout above the roster: renders as the kit's filled
+   accent button (Sidebar.tsx), the same accent blue the rest of the chrome
+   speaks. Sized/weighted up from the kit's md button so it reads as a
    banner rather than another roster row. */
 .tui-dq-open {
   width: 100%;
   margin-bottom: 6px;
   font-weight: 600;
   white-space: nowrap;
-  box-shadow: 0 1px 6px color-mix(in srgb, var(--accent) 45%, transparent);
+  box-shadow: 0 1px 6px color-mix(in srgb, var(--fill-accent) 45%, transparent);
 }
 
 /* Roster header: the All row plus a manage-roster gear beside it. */
@@ -1385,12 +1401,12 @@ body {
   border: 1px solid transparent;
   border-radius: 6px;
   background: none;
-  color: var(--muted-text);
+  color: var(--text-3);
   cursor: pointer;
 }
 .tui-side-gear:hover {
   background: var(--card);
-  color: var(--fg);
+  color: var(--text-1);
   border-color: var(--border);
 }
 .tui-side-item {
@@ -1403,7 +1419,7 @@ body {
   border: 1px solid transparent;
   border-radius: 6px;
   background: none;
-  color: var(--fg);
+  color: var(--text-1);
   font: inherit;
   cursor: pointer;
   text-align: left;
@@ -1433,7 +1449,7 @@ body {
   flex-shrink: 0;
 }
 .tui-side-count {
-  color: var(--muted-text);
+  color: var(--text-4);
   font-family: var(--font-sans);
   font-size: 0.85em;
 }
@@ -1450,12 +1466,12 @@ body {
   background: transparent;
   border: 1px solid var(--border);
   border-radius: 6px;
-  color: var(--fg);
+  color: var(--text-1);
   cursor: pointer;
   padding: 5px 7px;
 }
 .tui-burger:hover {
-  border-color: var(--accent);
+  border-color: var(--fill-accent);
 }
 .tui-header-title {
   min-width: 0;
@@ -1500,7 +1516,7 @@ body {
 .tui-ctl-label {
   flex-shrink: 0;
   width: 48px;
-  color: var(--muted-text);
+  color: var(--text-3);
   font-size: 0.78rem;
 }
 .tui-drawer-controls [data-part='segmented'] {
@@ -1520,17 +1536,17 @@ body {
   border: 1px solid var(--border);
   border-radius: 6px;
   background: transparent;
-  color: var(--fg);
+  color: var(--text-1);
   font: inherit;
   font-size: 0.85rem;
   cursor: pointer;
 }
 .tui-drawer-action:hover {
-  border-color: var(--accent);
+  border-color: var(--fill-accent);
 }
 .tui-drawer-action[data-copied] {
-  color: var(--dot-ok);
-  border-color: var(--dot-ok);
+  color: var(--text-ok);
+  border-color: var(--fill-ok);
 }
 
 @media (max-width: 720px) {
@@ -1565,23 +1581,23 @@ body {
 .tui-modal-title {
   font-weight: 700;
   letter-spacing: 0.02em;
-  color: var(--accent-text);
+  color: var(--text-accent);
 }
 .tui-modal-x {
   background: none;
   border: none;
-  color: var(--muted-text);
+  color: var(--text-2);
   cursor: pointer;
   font-size: 0.9rem;
   padding: 0.2rem 0.4rem;
   border-radius: 5px;
 }
 .tui-modal-x:hover {
-  color: var(--fg);
+  color: var(--text-1);
   background: var(--card);
 }
 .tui-modal-sub {
-  color: var(--muted-text);
+  color: var(--text-3);
   font-size: 0.76rem;
   margin: 0.2rem 0 0.9rem;
 }
@@ -1622,7 +1638,7 @@ body {
   width: 15px;
   height: 15px;
   cursor: pointer;
-  accent-color: var(--dot-ok);
+  accent-color: var(--fill-ok);
   margin: 0;
 }
 .tui-check-box:disabled {
@@ -1630,7 +1646,7 @@ body {
 }
 .tui-modal-count {
   flex-shrink: 0;
-  color: var(--muted-text);
+  color: var(--text-4);
   font-family: var(--font-sans);
   font-size: 0.85em;
 }
@@ -1646,7 +1662,7 @@ body {
 /* "already has a board" marker, in the quiet small-caps register of .tui-modal-count */
 .tui-peered {
   flex-shrink: 0;
-  color: var(--muted-text);
+  color: var(--text-4);
   font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -1664,7 +1680,7 @@ body {
   background: transparent;
   border: 1px solid var(--border);
   border-radius: 6px;
-  color: var(--fg);
+  color: var(--text-1);
 }
 .tui-invite-btn:hover:not(:disabled) {
   background: var(--card);
@@ -1681,8 +1697,8 @@ body {
    re-invite, so the pixel gate would not catch it. */
 .tui-invite-btn.copied,
 .tui-invite-btn[data-copied] {
-  color: var(--dot-ok);
-  border-color: var(--dot-ok);
+  color: var(--text-ok-small);
+  border-color: var(--fill-ok);
 }
 /* free-text handle entry, and the join input: field + button on one line */
 .tui-invite-new {
@@ -1700,10 +1716,10 @@ body {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 6px;
-  color: var(--fg);
+  color: var(--text-1);
 }
 .tui-invite-input::placeholder {
-  color: var(--muted-text);
+  color: var(--text-3);
 }
 /* the issued invite: the string itself, its copy button, and what it's good for */
 .tui-invite-row {
@@ -1722,16 +1738,16 @@ body {
   min-width: 0;
   font-family: var(--font-mono);
   font-size: 0.78rem;
-  color: var(--fg);
+  color: var(--text-1);
   overflow-wrap: anywhere;
 }
 .tui-invite-note {
   flex-basis: 100%;
-  color: var(--muted-text);
+  color: var(--text-4);
   font-size: 0.72rem;
 }
 .tui-invite-error {
-  color: var(--dot-bad);
+  color: var(--text-bad-small);
   margin: 0.6rem 0 0;
 }
 /* join / re-join sits below the roster, separated the way the modal separates
@@ -1742,11 +1758,11 @@ body {
   border-top: 1px solid var(--border);
 }
 .tui-join-label {
-  color: var(--muted-text);
+  color: var(--text-3);
   font-size: 0.76rem;
 }
 .tui-join-warning {
-  color: var(--dot-bad);
+  color: var(--text-bad-small);
   margin: 0 0 0.5rem;
 }
 /* collapsed affordance: a text button, so a healthy board isn't nagged by a form */
@@ -1757,16 +1773,16 @@ body {
   cursor: pointer;
   background: none;
   border: none;
-  color: var(--muted-text);
+  color: var(--text-3);
   text-decoration: underline;
 }
 .tui-join-toggle:hover {
-  color: var(--fg);
+  color: var(--text-1);
 }
 
 /* ── stacked chains ───────────────────────────────────────────────── */
 /* A chain reads as one unit: a single thread rail spans the children
-   (cyan to match the stacked flag), the row dividers inside the
+   (cyan, the stacked flag's hue), the row dividers inside the
    chain go quiet, and the boundary dividers move to the wrapper since the
    wrapper breaks .tui-row + .tui-row adjacency. */
 /* Opaque rail color (cyan over the panel tone): the rail is drawn as
@@ -1867,22 +1883,13 @@ body {
 .tui-gate-card,
 .tui-triage-modal,
 .tui-review-sheet {
-  /* Gate-scoped contrast lift: the kit's --border and --muted-text sit too
-     close to --card in dark, so the gate chrome takes its own edge/text
-     values -- now aliases onto the kit's own on-card tokens rather than a
-     hand-kept copy of them. The review sheet joins this scope (its own
-     section below resets the box-model rules this selector also carries)
-     so its reused `.tui-gate-choice`/`.tui-gate-choice-input`/`.tui-gate-note`
-     rows resolve the same custom properties the triage modal's do. */
-  --gate-edge: var(--border-on-card);
-  --gate-control-edge: var(--border-control-on-card);
-  --gate-muted: var(--text-muted-on-card);
-  --gate-key-bg: var(--surface-inset);
-  /* Soft rules on card grounds and the darker modal chrome: both are kit
-     roles now (dark's --border-soft is darker than the card it frames, and
-     the overlay ground sits a rung below the panel so cards read raised). */
-  --gate-soft-edge: var(--border-soft-on-card);
-  --gate-modal-ground: var(--surface-overlay);
+  /* Card ground needs its own edge in dark: --border and --border-soft sit
+     too close to --card there, so this scope re-points them (and
+     --border-control) onto the kit's on-card roles. In light the on-card
+     roles equal the base ones, so this is a no-op. */
+  --border: var(--border-on-card);
+  --border-soft: var(--border-soft-on-card);
+  --border-control: var(--border-control-on-card);
   /* One scale for the whole surface: four text sizes, three rhythm steps,
      one button geometry. Every rule below consumes these. */
   --gate-font-display: var(--type-display);
@@ -1915,7 +1922,7 @@ body {
 }
 .tui-gate-title {
   font: 600 0.72rem/1.4 var(--font-sans);
-  color: var(--gate-muted);
+  color: var(--text-4);
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
@@ -1929,7 +1936,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: var(--gate-gap-inner);
-  border: 1px solid var(--gate-edge);
+  border: 1px solid var(--border);
   border-radius: var(--gate-radius-card);
   background: var(--card);
   margin: 0;
@@ -1949,7 +1956,7 @@ body {
   margin: -1rem -1.1rem 0;
   padding: 0.6rem 1.1rem;
   background: var(--surface-wash-fg-4-card);
-  border-bottom: 1px solid var(--gate-soft-edge);
+  border-bottom: 1px solid var(--border-soft);
   border-radius: calc(var(--gate-radius-card) - 1px)
     calc(var(--gate-radius-card) - 1px) 0 0;
 }
@@ -1957,7 +1964,7 @@ body {
   font-size: var(--gate-font-title);
   font-weight: 600;
   line-height: 1.35;
-  color: var(--fg);
+  color: var(--text-1);
 }
 .tui-gate-form {
   display: flex;
@@ -1973,7 +1980,7 @@ body {
   gap: 8px;
   font: 500 var(--gate-font-meta) / 1.4 var(--font-sans);
   font-variant-numeric: tabular-nums;
-  color: var(--gate-muted);
+  color: var(--text-3);
 }
 .tui-gate-qdots {
   display: inline-flex;
@@ -1990,13 +1997,13 @@ body {
   background: color-mix(in srgb, var(--fg) 55%, transparent);
 }
 .tui-gate-qdot[data-state='active'] {
-  background: var(--accent);
-  outline: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  background: var(--fill-accent);
+  outline: 2px solid color-mix(in srgb, var(--fill-accent) 35%, transparent);
   outline-offset: 1px;
 }
 .tui-gate-qdot[data-state='todo'] {
   background: transparent;
-  border: 1px solid var(--gate-edge);
+  border: 1px solid var(--border);
 }
 .tui-gate-choices {
   display: flex;
@@ -2011,11 +2018,11 @@ body {
   gap: var(--gate-gap-row);
   min-height: 44px;
   padding: 10px 14px;
-  border: 1px solid var(--gate-edge);
+  border: 1px solid var(--border);
   border-radius: var(--gate-radius-control);
   background: transparent;
   font-size: var(--gate-font-body);
-  color: var(--fg);
+  color: var(--text-1);
   cursor: pointer;
   user-select: none;
   transition:
@@ -2026,11 +2033,11 @@ body {
   background: color-mix(in srgb, var(--fg) 4%, transparent);
 }
 .tui-gate-choice[data-checked] {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border-color: var(--fill-accent);
+  background: color-mix(in srgb, var(--fill-accent) 10%, transparent);
 }
 .tui-gate-choice:has(> input:focus-visible) {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--fill-accent);
   outline-offset: 1px;
 }
 /* tui-kit's own RadioGroup recipe (packages/tui-kit/src/recipes/Field/Field.tsx)
@@ -2047,7 +2054,7 @@ body {
   flex-shrink: 0;
   width: 15px;
   height: 15px;
-  border: 1px solid var(--gate-control-edge);
+  border: 1px solid var(--border-control);
   border-radius: 50%;
   background: transparent;
   cursor: pointer;
@@ -2059,11 +2066,11 @@ body {
   border-radius: 3px;
 }
 .tui-gate-choice-input[data-checked] {
-  border-color: var(--accent);
-  background: var(--accent);
+  border-color: var(--fill-accent);
+  background: var(--fill-accent);
 }
 .tui-gate-choice-input:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--fill-accent);
   outline-offset: 2px;
 }
 .tui-gate-choice-label {
@@ -2087,7 +2094,7 @@ body {
 .tui-gate-choice-subtitle {
   font-size: var(--gate-font-meta);
   line-height: 1.4;
-  color: var(--gate-muted);
+  color: var(--text-3);
 }
 /* No `display` here on purpose: the primitive hides the hint with the
    `hidden` attribute when an option has no key. */
@@ -2102,10 +2109,10 @@ body {
   height: 20px;
   box-sizing: border-box;
   padding: 0 5px;
-  border: 1px solid var(--gate-edge);
+  border: 1px solid var(--border);
   border-radius: 999px;
-  color: var(--gate-muted);
-  background: var(--gate-key-bg);
+  color: var(--text-4);
+  background: var(--surface-inset);
   pointer-events: none;
 }
 /* B9: a context the asker wrote as `[Label] text` lines. The label becomes
@@ -2124,12 +2131,12 @@ body {
   margin-left: 8px;
   font-weight: 500;
   font-size: var(--gate-font-meta);
-  color: var(--gate-muted);
+  color: var(--text-3);
 }
 .tui-gate-groups-preamble {
   margin: 0;
   font-size: var(--gate-font-meta);
-  color: var(--gate-muted);
+  color: var(--text-3);
 }
 .tui-gate-groups-preamble [data-part='markdown'] > * {
   margin: 0;
@@ -2142,7 +2149,7 @@ body {
   padding: 0;
   background: none;
   font: 500 var(--gate-font-meta) / 1.4 var(--font-sans);
-  color: var(--accent-text);
+  color: var(--text-accent-small);
   cursor: pointer;
 }
 .tui-gate-groups-raw:hover {
@@ -2154,7 +2161,7 @@ body {
 }
 .tui-gate-group + .tui-gate-group {
   padding-top: var(--gate-gap-inner);
-  border-top: 1px solid var(--gate-soft-edge);
+  border-top: 1px solid var(--border-soft);
 }
 .tui-gate-group-head {
   display: flex;
@@ -2165,16 +2172,13 @@ body {
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
-/* Orange, not the pill's amber: in light Tokyo Night amber is a muted
-   brown (#8c6c3e) that reads dead on a card, while orange stays hot in
-   both themes and is the hue the row already spends on a real problem. */
 .tui-gate-group-label {
   color: var(--orange);
 }
 /* Every group past the first reads as the quieter tail of the list: the
    asker's own order puts what matters first, so only it takes the tone. */
 .tui-gate-group + .tui-gate-group .tui-gate-group-label {
-  color: var(--gate-muted);
+  color: var(--text-4);
 }
 /* The preamble is a <p> before the groups, so the first group is not the
    pane's first child; keyed on type instead, the tone lands with or
@@ -2189,7 +2193,7 @@ body {
   font-weight: 500;
   letter-spacing: 0;
   text-transform: none;
-  color: var(--gate-muted);
+  color: var(--text-4);
 }
 .tui-gate-group-items {
   margin: 0;
@@ -2200,7 +2204,7 @@ body {
   gap: 5px;
   font-size: var(--gate-font-meta);
   line-height: 1.45;
-  color: var(--fg);
+  color: var(--text-1);
 }
 .tui-gate-group-items li {
   padding-left: 3px;
@@ -2216,7 +2220,7 @@ body {
   font-size: 0.92em;
 }
 .tui-gate-group-items li::marker {
-  color: var(--gate-muted);
+  color: var(--text-4);
   font-size: 0.85em;
 }
 
@@ -2231,7 +2235,7 @@ body {
   font: 600 var(--gate-font-micro) / 1.4 var(--font-sans);
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--gate-muted);
+  color: var(--text-4);
 }
 .tui-gate-question[data-sectioned] .tui-gate-question-label {
   font-family: var(--font-mono);
@@ -2249,7 +2253,7 @@ body {
 .tui-gate-question-context {
   font-size: var(--gate-font-meta);
   line-height: 1.45;
-  color: var(--gate-muted);
+  color: var(--text-3);
   overflow-wrap: anywhere;
 }
 .tui-gate-question-context [data-part='markdown'] > * {
@@ -2261,20 +2265,20 @@ body {
 .tui-gate-quote {
   margin: 0;
   padding: 2px 0 2px 12px;
-  border-left: 2px solid var(--gate-edge);
+  border-left: 2px solid var(--border);
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 .tui-gate-quote-who {
   font: 600 var(--gate-font-meta) / 1.4 var(--font-sans);
-  color: var(--gate-muted);
+  color: var(--text-3);
 }
 .tui-gate-quote-text {
   margin: 0;
   font-size: var(--gate-font-meta);
   line-height: 1.45;
-  color: var(--gate-muted);
+  color: var(--text-3);
   overflow-wrap: anywhere;
 }
 .tui-gate-verdict {
@@ -2285,18 +2289,18 @@ body {
 }
 .tui-gate-verdict-word {
   font: 600 var(--gate-font-meta) / 1.4 var(--font-sans);
-  color: var(--fg);
+  color: var(--text-1);
 }
 .tui-gate-lead,
 .tui-gate-adjudication {
   margin: 0;
   font-size: var(--gate-font-meta);
   line-height: 1.45;
-  color: var(--fg);
+  color: var(--text-1);
   overflow-wrap: anywhere;
 }
 .tui-gate-lead {
-  color: var(--gate-muted);
+  color: var(--text-3);
 }
 .tui-gate-lead [data-part='markdown'] > *,
 .tui-gate-adjudication [data-part='markdown'] > * {
@@ -2311,13 +2315,13 @@ body {
   padding-left: 18px;
 }
 .tui-gate-choice[data-recommended]:not([data-checked]) {
-  border-color: color-mix(in srgb, var(--accent) 55%, var(--gate-edge));
-  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  border-color: color-mix(in srgb, var(--fill-accent) 55%, var(--border));
+  background: color-mix(in srgb, var(--fill-accent) 7%, transparent);
 }
 .tui-gate-invalid {
   margin: 0;
   font-size: var(--gate-font-meta);
-  color: var(--dot-bad);
+  color: var(--text-bad-small);
 }
 .tui-gate-note {
   width: 100%;
@@ -2326,16 +2330,16 @@ body {
   padding: 6px 12px;
   font: inherit;
   font-size: var(--gate-font-body);
-  color: var(--fg);
+  color: var(--text-1);
   background: transparent;
-  border: 1px solid var(--gate-edge);
+  border: 1px solid var(--border);
   border-radius: 8px;
 }
 .tui-gate-note::placeholder {
-  color: var(--gate-muted);
+  color: var(--text-2);
 }
 .tui-gate-note:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--fill-accent);
   outline-offset: 1px;
 }
 .tui-gate-actions {
@@ -2353,7 +2357,7 @@ body {
 }
 .tui-gate-error {
   margin-right: auto;
-  color: var(--dot-bad);
+  color: var(--text-bad-small);
   font-size: var(--gate-font-meta);
 }
 .tui-gate-summary {
@@ -2368,11 +2372,11 @@ body {
   font-size: var(--gate-font-body);
 }
 .tui-gate-summary-row dt {
-  color: var(--muted-text);
+  color: var(--text-2);
 }
 .tui-gate-summary-row dd {
   margin: 0;
-  color: var(--fg);
+  color: var(--text-1);
 }
 .tui-gate-chip {
   font-size: 0.75rem;
@@ -2390,7 +2394,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: var(--gate-gap);
-  background: var(--gate-modal-ground);
+  background: var(--surface-overlay);
 }
 /* The head is the recipe's accent title span, stretched so the gate cluster
    (kind + actions) can ride its right edge; everything inside resets the
@@ -2430,7 +2434,7 @@ body {
   line-height: 1;
   font-variant-numeric: tabular-nums;
   letter-spacing: normal;
-  color: var(--fg);
+  color: var(--text-1);
   align-self: center;
 }
 .tui-triage-pips {
@@ -2448,15 +2452,15 @@ body {
   background: color-mix(in srgb, var(--fg) 55%, transparent);
 }
 .tui-triage-pip[data-state='active'] {
-  background: var(--accent);
+  background: var(--fill-accent);
 }
 .tui-triage-pip[data-state='todo'] {
   background: transparent;
-  border: 1px solid var(--gate-edge);
+  border: 1px solid var(--border);
   box-sizing: border-box;
 }
 .tui-triage-pip[data-state='skipped'] {
-  background: var(--dot-warn);
+  background: var(--fill-warn);
   opacity: 0.55;
 }
 /* B7's stand-in for the context pane: one line with the preamble and a
@@ -2468,7 +2472,7 @@ body {
   gap: 10px;
   min-width: 0;
   padding: 8px 12px;
-  border: 1px solid var(--gate-soft-edge);
+  border: 1px solid var(--border-soft);
   border-radius: var(--gate-radius-control);
   background: var(--card);
   font-size: var(--gate-font-meta);
@@ -2477,12 +2481,12 @@ body {
 .tui-triage-overview-title {
   flex-shrink: 0;
   font-weight: 600;
-  color: var(--accent-text);
+  color: var(--text-accent-small);
 }
 .tui-triage-overview-text {
   flex: 1;
   min-width: 0;
-  color: var(--gate-muted);
+  color: var(--text-3);
   overflow-wrap: anywhere;
 }
 .tui-triage-overview-toggle {
@@ -2491,7 +2495,7 @@ body {
   padding: 0;
   background: none;
   font: inherit;
-  color: var(--accent-text);
+  color: var(--text-accent-small);
   cursor: pointer;
 }
 .tui-triage-overview-toggle:hover {
@@ -2548,7 +2552,7 @@ body {
 }
 .tui-attention-reason {
   margin: 0;
-  color: var(--gate-muted);
+  color: var(--text-3);
   font-size: var(--gate-font-meta);
   text-transform: uppercase;
   letter-spacing: 0.03em;
@@ -2566,7 +2570,7 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: var(--gate-font-meta);
-  color: var(--gate-muted);
+  color: var(--text-3);
 }
 /* The queue's face for an answered gate stuck on delivery or left
    execution-unassigned -- same column shape as .tui-attention-card, in
@@ -2581,7 +2585,7 @@ body {
 }
 .tui-gate-delivery-message {
   margin: 0;
-  color: var(--gate-muted);
+  color: var(--text-3);
   font-size: var(--gate-font-meta);
   text-transform: uppercase;
   letter-spacing: 0.03em;
@@ -2590,13 +2594,13 @@ body {
   display: flex;
   flex-direction: column;
   padding: var(--gate-pad-chrome);
-  border: 1px solid var(--gate-soft-edge);
+  border: 1px solid var(--border-soft);
   border-radius: var(--gate-radius-btn);
   background: var(--chrome);
 }
 /* The strip separates its facts with this glyph; rows carry no separators. */
 .tui-triage-strip .tui-row-sep {
-  color: var(--muted-text);
+  color: var(--text-3);
   opacity: 0.5;
 }
 /* One size for the whole line, and the branch gives up the row's flex
@@ -2631,7 +2635,7 @@ body {
   font: 600 var(--gate-font-small) / 1 var(--font-sans);
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  color: var(--gate-muted);
+  color: var(--text-4);
   align-self: center;
 }
 /* Footer: next-gate peek left, pips centered on the modal, count right. */
@@ -2640,7 +2644,7 @@ body {
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: 10px;
-  border-top: 1px solid var(--gate-soft-edge);
+  border-top: 1px solid var(--border-soft);
   padding: 0.85rem 0 0.35rem;
 }
 .tui-triage-footer .tui-triage-pos {
@@ -2652,7 +2656,7 @@ body {
   align-items: baseline;
   gap: 6px;
   font-size: var(--gate-font-meta);
-  color: var(--gate-muted);
+  color: var(--text-3);
   min-height: 1lh;
   min-width: 0;
 }
@@ -2672,11 +2676,11 @@ body {
 }
 .tui-triage-done-line {
   font-size: 0.85rem;
-  color: var(--fg);
+  color: var(--text-1);
 }
 .tui-triage-done-counts {
   font: 500 0.7rem/1.4 var(--font-mono);
-  color: var(--gate-muted);
+  color: var(--text-4);
 }
 .tui-triage-done-action {
   margin-top: 0.5rem;
@@ -2691,10 +2695,10 @@ body {
    drawer. Scoped under .tui-triage-modal since [data-part='scrollpane-body']
    is a generic kit hook, not unique to the gate context pane. */
 .tui-triage-modal [data-part='scrollpane'] {
-  border-color: var(--gate-soft-edge);
+  border-color: var(--border-soft);
 }
 .tui-triage-modal [data-part='scrollpane-head'] {
-  border-bottom-color: var(--gate-soft-edge);
+  border-bottom-color: var(--border-soft);
 }
 .tui-triage-modal [data-part='scrollpane-body'] {
   font: inherit;
@@ -2724,7 +2728,7 @@ body {
   margin: 0 0 0.4rem;
 }
 .tui-triage-modal [data-part='scrollpane-body'] a {
-  color: var(--accent-text);
+  color: var(--text-accent-small);
 }
 .tui-triage-modal [data-part='scrollpane-body'] code {
   font-family: var(--font-mono);
@@ -2753,13 +2757,13 @@ body {
 .tui-triage-modal [data-part='scrollpane-body'] li {
   margin: 0.1rem 0;
 }
-/* Quotes read on the CARD ground, where the base muted/border roles sit
-   too close in dark; the on-card roles equal them in light. */
+/* Quotes read on the CARD ground; border-left uses the on-card border role
+   so it doesn't sit too close to the card fill in dark. */
 .tui-triage-modal [data-part='scrollpane-body'] blockquote {
   margin: 0 0 0.4rem;
   padding-left: 0.6rem;
   border-left: 2px solid var(--border-on-card);
-  color: var(--text-muted-on-card);
+  color: var(--text-3);
 }
 .tui-triage-modal [data-part='scrollpane-body'] h1,
 .tui-triage-modal [data-part='scrollpane-body'] h2,
@@ -2778,7 +2782,7 @@ body {
 }
 .tui-triage-modal [data-part='scrollpane-body'] th,
 .tui-triage-modal [data-part='scrollpane-body'] td {
-  border: 1px solid var(--gate-soft-edge);
+  border: 1px solid var(--border-soft);
   padding: 0.15rem 0.35rem;
 }
 .tui-triage-modal [data-part='scrollpane-body'] img {
@@ -2802,8 +2806,8 @@ body {
   position: absolute;
   right: -4px;
   bottom: -4px;
-  background: var(--dot-ok);
-  color: #fff;
+  background: var(--fill-ok);
+  color: #1c2024;
   font-size: 0.5625rem;
   line-height: 1;
   width: 11px;
@@ -2830,7 +2834,7 @@ body {
   border-radius: 8px;
   padding: 0.7rem 0.9rem;
   margin: 0;
-  color: var(--fg);
+  color: var(--text-1);
 }
 .tui-draft-actions {
   display: flex;
@@ -2841,12 +2845,12 @@ body {
 }
 .tui-draft-note {
   margin-right: auto;
-  color: var(--muted-text);
+  color: var(--text-3);
   font-size: 0.76rem;
 }
 .tui-draft-error {
   margin-right: auto;
-  color: var(--dot-bad);
+  color: var(--text-bad-small);
   font-size: 0.76rem;
 }
 .tui-draft-act {
@@ -2857,7 +2861,7 @@ body {
   background: transparent;
   border: 1px solid var(--border);
   border-radius: 6px;
-  color: var(--fg);
+  color: var(--text-1);
 }
 .tui-draft-act:hover:not(:disabled) {
   background: var(--card);
@@ -2867,16 +2871,16 @@ body {
   cursor: default;
 }
 .tui-draft-act-post {
-  color: var(--amber);
-  border-color: var(--amber);
+  color: var(--text-warn);
+  border-color: var(--fill-warn);
 }
 /* armed = the in-drawer confirm step; filled so "this will send" is unmissable */
 .tui-draft-act-post.armed {
-  background: var(--amber);
-  color: var(--bg);
+  background: var(--fill-warn);
+  color: #1c2024;
 }
 .tui-draft-act-post.armed:hover:not(:disabled) {
-  background: var(--amber);
+  background: var(--fill-warn-hover);
   opacity: 0.9;
 }
 /* clickable badge (a saved review exists): `.tui-review-open`'s font reset,
@@ -2956,8 +2960,8 @@ body {
   padding: 7px 9px;
   font: inherit;
   line-height: 1.5;
-  color: var(--fg);
-  background: var(--bg);
+  color: var(--text-1);
+  background: var(--page);
   border: 1px solid var(--border);
   border-radius: 6px;
   resize: none;
@@ -2966,16 +2970,16 @@ body {
 }
 .tui-menu-note:focus {
   outline: none;
-  border-color: var(--accent);
+  border-color: var(--fill-accent);
 }
 .tui-menu-note::placeholder {
-  color: var(--muted-text);
+  color: var(--text-3);
   opacity: 0.8;
 }
 .tui-menu-note-hint {
   font-family: var(--font-sans);
   font-size: 0.625rem;
-  color: var(--muted-text);
+  color: var(--text-4);
   padding: 6px 3px 2px;
 }
 /* Item labels: every item leads with one icon that says where the click
@@ -2988,7 +2992,7 @@ body {
   gap: 9px;
 }
 .tui-menu-icon-label svg {
-  color: var(--muted-text);
+  color: var(--text-3);
   flex-shrink: 0;
 }
 .tui-menu-emoji {
@@ -3002,10 +3006,10 @@ body {
   color: var(--lane);
 }
 .tui-menu-agent[data-lane='review'] {
-  --lane: var(--accent-text);
+  --lane: var(--text-accent);
 }
 .tui-menu-agent[data-lane='respond'] {
-  --lane: var(--green);
+  --lane: var(--text-ok-vivid);
 }
 .tui-menu-agent[data-lane='doctor'] {
   --lane: var(--orange);
@@ -3013,7 +3017,7 @@ body {
 /* Trailing nodes a slack-mark item hands the shell: the set mark, and the
    in-flight spinner that replaces it while the reaction is being written. */
 .tui-menu-check {
-  color: var(--dot-ok);
+  color: var(--text-ok-small);
   font-size: 0.75rem;
 }
 .tui-menu-spin {
@@ -3021,7 +3025,7 @@ body {
   height: 12px;
   flex-shrink: 0;
   border: 2px solid var(--border);
-  border-top-color: var(--accent);
+  border-top-color: var(--fill-accent);
   border-radius: 50%;
   display: inline-block;
   animation: tui-spin 0.7s linear infinite;
@@ -3052,7 +3056,7 @@ body {
 }
 .tui-config-group {
   margin: 0.9rem 0 0.25rem;
-  color: var(--muted-text);
+  color: var(--text-4);
   font-size: 0.68rem;
   font-weight: 600;
   text-transform: uppercase;
@@ -3081,7 +3085,7 @@ body {
   bottom: 9px;
   width: 2px;
   border-radius: 1px;
-  background: var(--accent);
+  background: var(--fill-accent);
 }
 .tui-config-head {
   display: flex;
@@ -3096,10 +3100,10 @@ body {
   border-radius: 4px;
 }
 .tui-disclosure-head:hover {
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  background: color-mix(in srgb, var(--fill-accent-hover) 8%, transparent);
 }
 .tui-disclosure-head:focus-visible {
-  outline: 1px solid var(--accent);
+  outline: 1px solid var(--fill-accent);
   outline-offset: 1px;
 }
 .tui-disclosure-chevron {
@@ -3108,7 +3112,7 @@ body {
   align-items: center;
   justify-content: center;
   width: 16px;
-  color: var(--muted-text);
+  color: var(--text-2);
   transition:
     transform 180ms ease,
     color 120ms ease;
@@ -3121,7 +3125,7 @@ body {
   transform: rotate(90deg);
 }
 .tui-disclosure-head:hover .tui-disclosure-chevron {
-  color: var(--fg);
+  color: var(--text-1);
 }
 .tui-config-tip {
   display: inline-flex;
@@ -3154,7 +3158,7 @@ body {
 }
 .tui-config-badge {
   margin-left: auto;
-  color: var(--muted-text);
+  color: var(--text-4);
   font-size: 0.66rem;
   white-space: nowrap;
   text-transform: uppercase;
@@ -3163,14 +3167,14 @@ body {
 .tui-config-clear {
   background: none;
   border: none;
-  color: var(--muted-text);
+  color: var(--text-2);
   cursor: pointer;
   padding: 0 4px;
   font: inherit;
   line-height: 1;
 }
 .tui-config-clear:hover:not(:disabled) {
-  color: var(--fg);
+  color: var(--text-1);
 }
 .tui-config-clear:disabled {
   opacity: 0.5;
@@ -3186,13 +3190,13 @@ body {
   border-radius: 50%;
   border: 1px solid var(--muted);
   background: none;
-  color: var(--muted-text);
+  color: var(--text-4);
   font: 600 10px/1 var(--font-sans);
   cursor: help;
 }
 .tui-info:hover,
 .tui-info:focus-visible {
-  color: var(--fg);
+  color: var(--text-1);
   border-color: var(--fg);
 }
 .tui-info-card {
@@ -3213,40 +3217,40 @@ body {
   max-width: 440px;
 }
 .tui-config-control .tui-invite-input.dirty {
-  border-color: var(--accent);
+  border-color: var(--fill-accent);
 }
 .tui-config-control select {
   font: inherit;
   font-size: 0.8rem;
   padding: 3px 6px;
-  color: var(--fg);
+  color: var(--text-1);
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 6px;
 }
 .tui-config-status {
   min-width: 4.5em;
-  color: var(--dot-ok);
+  color: var(--text-ok-vivid);
   font-size: 0.72rem;
   white-space: nowrap;
 }
 .tui-config-status.busy {
-  color: var(--muted-text);
+  color: var(--text-4);
 }
 .tui-config-error {
   margin: 4px 0 0;
-  color: var(--red-text, #d66);
+  color: var(--text-bad-small, #d66);
   font-size: 0.78rem;
 }
 .tui-config-value {
   font-family: var(--font-sans);
   font-size: 0.78rem;
-  color: var(--muted-text);
+  color: var(--text-3);
   word-break: break-all;
 }
 .tui-config-flag {
   margin-left: 6px;
-  color: var(--amber);
+  color: var(--text-warn-vivid);
   font-family: var(--font-sans);
   font-size: 0.72rem;
 }
@@ -3254,7 +3258,7 @@ body {
   background: none;
   border: none;
   padding: 0;
-  color: var(--accent-text);
+  color: var(--text-accent-small);
   cursor: pointer;
   font: inherit;
   font-size: 0.78rem;
@@ -3272,7 +3276,7 @@ body {
 .tui-config-leaf-label {
   font-family: var(--font-sans);
   font-size: 0.76rem;
-  color: var(--muted-text);
+  color: var(--text-3);
 }
 .tui-config-chips {
   display: flex;
@@ -3296,13 +3300,13 @@ body {
   background: none;
   border: none;
   padding: 0;
-  color: var(--muted-text);
+  color: var(--text-3);
   cursor: pointer;
   font: inherit;
   line-height: 1;
 }
 .tui-config-chip button:hover:not(:disabled) {
-  color: var(--red-text);
+  color: var(--text-bad-small);
 }
 .tui-config-chips .tui-invite-input {
   flex: 0 1 150px;
@@ -3342,8 +3346,8 @@ body {
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
   border-radius: 6px 6px 0 0;
-  background: color-mix(in srgb, var(--fg) 5%, var(--bg));
-  color: var(--muted-text);
+  background: color-mix(in srgb, var(--fg) 5%, var(--page));
+  color: var(--text-3);
   font: inherit;
   font-size: 0.8125rem;
   cursor: pointer;
@@ -3352,16 +3356,16 @@ body {
     border-color 150ms ease,
     background 150ms ease;
 }
-/* The active tab is marked by the accent underline and --fg text, not by a
-   lighter fill: a white active tab against the strip was the loudest seam
-   on the page. */
+/* The active tab is marked by the accent underline and --text-1 text, not
+   by a lighter fill: a white active tab against the strip was the loudest
+   seam on the page. */
 .tui-tab:hover {
-  color: var(--fg);
-  background: color-mix(in srgb, var(--fg) 8%, var(--bg));
+  color: var(--text-1);
+  background: color-mix(in srgb, var(--fg) 8%, var(--page));
 }
 .tui-tab.active {
-  color: var(--fg);
-  border-bottom-color: var(--accent, var(--fg));
+  color: var(--text-1);
+  border-bottom-color: var(--fill-accent, var(--fg));
 }
 /* A tab's live count: the group header's count in miniature, so the strip
    reads the way the groups below it do. */
@@ -3370,7 +3374,7 @@ body {
   font-size: 0.72rem;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  color: var(--accent-text);
+  color: var(--text-accent-small);
 }
 .tui-tabs .tui-chip {
   margin-left: auto;
@@ -3405,7 +3409,7 @@ body {
   list-style: none;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: var(--bg);
+  background: var(--page);
 }
 .tui-roster-item {
   display: flex;
@@ -3427,12 +3431,12 @@ body {
   min-width: 0;
 }
 .tui-roster-handle {
-  color: var(--muted-text);
+  color: var(--text-4);
   font-family: var(--font-sans);
   font-size: 0.6875rem;
 }
 .tui-roster-out {
-  color: var(--muted-text);
+  color: var(--text-4);
   font-size: 0.6875rem;
 }
 .tui-roster-add {
@@ -3448,7 +3452,7 @@ body {
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--card);
-  color: var(--fg);
+  color: var(--text-1);
   font: inherit;
   font-size: 0.8125rem;
 }
@@ -3457,7 +3461,7 @@ body {
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--card);
-  color: var(--muted-text);
+  color: var(--text-3);
   font: inherit;
   font-size: 0.75rem;
   cursor: pointer;
@@ -3466,19 +3470,19 @@ body {
     border-color 150ms ease;
 }
 .tui-modal-btn:hover:not(:disabled) {
-  color: var(--fg);
+  color: var(--text-1);
 }
 .tui-modal-btn:disabled {
   opacity: 0.5;
   cursor: default;
 }
 .tui-modal-btn.danger {
-  color: var(--red-text);
+  color: var(--text-bad-small);
   border-color: currentcolor;
 }
 .tui-modal-error {
   margin: 4px 0 0;
-  color: var(--red-text);
+  color: var(--text-bad-small);
   font-size: 0.75rem;
 }
 @media (prefers-reduced-motion: reduce) {
@@ -3520,7 +3524,7 @@ body {
   display: contents;
 }
 .tui-tabs-field > span {
-  color: var(--muted-text);
+  color: var(--text-4);
   font-family: var(--font-sans);
   font-size: 0.6875rem;
   white-space: nowrap;
@@ -3557,9 +3561,9 @@ body {
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
-  border: 1px solid var(--red);
+  border: 1px solid var(--fill-bad);
   border-radius: 4px;
-  background: color-mix(in srgb, var(--red) 8%, var(--panel));
+  background: color-mix(in srgb, var(--fill-bad) 8%, var(--panel));
 }
 .tui-tabs-drop .tui-modal-error {
   flex: 1 1 100%;
@@ -3580,7 +3584,7 @@ body {
   border-radius: 0;
   gap: 0;
   background: var(--card);
-  color: var(--fg);
+  color: var(--text-1);
   font-size: var(--gate-font-body);
   display: flex;
   flex-direction: column;
@@ -3596,7 +3600,7 @@ body {
 .tui-review-sheet-title {
   font-weight: 700;
   font-size: 20px;
-  color: var(--fg);
+  color: var(--text-1);
 }
 .tui-review-sheet-head-actions {
   display: flex;
@@ -3620,15 +3624,15 @@ body {
   border: 1px solid var(--border);
   border-radius: 6px;
   background: transparent;
-  color: var(--fg);
+  color: var(--text-1);
   cursor: pointer;
 }
 .tui-review-queue-chevron:hover:not(:disabled) {
-  border-color: var(--accent);
-  color: var(--accent-text);
+  border-color: var(--fill-accent);
+  color: var(--text-accent-small);
 }
 .tui-review-queue-chevron:disabled {
-  color: var(--muted);
+  color: var(--text-3);
   cursor: default;
   opacity: 0.5;
 }
@@ -3647,10 +3651,10 @@ body {
   background: color-mix(in srgb, var(--fg) 55%, transparent);
 }
 .tui-review-queue-pip[data-state='active'] {
-  background: var(--accent);
+  background: var(--fill-accent);
 }
 .tui-review-queue-pip[data-state='skipped'] {
-  background: var(--amber);
+  background: var(--fill-warn);
 }
 .tui-review-queue-pip[data-state='todo'] {
   background: transparent;
@@ -3658,7 +3662,7 @@ body {
 }
 .tui-review-queue-pos {
   font-size: var(--gate-font-meta);
-  color: var(--muted-text);
+  color: var(--text-3);
   white-space: nowrap;
 }
 .tui-review-head-sep {
@@ -3670,7 +3674,7 @@ body {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--muted-text);
+  color: var(--text-4);
 }
 .tui-review-close {
   display: inline-flex;
@@ -3680,13 +3684,13 @@ body {
   height: 28px;
   border: none;
   background: transparent;
-  color: var(--muted);
+  color: var(--text-2);
   font-size: 14px;
   cursor: pointer;
   border-radius: 6px;
 }
 .tui-review-close:hover {
-  color: var(--fg);
+  color: var(--text-1);
   background: color-mix(in srgb, var(--fg) 6%, transparent);
 }
 .tui-review-sheet-body {
@@ -3756,12 +3760,12 @@ body {
   flex-wrap: wrap;
 }
 .tui-review-author {
-  color: var(--purple);
+  color: var(--text-purple);
   font-size: 15px;
   font-weight: 700;
 }
 .tui-review-mr-open {
-  color: var(--muted-text);
+  color: var(--text-3);
   font-size: var(--gate-font-meta);
 }
 /* The locked design holds one scale across this card (author 15, title
@@ -3777,7 +3781,7 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
-  color: var(--muted-text);
+  color: var(--text-4);
   font-size: 12px;
 }
 .tui-review-diff {
@@ -3788,7 +3792,7 @@ body {
   color: var(--color-gray-okText);
 }
 .tui-review-diff-del {
-  color: var(--red-text);
+  color: var(--text-bad-small);
 }
 
 /* findings list */
@@ -3803,7 +3807,7 @@ body {
   font-weight: 600;
 }
 .tui-review-find-tally {
-  color: var(--muted-text);
+  color: var(--text-3);
   font-size: var(--gate-font-meta);
   white-space: nowrap;
 }
@@ -3850,15 +3854,14 @@ body {
   background: color-mix(in srgb, var(--fg) 7%, transparent);
 }
 .tui-review-tier-pill[data-tier='Critical'] {
-  color: var(--red-text);
-  background: color-mix(in srgb, var(--red) 15%, transparent);
+  color: var(--text-bad-small);
+  background: color-mix(in srgb, var(--fill-bad) 15%, transparent);
 }
-/* warnText is tuned to clear AA on white (4.58:1), which leaves nothing
-   for a wash underneath it. The pill keeps the token's hue and darkens it
-   just enough to pay for its own background. */
+/* warnText already has headroom on white, so this darkening is paying for
+   the pill's own background, not for contrast. */
 .tui-review-tier-pill[data-tier='Important'] {
   color: color-mix(in srgb, var(--color-gray-warnText) 86%, #000);
-  background: color-mix(in srgb, var(--amber) 9%, transparent);
+  background: color-mix(in srgb, var(--fill-warn) 9%, transparent);
 }
 .tui-review-allnone-group {
   display: inline-flex;
@@ -3867,31 +3870,32 @@ body {
   margin-left: auto;
 }
 .tui-review-allnone-sep {
-  color: var(--muted-text);
+  color: var(--text-4);
   font-size: 12px;
 }
-/* rest faint; hover = accent + underline; mousedown deepens; a no-op end
-   (already all / already none) drops to gray and stops taking clicks. */
+/* rest at full strength (--text-4, the same hex as --text-1); hover =
+   accent + underline; mousedown deepens; a no-op end (already all /
+   already none) drops to gray and stops taking clicks. */
 .tui-review-allnone {
   border: none;
   background: none;
   padding: 0;
   font-size: 12px;
-  color: var(--muted-text);
+  color: var(--text-4);
   cursor: pointer;
 }
 .tui-review-allnone:hover {
-  color: var(--accent-text);
+  color: var(--text-accent-small);
   text-decoration: underline;
 }
 .tui-review-allnone:active {
-  color: color-mix(in srgb, var(--accent) 80%, var(--fg));
+  color: color-mix(in srgb, var(--text-accent-small) 80%, var(--text-1));
 }
 /* Inert (already all / already none). WCAG exempts inactive controls, but
    a 0.55 veil on the dim token read as broken rather than spent, so the
    de-emphasis now comes off the text token at a lighter veil. */
 .tui-review-allnone[data-noop] {
-  color: var(--muted-text);
+  color: var(--text-4);
   opacity: 0.72;
   pointer-events: none;
 }
@@ -3919,16 +3923,16 @@ body {
   z-index: 1;
 }
 .tui-review-finding-row:hover {
-  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  background: color-mix(in srgb, var(--fill-accent-hover) 6%, transparent);
 }
 .tui-review-finding-row:active {
-  background: color-mix(in srgb, var(--accent) 11%, transparent);
+  background: color-mix(in srgb, var(--fill-accent) 11%, transparent);
 }
 /* Keyboard parity: the checkbox inside takes focus, and the row it belongs
    to is what the eye needs to find. */
 .tui-review-finding-row:focus-within {
-  background: color-mix(in srgb, var(--accent) 6%, transparent);
-  outline: 2px solid var(--accent);
+  background: color-mix(in srgb, var(--fill-accent) 6%, transparent);
+  outline: 2px solid var(--fill-accent);
   outline-offset: -2px;
 }
 .tui-review-finding-row:focus-within .tui-gate-choice-input:focus-visible {
@@ -3977,7 +3981,7 @@ body {
 .tui-review-finding-anchor {
   font-family: var(--font-mono);
   font-size: var(--gate-font-meta);
-  color: var(--accent-text);
+  color: var(--text-accent-small);
   overflow-wrap: anywhere;
 }
 /* A finding that anchors to nothing in the diff: prose, so it never takes
@@ -3988,13 +3992,13 @@ body {
   gap: 5px;
   font-size: var(--gate-font-meta);
   font-style: italic;
-  color: var(--muted-text);
+  color: var(--text-3);
 }
 .tui-review-finding-anchor-label svg {
-  color: var(--muted);
+  color: var(--text-3);
 }
 .tui-review-finding-fix {
-  color: var(--muted-text);
+  color: var(--text-3);
   font-size: var(--gate-font-meta);
 }
 
@@ -4025,7 +4029,7 @@ body {
   font-size: 10px;
   letter-spacing: 0.5px;
   text-transform: uppercase;
-  color: var(--muted-text);
+  color: var(--text-4);
   padding-top: 2px;
 }
 .tui-review-record-content {
@@ -4043,11 +4047,11 @@ body {
 .tui-review-record-icon {
   flex-shrink: 0;
   margin-top: 2px;
-  color: var(--muted);
+  color: var(--text-2);
   display: inline-flex;
 }
 .tui-review-record-icon-ok {
-  color: var(--green);
+  color: var(--text-ok);
 }
 /* Strengths' two-line entries: a dark lead, a dim detail underneath --
    never inline with a separator dot. */
@@ -4058,11 +4062,11 @@ body {
   min-width: 0;
 }
 .tui-review-record-lead {
-  color: var(--fg);
+  color: var(--text-1);
   font-weight: 500;
 }
 .tui-review-record-detail {
-  color: var(--muted-text);
+  color: var(--text-3);
   font-size: var(--gate-font-meta);
 }
 .tui-review-full-report {
@@ -4083,12 +4087,12 @@ body {
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--muted-text);
+  color: var(--text-4);
 }
 .tui-review-decision-lead {
   margin: 0;
   font-weight: 600;
-  color: var(--fg);
+  color: var(--text-1);
 }
 /* The verdict's rationale is the reason the reader is here, not a
    footnote: it reads at full foreground alongside the checks, while the
@@ -4096,7 +4100,7 @@ body {
    subtitles) stay on the muted text token. */
 .tui-review-decision-reasoning {
   margin: 0;
-  color: var(--fg);
+  color: var(--text-1);
   font-size: var(--gate-font-meta);
 }
 .tui-review-tier-pills {
@@ -4118,7 +4122,7 @@ body {
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--muted-text);
+  color: var(--text-4);
 }
 .tui-review-checks-list {
   display: flex;
@@ -4137,7 +4141,7 @@ body {
   text-align: center;
 }
 .tui-review-check-text {
-  color: var(--fg);
+  color: var(--text-1);
   font-size: var(--gate-font-meta);
   line-height: 1.4;
 }
@@ -4168,11 +4172,11 @@ body {
   background: none;
   padding: 0;
   font-size: 12px;
-  color: var(--muted-text);
+  color: var(--text-4);
   cursor: pointer;
 }
 .tui-review-reset:hover {
-  color: var(--accent-text);
+  color: var(--text-accent-small);
   text-decoration: underline;
 }
 .tui-review-verdict-head {

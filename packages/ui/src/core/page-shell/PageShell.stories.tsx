@@ -176,9 +176,7 @@ function WithTabIconsAndColorDemo() {
                     <Text size="sm" fw={500}>
                       Activity
                     </Text>
-                    <Text size="xs" c="dimmed">
-                      (12)
-                    </Text>
+                    <Text size="xs">(12)</Text>
                   </Group>
                 ),
                 active: activeTab === 'activity',

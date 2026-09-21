@@ -59,4 +59,23 @@ describe("Badge (browser)", () => {
     // proving the module class survived alongside the consumer's own.
     expect(getComputedStyle(root).display).toBe("inline-flex");
   });
+
+  it("each hue intent labels itself from the -small text token, not the raw fill hue", async () => {
+    const screen = await renderWithTheme(
+      <div>
+        <span data-testid="probe-ok" style={{ color: "var(--text-ok-small)" }} />
+        <span data-testid="probe-warn" style={{ color: "var(--text-warn-small)" }} />
+        <span data-testid="probe-bad" style={{ color: "var(--text-bad-small)" }} />
+        <Badge data-testid="badge-ok" intent="ok">ok</Badge>
+        <Badge data-testid="badge-warn" intent="warn">warn</Badge>
+        <Badge data-testid="badge-bad" intent="bad">bad</Badge>
+      </div>,
+    );
+
+    const colorOf = (testid: string) =>
+      getComputedStyle(screen.container.querySelector(`[data-testid="${testid}"]`) as HTMLElement).color;
+    for (const tone of ["ok", "warn", "bad"]) {
+      expect(colorOf(`badge-${tone}`)).toBe(colorOf(`probe-${tone}`));
+    }
+  });
 });

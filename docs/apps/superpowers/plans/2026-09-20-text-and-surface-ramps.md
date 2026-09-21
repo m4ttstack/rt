@@ -2,83 +2,94 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Land the contrast-ranked surface ramp, size-banded text ramp, line ramp and three-value palette in `packages/tokens`, generate the Mantine ramps from those seeds, retune the dark seeds, give tui-kit a bound provider, build the tokens storybook, extend the contrast gate, and ship the namespace lint rule.
+**Goal:** Land the Radix-sourced surface, text, line and hue ramps in `packages/tokens`, derive the Mantine tuples and their pins from the same vendored scales, retune tui-kit's button resolver to the hue text tokens, give tui-kit a bound provider, build the tokens storybook, extend the contrast gate, and ship the namespace lint rule.
 
-**Architecture:** `packages/tokens/src/values.ts` becomes the single home of every ramp; each scheme's role values (`surface.card`, `line.border`, `text.mutedText`) are derived from a ramp index rather than typed by hand, so "every role is a ramp member" is true by construction and checkable by test. The existing generator (`scripts/generate.ts`) emits the new families into tui-kit's `tokens.ts` and tokyo's `tokyo-theme.css`; a new generator (`scripts/generate-ramps.ts`) writes tokyo's Mantine ramps from the same seeds. tui-kit's soribashi codegen then emits the public names (`--surface-1`, `--text-3`, `--fill-ok`, `--text-ok-small`). Everything downstream (provider, storybook, gate, lint) consumes those names.
+**Architecture:** `packages/tokens/src/radix.ts` is a generated, byte-checked copy of seven `@radix-ui/colors` scales; `values.ts` names every role as a step into those scales, so "every role is a Radix step chosen by a stated rule" is true by construction and asserted by test. The existing generator (`scripts/generate.ts`) emits the ramps into tui-kit's `tokens.ts` and tokyo's `tokyo-theme.css`; a new generator (`scripts/generate-ramps.ts`) writes tokyo's Mantine tuples and per-colour pins by a fixed 12-to-10 pick. tui-kit's soribashi codegen then emits the public names (`--surface-1`, `--text-3`, `--fill-ok`, `--text-ok-small`). Everything downstream (provider, storybook, gate, lint) consumes those names.
 
-**Tech Stack:** bun workspaces, TypeScript, vitest (node + browser projects), soribashi codegen (`soribashi build`), `@mantine/colors-generator` + `chroma-js` (codegen devDependency only), Storybook 10 (`@storybook/react-vite`, `@storybook/addon-a11y`), ESLint 10 flat config with `@eslint/css`.
+**Tech Stack:** bun workspaces, TypeScript, vitest (node + browser projects), soribashi codegen (`soribashi build`), `@radix-ui/colors` 3.0.0 (codegen devDependency only), Mantine 9.5 (`cssVariablesResolver`, `primaryShade`), Storybook 10 (`@storybook/react-vite`, `@storybook/addon-a11y`), ESLint 10 flat config with `@eslint/css`.
 
 **Spec:** `docs/superpowers/specs/2026-09-20-text-and-surface-ramps-design.md`
 
 ## Global Constraints
 
 - The repo is public; every fixture, story string and test value must be invented data. `scripts/repo-purity.sh` gates the whole tree.
-- `packages/tokens` takes no React, Mantine or soribashi runtime dependency. `@mantine/colors-generator` and `chroma-js` are devDependencies of its codegen only.
+- `packages/tokens` takes no React, Mantine or soribashi runtime dependency. `@radix-ui/colors` is a devDependency of its codegen only; consumers never import it.
 - Root `bun.lock` is the only lockfile. Run `bun install` from the repo root; never inside a package.
 - Shared dependency versions live in the root `package.json` `workspaces.catalog`; members declare `"catalog:"`.
 - `bun run tui-kit:build` must run before any board, deck or storybook typecheck/test/build.
-- Generated artifacts are committed: after any `values.ts` change run `bun run tokens:codegen`, `cd packages/tui-kit && bun run codegen`, and `cd apps/deck && bun run build:board`, and commit `packages/tui-kit/src/generated/*`, `packages/tokyo/src/tokyo-theme.css`, `apps/deck/core/generated/*`. CI fails on drift (`.github/workflows/ci.yml` line 24).
-- Light hue seeds are locked: `accent #4658ff`, `ok #00c287`, `bad #ff3d81`, `warn #ff8a00`, `purple #9b45ff`, `cyan #00b8d9`. No task changes them.
-- Dark hue seeds change only in Task 6, together with the regenerated Night ramps and the resolver retune (Task 7 lands in the same PR).
-- `known-contrast-debt.ts` ratchet: entries are only removed or improved, never worsened; no new dark Button entries anywhere in this plan.
-- Contrast bars: text 4.5 (display/title/body), 5.5 (meta), 7.0 (small/micro); fills 3.0 (non-text). Solver values are the first hex clearing the bar, so assert `>= bar` at full float precision with the tokens package's `contrastRatio`.
+- Generated artifacts are committed: after any `values.ts` or `radix.ts` change run `bun run tokens:codegen`, `bun run tokens:ramps`, `cd packages/tui-kit && bun run codegen`, and `cd apps/deck && bun run build:board`, and commit `packages/tokens/src/radix.ts`, `packages/tui-kit/src/generated/*`, `packages/tokyo/src/tokyo-theme.css`, `packages/tokyo/src/ramps.ts`, `apps/deck/core/generated/*`. CI fails on drift (`.github/workflows/ci.yml` line 24, extended in Task 4).
+- Every colour is a Radix step. No task types a hex that is not in `radix.ts` (pure white `#ffffff` for light `surface-1` is the one literal, stated in the spec).
+- `known-contrast-debt.ts` ratchet: entries are only removed or improved, never worsened. Task 5 rewrites it once to the spec's eight filled cells; after that the ratchet holds.
+- Contrast bars: text 4.5 (display/title/body), 5.2 (meta), 7.0 (small/micro); fills 3.0 (non-text). Assert `>= bar` at full float precision with the tokens package's `contrastRatio`.
 - No em dashes or en dashes in any text this plan produces (code, comments, commit messages, stories).
 - Comments state constraints the code cannot show. No comments that narrate the next line, cite this plan or the spec's section numbers, or record decision history.
-- Run `bun run format` before every commit; CI runs `bun run format:check` over the tree (`packages/tui-kit`, `docs` and `apps/deck/core/generated` are prettier-ignored, and Task 5 adds `packages/tokyo/src/ramps.ts` to that list because its generator, not prettier, owns its layout).
+- Run `bun run format` before every commit; CI runs `bun run format:check` (`packages/tui-kit`, `docs` and `apps/deck/core/generated` are prettier-ignored, and Task 4 adds `packages/tokyo/src/ramps.ts` and Task 0 adds `packages/tokens/src/radix.ts` to that list because their generators own their layout).
 - Commit after every task with the message given in that task.
 
 ## Values reference (copy verbatim; every task reads from here)
 
-Surface ramps (index 1..4):
+Radix scales vendored (light then dark, steps 1 to 12):
 
-| | light | dark |
-| --- | --- | --- |
-| 1 | `#ffffff` | `#101016` |
-| 2 | `#fbfbfc` | `#16161e` |
-| 3 | `#f7f8fa` | `#1a1c28` |
-| 4 | `#f3f4f7` | `#1e2030` |
+```
+slate   light #fcfcfd #f9f9fb #f0f0f3 #e8e8ec #e0e1e6 #d9d9e0 #cdced6 #b9bbc6 #8b8d98 #80838d #60646c #1c2024
+slate   dark  #111113 #18191b #212225 #272a2d #2e3135 #363a3f #43484e #5a6169 #696e77 #777b84 #b0b4ba #edeef0
+indigo  light #fdfdfe #f7f9ff #edf2fe #e1e9ff #d2deff #c1d0ff #abbdf9 #8da4ef #3e63dd #3358d4 #3a5bc7 #1f2d5c
+indigo  dark  #11131f #141726 #182449 #1d2e62 #253974 #304384 #3a4f97 #435db1 #3e63dd #5472e4 #9eb1ff #d6e1ff
+teal    light #fafefd #f3fbf9 #e0f8f3 #ccf3ea #b8eae0 #a1ded2 #83cdc1 #53b9ab #12a594 #0d9b8a #008573 #0d3d38
+teal    dark  #0d1514 #111c1b #0d2d2a #023b37 #084843 #145750 #1c6961 #207e73 #12a594 #0eb39e #0bd8b6 #adf0dd
+crimson light #fffcfd #fef7f9 #ffe9f0 #fedce7 #facedd #f3bed1 #eaacc3 #e093b2 #e93d82 #df3478 #cb1d63 #621639
+crimson dark  #191114 #201318 #381525 #4d122f #5c1839 #6d2545 #873356 #b0436e #e93d82 #ee518a #ff92ad #fdd3e8
+orange  light #fefcfb #fff7ed #ffefd6 #ffdfb5 #ffd19a #ffc182 #f5ae73 #ec9455 #f76b15 #ef5f00 #cc4e00 #582d1d
+orange  dark  #17120e #1e160f #331e0b #462100 #562800 #66350c #7e451d #a35829 #f76b15 #ff801f #ffa057 #ffe0c2
+purple  light #fefcfe #fbf7fe #f7edfe #f2e2fc #ead5f9 #e0c4f4 #d1afec #be93e4 #8e4ec6 #8347b9 #8145b5 #402060
+purple  dark  #18111b #1e1523 #301c3b #3d224e #48295c #54346b #664282 #8457aa #8e4ec6 #9a5cd0 #d19dff #ecd9fa
+cyan    light #fafdfe #f2fafb #def7f9 #caf1f6 #b5e9f0 #9ddde7 #7dcedc #3db9cf #00a2c7 #0797b9 #107d98 #0d3c48
+cyan    dark  #0b161a #101b20 #082c36 #003848 #004558 #045468 #12677e #11809c #00a2c7 #23afd0 #4ccce6 #b6ecf7
+```
 
-Surface roles as ramp indices: light `card 1, panel 2, page 3, chrome 4, inset 3, overlay 2`; dark `card 4, panel 3, page 2, chrome 3, inset 1, overlay 2`.
+Hue to scale: `accent indigo, ok teal, bad crimson, warn orange, purple purple, cyan cyan`.
 
-Text ramps (index 1..4): light `#222222 #666e97 #596084 #4b5170`; dark `#e3e7f6 #7c86b3 #8d96bd #a3aac9`. Bars: 2 → 4.5, 3 → 5.5, 4 → 7.0.
+Surface ramps as steps: light `['#ffffff', slate 1, slate 2, slate 3]`; dark `[slate 1, slate 2, slate 3, slate 4]`.
 
-Text roles as ramp indices: `fg 1` both; `mutedText` light 3, dark 4; `mutedOnCard` light 3, dark 4.
+Surface roles as ramp indices: light `card 1, panel 2, page 3, chrome 4, inset 3, overlay 2, raised 4`; dark `card 3, panel 2, page 1, chrome 2, inset 1, overlay 1, raised 4`.
 
-Line ramps (index 1..3): light `#c8cad6 #d5d7e2 #d5d7e2` (3 carries 2's value); dark `#6b7499 #505879 #3b4261`.
+Text ramps as slate steps: both schemes `[12, 11, 11, 12]`. Text roles as ramp indices: `fg 1, mutedText 3, mutedOnCard 3` both schemes. Bars: text-2 4.5, text-3 5.2, text-4 7.0.
 
-Line roles as ramp indices: light `border 1, soft 2, control 1, edgeOnCard 1, softOnCard 2`; dark `border 3, soft 3, control 1, edgeOnCard 2, softOnCard 3`. `grid` stays a literal in both schemes.
+Line ramps as slate steps: light `[8, 7, 6]`, dark `[9, 7, 6]`. Line roles as ramp indices: light `border 2, soft 3, control 1, edgeOnCard 2, softOnCard 3`; dark `border 2, soft 3, control 1, edgeOnCard 1, softOnCard 2`.
 
-Hue text (body / small):
+Hue steps (`fill`, `text`; small is always 12; hover is step 10 when the fill is 9, and `color-mix(in srgb, <fill> 88%, <text-1>)` when the fill is 10):
 
-| hue | light body | light small | dark body | dark small |
+| hue | light fill | light text | dark fill | dark text |
 | --- | --- | --- | --- | --- |
-| accent | `#4658ff` | `#0e25ff` | `#6e7cf7` | `#9ca5f9` |
-| ok | `#008059` | `#005e42` | `#319879` | `#3ec098` |
-| bad | `#de004e` | `#a7003b` | `#f4417f` | `#f888af` |
-| warn | `#aa5c00` | `#7e4400` | `#bd7827` | `#dc9f56` |
-| purple | `#9337ff` | `#6900e3` | `#a867f3` | `#c498f7` |
-| cyan | `#007b91` | `#005b6b` | `#0095b0` | `#00bbdd` |
+| accent | 9 | 11 | 9 | 11 |
+| ok | 10 | 12 | 9 | 11 |
+| bad | 9 | 11 | 9 | 11 |
+| warn | 10 | 12 | 9 | 11 |
+| purple | 9 | 11 | 9 | 11 |
+| cyan | 10 | 12 | 9 | 11 |
 
-Dark fills (Task 6 only): `accent #4758f4`, `ok #277860`, `bad #d30c52`, `warn #955f1f`, `purple #8c38ef`, `cyan #00768b`.
+Neutral fill (`muted`): slate 9 both schemes. `wash`: `10%` light, `15%` dark. `line.grid`: `rgba(52, 59, 88, 0.05)` light, `rgba(122, 162, 247, 0.06)` dark, unchanged.
 
-Public CSS names emitted by tui-kit after Part A: `--surface-1..4`, `--text-1..4`, `--line-1..3`, `--page`, `--fill-<hue>`, `--text-<hue>`, `--text-<hue>-small`, `--border-control`, where `<hue>` is one of `accent ok bad warn purple cyan`. Tokyo emits the same set prefixed `--tk-`.
+Mantine picks (tuple index 0..9 ← Radix step): Day `[1,3,4,5,6,7,9,10,11,12]`; Night `[12,11,10,9,8,7,6,5,4,3]`; `gray` (light, from slate) `[2,3,4,6,7,8,11,11,12,12]`; `dark` (dark, from slate) `[12,11,11,9,8,4,3,2,1,1]` (indices 5 and 6 are Mantine's component grounds, so they sit on surface steps). `primaryShade: { light: 6, dark: 3 }`.
+
+Fill ledger (spec §7): light `warn` 2.93 on `surface-4`; dark `accent` 2.77 and `purple` 2.79 on `surface-4`. Filled-label ledger (Button, white label): light `ok` 3.46, `warn` 3.33, `cyan` 3.42, `bad` 3.85; dark `ok` 3.07, `warn` 2.97, `cyan` 3.00, `bad` 3.85. The neutral fill's label is `light-dark(var(--text-1), #ffffff)` and is not ledgered (4.96 light, 5.13 dark).
+
+Public CSS names emitted by tui-kit after Part A: `--surface-1..4`, `--text-1..4`, `--line-1..3`, `--page`, `--raised`, `--fill-<hue>`, `--fill-<hue>-hover`, `--text-<hue>` (display, title, body), `--text-<hue>-small` (meta, small, micro), `--border-control`, where `<hue>` is one of `accent ok bad warn purple cyan`. Tokyo emits the same set prefixed `--tk-`.
 
 ## File structure
 
 Part A (spec step 0):
-- Modify `packages/tokens/src/values.ts`: ramp types, per-scheme spec objects, a `buildScheme()` that derives role values from ramp indices; new `hueText`, `hueTextSmall`, `line.control` fields.
-- Modify `packages/tokens/test/invariants.test.ts`: ramp ordering, role membership, bar assertions, locked light hues.
-- Modify `packages/tokens/scripts/generate.ts`: emit `ground`/`ink`/`rule` families and hue text shades into tui-kit tokens; emit `--tk-*` ramp names into tokyo.
-- Modify `packages/tui-kit/src/theme.ts` (semantic `border.control`), `packages/tui-kit/soribashi.config.ts` (public aliases), `packages/tui-kit/test/theme.test.ts` (rulings).
+- Create `packages/tokens/scripts/generate-radix.ts`, `packages/tokens/src/radix.ts` (generated), `packages/tokens/test/radix-fresh.test.ts`.
+- Modify `packages/tokens/src/values.ts`: ramp types, per-scheme spec objects in steps, a `buildScheme()` that resolves steps to hex; `hueStep`, `hueHover`, `hueText`, `hueTextSmall`, `line.control`, `surface.raised` fields; `dot` removed.
+- Modify `packages/tokens/test/invariants.test.ts`: the rules as tests.
+- Modify `packages/tokens/scripts/generate.ts`: emit `ground`/`ink`/`rule` families, hue shades, `raised`, `control`, hover into tui-kit tokens; emit `--tk-*` ramp names into tokyo.
+- Modify `packages/tui-kit/src/theme.ts` (semantic `surface.raised`, `border.control`), `packages/tui-kit/soribashi.config.ts` (public aliases), `packages/tui-kit/test/theme.test.ts` (palette ruling), `packages/tokens/test/consumption.test.ts` (waivers).
 - Regenerate `packages/tui-kit/src/generated/{tokens.ts,theme.css}`, `packages/tokyo/src/tokyo-theme.css`, `apps/deck/core/generated/*`.
 
-Part B (spec step 1):
-- Create `packages/tokens/src/ramp-math.ts` (pure re-anchor), `packages/tokens/test/ramp-math.test.ts`.
-- Create `packages/tokens/scripts/generate-ramps.ts`; regenerate `packages/tokyo/src/ramps.ts`; root script `tokens:ramps`; CI freshness line.
+- Modify `packages/tui-kit/src/intent-resolver.ts`, `packages/tui-kit/src/recipes/Button/Button.tsx`, `packages/tui-kit/src/a11y/known-contrast-debt.ts` (Task 2, same PR); refresh visual baselines.
 
-Part C (spec step 2):
-- Modify `packages/tokens/src/values.ts` (dark `hue`), `packages/tokens/test/invariants.test.ts` (hue angle), regenerate ramps and codegen.
-- Modify `packages/tui-kit/src/intent-resolver.ts`; refresh Button visual baselines.
+Part B (spec step 1):
+- Create `packages/tokens/scripts/generate-ramps.ts`, `packages/tokens/src/mantine-pins.ts`; regenerate `packages/tokyo/src/ramps.ts` (tuples) and the pin blocks in `packages/tokyo/src/tokyo-theme.css`; modify `packages/tokyo/src/theme.ts` (`primaryShade`, `gray`/`dark` tuples), `packages/tokens/scripts/generate.ts` (pin splice), `packages/tokens/test/ramp-anchors.test.ts`; root script `tokens:ramps`; CI freshness line.
 
 Part D (spec step 3):
 - Rename `packages/tui-kit/src/provider.ts` to `provider.tsx`; add `TuiKitProvider`; test `packages/tui-kit/test/provider.test.tsx`.
@@ -94,37 +105,176 @@ Part G (spec step 6):
 
 ---
 
-## Part A: tokens, scheme-safe part (spec §9 step 0)
+## Part A: tokens (spec §9 step 0)
 
-Tasks 1, 2 and 3 land as one PR: Task 1 alone leaves the generated files stale, Task 2 alone leaves tokyo and deck stale.
+Tasks 0 to 4 land as one PR (`radix-palette`): Task 1 alone leaves the generated files stale, Task 2 alone leaves tokyo and deck stale, and Task 2 carries the tui-kit button retune and ledger rewrite because the Button matrix runs in CI against every hue.
 
-### Task 1: Ramps in `values.ts`, derived roles, invariants
+### Task 0: Vendor the Radix scales
+
+**Files:**
+- Create: `packages/tokens/scripts/generate-radix.ts`, `packages/tokens/src/radix.ts` (generated), `packages/tokens/test/radix-fresh.test.ts`
+- Modify: root `package.json` (catalog, `tokens:radix` script), `packages/tokens/package.json` (devDependencies), `.prettierignore`
+
+**Interfaces:**
+- Produces: `RADIX_VERSION: string`; `RADIX_SCALES` (`['slate','indigo','teal','crimson','orange','purple','cyan'] as const`); `type RadixScaleName`; `type Scale12 = readonly [string, ...string[]]` of length 12; `RADIX: Record<RadixScaleName, { light: Scale12; dark: Scale12 }>`. Root script `bun run tokens:radix`.
+
+- [ ] **Step 1: Add the dependency**
+
+Root `package.json` `workspaces.catalog`: add `"@radix-ui/colors": "^3.0.0",` in alphabetical position. `packages/tokens/package.json`: add
+
+```json
+  "devDependencies": {
+    "@radix-ui/colors": "catalog:"
+  }
+```
+
+Run: `bun install` (repo root). Expected: root `bun.lock` updated; no `packages/tokens/bun.lock`. Confirm the installed version is 3.0.0: `grep '"version"' packages/tokens/node_modules/@radix-ui/colors/package.json` (bun links a member-only devDependency under the member, not the root).
+
+- [ ] **Step 2: Write the failing freshness test**
+
+Create `packages/tokens/test/radix-fresh.test.ts`:
+
+```ts
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
+
+import { describe, expect, it } from 'vitest';
+
+import { RADIX, RADIX_SCALES, RADIX_VERSION } from '../src/radix.ts';
+
+const require = createRequire(import.meta.url);
+const pkgDir = dirname(require.resolve('@radix-ui/colors/package.json'));
+const installedVersion = (JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8')) as { version: string }).version;
+
+function stepsFromCss(file: string, name: string): string[] {
+  const css = readFileSync(join(pkgDir, file), 'utf8');
+  const out: string[] = [];
+  for (let i = 1; i <= 12; i++) {
+    const m = new RegExp(`--${name}-${i}: (#[0-9a-f]{6});`).exec(css);
+    if (!m) throw new Error(`${file}: no --${name}-${i}`);
+    out.push(m[1]!);
+  }
+  return out;
+}
+
+describe('vendored Radix scales', () => {
+  it('records the installed package version', () => {
+    expect(RADIX_VERSION).toBe(installedVersion);
+  });
+
+  it.each(RADIX_SCALES)('%s matches the installed package in both schemes', name => {
+    expect([...RADIX[name].light]).toEqual(stepsFromCss(`${name}.css`, name));
+    expect([...RADIX[name].dark]).toEqual(stepsFromCss(`${name}-dark.css`, name));
+  });
+});
+```
+
+Run: `cd packages/tokens && bunx vitest run test/radix-fresh.test.ts`
+Expected: FAIL, `../src/radix.ts` not found.
+
+- [ ] **Step 3: The generator**
+
+Create `packages/tokens/scripts/generate-radix.ts`:
+
+```ts
+import { readFileSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
+
+const require = createRequire(import.meta.url);
+const PKG_DIR = dirname(require.resolve('@radix-ui/colors/package.json'));
+const OUT = join(import.meta.dirname, '..', 'src', 'radix.ts');
+
+const SCALES = ['slate', 'indigo', 'teal', 'crimson', 'orange', 'purple', 'cyan'] as const;
+
+function steps(file: string, name: string): string[] {
+  const css = readFileSync(join(PKG_DIR, file), 'utf8');
+  const out: string[] = [];
+  for (let i = 1; i <= 12; i++) {
+    const m = new RegExp(`--${name}-${i}: (#[0-9a-f]{6});`).exec(css);
+    if (!m) throw new Error(`${file}: no --${name}-${i}`);
+    out.push(m[1]!);
+  }
+  return out;
+}
+
+function tuple(values: string[]): string {
+  return '[' + values.map(v => `'${v}'`).join(', ') + ']';
+}
+
+function render(): string {
+  const version = (JSON.parse(readFileSync(join(PKG_DIR, 'package.json'), 'utf8')) as { version: string }).version;
+  const lines = [
+    '/* GENERATED by packages/tokens/scripts/generate-radix.ts from @radix-ui/colors; do not edit. */',
+    '',
+    `export const RADIX_VERSION = '${version}';`,
+    '',
+    `export const RADIX_SCALES = [${SCALES.map(s => `'${s}'`).join(', ')}] as const;`,
+    'export type RadixScaleName = (typeof RADIX_SCALES)[number];',
+    '',
+    'export type Scale12 = readonly [',
+    '  string, string, string, string, string, string,',
+    '  string, string, string, string, string, string,',
+    '];',
+    '',
+    'export const RADIX: Record<RadixScaleName, { light: Scale12; dark: Scale12 }> = {',
+  ];
+  for (const name of SCALES) {
+    lines.push(`  ${name}: {`);
+    lines.push(`    light: ${tuple(steps(`${name}.css`, name))},`);
+    lines.push(`    dark: ${tuple(steps(`${name}-dark.css`, name))},`);
+    lines.push('  },');
+  }
+  lines.push('};', '');
+  return lines.join('\n');
+}
+
+if (import.meta.main) {
+  writeFileSync(OUT, render());
+}
+```
+
+Root `package.json` scripts, after `"tokens:codegen"`: `"tokens:radix": "bun run packages/tokens/scripts/generate-radix.ts",`. Add `packages/tokens/src/radix.ts` to `.prettierignore` under the `apps/deck/core/generated` entry with the comment `# generated from @radix-ui/colors by packages/tokens/scripts/generate-radix.ts; radix-fresh.test.ts byte-compares it`.
+
+Run: `bun run tokens:radix && cd packages/tokens && bunx vitest run test/radix-fresh.test.ts && bun run typecheck`
+Expected: `src/radix.ts` written; test PASS; typecheck clean. Open `radix.ts` and confirm the slate light row starts `#fcfcfd` and indigo light step 9 is `#3e63dd` (the values reference above).
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add package.json bun.lock .prettierignore packages/tokens
+git commit -m "tokens: vendor the seven Radix Colors scales with a freshness test"
+```
+
+### Task 1: Ramps in `values.ts` as Radix steps, with the rules as invariants
 
 **Files:**
 - Modify: `packages/tokens/src/values.ts`
 - Test: `packages/tokens/test/invariants.test.ts`
 
 **Interfaces:**
-- Consumes: nothing new.
-- Produces: `ColorScheme` gains `surfaceRamp: Ramp4`, `textRamp: Ramp4`, `lineRamp: Ramp3`, `surfaceRole: Record<SurfaceRole, RampIndex4>`, `textRole: Record<TextRole, RampIndex4>`, `lineRole: Record<LineRole, RampIndex3>`, `hueText: HueSet`, `hueTextSmall: HueSet`, and `line.control: string`. `TOKENS.light` / `TOKENS.dark` keep every existing field with the values in the reference table. Exports `HUES` (`['accent','ok','bad','warn','purple','cyan'] as const`) and the types `Ramp3`, `Ramp4`, `HueName`, `SurfaceRole`, `TextRole`, `LineRole`.
+- Consumes: `RADIX`, `Scale12`, `RadixScaleName` from Task 0.
+- Produces: `HUES`, `HueName`, `HueSet`, `HUE_SCALE: Record<HueName, RadixScaleName>`, `Ramp4`, `Ramp3`, `RampIndex4`, `RampIndex3`, `Step` (1..12), `SurfaceRole` (now includes `raised`), `TextRole`, `LineRole`, `HueStep = { fill: Step; text: Step }`. `ColorScheme` gains `surfaceRamp`, `textRamp`, `lineRamp`, `surfaceRole`, `textRole`, `lineRole`, `hueStep`, `hueHover`, `hueText`, `hueTextSmall`, `surface.raised`, `line.control`; loses `dot`. `TOKENS.light` / `TOKENS.dark` resolve every value from `RADIX`.
 
 - [ ] **Step 1: Write the failing invariants**
 
-Append to `packages/tokens/test/invariants.test.ts` (keep every existing test):
+Replace `packages/tokens/test/invariants.test.ts` with:
 
 ```ts
-import { HUES } from '../src/values.ts';
+import { describe, expect, it } from 'vitest';
 
-const LOCKED_LIGHT_HUES = {
-  accent: '#4658ff',
-  ok: '#00c287',
-  bad: '#ff3d81',
-  warn: '#ff8a00',
-  purple: '#9b45ff',
-  cyan: '#00b8d9',
-} as const;
+import { contrastRatio, srgbLuminance } from '../src/color-math.ts';
+import { RADIX } from '../src/radix.ts';
+import { CSS_TEXT, HUE_SCALE, HUES, TOKENS, type Step } from '../src/values.ts';
 
-const TEXT_BAR = [0, 4.5, 5.5, 7.0] as const;
+const SCHEMES = ['light', 'dark'] as const;
+const WHITE = '#ffffff';
+const TEXT_BAR = [0, 4.5, 5.2, 7.0] as const;
+
+function worst(hex: string, surfaces: readonly string[]): number {
+  return Math.min(...surfaces.map(s => contrastRatio(hex, s)));
+}
 
 describe('surface ramp', () => {
   it.each(SCHEMES)('%s: surface-1 has the most contrast against text-1, strictly descending', scheme => {
@@ -143,6 +293,30 @@ describe('surface ramp', () => {
     expect(t.surface.chrome).toBe(t.surfaceRamp[t.surfaceRole.chrome - 1]);
     expect(t.surface.inset).toBe(t.surfaceRamp[t.surfaceRole.inset - 1]);
     expect(t.surface.overlay).toBe(t.surfaceRamp[t.surfaceRole.overlay - 1]);
+    expect(t.surface.raised).toBe(t.surfaceRamp[t.surfaceRole.raised - 1]);
+  });
+
+  it.each(SCHEMES)('%s: bg < panel < card by luminance direction', scheme => {
+    const s = TOKENS[scheme].surface;
+    const [bg, panel, card] = [s.bg, s.panel, s.card].map(srgbLuminance);
+    if (scheme === 'light') {
+      expect(bg).toBeLessThan(panel!);
+      expect(panel).toBeLessThan(card!);
+    } else {
+      expect(bg).toBeLessThan(panel!);
+      expect(panel).toBeLessThan(card!);
+    }
+  });
+
+  it.each(SCHEMES)('%s: inset sits below card and overlay never above panel', scheme => {
+    const s = TOKENS[scheme].surface;
+    expect(srgbLuminance(s.inset)).toBeLessThan(srgbLuminance(s.card));
+    expect(srgbLuminance(s.overlay)).toBeLessThanOrEqual(srgbLuminance(s.panel));
+  });
+
+  it('light surfaces are white then slate 1..3; dark surfaces are slate 1..4', () => {
+    expect([...TOKENS.light.surfaceRamp]).toEqual([WHITE, ...RADIX.slate.light.slice(0, 3)]);
+    expect([...TOKENS.dark.surfaceRamp]).toEqual([...RADIX.slate.dark.slice(0, 4)]);
   });
 });
 
@@ -150,24 +324,19 @@ describe('text ramp', () => {
   it.each(SCHEMES)('%s: text-2..4 clear their bars on every surface', scheme => {
     const t = TOKENS[scheme];
     for (let i = 1; i < 4; i++) {
-      for (const surface of t.surfaceRamp) {
-        expect(
-          contrastRatio(t.textRamp[i]!, surface),
-          `${scheme} text-${i + 1} on ${surface}`
-        ).toBeGreaterThanOrEqual(TEXT_BAR[i]!);
-      }
+      expect(worst(t.textRamp[i]!, t.surfaceRamp), `${scheme} text-${i + 1}`).toBeGreaterThanOrEqual(TEXT_BAR[i]!);
     }
   });
 
   it.each(SCHEMES)('%s: text-1 clears 7.0 on every surface', scheme => {
     const t = TOKENS[scheme];
-    for (const surface of t.surfaceRamp) {
-      expect(contrastRatio(t.textRamp[0], surface)).toBeGreaterThanOrEqual(7.0);
-    }
+    expect(worst(t.textRamp[0], t.surfaceRamp)).toBeGreaterThanOrEqual(7.0);
   });
 
-  it.each(SCHEMES)('%s: text roles are ramp steps', scheme => {
+  it.each(SCHEMES)('%s: text roles are ramp steps and the ramp is slate 12, 11, 11, 12', scheme => {
     const t = TOKENS[scheme];
+    const s = RADIX.slate[scheme];
+    expect([...t.textRamp]).toEqual([s[11], s[10], s[10], s[11]]);
     expect(t.text.fg).toBe(t.textRamp[t.textRole.fg - 1]);
     expect(t.text.mutedText).toBe(t.textRamp[t.textRole.mutedText - 1]);
     expect(t.text.mutedOnCard).toBe(t.textRamp[t.textRole.mutedOnCard - 1]);
@@ -175,13 +344,17 @@ describe('text ramp', () => {
 });
 
 describe('line ramp', () => {
-  it.each(SCHEMES)('%s: line-1 is strongest against the ground it sits on, non-increasing', scheme => {
+  it.each(SCHEMES)('%s: slate 8, 7, 6 in light and 9, 7, 6 in dark, strongest first against its ground', scheme => {
     const t = TOKENS[scheme];
-    const ground = scheme === 'light' ? t.surfaceRamp[0] : t.surface.card;
+    const s = RADIX.slate[scheme];
+    expect([...t.lineRamp]).toEqual(scheme === 'light' ? [s[7], s[6], s[5]] : [s[8], s[6], s[5]]);
+    const ground = scheme === 'light' ? WHITE : t.surface.card;
     const ratios = t.lineRamp.map(l => contrastRatio(l, ground));
-    for (let i = 1; i < ratios.length; i++) {
-      expect(ratios[i]).toBeLessThanOrEqual(ratios[i - 1]!);
-    }
+    for (let i = 1; i < ratios.length; i++) expect(ratios[i]).toBeLessThanOrEqual(ratios[i - 1]!);
+  });
+
+  it('dark line-1 holds the non-text bar against the card', () => {
+    expect(contrastRatio(TOKENS.dark.line.control, TOKENS.dark.surface.card)).toBeGreaterThanOrEqual(3.0);
   });
 
   it.each(SCHEMES)('%s: line roles are ramp steps', scheme => {
@@ -191,76 +364,129 @@ describe('line ramp', () => {
     expect(t.line.control).toBe(t.lineRamp[t.lineRole.control - 1]);
     expect(t.line.edgeOnCard).toBe(t.lineRamp[t.lineRole.edgeOnCard - 1]);
     expect(t.line.softOnCard).toBe(t.lineRamp[t.lineRole.softOnCard - 1]);
+    expect(t.line.controlEdgeOnCard).toBe(t.line.control);
   });
 });
 
-describe('palette', () => {
-  it('light fills are the locked hex', () => {
-    for (const hue of HUES) {
-      expect(TOKENS.light.hue[hue], hue).toBe(LOCKED_LIGHT_HUES[hue]);
-    }
-  });
+function ruleFill(scale: readonly string[], surfaces: readonly string[], scheme: 'light' | 'dark'): Step {
+  if (worst(scale[8]!, surfaces) >= 3.0) return 9;
+  if (scheme === 'dark' && contrastRatio(scale[9]!, WHITE) < 4.5) return 9;
+  return 10;
+}
 
-  it('dark fills clear 3.0 on every dark surface', () => {
+function ruleText(scale: readonly string[], surfaces: readonly string[]): Step {
+  return worst(scale[10]!, surfaces) >= 4.5 ? 11 : 12;
+}
+
+describe('palette', () => {
+  it.each(SCHEMES)('%s: every hue value is the Radix step its rule picks', scheme => {
+    const t = TOKENS[scheme];
     for (const hue of HUES) {
-      for (const surface of TOKENS.dark.surfaceRamp) {
-        expect(contrastRatio(TOKENS.dark.hue[hue], surface), `${hue} on ${surface}`).toBeGreaterThanOrEqual(3.0);
-      }
+      const scale = RADIX[HUE_SCALE[hue]][scheme];
+      const fill = ruleFill(scale, t.surfaceRamp, scheme);
+      const text = ruleText(scale, t.surfaceRamp);
+      expect(t.hueStep[hue], `${scheme} ${hue} steps`).toEqual({ fill, text });
+      expect(t.hue[hue]).toBe(scale[fill - 1]);
+      expect(t.hueHover[hue]).toBe(
+        fill === 9 ? scale[9] : `color-mix(in srgb, ${scale[fill - 1]} 88%, ${t.textRamp[0]})`
+      );
+      expect(t.hueText[hue]).toBe(scale[text - 1]);
+      expect(t.hueTextSmall[hue]).toBe(scale[11]);
     }
   });
 
   it.each(SCHEMES)('%s: hue text clears 4.5 at body and 7.0 at small on every surface', scheme => {
     const t = TOKENS[scheme];
     for (const hue of HUES) {
-      for (const surface of t.surfaceRamp) {
-        expect(contrastRatio(t.hueText[hue], surface), `${scheme} text-${hue} on ${surface}`).toBeGreaterThanOrEqual(4.5);
-        expect(contrastRatio(t.hueTextSmall[hue], surface), `${scheme} text-${hue}-small on ${surface}`).toBeGreaterThanOrEqual(7.0);
-      }
+      expect(worst(t.hueText[hue], t.surfaceRamp), `${scheme} text-${hue}`).toBeGreaterThanOrEqual(4.5);
+      expect(worst(t.hueTextSmall[hue], t.surfaceRamp), `${scheme} text-${hue}-small`).toBeGreaterThanOrEqual(7.0);
     }
   });
 
-  it('light: fill, body, small progress darker', () => {
-    const t = TOKENS.light;
+  it('step 9 is the same hex in both schemes for every hue', () => {
     for (const hue of HUES) {
-      const [fill, body, small] = [t.hue[hue], t.hueText[hue], t.hueTextSmall[hue]].map(srgbLuminance);
-      expect(fill, `${hue} fill vs body`).toBeGreaterThanOrEqual(body!);
-      expect(body, `${hue} body vs small`).toBeGreaterThan(small!);
+      expect(RADIX[HUE_SCALE[hue]].light[8], hue).toBe(RADIX[HUE_SCALE[hue]].dark[8]);
+    }
+  });
+
+  it('the fills that miss 3.0 are exactly the ledgered three', () => {
+    const misses: string[] = [];
+    for (const scheme of SCHEMES) {
+      const t = TOKENS[scheme];
+      for (const hue of HUES) {
+        if (worst(t.hue[hue], t.surfaceRamp) < 3.0) misses.push(`${scheme}/${hue}`);
+      }
+    }
+    expect(misses.sort()).toEqual(['dark/accent', 'dark/purple', 'light/warn']);
+  });
+
+  it.each(SCHEMES)('%s: legacy text leaves read the hue text', scheme => {
+    const t = TOKENS[scheme];
+    expect(t.text.accentText).toBe(t.hueText.accent);
+    expect(t.text.okText).toBe(t.hueText.ok);
+    expect(t.text.warnText).toBe(t.hueText.warn);
+    expect(t.text.redText).toBe(t.hueText.bad);
+    expect(t.text.badgeText).toBe(t.textRamp[2]);
+    expect(t.text.muted).toBe(RADIX.slate[scheme][8]);
+  });
+});
+
+describe('CSS_TEXT overrides', () => {
+  it('every key resolves to an existing TOKENS path with the same color', () => {
+    for (const [path, cssText] of Object.entries(CSS_TEXT)) {
+      const resolved: unknown = path
+        .split('.')
+        .reduce<unknown>((node, key) => (node as Record<string, unknown>)[key], TOKENS);
+      expect(typeof resolved, `${path} resolves to a TOKENS string`).toBe('string');
+      expect(srgbLuminance(cssText)).toBe(srgbLuminance(resolved as string));
     }
   });
 });
 ```
 
-The dark direction (fill lighter than body lighter than small) is asserted in Task 6, where the dark fills change; with today's Tokyo Night seeds every dark fill is lighter than its solved body text and the assertion would fail here.
-
-Also change the existing `AA floors for text-role tokens` describe so its `surfaces` list reads the ramp: replace `const surfaces = ['chrome', 'bg', 'panel', 'card'] as const;` and the inner loop with `for (const surface of t.surfaceRamp)` and `contrastRatio(t.text[roleName], surface)`.
-
-- [ ] **Step 2: Run to verify it fails**
-
 Run: `cd packages/tokens && bunx vitest run test/invariants.test.ts`
-Expected: FAIL. `HUES` is not exported and `surfaceRamp` is undefined.
+Expected: FAIL: `HUES`, `HUE_SCALE`, `surfaceRamp` do not exist.
 
-- [ ] **Step 3: Rewrite `values.ts`**
+- [ ] **Step 2: Rewrite `values.ts`**
 
-Replace the whole of `packages/tokens/src/values.ts` above `CSS_TEXT` with:
+Replace the whole of `packages/tokens/src/values.ts` with:
 
 ```ts
+import { RADIX, type RadixScaleName, type Scale12 } from './radix.ts';
+
 export const HUES = ['accent', 'ok', 'bad', 'warn', 'purple', 'cyan'] as const;
 export type HueName = (typeof HUES)[number];
 export type HueSet = Record<HueName, string>;
 
+export const HUE_SCALE: Record<HueName, RadixScaleName> = {
+  accent: 'indigo',
+  ok: 'teal',
+  bad: 'crimson',
+  warn: 'orange',
+  purple: 'purple',
+  cyan: 'cyan',
+};
+
+export type Step = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12;
 export type Ramp4 = readonly [string, string, string, string];
 export type Ramp3 = readonly [string, string, string];
 export type RampIndex4 = 1 | 2 | 3 | 4;
 export type RampIndex3 = 1 | 2 | 3;
 
-export type SurfaceRole = 'card' | 'panel' | 'page' | 'chrome' | 'inset' | 'overlay';
+export type SurfaceRole = 'card' | 'panel' | 'page' | 'chrome' | 'inset' | 'overlay' | 'raised';
 export type TextRole = 'fg' | 'mutedText' | 'mutedOnCard';
 export type LineRole = 'border' | 'soft' | 'control' | 'edgeOnCard' | 'softOnCard';
+export interface HueStep {
+  fill: Step;
+  text: Step;
+}
 
 export interface ColorScheme {
   hue: HueSet;
+  hueHover: HueSet;
   hueText: HueSet;
   hueTextSmall: HueSet;
+  hueStep: Record<HueName, HueStep>;
   surfaceRamp: Ramp4;
   textRamp: Ramp4;
   lineRamp: Ramp3;
@@ -285,6 +511,7 @@ export interface ColorScheme {
     card: string;
     inset: string;
     overlay: string;
+    raised: string;
   };
   line: {
     border: string;
@@ -294,11 +521,6 @@ export interface ColorScheme {
     edgeOnCard: string;
     controlEdgeOnCard: string;
     softOnCard: string;
-  };
-  dot: {
-    ok: string;
-    warn: string;
-    bad: string;
   };
   wash: string;
 }
@@ -314,43 +536,68 @@ export interface Tokens {
   };
 }
 
+type Scheme = 'light' | 'dark';
+
 interface SchemeSpec {
-  hue: HueSet;
-  hueText: HueSet;
-  hueTextSmall: HueSet;
-  surfaceRamp: Ramp4;
-  textRamp: Ramp4;
-  lineRamp: Ramp3;
+  scheme: Scheme;
+  surfaceSteps: readonly [string | Step, Step, Step, Step];
+  textSteps: readonly [Step, Step, Step, Step];
+  lineSteps: readonly [Step, Step, Step];
   surfaceRole: Record<SurfaceRole, RampIndex4>;
   textRole: Record<TextRole, RampIndex4>;
   lineRole: Record<LineRole, RampIndex3>;
-  text: Omit<ColorScheme['text'], 'fg' | 'mutedText' | 'mutedOnCard'>;
+  hueStep: Record<HueName, HueStep>;
   grid: string;
-  dot: ColorScheme['dot'];
   wash: string;
 }
 
-// Role values are read off the ramps by index so a role can never carry a
-// colour that is not a ramp step; invariants.test.ts checks the ramps' order.
+const at = (scale: Scale12, step: Step) => scale[step - 1]!;
+
+// Every value is a step into a vendored Radix scale; a literal hex appears
+// only for light surface-1 (pure white). invariants.test.ts checks that the
+// steps are the ones the spec's rules pick, not just that the hex match.
 function buildScheme(spec: SchemeSpec): ColorScheme {
-  const s = (i: RampIndex4) => spec.surfaceRamp[i - 1];
-  const t = (i: RampIndex4) => spec.textRamp[i - 1];
-  const l = (i: RampIndex3) => spec.lineRamp[i - 1];
+  const slate = RADIX.slate[spec.scheme];
+  const surfaceRamp = spec.surfaceSteps.map(s => (typeof s === 'string' ? s : at(slate, s))) as unknown as Ramp4;
+  const textRamp = spec.textSteps.map(s => at(slate, s)) as unknown as Ramp4;
+  const lineRamp = spec.lineSteps.map(s => at(slate, s)) as unknown as Ramp3;
+  // Non-null on purpose: tui-kit compiles this file too, under
+  // noUncheckedIndexedAccess, and the indices are typed 1..4 / 1..3.
+  const s = (i: RampIndex4) => surfaceRamp[i - 1]!;
+  const t = (i: RampIndex4) => textRamp[i - 1]!;
+  const l = (i: RampIndex3) => lineRamp[i - 1]!;
+  const hueValue = (pick: (scale: Scale12, step: HueStep) => string): HueSet =>
+    Object.fromEntries(HUES.map(h => [h, pick(RADIX[HUE_SCALE[h]][spec.scheme], spec.hueStep[h])])) as HueSet;
+  const hue = hueValue((scale, step) => at(scale, step.fill));
+  // Step 10 is the last non-text step, so a fill already on it hovers as the
+  // mix tui-kit shipped for filled hover rather than stepping onto text.
+  const hueHover = hueValue((scale, step) =>
+    step.fill === 9 ? at(scale, 10) : `color-mix(in srgb, ${at(scale, step.fill)} 88%, ${textRamp[0]})`
+  );
+  const hueText = hueValue((scale, step) => at(scale, step.text));
+  const hueTextSmall = hueValue(scale => at(scale, 12));
   return {
-    hue: spec.hue,
-    hueText: spec.hueText,
-    hueTextSmall: spec.hueTextSmall,
-    surfaceRamp: spec.surfaceRamp,
-    textRamp: spec.textRamp,
-    lineRamp: spec.lineRamp,
+    hue,
+    hueHover,
+    hueText,
+    hueTextSmall,
+    hueStep: spec.hueStep,
+    surfaceRamp,
+    textRamp,
+    lineRamp,
     surfaceRole: spec.surfaceRole,
     textRole: spec.textRole,
     lineRole: spec.lineRole,
     text: {
       fg: t(spec.textRole.fg),
+      muted: at(slate, 9),
       mutedText: t(spec.textRole.mutedText),
+      accentText: hueText.accent,
+      okText: hueText.ok,
+      warnText: hueText.warn,
+      badgeText: t(3),
+      redText: hueText.bad,
       mutedOnCard: t(spec.textRole.mutedOnCard),
-      ...spec.text,
     },
     surface: {
       chrome: s(spec.surfaceRole.chrome),
@@ -359,6 +606,7 @@ function buildScheme(spec: SchemeSpec): ColorScheme {
       card: s(spec.surfaceRole.card),
       inset: s(spec.surfaceRole.inset),
       overlay: s(spec.surfaceRole.overlay),
+      raised: s(spec.surfaceRole.raised),
     },
     line: {
       border: l(spec.lineRole.border),
@@ -369,108 +617,51 @@ function buildScheme(spec: SchemeSpec): ColorScheme {
       controlEdgeOnCard: l(spec.lineRole.control),
       softOnCard: l(spec.lineRole.softOnCard),
     },
-    dot: spec.dot,
     wash: spec.wash,
   };
 }
 
+const LIGHT_HUE_STEPS: Record<HueName, HueStep> = {
+  accent: { fill: 9, text: 11 },
+  ok: { fill: 10, text: 12 },
+  bad: { fill: 9, text: 11 },
+  warn: { fill: 10, text: 12 },
+  purple: { fill: 9, text: 11 },
+  cyan: { fill: 10, text: 12 },
+};
+
+const DARK_HUE_STEPS: Record<HueName, HueStep> = {
+  accent: { fill: 9, text: 11 },
+  ok: { fill: 9, text: 11 },
+  bad: { fill: 9, text: 11 },
+  warn: { fill: 9, text: 11 },
+  purple: { fill: 9, text: 11 },
+  cyan: { fill: 9, text: 11 },
+};
+
 export const TOKENS: Tokens = {
   light: buildScheme({
-    hue: {
-      accent: '#4658ff',
-      ok: '#00c287',
-      bad: '#ff3d81',
-      warn: '#ff8a00',
-      purple: '#9b45ff',
-      cyan: '#00b8d9',
-    },
-    hueText: {
-      accent: '#4658ff',
-      ok: '#008059',
-      bad: '#de004e',
-      warn: '#aa5c00',
-      purple: '#9337ff',
-      cyan: '#007b91',
-    },
-    hueTextSmall: {
-      accent: '#0e25ff',
-      ok: '#005e42',
-      bad: '#a7003b',
-      warn: '#7e4400',
-      purple: '#6900e3',
-      cyan: '#005b6b',
-    },
-    surfaceRamp: ['#ffffff', '#fbfbfc', '#f7f8fa', '#f3f4f7'],
-    // Canonical 6-digit spelling; CSS_TEXT below overrides the shipped
-    // spelling of text-1 back to the 3-digit `#222`.
-    textRamp: ['#222222', '#666e97', '#596084', '#4b5170'],
-    // line-3 has no light consumer yet and carries line-2's value because a
-    // light-dark() declaration needs a colour on both sides.
-    lineRamp: ['#c8cad6', '#d5d7e2', '#d5d7e2'],
-    surfaceRole: { card: 1, panel: 2, page: 3, chrome: 4, inset: 3, overlay: 2 },
+    scheme: 'light',
+    surfaceSteps: ['#ffffff', 1, 2, 3],
+    textSteps: [12, 11, 11, 12],
+    lineSteps: [8, 7, 6],
+    surfaceRole: { card: 1, panel: 2, page: 3, chrome: 4, inset: 3, overlay: 2, raised: 4 },
     textRole: { fg: 1, mutedText: 3, mutedOnCard: 3 },
-    lineRole: { border: 1, soft: 2, control: 1, edgeOnCard: 1, softOnCard: 2 },
-    text: {
-      muted: '#8990b3',
-      accentText: '#3a3fe8',
-      okText: '#008559',
-      warnText: '#b36000',
-      badgeText: '#454b66',
-      redText: '#c8214f',
-    },
+    lineRole: { border: 2, soft: 3, control: 1, edgeOnCard: 2, softOnCard: 3 },
+    hueStep: LIGHT_HUE_STEPS,
     grid: 'rgba(52, 59, 88, 0.05)',
-    dot: {
-      ok: '#1f9d3a',
-      warn: '#e08a00',
-      bad: '#e5153f',
-    },
     wash: '10%',
   }),
   dark: buildScheme({
-    hue: {
-      accent: '#7aa2f7',
-      ok: '#9ece6a',
-      bad: '#f7768e',
-      warn: '#e0af68',
-      purple: '#bb9af7',
-      cyan: '#7dcfff',
-    },
-    hueText: {
-      accent: '#6e7cf7',
-      ok: '#319879',
-      bad: '#f4417f',
-      warn: '#bd7827',
-      purple: '#a867f3',
-      cyan: '#0095b0',
-    },
-    hueTextSmall: {
-      accent: '#9ca5f9',
-      ok: '#3ec098',
-      bad: '#f888af',
-      warn: '#dc9f56',
-      purple: '#c498f7',
-      cyan: '#00bbdd',
-    },
-    surfaceRamp: ['#101016', '#16161e', '#1a1c28', '#1e2030'],
-    textRamp: ['#e3e7f6', '#7c86b3', '#8d96bd', '#a3aac9'],
-    lineRamp: ['#6b7499', '#505879', '#3b4261'],
-    surfaceRole: { card: 4, panel: 3, page: 2, chrome: 3, inset: 1, overlay: 2 },
-    textRole: { fg: 1, mutedText: 4, mutedOnCard: 4 },
-    lineRole: { border: 3, soft: 3, control: 1, edgeOnCard: 2, softOnCard: 3 },
-    text: {
-      muted: '#7e86ad',
-      accentText: '#7aa2f7',
-      okText: '#9ece6a',
-      warnText: '#e0af68',
-      badgeText: '#aab3d8',
-      redText: '#f7768e',
-    },
+    scheme: 'dark',
+    surfaceSteps: [1, 2, 3, 4],
+    textSteps: [12, 11, 11, 12],
+    lineSteps: [9, 7, 6],
+    surfaceRole: { card: 3, panel: 2, page: 1, chrome: 2, inset: 1, overlay: 1, raised: 4 },
+    textRole: { fg: 1, mutedText: 3, mutedOnCard: 3 },
+    lineRole: { border: 2, soft: 3, control: 1, edgeOnCard: 1, softOnCard: 2 },
+    hueStep: DARK_HUE_STEPS,
     grid: 'rgba(122, 162, 247, 0.06)',
-    dot: {
-      ok: '#4ade5b',
-      warn: '#ffbb3d',
-      bad: '#ff5c72',
-    },
     wash: '15%',
   }),
   font: {
@@ -480,120 +671,131 @@ export const TOKENS: Tokens = {
     lineHeight: '1.55',
   },
 };
+
+// Dot-path (e.g. 'light.text.fg') into TOKENS, keyed to the exact CSS text an
+// emitter must print in place of the six-digit canonical value at that path.
+// Empty now that text-1 is slate 12 rather than the historical `#222`; the
+// mechanism stays for the next spelling that has to survive a migration.
+export const CSS_TEXT: Record<string, string> = {};
 ```
 
-Keep the existing `CSS_TEXT` export unchanged below it.
+- [ ] **Step 3: Run the tokens tests**
 
-- [ ] **Step 4: Run the tokens tests**
+Run: `cd packages/tokens && bunx vitest run test/invariants.test.ts test/radix-fresh.test.ts && bun run typecheck`
+Expected: tests PASS. Typecheck reports exactly six TS2339 errors, all in `scripts/generate.ts`, all on `t.dot.ok` / `t.dot.warn` / `t.dot.bad` (three in `buildTuiKitColors`, three in `buildTokyoDeclarations`): `dot` left `ColorScheme` in this task and Tasks 2 and 3 rewrite those reads. Any other typecheck error is a defect in this task. `consumption.test.ts`, `fragment-sync.test.ts`, `ramp-anchors.test.ts` are stale until Tasks 2 to 4 and are not run here.
 
-Run: `cd packages/tokens && bunx vitest run`
-Expected: PASS for `invariants.test.ts`. `ramp-anchors.test.ts` still passes (dark `hue` is unchanged). `consumption.test.ts` and `fragment-sync.test.ts` may fail because the generated files are now stale; that is Task 2's job, so note it and continue.
+The `dark` and `light` `bg < panel < card` branches are identical on purpose: both schemes order page below panel below card in luminance (light: `#f9f9fb` < `#fcfcfd` < `#ffffff`; dark: `#111113` < `#18191b` < `#212225`), so the old test's assumption survives the ramp change; the branch is written out so a future scheme that inverts it fails here rather than downstream.
 
-- [ ] **Step 5: Typecheck**
-
-Run: `cd packages/tokens && bun run typecheck`
-Expected: clean.
-
-- [ ] **Step 6: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
 git add packages/tokens/src/values.ts packages/tokens/test/invariants.test.ts
-git commit -m "tokens: surface, text and line ramps with roles derived by index"
+git commit -m "tokens: every colour a Radix step chosen by rule; ramps and roles derived by index"
 ```
 
-### Task 2: Emit the ramps through tui-kit
+### Task 2: Emit the ramps through tui-kit, retune the buttons, rewrite the ledger
 
 **Files:**
 - Modify: `packages/tokens/scripts/generate.ts:39-90`
-- Modify: `packages/tui-kit/src/theme.ts:236-242`
+- Modify: `packages/tui-kit/src/theme.ts:185-242`
 - Modify: `packages/tui-kit/soribashi.config.ts:42-95`
-- Modify: `packages/tui-kit/test/theme.test.ts:193-214,325-335`
-- Regenerate: `packages/tui-kit/src/generated/tokens.ts`, `packages/tui-kit/src/generated/theme.css`
+- Modify: `packages/tui-kit/test/theme.test.ts`
+- Modify: `packages/tokens/test/consumption.test.ts`
+- Modify: `packages/tui-kit/src/intent-resolver.ts:38-111`, `packages/tui-kit/src/recipes/Button/Button.tsx:89`, `packages/tui-kit/src/a11y/known-contrast-debt.ts`
+- Test: `packages/tui-kit/test/intent-resolver.test.ts` (new, node tier), `packages/tui-kit/src/recipes/Button/Button.matrix.test.tsx` (existing, must go green)
+- Regenerate: `packages/tui-kit/src/generated/tokens.ts`, `packages/tui-kit/src/generated/theme.css`; refresh every `packages/tui-kit/src/recipes/*/__screenshots__/*`
 
 **Interfaces:**
-- Consumes: `TOKENS[scheme].surfaceRamp/textRamp/lineRamp/hueText/hueTextSmall/line.control` from Task 1.
-- Produces: tui-kit colour families `ground["1".."4"]`, `ink["1".."4"]`, `rule["1".."3"]`, `<family>.text`, `<family>.textSmall`, `line.control`; emitted CSS names `--color-ground-N`, `--color-ink-N`, `--color-rule-N`, `--color-<family>-text`, `--color-<family>-textSmall`, `--border-control`; public aliases `--surface-1..4`, `--text-1..4`, `--line-1..3`, `--page`, `--fill-<hue>`, `--text-<hue>`, `--text-<hue>-small`.
+- Consumes: `TOKENS[scheme]` from Task 1.
+- Produces: tui-kit colour families `ground["1".."4"]`, `ink["1".."4"]`, `rule["1".."3"]`, `<family>.{500,hover,text,textSmall}`, `surface.raised`, `line.control`, `dot.{ok,warn,bad}` (now the fills); emitted CSS names `--color-ground-N`, `--color-ink-N`, `--color-rule-N`, `--color-<family>-hover/text/textSmall`, `--surface-raised`, `--border-control`; public aliases `--surface-1..4`, `--text-1..4`, `--line-1..3`, `--page`, `--raised`, `--fill-<hue>`, `--fill-<hue>-hover`, `--text-<hue>`, `--text-<hue>-small`. `retunedTextColor(tone, variant, intent)` returns the hue text token for `outline`/`subtle`, the small token for `light`, and the raw tone otherwise; `toneWeightFor` and the two weight tables are deleted; `KNOWN_CONTRAST_DEBT` holds exactly the eight filled cells from the values reference.
 
 - [ ] **Step 1: Write the failing theme tests**
 
-In `packages/tui-kit/test/theme.test.ts`, add after the `DARK_SURFACE_RETUNE` constant:
+In `packages/tui-kit/test/theme.test.ts`:
+
+Replace the three ruling constants (`SURFACE_RAMP_RULING`, `TEXT_CONFORMANCE_RULING`, `DARK_SURFACE_RETUNE`) and the `LIGHT_COLORS` / `DARK_COLORS` filters with one ruling: every colour slot leaves both census sweeps, fonts stay.
 
 ```ts
-// `--border-soft` is excluded from the DARK sweep: the line ramp folds the
-// census soft rule into the ramp's third step. See the "line ramp" block.
-const LINE_RAMP_RULING = new Set(["--border-soft"]);
+// The palette moved wholesale to Radix Colors (packages/tokens/src/radix.ts),
+// so no colour still carries its mr-board census literal; both colour sweeps
+// are empty and the "ramps" block further down covers every colour against
+// the tokens package instead. Fonts keep their own block below.
+const LIGHT_COLORS: [string, string][] = [];
+const DARK_COLORS: [string, string][] = [];
 ```
 
-and extend the `DARK_COLORS` filter to `!TEXT_CONFORMANCE_RULING.has(name) && !DARK_SURFACE_RETUNE.has(name) && !LINE_RAMP_RULING.has(name)`.
+An empty `test.each([])` is a pass in vitest 4; leave the two sweep tests in place.
 
-Replace the `muted FILL (--muted) stays the raw census hex...` test body's four `mutedText` / `--muted-text` expectations with:
+Four more existing tests pin the old palette by literal and are rewritten to read the tokens package (never a new literal): "the light surface ramp carries the split-chrome ruling's values" (`#f7f8fa`/`#fbfbfc`) and "chrome carries the ruling's value in both schemes" (`#f3f4f7`/`#1a1c28`) become one test asserting `resolve("--bg"|"--panel"|"--chrome", scheme)` equals `TOKENS[scheme].surface.bg|panel|chrome`; "generated css exposes the alias contract" loses its `#4658ff`, `#7aa2f7`, `#1a1c28` literals in favour of `TOKENS.light.hue.accent`, `TOKENS.dark.hue.accent`, `TOKENS.dark.surface.chrome`; "intent resolver maps intent words onto the single-shade families" expects `outline|ok`'s `.color` to be `var(--text-ok)` and `subtle|muted`'s to be `var(--text-2)` (the retune in Step 7 is what makes those true, so this test goes green at Step 9).
+
+Rewrite these existing tests to the new values (each keeps its name shape, values from the tokens package rather than typed): "the dark surface ramp carries the retune's values" becomes
 
 ```ts
-  expect(tuiTheme.tokens.colors.gray!.mutedText).toBe("#596084");
-  expect(tuiTheme.dark!.colors!.gray!.mutedText).toBe("#a3aac9");
-  expect(resolve("--muted-text", "light")).toBe("#596084");
-  expect(resolve("--muted-text", "dark")).toBe("#a3aac9");
+test("the surface ramps carry the Radix steps, ordered page < panel < card", () => {
+  expect(tuiTheme.dark!.colors!.surface!.bg).toBe(TOKENS.dark.surface.bg);
+  expect(resolve("--bg", "dark")).toBe("#111113");
+  expect(resolve("--panel", "dark")).toBe("#18191b");
+  expect(resolve("--card", "dark")).toBe("#212225");
+  expect(resolve("--bg", "light")).toBe("#f9f9fb");
+  expect(resolve("--panel", "light")).toBe("#fcfcfd");
+  expect(resolve("--card", "light")).toBe("#ffffff");
+});
 ```
 
-Add these tests at the end of the file:
+with `import { TOKENS } from "@mattstack/tokens";` added (tui-kit already depends on the workspace package; if not, add `"@mattstack/tokens": "workspace:*"` to its devDependencies and `bun install` at the root). "fg carries the value-conformance ruling's #222" becomes expectations of `#1c2024` / `#edeef0`; the `muted FILL` test expects `#8b8d98` / `#696e77` for `--muted` and `#60646c` / `#b0b4ba` for `--muted-text`; "accentText and badText" expects `#3a5bc7` / `#9eb1ff` for `--accent-text` and `#cb1d63` / `#ff92ad` for `--red-text`.
+
+Add at the end of the file:
 
 ```ts
 // ── ramps ────────────────────────────────────────────────────────────────
 
 test("the public ramp names resolve to the tokens package's ramp values", () => {
-  expect(resolve("--surface-1", "light")).toBe("#ffffff");
-  expect(resolve("--surface-4", "light")).toBe("#f3f4f7");
-  expect(resolve("--surface-1", "dark")).toBe("#101016");
-  expect(resolve("--surface-4", "dark")).toBe("#1e2030");
-  expect(resolve("--text-1", "light")).toBe("#222");
-  expect(resolve("--text-4", "light")).toBe("#4b5170");
-  expect(resolve("--text-2", "dark")).toBe("#7c86b3");
-  expect(resolve("--line-1", "dark")).toBe("#6b7499");
-  expect(resolve("--line-3", "light")).toBe("#d5d7e2");
-  expect(resolve("--page", "light")).toBe("#f7f8fa");
-  expect(resolve("--page", "dark")).toBe("#16161e");
+  for (const scheme of ["light", "dark"] as const) {
+    const t = TOKENS[scheme];
+    t.surfaceRamp.forEach((v, i) => expect(resolve(`--surface-${i + 1}`, scheme)).toBe(v));
+    t.textRamp.forEach((v, i) => expect(resolve(`--text-${i + 1}`, scheme)).toBe(v));
+    t.lineRamp.forEach((v, i) => expect(resolve(`--line-${i + 1}`, scheme)).toBe(v));
+    expect(resolve("--page", scheme)).toBe(t.surface.bg);
+    expect(resolve("--raised", scheme)).toBe(t.surface.raised);
+    for (const hue of ["accent", "ok", "bad", "warn", "purple", "cyan"] as const) {
+      expect(resolve(`--fill-${hue}`, scheme)).toBe(t.hue[hue]);
+      expect(resolve(`--fill-${hue}-hover`, scheme)).toBe(t.hueHover[hue]);
+      expect(resolve(`--text-${hue}`, scheme)).toBe(t.hueText[hue]);
+      expect(resolve(`--text-${hue}-small`, scheme)).toBe(t.hueTextSmall[hue]);
+    }
+  }
 });
 
 test("every surface role is a ramp step in both schemes", () => {
   for (const scheme of ["light", "dark"] as const) {
     const ramp = [1, 2, 3, 4].map((i) => resolve(`--surface-${i}`, scheme));
-    for (const role of ["--card", "--panel", "--page", "--chrome", "--surface-inset", "--surface-overlay"]) {
+    for (const role of ["--card", "--panel", "--page", "--chrome", "--surface-inset", "--surface-overlay", "--raised"]) {
       expect(ramp, `${scheme} ${role}`).toContain(resolve(role, scheme));
     }
   }
 });
 
-test("the line ramp carries the dark soft rule on line-3 and the card-scope edges on their steps", () => {
-  expect(resolve("--border-soft", "dark")).toBe("#3b4261");
-  expect(resolve("--border-on-card", "dark")).toBe("#505879");
-  expect(resolve("--border-control", "dark")).toBe("#6b7499");
-  expect(resolve("--border-control", "light")).toBe("#c8cad6");
-  expect(resolve("--border-soft-on-card", "dark")).toBe("#3b4261");
+test("card-scope line aliases carry the per-scheme mapping", () => {
+  expect(resolve("--border-on-card", "light")).toBe(resolve("--line-2", "light"));
+  expect(resolve("--border-on-card", "dark")).toBe(resolve("--line-1", "dark"));
+  expect(resolve("--border-soft-on-card", "light")).toBe(resolve("--line-3", "light"));
+  expect(resolve("--border-soft-on-card", "dark")).toBe(resolve("--line-2", "dark"));
+  expect(resolve("--border-control", "dark")).toBe("#696e77");
 });
 
-test("fill and text names exist for every hue, and text-<hue> is never the fill in dark", () => {
-  for (const hue of ["accent", "ok", "bad", "warn", "purple", "cyan"]) {
-    for (const scheme of ["light", "dark"] as const) {
-      expect(resolve(`--fill-${hue}`, scheme)).toMatch(/^#[0-9a-f]{6}$/);
-      expect(resolve(`--text-${hue}`, scheme)).toMatch(/^#[0-9a-f]{6}$/);
-      expect(resolve(`--text-${hue}-small`, scheme)).toMatch(/^#[0-9a-f]{6}$/);
-    }
-    expect(resolve(`--text-${hue}`, "dark")).not.toBe(resolve(`--fill-${hue}`, "dark"));
+test("dots are fills", () => {
+  for (const scheme of ["light", "dark"] as const) {
+    expect(resolve("--dot-ok", scheme)).toBe(resolve("--fill-ok", scheme));
+    expect(resolve("--dot-warn", scheme)).toBe(resolve("--fill-warn", scheme));
+    expect(resolve("--dot-bad", scheme)).toBe(resolve("--fill-bad", scheme));
   }
-  expect(resolve("--fill-ok", "light")).toBe("#00c287");
-  expect(resolve("--text-ok", "light")).toBe("#008059");
-  expect(resolve("--text-ok-small", "light")).toBe("#005e42");
 });
 ```
 
-Note `resolve("--text-1", "light")` expects `#222`: `CSS_TEXT` prints text-1 in its shipped 3-digit spelling, the same as `--fg`.
-
-- [ ] **Step 2: Run to verify it fails**
-
 Run: `cd packages/tui-kit && bunx vitest run --project node test/theme.test.ts`
-Expected: FAIL on the new tests (names not emitted) and on the `--muted-text` values.
+Expected: FAIL on the new tests (names not emitted) and on every rewritten value.
 
-- [ ] **Step 3: Emit the new families from `generate.ts`**
+- [ ] **Step 2: Emit the new families from `generate.ts`**
 
 In `packages/tokens/scripts/generate.ts`, replace `buildTuiKitColors` with:
 
@@ -603,6 +805,7 @@ function buildTuiKitColors(scheme: 'light' | 'dark') {
   const at = (leaf: string, value: string) => pick(`${scheme}.${leaf}`, value);
   const family = (hue: HueName) => ({
     '500': at(`hue.${hue}`, t.hue[hue]),
+    hover: at(`hueHover.${hue}`, t.hueHover[hue]),
     text: at(`hueText.${hue}`, t.hueText[hue]),
     textSmall: at(`hueTextSmall.${hue}`, t.hueTextSmall[hue]),
   });
@@ -636,6 +839,7 @@ function buildTuiKitColors(scheme: 'light' | 'dark') {
       chrome: at('surface.chrome', t.surface.chrome),
       inset: at('surface.inset', t.surface.inset),
       overlay: at('surface.overlay', t.surface.overlay),
+      raised: at('surface.raised', t.surface.raised),
     },
     line: {
       border: at('line.border', t.line.border),
@@ -647,24 +851,25 @@ function buildTuiKitColors(scheme: 'light' | 'dark') {
       softOnCard: at('line.softOnCard', t.line.softOnCard),
     },
     dot: {
-      ok: at('dot.ok', t.dot.ok),
-      warn: at('dot.warn', t.dot.warn),
-      bad: at('dot.bad', t.dot.bad),
+      ok: at('hue.ok', t.hue.ok),
+      warn: at('hue.warn', t.hue.warn),
+      bad: at('hue.bad', t.hue.bad),
     },
   };
 }
 ```
 
-Change the import line to `import { CSS_TEXT, TOKENS, type ColorScheme, type HueName } from '../src/values.ts';`. Add to `CSS_TEXT` in `values.ts`: `'light.textRamp.0': '#222',` so `ink.1` prints the same shipped spelling as `gray.fg`.
+Change the import line to `import { CSS_TEXT, TOKENS, type ColorScheme, type HueName } from '../src/values.ts';`.
 
-- [ ] **Step 4: Declare the semantic border role and the public aliases in tui-kit**
+- [ ] **Step 3: Declare the semantic roles and the public aliases in tui-kit**
 
-In `packages/tui-kit/src/theme.ts`, add `control: "colors.line.control",` inside `semanticTokens.border` after `default`.
+In `packages/tui-kit/src/theme.ts`: add `raised: "colors.surface.raised",` inside `semanticTokens.surface` after `overlay`, and `control: "colors.line.control",` inside `semanticTokens.border` after `default`.
 
 In `packages/tui-kit/soribashi.config.ts`, add inside the `root` object after the `"--border": "var(--border-default)"` line:
 
 ```ts
     "--page": "var(--surface-canvas)",
+    "--raised": "var(--surface-raised)",
     "--surface-1": "var(--color-ground-1)",
     "--surface-2": "var(--color-ground-2)",
     "--surface-3": "var(--color-ground-3)",
@@ -677,11 +882,17 @@ In `packages/tui-kit/soribashi.config.ts`, add inside the `root` object after th
     "--line-2": "var(--color-rule-2)",
     "--line-3": "var(--color-rule-3)",
     "--fill-accent": "var(--color-blue-500)",
+    "--fill-accent-hover": "var(--color-blue-hover)",
     "--fill-ok": "var(--color-green-500)",
+    "--fill-ok-hover": "var(--color-green-hover)",
     "--fill-bad": "var(--color-red-500)",
+    "--fill-bad-hover": "var(--color-red-hover)",
     "--fill-warn": "var(--color-amber-500)",
+    "--fill-warn-hover": "var(--color-amber-hover)",
     "--fill-purple": "var(--color-purple-500)",
+    "--fill-purple-hover": "var(--color-purple-hover)",
     "--fill-cyan": "var(--color-cyan-500)",
+    "--fill-cyan-hover": "var(--color-cyan-hover)",
     "--text-accent": "var(--color-blue-text)",
     "--text-accent-small": "var(--color-blue-textSmall)",
     "--text-ok": "var(--color-green-text)",
@@ -696,18 +907,19 @@ In `packages/tui-kit/soribashi.config.ts`, add inside the `root` object after th
     "--text-cyan-small": "var(--color-cyan-textSmall)",
 ```
 
-- [ ] **Step 5: Waive the new public names in the consumption gate**
+- [ ] **Step 4: Waive the new public names in the consumption gate**
 
-`packages/tokens/test/consumption.test.ts` fails any custom property emitted in tui-kit's `theme.css` that no recipe CSS, `canvas.css` or `theme.css` itself references, unless it is listed in `WAIVED_TUI` with a reason. The 31 public ramp names have no kit consumer until the storybook and the gate (both outside its scan) and the migration. Above `WAIVED_TUI` in that file add:
+`packages/tokens/test/consumption.test.ts` fails any custom property emitted in tui-kit's `theme.css` that no recipe CSS, `canvas.css` or `theme.css` itself references, unless it is listed in `WAIVED_TUI` with a reason. Above `WAIVED_TUI` add:
 
 ```ts
 const RAMP_HUES = ['accent', 'ok', 'bad', 'warn', 'purple', 'cyan'];
 const RAMP_PUBLIC_NAMES = [
   '--page',
+  '--raised',
   '--border-control',
   ...[1, 2, 3, 4].flatMap(i => [`--surface-${i}`, `--text-${i}`]),
   ...[1, 2, 3].map(i => `--line-${i}`),
-  ...RAMP_HUES.flatMap(h => [`--fill-${h}`, `--text-${h}`, `--text-${h}-small`]),
+  ...RAMP_HUES.flatMap(h => [`--fill-${h}`, `--fill-${h}-hover`, `--text-${h}`, `--text-${h}-small`]),
 ];
 const RAMP_WAIVER =
   'ramp name emitted ahead of the apps-wide migration; the storybook specimens and the ramp contrast gate read it, no kit recipe does yet.';
@@ -720,9 +932,9 @@ const WAIVED_TUI: Record<string, string> = {
   ...Object.fromEntries(RAMP_PUBLIC_NAMES.map(name => [name, RAMP_WAIVER])),
 ```
 
-keeping every existing entry after that spread.
+keeping every existing entry after that spread. `--surface-raised` is not waived: the `--raised` alias references it. The no-stale-waivers check will name any entry that is now referenced; remove exactly those.
 
-- [ ] **Step 6: Regenerate and run the node tier**
+- [ ] **Step 5: Regenerate and run the node tier**
 
 Run:
 ```bash
@@ -730,28 +942,167 @@ bun run tokens:codegen
 cd packages/tui-kit && bun run codegen && bunx vitest run --project node
 cd ../tokens && bunx vitest run test/consumption.test.ts
 ```
-Expected: PASS, including `theme.test.ts`'s referential-closure test (every `var()` has a declaration) and the census sweeps with the new ruling. If `token-existence.test.ts` or `no-hardcoded-values.test.ts` fail, the failure names a recipe reading a token that moved; none should, because no recipe changes here.
+Expected: PASS, including `theme.test.ts`'s referential-closure test (every `var()` has a declaration). `test/no-hardcoded-values.test.ts` and `test/token-existence.test.ts` are unaffected because no recipe changes here.
 
-- [ ] **Step 7: Run the browser tier the way CI does**
+- [ ] **Step 6: Write the failing resolver test**
 
-Run: `cd packages/tui-kit && bun run build && bunx vitest run --project browser --exclude '**/*.visual.test.tsx' --exclude '**/*.parity.test.tsx'`
-Expected: PASS. `Button.matrix.test.tsx` is unaffected: no seed or resolver changed, and the `muted` intent reads `--color-gray-muted`, which did not move.
+Create `packages/tui-kit/test/intent-resolver.test.ts`:
 
-- [ ] **Step 8: Commit**
+```ts
+import { describe, expect, test } from "vitest";
+import { retunedTextColor, tuiIntentResolver } from "../src/intent-resolver.ts";
+
+describe("hue text retune", () => {
+  test("filled paints a white label on hue fills and a scheme-aware label on the neutral fill", () => {
+    const r = tuiIntentResolver({ intent: "ok", variant: "filled" });
+    expect(r.color).toBe("#ffffff");
+    expect(r.hover).toBe("var(--color-green-hover)");
+    const m = tuiIntentResolver({ intent: "muted", variant: "filled" });
+    expect(m.color).toBe("light-dark(var(--text-1), #ffffff)");
+  });
+
+  test("outline and subtle take the hue text token", () => {
+    expect(retunedTextColor("var(--color-green-500)", "outline", "ok")).toBe("var(--text-ok)");
+    expect(retunedTextColor("var(--color-purple-500)", "subtle", "purple")).toBe("var(--text-purple)");
+  });
+
+  test("the tinted light variant takes the small hue text token", () => {
+    expect(retunedTextColor("var(--color-blue-500)", "light", "accent")).toBe("var(--text-accent-small)");
+  });
+
+  test("muted maps onto the neutral text ramp", () => {
+    expect(retunedTextColor("var(--color-gray-muted)", "outline", "muted")).toBe("var(--text-2)");
+    expect(retunedTextColor("var(--color-gray-muted)", "light", "muted")).toBe("var(--text-4)");
+  });
+
+  test("default is untouched", () => {
+    expect(retunedTextColor("var(--color-blue-500)", "default", "accent")).toBe("var(--color-blue-500)");
+  });
+});
+```
+
+Run: `cd packages/tui-kit && bunx vitest run --project node test/intent-resolver.test.ts`
+Expected: FAIL.
+
+- [ ] **Step 7: Retune**
+
+In `packages/tui-kit/src/intent-resolver.ts`, delete `LIGHT_VARIANT_TONE_WEIGHT`, `OUTLINE_SUBTLE_TONE_WEIGHT`, `toneWeightFor` and the comment block above them, and replace them with:
+
+```ts
+/**
+ * Text tones. Fills are Radix step 9 or 10 and read under AA as text on the
+ * kit's surfaces, so every text-bearing variant reads the hue's text token
+ * instead; the tinted `light` variant lifts its ground above the page and
+ * takes the small token for headroom. Both tokens are solved in
+ * packages/tokens, one value per scheme, so nothing here mixes toward --fg.
+ */
+const TEXT_TONE: Record<string, string> = {
+  accent: "var(--text-accent)",
+  ok: "var(--text-ok)",
+  warn: "var(--text-warn)",
+  bad: "var(--text-bad)",
+  cyan: "var(--text-cyan)",
+  purple: "var(--text-purple)",
+  muted: "var(--text-2)",
+};
+
+const TINT_TEXT_TONE: Record<string, string> = {
+  accent: "var(--text-accent-small)",
+  ok: "var(--text-ok-small)",
+  warn: "var(--text-warn-small)",
+  bad: "var(--text-bad-small)",
+  cyan: "var(--text-cyan-small)",
+  purple: "var(--text-purple-small)",
+  muted: "var(--text-4)",
+};
+
+export function retunedTextColor(tone: string, variant: string, intent: string): string {
+  if (variant === "light") return TINT_TEXT_TONE[intent] ?? tone;
+  if (variant === "outline" || variant === "subtle") return TEXT_TONE[intent] ?? tone;
+  return tone;
+}
+```
+
+In `tuiIntentResolver`, the `filled` branch becomes:
+
+```ts
+  if (variant === "filled") {
+    const neutral = family === "gray";
+    result = {
+      ...result,
+      // slate 9 carries a white label at 3.3 in light and 5.1 in dark; the
+      // high-contrast text step reads 5.0 on it in light, so the neutral fill
+      // flips its label per scheme where the hue fills keep Radix's white.
+      color: neutral ? "light-dark(var(--text-1), #ffffff)" : "#ffffff",
+      hover: neutral ? `color-mix(in srgb, ${tone} 88%, var(--fg))` : `var(--color-${family}-hover)`,
+      border: "transparent",
+    };
+  }
+```
+
+and the tail becomes:
+
+```ts
+  const color = retunedTextColor(tone, variant, intent);
+  return color === tone ? result : { ...result, color };
+```
+
+`Chip.test.tsx` and `Button.test.tsx` import `retunedTextColor`; `Chip.test.tsx` also imports `toneWeightFor` if its census does (grep for it); replace any `toneWeightFor` use with a direct `retunedTextColor` comparison, since the probe already paints `retunedTextColor(...)`.
+
+In `packages/tui-kit/src/recipes/Button/Button.tsx` line 89, change the pinned value to `"--sb-button-bad-color": "var(--text-bad)",` and delete the comment on line 88 that names `LIGHT_VARIANT_TONE_WEIGHT`, which no longer exists. In `packages/tui-kit/src/recipes/Button/Button.test.tsx` line 172, the `default|bad` probe paints the literal `"color-mix(in srgb, var(--red) 80%, var(--fg))"`; change it to `"var(--text-bad)"` so it keeps matching the pin. Delete the stale comment above the resolver's `filled` branch ("filled paints scheme-inverting text: --bg flips ..."); the branch's own comment in Step 7 replaces it.
+
+- [ ] **Step 8: Rewrite the ledger**
+
+Replace the `KNOWN_CONTRAST_DEBT` array in `packages/tui-kit/src/a11y/known-contrast-debt.ts` with exactly these eight entries (keep the header comment, the types and the helpers; reword the header's first paragraph to say the cells are Radix step 9 and 10 fills carrying the white label Radix's contract specifies):
+
+```ts
+export const KNOWN_CONTRAST_DEBT: readonly ContrastDebtEntry[] = [
+  { variant: "filled", intent: "ok", scheme: "light", state: "rest", measuredRatio: 3.46, reason: "white label on teal 10, Radix's own label choice for the solid step" },
+  { variant: "filled", intent: "warn", scheme: "light", state: "rest", measuredRatio: 3.33, reason: "white label on orange 10, Radix's own label choice for the solid step" },
+  { variant: "filled", intent: "cyan", scheme: "light", state: "rest", measuredRatio: 3.42, reason: "white label on cyan 10, Radix's own label choice for the solid step" },
+  { variant: "filled", intent: "bad", scheme: "light", state: "rest", measuredRatio: 3.85, reason: "white label on crimson 9, Radix's own label choice for the solid step" },
+  { variant: "filled", intent: "ok", scheme: "dark", state: "rest", measuredRatio: 3.07, reason: "white label on teal 9, Radix's own label choice for the solid step" },
+  { variant: "filled", intent: "warn", scheme: "dark", state: "rest", measuredRatio: 2.97, reason: "white label on orange 9, Radix's own label choice for the solid step" },
+  { variant: "filled", intent: "cyan", scheme: "dark", state: "rest", measuredRatio: 3.0, reason: "white label on cyan 9, Radix's own label choice for the solid step" },
+  { variant: "filled", intent: "bad", scheme: "dark", state: "rest", measuredRatio: 3.85, reason: "white label on crimson 9, Radix's own label choice for the solid step" },
+];
+```
+
+The matrix asserts a ledger cell within `measuredRatio - 0.05 <= ratio < 4.5`; Chromium's serialization can land a few thousandths off the tokens-package number, and the tolerance covers that. The `filled|muted` cell is not in the ledger on purpose: its label flips per scheme in Step 7 (4.96 in light on the text-1 label, 5.13 in dark on white), so it clears the floor in both.
+
+- [ ] **Step 9: Run the resolver test, codegen, then the matrix in both schemes**
+
+Run:
+```bash
+cd packages/tui-kit && bunx vitest run --project node test/intent-resolver.test.ts && bun run codegen && bun run build
+bunx vitest run --project browser src/recipes/Button/Button.matrix.test.tsx
+```
+Expected: PASS in both schemes with the ledger above (plus the muted entry if needed). A cell that fails outside the ledger is a wrong tone in `intent-resolver.ts` or `Button.tsx`, never a new ledger entry. `theme.css` does not change from the resolver edit; soribashi applies resolver output at render time (`autoVars`), so the codegen run only confirms nothing else moved.
+
+- [ ] **Step 10: The rest of the browser tier, and every visual baseline**
+
+Run: `cd packages/tui-kit && bunx vitest run --project browser --exclude '**/*.visual.test.tsx' --exclude '**/*.parity.test.tsx'`
+Expected: PASS. `Chip.test.tsx`'s census probes and `Button.test.tsx`'s outline and subtle probes build their expected colours from `retunedTextColor`, so they follow the retune; the `default|bad` probe was repointed in Step 7.
+
+Every recipe's visual baselines moved with the palette (local-only, CI excludes them): `cd packages/tui-kit && bunx vitest run --project browser visual -u`. Look at `button-grid-light` and `button-grid-dark` before committing: filled labels white, outline and subtle text the hue text tones, tinted variants on the Radix 3 ground. A layout shift is a defect; a colour shift is expected. `Button.parity.test.tsx` is excluded from CI and its oracle predates the arcade palette; leave it alone and say so in the report.
+
+- [ ] **Step 11: Commit**
 
 ```bash
-git add packages/tokens packages/tui-kit/src/theme.ts packages/tui-kit/soribashi.config.ts packages/tui-kit/test/theme.test.ts packages/tui-kit/src/generated
-git commit -m "tui-kit: emit the surface, text, line and hue-text ramps as public names"
+git add packages/tokens packages/tui-kit
+git commit -m "tui-kit: emit the Radix ramps as public names; buttons read the hue text tokens; ledger to Radix's eight white-label cells"
 ```
 
 ### Task 3: Emit the ramps through tokyo, regenerate deck
 
 **Files:**
 - Modify: `packages/tokens/scripts/generate.ts:153-245`
+- Modify: `packages/tokens/test/consumption.test.ts`
+- Create: `packages/tokens/test/tokyo-ramp-names.test.ts`
 - Regenerate: `packages/tokyo/src/tokyo-theme.css`, `apps/deck/core/generated/board.css`, `apps/deck/core/generated/board.js`, `apps/deck/core/generated/gateway.css`
 
 **Interfaces:**
-- Produces: `--tk-surface-1..4`, `--tk-text-1..4`, `--tk-line-1..3`, `--tk-fill-<hue>`, `--tk-text-<hue>`, `--tk-text-<hue>-small` in both `[data-mantine-color-scheme]` blocks of `tokyo-theme.css`.
+- Produces: `--tk-surface-1..4`, `--tk-text-1..4`, `--tk-line-1..3`, `--tk-raised`, `--tk-fill-<hue>`, `--tk-fill-<hue>-hover`, `--tk-text-<hue>`, `--tk-text-<hue>-small` in both `[data-mantine-color-scheme]` blocks of `tokyo-theme.css`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -765,10 +1116,7 @@ import { describe, expect, it } from 'vitest';
 
 import { HUES, TOKENS } from '../src/values.ts';
 
-const css = readFileSync(
-  join(import.meta.dirname, '..', '..', 'tokyo', 'src', 'tokyo-theme.css'),
-  'utf8'
-);
+const css = readFileSync(join(import.meta.dirname, '..', '..', 'tokyo', 'src', 'tokyo-theme.css'), 'utf8');
 
 function block(scheme: 'light' | 'dark'): string {
   const begin = css.indexOf(`/* BEGIN GENERATED: tokyo tokens ${scheme} */`);
@@ -777,20 +1125,21 @@ function block(scheme: 'light' | 'dark'): string {
 }
 
 describe('tokyo-theme.css carries the ramps', () => {
-  it.each(['light', 'dark'] as const)('%s: numbered ramps match TOKENS', scheme => {
+  it.each(['light', 'dark'] as const)('%s: numbered ramps and roles match TOKENS', scheme => {
     const b = block(scheme);
     const t = TOKENS[scheme];
     t.surfaceRamp.forEach((v, i) => expect(b).toContain(`--tk-surface-${i + 1}: ${v};`));
+    t.textRamp.forEach((v, i) => expect(b).toContain(`--tk-text-${i + 1}: ${v};`));
     t.lineRamp.forEach((v, i) => expect(b).toContain(`--tk-line-${i + 1}: ${v};`));
-    expect(b).toContain(`--tk-text-2: ${t.textRamp[1]};`);
-    expect(b).toContain(`--tk-text-4: ${t.textRamp[3]};`);
+    expect(b).toContain(`--tk-raised: ${t.surface.raised};`);
   });
 
-  it.each(['light', 'dark'] as const)('%s: fill and text names per hue', scheme => {
+  it.each(['light', 'dark'] as const)('%s: fill, hover and text names per hue', scheme => {
     const b = block(scheme);
     const t = TOKENS[scheme];
     for (const hue of HUES) {
       expect(b).toContain(`--tk-fill-${hue}: ${t.hue[hue]};`);
+      expect(b).toContain(`--tk-fill-${hue}-hover: ${t.hueHover[hue]};`);
       expect(b).toContain(`--tk-text-${hue}: ${t.hueText[hue]};`);
       expect(b).toContain(`--tk-text-${hue}-small: ${t.hueTextSmall[hue]};`);
     }
@@ -798,274 +1147,159 @@ describe('tokyo-theme.css carries the ramps', () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify it fails**
-
 Run: `cd packages/tokens && bunx vitest run test/tokyo-ramp-names.test.ts`
 Expected: FAIL, names absent.
 
-- [ ] **Step 3: Emit them**
+- [ ] **Step 2: Emit them**
 
-In `packages/tokens/scripts/generate.ts`, inside `renderTokyoSchemeBlock` add these lines to the returned array, after `` `  --tk-dot-bad: ${d.dotBad};` `` and before `''`:
+In `packages/tokens/scripts/generate.ts`, inside `renderTokyoSchemeBlock` add at the top `const t = TOKENS[scheme];` and `const at = (leaf: string, value: string) => pick(`${scheme}.${leaf}`, value);`, and add these lines to the returned array after `` `  --tk-dot-bad: ${d.dotBad};` `` and before `''`:
 
 ```ts
+    `  --tk-raised: ${at('surface.raised', t.surface.raised)};`,
     ...t.surfaceRamp.map((v, i) => `  --tk-surface-${i + 1}: ${at(`surfaceRamp.${i}`, v)};`),
     ...t.textRamp.map((v, i) => `  --tk-text-${i + 1}: ${at(`textRamp.${i}`, v)};`),
     ...t.lineRamp.map((v, i) => `  --tk-line-${i + 1}: ${at(`lineRamp.${i}`, v)};`),
     ...HUES.map(h => `  --tk-fill-${h}: ${at(`hue.${h}`, t.hue[h])};`),
+    ...HUES.map(h => `  --tk-fill-${h}-hover: ${at(`hueHover.${h}`, t.hueHover[h])};`),
     ...HUES.map(h => `  --tk-text-${h}: ${at(`hueText.${h}`, t.hueText[h])};`),
     ...HUES.map(h => `  --tk-text-${h}-small: ${at(`hueTextSmall.${h}`, t.hueTextSmall[h])};`),
 ```
 
-and at the top of `renderTokyoSchemeBlock` add `const t = TOKENS[scheme];` and `const at = (leaf: string, value: string) => pick(`${scheme}.${leaf}`, value);`. Import `HUES` from `../src/values.ts`.
+Import `HUES` from `../src/values.ts`. In `buildTokyoDeclarations`, the three `dot*` entries read `t.hue.ok`, `t.hue.warn`, `t.hue.bad` (the `dot` block no longer exists).
 
-Because `--tk-text-1` light goes through `CSS_TEXT` it prints `#222`; the test only checks text-2 and text-4 for that reason.
+In `packages/tokyo/src/tokyo-theme.css` line 154, change `--ui-bg-4: color-mix(in srgb, var(--tk-fg) 8%, var(--tk-card));` to `--ui-bg-4: var(--tk-raised);` and reword the comment above the `:root` block's fourth level to say level 4 is the raised ground from the tokens package rather than a wash over the card.
 
-- [ ] **Step 4: Waive the new `--tk-*` names, regenerate everything downstream**
+The hand-authored comments in `TOKYO_LIGHT_TOP_COMMENT` and `TOKYO_DARK_TOP_COMMENT` describe the old Supabase-style ramp; replace both with one sentence each: light `  /* Light surfaces: white cards on Radix slate 1 to 3 (packages/tokens/src/radix.ts); contrast rides text and borders, not surface-to-surface fill. */`, dark `  /* Dark surfaces: Radix slate 1 to 4, page darkest, cards on step 3, step 4 reserved for raised grounds. */`. `packages/tokens/test/fragment-sync.test.ts` or the tokyo test may pin the old comment text; if one does, update the pinned string to the new sentence.
 
-The tokyo half of `packages/tokens/test/consumption.test.ts` fails any `--tk-*` name no `packages/tokyo` or `packages/ui` CSS references unless it is in `WAIVED_TOKYO`. Above `WAIVED_TOKYO` add:
+- [ ] **Step 3: Waive the new `--tk-*` names**
+
+Above `WAIVED_TOKYO` in `packages/tokens/test/consumption.test.ts` add:
 
 ```ts
 const TK_RAMP_NAMES = [
   ...[1, 2, 3, 4].flatMap(i => [`--tk-surface-${i}`, `--tk-text-${i}`]),
   ...[1, 2, 3].map(i => `--tk-line-${i}`),
-  ...RAMP_HUES.flatMap(h => [`--tk-fill-${h}`, `--tk-text-${h}`, `--tk-text-${h}-small`]),
+  ...RAMP_HUES.flatMap(h => [`--tk-fill-${h}`, `--tk-fill-${h}-hover`, `--tk-text-${h}`, `--tk-text-${h}-small`]),
 ];
 const TK_RAMP_WAIVER =
   'ramp name mirrored from the tui theme for app-kit consumers ahead of the migration; no packages/ui component wires it yet.';
 ```
 
-(`RAMP_HUES` is the constant Task 2 added at the top of the same file) and make the first entries of `WAIVED_TOKYO`:
+and make the first entries of `WAIVED_TOKYO` the spread `...Object.fromEntries(TK_RAMP_NAMES.map(name => [name, TK_RAMP_WAIVER])),`. `--tk-raised` is not waived: Step 2's `--ui-bg-4: var(--tk-raised)` references it.
 
-```ts
-const WAIVED_TOKYO: Record<string, string> = {
-  ...Object.fromEntries(TK_RAMP_NAMES.map(name => [name, TK_RAMP_WAIVER])),
-```
+- [ ] **Step 4: Regenerate everything downstream**
 
-Run:
 ```bash
 bun run tokens:codegen
 cd packages/tokens && bunx vitest run
 cd ../../ && bun run tui-kit:build
-cd apps/deck && bun run build:board
-cd ../.. && git status --short
+cd apps/deck && bun run build:board && cd ../..
+git status --short
 ```
-Expected: tokens tests PASS, including both consumption suites and their no-stale-waivers checks; `git status` lists `packages/tokyo/src/tokyo-theme.css` and `apps/deck/core/generated/*` as modified.
+Expected: tokens tests PASS except `ramp-anchors.test.ts` (Task 4 regenerates `ramps.ts`; the old hand-written tuples no longer anchor on the new hues, and that is expected here). `git status` lists `packages/tokyo/src/tokyo-theme.css` and `apps/deck/core/generated/*` as modified.
 
-- [ ] **Step 5: Run the freshness gate and the app suites CI runs**
+- [ ] **Step 5: Run the freshness gate, the app suites and purity**
 
-Run:
 ```bash
 bun run tokens:codegen && git diff --exit-code packages/tui-kit/src/generated packages/tui-kit/assets packages/tokyo/src
 bun run chat:test && bun run console:test && bun run board:test
 scripts/repo-purity.sh
 ```
-Expected: the diff gate prints nothing and exits 0 (everything committed matches a live rebuild); app suites PASS; purity PASS.
+Expected: the diff gate prints nothing; app suites PASS (an app test that pins an old `--tk-*` hex is updated to read the value from `@mattstack/tokens` rather than to a new literal; list any such change in the report); purity PASS.
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git add packages/tokens packages/tokyo/src/tokyo-theme.css apps/deck/core/generated
-git commit -m "tokyo: emit the ramps as --tk-* names; regenerate deck's vendored board"
+git commit -m "tokyo: emit the Radix ramps as --tk-* names, raised as --ui-bg-4; regenerate deck's vendored board"
 ```
 
-## Part B: generated Mantine ramps, MAT-421 (spec §9 step 1)
+---
 
-### Task 4: Pure re-anchoring math
+## Part B: Mantine tuples and pins (spec §9 step 1, MAT-421 reframed)
+
+### Task 4: Generate tokyo's tuples and pins from the Radix scales
 
 **Files:**
-- Create: `packages/tokens/src/ramp-math.ts`
-- Test: `packages/tokens/test/ramp-math.test.ts`
+- Create: `packages/tokens/scripts/generate-ramps.ts`, `packages/tokens/src/mantine-pins.ts`
+- Regenerate: `packages/tokyo/src/ramps.ts`, `packages/tokyo/src/tokyo-theme.css` (pin blocks)
+- Modify: `packages/tokens/scripts/generate.ts` (pin splice), `packages/tokyo/src/theme.ts`, `packages/tokyo/src/tokyo-theme.css` (marker pairs, retired dark block), `packages/tokens/test/ramp-anchors.test.ts`, root `package.json`, `.github/workflows/ci.yml:24`, `.prettierignore`
+- Test: `packages/tokens/test/generated-ramps.test.ts` (new)
 
 **Interfaces:**
-- Produces: `type Lab = readonly [number, number, number]`; `rawPosition(outIndex: number, baseIndex: number, targetIndex: number): number`; `resampleRamp(raw: readonly Lab[], baseIndex: number, targetIndex: number): Lab[]`. Both pure; no colour library.
-
-The warp keeps three fixed points (0 to 0, target to base, 9 to 9) and is linear between them, so an output index maps to a fractional raw position and the OKLab triple is interpolated between the two raw stops around it.
-
-`@mantine/colors-generator` never produces a stop darker than about HSL lightness 0.34, and three of the dark seeds Task 6 introduces (`ok #277860`, `warn #955f1f`, `cyan #00768b`) sit below that, so the generator returns them at `baseColorIndex 9` with nothing darker to warp onto. For that case the light side is resampled from the raw ramp as usual and the five stops past the seed are extrapolated from the seed toward black in OKLab: lightness falls linearly to 45% of the seed's and chroma to 60% of the seed's at stop 9. A seed lighter than the raw ramp's lightest stop (`baseColorIndex 0`) still throws; no seed in this program hits it.
+- Consumes: `RADIX`, `HUE_SCALE`, `TOKENS[scheme]` from Tasks 0 and 1.
+- Produces: `packages/tokyo/src/ramps.ts` (generated) exporting `tokyoRamps` (six hue pairs `<hue>Day` / `<hue>Night` plus `grayDay` and `darkNight`), `TokyoRampName`, `ramp()`; `mantinePins(scheme): Record<string, string>` in `packages/tokens/src/mantine-pins.ts`; two generated `:root:root[data-mantine-color-scheme='<scheme>']` blocks in `tokyo-theme.css`; `primaryShade: { light: 6, dark: 3 }`. Root script `bun run tokens:ramps`.
 
 - [ ] **Step 1: Write the failing tests**
 
-Create `packages/tokens/test/ramp-math.test.ts`:
+Replace `packages/tokens/test/ramp-anchors.test.ts` with:
 
 ```ts
 import { describe, expect, it } from 'vitest';
 
-import { rawPosition, resampleRamp, type Lab } from '../src/ramp-math.ts';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
-const raw: Lab[] = Array.from({ length: 10 }, (_, i) => [1 - i * 0.1, i * 0.01, -i * 0.02]);
+import { tokyoRamps } from '../../tokyo/src/ramps.ts';
+import { mantinePins } from '../src/mantine-pins.ts';
+import { RADIX } from '../src/radix.ts';
+import { HUE_SCALE, HUES, TOKENS } from '../src/values.ts';
 
-describe('rawPosition', () => {
-  it('is the identity when base and target coincide', () => {
-    for (let i = 0; i < 10; i++) expect(rawPosition(i, 6, 6)).toBe(i);
-  });
+const css = readFileSync(join(import.meta.dirname, '..', '..', 'tokyo', 'src', 'tokyo-theme.css'), 'utf8');
 
-  it('pins 0, target and 9', () => {
-    expect(rawPosition(0, 3, 6)).toBe(0);
-    expect(rawPosition(6, 3, 6)).toBe(3);
-    expect(rawPosition(9, 3, 6)).toBe(9);
-  });
+function pinBlock(scheme: 'light' | 'dark'): string {
+  const begin = css.indexOf(`/* BEGIN GENERATED: mantine pins ${scheme} */`);
+  const end = css.indexOf('/* END GENERATED */', begin);
+  if (begin === -1 || end === -1) throw new Error(`tokyo-theme.css: no mantine pins ${scheme} block`);
+  return css.slice(begin, end);
+}
 
-  it('is linear on each side of the target', () => {
-    expect(rawPosition(3, 3, 6)).toBeCloseTo(1.5);
-    expect(rawPosition(7, 3, 6)).toBeCloseTo(5);
+const DAY = ['accentDay', 'okDay', 'badDay', 'warnDay', 'purpleDay', 'cyanDay'] as const;
+const NIGHT = ['accentNight', 'okNight', 'badNight', 'warnNight', 'purpleNight', 'cyanNight'] as const;
+
+describe('tokyo ramps anchor on Radix step 9', () => {
+  it.each(HUES.map((h, i) => [h, DAY[i]!, NIGHT[i]!] as const))('%s', (hue, day, night) => {
+    const scale = RADIX[HUE_SCALE[hue]];
+    expect(tokyoRamps[day][6]).toBe(scale.light[8]);
+    expect(tokyoRamps[night][3]).toBe(scale.dark[8]);
   });
 });
 
-describe('resampleRamp', () => {
-  it('returns ten stops with the raw base at the target index and the raw endpoints preserved', () => {
-    const out = resampleRamp(raw, 3, 6);
-    expect(out).toHaveLength(10);
-    expect(out[6]).toEqual(raw[3]);
-    expect(out[0]).toEqual(raw[0]);
-    expect(out[9]).toEqual(raw[9]);
+describe('pins land every Mantine derivation on the step the tokens chose', () => {
+  it.each(HUES)('%s', hue => {
+    const l = TOKENS.light;
+    const d = TOKENS.dark;
+    const light = mantinePins('light');
+    const dark = mantinePins('dark');
+    expect(light[`--mantine-color-${hue}-filled`]).toBe(l.hue[hue]);
+    expect(light[`--mantine-color-${hue}-filled-hover`]).toBe(l.hueHover[hue]);
+    expect(light[`--mantine-color-${hue}-text`]).toBe(l.hueText[hue]);
+    expect(light[`--mantine-color-${hue}-outline`]).toBe(l.hueText[hue]);
+    expect(dark[`--mantine-color-${hue}-filled`]).toBe(d.hue[hue]);
+    expect(dark[`--mantine-color-${hue}-filled-hover`]).toBe(d.hueHover[hue]);
+    expect(dark[`--mantine-color-${hue}-text`]).toBe(d.hueText[hue]);
+    expect(dark[`--mantine-color-${hue}-outline`]).toBe(d.hueText[hue]);
+    expect(dark[`--mantine-color-${hue}-light`]).toBe(RADIX[HUE_SCALE[hue]].dark[2]);
+    expect(dark[`--mantine-color-${hue}-light-hover`]).toBe(RADIX[HUE_SCALE[hue]].dark[3]);
   });
 
-  it('interpolates between raw stops', () => {
-    const out = resampleRamp(raw, 3, 6);
-    expect(out[3]![0]).toBeCloseTo(0.85);
+  it.each(['light', 'dark'] as const)('%s: every pin is in tokyo-theme.css under the doubled-root selector', scheme => {
+    const begin = css.indexOf(`/* BEGIN GENERATED: mantine pins ${scheme} */`);
+    const selector = `:root:root[data-mantine-color-scheme='${scheme}']`;
+    const selectorAt = css.lastIndexOf(selector, begin);
+    expect(selectorAt, 'selector precedes the marker').toBeGreaterThan(-1);
+    expect(css.lastIndexOf('}', begin), 'no rule closes between the selector and the marker').toBeLessThan(selectorAt);
+    const block = pinBlock(scheme);
+    for (const [name, value] of Object.entries(mantinePins(scheme))) {
+      expect(block, name).toContain(`${name}: ${value};`);
+    }
   });
 
-  it('keeps a monotonic lightness channel monotonic', () => {
-    const out = resampleRamp(raw, 7, 4);
-    for (let i = 1; i < out.length; i++) expect(out[i]![0]).toBeLessThan(out[i - 1]![0]);
-  });
-
-  it('extrapolates past a seed that is the darkest raw stop', () => {
-    const out = resampleRamp(raw, 9, 4);
-    expect(out).toHaveLength(10);
-    expect(out[0]).toEqual(raw[0]);
-    expect(out[4]).toEqual(raw[9]);
-    expect(out[2]![0]).toBeCloseTo(raw[4]![0] + (raw[5]![0] - raw[4]![0]) * 0.5);
-    for (let i = 1; i < out.length; i++) expect(out[i]![0]).toBeLessThan(out[i - 1]![0]);
-    expect(out[9]![0]).toBeCloseTo(raw[9]![0] * 0.45);
-    expect(out[9]![1]).toBeCloseTo(raw[9]![1] * 0.6);
-  });
-
-  it('throws when the seed is lighter than the lightest raw stop', () => {
-    expect(() => resampleRamp(raw, 0, 6)).toThrow(/lighter/);
+  it('the hand-written dark tuple remap is gone', () => {
+    expect(css).not.toContain('--mantine-color-dark-7: var(--tk-bg)');
   });
 });
 ```
-
-- [ ] **Step 2: Run to verify it fails**
-
-Run: `cd packages/tokens && bunx vitest run test/ramp-math.test.ts`
-Expected: FAIL, module not found.
-
-- [ ] **Step 3: Implement**
-
-Create `packages/tokens/src/ramp-math.ts`:
-
-```ts
-export type Lab = readonly [number, number, number];
-
-const STOPS = 10;
-const LAST = STOPS - 1;
-
-export function rawPosition(outIndex: number, baseIndex: number, targetIndex: number): number {
-  if (outIndex <= targetIndex) {
-    return targetIndex === 0 ? 0 : (outIndex * baseIndex) / targetIndex;
-  }
-  return baseIndex + ((outIndex - targetIndex) * (LAST - baseIndex)) / (LAST - targetIndex);
-}
-
-function lerp(a: Lab, b: Lab, f: number): Lab {
-  return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
-}
-
-const DARK_L_FLOOR = 0.45;
-const DARK_CHROMA_FLOOR = 0.6;
-
-function sampleAt(raw: readonly Lab[], p: number): Lab {
-  const lo = Math.floor(p);
-  const hi = Math.min(lo + 1, LAST);
-  return lo === hi ? raw[lo]! : lerp(raw[lo]!, raw[hi]!, p - lo);
-}
-
-// The generator has no stop darker than this seed, so the dark side is
-// drawn from the seed toward black instead of warped from the raw ramp.
-function extrapolateDark(seed: Lab, count: number): Lab[] {
-  const out: Lab[] = [];
-  for (let k = 1; k <= count; k++) {
-    const f = k / count;
-    out.push([
-      seed[0] * (1 - (1 - DARK_L_FLOOR) * f),
-      seed[1] * (1 - (1 - DARK_CHROMA_FLOOR) * f),
-      seed[2] * (1 - (1 - DARK_CHROMA_FLOOR) * f),
-    ]);
-  }
-  return out;
-}
-
-export function resampleRamp(raw: readonly Lab[], baseIndex: number, targetIndex: number): Lab[] {
-  if (raw.length !== STOPS) throw new Error(`resampleRamp: expected ${STOPS} stops, got ${raw.length}`);
-  if (baseIndex <= 0) {
-    throw new Error(`resampleRamp: base index 0; the seed is lighter than the generator's lightest stop`);
-  }
-  if (baseIndex === LAST) {
-    const out: Lab[] = [];
-    for (let i = 0; i < targetIndex; i++) out.push(sampleAt(raw, (i * LAST) / targetIndex));
-    out[0] = raw[0]!;
-    out.push(raw[LAST]!, ...extrapolateDark(raw[LAST]!, LAST - targetIndex));
-    return out;
-  }
-  const out: Lab[] = [];
-  for (let i = 0; i < STOPS; i++) out.push(sampleAt(raw, rawPosition(i, baseIndex, targetIndex)));
-  out[targetIndex] = raw[baseIndex]!;
-  out[0] = raw[0]!;
-  out[LAST] = raw[LAST]!;
-  return out;
-}
-```
-
-- [ ] **Step 4: Run the tests**
-
-Run: `cd packages/tokens && bunx vitest run test/ramp-math.test.ts && bun run typecheck`
-Expected: PASS, typecheck clean.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add packages/tokens/src/ramp-math.ts packages/tokens/test/ramp-math.test.ts
-git commit -m "tokens: pure OKLab ramp re-anchoring"
-```
-
-### Task 5: The ramp generator, wired into codegen and CI
-
-**Files:**
-- Create: `packages/tokens/scripts/generate-ramps.ts`
-- Modify: `package.json` (catalog + `tokens:ramps` script), `packages/tokens/package.json` (devDependencies)
-- Modify: `.github/workflows/ci.yml:24`
-- Regenerate: `packages/tokyo/src/ramps.ts`
-- Test: `packages/tokens/test/ramp-anchors.test.ts` (existing, must stay green), `packages/tokens/test/generated-ramps.test.ts` (new)
-
-**Interfaces:**
-- Consumes: `resampleRamp` from Task 4; `TOKENS[scheme].hue` seeds.
-- Produces: `packages/tokyo/src/ramps.ts` with the same exports as today (`tokyoRamps`, `TokyoRampName`, `ramp`), generated. Root script `bun run tokens:ramps`.
-
-- [ ] **Step 1: Add the codegen dependencies**
-
-In root `package.json` `workspaces.catalog`, add (keep alphabetical order with the neighbours):
-
-```json
-      "@mantine/colors-generator": "^9.5.2",
-      "@types/chroma-js": "^3.1.1",
-      "chroma-js": "^3.1.2",
-```
-
-In `packages/tokens/package.json` add:
-
-```json
-  "devDependencies": {
-    "@mantine/colors-generator": "catalog:",
-    "@types/chroma-js": "catalog:",
-    "chroma-js": "catalog:"
-  }
-```
-
-Run: `bun install` (repo root). Expected: `bun.lock` updated at the root only; `git status` shows no `packages/tokens/bun.lock`.
-
-- [ ] **Step 2: Write the failing generated-ramps test**
 
 Create `packages/tokens/test/generated-ramps.test.ts`:
 
@@ -1077,27 +1311,60 @@ import { describe, expect, it } from 'vitest';
 
 import { srgbLuminance } from '../src/color-math.ts';
 import { tokyoRamps } from '../../tokyo/src/ramps.ts';
+import { RADIX } from '../src/radix.ts';
 
 const source = readFileSync(join(import.meta.dirname, '..', '..', 'tokyo', 'src', 'ramps.ts'), 'utf8');
+const DAY_PICK = [1, 3, 4, 5, 6, 7, 9, 10, 11, 12];
+const NIGHT_PICK = [12, 11, 10, 9, 8, 7, 6, 5, 4, 3];
 
 describe('generated ramps', () => {
   it('ramps.ts is a generated file', () => {
     expect(source.startsWith('/* GENERATED by packages/tokens/scripts/generate-ramps.ts; do not edit. */')).toBe(true);
   });
 
-  it.each(Object.entries(tokyoRamps))('%s has ten stops, strictly darkening', (_name, stops) => {
+  it.each(Object.entries(tokyoRamps))('%s has ten stops', (_name, stops) => {
     expect(stops).toHaveLength(10);
     for (const s of stops) expect(s).toMatch(/^#[0-9a-f]{6}$/);
-    const lums = stops.map(srgbLuminance);
-    for (let i = 1; i < lums.length; i++) expect(lums[i], `stop ${i}`).toBeLessThan(lums[i - 1]!);
+  });
+
+  it.each([
+    ['accent', 'indigo'],
+    ['ok', 'teal'],
+    ['bad', 'crimson'],
+    ['warn', 'orange'],
+    ['purple', 'purple'],
+    ['cyan', 'cyan'],
+  ] as const)('%s tuples are the documented pick from the %s scale', (hue, scale) => {
+    expect([...tokyoRamps[`${hue}Day`]]).toEqual(DAY_PICK.map(s => RADIX[scale].light[s - 1]));
+    expect([...tokyoRamps[`${hue}Night`]]).toEqual(NIGHT_PICK.map(s => RADIX[scale].dark[s - 1]));
+  });
+
+  it('the day tuples darken from stop 0 to the primary stop 6', () => {
+    for (const [name, stops] of Object.entries(tokyoRamps)) {
+      if (!name.endsWith('Day')) continue;
+      const lums = stops.slice(0, 7).map(srgbLuminance);
+      for (let i = 1; i < lums.length; i++) expect(lums[i], `${name} stop ${i}`).toBeLessThan(lums[i - 1]!);
+    }
+  });
+
+  it('gray and dark tuples come from slate', () => {
+    expect(tokyoRamps.grayDay[4]).toBe(RADIX.slate.light[6]);
+    expect(tokyoRamps.grayDay[6]).toBe(RADIX.slate.light[10]);
+    expect(tokyoRamps.darkNight[4]).toBe(RADIX.slate.dark[7]);
+    expect(tokyoRamps.darkNight[5]).toBe(RADIX.slate.dark[3]);
+    expect(tokyoRamps.darkNight[6]).toBe(RADIX.slate.dark[2]);
+    expect(tokyoRamps.darkNight[2]).toBe(RADIX.slate.dark[10]);
+    expect(tokyoRamps.darkNight[7]).toBe(RADIX.slate.dark[1]);
   });
 });
 ```
 
-Run: `cd packages/tokens && bunx vitest run test/generated-ramps.test.ts`
-Expected: FAIL on the header assertion (the hand-written file has a different header).
+The pick is the invariant, not luminance: Radix indigo's light steps 10 and 11 rise slightly in WCAG luminance (0.1244 to 0.1251), so a whole-tuple monotonic check would fail on a correct file. Luminance is asserted only over stops 0 to 6, the tint-to-primary run Mantine's `light` and `filled` variants depend on.
 
-- [ ] **Step 3: Write the generator**
+Run: `cd packages/tokens && bunx vitest run test/ramp-anchors.test.ts test/generated-ramps.test.ts`
+Expected: FAIL (`mantinePins` does not exist, the marker blocks are absent, and the hand-written tuples do not anchor on Radix).
+
+- [ ] **Step 2: The generator**
 
 Create `packages/tokens/scripts/generate-ramps.ts`:
 
@@ -1105,77 +1372,52 @@ Create `packages/tokens/scripts/generate-ramps.ts`:
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { generateColorsMap } from '@mantine/colors-generator';
-import chroma from 'chroma-js';
-
-import { srgbLuminance } from '../src/color-math.ts';
-import { resampleRamp, type Lab } from '../src/ramp-math.ts';
-import { HUES, TOKENS, type HueName } from '../src/values.ts';
+import { RADIX, type Scale12 } from '../src/radix.ts';
+import { HUE_SCALE, HUES, type HueName } from '../src/values.ts';
 
 const OUT = join(import.meta.dirname, '..', '..', 'tokyo', 'src', 'ramps.ts');
 
-// Mantine reads shade 6 as primary in light and shade 4 in dark
-// (packages/tokyo/src/theme.ts `primaryShade`); the seed must land there.
-const PRIMARY_INDEX = { light: 6, dark: 4 } as const;
+// Mantine reads tuple index 6 as the light primary and, with
+// primaryShade.dark = 3 in packages/tokyo/src/theme.ts, index 3 as the dark
+// primary; both picks put Radix step 9 there. Radix dark scales run darkest
+// to lightest, Mantine tuples lightest to darkest, hence the reversed pick.
+const DAY_PICK = [1, 3, 4, 5, 6, 7, 9, 10, 11, 12] as const;
+const NIGHT_PICK = [12, 11, 10, 9, 8, 7, 6, 5, 4, 3] as const;
+const GRAY_PICK = [2, 3, 4, 6, 7, 8, 11, 11, 12, 12] as const;
+const DARK_PICK = [12, 11, 11, 9, 8, 4, 3, 2, 1, 1] as const;
 
-const HEADER = `/* GENERATED by packages/tokens/scripts/generate-ramps.ts; do not edit. */
-import type { MantineColorsTuple } from '@mantine/core';
+const pick = (scale: Scale12, steps: readonly number[]) => steps.map(s => scale[s - 1]!);
 
-/**
- * Tokyo Day / Tokyo Night as ten-shade Mantine ramps, one pair per hue.
- * Each ramp is @mantine/colors-generator's output for the tokens package's
- * seed, re-anchored in OKLab so the seed's exact hex sits on the shade
- * Mantine reads as primary (6 in Day, 4 in Night) and the ramp stays
- * monotonic in lightness. Regenerate with \`bun run tokens:ramps\`.
- */
-`;
-
-const FOOTER = `} as const satisfies Record<string, readonly string[]>;
-
-export type TokyoRampName = keyof typeof tokyoRamps;
-
-export const ramp = (name: TokyoRampName): MantineColorsTuple =>
-  tokyoRamps[name] as unknown as MantineColorsTuple;
-`;
-
-export function buildRamp(seed: string, targetIndex: number): string[] {
-  const map = generateColorsMap(seed);
-  const raw: Lab[] = map.colors.map(c => {
-    const [l, a, b] = c.oklab();
-    return [l, a, b];
-  });
-  const out = resampleRamp(raw, map.baseColorIndex, targetIndex).map(lab => chroma.oklab(lab[0], lab[1], lab[2]).hex());
-  out[targetIndex] = seed;
-  out[0] = map.colors[0]!.hex();
-  if (map.baseColorIndex !== 9) out[9] = map.colors[9]!.hex();
-  return out;
-}
-
-export function assertRamp(name: string, seed: string, targetIndex: number, stops: readonly string[]): void {
-  if (stops.length !== 10) throw new Error(`${name}: expected 10 stops, got ${stops.length}`);
-  if (stops[targetIndex] !== seed) throw new Error(`${name}: stop ${targetIndex} is ${stops[targetIndex]}, seed is ${seed}`);
-  const lums = stops.map(srgbLuminance);
-  for (let i = 1; i < lums.length; i++) {
-    if (!(lums[i]! < lums[i - 1]!)) {
-      throw new Error(`${name}: stops ${i - 1} and ${i} (${stops[i - 1]}, ${stops[i]}) are not strictly darkening`);
-    }
-  }
+function tuple(name: string, values: string[]): string {
+  return [`  ${name}: [`, ...values.map(v => `    '${v}',`), '  ],'].join('\n');
 }
 
 function render(): string {
-  const lines: string[] = [HEADER, 'export const tokyoRamps = {'];
+  const lines: string[] = [
+    '/* GENERATED by packages/tokens/scripts/generate-ramps.ts; do not edit. */',
+    "import type { MantineColorsTuple } from '@mantine/core';",
+    '',
+    '/**',
+    ' * Radix Colors scales (packages/tokens/src/radix.ts) picked down to the ten',
+    ' * shades Mantine reads: light 1 3 4 5 6 7 9 10 11 12, dark 12 11 10 9 8 7 6',
+    ' * 5 4 3, so step 9 sits on the primary shade in both schemes. The pins',
+    ' * that override Mantine derivations live in tokyo-theme.css (generated',
+    ' * from packages/tokens/src/mantine-pins.ts). Regenerate with',
+    ' * `bun run tokens:ramps`.',
+    ' */',
+    'export const tokyoRamps = {',
+  ];
   for (const hue of HUES as readonly HueName[]) {
-    for (const [scheme, suffix] of [['light', 'Day'], ['dark', 'Night']] as const) {
-      const seed = TOKENS[scheme].hue[hue];
-      const target = PRIMARY_INDEX[scheme];
-      const stops = buildRamp(seed, target);
-      assertRamp(`${hue}${suffix}`, seed, target, stops);
-      lines.push(`  ${hue}${suffix}: [`);
-      for (const s of stops) lines.push(`    '${s}',`);
-      lines.push('  ],');
-    }
+    const scale = RADIX[HUE_SCALE[hue]];
+    lines.push(tuple(`${hue}Day`, pick(scale.light, DAY_PICK)));
+    lines.push(tuple(`${hue}Night`, pick(scale.dark, NIGHT_PICK)));
   }
-  lines.push(FOOTER);
+  lines.push(tuple('grayDay', pick(RADIX.slate.light, GRAY_PICK)));
+  lines.push(tuple('darkNight', pick(RADIX.slate.dark, DARK_PICK)));
+  lines.push('} as const satisfies Record<string, readonly string[]>;', '');
+  lines.push('export type TokyoRampName = keyof typeof tokyoRamps;', '');
+  lines.push('export const ramp = (name: TokyoRampName): MantineColorsTuple =>');
+  lines.push('  tokyoRamps[name] as unknown as MantineColorsTuple;', '');
   return lines.join('\n');
 }
 
@@ -1184,365 +1426,123 @@ if (import.meta.main) {
 }
 ```
 
-`chroma.oklab(l, a, b)` and `Color.oklab()` are chroma-js 2.2+ APIs; `chroma-js@3` types them.
+Root `package.json` scripts, after `"tokens:radix"`: `"tokens:ramps": "bun run packages/tokens/scripts/generate-ramps.ts",`. Add `packages/tokyo/src/ramps.ts` to `.prettierignore` under the `radix.ts` entry with the comment `# generated by packages/tokens/scripts/generate-ramps.ts; the freshness gate byte-compares it`.
 
-- [ ] **Step 4: Wire the script and generate**
+Run: `bun run tokens:ramps && cd packages/tokens && bunx vitest run test/generated-ramps.test.ts`
+Expected: PASS. `ramp-anchors.test.ts` still fails here: it imports `mantine-pins.ts` and reads the pin blocks, both created in Step 3.
 
-Root `package.json` scripts, after `"tokens:codegen"`:
+- [ ] **Step 3: The pins module and the CSS splice**
 
-```json
-    "tokens:ramps": "bun run packages/tokens/scripts/generate-ramps.ts",
-```
+Create `packages/tokens/src/mantine-pins.ts`:
 
-Add `packages/tokyo/src/ramps.ts` to `.prettierignore` under the `apps/deck/core/generated` entry, with the comment `# generated by packages/tokens/scripts/generate-ramps.ts; the freshness gate byte-compares it against a live rebuild`.
+```ts
+import { RADIX } from './radix.ts';
+import { HUE_SCALE, HUES, TOKENS } from './values.ts';
 
-Run: `bun run tokens:ramps && git diff --stat packages/tokyo/src/ramps.ts`
-Expected: the file is rewritten; the generator threw nothing (every current seed sits inside the generator's range, so the extrapolation branch is not exercised until Task 6). If it throws `lighter than`, stop and report which seed; do not hand-edit the output.
-
-- [ ] **Step 5: Verify anchors and record the delta**
-
-Run: `cd packages/tokens && bunx vitest run test/ramp-anchors.test.ts test/generated-ramps.test.ts`
-Expected: PASS. `ramp-anchors.test.ts` pins `tokyoRamps[<hue>Day][6] === TOKENS.light.hue[hue]` and `[<hue>Night][4] === TOKENS.dark.hue[hue]`; the generator lands both by construction.
-
-Then compute how far the other nine stops moved from the hand-written ramps:
-
-```bash
-git show HEAD:packages/tokyo/src/ramps.ts > packages/tokens/ramps-before.tmp.ts
-cd packages/tokens && bun -e "
-import { tokyoRamps as before } from './ramps-before.tmp.ts';
-import { tokyoRamps as after } from '../tokyo/src/ramps.ts';
-import chroma from 'chroma-js';
-let worst = 0, where = '';
-for (const name of Object.keys(after)) for (let i = 0; i < 10; i++) {
-  const d = chroma.deltaE(before[name][i], after[name][i]);
-  if (d > worst) { worst = d; where = name + '[' + i + '] ' + before[name][i] + ' -> ' + after[name][i]; }
+// Mantine 9.5 derives text, outline, filled-hover and the dark light tint
+// from fixed tuple indices (get-css-color-variables.mjs); these are the
+// variables where that derivation and the tokens' step choices differ.
+export function mantinePins(scheme: 'light' | 'dark'): Record<string, string> {
+  const t = TOKENS[scheme];
+  const out: Record<string, string> = {};
+  for (const hue of HUES) {
+    const scale = RADIX[HUE_SCALE[hue]][scheme];
+    out[`--mantine-color-${hue}-filled`] = t.hue[hue];
+    out[`--mantine-color-${hue}-filled-hover`] = t.hueHover[hue];
+    out[`--mantine-color-${hue}-text`] = t.hueText[hue];
+    out[`--mantine-color-${hue}-outline`] = t.hueText[hue];
+    if (scheme === 'dark') {
+      out[`--mantine-color-${hue}-light`] = scale[2]!;
+      out[`--mantine-color-${hue}-light-hover`] = scale[3]!;
+    }
+  }
+  return out;
 }
-console.log('max deltaE', worst.toFixed(2), where);
-" && rm ramps-before.tmp.ts && cd ../..
 ```
 
-Write the printed line into the task report. A max deltaE under 5 is a re-solve of the same procedure with rounding differences; over 5 means the hand-written procedure and this one diverge somewhere, and the report must say on which stop so the reviewer can look at it. Either way the anchors are what the spec requires.
+Light `filled` for indigo, crimson and purple pins to the same step 9 Mantine already derives; pinning every hue keeps the block uniform and the test simple.
 
-- [ ] **Step 6: Run the consumers**
+In `packages/tokyo/src/tokyo-theme.css`, delete the `:root[data-mantine-color-scheme='dark'] { --mantine-color-dark-0 ... }` block and the comment above it (lines 240-258; the `dark` tuple now comes from slate through the theme), delete any bare-`:root` `--mantine-color-gray-*` declaration in the file for the same reason (grep for `--mantine-color-gray-`; the `gray` tuple now carries slate), and in the dark block's place add:
 
-Run: `bun run typecheck && bun run chat:test && bun run console:test`
-Expected: PASS. tokyo's `theme.ts` reads `ramp()` unchanged.
+```css
+/*
+ * Mantine derives a hue's text, outline, filled-hover and dark tint from
+ * fixed tuple indices; the tokens package chooses steps by rule instead,
+ * and these blocks pin the two together. Doubled `:root` for the same
+ * reason as `anchor` above: Mantine re-emits colour variables from the
+ * theme into its runtime style tag.
+ */
+:root:root[data-mantine-color-scheme='light'] {
+  /* BEGIN GENERATED: mantine pins light */
+  /* END GENERATED */
+}
+:root:root[data-mantine-color-scheme='dark'] {
+  /* BEGIN GENERATED: mantine pins dark */
+  /* END GENERATED */
+}
+```
 
-- [ ] **Step 7: Extend the CI freshness gate**
+In `packages/tokens/scripts/generate.ts`, add
+
+```ts
+import { mantinePins } from '../src/mantine-pins.ts';
+
+function renderMantinePins(scheme: 'light' | 'dark'): string {
+  return Object.entries(mantinePins(scheme))
+    .map(([name, value]) => `  ${name}: ${value};`)
+    .join('\n');
+}
+```
+
+and in `generateTokyoThemeCss`, after the two existing `spliceGenerated` calls, splice `renderMantinePins('light')` at `'/* BEGIN GENERATED: mantine pins light */'` and `renderMantinePins('dark')` at `'/* BEGIN GENERATED: mantine pins dark */'`. `spliceGenerated` already refuses a missing or duplicated marker.
+
+In `packages/tokyo/src/theme.ts`:
+
+- Change `primaryShade: { light: 6, dark: 4 }` to `primaryShade: { light: 6, dark: 3 }` and rewrite the comment above it to: "`primaryShade` is where the generated picks put Radix step 9 (index 6 in Day, index 3 in Night); moving either number without regenerating `ramps.ts` re-points every primary surface."
+- In `colors`, add `gray: ramp('grayDay'),` and `dark: ramp('darkNight'),` after the six virtual hues. Mantine reads `gray` only in light and `dark` only in dark, so neither needs a virtual pair.
+
+Also in `tokyo-theme.css`, move `--mantine-color-placeholder` out of the bare `:root` block (where it loses to Mantine's scheme block) into the existing `:root[data-mantine-color-scheme='light'], :root[data-mantine-color-scheme='dark']` block beside `--mantine-color-dimmed`, as `--mantine-color-placeholder: var(--tk-muted-text);`. Without it, dark placeholder text reads Mantine's `dark-3`, which is slate 9 (a fill step) at 3.10 on the input ground.
+
+Deleting the dark remap block and moving `placeholder` off `--tk-muted` leaves `--tk-muted` and `--tk-border-soft` referenced by nothing under `packages/tokyo` or `packages/ui`; add both to `WAIVED_TOKYO` in `packages/tokens/test/consumption.test.ts` with the reasons "raw neutral fill, kept for parity with tui-kit's --muted until the step-5 audit" and "soft rule, kept for parity with tui-kit's --border-soft; no packages/ui component wires it yet".
+
+Run: `bun run tokens:ramps && bun run tokens:codegen && cd packages/tokens && bunx vitest run`
+Expected: PASS, including `ramp-anchors.test.ts` (both pin blocks present with every pin, each under its doubled-root selector) and `consumption.test.ts` (the pins reference `--mantine-*` names, which its tokyo scan does not count as `--tk-*` definitions; the two new waivers cover the names the deletions orphaned).
+
+- [ ] **Step 4: Typecheck, test, CI gate**
+
+Run:
+```bash
+bun run typecheck
+cd packages/ui && bunx vitest run && cd ../..
+bun run chat:test && bun run console:test && bun run board:test
+cd apps/deck && bun run build:board && cd ../..
+```
+Expected: PASS. `packages/ui/src/design-system/colors.test.tsx` pins no colour value or `primaryShade` today; if a test elsewhere does, it is updated to read from `@mattstack/mantine-tokyo`'s `tokyoRamps`, never to a new literal. The deck rebuild most likely produces no diff (deck bundles tui-kit, not `tokyo-theme.css`); run it anyway so the freshness test is exercised.
 
 In `.github/workflows/ci.yml` line 24, change the run line to:
 
 ```yaml
-      - run: bun run tokens:codegen && bun run tokens:ramps && git diff --exit-code packages/tui-kit/src/generated packages/tui-kit/assets packages/tokyo/src
+      - run: bun run tokens:radix && bun run tokens:codegen && bun run tokens:ramps && git diff --exit-code packages/tokens/src/radix.ts packages/tui-kit/src/generated packages/tui-kit/assets packages/tokyo/src
 ```
 
-Run it locally: `bun run tokens:codegen && bun run tokens:ramps && git diff --exit-code packages/tui-kit/src/generated packages/tui-kit/assets packages/tokyo/src`
-Expected: exit 0.
+Run it locally. Expected: exit 0.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add package.json bun.lock .prettierignore packages/tokens packages/tokyo/src/ramps.ts .github/workflows/ci.yml
-git commit -m "tokens: generate tokyo's Mantine ramps from the hue seeds (MAT-421)"
+git add package.json bun.lock .prettierignore packages/tokens packages/tokyo apps/deck/core/generated .github/workflows/ci.yml
+git commit -m "tokyo: Mantine tuples and pins generated from the Radix scales (MAT-421)"
 ```
 
----
+Tasks 0 to 4 are one PR (`radix-palette`); its description carries the spec's §3 "what repaints" paragraph and the ledger delta (nineteen entries to eight).
 
-## Part C: dark seeds, one change (spec §9 step 2)
 
-Tasks 6 and 7 land in one PR. Task 6 alone leaves the dark Button grid under the floor; Task 7 fixes it. Do not open a PR between them.
-
-### Task 6: Retune the dark seeds and regenerate
-
-**Files:**
-- Modify: `packages/tokens/src/values.ts` (dark `hue` block only)
-- Modify: `packages/tokens/test/invariants.test.ts`
-- Regenerate: `packages/tokyo/src/ramps.ts`, `packages/tui-kit/src/generated/*`, `packages/tokyo/src/tokyo-theme.css`, `apps/deck/core/generated/*`
-
-**Interfaces:**
-- Produces: `TOKENS.dark.hue` = the dark fills from the values reference; `tokyoRamps.*Night[4]` = those fills.
-
-- [ ] **Step 1: Write the failing hue-angle invariant**
-
-Append to `packages/tokens/test/invariants.test.ts`:
-
-```ts
-function hueAngle(hex: string): number {
-  const h = hex.replace('#', '');
-  const [r, g, b] = [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16) / 255) as [number, number, number];
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  const d = max - min;
-  if (d === 0) return 0;
-  let angle: number;
-  if (max === r) angle = ((g - b) / d) % 6;
-  else if (max === g) angle = (b - r) / d + 2;
-  else angle = (r - g) / d + 4;
-  return ((angle * 60) + 360) % 360;
-}
-
-describe('dark hue correction', () => {
-  it('every dark fill holds its light fill hue angle within 1 degree', () => {
-    for (const hue of HUES) {
-      const light = hueAngle(TOKENS.light.hue[hue]);
-      const dark = hueAngle(TOKENS.dark.hue[hue]);
-      const delta = Math.min(Math.abs(light - dark), 360 - Math.abs(light - dark));
-      expect(delta, `${hue}: light ${light.toFixed(1)} vs dark ${dark.toFixed(1)}`).toBeLessThanOrEqual(1);
-    }
-  });
-
-  it('dark: fill, body, small progress lighter', () => {
-    const t = TOKENS.dark;
-    for (const hue of HUES) {
-      const [fill, body, small] = [t.hue[hue], t.hueText[hue], t.hueTextSmall[hue]].map(srgbLuminance);
-      expect(fill, `${hue} fill vs body`).toBeLessThan(body!);
-      expect(body, `${hue} body vs small`).toBeLessThan(small!);
-    }
-  });
-});
-```
-
-Run: `cd packages/tokens && bunx vitest run test/invariants.test.ts`
-Expected: FAIL on both new tests (`ok` is 73 degrees apart; every Tokyo Night fill is lighter than its solved body text).
-
-- [ ] **Step 2: Change the dark seeds**
-
-In `packages/tokens/src/values.ts`, the dark `hue` block becomes:
-
-```ts
-    hue: {
-      accent: '#4758f4',
-      ok: '#277860',
-      bad: '#d30c52',
-      warn: '#955f1f',
-      purple: '#8c38ef',
-      cyan: '#00768b',
-    },
-```
-
-- [ ] **Step 3: Regenerate everything and run the tokens tests**
-
-```bash
-bun run tokens:ramps && bun run tokens:codegen
-cd packages/tokens && bunx vitest run
-```
-Expected: PASS, including `ramp-anchors.test.ts` (the Night ramps were regenerated in the same step), `generated-ramps.test.ts`, and the two `dark hue correction` tests. `okNight`, `warnNight` and `cyanNight` take the extrapolation branch of `resampleRamp` (their seeds are darker than anything the generator emits); open the regenerated `ramps.ts` and confirm those three have stop 4 equal to the seed and stops 5 to 9 darker, then note it in the report.
-
-- [ ] **Step 4: Regenerate the kits and deck**
-
-```bash
-cd packages/tui-kit && bun run codegen && cd ../..
-bun run tui-kit:build
-cd apps/deck && bun run build:board && cd ../..
-cd packages/tui-kit && bunx vitest run --project node
-```
-Expected: node tier PASS. The census dark sweep covers `--accent`, `--green`, `--red`, `--amber`, `--purple`, `--cyan`; add a ruling set in `packages/tui-kit/test/theme.test.ts`:
-
-```ts
-// The six dark hues are excluded from the DARK sweep: the dark hue
-// correction re-seeds them on the light palette's hue angles. See the
-// "dark hue correction" block.
-const DARK_HUE_CORRECTION = new Set(["--accent", "--green", "--red", "--amber", "--purple", "--cyan"]);
-```
-
-added to the `DARK_COLORS` filter, plus this explicit test at the end of the file:
-
-```ts
-test("the dark hues carry the corrected seeds", () => {
-  expect(resolve("--accent", "dark")).toBe("#4758f4");
-  expect(resolve("--green", "dark")).toBe("#277860");
-  expect(resolve("--red", "dark")).toBe("#d30c52");
-  expect(resolve("--amber", "dark")).toBe("#955f1f");
-  expect(resolve("--purple", "dark")).toBe("#8c38ef");
-  expect(resolve("--cyan", "dark")).toBe("#00768b");
-});
-```
-
-Then re-run the node tier. Expected: PASS.
-
-- [ ] **Step 5: Confirm the dark Button grid is now red, as expected**
-
-Run: `cd packages/tui-kit && bunx vitest run --project browser src/recipes/Button/Button.matrix.test.tsx`
-Expected: dark cells FAIL (filled label is `var(--bg)` on a dark fill; outline and subtle tones are the seeds). Do not touch the ledger. Task 7 fixes this.
-
-- [ ] **Step 6: Commit (no PR yet)**
-
-```bash
-git add packages/tokens packages/tokyo/src packages/tui-kit/src/generated packages/tui-kit/test/theme.test.ts apps/deck/core/generated
-git commit -m "tokens: dark hues re-seeded on the light hue angles; Night ramps regenerated"
-```
-
-### Task 7: Retune the tui-kit button resolver for the new dark fills
-
-**Files:**
-- Modify: `packages/tui-kit/src/intent-resolver.ts:38-111`
-- Test: `packages/tui-kit/src/recipes/Button/Button.matrix.test.tsx` (existing, must go green), `packages/tui-kit/test/intent-resolver.test.ts` (new, node tier)
-- Refresh: `packages/tui-kit/src/recipes/Button/__screenshots__/*dark*`
-
-**Interfaces:**
-- Consumes: `--text-<hue>`, `--text-<hue>-small`, `--text-2`, `--text-4` from Task 2.
-- Produces: `retunedTextColor(tone, variant, intent)` now returns a `light-dark()` expression for `light`, `outline` and `subtle`; `filled` paints `light-dark(var(--bg), #ffffff)`. `toneWeightFor` unchanged.
-
-- [ ] **Step 1: Write the failing resolver test**
-
-Create `packages/tui-kit/test/intent-resolver.test.ts`:
-
-```ts
-import { describe, expect, test } from "vitest";
-import { retunedTextColor, tuiIntentResolver } from "../src/intent-resolver.ts";
-
-describe("dark retune", () => {
-  test("filled paints a white label in dark and keeps var(--bg) in light", () => {
-    const r = tuiIntentResolver({ intent: "ok", variant: "filled" });
-    expect(r.color).toBe("light-dark(var(--bg), #ffffff)");
-  });
-
-  test("outline and subtle take the hue text token in dark, the mixed tone in light", () => {
-    expect(retunedTextColor("var(--color-green-500)", "outline", "ok")).toBe(
-      "light-dark(color-mix(in srgb, var(--color-green-500) 85%, var(--fg)), var(--text-ok))",
-    );
-    expect(retunedTextColor("var(--color-purple-500)", "subtle", "purple")).toBe(
-      "light-dark(var(--color-purple-500), var(--text-purple))",
-    );
-  });
-
-  test("the tinted light variant takes the small hue text token in dark", () => {
-    expect(retunedTextColor("var(--color-blue-500)", "light", "accent")).toBe(
-      "light-dark(color-mix(in srgb, var(--color-blue-500) 80%, var(--fg)), var(--text-accent-small))",
-    );
-  });
-
-  test("muted maps onto the neutral text ramp", () => {
-    expect(retunedTextColor("var(--color-gray-muted)", "outline", "muted")).toBe(
-      "light-dark(color-mix(in srgb, var(--color-gray-muted) 60%, var(--fg)), var(--text-2))",
-    );
-    expect(retunedTextColor("var(--color-gray-muted)", "light", "muted")).toBe(
-      "light-dark(color-mix(in srgb, var(--color-gray-muted) 70%, var(--fg)), var(--text-4))",
-    );
-  });
-
-  test("default is untouched", () => {
-    expect(retunedTextColor("var(--color-blue-500)", "default", "accent")).toBe("var(--color-blue-500)");
-  });
-});
-```
-
-Run: `cd packages/tui-kit && bunx vitest run --project node test/intent-resolver.test.ts`
-Expected: FAIL.
-
-- [ ] **Step 2: Retune**
-
-In `packages/tui-kit/src/intent-resolver.ts`, add after `OUTLINE_SUBTLE_TONE_WEIGHT`:
-
-```ts
-/**
- * Dark text tones. The dark fills are solved at the 3:1 non-text bar, so a
- * fill used as text reads under AA there; every text-bearing variant reads
- * the hue's solved text token instead. The tinted `light` variant lifts its
- * ground above the page, so it takes the 7:1 small token for headroom.
- */
-const DARK_TEXT_TONE: Record<string, string> = {
-  accent: "var(--text-accent)",
-  ok: "var(--text-ok)",
-  warn: "var(--text-warn)",
-  bad: "var(--text-bad)",
-  cyan: "var(--text-cyan)",
-  purple: "var(--text-purple)",
-  muted: "var(--text-2)",
-};
-
-const DARK_TINT_TEXT_TONE: Record<string, string> = {
-  accent: "var(--text-accent-small)",
-  ok: "var(--text-ok-small)",
-  warn: "var(--text-warn-small)",
-  bad: "var(--text-bad-small)",
-  cyan: "var(--text-cyan-small)",
-  purple: "var(--text-purple-small)",
-  muted: "var(--text-4)",
-};
-
-function darkTextTone(variant: string, intent: string): string | undefined {
-  if (variant === "light") return DARK_TINT_TEXT_TONE[intent];
-  if (variant === "outline" || variant === "subtle") return DARK_TEXT_TONE[intent];
-  return undefined;
-}
-```
-
-Replace `retunedTextColor` with:
-
-```ts
-export function retunedTextColor(tone: string, variant: string, intent: string): string {
-  const weight = toneWeightFor(variant, intent);
-  const light = weight === undefined ? tone : `color-mix(in srgb, ${tone} ${weight}%, var(--fg))`;
-  const dark = darkTextTone(variant, intent);
-  return dark === undefined ? light : `light-dark(${light}, ${dark})`;
-}
-```
-
-In `packages/tui-kit/src/recipes/Button/Button.tsx` line 89, the `default|bad` cell is pinned outside the resolver; change it to
-
-```ts
-        "--sb-button-bad-color": "light-dark(color-mix(in srgb, var(--red) 80%, var(--fg)), var(--text-bad))",
-```
-
-(with the new dark red it measures 3.77:1 on the panel as a mix; `--text-bad` is solved at 4.5). `Button.test.tsx`'s light probe still matches because the light branch is unchanged.
-
-In `tuiIntentResolver`, change the `filled` branch's `color` to `"light-dark(var(--bg), #ffffff)"` and replace the tail
-
-```ts
-  const weight = toneWeightFor(variant, intent);
-  if (weight === undefined) return result;
-
-  return { ...result, color: retunedTextColor(tone, variant, intent) };
-```
-
-with
-
-```ts
-  const color = retunedTextColor(tone, variant, intent);
-  return color === tone ? result : { ...result, color };
-```
-
-Update the header comment above `LIGHT_VARIANT_TONE_WEIGHT` so its last paragraph reads: "N per intent was chosen by measurement against the light palette (each variant's real background). Dark takes the solved text tokens below instead of a mix."
-
-- [ ] **Step 3: Run the resolver test, then codegen**
-
-Run: `cd packages/tui-kit && bunx vitest run --project node test/intent-resolver.test.ts && bun run codegen && git diff --stat src/generated/theme.css`
-Expected: PASS; `theme.css` does not change. The resolver's strings are applied at render time as inline custom properties (`autoVars`), not baked into the generated stylesheet, so the codegen run is only a check that nothing else moved.
-
-- [ ] **Step 4: Run the matrix in both schemes**
-
-Run: `cd packages/tui-kit && bun run build && bunx vitest run --project browser src/recipes/Button/Button.matrix.test.tsx`
-Expected: PASS in dark with no ledger entry; light unchanged. If a dark cell still fails, the message prints `fg`, `bg`, `backdrop` and `ratio`; the fix is in `intent-resolver.ts` (a wrong tone for that variant/intent) or, for `default|bad`, in `Button.tsx`, never a new ledger entry. If a light ledger cell now clears 4.5 (the message says `cleared MIN_CONTRAST; remove this cell's entry`), remove that entry: the ratchet allows removal.
-
-- [ ] **Step 5: Run the rest of the browser tier and refresh dark baselines**
-
-Run: `cd packages/tui-kit && bunx vitest run --project browser --exclude '**/*.visual.test.tsx' --exclude '**/*.parity.test.tsx'`
-Expected: PASS. `Chip.test.tsx` and `Button.test.tsx` build their expected probes from `retunedTextColor`, so they follow the retune.
-
-Then refresh every recipe's visual baselines, which are local-only (CI excludes `*.visual.test.tsx`) and all moved in dark with the new seeds, and some in Task 2 with the muted-text re-alias:
-
-`cd packages/tui-kit && bunx vitest run --project browser visual -u`
-
-Look at the regenerated `button-grid-dark` PNG before committing: labels on filled buttons are white, outline and subtle text is the brighter solved tone. Skim the other dark baselines for anything that is not a hue change (a layout shift is a defect, a colour shift is expected). `Button.parity.test.tsx` is also excluded from CI and its oracle predates the arcade palette; leave it alone and say so in the report.
-
-- [ ] **Step 6: Regenerate deck, run the app suites, commit**
-
-```bash
-cd apps/deck && bun run build:board && cd ../..
-bun run board:test && bun run chat:test && bun run console:test
-scripts/repo-purity.sh
-git add packages/tui-kit apps/deck/core/generated
-git commit -m "tui-kit: dark buttons read the solved hue text tokens; filled labels white in dark"
-```
-
-Open one PR for Tasks 6 and 7 together.
 
 ---
 
 ## Part D: bound tui-kit provider (spec §9 step 3)
 
-### Task 8: `TuiKitProvider`
+### Task 5: `TuiKitProvider`
 
 **Files:**
 - Rename: `packages/tui-kit/src/provider.ts` to `packages/tui-kit/src/provider.tsx`
@@ -1655,7 +1655,7 @@ git commit -m "tui-kit: TuiKitProvider registers and provides the theme in one i
 
 ## Part E: tokens storybook, MAT-419 (spec §9 step 4)
 
-### Task 9: Storybook wiring for both kits
+### Task 6: Storybook wiring for both kits
 
 **Files:**
 - Modify: `.storybook/main.ts:4-9`, `.storybook/preview.tsx`
@@ -1801,7 +1801,7 @@ git add .storybook package.json bun.lock tsconfig.tools.json packages/tokens/pac
 git commit -m "storybook: root stories glob, tui-kit provider and scheme sync in the decorator"
 ```
 
-### Task 10: Reference catalogue stories
+### Task 7: Reference catalogue stories
 
 **Files:**
 - Create: `stories/ramps/catalogue.tsx` (shared pieces), `stories/ramps/Surfaces.stories.tsx`, `stories/ramps/Text.stories.tsx`, `stories/ramps/Lines.stories.tsx`, `stories/ramps/Palette.stories.tsx`, `stories/ramps/Type.stories.tsx`
@@ -1963,7 +1963,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 
 import { Ratio, scheme, TwoSchemes } from './catalogue';
 
-const BAR = [7.0, 4.5, 5.5, 7.0] as const;
+const BAR = [7.0, 4.5, 5.2, 7.0] as const;
 const SERVES = ['every size', 'display, title, body', 'meta', 'small, micro'] as const;
 const SIZE = [15, 14.45, 13.26, 11.9] as const;
 
@@ -2060,41 +2060,53 @@ Create `stories/ramps/Palette.stories.tsx`:
 ```tsx
 import type { Meta, StoryObj } from '@storybook/react-vite';
 
-import { HUES } from '@mattstack/tokens';
+import { HUE_SCALE, HUES } from '@mattstack/tokens';
+import { RADIX } from '@mattstack/tokens/radix';
 
-import { Ratio, scheme, Swatch, TwoSchemes } from './catalogue';
+import { Ratio, scheme, TwoSchemes } from './catalogue';
 
 function Palette() {
   return (
     <TwoSchemes
       render={name => {
         const t = scheme(name);
-        const worst = t.surfaceRamp[name === 'light' ? 3 : 0];
+        const worstSurface = t.surfaceRamp[3];
         return (
           <>
-            {HUES.map(hue => (
-              <div key={hue} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-                <Swatch hex={t.hue[hue]} label={`fill-${hue}`} textOn="#ffffff">
-                  <span>
-                    vs surfaces: <Ratio fg={t.hue[hue]} bg={worst} bar={3.0} />
-                  </span>
-                </Swatch>
-                <div style={{ background: t.surface.card, color: t.hueText[hue], padding: 12, borderRadius: 6, display: 'grid', gap: 4 }}>
-                  <strong>text-{hue}</strong>
-                  <code>{t.hueText[hue]}</code>
-                  <span>
-                    Aa body <Ratio fg={t.hueText[hue]} bg={worst} bar={4.5} />
-                  </span>
+            {HUES.map(hue => {
+              const steps = RADIX[HUE_SCALE[hue]][name];
+              const { fill, text } = t.hueStep[hue];
+              return (
+                <div key={hue} style={{ display: 'grid', gap: 6 }}>
+                  <code>
+                    {hue} ({HUE_SCALE[hue]}): fill {fill}, text {text}, small 12
+                  </code>
+                  <div style={{ display: 'flex', gap: 3 }}>
+                    {steps.map((hex, i) => {
+                      const step = i + 1;
+                      const chosen = step === fill || step === text || step === 12;
+                      return (
+                        <div key={hex} style={{ display: 'grid', gap: 2, justifyItems: 'center' }}>
+                          <div style={{ width: 40, height: chosen ? 40 : 28, background: hex, borderRadius: 3, outline: chosen ? `2px solid ${t.text.fg}` : 'none' }} />
+                          <span style={{ fontSize: 10 }}>{step}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div style={{ display: 'flex', gap: 16, fontSize: 12 }}>
+                    <span>
+                      fill {t.hue[hue]} <Ratio fg={t.hue[hue]} bg={worstSurface} bar={3.0} />
+                    </span>
+                    <span style={{ color: t.hueText[hue] }}>
+                      text {t.hueText[hue]} <Ratio fg={t.hueText[hue]} bg={worstSurface} bar={4.5} />
+                    </span>
+                    <span style={{ color: t.hueTextSmall[hue], fontSize: 11.9 }}>
+                      small {t.hueTextSmall[hue]} <Ratio fg={t.hueTextSmall[hue]} bg={worstSurface} bar={7.0} />
+                    </span>
+                  </div>
                 </div>
-                <div style={{ background: t.surface.card, color: t.hueTextSmall[hue], padding: 12, borderRadius: 6, fontSize: 11.9, display: 'grid', gap: 4 }}>
-                  <strong>text-{hue}-small</strong>
-                  <code>{t.hueTextSmall[hue]}</code>
-                  <span>
-                    Aa small <Ratio fg={t.hueTextSmall[hue]} bg={worst} bar={7.0} />
-                  </span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </>
         );
       }}
@@ -2110,10 +2122,10 @@ const meta = {
 
 export default meta;
 
-export const FillBodySmall: StoryObj<typeof meta> = {};
+export const RadixSteps: StoryObj<typeof meta> = {};
 ```
 
-The three light fills the spec keeps under 3.0 (`ok`, `warn`, `cyan`) render their ratio in red here on purpose; the story is the visible ledger.
+`@mattstack/tokens/radix` needs an export in `packages/tokens/package.json`: add `"./radix": "./src/radix.ts"` beside `"./color-math"`. The three fills the spec ledgers (light warn, dark accent, dark purple) render their ratio in red here on purpose; the story is the visible ledger.
 
 - [ ] **Step 6: Type**
 
@@ -2165,7 +2177,7 @@ This one reads the emitted `--type-*` and `--text-N` names, so it follows the to
 - [ ] **Step 7: Build and look**
 
 Run: `bun run tui-kit:build && bunx tsc -p tsconfig.tools.json && bun run lint && bun run build-storybook`
-Expected: clean. Then `bun run storybook` and open `Tokens/Palette`; the three ratios in red are exactly light `fill-ok`, `fill-warn`, `fill-cyan` and nothing else. Take a screenshot of each story in each scheme and attach the paths to the task report.
+Expected: clean. Then `bun run storybook` and open `Tokens/Palette`; the three fill ratios in red are exactly light `warn`, dark `accent` and dark `purple`, and nothing else is red. Take a screenshot of each story in each scheme and attach the paths to the task report.
 
 - [ ] **Step 8: Commit**
 
@@ -2174,7 +2186,7 @@ git add stories/ramps
 git commit -m "storybook: tokens reference catalogue (surfaces, text, lines, palette, type)"
 ```
 
-### Task 11: Specimen wall for both kits
+### Task 8: Specimen wall for both kits
 
 **Files:**
 - Create: `stories/specimens/TuiKit.stories.tsx`, `stories/specimens/AppKit.stories.tsx`
@@ -2333,7 +2345,7 @@ git commit -m "storybook: specimen walls for tui-kit and app-kit with a11y set t
 
 ## Part F: contrast gate (spec §9 step 5)
 
-### Task 12: Ramp contrast matrix with a fill ledger
+### Task 9: Ramp contrast matrix with a fill ledger
 
 **Files:**
 - Modify: `packages/tui-kit/src/a11y/known-contrast-debt.ts`
@@ -2363,22 +2375,28 @@ export interface FillContrastDebtEntry {
 
 export const KNOWN_FILL_DEBT: readonly FillContrastDebtEntry[] = [
   {
-    hue: "ok",
-    scheme: "light",
-    measuredRatio: 2.106,
-    reason: "locked arcade hex; a light ok fill alone must not carry meaning",
-  },
-  {
     hue: "warn",
     scheme: "light",
-    measuredRatio: 2.149,
-    reason: "locked arcade hex; a light warn fill alone must not carry meaning",
+    measuredRatio: 2.93,
+    reason: "orange 10 on the light row surface; 11 reads brown, so the fill stays at 10 and a warn fill alone must not carry meaning on rows",
   },
   {
-    hue: "cyan",
-    scheme: "light",
-    measuredRatio: 2.156,
-    reason: "locked arcade hex; a light cyan fill alone must not carry meaning",
+    hue: "accent",
+    scheme: "dark",
+    measuredRatio: 2.77,
+    reason: "indigo 9 against the dark raised ground; 10 would drop the white label under 4.5, so Radix's step 9 wins",
+  },
+  {
+    hue: "purple",
+    scheme: "dark",
+    measuredRatio: 2.79,
+    reason: "purple 9 against the dark raised ground; 10 would drop the white label under 4.5, so Radix's step 9 wins",
+  },
+  {
+    hue: "line-1",
+    scheme: "dark",
+    measuredRatio: 2.82,
+    reason: "slate 9 control edge against the dark raised ground; clears 3.0 on page, panels and cards",
   },
 ];
 
@@ -2409,7 +2427,7 @@ import { FILL_DEBT_BY_KEY, fillDebtKey } from "../src/a11y/known-contrast-debt.t
 import { TuiKitProvider } from "../src/provider.tsx";
 
 const SURFACES = [1, 2, 3, 4] as const;
-const TEXT_BAR: Record<number, number> = { 1: 7.0, 2: 4.5, 3: 5.5, 4: 7.0 };
+const TEXT_BAR: Record<number, number> = { 1: 7.0, 2: 4.5, 3: 5.2, 4: 7.0 };
 const HUES = ["accent", "ok", "bad", "warn", "purple", "cyan"] as const;
 const SCHEMES = ["light", "dark"] as const;
 const FILL_BAR = 3.0;
@@ -2450,6 +2468,7 @@ describe("ramp contrast matrix (text steps, hue text and fills against every sur
             {HUES.map((h) => (
               <span key={`${h}-fill`} data-testid={id("fill", h, s)} style={{ background: `var(--fill-${h})`, display: "inline-block", width: 12, height: 12 }} />
             ))}
+            <span data-testid={id("fill", "line-1", s)} style={{ background: "var(--line-1)", display: "inline-block", width: 12, height: 12 }} />
           </div>
         ))}
       </TuiKitProvider>,
@@ -2486,6 +2505,17 @@ describe("ramp contrast matrix (text steps, hue text and fills against every sur
         const ratio = textRatio(id("text", t, s), s);
         expect(ratio, `${scheme} text-${t} on surface-${s} ratio=${ratio.toFixed(3)}`).toBeGreaterThanOrEqual(TEXT_BAR[t]!);
       }
+      {
+        const line = fillRatio("line-1", s);
+        const label = `${scheme} line-1 on surface-${s} ratio=${line.toFixed(3)}`;
+        const debt = FILL_DEBT_BY_KEY.get(fillDebtKey({ hue: "line-1", scheme }));
+        if (debt && s === 4) {
+          expect(line, `${label} regressed below its known-contrast-debt.ts floor`).toBeGreaterThanOrEqual(debt.measuredRatio - 0.05);
+          expect(line, `${label} cleared ${FILL_BAR}; remove its entry`).toBeLessThan(FILL_BAR);
+        } else if (scheme === "dark") {
+          expect(line, label).toBeGreaterThanOrEqual(FILL_BAR);
+        }
+      }
       for (const h of HUES) {
         const body = textRatio(id("hue", h, s), s);
         expect(body, `${scheme} text-${h} on surface-${s} ratio=${body.toFixed(3)}`).toBeGreaterThanOrEqual(4.5);
@@ -2497,7 +2527,7 @@ describe("ramp contrast matrix (text steps, hue text and fills against every sur
         const debt = FILL_DEBT_BY_KEY.get(fillDebtKey({ hue: h, scheme }));
         if (debt) {
           expect(fill, `${label} regressed below its known-contrast-debt.ts floor (${debt.measuredRatio} - 0.05)`).toBeGreaterThanOrEqual(debt.measuredRatio - 0.05);
-          if (s === (scheme === "light" ? 4 : 1)) {
+          if (s === 4) {
             expect(fill, `${label} cleared ${FILL_BAR}; remove this fill's entry from known-contrast-debt.ts`).toBeLessThan(FILL_BAR);
           }
         } else {
@@ -2524,7 +2554,7 @@ describe("ramp contrast matrix (text steps, hue text and fills against every sur
 });
 ```
 
-The ledger's `measuredRatio` is the worst surface (light `surface-4`, dark `surface-1`), so the "cleared the bar, remove the entry" check runs only on that surface; the floor check runs on all four.
+The ledger's `measuredRatio` is the worst surface, `surface-4` in both schemes (light slate 3, dark slate 4), so the "cleared the bar, remove the entry" check runs only on that surface; the floor check runs on all four. `line-1` is measured like a fill in dark only: it must clear 3.0 on surfaces 1 to 3 and matches its ledger entry on `surface-4`; every light line is under 3.0 by design (the spec's ledgered light control edge), so light lines are not asserted here. `--muted` is not in the matrix until the step-5 audit.
 
 - [ ] **Step 3: Run it**
 
@@ -2544,7 +2574,7 @@ git commit -m "tui-kit: ramp contrast matrix gate with a ratcheted fill ledger"
 
 ## Part G: namespace lint, MAT-420 (spec §9 step 6)
 
-### Task 13: Classifier and the TSX rule
+### Task 10: Classifier and the TSX rule
 
 **Files:**
 - Create: `packages/ui/presets/eslint-local/token-namespaces.js` (classifier) and `token-namespaces.d.ts`, `packages/ui/presets/eslint-local/token-namespaces-tsx.js` (rule) and `token-namespaces-tsx.d.ts`
@@ -2770,14 +2800,14 @@ git add packages/ui/presets packages/ui/vitest.config.ts
 git commit -m "eslint: token-namespaces rule for style objects (MAT-420)"
 ```
 
-### Task 14: The CSS rule
+### Task 11: The CSS rule
 
 **Files:**
 - Create: `packages/ui/presets/eslint-local/token-namespaces-css.js` and `token-namespaces-css.d.ts` (same two-line shape as `token-namespaces-tsx.d.ts`)
 - Modify: `packages/ui/presets/eslint-local/token-namespaces.test.ts`, `eslint.config.js`, root `package.json`
 
 **Interfaces:**
-- Consumes: `classifyTokenUse` from Task 13.
+- Consumes: `classifyTokenUse` from Task 10.
 - Produces: `tokenNamespacesCss`, an `@eslint/css` rule; root config blocks that lint `.css` under `packages/ui/src` and `stories/` at `error`, and under `packages/tui-kit/src` (excluding `generated/`) and `apps/board/src` at `warn` until each migrates.
 
 - [ ] **Step 1: Install the CSS language plugin**
@@ -2926,23 +2956,746 @@ Spec coverage:
 
 | Spec section | Task |
 | --- | --- |
-| §3 surfaces, inset/overlay snap | 1, 2, 3 |
-| §4 two layers, semantic roles, `--page` | 1 (roles by index), 2 (aliases) |
-| §5 text ramp, bars, margins at full precision | 1 (invariants), 12 (gate) |
-| §6 type bars | 10 (Type story), 12 (bars per text step) |
-| §7 palette, fill = seed, hue text tokens, light-fill decision default | 1, 2, 3, 12 (fill ledger) |
-| §7.1 dark hue correction, ramps first | 5 then 6, 7 |
-| §7.2 lines, per-scheme mapping, card scope | 1, 2 (`--border-on-card` = light-dark(line-1, line-2) by derivation) |
-| §8.1 namespaces | 13, 14 |
-| §8.2 bound provider | 8 |
-| §9 step 0 aliases (`--muted-text` per scheme, `--text-muted-on-card`) | 1 (`textRole`) |
-| §9 step 1 generator in tokens/scripts writing tokyo/src/ramps.ts, asserts | 4, 5 |
-| §9 step 2 resolver retune dark-only, no dark ledger entries | 7 |
-| §9 step 3 storybook decorator, tui-kit theme.css, build order | 9, 10, 11 |
-| §9 step 4 gate on the vitest browser project, ledger shape widened | 12 |
-| §9 step 5 lint before migration | 13, 14 (board at `warn`) |
-| §9.1 measurement helpers | 12 uses `@soribashi/core/testing`; 10 uses tokens' math for pure hex values |
+| §2 Radix vendored, freshness test | 0 |
+| §3 surfaces, `raised`, what repaints | 1, 2, 3 |
+| §4 two layers, semantic roles, `--page`, `--raised` | 1 (roles by index), 2 (aliases) |
+| §5 text ramp on slate 11/12, bars | 1 (invariants), 7 (Text story), 9 (gate) |
+| §6 type bars (5.2 meta) | 7 (Type story), 9 |
+| §7 palette by rule, ledgers, `dot` retired, legacy text leaves | 1 (rules as tests), 2 (aliases, Button ledger), 9 (fill ledger) |
+| §7.1 step 9 shared by scheme | 1 |
+| §7.2 lines from slate 8/7/6, card-scope aliases | 1, 2 |
+| §7.3 Mantine picks, `primaryShade`, pins, `gray`/`dark` tuples | 4 |
+| §8.1 namespaces | 10, 11 |
+| §8.2 bound provider | 5 |
+| §9 step 0 aliases (`--muted-text` → text-3, `--dot-*` → `--fill-*`, legacy hue text) | 1, 2 |
+| §9 step 1 tuples and pins generated, dark block retired | 4 |
+| §9 step 0 resolver retune both schemes, ledger to eight | 2 |
+| §9 step 3 storybook decorator, tui-kit theme.css, build order | 6, 7, 8 |
+| §9 step 4 gate on the vitest browser project, ledger shape widened | 9 |
+| §9 step 5 lint before migration | 10, 11 (tui-kit and board at `warn`) |
+| §9.1 measurement helpers | 9 uses `@soribashi/core/testing`; 7 uses tokens' math for pure hex values |
 
-Not in this plan, by the spec's own sequencing: the apps-wide migration onto the new names (the 154 `--muted` classifications, the `--gate-*` block deletion, the light outline/subtle retune) follows after Task 14 lands.
+Not in this plan, by the spec's own sequencing: the apps-wide migration onto the new names (the 154 `--muted` classifications, the `--gate-*` block deletion, the board's own CSS moving off `--accent-text` and friends) follows after Task 11 lands.
 
-Type consistency checked: `HUES`, `HueName`, `Ramp3`, `Ramp4`, `surfaceRole/textRole/lineRole` (Task 1) are what Tasks 2, 3, 5, 10 read; `TuiKitProvider` (Task 8) is what Tasks 9, 11, 12 import; `FILL_DEBT_BY_KEY` / `fillDebtKey` (Task 12) match their own use; `classifyTokenUse` (Task 13) is what Task 14 imports.
+Type consistency checked: `RADIX`, `RADIX_SCALES`, `Scale12` (Task 0) are what Tasks 1, 4 and 7 read; `HUES`, `HUE_SCALE`, `HueName`, `Step`, `hueStep`, `hueHover`, `surface.raised`, `line.control` (Task 1) are what Tasks 2, 3, 4, 7 read; `mantinePins` (Task 4) is what Task 4's generator and test import; `TuiKitProvider` (Task 5) is what Tasks 6, 8, 9 import; `FILL_DEBT_BY_KEY` / `fillDebtKey` (Task 9) match their own use; `classifyTokenUse` (Task 10) is what Task 11 imports.
+
+---
+
+## Part H: light surface ramp correction (spec §3, §10)
+
+### Task 13: Stretch the light surface ramp to slate 2-4
+
+Added after Task 7's storybook made the defect visible: on slate 1 to 3 the
+four light surfaces spanned 16.39 to 14.41 against `text-1` and rendered as
+four near-identical whites, while dark's four steps (16.25 to 12.43) read
+as a ramp. §3's rule ("each step after `surface-1` has less contrast") was
+not delivered in light, so this is a defect, not a preference.
+
+**Files:**
+- Modify: `packages/tokens/src/values.ts`, `packages/tokens/scripts/generate.ts`, `packages/tokens/test/invariants.test.ts`, `packages/tui-kit/test/theme.test.ts`, `packages/tui-kit/src/recipes/Button/Button.tsx`, `stories/ramps/catalogue.tsx`, `stories/ramps/Palette.stories.tsx`, `stories/ramps/Text.stories.tsx`, `stories/ramps/Type.stories.tsx`, the spec's §1.1/§3/§4/§5/§6/§7/§9/§10
+- Regenerate: `packages/tokyo/src/tokyo-theme.css`, `packages/tui-kit/src/generated/{theme.css,tokens.ts}`, `apps/deck/core/generated/{board.js,board.css,gateway.css}`
+
+**What was done:**
+
+1. `values.ts`: light `surfaceSteps` `['#ffffff', 1, 2, 3]` to
+   `['#ffffff', 2, 3, 4]`, so the light ramp is `#ffffff`, `#f9f9fb`,
+   `#f0f0f3`, `#e8e8ec` (16.39, 15.58, 14.41, 13.41 against `text-1`). Dark
+   is untouched, and no role index moves.
+2. `values.ts`: `LIGHT_HUE_STEPS.bad` text step 11 to 12. Crimson 11
+   measures 4.41 against the new floor, under the 4.5 body bar, which is
+   what `invariants.test.ts`'s `ruleText` computes; the pin now matches the
+   rule again.
+3. `invariants.test.ts`: `TEXT_BAR` meta 5.2 to 4.8 (slate 11's worst case
+   moves 5.22 to 4.86); the surface identity test reads slate 2..4; the
+   fill-ledger case lists five misses (`dark/accent`, `dark/purple`,
+   `light/cyan`, `light/ok`, `light/warn`), not three. Five, not six: light
+   `warn` was already ledgered, so only `ok` and `cyan` join.
+4. `generate.ts`: the emitted tokyo comment says slate 2 to 4.
+5. `Button.tsx`: the pinned `light|accent` cell's label moves from
+   `var(--accent-text)` (indigo 11) to `var(--text-accent-small)`
+   (indigo 12). Its tint is translucent, so its painted ground is the page:
+   on the new page the body token measures 4.399, under AA. The small token
+   is what the resolver already gives every other tinted cell (spec §9
+   step 0), so this is the pin catching up to the rule, not a new exception
+   or a ledger entry.
+6. Stories: the ramp catalogue's scheme columns sit on a warm mid-tone
+   story-chrome literal (`#8a7560`, outside the cool platform palette) with
+   28px padding and a 16px gap, so light and dark surfaces both read as
+   objects with an edge; `Palette` puts each hue block on the scheme's card
+   because it paints hue text directly; `Text` and `Type` carry the 4.8
+   meta bar.
+
+**Verification run:** tokens 90, tui-kit node 189, tui-kit browser 453,
+visual 76 (refreshed with `-u`, no baseline bytes changed: the comparator's
+0.2 per-pixel threshold and 1% mismatch ratio absorb the shift), chat 302,
+console 748, board 1707, boxscore 309, deck 753. Freshness
+gate, `bun run format`, `bun run lint`, `bun run typecheck` and
+`scripts/repo-purity.sh` all clean.
+
+---
+
+## Part I: on-fill labels and the vivid hue text step (spec §7, §10)
+
+Two per-hue tokens that the ramp rules cannot express, both discovered from
+rendered UI rather than from the spec.
+
+`--on-fill-<hue>` exists because "white on a hue fill" is wrong for four of
+the six hues. `--text-<hue>-vivid` exists because `--text-<hue>` is defined
+as the first step from 11 upward clearing 4.5, so it silently resolves to
+step 12 in light for ok, bad, warn and cyan, and there is no token that names
+step 11 unconditionally.
+
+### Task 12: Emit `--on-fill-<hue>` and `--text-<hue>-vivid`, retune the filled label, rewrite the ledger
+
+**Files:**
+- Modify: `packages/tokens/src/values.ts`
+- Modify: `packages/tokens/scripts/generate.ts`
+- Modify: `packages/tokens/test/invariants.test.ts`
+- Modify: `packages/tui-kit/src/intent-resolver.ts:76`
+- Modify: `packages/tui-kit/src/a11y/known-contrast-debt.ts`
+- Modify: `docs/superpowers/specs/2026-09-20-text-and-surface-ramps-design.md` (§7, the "Labels on fills" paragraph)
+- Regenerate (never hand-edit): `packages/tui-kit/src/generated/tokens.ts`,
+  `packages/tui-kit/src/generated/theme.css`, `packages/tokyo/src/tokyo-theme.css`,
+  `packages/tokyo/src/ramps.ts`, `apps/deck/core/generated/*`
+
+**Interfaces:**
+- Consumes: `buildScheme()`'s `hueValue()` helper and `HueStep` from Task 1;
+  the `family()` record in `generate.ts:56-61` from Task 2.
+- Produces: `ColorScheme.hueOnFill` and `ColorScheme.hueTextVivid` (both
+  `HueSet`); CSS custom properties `--tk-on-fill-<hue>` / `--on-fill-<hue>`
+  and `--tk-text-<hue>-vivid` / `--text-<hue>-vivid`; tui-kit token-map keys
+  `colors.<family>.onFill` and `colors.<family>.textVivid`, which reach CSS
+  as `--color-<family>-onFill` and `--color-<family>-textVivid`.
+
+**The two values, measured.** These are the numbers the invariants assert.
+The dark neutral label is `#1c2024`, slate 12 light, which is already
+`textRamp[0]` in the light scheme.
+
+On-fill, label against fill, both schemes:
+
+| hue | light fill | white | dark label | dark fill | white | dark label | pick |
+|---|---|---|---|---|---|---|---|
+| accent | `#3e63dd` | 5.21 | 3.15 | `#3e63dd` | 5.21 | 3.15 | white |
+| purple | `#8e4ec6` | 5.18 | 3.16 | `#8e4ec6` | 5.18 | 3.16 | white |
+| ok | `#0d9b8a` | 3.46 | 4.74 | `#12a594` | 3.07 | 5.33 | dark |
+| warn | `#ef5f00` | 3.33 | 4.92 | `#f76b15` | 2.97 | 5.52 | dark |
+| cyan | `#0797b9` | 3.42 | 4.79 | `#00a2c7` | 3.00 | 5.46 | dark |
+| bad | `#e93d82` | 3.85 | 4.26 | `#e93d82` | 3.85 | 4.26 | dark |
+
+The pick is the same in both schemes for every hue, so it is a property of
+the hue, not the scheme. Only `bad` stays under 4.5, at 4.26, so the ledger
+goes from eight entries to one.
+
+Vivid text, step 11 unconditionally:
+
+| hue | light | dark |
+|---|---|---|
+| accent | `#3a5bc7` | `#9eb1ff` |
+| ok | `#008573` | `#0bd8b6` |
+| bad | `#cb1d63` | `#ff92ad` |
+| warn | `#cc4e00` | `#ffa057` |
+| purple | `#8145b5` | `#d19dff` |
+| cyan | `#107d98` | `#4ccce6` |
+
+- [ ] **Step 1: Write the failing invariants**
+
+In `packages/tokens/test/invariants.test.ts`, add:
+
+```ts
+import { contrast } from '../src/color-math.ts';
+
+test('on-fill labels clear 4.5 except the ledgered miss', () => {
+  const ledger: string[] = [];
+  for (const scheme of ['light', 'dark'] as const) {
+    for (const hue of HUES) {
+      const fill = TOKENS[scheme].hue[hue];
+      const label = TOKENS[scheme].hueOnFill[hue];
+      const ratio = contrast(fill, label);
+      if (ratio < 4.5) ledger.push(`${scheme}/${hue}`);
+      expect(label === '#ffffff' || label === TOKENS.light.textRamp[0]).toBe(true);
+    }
+  }
+  expect(ledger).toEqual(['light/bad', 'dark/bad']);
+});
+
+test('on-fill picks the better of white and the dark neutral', () => {
+  const dark = TOKENS.light.textRamp[0];
+  for (const scheme of ['light', 'dark'] as const) {
+    for (const hue of HUES) {
+      const fill = TOKENS[scheme].hue[hue];
+      const chosen = TOKENS[scheme].hueOnFill[hue];
+      const other = chosen === '#ffffff' ? dark : '#ffffff';
+      expect(contrast(fill, chosen)).toBeGreaterThanOrEqual(contrast(fill, other));
+    }
+  }
+});
+
+test('the on-fill pick is the same in both schemes', () => {
+  for (const hue of HUES) {
+    const light = TOKENS.light.hueOnFill[hue] === '#ffffff';
+    const dark = TOKENS.dark.hueOnFill[hue] === '#ffffff';
+    expect(light).toBe(dark);
+  }
+});
+
+test('vivid text is step 11 for every hue in both schemes', () => {
+  for (const scheme of ['light', 'dark'] as const) {
+    for (const hue of HUES) {
+      expect(TOKENS[scheme].hueTextVivid[hue]).toBe(
+        RADIX[HUE_SCALE[hue]][scheme][10]
+      );
+    }
+  }
+});
+```
+
+- [ ] **Step 2: Run them to verify they fail**
+
+Run: `bun run --cwd packages/tokens test`
+Expected: FAIL, `hueOnFill` and `hueTextVivid` are not properties of `ColorScheme`.
+
+- [ ] **Step 3: Add both to `values.ts`**
+
+Extend the interface (beside `hueTextSmall`, around line 36):
+
+```ts
+  hueOnFill: HueSet;
+  hueTextVivid: HueSet;
+```
+
+Inside `buildScheme()`, after the `hueTextSmall` line:
+
+```ts
+  // Radix's step 9 and 10 are chosen to carry a white label, but only the two
+  // blue-violet hues actually do: on the other four a white label measures
+  // 2.97 to 3.85 while the dark neutral measures 4.26 to 5.52. The winner is
+  // the same in both schemes for every hue, so this is a property of the hue.
+  const onFillDark = RADIX.slate.light[11]!;
+  const hueOnFill = hueValue((scale, step) =>
+    contrast(at(scale, step.fill), '#ffffff') >= contrast(at(scale, step.fill), onFillDark)
+      ? '#ffffff'
+      : onFillDark
+  );
+  // Step 11 unconditionally. `hueText` promotes to 12 wherever 11 misses 4.5,
+  // which in light is three of the six hues, so it cannot name this step.
+  const hueTextVivid = hueValue(scale => at(scale, 11));
+```
+
+Add `contrast` to the imports at the top of the file:
+
+```ts
+import { contrast } from './color-math.ts';
+```
+
+Return both from `buildScheme()`, beside `hueTextSmall`:
+
+```ts
+    hueOnFill,
+    hueTextVivid,
+```
+
+- [ ] **Step 4: Run the tokens tests**
+
+Run: `bun run --cwd packages/tokens test`
+Expected: PASS, all four new cases green.
+
+- [ ] **Step 5: Emit them**
+
+In `packages/tokens/scripts/generate.ts`, extend `family()` (line 56-61):
+
+```ts
+  const family = (hue: HueName) => ({
+    '500': at(`hue.${hue}`, t.hue[hue]),
+    hover: at(`hueHover.${hue}`, t.hueHover[hue]),
+    onFill: at(`hueOnFill.${hue}`, t.hueOnFill[hue]),
+    text: at(`hueText.${hue}`, t.hueText[hue]),
+    textSmall: at(`hueTextSmall.${hue}`, t.hueTextSmall[hue]),
+    textVivid: at(`hueTextVivid.${hue}`, t.hueTextVivid[hue]),
+  });
+```
+
+In the `--tk-*` block, beside the existing `--tk-fill-${h}-hover` line (268)
+and `--tk-text-${h}-small` line (273), add the two matching emitters:
+
+```ts
+      h => `  --tk-on-fill-${h}: ${at(`hueOnFill.${h}`, t.hueOnFill[h])};`
+```
+
+```ts
+        `  --tk-text-${h}-vivid: ${at(`hueTextVivid.${h}`, t.hueTextVivid[h])};`
+```
+
+Follow the surrounding block's existing alias pattern so `--on-fill-<hue>`
+and `--text-<hue>-vivid` land beside `--fill-<hue>` and `--text-<hue>-small`.
+Read the block before editing; do not invent a second alias mechanism.
+
+- [ ] **Step 6: Regenerate and commit the generated files**
+
+Run, in this order:
+
+```bash
+bun run tokens:radix && bun run tokens:codegen && bun run tokens:ramps
+bun run --cwd packages/tui-kit codegen
+bun run tui-kit:build
+```
+
+Then confirm the freshness gate: re-run the same commands and check
+`git status --porcelain` is empty on the second pass.
+
+- [ ] **Step 7: Point the filled label at the token**
+
+`packages/tui-kit/src/intent-resolver.ts`, in the `variant === "filled"`
+block. Replace the `color:` line and its comment:
+
+```ts
+      // The neutral fill is the one case with no hue token: slate 9 carries a
+      // white label at 3.3 in light and 5.1 in dark, so it flips per scheme.
+      color: neutral ? "light-dark(var(--text-1), #ffffff)" : `var(--color-${family}-onFill)`,
+```
+
+- [ ] **Step 8: Rewrite the ledger**
+
+`packages/tui-kit/src/a11y/known-contrast-debt.ts` currently holds eight
+`filled` entries. Seven of them exist only because the label was white; with
+the token they measure 4.74 to 5.52 and are no longer debt. Delete those
+seven. Keep exactly one, rewritten to the new value:
+
+```ts
+  {
+    id: 'filled/bad',
+    schemes: ['light', 'dark'],
+    measured: 4.26,
+    note:
+      'Crimson 9 is the one hue no label clears 4.5 on: white measures 3.85 ' +
+      'and the dark neutral 4.26. The dark neutral is the better of the two ' +
+      'and the fill step is fixed by the spec, so this is the floor.',
+  },
+```
+
+Match the file's existing entry shape exactly; read it before editing rather
+than assuming the field names above.
+
+- [ ] **Step 9: Run every gate**
+
+```bash
+bun run --cwd packages/tokens test
+bun run --cwd packages/tui-kit test
+bun run tui-kit:build
+bun run format:check && scripts/repo-purity.sh
+```
+
+Expected: all pass. Visual baselines will move where a filled control's label
+changed colour; regenerate them with `-u` and LOOK at the resulting PNGs
+before accepting. If a baseline moved in a way the token does not explain,
+stop and report it rather than accepting the rewrite.
+
+- [ ] **Step 10: Correct the spec**
+
+In `docs/superpowers/specs/2026-09-20-text-and-surface-ramps-design.md` §7,
+the "Labels on fills" paragraph currently says a label on a hue fill is
+white. Replace that claim with the measured rule and the table from this
+task's header, and add `--text-<hue>-vivid` to the §7 token list with its
+one-line reason. Do not cite this task number or the review that found it.
+
+- [ ] **Step 11: Commit**
+
+```bash
+git add -A
+git commit -m "tokens: emit --on-fill-<hue> and --text-<hue>-vivid, retune the filled label"
+```
+
+---
+
+## Part J: the seventh hue (spec §7)
+
+Board uses two distinct warm status hues (conflicts vs ci-running, doctor vs
+decide) and the six-hue palette has one. This adds a seventh.
+
+### Task 14: Add `gold`, backed by the Radix amber scale
+
+**Files:**
+- Modify: `packages/tokens/scripts/generate-radix.ts`
+- Regenerate: `packages/tokens/src/radix.ts`
+- Modify: `packages/tokens/src/values.ts`
+- Modify: `packages/tokens/scripts/generate.ts`
+- Modify: `packages/tokens/test/invariants.test.ts`
+- Modify: `packages/tui-kit/src/intent-resolver.ts` (`FAMILY`, `TEXT_TONE`, `TINT_TEXT_TONE`)
+- Modify: `packages/tui-kit/src/a11y/known-contrast-debt.ts`
+- Modify: `packages/tui-kit/soribashi.config.ts`
+- Modify: `packages/tui-kit/docs/css-contract.md`
+- Modify: `docs/superpowers/specs/2026-09-20-text-and-surface-ramps-design.md` (§7 palette table)
+- Regenerate: `packages/tui-kit/src/generated/*`, `packages/tokyo/src/tokyo-theme.css`,
+  `packages/tokyo/src/ramps.ts`, `apps/deck/core/generated/*`
+
+**Interfaces:**
+- Consumes: `--on-fill-<hue>` and `--text-<hue>-vivid` from Task 12; `HUES`,
+  `HUE_SCALE`, `LIGHT_HUE_STEPS`, `DARK_HUE_STEPS` from Task 1.
+- Produces: the hue name `gold` in `HUES`, the family alias `gold` in the
+  tui-kit token map, and the public aliases `--gold`, `--fill-gold`,
+  `--fill-gold-hover`, `--text-gold`, `--text-gold-small`,
+  `--text-gold-vivid`, `--on-fill-gold`.
+
+**Why `gold` and not `amber`.** The Radix scale is called amber, but
+`--amber` is already a public alias in tui-kit's CSS contract meaning the
+warn fill, and board reads `var(--amber)` today. Role names and Radix scale
+names already diverge in this file (`warn` is backed by Radix orange), so
+`HUE_SCALE.gold = 'amber'` follows the existing pattern rather than breaking
+a shipped alias mid-migration.
+
+**Values, read from `@radix-ui/colors` 3.0.0:**
+
+```
+light  9 #ffc53d  10 #ffba18  11 #ab6400  12 #4f3422
+dark   9 #ffc53d  10 #ffd60a  11 #ffca16  12 #ffe7b3
+```
+
+**The fill limitation, and why it is a ledger entry rather than a fix.**
+Radix amber is one of their deliberately low-contrast scales: step 9 is a
+bright yellow chosen to carry a dark label, not to sit against a white page.
+Measured against the light surface ramp, `#ffc53d` is 1.58 on `#ffffff` and
+1.51 on `#e8e8ec`, and step 10 is no better. No step between 9 and 10 clears
+the 3.0 fill bar in light, so the rule in §7 cannot pick one. Gold still
+takes fill step 9 so its token shape matches every other hue, and the
+shortfall is ledgered. Gold's intended use is status text, where it is
+strong: `--text-gold-vivid` is 3.77 in light and 9.42 in dark.
+
+Its on-fill label is the dark neutral at 10.38, the widest margin of any hue.
+
+- [ ] **Step 1: Vendor the scale**
+
+In `packages/tokens/scripts/generate-radix.ts`, add `'amber'` to the list of
+scales it vendors. Read the existing list before editing; keep its ordering
+convention.
+
+Run: `bun run tokens:radix`
+Expected: `packages/tokens/src/radix.ts` gains an `amber` entry with the
+twelve light and twelve dark values above, and `RADIX_SCALES` gains `'amber'`.
+
+- [ ] **Step 2: Write the failing test**
+
+In `packages/tokens/test/invariants.test.ts`:
+
+```ts
+test('gold is the seventh hue, backed by Radix amber', () => {
+  expect(HUES).toContain('gold');
+  expect(HUE_SCALE.gold).toBe('amber');
+  expect(TOKENS.light.hue.gold).toBe('#ffc53d');
+  expect(TOKENS.dark.hue.gold).toBe('#ffc53d');
+  expect(TOKENS.light.hueTextVivid.gold).toBe('#ab6400');
+  expect(TOKENS.dark.hueTextVivid.gold).toBe('#ffca16');
+});
+
+test('gold takes the dark on-fill label', () => {
+  expect(TOKENS.light.hueOnFill.gold).toBe(TOKENS.light.textRamp[0]);
+  expect(TOKENS.dark.hueOnFill.gold).toBe(TOKENS.light.textRamp[0]);
+});
+```
+
+- [ ] **Step 3: Run it to verify it fails**
+
+Run: `bun run --cwd packages/tokens test`
+Expected: FAIL, `'gold'` is not in `HUES`.
+
+- [ ] **Step 4: Add the hue**
+
+`packages/tokens/src/values.ts`:
+
+```ts
+export const HUES = ['accent', 'ok', 'bad', 'warn', 'purple', 'cyan', 'gold'] as const;
+```
+
+```ts
+export const HUE_SCALE: Record<HueName, RadixScaleName> = {
+  accent: 'indigo',
+  ok: 'teal',
+  bad: 'crimson',
+  warn: 'orange',
+  purple: 'purple',
+  cyan: 'cyan',
+  // Radix amber. The role is named gold because `--amber` is already the
+  // shipped public alias for the warn fill.
+  gold: 'amber',
+};
+```
+
+Add to both step maps:
+
+```ts
+const LIGHT_HUE_STEPS: Record<HueName, HueStep> = {
+  ...
+  // Radix amber is a low-contrast scale: no step from 9 to 10 clears the 3.0
+  // fill bar on a light surface. Step 9 keeps gold's token shape uniform and
+  // the shortfall is ledgered; gold's real use is text.
+  gold: { fill: 9, text: 12 },
+};
+```
+
+```ts
+const DARK_HUE_STEPS: Record<HueName, HueStep> = {
+  ...
+  gold: { fill: 9, text: 11 },
+};
+```
+
+- [ ] **Step 5: Run the tokens tests**
+
+Run: `bun run --cwd packages/tokens test`
+Expected: PASS. If the existing "fills clear 3.0 on every surface" invariant
+now fails for `light/gold`, that is the documented exception: add
+`'light/gold'` to that test's expected-miss list with the measured 1.58 and
+the reason, in the same shape the list already uses.
+
+- [ ] **Step 6: Wire the family through the generator**
+
+`packages/tokens/scripts/generate.ts`, in `buildTuiKitColors()`:
+
+```ts
+    gold: family('gold'),
+```
+
+The `--tk-*` emitters iterate `HUES`, so they pick gold up with no further
+edit. Verify that by reading the block rather than assuming it.
+
+- [ ] **Step 7: Wire the resolver**
+
+`packages/tui-kit/src/intent-resolver.ts`, three maps:
+
+```ts
+const FAMILY: Record<string, string> = { ..., gold: "gold" };
+```
+
+```ts
+const TEXT_TONE: Record<string, string> = { ..., gold: "var(--text-gold)" };
+```
+
+```ts
+const TINT_TEXT_TONE: Record<string, string> = { ..., gold: "var(--text-gold-small)" };
+```
+
+Read each map first; match its existing key ordering and quoting style.
+
+- [ ] **Step 8: Add the aliases**
+
+`packages/tui-kit/soribashi.config.ts` gains the gold rows beside the warn
+and cyan ones it already has (`--fill-gold`, `--fill-gold-hover`,
+`--text-gold`, `--text-gold-small`, `--text-gold-vivid`, `--on-fill-gold`,
+`--gold`). Update `packages/tui-kit/docs/css-contract.md`'s table to match.
+
+- [ ] **Step 9: Ledger the fill**
+
+`packages/tui-kit/src/a11y/known-contrast-debt.ts`, one new entry alongside
+the `filled/bad` entry from Task 12:
+
+```ts
+  {
+    id: 'fill/gold-on-surface',
+    schemes: ['light'],
+    measured: 1.58,
+    note:
+      'Radix amber is a low-contrast scale by design: step 9 is a bright ' +
+      'yellow meant to carry a dark label, not to separate from a white ' +
+      'page. No step from 9 to 10 clears 3.0 in light. Gold is a text hue; ' +
+      'a gold fill on a light surface needs its own border to read.',
+  },
+```
+
+- [ ] **Step 10: Regenerate and run every gate**
+
+```bash
+bun run tokens:radix && bun run tokens:codegen && bun run tokens:ramps
+bun run --cwd packages/tui-kit codegen
+bun run tui-kit:build
+bun run --cwd packages/tokens test
+bun run --cwd packages/tui-kit test
+bun run format:check && scripts/repo-purity.sh
+```
+
+Re-run the generate commands a second time and confirm `git status
+--porcelain` is empty, proving the freshness gate holds.
+
+- [ ] **Step 11: Add gold to the reference catalogue**
+
+`stories/ramps/Palette.stories.tsx` and `stories/ramps/catalogue.tsx` iterate
+the hue list; confirm gold appears in the palette story with its fill, hover,
+text, small, vivid and on-fill swatches. Screenshot the palette story in both
+schemes to `.superpowers/sdd/2026-09-20-text-and-surface-ramps/screenshots/`
+and LOOK at it. Gold's light-mode fill will look washed out against the page;
+that is the ledgered limitation, not a bug. Say so in the report rather than
+"fixing" it.
+
+- [ ] **Step 12: Update the spec**
+
+Add gold to §7's palette table with its scale, steps and the fill-limitation
+note. Do not cite this task number.
+
+- [ ] **Step 13: Commit**
+
+```bash
+git add -A
+git commit -m "tokens: add gold as the seventh hue, backed by Radix amber"
+```
+
+---
+
+## Part K: app-kit's filled labels (spec §7)
+
+Task 12 gave tui-kit's Button the per-hue on-fill label. app-kit's Mantine
+Button was never wired to the same fix, so every filled button still paints a
+white label on its hue fill. The specimen wall in Task 8 rendered both kits
+side by side and made the gap visible: 16 axe violations per scheme in
+app-kit against 1 in tui-kit.
+
+### Task 15: app-kit's filled variant reads `--tk-on-fill-<hue>`
+
+**Files:**
+- Modify: `packages/ui/src/design-system/variant-resolver.ts`
+- Test: `packages/ui/src/design-system/variant-resolver.test.ts` (create if absent; check first)
+
+**Interfaces:**
+- Consumes: `--tk-on-fill-<hue>` from Task 12, emitted in
+  `packages/tokyo/src/tokyo-theme.css` for all seven hues in both schemes.
+  Verified present at lines 107-113 (light) and 203-209 (dark).
+- Produces: nothing new. This points an existing resolver at existing tokens.
+
+**Why Mantine's own options do not solve it.** Read from the installed
+`@mantine/core` 9.5.2, not from memory:
+
+`default-variant-colors-resolver.mjs`, the `filled` branch, sets
+
+```js
+const textColor = _autoContrast
+  ? (isVirtual ? `var(--mantine-color-${parsed.color}-contrast)`
+               : parsed.isLight ? "var(--mantine-color-black)" : "var(--mantine-color-white)")
+  : "var(--mantine-color-white)";
+```
+
+So with `autoContrast` off it is unconditionally white, and with it on it is
+pure black or pure white chosen by Mantine's own `isLight` luminance test.
+Neither reaches our measured pick, which is white for two hues and the dark
+neutral `#1c2024` for the other five. Turning `autoContrast` on is therefore
+not the fix; overriding the resolver is.
+
+**The values, measured.** Label against fill, identical in both schemes
+because the fill hex does not change between them:
+
+| hue | fill (light) | white | `#1c2024` | pick |
+|---|---|---|---|---|
+| accent | `#3e63dd` | 5.21 | 3.15 | white |
+| purple | `#8e4ec6` | 5.18 | 3.16 | white |
+| ok | `#0d9b8a` | 3.46 | 4.74 | dark |
+| warn | `#ef5f00` | 3.33 | 4.92 | dark |
+| cyan | `#0797b9` | 3.42 | 4.79 | dark |
+| bad | `#e93d82` | 3.85 | 4.26 | dark |
+
+`bad` stays under 4.5 on its better pick and is already ledgered. Every other
+hue crosses from failing to passing.
+
+- [ ] **Step 1: Write the failing test**
+
+Check whether `packages/ui/src/design-system/variant-resolver.test.ts`
+exists and follow its conventions if so. Otherwise create it, matching the
+test style of its sibling files in `packages/ui/src/design-system/`.
+
+```ts
+import { describe, expect, test } from 'vitest';
+import { variantColorResolver } from './variant-resolver';
+import { baseTheme } from './base-theme';
+
+const HUES = ['accent', 'ok', 'bad', 'warn', 'purple', 'cyan'] as const;
+
+describe('filled labels', () => {
+  test.each(HUES)('%s reads its on-fill token', hue => {
+    const result = variantColorResolver({
+      color: hue,
+      theme: baseTheme,
+      variant: 'filled',
+    } as Parameters<typeof variantColorResolver>[0]);
+    expect(result.color).toBe(`var(--tk-on-fill-${hue})`);
+  });
+
+  test('a non-hue colour keeps Mantine default', () => {
+    const result = variantColorResolver({
+      color: 'gray',
+      theme: baseTheme,
+      variant: 'filled',
+    } as Parameters<typeof variantColorResolver>[0]);
+    expect(result.color).toBe('var(--mantine-color-white)');
+  });
+
+  test('other variants are untouched', () => {
+    const result = variantColorResolver({
+      color: 'ok',
+      theme: baseTheme,
+      variant: 'light',
+    } as Parameters<typeof variantColorResolver>[0]);
+    expect(result.color).not.toBe('var(--tk-on-fill-ok)');
+  });
+});
+```
+
+Note: the import path for `baseTheme` and the exact shape of the resolver
+input are things to VERIFY before writing, not to copy from here. If
+`baseTheme` is not exported from `./base-theme`, find what is and use that.
+
+- [ ] **Step 2: Run it to verify it fails**
+
+Run: `bun run --cwd packages/ui test variant-resolver`
+Expected: FAIL, the filled colour is `var(--mantine-color-white)`.
+
+- [ ] **Step 3: Add the branch**
+
+In `packages/ui/src/design-system/variant-resolver.ts`, add a `filled`
+branch beside the existing `default` one. Keep the file's existing doc
+comment accurate: it currently says "The one override", which stops being
+true.
+
+```ts
+const ON_FILL_HUES = new Set(['accent', 'ok', 'bad', 'warn', 'purple', 'cyan']);
+```
+
+```ts
+  if (input.variant === 'filled' && typeof input.color === 'string' && ON_FILL_HUES.has(input.color)) {
+    return {
+      ...base,
+      color: `var(--tk-on-fill-${input.color})`,
+    };
+  }
+```
+
+`gold` is deliberately absent: it has no Mantine colour entry because its
+fill measures 1.29 against the tightest light surface, so no gold filled
+button exists to label.
+
+- [ ] **Step 4: Run the test**
+
+Run: `bun run --cwd packages/ui test variant-resolver`
+Expected: PASS.
+
+- [ ] **Step 5: Run every gate**
+
+```bash
+bun run --cwd packages/ui test
+bun run typecheck
+bun run lint
+bun run format:check && scripts/repo-purity.sh
+```
+
+- [ ] **Step 6: Render it and look**
+
+Re-run the `Specimens/app-kit/Buttons` story from Task 8 in both schemes,
+screenshot, and read the PNGs. Report the axe violation count before and
+after, and say plainly whether the filled labels now read. The expected
+result is 16 violations per scheme dropping to 1, the ledgered `bad`.
+
+If the count does not drop as expected, say so rather than declaring
+success: it would mean the token is not reaching the component, which is the
+same class of silent failure that a `light-dark()` pin hit elsewhere in this
+program. Read `getComputedStyle` on a filled button's label to confirm the
+value actually resolves, rather than trusting the screenshot.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add -A
+git commit -m "app-kit: filled buttons read the per-hue on-fill label"
+```

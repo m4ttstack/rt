@@ -178,7 +178,12 @@ describe('TimedRingProgress', () => {
       </DeferredMount>
     );
 
-    await waitFor(() => expect(onFinish).toHaveBeenCalled(), { timeout: 3000 });
+    // 10s, not 3: the 40ms countdown itself is instant, but under a saturated
+    // machine (parallel suites) the completion effect can take several
+    // seconds to be scheduled, and 3s produced load-dependent failures.
+    await waitFor(() => expect(onFinish).toHaveBeenCalled(), {
+      timeout: 10000,
+    });
 
     // Give a StrictMode-induced duplicate (mount -> unmount -> remount of
     // the completion effect) a chance to fire before asserting the count.

@@ -2,107 +2,221 @@
 
 export const GENERATED_LIGHT_COLORS = {
   "blue": {
-    "500": "#4658ff"
+    "500": "#3e63dd",
+    "hover": "#3358d4",
+    "onFill": "#ffffff",
+    "text": "#3a5bc7",
+    "textSmall": "#1f2d5c",
+    "textVivid": "#3a5bc7"
   },
   "green": {
-    "500": "#00c287"
+    "500": "#0d9b8a",
+    "hover": "color-mix(in srgb, #0d9b8a 88%, #1c2024)",
+    "onFill": "#ffffff",
+    "text": "#008573",
+    "textSmall": "#0d3d38",
+    "textVivid": "#008573"
   },
   "red": {
-    "500": "#ff3d81"
+    "500": "#e93d82",
+    "hover": "#df3478",
+    "onFill": "#ffffff",
+    "text": "#cb1d63",
+    "textSmall": "#621639",
+    "textVivid": "#cb1d63"
   },
   "amber": {
-    "500": "#ff8a00"
+    "500": "#ef5f00",
+    "hover": "color-mix(in srgb, #ef5f00 88%, #1c2024)",
+    "onFill": "#ffffff",
+    "text": "#cc4e00",
+    "textSmall": "#582d1d",
+    "textVivid": "#cc4e00"
   },
   "purple": {
-    "500": "#9b45ff"
+    "500": "#8e4ec6",
+    "hover": "#8347b9",
+    "onFill": "#ffffff",
+    "text": "#8145b5",
+    "textSmall": "#402060",
+    "textVivid": "#8145b5"
   },
   "cyan": {
-    "500": "#00b8d9"
+    "500": "#0797b9",
+    "hover": "color-mix(in srgb, #0797b9 88%, #1c2024)",
+    "onFill": "#ffffff",
+    "text": "#107d98",
+    "textSmall": "#0d3c48",
+    "textVivid": "#107d98"
+  },
+  "gold": {
+    "500": "#ffc53d",
+    "hover": "#ffba18",
+    "onFill": "#1c2024",
+    "text": "#ab6400",
+    "textSmall": "#4f3422",
+    "textVivid": "#ab6400"
+  },
+  "ground": {
+    "1": "#ffffff",
+    "2": "#f9f9fb",
+    "3": "#f0f0f3",
+    "4": "#e8e8ec"
+  },
+  "ink": {
+    "1": "#1c2024",
+    "2": "#60646c",
+    "3": "#60646c",
+    "4": "#1c2024"
+  },
+  "rule": {
+    "1": "#b9bbc6",
+    "2": "#cdced6",
+    "3": "#d9d9e0"
   },
   "gray": {
-    "fg": "#222",
-    "muted": "#8990b3",
-    "mutedText": "#565d80",
-    "accentText": "#3a3fe8",
-    "okText": "#008559",
-    "warnText": "#b36000",
-    "badgeText": "#454b66",
-    "redText": "#c8214f",
-    "mutedOnCard": "#565d80"
+    "fg": "#1c2024",
+    "muted": "#8b8d98",
+    "mutedText": "#60646c",
+    "accentText": "#3a5bc7",
+    "okText": "#008573",
+    "warnText": "#cc4e00",
+    "badgeText": "#60646c",
+    "redText": "#cb1d63",
+    "mutedOnCard": "#60646c"
   },
   "surface": {
-    "bg": "#f7f8fa",
-    "panel": "#fbfbfc",
+    "bg": "#f0f0f3",
+    "panel": "#f9f9fb",
     "card": "#ffffff",
-    "chrome": "#f3f4f7",
-    "inset": "#f7f8fa",
-    "overlay": "#fbfbfc"
+    "chrome": "#e8e8ec",
+    "inset": "#f0f0f3",
+    "overlay": "#f9f9fb",
+    "raised": "#e8e8ec"
   },
   "line": {
-    "border": "#c8cad6",
-    "soft": "#d5d7e2",
+    "border": "#cdced6",
+    "soft": "#d9d9e0",
     "grid": "rgba(52, 59, 88, 0.05)",
-    "edgeOnCard": "#c8cad6",
-    "controlEdgeOnCard": "#c8cad6",
-    "softOnCard": "#d5d7e2"
+    "control": "#b9bbc6",
+    "edgeOnCard": "#cdced6",
+    "controlEdgeOnCard": "#b9bbc6",
+    "softOnCard": "#d9d9e0"
   },
   "dot": {
-    "ok": "#1f9d3a",
-    "warn": "#e08a00",
-    "bad": "#e5153f"
+    "ok": "#0d9b8a",
+    "warn": "#ef5f00",
+    "bad": "#e93d82"
   }
 } as const;
 
 export const GENERATED_DARK_COLORS = {
   "blue": {
-    "500": "#7aa2f7"
+    "500": "#3e63dd",
+    "hover": "#5472e4",
+    "onFill": "#ffffff",
+    "text": "#9eb1ff",
+    "textSmall": "#d6e1ff",
+    "textVivid": "#9eb1ff"
   },
   "green": {
-    "500": "#9ece6a"
+    "500": "#12a594",
+    "hover": "#0eb39e",
+    "onFill": "#ffffff",
+    "text": "#0bd8b6",
+    "textSmall": "#adf0dd",
+    "textVivid": "#0bd8b6"
   },
   "red": {
-    "500": "#f7768e"
+    "500": "#e93d82",
+    "hover": "#ee518a",
+    "onFill": "#ffffff",
+    "text": "#ff92ad",
+    "textSmall": "#fdd3e8",
+    "textVivid": "#ff92ad"
   },
   "amber": {
-    "500": "#e0af68"
+    "500": "#f76b15",
+    "hover": "#ff801f",
+    "onFill": "#ffffff",
+    "text": "#ffa057",
+    "textSmall": "#ffe0c2",
+    "textVivid": "#ffa057"
   },
   "purple": {
-    "500": "#bb9af7"
+    "500": "#8e4ec6",
+    "hover": "#9a5cd0",
+    "onFill": "#ffffff",
+    "text": "#d19dff",
+    "textSmall": "#ecd9fa",
+    "textVivid": "#d19dff"
   },
   "cyan": {
-    "500": "#7dcfff"
+    "500": "#00a2c7",
+    "hover": "#23afd0",
+    "onFill": "#ffffff",
+    "text": "#4ccce6",
+    "textSmall": "#b6ecf7",
+    "textVivid": "#4ccce6"
+  },
+  "gold": {
+    "500": "#ffc53d",
+    "hover": "#ffd60a",
+    "onFill": "#1c2024",
+    "text": "#ffca16",
+    "textSmall": "#ffe7b3",
+    "textVivid": "#ffca16"
+  },
+  "ground": {
+    "1": "#111113",
+    "2": "#18191b",
+    "3": "#212225",
+    "4": "#272a2d"
+  },
+  "ink": {
+    "1": "#edeef0",
+    "2": "#b0b4ba",
+    "3": "#b0b4ba",
+    "4": "#edeef0"
+  },
+  "rule": {
+    "1": "#696e77",
+    "2": "#43484e",
+    "3": "#363a3f"
   },
   "gray": {
-    "fg": "#e3e7f6",
-    "muted": "#7e86ad",
-    "mutedText": "#969ec2",
-    "accentText": "#7aa2f7",
-    "okText": "#9ece6a",
-    "warnText": "#e0af68",
-    "badgeText": "#aab3d8",
-    "redText": "#f7768e",
-    "mutedOnCard": "#aab3d8"
+    "fg": "#edeef0",
+    "muted": "#696e77",
+    "mutedText": "#b0b4ba",
+    "accentText": "#9eb1ff",
+    "okText": "#0bd8b6",
+    "warnText": "#ffa057",
+    "badgeText": "#b0b4ba",
+    "redText": "#ff92ad",
+    "mutedOnCard": "#b0b4ba"
   },
   "surface": {
-    "bg": "#16161e",
-    "panel": "#1a1c28",
-    "card": "#1e2030",
-    "chrome": "#1a1c28",
-    "inset": "#181a24",
-    "overlay": "#181a24"
+    "bg": "#111113",
+    "panel": "#18191b",
+    "card": "#212225",
+    "chrome": "#18191b",
+    "inset": "#111113",
+    "overlay": "#212225",
+    "raised": "#272a2d"
   },
   "line": {
-    "border": "#3b4261",
-    "soft": "#313853",
+    "border": "#43484e",
+    "soft": "#363a3f",
     "grid": "rgba(122, 162, 247, 0.06)",
-    "edgeOnCard": "#505879",
-    "controlEdgeOnCard": "#6b7499",
-    "softOnCard": "#404866"
+    "control": "#696e77",
+    "edgeOnCard": "#696e77",
+    "controlEdgeOnCard": "#696e77",
+    "softOnCard": "#43484e"
   },
   "dot": {
-    "ok": "#4ade5b",
-    "warn": "#ffbb3d",
-    "bad": "#ff5c72"
+    "ok": "#12a594",
+    "warn": "#f76b15",
+    "bad": "#e93d82"
   }
 } as const;
 

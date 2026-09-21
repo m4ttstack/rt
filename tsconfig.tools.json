@@ -23,5 +23,11 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": [".storybook/**/*.ts", ".storybook/**/*.tsx", "vitest.config.ts"]
+  "include": [
+    ".storybook/**/*.ts",
+    ".storybook/**/*.tsx",
+    "stories/**/*.ts",
+    "stories/**/*.tsx",
+    "vitest.config.ts"
+  ]
 }

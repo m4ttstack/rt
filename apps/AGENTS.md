@@ -117,6 +117,16 @@ where autofill is actually wanted: `autoComplete="on"`, or a specific
 token (`autoComplete="email"`, `"current-password"`, ...) on real
 login/signup/profile fields.
 
+### Token namespaces (lint)
+
+`local/token-namespaces` (style objects) and `local/token-namespaces-css`
+(stylesheets) enforce the ramp namespaces: `--text-*` only in `color`,
+`--surface-*` only in backgrounds and `fill`, `--border-*` only in border
+and outline properties, `--fill-*` never in `color`, and the numeric
+ramp steps `--surface-N` / `--line-N` never outside the tokens package.
+An app that uses `mattstackEslint()` gets the first rule; add the CSS
+block from the root `eslint.config.js` to lint its stylesheets.
+
 ## 2. Adding a component: kit vs. app
 
 **Add it to the kit (`packages/ui/src/core/<name>/`)** when the component
@@ -715,3 +725,9 @@ way that does not announce itself as "the kit is wrong":
    the visual label text to the underlying control instead; it satisfies
    both without rendering a second visible label. `AgentDefaultsPage.tsx`
    in `apps/console` does this for every field with a custom row header.
+
+### Text slots and sizes
+
+`--ui-text-1` is primary text at every size; `--ui-text-2` is secondary text at body sizes and above; `--ui-text-3` at meta (about 13px); `--ui-text-4` at small and micro (under 12.5px) and is the same colour as `--ui-text-1`, because small text needs the high-contrast step. `--ui-text-muted` is `--ui-text-3` and `--ui-text-dimmed` is `--ui-text-4`. In JSX, `c="dimmed"` at `size="xs"` is a lint error (`local/no-dimmed-xs`); use `sm` for dimmed text or the default colour at `xs`.
+
+In JSX, `c="dimmed"` reads Mantine's `--mantine-color-dimmed` (slate 11, the same value as `--ui-text-muted`), not `--ui-text-dimmed`; the lint exists because that Mantine slot is under the small-text bar at `xs`.

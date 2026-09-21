@@ -7,7 +7,7 @@
   .body {
     padding: var(--spacing-md) 0;
     font-size: var(--font-size-sm);
-    color: var(--fg);
+    color: var(--text-1);
   }
 
   .foot {

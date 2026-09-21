@@ -80,7 +80,7 @@ recorded next to the file that fixes it.
 | `@mattstack/tui-kit` | `src/index.ts` | components, hooks and `tuiTheme`, the common case |
 | `@mattstack/tui-kit/hooks` | `src/hooks/index.ts` | only the hooks, no component module graph |
 | `@mattstack/tui-kit/theme` | `src/theme.ts` | only `tuiTheme`, for example feeding a `createTheme({ extends })` call |
-| `@mattstack/tui-kit/provider` | `src/provider.ts` | `registerTheme` + `SoribashiProvider` for an app entry, without the component module graph |
+| `@mattstack/tui-kit/provider` | `src/provider.tsx` | `TuiKitProvider` (registers and provides the theme in one import), or `registerTheme` + `SoribashiProvider` separately, for an app entry without the component module graph |
 | `@mattstack/tui-kit/theme.css` | `src/generated/theme.css` | the generated CSS custom properties, imported once at an app entry |
 | `@mattstack/tui-kit/canvas.css` | `src/canvas.css` | opt-in page canvas reset, see below |
 | `@mattstack/tui-kit/types/css-modules.d.ts` | `types/css-modules.d.ts` | the ambient CSS-module declaration, see below |

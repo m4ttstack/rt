@@ -25,10 +25,10 @@
     padding: var(--spacing-px9) var(--font-size-px13);
     background: var(--card);
     border: 1px solid var(--border);
-    border-left: var(--spacing-px3) solid var(--accent);
+    border-left: var(--spacing-px3) solid var(--fill-accent);
     border-radius: var(--radius-px7);
     box-shadow: var(--shadow-toast);
-    color: var(--fg);
+    color: var(--text-1);
     font-size: var(--font-size-px13);
     max-width: 320px;
   }

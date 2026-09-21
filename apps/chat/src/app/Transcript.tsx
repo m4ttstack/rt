@@ -316,7 +316,7 @@ function DayDivider({ label }: { label: string }) {
       data-testid="day-divider"
       aria-label={label}
       style={{
-        color: 'var(--tk-muted-text)',
+        color: 'var(--tk-text-4)',
         fontSize: 'var(--tk-fs-3xs)',
         fontWeight: 600,
         padding: 'var(--mantine-spacing-xs) 0',
@@ -344,7 +344,7 @@ function YouBadge() {
         fontWeight: 500,
         lineHeight: 1,
         border: '1px solid var(--tk-border)',
-        color: 'var(--tk-muted-text)',
+        color: 'var(--tk-text-4)',
       }}
     >
       you
@@ -393,7 +393,7 @@ function MessageRow({
         <AgentName
           handle={message.handle}
           variant="inline"
-          hue={speakerHue(message.handle, humanHandle)}
+          hue={speakerHue(message.handle, humanHandle, 'body')}
           task={task}
           size={MESSAGE_HANDLE}
         />
@@ -401,7 +401,7 @@ function MessageRow({
         <Text
           size="xs"
           title={new Date(message.postedAt).toLocaleString()}
-          style={{ color: 'var(--tk-muted-text)' }}
+          style={{ color: 'var(--tk-text-3)' }}
         >
           {localTime(message.postedAt)}
         </Text>
@@ -780,7 +780,7 @@ export function Transcript({
                       'var(--mantine-spacing-sm) 0 var(--mantine-spacing-xs)',
                     textAlign: 'left',
                     fontSize: 'var(--tk-fs-3xs)',
-                    color: 'var(--tk-muted-text)',
+                    color: 'var(--tk-text-4)',
                   }}
                 >
                   {notice}

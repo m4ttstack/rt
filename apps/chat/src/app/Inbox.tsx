@@ -16,7 +16,14 @@ import { CtxChip, InboxCard } from './InboxCard';
 import { Reader } from './Reader';
 import { isMsgTopic, useRelayFrames } from './relay-socket';
 
-const MUTED = 'var(--tk-muted-text)';
+/** Explicit `--tk-fs-{3xs,4xs}` sites (small band). */
+const MUTED_SMALL = 'var(--tk-text-4)';
+/** `InboxBar`'s icon (beside a `size="xl"` title) and the empty-reader
+    panel's `size="sm"` message -- both body band under `chatFontTheme`,
+    which `Inbox`/`InboxBar` always render inside regardless of which
+    literal JSX call site instantiates them (both are threaded through
+    `ChatPage`'s `inbox.bar`/`inbox.panel` props). */
+const MUTED_BODY = 'var(--tk-text-2)';
 const BORDER = 'var(--tk-border)';
 const ACCENT_TEXT = 'var(--mantine-color-accent-text)';
 
@@ -40,7 +47,7 @@ export const UNREAD_BADGE = {
   fontWeight: 500,
   lineHeight: 1,
   border: `1px solid ${BORDER}`,
-  color: MUTED,
+  color: MUTED_SMALL,
   whiteSpace: 'nowrap',
 } as const;
 
@@ -129,7 +136,7 @@ function Section({
           fontSize: 'var(--tk-fs-4xs)',
           fontWeight: 700,
           letterSpacing: '0.06em',
-          color: MUTED,
+          color: MUTED_SMALL,
         }}
       >
         {label}
@@ -138,7 +145,11 @@ function Section({
         <Text
           component="span"
           truncate
-          style={{ minWidth: 0, fontSize: 'var(--tk-fs-3xs)', color: MUTED }}
+          style={{
+            minWidth: 0,
+            fontSize: 'var(--tk-fs-3xs)',
+            color: MUTED_SMALL,
+          }}
         >
           {note}
         </Text>
@@ -186,7 +197,7 @@ export function InboxBar({
     >
       <Box
         component="span"
-        style={{ display: 'inline-flex', flex: 'none', color: MUTED }}
+        style={{ display: 'inline-flex', flex: 'none', color: MUTED_BODY }}
       >
         <Icon name="inbox" size={18} />
       </Box>
@@ -218,7 +229,7 @@ export function InboxBar({
                       height: 8,
                       borderRadius: '50%',
                       flex: 'none',
-                      background: 'var(--tk-dot-ok)',
+                      background: 'var(--tk-fill-ok)',
                     }}
                   />
                 }
@@ -436,7 +447,7 @@ export function Inbox({
           style={{
             paddingTop: 2,
             fontSize: 'var(--tk-fs-3xs)',
-            color: MUTED,
+            color: MUTED_SMALL,
           }}
         >
           Nothing here mentions you or is waiting on an answer. Open a room from
@@ -466,10 +477,10 @@ export function Inbox({
             padding: 'var(--mantine-spacing-xl)',
             // Same near-white surface the open reader uses (see Reader.tsx).
             background: 'var(--tk-card)',
-            color: MUTED,
+            color: MUTED_BODY,
           }}
         >
-          <Text size="sm" style={{ color: MUTED }}>
+          <Text size="sm" style={{ color: MUTED_BODY }}>
             Nothing is waiting on you right now.
           </Text>
         </Box>

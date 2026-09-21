@@ -152,7 +152,7 @@ function MenuChildren() {
   return (
     <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <span style={{ fontWeight: 700, color: "var(--accent)" }}>❯ menu</span>
+        <span style={{ fontWeight: 700, color: "var(--text-accent)" }}>❯ menu</span>
         <span style={{ color: "var(--muted)" }}>✕</span>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>

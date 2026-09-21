@@ -8,7 +8,66 @@ import { describe, expect, it } from 'vitest';
  * the one-line reason that justifies keeping it definition-only for now.
  * Deletion is Phase 2 material.
  */
+const RAMP_HUES = ['accent', 'ok', 'bad', 'warn', 'purple', 'cyan', 'gold'];
+const RAMP_PUBLIC_NAMES = [
+  '--page',
+  '--raised',
+  '--border-control',
+  ...[1, 2, 3, 4].flatMap(i => [`--surface-${i}`, `--text-${i}`]),
+  ...[1, 2, 3].map(i => `--line-${i}`),
+  ...RAMP_HUES.flatMap(h => [
+    `--fill-${h}`,
+    `--fill-${h}-hover`,
+    `--text-${h}`,
+    `--text-${h}-small`,
+  ]),
+];
+const RAMP_WAIVER =
+  'ramp name emitted ahead of the apps-wide migration; the storybook specimens and the ramp contrast gate read it, no kit recipe does yet.';
+
+// Wired by the recipes during the migration, so these are no longer
+// definition-only and must not carry a waiver.
+const RAMP_NOW_CONSUMED = new Set([
+  '--page',
+  ...[1, 2, 3, 4].map(i => `--text-${i}`),
+  '--fill-accent',
+  '--text-accent',
+  '--text-accent-small',
+  '--fill-ok',
+  '--text-ok-small',
+  '--fill-bad',
+  '--text-bad-small',
+]);
+
+const ON_FILL_WAIVER =
+  "on-fill label; Button's filled variant reads --color-<family>-onFill directly (intent-resolver.ts), not this bare alias -- Segmented's accent-only active state is the one recipe that reads it today, so the other six hues stay unconsumed here.";
+const TEXT_VIVID_WAIVER =
+  'vivid hue text, step 11 unconditionally; emitted ahead of its consumer -- no kit recipe reads it yet.';
+
+const RETIRED_ALIAS_WAIVER =
+  'pre-migration alias kept in the public CSS contract; every recipe moved to the ramp name, so nothing in this repo reads it any more.';
+
 const WAIVED_TUI: Record<string, string> = {
+  ...Object.fromEntries(
+    ['--accent-text', '--green', '--red', '--surface-wash-accent-fg-70'].map(
+      name => [name, RETIRED_ALIAS_WAIVER]
+    )
+  ),
+  ...Object.fromEntries(
+    RAMP_PUBLIC_NAMES.filter(name => !RAMP_NOW_CONSUMED.has(name)).map(name => [
+      name,
+      RAMP_WAIVER,
+    ])
+  ),
+  ...Object.fromEntries(
+    RAMP_HUES.filter(h => h !== 'accent').map(h => [
+      `--on-fill-${h}`,
+      ON_FILL_WAIVER,
+    ])
+  ),
+  ...Object.fromEntries(
+    RAMP_HUES.map(h => [`--text-${h}-vivid`, TEXT_VIVID_WAIVER])
+  ),
   '--border-control-on-card':
     "on-card contrast role read by apps/board's gate control edges (its --gate-control-edge alias); no kit recipe reads it yet.",
   '--border-soft-on-card':
@@ -49,6 +108,8 @@ const WAIVED_TUI: Record<string, string> = {
     "public alias contract (soribashi.config.ts's cssVariablesResolver + docs/css-contract.md); consumed via inline style in StatusDot.tsx, outside this test's CSS-module scope.",
   '--purple':
     "public alias contract (soribashi.config.ts's cssVariablesResolver + docs/css-contract.md); referenced only from Chip.test.tsx today.",
+  '--gold':
+    "public alias contract (soribashi.config.ts's cssVariablesResolver + docs/css-contract.md); no kit recipe or wash mixes it yet.",
   '--terminal-bg':
     'scheme-invariant public alias for consumer terminal/log surfaces, documented in docs/css-contract.md; not consumed by any recipe in this repo.',
   '--terminal-fg':
@@ -119,9 +180,53 @@ const WAIVED_TUI: Record<string, string> = {
     "theme.ts: 'every distinct color-mix() expression in mr-board's stylesheet, carried as RAW strings' -- ported verbatim from that external stylesheet, not yet used by a recipe in this repo.",
 };
 
+const TK_RAMP_NAMES = [
+  ...[1, 2, 3, 4].flatMap(i => [`--tk-surface-${i}`, `--tk-text-${i}`]),
+  ...[1, 2, 3].map(i => `--tk-line-${i}`),
+  ...RAMP_HUES.flatMap(h => [
+    `--tk-fill-${h}`,
+    `--tk-fill-${h}-hover`,
+    `--tk-text-${h}`,
+    `--tk-text-${h}-small`,
+    `--tk-text-${h}-vivid`,
+  ]),
+];
+const TK_RAMP_WAIVER =
+  'ramp name mirrored from the tui theme for app-kit consumers ahead of the migration; no packages/ui component wires it yet.';
+
+// The four text-slot mirrors (--tk-text-1..4) are referenced by tokyo-theme.css's
+// own --ui-text-* remap block, so they are never a real defined-but-unreferenced
+// failure and stay out of this waiver set.
+const TK_TEXT_SLOT_NAMES = new Set([
+  '--tk-text-1',
+  '--tk-text-2',
+  '--tk-text-3',
+  '--tk-text-4',
+]);
+
+// Read by packages/ui/src/app/AppLauncher.module.css, so these are never a
+// real defined-but-unreferenced failure and stay out of this waiver set.
+const TK_APP_LAUNCHER_NAMES = new Set([
+  '--tk-fill-accent',
+  '--tk-fill-accent-hover',
+  '--tk-text-accent-vivid',
+]);
+
+const TK_ON_FILL_NAMES = RAMP_HUES.map(h => `--tk-on-fill-${h}`);
+const TK_ON_FILL_WAIVER =
+  "app-kit's variantColorResolver builds this name at runtime from the intent, so no static reference to any single hue exists; the filled label is genuinely wired.";
+
 const WAIVED_TOKYO: Record<string, string> = {
+  ...Object.fromEntries(
+    TK_RAMP_NAMES.filter(
+      name => !TK_TEXT_SLOT_NAMES.has(name) && !TK_APP_LAUNCHER_NAMES.has(name)
+    ).map(name => [name, TK_RAMP_WAIVER])
+  ),
+  ...Object.fromEntries(
+    TK_ON_FILL_NAMES.map(name => [name, TK_ON_FILL_WAIVER])
+  ),
   '--tk-overlay':
-    "modal/overlay chrome role (dark sits below panel, light equals it), mirrored from the tui theme's --surface-overlay; no packages/ui component wires this surface yet.",
+    "modal/overlay chrome role (dark sits level with the card so a dialog has an edge against the page, light sits above it), mirrored from the tui theme's --surface-overlay; no packages/ui component wires this surface yet.",
   '--tk-soft-on-card':
     "soft rule for card grounds (dark's --tk-border-soft is darker than the card it frames), mirrored from the tui theme's --border-soft-on-card; no packages/ui component wires it yet.",
   '--tk-red-text':
@@ -154,6 +259,10 @@ const WAIVED_TOKYO: Record<string, string> = {
     'AA-compliant warn text companion to --tk-accent-text, added for the review-gate redesign; no packages/ui component wires it yet.',
   '--tk-badge-text':
     'darkened small-badge text companion, added for the review-gate redesign; no packages/ui component wires it yet.',
+  '--tk-muted':
+    "raw neutral fill, kept for parity with tui-kit's --muted until the step-5 audit",
+  '--tk-border-soft':
+    "soft rule, kept for parity with tui-kit's --border-soft; no packages/ui component wires it yet",
 };
 
 const REPO_ROOT = join(import.meta.dirname, '..', '..', '..');
@@ -201,6 +310,9 @@ function isCss(path: string): boolean {
 }
 
 function isUiSource(path: string): boolean {
+  // A test that names a token is not a component consuming it: counting them
+  // lets a waiver go stale the moment someone asserts on the token's name.
+  if (path.includes('.test.') || path.includes('/test-utils/')) return false;
   const ext = extname(path);
   return ext === '.ts' || ext === '.tsx' || ext === '.css';
 }

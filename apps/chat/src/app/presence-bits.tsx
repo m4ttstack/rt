@@ -6,21 +6,19 @@ export const STATUS_TEXT_COLOR: Record<'live' | 'idle', string> = {
 };
 
 export const DOT_COLOR: Record<'live' | 'idle', string> = {
-  live: 'var(--tk-dot-ok)',
-  idle: 'var(--tk-dot-warn)',
+  live: 'var(--tk-fill-ok)',
+  idle: 'var(--tk-fill-warn)',
 };
 
-/** `.doing` and every other extra-small meta line. */
+/** `.doing` and every other extra-small meta line. Used to have a dimmer
+    `MUTED_XS_DIM` sibling for a `kind: 'path'` task line, back when
+    `--tk-muted`/`--tk-muted-text` were two different shades; the mapping
+    table bands both aliases onto the same role token in `color`, so that
+    distinction is gone by design -- one constant now covers every small
+    meta line regardless of task kind. */
 export const MUTED_XS = {
   fontSize: 'var(--tk-fs-3xs)',
-  color: 'var(--tk-muted-text)',
-} as const;
-
-/** `.doing.dim`: the honest "nothing better known" state for a `kind:
-    'path'` task line -- one step dimmer than `MUTED_XS`. */
-export const MUTED_XS_DIM = {
-  fontSize: 'var(--tk-fs-3xs)',
-  color: 'var(--tk-muted)',
+  color: 'var(--tk-text-4)',
 } as const;
 
 export function headTruncatePath(cwd: string): string {
@@ -48,10 +46,10 @@ export function Tag({ handle, room }: { handle: string; room: string }) {
         whiteSpace: 'nowrap',
         border: `1px solid ${
           isDm
-            ? 'color-mix(in srgb, var(--tk-purple) 45%, transparent)'
+            ? 'color-mix(in srgb, var(--tk-fill-purple) 45%, transparent)'
             : 'var(--tk-border-soft)'
         }`,
-        color: isDm ? 'var(--tk-purple)' : 'var(--tk-muted-text)',
+        color: isDm ? 'var(--tk-text-purple-small)' : 'var(--tk-text-4)',
       }}
     >
       {isDm ? 'dm' : `#${room}`}

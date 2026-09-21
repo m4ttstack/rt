@@ -21,7 +21,7 @@ jobs:
       # Regenerating must reproduce what's checked in byte-for-byte: a diff
       # here means the emitter drifted, a generated file was hand-edited, or
       # the committed font copy diverged from the canonical source.
-      - run: bun run tokens:codegen && git diff --exit-code packages/tui-kit/src/generated packages/tui-kit/assets packages/tokyo/src
+      - run: bun run tokens:radix && bun run tokens:codegen && bun run tokens:ramps && git diff --exit-code packages/tokens/src/radix.ts packages/tui-kit/src/generated packages/tui-kit/assets packages/tokyo/src
       - run: bun run typecheck
       - run: bun run lint
       - run: bun run format:check

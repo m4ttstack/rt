@@ -32,7 +32,11 @@ function Stage({
   return (
     <div
       className={scheme === 'dark' ? 'dark' : undefined}
-      style={{ background: 'var(--bg)', color: 'var(--fg)', height: '100vh' }}
+      style={{
+        background: 'var(--page)',
+        color: 'var(--text-1)',
+        height: '100vh',
+      }}
     >
       <SoribashiProvider theme={tuiTheme}>{children}</SoribashiProvider>
     </div>

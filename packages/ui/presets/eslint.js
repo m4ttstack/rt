@@ -3,10 +3,24 @@ import eslintConfigPrettier from 'eslint-config-prettier';
 import reactHooks from 'eslint-plugin-react-hooks';
 import tseslint from 'typescript-eslint';
 
+import noDimmedXs from './eslint-local/no-dimmed-xs.js';
 import noInlineStyles from './eslint-local/no-inline-styles.js';
 import requireDataTestid from './eslint-local/require-data-testid.js';
+import tokenNamespacesTsx from './eslint-local/token-namespaces-tsx.js';
 
 const KIT = '@mattstack/app-kit';
+
+// Defined once and reused by every config block below: ESLint throws
+// "Cannot redefine plugin" if two blocks each declare their own `local`
+// plugin object under the same name.
+export const local = {
+  rules: {
+    'require-data-testid': requireDataTestid,
+    'no-inline-styles': noInlineStyles,
+    'no-dimmed-xs': noDimmedXs,
+    'token-namespaces': tokenNamespacesTsx,
+  },
+};
 
 const wall = (pkg, subpath) => ({
   name: pkg,
@@ -69,18 +83,19 @@ export function mattstackEslint(opts = {}) {
     },
     {
       files: app,
-      plugins: {
-        local: {
-          rules: {
-            'require-data-testid': requireDataTestid,
-            'no-inline-styles': noInlineStyles,
-          },
-        },
-      },
+      plugins: { local },
       rules: {
         'local/require-data-testid': 'off',
         'local/no-inline-styles': 'off',
+        'local/token-namespaces': 'error',
         'no-restricted-imports': ['error', importWall],
+      },
+    },
+    {
+      files: ['**/*.tsx'],
+      plugins: { local },
+      rules: {
+        'local/no-dimmed-xs': 'error',
       },
     },
     eslintConfigPrettier,

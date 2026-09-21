@@ -142,7 +142,7 @@ Consequences a later change must keep:
 Do not fold the two halves back into the module "to keep the recipe in one
 file". That is the layout that froze deck.
 
-## Why `src/provider.ts` exists
+## Why `src/provider.tsx` exists
 
 Bundlers key module identity by *resolved path*. Before this file, an adopter
 imported `registerTheme` / `SoribashiProvider` from `@soribashi/core` directly.
@@ -162,7 +162,9 @@ Re-exporting them from the kit collapses that to one identity by construction,
 and an adopter needs no `@soribashi/*` dependency at all. The subpath exists
 alongside the barrel re-export because an app entry usually wants only the
 wiring, and the barrel drags every recipe's module graph — and every
-`.module.css` — with it.
+`.module.css` — with it. `TuiKitProvider` is the one-import path: it calls
+`registerTheme` at module scope and renders `SoribashiProvider`, so an app
+entry does not have to get both calls right in two different scopes itself.
 
 ## `defineComponent` over `defineCompound` for the overlays
 

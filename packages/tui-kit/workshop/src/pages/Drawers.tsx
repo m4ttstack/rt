@@ -35,7 +35,7 @@ function editingScreen(interval: string, onChangeInterval: (v: string) => void):
     id: "editing",
     title: "Edit polling interval",
     header: (
-      <div style={{ color: "var(--amber)", fontSize: "var(--font-size-sm)" }}>unsaved changes</div>
+      <div style={{ color: "var(--text-warn)", fontSize: "var(--font-size-sm)" }}>unsaved changes</div>
     ),
     navAction: { label: "Save", onAction: () => {} },
     content: (

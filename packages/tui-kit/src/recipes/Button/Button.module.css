@@ -34,7 +34,7 @@
   }
 
   .root:focus-visible {
-    outline: 1px solid var(--accent);
+    outline: 1px solid var(--fill-accent);
     outline-offset: 1px;
   }
 
@@ -65,7 +65,7 @@
   }
 
   .root[data-variant="filled"] {
-    font-weight: 600;
+    font-weight: 500;
   }
 
   /* `--spacing-xxs` read as too tight around a 14px Icon glyph — bumped to
@@ -87,14 +87,13 @@
      this: red text AND red border, at rest, is a Button-specific departure
      from that neutral rule, so it stays here as a narrow override rather
      than becoming a resolver patch that would leak into every other variant.
-     `color` is darkened toward `--fg` (same formula as intent-resolver.ts) —
-     raw `--red` on `--surface-panel` reads below WCAG AA; `border-color` stays
-     the raw tone since border isn't the failing axis. The mix itself lives in
-     Button.tsx's `vars` as `--sb-button-bad-color`: a literal color-mix()
-     percentage here would trip the no-hardcoded-values gate even inside
-     var()'s expression tree. */
+     `color` is the hue text token (same as intent-resolver.ts's outline and
+     subtle tone): the `--fill-bad` fill on `--surface-panel` reads below WCAG
+     AA; `border-color` stays the raw tone since border isn't the failing
+     axis. The token is pinned from Button.tsx's `vars` as
+     `--sb-button-bad-color`, alongside the other pinned cells. */
   .root[data-variant="default"][data-intent="bad"] {
     color: var(--sb-button-bad-color);
-    border-color: var(--red);
+    border-color: var(--fill-bad);
   }
 }

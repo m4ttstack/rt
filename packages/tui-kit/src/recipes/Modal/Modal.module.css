@@ -49,7 +49,7 @@
   .title {
     font-weight: 700;
     letter-spacing: var(--sb-modal-title-tracking);
-    color: var(--accent);
+    color: var(--text-accent-small);
   }
 
   /* No `font: inherit` here, deliberately: `.tui-modal-x` never set one, so the
@@ -58,7 +58,7 @@
   .close {
     background: none;
     border: none;
-    color: var(--muted);
+    color: var(--text-2);
     cursor: pointer;
     font-size: var(--font-size-rem90);
     padding: var(--spacing-rem20) var(--spacing-rem40);
@@ -66,12 +66,12 @@
   }
 
   .close:hover {
-    color: var(--fg);
+    color: var(--text-1);
     background: var(--card);
   }
 
   .close:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--fill-accent);
     outline-offset: 2px;
   }
 }

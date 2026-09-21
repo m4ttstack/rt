@@ -124,7 +124,7 @@ export const WithPinningAndToolbar: Story = {
         itemSubtitle={item => item.location}
         isItemPinned={item => item.onLoan}
         toolbar={
-          <Text size="xs" c="dimmed" px={4} pb={4}>
+          <Text size="sm" c="dimmed" px={4} pb={4}>
             On-loan items are pinned to the top.
           </Text>
         }

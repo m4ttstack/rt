@@ -15,7 +15,7 @@ import type { RoomSummary } from '@mattstack/rt-client';
 import { AgentName } from './AgentName';
 import { doing } from './doing';
 import classes from './fleet-tree.module.css';
-import { DOT_COLOR, MUTED_XS, MUTED_XS_DIM } from './presence-bits';
+import { DOT_COLOR, MUTED_XS } from './presence-bits';
 import type { RosterBuddy } from './roster-types';
 import { STATUS_WORD, statusDetail } from './statusDetail';
 
@@ -249,7 +249,7 @@ function UnreadBadge({ count }: { count: number }) {
         whiteSpace: 'nowrap',
         flex: 'none',
         border: `1px solid ${BORDER}`,
-        color: 'var(--tk-muted-text)',
+        color: 'var(--tk-text-4)',
       }}
     >
       {count}
@@ -297,7 +297,12 @@ function CloseControl({
           display: shown ? undefined : 'none',
           flex: 'none',
           marginRight: nudge ? -4 : undefined,
-          color: 'var(--tk-muted-text)',
+          // Icon-tint default (--tk-text-3): `CloseControl` mounts from both
+          // `RoomRow` (no explicit sized sibling, body band) and `DmRow`
+          // (`ROW_NAME_SIZE`, small band) -- one shared icon tint can't
+          // follow both, so it reads the plan's own unknown-size fallback
+          // rather than either row's band.
+          color: 'var(--tk-text-3)',
         }}
       >
         <Icon name="close" size={14} />
@@ -415,7 +420,7 @@ function RoomRow({
       <Icon
         name="hash"
         size={14}
-        color={active ? ACCENT_TEXT : 'var(--tk-muted-text)'}
+        color={active ? ACCENT_TEXT : 'var(--tk-text-2)'}
         style={{ flex: 'none' }}
       />
       <Text
@@ -480,7 +485,7 @@ function RepoRow({ repo }: { repo: string }) {
           fontSize: ROW_NAME_SIZE,
           flex: 1,
           minWidth: 0,
-          color: 'var(--tk-muted-text)',
+          color: 'var(--tk-text-4)',
         }}
       >
         {repo}
@@ -592,7 +597,7 @@ function WorkstreamRow({
         truncate
         data-testid={`ws-doing-${handle}`}
         style={{
-          ...(task?.kind === 'path' || !reachable ? MUTED_XS_DIM : MUTED_XS),
+          ...MUTED_XS,
           flex: 1,
           minWidth: 0,
         }}
@@ -723,7 +728,9 @@ function DmRow({
         style={{ fontSize: ROW_NAME_SIZE, flex: 1, minWidth: 0 }}
       >
         <AgentName handle={pair.a} withCard={false} withAvatar={false} />{' '}
-        <span style={{ color: 'var(--tk-purple)', flex: 'none' }}>↔</span>{' '}
+        <span style={{ color: 'var(--tk-text-purple-small)', flex: 'none' }}>
+          ↔
+        </span>{' '}
         <AgentName handle={pair.b} withCard={false} withAvatar={false} />
       </Text>
       {room.unread > 0 && <UnreadBadge count={room.unread} />}
@@ -877,7 +884,7 @@ export function FleetTree({
               style={{
                 margin: 0,
                 fontSize: 'var(--tk-fs-4xs)',
-                color: 'var(--tk-muted-text)',
+                color: 'var(--tk-text-4)',
                 letterSpacing: '0.06em',
               }}
             >

@@ -214,7 +214,7 @@ function SettingRow({
   let control;
   if (def.secret || kind === 'readonly' || malformed) {
     control = (
-      <Text size="xs" c="dimmed">
+      <Text size="sm" c="dimmed">
         {value === undefined ? 'unset' : formatValue(value)}
         {malformed && ' (unexpected shape, edit the store file)'}
       </Text>
@@ -244,19 +244,19 @@ function SettingRow({
         <Text size="sm" fw={600}>
           {keyLabel(def.key)}
         </Text>
-        <Text size="xs" c="dimmed">
+        <Text size="sm" c="dimmed">
           {def.key}
         </Text>
       </Stack>
       <Stack gap={4} style={{ flex: 1, minWidth: 0 }}>
         {def.description && (
-          <Text size="xs" c="dimmed">
+          <Text size="sm" c="dimmed">
             {def.description}
           </Text>
         )}
         {control}
         {row.error && (
-          <Text size="xs" c="red">
+          <Text size="xs" style={{ color: 'var(--tk-text-bad-small)' }}>
             {row.error}
           </Text>
         )}
@@ -265,7 +265,7 @@ function SettingRow({
       <Group gap={6} wrap="nowrap" align="flex-start" style={{ flex: 'none' }}>
         {scopeBadge(def.scopes[0] ?? 'user')}
         {!isSet(def) && (
-          <Text size="xs" c="dimmed">
+          <Text size="sm" c="dimmed">
             unset
           </Text>
         )}
@@ -332,13 +332,13 @@ function RosterRow({ keyState }: { keyState: SettingKeyState }) {
         <Text size="sm" fw={600}>
           Roster
         </Text>
-        <Text size="xs" c="dimmed">
+        <Text size="sm" c="dimmed">
           mattstack.roster
         </Text>
       </Stack>
       <Stack gap={6} style={{ flex: 1, minWidth: 0 }}>
         {def.description && (
-          <Text size="xs" c="dimmed">
+          <Text size="sm" c="dimmed">
             {def.description}
           </Text>
         )}
@@ -346,7 +346,7 @@ function RosterRow({ keyState }: { keyState: SettingKeyState }) {
           <Paper withBorder p="xs">
             <Stack gap={4}>
               {roster.length === 0 && (
-                <Text size="xs" c="dimmed">
+                <Text size="sm" c="dimmed">
                   no members
                 </Text>
               )}
@@ -358,11 +358,7 @@ function RosterRow({ keyState }: { keyState: SettingKeyState }) {
                 >
                   <Group gap={6} wrap="nowrap">
                     <Text size="xs">{m.username}</Text>
-                    {m.name && (
-                      <Text size="xs" c="dimmed">
-                        {m.name}
-                      </Text>
-                    )}
+                    {m.name && <Text size="xs">{m.name}</Text>}
                   </Group>
                   <ActionIcon
                     size="xs"
@@ -405,12 +401,12 @@ function RosterRow({ keyState }: { keyState: SettingKeyState }) {
             </Stack>
           </Paper>
         ) : (
-          <Text size="xs" c="dimmed">
+          <Text size="sm" c="dimmed">
             {roster.length} member{roster.length === 1 ? '' : 's'}
           </Text>
         )}
         {error && (
-          <Text size="xs" c="red">
+          <Text size="xs" style={{ color: 'var(--tk-text-bad-small)' }}>
             {error}
           </Text>
         )}
@@ -438,7 +434,7 @@ function Section({
         <Text size="sm" fw={700}>
           {title}
         </Text>
-        <Text size="xs" c="dimmed">
+        <Text size="sm" c="dimmed">
           {subtitle}
         </Text>
       </Group>
@@ -463,7 +459,7 @@ export function SettingsPage() {
           <Text fw={700} size="xl">
             Settings
           </Text>
-          <Text size="xs" c="dimmed">
+          <Text size="sm" c="dimmed">
             rt settings explain &lt;key&gt; shows the full resolution chain for
             any key below.
           </Text>
@@ -501,7 +497,7 @@ export function SettingsPage() {
                 <SettingRow key={def.key} def={def} store={store} />
               ))}
               {userDefs.length === 0 && (
-                <Text size="xs" c="dimmed" p="sm">
+                <Text size="sm" c="dimmed" p="sm">
                   no user-scoped keys
                 </Text>
               )}

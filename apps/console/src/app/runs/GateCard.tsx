@@ -218,12 +218,16 @@ export function GateCard({ gate }: { gate: GateRow }) {
   const status = (
     <>
       {failed && (
-        <Text c="bad" fz={12}>
+        <Text fz={12} style={{ color: 'var(--tk-text-bad-small)' }}>
           submit failed... nothing was sent, try again
         </Text>
       )}
       {focusError && (
-        <Text c="bad" fz={12} data-testid="gate-focus-error">
+        <Text
+          fz={12}
+          data-testid="gate-focus-error"
+          style={{ color: 'var(--tk-text-bad-small)' }}
+        >
           {focusError}
         </Text>
       )}
@@ -315,7 +319,7 @@ export function GateCard({ gate }: { gate: GateRow }) {
           <AnsweredSummary row={gate} />
         ) : lost ? (
           <>
-            <Text c="bad" fz={12}>
+            <Text fz={12} style={{ color: 'var(--tk-text-bad-vivid)' }}>
               answered elsewhere
             </Text>
             <AnsweredSummary

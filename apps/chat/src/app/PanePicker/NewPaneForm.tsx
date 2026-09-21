@@ -12,7 +12,10 @@ import {
 
 import type { PaneAccount, PaneDirectory } from './types';
 
-const MUTED = 'var(--tk-muted-text)';
+/** Always rendered inside `PanePickerModal`, outside
+    `ThemeOverrideWrapper theme={chatFontTheme}`, so `size="xs"` here is
+    small band under the base tokyo theme. */
+const MUTED = 'var(--tk-text-4)';
 const BORDER = 'var(--tk-border)';
 
 const MODELS = ['claude-fable-5', 'claude-opus-5', 'claude-sonnet-5'];

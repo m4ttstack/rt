@@ -29,7 +29,7 @@
   }
 
   .root::-webkit-scrollbar-thumb {
-    background: var(--border);
+    background: var(--muted);
     border-radius: var(--radius-pill);
   }
 
@@ -41,7 +41,7 @@
   }
 
   .headcell {
-    color: var(--muted);
+    color: var(--text-4);
     text-transform: uppercase;
     font-size: var(--font-size-xs);
     letter-spacing: var(--sb-table-tracking);

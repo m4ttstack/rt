@@ -19,7 +19,10 @@ import { z } from 'zod';
 import { PaneRow, usePanePicker } from './PanePicker';
 import type { ChatPane, InviteResult } from './PanePicker/types';
 
-const MUTED = 'var(--tk-muted-text)';
+/** Always rendered outside `ThemeOverrideWrapper theme={chatFontTheme}`
+    (see App.tsx), so every `Text size="xs"`/`"sm"` here is small band under
+    the base tokyo theme. */
+const MUTED = 'var(--tk-text-4)';
 
 const ROOM_RE = /^[a-z0-9._-]+$/;
 

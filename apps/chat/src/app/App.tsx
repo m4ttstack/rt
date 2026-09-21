@@ -54,6 +54,7 @@ import { PanePickerProvider, usePanePicker } from './PanePicker';
 import {
   PHONE_BORDER,
   PHONE_MUTED,
+  PHONE_MUTED_META,
   PHONE_TAP,
   tapButtonStyle,
 } from './phone-chrome';
@@ -483,21 +484,21 @@ function PhoneHeader({
       >
         {reachable ? (
           <>
-            <FleetDot color="var(--tk-dot-ok)" />
+            <FleetDot color="var(--tk-fill-ok)" />
             <Text size="xs" style={{ color: 'var(--mantine-color-ok-text)' }}>
               {live}
             </Text>
-            <FleetDot color="var(--tk-dot-warn)" />
+            <FleetDot color="var(--tk-fill-warn)" />
             <Text size="xs" style={{ color: 'var(--mantine-color-warn-text)' }}>
               {idle}
             </Text>
             <FleetDot hollow />
-            <Text size="xs" style={{ color: PHONE_MUTED }}>
+            <Text size="xs" style={{ color: PHONE_MUTED_META }}>
               {offline}
             </Text>
           </>
         ) : (
-          <Text size="xs" style={{ color: PHONE_MUTED }}>
+          <Text size="xs" style={{ color: PHONE_MUTED_META }}>
             presence withheld
           </Text>
         )}

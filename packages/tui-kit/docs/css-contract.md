@@ -26,6 +26,7 @@ the underlying generated names directly.
 | `--amber` | `var(--color-amber-500)` |
 | `--purple` | `var(--color-purple-500)` |
 | `--cyan` | `var(--color-cyan-500)` |
+| `--gold` | `var(--color-gold-500)` |
 | `--grid-line` | `var(--color-line-grid)` |
 | `--dot-ok` | `var(--color-dot-ok)` |
 | `--dot-warn` | `var(--color-dot-warn)` |

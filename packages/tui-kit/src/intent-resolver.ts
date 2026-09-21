@@ -16,62 +16,36 @@ const FAMILY: Record<string, string> = {
 };
 
 /**
- * Text-tone retune: Tokyo has one shade per hue, so `singleShadeVariantColors`
- * has no darker/lighter ramp step to reach for the way a multi-shade resolver
- * would — its `light`/`outline`/`subtle` branches all paint `color: tone`
- * verbatim, and several tones read below WCAG AA against those variants'
- * actual backgrounds. Mirrors Mantine's tinted-context text (its light-variant
- * text sits a shade darker than the tint itself): `color` is patched to
- * `color-mix(in srgb, tone N%, var(--fg))` for the intents that need it.
- * Leaning toward `--fg` corrects both schemes with one N — `--fg` itself flips
- * near-black/near-white per scheme (src/generated/theme.css), so the same mix
- * darkens in light mode and lightens in dark mode. `border`/`background` stay
- * untouched: neither is the failing axis (WCAG text contrast only grades
- * `color` against `background`), and `filled`'s foreground already clears the
- * floor.
- *
- * N per intent was chosen by measurement against this exact palette (each
- * variant's real background), not by eye. An intent absent from a table clears
- * the floor at the raw tone already and is left unpatched, to stay as close to
- * the original hue as the floor allows.
+ * Text tones. Fills are Radix step 9 or 10 and read under AA as text on the
+ * kit's surfaces, so every text-bearing variant reads the hue's text token
+ * instead; the tinted `light` variant lifts its ground above the page and
+ * takes the small token for headroom. Both tokens are solved in
+ * packages/tokens, one value per scheme, so nothing here mixes toward --fg.
  */
-const LIGHT_VARIANT_TONE_WEIGHT: Partial<Record<string, number>> = {
-  accent: 80,
-  warn: 95,
-  bad: 80,
-  muted: 70,
+const TEXT_TONE: Record<string, string> = {
+  accent: "var(--text-accent)",
+  ok: "var(--text-ok)",
+  warn: "var(--text-warn)",
+  bad: "var(--text-bad)",
+  cyan: "var(--text-cyan)",
+  purple: "var(--text-purple)",
+  muted: "var(--text-2)",
 };
 
-const OUTLINE_SUBTLE_TONE_WEIGHT: Partial<Record<string, number>> = {
-  accent: 70,
-  ok: 85,
-  warn: 80,
-  bad: 70,
-  cyan: 90,
-  muted: 60,
+const TINT_TEXT_TONE: Record<string, string> = {
+  accent: "var(--text-accent-small)",
+  ok: "var(--text-ok-small)",
+  warn: "var(--text-warn-small)",
+  bad: "var(--text-bad-small)",
+  cyan: "var(--text-cyan-small)",
+  purple: "var(--text-purple-small)",
+  muted: "var(--text-4)",
 };
 
-/**
- * Exported so a test can ask "does this (variant, intent) get retuned" without
- * hand-rolling a second copy of the weight tables above — see
- * Chip.test.tsx's census, which paints its expected-colour probe with this
- * same function's output rather than the raw alias.
- */
-export function toneWeightFor(variant: string, intent: string): number | undefined {
-  if (variant === "light") return LIGHT_VARIANT_TONE_WEIGHT[intent];
-  if (variant === "outline" || variant === "subtle") return OUTLINE_SUBTLE_TONE_WEIGHT[intent];
-  return undefined;
-}
-
-/**
- * Applies the retune above to a resolved `color` value. Exported alongside
- * `toneWeightFor` for the same reason: a test that wants "the colour this
- * (variant, intent) actually paints" builds it from this function and a raw
- * tone reference, instead of restating the `color-mix` shape.
- */
 export function retunedTextColor(tone: string, variant: string, intent: string): string {
-  const weight = toneWeightFor(variant, intent);
-  return weight === undefined ? tone : `color-mix(in srgb, ${tone} ${weight}%, var(--fg))`;
+  if (variant === "light") return TINT_TEXT_TONE[intent] ?? tone;
+  if (variant === "outline" || variant === "subtle") return TEXT_TONE[intent] ?? tone;
+  return tone;
 }
 
 /**
@@ -92,20 +66,18 @@ export const tuiIntentResolver: IntentResolver = ({ intent, variant }) => {
 
   let result = singleShadeVariantColors(tone, variant) satisfies IntentResolverResult;
 
-  // filled paints scheme-inverting text: --bg flips near-white/near-black
-  // per scheme, so one rule clears both grounds where a literal white
-  // could not. Hover mixes the tone toward --fg (88%), the shipped value.
   if (variant === "filled") {
+    const neutral = family === "gray";
     result = {
       ...result,
-      color: "var(--bg)",
-      hover: `color-mix(in srgb, ${tone} 88%, var(--fg))`,
+      // The neutral fill is the one case with no hue token: slate 9 carries a
+      // white label at 3.3 in light and 5.1 in dark, so it flips per scheme.
+      color: neutral ? "light-dark(var(--text-1), #ffffff)" : `var(--color-${family}-onFill)`,
+      hover: neutral ? `color-mix(in srgb, ${tone} 88%, var(--fg))` : `var(--color-${family}-hover)`,
       border: "transparent",
     };
   }
 
-  const weight = toneWeightFor(variant, intent);
-  if (weight === undefined) return result;
-
-  return { ...result, color: retunedTextColor(tone, variant, intent) };
+  const color = retunedTextColor(tone, variant, intent);
+  return color === tone ? result : { ...result, color };
 };

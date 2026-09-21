@@ -18,12 +18,12 @@
     position: absolute;
     top: var(--panel-title-offset);
     left: var(--spacing-xl);
-    background: var(--bg);
+    background: var(--page);
     padding: 0 var(--spacing-rem50);
     font-size: var(--font-size-rem74);
     font-weight: 700;
     letter-spacing: var(--panel-title-tracking);
-    color: var(--accent);
+    color: var(--text-accent-small);
     border: 0;
     font-family: inherit;
     cursor: pointer;
@@ -33,11 +33,11 @@
   }
 
   .title:hover {
-    color: var(--surface-wash-accent-fg-70);
+    text-decoration: underline;
   }
 
   .title:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--fill-accent);
     outline-offset: 2px;
     border-radius: var(--radius-px2);
   }
@@ -62,7 +62,7 @@
   }
 
   .count {
-    color: var(--muted);
+    color: var(--text-4);
     font-weight: 400;
   }
 

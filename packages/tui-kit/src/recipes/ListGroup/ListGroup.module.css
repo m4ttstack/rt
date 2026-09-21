@@ -15,7 +15,7 @@
     overflow: hidden;
     font-family: var(--font-sans);
     font-size: var(--font-size-sm);
-    color: var(--fg);
+    color: var(--text-1);
   }
 
   .list {
@@ -27,7 +27,7 @@
   .footer {
     margin: 0;
     padding: var(--spacing-sm) var(--spacing-md);
-    color: var(--muted);
+    color: var(--text-4);
     font-size: var(--font-size-xs);
   }
 
@@ -42,7 +42,7 @@
     border-bottom: none;
   }
 
-  /* No `color` here, deliberately: `.root` already sets `--fg` as the panel's
+  /* No `color` here, deliberately: `.root` already sets `--text-1` as the panel's
      base text colour, and Action's `[data-intent]` rule below relies on this
      span INHERITING its button's colour rather than fighting a same-specificity
      declaration of its own. */
@@ -51,7 +51,7 @@
   }
 
   .value {
-    color: var(--muted);
+    color: var(--text-4);
     font-variant-numeric: var(--font-numeric);
   }
 
@@ -62,7 +62,7 @@
   }
 
   .chevron {
-    color: var(--muted);
+    color: var(--text-4);
   }
 
   .navButton {
@@ -100,11 +100,11 @@
   }
 
   .actionButton[data-intent="accent"] {
-    color: var(--accent);
+    color: var(--text-accent-small);
   }
 
   .actionButton[data-intent="bad"] {
-    color: var(--red);
+    color: var(--text-bad-small);
   }
 
   /* Danger's sugar: intent bad, centered -- the destructive-confirmation
@@ -121,7 +121,7 @@
 
   .navButton:focus-visible,
   .actionButton:focus-visible {
-    outline: 1px solid var(--accent);
+    outline: 1px solid var(--fill-accent);
     outline-offset: 1px;
   }
 

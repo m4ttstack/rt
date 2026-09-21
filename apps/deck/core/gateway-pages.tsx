@@ -17,31 +17,31 @@ const LAYOUT_CSS = `
    and is not inherited from it. */
 body { font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; min-height: 100vh;
        -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
-       margin: 0; display: grid; place-items: center; padding: 1.5rem; color: var(--fg); background: var(--bg); }
+       margin: 0; display: grid; place-items: center; padding: 1.5rem; color: var(--text-1); background: var(--page); }
 .card { width: 100%; max-width: 360px; text-align: center; border: 1px solid var(--border);
        border-radius: 16px; background: var(--panel); padding: 2rem 1.75rem;
-       box-shadow: 0 4px 24px color-mix(in srgb, var(--fg) 9%, transparent); }
+       box-shadow: 0 4px 24px color-mix(in srgb, var(--text-1) 9%, transparent); }
 .badge { width: 46px; height: 46px; margin: 0 auto 1.1rem; border-radius: 50%; display: grid;
-       place-items: center; color: var(--accent); background: color-mix(in srgb, var(--accent) 15%, transparent); }
+       place-items: center; color: var(--text-accent); background: color-mix(in srgb, var(--fill-accent) 15%, transparent); }
 h1 { font-size: 1.15rem; font-weight: 650; letter-spacing: -0.01em; margin: 0 0 0.4rem; }
 p { opacity: 0.6; font-size: 0.9rem; margin: 0.3rem 0 1.25rem; }
 form { display: grid; gap: 0.55rem; text-align: left; }
 label { font-size: 0.78rem; font-weight: 500; opacity: 0.72; }
 input[type=password] { font: inherit; width: 100%; padding: 0.6rem 0.7rem; border-radius: 9px;
-       border: 1px solid var(--border); background: var(--bg); color: var(--fg);
+       border: 1px solid var(--border); background: var(--page); color: var(--text-1);
        transition: border-color .12s, box-shadow .12s; }
 input[type=password]::placeholder { opacity: 0.5; }
-input[type=password]:focus { outline: none; border-color: var(--accent);
-       box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+input[type=password]:focus { outline: none; border-color: var(--fill-accent);
+       box-shadow: 0 0 0 3px color-mix(in srgb, var(--fill-accent) 25%, transparent); }
 button.primary { font: inherit; font-weight: 600; width: 100%; margin-top: 0.35rem;
        padding: 0.62rem 0.7rem; border-radius: 9px; border: 1px solid transparent;
-       background: var(--accent); color: #fff; cursor: pointer;
+       background: var(--fill-accent); color: #fff; cursor: pointer;
        transition: filter .12s, transform .04s, box-shadow .12s; }
 button.primary:hover { filter: brightness(0.92); }
 button.primary:active { filter: brightness(0.85); transform: translateY(1px); }
 button.primary:focus-visible { outline: none;
-       box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 38%, transparent); }
-.err { color: var(--red); font-size: 0.82rem; margin: 0 0 0.1rem; }
+       box-shadow: 0 0 0 3px color-mix(in srgb, var(--fill-accent) 38%, transparent); }
+.err { color: var(--text-bad-vivid); font-size: 0.82rem; margin: 0 0 0.1rem; opacity: 1; }
 `;
 
 function LockBadge() {

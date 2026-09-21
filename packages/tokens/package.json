@@ -4,10 +4,17 @@
   "version": "0.0.0",
   "type": "module",
   "exports": {
-    ".": "./src/values.ts"
+    ".": "./src/values.ts",
+    "./color-math": "./src/color-math.ts",
+    "./radix": "./src/radix.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run"
+  },
+  "devDependencies": {
+    "@radix-ui/colors": "catalog:",
+    "@types/css-tree": "catalog:",
+    "css-tree": "catalog:"
   }
 }

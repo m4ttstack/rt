@@ -23,7 +23,7 @@
   opacity: 0;
   pointer-events: none;
   transition: opacity 100ms ease;
-  color: var(--tk-muted-text);
+  color: var(--tk-text-4);
   font-size: var(--tk-fs-4xs);
   white-space: nowrap;
   background: linear-gradient(90deg, transparent, var(--ui-bg-4) 14px);

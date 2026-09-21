@@ -30,7 +30,7 @@
     align-self: flex-start;
     background: none;
     border: none;
-    color: var(--muted);
+    color: var(--text-4);
     cursor: pointer;
     padding: 0;
     font: inherit;
@@ -38,11 +38,11 @@
   }
 
   .back:hover {
-    color: var(--fg);
+    text-decoration: underline;
   }
 
   .back:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--fill-accent);
     outline-offset: 2px;
   }
 
@@ -56,7 +56,7 @@
   .title {
     font-weight: 700;
     font-size: var(--font-size-xl);
-    color: var(--fg);
+    color: var(--text-1);
     /* The stack's top screen can outlive the row it was pushed from; this
        keeps a long title from forcing the nav bar to wrap the close button
        off the edge. */
@@ -75,10 +75,10 @@
   .navAction {
     background: none;
     border: none;
-    color: var(--accent);
+    color: var(--text-accent-small);
     cursor: pointer;
     font: inherit;
-    font-weight: 600;
+    font-weight: 500;
     padding: var(--spacing-rem20) var(--spacing-rem40);
     border-radius: var(--radius-px5);
   }
@@ -88,7 +88,7 @@
   }
 
   .navAction:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--fill-accent);
     outline-offset: 2px;
   }
 
@@ -103,7 +103,7 @@
   .close {
     background: none;
     border: none;
-    color: var(--muted);
+    color: var(--text-2);
     cursor: pointer;
     font-size: var(--font-size-rem90);
     padding: var(--spacing-rem20) var(--spacing-rem40);
@@ -111,12 +111,12 @@
   }
 
   .close:hover {
-    color: var(--fg);
+    color: var(--text-1);
     background: var(--card);
   }
 
   .close:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--fill-accent);
     outline-offset: 2px;
   }
 

@@ -6,7 +6,14 @@ import {
   FONT_SMOOTHING_END_MARKER,
   renderFontSmoothing,
 } from '../src/fragments.ts';
-import { CSS_TEXT, TOKENS, type ColorScheme } from '../src/values.ts';
+import { mantinePins } from '../src/mantine-pins.ts';
+import {
+  CSS_TEXT,
+  HUES,
+  TOKENS,
+  type ColorScheme,
+  type HueName,
+} from '../src/values.ts';
 
 const PACKAGES_ROOT = join(import.meta.dirname, '..', '..');
 const TUI_KIT_TOKENS_TS = join(
@@ -38,22 +45,37 @@ function pick(path: string, value: string): string {
 
 /**
  * Maps a TOKENS color scheme onto tui-kit's `tuiTheme.tokens.colors` /
- * `TUI_DARK_COLORS` shape. tui-kit has one canonical shade per hue (`"500"`)
- * where TOKENS has a bare hex, and collapses `text` to the nine leaves
- * (`fg`, `muted`, `mutedText`, `accentText`, `okText`, `warnText`,
- * `badgeText`, `redText`, `mutedOnCard`) it
+ * `TUI_DARK_COLORS` shape. Each hue family carries its fill (`"500"`), hover,
+ * text and small-text steps; the three neutral ramps land as `ground`, `ink`
+ * and `rule` keyed by 1-based index; `text` collapses to the nine leaves tui-kit
  * consumes -- `wash` is a percentage, not a color, and stays out of this map.
  */
 function buildTuiKitColors(scheme: 'light' | 'dark') {
   const t: ColorScheme = TOKENS[scheme];
   const at = (leaf: string, value: string) => pick(`${scheme}.${leaf}`, value);
+  const family = (hue: HueName) => ({
+    '500': at(`hue.${hue}`, t.hue[hue]),
+    hover: at(`hueHover.${hue}`, t.hueHover[hue]),
+    onFill: at(`hueOnFill.${hue}`, t.hueOnFill[hue]),
+    text: at(`hueText.${hue}`, t.hueText[hue]),
+    textSmall: at(`hueTextSmall.${hue}`, t.hueTextSmall[hue]),
+    textVivid: at(`hueTextVivid.${hue}`, t.hueTextVivid[hue]),
+  });
+  const ramp = (leaf: string, values: readonly string[]) =>
+    Object.fromEntries(
+      values.map((v, i) => [String(i + 1), at(`${leaf}.${i}`, v)])
+    );
   return {
-    blue: { '500': at('hue.accent', t.hue.accent) },
-    green: { '500': at('hue.ok', t.hue.ok) },
-    red: { '500': at('hue.bad', t.hue.bad) },
-    amber: { '500': at('hue.warn', t.hue.warn) },
-    purple: { '500': at('hue.purple', t.hue.purple) },
-    cyan: { '500': at('hue.cyan', t.hue.cyan) },
+    blue: family('accent'),
+    green: family('ok'),
+    red: family('bad'),
+    amber: family('warn'),
+    purple: family('purple'),
+    cyan: family('cyan'),
+    gold: family('gold'),
+    ground: ramp('surfaceRamp', t.surfaceRamp),
+    ink: ramp('textRamp', t.textRamp),
+    rule: ramp('lineRamp', t.lineRamp),
     gray: {
       fg: at('text.fg', t.text.fg),
       muted: at('text.muted', t.text.muted),
@@ -72,19 +94,21 @@ function buildTuiKitColors(scheme: 'light' | 'dark') {
       chrome: at('surface.chrome', t.surface.chrome),
       inset: at('surface.inset', t.surface.inset),
       overlay: at('surface.overlay', t.surface.overlay),
+      raised: at('surface.raised', t.surface.raised),
     },
     line: {
       border: at('line.border', t.line.border),
       soft: at('line.soft', t.line.soft),
       grid: at('line.grid', t.line.grid),
+      control: at('line.control', t.line.control),
       edgeOnCard: at('line.edgeOnCard', t.line.edgeOnCard),
       controlEdgeOnCard: at('line.controlEdgeOnCard', t.line.controlEdgeOnCard),
       softOnCard: at('line.softOnCard', t.line.softOnCard),
     },
     dot: {
-      ok: at('dot.ok', t.dot.ok),
-      warn: at('dot.warn', t.dot.warn),
-      bad: at('dot.bad', t.dot.bad),
+      ok: at('hue.ok', t.hue.ok),
+      warn: at('hue.warn', t.hue.warn),
+      bad: at('hue.bad', t.hue.bad),
     },
   };
 }
@@ -124,15 +148,7 @@ function generateTuiKitTokens(): string {
  * TOKENS -- these are prose, kept verbatim in the emitter template per the
  * marker contract (see the BEGIN/END markers in tokyo-theme.css).
  */
-const TOKYO_LIGHT_TOP_COMMENT = `  /* Light surface ramp, Supabase model: a near-white canvas, a subtle grey chrome
-     frame, and true-white content. Contrast rides text and element borders on the
-     light ground, not surface-to-surface fill. --tk-chrome is the frame grey (app
-     rail/nav); it is deliberately kept OUT of the bg/panel/card elevation ladder so
-     that ladder stays ordered (bg < panel < card) AND near-white -- panel is the
-     raised content surface, not the chrome. Without the split, panel had to be both
-     and the ladder inverted (--bg ended up lighter than --panel). The chrome
-     retarget below maps rail/nav onto --tk-chrome and PageShell header/sidebar +
-     content onto card. */`;
+const TOKYO_LIGHT_TOP_COMMENT = `  /* Light surfaces: white cards on Radix slate 2 to 4 (packages/tokens/src/radix.ts); contrast rides text and borders, not surface-to-surface fill. */`;
 const TOKYO_LIGHT_MUTED_TEXT_COMMENT = `  /* AA-compliant muted for TEXT (>=4.5:1 on bg 1-3). The raw muted token above
      stays tui-kit's exact hex for dots/borders; only the muted TEXT roles read
      the value below, which the scheme-vars contract lets an app remap. */`;
@@ -141,8 +157,7 @@ const TOKYO_LIGHT_ACCENT_TEXT_COMMENT = `  /* AA-compliant accent for LINK TEXT 
      text reads the darker value below. Same split as the muted pair. */`;
 const TOKYO_LIGHT_RED_TEXT_COMMENT =
   "  /* AA-compliant red for TEXT (>=4.5:1 on bg 1-3); the raw red token above stays tui-kit's exact hex for fills and error surfaces. Same split as the muted/accent pair. */";
-const TOKYO_DARK_TOP_COMMENT = `  /* Dark never inverted (bg < panel < card already), so --tk-chrome equals the
-     panel rung: the rail/nav frame reads as a step up from the near-black page. */`;
+const TOKYO_DARK_TOP_COMMENT = `  /* Dark surfaces: Radix slate 1 to 4, page darkest, cards on step 3, step 4 reserved for raised grounds. */`;
 const TOKYO_DARK_MUTED_TEXT_COMMENT =
   '  /* AA-compliant muted text for the dark scheme (>=4.5:1 on bg 1-3). */';
 const TOKYO_DARK_ACCENT_TEXT_COMMENT = `  /* Accent for link text in dark (>=4.5:1 on bg 1-3); the accent already
@@ -181,15 +196,17 @@ function buildTokyoDeclarations(scheme: 'light' | 'dark') {
     purple: at('hue.purple', t.hue.purple),
     cyan: at('hue.cyan', t.hue.cyan),
     gridLine: at('line.grid', t.line.grid),
-    dotOk: at('dot.ok', t.dot.ok),
-    dotWarn: at('dot.warn', t.dot.warn),
-    dotBad: at('dot.bad', t.dot.bad),
+    dotOk: at('hue.ok', t.hue.ok),
+    dotWarn: at('hue.warn', t.hue.warn),
+    dotBad: at('hue.bad', t.hue.bad),
     wash: at('wash', t.wash),
   };
 }
 
 function renderTokyoSchemeBlock(scheme: 'light' | 'dark'): string {
   const d = buildTokyoDeclarations(scheme);
+  const t = TOKENS[scheme];
+  const at = (leaf: string, value: string) => pick(`${scheme}.${leaf}`, value);
   const topComment =
     scheme === 'light' ? TOKYO_LIGHT_TOP_COMMENT : TOKYO_DARK_TOP_COMMENT;
   const mutedTextComment =
@@ -239,9 +256,41 @@ function renderTokyoSchemeBlock(scheme: 'light' | 'dark'): string {
     `  --tk-dot-ok: ${d.dotOk};`,
     `  --tk-dot-warn: ${d.dotWarn};`,
     `  --tk-dot-bad: ${d.dotBad};`,
+    `  --tk-raised: ${at('surface.raised', t.surface.raised)};`,
+    ...t.surfaceRamp.map(
+      (v, i) => `  --tk-surface-${i + 1}: ${at(`surfaceRamp.${i}`, v)};`
+    ),
+    ...t.textRamp.map(
+      (v, i) => `  --tk-text-${i + 1}: ${at(`textRamp.${i}`, v)};`
+    ),
+    ...t.lineRamp.map(
+      (v, i) => `  --tk-line-${i + 1}: ${at(`lineRamp.${i}`, v)};`
+    ),
+    ...HUES.map(h => `  --tk-fill-${h}: ${at(`hue.${h}`, t.hue[h])};`),
+    ...HUES.map(
+      h => `  --tk-fill-${h}-hover: ${at(`hueHover.${h}`, t.hueHover[h])};`
+    ),
+    ...HUES.map(
+      h => `  --tk-on-fill-${h}: ${at(`hueOnFill.${h}`, t.hueOnFill[h])};`
+    ),
+    ...HUES.map(h => `  --tk-text-${h}: ${at(`hueText.${h}`, t.hueText[h])};`),
+    ...HUES.map(
+      h =>
+        `  --tk-text-${h}-small: ${at(`hueTextSmall.${h}`, t.hueTextSmall[h])};`
+    ),
+    ...HUES.map(
+      h =>
+        `  --tk-text-${h}-vivid: ${at(`hueTextVivid.${h}`, t.hueTextVivid[h])};`
+    ),
     '',
     `  --tk-wash: ${d.wash};`,
   ].join('\n');
+}
+
+function renderMantinePins(scheme: 'light' | 'dark'): string {
+  return Object.entries(mantinePins(scheme))
+    .map(([name, value]) => `  ${name}: ${value};`)
+    .join('\n');
 }
 
 /**
@@ -338,6 +387,16 @@ function generateTokyoThemeCss(): string {
     css,
     '/* BEGIN GENERATED: tokyo tokens dark */',
     renderTokyoSchemeBlock('dark')
+  );
+  css = spliceGenerated(
+    css,
+    '/* BEGIN GENERATED: mantine pins light */',
+    renderMantinePins('light')
+  );
+  css = spliceGenerated(
+    css,
+    '/* BEGIN GENERATED: mantine pins dark */',
+    renderMantinePins('dark')
   );
   css = upsertFontSmoothingFragment(css);
   return css;

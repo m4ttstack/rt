@@ -161,17 +161,14 @@ describe("Button (browser)", () => {
       expect(getComputedStyle(button).color).toBe(fgColor);
     });
 
-    it("default + bad intent: red text (retuned toward --fg) AND raw red border, at rest (no hover needed)", async () => {
+    it("default + bad intent: red text (the hue text token) AND raw red border, at rest (no hover needed)", async () => {
       const screen = await renderWithTheme(
         <div>
           <Button variant="default" intent="bad">
             remove
           </Button>
           <span data-testid="red-probe" style={{ color: "var(--red)" }} />
-          <span
-            data-testid="red-retuned-probe"
-            style={{ color: "color-mix(in srgb, var(--red) 80%, var(--fg))" }}
-          />
+          <span data-testid="red-retuned-probe" style={{ color: "var(--text-bad)" }} />
         </div>,
       );
       const button = buttonOf(screen.container);
@@ -232,21 +229,29 @@ describe("Button (browser)", () => {
       );
     });
 
-    it("light's text also rides the intent tone, same as outline's", async () => {
-      const outlineScreen = await renderWithTheme(
-        <Button variant="outline" intent="purple">
-          outline
-        </Button>,
+    it("light's text rides the intent's small text token, not outline's regular one", async () => {
+      const screen = await renderWithTheme(
+        <div>
+          <Button variant="light" intent="purple">
+            light
+          </Button>
+          <span
+            data-testid="light-probe"
+            style={{ color: retunedTextColor("var(--purple)", "light", "purple") }}
+          />
+          <span
+            data-testid="outline-probe"
+            style={{ color: retunedTextColor("var(--purple)", "outline", "purple") }}
+          />
+        </div>,
       );
-      const lightScreen = await renderWithTheme(
-        <Button variant="light" intent="purple">
-          light
-        </Button>,
-      );
+      const probeColor = (testid: string) =>
+        getComputedStyle(
+          screen.container.querySelector(`[data-testid="${testid}"]`) as HTMLElement,
+        ).color;
 
-      expect(getComputedStyle(buttonOf(lightScreen.container)).color).toBe(
-        getComputedStyle(buttonOf(outlineScreen.container)).color,
-      );
+      expect(getComputedStyle(buttonOf(screen.container)).color).toBe(probeColor("light-probe"));
+      expect(probeColor("light-probe")).not.toBe(probeColor("outline-probe"));
     });
 
     it("hover changes ONLY background — outline's border and text stay put from rest to hover", async () => {

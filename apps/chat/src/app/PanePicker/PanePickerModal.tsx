@@ -177,7 +177,7 @@ export function PanePickerModal({
         {view === 'new' ? 'New pane' : 'Pick herdr panes'}
       </Text>
       {opts.context && view === 'list' && (
-        <Text size="sm" style={{ color: 'var(--tk-muted-text)' }}>
+        <Text size="sm" style={{ color: 'var(--tk-text-4)' }}>
           {opts.context}
         </Text>
       )}
@@ -215,11 +215,11 @@ export function PanePickerModal({
                 aria-label="Filter panes"
               />
               <Group justify="space-between" wrap="nowrap">
-                <Text size="xs" style={{ color: 'var(--tk-muted-text)' }}>
+                <Text size="xs" style={{ color: 'var(--tk-text-4)' }}>
                   {panes.length} panes running Claude
                 </Text>
                 <Group gap="xs" wrap="nowrap">
-                  <Text size="xs" style={{ color: 'var(--tk-muted-text)' }}>
+                  <Text size="xs" style={{ color: 'var(--tk-text-4)' }}>
                     {picked.length} selected
                   </Text>
                   {opts.allowCreate && (

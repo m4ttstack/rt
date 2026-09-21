@@ -74,7 +74,7 @@ test('service column shows dim pid N, or exit N as bad-tone text (no pill)', asy
       .evaluate(el => getComputedStyle(el).color);
     const redProbe = await page.evaluate(() => {
       const probe = document.createElement('span');
-      probe.style.color = 'var(--red)';
+      probe.style.color = 'light-dark(#cb1d63, #ff92ad)';
       document.body.appendChild(probe);
       const c = getComputedStyle(probe).color;
       probe.remove();

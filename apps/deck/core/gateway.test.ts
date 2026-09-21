@@ -164,8 +164,8 @@ test('gateway pages carry no <script> tag', () => {
 });
 
 test('gateway pages inline the generated token css', () => {
-  expect(pageNothingHere()).toContain('--bg:');
-  expect(pageLogin('nihongo')).toContain('--bg:');
+  expect(pageNothingHere()).toContain('--page:');
+  expect(pageLogin('nihongo')).toContain('--page:');
 });
 
 test('pageLogin escapes an app name carrying markup', () => {

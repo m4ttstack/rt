@@ -5,18 +5,18 @@ import { tuiTheme } from '@mattstack/tui-kit/theme';
 const ROOT = join(import.meta.dir, '..');
 
 // Gateway pages ship zero client JS, so they lean on exactly these seven
-// tokens (never a full kit recipe) — the read here mirrors that surface.
-// Non-null: theme.ts declares every family/shade below for both light and
-// dark, so an absent one is a theme regression, not a normal runtime case.
+// tokens (never a full kit recipe), named as the ramp names gateway-pages.tsx
+// reads. Non-null: theme.ts declares every family/shade below for both light
+// and dark, so an absent one is a theme regression, not a normal runtime case.
 function readTokens(colors: typeof tuiTheme.tokens.colors) {
   return {
-    bg: colors.surface!.bg!,
+    page: colors.surface!.bg!,
     panel: colors.surface!.panel!,
-    fg: colors.gray!.fg!,
-    muted: colors.gray!.muted!,
+    'text-1': colors.ink!['1']!,
     border: colors.line!.border!,
-    accent: colors.blue!['500']!,
-    red: colors.red!['500']!,
+    'fill-accent': colors.blue!['500']!,
+    'text-accent': colors.blue!['text']!,
+    'text-bad-vivid': colors.red!['textVivid']!,
   };
 }
 

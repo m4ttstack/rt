@@ -11,7 +11,7 @@
     gap: var(--spacing-sm);
     font-family: var(--font-sans);
     font-size: var(--font-size-sm);
-    color: var(--fg);
+    color: var(--text-1);
     cursor: pointer;
   }
 
@@ -50,16 +50,16 @@
 
   .control:checked {
     background: var(--sb-switch-bg-on);
-    border-color: var(--accent);
+    border-color: var(--fill-accent);
   }
 
   .control:checked::after {
     left: calc(100% - var(--spacing-rem75) - var(--spacing-px2));
-    background: var(--accent);
+    background: var(--fill-accent);
   }
 
   .control:focus-visible {
-    outline: 1px solid var(--accent);
+    outline: 1px solid var(--fill-accent);
     outline-offset: 1px;
   }
 

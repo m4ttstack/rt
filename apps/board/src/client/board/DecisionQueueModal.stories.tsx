@@ -37,8 +37,8 @@ function BoardStage({
     <div
       className={scheme === 'dark' ? 'dark' : undefined}
       style={{
-        background: 'var(--bg)',
-        color: 'var(--fg)',
+        background: 'var(--page)',
+        color: 'var(--text-1)',
         padding: '1.5rem',
         minHeight: '620px',
       }}

@@ -618,7 +618,10 @@ describe("Chip (browser)", () => {
     const screen = await renderWithTheme(
       <div>
         <Chip>respond</Chip>
-        <span data-testid="probe" style={{ color: "var(--purple)" }} />
+        <span
+          data-testid="probe"
+          style={{ color: retunedTextColor("var(--purple)", "outline", "purple") }}
+        />
       </div>,
       undefined,
       extended,

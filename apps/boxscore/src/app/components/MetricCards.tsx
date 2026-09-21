@@ -73,7 +73,7 @@ function Ranking({
 
   if (ranked.length === 0) {
     return (
-      <Text size="xs" c="dimmed">
+      <Text size="sm" c="dimmed">
         No data.
       </Text>
     );
@@ -95,11 +95,7 @@ function Ranking({
             title={`${u.name ?? u.username} · ${col.label} details`}
           >
             <Group gap={8} wrap="nowrap">
-              <Text
-                size="xs"
-                c="dimmed"
-                style={{ width: 16, textAlign: 'right' }}
-              >
+              <Text size="xs" style={{ width: 16, textAlign: 'right' }}>
                 {rankValue(u.metrics, col) ?? '—'}
               </Text>
               <Text

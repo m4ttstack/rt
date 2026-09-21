@@ -173,7 +173,7 @@ export type { OverflowTarget, Toast } from "./hooks/index.ts";
 export { tuiTheme } from "./theme.ts";
 
 // `tuiTheme`'s companions: `registerTheme(tuiTheme)` at module scope,
-// `<SoribashiProvider theme={tuiTheme}>` around the tree. Reached through
-// `./provider.ts` rather than `@soribashi/core` for the module-identity reason
-// that file records.
-export { registerTheme, SoribashiProvider } from "./provider.ts";
+// `<SoribashiProvider theme={tuiTheme}>` around the tree, or both at once via
+// `TuiKitProvider`. Reached through `./provider.tsx` rather than
+// `@soribashi/core` for the module-identity reason that file records.
+export { registerTheme, SoribashiProvider, TuiKitProvider } from "./provider.tsx";

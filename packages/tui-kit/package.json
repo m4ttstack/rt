@@ -59,6 +59,7 @@
     "react-dom": "catalog:"
   },
   "devDependencies": {
+    "@mattstack/tokens": "workspace:*",
     "@types/node": "catalog:",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",

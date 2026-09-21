@@ -6,7 +6,7 @@ export default defineConfig({
   test: {
     name: 'ui',
     environment: 'jsdom',
-    include: ['src/**/*.test.{ts,tsx}'],
+    include: ['src/**/*.test.{ts,tsx}', 'presets/**/*.test.ts'],
     globals: true,
     setupFiles: ['./vitest.setup.ts'],
   },

@@ -19,12 +19,24 @@ import { HUMAN_HANDLE } from './human';
 import { STATUS_WORD } from './statusDetail';
 import { useAutoGrowTextarea } from './use-auto-grow-textarea';
 
-const MUTED = 'var(--tk-muted-text)';
-const MUTED_DIM = 'var(--tk-muted)';
+/** `BuddyOption`/`HereOption` render inside `Popover.Dropdown`
+    (`withinPortal` below): Mantine portals mount to `document.body`,
+    outside the DOM subtree `ScopedThemeProvider` scopes its CSS-variable
+    overrides to (`cssVariablesSelector={`.${scope}`}` --
+    packages/ui/src/design-system/ScopedThemeProvider.tsx:88), so
+    `chatFontTheme` never reaches them. `size="xs"`/`"sm"` there read the
+    base tokyo theme instead (`packages/tokyo/src/theme.ts:62-68`, `xs` =
+    10.56px, `sm` = 11.2px) -- both small band. */
+const MUTED_SMALL = 'var(--tk-text-4)';
+/** The composer input itself (`Popover.Target`, never portalled): body
+    band at its own 16px font size, under `chatFontTheme` as normal. */
+const MUTED_BODY = 'var(--tk-text-2)';
 const INPUT_LINE_HEIGHT = 1.4;
 const BORDER = 'var(--tk-border)';
 const BORDER_SOFT = 'var(--tk-border-soft)';
-const PURPLE = 'var(--tk-purple)';
+/** Same portal reasoning as `MUTED_SMALL`: the "not in #room" subtext
+    renders inside the portalled dropdown too, at small band. */
+const PURPLE = 'var(--tk-text-purple-small)';
 const ACCENT_TEXT = 'var(--mantine-color-accent-text)';
 
 const STATUS_TEXT_COLOR: Record<'live' | 'idle', string> = {
@@ -32,8 +44,8 @@ const STATUS_TEXT_COLOR: Record<'live' | 'idle', string> = {
   idle: 'var(--mantine-color-warn-text)',
 };
 const DOT_COLOR: Record<'live' | 'idle', string> = {
-  live: 'var(--tk-dot-ok)',
-  idle: 'var(--tk-dot-warn)',
+  live: 'var(--tk-fill-ok)',
+  idle: 'var(--tk-fill-warn)',
 };
 const STATUS_ORDER: readonly ('live' | 'idle')[] = ['live', 'idle'];
 const BAD_TEXT = 'var(--mantine-color-bad-text)';
@@ -151,10 +163,13 @@ function BuddyOption({
   task: DoingLine | null;
   onSelect: (handle: string, inRoom: boolean) => void;
 }) {
+  // `path`-kind tasks and any other kind used to read two different
+  // shades (`--tk-muted`/`--tk-muted-text`); both band-resolve to the same
+  // role token now, so there is no longer a kind-based distinction to draw.
   const subtext = !inRoom
     ? { text: `not in #${room}, DM instead`, color: PURPLE }
     : task
-      ? { text: task.text, color: task.kind === 'path' ? MUTED_DIM : MUTED }
+      ? { text: task.text, color: MUTED_SMALL }
       : undefined;
 
   return (
@@ -233,14 +248,14 @@ function HereOption({
           display: 'flex',
           alignItems: 'center',
           width: '100%',
-          color: MUTED,
+          color: MUTED_SMALL,
         }}
       >
         @here
         <Text
           component="span"
           size="xs"
-          style={{ color: MUTED, marginLeft: 'auto' }}
+          style={{ color: MUTED_SMALL, marginLeft: 'auto' }}
         >
           wakes {count} agents
         </Text>
@@ -490,7 +505,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
               radius="lg"
               p="md"
               bg={!daemonReachable ? 'var(--tk-panel)' : 'var(--tk-card)'}
-              c={!daemonReachable ? MUTED : undefined}
+              c={!daemonReachable ? MUTED_BODY : undefined}
               bd={`1px ${!daemonReachable ? 'dashed' : 'solid'} ${inputBorderColor}`}
             >
               <textarea
