@@ -640,18 +640,19 @@ export class MissionDriver {
 
     const cwd = this.state.currentWorktree;
     const client = this.deps.client(cwd);
-    // GHD's own sequencing (app/src/lib/git/commit.ts's createCommit):
-    // unconditionally reset the whole index to HEAD, then rebuild it from
-    // each file's own commit-intent selection, THEN commit -- amend or
-    // not. Anything staged outside glitter (a plain `git add`, another
-    // agent working the same repo) is rebuilt away here: the checkbox is
-    // the source of truth now, not whatever happened to already be in the
-    // index. Documented in docs/design/mission/README.md so it's not a
-    // surprise.
-    await this.rebuildIndexFromSelections(client);
-
     const message = payload.description ? `${payload.summary}\n\n${payload.description}` : payload.summary;
+    // Both halves sit inside the try because a failed index rebuild loses the
+    // draft exactly as a failed commit does.
     try {
+      // GHD's own sequencing (app/src/lib/git/commit.ts's createCommit):
+      // unconditionally reset the whole index to HEAD, then rebuild it from
+      // each file's own commit-intent selection, THEN commit -- amend or
+      // not. Anything staged outside glitter (a plain `git add`, another
+      // agent working the same repo) is rebuilt away here: the checkbox is
+      // the source of truth now, not whatever happened to already be in the
+      // index. Documented in docs/design/mission/README.md so it's not a
+      // surprise.
+      await this.rebuildIndexFromSelections(client);
       if (payload.amend) {
         this.deps.amend(cwd, { message });
         this.state.forcePushRecommended = true;

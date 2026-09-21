@@ -112,6 +112,7 @@ function makeFakeClient(overrides: {
   branches?: () => Promise<BranchInfo[]>;
   remotes?: GitClient["remotes"];
   log?: GitClient["log"];
+  resetToCommit?: GitClient["resetToCommit"];
 } = {}): GitClient & { calls: FakeClientCalls } {
   const calls: FakeClientCalls = { stagingDiff: [], stageSelection: [], discardSelection: [], checkoutBranch: [], stageFileFully: [], resetToCommit: [] };
   const client: GitClient = {
@@ -143,8 +144,9 @@ function makeFakeClient(overrides: {
       calls.discardSelection.push({ diff, selection });
     },
     undoLastCommit: overrides.undoLastCommit ?? (async () => ({ ok: true, undoneSha: "deadbeef" })),
-    resetToCommit: async (sha: string, mode: string) => {
+    resetToCommit: async (sha: string, mode: "soft" | "mixed" | "hard") => {
       calls.resetToCommit.push({ sha, mode });
+      if (overrides.resetToCommit) await overrides.resetToCommit(sha, mode);
     },
     stageFileFully: async (path: string, originalPath?: string) => {
       calls.stageFileFully.push({ path, originalPath });
@@ -854,6 +856,25 @@ describe("MissionDriver: commit", () => {
 
     const last = session.pushed.at(-1) as MissionModel;
     expect(last.notice).toBe("commit failed: nothing to commit");
+    expect(last.commit.summary).toBe("Fix the thing");
+    expect(last.commit.description).toBe("extra detail");
+  });
+
+  test("a commit-time index rebuild that fails restores the typed summary and description to the commit box", async () => {
+    const session = new FakeSession([
+      { t: "intent", name: "mission:commit", payload: { summary: "Fix the thing", description: "extra detail" } },
+      { t: "intent", name: "quit" },
+    ]);
+    const client = makeFakeClient({
+      resetToCommit: async () => {
+        throw new Error("index.lock exists");
+      },
+    });
+
+    await new MissionDriver(baseDeps({ session, client }), START).run();
+
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.notice).toBe("commit failed: index.lock exists");
     expect(last.commit.summary).toBe("Fix the thing");
     expect(last.commit.description).toBe("extra detail");
   });
