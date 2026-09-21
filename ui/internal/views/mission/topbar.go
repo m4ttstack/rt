@@ -75,7 +75,17 @@ type segmentSpec struct {
 	bottomColor color.Color
 	bottomBold  bool
 	trailing    string
+	// trailingPad is extra blank cells of the segment's own background
+	// between trailing and the segment's right edge (the divider sits just
+	// past it). The three foldout chevrons want breathing room (ratified
+	// 2026-09-20, "mission segment chevrons get their right padding");
+	// the action segment's ahead/behind pills stay flush -- 0, the
+	// zero-value default.
+	trailingPad int
 }
+
+// chevronTrailingPad is the foldout segments' own trailingPad value.
+const chevronTrailingPad = 2
 
 func renderRepoSegment(m Model, width int, hovered, isOpen bool) string {
 	label := m.Current.RepoLabel
@@ -91,6 +101,7 @@ func renderRepoSegment(m Model, width int, hovered, isOpen bool) string {
 		bottomColor: theme.Text,
 		bottomBold:  true,
 		trailing:    segmentBase(hovered, isOpen).Foreground(theme.Dimmer).Render(theme.GlyphChevron),
+		trailingPad: chevronTrailingPad,
 	}, hovered, isOpen)
 }
 
@@ -108,6 +119,7 @@ func renderWorktreeSegment(m Model, width int, hovered, isOpen bool) string {
 		bottomColor: theme.Text,
 		bottomBold:  true,
 		trailing:    segmentBase(hovered, isOpen).Foreground(theme.Dimmer).Render(theme.GlyphChevron),
+		trailingPad: chevronTrailingPad,
 	}, hovered, isOpen)
 }
 
@@ -135,6 +147,7 @@ func renderBranchSegment(m Model, width int, hovered, isOpen bool) string {
 		bottomColor: theme.Text,
 		bottomBold:  true,
 		trailing:    segmentBase(hovered, isOpen).Foreground(theme.Dimmer).Render(theme.GlyphChevron),
+		trailingPad: chevronTrailingPad,
 	}, hovered, isOpen)
 }
 
@@ -238,7 +251,7 @@ func renderSegment(width int, spec segmentSpec, hovered, isOpen bool) string {
 	row1 = base.Width(width).Render(row1)
 
 	trailW := lipgloss.Width(spec.trailing)
-	bottomAvail := width - prefixW - trailW
+	bottomAvail := width - prefixW - trailW - spec.trailingPad
 	if trailW > 0 {
 		bottomAvail-- // gap before the trailing accessory
 	}
@@ -249,7 +262,11 @@ func renderSegment(width int, spec segmentSpec, hovered, isOpen bool) string {
 	value := base.Foreground(spec.bottomColor).Bold(spec.bottomBold).Render(clip(spec.bottom, bottomAvail))
 	row2 := base.Render(" ") + icon + base.Render("  ") + value
 	if spec.trailing != "" {
-		gap := width - lipgloss.Width(row2) - trailW - 1
+		// trailingPad leaves that many blank cells between the trailing
+		// accessory and the segment's right edge -- base.Width(width)'s own
+		// padding fills them with the segment's background, the same way
+		// it already fills any padding past row2's content.
+		gap := width - spec.trailingPad - lipgloss.Width(row2) - trailW - 1
 		if gap < 0 {
 			gap = 0
 		}

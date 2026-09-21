@@ -127,6 +127,85 @@ func TestRenderRepoSegmentWidthIsSidebarWidth(t *testing.T) {
 	}
 }
 
+// TestRenderSegmentChevronSitsTwoCellsBeforeTheRightEdge pins the owner's
+// ratified breathing-room ruling (2026-09-20, "mission segment chevrons get
+// their right padding"): the chevron used to render flush against the
+// divider; now it sits 2 cells of the segment's own background in from the
+// right edge, for all three foldout segments. The action segment has no
+// chevron and is covered separately (TestRenderActionSegmentPillsStayFlush).
+func TestRenderSegmentChevronSitsTwoCellsBeforeTheRightEdge(t *testing.T) {
+	const width = 40
+	cases := []struct {
+		name string
+		out  string
+	}{
+		{"repo", renderRepoSegment(pullModel(), width, false, false)},
+		{"worktree", renderWorktreeSegment(pullModel(), width, false, false)},
+		{"branch", renderBranchSegment(Model{Current: Current{Branch: "main"}}, width, false, false)},
+	}
+	chevronRune := []rune(theme.GlyphChevron)[0]
+	for _, c := range cases {
+		lines := strings.Split(c.out, "\n")
+		row2 := []rune(ansi.Strip(lines[1]))
+		if len(row2) != width {
+			t.Fatalf("%s: value row should be exactly %d cells, got %d: %q", c.name, width, len(row2), string(row2))
+		}
+		chevronIdx := -1
+		for i, r := range row2 {
+			if r == chevronRune {
+				chevronIdx = i
+				break
+			}
+		}
+		if chevronIdx == -1 {
+			t.Fatalf("%s: chevron not found in value row: %q", c.name, string(row2))
+		}
+		if want := width - 3; chevronIdx != want {
+			t.Fatalf("%s: chevron should sit at cell %d (2 blank cells before the right edge), got %d: %q", c.name, want, chevronIdx, string(row2))
+		}
+		if trailing := strings.TrimSpace(string(row2[width-2:])); trailing != "" {
+			t.Fatalf("%s: the 2 cells after the chevron should be blank: %q", c.name, string(row2))
+		}
+	}
+}
+
+// TestRenderSegmentLongValueClipsWithoutTouchingChevron pins the other half
+// of the same ruling: a long repo/branch name must clip to leave the new
+// 2-cell gap intact, not grow into it and collide with the chevron.
+func TestRenderSegmentLongValueClipsWithoutTouchingChevron(t *testing.T) {
+	const width = 30
+	long := "a-very-long-repo-or-branch-name-that-would-otherwise-collide"
+	out := renderBranchSegment(Model{Current: Current{Branch: long}}, width, false, false)
+	lines := strings.Split(out, "\n")
+	row2 := []rune(ansi.Strip(lines[1]))
+	if len(row2) != width {
+		t.Fatalf("value row should stay exactly %d cells, got %d: %q", width, len(row2), string(row2))
+	}
+	if !strings.Contains(string(row2), theme.GlyphChevron) {
+		t.Fatalf("chevron should still render even with a long value: %q", string(row2))
+	}
+	if trailing := strings.TrimSpace(string(row2[width-2:])); trailing != "" {
+		t.Fatalf("the 2 cells after the chevron should stay blank even with a long value: %q", string(row2))
+	}
+}
+
+// TestRenderActionSegmentPillsStayFlush pins the other half of the owner's
+// ruling: the action segment has no chevron, and its ahead/behind pills
+// keep hugging the right edge exactly as before -- the new gap is a
+// chevron-only accessory, not a blanket renderSegment change.
+func TestRenderActionSegmentPillsStayFlush(t *testing.T) {
+	const width = 30
+	out := renderActionSegment(ActionModel{Kind: "pull", Title: "Pull origin", Meta: "2 commits behind", Ahead: 3, Behind: 2}, width, false, false)
+	lines := strings.Split(out, "\n")
+	row2 := []rune(ansi.Strip(lines[1]))
+	if len(row2) != width {
+		t.Fatalf("value row should be exactly %d cells, got %d: %q", width, len(row2), string(row2))
+	}
+	if trailing := strings.TrimSpace(string(row2[len(row2)-2:])); trailing == "" {
+		t.Fatalf("the action segment's pills should still hug the right edge (no new gap): %q", string(row2))
+	}
+}
+
 func TestRenderTopBarAssemblesAllFourSegments(t *testing.T) {
 	out := renderTopBar(pullModel(), 140, zoneNone, zoneNone)
 	for _, want := range []string{"Current Repository", "repo-tools", "Current Worktree", "gandalf", "Current Branch", "rt-191-mission-tui", "Pull origin"} {
