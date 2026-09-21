@@ -596,3 +596,17 @@ export async function closeTab(
 ): Promise<void> {
   await runner(['tab', 'close', tabId]);
 }
+
+/** Type text into an ALREADY-RUNNING pane and submit it, same primitive
+    launchDoctor et al. use to start a fresh one (`pane run`) aimed at an
+    existing paneId instead. Used for the operator stand-down nudge: the
+    pane reads it as its next input whenever it's next idle -- this cannot
+    force a running skill to stop mid-tool-call. Best-effort; callers decide
+    whether a failure here should block the rest of the stand-down. */
+export async function sendPaneText(
+  paneId: string,
+  text: string,
+  runner: HerdrRunner = defaultRunner
+): Promise<void> {
+  await runner(['pane', 'run', paneId, text]);
+}

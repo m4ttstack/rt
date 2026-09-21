@@ -21,6 +21,7 @@ import {
   reopenPrompt,
   respondPrompt,
   reviewPrompt,
+  sendPaneText,
   statusBinPath,
   type HerdrRunner,
 } from '../herdr.ts';
@@ -1051,5 +1052,19 @@ describe('dispatchPrompt (wrapper hop stays; --skill-path rides alongside --skil
     expect(prompt).toContain(
       '--skill-path /cache/acme/skills/board-review/SKILL.md\n  --re-review'
     );
+  });
+});
+
+describe('sendPaneText', () => {
+  test('runs `pane run <paneId> <text>` -- same primitive a fresh launch uses, aimed at an existing pane', async () => {
+    const calls: string[][] = [];
+    const runner: HerdrRunner = async args => {
+      calls.push(args);
+      return '';
+    };
+    await sendPaneText('pane-123', 'stand down, operator muted this stack', runner);
+    expect(calls).toEqual([
+      ['pane', 'run', 'pane-123', 'stand down, operator muted this stack'],
+    ]);
   });
 });
