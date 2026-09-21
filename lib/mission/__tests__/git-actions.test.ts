@@ -181,6 +181,54 @@ describe("runAction: fetch stamps FETCH_HEAD", () => {
   });
 });
 
+describe("runAction: fetch/pull self-heal the local default-branch symref", () => {
+  // CodeRabbit finding on mission-visual-parity: getRemoteDefaultBranch's
+  // local-first path trusts refs/remotes/<remote>/HEAD, which a plain fetch
+  // never refreshes on its own -- it can go stale forever after the
+  // server's default branch is renamed. runAction rides `remote set-head
+  // -a` along fetch/pull/pull-rebase (network already in play there) so the
+  // local symref self-heals on actions users already run constantly.
+  test("fetch refreshes refs/remotes/<remote>/HEAD to the remote's current default", async () => {
+    const a = await makeSandbox();
+    try {
+      await a.write("a.txt", "one\n");
+      await a.commitAll("init");
+      const remoteDir = await a.addBareRemote();
+      await runAction(a.dir, "publish-branch", { remote: "origin", branch: "main" });
+      // publish-branch (push -u) doesn't itself write the symref -- only
+      // clone/`remote set-head` do (this function's own doc comment) --
+      // so set it explicitly to simulate the ordinary already-cloned case.
+      await a.git(["remote", "set-head", "origin", "main"]);
+
+      // Rename the remote's default after the local symref already points at main.
+      await runGit(remoteDir, ["branch", "-m", "main", "trunk"]);
+      await runGit(remoteDir, ["symbolic-ref", "HEAD", "refs/heads/trunk"]);
+      await a.git(["fetch", "origin", "trunk:trunk"]);
+      expect((await a.git(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"])).trim()).toBe("origin/main");
+
+      const fetched = await runAction(a.dir, "fetch", { remote: "origin", branch: null });
+      expect(fetched.ok).toBe(true);
+      expect((await a.git(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"])).trim()).toBe("origin/trunk");
+    } finally {
+      await a.cleanup();
+    }
+  });
+
+  test("a failed fetch (unreachable remote) never throws, and skips the self-heal", async () => {
+    const a = await makeSandbox();
+    try {
+      await a.write("a.txt", "one\n");
+      await a.commitAll("init");
+      await a.git(["remote", "add", "origin", "/nonexistent/o.git"]);
+
+      const fetched = await runAction(a.dir, "fetch", { remote: "origin", branch: null });
+      expect(fetched.ok).toBe(false);
+    } finally {
+      await a.cleanup();
+    }
+  });
+});
+
 describe("runAction: env scrubbing", () => {
   // Bun.spawn's default (no explicit `env`) inherit path reads a snapshot
   // taken at process start, not the live `process.env` object, so mutating

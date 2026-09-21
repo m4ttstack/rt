@@ -82,4 +82,37 @@ describe("getRemoteDefaultBranch", () => {
     expect(getRemoteDefaultBranch(repo, "upstream")).toBe("upstream/main");
     expect(getRemoteDefaultBranch(repo)).toBeNull(); // no "origin" remote exists in this repo
   });
+
+  // CodeRabbit finding on the mission-visual-parity head: the local symref
+  // early-return meant a renamed server default (main -> trunk) never
+  // reached the ls-remote step, so a stale branch could flow to sync,
+  // rebase, and reset. The two orderings are pinned deliberately, not
+  // reconciled to one answer: preferRemote is for mutation call sites where
+  // correctness beats latency, and the default stays local-first for
+  // mission's interactive, offline-safe per-refresh resolve.
+  describe("preferRemote: local symref goes stale after a server-side rename", () => {
+    beforeEach(() => {
+      const bare = addBareRemote(repo);
+      const bareRepo = join(bare, "o.git");
+      // The bare remote's own default moves to "trunk" after the local
+      // clone/fetch already wrote refs/remotes/origin/HEAD -> main.
+      execSync("git branch -m main trunk", { cwd: bareRepo, shell: "/bin/zsh" });
+      execSync("git symbolic-ref HEAD refs/heads/trunk", { cwd: bareRepo, shell: "/bin/zsh" });
+    });
+
+    test("default (local-first) ordering still returns the cached, now-stale branch", () => {
+      expect(getRemoteDefaultBranch(repo)).toBe("origin/main");
+    });
+
+    test("preferRemote: true asks the remote first and returns the new branch", () => {
+      expect(getRemoteDefaultBranch(repo, "origin", { preferRemote: true })).toBe("origin/trunk");
+    });
+  });
+
+  test("preferRemote: true falls back to the local symref, not a throw, when the remote is unreachable", () => {
+    addBareRemote(repo);
+    execSync("git remote set-url origin /nonexistent/o.git", { cwd: repo, shell: "/bin/zsh" });
+    expect(() => getRemoteDefaultBranch(repo, "origin", { preferRemote: true })).not.toThrow();
+    expect(getRemoteDefaultBranch(repo, "origin", { preferRemote: true })).toBe("origin/main");
+  });
 });

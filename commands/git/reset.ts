@@ -216,7 +216,7 @@ export async function resetToOrigin(opts: ResetOptions): Promise<ResetResult> {
   // newer base is the rewrite to keep. Resetting when LOCAL is the fresher
   // rewrite would discard the rebase and misclassify every intervening
   // default-branch commit as "extra local work" to cherry-pick.
-  const defaultBranch = getRemoteDefaultBranch(cwd);
+  const defaultBranch = getRemoteDefaultBranch(cwd, "origin", { preferRemote: true });
   if (defaultBranch && defaultBranch !== remoteBranch) {
     try {
       const localBase = git(`merge-base HEAD ${defaultBranch}`, cwd);
