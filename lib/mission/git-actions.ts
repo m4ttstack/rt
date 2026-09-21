@@ -91,6 +91,19 @@ async function spawnGit(cwd: string, args: string[]): Promise<ActionResult> {
   return { ok: true, detail: "" };
 }
 
+// getRemoteDefaultBranch's local-first path (mission's own interactive
+// resolve, see its doc comment) trusts refs/remotes/<remote>/HEAD, which a
+// plain fetch does not refresh once set -- it can go stale after the
+// server's default branch is renamed. Fetch/pull already pay the network
+// cost here, so riding this along closes that staleness window for free.
+// Best-effort only: a failure (offline, no permission to write the ref)
+// must never surface as this action's own failure.
+async function refreshDefaultBranchSymref(cwd: string, remote: string): Promise<void> {
+  try {
+    await spawnGit(cwd, ["remote", "set-head", remote, "-a"]);
+  } catch { /* self-heal only; never fails the action it rides along with */ }
+}
+
 export async function runAction(
   cwd: string,
   kind: ActionKind,
@@ -104,12 +117,21 @@ export async function runAction(
       return { ok: false, detail: "cannot run a remote action while checked out on a commit, not a branch" };
     case "publish-repo":
       return { ok: false, detail: "publishing a repository is not wired yet" };
-    case "fetch":
-      return spawnGit(cwd, ["fetch", "--quiet", remote]);
-    case "pull":
-      return spawnGit(cwd, ["pull", remote]);
-    case "pull-rebase":
-      return spawnGit(cwd, ["pull", "--rebase", remote]);
+    case "fetch": {
+      const result = await spawnGit(cwd, ["fetch", "--quiet", remote]);
+      if (result.ok) await refreshDefaultBranchSymref(cwd, remote);
+      return result;
+    }
+    case "pull": {
+      const result = await spawnGit(cwd, ["pull", remote]);
+      if (result.ok) await refreshDefaultBranchSymref(cwd, remote);
+      return result;
+    }
+    case "pull-rebase": {
+      const result = await spawnGit(cwd, ["pull", "--rebase", remote]);
+      if (result.ok) await refreshDefaultBranchSymref(cwd, remote);
+      return result;
+    }
     case "push":
       return spawnGit(cwd, ["push", remote]);
     case "force-push":

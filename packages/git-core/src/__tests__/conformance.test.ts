@@ -114,12 +114,20 @@ describe("conformance: mutation verbs against hostile states fail cleanly", () =
     }
   });
 
-  it("empty repo (unborn HEAD): stagingDiff on a missing path resolves cleanly with no hunks", async () => {
+  // Re-pinned 2026-09-21 when getStagingDiff moved to `git diff HEAD --
+  // <path>` for a non-untracked/renamed path (rt's own adoption of GHD's
+  // staging model: the displayed diff is worktree vs HEAD, not vs the
+  // index). With no HEAD to name yet, that command itself fails -- verified
+  // directly against real git ("fatal: bad revision 'HEAD'"), same
+  // methodology as every other case in this file. Not reachable from the
+  // mission view in practice: any file in an unborn repo is untracked (no
+  // HEAD to be "modified" relative to), so getStagingDiff's untracked check
+  // catches it first and never reaches this branch for a real Change row.
+  it("empty repo (unborn HEAD): stagingDiff on a missing (non-untracked) path throws git's own bad-revision error, no HEAD to diff against yet", async () => {
     const sb = await makeSandbox();
     try {
       const client = createGitClient(sb.dir);
-      const diff = await client.stagingDiff("missing.txt");
-      expect(diff).toEqual({ path: "missing.txt", kind: "text", untracked: false, hunks: [] });
+      await expect(client.stagingDiff("missing.txt")).rejects.toThrow(/bad revision 'HEAD'/i);
     } finally {
       await sb.cleanup();
     }
@@ -161,7 +169,16 @@ describe("conformance: mutation verbs against hostile states fail cleanly", () =
     }
   });
 
-  it("mid-merge conflict: stagingDiff on the conflicted path throws a descriptive parser error, not the typed 'text' kind (git emits a combined diff for an unmerged path, which the vendored hunk-header parser does not understand)", async () => {
+  // Re-pinned 2026-09-21 alongside the unborn-HEAD case above, same root
+  // cause: `git diff --` (no ref) on a conflicted path uses git's special
+  // "combined diff" format (a triple-`@@@` hunk header) the vendored
+  // parser can't understand, which is what made this throw before.
+  // `git diff HEAD --` names one real ref, so git falls back to an
+  // ordinary two-file unified diff instead -- parseable, just showing the
+  // conflict markers as literal +/- content (conflict resolution isn't
+  // mission's scope; this is a parseable, if unglamorous, degradation
+  // rather than a crash). Verified directly against real git.
+  it("mid-merge conflict: stagingDiff on the conflicted path now resolves cleanly, showing the conflict markers as literal diff content", async () => {
     const sb = await makeSandbox();
     try {
       await sb.write("a.txt", "1\n");
@@ -174,8 +191,13 @@ describe("conformance: mutation verbs against hostile states fail cleanly", () =
       await sb.commitAll("main");
       await expect(sb.git(["merge", "feature"])).rejects.toThrow();
       const client = createGitClient(sb.dir);
-      await expect(client.stagingDiff("a.txt")).rejects.toThrow(/invalid hunk header/i);
-      // The failed read must not touch the repo: still mid-merge afterward.
+      const diff = await client.stagingDiff("a.txt");
+      expect(diff.kind).toBe("text");
+      const text = diff.hunks.flatMap((h) => h.lines.map((l) => l.text));
+      expect(text).toContain("+<<<<<<< HEAD");
+      expect(text).toContain("+=======");
+      expect(text).toContain("+>>>>>>> feature");
+      // Still mid-merge afterward: a read never touches the repo.
       expect((await sb.git(["diff", "--name-only", "--diff-filter=U"])).trim()).toBe("a.txt");
     } finally {
       await sb.cleanup();

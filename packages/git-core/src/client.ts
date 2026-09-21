@@ -5,7 +5,7 @@ import { getBranches, getTags, createTag, deleteTag, pushTag, fetchRemote } from
 import { getLog } from "./log.ts";
 import { getStashes, stashPush, stashApply, stashPop, stashDrop } from "./stash.ts";
 import { getFetchState } from "./fetch-state.ts";
-import { getStagingDiff, stageSelection, discardSelection } from "./staging.ts";
+import { getStagingDiff, stageSelection, discardSelection, stageFileFully } from "./staging.ts";
 import { undoLastCommit, resetToCommit } from "./commits.ts";
 import { checkoutBranch, createBranch } from "./branch-ops.ts";
 import { scrubGitEnv } from "./exec.ts";
@@ -61,6 +61,7 @@ export function createGitClient(dir: string): GitClient {
     stagingDiff: (path) => getStagingDiff(ctx, path),
     stageSelection: (diff, selection, opts) => stageSelection(ctx, diff, selection, opts),
     discardSelection: (diff, selection) => discardSelection(ctx, diff, selection),
+    stageFileFully: (path, originalPath) => stageFileFully(ctx, path, originalPath),
     undoLastCommit: () => undoLastCommit(ctx),
     resetToCommit: (sha, mode) => resetToCommit(ctx, sha, mode),
     checkoutBranch: (name) => checkoutBranch(ctx, name),

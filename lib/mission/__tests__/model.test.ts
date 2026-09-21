@@ -7,7 +7,7 @@ import { DiffHunk, DiffHunkExpansionType, DiffHunkHeader } from "../../../packag
 import type { GitWorktreeBadge, RepoStatusRow, WorktreeTreeRow } from "../../../packages/rt-client/src/commands.ts";
 import { serializeIdentity } from "../../settings/identity.ts";
 import type { ActionState } from "../git-actions.ts";
-import { buildModel, joinWorktreeRows, type MissionModel, type MissionState, type WorktreeRow } from "../model.ts";
+import { buildBranchRows, buildModel, joinWorktreeRows, type MissionModel, type MissionState, type WorktreeRow } from "../model.ts";
 
 const FIXTURES = resolve(import.meta.dir, "..", "..", "..", "ui", "fixtures");
 
@@ -119,6 +119,8 @@ function baseInput(overrides: {
   stashes?: number;
   lastCommit?: MissionModel["commit"]["lastCommit"];
   action?: Partial<ActionState>;
+  defaultBranch?: string | null;
+  now?: Date;
 } = {}) {
   return {
     state: baseState(overrides.state),
@@ -131,6 +133,8 @@ function baseInput(overrides: {
     stashes: overrides.stashes ?? 0,
     lastCommit: overrides.lastCommit ?? null,
     action: baseAction(overrides.action),
+    defaultBranch: overrides.defaultBranch ?? null,
+    now: overrides.now ?? new Date("2026-09-18T15:00:00Z"),
   };
 }
 
@@ -213,10 +217,23 @@ describe("buildModel golden fixture handshake", () => {
       },
     ];
 
+    // now is fixed at 2026-09-18T15:00:00Z below. The branch list exercises
+    // every section of the GHD taxonomy end to end -- default, recent
+    // (current row plus 5 more, exactly filling RECENT_BRANCH_COUNT),
+    // guarded, and a genuine "other" row (needs a 6th non-current/default/
+    // guarded candidate to spill past the recent-5 budget) -- and the JSON
+    // fixture's own branches array is the SORTED OUTPUT order buildBranchRows
+    // produces from this input, not this input's own (irrelevant) order.
     const branches: BranchInfo[] = [
       branchInfo({ name: "rt-191-mission-tui", current: true, ahead: 3, behind: 2 }),
-      branchInfo({ name: "main", ahead: 0, behind: 5 }),
-      branchInfo({ name: "rt-190-picker-polish", ahead: 0, behind: 0 }),
+      branchInfo({ name: "main", ahead: 0, behind: 5, committedAt: "2026-09-16T15:00:00Z" }), // 2 days ago
+      branchInfo({ name: "rt-190-picker-polish", ahead: 0, behind: 0, committedAt: "2026-09-15T15:00:00Z" }), // guarded; date irrelevant to its group
+      branchInfo({ name: "rt-189-recent-a", committedAt: "2026-09-17T15:00:00Z" }), // yesterday -- newest of the 5 budgeted recent rows
+      branchInfo({ name: "rt-188-recent-b", committedAt: "2026-09-15T15:00:00Z" }),
+      branchInfo({ name: "rt-187-recent-c", committedAt: "2026-09-14T15:00:00Z" }),
+      branchInfo({ name: "rt-186-recent-d", committedAt: "2026-09-13T15:00:00Z" }),
+      branchInfo({ name: "rt-185-recent-e", committedAt: "2026-09-12T15:00:00Z" }), // 6 days ago -- 5th and last budgeted recent row
+      branchInfo({ name: "rt-100-ancient-other", committedAt: "2026-08-09T15:00:00Z" }), // last month -- 6th candidate, spills to "other"
     ];
     const guards = new Map([["rt-190-picker-polish", "checked out in worktree frodo"]]);
 
@@ -258,6 +275,8 @@ describe("buildModel golden fixture handshake", () => {
         undoable: true,
       },
       action: baseAction({ kind: "pull", title: "Pull origin", meta: "2 commits behind", ahead: 3, behind: 2 }),
+      defaultBranch: "origin/main",
+      now: new Date("2026-09-18T15:00:00Z"),
     });
 
     expect(JSON.parse(JSON.stringify(model))).toEqual(fixture.model);
@@ -304,6 +323,38 @@ describe("joinWorktreeRows", () => {
   });
 });
 
+// A plain (non-rt-managed) repo's worktree:list has no rt worktree name for
+// the checkout -- WorktreeTreeRow.name comes back "" -- and the segment must
+// never fall back to the raw checkout path (a real-repo defect the mission
+// fixtures never exposed, since every fixture models an rt-managed worktree
+// with a daemon-assigned name).
+describe("current.worktreeName falls back to the checkout directory's basename", () => {
+  test("an empty WorktreeRow.name yields the basename, not the raw path", () => {
+    const model = buildModel(
+      baseInput({
+        state: { currentWorktree: "/Users/matt/Documents/glitter-demo" },
+        worktrees: [{ path: "/Users/matt/Documents/glitter-demo", name: "", branch: "main", onDeck: false, badge: badge() }],
+      }),
+    );
+    expect(model.current.worktreeName).toBe("glitter-demo");
+  });
+
+  test("no matching WorktreeRow at all (worktree:list returned nothing) also falls back to the basename", () => {
+    const model = buildModel(
+      baseInput({
+        state: { currentWorktree: "/Users/matt/Documents/glitter-demo" },
+        worktrees: [],
+      }),
+    );
+    expect(model.current.worktreeName).toBe("glitter-demo");
+  });
+
+  test("a real rt worktree name is unaffected", () => {
+    const model = buildModel(baseInput());
+    expect(model.current.worktreeName).toBe("repo");
+  });
+});
+
 describe("repo modal group derivation", () => {
   test.each([
     ["github remote", serializeIdentity({ kind: "remote", id: "github.com/m4ttstack/repo-tools" }), "github.com/m4ttstack"],
@@ -316,15 +367,141 @@ describe("repo modal group derivation", () => {
   });
 });
 
-describe("Include tri-state", () => {
+describe("buildBranchRows sections (GitHub-Desktop-style, ratified 2026-09-19)", () => {
+  const NOW = new Date("2026-09-18T15:00:00Z");
+  const daysAgo = (n: number) => new Date(NOW.getTime() - n * 24 * 60 * 60 * 1000).toISOString();
+
+  test("the default branch gets its own group and default:true, regardless of recency", () => {
+    const branches = [
+      branchInfo({ name: "main", committedAt: daysAgo(400) }), // older than every other branch below
+      branchInfo({ name: "feature-a", committedAt: daysAgo(1) }),
+    ];
+    const rows = buildBranchRows(branches, new Map(), "origin/main", NOW);
+    const main = rows.find((r) => r.name === "main")!;
+    expect(main.group).toBe("default branch");
+    expect(main.default).toBe(true);
+    expect(rows.find((r) => r.name === "feature-a")!.default).toBe(false);
+  });
+
+  test("only the RECENT_BRANCH_COUNT freshest non-default, non-current branches get \"recent\"; the rest fall to \"other\"", () => {
+    const branches = Array.from({ length: 8 }, (_, i) => branchInfo({ name: `b${i}`, committedAt: daysAgo(i) }));
+    const rows = buildBranchRows(branches, new Map(), null, NOW);
+    const recent = rows.filter((r) => r.group === "recent").map((r) => r.name).sort();
+    const other = rows.filter((r) => r.group === "other").map((r) => r.name).sort();
+    expect(recent).toEqual(["b0", "b1", "b2", "b3", "b4"]); // the 5 newest (smallest daysAgo)
+    expect(other).toEqual(["b5", "b6", "b7"]);
+  });
+
+  test("a guarded branch stays \"guarded\" even if it would otherwise be the default or the freshest", () => {
+    const branches = [branchInfo({ name: "main", committedAt: daysAgo(0) })];
+    const guards = new Map([["main", "checked out in worktree frodo"]]);
+    const rows = buildBranchRows(branches, guards, "origin/main", NOW);
+    expect(rows[0]!.group).toBe("guarded");
+  });
+
+  test("the current branch's own committedAt never produces a `when`; a non-current branch always does", () => {
+    const branches = [
+      branchInfo({ name: "feature-current", current: true, committedAt: daysAgo(0) }),
+      branchInfo({ name: "feature-other", committedAt: daysAgo(2) }),
+    ];
+    const rows = buildBranchRows(branches, new Map(), null, NOW);
+    expect(rows.find((r) => r.name === "feature-current")!.when).toBe("");
+    expect(rows.find((r) => r.name === "feature-other")!.when).toBe("2 days ago");
+  });
+
+  test("the current branch never counts toward the recent-5 budget for OTHER rows, even when freshest", () => {
+    const branches = [
+      branchInfo({ name: "current", current: true, committedAt: daysAgo(0) }),
+      ...Array.from({ length: 5 }, (_, i) => branchInfo({ name: `b${i}`, committedAt: daysAgo(i + 1) })),
+    ];
+    const rows = buildBranchRows(branches, new Map(), null, NOW);
+    // The current branch (non-default) is itself "recent" -- see the
+    // GHD-parity correction below -- but its own freshness never displaces
+    // one of the 5 budgeted non-current recent rows.
+    expect(rows.find((r) => r.name === "current")!.group).toBe("recent");
+    expect(rows.filter((r) => r.group === "recent" && r.name !== "current")).toHaveLength(5);
+  });
+
+  test("a default branch ref with no slash (already bare) still matches", () => {
+    const rows = buildBranchRows([branchInfo({ name: "main" })], new Map(), "main", NOW);
+    expect(rows[0]!.default).toBe(true);
+  });
+
+  test("a non-default current branch sits in \"recent\", not \"other\" (GHD shows the checked-out branch inside its own section)", () => {
+    const branches = [
+      branchInfo({ name: "feature-current", current: true, committedAt: daysAgo(10) }), // older than the other recent branches below
+      branchInfo({ name: "feature-fresh", committedAt: daysAgo(0) }),
+    ];
+    const rows = buildBranchRows(branches, new Map(), null, NOW);
+    expect(rows.find((r) => r.name === "feature-current")!.group).toBe("recent");
+    // Still keeps its pills, not a date, regardless of group.
+    expect(rows.find((r) => r.name === "feature-current")!.when).toBe("");
+  });
+
+  test("a current branch that IS the default lands in \"default branch\", not \"recent\"", () => {
+    const rows = buildBranchRows([branchInfo({ name: "main", current: true })], new Map(), "origin/main", NOW);
+    expect(rows[0]!.group).toBe("default branch");
+  });
+});
+
+describe("buildBranchRows section order (GHD parity, ratified 2026-09-19)", () => {
+  const NOW = new Date("2026-09-18T15:00:00Z");
+  const daysAgo = (n: number) => new Date(NOW.getTime() - n * 24 * 60 * 60 * 1000).toISOString();
+
+  test("emits default branch, then recent (current first, newest-committed next), then guarded, then other -- alphabetical within guarded/other -- regardless of the input's own listing order", () => {
+    // Deliberately scrambled: git's own listing order must never leak
+    // through as the emitted order (this is exactly the bug the sort fixes:
+    // branches.map used to preserve git's order and GroupContiguous then
+    // rendered groups in first-appearance order instead of the ratified one).
+    // Both "other" names and "guarded" names are picked so alphabetical
+    // order DISAGREES with commit-date order -- a date-based sort passing
+    // by coincidence is ruled out.
+    const branches = [
+      branchInfo({ name: "other-zz", committedAt: daysAgo(60) }), // newer than other-aa
+      branchInfo({ name: "guarded-b", committedAt: daysAgo(3) }), // newer than guarded-a
+      branchInfo({ name: "recent-newest", committedAt: daysAgo(1) }),
+      branchInfo({ name: "other-aa", committedAt: daysAgo(70) }),
+      branchInfo({ name: "current-branch", current: true, committedAt: daysAgo(20) }),
+      branchInfo({ name: "guarded-a", committedAt: daysAgo(4) }),
+      branchInfo({ name: "main", committedAt: daysAgo(400) }),
+      branchInfo({ name: "recent-2", committedAt: daysAgo(2) }),
+      branchInfo({ name: "recent-3", committedAt: daysAgo(3) }),
+      branchInfo({ name: "recent-4", committedAt: daysAgo(4) }),
+      branchInfo({ name: "recent-5", committedAt: daysAgo(5) }), // 5th and last budgeted recent slot
+    ];
+    const guards = new Map([
+      ["guarded-b", "checked out in worktree frodo"],
+      ["guarded-a", "checked out in worktree bilbo"],
+    ]);
+    const rows = buildBranchRows(branches, guards, "origin/main", NOW);
+    expect(rows.map((r) => r.name)).toEqual([
+      "main", // default branch
+      "current-branch", // recent: current always first
+      "recent-newest", // recent: then newest-committed first
+      "recent-2",
+      "recent-3",
+      "recent-4",
+      "recent-5",
+      "guarded-a", // guarded: alphabetical, not date order (guarded-b is newer)
+      "guarded-b",
+      "other-aa", // other: alphabetical, not date order (other-zz is newer)
+      "other-zz",
+    ]);
+  });
+});
+
+// GHD's own model (ratified 2026-09-21): include is purely a read of the
+// driver's persisted selection now -- file.staged/file.unstaged never
+// factor in (a checkbox means "include in the next commit," not "already
+// in the index"). No selection at all means the file hasn't been through
+// reconcileSelections yet; that default is All, same as everywhere else.
+describe("Include tri-state (selection-only, ratified 2026-09-21)", () => {
   test.each([
-    ["staged only, no selection -> all", true, false, undefined, "all"],
-    ["unstaged only, no selection -> none", false, true, undefined, "none"],
-    ["staged and unstaged, no selection -> partial", true, true, undefined, "partial"],
-    ["selection All overrides flags -> all", false, true, DiffSelectionType.All, "all"],
-    ["selection None overrides flags -> none", true, false, DiffSelectionType.None, "none"],
-    ["selection Partial overrides flags -> partial", true, false, DiffSelectionType.Partial, "partial"],
-  ] as const)("%s", (_label, staged, unstaged, selectionType, expected) => {
+    ["no selection recorded -> defaults to all", undefined, "all"],
+    ["selection All -> all", DiffSelectionType.All, "all"],
+    ["selection None -> none", DiffSelectionType.None, "none"],
+    ["selection Partial -> partial", DiffSelectionType.Partial, "partial"],
+  ] as const)("%s", (_label, selectionType, expected) => {
     const selections = new Map<string, DiffSelection>();
     if (selectionType !== undefined) {
       let sel = DiffSelection.fromInitialSelection(
@@ -337,7 +514,7 @@ describe("Include tri-state", () => {
     const model = buildModel(
       baseInput({
         state: { selections },
-        snapshot: { files: [changedFile({ path: "a.txt", staged, unstaged })] },
+        snapshot: { files: [changedFile({ path: "a.txt" })] },
       }),
     );
 
@@ -365,6 +542,55 @@ describe("commit button label", () => {
   });
 });
 
+// Owner-verified real-repo defect: rows reordered when files got staged,
+// because allChanges rendered in snapshot.files' own order, which regroups
+// as the index changes underneath it. GHD's own fix (app/src/lib/stores/
+// updates/changes-state.ts's updateChangedFiles, ratified 2026-09-21):
+// sort by path, case-insensitively, on every refresh -- independent of
+// staged/selection state -- so order depends only on which paths are
+// present, never on how git status happened to list them.
+describe("Changes list order is stable (case-insensitive path sort, ratified 2026-09-21)", () => {
+  test("a scrambled snapshot.files order yields the same rendered order as the sorted one", () => {
+    const scrambled = [
+      changedFile({ path: "zebra.txt" }),
+      changedFile({ path: "apple.txt" }),
+      changedFile({ path: "mango.txt" }),
+    ];
+    const model = buildModel(baseInput({ snapshot: { files: scrambled } }));
+    expect(model.changes.map((c) => c.path)).toEqual(["apple.txt", "mango.txt", "zebra.txt"]);
+  });
+
+  test("the same files returning in a DIFFERENT order (as if staged, reordering the underlying status) renders identically", () => {
+    const first = [changedFile({ path: "zebra.txt" }), changedFile({ path: "apple.txt" }), changedFile({ path: "mango.txt" })];
+    const second = [changedFile({ path: "mango.txt" }), changedFile({ path: "zebra.txt" }), changedFile({ path: "apple.txt" })];
+    const orderA = buildModel(baseInput({ snapshot: { files: first } })).changes.map((c) => c.path);
+    const orderB = buildModel(baseInput({ snapshot: { files: second } })).changes.map((c) => c.path);
+    expect(orderA).toEqual(orderB);
+  });
+
+  test("mixed-case paths sort case-insensitively, not by raw byte order", () => {
+    const files = [changedFile({ path: "Banana.txt" }), changedFile({ path: "apple.txt" }), changedFile({ path: "cherry.txt" })];
+    const model = buildModel(baseInput({ snapshot: { files } }));
+    // Byte/ordinal order would put "Banana.txt" (capital B, 0x42) before
+    // "apple.txt" and "cherry.txt" (lowercase, 0x61+); case-insensitive
+    // sorts it between them instead.
+    expect(model.changes.map((c) => c.path)).toEqual(["apple.txt", "Banana.txt", "cherry.txt"]);
+  });
+
+  test("the selected file's diff still resolves correctly by path after the underlying status reorders (cursor stays on the FILE, not a row index)", () => {
+    const before = [changedFile({ path: "zebra.txt" }), changedFile({ path: "apple.txt" })];
+    const after = [changedFile({ path: "apple.txt" }), changedFile({ path: "zebra.txt" })]; // same files, different incoming order
+    const stagingDiff = { path: "zebra.txt", kind: "text" as const, untracked: false, hunks: [] };
+    const beforeModel = buildModel(baseInput({ state: { selectedPath: "zebra.txt" }, snapshot: { files: before }, stagingDiff }));
+    const afterModel = buildModel(baseInput({ state: { selectedPath: "zebra.txt" }, snapshot: { files: after }, stagingDiff }));
+    expect(beforeModel.diff.path).toBe("zebra.txt");
+    expect(afterModel.diff.path).toBe("zebra.txt");
+    // Row position moved (zebra.txt sorts after apple.txt either way here),
+    // but selection tracking is by path, not index, in both directions.
+    expect(afterModel.changes.map((c) => c.path)).toEqual(["apple.txt", "zebra.txt"]);
+  });
+});
+
 describe("changes filter", () => {
   const files = [
     changedFile({ path: "lib/mission/driver.ts", staged: true, unstaged: false }),
@@ -382,7 +608,15 @@ describe("changes filter", () => {
   });
 
   test("a filter that matches nothing empties the list but keeps totals and the commit gate", () => {
-    const model = buildModel(baseInput({ state: { filter: "zzz" }, snapshot: { files: [...files] } }));
+    // Explicit selections: exactly one file checked, so stagedTotal (now a
+    // count of checked files, GHD-style) reads a meaningful 1 rather than
+    // every file's own All default.
+    const selections = new Map([
+      ["lib/mission/driver.ts", DiffSelection.fromInitialSelection(DiffSelectionType.All)],
+      ["ui/internal/views/mission/mission.go", DiffSelection.fromInitialSelection(DiffSelectionType.None)],
+      ["README.md", DiffSelection.fromInitialSelection(DiffSelectionType.None)],
+    ]);
+    const model = buildModel(baseInput({ state: { filter: "zzz", selections }, snapshot: { files: [...files] } }));
     expect(model.changes).toEqual([]);
     expect(model.changedTotal).toBe(3);
     expect(model.stagedTotal).toBe(1);
@@ -391,21 +625,26 @@ describe("changes filter", () => {
 });
 
 describe("canCommit", () => {
-  test("true whenever anything is staged, regardless of the driver-side summary", () => {
+  test("true whenever anything is checked, regardless of the driver-side summary", () => {
     const model = buildModel(
       baseInput({
         state: { summary: "" },
-        snapshot: { files: [changedFile({ path: "a.txt", staged: true, unstaged: false })] },
+        snapshot: { files: [changedFile({ path: "a.txt" })] }, // no selection recorded -> defaults to All
       }),
     );
     expect(model.commit.canCommit).toBe(true);
   });
 
-  test("false with nothing staged even when a summary is present", () => {
+  // GHD's own model (ratified 2026-09-21): a freshly-appeared file defaults
+  // to checked, so getting to canCommit=false takes an EXPLICIT uncheck,
+  // not merely "nothing staged in the index" (there is no index concept
+  // here anymore).
+  test("false with everything explicitly unchecked, even when a summary is present", () => {
+    const selections = new Map([["a.txt", DiffSelection.fromInitialSelection(DiffSelectionType.None)]]);
     const model = buildModel(
       baseInput({
-        state: { summary: "a summary" },
-        snapshot: { files: [changedFile({ path: "a.txt", staged: false, unstaged: true })] },
+        state: { summary: "a summary", selections },
+        snapshot: { files: [changedFile({ path: "a.txt" })] },
       }),
     );
     expect(model.commit.canCommit).toBe(false);
@@ -468,17 +707,23 @@ describe("diff Selected flags", () => {
     ]);
   });
 
-  test("with no persisted selection the flags seed from the file's staged state, not select-all", () => {
+  // GHD's own default (ratified 2026-09-21): a freshly-appeared file's
+  // selection seeds to All -- every selectable line reads checked -- not
+  // derived from file.staged/unstaged (there is no index concept here
+  // anymore; the checkbox is the user's own commit intent from the start).
+  test("with no persisted selection every selectable line reads checked (select-all, GHD's own default)", () => {
     const model = buildModel(
       baseInput({
         state: { selectedPath: "two-hunk.txt" },
-        snapshot: { files: [changedFile({ path: "two-hunk.txt", staged: false, unstaged: true })] },
+        snapshot: { files: [changedFile({ path: "two-hunk.txt" })] },
         stagingDiff: twoHunkDiff(),
       }),
     );
 
-    for (const line of model.diff.lines) {
-      expect(line.selected).toBe(false);
+    const selectable = model.diff.lines.filter((line) => line.selIdx >= 0);
+    expect(selectable.length).toBeGreaterThan(0);
+    for (const line of selectable) {
+      expect(line.selected).toBe(true);
     }
   });
 });

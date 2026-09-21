@@ -8,6 +8,8 @@ import {
 } from "../../packages/git-core/src/index.ts";
 import { DiffLineType } from "../../packages/git-core/src/vendor/ghd/diff-line.ts";
 import type { GitWorktreeBadge, RepoStatusRow, WorktreeTreeRow } from "../../packages/rt-client/src/commands.ts";
+import { basename } from "path";
+import { formatRelativeTime } from "../relative-time.ts";
 import { repoLabel } from "../repo-label.ts";
 import { parseIdentity } from "../settings/identity.ts";
 import type { ActionState } from "./git-actions.ts";
@@ -163,17 +165,83 @@ export function joinWorktreeRows(trees: WorktreeTreeRow[], badges: GitWorktreeBa
   }));
 }
 
-function buildBranchRow(branch: BranchInfo, guards: Map<string, string>): MissionBranchRow {
-  const guardedBy = guards.get(branch.name) ?? "";
-  const group: MissionBranchRow["group"] = guardedBy !== "" ? "guarded" : branch.current ? "recent" : "other";
-  return {
-    name: branch.name,
-    current: branch.current,
-    ahead: branch.ahead ?? 0,
-    behind: branch.behind ?? 0,
-    guardedBy,
-    group,
-  };
+/** How many of the freshest (non-default, non-current) branches by commit date get the "recent" group, GitHub-Desktop-style. */
+const RECENT_BRANCH_COUNT = 5;
+
+/** getRemoteDefaultBranch returns e.g. "origin/main"; local branch names carry no remote prefix. */
+function stripRemotePrefix(ref: string | null): string | null {
+  if (ref === null) return null;
+  const slash = ref.indexOf("/");
+  return slash === -1 ? ref : ref.slice(slash + 1);
+}
+
+/** Section order the rows must EMIT in, not just group into -- GroupContiguous on the Go side otherwise renders groups in git's own first-appearance listing order. */
+const GROUP_RANK: Record<MissionBranchRow["group"], number> = {
+  "default branch": 0,
+  recent: 1,
+  guarded: 2,
+  other: 3,
+};
+
+/**
+ * Sections, in order: the repo's default branch; recent (the current
+ * branch first, when it is not itself the default -- GitHub Desktop shows
+ * the checked-out branch inside its own section, never dumped into a
+ * generic "other" wall -- followed by the RECENT_BRANCH_COUNT most
+ * recently committed branches excluding the default and the current
+ * branch, so neither displaces a genuinely different recent branch, nor
+ * does the current branch's own freshness ever count against that
+ * budget); guarded (rt-specific, unchanged), alphabetical; everything
+ * else, alphabetical.
+ *
+ * Each non-current row gets a driver-computed relative date
+ * (formatRelativeTime); the current row's `when` stays "" since its own
+ * ahead/behind pills render in that slot instead (modal.go's
+ * modalRowLine), regardless of which group it lands in.
+ */
+export function buildBranchRows(branches: BranchInfo[], guards: Map<string, string>, defaultBranchRef: string | null, now: Date): MissionBranchRow[] {
+  const defaultBranch = stripRemotePrefix(defaultBranchRef);
+  const committedAtByName = new Map(branches.map((b) => [b.name, b.committedAt]));
+
+  const recentCandidates = branches
+    .filter((b) => !b.current && b.name !== defaultBranch && (guards.get(b.name) ?? "") === "")
+    .slice()
+    .sort((a, b) => b.committedAt.localeCompare(a.committedAt));
+  const recentNames = new Set(recentCandidates.slice(0, RECENT_BRANCH_COUNT).map((b) => b.name));
+
+  const rows = branches.map((branch) => {
+    const guardedBy = guards.get(branch.name) ?? "";
+    const isDefault = defaultBranch !== null && branch.name === defaultBranch;
+    let group: MissionBranchRow["group"];
+    if (guardedBy !== "") group = "guarded";
+    else if (isDefault) group = "default branch";
+    else if (branch.current) group = "recent";
+    else if (recentNames.has(branch.name)) group = "recent";
+    else group = "other";
+
+    return {
+      name: branch.name,
+      current: branch.current,
+      ahead: branch.ahead ?? 0,
+      behind: branch.behind ?? 0,
+      guardedBy,
+      group,
+      default: isDefault,
+      when: branch.current ? "" : formatRelativeTime(branch.committedAt, now),
+    };
+  });
+
+  return rows.slice().sort((a, b) => {
+    const rankDiff = GROUP_RANK[a.group] - GROUP_RANK[b.group];
+    if (rankDiff !== 0) return rankDiff;
+    if (a.group === "recent") {
+      if (a.current !== b.current) return a.current ? -1 : 1;
+      const aAt = committedAtByName.get(a.name) ?? "";
+      const bAt = committedAtByName.get(b.name) ?? "";
+      return bAt.localeCompare(aAt);
+    }
+    return a.name.localeCompare(b.name);
+  });
 }
 
 function toChangeStatus(kind: ChangedFile["kind"]): MissionChangeRow["status"] {
@@ -192,15 +260,28 @@ function toChangeStatus(kind: ChangedFile["kind"]): MissionChangeRow["status"] {
   }
 }
 
-function deriveInclude(file: ChangedFile, selection: DiffSelection | undefined): MissionChangeRow["include"] {
-  if (selection) {
-    const type = selection.getSelectionType();
-    if (type === DiffSelectionType.All) return "all";
-    if (type === DiffSelectionType.None) return "none";
-    return "partial";
-  }
-  if (file.staged && file.unstaged) return "partial";
-  return file.staged ? "all" : "none";
+// Ordinal comparison on lowercased strings -- GHD's own caseInsensitiveCompare
+// (app/src/lib/compare.ts), not locale-aware collation, so the ordering is
+// identical for every user regardless of locale.
+function caseInsensitiveComparePath(a: string, b: string): number {
+  const al = a.toLowerCase();
+  const bl = b.toLowerCase();
+  if (al < bl) return -1;
+  if (al > bl) return 1;
+  return 0;
+}
+
+// GHD's own model (ratified 2026-09-21): a checkbox means "include in the
+// next commit," not "already in the index" -- include is purely a read of
+// the driver's own persisted selection now, never file.staged/unstaged.
+// The driver seeds every changed file's selection to All the moment it
+// first appears (reconcileSelections), so the fallback below only matters
+// before that has ever run.
+function deriveInclude(selection: DiffSelection | undefined): MissionChangeRow["include"] {
+  const type = (selection ?? DiffSelection.fromInitialSelection(DiffSelectionType.All)).getSelectionType();
+  if (type === DiffSelectionType.All) return "all";
+  if (type === DiffSelectionType.None) return "none";
+  return "partial";
 }
 
 function commitPlaceholder(changes: MissionChangeRow[]): string {
@@ -288,8 +369,12 @@ export function buildModel(input: {
   action: ActionState;
   /** HEAD's short sha; stands in for current.branch on a detached checkout. */
   headShortSha?: string;
+  /** e.g. "origin/main"; null when no remote default branch was found. */
+  defaultBranch: string | null;
+  /** Injected for deterministic branch-date formatting in tests; defaults to the real clock. */
+  now?: Date;
 }): MissionModel {
-  const { state, rows, snapshot, branches, guards, worktrees, stagingDiff, stashes, lastCommit, action, headShortSha } = input;
+  const { state, rows, snapshot, branches, guards, worktrees, stagingDiff, stashes, lastCommit, action, headShortSha, defaultBranch, now = new Date() } = input;
 
   const repos: MissionRepoRow[] = rows.map((row) => ({
     id: row.repo,
@@ -308,14 +393,23 @@ export function buildModel(input: {
     onDeck: worktree.onDeck,
   }));
 
-  const branchRows: MissionBranchRow[] = branches.map((branch) => buildBranchRow(branch, guards));
+  const branchRows: MissionBranchRow[] = buildBranchRows(branches, guards, defaultBranch, now);
 
-  const allChanges: MissionChangeRow[] = snapshot.files.map((file) => ({
-    path: file.path,
-    origPath: file.originalPath ?? "",
-    status: toChangeStatus(file.kind),
-    include: deriveInclude(file, state.selections.get(file.path)),
-  }));
+  // GHD's own ordering rule (app/src/lib/stores/updates/changes-state.ts's
+  // updateChangedFiles, ratified 2026-09-21): the list sorts by path,
+  // case-insensitively, on every status refresh -- independent of staged
+  // state or selection -- so a row never jumps position just because
+  // something got checked or the index changed underneath it. Sorted here,
+  // not left to whatever order git status/snapshot.files happened to
+  // return, which regroups as the index changes.
+  const allChanges: MissionChangeRow[] = snapshot.files
+    .map((file) => ({
+      path: file.path,
+      origPath: file.originalPath ?? "",
+      status: toChangeStatus(file.kind),
+      include: deriveInclude(state.selections.get(file.path)),
+    }))
+    .sort((a, b) => caseInsensitiveComparePath(a.path, b.path));
 
   // The filter narrows only the visible list; totals and the commit gate
   // keep counting every change, or filtering would silently disable commit.
@@ -326,14 +420,12 @@ export function buildModel(input: {
   const stagedTotal = allChanges.filter((change) => change.include !== "none").length;
 
   const selectedChange = state.selectedPath ? (allChanges.find((change) => change.path === state.selectedPath) ?? null) : null;
-  // Fallback seed mirrors the driver's currentSelection: only a fully staged
-  // file reads all-selected; a file with unstaged content has, by
-  // definition, none of its staging-diff lines in the index yet.
-  const selectedFile = state.selectedPath ? snapshot.files.find((file) => file.path === state.selectedPath) : undefined;
-  const fullyStaged = selectedFile !== undefined && selectedFile.staged && !selectedFile.unstaged;
+  // GHD's own default (ratified 2026-09-21): every file's selection seeds to
+  // All the moment it first appears (reconcileSelections, driver-side), so
+  // this fallback only matters before that has ever run.
   const diffSelection =
     (state.selectedPath ? state.selections.get(state.selectedPath) : undefined) ??
-    DiffSelection.fromInitialSelection(fullyStaged ? DiffSelectionType.All : DiffSelectionType.None);
+    DiffSelection.fromInitialSelection(DiffSelectionType.All);
 
   const diff = buildDiffModel({
     path: state.selectedPath,
@@ -343,7 +435,13 @@ export function buildModel(input: {
     oversizedOverride: state.selectedPath !== null && state.showOversized.has(state.selectedPath),
   });
 
-  const worktreeName = worktreeRows.find((worktree) => worktree.path === state.currentWorktree)?.name ?? "";
+  // On a plain (non-rt-managed) repo, worktree:list has no row for the
+  // checkout at all -- or rt-client's WorktreeTreeRow.name (an rt worktree
+  // name, e.g. "gandalf") comes back "" -- and the segment must never fall
+  // back to rendering the raw checkout path (mission.go's renderWorktreeSegment
+  // does that itself when Current.WorktreeName is ""), so the directory's own
+  // basename stands in.
+  const worktreeName = worktreeRows.find((worktree) => worktree.path === state.currentWorktree)?.name || basename(state.currentWorktree);
 
   const current: MissionCurrent = {
     repo: state.currentRepo,

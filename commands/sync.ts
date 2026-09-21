@@ -148,7 +148,7 @@ export async function syncBranch(
   }
 
 
-  const defaultBranch = getRemoteDefaultBranch(cwd);
+  const defaultBranch = getRemoteDefaultBranch(cwd, "origin", { preferRemote: true });
   const defaultBranchName = defaultBranch?.replace("origin/", "") ?? "master";
 
   // Don't sync the default branch itself

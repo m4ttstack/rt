@@ -1,5 +1,7 @@
 package picker
 
+import "charm.land/lipgloss/v2"
+
 // defaultCap is the viewport height used when a caller sets no cap (cap_==0):
 // enough rows to read as a real list without a short pane's chrome ever
 // getting squeezed off a typical terminal.
@@ -93,4 +95,45 @@ func placeTop(cursor, prevTop, n, h int) int {
 		top = maxTop
 	}
 	return top
+}
+
+// ThumbSpan sizes a scroll rail to the visible fraction of the list
+// (h*h/n, floored, minimum one row so a long list always shows something to
+// grab) and positions it in lockstep with the scroll offset. Shared by every
+// scrolling region in the TUI (this package's own list, the diff pane, the
+// mission foldouts) so there is one thumb-sizing formula, not a copy per
+// view.
+func ThumbSpan(top, h, n int) (thumbTop, thumbH int) {
+	if n <= 0 || h <= 0 {
+		return 0, 0
+	}
+	thumbH = h * h / n
+	if thumbH < 1 {
+		thumbH = 1
+	}
+	if thumbH > h {
+		thumbH = h
+	}
+	maxTop := n - h
+	if maxTop <= 0 {
+		return 0, thumbH
+	}
+	avail := h - thumbH
+	if avail < 0 {
+		avail = 0
+	}
+	thumbTop = top * avail / maxTop
+	return thumbTop, thumbH
+}
+
+// ThumbCell paints one row of a scroll rail: thumbStyle across the thumb's
+// own span, restStyle everywhere else in the gutter -- callers supply both
+// since each view's own background differs (the picker paints inline at the
+// terminal default, the diff pane and mission's modals paint an explicit
+// Bg/Surface).
+func ThumbCell(rowInWindow, thumbTop, thumbH int, thumbStyle, restStyle lipgloss.Style) string {
+	if rowInWindow >= thumbTop && rowInWindow < thumbTop+thumbH {
+		return thumbStyle.Render(" ")
+	}
+	return restStyle.Render(" ")
 }

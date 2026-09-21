@@ -80,6 +80,37 @@ of them: the board is ephemeral and pane-owned (quit closes the workspace),
 the exit code of a pane command comes only from the `__rt_exit` sentinel,
 and the add flow closes and reopens the session around the rt-ui picker.
 
+### Shared rt-ui primitives -- lift, don't duplicate
+
+`ui/internal/views/picker/scroll.go`'s `Viewport`/`ThumbSpan`/`ThumbCell` are
+the one scroll-offset/thumb implementation for every scrolling region in
+rt-ui (the picker's own list, the diff pane, the Changes list, and all
+three mission foldouts) -- vim-style scrolloff, a caller cap, a shared
+`h*h/n` thumb formula, with the thumb's own styles passed in per caller.
+`clip`/`clipOn` (`ui/internal/views/mission/topbar.go`) are the only text
+clippers mission uses. A new scrolling region, thumb, or text-truncation
+site imports and calls these; it does not hand-roll a second copy. When a
+new cross-view need comes up (a bordered box, a keybar strip, a row's
+rest/hover/cursor background), check picker/board/mission for an existing
+implementation FIRST and lift the best one to a shared spot rather than
+writing a third version -- this was a standing correction after mission's
+own diff pane and Changes list had each grown a byte-for-byte duplicate of
+the picker's viewport math independently.
+
+### Mission adopts GitHub Desktop's staging model
+
+`rt glitter`'s checkboxes (line, hunk, or whole file) are commit
+INTENT, not index state -- toggling one never touches git. The real
+index is rebuilt from scratch at commit time (reset to HEAD, then
+restaged file by file from each one's own selection), so **anything
+staged outside glitter -- a plain `git add`, another agent editing the
+same repo concurrently -- is discarded at the next commit and replaced
+with exactly what the checkboxes say.** This is GitHub Desktop's own
+behavior, not a bug. Full design and the one selection-persistence
+exception (a Partial selection downgrades to None, not All, once a
+commit or discard shifts its file's diff shape) are in
+`docs/design/mission/README.md`'s "Staging model" section.
+
 ## The TypeScript CLI is UI-free
 
 The rt TS CLI (`commands/`, `lib/`, `cli.ts`, `scripts/`) is pure Bun/TypeScript

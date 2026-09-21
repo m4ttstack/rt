@@ -97,6 +97,8 @@ interface FakeClientCalls {
   stageSelection: { diff: StagingDiff; selection: DiffSelection }[];
   discardSelection: { diff: StagingDiff; selection: DiffSelection }[];
   checkoutBranch: string[];
+  stageFileFully: { path: string; originalPath?: string }[];
+  resetToCommit: { sha: string; mode: string }[];
 }
 
 function baseSnapshot(overrides: Partial<RepoSnapshot> = {}): RepoSnapshot {
@@ -110,7 +112,7 @@ function makeFakeClient(overrides: {
   branches?: () => Promise<BranchInfo[]>;
   log?: GitClient["log"];
 } = {}): GitClient & { calls: FakeClientCalls } {
-  const calls: FakeClientCalls = { stagingDiff: [], stageSelection: [], discardSelection: [], checkoutBranch: [] };
+  const calls: FakeClientCalls = { stagingDiff: [], stageSelection: [], discardSelection: [], checkoutBranch: [], stageFileFully: [], resetToCommit: [] };
   const client: GitClient = {
     dir: "/repo",
     snapshot: overrides.snapshot ?? (async () => baseSnapshot()),
@@ -136,7 +138,12 @@ function makeFakeClient(overrides: {
       calls.discardSelection.push({ diff, selection });
     },
     undoLastCommit: overrides.undoLastCommit ?? (async () => ({ ok: true, undoneSha: "deadbeef" })),
-    resetToCommit: async () => {},
+    resetToCommit: async (sha: string, mode: string) => {
+      calls.resetToCommit.push({ sha, mode });
+    },
+    stageFileFully: async (path: string, originalPath?: string) => {
+      calls.stageFileFully.push({ path, originalPath });
+    },
     checkoutBranch: async (name: string) => {
       calls.checkoutBranch.push(name);
     },
@@ -248,8 +255,7 @@ function baseDeps(over: {
   amend?: MissionDeps["amend"];
   guard?: MissionDeps["guard"];
   now?: MissionDeps["now"];
-  stageFile?: MissionDeps["stageFile"];
-  unstageFile?: MissionDeps["unstageFile"];
+  resolveDefaultBranch?: MissionDeps["resolveDefaultBranch"];
 }): MissionDeps {
   const client = over.client ?? makeFakeClient();
   return {
@@ -267,8 +273,12 @@ function baseDeps(over: {
     amend: over.amend ?? (() => "[main abc] msg"),
     guard: over.guard ?? (async () => ({ verdict: "clear" }) as BranchGuardVerdict),
     now: over.now ?? (() => new Date("2026-09-18T00:00:00Z")),
-    stageFile: over.stageFile ?? (() => {}),
-    unstageFile: over.unstageFile ?? (() => {}),
+    // START's worktree ("/repo") is never a real git checkout in this
+    // file's tests, so the real getRemoteDefaultBranch would just fail and
+    // return null anyway; stubbing it directly skips a real subprocess spawn
+    // per test and makes the resolver itself spy-able (see the caching test
+    // below).
+    resolveDefaultBranch: over.resolveDefaultBranch ?? (() => null),
   };
 }
 
@@ -276,8 +286,13 @@ const START = { repo: "repo-tools", worktree: "/repo" };
 
 // ─── driver behavior ─────────────────────────────────────────────────────────
 
-describe("MissionDriver: staging", () => {
-  test("a line press stages exactly the pressed line: seeded None, translated to the absolute index", async () => {
+// GHD's own model (ratified 2026-09-21): mission:stage mutates the driver's
+// own commit-intent SELECTION only -- it never touches the real git index,
+// so none of these call client.stageSelection/stageFileFully at all. The
+// index is rebuilt from selections once, at commit time (see "MissionDriver:
+// commit rebuilds the index from selections" below).
+describe("MissionDriver: staging (selection-only, ratified 2026-09-21)", () => {
+  test("a line press toggles exactly that line's selection off, everything else stays at its All default", async () => {
     const client = makeFakeClient({
       snapshot: async () => baseSnapshot({ clean: false, files: [{ path: "a.txt", kind: "modified", staged: false, unstaged: true }] }),
     });
@@ -289,15 +304,33 @@ describe("MissionDriver: staging", () => {
 
     await new MissionDriver(deps, START).run();
 
-    expect(client.calls.stageSelection).toHaveLength(1);
-    const { selection } = client.calls.stageSelection[0]!;
-    // compacted selIdx 1 in oneHunkDiff is the second Add line, absolute index 3.
-    expect(selection.isSelected(3)).toBe(true); // the pressed line, and nothing else
-    expect(selection.isSelected(2)).toBe(false);
-    expect(selection.isSelected(5)).toBe(false);
+    expect(client.calls.stageSelection).toHaveLength(0);
+    const last = session.pushed.at(-1) as MissionModel;
+    const bySelIdx = new Map(last.diff.lines.filter((l) => l.selIdx >= 0).map((l) => [l.selIdx, l.selected]));
+    expect(bySelIdx.get(1)).toBe(false); // the pressed line, toggled off
+    expect(bySelIdx.get(0)).toBe(true); // untouched, still at the All default
+    expect(bySelIdx.get(2)).toBe(true);
   });
 
-  test("hunk mode stages the whole owning hunk's selectable lines from a None seed", async () => {
+  test("pressing the same line again toggles it back on (a real toggle, not a one-way stage)", async () => {
+    const client = makeFakeClient({
+      snapshot: async () => baseSnapshot({ clean: false, files: [{ path: "a.txt", kind: "modified", staged: false, unstaged: true }] }),
+    });
+    const session = new FakeSession([
+      { t: "intent", name: "mission:stage", payload: { path: "a.txt", mode: "line", selIdx: 1 } },
+      { t: "intent", name: "mission:stage", payload: { path: "a.txt", mode: "line", selIdx: 1 } },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({ session, client });
+
+    await new MissionDriver(deps, START).run();
+
+    const last = session.pushed.at(-1) as MissionModel;
+    const line = last.diff.lines.find((l) => l.selIdx === 1);
+    expect(line?.selected).toBe(true);
+  });
+
+  test("hunk mode toggles the whole owning hunk's selectable lines off together (all were on, GHD's default)", async () => {
     const client = makeFakeClient({
       snapshot: async () => baseSnapshot({ clean: false, files: [{ path: "a.txt", kind: "modified", staged: false, unstaged: true }] }),
     });
@@ -309,34 +342,14 @@ describe("MissionDriver: staging", () => {
 
     await new MissionDriver(deps, START).run();
 
-    expect(client.calls.stageSelection).toHaveLength(1);
-    const { selection } = client.calls.stageSelection[0]!;
-    expect(selection.isSelected(2)).toBe(true);
-    expect(selection.isSelected(3)).toBe(true);
-    expect(selection.isSelected(5)).toBe(true);
-  });
-
-  test("a line press whose target is already selected refuses with a notice instead of staging the complement", async () => {
-    // A fully staged file seeds All; git-core has no reverse cached apply,
-    // so a line toggle that would DEselect must refuse, not invert.
-    const client = makeFakeClient({
-      snapshot: async () => baseSnapshot({ clean: false, files: [{ path: "a.txt", kind: "modified", staged: true, unstaged: false }] }),
-    });
-    const session = new FakeSession([
-      { t: "intent", name: "mission:stage", payload: { path: "a.txt", mode: "line", selIdx: 0 } },
-      { t: "intent", name: "quit" },
-    ]);
-    const deps = baseDeps({ session, client });
-
-    await new MissionDriver(deps, START).run();
-
     expect(client.calls.stageSelection).toHaveLength(0);
     const last = session.pushed.at(-1) as MissionModel;
-    expect(last.notice).toBe("unstaging a single line is not supported yet");
+    for (const line of last.diff.lines.filter((l) => l.selIdx >= 0)) {
+      expect(line.selected).toBe(false);
+    }
   });
 
-  test("toggle-file on an unstaged file stages the whole file via the add path, never the patch pipeline", async () => {
-    const stageFileCalls: [string, string][] = [];
+  test("toggle-file flips a fully-checked (default) file to fully unchecked", async () => {
     const client = makeFakeClient({
       snapshot: async () => baseSnapshot({ clean: false, files: [{ path: "a.txt", kind: "modified", staged: false, unstaged: true }] }),
     });
@@ -344,64 +357,31 @@ describe("MissionDriver: staging", () => {
       { t: "intent", name: "mission:stage", payload: { path: "a.txt", mode: "toggle-file" } },
       { t: "intent", name: "quit" },
     ]);
-    const deps = baseDeps({
-      session,
-      client,
-      stageFile: (cwd, path) => {
-        stageFileCalls.push([cwd, path]);
-      },
-    });
+    const deps = baseDeps({ session, client });
 
     await new MissionDriver(deps, START).run();
 
-    expect(stageFileCalls).toEqual([[START.worktree, "a.txt"]]);
     expect(client.calls.stageSelection).toHaveLength(0);
+    expect(client.calls.stageFileFully).toHaveLength(0);
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.changes[0]!.include).toBe("none");
   });
 
-  test("toggle-file on a partially staged file also stages the remainder", async () => {
-    const stageFileCalls: string[] = [];
+  test("toggle-file on a partially-selected file checks everything (tri-state click rule: partial/none -> all)", async () => {
     const client = makeFakeClient({
       snapshot: async () => baseSnapshot({ clean: false, files: [{ path: "a.txt", kind: "modified", staged: true, unstaged: true }] }),
     });
     const session = new FakeSession([
+      { t: "intent", name: "mission:stage", payload: { path: "a.txt", mode: "line", selIdx: 0 } }, // -> partial
       { t: "intent", name: "mission:stage", payload: { path: "a.txt", mode: "toggle-file" } },
       { t: "intent", name: "quit" },
     ]);
-    const deps = baseDeps({
-      session,
-      client,
-      stageFile: (_cwd, path) => {
-        stageFileCalls.push(path);
-      },
-    });
+    const deps = baseDeps({ session, client });
 
     await new MissionDriver(deps, START).run();
 
-    expect(stageFileCalls).toEqual(["a.txt"]);
-  });
-
-  test("toggle-file on a fully staged file unstages the whole file via the reset path", async () => {
-    const unstageFileCalls: [string, string, string | undefined][] = [];
-    const client = makeFakeClient({
-      snapshot: async () => baseSnapshot({ clean: false, files: [{ path: "a.txt", kind: "modified", staged: true, unstaged: false }] }),
-    });
-    const session = new FakeSession([
-      { t: "intent", name: "mission:stage", payload: { path: "a.txt", mode: "toggle-file" } },
-      { t: "intent", name: "quit" },
-    ]);
-    const deps = baseDeps({
-      session,
-      client,
-      unstageFile: (cwd, path, origPath) => {
-        unstageFileCalls.push([cwd, path, origPath]);
-      },
-    });
-
-    await new MissionDriver(deps, START).run();
-
-    expect(unstageFileCalls).toEqual([[START.worktree, "a.txt", undefined]]);
-    expect(client.calls.stageSelection).toHaveLength(0);
-    expect(client.calls.discardSelection).toHaveLength(0);
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.changes[0]!.include).toBe("all");
   });
 });
 
@@ -465,11 +445,18 @@ describe("MissionDriver: discard disarm", () => {
 });
 
 describe("MissionDriver: badge resolution", () => {
-  test("a missing badge for the current worktree falls back to empty, never another worktree's badge", async () => {
+  test("a missing badge for the current worktree never borrows another worktree's badge", async () => {
     const session = new FakeSession([{ t: "intent", name: "quit" }]);
     let opened: MissionModel | null = null;
+    const client = makeFakeClient({
+      // No upstream at all in the live snapshot either, so the synthetic
+      // fallback badge genuinely has none -- this isolates "never borrows
+      // /elsewhere's badge" from the live-snapshot fallback covered below.
+      snapshot: async () => baseSnapshot({ upstream: null, ahead: null, behind: null }),
+    });
     const deps = baseDeps({
       session,
+      client,
       daemonQuery: async (cmd: string) =>
         cmd === "worktree:list"
           ? { ok: true, data: { trees: defaultTrees() } }
@@ -482,9 +469,40 @@ describe("MissionDriver: badge resolution", () => {
 
     await new MissionDriver(deps, START).run();
 
-    // The empty badge has no upstream, so the action derives publish-branch;
-    // borrowing /elsewhere's badge (ahead 9, upstream set) would say push.
+    // No upstream anywhere it's allowed to look, so publish-branch; borrowing
+    // /elsewhere's badge (ahead 9, upstream set) would say push instead.
     expect(opened!.action.kind).toBe("publish-branch");
+  });
+
+  // Owner-confirmed real-repo defect: on a repo the daemon has never swept,
+  // currentBadge() fell back to EMPTY_GIT_BADGE (null upstream), so the
+  // action segment claimed "Publish branch · Never fetched" even when the
+  // branch demonstrably has an upstream and is ahead. Fixed by falling back
+  // to the live snapshot's own upstream/ahead/behind (already fetched on
+  // every refresh, independent of the daemon) instead of a blank badge.
+  test("a missing badge falls back to the live snapshot's own upstream/ahead/behind, not a blank badge", async () => {
+    const session = new FakeSession([{ t: "intent", name: "quit" }]);
+    let opened: MissionModel | null = null;
+    const client = makeFakeClient({
+      snapshot: async () => baseSnapshot({ upstream: "origin/main", ahead: 1, behind: 0 }),
+    });
+    const deps = baseDeps({
+      session,
+      client,
+      daemonQuery: async (cmd: string) =>
+        cmd === "worktree:list" ? { ok: true, data: { trees: defaultTrees() } } : { ok: true, data: { repos: [] } },
+    });
+    deps.openSession = async (view, model) => {
+      opened = model as MissionModel;
+      return session;
+    };
+
+    await new MissionDriver(deps, START).run();
+
+    // Real upstream + ahead 1, behind 0 -> push, never the false
+    // publish-branch/"Never fetched" the empty-badge fallback produced.
+    expect(opened!.action.kind).toBe("push");
+    expect(opened!.action.meta).toBe("Never fetched"); // still accurate: the DAEMON hasn't fetched
   });
 });
 
@@ -564,6 +582,72 @@ describe("MissionDriver: repo switch", () => {
   });
 });
 
+// CodeRabbit finding on PR #353: getRemoteDefaultBranch runs up to two
+// synchronous git subprocesses, and it was called directly from model(),
+// which every push() invokes -- so typing in the filter, moving the
+// selection, or any notice replayed those subprocesses on every keystroke.
+// It is now resolved once in refresh() and cached on MissionDriver;
+// model()/guardBranch() read the cache.
+describe("MissionDriver: default branch resolution is cached, not per-push", () => {
+  test("a scripted sequence of several pushes with no refresh in between calls the resolver exactly once", async () => {
+    let calls = 0;
+    const session = new FakeSession([
+      { t: "intent", name: "mission:select", payload: { filter: "a" } },
+      { t: "intent", name: "mission:select", payload: { filter: "ab" } },
+      { t: "intent", name: "mission:select", payload: { filter: "abc" } },
+      { t: "intent", name: "mission:select", payload: { filter: "" } },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({
+      session,
+      resolveDefaultBranch: () => {
+        calls++;
+        return "origin/main";
+      },
+    });
+
+    await new MissionDriver(deps, START).run();
+
+    // run()'s own initial refresh() is the one call the whole scripted
+    // sequence of filter-only pushes above must not add to.
+    expect(calls).toBe(1);
+    expect(session.pushed.length).toBeGreaterThan(1); // several real pushes did happen, each reading the cache
+    expect((session.pushed.at(-1) as MissionModel).filter).toBe("");
+  });
+
+  test("a worktree switch re-resolves (the cache tracks the worktree it describes, not a one-time value)", async () => {
+    const twoRepoQuery = async (cmd: string) =>
+      cmd === "worktree:list"
+        ? { ok: true, data: { trees: defaultTrees() } }
+        : {
+            ok: true,
+            data: {
+              repos: [
+                { repo: "repo-tools", error: null, worktrees: [badge()] },
+                { repo: "other-repo", error: null, worktrees: [badge({ worktree: "/other/tree", branch: "dev" })] },
+              ],
+            },
+          };
+    const seen: string[] = [];
+    const session = new FakeSession([
+      { t: "intent", name: "mission:repo", payload: { repo: "other-repo" } },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({
+      session,
+      daemonQuery: twoRepoQuery,
+      resolveDefaultBranch: (cwd: string) => {
+        seen.push(cwd);
+        return "origin/main";
+      },
+    });
+
+    await new MissionDriver(deps, START).run();
+
+    expect(seen).toEqual([START.worktree, "/other/tree"]); // initial refresh, then the repo-switch refresh
+  });
+});
+
 describe("MissionDriver: commit", () => {
   test("calls commitStaged with the typed summary and pushes a cleared commit box", async () => {
     const commitCalls: [string, string][] = [];
@@ -629,6 +713,103 @@ describe("MissionDriver: commit", () => {
     expect(amendCalled).toBe(false);
     const last = session.pushed.at(-1) as MissionModel;
     expect(last.notice).toBe("main is a stack root; amend refused");
+  });
+});
+
+// GHD's own sequencing (ratified 2026-09-21): commit resets the whole index
+// to HEAD, then rebuilds it from each file's own selection -- None needs no
+// call, All is a whole-file stage, Partial fetches the file's own diff and
+// applies exactly what's checked. The real-sandbox round trip lives in
+// compose.test.ts; this is the fast, precise unit coverage of the dispatch
+// itself against a fake client.
+describe("MissionDriver: commit rebuilds the index from selections", () => {
+  test("None -> no stage call at all; All -> stageFileFully; Partial -> stageSelection, in that per-file order", async () => {
+    const client = makeFakeClient({
+      snapshot: async () =>
+        baseSnapshot({
+          clean: false,
+          files: [
+            { path: "none.txt", kind: "modified", staged: false, unstaged: true },
+            { path: "all.txt", kind: "modified", staged: false, unstaged: true },
+            { path: "partial.txt", kind: "modified", staged: false, unstaged: true },
+          ],
+        }),
+    });
+    const session = new FakeSession([
+      { t: "intent", name: "mission:stage", payload: { path: "none.txt", mode: "toggle-file" } }, // All -> None
+      { t: "intent", name: "mission:stage", payload: { path: "partial.txt", mode: "line", selIdx: 1 } }, // All -> Partial
+      { t: "intent", name: "mission:commit", payload: { summary: "rebuild from selections" } },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({ session, client });
+
+    await new MissionDriver(deps, START).run();
+
+    expect(client.calls.resetToCommit).toEqual([{ sha: "HEAD", mode: "mixed" }]);
+    expect(client.calls.stageFileFully.map((c) => c.path)).toEqual(["all.txt"]);
+    expect(client.calls.stageSelection).toHaveLength(1);
+    expect(client.calls.stageSelection[0]!.diff.path).toBe("partial.txt");
+  });
+
+  test("a rename's originalPath reaches both stageFileFully (All) and stageSelection (Partial)", async () => {
+    const client = makeFakeClient({
+      snapshot: async () =>
+        baseSnapshot({
+          clean: false,
+          files: [
+            { path: "renamed-all.txt", kind: "renamed", staged: false, unstaged: true, originalPath: "old-all.txt" },
+            { path: "renamed-partial.txt", kind: "renamed", staged: false, unstaged: true, originalPath: "old-partial.txt" },
+          ],
+        }),
+    });
+    const session = new FakeSession([
+      { t: "intent", name: "mission:stage", payload: { path: "renamed-partial.txt", mode: "line", selIdx: 1 } }, // All -> Partial
+      { t: "intent", name: "mission:commit", payload: { summary: "rename rebuild" } },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({ session, client });
+
+    await new MissionDriver(deps, START).run();
+
+    expect(client.calls.stageFileFully).toEqual([{ path: "renamed-all.txt", originalPath: "old-all.txt" }]);
+    expect(client.calls.stageSelection[0]!.diff.path).toBe("renamed-partial.txt");
+  });
+});
+
+// GHD's own model (ratified 2026-09-21): selections are the user's own
+// commit intent, not derived state -- they must survive across refreshes
+// for the whole session, not reset by whatever triggered the refresh.
+describe("MissionDriver: selections persist across a refresh", () => {
+  test("a selection made before a git-status-triggered refresh survives it", async () => {
+    let statusHandler: ((ev: DaemonEvent) => void) | null = null;
+    const client = makeFakeClient({
+      snapshot: async () => baseSnapshot({ clean: false, files: [{ path: "a.txt", kind: "modified", staged: false, unstaged: true }] }),
+    });
+    const session = new QueueSession();
+    const deps = baseDeps({
+      session,
+      client,
+      subscribe: (onEvent) => {
+        statusHandler = onEvent;
+        return { close: () => {} };
+      },
+    });
+
+    const runPromise = new MissionDriver(deps, START).run();
+    await flushMicrotasks();
+
+    session.send({ t: "intent", name: "mission:stage", payload: { path: "a.txt", mode: "toggle-file" } }); // All -> None
+    await flushMicrotasks();
+    expect((session.pushed.at(-1) as MissionModel).changes[0]!.include).toBe("none");
+
+    expect(statusHandler).not.toBeNull();
+    statusHandler!({ type: "git-status", data: {} }); // triggers refreshBadges, which reconciles selections
+    await flushMicrotasks();
+
+    expect((session.pushed.at(-1) as MissionModel).changes[0]!.include).toBe("none"); // survived the refresh
+
+    session.send({ t: "intent", name: "quit" });
+    await runPromise;
   });
 });
 
@@ -741,6 +922,41 @@ describe("MissionDriver: undo", () => {
 
     const last = session.pushed.at(-1) as MissionModel;
     expect(last.notice).toBe("refused: pushed");
+  });
+});
+
+// A real (non-fixture) repo surfaced this: git-core's log entry carries a
+// raw ISO authorDate, and the undo strip rendered it verbatim ("Committed
+// 2026-09-20T19:21:02-05:00 ...") instead of a relative time. Preformatted
+// here to match action.meta and MissionBranchRow.when's own convention (the
+// driver formats once per refresh; the view renders whatever string it gets).
+describe("MissionDriver: last commit's `when` is driver-formatted relative time", () => {
+  test("formats log[0].authorDate through formatRelativeTime using deps.now()", async () => {
+    const client = makeFakeClient({
+      log: async () => [
+        {
+          sha: "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+          parents: [],
+          authorName: "Test",
+          authorEmail: "test@example.com",
+          authorDate: "2026-09-17T23:58:00Z", // 2 minutes before baseDeps' now()
+          subject: "fix parser",
+          body: "",
+        },
+      ],
+    });
+    const session = new FakeSession([{ t: "intent", name: "quit" }]);
+    let opened: MissionModel | null = null;
+    const deps = baseDeps({ session, client });
+    deps.openSession = async (_view, model) => {
+      opened = model as MissionModel;
+      return session;
+    };
+
+    await new MissionDriver(deps, START).run();
+
+    expect(opened!.commit.lastCommit?.summary).toBe("fix parser");
+    expect(opened!.commit.lastCommit?.when).toBe("2 minutes ago");
   });
 });
 

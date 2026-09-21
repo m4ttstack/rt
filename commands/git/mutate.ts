@@ -28,7 +28,7 @@ async function guardHistoryRewrite(cwd: string, json: boolean, verb: string): Pr
     console.error(`rt ${verb}: warning, could not determine the current branch; skipping the ownership guard`);
     return;
   }
-  const remoteDefault = getRemoteDefaultBranch(cwd);
+  const remoteDefault = getRemoteDefaultBranch(cwd, "origin", { preferRemote: true });
   const defaultBranch = remoteDefault ? remoteDefault.replace("origin/", "") : null;
   const runners = createStackGuardRunners(
     (await import("../../lib/setup/probes.ts")).createRealProbes(),

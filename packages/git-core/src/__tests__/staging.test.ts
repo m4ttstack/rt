@@ -1,5 +1,5 @@
 import { describe, expect, it, test } from "bun:test";
-import { rename } from "node:fs/promises";
+import { rename, unlink } from "node:fs/promises";
 import { makeSandbox } from "../../test-support/sandbox.ts";
 import { createGitClient } from "../index.ts";
 import { rawGit } from "../exec.ts";
@@ -291,6 +291,142 @@ describe("stagingDiff / stageSelection / discardSelection", () => {
       await expect(
         client.discardSelection(diff, DiffSelection.fromInitialSelection(DiffSelectionType.All)),
       ).rejects.toThrow(/u\.txt/);
+    } finally {
+      await sb.cleanup();
+    }
+  });
+
+  // rt adopts GitHub Desktop's own staging model wholesale (ratified
+  // 2026-09-21): the diff pane always shows a modified file's FULL change
+  // (git diff HEAD), staged or not, because "staged" is no longer a
+  // separate concept the display tracks -- it's purely the user's commit
+  // SELECTION now. This is the real-repo defect that started the round:
+  // a fully staged file's diff used to be worktree-vs-index (empty, by
+  // definition, once nothing is left unstaged).
+  it("8a. a FULLY staged modified file's diff shows its full change, not empty", async () => {
+    const sb = await makeSandbox();
+    try {
+      await sb.write("f.txt", "a\nb\nc\n");
+      await sb.commitAll("base");
+      await sb.write("f.txt", "a\nB\nc\n");
+      await sb.git(["add", "-A"]);
+      const client = createGitClient(sb.dir);
+
+      const diff = await client.stagingDiff("f.txt");
+      expect(diff.hunks.length).toBeGreaterThan(0);
+      const text = diff.hunks.flatMap((h) => h.lines.map((l) => l.text));
+      expect(text).toContain("+B");
+      expect(text).toContain("-b");
+    } finally {
+      await sb.cleanup();
+    }
+  });
+
+  it("8b. a PARTIALLY staged file's diff shows staged and unstaged changes together", async () => {
+    const sb = await makeSandbox();
+    try {
+      await sb.write("f.txt", "a\nb\nc\nd\n");
+      await sb.commitAll("base");
+      await sb.write("f.txt", "a\nB\nc\nd\n"); // b -> B
+      await sb.git(["add", "-A"]); // stage the b->B edit
+      await sb.write("f.txt", "a\nB\nc\nD\n"); // further, unstaged: d -> D
+      const client = createGitClient(sb.dir);
+
+      const diff = await client.stagingDiff("f.txt");
+      const text = diff.hunks.flatMap((h) => h.lines.map((l) => l.text));
+      expect(text).toContain("+B"); // the staged edit
+      expect(text).toContain("-b");
+      expect(text).toContain("+D"); // the unstaged edit
+      expect(text).toContain("-d");
+    } finally {
+      await sb.cleanup();
+    }
+  });
+
+  it("8c. a FULLY staged deletion still shows the deletion, not an empty diff (the same bug class as 8a, for deletes)", async () => {
+    const sb = await makeSandbox();
+    try {
+      await sb.write("gone.txt", "bye\n");
+      await sb.commitAll("base");
+      await sb.git(["rm", "gone.txt"]); // deletes from disk AND stages the removal in one step
+      const client = createGitClient(sb.dir);
+
+      const diff = await client.stagingDiff("gone.txt");
+      const text = diff.hunks.flatMap((h) => h.lines.map((l) => l.text));
+      expect(text).toContain("-bye");
+    } finally {
+      await sb.cleanup();
+    }
+  });
+
+  it("8d. a renamed file's diff still compares against the index, not HEAD (GHD's own acknowledged compromise)", async () => {
+    const sb = await makeSandbox();
+    try {
+      await sb.write("old.txt", "a\nb\nc\n");
+      await sb.commitAll("base");
+      await sb.git(["mv", "old.txt", "new.txt"]); // stages the rename
+      await sb.write("new.txt", "a\nB\nc\n"); // further, unstaged content edit
+      const client = createGitClient(sb.dir);
+
+      const diff = await client.stagingDiff("new.txt");
+      // Index-based: only the unstaged b->B edit shows, not the rename
+      // itself (which git diff -- new.txt never shows regardless -- the
+      // rename is a name change, not a content line).
+      const text = diff.hunks.flatMap((h) => h.lines.map((l) => l.text));
+      expect(text).toContain("+B");
+      expect(text).toContain("-b");
+    } finally {
+      await sb.cleanup();
+    }
+  });
+
+  it("9a. stageFileFully stages a plain modified file's full content", async () => {
+    const sb = await makeSandbox();
+    try {
+      await sb.write("f.txt", "a\nb\n");
+      await sb.commitAll("base");
+      await sb.write("f.txt", "a\nB\n");
+      const client = createGitClient(sb.dir);
+
+      await client.stageFileFully("f.txt");
+
+      const cached = await sb.git(["show", ":f.txt"]);
+      expect(cached).toBe("a\nB\n");
+    } finally {
+      await sb.cleanup();
+    }
+  });
+
+  it("9b. stageFileFully stages an (unstaged) deletion", async () => {
+    const sb = await makeSandbox();
+    try {
+      await sb.write("gone.txt", "bye\n");
+      await sb.commitAll("base");
+      await unlink(`${sb.dir}/gone.txt`); // an unstaged worktree-only delete
+      const client = createGitClient(sb.dir);
+
+      await client.stageFileFully("gone.txt");
+
+      const nameStatus = await sb.git(["diff", "--cached", "--name-status"]);
+      expect(nameStatus.trim()).toBe("D\tgone.txt");
+    } finally {
+      await sb.cleanup();
+    }
+  });
+
+  it("9c. stageFileFully recreates a rename via its old path before adding the new one", async () => {
+    const sb = await makeSandbox();
+    try {
+      await sb.write("old.txt", "a\nb\n");
+      await sb.commitAll("base");
+      await sb.git(["mv", "old.txt", "new.txt"]);
+      await sb.git(["reset", "HEAD", "--", "old.txt", "new.txt"]); // unstage the rename (as a fresh reset --mixed HEAD would)
+      const client = createGitClient(sb.dir);
+
+      await client.stageFileFully("new.txt", "old.txt");
+
+      const nameStatus = await sb.git(["diff", "--cached", "--name-status", "-M"]);
+      expect(nameStatus).toMatch(/^R\d*\told\.txt\tnew\.txt$/m);
     } finally {
       await sb.cleanup();
     }

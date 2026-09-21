@@ -42,13 +42,37 @@ func TestSetModelDecodesEveryTopField(t *testing.T) {
 	if len(m.model.Worktrees) != 2 || !m.model.Worktrees[1].OnDeck {
 		t.Fatalf("Worktrees: %+v", m.model.Worktrees)
 	}
-	if len(m.model.Branches) != 3 || m.model.Branches[2].GuardedBy == "" {
-		t.Fatalf("Branches[2].GuardedBy not populated: %+v", m.model.Branches)
+	// GHD section order the driver sorts into (mission: branch rows sort
+	// into the desktop's section order, 2026-09-20): default branch, recent
+	// (current row first), guarded, other. The fixture carries 9 rows so a
+	// genuine "other" row exists at all -- with fewer than 6 non-current/
+	// default/guarded candidates every one of them fits inside the
+	// recent-5 budget and none ever falls to "other".
+	if len(m.model.Branches) != 9 {
+		t.Fatalf("Branches: expected 9 rows, got %d: %+v", len(m.model.Branches), m.model.Branches)
 	}
-	if len(m.model.Changes) != 3 || m.model.Changes[0].Include != "all" || m.model.Changes[1].Include != "none" || m.model.Changes[2].Include != "partial" {
+	if !m.model.Branches[0].Default || m.model.Branches[0].Group != "default branch" {
+		t.Fatalf("Branches[0] (main) should decode as the default branch: %+v", m.model.Branches[0])
+	}
+	if m.model.Branches[0].When != "2 days ago" {
+		t.Fatalf("Branches[0].When not populated: %+v", m.model.Branches[0])
+	}
+	if !m.model.Branches[1].Current || m.model.Branches[1].Group != "recent" {
+		t.Fatalf("Branches[1] (rt-191-mission-tui) should be the current row, leading \"recent\": %+v", m.model.Branches[1])
+	}
+	if m.model.Branches[1].When != "" {
+		t.Fatalf("the current row's When should be empty (it shows pills instead): %+v", m.model.Branches[1])
+	}
+	if m.model.Branches[7].GuardedBy == "" || m.model.Branches[7].Group != "guarded" {
+		t.Fatalf("Branches[7] should be the guarded row: %+v", m.model.Branches[7])
+	}
+	if m.model.Branches[8].Group != "other" {
+		t.Fatalf("Branches[8] should be the \"other\" row: %+v", m.model.Branches[8])
+	}
+	if len(m.model.Changes) != 3 || m.model.Changes[0].Include != "partial" || m.model.Changes[1].Include != "all" || m.model.Changes[2].Include != "all" {
 		t.Fatalf("Changes: %+v", m.model.Changes)
 	}
-	if m.model.ChangedTotal != 3 || m.model.StagedTotal != 2 {
+	if m.model.ChangedTotal != 3 || m.model.StagedTotal != 3 {
 		t.Fatalf("totals: changed=%d staged=%d", m.model.ChangedTotal, m.model.StagedTotal)
 	}
 	if len(m.model.Diff.Lines) != 6 || m.model.Diff.Lines[0].Kind != "hunk" {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"image/color"
 	"os"
 	"path/filepath"
 	"strings"
@@ -104,7 +105,9 @@ func TestSpaceOnCursorRowEmitsStageWithPath(t *testing.T) {
 	s := s5open(t)
 	s.Type(" ")
 	l, ok := s.ReadLine(2 * time.Second)
-	if !ok || !strings.Contains(l, `"name":"mission:stage"`) || !strings.Contains(l, `"path":"ui/internal/views/mission/model.go"`) || !strings.Contains(l, `"mode":"toggle-file"`) {
+	// mission.go, not model.go: the Changes list now sorts case-insensitively
+	// by path (ratified 2026-09-21), and "mission.go" < "model.go" ('i' < 'o').
+	if !ok || !strings.Contains(l, `"name":"mission:stage"`) || !strings.Contains(l, `"path":"ui/internal/views/mission/mission.go"`) || !strings.Contains(l, `"mode":"toggle-file"`) {
 		t.Fatalf("stage intent: %q", l)
 	}
 	s.Send(`{"t":"close"}`)
@@ -182,16 +185,18 @@ func TestAmendToggleEnablesCommitDespiteWireCanCommitFalse(t *testing.T) {
 // TestListCursorMoveEmitsSelectWithRowPath: moving the Changes cursor loads
 // that row's diff, so down and back up each emit mission:select with the row
 // the cursor landed on.
+// Row order is the Changes list's own case-insensitive path sort (ratified
+// 2026-09-21): mission.go, model.go, topbar.go ('i' < 'o' < 't').
 func TestListCursorMoveEmitsSelectWithRowPath(t *testing.T) {
 	s := s5open(t)
 	s.Type("\x1b[B")
 	l, ok := s.ReadLine(2 * time.Second)
-	if !ok || !strings.Contains(l, `"name":"mission:select"`) || !strings.Contains(l, `"path":"ui/internal/views/mission/topbar.go"`) {
+	if !ok || !strings.Contains(l, `"name":"mission:select"`) || !strings.Contains(l, `"path":"ui/internal/views/mission/model.go"`) {
 		t.Fatalf("select intent after down: %q", l)
 	}
 	s.Type("\x1b[A")
 	l, ok = s.ReadLine(2 * time.Second)
-	if !ok || !strings.Contains(l, `"name":"mission:select"`) || !strings.Contains(l, `"path":"ui/internal/views/mission/model.go"`) {
+	if !ok || !strings.Contains(l, `"name":"mission:select"`) || !strings.Contains(l, `"path":"ui/internal/views/mission/mission.go"`) {
 		t.Fatalf("select intent after up: %q", l)
 	}
 	s.Send(`{"t":"close"}`)
@@ -211,14 +216,17 @@ func TestListCursorAtTopUpDoesNotEmit(t *testing.T) {
 }
 
 // TestMouseClickFileRowEmitsSelectWithPath clicks the third Changes row
-// (mission.go, absolute y=10 per the coordinate walk on
+// (mission.go, absolute y=12 per the coordinate walk on
 // TestMouseClickCheckboxCellEmitsToggleFileWithPath) while the cursor sits
 // on the first: the click moves the cursor and emits that row's select.
+// Row 2 (0-indexed) is "topbar.go" under the Changes list's own
+// case-insensitive path sort (ratified 2026-09-21): mission.go, model.go,
+// topbar.go.
 func TestMouseClickFileRowEmitsSelectWithPath(t *testing.T) {
 	s := s5open(t)
-	s.Type(sgrClick(0, 20, 10))
+	s.Type(sgrClick(0, 20, 12))
 	l, ok := s.ReadLine(2 * time.Second)
-	if !ok || !strings.Contains(l, `"name":"mission:select"`) || !strings.Contains(l, `"path":"ui/internal/views/mission/mission.go"`) {
+	if !ok || !strings.Contains(l, `"name":"mission:select"`) || !strings.Contains(l, `"path":"ui/internal/views/mission/topbar.go"`) {
 		t.Fatalf("file-row click select intent: %q", l)
 	}
 	s.Send(`{"t":"close"}`)
@@ -390,11 +398,15 @@ func TestRepoModalEnterEmitsRepoIntentWithRowID(t *testing.T) {
 // TestBranchModalCheckoutEmitsIntentWithBranchName moves one row down from
 // the current branch (recent) to "main" (other): the guarded row sits past
 // it and is never reached here.
+// TestBranchModalCheckoutEmitsIntentWithBranchName pins the cursor's initial
+// landing spot too: "main" is the fixture's default branch, and default
+// branch is the first GHD section (mission: branch rows sort into the
+// desktop's section order, 2026-09-20), so the cursor opens directly on it
+// with no navigation needed.
 func TestBranchModalCheckoutEmitsIntentWithBranchName(t *testing.T) {
 	s := s5open(t)
 	s.Type("b")
 	s.WaitForPaint("main")
-	s.Type("\x1b[B")
 	s.Type(keyEnter)
 	l, ok := s.ReadLine(2 * time.Second)
 	if !ok || !strings.Contains(l, `"name":"mission:checkout"`) || !strings.Contains(l, `"branch":"main"`) {
@@ -456,11 +468,19 @@ func TestModalEscClosesWithoutEmittingAndReturnsFocusToList(t *testing.T) {
 
 // TestBranchActionRowEmitsCheckoutNewFromCurrent walks past the recent and
 // other rows (the guarded row auto-skips) to land on the action slot.
+// TestBranchActionRowEmitsCheckoutNewFromCurrent reaches the pinned action
+// row through a query with no matches rather than a fixed number of
+// down-presses: firstSelectableMatch's own doc comment establishes that an
+// empty match list defaults the cursor straight to the action slot, and
+// that holds regardless of how many branch rows the fixture carries (9,
+// after mission: branch rows sort into the desktop's section order,
+// 2026-09-20, added the "recent" and "other" rows a fixed down-count used
+// to rely on).
 func TestBranchActionRowEmitsCheckoutNewFromCurrent(t *testing.T) {
 	s := s5open(t)
 	s.Type("b")
 	s.WaitForPaint("New branch from")
-	s.Type("\x1b[B", "\x1b[B")
+	s.Type("zzz-no-match")
 	s.Type(keyEnter)
 	l, ok := s.ReadLine(2 * time.Second)
 	if !ok || !strings.Contains(l, `"name":"mission:checkout"`) || !strings.Contains(l, `"new":true`) ||
@@ -581,15 +601,18 @@ const (
 
 // TestMouseClickCheckboxCellEmitsToggleFileWithPath drives a left click at
 // the checkbox column of the fixture's second Changes row (topbar.go):
-// tabs(2)+filter(3)+master(1)=6 body rows ahead of the list, +1 for row
-// index 1 = bodyY 7; topH(2)+bodyY(7) = frame y 9 (the debug screen dump
-// pins this: row 9 is "  ○ .../topbar.go"), checkbox at x=2 (the "  "
-// prefix's own width).
+// tabs(2)+tabs-gap(1)+filter(3)+master(1)=7 body rows ahead of the list
+// (docs/design/mission/README.md's Terminal geometry table: the tabs-gap
+// blank band row), +1 for row index 1 = bodyY 8; topH(3)+bodyY(8) = frame
+// y 11, checkbox at x=2 (the "  " prefix's own width).
+// Row 1 (0-indexed) is "model.go" under the Changes list's own
+// case-insensitive path sort (ratified 2026-09-21): mission.go, model.go,
+// topbar.go.
 func TestMouseClickCheckboxCellEmitsToggleFileWithPath(t *testing.T) {
 	s := s5open(t)
-	s.Type(sgrClick(0, 2, 9))
+	s.Type(sgrClick(0, 2, 11))
 	l, ok := s.ReadLine(2 * time.Second)
-	if !ok || !strings.Contains(l, `"name":"mission:stage"`) || !strings.Contains(l, `"path":"ui/internal/views/mission/topbar.go"`) || !strings.Contains(l, `"mode":"toggle-file"`) {
+	if !ok || !strings.Contains(l, `"name":"mission:stage"`) || !strings.Contains(l, `"path":"ui/internal/views/mission/model.go"`) || !strings.Contains(l, `"mode":"toggle-file"`) {
 		t.Fatalf("checkbox click stage intent: %q", l)
 	}
 	s.Send(`{"t":"close"}`)
@@ -598,11 +621,12 @@ func TestMouseClickCheckboxCellEmitsToggleFileWithPath(t *testing.T) {
 
 // TestMouseClickDiffGutterOnAddLineEmitsLineStage clicks the gutter column
 // (x=0 relative to the diff pane, absolute sidebarWidth+1) of the fixture's
-// third diff line (index 2, the first add line, selIdx 0): header@2, then
-// one line per index (idx0 hunk@3, idx1 context@4, idx2 add@5).
+// third diff line (index 2, the first add line, selIdx 0): the diff pane
+// starts at topH(3), header@3, then one line per index (idx0 hunk@4, idx1
+// context@5, idx2 add@6).
 func TestMouseClickDiffGutterOnAddLineEmitsLineStage(t *testing.T) {
 	s := s5open(t)
-	s.Type(sgrClick(0, sidebarWidthConst+1, 5))
+	s.Type(sgrClick(0, sidebarWidthConst+1, 6))
 	l, ok := s.ReadLine(2 * time.Second)
 	if !ok || !strings.Contains(l, `"name":"mission:stage"`) || !strings.Contains(l, `"path":"ui/internal/views/mission/mission.go"`) ||
 		!strings.Contains(l, `"mode":"line"`) || !strings.Contains(l, `"selIdx":0`) {
@@ -613,11 +637,12 @@ func TestMouseClickDiffGutterOnAddLineEmitsLineStage(t *testing.T) {
 }
 
 // TestMouseClickHunkRowEmitsHunkStage clicks anywhere across the fixture's
-// hunk header (index 0, absolute y=3): the whole row is the toggle, so any
-// x within the diff pane's content resolves the same as a gutter click.
+// hunk header (index 0, absolute y=4: the diff pane's header sits at
+// topH(3), the hunk line right after it): the whole row is the toggle, so
+// any x within the diff pane's content resolves the same as a gutter click.
 func TestMouseClickHunkRowEmitsHunkStage(t *testing.T) {
 	s := s5open(t)
-	s.Type(sgrClick(0, sidebarWidthConst+4, 3))
+	s.Type(sgrClick(0, sidebarWidthConst+4, 4))
 	l, ok := s.ReadLine(2 * time.Second)
 	if !ok || !strings.Contains(l, `"name":"mission:stage"`) || !strings.Contains(l, `"mode":"hunk"`) || !strings.Contains(l, `"selIdx":0`) {
 		t.Fatalf("hunk row click stage intent: %q", l)
@@ -626,12 +651,21 @@ func TestMouseClickHunkRowEmitsHunkStage(t *testing.T) {
 	s.Wait()
 }
 
-// TestMouseClickUndoChipEmitsUndoIntent clicks the undo strip row (absolute
-// y=21: tabs(2)+filter(3)+master(1)+changes(3)+stash(1)+rule(1)+summary(3)+
-// description(4)+button(1)=19 body rows, topH(2)+19=21).
+// TestMouseClickUndoChipEmitsUndoIntent clicks the undo strip row. The
+// stash/rule/commit-box/undo block docks to the sidebar's bottom edge
+// (mission.go's sidebarBlocks/renderSidebar), so its row depends on the
+// pane height, not just the row count above it: PTY is 30x100, topbar
+// height 3 (docs/design/mission/README.md's Terminal geometry table), keybar
+// 1, no notice, so bodyH=26; the fixed top rows (tabs 2 + tabs-gap 1 +
+// filter 3 + master 1 = 7) plus a 4-row list region (3 changes rows + 1
+// filler) plus the docked block (stash 1 + rule 1 + commit-box top pad 1 +
+// summary 3 + description 4 + gap 1 + button 3 (top half-block cap, label,
+// bottom half-block cap -- ratified 2026-09-20's sub-cell-height treatment)
+// + undo 1 = 15) exactly fill the 26-row body; undo sits at bodyY
+// 7+4+1+1+1+3+4+1+3=25, frame y = topH(3)+25 = 28.
 func TestMouseClickUndoChipEmitsUndoIntent(t *testing.T) {
 	s := s5open(t)
-	s.Type(sgrClick(0, 5, 21))
+	s.Type(sgrClick(0, 5, 28))
 	l, ok := s.ReadLine(2 * time.Second)
 	if !ok || !strings.Contains(l, `"name":"mission:undo"`) {
 		t.Fatalf("undo chip click intent: %q", l)
@@ -661,10 +695,12 @@ func TestMouseClickRepoSegmentOpensModalThenRowClickEmitsRepoIntent(t *testing.T
 	s := s5open(t)
 	s.Type(sgrClick(0, 5, 0))
 	s.WaitForPaint("chat")
-	// The repo modal is anchored at x=0 (segmentOrigin's zoneRepo case); its
-	// first content row sits after the filter line, the top rule, and the
-	// fixture's own "local" group header (both repo rows share that group).
-	s.Type(sgrClick(0, 5, 6))
+	// The repo modal is anchored at x=0 (segmentOrigin's zoneRepo case) and
+	// its own y at topH(3); its first content row sits after the filter
+	// line, the top rule, and the fixture's own "local" group header (both
+	// repo rows share that group) -- li=3 within the box, frame y = topH(3)
+	// + li(3) + 1 (the box's own top border) = 7.
+	s.Type(sgrClick(0, 5, 7))
 	l, ok := s.ReadLine(2 * time.Second)
 	if !ok || !strings.Contains(l, `"name":"mission:repo"`) || !strings.Contains(l, `"repo":"repo-tools"`) {
 		t.Fatalf("repo modal row click intent: %q", l)
@@ -690,22 +726,23 @@ func TestMouseClickOutsideModalClosesIt(t *testing.T) {
 	s.Wait()
 }
 
-// TestMouseClickHistoryTabShowsNotice clicks past the "Changes 3" tab text
-// on the tabs row (absolute y=2): the gap is 4 cells wide, so a click at
-// column 14 (changesW=9 for "Changes 3") lands past it, on History.
+// TestMouseClickHistoryTabShowsNotice clicks the tabs row's right half
+// (absolute y=3, the first sidebar row after topH(3)): Changes and History
+// each occupy half of sidebarWidth(46), so any x >= 23 resolves to History.
 func TestMouseClickHistoryTabShowsNotice(t *testing.T) {
 	s := s5open(t)
-	s.Type(sgrClick(0, 20, 2))
+	s.Type(sgrClick(0, 30, 3))
 	s.WaitForPaint("History lands in v2")
 	s.Send(`{"t":"close"}`)
 	s.Wait()
 }
 
 // TestMouseRightClickFileRowShowsNotice right-clicks the fixture's first
-// Changes row (absolute y=8).
+// Changes row (absolute y=10: topH(3) + the 7-row tabs/tabs-gap/filter/
+// master prefix).
 func TestMouseRightClickFileRowShowsNotice(t *testing.T) {
 	s := s5open(t)
-	s.Type(sgrClick(2, 10, 8))
+	s.Type(sgrClick(2, 10, 10))
 	s.WaitForPaint("menu lands with polish")
 	s.Send(`{"t":"close"}`)
 	s.Wait()
@@ -716,11 +753,12 @@ func TestMouseRightClickFileRowShowsNotice(t *testing.T) {
 // the body -- TestMouseClickOutsideModalClosesIt's "far outside" corner) must
 // be a no-op rather than nudging the Changes-list cursor, even though its x=5
 // falls in the same column range a real body row would resolve against. The
-// fixture's cursor starts on row 0 (model.go, absolute y=8 per
+// fixture's cursor starts on row 0 (model.go, absolute y=10 per
 // TestMouseRightClickFileRowShowsNotice); an unbounded wheel-down would walk
-// it wheelStep(3) rows to row 2 (mission.go, y=10), visibly moving the "▌"
-// cursor bar, so a before/after screen comparison catches the regression
-// without reaching into Mission's unexported fields.
+// it wheelStep(3) rows to row 2 (mission.go, y=12 per
+// TestMouseClickFileRowEmitsSelectWithPath), visibly moving the "▌" cursor
+// bar, so a before/after screen comparison catches the regression without
+// reaching into Mission's unexported fields.
 func TestMouseWheelOverKeybarRowDoesNotMoveCursor(t *testing.T) {
 	s := s5open(t)
 	before := s.Screen()
@@ -733,6 +771,91 @@ func TestMouseWheelOverKeybarRowDoesNotMoveCursor(t *testing.T) {
 	}
 	s.Send(`{"t":"close"}`)
 	s.Wait()
+}
+
+// ─── terminal background (real renderer, real pty) ─────────────────────
+
+// TestLiveFrameSetsTerminalBackgroundToThemeBg pins the fix for a defect
+// no in-process render test can see: bubbletea's real renderer is free to
+// erase a run of styled trailing blanks down to a bare erase-to-end-of-line
+// control code, which paints with the TERMINAL's own default background,
+// not whatever SGR the erased content carried -- so mission.go's View()
+// sets tea.View.BackgroundColor (an OSC 11 sequence) to theme.Bg every
+// frame. Verified through the real compiled binary over a real pty
+// (testutil.Session), replayed through a real terminal emulator
+// (testutil.TerminalBackground/CellBackground), not by inspecting
+// Mission.View().Content directly -- that string never carries evidence of
+// what the renderer does to it on the way to a real terminal.
+func TestLiveFrameSetsTerminalBackgroundToThemeBg(t *testing.T) {
+	s := s5open(t)
+	tty := s.TTY()
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+
+	themeBg := color.RGBA{R: 0x16, G: 0x12, B: 0x24, A: 0xff}
+	if got := testutil.TerminalBackground(tty); !sameRGB(got, themeBg) {
+		t.Fatalf("terminal's own default background should be theme.Bg, got %#v", got)
+	}
+}
+
+// TestLiveFrameCellBeyondPTYResolvesToThemeBg is the case cell-level content
+// fills can never cover: a region the app never drew a single byte into (an
+// oversized real terminal pane around a smaller frame, or scrollback above
+// the alt-screen). Replaying the same session bytes into an emulator taller
+// than the pty's own 30 rows puts row 35 entirely outside anything rt-ui
+// composed; with the terminal-level background set, Emulator.Draw still
+// resolves it to theme.Bg instead of the emulator's unset default.
+func TestLiveFrameCellBeyondPTYResolvesToThemeBg(t *testing.T) {
+	s := s5open(t)
+	tty := s.TTY()
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+
+	themeBg := color.RGBA{R: 0x16, G: 0x12, B: 0x24, A: 0xff}
+	if got := testutil.CellBackgroundBeyondPTY(tty, 50, 35); !sameRGB(got, themeBg) {
+		t.Fatalf("a cell beyond the pty's own rows should still resolve to theme.Bg via the terminal-level background, got %#v", got)
+	}
+}
+
+// TestLiveFrameFillerAndDiffBlankCellsResolveToThemeBg re-checks the two
+// regions the coordinator's live capture named (the sidebar's bottom-dock
+// filler gap and the diff pane's blank region past its content) through the
+// real renderer, not just the composed-string tests in render_test.go.
+func TestLiveFrameFillerAndDiffBlankCellsResolveToThemeBg(t *testing.T) {
+	s := s5open(t)
+	tty := s.TTY()
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+
+	themeBg := color.RGBA{R: 0x16, G: 0x12, B: 0x24, A: 0xff}
+	cases := []struct {
+		name string
+		x, y int
+	}{
+		// The filler gap shrank from 3 rows to 1 when the commit button
+		// grew from 1 row to 3 (ratified 2026-09-20's sub-cell-height
+		// treatment: a half-block cap above and below the label row), so
+		// row 14 -- filler before that change -- is now the stash strip.
+		{"sidebar filler gap", 20, 13},
+		{"diff pane blank region", 70, 25},
+	}
+	for _, c := range cases {
+		if got := testutil.CellBackground(tty, c.x, c.y); !sameRGB(got, themeBg) {
+			t.Fatalf("%s cell (%d,%d) should resolve to theme.Bg, got %#v", c.name, c.x, c.y, got)
+		}
+	}
+}
+
+// sameRGB compares two colors by their 8-bit RGB channels, ignoring
+// whichever concrete color.Color type each side happens to be (the
+// emulator hands back a colorful.Color; the constants here are color.RGBA).
+func sameRGB(a, b color.Color) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	ar, ag, ab, _ := a.RGBA()
+	br, bg, bb, _ := b.RGBA()
+	return ar>>8 == br>>8 && ag>>8 == bg>>8 && ab>>8 == bb>>8
 }
 
 // sidebarWidthConst mirrors topbar.go's sidebarWidth for this file's own

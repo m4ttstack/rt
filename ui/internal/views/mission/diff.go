@@ -14,6 +14,7 @@ import (
 
 	"rt-ui/internal/protocol"
 	"rt-ui/internal/theme"
+	"rt-ui/internal/views/picker"
 )
 
 // diffNumWidth is the fixed cell width of the old/new line-number gutter
@@ -203,6 +204,13 @@ func (m *Mission) renderDiffPane(width, height int) string {
 		return ""
 	}
 	if d.Kind == "" || d.Kind == "none" {
+		// ChangedTotal, not len(Changes): Changes is the FILTERED list
+		// (lib/mission/model.ts computes changedTotal from allChanges before
+		// the filter narrows it), so a filter matching nothing on a dirty
+		// worktree must not read as a clean one.
+		if m.model.ChangedTotal == 0 {
+			return renderEmptyStateCard(width, height)
+		}
 		return centeredMessage(width, height, theme.Faint, "select a file")
 	}
 	header := renderDiffHeader(d, width)
@@ -235,14 +243,60 @@ func renderDiffHeader(d DiffModel, width int) string {
 }
 
 func centeredMessage(width, height int, col color.Color, text string) string {
-	return lipgloss.NewStyle().Width(width).Height(height).Align(lipgloss.Center, lipgloss.Center).Foreground(col).Render(text)
+	return lipgloss.NewStyle().Width(width).Height(height).Background(theme.Bg).Align(lipgloss.Center, lipgloss.Center).Foreground(col).Render(text)
+}
+
+// renderEmptyStateCard is the clean-worktree diff pane (docs/design/mission/
+// EmptyState.png): no GitHub Desktop card clone, just a centered title,
+// subline, and the four keys that get a repo out of that state.
+func renderEmptyStateCard(width, height int) string {
+	on := lipgloss.NewStyle().Background(theme.Bg)
+	title := on.Foreground(theme.Text).Bold(true).Render("No local changes")
+	subline := on.Foreground(theme.Dim).Render("the working tree is clean")
+	hint := func(key, label string) string {
+		return on.Foreground(theme.Pink).Bold(true).Render(key) + on.Foreground(theme.Dimmer).Render("  "+label)
+	}
+	lines := []string{
+		title,
+		subline,
+		"",
+		hint("f", "run the fetch/pull/push action"),
+		hint("b", "switch branch"),
+		hint("w", "switch worktree"),
+		hint("r", "switch repository"),
+	}
+	// JoinVertical centers shorter lines by padding them with bare,
+	// unstyled spaces (it has no whitespace-style option, unlike
+	// PlaceHorizontal), so each line is pre-padded to the widest one
+	// through on itself first -- JoinVertical then has no padding left to
+	// add of its own.
+	maxW := 0
+	for _, l := range lines {
+		if w := lipgloss.Width(l); w > maxW {
+			maxW = w
+		}
+	}
+	// diffWidth has no positive minimum, so a narrow but reachable pane can
+	// be narrower than the longest hint line; clip every line to the pane's
+	// own width before padding, or lipgloss wraps the overflowing one
+	// instead of truncating it, growing the block past height.
+	if maxW > width {
+		maxW = width
+	}
+	padded := make([]string, len(lines))
+	for i, l := range lines {
+		padded[i] = on.Width(maxW).Align(lipgloss.Center).Render(clipOn(l, maxW, on))
+	}
+	block := lipgloss.JoinVertical(lipgloss.Left, padded...)
+	return on.Width(width).Height(height).Align(lipgloss.Center, lipgloss.Center).Render(block)
 }
 
 func renderOversizedBody(width, height int) string {
-	msg := fg(theme.Faint).Render("Diff too large to display by default")
-	hint := fg(theme.Dimmer).Render("enter shows it anyway")
+	on := lipgloss.NewStyle().Background(theme.Bg)
+	msg := on.Foreground(theme.Faint).Render("Diff too large to display by default")
+	hint := on.Foreground(theme.Dimmer).Render("enter shows it anyway")
 	block := lipgloss.JoinVertical(lipgloss.Center, msg, hint)
-	return lipgloss.NewStyle().Width(width).Height(height).Align(lipgloss.Center, lipgloss.Center).Render(block)
+	return on.Width(width).Height(height).Align(lipgloss.Center, lipgloss.Center).Render(block)
 }
 
 // renderDiffLines paints the visible line window -- a stage-bar/number
@@ -250,92 +304,33 @@ func renderOversizedBody(width, height int) string {
 // Panel scroll thumb along the right edge.
 func (m *Mission) renderDiffLines(width, height int) string {
 	lines := m.model.Diff.Lines
-	top, h := diffViewport(m.diffCursor, m.diffTop, len(lines), height)
+	// picker.Viewport is the one scroll-offset primitive shared by every
+	// scrolling region in the TUI (the picker's own list, this pane, the
+	// mission foldouts): cap_=height and chromeRows=0 reproduce the diff
+	// pane's own "no cap, fill the pane" contract while gaining picker's
+	// vim-style scrolloff margin for free.
+	top, h := picker.Viewport(m.diffCursor, m.diffTop, len(lines), height, height, 0)
 	m.diffTop = top
 
 	contentW := width - 1 // 1 cell reserved for the scroll thumb
 	if contentW < 0 {
 		contentW = 0
 	}
-	thumbTop, thumbH := diffThumbSpan(top, h, len(lines))
+	thumbTop, thumbH := picker.ThumbSpan(top, h, len(lines))
+	thumbOn := lipgloss.NewStyle().Background(theme.Panel)
+	restOn := lipgloss.NewStyle().Background(theme.Bg)
 
 	rows := make([]string, height)
 	for i := 0; i < height; i++ {
 		idx := top + i
-		line := lipgloss.NewStyle().Width(contentW).Render("")
+		line := lipgloss.NewStyle().Width(contentW).Background(theme.Bg).Render("")
 		if idx < len(lines) {
 			hover := idx == m.hoverDiffLine
 			line = renderDiffLine(m.model.Diff, lines[idx], contentW, hover, hover && m.hoverGutter)
 		}
-		rows[i] = line + diffThumbCell(i, thumbTop, thumbH)
+		rows[i] = line + picker.ThumbCell(i, thumbTop, thumbH, thumbOn, restOn)
 	}
 	return strings.Join(rows, "\n")
-}
-
-// diffViewport keeps the cursor inside [top, top+h), sliding the window the
-// minimum amount needed rather than recentering -- the board tail pane's
-// precedent for a scroll window driven off a moving point of interest.
-func diffViewport(cursor, top, n, paneRows int) (newTop, h int) {
-	h = paneRows
-	if h > n {
-		h = n
-	}
-	if h < 0 {
-		h = 0
-	}
-	if h == 0 {
-		return 0, 0
-	}
-	maxTop := n - h
-	if maxTop < 0 {
-		maxTop = 0
-	}
-	if top > maxTop {
-		top = maxTop
-	}
-	if top < 0 {
-		top = 0
-	}
-	if cursor < top {
-		top = cursor
-	}
-	if cursor >= top+h {
-		top = cursor - h + 1
-	}
-	return top, h
-}
-
-// diffThumbSpan mirrors the picker rail's sizing (h*h/n, floored, minimum
-// one row, in lockstep with the scroll offset) so the two scrollbars in the
-// same TUI read the same way.
-func diffThumbSpan(top, h, n int) (thumbTop, thumbH int) {
-	if n <= 0 || h <= 0 {
-		return 0, 0
-	}
-	thumbH = h * h / n
-	if thumbH < 1 {
-		thumbH = 1
-	}
-	if thumbH > h {
-		thumbH = h
-	}
-	maxTop := n - h
-	if maxTop <= 0 {
-		return 0, thumbH
-	}
-	avail := h - thumbH
-	if avail < 0 {
-		avail = 0
-	}
-	thumbTop = top * avail / maxTop
-	return thumbTop, thumbH
-}
-
-func diffThumbCell(row, thumbTop, thumbH int) string {
-	if row >= thumbTop && row < thumbTop+thumbH {
-		return lipgloss.NewStyle().Background(theme.Panel).Render(" ")
-	}
-	return " "
 }
 
 // renderDiffLine paints one line's gutter (stage bar + right-aligned
@@ -351,7 +346,7 @@ func renderDiffLine(d DiffModel, line DiffLine, width int, hover, gutterHover bo
 	if width < 1 {
 		return ""
 	}
-	rowBg := lipgloss.NewStyle()
+	rowBg := lipgloss.NewStyle().Background(theme.Bg)
 	if hover {
 		rowBg = rowBg.Background(theme.HoverBg)
 	}
@@ -388,7 +383,7 @@ func renderDiffLine(d DiffModel, line DiffLine, width int, hover, gutterHover bo
 
 	rendered := rowBg.Foreground(base).Render(text)
 	if line.Kind != "del" && d.Lang != "" && !hover {
-		rendered = highlightLine(d.Lang, text, base)
+		rendered = highlightLine(d.Lang, text, base, theme.Bg)
 	}
 	return rowBg.Width(width).Render(gutter + rowBg.Foreground(base).Render(mark) + rendered)
 }

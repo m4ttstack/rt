@@ -5,7 +5,6 @@ package mission
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 	"time"
 
@@ -16,6 +15,7 @@ import (
 	"rt-ui/internal/protocol"
 	"rt-ui/internal/session"
 	"rt-ui/internal/theme"
+	"rt-ui/internal/views/picker"
 )
 
 // focusKind is which part of the view keys route to. focusList is the zero
@@ -41,8 +41,11 @@ type Mission struct {
 	// selected is the Changes row cursor, held by path across model swaps
 	// (board.go's selected-by-id precedent) since the wholesale Model
 	// replacement in SetModel carries no index that would survive a
-	// reordered or filtered list.
-	selected string
+	// reordered or filtered list. changesTop is the Changes list's own
+	// scroll window top (picker.Viewport), the same role diffTop plays for
+	// the diff pane.
+	selected   string
+	changesTop int
 
 	focus            focusKind
 	filterText       string
@@ -121,10 +124,10 @@ func newCommitInput(placeholder string) textinput.Model {
 	ti.Placeholder = placeholder
 	ti.SetWidth(commitBoxInner)
 	styles := ti.Styles()
-	styles.Focused.Text = lipgloss.NewStyle().Foreground(theme.Text)
-	styles.Focused.Placeholder = lipgloss.NewStyle().Foreground(theme.Faint)
-	styles.Blurred.Text = lipgloss.NewStyle().Foreground(theme.Text)
-	styles.Blurred.Placeholder = lipgloss.NewStyle().Foreground(theme.Faint)
+	styles.Focused.Text = lipgloss.NewStyle().Background(theme.Bg).Foreground(theme.Text)
+	styles.Focused.Placeholder = lipgloss.NewStyle().Background(theme.Bg).Foreground(theme.Faint)
+	styles.Blurred.Text = lipgloss.NewStyle().Background(theme.Bg).Foreground(theme.Text)
+	styles.Blurred.Placeholder = lipgloss.NewStyle().Background(theme.Bg).Foreground(theme.Faint)
 	styles.Cursor.Color = theme.Pink
 	ti.SetStyles(styles)
 	return ti
@@ -429,24 +432,110 @@ func (m *Mission) filterDisplayText() string {
 	return m.model.Filter
 }
 
-func (m *Mission) renderSidebar(width int) string {
-	rows := []string{
+// sidebarFixedTopRows is the constant row count above the (scrollable)
+// Changes list: tabs(2) + the tabs-gap blank band row(1) + the filter
+// box(3) + the master row(1) (docs/design/mission/README.md's Terminal
+// geometry table). Unlike the old content-driven top block, this never
+// varies with the Changes count -- the list itself is now a fixed-height
+// scrolling region, not a block that grows the whole sidebar.
+const sidebarFixedTopRows = 7
+
+func (m *Mission) sidebarFixedTop(width int) string {
+	return lipgloss.JoinVertical(lipgloss.Left,
 		renderTabsRow(m.model.ChangedTotal, width),
+		blankRows(width, 1),
 		renderFilterRow(m.filterDisplayText(), m.focus == focusFilter, width),
 		renderMasterRow(m.model.ChangedTotal, m.model.StagedTotal, width),
-	}
-	for i, c := range m.model.Changes {
-		rows = append(rows, renderChangeRow(c, width, c.Path == m.selected, i == m.hoverFile))
-	}
+	)
+}
+
+// sidebarDocked is the bottom-pinned block: stash strip, rule, commit box,
+// undo strip.
+func (m *Mission) sidebarDocked(width int) string {
+	var docked []string
 	if m.model.StashCount > 0 {
-		rows = append(rows, renderStashStrip(m.model.StashCount, width))
+		docked = append(docked, renderStashStrip(m.model.StashCount, width))
 	}
-	rows = append(rows, fg(theme.Rule).Render(strings.Repeat("─", width)))
-	rows = append(rows, renderCommitBox(width, m.summaryInput.View(), m.descriptionInput.View(), m.amendLocal, m.model.Commit.ButtonLabel, m.commitEnabled()))
+	docked = append(docked, lipgloss.NewStyle().Background(theme.Bg).Foreground(theme.Rule).Render(strings.Repeat("─", width)))
+	docked = append(docked, renderCommitBox(width, m.summaryInput.View(), m.descriptionInput.View(), m.amendLocal, m.model.Commit.ButtonLabel, m.commitEnabled()))
 	if lc := m.model.Commit.LastCommit; lc != nil && lc.Undoable {
-		rows = append(rows, renderUndoStrip(*lc, width))
+		docked = append(docked, renderUndoStrip(*lc, width))
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, rows...)
+	return lipgloss.JoinVertical(lipgloss.Left, docked...)
+}
+
+// listRegionHeight is the fixed height the Changes list renders into, given
+// the sidebar's overall height: whatever height isn't claimed by the fixed
+// top rows or the docked block. Shared by layout() (for hit-testing) and
+// renderSidebar/renderChangesList (for painting) so both agree on exactly
+// how tall the scrolling region is.
+func (m *Mission) listRegionHeight(width, height int) int {
+	h := height - sidebarFixedTopRows - lipgloss.Height(m.sidebarDocked(width))
+	if h < 0 {
+		h = 0
+	}
+	return h
+}
+
+// renderChangesList windows the Changes rows into exactly listRegionH rows:
+// a short list top-aligns with Bg filler below it, a long list scrolls with
+// the cursor via picker.Viewport -- the same primitive the diff pane uses,
+// so both scrolling regions in the TUI share one offset/scrolloff formula.
+// One column is always reserved for a Panel scroll thumb, whether or not
+// the list is actually scrolling, mirroring the diff pane's own
+// always-reserved thumb column.
+func (m *Mission) renderChangesList(width, listRegionH int) string {
+	changes := m.model.Changes
+	n := len(changes)
+	rowWidth := width - 1
+	if rowWidth < 0 {
+		rowWidth = 0
+	}
+	cursorIdx := m.index()
+	if cursorIdx < 0 {
+		cursorIdx = 0
+	}
+	top, h := picker.Viewport(cursorIdx, m.changesTop, n, listRegionH, listRegionH, 0)
+	m.changesTop = top
+	thumbTop, thumbH := picker.ThumbSpan(top, h, n)
+	thumbOn := lipgloss.NewStyle().Background(theme.Panel)
+	restOn := lipgloss.NewStyle().Background(theme.Bg)
+
+	rows := make([]string, listRegionH)
+	for i := 0; i < listRegionH; i++ {
+		idx := top + i
+		row := lipgloss.NewStyle().Width(rowWidth).Background(theme.Bg).Render("")
+		if i < h && idx < n {
+			c := changes[idx]
+			row = renderChangeRow(c, rowWidth, c.Path == m.selected, idx == m.hoverFile)
+		}
+		rows[i] = row + picker.ThumbCell(i, thumbTop, thumbH, thumbOn, restOn)
+	}
+	return strings.Join(rows, "\n")
+}
+
+// renderSidebar composes the fixed top rows, the (now fixed-height,
+// scrollable) Changes list, and the bottom-docked stash/commit/undo block
+// (docs/design/mission/Main.png, EmptyState.png): the list's own height is
+// whatever the top rows and docked block don't claim, so the docked block
+// never gets pushed off screen by a long list -- the list scrolls within
+// what remains instead.
+func (m *Mission) renderSidebar(width, height int) string {
+	listRegionH := m.listRegionHeight(width, height)
+	return lipgloss.JoinVertical(lipgloss.Left,
+		m.sidebarFixedTop(width),
+		m.renderChangesList(width, listRegionH),
+		m.sidebarDocked(width),
+	)
+}
+
+func blankRows(width, n int) string {
+	row := lipgloss.NewStyle().Width(width).Background(theme.Bg).Render("")
+	rows := make([]string, n)
+	for i := range rows {
+		rows[i] = row
+	}
+	return strings.Join(rows, "\n")
 }
 
 // diffWidth is the diff pane's content width: the frame width less the
@@ -462,9 +551,15 @@ func (m *Mission) diffWidth() int {
 
 // frameLayout is View's own line-count arithmetic, factored out so hitTest
 // resolves a click against the exact geometry the last frame painted rather
-// than a second, potentially drifting copy of it.
+// than a second, potentially drifting copy of it. sidebarTopH is the
+// constant sidebarFixedTopRows; listRegionH is the Changes list's own fixed
+// height (however many of its rows are actually filled, versus left as
+// Bg-filler or scrolled past); sidebarFillerH is how many of those rows are
+// filler (0 once the list is long enough to scroll).
 type frameLayout struct {
-	topH, bodyH, keybarH, noticeH int
+	topH, bodyH, keybarH, noticeH               int
+	sidebarTopH, sidebarDockedH, sidebarFillerH int
+	listRegionH                                 int
 }
 
 func (m *Mission) layout() frameLayout {
@@ -475,26 +570,32 @@ func (m *Mission) layout() frameLayout {
 	if m.noticeText() != "" {
 		l.noticeH = 1
 	}
-	sidebar := m.renderSidebar(sidebarWidth)
+	l.sidebarTopH = sidebarFixedTopRows
+	l.sidebarDockedH = lipgloss.Height(m.sidebarDocked(sidebarWidth))
+	natural := l.sidebarTopH + l.sidebarDockedH
 	l.bodyH = m.height - l.topH - l.keybarH - l.noticeH
-	if l.bodyH < lipgloss.Height(sidebar) {
-		l.bodyH = lipgloss.Height(sidebar)
+	if l.bodyH < natural {
+		l.bodyH = natural
+	}
+	l.listRegionH = l.bodyH - natural
+	l.sidebarFillerH = l.listRegionH - len(m.model.Changes)
+	if l.sidebarFillerH < 0 {
+		l.sidebarFillerH = 0
 	}
 	return l
 }
 
 func (m *Mission) View() tea.View {
 	top := renderTopBar(m.model, m.width, m.hoverZone, m.openZone())
-	sidebar := m.renderSidebar(sidebarWidth)
 	diffW := m.diffWidth()
 	keybar := renderKeybar(m.width)
 	l := m.layout()
 	bodyHeight := l.bodyH
 
-	sidebarPadded := lipgloss.NewStyle().Height(bodyHeight).Render(sidebar)
-	diffPadded := lipgloss.NewStyle().Height(bodyHeight).Render(m.renderDiffPane(diffW, bodyHeight))
+	sidebarPadded := m.renderSidebar(sidebarWidth, bodyHeight)
+	diffPadded := lipgloss.NewStyle().Width(diffW).Height(bodyHeight).Background(theme.Bg).Render(m.renderDiffPane(diffW, bodyHeight))
 
-	dividerLine := fg(theme.Rule).Render("│")
+	dividerLine := lipgloss.NewStyle().Background(theme.Bg).Foreground(theme.Rule).Render("│")
 	dividerLines := make([]string, bodyHeight)
 	for i := range dividerLines {
 		dividerLines[i] = dividerLine
@@ -508,11 +609,20 @@ func (m *Mission) View() tea.View {
 		out = lipgloss.JoinVertical(lipgloss.Left, out, renderNoticeStrip(notice, m.width))
 	}
 	if m.modal != nil {
-		out = renderMissionModal(out, m.modal, m.width, lipgloss.Height(top))
+		out = renderMissionModal(out, m.modal, m.width, m.height, lipgloss.Height(top))
 	}
 
 	v := tea.NewView(out)
 	v.AltScreen = true
+	// bubbletea's renderer optimizes trailing styled blanks by erasing to
+	// end-of-line rather than emitting every styled space, and an erased
+	// cell paints the TERMINAL's own default background, not whatever SGR
+	// the erased content carried. Per-row Bg/BgSubtle fills alone can't
+	// survive that erase, so the frame's own terminal background is set
+	// here too: with it in place, anything the renderer erases or never
+	// touches still resolves to theme.Bg instead of the terminal's own
+	// default.
+	v.BackgroundColor = theme.Bg
 	return v
 }
 
@@ -582,7 +692,7 @@ func (m *Mission) hitTest(x, y int) hit {
 	}
 	switch {
 	case x < sidebarWidth:
-		return m.sidebarHit(x, bodyY)
+		return m.sidebarHit(x, bodyY, l.listRegionH)
 	case x == sidebarWidth:
 		return hit{}
 	default:
@@ -631,13 +741,21 @@ func topbarHit(width, x int) zoneID {
 // to map a body-relative (x, y) to whichever row painted there -- the same
 // "recompute the pure layout a second time" approach hitTest takes for the
 // top bar and the diff pane, rather than recording zones as a render side
-// effect.
-func (m *Mission) sidebarHit(x, y int) hit {
+// effect. listRegionH is layout()'s own listRegionH: the Changes list is a
+// fixed-height scrolling region (renderChangesList/m.changesTop), so a click
+// inside it maps through the same scroll offset the last render left there,
+// and the docked block always starts exactly listRegionH rows after the
+// list begins, scrolled or not.
+func (m *Mission) sidebarHit(x, y, listRegionH int) hit {
 	row := 0
 	if y < row+2 {
-		return tabsHit(m.model.ChangedTotal, x)
+		return tabsHit(sidebarWidth, x)
 	}
 	row += 2
+	if y == row {
+		return hit{} // the tabs-gap blank band row: no click target
+	}
+	row++
 	if y < row+3 {
 		return hit{kind: hitFilterRow}
 	}
@@ -646,11 +764,14 @@ func (m *Mission) sidebarHit(x, y int) hit {
 		return hit{} // master row: no wire affordance to toggle select-all yet
 	}
 	row++
-	n := len(m.model.Changes)
-	if y < row+n {
-		return fileRowHit(m.model.Changes[y-row], y-row, x)
+	if y < row+listRegionH {
+		idx := m.changesTop + (y - row)
+		if idx < len(m.model.Changes) {
+			return fileRowHit(m.model.Changes[idx], idx, x)
+		}
+		return hit{} // filler row below the last visible change: no click target
 	}
-	row += n
+	row += listRegionH
 	if m.model.StashCount > 0 {
 		if y == row {
 			return hit{kind: hitStash}
@@ -664,6 +785,7 @@ func (m *Mission) sidebarHit(x, y int) hit {
 		}
 		row++
 	}
+	row++ // the commit box's own top-padding blank band row: no click target
 	if y >= row && y < row+3 {
 		return hit{kind: hitCommitSummary}
 	}
@@ -672,30 +794,29 @@ func (m *Mission) sidebarHit(x, y int) hit {
 		return hit{kind: hitCommitDescription}
 	}
 	row += 4
-	if y == row {
+	row++ // the gap row between the description box and the button: no click target
+	// The button is a fixed THREE-row unit now (a half-block cap row above
+	// and below the solid label row, ratified 2026-09-20's sub-cell-height
+	// treatment): all three resolve to the same hit target.
+	if y >= row && y < row+3 {
 		return hit{kind: hitCommitButton}
 	}
-	row++
+	row += 3
 	if lc := m.model.Commit.LastCommit; lc != nil && lc.Undoable && y == row {
 		return hit{kind: hitUndoChip}
 	}
 	return hit{}
 }
 
-// tabsHit mirrors renderTabsRow's own "Changes N" + gap + "History" layout
-// (changes.go) to tell which tab a click on either of its two lines landed
-// on; a click in the gap between them is inert.
-func tabsHit(changedTotal, x int) hit {
-	changesW := lipgloss.Width(fmt.Sprintf("Changes %d", changedTotal))
-	const gapW = 4 // renderTabsRow's own gap := "    "
-	switch {
-	case x < changesW:
+// tabsHit mirrors renderTabsRow's own half-width Changes/History split
+// (changes.go): a click anywhere in the left half is inert (Changes is
+// already the active tab), a click anywhere in the right half resolves to
+// History.
+func tabsHit(width, x int) hit {
+	if x < width/2 {
 		return hit{}
-	case x < changesW+gapW:
-		return hit{}
-	default:
-		return hit{kind: hitTabHistory}
 	}
+	return hit{kind: hitTabHistory}
 }
 
 // fileRowHit mirrors renderChangeRow's own checkbox column span
@@ -742,9 +863,14 @@ func (m *Mission) diffHit(diffX, y int) hit {
 // coordinate to a match index without modal.go itself ever recording a zone.
 // The trailing rule and keybar carry no click target, so nothing past the
 // action row needs its own cursor bookkeeping: nothing left can match li.
+// modalHitTest maps a frame coordinate against the SAME fixed-height,
+// scroll-windowed geometry modalBoxLines paints (modal.go): the box now
+// always spans from its anchor row to the frame's own last row, so a click
+// past the row region's own displayLines resolves to the pinned bottom
+// block (action/keybar) rather than there being nothing left to hit.
 func (m *Mission) modalHitTest(x, y int) hit {
 	ms := m.modal
-	inner := modalWidth(ms)
+	inner := modalWidth(ms, m.width)
 	if maxInner := m.width - 2; inner > maxInner {
 		inner = maxInner
 	}
@@ -754,50 +880,52 @@ func (m *Mission) modalHitTest(x, y int) hit {
 	boxW := inner + 2
 	bx := clampX(segmentOrigin(ms.zone, m.width), boxW, m.width)
 	by := m.layout().topH
-	lines := modalBoxLines(ms, inner)
-	boxH := len(lines) + 2
+	boxH := m.height - by
 	if x < bx || x >= bx+boxW || y < by || y >= by+boxH {
 		return hit{kind: hitModalOutside}
 	}
 	li := y - by - 1 // -1 for the box's own top border
-	if li < 0 || li >= len(lines) {
+	boxInnerHeight := boxH - 2
+	if li < 0 || li >= boxInnerHeight {
 		return hit{}
 	}
 
-	cursor := 0
-	if li == cursor { // filter line
+	switch li {
+	case 0: // filter line
+		return hit{}
+	case 1: // top rule
 		return hit{}
 	}
-	cursor++
-	if li == cursor { // top rule
-		return hit{}
+
+	above, below := modalFixedRows(ms)
+	rowRegionH := boxInnerHeight - above - below
+	if rowRegionH < 0 {
+		rowRegionH = 0
 	}
-	cursor++
-	if len(ms.matches) == 0 && ms.action == nil {
-		return hit{} // "no matches" line
-	}
-	for i := range ms.matches {
-		if text := modalHeaderBefore(ms, i); text != "" {
-			if li == cursor {
-				return hit{}
-			}
-			cursor++
+	rowLocal := li - above
+	if rowLocal >= 0 && rowLocal < rowRegionH {
+		displayLines := modalDisplayLines(ms)
+		idx := ms.scrollTop + rowLocal
+		if idx < len(displayLines) && displayLines[idx].header == "" {
+			return hit{kind: hitModalRow, idx: displayLines[idx].matchIdx}
 		}
-		if li == cursor {
-			return hit{kind: hitModalRow, idx: i}
-		}
-		cursor++
+		return hit{} // a header row or filler past the list: no click target
 	}
+
+	afterRegion := li - above - rowRegionH
 	if ms.action != nil {
-		if li == cursor { // the rule above the action row
+		switch afterRegion {
+		case 0: // the rule above the action row
 			return hit{}
-		}
-		cursor++
-		if li == cursor {
+		case 1:
 			return hit{kind: hitModalAction}
 		}
+		afterRegion -= 2
 	}
-	return hit{}
+	if afterRegion == 0 { // the closing rule
+		return hit{}
+	}
+	return hit{} // the keybar: no click target
 }
 
 // mouseClick dispatches a button press against whatever hitTest resolves it

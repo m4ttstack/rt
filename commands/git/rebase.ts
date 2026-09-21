@@ -194,7 +194,7 @@ export async function rebaseOnto(opts: RebaseOptions): Promise<RebaseResult> {
   }
 
   // 2. Detect target
-  const target = opts.target ?? getRemoteDefaultBranch(cwd);
+  const target = opts.target ?? getRemoteDefaultBranch(cwd, "origin", { preferRemote: true });
   if (!target) {
     return {
       status: "error",

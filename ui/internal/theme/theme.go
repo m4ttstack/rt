@@ -72,6 +72,22 @@ const (
 	GlyphWarn    = "⚠"
 	GlyphBack    = "↩"
 	GlyphLock    = "⚿"
+
+	// Sub-cell-height caps (ratified 2026-09-20, "mission commit button
+	// gains its half-cell padding"): a board height that quantizes to a
+	// fraction of a terminal cell (e.g. 32px / 26px-per-cell = 1.23) has no
+	// single-row rendering, so a half-block glyph as FOREGROUND on the
+	// surrounding background paints only that row's own half -- the
+	// sanctioned way to hit a sub-cell height, not a fourth physical row.
+	GlyphHalfBlockLower = "▄" // U+2584: paints a row's bottom half
+	GlyphHalfBlockUpper = "▀" // U+2580: paints a row's top half
+
+	// Nerd Font octicons for the top bar's repo/worktree/branch segments,
+	// ratified 2026-09-18 (docs/design/mission/README.md): a font without
+	// these glyphs patched in shows a fallback box, which is accepted.
+	GlyphRepo     = ""
+	GlyphWorktree = ""
+	GlyphBranch   = ""
 )
 
 var SpinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠣", "⠏"}

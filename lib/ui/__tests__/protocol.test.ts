@@ -118,11 +118,23 @@ test("the mission model fixture parses as a model line and matches the MissionMo
   expect(model.repos).toHaveLength(2);
   expect(model.worktrees).toHaveLength(2);
   expect(model.worktrees[1]!.onDeck).toBe(true);
-  expect(model.branches).toHaveLength(3);
-  expect(model.branches[2]!.guardedBy).not.toBe("");
-  expect(model.changes.map((c) => c.include)).toEqual(["all", "none", "partial"]);
+  // GHD section order (mission: branch rows sort into the desktop's section
+  // order, 2026-09-20): default branch, recent (current row first), guarded,
+  // other. 9 rows so a genuine "other" row exists -- fewer than 6 non-
+  // current/default/guarded candidates would all fit the recent-5 budget.
+  expect(model.branches).toHaveLength(9);
+  expect(model.branches[0]!.default).toBe(true);
+  expect(model.branches[0]!.group).toBe("default branch");
+  expect(model.branches[0]!.when).toBe("2 days ago");
+  expect(model.branches[1]!.current).toBe(true);
+  expect(model.branches[1]!.group).toBe("recent");
+  expect(model.branches[1]!.when).toBe("");
+  expect(model.branches[7]!.guardedBy).not.toBe("");
+  expect(model.branches[7]!.group).toBe("guarded");
+  expect(model.branches[8]!.group).toBe("other");
+  expect(model.changes.map((c) => c.include)).toEqual(["partial", "all", "all"]);
   expect(model.changedTotal).toBe(3);
-  expect(model.stagedTotal).toBe(2);
+  expect(model.stagedTotal).toBe(3);
   expect(model.diff.lines).toHaveLength(6);
   expect(model.diff.lines[0]!.kind).toBe("hunk");
   expect(model.diff.lines[2]!.selected).toBe(true);

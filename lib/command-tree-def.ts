@@ -1015,10 +1015,10 @@ export const TREE: Record<string, CommandNode> = {
     args: [],
   },
 
-  mission: {
+  glitter: {
     description: "Mission control: repos, changes, diff, and commit in one board",
-    module: "./commands/mission.ts",
-    fn: "missionCommand",
+    module: "./commands/glitter.ts",
+    fn: "glitterCommand",
     context: "repo",
     requiresTTY: true,
     fullscreen: true,

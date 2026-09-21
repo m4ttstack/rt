@@ -20,17 +20,26 @@ import (
 // terminal is (topbar.go's own comment on the repo segment).
 const commitBoxInner = sidebarWidth - 4
 
-// renderTabsRow paints the two-tab header: Changes (bold, an underline bar
-// the width of "Changes N", and its count in PinkSoft) beside History
-// (Dimmer, with the "v2" meta the design boards use to mark it deferred).
+// renderTabsRow paints the two-tab header per Main.png/EmptyState.png: Changes
+// and History each occupy HALF the sidebar width with centered labels, and
+// the underline runs the full width -- Pink under the active tab's half,
+// Rule under the inactive half (the board's own bottom border). Changes is
+// always the active tab; History has no wire state to select it yet
+// (renderKeybar's own "History lands in v2" notice covers a click on it).
 func renderTabsRow(changedTotal, width int) string {
-	changes := fg(theme.Text).Bold(true).Render("Changes")
-	count := fg(theme.PinkSoft).Render(fmt.Sprintf(" %d", changedTotal))
-	gap := "    "
-	history := fg(theme.Dimmer).Render("History") + fg(theme.Faint).Render(" v2")
-	top := changes + count + gap + history
-	underline := fg(theme.Pink).Render(strings.Repeat("─", lipgloss.Width(changes+count)))
-	return lipgloss.NewStyle().Width(width).Render(top) + "\n" + lipgloss.NewStyle().Width(width).Render(underline)
+	on := lipgloss.NewStyle().Background(theme.Bg)
+	half := width / 2
+	otherHalf := width - half
+
+	changesLabel := on.Foreground(theme.Text).Bold(true).Render("Changes") +
+		on.Foreground(theme.PinkSoft).Render(fmt.Sprintf(" %d", changedTotal))
+	historyLabel := on.Foreground(theme.Dimmer).Render("History") + on.Foreground(theme.Faint).Render(" v2")
+
+	top := on.Width(half).Align(lipgloss.Center).Render(changesLabel) +
+		on.Width(otherHalf).Align(lipgloss.Center).Render(historyLabel)
+	underline := on.Foreground(theme.Pink).Render(strings.Repeat("─", half)) +
+		on.Foreground(theme.Rule).Render(strings.Repeat("─", otherHalf))
+	return top + "\n" + underline
 }
 
 // renderFilterRow paints the "❯ filter" box: the typed filter text, or the
@@ -46,24 +55,28 @@ func renderFilterRow(text string, focused bool, width int) string {
 	if textW < 0 {
 		textW = 0
 	}
+	on := lipgloss.NewStyle().Background(theme.Bg)
 	body := text
-	bodyStyle := fg(theme.Text)
+	bodyStyle := on.Foreground(theme.Text)
 	if body == "" {
 		body = "Filter changes"
-		bodyStyle = fg(theme.Faint)
+		bodyStyle = on.Foreground(theme.Faint)
 	}
-	line := fg(theme.Dimmer).Render(theme.GlyphChevron+" ") + bodyStyle.Render(clip(body, textW))
+	line := on.Foreground(theme.Dimmer).Render(theme.GlyphChevron+" ") + bodyStyle.Render(clip(body, textW))
 	border := theme.Panel
 	if focused {
 		border = theme.Pink
 	}
-	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(border).Padding(0, 1).
-		Render(lipgloss.NewStyle().Width(inner).Render(line))
+	return lipgloss.NewStyle().Background(theme.Bg).Border(lipgloss.RoundedBorder()).BorderForeground(border).BorderBackground(theme.Bg).Padding(0, 1).
+		Render(on.Width(inner).Render(line))
 }
 
 // renderMasterRow is the "N changed files · M staged" line, its glyph the
 // same tri-state read as a row's own checkbox: all staged reads ◉, none ○,
-// otherwise the mixed ◪.
+// otherwise the mixed ◪. changedTotal/stagedTotal are driver-supplied ints
+// with no practical upper bound, so the text is clipped before it reaches
+// Width() -- CodeRabbit's PR #353 finding on the neighboring commit button
+// was this same class of bug (Width() wraps instead of truncating).
 func renderMasterRow(changedTotal, stagedTotal, width int) string {
 	glyph := theme.GlyphStopped
 	switch {
@@ -73,7 +86,18 @@ func renderMasterRow(changedTotal, stagedTotal, width int) string {
 		glyph = theme.GlyphMixed
 	}
 	text := fmt.Sprintf("%d changed files · %d staged", changedTotal, stagedTotal)
-	return lipgloss.NewStyle().Width(width).Render(fg(theme.Dim).Render(glyph + "  " + text))
+	on := lipgloss.NewStyle().Background(theme.Bg)
+	prefix := glyph + "  "
+	textW := width - lipgloss.Width(prefix)
+	if textW < 0 {
+		textW = 0
+	}
+	// clip, not clipOn: text carries no color of its own yet, and clipOn's
+	// non-truncating path renders its input through a colorless style
+	// (safe only when the input already carries its own embedded fg+bg per
+	// fragment, e.g. justify's left) -- passing plain text through it left
+	// a real background hole here (caught by the bg-coverage frame tests).
+	return on.Width(width).Render(on.Foreground(theme.Dim).Render(prefix + clip(text, textW)))
 }
 
 // changeRowCheckboxSpan is the column range renderChangeRow's checkbox glyph
@@ -128,7 +152,7 @@ func statusGlyph(status string) (string, color.Color) {
 // only when cursor is false: the keyboard cursor's SelBg always wins, so
 // moving the mouse across the list can never displace it.
 func renderChangeRow(c ChangeRow, width int, cursor, hover bool) string {
-	on := lipgloss.NewStyle()
+	on := lipgloss.NewStyle().Background(theme.Bg)
 	prefix := "  "
 	switch {
 	case cursor:
@@ -177,11 +201,21 @@ func renderStashStrip(count, width int) string {
 func renderCommitBox(width int, summaryView, descriptionView string, amending bool, buttonLabel string, enabled bool) string {
 	var lines []string
 	if amending {
-		lines = append(lines, fg(theme.Peach).Render("Amending last commit · a stops"))
+		on := lipgloss.NewStyle().Background(theme.Bg)
+		lines = append(lines, on.Width(width).Render(on.Foreground(theme.Peach).Render("Amending last commit · a stops")))
 		buttonLabel = "Amend last commit"
 	}
+	// The board's own CommitBox top padding (12px) reads as one blank band
+	// row in the terminal (docs/design/mission/README.md's Terminal
+	// geometry table).
+	lines = append(lines, blankRows(width, 1))
 	lines = append(lines, boxLine(width, summaryView))
 	lines = append(lines, boxBlock(width, []string{descriptionView, ""}))
+	// The board's own gap between the description box and the button (8px)
+	// reads as one blank band row -- unlike the summary/description seam,
+	// which stays flush (docs/design/mission/README.md's Terminal geometry
+	// table).
+	lines = append(lines, blankRows(width, 1))
 	lines = append(lines, renderCommitButton(width, buttonLabel, enabled))
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }
@@ -195,26 +229,45 @@ func boxBlock(width int, contentLines []string) string {
 	if inner < 1 {
 		inner = 1
 	}
+	on := lipgloss.NewStyle().Background(theme.Bg)
 	padded := make([]string, len(contentLines))
 	for i, l := range contentLines {
-		padded[i] = lipgloss.NewStyle().Width(inner).Render(l)
+		padded[i] = on.Width(inner).Render(l)
 	}
-	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(theme.Panel).Padding(0, 1).
+	return lipgloss.NewStyle().Background(theme.Bg).Border(lipgloss.RoundedBorder()).BorderForeground(theme.Panel).BorderBackground(theme.Bg).Padding(0, 1).
 		Render(strings.Join(padded, "\n"))
 }
 
 // renderCommitButton is the full-width commit button: Pink with Bg-dark
 // (i.e. theme.Bg foreground) text at rest, Panel background with Dimmer
 // text once !canCommit -- the same rest/disabled pair InteractionStates.png
-// pins for it.
+// pins for it. renderCommitBox supplies the blank gap row above it that
+// separates it from the description box.
+//
+// Board scale is 32px against a 26px row unit, i.e. 1.23 cells -- no single
+// terminal row can express that, so three physical rows carry it (ratified
+// 2026-09-20, "mission commit button gains its half-cell padding",
+// superseding the single solid row an earlier pass drew): a half-block
+// "cap" row above and below the full solid label row. GlyphHalfBlockLower
+// (▄) as that row's own FOREGROUND on a theme.Bg background paints only the
+// row's bottom half in the button color, leaving the top half as canvas;
+// GlyphHalfBlockUpper (▀) mirrors that for the bottom cap's top half. The
+// middle row is the button exactly as it always rendered -- full solid fill,
+// centered label, clipped before Width() (lipgloss wraps a too-long string
+// there instead of truncating it, and a long current.branch in "Commit N
+// files to <branch>" would otherwise spill it onto a second row -- CodeRabbit
+// finding on PR #353). The block is a fixed THREE-row unit in the sidebar's
+// own layout now; sidebarHit maps all three rows to the same hit target.
 func renderCommitButton(width int, label string, canCommit bool) string {
-	style := lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Bold(true)
-	if canCommit {
-		style = style.Background(theme.Pink).Foreground(theme.Bg)
-	} else {
-		style = style.Background(theme.Panel).Foreground(theme.Dimmer)
+	buttonColor, textColor := theme.Pink, theme.Bg
+	if !canCommit {
+		buttonColor, textColor = theme.Panel, theme.Dimmer
 	}
-	return style.Render(label)
+	capStyle := lipgloss.NewStyle().Width(width).Background(theme.Bg).Foreground(buttonColor)
+	labelStyle := lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Bold(true).Background(buttonColor).Foreground(textColor)
+	top := capStyle.Render(strings.Repeat(theme.GlyphHalfBlockLower, width))
+	bottom := capStyle.Render(strings.Repeat(theme.GlyphHalfBlockUpper, width))
+	return lipgloss.JoinVertical(lipgloss.Left, top, labelStyle.Render(clip(label, width)), bottom)
 }
 
 // renderUndoStrip is the WarnBg strip a successful, still-undoable commit
@@ -230,10 +283,10 @@ func renderUndoStrip(lc LastCommit, width int) string {
 // (bold) and their labels in KeybarLabel, separated by a Dim middle dot --
 // the same grammar the picker and board keybars use.
 func renderKeybar(width int) string {
-	on := lipgloss.NewStyle()
-	dot := fg(theme.Dim).Render(" · ")
+	on := lipgloss.NewStyle().Background(theme.BgSubtle)
+	dot := on.Foreground(theme.Dim).Render(" · ")
 	key := func(k, label string) string {
-		return fg(theme.KeybarKey).Bold(true).Render(k) + fg(theme.KeybarLabel).Render(" "+label)
+		return on.Foreground(theme.KeybarKey).Bold(true).Render(k) + on.Foreground(theme.KeybarLabel).Render(" "+label)
 	}
 	pairs := [][2]string{
 		{"space", "stage"}, {"enter", "diff"}, {"c", "commit"}, {"f", "action"},
@@ -262,7 +315,9 @@ func justify(on lipgloss.Style, width int, left, right string) string {
 		maxLeft = 0
 	}
 	if lipgloss.Width(left) > maxLeft {
-		left = clip(left, maxLeft)
+		// left already carries its own fg+bg per fragment (justify's
+		// callers), so its ellipsis must too -- clipOn, not clip.
+		left = clipOn(left, maxLeft, on)
 	}
 	avail := width - 3 - lipgloss.Width(left)
 	if avail < 0 {

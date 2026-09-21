@@ -102,7 +102,7 @@ func renderFrame(m *Model, target int) string {
 	if scrolling {
 		rowWidth-- // last column is the thumb rail's dedicated gutter
 	}
-	thumbTop, thumbH := thumbSpan(top, h, n)
+	thumbTop, thumbH := ThumbSpan(top, h, n)
 	for i := top; i < top+h; i++ {
 		if group, ok := headerBoundary(m, i); ok {
 			lines = append(lines, groupHeaderLine(group))
@@ -111,7 +111,7 @@ func renderFrame(m *Model, target int) string {
 		line := rowLineWidth(m, i, rowWidth)
 		zones.addAll(y, rowZones(m, i, rowWidth))
 		if scrolling {
-			line += thumbCell(i-top, thumbTop, thumbH)
+			line += ThumbCell(i-top, thumbTop, thumbH, thumbStyle, restStyle)
 		}
 		lines = append(lines, line)
 		y++
@@ -212,40 +212,13 @@ func groupHeaderLine(group string) string {
 	return onBg.Render("  ") + fg(theme.Meta).Render(strings.ToUpper(group))
 }
 
-// thumbSpan sizes the rail to the visible fraction of the list (h*h/n,
-// floored, minimum one row so a long list always shows something to grab)
-// and positions it in lockstep with the scroll offset.
-func thumbSpan(top, h, n int) (thumbTop, thumbH int) {
-	if n <= 0 || h <= 0 {
-		return 0, 0
-	}
-	thumbH = h * h / n
-	if thumbH < 1 {
-		thumbH = 1
-	}
-	if thumbH > h {
-		thumbH = h
-	}
-	maxTop := n - h
-	if maxTop <= 0 {
-		return 0, thumbH
-	}
-	avail := h - thumbH
-	if avail < 0 {
-		avail = 0
-	}
-	thumbTop = top * avail / maxTop
-	return thumbTop, thumbH
-}
-
-// thumbCell paints one row of the rail: Panel-colored across the thumb's
-// span, a plain blank cell everywhere else in the gutter.
-func thumbCell(rowInWindow, thumbTop, thumbH int) string {
-	if rowInWindow >= thumbTop && rowInWindow < thumbTop+thumbH {
-		return lipgloss.NewStyle().Background(theme.Panel).Render(" ")
-	}
-	return onBg.Render(" ")
-}
+// thumbStyle/restStyle are this view's own two ThumbCell arguments: Panel
+// across the thumb's span, the plain inline default everywhere else in the
+// gutter.
+var (
+	thumbStyle = lipgloss.NewStyle().Background(theme.Panel)
+	restStyle  = onBg
+)
 
 // keybarLine renders the footer's grouped action legend on the left and,
 // on the right, the visible-range indicator (shown whenever the list

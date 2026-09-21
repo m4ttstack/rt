@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"charm.land/lipgloss/v2"
+
 	"rt-ui/internal/theme"
 )
 
@@ -24,7 +26,7 @@ func allowedHighlightSGR(base color.Color) map[string]bool {
 
 func TestHighlightLineTypeScriptUsesAtLeastTwoThemeAccentsAndNoStrayHex(t *testing.T) {
 	const src = `const total = "done"; // 42 items processed`
-	out := highlightLine("typescript", src, theme.TextSoft)
+	out := highlightLine("typescript", src, theme.TextSoft, theme.Bg)
 	allowed := allowedHighlightSGR(theme.TextSoft)
 
 	found := map[string]bool{}
@@ -40,16 +42,26 @@ func TestHighlightLineTypeScriptUsesAtLeastTwoThemeAccentsAndNoStrayHex(t *testi
 }
 
 func TestHighlightLineEmptyLangReturnsFlatBase(t *testing.T) {
-	out := highlightLine("", "plain text, no lexer", theme.Mint)
-	want := fg(theme.Mint).Render("plain text, no lexer")
+	out := highlightLine("", "plain text, no lexer", theme.Mint, theme.Bg)
+	want := lipgloss.NewStyle().Background(theme.Bg).Foreground(theme.Mint).Render("plain text, no lexer")
 	if out != want {
-		t.Fatalf("empty lang should render flat base color:\ngot  %q\nwant %q", out, want)
+		t.Fatalf("empty lang should render flat base color over bg:\ngot  %q\nwant %q", out, want)
 	}
 }
 
 func TestHighlightLineUnknownLexerFallsBackToPlain(t *testing.T) {
-	out := highlightLine("not-a-real-language", "hello world", theme.TextSoft)
+	out := highlightLine("not-a-real-language", "hello world", theme.TextSoft, theme.Bg)
 	if !strings.Contains(out, "hello world") {
 		t.Fatalf("unknown lexer should still render the text: %q", out)
+	}
+}
+
+// TestHighlightLineTokensCarryBackground pins the fix for the diff pane's
+// full-frame Bg fill: a token colored by chromaStyleTable must still carry
+// bg, not just its own foreground.
+func TestHighlightLineTokensCarryBackground(t *testing.T) {
+	out := highlightLine("typescript", `const total = 1`, theme.TextSoft, theme.Bg)
+	if !strings.Contains(out, bgSGR(theme.Bg)) {
+		t.Fatalf("highlighted tokens should carry the row's Bg: %q", out)
 	}
 }
