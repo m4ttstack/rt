@@ -1329,6 +1329,82 @@ describe("MissionDriver: provisioning a worktree", () => {
     await runPromise;
   });
 
+  test("a worktree:ready-settled event for the provisioned path arriving before the provision reply still clears settling once the reply lands", async () => {
+    let resolveProvision!: (v: { ok: true; data: Record<string, unknown> }) => void;
+    let emit: ((ev: DaemonEvent) => void) | null = null;
+    const session = new FakeSession([
+      { t: "intent", name: "mission:worktree", payload: { new: true, name: "my-feature" } },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({
+      session,
+      daemonQuery: async (cmd: string) => {
+        if (cmd === "worktree:provision") {
+          return new Promise((resolve) => { resolveProvision = resolve; });
+        }
+        if (cmd === "worktree:list") return { ok: true, data: { trees: defaultTrees() } };
+        return { ok: true, data: { repos: [] } };
+      },
+      subscribe: (onEvent) => {
+        emit = onEvent;
+        return { close: () => {} };
+      },
+    });
+
+    const runPromise = new MissionDriver(deps, START).run();
+    await flushMicrotasks();
+
+    // The daemon's ready task finishes and emits before daemonQuery's own
+    // promise resolves -- the event's path can't match currentWorktree yet
+    // because provisionWorktree hasn't switched onto it.
+    emit!({ type: "worktree:ready-settled", data: { repo: "repo-tools", tree: "rohan", path: "/trees/rohan", ok: true } });
+    await flushMicrotasks();
+
+    resolveProvision({ ok: true, data: { tree: "rohan", path: "/trees/rohan", branch: "my-feature", readyPending: true } });
+    await runPromise;
+
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.current.worktree).toBe("/trees/rohan");
+    expect(last.current.settling).toBe(false);
+  });
+
+  test("the same race with ok: false still surfaces the stale-dependency notice", async () => {
+    let resolveProvision!: (v: { ok: true; data: Record<string, unknown> }) => void;
+    let emit: ((ev: DaemonEvent) => void) | null = null;
+    const session = new FakeSession([
+      { t: "intent", name: "mission:worktree", payload: { new: true, name: "my-feature" } },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({
+      session,
+      daemonQuery: async (cmd: string) => {
+        if (cmd === "worktree:provision") {
+          return new Promise((resolve) => { resolveProvision = resolve; });
+        }
+        if (cmd === "worktree:list") return { ok: true, data: { trees: defaultTrees() } };
+        return { ok: true, data: { repos: [] } };
+      },
+      subscribe: (onEvent) => {
+        emit = onEvent;
+        return { close: () => {} };
+      },
+    });
+
+    const runPromise = new MissionDriver(deps, START).run();
+    await flushMicrotasks();
+
+    emit!({ type: "worktree:ready-settled", data: { repo: "repo-tools", tree: "rohan", path: "/trees/rohan", ok: false } });
+    await flushMicrotasks();
+
+    resolveProvision({ ok: true, data: { tree: "rohan", path: "/trees/rohan", branch: "my-feature", readyPending: true } });
+    await runPromise;
+
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.current.worktree).toBe("/trees/rohan");
+    expect(last.current.settling).toBe(false);
+    expect(last.notice).toContain("stale");
+  });
+
   test("switching to an existing worktree after a readyPending provision clears settling", async () => {
     const session = new FakeSession([
       { t: "intent", name: "mission:worktree", payload: { new: true, name: "my-feature" } },

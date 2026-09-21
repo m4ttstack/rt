@@ -201,6 +201,20 @@ export class MissionDriver {
    *  doc comment) -- checkoutBranch enforcement always goes through
    *  guardBranch()/checkBranchGuard, never this map. */
   private guards: Map<string, string> = new Map();
+  /** True only while provisionWorktree's daemonQuery await is in flight. The
+   *  daemon runs the ready task before that reply lands, so a
+   *  worktree:ready-settled event for the tree being provisioned can arrive
+   *  before currentWorktree has switched to it -- this gate is what tells
+   *  the subscription handler such an event is worth caching in
+   *  pendingSettledEvents rather than discarding it as unrelated. */
+  private provisioning = false;
+  /** Path -> ok, for a worktree:ready-settled event that arrived while
+   *  provisioning was true and didn't match the OLD currentWorktree.
+   *  provisionWorktree consumes (and clears) its own path's entry once the
+   *  daemon reply reveals what that path is; cleared at the start of every
+   *  provision attempt so an unmatched entry from an earlier one never
+   *  lingers. */
+  private pendingSettledEvents: Map<string, boolean> = new Map();
 
   constructor(private readonly deps: MissionDeps, start: { repo: string; worktree: string }) {
     this.state = {
@@ -228,12 +242,18 @@ export class MissionDriver {
     const sub = this.deps.subscribe((ev) => {
       if (ev.type === "worktree:ready-settled") {
         const data = ev.data as { path?: string; ok?: boolean } | undefined;
-        if (data?.path !== this.state.currentWorktree) return;
-        this.state.settling = false;
-        if (data?.ok === false) {
-          this.state.notice = "a ready step failed; dependencies in this tree may be stale";
+        if (typeof data?.path !== "string") return;
+        if (data.path === this.state.currentWorktree) {
+          this.state.settling = false;
+          if (data.ok === false) {
+            this.state.notice = "a ready step failed; dependencies in this tree may be stale";
+          }
+          this.push();
+          return;
         }
-        this.push();
+        // Doesn't match yet because the provision reply hasn't landed --
+        // cache it for provisionWorktree to consume once it has.
+        if (this.provisioning) this.pendingSettledEvents.set(data.path, data.ok !== false);
         return;
       }
       if (ev.type !== "git-status") return;
@@ -831,11 +851,21 @@ export class MissionDriver {
     // is frozen rather than sitting blank until the daemon replies.
     this.state.notice = `provisioning ${name}...`;
     this.push();
-    const res = await this.deps.daemonQuery("worktree:provision", {
-      repoName: this.state.currentRepo,
-      branch: name,
-      owner: "glitter",
-    }, PROVISION_TIMEOUT_MS);
+    // A stale entry from an earlier provision attempt (one whose path never
+    // matched, e.g. a refusal) must not be mistaken for this attempt's own
+    // settled event below.
+    this.pendingSettledEvents.clear();
+    this.provisioning = true;
+    let res: Awaited<ReturnType<DaemonQueryFn>>;
+    try {
+      res = await this.deps.daemonQuery("worktree:provision", {
+        repoName: this.state.currentRepo,
+        branch: name,
+        owner: "glitter",
+      }, PROVISION_TIMEOUT_MS);
+    } finally {
+      this.provisioning = false;
+    }
 
     if (!res) {
       this.state.notice = "the rt daemon is not running";
@@ -855,12 +885,22 @@ export class MissionDriver {
       this.push();
       return;
     }
+    // A settled event for this exact path may have already arrived and been
+    // cached above, while currentWorktree still pointed at the OLD tree --
+    // consuming it here is what keeps its `ok` (and thus its failure
+    // notice) from being lost to that ordering.
+    const cachedOk = this.pendingSettledEvents.get(data.path);
+    this.pendingSettledEvents.delete(data.path);
     // readyHeld means the daemon withheld readyPending entirely -- a silent
     // switch onto a tree whose team ready steps never ran is exactly what
     // the readiness design forbids, so this notice is the one place that
     // gets said out loud (commands/worktree.ts prints the same case).
-    this.state.notice = data.readyHeld ? "team ready steps held pending approval... run rt worktree ready-approve" : "";
-    this.setCurrentWorktree(data.path, data.readyPending === true);
+    this.state.notice = data.readyHeld
+      ? "team ready steps held pending approval... run rt worktree ready-approve"
+      : cachedOk === false
+        ? "a ready step failed; dependencies in this tree may be stale"
+        : "";
+    this.setCurrentWorktree(data.path, data.readyPending === true && cachedOk === undefined);
     this.state.selectedPath = null;
     this.state.selections = new Map();
     await this.refresh();
