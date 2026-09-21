@@ -260,15 +260,17 @@ function toChangeStatus(kind: ChangedFile["kind"]): MissionChangeRow["status"] {
   }
 }
 
-function deriveInclude(file: ChangedFile, selection: DiffSelection | undefined): MissionChangeRow["include"] {
-  if (selection) {
-    const type = selection.getSelectionType();
-    if (type === DiffSelectionType.All) return "all";
-    if (type === DiffSelectionType.None) return "none";
-    return "partial";
-  }
-  if (file.staged && file.unstaged) return "partial";
-  return file.staged ? "all" : "none";
+// GHD's own model (ratified 2026-09-21): a checkbox means "include in the
+// next commit," not "already in the index" -- include is purely a read of
+// the driver's own persisted selection now, never file.staged/unstaged.
+// The driver seeds every changed file's selection to All the moment it
+// first appears (reconcileSelections), so the fallback below only matters
+// before that has ever run.
+function deriveInclude(selection: DiffSelection | undefined): MissionChangeRow["include"] {
+  const type = (selection ?? DiffSelection.fromInitialSelection(DiffSelectionType.All)).getSelectionType();
+  if (type === DiffSelectionType.All) return "all";
+  if (type === DiffSelectionType.None) return "none";
+  return "partial";
 }
 
 function commitPlaceholder(changes: MissionChangeRow[]): string {
@@ -386,7 +388,7 @@ export function buildModel(input: {
     path: file.path,
     origPath: file.originalPath ?? "",
     status: toChangeStatus(file.kind),
-    include: deriveInclude(file, state.selections.get(file.path)),
+    include: deriveInclude(state.selections.get(file.path)),
   }));
 
   // The filter narrows only the visible list; totals and the commit gate
@@ -398,14 +400,12 @@ export function buildModel(input: {
   const stagedTotal = allChanges.filter((change) => change.include !== "none").length;
 
   const selectedChange = state.selectedPath ? (allChanges.find((change) => change.path === state.selectedPath) ?? null) : null;
-  // Fallback seed mirrors the driver's currentSelection: only a fully staged
-  // file reads all-selected; a file with unstaged content has, by
-  // definition, none of its staging-diff lines in the index yet.
-  const selectedFile = state.selectedPath ? snapshot.files.find((file) => file.path === state.selectedPath) : undefined;
-  const fullyStaged = selectedFile !== undefined && selectedFile.staged && !selectedFile.unstaged;
+  // GHD's own default (ratified 2026-09-21): every file's selection seeds to
+  // All the moment it first appears (reconcileSelections, driver-side), so
+  // this fallback only matters before that has ever run.
   const diffSelection =
     (state.selectedPath ? state.selections.get(state.selectedPath) : undefined) ??
-    DiffSelection.fromInitialSelection(fullyStaged ? DiffSelectionType.All : DiffSelectionType.None);
+    DiffSelection.fromInitialSelection(DiffSelectionType.All);
 
   const diff = buildDiffModel({
     path: state.selectedPath,

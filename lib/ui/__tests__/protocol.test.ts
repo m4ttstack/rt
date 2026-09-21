@@ -132,9 +132,9 @@ test("the mission model fixture parses as a model line and matches the MissionMo
   expect(model.branches[7]!.guardedBy).not.toBe("");
   expect(model.branches[7]!.group).toBe("guarded");
   expect(model.branches[8]!.group).toBe("other");
-  expect(model.changes.map((c) => c.include)).toEqual(["all", "none", "partial"]);
+  expect(model.changes.map((c) => c.include)).toEqual(["all", "all", "partial"]);
   expect(model.changedTotal).toBe(3);
-  expect(model.stagedTotal).toBe(2);
+  expect(model.stagedTotal).toBe(3);
   expect(model.diff.lines).toHaveLength(6);
   expect(model.diff.lines[0]!.kind).toBe("hunk");
   expect(model.diff.lines[2]!.selected).toBe(true);

@@ -44,11 +44,11 @@
   ],
   "changes": [
     { "path": "ui/internal/views/mission/model.go", "origPath": "", "status": "modified", "include": "all" },
-    { "path": "ui/internal/views/mission/topbar.go", "origPath": "", "status": "new", "include": "none" },
+    { "path": "ui/internal/views/mission/topbar.go", "origPath": "", "status": "new", "include": "all" },
     { "path": "ui/internal/views/mission/mission.go", "origPath": "", "status": "modified", "include": "partial" }
   ],
   "changedTotal": 3,
-  "stagedTotal": 2,
+  "stagedTotal": 3,
   "filter": "",
   "diff": {
     "path": "ui/internal/views/mission/mission.go",
@@ -70,7 +70,7 @@
     "description": "",
     "placeholder": "Summary (required)",
     "amending": false,
-    "buttonLabel": "Commit 2 files to rt-191-mission-tui",
+    "buttonLabel": "Commit 3 files to rt-191-mission-tui",
     "canCommit": true,
     "lastCommit": { "summary": "rt-ui: mission view skeleton behind an opt-in mouse session option", "when": "2 minutes ago", "undoable": true }
   },

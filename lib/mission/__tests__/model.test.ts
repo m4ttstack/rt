@@ -490,15 +490,18 @@ describe("buildBranchRows section order (GHD parity, ratified 2026-09-19)", () =
   });
 });
 
-describe("Include tri-state", () => {
+// GHD's own model (ratified 2026-09-21): include is purely a read of the
+// driver's persisted selection now -- file.staged/file.unstaged never
+// factor in (a checkbox means "include in the next commit," not "already
+// in the index"). No selection at all means the file hasn't been through
+// reconcileSelections yet; that default is All, same as everywhere else.
+describe("Include tri-state (selection-only, ratified 2026-09-21)", () => {
   test.each([
-    ["staged only, no selection -> all", true, false, undefined, "all"],
-    ["unstaged only, no selection -> none", false, true, undefined, "none"],
-    ["staged and unstaged, no selection -> partial", true, true, undefined, "partial"],
-    ["selection All overrides flags -> all", false, true, DiffSelectionType.All, "all"],
-    ["selection None overrides flags -> none", true, false, DiffSelectionType.None, "none"],
-    ["selection Partial overrides flags -> partial", true, false, DiffSelectionType.Partial, "partial"],
-  ] as const)("%s", (_label, staged, unstaged, selectionType, expected) => {
+    ["no selection recorded -> defaults to all", undefined, "all"],
+    ["selection All -> all", DiffSelectionType.All, "all"],
+    ["selection None -> none", DiffSelectionType.None, "none"],
+    ["selection Partial -> partial", DiffSelectionType.Partial, "partial"],
+  ] as const)("%s", (_label, selectionType, expected) => {
     const selections = new Map<string, DiffSelection>();
     if (selectionType !== undefined) {
       let sel = DiffSelection.fromInitialSelection(
@@ -511,7 +514,7 @@ describe("Include tri-state", () => {
     const model = buildModel(
       baseInput({
         state: { selections },
-        snapshot: { files: [changedFile({ path: "a.txt", staged, unstaged })] },
+        snapshot: { files: [changedFile({ path: "a.txt" })] },
       }),
     );
 
@@ -556,7 +559,15 @@ describe("changes filter", () => {
   });
 
   test("a filter that matches nothing empties the list but keeps totals and the commit gate", () => {
-    const model = buildModel(baseInput({ state: { filter: "zzz" }, snapshot: { files: [...files] } }));
+    // Explicit selections: exactly one file checked, so stagedTotal (now a
+    // count of checked files, GHD-style) reads a meaningful 1 rather than
+    // every file's own All default.
+    const selections = new Map([
+      ["lib/mission/driver.ts", DiffSelection.fromInitialSelection(DiffSelectionType.All)],
+      ["ui/internal/views/mission/mission.go", DiffSelection.fromInitialSelection(DiffSelectionType.None)],
+      ["README.md", DiffSelection.fromInitialSelection(DiffSelectionType.None)],
+    ]);
+    const model = buildModel(baseInput({ state: { filter: "zzz", selections }, snapshot: { files: [...files] } }));
     expect(model.changes).toEqual([]);
     expect(model.changedTotal).toBe(3);
     expect(model.stagedTotal).toBe(1);
@@ -565,21 +576,26 @@ describe("changes filter", () => {
 });
 
 describe("canCommit", () => {
-  test("true whenever anything is staged, regardless of the driver-side summary", () => {
+  test("true whenever anything is checked, regardless of the driver-side summary", () => {
     const model = buildModel(
       baseInput({
         state: { summary: "" },
-        snapshot: { files: [changedFile({ path: "a.txt", staged: true, unstaged: false })] },
+        snapshot: { files: [changedFile({ path: "a.txt" })] }, // no selection recorded -> defaults to All
       }),
     );
     expect(model.commit.canCommit).toBe(true);
   });
 
-  test("false with nothing staged even when a summary is present", () => {
+  // GHD's own model (ratified 2026-09-21): a freshly-appeared file defaults
+  // to checked, so getting to canCommit=false takes an EXPLICIT uncheck,
+  // not merely "nothing staged in the index" (there is no index concept
+  // here anymore).
+  test("false with everything explicitly unchecked, even when a summary is present", () => {
+    const selections = new Map([["a.txt", DiffSelection.fromInitialSelection(DiffSelectionType.None)]]);
     const model = buildModel(
       baseInput({
-        state: { summary: "a summary" },
-        snapshot: { files: [changedFile({ path: "a.txt", staged: false, unstaged: true })] },
+        state: { summary: "a summary", selections },
+        snapshot: { files: [changedFile({ path: "a.txt" })] },
       }),
     );
     expect(model.commit.canCommit).toBe(false);
@@ -642,17 +658,23 @@ describe("diff Selected flags", () => {
     ]);
   });
 
-  test("with no persisted selection the flags seed from the file's staged state, not select-all", () => {
+  // GHD's own default (ratified 2026-09-21): a freshly-appeared file's
+  // selection seeds to All -- every selectable line reads checked -- not
+  // derived from file.staged/unstaged (there is no index concept here
+  // anymore; the checkbox is the user's own commit intent from the start).
+  test("with no persisted selection every selectable line reads checked (select-all, GHD's own default)", () => {
     const model = buildModel(
       baseInput({
         state: { selectedPath: "two-hunk.txt" },
-        snapshot: { files: [changedFile({ path: "two-hunk.txt", staged: false, unstaged: true })] },
+        snapshot: { files: [changedFile({ path: "two-hunk.txt" })] },
         stagingDiff: twoHunkDiff(),
       }),
     );
 
-    for (const line of model.diff.lines) {
-      expect(line.selected).toBe(false);
+    const selectable = model.diff.lines.filter((line) => line.selIdx >= 0);
+    expect(selectable.length).toBeGreaterThan(0);
+    for (const line of selectable) {
+      expect(line.selected).toBe(true);
     }
   });
 });

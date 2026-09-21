@@ -69,10 +69,10 @@ func TestSetModelDecodesEveryTopField(t *testing.T) {
 	if m.model.Branches[8].Group != "other" {
 		t.Fatalf("Branches[8] should be the \"other\" row: %+v", m.model.Branches[8])
 	}
-	if len(m.model.Changes) != 3 || m.model.Changes[0].Include != "all" || m.model.Changes[1].Include != "none" || m.model.Changes[2].Include != "partial" {
+	if len(m.model.Changes) != 3 || m.model.Changes[0].Include != "all" || m.model.Changes[1].Include != "all" || m.model.Changes[2].Include != "partial" {
 		t.Fatalf("Changes: %+v", m.model.Changes)
 	}
-	if m.model.ChangedTotal != 3 || m.model.StagedTotal != 2 {
+	if m.model.ChangedTotal != 3 || m.model.StagedTotal != 3 {
 		t.Fatalf("totals: changed=%d staged=%d", m.model.ChangedTotal, m.model.StagedTotal)
 	}
 	if len(m.model.Diff.Lines) != 6 || m.model.Diff.Lines[0].Kind != "hunk" {
