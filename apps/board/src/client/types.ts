@@ -138,6 +138,10 @@ export type BoardMRWithReview = BoardMR & {
   review?: ReviewInfo;
   respond?: RespondInfo;
   doctor?: DoctorInfo;
+  /** Operator stood auto-doctor down on THIS MR (row-menu toggle); true only
+      on the row it was set from, never computed for a descendant -- see
+      attachStandDown. */
+  standDown?: true;
   slack?: SlackInfo;
   drafts?: DraftInfo[];
   /** The seat's own note on this MR (B10), kept in the board's state db and

@@ -28,6 +28,20 @@ export function readMemory(db: Database = getStateDb()): DispatchMemory {
   return { identity: raw.identity ?? null, mrs: raw.mrs ?? {} };
 }
 
+/** Stamps `standDown: true` on a row whose OWN memory entry carries the
+    flag -- same minimal-display choice as the badge (see triage/run.ts's
+    isStoodDown for the whole-stack enforcement, which walks ancestors and
+    is not mirrored here). An MR with no flag, or no memory row at all, is
+    returned untouched rather than spelling out `standDown: false`. */
+export function attachStandDown<T extends { webUrl?: string | null }>(
+  mrs: T[],
+  mem: DispatchMemory
+): Array<T & { standDown?: true }> {
+  return mrs.map(mr =>
+    mr.webUrl && mem.mrs[mr.webUrl]?.standDown ? { ...mr, standDown: true } : mr
+  );
+}
+
 export function writeMemory(
   mem: DispatchMemory,
   db: Database = getStateDb()

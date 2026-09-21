@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { openStateDb } from '../state/db.ts';
 import { setKvValue } from '../state/kv-blob.ts';
 import {
+  attachStandDown,
   readMemory,
   releaseCron,
   tryClaimCron,
@@ -69,6 +70,37 @@ describe('dispatch memory', () => {
     const mem = readMemory(db);
     expect(mem.mrs).toEqual({});
     expect(() => mem.mrs['https://x/mr/1']).not.toThrow();
+  });
+});
+
+describe('attachStandDown', () => {
+  test('stamps standDown: true only on an MR whose memory row carries the flag', () => {
+    const mem: DispatchMemory = {
+      identity: null,
+      mrs: {
+        'https://x/mr/1': { ...emptyMrMemory('d'), standDown: true },
+        'https://x/mr/2': { ...emptyMrMemory('d'), standDown: false },
+      },
+    };
+    const mrs = [{ webUrl: 'https://x/mr/1' }, { webUrl: 'https://x/mr/2' }];
+    expect(attachStandDown(mrs, mem)).toEqual([
+      { webUrl: 'https://x/mr/1', standDown: true },
+      { webUrl: 'https://x/mr/2' },
+    ]);
+  });
+
+  test('an MR with no memory row at all is left untouched', () => {
+    const mem: DispatchMemory = { identity: null, mrs: {} };
+    expect(attachStandDown([{ webUrl: 'https://x/mr/9' }], mem)).toEqual([
+      { webUrl: 'https://x/mr/9' },
+    ]);
+  });
+
+  test('a webUrl-less row is left untouched rather than throwing', () => {
+    const mem: DispatchMemory = { identity: null, mrs: {} };
+    expect(attachStandDown([{ webUrl: null }], mem)).toEqual([
+      { webUrl: null },
+    ]);
   });
 });
 

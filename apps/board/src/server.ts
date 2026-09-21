@@ -258,6 +258,7 @@ import {
 import { loadReReviewConfig, loadTriageConfig } from './triage/config.ts';
 import { emptyMrMemory } from './triage/memory.ts';
 import {
+  attachStandDown,
   readMemory,
   releaseCron,
   tryClaimCron,
@@ -980,26 +981,29 @@ const httpServer = Bun.serve({
           // Peer state too: a scoped refresh replaces that member's rows
           // wholesale on the client, so anything left off here would blink out
           // of the UI every 15s.
-          const withState = attachPeerState(
-            attachNotes(
-              attachDrafts(
-                attachSlack(
-                  attachGates(
-                    attachDoctors(
-                      attachResponds(
-                        attachReviews(mrs, readReviewStates()),
-                        readRespondStates()
+          const withState = attachStandDown(
+            attachPeerState(
+              attachNotes(
+                attachDrafts(
+                  attachSlack(
+                    attachGates(
+                      attachDoctors(
+                        attachResponds(
+                          attachReviews(mrs, readReviewStates()),
+                          readRespondStates()
+                        ),
+                        readDoctorStates()
                       ),
-                      readDoctorStates()
+                      gateCache
                     ),
-                    gateCache
+                    readSlackRefs()
                   ),
-                  readSlackRefs()
+                  heldDraftsByMr(readDrafts())
                 ),
-                heldDraftsByMr(readDrafts())
-              ),
-              readNotes()
-            )
+                readNotes()
+              )
+            ),
+            readMemory()
           );
           // Reconciler joins too, for the same wholesale-replace reason: rows
           // served here without `orphan`/`executor` made the interrupted
@@ -1074,26 +1078,29 @@ const httpServer = Bun.serve({
         const doctors = readDoctorStates();
         const slackRefs = readSlackRefs();
         const reconciler = await fetchReconcilerView();
-        const mrsWithGates = attachPeerState(
-          attachNotes(
-            attachDrafts(
-              attachSlack(
-                attachGates(
-                  attachDoctors(
-                    attachResponds(
-                      attachReviews(visibleMrs, reviews),
-                      responds
+        const mrsWithGates = attachStandDown(
+          attachPeerState(
+            attachNotes(
+              attachDrafts(
+                attachSlack(
+                  attachGates(
+                    attachDoctors(
+                      attachResponds(
+                        attachReviews(visibleMrs, reviews),
+                        responds
+                      ),
+                      doctors
                     ),
-                    doctors
+                    gateCache
                   ),
-                  gateCache
+                  slackRefs
                 ),
-                slackRefs
+                heldDraftsByMr(readDrafts())
               ),
-              heldDraftsByMr(readDrafts())
-            ),
-            readNotes()
-          )
+              readNotes()
+            )
+          ),
+          readMemory()
         ).map(mr => ({
           ...mr,
           gates: joinGateExecutors(mr.gates, reconciler.executors),
