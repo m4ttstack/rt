@@ -235,7 +235,6 @@ function MessageBody({
     return () => observer.disconnect();
   }, [message.id]);
 
-  const folded = tall && !expanded && !expandAll;
   const moreLines = foldEntry?.moreLines ?? 0;
   // A single-block body has nothing left to reveal, so it never counts as
   // read-folded even when `foldEntry.folded` says the message is read --
@@ -246,6 +245,12 @@ function MessageBody({
   const readFoldable =
     (foldEntry?.folded ?? false) && moreLines > 0 && !expandAll;
   const readFolded = readFoldable && !readUnfolded;
+  // Clicking "N more lines" means "show me the rest", so the tall-body fold
+  // stands down for as long as that row stays unfolded: otherwise the reveal
+  // is clipped again at once and one message costs two clicks through two
+  // controls. Derived, never latched -- re-folding hands the row back.
+  const revealed = readFoldable && readUnfolded;
+  const folded = tall && !expanded && !expandAll && !revealed;
   // The wrapper shape stays IDENTICAL whether or not `tall` is true: a
   // position whose element type changes on re-render gets remounted by
   // React, which would drop the live CodeHighlight instance and reset the
@@ -265,7 +270,7 @@ function MessageBody({
           />
         </div>
       </Box>
-      {tall && !expandAll && (
+      {tall && !expandAll && !revealed && (
         <UnstyledButton
           data-testid="fold-toggle"
           onClick={() => setExpanded(e => !e)}

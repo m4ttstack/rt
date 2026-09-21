@@ -961,6 +961,33 @@ test("a folded message's control toggles only that message, both ways", () => {
   );
 });
 
+test('unfolding a read row stands the tall fold down, leaving one control', () => {
+  withTallBodies(() => {
+    renderWithProviders(
+      <Transcript
+        room="build"
+        unreadCount={0}
+        messages={[twoBlockMessage(1)]}
+      />
+    );
+  });
+  const row = screen.getByTestId('message-1');
+  // The read-fold owns this row's reveal: its click must not hand the body
+  // straight to the tall fold's own 320px clip, or reading one message
+  // costs two clicks through two controls.
+  fireEvent.click(within(row).getByTestId('read-fold-toggle'));
+  expect(row).toHaveTextContent('second 1');
+  expect(within(row).getByTestId('message-fold')).toHaveAttribute(
+    'data-folded',
+    'false'
+  );
+  expect(within(row).queryByTestId('fold-toggle')).toBeNull();
+  // Re-folding hands the row back: the two folds stay independent, so this
+  // is not a one-way latch.
+  fireEvent.click(within(row).getByTestId('read-fold-toggle'));
+  expect(within(row).getByTestId('fold-toggle')).toBeInTheDocument();
+});
+
 test('an undefined unreadCount folds every message', () => {
   renderWithProviders(
     <Transcript room="build" messages={[twoBlockMessage(1)]} />

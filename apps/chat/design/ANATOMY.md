@@ -187,9 +187,11 @@ task line.
 **Folding**: a message above the read cursor renders its **first block**
 plus a `.foldrow` (`▶ N more lines`, accent, 10.56px / 600); unread messages
 render whole — they are what the page was opened to read. The page-wide
-expand-all toggle unfolds everything. This replaces nothing: the `.fold`
-320px cap with `show more` still applies to any single body taller than
-480px (long code blocks), and the anchored message never folds either way.
+expand-all toggle unfolds everything. The `.fold` 320px cap with `show more`
+still applies to any single body taller than 480px (long code blocks), but it
+stands down on a row whose `.foldrow` the reader has unfolded, so one row
+never carries both controls at once. The anchored message never folds either
+way.
 
 An unanswered `@here` ask carries a `.ctx.warn` chip under the body:
 `@here · unclaimed 1h 17m`.
