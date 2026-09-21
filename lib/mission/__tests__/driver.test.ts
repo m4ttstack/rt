@@ -813,6 +813,50 @@ describe("MissionDriver: commit", () => {
     const last = session.pushed.at(-1) as MissionModel;
     expect(last.notice).toBe("main is a stack root; amend refused");
   });
+
+  // RT-221: the view clears its own local summary/description drafts the
+  // moment it emits mission:commit (the only point a non-empty local draft
+  // can ever go back to empty -- see mission.go's emitCommit/SetModel). A
+  // refusal or failure must echo the rejected text back onto the wire
+  // model so the now-empty view fields re-seed from it, or the typed
+  // message is lost with no way to recover it.
+  test("a branch-guard refusal on amend restores the typed summary and description to the commit box", async () => {
+    const session = new FakeSession([
+      { t: "intent", name: "mission:commit", payload: { summary: "Amend it", description: "body text", amend: true } },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({
+      session,
+      guard: async () => ({ verdict: "refuse", reason: "stack", detail: "main is a stack root; amend refused" }),
+    });
+
+    await new MissionDriver(deps, START).run();
+
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.notice).toBe("main is a stack root; amend refused");
+    expect(last.commit.summary).toBe("Amend it");
+    expect(last.commit.description).toBe("body text");
+  });
+
+  test("a commit that fails in git restores the typed summary and description to the commit box", async () => {
+    const session = new FakeSession([
+      { t: "intent", name: "mission:commit", payload: { summary: "Fix the thing", description: "extra detail" } },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({
+      session,
+      commit: () => {
+        throw new Error("nothing to commit");
+      },
+    });
+
+    await new MissionDriver(deps, START).run();
+
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.notice).toBe("commit failed: nothing to commit");
+    expect(last.commit.summary).toBe("Fix the thing");
+    expect(last.commit.description).toBe("extra detail");
+  });
 });
 
 // GHD's own sequencing (ratified 2026-09-21): commit resets the whole index

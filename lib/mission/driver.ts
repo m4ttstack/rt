@@ -605,6 +605,20 @@ export class MissionDriver {
     this.push();
   }
 
+  /**
+   * The view clears its own local summary/description drafts the moment it
+   * emits mission:commit (the only point a non-empty local draft can ever
+   * go back to empty -- mission.go's emitCommit/SetModel treats a non-empty
+   * draft as always outranking a push). A refusal or failure must echo the
+   * rejected text back onto the wire model so the now-empty view fields
+   * re-seed from it on the next push, or the typed message is lost with no
+   * way to recover it.
+   */
+  private restoreDraft(payload: CommitPayload): void {
+    this.state.summary = payload.summary;
+    this.state.description = payload.description ?? "";
+  }
+
   private async handleCommit(payload: CommitPayload | undefined): Promise<void> {
     if (!payload || typeof payload.summary !== "string") return;
     // The view already gates on a non-empty summary; this re-check covers
@@ -617,6 +631,7 @@ export class MissionDriver {
     if (payload.amend && this.snapshot.branch) {
       const verdict = await this.guardBranch(this.snapshot.branch);
       if (verdict.verdict === "refuse") {
+        this.restoreDraft(payload);
         this.state.notice = verdict.detail;
         this.push();
         return;
@@ -636,11 +651,18 @@ export class MissionDriver {
     await this.rebuildIndexFromSelections(client);
 
     const message = payload.description ? `${payload.summary}\n\n${payload.description}` : payload.summary;
-    if (payload.amend) {
-      this.deps.amend(cwd, { message });
-      this.state.forcePushRecommended = true;
-    } else {
-      this.deps.commit(cwd, message);
+    try {
+      if (payload.amend) {
+        this.deps.amend(cwd, { message });
+        this.state.forcePushRecommended = true;
+      } else {
+        this.deps.commit(cwd, message);
+      }
+    } catch (err) {
+      this.restoreDraft(payload);
+      this.state.notice = `commit failed: ${err instanceof Error ? err.message : String(err)}`;
+      this.push();
+      return;
     }
 
     this.state.summary = "";
