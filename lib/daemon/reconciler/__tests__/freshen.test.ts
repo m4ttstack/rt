@@ -146,8 +146,11 @@ describe("freshen.ts: freshenRepo", () => {
       root: join(repo, ".worktrees"),
       ready: [{ run: "touch .freshened", when: "changed:tracked.txt" }],
     });
-    const g = await createTree({ repoName, repoPath: repo, emit: () => {}, log: fakeLog() as never, target: "golden" });
+    // Member created before the golden, so the registry's natural (creation)
+    // order is [member, golden]: ran[0] === "golden" can only pass if
+    // freshenRepo's sort actually reorders it.
     const m = await createTree({ repoName, repoPath: repo, emit: () => {}, log: fakeLog() as never });
+    const g = await createTree({ repoName, repoPath: repo, emit: () => {}, log: fakeLog() as never, target: "golden" });
     if (!g.ok || !m.ok) throw new Error("setup");
     writeFileSync(join(repo, "tracked.txt"), "bump\n");
     execSync("git add tracked.txt && git -c user.email=t@t -c user.name=t commit -qm bump && git push -q origin HEAD", { cwd: repo, shell: "/bin/zsh" });
