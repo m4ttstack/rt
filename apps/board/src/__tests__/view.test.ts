@@ -347,6 +347,29 @@ describe('statusFlags', () => {
     );
     expect(flags.some(f => f.text === 'auto-merge')).toBe(false);
   });
+
+  test('a stood-down MR shows an auto-doctor-off flag, before the stacked flag', () => {
+    const flags = statusFlags(
+      mr({
+        standDown: true,
+        isStacked: true,
+        targetBranch: 'parent-branch',
+      } as any)
+    );
+    expect(flags).toEqual([
+      {
+        key: 'stood-down',
+        text: 'auto-doctor off',
+        title: 'auto-doctor stood down for this MR, right-click to re-enable',
+      },
+      { key: 'stacked', text: 'stacked', title: 'stacked on parent-branch' },
+    ]);
+  });
+
+  test('no auto-doctor-off flag when not stood down', () => {
+    const flags = statusFlags(mr({ standDown: false } as any));
+    expect(flags.some(f => f.key === 'stood-down')).toBe(false);
+  });
 });
 
 describe('behindToken', () => {

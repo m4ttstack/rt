@@ -282,6 +282,16 @@ test('flags are icon-and-word tokens on the header line, keyed by data-flag; the
   expect(row.querySelector('.tui-row-1')!.children).toHaveLength(1);
 });
 
+test('a stood-down MR shows an auto-doctor-off flag on the header line', async () => {
+  await render([mr({ standDown: true } as never)]);
+  const flag = container.querySelector('[data-flag="stood-down"]');
+  expect(flag?.textContent).toBe('auto-doctor off');
+  expect(flag?.getAttribute('title')).toBe(
+    'auto-doctor stood down for this MR, right-click to re-enable'
+  );
+  expect(flag?.querySelector('svg')).not.toBeNull();
+});
+
 test('the state pill carries the merge blockers in its tooltip', async () => {
   await render([
     mr({

@@ -80,6 +80,7 @@ export type FlagKey =
   | 'conflicts'
   | 'ci-failing'
   | 'ci-running'
+  | 'stood-down'
   | 'stacked';
 
 export interface StatusFlag {
@@ -89,11 +90,11 @@ export interface StatusFlag {
 }
 
 /** GitLab-native facts on the header line: draft first, armed auto-merge,
-    then mechanical blockers (conflicts / CI) most severe first, plus the
-    stacked marker for MRs targeting a parent branch instead of the default
-    branch. */
-export function statusFlags(
-  mr: BoardMR,
+    then mechanical blockers (conflicts / CI) most severe first, then the
+    one board-local fact (auto-doctor stood down), plus the stacked marker
+    for MRs targeting a parent branch instead of the default branch. */
+export function statusFlags<M extends BoardMR & { standDown?: boolean }>(
+  mr: M,
   opts?: { nested?: boolean }
 ): StatusFlag[] {
   const b = mr.blockers;
@@ -109,6 +110,12 @@ export function statusFlags(
   if (b.hasConflicts) flags.push({ key: 'conflicts', text: 'conflicts' });
   if (b.pipelineFailing) flags.push({ key: 'ci-failing', text: 'ci failing' });
   if (b.pipelineRunning) flags.push({ key: 'ci-running', text: 'ci running' });
+  if (mr.standDown)
+    flags.push({
+      key: 'stood-down',
+      text: 'auto-doctor off',
+      title: 'auto-doctor stood down for this MR, right-click to re-enable',
+    });
   // A row nested under its parent already shows the relationship; the flag
   // only earns its place when the parent is not visible above the row.
   if (mr.isStacked && !opts?.nested)

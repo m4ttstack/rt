@@ -460,6 +460,9 @@ body {
 .tui-flag[data-flag='ci-running'] {
   --flag: var(--text-warn-vivid);
 }
+.tui-flag[data-flag='stood-down'] {
+  --flag: color-mix(in srgb, var(--text-4) 75%, transparent);
+}
 .tui-flag[data-flag='stacked'] {
   --flag: var(--text-cyan-vivid);
 }
