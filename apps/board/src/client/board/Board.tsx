@@ -15,6 +15,7 @@ import {
 } from '../../selection.ts';
 import {
   dataAgeLabel,
+  filterByDraft,
   filterByMember,
   filterBySlack,
   filterByTab,
@@ -28,7 +29,12 @@ import {
   serializeViewState,
   sortMRs,
 } from '../../view.ts';
-import type { SlackFilter, StackNode, ViewState } from '../../view.ts';
+import type {
+  DraftFilter,
+  SlackFilter,
+  StackNode,
+  ViewState,
+} from '../../view.ts';
 import { postAction } from '../api.ts';
 import type {
   BoardData,
@@ -100,13 +106,25 @@ function boardTabs(d: Pick<BoardData, 'tabs' | 'defaultMember'>): TabConfig[] {
   return d.defaultMember === 'all' ? d.tabs : [...d.tabs, NEEDS_ME_TAB];
 }
 
-/** Empty-list copy: the posted-in-slack chip persists across tabs, so an
-    empty view has to name the filter — and how many rows it hid — rather
-    than read as "this queue has no work". */
-function emptyQueueCopy(slackFilter: SlackFilter, hidden: number): string {
-  if (slackFilter !== 'posted') return 'nothing waiting on review ✓';
-  if (hidden === 0) return 'Nothing found in slack';
-  return `Nothing found in slack · ${hidden} item${hidden === 1 ? '' : 's'} hidden`;
+/** Empty-list copy: the posted-in-slack and hide-drafts chips both persist
+    across tabs, so an empty view has to name whichever is on — and how many
+    rows it hid — rather than read as "this queue has no work". Slack wins
+    when both are on at once; the two firing together to empty a queue is
+    rare enough not to earn its own combined phrasing. */
+function emptyQueueCopy(
+  slackFilter: SlackFilter,
+  slackHidden: number,
+  draftFilter: DraftFilter,
+  draftsHidden: number
+): string {
+  if (slackFilter === 'posted') {
+    if (slackHidden === 0) return 'Nothing found in slack';
+    return `Nothing found in slack · ${slackHidden} item${slackHidden === 1 ? '' : 's'} hidden`;
+  }
+  if (draftFilter === 'hide' && draftsHidden > 0) {
+    return `nothing waiting on review ✓ · ${draftsHidden} draft${draftsHidden === 1 ? '' : 's'} hidden`;
+  }
+  return 'nothing waiting on review ✓';
 }
 
 // ── board ──────────────────────────────────────────────────────────────────
@@ -868,9 +886,17 @@ export function Board() {
     // behind a control that isn't rendered, so the filter only bites when
     // there are refs to filter on.
     const slackFilter = data.slackEnabled ? state.slack : 'all';
+    // Drafts never appear at all on an "all" board (buildBoard drops every
+    // draft when there's no single defaultMember to own one), so the same
+    // guard keeps a stored "hide" pick from doing anything on a board where
+    // the chip isn't rendered.
+    const draftFilter: DraftFilter =
+      data.defaultMember !== 'all' ? state.drafts : 'all';
     const memberFiltered = filterByMember(tabFiltered, state.member);
-    const filtered = filterBySlack(memberFiltered, slackFilter);
-    const slackHidden = memberFiltered.length - filtered.length;
+    const slackFiltered = filterBySlack(memberFiltered, slackFilter);
+    const filtered = filterByDraft(slackFiltered, draftFilter);
+    const slackHidden = memberFiltered.length - slackFiltered.length;
+    const draftsHidden = slackFiltered.length - filtered.length;
     const groups = groupMRs(
       filtered,
       state.group,
@@ -897,6 +923,8 @@ export function Board() {
       rosterTotal,
       slackFilter,
       slackHidden,
+      draftFilter,
+      draftsHidden,
       filtered,
       groups,
     };
@@ -964,6 +992,8 @@ export function Board() {
     rosterTotal,
     slackFilter,
     slackHidden,
+    draftFilter,
+    draftsHidden,
     filtered,
     groups,
   } = boardView!;
@@ -1066,6 +1096,11 @@ export function Board() {
       load();
     });
   };
+  // No server refresh needed here: isDraft rides the regular poll, unlike
+  // slack status which needs its own out-of-band check.
+  const toggleDraftFilter = () => {
+    update({ drafts: state.drafts === 'hide' ? 'all' : 'hide' });
+  };
   const inferredNote = isCodeownersTab
     ? 'authors in this queue'
     : isSeatTab
@@ -1090,6 +1125,10 @@ export function Board() {
     slackFilter: data.slackEnabled
       ? { active: slackFilter === 'posted', toggle: toggleSlackFilter }
       : null,
+    draftFilter:
+      data.defaultMember !== 'all'
+        ? { active: draftFilter === 'hide', toggle: toggleDraftFilter }
+        : null,
   };
 
   return (
@@ -1212,7 +1251,7 @@ export function Board() {
         !data.fetchError &&
         !activeSection?.unknown ? (
           <p className="tui-empty">
-            {emptyQueueCopy(slackFilter, slackHidden)}
+            {emptyQueueCopy(slackFilter, slackHidden, draftFilter, draftsHidden)}
           </p>
         ) : (
           groups.map(g => (

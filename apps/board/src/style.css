@@ -103,15 +103,31 @@ body {
   flex-wrap: wrap;
   align-items: center;
 }
-/* Push the header toolbar to the right edge, even when it wraps below the title. */
+/* Push the header toolbar to the right edge, even when it wraps below the
+   title. The toolbar itself stays one row -- `.tui-controls`'s own
+   flex-wrap would otherwise split it mid-row (e.g. the theme picker
+   stranded alone under everything else) once its buttons no longer fit
+   beside the title. `flex-shrink: 0` keeps `.tui-header`'s own wrap (title
+   moves above) as the first release valve, ahead of this row scrolling
+   itself; `flex-start` (rather than `flex-end`) is what makes any overflow
+   that remains spill off the end, the direction `overflow-x: auto` can
+   actually scroll to -- flex-end overflow spills off the *start* instead,
+   which is invisible with no way to reach it. */
 .tui-controls-header {
   margin-left: auto;
-  justify-content: flex-end;
+  justify-content: flex-start;
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  max-width: 100%;
 }
 /* Uniform control height: the text segmented (0.8em) and icon segmented would
-   otherwise differ by ~1px and read as misaligned. */
+   otherwise differ by ~1px and read as misaligned. `flex-shrink: 0` is what
+   makes the nowrap/overflow-x pair above actually scroll instead of
+   squeezing each segmented's own text/icons down to an unreadable clip. */
 .tui-controls-header > * {
   height: 28px;
+  flex-shrink: 0;
 }
 .tui-controls-header [data-part='segmented-option'] {
   height: 100%;
@@ -149,20 +165,23 @@ body {
   color: var(--text-accent-small);
   border-color: var(--fill-accent);
 }
-/* Posted-to-slack filter: off is a muted mono glyph like its neighbours; on
-   is the segmented control's active state (accent fill, white glyph, the
-   chip's checkmark badge kept). A label on a saturated fill takes white
-   for accent and purple, the dark neutral #1c2024 for ok, warn, cyan and
-   bad; the pick holds in both schemes since a saturated fill does not
-   lighten in light mode. The hover rule below outranks `.tui-copy:hover`,
-   which would otherwise flip the glyph to --text-1 on accent. */
+/* Posted-to-slack and hide-drafts filters: off is a muted mono glyph like
+   their neighbours; on is the segmented control's active state (accent
+   fill, white glyph, the chip's checkmark badge kept). A label on a
+   saturated fill takes white for accent and purple, the dark neutral
+   #1c2024 for ok, warn, cyan and bad; the pick holds in both schemes since
+   a saturated fill does not lighten in light mode. The hover rule below
+   outranks `.tui-copy:hover`, which would otherwise flip the glyph to
+   --text-1 on accent. */
 .tui-slack-filter[data-active],
+.tui-draft-filter[data-active],
 .tui-drawer-action[data-active] {
   background: var(--fill-accent);
   border-color: var(--fill-accent);
   color: #ffffff;
 }
 .tui-slack-filter[data-active]:hover,
+.tui-draft-filter[data-active]:hover,
 .tui-drawer-action[data-active]:hover {
   color: #ffffff;
 }

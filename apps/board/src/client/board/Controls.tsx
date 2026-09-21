@@ -4,7 +4,7 @@ import type { GroupKey, ViewState } from '../../view.ts';
 import type { ThemeMode } from '../types.ts';
 import { SlackPostedMark } from './chips.tsx';
 import { GROUP_LABEL, SORT_LABEL } from './format.ts';
-import { SlackLogo } from './icons.tsx';
+import { FlagGlyph, SlackLogo } from './icons.tsx';
 
 // ── controls (shared: desktop header + mobile drawer) ───────────────────────
 
@@ -21,6 +21,7 @@ function Controls({
   canPostSummary,
   postingSummary,
   slackFilter,
+  draftFilter,
   groupKeys = GROUP_KEYS,
   stacked = false,
 }: {
@@ -39,6 +40,9 @@ function Controls({
   postingSummary?: boolean;
   /** Null when slack isn't configured: there are no refs to filter on. */
   slackFilter?: { active: boolean; toggle: () => void } | null;
+  /** Null on an "all" board: drafts never appear there (buildBoard drops
+      every draft when there's no single defaultMember to own one). */
+  draftFilter?: { active: boolean; toggle: () => void } | null;
   stacked?: boolean;
 }) {
   const group = (
@@ -70,6 +74,9 @@ function Controls({
   const slackFilterLabel = slackFilter?.active
     ? 'showing only MRs posted in slack'
     : 'only MRs posted in slack';
+  const draftFilterLabel = draftFilter?.active
+    ? 'hiding your draft MRs'
+    : 'hide your draft MRs';
 
   // Drawer: labeled full-width rows, so a mobile user can tell what each does.
   if (stacked) {
@@ -105,6 +112,17 @@ function Controls({
             {slackFilter.active
               ? 'showing only posted in slack'
               : 'only posted in slack'}
+          </button>
+        )}
+        {draftFilter && (
+          <button
+            className="tui-drawer-action"
+            data-active={draftFilter.active || undefined}
+            aria-pressed={draftFilter.active}
+            onClick={draftFilter.toggle}
+          >
+            <FlagGlyph kind="draft" />{' '}
+            {draftFilter.active ? 'hiding drafts' : 'hide drafts'}
           </button>
         )}
         {canCopy && (
@@ -159,6 +177,18 @@ function Controls({
           onClick={slackFilter.toggle}
         >
           <SlackPostedMark mono />
+        </button>
+      )}
+      {draftFilter && (
+        <button
+          className="tui-copy tui-draft-filter"
+          data-active={draftFilter.active || undefined}
+          aria-pressed={draftFilter.active}
+          aria-label={draftFilterLabel}
+          title={draftFilterLabel}
+          onClick={draftFilter.toggle}
+        >
+          <FlagGlyph kind="draft" />
         </button>
       )}
       {group}

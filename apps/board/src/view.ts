@@ -9,6 +9,7 @@ export type GroupKey = 'age' | 'author' | 'status' | 'review' | 'needs';
 export type SortKey = 'oldest' | 'progress';
 
 export type SlackFilter = 'all' | 'posted';
+export type DraftFilter = 'all' | 'hide';
 
 export const GROUP_KEYS: readonly GroupKey[] = [
   'age',
@@ -19,6 +20,7 @@ export const GROUP_KEYS: readonly GroupKey[] = [
 ];
 export const SORT_KEYS: readonly SortKey[] = ['oldest', 'progress'];
 export const SLACK_FILTER_KEYS: readonly SlackFilter[] = ['all', 'posted'];
+export const DRAFT_FILTER_KEYS: readonly DraftFilter[] = ['all', 'hide'];
 
 /** Sentinel that sorts after any ISO date, so null timestamps land last. */
 const LATEST = '9999';
@@ -297,6 +299,16 @@ export function filterBySlack<
   return filter === 'all' ? mrs : mrs.filter(m => !!m.slack?.posted);
 }
 
+/** Same "your own drafts only" rows the DRAFT chip marks -- drafts from
+    anyone else never reach the board (see buildBoard), so this is exactly
+    the show/hide toggle for that chip. */
+export function filterByDraft<T extends { isDraft?: boolean }>(
+  mrs: T[],
+  filter: DraftFilter
+): T[] {
+  return filter === 'all' ? mrs : mrs.filter(m => !m.isDraft);
+}
+
 /** Usernames the member filter may legitimately hold on a given tab. An
     authors tab answers with the configured roster; a codeowners tab answers
     with the authors of the rows it shows, since its roster is inferred from
@@ -560,6 +572,7 @@ export interface ViewState {
   sort: SortKey;
   tab: string;
   slack: SlackFilter;
+  drafts: DraftFilter;
 }
 
 export const DEFAULT_VIEW: ViewState = {
@@ -568,6 +581,7 @@ export const DEFAULT_VIEW: ViewState = {
   sort: 'oldest',
   tab: '',
   slack: 'all',
+  drafts: 'all',
 };
 
 /** URL query params win, then stored localStorage values, then defaults. Invalid
@@ -607,6 +621,7 @@ export function parseViewState(
     sort: resolve('sort', SORT_KEYS, 'oldest'),
     tab: resolve('tab', validTabs, validTabs[0] ?? ''),
     slack: resolve('slack', SLACK_FILTER_KEYS, 'all'),
+    drafts: resolve('drafts', DRAFT_FILTER_KEYS, 'all'),
   };
 }
 
@@ -680,6 +695,7 @@ export function serializeViewState(v: ViewState): string {
   if (v.sort !== DEFAULT_VIEW.sort) params.set('sort', v.sort);
   if (v.tab !== DEFAULT_VIEW.tab) params.set('tab', v.tab);
   if (v.slack !== DEFAULT_VIEW.slack) params.set('slack', v.slack);
+  if (v.drafts !== DEFAULT_VIEW.drafts) params.set('drafts', v.drafts);
   const s = params.toString();
   return s ? `?${s}` : '';
 }

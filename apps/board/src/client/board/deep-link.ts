@@ -21,14 +21,15 @@ export function mrForGate(
   return hit ? hit.iid : null;
 }
 
-/** A `?gate=<id>` deep link overrides the stored member/tab/slack filters
-    that would otherwise hide the linked MR rather than merely widening
-    them -- a notification click has to land, not silently no-op behind
-    whatever the viewer last had picked. Member always widens to 'all' (a
-    link carries no author context worth preserving); the tab only changes
-    when the current one would not show the MR, switching to the first
-    configured tab whose filterByTab result includes it; the slack filter
-    only clears when it would otherwise filter the MR out. */
+/** A `?gate=<id>` deep link overrides the stored member/tab/slack/drafts
+    filters that would otherwise hide the linked MR rather than merely
+    widening them -- a notification click has to land, not silently no-op
+    behind whatever the viewer last had picked. Member always widens to
+    'all' (a link carries no author context worth preserving); the tab
+    only changes when the current one would not show the MR, switching to
+    the first configured tab whose filterByTab result includes it; the
+    slack and drafts filters only clear when they would otherwise filter
+    the MR out. */
 export function viewStateForGate<
   T extends BoardMR & { slack?: { posted?: boolean } | null },
 >(
@@ -53,6 +54,10 @@ export function viewStateForGate<
 
   if (next.slack !== 'all' && !mr.slack?.posted) {
     next = { ...next, slack: 'all' };
+  }
+
+  if (next.drafts !== 'all' && mr.isDraft) {
+    next = { ...next, drafts: 'all' };
   }
 
   return next;

@@ -8,6 +8,7 @@ import {
   DEFAULT_VIEW,
   descendantsOf,
   dropPeer,
+  filterByDraft,
   filterByMember,
   filterBySlack,
   filterByTab,
@@ -63,6 +64,18 @@ describe('filterBySlack', () => {
   });
   test('posted keeps only rows the posted-in-slack chip would mark', () => {
     expect(filterBySlack(list, 'posted').map(m => m.iid)).toEqual([1]);
+  });
+});
+
+describe('filterByDraft', () => {
+  const draft = mr({ iid: 1, isDraft: true } as any);
+  const ready = mr({ iid: 2, isDraft: false } as any);
+  const list = [draft, ready];
+  test('all returns everything', () => {
+    expect(filterByDraft(list, 'all')).toHaveLength(2);
+  });
+  test('hide drops the draft-chip rows', () => {
+    expect(filterByDraft(list, 'hide').map(m => m.iid)).toEqual([2]);
   });
 });
 
@@ -989,6 +1002,7 @@ describe('parseViewState', () => {
       sort: 'progress',
       tab: '',
       slack: 'all',
+      drafts: 'all',
     });
   });
   test('ignores unknown member and invalid group/sort', () => {
@@ -1054,6 +1068,24 @@ describe('parseViewState', () => {
   test('an unknown slack filter value falls back to all', () => {
     expect(parseViewState('?slack=bogus', null, members).slack).toBe('all');
   });
+
+  test('drafts filter defaults to all', () => {
+    expect(parseViewState('', null, members).drafts).toBe('all');
+  });
+
+  test('drafts=hide from the URL', () => {
+    expect(parseViewState('?drafts=hide', null, members).drafts).toBe('hide');
+  });
+
+  test('stored drafts filter is honoured', () => {
+    expect(parseViewState('', { drafts: 'hide' }, members).drafts).toBe(
+      'hide'
+    );
+  });
+
+  test('an unknown drafts filter value falls back to all', () => {
+    expect(parseViewState('?drafts=bogus', null, members).drafts).toBe('all');
+  });
 });
 
 describe('serializeViewState', () => {
@@ -1068,6 +1100,7 @@ describe('serializeViewState', () => {
         sort: 'oldest',
         tab: '',
         slack: 'all',
+        drafts: 'all',
       })
     ).toBe('?member=bob&group=status');
   });
@@ -1079,12 +1112,18 @@ describe('serializeViewState', () => {
         sort: 'oldest',
         tab: 'team',
         slack: 'all',
+        drafts: 'all',
       })
     ).toBe('?tab=team');
   });
   test('includes the slack filter when it is on', () => {
     expect(serializeViewState({ ...DEFAULT_VIEW, slack: 'posted' })).toBe(
       '?slack=posted'
+    );
+  });
+  test('includes the drafts filter when it is on', () => {
+    expect(serializeViewState({ ...DEFAULT_VIEW, drafts: 'hide' })).toBe(
+      '?drafts=hide'
     );
   });
 });

@@ -148,6 +148,13 @@ describe('viewStateForGate', () => {
     expect(result.slack).toBe('all');
   });
 
+  test('clears a drafts-hide filter that would hide the row', () => {
+    const mrs = [mr({ iid: 5, isDraft: true } as Partial<GateLinkMR>)];
+    const state = { ...DEFAULT_VIEW, tab: 'team', drafts: 'hide' as const };
+    const result = viewStateForGate(state, mrs, [teamTab], new Set(['bob']), 5);
+    expect(result.drafts).toBe('all');
+  });
+
   test('returns state unchanged when no row carries the iid', () => {
     const mrs = [mr({ iid: 6 })];
     const state = { ...DEFAULT_VIEW, tab: 'team', member: 'bob' };
