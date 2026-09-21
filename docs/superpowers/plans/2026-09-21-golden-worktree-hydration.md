@@ -182,7 +182,7 @@ Expected: PASS.
 
 - [ ] **Step 5: Run the typecheck and commit**
 
-Run: `bun run typecheck` (or `bunx tsc --noEmit -p tsconfig.json` if no script)
+Run: `bunx tsc --noEmit` (the command CI runs; there is no `typecheck` npm script)
 Expected: clean.
 
 ```bash
@@ -1528,7 +1528,7 @@ hydrated tree must inherit the stamp rather than "verify" with an install.
 
 Run:
 ```bash
-bun run typecheck
+bunx tsc --noEmit
 bun run test
 bun run test:e2e
 bun run picker:check
