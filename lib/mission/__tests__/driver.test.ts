@@ -1183,8 +1183,7 @@ describe("MissionDriver: provisioning a worktree", () => {
     expect(calls).not.toContain("worktree:provision");
   });
 
-  test("a readyPending provision leaves the board settling until the daemon says otherwise", async () => {
-    let emit: ((ev: DaemonEvent) => void) | null = null;
+  test("a readyPending provision marks the board settling immediately after switching", async () => {
     const session = new FakeSession([
       { t: "intent", name: "mission:worktree", payload: { new: true, name: "my-feature" } },
       { t: "intent", name: "quit" },
@@ -1199,10 +1198,6 @@ describe("MissionDriver: provisioning a worktree", () => {
         return { ok: true, data: { repos: [] } };
       },
     });
-    deps.subscribe = (onEvent) => {
-      emit = onEvent;
-      return { close: () => {} };
-    };
 
     await new MissionDriver(deps, START).run();
 
