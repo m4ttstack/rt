@@ -14,7 +14,7 @@
 
 - The TS CLI stays UI-free: no `.tsx`, no UI frameworks (`lib/__tests__/no-ui-in-cli.test.ts`).
 - Any new command module must be a thunk in `lib/module-registry.ts`; `./commands/worktree.ts` is already registered, so the new verb lives there.
-- A hidden leaf with required positionals declares `omitBehavior: { exempt: "..." }` (`bun run picker:check`).
+- A hidden leaf with required positionals declares `omitBehavior: { exempt: "..." }`. `picker:check` does not enforce this: `scripts/lib/picker-conformance.ts:32` skips `hidden` nodes before it looks at `omitBehavior`, and CLAUDE.md's rule is scoped to visible leaves. It is a convention three existing hidden nodes already follow, so the declaration records intent for a reader rather than satisfying a gate.
 - Never sync-exec or block on the daemon thread: the clone runs in a child process via `runCapture`.
 - Nothing in a `V*_SCHEMA` block changes; the registry is kv rows, no migration.
 - Tests run under the bunfig-preloaded isolated HOME; every test that touches the registry sets `process.env.HOME` to a fresh temp dir and calls `closeStateDb()` (see `lib/daemon/reconciler/__tests__/replenish.test.ts`).
