@@ -301,6 +301,61 @@ test('a long detail renders its first clause and keeps the whole message as the 
   ).toBeNull();
 });
 
+const MERGE_LINE: RowStatus = {
+  line: {
+    tone: 'go',
+    word: 'review ready',
+    verbs: [
+      { kind: 'merge', label: 'merge' },
+      { kind: 'read-review', label: 'read ↗' },
+    ],
+  },
+  more: [],
+  bar: null,
+};
+
+test('merge takes two clicks: the first arms it as "really merge?", the second merges', async () => {
+  const merged: number[] = [];
+  await render(MERGE_LINE, ctx({ onMerge: m => merged.push(m.iid) }));
+  const merge = () =>
+    container.querySelector<HTMLButtonElement>('button[data-verb="merge"]')!;
+  expect(merge().textContent).toBe('merge');
+  expect(merge().dataset.armed).toBeUndefined();
+  expect(merge().dataset.lane).toBeUndefined();
+  await React.act(async () => merge().click());
+  expect(merged).toEqual([]);
+  expect(merge().textContent).toBe('really merge?');
+  expect(merge().dataset.armed).toBe('true');
+  await React.act(async () => merge().click());
+  expect(merged).toEqual([1418]);
+  expect(merge().textContent).toBe('merge');
+});
+
+test('leaving the line disarms merge', async () => {
+  const merged: number[] = [];
+  await render(MERGE_LINE, ctx({ onMerge: m => merged.push(m.iid) }));
+  const merge = () =>
+    container.querySelector<HTMLButtonElement>('button[data-verb="merge"]')!;
+  await React.act(async () => merge().click());
+  await React.act(async () => {
+    container
+      .querySelector('.tui-status')!
+      .dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
+  });
+  expect(merge().textContent).toBe('merge');
+  await React.act(async () => merge().click());
+  expect(merged).toEqual([]);
+});
+
+test('a board that is not local hides merge, as the row menu does; the next verb leads', async () => {
+  await render(MERGE_LINE, ctx({ local: false }));
+  const verbs = [
+    ...container.querySelectorAll<HTMLButtonElement>('button[data-verb]'),
+  ];
+  expect(verbs.map(v => v.dataset.verb)).toEqual(['read-review']);
+  expect(verbs[0]!.dataset.secondary).toBeUndefined();
+});
+
 test('the dismiss secondary sits left of the relaunch and carries the lane it drops', async () => {
   const calls: string[] = [];
   await render(

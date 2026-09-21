@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 
 import type { BoardMRWithReview, RowContext } from '../types.ts';
 import { clauseOf } from './clause.ts';
@@ -78,6 +78,9 @@ function runVerb(verb: Verb, mr: BoardMRWithReview, ctx: RowContext): void {
     case 'open-mr':
       if (mr.webUrl) window.open(mr.webUrl, '_blank', 'noopener');
       return;
+    case 'merge':
+      ctx.onMerge(mr);
+      return;
     default: {
       const never: never = verb.kind;
       return never;
@@ -103,10 +106,22 @@ export function StatusLine({
   tools?: ReactNode;
 }) {
   const { line, more } = status;
+  // Merge is the one irreversible verb: the first click arms it, the second
+  // fires, and leaving the line disarms it, the row menu's item made inline.
+  const [armed, setArmed] = useState(false);
+  // /mr/action refuses a non-local request, so a remote board never shows
+  // merge, the same as the row menu's gitlab section.
+  const verbs = ctx.local
+    ? line.verbs
+    : line.verbs.filter(verb => verb.kind !== 'merge');
   const hot = line.tone === 'bad' || line.tone === 'warn';
   const detail = line.detail ? clauseOf(line.detail) : null;
   return (
-    <div className="tui-status" data-tone={line.tone}>
+    <div
+      className="tui-status"
+      data-tone={line.tone}
+      onMouseLeave={() => setArmed(false)}
+    >
       <span className="tui-status-word">{line.word}</span>
       {line.spin && <span className="tui-status-ring" aria-hidden />}
       {line.tone === 'clear' && (
@@ -128,10 +143,11 @@ export function StatusLine({
         </span>
       )}
       {tools && <span className="tui-status-tools">{tools}</span>}
-      {line.verbs.length > 0 && (
+      {verbs.length > 0 && (
         <span className="tui-status-verbs">
-          {ordered(line.verbs).map(({ verb, primary }) => {
+          {ordered(verbs).map(({ verb, primary }) => {
             const lane = laneOf(verb);
+            const merge = verb.kind === 'merge';
             return (
               <button
                 key={`${verb.kind}-${verb.label}`}
@@ -140,15 +156,22 @@ export function StatusLine({
                 data-verb={verb.kind}
                 data-lane={lane}
                 data-decide={verb.kind === 'answer' ? 'true' : undefined}
+                data-armed={merge && armed ? 'true' : undefined}
                 data-hot={hot && primary ? 'true' : undefined}
                 data-secondary={primary ? undefined : 'true'}
                 onClick={e => {
                   e.stopPropagation();
+                  if (merge && !armed) {
+                    setArmed(true);
+                    return;
+                  }
+                  setArmed(false);
                   runVerb(verb, mr, ctx);
                 }}
+                onBlur={merge ? () => setArmed(false) : undefined}
               >
                 {lane && <AgentGlyph />}
-                {verb.label}
+                {merge && armed ? 'really merge?' : verb.label}
               </button>
             );
           })}

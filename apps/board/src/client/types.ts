@@ -258,6 +258,9 @@ export interface RowContext {
   /** The status line's clear verb: POSTs /reconciler/clear for the gone
       orphan's agentId, whether or not an attention gate still exists. */
   onClearOrphan: (agentId: string) => void;
+  /** The status line's merge verb, through the same /mr/action call the row
+      menu's merge item makes. */
+  onMerge: (mr: BoardMR) => void;
   /** Stop showing a failed lane's line on the row; nothing is deleted. */
   onDismissLane: (mr: BoardMR, lane: 'review' | 'respond' | 'doctor') => void;
   /** Row menu's "never diagnose this stack" toggle: mutes auto-doctor for

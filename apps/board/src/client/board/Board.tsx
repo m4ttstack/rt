@@ -1036,6 +1036,7 @@ export function Board() {
     selected,
     onToggleSelect: toggleSelect,
     onClearOrphan: handleClearOrphan,
+    onMerge: mr => handleMrAction(mr, 'merge'),
     onDismissLane: handleDismissLane,
     onStandDown: handleStandDown,
     noteEditing,

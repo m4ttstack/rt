@@ -44,7 +44,8 @@ export type VerbKind =
   | 'read-note'
   | 'view-peer'
   | 'dismiss'
-  | 'open-mr';
+  | 'open-mr'
+  | 'merge';
 
 export interface Verb {
   kind: VerbKind;
@@ -147,6 +148,25 @@ function agoMs(ms: number | undefined, now: number): string | undefined {
 
 function lowerFirst(s: string): string {
   return s.charAt(0).toLowerCase() + s.slice(1);
+}
+
+const MERGE: Verb = { kind: 'merge', label: 'merge' };
+
+/** The seat's own MR, approved, unblocked, and GitLab's merge button up and
+    idle: the same button the row menu's merge item reads, plus the blockers,
+    because glance enables the button optimistically while GitLab is still
+    re-checking mergeability. */
+function canMerge(mr: BoardMRWithReview, self: string | null): boolean {
+  const button = mr.mergeButton;
+  return (
+    self !== null &&
+    mr.author.username === self &&
+    mr.reviews.isApproved &&
+    !mr.blockers.any &&
+    button.visible &&
+    !button.disabled &&
+    !button.loading
+  );
 }
 
 function verdictWord(
@@ -302,18 +322,21 @@ function reviewLine(
         ? [{ kind: 'read-review', label: 'read ↗' }]
         : [];
       // A finished review that left threads for the author is a row with a
-      // move on it, not just something to read: respond leads, and the
-      // report stays one hover away.
+      // move on it, not just something to read: respond leads (or merge, once
+      // there is nothing left to answer), and the report stays one hover away.
       const mine = self !== null && mr.author.username === self;
       const awaiting = mr.threadSummary?.awaiting ?? 0;
+      const lead: Verb[] =
+        mine && awaiting > 0
+          ? [{ kind: 'launch-respond', label: 'respond' }]
+          : canMerge(mr, self)
+            ? [MERGE]
+            : [];
       return {
         tone: 'go',
         word: 'review ready',
         detail: verdict === statusPhrase(mr).text ? undefined : verdict,
-        verbs:
-          mine && awaiting > 0
-            ? [{ kind: 'launch-respond', label: 'respond' }, ...read]
-            : read,
+        verbs: [...lead, ...read],
       };
     }
     case 'error':
@@ -329,7 +352,10 @@ function reviewLine(
   }
 }
 
-function respondDoneLine(mr: BoardMRWithReview): Candidate {
+function respondDoneLine(
+  mr: BoardMRWithReview,
+  self: string | null
+): Candidate {
   const r = mr.respond!;
   const threads = r.threads ?? 0;
   const posted = Math.min(r.posted ?? 0, threads);
@@ -354,7 +380,7 @@ function respondDoneLine(mr: BoardMRWithReview): Candidate {
         tone: 'go',
         word: 'replies posted',
         detail: `${threads} of ${threads}`,
-        verbs: read,
+        verbs: canMerge(mr, self) ? [MERGE, ...read] : read,
       };
     }
     case 'partial':
@@ -382,7 +408,8 @@ function respondDoneLine(mr: BoardMRWithReview): Candidate {
 
 function respondLine(
   mr: BoardMRWithReview,
-  interrupted: Lane | null
+  interrupted: Lane | null,
+  self: string | null
 ): Candidate | null {
   const r = mr.respond;
   if (!r || interrupted === 'respond' || laneDismissed(r)) return null;
@@ -413,7 +440,7 @@ function respondLine(
         ],
       };
     case 'done':
-      return respondDoneLine(mr);
+      return respondDoneLine(mr, self);
   }
 }
 
@@ -641,7 +668,7 @@ function repairPhrase(b: BoardMR['blockers']): string | null {
 
 /** The author's standing state: what the MR needs from them before anyone
     else can move it, in the order they would fix it. */
-function authorLine(mr: BoardMRWithReview): Candidate {
+function authorLine(mr: BoardMRWithReview, self: string): Candidate {
   const b = mr.blockers;
   const repair = repairPhrase(b);
   if (repair) {
@@ -687,7 +714,11 @@ function authorLine(mr: BoardMRWithReview): Candidate {
     };
   }
   if (b.any) return { tone: 'quiet', word: 'blocked', verbs: [OPEN] };
-  return { tone: 'go', word: 'ready to merge', verbs: [OPEN] };
+  return {
+    tone: 'go',
+    word: 'ready to merge',
+    verbs: canMerge(mr, self) ? [MERGE, OPEN] : [OPEN],
+  };
 }
 
 /** A reviewer's standing state on someone else's MR: whether the next move
@@ -754,14 +785,14 @@ export function candidateLines(
     ...gateLines(mr),
     orphanLine(mr, now, interrupted),
     reviewLine(mr, now, interrupted, self),
-    respondLine(mr, interrupted),
+    respondLine(mr, interrupted, self),
     doctorLine(mr, now),
     ...draftLines(mr, draftResolved),
     ...peerLines(mr, now),
   ].filter((l): l is Candidate => l !== null);
   if (lines.length > 0) return lines;
   const mine = self !== null && mr.author.username === self;
-  return [mine ? authorLine(mr) : reviewerLine(mr, self)];
+  return [mine ? authorLine(mr, self) : reviewerLine(mr, self)];
 }
 
 const TONE_RANK: Record<Tone, number> = {

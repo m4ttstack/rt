@@ -23,6 +23,7 @@ function mr(over: Partial<BoardMRWithReview> = {}): BoardMRWithReview {
     author: { username: 'pat', name: 'Pat' },
     reviews: { isApproved: false, required: 1, given: 0, reviewers: [] },
     blockers: { any: false },
+    mergeButton: { visible: false, disabled: false, loading: false },
     gates: [],
     ...over,
   } as unknown as BoardMRWithReview;
@@ -60,6 +61,9 @@ const unapproved = (given: number, required: number) => ({
   reviews: { isApproved: false, required, given, reviewers: [] },
 });
 const blockedBy = (flags: Over) => ({ blockers: { any: true, ...flags } });
+const MERGEABLE = {
+  mergeButton: { visible: true, disabled: false, loading: false },
+};
 
 describe('rowStatus: the quiet row', () => {
   test("someone else's settled MR earns the sun: all clear, open verb, no bar", () => {
@@ -1351,6 +1355,78 @@ describe('a finished review that left threads for the author', () => {
       ME
     );
     expect(theirs.line.verbs.map(v => v.kind)).toEqual(['read-review']);
+  });
+});
+
+describe('merge from the row', () => {
+  const verbs = (m: BoardMRWithReview) =>
+    rowStatus(m, NOW, NONE, ME).line.verbs.map(v => v.kind);
+  const mine = (over: Over = {}) =>
+    settled({ author: { username: ME, name: 'Me' }, ...MERGEABLE, ...over });
+  const reviewDone = {
+    review: { status: 'done', outcome: 'approve', reportReady: true },
+  };
+
+  test('my approved, mergeable MR with a finished review: merge leads, the report one hover away', () => {
+    const s = rowStatus(mine(reviewDone), NOW, NONE, ME);
+    expect(s.line.word).toBe('review ready');
+    expect(s.line.verbs).toEqual([
+      { kind: 'merge', label: 'merge' },
+      { kind: 'read-review', label: 'read ↗' },
+    ]);
+  });
+
+  test('a finished response on my mergeable MR: merge leads, the report one hover away', () => {
+    expect(
+      verbs(
+        mine({
+          respond: {
+            status: 'done',
+            posted: 3,
+            threads: 3,
+            reportReady: true,
+          },
+        })
+      )
+    ).toEqual(['merge', 'read-respond']);
+  });
+
+  test('ready to merge: merge leads, open one hover away', () => {
+    const [line] = candidateLines(mine(), NOW, NONE, ME);
+    expect(line!.word).toBe('ready to merge');
+    expect(line!.verbs.map(v => v.kind)).toEqual(['merge', 'open-mr']);
+  });
+
+  test("someone else's MR never offers merge", () => {
+    expect(
+      verbs(mine({ ...reviewDone, author: { username: 'pat', name: 'Pat' } }))
+    ).toEqual(['read-review']);
+  });
+
+  test('no merge while GitLab would refuse it: conflicts, a disabled or busy button, or no approval', () => {
+    const cases: Over[] = [
+      {
+        ...blockedBy({ hasConflicts: true }),
+        mergeButton: { visible: true, disabled: true, loading: false },
+      },
+      { mergeButton: { visible: true, disabled: true, loading: false } },
+      { mergeButton: { visible: true, disabled: false, loading: true } },
+      { mergeButton: { visible: false, disabled: false, loading: false } },
+      unapproved(0, 1),
+    ];
+    for (const over of cases)
+      expect(verbs(mine({ ...reviewDone, ...over }))).toEqual(['read-review']);
+  });
+
+  test('threads awaiting me keep respond in the lead', () => {
+    expect(
+      verbs(
+        mine({
+          ...reviewDone,
+          threadSummary: { awaiting: 2, replied: 0, resolved: 0 },
+        })
+      )
+    ).toEqual(['launch-respond', 'read-review']);
   });
 });
 

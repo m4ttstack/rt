@@ -18,6 +18,7 @@ function mr(over: Over = {}): BoardMRWithReview {
     author: { username: 'pat', name: 'Pat' },
     reviews: { isApproved: false, required: 1, given: 0, reviewers: [] },
     blockers: { any: false },
+    mergeButton: { visible: false, disabled: false, loading: false },
     gates: [],
     ...over,
   } as unknown as BoardMRWithReview;
