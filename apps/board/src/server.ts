@@ -95,6 +95,7 @@ import {
   doctorFilePath,
   doctorResumeDispatchFields,
   parseDoctorRequestBody,
+  planStandDown,
   pruneDoctorStates,
   readDoctorStates,
   writeDoctorState,
@@ -145,6 +146,7 @@ import {
   mrTabLabel,
   parseLaunchNote,
   reopenPrompt,
+  sendPaneText,
   statusBinPath,
 } from './herdr.ts';
 import { findLatches, hasArmedLatch } from './latch/discussions.ts';
@@ -254,10 +256,12 @@ import {
   type MrFacts,
 } from './template.ts';
 import { loadReReviewConfig, loadTriageConfig } from './triage/config.ts';
+import { emptyMrMemory } from './triage/memory.ts';
 import {
   readMemory,
   releaseCron,
   tryClaimCron,
+  writeMemory,
   writeRefreshedIdentity,
 } from './triage/memory-store.ts';
 import { manualDoctorFields, resolveDispatchIdentity } from './triage/run.ts';
@@ -2200,6 +2204,91 @@ const httpServer = Bun.serve({
         if (!dismissByHandle(handle, now))
           return new Response(`no ${lane} row at "${handle}"`, { status: 404 });
         return new Response(JSON.stringify({ ok: true, dismissedAt: now }), {
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      case '/triage/stand-down': {
+        // The row menu's "never diagnose this stack": a sticky per-MR flag
+        // runTriage checks (self or any ancestor) before every dispatch --
+        // see triage/run.ts's isStoodDown. Turning it on also cleans up
+        // whatever the doctor left on THIS MR's own row: a stale error or
+        // open escalation gate (writeDoctorState to a terminal status
+        // auto-closes it, see gates/cache.ts's isAnsweredRowTerminal), any
+        // held draft note, and a live pane if one is still running.
+        if (req.method !== 'POST')
+          return new Response('method not allowed', { status: 405 });
+        if (!isLocalRequest(req))
+          return new Response('forbidden', { status: 403 });
+        {
+          const notJson = requireJsonBody(req);
+          if (notJson) return notJson;
+        }
+        let body: unknown;
+        try {
+          body = await req.json();
+        } catch {
+          return new Response('invalid json', { status: 400 });
+        }
+        const { mrUrl, iid, on } = (body ?? {}) as {
+          mrUrl?: unknown;
+          iid?: unknown;
+          on?: unknown;
+        };
+        if (typeof mrUrl !== 'string' || !mrUrl)
+          return new Response(
+            'expected { mrUrl: string, iid: number, on: boolean }',
+            { status: 400 }
+          );
+        if (typeof iid !== 'number' || !Number.isFinite(iid))
+          return new Response(
+            'expected { mrUrl: string, iid: number, on: boolean }',
+            { status: 400 }
+          );
+        if (typeof on !== 'boolean')
+          return new Response(
+            'expected { mrUrl: string, iid: number, on: boolean }',
+            { status: 400 }
+          );
+
+        const mem = readMemory();
+        const dayStamp = new Date().toISOString().slice(0, 10);
+        mem.mrs[mrUrl] = {
+          ...(mem.mrs[mrUrl] ?? emptyMrMemory(dayStamp)),
+          standDown: on,
+        };
+        writeMemory(mem);
+
+        if (on) {
+          const plan = planStandDown(
+            readDoctorStates().get(mrUrl),
+            DOCTOR_IN_FLIGHT
+          );
+          if (plan.paneToNudge) {
+            try {
+              await sendPaneText(
+                plan.paneToNudge,
+                'Operator stood down auto-doctor on this MR/stack. Stop and exit -- this pane will not be resumed automatically.'
+              );
+            } catch (err) {
+              console.error(
+                `stand-down pane nudge failed: ${err instanceof Error ? err.message : err}`
+              );
+            }
+          }
+          if (plan.clearDoctorState) {
+            writeDoctorState(doctorFilePath(mrUrl), {
+              mrUrl,
+              iid,
+              status: 'done',
+              message: 'stood down by operator',
+            });
+          }
+          for (const d of heldDraftsByMr(readDrafts()).get(mrUrl) ?? []) {
+            writeDraft(mrUrl, d.kind, { status: 'dismissed' });
+          }
+        }
+
+        return new Response(JSON.stringify({ ok: true, standDown: on }), {
           headers: { 'content-type': 'application/json' },
         });
       }

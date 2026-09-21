@@ -8,6 +8,7 @@ import {
   doctorFilePath,
   doctorResumeDispatchFields,
   parseDoctorRequestBody,
+  planStandDown,
   writeDoctorState,
 } from '../doctor-state.ts';
 import { dispatchPrompt } from '../herdr.ts';
@@ -174,5 +175,60 @@ describe('parseDoctorRequestBody', () => {
 
   test('an unknown mode is rejected', () => {
     expect(parseDoctorRequestBody({ ...base, mode: 'fix-all' })).toBeNull();
+  });
+});
+
+describe('planStandDown', () => {
+  const IN_FLIGHT = new Set(['queued', 'diagnosing', 'fixing']);
+
+  test('no existing doctor row: nothing to nudge or clear', () => {
+    expect(planStandDown(undefined, IN_FLIGHT)).toEqual({
+      paneToNudge: null,
+      clearDoctorState: false,
+    });
+  });
+
+  test('a terminal doctor row (already done/error): clear it, nothing to nudge', () => {
+    const state = {
+      mrUrl: 'https://x/mr/1',
+      iid: 1,
+      status: 'error' as const,
+      paneId: 'p1',
+      startedAt: 0,
+      updatedAt: 0,
+    };
+    expect(planStandDown(state, IN_FLIGHT)).toEqual({
+      paneToNudge: null,
+      clearDoctorState: true,
+    });
+  });
+
+  test('an in-flight doctor with a live pane: nudge it and clear the row', () => {
+    const state = {
+      mrUrl: 'https://x/mr/1',
+      iid: 1,
+      status: 'fixing' as const,
+      paneId: 'p1',
+      startedAt: 0,
+      updatedAt: 0,
+    };
+    expect(planStandDown(state, IN_FLIGHT)).toEqual({
+      paneToNudge: 'p1',
+      clearDoctorState: true,
+    });
+  });
+
+  test('an in-flight doctor with no paneId yet (launch still resolving): clear it, nothing to nudge', () => {
+    const state = {
+      mrUrl: 'https://x/mr/1',
+      iid: 1,
+      status: 'queued' as const,
+      startedAt: 0,
+      updatedAt: 0,
+    };
+    expect(planStandDown(state, IN_FLIGHT)).toEqual({
+      paneToNudge: null,
+      clearDoctorState: true,
+    });
   });
 });

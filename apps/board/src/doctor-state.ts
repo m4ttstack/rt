@@ -155,6 +155,31 @@ export function doctorResumeDispatchFields(
   };
 }
 
+export interface StandDownPlan {
+  /** paneId to nudge via sendPaneText, or null when there's no live pane to tell. */
+  paneToNudge: string | null;
+  /** Whether the caller should write this MR's doctor state to a clean
+      terminal status, so a stale error/escalation never sits on the row
+      after the operator stands it down. */
+  clearDoctorState: boolean;
+}
+
+/** Pure decision for the operator stand-down action: what to nudge and
+    clear, given the MR's current doctor row. `inFlight` is DOCTOR_IN_FLIGHT
+    from launch-dedup.ts, passed in rather than imported so this module
+    (already Bun-only via bun:sqlite) doesn't also pull in focus-pane.ts. */
+export function planStandDown(
+  existing: DoctorState | undefined,
+  inFlight: ReadonlySet<string>
+): StandDownPlan {
+  if (!existing) return { paneToNudge: null, clearDoctorState: false };
+  const isInFlight = inFlight.has(existing.status);
+  return {
+    paneToNudge: isInFlight && existing.paneId ? existing.paneId : null,
+    clearDoctorState: true,
+  };
+}
+
 export function parseDoctorRequestBody(
   body: unknown
 ): { mrUrl: string; iid: number; mode?: 'rebase' } | null {
