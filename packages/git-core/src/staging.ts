@@ -9,12 +9,31 @@ import type { StagingDiff } from "./types.ts";
 
 const APPLY_FLAGS = ["--unidiff-zero", "--whitespace=nowarn", "-"];
 
+/**
+ * The file's full displayed diff, GHD-style (rt adopts GitHub Desktop's own
+ * staging model wholesale, ratified 2026-09-21: `app/src/lib/git/diff.ts`'s
+ * getWorkingDirectoryDiff, verified against the local clone). Staged or not
+ * never affects what is shown here -- three cases, same as GHD's:
+ *   - untracked: `--no-index -- /dev/null <path>` (the whole file as additions).
+ *   - renamed: `git diff -- <path>` (against the INDEX, not HEAD). GHD's own
+ *     comment calls this "technically incorrect, the best kind of incorrect":
+ *     diffing against HEAD would need a rename-aware three-way comparison
+ *     this doesn't attempt, so an already-staged edit to a renamed file is
+ *     invisible here (matches GHD exactly, not a gap introduced here).
+ *   - everything else (modified/deleted/copied/conflicted): `git diff HEAD
+ *     -- <path>`, which is worktree vs HEAD and so includes staged AND
+ *     unstaged changes together -- the point of the model: what you see is
+ *     what you can select for the next commit, independent of the index.
+ */
 export async function getStagingDiff(ctx: ClientContext, path: string): Promise<StagingDiff> {
   const status = await ctx.git.status();
   const untracked = status.not_added.includes(path);
+  const renamed = status.renamed.some((r) => r.to === path);
   const text = untracked
     ? await rawGit(ctx.dir, ["diff", "--no-index", "--", "/dev/null", path], { okCodes: [1] })
-    : await ctx.git.diff(["--", path]);
+    : renamed
+      ? await ctx.git.diff(["--", path])
+      : await ctx.git.diff(["HEAD", "--", path]);
 
   const kind = classifyDiffText(text);
   if (kind !== "text") {
@@ -124,4 +143,23 @@ export async function discardSelection(
   // No `-R`: the reversal is already baked into the patch text, and it
   // targets the working tree, not the index (no `--cached`).
   await rawGit(ctx.dir, ["apply", ...APPLY_FLAGS], { stdin: patch });
+}
+
+/**
+ * Stages path's FULL current content -- the "All" case of a GHD-style
+ * commit-time index rebuild (the "Partial" case is stageSelection above; a
+ * "None" selection needs no call at all). Mirrors GHD's own stageFiles
+ * "normal" + "oldRenamed" steps (app/src/lib/git/update-index.ts): a rename
+ * needs its old path force-removed from the index first (recreating the
+ * move rather than leaving a stale entry behind), since the caller has
+ * just reset the whole index to HEAD and HEAD still has the old name.
+ * A bare `git add` on a plain path already handles new/modified/deleted
+ * uniformly (it stages a removal for a path missing from the working
+ * tree), so no branching is needed for those.
+ */
+export async function stageFileFully(ctx: ClientContext, path: string, originalPath?: string): Promise<void> {
+  if (originalPath !== undefined) {
+    await rawGit(ctx.dir, ["update-index", "--force-remove", "--", originalPath]);
+  }
+  await rawGit(ctx.dir, ["add", "--", path]);
 }

@@ -120,6 +120,8 @@ export interface GitClient {
     diff: StagingDiff,
     selection: import("./vendor/ghd/diff-selection.ts").DiffSelection,
   ): Promise<void>;
+  /** The "All" case of a GHD-style commit-time index rebuild -- stages path's full content, recreating a rename via originalPath first when given. */
+  stageFileFully(path: string, originalPath?: string): Promise<void>;
   undoLastCommit(): Promise<UndoResult>;
   resetToCommit(sha: string, mode: "soft" | "mixed" | "hard"): Promise<void>;
   checkoutBranch(name: string): Promise<void>;
