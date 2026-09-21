@@ -75,8 +75,8 @@ function Controls({
     ? 'showing only MRs posted in slack'
     : 'only MRs posted in slack';
   const draftFilterLabel = draftFilter?.active
-    ? 'hiding your draft MRs'
-    : 'hide your draft MRs';
+    ? 'showing your draft MRs, click to hide them'
+    : 'draft MRs hidden, click to show them';
 
   // Drawer: labeled full-width rows, so a mobile user can tell what each does.
   if (stacked) {
@@ -122,7 +122,7 @@ function Controls({
             onClick={draftFilter.toggle}
           >
             <FlagGlyph kind="draft" />{' '}
-            {draftFilter.active ? 'hiding drafts' : 'hide drafts'}
+            {draftFilter.active ? 'showing drafts' : 'drafts hidden'}
           </button>
         )}
         {canCopy && (
@@ -193,9 +193,30 @@ function Controls({
       )}
       {group}
       {sort}
-      {themeSeg}
     </>
   );
 }
 
-export { Controls };
+/** The theme picker, split out of the header's control row: it was the
+    single heaviest item competing for that row's width, and unlike the
+    row's other controls it's a personal display preference rather than a
+    board filter. Rendered next to the app launcher instead, in its own
+    reserved corner. */
+function ThemeToggle({
+  theme,
+  pickTheme,
+}: {
+  theme: ThemeMode;
+  pickTheme: (m: ThemeMode) => void;
+}) {
+  return (
+    <Segmented
+      options={['light', 'dark', 'system'] as const}
+      value={theme}
+      onChange={pickTheme}
+      label="theme"
+    />
+  );
+}
+
+export { Controls, ThemeToggle };

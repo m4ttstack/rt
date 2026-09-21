@@ -47,7 +47,7 @@ import type {
 import { AppLauncher } from './AppLauncher.tsx';
 import { AppMark } from './AppMark.tsx';
 import { ConfigModal } from './ConfigModal.tsx';
-import { Controls } from './Controls.tsx';
+import { Controls, ThemeToggle } from './Controls.tsx';
 import type { QueueEntry } from './decision-queue.ts';
 import { useDecisionQueue } from './decision-queue.ts';
 import {
@@ -1125,9 +1125,12 @@ export function Board() {
     slackFilter: data.slackEnabled
       ? { active: slackFilter === 'posted', toggle: toggleSlackFilter }
       : null,
+    // `active` is "drafts are showing", not "the filter is engaged": drafts
+    // show by default, so a chip that only lit up once they were hidden read
+    // as off in the state the board is normally in.
     draftFilter:
       data.defaultMember !== 'all'
-        ? { active: draftFilter === 'hide', toggle: toggleDraftFilter }
+        ? { active: draftFilter === 'all', toggle: toggleDraftFilter }
         : null,
   };
 
@@ -1183,6 +1186,7 @@ export function Board() {
             <Controls {...controlProps} />
           </div>
           <div className="tui-app-launcher">
+            <ThemeToggle theme={theme} pickTheme={pickTheme} />
             <AppLauncher />
           </div>
         </header>
