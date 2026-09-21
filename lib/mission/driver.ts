@@ -264,8 +264,27 @@ export class MissionDriver {
 
   private currentBadge(): GitWorktreeBadge {
     // Never another worktree's badge: a wrong ahead/behind would derive a
-    // wrong action, so an unswept tree reads as empty until its sweep lands.
-    return this.currentRepoBadges().find((w) => w.worktree === this.state.currentWorktree) ?? EMPTY_GIT_BADGE;
+    // wrong action, so an unswept tree never borrows one from elsewhere.
+    const badge = this.currentRepoBadges().find((w) => w.worktree === this.state.currentWorktree);
+    if (badge) return badge;
+    // The daemon's repos:status sweep hasn't reached this worktree yet (a
+    // plain, never-registered repo never will), but this.snapshot's own
+    // upstream/ahead/behind are already fetched live on every refresh,
+    // independent of the daemon -- falling back to EMPTY_GIT_BADGE's null
+    // upstream made the action segment claim "Publish branch · Never
+    // fetched" even when the branch demonstrably has an upstream and is
+    // ahead. lastFetchedAt stays null: that specifically answers "has the
+    // daemon fetched," which the live snapshot has no way to know.
+    return {
+      ...EMPTY_GIT_BADGE,
+      worktree: this.state.currentWorktree,
+      branch: this.snapshot.branch,
+      detached: this.snapshot.detached,
+      upstream: this.snapshot.upstream,
+      ahead: this.snapshot.ahead ?? 0,
+      behind: this.snapshot.behind ?? 0,
+      clean: this.snapshot.clean,
+    };
   }
 
   private async guardBranch(branch: string): Promise<BranchGuardVerdict> {

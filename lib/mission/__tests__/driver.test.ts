@@ -445,11 +445,18 @@ describe("MissionDriver: discard disarm", () => {
 });
 
 describe("MissionDriver: badge resolution", () => {
-  test("a missing badge for the current worktree falls back to empty, never another worktree's badge", async () => {
+  test("a missing badge for the current worktree never borrows another worktree's badge", async () => {
     const session = new FakeSession([{ t: "intent", name: "quit" }]);
     let opened: MissionModel | null = null;
+    const client = makeFakeClient({
+      // No upstream at all in the live snapshot either, so the synthetic
+      // fallback badge genuinely has none -- this isolates "never borrows
+      // /elsewhere's badge" from the live-snapshot fallback covered below.
+      snapshot: async () => baseSnapshot({ upstream: null, ahead: null, behind: null }),
+    });
     const deps = baseDeps({
       session,
+      client,
       daemonQuery: async (cmd: string) =>
         cmd === "worktree:list"
           ? { ok: true, data: { trees: defaultTrees() } }
@@ -462,9 +469,40 @@ describe("MissionDriver: badge resolution", () => {
 
     await new MissionDriver(deps, START).run();
 
-    // The empty badge has no upstream, so the action derives publish-branch;
-    // borrowing /elsewhere's badge (ahead 9, upstream set) would say push.
+    // No upstream anywhere it's allowed to look, so publish-branch; borrowing
+    // /elsewhere's badge (ahead 9, upstream set) would say push instead.
     expect(opened!.action.kind).toBe("publish-branch");
+  });
+
+  // Owner-confirmed real-repo defect: on a repo the daemon has never swept,
+  // currentBadge() fell back to EMPTY_GIT_BADGE (null upstream), so the
+  // action segment claimed "Publish branch · Never fetched" even when the
+  // branch demonstrably has an upstream and is ahead. Fixed by falling back
+  // to the live snapshot's own upstream/ahead/behind (already fetched on
+  // every refresh, independent of the daemon) instead of a blank badge.
+  test("a missing badge falls back to the live snapshot's own upstream/ahead/behind, not a blank badge", async () => {
+    const session = new FakeSession([{ t: "intent", name: "quit" }]);
+    let opened: MissionModel | null = null;
+    const client = makeFakeClient({
+      snapshot: async () => baseSnapshot({ upstream: "origin/main", ahead: 1, behind: 0 }),
+    });
+    const deps = baseDeps({
+      session,
+      client,
+      daemonQuery: async (cmd: string) =>
+        cmd === "worktree:list" ? { ok: true, data: { trees: defaultTrees() } } : { ok: true, data: { repos: [] } },
+    });
+    deps.openSession = async (view, model) => {
+      opened = model as MissionModel;
+      return session;
+    };
+
+    await new MissionDriver(deps, START).run();
+
+    // Real upstream + ahead 1, behind 0 -> push, never the false
+    // publish-branch/"Never fetched" the empty-badge fallback produced.
+    expect(opened!.action.kind).toBe("push");
+    expect(opened!.action.meta).toBe("Never fetched"); // still accurate: the DAEMON hasn't fetched
   });
 });
 
