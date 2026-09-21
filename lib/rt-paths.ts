@@ -153,6 +153,11 @@ export function worktreePoolRoot(serializedIdentity: string): string {
   return join(worktreesDir(), worktreePoolSegment(serializedIdentity));
 }
 
+/** golden/<same PATH-safe segment as the pool root>: the hydration donor, kept out of the pool listing. */
+export function goldenRoot(serializedIdentity: string): string {
+  return join(rtDir(), "golden", worktreePoolSegment(serializedIdentity));
+}
+
 /**
  * Prior pool-root spellings, oldest first: the raw wire (colon, pre-RT-95)
  * and the %3A form (RT-95's hotfix). Heal and trash-read targeting only:

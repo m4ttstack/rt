@@ -2,7 +2,9 @@ import { canon } from "../fs-canon.ts";
 import { legacyRepoFile } from "../legacy-repo-data.ts";
 import { deleteKvValue, getKvValue, hasKvValue, importLegacyJsonFile, listKvValues, setKvValue, setKvValueCritical } from "../state/index.ts";
 
-export type TreeKind = "main" | "ephemeral" | "unmanaged";
+export type TreeKind = "main" | "ephemeral" | "unmanaged" | "golden";
+export const GOLDEN_NAME = "golden";
+export const GOLDEN_BRANCH = "golden";
 export type TreeState = "creating" | "on-deck" | "claimed" | "disposable";
 export type DisposalMode = "merge" | "job";
 
@@ -10,7 +12,7 @@ export interface TreeRecord {
   name: string;
   path: string; // absolute
   kind: TreeKind;
-  state?: TreeState; // ephemeral only
+  state?: TreeState; // ephemeral and golden only
   branch: string | null; // git ground truth, reconciled every pass
   owner?: string;
   disposal?: DisposalMode;
@@ -183,7 +185,7 @@ export function usedNames(trees: TreeRecord[]): Set<string> {
   return new Set(trees.map((t) => t.name));
 }
 
-const MANAGED_KINDS: ReadonlySet<TreeKind> = new Set<TreeKind>(["main", "ephemeral"]);
+const MANAGED_KINDS: ReadonlySet<TreeKind> = new Set<TreeKind>(["main", "ephemeral", "golden"]);
 
 /**
  * Total order for two records of the same canonical path: a managed record

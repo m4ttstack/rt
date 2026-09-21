@@ -27,7 +27,7 @@ const realHostname = osReal.hostname;
 import { basename, dirname, join } from "path";
 import {
   rtDir, reposDir, repoDataDir, logsDir,
-  worktreePoolRoot, legacyWorktreePoolRoots,
+  worktreePoolRoot, legacyWorktreePoolRoots, goldenRoot,
   migrateLegacyRtDir, legacyDirsPresent,
   TRAY_APP_NAME, DEV_TRAY_APP_NAME, TRAY_APP_BUNDLE, DEV_TRAY_APP_BUNDLE,
   trayAppPath, devTrayAppPath, legacyTrayAppPaths, installedTrayAppPath, machineSettingsPath,
@@ -600,5 +600,14 @@ describe("worktreePoolRoot (friendly PATH-safe identity segment)", () => {
       "remote:github.com%2Facme%2Frepo",
       "remote%3Agithub.com%2Facme%2Frepo",
     ]);
+  });
+});
+
+describe("goldenRoot", () => {
+  test("lives under <rtDir>/golden with the same segment as the pool root", () => {
+    const id = "github.com/m4ttstack/rt";
+    const seg = worktreePoolRoot(id).split("/").pop();
+    expect(goldenRoot(id)).toBe(`${rtDir()}/golden/${seg}`);
+    expect(goldenRoot(id).startsWith(worktreePoolRoot(id))).toBe(false);
   });
 });
