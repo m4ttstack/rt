@@ -37,7 +37,7 @@ const PAGE_BAR_ROW = {
 const CONTROL_SURFACE = {
   background: 'var(--tk-bg)',
   borderColor: 'var(--tk-border)',
-  fontSize: 'var(--tk-fs-2xs)',
+  fontSize: 'var(--mantine-font-size-sm)',
 } as const;
 
 const UNREAD_BADGE = {
@@ -46,7 +46,7 @@ const UNREAD_BADGE = {
   height: 18,
   padding: '0 var(--mantine-spacing-sm)',
   borderRadius: 'var(--mantine-radius-xl)',
-  fontSize: 'var(--tk-fs-3xs)',
+  fontSize: 'var(--mantine-font-size-xs)',
   fontWeight: 500,
   lineHeight: 1,
   border: '1px solid var(--tk-border)',
@@ -150,7 +150,10 @@ export function RoomMenu({
           // The 44px touch variant grows its type and padding to the tap
           // scale; the desk keeps Mantine's default item size.
           ...(size >= 44
-            ? { fontSize: 'var(--tk-fs-2xs)', padding: '3.2px 9.6px' }
+            ? {
+                fontSize: 'var(--mantine-font-size-sm)',
+                padding: '3.2px 9.6px',
+              }
             : {}),
         },
         dropdown: {
@@ -188,7 +191,7 @@ export function RoomMenu({
 const MUTED = { color: 'var(--tk-text-4)' } as const;
 
 const GROUP_LABEL = {
-  fontSize: 'var(--tk-fs-4xs)',
+  fontSize: 'var(--mantine-font-size-xs)',
   fontWeight: 700,
   letterSpacing: '0.06em',
   textTransform: 'uppercase',
@@ -289,7 +292,7 @@ function RoomMembers({
           <Text
             component="span"
             data-testid="members-wakes"
-            style={{ ...MUTED, fontSize: 'var(--tk-fs-3xs)' }}
+            style={{ ...MUTED, fontSize: 'var(--mantine-font-size-xs)' }}
           >
             wakes: {wakeMode}
           </Text>
@@ -322,7 +325,10 @@ function RoomMembers({
                     </Text>
                     <Text
                       component="span"
-                      style={{ ...MUTED, fontSize: 'var(--tk-fs-3xs)' }}
+                      style={{
+                        ...MUTED,
+                        fontSize: 'var(--mantine-font-size-xs)',
+                      }}
                     >
                       {g.members.length}
                     </Text>
@@ -350,7 +356,7 @@ function RoomMembers({
           </ScrollArea.Autosize>
         ) : (
           <Box style={{ padding: 'var(--mantine-spacing-md)' }}>
-            <Text style={{ ...MUTED, fontSize: 'var(--tk-fs-2xs)' }}>
+            <Text style={{ ...MUTED, fontSize: 'var(--mantine-font-size-sm)' }}>
               presence withheld while the daemon is down
             </Text>
           </Box>

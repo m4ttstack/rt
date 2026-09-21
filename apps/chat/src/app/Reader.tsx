@@ -17,10 +17,10 @@ import { PHONE_BORDER, PHONE_TAP, tapButtonStyle } from './phone-chrome';
 import { speakerHue } from './speaker-hue';
 import prose from './transcript-prose.module.css';
 
-/** Explicit `--tk-fs-3xs` sites (small band). */
+/** Meta-step sites. */
 const MUTED_SMALL = 'var(--tk-text-4)';
-/** `size="xs"` under `chatFontTheme` (13px, meta band) and the excerpt
-    fallback, which inherits the 13.5px body default (also meta band). */
+/** Chrome-step sites, plus the excerpt fallback, which inherits tokyo's
+    13.5px body size rather than stating a step. */
 const MUTED_META = 'var(--tk-text-3)';
 const ACCENT_TEXT = 'var(--mantine-color-accent-text)';
 const RULE_ACCENT = `color-mix(in srgb, ${ACCENT_TEXT} 45%, transparent)`;
@@ -50,7 +50,7 @@ function ContextLabel({ label }: { label: string }) {
       data-testid="reader-context-label"
       style={{
         color: MUTED_SMALL,
-        fontSize: 'var(--tk-fs-3xs)',
+        fontSize: 'var(--mantine-font-size-xs)',
         fontWeight: 600,
         padding: 'var(--mantine-spacing-xs) 0',
       }}
@@ -129,7 +129,7 @@ function OpenedDivider() {
       data-testid="reader-divider"
       style={{
         color: ACCENT_TEXT,
-        fontSize: 'var(--tk-fs-3xs)',
+        fontSize: 'var(--mantine-font-size-xs)',
         fontWeight: 600,
         padding: 'var(--mantine-spacing-xs) 0',
       }}
@@ -315,7 +315,7 @@ export function Reader({
             data-testid="reader-note"
             style={{
               minWidth: 0,
-              fontSize: 'var(--tk-fs-3xs)',
+              fontSize: 'var(--mantine-font-size-xs)',
               color: MUTED_SMALL,
             }}
           >
@@ -333,7 +333,7 @@ export function Reader({
               alignItems: 'center',
               gap: 4,
               flex: 'none',
-              fontSize: 'var(--tk-fs-3xs)',
+              fontSize: 'var(--mantine-font-size-xs)',
               fontWeight: 600,
               color: ACCENT_TEXT,
             }}

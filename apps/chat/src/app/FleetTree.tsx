@@ -44,9 +44,11 @@ const WORKSTREAM_INDENT = 26.4;
     A space keeps it from ever colliding with a real repo name. */
 const NO_REPO = 'no repo';
 
-/** `.ws .h` and `.grp`, the two 11.2px names in the tree. A Mantine size
-    cannot carry them: `chatFontTheme` lifts `sm` to 15px in this subtree. */
-const ROW_NAME_SIZE = 'var(--tk-fs-small)';
+/** Everything nested inside a room -- workstream handles, the roomless
+    group label, DM names -- reads at meta. */
+const ROW_NAME_SIZE = 'var(--mantine-font-size-xs)';
+/** The room row itself, one step up, so the tree has a visible hierarchy. */
+const CHROME_SIZE = 'var(--mantine-font-size-sm)';
 
 /** The artboards draw four `.dm2` rows, then the `N more` line. */
 const DM_VISIBLE = 4;
@@ -217,7 +219,7 @@ function MentionBadge({ count }: { count: number }) {
         lineHeight: 1,
         borderRadius: 'var(--mantine-radius-xl)',
         padding: '0 var(--mantine-spacing-sm)',
-        fontSize: 'var(--tk-fs-3xs)',
+        fontSize: 'var(--mantine-font-size-xs)',
         fontWeight: 600,
         whiteSpace: 'nowrap',
         flex: 'none',
@@ -244,7 +246,7 @@ function UnreadBadge({ count }: { count: number }) {
         lineHeight: 1,
         borderRadius: 'var(--mantine-radius-xl)',
         padding: '0 var(--mantine-spacing-sm)',
-        fontSize: 'var(--tk-fs-3xs)',
+        fontSize: 'var(--mantine-font-size-xs)',
         fontWeight: 500,
         whiteSpace: 'nowrap',
         flex: 'none',
@@ -297,11 +299,10 @@ function CloseControl({
           display: shown ? undefined : 'none',
           flex: 'none',
           marginRight: nudge ? -4 : undefined,
-          // Icon-tint default (--tk-text-3): `CloseControl` mounts from both
-          // `RoomRow` (no explicit sized sibling, body band) and `DmRow`
-          // (`ROW_NAME_SIZE`, small band) -- one shared icon tint can't
-          // follow both, so it reads the plan's own unknown-size fallback
-          // rather than either row's band.
+          // Icon-tint default (--tk-text-3): `CloseControl` mounts from
+          // both `RoomRow` (chrome step) and `DmRow` (meta step), so one
+          // shared tint cannot follow either row's text colour; it reads the
+          // plan's own unknown-size fallback instead.
           color: 'var(--tk-text-3)',
         }}
       >
@@ -426,11 +427,10 @@ function RoomRow({
       <Text
         fw={active ? 600 : undefined}
         truncate
-        /* The artboards' `.room` sets no font-size, so the row name is the
-           shell's own 13.5px. A sizeless Mantine `Text` resolves to `md`
-           (16px) instead of inheriting, which put the name above every
-           other row in the tree. */
-        style={{ flex: 1, minWidth: 0, fontSize: 'inherit' }}
+        /* A room heads the rows nested under it, so it takes the chrome step
+           while they take meta. Stated rather than inherited: a sizeless
+           Mantine `Text` resolves to `md`, not to the body size. */
+        style={{ flex: 1, minWidth: 0, fontSize: CHROME_SIZE }}
       >
         {room.room}
       </Text>
@@ -887,7 +887,7 @@ export function FleetTree({
               fw={700}
               style={{
                 margin: 0,
-                fontSize: 'var(--tk-fs-4xs)',
+                fontSize: 'var(--mantine-font-size-xs)',
                 color: 'var(--tk-text-4)',
                 letterSpacing: '0.06em',
               }}

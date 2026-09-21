@@ -17,7 +17,7 @@ export const DOT_COLOR: Record<'live' | 'idle', string> = {
     distinction is gone by design -- one constant now covers every small
     meta line regardless of task kind. */
 export const MUTED_XS = {
-  fontSize: 'var(--tk-fs-3xs)',
+  fontSize: 'var(--mantine-font-size-xs)',
   color: 'var(--tk-text-4)',
 } as const;
 
@@ -41,7 +41,7 @@ export function Tag({ handle, room }: { handle: string; room: string }) {
         // A pill on a 14px chip, and the artboards' smallest type step --
         // neither lands on a Mantine radius or font-size token.
         borderRadius: 7,
-        fontSize: 'var(--tk-fs-5xs)',
+        fontSize: 'var(--mantine-font-size-xs)',
         fontWeight: 500,
         whiteSpace: 'nowrap',
         border: `1px solid ${

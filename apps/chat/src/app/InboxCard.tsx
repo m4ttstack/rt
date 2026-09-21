@@ -47,7 +47,7 @@ export function whereLabel(card: InboxCardData): string {
 /** The card's own scale: the artboard's 12.16px handle beside a 10px sprite,
     a step under the message header's. */
 const CARD_HANDLE: AgentNameSize = {
-  font: 'var(--tk-fs-2xs)',
+  font: 'var(--mantine-font-size-sm)',
   avatar: 10,
 };
 
@@ -198,7 +198,7 @@ export function InboxCard({
           }}
           style={{
             flex: 'none',
-            fontSize: 'var(--tk-fs-3xs)',
+            fontSize: 'var(--mantine-font-size-xs)',
             fontWeight: 600,
             color: ACCENT_TEXT,
           }}
@@ -218,7 +218,7 @@ export function InboxCard({
           }}
           style={{
             flex: 'none',
-            fontSize: 'var(--tk-fs-3xs)',
+            fontSize: 'var(--mantine-font-size-xs)',
             fontWeight: 600,
             color: ACCENT_TEXT,
           }}

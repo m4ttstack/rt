@@ -54,7 +54,7 @@ export interface AgentNameSize {
     Wired here because reader/transcript passing no size fell to the `lg`
     default (18px), which towered over the 16px body once the UI went sans. */
 export const MESSAGE_HANDLE: AgentNameSize = {
-  font: 'var(--mantine-font-size-md)',
+  font: 'var(--mantine-font-size-lg)',
   avatar: 20,
   meta: 'var(--mantine-font-size-xs)',
 };
@@ -126,7 +126,7 @@ export interface AgentNameProps {
 }
 
 const LABEL = {
-  fontSize: 'var(--tk-fs-4xs)',
+  fontSize: 'var(--mantine-font-size-xs)',
   fontWeight: 700,
   letterSpacing: '0.06em',
   textTransform: 'uppercase',
@@ -156,7 +156,7 @@ function RepoToken({
     >
       <span
         style={{
-          fontSize: metaFontSize ?? 'var(--tk-fs-2xs)',
+          fontSize: metaFontSize ?? 'var(--mantine-font-size-sm)',
           margin: '0 3px',
         }}
       >
@@ -283,7 +283,7 @@ export function AgentCard({
           component="span"
           data-testid={`status-${buddy.handle}`}
           style={{
-            fontSize: 'var(--tk-fs-3xs)',
+            fontSize: 'var(--mantine-font-size-xs)',
             fontWeight: 500,
             flex: 'none',
             color:

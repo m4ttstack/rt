@@ -1,6 +1,10 @@
 import { Box, Paper } from '@mattstack/app-kit/core';
 import { CodeHighlight } from '@mattstack/app-kit/lazy';
 
+/** A fence's line box, as a ratio of its own font size. `MessageMarkdown`
+    reserves height for a folded fence from this and the `md` step. */
+export const CODE_LINE_HEIGHT = 1.7;
+
 export interface CodeBlockProps {
   code: string;
   language: string;
@@ -33,7 +37,13 @@ export function CodeBlock({
           code={code}
           language={language}
           withCopyButton={withCopyButton}
-          styles={{ pre: { overflowX: 'auto' } }}
+          styles={{
+            pre: {
+              overflowX: 'auto',
+              fontSize: 'var(--mantine-font-size-md)',
+              lineHeight: CODE_LINE_HEIGHT,
+            },
+          }}
         />
       </Box>
     </Paper>

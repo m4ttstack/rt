@@ -45,13 +45,13 @@ export interface ChipProps {
 }
 
 /**
- * The app's one chip: a Mantine `Badge` pinned to the design's compact spec
- * (16px tall, fs-4xs, sm radius). Every chip -- the context labels on cards
- * and the reader strip, the inbox summary pills, the page bar's presence
- * chips -- is this component, so they read as one thing and Badge centres the
- * label rather than a hand-aligned box. Pass `onClick` to render it as a
- * button (the members chip opens its roster that way); `forwardRef` so it can
- * be a `Popover.Target`.
+ * The app's one chip: a Mantine `Badge` at 20px tall on the ladder's meta
+ * step, sm radius. Every chip -- the context labels on cards and the reader
+ * strip, the inbox summary pills, the page bar's presence chips -- is this
+ * component, so they read as one thing and Badge centres the label rather
+ * than a hand-aligned box. Pass `onClick` to render it as a button (the
+ * members chip opens its roster that way); `forwardRef` so it can be a
+ * `Popover.Target`.
  */
 export const Chip = forwardRef<HTMLDivElement, ChipProps>(function Chip(
   {
@@ -72,14 +72,14 @@ export const Chip = forwardRef<HTMLDivElement, ChipProps>(function Chip(
   const color = TONE_COLOR[tone];
   const interactive = onClick !== undefined;
   const root: CSSProperties = {
-    height: 16,
-    minHeight: 16,
+    height: 20,
+    minHeight: 20,
     gap: 4,
-    fontSize: 'var(--tk-fs-4xs)',
-    fontWeight: 600,
+    fontSize: 'var(--mantine-font-size-xs)',
+    fontWeight: 500,
     textTransform: 'none',
-    paddingLeft: 6,
-    paddingRight: 6,
+    paddingLeft: 8,
+    paddingRight: 8,
     borderRadius: 'var(--mantine-radius-sm)',
     border: `1px solid ${
       color
@@ -111,11 +111,11 @@ export const Chip = forwardRef<HTMLDivElement, ChipProps>(function Chip(
       rightSection={rightSection}
       styles={{
         root,
-        // Badge's label ships an 18px line-height that overflows the 16px
-        // chip and drops the text low; a 14px line box (the content height
-        // inside the 1px borders) centres it. `overflow: visible` lets the
-        // whole label show rather than ellipsis inside a fixed Badge width.
-        label: { overflow: 'visible', lineHeight: '14px' },
+        // Badge's own label line-height drops the text low in a fixed-height
+        // chip; an 18px line box (the content height inside the 1px borders)
+        // centres it. `overflow: visible` lets the whole label show rather
+        // than ellipsis inside a fixed Badge width.
+        label: { overflow: 'visible', lineHeight: '18px' },
         section: { marginInline: 0 },
       }}
     >

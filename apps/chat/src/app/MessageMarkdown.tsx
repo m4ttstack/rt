@@ -3,13 +3,14 @@ import type { Element } from 'hast';
 import Markdown, { type Components, type Options } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
-import { CodeBlock } from './components/CodeBlock';
+import { CODE_LINE_HEIGHT, CodeBlock } from './components/CodeBlock';
 import { firstBlockOf } from './folding';
 import { remarkMentions } from './remark-mentions';
 import classes from './transcript-prose.module.css';
 
-/** 12.16px at CodeHighlight's 1.7 line height, plus its 4.8px paddings. */
-const CODE_LINE_PX = 20.7;
+/** The fence's own 14px (`md`, set in `CodeBlock`) at its line height,
+    plus its 4.8px paddings. */
+const CODE_LINE_PX = 14 * CODE_LINE_HEIGHT;
 const CODE_PAD_PX = 9.6;
 
 /** react-markdown passes its own `node` prop to every component override;

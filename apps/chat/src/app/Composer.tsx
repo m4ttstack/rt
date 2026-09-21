@@ -21,21 +21,16 @@ import { useAutoGrowTextarea } from './use-auto-grow-textarea';
 
 /** `BuddyOption`/`HereOption` render inside `Popover.Dropdown`
     (`withinPortal` below): Mantine portals mount to `document.body`,
-    outside the DOM subtree `ScopedThemeProvider` scopes its CSS-variable
-    overrides to (`cssVariablesSelector={`.${scope}`}` --
-    packages/ui/src/design-system/ScopedThemeProvider.tsx:88), so
-    `chatFontTheme` never reaches them. `size="xs"`/`"sm"` there read the
-    base tokyo theme instead (`packages/tokyo/src/theme.ts:62-68`, `xs` =
-    10.56px, `sm` = 11.2px) -- both small band. */
+    portalled, and the ladder is merged at the root provider rather than
+    scoped to a subtree, so a step means the same size inside the dropdown
+    as outside it. These labels sit on the meta step. */
 const MUTED_SMALL = 'var(--tk-text-4)';
-/** The composer input itself (`Popover.Target`, never portalled): body
-    band at its own 16px font size, under `chatFontTheme` as normal. */
+/** The composer input itself: the prose step, since it types the prose. */
 const MUTED_BODY = 'var(--tk-text-2)';
 const INPUT_LINE_HEIGHT = 1.4;
 const BORDER = 'var(--tk-border)';
 const BORDER_SOFT = 'var(--tk-border-soft)';
-/** Same portal reasoning as `MUTED_SMALL`: the "not in #room" subtext
-    renders inside the portalled dropdown too, at small band. */
+/** The "not in #room" subtext, meta step like the rest of the dropdown. */
 const PURPLE = 'var(--tk-text-purple-small)';
 const ACCENT_TEXT = 'var(--mantine-color-accent-text)';
 
@@ -463,7 +458,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       : focused
         ? ACCENT_TEXT
         : BORDER_SOFT;
-    const inputFontSize = phone ? 16 : 'var(--mantine-font-size-md)';
+    const inputFontSize = phone ? 16 : 'var(--mantine-font-size-lg)';
     const canSend = value.trim().length > 0 && daemonReachable && !sending;
 
     return (

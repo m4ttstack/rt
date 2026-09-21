@@ -1,8 +1,8 @@
 import { mountMattstackApp } from '@mattstack/app-kit/app';
 
-import './app/styles/type-scale.css';
 import './app/icons';
 
 import { App } from './app/App';
+import { chatFontTheme } from './app/chat-font-theme';
 
-mountMattstackApp(<App />);
+mountMattstackApp(<App />, { theme: chatFontTheme });

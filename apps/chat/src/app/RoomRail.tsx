@@ -142,7 +142,7 @@ export function RoomRail({
             // The artboards' FLEET span is `.xs` -- the same step as the
             // count beside it. `size="xs"` is 13px under `chatFontTheme`,
             // which made the header outgrow its own row.
-            fontSize: 'var(--tk-fs-3xs)',
+            fontSize: 'var(--mantine-font-size-xs)',
             color: 'var(--tk-text-3)',
             letterSpacing: '0.04em',
           }}

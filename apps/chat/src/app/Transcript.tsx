@@ -271,7 +271,7 @@ function MessageBody({
           onClick={() => setExpanded(e => !e)}
           style={{
             marginTop: 'var(--mantine-spacing-xs)',
-            fontSize: 'var(--tk-fs-3xs)',
+            fontSize: 'var(--mantine-font-size-xs)',
             fontWeight: 600,
             color: ACCENT_TEXT,
           }}
@@ -317,7 +317,7 @@ function DayDivider({ label }: { label: string }) {
       aria-label={label}
       style={{
         color: 'var(--tk-text-4)',
-        fontSize: 'var(--tk-fs-3xs)',
+        fontSize: 'var(--mantine-font-size-xs)',
         fontWeight: 600,
         padding: 'var(--mantine-spacing-xs) 0',
       }}
@@ -340,7 +340,7 @@ function YouBadge() {
         height: 16,
         padding: '0 var(--mantine-spacing-sm)',
         borderRadius: 'var(--mantine-radius-xl)',
-        fontSize: 'var(--tk-fs-4xs)',
+        fontSize: 'var(--mantine-font-size-xs)',
         fontWeight: 500,
         lineHeight: 1,
         border: '1px solid var(--tk-border)',
@@ -779,7 +779,7 @@ export function Transcript({
                     padding:
                       'var(--mantine-spacing-sm) 0 var(--mantine-spacing-xs)',
                     textAlign: 'left',
-                    fontSize: 'var(--tk-fs-3xs)',
+                    fontSize: 'var(--mantine-font-size-xs)',
                     color: 'var(--tk-text-4)',
                   }}
                 >
@@ -811,7 +811,7 @@ export function Transcript({
                         data-testid="transcript-divider"
                         style={{
                           color: ACCENT_TEXT,
-                          fontSize: 'var(--tk-fs-3xs)',
+                          fontSize: 'var(--mantine-font-size-xs)',
                           fontWeight: 600,
                           padding: 'var(--mantine-spacing-xs) 0',
                         }}

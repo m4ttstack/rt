@@ -15,7 +15,6 @@ import {
   Text,
   UnstyledButton,
 } from '@mattstack/app-kit/core';
-import { ThemeOverrideWrapper } from '@mattstack/app-kit/design-system';
 import { useIsMobile } from '@mattstack/app-kit/hooks';
 import { Icon } from '@mattstack/app-kit/icons';
 import { notifications } from '@mattstack/app-kit/notifications';
@@ -33,7 +32,6 @@ import { navigate } from 'wouter/use-browser-location';
 
 import type { InboxCard as InboxCardData, InboxPayload } from '../server/inbox';
 import { BuddiesProvider } from './buddies-context';
-import { chatFontTheme } from './chat-font-theme';
 import { AppMark } from './chrome/AppMark';
 import { Composer, type ComposerHandle } from './Composer';
 import { PageShellDemoPage } from './demo/PageShellDemoPage';
@@ -549,88 +547,86 @@ function PhoneChat({
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   return (
-    <ThemeOverrideWrapper theme={chatFontTheme}>
-      <Box
-        data-testid="phone-shell"
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          minHeight: '100dvh',
-          background: 'var(--ui-bg-1)',
-        }}
-      >
-        <PhoneHeader
-          room={activeRoomSummary}
-          buddies={buddies}
-          reachable={daemon.reachable}
-          onOpenDrawer={() => setDrawerOpen(true)}
-          onCloseRoom={onCloseRoom}
-        />
+    <Box
+      data-testid="phone-shell"
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        minHeight: '100dvh',
+        background: 'var(--ui-bg-1)',
+      }}
+    >
+      <PhoneHeader
+        room={activeRoomSummary}
+        buddies={buddies}
+        reachable={daemon.reachable}
+        onOpenDrawer={() => setDrawerOpen(true)}
+        onCloseRoom={onCloseRoom}
+      />
 
-        <DaemonBanner
-          reachable={daemon.reachable}
-          downSince={daemon.downSince}
-          probeCount={daemon.probeCount}
-          lastAnsweredAt={daemon.lastAnsweredAt}
-          onProbeNow={daemon.probeNow}
-        />
+      <DaemonBanner
+        reachable={daemon.reachable}
+        downSince={daemon.downSince}
+        probeCount={daemon.probeCount}
+        lastAnsweredAt={daemon.lastAnsweredAt}
+        onProbeNow={daemon.probeNow}
+      />
 
-        {activeRoom && (
-          // `display: flex` here, not just `flex: 1`: a bare Transcript root
-          // sizes ITSELF via `flex: 1; min-height: 0` on the assumption its
-          // parent is a flex container -- a plain (block) Box gives it no
-          // such context, so it falls back to auto height and its own inner
-          // scroll box (also `flex: 1; min-height: 0`) collapses to zero.
-          // Scrolling belongs to Transcript's own scroll view, so this
-          // wrapper stays a non-scrolling flex column, not `overflowY: auto`.
-          <Box
-            style={{
-              flex: 1,
-              minHeight: 0,
-              display: 'flex',
-              flexDirection: 'column',
-              padding: 'var(--mantine-spacing-md) var(--mantine-spacing-lg) 0',
-            }}
-          >
-            <Transcript
-              room={activeRoom}
-              messages={messages}
-              humanHandle={HUMAN_HANDLE}
-              anchor={anchor}
-              unreadCount={activeRoomSummary?.unread}
-              isDm={activeRoomSummary?.kind === 'dm'}
-              bare
-            />
-          </Box>
-        )}
-
-        {activeRoom && (
-          <Composer
-            ref={composerRef}
-            phone
+      {activeRoom && (
+        // `display: flex` here, not just `flex: 1`: a bare Transcript root
+        // sizes ITSELF via `flex: 1; min-height: 0` on the assumption its
+        // parent is a flex container -- a plain (block) Box gives it no
+        // such context, so it falls back to auto height and its own inner
+        // scroll box (also `flex: 1; min-height: 0`) collapses to zero.
+        // Scrolling belongs to Transcript's own scroll view, so this
+        // wrapper stays a non-scrolling flex column, not `overflowY: auto`.
+        <Box
+          style={{
+            flex: 1,
+            minHeight: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            padding: 'var(--mantine-spacing-md) var(--mantine-spacing-lg) 0',
+          }}
+        >
+          <Transcript
             room={activeRoom}
-            roomMembers={roomMembers}
-            buddies={buddies}
+            messages={messages}
+            humanHandle={HUMAN_HANDLE}
+            anchor={anchor}
+            unreadCount={activeRoomSummary?.unread}
             isDm={activeRoomSummary?.kind === 'dm'}
-            daemonReachable={daemon.reachable}
-            onOpenDm={onOpenDm}
+            bare
           />
-        )}
+        </Box>
+      )}
 
-        <FleetDrawer
-          opened={drawerOpen}
-          onClose={() => setDrawerOpen(false)}
-          rooms={railRooms}
-          activeRoom={activeRoom}
-          onSelectRoom={setActiveRoom}
+      {activeRoom && (
+        <Composer
+          ref={composerRef}
+          phone
+          room={activeRoom}
+          roomMembers={roomMembers}
           buddies={buddies}
+          isDm={activeRoomSummary?.kind === 'dm'}
           daemonReachable={daemon.reachable}
-          onCloseRoom={onCloseRoom}
-          onMarkRead={onMarkRead}
           onOpenDm={onOpenDm}
         />
-      </Box>
-    </ThemeOverrideWrapper>
+      )}
+
+      <FleetDrawer
+        opened={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        rooms={railRooms}
+        activeRoom={activeRoom}
+        onSelectRoom={setActiveRoom}
+        buddies={buddies}
+        daemonReachable={daemon.reachable}
+        onCloseRoom={onCloseRoom}
+        onMarkRead={onMarkRead}
+        onOpenDm={onOpenDm}
+      />
+    </Box>
   );
 }
 
@@ -762,97 +758,95 @@ function PhoneInboxPage({
   const showReader = readerOpen && openCard !== undefined;
 
   return (
-    <ThemeOverrideWrapper theme={chatFontTheme}>
-      <Box
-        data-testid="phone-inbox-shell"
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          minHeight: '100dvh',
-          background: 'var(--ui-bg-1)',
-        }}
-      >
-        <PhoneInboxHeader
-          inbox={inbox}
-          onOpenDrawer={() => setDrawerOpen(true)}
-          onMarkAllRead={onMarkAllRead}
-        />
+    <Box
+      data-testid="phone-inbox-shell"
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        minHeight: '100dvh',
+        background: 'var(--ui-bg-1)',
+      }}
+    >
+      <PhoneInboxHeader
+        inbox={inbox}
+        onOpenDrawer={() => setDrawerOpen(true)}
+        onMarkAllRead={onMarkAllRead}
+      />
 
-        <Box style={{ position: 'relative', flex: 1, minHeight: 0 }}>
+      <Box style={{ position: 'relative', flex: 1, minHeight: 0 }}>
+        <Box
+          data-testid="phone-inbox-list"
+          style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            // `visibility`, not `display: none`: `display: none`
+            // destroys the scroll container's box, and a real browser
+            // resets `scrollTop` on redisplay -- exactly the position
+            // this toggle exists to preserve. `visibility: hidden` (with
+            // `position: absolute` above so the hidden box doesn't still
+            // claim layout space) keeps the box, and its scroll offset,
+            // intact underneath the reader. Do not "simplify" this back
+            // to `display`.
+            visibility: showReader ? 'hidden' : 'visible',
+            pointerEvents: showReader ? 'none' : undefined,
+          }}
+        >
+          <Inbox
+            inbox={inbox}
+            reachable={daemonReachable}
+            buddies={buddies}
+            readerMembers={readerMembers}
+            openCard={openCard}
+            onOpenCard={card => {
+              onOpenCard(card);
+              setReaderOpen(true);
+            }}
+            onMarkRoomRead={onMarkRoomRead}
+            onMarkAllRead={onMarkAllRead}
+            onOpenRoom={onOpenRoom}
+            onReplied={onReplied}
+            phone
+          />
+        </Box>
+
+        {showReader && openCard && (
           <Box
-            data-testid="phone-inbox-list"
+            data-testid="phone-inbox-reader"
             style={{
               position: 'absolute',
               inset: 0,
               display: 'flex',
               flexDirection: 'column',
-              // `visibility`, not `display: none`: `display: none`
-              // destroys the scroll container's box, and a real browser
-              // resets `scrollTop` on redisplay -- exactly the position
-              // this toggle exists to preserve. `visibility: hidden` (with
-              // `position: absolute` above so the hidden box doesn't still
-              // claim layout space) keeps the box, and its scroll offset,
-              // intact underneath the reader. Do not "simplify" this back
-              // to `display`.
-              visibility: showReader ? 'hidden' : 'visible',
-              pointerEvents: showReader ? 'none' : undefined,
             }}
           >
-            <Inbox
-              inbox={inbox}
-              reachable={daemonReachable}
-              buddies={buddies}
-              readerMembers={readerMembers}
-              openCard={openCard}
-              onOpenCard={card => {
-                onOpenCard(card);
-                setReaderOpen(true);
-              }}
-              onMarkRoomRead={onMarkRoomRead}
-              onMarkAllRead={onMarkAllRead}
-              onOpenRoom={onOpenRoom}
-              onReplied={onReplied}
+            <Reader
               phone
+              card={openCard}
+              daemonReachable={daemonReachable}
+              buddies={buddies}
+              roomMembers={readerMembers}
+              onBack={() => setReaderOpen(false)}
+              onOpenRoom={() => onOpenRoom(openCard.room, openCard.messageId)}
+              onReplied={onReplied}
             />
           </Box>
-
-          {showReader && openCard && (
-            <Box
-              data-testid="phone-inbox-reader"
-              style={{
-                position: 'absolute',
-                inset: 0,
-                display: 'flex',
-                flexDirection: 'column',
-              }}
-            >
-              <Reader
-                phone
-                card={openCard}
-                daemonReachable={daemonReachable}
-                buddies={buddies}
-                roomMembers={readerMembers}
-                onBack={() => setReaderOpen(false)}
-                onOpenRoom={() => onOpenRoom(openCard.room, openCard.messageId)}
-                onReplied={onReplied}
-              />
-            </Box>
-          )}
-        </Box>
-
-        <FleetDrawer
-          opened={drawerOpen}
-          onClose={() => setDrawerOpen(false)}
-          rooms={railRooms}
-          buddies={buddies}
-          daemonReachable={daemonReachable}
-          onSelectRoom={onSelectRoom}
-          onCloseRoom={onCloseRoom}
-          onMarkRead={onMarkRoomRead}
-          onOpenDm={onOpenDm}
-        />
+        )}
       </Box>
-    </ThemeOverrideWrapper>
+
+      <FleetDrawer
+        opened={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        rooms={railRooms}
+        buddies={buddies}
+        daemonReachable={daemonReachable}
+        onSelectRoom={onSelectRoom}
+        onCloseRoom={onCloseRoom}
+        onMarkRead={onMarkRoomRead}
+        onOpenDm={onOpenDm}
+      />
+    </Box>
   );
 }
 
@@ -956,127 +950,118 @@ function ChatPage({
           Content's notch slot, and a scroll-clamped Content whose transcript
           and roster manage their own scrolling. No ContentContainer: the
           capped, centred column is what boxed this page before. */}
-      <ThemeOverrideWrapper theme={chatFontTheme}>
-        <PageShell
-          scrollClamp
-          sidebarWidth={244}
-          drawerStateKey="chat-rooms-sidebar"
-        >
-          {/* The sidebar is the fleet now, not just the rooms: a machine with
+      <PageShell
+        scrollClamp
+        sidebarWidth={244}
+        drawerStateKey="chat-rooms-sidebar"
+      >
+        {/* The sidebar is the fleet now, not just the rooms: a machine with
               agents signed in and no room yet still has a tree to show. */}
-          {(rooms.length > 0 || buddies.length > 0) && (
-            <PageShell.Sidebar
-              // The kit's sidebar ScrollArea content defaults to
-              // `min-width: min-content`, so the fleet tree's widest
-              // unbreakable row (a long DM pair or task line) sizes the whole
-              // column past `sidebarWidth` and the y-only viewport clips it
-              // with no ellipsis. Pinning the content to 0 lets each row's
-              // own `truncate` engage instead.
-              scrollAreaProps={{ styles: { content: { minWidth: 0 } } }}
-            >
-              <RoomRail
-                sidebar
-                rooms={railRooms}
-                buddies={buddies}
-                now={Date.now()}
-                activeRoom={activeRoom}
-                onSelectRoom={selectRoom}
-                daemonReachable={daemon.reachable}
-                onNewRoom={
-                  panesAvailable ? () => setNewRoomOpen(true) : undefined
-                }
-                onCloseRoom={onCloseRoom}
-                onMarkRead={onMarkRead}
-                onFocusPane={onFocusPane}
-              />
-            </PageShell.Sidebar>
+        {(rooms.length > 0 || buddies.length > 0) && (
+          <PageShell.Sidebar
+            // The kit's sidebar ScrollArea content defaults to
+            // `min-width: min-content`, so the fleet tree's widest
+            // unbreakable row (a long DM pair or task line) sizes the whole
+            // column past `sidebarWidth` and the y-only viewport clips it
+            // with no ellipsis. Pinning the content to 0 lets each row's
+            // own `truncate` engage instead.
+            scrollAreaProps={{ styles: { content: { minWidth: 0 } } }}
+          >
+            <RoomRail
+              sidebar
+              rooms={railRooms}
+              buddies={buddies}
+              now={Date.now()}
+              activeRoom={activeRoom}
+              onSelectRoom={selectRoom}
+              daemonReachable={daemon.reachable}
+              onNewRoom={
+                panesAvailable ? () => setNewRoomOpen(true) : undefined
+              }
+              onCloseRoom={onCloseRoom}
+              onMarkRead={onMarkRead}
+              onFocusPane={onFocusPane}
+            />
+          </PageShell.Sidebar>
+        )}
+        <PageShell.Main>
+          {inbox ? (
+            <PageShell.Header>{inbox.bar}</PageShell.Header>
+          ) : (
+            activeRoomSummary && (
+              <PageShell.Header>
+                <PageBar
+                  room={activeRoomSummary}
+                  buddies={buddies.filter(b => roomMembers.includes(b.handle))}
+                  reachable={daemon.reachable}
+                  onMarkedRead={() => void refetchRooms()}
+                  onAddAgents={panesAvailable ? addAgents : undefined}
+                />
+              </PageShell.Header>
+            )
           )}
-          <PageShell.Main>
-            {inbox ? (
-              <PageShell.Header>{inbox.bar}</PageShell.Header>
-            ) : (
-              activeRoomSummary && (
-                <PageShell.Header>
-                  <PageBar
-                    room={activeRoomSummary}
-                    buddies={buddies.filter(b =>
-                      roomMembers.includes(b.handle)
-                    )}
+          <PageShell.Content
+            contentContainer={false}
+            topNotch={{
+              opened: !daemon.reachable,
+              content: (
+                <Box w="100%" px="lg" pt="lg" data-testid="daemon-banner-slot">
+                  <DaemonBanner
                     reachable={daemon.reachable}
-                    onMarkedRead={() => void refetchRooms()}
-                    onAddAgents={panesAvailable ? addAgents : undefined}
+                    downSince={daemon.downSince}
+                    probeCount={daemon.probeCount}
+                    lastAnsweredAt={daemon.lastAnsweredAt}
+                    onProbeNow={daemon.probeNow}
                   />
-                </PageShell.Header>
-              )
-            )}
-            <PageShell.Content
-              contentContainer={false}
-              topNotch={{
-                opened: !daemon.reachable,
-                content: (
-                  <Box
-                    w="100%"
-                    px="lg"
-                    pt="lg"
-                    data-testid="daemon-banner-slot"
-                  >
-                    <DaemonBanner
-                      reachable={daemon.reachable}
-                      downSince={daemon.downSince}
-                      probeCount={daemon.probeCount}
-                      lastAnsweredAt={daemon.lastAnsweredAt}
-                      onProbeNow={daemon.probeNow}
-                    />
-                  </Box>
-                ),
-              }}
+                </Box>
+              ),
+            }}
+          >
+            <Group
+              align="stretch"
+              wrap="nowrap"
+              gap={0}
+              style={{ flex: 1, minHeight: 0, minWidth: 0 }}
             >
-              <Group
-                align="stretch"
-                wrap="nowrap"
-                gap={0}
-                style={{ flex: 1, minHeight: 0, minWidth: 0 }}
-              >
-                {inbox ? (
-                  inbox.panel
-                ) : openRooms.length === 0 && !activeRoomSummary ? (
-                  <Box style={{ flex: 1, minWidth: 0 }} p="xl">
-                    <RoomsPlaceholder
-                      anyBuddies={buddies.length > 0}
-                      allClosed={rooms.length > 0}
-                    />
-                  </Box>
-                ) : (
-                  activeRoom && (
-                    <Transcript
-                      room={activeRoom}
-                      messages={messages}
-                      humanHandle={HUMAN_HANDLE}
-                      anchor={anchor}
-                      unreadCount={activeRoomSummary?.unread}
-                      isDm={activeRoomSummary?.kind === 'dm'}
-                      notice={
-                        notice?.room === activeRoom ? notice.node : undefined
-                      }
-                      footer={
-                        <Composer
-                          ref={composerRef}
-                          room={activeRoom}
-                          roomMembers={roomMembers}
-                          buddies={buddies}
-                          isDm={activeRoomSummary?.kind === 'dm'}
-                          daemonReachable={daemon.reachable}
-                          onOpenDm={onOpenDm}
-                        />
-                      }
-                    />
-                  )
-                )}
-              </Group>
-            </PageShell.Content>
-          </PageShell.Main>
-        </PageShell>
-      </ThemeOverrideWrapper>
+              {inbox ? (
+                inbox.panel
+              ) : openRooms.length === 0 && !activeRoomSummary ? (
+                <Box style={{ flex: 1, minWidth: 0 }} p="xl">
+                  <RoomsPlaceholder
+                    anyBuddies={buddies.length > 0}
+                    allClosed={rooms.length > 0}
+                  />
+                </Box>
+              ) : (
+                activeRoom && (
+                  <Transcript
+                    room={activeRoom}
+                    messages={messages}
+                    humanHandle={HUMAN_HANDLE}
+                    anchor={anchor}
+                    unreadCount={activeRoomSummary?.unread}
+                    isDm={activeRoomSummary?.kind === 'dm'}
+                    notice={
+                      notice?.room === activeRoom ? notice.node : undefined
+                    }
+                    footer={
+                      <Composer
+                        ref={composerRef}
+                        room={activeRoom}
+                        roomMembers={roomMembers}
+                        buddies={buddies}
+                        isDm={activeRoomSummary?.kind === 'dm'}
+                        daemonReachable={daemon.reachable}
+                        onOpenDm={onOpenDm}
+                      />
+                    }
+                  />
+                )
+              )}
+            </Group>
+          </PageShell.Content>
+        </PageShell.Main>
+      </PageShell>
       <NewRoomModal
         opened={newRoomOpen}
         onClose={() => setNewRoomOpen(false)}

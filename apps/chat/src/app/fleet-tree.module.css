@@ -24,7 +24,7 @@
   pointer-events: none;
   transition: opacity 100ms ease;
   color: var(--tk-text-4);
-  font-size: var(--tk-fs-4xs);
+  font-size: var(--mantine-font-size-xs);
   white-space: nowrap;
   background: linear-gradient(90deg, transparent, var(--ui-bg-4) 14px);
 }

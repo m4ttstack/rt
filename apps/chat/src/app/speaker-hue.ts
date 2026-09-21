@@ -68,9 +68,11 @@ export interface SpeakerHue {
  * transcript passes its own `humanHandle` prop so the accent chip and the
  * accent wash agree on who the human is.
  *
- * `band` picks which text step renders: `'small'` (default) for the inbox
- * card's 12.16px handle, `'body'` for the message header's 16px one under
- * `chatFontTheme`. The same handle lands on the same hue's index in either
+ * `band` picks which text shade renders: `'small'` (default) for the inbox
+ * card's 14px handle, `'body'` for the message header's 16px one. A smaller
+ * handle needs the higher-contrast step of its hue to stay legible, which is
+ * the whole reason for the split. The same handle lands on the same hue's
+ * index in either
  * band -- only the text shade at that index differs; the returned `fill`
  * never depends on `band` at all.
  */

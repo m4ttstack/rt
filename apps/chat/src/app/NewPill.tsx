@@ -30,7 +30,7 @@ export function NewPill({ count, onClick }: NewPillProps) {
         padding: '0 var(--mantine-spacing-md)',
         // A pill on a 26px control, which no radius token lands on.
         borderRadius: 13,
-        fontSize: 'var(--tk-fs-3xs)',
+        fontSize: 'var(--mantine-font-size-xs)',
         fontWeight: 600,
         color: ACCENT_TEXT,
         background: `color-mix(in srgb, ${ACCENT_TEXT} var(--tk-wash), var(--tk-card))`,

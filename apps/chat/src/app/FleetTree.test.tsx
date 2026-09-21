@@ -231,20 +231,22 @@ test('four or fewer DMs render no overflow control at all', () => {
   expect(screen.queryByTestId('dm-more')).toBeNull();
 });
 
-test('the workstream handle and the roomless group label share the tree row size', () => {
+test('every tree row label sits on the meta step', () => {
   renderTree({
     rooms: [room('rt')],
     buddies: [buddy('max', 'rt'), buddy('gail', 'board')],
   });
-  // 11.2px, one step above the `3xs` task line beside it, as drawn.
+  // The handle, the roomless group label and the task line beside them were
+  // 11.2px, 11.2px and 10.56px -- three names for a difference nobody could
+  // see. One step now carries all three.
   expect(screen.getByTestId('ws-handle-max').style.fontSize).toBe(
-    'var(--tk-fs-small)'
+    'var(--mantine-font-size-xs)'
   );
   expect(screen.getByTestId('repo-name-board').style.fontSize).toBe(
-    'var(--tk-fs-small)'
+    'var(--mantine-font-size-xs)'
   );
   expect(screen.getByTestId('ws-doing-max').style.fontSize).toBe(
-    'var(--tk-fs-3xs)'
+    'var(--mantine-font-size-xs)'
   );
 });
 

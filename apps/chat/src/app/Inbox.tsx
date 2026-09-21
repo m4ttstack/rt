@@ -16,7 +16,7 @@ import { CtxChip, InboxCard } from './InboxCard';
 import { Reader } from './Reader';
 import { isMsgTopic, useRelayFrames } from './relay-socket';
 
-/** Explicit `--tk-fs-{3xs,4xs}` sites (small band). */
+/** Meta-step sites. */
 const MUTED_SMALL = 'var(--tk-text-4)';
 /** `InboxBar`'s icon (beside a `size="xl"` title) and the empty-reader
     panel's `size="sm"` message -- both body band under `chatFontTheme`,
@@ -43,7 +43,7 @@ export const UNREAD_BADGE = {
   height: 18,
   padding: '0 var(--mantine-spacing-sm)',
   borderRadius: 'var(--mantine-radius-xl)',
-  fontSize: 'var(--tk-fs-3xs)',
+  fontSize: 'var(--mantine-font-size-xs)',
   fontWeight: 500,
   lineHeight: 1,
   border: `1px solid ${BORDER}`,
@@ -133,7 +133,7 @@ function Section({
         component="span"
         style={{
           flex: 'none',
-          fontSize: 'var(--tk-fs-4xs)',
+          fontSize: 'var(--mantine-font-size-xs)',
           fontWeight: 700,
           letterSpacing: '0.06em',
           color: MUTED_SMALL,
@@ -147,7 +147,7 @@ function Section({
           truncate
           style={{
             minWidth: 0,
-            fontSize: 'var(--tk-fs-3xs)',
+            fontSize: 'var(--mantine-font-size-xs)',
             color: MUTED_SMALL,
           }}
         >
@@ -266,7 +266,7 @@ export function InboxBar({
               root: {
                 background: 'var(--tk-bg)',
                 borderColor: BORDER,
-                fontSize: 'var(--tk-fs-2xs)',
+                fontSize: 'var(--mantine-font-size-sm)',
               },
             }}
           >
@@ -433,7 +433,7 @@ export function Inbox({
             onClick={onMarkAllRead}
             style={{
               flex: 'none',
-              fontSize: 'var(--tk-fs-3xs)',
+              fontSize: 'var(--mantine-font-size-xs)',
               fontWeight: 600,
               color: ACCENT_TEXT,
             }}
@@ -446,7 +446,7 @@ export function Inbox({
           data-testid="inbox-elsewhere-note"
           style={{
             paddingTop: 2,
-            fontSize: 'var(--tk-fs-3xs)',
+            fontSize: 'var(--mantine-font-size-xs)',
             color: MUTED_SMALL,
           }}
         >
