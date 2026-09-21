@@ -254,6 +254,11 @@ interface TreeRow {
   duplicateBranch?: boolean;
 }
 
+/** The golden's state is readiness bookkeeping; its kind is what a human needs to see. */
+function rowLabel(r: { kind: string; state?: string }): string {
+  return r.kind === "golden" ? "golden" : (r.state ?? r.kind);
+}
+
 async function fetchTreeRows(json: boolean, repoName?: string): Promise<TreeRow[]> {
   const res = await daemonQuery("worktree:list", repoName ? { repoName } : undefined);
   const ok = requireQueryResult(json, res);
@@ -312,7 +317,7 @@ async function pickOneTree(rows: TreeRow[], message: string, breadcrumb: string[
   const trailingByPath = await enrichTrailingByPath(rows);
   const nameWidth = Math.max(...rows.map((r) => r.name.length));
   const options = rows.map((r) => {
-    const state = r.state ?? r.kind;
+    const state = rowLabel(r);
     const base =
       state === "disposable"
         ? r.disposableReason
@@ -619,7 +624,7 @@ export async function worktreeList(args: string[], _ctx: unknown): Promise<void>
     const dupPart = r.duplicateBranch ? `  ${yellow}duplicate branch${reset}` : "";
     const ownerPart = r.owner ? `  ${dim}${r.owner}${reset}` : "";
     console.log(
-      `  ${bold}${repoLabel(r.repoName)}/${r.name}${reset}  ${dim}${r.state ?? r.kind}${reset}  ${cyan}${r.branch ?? "(detached)"}${reset}${ownerPart}${mrPart}${dupPart}`,
+      `  ${bold}${repoLabel(r.repoName)}/${r.name}${reset}  ${dim}${rowLabel(r)}${reset}  ${cyan}${r.branch ?? "(detached)"}${reset}${ownerPart}${mrPart}${dupPart}`,
     );
   }
   console.log("");
@@ -723,10 +728,11 @@ export async function worktreeFreshen(args: string[], _ctx: unknown): Promise<vo
 
   if (!treeName && process.stdin.isTTY) {
     // Mirrors freshenCandidate (lib/daemon/worktree-reconciler.ts): only
-    // on-deck ephemeral trees and the main clone are ever freshened — a
-    // claimed tree is someone's active work and always comes back ran:[].
+    // on-deck ephemeral or golden trees and the main clone are ever
+    // freshened... a claimed tree is someone's active work and always comes
+    // back ran:[].
     const rows = (await fetchTreeRows(parsed.json, repoName))
-      .filter((r) => (r.kind === "ephemeral" && r.state === "on-deck") || r.kind === "main")
+      .filter((r) => ((r.kind === "ephemeral" || r.kind === "golden") && r.state === "on-deck") || r.kind === "main")
       .sort((a, b) => a.name.localeCompare(b.name));
     const picked = await pickOneTree(rows, "Freshen which worktree?", ["rt", "worktree", "freshen"]);
     if (!picked) { console.log(`\n  ${dim}nothing selected${reset}\n`); return; }

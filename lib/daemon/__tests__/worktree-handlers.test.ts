@@ -18,6 +18,7 @@ import { goldenRoot, machineSettingsPath, repoDataDir, rtDir } from "../../rt-pa
 import { deriveRepoIdentity } from "../../settings/identity.ts";
 import { closeStateDb } from "../../state/index.ts";
 import { GOLDEN_BRANCH, GOLDEN_NAME, loadRegistry, saveRegistry, type TreeRecord } from "../../worktree/registry.ts";
+import { disposeTree } from "../../worktree/dispose.ts";
 import { readyTaskFor } from "../../worktree/ready-async.ts";
 import { tryLockTree } from "../../worktree/locks.ts";
 import { branchExistsLocalAsync, currentBranchAsync, headSha } from "../../worktree/git-async.ts";
@@ -864,6 +865,29 @@ describe("worktree:adopt and the golden", () => {
     expect(after.kind).toBe("golden");
     expect(after.state).toBe("on-deck");
     expect(after.claimedAt).toBeUndefined();
+  });
+});
+
+describe("golden guards", () => {
+  const golden: TreeRecord = { name: "golden", path: "/g", kind: "golden", state: "on-deck", branch: "golden", createdAt: "2026-09-21T00:00:00.000Z", readyStamp: "abc" };
+
+  test("a ready golden is never claimable", () => {
+    expect(isClaimable(golden)).toBe(false);
+  });
+
+  test("dispose refuses the golden with kind-golden even when forced", async () => {
+    // disposeTree re-reads the registry under the lock before guard 1 and
+    // refuses "changed" if the row is absent, so the row has to be seeded
+    // first or guard 1 never runs.
+    saveRegistry("acme", [golden]);
+    const outcome = await disposeTree(
+      { repoName: "acme", repoPath: "/repo", cacheEntries: {}, emit: () => {}, log: { info: () => {}, warn: () => {}, debug: () => {} } as never, killProcesses: false, findRunningRun: () => ({ kind: "none" }) },
+      golden,
+      { auto: false, force: true },
+    );
+    expect(outcome.disposed).toBe(false);
+    if (outcome.disposed) return;
+    expect(outcome.refusal).toBe("kind-golden");
   });
 });
 
