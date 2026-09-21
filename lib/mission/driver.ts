@@ -826,6 +826,11 @@ export class MissionDriver {
   private async provisionWorktree(payload: WorktreePayload): Promise<void> {
     const name = typeof payload.name === "string" ? payload.name.trim() : "";
     if (name === "") return;
+    // Provisioning can run for minutes (PROVISION_TIMEOUT_MS): the modal has
+    // already closed by the time this awaits, so the board must say why it
+    // is frozen rather than sitting blank until the daemon replies.
+    this.state.notice = `provisioning ${name}...`;
+    this.push();
     const res = await this.deps.daemonQuery("worktree:provision", {
       repoName: this.state.currentRepo,
       branch: name,

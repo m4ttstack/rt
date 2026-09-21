@@ -1183,6 +1183,37 @@ describe("MissionDriver: provisioning a worktree", () => {
     expect(calls).not.toContain("worktree:provision");
   });
 
+  test("provisioning pushes an in-flight notice before the daemon reply arrives", async () => {
+    let resolveProvision!: (v: { ok: true; data: Record<string, unknown> }) => void;
+    const session = new FakeSession([
+      { t: "intent", name: "mission:worktree", payload: { new: true, name: "my-feature" } },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({
+      session,
+      daemonQuery: async (cmd: string) => {
+        if (cmd === "worktree:provision") {
+          return new Promise((resolve) => { resolveProvision = resolve; });
+        }
+        if (cmd === "worktree:list") return { ok: true, data: { trees: defaultTrees() } };
+        return { ok: true, data: { repos: [] } };
+      },
+    });
+
+    const runPromise = new MissionDriver(deps, START).run();
+    await flushMicrotasks();
+
+    const beforeReply = session.pushed.at(-1);
+    expect(beforeReply?.notice).toContain("my-feature");
+    expect(beforeReply?.current.worktree).toBe(START.worktree);
+
+    resolveProvision({ ok: true, data: { tree: "rohan", path: "/trees/rohan", branch: "my-feature", readyPending: false } });
+    await runPromise;
+
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.current.worktree).toBe("/trees/rohan");
+  });
+
   test("a readyPending provision marks the board settling immediately after switching", async () => {
     const session = new FakeSession([
       { t: "intent", name: "mission:worktree", payload: { new: true, name: "my-feature" } },
