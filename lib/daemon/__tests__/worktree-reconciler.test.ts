@@ -1689,9 +1689,7 @@ describe("replenish / shrink", () => {
       fakeAppConfig(),
     );
 
-    // Filtered by kind, matching this describe block's other member-count
-    // assertions: replenish also builds a golden on this repo's first pass,
-    // and that row is on-deck too, but it isn't the member this test is about.
+    // kind: "ephemeral" excludes the repo's golden row, which is on-deck too but isn't a member.
     expect(loadRegistry(repoName).filter((t) => t.kind === "ephemeral" && t.state === "on-deck").length).toBe(1);
     expect(__test__.createBackoff.has(repoName)).toBe(false);
   });

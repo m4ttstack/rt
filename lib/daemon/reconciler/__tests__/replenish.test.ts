@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { execSync } from "child_process";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import type { Logger } from "pino";
@@ -287,6 +287,41 @@ describe("replenish.ts: golden lifecycle", () => {
       expect(m.readyStamp).toBe(golden!.readyStamp);
       expect(m.readyAt).toBe(golden!.readyAt);
     }
+  });
+
+  test("a pass with nothing to build never creates cfg.root", async () => {
+    // Nothing for this pass to do: a placeholder golden row (any row
+    // satisfies findGolden, so the ensure-golden build is skipped) and a
+    // pool already at onDeck (so the member loop is never entered). If the
+    // volume probe ever materialized cfg.root as a side effect, it would be
+    // the only thing in this pass able to create it: ensure-golden touches
+    // goldenRoot, a different path, and the member loop never runs.
+    const cfgRoot = join(repo, ".worktrees");
+    await declareWorktrees(repo, repoName, { onDeck: 1, root: cfgRoot, ready: [] });
+    saveRegistry(repoName, [
+      { name: "golden", path: goldenRoot(repoName), kind: "golden", state: "on-deck", branch: "golden", createdAt: new Date().toISOString() },
+      { name: "existing", path: join(cfgRoot, "existing"), kind: "ephemeral", state: "on-deck", branch: "on-deck/existing", createdAt: new Date().toISOString() },
+    ]);
+    expect(existsSync(cfgRoot)).toBe(false);
+
+    await replenishAndShrink(deps(), new Map(), fakeAppConfig());
+
+    expect(existsSync(cfgRoot)).toBe(false);
+  });
+
+  test("hydration still chooses correctly when cfg.root does not exist yet", async () => {
+    await declareWorktrees(repo, repoName, { onDeck: 1, root: join(repo, ".worktrees"), ready: [] });
+    expect(existsSync(join(repo, ".worktrees"))).toBe(false);
+
+    await replenishAndShrink(deps(), new Map(), fakeAppConfig());
+
+    const trees = loadRegistry(repoName);
+    const golden = findGolden(trees);
+    const member = trees.find((t) => t.kind === "ephemeral" && t.state === "on-deck");
+    // Equal to the golden's own readyStamp/readyAt only if the member was
+    // actually hydrated, not cold-created (a cold create stamps its own).
+    expect(member?.readyStamp).toBe(golden!.readyStamp);
+    expect(member?.readyAt).toBe(golden!.readyAt);
   });
 
   test("a golden create failure backs off and members still cold-create", async () => {

@@ -6,7 +6,8 @@
  * same per-repo pass, so splitting them would just duplicate that read.
  */
 
-import { mkdirSync, statfsSync, statSync } from "fs";
+import { existsSync, statfsSync, statSync } from "fs";
+import { dirname, resolve } from "path";
 import {
   findByPath,
   loadRegistry,
@@ -128,9 +129,24 @@ export function chooseCreateMode(
   return { mode: "hydrate", golden };
 }
 
+/** The nearest ancestor of `p` that exists: a not-yet-created path always lands on this ancestor's device. */
+function nearestExisting(p: string): string {
+  let cur = resolve(p);
+  while (!existsSync(cur)) {
+    const up = dirname(cur);
+    if (up === cur) return cur;
+    cur = up;
+  }
+  return cur;
+}
+
+// The probe must never create the pool root: an existing pool root is what
+// tells reconcile's isHeldByUnreadableMount (reconcile.ts) that the mount is
+// live, so materializing it here would make a genuinely vanished mount look
+// present, un-hold its rows, and let them accrue misses toward pruning.
 function sameDev(a: string, b: string): boolean {
   try {
-    return statSync(a).dev === statSync(b).dev;
+    return statSync(nearestExisting(a)).dev === statSync(nearestExisting(b)).dev;
   } catch {
     return false;
   }
@@ -188,18 +204,15 @@ export async function replenishAndShrink(
   if (onDeck <= 0) {
     const golden = findGolden(loadRegistry(repoName));
     if (golden) {
-      await withCreateLock(repoPath, () => scrapTree({ repoName, repoPath, emit, log }, golden));
-      log.info({ repo: repoName }, "replenish: onDeck is 0; scrapped the golden");
+      const result = await withCreateLock(repoPath, () =>
+        withTreeLock(golden.path, () => scrapTree({ repoName, repoPath, emit, log }, golden)),
+      );
+      if (result !== "busy") {
+        log.info({ repo: repoName }, "replenish: onDeck is 0; scrapped the golden");
+      }
     }
     return;
   }
-
-  // sameDev needs BOTH paths present, and cfg.root is otherwise created
-  // lazily by a member's own `git worktree add`, which runs after the volume
-  // check below... on a repo's first ever pass that leaves the check racing
-  // a path that doesn't exist yet. Make it exist first so the check reflects
-  // ground truth, not "path missing".
-  try { mkdirSync(cfg.root, { recursive: true }); } catch { /* stat below degrades safely either way */ }
 
   // Lazy and memoized once per pass, not eagerly: the golden root does not
   // exist on disk until the ensure block below has run, and `sameVolume`
