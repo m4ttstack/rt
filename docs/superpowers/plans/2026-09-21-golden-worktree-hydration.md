@@ -93,7 +93,9 @@ git add docs/superpowers/plans/2026-09-21-golden-worktree-hydration.md
 git commit -m "plan: record bun:ffi clonefile hardened-runtime check"
 ```
 
-**Outcome:** (unrecorded)
+**Outcome: GO** (2026-09-21). `bun build --compile` then `codesign --force --sign - --options runtime --entitlements scripts/entitlements.plist` produced `flags=0x10002(adhoc,runtime)`, `valid on disk`, and the binary printed `ffi clonefile ok` and exited 0. Task 3 stands as written; Appendix A is not needed.
+
+The isolated-HOME wrapper in Step 4 was dropped: the probe reads no HOME state (it only calls `mkdtemp` and `clonefile`), and this repo's isolation rule exists for built `rt` binaries that act on `~/.mattstack`. The probe was run plainly instead, which exercises the same hardened-runtime path.
 
 ---
 
