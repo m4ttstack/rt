@@ -570,3 +570,105 @@ describe('runTriage stack chain (BOARD-12)', () => {
     expect(looked).toHaveLength(0);
   });
 });
+
+describe('runTriage stand-down (operator "never diagnose this stack")', () => {
+  const PARENT = 'https://x/mr/1';
+  const CHILD = 'https://x/mr/2';
+
+  function stack(): OwnMrFacts[] {
+    return [
+      {
+        mrUrl: PARENT,
+        iid: 1,
+        pipelineId: 100,
+        pipelineState: 'failed',
+        needsRebase: false,
+        author: 'matt',
+        sourceBranch: 'feat-parent',
+        targetBranch: 'master',
+        isStacked: false,
+      },
+      {
+        mrUrl: CHILD,
+        iid: 2,
+        pipelineId: 200,
+        pipelineState: 'failed',
+        needsRebase: false,
+        author: 'matt',
+        sourceBranch: 'feat-child',
+        targetBranch: 'feat-parent',
+        isStacked: true,
+      },
+    ];
+  }
+
+  test('a stood-down MR skips without consuming budget', async () => {
+    const d = deps({
+      memory: {
+        identity: null,
+        mrs: {
+          'https://x/mr/1': { ...emptyMrMemory('1970-01-12'), standDown: true },
+        },
+      },
+    });
+    const result = await runTriage(d);
+    expect(d.launches).toHaveLength(0);
+    expect(
+      d.audit.some(e => e.mrUrl === 'https://x/mr/1' && e.reason === 'stood-down')
+    ).toBe(true);
+    expect(d.memory.mrs['https://x/mr/1']!.attemptsToday).toBe(0);
+    expect(result.dispatched).toBe(0);
+  });
+
+  test('standing down the parent also blocks the child (whole stack)', async () => {
+    const d = deps({
+      fetchOwnMrs: async () => stack(),
+      memory: {
+        identity: null,
+        mrs: {
+          [PARENT]: { ...emptyMrMemory('1970-01-12'), standDown: true },
+        },
+      },
+    });
+    await runTriage(d);
+    expect(d.launches).toHaveLength(0);
+    expect(
+      d.audit.some(e => e.mrUrl === CHILD && e.reason === 'stood-down')
+    ).toBe(true);
+    expect(d.memory.mrs[CHILD]?.attemptsToday ?? 0).toBe(0);
+  });
+
+  test('a new pipeline id on a stood-down MR still skips -- the edge is never latched as handled', async () => {
+    const d = deps({
+      fetchOwnMrs: async () => stack(),
+      memory: {
+        identity: null,
+        mrs: {
+          [PARENT]: { ...emptyMrMemory('1970-01-12'), standDown: true },
+        },
+      },
+    });
+    await runTriage(d);
+    expect(d.memory.mrs[PARENT]!.lastHandledPipelineId).not.toBe(100);
+    const again = await runTriage(d);
+    expect(again.skipped).toBeGreaterThan(0);
+    expect(d.launches.filter(l => l.iid === 1)).toHaveLength(0);
+  });
+
+  test('clearing the flag lets the next run dispatch again', async () => {
+    const d = deps({
+      fetchOwnMrs: async () => stack(),
+      memory: {
+        identity: null,
+        mrs: {
+          [PARENT]: { ...emptyMrMemory('1970-01-12'), standDown: true },
+        },
+      },
+    });
+    await runTriage(d);
+    d.memory.mrs[PARENT]!.standDown = false;
+    const result = await runTriage(d);
+    expect(d.launches.map(l => l.iid)).toContain(1);
+    expect(result.dispatched).toBeGreaterThan(0);
+  });
+});

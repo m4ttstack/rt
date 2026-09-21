@@ -13,6 +13,11 @@ export interface MrMemory {
   budgetEscalatedDay: string | null;
   lastHandledPipelineId: number | null;
   lastNeedsRebase: boolean;
+  /** Operator stand-down (right-click "never diagnose this stack"): true
+      blocks auto-dispatch on this MR and, via chainOf, every descendant --
+      set and cleared only by the operator, never by rollDay or a fresh
+      pipeline id. */
+  standDown?: boolean;
 }
 
 export interface DispatchMemory {

@@ -189,6 +189,20 @@ function upstreamBlocker(
   return held ? { reason: 'attended-upstream', upstreamMr: held.mr } : null;
 }
 
+/** Operator stand-down covers the whole stack: an MR is stood down if it or
+    any ancestor (chainOf, same walk upstreamBlocker uses) carries the flag,
+    since a child's own edge check is what has to catch a stood-down parent
+    -- there is no separate descendant walk. */
+function isStoodDown(
+  mrUrl: string,
+  mrs: OwnMrFacts[],
+  memory: DispatchMemory
+): boolean {
+  if (memory.mrs[mrUrl]?.standDown) return true;
+  const { ancestors } = chainOf(mrs, mrUrl);
+  return ancestors.some(anc => memory.mrs[anc.mrUrl]?.standDown);
+}
+
 export async function runTriage(
   deps: TriageRunDeps
 ): Promise<{ dispatched: number; escalated: number; skipped: number }> {
@@ -219,6 +233,19 @@ export async function runTriage(
   }
 
   for (const edge of edges) {
+    if (isStoodDown(edge.mrUrl, mrs, deps.memory)) {
+      result.skipped++;
+      deps.appendAudit({
+        ts: now,
+        mrUrl: edge.mrUrl,
+        iid: edge.iid,
+        event: edge.kind,
+        decision: 'skip',
+        reason: 'stood-down',
+        pipelineId: edge.pipelineId,
+      });
+      continue;
+    }
     const existing = doctors.get(edge.mrUrl);
     if (existing && IN_FLIGHT.has(existing.status)) {
       result.skipped++;
