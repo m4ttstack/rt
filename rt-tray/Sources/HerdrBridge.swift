@@ -211,6 +211,12 @@ class HerdrBridge {
     /// frontmost. Walk up from the pane's shell pid to whichever terminal
     /// emulator hosts it and activate that app so the change is actually seen.
     func focusPane(_ pane: HerdrPane) {
+        // Every focus path funnels through here: the daemon's POST, both
+        // notification click handlers, and the process panel. A running flock
+        // answers for its own windows and sends its own workspace, tab and
+        // pane focus, so nothing below needs to run.
+        if FlockBridge.focusPane(pane.paneId) { return }
+
         run(["workspace", "focus", pane.workspaceId])
         run(["tab", "focus", pane.tabId])
         // Shell ancestry only reaches the terminal when the pane runs under
