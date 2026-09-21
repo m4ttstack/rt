@@ -3873,15 +3873,15 @@ body {
   color: var(--text-4);
   font-size: 12px;
 }
-/* rest at full strength (--text-4, the same hex as --text-1); hover =
-   accent + underline; mousedown deepens; a no-op end (already all /
-   already none) drops to gray and stops taking clicks. */
+/* rest at full strength (--text-1, a clickable control rather than small
+   secondary text); hover = accent + underline; mousedown deepens; a no-op
+   end (already all / already none) drops to gray and stops taking clicks. */
 .tui-review-allnone {
   border: none;
   background: none;
   padding: 0;
   font-size: 12px;
-  color: var(--text-4);
+  color: var(--text-1);
   cursor: pointer;
 }
 .tui-review-allnone:hover {
@@ -3895,7 +3895,7 @@ body {
    a 0.55 veil on the dim token read as broken rather than spent, so the
    de-emphasis now comes off the text token at a lighter veil. */
 .tui-review-allnone[data-noop] {
-  color: var(--text-4);
+  color: var(--text-1);
   opacity: 0.72;
   pointer-events: none;
 }

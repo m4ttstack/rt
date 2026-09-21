@@ -55,9 +55,6 @@ function TextWall() {
           <Text c="dimmed">
             Dimmed text on {ground}: items on loan keep their due dates.
           </Text>
-          {/* eslint-disable-next-line local/no-dimmed-xs --
-              this row is the specimen for the combination the rule forbids;
-              a wall that cannot render the failing case cannot show it. */}
           <Text size="xs" c="dimmed">
             Small dimmed text on {ground}: returns reopen Monday.
           </Text>

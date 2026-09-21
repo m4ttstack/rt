@@ -728,6 +728,6 @@ way that does not announce itself as "the kit is wrong":
 
 ### Text slots and sizes
 
-`--ui-text-1` is primary text at every size; `--ui-text-2` is secondary text at body sizes and above; `--ui-text-3` at meta (about 13px); `--ui-text-4` at small and micro (under 12.5px) and is the same colour as `--ui-text-1`, because small text needs the high-contrast step. `--ui-text-muted` is `--ui-text-3` and `--ui-text-dimmed` is `--ui-text-4`. In JSX, `c="dimmed"` at `size="xs"` is a lint error (`local/no-dimmed-xs`); use `sm` for dimmed text or the default colour at `xs`.
+`--ui-text-1` is primary text at every size; `--ui-text-2` is secondary text at body sizes and above; `--ui-text-3` at meta (about 13px); `--ui-text-4` at small and micro (under 12.5px) and shares `--ui-text-2`/`--ui-text-3`'s colour rather than `--ui-text-1`'s, since that step measures legible at small sizes too (`packages/tokens/src/values.ts`).
 
-In JSX, `c="dimmed"` reads Mantine's `--mantine-color-dimmed` (slate 11, the same value as `--ui-text-muted`), not `--ui-text-dimmed`; the lint exists because that Mantine slot is under the small-text bar at `xs`.
+In JSX, `c="dimmed"` reads Mantine's `--mantine-color-dimmed` (slate 11, the same value as `--ui-text-muted` and now `--ui-text-dimmed` too), and is safe at every Mantine size including `xs`.

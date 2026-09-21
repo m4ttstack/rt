@@ -38,7 +38,7 @@ const STEPS = [
     px: 11.9,
     weight: 400,
     line: 1.4,
-    bar: 7.0,
+    bar: 4.8,
     token: '--text-4',
   },
   {
@@ -46,7 +46,7 @@ const STEPS = [
     px: 10.54,
     weight: 500,
     line: 1.35,
-    bar: 7.0,
+    bar: 4.8,
     token: '--text-4',
   },
 ] as const;
