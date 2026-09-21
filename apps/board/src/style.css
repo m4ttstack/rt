@@ -120,7 +120,6 @@ body {
   flex-wrap: nowrap;
   overflow-x: auto;
   max-width: 100%;
-  gap: 0.4rem;
 }
 /* Uniform control height: the text segmented (0.8em) and icon segmented would
    otherwise differ by ~1px and read as misaligned. `flex-shrink: 0` is what
@@ -130,18 +129,8 @@ body {
   height: 28px;
   flex-shrink: 0;
 }
-/* The recipes' own padding is sized for a standalone control, generous
-   enough that seven of them side by side forced this row to scroll on an
-   ordinary window width. Trimmed here, scoped to the header toolbar only
-   -- every other user of `.tui-copy`/copybutton/segmented-option keeps the
-   recipe's own spacing. */
-.tui-controls-header .tui-copy,
-.tui-controls-header [data-part='copybutton'] {
-  padding: 0.22rem;
-}
 .tui-controls-header [data-part='segmented-option'] {
   height: 100%;
-  padding-inline: 0.3rem;
 }
 .tui-author {
   color: var(--text-purple);
