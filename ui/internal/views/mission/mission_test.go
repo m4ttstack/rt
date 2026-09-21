@@ -607,13 +607,29 @@ const (
 // y 11, checkbox at x=2 (the "  " prefix's own width).
 // Row 1 (0-indexed) is "model.go" under the Changes list's own
 // case-insensitive path sort (ratified 2026-09-21): mission.go, model.go,
-// topbar.go.
+// topbar.go -- not the fixture's initial cursor row, so clicking its
+// checkbox (RT-221) batches a select intent alongside the stage intent; the
+// two land as concurrent Cmds, so the read order between them is not
+// guaranteed and both lines are checked as a set.
 func TestMouseClickCheckboxCellEmitsToggleFileWithPath(t *testing.T) {
 	s := s5open(t)
 	s.Type(sgrClick(0, 2, 11))
-	l, ok := s.ReadLine(2 * time.Second)
-	if !ok || !strings.Contains(l, `"name":"mission:stage"`) || !strings.Contains(l, `"path":"ui/internal/views/mission/model.go"`) || !strings.Contains(l, `"mode":"toggle-file"`) {
-		t.Fatalf("checkbox click stage intent: %q", l)
+	l1, ok1 := s.ReadLine(2 * time.Second)
+	l2, ok2 := s.ReadLine(2 * time.Second)
+	if !ok1 || !ok2 {
+		t.Fatalf("checkbox click on an unselected row should emit both a stage and a select intent: %q / %q", l1, l2)
+	}
+	var hasStage, hasSelect bool
+	for _, l := range []string{l1, l2} {
+		if strings.Contains(l, `"name":"mission:stage"`) && strings.Contains(l, `"path":"ui/internal/views/mission/model.go"`) && strings.Contains(l, `"mode":"toggle-file"`) {
+			hasStage = true
+		}
+		if strings.Contains(l, `"name":"mission:select"`) && strings.Contains(l, `"path":"ui/internal/views/mission/model.go"`) {
+			hasSelect = true
+		}
+	}
+	if !hasStage || !hasSelect {
+		t.Fatalf("checkbox click on an unselected row should emit both a stage and a select intent for model.go: %q / %q", l1, l2)
 	}
 	s.Send(`{"t":"close"}`)
 	s.Wait()
