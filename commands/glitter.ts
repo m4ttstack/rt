@@ -11,9 +11,9 @@ import { exit, openSession } from "../lib/ui/spawn.ts";
 import { SessionDied } from "../lib/runner/runner.ts";
 import { createGitClient } from "../packages/git-core/src/index.ts";
 import { daemonQuery, subscribeToDaemon } from "../lib/daemon-client.ts";
-import { checkBranchGuard } from "../lib/branch-guard.ts";
+import { buildWorktreeGuardMap, checkBranchGuard } from "../lib/branch-guard.ts";
 import { commitStaged, amendStaged } from "../lib/commit-ops.ts";
-import { getRemoteDefaultBranch } from "../lib/git-ops.ts";
+import { getPullRebase, getRemoteDefaultBranch } from "../lib/git-ops.ts";
 
 export async function glitterCommand(_args: string[], ctx: CommandContext): Promise<void> {
   if (!interactive()) {
@@ -39,6 +39,8 @@ export async function glitterCommand(_args: string[], ctx: CommandContext): Prom
     guard: checkBranchGuard,
     now: () => new Date(),
     resolveDefaultBranch: getRemoteDefaultBranch,
+    readPullRebase: getPullRebase,
+    buildGuards: buildWorktreeGuardMap,
   };
 
   const driver = new MissionDriver(deps, {

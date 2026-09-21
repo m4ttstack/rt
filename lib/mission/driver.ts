@@ -16,9 +16,9 @@ import {
 } from "../../packages/git-core/src/index.ts";
 import { DiffLineType } from "../../packages/git-core/src/vendor/ghd/diff-line.ts";
 import type { GitWorktreeBadge, RepoStatusRow, WorktreeTreeRow } from "../../packages/rt-client/src/commands.ts";
-import type { BranchGuardVerdict, checkBranchGuard } from "../branch-guard.ts";
+import type { BranchGuardVerdict, buildWorktreeGuardMap, checkBranchGuard } from "../branch-guard.ts";
 import type { DaemonEvent, DaemonSubscription, daemonQuery } from "../daemon-client.ts";
-import type { getRemoteDefaultBranch } from "../git-ops.ts";
+import type { getPullRebase, getRemoteDefaultBranch } from "../git-ops.ts";
 import { formatRelativeTime } from "../relative-time.ts";
 import { repoLabel } from "../repo-label.ts";
 import { createRealProbes } from "../setup/probes.ts";
@@ -39,6 +39,8 @@ type CommitStagedFn = (cwd: string, message: string, opts?: { amend?: boolean; n
 type AmendStagedFn = (cwd: string, opts?: { message?: string; noVerify?: boolean }) => string;
 type GuardFn = typeof checkBranchGuard;
 type ResolveDefaultBranchFn = typeof getRemoteDefaultBranch;
+type ReadPullRebaseFn = typeof getPullRebase;
+type BuildGuardsFn = typeof buildWorktreeGuardMap;
 
 export interface MissionDeps {
   openSession: OpenSessionFn;
@@ -60,6 +62,10 @@ export interface MissionDeps {
    * UI thread on every filter keystroke and selection change.
    */
   resolveDefaultBranch: ResolveDefaultBranchFn;
+  /** Sync, same caching contract as resolveDefaultBranch: read once per refresh(), never from model()/push(). */
+  readPullRebase: ReadPullRebaseFn;
+  /** Batch worktree-ownership lookup for the branch modal's lock badges (display only; checkBranchGuard remains the enforcement point). */
+  buildGuards: BuildGuardsFn;
 }
 
 interface StagePayload {
@@ -170,6 +176,18 @@ export class MissionDriver {
    *  transition, all of which call it) so model()/push() and guardBranch()
    *  never run resolveDefaultBranch's blocking git subprocesses themselves. */
   private defaultBranch: string | null = null;
+  /** First configured remote's name, or null for a repo with none. Cached by
+   *  refresh(), same contract as defaultBranch: recomputeAction() and
+   *  handleAction() read the cache rather than awaiting client.remotes()
+   *  themselves. */
+  private remoteName: string | null = null;
+  /** Cached by refresh(), same contract as defaultBranch/remoteName. */
+  private pullRebase = false;
+  /** Branch name -> lock reason, for the branch modal's guarded rows. Cached
+   *  by refresh(); a display signal only (see buildWorktreeGuardMap's own
+   *  doc comment) -- checkoutBranch enforcement always goes through
+   *  guardBranch()/checkBranchGuard, never this map. */
+  private guards: Map<string, string> = new Map();
 
   constructor(private readonly deps: MissionDeps, start: { repo: string; worktree: string }) {
     this.state = {
@@ -243,7 +261,7 @@ export class MissionDriver {
       rows: this.rows,
       snapshot: this.snapshot,
       branches: this.branches,
-      guards: new Map(),
+      guards: this.guards,
       worktrees: this.worktreeRows(),
       stagingDiff: this.stagingDiff,
       stashes: this.stashCount,
@@ -310,17 +328,22 @@ export class MissionDriver {
     // model()/guardBranch()'s own comments on why they read the cache
     // instead of calling this themselves.
     this.defaultBranch = this.deps.resolveDefaultBranch(this.state.currentWorktree);
-    const [statusRes, treesRes, snapshot, branches, stashes, log] = await Promise.all([
+    this.pullRebase = this.deps.readPullRebase(this.state.currentWorktree);
+    const [statusRes, treesRes, snapshot, branches, remotes, guards, stashes, log] = await Promise.all([
       this.deps.daemonQuery("repos:status", {}),
       this.deps.daemonQuery("worktree:list", { repoName: this.state.currentRepo }),
       client.snapshot(),
       client.branches(),
+      client.remotes(),
+      this.deps.buildGuards(this.state.currentWorktree),
       client.stashes(),
       client.log({ maxCount: 1 }),
     ]);
     if (statusRes?.ok) this.rows = (statusRes.data?.repos as RepoStatusRow[] | undefined) ?? [];
     if (treesRes?.ok) this.trees = (treesRes.data?.trees as WorktreeTreeRow[] | undefined) ?? [];
     this.snapshot = snapshot;
+    this.remoteName = remotes[0]?.name ?? null;
+    this.guards = guards;
     this.reconcileSelections();
     // Seed the diff pane on open (and after a checkout/worktree/repo switch
     // cleared it): the first change is what the view's cursor starts on.
@@ -395,10 +418,10 @@ export class MissionDriver {
   private recomputeAction(): void {
     this.action = deriveAction({
       badge: this.currentBadge(),
-      remoteName: "origin",
+      remoteName: this.remoteName,
       detached: this.snapshot.detached,
       unborn: this.snapshot.branch === null && !this.snapshot.detached,
-      pullRebase: false,
+      pullRebase: this.pullRebase,
       forcePushRecommended: this.state.forcePushRecommended,
       busy: this.state.busyAction,
     });
@@ -452,7 +475,10 @@ export class MissionDriver {
     this.push();
 
     try {
-      const result = await this.deps.runAction(this.state.currentWorktree, kind, { branch: this.snapshot.branch });
+      const result = await this.deps.runAction(this.state.currentWorktree, kind, {
+        remote: this.remoteName ?? undefined,
+        branch: this.snapshot.branch,
+      });
       if (!result.ok) {
         this.state.notice = result.detail;
       } else {

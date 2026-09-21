@@ -261,6 +261,8 @@ function baseDeps(over: {
   guard?: MissionDeps["guard"];
   now?: MissionDeps["now"];
   resolveDefaultBranch?: MissionDeps["resolveDefaultBranch"];
+  readPullRebase?: MissionDeps["readPullRebase"];
+  buildGuards?: MissionDeps["buildGuards"];
 }): MissionDeps {
   const client = over.client ?? makeFakeClient();
   return {
@@ -284,6 +286,8 @@ function baseDeps(over: {
     // per test and makes the resolver itself spy-able (see the caching test
     // below).
     resolveDefaultBranch: over.resolveDefaultBranch ?? (() => null),
+    readPullRebase: over.readPullRebase ?? (() => false),
+    buildGuards: over.buildGuards ?? (async () => new Map()),
   };
 }
 
@@ -508,6 +512,96 @@ describe("MissionDriver: badge resolution", () => {
     // publish-branch/"Never fetched" the empty-badge fallback produced.
     expect(opened!.action.kind).toBe("push");
     expect(opened!.action.meta).toBe("Never fetched"); // still accurate: the DAEMON hasn't fetched
+  });
+});
+
+describe("MissionDriver: real remote name, pull.rebase, and guards (RT-219)", () => {
+  test("a repo with no remote shows Publish repository in the action segment", async () => {
+    const session = new FakeSession([{ t: "intent", name: "quit" }]);
+    let opened: MissionModel | null = null;
+    const client = makeFakeClient({ remotes: async () => [] });
+    const deps = baseDeps({ session, client });
+    deps.openSession = async (_view, model) => {
+      opened = model as MissionModel;
+      return session;
+    };
+
+    await new MissionDriver(deps, START).run();
+
+    expect(opened!.action.kind).toBe("publish-repo");
+    expect(opened!.action.title).toBe("Publish repository");
+  });
+
+  test("a remote named something other than origin flows into runAction", async () => {
+    let capturedOpts: { remote?: string; branch: string | null } | null = null;
+    const session = new FakeSession([
+      { t: "intent", name: "mission:action" },
+      { t: "intent", name: "quit" },
+    ]);
+    const client = makeFakeClient({ remotes: async () => [{ name: "upstream" }] });
+    const deps = baseDeps({
+      session,
+      client,
+      daemonQuery: async (cmd: string) =>
+        cmd === "worktree:list"
+          ? { ok: true, data: { trees: defaultTrees() } }
+          : { ok: true, data: { repos: [{ repo: "repo-tools", error: null, worktrees: [badge({ ahead: 1, behind: 0 })] }] } },
+      runAction: async (_cwd, _kind, opts) => {
+        capturedOpts = opts;
+        return { ok: true, detail: "" };
+      },
+    });
+
+    await new MissionDriver(deps, START).run();
+
+    expect(capturedOpts!).toEqual({ remote: "upstream", branch: "main" });
+  });
+
+  test("pull.rebase=true renders the with-rebase title in the action segment", async () => {
+    const session = new FakeSession([{ t: "intent", name: "quit" }]);
+    let opened: MissionModel | null = null;
+    const deps = baseDeps({
+      session,
+      daemonQuery: async (cmd: string) =>
+        cmd === "worktree:list"
+          ? { ok: true, data: { trees: defaultTrees() } }
+          : { ok: true, data: { repos: [{ repo: "repo-tools", error: null, worktrees: [badge({ ahead: 0, behind: 1 })] }] } },
+      readPullRebase: () => true,
+    });
+    deps.openSession = async (_view, model) => {
+      opened = model as MissionModel;
+      return session;
+    };
+
+    await new MissionDriver(deps, START).run();
+
+    expect(opened!.action.kind).toBe("pull-rebase");
+    expect(opened!.action.title).toBe("Pull origin with rebase");
+  });
+
+  test("a branch checked out in another worktree renders guardedBy in the branch modal rows", async () => {
+    const session = new FakeSession([{ t: "intent", name: "quit" }]);
+    let opened: MissionModel | null = null;
+    const client = makeFakeClient({
+      branches: async () => [
+        { name: "main", current: true, sha: "a", upstream: null, upstreamGone: false, ahead: null, behind: null, committedAt: "2026-01-01T00:00:00Z" },
+        { name: "feature-x", current: false, sha: "b", upstream: null, upstreamGone: false, ahead: null, behind: null, committedAt: "2026-01-01T00:00:00Z" },
+      ],
+    });
+    const deps = baseDeps({
+      session,
+      client,
+      buildGuards: async () => new Map([["feature-x", "feature-x is already checked out in another worktree at /elsewhere"]]),
+    });
+    deps.openSession = async (_view, model) => {
+      opened = model as MissionModel;
+      return session;
+    };
+
+    await new MissionDriver(deps, START).run();
+
+    const row = opened!.branches.find((b) => b.name === "feature-x")!;
+    expect(row.guardedBy).toContain("/elsewhere");
   });
 });
 
