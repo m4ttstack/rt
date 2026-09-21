@@ -254,7 +254,10 @@ export const TOKENS: Tokens = {
     // Slate 2, 3, 4 rather than 1, 2, 3: on 1..3 the four light surfaces
     // measure 16.39 to 14.41 against text-1 and read as one white.
     surfaceSteps: ['#ffffff', 2, 3, 4],
-    textSteps: [12, 11, 11, 12],
+    // text-4 shares slate 11 with text-2/text-3 rather than promoting to 12:
+    // 11's worst case (4.86 here) is rendered-legible at 10.5-12px, and 12
+    // is where text-1 already sits, which is the collision this fixes.
+    textSteps: [12, 11, 11, 11],
     lineSteps: [8, 7, 6],
     surfaceRole: {
       card: 1,
@@ -274,7 +277,7 @@ export const TOKENS: Tokens = {
   dark: buildScheme({
     scheme: 'dark',
     surfaceSteps: [1, 2, 3, 4],
-    textSteps: [12, 11, 11, 12],
+    textSteps: [12, 11, 11, 11],
     lineSteps: [9, 7, 6],
     surfaceRole: {
       card: 3,

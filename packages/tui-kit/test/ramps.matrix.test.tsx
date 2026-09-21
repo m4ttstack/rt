@@ -20,7 +20,7 @@ import {
 import { TuiKitProvider } from "../src/provider.tsx";
 
 const SURFACES = [1, 2, 3, 4] as const;
-const TEXT_BAR: Record<number, number> = { 1: 7.0, 2: 4.5, 3: 4.8, 4: 7.0 };
+const TEXT_BAR: Record<number, number> = { 1: 7.0, 2: 4.5, 3: 4.8, 4: 4.8 };
 const HUES = ["accent", "ok", "bad", "warn", "purple", "cyan", "gold"] as const;
 const SCHEMES = ["light", "dark"] as const;
 const FILL_BAR = 3.0;

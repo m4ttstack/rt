@@ -86,7 +86,7 @@
   --tk-text-1: #1c2024;
   --tk-text-2: #60646c;
   --tk-text-3: #60646c;
-  --tk-text-4: #1c2024;
+  --tk-text-4: #60646c;
   --tk-line-1: #b9bbc6;
   --tk-line-2: #cdced6;
   --tk-line-3: #d9d9e0;
@@ -182,7 +182,7 @@
   --tk-text-1: #edeef0;
   --tk-text-2: #b0b4ba;
   --tk-text-3: #b0b4ba;
-  --tk-text-4: #edeef0;
+  --tk-text-4: #b0b4ba;
   --tk-line-1: #696e77;
   --tk-line-2: #43484e;
   --tk-line-3: #363a3f;
@@ -248,9 +248,9 @@
  *
  * Four text slots, `--ui-text-1` through `--ui-text-4`, mirror the band
  * ladder: 1 is primary at every size, 2/3 step down for secondary text at
- * body/meta sizes, and 4 is dimmed's home -- the small-text slot, pinned
- * back to the high-contrast step because dimmed text under the small-text
- * bar fails contrast by construction.
+ * body/meta sizes, and 4 is dimmed's home -- the small-text slot, sharing
+ * 2/3's step (slate 11) rather than 1's, since that step measures legible
+ * at small sizes too (packages/tokens/src/values.ts).
  */
 :root {
   --ui-bg-1: var(--tk-bg);

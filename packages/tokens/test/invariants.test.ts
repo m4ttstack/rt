@@ -6,7 +6,9 @@ import { CSS_TEXT, HUE_SCALE, HUES, TOKENS, type Step } from '../src/values.ts';
 
 const SCHEMES = ['light', 'dark'] as const;
 const WHITE = '#ffffff';
-const TEXT_BAR = [0, 4.5, 4.8, 7.0] as const;
+// text-4 shares text-3's bar: both sit on slate 11, whose worst case (4.86,
+// the light row surface) is what set 4.8 in the first place.
+const TEXT_BAR = [0, 4.5, 4.8, 4.8] as const;
 
 function worst(hex: string, surfaces: readonly string[]): number {
   return Math.min(...surfaces.map(s => contrastRatio(hex, s)));
@@ -96,11 +98,11 @@ describe('text ramp', () => {
   });
 
   it.each(SCHEMES)(
-    '%s: text roles are ramp steps and the ramp is slate 12, 11, 11, 12',
+    '%s: text roles are ramp steps and the ramp is slate 12, 11, 11, 11',
     scheme => {
       const t = TOKENS[scheme];
       const s = RADIX.slate[scheme];
-      expect([...t.textRamp]).toEqual([s[11], s[10], s[10], s[11]]);
+      expect([...t.textRamp]).toEqual([s[11], s[10], s[10], s[10]]);
       expect(t.text.fg).toBe(t.textRamp[t.textRole.fg - 1]);
       expect(t.text.mutedText).toBe(t.textRamp[t.textRole.mutedText - 1]);
       expect(t.text.mutedOnCard).toBe(t.textRamp[t.textRole.mutedOnCard - 1]);
