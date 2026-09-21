@@ -658,3 +658,37 @@ them.
   there), light teal-10 and cyan-10 into the §7 fill ledger beside
   orange-10, and light `bad` body text from crimson 11 to 12 (11 measures
   4.41, under AA).
+
+## 11. Revision: text-4 moves off the high-contrast step
+
+`--text-4` shipped as the same hex as `--text-1` (§5): the 7.0 small-text
+bar left slate 11 (4.86 light, 6.93 dark) short, and slate 12 was the only
+step that cleared it, so small and dimmed text rendered at full ink
+wherever a screen used `text-4` for anything other than a control that
+wanted full ink on purpose. This read as one screen disagreeing with
+itself about what "secondary" meant, filed as the apps repo's issue 103.
+
+The fix is the bar, not the step: there is no third neutral text step
+between 11 and 12 to promote into, so lowering `text-4`'s bar to 4.8 (§6's
+meta bar, already set at slate 11's own measured floor) is the only way to
+give small text a secondary colour at all. That reopens exactly the
+question §1.1 raised: 4.5 measured as illegible at 10.5-12px on these
+fonts, which is why the 7.0 bar existed. The deciding step was rendering
+slate 11 at the board's real small-text sizes (10.5, 11.2, 11.9, 12.2px)
+against the worst surface in both schemes, with realistic row metadata
+rather than lorem ipsum, and reading the result rather than the number:
+legible at every size tested, in both schemes, clearly distinct from the
+full-ink `text-1` next to it.
+
+`--text-4` now shares slate 11 with `--text-2`/`--text-3` (worst case 4.86
+light, 6.93 dark) instead of promoting to slate 12, and its bar drops from
+7.0 to 4.8 to match. The practical effect: `text-2`, `text-3` and `text-4`
+become one secondary tier and `text-1` stays the only full-ink tier, rather
+than the four nominal tiers that only ever delivered two, wrongly paired.
+Mantine's `c="dimmed"` at `xs` (slate 11, previously under the 7.0 bar) is
+safe under the new 4.8 bar, so `local/no-dimmed-xs` no longer guards
+against anything and is removed rather than left enforcing a bar that no
+longer exists. One rest-state control in the board (`.tui-review-allnone`)
+had documented that it wanted `text-4` specifically for its old
+full-ink value; it now reads `--text-1` directly so its appearance does
+not move.
