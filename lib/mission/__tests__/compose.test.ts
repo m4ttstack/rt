@@ -267,4 +267,115 @@ describe("mission compose: driver + git-core against a real repo", () => {
       await sandbox.cleanup();
     }
   }, 30_000);
+
+  // GHD's own contract, the whole point of the reset-then-rebuild sequencing:
+  // the commit takes what's CHECKED, never what happens to already be in the
+  // index. A file entirely pre-staged by a raw `git add` -- outside glitter
+  // entirely, exactly like another agent working the same repo concurrently
+  // -- must NOT reach the commit once its checkbox is unchecked.
+  test("a file staged outside the app (a raw `git add`) commits per its checkbox, not per the index", async () => {
+    const sandbox = await makeSandbox();
+    try {
+      await sandbox.write("a.txt", "alpha\n");
+      await sandbox.git(["add", "-A"]);
+      await sandbox.git(["commit", "-m", "init"]);
+      await sandbox.write("a.txt", "alpha\nbeta\n");
+      await sandbox.git(["add", "-A"]); // staged entirely OUTSIDE the driver, before it ever runs
+      await sandbox.write("b.txt", "new file\n"); // a second, ordinary change so the commit isn't empty
+
+      const session = new LiveSession();
+      const openedModels: MissionModel[] = [];
+      const deps = realDeps(sandbox, session, (model) => openedModels.push(model));
+      const driver = new MissionDriver(deps, { repo: "sandbox", worktree: sandbox.dir });
+      const runPromise = driver.run();
+
+      const deadline = Date.now() + 5_000;
+      while (openedModels.length === 0) {
+        if (Date.now() > deadline) throw new Error("driver never opened the session");
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      // Defaults to All (GHD's own default) despite already being fully
+      // staged -- the checkbox has no idea and doesn't care what's in the
+      // index.
+      expect(openedModels[0]!.changes.find((c) => c.path === "a.txt")?.include).toBe("all");
+
+      // Uncheck a.txt entirely; leave b.txt at its own All default.
+      const toggled = await session.step({ t: "intent", name: "mission:stage", payload: { path: "a.txt", mode: "toggle-file" } });
+      expect(toggled.changes.find((c) => c.path === "a.txt")?.include).toBe("none");
+      // Still fully staged in the real index -- toggling is selection-only.
+      expect((await sandbox.git(["diff", "--cached", "--name-only"])).trim()).toBe("a.txt");
+
+      const committed = await session.step({ t: "intent", name: "mission:commit", payload: { summary: "commit b only" } });
+      // The rebuild reset the index and rebuilt it from selections alone,
+      // so a.txt's pre-existing external staging never reached the commit
+      // -- only b.txt (still All, untouched) did.
+      expect((await sandbox.git(["log", "-n", "1", "--format=%s"])).trim()).toBe("commit b only");
+      const committedNames = await sandbox.git(["ls-tree", "-r", "--name-only", "HEAD"]);
+      expect(committedNames.split("\n")).toContain("b.txt");
+      const committedA = await sandbox.git(["show", "HEAD:a.txt"]);
+      expect(committedA).toBe("alpha\n"); // beta did NOT commit, despite being externally staged
+      const porcelain = await sandbox.git(["status", "--porcelain"]);
+      expect(porcelain.split("\n").filter(Boolean)).toEqual([" M a.txt"]); // back to unstaged, untouched
+      expect(committed.notice).toBe("");
+
+      session.send({ t: "intent", name: "quit" });
+      await runPromise;
+    } finally {
+      await sandbox.cleanup();
+    }
+  }, 30_000);
+
+  test("amend still works with the reset-then-rebuild sequencing", async () => {
+    const sandbox = await makeSandbox();
+    try {
+      await sandbox.write("a.txt", "alpha\n");
+      await sandbox.git(["add", "-A"]);
+      await sandbox.git(["commit", "-m", "init"]);
+      await sandbox.write("a.txt", "alpha\nbeta\n");
+      await sandbox.write("c.txt", "extra\n"); // present from the start, deliberately excluded below
+
+      const session = new LiveSession();
+      const openedModels: MissionModel[] = [];
+      const deps = realDeps(sandbox, session, (model) => openedModels.push(model));
+      const driver = new MissionDriver(deps, { repo: "sandbox", worktree: sandbox.dir });
+      const runPromise = driver.run();
+
+      const deadline = Date.now() + 5_000;
+      while (openedModels.length === 0) {
+        if (Date.now() > deadline) throw new Error("driver never opened the session");
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+
+      // Uncheck c.txt (defaults to All like everything else) before the
+      // first commit, so only a.txt lands in it.
+      await session.step({ t: "intent", name: "mission:stage", payload: { path: "c.txt", mode: "toggle-file" } });
+      await session.step({ t: "intent", name: "mission:commit", payload: { summary: "first commit" } });
+      expect((await sandbox.git(["log", "-n", "1", "--format=%s"])).trim()).toBe("first commit");
+      const namesAfterFirst = await sandbox.git(["ls-tree", "-r", "--name-only", "HEAD"]);
+      expect(namesAfterFirst.split("\n")).not.toContain("c.txt");
+      // c.txt's own None selection persisted across the commit (it was
+      // never touched by it) rather than springing back to checked.
+      expect((session.pushed.at(-1) as MissionModel).changes.find((c) => c.path === "c.txt")?.include).toBe("none");
+
+      // Now check it and amend: the same reset-then-rebuild sequencing
+      // runs again before `git commit --amend`, folding c.txt in alongside
+      // a.txt's already-committed content.
+      await session.step({ t: "intent", name: "mission:stage", payload: { path: "c.txt", mode: "toggle-file" } });
+      const amended = await session.step({ t: "intent", name: "mission:commit", payload: { summary: "amended commit", amend: true } });
+      expect((await sandbox.git(["log", "-n", "1", "--format=%s"])).trim()).toBe("amended commit");
+      // init + amended commit -- REPLACED "first commit", not a third commit
+      // stacked on top of it.
+      expect((await sandbox.git(["log", "--format=%s"])).trim().split("\n")).toEqual(["amended commit", "init"]);
+      const amendedA = await sandbox.git(["show", "HEAD:a.txt"]);
+      expect(amendedA).toBe("alpha\nbeta\n");
+      const amendedNames = await sandbox.git(["ls-tree", "-r", "--name-only", "HEAD"]);
+      expect(amendedNames.split("\n")).toContain("c.txt");
+      expect(amended.notice).toBe("");
+
+      session.send({ t: "intent", name: "quit" });
+      await runPromise;
+    } finally {
+      await sandbox.cleanup();
+    }
+  }, 30_000);
 });
