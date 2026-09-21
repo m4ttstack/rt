@@ -20,6 +20,7 @@ import {
   filterByTab,
   GROUP_KEYS,
   groupMRs,
+  hasStackDescendants,
   NEEDS_ME_TAB,
   nestStacks,
   parseViewState,
@@ -1346,6 +1347,9 @@ export function Board() {
           // Own MRs only, same gate as canDraftState/canNudge below --
           // auto-doctor (fetchOwnMrs) never touches anyone else's MR.
           canStandDown={rowMenu.mr.author.username === data.defaultMember}
+          // Copy only: "ignore this stack" vs "ignore this MR" -- the flag
+          // itself is per-MR regardless (see triage/run.ts's isStoodDown).
+          mrHasStackDescendants={hasStackDescendants(rowMenu.mr, data.mrs)}
           onDraftState={handleDraftState}
           // Your own MRs only, both directions. buildBoard already hides other
           // people's drafts, but their ready MRs are on the board, so this gate

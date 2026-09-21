@@ -11,6 +11,7 @@ import {
   filterBySlack,
   filterByTab,
   groupMRs,
+  hasStackDescendants,
   joinRowState,
   memberPeerState,
   NEEDS_ME_TAB,
@@ -438,6 +439,40 @@ describe('nestStacks', () => {
     } as any);
     const nodes = nestStacks([parent, orphan]);
     expect(nodes.map(n => n.mr.iid)).toEqual([1, 2]);
+  });
+
+  describe('hasStackDescendants', () => {
+    // Stand-down only ever cascades DOWN (an MR's descendants inherit it via
+    // their own ancestor walk -- see triage/run.ts's isStoodDown). So the
+    // "ignore this MR" vs "ignore this stack" copy has to ask "does toggling
+    // THIS row affect anything besides itself", not "is this row isStacked"
+    // -- a leaf child is isStacked but toggling it cascades nowhere.
+    test('a root with a resolved child: toggling it cascades, so it counts', () => {
+      const parent = smr(1, 'feat-a', 'master');
+      const child = smr(2, 'feat-b', 'feat-a');
+      expect(hasStackDescendants(parent, [parent, child])).toBe(true);
+    });
+
+    test('a leaf child (isStacked, no children of its own) does not count', () => {
+      const parent = smr(1, 'feat-a', 'master');
+      const child = smr(2, 'feat-b', 'feat-a');
+      expect(child.isStacked).toBe(true);
+      expect(hasStackDescendants(child, [parent, child])).toBe(false);
+    });
+
+    test('a standalone MR (no parent, no child) does not count', () => {
+      const solo = smr(1, 'feat-a', 'master');
+      expect(hasStackDescendants(solo, [solo])).toBe(false);
+    });
+
+    test('a middle-of-chain MR with its own child counts', () => {
+      const root = smr(1, 'l1', 'master');
+      const middle = smr(2, 'l2', 'l1');
+      const leaf = smr(3, 'l3', 'l2');
+      const mrs = [root, middle, leaf];
+      expect(hasStackDescendants(middle, mrs)).toBe(true);
+      expect(hasStackDescendants(leaf, mrs)).toBe(false);
+    });
   });
 });
 

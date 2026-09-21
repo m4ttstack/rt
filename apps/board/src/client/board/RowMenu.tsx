@@ -85,6 +85,7 @@ function RowMenu({
   onDoctor,
   canDoctor,
   canStandDown,
+  mrHasStackDescendants,
   onDraftState,
   canDraftState,
   onMrAction,
@@ -117,6 +118,9 @@ function RowMenu({
   canDoctor: boolean;
   /** Own MRs only -- auto-doctor never acts on anyone else's (fetchOwnMrs). */
   canStandDown: boolean;
+  /** Copy only ("ignore this stack" vs "ignore this MR") -- the flag itself
+      is per-MR regardless; see hasStackDescendants. */
+  mrHasStackDescendants: boolean;
   onDraftState: (mr: BoardMR, draft: boolean) => void;
   canDraftState: boolean;
   onMrAction: (mr: BoardMR, action: MrAction) => void;
@@ -422,9 +426,11 @@ function RowMenu({
       />
     );
   }
-  // "never diagnose this stack": mutes auto-doctor for this MR and every
-  // descendant (server-enforced -- see triage/run.ts's isStoodDown). On ->
-  // true also clears whatever's currently on this row.
+  // "ignore this MR/stack": mutes auto-doctor for this MR and, when it has
+  // its own descendants, every one of them too (server-enforced -- see
+  // triage/run.ts's isStoodDown). The flag is per-MR either way; the copy
+  // just says which it'll actually affect. On -> true also clears whatever
+  // is currently on this row.
   if (canStandDown)
     agentItems.push(
       <ContextMenu.Item
@@ -433,7 +439,7 @@ function RowMenu({
           <DismissGlyph />,
           mrx.standDown
             ? 're-enable auto-doctor'
-            : 'auto-doctor: never diagnose this stack'
+            : `auto-doctor: ignore this ${mrHasStackDescendants ? 'stack' : 'MR'}`
         )}
         onClick={run(() => ctx.onStandDown(mr, !mrx.standDown))}
       />

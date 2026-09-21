@@ -80,6 +80,7 @@ async function render(
     canAskRespond?: boolean;
     peers?: string[];
     canStandDown?: boolean;
+    mrHasStackDescendants?: boolean;
   } = {}
 ) {
   container = document.createElement('div');
@@ -102,6 +103,7 @@ async function render(
         onDoctor={noop}
         canDoctor={false}
         canStandDown={opts.canStandDown ?? false}
+        mrHasStackDescendants={opts.mrHasStackDescendants ?? false}
         onDraftState={noop}
         canDraftState={true}
         onMrAction={noop}
@@ -229,9 +231,16 @@ test('the stand-down item is hidden on someone else\'s MR (canStandDown false)',
   expect(items.some(t => t?.includes('auto-doctor'))).toBe(false);
 });
 
-test('offers "never diagnose this stack" and fires on: true', async () => {
-  await render(mrx(), ['pat'], { canStandDown: true });
-  const item = itemByText('auto-doctor: never diagnose this stack');
+test('a standalone MR offers "ignore this MR" and fires on: true', async () => {
+  await render(mrx(), ['pat'], { canStandDown: true, mrHasStackDescendants: false });
+  const item = itemByText('auto-doctor: ignore this MR');
+  await React.act(async () => item.click());
+  expect(standDownCalls).toEqual([{ iid: 1418, on: true }]);
+});
+
+test('an MR with its own descendants offers "ignore this stack" instead', async () => {
+  await render(mrx(), ['pat'], { canStandDown: true, mrHasStackDescendants: true });
+  const item = itemByText('auto-doctor: ignore this stack');
   await React.act(async () => item.click());
   expect(standDownCalls).toEqual([{ iid: 1418, on: true }]);
 });

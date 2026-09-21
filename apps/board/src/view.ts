@@ -201,6 +201,23 @@ export function nestStacks<M extends BoardMR>(mrs: M[]): StackNode<M>[] {
   return roots;
 }
 
+/** Whether `mr` has at least one resolved descendant among `mrs` -- the
+    question the stand-down toggle's copy needs ("ignore this MR" vs "ignore
+    this stack"), since a stand-down only ever cascades DOWN to descendants
+    (triage/run.ts's isStoodDown walks ancestors from the OTHER side). Not
+    `mr.isStacked`: that's true for a leaf child too, and toggling a leaf
+    cascades nowhere. */
+export function hasStackDescendants<M extends BoardMR>(
+  mr: M,
+  mrs: M[]
+): boolean {
+  const parentOf = stackParents(mrs);
+  for (const parent of parentOf.values()) {
+    if (parent === mr) return true;
+  }
+  return false;
+}
+
 /** Depth-first flattening of one stack tree, for views that render a chain as
     consecutive indented items rather than nested markup. */
 export function flattenStack<M extends BoardMR>(
