@@ -223,7 +223,7 @@ test('a known enrollment list narrows the picker to enrolled members', async () 
   expect(items.some(t => t?.includes('jo'))).toBe(false);
 });
 
-test('the stand-down item is hidden on someone else\'s MR (canStandDown false)', async () => {
+test("the stand-down item is hidden on someone else's MR (canStandDown false)", async () => {
   await render(mrx(), ['pat'], { canStandDown: false });
   const items = [...document.querySelectorAll('[role="menuitem"]')].map(
     el => el.textContent
@@ -232,14 +232,20 @@ test('the stand-down item is hidden on someone else\'s MR (canStandDown false)',
 });
 
 test('a standalone MR offers "ignore this MR" and fires on: true', async () => {
-  await render(mrx(), ['pat'], { canStandDown: true, mrHasStackDescendants: false });
+  await render(mrx(), ['pat'], {
+    canStandDown: true,
+    mrHasStackDescendants: false,
+  });
   const item = itemByText('auto-doctor: ignore this MR');
   await React.act(async () => item.click());
   expect(standDownCalls).toEqual([{ iid: 1418, on: true }]);
 });
 
 test('an MR with its own descendants offers "ignore this stack" instead', async () => {
-  await render(mrx(), ['pat'], { canStandDown: true, mrHasStackDescendants: true });
+  await render(mrx(), ['pat'], {
+    canStandDown: true,
+    mrHasStackDescendants: true,
+  });
   const item = itemByText('auto-doctor: ignore this stack');
   await React.act(async () => item.click());
   expect(standDownCalls).toEqual([{ iid: 1418, on: true }]);

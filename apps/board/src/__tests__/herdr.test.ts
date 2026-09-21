@@ -1062,7 +1062,11 @@ describe('sendPaneText', () => {
       calls.push(args);
       return '';
     };
-    await sendPaneText('pane-123', 'stand down, operator muted this stack', runner);
+    await sendPaneText(
+      'pane-123',
+      'stand down, operator muted this stack',
+      runner
+    );
     expect(calls).toEqual([
       ['pane', 'run', 'pane-123', 'stand down, operator muted this stack'],
     ]);

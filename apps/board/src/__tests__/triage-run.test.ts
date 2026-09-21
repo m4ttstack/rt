@@ -614,7 +614,9 @@ describe('runTriage stand-down (operator "never diagnose this stack")', () => {
     const result = await runTriage(d);
     expect(d.launches).toHaveLength(0);
     expect(
-      d.audit.some(e => e.mrUrl === 'https://x/mr/1' && e.reason === 'stood-down')
+      d.audit.some(
+        e => e.mrUrl === 'https://x/mr/1' && e.reason === 'stood-down'
+      )
     ).toBe(true);
     expect(d.memory.mrs['https://x/mr/1']!.attemptsToday).toBe(0);
     expect(result.dispatched).toBe(0);

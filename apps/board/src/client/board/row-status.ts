@@ -438,7 +438,8 @@ function doctorLine(mr: BoardMRWithReview, now: number): Candidate | null {
   // finished run does (DOCTOR_DONE_TTL), since the mute stays in force
   // until the operator flips it back -- see triage/run.ts's isStoodDown
   // and POST /triage/stand-down.
-  if (mr.standDown) return { tone: 'quiet', word: 'auto-doctor off', verbs: [] };
+  if (mr.standDown)
+    return { tone: 'quiet', word: 'auto-doctor off', verbs: [] };
   const d = mr.doctor;
   if (!d || laneDismissed(d)) return null;
   switch (d.status) {

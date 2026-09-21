@@ -256,7 +256,6 @@ import {
   type MrFacts,
 } from './template.ts';
 import { loadReReviewConfig, loadTriageConfig } from './triage/config.ts';
-import { emptyMrMemory } from './triage/memory.ts';
 import {
   attachStandDown,
   readMemory,
@@ -265,6 +264,7 @@ import {
   writeMemory,
   writeRefreshedIdentity,
 } from './triage/memory-store.ts';
+import { emptyMrMemory } from './triage/memory.ts';
 import { manualDoctorFields, resolveDispatchIdentity } from './triage/run.ts';
 
 /** Capture-harness mode: boot from a committed fixture dir instead of live
