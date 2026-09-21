@@ -1278,6 +1278,91 @@ describe("MissionDriver: provisioning a worktree", () => {
     session.send({ t: "intent", name: "quit" });
     await runPromise;
   });
+
+  test("switching to an existing worktree after a readyPending provision clears settling", async () => {
+    const session = new FakeSession([
+      { t: "intent", name: "mission:worktree", payload: { new: true, name: "my-feature" } },
+      { t: "intent", name: "mission:worktree", payload: { path: "/repo2" } },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({
+      session,
+      daemonQuery: async (cmd: string) => {
+        if (cmd === "worktree:provision") {
+          return { ok: true, data: { tree: "rohan", path: "/trees/rohan", branch: "my-feature", readyPending: true } };
+        }
+        if (cmd === "worktree:list") {
+          return {
+            ok: true,
+            data: {
+              trees: [
+                { path: "/repo", name: "gandalf", branch: "main", state: "claimed" },
+                { path: "/trees/rohan", name: "rohan", branch: "my-feature", state: "claimed" },
+                { path: "/repo2", name: "frodo", branch: "feature", state: "claimed" },
+              ],
+            },
+          };
+        }
+        return {
+          ok: true,
+          data: {
+            repos: [
+              {
+                repo: "repo-tools",
+                error: null,
+                worktrees: [badge({ worktree: "/repo" }), badge({ worktree: "/trees/rohan" }), badge({ worktree: "/repo2", branch: "feature" })],
+              },
+            ],
+          },
+        };
+      },
+    });
+
+    await new MissionDriver(deps, START).run();
+
+    const afterProvision = session.pushed.find((m) => m.current.worktree === "/trees/rohan");
+    expect(afterProvision?.current.settling).toBe(true);
+
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.current.worktree).toBe("/repo2");
+    expect(last.current.settling).toBe(false);
+  });
+
+  test("switching repos after a readyPending provision clears settling", async () => {
+    const session = new FakeSession([
+      { t: "intent", name: "mission:worktree", payload: { new: true, name: "my-feature" } },
+      { t: "intent", name: "mission:repo", payload: { repo: "other-repo" } },
+      { t: "intent", name: "quit" },
+    ]);
+    const deps = baseDeps({
+      session,
+      daemonQuery: async (cmd: string) => {
+        if (cmd === "worktree:provision") {
+          return { ok: true, data: { tree: "rohan", path: "/trees/rohan", branch: "my-feature", readyPending: true } };
+        }
+        if (cmd === "worktree:list") return { ok: true, data: { trees: defaultTrees() } };
+        return {
+          ok: true,
+          data: {
+            repos: [
+              { repo: "repo-tools", error: null, worktrees: [badge({ worktree: "/trees/rohan" })] },
+              { repo: "other-repo", error: null, worktrees: [badge({ worktree: "/other/tree", branch: "dev" })] },
+            ],
+          },
+        };
+      },
+    });
+
+    await new MissionDriver(deps, START).run();
+
+    const afterProvision = session.pushed.find((m) => m.current.worktree === "/trees/rohan");
+    expect(afterProvision?.current.settling).toBe(true);
+
+    const last = session.pushed.at(-1) as MissionModel;
+    expect(last.current.repo).toBe("other-repo");
+    expect(last.current.worktree).toBe("/other/tree");
+    expect(last.current.settling).toBe(false);
+  });
 });
 
 describe("MissionDriver: undo", () => {

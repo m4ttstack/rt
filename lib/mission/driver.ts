@@ -796,6 +796,19 @@ export class MissionDriver {
     this.push();
   }
 
+  /**
+   * The single place `currentWorktree` is ever reassigned: `settling` must
+   * travel with it, since a tree the board switches away from can never
+   * again produce a `worktree:ready-settled` event this driver acts on
+   * (the event's path no longer matches `currentWorktree` by then), and a
+   * tree the board switches TO is ready unless the caller says otherwise.
+   * Only provisionWorktree's fresh tree passes true.
+   */
+  private setCurrentWorktree(path: string, settling: boolean): void {
+    this.state.currentWorktree = path;
+    this.state.settling = settling;
+  }
+
   private async handleWorktree(payload: WorktreePayload | undefined): Promise<void> {
     if (!payload) return;
     if (payload.new === true) {
@@ -803,7 +816,7 @@ export class MissionDriver {
       return;
     }
     if (typeof payload.path !== "string") return;
-    this.state.currentWorktree = payload.path;
+    this.setCurrentWorktree(payload.path, false);
     this.state.selectedPath = null;
     this.state.selections = new Map();
     await this.refresh();
@@ -838,8 +851,7 @@ export class MissionDriver {
       return;
     }
     this.state.notice = "";
-    this.state.currentWorktree = data.path;
-    this.state.settling = data.readyPending === true;
+    this.setCurrentWorktree(data.path, data.readyPending === true);
     this.state.selectedPath = null;
     this.state.selections = new Map();
     await this.refresh();
@@ -857,7 +869,7 @@ export class MissionDriver {
       return;
     }
     this.state.currentRepo = payload.repo;
-    this.state.currentWorktree = target.worktree;
+    this.setCurrentWorktree(target.worktree, false);
     this.state.selectedPath = null;
     this.state.selections = new Map();
     await this.refresh();
