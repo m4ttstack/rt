@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 
+	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
@@ -43,22 +44,30 @@ type modalRow struct {
 // last cursor slot, after whatever the query leaves visible, so typing
 // never buries or hides it.
 type modalActionRow struct {
-	label   string
-	payload json.RawMessage
+	label        string
+	buildPayload func(name string) json.RawMessage
 }
 
 // modalState is one open foldout. cursor indexes into matches, except the
 // value len(matches) which means "the action row" -- see slotSelectable.
 type modalState struct {
-	zone         zoneID
-	intent       string
-	placeholder  string
-	buildPayload func(value string) json.RawMessage
-	rows         []modalRow
-	action       *modalActionRow
-	query        string
-	matches      []picker.Match
-	cursor       int
+	zone            zoneID
+	intent          string
+	placeholder     string
+	namePlaceholder string
+	buildPayload    func(value string) json.RawMessage
+	rows            []modalRow
+	action          *modalActionRow
+	query           string
+	matches         []picker.Match
+	cursor          int
+
+	// naming is the action row's second step: ctrl-n opens a name field in
+	// place of the filter line and only the following enter emits. The
+	// field is separate from query because refilter() resets the cursor on
+	// every keystroke, which a name being typed must not do.
+	naming    bool
+	nameInput textinput.Model
 
 	// hoverRow/hoverAction are the mouse's own position, independent of
 	// cursor exactly as the base list's hover is independent of its
@@ -74,8 +83,8 @@ type modalState struct {
 	scrollTop int
 }
 
-func newModal(zone zoneID, intent, placeholder string, buildPayload func(string) json.RawMessage, rows []modalRow, action *modalActionRow) *modalState {
-	ms := &modalState{zone: zone, intent: intent, placeholder: placeholder, buildPayload: buildPayload, rows: rows, action: action, hoverRow: -1}
+func newModal(zone zoneID, intent, placeholder, namePlaceholder string, buildPayload func(string) json.RawMessage, rows []modalRow, action *modalActionRow) *modalState {
+	ms := &modalState{zone: zone, intent: intent, placeholder: placeholder, namePlaceholder: namePlaceholder, buildPayload: buildPayload, rows: rows, action: action, hoverRow: -1}
 	ms.refilter()
 	return ms
 }
@@ -91,6 +100,7 @@ type checkoutPayload struct {
 type checkoutNewPayload struct {
 	New  bool   `json:"new"`
 	From string `json:"from"`
+	Name string `json:"name"`
 }
 
 type worktreePayload struct {
@@ -98,7 +108,8 @@ type worktreePayload struct {
 }
 
 type worktreeNewPayload struct {
-	New bool `json:"new"`
+	New  bool   `json:"new"`
+	Name string `json:"name"`
 }
 
 // newRepoModal lists every repo, grouped by RepoRow.Group. It has no action
@@ -115,7 +126,7 @@ func newRepoModal(m Model) *modalState {
 			group: r.Group, current: r.Current, selectable: true, value: r.ID,
 		}
 	}
-	return newModal(zoneRepo, "mission:repo", "filter repos", func(v string) json.RawMessage {
+	return newModal(zoneRepo, "mission:repo", "filter repos", "", func(v string) json.RawMessage {
 		return mustPayload(repoPayload{Repo: v})
 	}, rows, nil)
 }
@@ -145,10 +156,12 @@ func newBranchModal(m Model) *modalState {
 		}
 	}
 	action := &modalActionRow{
-		label:   "New branch from " + m.Current.Branch + "…",
-		payload: mustPayload(checkoutNewPayload{New: true, From: m.Current.Branch}),
+		label: "New branch from " + m.Current.Branch + "…",
+		buildPayload: func(name string) json.RawMessage {
+			return mustPayload(checkoutNewPayload{New: true, From: m.Current.Branch, Name: name})
+		},
 	}
-	return newModal(zoneBranch, "mission:checkout", "filter branches", func(v string) json.RawMessage {
+	return newModal(zoneBranch, "mission:checkout", "filter branches", "new branch name", func(v string) json.RawMessage {
 		return mustPayload(checkoutPayload{Branch: v})
 	}, rows, action)
 }
@@ -174,14 +187,16 @@ func newWorktreeModal(m Model) *modalState {
 		}
 	}
 	action := &modalActionRow{
-		label:   "Provision new worktree…",
-		payload: mustPayload(worktreeNewPayload{New: true}),
+		label: "Provision new worktree…",
+		buildPayload: func(name string) json.RawMessage {
+			return mustPayload(worktreeNewPayload{New: true, Name: name})
+		},
 	}
 	repoLabel := m.Current.RepoLabel
 	if repoLabel == "" {
 		repoLabel = m.Current.Repo
 	}
-	return newModal(zoneWorktree, "mission:worktree", "filter worktrees · "+repoLabel, func(v string) json.RawMessage {
+	return newModal(zoneWorktree, "mission:worktree", "filter worktrees · "+repoLabel, "branch name for the new worktree", func(v string) json.RawMessage {
 		return mustPayload(worktreePayload{Path: v})
 	}, rows, action)
 }
@@ -356,6 +371,19 @@ func (m *Mission) openZone() zoneID {
 
 func (m *Mission) modalKey(v tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	ms := m.modal
+	if ms.naming {
+		switch v.String() {
+		case "esc":
+			ms.naming = false
+			ms.nameInput.Blur()
+			return m, nil
+		case "enter":
+			return m.commitModalName()
+		}
+		var cmd tea.Cmd
+		ms.nameInput, cmd = ms.nameInput.Update(v)
+		return m, cmd
+	}
 	switch v.String() {
 	case "esc":
 		m.closeModal()
@@ -398,16 +426,31 @@ func (m *Mission) selectModalRow() (tea.Model, tea.Cmd) {
 	return m, m.em.Emit(protocol.Intent{Name: intent, Payload: payload})
 }
 
-// selectModalAction fires the trailing action row's fixed payload
-// regardless of where the cursor sits -- ctrl-n's own path, and the one
-// enter takes when the cursor already sits on the action slot. A repo
-// modal has no action row, so ctrl-n there is simply a no-op.
+// selectModalAction opens the trailing action row's name field regardless of
+// where the cursor sits: ctrl-n's own path, and the one enter takes when the
+// cursor already sits on the action slot. A repo modal has no action row, so
+// ctrl-n there is simply a no-op. Nothing is emitted here; commitModalName
+// does that once a name exists.
 func (m *Mission) selectModalAction() (tea.Model, tea.Cmd) {
 	ms := m.modal
-	if ms.action == nil {
+	if ms.action == nil || ms.naming {
 		return m, nil
 	}
-	intent, payload := ms.intent, ms.action.payload
+	ms.naming = true
+	ms.nameInput = newTextInput(ms.namePlaceholder, modalNameWidth(ms, m.width))
+	return m, ms.nameInput.Focus()
+}
+
+// commitModalName emits the action row's intent with the typed name. A blank
+// or whitespace-only name is inert, the same gate the commit button applies
+// to its summary.
+func (m *Mission) commitModalName() (tea.Model, tea.Cmd) {
+	ms := m.modal
+	name := strings.TrimSpace(ms.nameInput.Value())
+	if name == "" {
+		return m, nil
+	}
+	intent, payload := ms.intent, ms.action.buildPayload(name)
 	m.closeModal()
 	return m, m.em.Emit(protocol.Intent{Name: intent, Payload: payload})
 }
@@ -492,6 +535,16 @@ func modalWidth(ms *modalState, frameWidth int) int {
 		need = floor
 	}
 	return need
+}
+
+// modalNameWidth is the name field's own width: the filter line's text area,
+// which is the box's content width less the chevron and its trailing space.
+func modalNameWidth(ms *modalState, frameWidth int) int {
+	w := modalWidth(ms, frameWidth) - lipgloss.Width(theme.GlyphChevron) - 1
+	if w < 0 {
+		return 0
+	}
+	return w
 }
 
 // modalFilterLine is the foldout's own fixed-height filter row

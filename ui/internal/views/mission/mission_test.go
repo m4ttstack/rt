@@ -466,72 +466,66 @@ func TestModalEscClosesWithoutEmittingAndReturnsFocusToList(t *testing.T) {
 	s.Wait()
 }
 
-// TestBranchActionRowEmitsCheckoutNewFromCurrent walks past the recent and
-// other rows (the guarded row auto-skips) to land on the action slot.
-// TestBranchActionRowEmitsCheckoutNewFromCurrent reaches the pinned action
-// row through a query with no matches rather than a fixed number of
-// down-presses: firstSelectableMatch's own doc comment establishes that an
-// empty match list defaults the cursor straight to the action slot, and
-// that holds regardless of how many branch rows the fixture carries (9,
-// after mission: branch rows sort into the desktop's section order,
-// 2026-09-20, added the "recent" and "other" rows a fixed down-count used
-// to rely on).
-func TestBranchActionRowEmitsCheckoutNewFromCurrent(t *testing.T) {
-	s := s5open(t)
-	s.Type("b")
-	s.WaitForPaint("New branch from")
-	s.Type("zzz-no-match")
-	s.Type(keyEnter)
-	l, ok := s.ReadLine(2 * time.Second)
-	if !ok || !strings.Contains(l, `"name":"mission:checkout"`) || !strings.Contains(l, `"new":true`) ||
-		!strings.Contains(l, `"from":"rt-191-mission-tui"`) {
-		t.Fatalf("branch action intent: %q", l)
-	}
-	s.Send(`{"t":"close"}`)
-	s.Wait()
-}
-
-func TestWorktreeActionRowEmitsWorktreeNew(t *testing.T) {
-	s := s5open(t)
-	s.Type("w")
-	s.WaitForPaint("Provision new worktree")
-	s.Type("\x1b[B", "\x1b[B")
-	s.Type(keyEnter)
-	l, ok := s.ReadLine(2 * time.Second)
-	if !ok || !strings.Contains(l, `"name":"mission:worktree"`) || !strings.Contains(l, `"new":true`) {
-		t.Fatalf("worktree action intent: %q", l)
-	}
-	s.Send(`{"t":"close"}`)
-	s.Wait()
-}
-
-// TestBranchModalCtrlNEmitsCheckoutNewFromCurrent fires the action row's
-// payload straight from ctrl-n, without navigating the cursor there first --
-// the keyboard shortcut item 2 wires alongside the action row itself.
-func TestBranchModalCtrlNEmitsCheckoutNewFromCurrent(t *testing.T) {
+// TestBranchCtrlNEntersNamingWithoutEmitting pins the naming sub-mode: ctrl-n
+// opens the name field in place of the old frozen "new branch" payload, and
+// nothing is emitted until a name is actually committed.
+func TestBranchCtrlNEntersNamingWithoutEmitting(t *testing.T) {
 	s := s5open(t)
 	s.Type("b")
 	s.WaitForPaint("New branch from")
 	s.Type(keyCtrlN)
-	l, ok := s.ReadLine(2 * time.Second)
-	if !ok || !strings.Contains(l, `"name":"mission:checkout"`) || !strings.Contains(l, `"new":true`) ||
-		!strings.Contains(l, `"from":"rt-191-mission-tui"`) {
-		t.Fatalf("branch ctrl-n intent: %q", l)
+	if l, ok := s.ReadLine(300 * time.Millisecond); ok {
+		t.Fatalf("ctrl-n must not emit until a name is entered: %q", l)
 	}
 	s.Send(`{"t":"close"}`)
 	s.Wait()
 }
 
-// TestWorktreeModalCtrlNEmitsWorktreeNew mirrors the branch modal's ctrl-n
-// case for "Provision new worktree…".
-func TestWorktreeModalCtrlNEmitsWorktreeNew(t *testing.T) {
+// TestWorktreeCtrlNEntersNamingWithoutEmitting mirrors the branch case for
+// "Provision new worktree…".
+func TestWorktreeCtrlNEntersNamingWithoutEmitting(t *testing.T) {
 	s := s5open(t)
 	s.Type("w")
 	s.WaitForPaint("Provision new worktree")
 	s.Type(keyCtrlN)
+	if l, ok := s.ReadLine(300 * time.Millisecond); ok {
+		t.Fatalf("ctrl-n must not emit until a name is entered: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+// TestBranchNamingEnterEmitsCheckoutNewWithTypedName types a name after
+// ctrl-n and confirms the following enter is what emits, carrying it.
+func TestBranchNamingEnterEmitsCheckoutNewWithTypedName(t *testing.T) {
+	s := s5open(t)
+	s.Type("b")
+	s.WaitForPaint("New branch from")
+	s.Type(keyCtrlN)
+	s.Type("my-feature")
+	s.Type(keyEnter)
 	l, ok := s.ReadLine(2 * time.Second)
-	if !ok || !strings.Contains(l, `"name":"mission:worktree"`) || !strings.Contains(l, `"new":true`) {
-		t.Fatalf("worktree ctrl-n intent: %q", l)
+	if !ok || !strings.Contains(l, `"name":"mission:checkout"`) ||
+		!strings.Contains(l, `"payload":{"new":true,"from":"rt-191-mission-tui","name":"my-feature"}`) {
+		t.Fatalf("branch naming intent: %q", l)
+	}
+	s.Send(`{"t":"close"}`)
+	s.Wait()
+}
+
+// TestWorktreeNamingEnterEmitsWorktreeNewWithTypedName mirrors the branch
+// case for the worktree action row.
+func TestWorktreeNamingEnterEmitsWorktreeNewWithTypedName(t *testing.T) {
+	s := s5open(t)
+	s.Type("w")
+	s.WaitForPaint("Provision new worktree")
+	s.Type(keyCtrlN)
+	s.Type("my-feature")
+	s.Type(keyEnter)
+	l, ok := s.ReadLine(2 * time.Second)
+	if !ok || !strings.Contains(l, `"name":"mission:worktree"`) ||
+		!strings.Contains(l, `"payload":{"new":true,"name":"my-feature"}`) {
+		t.Fatalf("worktree naming intent: %q", l)
 	}
 	s.Send(`{"t":"close"}`)
 	s.Wait()

@@ -713,6 +713,80 @@ func TestModalGuardedBranchRowSkippedByCursorMovement(t *testing.T) {
 	}
 }
 
+// TestCtrlNEntersNamingMode pins the naming sub-mode's own internal flag: an
+// action row's ctrl-n opens the name field rather than emitting straight
+// away (mission_test.go's session tests pin the emission side of the same
+// contract).
+func TestCtrlNEntersNamingMode(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		open rune
+	}{
+		{"branch", 'b'},
+		{"worktree", 'w'},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := newTestMission()
+			m.Update(tea.KeyPressMsg{Code: tc.open, Text: string(tc.open)})
+			m.Update(tea.KeyPressMsg{Code: 'n', Mod: tea.ModCtrl})
+			if !m.modal.naming {
+				t.Fatal("ctrl-n did not enter naming mode")
+			}
+		})
+	}
+}
+
+// TestNamingEnterWithBlankNameLeavesModalOpenAndNaming mirrors the gate the
+// commit button applies to its own summary: a whitespace-only name is inert.
+func TestNamingEnterWithBlankNameLeavesModalOpenAndNaming(t *testing.T) {
+	m := newTestMission()
+	m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
+	m.Update(tea.KeyPressMsg{Code: 'n', Mod: tea.ModCtrl})
+	for _, r := range "   " {
+		m.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m.modal == nil || !m.modal.naming {
+		t.Fatal("a blank enter should leave the modal open and still naming")
+	}
+}
+
+// TestEscLeavesNamingButKeepsTheModalOpen pins the two-step esc: the first
+// esc backs out of naming only, the second closes the modal.
+func TestEscLeavesNamingButKeepsTheModalOpen(t *testing.T) {
+	m := newTestMission()
+	m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
+	m.Update(tea.KeyPressMsg{Code: 'n', Mod: tea.ModCtrl})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+
+	if m.modal == nil {
+		t.Fatal("first esc closed the modal, want it to only leave naming")
+	}
+	if m.modal.naming {
+		t.Fatal("esc did not leave naming mode")
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	if m.modal != nil {
+		t.Fatal("second esc did not close the modal")
+	}
+}
+
+// TestNamingTypingDoesNotFilterTheList pins the reason naming keeps its own
+// field separate from query: refilter resets the cursor on every keystroke,
+// which typing a name must not do to the row list underneath it.
+func TestNamingTypingDoesNotFilterTheList(t *testing.T) {
+	m := newTestMission()
+	m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
+	before := len(m.modal.matches)
+	m.Update(tea.KeyPressMsg{Code: 'n', Mod: tea.ModCtrl})
+	for _, r := range "zzzz" {
+		m.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	if got := len(m.modal.matches); got != before {
+		t.Fatalf("typing a name refiltered the list to %d rows, want %d unchanged", got, before)
+	}
+}
+
 func TestModalGuardedBranchRowIsDimmerWithLockGlyph(t *testing.T) {
 	m := newTestMission()
 	m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
