@@ -5,11 +5,21 @@ import { tmpdir } from "os";
 import { join } from "path";
 import type { Logger } from "pino";
 import { closeStateDb } from "../../../state/index.ts";
-import { machineSettingsPath } from "../../../rt-paths.ts";
+import { machineSettingsPath, goldenRoot } from "../../../rt-paths.ts";
 import { deriveRepoIdentity } from "../../../settings/identity.ts";
-import { saveRegistry, type TreeRecord } from "../../../worktree/registry.ts";
+import { loadRegistry, saveRegistry, type TreeRecord } from "../../../worktree/registry.ts";
 import type { WorktreeAppConfig } from "../../../worktree/config.ts";
-import { withCreateLock, poolCounts, hasFreeDiskGb, replenishAndShrink, createBackoff } from "../replenish.ts";
+import { clonePath, cloneExitCode } from "../../../worktree/clonefile.ts";
+import type { CloneRunner } from "../../../worktree/hydrate.ts";
+import {
+  withCreateLock,
+  poolCounts,
+  hasFreeDiskGb,
+  replenishAndShrink,
+  createBackoff,
+  chooseCreateMode,
+  findGolden,
+} from "../replenish.ts";
 
 function onDeckEntry(path: string, overrides: Partial<TreeRecord> = {}): TreeRecord {
   return {
@@ -206,5 +216,114 @@ describe("replenish.ts: per-instance backoff", () => {
     expect(Date.parse(a.get(repoName)!.nextRetryAt)).toBeGreaterThan(Date.now());
     expect(a.get(repoName)?.failures).toBe(1);
     expect(b.get(repoName)?.failures).toBe(1);
+  });
+});
+
+const inProcessClone: CloneRunner = async (src, dst) => {
+  const r = clonePath(src, dst);
+  return { exitCode: cloneExitCode(r), stderr: r.ok ? "" : `clonefile: ${r.message}` };
+};
+
+describe("replenish.ts: chooseCreateMode", () => {
+  const now = Date.parse("2026-09-21T12:00:00.000Z");
+  const same = () => true;
+  const golden: TreeRecord = { name: "golden", path: "/g", kind: "golden", state: "on-deck", branch: "golden", createdAt: "2026-09-01T00:00:00.000Z", readyStamp: "abc", readyAt: "2026-09-01T00:10:00.000Z" };
+
+  test("ready golden on the same volume hydrates", () => {
+    expect(chooseCreateMode([golden], "/pool", now, same)).toEqual({ mode: "hydrate", golden });
+  });
+  test("no golden is cold", () => {
+    expect(chooseCreateMode([], "/pool", now, same)).toEqual({ mode: "cold", why: "no golden" });
+  });
+  test("creating golden is cold", () => {
+    expect(chooseCreateMode([{ ...golden, state: "creating" }], "/pool", now, same).mode).toBe("cold");
+  });
+  test("golden in backoff is cold", () => {
+    expect(chooseCreateMode([{ ...golden, nextRetryAt: "2026-09-21T13:00:00.000Z" }], "/pool", now, same).mode).toBe("cold");
+  });
+  test("golden without readyStamp is cold", () => {
+    expect(chooseCreateMode([{ ...golden, readyStamp: undefined }], "/pool", now, same).mode).toBe("cold");
+  });
+  test("a golden with recorded failures is cold even with no live backoff deadline", () => {
+    expect(chooseCreateMode([{ ...golden, retryFailures: 1 }], "/pool", now, same).mode).toBe("cold");
+  });
+  test("different volume is cold", () => {
+    expect(chooseCreateMode([golden], "/pool", now, () => false)).toEqual({ mode: "cold", why: "golden and pool root are on different volumes" });
+  });
+});
+
+describe("replenish.ts: golden lifecycle", () => {
+  const repoName = "acme";
+  let repo: string;
+  let priorHome: string | undefined;
+
+  beforeEach(() => {
+    priorHome = process.env.HOME;
+    process.env.HOME = realpathSync(mkdtempSync(join(tmpdir(), "rtgolden-home-")));
+    closeStateDb();
+    createBackoff.clear();
+    repo = makeRepo();
+    addBareOrigin(repo);
+  });
+  afterEach(() => {
+    closeStateDb();
+    if (priorHome !== undefined) process.env.HOME = priorHome;
+  });
+
+  function deps(clone: CloneRunner = inProcessClone) {
+    return { repoName, repoPath: repo, emit: () => {}, log: fakeLog(), findRunningRun: () => ({ kind: "none" as const }), clone };
+  }
+
+  test("first pass builds the golden, then fills onDeck by hydration", async () => {
+    await declareWorktrees(repo, repoName, { onDeck: 2, root: join(repo, ".worktrees"), ready: [] });
+    await replenishAndShrink(deps(), new Map(), fakeAppConfig());
+    const trees = loadRegistry(repoName);
+    const golden = findGolden(trees);
+    expect(golden?.state).toBe("on-deck");
+    expect(golden?.readyStamp).toBeTruthy();
+    const members = trees.filter((t) => t.kind === "ephemeral" && t.state === "on-deck");
+    expect(members).toHaveLength(2);
+    for (const m of members) {
+      expect(m.readyStamp).toBe(golden!.readyStamp);
+      expect(m.readyAt).toBe(golden!.readyAt);
+    }
+  });
+
+  test("a golden create failure backs off and members still cold-create", async () => {
+    // createTree keys the golden path off the repoName it is handed, verbatim,
+    // so the gate script must be built from that same call, not from a
+    // re-derived identity.
+    const gRoot = goldenRoot(repoName);
+    await declareWorktrees(repo, repoName, {
+      onDeck: 1,
+      root: join(repo, ".worktrees"),
+      ready: [{ run: `case "$PWD" in ${gRoot}*) exit 1;; *) exit 0;; esac` }],
+    });
+    const backoff = new Map<string, { failures: number; nextRetryAt: string }>();
+    await replenishAndShrink({ ...deps(), backoff }, new Map(), fakeAppConfig());
+    const trees = loadRegistry(repoName);
+    expect(findGolden(trees)).toBeUndefined();
+    expect(trees.filter((t) => t.kind === "ephemeral" && t.state === "on-deck")).toHaveLength(1);
+    expect(backoff.get(`${repoName}#golden`)?.failures).toBe(1);
+  });
+
+  test("hydrate-unavailable falls back to cold create in the same pass", async () => {
+    await declareWorktrees(repo, repoName, { onDeck: 1, root: join(repo, ".worktrees"), ready: [] });
+    const exdev: CloneRunner = async () => ({ exitCode: 3, stderr: "clonefile: Cross-device link" });
+    await replenishAndShrink(deps(exdev), new Map(), fakeAppConfig());
+    const trees = loadRegistry(repoName);
+    expect(findGolden(trees)?.state).toBe("on-deck");
+    expect(trees.filter((t) => t.kind === "ephemeral" && t.state === "on-deck")).toHaveLength(1);
+  });
+
+  test("onDeck 0 scraps the golden and nothing else", async () => {
+    await declareWorktrees(repo, repoName, { onDeck: 1, root: join(repo, ".worktrees"), ready: [] });
+    await replenishAndShrink(deps(), new Map(), fakeAppConfig());
+    expect(findGolden(loadRegistry(repoName))).toBeDefined();
+    await declareWorktrees(repo, repoName, { onDeck: 0, root: join(repo, ".worktrees"), ready: [] });
+    await replenishAndShrink(deps(), new Map(), fakeAppConfig());
+    const trees = loadRegistry(repoName);
+    expect(findGolden(trees)).toBeUndefined();
+    expect(trees.filter((t) => t.kind === "ephemeral" && t.state === "on-deck")).toHaveLength(1);
   });
 });

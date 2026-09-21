@@ -9,7 +9,7 @@ import type { Logger } from "pino";
 import { readJson, writeJson } from "../../json-store.ts";
 import { closeStateDb, listKvValues, setKvValue } from "../../state/index.ts";
 import { composeKey } from "../../state/branch-cache.ts";
-import { machineSettingsPath, rtDir, teamSettingsPath } from "../../rt-paths.ts";
+import { goldenRoot, machineSettingsPath, rtDir, teamSettingsPath } from "../../rt-paths.ts";
 import { deriveRepoIdentity, parseIdentity } from "../../settings/identity.ts";
 import { findByPath, loadRegistry, saveRegistry, type TreeRecord } from "../../worktree/registry.ts";
 import * as gitAsync from "../../worktree/git-async.ts";
@@ -171,6 +171,15 @@ describe("reconcileRepoRegistry", () => {
 
     const registry = loadRegistry(repoName);
     expect(registry.length).toBe(2);
+  });
+
+  test("a registered golden is not re-adopted as unmanaged", async () => {
+    const golden: TreeRecord = { name: "golden", path: goldenRoot(repoName), kind: "golden", state: "on-deck", branch: "golden", createdAt: new Date().toISOString(), readyStamp: "abc" };
+    saveRegistry(repoName, [golden]);
+    await reconcileRepoRegistry(makeDeps(repoName, repo, events));
+    const rows = loadRegistry(repoName).filter((r) => r.path === golden.path);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.kind).toBe("golden");
   });
 
   test("a missing path is held for MISSING_PRUNE_PASSES, then pruned and the name reusable by createTree", async () => {
