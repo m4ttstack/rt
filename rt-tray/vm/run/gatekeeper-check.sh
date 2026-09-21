@@ -18,12 +18,14 @@ set -euo pipefail
 source "$(cd "$(dirname "$0")/.." && pwd)/lib/common.sh"
 
 DMG=""; APP=""; VER=26; DEST="/Applications"; KEEP=0; DRY=0
+# Without this, a value-less flag makes `shift 2` fail and set -e exits mute.
+need_val() { [ -n "${2:-}" ] || vm_die "$1 needs a value"; }
 while [ $# -gt 0 ]; do
   case "$1" in
-    --dmg) DMG="${2:-}"; shift 2;;
-    --app) APP="${2:-}"; shift 2;;
-    --ver) VER="${2:-}"; shift 2;;
-    --dest) DEST="${2:-}"; shift 2;;
+    --dmg) need_val --dmg "${2:-}"; DMG="$2"; shift 2;;
+    --app) need_val --app "${2:-}"; APP="$2"; shift 2;;
+    --ver) need_val --ver "${2:-}"; VER="$2"; shift 2;;
+    --dest) need_val --dest "${2:-}"; DEST="$2"; shift 2;;
     --keep) KEEP=1; shift;;
     --dry-run) DRY=1; shift;;
     -h|--help) sed -n '2,16p' "$0"; exit 0;;
@@ -39,8 +41,16 @@ RUN_VM="gkcheck-$(date +%H%M%S)"
 
 vm_run_init "gatekeeper-$VER"
 TART_PID=""
+HOST_MNT=""
 cleanup() {
   local failed; failed=$(vm_phases_failed)
+  # Every vm_die between the host mount and here would otherwise leak it, and
+  # the next run's mount lands at "<name> 1" instead of the path it expects.
+  if [ -n "$HOST_MNT" ]; then
+    hdiutil detach "$HOST_MNT" -quiet 2>/dev/null || true
+    rmdir "$HOST_MNT" 2>/dev/null || true
+    HOST_MNT=""
+  fi
   if [ "$KEEP" = 1 ] || [ "${failed:-0}" != 0 ]; then
     vm_warn "keeping $RUN_VM for diagnosis; remove with: tart stop $RUN_VM && tart delete $RUN_VM"
   else
@@ -48,7 +58,9 @@ cleanup() {
     [ -n "$TART_PID" ] && wait "$TART_PID" 2>/dev/null
     tart delete "$RUN_VM" 2>/dev/null || true
   fi
-  vm_render_report
+  # A vm_die before the first phase ends leaves no ledger, and rendering one
+  # then buries the real error under a missing-file complaint.
+  [ -f "$VM_RUN_DIR/phases.jsonl" ] && vm_render_report
 }
 trap cleanup EXIT
 
@@ -60,17 +72,21 @@ else
   vm_require_cmd tart "brew install openai/tools/tart"
   vm_require_cmd swiftc "Apple CLT required for the host-side screenshot"
   SRC="$APP"
-  HOST_MNT=""
   if [ -n "$DMG" ]; then
     [ -f "$DMG" ] || vm_die "no dmg at $DMG"
-    HOST_MNT=$(mktemp -d)
-    hdiutil attach "$DMG" -nobrowse -readonly -mountpoint "$HOST_MNT" >/dev/null \
-      || vm_die "could not mount $DMG on the host"
+    MNT=$(mktemp -d)
+    hdiutil attach "$DMG" -nobrowse -readonly -mountpoint "$MNT" >/dev/null \
+      || { rmdir "$MNT" 2>/dev/null || true; vm_die "could not mount $DMG on the host"; }
+    HOST_MNT="$MNT"
     SRC=$(find "$HOST_MNT" -maxdepth 1 -name '*.app' -print -quit)
-    [ -n "$SRC" ] || { hdiutil detach "$HOST_MNT" -quiet; vm_die "no .app at the top level of $DMG"; }
+    [ -n "$SRC" ] || vm_die "no .app at the top level of $DMG"
   fi
   [ -d "$SRC" ] || vm_die "no app bundle at $SRC"
   APP_NAME="$(basename "$SRC")"
+  # CFBundleExecutable, not the bundle name: the two differ often enough that
+  # assuming them equal would report "never started" for a launch that worked.
+  APP_EXEC=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$SRC/Contents/Info.plist" 2>/dev/null || true)
+  [ -n "$APP_EXEC" ] || APP_EXEC="${APP_NAME%.app}"
 
   # Stapling is asserted on the host because the golden has no CLT to run
   # stapler: an unstapled build still passes inside the VM whenever the guest
@@ -82,7 +98,11 @@ else
     || PF_FAIL="$PF_FAIL spctl"
   xcrun stapler validate "$SRC" >>"$VM_RUN_DIR/logs/preflight.log" 2>&1 \
     || PF_FAIL="$PF_FAIL staple"
-  [ -n "$HOST_MNT" ] && hdiutil detach "$HOST_MNT" -quiet 2>/dev/null || true
+  if [ -n "$HOST_MNT" ]; then
+    hdiutil detach "$HOST_MNT" -quiet 2>/dev/null || true
+    rmdir "$HOST_MNT" 2>/dev/null || true
+    HOST_MNT=""
+  fi
   if [ -n "$PF_FAIL" ]; then
     vm_phase_end preflight fail "host checks failed:$PF_FAIL (see logs/preflight.log)"
     exit 1
@@ -183,7 +203,6 @@ vm_phase_end install pass "Finder-copied to $DEST_APP, quarantine intact"
 #    prompt is SecurityAgent, so the two are told apart by owning process
 #    rather than by reading pixels. Screenshots are evidence, not the test. ────
 vm_phase_begin launch
-PROC="${APP_NAME%.app}"
 # Positive control before the assertion that matters: an absent dialog and an
 # unreachable System Events both read as "no windows", so without this the
 # phase would pass whenever Accessibility is not granted in the guest.
@@ -205,16 +224,20 @@ while [ "$i" -lt 12 ]; do
   GK_WINDOWS=$(vm_ssh_try "$VM_TESTER_USER" "$RUN_VM" \
     "osascript -e 'tell application \"System Events\" to get name of windows of process \"CoreServicesUIAgent\"' 2>/dev/null" || true)
   [ -n "$GK_WINDOWS" ] && break
-  vm_ssh_try "$VM_TESTER_USER" "$RUN_VM" "pgrep -x '$PROC' >/dev/null" && { RUNNING=1; break; }
+  # Anchored to the installed bundle's own executable directory: pgrep -x on a
+  # guessed process name misses whenever CFBundleExecutable is not the bundle
+  # name, and a bare bundle-path match would catch unrelated processes.
+  vm_ssh_try "$VM_TESTER_USER" "$RUN_VM" "pgrep -f '$DEST_APP/Contents/MacOS/' >/dev/null" \
+    && { RUNNING=1; break; }
 done
 "$VM_ROOT/run/host/capture.sh" "$RUN_VM" "$VM_RUN_DIR/screenshots/04-settled.png" || true
 
 if [ -n "$GK_WINDOWS" ]; then
   vm_phase_end launch fail "Gatekeeper warning shown: $GK_WINDOWS" "04-settled.png"
 elif [ "$RUNNING" = 1 ]; then
-  vm_phase_end launch pass "no CoreServicesUIAgent window; $PROC is running" "04-settled.png"
+  vm_phase_end launch pass "no CoreServicesUIAgent window; $APP_EXEC is running" "04-settled.png"
 else
-  vm_phase_end launch fail "$PROC never started and no warning appeared, so something else blocked it" "04-settled.png"
+  vm_phase_end launch fail "$APP_EXEC never started and no warning appeared, so something else blocked it" "04-settled.png"
 fi
 
 vm_phase_begin assess
