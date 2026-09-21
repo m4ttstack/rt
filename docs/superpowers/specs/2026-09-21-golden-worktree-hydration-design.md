@@ -78,11 +78,13 @@ in the same pass proceeds regardless (cold create until the golden is ready).
 in each pass, so a master bump reaches the donor before any member that
 might be hydrated from it. Members freshen exactly as today.
 
-**Never provisioned, never disposed by provision.** No handler path ever
-transitions the golden to `claimed` or `disposable`. `rt worktree dispose`
-by name refuses it with `golden-not-disposable`; the only way to remove it is
-to set `onDeck` to 0, at which point the reconciler scraps it along with the
-members it already scraps today.
+**Never provisioned, never disposed.** No handler path ever transitions
+the golden to `claimed` or `disposable`. `rt worktree dispose` by name is
+refused by dispose's existing guard 1 (`kind !== "ephemeral"`), which
+returns `kind-golden`; no new guard is needed. The only way to remove it is
+to set `onDeck` to 0: replenish, which today returns immediately at
+`onDeck <= 0`, first scraps any `kind: "golden"` row through `scrapTree`.
+Existing members are left alone at `onDeck: 0`, as today.
 
 ### Hydration
 
@@ -207,9 +209,12 @@ golden) plus per-member freshens as before.
   hydrate vs cold for each fallback condition above; hydrate runs under both
   locks; failure scraps and backs off.
 - `freshen`: golden is a candidate and visits first.
-- `handlers/worktree`: golden is not selectable, not claimable, not
-  disposable.
-- `reconcile`: a registered golden is not re-adopted; `onDeck: 0` scraps it.
+- `handlers/worktree` and `dispose`: golden is not selectable, not
+  claimable, and dispose refuses it with `kind-golden`.
+- `commands/worktree`: `list` prints `golden` (the kind) for the golden row
+  instead of its `on-deck` state; `freshen`'s candidate filter includes it.
+- `reconcile`: a registered golden is not re-adopted; `replenish` at
+  `onDeck: 0` scraps it and nothing else.
 - Hydration unit: ignored-path enumeration from porcelain output (drops
   `*.log`, keeps files and dirs), `readyStamp`/`readyAt` inheritance,
   exit-code mapping.
